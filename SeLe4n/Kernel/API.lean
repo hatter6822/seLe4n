@@ -1483,6 +1483,7 @@ def syscallRequiredRight : SyscallId → AccessRight
   | .tcbSetMCPriority      => .write
   | .tcbSetIPCBuffer       => .write
   | .tcbSetAffinity        => .write
+  | .tcbSetFaultHandler    => .write
   | .tcbBindNotification   => .write
   | .tcbUnbindNotification => .write
   -- PR #822 Phase H: deriving a reply cap from the object cap to a Reply requires
@@ -1537,6 +1538,7 @@ def syscallChecksTargetFirst : SyscallId → Bool
   | .tcbSetMCPriority      => false
   | .tcbSetIPCBuffer       => false
   | .tcbSetAffinity        => false
+  | .tcbSetFaultHandler    => false
   | .tcbBindNotification   => false
   | .tcbUnbindNotification => false
   | .mintReplyCap          => false
@@ -2205,10 +2207,19 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
         -- cross-core pokes from the committed `(pre, post)` states, and a thread
         -- newly runnable on a remote home core is exactly
         -- `crossCoreSgiBody_remote_wake`.
+        --
+        -- Review round (PR #887): a thread suspended fail-closed by the fault
+        -- path keeps its fault as a diagnostic.  Resuming it must retire that
+        -- fault — restart at the faulting instruction with the register window
+        -- it held at the trap, clearing `pendingFault` — or the thread's next
+        -- ordinary Call would be answered through the reply seam's fault
+        -- branch and rewound to the old fault PC.  A thread carrying no fault
+        -- is untouched (`retirePendingFaultForResume_of_no_fault`).
         match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
         | .error e => .error e
         | .ok vtid =>
-            match Lifecycle.Suspend.resumeThreadOnCoreLive st vtid
+            match Lifecycle.Suspend.resumeThreadOnCoreLive
+                (retirePendingFaultForResume st vtid.val) vtid
                 (determineExecutingCore st tid) with
             | .ok (st', _) => .ok ((), st')
             | .error e => .error e
@@ -2311,6 +2322,25 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
                         (determineExecutingCore st tid) with
                 | .ok (st', _) => .ok ((), st')
                 | .error e => .error e
+    | _ => fun _ => .error .invalidCapability
+  -- Review round (PR #887): `seL4_TCB_SetSpace`'s fault endpoint.  The CPtr
+  -- is interpreted in the *target* thread's CSpace and validated at set time
+  -- by the same resolution the fault path runs (`resolveFaultHandlerCPtr`),
+  -- so a handler that could never be delivered to is refused here rather than
+  -- discovered as a suspended thread later.  Authority: the write right on the
+  -- target TCB capability, like every other thread-configuration arm.
+  | .tcbSetFaultHandler =>
+    some <| match cap.target with
+    | .object objId =>
+      fun st => match Architecture.SyscallArgDecode.decodeSetFaultHandlerArgs decoded with
+      | .error e => .error e
+      | .ok args =>
+        match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+        | .error e => .error e
+        | .ok vtid =>
+            match setThreadFaultHandlerOp st vtid args.handlerCPtr with
+            | .ok st' => .ok ((), st')
+            | .error e => .error e
     | _ => fun _ => .error .invalidCapability
   | _ => none
 
@@ -2599,15 +2629,20 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
       | error e => simp only [hVal] at hStep; cases hStep
       | ok vtid =>
           simp only [hVal] at hStep
-          cases hRes : Lifecycle.Suspend.resumeThreadOnCoreLive st vtid
+          cases hRes : Lifecycle.Suspend.resumeThreadOnCoreLive
+              (retirePendingFaultForResume st vtid.val) vtid
               (determineExecutingCore st tid) with
           | error e => simp only [hRes] at hStep; cases hStep
           | ok pair =>
               obtain ⟨stU, sgiU⟩ := pair
               simp only [hRes] at hStep
               cases hStep
-              exact resumeThreadOnCoreLive_preserves_ipcInvariantFull st st' vtid _ sgiU
-                hObjInv (hPack.targetThreadQuiescent objId (Or.inr hSy) hTgt vtid hVal) hInv hRes
+              exact resumeThreadOnCoreLive_preserves_ipcInvariantFull
+                (retirePendingFaultForResume st vtid.val) st' vtid _ sgiU
+                (retirePendingFaultForResume_preserves_objects_invExt st _ hObjInv)
+                (threadIpcFieldsQuiescent_retirePendingFaultForResume st _ hObjInv
+                  (hPack.targetThreadQuiescent objId (Or.inr hSy) hTgt vtid hVal))
+                (retirePendingFaultForResume_preserves_ipcInvariantFull st _ hObjInv hInv) hRes
     all_goals try cases hStep
   case tcbSetPriority =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -2709,6 +2744,26 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                       cases hStep
                       exact setThreadCpuAffinityOnCore_preserves_ipcInvariantFull st st'
                         vtid affinity _ sgiU hObjInv hInv hPack.queuedThreadsIdle hSet
+    all_goals try cases hStep
+  case tcbSetFaultHandler =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object objId =>
+      try dsimp only [] at hStep
+      cases hDec : Architecture.SyscallArgDecode.decodeSetFaultHandlerArgs decoded with
+      | error e => simp only [hDec] at hStep; cases hStep
+      | ok args =>
+          simp only [hDec] at hStep
+          cases hVal : validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+          | error e => simp only [hVal] at hStep; cases hStep
+          | ok vtid =>
+              simp only [hVal] at hStep
+              cases hSet : setThreadFaultHandlerOp st vtid args.handlerCPtr with
+              | error e => simp only [hSet] at hStep; cases hStep
+              | ok stU =>
+                  simp only [hSet] at hStep
+                  cases hStep
+                  exact setThreadFaultHandlerOp_preserves_ipcInvariantFull st st' vtid _
+                    hObjInv hInv hSet
     all_goals try cases hStep
 
 /-- WS-J1-C/K-C/K-D: Dispatch a decoded syscall to the appropriate internal
@@ -4219,7 +4274,7 @@ theorem dispatchWithCap_wildcard_unreachable (sid : SyscallId) :
             .tcbSetIPCBuffer, .tcbSetAffinity,
             .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap,
             .vspaceUnifyInstruction, .declassify, .declassifySignal,
-            .auditRead, .auditDrain] : List SyscallId) := by
+            .auditRead, .auditDrain, .tcbSetFaultHandler] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- AE1-D: Every `SyscallId` variant is handled by either `dispatchCapabilityOnly`
@@ -4240,7 +4295,7 @@ theorem dispatchWithCapChecked_wildcard_unreachable (sid : SyscallId) :
             .tcbSetIPCBuffer, .tcbSetAffinity,
             .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap,
             .vspaceUnifyInstruction, .declassify, .declassifySignal,
-            .auditRead, .auditDrain] : List SyscallId) := by
+            .auditRead, .auditDrain, .tcbSetFaultHandler] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- WS-J1-C: Route decoded syscall arguments to the appropriate capability-gated
@@ -5461,7 +5516,8 @@ theorem dispatchWithCap_preservation_composition_witness :
     | `.tcbSetIPCBuffer` | **`setIPCBufferOp_preserves_projection`** (Operations.lean — AK6-F.2b, v0.29.10) |
     | `.tcbSetPriority/SetMCPriority` | `objects_insert_preserves_projection_high` at non-observable TCB/SC — uses the universal direct-insert frame lemma (Operations.lean — AK6-F Step A, v0.29.10) |
     | `.tcbSetAffinity` | **`setThreadCpuAffinityOnCore_preserves_projection`** (Operations.lean — WS-SM SM8.B, review round 42) at non-observable target — the **live** wrapper, which round 37 rerouted this arm to; the boot-core `setThreadCpuAffinityOp_preserves_projection` (SM5.H.4) is its `bootCoreId` instance, reachable through `setThreadCpuAffinityOp_eq_onCore_state` but not needed here.  The affinity write is `cpuAffinity`-erased (invisible); the run-queue migration's write, at the executing core rather than a pinned boot core, preserves the filtered `projectRunnable` for a high thread (`migrateRunQueueOnAffinityChange_preserves_projection`); the replenishment migration is never projected (`migrateSchedContextReplenishment_preserves_projection`). |
-    | `.tcbSuspend/Resume` | `storeObject_preserves_projection` at non-observable TCB target |
+    | `.tcbSuspend/Resume` | `storeObject_preserves_projection` at non-observable TCB target; the review-round retire prefix is `applyFaultRestart`, a register + `pendingFault` write on the same target |
+    | `.tcbSetFaultHandler` | `objects_insert_preserves_projection_high` at non-observable TCB target (a `faultHandler` field write) |
 
     **New AK6-F building blocks in v0.29.10:**
     - `objects_insert_preserves_projection_high` — universal direct-insert
@@ -6207,7 +6263,8 @@ theorem dispatchWithCap_tcbResume_delegates
     (hDecode : ∃ a, Architecture.SyscallArgDecode.decodeResumeArgs decoded = .ok a)
     (hValid : validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vtid) :
     dispatchWithCap decoded tid gate cap st =
-      (match Lifecycle.Suspend.resumeThreadOnCoreLive st vtid
+      (match Lifecycle.Suspend.resumeThreadOnCoreLive
+              (retirePendingFaultForResume st vtid.val) vtid
               (determineExecutingCore st tid) with
        | .ok (st', _) => .ok ((), st')
        | .error e => .error e) := by
@@ -6501,7 +6558,8 @@ def syscallDelegates : SyscallId → Prop
         (∃ a, Architecture.SyscallArgDecode.decodeResumeArgs decoded = .ok a) →
         validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vtid →
         dispatchWithCap decoded tid gate cap st =
-          (match Lifecycle.Suspend.resumeThreadOnCoreLive st vtid
+          (match Lifecycle.Suspend.resumeThreadOnCoreLive
+                  (retirePendingFaultForResume st vtid.val) vtid
                   (determineExecutingCore st tid) with
            | .ok (st', _) => .ok ((), st')
            | .error e => .error e)

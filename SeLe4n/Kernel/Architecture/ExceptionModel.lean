@@ -301,6 +301,13 @@ def dispatchSynchronousException (ectx : ExceptionContext) (st : SystemState)
       match syscallEntry arm64DefaultLayout st.machine.registerCount st with
       | .error e => .error e
       | .ok ((), st') => .ok (none, st')
+  -- Review round (PR #887): a current-EL abort is the kernel's own fault.
+  -- There is no user thread to attribute it to and no handler to deliver it
+  -- to; the model reports it and the trap layer halts.  The shape model does
+  -- not read `SPSR_EL1`'s exception level — the live entry does
+  -- (`faultEntryStep`'s `takenFromEl0` gate), which is the second half of
+  -- the same rule for the classes whose EC does not encode the level.
+  | .kernelAbort => .error .illegalState
   | .dataAbort | .instrAbort | .pcAlignment | .spAlignment | .unknownReason =>
       match faultOfExceptionContext ectx with
       | none => .error .illegalState
@@ -433,14 +440,16 @@ theorem dispatchSynchronousException_nonSvc_thread_not_dispatchable
     (ectx : ExceptionContext) (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
     (sgi? : Option (CoreId × SgiKind)) (st' : SystemState)
     (hCls : classifySynchronousException ectx ≠ .svc)
+    (hK : classifySynchronousException ectx ≠ .kernelAbort)
     (hCur : st.scheduler.currentOnCore c = some tid)
     (hStep : dispatchSynchronousException ectx st c = .ok (sgi?, st')) :
     ¬ SeLe4n.Kernel.dispatchableOnCore st' tid c := by
   have hFault : (faultOfExceptionContext ectx).isSome :=
-    faultOfExceptionContext_isSome_of_ne_svc ectx hCls
+    faultOfExceptionContext_isSome_of_ne_svc ectx hCls hK
   unfold dispatchSynchronousException at hStep
   cases hC : classifySynchronousException ectx with
   | svc => exact absurd hC hCls
+  | kernelAbort => exact absurd hC hK
   | dataAbort | instrAbort | pcAlignment | spAlignment | unknownReason =>
       rw [hC] at hStep
       simp only at hStep

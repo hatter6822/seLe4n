@@ -72,7 +72,7 @@ architectural improvements enabled by the Lean 4 proof framework:
 
 ### Security and verification
 
-- **N-domain information-flow** — parameterized flow policies generalizing seL4's binary partition. 43-entry enforcement boundary with per-operation non-interference proofs (35-constructor `NonInterferenceStep` inductive), and a bounded, fail-closed declassification audit trail with a capability-gated reader
+- **N-domain information-flow** — parameterized flow policies generalizing seL4's binary partition. 44-entry enforcement boundary with per-operation non-interference proofs (35-constructor `NonInterferenceStep` inductive), and a bounded, fail-closed declassification audit trail with a capability-gated reader
 - **Composed proof layer** — `proofLayerInvariantBundle` composes 16 subsystem invariant bundles (scheduler core + CBS extensions, capability, IPC + IPC–scheduler coupling, lifecycle, service, VSpace, cross-subsystem, TLB consistency, notification-waiter consistency, TLB-shootdown pending/ack bounds, per-core TLB invalidation and I-cache coherence, and the declassification audit-log bound) into a single top-level obligation verified from boot through all operations
 - **Three-phase state architecture** — builder phase with invariant witnesses flows to a frozen immutable representation with proven lookup equivalence. 24 frozen operations mirror the live API
 - **Complete operation set** — all seL4 operations implemented with invariant preservation, through thread suspend/resume, priority management (setPriority/setMCPriority), and IPC-buffer configuration
@@ -88,9 +88,9 @@ architectural improvements enabled by the Lean 4 proof framework:
 |-----------|-------|
 | **Version** | `0.34.44` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 315,553 across 307 files |
-| **Test Lean LoC** | 66,553 across 70 test suites |
-| **Proved declarations** | 10,473 theorem/lemma declarations (zero sorry/axiom) |
+| **Production Lean LoC** | 316,336 across 307 files |
+| **Test Lean LoC** | 66,866 across 70 test suites |
+| **Proved declarations** | 10,503 theorem/lemma declarations (zero sorry/axiom) |
 | **Rust crates** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) across 48 source files |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Hardware binding** | **H3 COMPLETE** (WS-AG AG1–AG10): HAL, GIC-400, timer, ARMv8 page tables, FFI bridge, QEMU boot |
@@ -224,7 +224,7 @@ per-file inventory, see [`docs/codebase_map.json`](docs/codebase_map.json).
 | **Scheduling** | C-implemented sporadic server (MCS) | CBS with machine-checked `cbs_bandwidth_bounded` theorem; `SchedContext` as capability-controlled kernel object |
 | **Passive servers** | SchedContext donation via C | Verified donation with `donationChainAcyclic` invariant |
 | **IPC** | Single linked-list endpoint queue | Intrusive dual-queue with O(1) mid-queue removal; budget-driven timeouts |
-| **Information flow** | Binary high/low partition | N-domain configurable policy with a 43-entry enforcement boundary (count pinned by `enforcementBoundaryExtended_count`), per-operation NI proofs, and a capability-gated audit trail for every authorized declassification |
+| **Information flow** | Binary high/low partition | N-domain configurable policy with a 44-entry enforcement boundary (count pinned by `enforcementBoundaryExtended_count`), per-operation NI proofs, and a capability-gated audit trail for every authorized declassification |
 | **Priority inheritance** | C-implemented PIP (MCS branch) | Machine-checked transitive PIP with deadlock freedom and parametric WCRT bound |
 | **Bounded latency** | No formal WCRT bound | `WCRT = D × L_max + N × (B + P)` proven across 8 liveness modules |
 | **Object stores** | Linked lists and arrays | Verified Robin Hood hash tables (`RHTable`/`RHSet`) with O(1) hot paths |

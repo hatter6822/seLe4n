@@ -77,9 +77,14 @@ inventory was written:
 - `SeLe4n/Kernel/SyscallDispatchEntry.lean`, `SecondaryEntry.lean`,
   `PerCoreTimerEntry.lean`, `FaultEntry.lean` (WS-RR RR4) — the live
   `@[export]` dispatch/boot/timer/fault seams the Rust HAL resolves against.
-  `FaultEntry.lean` carries two: `lean_handle_fault` (classify, build the
-  fault, run `faultDeliverOnCore` against the live kernel state, fire the SGI
-  the delivery surfaced) and `lean_classify_synchronous_exception`, which makes
+  `FaultEntry.lean` carries three: `lean_handle_fault` (spill the trap frame's
+  fault window, build the fault, run `faultDeliverOnCoreChecked` against the
+  live kernel state, derive the cross-core SGIs from the state diff — and inert
+  unless the frame came from EL0, since the PR #887 review round: a
+  kernel-origin exception is never delivered), `lean_handle_unknown_syscall`
+  (same round: the same step for a syscall number outside `SyscallId`,
+  delivered as an `unknownSyscall` fault) and
+  `lean_classify_synchronous_exception`, which makes
   the Lean model the **only** place an `ESR_EL1` value becomes an exception
   class — `trap.rs` calls it instead of running its own `esr_ec` match, so the
   routing decision and the delivered fault's kind cannot disagree.
@@ -171,7 +176,7 @@ inventory was written:
   - `syscallEntry` — top-level register-sourced user-space entry point,
   - `lookupThreadRegisterContext` — TCB register context extraction,
   - `dispatchSyscall` — routes decoded arguments through `SyscallGate`/`syscallInvoke`,
-  - `dispatchWithCap` — per-syscall routing for all 34 `SyscallId` variants
+  - `dispatchWithCap` — per-syscall routing for all 35 `SyscallId` variants
     (13 base + IPC compound + SchedContext + TCB/notification + the SM9
     declassification/audit family); accepts `SyscallDecodeResult` (WS-K-C);
     IPC message body population from decoded registers via `extractMessageRegisters`
@@ -317,7 +322,11 @@ inventory was written:
   (the `TCB.faultHandler` CPtr resolved through the thread's own CSpace, gated
   on seL4's `sendFaultIPC` predicate — send, and grant **or** grant-reply),
   `faultMessage`, the `FaultDisposition` pair, and the state writes
-  `recordPendingFault` / `faultSuspend` / `faultAbandon` / `applyFaultRestart`.
+  `recordPendingFault` / `faultSuspend` / `faultAbandon` / `applyFaultRestart`;
+  §7 (PR #887 review round): `setThreadFaultHandlerOp` — seL4 `TCB_SetSpace`'s
+  `fault_ep`, the field's only writer, validated through the *target's* CSpace at
+  set time — and `retirePendingFaultForResume`, seL4's `restart` for a
+  double-faulted thread, which the `.tcbResume` arm runs first.
 - `SeLe4n/Kernel/IPC/CrossCore/Fault.lean` (production) — `faultDeliverOnCore`
   (and its `endpointFlowGate`-checked wrapper `faultDeliverOnCoreChecked`, §5,
   the arm the live fault entry calls), plus the reply seam

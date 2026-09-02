@@ -51,9 +51,9 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.34.44` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 315,553 across 307 Lean files |
-| **Test LoC** | 66,553 across 70 Lean test suites |
-| **Proved declarations** | 10,473 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 316,336 across 307 Lean files |
+| **Test LoC** | 66,866 across 70 Lean test suites |
+| **Proved declarations** | 10,503 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) — the active pre-1.0 baseline family (WS-RC R0–R5 landed at v0.31.2; R6–R14 absorbed into WS-SM per SM0.Q). Prior audits (v0.27.6 and earlier, remediated via WS-AI and successors) are archived in `docs/dev_history/audits/`. |
 | **Current workstream** | **WS-RA (Syscall Return ABI) — COMPLETE; both return orderings staged end to end.**  The kernel returns seL4's ARM64 frame exactly: `x0` = badge or primary result at full 64-bit width, `x1` = `MessageInfo` whose label carries the kernel status in the **top** of the 20-bit label range (`0` = success, `errorLabelBase + d` = `KernelError` discriminant `d`, base `0xFFF00`; every label below the base is a delivered message's own — ABI v3 at v0.34.44, which retired v2's `d + 1` offset because a delivered fault message's `seL4_Fault_tag` decoded as a kernel error), `x2`-`x5` = message registers.  The bit-63 status protocol (`encodeOk`/`encodeError`) and the vestigial `syscall_dispatch_inner` export are retired; `SYSCALL_ABI_VERSION = 3` is pinned in Lean, `sele4n-types` and the HAL.  `syscallDispatchFromAbi : Kernel SyscallOutcome` decides `returns frame` / `blocks` from the caller's post-state; value arms stage via `Architecture.writeReturnFrameToTcb` (`.notificationWait`'s badge — the SM9.C.0 closure, delivered end to end in the signal-before-wait ordering — `.receive`/`.replyRecv` consume deliveries, `.serviceQuery`'s resolved `ServiceId`); `Unit` frames are constructed, never read from staged registers; the frame crosses the FFI through the per-core return-frame mailbox and the trap layer restores all six registers (a blocked caller has no return frame; until the SM10.1 context restore installs a successor, the trap layer poisons its frame with the fail-closed blocked-resume sentinel — label `0xFFFFF`, decoded as `UnknownKernelError`, never success — per the PR #866 review).  Review round 2 (v0.33.40): the synthesized `extraCaps` reports the capabilities **actually installed** by the transfer (never the requested count — a grant-denied transfer reports zero), the mailbox/entry-lock core index is the boot-validated TPIDR logical id, and `service_query` returns the typed `ServiceId`.  **Completed at v0.33.38**: RA.B.5b's blocked-waiter staging landed at the unblocking arms (eleven sites through `stageWokenDelivery`/`stageWokenSendCompletion`, zero IPC transitions touched; `blockedReturn_staged_in_waiter_frame` + `blockedUnitReturn_staged_in_sender_frame`; five end-to-end two-core suite scenarios) and RA.B.8's per-arm `dispatchArm_matches_returnShape` value family with the unit half structural (`frameForShape_unit` constructs, never reads).  SM10.1 owes only frame *delivery* at the context restore plus the cancellation/timeout error-frame staging.  Plan: [`SYSCALL_RETURN_ABI_PLAN.md`](../planning/SYSCALL_RETURN_ABI_PLAN.md). |
@@ -123,7 +123,7 @@ semantic and proof foundations of the previous one.
 - IPC message transfer via `TCB.pendingMessage`: messages (registers, caps, badge) flow through sender→receiver rendezvous with combined state+message helpers (`storeTcbIpcStateAndMessage`).
 - **WS-H12d/A-09:** IPC message payloads bounded by `maxMessageRegisters` (120) and `maxExtraCaps` (3), matching seL4's `seL4_MsgMaxLength`/`seL4_MsgMaxExtraCaps`. Bounds enforced at all IPC send boundaries with `ipcMessageTooLarge`/`ipcMessageTooManyCaps` errors. `IpcMessage.bounded` predicate with proven send-produces-bounded theorems.
 - Node-stable CDT with bidirectional slot↔node maps and strict revocation error reporting.
-- Policy-checked wrappers (`endpointSendDualChecked`, `cspaceMintChecked`, `registerServiceChecked`) exercised by default in trace and probe harnesses. `enforcementBoundary` classifies 43 operations (13 policy-gated, 26 capability-only, 4 read-only; pinned by `enforcementBoundaryExtended_count`). Includes SchedContext ops (WS-Z8), thread lifecycle (D1), priority management (D2), IPC buffer (D3), VSpace/service ops (AC4-D), the live declassification entry point (WS-SM SM8.C), the two-phase-locking bracket (WS-SM SM8.E.3), the two audit-trail readers (WS-SM SM9.A.11) and the data-carrying declassification signal (WS-SM SM9.C.8). (WS-Q1: `serviceRestartChecked` removed, `registerServiceChecked` added — service lifecycle simplified to registry-only model.)
+- Policy-checked wrappers (`endpointSendDualChecked`, `cspaceMintChecked`, `registerServiceChecked`) exercised by default in trace and probe harnesses. `enforcementBoundary` classifies 44 operations (13 policy-gated, 27 capability-only, 4 read-only; pinned by `enforcementBoundaryExtended_count`). Includes SchedContext ops (WS-Z8), thread lifecycle (D1), priority management (D2), IPC buffer (D3), VSpace/service ops (AC4-D), the live declassification entry point (WS-SM SM8.C), the two-phase-locking bracket (WS-SM SM8.E.3), the two audit-trail readers (WS-SM SM9.A.11), the data-carrying declassification signal (WS-SM SM9.C.8) and the fault-handler configuration syscall `setThreadFaultHandlerOp` (PR #887 review round, capability-only). (WS-Q1: `serviceRestartChecked` removed, `registerServiceChecked` added — service lifecycle simplified to registry-only model.)
 - **WS-G1/WS-J1:** All 16 typed identifiers and the composite `SlotRef` key have `Hashable` instances with `@[inline]` for zero overhead. `Std.Data.HashMap` and `Std.Data.HashSet` imported in `Prelude.lean`, enabling O(1) hash-based data structures for kernel performance optimization (WS-G2..G9). WS-J1-A added `RegName`/`RegValue` (v0.15.4); WS-J1-F added `CdtNodeId` (v0.15.10).
 
 ---
@@ -1771,7 +1771,7 @@ abstract Lean kernel model to concrete ARM64 hardware:
 ```
 ┌──────────────────────────────────────────────────────────┐
 │  Lean Kernel Model (pure functions, machine-checked)     │
-│  - Transitions: SeLe4n/Kernel/API.lean (34 syscalls)     │
+│  - Transitions: SeLe4n/Kernel/API.lean (35 syscalls)     │
 │  - Invariants: cross-subsystem, IPC, scheduler, etc.     │
 ├──────────────────────────────────────────────────────────┤
 │  FFI Bridge (@[extern] declarations)                     │
@@ -1799,8 +1799,11 @@ AG3-C) defines the hardware exception dispatch path:
   (bits [31:26]) routes synchronous exceptions to handlers
 - **SVC dispatch**: SVC instructions from EL0 enter `dispatchException` which
   classifies the exception and routes to `syscallEntry`; since WS-RR RR4
-  (v0.34.44) every *other* synchronous class routes to `faultDeliverOnCore`
-  instead of returning a `KernelError` — see the RR4 note below
+  (v0.34.44) every *other* lower-EL synchronous class routes to
+  `faultDeliverOnCore` instead of returning a `KernelError` — see the RR4
+  note below.  A current-EL abort (EC `0x25`/`0x21`, `.kernelAbort`, PR #887
+  review round) is the kernel's own and is never delivered: the model answers
+  `.illegalState` and the trap handler halts before classification
 - **Exception levels**: EL0 (user) ↔ EL1 (kernel) transitions are modeled
   with `exceptionEntry_setsEL1` and `exceptionReturn_restoresEL0` proofs
 - **Atomicity**: 8 preservation theorems prove kernel state consistency across
@@ -1977,6 +1980,42 @@ v0.34.44 (no core sets `lean_ready` anywhere in the tree, so the trap
 handler takes the pre-RR4 error-frame branch on hardware), and it is a halt
 rather than a resume because resuming a faulted thread at its faulting
 instruction is precisely the livelock RR4 exists to remove.
+
+**Review round (PR #887), same version.**  Five findings, all fixed in code:
+
+- `TCB.faultHandler` had no writer outside the test fixtures, so on a live
+  system every fault took the fail-closed suspend and the mechanism above was
+  verified and unreachable.  `.tcbSetFaultHandler` (syscall id 34, seL4
+  `TCB_SetSpace`'s `fault_ep`) is the writer: `setThreadFaultHandlerOp`
+  (`IPC/Operations/Fault.lean` §7) resolves the candidate CPtr through the
+  **target's** CSpace and refuses at set time anything
+  `faultHandlerCapAuthorized` would refuse at fault time, so "configured" and
+  "usable" are the same thing; the authority is the TCB capability's write
+  right.  It is capability-only in the enforcement boundary (44 entries), has
+  a lock set (caller's TCB, target's TCB, target's CNode root in read mode),
+  preserves `ipcInvariantFull`, `objects.invExt` and the low projection, and
+  is mirrored in `sele4n-types` / `sele4n-abi` / `sele4n-sys`
+  (`tcb_set_fault_handler`; 35 syscalls).
+- A current-EL abort (EC `0x25`/`0x21`) or an EL1-origin frame was delivered
+  as the current *user* thread's fault, carrying the kernel's register window
+  to a handler whose reply would `eret` into the kernel frame.  The syndromes
+  classify as `.kernelAbort` (no fault; `dispatchSynchronousException`
+  answers `.illegalState`), the entries are inert unless `SPSR_EL1.M[3:2] = 0`
+  (`ExceptionContext.takenFromEl0`, `faultEntryStep_kernel_origin_inert`),
+  and `trap.rs` halts first (`halt_if_kernel_origin`, the `KERNEL_ABORT`
+  arm; `build.rs` pins the gate-before-classify order).
+- A handler already blocked in receive woke without the fault message in its
+  return frame: `faultDeliverOnCore` now stages it (`stageWokenDelivery`, the
+  `.call` arm's write), with the bundle carried through.
+- `.tcbResume` left a double-faulted thread's stale fault on the TCB, so its
+  next ordinary Call was answered through the fault branch.  The arm runs
+  `retirePendingFaultForResume` (seL4's `restart`: re-execute the faulting
+  instruction with the trap-time window, fault cleared) before the resume;
+  a thread carrying no fault is untouched.
+- An unknown syscall number was returned to the thread as an
+  `invalidSyscallNumber` frame; it is delivered as an `unknownSyscall` fault
+  (`lean_handle_unknown_syscall`, `trap.rs::deliver_unknown_syscall`), seL4's
+  `handleUnknownSyscall`.
 
 #### 6.5.0 Panic Discipline (AK5-A)
 
@@ -4300,7 +4339,8 @@ theorem that fixes its status.  `enforcementBoundaryPerCore` was, at this round,
 38-entry boundary plus the one operation SMP adds — the 2PL bracket,
 capability-only for the same reason `storeObject` is — at 53 entries, with
 `SyscallId` coverage re-checked against the extended list; the SM9 growth
-has since taken it to 58 (`enforcementBoundaryPerCore_count`, §2).
+and the PR #887 review round's fault-handler configuration entry have since
+taken it to 59 (`enforcementBoundaryPerCore_count`, §2).
 
 **`crossCoreLeakage_bounded`** states the bound as an `↔`: a `c'`-confined
 transition freezes core `c`'s per-core fragment outright, so the observer's

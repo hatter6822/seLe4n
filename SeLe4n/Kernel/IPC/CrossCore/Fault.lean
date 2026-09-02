@@ -193,6 +193,17 @@ faulted on.  The Call chain returns the **pre-state** on its error arm, so the
 suspend runs on the state the thread faulted in and no partial Call is ever
 observable.
 
+**The woken handler's frame is staged** (review round, PR #887): when the
+handler was already blocked in its receive, the Call wakes it with the fault
+in `pendingMessage`, and — as the live `.call` arm does through
+`Architecture.stageWokenDelivery` — its return frame (`x0` badge, `x1` the
+`MessageInfo` carrying the `seL4_Fault_tag`, `x2`-`x5` the first four fault
+words) is written into its saved registers here, so the context restore
+hands it the message rather than its stale receive-syscall registers.  The
+installed-capability count is the transfer summary's, which is `0` for a
+fault message.  A handler that receives *later* (the queued ordering) is
+staged by its own `.receive` arm.
+
 **On the ordering.** seL4 writes `tptr->tcbFault` *before* `sendIPC`; here the
 record is applied to the post-state of each arm.  The two are observationally
 identical — `pendingFault` is written only by this path and read only by the
@@ -210,14 +221,23 @@ def faultDeliverOnCore (st : SystemState) (tid : SeLe4n.ThreadId) (f : Fault)
       (recordPendingFault (faultSuspendOnCore st tid executingCore) tid tf,
        { disposition := .suspended })
   | .ok tgt =>
+      -- Review round (PR #887): capture the receive-queue head the Call will
+      -- wake, exactly as the live `.call` arm does, so the woken handler's
+      -- **return frame** is staged below.  Without it the handler's saved
+      -- `x1`/`x2`-`x5` stayed whatever its receive syscall left there, and
+      -- once the context restore installs it the handler would resume with
+      -- neither the fault tag nor `MR0`-`MR3` — the frame the ABI promises.
+      let wokenReceiver? := (st.getEndpoint? tgt.endpoint).bind (·.receiveQ.head)
       match endpointCallCrossCoreDispatch tgt.endpoint tid
           (faultMessage f ctx tgt.cap.badge) tgt.cap.rights tgt.cspaceRoot
           (SeLe4n.Slot.ofNat 0) executingCore st with
       | (_, .error _) =>
           (recordPendingFault (faultSuspendOnCore st tid executingCore) tid tf,
            { disposition := .suspended })
-      | (st', .ok (_summary, sgi?)) =>
-          (recordPendingFault st' tid tf,
+      | (st', .ok (summary, sgi?)) =>
+          (recordPendingFault
+             (Architecture.stageWokenDelivery st' wokenReceiver? summary.installedCount)
+             tid tf,
            { disposition := .delivered tgt.endpoint, sgi := sgi? })
 
 /-- WS-RR RR4.10: a fault whose handler does not resolve — for any reason —
@@ -273,7 +293,10 @@ theorem faultDeliverOnCore_delivered_eq (st : SystemState) (tid : SeLe4n.ThreadI
         (faultMessage f ctx tgt.cap.badge) tgt.cap.rights tgt.cspaceRoot
         (SeLe4n.Slot.ofNat 0) c st = (st', .ok (summary, sgi?))) :
     faultDeliverOnCore st tid f ctx c =
-      (recordPendingFault st' tid { fault := f, context := ctx },
+      (recordPendingFault
+         (Architecture.stageWokenDelivery st'
+           ((st.getEndpoint? tgt.endpoint).bind (·.receiveQ.head)) summary.installedCount)
+         tid { fault := f, context := ctx },
        { disposition := .delivered tgt.endpoint, sgi := sgi? }) := by
   unfold faultDeliverOnCore; rw [hRes]; simp only; rw [hCall]
 

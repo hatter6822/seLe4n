@@ -16,3 +16,7 @@
 [fault-4core] entry: PC-alignment fault with window sp=30576 fires SGIs [(1, SeLe4n.Kernel.Concurrency.SgiKind.reschedule)]
 [fault-4core] entry: recorded context sp=some 30576 lr=some 48879
 [fault-4core] entry: delivered MR1 = some 30576
+[fault-4core] unknown syscall x7=0x18 on core 0: faulter some (SeLe4n.Model.ThreadIpcState.blockedOnReply { val := 1110 } (some { val := 1122 })) SGIs [(1, SeLe4n.Kernel.Concurrency.SgiKind.reschedule)]
+[fault-4core] unknown syscall handler frame: x0=7 x1=1028 x2=17
+[fault-4core] kernel-origin abort (EL1 SPSR) at the entry: SGIs []
+[fault-4core] resume of double-faulted orphan: fault retired = true pc = some 327680

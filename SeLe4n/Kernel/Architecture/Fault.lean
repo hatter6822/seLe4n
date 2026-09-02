@@ -75,14 +75,26 @@ open SeLe4n.Model
 -- imports this module and both live in `SeLe4n.Kernel.Architecture`, so every
 -- name below is still visible to every existing consumer unchanged.
 
-/-- AG3-C: Synchronous exception class (derived from ESR_EL1 EC field). -/
+/-- AG3-C: Synchronous exception class (derived from ESR_EL1 EC field).
+
+**Review round (PR #887): `kernelAbort` is the current-EL abort** — EC `0x25`
+(data abort taken from the same EL) and `0x21` (instruction abort taken from
+the same EL).  The kernel runs at EL1, so an exception with either syndrome
+was raised by the *kernel*, never by a user thread: it is a kernel bug or a
+hardware fault, and the only correct answer is to halt.  Folding it into
+`dataAbort` / `instrAbort` — as the AG3-C table did — would have delivered a
+kernel page fault, with the kernel's own `FAR_EL1` and register window, to
+whichever user thread happened to be current, whose handler's reply could
+then resume the kernel at the faulting instruction as if nothing had
+happened. -/
 inductive SynchronousExceptionClass where
   | svc             -- SVC instruction (syscall)
-  | dataAbort       -- Data abort
-  | instrAbort      -- Instruction abort
+  | dataAbort       -- Data abort, taken from a lower EL (a user thread)
+  | instrAbort      -- Instruction abort, taken from a lower EL
   | pcAlignment     -- PC alignment fault
   | spAlignment     -- SP alignment fault
   | unknownReason   -- Unclassified synchronous exception
+  | kernelAbort     -- Data or instruction abort taken from the current EL: the kernel faulted
   deriving Repr, DecidableEq
 
 /-- AG3-C: Exception context — captures the ARM64 exception registers
@@ -104,6 +116,18 @@ structure ExceptionContext where
 def extractExceptionClass (esr : UInt64) : UInt64 :=
   (esr >>> 26) &&& 0x3F
 
+/-- Review round (PR #887): **which exception level the exception was taken
+from**, read off the saved `SPSR_EL1`.  `M[3:2]` (bits 3 and 2 of the mode
+field) is the EL: `0` for EL0, `1` for EL1.  This is the second, syndrome-
+independent half of the kernel-origin gate: `kernelAbort` catches the two
+abort classes whose EC encodes "current EL", but an alignment fault or an
+undefined instruction has one EC whichever EL raised it, and only the saved
+PSTATE says which.  A fault entry must deliver only exceptions taken from
+EL0 — the kernel has no fault handler to deliver to and a user handler must
+never be handed a kernel fault. -/
+def ExceptionContext.takenFromEl0 (ectx : ExceptionContext) : Bool :=
+  ((ectx.spsr >>> 2) &&& 0x3) == 0
+
 /-- WS-RR RR4.3: extract the Instruction Specific Syndrome (ISS) field from
     ESR_EL1 — bits [24:0].  The per-class detail word: for a data abort it
     carries the DFSC status code, the write-not-read bit and the access size;
@@ -115,19 +139,30 @@ def extractInstructionSyndrome (esr : UInt64) : UInt64 :=
 /-- AG3-C: Classify a synchronous exception from the ESR_EL1 EC field.
     Maps ARM64 exception class codes to our model's classification:
     - EC 0x15: SVC from AArch64 (syscall)
-    - EC 0x24/0x25: Data abort (from lower/current EL)
-    - EC 0x20/0x21: Instruction abort (from lower/current EL)
+    - EC 0x24: Data abort from a lower EL (a user thread)
+    - EC 0x20: Instruction abort from a lower EL
+    - EC 0x25 / 0x21: Data / instruction abort from the **current** EL — the
+      kernel itself faulted (`kernelAbort`; review round, PR #887)
     - EC 0x22: PC alignment fault
     - EC 0x26: SP alignment fault
     - All others: Unknown/unmodeled -/
 def classifySynchronousException (ectx : ExceptionContext) : SynchronousExceptionClass :=
   let ec := extractExceptionClass ectx.esr
   if ec = 0x15 then .svc
-  else if ec = 0x24 || ec = 0x25 then .dataAbort
-  else if ec = 0x20 || ec = 0x21 then .instrAbort
+  else if ec = 0x24 then .dataAbort
+  else if ec = 0x20 then .instrAbort
+  else if ec = 0x25 || ec = 0x21 then .kernelAbort
   else if ec = 0x22 then .pcAlignment
   else if ec = 0x26 then .spAlignment
   else .unknownReason
+
+/-- Review round (PR #887): the two current-EL abort syndromes classify as a
+kernel abort — never as a user fault. -/
+theorem classifySynchronousException_currentEl_abort (ectx : ExceptionContext)
+    (h : extractExceptionClass ectx.esr = 0x25 ∨ extractExceptionClass ectx.esr = 0x21) :
+    classifySynchronousException ectx = .kernelAbort := by
+  unfold classifySynchronousException
+  rcases h with h | h <;> simp [h]
 
 /-- AG3-C: Classification is total — every ESR value produces a valid class. -/
 theorem classifySynchronousException_total (ectx : ExceptionContext) :
@@ -141,9 +176,11 @@ theorem classifySynchronousException_total (ectx : ExceptionContext) :
 /-- WS-RR RR4.3: classify a synchronous exception into the fault the kernel
 raises for it, reading the payload out of the syndrome registers.
 
-`none` for the SVC class alone: an `SVC` is the syscall path, not a fault, and
+`none` for two classes: an `SVC` is the syscall path, not a fault, and
 returning a fault for it would make the abort wiring (RR4.21) divert syscalls
-into the handler endpoint.
+into the handler endpoint; and a `kernelAbort` is the kernel's own fault
+(review round, PR #887), which no user thread may be handed — the trap layer
+halts on it, and this map refuses to manufacture a user fault for it.
 
 * data abort → `vmFault (FAR) (ESR) prefetch := false`
 * instruction abort → `vmFault (FAR) (ESR) prefetch := true`
@@ -156,23 +193,36 @@ could only invent one. -/
 def faultOfExceptionContext (ectx : ExceptionContext) : Option Fault :=
   match classifySynchronousException ectx with
   | .svc          => none
+  | .kernelAbort  => none
   | .dataAbort    => some (.vmFault ectx.far ectx.esr false)
   | .instrAbort   => some (.vmFault ectx.far ectx.esr true)
   | .pcAlignment  => some (.userException (extractExceptionClass ectx.esr) ectx.esr)
   | .spAlignment  => some (.userException (extractExceptionClass ectx.esr) ectx.esr)
   | .unknownReason => some (.userException (extractExceptionClass ectx.esr) ectx.esr)
 
-/-- WS-RR RR4.3: the SVC class — and only it — yields no fault. -/
+/-- WS-RR RR4.3 / review round: the SVC class and the kernel abort — and only
+they — yield no fault. -/
 theorem faultOfExceptionContext_eq_none_iff (ectx : ExceptionContext) :
-    faultOfExceptionContext ectx = none ↔ classifySynchronousException ectx = .svc := by
+    faultOfExceptionContext ectx = none ↔
+      (classifySynchronousException ectx = .svc ∨
+        classifySynchronousException ectx = .kernelAbort) := by
   unfold faultOfExceptionContext
   cases h : classifySynchronousException ectx <;> simp
 
-/-- WS-RR RR4.3: every non-SVC synchronous exception produces a fault — the
-totality the abort wiring relies on (there is no "unclassifiable" arm that
-would silently fall back to resuming the faulting instruction). -/
+/-- Review round (PR #887): a kernel abort is never turned into a user fault. -/
+theorem faultOfExceptionContext_kernelAbort (ectx : ExceptionContext)
+    (h : classifySynchronousException ectx = .kernelAbort) :
+    faultOfExceptionContext ectx = none := by
+  simp [faultOfExceptionContext, h]
+
+/-- WS-RR RR4.3: every user-originated non-SVC synchronous exception produces
+a fault — the totality the abort wiring relies on (there is no
+"unclassifiable" arm that would silently fall back to resuming the faulting
+instruction).  The kernel abort is excluded by name: it is the one class the
+trap layer must *halt* on rather than deliver. -/
 theorem faultOfExceptionContext_isSome_of_ne_svc (ectx : ExceptionContext)
-    (h : classifySynchronousException ectx ≠ .svc) :
+    (h : classifySynchronousException ectx ≠ .svc)
+    (hK : classifySynchronousException ectx ≠ .kernelAbort) :
     (faultOfExceptionContext ectx).isSome := by
   unfold faultOfExceptionContext
   cases hc : classifySynchronousException ectx <;> simp_all

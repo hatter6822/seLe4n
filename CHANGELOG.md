@@ -362,6 +362,94 @@ documentation note in place of a fix.
   the spilled window (§6e), and the rights predicate on all four shapes.  The
   golden fixture grew seven lines.
 
+### Review round (PR #887)
+
+The review of the cut above found five defects, each a way the verified
+mechanism was unreachable or unsound on a live system.  All are fixed in
+code; none became a caveat.
+
+* **`TCB.faultHandler` had no writer** (blocker).  Production TCB creation
+  leaves the field `none` and no syscall set it, so on a live system every
+  fault took the fail-closed suspend and the whole reply-based restart was
+  verified and unreachable.  `.tcbSetFaultHandler` (id 34, seL4
+  `TCB_SetSpace`'s `fault_ep`) is the writer: `setThreadFaultHandlerOp`
+  (`IPC/Operations/Fault.lean` §7) resolves the candidate CPtr through the
+  **target's** CSpace and refuses at set time anything
+  `faultHandlerCapAuthorized` would refuse at fault time
+  (`setThreadFaultHandlerOp_validated` / `_rejects`), so "configured" and
+  "usable" are the same thing; the authority is the TCB capability's write
+  right, like every sibling configuration syscall.  It carries the full
+  surface a syscall needs here — the `dispatchCapabilityOnly` arm with its
+  payoff case, the bundle and `objects.invExt` preservation
+  (`DispatchArmPreservation`), the non-interference discharge
+  (`setThreadFaultHandlerOp_preserves_projection`), a lock set (caller's TCB,
+  target's TCB, target's CNode root in read mode) with its consistency theorem
+  and inventory entries, the frozen/refusal/taint tables, `SetFaultHandlerArgs`
+  with its decode round trip, and the Rust mirrors
+  (`SyscallId::TcbSetFaultHandler`, `sele4n_sys::tcb_set_fault_handler`, the
+  conformance suite at 35 syscalls).  §7d of the suite configures a handler
+  through the dispatcher on the orphan fixture thread, faults it, and sees the
+  delivery.
+* **Kernel-origin exceptions were delivered as the current thread's fault**
+  (high).  `classifySynchronousException` mapped the current-EL aborts
+  (EC `0x25`, `0x21`) onto the lower-EL classes, and nothing read
+  `SPSR_EL1.M`, so an abort the kernel itself took — a kernel bug — was
+  delivered to the *user thread's* handler as a `vmFault` carrying the
+  kernel's register window, and the handler's reply would have `eret`ed into
+  the kernel frame with registers of its choosing.  The current-EL syndromes
+  now classify as `.kernelAbort` (`faultOfExceptionContext` yields no fault;
+  `dispatchSynchronousException` answers `.illegalState`), `faultEntryStep`
+  and `unknownSyscallEntryStep` are inert unless `SPSR_EL1.M[3:2] = 0`
+  (`ExceptionContext.takenFromEl0`; `faultEntryStep_kernel_origin_inert`,
+  `faultEntryStep_kernelAbort_inert`), and `trap.rs` halts first:
+  `halt_if_kernel_origin` runs before classification in
+  `handle_synchronous_exception` and the `KERNEL_ABORT` arm halts on the
+  syndrome alone, with `build.rs` pinning the gate-before-classify order and
+  the arm's presence.  Both gates live in plain functions so the host lane
+  can test them with `#[should_panic]`, which a panic through an `extern "C"`
+  frame cannot be.
+* **A handler already blocked in receive woke with its own request
+  registers** (high).  `faultDeliverOnCore` recorded the fault and ran the
+  Call chain, but only the queued-order path — fault first, handler receives
+  later — staged the message into the handler's return frame; a handler
+  already parked in `receiveQ` was woken with the fault in its
+  `pendingMessage` and nothing in `x1`-`x5`.  The delivery now stages the
+  woken receiver's frame (`stageWokenDelivery`, the write the `.call` syscall
+  arm performs), with the bundle and progress proofs carried through
+  (`stageWokenDelivery_preserves_ipcInvariantFull`,
+  `stageWokenDelivery_scheduler_eq`); §6 of the suite reads the handler's
+  frame on the woken path.
+* **`.tcbResume` left a double-faulted thread's stale fault on the TCB**
+  (medium).  The fail-closed suspend keeps `pendingFault` as a diagnostic;
+  resuming the thread made it `.Ready` with the fault still recorded, so its
+  next ordinary Call was answered through `replyTransferOnCore`'s fault
+  branch — a VM fault's snapshot reinstalled and the PC rewound to the old
+  fault.  The resume arm now runs `retirePendingFaultForResume` first: seL4's
+  `restart` — the thread re-executes the faulting instruction with its
+  trap-time window and no fault
+  (`retirePendingFaultForResume_pendingFault_none`), faulting again and being
+  delivered this time if a handler was configured in between, or suspending
+  again; through the fault path either way.  A thread carrying no fault is
+  untouched (`retirePendingFaultForResume_of_no_fault`), so every existing
+  resume theorem transfers.
+* **An unknown syscall number returned an error frame** (medium).
+  `svc_dispatch` answered `DispatchError::InvalidSyscallId` with the
+  `invalidSyscallNumber` status frame, so a thread could not be run under an
+  emulation handler — seL4's `handleUnknownSyscall` delivers the number as an
+  `unknownSyscall` fault.  `lean_handle_unknown_syscall`
+  (`unknownSyscallEntryStep`, sharing `faultEntryDeliver` with the abort
+  entry) and `trap.rs::deliver_unknown_syscall` do that now, under the same
+  kernel-origin gate and with the same fail-closed status frame when no core
+  is Lean-ready; §6f of the suite delivers one end to end.
+
+The enforcement boundary is 44 entries (27 capability-only), the lock-set
+inventory 111, the phase manifest 903 theorems over 1113 entries, and the
+conformance and decode suites pin 35 syscalls, so the main trace fixture moves
+by exactly one line (`[XVAL-002]` 34 → 35 variants) and the SMP information-flow
+fixture by four (the two boundary counts, the syscall count, and one more
+taint-inert opcode); Tier 0–3, the Rust lane and the aarch64 cross gate are
+green.
+
 Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR4
 
 ## v0.34.43 — WS-RR RR3: `ipcInvariantFull` de-threaded, dispatch payoff landed

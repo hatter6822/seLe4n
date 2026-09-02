@@ -7331,7 +7331,7 @@ RR8 closes.
 | RR1 | aarch64 compile coverage — **LANDED v0.34.41** (incl. RR1.12 gate hardening) | 12 |
 | RR2 | Live-path correctness: dispatch-arm bundles, donation queue migration — **LANDED v0.34.42** | 20 |
 | RR3 | `ipcInvariantFull` de-threading closure (D1, D6, D8) — **LANDED v0.34.43** (RR3.1–RR3.26: de-threading, per-arm dispatch bundles, the three payoff theorems, plan retirement) | 26 |
-| RR4 | Fault handling: full fault IPC with reply-based restart — **LANDED v0.34.44** (RR4.1–RR4.27: `Fault` + wire format, resolution + rights, fail-closed dispositions, delivery through the live `.call` chain, resume/restart, preservation + RR4.19 progress + RR4.20's production flow gate and non-interference, the `ExceptionModel`/`trap.rs` wiring, suite + fixture) | 27 |
+| RR4 | Fault handling: full fault IPC with reply-based restart — **LANDED v0.34.44** (RR4.1–RR4.27: `Fault` + wire format, resolution + rights, fail-closed dispositions, delivery through the live `.call` chain, resume/restart, preservation + RR4.19 progress + RR4.20's production flow gate and non-interference, the `ExceptionModel`/`trap.rs` wiring, suite + fixture; **review round, PR #887**: `.tcbSetFaultHandler` as `TCB.faultHandler`'s only writer, kernel-origin exceptions halt instead of being delivered, the woken handler's frame staged, `.tcbResume` retires a pending fault, unknown syscall numbers delivered as faults) | 27 |
 | RR5 | Boot-path fail-open closure | 14 |
 | RR6 | Verified lock primitives completion (SM2.C-defer, pre-v1.0.0) | 19 |
 | RR7 | Medium-severity sweep, plus the §7 rows RR0.11 routes here | 32 |

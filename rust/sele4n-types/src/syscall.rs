@@ -91,11 +91,19 @@ pub enum SyscallId {
     // reading a bare "denied" cannot tell an unauthorized caller from an
     // authorized caller aimed at an unauthorized sink.
     DeclassifySignal = 33,
+    /// PR #887 review: install a thread's fault-handler CPtr — seL4's
+    /// `TCB_SetSpace` fault endpoint.  The CPtr (`x2`) is interpreted in the
+    /// **target** thread's CSpace and validated kernel-side at set time:
+    /// it must resolve to an endpoint capability carrying send and grant or
+    /// grant-reply, the same check the fault path applies at delivery.
+    /// The first writer of `TCB.faultHandler`: without it every fault on a
+    /// live system took the fail-closed suspend.
+    TcbSetFaultHandler = 34,
 }
 
 impl SyscallId {
     /// Total number of modeled syscalls.
-    pub const COUNT: usize = 34;
+    pub const COUNT: usize = 35;
 
     /// Convert from a raw `u64` value. Returns `None` for out-of-range.
     /// Lean: `SyscallId.ofNat?`
@@ -135,6 +143,7 @@ impl SyscallId {
             31 => Some(Self::AuditRead),
             32 => Some(Self::AuditDrain),
             33 => Some(Self::DeclassifySignal),
+            34 => Some(Self::TcbSetFaultHandler),
             _ => None,
         }
     }
@@ -168,6 +177,9 @@ impl SyscallId {
             Self::TcbSetPriority | Self::TcbSetMCPriority => AccessRight::Write,
             Self::TcbSetIPCBuffer => AccessRight::Write,
             Self::TcbSetAffinity => AccessRight::Write,
+            // PR #887 review: configuring a fault handler is a thread
+            // configuration write, like every other TCB_* invocation.
+            Self::TcbSetFaultHandler => AccessRight::Write,
             Self::TcbBindNotification | Self::TcbUnbindNotification => AccessRight::Write,
             // PR #822 Phase H: deriving a reply cap requires grant authority on the
             // source object cap (matches the cspaceMint/Copy/Move family).
@@ -332,6 +344,19 @@ mod tests {
     fn tcb_affinity_discriminant() {
         // WS-SM SM5.H.4: CPU-affinity configuration
         assert_eq!(SyscallId::TcbSetAffinity.to_u64(), 25);
+    }
+
+    #[test]
+    fn tcb_set_fault_handler_discriminant() {
+        // PR #887 review: fault-handler configuration, appended so every
+        // earlier discriminant is unchanged.
+        assert_eq!(SyscallId::TcbSetFaultHandler.to_u64(), 34);
+        assert_eq!(SyscallId::from_u64(34), Some(SyscallId::TcbSetFaultHandler));
+        assert_eq!(SyscallId::COUNT, 35);
+        assert_eq!(
+            SyscallId::TcbSetFaultHandler.required_right(),
+            AccessRight::Write
+        );
     }
 
     #[test]

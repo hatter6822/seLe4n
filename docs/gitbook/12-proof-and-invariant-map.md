@@ -577,6 +577,20 @@ Bundle level:
   register mirror's stale last-syscall contents —
   `Model/Fault.lean`'s `FaultRegisterWindow.ofRegisterFile_spill` is the
   register-level half).
+  The PR #887 review round added, all production:
+  `faultEntryStep_kernel_origin_inert` / `faultEntryStep_kernelAbort_inert`
+  (an EL1-origin frame or a current-EL abort syndrome delivers nothing — the
+  entry is the identity, and `trap.rs` halts before it is reached),
+  `stageWokenDelivery_preserves_ipcInvariantFull` carried through the
+  delivered arm (a handler already blocked in receive gets the fault message
+  in its return frame), `retirePendingFaultForResume_pendingFault_none` /
+  `_of_no_fault` / `_scheduler_eq` (the `.tcbResume` arm retires a pending
+  fault before it resumes, so no later reply decodes against a stale one), and
+  `setThreadFaultHandlerOp_validated` / `_preserves_ipcInvariantFull` /
+  `_preserves_objects_invExt` / `_preserves_projection` (the
+  `.tcbSetFaultHandler` arm — `TCB.faultHandler`'s only writer — validated
+  through the target's CSpace at set time, with the bundle, the object store
+  and non-interference).
   Also production, and load-bearing for the live path: `replyTransferOnCore`
   (`IPC/CrossCore/Fault.lean` §4) — seL4's `doReplyTransfer` branch on the
   answered thread's `pendingFault`, which the `.reply` and checked-`.reply`
@@ -1583,12 +1597,12 @@ v0.13.5 gap closure (3 theorems + 1 bridge):
 **M-07 — Enforcement boundary specification:**
 
 - `EnforcementClass` inductive (`policyGated`/`capabilityOnly`/`readOnly`),
-- `enforcementBoundary` — exhaustive 43-entry classification table (13 policy-gated, 26 capability-only, 4 read-only; count pinned by `enforcementBoundaryExtended_count`; Z8-M added 3 SchedContext, D1 added 2 thread lifecycle, D2 added 2 priority management, D3 added 1 IPC buffer, AC4-D added 3 VSpace/service capability-only operations, WS-SM SM8.C added the live declassification entry point (policy-gated), WS-SM SM8.E.3 added the SM3 two-phase-locking bracket `withLockSet` (capability-only), WS-SM SM9.A.11 added the two audit-trail readers `auditReadFromCore` / `auditDrainVisiblePrefix` (capability-only — authority is the dedicated `CapTarget.auditTrail`, never a right), and WS-SM SM9.C.8 added the data-carrying declassification `notificationSignalDeclassifiedOnCore` (policy-gated, the thirteenth)),
+- `enforcementBoundary` — exhaustive 44-entry classification table (13 policy-gated, 27 capability-only, 4 read-only; count pinned by `enforcementBoundaryExtended_count`; Z8-M added 3 SchedContext, D1 added 2 thread lifecycle, D2 added 2 priority management, D3 added 1 IPC buffer, AC4-D added 3 VSpace/service capability-only operations, WS-SM SM8.C added the live declassification entry point (policy-gated), WS-SM SM8.E.3 added the SM3 two-phase-locking bracket `withLockSet` (capability-only), WS-SM SM9.A.11 added the two audit-trail readers `auditReadFromCore` / `auditDrainVisiblePrefix` (capability-only — authority is the dedicated `CapTarget.auditTrail`, never a right), WS-SM SM9.C.8 added the data-carrying declassification `notificationSignalDeclassifiedOnCore` (policy-gated, the thirteenth), and the PR #887 review round added the fault-handler configuration `setThreadFaultHandlerOp` (capability-only, the twenty-seventh)),
 - `enforcementBoundaryExtended` — definitional alias of `enforcementBoundary` (W2-G, previously duplicate list),
 - `enforcementBoundaryExtended_eq_canonical` — element-wise equality proof (W2-G),
-- `enforcementBoundaryExtended_count` — compile-time count witness (43 entries: 13 policy-gated + 26 capability-only + 4 read-only),
+- `enforcementBoundaryExtended_count` — compile-time count witness (44 entries: 13 policy-gated + 27 capability-only + 4 read-only),
 - `enforcementBoundary_names_nonempty` — all boundary handler names non-empty (V6-F),
-- `SyscallId.all` — exhaustive list of all 34 SyscallId variants (AC4-D; grown since by the SM6-SM9 ABI additions through `.declassifySignal` = 33),
+- `SyscallId.all` — exhaustive list of all 35 SyscallId variants (AC4-D; grown since by the SM6-SM9 ABI additions through `.declassifySignal` = 33),
 - `SyscallId.all_length` — compile-time length check (`all.length = count`, AC4-D),
 - `SyscallId.all_complete` — membership proof for every variant (`cases s <;> decide`, AC4-D),
 - `syscallIdToEnforcementName` — SyscallId → String bridge mapping to enforcement boundary names (AC4-D),

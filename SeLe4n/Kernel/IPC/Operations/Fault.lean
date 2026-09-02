@@ -140,10 +140,13 @@ structure FaultHandlerTarget where
   cspaceRoot : SeLe4n.ObjId
   deriving Repr, DecidableEq
 
-/-- WS-RR RR4.7 (**handler resolution**): resolve a faulting thread's
-`faultHandler : Option CPtr` to the endpoint it names.
+/-- WS-RR RR4.7 (**handler resolution**): resolve a fault-handler CPtr to the
+endpoint it names, through the thread's own CSpace.  `resolveFaultHandler`
+below supplies the thread's configured CPtr; `setThreadFaultHandlerOp`
+supplies a candidate.
 
-The four gates, in the order seL4 applies them:
+The four gates, in the order seL4 applies them (the first two are
+`resolveFaultHandler`'s, the last two this function's):
 
 1. the thread exists and **has** a fault-handler CPtr (`none` is seL4's
    "no handler configured", and takes the RR4.9 path);
@@ -156,6 +159,33 @@ The four gates, in the order seL4 applies them:
 4. it names an object that really is an endpoint.
 
 Read-only: resolution never mutates the state. -/
+def resolveFaultHandlerCPtr (st : SystemState) (tcb : TCB) (cptr : SeLe4n.CPtr) :
+    Except KernelError FaultHandlerTarget :=
+  match st.getCNode? tcb.cspaceRoot with
+  | none => .error .objectNotFound
+  | some rootCn =>
+      match resolveCapAddress tcb.cspaceRoot cptr rootCn.depth st with
+      | .error e => .error e
+      | .ok ref =>
+          match SystemState.lookupSlotCap st ref with
+          | none => .error .invalidCapability
+          | some cap =>
+              if faultHandlerCapAuthorized cap then
+                match cap.target with
+                | .object epId =>
+                    match st.getEndpoint? epId with
+                    | some _ =>
+                        .ok { endpoint := epId, cap := cap,
+                              cspaceRoot := tcb.cspaceRoot }
+                    | none   => .error .invalidCapability
+                | _ => .error .invalidCapability
+              else .error .illegalAuthority
+
+/-- WS-RR RR4.7: resolve a thread's configured fault handler — gates 1 and 2
+of the resolution, then `resolveFaultHandlerCPtr` for gates 3 and 4.  Review
+round (PR #887): the CPtr half is factored out so `setThreadFaultHandlerOp`
+validates a candidate handler with the **same** resolution the fault path
+will run, rather than a second copy of it. -/
 def resolveFaultHandler (st : SystemState) (tid : SeLe4n.ThreadId) :
     Except KernelError FaultHandlerTarget :=
   match st.getTcb? tid with
@@ -163,26 +193,7 @@ def resolveFaultHandler (st : SystemState) (tid : SeLe4n.ThreadId) :
   | some tcb =>
       match tcb.faultHandler with
       | none => .error .invalidCapability
-      | some cptr =>
-          match st.getCNode? tcb.cspaceRoot with
-          | none => .error .objectNotFound
-          | some rootCn =>
-              match resolveCapAddress tcb.cspaceRoot cptr rootCn.depth st with
-              | .error e => .error e
-              | .ok ref =>
-                  match SystemState.lookupSlotCap st ref with
-                  | none => .error .invalidCapability
-                  | some cap =>
-                      if faultHandlerCapAuthorized cap then
-                        match cap.target with
-                        | .object epId =>
-                            match st.getEndpoint? epId with
-                            | some _ =>
-                                .ok { endpoint := epId, cap := cap,
-                                      cspaceRoot := tcb.cspaceRoot }
-                            | none   => .error .invalidCapability
-                        | _ => .error .invalidCapability
-                      else .error .illegalAuthority
+      | some cptr => resolveFaultHandlerCPtr st tcb cptr
 
 /-- WS-RR RR4.10 (**the negative**): a thread with no `faultHandler` never
 resolves — the arm that sends it to the fail-closed suspend. -/
@@ -208,10 +219,33 @@ theorem resolveFaultHandler_ok_inv (st : SystemState) (tid : SeLe4n.ThreadId)
     faultHandlerCapAuthorized tgt.cap = true ∧
     tgt.cap.target = .object tgt.endpoint ∧
     (st.getEndpoint? tgt.endpoint).isSome := by
-  unfold resolveFaultHandler at hOk
+  unfold resolveFaultHandler resolveFaultHandlerCPtr at hOk
   repeat' split at hOk
   all_goals (try (injection hOk with hEq; subst hEq))
   all_goals simp_all
+
+/-- Review round (PR #887): the CPtr resolution's own inversion — what a
+successful `resolveFaultHandlerCPtr` guarantees, the half the configuration
+operation relies on. -/
+theorem resolveFaultHandlerCPtr_ok_inv (st : SystemState) (tcb : TCB)
+    (cptr : SeLe4n.CPtr) (tgt : FaultHandlerTarget)
+    (hOk : resolveFaultHandlerCPtr st tcb cptr = .ok tgt) :
+    faultHandlerCapAuthorized tgt.cap = true ∧
+    tgt.cap.target = .object tgt.endpoint ∧
+    (st.getEndpoint? tgt.endpoint).isSome ∧
+    tgt.cspaceRoot = tcb.cspaceRoot := by
+  unfold resolveFaultHandlerCPtr at hOk
+  repeat' split at hOk
+  all_goals (try (injection hOk with hEq; subst hEq))
+  all_goals simp_all
+
+/-- Review round (PR #887): a configured handler resolves exactly as its CPtr
+does — the definitional bridge between the two resolutions. -/
+theorem resolveFaultHandler_eq_cptr (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (cptr : SeLe4n.CPtr)
+    (hTcb : st.getTcb? tid = some tcb) (hFh : tcb.faultHandler = some cptr) :
+    resolveFaultHandler st tid = resolveFaultHandlerCPtr st tcb cptr := by
+  simp [resolveFaultHandler, hTcb, hFh]
 
 /-- WS-RR RR4.8 (**the rights check, as a theorem**): a resolved handler
 capability always carries send **and** one of the grant rights — seL4's
@@ -543,5 +577,194 @@ theorem applyFaultRestart_clears_pendingFault (st : SystemState)
   rw [applyFaultRestart_pc st faulted frame tcb hTcb hObjInv] at h
   cases h
   rfl
+
+
+-- ============================================================================
+-- §7  Review round (PR #887) — configuring a handler, and resuming past a fault
+-- ============================================================================
+
+/-- The post-state of a successful `setThreadFaultHandlerOp`: the target's TCB
+with its `faultHandler` rewritten and nothing else touched — the shape every
+preservation proof below reads off. -/
+def installFaultHandler (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (cptr : SeLe4n.CPtr) : SystemState :=
+  { st with
+      objects := st.objects.insert tid.toObjId (.tcb { tcb with faultHandler := some cptr }) }
+
+/-- **`seL4_TCB_SetSpace`'s fault endpoint, as a kernel operation.**  Install
+`cptr` as the target thread's fault handler.
+
+Before this operation existed, `TCB.faultHandler` had no writer outside the
+test fixtures — production TCB creation leaves it `none` — so on a live
+system every fault took the fail-closed suspend and the whole RR4 mechanism
+was unreachable.  The CPtr is interpreted **in the target thread's own
+CSpace**, exactly as seL4 documents (`fault_ep` "must be in the CSpace of
+the thread being configured") and exactly as `resolveFaultHandler` reads it
+at fault time.
+
+**Validated at set time.**  seL4-classic stores whatever CPtr it is given
+and discovers a bad one only when the thread faults; seL4-MCS validates the
+endpoint when it is configured.  This model validates: the candidate must
+resolve, through the target's CSpace, to an endpoint capability satisfying
+`faultHandlerCapAuthorized` — the same `resolveFaultHandlerCPtr` the fault
+path runs — so a misconfiguration is refused with its reason rather than
+surfacing later as a suspended thread.  The fault-time check remains (the
+capability may be revoked in between), and revoking the handler capability is
+the fail-closed way to withdraw a handler: the next fault then suspends.
+
+Authority is the caller's TCB capability with the write right, like every
+other thread-configuration syscall.  The write itself is a one-TCB field
+rewrite; it touches no scheduler or IPC state. -/
+def setThreadFaultHandlerOp (st : SystemState) (vTargetTid : SeLe4n.ValidThreadId)
+    (cptr : SeLe4n.CPtr) : Except KernelError SystemState :=
+  match st.getTcb? vTargetTid.val with
+  | none => .error .objectNotFound
+  | some tcb =>
+      match resolveFaultHandlerCPtr st tcb cptr with
+      | .error e => .error e
+      | .ok _ => .ok (installFaultHandler st vTargetTid.val tcb cptr)
+
+/-- On the success path the step *is* the one-field rewrite. -/
+theorem setThreadFaultHandlerOp_ok_eq (st : SystemState) (vTargetTid : SeLe4n.ValidThreadId)
+    (cptr : SeLe4n.CPtr) (tcb : TCB) (tgt : FaultHandlerTarget)
+    (hTcb : st.getTcb? vTargetTid.val = some tcb)
+    (hR : resolveFaultHandlerCPtr st tcb cptr = .ok tgt) :
+    setThreadFaultHandlerOp st vTargetTid cptr
+      = .ok (installFaultHandler st vTargetTid.val tcb cptr) := by
+  simp only [setThreadFaultHandlerOp, hTcb, hR]
+
+/-- A handler is installed only if it resolved, through the target's CSpace,
+to an authorised endpoint capability in the pre-state — the set-time
+validation, as a theorem. -/
+theorem setThreadFaultHandlerOp_validated (st st' : SystemState)
+    (vTargetTid : SeLe4n.ValidThreadId) (cptr : SeLe4n.CPtr)
+    (hStep : setThreadFaultHandlerOp st vTargetTid cptr = .ok st') :
+    ∃ tcb tgt, st.getTcb? vTargetTid.val = some tcb ∧
+      resolveFaultHandlerCPtr st tcb cptr = .ok tgt ∧
+      faultHandlerCapAuthorized tgt.cap = true ∧
+      (st.getEndpoint? tgt.endpoint).isSome := by
+  cases hT : st.getTcb? vTargetTid.val with
+  | none => simp [setThreadFaultHandlerOp, hT] at hStep
+  | some tcb =>
+      cases hR : resolveFaultHandlerCPtr st tcb cptr with
+      | error e => simp [setThreadFaultHandlerOp, hT, hR] at hStep
+      | ok tgt =>
+          have hInv := resolveFaultHandlerCPtr_ok_inv st tcb cptr tgt hR
+          exact ⟨tcb, tgt, rfl, hR, hInv.1, hInv.2.2.1⟩
+
+/-- The post-state records the CPtr on the target — the field the fault path
+reads. -/
+theorem setThreadFaultHandlerOp_faultHandler (st st' : SystemState)
+    (vTargetTid : SeLe4n.ValidThreadId) (cptr : SeLe4n.CPtr) (tcb : TCB)
+    (hTcb : st.getTcb? vTargetTid.val = some tcb)
+    (hObjInv : st.objects.invExt)
+    (hStep : setThreadFaultHandlerOp st vTargetTid cptr = .ok st') :
+    st'.getTcb? vTargetTid.val = some { tcb with faultHandler := some cptr } := by
+  cases hR : resolveFaultHandlerCPtr st tcb cptr with
+  | error e => simp [setThreadFaultHandlerOp, hTcb, hR] at hStep
+  | ok tgt =>
+      rw [setThreadFaultHandlerOp_ok_eq st vTargetTid cptr tcb tgt hTcb hR] at hStep
+      cases hStep
+      simp only [installFaultHandler]
+      unfold SystemState.getTcb?
+      rw [RHTable_getElem?_eq_get?,
+        SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects vTargetTid.val.toObjId
+          (KernelObject.tcb { tcb with faultHandler := some cptr }) hObjInv]
+
+/-- Configuring a handler touches no scheduler state. -/
+theorem setThreadFaultHandlerOp_scheduler_eq (st st' : SystemState)
+    (vTargetTid : SeLe4n.ValidThreadId) (cptr : SeLe4n.CPtr)
+    (hStep : setThreadFaultHandlerOp st vTargetTid cptr = .ok st') :
+    st'.scheduler = st.scheduler := by
+  cases hT : st.getTcb? vTargetTid.val with
+  | none => simp [setThreadFaultHandlerOp, hT] at hStep
+  | some tcb =>
+      cases hR : resolveFaultHandlerCPtr st tcb cptr with
+      | error e => simp [setThreadFaultHandlerOp, hT, hR] at hStep
+      | ok tgt =>
+          rw [setThreadFaultHandlerOp_ok_eq st vTargetTid cptr tcb tgt hT hR] at hStep
+          cases hStep
+          rfl
+
+/-- A CPtr that does not resolve to an authorised endpoint capability is
+refused — the negative that keeps "configured" and "usable" the same thing. -/
+theorem setThreadFaultHandlerOp_rejects (st : SystemState)
+    (vTargetTid : SeLe4n.ValidThreadId) (cptr : SeLe4n.CPtr) (tcb : TCB) (e : KernelError)
+    (hTcb : st.getTcb? vTargetTid.val = some tcb)
+    (hR : resolveFaultHandlerCPtr st tcb cptr = .error e) :
+    setThreadFaultHandlerOp st vTargetTid cptr = .error e := by
+  simp [setThreadFaultHandlerOp, hTcb, hR]
+
+/-- **Resuming a thread that carries a fault retires the fault** — seL4's
+`restart` semantics for a double-faulted thread, closing a misclassification
+the review found.
+
+The fail-closed suspend keeps `pendingFault` as a diagnostic.  `.tcbResume`
+makes an `.Inactive` thread `.Ready` again, and if the fault stayed on the
+TCB, the thread's next ordinary Call would be answered through
+`replyTransferOnCore`'s fault branch: the server's reply would be decoded
+against the stale fault and, for a VM fault, would reinstall the old snapshot
+and rewind execution to the former fault PC.  So a resume answers the fault
+itself, the way a payload-free handler reply does: the thread restarts at
+the faulting instruction with the register window it held at the trap
+(`faultRestartFrameOfContext`), and the fault is cleared.  If the handler
+configuration was repaired in between (`setThreadFaultHandlerOp`), the
+re-executed instruction faults again and is delivered this time; if not, it
+suspends again — either way through the fault path, never through a stale
+fault.  A thread carrying no fault is untouched. -/
+def retirePendingFaultForResume (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  match st.getTcb? tid with
+  | some tcb =>
+      match tcb.pendingFault with
+      | some tf => applyFaultRestart st tid (faultRestartFrameOfContext tf.context)
+      | none => st
+  | none => st
+
+/-- After the retire step the thread carries no fault — so the ordinary reply
+branch (`replyTransferOnCore_of_no_fault`) is the one every later reply to it
+takes. -/
+theorem retirePendingFaultForResume_pendingFault_none (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hTcb : st.getTcb? tid = some tcb) (hObjInv : st.objects.invExt) :
+    ∀ tcb', (retirePendingFaultForResume st tid).getTcb? tid = some tcb' →
+      tcb'.pendingFault = none := by
+  intro tcb' hT'
+  cases hF : tcb.pendingFault with
+  | none =>
+      have hEq : retirePendingFaultForResume st tid = st := by
+        simp only [retirePendingFaultForResume, hTcb, hF]
+      rw [hEq, hTcb] at hT'
+      cases hT'
+      exact hF
+  | some tf =>
+      have hEq : retirePendingFaultForResume st tid
+          = applyFaultRestart st tid (faultRestartFrameOfContext tf.context) := by
+        simp only [retirePendingFaultForResume, hTcb, hF]
+      rw [hEq] at hT'
+      exact applyFaultRestart_clears_pendingFault st tid _ tcb hTcb hObjInv tcb' hT'
+
+/-- A thread with no fault is untouched — so on every resume of an ordinary
+suspended thread the arm is the pre-review body verbatim. -/
+theorem retirePendingFaultForResume_of_no_fault (st : SystemState)
+    (tid : SeLe4n.ThreadId)
+    (hNo : ∀ tcb : TCB, st.getTcb? tid = some tcb → tcb.pendingFault = none) :
+    retirePendingFaultForResume st tid = st := by
+  cases hT : st.getTcb? tid with
+  | none => simp only [retirePendingFaultForResume, hT]
+  | some tcb => simp only [retirePendingFaultForResume, hT, hNo tcb hT]
+
+/-- The retire step touches no scheduler state: it writes registers and clears
+a field, and the resume that follows is what makes the thread runnable. -/
+@[simp] theorem retirePendingFaultForResume_scheduler_eq (st : SystemState)
+    (tid : SeLe4n.ThreadId) :
+    (retirePendingFaultForResume st tid).scheduler = st.scheduler := by
+  cases hT : st.getTcb? tid with
+  | none => simp only [retirePendingFaultForResume, hT]
+  | some tcb =>
+      cases hF : tcb.pendingFault with
+      | none => simp only [retirePendingFaultForResume, hT, hF]
+      | some tf =>
+          simp only [retirePendingFaultForResume, hT, hF]
+          exact applyFaultRestart_scheduler_eq st tid _
 
 end SeLe4n.Kernel

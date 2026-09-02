@@ -884,6 +884,43 @@ run_negative_check "INVARIANT" rg -n '\.sgi\.toList' SeLe4n/Kernel/FaultEntry.le
 # so the extern's arity and its argument source are both pinned.
 run_check "INVARIANT" rg -n 'sp_el0, g\[30\],' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n 'let g = frame\.gprs;' rust/sele4n-hal/src/trap.rs
+# PR #887 review round — five findings, each pinned as the relation it closed:
+# (1) a kernel-origin exception is never a user fault: the classifier has the
+#     current-EL abort class, the entry gates on the saved PSTATE's EL, and the
+#     Rust handler halts on both before it routes;
+run_check "INVARIANT" rg -n '^  \| kernelAbort' SeLe4n/Kernel/Architecture/Fault.lean
+run_check "INVARIANT" rg -n '^def ExceptionContext\.takenFromEl0' SeLe4n/Kernel/Architecture/Fault.lean
+run_check "INVARIANT" rg -n '^theorem faultOfExceptionContext_kernelAbort' SeLe4n/Kernel/Architecture/Fault.lean
+run_check "INVARIANT" rg -n 'if ectx\.takenFromEl0 then' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n '^theorem faultEntryStep_kernel_origin_inert' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n '^    halt_if_kernel_origin\(frame, esr\);' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n 'if !exception_taken_from_el0\(frame\.spsr_el1\)' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n 'sync_class::KERNEL_ABORT => \{' rust/sele4n-hal/src/trap.rs
+# (2) the woken handler's return frame is staged by the delivery, as the
+#     `.call` arm stages it — relation, not presence: the staging must sit on
+#     the delivered arm between the Call and the fault record;
+run_check "INVARIANT" rg -n 'Architecture\.stageWokenDelivery st. wokenReceiver\? summary\.installedCount' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+# (3) resuming a thread retires the fault it carries, and the arm runs the
+#     resume on the retired state;
+run_check "INVARIANT" rg -n '^def retirePendingFaultForResume' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n 'resumeThreadOnCoreLive$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '\(retirePendingFaultForResume st vtid\.val\) vtid' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem retirePendingFaultForResume_pendingFault_none' SeLe4n/Kernel/IPC/Operations/Fault.lean
+# (4) the unknown-syscall fault has a live producer: the SVC arm routes an
+#     invalid syscall id to the seam instead of publishing an error frame;
+run_check "INVARIANT" rg -n '@\[export lean_handle_unknown_syscall\]' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n 'Err\(crate::svc_dispatch::DispatchError::InvalidSyscallId\) => \{' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -U '"deliver_unknown_syscall",\s*"lean_handle_unknown_syscall"' rust/sele4n-hal/build.rs
+# (5) `TCB.faultHandler` has a live writer, validated by the same resolution
+#     the fault path runs.
+run_check "INVARIANT" rg -n '^def setThreadFaultHandlerOp' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n 'match resolveFaultHandlerCPtr st tcb cptr with' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n '^theorem setThreadFaultHandlerOp_validated' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n 'match setThreadFaultHandlerOp st vtid args\.handlerCPtr with' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem setThreadFaultHandlerOp_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n '^theorem setThreadFaultHandlerOp_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n 'TcbSetFaultHandler = 34' rust/sele4n-types/src/syscall.rs
+run_check "INVARIANT" rg -n 'pub fn tcb_set_fault_handler' rust/sele4n-sys/src/tcb.rs
 # …and the labeling-context read that makes the gate meaningful: without it the
 # entry could call the checked arm with a context it invented.
 run_check "INVARIANT" rg -n 'Platform\.FFI\.getKernelLabelingContext' SeLe4n/Kernel/FaultEntry.lean
@@ -1780,8 +1817,8 @@ run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_count' SeLe4n/K
 # repeating a `decide` drifted from it.  Anchoring the PAIR couples them: bump
 # the theorem without the sentence and this fails, which is the only mechanism
 # that has actually held.
-run_prose_check "INVARIANT" rg -n 'per-core boundary has 58 entries' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 58' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_prose_check "INVARIANT" rg -n 'per-core boundary has 59 entries' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 59' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_extends_canonical' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCoreComplete' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_is_complete' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
@@ -2486,7 +2523,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: linearOrder disagrees on exactly one of t
 run_prose_negative_check "INVARIANT" rg -n 'classification table \([0-9]+ entries\)' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 # WS-SM SM8.E.3 took the canonical boundary 39 -> 40 with the 2PL bracket;
 # SM9.A.11 took it 40 -> 42 with the two audit readers.
-run_check "INVARIANT" rg -n 'enforcementBoundaryExtended.length = 43' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryExtended.length = 44' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
 run_check "INVARIANT" rg -n '^  runEndpointPolicyGateChecks' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: a widening override cannot open a flow the lattice denies' tests/SmpInformationFlowSuite.lean
 
@@ -2896,7 +2933,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: it IS visible at the core it landed on' t
 run_check "INVARIANT" rg -n 'NEGATIVE: the remote wake is not confined to the EXECUTING core' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'SCOPE: the decidable slice cannot see a badge write' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^\[smp-information-flow\]' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'enforcement boundary: canonical 43' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'enforcement boundary: canonical 44' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'smp_information_flow\.expected' tests/fixtures/smp_information_flow.expected.sha256
 # The FIXTURE's independence probe must land on a core whose current thread the
 # low observer can SEE, or the reported set is `allCores` and the line is
@@ -3073,10 +3110,10 @@ run_check "INVARIANT" rg -n '\| \.auditRead\s+=> 31' SeLe4n/Model/Object/Types.l
 run_check "INVARIANT" rg -n '\| \.auditDrain\s+=> 32' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '31 => some \.auditRead' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '32 => some \.auditDrain' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^def count : Nat := 34' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def count : Nat := 35' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'AuditRead = 31' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'AuditDrain = 32' rust/sele4n-types/src/syscall.rs
-run_check "INVARIANT" rg -n 'pub const COUNT: usize = 34;' rust/sele4n-types/src/syscall.rs
+run_check "INVARIANT" rg -n 'pub const COUNT: usize = 35;' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'AuditFieldTooLarge = 55' rust/sele4n-types/src/error.rs
 
 # SM9.A.8: the safe wrappers.  Without them the syscalls are hand-encode-only,
@@ -3167,7 +3204,7 @@ run_prose_negative_check "INVARIANT" rg -n 'Partial readers are unchanged where 
 run_check "INVARIANT" rg -n 'capabilityOnly "auditReadFromCore"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_negative_check "INVARIANT" rg -n 'capabilityOnly "auditReadWord"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n 'capabilityOnly "auditDrainVisiblePrefix"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
-run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore.length = 58' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore.length = 59' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def lockSet_auditRead' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^def lockSet_auditDrain' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # PR #870 round 6 (the lock domain): a declared footprint covers the COMMITTED
@@ -3237,7 +3274,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: the PRE-EPOCH rule would have stamped thi
 run_check "INVARIANT" rg -n 'NEGATIVE: an unconfigured deployment still has the cliff' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^private def auditReaderTraceLines' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'audit view: trail 3 entries' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=34' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=35' tests/fixtures/smp_information_flow.expected
 # The end-to-end ABI witness: the returned word is the SELECTED one, not the
 # caller's own preloaded `x0`.  Without the staged frame the assertion below
 # would read back whatever the caller left there.
@@ -3457,7 +3494,7 @@ run_check "INVARIANT" rg -n '^private def refusalLedgerTraceLines' tests/SmpInfo
 run_check "INVARIANT" rg -n 'refusal seam: recordingSyscalls=2' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'refusal write: attempts=1 version=1 trailMoved=false' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'refusal read .partial.: status=SeLe4n.Model.KernelError.illegalAuthority' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=34 opcodes=30 readableStructures=2' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=35 opcodes=30 readableStructures=2' tests/fixtures/smp_information_flow.expected
 
 # ============================================================================
 # WS-SM SM9.C — the data-carrying declassification
@@ -3565,7 +3602,7 @@ run_negative_check "INVARIANT" rg -n 'declassifiedSignal' SeLe4n/Kernel/Informat
 # SM9.C.8: the syscall, both Rust mirrors and the seam classification the total
 # `refusalSeamClass` forced it to supply.
 run_check "INVARIANT" rg -n '^  \| declassifySignal' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n 'def count : Nat := 34' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n 'def count : Nat := 35' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'DeclassifySignal = 33' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'DeclassifySignal = 33' rust/sele4n-hal/src/svc_dispatch.rs
 run_check "INVARIANT" rg -n 'DeclassificationDeniedAtReceiver = 56' rust/sele4n-types/src/error.rs

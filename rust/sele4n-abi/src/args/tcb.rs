@@ -178,6 +178,35 @@ impl SetAffinityArgs {
     }
 }
 
+/// Arguments for `tcbSetFaultHandler` (syscall 34).
+/// Register mapping: x2 = the fault-handler CPtr, interpreted in the **target**
+/// thread's CSpace (seL4's `fault_ep`).  Validated kernel-side at set time by
+/// `setThreadFaultHandlerOp`: the CPtr must resolve to an endpoint capability
+/// carrying send and grant or grant-reply (`faultHandlerCapAuthorized`), the
+/// same check the fault path applies when it delivers.
+///
+/// Lean: `SetFaultHandlerArgs` (SyscallArgDecode.lean, PR #887 review)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SetFaultHandlerArgs {
+    pub handler_cptr: u64,
+}
+
+impl SetFaultHandlerArgs {
+    pub const fn encode(&self) -> [u64; 1] {
+        [self.handler_cptr]
+    }
+
+    /// Decode from message registers. Requires 1 register (the CPtr word).
+    pub fn decode(regs: &[u64]) -> KernelResult<Self> {
+        if regs.is_empty() {
+            return Err(KernelError::InvalidMessageInfo);
+        }
+        Ok(Self {
+            handler_cptr: regs[0],
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -282,6 +311,22 @@ mod tests {
     fn set_ipc_buffer_insufficient_regs() {
         assert_eq!(
             SetIPCBufferArgs::decode(&[]),
+            Err(KernelError::InvalidMessageInfo)
+        );
+    }
+
+    // -- PR #887 review: SetFaultHandler --
+
+    #[test]
+    fn set_fault_handler_roundtrip() {
+        let args = SetFaultHandlerArgs { handler_cptr: 0x2A };
+        assert_eq!(SetFaultHandlerArgs::decode(&args.encode()).unwrap(), args);
+    }
+
+    #[test]
+    fn set_fault_handler_requires_one_register() {
+        assert_eq!(
+            SetFaultHandlerArgs::decode(&[]),
             Err(KernelError::InvalidMessageInfo)
         );
     }

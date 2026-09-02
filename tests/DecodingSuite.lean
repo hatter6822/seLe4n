@@ -70,6 +70,12 @@ private def rd001_decodeSyscallIdValid : IO Unit := do
   -- WS-SM SM5.H.4: tcbSetAffinity=25
   let r25 := decodeSyscallId ⟨25⟩
   expect "tcbSetAffinity=25" (isOkEq r25 .tcbSetAffinity)
+  -- PR #887 review: tcbSetFaultHandler=34 (the fault-handler configuration
+  -- syscall, the first writer of `TCB.faultHandler`)
+  let r34 := decodeSyscallId ⟨34⟩
+  expect "tcbSetFaultHandler=34" (isOkEq r34 .tcbSetFaultHandler)
+  let r35 := decodeSyscallId ⟨35⟩
+  expect "35 is outside the modeled set" (match r35 with | .error _ => true | .ok _ => false)
   -- WS-SM SM7.D: vspaceUnifyInstruction=29 (the code-publication path)
   let r29 := decodeSyscallId ⟨29⟩
   expect "vspaceUnifyInstruction=29" (isOkEq r29 .vspaceUnifyInstruction)
@@ -87,23 +93,23 @@ private def rd001_decodeSyscallIdValid : IO Unit := do
 
 /-- RD-002: decodeSyscallId — invalid values. -/
 private def rd002_decodeSyscallIdInvalid : IO Unit := do
-  -- First invalid: 34 (WS-SM SM9.C added declassifySignal at 33, on top of
-  -- SM9.A's auditRead at 31 and auditDrain at 32, SM8.C's declassify at 30,
-  -- SM7.D's vspaceUnifyInstruction at 29 and PR #822 Phase H's mintReplyCap
-  -- at 28)
-  let r34 := decodeSyscallId ⟨34⟩
-  expect "invalid=34" (isErrEq r34 .invalidSyscallNumber)
+  -- First invalid: 35 (the PR #887 review round added tcbSetFaultHandler at
+  -- 34, on top of WS-SM SM9.C's declassifySignal at 33, SM9.A's auditRead at
+  -- 31 and auditDrain at 32, SM8.C's declassify at 30, SM7.D's
+  -- vspaceUnifyInstruction at 29 and PR #822 Phase H's mintReplyCap at 28)
+  let r35 := decodeSyscallId ⟨35⟩
+  expect "invalid=35" (isErrEq r35 .invalidSyscallNumber)
   -- Large value
   let rLarge := decodeSyscallId ⟨999999⟩
   expect "invalid=999999" (isErrEq rLarge .invalidSyscallNumber)
 
-/-- RD-003: decodeSyscallId — boundary edge 33/34 (WS-SM SM9.C:
-declassifySignal=33 is the last valid). -/
+/-- RD-003: decodeSyscallId — boundary edge 34/35 (PR #887 review round:
+tcbSetFaultHandler=34 is the last valid). -/
 private def rd003_decodeSyscallIdBoundary : IO Unit := do
-  let r33 := decodeSyscallId ⟨33⟩
   let r34 := decodeSyscallId ⟨34⟩
-  expect "boundary=33 ok (declassifySignal)" (isOkEq r33 .declassifySignal)
-  expect "boundary=34 err" (!r34.isOk)
+  let r35 := decodeSyscallId ⟨35⟩
+  expect "boundary=34 ok (tcbSetFaultHandler)" (isOkEq r34 .tcbSetFaultHandler)
+  expect "boundary=35 err" (!r35.isOk)
 
 /-- RD-004: decodeMsgInfo — valid round-trip. -/
 private def rd004_decodeMsgInfoValid : IO Unit := do

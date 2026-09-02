@@ -140,7 +140,7 @@ def lockSetForSyscall (sid : SyscallId) (callerTid targetTid : ThreadId)
   | .serviceRegister | .serviceRevoke | .serviceQuery
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind
   | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
-  | .tcbSetIPCBuffer | .tcbSetAffinity
+  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler
   | .tcbBindNotification | .tcbUnbindNotification
   | .declassify
   -- WS-SM SM9.C.8: `.declassifySignal` is undeclared here for the same reason,

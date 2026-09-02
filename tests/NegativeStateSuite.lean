@@ -2103,12 +2103,13 @@ def runWSJ1DecodeChecks : IO Unit := do
     (SeLe4n.Kernel.Architecture.RegisterDecode.validateRegBound ⟨31⟩ 32)
 
   -- J1-NEG-04: decodeSyscallId with value beyond modeled set → invalidSyscallNumber
-  -- WS-SM SM9.C.8: SyscallId now covers 0..33 (count=34, +declassifySignal, on
-  -- top of SM9.A.6's +auditRead/+auditDrain, SM8.C.9's +declassify, SM7.D's
-  -- +vspaceUnifyInstruction and PR #822 Phase H's +mintReplyCap); value 34 is
-  -- the first invalid number.  The four most recent additions are each checked
-  -- as VALID, so the boundary is pinned from both sides and a future off-by-one
-  -- in `ofNat?` cannot pass silently.
+  -- PR #887 review round: SyscallId now covers 0..34 (count=35,
+  -- +tcbSetFaultHandler — the fault-handler configuration syscall — on top of
+  -- WS-SM SM9.C.8's +declassifySignal, SM9.A.6's +auditRead/+auditDrain,
+  -- SM8.C.9's +declassify, SM7.D's +vspaceUnifyInstruction and PR #822 Phase
+  -- H's +mintReplyCap); value 35 is the first invalid number.  The five most
+  -- recent additions are each checked as VALID, so the boundary is pinned from
+  -- both sides and a future off-by-one in `ofNat?` cannot pass silently.
   let _ ← expectOkVal "J1 decodeSyscallId valid boundary (30 = declassify)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨30⟩)
   let _ ← expectOkVal "J1 decodeSyscallId valid boundary (31 = auditRead)"
@@ -2117,8 +2118,10 @@ def runWSJ1DecodeChecks : IO Unit := do
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨32⟩)
   let _ ← expectOkVal "J1 decodeSyscallId valid boundary (33 = declassifySignal)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨33⟩)
-  expectErr "J1 decodeSyscallId invalid (34)"
+  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (34 = tcbSetFaultHandler)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨34⟩)
+  expectErr "J1 decodeSyscallId invalid (35)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨35⟩)
     .invalidSyscallNumber
 
   -- J1-NEG-05: decodeSyscallId with large invalid number → invalidSyscallNumber

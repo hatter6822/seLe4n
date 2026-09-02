@@ -82,7 +82,7 @@ impl DispatchError {
     }
 }
 
-/// AN9-F: 34-variant syscall ID enum mirroring
+/// AN9-F: 35-variant syscall ID enum mirroring
 /// `sele4n-types::SyscallId`.  Discriminants align with the Lean
 /// `SyscallId.toNat` encoding so a `u64` syscall id read from the
 /// trap frame's `x7` register decodes identically on both sides.
@@ -138,11 +138,14 @@ pub enum SyscallId {
     /// notification, and the notification onward into the resolved receiver —
     /// with the real delivery performed in between.
     DeclassifySignal = 33,
+    /// PR #887 review: install a thread's fault-handler CPtr (seL4's
+    /// `TCB_SetSpace` fault endpoint), validated kernel-side at set time.
+    TcbSetFaultHandler = 34,
 }
 
 impl SyscallId {
     /// Total number of modelled syscalls (must match `sele4n-types`).
-    pub const COUNT: u32 = 34;
+    pub const COUNT: u32 = 35;
 
     /// AN9-F.1.b: decode a raw `u32` syscall id, rejecting values
     /// outside the valid 0..=33 range with `None`.
@@ -182,6 +185,7 @@ impl SyscallId {
             31 => Some(Self::AuditRead),
             32 => Some(Self::AuditDrain),
             33 => Some(Self::DeclassifySignal),
+            34 => Some(Self::TcbSetFaultHandler),
             _ => None,
         }
     }
@@ -261,6 +265,9 @@ impl SyscallId {
             Self::TcbSetIPCBuffer => 1,
             // WS-SM SM5.H.4: x2 = the raw affinity word (1 inline register).
             Self::TcbSetAffinity => 1,
+            // PR #887 review: x2 = the fault-handler CPtr (1 inline register,
+            // `requireMsgReg 0` in `decodeSetFaultHandlerArgs`).
+            Self::TcbSetFaultHandler => 1,
             // WS-SM SM6.B: bind takes 1 register (notification id); unbind none.
             Self::TcbBindNotification => 1,
             Self::TcbUnbindNotification => 0,
@@ -1059,6 +1066,10 @@ mod tests {
         // (the raw affinity word, msgReg[0]) — matching `decodeSetAffinityArgs`
         // (requireMsgReg 0) and the `tcb_set_affinity` wrapper.
         assert_eq!(SyscallId::TcbSetAffinity.min_inline_args(), 1);
+        // PR #887 review: the fault-handler CPtr is one inline register too.
+        assert_eq!(SyscallId::TcbSetFaultHandler.min_inline_args(), 1);
+        assert_eq!(SyscallId::from_u32(34), Some(SyscallId::TcbSetFaultHandler));
+        assert_eq!(SyscallId::from_u32(35), None);
     }
 
     /// Regression guard for the off-by-one ABI bug: a valid length-1
@@ -1073,6 +1084,7 @@ mod tests {
             SyscallId::TcbSetMCPriority,
             SyscallId::TcbSetIPCBuffer,
             SyscallId::TcbSetAffinity,
+            SyscallId::TcbSetFaultHandler,
         ] {
             // A length-1 message (exactly what the `sele4n-sys` wrappers send).
             let args = SyscallArgs {

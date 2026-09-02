@@ -289,6 +289,66 @@ pub mod sync_class {
     pub const SP_ALIGNMENT: u32 = 4;
     /// Anything the model does not classify.
     pub const UNKNOWN_REASON: u32 = 5;
+    /// A data or instruction abort taken from the **current** EL — the kernel
+    /// itself faulted (PR #887 review).  Never delivered; the handler halts.
+    pub const KERNEL_ABORT: u32 = 6;
+}
+
+/// **PR #887 review**: was the exception taken from EL0?
+///
+/// Reads `SPSR_EL1.M[3:2]` — the exception level the PE was in when the
+/// exception was taken: `0` for EL0, `1` for EL1.  Mirrors the Lean
+/// `ExceptionContext.takenFromEl0`.  The syndrome-independent half of the
+/// kernel-origin gate: `KERNEL_ABORT` catches the two abort classes whose EC
+/// encodes "current EL", but an alignment fault or an undefined instruction
+/// has one EC whichever EL raised it, and only the saved PSTATE says which.
+#[inline(always)]
+fn exception_taken_from_el0(spsr: u64) -> bool {
+    (spsr >> 2) & 0x3 == 0
+}
+
+/// **PR #887 review**: halt if the exception was taken from EL1.
+///
+/// Both `__el0_sync_entry` and `__el1_sync_entry` land in
+/// `handle_synchronous_exception`, and before this gate a kernel page fault
+/// was classified by EC alone, attributed to the current user thread, and —
+/// once `lean_ready` flips — delivered to that thread's fault handler with
+/// the kernel's FAR, ESR and register window, whose reply could then resume
+/// the kernel at the faulting instruction.  A kernel-origin exception halts
+/// with a diagnostic and is never routed, never delivered, and never
+/// `eret`ed through.  A plain Rust function rather than a block inside the
+/// `extern "C"` handler so the host lane can observe the halt (a panic
+/// cannot unwind across a C-ABI frame).
+#[inline(always)]
+fn halt_if_kernel_origin(frame: &TrapFrame, esr: u64) {
+    if !exception_taken_from_el0(frame.spsr_el1) {
+        crate::kprintln!(
+            "kernel-origin synchronous exception: EC=0x{:02x} ESR=0x{:016x} ELR=0x{:016x} FAR=0x{:016x} SPSR=0x{:016x}",
+            esr_ec(esr),
+            esr,
+            frame.elr_el1,
+            frame.far_el1,
+            frame.spsr_el1
+        );
+        crate::cpu::fatal_halt();
+    }
+}
+
+/// **PR #887 review**: a data or instruction abort taken from the current EL
+/// — the kernel faulted.  The origin gate halts on every EL1-origin exception
+/// already; this is the syndrome-classified half of the same rule, so a
+/// `KERNEL_ABORT` reaching it (a saved PSTATE claiming EL0 with a current-EL
+/// syndrome) is a contradiction the kernel must not interpret.
+#[inline(always)]
+fn halt_on_kernel_abort(frame: &TrapFrame, esr: u64) -> ! {
+    crate::kprintln!(
+        "kernel abort: EC=0x{:02x} ESR=0x{:016x} ELR=0x{:016x} FAR=0x{:016x}",
+        esr_ec(esr),
+        esr,
+        frame.elr_el1,
+        frame.far_el1
+    );
+    crate::cpu::fatal_halt()
 }
 
 /// **WS-RR RR4.25**: classify a synchronous exception **through the Lean
@@ -335,8 +395,9 @@ fn classify_synchronous_exception(esr: u64) -> u32 {
 fn classify_synchronous_exception(esr: u64) -> u32 {
     match esr_ec(esr) {
         ec::SVC_AARCH64 => sync_class::SVC,
-        ec::DABT_LOWER | ec::DABT_CURRENT => sync_class::DATA_ABORT,
-        ec::IABT_LOWER | ec::IABT_CURRENT => sync_class::INSTR_ABORT,
+        ec::DABT_LOWER => sync_class::DATA_ABORT,
+        ec::IABT_LOWER => sync_class::INSTR_ABORT,
+        ec::DABT_CURRENT | ec::IABT_CURRENT => sync_class::KERNEL_ABORT,
         ec::PC_ALIGN => sync_class::PC_ALIGNMENT,
         ec::SP_ALIGN => sync_class::SP_ALIGNMENT,
         _ => sync_class::UNKNOWN_REASON,
@@ -451,6 +512,75 @@ fn deliver_fault(frame: &mut TrapFrame, fallback_discriminant: u32) {
     frame.set_return_frame(crate::svc_dispatch::error_frame_regs(fallback_discriminant));
 }
 
+/// **PR #887 review**: deliver an unknown-syscall fault through the verified
+/// Lean path, or — when this core's Lean runtime is not up — publish the
+/// fail-closed `invalidSyscallNumber` status frame the prefilter used to.
+///
+/// The delivery half is `lean_handle_unknown_syscall` (`@[export]` on
+/// `SeLe4n.Kernel.unknownSyscallEntry`), which builds seL4's `UnknownSyscall`
+/// fault from the syscall-number register (`x7`) and the trap frame's fault
+/// window and runs the same flow-checked delivery as `deliver_fault`: the
+/// thread blocks on its handler's endpoint awaiting a reply (a handler that
+/// emulates the call replies and the thread continues after the `SVC`), or —
+/// with no usable handler — is suspended fail-closed.  Same lock, same
+/// readiness gate, same SM10.1 halt as `deliver_fault`, for the same reasons.
+#[allow(unused_variables)]
+fn deliver_unknown_syscall(frame: &mut TrapFrame) {
+    #[cfg(feature = "hw_target")]
+    {
+        let core_id = crate::per_cpu::current_core_id_from_tpidr();
+        if crate::lean_ready::lean_ready(core_id as usize) {
+            extern "C" {
+                #[allow(clippy::too_many_arguments)]
+                fn lean_handle_unknown_syscall(
+                    core_id: u64,
+                    esr: u64,
+                    elr: u64,
+                    spsr: u64,
+                    far: u64,
+                    x0: u64,
+                    x1: u64,
+                    x2: u64,
+                    x3: u64,
+                    x4: u64,
+                    x5: u64,
+                    x6: u64,
+                    x7: u64,
+                    sp_el0: u64,
+                    lr: u64,
+                );
+            }
+            let (esr, elr, spsr, far) =
+                (frame.esr_el1, frame.elr_el1, frame.spsr_el1, frame.far_el1);
+            let g = frame.gprs;
+            let sp_el0 = frame.sp_el0;
+            // SAFETY: `lean_handle_unknown_syscall` is the C-callable wrapper
+            // the Lean compiler emits for `Kernel.unknownSyscallEntry`
+            // (`@[export lean_handle_unknown_syscall]`).  Fifteen `u64`s, no
+            // return value; sound from EL1 exception context once this core's
+            // Lean runtime is initialized (the gate just checked) and inside
+            // the kernel-entry lock (taken below), which serialises its
+            // `IO.Ref` commit.
+            crate::kernel_entry::with_kernel_entry(core_id as usize, || unsafe {
+                lean_handle_unknown_syscall(
+                    core_id, esr, elr, spsr, far, g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7],
+                    sp_el0, g[30],
+                );
+            });
+            crate::kprintln!(
+                "[core {}] unknown syscall delivered; halting pending the SM10.1 context restore (x7=0x{:x} ELR=0x{:016x})",
+                core_id,
+                g[7],
+                elr
+            );
+            crate::cpu::fatal_halt();
+        }
+    }
+    frame.set_return_frame(crate::svc_dispatch::error_frame_regs(
+        crate::svc_dispatch::DispatchError::InvalidSyscallId.kernel_error_discriminant(),
+    ));
+}
+
 /// Synchronous exception handler — called from assembly after context save.
 ///
 /// Routes to the appropriate handler based on the ESR_EL1 Exception Class:
@@ -468,6 +598,10 @@ fn deliver_fault(frame: &mut TrapFrame, fallback_discriminant: u32) {
 #[no_mangle]
 pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
     let esr = frame.esr_el1;
+    // PR #887 review: **an exception taken from EL1 is the kernel's own
+    // fault**, whatever its syndrome — halt before routing anything.  The
+    // `build.rs` scanner pins that this call precedes the classification.
+    halt_if_kernel_origin(frame, esr);
     // WS-RR RR4.25: the class comes from the Lean model, not from a second
     // `esr_ec` match here.  `esr_ec` survives as a diagnostic reader only.
     let exception_class = classify_synchronous_exception(esr);
@@ -530,10 +664,21 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
                     // success and never as a kernel-emitted error.
                     frame.set_return_frame(crate::svc_dispatch::blocked_resume_sentinel_regs());
                 }
+                // PR #887 review: a syscall number outside `SyscallId` is
+                // seL4's `UnknownSyscall` fault — delivered to the thread's
+                // fault handler (so a handler can emulate the call), not an
+                // `invalidSyscallNumber` frame handed back to the thread.
+                Err(crate::svc_dispatch::DispatchError::InvalidSyscallId) => {
+                    deliver_unknown_syscall(frame);
+                }
                 Err(e) => frame.set_return_frame(crate::svc_dispatch::error_frame_regs(
                     e.kernel_error_discriminant(),
                 )),
             }
+        }
+        sync_class::KERNEL_ABORT => {
+            // PR #887 review: the kernel faulted — halt, never deliver.
+            halt_on_kernel_abort(frame, esr);
         }
         sync_class::DATA_ABORT | sync_class::INSTR_ABORT => {
             // WS-RR RR4.21/RR4.23: an abort is **delivered** to the faulting
@@ -991,9 +1136,13 @@ mod tests {
         outer.esr_el1 = ec::DABT_LOWER << 26;
         outer.far_el1 = 0xAAAA;
 
-        // Simulate nested: inner frame with different ESR/FAR.
+        // Simulate a subsequent trap: a second frame with different ESR/FAR.
+        // PR #887 review: it is a *lower*-EL instruction abort, because a
+        // current-EL one is a kernel-origin exception and halts the core
+        // before any frame is read (`halt_if_kernel_origin`) — the frame
+        // isolation this test pins is a property of the delivered path.
         let mut inner = zero_frame();
-        inner.esr_el1 = ec::IABT_CURRENT << 26;
+        inner.esr_el1 = ec::IABT_LOWER << 26;
         inner.far_el1 = 0xBBBB;
         handle_synchronous_exception(&mut inner);
 
@@ -1019,8 +1168,10 @@ mod tests {
             let esr = raw_ec << 26;
             let expected = match raw_ec {
                 0x15 => sync_class::SVC,
-                0x24 | 0x25 => sync_class::DATA_ABORT,
-                0x20 | 0x21 => sync_class::INSTR_ABORT,
+                0x24 => sync_class::DATA_ABORT,
+                0x20 => sync_class::INSTR_ABORT,
+                // PR #887 review: current-EL aborts are the kernel's own.
+                0x25 | 0x21 => sync_class::KERNEL_ABORT,
                 0x22 => sync_class::PC_ALIGNMENT,
                 0x26 => sync_class::SP_ALIGNMENT,
                 _ => sync_class::UNKNOWN_REASON,
@@ -1043,6 +1194,83 @@ mod tests {
         assert_eq!(sync_class::PC_ALIGNMENT, 3);
         assert_eq!(sync_class::SP_ALIGNMENT, 4);
         assert_eq!(sync_class::UNKNOWN_REASON, 5);
+        assert_eq!(sync_class::KERNEL_ABORT, 6);
+    }
+
+    /// **PR #887 review**: the origin predicate reads `SPSR_EL1.M[3:2]`.
+    #[test]
+    fn exception_origin_reads_spsr_el() {
+        assert!(exception_taken_from_el0(0)); // EL0t
+        assert!(exception_taken_from_el0(0x3C0)); // EL0t with DAIF set
+        assert!(exception_taken_from_el0(0x10)); // AArch32 EL0 (M[4] set)
+        assert!(!exception_taken_from_el0(0x3C4)); // EL1t
+        assert!(!exception_taken_from_el0(0x3C5)); // EL1h
+        assert!(!exception_taken_from_el0(0x5)); // EL1h, DAIF clear
+    }
+
+    /// **PR #887 review**: a synchronous exception taken from EL1 — a kernel
+    /// page fault — halts instead of being classified and delivered to the
+    /// current user thread.  On the host lane `fatal_halt` panics, which is
+    /// the observable; the gate is exercised directly because a panic cannot
+    /// unwind across the `extern "C"` handler frame.
+    #[test]
+    #[should_panic]
+    fn kernel_origin_gate_halts_on_el1() {
+        let mut frame = zero_frame();
+        frame.esr_el1 = ec::DABT_LOWER << 26; // the syndrome alone looks like a user fault…
+        frame.spsr_el1 = 0x3C5; // …but the PE was at EL1h when it was taken.
+        halt_if_kernel_origin(&frame, frame.esr_el1);
+    }
+
+    /// **PR #887 review**: …and passes an EL0-origin exception through.
+    #[test]
+    fn kernel_origin_gate_passes_el0() {
+        let mut frame = zero_frame();
+        frame.esr_el1 = ec::DABT_LOWER << 26;
+        frame.spsr_el1 = 0x3C0; // EL0t, DAIF set
+        halt_if_kernel_origin(&frame, frame.esr_el1);
+    }
+
+    /// **PR #887 review**: a current-EL abort syndrome halts on its own class,
+    /// independently of the origin gate.
+    #[test]
+    #[should_panic]
+    fn current_el_abort_halts() {
+        let mut frame = zero_frame();
+        frame.esr_el1 = ec::DABT_CURRENT << 26;
+        halt_on_kernel_abort(&frame, frame.esr_el1);
+    }
+
+    /// **PR #887 review**: …and the instruction-abort half of the class does
+    /// too — the syndrome the kernel raises by branching to an unmapped or
+    /// non-executable address, which the data-abort case above cannot stand
+    /// in for.
+    #[test]
+    #[should_panic]
+    fn current_el_instruction_abort_halts() {
+        let mut frame = zero_frame();
+        frame.esr_el1 = ec::IABT_CURRENT << 26;
+        halt_on_kernel_abort(&frame, frame.esr_el1);
+    }
+
+    /// **PR #887 review**: a syscall number outside `SyscallId` takes the
+    /// unknown-syscall seam.  On the host lane no core is Lean-ready, so the
+    /// seam's fail-closed half publishes the `invalidSyscallNumber` status
+    /// frame (discriminant 31) — never a success, never the thread's own
+    /// request registers.
+    #[test]
+    fn handle_sync_unknown_syscall_id_not_ready_publishes_status_frame() {
+        let mut frame = zero_frame();
+        frame.esr_el1 = ec::SVC_AARCH64 << 26;
+        frame.gprs[7] = 0xFFFF; // no such syscall
+        frame.gprs[0] = 0xDEAD;
+        handle_synchronous_exception(&mut frame);
+        assert_eq!(frame.x0(), 0);
+        assert_eq!(
+            frame.x1(),
+            (crate::svc_dispatch::ERROR_LABEL_BASE + 31) << 9
+        );
+        assert_eq!([frame.x2(), frame.x3(), frame.x4(), frame.x5()], [0; 4]);
     }
 
     /// **WS-RR RR4.25**: the low ESR bits (IL, ISS) do not change the class —
@@ -1121,11 +1349,9 @@ mod tests {
     /// decoded the fault as a *successful syscall* with a forged badge.
     #[test]
     fn exception_arms_publish_offset_label_frames() {
-        let cases: [(u64, u32); 7] = [
+        let cases: [(u64, u32); 5] = [
             (ec::DABT_LOWER, error_code::VM_FAULT),
-            (ec::DABT_CURRENT, error_code::VM_FAULT),
             (ec::IABT_LOWER, error_code::VM_FAULT),
-            (ec::IABT_CURRENT, error_code::VM_FAULT),
             (ec::PC_ALIGN, error_code::USER_EXCEPTION),
             (ec::SP_ALIGN, error_code::USER_EXCEPTION),
             (0x3F, error_code::USER_EXCEPTION),

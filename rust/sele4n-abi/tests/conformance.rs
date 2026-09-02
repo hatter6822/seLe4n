@@ -536,7 +536,8 @@ fn message_info_exhaustive_bounds() {
 /// Verify SyscallId roundtrip for all variants (D6: +D1/D2/D3 TCB ops;
 /// WS-SM SM5.H.4: +TcbSetAffinity; SM6.B: +Tcb{Bind,Unbind}Notification;
 /// PR #822 Phase H: +MintReplyCap; WS-SM SM7.D: +VSpaceUnifyInstruction;
-/// WS-SM SM8.C.9: +Declassify; WS-SM SM9.A.6: +AuditRead/+AuditDrain).
+/// WS-SM SM8.C.9: +Declassify; WS-SM SM9.A.6: +AuditRead/+AuditDrain;
+/// PR #887 review: +TcbSetFaultHandler).
 #[test]
 fn syscall_id_exhaustive_roundtrip() {
     for i in 0..(SyscallId::COUNT as u64) {
@@ -1139,10 +1140,11 @@ fn kernel_error_variant_count() {
 /// PR #822 Phase H added MintReplyCap at 28; WS-SM SM7.D added
 /// VSpaceUnifyInstruction at 29; WS-SM SM8.C.9 added Declassify at 30; WS-SM
 /// SM9.A.6 added AuditRead at 31 and AuditDrain at 32; WS-SM SM9.C.8 added
-/// DeclassifySignal at 33).
+/// DeclassifySignal at 33; PR #887's review round added TcbSetFaultHandler at
+/// 34).
 #[test]
 fn syscall_id_variant_count() {
-    const SYSCALL_COUNT: u64 = 34;
+    const SYSCALL_COUNT: u64 = 35;
     assert_eq!(SyscallId::COUNT, SYSCALL_COUNT as usize);
     for i in 0..SYSCALL_COUNT {
         assert!(
@@ -1287,12 +1289,13 @@ fn sched_context_boundary() {
     assert_eq!(SyscallId::from_u64(20).unwrap(), SyscallId::TcbSuspend);
 }
 
-/// AA1-B-5: COUNT is updated to 34 (WS-SM SM9.C.8 added DeclassifySignal, on
-/// top of WS-SM SM9.A.6's AuditRead/AuditDrain, WS-SM SM8.C.9's Declassify,
-/// WS-SM SM7.D's VSpaceUnifyInstruction and PR #822 Phase H's MintReplyCap).
+/// AA1-B-5: COUNT is updated to 35 (PR #887's review round added
+/// TcbSetFaultHandler, on top of WS-SM SM9.C.8's DeclassifySignal, WS-SM
+/// SM9.A.6's AuditRead/AuditDrain, WS-SM SM8.C.9's Declassify, WS-SM SM7.D's
+/// VSpaceUnifyInstruction and PR #822 Phase H's MintReplyCap).
 #[test]
 fn syscall_count_updated() {
-    assert_eq!(SyscallId::COUNT, 34);
+    assert_eq!(SyscallId::COUNT, 35);
 }
 
 /// AA1-B-6: SchedContext syscalls require Write access (API.lean:381-383).
@@ -1556,6 +1559,15 @@ fn tcb_set_affinity_roundtrip() {
     assert_eq!(sid.to_u64(), 25);
 }
 
+/// PR #887 review: TcbSetFaultHandler roundtrip (discriminant 34).
+#[test]
+fn tcb_set_fault_handler_roundtrip() {
+    let sid = SyscallId::from_u64(34).expect("TcbSetFaultHandler must exist");
+    assert_eq!(sid, SyscallId::TcbSetFaultHandler);
+    assert_eq!(sid.to_u64(), 34);
+    assert_eq!(SyscallId::COUNT, 35);
+}
+
 /// WS-SM SM6.B: TcbBindNotification roundtrip (discriminant 26).
 #[test]
 fn tcb_bind_notification_roundtrip() {
@@ -1615,13 +1627,14 @@ fn declassify_roundtrip() {
     assert_eq!(sid.required_right(), AccessRight::Write);
 }
 
-/// D6-D5: Boundary — discriminant 34 is out of range for SyscallId
-/// (WS-SM SM9.C.8 added DeclassifySignal, moving the boundary from 32 to 33).
+/// D6-D5: Boundary — discriminant 35 is out of range for SyscallId
+/// (PR #887's review round added TcbSetFaultHandler, moving the boundary from
+/// 33 to 34).
 #[test]
 fn syscall_boundary() {
-    assert!(SyscallId::from_u64(33).is_some()); // Last valid
-    assert!(SyscallId::from_u64(34).is_none()); // First invalid
-    assert_eq!(SyscallId::COUNT, 34);
+    assert!(SyscallId::from_u64(34).is_some()); // Last valid
+    assert!(SyscallId::from_u64(35).is_none()); // First invalid
+    assert_eq!(SyscallId::COUNT, 35);
 }
 
 /// WS-SM SM9.A.6: AuditRead roundtrip (discriminant 31).
@@ -1675,6 +1688,10 @@ fn tcb_ops_require_write() {
     );
     assert_eq!(
         SyscallId::TcbSetAffinity.required_right(),
+        AccessRight::Write
+    );
+    assert_eq!(
+        SyscallId::TcbSetFaultHandler.required_right(),
         AccessRight::Write
     );
     assert_eq!(
@@ -2143,6 +2160,8 @@ fn wrapper_lengths_clear_prefilter_minimums() {
     assert_clears("tcb_set_ipc_buffer", SyscallId::TcbSetIPCBuffer);
     let _ = sele4n_sys::tcb::tcb_set_affinity(cap, 1);
     assert_clears("tcb_set_affinity", SyscallId::TcbSetAffinity);
+    let _ = sele4n_sys::tcb::tcb_set_fault_handler(cap, 3);
+    assert_clears("tcb_set_fault_handler", SyscallId::TcbSetFaultHandler);
     let _ = sele4n_sys::tcb::tcb_bind_notification(cap, cap);
     assert_clears("tcb_bind_notification", SyscallId::TcbBindNotification);
     let _ = sele4n_sys::tcb::tcb_unbind_notification(cap);

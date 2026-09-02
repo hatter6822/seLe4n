@@ -1111,6 +1111,36 @@ fn scan_trap_rs_classifies_via_lean() {
              here can drift from it silently."
         );
     }
+    // PR #887 review (relation, not presence): the kernel-origin gate must run
+    // *before* the classification.  Both `__el0_sync_entry` and
+    // `__el1_sync_entry` reach this handler; an EL1-origin exception routed
+    // to the fault path would hand a user handler the kernel's own fault.
+    let gate_idx = handler_body
+        .find("halt_if_kernel_origin(frame, esr);")
+        .unwrap_or_else(|| {
+            panic!(
+                "PR #887 regression: `{path}`'s `handle_synchronous_exception` no longer \
+             calls `halt_if_kernel_origin(frame, esr)`.  Every synchronous exception \
+             taken from EL1 must halt before it is classified and routed."
+            )
+        });
+    let classify_idx = handler_body
+        .find("classify_synchronous_exception(esr)")
+        .expect("checked above");
+    if gate_idx > classify_idx {
+        panic!(
+            "PR #887 regression: in `{path}`'s `handle_synchronous_exception`, the \
+             kernel-origin gate runs *after* the classification.  The gate must \
+             precede it: a kernel fault must never reach the routing match."
+        );
+    }
+    if !handler_body.contains("sync_class::KERNEL_ABORT => {") {
+        panic!(
+            "PR #887 regression: `{path}`'s `handle_synchronous_exception` has no \
+             `sync_class::KERNEL_ABORT` arm.  A current-EL abort must halt on its own \
+             class, not fall through to the unknown-exception delivery."
+        );
+    }
     if !handler_body.contains("match exception_class {") {
         panic!(
             "WS-RR RR4.25 regression: `{path}`'s `handle_synchronous_exception` calls \
@@ -1232,6 +1262,13 @@ fn scan_lean_ready_gates_intact() {
         // state, so it consults the same readiness gate as the timer tick and
         // the `.reschedule` receiver.
         ("src/trap.rs", "deliver_fault", "lean_handle_fault"),
+        // PR #887 review: the unknown-syscall seam enters the Lean runtime
+        // the same way, so it consults the same gate.
+        (
+            "src/trap.rs",
+            "deliver_unknown_syscall",
+            "lean_handle_unknown_syscall",
+        ),
     ];
     for (path, fn_name, lean_symbol) in sites {
         println!("cargo:rerun-if-changed={path}");

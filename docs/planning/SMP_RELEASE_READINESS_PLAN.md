@@ -633,6 +633,29 @@ defects and two registration gaps, all closed in place:
   the cross-core Call and reply chains do not carry for the fault path to
   compose.
 
+**Review round (PR #887).**  Five findings, all fixed in code:
+
+* `TCB.faultHandler` had no writer outside the test fixtures, so on a live
+  system every fault took the fail-closed suspend and the mechanism was
+  verified and unreachable — `.tcbSetFaultHandler` (id 34,
+  `setThreadFaultHandlerOp`, seL4 `TCB_SetSpace`'s `fault_ep`) is the writer,
+  validated through the target's CSpace at set time and carrying the full
+  syscall surface (dispatch arm + payoff, bundle/NI preservation, lock set,
+  tables, Rust mirrors, conformance at 35);
+* current-EL aborts (EC `0x25`/`0x21`) and EL1-origin frames were delivered
+  as the current user thread's fault — they classify as `.kernelAbort`, the
+  entries are inert unless `SPSR_EL1.M[3:2] = 0`, and `trap.rs` halts before
+  classification (`halt_if_kernel_origin`, the `KERNEL_ABORT` arm; order
+  pinned by `build.rs`);
+* a handler already blocked in receive woke without the fault message in its
+  return frame — `faultDeliverOnCore` now stages it (`stageWokenDelivery`);
+* `.tcbResume` left a double-faulted thread's stale fault on the TCB, so its
+  next Call was answered through the fault branch — the arm now runs
+  `retirePendingFaultForResume` (seL4's `restart`) first;
+* an unknown syscall number returned an error frame instead of an
+  `unknownSyscall` fault — `lean_handle_unknown_syscall` /
+  `trap.rs::deliver_unknown_syscall` deliver it.
+
 The finding, as the audit stated it:
 
 The largest phase, and the one that closes the audit's most serious security

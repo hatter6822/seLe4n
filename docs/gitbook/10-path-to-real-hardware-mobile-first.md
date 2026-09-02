@@ -80,7 +80,16 @@ WS-AN Phase AN9 closes every hardware-binding deferred item from
   sets `lean_ready` anywhere in the tree, so the trap handler still
   takes the fail-closed branch on hardware: a full ABI v3 status-label
   frame (`error_frame_regs`), never the pre-RR4 raw discriminant in
-  `x0` with `x1` left as the thread found it.
+  `x0` with `x1` left as the thread found it.  Since the PR #887 review
+  round `handle_synchronous_exception` first halts on a kernel-origin
+  frame (`halt_if_kernel_origin`, `SPSR_EL1.M[3:2] ≠ 0`; the
+  `KERNEL_ABORT` class halts on the syndrome alone, and `build.rs` pins
+  the gate-before-classify order) — an EL1 abort is the kernel's own
+  bug and is never delivered as a user thread's fault — and a syscall
+  number outside `SyscallId` takes `deliver_unknown_syscall`
+  (`lean_handle_unknown_syscall`), delivered as an `unknownSyscall`
+  fault rather than returned as an `invalidSyscallNumber` frame, with
+  the same fail-closed status frame when no core is Lean-ready.
 - **Bounded WFE** (AN9-G / DEF-R-HAL-L17): `wfe_bounded` with
   10 ms default at 54 MHz.
 - **SMP scaffolding** (AN9-J / DEF-R-HAL-L20): PSCI `cpu_on` +

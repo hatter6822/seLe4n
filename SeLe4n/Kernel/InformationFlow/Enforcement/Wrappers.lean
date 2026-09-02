@@ -260,6 +260,13 @@ def enforcementBoundary : List EnforcementClass :=
   , .capabilityOnly "setIPCBuffer"
   -- WS-SM SM5.H.4: CPU-affinity configuration capability-only operation
   , .capabilityOnly "setThreadCpuAffinity"
+  -- PR #887 review round: fault-handler configuration (seL4 `TCB_SetSpace`'s
+  -- `fault_ep`).  Capability-only: the authority is the TCB capability's write
+  -- right, the candidate CPtr is validated through the *target's* CSpace at
+  -- set time, and the write touches one TCB field — no data crosses a label
+  -- boundary until the thread faults, and that delivery is policy-gated by
+  -- `faultDeliverOnCoreChecked`.
+  , .capabilityOnly "setThreadFaultHandlerOp"
   -- WS-SM SM6.B: notification-binding capability-only operations (seL4
   -- NotificationBind / UnbindNotification — mutate the boundTCB ⇄ boundNotification
   -- relation; gated by the TCB capability, not an information-flow policy)
@@ -387,6 +394,7 @@ def syscallIdToEnforcementName : SyscallId → String
   | .tcbSetMCPriority      => "setMCPriority"
   | .tcbSetIPCBuffer       => "setIPCBuffer"
   | .tcbSetAffinity        => "setThreadCpuAffinity"
+  | .tcbSetFaultHandler    => "setThreadFaultHandlerOp"
   | .tcbBindNotification   => "bindNotification"
   | .tcbUnbindNotification => "unbindNotification"
   | .mintReplyCap          => "mintReplyCapWithCdt"

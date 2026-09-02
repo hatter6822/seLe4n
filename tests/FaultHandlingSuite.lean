@@ -133,6 +133,32 @@ open SeLe4n.Testing
 #check @faultContextOfThread_writeFaultRegistersToTcb
 #check @errorLabelBase
 #check @faultLabel_lt_errorLabelBase
+-- PR #887 review round: kernel-origin exceptions, the unknown-syscall producer,
+-- the woken handler's staged frame, resume retiring a fault, and the
+-- fault-handler configuration syscall.
+#check @ExceptionContext.takenFromEl0
+#check @classifySynchronousException_currentEl_abort
+#check @faultOfExceptionContext_kernelAbort
+#check @faultEntryDeliver
+#check @faultEntryStep_kernel_origin_inert
+#check @faultEntryStep_kernelAbort_inert
+#check @unknownSyscallEntryStep
+#check @unknownSyscallEntry
+#check @unknownSyscallEntryStep_not_dispatchable
+#check @unknownSyscallEntryStep_kernel_origin_inert
+#check @resolveFaultHandlerCPtr
+#check @resolveFaultHandlerCPtr_ok_inv
+#check @setThreadFaultHandlerOp
+#check @setThreadFaultHandlerOp_validated
+#check @setThreadFaultHandlerOp_faultHandler
+#check @setThreadFaultHandlerOp_rejects
+#check @retirePendingFaultForResume
+#check @retirePendingFaultForResume_pendingFault_none
+#check @retirePendingFaultForResume_of_no_fault
+#check @stageWokenDelivery_preserves_objects_invExt
+#check @retirePendingFaultForResume_preserves_ipcInvariantFull
+#check @setThreadFaultHandlerOp_preserves_ipcInvariantFull
+#check @setThreadFaultHandlerOp_preserves_projection
 
 -- ============================================================================
 -- §2  Elaboration-time witnesses (headline theorems applied to typed inputs)
@@ -188,11 +214,12 @@ took it — it delivers one, and the thread is not dispatchable afterwards. -/
 example (ectx : ExceptionContext) (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (sgi? : Option (CoreId × SgiKind)) (st' : SystemState)
     (hCls : classifySynchronousException ectx ≠ .svc)
+    (hK : classifySynchronousException ectx ≠ .kernelAbort)
     (hCur : st.scheduler.currentOnCore c = some tid)
     (hStep : dispatchSynchronousException ectx st c = .ok (sgi?, st')) :
     ¬ dispatchableOnCore st' tid c :=
   dispatchSynchronousException_nonSvc_thread_not_dispatchable ectx st c tid sgi? st'
-    hCls hCur hStep
+    hCls hK hCur hStep
 
 -- ============================================================================
 -- §3  Runtime fixture — four cores, four threads
@@ -402,9 +429,9 @@ private def runClassificationChecks : IO Unit := do
   assertBool "EC 0x24 is a non-prefetch VM fault"
     (faultOfExceptionContext (mk 0x24) ==
       some (.vmFault 0xFACE (UInt64.ofNat (0x24 <<< 26)) false))
-  assertBool "EC 0x21 is a prefetch VM fault"
-    (faultOfExceptionContext (mk 0x21) ==
-      some (.vmFault 0xFACE (UInt64.ofNat (0x21 <<< 26)) true))
+  assertBool "EC 0x20 is a prefetch VM fault"
+    (faultOfExceptionContext (mk 0x20) ==
+      some (.vmFault 0xFACE (UInt64.ofNat (0x20 <<< 26)) true))
   assertBool "EC 0x22 is a user exception"
     (faultOfExceptionContext (mk 0x22) ==
       some (.userException 0x22 (UInt64.ofNat (0x22 <<< 26))))
@@ -415,11 +442,27 @@ private def runClassificationChecks : IO Unit := do
   assertBool "exported tag: pcAlignment = 3" (classifySynchronousExceptionExport (UInt64.ofNat (0x22 <<< 26)) == 3)
   assertBool "exported tag: spAlignment = 4" (classifySynchronousExceptionExport (UInt64.ofNat (0x26 <<< 26)) == 4)
   assertBool "exported tag: unknownReason = 5" (classifySynchronousExceptionExport (UInt64.ofNat (0x3F <<< 26)) == 5)
+  -- PR #887 review: a current-EL abort is the kernel's own fault — its own
+  -- class, its own tag, and never a user fault.
+  assertBool "exported tag: kernelAbort = 6 (EC 0x25, data abort from the current EL)"
+    (classifySynchronousExceptionExport (UInt64.ofNat (0x25 <<< 26)) == 6)
+  assertBool "exported tag: kernelAbort = 6 (EC 0x21, instruction abort from the current EL)"
+    (classifySynchronousExceptionExport (UInt64.ofNat (0x21 <<< 26)) == 6)
+  assertBool "a current-EL data abort yields no user fault"
+    (faultOfExceptionContext (mk 0x25) == none)
+  assertBool "a current-EL instruction abort yields no user fault"
+    (faultOfExceptionContext (mk 0x21) == none)
+  assertBool "the EL0 origin predicate reads SPSR_EL1.M[3:2]"
+    (ExceptionContext.takenFromEl0 { esr := 0, elr := 0, spsr := 0x3C0, far := 0 } &&
+     ExceptionContext.takenFromEl0 { esr := 0, elr := 0, spsr := 0x10, far := 0 } &&
+     !ExceptionContext.takenFromEl0 { esr := 0, elr := 0, spsr := 0x3C5, far := 0 } &&
+     !ExceptionContext.takenFromEl0 { esr := 0, elr := 0, spsr := 0x3C4, far := 0 })
   -- Every one of the 64 EC values agrees with the tag table `trap.rs` mirrors.
   let expected (ec : Nat) : UInt32 :=
     if ec == 0x15 then 0
-    else if ec == 0x24 || ec == 0x25 then 1
-    else if ec == 0x20 || ec == 0x21 then 2
+    else if ec == 0x24 then 1
+    else if ec == 0x20 then 2
+    else if ec == 0x25 || ec == 0x21 then 6
     else if ec == 0x22 then 3
     else if ec == 0x26 then 4
     else 5
@@ -565,6 +608,20 @@ private def runDeliveryChecks : IO Unit := do
          | none => false)
       assertBool "core 1 dispatches the handler after the SGI"
         (d.afterSgi.scheduler.currentOnCore c1 == some handler)
+      -- PR #887 review: the woken handler's **return frame** is staged by the
+      -- delivery — `x0` the badge, `x1` the MessageInfo carrying the fault
+      -- tag, `x2`-`x5` the first four fault words — so the context restore
+      -- hands it the message, not its stale receive-syscall registers.
+      let fr := SeLe4n.Kernel.Architecture.readReturnFrame d.afterFault handler
+      assertBool "the woken handler's staged x0 is the handler capability's badge"
+        (fr.x0 == 7)
+      assertBool "the woken handler's staged x1 carries the fault tag, length 4"
+        (fr.x1 == (MessageInfo.encode { length := 4, extraCaps := 0, label := 6 }).toUInt64)
+      assertBool "the woken handler's staged x2-x5 are MR0-MR3 of the fault message"
+        (fr.x2 == dataAbortCtx.elr && fr.x3 == 0xDEAD_0000 && fr.x4 == 0 &&
+          fr.x5 == dataAbortCtx.esr)
+      assertBool "control: before the delivery those registers held the mirror's stale values"
+        ((SeLe4n.Kernel.Architecture.readReturnFrame d.afterRecv handler).x2 == 200)
 
 private def runNoHandlerChecks : IO Unit := do
   IO.println "--- §6b the fail-closed no-handler policy (RR4.9/RR4.10) ---"
@@ -888,6 +945,232 @@ private def runEntryWindowChecks : IO Unit := do
       -- The entry's progress guarantee holds on the spilled state too.
       assertBool "the entry leaves the faulter undispatchable on core 0"
         (!dispatchableOn stE faulter c0)
+      -- PR #887 review: **a kernel-origin exception is never delivered.**  The
+      -- same syndrome taken from EL1 (SPSR_EL1.M = EL1h) commits nothing, and
+      -- neither does a current-EL abort syndrome claiming EL0.
+      let el1Ctx : ExceptionContext := { pcAlignCtx with spsr := 0x3C5 }
+      let (sgisK, stK) := faultEntryStep permissiveCtx stRecv el1Ctx trapWindow 0
+      assertBool "an exception taken from EL1 fires no SGI"
+        (sgisK.isEmpty)
+      assertBool "an exception taken from EL1 delivers nothing to the current thread"
+        (ipcStateOf stK faulter == ipcStateOf stRecv faulter &&
+          (pendingFaultOf stK faulter).isNone &&
+          deliveredMessageOf stK handler == deliveredMessageOf stRecv handler)
+      assertBool "…and does not even spill: the current thread's registers are untouched"
+        ((stK.getTcb? faulter).map (·.registerContext.sp.val) == some 0x7000)
+      let kernelAbortCtx : ExceptionContext :=
+        { esr := UInt64.ofNat ((0x25 <<< 26) ||| 0x7), elr := 0xFFFF_0000_0000_1000,
+          spsr := 0x3C0, far := 0xFFFF_0000_DEAD_0000 }
+      let (sgisA, stA) := faultEntryStep permissiveCtx stRecv kernelAbortCtx trapWindow 0
+      assertBool "a current-EL abort syndrome is inert even with an EL0 PSTATE"
+        (sgisA.isEmpty && (pendingFaultOf stA faulter).isNone &&
+          ipcStateOf stA faulter == ipcStateOf stRecv faulter)
+
+-- ============================================================================
+-- §6f  The unknown-syscall producer (PR #887 review)
+-- ============================================================================
+
+/-- An `SVC` whose syscall number (`x7`) names no `SyscallId`: the prefilter
+rejects it and the trap layer routes it to the unknown-syscall seam instead of
+handing the thread an error frame.  The ELR of an `SVC` addresses the
+instruction *after* it. -/
+private def svcCtx : ExceptionContext :=
+  { esr := UInt64.ofNat (0x15 <<< 26), elr := 0x4_0008, spsr := 0x3C0, far := 0 }
+
+private def runUnknownSyscallChecks : IO Unit := do
+  IO.println "--- §6f the unknown-syscall fault has a live producer ---"
+  match endpointReceiveDualOnCore epHandler handler (some replyH) c1 stRunning with
+  | (_, .error e) => assertBool s!"handler recv must succeed (got {repr e})" false
+  | (stRecv, .ok _) =>
+      -- The generic entry is inert on an SVC: that class is the syscall path.
+      let (sgisG, stG) := faultEntryStep permissiveCtx stRecv svcCtx trapWindow 0
+      assertBool "the syndrome-classified entry is inert on an SVC"
+        (sgisG.isEmpty && (pendingFaultOf stG faulter).isNone)
+      -- The unknown-syscall entry delivers `unknownSyscall x7`.
+      let (sgis, stU) := unknownSyscallEntryStep permissiveCtx stRecv svcCtx trapWindow 0
+      assertBool "the unknown-syscall entry delivers the fault"
+        (ipcStateOf stU faulter == some (.blockedOnReply epHandler (some handler)))
+      assertBool "the fault is seL4's UnknownSyscall, carrying the trap frame's x7"
+        ((pendingFaultOf stU faulter).map (·.fault) == some (.unknownSyscall trapWindow.lr) ||
+          (pendingFaultOf stU faulter).map (·.fault) == some (.unknownSyscall (trapWindow.gprAt 7)))
+      assertBool "the fault's syscall number is x7 of the window, not the link register"
+        ((pendingFaultOf stU faulter).map (·.fault) == some (.unknownSyscall 0x18))
+      match deliveredMessageOf stU handler with
+      | none => assertBool "the handler must receive the unknown-syscall message" false
+      | some m =>
+          assertBool "the message carries the UnknownSyscall tag"
+            (m.label == FaultLabel.unknownSyscall)
+          assertBool "the message is thirteen words" (m.registers.size == 13)
+          assertBool "MR0-MR7 are the trap frame's argument window"
+            ((List.range 8).all (fun i => wordAt m.registers i == trapWindow.gprAt i))
+          assertBool "MR8 is the restart PC — the instruction after the SVC"
+            (wordAt m.registers 8 == svcCtx.elr)
+          assertBool "MR9 is SP_EL0 and MR10 is the link register, from the trap frame"
+            (wordAt m.registers 9 == trapWindow.sp && wordAt m.registers 10 == trapWindow.lr)
+          assertBool "MR12 is the syscall number" (wordAt m.registers 12 == 0x18)
+          assertBool "the handler can recover the fault from the message"
+            (decodeFault { length := 13, extraCaps := 0, label := m.label } m.registers ==
+              some (.unknownSyscall 0x18))
+      assertBool "the delivery pokes the handler's core"
+        (sgis == [(c1, SgiKind.reschedule)])
+      assertBool "the thread that issued the unknown syscall is not dispatchable on core 0"
+        (!dispatchableOn stU faulter c0)
+      -- A payload-free reply — "emulated, continue" — resumes after the SVC.
+      match faultReplyOnCore handler faulter resumeInfo #[] c1 stU with
+      | (stR, .ok (outcome, _)) =>
+          assertBool "an emulating handler's payload-free reply continues after the SVC"
+            (outcome.restartPC? == some svcCtx.elr && savedPcOf stR faulter == some svcCtx.elr.toNat)
+          assertBool "…with the argument window the thread had at the trap"
+            ((List.range 8).all (fun i =>
+              (stR.getTcb? faulter).map (·.registerContext.gpr ⟨i⟩ |>.val) ==
+                some (trapWindow.gprAt i).toNat))
+      | (_, .error e) =>
+          assertBool s!"the emulating reply must succeed (got {repr e})" false
+      -- An SVC issued at EL1 is a kernel bug, not a user fault.
+      let (sgisK, stK) :=
+        unknownSyscallEntryStep permissiveCtx stRecv { svcCtx with spsr := 0x3C5 } trapWindow 0
+      assertBool "an SVC taken from EL1 is inert at the unknown-syscall entry"
+        (sgisK.isEmpty && (pendingFaultOf stK faulter).isNone)
+
+-- ============================================================================
+-- §7d  Configuring a handler, and resuming past a fault (PR #887 review)
+-- ============================================================================
+
+/-- A TCB capability on the orphan (no handler configured), held by the
+handler thread, with the write right every thread-configuration syscall
+demands. -/
+private def orphanTcbCap : Capability :=
+  { target := .object orphan.toObjId, rights := AccessRightSet.ofList [.read, .write] }
+
+private def configGate : SyscallGate :=
+  { callerId := handler, cspaceRoot := cnRoot, capAddr := SeLe4n.CPtr.ofNat 0,
+    capDepth := 2, requiredRight := .write }
+
+/-- `tcbSetFaultHandler` with MR0 = the CPtr, in the target's CSpace. -/
+private def setHandlerDecoded (cptr : Nat) : SyscallDecodeResult :=
+  { capAddr := SeLe4n.CPtr.ofNat 0,
+    msgInfo := { length := 1, extraCaps := 0, label := 0 },
+    syscallId := .tcbSetFaultHandler,
+    msgRegs := #[SeLe4n.RegValue.ofNat cptr] }
+
+private def resumeTcbDecoded : SyscallDecodeResult :=
+  { capAddr := SeLe4n.CPtr.ofNat 0,
+    msgInfo := { length := 0, extraCaps := 0, label := 0 },
+    syscallId := .tcbResume, msgRegs := #[] }
+
+private def runConfigureAndResumeChecks : IO Unit := do
+  IO.println "--- §7d configure a fault handler, resume past a double fault ---"
+  -- The fault-handler CPtr is validated at set time by the same resolution
+  -- the fault path runs: send + grant (slot 0) and send + grant-reply (slot 2)
+  -- are admitted, a read-only capability (slot 1) is refused on rights, and an
+  -- empty slot (3) is refused as no capability at all.
+  assertBool "pre: the orphan has no fault handler"
+    (resolveErr stRunning orphan == some .invalidCapability)
+  match dispatchWithCap (setHandlerDecoded 0) handler configGate orphanTcbCap stRunning with
+  | .ok (_, st1) =>
+      assertBool "the live tcbSetFaultHandler arm installs the CPtr on the target"
+        ((st1.getTcb? orphan).bind (·.faultHandler) == some (SeLe4n.CPtr.ofNat 0))
+      assertBool "…and the target's handler now resolves to the handler endpoint"
+        (match resolveFaultHandler st1 orphan with
+         | .ok tgt => tgt.endpoint == epHandler
+         | .error _ => false)
+      assertBool "configuring touches no scheduler state"
+        (st1.scheduler.currentOnCore c2 == stRunning.scheduler.currentOnCore c2 &&
+          (st1.scheduler.runQueueOnCore c2).toList == (stRunning.scheduler.runQueueOnCore c2).toList)
+      -- The configured thread's next fault is delivered, not suspended.
+      match endpointReceiveDualOnCore epHandler handler (some replyH) c1 st1 with
+      | (st2, .ok _) =>
+          let fctx := faultContextOfThread st2 orphan 0x5_0000 0x3C0
+          let (_, res) := faultDeliverOnCore st2 orphan theFault fctx c2
+          assertBool "a fault on the freshly configured thread is delivered"
+            (res.disposition == .delivered epHandler)
+      | (_, .error e) => assertBool s!"handler recv must succeed (got {repr e})" false
+  | .error e => assertBool s!"tcbSetFaultHandler must succeed (got {repr e})" false
+  assertBool "a send + grant-reply capability is admitted as a handler"
+    (match dispatchWithCap (setHandlerDecoded 2) handler configGate orphanTcbCap stRunning with
+     | .ok (_, st') => (st'.getTcb? orphan).bind (·.faultHandler) == some (SeLe4n.CPtr.ofNat 2)
+     | .error _ => false)
+  assertBool "a read-only capability is refused at set time on rights"
+    (errorOf (dispatchWithCap (setHandlerDecoded 1) handler configGate orphanTcbCap stRunning)
+      == some .illegalAuthority)
+  assertBool "an empty slot is refused at set time as no capability"
+    (errorOf (dispatchWithCap (setHandlerDecoded 3) handler configGate orphanTcbCap stRunning)
+      == some .invalidCapability)
+  assertBool "a refused configuration leaves the field as it was"
+    (match dispatchWithCap (setHandlerDecoded 1) handler configGate orphanTcbCap stRunning with
+     | .ok _ => false
+     | .error _ => (stRunning.getTcb? orphan).bind (·.faultHandler) == none)
+  -- The write right is checked by the real lookup path (`syscallLookupCap`
+  -- against `requiredRight .tcbSetFaultHandler = .write`), so it is exercised
+  -- through `dispatchSyscall` with a TCB capability parked in the caller's
+  -- CSpace: slot 3 of the handler's root CNode holds a capability to the
+  -- orphan, once read-only and once read + write.
+  let orphanCapAt3 (rights : List AccessRight) : SystemState :=
+    let cap : Capability :=
+      { target := .object orphan.toObjId, rights := AccessRightSet.ofList rights }
+    let cn : KernelObject := .cnode (rootCnode.insert (SeLe4n.Slot.ofNat 3) cap)
+    { stRunning with objects := stRunning.objects.insert cnRoot cn }
+  let viaLookup (st : SystemState) :=
+    dispatchSyscall { setHandlerDecoded 0 with capAddr := SeLe4n.CPtr.ofNat 3 } handler st
+  assertBool "a capability without the write right cannot configure a handler"
+    (errorOf (viaLookup (orphanCapAt3 [.read])) == some .illegalAuthority)
+  assertBool "…and with the write right the real lookup path installs it"
+    (match viaLookup (orphanCapAt3 [.read, .write]) with
+     | .ok (_, st') => (st'.getTcb? orphan).bind (·.faultHandler) == some (SeLe4n.CPtr.ofNat 0)
+     | .error _ => false)
+  -- **Resuming past a double fault.**  The orphan faults with no handler and
+  -- is suspended, keeping its fault as a diagnostic.  Resuming it must retire
+  -- that fault — restart at the faulting instruction — or its next ordinary
+  -- Call would be answered through the reply seam's fault branch.
+  let fctxO := faultContextOfThread stRunning orphan 0x5_0000 0x3C0
+  let (stSusp, resO) := faultDeliverOnCore stRunning orphan theFault fctxO c2
+  assertBool "pre: the orphan is suspended with its fault recorded"
+    (resO.disposition == .suspended && (pendingFaultOf stSusp orphan).isSome &&
+      threadStateOf stSusp orphan == some .Inactive)
+  assertBool "pre: the reply seam would take the fault branch on it"
+    (threadHasPendingFault stSusp orphan)
+  match dispatchWithCap resumeTcbDecoded handler configGate orphanTcbCap stSusp with
+  | .ok (_, stRes) =>
+      assertBool "resuming a double-faulted thread retires its fault"
+        (pendingFaultOf stRes orphan == none && !threadHasPendingFault stRes orphan)
+      assertBool "…and restarts it at the faulting instruction"
+        (savedPcOf stRes orphan == some 0x5_0000)
+      assertBool "…with the register window it held at the trap"
+        ((List.range 8).all (fun i =>
+          (stRes.getTcb? orphan).map (·.registerContext.gpr ⟨i⟩ |>.val) ==
+            some (fctxO.gprAt i).toNat))
+      assertBool "the resumed thread is Ready again"
+        (threadStateOf stRes orphan == some .Ready)
+      -- The recovery story: repair the configuration, resume, fault again —
+      -- and this time it is delivered.
+      match dispatchWithCap (setHandlerDecoded 0) handler configGate orphanTcbCap stSusp with
+      | .ok (_, stCfg) =>
+          match dispatchWithCap resumeTcbDecoded handler configGate orphanTcbCap stCfg with
+          | .ok (_, stRes2) =>
+              match endpointReceiveDualOnCore epHandler handler (some replyH) c1 stRes2 with
+              | (stRecv2, .ok _) =>
+                  let fctx2 := faultContextOfThread stRecv2 orphan 0x5_0000 0x3C0
+                  let (stD, resD) := faultDeliverOnCore stRecv2 orphan theFault fctx2 c2
+                  assertBool "after repair + resume, the re-executed fault is delivered"
+                    (resD.disposition == .delivered epHandler)
+                  assertBool "…to a handler that receives the fresh fault, not the retired one"
+                    ((deliveredMessageOf stD handler).map (·.label) == some (faultLabel theFault))
+              | (_, .error e) => assertBool s!"handler recv must succeed (got {repr e})" false
+          | .error e => assertBool s!"resume after repair must succeed (got {repr e})" false
+      | .error e => assertBool s!"repairing the handler must succeed (got {repr e})" false
+  | .error e => assertBool s!"resuming the suspended thread must succeed (got {repr e})" false
+  -- Control: resuming a thread that carries no fault leaves its registers alone.
+  let stPlain := faultSuspendOnCore stRunning weak c3
+  assertBool "control: a plain suspend records no fault"
+    ((pendingFaultOf stPlain weak).isNone)
+  match dispatchWithCap resumeTcbDecoded handler configGate
+      { orphanTcbCap with target := .object weak.toObjId } stPlain with
+  | .ok (_, stW) =>
+      assertBool "control: resuming an unfaulted thread does not touch its saved pc"
+        (savedPcOf stW weak == some 0)
+      assertBool "control: nor its registers"
+        ((stW.getTcb? weak).map (·.registerContext.gpr ⟨3⟩ |>.val) == some 300)
+  | .error e => assertBool s!"resuming the unfaulted thread must succeed (got {repr e})" false
 
 -- ============================================================================
 -- §7  Reply-based resume and restart (RR4.14 / RR4.15 / RR4.16)
@@ -966,13 +1249,6 @@ private def runRestartChecks : IO Unit := do
 -- §7c  The reply seam is live: `dispatchWithCap` reaches the fault reply
 -- ============================================================================
 
-/-- The error a reply seam reports, as a comparable value (`SystemState` has no
-`BEq`, so the whole result cannot be compared directly). -/
-private def replyErrOf (r : Except KernelError (Unit × SystemState)) : Option KernelError :=
-  match r with
-  | .error e => some e
-  | .ok _ => none
-
 /-- The `.reply` decode a fault handler issues: seL4's `seL4_Reply` on the reply
 capability the fault Call gave it, carrying the restart frame. -/
 private def replyDecoded : SyscallDecodeResult :=
@@ -1038,9 +1314,9 @@ private def runReplySeamChecks : IO Unit := do
       assertBool "control: an unfaulted thread has no pending fault in the same state"
         (!threadHasPendingFault afterFault handler)
       assertBool "control: on such a thread the seam answers exactly as the pre-RR4 reply did"
-        (replyErrOf (replyTransferOnCore handler handler restartInfo restartRegs
+        (errorOf (replyTransferOnCore handler handler restartInfo restartRegs
             IpcMessage.empty c1 afterFault) ==
-          replyErrOf
+          errorOf
             (match endpointReplyCrossCoreDispatch handler handler IpcMessage.empty c1
                 afterFault with
              | (st', .ok _) => .ok ((), Architecture.stageDeliveredMessage st' handler 0)
@@ -1120,8 +1396,28 @@ private def faultTraceLines : List String :=
       ] ++ resume ++
       [ traceLine s!"faulter resumes with saved pc {repr (savedPcOf resumeState faulter)}"
       , traceLine s!"faulter outstanding fault after reply = {repr (pendingFaultOf resumeState faulter |>.isSome)}"
-      ] ++ queuedLines ++ windowLines
+      ] ++ queuedLines ++ windowLines ++ reviewLines
 where
+  /-- PR #887 review: the unknown-syscall producer, the staged handler frame,
+  and resume retiring a double fault. -/
+  reviewLines : List String :=
+    match endpointReceiveDualOnCore epHandler handler (some replyH) c1 stRunning with
+    | (_, .error _) => [traceLine "REVIEW PIPELINE FAILED"]
+    | (stRecv, .ok _) =>
+        let (sgis, stU) := unknownSyscallEntryStep permissiveCtx stRecv svcCtx trapWindow 0
+        let fr := SeLe4n.Kernel.Architecture.readReturnFrame stU handler
+        let (stSusp, _) :=
+          faultDeliverOnCore stRunning orphan theFault (faultContextOfThread stRunning orphan 0x5_0000 0x3C0) c2
+        let resumed :=
+          match dispatchWithCap resumeTcbDecoded handler configGate orphanTcbCap stSusp with
+          | .ok (_, stRes) =>
+              s!"resume of double-faulted orphan: fault retired = {repr (pendingFaultOf stRes orphan |>.isNone)} pc = {repr (savedPcOf stRes orphan)}"
+          | .error e => s!"resume of double-faulted orphan FAILED {repr e}"
+        [ traceLine s!"unknown syscall x7=0x18 on core 0: faulter {repr (ipcStateOf stU faulter)} SGIs {repr sgis}"
+        , traceLine s!"unknown syscall handler frame: x0={repr fr.x0} x1={repr fr.x1} x2={repr fr.x2}"
+        , traceLine s!"kernel-origin abort (EL1 SPSR) at the entry: SGIs {repr (faultEntryStep permissiveCtx stRecv { pcAlignCtx with spsr := 0x3C5 } trapWindow 0).1}"
+        , traceLine resumed
+        ]
   /-- The queued ordering (§6d): the fault parks on the endpoint until the
   handler asks, and the label survives the queue. -/
   queuedLines : List String :=
@@ -1184,6 +1480,8 @@ def runFaultHandlingChecks : IO Unit := do
   runFlowGateChecks
   runQueuedDeliveryChecks
   runEntryWindowChecks
+  runUnknownSyscallChecks
+  runConfigureAndResumeChecks
   runResumeChecks
   runRestartChecks
   runReplySeamChecks

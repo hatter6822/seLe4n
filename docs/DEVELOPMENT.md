@@ -103,6 +103,24 @@ It is aligned to the **current project state**:
   thread and cannot yet install a successor.  Tests:
   `tests/FaultHandlingSuite.lean` (`fault_handling_suite`, Tier 2) plus the
   4-core golden fixture `tests/fixtures/fault_handling_4core.expected`.
+  **Review round (PR #887)**, five findings fixed in code: `TCB.faultHandler`
+  had no writer outside the test fixtures, so no live fault could reach a
+  handler — `.tcbSetFaultHandler` (id 34, `setThreadFaultHandlerOp`, seL4
+  `TCB_SetSpace`'s `fault_ep`) is the writer, capability-only under the TCB
+  write right and validated through the *target's* CSpace at set time, with
+  the dispatch arm, payoff case, bundle/NI preservation, lock set, tables and
+  Rust mirrors a syscall needs; current-EL aborts (EC `0x25`/`0x21`) and
+  EL1-origin frames were delivered as the current user thread's fault — they
+  classify as `.kernelAbort`, `faultEntryStep` is inert unless
+  `SPSR_EL1.M[3:2] = 0` (`takenFromEl0`), and `trap.rs` halts before
+  classification (`halt_if_kernel_origin`, the `KERNEL_ABORT` arm, order
+  pinned by `build.rs`); a handler already blocked in receive woke without
+  the fault message in its return frame — the delivery stages it
+  (`stageWokenDelivery`); `.tcbResume` left a double-faulted thread's stale
+  fault on the TCB — the arm runs `retirePendingFaultForResume` (seL4's
+  `restart`) first; an unknown syscall number returned an error frame — it is
+  delivered as an `unknownSyscall` fault (`lean_handle_unknown_syscall`,
+  `trap.rs::deliver_unknown_syscall`).
   Preceding WS-RR cuts: RR0 honesty patches (v0.34.26), RR1 the aarch64 cross
   gate + TLBI broadcast discipline (v0.34.41), RR2 the cancellation/donation
   invariant gaps behind the live dispatch arms (v0.34.42), RR3
@@ -880,8 +898,8 @@ Unless a PR explicitly proposes spec-level change control, preserve:
    process below.
 11. **a count of theorems counts propositions**: `List.length` over an
    inventory counts *registrations*, and the inventories register a phase's
-   whole surface — 209 of their 1111 entries are `def`s.  Quote
-   `smpInventoriedTheoremCount` (902), not `smpInventoriedEntryCount` (1111),
+   whole surface — 210 of their 1113 entries are `def`s.  Quote
+   `smpInventoriedTheoremCount` (903), not `smpInventoriedEntryCount` (1113),
    and never infer one from the other.
 
 ---
@@ -1172,7 +1190,7 @@ Every milestone-moving PR should include:
 
 - IPC thread-state updates now fail with `objectNotFound` when the target TCB is missing (including reserved thread ID `0`), preventing ghost queue entries in endpoint/notification paths.
 - Sentinel ID `0` is rejected at IPC TCB lookup/update boundaries (`lookupTcb`/`storeTcbIpcState`) rather than silently treated as a valid runtime thread identity.
-- Trace and probe harnesses now exercise policy-checked wrappers (`endpointSendDualChecked`, `cspaceMintChecked`, `registerServiceChecked`) by default; unchecked operations remain available for research experiments. `enforcementBoundary` classifies 43 operations (13 policy-gated, 26 capability-only, 4 read-only; pinned by `enforcementBoundaryExtended_count`). (WS-Q1: `serviceRestartChecked` removed, `registerServiceChecked` added; WS-Z8: SchedContext ops; D1: thread lifecycle; D2: priority management; D3: IPC buffer; AC4-D: VSpace/service ops; WS-SM SM8.C: the live declassification entry point, policy-gated; WS-SM SM8.E.3: the SM3 two-phase-locking bracket `withLockSet`, capability-only; WS-SM SM9.A.11: the two audit-trail readers `auditReadFromCore` / `auditDrainVisiblePrefix`, capability-only; WS-SM SM9.C.8: the data-carrying declassification signal, policy-gated.)
+- Trace and probe harnesses now exercise policy-checked wrappers (`endpointSendDualChecked`, `cspaceMintChecked`, `registerServiceChecked`) by default; unchecked operations remain available for research experiments. `enforcementBoundary` classifies 44 operations (13 policy-gated, 27 capability-only, 4 read-only; pinned by `enforcementBoundaryExtended_count`). (WS-Q1: `serviceRestartChecked` removed, `registerServiceChecked` added; WS-Z8: SchedContext ops; D1: thread lifecycle; D2: priority management; D3: IPC buffer; AC4-D: VSpace/service ops; WS-SM SM8.C: the live declassification entry point, policy-gated; WS-SM SM8.E.3: the SM3 two-phase-locking bracket `withLockSet`, capability-only; WS-SM SM9.A.11: the two audit-trail readers `auditReadFromCore` / `auditDrainVisiblePrefix`, capability-only; WS-SM SM9.C.8: the data-carrying declassification signal, policy-gated; PR #887 review round: `setThreadFaultHandlerOp`, the fault-handler configuration syscall, capability-only.)
 - WS-E4 dual-queue endpoint operations (`endpointSendDual`/`endpointReceiveDual`) use intrusive-list queue boundaries (`sendQ`/`receiveQ`) with per-thread links stored in `TCB.queuePrev`/`TCB.queuePPrev`/`TCB.queueNext`; invariant checks now include `intrusiveQueueWellFormed` validation for both endpoint queues (including head/tail shape, cycle-free traversal, and per-node `queuePrev`/`queuePPrev`/`queueNext` linkage), and `negative_state_suite` adds runtime queue-link assertions for both send-queue and receive-queue FIFO/dequeue paths alongside enqueue/block, rendezvous/dequeue, queue drain, O(1) middle removal via `endpointQueueRemoveDual`, malformed-`queuePPrev` rejection (`illegalState`), and dual-queue double-wait rejection (`alreadyWaiting`).
 - WS-E4 CDT representation is node-stable: derivation edges are over stable node IDs and slots map to nodes via bidirectional maps (`cdtSlotNode`, `cdtNodeSlot`). `cspaceMove` updates slot→node ownership/backpointers instead of rewriting every CDT edge, `cspaceDeleteSlot` detaches stale slot↔node mappings on deletion, the observed slot-level CDT is defined as projection of node edges through the slot mapping (`SystemState.observedCdtEdges`), and strict revoke (`cspaceRevokeCdtStrict`) now reports the first descendant deletion failure with offending slot context.
 

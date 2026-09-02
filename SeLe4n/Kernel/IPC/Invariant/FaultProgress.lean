@@ -296,7 +296,8 @@ theorem faultDeliverOnCore_not_dispatchable (st : SystemState)
           exact faultSuspendOnCore_not_runnable _ tid c
       | ok r =>
           obtain ⟨summary, sgi?⟩ := r
-          simp only [faultDeliverOnCore, hRes, hCall, recordPendingFault_scheduler_eq]
+          simp only [faultDeliverOnCore, hRes, hCall, recordPendingFault_scheduler_eq,
+            Architecture.stageWokenDelivery_scheduler_eq]
           exact endpointCallCrossCoreDispatch_caller_not_runnable tgt.endpoint tid _
             tgt.cap.rights tgt.cspaceRoot (SeLe4n.Slot.ofNat 0) c st stC summary sgi?
             (by rw [faultMessage_caps f ctx tgt.cap.badge]; rfl) hCall

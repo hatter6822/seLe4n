@@ -394,7 +394,9 @@ theorem faultDeliverOnCore_preserves_ipcInvariantFull
     | ok r =>
         obtain ⟨summary, sgi?⟩ := r
         simp only [faultDeliverOnCore, hRes, hStep]
-        exact recordPendingFault_preserves_ipcInvariantFull stC tid _ hCallObj hCall
+        exact recordPendingFault_preserves_ipcInvariantFull _ tid _
+          (stageWokenDelivery_preserves_objects_invExt stC _ _ hCallObj)
+          (stageWokenDelivery_preserves_ipcInvariantFull stC _ _ hCallObj hCall)
 
 /-- WS-RR RR4.17: and the delivery preserves the object-store invariant. -/
 theorem faultDeliverOnCore_preserves_objects_invExt
@@ -421,7 +423,8 @@ theorem faultDeliverOnCore_preserves_objects_invExt
     | ok r =>
         obtain ⟨summary, sgi?⟩ := r
         simp only [faultDeliverOnCore, hRes, hStep]
-        exact recordPendingFault_preserves_objects_invExt stC tid _ hCallObj
+        exact recordPendingFault_preserves_objects_invExt _ tid _
+          (stageWokenDelivery_preserves_objects_invExt stC _ _ hCallObj)
 
 
 /-- WS-RR RR4.17/RR4.20: **the flow-checked delivery preserves the bundle.**

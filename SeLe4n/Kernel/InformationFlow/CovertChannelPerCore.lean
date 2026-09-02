@@ -161,13 +161,15 @@ are live and both must be classified. -/
 def enforcementBoundaryPerCore : List EnforcementClass :=
   enforcementBoundaryExtended ++ crossCoreEnforcementEntries
 
-/-- SM8.B.6: the per-core boundary has 58 entries — the live canonical 43 (39
+/-- SM8.B.6: the per-core boundary has 59 entries — the live canonical 44 (39
 plus the 2PL bracket SM8.E.3 promoted into it, plus WS-SM SM9.A.11's two
-audit-trail entries, plus WS-SM SM9.C.8's data-carrying declassification) and
-the fifteen cross-core wrappers.  Re-anchored at the
+audit-trail entries, plus WS-SM SM9.C.8's data-carrying declassification, plus
+the PR #887 review round's fault-handler configuration `setThreadFaultHandlerOp`)
+and the fifteen cross-core wrappers.  Re-anchored at the
 SM8.A cut, in the fourth review round, again in rounds 10 and 12 as the `.send`,
 resume and architecture arms joined the cross-core surface, in round 37 as the
-routing gate found `.tcbSetAffinity`, at SM9.A.11, and at SM9.C.8.
+routing gate found `.tcbSetAffinity`, at SM9.A.11, at SM9.C.8, and at the
+PR #887 review round.
 `enforcementBoundaryExtended_count` is the authority for the base figure and
 this theorem for the total; the sentence above is worth what they are worth, and
 round 38 caught it stale at 53 one commit after the theorem moved.
@@ -175,7 +177,7 @@ round 38 caught it stale at 53 one commit after the theorem moved.
 The SM8.E.3 promotion left the total **unchanged**, which is the point of
 appending the bracket last in the canonical list; SM9.A.11 moves it, because the
 two audit entries are genuinely new operations rather than a reclassification. -/
-theorem enforcementBoundaryPerCore_count : enforcementBoundaryPerCore.length = 58 := by rfl
+theorem enforcementBoundaryPerCore_count : enforcementBoundaryPerCore.length = 59 := by rfl
 
 /-- SM8.B.7 (completeness, part 1): the per-core boundary **extends** the
 canonical one — it is the canonical list followed by the fifteen live cross-core

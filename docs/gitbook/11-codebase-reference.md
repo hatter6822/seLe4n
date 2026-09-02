@@ -128,8 +128,8 @@ Docs-sync checks compare only the stable subset so branch/merge-only churn does 
     domainTimeRemaining, domainScheduleIndex, memory),
     `lowEquivalent` relation scaffold with refl/symm/trans.
 - `SeLe4n/Kernel/InformationFlow/Enforcement.lean` (re-export hub)
-  - `Enforcement/Wrappers.lean` — 43-entry enforcement boundary (13 policy-gated,
-    26 capability-only, 4 read-only) wiring `securityFlowsTo` policy
+  - `Enforcement/Wrappers.lean` — 44-entry enforcement boundary (13 policy-gated,
+    27 capability-only, 4 read-only) wiring `securityFlowsTo` policy
     into enforcement boundaries. Includes SchedContext ops (WS-Z8), thread lifecycle (D1), priority management (D2), IPC buffer (D3), VSpace and service ops (AC4-D), the live declassification entry point (WS-SM SM8.C, policy-gated), the SM3 two-phase-locking bracket `withLockSet` (WS-SM SM8.E.3, capability-only — an internal building block used under an already-capability-guarded context), and the two audit-trail readers `auditReadFromCore` / `auditDrainVisiblePrefix` (WS-SM SM9.A.11, capability-only — authority is the dedicated `CapTarget.auditTrail`, never a right), and the data-carrying declassification signal (WS-SM SM9.C.8, the 13th policy-gated entry).
     The count is pinned by `enforcementBoundaryExtended_count`; this line is a
     mirror of that theorem, not an independent claim.

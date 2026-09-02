@@ -257,6 +257,7 @@ def syscallReturnShape : SyscallId → ReturnShape
   | .tcbSetMCPriority      => .unit
   | .tcbSetIPCBuffer       => .unit
   | .tcbSetAffinity        => .unit
+  | .tcbSetFaultHandler    => .unit
   | .tcbBindNotification   => .unit
   | .tcbUnbindNotification => .unit
   | .mintReplyCap          => .unit

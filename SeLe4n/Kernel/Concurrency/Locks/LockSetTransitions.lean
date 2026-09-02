@@ -1448,6 +1448,25 @@ def lockSet_tcbSetAffinity (callerTid : ThreadId)
        (tcbLock targetTcbTid, .write)])
     (boundSchedContextId.map (fun sc => (schedContextLock sc, .write)))
 
+/-- PR #887 review: `lockSet` for `tcbSetFaultHandler`.
+
+`setThreadFaultHandlerOp` writes the target TCB's `faultHandler` field (covered
+by `tcbLock targetTcbTid .write`) after validating the candidate CPtr through
+the **target's** CSpace root — a read walk of that CNode
+(`resolveFaultHandlerCPtr`), which is the fourth lock.  The caller pre-resolves
+`(s.getTcb? targetTcbTid).map (·.cspaceRoot)`; `none` covers a missing target
+(the syscall fails before any CNode is read), and a caller whose own root *is*
+the target's passes `none` too, since that read lock is already in the base. -/
+def lockSet_tcbSetFaultHandler (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) (targetTcbTid : ThreadId)
+    (targetCnodeRootObjId : Option ObjId) : LockSet :=
+  lockSetExtendOpt
+    (lockSetOfList
+      [(tcbLock callerTid, .read),
+       (cnodeLock cnodeRootObjId, .read),
+       (tcbLock targetTcbTid, .write)])
+    (targetCnodeRootObjId.map (fun cn => (cnodeLock cn, .read)))
+
 -- ============================================================================
 -- SM3.B.3 (audit-pass-5) — PIP-chain-walk start markers
 -- ============================================================================
@@ -1744,6 +1763,10 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- the run-queue / replenish-queue slots are SM5.A's separate `SchedLockId` domain).
   | .tcbSetAffinity =>
       [.tcb, .cnode, .schedContext]
+  -- PR #887 review: `setThreadFaultHandlerOp` writes the target TCB's
+  -- `faultHandler` and reads the target's root CNode to validate the CPtr.
+  | .tcbSetFaultHandler =>
+      [.tcb, .cnode]
   -- WS-SM SM6.B: bind/unbind a notification to a TCB.  Both the notification
   -- (write — `boundTCB`) and the bound TCB (write — `boundNotification`) are in
   -- the footprint, plus the CNode (read) covering the capability resolution.
@@ -2771,5 +2794,25 @@ theorem lockSet_consistent_tcbSetAffinity (callerTid : ThreadId)
         cases boundSc with
         | none => simp at hpp
         | some sc => simp at hpp; rw [← hpp]; simp; decide)
+
+/-- PR #887 review, for `.tcbSetFaultHandler`: the base three locks plus the
+optional target-CNode read. -/
+theorem lockSet_consistent_tcbSetFaultHandler (callerTid : ThreadId)
+    (cnRoot : ObjId) (targetTcb : ThreadId) (targetCnRoot : Option ObjId) :
+    ∀ p ∈ (lockSet_tcbSetFaultHandler callerTid cnRoot targetTcb targetCnRoot).pairs,
+      p.fst.kind ∈ permittedKinds .tcbSetFaultHandler :=
+  lockSet_consistent_base_plus_opt _ _ _
+    (by intro p hMem
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        exact absurd hMem (by intro h; cases h))
+    (by intro pp hpp
+        cases targetCnRoot with
+        | none => simp at hpp
+        | some cn => simp at hpp; rw [← hpp]; simp; decide)
 
 end SeLe4n.Kernel.Concurrency

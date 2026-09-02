@@ -1723,6 +1723,38 @@ theorem decodeSetAffinityArgs_roundtrip (args : SetAffinityArgs) :
         Except.bind, Pure.pure, Except.pure]
 
 -- ============================================================================
+-- Review round (PR #887): fault-handler configuration decode (`tcbSetFaultHandler`)
+-- ============================================================================
+
+/-- Per-syscall argument structure for `tcbSetFaultHandler`.
+    Register mapping: x2 = the fault-handler CPtr, interpreted in the **target
+    thread's** CSpace (seL4's `fault_ep`).  The target thread comes from the
+    capability target; the CPtr is validated downstream by
+    `setThreadFaultHandlerOp` (it must resolve to an endpoint capability
+    carrying send and grant-or-grant-reply). -/
+structure SetFaultHandlerArgs where
+  handlerCPtr : SeLe4n.CPtr
+  deriving Repr, DecidableEq
+
+/-- Decode `tcbSetFaultHandler` arguments from message registers.  Requires 1
+    message register (the CPtr word). -/
+def decodeSetFaultHandlerArgs (decoded : SyscallDecodeResult)
+    : Except KernelError SetFaultHandlerArgs := do
+  let r0 ← requireMsgReg decoded.msgRegs 0
+  pure { handlerCPtr := SeLe4n.CPtr.ofNat r0.val }
+
+/-- Encode `tcbSetFaultHandler` arguments into message registers. -/
+@[inline] def encodeSetFaultHandlerArgs (args : SetFaultHandlerArgs) : Array RegValue :=
+  #[⟨args.handlerCPtr.toNat⟩]
+
+/-- SetFaultHandlerArgs decode round-trip. -/
+theorem decodeSetFaultHandlerArgs_roundtrip (args : SetFaultHandlerArgs) :
+    decodeSetFaultHandlerArgs (stubDecoded (encodeSetFaultHandlerArgs args)) = .ok args := by
+  simp [decodeSetFaultHandlerArgs, encodeSetFaultHandlerArgs, stubDecoded, requireMsgReg,
+        Bind.bind, Except.bind, Pure.pure, Except.pure]
+  rfl
+
+-- ============================================================================
 -- WS-SM SM9.A.10: audit-trail read and drain arguments
 -- ============================================================================
 
