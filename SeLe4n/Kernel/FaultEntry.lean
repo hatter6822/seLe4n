@@ -419,10 +419,11 @@ theorem syscallCapFault_not_dispatchable (lctx : LabelingContext) (st : SystemSt
 
 /-- PR #887 review round 3: the same statement one level up, at the typed ABI
 entry the hardware calls.  When `syscallDispatchFromAbi` takes the
-capability-fault arm (`syscallDispatchFromAbi_capFault_blocks`), the state it
-commits leaves the caller undispatchable on the executing core — the `.blocks`
-outcome the seam hands the Rust side is backed by a thread that is in fact
-blocked, never one left runnable at the `SVC`. -/
+capability-fault arm (`syscallDispatchFromAbi_capFault_faulted`), the state it
+commits leaves the caller undispatchable on the executing core — the `.faulted`
+outcome the seam hands the Rust side (tag 2, on which the trap layer halts) is
+backed by a thread that is in fact descheduled, never one left runnable at the
+`SVC`. -/
 theorem syscallDispatchFromAbi_capFault_not_dispatchable
     (ctx : LabelingContext) (executingCore : CoreId)
     (syscallId : UInt32) (msgInfo : UInt64)
@@ -438,9 +439,9 @@ theorem syscallDispatchFromAbi_capFault_not_dispatchable
         (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid ke
         = some fault)
     (hCommit : Platform.FFI.syscallDispatchFromAbi ctx executingCore syscallId msgInfo
-        x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st = Except.ok (.blocks, st')) :
+        x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st = Except.ok (.faulted, st')) :
     ¬ dispatchableOnCore st' tid executingCore := by
-  rw [Platform.FFI.syscallDispatchFromAbi_capFault_blocks ctx executingCore syscallId msgInfo
+  rw [Platform.FFI.syscallDispatchFromAbi_capFault_faulted ctx executingCore syscallId msgInfo
     x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid ke fault hMsg hCur hSyscall hCap]
     at hCommit
   have hSt : st' = Platform.FFI.deliverSyscallCapFault ctx executingCore

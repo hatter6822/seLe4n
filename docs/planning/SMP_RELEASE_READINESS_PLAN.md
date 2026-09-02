@@ -721,6 +721,15 @@ routing match, and `deliver_fault`'s two halts must be unconditional terminal
 statements — with ten more token-preserving mutations, each nesting the
 token under a condition or inverting the predicate around it.
 
+**Review round 5 (PR #887).**  One finding, real: the capability fault
+delivered from the SVC seam answered `.blocks`, whose interim trap-layer
+handling resumes the caller past the `SVC` behind a sentinel.  A third
+outcome, `SyscallOutcome.faulted` (tag 2), now carries a delivered
+syscall fault; `dispatch_svc` decodes it to `SvcOutcome::Faulted` and the
+handler halts on it (`halt_after_delivered_syscall_fault`) pending SM10.1,
+as after every other delivered fault — pinned by
+`scan_trap_rs_faulted_outcome_halts`.
+
 The finding, as the audit stated it:
 
 The largest phase, and the one that closes the audit's most serious security

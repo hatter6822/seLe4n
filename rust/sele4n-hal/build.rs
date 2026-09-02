@@ -125,6 +125,7 @@ fn main() {
     // wrong handler, or to none.
     scan_trap_rs_classifies_via_lean();
     scan_trap_rs_abort_fallback_halts();
+    scan_trap_rs_faulted_outcome_halts();
 
     // WS-SM SM2.D.5 (verified-lock FFI bridge contract): verify the
     // SM2.D lock-bridge module is present and every required FFI
@@ -174,6 +175,7 @@ fn main() {
     verify_lean_upcall_scanner();
     verify_handler_routing_scanner();
     verify_abort_fallback_scanner();
+    verify_faulted_outcome_scanner();
     scan_tlb_rs_outer_shareable_guards_intact();
 
     // Only build assembly for aarch64 targets
@@ -3982,5 +3984,214 @@ fn halt_abort_before_lean_ready(core_id: u64, esr: u64, elr: u64) -> ! {
                 "build.rs self-check: `abort_fallback_status` accepted a broken fixture: {what}"
             );
         }
+    }
+}
+
+/// PR #887 review round 5: **a delivered syscall fault halts the core.**
+///
+/// The Lean dispatch answers a capability fault it delivered with outcome
+/// tag 2 (`SyscallOutcome.faulted`), distinct from a block (tag 1): the
+/// model restarts that caller *at* the `SVC` on its handler's reply, so the
+/// `Blocked` arm's sentinel — which resumes the caller past the `SVC` —
+/// would run a thread the model has waiting on a fault.  Two relations, on
+/// the statement-level view: `dispatch_svc` decodes tag 2 to
+/// `SvcOutcome::Faulted`, and the handler's `Faulted` arm is exactly one
+/// unconditional statement, the diverging `halt_after_delivered_syscall_fault(`.
+fn scan_trap_rs_faulted_outcome_halts() {
+    let trap = std::fs::read_to_string("src/trap.rs")
+        .unwrap_or_else(|e| panic!("build.rs: cannot read `src/trap.rs`: {e}"));
+    let dispatch = std::fs::read_to_string("src/svc_dispatch.rs")
+        .unwrap_or_else(|e| panic!("build.rs: cannot read `src/svc_dispatch.rs`: {e}"));
+    if let Err(why) = faulted_outcome_status(&trap, &dispatch) {
+        panic!("PR #887 review round 5 regression: {why}");
+    }
+}
+
+/// The relation behind `scan_trap_rs_faulted_outcome_halts`, on the two
+/// source texts: `Ok(())` or the first reason it does not hold.
+fn faulted_outcome_status(trap_raw: &str, dispatch_raw: &str) -> Result<(), String> {
+    let (_, dispatch) = rust_code_views(dispatch_raw);
+    if !dispatch.contains("2 => Ok(SvcOutcome::Faulted),") {
+        return Err(
+            "`svc_dispatch.rs` does not decode outcome tag 2 to `SvcOutcome::Faulted` — \
+                    a delivered syscall fault would be read as a block and resumed"
+                .to_string(),
+        );
+    }
+    let (_, trap) = rust_code_views(trap_raw);
+    let handler = trap
+        .find("fn handle_synchronous_exception(")
+        .ok_or_else(|| "`trap.rs` has no `fn handle_synchronous_exception(`".to_string())?;
+    let body_open = block_open_after(&trap, handler)
+        .ok_or_else(|| "`handle_synchronous_exception` has no body".to_string())?;
+    let body_close = matching_close_brace(&trap, body_open)
+        .ok_or_else(|| "`handle_synchronous_exception`'s body is unbalanced".to_string())?;
+    let arm_at = body_open
+        + trap[body_open..body_close]
+            .find("SvcOutcome::Faulted) =>")
+            .ok_or_else(|| {
+                "`handle_synchronous_exception` has no `SvcOutcome::Faulted` arm — a delivered \
+                 syscall fault would fall through to another arm"
+                    .to_string()
+            })?;
+    let arm_open = block_open_after(&trap, arm_at)
+        .ok_or_else(|| "the `Faulted` arm has no block".to_string())?;
+    let arm_close = matching_close_brace(&trap, arm_open)
+        .ok_or_else(|| "the `Faulted` arm's block is unbalanced".to_string())?;
+    let statements = top_level_statements(&trap, arm_open, arm_close);
+    let sole_halt = statements.len() == 1
+        && trap[statements[0].0..statements[0].1]
+            .trim()
+            .starts_with("halt_after_delivered_syscall_fault(");
+    if !sole_halt {
+        return Err(
+            "the `Faulted` arm of `handle_synchronous_exception` is not exactly one \
+                    unconditional `halt_after_delivered_syscall_fault(…)` statement — the caller \
+                    would be resumed past the `SVC` its handler restarts it at"
+                .to_string(),
+        );
+    }
+    if trap[arm_open..=arm_close].contains("set_return_frame(") {
+        return Err("the `Faulted` arm publishes a return frame".to_string());
+    }
+    let helper = trap
+        .find("fn halt_after_delivered_syscall_fault(")
+        .ok_or_else(|| "no `fn halt_after_delivered_syscall_fault(`".to_string())?;
+    let helper_open = block_open_after(&trap, helper)
+        .ok_or_else(|| "`halt_after_delivered_syscall_fault` has no body".to_string())?;
+    let helper_close = matching_close_brace(&trap, helper_open)
+        .ok_or_else(|| "`halt_after_delivered_syscall_fault`'s body is unbalanced".to_string())?;
+    if !trap[helper..helper_open].contains("-> !") {
+        return Err("`halt_after_delivered_syscall_fault` does not diverge (`-> !`)".to_string());
+    }
+    let helper_statements = top_level_statements(&trap, helper_open, helper_close);
+    let helper_last = helper_statements
+        .last()
+        .map(|&(lo, hi)| trap[lo..hi].trim())
+        .unwrap_or("");
+    if !(statement_diverges(helper_last) && helper_last.contains("fatal_halt(")) {
+        return Err(
+            "`halt_after_delivered_syscall_fault` does not END in `fatal_halt(`".to_string(),
+        );
+    }
+    Ok(())
+}
+
+/// Token-preserving self-check for `faulted_outcome_status`.
+fn verify_faulted_outcome_scanner() {
+    const GOOD_TRAP: &str = r#"
+pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
+    let esr = frame.esr_el1;
+    halt_if_kernel_origin(frame, esr);
+    let exception_class = classify_synchronous_exception(esr);
+    match exception_class {
+        sync_class::SVC => {
+            let args = crate::svc_dispatch::SyscallArgs::from_trap_frame(frame);
+            let dispatched = match u32::try_from(frame.x7()) {
+                Ok(syscall_id) => crate::svc_dispatch::dispatch_svc(syscall_id, &args),
+                Err(_) => Err(crate::svc_dispatch::DispatchError::InvalidSyscallId),
+            };
+            match dispatched {
+                Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) => frame.set_return_frame(regs),
+                // The caller took a fault at the seam: halt pending the successor install.
+                Ok(crate::svc_dispatch::SvcOutcome::Faulted) => {
+                    halt_after_delivered_syscall_fault(frame);
+                }
+                Ok(crate::svc_dispatch::SvcOutcome::Blocked) => {
+                    frame.set_return_frame(crate::svc_dispatch::blocked_resume_sentinel_regs());
+                }
+                Err(e) => frame.set_return_frame(crate::svc_dispatch::error_frame_regs(
+                    e.kernel_error_discriminant(),
+                )),
+            }
+        }
+        sync_class::KERNEL_ABORT => {
+            halt_on_kernel_abort(frame, esr);
+        }
+        _ => {
+            deliver_fault(frame, error_code::USER_EXCEPTION);
+        }
+    }
+}
+
+fn halt_after_delivered_syscall_fault(frame: &TrapFrame) -> ! {
+    crate::kprintln!("syscall fault delivered; halting (x7=0x{:x})", frame.x7());
+    crate::cpu::fatal_halt()
+}
+"#;
+    const GOOD_DISPATCH: &str = r#"
+pub enum SvcOutcome {
+    Frame([u64; 6]),
+    Blocked,
+    Faulted,
+}
+pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<SvcOutcome, DispatchError> {
+    let (tag, regs) = run(syscall_id, args);
+    match tag {
+        0 => Ok(SvcOutcome::Frame(regs)),
+        1 => Ok(SvcOutcome::Blocked),
+        2 => Ok(SvcOutcome::Faulted),
+        other => panic!("unknown outcome tag {other}"),
+    }
+}
+"#;
+    if let Err(why) = faulted_outcome_status(GOOD_TRAP, GOOD_DISPATCH) {
+        panic!("build.rs self-check: the good faulted-outcome fixture was refused: {why}");
+    }
+    let trap_mutations: [(&str, &str, &str); 5] = [
+        (
+            "the Faulted arm resuming behind the sentinel (helper token kept in a comment)",
+            "                Ok(crate::svc_dispatch::SvcOutcome::Faulted) => {\n                    halt_after_delivered_syscall_fault(frame);\n                }\n",
+            "                Ok(crate::svc_dispatch::SvcOutcome::Faulted) => {\n                    // halt_after_delivered_syscall_fault(frame);\n                    frame.set_return_frame(crate::svc_dispatch::blocked_resume_sentinel_regs());\n                }\n",
+        ),
+        (
+            "the halt nested under a condition",
+            "                    halt_after_delivered_syscall_fault(frame);\n",
+            "                    if frame.x0() == 0 {\n                        halt_after_delivered_syscall_fault(frame);\n                    }\n",
+        ),
+        (
+            "a statement after the halt",
+            "                    halt_after_delivered_syscall_fault(frame);\n                }\n                Ok(crate::svc_dispatch::SvcOutcome::Blocked)",
+            "                    halt_after_delivered_syscall_fault(frame);\n                    let _ = frame.x0();\n                }\n                Ok(crate::svc_dispatch::SvcOutcome::Blocked)",
+        ),
+        (
+            "the helper mentioned in a string only",
+            "                    halt_after_delivered_syscall_fault(frame);\n",
+            "                    let _why = \"halt_after_delivered_syscall_fault(frame)\";\n",
+        ),
+        (
+            "the helper no longer ending in the halt",
+            "    crate::kprintln!(\"syscall fault delivered; halting (x7=0x{:x})\", frame.x7());\n    crate::cpu::fatal_halt()\n",
+            "    crate::cpu::fatal_halt();\n    crate::kprintln!(\"syscall fault delivered; halting (x7=0x{:x})\", frame.x7());\n    loop {}\n",
+        ),
+    ];
+    for (what, from, to) in trap_mutations {
+        assert!(
+            GOOD_TRAP.contains(from),
+            "build.rs self-check: faulted-outcome mutation `{what}` does not apply"
+        );
+        let mutated = GOOD_TRAP.replacen(from, to, 1);
+        assert_ne!(
+            mutated, GOOD_TRAP,
+            "build.rs self-check: faulted-outcome mutation `{what}` is inert"
+        );
+        if faulted_outcome_status(&mutated, GOOD_DISPATCH).is_ok() {
+            panic!("build.rs self-check: `faulted_outcome_status` accepted a broken trap fixture: {what}");
+        }
+    }
+    let decode_as_block = GOOD_DISPATCH.replacen(
+        "2 => Ok(SvcOutcome::Faulted),",
+        "2 => Ok(SvcOutcome::Blocked),",
+        1,
+    );
+    assert_ne!(
+        decode_as_block, GOOD_DISPATCH,
+        "build.rs self-check: the decode mutation is inert"
+    );
+    if faulted_outcome_status(GOOD_TRAP, &decode_as_block).is_ok() {
+        panic!(
+            "build.rs self-check: `faulted_outcome_status` accepted tag 2 decoded as a block \
+                (the `Faulted` variant still declared)"
+        );
     }
 }

@@ -698,6 +698,37 @@ token and broke the relation.
 
 Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR4
 
+### Review round 5 (PR #887)
+
+One finding, on the round-3 fix-up head, and a real one (high): **a
+capability fault delivered from the SVC seam was answered with the generic
+`.blocks` outcome.**  The trap layer handles that outcome by poisoning the
+caller's frame with the blocked-resume sentinel and returning, after which
+`trap.S` restores the frame and `eret`s past the `SVC` — so on hardware the
+thread would run on while the model had it descheduled and waiting on its
+handler, whose reply restarts it *at* the `SVC` (`svcFaultIP`).  Every other
+delivered fault halts pending SM10.1; this one resumed.
+
+* **A third outcome.**  `SyscallOutcome.faulted` (tag 2, `tagWord`; the
+  mailbox frame is zero, as for a block) is what the capability-fault arm
+  hands back (`syscallDispatchFromAbi_capFault_faulted`,
+  `syscallDispatchFromAbi_capFault_not_dispatchable` restated on it;
+  `tagWord_faulted_ne_returns` / `tagWord_faulted_ne_blocks` pin the tag
+  apart from both others).  `dispatch_svc` decodes tag 2 to
+  `SvcOutcome::Faulted`, and the handler's `Faulted` arm is one
+  unconditional statement, `halt_after_delivered_syscall_fault` — the same
+  SM10.1 halt the unknown-syscall and abort deliveries take.  When SM10.1
+  installs successors, `.faulted` and `.blocks` install one alike; what
+  differs is only what the interim trap layer may do, and a block's
+  sentinel-and-resume is exactly what a fault must not get.
+* **Pinned by** `scan_trap_rs_faulted_outcome_halts` (the tag-2 decode and
+  the arm's sole halting statement, on the statement-level view, with six
+  token-preserving mutations), the host test
+  `delivered_syscall_fault_halts`, the suite's tag check in §7e, and Tier 3
+  anchors.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR4
+
 ## v0.34.43 — WS-RR RR3: `ipcInvariantFull` de-threaded, dispatch payoff landed
 
 **One PR, one version.**  The work is RR3.1–RR3.26 — the whole phase.  The

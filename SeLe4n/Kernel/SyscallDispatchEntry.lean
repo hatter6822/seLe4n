@@ -602,7 +602,9 @@ def syscallDispatchCrossCoreEntry
   -- stranded into the next syscall.  Inert when nothing was owed.
   completeIcacheMaintenance result.2.2.2.2.2
   -- WS-RA: the export's scalar return is the outcome tag (0 = the mailbox
-  -- frame is the caller's return; 1 = the caller blocked, no frame).
+  -- frame is the caller's return; 1 = the caller blocked, no frame; 2 = the
+  -- caller faulted at the seam, no frame, and the trap layer halts pending
+  -- SM10.1 — PR #887 review round 5).
   pure result.1.tagWord
 
 /-- **WS-SM SM6.A** structural marker: `syscallDispatchCrossCoreEntry` unfolds to

@@ -1124,21 +1124,45 @@ on a waiting receiver — never from the syscall id alone. -/
 inductive SyscallOutcome where
   | returns (frame : SyscallReturnFrame)
   | blocks
+  /-- PR #887 review round 5: the caller **took a fault at the seam** — a
+  failed capability lookup delivered to its fault handler, or the fail-closed
+  suspend when no handler could take it.  Like `.blocks`, no frame exists for
+  it; unlike `.blocks`, the caller is not waiting on an IPC partner but on a
+  fault reply that restarts it *at* the `SVC` (`svcFaultIP`), so the interim
+  trap layer must not `eret` it past the `SVC` behind a sentinel frame — it
+  halts, as it does after every other delivered fault pending SM10.1
+  (`halt_after_delivered_syscall_fault`).  When SM10.1 installs successors,
+  `.faulted` and `.blocks` install one alike. -/
+  | faulted
   deriving Repr, DecidableEq
 
 namespace SyscallOutcome
 
 /-- The outcome tag the `lean_syscall_dispatch_cross_core` export returns
 (the frame itself crosses through the per-core mailbox — plan §3.3):
-`0` = a frame was written, `1` = the caller blocked and no frame exists. -/
+`0` = a frame was written, `1` = the caller blocked and no frame exists,
+`2` = the caller faulted at the seam (PR #887 review round 5) — no frame,
+and the trap layer halts rather than resumes. -/
 def tagWord : SyscallOutcome → UInt64
   | .returns _ => 0
   | .blocks    => 1
+  | .faulted   => 2
 
-/-- The two tags are distinct — a blocked outcome cannot be mistaken for a
+/-- The tags are distinct — a blocked outcome cannot be mistaken for a
 frame delivery at the boundary. -/
 theorem tagWord_blocks_ne_returns (f : SyscallReturnFrame) :
     tagWord .blocks ≠ tagWord (.returns f) := by
+  simp [tagWord]
+
+/-- …nor a faulted one for a frame delivery… -/
+theorem tagWord_faulted_ne_returns (f : SyscallReturnFrame) :
+    tagWord .faulted ≠ tagWord (.returns f) := by
+  simp [tagWord]
+
+/-- …nor a faulted one for a block: the trap layer's `Blocked` arm resumes
+the caller behind a sentinel, its `Faulted` arm halts, and the two must
+never be confused at the boundary. -/
+theorem tagWord_faulted_ne_blocks : tagWord .faulted ≠ tagWord .blocks := by
   simp [tagWord]
 
 /-- The mailbox frame for an outcome: a blocked caller's mailbox stays
@@ -1151,6 +1175,7 @@ this model: the model stages real frames only. -/
 def mailboxFrame : SyscallOutcome → SyscallReturnFrame
   | .returns f => f
   | .blocks    => .zero
+  | .faulted   => .zero
 
 end SyscallOutcome
 

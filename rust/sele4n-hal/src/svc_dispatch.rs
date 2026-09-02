@@ -498,6 +498,17 @@ pub enum SvcOutcome {
     /// `0`) decode as a **false success** — the same fail-open class the
     /// retired pre-WS-RA protocol had (PR #866 review).
     Blocked,
+    /// PR #887 review round 5: the caller **took a fault at the seam** — a
+    /// failed capability lookup delivered to its fault handler, or the
+    /// fail-closed suspend when no handler could take it (outcome tag 2,
+    /// `SyscallOutcome.faulted`).  No frame exists, as for `Blocked`; but
+    /// the model restarts this caller *at* the `SVC` on its handler's
+    /// reply, so the `Blocked` sentinel — which `eret`s the caller past the
+    /// `SVC` — would resume a thread the model has waiting on a fault.  The
+    /// trap layer halts on this variant pending the SM10.1 successor
+    /// install, exactly as it does after a delivered unknown-syscall or
+    /// abort fault (`halt_after_delivered_syscall_fault`).
+    Faulted,
 }
 
 /// WS-RA: the label-encoded error frame for a prefilter rejection —
@@ -592,6 +603,11 @@ pub fn blocked_resume_sentinel_regs() -> [u64; 6] {
 ///                                   [`blocked_resume_sentinel_regs`]
 ///                                   until the SM10.1 context restore
 ///                                   installs a successor instead).
+///   `Ok(SvcOutcome::Faulted)`     — the caller took a fault at the seam
+///                                   (tag 2); no frame exists and the trap
+///                                   layer halts pending SM10.1 rather
+///                                   than resume the caller past the `SVC`
+///                                   its handler's reply restarts it at.
 ///   `Err(error)`                  — prefilter rejection (invalid syscall
 ///                                   id / argument count); the trap layer
 ///                                   surfaces it as a label-encoded error
@@ -671,7 +687,8 @@ pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<SvcOutcome, D
     match tag {
         0 => Ok(SvcOutcome::Frame(regs)),
         1 => Ok(SvcOutcome::Blocked),
-        // `SyscallOutcome.tagWord` is total over {0, 1}; anything else
+        2 => Ok(SvcOutcome::Faulted),
+        // `SyscallOutcome.tagWord` is total over {0, 1, 2}; anything else
         // means the FFI boundary itself is broken.  Fail closed and loud,
         // like every impossible-input arm in this crate.
         other => panic!("lean_syscall_dispatch_cross_core returned unknown outcome tag {other}"),
@@ -692,8 +709,9 @@ pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<SvcOutcome, D
 //
 // WS-RA: the scalar return is the OUTCOME TAG (0 = the caller's return
 // frame was published into this core's `RETURN_FRAMES` slot via
-// `ffi_syscall_return_frame`; 1 = the caller blocked, no frame).  The
-// retired bit-63 word is gone.
+// `ffi_syscall_return_frame`; 1 = the caller blocked, no frame; 2 = the
+// caller faulted at the seam, no frame, and the trap layer halts — PR #887
+// review round 5).  The retired bit-63 word is gone.
 //
 // In test builds (`#[cfg(test)]`) a Rust-side stub publishes the
 // label-encoded `KernelError::NotImplemented` error frame and returns

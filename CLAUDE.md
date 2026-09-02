@@ -913,7 +913,9 @@ What remains is owed to SM10.1: return-frame *delivery* at the context restore,
 and the cancellation/timeout error-frame staging.  Until that seam flips, a
 blocked caller's frame is poisoned with the fail-closed
 `blocked_resume_sentinel_regs()` so a stale request register can never decode as
-a success.
+a success.  A caller that took a fault at the seam is outcome tag 2
+(`.faulted`) and is never poisoned-and-resumed: the core halts pending SM10.1
+(PR #887 review round 5).
 
 Plan: [`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](docs/planning/SYSCALL_RETURN_ABI_PLAN.md).
 
@@ -1300,8 +1302,12 @@ code may assume:
   PC (`svcFaultIP`), so a payload-free reply re-issues the syscall, and
   `ELR_EL1`, `SPSR_EL1`, `SP_EL0`, `x30` cross the ABI for it
   (`lean_syscall_dispatch_cross_core` takes fifteen words).  The outcome is
-  `.blocks` and the caller is not dispatchable afterwards
-  (`syscallDispatchFromAbi_capFault_blocks`,
+  `.faulted` — outcome tag 2, distinct from a frame (0) and a block (1), on
+  which the SVC arm **halts** pending SM10.1 exactly as the unknown-syscall
+  delivery does (`halt_after_delivered_syscall_fault`, PR #887 review round
+  5), because a block's sentinel frame would `eret` the caller past the
+  `SVC` the model has it restart at — and the caller is not dispatchable
+  afterwards (`syscallDispatchFromAbi_capFault_faulted`,
   `syscallDispatchFromAbi_capFault_not_dispatchable`); every error-frame
   theorem at the seam is stated on the complementary arm (`hNoCapFault`).  A
   `.replyRecv` whose *reply* capability fails to resolve still returns the
@@ -1318,6 +1324,10 @@ code may assume:
   its not-ready path calls `halt_abort_before_lean_ready` rather than
   publishing a status frame: an abort leaves `ELR_EL1` on the faulting
   instruction, so a returned frame is `eret`ed straight back into the abort.
+  A fault raised at the SVC seam halts too (outcome tag 2, `.faulted`,
+  `halt_after_delivered_syscall_fault`, PR #887 review round 5): the model
+  restarts that caller *at* the `SVC`, and a `.blocks` sentinel would `eret`
+  it past the `SVC` instead.
   **A fallback may publish a return frame only on a seam whose exception
   advanced the PC** — the SVC seam, where the unknown-syscall path keeps its
   not-ready frame and where the not-ready behaviour as a whole is RR5's

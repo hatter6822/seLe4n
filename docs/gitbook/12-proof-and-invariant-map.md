@@ -592,10 +592,11 @@ Bundle level:
   through the target's CSpace at set time, with the bundle, the object store
   and non-interference).
   Review round 3 added, all production, in `Platform/FFI.lean` and
-  `Kernel/FaultEntry.lean`: `syscallDispatchFromAbi_capFault_blocks` (a
+  `Kernel/FaultEntry.lean`: `syscallDispatchFromAbi_capFault_faulted` (a
   failed capability lookup on a syscall `capFaultReceivePhase?` names is
   delivered — `syscallCapFaultOf` / `deliverSyscallCapFault` — and the
-  outcome is `.blocks`), `syscallCapFault_not_dispatchable` /
+  outcome is `.faulted`, tag 2, on which the trap layer halts; review
+  round 5), `syscallCapFault_not_dispatchable` /
   `syscallDispatchFromAbi_capFault_not_dispatchable` (the caller is not
   dispatchable afterwards), `syscallCapFaultOf_none_of_no_fault_phase` /
   `_of_resolve_ok` (the discharges for every error-frame theorem's

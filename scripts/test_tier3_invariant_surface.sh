@@ -899,7 +899,23 @@ run_check "INVARIANT" rg -n '^def capFaultReceivePhase\?' SeLe4n/Platform/FFI.le
 run_check "INVARIANT" rg -n '^theorem capFaultReceivePhase\?_none_iff_records' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^def deliverSyscallCapFault' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^def svcFaultIP \(elr : UInt64\) : UInt64 := elr - 4' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_capFault_blocks' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_capFault_faulted' SeLe4n/Platform/FFI.lean
+# PR #887 review round 5: a delivered syscall fault is a DISTINCT outcome
+# (tag 2) on which the trap layer halts — never the blocked-resume sentinel,
+# which would `eret` the caller past the `SVC` its handler restarts it at.
+run_check "INVARIANT" rg -n '^  \| faulted$' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^  \| \.faulted   => 2$' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem tagWord_faulted_ne_blocks' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^                \.ok \(\.faulted,$' SeLe4n/Platform/FFI.lean
+run_negative_check "INVARIANT" rg -n '^                \.ok \(\.blocks,$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^        2 => Ok\(SvcOutcome::Faulted\),' rust/sele4n-hal/src/svc_dispatch.rs
+run_check "INVARIANT" rg -n -U 'Ok\(crate::svc_dispatch::SvcOutcome::Faulted\) => \{\n\s+halt_after_delivered_syscall_fault\(frame\);\n\s+\}' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n '^fn halt_after_delivered_syscall_fault\(frame: &TrapFrame\) -> !' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n '^fn scan_trap_rs_faulted_outcome_halts\(\)' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn faulted_outcome_status\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn verify_faulted_outcome_scanner\(\)' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^    scan_trap_rs_faulted_outcome_halts\(\);' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^    verify_faulted_outcome_scanner\(\);' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n '^theorem syscallCapFault_not_dispatchable' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_capFault_not_dispatchable' SeLe4n/Kernel/FaultEntry.lean
 # Relation, not presence: the producer decides on the RESOLUTION half of the

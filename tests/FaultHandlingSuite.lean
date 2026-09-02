@@ -1252,7 +1252,7 @@ private def seamErrorFrame (r : Except KernelError (SyscallOutcome × SystemStat
 private def seamCapFault (r : Except KernelError (SyscallOutcome × SystemState))
     (f : Fault) : Bool :=
   match r with
-  | .ok (.blocks, st) => (pendingFaultOf st faulter).map (·.fault) == some f
+  | .ok (.faulted, st) => (pendingFaultOf st faulter).map (·.fault) == some f
   | _ => false
 
 private def runSyscallCapFaultChecks : IO Unit := do
@@ -1260,8 +1260,11 @@ private def runSyscallCapFaultChecks : IO Unit := do
   match seamFaultE with
   | .error e => assertBool s!"seam capFault pipeline: {e}" false
   | .ok s =>
-      assertBool "a Call whose endpoint CPtr resolves to nothing BLOCKS the caller — no error frame"
-        (match s.outcome with | .blocks => true | .returns _ => false)
+      assertBool "a Call whose endpoint CPtr resolves to nothing FAULTS the caller — no error frame"
+        (match s.outcome with | .faulted => true | .blocks => false | .returns _ => false)
+      assertBool "the faulted outcome's tag is 2 — distinct from a frame (0) and a block (1), so the trap layer halts instead of resuming"
+        (s.outcome.tagWord == 2 && SyscallOutcome.tagWord .blocks == 1 &&
+          SyscallOutcome.tagWord (.returns .zero) == 0)
       assertBool "the caller is parked on the handler endpoint as a Call sender"
         (ipcStateOf s.afterFault faulter == some (.blockedOnCall epHandler))
       assertBool "the caller carries a capFault: the CPtr, the send phase, the resolution's error"

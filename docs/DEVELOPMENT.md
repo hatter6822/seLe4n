@@ -112,7 +112,9 @@ It is aligned to the **current project state**:
   full width, and made the not-ready abort fallback halt
   (`halt_abort_before_lean_ready`; the host lane keeps the frame as its
   observable, `scan_trap_rs_abort_fallback_halts` pins that it is host-only).
-  Both are
+  A fault raised at the SVC seam is outcome tag 2 (`SyscallOutcome.faulted`),
+  on which the SVC arm halts too (`halt_after_delivered_syscall_fault`,
+  review round 5).  Both are
   dormant behind the per-core `lean_ready` gate until SM10.1; a core that
   delivers a fault today would halt, because it has descheduled the faulting
   thread and cannot yet install a successor.  Tests:

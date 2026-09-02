@@ -586,6 +586,26 @@ fn deliver_fault(frame: &mut TrapFrame, fallback_discriminant: u32) {
 /// exists before the runtime that creates it — and pinned by
 /// `abort_before_lean_ready_halts` on the host lane, where `fatal_halt`
 /// panics.
+/// **PR #887 review round 5**: a syscall-raised fault has been delivered (or
+/// the caller suspended fail-closed) by the Lean dispatch — outcome tag 2,
+/// `SyscallOutcome.faulted`.  The model has descheduled the caller and, on
+/// the handler's reply, restarts it at the `SVC` (`svcFaultIP`); the
+/// hardware cannot honour either until the SM10.1 context restore installs
+/// a successor, and returning here would `eret` the caller past the `SVC`
+/// it is to re-issue.  So the core stops, as after every other delivered
+/// fault.  Unreachable today (no core sets `lean_ready`, so no Lean
+/// dispatch runs on hardware); pinned by `delivered_syscall_fault_halts` on
+/// the host lane, where `fatal_halt` panics, and by
+/// `scan_trap_rs_faulted_outcome_halts` in `build.rs`.
+fn halt_after_delivered_syscall_fault(frame: &TrapFrame) -> ! {
+    crate::kprintln!(
+        "syscall fault delivered; halting pending the SM10.1 context restore (x7=0x{:x} ELR=0x{:016x})",
+        frame.x7(),
+        frame.elr_el1
+    );
+    crate::cpu::fatal_halt()
+}
+
 #[cfg_attr(not(feature = "hw_target"), allow(dead_code))]
 fn halt_abort_before_lean_ready(core_id: u64, esr: u64, elr: u64) -> ! {
     crate::kprintln!(
@@ -749,6 +769,17 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
             // documented collision.
             match dispatched {
                 Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) => frame.set_return_frame(regs),
+                // PR #887 review round 5: the caller took a fault at the
+                // seam (a failed capability lookup delivered to its handler,
+                // or the fail-closed suspend).  No frame exists, and the
+                // model restarts the caller AT the `SVC` on its handler's
+                // reply — the `Blocked` sentinel would `eret` it past the
+                // `SVC` instead.  So this arm halts pending the SM10.1
+                // successor install, as the delivered unknown-syscall and
+                // abort paths do.
+                Ok(crate::svc_dispatch::SvcOutcome::Faulted) => {
+                    halt_after_delivered_syscall_fault(frame);
+                }
                 Ok(crate::svc_dispatch::SvcOutcome::Blocked) => {
                     // SM10.1 context-restore hook: the successor's frame
                     // install lands here when `contextRestoreSeamLive`
@@ -1357,6 +1388,19 @@ mod tests {
     #[should_panic]
     fn abort_before_lean_ready_halts() {
         halt_abort_before_lean_ready(0, ec::DABT_LOWER << 26, 0x4_0000);
+    }
+
+    /// **PR #887 review round 5**: a delivered syscall fault (outcome tag 2)
+    /// halts the core pending SM10.1 — returning would `eret` the caller
+    /// past the `SVC` the model has it restart at.  On the host lane
+    /// `fatal_halt` panics, which is the observable.
+    #[test]
+    #[should_panic]
+    fn delivered_syscall_fault_halts() {
+        let mut frame = zero_frame();
+        frame.esr_el1 = ec::SVC_AARCH64 << 26;
+        frame.gprs[7] = 2;
+        halt_after_delivered_syscall_fault(&frame);
     }
 
     /// **PR #887 review**: a current-EL abort syndrome halts on its own class,

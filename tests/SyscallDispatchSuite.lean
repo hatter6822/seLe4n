@@ -400,7 +400,7 @@ private def isErrorFrameFor (outcome : Kernel.Architecture.SyscallOutcome)
 /-- Does this outcome carry *some* error on its x1 label? -/
 private def isSomeErrorFrame (outcome : Kernel.Architecture.SyscallOutcome) : Bool :=
   match outcome with
-  | .blocks => false
+  | .blocks | .faulted => false
   | .returns f =>
       match MessageInfo.decode f.x1.toNat with
       | some mi => (Kernel.Architecture.ofErrorLabel? mi.label).isSome

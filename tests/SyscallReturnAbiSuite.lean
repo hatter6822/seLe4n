@@ -355,6 +355,8 @@ private def runUnitReturnWitness : IO Unit := do
       match outcome with
       | .blocks =>
           assertBool "a signal never blocks the signaller" false
+      | .faulted =>
+          assertBool "a signal on a resolved capability never faults the signaller" false
       | .returns frame => do
           assertBool "FLIPPED: the Unit frame is the zero frame, not the cap pointer"
             (frame == .zero && frame.x0 != capPtrValue.toUInt64)
@@ -390,6 +392,8 @@ private def runBadgeDeliveryWitness : IO Unit := do
           match outcome with
           | .blocks =>
               assertBool "a pending badge means the wait returns, not blocks" false
+          | .faulted =>
+              assertBool "a wait on a resolved capability never faults" false
           | .returns frame => do
               assertBool "FLIPPED: the wait's frame carries the badge in x0"
                 (frame.x0 == signalledBadge.toUInt64)
@@ -713,6 +717,7 @@ private def outcomeLine (tag : String)
   match r with
   | .error e => s!"[ret-abi] {tag}: dispatch-error {reprStr e}"
   | .ok (.blocks, _) => s!"[ret-abi] {tag}: outcome=blocks tag=1 (no frame for the caller)"
+  | .ok (.faulted, _) => s!"[ret-abi] {tag}: outcome=faulted tag=2 (no frame; the trap layer halts)"
   | .ok (.returns f, _) =>
       s!"[ret-abi] {tag}: outcome=returns tag=0 {frameCells f} {decodeCell f}"
 
@@ -848,7 +853,7 @@ private def runBlockedWaiterStagingWitnesses : IO Unit := do
       assertBool "9c: the receive's own outcome is the consumed message (immediate half)"
         (match out2 with
           | .returns f => f.x0 == epBadgeVal.toUInt64 && f.x2 == 7 && f.x3 == 8
-          | .blocks => false)
+          | .blocks | .faulted => false)
       assertBool "9c: the completed sender's staged frame is the unit zero frame"
         (senderFrame == .zero)
   -- 9d — the reply delivers `.call`'s frame
@@ -875,14 +880,14 @@ private def runBlockedWaiterStagingWitnesses : IO Unit := do
       assertBool "9f: the query's outcome carries the resolved ServiceId in x0"
         (match out with
           | .returns f => f.x0 == queriedSid.toUInt64 && f.x1 == 0
-          | .blocks => false)
+          | .blocks | .faulted => false)
       assertBool "9f: the arm staged the word (the boundary read is of fresh data)"
         ((stagedFrame st' callerTid).x0 == queriedSid.toUInt64)
       assertBool "9f: the word decodes as a success value, end to end"
         (match out with
           | .returns f =>
               rustDecodeResponse (postTrapRegs f) == .ok queriedSid.toUInt64 #[0, 0, 0, 0]
-          | .blocks => false)
+          | .blocks | .faulted => false)
   -- 9g — the self-suspend returns-unit split (§3.5's parenthetical)
   match selfSuspendScenario with
   | .error e => assertBool s!"9g dispatches (got .error {reprStr e})" false

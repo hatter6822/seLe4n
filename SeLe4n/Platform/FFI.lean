@@ -1771,8 +1771,11 @@ def syscallCapFaultOf (layout : SeLe4n.SyscallRegisterLayout) (st : SystemState)
 abort entry's delivery, at the SVC seam: spill the trap frame's window, build
 the context from the spilled file with the `SVC` instruction as the restart
 PC, and run the flow-checked delivery on the executing core.  The result is
-the committed state; the outcome is `.blocks`, because the faulting thread is
-now waiting on its handler and no frame exists for it. -/
+the committed state; the outcome is `.faulted` (tag 2), because the faulting
+thread is now waiting on its handler, no frame exists for it, and — until
+SM10.1 installs successors — the trap layer must halt rather than `eret` the
+thread past the `SVC` the handler's reply will restart it at (PR #887 review
+round 5). -/
 def deliverSyscallCapFault (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (st : SystemState)
     (tid : SeLe4n.ThreadId) (fault : Fault) (w : FaultRegisterWindow)
@@ -1846,7 +1849,10 @@ Pipeline:
      dispatcher's gate ran, on a syscall `capFaultReceivePhase?` names),
      deliver a `capFault` to the thread's fault handler instead of returning
      the error — seL4's `handleInvocation` / `handleRecv` — and hand back
-     `.blocks`.
+     `.faulted` (outcome tag 2; PR #887 review round 5): a delivered fault,
+     on which the trap layer halts pending SM10.1 as it does for an
+     unknown-syscall delivery, never the `.blocks` sentinel that would
+     resume the thread past the `SVC`.
      The trap frame's `ELR_EL1`, `SPSR_EL1`, `SP_EL0` and `x30` cross for
      this: the fault context is built from the spilled window
      (`syscallWindow`) with the `SVC` instruction as the restart PC
@@ -1894,9 +1900,10 @@ def syscallDispatchFromAbi
                 -- PR #887 review round 3: a syscall whose capability lookup
                 -- failed is **delivered**, not returned — seL4's
                 -- `handleInvocation` / `handleRecv` `CapFault`.  The outcome
-                -- is `.blocks`: the thread now waits on its handler, and no
-                -- frame exists for it until the handler replies.
-                .ok (.blocks,
+                -- is `.faulted` (tag 2): the thread now waits on its handler,
+                -- no frame exists for it, and the trap layer halts rather
+                -- than resumes it (PR #887 review round 5).
+                .ok (.faulted,
                      deliverSyscallCapFault ctx executingCore stRegs tid fault
                        (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)
                        elr spsr)
@@ -2185,7 +2192,7 @@ theorem syscallDispatchFromAbi_total
             cases hCap : syscallCapFaultOf SeLe4n.arm64DefaultLayout
                 (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid ke with
             | some fault =>
-                exact ⟨.blocks,
+                exact ⟨.faulted,
                        deliverSyscallCapFault ctx executingCore
                          (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid fault
                          (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)
@@ -2265,11 +2272,12 @@ theorem syscallDispatchFromAbi_error_of_syscallEntryChecked_error
 /-- PR #887 review round 3 (**the capability-fault arm**): when the checked
 dispatcher refuses and the refusal is the syscall's failed capability
 lookup, the seam **delivers** the fault — the outcome is
-`.blocks` and the committed state is the delivery on the executing core,
-built from the trap frame's window with the `SVC` instruction as the restart
-PC.  The error-frame theorems above are stated on the complementary arm
-(`hNoCapFault`); together the two cover the refusal path. -/
-theorem syscallDispatchFromAbi_capFault_blocks
+`.faulted` (tag 2, PR #887 review round 5) and the committed state is the
+delivery on the executing core, built from the trap frame's window with the
+`SVC` instruction as the restart PC.  The error-frame theorems above are
+stated on the complementary arm (`hNoCapFault`); together the two cover the
+refusal path. -/
+theorem syscallDispatchFromAbi_capFault_faulted
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32) (msgInfo : UInt64)
@@ -2285,7 +2293,7 @@ theorem syscallDispatchFromAbi_capFault_blocks
         (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid ke = some fault) :
     syscallDispatchFromAbi ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr
         elr spsr spEl0 x30 st
-      = Except.ok (.blocks,
+      = Except.ok (.faulted,
           deliverSyscallCapFault ctx executingCore
             (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid fault
             (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30) elr spsr) := by
