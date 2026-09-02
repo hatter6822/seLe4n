@@ -650,6 +650,16 @@ The review of the round-2 head found three more, fixed in the same round:
   so every footprint that resolves a CPtr carries the statement once rather
   than each restating or omitting it; the registry's completeness theorem and
   the suite's pins moved from six domains to seven.
+* **The index-reading gates and the working tree** (CI, first seen on this
+  round's push).  Tier 0 passed locally on the round-3 tree and failed in
+  CI on the same commit: `check_identifier_naming.py` reads the git *index*,
+  the local run happened before `git add`, and the Tier 3 anchor pinning
+  the new uncovered domain's registration spelled its owner's workstream
+  code.  The anchor now matches the registration with any non-empty owner
+  (the completeness theorem already holds the owner non-empty), and the
+  pre-commit hook runs the naming gate whenever a non-documentation file is
+  staged, so the check that reads the index runs at the one moment the
+  index is what will be committed.
 
 Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR4
 

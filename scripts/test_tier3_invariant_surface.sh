@@ -934,7 +934,7 @@ run_negative_check "INVARIANT" rg -n 'r ∈ faultHandlerRights → r ∈ faultHa
 run_check "INVARIANT" rg -n 'handlerEndpointObjId\.map \(fun ep => \(endpointLock ep, \.read\)\)' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n -U '\| \.tcbSetFaultHandler =>\n\s+\[\.tcb, \.cnode, \.endpoint\]' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^  \| cspaceWalkInteriorCnodes' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '\(\.cspaceWalkInteriorCnodes, "WS-RR RR7\.7 \(fine-lock Track C\)"\)' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '\(\.cspaceWalkInteriorCnodes, "[^"]+"\)' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # RR4.14/RR4.15: the reply seam — seL4's `doReplyTransfer` branch — and the two
 # live dispatch arms that must go through it.  Without the branch the fault
 # reply is verified and unreachable: a handler's ordinary `seL4_Reply` would

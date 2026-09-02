@@ -133,7 +133,13 @@ and CI checkouts are guarded without manual action). For CI contexts:
 
 The hook detects staged `.lean` files, builds each modified module, checks
 for `sorry` in staged content, and **blocks the commit** if any build fails
-or sorry is found. Do NOT bypass it with `--no-verify`.
+or sorry is found. Do NOT bypass it with `--no-verify`.  It also runs the
+identifier-naming gate (`scripts/check_identifier_naming.py`) whenever a
+non-documentation file is staged (PR #887 review round 3): that gate reads
+the **git index**, so a Tier 0 run on unstaged edits checks the *previous*
+content and passes while the commit fails in CI — which is how one review
+round shipped a workstream token in a Tier 3 anchor.  Stage first, then run
+`test_tier0_hygiene.sh`; the hook is the backstop.
 
 ## Source layout
 
