@@ -88,7 +88,10 @@ WS-AN Phase AN9 closes every hardware-binding deferred item from
   **halts** (`halt_abort_before_lean_ready`) instead of publishing a
   status frame, because an abort's frame would be `eret`ed straight back
   into the abort — the fallback frame is now the host lane's alone, and
-  `scan_trap_rs_abort_fallback_halts` pins it there.
+  `scan_trap_rs_abort_fallback_halts` pins it there; since the fourth round
+  every one of these scanners asks its question of top-level statements
+  (`top_level_statements`), so a halt or a divergence nested under a
+  condition, or an inverted readiness predicate, no longer passes.
   **Dormant behind the per-core `lean_ready` gate**
   until SM10.1: a core that delivers a fault has descheduled the
   faulting thread and cannot install a successor, so `deliver_fault`

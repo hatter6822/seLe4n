@@ -935,6 +935,23 @@ run_check "INVARIANT" rg -n 'handlerEndpointObjId\.map \(fun ep => \(endpointLoc
 run_check "INVARIANT" rg -n -U '\| \.tcbSetFaultHandler =>\n\s+\[\.tcb, \.cnode, \.endpoint\]' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^  \| cspaceWalkInteriorCnodes' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '\(\.cspaceWalkInteriorCnodes, "[^"]+"\)' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# PR #887 review round 4: a region-scoped presence check is still a presence
+# check.  The scanners ask their questions of top-level STATEMENTS — the
+# negated guard's block ends in a divergence, the positive guard's condition
+# structurally entails readiness, the routing match is a top-level statement,
+# the halts are unconditional terminal statements — and the region-scoped
+# `contains` forms are forbidden.
+run_check "INVARIANT" rg -n '^fn top_level_statements\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn top_level_statements_in\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn statement_diverges\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn condition_entails_ready\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn is_negated_ready_call\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n 'top_level_statements\(code, block_open, block_close\)' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n 'top_level_statements_in\(&stripped, ready_close \+ 1, hw_close\)' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n 'starts_with\("match exception_class \{"\)' rust/sele4n-hal/build.rs
+run_negative_check "INVARIANT" rg -n 'let diverges = block\.contains\("return"\)' rust/sele4n-hal/build.rs
+run_negative_check "INVARIANT" rg -n 'if !tail\.contains\("halt_abort_before_lean_ready\("\)' rust/sele4n-hal/build.rs
+run_negative_check "INVARIANT" rg -n 'body\[init_end\.\.\]\.contains\("match exception_class \{"\)' rust/sele4n-hal/build.rs
 # RR4.14/RR4.15: the reply seam — seL4's `doReplyTransfer` branch — and the two
 # live dispatch arms that must go through it.  Without the branch the fault
 # reply is verified and unreachable: a handler's ordinary `seL4_Reply` would

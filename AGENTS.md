@@ -672,6 +672,23 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   `mod`-less, gate-less toy passes checks the real file would fail, which
   is how a missing `re.MULTILINE` and an unanchored `.file()` search both
   survived.
+
+  **A region-scoped presence check is still a presence check** (PR #887
+  review round 4).  Resolving the guard's block, the tail after a branch, or
+  the body after a binding and then asking whether a token occurs inside it
+  moves the haystack without changing the question: a divergence nested under
+  `if retry { … }`, a halt nested under `if frame.x0() == 0 { … }`, and a
+  routing `match` nested under a condition beside a second `match` all keep
+  the token and break the relation, and `if lean_ready(c) == false { … }` is
+  a condition without `||` that entails the *opposite* of readiness.  Ask the
+  question of **statements** — `rust/sele4n-hal/build.rs`'s
+  `top_level_statements` is the view: what a block does unconditionally is
+  what its top-level statements say, a divergence is the block's *last*
+  top-level statement, a routing construct is a top-level statement of the
+  body, and a predicate entails readiness only in a structural form
+  (`condition_entails_ready`: a conjunct that *is* the call).  The mutation
+  for this class nests the token under a condition, or inverts the predicate
+  around it.
 - **Invariant/Operations split**: each kernel subsystem has
   `Operations.lean` (transitions) and `Invariant.lean` (proofs). Keep
   this separation.

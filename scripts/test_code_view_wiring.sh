@@ -37,7 +37,7 @@ unset LEAN_CODE_VIEW_DIR
 
 FIXTURE_DIR="SeLe4n/Kernel"
 FIXTURE="${FIXTURE_DIR}/CodeViewWiringWitness.lean"
-# shellcheck disable=SC2317  # invoked by the EXIT trap below, not by name
+# shellcheck disable=SC2317,SC2329  # invoked by the EXIT trap below, not by name
 cleanup() { rm -f "${REPO_ROOT}/${FIXTURE}" "${REPO_ROOT}/.lake/build/leancodeview/${FIXTURE}"; }
 trap cleanup EXIT
 

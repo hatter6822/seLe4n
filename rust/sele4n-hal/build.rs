@@ -1262,21 +1262,71 @@ fn handler_routing_status(body: &str) -> Result<(), String> {
             );
         }
     }
-    if !body[init_end..].contains("match exception_class {") {
-        return Err(
+    // Round 4 (PR #887): the routing match is a TOP-LEVEL statement of the
+    // handler — one that runs on every entry — not a `match` found anywhere
+    // after the binding, which a copy nested under `if frame.x0() == 0 { … }`
+    // satisfied while a second match routed the rest.
+    let body_open = body.find('{').ok_or_else(|| {
+        "PR #887 review round 4: the handler text carries no body block".to_string()
+    })?;
+    let body_close = matching_close_brace(body, body_open)
+        .ok_or_else(|| "PR #887 review round 4: the handler's body is unbalanced".to_string())?;
+    let statements = top_level_statements(body, body_open, body_close);
+    let routing = statements
+        .iter()
+        .copied()
+        .find(|&(lo, _)| {
+            body[lo..]
+                .trim_start()
+                .starts_with("match exception_class {")
+        })
+        .ok_or_else(|| {
             "WS-RR RR4.25 regression: the handler binds the classifier's result but \
-                    no longer routes on it (`match exception_class`).  Calling it and \
-                    ignoring it is the same defect as not calling it"
+             does not route on it as a top-level statement (`match exception_class`).  \
+             Calling it and ignoring it — or matching on it only under a condition — \
+             is the same defect as not calling it"
+                .to_string()
+        })?;
+    if routing.0 < init_end {
+        return Err(
+            "PR #887 review round 4: the routing match precedes the binding it matches on"
                 .to_string(),
         );
     }
-    if !body.contains("sync_class::KERNEL_ABORT => {") {
+    let routing_text = &body[routing.0..routing.1];
+    if !routing_text.contains("sync_class::KERNEL_ABORT => {") {
         return Err(
-            "PR #887 regression: no `sync_class::KERNEL_ABORT` arm.  A current-EL \
-                    abort must halt on its own class, not fall through to the \
-                    unknown-exception delivery"
+            "PR #887 regression: no `sync_class::KERNEL_ABORT` arm in the routing \
+                    match.  A current-EL abort must halt on its own class, not fall \
+                    through to the unknown-exception delivery"
                 .to_string(),
         );
+    }
+    // No competing routing match: every `match` whose arms name a
+    // `sync_class::` tag must be the top-level routing match itself.
+    let routing_match_at = routing.0 + (routing_text.len() - routing_text.trim_start().len());
+    let mut search = 0usize;
+    while let Some(hit) = body[search..].find("match ") {
+        let at = search + hit;
+        search = at + "match ".len();
+        let bytes = body.as_bytes();
+        if at > 0 && (bytes[at - 1].is_ascii_alphanumeric() || bytes[at - 1] == b'_') {
+            continue;
+        }
+        let Some(open) = block_open_after(body, at) else {
+            continue;
+        };
+        let Some(close) = matching_close_brace(body, open) else {
+            continue;
+        };
+        if body[open..=close].contains("sync_class::") && at != routing_match_at {
+            let excerpt: String = body[at..].chars().take(40).collect();
+            return Err(format!(
+                "PR #887 review round 4: a second match routes on `sync_class::` tags \
+                 (`{excerpt}…`); the top-level `match exception_class` is the only \
+                 routing construct the handler may have"
+            ));
+        }
     }
     if let Some(idx) = body.find("ec::") {
         let excerpt: String = body[idx..].chars().take(40).collect();
@@ -1365,6 +1415,33 @@ fn verify_handler_routing_scanner() {
              classify_synchronous_exception_mirror(esr);\n    match exception_class {\n        \
              sync_class::KERNEL_ABORT => {\n            halt_on_kernel_abort(frame, esr);\n        \
              }\n        _ => {}\n    }\n}\n",
+        ),
+        // PR #887 review round 4: the routing match found after the binding
+        // but nested under a condition, and a competing routing match.
+        (
+            "the routing match nested under a condition",
+            "fn handle_synchronous_exception(frame: &mut TrapFrame) {\n    let esr = \
+             frame.esr_el1;\n    halt_if_kernel_origin(frame, esr);\n    let exception_class = \
+             classify_synchronous_exception(esr);\n    if frame.x0() == 0 {\n        match \
+             exception_class {\n            sync_class::KERNEL_ABORT => {\n                \
+             halt_on_kernel_abort(frame, esr);\n            }\n            _ => {}\n        }\n    \
+             }\n}\n",
+        ),
+        (
+            "a competing routing match on another scrutinee",
+            "fn handle_synchronous_exception(frame: &mut TrapFrame) {\n    let esr = \
+             frame.esr_el1;\n    halt_if_kernel_origin(frame, esr);\n    let exception_class = \
+             classify_synchronous_exception(esr);\n    let other = esr_ec(esr) as u32;\n    match \
+             other {\n        sync_class::SVC => {}\n        _ => {}\n    }\n    match \
+             exception_class {\n        sync_class::KERNEL_ABORT => {\n            \
+             halt_on_kernel_abort(frame, esr);\n        }\n        _ => {}\n    }\n}\n",
+        ),
+        (
+            "the KERNEL_ABORT arm outside the routing match",
+            "fn handle_synchronous_exception(frame: &mut TrapFrame) {\n    let esr = \
+             frame.esr_el1;\n    halt_if_kernel_origin(frame, esr);\n    let exception_class = \
+             classify_synchronous_exception(esr);\n    match exception_class {\n        _ => {}\n    \
+             }\n    let _arm = \"sync_class::KERNEL_ABORT => {\";\n}\n",
         ),
     ];
     for (what, source) in cases {
@@ -1650,6 +1727,18 @@ fn lean_upcall_sites(code: &str, exports: &[&str]) -> Result<Vec<LeanUpcallSite>
 ///
 /// Anything else — a `match`, a `while`, a stored boolean, a disjunction — is
 /// not recognised and reads as ungated, which is the fail-closed direction.
+///
+/// **Round 4 (PR #887): the relation is on statements, not on a region.**
+/// The first cut of this function resolved the guard's block and then looked
+/// for a divergence *token* inside it, and accepted any condition without
+/// `||` as entailing readiness — a region-scoped presence check, which
+/// `if !lean_ready(c) { if retry { return; } }` and
+/// `if lean_ready(c) == false { … }` both passed.  Now the negated guard's
+/// block must END in a diverging top-level statement
+/// (`top_level_statements` + `statement_diverges`), and the positive guard's
+/// condition must be a conjunction one of whose conjuncts is exactly the
+/// `lean_ready(…)` call (`condition_entails_ready`): no comparison, no `!`,
+/// no `||` anywhere.
 fn readiness_guard_dominates(code: &str, body_open: usize, call: usize) -> bool {
     let bytes = code.as_bytes();
     let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
@@ -1671,25 +1760,198 @@ fn readiness_guard_dominates(code: &str, body_open: usize, call: usize) -> bool 
             continue;
         };
         let cond = code[if_at + 2..block_open].trim();
-        if let Some(inner) = cond.strip_prefix('!') {
-            let inner = inner.trim();
-            let bare = inner.contains("lean_ready(")
-                && inner.ends_with(')')
-                && !inner.contains("&&")
-                && !inner.contains("||");
-            let block = &code[block_open..=block_close];
-            let diverges = block.contains("return")
-                || block.contains("panic!(")
-                || block.contains("fatal_halt(")
-                || block.contains("unreachable!(");
-            if bare && diverges && block_close < call {
+        if is_negated_ready_call(cond) {
+            let statements = top_level_statements(code, block_open, block_close);
+            let last_diverges = statements
+                .last()
+                .map(|&(lo, hi)| statement_diverges(&code[lo..hi]))
+                .unwrap_or(false);
+            if last_diverges && block_close < call {
                 return true;
             }
-        } else if !cond.contains("||") && block_open < call && call < block_close {
+        } else if condition_entails_ready(cond) && block_open < call && call < block_close {
             return true;
         }
     }
     false
+}
+
+/// Does `cond` — the text between an `if` and its `{` — entail readiness?
+/// Yes exactly when it contains no `||` and is a conjunction (`&&` at
+/// parenthesis depth zero) one of whose conjuncts is a bare `lean_ready(…)`
+/// call.  `lean_ready(c) == false`, `!lean_ready(c)`, `ready_flag` and
+/// `lean_ready(c) || x` all read as not entailing it — the fail-closed
+/// direction.
+fn condition_entails_ready(cond: &str) -> bool {
+    if cond.contains("||") {
+        return false;
+    }
+    split_top_level(cond, "&&")
+        .iter()
+        .any(|conjunct| is_bare_ready_call(conjunct))
+}
+
+/// Is `expr` exactly a call of `lean_ready` (optionally path-qualified,
+/// optionally parenthesised), with balanced arguments and nothing after the
+/// closing parenthesis?
+fn is_bare_ready_call(expr: &str) -> bool {
+    let mut e = expr.trim();
+    while e.starts_with('(') && e.ends_with(')') && matching_close_paren(e, 0) == Some(e.len() - 1)
+    {
+        e = e[1..e.len() - 1].trim();
+    }
+    let Some(rest) = e
+        .strip_prefix("crate::lean_ready::lean_ready(")
+        .or_else(|| e.strip_prefix("lean_ready::lean_ready("))
+        .or_else(|| e.strip_prefix("lean_ready("))
+    else {
+        return false;
+    };
+    let mut depth = 1i32;
+    for (index, ch) in rest.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return rest[index + 1..].trim().is_empty();
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+/// Is `cond` exactly `!lean_ready(…)` — the negated bare guard whose block
+/// must diverge?
+fn is_negated_ready_call(cond: &str) -> bool {
+    cond.trim()
+        .strip_prefix('!')
+        .map(is_bare_ready_call)
+        .unwrap_or(false)
+}
+
+/// The `)` matching the `(` at `open` in `text`, if balanced.
+fn matching_close_paren(text: &str, open: usize) -> Option<usize> {
+    let mut depth = 0i32;
+    for (index, ch) in text[open..].char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(open + index);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Split `text` on `sep` at parenthesis/bracket/brace depth zero.
+fn split_top_level<'a>(text: &'a str, sep: &str) -> Vec<&'a str> {
+    let bytes = text.as_bytes();
+    let mut parts = Vec::new();
+    let mut depth = 0i32;
+    let mut start = 0usize;
+    let mut i = 0usize;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'(' | b'[' | b'{' => depth += 1,
+            b')' | b']' | b'}' => depth -= 1,
+            _ if depth == 0 && text[i..].starts_with(sep) => {
+                parts.push(&text[start..i]);
+                i += sep.len();
+                start = i;
+                continue;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    parts.push(&text[start..]);
+    parts
+}
+
+/// The top-level statements of the block whose `{` is at `open` and whose
+/// matching `}` is at `close`, as byte spans of the block's interior.  A
+/// statement ends at a `;` at depth zero, or where a depth-zero brace block
+/// closes and is not continued by `else`; a trailing `;` after such a block
+/// belongs to that statement; a final expression without `;` is the last
+/// statement.  Parentheses, brackets and braces are tracked, and the views
+/// this runs on have strings and comments blanked, so no brace inside a
+/// literal can unbalance the count.
+///
+/// This is the view every divergence and routing question is asked on: what
+/// a block does *unconditionally* is what its top-level statements say, and a
+/// token nested under a conditional inside it says nothing about that.
+fn top_level_statements(code: &str, open: usize, close: usize) -> Vec<(usize, usize)> {
+    top_level_statements_in(code, open + 1, close)
+}
+
+/// `top_level_statements` over an arbitrary interior `[start, end)`.
+fn top_level_statements_in(code: &str, start: usize, end: usize) -> Vec<(usize, usize)> {
+    let bytes = code.as_bytes();
+    let mut out = Vec::new();
+    let mut depth = 0i32;
+    let mut paren = 0i32;
+    let mut stmt_start = start;
+    let mut i = start;
+    while i < end {
+        match bytes[i] {
+            b'(' | b'[' => paren += 1,
+            b')' | b']' => paren -= 1,
+            b'{' => depth += 1,
+            b'}' => {
+                depth -= 1;
+                if depth == 0 && paren == 0 {
+                    let mut next = i + 1;
+                    while next < end && bytes[next].is_ascii_whitespace() {
+                        next += 1;
+                    }
+                    if !code[next.min(end)..end].starts_with("else") {
+                        let stmt_end = if next < end && bytes[next] == b';' {
+                            next + 1
+                        } else {
+                            i + 1
+                        };
+                        out.push((stmt_start, stmt_end));
+                        stmt_start = stmt_end;
+                        i = stmt_end;
+                        continue;
+                    }
+                }
+            }
+            b';' if depth == 0 && paren == 0 => {
+                out.push((stmt_start, i + 1));
+                stmt_start = i + 1;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    if !code[stmt_start..end].trim().is_empty() {
+        out.push((stmt_start, end));
+    }
+    out
+}
+
+/// Does a top-level statement diverge unconditionally?  A `return`, a
+/// `panic!`, an `unreachable!`, or a call to `fatal_halt` — the four forms the
+/// HAL's fail-closed paths use.  A conditional that *contains* one does not:
+/// `if retry { return; }` reaches the next statement when `retry` is false.
+fn statement_diverges(statement: &str) -> bool {
+    let s = statement.trim().trim_end_matches(';').trim();
+    s == "return"
+        || s.starts_with("return ")
+        || s.starts_with("return(")
+        || s.starts_with("panic!(")
+        || s.starts_with("unreachable!(")
+        || s.starts_with("crate::cpu::fatal_halt(")
+        || s.starts_with("cpu::fatal_halt(")
+        || s.starts_with("fatal_halt(")
 }
 
 /// The `if` whose condition contains `at`: the nearest preceding `if` token
@@ -2085,6 +2347,41 @@ fn verify_lean_upcall_scanner() {
          crate::lean_ready::lean_ready(c) {\n        unsafe { lean_x(1) }\n    } else {\n        \
          0\n    }\n}\n",
         "a conjunction with the readiness check",
+    );
+    // PR #887 review round 4: a region-scoped presence check is still a
+    // presence check.  The divergence must be the negated block's LAST
+    // top-level statement, and the positive guard's condition must be the
+    // readiness call itself, not any comparison on it.
+    ungated(
+        "fn seam(c: usize, retry: bool) -> u32 {\n    if !crate::lean_ready::lean_ready(c) {\n        \
+         if retry {\n            return 0;\n        }\n    }\n    unsafe { lean_x(1) }\n}\n",
+        "a negated check whose divergence is nested under a condition",
+    );
+    ungated(
+        "fn seam(c: usize) -> u32 {\n    if crate::lean_ready::lean_ready(c) == false {\n        \
+         unsafe { lean_x(1) }\n    } else {\n        0\n    }\n}\n",
+        "an inverted comparison on the readiness check",
+    );
+    ungated(
+        "fn seam(c: usize) -> u32 {\n    if crate::lean_ready::lean_ready(c) != true {\n        \
+         unsafe { lean_x(1) }\n    } else {\n        0\n    }\n}\n",
+        "an inverted inequality on the readiness check",
+    );
+    ungated(
+        "fn seam(c: usize) -> u32 {\n    let ready = crate::lean_ready::lean_ready(c);\n    if ready \
+         {\n        unsafe { lean_x(1) }\n    } else {\n        0\n    }\n}\n",
+        "a readiness value consulted through a binding",
+    );
+    gated_by(
+        "fn seam(c: usize) -> u32 {\n    if !crate::lean_ready::lean_ready(c) {\n        \
+         crate::kprintln!(\"not ready\");\n        crate::cpu::fatal_halt();\n    }\n    unsafe { \
+         lean_x(1) }\n}\n",
+        "a fail-closed halt as the negated block's last statement",
+    );
+    gated_by(
+        "fn seam(c: usize) -> u32 {\n    if (crate::lean_ready::lean_ready(c)) {\n        unsafe { \
+         lean_x(1) }\n    } else {\n        0\n    }\n}\n",
+        "a parenthesised readiness check",
     );
 }
 
@@ -3503,10 +3800,21 @@ fn abort_fallback_status(raw: &str) -> Result<(), String> {
     let ready_close = matching_close_brace(&stripped, ready_open)
         .ok_or_else(|| "the readiness guard's block is unbalanced".to_string())?;
     let ready_branch = &stripped[ready_open..=ready_close];
-    if !ready_branch.contains("fatal_halt(") {
+    // Round 4 (PR #887): both halts are UNCONDITIONAL TERMINAL statements —
+    // the last top-level statement of the delivered arm is the SM10.1 halt,
+    // and the not-ready tail is exactly one statement, the helper call.  A
+    // halt nested under `if frame.x0() == 0 { … }` keeps the token and lets
+    // the function return on hardware, which is the wedge this pins against.
+    let ready_statements = top_level_statements(&stripped, ready_open, ready_close);
+    let ready_last = ready_statements
+        .last()
+        .map(|&(lo, hi)| stripped[lo..hi].trim())
+        .unwrap_or("");
+    if !(statement_diverges(ready_last) && ready_last.contains("fatal_halt(")) {
         return Err(
-            "the delivered arm (the readiness guard's true branch) no longer halts \
-                    pending the SM10.1 successor install"
+            "the delivered arm (the readiness guard's true branch) does not END in the \
+                    unconditional `fatal_halt()` that stands in for the SM10.1 successor \
+                    install"
                 .to_string(),
         );
     }
@@ -3518,11 +3826,16 @@ fn abort_fallback_status(raw: &str) -> Result<(), String> {
         );
     }
     let tail = &stripped[ready_close + 1..hw_close];
-    if !tail.contains("halt_abort_before_lean_ready(") {
+    let tail_statements = top_level_statements_in(&stripped, ready_close + 1, hw_close);
+    let tail_is_the_halt = tail_statements.len() == 1
+        && stripped[tail_statements[0].0..tail_statements[0].1]
+            .trim()
+            .starts_with("halt_abort_before_lean_ready(");
+    if !tail_is_the_halt {
         return Err(
             "the not-ready path of the `hw_target` block (after the readiness guard's \
-                    branch) does not call `halt_abort_before_lean_ready(` — a not-ready core \
-                    would return through the faulting instruction"
+                    branch) is not exactly one unconditional `halt_abort_before_lean_ready(…)` \
+                    statement — a not-ready core would return through the faulting instruction"
                 .to_string(),
         );
     }
@@ -3605,7 +3918,7 @@ fn halt_abort_before_lean_ready(core_id: u64, esr: u64, elr: u64) -> ! {
     if let Err(why) = abort_fallback_status(GOOD) {
         panic!("build.rs self-check: the good abort-fallback fixture was refused: {why}");
     }
-    let mutations: [(&str, &str, &str); 6] = [
+    let mutations: [(&str, &str, &str); 9] = [
         (
             "the not-ready halt moved into the ready branch (token kept, path broken)",
             "            crate::cpu::fatal_halt();\n        }\n        // A frame cannot fail-close an abort: halt.\n        halt_abort_before_lean_ready(core_id, frame.esr_el1, frame.elr_el1);\n",
@@ -3635,6 +3948,23 @@ fn halt_abort_before_lean_ready(core_id: u64, esr: u64, elr: u64) -> ! {
             "the delivered arm returning instead of halting (helper token kept)",
             "            crate::cpu::fatal_halt();\n        }\n",
             "            return;\n        }\n",
+        ),
+        // PR #887 review round 4: the halts must be unconditional terminal
+        // statements, not tokens somewhere in their region.
+        (
+            "the not-ready halt nested under a condition",
+            "        halt_abort_before_lean_ready(core_id, frame.esr_el1, frame.elr_el1);\n",
+            "        if frame.x0() == 0 {\n            halt_abort_before_lean_ready(core_id, frame.esr_el1, frame.elr_el1);\n        }\n",
+        ),
+        (
+            "the delivered arm's halt nested under a condition",
+            "            crate::cpu::fatal_halt();\n        }\n",
+            "            if core_id == 0 {\n                crate::cpu::fatal_halt();\n            }\n        }\n",
+        ),
+        (
+            "a statement after the not-ready halt",
+            "        halt_abort_before_lean_ready(core_id, frame.esr_el1, frame.elr_el1);\n    }\n",
+            "        halt_abort_before_lean_ready(core_id, frame.esr_el1, frame.elr_el1);\n        let _ = frame.x0();\n    }\n",
         ),
     ];
     for (what, from, to) in mutations {

@@ -663,6 +663,41 @@ The review of the round-2 head found three more, fixed in the same round:
 
 Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR4
 
+### Review round 4 (PR #887)
+
+Four findings on the round-3 head, every one of them one level down in the
+same class: the round-3 scanners resolved a *region* — a guard's block, the
+text after a branch, the body after a binding — and then asked whether a
+token occurred inside it, which is a presence check with a smaller haystack.
+A divergence nested under `if retry { … }`, a halt nested under
+`if frame.x0() == 0 { … }`, a routing match nested under a condition with a
+second match beside it, and `if lean_ready(c) == false { … }` all kept the
+token and broke the relation.
+
+* **The scanners now ask their questions of statements** (the class).
+  `top_level_statements` splits a block into the statements that run
+  unconditionally when it is entered, and every divergence and routing
+  question is asked of those: the negated readiness guard's block must *end*
+  in a diverging statement (`statement_diverges`: `return`, `panic!`,
+  `unreachable!`, `fatal_halt`), the delivered arm of `deliver_fault` must
+  end in the SM10.1 halt and its not-ready tail must be exactly one
+  statement, the helper call, and the handler's `match exception_class` must
+  be a top-level statement of its body, the only `match` whose arms name a
+  `sync_class::` tag, with the `KERNEL_ABORT` arm inside it.
+* **The positive readiness guard is structural** (`condition_entails_ready`):
+  a conjunction one of whose conjuncts is exactly the `lean_ready(…)` call —
+  no comparison, no `!`, no `||` anywhere — so `lean_ready(c) == false`,
+  `lean_ready(c) != true` and a readiness value consulted through a binding
+  all read as ungated.
+* **Ten more token-preserving mutations** pin the shapes: the nested
+  divergence, the two inverted comparisons, the bound readiness value, the
+  nested routing match, the competing routing match, the `KERNEL_ABORT` arm
+  outside the routing match, the nested not-ready halt, the nested delivered
+  halt, and a statement after the halt; a parenthesised readiness check and
+  a fail-closed halt as the negated block's last statement are admitted.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR4
+
 ## v0.34.43 — WS-RR RR3: `ipcInvariantFull` de-threaded, dispatch payoff landed
 
 **One PR, one version.**  The work is RR3.1–RR3.26 — the whole phase.  The

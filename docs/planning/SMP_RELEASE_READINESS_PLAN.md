@@ -710,6 +710,17 @@ class as round 2's, fixed this time at the mechanism:
   registered as `UncoveredLockDomain.cspaceWalkInteriorCnodes` (owner:
   RR7.7, fine-lock Track C).
 
+**Review round 4 (PR #887).**  Four findings on the round-3 head, all one
+level down in the same class — the scanners resolved a region and then
+looked for a token inside it.  Every one now asks its question of
+statements (`top_level_statements` in `build.rs`): the negated readiness
+guard's block must end in a diverging statement, the positive guard's
+condition must structurally entail readiness (`condition_entails_ready`),
+the handler's routing `match` must be a top-level statement and the only
+routing match, and `deliver_fault`'s two halts must be unconditional terminal
+statements — with ten more token-preserving mutations, each nesting the
+token under a condition or inverting the predicate around it.
+
 The finding, as the audit stated it:
 
 The largest phase, and the one that closes the audit's most serious security
