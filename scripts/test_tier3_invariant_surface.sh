@@ -811,6 +811,286 @@ run_check "INVARIANT" rg -n '^\[smp-ipc-4core\]' tests/fixtures/smp_ipc_4core.ex
 run_check "INVARIANT" rg -n 'smp_ipc_4core\.expected' tests/fixtures/smp_ipc_4core.expected.sha256
 run_check "INVARIANT" rg -n '^name = "smp_ipc_suite"' lakefile.toml
 run_check "INVARIANT" rg -n '^name = "smp_notification_suite"' lakefile.toml
+
+# WS-RR RR4 fault handling — the RR4.26 suite, its Tier-2 wiring, the RR4.27
+# golden fault trace (+ sha256 companion) it verifies byte-for-byte, the
+# delivery pipeline and trace emitter inside the suite, and the lakefile exe
+# registration.
+run_check "INVARIANT" rg -n '^def runFaultHandlingChecks' tests/FaultHandlingSuite.lean
+run_check "INVARIANT" rg -n '^run_check(_with_timeout)? "TRACE" lake exe fault_handling_suite' scripts/test_tier2_negative.sh
+run_check "INVARIANT" rg -n '^private def deliveryE' tests/FaultHandlingSuite.lean
+run_check "INVARIANT" rg -n '^private def faultTraceLines' tests/FaultHandlingSuite.lean
+run_check "INVARIANT" rg -n '^\[fault-4core\]' tests/fixtures/fault_handling_4core.expected
+run_check "INVARIANT" rg -n 'fault_handling_4core\.expected' tests/fixtures/fault_handling_4core.expected.sha256
+run_check "INVARIANT" rg -n '^name = "fault_handling_suite"' lakefile.toml
+# WS-RR RR4 surface: the fault type and wire format, the transitions, the
+# preservation / progress / non-interference payoffs, and the live seams.
+run_check "INVARIANT" rg -n '^inductive Fault where' SeLe4n/Model/Fault.lean
+run_check "INVARIANT" rg -n '^def encodeFault' SeLe4n/Kernel/Architecture/Fault.lean
+run_check "INVARIANT" rg -n '^theorem decodeFault_encodeFault' SeLe4n/Kernel/Architecture/Fault.lean
+run_check "INVARIANT" rg -n '^def resolveFaultHandler' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n '^def faultDeliverOnCore' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^def faultReplyOnCore' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^theorem faultDeliverOnCore_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/FaultPreservation.lean
+run_check "INVARIANT" rg -n '^theorem faultReplyOnCore_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/FaultPreservation.lean
+run_check "INVARIANT" rg -n '^theorem faultDeliverOnCore_not_dispatchable' SeLe4n/Kernel/IPC/Invariant/FaultProgress.lean
+# RR4.20: the flow gate is **production** (it is the arm the live entry calls;
+# a gate reachable only from a staged module is a gate the kernel does not
+# apply), and it carries RR4.19's progress guarantee through the denial.
+run_check "INVARIANT" rg -n '^def faultDeliverOnCoreChecked' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^theorem faultDeliverOnCoreChecked_flow_denied' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^theorem faultDeliverOnCoreChecked_not_dispatchable' SeLe4n/Kernel/IPC/Invariant/FaultProgress.lean
+run_check "INVARIANT" rg -n '^theorem faultDeliverOnCoreChecked_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/FaultPreservation.lean
+run_check "INVARIANT" rg -n '^theorem faultMessage_transfers_no_authority' SeLe4n/Kernel/InformationFlow/FaultFlow.lean
+run_check "INVARIANT" rg -n '@\[export lean_handle_fault\]' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n '@\[export lean_classify_synchronous_exception\]' SeLe4n/Kernel/FaultEntry.lean
+# PR #887 review round 2: the fault tags are the MCS layout of seL4's
+# `arch/shared_types.bf` — `Timeout` is 5 and `VMFault` is 6 — and the two
+# reserved tags below the VM fault are named and proven never carried, so the
+# non-MCS layout (`VMFault 5`) cannot be mistaken for this ABI again.
+run_check "INVARIANT" rg -n '^def debugException : Nat := 4' SeLe4n/Kernel/Architecture/Fault.lean
+run_check "INVARIANT" rg -n '^def timeout : Nat := 5' SeLe4n/Kernel/Architecture/Fault.lean
+run_check "INVARIANT" rg -n '^def vmFault : Nat := 6' SeLe4n/Kernel/Architecture/Fault.lean
+run_check "INVARIANT" rg -n '^theorem faultLabel_ne_timeout' SeLe4n/Kernel/Architecture/Fault.lean
+run_check "INVARIANT" rg -n '^theorem faultLabel_ne_debugException' SeLe4n/Kernel/Architecture/Fault.lean
+# PR #887 review round 2: the classifier upcall is a Lean-emitted symbol like
+# every other, so it sits behind the readiness gate — the declaration and the
+# call follow `lean_ready(` in the hardware classifier's body, the pinned Rust
+# mirror is the other branch and the host lane's classifier — and the set of
+# gated seams is DERIVED from the Lean tree's exports in `build.rs`, with the
+# hand-written table kept as the pin and the ungated upcalls as a reasoned
+# allowlist.  The negatives keep the old shapes out: the classifier called at
+# the function's top level, and the EC table compiled away on hardware (the
+# mirror needs it on every target).
+run_check "INVARIANT" rg -n -U 'lean_ready\(core_id as usize\) \{\n\s+extern "C" \{\n\s+fn lean_classify_synchronous_exception\(esr: u64\) -> u32;' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n '^fn classify_synchronous_exception_mirror\(esr: u64\) -> u32 \{' rust/sele4n-hal/src/trap.rs
+run_negative_check "INVARIANT" rg -n '^    unsafe \{ lean_classify_synchronous_exception\(esr\) \}' rust/sele4n-hal/src/trap.rs
+run_negative_check "INVARIANT" rg -n -U '#\[cfg\(any\(not\(feature = "hw_target"\), test\)\)\]\n\s*mod ec' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n '^fn scan_lean_upcalls_readiness_gated\(\)' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn verify_lean_upcall_scanner\(\)' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^    scan_lean_upcalls_readiness_gated\(\);' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^    verify_lean_upcall_scanner\(\);' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^const LEAN_READY_GATED_SEAMS' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^const LEAN_UPCALLS_OUTSIDE_THE_GATE' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^        "lean_classify_synchronous_exception",$' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n 'let hw = blank_extern_blocks\(hw_body\);' rust/sele4n-hal/build.rs
+# PR #887 review round 3.  (1) The SVC arm reads the syscall number at the
+# register's full width: an `as u32` narrowing of `x7` made `0x1_0000_0002`
+# dispatch as syscall 2, so the conversion is checked and its failure is the
+# unknown-syscall fault.  (2) The readiness scanner asks whether the gate
+# DOMINATES the upcall (the call sits in the guard's true branch, or after a
+# diverging negated guard), not whether `lean_ready(` occurs earlier in the
+# body.  (3) The routing check reads the ASSIGNMENT relation — the handler
+# binds `exception_class` from the classifier and matches on that binding —
+# rather than the presence of two tokens.  (4) A blocking IPC syscall whose
+# capability lookup fails is DELIVERED as a capFault through the flow-checked
+# delivery the abort entry uses, from a context built on the trap frame's
+# window with the SVC as the restart PC; the four words that build it cross
+# the ABI.
+run_check "INVARIANT" rg -n 'let dispatched = match u32::try_from\(frame\.x7\(\)\) \{' rust/sele4n-hal/src/trap.rs
+run_negative_check "INVARIANT" rg -n 'frame\.x7\(\) as u32' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n '^fn readiness_guard_dominates\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn handler_routing_status\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn verify_handler_routing_scanner\(\)' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^    verify_handler_routing_scanner\(\);' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n -U 'elr: frame\.elr_el1,\n\s+spsr: frame\.spsr_el1,\n\s+sp_el0: frame\.sp_el0,\n\s+x30: frame\.gprs\[30\],' rust/sele4n-hal/src/svc_dispatch.rs
+run_check "INVARIANT" rg -n '^def syscallCapFaultOf' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def capFaultReceivePhase\?' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem capFaultReceivePhase\?_none_iff_records' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def deliverSyscallCapFault' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def svcFaultIP \(elr : UInt64\) : UInt64 := elr - 4' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_capFault_faulted' SeLe4n/Platform/FFI.lean
+# PR #887 review round 5: a delivered syscall fault is a DISTINCT outcome
+# (tag 2) on which the trap layer halts — never the blocked-resume sentinel,
+# which would `eret` the caller past the `SVC` its handler restarts it at.
+run_check "INVARIANT" rg -n '^  \| faulted$' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^  \| \.faulted   => 2$' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem tagWord_faulted_ne_blocks' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^                \.ok \(\.faulted,$' SeLe4n/Platform/FFI.lean
+run_negative_check "INVARIANT" rg -n '^                \.ok \(\.blocks,$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^        2 => Ok\(SvcOutcome::Faulted\),' rust/sele4n-hal/src/svc_dispatch.rs
+run_check "INVARIANT" rg -n -U 'Ok\(crate::svc_dispatch::SvcOutcome::Faulted\) => \{\n\s+halt_after_delivered_syscall_fault\(frame\);\n\s+\}' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n '^fn halt_after_delivered_syscall_fault\(frame: &TrapFrame\) -> !' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n '^fn scan_trap_rs_faulted_outcome_halts\(\)' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn faulted_outcome_status\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn verify_faulted_outcome_scanner\(\)' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^    scan_trap_rs_faulted_outcome_halts\(\);' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^    verify_faulted_outcome_scanner\(\);' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^theorem syscallCapFault_not_dispatchable' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_capFault_not_dispatchable' SeLe4n/Kernel/FaultEntry.lean
+# Relation, not presence: the producer decides on the RESOLUTION half of the
+# lookup — a resolved capability refused on rights is the invocation's error
+# (seL4's `decodeInvocation`), never the lookup's fault — and hands the fault
+# to the flow-checked delivery, as the abort entry does.
+run_check "INVARIANT" rg -n '^          match syscallResolveCap gate st with' SeLe4n/Platform/FFI.lean
+run_negative_check "INVARIANT" rg -n 'match syscallLookupCap gate st with' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '\(faultDeliverOnCoreChecked ctx stW tid fault fctx executingCore\)\.1' SeLe4n/Platform/FFI.lean
+run_negative_check "INVARIANT" rg -n 'faultDeliverOnCore ctx stW' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '\(elr spsr spEl0 x30 : UInt64\) : BaseIO UInt64' SeLe4n/Kernel/SyscallDispatchEntry.lean
+# PR #887 review round 3, the review of the round-2 head.  (5) A not-ready
+# core that takes an EL0 abort halts — a frame would be `eret`ed back into the
+# abort — and the fallback frame is host-only; the relation is pinned in
+# `build.rs` and its shape here.  (6) The rights predicate is DEFINED from its
+# clause inventory; the vacuous theorem shape (a conclusion that is its own
+# hypothesis) is forbidden.  (7) The fault-handler lock set names the endpoint
+# it validates, and the CSpace walk's interior is a registered domain.
+run_check "INVARIANT" rg -n '^fn halt_abort_before_lean_ready\(core_id: u64, esr: u64, elr: u64\) -> !' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n '^        halt_abort_before_lean_ready\(core_id, frame\.esr_el1, frame\.elr_el1\);' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -U '#\[cfg\(not\(feature = "hw_target"\)\)\]\n\s+frame\.set_return_frame\(crate::svc_dispatch::error_frame_regs\(fallback_discriminant\)\);' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n '^fn scan_trap_rs_abort_fallback_halts\(\)' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn abort_fallback_status\(raw: &str\) -> Result<\(\), String>' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn verify_abort_fallback_scanner\(\)' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^    scan_trap_rs_abort_fallback_halts\(\);' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^    verify_abort_fallback_scanner\(\);' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^def faultHandlerRequiredRights : List \(List AccessRight\) := \[\[\.write\], \[\.grant, \.grantReply\]\]' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n '^def faultHandlerRights : List AccessRight := faultHandlerRequiredRights\.flatten' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n '^theorem faultHandlerRights_eq' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n '^theorem faultHandlerCapAuthorized_depends_only_on_faultHandlerRights' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_negative_check "INVARIANT" rg -n 'r ∈ faultHandlerRights → r ∈ faultHandlerRights' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n 'handlerEndpointObjId\.map \(fun ep => \(endpointLock ep, \.read\)\)' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n -U '\| \.tcbSetFaultHandler =>\n\s+\[\.tcb, \.cnode, \.endpoint\]' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^  \| cspaceWalkInteriorCnodes' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '\(\.cspaceWalkInteriorCnodes, "[^"]+"\)' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# PR #887 review round 4: a region-scoped presence check is still a presence
+# check.  The scanners ask their questions of top-level STATEMENTS — the
+# negated guard's block ends in a divergence, the positive guard's condition
+# structurally entails readiness, the routing match is a top-level statement,
+# the halts are unconditional terminal statements — and the region-scoped
+# `contains` forms are forbidden.
+run_check "INVARIANT" rg -n '^fn top_level_statements\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn top_level_statements_in\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn statement_diverges\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn ready_condition_argument\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn negated_ready_call_argument\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n 'top_level_statements\(code, block_open, block_close\)' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n 'top_level_statements_in\(&stripped, ready_close \+ 1, hw_close\)' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n 'starts_with\("match exception_class \{"\)' rust/sele4n-hal/build.rs
+run_negative_check "INVARIANT" rg -n 'let diverges = block\.contains\("return"\)' rust/sele4n-hal/build.rs
+run_negative_check "INVARIANT" rg -n 'if !tail\.contains\("halt_abort_before_lean_ready\("\)' rust/sele4n-hal/build.rs
+run_negative_check "INVARIANT" rg -n 'body\[init_end\.\.\]\.contains\("match exception_class \{"\)' rust/sele4n-hal/build.rs
+# PR #887 review rounds 6 and 7: provenance, sole consumption and location
+# are relations too.  The readiness guard's argument is resolved to the
+# executing PE through the statements dominating it; the routing match is
+# the handler's terminal statement and the only consumer of the class; an
+# aliased upcall fails closed; exemptions reconcile by occurrence; the
+# classifier's branches are bound to their values; the tag-2 decode and the
+# `Faulted` arm are located through parsed arms from each function's
+# terminal statement.  The first-occurrence and whole-file forms are
+# forbidden, and the two seams that bind the core id do so in release builds.
+run_check "INVARIANT" rg -n '^fn ready_argument_is_executing_core\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn executing_core_verdict\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn dominating_statements\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn is_tpidr_core_expression\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n 'ready_argument_is_executing_core\(code, body_open, if_at, arg\)' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn terminal_routing_match\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn match_arm_spans\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn word_occurrences\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n 'text\(span\) == "halt_if_kernel_origin\(frame, esr\);"' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n 'word_occurrences\(&body\[body_open\.\.=body_close\], "exception_class"\)' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn classifier_status\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn verify_classifier_scanner\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^    verify_classifier_scanner\(\);' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn reconcile_upcall_exemptions\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn verify_upcall_exemption_reconciliation\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^const LEAN_UPCALLS_OUTSIDE_THE_GATE: &\[\(&str, &str, &str, usize, &str\)\]' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn dispatch_decodes_faulted\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn handler_faulted_arm_halts\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn outcome_tag_binding_status\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn dispatched_binding_status\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n -U '#\[cfg\(feature = "hw_target"\)\]\n\s+assert_eq!\(\n\s+core_id,\n\s+crate::per_cpu::current_core_id_from_tpidr\(\),' rust/sele4n-hal/src/timer.rs
+run_check "INVARIANT" rg -n -U 'assert_eq!\(\n\s+core_idx as u64,\n\s+crate::per_cpu::current_core_id_from_tpidr\(\),' rust/sele4n-hal/src/smp.rs
+run_negative_check "INVARIANT" rg -n -U 'debug_assert_eq!\(\n\s+core_id,\n\s+crate::per_cpu::current_core_id_from_tpidr' rust/sele4n-hal/src/timer.rs
+run_negative_check "INVARIANT" rg -n 'let mut exempt_seen' rust/sele4n-hal/build.rs
+run_negative_check "INVARIANT" rg -n 'dispatch\.contains\("2 => Ok\(SvcOutcome::Faulted\),"\)' rust/sele4n-hal/build.rs
+run_negative_check "INVARIANT" rg -n '\.find\("SvcOutcome::Faulted\) =>"\)' rust/sele4n-hal/build.rs
+run_negative_check "INVARIANT" rg -n '\.find\("halt_if_kernel_origin\(frame, esr\);"\)' rust/sele4n-hal/build.rs
+run_negative_check "INVARIANT" rg -n 'body_no_decl\.contains\("classify_synchronous_exception_mirror\(esr\)"\)' rust/sele4n-hal/build.rs
+run_negative_check "INVARIANT" rg -n 'let needle = format!\("\{symbol\}\("\);' rust/sele4n-hal/build.rs
+# RR4.14/RR4.15: the reply seam — seL4's `doReplyTransfer` branch — and the two
+# live dispatch arms that must go through it.  Without the branch the fault
+# reply is verified and unreachable: a handler's ordinary `seL4_Reply` would
+# wake the faulted thread `.ready` at the instruction that faulted.
+run_check "INVARIANT" rg -n '^def replyTransferOnCore' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^def replyTransferOnCoreChecked' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^theorem replyTransferOnCore_of_no_fault' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^theorem replyTransferOnCore_of_fault' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+# Relation, not presence: the arms must *call* the seam.  A check for the
+# seam's mere existence in `API.lean` would pass on a file that defines it and
+# never dispatches through it, which is the defect this closed.
+run_check "INVARIANT" rg -n 'replyTransferOnCore tid callerTid' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'replyTransferOnCoreChecked ctx tid callerTid' SeLe4n/Kernel/API.lean
+# RR4.20 relation, not presence: the live entry must call the **checked**
+# delivery.  Both names contain `faultDeliverOnCore`, so a presence check for
+# it passes on the ungated arm as well — the exact defect this replaced.  The
+# positive pins the gated call; the negative forbids the bare one anywhere in
+# the entry module, which is where the regression would land.
+run_check "INVARIANT" rg -n 'faultDeliverOnCoreChecked lctx stRegs tid f fctx c' SeLe4n/Kernel/FaultEntry.lean
+run_negative_check "INVARIANT" rg -n 'faultDeliverOnCore [a-z]' SeLe4n/Kernel/FaultEntry.lean
+# Fault-entry audit round, relation not presence: the delivery runs on the state the
+# trap frame's fault window was spilled into (`stRegs`), never on the entry's
+# raw pre-state — a delivery on `st` would build the fault context from the
+# register mirror's stale last-syscall contents and reinstall them on resume.
+# The spill must precede the context build, so both are pinned by the names
+# the body threads rather than by the helper's mere existence.
+run_check "INVARIANT" rg -n 'let stRegs := writeFaultRegistersToTcb st tid w' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n 'faultContextOfThread stRegs tid ectx\.elr ectx\.spsr' SeLe4n/Kernel/FaultEntry.lean
+run_negative_check "INVARIANT" rg -n 'faultContextOfThread st tid' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n '^theorem faultContextOfThread_writeFaultRegistersToTcb' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n '^theorem ofRegisterFile_spill' SeLe4n/Model/Fault.lean
+# …and the cross-core pokes are derived from the state diff, as the syscall
+# seam derives them, not read off the single SGI the Call chain surfaces.
+run_check "INVARIANT" rg -n 'PriorityInheritance\.computeCrossCoreSgis st st.. c' SeLe4n/Kernel/FaultEntry.lean
+run_negative_check "INVARIANT" rg -n '\.sgi\.toList' SeLe4n/Kernel/FaultEntry.lean
+# The Rust seam passes the fifteen words (syndrome + the fault window), and the
+# window is read from the saved trap frame — `frame.gprs` / `frame.sp_el0` —
+# so the extern's arity and its argument source are both pinned.
+run_check "INVARIANT" rg -n 'sp_el0, g\[30\],' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n 'let g = frame\.gprs;' rust/sele4n-hal/src/trap.rs
+# PR #887 review round — five findings, each pinned as the relation it closed:
+# (1) a kernel-origin exception is never a user fault: the classifier has the
+#     current-EL abort class, the entry gates on the saved PSTATE's EL, and the
+#     Rust handler halts on both before it routes;
+run_check "INVARIANT" rg -n '^  \| kernelAbort' SeLe4n/Kernel/Architecture/Fault.lean
+run_check "INVARIANT" rg -n '^def ExceptionContext\.takenFromEl0' SeLe4n/Kernel/Architecture/Fault.lean
+run_check "INVARIANT" rg -n '^theorem faultOfExceptionContext_kernelAbort' SeLe4n/Kernel/Architecture/Fault.lean
+run_check "INVARIANT" rg -n 'if ectx\.takenFromEl0 then' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n '^theorem faultEntryStep_kernel_origin_inert' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n '^    halt_if_kernel_origin\(frame, esr\);' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n 'if !exception_taken_from_el0\(frame\.spsr_el1\)' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n 'sync_class::KERNEL_ABORT => \{' rust/sele4n-hal/src/trap.rs
+# (2) the woken handler's return frame is staged by the delivery, as the
+#     `.call` arm stages it — relation, not presence: the staging must sit on
+#     the delivered arm between the Call and the fault record;
+run_check "INVARIANT" rg -n 'Architecture\.stageWokenDelivery st. wokenReceiver\? summary\.installedCount' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+# (3) resuming a thread retires the fault it carries, and the arm runs the
+#     resume on the retired state;
+run_check "INVARIANT" rg -n '^def retirePendingFaultForResume' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n 'resumeThreadOnCoreLive$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '\(retirePendingFaultForResume st vtid\.val\) vtid' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem retirePendingFaultForResume_pendingFault_none' SeLe4n/Kernel/IPC/Operations/Fault.lean
+# (4) the unknown-syscall fault has a live producer: the SVC arm routes an
+#     invalid syscall id to the seam instead of publishing an error frame;
+run_check "INVARIANT" rg -n '@\[export lean_handle_unknown_syscall\]' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n 'Err\(crate::svc_dispatch::DispatchError::InvalidSyscallId\) => \{' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -U '"deliver_unknown_syscall",\s*"lean_handle_unknown_syscall"' rust/sele4n-hal/build.rs
+# (5) `TCB.faultHandler` has a live writer, validated by the same resolution
+#     the fault path runs.
+run_check "INVARIANT" rg -n '^def setThreadFaultHandlerOp' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n 'match resolveFaultHandlerCPtr st tcb cptr with' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n '^theorem setThreadFaultHandlerOp_validated' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n 'match setThreadFaultHandlerOp st vtid args\.handlerCPtr with' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem setThreadFaultHandlerOp_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n '^theorem setThreadFaultHandlerOp_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n 'TcbSetFaultHandler = 34' rust/sele4n-types/src/syscall.rs
+run_check "INVARIANT" rg -n 'pub fn tcb_set_fault_handler' rust/sele4n-sys/src/tcb.rs
+# …and the labeling-context read that makes the gate meaningful: without it the
+# entry could call the checked arm with a context it invented.
+run_check "INVARIANT" rg -n 'Platform\.FFI\.getKernelLabelingContext' SeLe4n/Kernel/FaultEntry.lean
+# RR4.21: the abort arms deliver; the retired `.error .vmFault` return must not
+# come back.  A negative check, because the defect's shape is a *return*, not
+# an absence: the arm can be present and still hand the fault back.
+run_negative_check "INVARIANT" rg -n '=> \.error \.vmFault' \
+  SeLe4n/Kernel/Architecture/ExceptionModel.lean
 run_check "INVARIANT" rg -n 'test_qemu_smp_ipc\.sh' scripts/test_tier4_smp_bootcheck.sh
 # The QEMU exerciser's driver-detection guard and its pass gate must agree on the
 # `cross-core-ipc` banner tag (the contract the future SM10.1 kernel-image driver
@@ -1699,8 +1979,8 @@ run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_count' SeLe4n/K
 # repeating a `decide` drifted from it.  Anchoring the PAIR couples them: bump
 # the theorem without the sentence and this fails, which is the only mechanism
 # that has actually held.
-run_prose_check "INVARIANT" rg -n 'per-core boundary has 58 entries' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 58' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_prose_check "INVARIANT" rg -n 'per-core boundary has 59 entries' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 59' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_extends_canonical' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCoreComplete' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_is_complete' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
@@ -2405,7 +2685,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: linearOrder disagrees on exactly one of t
 run_prose_negative_check "INVARIANT" rg -n 'classification table \([0-9]+ entries\)' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 # WS-SM SM8.E.3 took the canonical boundary 39 -> 40 with the 2PL bracket;
 # SM9.A.11 took it 40 -> 42 with the two audit readers.
-run_check "INVARIANT" rg -n 'enforcementBoundaryExtended.length = 43' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryExtended.length = 44' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
 run_check "INVARIANT" rg -n '^  runEndpointPolicyGateChecks' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: a widening override cannot open a flow the lattice denies' tests/SmpInformationFlowSuite.lean
 
@@ -2815,7 +3095,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: it IS visible at the core it landed on' t
 run_check "INVARIANT" rg -n 'NEGATIVE: the remote wake is not confined to the EXECUTING core' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'SCOPE: the decidable slice cannot see a badge write' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^\[smp-information-flow\]' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'enforcement boundary: canonical 43' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'enforcement boundary: canonical 44' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'smp_information_flow\.expected' tests/fixtures/smp_information_flow.expected.sha256
 # The FIXTURE's independence probe must land on a core whose current thread the
 # low observer can SEE, or the reported set is `allCores` and the line is
@@ -2992,10 +3272,10 @@ run_check "INVARIANT" rg -n '\| \.auditRead\s+=> 31' SeLe4n/Model/Object/Types.l
 run_check "INVARIANT" rg -n '\| \.auditDrain\s+=> 32' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '31 => some \.auditRead' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '32 => some \.auditDrain' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^def count : Nat := 34' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def count : Nat := 35' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'AuditRead = 31' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'AuditDrain = 32' rust/sele4n-types/src/syscall.rs
-run_check "INVARIANT" rg -n 'pub const COUNT: usize = 34;' rust/sele4n-types/src/syscall.rs
+run_check "INVARIANT" rg -n 'pub const COUNT: usize = 35;' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'AuditFieldTooLarge = 55' rust/sele4n-types/src/error.rs
 
 # SM9.A.8: the safe wrappers.  Without them the syscalls are hand-encode-only,
@@ -3086,7 +3366,7 @@ run_prose_negative_check "INVARIANT" rg -n 'Partial readers are unchanged where 
 run_check "INVARIANT" rg -n 'capabilityOnly "auditReadFromCore"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_negative_check "INVARIANT" rg -n 'capabilityOnly "auditReadWord"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n 'capabilityOnly "auditDrainVisiblePrefix"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
-run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore.length = 58' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore.length = 59' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def lockSet_auditRead' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^def lockSet_auditDrain' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # PR #870 round 6 (the lock domain): a declared footprint covers the COMMITTED
@@ -3156,7 +3436,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: the PRE-EPOCH rule would have stamped thi
 run_check "INVARIANT" rg -n 'NEGATIVE: an unconfigured deployment still has the cliff' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^private def auditReaderTraceLines' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'audit view: trail 3 entries' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=34' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=35' tests/fixtures/smp_information_flow.expected
 # The end-to-end ABI witness: the returned word is the SELECTED one, not the
 # caller's own preloaded `x0`.  Without the staged frame the assertion below
 # would read back whatever the caller left there.
@@ -3376,7 +3656,7 @@ run_check "INVARIANT" rg -n '^private def refusalLedgerTraceLines' tests/SmpInfo
 run_check "INVARIANT" rg -n 'refusal seam: recordingSyscalls=2' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'refusal write: attempts=1 version=1 trailMoved=false' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'refusal read .partial.: status=SeLe4n.Model.KernelError.illegalAuthority' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=34 opcodes=30 readableStructures=2' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=35 opcodes=30 readableStructures=2' tests/fixtures/smp_information_flow.expected
 
 # ============================================================================
 # WS-SM SM9.C — the data-carrying declassification
@@ -3484,7 +3764,7 @@ run_negative_check "INVARIANT" rg -n 'declassifiedSignal' SeLe4n/Kernel/Informat
 # SM9.C.8: the syscall, both Rust mirrors and the seam classification the total
 # `refusalSeamClass` forced it to supply.
 run_check "INVARIANT" rg -n '^  \| declassifySignal' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n 'def count : Nat := 34' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n 'def count : Nat := 35' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'DeclassifySignal = 33' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'DeclassifySignal = 33' rust/sele4n-hal/src/svc_dispatch.rs
 run_check "INVARIANT" rg -n 'DeclassificationDeniedAtReceiver = 56' rust/sele4n-types/src/error.rs
@@ -4895,7 +5175,18 @@ run_check "INVARIANT" rg -n '^theorem errorLabel_never_zero' SeLe4n/Kernel/Archi
 run_check "INVARIANT" rg -n '^theorem errorLabel_roundtrip' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^theorem kernelErrorFitsLabel' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^theorem bit63Encoding_not_injective_on_badges' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^def syscallAbiVersion : Nat := 2' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^def syscallAbiVersion : Nat := 3' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+# ABI v3 (fault-handling audit round): kernel status rides in the top of the label range, so a
+# delivered fault message's `seL4_Fault_tag` is never read as a kernel error.
+# The base is pinned as a literal on all three sides; the two negatives keep
+# the v2 offset encoding from returning on either side of the boundary.
+run_check "INVARIANT" rg -n '^theorem errorLabelBase_eq : errorLabelBase = 0xFFF00' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem ofErrorLabel\?_none_of_lt_base' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem returnMessageInfo_label_lt_errorLabelBase' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem faultLabel_lt_errorLabelBase' SeLe4n/Kernel/Architecture/Fault.lean
+run_negative_check "INVARIANT" rg -n 'e\.toDiscriminant \+ 1' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n 'pub const ERROR_LABEL_BASE: u64 = \(1 << 20\) - 256' rust/sele4n-types/src/lib.rs
+run_negative_check "INVARIANT" rg -n 'kernel_error_discriminant as u64\) \+ 1\) << 9' rust/sele4n-hal/src/svc_dispatch.rs
 run_check "INVARIANT" rg -n '^def writeReturnFrameToTcb' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^def readReturnFrame' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^theorem readReturnFrame_writeReturnFrame' SeLe4n/Kernel/Architecture/SyscallReturn.lean
@@ -4922,7 +5213,7 @@ run_check "INVARIANT" rg -n '^theorem writeReturnFrameToTcb_preserves_projection
 run_check "INVARIANT" rg -n '^theorem stageDeliveredMessage_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_error_stages_no_frame' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n 'ffi_syscall_return_frame' rust/sele4n-hal/src/ffi.rs
-run_check "INVARIANT" rg -n 'pub const SYSCALL_ABI_VERSION: u64 = 2' rust/sele4n-types/src/lib.rs
+run_check "INVARIANT" rg -n 'pub const SYSCALL_ABI_VERSION: u64 = 3' rust/sele4n-types/src/lib.rs
 # PR #866 review: the Blocked trap arm must poison the frame with the
 # fail-closed blocked-resume sentinel until the context-restore seam
 # installs a successor — a silent revert to the no-op arm re-opens the

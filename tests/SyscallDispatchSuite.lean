@@ -22,7 +22,8 @@ WS-RC R2 wires through `syscallEntryChecked`:
 - `KernelError → UInt32` discriminant table mirrors
   `rust/sele4n-types/src/error.rs` exactly.
 - WS-RA: every discriminant rides the **offset** `x1` label
-  (`errorLabel = discriminant + 1`; label `0` = success), round-tripping
+  (`errorLabel = errorLabelBase + discriminant`; label `0` = success),
+  round-tripping
   through `ofErrorLabel?` — the bit-63 `encodeOk` / `encodeError`
   protocol is retired.
 - `bootAndInitialiseFromPlatform` installs the post-boot
@@ -164,12 +165,12 @@ private def sd002_errorLabelCarriage : IO Unit := do
           s!"discriminant {disc} must resolve to a KernelError"
     | some e => do
         expect s!"sd002b_label_offset_{disc}"
-          (Kernel.Architecture.errorLabel e == disc + 1)
-          s!"errorLabel must be discriminant + 1 for {disc}"
+          (Kernel.Architecture.errorLabel e == Kernel.Architecture.errorLabelBase + disc)
+          s!"errorLabel must be errorLabelBase + discriminant for {disc}"
         let frame := Kernel.Architecture.errorFrame e
         expect s!"sd002c_frame_x1_{disc}"
-          (frame.x1 == ((disc + 1) <<< 9).toUInt64)
-          s!"errorFrame x1 must carry label {disc + 1} at bit 9"
+          (frame.x1 == ((Kernel.Architecture.errorLabelBase + disc) <<< 9).toUInt64)
+          s!"errorFrame x1 must carry label errorLabelBase + {disc} at bit 9"
         expect s!"sd002d_frame_rest_zero_{disc}"
           (frame.x0 == 0 && frame.x2 == 0 && frame.x3 == 0 &&
            frame.x4 == 0 && frame.x5 == 0)
@@ -181,6 +182,20 @@ private def sd002_errorLabelCarriage : IO Unit := do
   expect "sd002f_boundary_57_rejected"
     ((SeLe4n.Model.KernelError.ofDiscriminant? 57).isNone)
     "discriminant 57 must not resolve (fail-closed)"
+  -- ABI v3 (WS-RR RR4): the status range is the top of the label field, so
+  -- a delivered message's label — the four `seL4_Fault_tag` values a fault
+  -- handler receives, in particular — is never read as an error.
+  expect "sd002g_base_literal"
+    (Kernel.Architecture.errorLabelBase == 0xFFF00)
+    "errorLabelBase must be 0xFFF00 (the Rust mirrors pin the same literal)"
+  for tag in [0, 1, 2, 3, 6, 0xFFEFF] do
+    expect s!"sd002h_delivery_label_{tag}_not_an_error"
+      ((Kernel.Architecture.ofErrorLabel? tag).isNone)
+      s!"label {tag} is below the status range and must decode as no error"
+  expect "sd002i_sentinel_is_top_of_range"
+    (Kernel.Architecture.errorLabelBase + 255 == MessageInfo.maxLabel &&
+      (Kernel.Architecture.ofErrorLabel? MessageInfo.maxLabel).isNone)
+    "the blocked-resume sentinel names discriminant 255, which no error has"
 
 /-- SD-003 (WS-RA shape): the label round trip and its non-aliasing — no
 error's label is the success label `0`, every label decodes back to its
@@ -369,7 +384,7 @@ private def dispatchViaRef (syscallId : UInt32)
   let st ← getKernelState
   let ctx ← getKernelLabelingContext
   match syscallDispatchFromAbi ctx SeLe4n.Kernel.Concurrency.bootCoreId
-      syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBuf st with
+      syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBuf 0 0 0 0 st with
   | Except.ok (outcome, st') =>
       initialiseKernelState st'
       pure outcome
@@ -385,7 +400,7 @@ private def isErrorFrameFor (outcome : Kernel.Architecture.SyscallOutcome)
 /-- Does this outcome carry *some* error on its x1 label? -/
 private def isSomeErrorFrame (outcome : Kernel.Architecture.SyscallOutcome) : Bool :=
   match outcome with
-  | .blocks => false
+  | .blocks | .faulted => false
   | .returns f =>
       match MessageInfo.decode f.x1.toNat with
       | some mi => (Kernel.Architecture.ofErrorLabel? mi.label).isSome
@@ -446,7 +461,8 @@ private def sd033_dispatchFromAbi_total : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨9⟩
   let st := mkState [(⟨9⟩, .tcb (mkTcb 9 .Ready))] (some tid)
   let ctx := SeLe4n.Kernel.testLabelingContext
-  match syscallDispatchFromAbi ctx SeLe4n.Kernel.Concurrency.bootCoreId 99 0 0 0 0 0 0 0 0 st with
+  match syscallDispatchFromAbi ctx SeLe4n.Kernel.Concurrency.bootCoreId 99 0 0 0 0 0 0 0 0
+      0 0 0 0 st with
   | Except.ok _ =>
       passLine "sd033_dispatchFromAbi_returns_ok"
   | Except.error _ =>

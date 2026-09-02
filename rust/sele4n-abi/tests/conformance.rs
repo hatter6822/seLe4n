@@ -536,7 +536,8 @@ fn message_info_exhaustive_bounds() {
 /// Verify SyscallId roundtrip for all variants (D6: +D1/D2/D3 TCB ops;
 /// WS-SM SM5.H.4: +TcbSetAffinity; SM6.B: +Tcb{Bind,Unbind}Notification;
 /// PR #822 Phase H: +MintReplyCap; WS-SM SM7.D: +VSpaceUnifyInstruction;
-/// WS-SM SM8.C.9: +Declassify; WS-SM SM9.A.6: +AuditRead/+AuditDrain).
+/// WS-SM SM8.C.9: +Declassify; WS-SM SM9.A.6: +AuditRead/+AuditDrain;
+/// PR #887 review: +TcbSetFaultHandler).
 #[test]
 fn syscall_id_exhaustive_roundtrip() {
     for i in 0..(SyscallId::COUNT as u64) {
@@ -929,42 +930,56 @@ fn decode_response_u64_overflow() {
 fn unknown_kernel_error_fallback() {
     use sele4n_abi::decode_response;
 
-    // WS-RA: errors ride the x1 label offset by one — label d+1 names
-    // discriminant d.  Discriminant 57 — first unrecognized after
+    // WS-RA / WS-RR RR4 (ABI v3): errors ride the x1 label in the top of
+    // the 20-bit range — label ERROR_LABEL_BASE + d names discriminant d.
+    // Discriminant 57 — first unrecognized after
     // DeclassificationDeniedAtReceiver (56).
-    let regs = [0, 58u64 << 9, 0, 0, 0, 0, 0];
+    let base = sele4n_types::ERROR_LABEL_BASE;
+    let regs = [0, (base + 57) << 9, 0, 0, 0, 0, 0];
     assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
 
     // Discriminant 100 — arbitrary unrecognized code
-    let regs = [0, 101u64 << 9, 0, 0, 0, 0, 0];
+    let regs = [0, (base + 100) << 9, 0, 0, 0, 0, 0];
     assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
 
-    // Discriminant 254 — just below sentinel
-    let regs = [0, 255u64 << 9, 0, 0, 0, 0, 0];
+    // Discriminant 254 — just below the sentinel
+    let regs = [0, (base + 254) << 9, 0, 0, 0, 0, 0];
     assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
 
-    // Discriminant 255 — sentinel value resolves to UnknownKernelError directly
-    let regs = [0, 256u64 << 9, 0, 0, 0, 0, 0];
+    // Discriminant 255 — the blocked-resume sentinel (MAX_LABEL) resolves to
+    // UnknownKernelError directly: it is the last label of the status range.
+    let regs = [0, (base + 255) << 9, 0, 0, 0, 0, 0];
+    assert_eq!(base + 255, sele4n_abi::message_info::MAX_LABEL);
     assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
+
+    // …while the same discriminant values BELOW the base are deliveries,
+    // not errors: under v2's offset scheme labels 58, 101 and 255 were all
+    // `UnknownKernelError`, and a fault handler's tag-6 message was
+    // discriminant 5.
+    for label in [58u64, 101, 255, 6, 1] {
+        let resp = decode_response([0, label << 9, 0, 0, 0, 0, 0])
+            .unwrap_or_else(|e| panic!("label {label} must be a delivery, got {e:?}"));
+        assert_eq!(resp.msg_info().label(), label);
+    }
 }
 
 /// R5.E (DEEP-SCH-04): Discriminant 52 round-trips to MissingSchedContext
-/// (WS-RA: as label 53 on x1).
+/// (ABI v3: as label ERROR_LABEL_BASE + 52 on x1).
 #[test]
 fn missing_sched_context_decode() {
     use sele4n_abi::decode_response;
 
-    let regs = [0, 53u64 << 9, 0, 0, 0, 0, 0];
+    let regs = [0, (sele4n_types::ERROR_LABEL_BASE + 52) << 9, 0, 0, 0, 0, 0];
     assert_eq!(decode_response(regs), Err(KernelError::MissingSchedContext));
 }
 
 /// WS-SM SM5.B.4: Discriminant 53 round-trips to ThreadOnDifferentCore
-/// (WS-RA: as label 54 on x1).
+/// (ABI v3: as label ERROR_LABEL_BASE + 53 on x1).
 #[test]
 fn thread_on_different_core_decode() {
     use sele4n_abi::decode_response;
 
-    let regs = [0, 54u64 << 9, 0, 0, 0, 0, 0];
+    let regs = [0, (sele4n_types::ERROR_LABEL_BASE + 53) << 9, 0, 0, 0, 0, 0];
     assert_eq!(
         decode_response(regs),
         Err(KernelError::ThreadOnDifferentCore)
@@ -1125,10 +1140,11 @@ fn kernel_error_variant_count() {
 /// PR #822 Phase H added MintReplyCap at 28; WS-SM SM7.D added
 /// VSpaceUnifyInstruction at 29; WS-SM SM8.C.9 added Declassify at 30; WS-SM
 /// SM9.A.6 added AuditRead at 31 and AuditDrain at 32; WS-SM SM9.C.8 added
-/// DeclassifySignal at 33).
+/// DeclassifySignal at 33; PR #887's review round added TcbSetFaultHandler at
+/// 34).
 #[test]
 fn syscall_id_variant_count() {
-    const SYSCALL_COUNT: u64 = 34;
+    const SYSCALL_COUNT: u64 = 35;
     assert_eq!(SyscallId::COUNT, SYSCALL_COUNT as usize);
     for i in 0..SYSCALL_COUNT {
         assert!(
@@ -1273,12 +1289,13 @@ fn sched_context_boundary() {
     assert_eq!(SyscallId::from_u64(20).unwrap(), SyscallId::TcbSuspend);
 }
 
-/// AA1-B-5: COUNT is updated to 34 (WS-SM SM9.C.8 added DeclassifySignal, on
-/// top of WS-SM SM9.A.6's AuditRead/AuditDrain, WS-SM SM8.C.9's Declassify,
-/// WS-SM SM7.D's VSpaceUnifyInstruction and PR #822 Phase H's MintReplyCap).
+/// AA1-B-5: COUNT is updated to 35 (PR #887's review round added
+/// TcbSetFaultHandler, on top of WS-SM SM9.C.8's DeclassifySignal, WS-SM
+/// SM9.A.6's AuditRead/AuditDrain, WS-SM SM8.C.9's Declassify, WS-SM SM7.D's
+/// VSpaceUnifyInstruction and PR #822 Phase H's MintReplyCap).
 #[test]
 fn syscall_count_updated() {
-    assert_eq!(SyscallId::COUNT, 34);
+    assert_eq!(SyscallId::COUNT, 35);
 }
 
 /// AA1-B-6: SchedContext syscalls require Write access (API.lean:381-383).
@@ -1542,6 +1559,15 @@ fn tcb_set_affinity_roundtrip() {
     assert_eq!(sid.to_u64(), 25);
 }
 
+/// PR #887 review: TcbSetFaultHandler roundtrip (discriminant 34).
+#[test]
+fn tcb_set_fault_handler_roundtrip() {
+    let sid = SyscallId::from_u64(34).expect("TcbSetFaultHandler must exist");
+    assert_eq!(sid, SyscallId::TcbSetFaultHandler);
+    assert_eq!(sid.to_u64(), 34);
+    assert_eq!(SyscallId::COUNT, 35);
+}
+
 /// WS-SM SM6.B: TcbBindNotification roundtrip (discriminant 26).
 #[test]
 fn tcb_bind_notification_roundtrip() {
@@ -1601,13 +1627,14 @@ fn declassify_roundtrip() {
     assert_eq!(sid.required_right(), AccessRight::Write);
 }
 
-/// D6-D5: Boundary — discriminant 34 is out of range for SyscallId
-/// (WS-SM SM9.C.8 added DeclassifySignal, moving the boundary from 32 to 33).
+/// D6-D5: Boundary — discriminant 35 is out of range for SyscallId
+/// (PR #887's review round added TcbSetFaultHandler, moving the boundary from
+/// 33 to 34).
 #[test]
 fn syscall_boundary() {
-    assert!(SyscallId::from_u64(33).is_some()); // Last valid
-    assert!(SyscallId::from_u64(34).is_none()); // First invalid
-    assert_eq!(SyscallId::COUNT, 34);
+    assert!(SyscallId::from_u64(34).is_some()); // Last valid
+    assert!(SyscallId::from_u64(35).is_none()); // First invalid
+    assert_eq!(SyscallId::COUNT, 35);
 }
 
 /// WS-SM SM9.A.6: AuditRead roundtrip (discriminant 31).
@@ -1661,6 +1688,10 @@ fn tcb_ops_require_write() {
     );
     assert_eq!(
         SyscallId::TcbSetAffinity.required_right(),
+        AccessRight::Write
+    );
+    assert_eq!(
+        SyscallId::TcbSetFaultHandler.required_right(),
         AccessRight::Write
     );
     assert_eq!(
@@ -1839,7 +1870,20 @@ fn sys_sched_context_module_exports() {
 /// and a half-bumped tree fails whichever suite still reads the old value.
 #[test]
 fn syscall_abi_version_pinned() {
-    assert_eq!(sele4n_types::SYSCALL_ABI_VERSION, 2);
+    assert_eq!(sele4n_types::SYSCALL_ABI_VERSION, 3);
+}
+
+/// WS-RR RR4 (ABI v3): the status-range base, pinned as a literal on the
+/// userspace side — the Lean side pins the same value (`errorLabelBase_eq`)
+/// and the HAL's hand-duplicated mirror is `const`-asserted against this
+/// constant, so the three cannot drift apart silently.
+#[test]
+fn error_label_base_pinned() {
+    assert_eq!(sele4n_types::ERROR_LABEL_BASE, 0xFFF00);
+    assert_eq!(
+        sele4n_types::ERROR_LABEL_BASE + 255,
+        sele4n_abi::message_info::MAX_LABEL
+    );
 }
 
 /// WS-RA RA.D.4: the return shape of every syscall, mirrored per-variant
@@ -2116,6 +2160,8 @@ fn wrapper_lengths_clear_prefilter_minimums() {
     assert_clears("tcb_set_ipc_buffer", SyscallId::TcbSetIPCBuffer);
     let _ = sele4n_sys::tcb::tcb_set_affinity(cap, 1);
     assert_clears("tcb_set_affinity", SyscallId::TcbSetAffinity);
+    let _ = sele4n_sys::tcb::tcb_set_fault_handler(cap, 3);
+    assert_clears("tcb_set_fault_handler", SyscallId::TcbSetFaultHandler);
     let _ = sele4n_sys::tcb::tcb_bind_notification(cap, cap);
     assert_clears("tcb_bind_notification", SyscallId::TcbBindNotification);
     let _ = sele4n_sys::tcb::tcb_unbind_notification(cap);

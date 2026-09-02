@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Безпека" /></a>
-  <img src="https://img.shields.io/badge/version-0.34.43-blue" alt="Версія" />
+  <img src="https://img.shields.io/badge/version-0.34.44-blue" alt="Версія" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Ліцензія" /></a>
 </p>
@@ -88,7 +88,7 @@ security model) від seL4, водночас впроваджуючи архі�
 
 | Атрибут | Значення |
 |---------|----------|
-| **Версія** | `0.34.43` |
+| **Версія** | `0.34.44` |
 | **Тулчейн Lean** | `v4.28.0` |
 | **Продуктовий код (Lean LoC)** | 286 841 рядок у 286 файлах |
 | **Тестовий код (Lean LoC)** | 64 078 рядків у 69 тест-сьютах |
@@ -235,6 +235,8 @@ shootdown та обслуговування кешів, інформаційни
 завершення декласифікації (SM9, закрито у v0.33.100). Залишилася фаза
 **SM10** (релізне закриття → v1.0.0). Робочий потік ABI повернення
 системних викликів (**WS-RA**) завершено.
+
+**SM10 заблокована WS-RR** (готовність SMP-релізу) — фаза усунення зауважень перед 1.0, що триває зараз ([`SMP_RELEASE_READINESS_PLAN.md`](../../planning/SMP_RELEASE_READINESS_PLAN.md)): RR0 (v0.34.26), RR1 (v0.34.41), RR2 (v0.34.42), RR3 (v0.34.43) та **RR4 — обробка відмов: повний fault-IPC із перезапуском за відповіддю (v0.34.44)**, який не дає потоку з відмовою відновитися на інструкції, що спричинила відмову: відмова записується в TCB, доставляється на кінцеву точку `faultHandler` потоку живим міжʼядерним ланцюжком call і опрацьовується відповіддю, що перезапускає потік із обраного PC або відкидає його. Залишаються RR5–RR8, далі **SM10** (релізне закриття → v1.0.0).
 
 Головний план: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../planning/SMP_MULTICORE_COMPLETION_PLAN.md),
 з планами окремих фаз у `docs/planning/SMP_*.md`. Канонічний пофазовий

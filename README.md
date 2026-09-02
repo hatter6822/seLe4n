@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.34.43-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.34.44-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -72,7 +72,7 @@ architectural improvements enabled by the Lean 4 proof framework:
 
 ### Security and verification
 
-- **N-domain information-flow** — parameterized flow policies generalizing seL4's binary partition. 43-entry enforcement boundary with per-operation non-interference proofs (35-constructor `NonInterferenceStep` inductive), and a bounded, fail-closed declassification audit trail with a capability-gated reader
+- **N-domain information-flow** — parameterized flow policies generalizing seL4's binary partition. 44-entry enforcement boundary with per-operation non-interference proofs (35-constructor `NonInterferenceStep` inductive), and a bounded, fail-closed declassification audit trail with a capability-gated reader
 - **Composed proof layer** — `proofLayerInvariantBundle` composes 16 subsystem invariant bundles (scheduler core + CBS extensions, capability, IPC + IPC–scheduler coupling, lifecycle, service, VSpace, cross-subsystem, TLB consistency, notification-waiter consistency, TLB-shootdown pending/ack bounds, per-core TLB invalidation and I-cache coherence, and the declassification audit-log bound) into a single top-level obligation verified from boot through all operations
 - **Three-phase state architecture** — builder phase with invariant witnesses flows to a frozen immutable representation with proven lookup equivalence. 24 frozen operations mirror the live API
 - **Complete operation set** — all seL4 operations implemented with invariant preservation, through thread suspend/resume, priority management (setPriority/setMCPriority), and IPC-buffer configuration
@@ -86,11 +86,11 @@ architectural improvements enabled by the Lean 4 proof framework:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.34.43` |
+| **Version** | `0.34.44` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 311,181 across 299 files |
-| **Test Lean LoC** | 65,318 across 69 test suites |
-| **Proved declarations** | 10,302 theorem/lemma declarations (zero sorry/axiom) |
+| **Production Lean LoC** | 316,818 across 307 files |
+| **Test Lean LoC** | 67,030 across 70 test suites |
+| **Proved declarations** | 10,514 theorem/lemma declarations (zero sorry/axiom) |
 | **Rust crates** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) across 48 source files |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Hardware binding** | **H3 COMPLETE** (WS-AG AG1–AG10): HAL, GIC-400, timer, ARMv8 page tables, FFI bridge, QEMU boot |
@@ -224,7 +224,7 @@ per-file inventory, see [`docs/codebase_map.json`](docs/codebase_map.json).
 | **Scheduling** | C-implemented sporadic server (MCS) | CBS with machine-checked `cbs_bandwidth_bounded` theorem; `SchedContext` as capability-controlled kernel object |
 | **Passive servers** | SchedContext donation via C | Verified donation with `donationChainAcyclic` invariant |
 | **IPC** | Single linked-list endpoint queue | Intrusive dual-queue with O(1) mid-queue removal; budget-driven timeouts |
-| **Information flow** | Binary high/low partition | N-domain configurable policy with a 43-entry enforcement boundary (count pinned by `enforcementBoundaryExtended_count`), per-operation NI proofs, and a capability-gated audit trail for every authorized declassification |
+| **Information flow** | Binary high/low partition | N-domain configurable policy with a 44-entry enforcement boundary (count pinned by `enforcementBoundaryExtended_count`), per-operation NI proofs, and a capability-gated audit trail for every authorized declassification |
 | **Priority inheritance** | C-implemented PIP (MCS branch) | Machine-checked transitive PIP with deadlock freedom and parametric WCRT bound |
 | **Bounded latency** | No formal WCRT bound | `WCRT = D × L_max + N × (B + P)` proven across 8 liveness modules |
 | **Object stores** | Linked lists and arrays | Verified Robin Hood hash tables (`RHTable`/`RHSet`) with O(1) hot paths |
@@ -241,9 +241,25 @@ Raspberry Pi 5. Phases SM0–SM9 have landed — foundational SMP types and the
 lock hierarchy, the Rust HAL SMP bring-up, verified lock primitives,
 per-object locks, per-core scheduler state and scheduling, cross-core IPC,
 TLB shootdown and cache maintenance, SMP information flow, and the
-declassification completion (SM9, closed at v0.33.100). The remaining phase
-is **SM10** (release closure → v1.0.0). The syscall return ABI workstream
-(**WS-RA**) is complete.
+declassification completion (SM9, closed at v0.33.100). The syscall return
+ABI workstream (**WS-RA**) is complete.
+
+**SM10 is blocked on WS-RR** (SMP release readiness), the pre-1.0 remediation
+phase now in flight
+([`SMP_RELEASE_READINESS_PLAN.md`](docs/planning/SMP_RELEASE_READINESS_PLAN.md)):
+RR0 honesty patches (v0.34.26), RR1 the aarch64 cross-build gate and the TLBI
+broadcast discipline (v0.34.41), RR2 the invariant gaps behind the live
+cancellation and donation dispatch arms (v0.34.42), RR3 `ipcInvariantFull`
+de-threading and its dispatch payoff (v0.34.43), and **RR4 fault handling —
+full fault IPC with reply-based restart (v0.34.44)**, which replaces the
+pre-RR4 behaviour of resuming a faulting thread at the instruction that
+faulted: a fault is now recorded on the TCB, delivered to the thread's
+`faultHandler` endpoint through the live cross-core call chain (so a passive
+handler receives the scheduling-context donation it needs to run), and
+answered by a reply that restarts the thread at a chosen PC or abandons it —
+with a machine-checked progress theorem placing the faulting thread off every
+core's run queue and current slot on both outcomes. RR5–RR8 remain, then
+**SM10** (release closure → v1.0.0).
 
 Master plan: [`SMP_MULTICORE_COMPLETION_PLAN.md`](docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md),
 with per-phase plans in `docs/planning/SMP_*.md`. The canonical per-phase

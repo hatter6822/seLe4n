@@ -64,6 +64,37 @@ if [ -n "${PRE_COMMIT_REPO_ROOT}" ] \
     fi
 fi
 
+# --- Identifier-naming gate (CLAUDE.md "Internal-first naming") ---
+# PR #887 review round 3: the gate reads the git INDEX, so this hook is the
+# one place it sees exactly what is being committed — a Tier 0 run on
+# unstaged edits checks the previous content and passes while CI fails on
+# the commit.  Runs whenever a non-documentation file is staged; a commit
+# that touches only `docs/` or Markdown skips it, since the gate exempts
+# prose by location.  Needs python3 only, so it precedes the lake check.
+if [ -n "${PRE_COMMIT_REPO_ROOT}" ] \
+   && [ -f "${PRE_COMMIT_REPO_ROOT}/scripts/check_identifier_naming.py" ] \
+   && command -v python3 &>/dev/null; then
+    mapfile -t STAGED_FOR_NAMING < <(git diff --cached --name-only --diff-filter=ACMR || true)
+    NAMING_CODE_STAGED=0
+    if [ "${#STAGED_FOR_NAMING[@]}" -gt 0 ]; then
+        for _staged in "${STAGED_FOR_NAMING[@]}"; do
+            case "${_staged}" in
+                docs/*|*.md) ;;
+                *) NAMING_CODE_STAGED=1; break ;;
+            esac
+        done
+    fi
+    if [ "${NAMING_CODE_STAGED}" -eq 1 ]; then
+        echo "pre-commit: non-documentation file staged — running the identifier-naming gate on the index..."
+        if ! python3 "${PRE_COMMIT_REPO_ROOT}/scripts/check_identifier_naming.py"; then
+            echo ""
+            echo "COMMIT BLOCKED: a staged identifier or path carries a workstream/phase code (see above)."
+            echo "Rename it to describe what it is (CLAUDE.md: Internal-first naming)."
+            exit 1
+        fi
+    fi
+fi
+
 if ! command -v lake &>/dev/null; then
     echo "⚠ pre-commit: lake not found, skipping Lean build check"
     exit 0

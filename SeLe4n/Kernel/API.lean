@@ -17,6 +17,7 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch
 import SeLe4n.Kernel.IPC.CrossCore.EndpointSend
 import SeLe4n.Kernel.IPC.CrossCore.EndpointSendInvariant
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDispatch
+import SeLe4n.Kernel.IPC.CrossCore.Fault
 import SeLe4n.Kernel.IPC.CrossCore.NotificationBindDispatch
 -- WS-SM SM6.E: the live per-core suspend (`suspendThreadOnCore`) behind the
 -- `.tcbSuspend` arm — the victim is descheduled on its *home* core.
@@ -1482,6 +1483,7 @@ def syscallRequiredRight : SyscallId → AccessRight
   | .tcbSetMCPriority      => .write
   | .tcbSetIPCBuffer       => .write
   | .tcbSetAffinity        => .write
+  | .tcbSetFaultHandler    => .write
   | .tcbBindNotification   => .write
   | .tcbUnbindNotification => .write
   -- PR #822 Phase H: deriving a reply cap from the object cap to a Reply requires
@@ -1536,6 +1538,7 @@ def syscallChecksTargetFirst : SyscallId → Bool
   | .tcbSetMCPriority      => false
   | .tcbSetIPCBuffer       => false
   | .tcbSetAffinity        => false
+  | .tcbSetFaultHandler    => false
   | .tcbBindNotification   => false
   | .tcbUnbindNotification => false
   | .mintReplyCap          => false
@@ -2204,10 +2207,19 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
         -- cross-core pokes from the committed `(pre, post)` states, and a thread
         -- newly runnable on a remote home core is exactly
         -- `crossCoreSgiBody_remote_wake`.
+        --
+        -- Review round (PR #887): a thread suspended fail-closed by the fault
+        -- path keeps its fault as a diagnostic.  Resuming it must retire that
+        -- fault — restart at the faulting instruction with the register window
+        -- it held at the trap, clearing `pendingFault` — or the thread's next
+        -- ordinary Call would be answered through the reply seam's fault
+        -- branch and rewound to the old fault PC.  A thread carrying no fault
+        -- is untouched (`retirePendingFaultForResume_of_no_fault`).
         match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
         | .error e => .error e
         | .ok vtid =>
-            match Lifecycle.Suspend.resumeThreadOnCoreLive st vtid
+            match Lifecycle.Suspend.resumeThreadOnCoreLive
+                (retirePendingFaultForResume st vtid.val) vtid
                 (determineExecutingCore st tid) with
             | .ok (st', _) => .ok ((), st')
             | .error e => .error e
@@ -2310,6 +2322,25 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
                         (determineExecutingCore st tid) with
                 | .ok (st', _) => .ok ((), st')
                 | .error e => .error e
+    | _ => fun _ => .error .invalidCapability
+  -- Review round (PR #887): `seL4_TCB_SetSpace`'s fault endpoint.  The CPtr
+  -- is interpreted in the *target* thread's CSpace and validated at set time
+  -- by the same resolution the fault path runs (`resolveFaultHandlerCPtr`),
+  -- so a handler that could never be delivered to is refused here rather than
+  -- discovered as a suspended thread later.  Authority: the write right on the
+  -- target TCB capability, like every other thread-configuration arm.
+  | .tcbSetFaultHandler =>
+    some <| match cap.target with
+    | .object objId =>
+      fun st => match Architecture.SyscallArgDecode.decodeSetFaultHandlerArgs decoded with
+      | .error e => .error e
+      | .ok args =>
+        match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+        | .error e => .error e
+        | .ok vtid =>
+            match setThreadFaultHandlerOp st vtid args.handlerCPtr with
+            | .ok st' => .ok ((), st')
+            | .error e => .error e
     | _ => fun _ => .error .invalidCapability
   | _ => none
 
@@ -2598,15 +2629,20 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
       | error e => simp only [hVal] at hStep; cases hStep
       | ok vtid =>
           simp only [hVal] at hStep
-          cases hRes : Lifecycle.Suspend.resumeThreadOnCoreLive st vtid
+          cases hRes : Lifecycle.Suspend.resumeThreadOnCoreLive
+              (retirePendingFaultForResume st vtid.val) vtid
               (determineExecutingCore st tid) with
           | error e => simp only [hRes] at hStep; cases hStep
           | ok pair =>
               obtain ⟨stU, sgiU⟩ := pair
               simp only [hRes] at hStep
               cases hStep
-              exact resumeThreadOnCoreLive_preserves_ipcInvariantFull st st' vtid _ sgiU
-                hObjInv (hPack.targetThreadQuiescent objId (Or.inr hSy) hTgt vtid hVal) hInv hRes
+              exact resumeThreadOnCoreLive_preserves_ipcInvariantFull
+                (retirePendingFaultForResume st vtid.val) st' vtid _ sgiU
+                (retirePendingFaultForResume_preserves_objects_invExt st _ hObjInv)
+                (threadIpcFieldsQuiescent_retirePendingFaultForResume st _ hObjInv
+                  (hPack.targetThreadQuiescent objId (Or.inr hSy) hTgt vtid hVal))
+                (retirePendingFaultForResume_preserves_ipcInvariantFull st _ hObjInv hInv) hRes
     all_goals try cases hStep
   case tcbSetPriority =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -2708,6 +2744,26 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                       cases hStep
                       exact setThreadCpuAffinityOnCore_preserves_ipcInvariantFull st st'
                         vtid affinity _ sgiU hObjInv hInv hPack.queuedThreadsIdle hSet
+    all_goals try cases hStep
+  case tcbSetFaultHandler =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object objId =>
+      try dsimp only [] at hStep
+      cases hDec : Architecture.SyscallArgDecode.decodeSetFaultHandlerArgs decoded with
+      | error e => simp only [hDec] at hStep; cases hStep
+      | ok args =>
+          simp only [hDec] at hStep
+          cases hVal : validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+          | error e => simp only [hVal] at hStep; cases hStep
+          | ok vtid =>
+              simp only [hVal] at hStep
+              cases hSet : setThreadFaultHandlerOp st vtid args.handlerCPtr with
+              | error e => simp only [hSet] at hStep; cases hStep
+              | ok stU =>
+                  simp only [hSet] at hStep
+                  cases hStep
+                  exact setThreadFaultHandlerOp_preserves_ipcInvariantFull st st' vtid _
+                    hObjInv hInv hSet
     all_goals try cases hStep
 
 /-- WS-J1-C/K-C/K-D: Dispatch a decoded syscall to the appropriate internal
@@ -2925,17 +2981,18 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
           | none => .error .replyCapInvalid
           | some callerTid =>
             let executingCore := determineExecutingCore st tid
-            match endpointReplyCrossCoreDispatch tid callerTid
-                { registers := body, caps := #[], badge := cap.badge } executingCore st with
-            | (st', .ok _) =>
-                -- WS-RA RA.B.5b: the reply woke the `blockedOnReply` caller with
-                -- the payload in its `pendingMessage`; stage its return frame —
-                -- this is `.call`'s `.message` frame, delivered entirely through
-                -- the reply path (§3.5: a call never returns at its own boundary).
-                -- Installed count 0: the reply message is built with
-                -- `caps := #[]` above and the reply path runs no unwrap.
-                .ok ((), Architecture.stageDeliveredMessage st' callerTid 0)
-            | (_, .error e) => .error e
+            -- WS-RR RR4.14/RR4.15: seL4's `doReplyTransfer` branches on the
+            -- answered thread's `tcbFault` before it transfers anything.  On an
+            -- unfaulted caller this is the pre-RR4 arm verbatim — the cross-core
+            -- reply plus the RA.B.5b delivered-message staging
+            -- (`replyTransferOnCore_of_no_fault`).  On a faulted one it is the
+            -- fault reply: the handler's message is decoded against the fault the
+            -- thread carries and the thread is restarted at a chosen PC or
+            -- abandoned, with no delivered message to stage.  Without this branch
+            -- the fault handler's reply would wake the faulted thread `.ready`
+            -- with its saved PC still addressing the instruction that faulted.
+            replyTransferOnCore tid callerTid decoded.msgInfo decoded.msgRegs
+              { registers := body, caps := #[], badge := cap.badge } executingCore st
     | _ => fun _ => .error .invalidCapability
   -- WS-K-C: CSpace operations — cap targets a CNode, message registers
   -- carry slot indices, rights, and badge. Decoded via SyscallArgDecode.
@@ -3386,14 +3443,16 @@ def dispatchWithCapChecked (ctx : LabelingContext)
             -- consume, so `checkedDispatch_reply_eq_unchecked_when_allowed` holds.
             if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf callerTid) then
               let executingCore := determineExecutingCore st tid
-              match endpointReplyCrossCoreDispatchChecked ctx tid callerTid
-                  { registers := body, caps := #[], badge := cap.badge } executingCore st with
-              | (st', .ok _) =>
-                  -- WS-RA RA.B.5b: the woken caller's staged reply frame (checked
-                  -- twin; the replier→caller flow gate above admitted the value).
-                  -- Installed count 0: reply messages are built `caps := #[]`.
-                  .ok ((), Architecture.stageDeliveredMessage st' callerTid 0)
-              | (_, .error e) => .error e
+              -- WS-RR RR4.14/RR4.15: seL4's `doReplyTransfer` fault branch, in
+              -- the checked twin.  Ordinary callers take the prior body verbatim
+              -- (checked cross-core reply + the RA.B.5b delivered-message
+              -- staging); a faulted caller takes the fault reply.  Both are
+              -- already behind the replier→caller flow gate above, which is the
+              -- same test the checked reply dispatch applies — so the arm equals
+              -- the unchecked one exactly when that gate admits
+              -- (`replyTransferOnCoreChecked_eq_unchecked_of_flow_allowed`).
+              replyTransferOnCoreChecked ctx tid callerTid decoded.msgInfo decoded.msgRegs
+                { registers := body, caps := #[], badge := cap.badge } executingCore st
             else .error .replyCapInvalid
     | _ => fun _ => .error .invalidCapability
   -- T6-I: CSpace mint — checked for source→destination CNode flow
@@ -4084,7 +4143,10 @@ theorem checkedDispatch_reply_eq_unchecked_when_allowed
   -- guard.
   simp only [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly,
     hSyscall, hCap, hReply, hCaller, hFlow, if_true]
-  rw [endpointReplyCrossCoreDispatchChecked_flow_allowed ctx tid callerTid _ _ st hFlow]
+  -- WS-RR RR4.14: the seam collapses on *both* branches under the same flow
+  -- guard, so the fault branch costs this proof nothing.
+  rw [replyTransferOnCoreChecked_eq_unchecked_of_flow_allowed ctx tid callerTid
+    decoded.msgInfo decoded.msgRegs _ _ st hFlow]
 
 /-- AJ1-D (M-01) / WS-SM SM6.D: When the information-flow policy allows both legs
 (reply + receive), checked and unchecked `.replyRecv` dispatch produce identical
@@ -4212,7 +4274,7 @@ theorem dispatchWithCap_wildcard_unreachable (sid : SyscallId) :
             .tcbSetIPCBuffer, .tcbSetAffinity,
             .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap,
             .vspaceUnifyInstruction, .declassify, .declassifySignal,
-            .auditRead, .auditDrain] : List SyscallId) := by
+            .auditRead, .auditDrain, .tcbSetFaultHandler] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- AE1-D: Every `SyscallId` variant is handled by either `dispatchCapabilityOnly`
@@ -4233,7 +4295,7 @@ theorem dispatchWithCapChecked_wildcard_unreachable (sid : SyscallId) :
             .tcbSetIPCBuffer, .tcbSetAffinity,
             .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap,
             .vspaceUnifyInstruction, .declassify, .declassifySignal,
-            .auditRead, .auditDrain] : List SyscallId) := by
+            .auditRead, .auditDrain, .tcbSetFaultHandler] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- WS-J1-C: Route decoded syscall arguments to the appropriate capability-gated
@@ -4816,10 +4878,13 @@ theorem dispatchWithCap_call_uses_crossCoreDispatch
 /-- WS-K-E / WS-SM SM6.D: When reply dispatch is invoked, the IPC message body is
 populated from decoded message registers via `extractMessageRegisters`; the reply
 cap's `ReplyId` is resolved to its recorded caller (`reply.caller`) and the reply is
-routed through the **cross-core** dispatch (`endpointReplyCrossCoreDispatch` — the
+routed through the reply seam `replyTransferOnCore` (WS-RR RR4.14) at
+`determineExecutingCore st tid` — the replier's own core.  On an unfaulted caller
+that seam is the **cross-core** dispatch (`endpointReplyCrossCoreDispatch` — the
 caller woken on its home core, the donated SchedContext returned, and
-priority-inheritance reverted cross-core, at `determineExecutingCore st tid` —
-the replier's own core).  The single-use linkage consume is folded into
+priority-inheritance reverted cross-core) plus the RA.B.5b delivered-message
+staging; on a faulted one it is the fault reply, decoding the handler's message
+against the fault the thread carries.  The single-use linkage consume is folded into
 `endpointReplyOnCore` (PR #827 review #3) — atomic with the delivery.  Fails
 closed on a dangling reply or an unlinked caller. -/
 theorem dispatchWithCap_reply_populates_msg
@@ -4837,13 +4902,12 @@ theorem dispatchWithCap_reply_populates_msg
           | none => .error .replyCapInvalid
           | some callerTid =>
             let executingCore := determineExecutingCore st tid
-            match endpointReplyCrossCoreDispatch tid callerTid
-                { registers := body, caps := #[], badge := cap.badge } executingCore st with
-            | (st', .ok _) =>
-                -- WS-RA RA.B.5b: the woken caller's staged reply frame
-                -- (installed count 0: reply messages are built `caps := #[]`).
-                .ok ((), Architecture.stageDeliveredMessage st' callerTid 0)
-            | (_, .error e) => .error e := by
+            -- WS-RR RR4.14/RR4.15: seL4's `doReplyTransfer` branch on the
+            -- answered thread's `tcbFault`.  On an unfaulted caller this is the
+            -- pre-RR4 body verbatim — cross-core reply plus the RA.B.5b
+            -- delivered-message staging (`replyTransferOnCore_of_no_fault`).
+            replyTransferOnCore tid callerTid decoded.msgInfo decoded.msgRegs
+              { registers := body, caps := #[], badge := cap.badge } executingCore st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 
 -- ============================================================================
@@ -5056,7 +5120,15 @@ successful call leaves the caller `blockedOnReply` in every ordering, so
 its `.message` frame is delivered entirely by the reply path's RA.B.5b
 staging.  The theorem is therefore the cross-arm statement: a `.reply`
 dispatched at the server stages the *caller's* frame, and the boundary
-read at the caller recovers the delivered reply. -/
+read at the caller recovers the delivered reply.
+
+**WS-RR RR4.14** adds the one pre-state hypothesis this statement always
+needed and previously got for free: the answered caller must carry **no**
+pending fault.  A faulted caller's reply is seL4's fault reply — it installs a
+restart frame or abandons the thread — and delivers no message, so there is no
+`.message` frame for the boundary to read.  `hNoFault` is a fact about the
+pre-state of an ordinary `.call`, whose caller faulted at no point: a fault
+delivery is itself a Call, and the two cannot be the same one. -/
 theorem dispatchArm_call_frame_delivered_by_reply
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (rid : SeLe4n.ReplyId) (reply : Reply)
@@ -5067,6 +5139,7 @@ theorem dispatchArm_call_frame_delivered_by_reply
     (hTarget : cap.target = .replyCap rid)
     (hReply : st.getReply? rid = some reply)
     (hCaller : reply.caller = some callerTid)
+    (hNoFault : threadHasPendingFault st callerTid = false)
     (hDispatch : endpointReplyCrossCoreDispatch tid callerTid
         { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
           caps := #[], badge := cap.badge }
@@ -5081,7 +5154,7 @@ theorem dispatchArm_call_frame_delivered_by_reply
         = Architecture.returnFrameOfMessage msg 0 := by
   refine ⟨rfl, Architecture.stageDeliveredMessage st1 callerTid 0, ?_, ?_⟩
   · simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hReply,
-      hCaller, hDispatch]
+      hCaller, replyTransferOnCore, hNoFault, hDispatch]
   · exact Architecture.blockedReturn_staged_in_waiter_frame st1 callerTid tcb msg 0
       hTcb hReady hMsg hObjInv
 
@@ -5443,7 +5516,8 @@ theorem dispatchWithCap_preservation_composition_witness :
     | `.tcbSetIPCBuffer` | **`setIPCBufferOp_preserves_projection`** (Operations.lean — AK6-F.2b, v0.29.10) |
     | `.tcbSetPriority/SetMCPriority` | `objects_insert_preserves_projection_high` at non-observable TCB/SC — uses the universal direct-insert frame lemma (Operations.lean — AK6-F Step A, v0.29.10) |
     | `.tcbSetAffinity` | **`setThreadCpuAffinityOnCore_preserves_projection`** (Operations.lean — WS-SM SM8.B, review round 42) at non-observable target — the **live** wrapper, which round 37 rerouted this arm to; the boot-core `setThreadCpuAffinityOp_preserves_projection` (SM5.H.4) is its `bootCoreId` instance, reachable through `setThreadCpuAffinityOp_eq_onCore_state` but not needed here.  The affinity write is `cpuAffinity`-erased (invisible); the run-queue migration's write, at the executing core rather than a pinned boot core, preserves the filtered `projectRunnable` for a high thread (`migrateRunQueueOnAffinityChange_preserves_projection`); the replenishment migration is never projected (`migrateSchedContextReplenishment_preserves_projection`). |
-    | `.tcbSuspend/Resume` | `storeObject_preserves_projection` at non-observable TCB target |
+    | `.tcbSuspend/Resume` | `storeObject_preserves_projection` at non-observable TCB target; the review-round retire prefix is `applyFaultRestart`, a register + `pendingFault` write on the same target |
+    | `.tcbSetFaultHandler` | `objects_insert_preserves_projection_high` at non-observable TCB target (a `faultHandler` field write) |
 
     **New AK6-F building blocks in v0.29.10:**
     - `objects_insert_preserves_projection_high` — universal direct-insert
@@ -6189,7 +6263,8 @@ theorem dispatchWithCap_tcbResume_delegates
     (hDecode : ∃ a, Architecture.SyscallArgDecode.decodeResumeArgs decoded = .ok a)
     (hValid : validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vtid) :
     dispatchWithCap decoded tid gate cap st =
-      (match Lifecycle.Suspend.resumeThreadOnCoreLive st vtid
+      (match Lifecycle.Suspend.resumeThreadOnCoreLive
+              (retirePendingFaultForResume st vtid.val) vtid
               (determineExecutingCore st tid) with
        | .ok (st', _) => .ok ((), st')
        | .error e => .error e) := by
@@ -6483,7 +6558,8 @@ def syscallDelegates : SyscallId → Prop
         (∃ a, Architecture.SyscallArgDecode.decodeResumeArgs decoded = .ok a) →
         validateThreadIdArg (SeLe4n.ThreadId.ofNat objId.toNat) = .ok vtid →
         dispatchWithCap decoded tid gate cap st =
-          (match Lifecycle.Suspend.resumeThreadOnCoreLive st vtid
+          (match Lifecycle.Suspend.resumeThreadOnCoreLive
+                  (retirePendingFaultForResume st vtid.val) vtid
                   (determineExecutingCore st tid) with
            | .ok (st', _) => .ok ((), st')
            | .error e => .error e)

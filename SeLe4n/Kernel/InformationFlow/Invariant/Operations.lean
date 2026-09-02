@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.InformationFlow.Invariant.Helpers
 import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.IPC.Operations.Donation
+import SeLe4n.Kernel.IPC.Operations.Fault
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.Propagate
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.Preservation
 -- AK6-F: Imports needed for per-op projection preservation theorems over
@@ -5096,4 +5097,31 @@ theorem resumeThread_preserves_projection
     projectState ctx observer st' = projectState ctx observer st :=
   hProjEq st' hStep
 
+-- ============================================================================
+-- PR #887 review: information-flow non-interference for `tcbSetFaultHandler`
+-- ============================================================================
 
+/-- The fault-handler configuration writes one field of one TCB, so for a
+non-observable target the projection is unchanged — the discharge for the
+`.tcbSetFaultHandler` capability-only arm, the same shape as every sibling
+TCB-configuration op.  (For an observable target the write *is* visible, as
+`faultHandler` is part of the thread's projected configuration.) -/
+theorem setThreadFaultHandlerOp_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (vTargetTid : SeLe4n.ValidThreadId) (cptr : SeLe4n.CPtr)
+    (hTargetObjHigh : objectObservable ctx observer vTargetTid.val.toObjId = false)
+    (hObjInv : st.objects.invExt)
+    (hStep : setThreadFaultHandlerOp st vTargetTid cptr = .ok st') :
+    projectState ctx observer st' = projectState ctx observer st := by
+  cases hT : st.getTcb? vTargetTid.val with
+  | none => simp [setThreadFaultHandlerOp, hT] at hStep
+  | some tcb =>
+      cases hR : resolveFaultHandlerCPtr st tcb cptr with
+      | error e => simp [setThreadFaultHandlerOp, hT, hR] at hStep
+      | ok tgt =>
+          rw [setThreadFaultHandlerOp_ok_eq st vTargetTid cptr tcb tgt hT hR] at hStep
+          cases hStep
+          simp only [installFaultHandler]
+          exact objects_insert_preserves_projection_high ctx observer st
+            vTargetTid.val.toObjId (.tcb { tcb with faultHandler := some cptr })
+            hTargetObjHigh hObjInv

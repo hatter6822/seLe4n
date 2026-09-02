@@ -19,6 +19,7 @@ import SeLe4n.Kernel.Capability.Operations
 import SeLe4n.Kernel.SchedContext.OperationsPerCore
 import SeLe4n.Kernel.Service.Registry
 import SeLe4n.Kernel.IPC.CrossCore.Cancellation
+import SeLe4n.Kernel.IPC.Operations.Fault
 
 /-!
 # `ipcInvariantFull` bundles for the non-IPC dispatch arms
@@ -127,6 +128,20 @@ theorem vspaceUnifyInstructionPage_preserves_ipcInvariantFull
 -- §4  Return-frame staging (`.serviceQuery`'s answer, and every arm that
 --     stages a result register)
 -- ============================================================================
+
+/-- Return-frame staging is one object-store insert or the identity, so the
+object-store invariant transports. -/
+theorem writeReturnFrameToTcb_preserves_objects_invExt
+    (st : SystemState) (tid : SeLe4n.ThreadId) (frame : Architecture.SyscallReturnFrame)
+    (hObjInv : st.objects.invExt) :
+    (Architecture.writeReturnFrameToTcb st tid frame).objects.invExt := by
+  cases hT : st.getTcb? tid with
+  | none =>
+      rw [Architecture.writeReturnFrameToTcb_id_when_not_tcb st tid frame hT]
+      exact hObjInv
+  | some tcb =>
+      simp only [Architecture.writeReturnFrameToTcb, hT]
+      exact RobinHood.RHTable.insert_preserves_invExt _ _ _ hObjInv
 
 /-- Return-frame staging rewrites exactly one TCB's `registerContext` — a
 field no conjunct reads — so the whole bundle transports.  This is the lever
@@ -4020,6 +4035,103 @@ theorem resumeThreadOnCore_preserves_ipcInvariantFull
         · cases hStep
           exact hEnq
 
+/-- Review round (PR #887): **retiring a pending fault on resume preserves
+the bundle** — it is `applyFaultRestart` (a one-TCB rewrite of registers and
+`pendingFault`, neither read by any conjunct) or the identity. -/
+theorem retirePendingFaultForResume_preserves_ipcInvariantFull
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
+    ipcInvariantFull (retirePendingFaultForResume st tid) := by
+  cases hT : st.getTcb? tid with
+  | none => simp only [retirePendingFaultForResume, hT]; exact hInv
+  | some tcb =>
+      cases hF : tcb.pendingFault with
+      | none => simp only [retirePendingFaultForResume, hT, hF]; exact hInv
+      | some tf =>
+          simp only [retirePendingFaultForResume, hT, hF, applyFaultRestart]
+          exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st tid tcb
+            { tcb.withRestartFrame (Architecture.faultRestartFrameOfContext tf.context) with
+                pendingFault := none } hObjInv hInv
+            ((SystemState.getTcb?_eq_some_iff st tid tcb).mp hT)
+            rfl rfl rfl rfl rfl rfl rfl rfl rfl
+
+/-- Review round (PR #887): and the object-store invariant. -/
+theorem retirePendingFaultForResume_preserves_objects_invExt
+    (st : SystemState) (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) :
+    (retirePendingFaultForResume st tid).objects.invExt := by
+  cases hT : st.getTcb? tid with
+  | none => simp only [retirePendingFaultForResume, hT]; exact hObjInv
+  | some tcb =>
+      cases hF : tcb.pendingFault with
+      | none => simp only [retirePendingFaultForResume, hT, hF]; exact hObjInv
+      | some tf =>
+          simp only [retirePendingFaultForResume, hT, hF, applyFaultRestart]
+          exact RobinHood.RHTable.insert_preserves_invExt _ _ _ hObjInv
+
+/-- Review round (PR #887): the retire step rewrites none of the fields the
+quiescence pack reads, so the pack transports to the state the resume runs
+on. -/
+theorem threadIpcFieldsQuiescent_retirePendingFaultForResume
+    (st : SystemState) (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
+    (hQ : threadIpcFieldsQuiescent st tid) :
+    threadIpcFieldsQuiescent (retirePendingFaultForResume st tid) tid := by
+  cases hT : st.getTcb? tid with
+  | none => simp only [retirePendingFaultForResume, hT]; exact hQ
+  | some tcb =>
+      cases hF : tcb.pendingFault with
+      | none => simp only [retirePendingFaultForResume, hT, hF]; exact hQ
+      | some tf =>
+          simp only [retirePendingFaultForResume, hT, hF]
+          have hPost := applyFaultRestart_pc st tid
+            (Architecture.faultRestartFrameOfContext tf.context) tcb hT hObjInv
+          refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro tcb' hT' <;> rw [hPost] at hT' <;>
+            cases hT'
+          · exact hQ.ready tcb hT
+          · exact hQ.noNext tcb hT
+          · exact hQ.noPrev tcb hT
+          · exact hQ.noPPrev tcb hT
+          · exact hQ.noStash tcb hT
+          · exact hQ.noPendingMsg tcb hT
+          · exact hQ.noBudget tcb hT
+
+/-- Review round (PR #887): **configuring a fault handler preserves the
+bundle** — a one-TCB rewrite of `faultHandler`, a field no conjunct reads. -/
+theorem setThreadFaultHandlerOp_preserves_ipcInvariantFull
+    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (cptr : SeLe4n.CPtr)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : setThreadFaultHandlerOp st vtid cptr = .ok st') :
+    ipcInvariantFull st' := by
+  cases hT : st.getTcb? vtid.val with
+  | none => simp [setThreadFaultHandlerOp, hT] at hStep
+  | some tcb =>
+      cases hR : resolveFaultHandlerCPtr st tcb cptr with
+      | error e => simp [setThreadFaultHandlerOp, hT, hR] at hStep
+      | ok tgt =>
+          rw [setThreadFaultHandlerOp_ok_eq st vtid cptr tcb tgt hT hR] at hStep
+          cases hStep
+          simp only [installFaultHandler]
+          exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st vtid.val tcb
+            { tcb with faultHandler := some cptr } hObjInv hInv
+            ((SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hT)
+            rfl rfl rfl rfl rfl rfl rfl rfl rfl
+
+/-- Review round (PR #887): and the object-store invariant. -/
+theorem setThreadFaultHandlerOp_preserves_objects_invExt
+    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (cptr : SeLe4n.CPtr)
+    (hObjInv : st.objects.invExt)
+    (hStep : setThreadFaultHandlerOp st vtid cptr = .ok st') :
+    st'.objects.invExt := by
+  cases hT : st.getTcb? vtid.val with
+  | none => simp [setThreadFaultHandlerOp, hT] at hStep
+  | some tcb =>
+      cases hR : resolveFaultHandlerCPtr st tcb cptr with
+      | error e => simp [setThreadFaultHandlerOp, hT, hR] at hStep
+      | ok tgt =>
+          rw [setThreadFaultHandlerOp_ok_eq st vtid cptr tcb tgt hT hR] at hStep
+          cases hStep
+          simp only [installFaultHandler]
+          exact RobinHood.RHTable.insert_preserves_invExt _ _ _ hObjInv
+
 /-- `.tcbResume` (dispatch arm): the seam-gated wrapper, both branches. -/
 theorem resumeThreadOnCoreLive_preserves_ipcInvariantFull
     (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (ec : CoreId)
@@ -4792,6 +4904,35 @@ theorem stageWokenDelivery_preserves_ipcInvariantFull
   | some tid =>
       rw [Architecture.stageWokenDelivery_some]
       exact stageDeliveredMessage_preserves_ipcInvariantFull st tid installedCaps hObjInv hInv
+
+/-- Review round (PR #887): the delivered-message staging is a single
+`writeReturnFrameToTcb` insert or the identity, so it preserves the
+object-store invariant. -/
+theorem stageDeliveredMessage_preserves_objects_invExt
+    (st : SystemState) (tid : SeLe4n.ThreadId) (installedCaps : Nat)
+    (hObjInv : st.objects.invExt) :
+    (Architecture.stageDeliveredMessage st tid installedCaps).objects.invExt := by
+  unfold Architecture.stageDeliveredMessage
+  cases st.getTcb? tid with
+  | none => exact hObjInv
+  | some tcb =>
+      dsimp only []
+      split
+      · cases tcb.pendingMessage with
+        | none => exact hObjInv
+        | some msg => exact writeReturnFrameToTcb_preserves_objects_invExt st tid _ hObjInv
+      · exact hObjInv
+
+/-- Review round (PR #887): and so does the woken-delivery wrapper. -/
+theorem stageWokenDelivery_preserves_objects_invExt
+    (st : SystemState) (woken? : Option SeLe4n.ThreadId) (installedCaps : Nat)
+    (hObjInv : st.objects.invExt) :
+    (Architecture.stageWokenDelivery st woken? installedCaps).objects.invExt := by
+  cases woken? with
+  | none => exact hObjInv
+  | some tid =>
+      rw [Architecture.stageWokenDelivery_some]
+      exact stageDeliveredMessage_preserves_objects_invExt st tid installedCaps hObjInv
 
 /-- Send-completion staging: the unit success frame or the identity. -/
 theorem stageWokenSendCompletion_preserves_ipcInvariantFull

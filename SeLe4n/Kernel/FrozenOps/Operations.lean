@@ -1381,6 +1381,7 @@ def frozenOpCoverage : SyscallId → Bool
   | .tcbSetMCPriority => true        -- D2: frozenSetMCPriority
   | .tcbSetIPCBuffer => true         -- D3: frozenSetIPCBuffer
   | .tcbSetAffinity => false         -- WS-SM SM5.H.4: runtime scheduler op (run/replenish-queue migration)
+  | .tcbSetFaultHandler => false     -- PR #887 review: production object-store op; no frozen-phase variant defined
   | .tcbBindNotification => false    -- WS-SM SM6.B: production object-store op; no frozen-phase variant defined
   | .tcbUnbindNotification => false  -- WS-SM SM6.B: ditto
   | .mintReplyCap => false           -- PR #822 Phase H: structural cap insertion (like cspaceCopy); builder-only, no frozen-phase variant
@@ -1412,7 +1413,7 @@ theorem frozenOpCoverage_count :
        .tcbSetIPCBuffer, .tcbSetAffinity,
        .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap,
        .vspaceUnifyInstruction, .declassify, .declassifySignal,
-       .auditRead, .auditDrain].filter
+       .auditRead, .auditDrain, .tcbSetFaultHandler].filter
          frozenOpCoverage).length = 20) := by
   decide
 

@@ -101,10 +101,13 @@ register file.  Mirrors the WS-RA `decode_response` exactly:
 
 * `x1` must decode as a well-formed `MessageInfo` (fail-closed
   `InvalidMessageInfo` otherwise — the RA.C.7 width guard);
-* label `0` → success: `x0` is the full-width value, `regs[2..5]` the
-  message registers;
-* label `n + 1` → `KernelError` discriminant `n`, unknown discriminants
-  collapsing to an error either way. -/
+* a label below `errorLabelBase` → a delivery: `x0` is the full-width
+  value, `regs[2..5]` the message registers, and the label is the delivered
+  message's own (`0` on every kernel path but a fault delivery — ABI v3,
+  WS-RR RR4);
+* a label at or above `errorLabelBase` → `KernelError` discriminant
+  `label - errorLabelBase`, unknown discriminants collapsing to an error
+  either way. -/
 inductive RustDecoded where
   | err (disc : Nat)
   | errUndecodableX1
@@ -115,9 +118,9 @@ private def rustDecodeResponse (regs : Array UInt64) : RustDecoded :=
   match MessageInfo.decode regs[1]!.toNat with
   | none => .errUndecodableX1
   | some mi =>
-      match mi.label with
-      | 0 => .ok regs[0]! #[regs[2]!, regs[3]!, regs[4]!, regs[5]!]
-      | n + 1 => .err n
+      if Kernel.Architecture.errorLabelBase ≤ mi.label then
+        .err (mi.label - Kernel.Architecture.errorLabelBase)
+      else .ok regs[0]! #[regs[2]!, regs[3]!, regs[4]!, regs[5]!]
 
 /-- The post-trap register file after the WS-RA writeback: the trap layer
 restores the full six-register frame for a `returns` outcome (`trap.rs`'s
@@ -186,7 +189,7 @@ private def dispatchFromAbi (syscallId : Nat) (msgInfoRaw : UInt64)
     SeLe4n.Kernel.Concurrency.bootCoreId
     syscallId.toUInt32 msgInfoRaw
     capPtrValue.toUInt64 msgInfoRaw x2 0 0 0
-    0 st
+    0 0 0 0 0 st
 
 -- ============================================================================
 -- §3b  Two-thread fixture — the RA.B.5b blocked orderings (wait-before-signal,
@@ -322,7 +325,7 @@ private def dispatchFromAbiOn (core : SeLe4n.Kernel.Concurrency.CoreId)
     Except KernelError (Kernel.Architecture.SyscallOutcome × SystemState) :=
   SeLe4n.Platform.FFI.syscallDispatchFromAbi trustedLabeling core
     syscallId.toUInt32 msgInfoRaw capPtr msgInfoRaw x2 x3 x4 0
-    0 st
+    0 0 0 0 0 st
 
 -- ============================================================================
 -- §4  INVERTED witness A — a successful Unit syscall decodes as a VALUE
@@ -352,6 +355,8 @@ private def runUnitReturnWitness : IO Unit := do
       match outcome with
       | .blocks =>
           assertBool "a signal never blocks the signaller" false
+      | .faulted =>
+          assertBool "a signal on a resolved capability never faults the signaller" false
       | .returns frame => do
           assertBool "FLIPPED: the Unit frame is the zero frame, not the cap pointer"
             (frame == .zero && frame.x0 != capPtrValue.toUInt64)
@@ -387,6 +392,8 @@ private def runBadgeDeliveryWitness : IO Unit := do
           match outcome with
           | .blocks =>
               assertBool "a pending badge means the wait returns, not blocks" false
+          | .faulted =>
+              assertBool "a wait on a resolved capability never faults" false
           | .returns frame => do
               assertBool "FLIPPED: the wait's frame carries the badge in x0"
                 (frame.x0 == signalledBadge.toUInt64)
@@ -679,7 +686,7 @@ private def dispatchAudit (ctx : LabelingContext) (syscallId : Nat) (capPtr : Na
     SeLe4n.Kernel.Concurrency.bootCoreId
     syscallId.toUInt32 msgInfoRaw
     capPtr.toUInt64 msgInfoRaw r0.toUInt64 r1.toUInt64 r2.toUInt64 0
-    0 st
+    0 0 0 0 0 st
 
 /-- The `x0` a completed dispatch hands back, or `none` if it blocked/errored. -/
 private def auditReturnedWord
@@ -710,6 +717,7 @@ private def outcomeLine (tag : String)
   match r with
   | .error e => s!"[ret-abi] {tag}: dispatch-error {reprStr e}"
   | .ok (.blocks, _) => s!"[ret-abi] {tag}: outcome=blocks tag=1 (no frame for the caller)"
+  | .ok (.faulted, _) => s!"[ret-abi] {tag}: outcome=faulted tag=2 (no frame; the trap layer halts)"
   | .ok (.returns f, _) =>
       s!"[ret-abi] {tag}: outcome=returns tag=0 {frameCells f} {decodeCell f}"
 
@@ -745,7 +753,7 @@ private def returnAbiTraceLines : List String :=
       (SeLe4n.Platform.FFI.syscallDispatchFromAbi trustedLabeling
         SeLe4n.Kernel.Concurrency.bootCoreId
         SyscallId.notificationSignal.toNat.toUInt32 0xAAAA
-        capPtrValue.toUInt64 0xBBBB 0 0 0 0 0 witnessState)
+        capPtrValue.toUInt64 0xBBBB 0 0 0 0 0 0 0 0 0 witnessState)
   , s!"[ret-abi] error labels: all 57 discriminants round-trip = {labelRoundtrips}; 57 unassigned = {labelBoundary}"
   , s!"[ret-abi] full-width badge frame: " ++
       frameCells (Kernel.Architecture.returnFrameOfBadge
@@ -845,7 +853,7 @@ private def runBlockedWaiterStagingWitnesses : IO Unit := do
       assertBool "9c: the receive's own outcome is the consumed message (immediate half)"
         (match out2 with
           | .returns f => f.x0 == epBadgeVal.toUInt64 && f.x2 == 7 && f.x3 == 8
-          | .blocks => false)
+          | .blocks | .faulted => false)
       assertBool "9c: the completed sender's staged frame is the unit zero frame"
         (senderFrame == .zero)
   -- 9d — the reply delivers `.call`'s frame
@@ -872,14 +880,14 @@ private def runBlockedWaiterStagingWitnesses : IO Unit := do
       assertBool "9f: the query's outcome carries the resolved ServiceId in x0"
         (match out with
           | .returns f => f.x0 == queriedSid.toUInt64 && f.x1 == 0
-          | .blocks => false)
+          | .blocks | .faulted => false)
       assertBool "9f: the arm staged the word (the boundary read is of fresh data)"
         ((stagedFrame st' callerTid).x0 == queriedSid.toUInt64)
       assertBool "9f: the word decodes as a success value, end to end"
         (match out with
           | .returns f =>
               rustDecodeResponse (postTrapRegs f) == .ok queriedSid.toUInt64 #[0, 0, 0, 0]
-          | .blocks => false)
+          | .blocks | .faulted => false)
   -- 9g — the self-suspend returns-unit split (§3.5's parenthetical)
   match selfSuspendScenario with
   | .error e => assertBool s!"9g dispatches (got .error {reprStr e})" false

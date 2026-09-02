@@ -366,7 +366,7 @@ abbrev enforcementBoundaryExtended : List EnforcementClass := enforcementBoundar
     This theorem is the authority for the entry count; `enforcementBoundary`'s
     own docstring deliberately does not restate it. -/
 theorem enforcementBoundaryExtended_count :
-    enforcementBoundaryExtended.length = 43 := by rfl
+    enforcementBoundaryExtended.length = 44 := by rfl
 
 /-- W2-G (M-3): Element-wise correspondence — `enforcementBoundaryExtended` and
     `enforcementBoundary` are definitionally equal. This closes the M-3 finding

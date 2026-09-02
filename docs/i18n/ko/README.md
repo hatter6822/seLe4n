@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.34.43-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.34.44-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -86,7 +86,7 @@ seLe4n은 Lean 4로 처음부터 설계된 마이크로커널입니다. 모든 �
 
 | 속성 | 값 |
 |------|-----|
-| **버전** | `0.34.43` |
+| **버전** | `0.34.44` |
 | **Lean 툴체인** | `v4.28.0` |
 | **프로덕션 Lean LoC** | 286개 파일, 286,841줄 |
 | **테스트 Lean LoC** | 69개 테스트 스위트, 64,078줄 |
@@ -221,6 +221,8 @@ tests/                           Executable test suites + fixtures
 TLB 슈트다운과 캐시 유지 관리, SMP 정보 흐름, 그리고 기밀 해제 완성(SM9,
 v0.33.100 에서 마감). 남은 단계는 **SM10**(릴리스 마감 → v1.0.0)입니다.
 시스템 콜 반환 ABI 작업 스트림(**WS-RA**)은 완료되었습니다.
+
+**SM10 은 WS-RR**(SMP 릴리스 준비)**에 의해 차단되어 있습니다** — 현재 진행 중인 1.0 이전 교정 단계입니다([`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)): RR0(v0.34.26), RR1(v0.34.41), RR2(v0.34.42), RR3(v0.34.43), 그리고 **RR4 — 폴트 처리: 응답 기반 재시작을 갖춘 완전한 폴트 IPC(v0.34.44)**. RR4 는 폴트가 발생한 스레드가 폴트를 일으킨 명령에서 재개되는 것을 막습니다: 폴트는 TCB 에 기록되고, 활성 코어 간 call 체인을 통해 스레드의 `faultHandler` 엔드포인트로 전달되며, 선택한 PC 에서 스레드를 재시작하거나 포기하는 응답으로 처리됩니다. RR5–RR8 이 남아 있으며, 그다음이 **SM10**(릴리스 마감 → v1.0.0)입니다.
 
 마스터 계획: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md),
 단계별 계획은 `docs/planning/SMP_*.md` 에 있습니다. 완료된 모든 작업 스트림

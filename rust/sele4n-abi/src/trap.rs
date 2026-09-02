@@ -117,11 +117,12 @@ pub mod host_capture {
 #[allow(unsafe_code)]
 pub unsafe fn raw_syscall(regs: &mut [u64; 7]) {
     host_capture::record(regs);
-    // Mock (WS-RA shape): an error rides the x1 label, offset by one
-    // (label d + 1 = discriminant d), with x0 = 0 — exactly the frame the
-    // kernel's `errorFrame` would publish for InvalidSyscallNumber.
+    // Mock (WS-RA shape, ABI v3): an error rides the x1 label in the top of
+    // the label range (label ERROR_LABEL_BASE + d = discriminant d), with
+    // x0 = 0 — exactly the frame the kernel's `errorFrame` would publish
+    // for InvalidSyscallNumber.
     regs[0] = 0;
-    regs[1] = ((KernelError::InvalidSyscallNumber as u64) + 1) << 9;
+    regs[1] = (sele4n_types::ERROR_LABEL_BASE + (KernelError::InvalidSyscallNumber as u64)) << 9;
     regs[2] = 0;
     regs[3] = 0;
     regs[4] = 0;

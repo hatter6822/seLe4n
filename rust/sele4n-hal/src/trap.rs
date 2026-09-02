@@ -107,8 +107,9 @@ impl TrapFrame {
     }
 
     /// Set x1 (the returned `MessageInfo` word — its label carries the
-    /// error status: `0` = success, `d + 1` = `KernelError` discriminant
-    /// `d`).
+    /// kernel status in the top of the label range: `0` = success,
+    /// `ERROR_LABEL_BASE + d` = `KernelError` discriminant `d`, anything
+    /// below the base a delivered message's own label).
     #[inline(always)]
     pub fn set_x1(&mut self, val: u64) {
         self.gprs[1] = val;
@@ -146,10 +147,79 @@ impl TrapFrame {
     pub fn set_return_frame(&mut self, regs: [u64; 6]) {
         self.gprs[..6].copy_from_slice(&regs);
     }
+
+    /// **WS-RR RR4.24**: set `ELR_EL1` — the address the `eret` returns to.
+    ///
+    /// The mutator the trap frame lacked before RR4, and the reason a fault
+    /// reply could not have been honoured on hardware: seL4's fault reply
+    /// distinguishes a **resume** (the thread restarts at the instruction
+    /// that faulted, once the handler has repaired what faulted) from a
+    /// **restart** (the reply supplied a new PC), and both are writes to this
+    /// field.  Without it the trap layer could only ever return to the
+    /// faulting instruction, which is the RR4 finding itself.
+    ///
+    /// Mirrors `SeLe4n.Kernel.Architecture.FaultRestartFrame.pc`, which the
+    /// verified `RegisterFile.stageRestartFrame` installs as the thread's
+    /// saved `pc`.
+    #[inline(always)]
+    pub fn set_elr_el1(&mut self, val: u64) {
+        self.elr_el1 = val;
+    }
+
+    /// **WS-RR RR4.24**: set the saved user stack pointer (`SP_EL0`).
+    ///
+    /// The second word a fault reply may override — seL4's
+    /// `fault_messages[MessageID_Syscall]` and `[MessageID_Exception]` both
+    /// carry `SP_EL0` — mirroring `FaultRestartFrame.sp`.
+    #[inline(always)]
+    pub fn set_sp_el0(&mut self, val: u64) {
+        self.sp_el0 = val;
+    }
+
+    /// **WS-RR RR4.16/RR4.24**: install a fault-restart frame.
+    ///
+    /// The Rust half of the verified `RegisterFile.stageRestartFrame`, in the
+    /// same field order: `x0`-`x7`, the link register, the restart PC, and the
+    /// stack pointer.  `regs` is `[x0..x7, lr, pc, sp]` — the flat encoding
+    /// the Lean `FaultRestartFrame` marshals to, so the two sides carry one
+    /// layout and not two.
+    ///
+    /// `SPSR_EL1` is deliberately **not** written: this model keeps PSTATE out
+    /// of a fault handler's reach (see `Model.FaultContext.spsr`), which is
+    /// strictly the fail-closed side of seL4's `sanitiseRegister`.
+    ///
+    /// **Consumer**: SM10.1's context restore, which does not exist yet — this
+    /// mutator and its two siblings above are exercised by tests only today.
+    /// That is not an oversight to be tidied away: the restart frame is
+    /// installed into the *Lean* TCB by `applyFaultRestart` at reply time, and
+    /// reaches hardware when a core installs a successor.  Until then a core
+    /// that delivered a fault halts (`deliver_fault`), so there is no restore
+    /// to call this from.  RR4.24 exists because without an `ELR_EL1` mutator
+    /// the trap layer could only ever return to the faulting instruction, which
+    /// is the finding RR4 closes; the API has to be here before the restore
+    /// that uses it can be written.
+    #[inline(always)]
+    pub fn set_fault_restart_frame(&mut self, regs: [u64; 11]) {
+        self.gprs[..8].copy_from_slice(&regs[..8]);
+        self.gprs[30] = regs[8];
+        self.elr_el1 = regs[9];
+        self.sp_el0 = regs[10];
+    }
 }
 
 /// ESR_EL1 Exception Class (EC) field values.
 /// ARM ARM D17.2.40: ESR_EL1 bits [31:26].
+///
+/// **WS-RR RR4.25**: the only reader of these names is the pre-readiness
+/// mirror (`classify_synchronous_exception_mirror`) and the tests that pin it
+/// against Lean.  Once a core is ready the mapping is the Lean model's
+/// (`classifySynchronousException`), and `build.rs` holds
+/// `handle_synchronous_exception`'s routing to the `sync_class::` tags it
+/// returns: an `ec::` constant in the routing arms is the second
+/// classification path RR4.25 retired, and the scanner rejects it.  PR #887
+/// review round 2 compiles the table on every target because a core whose
+/// Lean runtime is not yet initialized must still classify — through the
+/// mirror — rather than enter a Lean-emitted symbol.
 mod ec {
     /// SVC instruction execution in AArch64 state.
     pub const SVC_AARCH64: u64 = 0x15;
@@ -179,19 +249,448 @@ mod error_code {
     /// dispatch path; the `svc_stub_returns_not_implemented` test in
     /// the parent module still asserts this value.
     #[allow(dead_code)]
-    pub const NOT_IMPLEMENTED: u64 = 17;
+    pub const NOT_IMPLEMENTED: u32 = 17;
     /// `KernelError::VmFault = 44` — data abort or instruction abort.
-    pub const VM_FAULT: u64 = 44;
+    pub const VM_FAULT: u32 = 44;
     /// `KernelError::UserException = 45` — alignment fault, unknown exception.
     /// Matches Lean `ExceptionModel.lean` mapping of `pcAlignment`,
     /// `spAlignment`, and `unknownReason` to `.error .userException`.
-    pub const USER_EXCEPTION: u64 = 45;
+    pub const USER_EXCEPTION: u32 = 45;
 }
 
 /// Extract the Exception Class from ESR_EL1.
+///
+/// **WS-RR RR4.25**: this is a *diagnostic* reader, not a classifier.  It
+/// feeds the unhandled-exception log line and the pre-readiness mirror
+/// (`classify_synchronous_exception_mirror`); once a core is ready the routing
+/// decision comes from the Lean model ([`classify_synchronous_exception`]),
+/// so a running kernel has one classification path and not two.
 #[inline(always)]
 fn esr_ec(esr: u64) -> u64 {
     (esr >> 26) & 0x3F
+}
+
+/// **WS-RR RR4.25**: the synchronous exception classes, as the Lean model
+/// tags them.
+///
+/// The values mirror `SeLe4n.Kernel.syncExceptionClassTag`
+/// (`SeLe4n/Kernel/FaultEntry.lean`) and nothing else: the *mapping* from
+/// `ESR_EL1` to a class lives in Lean's `classifySynchronousException`; the
+/// pre-readiness mirror (`classify_synchronous_exception_mirror`) restates it
+/// and is pinned to it over all 64 EC values, so a running kernel's routing
+/// cannot classify differently — this side can only fail to recognise a tag,
+/// which it routes to the same fail-closed unknown-exception arm the Lean map
+/// defaults to.
+pub mod sync_class {
+    /// `SVC` from AArch64 — the syscall path, not a fault.
+    pub const SVC: u32 = 0;
+    /// Data abort.
+    pub const DATA_ABORT: u32 = 1;
+    /// Instruction abort.
+    pub const INSTR_ABORT: u32 = 2;
+    /// PC alignment fault.
+    pub const PC_ALIGNMENT: u32 = 3;
+    /// SP alignment fault.
+    pub const SP_ALIGNMENT: u32 = 4;
+    /// Anything the model does not classify.
+    pub const UNKNOWN_REASON: u32 = 5;
+    /// A data or instruction abort taken from the **current** EL — the kernel
+    /// itself faulted (PR #887 review).  Never delivered; the handler halts.
+    pub const KERNEL_ABORT: u32 = 6;
+}
+
+/// **PR #887 review**: was the exception taken from EL0?
+///
+/// Reads `SPSR_EL1.M[3:2]` — the exception level the PE was in when the
+/// exception was taken: `0` for EL0, `1` for EL1.  Mirrors the Lean
+/// `ExceptionContext.takenFromEl0`.  The syndrome-independent half of the
+/// kernel-origin gate: `KERNEL_ABORT` catches the two abort classes whose EC
+/// encodes "current EL", but an alignment fault or an undefined instruction
+/// has one EC whichever EL raised it, and only the saved PSTATE says which.
+#[inline(always)]
+fn exception_taken_from_el0(spsr: u64) -> bool {
+    (spsr >> 2) & 0x3 == 0
+}
+
+/// **PR #887 review**: halt if the exception was taken from EL1.
+///
+/// Both `__el0_sync_entry` and `__el1_sync_entry` land in
+/// `handle_synchronous_exception`, and before this gate a kernel page fault
+/// was classified by EC alone, attributed to the current user thread, and —
+/// once `lean_ready` flips — delivered to that thread's fault handler with
+/// the kernel's FAR, ESR and register window, whose reply could then resume
+/// the kernel at the faulting instruction.  A kernel-origin exception halts
+/// with a diagnostic and is never routed, never delivered, and never
+/// `eret`ed through.  A plain Rust function rather than a block inside the
+/// `extern "C"` handler so the host lane can observe the halt (a panic
+/// cannot unwind across a C-ABI frame).
+#[inline(always)]
+fn halt_if_kernel_origin(frame: &TrapFrame, esr: u64) {
+    if !exception_taken_from_el0(frame.spsr_el1) {
+        crate::kprintln!(
+            "kernel-origin synchronous exception: EC=0x{:02x} ESR=0x{:016x} ELR=0x{:016x} FAR=0x{:016x} SPSR=0x{:016x}",
+            esr_ec(esr),
+            esr,
+            frame.elr_el1,
+            frame.far_el1,
+            frame.spsr_el1
+        );
+        crate::cpu::fatal_halt();
+    }
+}
+
+/// **PR #887 review**: a data or instruction abort taken from the current EL
+/// — the kernel faulted.  The origin gate halts on every EL1-origin exception
+/// already; this is the syndrome-classified half of the same rule, so a
+/// `KERNEL_ABORT` reaching it (a saved PSTATE claiming EL0 with a current-EL
+/// syndrome) is a contradiction the kernel must not interpret.
+#[inline(always)]
+fn halt_on_kernel_abort(frame: &TrapFrame, esr: u64) -> ! {
+    crate::kprintln!(
+        "kernel abort: EC=0x{:02x} ESR=0x{:016x} ELR=0x{:016x} FAR=0x{:016x}",
+        esr_ec(esr),
+        esr,
+        frame.elr_el1,
+        frame.far_el1
+    );
+    crate::cpu::fatal_halt()
+}
+
+/// **WS-RR RR4.25**: classify a synchronous exception **through the Lean
+/// model** once this core may enter it.
+///
+/// On the hardware target a *ready* core calls
+/// `lean_classify_synchronous_exception` (`@[export]` on
+/// `SeLe4n.Kernel.classifySynchronousExceptionExport`), so the routing decision
+/// and the delivered fault's kind come from one classifier and cannot drift
+/// apart — the `esr_ec` match this replaced could, and a drift on the abort
+/// arms would have routed a fault to the wrong handler, or to none.
+///
+/// **PR #887 review round 2 — the upcall is behind the readiness gate.**  The
+/// contract in `lean_ready.rs` admits no exception for a pure function: no
+/// Lean-emitted symbol may be entered from a PE whose runtime state is not
+/// initialized, and the first cut called this one unconditionally on the
+/// strength of a SAFETY comment claiming it needed no runtime.  The claim was
+/// about the function; the contract is about the symbol, and a scanner cannot
+/// tell the difference.  So a core that is not ready classifies through
+/// `classify_synchronous_exception_mirror` — the same `esr_ec` table the host
+/// lane runs, pinned to the Lean mapping across all 64 EC values by
+/// `sync_class_mirrors_lean_ec_table` — and the routing then reaches the
+/// seams' fail-closed halves (`deliver_fault`'s status frame), which is the
+/// documented pre-readiness behaviour of the whole fault path.  Reachable
+/// only on the primary before the image target marks it ready: no other core
+/// runs EL0 code without a Lean runtime, and an EL1-origin exception halts
+/// before classification (`halt_if_kernel_origin`).  `build.rs` pins the
+/// relation — the Lean call sits after the gate in this body, the mirror is
+/// the other branch — and `scan_lean_upcalls_readiness_gated` derives the set
+/// of every Lean upcall in the HAL from the Lean tree's `@[export]`s, so the
+/// next upcall cannot be written outside the gate silently.
+///
+/// It is a pure query: no kernel state is read or committed, so it needs no
+/// entry lock and is called *before* one is taken, which is what lets the
+/// caller route an `SVC` away from the fault path without entering the kernel
+/// twice.
+#[cfg(feature = "hw_target")]
+#[inline]
+fn classify_synchronous_exception(esr: u64) -> u32 {
+    let core_id = crate::per_cpu::current_core_id_from_tpidr();
+    if crate::lean_ready::lean_ready(core_id as usize) {
+        extern "C" {
+            fn lean_classify_synchronous_exception(esr: u64) -> u32;
+        }
+        // SAFETY: `lean_classify_synchronous_exception` is the C-callable
+        // wrapper the Lean compiler emits for
+        // `Kernel.classifySynchronousExceptionExport`.  It takes a `u64` and
+        // returns a `u32`, reads no kernel state and allocates nothing, and
+        // this core's Lean runtime is initialized — the `lean_ready` gate just
+        // checked — so entering the symbol is within the runtime's contract.
+        unsafe { lean_classify_synchronous_exception(esr) }
+    } else {
+        classify_synchronous_exception_mirror(esr)
+    }
+}
+
+/// The host lane has no Lean symbol to call, so it classifies through the
+/// mirror unconditionally — the same answers a not-yet-ready core gets on
+/// hardware.
+#[cfg(not(feature = "hw_target"))]
+#[inline]
+fn classify_synchronous_exception(esr: u64) -> u32 {
+    classify_synchronous_exception_mirror(esr)
+}
+
+/// **The pre-readiness classifier**: the `ESR_EL1` exception-class table as
+/// the Lean model defines it, in Rust.
+///
+/// Two callers: the host test lane, where the Lean symbol is not linked, and
+/// a hardware core whose Lean runtime is not yet initialized (see
+/// [`classify_synchronous_exception`]).  It is **not** a second live
+/// classification path for a running kernel: once a core is ready every
+/// exception it takes is classified in Lean, and this table's only job is to
+/// agree with that one.  Agreement is pinned from both sides —
+/// `sync_class_mirrors_lean_ec_table` walks all 64 EC values against the
+/// expected table here, and the Lean suite walks the same 64 values against
+/// `classifySynchronousException` — so a mapping edit on either side that the
+/// other does not mirror fails a test rather than routing a fault to the wrong
+/// handler.
+#[inline]
+fn classify_synchronous_exception_mirror(esr: u64) -> u32 {
+    match esr_ec(esr) {
+        ec::SVC_AARCH64 => sync_class::SVC,
+        ec::DABT_LOWER => sync_class::DATA_ABORT,
+        ec::IABT_LOWER => sync_class::INSTR_ABORT,
+        ec::DABT_CURRENT | ec::IABT_CURRENT => sync_class::KERNEL_ABORT,
+        ec::PC_ALIGN => sync_class::PC_ALIGNMENT,
+        ec::SP_ALIGN => sync_class::SP_ALIGNMENT,
+        _ => sync_class::UNKNOWN_REASON,
+    }
+}
+
+/// **WS-RR RR4.23**: deliver a fault to the faulting thread's handler through
+/// the verified Lean fault path, or — when this core's Lean runtime is not up
+/// — publish a fail-closed error frame.
+///
+/// The delivery half is `lean_handle_fault`
+/// (`@[export]` on `SeLe4n.Kernel.faultEntry`), which spills the trap frame's
+/// fault window (`x0`-`x7`, `SP_EL0`, `x30`) into the faulting thread's saved
+/// register context, classifies, builds the fault message from those
+/// registers, and runs the verified, flow-checked `faultDeliverOnCoreChecked`:
+/// the thread blocks on its handler's endpoint
+/// awaiting a reply, or — with no usable handler — is descheduled and marked
+/// `.Inactive`.  Either way it comes out **not runnable on this core**
+/// (`faultEntryStep_not_dispatchable`), which is what makes the pre-RR4
+/// fault loop unrepresentable.
+///
+/// It runs inside [`crate::kernel_entry::with_kernel_entry`]: the Lean entry
+/// commits through an `IO.Ref` read-then-write, not a cross-core atomic, so it
+/// must be serialised like every other state-committing seam.
+///
+/// # Why the core halts afterwards
+///
+/// The model has just descheduled the faulting thread.  The hardware cannot
+/// honour that until the SM10.1 context restore installs a *successor* —
+/// until then `trap.S` restores and `eret`s through the faulting thread's own
+/// frame, straight back onto the instruction that faulted, which is precisely
+/// the defect RR4 exists to remove.  So the interim behaviour is to stop:
+/// `fatal_halt` after a diagnostic, rather than spin.  The halt is
+/// unreachable at `v0.34.x` (no core sets `lean_ready`), and SM10.1 replaces
+/// it with the successor install — it is the seam's occupant, not its
+/// contract.
+///
+/// # The not-ready path (WS-RR RR4.22; PR #887 review round 3)
+///
+/// A core whose Lean runtime is not up cannot deliver — and, on hardware, it
+/// cannot return either: the abort left `ELR_EL1` on the faulting
+/// instruction, so a published frame would be `eret`ed back into the same
+/// abort and the core would wedge.  The not-ready path therefore **halts**
+/// (`halt_abort_before_lean_ready`), which makes both branches of this
+/// function diverge on hardware; the SVC seam, whose exception advanced the
+/// PC, is the one place a fallback frame is a coherent return.  The host lane
+/// keeps the RR4.22 fallback frame as the harness observable — a full
+/// **status-label** frame (ABI v3): `x0 = 0`, `x1` a `MessageInfo` whose
+/// label is `ERROR_LABEL_BASE + discriminant`, and `x2`-`x5` cleared, never
+/// the retired raw-discriminant-in-`x0` shape that left `x1` untouched and
+/// let a resumed thread decode a fault as a successful syscall carrying a
+/// forged badge — and `build.rs` pins that the frame write is host-only and
+/// the halt sits on the not-ready path.
+#[allow(unused_variables)]
+fn deliver_fault(frame: &mut TrapFrame, fallback_discriminant: u32) {
+    #[cfg(feature = "hw_target")]
+    {
+        let core_id = crate::per_cpu::current_core_id_from_tpidr();
+        if crate::lean_ready::lean_ready(core_id as usize) {
+            extern "C" {
+                // The fifteen words the Lean seam consumes: the syndrome, and
+                // the fault window the trap frame saved (`x0`-`x7`, `SP_EL0`,
+                // `x30`) — the registers seL4's `setMRs_fault` reads and
+                // `handleFaultReply` writes.  The window is spilled into the
+                // thread's saved register context on the Lean side before the
+                // fault context is built (`writeFaultRegistersToTcb`): the
+                // Lean mirror of the register file is partial and, between
+                // syscalls, holds the *last syscall's* arguments, so building
+                // the context from the mirror alone would report a stale
+                // argument window and, on resume, reinstall it over the
+                // thread's live registers.
+                #[allow(clippy::too_many_arguments)]
+                fn lean_handle_fault(
+                    core_id: u64,
+                    esr: u64,
+                    elr: u64,
+                    spsr: u64,
+                    far: u64,
+                    x0: u64,
+                    x1: u64,
+                    x2: u64,
+                    x3: u64,
+                    x4: u64,
+                    x5: u64,
+                    x6: u64,
+                    x7: u64,
+                    sp_el0: u64,
+                    lr: u64,
+                );
+            }
+            let (esr, elr, spsr, far) =
+                (frame.esr_el1, frame.elr_el1, frame.spsr_el1, frame.far_el1);
+            let g = frame.gprs;
+            let sp_el0 = frame.sp_el0;
+            // SAFETY: `lean_handle_fault` is the C-callable wrapper the Lean
+            // compiler emits for `Kernel.faultEntry`
+            // (`@[export lean_handle_fault]`).  It takes fifteen `u64`s and
+            // returns no value; calling it is sound from EL1 exception context
+            // once this core's Lean runtime is initialized (the gate just
+            // checked) and inside the kernel-entry lock (taken below), which is
+            // what serialises its `IO.Ref` commit.
+            crate::kernel_entry::with_kernel_entry(core_id as usize, || unsafe {
+                lean_handle_fault(
+                    core_id, esr, elr, spsr, far, g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7],
+                    sp_el0, g[30],
+                );
+            });
+            crate::kprintln!(
+                "[core {}] fault delivered; halting pending the SM10.1 context restore (ESR=0x{:016x} ELR=0x{:016x})",
+                core_id,
+                esr,
+                elr
+            );
+            crate::cpu::fatal_halt();
+        }
+        // PR #887 review round 3: a core whose Lean runtime is not up cannot
+        // deliver, and a status frame cannot fail-close an abort — `trap.S`
+        // would `eret` through the unchanged `ELR_EL1` onto the instruction
+        // that faulted, and the core would take the same abort forever.  So
+        // the not-ready path halts, as the delivered arm does.
+        halt_abort_before_lean_ready(core_id, frame.esr_el1, frame.elr_el1);
+    }
+    // The host lane's fallback: the harness observable that the abort arms
+    // reached this seam (`handle_sync_data_abort_via_frame` and the
+    // per-core counter tests drive the whole handler).  On hardware the
+    // function never returns; `build.rs` pins that this write is host-only.
+    #[cfg(not(feature = "hw_target"))]
+    frame.set_return_frame(crate::svc_dispatch::error_frame_regs(fallback_discriminant));
+}
+
+/// **PR #887 review round 3**: an EL0 abort taken on a core whose Lean
+/// runtime is not initialized.  Nothing can be delivered (there is no model
+/// to deliver into) and nothing can be returned: the abort left `ELR_EL1` on
+/// the faulting instruction, so any frame the handler published would be
+/// `eret`ed straight back into the same abort — the wedge RR4 exists to
+/// remove, reintroduced on the fallback.  The only fail-closed action is to
+/// stop the core, as `deliver_fault`'s delivered arm does pending the SM10.1
+/// successor install; both branches of that function therefore diverge on
+/// hardware.  The SVC seam is different and keeps its status frame: an `SVC`
+/// advances `ELR_EL1` past itself, so a frame returned to a thread is a
+/// coherent outcome there (and the not-ready behaviour of the SVC seam as a
+/// whole is RR5's to decide, together with the ungated `dispatch_svc` beside
+/// it).  Unreachable today — no core sets `lean_ready`, and no user thread
+/// exists before the runtime that creates it — and pinned by
+/// `abort_before_lean_ready_halts` on the host lane, where `fatal_halt`
+/// panics.
+/// **PR #887 review round 5**: a syscall-raised fault has been delivered (or
+/// the caller suspended fail-closed) by the Lean dispatch — outcome tag 2,
+/// `SyscallOutcome.faulted`.  The model has descheduled the caller and, on
+/// the handler's reply, restarts it at the `SVC` (`svcFaultIP`); the
+/// hardware cannot honour either until the SM10.1 context restore installs
+/// a successor, and returning here would `eret` the caller past the `SVC`
+/// it is to re-issue.  So the core stops, as after every other delivered
+/// fault.  Unreachable today (no core sets `lean_ready`, so no Lean
+/// dispatch runs on hardware); pinned by `delivered_syscall_fault_halts` on
+/// the host lane, where `fatal_halt` panics, and by
+/// `scan_trap_rs_faulted_outcome_halts` in `build.rs`.
+fn halt_after_delivered_syscall_fault(frame: &TrapFrame) -> ! {
+    crate::kprintln!(
+        "syscall fault delivered; halting pending the SM10.1 context restore (x7=0x{:x} ELR=0x{:016x})",
+        frame.x7(),
+        frame.elr_el1
+    );
+    crate::cpu::fatal_halt()
+}
+
+#[cfg_attr(not(feature = "hw_target"), allow(dead_code))]
+fn halt_abort_before_lean_ready(core_id: u64, esr: u64, elr: u64) -> ! {
+    crate::kprintln!(
+        "[core {}] EL0 abort before the Lean runtime is ready; halting (ESR=0x{:016x} ELR=0x{:016x})",
+        core_id,
+        esr,
+        elr
+    );
+    crate::cpu::fatal_halt()
+}
+
+/// **PR #887 review**: deliver an unknown-syscall fault through the verified
+/// Lean path, or — when this core's Lean runtime is not up — publish the
+/// fail-closed `invalidSyscallNumber` status frame the prefilter used to.
+///
+/// The delivery half is `lean_handle_unknown_syscall` (`@[export]` on
+/// `SeLe4n.Kernel.unknownSyscallEntry`), which builds seL4's `UnknownSyscall`
+/// fault from the syscall-number register (`x7`) and the trap frame's fault
+/// window and runs the same flow-checked delivery as `deliver_fault`: the
+/// thread blocks on its handler's endpoint awaiting a reply (a handler that
+/// emulates the call replies and the thread continues after the `SVC`), or —
+/// with no usable handler — is suspended fail-closed.  Same lock, same
+/// readiness gate, same SM10.1 halt as `deliver_fault`, for the same reasons.
+///
+/// The not-ready path differs from `deliver_fault`'s, deliberately: this seam
+/// keeps its status frame, because an `SVC` advances `ELR_EL1` past itself
+/// and a frame returned to the thread is a coherent outcome, where an abort's
+/// would re-execute the faulting instruction (PR #887 review round 3).  What
+/// a not-ready core should do with an `SVC` at all is RR5's question, asked
+/// once for the whole SVC seam together with the ungated `dispatch_svc`.
+#[allow(unused_variables)]
+fn deliver_unknown_syscall(frame: &mut TrapFrame) {
+    #[cfg(feature = "hw_target")]
+    {
+        let core_id = crate::per_cpu::current_core_id_from_tpidr();
+        if crate::lean_ready::lean_ready(core_id as usize) {
+            extern "C" {
+                #[allow(clippy::too_many_arguments)]
+                fn lean_handle_unknown_syscall(
+                    core_id: u64,
+                    esr: u64,
+                    elr: u64,
+                    spsr: u64,
+                    far: u64,
+                    x0: u64,
+                    x1: u64,
+                    x2: u64,
+                    x3: u64,
+                    x4: u64,
+                    x5: u64,
+                    x6: u64,
+                    x7: u64,
+                    sp_el0: u64,
+                    lr: u64,
+                );
+            }
+            let (esr, elr, spsr, far) =
+                (frame.esr_el1, frame.elr_el1, frame.spsr_el1, frame.far_el1);
+            let g = frame.gprs;
+            let sp_el0 = frame.sp_el0;
+            // SAFETY: `lean_handle_unknown_syscall` is the C-callable wrapper
+            // the Lean compiler emits for `Kernel.unknownSyscallEntry`
+            // (`@[export lean_handle_unknown_syscall]`).  Fifteen `u64`s, no
+            // return value; sound from EL1 exception context once this core's
+            // Lean runtime is initialized (the gate just checked) and inside
+            // the kernel-entry lock (taken below), which serialises its
+            // `IO.Ref` commit.
+            crate::kernel_entry::with_kernel_entry(core_id as usize, || unsafe {
+                lean_handle_unknown_syscall(
+                    core_id, esr, elr, spsr, far, g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7],
+                    sp_el0, g[30],
+                );
+            });
+            crate::kprintln!(
+                "[core {}] unknown syscall delivered; halting pending the SM10.1 context restore (x7=0x{:x} ELR=0x{:016x})",
+                core_id,
+                g[7],
+                elr
+            );
+            crate::cpu::fatal_halt();
+        }
+    }
+    frame.set_return_frame(crate::svc_dispatch::error_frame_regs(
+        crate::svc_dispatch::DispatchError::InvalidSyscallId.kernel_error_discriminant(),
+    ));
 }
 
 /// Synchronous exception handler — called from assembly after context save.
@@ -211,14 +710,20 @@ fn esr_ec(esr: u64) -> u64 {
 #[no_mangle]
 pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
     let esr = frame.esr_el1;
-    let exception_class = esr_ec(esr);
+    // PR #887 review: **an exception taken from EL1 is the kernel's own
+    // fault**, whatever its syndrome — halt before routing anything.  The
+    // `build.rs` scanner pins that this call precedes the classification.
+    halt_if_kernel_origin(frame, esr);
+    // WS-RR RR4.25: the class comes from the Lean model, not from a second
+    // `esr_ec` match here.  `esr_ec` survives as a diagnostic reader only.
+    let exception_class = classify_synchronous_exception(esr);
 
     // AG9-F: CSDB after reading the exception class ensures speculative
     // execution cannot bypass the match and enter the wrong handler.
     crate::barriers::csdb();
 
     match exception_class {
-        ec::SVC_AARCH64 => {
+        sync_class::SVC => {
             // CLOSED at AN9-F: Wire Lean FFI dispatch via the
             // `dispatch_svc` shim (closes DEF-R-HAL-L14 per WS-AN AN9-F).
             // CLOSED at WS-RC R2.B: Lean side substantively routes
@@ -244,8 +749,15 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
             // (single AtomicU64::fetch_add) and not on any
             // correctness path.
             let _ = crate::per_cpu_stats::record_syscall();
-            let syscall_id = frame.x7() as u32;
             let args = crate::svc_dispatch::SyscallArgs::from_trap_frame(frame);
+            // PR #887 review round 3: the syscall number is the FULL 64-bit
+            // `x7`.  Narrowing first would make `0x1_0000_0002` syscall 2; a
+            // word the ABI cannot name is an unknown syscall, delivered to the
+            // thread's fault handler like any other, with the full word.
+            let dispatched = match u32::try_from(frame.x7()) {
+                Ok(syscall_id) => crate::svc_dispatch::dispatch_svc(syscall_id, &args),
+                Err(_) => Err(crate::svc_dispatch::DispatchError::InvalidSyscallId),
+            };
             // WS-RA (plan §3.1/§3.3): the writeback is a six-register
             // context restore — `x0` the value, the offset error label on
             // `x1`, `x2`-`x5` message registers.  A blocked caller has NO
@@ -255,8 +767,19 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
             // surface as label-encoded error frames like every kernel
             // rejection, retiring the raw-discriminant `x0` write and its
             // documented collision.
-            match crate::svc_dispatch::dispatch_svc(syscall_id, &args) {
+            match dispatched {
                 Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) => frame.set_return_frame(regs),
+                // PR #887 review round 5: the caller took a fault at the
+                // seam (a failed capability lookup delivered to its handler,
+                // or the fail-closed suspend).  No frame exists, and the
+                // model restarts the caller AT the `SVC` on its handler's
+                // reply — the `Blocked` sentinel would `eret` it past the
+                // `SVC` instead.  So this arm halts pending the SM10.1
+                // successor install, as the delivered unknown-syscall and
+                // abort paths do.
+                Ok(crate::svc_dispatch::SvcOutcome::Faulted) => {
+                    halt_after_delivered_syscall_fault(frame);
+                }
                 Ok(crate::svc_dispatch::SvcOutcome::Blocked) => {
                     // SM10.1 context-restore hook: the successor's frame
                     // install lands here when `contextRestoreSeamLive`
@@ -271,43 +794,53 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
                     // success and never as a kernel-emitted error.
                     frame.set_return_frame(crate::svc_dispatch::blocked_resume_sentinel_regs());
                 }
+                // PR #887 review: a syscall number outside `SyscallId` is
+                // seL4's `UnknownSyscall` fault — delivered to the thread's
+                // fault handler (so a handler can emulate the call), not an
+                // `invalidSyscallNumber` frame handed back to the thread.
+                Err(crate::svc_dispatch::DispatchError::InvalidSyscallId) => {
+                    deliver_unknown_syscall(frame);
+                }
                 Err(e) => frame.set_return_frame(crate::svc_dispatch::error_frame_regs(
                     e.kernel_error_discriminant(),
                 )),
             }
         }
-        ec::DABT_LOWER | ec::DABT_CURRENT => {
-            // Data abort — VM fault (KernelError::VmFault = 44)
-            // WS-SM SM1.I.4: per-core VM-fault attribution.
-            let _ = crate::per_cpu_stats::record_vm_fault();
-            frame.set_x0(error_code::VM_FAULT);
+        sync_class::KERNEL_ABORT => {
+            // PR #887 review: the kernel faulted — halt, never deliver.
+            halt_on_kernel_abort(frame, esr);
         }
-        ec::IABT_LOWER | ec::IABT_CURRENT => {
-            // Instruction abort — VM fault (KernelError::VmFault = 44)
-            // WS-SM SM1.I.4: per-core VM-fault attribution.
+        sync_class::DATA_ABORT | sync_class::INSTR_ABORT => {
+            // WS-RR RR4.21/RR4.23: an abort is **delivered** to the faulting
+            // thread's fault handler, not returned to the thread that took it.
+            // The pre-RR4 arm set `x0 = VM_FAULT` and returned, so `trap.S`
+            // `eret`ed straight back onto the faulting instruction: any user
+            // thread touching an unmapped page wedged its core forever.
+            //
+            // WS-SM SM1.I.4: per-core VM-fault attribution, unchanged.
             let _ = crate::per_cpu_stats::record_vm_fault();
-            frame.set_x0(error_code::VM_FAULT);
+            deliver_fault(frame, error_code::VM_FAULT);
         }
-        ec::PC_ALIGN | ec::SP_ALIGN => {
-            // Alignment fault — user exception (KernelError::UserException = 45)
-            // Matches Lean ExceptionModel.lean:175-177 mapping of pcAlignment
-            // and spAlignment to `.error .userException`.
+        sync_class::PC_ALIGNMENT | sync_class::SP_ALIGNMENT => {
+            // WS-RR RR4.21: an alignment fault is a `userException` fault and
+            // is delivered on the same path, for the same reason — returning
+            // it to the faulting thread re-executes the misaligned access.
             // WS-SM SM1.I.4: per-core user-exception attribution.
             let _ = crate::per_cpu_stats::record_user_exception();
-            frame.set_x0(error_code::USER_EXCEPTION);
+            deliver_fault(frame, error_code::USER_EXCEPTION);
         }
         _ => {
-            // Unknown exception class — user exception (KernelError::UserException = 45)
-            // Matches Lean ExceptionModel.lean:175-177 mapping of unknownReason
-            // to `.error .userException`.
+            // Unknown exception class — a `userException` fault, delivered
+            // like the rest.  The diagnostic reports the raw EC, which is
+            // what a reader needs when the model did not classify it.
             // WS-SM SM1.I.4: per-core user-exception attribution.
             let _ = crate::per_cpu_stats::record_user_exception();
             crate::kprintln!(
-                "FATAL: unhandled exception EC=0x{:02x} ESR=0x{:016x}",
-                exception_class,
+                "unhandled exception class: EC=0x{:02x} ESR=0x{:016x}",
+                esr_ec(esr),
                 esr
             );
-            frame.set_x0(error_code::USER_EXCEPTION);
+            deliver_fault(frame, error_code::USER_EXCEPTION);
         }
     }
 }
@@ -605,6 +1138,21 @@ mod tests {
     // by cargo's test harness).
     static PER_CORE_STATS_OBSERVATION_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+    /// PR #887 review round 2 (CI flake made structural): **every** host test
+    /// that drives `handle_synchronous_exception` records into the same
+    /// process-global counters — `current_core_id_from_tpidr()` is core 0 on
+    /// every test thread — so a test that only checks a return frame can
+    /// still land a `record_vm_fault` between the two reads of an
+    /// observation test's snapshot pair.  The observation tests hold the
+    /// mutex across their pair and call the handler directly; every other
+    /// driver goes through here, so no recorder runs inside a pair.
+    fn drive_sync(frame: &mut TrapFrame) {
+        let _guard = PER_CORE_STATS_OBSERVATION_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        handle_synchronous_exception(frame);
+    }
+
     #[test]
     fn trap_frame_size_is_288_bytes() {
         // AK5-F: TrapFrame grew from 272 to 288 (added ESR_EL1 + FAR_EL1).
@@ -682,15 +1230,18 @@ mod tests {
         // SVC ESR into the frame and verify the SVC-arm is taken.
         //
         // WS-RA: the stub kernel publishes the label-encoded
-        // `NotImplemented` (discriminant 17 → label 18) error frame, and
-        // the SVC arm's writeback is the full six-register restore —
-        // `x0 = 0`, the offset label on `x1`, `x2`-`x5` zero.  Under the
-        // retired bit-63 convention this test asserted `x0 == 17`.
+        // `NotImplemented` (discriminant 17 → label ERROR_LABEL_BASE + 17)
+        // error frame, and the SVC arm's writeback is the full six-register
+        // restore — `x0 = 0`, the status label on `x1`, `x2`-`x5` zero.
+        // Under the retired bit-63 convention this test asserted `x0 == 17`.
         let mut frame = zero_frame();
         frame.esr_el1 = (ec::SVC_AARCH64 << 26) | 0x42; // lower bits ignored
-        handle_synchronous_exception(&mut frame);
+        drive_sync(&mut frame);
         assert_eq!(frame.x0(), 0);
-        assert_eq!(frame.x1(), (error_code::NOT_IMPLEMENTED + 1) << 9);
+        assert_eq!(
+            frame.x1(),
+            (crate::svc_dispatch::ERROR_LABEL_BASE + u64::from(error_code::NOT_IMPLEMENTED)) << 9
+        );
         assert_eq!([frame.x2(), frame.x3(), frame.x4(), frame.x5()], [0; 4]);
     }
 
@@ -698,11 +1249,27 @@ mod tests {
     fn handle_sync_data_abort_via_frame() {
         // AK5-F.3: DABT from lower EL is classified from frame ESR, not
         // from live register — proves the handler is not reading live mrs.
+        //
+        // WS-RR RR4.22: the abort arm now publishes a full **status-label**
+        // frame (ABI v3) instead of the retired raw discriminant in `x0`.
+        // On the host lane `deliver_fault` takes its fallback: `x0 = 0`,
+        // `x1` a `MessageInfo` whose label is `ERROR_LABEL_BASE + VM_FAULT`,
+        // and `x2`-`x5` cleared.  Under the retired convention this asserted
+        // `x0 == 44` and left `x1` untouched — the fail-open shape a resumed
+        // thread could decode as a success.  PR #887 review round 3: this
+        // frame is the *host lane's* observable only; on hardware a not-ready
+        // core halts instead (`abort_before_lean_ready_halts`), because an
+        // abort's frame would be `eret`ed back into the abort.
         let mut frame = zero_frame();
         frame.esr_el1 = ec::DABT_LOWER << 26;
         frame.far_el1 = 0xFFFF_0000_DEAD_0000;
-        handle_synchronous_exception(&mut frame);
-        assert_eq!(frame.x0(), error_code::VM_FAULT);
+        drive_sync(&mut frame);
+        assert_eq!(frame.x0(), 0);
+        assert_eq!(
+            frame.x1(),
+            (crate::svc_dispatch::ERROR_LABEL_BASE + u64::from(error_code::VM_FAULT)) << 9
+        );
+        assert_eq!([frame.x2(), frame.x3(), frame.x4(), frame.x5()], [0; 4]);
         // FAR is preserved in the frame (not mutated by the handler).
         assert_eq!(frame.far_el1, 0xFFFF_0000_DEAD_0000);
     }
@@ -716,15 +1283,295 @@ mod tests {
         outer.esr_el1 = ec::DABT_LOWER << 26;
         outer.far_el1 = 0xAAAA;
 
-        // Simulate nested: inner frame with different ESR/FAR.
+        // Simulate a subsequent trap: a second frame with different ESR/FAR.
+        // PR #887 review: it is a *lower*-EL instruction abort, because a
+        // current-EL one is a kernel-origin exception and halts the core
+        // before any frame is read (`halt_if_kernel_origin`) — the frame
+        // isolation this test pins is a property of the delivered path.
         let mut inner = zero_frame();
-        inner.esr_el1 = ec::IABT_CURRENT << 26;
+        inner.esr_el1 = ec::IABT_LOWER << 26;
         inner.far_el1 = 0xBBBB;
-        handle_synchronous_exception(&mut inner);
+        drive_sync(&mut inner);
 
         // The outer frame remains untouched.
         assert_eq!(outer.esr_el1, ec::DABT_LOWER << 26);
         assert_eq!(outer.far_el1, 0xAAAA);
+    }
+
+    /// **WS-RR RR4.25**: the host lane's classification mirror agrees with the
+    /// Lean model's `classifySynchronousException` on **every** EC value.
+    ///
+    /// Enumerated rather than spot-checked, and stated as an explicit expected
+    /// table rather than by re-deriving it from `esr_ec`: a mutation that keeps
+    /// every token but *changes the mapping* — swapping the abort arms, folding
+    /// `SP_ALIGN` into the unknown arm, moving `SVC` — is exactly the drift
+    /// that would route a fault to the wrong handler, and only a table can
+    /// catch it.  On hardware the mirror classifies only before a core is
+    /// ready (`classify_synchronous_exception` is the Lean call once it is), so
+    /// this pins both the host lane and the pre-readiness path to the answers
+    /// the Lean classifier gives.
+    #[test]
+    fn sync_class_mirrors_lean_ec_table() {
+        for raw_ec in 0u64..64 {
+            let esr = raw_ec << 26;
+            let expected = match raw_ec {
+                0x15 => sync_class::SVC,
+                0x24 => sync_class::DATA_ABORT,
+                0x20 => sync_class::INSTR_ABORT,
+                // PR #887 review: current-EL aborts are the kernel's own.
+                0x25 | 0x21 => sync_class::KERNEL_ABORT,
+                0x22 => sync_class::PC_ALIGNMENT,
+                0x26 => sync_class::SP_ALIGNMENT,
+                _ => sync_class::UNKNOWN_REASON,
+            };
+            assert_eq!(
+                classify_synchronous_exception_mirror(esr),
+                expected,
+                "EC 0x{raw_ec:02x} classified differently from the Lean model"
+            );
+        }
+    }
+
+    /// **WS-RR RR4.25**: the five class tags are the Lean
+    /// `syncExceptionClassTag` values, pinned as literals.
+    #[test]
+    fn sync_class_tags_match_lean() {
+        assert_eq!(sync_class::SVC, 0);
+        assert_eq!(sync_class::DATA_ABORT, 1);
+        assert_eq!(sync_class::INSTR_ABORT, 2);
+        assert_eq!(sync_class::PC_ALIGNMENT, 3);
+        assert_eq!(sync_class::SP_ALIGNMENT, 4);
+        assert_eq!(sync_class::UNKNOWN_REASON, 5);
+        assert_eq!(sync_class::KERNEL_ABORT, 6);
+    }
+
+    /// **PR #887 review**: the origin predicate reads `SPSR_EL1.M[3:2]`.
+    #[test]
+    fn exception_origin_reads_spsr_el() {
+        assert!(exception_taken_from_el0(0)); // EL0t
+        assert!(exception_taken_from_el0(0x3C0)); // EL0t with DAIF set
+        assert!(exception_taken_from_el0(0x10)); // AArch32 EL0 (M[4] set)
+        assert!(!exception_taken_from_el0(0x3C4)); // EL1t
+        assert!(!exception_taken_from_el0(0x3C5)); // EL1h
+        assert!(!exception_taken_from_el0(0x5)); // EL1h, DAIF clear
+    }
+
+    /// **PR #887 review**: a synchronous exception taken from EL1 — a kernel
+    /// page fault — halts instead of being classified and delivered to the
+    /// current user thread.  On the host lane `fatal_halt` panics, which is
+    /// the observable; the gate is exercised directly because a panic cannot
+    /// unwind across the `extern "C"` handler frame.
+    #[test]
+    #[should_panic]
+    fn kernel_origin_gate_halts_on_el1() {
+        let mut frame = zero_frame();
+        frame.esr_el1 = ec::DABT_LOWER << 26; // the syndrome alone looks like a user fault…
+        frame.spsr_el1 = 0x3C5; // …but the PE was at EL1h when it was taken.
+        halt_if_kernel_origin(&frame, frame.esr_el1);
+    }
+
+    /// **PR #887 review**: …and passes an EL0-origin exception through.
+    #[test]
+    fn kernel_origin_gate_passes_el0() {
+        let mut frame = zero_frame();
+        frame.esr_el1 = ec::DABT_LOWER << 26;
+        frame.spsr_el1 = 0x3C0; // EL0t, DAIF set
+        halt_if_kernel_origin(&frame, frame.esr_el1);
+    }
+
+    /// **PR #887 review round 3**: an EL0 abort on a core whose Lean runtime
+    /// is not up halts.  A status frame cannot fail-close an abort — `eret`
+    /// through the unchanged `ELR_EL1` re-executes the faulting instruction —
+    /// so the not-ready path diverges like the delivered arm; on the host
+    /// lane `fatal_halt` panics, which is the observable.
+    #[test]
+    #[should_panic]
+    fn abort_before_lean_ready_halts() {
+        halt_abort_before_lean_ready(0, ec::DABT_LOWER << 26, 0x4_0000);
+    }
+
+    /// **PR #887 review round 5**: a delivered syscall fault (outcome tag 2)
+    /// halts the core pending SM10.1 — returning would `eret` the caller
+    /// past the `SVC` the model has it restart at.  On the host lane
+    /// `fatal_halt` panics, which is the observable.
+    #[test]
+    #[should_panic]
+    fn delivered_syscall_fault_halts() {
+        let mut frame = zero_frame();
+        frame.esr_el1 = ec::SVC_AARCH64 << 26;
+        frame.gprs[7] = 2;
+        halt_after_delivered_syscall_fault(&frame);
+    }
+
+    /// **PR #887 review**: a current-EL abort syndrome halts on its own class,
+    /// independently of the origin gate.
+    #[test]
+    #[should_panic]
+    fn current_el_abort_halts() {
+        let mut frame = zero_frame();
+        frame.esr_el1 = ec::DABT_CURRENT << 26;
+        halt_on_kernel_abort(&frame, frame.esr_el1);
+    }
+
+    /// **PR #887 review**: …and the instruction-abort half of the class does
+    /// too — the syndrome the kernel raises by branching to an unmapped or
+    /// non-executable address, which the data-abort case above cannot stand
+    /// in for.
+    #[test]
+    #[should_panic]
+    fn current_el_instruction_abort_halts() {
+        let mut frame = zero_frame();
+        frame.esr_el1 = ec::IABT_CURRENT << 26;
+        halt_on_kernel_abort(&frame, frame.esr_el1);
+    }
+
+    /// **PR #887 review**: a syscall number outside `SyscallId` takes the
+    /// unknown-syscall seam.  On the host lane no core is Lean-ready, so the
+    /// seam's fail-closed half publishes the `invalidSyscallNumber` status
+    /// frame (discriminant 31) — never a success, never the thread's own
+    /// request registers.
+    #[test]
+    fn handle_sync_unknown_syscall_id_not_ready_publishes_status_frame() {
+        let mut frame = zero_frame();
+        frame.esr_el1 = ec::SVC_AARCH64 << 26;
+        frame.gprs[7] = 0xFFFF; // no such syscall
+        frame.gprs[0] = 0xDEAD;
+        drive_sync(&mut frame);
+        assert_eq!(frame.x0(), 0);
+        assert_eq!(
+            frame.x1(),
+            (crate::svc_dispatch::ERROR_LABEL_BASE + 31) << 9
+        );
+        assert_eq!([frame.x2(), frame.x3(), frame.x4(), frame.x5()], [0; 4]);
+    }
+
+    /// **PR #887 review round 3**: the syscall number is validated at its
+    /// full 64-bit width.  `0x1_0000_0002` narrows to syscall 2, which the
+    /// old `as u32` would have dispatched (the host stub answers it with the
+    /// `notImplemented` frame, discriminant 17); it is an unknown syscall,
+    /// and on the not-ready host lane that is the `invalidSyscallNumber`
+    /// status frame (31).
+    #[test]
+    fn handle_sync_wide_syscall_number_is_unknown_syscall() {
+        let mut frame = zero_frame();
+        frame.esr_el1 = ec::SVC_AARCH64 << 26;
+        frame.gprs[7] = 0x1_0000_0002;
+        drive_sync(&mut frame);
+        assert_eq!(frame.x0(), 0);
+        assert_eq!(
+            frame.x1(),
+            (crate::svc_dispatch::ERROR_LABEL_BASE + 31) << 9
+        );
+        assert_ne!(
+            frame.x1(),
+            (crate::svc_dispatch::ERROR_LABEL_BASE + 17) << 9
+        );
+    }
+
+    /// **WS-RR RR4.25**: the low ESR bits (IL, ISS) do not change the class —
+    /// the classification reads EC alone, exactly as the Lean
+    /// `classifySynchronousException_depends_only_on_esr` companion states of
+    /// the other three syndrome words.
+    #[test]
+    fn sync_class_ignores_iss_bits() {
+        let base = ec::DABT_LOWER << 26;
+        assert_eq!(
+            classify_synchronous_exception(base),
+            classify_synchronous_exception(base | 0x01FF_FFFF)
+        );
+    }
+
+    /// **WS-RR RR4.24**: `ELR_EL1` is writable — the mutator the trap frame
+    /// lacked, and without which a fault reply could only ever return the
+    /// thread to the instruction that faulted.
+    #[test]
+    fn trap_frame_elr_mutator() {
+        let mut frame = zero_frame();
+        frame.elr_el1 = 0x1000;
+        frame.set_elr_el1(0xDEAD_BEEF_0000);
+        assert_eq!(frame.elr_el1, 0xDEAD_BEEF_0000);
+    }
+
+    /// **WS-RR RR4.24**: and so is the saved user stack pointer.
+    #[test]
+    fn trap_frame_sp_el0_mutator() {
+        let mut frame = zero_frame();
+        frame.set_sp_el0(0x7FFF_0000);
+        assert_eq!(frame.sp_el0, 0x7FFF_0000);
+    }
+
+    /// **WS-RR RR4.16/RR4.24**: a fault-restart frame installs `x0`-`x7`, the
+    /// link register, the restart PC and the stack pointer — and **nothing
+    /// else**.  `SPSR_EL1` in particular survives: this model keeps PSTATE out
+    /// of a fault handler's reach.
+    #[test]
+    fn trap_frame_fault_restart_frame() {
+        let mut frame = zero_frame();
+        frame.spsr_el1 = 0x3C5;
+        frame.gprs[8] = 0xC0FFEE;
+        frame.gprs[29] = 0xFEEDFACE;
+        // [x0..x7, lr, pc, sp]
+        frame.set_fault_restart_frame([10, 11, 12, 13, 14, 15, 16, 17, 0x30, 0x9000, 0x8000]);
+        assert_eq!(
+            [
+                frame.x0(),
+                frame.x1(),
+                frame.x2(),
+                frame.x3(),
+                frame.x4(),
+                frame.x5(),
+                frame.gprs[6],
+                frame.gprs[7]
+            ],
+            [10, 11, 12, 13, 14, 15, 16, 17]
+        );
+        assert_eq!(frame.gprs[30], 0x30);
+        assert_eq!(frame.elr_el1, 0x9000);
+        assert_eq!(frame.sp_el0, 0x8000);
+        // Untouched: PSTATE, and every register outside the restart window.
+        assert_eq!(frame.spsr_el1, 0x3C5);
+        assert_eq!(frame.gprs[8], 0xC0FFEE);
+        assert_eq!(frame.gprs[29], 0xFEEDFACE);
+    }
+
+    /// **WS-RR RR4.22**: every exception arm that is not `SVC` publishes a
+    /// **status-label** frame (ABI v3) — `x0 = 0`, the error in the top of
+    /// `x1`'s label range, `x2`-`x5` cleared — and never the retired raw
+    /// discriminant in `x0` with `x1` left as the faulting thread found it.
+    ///
+    /// The `x1` assertion is the load-bearing half: the pre-RR4 arms wrote
+    /// only `x0`, so a resumed thread whose `x1` carried a label below 512
+    /// decoded the fault as a *successful syscall* with a forged badge.
+    #[test]
+    fn exception_arms_publish_offset_label_frames() {
+        let cases: [(u64, u32); 5] = [
+            (ec::DABT_LOWER, error_code::VM_FAULT),
+            (ec::IABT_LOWER, error_code::VM_FAULT),
+            (ec::PC_ALIGN, error_code::USER_EXCEPTION),
+            (ec::SP_ALIGN, error_code::USER_EXCEPTION),
+            (0x3F, error_code::USER_EXCEPTION),
+        ];
+        for (raw_ec, disc) in cases {
+            let mut frame = zero_frame();
+            frame.esr_el1 = raw_ec << 26;
+            // Seed `x1` with a label a decoder would read as success, so a
+            // regression that stops writing `x1` fails here rather than in
+            // userspace.
+            frame.gprs[1] = 0;
+            frame.gprs[0] = 0xDEAD;
+            drive_sync(&mut frame);
+            assert_eq!(
+                frame.x0(),
+                0,
+                "EC 0x{raw_ec:02x}: x0 must be the value channel, not the status"
+            );
+            assert_eq!(
+                frame.x1(),
+                (crate::svc_dispatch::ERROR_LABEL_BASE + u64::from(disc)) << 9,
+                "EC 0x{raw_ec:02x}: x1 must carry the status label"
+            );
+            assert_eq!([frame.x2(), frame.x3(), frame.x4(), frame.x5()], [0; 4]);
+        }
     }
 
     #[test]

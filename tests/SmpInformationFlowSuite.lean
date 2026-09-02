@@ -5409,9 +5409,9 @@ private def runPerCoreCoverageChecks : IO Unit := do
 /-- §4.7  The per-core enforcement boundary (SM8.B.6 / SM8.B.7). -/
 private def runEnforcementBoundaryChecks : IO Unit := do
   IO.println "--- §4.7 the per-core enforcement boundary ---"
-  assertBool "58 entries: 43 canonical (the 2PL bracket, the two audit readers, the declassifying signal) + 15 cross-core wrappers"
-    (decide (enforcementBoundaryPerCore.length = 58) &&
-     decide (enforcementBoundaryExtended.length = 43) &&
+  assertBool "59 entries: 44 canonical (the 2PL bracket, the two audit readers, the declassifying signal, the fault-handler configuration) + 15 cross-core wrappers"
+    (decide (enforcementBoundaryPerCore.length = 59) &&
+     decide (enforcementBoundaryExtended.length = 44) &&
      decide (crossCoreEnforcementEntries.length = 15))
   assertBool "every SyscallId is still covered by the extended boundary (single-core half)"
     (enforcementBoundaryPerCoreComplete)
@@ -7911,22 +7911,24 @@ private def runDeclaredFootprintChecks : IO Unit := do
   -- dynamic PIP chain, the queue-ownership protocol, (SM9.D audit) the
   -- capability-transfer destination CNode, (SM9.D audit) the taint table's
   -- per-key realisation and (PR #873 round 13) the CDT node allocator's global
-  -- counter are named as data with owners rather than left implicit.
-  assertBool "the six uncovered lock domains are registered, each with an owner"
-    (decide (declaredFootprintUncoveredDomains.length = 6) &&
+  -- counter and (PR #887 review round 3) the interior CNodes of a multi-level
+  -- CSpace walk are named as data with owners rather than left implicit.
+  assertBool "the seven uncovered lock domains are registered, each with an owner"
+    (decide (declaredFootprintUncoveredDomains.length = 7) &&
      decide (declaredFootprintUncoveredDomains.map Prod.fst
        = [UncoveredLockDomain.schedulerDomain, UncoveredLockDomain.dynamicPipChain,
           UncoveredLockDomain.queueOwnershipProtocol,
           UncoveredLockDomain.capTransferReceiverCnode,
           UncoveredLockDomain.taintTablePerKeyStore,
-          UncoveredLockDomain.cdtNodeAllocation]) &&
+          UncoveredLockDomain.cdtNodeAllocation,
+          UncoveredLockDomain.cspaceWalkInteriorCnodes]) &&
      declaredFootprintUncoveredDomains.all (fun d => !d.2.isEmpty))
   -- LOAD-BEARING NEGATIVE: completeness is quantified over the *constructors*,
   -- so a domain added without a registration cannot pass.
   assertBool "NEGATIVE: every uncovered-domain constructor is registered"
     (UncoveredLockDomain.all.all
        (fun d => declaredFootprintUncoveredDomains.map Prod.fst |>.contains d) &&
-     decide (UncoveredLockDomain.all.length = 6))
+     decide (UncoveredLockDomain.all.length = 7))
   -- PR #873 round 6: the inventory is no longer data alone.  Relying on declared
   -- footprints as a complete serialization discipline is gated on it being
   -- EMPTY, so the per-key taint store — the entry the review pressed twice — is
@@ -8583,12 +8585,13 @@ private def runRefusalSeamWriteChecks : IO Unit := do
   -- class a monitor cannot see.  The *policy-path* refusals travel the same
   -- boundary in §13.2, under a deployment the probe serves.
   assertBool "END TO END: the boundary commits the record and returns the plain error frame"
-    (match Platform.FFI.syscallDispatchFromAbi ctx c1 declassId 0 5 0 0 0 0 0 0 niState with
+    (match Platform.FFI.syscallDispatchFromAbi ctx c1 declassId 0 5 0 0 0 0 0 0 0 0 0 0
+        niState with
      | .error _ => false
      | .ok (outcome, committed) =>
          (match outcome with
           | .returns f => decide (f = Architecture.errorFrame KernelError.policyDenied)
-          | .blocks => false) &&
+          | .blocks | .faulted => false) &&
          (match committed.declassificationRefusals.recent.get
              niState.declassificationRefusals.nextSlot with
           | some r => decide (r.reason = KernelError.policyDenied) &&
@@ -8598,7 +8601,8 @@ private def runRefusalSeamWriteChecks : IO Unit := do
          decide (committed.declassificationRefusals.attemptCount.val = 1) &&
          decide (committed.declassificationAuditLog = niState.declassificationAuditLog))
   assertBool "NEGATIVE: the same boundary call for an EXEMPT syscall records nothing"
-    (match Platform.FFI.syscallDispatchFromAbi ctx c1 sendId 0 5 0 0 0 0 0 0 niState with
+    (match Platform.FFI.syscallDispatchFromAbi ctx c1 sendId 0 5 0 0 0 0 0 0 0 0 0 0
+        niState with
      | .error _ => false
      | .ok (_, committed) =>
          decide (committed.declassificationRefusals = niState.declassificationRefusals))
@@ -8863,7 +8867,7 @@ private def runRefusalAcceptanceChecks : IO Unit := do
   -- refusals travel the same boundary in §13.2.
   assertBool "END TO END: the committed refusal reads back live, and the caller's frame is exactly its reason's"
     (match Platform.FFI.syscallDispatchFromAbi auditMonitorLabeling c1
-        (SyscallId.declassify.toNat.toUInt32) 0 5 0 0 0 0 0 0 auditMixedState with
+        (SyscallId.declassify.toNat.toUInt32) 0 5 0 0 0 0 0 0 0 0 0 0 auditMixedState with
      | .error _ => false
      | .ok (outcome, committed) =>
          match committed.declassificationRefusals.recent.get
@@ -8872,7 +8876,7 @@ private def runRefusalAcceptanceChecks : IO Unit := do
          | some recorded =>
              (match outcome with
               | .returns f => decide (f = Architecture.errorFrame recorded.reason)
-              | .blocks => false) &&
+              | .blocks | .faulted => false) &&
              decide (recorded.reason = KernelError.policyDenied) &&
              decide (recorded.syscall = SyscallId.declassify) &&
              decide (recorded.subject = highCurrent) &&
@@ -9324,7 +9328,7 @@ private def runAuditLiveArmChecks : IO Unit := do
   assertBool "both audit syscalls are in the ABI, with different required rights"
     (decide (SyscallId.auditRead.toNat = 31) &&
      decide (SyscallId.auditDrain.toNat = 32) &&
-     decide (SyscallId.count = 34) &&
+     decide (SyscallId.count = 35) &&
      decide (syscallRequiredRight .auditRead = AccessRight.read) &&
      decide (syscallRequiredRight .auditDrain = AccessRight.write))
   assertBool "both return a WORD, so the boundary reads the staged frame rather than constructing"
@@ -9951,9 +9955,9 @@ private def runDeclassifiedSignalDefaultChecks : IO Unit := do
 /-- §11.6  SM9.C.8 / SM9.C.9 — the ABI, the live arm and the registries. -/
 private def runDeclassifiedSignalAbiChecks : IO Unit := do
   IO.println "--- §11.6 SM9.C.8 the syscall, end to end ---"
-  assertBool "the syscall is in the ABI at 33, count 34, requiring the notification's write right"
+  assertBool "the syscall is in the ABI at 33, count 35, requiring the notification's write right"
     (decide (SyscallId.declassifySignal.toNat = 33) &&
-     decide (SyscallId.count = 34) &&
+     decide (SyscallId.count = 35) &&
      decide (SyscallId.ofNat? 33 = some SyscallId.declassifySignal) &&
      decide (syscallRequiredRight .declassifySignal = AccessRight.write))
   -- The same right the ordinary signal needs: the declassification gates sit
@@ -11338,7 +11342,7 @@ refuses hop 2, so the committed record must carry the resolved receiver. -/
 private def deniedSignalDispatchOutcome :
     Except KernelError (Architecture.SyscallOutcome × SystemState) :=
   Platform.FFI.syscallDispatchFromAbi signalReceiverDeniedLabeling c1
-    (SyscallId.declassifySignal.toNat.toUInt32) 1 2 1 0x5C 0 0 0 0
+    (SyscallId.declassifySignal.toNat.toUInt32) 1 2 1 0x5C 0 0 0 0 0 0 0 0
     seamBoundaryState
 
 /-- §13.2 fixture — the denied `.declassify` at the SAME state: the deny-all
@@ -11348,7 +11352,7 @@ resolves to the public notification, so the refusal is the policy gate's own
 private def deniedDeclassifyDispatchOutcome :
     Except KernelError (Architecture.SyscallOutcome × SystemState) :=
   Platform.FFI.syscallDispatchFromAbi declassifyDenyAllLabeling c1
-    (SyscallId.declassify.toNat.toUInt32) 0 3 0 0 0 0 0 0 seamBoundaryState
+    (SyscallId.declassify.toNat.toUInt32) 0 3 0 0 0 0 0 0 0 0 0 0 seamBoundaryState
 
 /-- §13.2  SM9.E.2 — the refusal seam covers BOTH declassifying syscalls, at
 the boundary the hardware calls.

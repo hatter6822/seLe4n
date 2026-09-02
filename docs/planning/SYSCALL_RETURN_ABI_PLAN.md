@@ -38,7 +38,7 @@ per-core return-frame mailbox (`ffi_syscall_return_frame` /
 `ReturnFrameMailbox`), `trap.rs` restoring all six registers
 (`set_return_frame`), `decode_response` rewritten to the label convention,
 `encodeOk` / `encodeError` / `syscallDispatchInner` **deleted** with Tier-3
-negative anchors, `SYSCALL_ABI_VERSION = 2` pinned on all three sides
+negative anchors, `SYSCALL_ABI_VERSION = 2` pinned on all three sides (`3` since v0.34.44 — see the amendment under §3.1)
 (Lean `decide` theorem; Rust test-compile-time `const` assertion), the five
 unreachable-wrapper prefilter defects fixed, and the golden fixture
 `tests/fixtures/syscall_return_abi.expected` byte-verified in-suite.
@@ -494,6 +494,23 @@ we cannot renumber (the discriminants are pinned by the Rust mirror and the
 `errorLabel e = toDiscriminant e + 1`, decoded as `0 → success`,
 `n+1 → ofDiscriminant? n` (fail-closed on unknown).  `errorLabel_never_zero` is
 the theorem that pins the non-aliasing.
+
+**Amendment, v0.34.44 (WS-RR RR4 audit round) — ABI version 3.**  The offset
+scheme was sound only while every *delivered* message carried label `0`, which
+was true of the whole tree until RR4 made the kernel deliver fault messages
+under their `seL4_Fault_tag` (1, 2, 3, 6).  A handler's `seL4_Recv` returns
+that label in `x1`, and under `d + 1` every such delivery decoded as a kernel
+error (`vmFault` as discriminant 5, `capFault` as `.invalidCapability`), so no
+fault handler could be written against `decode_response`.  The convention is
+now range-separated: the top 256 labels of the 20-bit field are kernel status
+(`errorLabelBase = 0xFFF00`; `errorLabel e = errorLabelBase + toDiscriminant e`;
+`ofErrorLabel?` decides by `errorLabelBase ≤ label`), and every delivered label
+is below the base (`returnMessageInfo` clamps there;
+`faultLabel_lt_errorLabelBase`, `ofErrorLabel?_none_of_lt_base`).  The
+blocked-resume sentinel `0xFFFFF` is the last status label, naming
+discriminant 255, which no `KernelError` has — the same `UnknownKernelError`
+answer, now for the stated reason.  `SYSCALL_ABI_VERSION = 3` on all three
+sides; `ERROR_LABEL_BASE` is the fourth pinned literal.
 
 The carrier already exists: `MessageInfo.label` is a 20-bit field documented as
 "seL4 convention" (`maxLabel = 2^20 - 1`, mirrored and compile-time-checked in

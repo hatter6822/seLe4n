@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Segurança" /></a>
-  <img src="https://img.shields.io/badge/version-0.34.43-blue" alt="Versão" />
+  <img src="https://img.shields.io/badge/version-0.34.44-blue" alt="Versão" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Licença" /></a>
 </p>
@@ -87,7 +87,7 @@ provas do Lean 4:
 
 | Atributo | Valor |
 |----------|-------|
-| **Versão** | `0.34.43` |
+| **Versão** | `0.34.44` |
 | **Toolchain Lean** | `v4.28.0` |
 | **LoC Lean de produção** | 286.841 em 286 arquivos |
 | **LoC Lean de testes** | 64.078 em 69 suítes de testes |
@@ -226,6 +226,8 @@ cache, fluxo de informação SMP e a conclusão da desclassificação (SM9,
 encerrada na v0.33.100). A fase restante é a **SM10** (fechamento de release
 → v1.0.0). O workstream do ABI de retorno de syscalls (**WS-RA**) está
 completo.
+
+**A SM10 está bloqueada pelo WS-RR** (prontidão de release SMP), a fase de remediação pré-1.0 atualmente em andamento ([`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)): RR0 (v0.34.26), RR1 (v0.34.41), RR2 (v0.34.42), RR3 (v0.34.43) e **RR4 — tratamento de faltas: IPC de falta completo com reinício baseado em resposta (v0.34.44)**, que impede que uma thread em falta seja retomada na instrução que falhou: a falta é registrada no TCB, entregue ao endpoint `faultHandler` da thread pela cadeia de chamada entre núcleos ativa e atendida por uma resposta que reinicia a thread em um PC escolhido ou a abandona. Restam RR5–RR8 e, então, a **SM10** (fechamento de release → v1.0.0).
 
 Plano mestre: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md),
 com planos por fase em `docs/planning/SMP_*.md`. O registro canônico por

@@ -82,7 +82,7 @@ impl DispatchError {
     }
 }
 
-/// AN9-F: 34-variant syscall ID enum mirroring
+/// AN9-F: 35-variant syscall ID enum mirroring
 /// `sele4n-types::SyscallId`.  Discriminants align with the Lean
 /// `SyscallId.toNat` encoding so a `u64` syscall id read from the
 /// trap frame's `x7` register decodes identically on both sides.
@@ -138,11 +138,14 @@ pub enum SyscallId {
     /// notification, and the notification onward into the resolved receiver —
     /// with the real delivery performed in between.
     DeclassifySignal = 33,
+    /// PR #887 review: install a thread's fault-handler CPtr (seL4's
+    /// `TCB_SetSpace` fault endpoint), validated kernel-side at set time.
+    TcbSetFaultHandler = 34,
 }
 
 impl SyscallId {
     /// Total number of modelled syscalls (must match `sele4n-types`).
-    pub const COUNT: u32 = 34;
+    pub const COUNT: u32 = 35;
 
     /// AN9-F.1.b: decode a raw `u32` syscall id, rejecting values
     /// outside the valid 0..=33 range with `None`.
@@ -182,6 +185,7 @@ impl SyscallId {
             31 => Some(Self::AuditRead),
             32 => Some(Self::AuditDrain),
             33 => Some(Self::DeclassifySignal),
+            34 => Some(Self::TcbSetFaultHandler),
             _ => None,
         }
     }
@@ -261,6 +265,9 @@ impl SyscallId {
             Self::TcbSetIPCBuffer => 1,
             // WS-SM SM5.H.4: x2 = the raw affinity word (1 inline register).
             Self::TcbSetAffinity => 1,
+            // PR #887 review: x2 = the fault-handler CPtr (1 inline register,
+            // `requireMsgReg 0` in `decodeSetFaultHandlerArgs`).
+            Self::TcbSetFaultHandler => 1,
             // WS-SM SM6.B: bind takes 1 register (notification id); unbind none.
             Self::TcbBindNotification => 1,
             Self::TcbUnbindNotification => 0,
@@ -310,6 +317,19 @@ pub struct SyscallArgs {
     /// Caller's IPC buffer address from `x6` (`TPIDRRO_EL0`).  Set to
     /// `None` when the field is zero (no IPC buffer registered).
     pub ipc_buffer_addr: Option<u64>,
+    /// PR #887 review round 3: the `SVC`'s return address (`ELR_EL1`).  A
+    /// blocking IPC syscall whose capability lookup fails is not answered
+    /// with an error frame — seL4's `handleInvocation` / `handleRecv`
+    /// deliver a `CapFault` to the thread's fault handler — and that fault's
+    /// message reports the faulting `SVC` (`ELR_EL1 - 4`) as the restart PC.
+    pub elr: u64,
+    /// The saved PSTATE (`SPSR_EL1`), carried outbound in the fault context
+    /// and never written back (the fail-closed half of `sanitiseRegister`).
+    pub spsr: u64,
+    /// `SP_EL0` — the fault window's stack pointer.
+    pub sp_el0: u64,
+    /// `x30` — the fault window's link register.
+    pub x30: u64,
 }
 
 impl SyscallArgs {
@@ -322,6 +342,11 @@ impl SyscallArgs {
     ///
     /// Note that `x7` is the `syscall_id` and is read separately by
     /// the dispatcher; it is NOT part of [`SyscallArgs`].
+    ///
+    /// PR #887 review round 3: `ELR_EL1`, `SPSR_EL1`, `SP_EL0` and `x30`
+    /// cross too, so a capability fault raised by the Lean dispatcher can
+    /// build its context from the trap frame's window rather than from the
+    /// register mirror's stale last-syscall contents.
     pub fn from_trap_frame(frame: &TrapFrame) -> Self {
         let raw_buf = frame.gprs[6];
         Self {
@@ -335,6 +360,10 @@ impl SyscallArgs {
                 frame.x5(),
             ],
             ipc_buffer_addr: if raw_buf == 0 { None } else { Some(raw_buf) },
+            elr: frame.elr_el1,
+            spsr: frame.spsr_el1,
+            sp_el0: frame.sp_el0,
+            x30: frame.gprs[30],
         }
     }
 
@@ -359,8 +388,11 @@ impl SyscallArgs {
 }
 
 /// WS-RA: the syscall ABI version this HAL speaks — the seL4 frame
-/// convention (`x0` value, offset error label on `x1`, `x2`-`x5` message
-/// registers).  Version 1 was the retired bit-63 protocol.  Mirrors
+/// convention (`x0` value, kernel status in the top of `x1`'s label range,
+/// `x2`-`x5` message registers).  Version 1 was the retired bit-63
+/// protocol; version 2 carried the status as label `d + 1`, which made a
+/// delivered fault message's `seL4_Fault_tag` decode as a kernel error
+/// (retired at WS-RR RR4).  Mirrors
 /// `sele4n-types::SYSCALL_ABI_VERSION` and Lean's
 /// `Architecture.syscallAbiVersion`.  The HAL carries zero runtime
 /// dependencies by design (the mirror discipline documented in
@@ -371,7 +403,15 @@ impl SyscallArgs {
 /// side — so a half-bumped tree cannot build its own test lane, let
 /// alone pass it (plan §3.6).  The Lean side is a `decide` theorem
 /// (`syscallAbiVersion_pinned`), failing the kernel build itself.
-pub const SYSCALL_ABI_VERSION: u64 = 2;
+pub const SYSCALL_ABI_VERSION: u64 = 3;
+
+/// WS-RR RR4 (ABI v3): the first kernel-status label — `0xFFF00`, the top
+/// 256 labels of the 20-bit field.  Hand-duplicated from
+/// `sele4n-types::ERROR_LABEL_BASE` per this crate's zero-runtime-deps
+/// discipline; the cross-crate agreement is a `#[cfg(test)]` `const`
+/// assertion below (a drift fails test *compilation*), and Lean pins the
+/// same literal (`Architecture.errorLabelBase_eq`).
+pub const ERROR_LABEL_BASE: u64 = (1 << 20) - 256;
 
 /// WS-RA: number of return-frame mailbox slots — one per core.
 pub const RETURN_FRAME_CORES: usize = crate::smp::MAX_SECONDARY_CORES + 1;
@@ -458,15 +498,35 @@ pub enum SvcOutcome {
     /// `0`) decode as a **false success** — the same fail-open class the
     /// retired pre-WS-RA protocol had (PR #866 review).
     Blocked,
+    /// PR #887 review round 5: the caller **took a fault at the seam** — a
+    /// failed capability lookup delivered to its fault handler, or the
+    /// fail-closed suspend when no handler could take it (outcome tag 2,
+    /// `SyscallOutcome.faulted`).  No frame exists, as for `Blocked`; but
+    /// the model restarts this caller *at* the `SVC` on its handler's
+    /// reply, so the `Blocked` sentinel — which `eret`s the caller past the
+    /// `SVC` — would resume a thread the model has waiting on a fault.  The
+    /// trap layer halts on this variant pending the SM10.1 successor
+    /// install, exactly as it does after a delivered unknown-syscall or
+    /// abort fault (`halt_after_delivered_syscall_fault`).
+    Faulted,
 }
 
 /// WS-RA: the label-encoded error frame for a prefilter rejection —
-/// `x0 = 0`, `x1` = `MessageInfo {length 0, extraCaps 0, label disc + 1}`
-/// = `(disc + 1) << 9`, no message registers.  Mirrors Lean's
-/// `Architecture.errorFrame` (the `+ 1` is the §3.1 offset: label `0`
-/// means success, and discriminant `0` is a real error).
+/// `x0 = 0`, `x1` = `MessageInfo {length 0, extraCaps 0, label
+/// ERROR_LABEL_BASE + disc}` = `(ERROR_LABEL_BASE + disc) << 9`, no message
+/// registers.  Mirrors Lean's `Architecture.errorFrame` (ABI v3: the status
+/// range is the top of the label field, so label `0` means success,
+/// discriminant `0` is a real error, and a delivered message's label —
+/// always below the base — can never be read as either).
 pub fn error_frame_regs(kernel_error_discriminant: u32) -> [u64; 6] {
-    [0, ((kernel_error_discriminant as u64) + 1) << 9, 0, 0, 0, 0]
+    [
+        0,
+        (ERROR_LABEL_BASE + (kernel_error_discriminant as u64)) << 9,
+        0,
+        0,
+        0,
+        0,
+    ]
 }
 
 /// The `x1` label of the blocked-resume sentinel: the maximum value the
@@ -477,17 +537,21 @@ pub fn error_frame_regs(kernel_error_discriminant: u32) -> [u64; 6] {
 /// Three properties make it the right sentinel, each pinned by a test:
 /// in-field (so `MessageInfo::decode` accepts the word and the failure
 /// surfaces at the error mapping, not as a malformed-word artifact),
-/// nonzero (never a success), and far outside the kernel-emittable label
-/// set `{0} ∪ {1..=57}` (label `d + 1` for discriminant `d ∈ 0..=56`),
-/// so `decode_response` collapses it to `UnknownKernelError` — an error
-/// the verified kernel never emits, hence unambiguously "this is not a
-/// completed syscall's frame".
+/// nonzero (never a success), and the **last** label of the status range
+/// — `ERROR_LABEL_BASE + 255`, naming discriminant 255, which the Lean
+/// `KernelError` does not have and the Rust enumeration reserves for its
+/// forward-compatibility sentinel `UnknownKernelError` — so
+/// `decode_response` reads it as that variant by construction: an error the
+/// verified kernel never emits, hence unambiguously "this is not a completed
+/// syscall's frame".
 pub const BLOCKED_RESUME_SENTINEL_LABEL: u64 = (1 << 20) - 1;
 
-// Compile-time: the sentinel lies outside the kernel-emittable label set
-// `{0} ∪ {1..=57}` (57 = discriminant 56 + the offset; the test suite
-// grounds that bound against the canonical `KernelError` space).
-const _: () = assert!(BLOCKED_RESUME_SENTINEL_LABEL > 57);
+// Compile-time: the sentinel is the top of the status range and names a
+// discriminant (255) beyond the kernel-emittable set `0..=56` (the test
+// suite grounds that bound against the canonical `KernelError` space and
+// pins 255 to the Rust-only sentinel variant).
+const _: () = assert!(BLOCKED_RESUME_SENTINEL_LABEL == ERROR_LABEL_BASE + 255);
+const _: () = assert!(BLOCKED_RESUME_SENTINEL_LABEL - ERROR_LABEL_BASE > 56);
 
 /// The poison frame the trap layer writes for a blocked caller that the
 /// hardware is about to resume anyway (PR #866 review).
@@ -539,6 +603,11 @@ pub fn blocked_resume_sentinel_regs() -> [u64; 6] {
 ///                                   [`blocked_resume_sentinel_regs`]
 ///                                   until the SM10.1 context restore
 ///                                   installs a successor instead).
+///   `Ok(SvcOutcome::Faulted)`     — the caller took a fault at the seam
+///                                   (tag 2); no frame exists and the trap
+///                                   layer halts pending SM10.1 rather
+///                                   than resume the caller past the `SVC`
+///                                   its handler's reply restarts it at.
 ///   `Err(error)`                  — prefilter rejection (invalid syscall
 ///                                   id / argument count); the trap layer
 ///                                   surfaces it as a label-encoded error
@@ -606,6 +675,10 @@ pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<SvcOutcome, D
                 args.msg_regs[4],
                 args.msg_regs[5],
                 args.ipc_buffer_addr.unwrap_or(0),
+                args.elr,
+                args.spsr,
+                args.sp_el0,
+                args.x30,
             )
         };
         (tag, return_frame_read_in(&RETURN_FRAMES, core))
@@ -614,7 +687,8 @@ pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<SvcOutcome, D
     match tag {
         0 => Ok(SvcOutcome::Frame(regs)),
         1 => Ok(SvcOutcome::Blocked),
-        // `SyscallOutcome.tagWord` is total over {0, 1}; anything else
+        2 => Ok(SvcOutcome::Faulted),
+        // `SyscallOutcome.tagWord` is total over {0, 1, 2}; anything else
         // means the FFI boundary itself is broken.  Fail closed and loud,
         // like every impossible-input arm in this crate.
         other => panic!("lean_syscall_dispatch_cross_core returned unknown outcome tag {other}"),
@@ -635,8 +709,9 @@ pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<SvcOutcome, D
 //
 // WS-RA: the scalar return is the OUTCOME TAG (0 = the caller's return
 // frame was published into this core's `RETURN_FRAMES` slot via
-// `ffi_syscall_return_frame`; 1 = the caller blocked, no frame).  The
-// retired bit-63 word is gone.
+// `ffi_syscall_return_frame`; 1 = the caller blocked, no frame; 2 = the
+// caller faulted at the seam, no frame, and the trap layer halts — PR #887
+// review round 5).  The retired bit-63 word is gone.
 //
 // In test builds (`#[cfg(test)]`) a Rust-side stub publishes the
 // label-encoded `KernelError::NotImplemented` error frame and returns
@@ -664,6 +739,10 @@ extern "C" {
         x4: u64,
         x5: u64,
         ipc_buffer_addr: u64,
+        elr: u64,
+        spsr: u64,
+        sp_el0: u64,
+        x30: u64,
     ) -> u64;
 }
 
@@ -684,6 +763,10 @@ extern "C" fn lean_syscall_dispatch_cross_core(
     _x4: u64,
     _x5: u64,
     _ipc_buffer_addr: u64,
+    _elr: u64,
+    _spsr: u64,
+    _sp_el0: u64,
+    _x30: u64,
 ) -> u64 {
     return_frame_publish_in(&RETURN_FRAMES, 0, error_frame_regs(17));
     0
@@ -829,8 +912,9 @@ mod tests {
         let args = SyscallArgs::from_trap_frame(&frame);
         let result = dispatch_svc(SyscallId::Send.to_u32(), &args);
         assert_eq!(result, Ok(SvcOutcome::Frame(error_frame_regs(17))));
-        // The frame's x1 word is the offset label in MessageInfo position.
-        assert_eq!(error_frame_regs(17)[1], 18u64 << 9);
+        // The frame's x1 word is the status label in MessageInfo position
+        // (ABI v3: the top of the label range, base 0xFFF00).
+        assert_eq!(error_frame_regs(17)[1], (0xFFF00u64 + 17) << 9);
     }
 
     #[test]
@@ -867,12 +951,16 @@ mod tests {
     // theorem, failing the kernel build), and the abi-crate conformance
     // suite pins its own read of the canonical constant.
     const _: () = assert!(SYSCALL_ABI_VERSION == sele4n_types::SYSCALL_ABI_VERSION);
+    // WS-RR RR4 (ABI v3): the status-range base mirror, held to the canonical
+    // constant the same way.
+    const _: () = assert!(ERROR_LABEL_BASE == sele4n_types::ERROR_LABEL_BASE);
 
     #[test]
     fn syscall_abi_version_matches_canonical_pin() {
         // The literal itself, pinned at runtime so a coordinated bump of
         // both mirrors without a protocol change still surfaces here.
-        assert_eq!(SYSCALL_ABI_VERSION, 2);
+        assert_eq!(SYSCALL_ABI_VERSION, 3);
+        assert_eq!(ERROR_LABEL_BASE, 0xFFF00);
     }
 
     #[test]
@@ -890,18 +978,44 @@ mod tests {
 
     #[test]
     fn error_frame_regs_offsets_every_discriminant() {
-        // WS-RA: every KernelError discriminant 0..=54 rides the x1 label
-        // offset by one (label 0 is success; discriminant 0 is a real
-        // error — the aliasing the offset exists to prevent), and no
-        // other register carries anything.  This replaces the retired
-        // `DispatchError::Kernel(disc).to_u32()` loop, whose 0..=51 bound
-        // had also gone stale against the real 0..=54 range.
-        for disc in 0..=54u32 {
+        // WS-RA / ABI v3: every KernelError discriminant 0..=56 rides the
+        // x1 label at ERROR_LABEL_BASE + disc (label 0 is success;
+        // discriminant 0 is a real error — the aliasing the offset from
+        // zero exists to prevent; and every label below the base is a
+        // delivered message's own, so no error can be read as a delivery
+        // either), and no other register carries anything.
+        for disc in 0..=56u32 {
             let regs = error_frame_regs(disc);
-            assert_eq!(regs[1] >> 9, (disc as u64) + 1, "label must be disc + 1");
+            assert_eq!(
+                regs[1] >> 9,
+                ERROR_LABEL_BASE + (disc as u64),
+                "label must be ERROR_LABEL_BASE + disc"
+            );
             assert_ne!(regs[1] >> 9, 0, "no error may alias the success label");
+            assert!(
+                regs[1] >> 9 >= ERROR_LABEL_BASE,
+                "no error may fall into the delivery label range"
+            );
+            assert!(
+                regs[1] >> 9 <= BLOCKED_RESUME_SENTINEL_LABEL,
+                "label must stay in-field"
+            );
             assert_eq!(regs[1] & 0x1FF, 0, "length/extraCaps must be zero");
             assert_eq!([regs[0], regs[2], regs[3], regs[4], regs[5]], [0; 5]);
+            // …and the userspace decoder reads it back as that error.
+            let mut frame = [0u64; 7];
+            frame[..6].copy_from_slice(&regs);
+            assert_eq!(
+                sele4n_abi::decode_response(frame),
+                Err(sele4n_types::KernelError::from_u32(disc).expect("0..=56 are all valid"))
+            );
+        }
+        // The four fault tags a handler receives are deliveries, not status:
+        // the property v2 lacked.
+        for tag in [1u64, 2, 3, 6] {
+            let resp = sele4n_abi::decode_response([0, tag << 9, 0, 0, 0, 0, 0])
+                .expect("a fault tag label is a delivery");
+            assert_eq!(resp.msg_info().label(), tag);
         }
     }
 
@@ -924,15 +1038,21 @@ mod tests {
         );
         let mi = sele4n_abi::MessageInfo::decode(regs[1]).expect("sentinel x1 must be in-field");
         assert_eq!(mi.label(), BLOCKED_RESUME_SENTINEL_LABEL);
-        // Nonzero (never success) and outside the kernel-emittable label
-        // set {0} ∪ {1..=57}: label d + 1 for discriminant d ∈ 0..=56.
-        // The `> 57` bound itself is a compile-time assert at the
-        // constant's definition; these two GROUND the 57 against the
-        // canonical KernelError space (56 is the last real discriminant,
-        // 57 the first unknown).
+        // Nonzero (never success) and the last label of the status range,
+        // naming discriminant 255 — beyond the kernel-emittable set
+        // 0..=56, and exactly the Rust-only `UnknownKernelError` sentinel.
+        // The range position is a compile-time assert at the constant's
+        // definition; these GROUND the 56 against the canonical KernelError
+        // space (56 is the last real discriminant, 57 the first unknown)
+        // and the 255 against the sentinel variant.
         assert_ne!(BLOCKED_RESUME_SENTINEL_LABEL, 0);
+        assert_eq!(BLOCKED_RESUME_SENTINEL_LABEL - ERROR_LABEL_BASE, 255);
         assert!(sele4n_types::KernelError::from_u32(56).is_some());
         assert!(sele4n_types::KernelError::from_u32(57).is_none());
+        assert_eq!(
+            sele4n_types::KernelError::from_u32(255),
+            Some(sele4n_types::KernelError::UnknownKernelError)
+        );
         for disc in 0..=56u32 {
             assert_ne!(
                 error_frame_regs(disc)[1],
@@ -998,6 +1118,10 @@ mod tests {
         // (the raw affinity word, msgReg[0]) — matching `decodeSetAffinityArgs`
         // (requireMsgReg 0) and the `tcb_set_affinity` wrapper.
         assert_eq!(SyscallId::TcbSetAffinity.min_inline_args(), 1);
+        // PR #887 review: the fault-handler CPtr is one inline register too.
+        assert_eq!(SyscallId::TcbSetFaultHandler.min_inline_args(), 1);
+        assert_eq!(SyscallId::from_u32(34), Some(SyscallId::TcbSetFaultHandler));
+        assert_eq!(SyscallId::from_u32(35), None);
     }
 
     /// Regression guard for the off-by-one ABI bug: a valid length-1
@@ -1012,12 +1136,17 @@ mod tests {
             SyscallId::TcbSetMCPriority,
             SyscallId::TcbSetIPCBuffer,
             SyscallId::TcbSetAffinity,
+            SyscallId::TcbSetFaultHandler,
         ] {
             // A length-1 message (exactly what the `sele4n-sys` wrappers send).
             let args = SyscallArgs {
                 msg_info: 1,
                 msg_regs: [0; 6],
                 ipc_buffer_addr: None,
+                elr: 0,
+                spsr: 0,
+                sp_el0: 0,
+                x30: 0,
             };
             // Must clear the argument-count gate (any result other than the
             // count-mismatch rejection is acceptable here; in test builds the

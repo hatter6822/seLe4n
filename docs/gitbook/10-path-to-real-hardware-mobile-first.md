@@ -54,6 +54,68 @@ WS-AN Phase AN9 closes every hardware-binding deferred item from
   `x0` = badge/result, `x1` = `MessageInfo` error label, `x2`–`x5`
   = message registers — via a per-core return-frame mailbox,
   retiring the interim bit-63 error-flag encoding.
+- **Fault delivery** (WS-RR RR4, v0.34.44): `trap.rs`'s abort and
+  alignment arms no longer write an error frame back into the
+  faulting thread's registers and `eret` onto the instruction that
+  faulted.  `deliver_fault` calls `@[export lean_handle_fault]`
+  (`Kernel/FaultEntry.lean`) inside `with_kernel_entry` with fifteen
+  words — the syndrome and the trap frame's fault window (`x0`-`x7`,
+  `SP_EL0`, `x30`), which the entry spills into the thread's register
+  mirror before building the fault context, since the mirror holds only
+  the last syscall's arguments between syscalls — and the entry records
+  the fault on the TCB and delivers it to the thread's `faultHandler`
+  endpoint through the live cross-core `.call` chain, deriving its
+  cross-core pokes from the state diff as the syscall seam does.
+  Classification is exported too — `@[export
+  lean_classify_synchronous_exception]` — and `trap.rs` calls it on
+  the hardware target instead of running its own `esr_ec` match, so
+  the routing decision (SVC → syscall dispatcher, everything else →
+  fault entry) and the delivered fault's kind cannot diverge; the
+  `build.rs` scanner `scan_trap_rs_classifies_via_lean` pins that
+  relation, and the host tests replay all 64 EC values against the
+  Lean table.  Since PR #887's second review round the upcall itself
+  sits behind the readiness gate — a not-ready core classifies through
+  the Rust mirror pinned to that table — and
+  `scan_lean_upcalls_readiness_gated` derives every Lean upcall in the
+  HAL from the Lean tree's exports, so none can be written outside the
+  gate silently; since the third round the guard has to *dominate* the
+  upcall (`readiness_guard_dominates`), the SVC arm reads the syscall
+  number at full width (`u32::try_from(frame.x7())`, its failure the
+  unknown-syscall fault), and a syscall whose capability lookup fails is
+  delivered as a `capFault` from the SVC seam — `ELR_EL1`, `SPSR_EL1`,
+  `SP_EL0` and `x30` now cross `lean_syscall_dispatch_cross_core` to
+  build its context; and a not-ready core that takes an EL0 abort
+  **halts** (`halt_abort_before_lean_ready`) instead of publishing a
+  status frame, because an abort's frame would be `eret`ed straight back
+  into the abort — the fallback frame is now the host lane's alone, and
+  `scan_trap_rs_abort_fallback_halts` pins it there; since the fourth round
+  every one of these scanners asks its question of top-level statements
+  (`top_level_statements`), so a halt or a divergence nested under a
+  condition, or an inverted readiness predicate, no longer passes;
+  since the sixth and seventh rounds the readiness guard has to name the
+  executing PE (`ready_argument_is_executing_core`), an upcall reached
+  through an alias fails the build, every exemption is reconciled by
+  occurrence, the classifier's two branches are bound to their values,
+  and the tag-2 decode and the `Faulted` arm are located in the terminal
+  matches of `dispatch_svc` and the handler through parsed arms rather
+  than found first in the text.
+  **Dormant behind the per-core `lean_ready` gate**
+  until SM10.1: a core that delivers a fault has descheduled the
+  faulting thread and cannot install a successor, so `deliver_fault`
+  halts rather than resuming.  Unreachable at v0.34.44 — no core
+  sets `lean_ready` anywhere in the tree, so the trap handler still
+  takes the fail-closed branch on hardware: a full ABI v3 status-label
+  frame (`error_frame_regs`), never the pre-RR4 raw discriminant in
+  `x0` with `x1` left as the thread found it.  Since the PR #887 review
+  round `handle_synchronous_exception` first halts on a kernel-origin
+  frame (`halt_if_kernel_origin`, `SPSR_EL1.M[3:2] ≠ 0`; the
+  `KERNEL_ABORT` class halts on the syndrome alone, and `build.rs` pins
+  the gate-before-classify order) — an EL1 abort is the kernel's own
+  bug and is never delivered as a user thread's fault — and a syscall
+  number outside `SyscallId` takes `deliver_unknown_syscall`
+  (`lean_handle_unknown_syscall`), delivered as an `unknownSyscall`
+  fault rather than returned as an `invalidSyscallNumber` frame, with
+  the same fail-closed status frame when no core is Lean-ready.
 - **Bounded WFE** (AN9-G / DEF-R-HAL-L17): `wfe_bounded` with
   10 ms default at 54 MHz.
 - **SMP scaffolding** (AN9-J / DEF-R-HAL-L20): PSCI `cpu_on` +

@@ -892,7 +892,7 @@ theorem KernelError.toUInt32_eq_toDiscriminant (e : KernelError) :
 -- `encodeError` / `encodeOk` and their theorems (`encodeError_high_bit_set`,
 -- `encodeOk_high_bit_clear`) are deleted with the WS-RA flip.  Bit 63 was a
 -- workaround for multiplexing status into the value register: with the
--- channels separated — `x0` the full-width value, the offset error label on
+-- channels separated — `x0` the full-width value, the status label (ABI v3) on
 -- `x1` (`Architecture.errorFrame`) — there is nothing to multiplex, and a
 -- badge may use all 64 bits.  The hazard the protocol carried is retained as
 -- the negative `Architecture.bit63Encoding_not_injective_on_badges`
@@ -1625,6 +1625,197 @@ theorem refusalWrite_cannot_exhaust_trail
       = (recordDeclassificationChecked st.declassificationAuditLog e).isSome := by
   rw [(refusalWrite_declassificationAuditLog_eq ctx executingCore syscallId tid ke x0 st).1]
 
+/-- PR #887 review round 3: the trap frame's fault window as the SVC seam
+carries it.  `x0`-`x5` are the syscall arguments the seam already spills,
+`x6` the IPC-buffer word (`ipcBufferAddr` crosses as `x6` verbatim), `x7` the
+syscall number, and `SP_EL0` / `x30` cross with the round's ABI extension —
+the same nine registers the abort entry spills, so a capability fault's
+context is built from what the thread held at the `SVC`, never from the
+mirror's stale last-syscall contents. -/
+def syscallWindow (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 spEl0 x30 : UInt64) :
+    FaultRegisterWindow :=
+  { gprs := #[x0, x1, x2, x3, x4, x5, x6, syscallId.toUInt64], sp := spEl0, lr := x30 }
+
+/-- seL4's `FaultIP` on the syscall path: the `SVC` instruction itself, one
+instruction before the return address `ELR_EL1` holds, so a payload-free
+handler reply restarts the thread by re-issuing the syscall
+(`handleFaultReply`'s `CapFault` arm answers `Restart`). -/
+def svcFaultIP (elr : UInt64) : UInt64 := elr - 4
+
+/-- PR #887 review round 3: which syscalls answer a failed capability lookup
+with a **capability fault**, and the `seL4_CapFault_InRecvPhase` flag each
+carries; `none` returns the error instead.
+
+seL4's rule is the syscall's blocking flag, not the object invoked.
+`handleInvocation(isBlocking := true)` — `SysSend` and `SysCall`, hence every
+object invocation libsel4 issues as a `seL4_Call`, and `seL4_Signal`, which
+*is* `seL4_Send` — raises `CapFault` with the flag clear when the invoked
+capability cannot be looked up; `handleRecv(isBlocking := true)` — `SysRecv`,
+`SysWait`, `SysReplyRecv` — raises it with the flag set.  Only the
+non-blocking forms (`NBSend`, `NBRecv`, `NBWait`) return the error, and this
+model defines none of them.  Under MCS a reply is a `Send` on the reply
+object, so `.reply` faults in the send phase as `.send` does.
+
+The two syscalls that return their lookup failure are the declassifying
+pair, for a reason this model owns rather than inherits: SM9.B attributes and
+**records** their refusals in the refusal ledger (`refusalSeamClass` =
+`.records`) so a monitor sees every refused downgrade attempt, and a fault
+would move that refusal out of the ledger and into a handler's mailbox.  The
+partition is therefore the ledger's, and it is pinned
+(`capFaultReceivePhase?_none_iff_records`): a syscall returns its lookup
+failure exactly when the seam records it.  Total, with no wildcard: a new
+syscall decides its arm at elaboration, and the pin decides it against the
+ledger. -/
+def capFaultReceivePhase? : SyscallId → Option Bool
+  | .send                   => some false
+  | .receive                => some true
+  | .call                   => some false
+  | .reply                  => some false
+  | .cspaceMint             => some false
+  | .cspaceCopy             => some false
+  | .cspaceMove             => some false
+  | .cspaceDelete           => some false
+  | .lifecycleRetype        => some false
+  | .vspaceMap              => some false
+  | .vspaceUnmap            => some false
+  | .serviceRegister        => some false
+  | .serviceRevoke          => some false
+  | .serviceQuery           => some false
+  | .notificationSignal     => some false
+  | .notificationWait       => some true
+  | .replyRecv              => some true
+  | .schedContextConfigure  => some false
+  | .schedContextBind       => some false
+  | .schedContextUnbind     => some false
+  | .tcbSuspend             => some false
+  | .tcbResume              => some false
+  | .tcbSetPriority         => some false
+  | .tcbSetMCPriority       => some false
+  | .tcbSetIPCBuffer        => some false
+  | .tcbSetAffinity         => some false
+  | .tcbBindNotification    => some false
+  | .tcbUnbindNotification  => some false
+  | .mintReplyCap           => some false
+  | .vspaceUnifyInstruction => some false
+  | .declassify             => none
+  | .auditRead              => some false
+  | .auditDrain             => some false
+  | .declassifySignal       => none
+  | .tcbSetFaultHandler     => some false
+
+/-- The partition, pinned against the ledger rather than listed twice: a
+syscall returns its lookup failure exactly when the refusal seam records it.
+A third recording syscall, or a fault arm given to a declassifying one, fails
+here. -/
+theorem capFaultReceivePhase?_none_iff_records (sid : SyscallId) :
+    (capFaultReceivePhase? sid).isNone = decide (refusalSeamClass sid = .records) := by
+  cases sid <;> rfl
+
+/-- PR #887 review round 3: **the capability-fault producer's decision.**
+Given the refusal `ke` the checked dispatcher returned for the thread `tid`
+on the argument-spilled state `st`, decide whether it was the syscall's
+capability lookup that failed on a syscall that faults
+(`capFaultReceivePhase?`) — and if so, the fault to deliver.
+
+The decision re-runs the dispatcher's own prologue on the same state: decode
+the arguments from the spilled registers, build the gate
+`dispatchSyscallChecked` builds (the caller's CSpace root, the root's depth,
+the syscall's required right), and run the **resolution half** of its lookup,
+`syscallResolveCap`.  The fault is produced only when that resolution fails
+**with the very error the dispatcher returned**: seL4 raises the `CapFault`
+from `lookupCapAndSlot`, and a capability that resolved but lacks the right
+(`syscallLookupCap`'s `.illegalAuthority`, seL4's `decodeInvocation` refusing
+an endpoint capability without send) is a syscall *error*, as is every
+arm-level refusal on a resolved capability (a wrong-kind target, a full
+queue).  Matching on the error, not only on the arm, is what keeps a refusal
+raised *before* the lookup — the insecure-context rejection, a decode
+failure — from being delivered as a fault the CSpace did not raise.
+`capAddress` is the CPtr that failed, `inReceivePhase` the syscall's flag,
+and the resolution's `KernelError` rides as the reason, the model's
+`lookup_fault_t`.
+
+The prologue is mirrored rather than shared because the dispatcher runs its
+lookup *inside* `syscallInvoke` and surfaces only the error; the state the
+mirror reads is the argument-spilled one the dispatcher decoded from, and the
+per-core TLB fill between the two touches no object
+(`tlbFillIpcBufferOnCore_frame`), so the two resolutions agree.  What the
+mirror does not re-run is a second lookup an arm performs after the first
+succeeded — `.replyRecv`'s reply capability — so that failure returns the
+error rather than faulting (seL4-MCS's `lookupReply` faults there);
+registered debt, not a silent divergence. -/
+def syscallCapFaultOf (layout : SeLe4n.SyscallRegisterLayout) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (ke : KernelError) : Option Fault :=
+  match st.objects[tid.toObjId]? with
+  | some (.tcb tcb) =>
+    match SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+        st tid layout tcb.registerContext 32 with
+    | .error _ => none
+    | .ok decoded =>
+      match capFaultReceivePhase? decoded.syscallId with
+      | none => none
+      | some inRecv =>
+        match st.objects[tcb.cspaceRoot]? with
+        | some (.cnode rootCn) =>
+          let gate : SyscallGate :=
+            { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
+              capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
+          match syscallResolveCap gate st with
+          | .error e =>
+              if e = ke then some (.capFault (UInt64.ofNat decoded.capAddr.toNat) inRecv e)
+              else none
+          | .ok _ => none
+        | _ => none
+  | _ => none
+
+/-- PR #887 review round 3: deliver a syscall-raised capability fault — the
+abort entry's delivery, at the SVC seam: spill the trap frame's window, build
+the context from the spilled file with the `SVC` instruction as the restart
+PC, and run the flow-checked delivery on the executing core.  The result is
+the committed state; the outcome is `.faulted` (tag 2), because the faulting
+thread is now waiting on its handler, no frame exists for it, and — until
+SM10.1 installs successors — the trap layer must halt rather than `eret` the
+thread past the `SVC` the handler's reply will restart it at (PR #887 review
+round 5). -/
+def deliverSyscallCapFault (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (fault : Fault) (w : FaultRegisterWindow)
+    (elr spsr : UInt64) : SystemState :=
+  let stW := writeFaultRegistersToTcb st tid w
+  let fctx := Architecture.faultContextOfThread stW tid (svcFaultIP elr) spsr
+  (faultDeliverOnCoreChecked ctx stW tid fault fctx executingCore).1
+
+/-- A refusal on a syscall that returns its lookup failure (the recorded
+declassifying pair) produces no capability fault — one of the two discharges
+for every theorem below that is stated on the error-frame arm. -/
+theorem syscallCapFaultOf_none_of_no_fault_phase (layout : SeLe4n.SyscallRegisterLayout)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (ke : KernelError) (tcb : TCB)
+    (decoded : SeLe4n.Model.SyscallDecodeResult)
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hDec : SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+        st tid layout tcb.registerContext 32 = .ok decoded)
+    (hNot : capFaultReceivePhase? decoded.syscallId = none) :
+    syscallCapFaultOf layout st tid ke = none := by
+  simp [syscallCapFaultOf, hTcb, hDec, hNot]
+
+/-- …and neither does a refusal whose capability **resolved**: the fault is
+the lookup's, never the invocation's — a resolved capability refused on
+rights or by its arm returns the error. -/
+theorem syscallCapFaultOf_none_of_resolve_ok (layout : SeLe4n.SyscallRegisterLayout)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (ke : KernelError) (tcb : TCB)
+    (decoded : SeLe4n.Model.SyscallDecodeResult) (inRecv : Bool)
+    (rootCn : CNode) (cap : Capability)
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hDec : SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+        st tid layout tcb.registerContext 32 = .ok decoded)
+    (hIpc : capFaultReceivePhase? decoded.syscallId = some inRecv)
+    (hRoot : st.objects[tcb.cspaceRoot]? = some (.cnode rootCn))
+    (hResolve : syscallResolveCap
+        { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
+          capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
+        st = .ok (cap, st)) :
+    syscallCapFaultOf layout st tid ke = none := by
+  simp [syscallCapFaultOf, hTcb, hDec, hIpc, hRoot, hResolve]
+
 /-- WS-RC R2.B.1 (restated at the WS-RA type): the pure typed-ABI entry
     point behind the `lean_syscall_dispatch_cross_core` export
     (`Kernel/SyscallDispatchEntry.lean`).
@@ -1643,7 +1834,7 @@ Pipeline:
   5. Hand back a `SyscallOutcome` (WS-RA, plan §3.1/§3.5): on success
      `syscallReturnOutcome` decides `blocks` from the caller's post-state
      or composes the shape-driven return frame; on failure a **computed**
-     error frame carries the offset label on `x1`
+     error frame carries the status label on `x1`
      (`Architecture.errorFrame`), staged into no TCB
      (`syscallDispatchFromAbi_error_stages_no_frame`).
   6. WS-SM SM9.B.9: on failure, additionally record the attributed refusal
@@ -1653,6 +1844,19 @@ Pipeline:
      (`refusalLedger_write_is_caller_invisible`, `recordSyscallRefusal_frame`),
      and it preserves the bundle
      (`recordSyscallRefusal_preserves_proofLayerInvariantBundle`).
+  7. PR #887 review round 3: on failure, when the refusal is the syscall's
+     **failed capability lookup** (`syscallCapFaultOf`: the resolution the
+     dispatcher's gate ran, on a syscall `capFaultReceivePhase?` names),
+     deliver a `capFault` to the thread's fault handler instead of returning
+     the error — seL4's `handleInvocation` / `handleRecv` — and hand back
+     `.faulted` (outcome tag 2; PR #887 review round 5): a delivered fault,
+     on which the trap layer halts pending SM10.1 as it does for an
+     unknown-syscall delivery, never the `.blocks` sentinel that would
+     resume the thread past the `SVC`.
+     The trap frame's `ELR_EL1`, `SPSR_EL1`, `SP_EL0` and `x30` cross for
+     this: the fault context is built from the spilled window
+     (`syscallWindow`) with the `SVC` instruction as the restart PC
+     (`svcFaultIP`), so a payload-free reply re-issues the syscall.
 
 `ipcBufferAddr` is passed for parity with the seL4 ABI; the verified
 kernel reads the IPC buffer from `tcb.ipcBuffer` (set by
@@ -1664,7 +1868,8 @@ def syscallDispatchFromAbi
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32) (msgInfo : UInt64)
     (x0 x1 x2 x3 x4 x5 : UInt64)
-    (_ipcBufferAddr : UInt64) : Kernel Architecture.SyscallOutcome :=
+    (ipcBufferAddr : UInt64)
+    (elr spsr spEl0 x30 : UInt64) : Kernel Architecture.SyscallOutcome :=
   fun st =>
     -- ABI consistency check: the Rust caller guarantees
     -- `msg_info == msg_regs[1] == frame.x1()` when constructing the
@@ -1690,18 +1895,31 @@ def syscallDispatchFromAbi
         let layout := SeLe4n.arm64DefaultLayout
         match syscallEntryChecked ctx layout executingCore 32 stRegs with
         | .error ke =>
-            -- WS-SM SM9.B.9: the refusal seam.  The outcome is the error frame
-            -- computed from `ke` alone — bit-identical to what this arm
-            -- returned before the ledger existed — and the committed state
-            -- additionally carries the attributed refusal record, for the
-            -- syscalls the total `refusalSeamClass` admits.  `recordRefusal`
-            -- is total, so this adds no failure mode the caller could observe
-            -- (`refusalLedger_write_is_caller_invisible`), and it writes a
-            -- different structure from the trail, so refusals can never
-            -- exhaust the trail's fail-closed capacity
-            -- (`refusalWrite_declassificationAuditLog_eq`).
-            .ok (.returns (Architecture.errorFrame ke),
-                 recordSyscallRefusal ctx executingCore syscallId tid ke x0 stRegs)
+            match syscallCapFaultOf layout stRegs tid ke with
+            | some fault =>
+                -- PR #887 review round 3: a syscall whose capability lookup
+                -- failed is **delivered**, not returned — seL4's
+                -- `handleInvocation` / `handleRecv` `CapFault`.  The outcome
+                -- is `.faulted` (tag 2): the thread now waits on its handler,
+                -- no frame exists for it, and the trap layer halts rather
+                -- than resumes it (PR #887 review round 5).
+                .ok (.faulted,
+                     deliverSyscallCapFault ctx executingCore stRegs tid fault
+                       (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)
+                       elr spsr)
+            | none =>
+                -- WS-SM SM9.B.9: the refusal seam.  The outcome is the error
+                -- frame computed from `ke` alone — bit-identical to what this
+                -- arm returned before the ledger existed — and the committed
+                -- state additionally carries the attributed refusal record, for
+                -- the syscalls the total `refusalSeamClass` admits.
+                -- `recordRefusal` is total, so this adds no failure mode the
+                -- caller could observe (`refusalLedger_write_is_caller_invisible`),
+                -- and it writes a different structure from the trail, so refusals
+                -- can never exhaust the trail's fail-closed capacity
+                -- (`refusalWrite_declassificationAuditLog_eq`).
+                .ok (.returns (Architecture.errorFrame ke),
+                     recordSyscallRefusal ctx executingCore syscallId tid ke x0 stRegs)
         | .ok ((), st') => .ok (syscallReturnOutcome syscallId st' tid, st')
 
 -- ============================================================================
@@ -1950,10 +2168,10 @@ theorem syscallDispatchFromAbi_total
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32) (msgInfo : UInt64)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr : UInt64)
+    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
     (st : SystemState) :
     ∃ (outcome : Architecture.SyscallOutcome) (st' : SystemState),
-      syscallDispatchFromAbi ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st
+      syscallDispatchFromAbi ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
         = Except.ok (outcome, st') := by
   unfold syscallDispatchFromAbi
   -- The function first checks the ABI invariant `msgInfo == x1`,
@@ -1971,10 +2189,20 @@ theorem syscallDispatchFromAbi_total
         cases hSyscall : syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
                 (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) with
         | error ke =>
-            exact ⟨.returns (Architecture.errorFrame ke),
-                   recordSyscallRefusal ctx executingCore syscallId tid ke x0
-                     (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5),
-                   by simp [hMsg, hSyscall]⟩
+            cases hCap : syscallCapFaultOf SeLe4n.arm64DefaultLayout
+                (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid ke with
+            | some fault =>
+                exact ⟨.faulted,
+                       deliverSyscallCapFault ctx executingCore
+                         (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid fault
+                         (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)
+                         elr spsr,
+                       by simp [hMsg, hSyscall, hCap]⟩
+            | none =>
+                exact ⟨.returns (Architecture.errorFrame ke),
+                       recordSyscallRefusal ctx executingCore syscallId tid ke x0
+                         (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5),
+                       by simp [hMsg, hSyscall, hCap]⟩
         | ok r =>
             obtain ⟨_, st'⟩ := r
             exact ⟨syscallReturnOutcome syscallId st' tid, st',
@@ -1993,7 +2221,7 @@ theorem syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32) (msgInfo : UInt64)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr : UInt64)
+    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (st' : SystemState)
     (hMsg : msgInfo = x1)
     (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
@@ -2001,7 +2229,7 @@ theorem syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok
       syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
           (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
         = Except.ok ((), st')) :
-    syscallDispatchFromAbi ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st
+    syscallDispatchFromAbi ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
       = Except.ok (syscallReturnOutcome syscallId st' tid, st') := by
   unfold syscallDispatchFromAbi
   simp [hMsg, hCur, hSyscall]
@@ -2009,7 +2237,7 @@ theorem syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok
 /-- WS-RC R2.B.5 (restated at the WS-RA type, and again at SM9.B.9): when
     `syscallEntryChecked` rejects on the register-spilled state,
     `syscallDispatchFromAbi` propagates the error as a **computed** error
-    frame — the offset label on `x1` — over the post-spill `SystemState`
+    frame — the status label on `x1` — over the post-spill `SystemState`
     **with the SM9.B refusal record applied**.
 
 WS-RA RA.B.4's content survives the ledger: an error still stages nothing into
@@ -2024,20 +2252,53 @@ theorem syscallDispatchFromAbi_error_of_syscallEntryChecked_error
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32) (msgInfo : UInt64)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr : UInt64)
+    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (ke : KernelError)
     (hMsg : msgInfo = x1)
     (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
     (hSyscall :
       syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
           (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
-        = Except.error ke) :
-    syscallDispatchFromAbi ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st
+        = Except.error ke)
+    (hNoCapFault : syscallCapFaultOf SeLe4n.arm64DefaultLayout
+        (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid ke = none) :
+    syscallDispatchFromAbi ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
       = Except.ok (.returns (Architecture.errorFrame ke),
                    recordSyscallRefusal ctx executingCore syscallId tid ke x0
                      (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) := by
   unfold syscallDispatchFromAbi
-  simp [hMsg, hCur, hSyscall]
+  simp [hMsg, hCur, hSyscall, hNoCapFault]
+
+/-- PR #887 review round 3 (**the capability-fault arm**): when the checked
+dispatcher refuses and the refusal is the syscall's failed capability
+lookup, the seam **delivers** the fault — the outcome is
+`.faulted` (tag 2, PR #887 review round 5) and the committed state is the
+delivery on the executing core, built from the trap frame's window with the
+`SVC` instruction as the restart PC.  The error-frame theorems above are
+stated on the complementary arm (`hNoCapFault`); together the two cover the
+refusal path. -/
+theorem syscallDispatchFromAbi_capFault_faulted
+    (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : UInt32) (msgInfo : UInt64)
+    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (ke : KernelError) (fault : Fault)
+    (hMsg : msgInfo = x1)
+    (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
+    (hSyscall :
+      syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
+          (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+        = Except.error ke)
+    (hCap : syscallCapFaultOf SeLe4n.arm64DefaultLayout
+        (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid ke = some fault) :
+    syscallDispatchFromAbi ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr
+        elr spsr spEl0 x30 st
+      = Except.ok (.faulted,
+          deliverSyscallCapFault ctx executingCore
+            (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid fault
+            (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30) elr spsr) := by
+  unfold syscallDispatchFromAbi
+  simp [hMsg, hCur, hSyscall, hCap]
 
 /-- WS-RA RA.B.4 (`syscallDispatchFromAbi_error_stages_no_frame`): on
 every error arm the returned state carries **no return-frame write**.  The
@@ -2056,16 +2317,18 @@ theorem syscallDispatchFromAbi_error_stages_no_frame
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32) (msgInfo : UInt64)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr : UInt64)
+    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (ke : KernelError)
     (hMsg : msgInfo = x1)
     (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
     (hSyscall :
       syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
           (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
-        = Except.error ke) :
+        = Except.error ke)
+    (hNoCapFault : syscallCapFaultOf SeLe4n.arm64DefaultLayout
+        (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid ke = none) :
     (syscallDispatchFromAbi ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5
-        ipcBufferAddr st).map (·.2)
+        ipcBufferAddr elr spsr spEl0 x30 st).map (·.2)
       = Except.ok (recordSyscallRefusal ctx executingCore syscallId tid ke x0
           (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) ∧
     Architecture.readReturnFrame
@@ -2075,7 +2338,7 @@ theorem syscallDispatchFromAbi_error_stages_no_frame
           (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid := by
   refine ⟨?_, recordSyscallRefusal_readReturnFrame_eq ctx executingCore syscallId tid ke x0 _ tid⟩
   rw [syscallDispatchFromAbi_error_of_syscallEntryChecked_error ctx executingCore
-    syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st tid ke hMsg hCur hSyscall]
+    syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid ke hMsg hCur hSyscall hNoCapFault]
   rfl
 
 /-- WS-SM SM9.B.9 (**the caller learns exactly what it learned before**): on
@@ -2095,19 +2358,21 @@ theorem refusalLedger_write_is_caller_invisible
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32) (msgInfo : UInt64)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr : UInt64)
+    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (ke : KernelError)
     (hMsg : msgInfo = x1)
     (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
     (hSyscall :
       syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
           (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
-        = Except.error ke) :
+        = Except.error ke)
+    (hNoCapFault : syscallCapFaultOf SeLe4n.arm64DefaultLayout
+        (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid ke = none) :
     (syscallDispatchFromAbi ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5
-        ipcBufferAddr st).map (·.1)
+        ipcBufferAddr elr spsr spEl0 x30 st).map (·.1)
       = Except.ok (.returns (Architecture.errorFrame ke)) := by
   rw [syscallDispatchFromAbi_error_of_syscallEntryChecked_error ctx executingCore
-    syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st tid ke hMsg hCur hSyscall]
+    syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid ke hMsg hCur hSyscall hNoCapFault]
   rfl
 
 /-- WS-SM SM9.B.9 (**the seam records, end to end**): a refused declassification
@@ -2121,7 +2386,7 @@ theorem syscallDispatchFromAbi_records_refusal
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32) (msgInfo : UInt64)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr : UInt64)
+    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (ke : KernelError) (sid : SyscallId)
     (hMsg : msgInfo = x1)
     (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
@@ -2130,10 +2395,12 @@ theorem syscallDispatchFromAbi_records_refusal
     (hSyscall :
       syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
           (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
-        = Except.error ke) :
+        = Except.error ke)
+    (hNoCapFault : syscallCapFaultOf SeLe4n.arm64DefaultLayout
+        (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid ke = none) :
     ∃ post : SystemState,
       (syscallDispatchFromAbi ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5
-        ipcBufferAddr st).map (·.2) = Except.ok post ∧
+        ipcBufferAddr elr spsr spEl0 x30 st).map (·.2) = Except.ok post ∧
       post.declassificationRefusals.recent.get
           (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4
             x5).declassificationRefusals.nextSlot
@@ -2149,7 +2416,7 @@ theorem syscallDispatchFromAbi_records_refusal
   refine ⟨recordSyscallRefusal ctx executingCore syscallId tid ke x0
       (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5), ?_, ?_⟩
   · rw [syscallDispatchFromAbi_error_of_syscallEntryChecked_error ctx executingCore
-      syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st tid ke hMsg hCur hSyscall]
+      syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid ke hMsg hCur hSyscall hNoCapFault]
     rfl
   · rw [recordSyscallRefusal_records ctx executingCore syscallId tid ke x0 _ sid hDecode hRecords]
     exact recordRefusal_writes_selected_slot _ _
@@ -2166,7 +2433,7 @@ theorem syscallDispatchFromAbi_exempt_refusal_frames_ledger
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32) (msgInfo : UInt64)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr : UInt64)
+    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (ke : KernelError) (sid : SyscallId)
     (hMsg : msgInfo = x1)
     (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
@@ -2175,12 +2442,14 @@ theorem syscallDispatchFromAbi_exempt_refusal_frames_ledger
     (hSyscall :
       syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
           (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
-        = Except.error ke) :
+        = Except.error ke)
+    (hNoCapFault : syscallCapFaultOf SeLe4n.arm64DefaultLayout
+        (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid ke = none) :
     (syscallDispatchFromAbi ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5
-        ipcBufferAddr st).map (·.2)
+        ipcBufferAddr elr spsr spEl0 x30 st).map (·.2)
       = Except.ok (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
   rw [syscallDispatchFromAbi_error_of_syscallEntryChecked_error ctx executingCore
-    syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st tid ke hMsg hCur hSyscall,
+    syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid ke hMsg hCur hSyscall hNoCapFault,
     recordSyscallRefusal_exempt ctx executingCore syscallId tid ke x0 _ sid hDecode hExempt]
   rfl
 
@@ -2194,11 +2463,11 @@ theorem syscallDispatchFromAbi_illegalState_when_no_current
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32) (msgInfo : UInt64)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr : UInt64)
+    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
     (st : SystemState)
     (hMsg : msgInfo = x1)
     (hCur : (st.scheduler.currentOnCore executingCore) = none) :
-    syscallDispatchFromAbi ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st
+    syscallDispatchFromAbi ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
       = Except.ok (.returns (Architecture.errorFrame .illegalState), st) := by
   unfold syscallDispatchFromAbi
   simp [hMsg, hCur]
@@ -2217,10 +2486,10 @@ theorem syscallDispatchFromAbi_abiMismatch_rejected
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32) (msgInfo : UInt64)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr : UInt64)
+    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
     (st : SystemState)
     (hMsg : msgInfo ≠ x1) :
-    syscallDispatchFromAbi ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st
+    syscallDispatchFromAbi ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
       = Except.ok (.returns (Architecture.errorFrame .invalidSyscallArgument), st) := by
   unfold syscallDispatchFromAbi
   -- `msgInfo ≠ x1` ⟹ `msgInfo != x1 = true` ⟹ the if-branch is taken.

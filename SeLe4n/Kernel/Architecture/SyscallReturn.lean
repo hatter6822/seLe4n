@@ -257,6 +257,7 @@ def syscallReturnShape : SyscallId → ReturnShape
   | .tcbSetMCPriority      => .unit
   | .tcbSetIPCBuffer       => .unit
   | .tcbSetAffinity        => .unit
+  | .tcbSetFaultHandler    => .unit
   | .tcbBindNotification   => .unit
   | .tcbUnbindNotification => .unit
   | .mintReplyCap          => .unit
@@ -352,6 +353,40 @@ end SyscallReturnFrame
 -- §4  Message-frame synthesis (RA.A.3) — the single IpcMessage → frame place
 -- ============================================================================
 
+/-- **WS-RR RR4 (audit round) — ABI version 3: kernel status rides in the top
+of the label range.**
+
+Version 2 carried a `KernelError` discriminant `d` as label `d + 1`, with `0`
+success.  That was sound while every delivered message had label `0`, which
+was true of the whole tree until RR4: a fault message is delivered under its
+`seL4_Fault_tag` (`1`, `2`, `3`, `6` — `Architecture.faultLabel`), and a
+handler's `seL4_Recv` returns that label in `x1`.  Under the offset scheme a
+`vmFault` (tag 6) decoded in userspace as `KernelError` discriminant 5, and
+`capFault` (tag 1) as `.invalidCapability` — every fault a handler received
+read as a failed receive, so no fault handler could be written against
+`sele4n-abi`.
+
+The fix keeps one syscall-agnostic decoder and separates the two by
+**range**: the top `errorLabelRangeSize` labels of the 20-bit field are
+kernel status, everything below is a delivered message's own label.  Success
+is still `0`; error `d` is `errorLabelBase + d`; and a delivered label is
+always below `errorLabelBase` (`returnMessageInfo` clamps there, and every
+kernel-emitted label — the fault tags — sits far below it,
+`faultLabel_lt_errorLabelBase`).  The blocked-resume sentinel `0xFFFFF` is
+the top of the range, naming discriminant `255`, which no `KernelError` has
+— so it still decodes as `UnknownKernelError`, and now for the *stated*
+reason rather than by happening to exceed the enumeration. -/
+def errorLabelRangeSize : Nat := 256
+
+/-- The first kernel-status label: `0xFFF00`.  Labels at or above it are
+kernel status; labels below it are a delivered message's own. -/
+def errorLabelBase : Nat := MessageInfo.maxLabel + 1 - errorLabelRangeSize
+
+/-- The base, as a literal — pinned so a change to `maxLabel` or the range
+size cannot move it silently past the Rust mirror
+(`sele4n_types::ERROR_LABEL_BASE`). -/
+theorem errorLabelBase_eq : errorLabelBase = 0xFFF00 := by decide
+
 /-- The `MessageInfo` a delivered message returns in `x1`.  `IpcMessage`
 carries no `MessageInfo` (it is discarded at decode time), so the return
 word is synthesized — here, once, for every delivery site: `length` is the
@@ -375,7 +410,7 @@ nothing. -/
 def returnMessageInfo (msg : IpcMessage) (installedCaps : Nat) : MessageInfo :=
   { length    := min msg.registers.size 4
     extraCaps := min installedCaps Model.maxExtraCaps
-    label     := 0 }
+    label     := min msg.label (errorLabelBase - 1) }
 
 /-- The §3.7 window bound, stated: the returned length never exceeds the
 four inline message registers. -/
@@ -384,12 +419,39 @@ theorem returnFrame_message_window (msg : IpcMessage) (installedCaps : Nat) :
   Nat.min_le_right _ _
 
 /-- The synthesized word is well-formed for the 20-bit-label encoding:
-length ≤ 120, extraCaps ≤ 3, label 0. -/
+length ≤ 120, extraCaps ≤ 3, label ≤ 2^20 − 1. -/
 theorem returnMessageInfo_wellFormed (msg : IpcMessage) (installedCaps : Nat) :
     (returnMessageInfo msg installedCaps).wellFormed := by
   refine ⟨Nat.le_trans (Nat.min_le_right _ _) (by decide), ?_, ?_⟩
   · exact Nat.min_le_right _ _
-  · exact Nat.zero_le _
+  · exact Nat.le_trans (Nat.min_le_right _ _) (by rw [errorLabelBase_eq]; decide)
+
+/-- **A delivered message never carries a status label** (ABI v3): the
+synthesized label is below `errorLabelBase`, so a receiver's decoder cannot
+read a delivery as a kernel error whatever the message's label was. -/
+theorem returnMessageInfo_label_lt_errorLabelBase (msg : IpcMessage) (installedCaps : Nat) :
+    (returnMessageInfo msg installedCaps).label < errorLabelBase := by
+  unfold returnMessageInfo
+  have : errorLabelBase - 1 < errorLabelBase := by rw [errorLabelBase_eq]; decide
+  exact Nat.lt_of_le_of_lt (Nat.min_le_right _ _) this
+
+/-- WS-RR RR4.4: the delivered label is the message's own whenever it is
+below the status range — the clamp above is the fail-closed guard for an
+out-of-range label, never a rewrite of a real one.  Every kernel-emitted label
+satisfies the hypothesis (`Architecture.faultLabel_lt_errorLabelBase` for a
+fault message; a user send carries label `0`), so on every live path this
+reads as the identity. -/
+@[simp] theorem returnMessageInfo_label_of_lt (msg : IpcMessage) (installedCaps : Nat)
+    (h : msg.label < errorLabelBase) :
+    (returnMessageInfo msg installedCaps).label = msg.label :=
+  Nat.min_eq_left (Nat.le_sub_one_of_lt h)
+
+/-- WS-RR RR4.4: a message carrying no label (the default, and every message
+built before RR4) delivers the `0` label the pre-RR4 synthesis hard-coded —
+the backward-compatibility bridge. -/
+@[simp] theorem returnMessageInfo_label_zero (msg : IpcMessage) (installedCaps : Nat)
+    (h : msg.label = 0) : (returnMessageInfo msg installedCaps).label = 0 := by
+  simp [returnMessageInfo, h]
 
 /-- The honesty bound (PR #866 round-2): the returned `extraCaps` never
 exceeds the installed count — in particular, a path that installed
@@ -939,50 +1001,90 @@ theorem blockedUnitReturn_staged_in_sender_frame
 -- §5  Error carriage on the x1 label (RA.A.5, RA.A.6)
 -- ============================================================================
 
-/-- The offset error label (plan §3.1): discriminant `d` rides as label
-`d + 1`, and label `0` means success.  The offset is load-bearing —
-discriminant `0` is `.invalidCapability`, and a label carrying it directly
-would alias the first error with success. -/
+/-- The status label of an error: discriminant `d` rides as
+`errorLabelBase + d`.  Never `0` (the base is positive) and never below the
+base, so no error can be read as a delivered message. -/
 def errorLabel (e : KernelError) : Nat :=
-  e.toDiscriminant + 1
+  errorLabelBase + e.toDiscriminant
 
-/-- Decode a label back to its error: `0` is success (`none`), `n + 1` is
-discriminant `n`, unknown discriminants fail closed. -/
-def ofErrorLabel? : Nat → Option KernelError
-  | 0     => none
-  | n + 1 => KernelError.ofDiscriminant? n
+/-- Decode a label back to its error: below the base is not an error
+(`none` — success, or a delivered message's label), at or above it is
+discriminant `label - errorLabelBase`, unknown discriminants failing closed. -/
+def ofErrorLabel? (label : Nat) : Option KernelError :=
+  if errorLabelBase ≤ label then KernelError.ofDiscriminant? (label - errorLabelBase)
+  else none
 
 /-- §3.1's non-aliasing: no error's label is the success label. -/
-theorem errorLabel_never_zero (e : KernelError) : errorLabel e ≠ 0 :=
-  Nat.succ_ne_zero _
+theorem errorLabel_never_zero (e : KernelError) : errorLabel e ≠ 0 := by
+  unfold errorLabel; rw [errorLabelBase_eq]; omega
+
+/-- Every error's label is in the status range. -/
+theorem errorLabelBase_le_errorLabel (e : KernelError) : errorLabelBase ≤ errorLabel e :=
+  Nat.le_add_right _ _
 
 /-- The success label decodes as success. -/
-theorem ofErrorLabel?_zero : ofErrorLabel? 0 = none := rfl
+theorem ofErrorLabel?_zero : ofErrorLabel? 0 = none := by
+  unfold ofErrorLabel?; rw [errorLabelBase_eq]; decide
+
+/-- **A delivered message's label is never read as an error** — the property
+the fault handler's receive needs, and the one the offset scheme lacked.
+Every label below the base, the four fault tags included, decodes as
+"no kernel error". -/
+theorem ofErrorLabel?_none_of_lt_base (label : Nat) (h : label < errorLabelBase) :
+    ofErrorLabel? label = none := by
+  unfold ofErrorLabel?
+  rw [if_neg (Nat.not_le.mpr h)]
 
 /-- RA.A.5 — every error survives the label round trip. -/
 theorem errorLabel_roundtrip (e : KernelError) :
-    ofErrorLabel? (errorLabel e) = some e :=
-  KernelError.ofDiscriminant?_toDiscriminant e
+    ofErrorLabel? (errorLabel e) = some e := by
+  unfold ofErrorLabel? errorLabel
+  rw [if_pos (Nat.le_add_right _ _), Nat.add_sub_cancel_left]
+  exact KernelError.ofDiscriminant?_toDiscriminant e
 
-/-- The decode side over the whole in-range domain: label `0` is success,
-labels `1..57` hit their errors and re-encode to themselves, label `58`
-(the first out-of-range value) is rejected — so label `0` decodes as
-success and *only* label `0` does, on the entire inhabited label space. -/
+/-- The decode side over the whole status range: the base plus `0..56` hits
+the errors and re-encodes to itself, the base plus `57` (the first
+discriminant no error has) is rejected, and the label just *below* the base
+is not an error at all — so the range boundary is pinned from both sides on
+the inhabited label space. -/
 theorem errorLabel_zero_iff_success :
     ofErrorLabel? 0 = none ∧
       (∀ n, n < 57 →
-        ((ofErrorLabel? (n + 1)).map errorLabel) = some (n + 1)) ∧
-      ofErrorLabel? 58 = none := by
-  refine ⟨rfl, ?_, rfl⟩
-  decide
+        ((ofErrorLabel? (errorLabelBase + n)).map errorLabel) = some (errorLabelBase + n)) ∧
+      ofErrorLabel? (errorLabelBase + 57) = none ∧
+      ofErrorLabel? (errorLabelBase - 1) = none := by
+  refine ⟨ofErrorLabel?_zero, ?_, ?_, ?_⟩
+  · intro n hn
+    have hRt := KernelError.toDiscriminant_ofDiscriminant?.1 n hn
+    unfold ofErrorLabel? errorLabel
+    rw [if_pos (Nat.le_add_right _ _), Nat.add_sub_cancel_left]
+    cases hE : KernelError.ofDiscriminant? n with
+    | none => rw [hE] at hRt; exact absurd hRt (by simp)
+    | some e =>
+        rw [hE] at hRt
+        simp only [Option.map_some, Option.some.injEq] at hRt ⊢
+        rw [hRt]
+  · unfold ofErrorLabel?
+    rw [if_pos (Nat.le_add_right _ _), Nat.add_sub_cancel_left]
+    exact KernelError.toDiscriminant_ofDiscriminant?.2
+  · apply ofErrorLabel?_none_of_lt_base
+    rw [errorLabelBase_eq]; decide
 
-/-- RA.A.6 — all 57 offset labels (1..57) fit the 20-bit `MessageInfo`
-label field, so the error carriage never needs a wider register. -/
+/-- RA.A.6 — every status label fits the 20-bit `MessageInfo` label field:
+the range is sized so `errorLabelBase + 255 = maxLabel`, and every
+discriminant is below `57`. -/
 theorem kernelErrorFitsLabel (e : KernelError) :
     errorLabel e ≤ MessageInfo.maxLabel := by
   have h := KernelError.toDiscriminant_lt e
-  unfold errorLabel MessageInfo.maxLabel
+  unfold errorLabel
+  rw [errorLabelBase_eq, show MessageInfo.maxLabel = 0xFFFFF by decide]
   omega
+
+/-- The status range is exactly the top of the field: the sentinel
+`maxLabel` is its last member. -/
+theorem errorLabelBase_add_range_eq_maxLabel :
+    errorLabelBase + errorLabelRangeSize = MessageInfo.maxLabel + 1 := by
+  rw [errorLabelBase_eq]; decide
 
 /-- The load-bearing negative for RA.A.6: an over-wide `x1` word is not
 silently truncated — `MessageInfo.decode` fail-closes on any word whose
@@ -993,7 +1095,7 @@ theorem overWideLabel_rejected :
   decide
 
 /-- The error frame the boundary returns on a failed syscall: `x0 = 0`,
-the offset label in `x1`, no message registers.  Computed at the boundary,
+the status label in `x1`, no message registers.  Computed at the boundary,
 **never staged into the TCB** — which is what keeps the error path
 state-preserving (RA.B.4). -/
 def errorFrame (e : KernelError) : SyscallReturnFrame :=
@@ -1022,21 +1124,45 @@ on a waiting receiver — never from the syscall id alone. -/
 inductive SyscallOutcome where
   | returns (frame : SyscallReturnFrame)
   | blocks
+  /-- PR #887 review round 5: the caller **took a fault at the seam** — a
+  failed capability lookup delivered to its fault handler, or the fail-closed
+  suspend when no handler could take it.  Like `.blocks`, no frame exists for
+  it; unlike `.blocks`, the caller is not waiting on an IPC partner but on a
+  fault reply that restarts it *at* the `SVC` (`svcFaultIP`), so the interim
+  trap layer must not `eret` it past the `SVC` behind a sentinel frame — it
+  halts, as it does after every other delivered fault pending SM10.1
+  (`halt_after_delivered_syscall_fault`).  When SM10.1 installs successors,
+  `.faulted` and `.blocks` install one alike. -/
+  | faulted
   deriving Repr, DecidableEq
 
 namespace SyscallOutcome
 
 /-- The outcome tag the `lean_syscall_dispatch_cross_core` export returns
 (the frame itself crosses through the per-core mailbox — plan §3.3):
-`0` = a frame was written, `1` = the caller blocked and no frame exists. -/
+`0` = a frame was written, `1` = the caller blocked and no frame exists,
+`2` = the caller faulted at the seam (PR #887 review round 5) — no frame,
+and the trap layer halts rather than resumes. -/
 def tagWord : SyscallOutcome → UInt64
   | .returns _ => 0
   | .blocks    => 1
+  | .faulted   => 2
 
-/-- The two tags are distinct — a blocked outcome cannot be mistaken for a
+/-- The tags are distinct — a blocked outcome cannot be mistaken for a
 frame delivery at the boundary. -/
 theorem tagWord_blocks_ne_returns (f : SyscallReturnFrame) :
     tagWord .blocks ≠ tagWord (.returns f) := by
+  simp [tagWord]
+
+/-- …nor a faulted one for a frame delivery… -/
+theorem tagWord_faulted_ne_returns (f : SyscallReturnFrame) :
+    tagWord .faulted ≠ tagWord (.returns f) := by
+  simp [tagWord]
+
+/-- …nor a faulted one for a block: the trap layer's `Blocked` arm resumes
+the caller behind a sentinel, its `Faulted` arm halts, and the two must
+never be confused at the boundary. -/
+theorem tagWord_faulted_ne_blocks : tagWord .faulted ≠ tagWord .blocks := by
   simp [tagWord]
 
 /-- The mailbox frame for an outcome: a blocked caller's mailbox stays
@@ -1049,6 +1175,7 @@ this model: the model stages real frames only. -/
 def mailboxFrame : SyscallOutcome → SyscallReturnFrame
   | .returns f => f
   | .blocks    => .zero
+  | .faulted   => .zero
 
 end SyscallOutcome
 
@@ -1102,6 +1229,220 @@ theorem frameForShape_value (shape : ReturnShape) (staged : SyscallReturnFrame)
   cases shape <;> simp_all [frameForShape]
 
 -- ============================================================================
+-- §6b  WS-RR RR4.16 — the fault-restart writeback
+-- ============================================================================
+--
+-- A fault reply restarts the faulted thread, and on two of the four fault
+-- kinds it installs registers the handler supplied (seL4's
+-- `copyMRsFaultReply` over `fault_messages[MessageID_Syscall]` /
+-- `[MessageID_Exception]`).  That is the *same* act as a syscall return
+-- writeback — a frame of words staged into a thread's saved register
+-- context — so it goes through the same mechanism rather than a second one:
+-- `stageRestartFrame` is defined *as* `stageReturnFrame` plus the three
+-- registers a restart reaches that a syscall return does not (`x6`/`x7`,
+-- `lr`), and `pc`/`sp`.
+
+/-- WS-RR RR4.16: the register state a fault reply restarts a thread with.
+
+The union of seL4's two fault-reply register lists on AArch64:
+`fault_messages[MessageID_Syscall] = {x0..x7, FaultIP, SP_EL0, x30, SPSR_EL1}`
+and `[MessageID_Exception] = {FaultIP, SP_EL0, SPSR_EL1}`, minus `SPSR_EL1` —
+the model's `RegisterFile` carries no PSTATE, and refusing the override is
+the fail-closed direction (see `Model.FaultContext.spsr`). -/
+structure FaultRestartFrame where
+  /-- The instruction to restart at — seL4's `FaultIP`, installed as the
+      thread's saved `pc`. -/
+  pc : UInt64 := 0
+  /-- The user stack pointer to restart with (`SP_EL0`). -/
+  sp : UInt64 := 0
+  /-- The link register to restart with (`x30`). -/
+  lr : UInt64 := 0
+  x0 : UInt64 := 0
+  x1 : UInt64 := 0
+  x2 : UInt64 := 0
+  x3 : UInt64 := 0
+  x4 : UInt64 := 0
+  x5 : UInt64 := 0
+  x6 : UInt64 := 0
+  x7 : UInt64 := 0
+  deriving Repr, DecidableEq, Inhabited
+
+namespace FaultRestartFrame
+
+/-- WS-RR RR4.16: the `x0`-`x5` sub-frame, so the restart writeback can hand
+it to the syscall-return stager rather than repeating its six writes. -/
+def returnWindow (f : FaultRestartFrame) : SyscallReturnFrame :=
+  { x0 := f.x0, x1 := f.x1, x2 := f.x2, x3 := f.x3, x4 := f.x4, x5 := f.x5 }
+
+end FaultRestartFrame
+
+/-- WS-RR RR4.16: stage a fault-restart frame into a register file.
+
+**Defined through `stageReturnFrame`**, not beside it: the `x0`-`x5` window
+is written by the syscall-return stager and this adds only what a restart
+reaches beyond it (`x6`, `x7`, `x30`, `pc`, `sp`).  One mechanism, so a
+change to how a frame lands in a register file cannot apply to syscall
+returns and miss fault restarts. -/
+def _root_.SeLe4n.RegisterFile.stageRestartFrame
+    (rf : SeLe4n.RegisterFile) (f : FaultRestartFrame) : SeLe4n.RegisterFile :=
+  let rf := rf.stageReturnFrame f.returnWindow
+  let rf := SeLe4n.writeReg rf ⟨6⟩ ⟨f.x6.toNat⟩
+  let rf := SeLe4n.writeReg rf ⟨7⟩ ⟨f.x7.toNat⟩
+  let rf := SeLe4n.writeReg rf ⟨30⟩ ⟨f.lr.toNat⟩
+  { rf with pc := ⟨f.pc.toNat⟩, sp := ⟨f.sp.toNat⟩ }
+
+/-- WS-RR RR4.16: the restart PC lands in the register file's `pc` — the
+word that decides where the thread resumes, and therefore the whole point of
+a restart (`faultRestart_moves_pc` lifts this to the state). -/
+@[simp] theorem _root_.SeLe4n.RegisterFile.stageRestartFrame_pc
+    (rf : SeLe4n.RegisterFile) (f : FaultRestartFrame) :
+    (rf.stageRestartFrame f).pc = ⟨f.pc.toNat⟩ := rfl
+
+@[simp] theorem _root_.SeLe4n.RegisterFile.stageRestartFrame_sp
+    (rf : SeLe4n.RegisterFile) (f : FaultRestartFrame) :
+    (rf.stageRestartFrame f).sp = ⟨f.sp.toNat⟩ := rfl
+
+/-- WS-RR RR4.16: the eight-register argument window and the link register
+read back as the frame — the property a handler emulating a trapped syscall
+relies on when it replies with the emulation's results. -/
+theorem _root_.SeLe4n.RegisterFile.stageRestartFrame_reads_back
+    (rf : SeLe4n.RegisterFile) (f : FaultRestartFrame) :
+    (rf.stageRestartFrame f).gpr ⟨0⟩ = ⟨f.x0.toNat⟩ ∧
+    (rf.stageRestartFrame f).gpr ⟨1⟩ = ⟨f.x1.toNat⟩ ∧
+    (rf.stageRestartFrame f).gpr ⟨2⟩ = ⟨f.x2.toNat⟩ ∧
+    (rf.stageRestartFrame f).gpr ⟨3⟩ = ⟨f.x3.toNat⟩ ∧
+    (rf.stageRestartFrame f).gpr ⟨4⟩ = ⟨f.x4.toNat⟩ ∧
+    (rf.stageRestartFrame f).gpr ⟨5⟩ = ⟨f.x5.toNat⟩ ∧
+    (rf.stageRestartFrame f).gpr ⟨6⟩ = ⟨f.x6.toNat⟩ ∧
+    (rf.stageRestartFrame f).gpr ⟨7⟩ = ⟨f.x7.toNat⟩ ∧
+    (rf.stageRestartFrame f).gpr ⟨30⟩ = ⟨f.lr.toNat⟩ := by
+  unfold SeLe4n.RegisterFile.stageRestartFrame SeLe4n.RegisterFile.stageReturnFrame
+    SeLe4n.writeReg FaultRestartFrame.returnWindow
+  refine ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- WS-RR RR4.16: registers outside the restart window survive — the
+callee-saved range `x8`-`x29` is the faulted thread's own, and a handler that
+did not ask to change it does not. -/
+theorem _root_.SeLe4n.RegisterFile.stageRestartFrame_gpr_untouched
+    (rf : SeLe4n.RegisterFile) (f : FaultRestartFrame) (r : SeLe4n.RegName)
+    (hLow : 7 < r.val) (hHigh : r.val ≠ 30) :
+    (rf.stageRestartFrame f).gpr r = rf.gpr r := by
+  unfold SeLe4n.RegisterFile.stageRestartFrame SeLe4n.RegisterFile.stageReturnFrame
+    SeLe4n.writeReg FaultRestartFrame.returnWindow
+  simp only
+  have h0 : r.val ≠ 0 := by omega
+  have h1 : r.val ≠ 1 := by omega
+  have h2 : r.val ≠ 2 := by omega
+  have h3 : r.val ≠ 3 := by omega
+  have h4 : r.val ≠ 4 := by omega
+  have h5 : r.val ≠ 5 := by omega
+  have h6 : r.val ≠ 6 := by omega
+  have h7 : r.val ≠ 7 := by omega
+  simp [h0, h1, h2, h3, h4, h5, h6, h7, hHigh]
+
+/-- WS-RR RR4.16: stage a restart frame into a TCB's saved register context —
+the single record update the restart path goes through, mirroring
+`TCB.withReturnFrame`.  `registerContext` moves; every other TCB field is
+definitionally unchanged. -/
+def _root_.SeLe4n.Model.TCB.withRestartFrame (tcb : TCB) (f : FaultRestartFrame) : TCB :=
+  { tcb with registerContext := tcb.registerContext.stageRestartFrame f }
+
+@[simp] theorem _root_.SeLe4n.Model.TCB.withRestartFrame_ipcState
+    (tcb : TCB) (f : FaultRestartFrame) :
+    (tcb.withRestartFrame f).ipcState = tcb.ipcState := rfl
+
+@[simp] theorem _root_.SeLe4n.Model.TCB.withRestartFrame_threadState
+    (tcb : TCB) (f : FaultRestartFrame) :
+    (tcb.withRestartFrame f).threadState = tcb.threadState := rfl
+
+@[simp] theorem _root_.SeLe4n.Model.TCB.withRestartFrame_tid
+    (tcb : TCB) (f : FaultRestartFrame) :
+    (tcb.withRestartFrame f).tid = tcb.tid := rfl
+
+@[simp] theorem _root_.SeLe4n.Model.TCB.withRestartFrame_pendingMessage
+    (tcb : TCB) (f : FaultRestartFrame) :
+    (tcb.withRestartFrame f).pendingMessage = tcb.pendingMessage := rfl
+
+@[simp] theorem _root_.SeLe4n.Model.TCB.withRestartFrame_pendingFault
+    (tcb : TCB) (f : FaultRestartFrame) :
+    (tcb.withRestartFrame f).pendingFault = tcb.pendingFault := rfl
+
+@[simp] theorem _root_.SeLe4n.Model.TCB.withRestartFrame_registerContext
+    (tcb : TCB) (f : FaultRestartFrame) :
+    (tcb.withRestartFrame f).registerContext
+      = tcb.registerContext.stageRestartFrame f := rfl
+
+/-- WS-RR RR4.16: stage a restart frame into a thread's saved register
+context — the state-level writeback, mirroring `writeReturnFrameToTcb` down
+to its totality posture (a non-TCB target returns the state unchanged). -/
+def writeRestartFrameToTcb (st : SystemState) (tid : SeLe4n.ThreadId)
+    (frame : FaultRestartFrame) : SystemState :=
+  match st.getTcb? tid with
+  | some tcb =>
+      { st with objects := st.objects.insert tid.toObjId (.tcb (tcb.withRestartFrame frame)) }
+  | none => st
+
+/-- WS-RR RR4.16 (frame): the restart writeback never touches the scheduler —
+restarting a thread installs registers; making it runnable again is the
+separate act the delivery's counterpart performs. -/
+@[simp] theorem writeRestartFrameToTcb_scheduler_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) (frame : FaultRestartFrame) :
+    (writeRestartFrameToTcb st tid frame).scheduler = st.scheduler := by
+  unfold writeRestartFrameToTcb; cases st.getTcb? tid <;> rfl
+
+/-- WS-RR RR4.16 (frame): nor the machine mirror — same posture as
+`writeReturnFrameToTcb`, and for the same reason (the SM10.1 context restore
+owns that mirror). -/
+@[simp] theorem writeRestartFrameToTcb_machine_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) (frame : FaultRestartFrame) :
+    (writeRestartFrameToTcb st tid frame).machine = st.machine := by
+  unfold writeRestartFrameToTcb; cases st.getTcb? tid <;> rfl
+
+/-- WS-RR RR4.16 (frame): nor the declassification audit trail. -/
+@[simp] theorem writeRestartFrameToTcb_declassificationAuditLog_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) (frame : FaultRestartFrame) :
+    (writeRestartFrameToTcb st tid frame).declassificationAuditLog
+      = st.declassificationAuditLog := by
+  unfold writeRestartFrameToTcb; cases st.getTcb? tid <;> rfl
+
+/-- WS-RR RR4.16 (frame): every object but the restarted thread's is
+untouched — the restart is a single-TCB write. -/
+theorem writeRestartFrameToTcb_objects_ne
+    (st : SystemState) (tid : SeLe4n.ThreadId) (frame : FaultRestartFrame)
+    (oid : SeLe4n.ObjId) (hNe : oid ≠ tid.toObjId)
+    (hObjInv : st.objects.invExt) :
+    (writeRestartFrameToTcb st tid frame).objects[oid]? = st.objects[oid]? := by
+  have hNe' : ¬(tid.toObjId == oid) = true := by
+    simp only [beq_iff_eq]
+    exact fun h => hNe h.symm
+  unfold writeRestartFrameToTcb
+  cases h : st.getTcb? tid with
+  | none => rfl
+  | some tcb =>
+    exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne
+        st.objects tid.toObjId oid _ hNe' hObjInv
+
+/-- WS-RR RR4.16: the restarted thread's saved `pc` is the frame's — the
+statement RR4.19's progress argument consumes, since "the thread does not
+re-execute the faulting instruction" is exactly "its saved `pc` is what the
+handler chose". -/
+theorem writeRestartFrameToTcb_pc
+    (st : SystemState) (tid : SeLe4n.ThreadId) (frame : FaultRestartFrame)
+    (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
+    (hObjInv : st.objects.invExt) :
+    (writeRestartFrameToTcb st tid frame).getTcb? tid
+      = some (tcb.withRestartFrame frame) ∧
+    (tcb.withRestartFrame frame).registerContext.pc = ⟨frame.pc.toNat⟩ := by
+  refine ⟨?_, rfl⟩
+  unfold writeRestartFrameToTcb
+  rw [hTcb]
+  simp only
+  unfold SystemState.getTcb?
+  rw [RHTable_getElem?_eq_get?,
+      SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId
+        (KernelObject.tcb (tcb.withRestartFrame frame)) hObjInv]
+
+-- ============================================================================
 -- §7  The ABI version pin (RA.A.7, plan §3.6)
 -- ============================================================================
 
@@ -1121,18 +1462,24 @@ theorem bit63Encoding_not_injective_on_badges :
 
 * Version **1** — the retired bit-63 protocol: one status word in `x0`,
   bit 63 the error flag, values masked to 63 bits.
-* Version **2** — the seL4 frame convention this module models: `x0` the
-  full-width value, `x1` a `MessageInfo` whose offset label carries the
-  error, `x2`-`x5` message registers.
+* Version **2** — the seL4 frame convention: `x0` the full-width value,
+  `x1` a `MessageInfo` whose label carried the error **offset by one**
+  (`d + 1`), `x2`-`x5` message registers.  Retired at WS-RR RR4 because a
+  delivered fault message's `seL4_Fault_tag` label decoded as a kernel error.
+* Version **3** — the same frame, with kernel status in the **top** of the
+  20-bit label range (`errorLabelBase + d`, see `errorLabel`) and every
+  delivered message's label below it.  A v2 decoder reads a v3 error frame as
+  `UnknownKernelError` and a v3 fault delivery as a spurious error, which is
+  why this is a version bump and not a patch.
 
-Mirrored as `SYSCALL_ABI_VERSION` in `rust/sele4n-types` at the flip, with
+Mirrored as `SYSCALL_ABI_VERSION` in `rust/sele4n-types` at each flip, with
 each side's conformance suite pinning its own constant to the same literal —
 so a half-bumped tree fails its own suite rather than mis-decoding at
 runtime (plan §3.6). -/
-def syscallAbiVersion : Nat := 2
+def syscallAbiVersion : Nat := 3
 
 /-- The Lean half of the version pin (RA.A.7).  The Rust conformance test
 asserts the identical literal; a bump that forgets one side fails there. -/
-theorem syscallAbiVersion_pinned : syscallAbiVersion = 2 := rfl
+theorem syscallAbiVersion_pinned : syscallAbiVersion = 3 := rfl
 
 end SeLe4n.Kernel.Architecture

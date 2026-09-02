@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Sicherheit" /></a>
-  <img src="https://img.shields.io/badge/version-0.34.43-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.34.44-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Lizenz" /></a>
 </p>
@@ -87,7 +87,7 @@ Lean-4-Beweissystem ermöglicht werden:
 
 | Eigenschaft | Wert |
 |-------------|------|
-| **Version** | `0.34.43` |
+| **Version** | `0.34.44` |
 | **Lean-Toolchain** | `v4.28.0` |
 | **Produktions-LoC (Lean)** | 286.841 über 286 Dateien |
 | **Test-LoC (Lean)** | 64.078 über 69 Testsuiten |
@@ -228,6 +228,8 @@ TLB-Shootdown und Cache-Wartung, SMP-Informationsfluss sowie die
 Vervollständigung der Deklassifizierung (SM9, abgeschlossen bei v0.33.100).
 Die verbleibende Phase ist **SM10** (Release-Abschluss → v1.0.0). Der
 Workstream zum Syscall-Rückgabe-ABI (**WS-RA**) ist abgeschlossen.
+
+**SM10 ist durch WS-RR blockiert** (SMP-Release-Reife), die derzeit laufende Remediationsphase vor 1.0 ([`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)): RR0 (v0.34.26), RR1 (v0.34.41), RR2 (v0.34.42), RR3 (v0.34.43) und **RR4 — Fehlerbehandlung: vollständige Fault-IPC mit antwortbasiertem Neustart (v0.34.44)**, die verhindert, dass ein fehlerhafter Thread an der auslösenden Instruktion fortgesetzt wird: der Fault wird im TCB vermerkt, über die aktive kernübergreifende Call-Kette an den `faultHandler`-Endpunkt des Threads zugestellt und mit einer Antwort beantwortet, die den Thread an einem gewählten PC neu startet oder ihn aufgibt. RR5–RR8 stehen noch aus, danach **SM10** (Release-Abschluss → v1.0.0).
 
 Masterplan: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md),
 mit Plänen pro Phase in `docs/planning/SMP_*.md`. Die kanonische Aufzeichnung

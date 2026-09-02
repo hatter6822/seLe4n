@@ -519,7 +519,7 @@ shootdown round(s) the commit posted (`completeShootdownRounds`, recovered from
 the `tlbShootdown` diff; inert for every non-shootdown syscall).
 
 **WS-RA (the return convention)**: the committed outcome's return frame
-(`x0`-`x5`, errors as the offset label on `x1`) is published into this core's
+(`x0`-`x5`, errors as the status label on `x1`) is published into this core's
 return-frame mailbox (`ffiSyscallReturnFrame` — the `ShootdownOpMailbox`
 pattern, since a scalar export return cannot carry six words), and the export's
 scalar return is the **outcome tag**: `0` = the mailbox frame is the caller's
@@ -562,12 +562,12 @@ running on this core — including every arm of a single-core build. -/
 def syscallDispatchCrossCoreEntry
     (syscallId : UInt32) (msgInfo : UInt64)
     (x0 x1 x2 x3 x4 x5 : UInt64)
-    (ipcBufferAddr : UInt64) : BaseIO UInt64 := do
+    (ipcBufferAddr : UInt64) (elr spsr spEl0 x30 : UInt64) : BaseIO UInt64 := do
   let ctx ← Platform.FFI.getKernelLabelingContext
   let execCore ← Concurrency.currentCoreId
   let result ← Platform.FFI.modifyGetKernelState (fun st =>
     match Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
-        ipcBufferAddr st with
+        ipcBufferAddr elr spsr spEl0 x30 st with
     | Except.ok (outcome, st') =>
         let st'' := PriorityInheritance.scheduleLocalSuccessorLive st st' execCore
         ((outcome, PriorityInheritance.computeCrossCoreSgis st st'' execCore,
@@ -602,7 +602,9 @@ def syscallDispatchCrossCoreEntry
   -- stranded into the next syscall.  Inert when nothing was owed.
   completeIcacheMaintenance result.2.2.2.2.2
   -- WS-RA: the export's scalar return is the outcome tag (0 = the mailbox
-  -- frame is the caller's return; 1 = the caller blocked, no frame).
+  -- frame is the caller's return; 1 = the caller blocked, no frame; 2 = the
+  -- caller faulted at the seam, no frame, and the trap layer halts pending
+  -- SM10.1 — PR #887 review round 5).
   pure result.1.tagWord
 
 /-- **WS-SM SM6.A** structural marker: `syscallDispatchCrossCoreEntry` unfolds to
@@ -614,14 +616,15 @@ elaboration; combined with `@[export]` (which the Rust extern resolves against)
 the seam cannot regress silently. -/
 theorem syscallDispatchCrossCoreEntry_def
     (syscallId : UInt32) (msgInfo : UInt64) (x0 x1 x2 x3 x4 x5 : UInt64)
-    (ipcBufferAddr : UInt64) :
-    syscallDispatchCrossCoreEntry syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr =
+    (ipcBufferAddr : UInt64) (elr spsr spEl0 x30 : UInt64) :
+    syscallDispatchCrossCoreEntry syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr
+        elr spsr spEl0 x30 =
       (do
         let ctx ← Platform.FFI.getKernelLabelingContext
         let execCore ← Concurrency.currentCoreId
         let result ← Platform.FFI.modifyGetKernelState (fun st =>
           match Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
-              ipcBufferAddr st with
+              ipcBufferAddr elr spsr spEl0 x30 st with
           | Except.ok (outcome, st') =>
               let st'' := PriorityInheritance.scheduleLocalSuccessorLive st st' execCore
               ((outcome, PriorityInheritance.computeCrossCoreSgis st st'' execCore,
@@ -666,17 +669,18 @@ theorem vacatedCore_next_syscall_rejected
     (ctx : LabelingContext) (execCore : CoreId)
     (pre post : SystemState)
     (syscallId : UInt32) (msgInfo : UInt64)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr : UInt64)
+    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
     (hMsg : msgInfo = x1)
     (hVacated :
       (PriorityInheritance.scheduleLocalSuccessorLive pre post execCore).scheduler.currentOnCore
         execCore = none) :
     Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
-        ipcBufferAddr (PriorityInheritance.scheduleLocalSuccessorLive pre post execCore)
+        ipcBufferAddr elr spsr spEl0 x30
+        (PriorityInheritance.scheduleLocalSuccessorLive pre post execCore)
       = Except.ok (.returns (Architecture.errorFrame .illegalState),
                    PriorityInheritance.scheduleLocalSuccessorLive pre post execCore) :=
   Platform.FFI.syscallDispatchFromAbi_illegalState_when_no_current ctx execCore syscallId msgInfo
-    x0 x1 x2 x3 x4 x5 ipcBufferAddr _ hMsg hVacated
+    x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 _ hMsg hVacated
 
 /-- **WS-SM SM6.A** trace-safety witness: on the boot core, when every thread's
 home core is the boot core (the single-core configuration), the diff-recovered

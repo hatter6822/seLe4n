@@ -253,6 +253,10 @@ def test_schedContext_yield_self_returns_state_unchanged : IO Bool := do
 #check @SeLe4n.Kernel.projectKernelObject_tcb_cpuAffinity_irrelevant
 #check @SeLe4n.Kernel.objects_insert_preserves_projection_of_proj_eq
 #check @SeLe4n.Kernel.setThreadCpuAffinity_preserves_projection_unconditional
+-- PR #887 review: the per-op NI witness for the `tcbSetFaultHandler`
+-- capability-only arm — a `faultHandler` field write on a non-observable
+-- target, discharged by the universal direct-insert frame lemma.
+#check @SeLe4n.Kernel.setThreadFaultHandlerOp_preserves_projection
 
 -- WS-SM SM8.C: the two enforcement families, completed.  Both were documented
 -- as covering "all policy-gated operations" while covering seven of twelve —
@@ -756,7 +760,10 @@ def runInformationFlowChecks : IO Unit := do
     ((SeLe4n.Kernel.enforcementBoundary.filter (fun c =>
       match c with | .readOnly _ => true | _ => false)).length > 0)
 
-  -- 43 classified ops: 42 prior + notificationSignalDeclassifiedCrossCoreDispatch
+  -- 44 classified ops: 43 prior + setThreadFaultHandlerOp (PR #887 review round —
+  -- fault-handler configuration, capability-only: the TCB capability's write
+  -- right, validated through the target's CSpace at set time), on top of
+  -- notificationSignalDeclassifiedCrossCoreDispatch
   -- (WS-SM SM9.C — the data-carrying declassification, policy-gated), on top of
   -- auditReadFromCore and auditDrainVisiblePrefix
   -- (WS-SM SM9.A.11 — the declassification trail's reader and drain, both
@@ -769,8 +776,8 @@ def runInformationFlowChecks : IO Unit := do
   -- path, capability-only) and mintReplyCapWithCdt (WS-SM SM6.D / PR #822
   -- Phase H, capability-only — derives a reply cap from an object cap to a
   -- retyped Reply).
-  expect "enforcement boundary: total 43 classified operations"
-    (SeLe4n.Kernel.enforcementBoundary.length == 43)
+  expect "enforcement boundary: total 44 classified operations"
+    (SeLe4n.Kernel.enforcementBoundary.length == 44)
 
   -- Verify enforcement boundary: denied flows produce errors
   let deniedSendResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ testMsg default default default publicEndpointState
@@ -1336,12 +1343,12 @@ def runInformationFlowChecks : IO Unit := do
   -- reader and drain, capability-only because the authority they check is the
   -- dedicated `CapTarget.auditTrail` rather than a right — a rights-only gate
   -- would repeat the v0.32.97 confused-deputy class.
-  expect "enforcement boundary has 26 capability-only"
-    (coCount = 26)
+  expect "enforcement boundary has 27 capability-only"
+    (coCount = 27)
   expect "enforcement boundary has 4 read-only"
     (roCount = 4)
-  expect "enforcement boundary total is 43"
-    (boundary.length = 43)
+  expect "enforcement boundary total is 44"
+    (boundary.length = 44)
 
   IO.println "enforcement boundary completeness verified"
 
@@ -1422,8 +1429,8 @@ def runInformationFlowChecks : IO Unit := do
   IO.println "default labeling context insecurity verified"
 
   -- V6-L: Extended boundary matches canonical
-  expect "enforcementBoundaryExtended has 43 entries"
-    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 43)
+  expect "enforcementBoundaryExtended has 44 entries"
+    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 44)
   expect "extended boundary matches canonical length"
     (SeLe4n.Kernel.enforcementBoundaryExtended.length = SeLe4n.Kernel.enforcementBoundary.length)
 

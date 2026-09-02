@@ -746,14 +746,26 @@ private def row_hardwareFault_serror : KernelErrorRejection :=
       runUnit (SeLe4n.Kernel.Architecture.dispatchException .serror ectx 0
         (default : SystemState)) }
 
-/-- Row: `dispatchSynchronousException` on a data abort returns
-`.vmFault`. -/
+/-- Row: `dispatchSynchronousException` on a data abort **the kernel cannot
+attribute to a thread** returns `.vmFault`.
+
+WS-RR RR4.21 changed what this row means, and the change is the phase's whole
+point.  Before RR4 this arm returned `.error .vmFault` for *every* data abort:
+a pure error, no state change, and the faulting thread left runnable at the
+instruction that faulted.  Now an abort taken by a running thread is
+**delivered** to that thread's fault handler (`faultDeliverOnCore`), and
+`.vmFault` survives only for an abort on a core with **no current thread** —
+an idle core or the kernel itself — where there is no thread to contain and
+reporting is the fail-closed answer.  The state here is `default`, whose boot
+core has no current thread, so the row exercises exactly that arm
+(`dispatchSynchronousException_dataAbort_unattributable`). -/
 private def row_vmFault_data_abort : KernelErrorRejection :=
   { syscall       := "dispatchSynchronousException"
     expectedError := .vmFault
-    scenarioTag   := "AN11A.5.vmFault.data_abort"
-    scenarioDesc  := "AG3-C: ESR with EC=0x24 classifies as dataAbort and" ++
-                     " dispatches to .vmFault"
+    scenarioTag   := "AN11A.5.vmFault.data_abort_unattributable"
+    scenarioDesc  := "WS-RR RR4.21: ESR with EC=0x24 classifies as dataAbort;" ++
+                     " with no current thread on the executing core the fault" ++
+                     " is unattributable and reported as .vmFault"
     runScenario   := fun _ =>
       -- ESR with EC field = 0x24 (data abort, lower EL).  EC sits at bits
       -- [31:26] of the ESR register, so the raw value is 0x24 << 26.
@@ -762,14 +774,16 @@ private def row_vmFault_data_abort : KernelErrorRejection :=
       runUnit (SeLe4n.Kernel.Architecture.dispatchSynchronousException ectx
         (default : SystemState)) }
 
-/-- Row: `dispatchSynchronousException` on a PC-alignment fault returns
-`.userException`. -/
+/-- Row: `dispatchSynchronousException` on a PC-alignment fault the kernel
+cannot attribute returns `.userException` — the alignment-fault twin of the
+row above, and the same RR4.21 change of meaning. -/
 private def row_userException_pc_alignment : KernelErrorRejection :=
   { syscall       := "dispatchSynchronousException"
     expectedError := .userException
-    scenarioTag   := "AN11A.5.userException.pc_alignment"
-    scenarioDesc  := "AG3-C: ESR with EC=0x22 classifies as a PC alignment" ++
-                     " fault and dispatches to .userException"
+    scenarioTag   := "AN11A.5.userException.pc_alignment_unattributable"
+    scenarioDesc  := "WS-RR RR4.21: ESR with EC=0x22 classifies as a PC" ++
+                     " alignment fault; with no current thread it is" ++
+                     " unattributable and reported as .userException"
     runScenario   := fun _ =>
       let ectx : SeLe4n.Kernel.Architecture.ExceptionContext :=
         { esr := UInt64.ofNat (0x22 <<< 26), elr := 0, spsr := 0, far := 0 }

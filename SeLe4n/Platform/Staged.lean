@@ -584,6 +584,8 @@ import SeLe4n.Kernel.InformationFlow.DeclassificationPerCore
 -- Reachability: staged at SM8.D; SM3.C.9's `withLockSet` migration at the
 -- `@[export]` bodies is the runtime exerciser, SM8.E the next consumer.
 import SeLe4n.Kernel.InformationFlow.FineLockFlow
+import SeLe4n.Kernel.IPC.Invariant.FaultPreservation
+import SeLe4n.Kernel.InformationFlow.FaultFlow
 -- WS-SM SM6.A: the cross-core-aware syscall dispatch entry —
 -- `syscallDispatchCrossCoreEntry` (`@[export lean_syscall_dispatch_cross_core]`).
 -- Runs the verified `syscallDispatchFromAbi` atomically via `modifyGetKernelState`,

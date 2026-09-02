@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="सुरक्षा" /></a>
-  <img src="https://img.shields.io/badge/version-0.34.43-blue" alt="संस्करण" />
+  <img src="https://img.shields.io/badge/version-0.34.44-blue" alt="संस्करण" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="लाइसेंस" /></a>
 </p>
@@ -62,7 +62,7 @@ Lean प्रकार-परीक्षक द्वारा मशीन-�
 
 | विशेषता | मान |
 |----------|------|
-| **संस्करण** | `0.34.43` |
+| **संस्करण** | `0.34.44` |
 | **Lean टूलचेन** | `v4.28.0` |
 | **उत्पादन Lean LoC** | 286 फ़ाइलों में 286,841 |
 | **परीक्षण Lean LoC** | 69 परीक्षण सुइट्स में 64,078 |
@@ -200,6 +200,8 @@ Raspberry Pi 5 पर बूट-योग्य सत्यापित SMP स
 प्रवाह, और अवर्गीकरण पूर्णता (SM9, v0.33.100 में समाप्त)। शेष चरण
 **SM10** (रिलीज़ समापन → v1.0.0) है। सिस्टम-कॉल रिटर्न ABI कार्यधारा
 (**WS-RA**) पूर्ण है।
+
+**SM10, WS-RR पर अवरुद्ध है** (SMP रिलीज़ तत्परता) — 1.0 से पूर्व की सुधार चरण, जो अभी प्रगति पर है ([`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)): RR0 (v0.34.26), RR1 (v0.34.41), RR2 (v0.34.42), RR3 (v0.34.43) और **RR4 — फ़ॉल्ट हैंडलिंग: उत्तर-आधारित पुनरारंभ के साथ पूर्ण फ़ॉल्ट IPC (v0.34.44)**, जो फ़ॉल्ट वाले थ्रेड को उसी निर्देश पर फिर से चलने से रोकता है: फ़ॉल्ट TCB में दर्ज होता है, थ्रेड के `faultHandler` एंडपॉइंट तक सक्रिय क्रॉस-कोर कॉल श्रृंखला के माध्यम से पहुँचाया जाता है, और एक उत्तर द्वारा निपटाया जाता है जो थ्रेड को चुने हुए PC पर पुनः आरंभ करता है या उसे त्याग देता है। RR5–RR8 शेष हैं, उसके बाद **SM10** (रिलीज़ समापन → v1.0.0)।
 
 मास्टर योजना: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md),
 प्रति-चरण योजनाओं सहित `docs/planning/SMP_*.md` में। विहित प्रति-चरण

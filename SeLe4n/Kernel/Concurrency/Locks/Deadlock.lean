@@ -916,7 +916,13 @@ theorem lockSet_tcbSetIPCBuffer_size_le (a : ThreadId) (b : ObjId) (c : ThreadId
   unfold lockSet_tcbSetIPCBuffer maxLockSetSize
   exact Nat.le_trans (size_le_1 _ _) (by size_bound)
 
-/-- WS-SM SM3.D.6b (aggregate): **every** one of the 30 per-transition
+theorem lockSet_tcbSetFaultHandler_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
+    (d e : Option ObjId) :
+    (lockSet_tcbSetFaultHandler a b c d e).size ≤ maxLockSetSize := by
+  unfold lockSet_tcbSetFaultHandler maxLockSetSize
+  exact Nat.le_trans (size_le_2 _ _ _) (by size_bound)
+
+/-- WS-SM SM3.D.6b (aggregate): **every** one of the 31 per-transition
 `lockSet_<τ>` declarations enumerated here has size `≤ maxLockSetSize`, for
 all arguments.  This discharges, once and for all, the size premise of
 `boundedWait_under_2pl` / the `KernelOperation` invariant for the real
@@ -926,7 +932,8 @@ it had read "26" across two syscall additions.  WS-SM SM9.C.8's
 `declassifySignal` is the thirtieth, and the same cut generalised the
 `notificationSignal` conjunct over its SM6.B bound-delivery optionals, which
 had been fixed at their `none` defaults and so left the five-member
-bound-delivery footprint unbounded.) -/
+bound-delivery footprint unbounded.  PR #887's review round added the
+thirty-first, `tcbSetFaultHandler`.) -/
 theorem lockSetTransitions_within_bound :
     (∀ a b c d, (lockSet_endpointSend a b c d).size ≤ maxLockSetSize) ∧
     (∀ a b c d e f, (lockSet_endpointReceive a b c d e f).size ≤ maxLockSetSize) ∧
@@ -957,7 +964,8 @@ theorem lockSetTransitions_within_bound :
     (∀ a b c, (lockSet_tcbResume a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c d, (lockSet_tcbSetPriority a b c d).size ≤ maxLockSetSize) ∧
     (∀ a b c d, (lockSet_tcbSetMCPriority a b c d).size ≤ maxLockSetSize) ∧
-    (∀ a b c d, (lockSet_tcbSetIPCBuffer a b c d).size ≤ maxLockSetSize) :=
+    (∀ a b c d, (lockSet_tcbSetIPCBuffer a b c d).size ≤ maxLockSetSize) ∧
+    (∀ a b c d e, (lockSet_tcbSetFaultHandler a b c d e).size ≤ maxLockSetSize) :=
   ⟨lockSet_endpointSend_size_le, lockSet_endpointReceive_size_le,
    lockSet_endpointCall_size_le, lockSet_endpointReply_size_le,
    lockSet_replyRecv_size_le, lockSet_notificationSignal_size_le,
@@ -974,7 +982,7 @@ theorem lockSetTransitions_within_bound :
    fun a b c d e f g h => lockSet_tcbSuspend_size_le a b c d e f g h,
    lockSet_tcbResume_size_le,
    lockSet_tcbSetPriority_size_le, lockSet_tcbSetMCPriority_size_le,
-   lockSet_tcbSetIPCBuffer_size_le⟩
+   lockSet_tcbSetIPCBuffer_size_le, lockSet_tcbSetFaultHandler_size_le⟩
 
 -- ============================================================================
 -- §6c — `KernelOperation` (a transition's lock footprint, size-bounded)

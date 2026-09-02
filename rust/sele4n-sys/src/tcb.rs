@@ -108,6 +108,30 @@ pub fn tcb_set_affinity(tcb_cap: CPtr, affinity_raw: u64) -> KernelResult<Syscal
     })
 }
 
+/// Install a thread's fault handler (PR #887 review) — seL4's
+/// `seL4_TCB_SetSpace` fault endpoint, as its own invocation.
+///
+/// `handler_cptr` is a CPtr **in the target thread's CSpace** naming an
+/// endpoint capability with send and grant or grant-reply; the kernel
+/// validates it at set time (`setThreadFaultHandlerOp`, the same resolution
+/// the fault path runs) and refuses a CPtr that would not deliver, so a
+/// misconfiguration surfaces here rather than as a suspended thread later.
+/// Requires `.write` on the target TCB capability.
+///
+/// Lean: `setThreadFaultHandlerOp` (IPC/Operations/Fault.lean), dispatched as
+/// `SyscallId.tcbSetFaultHandler` in `API.lean`.
+#[inline]
+pub fn tcb_set_fault_handler(tcb_cap: CPtr, handler_cptr: u64) -> KernelResult<SyscallResponse> {
+    let args = SetFaultHandlerArgs { handler_cptr };
+    let encoded = args.encode();
+    invoke_syscall(SyscallRequest {
+        cap_addr: tcb_cap,
+        msg_info: MessageInfo::new_const(1, 0, 0),
+        msg_regs: [encoded[0], 0, 0, 0],
+        syscall_id: SyscallId::TcbSetFaultHandler,
+    })
+}
+
 /// Bind a notification object to a TCB (PR #866 round-3 review: the
 /// wrapper the ABI documented but never had — the syscall was callable
 /// only via hand-encoded requests, leaving it outside the prefilter
