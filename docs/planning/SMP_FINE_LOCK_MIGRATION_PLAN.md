@@ -332,7 +332,7 @@ PR body per the vulnerability rule.
   recvRoot)` carve-out, restore the blanket "every write rides a declared lock"
   sentence (`SeLe4n/Kernel/InformationFlow/TaintPropagation.lean`).
 - *Step 5 (docs):* CLAUDE/AGENTS finding-5 prose + suite tally,
-  `WORKSTREAM_HISTORY`, the completion plan, GitBook 12, claim index; add an
+  `REGISTERED_DEBT`, the completion plan, GitBook 12, claim index; add an
   **"Audit-pass-7 closure additions"** block to `SMP_PER_OBJECT_LOCKS_PLAN.md`
   §5.2 (audit-pass-6 PR #793 is the format) + check its §8 box.
 

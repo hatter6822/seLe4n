@@ -47,7 +47,7 @@ making that mistake.
    families through, and then `z`, and then a round arguing about `x`
    and `d` -- five rounds, each closed by appending exactly what the
    reviewer named.  `enforced_families()` now reads
-   `docs/WORKSTREAM_HISTORY.md`.  Two-letter families are enforced on
+   `docs/REGISTERED_DEBT.md`.  Two-letter families are enforced on
    sight (all 17 collide with nothing); single-letter families collide
    with the architecture's namespaces without exception, so each needs
    a recorded decision and the gate FAILS on one that has none.
@@ -183,7 +183,7 @@ def read_tracked(rel: str) -> str | None:
 # `Sm5iAffinityAnchors`, `sm5i_affinity_anchors` and `SM5I_ANCHORS` are
 # one case rather than three regexes.
 #
-# The family set is DERIVED from `docs/WORKSTREAM_HISTORY.md`, not
+# The family set is DERIVED from `docs/REGISTERED_DEBT.md`, not
 # hand-listed.  A hand-list was the single largest source of holes in
 # this gate: five separate review rounds each found families it lacked
 # (`aa`/`ae` and eleven more, then `z`, then `x`, `d`) and each was
@@ -213,7 +213,7 @@ def read_tracked(rel: str) -> str | None:
 # reviewer eventually notices a missing family" into "CI fails the
 # moment the registry mentions it", which is the property the
 # hand-list never had.
-REGISTRY_REL = "docs/WORKSTREAM_HISTORY.md"
+REGISTRY_REL = "docs/REGISTERED_DEBT.md"
 
 # The registry spells a workstream two ways: `WS-Q` for the family and
 # `WS-Q1` for a phase of it.  Requiring a word boundary after the

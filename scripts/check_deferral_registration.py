@@ -2,7 +2,7 @@
 """Fail when a source file declares its own deferral untracked.
 
 The project keeps one debt register — the *Registered debt index* in
-`docs/WORKSTREAM_HISTORY.md`.  A comment that says "no currently-active plan
+`docs/REGISTERED_DEBT.md`.  A comment that says "no currently-active plan
 file tracks it" is a deferral that has opted out of it: self-describing and
 unfindable at once, because a reader can only meet it by opening the file it
 lives in.  The register enumerates them instead, and each source comment
@@ -49,7 +49,7 @@ BINARY_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif", ".ico", ".pdf", ".woff",
 # necessarily quote the phrasing while describing it.  This list is
 # deliberately short and each entry is a narrative, never a deferral site.
 NARRATIVE_EXEMPT = {
-    "docs/WORKSTREAM_HISTORY.md",       # the register itself
+    "docs/REGISTERED_DEBT.md",          # the register itself
     "CHANGELOG.md",                     # historical per-version narrative
     "docs/planning/UNFINISHED_SMP_WORK.md",  # the audit that reported the gap
     "scripts/check_deferral_registration.py",  # this file's own docstring
@@ -91,7 +91,7 @@ UNTRACKED_RE = re.compile(
 
 # A site is compliant when the register is cited near the claim.
 REGISTER_RE = re.compile(
-    r"Registered debt index|WORKSTREAM_HISTORY", re.I
+    r"Registered debt index|REGISTERED_DEBT|REGISTERED_DEBT", re.I
 )
 
 # `row 29`, `rows 24-26`, `rows 24, 25 and 31` — the citation forms the
@@ -120,7 +120,7 @@ def cited_rows(blob: str) -> list[int]:
                 out.append(int(part.strip()))
     return out
 
-REGISTER_PATH = "docs/WORKSTREAM_HISTORY.md"
+REGISTER_PATH = "docs/REGISTERED_DEBT.md"
 _REGISTER_ROW_RE = re.compile(r"^\|\s*(\d+)\s*\|\s*`([^`]+)`", re.M)
 
 
@@ -345,12 +345,12 @@ def _self_test() -> int:
           "should not fire")
     check("a citation within the context window passes",
           not scan_text("X.lean",
-                        "-- see docs/WORKSTREAM_HISTORY.md\n" + "-- filler\n" * 4 +
+                        "-- see docs/REGISTERED_DEBT.md\n" + "-- filler\n" * 4 +
                         "-- no currently-active plan file tracks it.\n"),
           "should not fire")
     check("a citation beyond the context window still fires",
           bool(scan_text("X.lean",
-                         "-- see docs/WORKSTREAM_HISTORY.md\n" + "-- filler\n" * 12 +
+                         "-- see docs/REGISTERED_DEBT.md\n" + "-- filler\n" * 12 +
                          "-- no currently-active plan file tracks it.\n")),
           "should fire")
 
@@ -392,13 +392,13 @@ def _self_test() -> int:
     check("a citation naming a nonexistent row is caught",
           any("does not contain" in f for f in scan_text(
               HERE,
-              "-- no currently-active plan tracks it; see WORKSTREAM_HISTORY.md row 99.\n",
+              "-- no currently-active plan tracks it; see REGISTERED_DEBT.md row 99.\n",
               reg)),
           "should fire")
     check("a citation naming a real row for this file passes",
           not scan_text(
               HERE,
-              "-- no currently-active plan tracks it; see WORKSTREAM_HISTORY.md row 29.\n",
+              "-- no currently-active plan tracks it; see REGISTERED_DEBT.md row 29.\n",
               reg),
           "should not fire")
     # Row existence alone is satisfied by any real row, so a deferral in a
@@ -406,13 +406,13 @@ def _self_test() -> int:
     check("a citation of a real row that names another file is caught",
           any("no cited row names this file" in f for f in scan_text(
               "X.lean",
-              "-- no currently-active plan tracks it; see WORKSTREAM_HISTORY.md row 29.\n",
+              "-- no currently-active plan tracks it; see REGISTERED_DEBT.md row 29.\n",
               reg)),
           "should fire")
     check("a range naming this file among others passes",
           not scan_text(
               HERE,
-              "-- no currently-active plan tracks it; WORKSTREAM_HISTORY.md rows 29-30.\n",
+              "-- no currently-active plan tracks it; REGISTERED_DEBT.md rows 29-30.\n",
               RegisterIndex("| 29 | `other/file.lean` | x |\n"
                             "| 30 | `scripts/check_deferral_registration.py` | y |\n")),
           "should not fire: row 30 names this file")
@@ -430,13 +430,13 @@ def _self_test() -> int:
     check("a range whose later members are absent is caught",
           any("does not contain" in f for f in scan_text(
               "scripts/check_deferral_registration.py",
-              "-- no currently-active plan tracks it; WORKSTREAM_HISTORY.md rows 29-31.\n",
+              "-- no currently-active plan tracks it; REGISTERED_DEBT.md rows 29-31.\n",
               reg)),
           "should fire: 30 and 31 are not in the register")
     check("a range whose members all exist passes",
           not scan_text(
               "scripts/check_deferral_registration.py",
-              "-- no currently-active plan tracks it; WORKSTREAM_HISTORY.md rows 29-29.\n",
+              "-- no currently-active plan tracks it; REGISTERED_DEBT.md rows 29-29.\n",
               reg),
           "should not fire")
     check("an implausibly wide range is not expanded into hundreds of rows",
@@ -486,7 +486,7 @@ def _self_test() -> int:
         (root / "scripts").mkdir()
         (root / "docs").mkdir()
         shutil.copy(src, root / "scripts" / src.name)
-        (root / "docs" / "WORKSTREAM_HISTORY.md").write_text(
+        (root / "docs" / "REGISTERED_DEBT.md").write_text(
             "| 1 | `scripts/probe.S` | a row |\n", encoding="utf-8")
         probe = root / "scripts" / "probe.S"
         probe.write_text("// clean\n", encoding="utf-8")
@@ -562,7 +562,7 @@ def main(argv: list[str]) -> int:
     if findings:
         print("FAIL: deferral registration is incomplete.")
         print("Each deferral must cite the *Registered debt index* in "
-              "docs/WORKSTREAM_HISTORY.md; a cited `row N` must exist in its "
+              "docs/REGISTERED_DEBT.md; a cited `row N` must exist in its "
               "enumerated table, and each row must name a file that exists. "
               "(Whether a row *describes* the deferral beside it is a reader's "
               "judgement, not this gate's.)")

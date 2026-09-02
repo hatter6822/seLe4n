@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.45.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.46.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -202,9 +202,8 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~49780 lines)
+- `CHANGELOG.md` (~50090 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22582 lines)
-- `docs/WORKSTREAM_HISTORY.md` (~12902 lines)
 - `tests/SmpInformationFlowSuite.lean` (~11760 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~7902 lines)
 - `SeLe4n/Kernel/API.lean` (~6784 lines)
@@ -212,11 +211,10 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~5186 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5127 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~4997 lines)
-- `docs/gitbook/12-proof-and-invariant-map.md` (~4785 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4750 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
-- `docs/spec/SELE4N_SPEC.md` (~4513 lines)
 - `SeLe4n/Model/State.lean` (~4503 lines)
+- `docs/spec/SELE4N_SPEC.md` (~4213 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
 - `tests/NegativeStateSuite.lean` (~4115 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3919 lines)
@@ -235,7 +233,6 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` (~3134 lines)
 - `SeLe4n/Model/Object/Structures.lean` (~3116 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean` (~3087 lines)
-- `docs/planning/SMP_RUST_HAL_PLAN.md` (~3080 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean` (~2993 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~2948 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~2844 lines)
@@ -245,16 +242,14 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2639 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean` (~2637 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean` (~2602 lines)
-- `docs/planning/SMP_INFORMATION_FLOW_PLAN.md` (~2578 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdown.lean` (~2562 lines)
-- `SeLe4n/Platform/FFI.lean` (~2543 lines)
+- `SeLe4n/Platform/FFI.lean` (~2551 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~2542 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~2505 lines)
 - `tests/ModelIntegritySuite.lean` (~2477 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` (~2476 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md` (~2472 lines)
 - `SeLe4n/Kernel/InformationFlow/TaintPropagation.lean` (~2382 lines)
-- `docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` (~2373 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md` (~2340 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md` (~2339 lines)
 - `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~2325 lines)
@@ -263,14 +258,11 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2287 lines)
 - `SeLe4n/Model/Object/Types.lean` (~2264 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2243 lines)
-- `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` (~2179 lines)
 - `SeLe4n/Prelude.lean` (~2137 lines)
-- `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` (~2084 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2079 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~2074 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2059 lines)
 - `SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean` (~2042 lines)
-- `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~2041 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2034 lines)
 - `SeLe4n/Kernel/Architecture/Invariant.lean` (~2033 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1967 lines)
@@ -299,15 +291,13 @@ To find files that need pagination today, run:
 - `docs/planning/UNFINISHED_SMP_WORK.md` (~1723 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1709 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
-- `docs/planning/SMP_FOUNDATIONS_PLAN.md` (~1668 lines)
 - `tests/SmpIpcSuite.lean` (~1660 lines)
-- `tests/FaultHandlingSuite.lean` (~1649 lines)
-- `docs/DEVELOPMENT.md` (~1565 lines)
+- `tests/FaultHandlingSuite.lean` (~1652 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1508 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~1491 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~1488 lines)
+- `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1485 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
-- `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1460 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
 - `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1425 lines)
@@ -318,9 +308,10 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean` (~1393 lines)
 - `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md` (~1382 lines)
 - `tests/LockSetSuite.lean` (~1377 lines)
+- `docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` (~1370 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
-- `docs/planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md` (~1349 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
+- `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~1331 lines)
 - `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1326 lines)
 - `tests/FrozenOpsSuite.lean` (~1324 lines)
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~1321 lines)
@@ -336,37 +327,32 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1233 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1216 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
-- `docs/planning/SMP_PER_CORE_STATE_PLAN.md` (~1199 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1195 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1186 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
 - `tests/SmpCacheMaintenanceSuite.lean` (~1170 lines)
 - `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1169 lines)
-- `docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md` (~1169 lines)
 - `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~1168 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` (~1165 lines)
 - `SeLe4n/Platform/DeviceTree.lean` (~1154 lines)
 - `SeLe4n/Platform/RPi5/MmioAdapter.lean` (~1154 lines)
 - `tests/KernelErrorMatrixSuite.lean` (~1154 lines)
 - `SeLe4n/Kernel/Architecture/VSpace.lean` (~1142 lines)
-- `docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md` (~1111 lines)
 - `SeLe4n/Machine.lean` (~1105 lines)
 - `tests/PerObjectLockSuite.lean` (~1097 lines)
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1085 lines)
 - `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1076 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
 - `tests/SyscallDispatchSuite.lean` (~1067 lines)
-- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1184 lines)
-- `tests/SyscallReturnAbiSuite.lean` (~1058 lines)
+- `tests/SyscallReturnAbiSuite.lean` (~1063 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1046 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
-- `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` (~1039 lines)
 - `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1030 lines)
 - `SeLe4n/Model/FrozenState.lean` (~1007 lines)
 - `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~998 lines)
 - `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean` (~995 lines)
-- `docs/planning/SMP_CROSS_CORE_IPC_PLAN.md` (~989 lines)
 - `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md` (~984 lines)
+- `docs/planning/SMP_PER_CORE_STATE_PLAN.md` (~968 lines)
 - `tests/SmpFoundationsSuite.lean` (~965 lines)
 - `docs/dev_history/planning/WS_X_LEAN_ETHEREUM_FORMALIZATION_PLAN.md` (~958 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~950 lines)
@@ -376,6 +362,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Concurrency/MemoryModel.lean` (~935 lines)
 - `SeLe4n/Kernel/InformationFlow/Declassification.lean` (~935 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md` (~930 lines)
+- `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` (~924 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_COMPREHENSIVE.md` (~921 lines)
 - `tests/SmpCbsSuite.lean` (~919 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
@@ -385,10 +372,12 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~877 lines)
 - `SeLe4n/Kernel/IPC/Operations/Fault.lean` (~868 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
+- `docs/planning/SMP_RUST_HAL_PLAN.md` (~848 lines)
 - `tests/SmpTimerSuite.lean` (~840 lines)
 - `tests/DecodingSuite.lean` (~833 lines)
 - `tests/SmpCrossCoreCallSuite.lean` (~833 lines)
-- `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~828 lines)
+- `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~830 lines)
+- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~825 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean` (~824 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` (~823 lines)
 - `docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
@@ -397,6 +386,7 @@ To find files that need pagination today, run:
 - `tests/WithLockSetSuite.lean` (~809 lines)
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
+- `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` (~800 lines)
 This bullet block is a **curated snapshot**, not a static enumeration.
 `scripts/find_large_lean_files.sh --check` (called from
 `scripts/sync_documentation_metrics.sh`) compares it against the live
@@ -737,7 +727,7 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   encoding them in identifiers creates documentation debt and hides
   what the code actually means. Legitimate places to reference a
   workstream ID: docstrings, commit messages, CHANGELOG entries, and
-  `CLAUDE.md` / `docs/WORKSTREAM_HISTORY.md` prose. Historical
+  `CLAUDE.md` / `docs/REGISTERED_DEBT.md` prose. Historical
   identifiers that already encode workstream IDs stay as-is until
   touched by a workstream that can rename them in the same commit;
   new code must comply from day one.  Enforced by
@@ -802,7 +792,7 @@ Concretely:
   through to runtime, never "remove the unwired structure."
 - Deferred items buried in source comments → **fix them** if the
   current scope permits; otherwise lift them into the project debt
-  register (`docs/audits/`, `docs/WORKSTREAM_HISTORY.md`). Never leave
+  register (`docs/audits/`, `docs/REGISTERED_DEBT.md`). Never leave
   in-source TODOs that age out with the surrounding workstream.
 - A "first hardware target" or similar capability claim while the path
   is non-functional → **make the path functional**, never qualify the
@@ -842,12 +832,12 @@ same PR:
 4. Affected GitBook chapter(s) — canonical root docs take priority
    over GitBook
 5. `docs/CLAIM_EVIDENCE_INDEX.md` if claims change
-6. `docs/WORKSTREAM_HISTORY.md` if workstream status changes
+6. `docs/REGISTERED_DEBT.md` if workstream status changes
 7. Regenerate `docs/codebase_map.json` if Lean sources changed
 
 Canonical ownership: root `docs/` files own policy/spec text. GitBook
 chapters under `docs/gitbook/` are mirrors that summarize and link to
-canonical sources. `docs/WORKSTREAM_HISTORY.md` is the single canonical
+canonical sources. `docs/REGISTERED_DEBT.md` is the single canonical
 source for workstream planning, status, and history.
 
 ## Third-party attribution
@@ -907,14 +897,14 @@ what each phase covers in one line, and where the detail lives.  Per-sub-task
 landing notes, audit-pass refinements, review-cut narratives and closeout
 details belong in the canonical sources and must not be restated here:
 
-- [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md) — the canonical
-  per-phase record, including "What's next".
+- [`docs/REGISTERED_DEBT.md`](docs/REGISTERED_DEBT.md) — the workstream
+  *index*: current status, the open phases' obligations, and the project's
+  single debt register.  Not the narrative.
 - [`CHANGELOG.md`](CHANGELOG.md) — the per-version narrative, one entry per PR.
-- [`docs/CLAUDE_HISTORY.md`](docs/CLAUDE_HISTORY.md) — archived workstreams.
 - `docs/planning/SMP_*.md` — the per-phase plans, linked from the table below.
 
 When a cut lands, update the row's status/version here and write the detail in
-`CHANGELOG.md` and `docs/WORKSTREAM_HISTORY.md`.  A row that grows past one line
+`CHANGELOG.md` and `docs/REGISTERED_DEBT.md`.  A row that grows past one line
 of summary is a sign the narrative belongs in those files instead.
 
 ### WS-RA Syscall Return ABI — COMPLETE (v0.33.37; RA.B.5b + RA.B.8 at v0.33.38)
@@ -1084,7 +1074,7 @@ code may assume:
   suspend); (3) production code must not cite the two staged payoffs.  The
   operation-hardening and relocation residuals are registered as debt under
   **WS-DT — CLOSED** in
-  [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md) (plan retired to
+  [`docs/REGISTERED_DEBT.md`](docs/REGISTERED_DEBT.md) (plan retired to
   [`docs/dev_history/planning/IPC_INVARIANT_DETHREADING_PLAN.md`](docs/dev_history/planning/IPC_INVARIANT_DETHREADING_PLAN.md));
   RR8.3 retires this bullet.
 - **A bare reply's post-state does not satisfy `donationOwnerValid`.**
@@ -1149,7 +1139,7 @@ code may assume:
   (`Scheduler/Liveness/TraceModel.lean`) still read `bootCoreId`, so no
   `ValidTrace` exhibits a step taken on a secondary core.  New code must not
   read an SMP liveness result off a trace: the predicates are per-core, the
-  traces are not.  Owned by **WS-SL** (`docs/WORKSTREAM_HISTORY.md`), closure
+  traces are not.  Owned by **WS-SL** (`docs/REGISTERED_DEBT.md`), closure
   target post-v1.0.0; the old target was a sub-task inside a plan marked
   LANDED, so no open phase owned it.
 - **The WCRT liveness theorems are hypothesis-conditional**: the band-progress
@@ -1414,11 +1404,11 @@ code may assume:
 
 ### Closed workstreams
 
-- **WS-RC** remediation CLOSED (v0.30.11 → v0.31.2): R0–R5 landed; R6–R14
-  absorbed into WS-SM per SM0.Q.
-- **WS-AN** portfolio COMPLETE (v0.30.11): 12 phases (AN0–AN12).
-- **WS-AK through WS-AA**: archived to
-  [`docs/CLAUDE_HISTORY.md`](docs/CLAUDE_HISTORY.md).
+Every closed workstream is listed in the *Workstream registry* of
+[`docs/REGISTERED_DEBT.md`](docs/REGISTERED_DEBT.md) with the versions it
+spans; what each one changed is in [`CHANGELOG.md`](CHANGELOG.md) at those
+versions.  **WS-RC** closed at v0.31.2 with R6–R14 absorbed into WS-SM per
+SM0.Q, and **WS-AN** closed at v0.30.11.
 
 ## Workstream planning documents
 
@@ -1474,7 +1464,7 @@ exact `Sub-task count` to its own arithmetic: sub-task numbers run 1..N per
 phase, the phase map matches the rows, the declared total matches the phase
 map, a findings column sums to its acceptance total, no row consumes itself or
 a later one, and every `<PREFIX><phase>.<sub>` citation — in the plan and in
-`UNFINISHED_SMP_WORK.md`, `WORKSTREAM_HISTORY.md`, `CLAUDE.md` and `AGENTS.md`
+`UNFINISHED_SMP_WORK.md`, `REGISTERED_DEBT.md`, `CLAUDE.md` and `AGENTS.md`
 — resolves to a real row.  It reads the git index, so it checks what is being
 committed rather than what happens to be in the tree.  Legacy letter-group
 plans (`SM6.A.1`) and plans declaring an estimate range are reported but not
@@ -1539,7 +1529,7 @@ reviewer nothing they can act on.
 
 ```
 Refs: docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md §8 (Phase R4)
-Refs: docs/WORKSTREAM_HISTORY.md WS-RC R3 closeout
+Refs: docs/REGISTERED_DEBT.md WS-RC R3 closeout
 Refs: #761                            # related GitHub PR or issue
 Refs: 7da2572                         # related commit SHA
 ```

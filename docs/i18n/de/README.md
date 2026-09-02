@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Sicherheit" /></a>
-  <img src="https://img.shields.io/badge/version-0.34.45-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.34.46-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Lizenz" /></a>
 </p>
@@ -87,7 +87,7 @@ Lean-4-Beweissystem ermöglicht werden:
 
 | Eigenschaft | Wert |
 |-------------|------|
-| **Version** | `0.34.45` |
+| **Version** | `0.34.46` |
 | **Lean-Toolchain** | `v4.28.0` |
 | **Produktions-LoC (Lean)** | 286.841 über 286 Dateien |
 | **Test-LoC (Lean)** | 64.078 über 69 Testsuiten |
@@ -118,7 +118,7 @@ lake exe sele4n                # Trace-Harness ausführen
 |----------|------|
 | [`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md) — Arbeitsablauf, Validierung, PR-Checkliste | [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md) — Spezifikation und Meilensteine |
 | [`docs/gitbook/README.md`](../../../docs/gitbook/README.md) — vollständiges Handbuch | [`docs/spec/SEL4_SPEC.md`](../../../docs/spec/SEL4_SPEC.md) — seL4-Referenzsemantik |
-| [`docs/codebase_map.json`](../../../docs/codebase_map.json) — maschinenlesbare Inventur | [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md) — Workstream-Geschichte und Roadmap |
+| [`docs/codebase_map.json`](../../../docs/codebase_map.json) — maschinenlesbare Inventur | [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) — Workstream-Geschichte und Roadmap |
 | [`CONTRIBUTING.md`](../../../CONTRIBUTING.md) — Beitragsmechanismen | [`CHANGELOG.md`](../../../CHANGELOG.md) — Versionshistorie |
 
 [`docs/codebase_map.json`](../../../docs/codebase_map.json) ist die Primärquelle
@@ -235,7 +235,7 @@ Masterplan: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULT
 mit Plänen pro Phase in `docs/planning/SMP_*.md`. Die kanonische Aufzeichnung
 pro Phase — einschließlich aller abgeschlossenen Workstream-Portfolios (WS-B
 bis WS-AB, WS-AE bis WS-AN, WS-RC R0–R5, WS-RA) — ist
-[`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md); frühere
+[`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md); frühere
 Audits und Meilensteinabschlüsse sind in
 [`docs/dev_history/`](../../../docs/dev_history/README.md) archiviert.
 

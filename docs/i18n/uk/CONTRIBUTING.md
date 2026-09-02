@@ -29,7 +29,7 @@ seLe4n розповсюджується за ліцензією [GNU General Pub
 3. **Політика CI:** [`docs/CI_POLICY.md`](../../CI_POLICY.md)
 4. **Обсяг проєкту та робочі потоки:** [`docs/spec/SELE4N_SPEC.md`](../../spec/SELE4N_SPEC.md)
 5. **Останній аудит:** [`docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md`](../../audits/AUDIT_v0.30.11_COMPREHENSIVE.md)
-6. **Історія робочих потоків:** [`docs/WORKSTREAM_HISTORY.md`](../../WORKSTREAM_HISTORY.md)
+6. **Історія робочих потоків:** [`docs/REGISTERED_DEBT.md`](../../REGISTERED_DEBT.md)
 
 Повний посібник: [`docs/gitbook/README.md`](../../gitbook/README.md)
 
@@ -91,7 +91,7 @@ cd rust && cargo test --workspace && cargo clippy --workspace -- -D warnings
 
 Якщо ваша зміна виштовхує файл за стелю, сплануйте розбиття в межах того ж
 PR — механічний патерн див. у розбиттях WS-AN AN3-C / AN4-F / AN4-G в
-[`docs/WORKSTREAM_HISTORY.md`](../../WORKSTREAM_HISTORY.md).
+[`docs/REGISTERED_DEBT.md`](../../REGISTERED_DEBT.md).
 
 `CHANGELOG.md` та інший документаційний/історичний контент звільнено від
 цієї стелі.

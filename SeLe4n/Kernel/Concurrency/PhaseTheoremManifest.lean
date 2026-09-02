@@ -83,7 +83,7 @@ registrations.
 
 Phases with no inventory contribute **zero** and are registered as
 `unregistered` rather than given a plausible-looking figure.  That gap is real
-and is registered as such in `docs/WORKSTREAM_HISTORY.md`; the honest zero is
+and is registered as such in `docs/REGISTERED_DEBT.md`; the honest zero is
 what makes it visible.  Assumption ledgers (`smpLatentInventory`,
 `smpRetiredInventory`) enumerate assumptions rather than proved theorems, so
 they are claimed — an unclaimed inventory is a gate failure — under
@@ -158,7 +158,7 @@ inductive PhaseInventoryKind where
       contribute nothing to the theorem total. -/
   | assumptionLedger
   /-- The phase has no machine-checked theorem inventory yet.  A registered
-      gap, not an estimate: see the debt row in `docs/WORKSTREAM_HISTORY.md`. -/
+      gap, not an estimate: see the debt row in `docs/REGISTERED_DEBT.md`. -/
   | unregistered
   deriving Repr, DecidableEq, Inhabited
 
@@ -388,7 +388,7 @@ theorem smpPhase_perCoreState_theoremCount_zero :
     `smpPhaseTheoremCount` excludes by design.  **Eight of eleven phases
     therefore register zero theorems**, and closing only these six would leave
     SM0's and SM4's own theorems unmeasured.  Registered as debt in
-    `docs/WORKSTREAM_HISTORY.md` with closure target SM10.3.13. -/
+    `docs/REGISTERED_DEBT.md` with closure target SM10.3.13. -/
 theorem smpPhase_unregistered_theoremCount_zero :
     smpPhaseTheoremCount .rustHal = 0
     ∧ smpPhaseTheoremCount .crossCoreIpc = 0

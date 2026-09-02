@@ -7,7 +7,7 @@
 > crosses the syscall gate (register §6, owner **RR7.29**), and deferred
 > follow-up item 4 named a tracking home that carries no entry for it
 > (now in the *Registered debt index* of
-> [`../WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md), RR0.9).
+> [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md), RR0.9).
 > **Archived by**: SM10.6.3.
 
 > Companion to the SM6.C/SM6.D reply-object slices in

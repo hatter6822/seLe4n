@@ -223,4 +223,4 @@ existentes. O type-checker do Lean indicará exatamente onde a prova falha.
 
 - Consulte o [guia de contribuição em português](CONTRIBUTING.md) para abrir PRs
 - Explore as [issues abertas](https://github.com/hatter6822/seLe4n/issues) para encontrar tarefas
-- Leia o [histórico de workstreams](../../../docs/WORKSTREAM_HISTORY.md) para entender o roadmap
+- Leia o [histórico de workstreams](../../../docs/REGISTERED_DEBT.md) para entender o roadmap

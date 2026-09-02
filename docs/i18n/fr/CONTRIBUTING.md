@@ -23,7 +23,7 @@ certifiez également que vous avez le droit de soumettre la contribution sous ce
 3. **Politique CI :** [`docs/CI_POLICY.md`](../../../docs/CI_POLICY.md)
 4. **Portée du projet et workstreams :** [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md)
 5. **Constats d'audit actifs :** [`docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md)
-6. **Historique des workstreams :** [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md)
+6. **Historique des workstreams :** [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md)
 
 Manuel complet : [`docs/gitbook/README.md`](../../../docs/gitbook/README.md)
 
@@ -156,7 +156,7 @@ workstream, mettez à jour dans la même PR :
 3. `docs/DEVELOPMENT.md`
 4. Les chapitres GitBook concernés
 5. `docs/CLAIM_EVIDENCE_INDEX.md` si les revendications changent
-6. `docs/WORKSTREAM_HISTORY.md` si le statut d'un workstream change
+6. `docs/REGISTERED_DEBT.md` si le statut d'un workstream change
 7. Regénérer `docs/codebase_map.json` si les sources Lean ont changé
 
 ## Signalement de vulnérabilités
@@ -179,7 +179,7 @@ toujours explicitement pour un suivi, un triage et une divulgation appropriés.
 - Consultez le [manuel complet](../../../docs/gitbook/README.md) pour des
   explications approfondies sur l'architecture et les preuves
 - Ouvrez une issue sur GitHub pour les questions ou les rapports de bogues
-- Consultez l'[historique des workstreams](../../../docs/WORKSTREAM_HISTORY.md)
+- Consultez l'[historique des workstreams](../../../docs/REGISTERED_DEBT.md)
   pour comprendre l'évolution du projet
 
 ---

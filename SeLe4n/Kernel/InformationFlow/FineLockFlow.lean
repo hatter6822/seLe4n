@@ -3043,7 +3043,7 @@ can close the domain, which is the same defect as a closure target inside a
 plan marked LANDED, and it is the reason the debt sweep found this register
 incoherent.  Each now names a **live** target; the fine-lock tracks are
 enumerated in `docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md` and the register
-row for each sits in `docs/WORKSTREAM_HISTORY.md`. -/
+row for each sits in `docs/REGISTERED_DEBT.md`. -/
 def declaredFootprintUncoveredDomains : List (UncoveredLockDomain × String) :=
   [(.schedulerDomain, "WS-RR RR7.10-RR7.13 (fine-lock Track C)"),
    (.dynamicPipChain, "WS-RR RR7.10-RR7.13 (fine-lock Track C)"),

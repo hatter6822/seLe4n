@@ -46,7 +46,7 @@ workstream that closes the v0.30.11 audit cycle. It is paired with:
 | `AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (this file) | Per-phase remediation plan | **NEW — this PR** |
 | `AUDIT_v0.30.11_WS_RC_BASELINE.txt` | Numeric baseline at WS-RC start | To be cut at first remediation PR |
 | `AUDIT_v0.30.11_DISCHARGE_INDEX.md` | Closure-form proof obligation index | To be added if any phase produces closure-form theorems |
-| `AUDIT_v0.30.11_DEFERRED.md` | Items pushed past WS-RC | **Never created.**  WS-RC closed at v0.31.2 without it, so R7's and R14's deferrals were registered nowhere while this plan referenced the file in nine places.  Their home is the *Registered debt index* in [`../WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) (WS-RR RR0.9, v0.34.26); read every later `AUDIT_v0.30.11_DEFERRED.md` mention in this plan as pointing there |
+| `AUDIT_v0.30.11_DEFERRED.md` | Items pushed past WS-RC | **Never created.**  WS-RC closed at v0.31.2 without it, so R7's and R14's deferrals were registered nowhere while this plan referenced the file in nine places.  Their home is the *Registered debt index* in [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) (WS-RR RR0.9, v0.34.26); read every later `AUDIT_v0.30.11_DEFERRED.md` mention in this plan as pointing there |
 | `AUDIT_v0.30.11_ERRATA.md` | Audit-text corrections (this plan introduces one) | To be added when phase R0 lands |
 
 **Reading order.** New contributors should read §1 (executive summary),
@@ -531,7 +531,7 @@ H-24 / DEBT-RUST-02 finding; create the discharge index seed.
 | R0.3 | `docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md` | New file: stub index for closure-form proof obligations produced by R1..R12. Empty at R0; populated incrementally. | Mirrors the AUDIT_v0.30.6_DISCHARGE_INDEX.md (archived) format. |
 | R0.4 | `docs/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md` (archived) | Add DEBT-RUST-02 / H-24 closure annotation: "Reconfirmed closed at v0.30.11 audit cycle (deep + plan author re-grep both return 0 hits for `WS-V`/`AG10` markers in `rust/sele4n-hal/src/{trap,lib}.rs`)." | Single-line cross-reference annotation; archived file allowed because DEBT-RUST-02 is the predecessor item and the plan-side closure target IS the archived index. Confirm with `scripts/check_website_links.sh`. |
 | R0.5 | `docs/audits/README.md` | Update §"Files currently live" to list the four new artefacts (PLAN, BASELINE, ERRATA, DISCHARGE_INDEX). | Removes ambiguity around which audit is active; ensures the README reflects the live state once R0 lands. |
-| R0.6 | `docs/WORKSTREAM_HISTORY.md` | Insert WS-RC opening row with phase plan summary + numeric baseline cross-reference. | Status: "in flight (R1..R12 pending)". |
+| R0.6 | `docs/REGISTERED_DEBT.md` | Insert WS-RC opening row with phase plan summary + numeric baseline cross-reference. | Status: "in flight (R1..R12 pending)". |
 
 ### 4.3 Validation
 
@@ -554,7 +554,7 @@ WS-RC R0: cut baseline + audit errata + DEBT-RUST-02 closure
 - AUDIT_v0.30.6_DISCHARGE_INDEX.md: DEBT-RUST-02 / H-24 reconfirmed
   closed (no `WS-V`/`AG10` markers in HAL grep).
 - docs/audits/README.md: live-files table sync.
-- docs/WORKSTREAM_HISTORY.md: WS-RC opening.
+- docs/REGISTERED_DEBT.md: WS-RC opening.
 ```
 
 ### 4.5 Dependencies and exit criteria
@@ -2723,7 +2723,7 @@ Track every WS-RC-related item that genuinely cannot ship in v1.0,
 plus the predecessor DEBT-* items whose remediation is large refactor
 work. R14 is **not** part of the v1.0 cut; its items become the
 v1.x roadmap recorded in `AUDIT_v0.30.11_DEFERRED.md` and
-`docs/WORKSTREAM_HISTORY.md`.
+`docs/REGISTERED_DEBT.md`.
 
 ### 18.2 R14 contents
 
@@ -2750,7 +2750,7 @@ v1.x roadmap recorded in `AUDIT_v0.30.11_DEFERRED.md` and
 At WS-RC closure, the R14 contents migrate to:
 - `AUDIT_v0.30.11_DEFERRED.md` (new file, archived under
   `docs/dev_history/audits/` once the next workstream opens).
-- `docs/WORKSTREAM_HISTORY.md` row for WS-RC closure: "post-1.0
+- `docs/REGISTERED_DEBT.md` row for WS-RC closure: "post-1.0
   backlog of N items (DEFERRED-list link)."
 
 
@@ -2884,7 +2884,7 @@ The following events would NOT push v1.0:
 | R11 | README/CLAUDE.md/AGENTS.md/SECURITY_ADVISORY synchronised with post-implementation tree; `check_version_sync.sh` clean; FrozenOps experimental status surfaced. |
 | R12 | R12.A: four non-Lean workflows have `concurrency:` blocks. R12.B: `check_production_staging_partition.sh` wired into Tier 0 (closes DEEP-ARCH-01 structurally). R12.C: `check_arm_arm_citations.sh` wired into Tier 0 (closes DEEP-RUST-01/02 structurally). R12.D: `check_no_orphan_fields.sh` wired into Tier 0 (closes DEEP-ARCH-02 structurally). All four gates pass on next push. |
 | R13 | Reserved (closes empty unless emergent items appear). |
-| R14 | Migrated to `AUDIT_v0.30.11_DEFERRED.md` and `WORKSTREAM_HISTORY.md` as the v1.x backlog; **not part of v1.0 closure**. |
+| R14 | Migrated to `AUDIT_v0.30.11_DEFERRED.md` and `REGISTERED_DEBT.md` as the v1.x backlog; **not part of v1.0 closure**. |
 
 ### 21.2 Workstream-level closure checklist (v0.31.0 release)
 
@@ -2948,7 +2948,7 @@ Tagging `v1.0.0` "bootable verified microkernel" additionally requires:
 - [ ] `CHANGELOG.md` entry summarising WS-RC R2..R6 closures
       including R4.D (CAP-02 structural) alongside R4.A/B/C.
 - [ ] R14 contents migrated to `AUDIT_v0.30.11_DEFERRED.md` and
-      logged in `WORKSTREAM_HISTORY.md` as v1.x backlog.
+      logged in `REGISTERED_DEBT.md` as v1.x backlog.
 - [ ] All six false-positive structural fixes (R4.C subsumes IPC-01,
       R4.D for CAP-02, R12.B for ARCH-01, R12.C for RUST-01/02,
       R12.D for ARCH-02) are demonstrably enforced — a synthesised
@@ -2965,7 +2965,7 @@ At v1.0.0 tag:
    pointing at the next active audit cut.
 3. Update `scripts/website_link_manifest.txt` to rewrite all
    `docs/audits/AUDIT_v0.30.11_*` references to the archived path.
-4. Add the WS-RC closure row to `docs/WORKSTREAM_HISTORY.md` with
+4. Add the WS-RC closure row to `docs/REGISTERED_DEBT.md` with
    cross-references to the archived files.
 5. The cascade gate `scripts/ak7_cascade_check_monotonic.sh` reads
    the baseline from the archived path until the next workstream
@@ -3268,7 +3268,7 @@ Per CLAUDE.md "Internal-first naming," the workstream code-name
 "WS-RC" is used **only** in:
 - Commit messages
 - This plan and the four other audit-cycle artefacts
-- `docs/WORKSTREAM_HISTORY.md` rows
+- `docs/REGISTERED_DEBT.md` rows
 - Branch names (e.g., `claude/audit-workstream-planning-XsmKS`)
 
 It is **not** used in:
@@ -3306,7 +3306,7 @@ The workstream after WS-RC will inherit:
 - Any items in `R13` (the reserved phase) that did not close.
 
 The successor's plan author should re-derive the inheritance from
-`docs/WORKSTREAM_HISTORY.md` and the deferred file at workstream
+`docs/REGISTERED_DEBT.md` and the deferred file at workstream
 opening, then cut a fresh `AUDIT_v<X>_WORKSTREAM_PLAN.md`.
 
 ---

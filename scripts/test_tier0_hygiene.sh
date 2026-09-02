@@ -158,7 +158,7 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/generate_smp_theorem_manifest.py" --s
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/generate_smp_theorem_manifest.py" --check
 
 # Every deferral cites the one register — the *Registered debt index* in
-# docs/WORKSTREAM_HISTORY.md.  A comment saying "no currently-active plan file
+# docs/REGISTERED_DEBT.md.  A comment saying "no currently-active plan file
 # tracks it" is a deferral that opted out of it: self-describing and
 # unfindable at once.  Keeping that true by hand did not work —
 #

@@ -155,7 +155,7 @@ Los subsistemas principales son:
 | [`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md) | Flujo de trabajo diario y lista de verificación para PRs |
 | [`docs/gitbook/README.md`](../../../docs/gitbook/README.md) | Manual completo del proyecto |
 | [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md) | Especificación del proyecto |
-| [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md) | Historial de flujos de trabajo (workstreams) y hoja de ruta |
+| [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) | Historial de flujos de trabajo (workstreams) y hoja de ruta |
 
 ## Resolución de problemas
 

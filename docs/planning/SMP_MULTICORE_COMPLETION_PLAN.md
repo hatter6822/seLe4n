@@ -412,7 +412,7 @@ Document: [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md).
 
 25-35 sub-tasks across ~10-15 PRs. Spec rewrite; new GitBook
 chapters; README + 10 i18n; CLAIM_EVIDENCE_INDEX;
-WORKSTREAM_HISTORY; full SMP test suites; tier-4/tier-5 scripts;
+REGISTERED_DEBT; full SMP test suites; tier-4/tier-5 scripts;
 version bump to 1.0.0; WS-SM closure record.
 
 ## 6. Cross-subsystem impact matrix
@@ -568,7 +568,7 @@ WS-SM is complete and v1.0.0 ships when:
 - [ ] No production-source `dev_history/` cross-references.
 - [ ] CHANGELOG v1.0.0 entry complete.
 - [ ] Version bumped to 1.0.0 across all metric-bearing files.
-- [ ] WS-SM closure recorded in `docs/WORKSTREAM_HISTORY.md`.
+- [ ] WS-SM closure recorded in `docs/REGISTERED_DEBT.md`.
 - [ ] This plan (and all 10 phase plans) moved to `docs/dev_history/planning/`.
 
 ## Appendix A — Phase-plan directory

@@ -1,9 +1,11 @@
 # seLe4n Production Deployment Guide
 
-**Version**: 0.33.101 (originally written at 0.25.13; §2.3 updated for WS-SM SM9)
-**Status**: Pre-release — requires external threat-model review before high-assurance deployment
-**Audit reference**: `docs/dev_history/audits/AUDIT_v0.25.10_PRE_RELEASE.md`
-**Phase**: WS-AD/AD3 (F-04, F-05, F-06, F-07), SM8.C/SM9 amendments
+**Status**: Pre-release — requires external threat-model review before
+high-assurance deployment.  **The kernel does not boot yet**: producing a
+bootable image is SM10.1's work, so this guide describes the deployment model
+the kernel is being built to satisfy, not a procedure you can run today.  See
+[`CLAIM_EVIDENCE_INDEX.md`](CLAIM_EVIDENCE_INDEX.md) §8 for what is and is not
+claimed.
 
 ---
 

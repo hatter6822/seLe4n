@@ -13,12 +13,12 @@ see [`docs/spec/SEL4_SPEC.md`](./SEL4_SPEC.md).
 
 1. [Project Identity](#1-project-identity)
 2. [Current State Snapshot](#2-current-state-snapshot)
-3. [Milestone History](#3-milestone-history)
+3. [Development Model](#3-development-model)
 4. [Architectural Improvements over seL4](#4-architectural-improvements-over-sel4)
-5. [Completed Workstream Portfolio (WS-G) and Next Steps](#5-completed-workstream-portfolio-ws-g-and-next-steps)
+5. [Workstream Record](#5-workstream-record)
 6. [Hardware Target: Raspberry Pi 5](#6-hardware-target-raspberry-pi-5)
 7. [Acceptance Expectations](#7-acceptance-expectations)
-8. [Model Fidelity & Type Safety (WS-S Phase S4)](#8-model-fidelity--type-safety-ws-s-phase-s4)
+8. [Model Fidelity & Type Safety](#8-model-fidelity--type-safety)
 9. [Non-Negotiable Baseline Contracts](#9-non-negotiable-baseline-contracts)
 10. [Audit Baselines](#10-audit-baselines)
 11. [Security and Threat Model](#11-security-and-threat-model)
@@ -49,82 +49,30 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.34.45` (`lakefile.toml`) |
+| **Package version** | `0.34.46` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 316,818 across 307 Lean files |
 | **Test LoC** | 67,030 across 70 Lean test suites |
 | **Proved declarations** | 10,514 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **Latest audit** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) — the active pre-1.0 baseline family (WS-RC R0–R5 landed at v0.31.2; R6–R14 absorbed into WS-SM per SM0.Q). Prior audits (v0.27.6 and earlier, remediated via WS-AI and successors) are archived in `docs/dev_history/audits/`. |
-| **Current workstream** | **WS-RA (Syscall Return ABI) — COMPLETE; both return orderings staged end to end.**  The kernel returns seL4's ARM64 frame exactly: `x0` = badge or primary result at full 64-bit width, `x1` = `MessageInfo` whose label carries the kernel status in the **top** of the 20-bit label range (`0` = success, `errorLabelBase + d` = `KernelError` discriminant `d`, base `0xFFF00`; every label below the base is a delivered message's own — ABI v3 at v0.34.44, which retired v2's `d + 1` offset because a delivered fault message's `seL4_Fault_tag` decoded as a kernel error), `x2`-`x5` = message registers.  The bit-63 status protocol (`encodeOk`/`encodeError`) and the vestigial `syscall_dispatch_inner` export are retired; `SYSCALL_ABI_VERSION = 3` is pinned in Lean, `sele4n-types` and the HAL.  `syscallDispatchFromAbi : Kernel SyscallOutcome` decides `returns frame` / `blocks` from the caller's post-state; value arms stage via `Architecture.writeReturnFrameToTcb` (`.notificationWait`'s badge — the SM9.C.0 closure, delivered end to end in the signal-before-wait ordering — `.receive`/`.replyRecv` consume deliveries, `.serviceQuery`'s resolved `ServiceId`); `Unit` frames are constructed, never read from staged registers; the frame crosses the FFI through the per-core return-frame mailbox and the trap layer restores all six registers (a blocked caller has no return frame; until the SM10.1 context restore installs a successor, the trap layer poisons its frame with the fail-closed blocked-resume sentinel — label `0xFFFFF`, decoded as `UnknownKernelError`, never success — per the PR #866 review).  Review round 2 (v0.33.40): the synthesized `extraCaps` reports the capabilities **actually installed** by the transfer (never the requested count — a grant-denied transfer reports zero), the mailbox/entry-lock core index is the boot-validated TPIDR logical id, and `service_query` returns the typed `ServiceId`.  **Completed at v0.33.38**: RA.B.5b's blocked-waiter staging landed at the unblocking arms (eleven sites through `stageWokenDelivery`/`stageWokenSendCompletion`, zero IPC transitions touched; `blockedReturn_staged_in_waiter_frame` + `blockedUnitReturn_staged_in_sender_frame`; five end-to-end two-core suite scenarios) and RA.B.8's per-arm `dispatchArm_matches_returnShape` value family with the unit half structural (`frameForShape_unit` constructs, never reads).  SM10.1 owes only frame *delivery* at the context restore plus the cancellation/timeout error-frame staging.  Plan: [`SYSCALL_RETURN_ABI_PLAN.md`](../planning/SYSCALL_RETURN_ABI_PLAN.md). |
-| **Active workstream** | **WS-SM (SMP multi-core completion) IN FLIGHT** — closes at v1.0.0 with a bootable verified SMP microkernel on Raspberry Pi 5. Current phase: **WS-RR (SMP release readiness) IN FLIGHT — the pre-SM10 remediation SM10 is blocked on** ([`SMP_RELEASE_READINESS_PLAN.md`](../planning/SMP_RELEASE_READINESS_PLAN.md)): RR0 honesty patches (v0.34.26), RR1 the aarch64 cross gate and the TLBI broadcast discipline (v0.34.41), RR2 the cancellation/donation invariant gaps behind the live dispatch arms (v0.34.42), RR3 `ipcInvariantFull` de-threading plus its dispatch payoff (v0.34.43), and **RR4 fault handling — full fault IPC with reply-based restart (v0.34.44)**, which replaces the pre-RR4 error-frame return on an abort with seL4's fault IPC: the fault is recorded on the TCB, delivered to the faulting thread's `faultHandler` endpoint through the live cross-core `.call` chain so a passive handler receives the SchedContext donation, and answered by a reply that either restarts the thread at a chosen PC or abandons it — with `faultDeliverOnCore_not_dispatchable` proving the faulting thread is off every core's run queue and current slot on **both** dispositions, so a fault can never re-fire in a loop (§6.5.1).  Remaining: RR5–RR8, then SM10 release closure.  Previously: **SM9.E tests + closure LANDED (v0.33.100) — WS-SM phase SM9 (declassification completion) is CLOSED**.  The phase's acceptance scenarios run end to end and are pinned byte-for-byte as golden fixtures (`tests/fixtures/declassification_reader.expected`, `tests/fixtures/declassification_taint.expected`): the 256-entry cliff (fill → fail-closed refusal → monitor drain → recovery, with the post-drain timestamp fresh against surviving entries through the live transition), and the causal-detector chain (downgrade → **ordinary** delivery → downgrade, with a domain-only detector's false positive, an object-adjacency detector's false negative, and two same-domain subjects distinguished only by their recorded snapshots).  A denied `.declassifySignal` now travels `syscallDispatchFromAbi` end to end — the committed refusal record names the syscall, `declassificationDeniedAtReceiver` and the **resolved receiver** — proving the refusal seam covers both declassifying syscalls at the boundary the hardware calls, and every dispatch-level check pins the refusal class it exercises.  **Operator consequence of the drain's full-dominance gate, stated here deliberately**: a deployment whose configured audit monitor does not dominate every recorded source domain cannot drain the trail at all, and the 256-entry fail-closed cliff returns for it — that is the conservative default, chosen because a partial-visibility drain would reveal the positions of entries the caller cannot see; deployments that need a drainable trail must configure `auditMonitorClearance` to dominate every domain their policy lets declassify.  Previously: **SM9.D causal declassification provenance — the laundering detector stops guessing**.  SM8's `declassificationChainLinked` was *syntactic*: it matched domains and increasing timestamps with no data dependency behind it, so it fired on causally unrelated hops and — scoped to declassification *edges* — missed the real chain, in which an **ordinary** delivery moves the content between two downgrades.  A bounded, upward-saturating `DeclassificationTaint` (bounded by a **refinement field**, so no seventeenth `proofLayerInvariantBundle` conjunct is owed) is mounted as an `ObjId`-keyed side table outside `ObservableState` and propagated through ordinary IPC delivery by a **single write at the per-core entry**, so no IPC transition's invariant surface is reopened; classification completeness is a Tier-1 call-graph reach gate rather than totality over `SyscallId`; a retype **clears** rather than frames; the detector reads recorded snapshots rather than the live table, and a monitor can now consume it through one opaque bit per adjacent pair (`AuditReadOp.chainNamesPredecessor`, opcode 27).  The taint write's serialization subject is the **key's own lock**, exactly as `SystemState.objects`' per-key writes are declared — never the coarse `.objStore` singleton, which would serialise every IPC in the system against every other.  Previously: **SM9.C data-carrying declassification — the first deliberately *visible* flow, bounded and recorded**.  SM8.C's `.declassify` authorizes a downgrade and moves no user data (its store is the model's *simulation* of a transfer, and performing one from userspace would let a caller install a chosen `KernelObject` at a chosen id); `notificationSignalDeclassifiedOnCore` (`InformationFlow/DeclassifiedSignal.lean`, production) is the syscall that moves it — a real SM6.B bound signal whose badge may cross a boundary the base lattice denies, committing SM6.B's own post-state with `declassificationAuditLog` replaced (`notificationSignalDeclassifiedOnCore_frame`), which is what lets the whole IPC invariant surface transfer rather than be re-proven.  It gates **two** hops, because the live checked `.notificationSignal` already gates `notification → receiver` as well as `signaler → notification` (v0.31.73, closing a badge leak into a low bound TCB) — so a variant gated only on the notification would have been strictly *weaker* than the syscall it wraps while carrying stronger authority.  Each hop carries its own refusal discriminant, the second being `KernelError.declassificationDeniedAtReceiver` (56), because a monitor reading a bare "denied" cannot tell an unauthorized caller from an authorized caller aimed at an unauthorized sink.  One audit event per authorized hop, never one collapsed record: `declassifiedSignal_no_invented_edge` is the property a single entry could not have.  `DeclassificationEvent` gains a **required** `actor` field, because a second-hop event's `srcDomain` is the notification's domain — nobody's subject domain — so SM8.C's attributability rule could not otherwise be stated of it; the retired `auditTrailDestinationsAreTargetDomains` is replaced by the object-identity discipline moving into the visibility filter itself, which makes `auditVisibleEntry_target_domain_flows` unconditional.  `declassifiedSignalEffectFootprint` is defined once and takes **no policy**, which is what makes `footprint_does_not_authorize` provable rather than plausible — a receiver squarely inside the footprint is still refused when the policy refuses it — and `declassificationRelativeNonInterference` bounds the flow in three conjuncts (confinement outside the footprint, every visible difference recorded with an authorized domain pair, the object effect bounded to the ordinary signal's), the sharpest negative being that this transition is **not** plain non-interference at all.  ABI `SyscallId.declassifySignal = 33` (count 34), enforcement boundary 43 canonical / 58 per-core, lock-set inventory 109, `CrossCoreTransition` 29 — while `KernelOperation` deliberately does **not** grow, since every `NonInterferenceStep` constructor concludes the projection is unchanged and an authorized visible flow cannot correspond to one.  **The audit cut (same version)** closed the failed-hop obligation the SM9.B landing had moved here — a refused second hop's ledger record now names the resolved receiver (`DeclassificationRefusal.refusedReceiver`, seam-resolved from the same pre-state the gate read; `refusalRecord_names_failed_hop`), read back through two appended opcodes (`auditReadOpcodeCount` 25 → 27 both sides) — and added the thirteenth policy-gated entry's members of both enforcement families (`notificationSignalDeclassifiedOnCore_denied_preserves_state`, the five-arm `enforcement_sufficiency_declassifySignal`).  **PR #872 review**: the plain-waiter gate — deliberately asymmetric with the ordinary checked signal, which gates the bound path only and trusts wait-time admission — is proven a no-op on any base-admitted waiter (`declassifiedSignalPlan_admitted_receiver_error_is_first_hop`) with its one-bit presence disclosure exhibited rather than hidden; and (round 2) the transition validates its operand as a live notification ahead of every policy read — before the fix, a writable capability to a non-notification object read policy state off the error discriminant — answering the ordinary signal's own recovery errors, with `notificationSignalDeclassifiedOnCore_invalid_target_policy_blind` pinning the invalid-target outcome as a function of the object store alone and `enforcement_sufficiency_declassifySignal` grown to six arms.  Next: SM9.D causal declassification provenance.  **Previously: SM9.B refusal auditing LANDED — a monitor can now tell "no attempts" from "many attempts, all denied"**.  SM8.C's trail recorded authorized downgrades and nothing else, and closing that gap needed a writer on a path with a post-state: a kernel transition's `.error` arm has none, while the FFI boundary one layer up already commits one for every kernel error and holds every field a record needs.  `Platform.FFI.recordSyscallRefusal` is that writer, filtered by a **total** `SyscallId → RefusalSeamClass` classification rather than a hardcoded `.declassify` or a hand-maintained list — the third taxonomy in this plan fixed the same way, because a list plus a completeness theorem stays true when SM9.C's second declassifying syscall joins neither (`refusalSeam_list_gate_insufficient`).  The ledger (`InformationFlow/RefusalRecord.lean`, production; `SystemState.declassificationRefusals`) is bounded by its **type** — a `Vector` ring and two `Fin` counters — so unlike the trail it needs no bundle conjunct and imposes no capacity obligation on a writer, and the bound holds for every value rather than only for recorded ones (`refusalLedger_bounded_structurally`).  The bundle *carriage* every mounted field owes is still supplied — no field write transports `proofLayerInvariantBundle` definitionally — and comes out **unconditional** (`proofLayerInvariantBundle_setDeclassificationRefusals`, `recordSyscallRefusal_preserves_proofLayerInvariantBundle`), which is where the type-level bound is actually paid back.  At the bound it **evicts and counts the eviction** rather than refusing, which is the opposite of the trail and deliberately so: a fail-closed ledger would make its own occupancy readable from an unprivileged syscall's outcome.  **The security theorems**: the ledger is not the trail, so refusals can never consume the fail-closed capacity an authorized downgrade needs (`refusalWrite_declassificationAuditLog_eq`, `refusalWrite_cannot_exhaust_trail`); the refused caller's outcome is the error frame computed from `ke` alone, bit-identical to what the arm returned before the ledger existed (`refusalLedger_write_is_caller_invisible`); and the record **does** carry `.auditLogCapacityExceeded` for the monitor — the occupancy channel is closed by the read gate, not by discarding the only durable evidence that an authorized downgrade hit the 256-entry cliff.  **The reader** is five new `.auditRead` sub-operations (opcodes 12–20, count 12 → 21) behind the same configured monitor gate the drain uses, and unlike the trail there is **no filtered view** below it: a ring evicts, so a hidden refusal would remove a lower reader's entry, and a caller the gate refuses observes *nothing* (`refusalLedger_requires_full_dominance`, `refusalLedger_partial_reader_learns_nothing`).  The gate is the **configuration** rather than the ring's surviving rows, because the ring evicts while the counters are cumulative — `refusalLedger_records_gate_unsound` keeps that counterexample refuted.  Reads carry their own **version** bracket, since the trail's `status` token does not move on a ledger write and a monitor bracketing with it would assemble a hybrid record (`refusalRead_bracketed_detects_overwrite`, `auditStatus_does_not_detect_refusal_write`).  The singleton discipline arrives *with* the ledger: `lockSet_refusalSeam_writer_declares_stateLevel_write` is the serialization subject, and `refusalLedger_occupancy_is_not_a_covert_channel` is why **no ninth channel entry is owed** — each of CC-8's four carriers is absent.  `DeclassificationRuleId.refusalIsUnrecorded` is **retired** (its statement is now false) for `.refusalsAreCountedAndAttributed`, and `declassification_refusal_is_unrecorded` is renamed `declassifyStoreOnCore_refusal_has_no_post_state` — what it proves is why the seam is the writer, not that refusals are unrecorded.  `KernelError` moved to its own import-free leaf `Model/KernelError.lean` so the record can name it typed rather than storing a bare discriminant `Nat`.  Preceded by **SM9.A the audit trail reader LANDED — the 256-entry cliff is gone**.  SM8.C shipped a durable, bounded, **fail-closed** declassification trail that nothing could read, so a deployment performing `maxDeclassificationAuditEntries = 256` authorized downgrades stopped being able to declassify at all until reboot: a write-only trail with a hard cap is a feature that disables itself.  SM9.A is the read side — `InformationFlow/AuditRead.lean` (production), two live syscalls (`SyscallId.auditRead` 31 / `.auditDrain` 32, count 31 → 33), both `.word`-shaped so WS-RA's `writeReturnFrameToTcb` carries the computed word back in `x0` rather than the caller's own preloaded value.  **The clearance filter** `auditLogVisibleTo` is a genuine sublist and a function of the reader's clearance **alone** (`auditLogVisibleTo_hidden_insert`), so hidden entries leave no index gap to count.  **Two reader classes — the partial one model-level since PR #870 round 6**: a partial reader gets view-local indices and provably learns nothing of the global position (`auditRead_hides_global_position`), a fully-dominating monitor gets global identities so it can still correlate across drains — the per-observer drain token the first design specified is unbuildable, since labels are an unbounded `Nat` and there is no finite family to key state by (`observerScopedGeneration_not_mountable`); the **live** entry serves monitors only, because a partial reader's visible length moves under a monitor's drain — a one-bit-per-drain downward signal (`auditDrain_moves_partial_readers_status` keeps it exhibited, `auditReadFromCore_partial_reader_denied` excludes its receiver, and `auditReadFromCore_observer_dominates_subjects` makes every surviving observation an authorized flow).  **PR #870 round 7 — the trail's singleton discipline, both halves**: its *occupancy* (bounded + fail-closed + drainable, each non-negotiable) is an irreducible inter-domain observable — every authorized declassifier reads full/not-full off its own syscall outcome, and a monitor's drain flips lower-domain results — registered as **CC-8** (`acceptedCovertChannel_auditOccupancy`, model-visible, LOW, deliberately not per-core) with alphabet bound, carrier theorems (`declassify_capacity_refusal_of_full` / `auditDrain_flips_declassify_outcome`) and the CC-5-style binding theorem; and its *mutation* gains the declared serialization subject the object-domain footprints lacked — `stateLevelLock`, the canonical `.objStore` singleton spelling, `.write` in `lockSet_declassify` / `lockSet_auditDrain`, `.read` in `lockSet_auditRead`, non-disjoint by `auditState_footprints_share_serialization` (the service-registry trio's identical gap is registered debt).  **The chunk protocol** exports all four unbounded `Nat` fields *and* the basis designation through 32-bit chunks with exact reconstruction, failing closed above `maxAuditFieldChunks` rather than truncating — a fixed low/high pair would only move the truncation point to `2^64`.  `status` is a **single** read, because chunking it traded aliasing for tearing on the first interleaved drain (`auditReadStatus_atomic`, `auditStatusSplitRead_tears`).  **Drain** is authorized only for a caller dominating every recorded source (a partial-visibility prefix drain reveals the *positions* of hidden entries, and repeated drains enumerate the hidden layout), and the gate is derived from the **configuration**, never from the rows the trail currently holds — drain a trail to `[]` and a rows-derived predicate goes vacuously true exactly where it matters (`auditMonitorGate_records_derived_unsound`).  **SM9.A.1a**, sequenced first because drain is unsound without it: `SystemState.declassificationAuditEpoch` makes `timestamp := epoch + log.length` persistent, since the pre-epoch rule reuses a timestamp after any prefix removal (`preEpochTimestamp_reused_after_drain`).  **SM9.A.9**: authority is the dedicated `CapTarget.auditTrail`, not the `.read`/`.write` right alone — `syscallLookupCap` never constrains `cap.target`, so a rights-only gate would repeat the v0.32.97 confused-deputy class exactly.  **SM9.A.4a** states the flow argument over `auditObservationalEquivalence`, whose clause set is a **total function** on `ReadableStructure` rather than a list (`readableStructure_list_gate_insufficient` refutes the list design), because adding a reader changes what is observable and `lowEquivalent` — which compares `ObservableState`, not the trail — cannot supply the lemma (`lowEquivalent_does_not_determine_visible_view`).  An unconfigured deployment has **no** audit reader at all, which keeps the cliff as the conservative default.  Preceded by **SM8.E tests + closure LANDED (v0.33.23) — WS-SM phase SM8 is CLOSED**: the SM8 headline surface anchored across all five sub-phases, the phase-level golden trace `tests/fixtures/smp_information_flow.expected` recording what an observer at `(core, label)` sees, and the SM3 two-phase-locking bracket promoted into the canonical `enforcementBoundary` (39 -> 40; 12 policy-gated, 24 capability-only, 4 read-only) with the per-core boundary unchanged at 55 (SM9.A.11 and SM9.C.8 have since taken those to 43 / 26 and 58).  Preceded by **SM8.D information flow under fine locks LANDED (v0.33.9, review cuts v0.33.10, v0.33.12–v0.33.22, completion cut v0.33.11 — the observer's view proven to *factor through* lock erasure, the plan's "writer-exclusion observable to blocked readers" row refuted at the model level rather than reinstated, the CC-5 lock-contention timing channel **bounded** at `(numCores − 1) × (maxDelay + 1)` steps with an alphabet and a run capacity — at **every** contending access mode, v0.33.11 having generalised the SM2.C liveness chain rather than duplicating it, so a blocked *reader* carries the same figure and is proven admitted *as a reader* — Biba integrity under per-core locks in *both* integrity directions, and the 2PL-bracketed live syscall entry's witness with the fail-closed statement sharpened from state equality to `lockWritesOnly`)**.  Preceded by **SM8.C per-core declassification audit COMPLETE (landed v0.33.7; completion cut v0.33.8 — SM8.C.8 mounts the audit trail in `SystemState` bounded and fail-closed as the 16th `proofLayerInvariantBundle` conjunct, and SM8.C.9 makes `.declassify` a live syscall, `SyscallId` 30, count 31)**.  Preceded by **SM8.A per-core observable state COMPLETE (v0.33.3, review cut v0.33.4; landed v0.33.2)**: the SMP information-flow *observer* is the pair `(core, clearance)` as a value (`PerCoreObserver`), and the state it sees is `ObservableState.onCore ctx c L s`, *defined as* `projectStateOnCore ctx ⟨L⟩ s c` so the SM8 observer and the SM4.D projection layer cannot drift (`onCore_bootCore` is `rfl`, tying every SM8 theorem at `bootCoreId` to the live single-core `projectState`). The thirteen `ObservableState` components partition into seven shared and six per-core, and the partition is a **bijection** — `ofFragments` reassembles a state from the pair and `ofFragments_eta` proves the round trip — so a fourteenth field registered in neither is a compile error as a checked fact. `onCore_perCore_independence` bounds the read set to six shared components plus the observer core's five scheduler slots and its register bank, without mentioning the boot core (which the SM4.D congruence cannot do), with fifteen corollaries covering the cross-core writes and every excluded component. `onCore_label_monotone` proves visibility monotone in clearance over `ObservableState.visibilityLe`, a structure carrying one clause per component: the two list clauses are `List.Sublist` (order-preserving — a run queue's order is its dispatch order), the four scheduling clauses are equality (those components are unfiltered, accepted covert channel CC-1), and the `objects` clause compares **content** via `objectVisibilityLe` — equality off the CNode arm, slot un-redaction on it. `eq_of_visibilityLe_antisymm` is the completeness check on that clause list. Decidability is partial by necessity and every limitation is proved (`RegisterFile.not_lawfulBEq`; `onCore_decidable` decides a strictly weaker slice, `lowEquivalentSliceOnCoreCheckWithRegs` a finer companion). Channels CC-6 (per-core TLB residency) and CC-7 (per-core instruction-cache residency) registered, one instance per core, on the CC-2 machine-timer precedent. Zero sorry/axiom; theorems and tests only, trace byte-identical. **SM8.B per-core NI proofs LANDED (v0.33.5)**: `crossCoreNonInterference` (plan Thm 3.3.1) proven from the frame premises — the plan's serializability route is unavailable while SM3.C.9 defers the fine locks, so the bridge `crossCoreNonInterference_of_disjoint_lockSet` makes it a corollary once they land; `nonInterference_perCore` as its boot-core corollary; all 35 per-operation lifts, **31 with the confinement premise derived** (discharging the SM4.C/SM4.D `hOtherIdle` obligation for them) and 4 catch-alls taking it explicitly; `withLockSet_preserves_projection` **unconditional**, which required erasing the per-object `lock` from the projection (`RwLockState` is three fields of `CoreId`s — the SM5.B placement channel re-opened through another field), leaving CC-5 a hardware timing channel only; the seven accepted covert channels CC-1…CC-7 as data with per-channel witness theorems (eight since SM9.A PR #870 round 7 — CC-8, the audit-trail occupancy); `enforcementBoundaryPerCore` at 53; `endpointPolicyRestricted_perCore`; the release bridge both ways; and `crossCoreLeakage_bounded` as an `↔`. **SM8.B review rounds 2+4 (v0.33.5 → v0.33.5)**: five findings closed — the live `.call` arm gets a bound of its own (`endpointCallCrossCoreDispatch_confinedToCores`, over a write set mirroring the dispatch's own control flow, so the priority-inheritance chain is keyed on the resolved receiver at the post-donation state); the three live cross-core arms that were unaudited (`notificationSignalBoundOnCore`, `endpointReceiveDualOnCore`, `endpointReplyRecvOnCore`) each gain a write set, a confinement lemma and an NI instantiation, taking the cross-core inventory 7 → 21 with `crossCoreTransitionIsLiveArm` marking the 14 arms the dispatch actually reaches; the covert-channel classification becomes evidence-bound (a total `CovertChannelId` table with `niName!`-validated citations, closing a `modelVisible` field that certified itself); CC-1's `log2(|domainSchedule|)` capacity claim — which `schedulingCovertChannel_bounded_width` never proved — is replaced by `schedulingChannelIndex_alphabet_bounded` plus the negative `schedulingChannel_not_bounded_by_scheduleLength`; and `enforcementBoundaryPerCore` (39 → 53) now audits the live cross-core wrappers rather than the single-core name table. 411 declarations axiom-clean.  **Current inventory — the machine-checked counts, which supersede the narrative figures above** (each round's figure is left as written, since it records what that round did): `crossCoreNiTheorem_count` = **30** transitions, `crossCoreTransitionIsLiveArm_count` = **22** live arms, `crossCoreTransitionWritesRemote_count` = **24** remote writers, `crossCoreLiveArmDelegationBacked_count` = **14** delegation-backed, `enforcementBoundaryPerCore_count` = **58** (the SM9.A/SM9.C growth included).  The growth from 21/14/… is the later review rounds re-routing boot-pinned live arms and auditing each one as it landed: `.send`, `.tcbSetPriority`/`.tcbSetMCPriority`, `.schedContextUnbind`, `.tcbSetAffinity`, `.lifecycleRetype` and the empty-write-set `.vspaceMap`/`.vspaceUnmap`, the last three of which retired the per-core routing allowlist to empty. **SM8.C per-core declassification audit LANDED (v0.33.7)**: the audit trail had no writer — nothing in the tree constructed a `DeclassificationEvent` — so the phase is the producer, not a field addition.  `declassifyStoreOnCore` records exactly one event per authorized downgrade with a state effect provably identical to the unaudited gate; `originatingCore` is undefaulted and `authorizationBasis` typed (the kernel can now check its own records, while `render` keeps the external strings byte-identical); `declassifyStoreFromCore` reads the source domain off the executing core's running subject, so attribution is a fact about the state and not a caller's claim, with `declassifyStoreOnCore_admits_unattributable` the negative that makes the wrapper load-bearing.  `declassificationAuditLog_partitions_by_core` makes the per-core views an exact partition, and `crossCoreChain_not_within_one_view` is the theorem that decides one global log over per-CPU buffers: a chain crossing cores lives in no single view.  Eight rules ship as data with dependently-typed evidence — laundering (per-hop authorization does not compose, over a *well-formed* policy), the endpoint rule consuming SM8.B's `endpointFlowCheck_restricted_subset_perCore`, and the core-is-audit-not-authority rule.  Same cut closes SM8.B's registered debt (a): `LabelingContext.endpointPolicy` is read by the four endpoint-keyed gates through `endpointFlowGate`, which conjoins rather than replaces, making `endpointPolicyRestricted` structural.  Next: SM10 release closure (→ v1.0.0). |
-| **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
+| **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
+| **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR4 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
+| **Workstream history** | [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
 
 ---
 
-## 3. Milestone History
+## 3. Development Model
 
-seLe4n has been developed through incremental milestone slices, each building on the
-semantic and proof foundations of the previous one.
+seLe4n is built in incremental slices, each landing its transitions together
+with the proofs that cover them: a live kernel transition never lands ahead of
+its own invariant surface.  Every merged PR ships its own patch version and its
+own [`CHANGELOG.md`](../../CHANGELOG.md) entry, so the documented state and the
+tree never diverge by more than one commit.
 
-### 3.1 Completed Milestone Slices
-
-| Milestone | Scope | Status |
-|-----------|-------|--------|
-| **Bootstrap** | Typed identifiers, monad foundations, machine state | Complete |
-| **M1** | Scheduler semantics and preservation theorems | Complete |
-| **M2** | Capability/CSpace operations + authority invariants | Complete |
-| **M3** | IPC seed semantics | Complete |
-| **M3.5** | Waiting handshake + scheduler coherence | Complete |
-| **M4-A** | Lifecycle/retype foundations | Complete |
-| **M4-B** | Lifecycle-capability composition hardening | Complete |
-| **M5** | Service-graph and policy-surface completion | Complete |
-| **M6** | Architecture-boundary assumptions/adapters/invariant hooks | Complete |
-| **M7** | Audit remediation WS-A1..WS-A8 | Complete |
-
-### 3.2 Completed Audit Portfolios
-
-| Portfolio | Scope | Workstreams |
-|-----------|-------|-------------|
-| **WS-S** (v0.19.0–v0.19.6) | Pre-Benchmark Strengthening: 7 phases (S1–S7), 83 sub-tasks addressing 115+ findings from dual v0.18.7 audits. Security boundary hardening, Rust type safety, test hardening, proof surface closure (CDT maps consistency, RunQueue well-formedness, SecurityLabel lattice), model fidelity (capacity enforcement, typed IPC registers, alignment predicates), API cleanup (removed deprecated wrappers, SimRestrictive platform), hardware preparation (WithFlush VSpace, memory scrubbing, DeviceTree abstraction), documentation & polish. 5 High, 29 Medium, 19 Low findings resolved. Zero sorry/axiom | WS-S completed |
-| **WS-R8** (v0.18.7) | Infrastructure & CI hardening: elan binary pinning with SHA-256, PR-based codebase map workflow, Rust test skip annotation, compiled test suite execution, Rust newtype encapsulation | WS-R8 completed |
-| **WS-R7** (v0.18.6) | Architecture & hardware preparation: `TlbState` integrated into `SystemState`, `tlbConsistent` added to `proofLayerInvariantBundle` (M-17); TLB-flushing VSpace wrappers with preservation proofs; `RegName.isValid` ARM64 GPR bounds (L-02); `isWord64` predicate + `machineWordBounded` invariant for 64-bit value bounds (L-03); TCB `faultHandler`/`boundNotification` for seL4 fidelity (L-06); `KernelObjectType` enum replacing raw `Nat` in `LifecycleRetypeArgs` with typed decode boundary (L-10) | WS-R7 completed |
-| **WS-R6** (v0.18.5) | Model & frozen state correctness: `apiInvariantBundle_frozenDirect` freeze-time equivalence, badge deprecation, `RegisterFile` BEq, scheduler bundle extension with `schedulerPriorityMatch`, all preservation proofs sorry-free | WS-R6 completed |
-| **WS-R5** (v0.18.4) | Information flow completion: internalized IPC NI, service NI, content-aware memory projection | WS-R5 completed |
-| **WS-R1–R4** (v0.18.0–v0.18.3) | Pre-release blockers, capability & CDT hardening, IPC invariant completion, lifecycle & service coherence | WS-R1–R4 completed |
-| **WS-M2** (v0.16.15) | Capability subsystem performance optimization: fused revoke path eliminating redundant CDT traversal (M-P01), CDT `parentMap` reverse index for O(1) parent lookup (M-P02/M-P03), reply-capability lemma extraction into dedicated module (M-P05) | WS-M2 completed |
-| **WS-M1** (v0.16.14) | Capability subsystem audit & remediation Phase 1: initial audit findings triage, critical invariant gap closure, baseline proof surface hardening | WS-M1 completed |
-| **WS-F6** | Invariant quality: `capabilityInvariantBundle` reduced from 8-tuple to 6-tuple (tautological predicates removed); `blockedOnNotificationNotRunnable` added to `ipcSchedulerContractPredicates` (6-tuple); `runnableThreadsAreTCBs` in `schedulerInvariantBundleFull` (6-tuple) with sorry-free preservation for all scheduler ops; `vspaceCrossAsidIsolation` in `vspaceInvariantBundle` (6-tuple); `default_serviceCountBounded` and `default_serviceGraphInvariant` proved; zero sorry/axiom | WS-F6 completed |
-| **WS-H13** (v0.14.4) | CSpace, lifecycle & service model enrichment: `cspaceDepthConsistent` invariant in `capabilityInvariantBundle` (8-tuple → 6-tuple after WS-F6), `resolveCapAddress` theorems (`_deterministic`, `_zero_bits`, `_result_valid_cnode`), `serviceGraphInvariant` preservation proofs (`serviceRegisterDependency`), `cspaceMove` error-path atomicity theorem (A-21); CNode field migration (`depth`/`guardWidth`/`guardValue`/`radixWidth`); addresses H-01, A-21, A-29, A-30, M-17/A-31. *(WS-Q1: `serviceStart`/`serviceStop` lifecycle ops and backing-object verification removed; registry-only model.)* | WS-H13 completed |
-| **WS-H12f** (v0.14.3) | Test harness update & documentation sync: `runDequeueOnDispatchTrace`, `runInlineContextSwitchTrace`, `runBoundedMessageExtendedTrace` trace scenarios; legacy `endpointInvariant` comment cleanup; fixture updated (108 lines); 9 new Tier 3 anchors; documentation synchronized. Completes WS-H12 composite workstream | WS-H12f completed |
-| **WS-H12b** (v0.13.9) | Dequeue-on-dispatch scheduler semantics: `queueCurrentConsistent` inverted to `current ∉ runnable` matching seL4's `switchToThread`/`tcbSchedDequeue`; `schedule`/`handleYield`/`timerTick`/`switchDomain` updated; `currentTimeSlicePositive` and `schedulerPriorityMatch` predicates; IPC predicates (`currentThreadIpcReady`, `currentNotEndpointQueueHead`, `currentNotOnNotificationWaitList`, `currentThreadDequeueCoherent`); ~1800 lines of proofs re-proved; closes H-04 (HIGH) | WS-H12b completed |
-| **WS-H11** (v0.13.7) | VSpace & architecture enrichment: `PagePermissions` struct with `wxCompliant` and W^X enforcement at insertion, `vspaceMapPageChecked` with ARM64 52-bit physical address bounds, `vspaceInvariantBundle` 5-conjunct preservation proofs, TLB/cache maintenance model (`TlbState`, `adapterFlushTlb`, `adapterFlushTlbByAsid`, `tlbConsistent`), `VSpaceBackend` typeclass abstraction; 10 new theorems | WS-H11 completed |
-| **WS-H8** (v0.13.2) | Enforcement-NI bridge & missing wrappers: enforcement soundness meta-theorems, 4 new enforcement wrappers (`notificationSignalChecked`, `cspaceCopyChecked`, `cspaceMoveChecked`, `endpointReceiveDualChecked`), NI bridge theorems, projection hardening (domain timing metadata), `enforcementBoundaryExtended` (8 policy-gated ops); 26 new theorems | WS-H8 completed |
-| **WS-H6** (v0.13.1) | Scheduler proof-surface completion: RunQueue reverse bridge (`flat_wf_rev`, `membership_implies_flat`, `mem_toList_iff_mem`) and scheduler candidate-selection lemmas (`isBetterCandidate_transitive`, `bucketFirst_fullScan_equivalence`); schedule membership validation now uses O(1) runQueue membership checks | WS-H6 completed |
-| **WS-H5** (v0.12.19) | IPC dual-queue structural invariant: `intrusiveQueueWellFormed`, `dualQueueSystemInvariant`, `tcbQueueLinkIntegrity`; 13 preservation theorems for all dual-queue operations; closes C-04/A-22 (CRITICAL), A-23 (HIGH), A-24 (HIGH) | WS-H5 completed |
-| **WS-H4** (v0.12.18) | Capability invariant redesign: `capabilityInvariantBundle` extended from 4-tuple to 7-tuple with `cspaceSlotCountBounded`, `cdtCompleteness`, `cdtAcyclicity`; all 25+ preservation theorems re-proved against non-trivial predicates | WS-H4 completed |
-| **WS-H3** (v0.12.17) | Build/CI infrastructure fixes: `run_check` return value fix (H-12), `test_docs_sync.sh` CI integration (M-19), Tier 3 `rg` availability guard with `grep -P` fallback (M-20) | WS-H3 completed |
-| **WS-H2** (v0.12.16) | Lifecycle safety guards: childId collision/self-overwrite guards, TCB scheduler cleanup on retype, CNode CDT detach, atomic retype | WS-H2 completed |
-| **WS-H1** (v0.12.16) | IPC call-path semantic fix: `blockedOnCall` state, reply-target scoping, 5-conjunct `ipcSchedulerContractPredicates` | WS-H1 completed |
-| **WS-G** (v0.12.6–v0.12.15) | Kernel performance optimization: all hot paths migrated to O(1) hash-based structures, 14 audit findings resolved | WS-G1..G9 + refinement completed |
-| **WS-F1..F4** (v0.12.2–v0.12.5) | Critical audit remediation: IPC message transfer, untyped memory, info-flow completeness, proof gap closure | WS-F1..F4 completed |
-| **WS-E** (v0.11.6) | Test/CI, proof quality, kernel hardening, capability/IPC, info-flow, completeness | WS-E1..E6 completed |
-| **WS-D** (v0.11.0) | Test validity, info-flow enforcement, proof gaps, kernel design | WS-D1..D4 completed; D5/D6 absorbed into WS-E |
-| **WS-C** (v0.9.32) | Model structure, documentation, maintainability | WS-C1..C8 completed |
-| **WS-B** (v0.9.0) | Comprehensive audit 2026-02 | WS-B1..B11 completed |
-
-### 3.3 Security Hardening (implemented)
-
-- IPC thread-state updates fail with `objectNotFound` for missing/reserved TCBs, preventing ghost queue entries.
-- Sentinel ID `0` rejected at IPC boundaries (`lookupTcb`/`storeTcbIpcState`).
-- Intrusive dual-queue endpoints with `sendQ`/`receiveQ` and per-thread links for O(1) removal. Formal structural invariant (`dualQueueSystemInvariant`) with doubly-linked integrity proofs (WS-H5).
-- IPC message transfer via `TCB.pendingMessage`: messages (registers, caps, badge) flow through sender→receiver rendezvous with combined state+message helpers (`storeTcbIpcStateAndMessage`).
-- **WS-H12d/A-09:** IPC message payloads bounded by `maxMessageRegisters` (120) and `maxExtraCaps` (3), matching seL4's `seL4_MsgMaxLength`/`seL4_MsgMaxExtraCaps`. Bounds enforced at all IPC send boundaries with `ipcMessageTooLarge`/`ipcMessageTooManyCaps` errors. `IpcMessage.bounded` predicate with proven send-produces-bounded theorems.
-- Node-stable CDT with bidirectional slot↔node maps and strict revocation error reporting.
-- Policy-checked wrappers (`endpointSendDualChecked`, `cspaceMintChecked`, `registerServiceChecked`) exercised by default in trace and probe harnesses. `enforcementBoundary` classifies 44 operations (13 policy-gated, 27 capability-only, 4 read-only; pinned by `enforcementBoundaryExtended_count`). Includes SchedContext ops (WS-Z8), thread lifecycle (D1), priority management (D2), IPC buffer (D3), VSpace/service ops (AC4-D), the live declassification entry point (WS-SM SM8.C), the two-phase-locking bracket (WS-SM SM8.E.3), the two audit-trail readers (WS-SM SM9.A.11), the data-carrying declassification signal (WS-SM SM9.C.8) and the fault-handler configuration syscall `setThreadFaultHandlerOp` (PR #887 review round, capability-only). (WS-Q1: `serviceRestartChecked` removed, `registerServiceChecked` added — service lifecycle simplified to registry-only model.)
-- **WS-G1/WS-J1:** All 16 typed identifiers and the composite `SlotRef` key have `Hashable` instances with `@[inline]` for zero overhead. `Std.Data.HashMap` and `Std.Data.HashSet` imported in `Prelude.lean`, enabling O(1) hash-based data structures for kernel performance optimization (WS-G2..G9). WS-J1-A added `RegName`/`RegValue` (v0.15.4); WS-J1-F added `CdtNodeId` (v0.15.10).
+The per-slice record is [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md);
+the working rules are [`docs/DEVELOPMENT.md`](../DEVELOPMENT.md).
 
 ---
 
@@ -148,228 +96,13 @@ carried forward into the production kernel.
 
 ---
 
-## 5. Completed Workstream Portfolio (WS-G) and Next Steps
+## 5. Workstream Record
 
-The WS-G portfolio addressed kernel performance optimization findings from the
-[v0.12.5 performance audit](../dev_history/audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md).
-All 9 workstreams completed (v0.12.6–v0.12.15), closing all 14 findings.
-
-Authoritative detail:
-[`docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md`](../dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md).
-
-### 5.1 Completed — Data Structure Optimization
-
-- **WS-G1:** ~~Typed identifier Hashable instances~~ **COMPLETED** — `Hashable` + `LawfulHashable` for all 16 typed identifiers (13 original + `RegName`/`RegValue` via WS-J1-A + `CdtNodeId` via WS-J1-F); `Std.HashMap`/`Std.HashSet` imports; zero-overhead foundation for O(1) lookups (v0.12.6, extended v0.15.4/v0.15.10)
-- **WS-G2:** ~~Object store & ObjectIndex HashMap~~ **COMPLETED** — `objects : Std.HashMap ObjId KernelObject` replacing closure-chain accumulation; `objectIndexSet : Std.HashSet ObjId` shadow set for O(1) membership; `objectTypes : Std.HashMap ObjId KernelObjectType` lifecycle metadata; 9 bridge lemmas; full proof migration (599 theorems verified); closes F-P01, F-P10, F-P13 (v0.12.7)
-- **WS-G3:** ~~ASID Resolution Table~~ **COMPLETED** — `asidTable : Std.HashMap ASID ObjId` in `SystemState`; `resolveAsidRoot` rewritten from O(n) `objectIndex.findSome?` to O(1) HashMap lookup with object-store validation; bidirectional `asidTableConsistent` invariant (soundness + completeness); `vspaceInvariantBundle` extended to 3-conjunct; erase-before-insert maintenance in `storeObject`; 3 bridge lemmas; round-trip theorems simplified; closes F-P06 (v0.12.8)
-
-### 5.2 Completed — Scheduler Optimization
-
-- **WS-G4:** ~~Run queue restructure~~ **COMPLETED** — `RunQueue` structure with `Std.HashMap Priority (List ThreadId)` + `Std.HashSet ThreadId` + bidirectional structural invariants (`flat_wf`, `flat_wf_rev`); `SchedulerState.runQueue` replaces flat `runnable : List ThreadId`; O(1) `insert`/`remove`/`contains`/`rotateHead`/`rotateToBack`; `chooseBestInBucket` bucket-first scheduling reduces best-candidate selection from O(t) to O(k); `withRunnableQueue`/`runnableHead`/`runnableTail` eliminated; 13 bridge lemmas; 30+ IPC invariant proofs migrated; info-flow projection re-proved; closes F-P02, F-P07, F-P12 (v0.12.9)
-
-### 5.3 Completed — CNode Optimization
-
-- **WS-G5:** ~~CNode slot HashMap~~ **COMPLETED** — `CNode.slots : Std.HashMap Slot Capability` replacing `List (Slot × Capability)`; `lookup`/`insert`/`remove` all O(1) amortized; `slotsUnique` trivially true (HashMap key uniqueness); 2 bridge lemmas (`HashMap_filter_preserves_key`, `HashMap_filter_filter_getElem?`); `projectKernelObject_idempotent` reformulated to slot-level lookup equality; `cspaceRevoke` `revokedRefs` via `HashMap.fold` (single O(m) pass); manual `BEq CNode`/`BEq KernelObject` instances; 10 files modified; closes F-P03 (v0.12.10)
-
-### 5.4 Completed — VSpace Optimization
-
-- **WS-G6:** ~~VSpace mapping HashMap~~ **COMPLETED** — `VSpaceRoot.mappings : Std.HashMap VAddr PAddr` replacing `List (VAddr × PAddr)` (enriched to `Std.HashMap VAddr (PAddr × PagePermissions)` by WS-H11); `lookup`/`mapPage`/`unmapPage` all O(1) amortized; universal `noVirtualOverlap_trivial` theorem proves the property for all VSpaceRoots (HashMap key uniqueness); round-trip theorems re-proved with HashMap bridge lemmas; manual `BEq VSpaceRoot` instance; `boundedAddressTranslation` reformulated for HashMap; `hashMapVSpaceBackend` replaces `listVSpaceBackend`; 7 files modified; closes F-P05 (v0.12.11)
-
-### 5.5 Completed — IPC Queue & Notification Optimization
-
-- **WS-G7:** ~~IPC Queue Completion & Notification~~ **COMPLETED** — Legacy `endpointSend`/`endpointReceive`/`endpointAwaitReceive` deprecated (removed in WS-H12a); trace harness and sequence probe migrated to O(1) dual-queue (`endpointSendDual`/`endpointReceiveDual`). `notificationWait` O(n) duplicate check replaced with O(1) TCB `ipcState` check; O(n) append replaced with O(1) prepend. New `notificationWaiterConsistent` invariant bridges TCB state to queue membership. `endpointSendDualChecked` enforcement wrapper added. All invariant proofs re-proved; 9 files modified; closes F-P04 and F-P11 (v0.12.12)
-
-### 5.6 WS-G8: Graph Traversal Optimization (completed, v0.12.13)
-
-- **WS-G8:** ~~Graph Traversal Optimization~~ **COMPLETED** — `serviceHasPathTo` rewritten from O(n²) BFS with `List ServiceId` to O(n+e) DFS with `Std.HashSet ServiceId`. `CapDerivationTree` extended with `childMap : Std.HashMap CdtNodeId (List CdtNodeId)` parent-indexed edge index; `childrenOf` O(1) HashMap lookup; `descendantsOf` O(N+E) total. `childMapConsistent` invariant with `empty`/`addEdge` preservation proofs. Full invariant proof migration; closes F-P08, F-P14 (v0.12.13)
-
-### 5.7 WS-G9: Information-Flow Projection Optimization (completed, v0.12.14)
-
-- **WS-G9:** ~~Information-Flow Projection Optimization~~ **COMPLETED** — `computeObservableSet` precomputes `Std.HashSet ObjId` via single `foldl` pass; `projectObjectsFast`, `projectIrqHandlersFast`, `projectObjectIndexFast` use O(1) `contains` lookups instead of redundant `objectObservable` re-evaluation. `projectStateFast_eq` proves equivalence with original `projectState` (`@[csimp]`-ready). Zero downstream proof breakage — all NI theorems, enforcement wrappers, and invariant proofs unchanged. 3 HashSet foldl bridge lemmas in `Prelude.lean`; closes F-P09 (v0.12.14)
-
-### 5.8 WS-G Refinement Pass (v0.12.15)
-
-Post-completion refinement addressing residual code quality, validation gaps, and test coverage across the WS-G portfolio:
-
-- **RunQueue.remove optimization:** Eliminated redundant bucket computation — filtered bucket now computed once and reused for both `byPriority` and `maxPriority` updates.
-- **WS-H6 scheduler proof completion:** Added reverse RunQueue bridge `membership_implies_flat`, bidirectional membership/list equivalence `mem_toList_iff_mem`, candidate-order transitivity `isBetterCandidate_transitive`, and bucket/full-scan equivalence theorem `bucketFirst_fullScan_equivalence`.
-- **WS-H6 scheduler runtime optimization:** `schedule` now validates selection using O(1) `tid ∈ st.scheduler.runQueue` while preserving list-level reasoning via bridge lemmas.
-- **MachineConfig validation hardening:** `wellFormed` now validates `pageSize` as a positive power of two via `isPowerOfTwo` (bitwise check), strengthening platform configuration safety.
-- **Dead code removal:** Removed unused `filterByDomain` from `Scheduler/Operations.lean` (superseded by WS-G4 bucket-first scheduling).
-- **Phantom object cleanup:** Removed object ID 200 from `bootstrapInvariantObjectIds` (no corresponding bootstrap object).
-- **Runtime invariant checks:** Added `runQueueThreadPriorityConsistentB` (RunQueue membership ↔ threadPriority consistency) and `cdtChildMapConsistentCheck` (CDT childMap ↔ edges bidirectional consistency).
-- **StateBuilder priority fix:** `BootstrapBuilder.build` uses actual TCB priorities for RunQueue bucketing instead of defaulting to priority 0.
-- **Test coverage expansion:** `NegativeStateSuite` extended with `endpointReplyRecv` (2 negative + 1 positive via endpointCall chain) and `cspaceMutate` (2 negative + 2 positive including badge override) audit coverage checks.
-
-### 5.9 WS-H1: IPC Call-Path Semantic Fix (completed, v0.12.16)
-
-WS-H1 addresses the IPC call-path semantic gap identified in the v0.12.15 audit.
-The `endpointCall` operation now transitions the caller to a distinct `blockedOnCall`
-state (rather than reusing `blockedOnReply`), and reply operations validate the
-authorized replier via reply-target scoping.
-
-- **Part A (C-01 CRITICAL):** Added `blockedOnCall endpointId` variant to `ThreadIpcState`; `endpointCall` transitions caller to `blockedOnCall` instead of `blockedOnReply`; `endpointReceiveDual` detects call-origin senders via `senderWasCall` match and transitions them to `blockedOnReply endpointId (some caller)` with reply-target scoping.
-- **Part B (M-02 MEDIUM):** `endpointReply`/`endpointReplyRecv` validate `expectedReplier` field — only the designated receiver can complete the reply, preventing confused-deputy attacks.
-- **Part C (Invariant maintenance):** `ipcSchedulerContractPredicates` expanded from 3 to 6 conjuncts (added `blockedOnCallNotRunnable`, `blockedOnReplyNotRunnable`, `blockedOnNotificationNotRunnable` via WS-F6/D2); all 62+ IPC invariant preservation theorems re-proved with zero sorry/axiom; 5 H1-series trace anchors added.
-
-### 5.10 WS-H11: VSpace & Architecture Enrichment (completed, v0.13.7)
-
-WS-H11 enriches the VSpace subsystem with per-page permissions, W^X enforcement,
-bounded address translation checks, and an abstract TLB maintenance model.
-
-- **Part A (H-02/A-32):** `PagePermissions` structure with `read`/`write`/`execute`/`user`/`cacheable` fields; `VSpaceRoot.mappings` enriched from `HashMap VAddr PAddr` to `HashMap VAddr (PAddr × PagePermissions)`; `vspaceMapPage` enforces W^X at insertion (returns `policyDenied` on violation); `vspaceLookupFull` returns `(PAddr × PagePermissions)`; `VSpaceBackend` typeclass enriched with permissions; all round-trip and preservation theorems re-proved.
-- **Part B (A-05/M-12/M-14):** `MemoryRegion.wellFormed` validates `endAddr ≤ 2^physicalAddressWidth`; `MachineConfig.wellFormed` extended with per-region overflow check; `boundedAddressTranslation` integrated into `vspaceInvariantBundle`.
-- **Part C (A-12):** Global ASID uniqueness via `vspaceAsidRootsUnique` and `asidTableConsistent` (already in bundle since WS-G3); preservation proven for all VSpace operations.
-- **Part D (H-10):** Abstract TLB model — `TlbEntry`/`TlbState` structures; `adapterFlushTlb` (full flush) and `adapterFlushTlbByAsid` (per-ASID flush); `tlbConsistent` invariant; flush-restoration and composition theorems.
-
-`vspaceInvariantBundle` now contains 6 conjuncts: `vspaceAsidRootsUnique`, `vspaceRootNonOverlap`, `asidTableConsistent`, `wxExclusiveInvariant`, `boundedAddressTranslation`, `vspaceCrossAsidIsolation` (WS-F6/D6).
-
-### 5.11 Prior Portfolio: WS-F (completed, v0.12.2)
-
-The WS-F portfolio addressed findings from two independent v0.12.2 codebase audits.
-Combined: 6 CRITICAL, 6 HIGH, 12 MEDIUM, 9 LOW findings.
-
-- **WS-F1:** ~~IPC message transfer and dual-queue verification~~ **COMPLETED**
-- **WS-F2:** ~~Untyped memory model~~ **COMPLETED**
-- **WS-F3:** ~~Information-flow completeness~~ **COMPLETED**
-- **WS-F4:** ~~Proof gap closure~~ **COMPLETED**
-- **WS-F5–F8:** Medium/Low priority — immediate next steps (see below)
-
-### 5.12 Next Steps: Remaining WS-F Workstreams (F5–F8)
-
-The remaining WS-F workstreams address medium/low-priority findings:
-
-| ID | Focus | Priority | Status |
-|----|-------|----------|--------|
-| **WS-F5** | Model fidelity (word-bounded badge, order-independent rights, deferred ops) | Medium | **Completed** (v0.14.9) |
-| **WS-F6** | Invariant quality (tautology reclassification, adapter proof hooks) | Medium | **Completed** (v0.14.9) |
-| **WS-F7** | Testing expansion (oracle, probe, fixtures) | Low | **Completed** (v0.14.9) |
-| **WS-F8** | Cleanup (dead code, legacy/dual-queue resolution) | Low | **Completed** (v0.14.9) |
-| **WS-I1** | Critical testing infrastructure (inter-transition assertions, mandatory determinism, scenario ID traceability) | High | **Completed** (v0.15.0) |
-| **WS-I3** | Test coverage expansion — operations (multi-operation chains, scheduler stress, declassification checks) | Medium | **Completed** (v0.15.2) |
-| **WS-I4** | Test coverage expansion — subsystems (VSpace multi-ASID sharing, IPC interleaving, lifecycle cascading chains) | Low | **Completed** (v0.15.3) |
-
-After WS-F/WS-I1: Raspberry Pi 5 hardware binding (H3).
-
-### 5.13 WS-I1: Critical Testing Infrastructure (completed, v0.15.0)
-
-WS-I1 is the first workstream of the WS-I improvement portfolio, addressing three
-critical testing infrastructure recommendations from the v0.14.9 audit.
-
-- **Part A (R-01 — Inter-transition assertions):** 17 `checkInvariants` calls inserted across all 13 trace functions in `MainTraceHarness.lean`. Each call invokes `assertStateInvariantsFor` (17 invariant check families covering scheduler, CSpace, IPC, lifecycle, service, VSpace, CDT, ASID, untyped, notification, blocked-thread, and domain invariants) with `IO.Ref Nat` counter tracking. Summary `[ITR-001]` line confirms all 17 checks passed. Zero sorry/axiom.
-- **Part B (R-02 — Mandatory determinism):** `scripts/test_tier2_determinism.sh` runs the trace harness twice and diffs output, failing on any divergence. Integrated into `test_smoke.sh` Tier 2 gate (between trace and negative checks), making determinism a mandatory CI property rather than an optional Tier 4 extension.
-- **Part C (R-03 — Scenario ID traceability):** All 121 trace output lines tagged with unique scenario IDs (15 prefix families: ENT, CAT, SST, LEP, CIC, IMT, IMB, DDT, ICS, BME, STD, UMT, SGT, RCF, ITR, PTY). Fixture format upgraded to pipe-delimited (`SCENARIO_ID | SUBSYSTEM | expected_trace_fragment`). `tests/fixtures/scenario_registry.yaml` maps all 121 IDs to source functions and subsystems. `scripts/scenario_catalog.py validate-registry` checks bidirectional fixture↔registry consistency. Tier 0 hygiene validates registry on every PR.
-- **WS-I2 (v0.15.1):** proof/validation depth completed: Tier 0 now runs semantic L-08 theorem-body analysis (`scripts/check_proof_depth.py` with regex fallback), Tier 3 now runs Lean `#check` correctness anchors across scheduler/capability/IPC/lifecycle/service/VSpace/IF preservation theorems, and IF projection now supports optional memory-domain ownership (`memoryOwnership`) with backward-compatible default (`none`).
-- **WS-I3 (v0.15.2):** operations coverage expansion completed: new `tests/OperationChainSuite.lean` adds six multi-operation chain tests and scheduler stress coverage (16-thread repeated schedule/yield, same-priority determinism, multi-domain domain-switch isolation); Tier 2 now executes this suite via `scripts/test_tier2_negative.sh`; `tests/InformationFlowSuite.lean` adds declassification runtime checks for authorized downgrade, normal-flow rejection, policy-denied rejection, and three-domain lattice behavior. The declassification policy-denied branch is represented explicitly as `KernelError.declassificationDenied` for clearer failure-mode discrimination.
-- **WS-I4 (v0.15.3):** subsystem coverage expansion completed in `tests/OperationChainSuite.lean` with three new chain families: (R-09) VSpace multi-ASID shared-page coherency and per-ASID permission independence checks (including post-unmap isolation), (R-10) endpoint IPC interleaved three-sender FIFO plus alternating send/receive ordering checks, and (R-11) lifecycle authority-degradation and CDT cascading-revoke chains (root→child→grandchild) validating descendant cleanup and non-amplification of rights.
-
-### 5.14 Deferred Operations (WS-F5/D3)
-
-The following seL4 operations were deferred from the early model, each with a
-documented rationale and prerequisite milestone. All five have since been
-implemented (D1–D3, v0.24.x); the table records the original deferral rationale
-and the landing status:
-
-| Operation | seL4 Equivalent | Rationale | Prerequisite | Status |
-|-----------|----------------|-----------|--------------|--------|
-| `setPriority` | `seL4_TCB_SetPriority` | MCP authority validation, SchedContext-aware priority update, run queue migration | MCS scheduling (Z1–Z5) | **Implemented (D2, v0.24.1)** |
-| `setMCPriority` | `seL4_TCB_SetMCPriority` | MCP ceiling update with retroactive priority capping | MCS scheduling (Z1–Z5) | **Implemented (D2, v0.24.1)** |
-| `suspend` | `seL4_TCB_Suspend` | Requires thread lifecycle state machine | WS-F6 (lifecycle invariants) | **Implemented (D1, v0.24.0)** |
-| `resume` | `seL4_TCB_Resume` | Inverse of suspend; same prerequisite | WS-F6 (lifecycle invariants) | **Implemented (D1, v0.24.0)** |
-| `setIPCBuffer` | `seL4_TCB_SetIPCBuffer` | VSpace-validated IPC buffer address update | H3 (VSpace integration) | **Implemented (D3, v0.24.2–v0.24.3)** |
-
-**D1 (v0.24.0):** Thread suspension and resumption are now fully implemented.
-`suspendThread` performs the complete cleanup pipeline (IPC blocking cancellation,
-SchedContext donation cleanup, run queue removal, pending state clearing, state
-transition to Inactive). `resumeThread` transitions from Inactive to Ready with
-conditional preemption. Both operations are wired into the API dispatch layer
-(`SyscallId.tcbSuspend`, `.tcbResume`) as capability-only arms and have frozen-phase
-equivalents. Transport lemmas prove scheduler, serviceRegistry, and lifecycle
-preservation through all suspension sub-operations.
-
-These operations are tracked in `SeLe4n/Kernel/API.lean` (stability table) and
-`docs/CLAIM_EVIDENCE_INDEX.md` (evidence tracking).
-
-**D2 (v0.24.1):** Priority management is now fully implemented. `setPriorityOp`
-validates MCP authority, updates priority on SchedContext (if bound) or TCB
-(if unbound), migrates run queue buckets, and triggers conditional reschedule.
-`setMCPriorityOp` updates the MCP ceiling and retroactively caps the thread's
-current priority if it exceeds the new MCP. Both operations are wired into
-`dispatchWithCap` (`SyscallId.tcbSetPriority`, `.tcbSetMCPriority`) as
-capability-only arms with frozen-phase equivalents. Preservation theorems
-prove authority non-escalation (`setPriority_authority_bounded`,
-`setMCPriority_authority_bounded`) and transport lemmas guarantee scheduler,
-serviceRegistry, and lifecycle field preservation.
-
-**D3 (v0.24.2):** IPC buffer configuration is now fully implemented.
-`setIPCBufferOp` validates the buffer address through a 7-step pipeline
-(alignment to 512 bytes, canonical address check, VSpace root validity,
-mapping existence via VSpaceRoot.lookup, write permission, physical address
-bounds check against `2^physicalAddressWidth` — AJ4-C) before updating
-the TCB's `ipcBuffer` field. The operation is wired into `dispatchWithCap`
-(`SyscallId.tcbSetIPCBuffer`) as a capability-only arm with a frozen-phase
-equivalent (`frozenSetIPCBuffer`). Validation correctness theorems prove that
-successful validation implies alignment and mapped-writable guarantees.
-Frame preservation is trivial since `ipcBuffer` is not referenced by any
-scheduler, IPC, cross-subsystem, or capability invariant predicate. As of
-AH3-B (v0.27.4), the TCB update delegates to `storeObject` — ensuring
-consistency with the canonical object storage path and eliminating manual
-struct-with replication.
-
-**D4 (v0.25.0):** Priority Inheritance Protocol is now fully implemented.
-A deterministic PIP temporarily elevates a server thread's effective scheduling
-priority when it holds a pending Reply on behalf of a higher-priority client,
-resolving transitive priority inversion (SV-2). Key components:
-
-- **`pipBoost` TCB field**: `Option Priority := none`. When `some p`, the
-  thread's effective priority is `max(SchedContext.priority, p)`.
-- **Blocking graph**: `blockedOnThread` predicate, `waitersOf` (direct
-  dependents), `blockingChain` (fuel-bounded transitive walk). Acyclicity
-  and depth bound proven (`blockingChain_length_le_fuel`).
-- **Propagation/Reversion**: `propagatePriorityInheritance` walks the
-  blocking chain upward from a server, applying `updatePipBoost` at each
-  step. `revertPriorityInheritance` recomputes after client unblock. Both
-  are structurally identical (`revert_eq_propagate`).
-- **Integration**: Call path propagates PIP after blocking
-  (`endpointCallWithDonation`), Reply/ReplyRecv paths revert PIP after
-  unblock, Suspend path reverts PIP before cleanup, Timeout path reverts
-  PIP for server when timed-out client was in `blockedOnReply`.
-- **Composition with SchedContext donation (Z7)**: PIP provides an
-  additional boost beyond the donated SchedContext priority via the
-  `max(scPrio, pipBoost)` computation in `effectiveSchedParams` (the
-  total successor to the retired `effectivePriority`; see WS-RC R5.C.1).
-- **Bounded inversion**: `pip_bounded_inversion` proves priority inversion
-  bounded by `objectIndex.length * WCRT`.
-- **16 frame preservation theorems**, determinism proofs, 22 test cases.
-
-**D5 (v0.25.0):** Bounded Latency Theorem is now proven — the first
-machine-checked WCRT for a microkernel with MCS scheduling contexts. Zero
-kernel code changes (proof-only phase). Key results:
-
-- **Trace model**: `SchedulerStep` (9 constructors), `SchedulerTrace`,
-  `validTrace` predicate, query predicates (`selectedAt`, `runnableAt`,
-  `budgetAvailableAt`), counting functions.
-- **Per-mechanism bounds**: `timerTickBudget_bound_succeeds` (budget
-  decrement characterization), `replenishment_within_period` (CBS
-  replenishment timing), `fifo_progress_in_band` (FIFO progress within
-  priority band; since renamed to the `fifoProgressBound` family in
-  `Liveness/Yield.lean`), `domainRotationTotal_le_bound` (domain rotation).
-- **WCRT hypotheses**: `WCRTHypotheses` structure with 14 fields
-  (threadRunnable, threadHasBudget, targetPrio, targetDomain, threadInDomain,
-  N, higherPriorityBound, B, maxBudgetBound, P, maxPeriodBound,
-  domainScheduleAdequate, domainEntriesPositive, domainScheduleNonEmpty).
-- **Main theorem**: `wcrtBound_unfold` / `bounded_scheduling_latency_exists` proves WCRT =
-  D * L_max + N * (B + P), where D = domain schedule entries,
-  L_max = maximum domain time, N = higher-priority thread count,
-  B = max budget, P = max period.
-- **PIP enhancement**: `pip_enhanced_wcrt_le_base` shows PIP-boosted
-  threads have tighter WCRT (fewer higher-priority competitors).
-- 58 surface anchor tests in `LivenessSuite.lean`.
-
-**D6 (v0.25.2):** API Surface Integration & Closure. Rust ABI synchronized
-with 5 new `SyscallId` variants (20→25) and `AlignmentError` (43). All 25
-SyscallId variants, 33 enforcement boundary entries, 20 frozen operations,
-and 25 dispatch arms verified. Documentation fully synchronized.
+A specification says what the kernel is, not how it got there.  The record of
+completed workstreams — scope, versions and evidence — is
+[`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md); what each version
+changed is [`CHANGELOG.md`](../../CHANGELOG.md); what is in flight and what
+blocks it is that file's *Current status*.
 
 ---
 
@@ -427,8 +160,7 @@ organizational foundation for hardware binding:
 + model closure) → AG9 (testing + validation) → AG10 (documentation + closure).
 **All 10 phases COMPLETE** (v0.26.0–v0.27.1).
 
-### 6.2.1 DTB peripheral-discovery depth (AN7-D.5 / PLT-M06, v0.30.8)
-
+### 6.2.1 DTB peripheral-discovery depth
 `extractPeripherals` in `SeLe4n/Platform/DeviceTree.lean` performs a
 **fuel-bounded recursive depth-first walk** of the FDT tree, replacing
 the previous hardcoded 2-level traversal (top-level + direct children
@@ -467,8 +199,7 @@ The tests are constructed programmatically via `FdtNode` values with
 explicit big-endian `reg` property encoding; no synthesized DTB-blob
 infrastructure is required.
 
-### 6.3 Cache Coherency & Memory Ordering Assumptions (T6-G/M-NEW-8)
-
+### 6.3 Cache Coherency & Memory Ordering Assumptions
 The seLe4n model makes the following cache coherency and memory ordering
 assumptions for the initial single-core RPi5 target:
 
@@ -507,8 +238,7 @@ assumptions for the initial single-core RPi5 target:
    consumed by production retype cleanup and the SM7 TLB-shootdown protocol
    (§8.7). See §8.7 for the full flush-requirement table.
 
-### 6.4 Hardware Limitations (AG10-A / FINDING-05)
-
+### 6.4 Hardware Limitations
 The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
 
 1. **Single-core execution**: H3 uses Cortex-A76 core 0 only. The remaining
@@ -1763,8 +1493,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    (`schedulerInvariant_perCore` suite, `ipcInvariantFull_perCore`, the SM4
    per-core `Vector` state migration).
 
-### 6.5 Hardware Binding Architecture (AG10-D)
-
+### 6.5 Hardware Binding Architecture
 The H3 hardware binding is structured as a layered architecture bridging the
 abstract Lean kernel model to concrete ARM64 hardware:
 
@@ -2050,8 +1779,7 @@ instruction is precisely the livelock RR4 exists to remove.
   (`lean_handle_unknown_syscall`, `trap.rs::deliver_unknown_syscall`), seL4's
   `handleUnknownSyscall`.
 
-#### 6.5.0 Panic Discipline (AK5-A)
-
+#### 6.5.0 Panic Discipline
 **Added in v0.29.8**: the `rust/Cargo.toml` workspace manifest sets
 `panic = "abort"` for both `[profile.dev]` and `[profile.release]`.
 The default `panic = "unwind"` is undefined behavior across `extern "C"`
@@ -2250,8 +1978,7 @@ UART access (including `kprint!` macro and FFI `ffi_uart_putc`) flows through
 the lock. The original `pub static mut BOOT_UART` has been replaced with
 module-private `BOOT_UART_INNER` guarded by `UART_LOCK`.
 
-#### 6.5.6 Architecture Gap: TPIDR_EL0 / TLS (L-13)
-
+#### 6.5.6 Architecture Gap: TPIDR_EL0 / TLS
 `RegisterFile` (Prelude.lean) models GPRs (x0-x30), PC, and SP only.
 The ARM64 `TPIDR_EL0` register (thread-local storage pointer) is not
 modeled. This register is required for user-space TLS support (e.g.,
@@ -2264,8 +1991,7 @@ since AK5-F: ESR at 272, FAR at 280) already has space for system
 register state; the Lean model needs a corresponding `RegisterFile`
 extension.
 
-### 6.6 Platform Testing Limitations (M-05)
-
+### 6.6 Platform Testing Limitations
 The simulation platform contract (`Sim/Contract.lean`) uses a permissive
 runtime contract (`True` for register context stability and memory access)
 but substantive boot and interrupt contracts (AI5-A/B, v0.27.11).
@@ -2293,8 +2019,7 @@ lines — matching the RPi5 production pattern.
 validation (it imposes some structural constraints). For production-
 representative testing, use the RPi5 contract (`RPi5/Contract.lean`).
 
-### 6.7 Insecure Default Labeling Context Guard (M-19)
-
+### 6.7 Insecure Default Labeling Context Guard
 The `defaultLabelingContext` assigns `publicLabel` to all entities, defeating
 all information-flow enforcement. This is formally proven insecure by
 `defaultLabelingContext_insecure` and `defaultLabelingContext_all_threads_observable`.
@@ -2309,8 +2034,7 @@ passing the guard while remaining structurally valid for test execution. Test
 harnesses should use this context instead of `defaultLabelingContext` when
 exercising `syscallEntryChecked`.
 
-### 6.8 SMP-Latent Single-Core Assumptions (AN12-B / Theme 4.4)
-
+### 6.8 SMP-Latent Single-Core Assumptions
 WS-AN Phase AN9-J landed the secondary-core bring-up infrastructure
 (`rust/sele4n-hal/src/psci.rs`, `rust/sele4n-hal/src/smp.rs`) merged
 behind the runtime flag `SMP_ENABLED`, initially default-off. Since
@@ -2779,7 +2503,7 @@ Every milestone-moving PR should include:
 
 ---
 
-## 8. Model Fidelity & Type Safety (WS-S Phase S4)
+## 8. Model Fidelity & Type Safety
 
 ### 8.1 Object Capacity Bounds
 
@@ -2855,8 +2579,7 @@ This enforcement closes the gap between the abstract model (which previously
 accepted any allocation base) and hardware requirements for ARM64 page-table
 structures. See `SeLe4n/Kernel/Lifecycle/Operations.lean` (S5-G/S5-H).
 
-### 8.5 IPC Timeout Semantics (Z6)
-
+### 8.5 IPC Timeout Semantics
 seLe4n implements budget-driven timeout for IPC blocking operations (Z6),
 extending seL4 MCS timeout semantics. When a thread's SchedContext budget
 expires while blocked on send/receive/call/reply, the thread is unblocked
@@ -2887,8 +2610,7 @@ The timeout lookup is triggered in `timerTickBudget` on budget exhaustion,
 using the `scThreadIndex` (a Robin Hood hash table mapping `SchedContextId`
 to `List ThreadId`) for O(1) identification of affected threads.
 
-### 8.5.1 IPC Buffer Alignment (AG10-B / FINDING-07)
-
+### 8.5.1 IPC Buffer Alignment
 The IPC buffer has specific alignment requirements bridging the Lean model to
 ARM64 hardware:
 
@@ -2911,8 +2633,7 @@ ARM64 hardware:
   boundary (512 + 960 = 1472 < 4096). This guarantees a single TLB entry
   covers the entire buffer, avoiding mid-transfer page faults.
 
-### 8.6 Memory Scrubbing on Delete (WS-S Phase S6)
-
+### 8.6 Memory Scrubbing on Delete
 When an object is deleted via `lifecycleRetypeWithCleanup`, the backing memory
 region is zeroed using `scrubObjectMemory` before the memory is returned to the
 untyped pool. This prevents information leakage between security domains when
@@ -2997,8 +2718,7 @@ strict cleanup pipeline and propagates errors before any retype is
 attempted. `.error` from `lifecycleRevokeDeleteRetype` is a best-effort
 cleanup-partially-completed outcome, NOT a rollback.
 
-### 8.7 TLB Flush Requirements for Production Paths (WS-S Phase S6)
-
+### 8.7 TLB Flush Requirements for Production Paths
 All production VSpace operations must use TLB-flushing variants to ensure
 hardware TLB consistency:
 
@@ -3014,8 +2734,7 @@ hardware TLB consistency:
 - **API dispatch**: `dispatchWithCap` routes VSpace syscalls through the
   `WithFlush` variants exclusively.
 
-### 8.8 Frozen IPC Queue Semantics (WS-T Phase T1)
-
+### 8.8 Frozen IPC Queue Semantics
 Frozen kernel operations now support blocking IPC paths with proper queue
 management:
 
@@ -3033,8 +2752,7 @@ management:
   O(1) frozen CNode slot addressing, alongside the Robin Hood tables that
   back the live stores.
 
-### 8.9 Object Well-Formedness Validation (WS-T Phase T5)
-
+### 8.9 Object Well-Formedness Validation
 Every kernel object has a decidable well-formedness predicate:
 
 - **`KernelObject.wellFormed`**: Validates structural constraints (CNode guard
@@ -3046,8 +2764,7 @@ Every kernel object has a decidable well-formedness predicate:
   successor links when removing mid-queue nodes, maintaining doubly-linked list
   integrity.
 
-### 8.10 Checked Dispatch and MMIO Adapter (WS-T Phase T6)
-
+### 8.10 Checked Dispatch and MMIO Adapter
 - **Checked dispatch**: `dispatchWithCapChecked`, `dispatchSyscallChecked`, and
   `syscallEntryChecked` gate all 11 policy-relevant operations through
   `securityFlowsTo` wrappers at runtime (endpointSend/Receive/Call/Reply/ReplyRecv,
@@ -3091,8 +2808,7 @@ behavior on ARM64).
 `validateVSpaceMapPermsForMemoryKind` after decode and before mapping. Device
 regions with `perms.execute = true` return `.error .policyDenied`.
 
-### 8.10.3 seL4 Divergence: CNode Intermediate Rights (M-06)
-
+### 8.10.3 seL4 Divergence: CNode Intermediate Rights
 `resolveCapAddress` (Operations.lean) does NOT check `Read` rights
 on intermediate CNode capabilities during multi-level CSpace traversal.
 This diverges from seL4, which requires `Read` on each intermediate CNode.
@@ -3184,8 +2900,7 @@ channel.
   `decodeSyscallArgsFromState`.
 - `SeLe4n/Kernel/API.lean` — `syscallEntry`, `syscallEntryChecked`.
 
-### 8.10.6 IPC Capability-Transfer NI Symmetry (AK1-I + WS-RC R1 / DEEP-IPC-03)
-
+### 8.10.6 IPC Capability-Transfer NI Symmetry
 The three IPC capability-transfer wrappers in
 `SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean` —
 `endpointSendDualWithCaps`, `endpointReceiveDualWithCaps`, and
@@ -3229,8 +2944,7 @@ regression extended for send/receive/call symmetry;
 provides three runtime-observable checks (healthy state, faulty
 state must error, `lookupCspaceRoot` returns `none`).
 
-### 8.10.7 Structural-Fix Discharge Index (WS-RC R4)
-
+### 8.10.7 Structural-Fix Discharge Index
 WS-RC R4 (Structural-invariant promotions —
 [`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)
 §8) lands four sub-tasks under the structural-fix policy (`§1.5` of
@@ -3292,15 +3006,14 @@ canonical
 `SeLe4n.Kernel.uniqueSlotMap_module_ready` and
 `SeLe4n.Kernel.noDupList_module_ready`.
 
-### 8.10.8 Scheduler / Lifecycle Behaviour Symmetry (WS-RC R5)
-
+### 8.10.8 Scheduler / Lifecycle Behaviour Symmetry
 WS-RC R5 closes the seven scheduler/lifecycle audit findings whose
 remediation is a behavioural symmetry or function-split. The phase
 implements seven coherent slices (R5.A..R5.G) and lands them on the
 v0.31.0 release path; see
 [`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)
 §9 for the canonical task breakdown and the closure record in
-[`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) `WS-RC R5`
+[`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) `WS-RC R5`
 for the per-sub-task narrative.
 
 * **R5.A (DEEP-SUSP-02) — `cancelDonation` split**: the suspend G3
@@ -3363,8 +3076,7 @@ new Rust tests (`decode_missing_sched_context_error` unit,
 `missing_sched_context_decode` conformance).  AK7 cascade monotonicity
 baseline retained at the v0.30.11 floor.
 
-### 8.11 buildChecked Runtime Invariant Validation (WS-T Phase T7)
-
+### 8.11 buildChecked Runtime Invariant Validation
 All test states use `BootstrapBuilder.buildChecked` instead of `build`:
 
 - **Runtime structural validation**: No duplicate ObjIds, lifecycle type-tag
@@ -3373,8 +3085,7 @@ All test states use `BootstrapBuilder.buildChecked` instead of `build`:
 - **31 post-mutation invariant checks** in the trace harness covering all
   major transition families (IPC, VSpace, lifecycle, scheduler, capability).
 
-### 8.12 Scheduling Context Objects (WS-Z)
-
+### 8.12 Scheduling Context Objects
 A `SchedContext` is a first-class kernel object containing CPU budget, period,
 priority, deadline, and domain parameters for CBS (Constant Bandwidth Server)
 scheduling. Threads bind to SchedContexts via the `schedContextBinding` field
@@ -3386,8 +3097,7 @@ Key types: `Budget` (CPU time in ticks), `Period` (replenishment period),
 `Bandwidth` (budget/period pair for admission control), `ReplenishmentEntry`
 (CBS replenishment event), `SchedContextBinding` (thread ↔ SchedContext relationship).
 
-#### 8.12.1 CBS Budget Engine (WS-Z Phase Z2)
-
+#### 8.12.1 CBS Budget Engine
 The CBS budget engine (`Kernel/SchedContext/Budget.lean`) provides pure-function
 budget management operations with machine-checked invariants:
 
@@ -3423,8 +3133,7 @@ operations maintain the invariant bundle, composed into
 Bandwidth isolation theorems (`cbs_single_period_bound`, `cbs_bandwidth_bounded`)
 bound total consumption by `maxReplenishments × budget`.
 
-#### 8.12.2 Replenishment Queue (WS-Z Phase Z3)
-
+#### 8.12.2 Replenishment Queue
 The system-wide `ReplenishQueue` (`Kernel/SchedContext/ReplenishQueue.lean`)
 tracks when each SchedContext's budget becomes eligible for refill. The queue
 is a sorted list of `(SchedContextId, eligibleAt)` pairs with a cached `size`
@@ -3437,8 +3146,7 @@ Operations: `insert` (sorted O(n)), `popDue` (prefix split O(k)), `remove`
 including `insert_preserves_sorted`, `popDue_preserves_sorted`,
 `splitDue_length_additive`, `mem_insertSorted`.
 
-#### 8.12.3 Scheduler Integration (WS-Z Phase Z4)
-
+#### 8.12.3 Scheduler Integration
 The CBS budget engine and replenishment queue are wired into the scheduler via
 `effectiveSchedParams` (the total successor to the retired
 `effectivePriority`; resolves scheduling params from SchedContext if bound, TCB
@@ -3454,8 +3162,7 @@ bundle: `schedulerInvariantBundleExtended` (16-tuple: original 9 + 7 new).
 Backward compatible: existing `chooseThread`/`schedule`/`timerTick`/`handleYield`
 preserved unchanged.
 
-#### 8.12.4 Capability-Controlled Thread Binding (WS-Z Phase Z5)
-
+#### 8.12.4 Capability-Controlled Thread Binding
 3 new `SyscallId` variants: `.schedContextConfigure` (17), `.schedContextBind`
 (18), `.schedContextUnbind` (19). Capability-gated operations:
 `validateSchedContextParams`, `schedContextConfigure` (validate + admit + store),
@@ -3467,8 +3174,7 @@ preservation theorems including `schedContextBind_output_bidirectional` and
 `schedContextConfigure_admission_excludes_eq`. API dispatch via
 `dispatchCapabilityOnly` shared path.
 
-#### 8.12.5 API Surface & Syscall Wiring (WS-Z Phase Z8)
-
+#### 8.12.5 API Surface & Syscall Wiring
 3 error-exclusivity theorems (`decodeSchedContextConfigureArgs_error_iff`,
 `decodeSchedContextBindArgs_error_iff`, `decodeSchedContextUnbindArgs_error_iff`).
 4 frozen SchedContext operations (`frozenSchedContextConfigure`,
@@ -3476,8 +3182,7 @@ preservation theorems including `schedContextBind_output_bidirectional` and
 `enforcementBoundary` expanded 22→25 entries (3 new `.capabilityOnly` SchedContext
 operations). `frozenOpCoverage_count` increased 12→15.
 
-#### 8.12.6 Invariant Composition & Cross-Subsystem (WS-Z Phase Z9)
-
+#### 8.12.6 Invariant Composition & Cross-Subsystem
 3 new cross-subsystem predicates: `schedContextStoreConsistent` (every
 SchedContext in the object store satisfies `schedContextWellFormed`),
 `schedContextNotDualBound` (no SchedContext simultaneously bound to two threads),
@@ -3488,8 +3193,7 @@ positive budget or are legacy-unbound). `crossSubsystemInvariant` extended from
 SchedContext `schedContextWellFormed` requirement (6th conjunct). Field-
 disjointness: 16 pairwise witnesses for 8 predicates, 3 new frame lemmas.
 
-#### 8.12.7 SchedContext Donation (WS-Z Phase Z7)
-
+#### 8.12.7 SchedContext Donation
 SchedContext donation enables **passive servers** — threads that consume zero
 CPU when idle by borrowing the client's SchedContext during IPC Call/Reply.
 
@@ -3544,7 +3248,7 @@ on the unbound-delivery path only, `.replyRecv` excluding a live donation
 edge naming the woken caller, retype and suspend behind their quiescence
 disciplines — so `ipcInvariantFull` across a syscall is machine-checked
 *given the packs*, and the pack-hardening residue is registered as WS-DT debt
-in `docs/WORKSTREAM_HISTORY.md`.
+in `docs/REGISTERED_DEBT.md`.
 
 **Invariants** (`ipcInvariantFull` 20 conjuncts — the first 15 forming
 `ipcInvariantCore` after WS-RC R4.C.7's close-out
@@ -3597,8 +3301,7 @@ retype from proceeding with dangling SchedContext references.
 **Defense-in-depth**: `donateSchedContext` validates `sc.boundThread = some
 clientTid` before transferring ownership.
 
-### 8.13 Priority Inheritance Protocol (WS-AB Phase D4)
-
+### 8.13 Priority Inheritance Protocol
 Priority inversion via Call/Reply IPC is mitigated by a deterministic Priority
 Inheritance Protocol (PIP). When a client blocks on a server via `Call`, the
 server's effective scheduling priority is transiently elevated to match the
@@ -3636,8 +3339,7 @@ client priority exceeds the donated SchedContext priority.
 **Bounded inversion**: Priority inversion is bounded by
 `objectIndex.length × WCRT(effectiveSchedParams)` ticks (parametric in WCRT).
 
-### 8.14 Bounded Latency Theorem (WS-AB Phase D5)
-
+### 8.14 Bounded Latency Theorem
 The kernel's first machine-checked liveness property: a conditional worst-case
 response time (WCRT) bound for the CBS-aware, PIP-enhanced scheduler. This is a
 proof-only phase with zero kernel code changes.
@@ -3706,8 +3408,7 @@ deployment provides the guarantee.
 
 **Source**: WCRT.lean, BandExhaustion.lean.
 
-### 8.14.1.1 RPi5 Canonical Deployment Specialisation (AN5-E / DEF-AK2-K.4 RESOLVED)
-
+### 8.14.1.1 RPi5 Canonical Deployment Specialisation
 AN5-E discharges the `eventuallyExits` hypothesis substantively for the
 canonical Raspberry Pi 5 deployment configuration. The closure is
 formalised in `SeLe4n/Kernel/Scheduler/Liveness/RPi5CanonicalConfig.lean`.
@@ -3859,8 +3560,7 @@ must substitute actual MMIO reads via the FFI bridge to Rust HAL
 
 **Source**: RPi5/MmioAdapter.lean.
 
-### 8.15 Hardware Integration Roadmap (AJ6-A / H-01, H-02, H-03)
-
+### 8.15 Hardware Integration Roadmap
 The v0.28.0 comprehensive audit identified three HIGH findings concerning
 orphaned architecture modules, inactive budget-aware scheduling, and an
 unwired FFI bridge, deferred at the time to WS-V (since completed). Their
@@ -3868,8 +3568,7 @@ current state: H-03 is closed, H-02 is superseded on the live path, and
 H-01 is partially closed (three of seven modules integrated). This section
 documents the original activation plans with per-item status.
 
-#### 8.15.1 Architecture Module Integration (H-01)
-
+#### 8.15.1 Architecture Module Integration
 Seven architecture modules were implemented and proven but not yet imported
 into the main kernel execution path at audit time. Three of the seven have
 since been integrated:
@@ -3935,8 +3634,7 @@ demonstrated that the load-bearing content (classification, fault
 construction, fault delivery) can be — and now is — production code below
 `API.lean`, leaving only the dispatch wrappers above it.
 
-#### 8.15.2 Budget-Aware Scheduler Activation (H-02)
-
+#### 8.15.2 Budget-Aware Scheduler Activation
 The CBS budget engine (`SchedContext/Budget.lean`), replenishment queue
 (`SchedContext/ReplenishQueue.lean`), and budget-aware scheduler operations
 (`scheduleEffective`, `handleYieldWithBudget`, `timerTickWithBudget`) are
@@ -3962,8 +3660,7 @@ checked wrappers retain the plain variants.
 
 **Dependency:** Preservation proofs must be complete before activation.
 
-#### 8.15.3 FFI Bridge Wiring (H-03)
-
+#### 8.15.3 FFI Bridge Wiring
 At audit time `FFI.lean` declared 17 `@[extern]` Lean functions mapping to
 the Rust HAL (`sele4n-hal/src/ffi.rs`) that no production module imported.
 **This finding is closed**: `FFI.lean` now carries 66 `@[extern]`
@@ -4044,8 +3741,7 @@ The hardware-boundary contract policy governing test-only fixture separation and
 architecture-assumption interfaces is documented in
 [`docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md`](../HARDWARE_BOUNDARY_CONTRACT_POLICY.md).
 
-### 11.1 Trust Boundaries (WS-S/S1)
-
+### 11.1 Trust Boundaries
 The following trust boundaries are documented as part of WS-S Phase S1:
 
 **`ThreadId.toObjId` identity mapping** (`SeLe4n/Prelude.lean`): The conversion
@@ -4070,8 +3766,7 @@ enables `decide`/`native_decide` and `if`-expressions.
 WS-S/S1-G. The well-formedness predicate `bits < 2^5` ensures no spurious
 upper bits exist. `AccessRightSet.ofNat` masks inputs to the valid 5-bit range.
 
-### 11.2 Information Flow and Non-Interference Boundary (AD3-C/F-05)
-
+### 11.2 Information Flow and Non-Interference Boundary
 The kernel's non-interference (NI) guarantees cover all kernel-primitive
 transitions via 35 `NonInterferenceStep` constructors in
 `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean`. These include IPC
@@ -4093,8 +3788,7 @@ service-layer flows independently of kernel NI guarantees. See
 [`docs/DEPLOYMENT_GUIDE.md`](../DEPLOYMENT_GUIDE.md) Section 3 for deployment
 implications.
 
-#### 11.2.1 Service-presence covert channels (AN6-E.1 / IF-M01)
-
+#### 11.2.1 Service-presence covert channels
 WS-AN Phase AN6-E.1 formalizes the scope of `serviceObservable`
 (`Kernel/InformationFlow/Projection.lean`): the predicate covers
 **boolean service presence only**, not internal state. Cross-service
@@ -4123,8 +3817,7 @@ that would invalidate the NI-L3 acceptance documentation.
 See `docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md` §2.5 IF-M01 for the
 audit-level classification.
 
-#### 11.2.2 Architecture assumption consumer index (AN6-B / H-08)
-
+#### 11.2.2 Architecture assumption consumer index
 WS-AN Phase AN6-B adds a machine-searchable index
 (`archAssumptionConsumer` in `Kernel/Architecture/Assumptions.lean`)
 mapping each of the 6 `ArchAssumption` enumeration values (the 6th,
@@ -4155,8 +3848,7 @@ Three complementary guards enforce the index cannot silently drift:
    If any consumer theorem is renamed or deleted, one of these
    references fails elaboration.
 
-#### 11.2.3 Single-core kernel model witness (AN6-F / CX-M03)
-
+#### 11.2.3 Single-core kernel model witness
 WS-AN Phase AN6-F added `bootFromPlatform_singleCore_witness` in
 `Kernel/CrossSubsystem.lean`. As anticipated below, the WS-SM SMP
 bring-up workstream took **path (a)**: at **SM4.B** (v0.31.12) the
@@ -4187,8 +3879,7 @@ substantive per-core form — so the SMP assumption was carried
 continuously across the migration (restated, not deleted, at SM4.B; then
 retired-with-replacement at SM4.E/SM4.G), never silently dropped.
 
-#### 11.2.4 Per-core observers under SMP (WS-SM SM8.A)
-
+#### 11.2.4 Per-core observers under SMP
 The NI boundary above is stated for a single observer at a security
 clearance. Under SMP an observer is a **pair** `(c, L)` of a core and a
 clearance (WS-SM SM8.A, `PerCoreObserver` in
@@ -4282,8 +3973,7 @@ asserted (`perCoreSlice_erases_register_content`,
 `perCoreSlice_erases_shared_content`, `machineRegs_beq_not_injective`), so
 a decided equality can never be read as observable equality.
 
-#### 11.2.5 Per-core non-interference under SMP (WS-SM SM8.B)
-
+#### 11.2.5 Per-core non-interference under SMP
 > **v0.33.5 follow-up.**  As first landed, `crossCoreNonInterference` had no
 > instantiation at a transition that actually writes a remote core — every
 > application had `c' = bootCoreId`, because all thirty-five per-operation lifts

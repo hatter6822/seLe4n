@@ -38,7 +38,7 @@ family, and they are answered differently:
   bundle is inhabited rather than vacuous.  Carrying it *along a trace* —
   concluding the pack's components alongside the bundle so the next syscall's
   pack is fed from the last one's conclusion — is the registered WS-DT
-  trace-composition debt (`docs/WORKSTREAM_HISTORY.md`, closure target SM10):
+  trace-composition debt (`docs/REGISTERED_DEBT.md`, closure target SM10):
   no per-syscall `ipcReachable` preservation theorem exists yet, and the
   payoffs conclude `ipcInvariantFull` alone.
 

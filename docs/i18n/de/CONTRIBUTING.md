@@ -24,7 +24,7 @@ Beitrag unter dieser Lizenz einzureichen.
 3. **CI-Richtlinie:** [`docs/CI_POLICY.md`](../../../docs/CI_POLICY.md)
 4. **Projektumfang + Workstreams:** [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md)
 5. **Aktive Audit-Befunde:** [`docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md)
-6. **Workstream-Geschichte:** [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md)
+6. **Workstream-Geschichte:** [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md)
 
 Vollständiges Handbuch: [`docs/gitbook/README.md`](../../../docs/gitbook/README.md)
 
@@ -146,7 +146,7 @@ im selben PR:
 3. `docs/DEVELOPMENT.md`
 4. Betroffene GitBook-Kapitel
 5. `docs/CLAIM_EVIDENCE_INDEX.md` bei Anspruchsänderungen
-6. `docs/WORKSTREAM_HISTORY.md` bei Workstream-Statusänderungen
+6. `docs/REGISTERED_DEBT.md` bei Workstream-Statusänderungen
 7. `docs/codebase_map.json` bei Lean-Quelltextänderungen neu generieren
 
 ## Website-Linkschutz
@@ -171,7 +171,7 @@ könnte, melden Sie diese bitte umgehend. Dies gilt für Schwachstellen in:
 
 - Erstellen Sie ein [Issue](https://github.com/hatter6822/seLe4n/issues) für Fragen oder Fehlerberichte
 - Lesen Sie das vollständige Handbuch unter [`docs/gitbook/README.md`](../../../docs/gitbook/README.md)
-- Konsultieren Sie die [Workstream-Geschichte](../../../docs/WORKSTREAM_HISTORY.md) für den aktuellen Projektstatus
+- Konsultieren Sie die [Workstream-Geschichte](../../../docs/REGISTERED_DEBT.md) für den aktuellen Projektstatus
 
 ---
 

@@ -395,7 +395,7 @@ check("a cpp directive is code, not a comment",
 # --- The code grammar -------------------------------------------------
 check("a lone ws is left alone", gate.is_coded("ws"), False)
 # Recognising only sm/an/ak let eleven further real families through.
-# The list is checked against docs/WORKSTREAM_HISTORY.md, so a family
+# The list is checked against docs/REGISTERED_DEBT.md, so a family
 # retired from the registry must be retired here too.
 for family in ("aa", "ac", "ad", "ae", "af", "ag", "ah",
                "ai", "aj", "ak", "al", "am", "an", "sm"):

@@ -14,8 +14,8 @@ Use this file during planning and PR review to keep documentation status aligned
 |---|---|---|---|
 | Milestones, scope, acceptance | `docs/spec/SELE4N_SPEC.md` | `05-specification-and-roadmap.md` | Update spec first; GitBook summarizes and links back. |
 | seL4 microkernel reference | `docs/spec/SEL4_SPEC.md` | `02-microkernel-and-sel4-primer.md` | Reference-only; update when seL4 spec content changes. |
-| Active audit / workstream (WS-SM) | `docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md` + per-phase `docs/planning/SMP_*.md`; active audit baseline `docs/audits/AUDIT_v0.30.11_*` | `05-specification-and-roadmap.md` | Findings and status tables canonical in the plans and `docs/WORKSTREAM_HISTORY.md`; GitBook chapter summarizes and links back. |
-| Workstream history (all prior portfolios) | `docs/WORKSTREAM_HISTORY.md` | `05-specification-and-roadmap.md` | Canonical record; GitBook chapter provides navigation. |
+| Active audit / workstream (WS-SM) | `docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md` + per-phase `docs/planning/SMP_*.md`; active audit baseline `docs/audits/AUDIT_v0.30.11_*` | `05-specification-and-roadmap.md` | Findings and status tables canonical in the plans and `docs/REGISTERED_DEBT.md`; GitBook chapter summarizes and links back. |
+| Registered debt and workstream registry | `docs/REGISTERED_DEBT.md` | `05-specification-and-roadmap.md` | Canonical record; GitBook chapter provides navigation. |
 | Completed performance portfolio (WS-G) | `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` | `08-kernel-performance-optimization.md` | All findings closed; chapter documents optimizations. Archived to `docs/dev_history/`. |
 | Prior audit findings (WS-E, completed) | `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` | — | Archived to `docs/dev_history/`; WS-E1..E6 all completed. |
 | Prior audit findings (WS-D, completed) | `docs/dev_history/audits/AUDIT_v0.11.0.md` | — | Archived to `docs/dev_history/`; WS-D1..D4 completed. |
@@ -63,9 +63,9 @@ For documentation/planning PRs:
 
 - **Active workstream**: WS-SM (SMP multi-core completion) — SM0–SM9
   landed, SM10 pending (→ v1.0.0); WS-RA complete. See
-  `docs/WORKSTREAM_HISTORY.md` "What's next" and CLAUDE.md's phase table.
+  `docs/REGISTERED_DEBT.md`'s *Current status* and CLAUDE.md's phase table.
 - **Completed portfolios**: WS-B through WS-AN, WS-RC R0–R5, WS-RA — the
-  full traceability table is in `docs/WORKSTREAM_HISTORY.md`.
+  full traceability table is in `docs/REGISTERED_DEBT.md`.
 - **Historical baselines**: prior audits and workstream plans archived in
   `docs/dev_history/audits/`; the active baseline family is
   `docs/audits/AUDIT_v0.30.11_*`.
@@ -73,8 +73,8 @@ For documentation/planning PRs:
   evidence, Tier 5 cross-language correspondence (nightly, experimental).
 - **Hardware target**: Raspberry Pi 5 (ARM64), SMP-on by default.
 - **Metrics**: live values in `docs/codebase_map.json` → `readme_sync`
-  (at v0.34.26: 289,335 production LoC across 288 files, 64,535 test LoC
-  across 69 suites, 9,680 proved declarations; zero sorry/axiom).
+  (run `python3 scripts/report_current_state.py` for the live figures; a
+  snapshot pinned here is drift by construction).
   **This figure is hand-copied**: `scripts/sync_documentation_metrics.sh`
   drives `README.md` and `docs/spec/SELE4N_SPEC.md` only, so this file — and
   the eleven i18n READMEs and four GitBook chapters — drift silently between

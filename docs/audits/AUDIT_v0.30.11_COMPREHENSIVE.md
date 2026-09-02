@@ -707,7 +707,7 @@ remediation workstream's `WORKSTREAM_PLAN.md`.
 - [ ] Tag this audit closed by adding
       `AUDIT_v0.30.11_DISCHARGE_INDEX.md` if any of the above
       generates closure-form proof obligations; otherwise note "no
-      closure-form artefacts" in `WORKSTREAM_HISTORY.md`.
+      closure-form artefacts" in `REGISTERED_DEBT.md`.
 
 ### Post-1.0 maintainability sequencing (suggested)
 

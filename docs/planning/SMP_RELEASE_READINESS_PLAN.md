@@ -169,7 +169,7 @@ register is accurate. RR0.1–RR0.3 close audit blocker 1's registration half.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| RR0.1 | Add an IPC de-threading workstream row to `docs/WORKSTREAM_HISTORY.md` recording per-slice state (D0/D2/D2′/D3/D4/D5/D7 closed; D1/D6/D8 open) with closure target RR3 | `docs/WORKSTREAM_HISTORY.md` | S |
+| RR0.1 | Add an IPC de-threading workstream row to `docs/REGISTERED_DEBT.md` recording per-slice state (D0/D2/D2′/D3/D4/D5/D7 closed; D1/D6/D8 open) with closure target RR3 | `docs/REGISTERED_DEBT.md` | S |
 | RR0.2 | Add it to `SMP_RELEASE_CLOSURE_PLAN.md` §2 Dependencies | (1 file) | T |
 | RR0.3 | Add a CLAUDE.md standing-constraint bullet naming the two still-threaded conjuncts, so new code does not assume `ipcInvariantFull` is end-to-end machine-checked; mirror to `AGENTS.md` | `CLAUDE.md`, `AGENTS.md` | S |
 | RR0.4 | Rewrite `SMP_RELEASE_CLOSURE_PLAN.md` §1 phase goal against the real SM10.1 scope (§2.2 of the register) | (1 file) | S |
@@ -177,16 +177,16 @@ register is accurate. RR0.1–RR0.3 close audit blocker 1's registration half.
 | RR0.6 | Replace the hand-summed `wsm_theorem_count` literal with a generated manifest, so the marker theorem cannot certify a stale number | `scripts/`, `SeLe4n/Kernel/Concurrency/` | M |
 | RR0.7 | Correct the SM10.6.3 archive list: add the SM9 plan, this plan, and the register; update the file-move count | (1 file) | T |
 | RR0.8 | Refresh the SM10.3 sub-task table against the tree — five of six suites and two of three fixtures already exist | (1 file) | S |
-| RR0.9 | Register the remaining unregistered debt the debt sweep found, each with an owner and closure target | `docs/WORKSTREAM_HISTORY.md` | M |
+| RR0.9 | Register the remaining unregistered debt the debt sweep found, each with an owner and closure target | `docs/REGISTERED_DEBT.md` | M |
 | RR0.10 | Fix SM4.C.11's circular closure target (the phase that owns it is marked LANDED); re-home it to a phase that can close it | (2 files) | S |
 | RR0.11 | Triage the register's §7 low-severity table by remedy, not by severity: rows fixed by editing prose become SM10.2's documentation work-list (cross-referenced from `SMP_RELEASE_CLOSURE_PLAN.md`); rows needing code, a proof or a wiring change become numbered RR7 rows or registered deferrals with owners. Handing all 99 to a documentation sweep would close the release over unwired proven structures | (2 files) | S |
 
 **Acceptance**: `grep` for each open workstream name returns a hit in
-`docs/WORKSTREAM_HISTORY.md`; no plan in `docs/planning/` lacks a status
+`docs/REGISTERED_DEBT.md`; no plan in `docs/planning/` lacks a status
 header; the SM10 tally arithmetic includes every landed phase.
 
 **Met at `v0.34.26`.**  Every plan under `docs/planning/` is cited from
-`docs/WORKSTREAM_HISTORY.md` and carries a status header — five did not, and
+`docs/REGISTERED_DEBT.md` and carries a status header — five did not, and
 two (`SMP_PANIC_HANG_REMEDIATION_PLAN.md`,
 `WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md`) were cited from nowhere.  The SM10
 tally is no longer arithmetic at all: `smpInventoriedTheoremCount` is a
@@ -241,17 +241,8 @@ keeps the target, the feature flag and the `build`-not-`check` choice from
 being dropped or weakened; and `scripts/check_tlbi_broadcast_discipline.py`
 (Tier 0, 12-case self-test) implements the §4.4 TLBI gate RR1.9 owed.
 
-**The first compile found six defects and three lints.**  Two `boot.S`
-sites used `and sp, sp, #~0xF`, which does not assemble — `AND (immediate)`
-accepts SP as its destination but not as its source — so neither the
-primary's nor the secondary's stack-alignment step was valid.  Four `TLBI
-*OS` sites are **FEAT_TLBIOS** (ARMv8.4-A) instructions that neither encode
-for the baseline target nor execute on **Cortex-A76**, the ARMv8.2-A core in
-the RPi5's BCM2712; they now probe `ID_AA64ISAR0_EL1.TLB` and fail closed.
-`cargo check` reported all four of those as clean, which is why RR1.5
-insisted the gate be a build.  The register records the full inventory
-([`UNFINISHED_SMP_WORK.md`](UNFINISHED_SMP_WORK.md) §5.1).
-
+*Met. What the cut changed, the defects it found and its review rounds are in
+[`CHANGELOG.md`](../../CHANGELOG.md) at the version above.*
 
 ### RR2 — Live-path correctness
 
@@ -295,133 +286,29 @@ unproven teardown hypothesis.
 > return-plus-migration lemma, both lower-numbered, and it carries its own suite
 > coverage rather than depending on RR2.19's.
 
-**Met at v0.34.42**, with one clause partial and named as such:
+**Met at v0.34.42**, with one clause partial and named as such: the three
+*queue* arms of the cancellation closure still take `hTeardownProj`, which
+needs an endpoint/notification queue label-uniformity invariant — a
+workstream, not a sub-task.  It is registered in
+[`UNFINISHED_SMP_WORK.md`](UNFINISHED_SMP_WORK.md) §4 finding 2 with closure
+target **RR3**, and RR2 is recorded as landing with it open rather than as
+closing a clause it did not close.
 
-* **Bundles on the live transitions** — every *unchecked transition* the SMP
-  dispatch arms call now carries `_preserves_ipcInvariantFull`:
-  `endpointSendDualWithCapsOnCore` (RR2.14/RR2.15) and
-  `endpointReceiveDualWithCapsOnCore` (closure audit — the audit had counted
-  the receive arm covered on the strength of the *bare* per-core form, i.e.
-  measured the wrong function), `clearWokenReceiverStash` (RR2.16),
-  `endpointCallCrossCoreDispatch` and `endpointReplyCrossCoreDispatch`
-  (RR2.6/RR2.11), `replyRecvReturnDonation` and
-  `notificationWaitCrossCoreDispatch` (closure audit), over the donation
-  primitives' new surface (`IPC/Invariant/DonationPreservation.lean`, RR2.5)
-  and the priority-inheritance chain walk's new bundle, which nothing had
-  before.  The call donation's two preconditions are *derived* from the
-  rendezvous the chain performs, not assumed.  Not covered at transition
-  level, by measurement: `notificationSignalBoundOnCore` (its bound-delivery
-  invariant surface is SM6.D's registered debt in
-  `SMP_CROSS_CORE_IPC_PLAN.md`); and the *composition* layer above the
-  transitions — the flow-`Checked` wrappers, the `replyRecvBody` three-stage
-  composite, and the `Architecture.stage*` return-frame writes — which is
-  RR3.22's charter, not a transition.
-* **Replenish-queue migration** — all **three** live donation paths carry the
-  SchedContext's pending CBS replenishments across cores
-  (`applyCallDonationOnCore`, `applyReplyDonationOnCore`, and
-  `replyRecvReturnDonation` at RR2.20), and
-  `replenishQueueAffinityConsistent_smp` is re-established on every core after
-  each.  Three, not the two the audit named: `.replyRecv` performs a *pair* of
-  hand-offs from the API layer, which the audit's primitive-by-primitive
-  enumeration did not reach.  Executable coverage in `tests/SmpIpcSuite.lean`
-  §3.9b, two-armed so the round trip cannot hide a missing migration.
-* **Cancellation** — the `ipcInvariant` closure now covers
-  `suspendThreadOnCore`, the operation the live `.tcbSuspend` arm actually
-  calls (RR2.17), rather than stopping at the teardown composite.
-* **The partial clause** — "no cancellation theorem rests on an unproven
-  teardown hypothesis" holds for the two arms whose teardown is confined to the
-  victim and its Reply object (`.ready`, and `.blockedOnReply` at RR2.18).  The
-  three *queue* arms still take `hTeardownProj`, because discharging them needs
-  an endpoint/notification queue label-uniformity invariant — a low endpoint
-  holding a high waiter would make the cancellation genuinely visible — plus
-  that invariant's establishment on every enqueue path.  That is a workstream,
-  not a sub-task; it is registered in
-  [`UNFINISHED_SMP_WORK.md`](UNFINISHED_SMP_WORK.md) §4 finding 2 with closure
-  target **RR3**, and RR2 is recorded as landing with it open rather than as
-  closing a clause it did not close.
+*Met. What the cut changed, the defects it found and its review rounds are in
+[`CHANGELOG.md`](../../CHANGELOG.md) at the version above.*
 
-**What RR2 hands RR3**, stated so the next phase is not surprised by its own
-inputs:
-
-* **RR3.11's site count is RR3.1's to measure, not this plan's to assert.**
-  RR2.15 retyped `ipcUnwrapCaps_preserves_ipcInvariantFull` to take the
-  receiver's CNode and the capability list and discharge
-  `dualQueueSystemInvariant` / `badgeWellFormed` from lemmas already in the
-  tree — two sites closed.  A binder-name census at the RR2 closure puts nine
-  theorem signatures still binding each of the two (across
-  `PerCoreBundlePreservation`, `DualQueueMembership`, `CapTransferBundle` and
-  the capability-preservation suite), but binder names are exactly what the
-  standing constraint says not to measure by; RR3.1's code-view gate sets the
-  baseline.
-* **RR3.3/RR3.4/RR3.8 gain sites.**  The new send, receive and dispatch
-  bundles *inherit* the post-state hypotheses their single-core predecessors
-  already carried — `blockedThreadsPendingMessageConsistent` everywhere,
-  `replyCallerLinkageReciprocal` on the send/receive side, `donationOwnerValid`
-  on the reply chain (from `endpointReplyOnCore`'s own surface).  No new
-  unproven content, but more bindings for the RR3.1 gate to count, so RR3.1's
-  baseline must be measured after RR2 — which the numbering already guarantees.
-  Fully de-threaded new bundles, for contrast: `clearWokenReceiverStash`,
-  `applyReplyDonationOnCore`, `replyRecvReturnDonation`, the donation
-  primitives, and the PIP walk — each takes only pre-state facts.
-* **RR3.24 has its IPC-side transition inputs; one is staged, and the
-  composition layer is its own.**  After the closure-audit split, only the
-  `.call` chain's bundle (`DispatchInvariant.lean`) is staged — it composes
-  the staged `EndpointCallInvariant` surface — so
-  `dispatchWithCap_preserves_ipcInvariantFull` still cannot state in
-  `SeLe4n/Kernel/API.lean` over that arm until the call surface moves to
-  production; RR3's author must either state the payoff in the staged layer or
-  schedule the relocation first.  Beyond that, RR3.22 owns the glue no
-  transition bundle covers: the flow-`Checked` wrappers (each has its
-  `_flow_denied` / equivalence lemmas ready), the `replyRecvBody` composite
-  over its three covered stages, and the `Architecture.stage*` return-frame
-  writes (over `writeRegisterState_preserves_ipcInvariantFull`).
-  `notificationSignalBoundOnCore` stays gated on SM6.D's bound-delivery debt
-  and is that debt's, not RR3.22's, to clear.
-
+*Met. What the cut changed, the defects it found and its review rounds are in
+[`CHANGELOG.md`](../../CHANGELOG.md) at the version above.*
 
 ### RR3 — `ipcInvariantFull` de-threading closure (D1, D6, D8)
 
 > **Status**: RR3.1–RR3.26 **LANDED** — the phase is closed.  The RR3.1 gate
-> reports **zero** post-state bindings of **any** conjunct across the whole
-> `_preserves_ipcInvariantFull` / `_establishes_ipcInvariantFull` family, and
-> both payoff theorems now exist: `dispatchCapabilityOnly_preserves_ipcInvariantFull`
-> (production, `SeLe4n/Kernel/API.lean`), and
-> `dispatchWithCap_preserves_ipcInvariantFull` /
-> `dispatchSyscall_preserves_ipcInvariantFull`
-> (`SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean`, staged with the `.call`
-> chain's bundle per RR3.24's own escape clause).  RR3.22 landed all three of
-> its items: the flow-`Checked` dispatch wrappers carry their own payoff tier
-> (`dispatchWithCapChecked_preserves_ipcInvariantFull` /
-> `dispatchSyscallChecked_preserves_ipcInvariantFull`, staged in the same
-> module) — every mirrored arm reduced to the unchecked payoff, the four live
-> SM9 arms closed from their transitions' frames — alongside the
-> `replyRecvBody` composite and the `Architecture.stage*` bundles.  Both
-> dispatch packs carry machine-checked inhabitation witnesses whose state is
-> built through the retype and binding levers.  The pending register is
-> empty and the gate's success line reads end-to-end closure.
->
-> **Deviations from the rows as written**, recorded rather than absorbed:
-> the per-arm bundles of RR3.15–RR3.21 landed in one host module
-> (`SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean`, wired into
-> production through `API.lean`) rather than scattered across the file
-> columns below — the arms share one read-view lever surface, and one module
-> keeps the levers next to their consumers.  The payoffs carry **pre-state
-> quiescence packs** (`capabilityDispatchQuiescence`,
-> `syscallDispatchQuiescence`) — every field dischargeable before the step,
-> nothing bound on a post-state — and four residuals are confinements inside
-> those packs rather than gaps in the theorems: the retype target must be
-> detached (the seL4 revoke-and-suspend-before-retype contract), a
-> suspended/resumed victim must be IPC-quiescent (the queue-unlink
-> cancellation composite is SM6.E-surface follow-up work), `.notificationSignal`
-> covers the unbound-delivery path (bound delivery is SM6.D's registered
-> debt), and `.replyRecv`'s composite excludes a live donation edge naming
-> the woken caller (the donated-server reply path has its own composite in
-> `EndpointReplyDispatchInvariant.lean`).  Two operation-hardening follow-ups
-> are registered in `docs/WORKSTREAM_HISTORY.md`: `schedContextBind` can
-> target a recorded donation owner and `schedContextUnbind` can strand an
-> IPC-blocked bound thread; each bundle takes the corresponding pre-state
-> hypothesis until the operation refuses the case itself.
-
+> reports zero post-state bindings of any conjunct across the whole
+> `_preserves_ipcInvariantFull` / `_establishes_ipcInvariantFull` family, the
+> pending register is empty, and all three payoff tiers exist.  What the
+> theorems say, what their quiescence packs confine and what new code may
+> assume is in `CLAUDE.md`'s *Standing constraints* section; what each cut
+> changed is in [`CHANGELOG.md`](../../CHANGELOG.md).
 Closes [`IPC_INVARIANT_DETHREADING_PLAN.md`](../dev_history/planning/IPC_INVARIANT_DETHREADING_PLAN.md).
 At authoring time its D1, D6 and D8 slices were open, two of the twenty
 conjuncts were still assumed as post-state hypotheses on nearly every bundle —
@@ -430,37 +317,8 @@ conjuncts were still assumed as post-state hypotheses on nearly every bundle —
 then an end-to-end machine-checked property of the live kernel; the status
 blockquote above records the closure.
 
-**What the landed half found, and why the second half was re-scoped.**
-
-* **The measured baseline was 103 post-state bindings, not the audit's 33+31**,
-  across six conjuncts rather than two.  RR3.1's gate derives the conjunct set,
-  the bundle family and each bundle's own pre-state, so it counted the
-  `donationOwnerValid`, `dualQueueSystemInvariant` and `badgeWellFormed`
-  bindings the binder-name census could not see.  All six are now zero.
-* **One conjunct was not merely unproven but false.**  `endpointReply` wakes the
-  answered caller `.ready` while the recorded server still holds
-  `.donated _ caller`; the donation returns afterwards, by the AUD-3 ordering.
-  So the nine reply bundles that threaded `donationOwnerValid` on their own
-  post-state were **vacuous** on the ordinary seL4-MCS path, not conditional.
-  RR3.12 answered with `donationOwnerValidExcept` — the invariant relaxed at the
-  woken caller, which the bare reply *establishes* — and the donation return's
-  upgrade back to the full form, so the live cross-core `.reply` dispatch now
-  covers the donating path it never covered before.
-* **Two vacuity defects closed on the way** (RR3.11): a receiver-root CNode
-  hypothesis that, quantified over the `*WithCaps` wrappers, read "every ObjId is
-  a CNode" and so held in no state containing the endpoint the step requires; and
-  `badgeWellFormed` constraining badges *at rest* while the IPC transfer installs
-  an in-flight capability verbatim, closed by the new
-  `pendingMessageCapBadgesWellFormed`.
-* **RR3.15/RR3.16 as originally written assumed per-arm bundles that do not
-  exist.**  The `_preserves_ipcInvariantFull` family covers the IPC and donation
-  transitions; `dispatchWithCap` routes twenty-five syscalls across the
-  capability, VSpace, service, sched-context, lifecycle and TCB subsystems, and
-  **six of about thirty arms** have any coverage at all.  The payoff is not a
-  composition of theorems already in the tree, so it was split into RR3.15–RR3.25
-  — one row per subsystem, then the two dispatch tiers — rather than shipped as a
-  theorem with its arms assumed.  `syscallDispatch` also names nothing in the
-  tree; the dispatcher is `dispatchSyscall`, and the theorem is named for it.
+*Met. What the cut changed, the defects it found and its review rounds are in
+[`CHANGELOG.md`](../../CHANGELOG.md) at the version above.*
 
 The per-transition establishers for all seven base transitions already exist,
 so D1's residue is module ordering rather than missing mathematics. RR3.24 and
@@ -523,235 +381,15 @@ measured rather than assumed.
 
 All twenty-seven sub-tasks landed in one cut.  **Acceptance, met**: no
 execution path returns a thread to its faulting instruction without handler
-action (`faultDeliverOnCore_not_dispatchable`, RR4.19, over *both*
-dispositions and through the whole `.call` chain); `TCB.faultHandler` has a
-consumer (`resolveFaultHandler`); `trap.rs` has one classification path
-(`lean_classify_synchronous_exception`, with two mutation-tested `build.rs`
-relation checks keeping it so); Tier 0–3 green.
+action (`faultDeliverOnCore_not_dispatchable`); `TCB.faultHandler` has a
+consumer; `trap.rs` has one classification path; Tier 0–3 green.  The
+standing constraints this phase established — a fault is delivered and never
+returned, the flow-checked arm is the live one, `pendingFault` is the only
+channel from a delivery to its reply — are in `CLAUDE.md`'s *Standing
+constraints* section, which is where new code must read them.
 
-Five placements differ from the file table below, each for a stated reason —
-in four of them the table's assignment of *work* is unchanged; the fifth
-(RR4.14/RR4.15) needed a live-dispatch change the table does not list, without
-which its own row would have described an unreachable function:
-
-* **The delivery composes the live `.call` chain**
-  (`endpointCallCrossCoreDispatch`), not the bare rendezvous.  seL4's
-  `sendFaultIPC` passes `canDonate = true`, so a fault delivered to a
-  **passive** handler donates the faulting thread's scheduling context; the
-  rendezvous alone would have delivered a message to a handler with no budget
-  to run on, which is the RR4 livelock with an extra step.  The reply composes
-  the `.reply` chain for the same reason (it returns the donation and reverts
-  the boost).  This is also how **RR4.13** is discharged: the reply object and
-  the handler's reply capability are created by the call rendezvous itself
-  (`applyCallDonationOnCore` and the reply linkage `endpointCallOnCore`
-  establishes), so there is no separate fault-reply constructor to write — a
-  parallel one would be a second way to create a reply object, with its own
-  linkage invariant to re-prove.
-* **There is no single-core `faultDeliver`.**  A bootCore-pinned form would not
-  be the per-core one's `bootCoreId` instance — the donation and
-  priority-inheritance legs are per-core — so it would be a *second* fault
-  delivery that can diverge from the first, which is the defect RR4.25 removes
-  from `trap.rs`.  RR4.11's transition therefore lives in
-  `IPC/CrossCore/Fault.lean` beside RR4.12's, with the core-independent pieces
-  (resolution, message, dispositions, restart application) in
-  `IPC/Operations/Fault.lean`.
-* **RR4.14/RR4.15 required a `Kernel/API.lean` change the table does not
-  list.**  Both rows assign the reply transition to `IPC/Operations/Fault.lean`,
-  and it is there — but a fault handler holds nothing except the reply
-  capability the fault Call gave it, so it answers with the *ordinary*
-  `seL4_Reply`.  With the live `.reply` arm going straight to
-  `endpointReplyCrossCoreDispatch`, `faultReplyOnCore` had no production caller:
-  the reply-based restart would have been verified and unreachable, and a
-  handler that repaired the fault would have woken its client at the instruction
-  that faulted.  seL4 puts the branch inside `doReplyTransfer`, and so does this
-  cut — `replyTransferOnCore` (production, `IPC/CrossCore/Fault.lean` §4) with
-  both live `.reply` arms routed through it.  Two residuals are registered as
-  debt rather than left silent: the confinement this leaves in the staged
-  dispatch payoff (`replyNoPendingFault`), and `.replyRecv`, which is the
-  *idiomatic* handler loop and does not route through the seam — `replyRecvBody`
-  fuses a reply leg, a receive leg and a donation return, and a fault reply
-  changes what the latter two are handed, so substituting the branch there is a
-  coherent slice of its own.  Interim shape: a handler answers with `.reply` and
-  takes its next request with a separate `.receive`.
-* **RR4.20's flow gate is production, in `IPC/CrossCore/Fault.lean` §5**, not
-  in `InformationFlow/`.  The sub-task's file column says
-  `SeLe4n/Kernel/InformationFlow/`, and the *non-interference* half is there —
-  but `faultDeliverOnCoreChecked` is the arm `Kernel/FaultEntry.lean` calls,
-  and `InformationFlow/FaultFlow.lean` is staged (it composes the staged
-  cross-core call NI surface).  A gate reachable only from a staged module is a
-  gate the kernel does not apply: the live SVC seam gates every endpoint
-  operation through `syscallEntryChecked`, so an ungated fault delivery would
-  have been the one endpoint flow no deployment policy could refuse.  The gate
-  reads only `InformationFlow/Policy.lean`, itself production and below the
-  cross-core module in the import order, so it sits beside the transition it
-  guards.  Because a denied flow takes the RR4.9 suspend rather than an error,
-  the gate carries both payoffs
-  (`faultDeliverOnCoreChecked_not_dispatchable`,
-  `faultDeliverOnCoreChecked_preserves_ipcInvariantFull`) at no cost to RR4.17
-  or RR4.19.
-* **`Fault` and `FaultContext` live in `SeLe4n/Model/Fault.lean`**, not in
-  `Architecture/`.  The TCB has to carry the fault (`TCB.pendingFault`, seL4's
-  `tcbFault`) or a reply cannot know which fault it answers, and
-  `Model/Object/Types.lean` cannot import an `Architecture` module.  seL4 makes
-  the same split: `seL4_Fault_t` is in the shared `shared_types.bf`, with only
-  the VM-fault arm arch-specific.  The syndrome classification and the wire
-  format stay in `Architecture/Fault.lean`.
-
-Two residuals are registered in `docs/WORKSTREAM_HISTORY.md` rather than left
-in source comments: a core that delivers a fault halts pending SM10.1's
-successor install (unreachable at v0.34.44 — no core sets `lean_ready`), and
-the sender-side `MessageInfo` label pass-through, which is deliberately **not**
-restored here because it would let a thread holding a send capability to a
-fault endpoint mint a message bearing a `seL4_Fault_tag`.
-
-**Audit round (same version).**  A deep audit of the landed cut found four
-defects and two registration gaps, all closed in place:
-
-* the fault entry built its context from the TCB's register mirror, which
-  between syscalls holds the *last syscall's* `x0`-`x5`/`x7` — so the
-  unknown-syscall message reported a stale argument window and a payload-free
-  resume reinstalled it over the thread's live registers.  `lean_handle_fault`
-  now carries the trap frame's `x0`-`x7`, `SP_EL0` and `x30`, spilled into the
-  mirror before the context is built (`writeFaultRegistersToTcb`,
-  `FaultRegisterWindow.ofRegisterFile_spill`,
-  `faultContextOfThread_writeFaultRegistersToTcb`);
-* the entry fired only the single SGI the Call chain surfaced; it now derives
-  its pokes from the pre/post diff (`computeCrossCoreSgis`) and runs the
-  executing core's successor through `scheduleLocalSuccessorLive`, as the
-  syscall seam does;
-* a delivered fault message's `seL4_Fault_tag` label collided with the v2
-  offset error label — `vmFault` (6) decoded in userspace as discriminant 5,
-  `capFault` (1) as `.invalidCapability` — so the return ABI is **version 3**:
-  kernel status in the top of the label range (`errorLabelBase = 0xFFF00`),
-  every delivered label below it;
-* `faultHandlerRights` demanded send **and** grant on a rationale that was
-  false of this model (the reply link does not depend on any right); it is now
-  seL4's `sendFaultIPC` predicate, send and grant **or** grant-reply, so the
-  idiomatic `seL4_CapRights_new(0, 1, 0, 1)` handler capability is admitted;
-* two residuals registered as debt with closure targets: only `MR0`-`MR3` of
-  a fault message reach hardware registers (no receive-side IPC-buffer write
-  exists yet), and RR4.18's scheduler/capability bundle preservation, which
-  the cross-core Call and reply chains do not carry for the fault path to
-  compose.
-
-**Review round (PR #887).**  Five findings, all fixed in code:
-
-* `TCB.faultHandler` had no writer outside the test fixtures, so on a live
-  system every fault took the fail-closed suspend and the mechanism was
-  verified and unreachable — `.tcbSetFaultHandler` (id 34,
-  `setThreadFaultHandlerOp`, seL4 `TCB_SetSpace`'s `fault_ep`) is the writer,
-  validated through the target's CSpace at set time and carrying the full
-  syscall surface (dispatch arm + payoff, bundle/NI preservation, lock set,
-  tables, Rust mirrors, conformance at 35);
-* current-EL aborts (EC `0x25`/`0x21`) and EL1-origin frames were delivered
-  as the current user thread's fault — they classify as `.kernelAbort`, the
-  entries are inert unless `SPSR_EL1.M[3:2] = 0`, and `trap.rs` halts before
-  classification (`halt_if_kernel_origin`, the `KERNEL_ABORT` arm; order
-  pinned by `build.rs`);
-* a handler already blocked in receive woke without the fault message in its
-  return frame — `faultDeliverOnCore` now stages it (`stageWokenDelivery`);
-* `.tcbResume` left a double-faulted thread's stale fault on the TCB, so its
-  next Call was answered through the fault branch — the arm now runs
-  `retirePendingFaultForResume` (seL4's `restart`) first;
-* an unknown syscall number returned an error frame instead of an
-  `unknownSyscall` fault — `lean_handle_unknown_syscall` /
-  `trap.rs::deliver_unknown_syscall` deliver it.
-
-**Review round 2 (PR #887).**  Three more findings; one defect, one class,
-one confusion resolved at the source:
-
-* the classifier upcall `lean_classify_synchronous_exception` ran before the
-  readiness gate — a not-ready core now classifies through the Rust mirror
-  pinned to the Lean table, and `build.rs` *derives* the gated-seam set from
-  the Lean tree's exports (`scan_lean_upcalls_readiness_gated`, with
-  `LEAN_READY_GATED_SEAMS` as the pin and the three ungated upcalls — the
-  boot install and the two registered-debt seams — as a reasoned allowlist)
-  so the next upcall cannot be written outside the gate silently;
-* the VM-fault tag was reported as the MCS timeout; seL4's
-  `arch/shared_types.bf` has `Timeout 5`, `VMFault 6` under
-  `CONFIG_KERNEL_MCS`, so `6` stands, cited at the definition and pinned by
-  `faultLabel_ne_timeout` / `faultLabel_ne_debugException`;
-* `scan_trap_rs_classifies_via_lean` accepted the extern declaration as the
-  call — it now blanks extern blocks and checks the call after the gate, the
-  mirror branch, and the host lane's use of the same mirror.
-
-**Review round 3 (PR #887).**  Four more findings — two of them the same
-class as round 2's, fixed this time at the mechanism:
-
-* the SVC arm read the syscall number as `u32`, so a wide `x7` aliased a
-  valid id — it is now `u32::try_from`, whose failure is the unknown-syscall
-  fault;
-* the readiness scanner accepted any earlier `lean_ready(` in the body — it
-  now requires the guard to *dominate* the upcall
-  (`readiness_guard_dominates`), with token-preserving fixtures for the
-  stored result, the closed block, the `||` and the non-diverging negation;
-* the routing check tested two tokens — `handler_routing_status` reads the
-  assignment relation (the handler binds `exception_class` from the
-  classifier, after the kernel-origin gate, and matches on that binding);
-* `Fault.capFault` had no producer — `syscallDispatchFromAbi` now delivers
-  a capability fault when the dispatcher's own resolution fails
-  (`syscallCapFaultOf` / `deliverSyscallCapFault`, `Platform/FFI.lean`), on
-  every syscall the refusal ledger does not record
-  (`capFaultReceivePhase?_none_iff_records`), from the trap frame's window
-  with the `SVC` as the restart PC, and `ELR_EL1` / `SPSR_EL1` / `SP_EL0` /
-  `x30` cross the ABI to build it.  Registered debt: `.replyRecv`'s reply
-  capability lookup still returns its failure;
-* the not-ready abort fallback returned a status frame into the faulting
-  instruction — it now halts (`halt_abort_before_lean_ready`; the frame is
-  host-only, pinned by `scan_trap_rs_abort_fallback_halts`), and the rule
-  is stated: a fallback may publish a frame only on a seam whose exception
-  advanced the PC;
-* `faultHandlerCapAuthorized_reads_faultHandlerRights` was vacuous — the
-  predicate is now defined from its clause inventory
-  (`faultHandlerRequiredRights`), held by `faultHandlerCapAuthorized_iff`
-  and `faultHandlerCapAuthorized_depends_only_on_faultHandlerRights`;
-* `lockSet_tcbSetFaultHandler` omitted the endpoint `resolveFaultHandlerCPtr`
-  validates — it is the fifth (read) lock, and the interior of a multi-level
-  CSpace walk, which every CPtr-resolving footprint leaves unlocked, is
-  registered as `UncoveredLockDomain.cspaceWalkInteriorCnodes` (owner:
-  RR7.10–RR7.13, fine-lock Track C).
-
-**Review round 4 (PR #887).**  Four findings on the round-3 head, all one
-level down in the same class — the scanners resolved a region and then
-looked for a token inside it.  Every one now asks its question of
-statements (`top_level_statements` in `build.rs`): the negated readiness
-guard's block must end in a diverging statement, the positive guard's
-condition must structurally entail readiness (`condition_entails_ready`,
-renamed `ready_condition_argument` in round 6),
-the handler's routing `match` must be a top-level statement and the only
-routing match, and `deliver_fault`'s two halts must be unconditional terminal
-statements — with ten more token-preserving mutations, each nesting the
-token under a condition or inverting the predicate around it.
-
-**Review round 5 (PR #887).**  One finding, real: the capability fault
-delivered from the SVC seam answered `.blocks`, whose interim trap-layer
-handling resumes the caller past the `SVC` behind a sentinel.  A third
-outcome, `SyscallOutcome.faulted` (tag 2), now carries a delivered
-syscall fault; `dispatch_svc` decodes it to `SvcOutcome::Faulted` and the
-handler halts on it (`halt_after_delivered_syscall_fault`) pending SM10.1,
-as after every other delivered fault — pinned by
-`scan_trap_rs_faulted_outcome_halts`.
-
-**Review rounds 6 and 7 (PR #887).**  Eight findings, all in `build.rs` and
-all one class — provenance, sole consumption and location answered with a
-token: the readiness guard accepted any argument (`lean_ready(0)` on core
-1), the kernel-origin gate was the first textual occurrence, the routing
-sweep saw only `match` competitors, an aliased upcall produced no site, the
-classifier's not-ready branch was a presence check, the exemption table
-recorded one boolean per entry, the tag-2 decode was a whole-file
-`contains`, and the `Faulted` arm was the first textual one.  Each now
-resolves to the statement it stands for: `ready_argument_is_executing_core`
-walks the dominating statements back to `current_core_id_from_tpidr()`
-(last binding wins; `debug_assert_eq!` does not count, so the timer ISR and
-the secondary bring-up assert the core id in release builds),
-`terminal_routing_match` + `word_occurrences` make the routing match the
-handler's last statement and the only consumer of the class,
-`lean_upcall_sites` refuses any non-call reference, `classifier_status`
-binds each branch to its value, `reconcile_upcall_exemptions` counts
-occurrences both ways, and `dispatch_decodes_faulted` /
-`handler_faulted_arm_halts` locate the decode and the arm through parsed
-arms (`match_arm_spans`) from each function's terminal statement.  Some
-thirty token-preserving mutations pin the shapes.
+*Met. What the cut changed, the defects it found and its review rounds are in
+[`CHANGELOG.md`](../../CHANGELOG.md) at the version above.*
 
 The finding, as the audit stated it:
 
@@ -925,8 +563,8 @@ would have caught that drives neither.
 | RR6.23 | Prove the D-2.5 writer-bounded-wait statement as specified — the ingredients exist; only a single-state `_weak` corollary landed | `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` | M |
 | RR6.24 | Repoint the R-10 aggregator entry at the theorem that proves writer liveness; keep the safety theorem registered under its accurate name | `SeLe4n/Kernel/Concurrency/LockPrimitives.lean` | S |
 | RR6.25 | Plan corrections: the retired-MCS design section, the D-1.9 landed row, the false §3.2.6.1 theorem statement, and the Appendix A commands that name a nonexistent script | `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` | M |
-| RR6.26 | Retitle the plan: it is no longer post-v1.0.0; add an SM2.C-defer row to `docs/WORKSTREAM_HISTORY.md` with closure target RR6 — this phase, not the boot-path phase that precedes it | (2 files) | S |
-| RR6.27 | Register Track D of `SMP_FINE_LOCK_MIGRATION_PLAN.md` — the commit-model partitioning, which that plan seam-gates to SM10.1 — as a named SM10.1 dependency in `SMP_RELEASE_CLOSURE_PLAN.md` §2 and the debt register, so the one part of the fine-lock work WS-RR cannot land is tracked rather than absorbed silently | `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`, `docs/WORKSTREAM_HISTORY.md` | S |
+| RR6.26 | Retitle the plan: it is no longer post-v1.0.0; add an SM2.C-defer row to `docs/REGISTERED_DEBT.md` with closure target RR6 — this phase, not the boot-path phase that precedes it | (2 files) | S |
+| RR6.27 | Register Track D of `SMP_FINE_LOCK_MIGRATION_PLAN.md` — the commit-model partitioning, which that plan seam-gates to SM10.1 — as a named SM10.1 dependency in `SMP_RELEASE_CLOSURE_PLAN.md` §2 and the debt register, so the one part of the fine-lock work WS-RR cannot land is tracked rather than absorbed silently | `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`, `docs/REGISTERED_DEBT.md` | S |
 
 **Acceptance**: the deployed RwLock is the one the Lean spec describes; the
 Tier-5 oracle drives real locks; neither refinement theorem assumes its own
@@ -1059,7 +697,7 @@ them to a documentation sweep.
 | RR8.2 | Update `UNFINISHED_SMP_WORK.md`: mark each closed finding with its version, leaving open items visible | `docs/planning/UNFINISHED_SMP_WORK.md` | M |
 | RR8.3 | Retire the RR0.3 standing constraint from `CLAUDE.md` and `AGENTS.md` once RR3 has closed — it says two conjuncts remain threaded and `ipcInvariantFull` is not end-to-end checked, which becomes false at RR3.25 and would otherwise misdirect every later contributor | `CLAUDE.md`, `AGENTS.md` | S |
 | RR8.4 | Hand-off check **before** the closure entry: confirm SM10's §2 dependencies are genuinely met and its §1 scope statement matches the tree. Ordered first deliberately — each row may land as its own PR, so recording closure first would advertise the workstream complete for an intervening release, and an unmet dependency found afterwards would have to be retracted rather than simply fixed | `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` | S |
-| RR8.5 | WS-RR closure entry in `docs/WORKSTREAM_HISTORY.md`; update the CLAUDE.md phase table — last, on evidence RR8.4 established | (3 files) | S |
+| RR8.5 | WS-RR closure entry in `docs/REGISTERED_DEBT.md`; update the CLAUDE.md phase table — last, on evidence RR8.4 established | (3 files) | S |
 
 ## 6. Verification strategy
 
@@ -1143,7 +781,7 @@ PASS — the contract landed at `v0.34.2` and pinned by
 - **Overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
 - **Absorbed by RR3**: [`IPC_INVARIANT_DETHREADING_PLAN.md`](../dev_history/planning/IPC_INVARIANT_DETHREADING_PLAN.md)
 - **Absorbed by RR6**: [`SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md`](SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md), [`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
-- **Canonical status**: [`../WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md)
+- **Canonical status**: [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md)
 - **Out of scope**: [`HARDWARE_PARTITION_ISOLATION_PLAN.md`](HARDWARE_PARTITION_ISOLATION_PLAN.md)
 
 ## Appendix A — Verification commands

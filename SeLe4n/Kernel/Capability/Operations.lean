@@ -29,7 +29,7 @@ findings for the capability subsystem that were addressed in Phase AK8-K.
   14 CDT-edge composition proofs. That refactor is larger than the
   Phase AK8 LOW-tier batch budgets for any single item and is recorded
   here as a post-1.0 hardening candidate, registered in the *Registered
-  debt index* (table C.1) in `docs/WORKSTREAM_HISTORY.md`, row 32.
+  debt index* (table C.1) in `docs/REGISTERED_DEBT.md`, row 32.
 - **C-L4 (`cleanupDonatedSchedContext` asymmetry):** handled inline by
   the AJ1-A + AH2-A/B cascade which aligned bound/donated cleanup
   error-propagation through `cleanupPreReceiveDonationChecked`.
@@ -1818,7 +1818,7 @@ descendant's CNode present, the shared step's failure branch is dead here, so
 list.
 
 The formal "the fold never sets `firstFailure` to `some`" witness is tracked as
-an AN12-B monotonicity lemma (a post-1.0 hardening candidate, registered in the *Registered debt index* (table C.1) in `docs/WORKSTREAM_HISTORY.md`,
+an AN12-B monotonicity lemma (a post-1.0 hardening candidate, registered in the *Registered debt index* (table C.1) in `docs/REGISTERED_DEBT.md`,
 row 31). Until it exists the completion test is what keeps the
 defensive branch honest: were validation ever weakened, a halted fold would
 report `[]` rather than claim a revocation it did not perform. -/

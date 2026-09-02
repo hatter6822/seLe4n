@@ -36,7 +36,7 @@ provides a substantive witness for the v1.0.0 release target.
 
 ## References
 
-* Plan: WS-AN AN5-E (historical record in docs/WORKSTREAM_HISTORY.md)
+* Plan: WS-AN AN5-E (historical record in CHANGELOG.md)
 * Deferred tracking: AK2-K.4
 * Spec: `docs/spec/SELE4N_SPEC.md` §5.7 (WCRT deployment obligation)
 -/

@@ -38,7 +38,7 @@ plan_branch_note    = Plan §0 names branch
                       commit; only the four R0 artefacts (this file,
                       ERRATA.md, DISCHARGE_INDEX.md seed,
                       docs/audits/README.md update) and the
-                      WORKSTREAM_HISTORY.md opening row land in this
+                      REGISTERED_DEBT.md opening row land in this
                       execution PR.
 
 ## 1. Build / test gate at WS-RC start (all GREEN)

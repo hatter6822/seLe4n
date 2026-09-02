@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/smp-release-readiness-breakdown-lcq801",
-      "commit_sha": "ef146b78d85961333223ad1749ee1508a3a4b922",
-      "tree_sha": "e78af83d5fe7baaf8ae984938bf12d9c6fecc01c",
-      "committed_at_utc": "2026-09-02T01:50:31-04:00"
+      "commit_sha": "adadd398705275806cd83c2186e516ba7681c8fc",
+      "tree_sha": "40a45160bff5a66c31c10259c2ad7e9a5187ec05",
+      "committed_at_utc": "2026-09-02T07:10:59+00:00"
     }
   },
   "source_sync": {
@@ -17,14 +17,14 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "fb3f28b7994983831c2b9af263743375d13f74a7a7ba0193abc70312288b8191"
+    "source_digest": "32507568a59f4e95abb1f8b5d1316b729226226af5d37929de9479b610b418bf"
   },
   "summary": {
     "module_count": 377,
     "declaration_count": 18262
   },
   "readme_sync": {
-    "version": "0.34.45",
+    "version": "0.34.46",
     "lean_toolchain": "v4.28.0",
     "production_files": 307,
     "production_loc": 316818,

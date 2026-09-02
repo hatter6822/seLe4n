@@ -49,7 +49,7 @@ REPO = Path(__file__).resolve().parent.parent
 # Documents that cite plan sub-task IDs and must not cite a stale one.
 COMPANIONS = [
     "docs/planning/UNFINISHED_SMP_WORK.md",
-    "docs/WORKSTREAM_HISTORY.md",
+    "docs/REGISTERED_DEBT.md",
     "CLAUDE.md",
     "AGENTS.md",
 ]

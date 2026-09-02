@@ -1,3 +1,139 @@
+## v0.34.46 — the documentation stops being a second changelog
+
+Documentation only — no kernel semantics change.  The tree carried two records
+of the same work: the CHANGELOG's 590 per-version entries, and a parallel
+per-cut narrative spread across `WORKSTREAM_HISTORY.md`, the phase plans, the
+spec, the claim index and the GitBook chapters.  Two records of one thing
+diverge, and these had: three documents still quoted a theorem total the Lean
+manifest had corrected, the GitBook index advertised 132k production LoC
+against an actual 316,818, and a chapter's "what's next" stopped at v0.28.0.
+
+**Documentation outside the CHANGELOG and `dev_history/` falls from 80,537 to
+48,800 lines — 39%** — with no loss of content that is not recoverable from
+`CHANGELOG.md` at the version named.
+
+### The rule now enforced by structure
+
+| Question | Document |
+|----------|----------|
+| What changed in version *X* | `CHANGELOG.md` — one entry per merged PR |
+| What is deferred, and who owns it | `docs/REGISTERED_DEBT.md` |
+| What a phase is scheduled to do | the plan in `docs/planning/` |
+| How to build, test, contribute | `docs/DEVELOPMENT.md` |
+| What the kernel is | `docs/spec/SELE4N_SPEC.md` |
+| What is claimed, and what is not | `docs/CLAIM_EVIDENCE_INDEX.md` |
+
+A plan is a *schedule*, not a history.  A spec says what the kernel is, not how
+it got there.  An index indexes.
+
+### `WORKSTREAM_HISTORY.md` is deleted; the register it held is its own document
+
+The file was 12,902 lines, of which ~7,100 were a "What's next" section that
+had become a second changelog and ~5,000 were per-phase completion records for
+workstreams closed as far back as v0.9.0.  Both are in `CHANGELOG.md` already.
+
+What was **not** redundant moved to **`docs/REGISTERED_DEBT.md`** (284 lines):
+the three debt tables (A: owned by a live WS-RR phase, B: SM10, C: no
+pre-v1.0.0 owner), the 32-row in-source hardening enumeration, WS-SL's SL1–SL3
+work list, and the workstream registry.
+
+Two gates bound to the old path and were repointed, not weakened:
+
+* `check_deferral_registration.py` reads the register to confirm a cited
+  `row N` exists — `REGISTER_PATH`, its narrative exemption and the phrase a
+  compliant citation must contain all move, and the register still holds all 32
+  rows.
+* `check_identifier_naming.py` **derives** its workstream-family grammar by
+  scanning `WS-XX` names in the register rather than from a hand-kept list.
+  That is why the registry table survives as a table: deleting it would have
+  silently narrowed a Tier 0 gate.  `check_workstream_plan.py`'s companion list
+  moved with them.
+
+104 files were repointed at the new path.  Twelve of those citations meant *the
+historical record* rather than *the debt register* — those now point at
+`CHANGELOG.md`, since a "historical record in the debt register" is a category
+error the rename would otherwise have introduced.  `docs/CLAUDE_HISTORY.md` is
+deleted outright: every line of it was a pointer into sections of the file just
+removed, so it had no content of its own.
+
+Earlier CHANGELOG entries are **not** rewritten — they record what the tree
+said at their own version.  Three dead link targets in them are repointed so
+the link gate passes; the prose is untouched.
+
+### `DEVELOPMENT.md`, rewritten
+
+The old guide opened with an 896-line §1 that was a workstream status report,
+and its §3 "Next workstreams" tracked portfolios closed at v0.12.15.  The new
+one (727 lines) is a manual: setup and the pre-commit hook, build with the
+module-build rule and why the default target is not enough, the tier ladder
+with what each tier answers and when to run it, the repository layout, the
+rules a gate will hold you to (naming, gates-read-code, presence-is-not-
+relation, implement-the-improvement, registered deferrals), Lean-specific
+working notes including the clang bracket-depth trap, versioning, documentation
+rules, the contribution loop and PR checklist, a failure-symptom table, and a
+single command reference.  Every command in it was run against this tree.
+
+### Plans keep their schedules and lose their histories
+
+Per-cut landing narrative, review-round accounts and code skeletons for phases
+that landed years of versions ago came out; sub-task tables, goals,
+dependencies, mathematical foundations, acceptance gates and cross-references
+stayed.  `SMP_RUST_HAL_PLAN.md` 3080 → 848, `SMP_INFORMATION_FLOW_PLAN.md`
+2578 → 487 (929 of those lines were a single "why nine review rounds"
+retrospective), `SMP_TLB_SHOOTDOWN_PLAN.md` 2179 → 924,
+`SMP_PER_OBJECT_LOCKS_PLAN.md` 2084 → 674, `WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md`
+1111 → 454, `SMP_FOUNDATIONS_PLAN.md` 1668 → 742,
+`SMP_PANIC_HANG_REMEDIATION_PLAN.md` 1349 → 751, and the live WS-RR plan
+1187 → 825.
+
+### The audit, and what it found
+
+* **A machine-checked figure contradicted in three places.**
+  `PhaseTheoremManifest.lean` proves 903 theorems across 1113 entries, 210 of
+  them `def`s.  `SMP_RELEASE_CLOSURE_PLAN.md`, `CLAIM_EVIDENCE_INDEX.md` and
+  the register still said 902/1111/209 — corrected at 14 sites.
+* **The GitBook index quoted 132k production LoC across 191 files**; the tree
+  has 316,818 across 307.  The bullet now names
+  `scripts/report_current_state.py` instead of freezing a number, as do the
+  documentation-sync matrix and the testing plan, which carried their own
+  snapshots pinned at v0.34.26 and v0.33.101.
+* **`docs/gitbook/12-proof-and-invariant-map.md` was 4,786 lines organised by
+  workstream**, with section numbers out of order (33 before 16, 34 before 31)
+  because each new workstream appended its own.  Rewritten as an actual map
+  (262 lines): how invariants layer, how to find a theorem from its name, the
+  bundles per subsystem with their real conjuncts, the per-core lifts, and what
+  checks each layer.
+* **`CLAIM_EVIDENCE_INDEX.md` was five 10,000-character table cells** of
+  workstream narrative.  Rewritten as an index of the claims the project makes
+  publicly, each with the command that checks it — and a new §8, *What is not
+  claimed*, naming the seven things the tree does not support and who owns each.
+* **`05-specification-and-roadmap.md` was 666 lines**, 620 of them forty
+  "Completed: WS-XXX" sections; it is now a roadmap (66 lines).
+  `01-project-overview.md`'s "what's next" stopped at v0.28.0.
+  `07-testing-and-ci.md` carried a "prior stage" record and a milestone
+  trajectory that duplicated the tier tables above them.
+* **The spec carried its own development history** — a 225-line completed-
+  portfolio section and a 64-line milestone history — and 43 section headings
+  named the workstream that added them rather than the subject.  The headings
+  are de-coded; the sections point at the CHANGELOG.  Its "current workstream"
+  row still named WS-RA, complete since v0.33.38.
+* **Two guides were stamped with the version they were written at**
+  (`DEPLOYMENT_GUIDE.md` "0.33.101 (originally written at 0.25.13)",
+  `HARDWARE_TESTING.md` "post-AN9, v0.30.10") and neither said the kernel does
+  not boot yet.  Both now do.
+
+### Verification
+
+`./scripts/test_smoke.sh` green (Tier 0–2 + Rust + docs sync).  The gates that
+constrain this change all pass on the restructured tree:
+`check_deferral_registration.py` (710 files, all 32 rows resolvable, 33-case
+self-test), `check_identifier_naming.py` (family grammar derived from the new
+register), `check_workstream_plan.py`, `check_website_links.sh`,
+`check_markdown_links.py`, `check_version_sync.sh` over 36 sites, and
+`test_docs_sync.sh` including the CLAUDE.md ↔ AGENTS.md byte-identity check and
+the GitBook mirror-header check, which caught the claim-index mirror before it
+could drift.
+
 ## v0.34.45 — WS-RR: the four XL sub-tasks split, and the ordering defect one of them hid
 
 Planning only — no kernel semantics change.  `SMP_RELEASE_READINESS_PLAN.md`
@@ -33043,7 +33179,7 @@ operationally via the SM2.A abstract memory model.
 
 See [`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md) §5.3
 for the full plan and
-[`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md) for the
+[`docs/WORKSTREAM_HISTORY.md`](docs/REGISTERED_DEBT.md) for the
 combined SM2.A+B+C landing entry.
 
 ## Unreleased — WS-SM Phase SM2.B landing (verified TicketLock primitive)
@@ -37276,7 +37412,7 @@ seeds the IO.Refs in lockstep.
 ### Cross-references
 
 - Plan: [`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md) §6
-- WORKSTREAM_HISTORY: [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md) WS-RC R2 entry
+- WORKSTREAM_HISTORY: [`docs/WORKSTREAM_HISTORY.md`](docs/REGISTERED_DEBT.md) WS-RC R2 entry
 
 ## v0.30.11 — WS-RC Phase R1: IPC call-path NI symmetry (DEEP-IPC-03)
 
@@ -37354,7 +37490,7 @@ the cross-domain distinguisher.
 ### Cross-references
 
 - Plan: [`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md) §5
-- WORKSTREAM_HISTORY: [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md) WS-RC R1 entry
+- WORKSTREAM_HISTORY: [`docs/WORKSTREAM_HISTORY.md`](docs/REGISTERED_DEBT.md) WS-RC R1 entry
 
 ## v0.30.11 — WS-AN Phase AN12: Documentation, themes, closure (WS-AN COMPLETE)
 

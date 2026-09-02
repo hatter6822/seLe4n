@@ -17,7 +17,7 @@ seLe4n 基于 [GNU 通用公共许可证 v3.0 或更高版本](../../../LICENSE)
 3. **CI 策略：** [`docs/CI_POLICY.md`](../../CI_POLICY.md)
 4. **项目范围与工作流：** [`docs/spec/SELE4N_SPEC.md`](../../spec/SELE4N_SPEC.md)
 5. **活跃审计发现：** [`docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md)
-6. **工作流历史：** [`docs/WORKSTREAM_HISTORY.md`](../../WORKSTREAM_HISTORY.md)
+6. **工作流历史：** [`docs/REGISTERED_DEBT.md`](../../REGISTERED_DEBT.md)
 
 完整手册：[`docs/gitbook/README.md`](../../gitbook/README.md)
 
@@ -78,7 +78,7 @@ lake build SeLe4n.Kernel.RobinHood.Bridge
 
 - 完整手册：[`docs/gitbook/README.md`](../../gitbook/README.md)
 - 项目规格说明：[`docs/spec/SELE4N_SPEC.md`](../../spec/SELE4N_SPEC.md)
-- 工作流历史：[`docs/WORKSTREAM_HISTORY.md`](../../WORKSTREAM_HISTORY.md)
+- 工作流历史：[`docs/REGISTERED_DEBT.md`](../../REGISTERED_DEBT.md)
 
 ---
 

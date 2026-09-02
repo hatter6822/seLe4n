@@ -21,7 +21,7 @@ seLe4n は [GNU General Public License v3.0 以降](../../../LICENSE) の下で�
 3. **CI ポリシー:** [`docs/CI_POLICY.md`](../../../docs/CI_POLICY.md)
 4. **プロジェクトスコープとワークストリーム:** [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md)
 5. **アクティブな監査結果:** [`docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md)
-6. **ワークストリーム履歴:** [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md)
+6. **ワークストリーム履歴:** [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md)
 
 完全なハンドブック: [`docs/gitbook/README.md`](../../../docs/gitbook/README.md)
 
@@ -119,7 +119,7 @@ cp scripts/pre-commit-lean-build.sh .git/hooks/pre-commit
 3. `docs/DEVELOPMENT.md`
 4. 影響を受ける GitBook チャプター（正規のルートドキュメントが GitBook より優先）
 5. `docs/CLAIM_EVIDENCE_INDEX.md`（クレームが変更された場合）
-6. `docs/WORKSTREAM_HISTORY.md`（ワークストリームステータスが変更された場合）
+6. `docs/REGISTERED_DEBT.md`（ワークストリームステータスが変更された場合）
 7. `docs/codebase_map.json` の再生成（Lean ソースが変更された場合）
 
 ## セキュリティ脆弱性の報告

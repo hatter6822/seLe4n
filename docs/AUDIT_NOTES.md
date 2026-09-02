@@ -57,7 +57,7 @@ Constants like `MAX_METHOD_COUNT`, `MAX_PRIORITY`, `MAX_DOMAIN`, and
 `sele4n-types` (identifiers + error enums). De-duplication across
 crates is a post-1.0 hardening candidate, registered in the project's
 debt register — the *Registered debt index*, table C, in
-[`docs/WORKSTREAM_HISTORY.md`](WORKSTREAM_HISTORY.md) — with owner and
+[`docs/REGISTERED_DEBT.md`](REGISTERED_DEBT.md) — with owner and
 closure target.  This is the only v0.29.0 R-ABI item still open; L3, L4,
 L5, L7 and L8 above record settled decisions rather than deferrals.
 

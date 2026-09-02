@@ -220,7 +220,7 @@ standalone operation-correctness lemmas in `Authority.lean`.
 - AF5-F (AF-26): This conjunction uses right-associative `∧` chains
   accessed via `.2.2.2...` projections. Refactoring to a named structure is
   recorded as a post-1.0 hardening candidate; registered in
-  `docs/WORKSTREAM_HISTORY.md` (Registered debt index, C.1); see the
+  `docs/REGISTERED_DEBT.md` (Registered debt index, C.1); see the
   Builder.lean AF5-F annotation for the rationale.
 
 WS-RC R4.A.6: The historical `cspaceSlotUnique` conjunct was removed when

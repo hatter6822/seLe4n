@@ -60,4 +60,4 @@ platform-specific binding without invalidating core verification.
 - Specification: [Specification & Roadmap](05-specification-and-roadmap.md)
 - Completed workstream: [WS-S Pre-Benchmark Strengthening](../dev_history/audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md)
 - Hardware path: [Path to Real Hardware (Raspberry Pi 5)](10-path-to-real-hardware-mobile-first.md)
-- Workstream history: [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md)
+- Registered debt: [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md)

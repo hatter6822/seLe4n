@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.34.45-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.34.46-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -86,7 +86,7 @@ architectural improvements enabled by the Lean 4 proof framework:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.34.45` |
+| **Version** | `0.34.46` |
 | **Lean toolchain** | `v4.28.0` |
 | **Production Lean LoC** | 316,818 across 307 files |
 | **Test Lean LoC** | 67,030 across 70 test suites |
@@ -119,7 +119,7 @@ lake exe sele4n                # run trace harness
 |------------|------|
 | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) — workflow, validation, PR checklist | [`docs/spec/SELE4N_SPEC.md`](docs/spec/SELE4N_SPEC.md) — specification and milestones |
 | [`docs/gitbook/README.md`](docs/gitbook/README.md) — full handbook | [`docs/spec/SEL4_SPEC.md`](docs/spec/SEL4_SPEC.md) — seL4 reference semantics |
-| [`docs/codebase_map.json`](docs/codebase_map.json) — machine-readable inventory | [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md) — workstream history and roadmap |
+| [`docs/codebase_map.json`](docs/codebase_map.json) — machine-readable inventory | [`docs/REGISTERED_DEBT.md`](docs/REGISTERED_DEBT.md) — every deferred item, with an owner |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) — contribution mechanics | [`CHANGELOG.md`](CHANGELOG.md) — version history |
 
 [`docs/codebase_map.json`](docs/codebase_map.json) is the source of truth for
@@ -247,27 +247,19 @@ ABI workstream (**WS-RA**) is complete.
 **SM10 is blocked on WS-RR** (SMP release readiness), the pre-1.0 remediation
 phase now in flight
 ([`SMP_RELEASE_READINESS_PLAN.md`](docs/planning/SMP_RELEASE_READINESS_PLAN.md)):
-RR0 honesty patches (v0.34.26), RR1 the aarch64 cross-build gate and the TLBI
-broadcast discipline (v0.34.41), RR2 the invariant gaps behind the live
-cancellation and donation dispatch arms (v0.34.42), RR3 `ipcInvariantFull`
-de-threading and its dispatch payoff (v0.34.43), and **RR4 fault handling —
-full fault IPC with reply-based restart (v0.34.44)**, which replaces the
-pre-RR4 behaviour of resuming a faulting thread at the instruction that
-faulted: a fault is now recorded on the TCB, delivered to the thread's
-`faultHandler` endpoint through the live cross-core call chain (so a passive
-handler receives the scheduling-context donation it needs to run), and
-answered by a reply that restarts the thread at a chosen PC or abandons it —
-with a machine-checked progress theorem placing the faulting thread off every
-core's run queue and current slot on both outcomes. RR5–RR8 remain, then
-**SM10** (release closure → v1.0.0).
+184 sub-tasks across nine phases, of which RR0–RR4 have landed (registration
+and plan correction; the aarch64 cross-build gate; the invariant gaps behind
+the live dispatch arms; `ipcInvariantFull` de-threading and its dispatch
+payoff; and full fault IPC with reply-based restart, at v0.34.44). RR5–RR8
+remain, then **SM10** (release closure → v1.0.0).
 
 Master plan: [`SMP_MULTICORE_COMPLETION_PLAN.md`](docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md),
 with per-phase plans in `docs/planning/SMP_*.md`. The canonical per-phase
 record — including every completed workstream portfolio (WS-B through WS-AB,
 WS-AE through WS-AN, WS-RC R0–R5, WS-RA) — is
-[`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md); prior audits and
-milestone closeouts are archived in
-[`docs/dev_history/`](docs/dev_history/README.md).
+[`docs/REGISTERED_DEBT.md`](docs/REGISTERED_DEBT.md); what each version
+changed is in [`CHANGELOG.md`](CHANGELOG.md), and prior audits and milestone
+closeouts are archived in [`docs/dev_history/`](docs/dev_history/README.md).
 
 ## License and third-party attributions
 

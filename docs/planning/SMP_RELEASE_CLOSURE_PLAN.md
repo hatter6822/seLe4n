@@ -79,7 +79,7 @@ between that surface and a running image, plus the remediation WS-RR owns.
 4. **README sync** (SM10.2.4): metrics, capability claim, 11
    i18n locales.
 5. **DEVELOPMENT.md + CLAIM_EVIDENCE_INDEX.md** (SM10.2.5, SM10.2.6).
-6. **WORKSTREAM_HISTORY.md** WS-SM closure (SM10.2.7).
+6. **REGISTERED_DEBT.md** WS-SM closure (SM10.2.7).
 7. **codebase_map.json regeneration** (SM10.2.8 as an interim sync; the
    validation phase re-runs it once the Lean-producing phases are done).
 8. **website manifest** (SM10.2.9).
@@ -187,7 +187,7 @@ what RR1.11 owed the estimate; the numbering has an owner and a place.
   value.
 - **WS-DT complete** — the IPC `ipcInvariantFull` de-threading workstream
   ([`IPC_INVARIANT_DETHREADING_PLAN.md`](../dev_history/planning/IPC_INVARIANT_DETHREADING_PLAN.md),
-  registered in [`../WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) as
+  registered in [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) as
   **WS-DT**).  Slices D1, D6 and D8 are open at `v0.34.25`: two of the twenty
   `ipcInvariantFull` conjuncts —
   `blockedThreadsPendingMessageConsistent` and `replyCallerLinkageReciprocal`,
@@ -315,7 +315,7 @@ obligation.
 | SM10.2.4 | README metrics + capability claim; 11 i18n locales | (12 files) | M |
 | SM10.2.5 | DEVELOPMENT.md updates | (1 file) | S |
 | SM10.2.6 | CLAIM_EVIDENCE_INDEX.md entries | (1 file) | M |
-| SM10.2.7 | WORKSTREAM_HISTORY.md WS-SM closure summary | (1 file) | L |
+| SM10.2.7 | REGISTERED_DEBT.md WS-SM closure summary | (1 file) | L |
 | SM10.2.8 | Regenerate codebase_map.json — an **interim** sync, so the docs written in this phase quote live figures.  It is re-run once the Lean-producing phases are done; the consuming row in the validation phase states that dependency | (1 file) | T |
 | SM10.2.9 | Update website_link_manifest.txt | (1 file) | S |
 
@@ -598,7 +598,7 @@ Plan: docs/dev_history/planning/SMP_MULTICORE_COMPLETION_PLAN.md
 carried the count as a hand-summed literal:
 
 > 16 SM0 + 1 SM1 + 22 SM2 + 28 SM3 + ~50 SM4 + 30 SM5 + 25 SM6 + 14 SM7
-> + 18 SM8 + 5 SM10 = 209 ≈ 210
+> + 18 SM8 + 5 SM10 = 210 ≈ 210
 
 That sum runs SM8 → SM10 with **no SM9 term**, though SM9 closed at
 v0.33.100 — so this template, the `wsm_theorem_count` marker theorem and
@@ -616,20 +616,20 @@ count proved equal to the real inventory lengths.
 manifest, the Lean total, or the JSON disagree.  Read the number; do not
 re-derive it.
 
-**What the number counts, and what it does not.**  902 is the number of
+**What the number counts, and what it does not.**  903 is the number of
 **theorems** registered in a machine-checked inventory: named, resolving at
 elaboration, duplicate-free, and — verified by the propositionality census —
 of a type that is a `Prop`.
 
 That last clause is not decoration.  The inventories register a phase's whole
-surface, so 209 of their 1111 entries are `def`s: `wakeThreadLockSet` and
+surface, so 210 of their 1113 entries are `def`s: `wakeThreadLockSet` and
 `determineTargetCore` in SM5.C's, `replenishOnCore` and
 `migrateSchedContextReplenishment` in SM5.H's, the per-core invariant
 *predicates* in SM5.I's, the WCRT cost functions in SM5.J's.  Every
 inventory's construction macro proves its identifier resolves; none checks the
 type.  A `List.length` therefore measures registrations, and quoting it as a
 theorem count is the mistake this plan made at `v0.34.26` and corrected at
-`v0.34.27` after review.  **`entryTotal` is 1111; `theoremTotal` is 902; quote
+`v0.34.27` after review.  **`entryTotal` is 1113; `theoremTotal` is 903; quote
 the second.**
 
 Neither figure is the earlier "~210 substantive theorems", which was an
@@ -640,10 +640,10 @@ and SM4 carry assumption ledgers** (`smpLatentInventory`,
 `smpRetiredInventory`), which `smpPhaseTheoremCount` excludes by design, so
 their own theorem catalogues are unmeasured for a different reason and by the
 same amount.  All eight are registered as contributing zero rather than given a
-plausible figure, so 902 *understates* what those phases prove.  Building the
+plausible figure, so 903 *understates* what those phases prove.  Building the
 missing inventories — **eight phases, not six** — is registered debt with
 closure target **SM10.3.13**
-(`docs/WORKSTREAM_HISTORY.md`); until they exist, the release note must say
+(`docs/REGISTERED_DEBT.md`); until they exist, the release note must say
 "registered in a machine-checked inventory" rather than "proved", because
 those are different claims.
 
@@ -698,7 +698,7 @@ sub-task with three of the five markers still absent.  All three now sit in
 - [ ] Spec §6.4 rewritten for SMP.
 - [ ] GitBook chapters 16 + 17 published.
 - [ ] README + 10 i18n synced.
-- [ ] DEVELOPMENT.md + CLAIM_EVIDENCE_INDEX.md + WORKSTREAM_HISTORY.md updated.
+- [ ] DEVELOPMENT.md + CLAIM_EVIDENCE_INDEX.md + REGISTERED_DEBT.md updated.
 - [ ] codebase_map.json regenerated.
 - [ ] All 6 SMP test suites land + run.
 - [ ] tier-4 + tier-5 scripts in test_nightly.sh.

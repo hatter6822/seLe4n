@@ -1,11 +1,13 @@
-# seLe4n Hardware Testing Guide (post-AN9, v0.30.10)
+# seLe4n Hardware Testing Guide
 
-This document covers the hardware/QEMU validation steps that complete
-WS-AN Phase AN9 (hardware-binding closure).  AN9 closes every
-hardware-binding deferred item at the **proof and code** layers; the
-items in this document are the **runtime validation** steps that must
-be performed on a Raspberry Pi 5 board or in QEMU before declaring
-the hardware-binding portfolio fully validated.
+The hardware and QEMU validation steps for the Raspberry Pi 5 target.  The
+hardware binding is closed at the **proof and code** layers; what follows are
+the **runtime validation** steps that must be performed on a board or in QEMU
+before the binding can be called validated.
+
+**These steps need artefacts SM10.1 has not produced yet** — there is no
+bootable image, so the procedures below are the contract they will be run
+against rather than a procedure you can run today.
 
 The Lean kernel + Rust HAL build, link, and pass every host unit test
 without any of the steps below.  These steps verify that the **emitted

@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Безопасность" /></a>
-  <img src="https://img.shields.io/badge/version-0.34.45-blue" alt="Версия" />
+  <img src="https://img.shields.io/badge/version-0.34.46-blue" alt="Версия" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Лицензия" /></a>
 </p>
@@ -88,7 +88,7 @@ security model) от seL4, вводя при этом архитектурные
 
 | Атрибут | Значение |
 |---------|----------|
-| **Версия** | `0.34.45` |
+| **Версия** | `0.34.46` |
 | **Тулчейн Lean** | `v4.28.0` |
 | **Продуктовый код (Lean LoC)** | 286 841 строка в 286 файлах |
 | **Тестовый код (Lean LoC)** | 64 078 строк в 69 тест-сьютах |
@@ -118,7 +118,7 @@ lake exe sele4n                # запуск трассировочного с�
 |---------------|-------|
 | [`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md) — рабочий процесс, валидация, чек-лист для PR | [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md) — спецификация и этапы |
 | [`docs/gitbook/README.md`](../../../docs/gitbook/README.md) — полное руководство | [`docs/spec/SEL4_SPEC.md`](../../../docs/spec/SEL4_SPEC.md) — справочная семантика seL4 |
-| [`docs/codebase_map.json`](../../../docs/codebase_map.json) — машиночитаемая опись | [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md) — история рабочих потоков и дорожная карта |
+| [`docs/codebase_map.json`](../../../docs/codebase_map.json) — машиночитаемая опись | [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) — история рабочих потоков и дорожная карта |
 | [`CONTRIBUTING.md`](../../../CONTRIBUTING.md) — механика внесения вклада | [`CHANGELOG.md`](../../../CHANGELOG.md) — история версий |
 
 [`docs/codebase_map.json`](../../../docs/codebase_map.json) является источником
@@ -233,7 +233,7 @@ SMP-микроядром на Raspberry Pi 5. Фазы SM0–SM9 заверше�
 пофазные планы — в `docs/planning/SMP_*.md`. Канонической пофазной записью —
 включая все завершённые портфели рабочих потоков (WS-B по WS-AB, WS-AE по
 WS-AN, WS-RC R0–R5, WS-RA) — является
-[`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md);
+[`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md);
 предыдущие аудиты и закрытия этапов архивированы в
 [`docs/dev_history/`](../../../docs/dev_history/README.md).
 

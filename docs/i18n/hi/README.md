@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="सुरक्षा" /></a>
-  <img src="https://img.shields.io/badge/version-0.34.45-blue" alt="संस्करण" />
+  <img src="https://img.shields.io/badge/version-0.34.46-blue" alt="संस्करण" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="लाइसेंस" /></a>
 </p>
@@ -62,7 +62,7 @@ Lean प्रकार-परीक्षक द्वारा मशीन-�
 
 | विशेषता | मान |
 |----------|------|
-| **संस्करण** | `0.34.45` |
+| **संस्करण** | `0.34.46` |
 | **Lean टूलचेन** | `v4.28.0` |
 | **उत्पादन Lean LoC** | 286 फ़ाइलों में 286,841 |
 | **परीक्षण Lean LoC** | 69 परीक्षण सुइट्स में 64,078 |
@@ -92,7 +92,7 @@ lake exe sele4n                # ट्रेस हार्नेस चला
 |-------------------|------|
 | [`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md) — कार्यप्रवाह, सत्यापन, PR चेकलिस्ट | [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md) — विशिष्टता और मील के पत्थर |
 | [`docs/gitbook/README.md`](../../../docs/gitbook/README.md) — पूर्ण पुस्तिका | [`docs/spec/SEL4_SPEC.md`](../../../docs/spec/SEL4_SPEC.md) — seL4 संदर्भ शब्दार्थ |
-| [`docs/codebase_map.json`](../../../docs/codebase_map.json) — मशीन-पठनीय सूची | [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md) — कार्यधारा इतिहास और रोडमैप |
+| [`docs/codebase_map.json`](../../../docs/codebase_map.json) — मशीन-पठनीय सूची | [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) — कार्यधारा इतिहास और रोडमैप |
 | [`CONTRIBUTING.md`](../../../CONTRIBUTING.md) — योगदान तंत्र | [`CHANGELOG.md`](../../../CHANGELOG.md) — संस्करण इतिहास |
 
 [`docs/codebase_map.json`](../../../docs/codebase_map.json) परियोजना मेट्रिक्स का
@@ -207,7 +207,7 @@ Raspberry Pi 5 पर बूट-योग्य सत्यापित SMP स
 प्रति-चरण योजनाओं सहित `docs/planning/SMP_*.md` में। विहित प्रति-चरण
 अभिलेख — प्रत्येक पूर्ण कार्यधारा पोर्टफोलियो (WS-B से WS-AB, WS-AE से
 WS-AN, WS-RC R0–R5, WS-RA) सहित —
-[`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md) है;
+[`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) है;
 पूर्व लेखापरीक्षाएँ और मील के पत्थर समापन
 [`docs/dev_history/`](../../../docs/dev_history/README.md) में संग्रहीत हैं।
 

@@ -35,7 +35,7 @@ seLe4n مرخص بموجب [رخصة جنو العمومية الإصدار 3.0 
 3. **سياسة التكامل المستمر (CI):** [`docs/CI_POLICY.md`](../../../docs/CI_POLICY.md)
 4. **نطاق المشروع وتيارات العمل:** [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md)
 5. **نتائج التدقيق النشطة:** [`docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md)
-6. **تاريخ تيارات العمل:** [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md)
+6. **تاريخ تيارات العمل:** [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md)
 
 <div dir="rtl">
 
@@ -160,7 +160,7 @@ cp scripts/pre-commit-lean-build.sh .git/hooks/pre-commit
 3. `docs/DEVELOPMENT.md`
 4. فصول GitBook المتأثرة — وثائق الجذر القانونية لها الأولوية على GitBook
 5. `docs/CLAIM_EVIDENCE_INDEX.md` إذا تغيرت الادعاءات
-6. `docs/WORKSTREAM_HISTORY.md` إذا تغيرت حالة تيار العمل
+6. `docs/REGISTERED_DEBT.md` إذا تغيرت حالة تيار العمل
 7. أعد توليد `docs/codebase_map.json` إذا تغيرت مصادر Lean
 
 ## الإبلاغ عن الثغرات الأمنية

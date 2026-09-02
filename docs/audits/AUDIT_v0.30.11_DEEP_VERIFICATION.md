@@ -1387,7 +1387,7 @@ The active canon is:
 
 - `README.md`, `CLAUDE.md`, `CONTRIBUTING.md`, `AGENTS.md` (root).
 - `docs/spec/SELE4N_SPEC.md` (1904), `docs/CLAIM_EVIDENCE_INDEX.md`,
-  `docs/WORKSTREAM_HISTORY.md`, `docs/codebase_map.json`.
+  `docs/REGISTERED_DEBT.md`, `docs/codebase_map.json`.
 - `docs/gitbook/` (18 chapters, mirrors of canonical root docs).
 - `docs/audits/` (current audit cycle artefacts).
 - `docs/planning/`, `docs/hardware_validation/`, `docs/i18n/`.

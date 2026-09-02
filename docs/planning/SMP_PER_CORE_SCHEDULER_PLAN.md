@@ -396,6 +396,9 @@ similar to SM0/SM1 patterns.)
 | SM5.A.7 | Decidability instance | T |
 | SM5.A.8 | Unit tests (6 scenarios) | M |
 
+*Landed. What each cut changed, and what its review rounds found, is in
+[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
+
 ### SM5.B — Per-core switchToThread (5 PRs, 9 sub-tasks)
 
 | Sub | Description | Est |
@@ -409,6 +412,9 @@ similar to SM0/SM1 patterns.)
 | SM5.B.7 | FFI: `ffi_switch_to_thread(tid, core_id)` | S |
 | SM5.B.8 | Totality + decidability | S |
 | SM5.B.9 | 8 unit-test scenarios | M |
+
+*Landed. What each cut changed, and what its review rounds found, is in
+[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
 
 ### SM5.C — Cross-core wake via SGI (6 PRs, 12 sub-tasks)
 
@@ -427,22 +433,8 @@ similar to SM0/SM1 patterns.)
 | SM5.C.11 | SGI delivery latency bound | M |
 | SM5.C.12 | Cross-core wake round-trip tests | L |
 
-> **WS-SM SM5.C LANDED at v0.31.40** (all 12 sub-tasks; three audit
-> passes — see the CLAIM_EVIDENCE_INDEX entry for the per-claim
-> record).  **SM5.C.5 receiver runtime seam completed with the SM5
-> seam-completion cut**: the verified `handleRescheduleSgiOnCore` is
-> now driven at runtime by the fail-closed `perCoreRescheduleStep`
-> (`Scheduler/Operations/PerCoreRunLoop.lean`) behind the
-> `@[export lean_per_core_reschedule]` entry
-> (`Kernel/PerCoreRescheduleEntry.lean`), which the Rust
-> `.reschedule` SGI handler (`trap.rs::reschedule_sgi_handler`,
-> registered at boot for INTID 0) invokes under the kernel-entry
-> lock.  The same step is the secondary bring-up body
-> (`secondaryKernelMain_eq_perCoreRescheduleEntry` — bring-up is the
-> core's first reschedule), and `trap.S`'s IRQ vectors were
-> redirected to `handle_irq_per_core` in the same cut (pinned by
-> `build.rs::scan_trap_s_irq_vector_redirect` /
-> `scan_reschedule_sgi_seam_intact`).
+*Landed. What each cut changed, and what its review rounds found, is in
+[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
 
 ### SM5.D — Per-core timer tick (4 PRs, 10 sub-tasks)
 
@@ -459,63 +451,8 @@ similar to SM0/SM1 patterns.)
 | SM5.D.9 | Per-core lastTimeoutErrors clearing | S |
 | SM5.D.10 | 8 tick scenarios | L |
 
-> **WS-SM SM5.D LANDED at v0.31.41** (all 10 sub-tasks).  Production
-> transitions (`timerTickOnCore`, `decrementDomainTimeOnCore`,
-> `processReplenishmentsDueOnCore`, `timerTickBudgetOnCore`,
-> `scheduleEffectiveOnCore`, `switchDomainOnCore`/`scheduleDomainOnCore`) in
-> `Scheduler/Operations/Core.lean`; the SM5.D.3 lock-set (`ReplenishQueueLockId`
-> + `SchedLockId.replenishQueue`, plan §4.4 object<runQueue<replenishQueue) in
-> `PerCoreChooseThread.lean`; the staged theorem surface — SM5.D.3/.7 lock-set +
-> WCRT, SM5.D.6 domain rotation, SM5.D.4 `cbsReplenish_can_wake_remote_core` +
-> preservation, SM5.D.5 budget tick + the full IPC-timeout objects-`invExt`
-> preservation chain, the SM5.D.2 headlines (`timerTickOnCore_advances_per_core`
-> / `_preempts_local` / `_rotates_domain` / `_clears_lastTimeoutErrors`) +
-> objects-`invExt` preservation, SM5.D.8 decidability — in
-> `PerCoreTimerTick.lean` (all axiom-clean).  SM5.D.1: `timer::per_core_timer_tick_isr`
-> + `handle_irq_per_core` wiring + the `lean_per_core_timer_tick` export seam
-> (`PerCoreTimerEntry.lean`).  Tests: `tests/SmpTimerSuite.lean`; +4 Rust HAL
-> tests.  The runtime per-core scheduler-tick driver (reading live per-core
-> kernel state, committing under the `timerTickOnCoreLockSet` `withLockSet`
-> bracket, emitting the cross-core SGIs) is SM5.I work — the pure transition +
-> its full theorem surface land here.
->
-> **WS-SM SM5.D audit-pass-1 LANDED at v0.31.42** (deep self-audit; closes the
-> verification-completeness gaps the initial cut deferred).  Per the maintainer-
-> approved **"parameterize + track"** decision: clean paths proved
-> unconditionally; the bound-budget-exhausted timeout branch (re-enqueuing
-> through the bootCoreId-pinned `ensureRunnable` / `revertPriorityInheritance`) is
-> parameterized by a single clean hypothesis and recorded as explicit **SM5.F**
-> (per-core PIP migration) tracked debt.  (1) **§4b** full per-core domain
-> re-dispatch — `switchDomainOnCore` no-op / `_preserves_objects_invExt` /
-> `_sets_currentOnCore_none` / `_rotates` + `scheduleDomainOnCore_decrements` /
-> `_preserves_objects_invExt`.  (2) **§7** per-core invariant preservation
-> (B1/B2/B3): `timerTickOnCore_preserves_currentThreadValidOnCore` UNCONDITIONAL
-> (preempted re-establishment absorbs the timeout's object-store effect);
-> `_preserves_runQueueOnCoreWellFormed` (B2) + `_preserves_queueCurrentConsistentOnCore`
-> parameterized (clean-path discharge unconditional, bound-exhausted = SM5.F);
-> full helper layer for `decrementDomainTimeOnCore` / `saveOutgoingContextOnCore` /
-> `scheduleEffectiveOnCore` / `timerTickBudgetOnCore_notPreempted_*`.  (3) **D3**
-> `Sm5DInventory.lean` (99-entry typed inventory, 7 categories, `s5dt!` macro).
-> (4) **D4** `scripts/test_qemu_smp_timer.sh` tier-4 SKIP-stub.  C1 (full-path
-> `machine.timer`) folds into the same SM5.F gap.  All axiom-clean; Tier 0–3
-> green; partition gate 48 staged-only; trace byte-identical.
->
-> **WS-SM SM5.D audit-pass-2 LANDED at v0.31.43** (deep code-first audit; PR #809).
-> **CRITICAL FIX**: the pre-fix `timerTickOnCore` folded an in-tick domain *rotation*
-> (`decrementDomainTimeOnCore`) into the tick **without** the coupled re-dispatch,
-> breaking `currentThreadInActiveDomain` on multi-domain configs (the running thread's
-> domain ≠ the rotated `activeDomainOnCore`).  This diverged from the single-core model
-> (`timerTick` / `timerTickWithBudget` never touch domain time; rotation is the
-> *atomic* `scheduleDomain` = `switchDomain` + `schedule`).  Fix: `timerTickOnCore` is
-> now a **pure budget tick**; the §3.4 pseudocode above (which showed
-> `decrementDomainTimeOnCore` in the tick) is superseded — per-core rotation is the
-> separate atomic `scheduleDomainOnCore`.  `decrementDomainTimeOnCore` is the pure
-> non-boundary decrement, wired into `scheduleDomainOnCore`'s `else`-branch.  Capstone:
-> `timerTickOnCore_preserves_currentThreadInActiveDomainOnCore` *proves* the fix.
-> Rust LOW findings fixed: the per-core timer is **CNTP** (EL1 physical, PPI 30) not
-> "CNTV"; `per_core_timer_tick_isr` hw-only `debug_assert_eq!` on `core_id`;
-> `reprogram_timer` `wrapping_add`.  Axiom-clean; `Sm5DInventory` 100 entries; Tier
-> 0+1+2 green (722 Rust HAL tests, zero clippy); trace byte-identical.
+*Landed. What each cut changed, and what its review rounds found, is in
+[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
 
 ### SM5.E — Per-core idle threads (3 PRs, 6 sub-tasks)
 
@@ -528,65 +465,8 @@ similar to SM0/SM1 patterns.)
 | SM5.E.5 | `idleThread_priority_zero` theorem | S |
 | SM5.E.6 | `chooseThreadOnCore_always_succeeds` | M |
 
-> **WS-SM SM5.E LANDED at v0.31.45; completion at v0.31.46; audit-pass-1 (dispatcher soundness parity) at v0.31.47; audit-pass-2 (PR #810 review closure — affinity gate on idleDispatchableOnCore, remove-then-insert rebucket, strong production-dispatcher no-starvation) at v0.31.48** (all 6 sub-tasks).
-> First cut (v0.31.45): `createIdleThread` `cpuAffinity := some c` (SM5.E.2);
-> `idleThread_priority_zero` (SM5.E.5) + field lemmas; the run-queue primitive
-> `enqueueIdleThreadOnCore` (SM5.E.3); `chooseThreadOnCore_always_succeeds`
-> (SM5.E.6, discharging the conditional SM5.A `chooseThreadOnCore_some_of_eligible`
-> with the idle candidate, via the `idleThreadEnqueuedOnCore` predicate);
-> `idleThread_core_locality` (SM5.E.4, affinity-based).  Staged
-> `Scheduler/Operations/PerCoreIdle.lean` + `PerCoreIdleInventory.lean`; tests
-> `tests/SmpIdleSuite.lean`.
->
-> **Completion (v0.31.46)** — per maintainer directive, the **SM5.I per-core
-> idle-aware dispatcher is pulled forward** so idle threads are *live in the
-> running kernel*: `scheduleOrIdleOnCore` (production `Scheduler/Operations/Core.lean`,
-> the SM5.I seed) runs core `c`'s idle thread when `scheduleEffectiveOnCore` finds
-> nothing runnable, instead of `current = none` (conditional-fallback
-> idle-if-installed-else-`none`, sound + backward-compatible, *layered on*
-> `scheduleEffectiveOnCore` so the SM5.D / `timerTickOnCore` proof base is
-> untouched).  Headline `scheduleOrIdleOnCore_runs_idle` + the soundness surface
-> (objects-`invExt` / `currentThreadValid` / `queueCurrentConsistent` /
-> `runQueueWellFormed`) in staged `Scheduler/Operations/PerCoreDispatch.lean`; a
-> `MainTraceHarness` `[IDLE-…]` demo shows idle dispatched live (+6 additive trace
-> lines).  Plus the `enqueueIdleThreadOnCore` invariant-preservation surface (incl.
-> the soundness-critical conditional `queueCurrentConsistent` under the documented
-> `current ≠ idle` precondition), the `enqueueIdleThreadOnCoreLockSet` footprint,
-> `idleThread_no_starvation`, the decidable `idleAvailableOnCoreB`, and the
-> `idleThread_core_locality_forall` `∀c` aggregate; `idleThreadId` moved to
-> `Scheduler/IdleThread.lean`; inventory 26 → 58 entries; partition gate 51
-> staged-only modules; axiom-clean; trace additive-only.
->
-> **Review #4 closure — fold into `scheduleEffectiveOnCore` (v0.31.49)** — per the
-> maintainer's choice on PR #810 review #4 ("wire the dispatcher into the live tick
-> path"), the idle dispatch is folded **into** `scheduleEffectiveOnCore`'s `none`
-> branch: the new `idleFallbackOnCore` helper runs core `c`'s idle thread when
-> `idleDispatchableOnCore` (installed + in-domain + affinity-admits) else falls back
-> to the legacy `current = none`.  Because `timerTickOnCore` (preempt path) and
-> `scheduleDomainOnCore` (domain boundary) already call `scheduleEffectiveOnCore`,
-> the running kernel now reaches the idle thread with no separate wiring;
-> `dispatchIdleOnCore` + its frame lemmas move into `Core`; `scheduleOrIdleOnCore` is
-> retained as the SM5.E name and is now *definitionally* `scheduleEffectiveOnCore`.
-> The idle/`none` case split is discharged once in four `idleFallbackOnCore_*`
-> lemmas, so the six `scheduleEffectiveOnCore_*` establishment theorems
-> (PerCoreTimerTick §7) cover the folded dispatch and every `timerTickOnCore` /
-> `scheduleDomainOnCore` preservation proof consuming them is unchanged (the SM5.D
-> proof base is intact); the `scheduleOrIdleOnCore_*` soundness theorems are now thin
-> aliases.  New `scheduleDomainOnCore_runs_idle` proves the live domain-tick path
-> dispatches idle (single-domain boundary + nothing eligible + idle dispatchable ⇒
-> `current = some (idleThreadId c)`); headline / strong-no-starvation restated on the
-> idle-dispatch precondition (`chooseThreadEffectiveOnCore = .ok none`).  Inventory
-> 62 → 64 (dispatch +`idleFallbackOnCore` +`scheduleDomainOnCore_runs_idle`);
-> `smp_idle_suite` 40/40; default build green (324 jobs); partition gate 51
-> staged-only modules; axiom-clean; states without an installed idle thread
-> byte-identical to pre-fold (trace unchanged).
->
-> **Tracked debt (SM5.I /
-> SM5.H / post-1.0)**: the unconditional invariant-backed
-> `chooseThreadOnCore_always_succeeds` (needs idle-always-enqueued maintained across
-> every transition); per-(core,domain) idle for multi-domain configs; wiring
-> `scheduleOrIdleOnCore` into the legacy single-core `schedule`.  Items deferred past
-> v1.0.0 with correctness impact: NONE.
+*Landed. What each cut changed, and what its review rounds found, is in
+[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
 
 ### SM5.F — Per-core PIP (5 PRs, 10 sub-tasks)
 
@@ -603,62 +483,8 @@ similar to SM0/SM1 patterns.)
 | SM5.F.9 | `priorityInheritance_perCore_witness` | M |
 | SM5.F.10 | Cross-core PIP scenarios (tests) | L |
 
-> **WS-SM SM5.F LANDED at v0.31.50** (all 10 sub-tasks).  Under SMP a thread `t`
-> on core `c` blocked on a resource held by a thread `t'` on core `c'` boosts `t'`
-> to `t`'s priority; if `c' ≠ c`, the boost emits a `.reschedule` SGI to `c'`.
->
-> **Correctness keystone — the boost VALUE stays global**: `computeMaxWaiterPriority`
-> (the max over *every* waiter, cross-core) is the value `updatePipBoostOnCore`
-> applies; the per-core aspect is purely (1) which core's run queue the boosted
-> holder's bucket migrates on and (2) whether a remote core must be poked.  Taking
-> only a per-core slice would *under-boost* and re-introduce priority inversion.
->
-> Production transitions (additive, the existing raw single-core PIP is preserved
-> verbatim via the `rfl` bridge `updatePipBoost = updatePipBoostOnCore bootCoreId`):
-> SM5.F.1 `computeMaxWaiterPriorityOnCore` + the per-core ≤ global decomposition
-> (`Compute.lean`); SM5.F.2 `updatePipBoostOnCore` (per-core bucket migration) +
-> `pipBoostWithWake` (cross-core PIP wake — emits `.reschedule` iff remote + material)
-> + SM5.F.4 `propagatePipChainCrossCore` (donation chain across cores) (`Propagate.lean`);
-> SM5.F.5/.6 `restoreToReadyOnCore` / `restoreToReadyWithWake` (per-core resume PIP
-> recompute from the GLOBAL graph + cross-core resume wake) (`Lifecycle/Suspend.lean`).
-> Staged theorem surface (`Scheduler/PriorityInheritance/PerCore.lean`): SM5.F.3
-> `pipBoost_perCore_consistent` (Thm 3.6.1), SM5.F.7 `blockingGraphOnCore_consistent`,
-> SM5.F.8 `blockingAcyclic_perCore` (the per-core blocking slice is a sub-walk of the
-> acyclic global chain), SM5.F.9 `priorityInheritance_perCore_witness` (aggregate
-> soundness).  95-entry `ppit!` inventory in `PerCoreInventory.lean`.  Tests:
-> `tests/SmpPipSuite.lean` (SM5.F.10).  All axiom-clean; trace byte-identical;
-> partition gate 53 staged-only modules; Tier 0–3 green.  The §3.6 pseudocode's
-> `computeMaxWaiterPriorityOnCore : Priority` is realised as `Option Priority`
-> (faithful to the codebase's `computeMaxWaiterPriority`), and the consistency bound
-> is stated over `optPriorityVal` (the numeric value, `none ↦ 0`).
->
-> **Completion pass (same v0.31.50 cut)** brings SM5.F to the complete + optimal
-> implementation: B5 exact per-core decomposition
-> (`computeMaxWaiterPriority_eq_sup_perCore` — global boost = sup over per-core
-> slices, the completeness direction); B6 post-boost dominance; B7 home-core
-> stability + cross-core chain SGI completeness (every visited remote link
-> contributes its SGI) + the single-core behaviour-identical bridge to
-> `propagatePriorityInheritance`; B8 full witness; C9 runnability gate
-> (`pipBoostWithWake` fires no SGI for a *blocked* holder — no spurious IPI); D11
-> memory-model happens-before (`pipBoostOrdering_happensBefore`); F13 the complete
-> per-core resume `resumeThreadOnCore` (sets `threadState := .Ready`, closing the
-> `restoreToReadyOnCore` gap); F14 the slice-membership home-core-partition note;
-> and the **SM6 dispatch pulled forward** — the runtime SGI-firing layer
-> `Concurrency.fireCrossCoreSgis` + the diff-based `computeCrossCoreSgis` + the
-> BaseIO combinators, each proven inert (`pure ()`) on single-core and demonstrated
-> to genuinely fire `[(core1, .reschedule)]` for a cross-core boost diff.  D10 tier-4
-> QEMU stub `scripts/test_qemu_smp_pip.sh`.
->
-> **Tracked debt (SM5.I)**: the cross-core dispatch *mechanism* is built and
-> verified; the remaining step is the production call-site substitution — routing
-> the live IPC donation / timeout / resume `@[export]` bodies through the per-core
-> boost + `fireCrossCoreSgis` (gated on the SM5.I per-core FFI seam, since the Lean
-> test executables do not link `libsele4n_hal.a`).  This also closes the SM5.D
-> timeout-path latency gap (route the timeout re-enqueue through `wakeThread` so a
-> remote target receives the `.reschedule` SGI).
-> SM5.F lands the verified per-core PIP *mechanism*; SM5.I performs the production
-> wiring + cross-subsystem preservation.  Items deferred past v1.0.0 with correctness
-> impact: NONE.
+*Landed. What each cut changed, and what its review rounds found, is in
+[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
 
 ### SM5.G — Per-core domain scheduling (3 PRs, 6 sub-tasks)
 
@@ -671,104 +497,8 @@ similar to SM0/SM1 patterns.)
 | SM5.G.5 | Cross-core domain independence | S |
 | SM5.G.6 | 5 domain-rotation tests | M |
 
-> **WS-SM SM5.G LANDED at v0.31.51** (all 6 sub-tasks).  Each core independently
-> rotates its **own** domain schedule (plan §3.7), so different cores can be in
-> different scheduling domains simultaneously (plan §4.2).  Built on the SM4.B
-> per-core `SchedulerState` domain fields and the SM5.A `chooseThreadOnCore`
-> selector.  All theorems axiom-clean; default build green (324 jobs); trace
-> byte-identical (purely additive — the new module is staged).
->
-> - **SM5.G.1**: the active-domain query is the existing
->   `SchedulerState.activeDomainOnCore` accessor (the form §3.7's
->   `s.scheduler.activeDomainOnCore c` uses), recapped via the rotation-query
->   lemmas `advanceDomainOnCore_rotates` / `_activeDomainOnCore_ne`.
-> - **SM5.G.2**: `advanceDomainOnCore` — the *pure* per-core domain rotation
->   (advances **only** core `c`'s domain triple; single-domain mode is a no-op via
->   the out-of-bounds `none` lookup, so no separate `| [] =>` arm is needed) + the
->   full frame surface + single-step index/domain/time formulas + boundedness; the
->   `advanceDomainOnCoreN` `k`-fold iteration and the **cyclic theorem**
->   `advanceDomainOnCore_cyclic` (iterating `domainSchedule.length` times returns
->   the schedule index to its start).  The bridge
->   `switchDomainOnCore_activeDomain_eq_advanceDomainOnCore` proves the operational
->   SM5.D.6 `switchDomainOnCore`'s *domain effect* is exactly this rotation.  (The
->   §3.7 pseudocode's unconditional modular-arithmetic / `.getD` form is realised as
->   a fail-closed single `Option`-lookup match that no-ops the empty schedule and
->   never fabricates a phantom domain.)
-> - **SM5.G.3**: `advanceDomainOnCore_establishes_activeDomainOnCore_isInDomainSchedule`
->   *unconditionally* establishes the SM4.C predicate on the rotated core (it always
->   lands on a real schedule domain); `_preserves_…_ne` /
->   `_preserves_isInDomainSchedule_smp` frame the untouched cores; the **Theorem
->   3.7.1** literal membership form `activeDomainOnCore_isInDomainSchedule_mem`
->   (+ `_mem_of_smp` from `schedulerInvariant_smp_crossSubsystem`).  (The §3.7
->   statement requires a non-empty-schedule hypothesis — under an empty schedule the
->   SM4.C predicate's single-domain disjunct holds, so the membership form is stated
->   with `domainSchedule ≠ []`, which the predicate itself does not require.)
-> - **SM5.G.4**: `chooseThreadOnCore_respects_activeDomain` (a selected thread is in
->   core `c`'s active domain — the domain barrier / temporal isolation), via the new
->   fold-eligibility lemmas `chooseBestRunnableBy_result_eligible` /
->   `chooseBestInBucket_result_eligible` (mirroring SM5.A's `_result_mem`); plus the
->   budget-aware companion `chooseThreadEffectiveOnCore_respects_activeDomain`.
-> - **SM5.G.5**: cross-core domain independence
->   (`advanceDomainOnCore_independent_of_other_core` / `_perCore_independence`) + the
->   `advanceDomainOnCoreLockSet` footprint (the single core-`c` run-queue WRITE lock
->   over SM5.A's `SchedLockId`) with the cross-core disjointness witness
->   `advanceDomainOnCoreLockSet_disjoint_of_ne`.
->
-> **Modules**: staged `Scheduler/Operations/PerCoreDomain.lean` (38 theorems + 3
-> defs) + `PerCoreDomainInventory.lean` (39-entry `pcdt!` inventory, 6 categories).
-> Tests: `tests/SmpDomainSuite.lean` (`lake exe smp_domain_suite`) — 43 surface
-> anchors, 7 examples, 27 runtime assertions (SM5.G.6).  Partition gate 55
-> staged-only modules.  Items deferred past v1.0.0 with correctness impact: NONE.
-> Follow-on: SM5.H (per-core CBS), SM5.I (per-core invariant suite + the production
-> wiring of the per-core domain rotation into the live run loop).
->
-> **WS-SM SM5.G completion (audit-pass) LANDED at v0.31.52** — closes every
-> optimality / completeness gap from the SM5.G self-audit.  Axiom-clean; default
-> build green; trace byte-identical; AK7 floor unchanged; inventory **39 → 67**
-> entries across **9** categories.  (1) The bridge to the production
-> `switchDomainOnCore` is upgraded from the active-domain field alone to the **full
-> domain triple** (`switchDomainOnCore_domainTriple_eq_advanceDomainOnCore`); a code-
-> merge of the two rotation paths is deliberately *not* done — it would regress
-> `switchDomainOnCore`'s fail-closed `.error` on an out-of-bounds lookup — so the
-> abstract rotation is instead made load-bearing at the *proof* level.  (2) The cyclic
-> theorem's `idx < length` precondition is discharged from a maintained invariant
-> (`domainScheduleIndexInBoundsOnCore` + `advanceDomainOnCore_cyclic_of_inBounds`).
-> (3) The cyclic property is extended from the index to the **active domain**
-> (`domainConsistentOnCore` + `advanceDomainOnCore_cyclic_activeDomain`).  (4)
-> Invariant preservation is lifted to the **live** transitions
-> (`switchDomainOnCore_preserves_…` / `scheduleDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule`,
-> via the new `scheduleEffectiveOnCore` domain frames).  (5) The literal §3.7
-> `SystemState.activeDomainOnCore` accessor is built + made load-bearing
-> (`activeDomainOnCore_systemState_mem`).  (6) The lock-set gains an acquisition-order
-> witness + a write-containment theorem.  (7) The tier-4 stub
-> `scripts/test_qemu_smp_domain.sh` reserves the nightly slot.  (8) The budget-aware
-> respects-domain theorem drops its asymmetric `wellFormed` hypothesis.  Tests grow to
-> 43 runtime assertions (+16 completion scenarios).  Items deferred past v1.0.0 with
-> correctness impact: NONE.
->
-> **WS-SM SM5.G deep-audit pass LANDED at v0.31.53** — a code-first audit (reading the
-> implementation, not its docstrings) confirmed the v0.31.52 cut sound, secure, and
-> proved with no dependency beyond the foundational `propext` / `Quot.sound` /
-> `Classical.choice`, with no shortcut that made the codebase less secure.  Closed
-> **one substantive completeness asymmetry**: v0.31.52 #3/#4 introduced the two
-> per-core domain invariants `domainScheduleIndexInBoundsOnCore` (index
-> `< domainSchedule.length`) and `domainConsistentOnCore` (active domain = the entry
-> at the index) but proved only that the *abstract* rotation establishes them and that
-> `scheduleDomainOnCore` preserves the SM4.C *membership* predicate — it did **not**
-> prove the **live** transitions maintain these two new invariants, so SM5.I could not
-> assume them across a domain tick.  §11 closes this with 8 live-transition
-> preservation theorems: the two per-other-core frames (`…_frame`), the three
-> schedule-index frames the re-dispatch path needs
-> (`idleFallbackOnCore` / `scheduleEffectiveOnCore` / `decrementDomainTimeOnCore`
-> `_domainScheduleIndexOnCore`), and the three live-preservation theorems
-> (`scheduleDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore`,
-> `switchDomainOnCore_preserves_domainConsistentOnCore`,
-> `scheduleDomainOnCore_preserves_domainConsistentOnCore`).  Plus a stale def docstring
-> fix (`advanceDomainOnCore` now cites the full-triple bridge, not the superseded
-> active-domain-only one).  Inventory **67 → 75** (`livePreservation` 7 → 15); tests
-> grow to **45** runtime assertions (+2 §11 scenarios); default build green (324 jobs);
-> trace byte-identical; AK7 floor unchanged.  Items deferred past v1.0.0 with
-> correctness impact: NONE.
+*Landed. What each cut changed, and what its review rounds found, is in
+[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
 
 ### SM5.H — Per-core CBS (4 PRs, 8 sub-tasks)
 
@@ -783,50 +513,8 @@ similar to SM0/SM1 patterns.)
 | SM5.H.7 | CBS budget accounting per core | M |
 | SM5.H.8 | 6 cross-core CBS tests | L |
 
-> **WS-SM SM5.H LANDED at v0.31.54** (all 8 sub-tasks).  Each core owns its **own**
-> CBS replenishment queue (`replenishQueueOnCore c`, the SM4.B per-core field); when a
-> thread's `cpuAffinity` changes its bound SchedContext's pending replenishments
-> migrate to the new core's queue, so the per-core CBS accounting follows the thread.
-> Built on SM5.D's per-core replenishment machinery
-> (`processReplenishmentsDueOnCore`, `timerTickBudgetOnCore`) + SM4.C's per-core
-> invariant predicates (`replenishQueueValidOnCore`, `replenishmentPipelineOrderOnCore`).
-> All theorems axiom-clean; default build green (324 jobs); trace byte-identical
-> (purely additive — the new modules are staged); AK7 floor unchanged.
->
-> - **SM5.H.1 / .5** `replenishQueueAffinityConsistentOnCore` — the plan §3.8 Theorem
->   3.8.1 invariant (every SchedContext with a pending replenishment in core `c`'s
->   queue has its bound thread homed on `c`: `determineTargetCore = c`) + the SMP form
->   / default-state / frame.  **Naming erratum**: §3.8 captions this
->   `schedContextRunQueueConsistent_perCore`, which collides with an unrelated SM4.C
->   predicate (run-queue ↔ budget); per the internal-first naming rule the SM5.H
->   replenish-queue ↔ affinity invariant is named `replenishQueueAffinityConsistentOnCore`.
->   The literal `cpuAffinity = some c` is realised as `determineTargetCore st tid = c`
->   (the SM5.C.9 "unbound ⇒ bootCoreId" rule), correctly admitting SchedContext-bound
->   but affinity-unbound threads (homed on the boot core).
-> - **SM5.H.2** `replenishOnCore` — the per-core CBS replenishment-scheduling primitive
->   (insert into `replenishQueueOnCore c`) + full frame surface + membership.
-> - **SM5.H.3 / .6** `replenishOnCore` preserves `replenishQueueValidOnCore` (sorted +
->   size-consistent) and `replenishmentPipelineOrderOnCore` (future-eligible), per-core
->   / sibling-core / SMP-wide.  (`replenishQueueOnCore_wellFormed` is realised as the
->   SM4.C `replenishQueueValidOnCore` preservation; `replenishmentPipelineOrder_perCore`
->   as the SM4.C `replenishmentPipelineOrderOnCore` preservation.)
-> - **SM5.H.4** `migrateSchedContextReplenishment` (move a SchedContext's replenishments
->   between cores) + frames + the structural moves-the-entries facts + validity /
->   pipeline SMP-preservation; the composite `setThreadCpuAffinityWithMigration`
->   (affinity write + migration); and the headline **`schedContextMigration_consistent`**
->   — the composite *restores* `replenishQueueAffinityConsistent_smp` on every core
->   (under the 1:1 binding + pre-state consistency).
-> - **SM5.H.7** the aggregate `perCoreCbsInvariant` (validity ∧ pipeline ∧ affinity) +
->   default + the `replenishOnCore` bundle preservation; CBS budget-bound accounting
->   (`consumeBudget` / `applyRefill` keep `budgetRemaining ≤ budget`).
->
-> **Modules**: staged `Scheduler/Operations/PerCoreCbs.lean` + `PerCoreCbsInventory.lean`
-> (54-entry `pccbst!` inventory, 7 categories).  Tests: `tests/SmpCbsSuite.lean`
-> (`lake exe smp_cbs_suite`) — 60 surface anchors, 8 examples, 36 runtime assertions
-> (SM5.H.8).  Partition gate 57 staged-only modules.  `replenishOnCore` / the migration
-> are forward-looking (the live per-core CBS path is the SM5.D `timerTickOnCore`; the
-> affinity-migration `tcbSetAffinity` syscall is SM5.I+); SM5.I's per-core run loop is
-> the first runtime exerciser.  Items deferred past v1.0.0 with correctness impact: NONE.
+*Landed. What each cut changed, and what its review rounds found, is in
+[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
 
 ### SM5.I — Per-core invariant suite (5 PRs, 10 sub-tasks)
 
@@ -843,59 +531,8 @@ similar to SM0/SM1 patterns.)
 | SM5.I.9 | `crossSubsystemInvariant_smp` extension | M |
 | SM5.I.10 | Tier-3 surface anchors | S |
 
-> **WS-SM SM5.I LANDED at v0.31.60** (the per-core invariant suite; all 10
-> sub-tasks).  The SM4.C/SM4.D per-core *predicates* (SM5.I.1–I.7, I.9) were
-> already defined as the SM4 per-core migration; SM5.I assembles them into the
-> coherent suite (new `Scheduler/Invariant/PerCoreInvariantSuite.lean` +
-> `PerCoreInvariantSuiteInventory.lean` + `tests/SmpInvariantSuite.lean`) and
-> proves **SM5.I.8 — preservation by every per-core transition** via a new
-> register-bank-free **structural** SMP invariant and a reusable
-> per-arbitrary-core SMP-preservation engine.  All theorems axiom-clean; default
-> build green (160 jobs); partition gate 62 staged-only modules; trace
-> byte-identical (additive + staged).
->
-> - **The structural SMP invariant**: `schedulerInvariantStructural_perCore` /
->   `_smp` — the four register-bank-independent safety conjuncts of
->   `schedulerInvariant_perCore` (`queueCurrentConsistent ∧ currentThreadValid ∧
->   runnableThreadsAreTCBs ∧ runQueueWellFormed`) proved preserved by every
->   transition.  The other seven are excluded for three reasons (the first two
->   genuinely-mathematical, the third a scope-bounding deferral — none a soundness
->   gap): (1) `contextMatchesCurrentOnCore` against the *system-wide* `machine.regs`
->   is satisfiable for **at most one** non-idle core, so a per-core dispatch
->   rewriting `machine.regs` invalidates every other active core's conjunct —
->   faithful only with **per-core register banks** (the SM5 context-bank migration
->   the SM4.C predicate already notes); (2) `edfCurrentHasEarliestDeadline` + the
->   time/domain-slice conjuncts are *dispatch-established*, not transition-stable
->   (a bare wake transiently breaks EDF, exactly as single-core `ensureRunnable`
->   preserves only the base invariant); (3) `schedulerPriorityMatch` is
->   register-bank-independent but PIP-dispatch-coupled (a `pipBoost` change
->   re-buckets the run-queue index only on the thread's home core), and
->   `runQueueUnique` (`Nodup`) is register-bank-independent + transition-stable but
->   deferred to bound the cut (its `RunQueue.insert`/`remove` `Nodup`-preservation
->   lemmas are the follow-on).  The structural frame needs **no `machine.regs`
->   agreement**, so a per-core dispatch preserves it on every core — the
->   register-bank-free system-wide guarantee the suite delivers now.  The §3.7 plan §3.5.2
->   `chooseThreadOnCore_always_succeeds` form is the SM5.E keystone; SM5.I.5/I.7
->   surface `schedulerInvariant_smp` from SM4.C unchanged, with the structural
->   invariant as the dominated register-bank-free core.
-> - **SM5.I.8 (preservation by every transition)**: the engine
->   `schedulerInvariantStructural_smp_of_establish_and_frame` (the per-arbitrary-core
->   analogue of SM4.C's boot-core-and-idle-frame skeleton) + ten
->   `<op>_preserves_schedulerInvariantStructural_smp` theorems (`advanceDomainOnCore`,
->   `enqueueRunnableOnCore`, `wakeThread`, `scheduleEffectiveOnCore` /
->   `scheduleOrIdleOnCore`, `switchToThreadOnCore`, `handleRescheduleSgiOnCore`,
->   `enqueueIdleThreadOnCore`, `replenishOnCore`, `decrementDomainTimeOnCore`) +
->   the missing per-conjunct helpers (wake/switch `runnableThreadsAreTCBs`, preempt
->   `getTcb?`-isSome / run-queue resolution, the dispatcher sibling frame, the
->   idle-fallback sibling frames).  The composite live-tick transitions
->   (`switchDomainOnCore` / `scheduleDomainOnCore` / `timerTickOnCore`) preserve the
->   structural invariant by *composition* of these primitives (the
->   `timerTickOnCore` cross-core replenish wake threads `wakeThread` preservation
->   through the fold) — the SM5.I closure follow-on; executing-core establishment
->   already present from SM5.D.  NONE deferred with correctness impact.
-> - **SM5.I.1–I.4/I.6/I.9 suite index** + **39-entry `pcist!` inventory** (3
->   categories) + **SM5.I.10 Tier-3 anchors** + `tests/SmpInvariantSuite.lean`
->   (43 surface anchors, 9 examples, 14 runtime assertions; Tier-2 + Tier-3 wired).
+*Landed. What each cut changed, and what its review rounds found, is in
+[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
 
 ### SM5.J — WCRT under fine locks (2 PRs, 5 sub-tasks)
 
@@ -907,84 +544,8 @@ similar to SM0/SM1 patterns.)
 | SM5.J.4 | Liveness: no thread starves under SMP | L |
 | SM5.J.5 | WCRT scenarios (3 tests) | M |
 
-> **WS-SM SM5.J LANDED at v0.31.63** (all 5 sub-tasks).  Bounds the per-core
-> scheduler operations' **worst-case response time under per-object RW fine locks**
-> (plan §3.9), *extending* the R5 domain-rotation / band-exhaustion scheduling-latency
-> bound (`wcrtBound`, `Scheduler/Liveness/WCRT.lean`) with the SMP lock-contention
-> dimension.  All theorems axiom-clean (`wcrt_bound_rpi5_smp` depends on **no** axioms);
-> default build green; trace byte-identical (purely additive — the new modules are
-> staged); partition gate 64 staged-only modules.
->
-> - **SM5.J.1** `WCRT_lockSet (lockSet : List (SchedLockId × AccessMode)) (tCs : Nat)`
->   — the fine-lock-contention WCRT of a per-core op as `|lockSet| · perLockWaitCost tCs`,
->   **reusing the SM3.D `perLockWaitCost` (= `(numCores − 1) · tCs`) verbatim** so the
->   per-lock cost is shared with the `boundedWait_under_2pl` model (the §3.9 formula
->   `max-lock-set-size · (coreCount − 1) · WCRT_per_lock`).  Forms: product / nil /
->   monotone-in-length / monotone-in-cost / the uniform `≤ maxLockSetSize ·
->   perLockWaitCost` bound; plus the RPi5 core-count grounding `rpi5OtherCoreCount`
->   (`numCores − 1 = 3`, pinned to `coreCount` via `numCores_eq_rpi5_coreCount`),
->   `perLockWaitCost_rpi5`, and the RPi5 form `WCRT_lockSet_rpi5 = |lockSet| · 3 · tCs`.
-> - **SM5.J.2** `wcrt_bound_rpi5_smp` — the plan §3.9 **Theorem 3.9.1**: for
->   `config = rpi5CanonicalConfig`, `config.wellFormed ∧ WCRT_lockSet lockSet tCs ≤
->   maxLockSetSize · 3 · tCs` (the `config` hypothesis load-bearing, mirroring
->   `boundedWait_under_2pl`'s `noDeadlock ∧ WCRT ≤ …` shape).  Plus the **combined
->   `WCRT_smp`** (= `wcrtBound D L_max N B P + WCRT_lockSet lockSet tCs`, the R5
->   scheduling latency PLUS the lock contention — the concrete "extends R5") with its
->   decomposition, R5/lock component bounds, and the full `wcrt_smp_bound_rpi5`.
-> - **SM5.J.3** the five per-operation WCRT bounds — `chooseThreadOnCore` (2 locks ⇒
->   `2 · 3 · tCs`), `switchToThreadOnCore` (2), `wakeThread` (2), `timerTickOnCore`
->   (3 ⇒ `3 · 3 · tCs`), `replenishOnCore` (1) — each with its exact value AND its
->   `≤ maxLockSetSize · 3 · tCs` headline; plus an `advanceDomainOnCore` bonus and the
->   generic `wcrt_op_bounded_of_size`.
-> - **SM5.J.4** **no thread starves under SMP**: `schedulerNoStall_smp` (the per-core
->   idle thread guarantees `chooseThreadOnCore` succeeds on every core — no core stalls,
->   via the SM5.E keystone `chooseThreadOnCore_always_succeeds`), `boundedKernelWait_smp`
->   (deadlock-free + WCRT ≤ `maxLockSetSize · 3 · tCs`, via the SM3.D
->   `boundedWait_under_2pl` — no *unbounded* priority inversion), the capstone
->   `no_starvation_under_smp`, and the R5-latency bridge `r5_latency_within_smp_bound`
->   (an R5-scheduled thread is a fortiori within the combined SMP bound).
->
-> **Modules**: staged `Scheduler/Operations/PerCoreWcrt.lean` (32 theorems/defs) +
-> `PerCoreWcrtInventory.lean` (32-entry `pcwt!` inventory, 4 categories).  Tests:
-> `tests/SmpWcrtSuite.lean` (`lake exe smp_wcrt_suite`) — SM5.J surface anchors +
-> elaboration-time witnesses + 30 runtime assertions (the SM5.J.5 WCRT scenarios: the
-> per-op exact values, the RPi5 bound, the `< 1 ms` tick-budget fit, the `WCRT_smp`
-> decomposition + monotonicity, the per-core no-stall, the inventory counts).  The
-> §3.9 pseudocode's abstract `WCRT syscall args ≤ maxLockSetSize × 3 × T_per_lock` is
-> realised faithfully: `syscall args` ↦ the op's concrete `SchedLockId` footprint,
-> `T_per_lock` ↦ `tCs`, and the `× 3` ↦ `numCores − 1`.  Items deferred past v1.0.0
-> with correctness impact: NONE.  Follow-on: SM5.I's live per-core run loop is the
-> runtime exerciser that acquires the footprints under `withLockSet`.
->
-> **WS-SM SM5.J completion (audit-pass) LANDED at v0.31.64** — closes every
-> optimality / completeness gap from the SM5.J self-audit; the inventory grows **32 →
-> 44** (5 categories, new `executionBridge`).  Axiom-clean (`wcrt_bound_rpi5_smp`
-> axiom-free); Tier 0–3 green; partition gate unchanged at 64 (the R5 generalisation is
-> *production*, not staged); AK7 floor re-anchored for the structural-minimum raw
-> increase (see `AL0_baseline.txt`).  **(1) The genuine per-core liveness** — the
-> bootCoreId-pinned R5 trace model is **generalised to an arbitrary `(c : CoreId)` in
-> production** (`Scheduler/Liveness/{TraceModel,BandExhaustion,WCRT,RPi5CanonicalConfig}.lean`):
-> `selectedAtOnCore` / `runnableAtOnCore` / `countHigherOrEqualEffectivePriorityOnCore`
-> / `maxBudgetInBandOnCore` / `maxPeriodInBandOnCore` / `eventuallyExitsOnCore` /
-> `higherBandExhaustedOnCore` / `WCRTHypothesesOnCore` / **`bounded_scheduling_latency_exists_onCore`**
-> + the RPi5 `wcrt_bound_rpi5_onCore` / `rpi5_higherBandExhausted_from_progressesOnCore`,
-> each with the single-core form as the `c := bootCoreId` instance (`rfl` bridges, the
-> SM5.A backward-compat pattern — every existing R5 theorem + `LivenessSuite` site
-> untouched).  SM5.J's `thread_eventually_scheduled_onCore` and the strengthened
-> `no_starvation_under_smp` (now a genuine **3-way** capstone: no-stall ∧
-> *eventually-scheduled* ∧ bounded-lock-wait) prove a *specific runnable thread makes
-> progress on an arbitrary core*, replacing the prior no-stall+bounded-wait pairing.
-> **(2) The decidable no-stall discharge** `schedulerNoStall_smp_of_idleAvailableB`
-> (the no-stall premise is established by `decide`, not assumed).  **(3) The
-> execution-sensitive bridge** (`WCRT_lockSet_eq_totalWaitCost_of_length_eq` +
-> `kernelWait_le_WCRT_lockSet_of_length_eq`): the static SchedLockId `WCRT_lockSet`
-> dominates the per-execution `Concurrency.WCRT` of an equal-size op — connecting the
-> two WCRT models.  **(4) Honest grounding** (`wcrt_bound_smp`: the `× 3` is `numCores
-> − 1`, config-free) + **cycle-commensurate units** (`WCRT_smp_cycles`, parameterised
-> by `cyclesPerTick` so the R5-tick and lock-cost terms share a base) + **access-mode
-> soundness** (`WCRT_lockSet_mode_independent`: the worst case is all-writers) + the
-> **SGI-handler / complete-timer** per-op bounds.  Items deferred past v1.0.0 with
-> correctness impact: NONE.
+*Landed. What each cut changed, and what its review rounds found, is in
+[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
 
 ### SM5.K — Tests + fixtures (3 PRs, 6 sub-tasks)
 
@@ -997,72 +558,8 @@ similar to SM0/SM1 patterns.)
 | SM5.K.5 | `scripts/test_qemu_smp_scheduler.sh` | M |
 | SM5.K.6 | Surface anchors | S |
 
-> **WS-SM SM5.K LANDED at v0.31.63** (all 6 sub-tasks).  The SM5 test + fixture
-> deliverables, closing the SM5 acceptance gate's test rows.  Default build green;
-> Tier 0–3 green; trace byte-identical (the new fixtures/suites are additive).
->
-> - **SM5.K.1** `tests/SmpSchedulerSuite.lean` (`lake exe smp_scheduler_suite`) — the
->   acceptance-gate **4-thread workload distributed across 4 cores** (plan §8): a single
->   deterministic fixture `stFourCore` binds one user thread to each of the 4 RPi5 cores
->   (A→core 0, B→core 1, C→core 2, D→core 3, distinct priorities, each in its own
->   per-core run queue).  **51 runtime scenarios** exercise the full SM5 surface
->   end-to-end: per-core selection (each core runs its OWN bound thread, never another
->   core's — §1, 12), cross-core independence (mutating one core frames the others —
->   §2, 6), affinity admission (§3, 8), wake routing + cross-core `.reschedule` SGI
->   emission (`determineTargetCore` / `wakeThread` — §4, 8), per-core switch (set
->   current / reject remote — §5, 5), per-core WCRT-under-fine-locks bounds (§6, 6), the
->   idle no-stall (§7, 5), and the SM5.K.4 golden-trace verification (§8).
-> - **SM5.K.2 / SM5.K.3** `tests/SmpTimerSuite.lean` / `tests/SmpPipSuite.lean` — already
->   landed with SM5.D (v0.31.41) and SM5.F (v0.31.50) respectively; re-confirmed green.
-> - **SM5.K.4** `tests/fixtures/smp_4core_scheduler.expected` (+ `.sha256`) — the
-> deterministic 12--core scheduler trace, each line **COMPUTED** from the live
->   `chooseThreadOnCore` / `determineTargetCore` / `wakeThread` / `switchToThreadOnCore`
->   decisions on `stFourCore` (a scheduling-logic regression diverges the golden trace).
->   `SmpSchedulerSuite` verifies the live trace byte-for-byte against it; the
->   Tier-2 trace gate's `*.expected.sha256` walk picks up the new fixture automatically.
-> - **SM5.K.5** `scripts/test_qemu_smp_scheduler.sh` — the Tier-4 QEMU `-smp 4`
->   acceptance stub (registered in `test_tier4_smp_bootcheck.sh`), SKIP-gated on the
->   SM5.I+ per-core scheduler run-loop driver; documents the formal coverage that holds
->   for ALL executions, mirroring the SM5.D/F/G/H QEMU stubs.
-> - **SM5.K.6** surface anchors — the SM5.J theorem surface is anchored as `#check`
->   blocks in `tests/SmpWcrtSuite.lean` (§1) and `tests/SmpSchedulerSuite.lean`, plus the
->   `pcwt!`-validated `PerCoreWcrtInventory` (a renamed/removed SM5.J symbol fails the
->   build).
->
-> Both new suites are wired into Tier 2 (`test_tier2_negative.sh`).  Items deferred past
-> v1.0.0 with correctness impact: NONE.
->
-> **WS-SM SM5.K completion (audit-pass) LANDED at v0.31.64** — `SmpSchedulerSuite`
-> gains a **§8 multi-step dynamic simulation**: a genuine threaded run rather than the
-> prior one-shot snapshots — concurrent two-core dispatch (A on core 0 *and* B on core
-> 1 running simultaneously, threaded through two `switchToThreadOnCore`s), then a full
-> **cross-core wake → `.reschedule` SGI → target-core handler round-trip** (a blocked
-> thread E is woken from core 0, the SGI routes to core 3, and `handleRescheduleSgiOnCore`
-> on core 3 dispatches E), with the cross-core framing observed across the four
-> transitions.  The golden fixture grows **12 → 14 lines** (the round-trip's wake-SGI +
-> handler-dispatch lines, computed from the live transitions).  `SmpWcrtSuite` gains the
-> §3.5 completion checks (execution bridge / cycle units / mode soundness) and anchors
-> the SM5.J completion surface + the per-core R5 generalisation; `LivenessSuite` anchors
-> the production `*OnCore` R5 forms.  Items deferred past v1.0.0 with correctness impact:
-> NONE.
->
-> **Deep-audit pass (same v0.31.64 cut)** — a code-first audit of the full SM5.J/K
-> diff confirmed the production Liveness generalisation purely additive (only the four
-> `open` lines modified; every `*OnCore` body mechanically diffed as an exact copy
-> modulo `bootCoreId → c`), all proofs axiom-clean, and no forbidden construct in the
-> diff.  Fixed: the unescaped `grep '^[smp-4core]'` regeneration command (a character
-> class that would corrupt a regenerated fixture — suite failure-paths + fixtures
-> README); the §8 round-trip labels' duplicated chain (now the single
-> `roundTripOutcome`, fixture byte-identical); the missing ∀-core non-vacuity witness
-> for `schedulerNoStall_smp_of_idleAvailableB` (the `stAllIdle` idle-on-all-4-cores
-> fixture, +3 assertions — `smp_wcrt_suite` 38, `smp_scheduler_suite` 59); stale
-> 32-entry/4-category comments (allowlist, `Staged.lean`, the `PerCoreWcrt.lean`
-> header); and `docs/DEVELOPMENT.md`'s WS-AJ-era active-workstream line (now WS-SM,
-> pointing at the canonical `WORKSTREAM_HISTORY.md`).  The note that the single-core
-> `SchedulerStep`/`ValidTrace` step alphabet is deliberately unchanged stands: the
-> per-core bound is observational (its `_hValid` is carried for API parity, exactly
-> as in the single-core original), so the SM6+ multi-core step semantics can later
-> strengthen `ValidTrace` without touching the bound.
+*Landed. What each cut changed, and what its review rounds found, is in
+[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
 
 ## 6. Verification strategy for SM5
 

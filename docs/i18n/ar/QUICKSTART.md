@@ -249,7 +249,7 @@ cp scripts/pre-commit-lean-build.sh .git/hooks/pre-commit
 - [دليل المساهمة](CONTRIBUTING.md) — قواعد المساهمة ومتطلبات طلبات السحب
 - [`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md) — سير العمل اليومي المفصّل
 - [`docs/gitbook/README.md`](../../../docs/gitbook/README.md) — الدليل الكامل (معمارية، تصميم، براهين)
-- [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md) — تاريخ تيارات العمل وخارطة الطريق
+- [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) — تاريخ تيارات العمل وخارطة الطريق
 
 </div>
 

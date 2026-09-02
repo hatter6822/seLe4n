@@ -1662,7 +1662,7 @@ AG8-F: The structural building blocks are `donationChainAcyclic_general`
 provide the *ingredients* of the k>2 prevention argument, but the formal
 bridge lemma from donation edges to `blockingAcyclic` (proving donation
 chains are a sub-relation of the blocking graph) is recorded as a post-1.0
-hardening candidate; registered in `docs/WORKSTREAM_HISTORY.md`
+hardening candidate; registered in `docs/REGISTERED_DEBT.md`
 (Registered debt index, C.1). -/
 def donationChainAcyclic (st : SystemState) : Prop :=
   ∀ (tid1 tid2 : SeLe4n.ThreadId) (tcb1 tcb2 : TCB)

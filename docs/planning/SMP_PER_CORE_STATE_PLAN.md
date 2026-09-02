@@ -417,10 +417,8 @@ Cleared at the start of each per-core tick (SM5.D.9).
 | SM4.A.7 | `bootCoreId` typeclass field (from SM0.G) | Recap | T |
 | SM4.A.8 | `allCores`, `allCores_length`, `allCores_nodup` (from SM0.E) | Recap | T |
 
-**Note**: Most SM4.A items recap SM0 deliverables. SM4.A.1 + .2
-are the new Lean-side work.
-
-**Size**: M-total (~150 LoC of new Lean across A.1 + A.2).
+*Landed. What each cut changed, and what its review rounds found, is in
+[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
 
 ### 5.2 SchedulerState path-a replacement (SM4.B, 5 PRs, 15 sub-tasks)
 
@@ -442,10 +440,8 @@ are the new Lean-side work.
 | SM4.B.14 | Immediate-caller sites in `Model/State.lean` | All compile | M |
 | SM4.B.15 | Regression test: single-core trace fixture preserved | `main_trace_smoke.expected` byte-identical at single-core scenario | M |
 
-**Critical insight for SM4.B.15**: even though the type changes,
-the runtime behavior at the single-core scenario (boot core only)
-must produce a byte-identical trace. This is the regression
-safety net.
+*Landed. What each cut changed, and what its review rounds found, is in
+[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
 
 ### 5.3 Scheduler invariants migration (SM4.C, 10 PRs, 30 sub-tasks)
 
@@ -485,56 +481,8 @@ invariant file. Pattern (from §3.4):
 | SM4.C.29 | Aggregate invariant `schedulerInvariant_perCore` | New aggregate | L |
 | SM4.C.30 | Cross-core `schedulerInvariant_perCore_pairwise` | Theorem | M |
 
-> **PARTIALLY CLOSED — SM4.C.11** (re-registered by WS-RR RR0.10 at
-> `v0.34.26`).  This note previously said the `Scheduler/Liveness/*.lean`
-> per-core forms "were **not** delivered" and that the "closure target stays
-> **SM4.C.11**".  Both halves were wrong.
->
-> **The migrated half.**  SM5.J delivered most of the named list at
-> `v0.31.64`, with genuine per-core bodies (`currentOnCore c` /
-> `runQueueOnCore c`, not `bootCoreId`) and an `rfl` boot-core bridge each:
-> `eventuallyExitsOnCore` and `higherBandExhaustedOnCore`
-> (`Liveness/BandExhaustion.lean`), `CanonicalDeploymentProgressOnCore`
-> (`Liveness/RPi5CanonicalConfig.lean`), `WCRTHypothesesOnCore` and
-> `wcrtBound_unfold_onCore` (`Liveness/WCRT.lean`), and
-> `selectedAtOnCore` / `runnableAtOnCore` /
-> `countHigherOrEqualEffectivePriorityOnCore` / `maxBudgetInBandOnCore` /
-> `maxPeriodInBandOnCore` / `bucketPositionOnCore` (`Liveness/TraceModel.lean`).
-> Leaving this note pessimistic was the legitimate documentation direction to
-> correct — the code was better than the text.
->
-> **The residual, stated precisely.**  What remains boot-core-pinned is the
-> *trace step relation itself*: `stepPrecondition`, `stepPost` and
-> `ValidTrace` (`Liveness/TraceModel.lean`) read `bootCoreId`, so no
-> `ValidTrace` can exhibit a step taken on a secondary core — the per-core
-> predicates above are lifted, but the traces they are evaluated over are
-> not.  That is a **model-completeness** gap, not a soundness defect: the
-> per-core forms are correct, and the SMP liveness capstones state their
-> `hBandProgress` hypothesis explicitly.  The register named nothing at all
-> here, which is why the debt read as closed-by-SM5.J when it is not.
->
-> **Closure target: WS-SL** (Scheduler liveness completion), registered in
-> [`../WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) — a live
-> Scheduler-subsystem follow-on, not a sub-task ID inside this LANDED plan.
-> The old target was circular: SM4.C.11 belongs to a phase whose own header
-> reads LANDED, so no open phase owned it and `grep SM4.C.11` over the SM10
-> plan returned nothing.
-
-**Migration discipline**: each PR (covering 1-3 sub-tasks)
-follows the same pattern:
-
-1. `git grep "scheduler.current"` to find single-core callsites.
-2. Replace each with `scheduler.currentOnCore <c>` where `<c>`
-   is the appropriate CoreId (often `bootCoreId` for boot
-   theorems; `currentCoreId` for runtime theorems).
-3. Update theorem signatures to take `(c : CoreId)` parameter
-   where the property is per-core.
-4. Run `lake build` to identify compilation errors.
-5. Fix each error site.
-6. Verify all preservation theorems still close.
-
-**Total LoC for SM4.C**: ~3500-5000 LoC of mechanical rewrites
-across ~30 sub-tasks. The bulk of WS-SM's tedium lives here.
+*Landed. What each cut changed, and what its review rounds found, is in
+[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
 
 ### 5.4 Cross-subsystem migrations (SM4.D, 8 PRs, 22 sub-tasks)
 
@@ -566,80 +514,8 @@ SchedulerState.
 | SM4.D.21 | `Kernel/Architecture/VSpace.lean` | 4 | M |
 | SM4.D.22 | `Kernel/Architecture/SyscallEntry.lean` | 4 | M |
 
-**Total LoC for SM4.D**: ~1500-2500 LoC of cross-subsystem
-migrations.
-
-> **SM4.D LANDED (v0.31.30 → v0.31.31 + audit-passes, branch
-> `claude/great-dijkstra-BPl3p`).**  Realised — following the SM4.C
-> additive pattern — as per-core invariant forms + `∀ c` SMP aggregates
-> + boot-core bridges + frame lemmas + defaults + per-operation
-> SMP-preservation, in six staged modules:
-> `IPC/Invariant/PerCore.lean`, `Capability/Invariant/PerCore.lean`,
-> `Architecture/InvariantPerCore.lean`,
-> `InformationFlow/ProjectionPerCore.lean`, `CrossSubsystemPerCore.lean`,
-> `CrossSubsystemPerCorePreservation.lean`.
->
-> Per-sub-task disposition (against the table above):
-> - **Migrated (per-core invariant + bridges + frames + defaults + SMP):**
->   SM4.D.2 (IPC invariants — 12 predicates), SM4.D.4 (Capability
->   `cleanupHookDischarged` / `cleanupNoStaleSchedRef` + SMP retype
->   precondition + `RetypeTargetSmp` consumer), SM4.D.9 (Architecture
->   `registerDecodeConsistent`), SM4.D.13 (InformationFlow projections —
->   6 + `projectStateOnCore` + `lowEquivalent`), SM4.D.19 (CrossSubsystem
->   `crossSubsystemInvariant_perCore` + the `crossSubsystemSchedulerContract`
->   capstone; `schedContextRunQueueConsistent` was migrated by SM4.C).
-> - **Per-operation preservation (the operation sub-tasks' SMP payoff):**
->   SM4.D.1 / SM4.D.10 / SM4.D.11 — 11 concrete per-op preservation
->   theorems (8 IPC ops → `ipcSchedulerContractPredicates_smp`; 2
->   architecture ops → `registerDecodeConsistent_smp`; `timerTick` →
->   SchedContext↔run-queue) + the generic single-core→SMP lifters + the
->   `passiveServerIdle_scheduledNowhere` natural-SMP form.
-> - **N/A (no scheduler-reading predicate; reads are operations that stay
->   boot-core until SM5, or frozen state that stays scalar per SM4.B):**
->   SM4.D.3 / SM4.D.5 / SM4.D.6 / SM4.D.7 / SM4.D.8 / SM4.D.12 (NI
->   *operations*; the NI *predicates* — projections + `lowEquivalent` —
->   are migrated under SM4.D.13) / SM4.D.14 (IF Invariant files define no
->   scheduler-reading predicate; their substrate is the migrated
->   projections) / SM4.D.15 (Model/State.lean — SM4.B accessor machinery)
->   / SM4.D.16 (frozen state stays scalar) / SM4.D.17 / SM4.D.18 / SM4.D.20
->   (Boot/FFI/API operations) / SM4.D.21 / SM4.D.22 (VSpace/SyscallEntry
->   define no scheduler-reading predicate).  Verified by an exhaustive
->   codebase scan (every `def … : Prop`/projection reading a scheduler
->   accessor, direct or transitive).
->
-> All staged-only; axiom-clean; AK7 typed-accessor discipline
-> (`getTcb?`/`getEndpoint?`/`getNotification?`); trace fixture
-> byte-identical (purely additive).  Tests:
-> `tests/CrossSubsystemPerCoreSuite.lean` (Tier-2 + Tier-3 wired).
->
-> **audit-pass-3 (v0.31.33)**: an exhaustive whole-tree re-scan found one
-> further scheduler-reading definition adjacent to the six subsystems —
-> `registerContextStableCheck` (`Platform/RPi5/RuntimeContract.lean`, a
-> `Bool` runtime contract reading `currentOnCore` + `.runnable`).  Migrated
-> to `registerContextStableCheckOnCore` in the new staged module
-> `Platform/RPi5/RuntimeContractPerCore.lean` (boot-core bridge + idle /
-> default witnesses), so every `SchedulerState`-reading definition **within
-> SM4.D's six subsystems plus the adjacent Platform/RPi5 runtime contract**
-> now has a per-core form or an explicit documented disposition.
-> Partition gate: 42 staged-only modules.
->
-> **audit-pass-4 (v0.31.34)**: scope-correction.  audit-pass-3's phrasing
-> ("every definition *in the tree*") was an overclaim.  The
-> Scheduler-subsystem **Liveness** predicates
-> (`Scheduler/Liveness/*.lean`: `eventuallyExits`, `higherBandExhausted`,
-> `rpi5CanonicalConfig`, `CanonicalDeploymentProgress`, `stepPrecondition`,
-> `stepPost`, `selectedAt`, `runnableAt`, `budgetAvailableAt`,
-> `WCRTHypotheses`, `wcrtBound`, … ~15 decls) also read scheduler state
-> (pinned to `bootCoreId`) and have no per-core form — but they are
-> **SM4.C.11** scope (the §5.3 row `Scheduler/Liveness/*.lean (incl.
-> WCRT)`), the Scheduler-subsystem migration, NOT the SM4.D cross-subsystem
-> boundary.  **Superseded in part**: SM5.J lifted most of that list at
-> v0.31.64; only the `stepPrecondition`/`stepPost`/`ValidTrace` step relation
-> is still `bootCoreId`-pinned, and it is owned by **WS-SL** — see the
-> corrected §5.3 note.  No SM4.D code change —
-> migrating Liveness inside this cut would misattribute SM4.C work and
-> break one-coherent-slice.  SM4.D's per-core cross-subsystem surface is
-> complete and axiom-clean.
+*Landed. What each cut changed, and what its review rounds found, is in
+[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
 
 ### 5.5 Witness retirement + replacement (SM4.E, 2 PRs, 5 sub-tasks)
 
@@ -651,47 +527,8 @@ migrations.
 | SM4.E.4 | AN12-B inventory entry 8 (`bootFromPlatform_currentCore_is_zero_smpLatent`): same treatment | Inventory updated | S |
 | SM4.E.5 | Add `smpRetiredInventory` aggregator (8 entries, all retired). Pin size at 8. | New aggregator + size witness | M |
 
-> **SM4.E LANDED (v0.31.35).**  All five sub-tasks landed in one cut; closes
-> the SMP-H2 finding (retired — per-core fields replace the singular ones).
-> Purely additive at the proof surface (trace fixture byte-identical, 227/227;
-> zero new axioms).
->
-> - **SM4.E.1** — `bootFromPlatform_singleCore_witness` **deleted** from
->   `CrossSubsystem.lean`.  A discoverability retirement note remains at the
->   CX-M03 site (the boot-core-only witness is structurally too weak for the
->   per-core SMP shape after SM4.B).
-> - **SM4.E.2** — `bootFromPlatform_smp_witness` added in `Platform/Boot.lean`
->   (NOT `CrossSubsystem.lean`: the replacement references `bootFromPlatform`,
->   and `Platform.Boot → Kernel.API → Architecture.Invariant → CrossSubsystem`,
->   so siting it in `CrossSubsystem` would cycle — same reason as the CX-M04
->   bundle note).  Per §3.8 / §4.3, the `some` branch is `= some (idleThreadId c)`
->   (`bootFromPlatform config : IntermediateState`, so the path is
->   `(bootFromPlatform config).state.scheduler.currentOnCore c`).  At the SM4.E
->   cut the disjunct's `some` branch was stated as `∃ tid, = some tid` because
->   `idleThreadId` did not yet exist; **SM4.G (v0.31.36, below) defined
->   `idleThreadId` and restated the witness to the substantive
->   `none ∨ = some (idleThreadId c)`** (non-vacuous — excludes non-idle
->   currents).  Substantive companion `bootFromPlatform_smp_currentAllNone`
->   proves `= none` on every core (via `bootFromPlatform_scheduler_eq` + SM4.B.9
->   `default_state_perCoreInitialized`).
-> - **SM4.E.3 / SM4.E.4** — inventory entries 7 + 8 `smpDischarge` →
->   "implemented in SM4 path-a"; `sourceTheorem`s repointed to
->   `bootFromPlatform_smp_witness` (entry 7) and `bootFromPlatform_smp_currentAllNone`
->   (entry 8 — distinct, so `smpLatentInventory_sourceTheorems_nodup` holds).
->   The `Architecture.ArchAssumption.singleCoreOperation` consumer mapping is
->   repointed to `bootFromPlatform_smp_witness` (a `Lean.Name` literal).
-> - **SM4.E.5** — `smpRetiredInventory` (8-entry `SmpRetiredAssumption` ledger
->   mirroring `smpLatentInventory` one-to-one).  Witnesses: `_count = 8`,
->   `_covers_latent`, `_identifiers_nodup`, `_retiredBy_nodup`, and (honest
->   disposition) the partition `_pathARetired_count = 2` /
->   `_perCoreBracketGated_count = 6`.  "All retired" is the ledger's
->   *purpose* (tracking the retirement of all 8 latent assumptions); per the
->   honesty corollary only the 2 path-a-genuine entries are
->   `.pathARetired`, the other 6 are `.perCoreBracketGated` pending SM5+.  SM10
->   adds `smpRetiredInventory_complete` once all are discharged.
->
-> Build-anchored in `Concurrency.Anchors` (SMP-H3) + tier-3 surface +
-> `SmpFoundationsSuite` / `ModelIntegritySuite` (both green).
+*Landed. What each cut changed, and what its review rounds found, is in
+[`CHANGELOG.md`](../../CHANGELOG.md) under the versions above.*
 
 ### 5.6 Per-core invariant suite (within SM4.C.29 + .30)
 
@@ -1129,71 +966,3 @@ test suite builds, and the executable trace is byte-identical to
 multi-session grind has been removed now that the migration is
 committed in-tree.
 
-**What landed**:
-
-- **`SeLe4n/Model/State.lean`**: the 7 per-core `SchedulerState` fields
-  flipped scalar → `Vector α numCores` with `Vector.replicate numCores
-  <neutral>` defaults (`runQueue`, `current`, `activeDomain`,
-  `domainTimeRemaining`, `domainScheduleIndex`, `replenishQueue`,
-  `lastTimeoutErrors`; `domainSchedule` / `configDefaultTimeSlice` stay
-  system-wide).  Accessors flipped scalar-wrapper → `s.field.get c`.
-  Added 7 per-core **setters** `set<Field>OnCore (c) (v) := { s with
-  field := s.field.set c.val v c.isLt }` (the clean write API).
-  `ext_perCore` re-proved via `PerCoreVector.ext`; `runnable` →
-  `(s.runQueueOnCore bootCoreId).toList`; `Repr` derived (SM4.B.11) +
-  explicit `Inhabited` → `{}` (SM4.B.13); **SM4.B.12 (`BEq`) is N/A**
-  — no `BEq`/`DecidableEq` instance exists or is needed (nothing
-  compares schedulers via `==`);
-  `default_state_perCoreInitialized` via `PerCoreVector.replicate_get`.
-- **The 70-lemma `@[simp]` store/load algebra** (State.lean): for each
-  (setter, accessor) pair, `set<X>OnCore_<x>OnCore_self : (s.set<X>OnCore
-  c v).<x>OnCore c = v` (7) + same-field cross-core independence
-  `set<X>OnCore_<x>OnCore_ne : c ≠ c' → (s.set<X>OnCore c v).<x>OnCore c'
-  = s.<x>OnCore c'` (7, lifted from `PerCoreVector.get_set_ne` — the
-  theorem-level per-core-independence property) + cross-field
-  `set<X>OnCore_<y>OnCore : (s.set<X>OnCore c v).<y>OnCore c' =
-  s.<y>OnCore c'` (42) + system-wide-field preservation (14).  Plus
-  `PerCoreVector.get_set_eq` / `replicate_get` promoted to `@[simp]`.
-  This is the lever that makes post-write reads reduce automatically
-  under `simp` — `Vector.get (Vector.set …)` is not definitional, so raw
-  `simp [accessor]`/`rfl` no longer suffices.
-- **Whole production import closure re-proved**: `Model.State`,
-  `Scheduler.Operations.{Core,Preservation}` (incl. `switchDomain` /
-  `scheduleDomain` and the EDF / priority-match / context /
-  domain-time preservation proofs), `IPC.Operations.SchedulerLemmas`,
-  `IPC.Operations.Endpoint`, `SchedContext.{Operations,PriorityManagement}`,
-  `Lifecycle.{Suspend,Operations.CleanupPreservation,Invariant.SuspendPreservation}`,
-  `Scheduler.PriorityInheritance.{Propagate,Preservation}`,
-  `IPC.Invariant.{QueueNextBlocking,Structural.StoreObjectFrame}`,
-  `InformationFlow.{Projection,Invariant.Operations,Invariant.Helpers}`,
-  `Architecture.{Adapter,Invariant}`, `CrossSubsystem`,
-  `Scheduler.Liveness.TraceModel`, `Platform.Boot`,
-  `Platform.RPi5.{RuntimeContract,ProofHooks}`,
-  `Model.{FrozenState,FreezeProofs}`.
-- **Test suites migrated**: `PerCoreSchedulerStateSuite` (now tests
-  genuine per-core independence), `Testing.StateBuilder`,
-  `Testing.MainTraceHarness` (new `setBootRqCur` helper),
-  `NegativeStateSuite`, `OperationChainSuite`, `InformationFlowSuite`,
-  `ModelIntegritySuite`, `TraceSequenceProbe`, and the
-  syscall/error/cascade/priority suites.
-
-**Recurring proof patterns** (for SM4.C/SM4.D and future per-core work):
-(1) convert any `{ X.scheduler with field := V }` write to
-`X.scheduler.set<Field>OnCore bootCoreId (V)` — single-line, since the
-structure-update parser stops a multi-line value indented below the
-value-start column; (2) for proofs that read a setter-written field,
-add the explicit `set<X>OnCore_<y>OnCore` / `set<X>OnCore_<x>OnCore_self`
-lemma to a `simp only` (preferred — keeps the simp set tight) or use
-`simp` (picks up the `@[simp]` algebra); (3) `setRunQueueOnCore` frames
-every `projectState` component except `projectRunnable`, so NI
-projection-preservation proofs reduce the other scheduler projections
-via the cross lemmas and discharge only the runnable filter; (4)
-`saveOutgoingContext` / `restoreIncomingContext` preserve `scheduler`
-*definitionally* (they touch objects / machine), so their frame lemmas
-are often unused under the per-core algebra — the non-defeq operations
-are exactly the `set…OnCore` writers.
-
-**SM4.E + closure** (the next sub-phase): retire
-`bootFromPlatform_singleCore_witness` (restated over `currentOnCore
-bootCoreId` at SM4.B), add `bootFromPlatform_smp_witness`, and update
-the AN12-B SMP-latent inventory entry.
