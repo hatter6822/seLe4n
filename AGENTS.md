@@ -686,9 +686,31 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   what its top-level statements say, a divergence is the block's *last*
   top-level statement, a routing construct is a top-level statement of the
   body, and a predicate entails readiness only in a structural form
-  (`condition_entails_ready`: a conjunct that *is* the call).  The mutation
+  (`ready_condition_argument`: a conjunct that *is* the call).  The mutation
   for this class nests the token under a condition, or inverts the predicate
   around it.
+
+  **Provenance, sole consumption and location are relations too** (PR #887
+  review rounds 6 and 7).  A statement-level view answers "is this
+  unconditional"; it does not answer *whose* value a guard reads, whether a
+  bound name has a *second* consumer, or *which* of two matching arms is the
+  live one — and a scanner that resolves the statement and then takes the
+  token's first occurrence, or accepts any argument, is back to presence.
+  `lean_ready(0)` on core 1, `let invoke = lean_x;`, a no-op `match`
+  followed by an `if` on the same class, a `#[cfg(test)]` decode of tag 2
+  beside the live one, and a decoy `Faulted` arm ahead of the real one all
+  kept every token round 4 checked.  So: read the guard's **argument** back
+  to the executing core through the statements that dominate it, with the
+  last binding winning (`ready_argument_is_executing_core`); **count** a
+  name's whole-word occurrences when the claim is "nothing else consumes
+  it" (`word_occurrences`); and **locate** an arm by walking from the
+  function's terminal statement through parsed arms
+  (`terminal_routing_match`, `match_arm_spans`) rather than by its first
+  textual match.  Round 4 applied the statement view to the three checks the
+  review named and left their siblings on text slices; rounds 6 and 7 swept
+  the siblings — the sweep rule above, failing in the way it says.  The
+  mutation for this class keeps the token and changes its provenance, adds
+  a second consumer, or puts a decoy ahead of the live occurrence.
 - **Invariant/Operations split**: each kernel subsystem has
   `Operations.lean` (transitions) and `Invariant.lean` (proofs). Keep
   this separation.
@@ -1153,14 +1175,28 @@ code may assume:
   (`readiness_guard_dominates`, PR #887 review round 3: the call sits inside
   the guard's true branch with no `||` in the condition, or after a negated
   bare guard whose block diverges — a stored `lean_ready(..)` result, a guard
-  block closed above the call, or an `||` no longer satisfy it) —
+  block closed above the call, or an `||` no longer satisfy it; and, since
+  round 6, the guard's argument must name the **executing** PE —
+  `current_core_id_from_tpidr()` inline, or an identifier a dominating
+  statement binds from it or validates against it with `assert_eq!`, the
+  last binding winning (`ready_argument_is_executing_core`) — so a literal,
+  a parameter, a shadowed binding or a `debug_assert_eq!` reads as ungated) —
   `LEAN_READY_GATED_SEAMS`
   is the pin the derivation must reproduce, and the three upcalls that run
   ungated (the primary's `lean_kernel_main` boot install, and the SVC-dispatch
   and cross-core-suspend seams) are `LEAN_UPCALLS_OUTSIDE_THE_GATE`, each with
-  its reason.  The classifier upcall
+  its occurrence count and reason, reconciled in both directions
+  (`reconcile_upcall_exemptions`, round 6: a second call in an exempt
+  function is a count mismatch, not a free pass).  A reference to a Lean
+  symbol that is not a call — an alias, a function pointer, a cast — fails
+  the build outright, since no gate can be attributed to a value that
+  escapes.  The classifier upcall
   (`lean_classify_synchronous_exception`) is gated too; a not-ready core
-  classifies through the Rust mirror pinned to the Lean table.  The two seams
+  classifies through the Rust mirror pinned to the Lean table —
+  `classifier_status` (round 6) holds the hardware classifier's terminal
+  `if … else …` to that shape branch by branch, the ready branch's value
+  being the Lean call and the not-ready branch's only statement the mirror
+  call.  The two seams
   that do not consult the gate at all are the registered debt above; closing
   that is RR5.6–RR5.9, and it means shrinking that allowlist.
 - **The outer-shareable TLBI wrappers cannot execute on the first hardware
@@ -1256,7 +1292,9 @@ code may assume:
   unless `SPSR_EL1.M[3:2] = 0` (`ExceptionContext.takenFromEl0`); on the Rust
   side `halt_if_kernel_origin` runs before classification in
   `handle_synchronous_exception` and the `KERNEL_ABORT` arm halts on the
-  syndrome alone (`build.rs` pins the order); the classification itself is
+  syndrome alone (`build.rs` pins both as unconditional top-level statements
+  of the handler, whose terminal statement is the routing match — round 6);
+  the classification itself is
   Lean's only once the core is ready, and the pinned Rust mirror's before
   that.  Delivering one would hand the
   kernel's own register window to a user-level handler and let its reply
@@ -1327,7 +1365,10 @@ code may assume:
   A fault raised at the SVC seam halts too (outcome tag 2, `.faulted`,
   `halt_after_delivered_syscall_fault`, PR #887 review round 5): the model
   restarts that caller *at* the `SVC`, and a `.blocks` sentinel would `eret`
-  it past the `SVC` instead.
+  it past the `SVC` instead.  Round 7 located that arm and the tag-2 decode
+  in the handler's and `dispatch_svc`'s own terminal matches
+  (`handler_faulted_arm_halts`, `dispatch_decodes_faulted`), not at their
+  first textual occurrence.
   **A fallback may publish a return frame only on a seam whose exception
   advanced the PC** — the SVC seam, where the unknown-syscall path keeps its
   not-ready frame and where the not-ready behaviour as a whole is RR5's

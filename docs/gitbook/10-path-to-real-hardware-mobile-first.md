@@ -91,7 +91,14 @@ WS-AN Phase AN9 closes every hardware-binding deferred item from
   `scan_trap_rs_abort_fallback_halts` pins it there; since the fourth round
   every one of these scanners asks its question of top-level statements
   (`top_level_statements`), so a halt or a divergence nested under a
-  condition, or an inverted readiness predicate, no longer passes.
+  condition, or an inverted readiness predicate, no longer passes;
+  since the sixth and seventh rounds the readiness guard has to name the
+  executing PE (`ready_argument_is_executing_core`), an upcall reached
+  through an alias fails the build, every exemption is reconciled by
+  occurrence, the classifier's two branches are bound to their values,
+  and the tag-2 decode and the `Faulted` arm are located in the terminal
+  matches of `dispatch_svc` and the handler through parsed arms rather
+  than found first in the text.
   **Dormant behind the per-core `lean_ready` gate**
   until SM10.1: a core that delivers a fault has descheduled the
   faulting thread and cannot install a successor, so `deliver_fault`

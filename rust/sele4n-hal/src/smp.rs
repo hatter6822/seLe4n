@@ -730,6 +730,22 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
         // leaves `currentOnCore` at its boot value (`none`, the legacy
         // idle representation); the core's first ready-side scheduling
         // point performs the deferred first reschedule.
+        //
+        // PR #887 review round 6: the readiness gate is the EXECUTING PE's.
+        // `core_idx` is the PSCI context id the primary passed, validated
+        // for range only; `boot.S::secondary_entry` set this core's
+        // `TPIDR_EL1` from the same word, so on conforming firmware the two
+        // agree — and a firmware that woke another PE with this context id
+        // must not consult that core's readiness, nor take its kernel-entry
+        // ticket.  Kept in release builds: a `debug_assert_eq!` compiles out
+        // on hardware, and `build.rs` accepts only this form (or a `let`
+        // from `current_core_id_from_tpidr()`) as the guard argument's
+        // provenance.
+        assert_eq!(
+            core_idx as u64,
+            crate::per_cpu::current_core_id_from_tpidr(),
+            "rust_secondary_main: the PSCI context id must match the executing core's TPIDR_EL1"
+        );
         if crate::lean_ready::lean_ready(core_idx) {
             extern "C" {
                 fn lean_secondary_kernel_main(core_id: u64);

@@ -407,8 +407,14 @@ pub fn per_core_timer_tick_isr(core_id: u64) {
     // derive from the same boot-set `TPIDR_EL1`, so this never fires; the assert
     // catches a future caller that passes a mismatched id.  hw-only: on the host
     // `current_core_id_from_tpidr()` is a constant 0 (no real per-core TPIDR).
+    //
+    // PR #887 review round 6: kept in release builds.  The readiness gate
+    // below is consulted for `core_id`, so `core_id` must be THIS core — a
+    // `debug_assert_eq!` compiles out of the image, and `build.rs` accepts
+    // only an `assert_eq!` against `current_core_id_from_tpidr()` (or a `let`
+    // from it) as the guard argument's provenance.
     #[cfg(feature = "hw_target")]
-    debug_assert_eq!(
+    assert_eq!(
         core_id,
         crate::per_cpu::current_core_id_from_tpidr(),
         "per_core_timer_tick_isr: core_id must match the executing core's TPIDR_EL1"

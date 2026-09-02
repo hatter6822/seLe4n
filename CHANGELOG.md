@@ -729,6 +729,107 @@ delivered fault halts pending SM10.1; this one resumed.
 
 Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR4
 
+### Review rounds 6 and 7 (PR #887)
+
+Eight findings, on the round-4 and round-5 heads, all in `build.rs`, and all
+one class: a scanner answering a question about **provenance**, **sole
+consumption** or **which occurrence** with a token.  Round 4 gave three
+checks a statement-level view and left the sibling checks — the classifier,
+the gate ordering, the exemption table, the alias case, the decode and the
+arm location — on the old text slices, which is the "sweep every site that
+asks the same question" failure `CLAUDE.md` already describes.  These two
+rounds swept them, in one commit.
+
+* **The readiness guard is the executing PE's** (round 6).
+  `condition_entails_ready` accepted any bare `lean_ready(…)` call, so
+  `if lean_ready(0) { unsafe { lean_x(…) } }` gated core 1 on core 0's
+  readiness.  `ready_argument_is_executing_core` now requires the guard's
+  argument to be `current_core_id_from_tpidr()` inline, or an identifier a
+  **dominating** statement (`dominating_statements`: the function body's
+  top-level statements and those of every enclosing block, ending before
+  the guard) binds from that call or validates against it by `assert_eq!`
+  — the last verdict wins (`executing_core_verdict`), so a shadowing `let`
+  or a reassignment after the binding reads as ungated, as do a literal, a
+  parameter, a binding in a sibling block, an assertion after the guard and
+  a `debug_assert_eq!` (release builds compile it out).  Two seams changed
+  to satisfy it: `per_core_timer_tick_isr`'s `debug_assert_eq!` on
+  `core_id` is an `assert_eq!` kept in release builds, and
+  `rust_secondary_main` asserts the PSCI context id against this core's
+  `TPIDR_EL1` before the gate (and before the kernel-entry ticket it
+  selects).
+* **The kernel-origin gate dominates classification** (round 6).
+  `handler_routing_status` found the first textual `halt_if_kernel_origin`
+  and compared offsets, so
+  `if frame.x0() == 0 { halt_if_kernel_origin(frame, esr); }` passed while
+  an EL1 exception with nonzero `x0` reached delivery.  The gate must now
+  be an unconditional top-level statement preceding the binding statement.
+* **The routing match is the terminal statement and the only consumer**
+  (round 6).  The competing-router sweep looked for a second `match`, so a
+  no-op top-level `match exception_class` followed by
+  `if exception_class == sync_class::SVC { … }` passed.  Now the match is
+  the handler's LAST top-level statement (`terminal_routing_match`) and
+  `exception_class` occurs exactly twice in the body — the binding and the
+  scrutinee (`word_occurrences`) — so a comparison, a copy, a rebinding or
+  a reassignment is refused as a third occurrence; the `KERNEL_ABORT` arm
+  is located among the match's parsed arms (`match_arm_spans`).
+* **An aliased upcall fails closed** (round 6).  `lean_upcall_sites`
+  searched for `symbol(`, so `let invoke = lean_x; invoke(1)` produced no
+  site and sat in neither inventory.  Every whole-identifier occurrence of
+  an exported symbol is now classified: declaration or definition
+  (skipped), call (attributed), anything else — a `let` alias, a
+  function-pointer argument, a cast, a re-export — an error.
+* **The not-ready branch returns the mirror** (round 6).  The classifier
+  scanner proved the mirror's presence anywhere in the hardware body, so
+  `else { let _ = classify_synchronous_exception_mirror(esr); sync_class::SVC }`
+  passed.  `classifier_status` parses the body's terminal `if … else …`:
+  the guard names the executing PE, the ready branch's value is exactly the
+  Lean call, the not-ready branch's only statement is exactly the mirror
+  call, nothing follows the `else` block; the host classifier's only
+  statement is the mirror call.  Seven token-preserving mutations
+  (`verify_classifier_scanner`).
+* **Exemptions are reconciled by occurrence** (round 6).  The table was
+  keyed by `(source, fn, symbol)` with one boolean per entry, so a second
+  `lean_syscall_dispatch_cross_core(…)` in `dispatch_svc` — a second commit
+  of the same syscall — passed on the first call's entry.
+  `LEAN_UPCALLS_OUTSIDE_THE_GATE` rows carry an occurrence count and
+  `reconcile_upcall_exemptions` holds both directions: every ungated group
+  has an entry with exactly its count, every entry's group exists with
+  exactly that count, and a zero-count entry is refused
+  (`verify_upcall_exemption_reconciliation`).
+* **The tag-2 decode is read off `dispatch_svc`'s own terminal match**
+  (round 7).  The round-5 scanner asked whether `svc_dispatch.rs`
+  *contained* `2 => Ok(SvcOutcome::Faulted),` — a `#[cfg(test)]` helper
+  satisfied it while the live match decoded a block.
+  `dispatch_decodes_faulted` locates the single `fn dispatch_svc(`,
+  requires its LAST top-level statement to be `match tag { … }`, parses
+  the arms, requires exactly one `2 =>` arm whose expression is
+  `Ok(SvcOutcome::Faulted)`, and — the sibling question — requires `tag`
+  to be bound exactly once, by the closure that returns the Lean call's
+  value in the tuple position the pattern reads
+  (`outcome_tag_binding_status`), with no other top-level consumer.
+* **The live `Faulted` arm is located, not found first** (round 7).  The
+  scanner took the first textual `SvcOutcome::Faulted) =>` in the handler,
+  so a decoy match under a condition holding the halt hid a live arm that
+  published a frame.  `handler_faulted_arm_halts` walks the terminal
+  routing match → its single `sync_class::SVC` arm → that arm's single
+  `let dispatched` binding (the full-width syscall-number match whose `Ok`
+  arm is the dispatch, `dispatched_binding_status`) → the arm's LAST
+  statement `match dispatched { … }` → its single
+  `Ok(crate::svc_dispatch::SvcOutcome::Faulted)` arm, whose block is the
+  one halt statement; `dispatched` occurs exactly twice in the arm and
+  `Faulted` exactly once in the handler.  Six more token-preserving trap
+  mutations and six dispatch mutations, on fixtures no thinner than the
+  files (the SVC arm's binding, the unknown-syscall and abort arms, the
+  kernel-entry bracket and the host stub are all in them).
+
+The rename that fell out: `condition_entails_ready`, `is_bare_ready_call`
+and `is_negated_ready_call` became the argument-returning
+`ready_condition_argument`, `bare_ready_call_argument` and
+`negated_ready_call_argument`, because the provenance check needs the
+argument, not a boolean; the round-4 anchors follow the rename.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR4
+
 ## v0.34.43 — WS-RR RR3: `ipcInvariantFull` de-threaded, dispatch payoff landed
 
 **One PR, one version.**  The work is RR3.1–RR3.26 — the whole phase.  The

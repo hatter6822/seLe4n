@@ -1994,8 +1994,14 @@ A fault raised at the SVC seam is a distinct outcome (`SyscallOutcome.faulted`,
 tag 2; review round 5) on which the trap layer halts pending SM10.1, as it
 does after every other delivered fault — never the blocked-resume sentinel,
 which would `eret` the caller past the `SVC` its handler restarts it at.
+Review rounds 6 and 7 bound the build-time scanners that pin these
+relations to the statements they stand for: the readiness guard's argument
+must name the executing PE, an aliased upcall fails the build, exemptions
+reconcile by occurrence, and the tag-2 decode and the `Faulted` arm are
+located in `dispatch_svc`'s and the handler's own terminal matches.
 `build.rs` pins the classifier relation (`scan_trap_rs_classifies_via_lean` —
-the call after the gate, not the declaration), and the Rust host tests replay
+the call after the gate, not the declaration; since round 6 each branch
+bound to its value, `classifier_status`), and the Rust host tests replay
 all 64 EC values against the Lean table.
 
 **The SM10.1 residual, stated plainly**: a core that delivers a fault has

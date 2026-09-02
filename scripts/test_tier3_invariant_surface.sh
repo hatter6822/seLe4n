@@ -873,7 +873,7 @@ run_check "INVARIANT" rg -n '^    verify_lean_upcall_scanner\(\);' rust/sele4n-h
 run_check "INVARIANT" rg -n '^const LEAN_READY_GATED_SEAMS' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n '^const LEAN_UPCALLS_OUTSIDE_THE_GATE' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n '^        "lean_classify_synchronous_exception",$' rust/sele4n-hal/build.rs
-run_check "INVARIANT" rg -n 'let body_no_decl = blank_extern_blocks\(classifier_body\);' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n 'let hw = blank_extern_blocks\(hw_body\);' rust/sele4n-hal/build.rs
 # PR #887 review round 3.  (1) The SVC arm reads the syscall number at the
 # register's full width: an `as u32` narrowing of `x7` made `0x1_0000_0002`
 # dispatch as syscall 2, so the conversion is checked and its failure is the
@@ -960,14 +960,52 @@ run_check "INVARIANT" rg -n '\(\.cspaceWalkInteriorCnodes, "[^"]+"\)' SeLe4n/Ker
 run_check "INVARIANT" rg -n '^fn top_level_statements\(' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n '^fn top_level_statements_in\(' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n '^fn statement_diverges\(' rust/sele4n-hal/build.rs
-run_check "INVARIANT" rg -n '^fn condition_entails_ready\(' rust/sele4n-hal/build.rs
-run_check "INVARIANT" rg -n '^fn is_negated_ready_call\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn ready_condition_argument\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn negated_ready_call_argument\(' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n 'top_level_statements\(code, block_open, block_close\)' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n 'top_level_statements_in\(&stripped, ready_close \+ 1, hw_close\)' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n 'starts_with\("match exception_class \{"\)' rust/sele4n-hal/build.rs
 run_negative_check "INVARIANT" rg -n 'let diverges = block\.contains\("return"\)' rust/sele4n-hal/build.rs
 run_negative_check "INVARIANT" rg -n 'if !tail\.contains\("halt_abort_before_lean_ready\("\)' rust/sele4n-hal/build.rs
 run_negative_check "INVARIANT" rg -n 'body\[init_end\.\.\]\.contains\("match exception_class \{"\)' rust/sele4n-hal/build.rs
+# PR #887 review rounds 6 and 7: provenance, sole consumption and location
+# are relations too.  The readiness guard's argument is resolved to the
+# executing PE through the statements dominating it; the routing match is
+# the handler's terminal statement and the only consumer of the class; an
+# aliased upcall fails closed; exemptions reconcile by occurrence; the
+# classifier's branches are bound to their values; the tag-2 decode and the
+# `Faulted` arm are located through parsed arms from each function's
+# terminal statement.  The first-occurrence and whole-file forms are
+# forbidden, and the two seams that bind the core id do so in release builds.
+run_check "INVARIANT" rg -n '^fn ready_argument_is_executing_core\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn executing_core_verdict\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn dominating_statements\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn is_tpidr_core_expression\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n 'ready_argument_is_executing_core\(code, body_open, if_at, arg\)' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn terminal_routing_match\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn match_arm_spans\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn word_occurrences\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n 'text\(span\) == "halt_if_kernel_origin\(frame, esr\);"' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n 'word_occurrences\(&body\[body_open\.\.=body_close\], "exception_class"\)' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn classifier_status\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn verify_classifier_scanner\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^    verify_classifier_scanner\(\);' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn reconcile_upcall_exemptions\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn verify_upcall_exemption_reconciliation\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^const LEAN_UPCALLS_OUTSIDE_THE_GATE: &\[\(&str, &str, &str, usize, &str\)\]' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn dispatch_decodes_faulted\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn handler_faulted_arm_halts\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn outcome_tag_binding_status\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn dispatched_binding_status\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n -U '#\[cfg\(feature = "hw_target"\)\]\n\s+assert_eq!\(\n\s+core_id,\n\s+crate::per_cpu::current_core_id_from_tpidr\(\),' rust/sele4n-hal/src/timer.rs
+run_check "INVARIANT" rg -n -U 'assert_eq!\(\n\s+core_idx as u64,\n\s+crate::per_cpu::current_core_id_from_tpidr\(\),' rust/sele4n-hal/src/smp.rs
+run_negative_check "INVARIANT" rg -n -U 'debug_assert_eq!\(\n\s+core_id,\n\s+crate::per_cpu::current_core_id_from_tpidr' rust/sele4n-hal/src/timer.rs
+run_negative_check "INVARIANT" rg -n 'let mut exempt_seen' rust/sele4n-hal/build.rs
+run_negative_check "INVARIANT" rg -n 'dispatch\.contains\("2 => Ok\(SvcOutcome::Faulted\),"\)' rust/sele4n-hal/build.rs
+run_negative_check "INVARIANT" rg -n '\.find\("SvcOutcome::Faulted\) =>"\)' rust/sele4n-hal/build.rs
+run_negative_check "INVARIANT" rg -n '\.find\("halt_if_kernel_origin\(frame, esr\);"\)' rust/sele4n-hal/build.rs
+run_negative_check "INVARIANT" rg -n 'body_no_decl\.contains\("classify_synchronous_exception_mirror\(esr\)"\)' rust/sele4n-hal/build.rs
+run_negative_check "INVARIANT" rg -n 'let needle = format!\("\{symbol\}\("\);' rust/sele4n-hal/build.rs
 # RR4.14/RR4.15: the reply seam — seL4's `doReplyTransfer` branch — and the two
 # live dispatch arms that must go through it.  Without the branch the fault
 # reply is verified and unreachable: a handler's ordinary `seL4_Reply` would

@@ -117,7 +117,15 @@ It is aligned to the **current project state**:
   review round 5).  Both are
   dormant behind the per-core `lean_ready` gate until SM10.1; a core that
   delivers a fault today would halt, because it has descheduled the faulting
-  thread and cannot yet install a successor.  Tests:
+  thread and cannot yet install a successor.  Review rounds 6 and 7 bound
+  the build-time scanners to the statements they stand for: the readiness
+  guard's argument must name the executing PE
+  (`ready_argument_is_executing_core`), an aliased upcall fails the build,
+  exemptions reconcile by occurrence (`reconcile_upcall_exemptions`), the
+  classifier's branches are bound to their values (`classifier_status`),
+  and the tag-2 decode and the `Faulted` arm are located in
+  `dispatch_svc`'s and the handler's own terminal matches
+  (`match_arm_spans`), never at their first textual occurrence.  Tests:
   `tests/FaultHandlingSuite.lean` (`fault_handling_suite`, Tier 2) plus the
   4-core golden fixture `tests/fixtures/fault_handling_4core.expected`.
   **Review round (PR #887)**, five findings fixed in code: `TCB.faultHandler`

@@ -174,6 +174,7 @@ fn main() {
     verify_rust_code_views();
     verify_lean_upcall_scanner();
     verify_handler_routing_scanner();
+    verify_classifier_scanner();
     verify_abort_fallback_scanner();
     verify_faulted_outcome_scanner();
     scan_tlb_rs_outer_shareable_guards_intact();
@@ -1134,42 +1135,6 @@ fn scan_trap_rs_classifies_via_lean() {
         );
     }
     let classifier_body = body_after(&stripped, classifier_idx, "classify_synchronous_exception");
-    let body_no_decl = blank_extern_blocks(classifier_body);
-    let call_idx = body_no_decl
-        .find("lean_classify_synchronous_exception(esr)")
-        .unwrap_or_else(|| {
-            panic!(
-                "WS-RR RR4.25 regression: `{path}`'s hardware-target \
-                 `classify_synchronous_exception` never *calls* \
-                 `lean_classify_synchronous_exception(esr)` — declaring the symbol is \
-                 not classifying through it.  On hardware the class must come from \
-                 the Lean model; a local table here is the divergence RR4.25 closed."
-            )
-        });
-    let gate_idx = body_no_decl.find("lean_ready(").unwrap_or_else(|| {
-        panic!(
-            "PR #887 review regression: `{path}`'s hardware-target \
-             `classify_synchronous_exception` calls into Lean without consulting the \
-             per-core readiness gate.  No Lean-emitted symbol may be entered from a \
-             PE whose runtime is not initialized, pure or not."
-        )
-    });
-    if gate_idx > call_idx {
-        panic!(
-            "PR #887 review regression: in `{path}`'s hardware-target \
-             `classify_synchronous_exception`, the Lean call precedes the readiness \
-             gate.  The gate must guard the call."
-        );
-    }
-    if !body_no_decl.contains("classify_synchronous_exception_mirror(esr)") {
-        panic!(
-            "PR #887 review regression: `{path}`'s hardware-target \
-             `classify_synchronous_exception` has no pre-readiness branch through \
-             `classify_synchronous_exception_mirror(esr)`.  A core that is not ready \
-             must still classify — through the mirror pinned to the Lean table — so \
-             the fail-closed seams below can route."
-        );
-    }
     // …and the host lane classifies through the same mirror, so the table the
     // host tests pin is the table a not-ready core runs.
     let host_idx = stripped[classifier_idx + 1..]
@@ -1182,57 +1147,302 @@ fn scan_trap_rs_classifies_via_lean() {
             )
         });
     let host_body = body_after(&stripped, host_idx, "classify_synchronous_exception (host)");
-    if !host_body.contains("classify_synchronous_exception_mirror(esr)") {
+    // PR #887 review round 6: the relation on both bodies — the hardware
+    // classifier's value is the readiness conditional on the executing PE,
+    // whose ready branch IS the Lean call and whose not-ready branch IS the
+    // mirror call; the host classifier's value IS the mirror call.  Round 2
+    // looked for the call after the gate and the mirror's presence anywhere,
+    // which `else { let _ = mirror(esr); sync_class::SVC }` satisfied.
+    if let Err(why) = classifier_status(classifier_body, host_body) {
+        panic!("{why} (`{path}`)");
+    }
+}
+
+/// PR #887 review round 6: **the classifier's branches are bound to their
+/// values.**  The round-2 check proved the Lean call after the gate and the
+/// mirror's presence *somewhere* in the hardware body, so
+/// `else { let _ = classify_synchronous_exception_mirror(esr); sync_class::SVC }`
+/// kept the token and routed every not-ready abort into the SVC path — and
+/// the host classifier is a separate definition, so the mirror-table tests
+/// never executed that branch.  On the hardware body (`hw_body`, from its
+/// `{`, strings blanked, the `extern "C"` declaration blanked here) the
+/// relation is read off top-level statements:
+///
+///   * the body's LAST statement — its value — is
+///     `if <guard> { … } else { … }`, with nothing after the `else` block and
+///     no `else if` chain;
+///   * `<guard>` entails readiness (`ready_condition_argument`) and its
+///     argument names the executing PE (`ready_argument_is_executing_core`);
+///   * the ready branch's last statement is exactly
+///     `unsafe { lean_classify_synchronous_exception(esr) }`;
+///   * the not-ready branch's only statement is exactly
+///     `classify_synchronous_exception_mirror(esr)`.
+///
+/// The host body's only statement is that same mirror call.
+fn classifier_status(hw_body: &str, host_body: &str) -> Result<(), String> {
+    const LEAN_CALL: &str = "unsafe { lean_classify_synchronous_exception(esr) }";
+    const MIRROR_CALL: &str = "classify_synchronous_exception_mirror(esr)";
+    let hw = blank_extern_blocks(hw_body);
+    let body_open = hw
+        .find('{')
+        .ok_or_else(|| "PR #887 review round 6: the hardware classifier has no body".to_string())?;
+    let body_close = matching_close_brace(&hw, body_open).ok_or_else(|| {
+        "PR #887 review round 6: the hardware classifier's body is unbalanced".to_string()
+    })?;
+    let statements = top_level_statements(&hw, body_open, body_close);
+    let &(lo, hi) = statements.last().ok_or_else(|| {
+        "PR #887 review round 6: the hardware classifier's body is empty".to_string()
+    })?;
+    let stmt = hw[lo..hi].trim_start();
+    let if_at = hi - stmt.len();
+    if strip_word_prefix(stmt, "if").is_none() {
+        return Err(format!(
+            "PR #887 review round 6 regression: the hardware classifier's value is `{}`, \
+             not the readiness conditional.  A conditional found earlier in the body \
+             decides nothing if it is not what the function returns",
+            collapse_whitespace(stmt.trim())
+        ));
+    }
+    let true_open = block_open_after(&hw, if_at).ok_or_else(|| {
+        "PR #887 review round 6: the readiness conditional has no block".to_string()
+    })?;
+    let cond = hw[if_at + 2..true_open].trim();
+    let arg = ready_condition_argument(cond).ok_or_else(|| {
+        format!(
+            "PR #887 review round 6 regression: the hardware classifier's terminal \
+             conditional `if {cond}` does not entail readiness — the Lean call must sit \
+             in the true branch of a bare `lean_ready(…)` guard"
+        )
+    })?;
+    if !ready_argument_is_executing_core(&hw, body_open, if_at, arg) {
+        return Err(format!(
+            "PR #887 review round 6 regression: the hardware classifier's readiness guard \
+             reads `lean_ready({arg})`, and `{arg}` is not bound to the executing PE's \
+             TPIDR-derived core id by a statement dominating the guard"
+        ));
+    }
+    let true_close = matching_close_brace(&hw, true_open)
+        .ok_or_else(|| "PR #887 review round 6: the ready branch is unbalanced".to_string())?;
+    let after = hw[true_close + 1..hi].trim_start();
+    let else_body = strip_word_prefix(after, "else")
+        .map(str::trim_start)
+        .ok_or_else(|| {
+            "PR #887 review round 6 regression: the readiness conditional has no `else` \
+             branch, so a not-ready core has no classification"
+                .to_string()
+        })?;
+    if !else_body.starts_with('{') {
+        return Err(
+            "PR #887 review round 6 regression: the readiness conditional continues with \
+             `else if`; the not-ready branch must be the mirror call, unconditionally"
+                .to_string(),
+        );
+    }
+    let else_open = hi - else_body.len();
+    let else_close = matching_close_brace(&hw, else_open)
+        .ok_or_else(|| "PR #887 review round 6: the not-ready branch is unbalanced".to_string())?;
+    if !hw[else_close + 1..hi].trim().is_empty() {
+        return Err(
+            "PR #887 review round 6 regression: text follows the `else` block inside the \
+             classifier's terminal statement"
+                .to_string(),
+        );
+    }
+    let branch_value = |open: usize, close: usize| -> Vec<String> {
+        top_level_statements(&hw, open, close)
+            .iter()
+            .map(|&(a, b)| collapse_whitespace(hw[a..b].trim()))
+            .collect()
+    };
+    let ready = branch_value(true_open, true_close);
+    if ready.last().map(String::as_str) != Some(LEAN_CALL) {
+        return Err(format!(
+            "PR #887 review round 6 regression: the hardware classifier's ready branch \
+             evaluates to `{}`, not to the Lean call `{LEAN_CALL}`",
+            ready.last().map(String::as_str).unwrap_or("")
+        ));
+    }
+    let not_ready = branch_value(else_open, else_close);
+    if not_ready.len() != 1 || not_ready[0] != MIRROR_CALL {
+        return Err(format!(
+            "PR #887 review round 6 regression: the hardware classifier's not-ready branch \
+             is {not_ready:?}, not exactly the mirror call `{MIRROR_CALL}`.  A core whose \
+             Lean runtime is not up must classify through the table pinned to the Lean \
+             one, so the fail-closed seams route on the class the model would return"
+        ));
+    }
+    let host_open = host_body
+        .find('{')
+        .ok_or_else(|| "PR #887 review round 6: the host classifier has no body".to_string())?;
+    let host_close = matching_close_brace(host_body, host_open).ok_or_else(|| {
+        "PR #887 review round 6: the host classifier's body is unbalanced".to_string()
+    })?;
+    let host: Vec<String> = top_level_statements(host_body, host_open, host_close)
+        .iter()
+        .map(|&(a, b)| collapse_whitespace(host_body[a..b].trim()))
+        .collect();
+    if host.len() != 1 || host[0] != MIRROR_CALL {
+        return Err(format!(
+            "PR #887 review round 6 regression: the host-lane classifier is {host:?}, not \
+             exactly the mirror call `{MIRROR_CALL}`, so the host tests would pin a table \
+             the pre-readiness path does not run"
+        ));
+    }
+    Ok(())
+}
+
+/// Token-preserving mutations for `classifier_status`: every case keeps the
+/// Lean call, the gate and the mirror call present and breaks the relation
+/// between a branch and its value.
+fn verify_classifier_scanner() {
+    const GOOD_HW: &str = "{\n    let core_id = crate::per_cpu::current_core_id_from_tpidr();\n    if \
+                           crate::lean_ready::lean_ready(core_id as usize) {\n        extern \"C\" {\n            \
+                           fn lean_classify_synchronous_exception(esr: u64) -> u32;\n        }\n        unsafe \
+                           { lean_classify_synchronous_exception(esr) }\n    } else {\n        \
+                           classify_synchronous_exception_mirror(esr)\n    }\n}\n";
+    const GOOD_HOST: &str = "{\n    classify_synchronous_exception_mirror(esr)\n}\n";
+    let status = |hw: &str, host: &str| {
+        let (_, hw_view) = rust_code_views(hw);
+        let (_, host_view) = rust_code_views(host);
+        classifier_status(&hw_view, &host_view)
+    };
+    if let Err(why) = status(GOOD_HW, GOOD_HOST) {
+        panic!("build.rs self-check: the good classifier fixture was refused: {why}");
+    }
+    let hw_mutations: &[(&str, &str, &str)] = &[
+        (
+            "the not-ready branch discarding the mirror's result",
+            "    } else {\n        classify_synchronous_exception_mirror(esr)\n    }\n",
+            "    } else {\n        let _ = classify_synchronous_exception_mirror(esr);\n        \
+             sync_class::SVC\n    }\n",
+        ),
+        (
+            "the not-ready branch classifying another syndrome",
+            "        classify_synchronous_exception_mirror(esr)\n",
+            "        classify_synchronous_exception_mirror(0)\n",
+        ),
+        (
+            "the ready branch returning the mirror after calling into Lean",
+            "        unsafe { lean_classify_synchronous_exception(esr) }\n",
+            "        let _ = unsafe { lean_classify_synchronous_exception(esr) };\n        \
+             classify_synchronous_exception_mirror(esr)\n",
+        ),
+        (
+            "the gate on a literal core",
+            "    if crate::lean_ready::lean_ready(core_id as usize) {\n",
+            "    if crate::lean_ready::lean_ready(0) {\n",
+        ),
+        (
+            "the conditional no longer the classifier's value",
+            "        classify_synchronous_exception_mirror(esr)\n    }\n}\n",
+            "        classify_synchronous_exception_mirror(esr)\n    };\n    sync_class::SVC\n}\n",
+        ),
+        (
+            "an `else if` chain before the mirror",
+            "    } else {\n        classify_synchronous_exception_mirror(esr)\n    }\n",
+            "    } else if esr == 0 {\n        classify_synchronous_exception_mirror(esr)\n    } else {\n        \
+             sync_class::SVC\n    }\n",
+        ),
+        (
+            "the ready branch's Lean call nested under a condition",
+            "        unsafe { lean_classify_synchronous_exception(esr) }\n",
+            "        if esr == 0 {\n            return unsafe { lean_classify_synchronous_exception(esr) \
+             };\n        }\n        classify_synchronous_exception_mirror(esr)\n",
+        ),
+    ];
+    for (what, from, to) in hw_mutations {
+        assert!(
+            GOOD_HW.contains(from),
+            "build.rs self-check: classifier mutation `{what}` does not apply"
+        );
+        let mutated = GOOD_HW.replacen(from, to, 1);
+        assert_ne!(
+            mutated, GOOD_HW,
+            "build.rs self-check: classifier mutation `{what}` is inert"
+        );
+        if status(&mutated, GOOD_HOST).is_ok() {
+            panic!("build.rs self-check: `classifier_status` accepted a broken hardware classifier: {what}");
+        }
+    }
+    let host_mutated =
+        "{\n    let _ = classify_synchronous_exception_mirror(esr);\n    sync_class::SVC\n}\n";
+    if status(GOOD_HW, host_mutated).is_ok() {
         panic!(
-            "PR #887 review regression: `{path}`'s host-lane \
-             `classify_synchronous_exception` does not classify through \
-             `classify_synchronous_exception_mirror(esr)`, so the host tests would \
-             pin a table the pre-readiness path does not run."
+            "build.rs self-check: `classifier_status` accepted a host classifier that discards \
+             the mirror's result"
         );
     }
 }
 
 /// The routing relation in `handle_synchronous_exception`'s body — a
-/// strings-blanked code view: the class the handler routes on is bound to
-/// the Lean classifier's result and nothing else, after the kernel-origin
-/// gate, and the handler never reaches the pre-readiness mirror itself.
+/// strings-blanked code view — read off the body's top-level statements:
 ///
-/// PR #887 review round 3: the previous checks proved a classifier call
-/// *somewhere* in the body and a `match exception_class` *somewhere* else, so
-/// `let _ = classify_synchronous_exception(esr); let exception_class =
-/// classify_synchronous_exception_mirror(esr);` passed — the divergent second
-/// path the gate exists to keep out.  This parses the binding's initializer
-/// and forbids a second binding or a reassignment, instead of counting tokens.
+///   1. `halt_if_kernel_origin(frame, esr);` is an unconditional top-level
+///      statement: every synchronous exception taken from EL1 halts there,
+///      whatever else the frame holds;
+///   2. `let exception_class = classify_synchronous_exception(esr);` is a
+///      later top-level statement — the class is bound, immutably, to the
+///      Lean classifier's result and to nothing else;
+///   3. the body's LAST top-level statement is `match exception_class { … }`
+///      (`terminal_routing_match`) — the complete routing, after which
+///      nothing runs — and exactly one of its arms is
+///      `sync_class::KERNEL_ABORT`;
+///   4. `exception_class` occurs exactly twice in the body: the binding and
+///      the scrutinee.  No comparison, copy, second binding or reassignment
+///      consumes it, so the terminal match is the only construct that routes
+///      on the class;
+///   5. no other `match` names a `sync_class::` tag, no `ec::` constant is
+///      referenced, and the pre-readiness mirror is not reached.
+///
+/// PR #887 review round 3 replaced token counting with the binding's
+/// initializer; round 4 made the routing match a top-level statement; round
+/// 6 made the gate one too — nested under `if frame.x0() == 0 { … }` it
+/// preceded the classifier textually and guarded nothing when `x0` was
+/// nonzero — and closed the non-`match` competitors: a no-op top-level match
+/// followed by `if exception_class == sync_class::SVC { … }` routed
+/// everything while the sweep looked for a second `match`.
 fn handler_routing_status(body: &str) -> Result<(), String> {
-    let gate = body
-        .find("halt_if_kernel_origin(frame, esr);")
+    let body_open = body.find('{').ok_or_else(|| {
+        "PR #887 review round 4: the handler text carries no body block".to_string()
+    })?;
+    let body_close = matching_close_brace(body, body_open)
+        .ok_or_else(|| "PR #887 review round 4: the handler's body is unbalanced".to_string())?;
+    let statements = top_level_statements(body, body_open, body_close);
+    let text = |span: &(usize, usize)| body[span.0..span.1].trim();
+    let gate = statements
+        .iter()
+        .position(|span| text(span) == "halt_if_kernel_origin(frame, esr);")
         .ok_or_else(|| {
-            "PR #887 regression: no `halt_if_kernel_origin(frame, esr)` call — every \
-         synchronous exception taken from EL1 must halt before it is classified and \
-         routed"
+            "PR #887 review round 6 regression: `halt_if_kernel_origin(frame, esr);` is not \
+             an unconditional top-level statement of the handler.  Nested under a \
+             condition it precedes the classifier textually and guards nothing when the \
+             condition is false: an EL1 exception would be classified and delivered with \
+             the kernel's register window"
                 .to_string()
         })?;
-    let needle = "let exception_class = ";
-    let binding = body.find(needle).ok_or_else(|| {
-        "WS-RR RR4.25 regression: no `let exception_class = …` binding, so the routing \
-         class is not bound at all"
-            .to_string()
+    let binding = statements
+        .iter()
+        .position(|span| {
+            let t = text(span);
+            t.starts_with("let exception_class") || t.starts_with("let mut exception_class")
+        })
+        .ok_or_else(|| {
+            "WS-RR RR4.25 regression: no top-level `let exception_class = …` binding, so \
+             the routing class is not bound at all"
+                .to_string()
+        })?;
+    let binding_text = text(&statements[binding]);
+    let (pattern, init) = let_binding_parts(binding_text).ok_or_else(|| {
+        "PR #887 review regression: the `exception_class` binding has no initializer".to_string()
     })?;
-    if body[binding + needle.len()..].contains(needle) {
+    if binding_text.starts_with("let mut") || pattern != "exception_class" {
         return Err(
-            "PR #887 review regression: `exception_class` is bound twice; the \
-                    second binding shadows the classifier's result"
+            "PR #887 review regression: the routing class is bound mutably or by pattern; \
+             it must be `let exception_class = …`, immutable, so no later statement can \
+             route another class"
                 .to_string(),
         );
     }
-    let init_start = binding + needle.len();
-    let init_end = body[init_start..]
-        .find(';')
-        .map(|i| init_start + i)
-        .ok_or_else(|| {
-            "PR #887 review regression: the `exception_class` binding is unterminated".to_string()
-        })?;
-    let init = body[init_start..init_end].trim();
     if init != "classify_synchronous_exception(esr)" {
         return Err(format!(
             "WS-RR RR4.25 regression: the routing class is bound to `{init}`, not to \
@@ -1242,71 +1452,41 @@ fn handler_routing_status(body: &str) -> Result<(), String> {
     }
     if gate > binding {
         return Err(
-            "PR #887 regression: the kernel-origin gate runs *after* the \
-                    classification.  The gate must precede it: a kernel fault must never \
-                    reach the routing match"
+            "PR #887 regression: the kernel-origin gate runs *after* the classification.  \
+             The gate must precede it: a kernel fault must never reach the routing match"
                 .to_string(),
         );
     }
-    // No reassignment of the bound class (also catches a `let mut` rebinding).
-    let mut search = 0usize;
-    while let Some(hit) = body[search..].find("exception_class =") {
-        let at = search + hit;
-        search = at + 1;
-        let is_binding = at >= needle.len() - "exception_class = ".len()
-            && at + "exception_class = ".len() == init_start;
-        let is_comparison = body[at + "exception_class =".len()..].starts_with('=');
-        if !is_binding && !is_comparison {
-            return Err(
-                "PR #887 review regression: `exception_class` is assigned after its \
-                        binding, so the routed class need not be the classifier's"
-                    .to_string(),
-            );
-        }
-    }
-    // Round 4 (PR #887): the routing match is a TOP-LEVEL statement of the
-    // handler — one that runs on every entry — not a `match` found anywhere
-    // after the binding, which a copy nested under `if frame.x0() == 0 { … }`
-    // satisfied while a second match routed the rest.
-    let body_open = body.find('{').ok_or_else(|| {
-        "PR #887 review round 4: the handler text carries no body block".to_string()
+    let routing = terminal_routing_match(body, body_open, body_close)?;
+    let routing_text = body[routing.0..routing.1].trim_start();
+    let routing_match_at = routing.1 - routing_text.len();
+    let arms = match_arm_spans(routing_text).ok_or_else(|| {
+        "PR #887 review round 6: the routing match's arms could not be parsed".to_string()
     })?;
-    let body_close = matching_close_brace(body, body_open)
-        .ok_or_else(|| "PR #887 review round 4: the handler's body is unbalanced".to_string())?;
-    let statements = top_level_statements(body, body_open, body_close);
-    let routing = statements
+    let kernel_abort_arms = arms
         .iter()
-        .copied()
-        .find(|&(lo, _)| {
-            body[lo..]
-                .trim_start()
-                .starts_with("match exception_class {")
+        .filter(|arm| {
+            routing_text[arm.pattern.0..arm.pattern.1].trim() == "sync_class::KERNEL_ABORT"
         })
-        .ok_or_else(|| {
-            "WS-RR RR4.25 regression: the handler binds the classifier's result but \
-             does not route on it as a top-level statement (`match exception_class`).  \
-             Calling it and ignoring it — or matching on it only under a condition — \
-             is the same defect as not calling it"
-                .to_string()
-        })?;
-    if routing.0 < init_end {
-        return Err(
-            "PR #887 review round 4: the routing match precedes the binding it matches on"
-                .to_string(),
-        );
+        .count();
+    if kernel_abort_arms != 1 {
+        return Err(format!(
+            "PR #887 regression: the routing match has {kernel_abort_arms} \
+             `sync_class::KERNEL_ABORT` arms, not one.  A current-EL abort must halt on \
+             its own class, not fall through to the unknown-exception delivery"
+        ));
     }
-    let routing_text = &body[routing.0..routing.1];
-    if !routing_text.contains("sync_class::KERNEL_ABORT => {") {
-        return Err(
-            "PR #887 regression: no `sync_class::KERNEL_ABORT` arm in the routing \
-                    match.  A current-EL abort must halt on its own class, not fall \
-                    through to the unknown-exception delivery"
-                .to_string(),
-        );
+    let uses = word_occurrences(&body[body_open..=body_close], "exception_class");
+    if uses != 2 {
+        return Err(format!(
+            "PR #887 review round 6 regression: `exception_class` occurs {uses} times in the \
+             handler; it must occur exactly twice — its binding and the terminal match's \
+             scrutinee.  A comparison, a copy, a second binding or a reassignment is a \
+             second construct routing on the class, beside the verified match"
+        ));
     }
     // No competing routing match: every `match` whose arms name a
-    // `sync_class::` tag must be the top-level routing match itself.
-    let routing_match_at = routing.0 + (routing_text.len() - routing_text.trim_start().len());
+    // `sync_class::` tag must be the terminal routing match itself.
     let mut search = 0usize;
     while let Some(hit) = body[search..].find("match ") {
         let at = search + hit;
@@ -1325,7 +1505,7 @@ fn handler_routing_status(body: &str) -> Result<(), String> {
             let excerpt: String = body[at..].chars().take(40).collect();
             return Err(format!(
                 "PR #887 review round 4: a second match routes on `sync_class::` tags \
-                 (`{excerpt}…`); the top-level `match exception_class` is the only \
+                 (`{excerpt}…`); the terminal `match exception_class` is the only \
                  routing construct the handler may have"
             ));
         }
@@ -1445,6 +1625,45 @@ fn verify_handler_routing_scanner() {
              classify_synchronous_exception(esr);\n    match exception_class {\n        _ => {}\n    \
              }\n    let _arm = \"sync_class::KERNEL_ABORT => {\";\n}\n",
         ),
+        // PR #887 review round 6: the gate nested under a condition still
+        // precedes the classifier textually; a no-op top-level match followed
+        // by an `if` router on the class is not a second `match`; a statement
+        // after the routing match runs on every routed class; a copy of the
+        // class taken before the match is a second consumer.
+        (
+            "the kernel-origin gate nested under a condition",
+            "fn handle_synchronous_exception(frame: &mut TrapFrame) {\n    let esr = \
+             frame.esr_el1;\n    if frame.x0() == 0 {\n        halt_if_kernel_origin(frame, esr);\n    \
+             }\n    let exception_class = classify_synchronous_exception(esr);\n    match \
+             exception_class {\n        sync_class::KERNEL_ABORT => {\n            \
+             halt_on_kernel_abort(frame, esr);\n        }\n        _ => {}\n    }\n}\n",
+        ),
+        (
+            "a no-op routing match followed by an `if` router on the class",
+            "fn handle_synchronous_exception(frame: &mut TrapFrame) {\n    let esr = \
+             frame.esr_el1;\n    halt_if_kernel_origin(frame, esr);\n    let exception_class = \
+             classify_synchronous_exception(esr);\n    match exception_class {\n        \
+             sync_class::KERNEL_ABORT => {\n            halt_on_kernel_abort(frame, esr);\n        \
+             }\n        _ => {}\n    }\n    if exception_class == sync_class::SVC {\n        \
+             deliver_fault(frame, error_code::USER_EXCEPTION);\n    } else {\n        \
+             halt_on_kernel_abort(frame, esr);\n    }\n}\n",
+        ),
+        (
+            "a statement after the terminal routing match",
+            "fn handle_synchronous_exception(frame: &mut TrapFrame) {\n    let esr = \
+             frame.esr_el1;\n    halt_if_kernel_origin(frame, esr);\n    let exception_class = \
+             classify_synchronous_exception(esr);\n    match exception_class {\n        \
+             sync_class::KERNEL_ABORT => {\n            halt_on_kernel_abort(frame, esr);\n        \
+             }\n        _ => {}\n    }\n    deliver_fault(frame, error_code::USER_EXCEPTION);\n}\n",
+        ),
+        (
+            "a copy of the class taken before the routing match",
+            "fn handle_synchronous_exception(frame: &mut TrapFrame) {\n    let esr = \
+             frame.esr_el1;\n    halt_if_kernel_origin(frame, esr);\n    let exception_class = \
+             classify_synchronous_exception(esr);\n    let _probe = exception_class;\n    match \
+             exception_class {\n        sync_class::KERNEL_ABORT => {\n            \
+             halt_on_kernel_abort(frame, esr);\n        }\n        _ => {}\n    }\n}\n",
+        ),
     ];
     for (what, source) in cases {
         assert!(
@@ -1452,6 +1671,127 @@ fn verify_handler_routing_scanner() {
             "handler routing self-check: {what} passed the routing relation"
         );
     }
+}
+
+/// PR #887 review round 6: the handler's terminal routing statement — the
+/// LAST top-level statement of the body `code[body_open..=body_close]`,
+/// which must be `match exception_class { … }`.  Terminal, because a
+/// statement after the match would run on every class the match routed, and
+/// the match would no longer be the complete routing; last rather than
+/// first-found, because a match found anywhere after the binding is what a
+/// decoy nested under a condition satisfies.
+fn terminal_routing_match(
+    code: &str,
+    body_open: usize,
+    body_close: usize,
+) -> Result<(usize, usize), String> {
+    let statements = top_level_statements(code, body_open, body_close);
+    let &(lo, hi) = statements
+        .last()
+        .ok_or_else(|| "PR #887 review round 6: the handler body is empty".to_string())?;
+    if !code[lo..hi]
+        .trim_start()
+        .starts_with("match exception_class {")
+    {
+        return Err(
+            "WS-RR RR4.25 regression: the handler's last top-level statement is not \
+             `match exception_class { … }`.  The routing match must be the terminal \
+             statement: routing under a condition, after the match, or on a copy of the \
+             class is a second routing construct beside the verified one"
+                .to_string(),
+        );
+    }
+    Ok((lo, hi))
+}
+
+/// One arm of a `match`, as byte spans into the text `match_arm_spans` read:
+/// the pattern (everything before `=>`, guard included) and the body (a
+/// brace block including its braces, or the expression up to its `,`).
+struct MatchArm {
+    pattern: (usize, usize),
+    body: (usize, usize),
+}
+
+/// The arms of the `match` expression that `text` starts with — a
+/// strings-blanked view, so no `=>` or brace inside a literal can split an
+/// arm — or `None` if the text is not a balanced match.  Round 6 (PR #887):
+/// an arm is located by its pattern among the arms of a located match, never
+/// by the first textual occurrence of the pattern in a file or a function.
+fn match_arm_spans(text: &str) -> Option<Vec<MatchArm>> {
+    strip_word_prefix(text.trim_start(), "match")?;
+    let open = block_open_after(text, 0)?;
+    let close = matching_close_brace(text, open)?;
+    let bytes = text.as_bytes();
+    let mut arms = Vec::new();
+    let mut i = open + 1;
+    loop {
+        while i < close && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if i >= close {
+            break;
+        }
+        let pattern_start = i;
+        let mut depth = 0i32;
+        let mut arrow = None;
+        let mut j = i;
+        while j < close {
+            match bytes[j] {
+                b'(' | b'[' | b'{' => depth += 1,
+                b')' | b']' | b'}' => depth -= 1,
+                b'=' if depth == 0 && bytes.get(j + 1) == Some(&b'>') => {
+                    arrow = Some(j);
+                    break;
+                }
+                _ => {}
+            }
+            j += 1;
+        }
+        let arrow = arrow?;
+        let mut k = arrow + 2;
+        while k < close && bytes[k].is_ascii_whitespace() {
+            k += 1;
+        }
+        if k >= close {
+            return None;
+        }
+        let body_start = k;
+        let body_end;
+        if bytes[k] == b'{' {
+            let block_close = matching_close_brace(text, k)?;
+            if block_close >= close {
+                return None;
+            }
+            body_end = block_close + 1;
+            k = body_end;
+            while k < close && bytes[k].is_ascii_whitespace() {
+                k += 1;
+            }
+            if k < close && bytes[k] == b',' {
+                k += 1;
+            }
+        } else {
+            let mut depth = 0i32;
+            let mut m = k;
+            while m < close {
+                match bytes[m] {
+                    b'(' | b'[' | b'{' => depth += 1,
+                    b')' | b']' | b'}' => depth -= 1,
+                    b',' if depth == 0 => break,
+                    _ => {}
+                }
+                m += 1;
+            }
+            body_end = m;
+            k = if m < close { m + 1 } else { m };
+        }
+        arms.push(MatchArm {
+            pattern: (pattern_start, arrow),
+            body: (body_start, body_end),
+        });
+        i = k;
+    }
+    Some(arms)
 }
 
 /// Blank every `extern "C" { … }` block in `body` (byte-aligned), so a
@@ -1623,17 +1963,27 @@ const LEAN_READY_GATED_SEAMS: &[(&str, &str, &str)] = &[
 ];
 
 /// **Lean upcalls that run outside the readiness gate, by design or as
-/// registered debt** — `(source, enclosing fn, Lean symbol, why)`.
+/// registered debt** — `(source, enclosing fn, Lean symbol, occurrences, why)`.
 ///
 /// Every entry is a call `scan_lean_upcalls_readiness_gated` would otherwise
 /// reject, so adding one is a decision with a reason a reader can check, and
 /// an entry whose call no longer exists fails the build rather than
 /// lingering.
-const LEAN_UPCALLS_OUTSIDE_THE_GATE: &[(&str, &str, &str, &str)] = &[
+///
+/// **PR #887 review round 6: an entry exempts exactly `occurrences` calls**
+/// of the symbol in that function, reconciled in both directions by
+/// `reconcile_upcall_exemptions`.  The round-3 table was keyed by
+/// `(source, fn, symbol)` and recorded one boolean per entry, so a second
+/// `lean_syscall_dispatch_cross_core(…)` written into `dispatch_svc` — a
+/// second commit of the same syscall, with no reason of its own — matched
+/// the existing debt entry and passed.  Now it is a count mismatch, and the
+/// entry's count has to change in the same diff as the call.
+const LEAN_UPCALLS_OUTSIDE_THE_GATE: &[(&str, &str, &str, usize, &str)] = &[
     (
         "src/boot.rs",
         "rust_boot_main",
         "lean_kernel_main",
+        1,
         "the primary core's boot install: this call is the one that initializes \
          the Lean runtime the gate stands for, so it cannot sit behind the gate; \
          the boot core is marked ready after it, the image target's obligation",
@@ -1642,6 +1992,7 @@ const LEAN_UPCALLS_OUTSIDE_THE_GATE: &[(&str, &str, &str, &str)] = &[
         "src/svc_dispatch.rs",
         "dispatch_svc",
         "lean_syscall_dispatch_cross_core",
+        1,
         "the SVC dispatch seam: registered debt, closed by the release-readiness \
          plan's boot-path fail-open phase (docs/WORKSTREAM_HISTORY.md)",
     ),
@@ -1649,6 +2000,7 @@ const LEAN_UPCALLS_OUTSIDE_THE_GATE: &[(&str, &str, &str, &str)] = &[
         "src/ffi.rs",
         "sele4n_suspend_thread",
         "suspend_thread_cross_core",
+        1,
         "the cross-core suspend seam: the same registered debt as the SVC seam",
     ),
 ];
@@ -1660,30 +2012,43 @@ struct LeanUpcallSite {
     enclosing_fn: String,
     /// The Lean symbol called.
     symbol: String,
-    /// Whether `lean_ready(` occurs in the enclosing body *before* the call.
+    /// Whether a readiness guard on the executing PE dominates the call
+    /// (`readiness_guard_dominates`).
     gated: bool,
 }
 
-/// Every call expression `symbol(` in `code` — a strings-blanked code view —
-/// for `symbol` in `exports`, attributed to its enclosing function.
+/// Every reference to a Lean-emitted symbol in `code` — a strings-blanked
+/// code view — for `symbol` in `exports`, resolved to the call it stands for
+/// and attributed to its enclosing function.
 ///
 /// A declaration (`fn symbol(` inside an `extern "C"` block) or a definition
 /// (a host-lane stub, `extern "C" fn symbol(`) is not a call: the token is
 /// present but nothing is invoked, which is the presence-versus-relation
 /// mistake the PR #887 review found in the classifier scanner.  A call at
 /// module scope cannot be attributed and is an error, so it fails closed.
+///
+/// **PR #887 review round 6: a reference that is not a call is an error
+/// too.**  The round-3 scanner looked for the spelling `symbol(`, so
+/// `let invoke = lean_x; unsafe { invoke(1) }` produced no site at all — the
+/// aliased upcall was in neither inventory and the build passed.  Every
+/// whole-identifier occurrence of an exported symbol is now classified: a
+/// declaration or definition is skipped, a call (the name followed by `(`)
+/// is attributed, and anything else — a `let` alias, a function-pointer
+/// argument, a cast, a `use` re-export — is refused, because a readiness
+/// gate cannot be attributed to a value that escapes.  Call the symbol
+/// directly, under the gate.
 fn lean_upcall_sites(code: &str, exports: &[&str]) -> Result<Vec<LeanUpcallSite>, String> {
     let bytes = code.as_bytes();
     let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
     let mut sites = Vec::new();
     for symbol in exports {
-        let needle = format!("{symbol}(");
         let mut search = 0usize;
-        while let Some(hit) = code[search..].find(&needle) {
+        while let Some(hit) = code[search..].find(*symbol) {
             let at = search + hit;
-            search = at + needle.len();
-            // Whole identifier: `not_lean_x(` must not match `lean_x(`.
-            if at > 0 && is_ident(bytes[at - 1]) {
+            let end = at + symbol.len();
+            search = end;
+            // Whole identifier: neither `not_lean_x` nor `lean_x2` is `lean_x`.
+            if (at > 0 && is_ident(bytes[at - 1])) || (end < bytes.len() && is_ident(bytes[end])) {
                 continue;
             }
             // A declaration or definition is `fn` followed by the name.
@@ -1696,6 +2061,20 @@ fn lean_upcall_sites(code: &str, exports: &[&str]) -> Result<Vec<LeanUpcallSite>
                 && (before == 2 || !is_ident(bytes[before - 3]));
             if declared {
                 continue;
+            }
+            // A call is the name followed by `(`; any other reference escapes.
+            let mut after = end;
+            while after < bytes.len() && matches!(bytes[after], b' ' | b'\t' | b'\n' | b'\r') {
+                after += 1;
+            }
+            if after >= bytes.len() || bytes[after] != b'(' {
+                let excerpt: String = code[at..].chars().take(48).collect();
+                return Err(format!(
+                    "the Lean symbol `{symbol}` is referenced at byte {at} without being \
+                     called (`{excerpt}…`).  An alias, a function pointer, a cast or a \
+                     re-export cannot be attributed to a readiness gate; call the symbol \
+                     directly, under the gate"
+                ));
             }
             let Some((enclosing_fn, open, _)) = enclosing_fn_span(code, at) else {
                 return Err(format!(
@@ -1739,8 +2118,13 @@ fn lean_upcall_sites(code: &str, exports: &[&str]) -> Result<Vec<LeanUpcallSite>
 /// block must END in a diverging top-level statement
 /// (`top_level_statements` + `statement_diverges`), and the positive guard's
 /// condition must be a conjunction one of whose conjuncts is exactly the
-/// `lean_ready(…)` call (`condition_entails_ready`): no comparison, no `!`,
+/// `lean_ready(…)` call (`ready_condition_argument`): no comparison, no `!`,
 /// no `||` anywhere.
+///
+/// **Round 6 (PR #887): the guard is the executing PE's.**  Both shapes
+/// require the call's argument to name the executing core
+/// (`ready_argument_is_executing_core`): `lean_ready(0)` on core 1 gates the
+/// wrong core, and a parameter is whatever the caller sent.
 fn readiness_guard_dominates(code: &str, body_open: usize, call: usize) -> bool {
     let bytes = code.as_bytes();
     let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
@@ -1762,7 +2146,17 @@ fn readiness_guard_dominates(code: &str, body_open: usize, call: usize) -> bool 
             continue;
         };
         let cond = code[if_at + 2..block_open].trim();
-        if is_negated_ready_call(cond) {
+        // PR #887 review round 6: the guard must be the EXECUTING PE's — its
+        // argument resolves to `current_core_id_from_tpidr()` inline, through
+        // a `let` bound from it, or through an `assert_eq!` against it, in a
+        // statement that dominates the guard.  `lean_ready(0)` on core 1 is a
+        // gate on the wrong core, and a parameter is whatever the caller sent.
+        let names_executing_core =
+            |arg: &str| ready_argument_is_executing_core(code, body_open, if_at, arg);
+        if let Some(arg) = negated_ready_call_argument(cond) {
+            if !names_executing_core(arg) {
+                continue;
+            }
             let statements = top_level_statements(code, block_open, block_close);
             let last_diverges = statements
                 .last()
@@ -1771,44 +2165,333 @@ fn readiness_guard_dominates(code: &str, body_open: usize, call: usize) -> bool 
             if last_diverges && block_close < call {
                 return true;
             }
-        } else if condition_entails_ready(cond) && block_open < call && call < block_close {
-            return true;
+        } else if let Some(arg) = ready_condition_argument(cond) {
+            if names_executing_core(arg) && block_open < call && call < block_close {
+                return true;
+            }
         }
     }
     false
 }
 
-/// Does `cond` — the text between an `if` and its `{` — entail readiness?
-/// Yes exactly when it contains no `||` and is a conjunction (`&&` at
-/// parenthesis depth zero) one of whose conjuncts is a bare `lean_ready(…)`
-/// call.  `lean_ready(c) == false`, `!lean_ready(c)`, `ready_flag` and
-/// `lean_ready(c) || x` all read as not entailing it — the fail-closed
-/// direction.
-fn condition_entails_ready(cond: &str) -> bool {
-    if cond.contains("||") {
+/// PR #887 review round 6: does `arg` — the argument of a `lean_ready(…)`
+/// guard whose `if` sits at `guard_at` inside the function body opening at
+/// `body_open` — name the **executing PE**?  Three structural forms are
+/// accepted, and nothing else:
+///
+///   * the call `crate::per_cpu::current_core_id_from_tpidr()` itself
+///     (optionally path-shortened, cast with `as`, parenthesised);
+///   * an identifier bound by a `let` whose initializer is that call, in a
+///     statement that **dominates** the guard — a top-level statement of the
+///     function body or of a block enclosing the guard, ending before it;
+///   * an identifier compared to that call by an `assert_eq!` in such a
+///     dominating statement (`debug_assert_eq!` is not accepted: a check that
+///     release builds compile out guarantees nothing on hardware).
+///
+/// A parameter, a literal, a value from another module, or a binding in a
+/// sibling block reads as *not* the executing core — the fail-closed
+/// direction.  So does an identifier whose TPIDR binding a later dominating
+/// statement shadows or reassigns: the last verdict wins
+/// (`executing_core_verdict`).
+fn ready_argument_is_executing_core(
+    code: &str,
+    body_open: usize,
+    guard_at: usize,
+    arg: &str,
+) -> bool {
+    if is_tpidr_core_expression(arg) {
+        return true;
+    }
+    let ident = strip_cast_and_parens(arg);
+    if ident.is_empty()
+        || !ident
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_')
+    {
         return false;
     }
-    split_top_level(cond, "&&")
-        .iter()
-        .any(|conjunct| is_bare_ready_call(conjunct))
+    let Some(body_close) = matching_close_brace(code, body_open) else {
+        return false;
+    };
+    let mut verdict = false;
+    for (lo, hi) in dominating_statements(code, body_open, body_close, guard_at) {
+        if let Some(latest) = executing_core_verdict(&code[lo..hi], ident) {
+            verdict = latest;
+        }
+    }
+    verdict
 }
 
-/// Is `expr` exactly a call of `lean_ready` (optionally path-qualified,
-/// optionally parenthesised), with balanced arguments and nothing after the
-/// closing parenthesis?
-fn is_bare_ready_call(expr: &str) -> bool {
+/// Is `expr`, after parentheses and a trailing `as <type>` are stripped, a
+/// call of `current_core_id_from_tpidr()`?
+fn is_tpidr_core_expression(expr: &str) -> bool {
+    matches!(
+        strip_cast_and_parens(expr),
+        "crate::per_cpu::current_core_id_from_tpidr()"
+            | "per_cpu::current_core_id_from_tpidr()"
+            | "current_core_id_from_tpidr()"
+    )
+}
+
+/// `expr` without enclosing parentheses and without trailing `as <type>`
+/// casts.
+fn strip_cast_and_parens(expr: &str) -> &str {
+    let mut e = expr.trim();
+    loop {
+        if e.starts_with('(') && e.ends_with(')') && matching_close_paren(e, 0) == Some(e.len() - 1)
+        {
+            e = e[1..e.len() - 1].trim();
+            continue;
+        }
+        if let Some(at) = e.rfind(" as ") {
+            let cast = e[at + 4..].trim();
+            if !cast.is_empty() && cast.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
+                e = e[..at].trim();
+                continue;
+            }
+        }
+        return e;
+    }
+}
+
+/// What the top-level statement `statement` says about `ident` as the
+/// executing core.  `Some(true)`: it binds `ident` to
+/// `current_core_id_from_tpidr()` (`let ident = …;`, typed or not, `mut` or
+/// not) or validates it against that call (`assert_eq!(ident, …)` in either
+/// order; `debug_assert_eq!` is not accepted, since a check release builds
+/// compile out guarantees nothing on hardware).  `Some(false)`: it binds or
+/// assigns `ident` to anything else — a shadowing `let`, a destructuring
+/// pattern naming it, a plain or compound assignment.  `None`: it does not
+/// touch `ident`.  Leading attribute lines (`#[cfg(…)]`) are skipped.  The
+/// verdict that counts is the LAST one among the statements dominating the
+/// guard (`ready_argument_is_executing_core`), so a shadow or a reassignment
+/// after the TPIDR binding reads as not the executing core.
+fn executing_core_verdict(statement: &str, ident: &str) -> Option<bool> {
+    let text = strip_leading_attributes(statement.trim());
+    let text = text.trim().trim_end_matches(';').trim();
+    if let Some((pattern, init)) = let_binding_parts(text) {
+        if word_occurrences(pattern, ident) == 0 {
+            return None;
+        }
+        return Some(pattern == ident && is_tpidr_core_expression(init));
+    }
+    if let Some(rest) = strip_word_prefix(text, ident) {
+        let rest = rest.trim_start();
+        let assigns = (rest.starts_with('=') && !rest.starts_with("=="))
+            || ["+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>="]
+                .iter()
+                .any(|op| rest.starts_with(op));
+        if assigns {
+            return Some(false);
+        }
+    }
+    if let Some(rest) = text.strip_prefix("assert_eq!") {
+        if rest.starts_with('(') {
+            let close = matching_close_paren(text, "assert_eq!".len())?;
+            let inner = &text["assert_eq!(".len()..close];
+            let parts = split_top_level(inner, ",");
+            if parts.len() >= 2 {
+                let a = strip_cast_and_parens(parts[0]);
+                let b = strip_cast_and_parens(parts[1]);
+                if (a == ident && is_tpidr_core_expression(b))
+                    || (b == ident && is_tpidr_core_expression(a))
+                {
+                    return Some(true);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// `text` without its leading attribute lines (`#[…]`, one or more).
+fn strip_leading_attributes(text: &str) -> &str {
+    let mut t = text.trim_start();
+    while t.starts_with("#[") {
+        match t.find(']') {
+            Some(end) => t = t[end + 1..].trim_start(),
+            None => return t,
+        }
+    }
+    t
+}
+
+/// `text` after a leading whole-word `word`, if it starts with one.
+fn strip_word_prefix<'a>(text: &'a str, word: &str) -> Option<&'a str> {
+    let rest = text.strip_prefix(word)?;
+    match rest.bytes().next() {
+        Some(b) if b.is_ascii_alphanumeric() || b == b'_' => None,
+        _ => Some(rest),
+    }
+}
+
+/// `let <pattern>[: <type>] = <init>` split into the pattern (without `mut`
+/// and without its type annotation) and the initializer (without a trailing
+/// `;`).  `None` when `text` is not a `let` binding with an initializer.
+fn let_binding_parts(text: &str) -> Option<(&str, &str)> {
+    let rest = strip_word_prefix(text.trim(), "let")?.trim_start();
+    let bytes = rest.as_bytes();
+    let mut depth = 0i32;
+    let mut eq = None;
+    for (i, &b) in bytes.iter().enumerate() {
+        match b {
+            b'(' | b'[' | b'{' => depth += 1,
+            b')' | b']' | b'}' => depth -= 1,
+            b'=' if depth == 0
+                && bytes.get(i + 1) != Some(&b'=')
+                && bytes.get(i + 1) != Some(&b'>')
+                && (i == 0 || !matches!(bytes[i - 1], b'!' | b'<' | b'>' | b'=')) =>
+            {
+                eq = Some(i);
+                break;
+            }
+            _ => {}
+        }
+    }
+    let eq = eq?;
+    let lhs = rest[..eq].trim();
+    let lhs = strip_word_prefix(lhs, "mut")
+        .map(str::trim_start)
+        .unwrap_or(lhs);
+    let lb = lhs.as_bytes();
+    let mut cut = lhs.len();
+    let mut depth = 0i32;
+    for i in 0..lb.len() {
+        match lb[i] {
+            b'(' | b'[' | b'{' => depth += 1,
+            b')' | b']' | b'}' => depth -= 1,
+            b':' if depth == 0 && lb.get(i + 1) != Some(&b':') && (i == 0 || lb[i - 1] != b':') => {
+                cut = i;
+                break;
+            }
+            _ => {}
+        }
+    }
+    let pattern = lhs[..cut].trim();
+    let init = rest[eq + 1..].trim().trim_end_matches(';').trim();
+    Some((pattern, init))
+}
+
+/// The position of `word` among the elements of the tuple `text` — `Some(0)`
+/// when `text` is `word` itself — or `None` when it is neither.
+fn tuple_index_of(text: &str, word: &str) -> Option<usize> {
+    let t = text.trim();
+    if t == word {
+        return Some(0);
+    }
+    if !t.starts_with('(') || matching_close_paren(t, 0) != Some(t.len() - 1) {
+        return None;
+    }
+    split_top_level(&t[1..t.len() - 1], ",")
+        .iter()
+        .position(|element| element.trim() == word)
+}
+
+/// Whole-word occurrences of `word` in `text`: an occurrence bounded on both
+/// sides by non-identifier bytes.  Round 6 (PR #887): the count is how a
+/// scanner asks "is this the ONLY consumer" — a binding plus one scrutinee is
+/// two, and a comparison, a copy or a shadow is a third.
+fn word_occurrences(text: &str, word: &str) -> usize {
+    let bytes = text.as_bytes();
+    let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let mut count = 0usize;
+    let mut search = 0usize;
+    while let Some(hit) = text[search..].find(word) {
+        let at = search + hit;
+        let end = at + word.len();
+        search = end;
+        let bounded =
+            (at == 0 || !is_ident(bytes[at - 1])) && (end >= bytes.len() || !is_ident(bytes[end]));
+        if bounded {
+            count += 1;
+        }
+    }
+    count
+}
+
+/// `text` with every run of whitespace collapsed to one space.
+fn collapse_whitespace(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// The statements that **dominate** position `at` inside the block
+/// `code[body_open..=body_close]`: at every nesting level from the body
+/// inward, the top-level statements that end before `at`, descending only
+/// into the block statement that contains `at`.  A statement in a sibling
+/// block is not returned — it need not have run.
+fn dominating_statements(
+    code: &str,
+    body_open: usize,
+    body_close: usize,
+    at: usize,
+) -> Vec<(usize, usize)> {
+    let mut out = Vec::new();
+    let mut open = body_open;
+    let mut close = body_close;
+    loop {
+        let statements = top_level_statements(code, open, close);
+        let mut container: Option<(usize, usize)> = None;
+        for &(lo, hi) in &statements {
+            if hi <= at {
+                out.push((lo, hi));
+            } else if lo <= at && at < hi {
+                container = Some((lo, hi));
+                break;
+            }
+        }
+        let Some((lo, hi)) = container else {
+            break;
+        };
+        let Some(inner_open) = block_open_after(code, lo) else {
+            break;
+        };
+        if inner_open >= at || inner_open >= hi {
+            break;
+        }
+        let Some(inner_close) = matching_close_brace(code, inner_open) else {
+            break;
+        };
+        if !(inner_open < at && at < inner_close) {
+            break;
+        }
+        open = inner_open;
+        close = inner_close;
+    }
+    out
+}
+
+/// The argument of the bare readiness call a positive guard's condition
+/// carries, when the condition entails readiness: no `||`, and a conjunction
+/// (`&&` at depth zero) one of whose conjuncts is exactly the call.
+fn ready_condition_argument(cond: &str) -> Option<&str> {
+    if cond.contains("||") {
+        return None;
+    }
+    split_top_level(cond, "&&")
+        .into_iter()
+        .find_map(bare_ready_call_argument)
+}
+
+/// The argument of `!lean_ready(…)` when `cond` is exactly that.
+fn negated_ready_call_argument(cond: &str) -> Option<&str> {
+    cond.trim()
+        .strip_prefix('!')
+        .and_then(bare_ready_call_argument)
+}
+
+/// If `expr` is exactly a `lean_ready(<arg>)` call (optionally path-qualified
+/// or parenthesised, balanced, nothing after the closing parenthesis), its
+/// argument text.
+fn bare_ready_call_argument(expr: &str) -> Option<&str> {
     let mut e = expr.trim();
     while e.starts_with('(') && e.ends_with(')') && matching_close_paren(e, 0) == Some(e.len() - 1)
     {
         e = e[1..e.len() - 1].trim();
     }
-    let Some(rest) = e
+    let rest = e
         .strip_prefix("crate::lean_ready::lean_ready(")
         .or_else(|| e.strip_prefix("lean_ready::lean_ready("))
-        .or_else(|| e.strip_prefix("lean_ready("))
-    else {
-        return false;
-    };
+        .or_else(|| e.strip_prefix("lean_ready("))?;
     let mut depth = 1i32;
     for (index, ch) in rest.char_indices() {
         match ch {
@@ -1816,22 +2499,16 @@ fn is_bare_ready_call(expr: &str) -> bool {
             ')' => {
                 depth -= 1;
                 if depth == 0 {
-                    return rest[index + 1..].trim().is_empty();
+                    return rest[index + 1..]
+                        .trim()
+                        .is_empty()
+                        .then_some(rest[..index].trim());
                 }
             }
             _ => {}
         }
     }
-    false
-}
-
-/// Is `cond` exactly `!lean_ready(…)` — the negated bare guard whose block
-/// must diverge?
-fn is_negated_ready_call(cond: &str) -> bool {
-    cond.trim()
-        .strip_prefix('!')
-        .map(is_bare_ready_call)
-        .unwrap_or(false)
+    None
 }
 
 /// The `)` matching the `(` at `open` in `text`, if balanced.
@@ -2165,46 +2842,31 @@ fn scan_lean_upcalls_readiness_gated() {
     let export_refs: Vec<&str> = exports.iter().map(String::as_str).collect();
 
     let mut gated_found: Vec<(String, String, String)> = Vec::new();
-    let mut exempt_seen = vec![false; LEAN_UPCALLS_OUTSIDE_THE_GATE.len()];
+    let mut ungated_found: Vec<(String, String, String)> = Vec::new();
     for (path, code) in &views {
         let sites = match lean_upcall_sites(code, &export_refs) {
             Ok(s) => s,
             Err(e) => panic!("Lean upcall scanner: `{path}`: {e}"),
         };
         for site in sites {
-            if site.gated {
-                gated_found.push((path.clone(), site.enclosing_fn, site.symbol));
-                continue;
-            }
-            let exempt = LEAN_UPCALLS_OUTSIDE_THE_GATE
-                .iter()
-                .position(|(p, f, sym, _)| {
-                    *p == path.as_str() && *f == site.enclosing_fn && *sym == site.symbol
-                });
-            match exempt {
-                Some(i) => exempt_seen[i] = true,
-                None => panic!(
-                    "Lean upcall scanner: `{path}`'s `fn {}` calls the Lean-emitted \
-                     symbol `{}` without consulting the per-core readiness gate \
-                     (`crate::lean_ready::lean_ready(core)`) earlier in its body.  A PE \
-                     must never enter a Lean runtime it has not initialized.  Either \
-                     gate the call — and add the seam to `LEAN_READY_GATED_SEAMS` — or, \
-                     if it is the call that establishes readiness or a registered gap, \
-                     add it to `LEAN_UPCALLS_OUTSIDE_THE_GATE` with its reason.",
-                    site.enclosing_fn, site.symbol
-                ),
+            let gated = site.gated;
+            let found = (path.clone(), site.enclosing_fn, site.symbol);
+            if gated {
+                gated_found.push(found);
+            } else {
+                ungated_found.push(found);
             }
         }
     }
-    for (i, (p, f, sym, _)) in LEAN_UPCALLS_OUTSIDE_THE_GATE.iter().enumerate() {
-        if !exempt_seen[i] {
-            panic!(
-                "Lean upcall scanner: `LEAN_UPCALLS_OUTSIDE_THE_GATE` lists `{p}`'s \
-                 `fn {f}` calling `{sym}`, but no ungated call to that symbol exists \
-                 there any more.  Remove the stale entry, or re-attribute a call that \
-                 moved."
-            );
-        }
+    // PR #887 review round 6: the ungated calls are reconciled against the
+    // exemption table by OCCURRENCE — every ungated call is covered by an
+    // entry, and every entry covers exactly the calls that exist.
+    let ungated_refs: Vec<(&str, &str, &str)> = ungated_found
+        .iter()
+        .map(|(p, f, s)| (p.as_str(), f.as_str(), s.as_str()))
+        .collect();
+    if let Err(why) = reconcile_upcall_exemptions(&ungated_refs, LEAN_UPCALLS_OUTSIDE_THE_GATE) {
+        panic!("Lean upcall scanner: {why}");
     }
     for (p, f, sym) in &gated_found {
         let pinned = LEAN_READY_GATED_SEAMS
@@ -2235,21 +2897,127 @@ fn scan_lean_upcalls_readiness_gated() {
     }
 }
 
+/// PR #887 review round 6: reconcile the ungated Lean upcalls the scanner
+/// found against `LEAN_UPCALLS_OUTSIDE_THE_GATE`, occurrence by occurrence.
+/// `Ok(())` exactly when every `(source, fn, symbol)` group of ungated calls
+/// has an entry whose count equals the group's size, and every entry's group
+/// exists with exactly that size — a table row and the tree's calls have to
+/// change together.
+fn reconcile_upcall_exemptions(
+    ungated: &[(&str, &str, &str)],
+    table: &[(&str, &str, &str, usize, &str)],
+) -> Result<(), String> {
+    let mut groups: Vec<((&str, &str, &str), usize)> = Vec::new();
+    for &(p, f, s) in ungated {
+        match groups.iter_mut().find(|(key, _)| *key == (p, f, s)) {
+            Some((_, n)) => *n += 1,
+            None => groups.push(((p, f, s), 1)),
+        }
+    }
+    for &(p, f, s, expected, _) in table {
+        if expected == 0 {
+            return Err(format!(
+                "`LEAN_UPCALLS_OUTSIDE_THE_GATE` exempts zero calls of `{s}` in `{p}`'s \
+                 `fn {f}`; an entry that covers nothing is a stale entry — remove it"
+            ));
+        }
+        let found = groups
+            .iter()
+            .find(|(key, _)| *key == (p, f, s))
+            .map(|(_, n)| *n)
+            .unwrap_or(0);
+        if found != expected {
+            return Err(format!(
+                "`LEAN_UPCALLS_OUTSIDE_THE_GATE` exempts {expected} ungated call(s) of `{s}` \
+                 in `{p}`'s `fn {f}`, but {found} exist there.  A call was added without a \
+                 reviewed reason of its own, or removed without retiring its entry; the \
+                 count changes in the same change as the call"
+            ));
+        }
+    }
+    for ((p, f, s), n) in &groups {
+        let registered = table
+            .iter()
+            .any(|(tp, tf, ts, _, _)| tp == p && tf == f && ts == s);
+        if !registered {
+            return Err(format!(
+                "`{p}`'s `fn {f}` calls the Lean-emitted symbol `{s}` ({n} call(s)) without \
+                 a readiness guard on the executing PE dominating the call \
+                 (`if crate::lean_ready::lean_ready(<this core's TPIDR-derived id>) {{ … }}`).  \
+                 A PE must never enter a Lean runtime it has not initialized.  Either gate \
+                 the call — and add the seam to `LEAN_READY_GATED_SEAMS` — or, if it is the \
+                 call that establishes readiness or a registered gap, add it to \
+                 `LEAN_UPCALLS_OUTSIDE_THE_GATE` with its occurrence count and reason"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// PR #887 review round 6: the reconciliation is by occurrence, both ways.
+fn verify_upcall_exemption_reconciliation() {
+    let one_entry: &[(&str, &str, &str, usize, &str)] = &[("src/a.rs", "f", "lean_x", 1, "why")];
+    let one_call: &[(&str, &str, &str)] = &[("src/a.rs", "f", "lean_x")];
+    let two_calls: &[(&str, &str, &str)] =
+        &[("src/a.rs", "f", "lean_x"), ("src/a.rs", "f", "lean_x")];
+    let none: &[(&str, &str, &str)] = &[];
+    assert!(
+        reconcile_upcall_exemptions(one_call, one_entry).is_ok(),
+        "exemption self-check: one registered call must reconcile: {:?}",
+        reconcile_upcall_exemptions(one_call, one_entry)
+    );
+    assert!(
+        reconcile_upcall_exemptions(two_calls, one_entry).is_err(),
+        "exemption self-check: a second call in an exempt function passed on the first call's entry"
+    );
+    assert!(
+        reconcile_upcall_exemptions(none, one_entry).is_err(),
+        "exemption self-check: a stale entry passed"
+    );
+    let elsewhere: &[(&str, &str, &str)] = &[("src/a.rs", "g", "lean_x")];
+    assert!(
+        reconcile_upcall_exemptions(elsewhere, one_entry).is_err(),
+        "exemption self-check: an ungated call in an unregistered function passed"
+    );
+    let two_entry: &[(&str, &str, &str, usize, &str)] = &[("src/a.rs", "f", "lean_x", 2, "why")];
+    assert!(
+        reconcile_upcall_exemptions(one_call, two_entry).is_err(),
+        "exemption self-check: an entry exempting two calls passed on one"
+    );
+    assert!(
+        reconcile_upcall_exemptions(two_calls, two_entry).is_ok(),
+        "exemption self-check: two registered calls must reconcile"
+    );
+    let zero_entry: &[(&str, &str, &str, usize, &str)] = &[("src/a.rs", "f", "lean_x", 0, "why")];
+    assert!(
+        reconcile_upcall_exemptions(none, zero_entry).is_err(),
+        "exemption self-check: a zero-count entry passed"
+    );
+}
+
 /// Token-preserving mutations for `lean_upcall_sites`: every case keeps the
 /// symbol present in the text and breaks the relation the scanner is meant to
 /// see, so a scanner that had degraded to a presence check fails here before
 /// it is trusted with the tree.
+///
+/// PR #887 review round 6: the executing-core provenance of the guard is part
+/// of the relation, so every fixture that expects a gated verdict binds the
+/// guard's argument from `current_core_id_from_tpidr()` the way the seams do
+/// (`BIND`), and the round-3 shape — a parameter as the guard's argument —
+/// is now one of the refused fixtures.
 fn verify_lean_upcall_scanner() {
     let exports = ["lean_x"];
     let sites = |source: &str| {
         let (_, code) = rust_code_views(source);
         lean_upcall_sites(&code, &exports)
     };
-    let gated = sites(
-        "fn seam(c: usize) -> u32 {\n    if crate::lean_ready::lean_ready(c) {\n        \
-         extern \"C\" {\n            fn lean_x(a: u64) -> u32;\n        }\n        \
-         unsafe { lean_x(1) }\n    } else {\n        0\n    }\n}\n",
-    )
+    const BIND: &str = "    let c = crate::per_cpu::current_core_id_from_tpidr() as usize;\n";
+    let seam =
+        |body: &str| format!("fn seam(other: bool, retry: bool) -> u32 {{\n{BIND}{body}}}\n");
+    let gated = sites(&seam(
+        "    if crate::lean_ready::lean_ready(c) {\n        extern \"C\" {\n            fn lean_x(a: \
+         u64) -> u32;\n        }\n        unsafe { lean_x(1) }\n    } else {\n        0\n    }\n",
+    ))
     .expect("gated fixture attributes");
     assert_eq!(
         gated,
@@ -2274,11 +3042,10 @@ fn verify_lean_upcall_scanner() {
         stub.is_empty(),
         "Lean upcall scanner self-check: a host-lane stub definition counted as a call"
     );
-    let gate_after = sites(
-        "fn seam(c: usize) -> u32 {\n    extern \"C\" {\n        fn lean_x(a: u64) -> u32;\n    }\n    \
-         let r = unsafe { lean_x(1) };\n    if crate::lean_ready::lean_ready(c) {\n        r\n    } \
-         else {\n        0\n    }\n}\n",
-    )
+    let gate_after = sites(&seam(
+        "    extern \"C\" {\n        fn lean_x(a: u64) -> u32;\n    }\n    let r = unsafe { lean_x(1) \
+         };\n    if crate::lean_ready::lean_ready(c) {\n        r\n    } else {\n        0\n    }\n",
+    ))
     .expect("late-gate fixture attributes");
     assert!(
         gate_after.len() == 1 && !gate_after[0].gated,
@@ -2298,12 +3065,18 @@ fn verify_lean_upcall_scanner() {
         suffix.is_empty(),
         "Lean upcall scanner self-check: a longer identifier matched the symbol"
     );
+    let prefix =
+        sites("fn seam() -> u32 {\n    lean_x2(1)\n}\nfn lean_x2(_a: u64) -> u32 {\n    0\n}\n")
+            .expect("prefix fixture attributes");
+    assert!(
+        prefix.is_empty(),
+        "Lean upcall scanner self-check: a longer identifier starting with the symbol matched it"
+    );
     let orphan = sites("static Y: u32 = lean_x(1);\n");
     assert!(
         orphan.is_err(),
         "Lean upcall scanner self-check: a call outside any function must fail closed"
     );
-    // PR #887 review round 3: a readiness token that does not CONTROL the call.
     let ungated = |source: &str, what: &str| {
         let found = sites(source).expect("fixture attributes");
         assert!(
@@ -2318,36 +3091,41 @@ fn verify_lean_upcall_scanner() {
             "Lean upcall scanner self-check: {what} was not recognised as the guard"
         );
     };
+    // PR #887 review round 3: a readiness token that does not CONTROL the call.
     ungated(
-        "fn seam(c: usize) -> u32 {\n    let _ = crate::lean_ready::lean_ready(c);\n    \
-         unsafe { lean_x(1) }\n}\n",
+        &seam("    let _ = crate::lean_ready::lean_ready(c);\n    unsafe { lean_x(1) }\n"),
         "a stored readiness value",
     );
     ungated(
-        "fn seam(c: usize) -> u32 {\n    if crate::lean_ready::lean_ready(c) {\n        \
-         0\n    } else {\n        0\n    };\n    unsafe { lean_x(1) }\n}\n",
+        &seam(
+            "    if crate::lean_ready::lean_ready(c) {\n        0\n    } else {\n        0\n    };\n    \
+             unsafe { lean_x(1) }\n",
+        ),
         "a readiness block closed before the call",
     );
     ungated(
-        "fn seam(c: usize, other: bool) -> u32 {\n    if other || \
-         crate::lean_ready::lean_ready(c) {\n        unsafe { lean_x(1) }\n    } else {\n        \
-         0\n    }\n}\n",
+        &seam(
+            "    if other || crate::lean_ready::lean_ready(c) {\n        unsafe { lean_x(1) }\n    } \
+             else {\n        0\n    }\n",
+        ),
         "a disjunction with the readiness check",
     );
     ungated(
-        "fn seam(c: usize) -> u32 {\n    if !crate::lean_ready::lean_ready(c) {\n    }\n    \
-         unsafe { lean_x(1) }\n}\n",
+        &seam("    if !crate::lean_ready::lean_ready(c) {\n    }\n    unsafe { lean_x(1) }\n"),
         "a negated check whose block does not diverge",
     );
     gated_by(
-        "fn seam(c: usize) -> u32 {\n    if !crate::lean_ready::lean_ready(c) {\n        \
-         return 0;\n    }\n    unsafe { lean_x(1) }\n}\n",
+        &seam(
+            "    if !crate::lean_ready::lean_ready(c) {\n        return 0;\n    }\n    unsafe { \
+             lean_x(1) }\n",
+        ),
         "the fail-closed early return",
     );
     gated_by(
-        "fn seam(c: usize, other: bool) -> u32 {\n    if other && \
-         crate::lean_ready::lean_ready(c) {\n        unsafe { lean_x(1) }\n    } else {\n        \
-         0\n    }\n}\n",
+        &seam(
+            "    if other && crate::lean_ready::lean_ready(c) {\n        unsafe { lean_x(1) }\n    } \
+             else {\n        0\n    }\n",
+        ),
         "a conjunction with the readiness check",
     );
     // PR #887 review round 4: a region-scoped presence check is still a
@@ -2355,36 +3133,141 @@ fn verify_lean_upcall_scanner() {
     // top-level statement, and the positive guard's condition must be the
     // readiness call itself, not any comparison on it.
     ungated(
-        "fn seam(c: usize, retry: bool) -> u32 {\n    if !crate::lean_ready::lean_ready(c) {\n        \
-         if retry {\n            return 0;\n        }\n    }\n    unsafe { lean_x(1) }\n}\n",
+        &seam(
+            "    if !crate::lean_ready::lean_ready(c) {\n        if retry {\n            return 0;\n        \
+             }\n    }\n    unsafe { lean_x(1) }\n",
+        ),
         "a negated check whose divergence is nested under a condition",
     );
     ungated(
-        "fn seam(c: usize) -> u32 {\n    if crate::lean_ready::lean_ready(c) == false {\n        \
-         unsafe { lean_x(1) }\n    } else {\n        0\n    }\n}\n",
+        &seam(
+            "    if crate::lean_ready::lean_ready(c) == false {\n        unsafe { lean_x(1) }\n    } \
+             else {\n        0\n    }\n",
+        ),
         "an inverted comparison on the readiness check",
     );
     ungated(
-        "fn seam(c: usize) -> u32 {\n    if crate::lean_ready::lean_ready(c) != true {\n        \
-         unsafe { lean_x(1) }\n    } else {\n        0\n    }\n}\n",
+        &seam(
+            "    if crate::lean_ready::lean_ready(c) != true {\n        unsafe { lean_x(1) }\n    } \
+             else {\n        0\n    }\n",
+        ),
         "an inverted inequality on the readiness check",
     );
     ungated(
-        "fn seam(c: usize) -> u32 {\n    let ready = crate::lean_ready::lean_ready(c);\n    if ready \
-         {\n        unsafe { lean_x(1) }\n    } else {\n        0\n    }\n}\n",
+        &seam(
+            "    let ready = crate::lean_ready::lean_ready(c);\n    if ready {\n        unsafe { \
+             lean_x(1) }\n    } else {\n        0\n    }\n",
+        ),
         "a readiness value consulted through a binding",
     );
     gated_by(
-        "fn seam(c: usize) -> u32 {\n    if !crate::lean_ready::lean_ready(c) {\n        \
-         crate::kprintln!(\"not ready\");\n        crate::cpu::fatal_halt();\n    }\n    unsafe { \
-         lean_x(1) }\n}\n",
+        &seam(
+            "    if !crate::lean_ready::lean_ready(c) {\n        crate::kprintln!(\"not ready\");\n        \
+             crate::cpu::fatal_halt();\n    }\n    unsafe { lean_x(1) }\n",
+        ),
         "a fail-closed halt as the negated block's last statement",
     );
     gated_by(
-        "fn seam(c: usize) -> u32 {\n    if (crate::lean_ready::lean_ready(c)) {\n        unsafe { \
-         lean_x(1) }\n    } else {\n        0\n    }\n}\n",
+        &seam(
+            "    if (crate::lean_ready::lean_ready(c)) {\n        unsafe { lean_x(1) }\n    } else {\n        \
+             0\n    }\n",
+        ),
         "a parenthesised readiness check",
     );
+    // PR #887 review round 6: the guard must be the EXECUTING PE's.  A
+    // literal, a parameter, a `debug_assert_eq!`, an assertion after the
+    // guard, a binding in a sibling block, a shadow and a reassignment all
+    // keep the readiness token and break the provenance; the inline TPIDR
+    // call, an `assert_eq!` before the guard, and a top-level TPIDR binding
+    // dominating a guard inside a `#[cfg]` block are the accepted shapes.
+    ungated(
+        "fn seam() -> u32 {\n    if crate::lean_ready::lean_ready(0) {\n        unsafe { lean_x(1) }\n    \
+         } else {\n        0\n    }\n}\n",
+        "a readiness check on a literal core",
+    );
+    ungated(
+        "fn seam(c: usize) -> u32 {\n    if crate::lean_ready::lean_ready(c) {\n        unsafe { lean_x(1) \
+         }\n    } else {\n        0\n    }\n}\n",
+        "a readiness check on a parameter",
+    );
+    gated_by(
+        "fn seam() -> u32 {\n    if \
+         crate::lean_ready::lean_ready(crate::per_cpu::current_core_id_from_tpidr() as usize) {\n        \
+         unsafe { lean_x(1) }\n    } else {\n        0\n    }\n}\n",
+        "an inline TPIDR-derived core",
+    );
+    gated_by(
+        "fn seam(c: u64) -> u32 {\n    assert_eq!(c, crate::per_cpu::current_core_id_from_tpidr(), \
+         \"wrong core\");\n    if crate::lean_ready::lean_ready(c as usize) {\n        unsafe { lean_x(1) \
+         }\n    } else {\n        0\n    }\n}\n",
+        "a parameter validated against TPIDR by `assert_eq!`",
+    );
+    ungated(
+        "fn seam(c: u64) -> u32 {\n    debug_assert_eq!(c, crate::per_cpu::current_core_id_from_tpidr(), \
+         \"wrong core\");\n    if crate::lean_ready::lean_ready(c as usize) {\n        unsafe { lean_x(1) \
+         }\n    } else {\n        0\n    }\n}\n",
+        "a parameter validated only by `debug_assert_eq!`",
+    );
+    ungated(
+        "fn seam(c: u64) -> u32 {\n    let r = if crate::lean_ready::lean_ready(c as usize) {\n        \
+         unsafe { lean_x(1) }\n    } else {\n        0\n    };\n    assert_eq!(c, \
+         crate::per_cpu::current_core_id_from_tpidr(), \"wrong core\");\n    r\n}\n",
+        "an assertion after the guard it should precede",
+    );
+    ungated(
+        "fn seam(flag: bool) -> u32 {\n    if flag {\n        let c = \
+         crate::per_cpu::current_core_id_from_tpidr() as usize;\n        let _ = c;\n    }\n    let c = \
+         0usize;\n    if crate::lean_ready::lean_ready(c) {\n        unsafe { lean_x(1) }\n    } else {\n        \
+         0\n    }\n}\n",
+        "a TPIDR binding in a sibling block",
+    );
+    ungated(
+        "fn seam() -> u32 {\n    let c = crate::per_cpu::current_core_id_from_tpidr() as usize;\n    let c \
+         = 0usize;\n    if crate::lean_ready::lean_ready(c) {\n        unsafe { lean_x(1) }\n    } else {\n        \
+         0\n    }\n}\n",
+        "the executing core shadowed before the guard",
+    );
+    ungated(
+        "fn seam() -> u32 {\n    let mut c = crate::per_cpu::current_core_id_from_tpidr() as usize;\n    c \
+         = 0;\n    if crate::lean_ready::lean_ready(c) {\n        unsafe { lean_x(1) }\n    } else {\n        \
+         0\n    }\n}\n",
+        "the executing core reassigned before the guard",
+    );
+    gated_by(
+        "fn seam() -> u32 {\n    let c = crate::per_cpu::current_core_id_from_tpidr() as usize;\n    \
+         #[cfg(feature = \"hw_target\")]\n    {\n        if crate::lean_ready::lean_ready(c) {\n            \
+         extern \"C\" {\n                fn lean_x(a: u64) -> u32;\n            }\n            return unsafe \
+         { lean_x(1) };\n        }\n    }\n    0\n}\n",
+        "a top-level TPIDR binding dominating a guard inside a `#[cfg]` block",
+    );
+    gated_by(
+        "fn seam(c: u64) -> u32 {\n    #[cfg(feature = \"hw_target\")]\n    assert_eq!(\n        c,\n        \
+         crate::per_cpu::current_core_id_from_tpidr(),\n        \"wrong core\"\n    );\n    #[cfg(feature = \
+         \"hw_target\")]\n    {\n        if crate::lean_ready::lean_ready(c as usize) {\n            return \
+         unsafe { lean_x(1) };\n        }\n    }\n    0\n}\n",
+        "an attribute-prefixed `assert_eq!` dominating a guard inside a `#[cfg]` block",
+    );
+    // PR #887 review round 6: a reference that is not a call fails closed.
+    let alias = |source: &str, what: &str| {
+        assert!(
+            sites(source).is_err(),
+            "Lean upcall scanner self-check: {what} produced no site and passed"
+        );
+    };
+    alias(
+        "fn seam() -> u32 {\n    let invoke = lean_x;\n    unsafe { invoke(1) }\n}\n",
+        "a `let` alias of the symbol",
+    );
+    alias(
+        "fn seam() -> u32 {\n    call_through(lean_x)\n}\n",
+        "the symbol passed as a function pointer",
+    );
+    alias(
+        "fn seam() -> usize {\n    lean_x as usize\n}\n",
+        "the symbol cast to an address",
+    );
+    alias("pub use crate::ffi::lean_x;\n", "a re-export of the symbol");
+    verify_upcall_exemption_reconciliation();
 }
 
 /// WS-SM SM2.D.5: Verify `lock_bridge.rs` defines every required
@@ -4009,62 +4892,361 @@ fn scan_trap_rs_faulted_outcome_halts() {
 
 /// The relation behind `scan_trap_rs_faulted_outcome_halts`, on the two
 /// source texts: `Ok(())` or the first reason it does not hold.
+///
+/// **PR #887 review round 7: the decode and the arm are located, not found.**
+/// The round-5 cut asked whether `svc_dispatch.rs` *contained*
+/// `2 => Ok(SvcOutcome::Faulted),` — a whole-file presence check a helper or
+/// a `#[cfg(test)]` block satisfies while `dispatch_svc`'s own match maps
+/// tag 2 to `Blocked` — and took the *first textual* `SvcOutcome::Faulted) =>`
+/// arm in the handler, which a decoy match nested under a condition supplies
+/// while the live arm publishes a frame.  Both questions are now asked of the
+/// statement that answers them (`dispatch_decodes_faulted`,
+/// `handler_faulted_arm_halts`).
 fn faulted_outcome_status(trap_raw: &str, dispatch_raw: &str) -> Result<(), String> {
     let (_, dispatch) = rust_code_views(dispatch_raw);
-    if !dispatch.contains("2 => Ok(SvcOutcome::Faulted),") {
+    dispatch_decodes_faulted(&dispatch)?;
+    let (_, trap) = rust_code_views(trap_raw);
+    handler_faulted_arm_halts(&trap)
+}
+
+/// In `dispatch_svc` (the strings-blanked `svc_dispatch.rs`): `tag` is bound
+/// by exactly one top-level `let`, and that binding makes it the Lean
+/// dispatch's outcome (`outcome_tag_binding_status`); no other top-level
+/// statement but the terminal one mentions `tag`; the function's LAST
+/// top-level statement — its value — is `match tag { … }`; that match has
+/// exactly one `2 =>` arm, whose expression is `Ok(SvcOutcome::Faulted)`;
+/// and `Faulted` occurs nowhere else in the body.
+fn dispatch_decodes_faulted(dispatch: &str) -> Result<(), String> {
+    let needle = "fn dispatch_svc(";
+    let definitions = dispatch.matches(needle).count();
+    if definitions != 1 {
+        return Err(format!(
+            "`svc_dispatch.rs` declares `fn dispatch_svc(` {definitions} times; the decode \
+             is read off exactly one definition"
+        ));
+    }
+    let at = dispatch.find(needle).unwrap_or(0);
+    let open =
+        block_open_after(dispatch, at).ok_or_else(|| "`dispatch_svc` has no body".to_string())?;
+    let close = matching_close_brace(dispatch, open)
+        .ok_or_else(|| "`dispatch_svc`'s body is unbalanced".to_string())?;
+    let statements = top_level_statements(dispatch, open, close);
+    let text = |span: &(usize, usize)| dispatch[span.0..span.1].trim();
+    let &(last_lo, last_hi) = statements
+        .last()
+        .ok_or_else(|| "`dispatch_svc`'s body is empty".to_string())?;
+    let bindings: Vec<&(usize, usize)> = statements
+        .iter()
+        .filter(|span| {
+            let_binding_parts(strip_leading_attributes(text(span)))
+                .is_some_and(|(pattern, _)| word_occurrences(pattern, "tag") > 0)
+        })
+        .collect();
+    if bindings.len() != 1 {
+        return Err(format!(
+            "`dispatch_svc` binds `tag` {} times at its top level; the outcome tag must be \
+             bound exactly once, from the Lean dispatch",
+            bindings.len()
+        ));
+    }
+    outcome_tag_binding_status(text(bindings[0]))?;
+    for span in &statements {
+        if span != bindings[0]
+            && *span != (last_lo, last_hi)
+            && word_occurrences(text(span), "tag") > 0
+        {
+            return Err(
+                "`tag` is consumed by a top-level statement of `dispatch_svc` other than its \
+                 binding and the terminal decode, so the decoded value need not be the Lean \
+                 dispatch's"
+                    .to_string(),
+            );
+        }
+    }
+    let last = dispatch[last_lo..last_hi].trim_start();
+    if !last.starts_with("match tag {") {
         return Err(
-            "`svc_dispatch.rs` does not decode outcome tag 2 to `SvcOutcome::Faulted` — \
-                    a delivered syscall fault would be read as a block and resumed"
+            "`dispatch_svc`'s value is not `match tag { … }` — the decode of the Lean \
+             outcome tag must be the function's terminal statement, not a match found \
+             elsewhere in the file"
                 .to_string(),
         );
     }
-    let (_, trap) = rust_code_views(trap_raw);
-    let handler = trap
-        .find("fn handle_synchronous_exception(")
-        .ok_or_else(|| "`trap.rs` has no `fn handle_synchronous_exception(`".to_string())?;
-    let body_open = block_open_after(&trap, handler)
+    let arms = match_arm_spans(last)
+        .ok_or_else(|| "`dispatch_svc`'s terminal match could not be parsed".to_string())?;
+    let two: Vec<&MatchArm> = arms
+        .iter()
+        .filter(|arm| last[arm.pattern.0..arm.pattern.1].trim() == "2")
+        .collect();
+    if two.len() != 1 {
+        return Err(format!(
+            "`dispatch_svc`'s terminal `match tag` has {} `2 =>` arms; outcome tag 2 must \
+             be decoded by exactly one",
+            two.len()
+        ));
+    }
+    let expr = last[two[0].body.0..two[0].body.1]
+        .trim()
+        .trim_end_matches(',')
+        .trim();
+    if expr != "Ok(SvcOutcome::Faulted)" {
+        return Err(format!(
+            "`dispatch_svc` decodes outcome tag 2 to `{expr}`, not to \
+             `Ok(SvcOutcome::Faulted)` — a delivered syscall fault would be read as a block \
+             and resumed"
+        ));
+    }
+    let mentions = word_occurrences(&dispatch[open..=close], "Faulted");
+    if mentions != 1 {
+        return Err(format!(
+            "`Faulted` occurs {mentions} times in `dispatch_svc`; only the tag-2 arm may \
+             name it"
+        ));
+    }
+    Ok(())
+}
+
+/// PR #887 review round 7: is the top-level `let` statement `statement` of
+/// `dispatch_svc` the binding that makes `tag` the Lean dispatch's outcome?
+/// Two shapes are accepted:
+/// `let tag = unsafe { lean_syscall_dispatch_cross_core(…) };` directly, or
+/// the live one — `let (tag, …) = <bracket>(…, || { … })`, a closure that
+/// binds `tag` that way exactly once and returns it in the tuple position the
+/// pattern reads it from.  Anything else — a constant in that position with
+/// the Lean call discarded, the call kept only inside a statement whose value
+/// is not bound — is refused.
+fn outcome_tag_binding_status(statement: &str) -> Result<(), String> {
+    let (pattern, init) = let_binding_parts(strip_leading_attributes(statement))
+        .ok_or_else(|| "`dispatch_svc`'s `tag` statement is not a `let` binding".to_string())?;
+    let pattern_index = tuple_index_of(pattern, "tag").ok_or_else(|| {
+        format!(
+            "`dispatch_svc` binds `tag` through the pattern `{pattern}`, which the scanner \
+             cannot resolve"
+        )
+    })?;
+    if is_lean_outcome_call(init) {
+        return if pattern == "tag" {
+            Ok(())
+        } else {
+            Err(format!(
+                "`dispatch_svc` binds the Lean call's value to `{pattern}`, not to `tag`"
+            ))
+        };
+    }
+    let closure_at = init.find("||").ok_or_else(|| {
+        format!(
+            "`dispatch_svc` binds `tag` from `{}`, which is neither the Lean call \
+             `unsafe {{ lean_syscall_dispatch_cross_core(…) }}` nor a closure returning it",
+            collapse_whitespace(init)
+        )
+    })?;
+    let block_open = block_open_after(init, closure_at + 2)
+        .ok_or_else(|| "`dispatch_svc`'s outcome closure has no block".to_string())?;
+    if !init[closure_at + 2..block_open].trim().is_empty() {
+        return Err("`dispatch_svc`'s outcome closure is not `|| { … }`".to_string());
+    }
+    let block_close = matching_close_brace(init, block_open)
+        .ok_or_else(|| "`dispatch_svc`'s outcome closure is unbalanced".to_string())?;
+    let statements = top_level_statements(init, block_open, block_close);
+    let &(lo, hi) = statements
+        .last()
+        .ok_or_else(|| "`dispatch_svc`'s outcome closure is empty".to_string())?;
+    let tail = init[lo..hi].trim();
+    let value_index = tuple_index_of(tail, "tag").ok_or_else(|| {
+        format!(
+            "`dispatch_svc`'s outcome closure evaluates to `{}`, which does not return `tag`",
+            collapse_whitespace(tail)
+        )
+    })?;
+    if value_index != pattern_index {
+        return Err(format!(
+            "`dispatch_svc` reads `tag` from tuple position {pattern_index} but the closure \
+             returns it in position {value_index}"
+        ));
+    }
+    let inner: Vec<&str> = statements[..statements.len() - 1]
+        .iter()
+        .map(|&(a, b)| strip_leading_attributes(init[a..b].trim()).trim())
+        .collect();
+    let tag_bindings: Vec<(&str, &str)> = inner
+        .iter()
+        .filter_map(|s| let_binding_parts(s))
+        .filter(|(p, _)| word_occurrences(p, "tag") > 0)
+        .collect();
+    if tag_bindings.len() != 1 {
+        return Err(format!(
+            "`dispatch_svc`'s outcome closure binds `tag` {} times; exactly once, from the \
+             Lean call",
+            tag_bindings.len()
+        ));
+    }
+    let (p, i) = tag_bindings[0];
+    if p != "tag" || !is_lean_outcome_call(i) {
+        return Err(format!(
+            "inside `dispatch_svc`'s outcome closure `tag` is bound from `{}`, not from \
+             `unsafe {{ lean_syscall_dispatch_cross_core(…) }}`",
+            collapse_whitespace(i)
+        ));
+    }
+    for s in &inner {
+        if strip_word_prefix(s, "tag").is_some_and(|rest| {
+            let rest = rest.trim_start();
+            rest.starts_with('=') && !rest.starts_with("==")
+        }) {
+            return Err("`tag` is assigned inside `dispatch_svc`'s outcome closure".to_string());
+        }
+    }
+    Ok(())
+}
+
+/// Is `init` exactly `unsafe { lean_syscall_dispatch_cross_core(<args>) }`,
+/// whitespace collapsed, arguments balanced, nothing after the call?
+fn is_lean_outcome_call(init: &str) -> bool {
+    let collapsed = collapse_whitespace(init);
+    let prefix = "unsafe { lean_syscall_dispatch_cross_core";
+    if !collapsed.starts_with(prefix) || collapsed.as_bytes().get(prefix.len()) != Some(&b'(') {
+        return false;
+    }
+    match matching_close_paren(&collapsed, prefix.len()) {
+        Some(close) => collapsed[close + 1..].trim() == "}",
+        None => false,
+    }
+}
+
+/// In `handle_synchronous_exception` (the strings-blanked `trap.rs`): the
+/// terminal routing match (`terminal_routing_match`) has exactly one
+/// `sync_class::SVC` arm; in that arm's block `dispatched` is bound by
+/// exactly one top-level `let` whose initializer is the dispatch itself
+/// (`dispatched_binding_status`), occurs exactly twice, and is the scrutinee
+/// of the block's LAST top-level statement `match dispatched { … }`; that
+/// match has exactly one `Ok(crate::svc_dispatch::SvcOutcome::Faulted)` arm,
+/// whose block is the single unconditional statement
+/// `halt_after_delivered_syscall_fault(frame);`; `Faulted` occurs nowhere
+/// else in the handler; and the helper diverges into `fatal_halt`.
+fn handler_faulted_arm_halts(trap: &str) -> Result<(), String> {
+    let needle = "fn handle_synchronous_exception(";
+    let definitions = trap.matches(needle).count();
+    if definitions != 1 {
+        return Err(format!(
+            "`trap.rs` declares `fn handle_synchronous_exception(` {definitions} times"
+        ));
+    }
+    let handler = trap.find(needle).unwrap_or(0);
+    let body_open = block_open_after(trap, handler)
         .ok_or_else(|| "`handle_synchronous_exception` has no body".to_string())?;
-    let body_close = matching_close_brace(&trap, body_open)
+    let body_close = matching_close_brace(trap, body_open)
         .ok_or_else(|| "`handle_synchronous_exception`'s body is unbalanced".to_string())?;
-    let arm_at = body_open
-        + trap[body_open..body_close]
-            .find("SvcOutcome::Faulted) =>")
-            .ok_or_else(|| {
-                "`handle_synchronous_exception` has no `SvcOutcome::Faulted` arm — a delivered \
-                 syscall fault would fall through to another arm"
-                    .to_string()
-            })?;
-    let arm_open = block_open_after(&trap, arm_at)
-        .ok_or_else(|| "the `Faulted` arm has no block".to_string())?;
-    let arm_close = matching_close_brace(&trap, arm_open)
-        .ok_or_else(|| "the `Faulted` arm's block is unbalanced".to_string())?;
-    let statements = top_level_statements(&trap, arm_open, arm_close);
-    let sole_halt = statements.len() == 1
-        && trap[statements[0].0..statements[0].1]
-            .trim()
-            .starts_with("halt_after_delivered_syscall_fault(");
+    let routing = terminal_routing_match(trap, body_open, body_close)?;
+    let routing_text = trap[routing.0..routing.1].trim_start();
+    let routing_at = routing.1 - routing_text.len();
+    let arms = match_arm_spans(routing_text)
+        .ok_or_else(|| "the terminal routing match could not be parsed".to_string())?;
+    let svc: Vec<&MatchArm> = arms
+        .iter()
+        .filter(|arm| routing_text[arm.pattern.0..arm.pattern.1].trim() == "sync_class::SVC")
+        .collect();
+    if svc.len() != 1 {
+        return Err(format!(
+            "the terminal routing match has {} `sync_class::SVC` arms; the syscall path must \
+             be exactly one arm, on exactly that class",
+            svc.len()
+        ));
+    }
+    let (svc_open, svc_end) = (routing_at + svc[0].body.0, routing_at + svc[0].body.1);
+    if trap.as_bytes().get(svc_open) != Some(&b'{') {
+        return Err("the `sync_class::SVC` arm is not a block".to_string());
+    }
+    let svc_close = svc_end - 1;
+    let svc_statements = top_level_statements(trap, svc_open, svc_close);
+    let text = |span: &(usize, usize)| trap[span.0..span.1].trim();
+    let bindings: Vec<&(usize, usize)> = svc_statements
+        .iter()
+        .filter(|span| {
+            let_binding_parts(strip_leading_attributes(text(span)))
+                .is_some_and(|(pattern, _)| word_occurrences(pattern, "dispatched") > 0)
+        })
+        .collect();
+    if bindings.len() != 1 {
+        return Err(format!(
+            "the SVC arm binds `dispatched` {} times; the dispatch result must be bound \
+             exactly once",
+            bindings.len()
+        ));
+    }
+    dispatched_binding_status(text(bindings[0]))?;
+    let uses = word_occurrences(&trap[svc_open..=svc_close], "dispatched");
+    if uses != 2 {
+        return Err(format!(
+            "`dispatched` occurs {uses} times in the SVC arm; it must occur exactly twice — \
+             its binding and the routing match's scrutinee — so nothing but that match \
+             consumes the dispatch result"
+        ));
+    }
+    let &(last_lo, last_hi) = svc_statements
+        .last()
+        .ok_or_else(|| "the SVC arm is empty".to_string())?;
+    let last = trap[last_lo..last_hi].trim_start();
+    let last_at = last_hi - last.len();
+    if !last.starts_with("match dispatched {") {
+        return Err(
+            "the SVC arm's terminal statement is not `match dispatched { … }` — the dispatch \
+             result is routed where the scanner cannot bind it, or something runs after \
+             the routing"
+                .to_string(),
+        );
+    }
+    let dispatched_arms = match_arm_spans(last)
+        .ok_or_else(|| "the `match dispatched` arms could not be parsed".to_string())?;
+    let faulted: Vec<&MatchArm> = dispatched_arms
+        .iter()
+        .filter(|arm| {
+            last[arm.pattern.0..arm.pattern.1].trim()
+                == "Ok(crate::svc_dispatch::SvcOutcome::Faulted)"
+        })
+        .collect();
+    if faulted.len() != 1 {
+        return Err(format!(
+            "`match dispatched` has {} `Ok(crate::svc_dispatch::SvcOutcome::Faulted)` arms; \
+             a delivered syscall fault must be routed by exactly one",
+            faulted.len()
+        ));
+    }
+    let (arm_open, arm_end) = (last_at + faulted[0].body.0, last_at + faulted[0].body.1);
+    if trap.as_bytes().get(arm_open) != Some(&b'{') {
+        return Err(
+            "the `Faulted` arm is an expression, not a block ending in the halt".to_string(),
+        );
+    }
+    let arm_statements = top_level_statements(trap, arm_open, arm_end - 1);
+    let sole_halt = arm_statements.len() == 1
+        && text(&arm_statements[0]) == "halt_after_delivered_syscall_fault(frame);";
     if !sole_halt {
         return Err(
             "the `Faulted` arm of `handle_synchronous_exception` is not exactly one \
-                    unconditional `halt_after_delivered_syscall_fault(…)` statement — the caller \
-                    would be resumed past the `SVC` its handler restarts it at"
+             unconditional `halt_after_delivered_syscall_fault(frame);` statement — the \
+             caller would be resumed past the `SVC` its handler restarts it at"
                 .to_string(),
         );
     }
-    if trap[arm_open..=arm_close].contains("set_return_frame(") {
-        return Err("the `Faulted` arm publishes a return frame".to_string());
+    let mentions = word_occurrences(&trap[body_open..=body_close], "Faulted");
+    if mentions != 1 {
+        return Err(format!(
+            "`Faulted` occurs {mentions} times in `handle_synchronous_exception`; a second \
+             arm — a decoy under a condition, or a second routing — is a second answer to \
+             a delivered fault"
+        ));
     }
     let helper = trap
         .find("fn halt_after_delivered_syscall_fault(")
         .ok_or_else(|| "no `fn halt_after_delivered_syscall_fault(`".to_string())?;
-    let helper_open = block_open_after(&trap, helper)
+    let helper_open = block_open_after(trap, helper)
         .ok_or_else(|| "`halt_after_delivered_syscall_fault` has no body".to_string())?;
-    let helper_close = matching_close_brace(&trap, helper_open)
+    let helper_close = matching_close_brace(trap, helper_open)
         .ok_or_else(|| "`halt_after_delivered_syscall_fault`'s body is unbalanced".to_string())?;
     if !trap[helper..helper_open].contains("-> !") {
         return Err("`halt_after_delivered_syscall_fault` does not diverge (`-> !`)".to_string());
     }
-    let helper_statements = top_level_statements(&trap, helper_open, helper_close);
+    let helper_statements = top_level_statements(trap, helper_open, helper_close);
     let helper_last = helper_statements
         .last()
         .map(|&(lo, hi)| trap[lo..hi].trim())
@@ -4077,15 +5259,78 @@ fn faulted_outcome_status(trap_raw: &str, dispatch_raw: &str) -> Result<(), Stri
     Ok(())
 }
 
-/// Token-preserving self-check for `faulted_outcome_status`.
+/// PR #887 review round 7: is the SVC arm's `let dispatched = …` statement
+/// the dispatch itself?  Its initializer must be
+/// `match u32::try_from(frame.x7()) { … }` (the full-width syscall number of
+/// review round 3) with exactly two arms: `Ok(syscall_id)` evaluating to
+/// `crate::svc_dispatch::dispatch_svc(syscall_id, &args)` and `Err(_)` to
+/// `Err(crate::svc_dispatch::DispatchError::InvalidSyscallId)`.
+fn dispatched_binding_status(statement: &str) -> Result<(), String> {
+    let (pattern, init) = let_binding_parts(strip_leading_attributes(statement))
+        .ok_or_else(|| "the `dispatched` statement is not a `let` binding".to_string())?;
+    if pattern != "dispatched" {
+        return Err(format!(
+            "the dispatch result is bound through `{pattern}`, not `dispatched`"
+        ));
+    }
+    if !init.starts_with("match u32::try_from(frame.x7()) {") {
+        return Err(format!(
+            "`dispatched` is bound from `{}`, not from the full-width syscall-number match \
+             `match u32::try_from(frame.x7()) {{ … }}`",
+            collapse_whitespace(init)
+        ));
+    }
+    let arms = match_arm_spans(init)
+        .ok_or_else(|| "the `dispatched` binding's match could not be parsed".to_string())?;
+    let mut pairs: Vec<(String, String)> = arms
+        .iter()
+        .map(|arm| {
+            (
+                collapse_whitespace(init[arm.pattern.0..arm.pattern.1].trim()),
+                collapse_whitespace(
+                    init[arm.body.0..arm.body.1]
+                        .trim()
+                        .trim_end_matches(',')
+                        .trim(),
+                ),
+            )
+        })
+        .collect();
+    pairs.sort();
+    let expected: Vec<(String, String)> = vec![
+        (
+            "Err(_)".to_string(),
+            "Err(crate::svc_dispatch::DispatchError::InvalidSyscallId)".to_string(),
+        ),
+        (
+            "Ok(syscall_id)".to_string(),
+            "crate::svc_dispatch::dispatch_svc(syscall_id, &args)".to_string(),
+        ),
+    ];
+    if pairs != expected {
+        return Err(format!(
+            "`dispatched` is bound from a match whose arms are {pairs:?}; the routed value \
+             must be `crate::svc_dispatch::dispatch_svc(syscall_id, &args)` on \
+             `Ok(syscall_id)` and the unknown-syscall error on `Err(_)`"
+        ));
+    }
+    Ok(())
+}
+
+/// Token-preserving self-check for `faulted_outcome_status`.  The fixtures
+/// carry the live shapes — the SVC arm's dispatch binding, the
+/// unknown-syscall and abort arms, the kernel-entry bracket and the host
+/// stub — so a check the real file would fail cannot pass on a thinner toy.
 fn verify_faulted_outcome_scanner() {
     const GOOD_TRAP: &str = r#"
 pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
     let esr = frame.esr_el1;
     halt_if_kernel_origin(frame, esr);
     let exception_class = classify_synchronous_exception(esr);
+    crate::barriers::csdb();
     match exception_class {
         sync_class::SVC => {
+            let _ = crate::per_cpu_stats::record_syscall();
             let args = crate::svc_dispatch::SyscallArgs::from_trap_frame(frame);
             let dispatched = match u32::try_from(frame.x7()) {
                 Ok(syscall_id) => crate::svc_dispatch::dispatch_svc(syscall_id, &args),
@@ -4100,6 +5345,9 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
                 Ok(crate::svc_dispatch::SvcOutcome::Blocked) => {
                     frame.set_return_frame(crate::svc_dispatch::blocked_resume_sentinel_regs());
                 }
+                Err(crate::svc_dispatch::DispatchError::InvalidSyscallId) => {
+                    deliver_unknown_syscall(frame);
+                }
                 Err(e) => frame.set_return_frame(crate::svc_dispatch::error_frame_regs(
                     e.kernel_error_discriminant(),
                 )),
@@ -4107,6 +5355,10 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
         }
         sync_class::KERNEL_ABORT => {
             halt_on_kernel_abort(frame, esr);
+        }
+        sync_class::DATA_ABORT | sync_class::INSTR_ABORT => {
+            let _ = crate::per_cpu_stats::record_vm_fault();
+            deliver_fault(frame, error_code::VM_FAULT);
         }
         _ => {
             deliver_fault(frame, error_code::USER_EXCEPTION);
@@ -4126,7 +5378,16 @@ pub enum SvcOutcome {
     Faulted,
 }
 pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<SvcOutcome, DispatchError> {
-    let (tag, regs) = run(syscall_id, args);
+    let sid = match SyscallId::from_u32(syscall_id) {
+        Some(sid) => sid,
+        None => return Err(DispatchError::InvalidSyscallId),
+    };
+    let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
+    let (tag, regs) = crate::kernel_entry::with_kernel_entry(core, || {
+        #[allow(unused_unsafe)]
+        let tag = unsafe { lean_syscall_dispatch_cross_core(sid.to_u32(), args.msg_info) };
+        (tag, return_frame_read_in(&RETURN_FRAMES, core))
+    });
     match tag {
         0 => Ok(SvcOutcome::Frame(regs)),
         1 => Ok(SvcOutcome::Blocked),
@@ -4134,11 +5395,19 @@ pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<SvcOutcome, D
         other => panic!("unknown outcome tag {other}"),
     }
 }
+#[cfg(feature = "hw_target")]
+extern "C" {
+    fn lean_syscall_dispatch_cross_core(syscall_id: u32, msg_info: u64) -> u32;
+}
+#[cfg(not(feature = "hw_target"))]
+extern "C" fn lean_syscall_dispatch_cross_core(_syscall_id: u32, _msg_info: u64) -> u32 {
+    1
+}
 "#;
     if let Err(why) = faulted_outcome_status(GOOD_TRAP, GOOD_DISPATCH) {
         panic!("build.rs self-check: the good faulted-outcome fixture was refused: {why}");
     }
-    let trap_mutations: [(&str, &str, &str); 5] = [
+    let trap_mutations: &[(&str, &str, &str)] = &[
         (
             "the Faulted arm resuming behind the sentinel (helper token kept in a comment)",
             "                Ok(crate::svc_dispatch::SvcOutcome::Faulted) => {\n                    halt_after_delivered_syscall_fault(frame);\n                }\n",
@@ -4164,6 +5433,38 @@ pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<SvcOutcome, D
             "    crate::kprintln!(\"syscall fault delivered; halting (x7=0x{:x})\", frame.x7());\n    crate::cpu::fatal_halt()\n",
             "    crate::cpu::fatal_halt();\n    crate::kprintln!(\"syscall fault delivered; halting (x7=0x{:x})\", frame.x7());\n    loop {}\n",
         ),
+        // PR #887 review round 7: the arm is located in the live routing, not
+        // found first in the text.
+        (
+            "a decoy Faulted arm under a condition, the live arm resuming behind the sentinel",
+            "            match dispatched {\n                Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) => frame.set_return_frame(regs),\n                // The caller took a fault at the seam: halt pending the successor install.\n                Ok(crate::svc_dispatch::SvcOutcome::Faulted) => {\n                    halt_after_delivered_syscall_fault(frame);\n                }\n",
+            "            if frame.x0() == 0 {\n                match dispatched {\n                    Ok(crate::svc_dispatch::SvcOutcome::Faulted) => {\n                        halt_after_delivered_syscall_fault(frame);\n                    }\n                    _ => {}\n                }\n            }\n            match dispatched {\n                Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) => frame.set_return_frame(regs),\n                Ok(crate::svc_dispatch::SvcOutcome::Faulted) => {\n                    frame.set_return_frame(crate::svc_dispatch::blocked_resume_sentinel_regs());\n                }\n",
+        ),
+        (
+            "the SVC arm widened to another class",
+            "        sync_class::SVC => {\n",
+            "        sync_class::SVC | sync_class::PC_ALIGNMENT => {\n",
+        ),
+        (
+            "a frame written after the dispatch routing",
+            "                )),\n            }\n        }\n        sync_class::KERNEL_ABORT => {\n",
+            "                )),\n            }\n            frame.set_return_frame(crate::svc_dispatch::blocked_resume_sentinel_regs());\n        }\n        sync_class::KERNEL_ABORT => {\n",
+        ),
+        (
+            "the dispatch result shadowed before the routing",
+            "            match dispatched {\n                Ok(crate::svc_dispatch::SvcOutcome::Frame(regs))",
+            "            let dispatched = Ok::<_, crate::svc_dispatch::DispatchError>(crate::svc_dispatch::SvcOutcome::Blocked);\n            match dispatched {\n                Ok(crate::svc_dispatch::SvcOutcome::Frame(regs))",
+        ),
+        (
+            "the routed value not the dispatch's result (the dispatch kept in a string)",
+            "                Ok(syscall_id) => crate::svc_dispatch::dispatch_svc(syscall_id, &args),\n",
+            "                Ok(syscall_id) => {\n                    let _ = \"crate::svc_dispatch::dispatch_svc(syscall_id, &args)\";\n                    Ok(crate::svc_dispatch::SvcOutcome::Blocked)\n                }\n",
+        ),
+        (
+            "a statement after the terminal routing match",
+            "        _ => {\n            deliver_fault(frame, error_code::USER_EXCEPTION);\n        }\n    }\n}\n",
+            "        _ => {\n            deliver_fault(frame, error_code::USER_EXCEPTION);\n        }\n    }\n    let _ = frame.x0();\n}\n",
+        ),
     ];
     for (what, from, to) in trap_mutations {
         assert!(
@@ -4179,19 +5480,52 @@ pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<SvcOutcome, D
             panic!("build.rs self-check: `faulted_outcome_status` accepted a broken trap fixture: {what}");
         }
     }
-    let decode_as_block = GOOD_DISPATCH.replacen(
-        "2 => Ok(SvcOutcome::Faulted),",
-        "2 => Ok(SvcOutcome::Blocked),",
-        1,
-    );
-    assert_ne!(
-        decode_as_block, GOOD_DISPATCH,
-        "build.rs self-check: the decode mutation is inert"
-    );
-    if faulted_outcome_status(GOOD_TRAP, &decode_as_block).is_ok() {
-        panic!(
-            "build.rs self-check: `faulted_outcome_status` accepted tag 2 decoded as a block \
-                (the `Faulted` variant still declared)"
+    // PR #887 review round 7: the decode is read off `dispatch_svc`'s own
+    // terminal match, and the tag it decodes is the Lean call's value.
+    let dispatch_mutations: &[(&str, &str, &str)] = &[
+        (
+            "tag 2 decoded as a block (the Faulted variant still declared)",
+            "        2 => Ok(SvcOutcome::Faulted),\n",
+            "        2 => Ok(SvcOutcome::Blocked),\n",
+        ),
+        (
+            "the tag-2 decode in a test helper, the live match decoding a block",
+            "        2 => Ok(SvcOutcome::Faulted),\n        other => panic!(\"unknown outcome tag {other}\"),\n    }\n}\n",
+            "        2 => Ok(SvcOutcome::Blocked),\n        other => panic!(\"unknown outcome tag {other}\"),\n    }\n}\n#[cfg(test)]\nfn decode_outcome(tag: u32) -> Result<SvcOutcome, DispatchError> {\n    match tag {\n        0 => Ok(SvcOutcome::Frame([0; 6])),\n        1 => Ok(SvcOutcome::Blocked),\n        2 => Ok(SvcOutcome::Faulted),\n        other => panic!(\"unknown outcome tag {other}\"),\n    }\n}\n",
+        ),
+        (
+            "the terminal match decoding a shadowed tag",
+            "    match tag {\n        0 => Ok(SvcOutcome::Frame(regs)),\n",
+            "    let tag = 1;\n    match tag {\n        0 => Ok(SvcOutcome::Frame(regs)),\n",
+        ),
+        (
+            "the tag-2 decode delegated to a helper the terminal match does not name",
+            "        2 => Ok(SvcOutcome::Faulted),\n        other => panic!(\"unknown outcome tag {other}\"),\n    }\n}\n",
+            "        other => decode_rest(other),\n    }\n}\nfn decode_rest(tag: u32) -> Result<SvcOutcome, DispatchError> {\n    match tag {\n        2 => Ok(SvcOutcome::Faulted),\n        other => panic!(\"unknown outcome tag {other}\"),\n    }\n}\n",
+        ),
+        (
+            "the tag bound to a constant, the Lean call discarded",
+            "        let tag = unsafe { lean_syscall_dispatch_cross_core(sid.to_u32(), args.msg_info) };\n        (tag, return_frame_read_in(&RETURN_FRAMES, core))\n",
+            "        let _ = unsafe { lean_syscall_dispatch_cross_core(sid.to_u32(), args.msg_info) };\n        (1, return_frame_read_in(&RETURN_FRAMES, core))\n",
+        ),
+        (
+            "a second decode of the tag before the terminal one",
+            "    match tag {\n        0 => Ok(SvcOutcome::Frame(regs)),\n",
+            "    if tag == 2 {\n        return Ok(SvcOutcome::Blocked);\n    }\n    match tag {\n        0 => Ok(SvcOutcome::Frame(regs)),\n",
+        ),
+    ];
+    for (what, from, to) in dispatch_mutations {
+        assert!(
+            GOOD_DISPATCH.contains(from),
+            "build.rs self-check: dispatch mutation `{what}` does not apply"
         );
+        let mutated = GOOD_DISPATCH.replacen(from, to, 1);
+        assert_ne!(
+            mutated, GOOD_DISPATCH,
+            "build.rs self-check: dispatch mutation `{what}` is inert"
+        );
+        if faulted_outcome_status(GOOD_TRAP, &mutated).is_ok() {
+            panic!("build.rs self-check: `faulted_outcome_status` accepted a broken dispatch fixture: {what}");
+        }
     }
 }

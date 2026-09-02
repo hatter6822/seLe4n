@@ -715,7 +715,8 @@ level down in the same class — the scanners resolved a region and then
 looked for a token inside it.  Every one now asks its question of
 statements (`top_level_statements` in `build.rs`): the negated readiness
 guard's block must end in a diverging statement, the positive guard's
-condition must structurally entail readiness (`condition_entails_ready`),
+condition must structurally entail readiness (`condition_entails_ready`,
+renamed `ready_condition_argument` in round 6),
 the handler's routing `match` must be a top-level statement and the only
 routing match, and `deliver_fault`'s two halts must be unconditional terminal
 statements — with ten more token-preserving mutations, each nesting the
@@ -729,6 +730,27 @@ syscall fault; `dispatch_svc` decodes it to `SvcOutcome::Faulted` and the
 handler halts on it (`halt_after_delivered_syscall_fault`) pending SM10.1,
 as after every other delivered fault — pinned by
 `scan_trap_rs_faulted_outcome_halts`.
+
+**Review rounds 6 and 7 (PR #887).**  Eight findings, all in `build.rs` and
+all one class — provenance, sole consumption and location answered with a
+token: the readiness guard accepted any argument (`lean_ready(0)` on core
+1), the kernel-origin gate was the first textual occurrence, the routing
+sweep saw only `match` competitors, an aliased upcall produced no site, the
+classifier's not-ready branch was a presence check, the exemption table
+recorded one boolean per entry, the tag-2 decode was a whole-file
+`contains`, and the `Faulted` arm was the first textual one.  Each now
+resolves to the statement it stands for: `ready_argument_is_executing_core`
+walks the dominating statements back to `current_core_id_from_tpidr()`
+(last binding wins; `debug_assert_eq!` does not count, so the timer ISR and
+the secondary bring-up assert the core id in release builds),
+`terminal_routing_match` + `word_occurrences` make the routing match the
+handler's last statement and the only consumer of the class,
+`lean_upcall_sites` refuses any non-call reference, `classifier_status`
+binds each branch to its value, `reconcile_upcall_exemptions` counts
+occurrences both ways, and `dispatch_decodes_faulted` /
+`handler_faulted_arm_halts` locate the decode and the arm through parsed
+arms (`match_arm_spans`) from each function's terminal statement.  Some
+thirty token-preserving mutations pin the shapes.
 
 The finding, as the audit stated it:
 
