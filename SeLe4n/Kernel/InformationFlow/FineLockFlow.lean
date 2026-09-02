@@ -3016,6 +3016,20 @@ inductive UncoveredLockDomain where
   `(stateLevelLock, .write)` on send/call together with the four `cspace*`
   operations that write the identical fields. -/
   | cdtNodeAllocation
+  /-- PR #887 review round 3: the **interior CNodes of a multi-level CSpace
+  walk**.  `resolveCapAddress` descends through child CNodes while address
+  bits remain, and every per-object footprint names only the walk's *root*
+  (`cnodeLock cnodeRootObjId`), because the interior is discovered by the
+  walk — from the guard and radix of each CNode it reads — and so cannot be
+  resolved from the arguments before the locks are taken.  A concurrent
+  `cspaceDelete` of an interior slot therefore has no conflicting lock
+  against a resolution passing through it.  Found while adding the validated
+  endpoint to `lockSet_tcbSetFaultHandler`; it is a property of every
+  footprint that resolves a CPtr, so it is registered once here rather than
+  restated at each.  The remedy is a lock-coupling walk (hand-over-hand
+  read locks down the CSpace), which is the same dynamic-acquisition shape
+  as `dynamicPipChain` and has the same owner. -/
+  | cspaceWalkInteriorCnodes
   deriving DecidableEq, Repr
 
 /-- SM8.D.5: the domains this bracket does **not** cover, and the workstream that
@@ -3036,14 +3050,16 @@ def declaredFootprintUncoveredDomains : List (UncoveredLockDomain × String) :=
    (.queueOwnershipProtocol, "WS-RR RR7.32"),
    (.capTransferReceiverCnode, "WS-RR RR7.7 (fine-lock Track B)"),
    (.taintTablePerKeyStore, "SM10.1 (fine-lock Track D)"),
-   (.cdtNodeAllocation, "WS-RR RR7.7 (fine-lock Track B)")]
+   (.cdtNodeAllocation, "WS-RR RR7.7 (fine-lock Track B)"),
+   (.cspaceWalkInteriorCnodes, "WS-RR RR7.7 (fine-lock Track C)")]
 
 /-- SM8.D.5: the exhaustive list of uncovered domains, in the shape the claim
 inventory uses — so completeness can be quantified over the *constructors*
 rather than compared against a literal. -/
 def UncoveredLockDomain.all : List UncoveredLockDomain :=
   [.schedulerDomain, .dynamicPipChain, .queueOwnershipProtocol,
-   .capTransferReceiverCnode, .taintTablePerKeyStore, .cdtNodeAllocation]
+   .capTransferReceiverCnode, .taintTablePerKeyStore, .cdtNodeAllocation,
+   .cspaceWalkInteriorCnodes]
 
 /-- SM8.D.5: every constructor is listed.  This is the clause a literal
 comparison cannot supply: adding a new domain makes `cases d` non-exhaustive

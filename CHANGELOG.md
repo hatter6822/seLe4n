@@ -515,6 +515,144 @@ round fixes the class as well as the instance.
 
 Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR4
 
+### Review round 3 (PR #887)
+
+A third pass found four more.  Two are instances of the class the second
+round named — a check that sees a token where the property is a relation —
+and this time the fix went to the *mechanism* that produced them, so the
+next instance is caught by the build rather than by a reviewer.  The other
+two are the syscall seam's own: a narrowing conversion that made the seam
+misread a syscall number, and a fault the model defined, encoded, decoded
+and never produced.
+
+* **The syscall number was read at 32 bits** (medium).  `trap.rs`'s SVC arm
+  dispatched on `frame.x7() as u32`, so `x7 = 0x1_0000_0002` decoded as
+  syscall 2 and a thread could issue a Call it never asked for, while the
+  model's decoder validates the register at full width.  The arm now takes
+  `u32::try_from` and treats its failure as `DispatchError::InvalidSyscallId`
+  — the unknown-syscall fault — so a wide register faults exactly as an
+  out-of-range one does.  Pinned by a host test
+  (`handle_sync_wide_syscall_number_is_unknown_syscall`) and a Tier 3
+  negative anchor on the narrowing.
+* **The readiness scanner accepted any earlier `lean_ready(`** (high, the
+  class).  `scan_lean_upcalls_readiness_gated` required only that the gate
+  precede the upcall in the enclosing body — satisfied by a `let ready =
+  lean_ready(..);` never consulted, by a closed `if lean_ready(..) { }` above
+  the call, by `if lean_ready(..) || other`, and by a negated guard that does
+  not diverge.  It now asks whether the guard *dominates* the call
+  (`readiness_guard_dominates`): the call sits inside the guard's true
+  branch and the condition carries no `||`, or the negated bare guard's block
+  diverges (`return`, `panic!`, `fatal_halt(`, `unreachable!`) and closes
+  before the call.  Six token-preserving fixtures pin the shape — four that
+  keep `lean_ready(` in the body and are refused, two (an early return, an
+  `&&`) that are admitted.
+* **The routing check tested two tokens** (medium, the same class).
+  `scan_trap_rs_routes_through_classifier` asserted that the handler
+  contained a call to the classifier and a `match` on `exception_class`, not
+  that the one fed the other.  `handler_routing_status` now reads the
+  assignment relation: a single `let exception_class = ` whose initializer
+  is exactly `classify_synchronous_exception(esr)`, after the kernel-origin
+  gate, no reassignment, the `match` on that binding after it, a
+  `KERNEL_ABORT` arm, and neither `ec::` nor the mirror named in the handler.
+  Its self-check runs the good body and six mutations that keep every token.
+* **A failed capability lookup returned an error** (high).  seL4's
+  `handleInvocation` and `handleRecv` raise a `CapFault` to the thread's
+  fault handler when the invoked capability cannot be looked up; this tree
+  defined `Fault.capFault`, encoded it, decoded its reply, and had no
+  producer — every unresolvable CPtr came back as an error frame and the
+  thread ran on.  `syscallDispatchFromAbi` now decides on the refusal arm
+  (`syscallCapFaultOf`): re-run the dispatcher's prologue on the spilled
+  state — decode, the gate `dispatchSyscallChecked` builds, the *resolution*
+  half of its lookup (`syscallResolveCap`) — and deliver a `capFault` when
+  that resolution fails with the very error the dispatcher returned, through
+  the same flow-checked delivery the abort entry uses
+  (`deliverSyscallCapFault`).  Which syscalls fault is seL4's rule, the
+  blocking flag rather than the object invoked (`capFaultReceivePhase?`):
+  every `seL4_Call` invocation and `seL4_Signal` (which *is* `seL4_Send`) in
+  the send phase, `.receive` / `.notificationWait` / `.replyRecv` in the
+  receive phase, and the model defines no non-blocking forms.  The two
+  exceptions are the declassifying syscalls, whose refusals SM9.B *records*
+  in the refusal ledger; that partition is pinned against
+  `refusalSeamClass` (`capFaultReceivePhase?_none_iff_records`) rather than
+  listed twice.  A resolved capability refused on rights or by its arm is
+  still an error (seL4's `decodeInvocation`), and a refusal raised before
+  the lookup — the insecure-context rejection, a decode failure — is never
+  delivered as a fault the CSpace did not raise.  The context is built from
+  the trap frame's window with the `SVC` as the restart PC (`svcFaultIP`,
+  seL4's `FaultIP`), so a payload-free reply re-issues the syscall; the four
+  words that build it — `ELR_EL1`, `SPSR_EL1`, `SP_EL0`, `x30` — cross the
+  ABI (`lean_syscall_dispatch_cross_core` takes fifteen words).  The outcome
+  is `.blocks` (`syscallDispatchFromAbi_capFault_blocks`), the caller is not
+  dispatchable afterwards (`syscallCapFault_not_dispatchable`,
+  `syscallDispatchFromAbi_capFault_not_dispatchable`), and every error-frame
+  theorem at the seam is restated on the complementary arm (`hNoCapFault`,
+  discharged by `syscallCapFaultOf_none_of_no_fault_phase` /
+  `_of_resolve_ok`).  Seventeen suite checks run the seam end to end — the
+  fault, the handler's receive, the reply restarting at the `SVC`, the
+  send/receive phases, the object invocation that faults too, and the three
+  arms that must not.  `writeFaultRegistersToTcb` moved to
+  `IPC/Operations/Fault.lean` so the seam can spill without importing the
+  entry.  Registered debt: a `.replyRecv` whose *reply* capability fails to
+  resolve still returns the error (seL4-MCS's `lookupReply` faults there),
+  since the mirror re-runs the first lookup only.
+
+The review of the round-2 head found three more, fixed in the same round:
+
+* **The not-ready abort fallback returned into the faulting instruction**
+  (high).  On hardware a core whose Lean runtime is not up took an EL0 data
+  or instruction abort to `deliver_fault`'s fallback, which published a
+  status frame and returned — and `trap.S` then `eret`ed through the
+  unchanged `ELR_EL1` onto the instruction that faulted, so the core took the
+  same abort forever: the wedge RR4 exists to remove, reintroduced on the
+  fallback, because the fallback frame was inherited from the SVC seam, where
+  the exception has advanced the PC and a frame *is* a coherent return.  The
+  not-ready path now halts (`halt_abort_before_lean_ready`), as the delivered
+  arm does pending SM10.1, so on hardware both branches of `deliver_fault`
+  diverge; the host lane keeps the frame as its harness observable, and the
+  frame write is `#[cfg(not(feature = "hw_target"))]`.  The unknown-syscall
+  seam keeps its not-ready frame, deliberately and with the reason at the
+  definition: the `SVC` advanced the PC, and what a not-ready core should do
+  with an `SVC` at all is RR5's question, asked once for the whole SVC seam.
+  `scan_trap_rs_abort_fallback_halts` pins the relation — the halt on the
+  not-ready path, no frame there, the frame host-only, the helper diverging
+  — with six token-preserving mutations, and `abort_before_lean_ready_halts`
+  witnesses the halt on the host lane.
+* **The rights-inventory theorem was vacuous** (medium).
+  `faultHandlerCapAuthorized_reads_faultHandlerRights` concluded a hypothesis
+  it had assumed (`r ∈ faultHandlerRights → r ∈ faultHandlerRights`) and
+  never used the authorization it took, so it compiled with `.write` deleted
+  from the inventory and with `.read` added — the proof-level form of a
+  presence check, and the one `intro _` in the RR4 surface.  The predicate is
+  now *defined from* the inventory: `faultHandlerRequiredRights` states
+  seL4's `sendFaultIPC` as clauses (`[[.write], [.grant, .grantReply]]`, a
+  conjunction of disjunctions), `faultHandlerRights` is their flattening,
+  `faultHandlerCapAuthorized` evaluates them, and two theorems hold the
+  reading: `faultHandlerCapAuthorized_iff` (the exact seL4 form, which any
+  clause edit breaks) and
+  `faultHandlerCapAuthorized_depends_only_on_faultHandlerRights` (the support
+  relation — capabilities agreeing on the inventory's rights get the same
+  verdict, which fails with `.write` dropped).
+* **The fault-handler lock set omitted the endpoint it validates** (medium).
+  `resolveFaultHandlerCPtr` reads `st.getEndpoint? epId` to check the
+  capability's kind before the CPtr is stored, and
+  `lockSet_tcbSetFaultHandler` named only the two TCBs and the two CNode
+  roots, so a concurrent endpoint retype had no conflicting lock against the
+  kind check.  The set takes the pre-resolved endpoint as a fifth, read-mode
+  lock — the shape `serviceRegister` uses for the same check —
+  `permittedKinds .tcbSetFaultHandler` admits `.endpoint`, and the
+  consistency and size-bound theorems follow.  Reading the walk that
+  resolves it exposed a gap the whole family shares: `resolveCapAddress`
+  descends through child CNodes while address bits remain, and every
+  footprint names only the walk's root, because the interior is discovered
+  by the walk.  That is now registered as
+  `UncoveredLockDomain.cspaceWalkInteriorCnodes` with its owner (the
+  fine-lock Track C's dynamic acquisition, the same shape as the PIP chain),
+  so every footprint that resolves a CPtr carries the statement once rather
+  than each restating or omitting it; the registry's completeness theorem and
+  the suite's pins moved from six domains to seven.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR4
+
 ## v0.34.43 — WS-RR RR3: `ipcInvariantFull` de-threaded, dispatch payoff landed
 
 **One PR, one version.**  The work is RR3.1–RR3.26 — the whole phase.  The

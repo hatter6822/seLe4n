@@ -674,6 +674,42 @@ one confusion resolved at the source:
   call — it now blanks extern blocks and checks the call after the gate, the
   mirror branch, and the host lane's use of the same mirror.
 
+**Review round 3 (PR #887).**  Four more findings — two of them the same
+class as round 2's, fixed this time at the mechanism:
+
+* the SVC arm read the syscall number as `u32`, so a wide `x7` aliased a
+  valid id — it is now `u32::try_from`, whose failure is the unknown-syscall
+  fault;
+* the readiness scanner accepted any earlier `lean_ready(` in the body — it
+  now requires the guard to *dominate* the upcall
+  (`readiness_guard_dominates`), with token-preserving fixtures for the
+  stored result, the closed block, the `||` and the non-diverging negation;
+* the routing check tested two tokens — `handler_routing_status` reads the
+  assignment relation (the handler binds `exception_class` from the
+  classifier, after the kernel-origin gate, and matches on that binding);
+* `Fault.capFault` had no producer — `syscallDispatchFromAbi` now delivers
+  a capability fault when the dispatcher's own resolution fails
+  (`syscallCapFaultOf` / `deliverSyscallCapFault`, `Platform/FFI.lean`), on
+  every syscall the refusal ledger does not record
+  (`capFaultReceivePhase?_none_iff_records`), from the trap frame's window
+  with the `SVC` as the restart PC, and `ELR_EL1` / `SPSR_EL1` / `SP_EL0` /
+  `x30` cross the ABI to build it.  Registered debt: `.replyRecv`'s reply
+  capability lookup still returns its failure;
+* the not-ready abort fallback returned a status frame into the faulting
+  instruction — it now halts (`halt_abort_before_lean_ready`; the frame is
+  host-only, pinned by `scan_trap_rs_abort_fallback_halts`), and the rule
+  is stated: a fallback may publish a frame only on a seam whose exception
+  advanced the PC;
+* `faultHandlerCapAuthorized_reads_faultHandlerRights` was vacuous — the
+  predicate is now defined from its clause inventory
+  (`faultHandlerRequiredRights`), held by `faultHandlerCapAuthorized_iff`
+  and `faultHandlerCapAuthorized_depends_only_on_faultHandlerRights`;
+* `lockSet_tcbSetFaultHandler` omitted the endpoint `resolveFaultHandlerCPtr`
+  validates — it is the fifth (read) lock, and the interior of a multi-level
+  CSpace walk, which every CPtr-resolving footprint leaves unlocked, is
+  registered as `UncoveredLockDomain.cspaceWalkInteriorCnodes` (owner:
+  RR7.7, fine-lock Track C).
+
 The finding, as the audit stated it:
 
 The largest phase, and the one that closes the audit's most serious security

@@ -124,66 +124,11 @@ theorem classifySynchronousException_depends_only_on_esr (ectx : ExceptionContex
 -- §2  RR4.23 — the fault delivery entry
 -- ============================================================================
 
-/-- WS-RR RR4 (audit round): spill the trap frame's fault window into the
-faulting thread's saved register context — the fault seam's twin of the SVC
-seam's `Platform.FFI.writeFfiRegistersToTcb`.
-
-`TCB.registerContext` is a partial mirror of the hardware file and, between
-syscalls, holds the *last syscall's* arguments; the fault context has to be
-built from what the thread held **at the trap**, because the unknown-syscall
-message reports that window and a resume reinstalls it
-(`applyFaultRestart`).  Total: a target that is not a TCB returns the state
-unchanged, and the delivery then fails closed on its own lookup. -/
-def writeFaultRegistersToTcb (st : SystemState) (tid : SeLe4n.ThreadId)
-    (w : FaultRegisterWindow) : SystemState :=
-  match st.getTcb? tid with
-  | some tcb =>
-      let tcb' : TCB := { tcb with registerContext := w.spill tcb.registerContext }
-      { st with objects := st.objects.insert tid.toObjId (.tcb tcb') }
-  | none => st
-
-/-- The spill touches no scheduler state — it is a register write, and the
-delivery it precedes is what deschedules the thread. -/
-@[simp] theorem writeFaultRegistersToTcb_scheduler (st : SystemState)
-    (tid : SeLe4n.ThreadId) (w : FaultRegisterWindow) :
-    (writeFaultRegistersToTcb st tid w).scheduler = st.scheduler := by
-  unfold writeFaultRegistersToTcb; cases st.getTcb? tid <;> rfl
-
-/-- A target that is not a TCB is left alone. -/
-theorem writeFaultRegistersToTcb_id_when_not_tcb (st : SystemState)
-    (tid : SeLe4n.ThreadId) (w : FaultRegisterWindow) (hNone : st.getTcb? tid = none) :
-    writeFaultRegistersToTcb st tid w = st := by
-  unfold writeFaultRegistersToTcb; simp [hNone]
-
-/-- The spilled thread's saved context is the spill of what it was. -/
-theorem writeFaultRegistersToTcb_getTcb? (st : SystemState) (tid : SeLe4n.ThreadId)
-    (w : FaultRegisterWindow) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
-    (hObjInv : st.objects.invExt) :
-    (writeFaultRegistersToTcb st tid w).getTcb? tid
-      = some { tcb with registerContext := w.spill tcb.registerContext } := by
-  unfold writeFaultRegistersToTcb
-  rw [hTcb]
-  simp only
-  unfold SystemState.getTcb?
-  rw [RHTable_getElem?_eq_get?,
-      SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId
-        (KernelObject.tcb { tcb with registerContext := w.spill tcb.registerContext }) hObjInv]
-
-/-- **The fault context the entry delivers is the trap frame's**, word for
-word: `sp` and `lr` are the saved `SP_EL0` and `x30`, and `x0`-`x7` are the
-saved argument window — never the mirror's stale contents.  Composed from the
-spill and `FaultRegisterWindow.ofRegisterFile_spill`; this is the theorem the
-audit-round fix exists to make true. -/
-theorem faultContextOfThread_writeFaultRegistersToTcb (st : SystemState)
-    (tid : SeLe4n.ThreadId) (w : FaultRegisterWindow) (tcb : TCB)
-    (hTcb : st.getTcb? tid = some tcb) (hObjInv : st.objects.invExt)
-    (faultIP spsr : UInt64) :
-    faultContextOfThread (writeFaultRegistersToTcb st tid w) tid faultIP spsr =
-      { faultIP := faultIP, sp := w.sp, lr := w.lr, spsr := spsr,
-        gprs := (Array.range FaultContext.gprWindow).map w.gprAt } := by
-  unfold faultContextOfThread
-  rw [writeFaultRegistersToTcb_getTcb? st tid w tcb hTcb hObjInv]
-  exact FaultRegisterWindow.ofRegisterFile_spill w tcb.registerContext faultIP spsr
+-- `writeFaultRegistersToTcb` and its three lemmas (`_id_when_not_tcb`,
+-- `_getTcb?`, `faultContextOfThread_writeFaultRegistersToTcb`) live in
+-- `SeLe4n/Kernel/IPC/Operations/Fault.lean` §8 since PR #887 review round 3:
+-- the SVC seam (`Platform.FFI.syscallDispatchFromAbi`, below this module in the
+-- import graph) spills the same window when it delivers a capability fault.
 
 /-- Review round (PR #887): **the delivery the two fault entries share**, given
 the fault already chosen.  Spill the trap frame's window, build the context
@@ -458,5 +403,53 @@ theorem unknownSyscallEntryStep_not_dispatchable (lctx : LabelingContext)
   unfold unknownSyscallEntryStep
   rw [dif_pos h, if_pos hEl0]
   exact faultEntryDeliver_not_dispatchable lctx st _ ectx w _ tid hCur
+
+/-- PR #887 review round 3: **the syscall seam's capability fault carries the
+same guarantee.**  `deliverSyscallCapFault` is the abort entry's delivery at
+the `SVC` seam — spill, context, flow-checked delivery — so whatever it
+commits, the thread whose capability lookup failed is not dispatchable on the
+executing core afterwards: it waits on its handler, or it took the fail-closed
+suspend, and either way the `SVC` is not re-issued until a reply restarts it. -/
+theorem syscallCapFault_not_dispatchable (lctx : LabelingContext) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (f : Fault) (w : FaultRegisterWindow) (elr spsr : UInt64)
+    (c : CoreId) :
+    ¬ dispatchableOnCore (Platform.FFI.deliverSyscallCapFault lctx c st tid f w elr spsr) tid c := by
+  unfold Platform.FFI.deliverSyscallCapFault
+  exact faultDeliverOnCoreChecked_not_dispatchable lctx _ tid f _ c
+
+/-- PR #887 review round 3: the same statement one level up, at the typed ABI
+entry the hardware calls.  When `syscallDispatchFromAbi` takes the
+capability-fault arm (`syscallDispatchFromAbi_capFault_blocks`), the state it
+commits leaves the caller undispatchable on the executing core — the `.blocks`
+outcome the seam hands the Rust side is backed by a thread that is in fact
+blocked, never one left runnable at the `SVC`. -/
+theorem syscallDispatchFromAbi_capFault_not_dispatchable
+    (ctx : LabelingContext) (executingCore : CoreId)
+    (syscallId : UInt32) (msgInfo : UInt64)
+    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (ke : KernelError) (fault : Fault)
+    (hMsg : msgInfo = x1)
+    (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
+    (hSyscall :
+      syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+        = Except.error ke)
+    (hCap : Platform.FFI.syscallCapFaultOf SeLe4n.arm64DefaultLayout
+        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid ke
+        = some fault)
+    (hCommit : Platform.FFI.syscallDispatchFromAbi ctx executingCore syscallId msgInfo
+        x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st = Except.ok (.blocks, st')) :
+    ¬ dispatchableOnCore st' tid executingCore := by
+  rw [Platform.FFI.syscallDispatchFromAbi_capFault_blocks ctx executingCore syscallId msgInfo
+    x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid ke fault hMsg hCur hSyscall hCap]
+    at hCommit
+  have hSt : st' = Platform.FFI.deliverSyscallCapFault ctx executingCore
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid fault
+      (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)
+      elr spsr := by
+    have := Except.ok.inj hCommit
+    exact (Prod.mk.inj this).2.symm
+  rw [hSt]
+  exact syscallCapFault_not_dispatchable ctx _ tid fault _ elr spsr executingCore
 
 end SeLe4n.Kernel

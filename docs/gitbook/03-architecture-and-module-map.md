@@ -91,7 +91,13 @@ inventory was written:
   core whose Lean runtime is not yet initialized classifies through the Rust
   mirror pinned to the same table (PR #887 review round 2), because the
   readiness contract admits no Lean-emitted symbol before the runtime is up,
-  pure or not.
+  pure or not.  Since the third round the gate has to *dominate* the upcall,
+  and a syscall whose capability lookup fails is delivered as a `capFault`
+  from the SVC seam (`Platform/FFI.lean`'s `syscallCapFaultOf`) on every
+  syscall the refusal ledger does not record, rather than returned as an
+  error; a not-ready core that takes an EL0 abort halts
+  (`halt_abort_before_lean_ready`) rather than returning a frame into the
+  faulting instruction.
 - `SeLe4n/Kernel/FrozenOps/` — the 24 frozen operations mirroring the
   live API; `SeLe4n/Kernel/CrossSubsystem.lean` +
   `CrossSubsystemPerCore*.lean` — cross-subsystem invariants.

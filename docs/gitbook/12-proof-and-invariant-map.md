@@ -591,6 +591,23 @@ Bundle level:
   `.tcbSetFaultHandler` arm — `TCB.faultHandler`'s only writer — validated
   through the target's CSpace at set time, with the bundle, the object store
   and non-interference).
+  Review round 3 added, all production, in `Platform/FFI.lean` and
+  `Kernel/FaultEntry.lean`: `syscallDispatchFromAbi_capFault_blocks` (a
+  failed capability lookup on a syscall `capFaultReceivePhase?` names is
+  delivered — `syscallCapFaultOf` / `deliverSyscallCapFault` — and the
+  outcome is `.blocks`), `syscallCapFault_not_dispatchable` /
+  `syscallDispatchFromAbi_capFault_not_dispatchable` (the caller is not
+  dispatchable afterwards), `syscallCapFaultOf_none_of_no_fault_phase` /
+  `_of_resolve_ok` (the discharges for every error-frame theorem's
+  `hNoCapFault`), and `capFaultReceivePhase?_none_iff_records` (a syscall
+  returns its lookup failure exactly when the refusal seam records it — the
+  partition pinned against `refusalSeamClass` rather than listed twice);
+  and in `IPC/Operations/Fault.lean`, `faultHandlerCapAuthorized_iff` /
+  `faultHandlerCapAuthorized_depends_only_on_faultHandlerRights` replace a
+  vacuous inventory theorem, the predicate now being defined from
+  `faultHandlerRequiredRights`.  `lockSet_tcbSetFaultHandler` gained the
+  validated endpoint, and `UncoveredLockDomain.cspaceWalkInteriorCnodes`
+  registers the multi-level CSpace walk's interior for every footprint.
   Also production, and load-bearing for the live path: `replyTransferOnCore`
   (`IPC/CrossCore/Fault.lean` §4) — seL4's `doReplyTransfer` branch on the
   answered thread's `pendingFault`, which the `.reply` and checked-`.reply`

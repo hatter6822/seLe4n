@@ -78,7 +78,18 @@ WS-AN Phase AN9 closes every hardware-binding deferred item from
   the Rust mirror pinned to that table — and
   `scan_lean_upcalls_readiness_gated` derives every Lean upcall in the
   HAL from the Lean tree's exports, so none can be written outside the
-  gate silently.  **Dormant behind the per-core `lean_ready` gate**
+  gate silently; since the third round the guard has to *dominate* the
+  upcall (`readiness_guard_dominates`), the SVC arm reads the syscall
+  number at full width (`u32::try_from(frame.x7())`, its failure the
+  unknown-syscall fault), and a syscall whose capability lookup fails is
+  delivered as a `capFault` from the SVC seam — `ELR_EL1`, `SPSR_EL1`,
+  `SP_EL0` and `x30` now cross `lean_syscall_dispatch_cross_core` to
+  build its context; and a not-ready core that takes an EL0 abort
+  **halts** (`halt_abort_before_lean_ready`) instead of publishing a
+  status frame, because an abort's frame would be `eret`ed straight back
+  into the abort — the fallback frame is now the host lane's alone, and
+  `scan_trap_rs_abort_fallback_halts` pins it there.
+  **Dormant behind the per-core `lean_ready` gate**
   until SM10.1: a core that delivers a fault has descheduled the
   faulting thread and cannot install a successor, so `deliver_fault`
   halts rather than resuming.  Unreachable at v0.34.44 — no core

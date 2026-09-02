@@ -874,6 +874,67 @@ run_check "INVARIANT" rg -n '^const LEAN_READY_GATED_SEAMS' rust/sele4n-hal/buil
 run_check "INVARIANT" rg -n '^const LEAN_UPCALLS_OUTSIDE_THE_GATE' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n '^        "lean_classify_synchronous_exception",$' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n 'let body_no_decl = blank_extern_blocks\(classifier_body\);' rust/sele4n-hal/build.rs
+# PR #887 review round 3.  (1) The SVC arm reads the syscall number at the
+# register's full width: an `as u32` narrowing of `x7` made `0x1_0000_0002`
+# dispatch as syscall 2, so the conversion is checked and its failure is the
+# unknown-syscall fault.  (2) The readiness scanner asks whether the gate
+# DOMINATES the upcall (the call sits in the guard's true branch, or after a
+# diverging negated guard), not whether `lean_ready(` occurs earlier in the
+# body.  (3) The routing check reads the ASSIGNMENT relation — the handler
+# binds `exception_class` from the classifier and matches on that binding —
+# rather than the presence of two tokens.  (4) A blocking IPC syscall whose
+# capability lookup fails is DELIVERED as a capFault through the flow-checked
+# delivery the abort entry uses, from a context built on the trap frame's
+# window with the SVC as the restart PC; the four words that build it cross
+# the ABI.
+run_check "INVARIANT" rg -n 'let dispatched = match u32::try_from\(frame\.x7\(\)\) \{' rust/sele4n-hal/src/trap.rs
+run_negative_check "INVARIANT" rg -n 'frame\.x7\(\) as u32' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n '^fn readiness_guard_dominates\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn handler_routing_status\(' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn verify_handler_routing_scanner\(\)' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^    verify_handler_routing_scanner\(\);' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n -U 'elr: frame\.elr_el1,\n\s+spsr: frame\.spsr_el1,\n\s+sp_el0: frame\.sp_el0,\n\s+x30: frame\.gprs\[30\],' rust/sele4n-hal/src/svc_dispatch.rs
+run_check "INVARIANT" rg -n '^def syscallCapFaultOf' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def capFaultReceivePhase\?' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem capFaultReceivePhase\?_none_iff_records' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def deliverSyscallCapFault' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def svcFaultIP \(elr : UInt64\) : UInt64 := elr - 4' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_capFault_blocks' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem syscallCapFault_not_dispatchable' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_capFault_not_dispatchable' SeLe4n/Kernel/FaultEntry.lean
+# Relation, not presence: the producer decides on the RESOLUTION half of the
+# lookup — a resolved capability refused on rights is the invocation's error
+# (seL4's `decodeInvocation`), never the lookup's fault — and hands the fault
+# to the flow-checked delivery, as the abort entry does.
+run_check "INVARIANT" rg -n '^          match syscallResolveCap gate st with' SeLe4n/Platform/FFI.lean
+run_negative_check "INVARIANT" rg -n 'match syscallLookupCap gate st with' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '\(faultDeliverOnCoreChecked ctx stW tid fault fctx executingCore\)\.1' SeLe4n/Platform/FFI.lean
+run_negative_check "INVARIANT" rg -n 'faultDeliverOnCore ctx stW' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '\(elr spsr spEl0 x30 : UInt64\) : BaseIO UInt64' SeLe4n/Kernel/SyscallDispatchEntry.lean
+# PR #887 review round 3, the review of the round-2 head.  (5) A not-ready
+# core that takes an EL0 abort halts — a frame would be `eret`ed back into the
+# abort — and the fallback frame is host-only; the relation is pinned in
+# `build.rs` and its shape here.  (6) The rights predicate is DEFINED from its
+# clause inventory; the vacuous theorem shape (a conclusion that is its own
+# hypothesis) is forbidden.  (7) The fault-handler lock set names the endpoint
+# it validates, and the CSpace walk's interior is a registered domain.
+run_check "INVARIANT" rg -n '^fn halt_abort_before_lean_ready\(core_id: u64, esr: u64, elr: u64\) -> !' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n '^        halt_abort_before_lean_ready\(core_id, frame\.esr_el1, frame\.elr_el1\);' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -U '#\[cfg\(not\(feature = "hw_target"\)\)\]\n\s+frame\.set_return_frame\(crate::svc_dispatch::error_frame_regs\(fallback_discriminant\)\);' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n '^fn scan_trap_rs_abort_fallback_halts\(\)' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn abort_fallback_status\(raw: &str\) -> Result<\(\), String>' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn verify_abort_fallback_scanner\(\)' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^    scan_trap_rs_abort_fallback_halts\(\);' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^    verify_abort_fallback_scanner\(\);' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^def faultHandlerRequiredRights : List \(List AccessRight\) := \[\[\.write\], \[\.grant, \.grantReply\]\]' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n '^def faultHandlerRights : List AccessRight := faultHandlerRequiredRights\.flatten' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n '^theorem faultHandlerRights_eq' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n '^theorem faultHandlerCapAuthorized_depends_only_on_faultHandlerRights' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_negative_check "INVARIANT" rg -n 'r ∈ faultHandlerRights → r ∈ faultHandlerRights' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n 'handlerEndpointObjId\.map \(fun ep => \(endpointLock ep, \.read\)\)' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n -U '\| \.tcbSetFaultHandler =>\n\s+\[\.tcb, \.cnode, \.endpoint\]' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^  \| cspaceWalkInteriorCnodes' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '\(\.cspaceWalkInteriorCnodes, "WS-RR RR7\.7 \(fine-lock Track C\)"\)' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # RR4.14/RR4.15: the reply seam — seL4's `doReplyTransfer` branch — and the two
 # live dispatch arms that must go through it.  Without the branch the fault
 # reply is verified and unreachable: a handler's ordinary `seL4_Reply` would
@@ -903,7 +964,7 @@ run_negative_check "INVARIANT" rg -n 'faultDeliverOnCore [a-z]' SeLe4n/Kernel/Fa
 run_check "INVARIANT" rg -n 'let stRegs := writeFaultRegistersToTcb st tid w' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n 'faultContextOfThread stRegs tid ectx\.elr ectx\.spsr' SeLe4n/Kernel/FaultEntry.lean
 run_negative_check "INVARIANT" rg -n 'faultContextOfThread st tid' SeLe4n/Kernel/FaultEntry.lean
-run_check "INVARIANT" rg -n '^theorem faultContextOfThread_writeFaultRegistersToTcb' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n '^theorem faultContextOfThread_writeFaultRegistersToTcb' SeLe4n/Kernel/IPC/Operations/Fault.lean
 run_check "INVARIANT" rg -n '^theorem ofRegisterFile_spill' SeLe4n/Model/Fault.lean
 # …and the cross-core pokes are derived from the state diff, as the syscall
 # seam derives them, not read off the single SGI the Call chain surfaces.

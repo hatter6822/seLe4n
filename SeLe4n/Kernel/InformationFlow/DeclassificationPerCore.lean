@@ -3360,7 +3360,7 @@ theorem refusalLedger_occupancy_is_not_a_covert_channel
     (ctx : LabelingContext) (observer : IfObserver)
     (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
     (executingCore : CoreId) (syscallId : UInt32) (msgInfo : UInt64)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr : UInt64)
+    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
     (tid : SeLe4n.ThreadId) (ke : KernelError) (st : SystemState)
     (L : RefusalLedger) (r : DeclassificationRefusal)
     (log : DeclassificationAuditLog) (e : DeclassificationEvent)
@@ -3373,14 +3373,26 @@ theorem refusalLedger_occupancy_is_not_a_covert_channel
     (hSyscall :
       syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
           (SeLe4n.Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
-        = Except.error ke) :
+        = Except.error ke)
+    -- PR #887 review round 3: the refusal is not a failed capability lookup
+    -- the seam delivers as a fault.  Every declassifying syscall discharges
+    -- this by `syscallCapFaultOf_none_of_no_fault_phase`: `capFaultReceivePhase?`
+    -- answers `none` for exactly the syscalls the refusal seam records
+    -- (`capFaultReceivePhase?_none_iff_records`), which is the partition this
+    -- theorem rests on — a recorded refusal stays in the ledger, and the
+    -- capability-fault arm, which blocks the caller instead of framing `ke`,
+    -- carries what it carries under the fault-flow policy (`FaultFlow`), not
+    -- the ledger's.
+    (hNoCapFault : SeLe4n.Platform.FFI.syscallCapFaultOf SeLe4n.arm64DefaultLayout
+        (SeLe4n.Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+        tid ke = none) :
     -- (1) the ledger has no capacity refusal, where the trail does
     ((recordRefusal L r).recent.get L.nextSlot = some r ∧
       recordDeclassificationChecked log e = none) ∧
     -- (2) the outcome the boundary hands the refused caller is the error frame
     -- computed from `ke` alone — it names no component of the ledger
     ((SeLe4n.Platform.FFI.syscallDispatchFromAbi ctx executingCore syscallId msgInfo
-        x0 x1 x2 x3 x4 x5 ipcBufferAddr st).map (·.1)
+        x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st).map (·.1)
       = Except.ok (.returns (Architecture.errorFrame ke))) ∧
     -- (3) the ledger write is invisible to the projection
     (projectState ctx observer
@@ -3395,7 +3407,8 @@ theorem refusalLedger_occupancy_is_not_a_covert_channel
             { st with declassificationRefusals := L₂ } op) := by
   refine ⟨recordRefusal_never_refuses L r log e hFullTrail, ?_, ?_, ?_, ?_⟩
   · exact SeLe4n.Platform.FFI.refusalLedger_write_is_caller_invisible ctx executingCore
-      syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st tid ke hMsg hCur hSyscall
+      syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid ke hMsg hCur
+      hSyscall hNoCapFault
   · obtain ⟨L', hEq⟩ :=
       SeLe4n.Platform.FFI.recordSyscallRefusal_frame ctx executingCore syscallId tid ke x0 st
     rw [hEq]

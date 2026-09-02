@@ -917,10 +917,10 @@ theorem lockSet_tcbSetIPCBuffer_size_le (a : ThreadId) (b : ObjId) (c : ThreadId
   exact Nat.le_trans (size_le_1 _ _) (by size_bound)
 
 theorem lockSet_tcbSetFaultHandler_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
-    (d : Option ObjId) :
-    (lockSet_tcbSetFaultHandler a b c d).size ≤ maxLockSetSize := by
+    (d e : Option ObjId) :
+    (lockSet_tcbSetFaultHandler a b c d e).size ≤ maxLockSetSize := by
   unfold lockSet_tcbSetFaultHandler maxLockSetSize
-  exact Nat.le_trans (size_le_1 _ _) (by size_bound)
+  exact Nat.le_trans (size_le_2 _ _ _) (by size_bound)
 
 /-- WS-SM SM3.D.6b (aggregate): **every** one of the 31 per-transition
 `lockSet_<τ>` declarations enumerated here has size `≤ maxLockSetSize`, for
@@ -965,7 +965,7 @@ theorem lockSetTransitions_within_bound :
     (∀ a b c d, (lockSet_tcbSetPriority a b c d).size ≤ maxLockSetSize) ∧
     (∀ a b c d, (lockSet_tcbSetMCPriority a b c d).size ≤ maxLockSetSize) ∧
     (∀ a b c d, (lockSet_tcbSetIPCBuffer a b c d).size ≤ maxLockSetSize) ∧
-    (∀ a b c d, (lockSet_tcbSetFaultHandler a b c d).size ≤ maxLockSetSize) :=
+    (∀ a b c d e, (lockSet_tcbSetFaultHandler a b c d e).size ≤ maxLockSetSize) :=
   ⟨lockSet_endpointSend_size_le, lockSet_endpointReceive_size_le,
    lockSet_endpointCall_size_le, lockSet_endpointReply_size_le,
    lockSet_replyRecv_size_le, lockSet_notificationSignal_size_le,

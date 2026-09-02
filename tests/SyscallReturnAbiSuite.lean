@@ -189,7 +189,7 @@ private def dispatchFromAbi (syscallId : Nat) (msgInfoRaw : UInt64)
     SeLe4n.Kernel.Concurrency.bootCoreId
     syscallId.toUInt32 msgInfoRaw
     capPtrValue.toUInt64 msgInfoRaw x2 0 0 0
-    0 st
+    0 0 0 0 0 st
 
 -- ============================================================================
 -- §3b  Two-thread fixture — the RA.B.5b blocked orderings (wait-before-signal,
@@ -325,7 +325,7 @@ private def dispatchFromAbiOn (core : SeLe4n.Kernel.Concurrency.CoreId)
     Except KernelError (Kernel.Architecture.SyscallOutcome × SystemState) :=
   SeLe4n.Platform.FFI.syscallDispatchFromAbi trustedLabeling core
     syscallId.toUInt32 msgInfoRaw capPtr msgInfoRaw x2 x3 x4 0
-    0 st
+    0 0 0 0 0 st
 
 -- ============================================================================
 -- §4  INVERTED witness A — a successful Unit syscall decodes as a VALUE
@@ -682,7 +682,7 @@ private def dispatchAudit (ctx : LabelingContext) (syscallId : Nat) (capPtr : Na
     SeLe4n.Kernel.Concurrency.bootCoreId
     syscallId.toUInt32 msgInfoRaw
     capPtr.toUInt64 msgInfoRaw r0.toUInt64 r1.toUInt64 r2.toUInt64 0
-    0 st
+    0 0 0 0 0 st
 
 /-- The `x0` a completed dispatch hands back, or `none` if it blocked/errored. -/
 private def auditReturnedWord
@@ -748,7 +748,7 @@ private def returnAbiTraceLines : List String :=
       (SeLe4n.Platform.FFI.syscallDispatchFromAbi trustedLabeling
         SeLe4n.Kernel.Concurrency.bootCoreId
         SyscallId.notificationSignal.toNat.toUInt32 0xAAAA
-        capPtrValue.toUInt64 0xBBBB 0 0 0 0 0 witnessState)
+        capPtrValue.toUInt64 0xBBBB 0 0 0 0 0 0 0 0 0 witnessState)
   , s!"[ret-abi] error labels: all 57 discriminants round-trip = {labelRoundtrips}; 57 unassigned = {labelBoundary}"
   , s!"[ret-abi] full-width badge frame: " ++
       frameCells (Kernel.Architecture.returnFrameOfBadge

@@ -384,7 +384,7 @@ private def dispatchViaRef (syscallId : UInt32)
   let st ← getKernelState
   let ctx ← getKernelLabelingContext
   match syscallDispatchFromAbi ctx SeLe4n.Kernel.Concurrency.bootCoreId
-      syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBuf st with
+      syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBuf 0 0 0 0 st with
   | Except.ok (outcome, st') =>
       initialiseKernelState st'
       pure outcome
@@ -461,7 +461,8 @@ private def sd033_dispatchFromAbi_total : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨9⟩
   let st := mkState [(⟨9⟩, .tcb (mkTcb 9 .Ready))] (some tid)
   let ctx := SeLe4n.Kernel.testLabelingContext
-  match syscallDispatchFromAbi ctx SeLe4n.Kernel.Concurrency.bootCoreId 99 0 0 0 0 0 0 0 0 st with
+  match syscallDispatchFromAbi ctx SeLe4n.Kernel.Concurrency.bootCoreId 99 0 0 0 0 0 0 0 0
+      0 0 0 0 st with
   | Except.ok _ =>
       passLine "sd033_dispatchFromAbi_returns_ok"
   | Except.error _ =>

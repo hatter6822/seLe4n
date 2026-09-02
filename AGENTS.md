@@ -196,28 +196,28 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~49576 lines)
+- `CHANGELOG.md` (~49780 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22582 lines)
 - `docs/WORKSTREAM_HISTORY.md` (~12902 lines)
-- `tests/SmpInformationFlowSuite.lean` (~11756 lines)
+- `tests/SmpInformationFlowSuite.lean` (~11760 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~7902 lines)
 - `SeLe4n/Kernel/API.lean` (~6784 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5738 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~5186 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5127 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~4997 lines)
-- `docs/gitbook/12-proof-and-invariant-map.md` (~4768 lines)
+- `docs/gitbook/12-proof-and-invariant-map.md` (~4785 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4750 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
+- `docs/spec/SELE4N_SPEC.md` (~4513 lines)
 - `SeLe4n/Model/State.lean` (~4503 lines)
-- `docs/spec/SELE4N_SPEC.md` (~4490 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
-- `tests/NegativeStateSuite.lean` (~4112 lines)
+- `tests/NegativeStateSuite.lean` (~4115 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3919 lines)
-- `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~3899 lines)
+- `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~3915 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRead.lean` (~3788 lines)
 - `SeLe4n/Platform/Boot.lean` (~3630 lines)
-- `SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (~3443 lines)
+- `SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (~3456 lines)
 - `SeLe4n/Kernel/CrossSubsystem.lean` (~3407 lines)
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
 - `tests/SmpTlbShootdownSuite.lean` (~3354 lines)
@@ -232,7 +232,7 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_RUST_HAL_PLAN.md` (~3080 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean` (~2993 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~2948 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~2818 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~2844 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2784 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~2755 lines)
 - `SeLe4n/Kernel/Capability/Operations.lean` (~2674 lines)
@@ -241,6 +241,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean` (~2602 lines)
 - `docs/planning/SMP_INFORMATION_FLOW_PLAN.md` (~2578 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdown.lean` (~2562 lines)
+- `SeLe4n/Platform/FFI.lean` (~2543 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~2542 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~2505 lines)
 - `tests/ModelIntegritySuite.lean` (~2477 lines)
@@ -254,7 +255,6 @@ To find files that need pagination today, run:
 - `docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md` (~2325 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueNextBlocking.lean` (~2290 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2287 lines)
-- `SeLe4n/Platform/FFI.lean` (~2282 lines)
 - `SeLe4n/Model/Object/Types.lean` (~2264 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2243 lines)
 - `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` (~2179 lines)
@@ -295,9 +295,9 @@ To find files that need pagination today, run:
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
 - `docs/planning/SMP_FOUNDATIONS_PLAN.md` (~1668 lines)
 - `tests/SmpIpcSuite.lean` (~1660 lines)
-- `docs/DEVELOPMENT.md` (~1550 lines)
+- `tests/FaultHandlingSuite.lean` (~1649 lines)
+- `docs/DEVELOPMENT.md` (~1565 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1508 lines)
-- `tests/FaultHandlingSuite.lean` (~1501 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~1491 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~1488 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
@@ -349,13 +349,13 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1085 lines)
 - `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1076 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
-- `tests/SyscallDispatchSuite.lean` (~1066 lines)
+- `tests/SyscallDispatchSuite.lean` (~1067 lines)
+- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1062 lines)
 - `tests/SyscallReturnAbiSuite.lean` (~1058 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1046 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
 - `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` (~1039 lines)
 - `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1030 lines)
-- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1008 lines)
 - `SeLe4n/Model/FrozenState.lean` (~1007 lines)
 - `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~998 lines)
 - `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean` (~995 lines)
@@ -377,11 +377,12 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~877 lines)
+- `SeLe4n/Kernel/IPC/Operations/Fault.lean` (~868 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
 - `tests/SmpTimerSuite.lean` (~840 lines)
 - `tests/DecodingSuite.lean` (~833 lines)
 - `tests/SmpCrossCoreCallSuite.lean` (~833 lines)
-- `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~826 lines)
+- `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~828 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean` (~824 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` (~823 lines)
 - `docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
@@ -1123,7 +1124,12 @@ code may assume:
   2): `build.rs`'s `scan_lean_upcalls_readiness_gated` collects every Lean
   upcall from the Lean tree's `@[export]`s and the HAL's `lean_`-prefixed
   externs, attributes each call to its enclosing function, and fails the
-  build unless `lean_ready(` precedes it in that body — `LEAN_READY_GATED_SEAMS`
+  build unless the readiness guard *dominates* it in that body
+  (`readiness_guard_dominates`, PR #887 review round 3: the call sits inside
+  the guard's true branch with no `||` in the condition, or after a negated
+  bare guard whose block diverges — a stored `lean_ready(..)` result, a guard
+  block closed above the call, or an `||` no longer satisfy it) —
+  `LEAN_READY_GATED_SEAMS`
   is the pin the derivation must reproduce, and the three upcalls that run
   ungated (the primary's `lean_kernel_main` boot install, and the SVC-dispatch
   and cross-core-suspend seams) are `LEAN_UPCALLS_OUTSIDE_THE_GATE`, each with
@@ -1196,7 +1202,12 @@ code may assume:
   grant-reply (`faultHandlerCapAuthorized`) — not send-and-grant: the reply
   link is structural in this model, so the disjunct is a policy gate, and the
   idiomatic `seL4_CapRights_new(0, 1, 0, 1)` handler capability must be
-  admitted.  (6) The fault entry **spills the trap frame's fault window**
+  admitted; the predicate is *defined from* its clause inventory
+  (`faultHandlerRequiredRights`, PR #887 review round 3), with
+  `faultHandlerCapAuthorized_iff` and
+  `faultHandlerCapAuthorized_depends_only_on_faultHandlerRights` holding the
+  two readings together — a theorem whose conclusion is one of its own
+  hypotheses, which is what pinned them before, pins nothing.  (6) The fault entry **spills the trap frame's fault window**
   (`x0`-`x7`, `SP_EL0`, `x30`) into the faulting thread's `registerContext`
   before it builds the fault context (`writeFaultRegistersToTcb`,
   `faultContextOfThread_writeFaultRegistersToTcb`): the mirror is partial and
@@ -1247,18 +1258,55 @@ code may assume:
   is 6 (`libsel4/arch_include/arm/sel4/arch/shared_types.bf` under
   `CONFIG_KERNEL_MCS`; the non-MCS layout's `VMFault 5` is not this ABI), and
   `faultLabel_ne_timeout` / `faultLabel_ne_debugException` pin the two
-  reserved tags as never carried.
-- **A core that delivers a fault halts, until SM10.1.**  The model deschedules
-  the faulting thread, and the hardware cannot honour that until the context
-  restore installs a successor — `trap.S` would otherwise `eret` through the
-  blocked thread's own frame, back onto the instruction that faulted.  So
-  `trap.rs::deliver_fault` calls `cpu::fatal_halt()` after a delivered fault.
-  It is unreachable at v0.34.44 (no core sets `lean_ready`) and SM10.1 replaces
-  it with the successor install; new code must not read it as the fault path's
-  contract.  A kernel-origin exception halts the core too, and that one *is*
-  the contract: `halt_if_kernel_origin` (an EL1-origin frame) and the
-  `KERNEL_ABORT` arm (a current-EL abort syndrome) are fail-closed by design,
-  not SM10.1 placeholders.
+  reserved tags as never carried.  (15) **A failed capability lookup is a
+  fault, on every syscall the refusal ledger does not record** (PR #887
+  review round 3): `syscallDispatchFromAbi` re-runs the dispatcher's prologue
+  on the refusal arm (`syscallCapFaultOf`: decode, the gate, the *resolution*
+  half of the lookup, `syscallResolveCap`) and, when the resolution fails with
+  the very error the dispatcher returned, delivers a `capFault` through the
+  flow-checked delivery the abort entry uses (`deliverSyscallCapFault`) —
+  seL4's `handleInvocation` / `handleRecv`, whose rule is the syscall's
+  blocking flag, so every `seL4_Call` invocation and `seL4_Signal` fault in
+  the send phase and `.receive` / `.notificationWait` / `.replyRecv` in the
+  receive phase (`capFaultReceivePhase?`).  A resolved capability refused on
+  rights or by its arm is still an error, a refusal raised before the lookup
+  is never delivered, and the two declassifying syscalls keep returning theirs
+  because SM9.B records them — the partition is pinned against
+  `refusalSeamClass` (`capFaultReceivePhase?_none_iff_records`), not listed
+  twice.  The context is the trap frame's window with the `SVC` as the restart
+  PC (`svcFaultIP`), so a payload-free reply re-issues the syscall, and
+  `ELR_EL1`, `SPSR_EL1`, `SP_EL0`, `x30` cross the ABI for it
+  (`lean_syscall_dispatch_cross_core` takes fifteen words).  The outcome is
+  `.blocks` and the caller is not dispatchable afterwards
+  (`syscallDispatchFromAbi_capFault_blocks`,
+  `syscallDispatchFromAbi_capFault_not_dispatchable`); every error-frame
+  theorem at the seam is stated on the complementary arm (`hNoCapFault`).  A
+  `.replyRecv` whose *reply* capability fails to resolve still returns the
+  error (seL4-MCS's `lookupReply` faults) — registered debt.  (16) **The SVC
+  arm reads the syscall number at full width**: `u32::try_from(frame.x7())`,
+  with the narrowing's failure delivered as the unknown-syscall fault, so a
+  wide `x7` cannot alias a valid id.
+- **A core that takes an EL0 abort halts, until SM10.1 — delivered or not.**
+  The model deschedules the faulting thread, and the hardware cannot honour
+  that until the context restore installs a successor — `trap.S` would
+  otherwise `eret` through the blocked thread's own frame, back onto the
+  instruction that faulted.  So `trap.rs::deliver_fault` calls
+  `cpu::fatal_halt()` after a delivered fault, and (PR #887 review round 3)
+  its not-ready path calls `halt_abort_before_lean_ready` rather than
+  publishing a status frame: an abort leaves `ELR_EL1` on the faulting
+  instruction, so a returned frame is `eret`ed straight back into the abort.
+  **A fallback may publish a return frame only on a seam whose exception
+  advanced the PC** — the SVC seam, where the unknown-syscall path keeps its
+  not-ready frame and where the not-ready behaviour as a whole is RR5's
+  decision.  The host lane keeps the abort fallback frame as the harness
+  observable; `scan_trap_rs_abort_fallback_halts` pins that the write is
+  host-only and the halt sits on the not-ready path.  Both halts are
+  unreachable at v0.34.44 (no core sets `lean_ready`) and SM10.1 replaces the
+  delivered one with the successor install; new code must not read either as
+  the fault path's contract.  A kernel-origin exception halts the core too,
+  and that one *is* the contract: `halt_if_kernel_origin` (an EL1-origin
+  frame) and the `KERNEL_ABORT` arm (a current-EL abort syndrome) are
+  fail-closed by design, not SM10.1 placeholders.
 - **Registered uncovered lock domains** are enumerated in Lean, not in prose:
   `UncoveredLockDomain` (`InformationFlow/FineLockFlow.lean`) names each gap and
   its owner, and its completeness theorem forces a new domain to be registered.

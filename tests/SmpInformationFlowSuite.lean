@@ -7911,22 +7911,24 @@ private def runDeclaredFootprintChecks : IO Unit := do
   -- dynamic PIP chain, the queue-ownership protocol, (SM9.D audit) the
   -- capability-transfer destination CNode, (SM9.D audit) the taint table's
   -- per-key realisation and (PR #873 round 13) the CDT node allocator's global
-  -- counter are named as data with owners rather than left implicit.
-  assertBool "the six uncovered lock domains are registered, each with an owner"
-    (decide (declaredFootprintUncoveredDomains.length = 6) &&
+  -- counter and (PR #887 review round 3) the interior CNodes of a multi-level
+  -- CSpace walk are named as data with owners rather than left implicit.
+  assertBool "the seven uncovered lock domains are registered, each with an owner"
+    (decide (declaredFootprintUncoveredDomains.length = 7) &&
      decide (declaredFootprintUncoveredDomains.map Prod.fst
        = [UncoveredLockDomain.schedulerDomain, UncoveredLockDomain.dynamicPipChain,
           UncoveredLockDomain.queueOwnershipProtocol,
           UncoveredLockDomain.capTransferReceiverCnode,
           UncoveredLockDomain.taintTablePerKeyStore,
-          UncoveredLockDomain.cdtNodeAllocation]) &&
+          UncoveredLockDomain.cdtNodeAllocation,
+          UncoveredLockDomain.cspaceWalkInteriorCnodes]) &&
      declaredFootprintUncoveredDomains.all (fun d => !d.2.isEmpty))
   -- LOAD-BEARING NEGATIVE: completeness is quantified over the *constructors*,
   -- so a domain added without a registration cannot pass.
   assertBool "NEGATIVE: every uncovered-domain constructor is registered"
     (UncoveredLockDomain.all.all
        (fun d => declaredFootprintUncoveredDomains.map Prod.fst |>.contains d) &&
-     decide (UncoveredLockDomain.all.length = 6))
+     decide (UncoveredLockDomain.all.length = 7))
   -- PR #873 round 6: the inventory is no longer data alone.  Relying on declared
   -- footprints as a complete serialization discipline is gated on it being
   -- EMPTY, so the per-key taint store — the entry the review pressed twice — is
@@ -8583,7 +8585,8 @@ private def runRefusalSeamWriteChecks : IO Unit := do
   -- class a monitor cannot see.  The *policy-path* refusals travel the same
   -- boundary in §13.2, under a deployment the probe serves.
   assertBool "END TO END: the boundary commits the record and returns the plain error frame"
-    (match Platform.FFI.syscallDispatchFromAbi ctx c1 declassId 0 5 0 0 0 0 0 0 niState with
+    (match Platform.FFI.syscallDispatchFromAbi ctx c1 declassId 0 5 0 0 0 0 0 0 0 0 0 0
+        niState with
      | .error _ => false
      | .ok (outcome, committed) =>
          (match outcome with
@@ -8598,7 +8601,8 @@ private def runRefusalSeamWriteChecks : IO Unit := do
          decide (committed.declassificationRefusals.attemptCount.val = 1) &&
          decide (committed.declassificationAuditLog = niState.declassificationAuditLog))
   assertBool "NEGATIVE: the same boundary call for an EXEMPT syscall records nothing"
-    (match Platform.FFI.syscallDispatchFromAbi ctx c1 sendId 0 5 0 0 0 0 0 0 niState with
+    (match Platform.FFI.syscallDispatchFromAbi ctx c1 sendId 0 5 0 0 0 0 0 0 0 0 0 0
+        niState with
      | .error _ => false
      | .ok (_, committed) =>
          decide (committed.declassificationRefusals = niState.declassificationRefusals))
@@ -8863,7 +8867,7 @@ private def runRefusalAcceptanceChecks : IO Unit := do
   -- refusals travel the same boundary in §13.2.
   assertBool "END TO END: the committed refusal reads back live, and the caller's frame is exactly its reason's"
     (match Platform.FFI.syscallDispatchFromAbi auditMonitorLabeling c1
-        (SyscallId.declassify.toNat.toUInt32) 0 5 0 0 0 0 0 0 auditMixedState with
+        (SyscallId.declassify.toNat.toUInt32) 0 5 0 0 0 0 0 0 0 0 0 0 auditMixedState with
      | .error _ => false
      | .ok (outcome, committed) =>
          match committed.declassificationRefusals.recent.get
@@ -11338,7 +11342,7 @@ refuses hop 2, so the committed record must carry the resolved receiver. -/
 private def deniedSignalDispatchOutcome :
     Except KernelError (Architecture.SyscallOutcome × SystemState) :=
   Platform.FFI.syscallDispatchFromAbi signalReceiverDeniedLabeling c1
-    (SyscallId.declassifySignal.toNat.toUInt32) 1 2 1 0x5C 0 0 0 0
+    (SyscallId.declassifySignal.toNat.toUInt32) 1 2 1 0x5C 0 0 0 0 0 0 0 0
     seamBoundaryState
 
 /-- §13.2 fixture — the denied `.declassify` at the SAME state: the deny-all
@@ -11348,7 +11352,7 @@ resolves to the public notification, so the refusal is the policy gate's own
 private def deniedDeclassifyDispatchOutcome :
     Except KernelError (Architecture.SyscallOutcome × SystemState) :=
   Platform.FFI.syscallDispatchFromAbi declassifyDenyAllLabeling c1
-    (SyscallId.declassify.toNat.toUInt32) 0 3 0 0 0 0 0 0 seamBoundaryState
+    (SyscallId.declassify.toNat.toUInt32) 0 3 0 0 0 0 0 0 0 0 0 0 seamBoundaryState
 
 /-- §13.2  SM9.E.2 — the refusal seam covers BOTH declassifying syscalls, at
 the boundary the hardware calls.

@@ -124,6 +124,7 @@ fn main() {
     // keep closed: a drift on the abort arms would route a fault to the
     // wrong handler, or to none.
     scan_trap_rs_classifies_via_lean();
+    scan_trap_rs_abort_fallback_halts();
 
     // WS-SM SM2.D.5 (verified-lock FFI bridge contract): verify the
     // SM2.D lock-bridge module is present and every required FFI
@@ -171,6 +172,8 @@ fn main() {
     // stripper defect would otherwise be reported as a clean tree.
     verify_rust_code_views();
     verify_lean_upcall_scanner();
+    verify_handler_routing_scanner();
+    verify_abort_fallback_scanner();
     scan_tlb_rs_outer_shareable_guards_intact();
 
     // Only build assembly for aarch64 targets
@@ -1100,61 +1103,8 @@ fn scan_trap_rs_classifies_via_lean() {
             )
         });
     let handler_body = body_after(&stripped, handler_idx, "handle_synchronous_exception");
-    if !handler_body.contains("classify_synchronous_exception(esr)") {
-        panic!(
-            "WS-RR RR4.25 regression: `{path}`'s `handle_synchronous_exception` no \
-             longer obtains its class from `classify_synchronous_exception(esr)` — \
-             the Lean model is the single classification path, and a second one \
-             here can drift from it silently."
-        );
-    }
-    // PR #887 review (relation, not presence): the kernel-origin gate must run
-    // *before* the classification.  Both `__el0_sync_entry` and
-    // `__el1_sync_entry` reach this handler; an EL1-origin exception routed
-    // to the fault path would hand a user handler the kernel's own fault.
-    let gate_idx = handler_body
-        .find("halt_if_kernel_origin(frame, esr);")
-        .unwrap_or_else(|| {
-            panic!(
-                "PR #887 regression: `{path}`'s `handle_synchronous_exception` no longer \
-             calls `halt_if_kernel_origin(frame, esr)`.  Every synchronous exception \
-             taken from EL1 must halt before it is classified and routed."
-            )
-        });
-    let classify_idx = handler_body
-        .find("classify_synchronous_exception(esr)")
-        .expect("checked above");
-    if gate_idx > classify_idx {
-        panic!(
-            "PR #887 regression: in `{path}`'s `handle_synchronous_exception`, the \
-             kernel-origin gate runs *after* the classification.  The gate must \
-             precede it: a kernel fault must never reach the routing match."
-        );
-    }
-    if !handler_body.contains("sync_class::KERNEL_ABORT => {") {
-        panic!(
-            "PR #887 regression: `{path}`'s `handle_synchronous_exception` has no \
-             `sync_class::KERNEL_ABORT` arm.  A current-EL abort must halt on its own \
-             class, not fall through to the unknown-exception delivery."
-        );
-    }
-    if !handler_body.contains("match exception_class {") {
-        panic!(
-            "WS-RR RR4.25 regression: `{path}`'s `handle_synchronous_exception` calls \
-             the classifier but no longer routes on its result (`match \
-             exception_class`).  Calling it and ignoring it is the same defect as \
-             not calling it."
-        );
-    }
-    if let Some(idx) = handler_body.find("ec::") {
-        let excerpt: String = handler_body[idx..].chars().take(40).collect();
-        panic!(
-            "WS-RR RR4.25 regression: `{path}`'s `handle_synchronous_exception` \
-             references a raw exception-class constant (`{excerpt}…`).  The routing \
-             arms must use the `sync_class::` tags the Lean model returns; matching \
-             on `ec::` values re-introduces the second classification path RR4.25 \
-             removed."
-        );
+    if let Err(why) = handler_routing_status(handler_body) {
+        panic!("{why} (`{path}`'s `handle_synchronous_exception`)");
     }
 
     // (3): the hardware-gated classifier calls into Lean — the *call*, behind
@@ -1236,6 +1186,191 @@ fn scan_trap_rs_classifies_via_lean() {
              `classify_synchronous_exception` does not classify through \
              `classify_synchronous_exception_mirror(esr)`, so the host tests would \
              pin a table the pre-readiness path does not run."
+        );
+    }
+}
+
+/// The routing relation in `handle_synchronous_exception`'s body — a
+/// strings-blanked code view: the class the handler routes on is bound to
+/// the Lean classifier's result and nothing else, after the kernel-origin
+/// gate, and the handler never reaches the pre-readiness mirror itself.
+///
+/// PR #887 review round 3: the previous checks proved a classifier call
+/// *somewhere* in the body and a `match exception_class` *somewhere* else, so
+/// `let _ = classify_synchronous_exception(esr); let exception_class =
+/// classify_synchronous_exception_mirror(esr);` passed — the divergent second
+/// path the gate exists to keep out.  This parses the binding's initializer
+/// and forbids a second binding or a reassignment, instead of counting tokens.
+fn handler_routing_status(body: &str) -> Result<(), String> {
+    let gate = body
+        .find("halt_if_kernel_origin(frame, esr);")
+        .ok_or_else(|| {
+            "PR #887 regression: no `halt_if_kernel_origin(frame, esr)` call — every \
+         synchronous exception taken from EL1 must halt before it is classified and \
+         routed"
+                .to_string()
+        })?;
+    let needle = "let exception_class = ";
+    let binding = body.find(needle).ok_or_else(|| {
+        "WS-RR RR4.25 regression: no `let exception_class = …` binding, so the routing \
+         class is not bound at all"
+            .to_string()
+    })?;
+    if body[binding + needle.len()..].contains(needle) {
+        return Err(
+            "PR #887 review regression: `exception_class` is bound twice; the \
+                    second binding shadows the classifier's result"
+                .to_string(),
+        );
+    }
+    let init_start = binding + needle.len();
+    let init_end = body[init_start..]
+        .find(';')
+        .map(|i| init_start + i)
+        .ok_or_else(|| {
+            "PR #887 review regression: the `exception_class` binding is unterminated".to_string()
+        })?;
+    let init = body[init_start..init_end].trim();
+    if init != "classify_synchronous_exception(esr)" {
+        return Err(format!(
+            "WS-RR RR4.25 regression: the routing class is bound to `{init}`, not to \
+             `classify_synchronous_exception(esr)` — the Lean model is the single \
+             classification path, and a second one here can drift from it silently"
+        ));
+    }
+    if gate > binding {
+        return Err(
+            "PR #887 regression: the kernel-origin gate runs *after* the \
+                    classification.  The gate must precede it: a kernel fault must never \
+                    reach the routing match"
+                .to_string(),
+        );
+    }
+    // No reassignment of the bound class (also catches a `let mut` rebinding).
+    let mut search = 0usize;
+    while let Some(hit) = body[search..].find("exception_class =") {
+        let at = search + hit;
+        search = at + 1;
+        let is_binding = at >= needle.len() - "exception_class = ".len()
+            && at + "exception_class = ".len() == init_start;
+        let is_comparison = body[at + "exception_class =".len()..].starts_with('=');
+        if !is_binding && !is_comparison {
+            return Err(
+                "PR #887 review regression: `exception_class` is assigned after its \
+                        binding, so the routed class need not be the classifier's"
+                    .to_string(),
+            );
+        }
+    }
+    if !body[init_end..].contains("match exception_class {") {
+        return Err(
+            "WS-RR RR4.25 regression: the handler binds the classifier's result but \
+                    no longer routes on it (`match exception_class`).  Calling it and \
+                    ignoring it is the same defect as not calling it"
+                .to_string(),
+        );
+    }
+    if !body.contains("sync_class::KERNEL_ABORT => {") {
+        return Err(
+            "PR #887 regression: no `sync_class::KERNEL_ABORT` arm.  A current-EL \
+                    abort must halt on its own class, not fall through to the \
+                    unknown-exception delivery"
+                .to_string(),
+        );
+    }
+    if let Some(idx) = body.find("ec::") {
+        let excerpt: String = body[idx..].chars().take(40).collect();
+        return Err(format!(
+            "WS-RR RR4.25 regression: the handler references a raw exception-class \
+             constant (`{excerpt}…`).  The routing arms must use the `sync_class::` tags \
+             the Lean model returns; matching on `ec::` values re-introduces the second \
+             classification path RR4.25 removed"
+        ));
+    }
+    if body.contains("classify_synchronous_exception_mirror(") {
+        return Err("PR #887 review regression: the handler reaches \
+                    `classify_synchronous_exception_mirror` directly.  The mirror is the \
+                    classifier's pre-readiness branch, chosen behind the readiness gate; a \
+                    handler that calls it is a second classification path"
+            .to_string());
+    }
+    Ok(())
+}
+
+/// Token-preserving mutations for `handler_routing_status`: each keeps every
+/// token the old presence checks looked for and breaks the relation.
+fn verify_handler_routing_scanner() {
+    let good = "fn handle_synchronous_exception(frame: &mut TrapFrame) {\n    let esr = \
+                frame.esr_el1;\n    halt_if_kernel_origin(frame, esr);\n    let exception_class \
+                = classify_synchronous_exception(esr);\n    match exception_class {\n        \
+                sync_class::KERNEL_ABORT => {\n            halt_on_kernel_abort(frame, esr);\n        \
+                }\n        _ => {}\n    }\n}\n";
+    let status = |source: &str| {
+        let (_, code) = rust_code_views(source);
+        handler_routing_status(&code)
+    };
+    assert!(
+        status(good).is_ok(),
+        "handler routing self-check: the live shape must pass: {:?}",
+        status(good)
+    );
+    let cases: &[(&str, &str)] = &[
+        (
+            "the classifier called and discarded, the mirror routed",
+            "fn handle_synchronous_exception(frame: &mut TrapFrame) {\n    let esr = \
+             frame.esr_el1;\n    halt_if_kernel_origin(frame, esr);\n    let _ = \
+             classify_synchronous_exception(esr);\n    let exception_class = \
+             classify_synchronous_exception_mirror(esr);\n    match exception_class {\n        \
+             sync_class::KERNEL_ABORT => {\n            halt_on_kernel_abort(frame, esr);\n        \
+             }\n        _ => {}\n    }\n}\n",
+        ),
+        (
+            "the class reassigned after the binding",
+            "fn handle_synchronous_exception(frame: &mut TrapFrame) {\n    let esr = \
+             frame.esr_el1;\n    halt_if_kernel_origin(frame, esr);\n    let mut exception_class \
+             = classify_synchronous_exception(esr);\n    exception_class = 5;\n    match \
+             exception_class {\n        sync_class::KERNEL_ABORT => {\n            \
+             halt_on_kernel_abort(frame, esr);\n        }\n        _ => {}\n    }\n}\n",
+        ),
+        (
+            "the kernel-origin gate after the classification",
+            "fn handle_synchronous_exception(frame: &mut TrapFrame) {\n    let esr = \
+             frame.esr_el1;\n    let exception_class = classify_synchronous_exception(esr);\n    \
+             halt_if_kernel_origin(frame, esr);\n    match exception_class {\n        \
+             sync_class::KERNEL_ABORT => {\n            halt_on_kernel_abort(frame, esr);\n        \
+             }\n        _ => {}\n    }\n}\n",
+        ),
+        (
+            "the routing match on a copy of the class",
+            "fn handle_synchronous_exception(frame: &mut TrapFrame) {\n    let esr = \
+             frame.esr_el1;\n    halt_if_kernel_origin(frame, esr);\n    let exception_class = \
+             classify_synchronous_exception(esr);\n    let routed = exception_class;\n    match \
+             routed {\n        sync_class::KERNEL_ABORT => {\n            \
+             halt_on_kernel_abort(frame, esr);\n        }\n        _ => {}\n    }\n}\n",
+        ),
+        (
+            "a raw exception-class constant in the arms",
+            "fn handle_synchronous_exception(frame: &mut TrapFrame) {\n    let esr = \
+             frame.esr_el1;\n    halt_if_kernel_origin(frame, esr);\n    let exception_class = \
+             classify_synchronous_exception(esr);\n    match exception_class {\n        \
+             sync_class::KERNEL_ABORT => {\n            halt_on_kernel_abort(frame, esr);\n        \
+             }\n        _ => {\n            if esr_ec(esr) == ec::DABT_LOWER {}\n        }\n    \
+             }\n}\n",
+        ),
+        (
+            "the mirror reached from the handler",
+            "fn handle_synchronous_exception(frame: &mut TrapFrame) {\n    let esr = \
+             frame.esr_el1;\n    halt_if_kernel_origin(frame, esr);\n    let exception_class = \
+             classify_synchronous_exception(esr);\n    let _ = \
+             classify_synchronous_exception_mirror(esr);\n    match exception_class {\n        \
+             sync_class::KERNEL_ABORT => {\n            halt_on_kernel_abort(frame, esr);\n        \
+             }\n        _ => {}\n    }\n}\n",
+        ),
+    ];
+    for (what, source) in cases {
+        assert!(
+            status(source).is_err(),
+            "handler routing self-check: {what} passed the routing relation"
         );
     }
 }
@@ -1489,7 +1624,7 @@ fn lean_upcall_sites(code: &str, exports: &[&str]) -> Result<Vec<LeanUpcallSite>
                      function, so its readiness gate cannot be attributed"
                 ));
             };
-            let gated = code[open..at].contains("lean_ready(");
+            let gated = readiness_guard_dominates(code, open, at);
             sites.push(LeanUpcallSite {
                 enclosing_fn,
                 symbol: (*symbol).to_string(),
@@ -1498,6 +1633,119 @@ fn lean_upcall_sites(code: &str, exports: &[&str]) -> Result<Vec<LeanUpcallSite>
         }
     }
     Ok(sites)
+}
+
+/// Does a readiness check **control** the call at `call`?  Textual precedence
+/// is not control: `let _ = lean_ready(c);` precedes a call it does not guard,
+/// and an `if lean_ready(c) { … }` block closed before the call guards nothing
+/// after it (PR #887 review round 3).  Two shapes count, both read off the
+/// brace structure of the strings-blanked view:
+///
+///   * `if <cond> {` where `<cond>` contains `lean_ready(`, is not negated and
+///     joins nothing with `||`, and the call sits inside that block — the
+///     true branch dominates the call;
+///   * `if !lean_ready(…) { … }` whose block diverges (`return`, `panic!`,
+///     `fatal_halt(`, `unreachable!`) and closes before the call — the
+///     fail-closed early exit dominates everything after it.
+///
+/// Anything else — a `match`, a `while`, a stored boolean, a disjunction — is
+/// not recognised and reads as ungated, which is the fail-closed direction.
+fn readiness_guard_dominates(code: &str, body_open: usize, call: usize) -> bool {
+    let bytes = code.as_bytes();
+    let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let mut search = body_open;
+    while let Some(hit) = code[search..call].find("lean_ready(") {
+        let gate = search + hit;
+        search = gate + "lean_ready(".len();
+        // Whole identifier: `mark_lean_ready(` is not the check.
+        if gate > 0 && is_ident(bytes[gate - 1]) {
+            continue;
+        }
+        let Some(if_at) = enclosing_if_keyword(code, body_open, gate) else {
+            continue;
+        };
+        let Some(block_open) = block_open_after(code, gate) else {
+            continue;
+        };
+        let Some(block_close) = matching_close_brace(code, block_open) else {
+            continue;
+        };
+        let cond = code[if_at + 2..block_open].trim();
+        if let Some(inner) = cond.strip_prefix('!') {
+            let inner = inner.trim();
+            let bare = inner.contains("lean_ready(")
+                && inner.ends_with(')')
+                && !inner.contains("&&")
+                && !inner.contains("||");
+            let block = &code[block_open..=block_close];
+            let diverges = block.contains("return")
+                || block.contains("panic!(")
+                || block.contains("fatal_halt(")
+                || block.contains("unreachable!(");
+            if bare && diverges && block_close < call {
+                return true;
+            }
+        } else if !cond.contains("||") && block_open < call && call < block_close {
+            return true;
+        }
+    }
+    false
+}
+
+/// The `if` whose condition contains `at`: the nearest preceding `if` token
+/// with no statement boundary (`;`, `{`, `}`) between it and `at`.
+fn enclosing_if_keyword(code: &str, lo: usize, at: usize) -> Option<usize> {
+    let bytes = code.as_bytes();
+    let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let mut i = at;
+    while i > lo {
+        i -= 1;
+        match bytes[i] {
+            b';' | b'{' | b'}' => return None,
+            b'i' if code[i..].starts_with("if")
+                && (i == 0 || !is_ident(bytes[i - 1]))
+                && matches!(bytes.get(i + 2), Some(b' ' | b'(' | b'!' | b'\n' | b'\t')) =>
+            {
+                return Some(i);
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// The `{` that opens the block of the condition containing `from`: the first
+/// brace at parenthesis depth zero, with no `;` before it.
+fn block_open_after(code: &str, from: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    for (index, ch) in code[from..].char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => depth = depth.saturating_sub(1),
+            ';' if depth == 0 => return None,
+            '{' if depth == 0 => return Some(from + index),
+            _ => {}
+        }
+    }
+    None
+}
+
+/// The `}` matching the `{` at `open`.
+fn matching_close_brace(code: &str, open: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    for (index, ch) in code[open..].char_indices() {
+        match ch {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(open + index);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 /// The names declared as functions inside `extern "C" { … }` blocks of `code`.
@@ -1790,6 +2038,53 @@ fn verify_lean_upcall_scanner() {
     assert!(
         orphan.is_err(),
         "Lean upcall scanner self-check: a call outside any function must fail closed"
+    );
+    // PR #887 review round 3: a readiness token that does not CONTROL the call.
+    let ungated = |source: &str, what: &str| {
+        let found = sites(source).expect("fixture attributes");
+        assert!(
+            found.len() == 1 && !found[0].gated,
+            "Lean upcall scanner self-check: {what} passed as gating the call"
+        );
+    };
+    let gated_by = |source: &str, what: &str| {
+        let found = sites(source).expect("fixture attributes");
+        assert!(
+            found.len() == 1 && found[0].gated,
+            "Lean upcall scanner self-check: {what} was not recognised as the guard"
+        );
+    };
+    ungated(
+        "fn seam(c: usize) -> u32 {\n    let _ = crate::lean_ready::lean_ready(c);\n    \
+         unsafe { lean_x(1) }\n}\n",
+        "a stored readiness value",
+    );
+    ungated(
+        "fn seam(c: usize) -> u32 {\n    if crate::lean_ready::lean_ready(c) {\n        \
+         0\n    } else {\n        0\n    };\n    unsafe { lean_x(1) }\n}\n",
+        "a readiness block closed before the call",
+    );
+    ungated(
+        "fn seam(c: usize, other: bool) -> u32 {\n    if other || \
+         crate::lean_ready::lean_ready(c) {\n        unsafe { lean_x(1) }\n    } else {\n        \
+         0\n    }\n}\n",
+        "a disjunction with the readiness check",
+    );
+    ungated(
+        "fn seam(c: usize) -> u32 {\n    if !crate::lean_ready::lean_ready(c) {\n    }\n    \
+         unsafe { lean_x(1) }\n}\n",
+        "a negated check whose block does not diverge",
+    );
+    gated_by(
+        "fn seam(c: usize) -> u32 {\n    if !crate::lean_ready::lean_ready(c) {\n        \
+         return 0;\n    }\n    unsafe { lean_x(1) }\n}\n",
+        "the fail-closed early return",
+    );
+    gated_by(
+        "fn seam(c: usize, other: bool) -> u32 {\n    if other && \
+         crate::lean_ready::lean_ready(c) {\n        unsafe { lean_x(1) }\n    } else {\n        \
+         0\n    }\n}\n",
+        "a conjunction with the readiness check",
     );
 }
 
@@ -3150,4 +3445,212 @@ fn braced_block_after<'a>(source: &'a str, header: &str) -> Option<&'a str> {
         }
     }
     None
+}
+
+/// PR #887 review round 3: **the not-ready abort path halts on hardware, and
+/// the fallback frame is host-only.**
+///
+/// An EL0 abort leaves `ELR_EL1` on the faulting instruction, so a status
+/// frame published by a not-ready core would be `eret`ed straight back into
+/// the same abort — the wedge RR4 removed, reintroduced on the fallback.  The
+/// relation this pins, on `deliver_fault`'s body: inside its
+/// `#[cfg(feature = "hw_target")]` block the readiness guard's true branch
+/// halts (the delivered arm), the text *after* that branch — the not-ready
+/// path — calls `halt_abort_before_lean_ready(` and publishes no frame, and
+/// every `set_return_frame(` outside the block sits under
+/// `#[cfg(not(feature = "hw_target"))]`.  Presence is not enough on any of
+/// the three: the helper called from the ready branch, a frame written before
+/// the halt, or the host attribute dropped all keep every token, and
+/// `verify_abort_fallback_scanner` runs exactly those mutations.
+fn scan_trap_rs_abort_fallback_halts() {
+    let path = "src/trap.rs";
+    let raw = std::fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("build.rs: cannot read `{path}`: {e}"));
+    if let Err(why) = abort_fallback_status(&raw) {
+        panic!("PR #887 review round 3 regression: in `{path}`, {why}");
+    }
+}
+
+/// The relation behind `scan_trap_rs_abort_fallback_halts`, on a source
+/// text: `Ok(())` or the first reason it does not hold.  Reads the
+/// strings-blanked view for structure and the strings-kept view for the two
+/// `cfg` attributes, which are literals.
+fn abort_fallback_status(raw: &str) -> Result<(), String> {
+    let (kept, stripped) = rust_code_views(raw);
+    let sig = stripped
+        .find("fn deliver_fault(")
+        .ok_or_else(|| "no `fn deliver_fault(`".to_string())?;
+    let open = block_open_after(&stripped, sig)
+        .ok_or_else(|| "`deliver_fault` has no body".to_string())?;
+    let close = matching_close_brace(&stripped, open)
+        .ok_or_else(|| "`deliver_fault`'s body is unbalanced".to_string())?;
+    let hw_attr = "#[cfg(feature = \"hw_target\")]";
+    let host_attr = "#[cfg(not(feature = \"hw_target\"))]";
+    let attr_at = open
+        + kept[open..=close]
+            .find(hw_attr)
+            .ok_or_else(|| "`deliver_fault` has no `hw_target` block".to_string())?;
+    let hw_open = block_open_after(&stripped, attr_at)
+        .ok_or_else(|| "the `hw_target` attribute is not followed by a block".to_string())?;
+    let hw_close = matching_close_brace(&stripped, hw_open)
+        .ok_or_else(|| "the `hw_target` block is unbalanced".to_string())?;
+    let guard_at = hw_open
+        + stripped[hw_open..hw_close]
+            .find("if crate::lean_ready::lean_ready(")
+            .ok_or_else(|| "the `hw_target` block has no readiness guard".to_string())?;
+    let ready_open = block_open_after(&stripped, guard_at)
+        .ok_or_else(|| "the readiness guard has no block".to_string())?;
+    let ready_close = matching_close_brace(&stripped, ready_open)
+        .ok_or_else(|| "the readiness guard's block is unbalanced".to_string())?;
+    let ready_branch = &stripped[ready_open..=ready_close];
+    if !ready_branch.contains("fatal_halt(") {
+        return Err(
+            "the delivered arm (the readiness guard's true branch) no longer halts \
+                    pending the SM10.1 successor install"
+                .to_string(),
+        );
+    }
+    if ready_branch.contains("halt_abort_before_lean_ready(") {
+        return Err(
+            "`halt_abort_before_lean_ready(` sits inside the readiness guard's true \
+                    branch; it is the NOT-ready path's halt and must follow that branch"
+                .to_string(),
+        );
+    }
+    let tail = &stripped[ready_close + 1..hw_close];
+    if !tail.contains("halt_abort_before_lean_ready(") {
+        return Err(
+            "the not-ready path of the `hw_target` block (after the readiness guard's \
+                    branch) does not call `halt_abort_before_lean_ready(` — a not-ready core \
+                    would return through the faulting instruction"
+                .to_string(),
+        );
+    }
+    if tail.contains("set_return_frame(") {
+        return Err(
+            "the not-ready path of the `hw_target` block publishes a return frame; an \
+                    abort's frame is `eret`ed back into the abort"
+                .to_string(),
+        );
+    }
+    let body_kept = &kept[open..=close];
+    let mut from = 0usize;
+    while let Some(rel) = body_kept[from..].find("set_return_frame(") {
+        let at = open + from + rel;
+        from += rel + "set_return_frame(".len();
+        if at > hw_open && at < hw_close {
+            return Err("the `hw_target` block publishes a return frame".to_string());
+        }
+        let line_start = kept[..at].rfind('\n').map(|i| i + 1).unwrap_or(0);
+        let before = kept[open..line_start].trim_end();
+        if !before.ends_with(host_attr) {
+            return Err(format!(
+                "a `set_return_frame(` in `deliver_fault` is not immediately under \
+                 `{host_attr}`; the fallback frame is the host lane's observable and must \
+                 never be compiled for hardware"
+            ));
+        }
+    }
+    let helper = stripped
+        .find("fn halt_abort_before_lean_ready(")
+        .ok_or_else(|| "no `fn halt_abort_before_lean_ready(`".to_string())?;
+    let helper_open = block_open_after(&stripped, helper)
+        .ok_or_else(|| "`halt_abort_before_lean_ready` has no body".to_string())?;
+    let helper_close = matching_close_brace(&stripped, helper_open)
+        .ok_or_else(|| "`halt_abort_before_lean_ready`'s body is unbalanced".to_string())?;
+    if !stripped[helper..helper_open].contains("-> !") {
+        return Err("`halt_abort_before_lean_ready` does not diverge (`-> !`)".to_string());
+    }
+    if !stripped[helper_open..=helper_close].contains("fatal_halt(") {
+        return Err("`halt_abort_before_lean_ready` does not call `fatal_halt(`".to_string());
+    }
+    Ok(())
+}
+
+/// Token-preserving self-check for `abort_fallback_status`: the fixture is
+/// no thinner than `deliver_fault` itself, and every mutation keeps the tokens
+/// a presence check would look for.
+fn verify_abort_fallback_scanner() {
+    const GOOD: &str = r#"
+#[allow(unused_variables)]
+fn deliver_fault(frame: &mut TrapFrame, fallback_discriminant: u32) {
+    #[cfg(feature = "hw_target")]
+    {
+        let core_id = crate::per_cpu::current_core_id_from_tpidr();
+        if crate::lean_ready::lean_ready(core_id as usize) {
+            extern "C" {
+                fn lean_handle_fault(core_id: u64, esr: u64);
+            }
+            let (esr, elr) = (frame.esr_el1, frame.elr_el1);
+            // SAFETY: the gate just checked; the entry lock serialises the commit.
+            crate::kernel_entry::with_kernel_entry(core_id as usize, || unsafe {
+                lean_handle_fault(core_id, esr);
+            });
+            crate::kprintln!("[core {}] fault delivered; halting (ESR=0x{:016x})", core_id, esr);
+            crate::cpu::fatal_halt();
+        }
+        // A frame cannot fail-close an abort: halt.
+        halt_abort_before_lean_ready(core_id, frame.esr_el1, frame.elr_el1);
+    }
+    #[cfg(not(feature = "hw_target"))]
+    frame.set_return_frame(crate::svc_dispatch::error_frame_regs(fallback_discriminant));
+}
+
+#[cfg_attr(not(feature = "hw_target"), allow(dead_code))]
+fn halt_abort_before_lean_ready(core_id: u64, esr: u64, elr: u64) -> ! {
+    crate::kprintln!("[core {}] EL0 abort before ready (ESR=0x{:016x} ELR=0x{:016x})", core_id, esr, elr);
+    crate::cpu::fatal_halt()
+}
+"#;
+    if let Err(why) = abort_fallback_status(GOOD) {
+        panic!("build.rs self-check: the good abort-fallback fixture was refused: {why}");
+    }
+    let mutations: [(&str, &str, &str); 6] = [
+        (
+            "the not-ready halt moved into the ready branch (token kept, path broken)",
+            "            crate::cpu::fatal_halt();\n        }\n        // A frame cannot fail-close an abort: halt.\n        halt_abort_before_lean_ready(core_id, frame.esr_el1, frame.elr_el1);\n",
+            "            halt_abort_before_lean_ready(core_id, frame.esr_el1, frame.elr_el1);\n            crate::cpu::fatal_halt();\n        }\n",
+        ),
+        (
+            "a frame published on the not-ready path before the halt (both tokens kept)",
+            "        halt_abort_before_lean_ready(core_id, frame.esr_el1, frame.elr_el1);\n",
+            "        frame.set_return_frame(crate::svc_dispatch::error_frame_regs(fallback_discriminant));\n        halt_abort_before_lean_ready(core_id, frame.esr_el1, frame.elr_el1);\n",
+        ),
+        (
+            "the host-only attribute dropped from the fallback frame (token kept, compiled for hardware)",
+            "    #[cfg(not(feature = \"hw_target\"))]\n    frame.set_return_frame(",
+            "    frame.set_return_frame(",
+        ),
+        (
+            "the not-ready halt reduced to a string literal",
+            "        halt_abort_before_lean_ready(core_id, frame.esr_el1, frame.elr_el1);\n",
+            "        let _why = \"halt_abort_before_lean_ready(core_id, esr, elr)\";\n",
+        ),
+        (
+            "the not-ready halt reduced to a comment",
+            "        halt_abort_before_lean_ready(core_id, frame.esr_el1, frame.elr_el1);\n",
+            "        // halt_abort_before_lean_ready(core_id, frame.esr_el1, frame.elr_el1);\n",
+        ),
+        (
+            "the delivered arm returning instead of halting (helper token kept)",
+            "            crate::cpu::fatal_halt();\n        }\n",
+            "            return;\n        }\n",
+        ),
+    ];
+    for (what, from, to) in mutations {
+        assert!(
+            GOOD.contains(from),
+            "build.rs self-check: abort-fallback mutation `{what}` does not apply"
+        );
+        let mutated = GOOD.replacen(from, to, 1);
+        assert_ne!(
+            mutated, GOOD,
+            "build.rs self-check: abort-fallback mutation `{what}` is inert"
+        );
+        if abort_fallback_status(&mutated).is_ok() {
+            panic!(
+                "build.rs self-check: `abort_fallback_status` accepted a broken fixture: {what}"
+            );
+        }
+    }
 }

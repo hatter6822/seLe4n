@@ -79,8 +79,11 @@ open SeLe4n.Testing
 #check @encodeFault_messageInfo_wellFormed
 -- RR4.7–RR4.11: resolution, rights, message, dispositions, delivery.
 #check @faultHandlerRights
+#check @faultHandlerRequiredRights
+#check @faultHandlerRights_eq
 #check @faultHandlerCapAuthorized
 #check @faultHandlerCapAuthorized_iff
+#check @faultHandlerCapAuthorized_depends_only_on_faultHandlerRights
 #check @faultHandlerCapAuthorized_false_of_no_send
 #check @faultHandlerCapAuthorized_false_of_no_grant
 #check @resolveFaultHandler
@@ -1184,6 +1187,139 @@ private def runConfigureAndResumeChecks : IO Unit := do
   | .error e => assertBool s!"resuming the unfaulted thread must succeed (got {repr e})" false
 
 -- ============================================================================
+-- §7e  Capability faults at the syscall seam (PR #887 review round 3)
+-- ============================================================================
+
+/-- A labeling context the checked entry admits.  `permissiveCtx` is, to the
+letter, the insecure default `syscallEntryChecked` refuses
+(`isInsecureDefaultContext`: every class `publicLabel`), so the seam tests
+label *objects* `kernelTrusted` — the fault gate reads `endpointLabelOf`, not
+`objectLabelOf` (§6c), so the delivery is unaffected, and the lookups the
+seam runs never reach a label. -/
+private def seamCtx : LabelingContext :=
+  { permissiveCtx with objectLabelOf := fun _ => SecurityLabel.kernelTrusted }
+
+/-- The trap frame's words at the `SVC`: `ELR_EL1` is the return address, one
+instruction past the `SVC`; `SP_EL0` and `x30` are chosen to differ from
+every register the fixture's TCB mirror holds (`sp = 0x7000`, `x30 = 0xF00D`),
+so a context built off the mirror instead of the frame is distinguishable. -/
+private def svcElr : UInt64 := 0x5_0004
+private def svcSpsr : UInt64 := 0x3C0
+private def svcSpEl0 : UInt64 := 0x7770
+private def svcX30 : UInt64 := 0xBEEF
+
+/-- Dispatch `sid` from core 0's current thread (the faulter) with `x0` = the
+CPtr and an empty message, through the typed ABI entry the hardware calls. -/
+private def seamDispatch (ctx : LabelingContext) (sid : SyscallId) (cptr : UInt64) :
+    Except KernelError (SyscallOutcome × SystemState) :=
+  Platform.FFI.syscallDispatchFromAbi ctx c0 sid.toNat.toUInt32 0 cptr 0 0 0 0 0 0
+    svcElr svcSpsr svcSpEl0 svcX30 stRunning
+
+/-- The seam pipeline: a `Call` at CPtr 3 — a slot the root CNode does not
+hold — faults; the handler receives it on core 1 and answers with a
+payload-free reply. -/
+private structure SeamFault where
+  outcome : SyscallOutcome
+  afterFault : SystemState
+  afterRecv : SystemState
+  afterReply : SystemState
+  replyOutcome : FaultReplyOutcome
+
+private def seamFaultE : Except String SeamFault := do
+  let (outcome, afterFault) ←
+    match seamDispatch seamCtx .call 3 with
+    | .ok r => .ok r
+    | .error e => .error s!"step1: seam dispatch: {repr e}"
+  let (afterRecv, _) ← stepPair "step2: handler recv on core 1 (dequeues the capFault)"
+    (endpointReceiveDualOnCore epHandler handler (some replyH) c1 afterFault)
+  let (afterReply, replyOutcome) ←
+    match faultReplyOnCore handler faulter resumeInfo #[] c1 afterRecv with
+    | (st, .ok (o, _)) => .ok (st, o)
+    | (_, .error e) => .error s!"step3: handler reply: {repr e}"
+  pure { outcome := outcome, afterFault := afterFault, afterRecv := afterRecv,
+         afterReply := afterReply, replyOutcome := replyOutcome }
+
+/-- Did the seam return an error frame carrying exactly `ke`, with no fault
+recorded on the caller? -/
+private def seamErrorFrame (r : Except KernelError (SyscallOutcome × SystemState))
+    (ke : KernelError) : Bool :=
+  match r with
+  | .ok (.returns f, st) =>
+      decide (f = errorFrame ke) && pendingFaultOf st faulter == none
+  | _ => false
+
+/-- Did the seam block the caller with exactly the fault `f` recorded on it? -/
+private def seamCapFault (r : Except KernelError (SyscallOutcome × SystemState))
+    (f : Fault) : Bool :=
+  match r with
+  | .ok (.blocks, st) => (pendingFaultOf st faulter).map (·.fault) == some f
+  | _ => false
+
+private def runSyscallCapFaultChecks : IO Unit := do
+  IO.println "--- §7e capability faults at the syscall seam (PR #887 review round 3) ---"
+  match seamFaultE with
+  | .error e => assertBool s!"seam capFault pipeline: {e}" false
+  | .ok s =>
+      assertBool "a Call whose endpoint CPtr resolves to nothing BLOCKS the caller — no error frame"
+        (match s.outcome with | .blocks => true | .returns _ => false)
+      assertBool "the caller is parked on the handler endpoint as a Call sender"
+        (ipcStateOf s.afterFault faulter == some (.blockedOnCall epHandler))
+      assertBool "the caller carries a capFault: the CPtr, the send phase, the resolution's error"
+        ((pendingFaultOf s.afterFault faulter).map (·.fault)
+          == some (.capFault 3 false .invalidCapability))
+      assertBool "the restart PC is the SVC instruction (ELR - 4), never the return address"
+        ((pendingFaultOf s.afterFault faulter).map (·.context.faultIP) == some (svcElr - 4))
+      assertBool "the context carries SP_EL0 and x30 from the trap frame, not from the mirror"
+        ((pendingFaultOf s.afterFault faulter).map (fun tf => (tf.context.sp, tf.context.lr))
+          == some (svcSpEl0, svcX30))
+      assertBool "the context's argument window is the syscall's own: x0 = CPtr, x7 = the id"
+        ((pendingFaultOf s.afterFault faulter).map
+            (fun tf => (tf.context.gprAt 0, tf.context.gprAt 7))
+          == some (3, SyscallId.call.toNat.toUInt64))
+      assertBool "the caller is not dispatchable on the core it trapped on"
+        (!dispatchableOn s.afterFault faulter c0)
+      assertBool "the handler's receive dequeues a message labelled seL4_Fault_CapFault"
+        ((deliveredMessageOf s.afterRecv handler).map (·.label) == some FaultLabel.capFault)
+      assertBool "MR0..MR3 = FaultIP, the CPtr, InRecvPhase = 0, the lookup failure's discriminant"
+        ((deliveredMessageOf s.afterRecv handler).map (·.registers) ==
+          some #[SeLe4n.RegValue.ofNat (svcElr - 4).toNat, SeLe4n.RegValue.ofNat 3,
+                 SeLe4n.RegValue.ofNat 0,
+                 SeLe4n.RegValue.ofNat (KernelError.toDiscriminant .invalidCapability)])
+      assertBool "a payload-free reply restarts the caller AT the SVC — the syscall is re-issued"
+        (s.replyOutcome.restartPC? == some (svcElr - 4) &&
+          savedPcOf s.afterReply faulter == some (svcElr - 4).toNat)
+      assertBool "the restarted caller is ready with its fault retired"
+        (ipcStateOf s.afterReply faulter == some .ready &&
+          pendingFaultOf s.afterReply faulter == none)
+  -- The other arms, each on the same state and the same unresolvable CPtr, so
+  -- only the decision differs.  seL4's rule is the syscall's blocking flag,
+  -- not the object invoked: every `seL4_Call` invocation faults, `seL4_Signal`
+  -- is `seL4_Send`, and the receive-side syscalls set the phase flag.
+  assertBool "a Receive at the same CPtr faults IN the receive phase"
+    (seamCapFault (seamDispatch seamCtx .receive 3) (.capFault 3 true .invalidCapability))
+  assertBool "a Signal at the same CPtr faults in the send phase — seL4_Signal is seL4_Send"
+    (seamCapFault (seamDispatch seamCtx .notificationSignal 3)
+      (.capFault 3 false .invalidCapability))
+  assertBool "a TCB invocation at the same CPtr faults too — handleInvocation raises CapFault for every blocking invocation"
+    (seamCapFault (seamDispatch seamCtx .tcbSuspend 3) (.capFault 3 false .invalidCapability))
+  -- …and what is NOT a capability fault.
+  assertBool "a Call on a capability that RESOLVES but lacks send is the invocation's error, not the lookup's fault"
+    (seamErrorFrame (seamDispatch seamCtx .call 1) .illegalAuthority)
+  assertBool "a refusal raised BEFORE the lookup (the insecure default context) is never delivered as a fault, even at an unresolvable CPtr"
+    (seamErrorFrame (seamDispatch permissiveCtx .call 3) .policyDenied)
+  assertBool "a declassifying syscall at the same CPtr returns the error AND records it — the refusal ledger's partition, not the handler's"
+    (match seamDispatch seamCtx .declassify 3 with
+     | .ok (.returns f, st) =>
+         decide (f = errorFrame KernelError.invalidCapability) &&
+           pendingFaultOf st faulter == none &&
+           (match st.declassificationRefusals.recent.get
+               stRunning.declassificationRefusals.nextSlot with
+            | some r => decide (r.reason = KernelError.invalidCapability) &&
+                        decide (r.syscall = SyscallId.declassify)
+            | none => false)
+     | _ => false)
+
+-- ============================================================================
 -- §7  Reply-based resume and restart (RR4.14 / RR4.15 / RR4.16)
 -- ============================================================================
 
@@ -1493,6 +1629,7 @@ def runFaultHandlingChecks : IO Unit := do
   runEntryWindowChecks
   runUnknownSyscallChecks
   runConfigureAndResumeChecks
+  runSyscallCapFaultChecks
   runResumeChecks
   runRestartChecks
   runReplySeamChecks

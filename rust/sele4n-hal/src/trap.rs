@@ -477,17 +477,22 @@ fn classify_synchronous_exception_mirror(esr: u64) -> u32 {
 /// it with the successor install — it is the seam's occupant, not its
 /// contract.
 ///
-/// # The not-ready path (WS-RR RR4.22)
+/// # The not-ready path (WS-RR RR4.22; PR #887 review round 3)
 ///
-/// A core whose Lean runtime is not up cannot deliver, so it publishes a full
+/// A core whose Lean runtime is not up cannot deliver — and, on hardware, it
+/// cannot return either: the abort left `ELR_EL1` on the faulting
+/// instruction, so a published frame would be `eret`ed back into the same
+/// abort and the core would wedge.  The not-ready path therefore **halts**
+/// (`halt_abort_before_lean_ready`), which makes both branches of this
+/// function diverge on hardware; the SVC seam, whose exception advanced the
+/// PC, is the one place a fallback frame is a coherent return.  The host lane
+/// keeps the RR4.22 fallback frame as the harness observable — a full
 /// **status-label** frame (ABI v3): `x0 = 0`, `x1` a `MessageInfo` whose
-/// label is `ERROR_LABEL_BASE + discriminant`, and `x2`-`x5` cleared.  This
-/// retires the
-/// raw-discriminant-in-`x0` convention the four exception arms used, which
-/// left `x1` **untouched** — so a resumed thread whose `x1` happened to carry
-/// a label below 512 decoded a fault as a *successful syscall* carrying a
-/// forged badge.  That is the same fail-open class WS-RA closed for the SVC
-/// path, and it becomes reachable the moment aborts deliver.
+/// label is `ERROR_LABEL_BASE + discriminant`, and `x2`-`x5` cleared, never
+/// the retired raw-discriminant-in-`x0` shape that left `x1` untouched and
+/// let a resumed thread decode a fault as a successful syscall carrying a
+/// forged badge — and `build.rs` pins that the frame write is host-only and
+/// the halt sits on the not-ready path.
 #[allow(unused_variables)]
 fn deliver_fault(frame: &mut TrapFrame, fallback_discriminant: u32) {
     #[cfg(feature = "hw_target")]
@@ -550,8 +555,46 @@ fn deliver_fault(frame: &mut TrapFrame, fallback_discriminant: u32) {
             );
             crate::cpu::fatal_halt();
         }
+        // PR #887 review round 3: a core whose Lean runtime is not up cannot
+        // deliver, and a status frame cannot fail-close an abort — `trap.S`
+        // would `eret` through the unchanged `ELR_EL1` onto the instruction
+        // that faulted, and the core would take the same abort forever.  So
+        // the not-ready path halts, as the delivered arm does.
+        halt_abort_before_lean_ready(core_id, frame.esr_el1, frame.elr_el1);
     }
+    // The host lane's fallback: the harness observable that the abort arms
+    // reached this seam (`handle_sync_data_abort_via_frame` and the
+    // per-core counter tests drive the whole handler).  On hardware the
+    // function never returns; `build.rs` pins that this write is host-only.
+    #[cfg(not(feature = "hw_target"))]
     frame.set_return_frame(crate::svc_dispatch::error_frame_regs(fallback_discriminant));
+}
+
+/// **PR #887 review round 3**: an EL0 abort taken on a core whose Lean
+/// runtime is not initialized.  Nothing can be delivered (there is no model
+/// to deliver into) and nothing can be returned: the abort left `ELR_EL1` on
+/// the faulting instruction, so any frame the handler published would be
+/// `eret`ed straight back into the same abort — the wedge RR4 exists to
+/// remove, reintroduced on the fallback.  The only fail-closed action is to
+/// stop the core, as `deliver_fault`'s delivered arm does pending the SM10.1
+/// successor install; both branches of that function therefore diverge on
+/// hardware.  The SVC seam is different and keeps its status frame: an `SVC`
+/// advances `ELR_EL1` past itself, so a frame returned to a thread is a
+/// coherent outcome there (and the not-ready behaviour of the SVC seam as a
+/// whole is RR5's to decide, together with the ungated `dispatch_svc` beside
+/// it).  Unreachable today — no core sets `lean_ready`, and no user thread
+/// exists before the runtime that creates it — and pinned by
+/// `abort_before_lean_ready_halts` on the host lane, where `fatal_halt`
+/// panics.
+#[cfg_attr(not(feature = "hw_target"), allow(dead_code))]
+fn halt_abort_before_lean_ready(core_id: u64, esr: u64, elr: u64) -> ! {
+    crate::kprintln!(
+        "[core {}] EL0 abort before the Lean runtime is ready; halting (ESR=0x{:016x} ELR=0x{:016x})",
+        core_id,
+        esr,
+        elr
+    );
+    crate::cpu::fatal_halt()
 }
 
 /// **PR #887 review**: deliver an unknown-syscall fault through the verified
@@ -566,6 +609,13 @@ fn deliver_fault(frame: &mut TrapFrame, fallback_discriminant: u32) {
 /// emulates the call replies and the thread continues after the `SVC`), or —
 /// with no usable handler — is suspended fail-closed.  Same lock, same
 /// readiness gate, same SM10.1 halt as `deliver_fault`, for the same reasons.
+///
+/// The not-ready path differs from `deliver_fault`'s, deliberately: this seam
+/// keeps its status frame, because an `SVC` advances `ELR_EL1` past itself
+/// and a frame returned to the thread is a coherent outcome, where an abort's
+/// would re-execute the faulting instruction (PR #887 review round 3).  What
+/// a not-ready core should do with an `SVC` at all is RR5's question, asked
+/// once for the whole SVC seam together with the ungated `dispatch_svc`.
 #[allow(unused_variables)]
 fn deliver_unknown_syscall(frame: &mut TrapFrame) {
     #[cfg(feature = "hw_target")]
@@ -679,8 +729,15 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
             // (single AtomicU64::fetch_add) and not on any
             // correctness path.
             let _ = crate::per_cpu_stats::record_syscall();
-            let syscall_id = frame.x7() as u32;
             let args = crate::svc_dispatch::SyscallArgs::from_trap_frame(frame);
+            // PR #887 review round 3: the syscall number is the FULL 64-bit
+            // `x7`.  Narrowing first would make `0x1_0000_0002` syscall 2; a
+            // word the ABI cannot name is an unknown syscall, delivered to the
+            // thread's fault handler like any other, with the full word.
+            let dispatched = match u32::try_from(frame.x7()) {
+                Ok(syscall_id) => crate::svc_dispatch::dispatch_svc(syscall_id, &args),
+                Err(_) => Err(crate::svc_dispatch::DispatchError::InvalidSyscallId),
+            };
             // WS-RA (plan §3.1/§3.3): the writeback is a six-register
             // context restore — `x0` the value, the offset error label on
             // `x1`, `x2`-`x5` message registers.  A blocked caller has NO
@@ -690,7 +747,7 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
             // surface as label-encoded error frames like every kernel
             // rejection, retiring the raw-discriminant `x0` write and its
             // documented collision.
-            match crate::svc_dispatch::dispatch_svc(syscall_id, &args) {
+            match dispatched {
                 Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) => frame.set_return_frame(regs),
                 Ok(crate::svc_dispatch::SvcOutcome::Blocked) => {
                     // SM10.1 context-restore hook: the successor's frame
@@ -1164,12 +1221,14 @@ mod tests {
         //
         // WS-RR RR4.22: the abort arm now publishes a full **status-label**
         // frame (ABI v3) instead of the retired raw discriminant in `x0`.
-        // On the host lane no core is Lean-ready, so `deliver_fault` takes
-        // its fail-closed half: `x0 = 0`, `x1` a `MessageInfo` whose label
-        // is `ERROR_LABEL_BASE + VM_FAULT`, and `x2`-`x5` cleared.  Under
-        // the retired convention this asserted `x0 == 44` and left `x1`
-        // untouched — the fail-open shape a resumed thread could decode as a
-        // success.
+        // On the host lane `deliver_fault` takes its fallback: `x0 = 0`,
+        // `x1` a `MessageInfo` whose label is `ERROR_LABEL_BASE + VM_FAULT`,
+        // and `x2`-`x5` cleared.  Under the retired convention this asserted
+        // `x0 == 44` and left `x1` untouched — the fail-open shape a resumed
+        // thread could decode as a success.  PR #887 review round 3: this
+        // frame is the *host lane's* observable only; on hardware a not-ready
+        // core halts instead (`abort_before_lean_ready_halts`), because an
+        // abort's frame would be `eret`ed back into the abort.
         let mut frame = zero_frame();
         frame.esr_el1 = ec::DABT_LOWER << 26;
         frame.far_el1 = 0xFFFF_0000_DEAD_0000;
@@ -1289,6 +1348,17 @@ mod tests {
         halt_if_kernel_origin(&frame, frame.esr_el1);
     }
 
+    /// **PR #887 review round 3**: an EL0 abort on a core whose Lean runtime
+    /// is not up halts.  A status frame cannot fail-close an abort — `eret`
+    /// through the unchanged `ELR_EL1` re-executes the faulting instruction —
+    /// so the not-ready path diverges like the delivered arm; on the host
+    /// lane `fatal_halt` panics, which is the observable.
+    #[test]
+    #[should_panic]
+    fn abort_before_lean_ready_halts() {
+        halt_abort_before_lean_ready(0, ec::DABT_LOWER << 26, 0x4_0000);
+    }
+
     /// **PR #887 review**: a current-EL abort syndrome halts on its own class,
     /// independently of the origin gate.
     #[test]
@@ -1329,6 +1399,29 @@ mod tests {
             (crate::svc_dispatch::ERROR_LABEL_BASE + 31) << 9
         );
         assert_eq!([frame.x2(), frame.x3(), frame.x4(), frame.x5()], [0; 4]);
+    }
+
+    /// **PR #887 review round 3**: the syscall number is validated at its
+    /// full 64-bit width.  `0x1_0000_0002` narrows to syscall 2, which the
+    /// old `as u32` would have dispatched (the host stub answers it with the
+    /// `notImplemented` frame, discriminant 17); it is an unknown syscall,
+    /// and on the not-ready host lane that is the `invalidSyscallNumber`
+    /// status frame (31).
+    #[test]
+    fn handle_sync_wide_syscall_number_is_unknown_syscall() {
+        let mut frame = zero_frame();
+        frame.esr_el1 = ec::SVC_AARCH64 << 26;
+        frame.gprs[7] = 0x1_0000_0002;
+        drive_sync(&mut frame);
+        assert_eq!(frame.x0(), 0);
+        assert_eq!(
+            frame.x1(),
+            (crate::svc_dispatch::ERROR_LABEL_BASE + 31) << 9
+        );
+        assert_ne!(
+            frame.x1(),
+            (crate::svc_dispatch::ERROR_LABEL_BASE + 17) << 9
+        );
     }
 
     /// **WS-RR RR4.25**: the low ESR bits (IL, ISS) do not change the class —

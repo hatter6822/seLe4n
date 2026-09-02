@@ -85,41 +85,73 @@ if (cap_get_capType(handlerCap) == cap_endpoint_cap &&
 
 The audit round replaced a send-**and**-grant reading whose stated rationale
 ("grant is what lets the handler receive a reply capability") was false of
-this model, where the reply link does not depend on any right. -/
-def faultHandlerRights : List AccessRight := [.write, .grant, .grantReply]
+this model, where the reply link does not depend on any right.
+
+**Stated as clauses, and the predicate is defined from them** (PR #887 review
+round 3).  The outer list is a conjunction and each inner list a disjunction —
+send, and grant or grant-reply — so the inventory below (`faultHandlerRights`,
+the clauses flattened) and the predicate (`faultHandlerCapAuthorized`, the
+clauses evaluated) are two readings of one definition rather than two
+definitions a theorem tries to hold together.  The first cut pinned them with
+`faultHandlerCapAuthorized_reads_faultHandlerRights`, whose conclusion was one
+of its own hypotheses: it compiled with `.write` deleted from the inventory
+and with `.read` added, which is the proof-level form of a presence check.
+What holds now is `faultHandlerCapAuthorized_iff` — the exact seL4 form, which
+an added or removed right breaks — and
+`faultHandlerCapAuthorized_depends_only_on_faultHandlerRights`, the support
+relation: two capabilities that agree on the inventory's rights get the same
+verdict, so no right outside the inventory is consulted. -/
+def faultHandlerRequiredRights : List (List AccessRight) := [[.write], [.grant, .grantReply]]
+
+/-- WS-RR RR4.8: the rights the predicate consults — the clauses, flattened. -/
+def faultHandlerRights : List AccessRight := faultHandlerRequiredRights.flatten
+
+/-- The inventory, as the list a reader expects; a clause edit changes it. -/
+theorem faultHandlerRights_eq : faultHandlerRights = [.write, .grant, .grantReply] := rfl
 
 /-- WS-RR RR4.8: does a capability carry the rights a fault handler needs?
-Send, and at least one of the two grant rights. -/
+Every clause satisfied by at least one of its rights: send, and at least one
+of the two grant rights. -/
 def faultHandlerCapAuthorized (cap : Capability) : Bool :=
-  cap.hasRight .write && (cap.hasRight .grant || cap.hasRight .grantReply)
+  faultHandlerRequiredRights.all (fun clause => clause.any (fun r => cap.hasRight r))
 
 /-- WS-RR RR4.8: the authorization is exactly seL4's predicate, unfolded —
-the form a caller checks against without reasoning through `Bool` algebra. -/
+the form a caller checks against without reasoning through `Bool` algebra.
+Since PR #887 review round 3 this is the drift pin between the clauses and
+the predicate seL4 states: a right added to or removed from a clause changes
+the left-hand side and not the right, and the theorem fails. -/
 @[simp] theorem faultHandlerCapAuthorized_iff (cap : Capability) :
     faultHandlerCapAuthorized cap = true ↔
       (cap.hasRight .write = true ∧
         (cap.hasRight .grant = true ∨ cap.hasRight .grantReply = true)) := by
-  simp [faultHandlerCapAuthorized]
+  simp [faultHandlerCapAuthorized, faultHandlerRequiredRights]
 
-/-- WS-RR RR4.8: the rights the predicate consults are exactly
-`faultHandlerRights` — the list is the predicate's inventory, pinned so a
-right added to one cannot go missing from the other. -/
-theorem faultHandlerCapAuthorized_reads_faultHandlerRights (cap : Capability) :
-    faultHandlerCapAuthorized cap = true →
-      ∀ r, cap.hasRight r = true → r ∈ faultHandlerRights → r ∈ faultHandlerRights := by
-  intro _ r _ hr; exact hr
+/-- PR #887 review round 3 (**the support relation**): the verdict is a
+function of the inventory's rights alone — two capabilities that agree on
+every right in `faultHandlerRights` are authorized alike.  This is what the
+retired `faultHandlerCapAuthorized_reads_faultHandlerRights` meant to say and
+did not: with `.write` dropped from the inventory the hypothesis no longer
+covers it, and the proof fails. -/
+theorem faultHandlerCapAuthorized_depends_only_on_faultHandlerRights
+    (c₁ c₂ : Capability)
+    (h : ∀ r ∈ faultHandlerRights, c₁.hasRight r = c₂.hasRight r) :
+    faultHandlerCapAuthorized c₁ = faultHandlerCapAuthorized c₂ := by
+  have hW := h .write (by simp [faultHandlerRights_eq])
+  have hG := h .grant (by simp [faultHandlerRights_eq])
+  have hR := h .grantReply (by simp [faultHandlerRights_eq])
+  simp [faultHandlerCapAuthorized, faultHandlerRequiredRights, hW, hG, hR]
 
 /-- WS-RR RR4.8 (**the negatives**): send alone is refused, and either grant
 right alone is refused — the predicate is a conjunction, not a disjunction of
 everything it names. -/
 theorem faultHandlerCapAuthorized_false_of_no_send (cap : Capability)
     (h : cap.hasRight .write = false) : faultHandlerCapAuthorized cap = false := by
-  simp [faultHandlerCapAuthorized, h]
+  simp [faultHandlerCapAuthorized, faultHandlerRequiredRights, h]
 
 theorem faultHandlerCapAuthorized_false_of_no_grant (cap : Capability)
     (hG : cap.hasRight .grant = false) (hR : cap.hasRight .grantReply = false) :
     faultHandlerCapAuthorized cap = false := by
-  simp [faultHandlerCapAuthorized, hG, hR]
+  simp [faultHandlerCapAuthorized, faultHandlerRequiredRights, hG, hR]
 
 /-- WS-RR RR4.7: everything the delivery needs about a faulting thread's fault
 handler, resolved from the pre-state in one pass.
@@ -766,5 +798,71 @@ a field, and the resume that follows is what makes the thread runnable. -/
       | some tf =>
           simp only [retirePendingFaultForResume, hT, hF]
           exact applyFaultRestart_scheduler_eq st tid _
+
+-- ============================================================================
+-- §8  The trap frame's fault window, spilled into the thread (audit round;
+--     relocated here in PR #887 review round 3 so the SVC seam can share it)
+-- ============================================================================
+
+/-- WS-RR RR4 (audit round): spill the trap frame's fault window into the
+faulting thread's saved register context — the fault seam's twin of the SVC
+seam's `Platform.FFI.writeFfiRegistersToTcb`.
+
+`TCB.registerContext` is a partial mirror of the hardware file and, between
+syscalls, holds the *last syscall's* arguments; the fault context has to be
+built from what the thread held **at the trap**, because the unknown-syscall
+message reports that window and a resume reinstalls it
+(`applyFaultRestart`).  Total: a target that is not a TCB returns the state
+unchanged, and the delivery then fails closed on its own lookup. -/
+def writeFaultRegistersToTcb (st : SystemState) (tid : SeLe4n.ThreadId)
+    (w : FaultRegisterWindow) : SystemState :=
+  match st.getTcb? tid with
+  | some tcb =>
+      let tcb' : TCB := { tcb with registerContext := w.spill tcb.registerContext }
+      { st with objects := st.objects.insert tid.toObjId (.tcb tcb') }
+  | none => st
+
+/-- The spill touches no scheduler state — it is a register write, and the
+delivery it precedes is what deschedules the thread. -/
+@[simp] theorem writeFaultRegistersToTcb_scheduler (st : SystemState)
+    (tid : SeLe4n.ThreadId) (w : FaultRegisterWindow) :
+    (writeFaultRegistersToTcb st tid w).scheduler = st.scheduler := by
+  unfold writeFaultRegistersToTcb; cases st.getTcb? tid <;> rfl
+
+/-- A target that is not a TCB is left alone. -/
+theorem writeFaultRegistersToTcb_id_when_not_tcb (st : SystemState)
+    (tid : SeLe4n.ThreadId) (w : FaultRegisterWindow) (hNone : st.getTcb? tid = none) :
+    writeFaultRegistersToTcb st tid w = st := by
+  unfold writeFaultRegistersToTcb; simp [hNone]
+
+/-- The spilled thread's saved context is the spill of what it was. -/
+theorem writeFaultRegistersToTcb_getTcb? (st : SystemState) (tid : SeLe4n.ThreadId)
+    (w : FaultRegisterWindow) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
+    (hObjInv : st.objects.invExt) :
+    (writeFaultRegistersToTcb st tid w).getTcb? tid
+      = some { tcb with registerContext := w.spill tcb.registerContext } := by
+  unfold writeFaultRegistersToTcb
+  rw [hTcb]
+  simp only
+  unfold SystemState.getTcb?
+  rw [RHTable_getElem?_eq_get?,
+      SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId
+        (KernelObject.tcb { tcb with registerContext := w.spill tcb.registerContext }) hObjInv]
+
+/-- **The fault context the entry delivers is the trap frame's**, word for
+word: `sp` and `lr` are the saved `SP_EL0` and `x30`, and `x0`-`x7` are the
+saved argument window — never the mirror's stale contents.  Composed from the
+spill and `FaultRegisterWindow.ofRegisterFile_spill`; this is the theorem the
+audit-round fix exists to make true. -/
+theorem faultContextOfThread_writeFaultRegistersToTcb (st : SystemState)
+    (tid : SeLe4n.ThreadId) (w : FaultRegisterWindow) (tcb : TCB)
+    (hTcb : st.getTcb? tid = some tcb) (hObjInv : st.objects.invExt)
+    (faultIP spsr : UInt64) :
+    faultContextOfThread (writeFaultRegistersToTcb st tid w) tid faultIP spsr =
+      { faultIP := faultIP, sp := w.sp, lr := w.lr, spsr := spsr,
+        gprs := (Array.range FaultContext.gprWindow).map w.gprAt } := by
+  unfold faultContextOfThread
+  rw [writeFaultRegistersToTcb_getTcb? st tid w tcb hTcb hObjInv]
+  exact FaultRegisterWindow.ofRegisterFile_spill w tcb.registerContext faultIP spsr
 
 end SeLe4n.Kernel

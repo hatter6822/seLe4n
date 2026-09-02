@@ -1456,16 +1456,34 @@ the **target's** CSpace root — a read walk of that CNode
 (`resolveFaultHandlerCPtr`), which is the fourth lock.  The caller pre-resolves
 `(s.getTcb? targetTcbTid).map (·.cspaceRoot)`; `none` covers a missing target
 (the syscall fails before any CNode is read), and a caller whose own root *is*
-the target's passes `none` too, since that read lock is already in the base. -/
+the target's passes `none` too, since that read lock is already in the base.
+
+**The validated endpoint is the fifth lock** (PR #887 review round 3).  The
+same resolution reads `st.getEndpoint? epId` to check that the capability the
+CPtr names is an endpoint before the CPtr is stored — the kind check
+`serviceRegister` locks its endpoint for (audit-pass-6), and for the same
+reason: without it a concurrent endpoint retype has no conflicting lock and
+races the check, so a handler could be recorded from a state that was never
+coherently validated.  The caller pre-resolves the capability's target the way
+`resolveFaultHandlerCPtr` does — the slot `resolveCapAddress` names through the
+target's root, its capability's `.object` target — and passes that `ObjId`;
+`none` when the walk fails or the target is not an object, since the operation
+then refuses before reading any endpoint.  Read mode, as the operation never
+writes the endpoint.  What this footprint still does not name is the interior
+of a multi-level CSpace walk, registered as
+`UncoveredLockDomain.cspaceWalkInteriorCnodes` for every footprint that
+resolves a CPtr. -/
 def lockSet_tcbSetFaultHandler (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (targetTcbTid : ThreadId)
-    (targetCnodeRootObjId : Option ObjId) : LockSet :=
+    (targetCnodeRootObjId : Option ObjId) (handlerEndpointObjId : Option ObjId) : LockSet :=
   lockSetExtendOpt
-    (lockSetOfList
-      [(tcbLock callerTid, .read),
-       (cnodeLock cnodeRootObjId, .read),
-       (tcbLock targetTcbTid, .write)])
-    (targetCnodeRootObjId.map (fun cn => (cnodeLock cn, .read)))
+    (lockSetExtendOpt
+      (lockSetOfList
+        [(tcbLock callerTid, .read),
+         (cnodeLock cnodeRootObjId, .read),
+         (tcbLock targetTcbTid, .write)])
+      (targetCnodeRootObjId.map (fun cn => (cnodeLock cn, .read))))
+    (handlerEndpointObjId.map (fun ep => (endpointLock ep, .read)))
 
 -- ============================================================================
 -- SM3.B.3 (audit-pass-5) — PIP-chain-walk start markers
@@ -1764,9 +1782,10 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   | .tcbSetAffinity =>
       [.tcb, .cnode, .schedContext]
   -- PR #887 review: `setThreadFaultHandlerOp` writes the target TCB's
-  -- `faultHandler` and reads the target's root CNode to validate the CPtr.
+  -- `faultHandler` and reads the target's root CNode to validate the CPtr —
+  -- and (review round 3) the endpoint the CPtr names, for the kind check.
   | .tcbSetFaultHandler =>
-      [.tcb, .cnode]
+      [.tcb, .cnode, .endpoint]
   -- WS-SM SM6.B: bind/unbind a notification to a TCB.  Both the notification
   -- (write — `boundTCB`) and the bound TCB (write — `boundNotification`) are in
   -- the footprint, plus the CNode (read) covering the capability resolution.
@@ -2796,23 +2815,30 @@ theorem lockSet_consistent_tcbSetAffinity (callerTid : ThreadId)
         | some sc => simp at hpp; rw [← hpp]; simp; decide)
 
 /-- PR #887 review, for `.tcbSetFaultHandler`: the base three locks plus the
-optional target-CNode read. -/
+optional target-CNode read and (review round 3) the optional read of the
+endpoint the CPtr names. -/
 theorem lockSet_consistent_tcbSetFaultHandler (callerTid : ThreadId)
-    (cnRoot : ObjId) (targetTcb : ThreadId) (targetCnRoot : Option ObjId) :
-    ∀ p ∈ (lockSet_tcbSetFaultHandler callerTid cnRoot targetTcb targetCnRoot).pairs,
+    (cnRoot : ObjId) (targetTcb : ThreadId) (targetCnRoot : Option ObjId)
+    (handlerEp : Option ObjId) :
+    ∀ p ∈ (lockSet_tcbSetFaultHandler callerTid cnRoot targetTcb targetCnRoot handlerEp).pairs,
       p.fst.kind ∈ permittedKinds .tcbSetFaultHandler :=
-  lockSet_consistent_base_plus_opt _ _ _
-    (by intro p hMem
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        exact absurd hMem (by intro h; cases h))
+  lockSet_consistent_extendOpt _ _ _
+    (lockSet_consistent_base_plus_opt _ _ _
+      (by intro p hMem
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          exact absurd hMem (by intro h; cases h))
+      (by intro pp hpp
+          cases targetCnRoot with
+          | none => simp at hpp
+          | some cn => simp at hpp; rw [← hpp]; simp; decide))
     (by intro pp hpp
-        cases targetCnRoot with
+        cases handlerEp with
         | none => simp at hpp
-        | some cn => simp at hpp; rw [← hpp]; simp; decide)
+        | some ep => simp at hpp; rw [← hpp]; simp; decide)
 
 end SeLe4n.Kernel.Concurrency

@@ -317,6 +317,19 @@ pub struct SyscallArgs {
     /// Caller's IPC buffer address from `x6` (`TPIDRRO_EL0`).  Set to
     /// `None` when the field is zero (no IPC buffer registered).
     pub ipc_buffer_addr: Option<u64>,
+    /// PR #887 review round 3: the `SVC`'s return address (`ELR_EL1`).  A
+    /// blocking IPC syscall whose capability lookup fails is not answered
+    /// with an error frame — seL4's `handleInvocation` / `handleRecv`
+    /// deliver a `CapFault` to the thread's fault handler — and that fault's
+    /// message reports the faulting `SVC` (`ELR_EL1 - 4`) as the restart PC.
+    pub elr: u64,
+    /// The saved PSTATE (`SPSR_EL1`), carried outbound in the fault context
+    /// and never written back (the fail-closed half of `sanitiseRegister`).
+    pub spsr: u64,
+    /// `SP_EL0` — the fault window's stack pointer.
+    pub sp_el0: u64,
+    /// `x30` — the fault window's link register.
+    pub x30: u64,
 }
 
 impl SyscallArgs {
@@ -329,6 +342,11 @@ impl SyscallArgs {
     ///
     /// Note that `x7` is the `syscall_id` and is read separately by
     /// the dispatcher; it is NOT part of [`SyscallArgs`].
+    ///
+    /// PR #887 review round 3: `ELR_EL1`, `SPSR_EL1`, `SP_EL0` and `x30`
+    /// cross too, so a capability fault raised by the Lean dispatcher can
+    /// build its context from the trap frame's window rather than from the
+    /// register mirror's stale last-syscall contents.
     pub fn from_trap_frame(frame: &TrapFrame) -> Self {
         let raw_buf = frame.gprs[6];
         Self {
@@ -342,6 +360,10 @@ impl SyscallArgs {
                 frame.x5(),
             ],
             ipc_buffer_addr: if raw_buf == 0 { None } else { Some(raw_buf) },
+            elr: frame.elr_el1,
+            spsr: frame.spsr_el1,
+            sp_el0: frame.sp_el0,
+            x30: frame.gprs[30],
         }
     }
 
@@ -637,6 +659,10 @@ pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<SvcOutcome, D
                 args.msg_regs[4],
                 args.msg_regs[5],
                 args.ipc_buffer_addr.unwrap_or(0),
+                args.elr,
+                args.spsr,
+                args.sp_el0,
+                args.x30,
             )
         };
         (tag, return_frame_read_in(&RETURN_FRAMES, core))
@@ -695,6 +721,10 @@ extern "C" {
         x4: u64,
         x5: u64,
         ipc_buffer_addr: u64,
+        elr: u64,
+        spsr: u64,
+        sp_el0: u64,
+        x30: u64,
     ) -> u64;
 }
 
@@ -715,6 +745,10 @@ extern "C" fn lean_syscall_dispatch_cross_core(
     _x4: u64,
     _x5: u64,
     _ipc_buffer_addr: u64,
+    _elr: u64,
+    _spsr: u64,
+    _sp_el0: u64,
+    _x30: u64,
 ) -> u64 {
     return_frame_publish_in(&RETURN_FRAMES, 0, error_frame_regs(17));
     0
@@ -1091,6 +1125,10 @@ mod tests {
                 msg_info: 1,
                 msg_regs: [0; 6],
                 ipc_buffer_addr: None,
+                elr: 0,
+                spsr: 0,
+                sp_el0: 0,
+                x30: 0,
             };
             // Must clear the argument-count gate (any result other than the
             // count-mismatch rejection is acceptable here; in test builds the

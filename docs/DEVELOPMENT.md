@@ -102,7 +102,17 @@ It is aligned to the **current project state**:
   pinned to that table (PR #887 review round 2: the readiness contract is
   about the symbol, not the function, and `build.rs` now *derives* every Lean
   upcall from the Lean tree's exports — `scan_lean_upcalls_readiness_gated` —
-  so an ungated upcall fails the build).  Both are
+  so an ungated upcall fails the build; review round 3 made the scanner ask
+  whether the guard *dominates* the upcall, `readiness_guard_dominates`).
+  Review round 3 also gave `Fault.capFault` its producer — a failed
+  capability lookup at the SVC seam is delivered (`syscallCapFaultOf` /
+  `deliverSyscallCapFault` in `Platform/FFI.lean`, on every syscall the
+  refusal ledger does not record), with `ELR_EL1`, `SPSR_EL1`, `SP_EL0` and
+  `x30` crossing the ABI to build the context — read the SVC number at
+  full width, and made the not-ready abort fallback halt
+  (`halt_abort_before_lean_ready`; the host lane keeps the frame as its
+  observable, `scan_trap_rs_abort_fallback_halts` pins that it is host-only).
+  Both are
   dormant behind the per-core `lean_ready` gate until SM10.1; a core that
   delivers a fault today would halt, because it has descheduled the faulting
   thread and cannot yet install a successor.  Tests:
