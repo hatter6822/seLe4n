@@ -504,6 +504,14 @@ round fixes the class as well as the instance.
   lane classifying through the same mirror — and it reads the strings-blanked
   code view, checking the `#[cfg(feature = "hw_target")]` attribute against
   the strings-kept one, instead of the line-based `//` stripper.
+* **A host-lane counter test raced its neighbours** (CI, first seen on this
+  round's push).  `per_core_counters_track_distinct_exception_branches`
+  reads a per-core counter twice around an SVC and asserts no change; every
+  host test drives the same core-0 counters, and five tests that only check
+  a return frame recorded a fault without taking the observation mutex, so
+  one of them could land between the two reads.  Every non-observation
+  driver now goes through `drive_sync`, which holds the mutex for the call —
+  the class, not the one interleaving CI happened to hit.
 
 Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR4
 

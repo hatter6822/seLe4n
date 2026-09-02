@@ -1050,6 +1050,21 @@ mod tests {
     // by cargo's test harness).
     static PER_CORE_STATS_OBSERVATION_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+    /// PR #887 review round 2 (CI flake made structural): **every** host test
+    /// that drives `handle_synchronous_exception` records into the same
+    /// process-global counters — `current_core_id_from_tpidr()` is core 0 on
+    /// every test thread — so a test that only checks a return frame can
+    /// still land a `record_vm_fault` between the two reads of an
+    /// observation test's snapshot pair.  The observation tests hold the
+    /// mutex across their pair and call the handler directly; every other
+    /// driver goes through here, so no recorder runs inside a pair.
+    fn drive_sync(frame: &mut TrapFrame) {
+        let _guard = PER_CORE_STATS_OBSERVATION_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        handle_synchronous_exception(frame);
+    }
+
     #[test]
     fn trap_frame_size_is_288_bytes() {
         // AK5-F: TrapFrame grew from 272 to 288 (added ESR_EL1 + FAR_EL1).
@@ -1133,7 +1148,7 @@ mod tests {
         // Under the retired bit-63 convention this test asserted `x0 == 17`.
         let mut frame = zero_frame();
         frame.esr_el1 = (ec::SVC_AARCH64 << 26) | 0x42; // lower bits ignored
-        handle_synchronous_exception(&mut frame);
+        drive_sync(&mut frame);
         assert_eq!(frame.x0(), 0);
         assert_eq!(
             frame.x1(),
@@ -1158,7 +1173,7 @@ mod tests {
         let mut frame = zero_frame();
         frame.esr_el1 = ec::DABT_LOWER << 26;
         frame.far_el1 = 0xFFFF_0000_DEAD_0000;
-        handle_synchronous_exception(&mut frame);
+        drive_sync(&mut frame);
         assert_eq!(frame.x0(), 0);
         assert_eq!(
             frame.x1(),
@@ -1186,7 +1201,7 @@ mod tests {
         let mut inner = zero_frame();
         inner.esr_el1 = ec::IABT_LOWER << 26;
         inner.far_el1 = 0xBBBB;
-        handle_synchronous_exception(&mut inner);
+        drive_sync(&mut inner);
 
         // The outer frame remains untouched.
         assert_eq!(outer.esr_el1, ec::DABT_LOWER << 26);
@@ -1307,7 +1322,7 @@ mod tests {
         frame.esr_el1 = ec::SVC_AARCH64 << 26;
         frame.gprs[7] = 0xFFFF; // no such syscall
         frame.gprs[0] = 0xDEAD;
-        handle_synchronous_exception(&mut frame);
+        drive_sync(&mut frame);
         assert_eq!(frame.x0(), 0);
         assert_eq!(
             frame.x1(),
@@ -1407,7 +1422,7 @@ mod tests {
             // userspace.
             frame.gprs[1] = 0;
             frame.gprs[0] = 0xDEAD;
-            handle_synchronous_exception(&mut frame);
+            drive_sync(&mut frame);
             assert_eq!(
                 frame.x0(),
                 0,
