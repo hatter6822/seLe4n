@@ -1,3 +1,152 @@
+## v0.34.47 — the tests get faster without checking less
+
+Test-performance audit.  Every gate keeps its semantics and every suite keeps
+every assertion; what changed is how the same answers are computed, and each
+change was held to the code it replaced by an old-versus-new harness on the
+real tree before it landed.  **Nothing is skipped, sampled, or trusted that
+was checked before.**  The one place the trust base moves, it shrinks: the
+three theorem inventories that discharged their distinctness witnesses with
+`native_decide` now use the kernel's `decide`, which closes WS-RR RR7.6.
+
+### Where the time went, and where it goes now
+
+Measured on the four-core runner the tiers run on (baseline: the v0.34.46
+smoke run; after: this cut).
+
+| Tier | Item | Before | After |
+|------|------|--------|-------|
+| 0 | `check_ipc_invariant_dethreading.py` | 141.1 s | 82.0 s in the tier (measured while the old-versus-new harness held a core; 26.3 s alone) |
+| 0 | `check_tlbi_broadcast_discipline.py` | 137.9 s | 14.9 s |
+| 0 | `check_identifier_naming.py` | 53.9 s | 15.8 s |
+| 0 | whole tier | 364.0 s | 145.1 s |
+| 1 | the thirteen theorem-inventory modules | 698 s CPU (12–149 s each) | 175 s CPU (5–20 s each) |
+| 2 | `test_tier2_negative.sh` | 496.8 s | 137.6 s |
+| 3 | `check_module_axioms.py --all-smp-information-flow` | 150.5 s | 16.8 s |
+| 3 | whole tier | 412 s (of which ~136 s was contention from a concurrent build; ~276 s alone) | 125.1 s |
+
+### Tier 0 — three scanners, three algorithmic defects
+
+Each was a presence-correct scanner doing its work in the wrong order of
+growth; none changes what is matched.
+
+* **TLBI discipline** (`scripts/check_tlbi_broadcast_discipline.py`).  The
+  call graph over the HAL was built by running one regex per (function body,
+  known callee) pair — 1.72 million `re.search` calls, each recompiling a
+  pattern past the `re` cache's 512 entries.  It now tokenises each body once
+  (`_CALL_TOKEN_RE`) and intersects the token set with the known names; a name
+  matches the old `\b<callee>\s*\(` exactly when it is the maximal identifier
+  token before `\s*(`, so the edge set is the same set.  `rust_code_view.py`'s
+  pure views (`_scan`, `code`, `code_no_strings`, `fn_bodies`) are memoised —
+  `fn_bodies` scanned every file three times per call.
+* **De-threading** (`scripts/check_ipc_invariant_dethreading.py`).
+  `declared_names`, `namespace_breakpoints` and `variable_intervals` were
+  recomputed on every pass over the same sources and `prefix_at` scanned its
+  breakpoint list linearly per query; they are memoised and `prefix_at`
+  bisects (`bisect_right` on the start offset — the same "last breakpoint at
+  or before the offset").
+* **Identifier naming** (`scripts/check_identifier_naming.py`).  `is_coded`
+  tried fourteen component regexes per component (62 million matches); it now
+  tries their alternation once.  `_is_fstring` searched `text[:quote_start]`
+  per literal — quadratic per file — where only the four characters before
+  the quote can matter, so it searches that window.  `strip_pairs` appended
+  one character per loop iteration; it now copies each run of characters no
+  branch can act on in one slice, jumping to the next delimiter with a
+  per-syntax trigger class.
+
+The equivalence harnesses: TLBI `local_ffi_exports` and `run_checks` equal
+old-for-new on the tree (106.6 → 2.0 s, 114.3 → 12.6 s); de-threading
+`namespace_breakpoints`, `variable_intervals`, `prefix_at` at 2,894,291
+offsets, `declared_names`, `run_checks`, `grammar_coverage` and
+`family_references` all equal (102.6 → 26.3 s); naming `scan()` equal and
+every strip function byte-identical over every tracked file, `is_coded` equal
+over every identifier token in the tree (588 tracked files, each stripped by the stripper the gate picks for it, byte-identical old-for-new, and `scan()` equal with the same 296 ratcheted entries (55.9 → 18.0 s)).  All four gates'
+own witness suites pass (40, 127 and the code-view cases unchanged; the naming
+suite grows from 191 to 267 checks with the union-versus-tuple and
+f-string-window witnesses).
+
+### Tier 1 — packed inventory strings (`SeLe4n/PackedString.lean`)
+
+The thirteen theorem inventories each prove `Nodup` of their identifiers and
+of their descriptions with the kernel's `decide`, never `native_decide`.
+Over `String` literals that cost the kernel one character walk per pair:
+~7,000 pairs per witness, 12–149 s per module, 698 s of build CPU in total —
+40% of Tier 1.
+
+Each string is now stored as **one packed `Nat`**: its scalar values as
+base-2²¹ digits behind a leading `1`.  Every entry carries the key and a
+proof field, `isWellFormedPacked key = true`, that the kernel discharges per
+entry (~14 ms): the key packs exactly the valid scalar values it unpacks to.
+`identifier` and `description` are derived (`stringOfPacked`), never stored,
+and `nodup_map_stringOfPacked` turns distinctness of the keys — one
+`decide +kernel` over `Nat`s, ~3 s per witness — into distinctness of the
+strings they spell, through `String.ofList` and `Char.ofNat` injectivity on
+valid scalar values.  **Every `<inventory>! "description" name category`
+line is unchanged**, every `_identifiers_nodup` / `_descriptions_nodup`
+statement is unchanged, the `_elabCheck` witness is unchanged, and the
+census, the manifest generator and the runtime `decide`s in the suites read
+the same strings.  `native_decide` is gone from
+`DeadlockInventory`, `SerializabilityInventory` and `WithLockSetInventory`
+— the six uses RR7.6 registered — because the kernel-checked proof is now the
+cheap one; production Lean carries zero.
+
+Two shapes were measured and rejected: a `List Nat` of scalar values per
+entry (the compiler is superlinear in a ~15,000-cell literal: ~12 s per
+module to *compile*), and one list-level well-formedness fold (the kernel
+re-evaluates the per-key work through `brecOn`: 13 s where the proof fields
+cost 3 s).  Both are recorded in the module docstring so nobody measures
+them again.
+
+### Tier 2 — one parallel prebuild
+
+`test_tier2_negative.sh` ran 65 `lake exe` suites one after another, each
+compiling its own executable first: ~167 s of the tier was serial
+compilation on a four-core runner.  It now issues one `lake build` of every
+suite executable — the list read off its own `lake exe` lines, so a new
+suite is prebuilt without a second list — before the first run.  Same
+suites, same order, same assertions; each `lake exe` still builds its target
+if it is out of date.
+
+### Tier 3 — the axiom sweep walks the graph once
+
+`check_module_axioms.py` called `Lean.collectAxioms` per constant — 4,773
+fresh walks of the same ~15,000-constant closure, 150 s.  The probe now walks
+the union of the closures once, mirroring `CollectAxioms.collect` case for
+case, records the reverse edges, and marks from each axiom the constants it
+reaches; a constant's axiom set is the axioms that reach it.  It reports the
+same TOTAL / FREE / BADCOUNT (4,773 / 2,370 / 0) and, rather than assert the
+equivalence, **cross-checks itself against `Lean.collectAxioms`** on every
+constant it would report plus one in thirty-seven (129 on this surface, 0
+mismatches); a mismatch or an absent cross-check fails the gate.
+
+### Found and registered, not changed
+
+* `asid_pool_suite` takes 37.6 s because `AsidPool.allocate`'s rollover scan
+  is quadratic (a `List.range` of 65,535 filtered by `List` membership) and
+  the fail-closed regression exercises the real scan — a production
+  representation issue under existing proofs, now in
+  `docs/REGISTERED_DEBT.md` §C.
+* `InformationFlowSuite` (28.6 s) and `NegativeStateSuite` (11.2 s) run
+  interpreted because compiling them exceeds clang's bracket depth; their
+  `lean_exe` targets (with `robin_hood_suite`) are declared and never built.
+  Splitting them is the §7 refactor `DEVELOPMENT.md` describes, not a
+  performance change, and is left for its own cut.
+* Tier 3's 44 Lean-snippet anchors cost ~2 s each in Lean start-up and
+  imports (~90 s); batching them would trade per-anchor reporting for time,
+  so they stay.  Tier 3 also re-runs eight Tier 2 suites (~10 s).
+
+### Files
+
+`SeLe4n/PackedString.lean` (new); the thirteen inventory modules;
+`tests/PerObjectLockSuite.lean` (its compile-time `Nodup` example cites the
+inventory's witness — deciding it again over the derived strings would make
+the elaborator unpack every key; its runtime `decide` is unchanged);
+`scripts/check_tlbi_broadcast_discipline.py`, `scripts/rust_code_view.py`,
+`scripts/check_identifier_naming.py`, `scripts/check_ipc_invariant_dethreading.py`,
+`scripts/check_module_axioms.py`, `scripts/test_tier2_negative.sh`;
+`docs/REGISTERED_DEBT.md`, `docs/planning/SMP_RELEASE_READINESS_PLAN.md`
+(RR7.6 landed), `docs/planning/UNFINISHED_SMP_WORK.md`, the source-layout
+tables, `docs/codebase_map.json` and the README/spec metrics it feeds.
+
 ## v0.34.46 — the documentation stops being a second changelog
 
 Documentation only — no kernel semantics change.  The tree carried two records

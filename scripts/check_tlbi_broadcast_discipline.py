@@ -622,6 +622,9 @@ def check_local_wrapper_inventory(root: str) -> list[str]:
     return problems
 
 
+_CALL_TOKEN_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*\(")
+
+
 def local_ffi_exports(root: str) -> set[str]:
     """`ffi_tlbi_*` exports that transitively reach a LOCAL wrapper.
 
@@ -665,11 +668,24 @@ def local_ffi_exports(root: str) -> set[str]:
     direct = {
         name for name, body in merged.items() if LOCAL_WRAPPER_RE.search(body)
     }
+    # An edge `name -> callee` is a call-shaped occurrence of the callee in
+    # the body: the callee's name at a word boundary, followed by optional
+    # whitespace and `(`.  Testing every (body, callee) pair with its own
+    # `re.search(rf"\b{callee}\s*\(", body)` asked that question 1.7 million
+    # times with 1,300 distinct patterns -- past `re`'s 512-entry cache, so
+    # the pattern was recompiled on every call and this one comprehension
+    # was 390 of the gate's 460 seconds.  One tokenising pass per body
+    # answers the same question for every callee at once: a name matches
+    # `\b<callee>\s*\(` iff it is the maximal identifier ending right before
+    # `\s*(` (the boundary before and the `(` after bracket the whole
+    # token), so the set of such tokens, intersected with the known names,
+    # is exactly the old edge set.  Verified against the old computation
+    # over the real tree before the swap.
     calls = {
         name: {
             callee
-            for callee in merged
-            if callee != name and re.search(rf"\b{re.escape(callee)}\s*\(", body)
+            for callee in set(_CALL_TOKEN_RE.findall(body))
+            if callee != name and callee in merged
         }
         for name, body in merged.items()
     }

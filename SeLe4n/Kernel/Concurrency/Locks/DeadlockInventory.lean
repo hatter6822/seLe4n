@@ -10,6 +10,7 @@
 -- STATUS: staged for WS-SM (SM3.D deadlock-freedom inventory)
 
 import SeLe4n.Kernel.Concurrency.Locks.Deadlock
+import SeLe4n.PackedString
 
 /-!
 # WS-SM SM3.D — Theorem inventory
@@ -78,11 +79,31 @@ inductive DeadlockCategory where
 
 /-- WS-SM SM3.D: a theorem entry in the SM3.D inventory. -/
 structure DeadlockTheorem where
-  description : String
-  identifier  : String
+  /-- The description as one packed key (`SeLe4n.PackedString`): one
+      base-2²¹ digit per scalar value behind a leading `1`.  Read it back
+      through `description`. -/
+  descriptionKey : Nat
+  /-- The fully-qualified name, packed the same way.  Read it back through
+      `identifier`. -/
+  identifierKey  : Nat
+  /-- The kernel's own check, per entry, that the key packs exactly the valid
+      scalar values it unpacks to — what lets distinctness of the strings be
+      proven from distinctness of the keys. -/
+  descriptionKey_wf : isWellFormedPacked descriptionKey = true := by decide +kernel
+  identifierKey_wf  : isWellFormedPacked identifierKey = true := by decide +kernel
   _elabCheck  : Unit
   category    : DeadlockCategory
-  deriving Repr, Inhabited
+  deriving Repr
+
+/-- The default entry spells the empty string twice: `1` packs no digits. -/
+instance : Inhabited DeadlockTheorem :=
+  ⟨{ descriptionKey := 1, identifierKey := 1, _elabCheck := (), category := default }⟩
+
+/-- The entry's description, unpacked from its key. -/
+def DeadlockTheorem.description (t : DeadlockTheorem) : String := stringOfPacked t.descriptionKey
+
+/-- The entry's fully-qualified name, unpacked from its key. -/
+def DeadlockTheorem.identifier (t : DeadlockTheorem) : String := stringOfPacked t.identifierKey
 
 /-- WS-SM SM3.D: build a `DeadlockTheorem` with a compile-time-validated
 identifier.  See SM3.A's `polt!` / SM3.B's `lkst!` / SM3.C's `wlst!`. -/
@@ -90,10 +111,10 @@ syntax (name := dltMacro) "dlt!" str ident term : term
 
 macro_rules
   | `(dlt! $desc:str $ident:ident $cat:term) => do
-      let nameStr : String := ident.getId.toString
-      let nameStxLit := Lean.Syntax.mkStrLit nameStr
-      `(({ description := $desc,
-           identifier := $nameStxLit,
+      let descKey := packedStringLit desc.getString
+      let identKey := packedStringLit ident.getId.toString
+      `(({ descriptionKey := nat_lit $descKey,
+           identifierKey := nat_lit $identKey,
            _elabCheck := (let _ := @$ident; ()),
            category := $cat
          } : DeadlockTheorem))
@@ -296,12 +317,22 @@ theorem deadlockTheorems_partition_sum :
     (deadlockTheorems.filter (fun t => t.category == .grounding)).length =
     deadlockTheorems.length := by decide
 
-/-- WS-SM SM3.D: every inventory identifier is unique. -/
+/-- WS-SM SM3.D: every inventory identifier is unique.  Kernel-checked, never
+`native_decide`: the identifiers are stored as packed keys, each entry's
+`identifierKey_wf` field is the kernel's own check that its key is well
+formed, and `SeLe4n.nodup_map_stringOfPacked` turns distinctness of the keys
+— one `decide +kernel` over `Nat`s — into distinctness of the strings they
+spell.  A duplicate identifier fails this proof in the kernel. -/
 theorem deadlockTheorems_identifiers_nodup :
-    (deadlockTheorems.map (·.identifier)).Nodup := by native_decide
+    (deadlockTheorems.map (·.identifier)).Nodup :=
+  nodup_map_stringOfPacked DeadlockTheorem.identifierKey (fun t _ => t.identifierKey_wf)
+    (by decide +kernel)
 
-/-- WS-SM SM3.D: every inventory description is unique. -/
+/-- WS-SM SM3.D: every inventory description is unique — the same key-level
+argument as `deadlockTheorems_identifiers_nodup`, over `descriptionKey`. -/
 theorem deadlockTheorems_descriptions_nodup :
-    (deadlockTheorems.map (·.description)).Nodup := by native_decide
+    (deadlockTheorems.map (·.description)).Nodup :=
+  nodup_map_stringOfPacked DeadlockTheorem.descriptionKey (fun t _ => t.descriptionKey_wf)
+    (by decide +kernel)
 
 end SeLe4n.Kernel.Concurrency

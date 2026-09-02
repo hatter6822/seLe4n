@@ -596,9 +596,16 @@ example : (perObjectLockTheorems.filter (·.category == .defaultState)).length =
 example : (perObjectLockTheorems.filter (·.category == .preservation)).length = 8 := by decide
 example : (perObjectLockTheorems.filter (·.category == .consistency)).length = 5 := by decide
 
-/-! ## perObjectLockTheorems identifiers are unique -/
+/-! ## perObjectLockTheorems identifiers are unique
 
-example : (perObjectLockTheorems.map (·.identifier)).Nodup := by decide
+The inventory's own witness is restated here so the suite pins its statement;
+the proof is the inventory's (kernel-checked through the packed keys, see
+`SeLe4n.PackedString`), because deciding it again over the derived strings
+would make the elaborator unpack every key.  The runtime check below
+(`decide` over the unpacked strings) stays independent. -/
+
+example : (perObjectLockTheorems.map (·.identifier)).Nodup :=
+  perObjectLockTheorems_identifiers_nodup
 
 /-! ## SM3.A audit-pass-6 — allObjectLocksUnheld iff exercised on default
 

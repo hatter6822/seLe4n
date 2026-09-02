@@ -15,6 +15,20 @@ cd "${REPO_ROOT}"
 
 ensure_lake_available
 
+# Build every suite executable this tier runs in one Lake invocation before
+# running any of them.  Each `lake exe` below still builds its own target when
+# it is out of date, so nothing about what is checked changes — only that the
+# suite compilations run on every core at once instead of one at a time,
+# each behind the previous suite's run (test-performance audit, v0.34.47:
+# ~167 s of the tier was that serial compilation on a four-core runner).
+# The target list is read off this script's own `lake exe` lines, so a suite
+# added below is prebuilt without a second list to keep in step.
+suite_exes=()
+while read -r exe; do suite_exes+=("${exe}"); done < <(
+  grep -oE '^run_check_with_timeout "TRACE" lake exe [[:alnum:]_]+' \
+    "${BASH_SOURCE[0]}" | awk '{print $5}')
+run_check "BUILD" lake build "${suite_exes[@]}"
+
 # Run suites through the Lean interpreter to avoid pathological C compilation
 # times for very large test modules (notably NegativeStateSuite).
 run_check_with_timeout "TRACE" lake env lean --run tests/NegativeStateSuite.lean

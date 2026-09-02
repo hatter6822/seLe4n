@@ -60,6 +60,7 @@ Exits 0 when clean, 1 on a self-test failure.
 
 from __future__ import annotations
 
+import functools
 import re
 import sys
 
@@ -81,6 +82,13 @@ def _blank(text: str) -> str:
     return "".join("\n" if ch == "\n" else " " for ch in text)
 
 
+# Memoised (the four public views and the scanner beneath them): each is a pure
+# function of its text, and the Tier 0 gates ask for the same few dozen sources
+# many times over -- `fn_bodies` alone scanned each file three times per call
+# (once for `code`, again for `code_no_strings`, again itself), and the TLBI
+# gate called it per pass.  The cache is keyed on the text, so a fixture that
+# is edited between calls is re-scanned; only identical text is reused.
+@functools.lru_cache(maxsize=None)
 def _scan(src: str) -> list[tuple[str, int, int]]:
     """Classify `src` into ``(kind, start, end)`` spans.
 
@@ -235,6 +243,7 @@ def _char_literal_end(src: str, start: int) -> int | None:
     return j + 1 if j < n and src[j] == "'" else None
 
 
+@functools.lru_cache(maxsize=None)
 def code(text: str) -> str:
     """Comments blanked; string contents preserved, byte-aligned."""
     out = list(text)
@@ -244,6 +253,7 @@ def code(text: str) -> str:
     return "".join(out)
 
 
+@functools.lru_cache(maxsize=None)
 def code_no_strings(text: str) -> str:
     """Comments and string interiors blanked; delimiters kept, byte-aligned."""
     out = list(code(text))
@@ -256,6 +266,7 @@ def code_no_strings(text: str) -> str:
 _FN_RE = re.compile(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)")
 
 
+@functools.lru_cache(maxsize=None)
 def fn_bodies(text: str) -> list[tuple[str, int, int]]:
     """Every ``fn`` body as ``(name, body_start, body_end)``, outermost first.
 

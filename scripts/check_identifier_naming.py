@@ -113,6 +113,7 @@ violation and its pardon from being staged separately.
 """
 from __future__ import annotations
 
+import functools
 import json
 import re
 import subprocess
@@ -316,6 +317,24 @@ COMPONENT_CODES = tuple(
     re.compile(r"^tpi$"),           # TPI-D* tracked-proof ids
 )
 
+# The same set of patterns as ONE anchored alternation.  `is_coded` runs on
+# every identifier token in the tree -- 1.4 million of them -- and testing
+# each component against ~40 anchored patterns one by one was 62 million
+# regex matches, 44 seconds of a 54-second gate.  An alternation of anchored
+# patterns accepts exactly the union of the languages the individual
+# patterns accept, so `COMPONENT_CODE_UNION.match(c)` is true iff some
+# `rx.match(c)` is; `COMPONENT_CODES` stays as the readable inventory the
+# self-test and the docstrings refer to.  Stripping the anchors to splice a
+# pattern into the alternation is sound only when every pattern carries
+# them, which is asserted here rather than assumed; `is_coded`'s cases in
+# `test_identifier_naming_gate.py` exercise the union, and the witness there
+# holds the union to the tuple on every pattern's own positive and near-miss.
+assert all(rx.pattern.startswith("^") and rx.pattern.endswith("$")
+           for rx in COMPONENT_CODES), "every COMPONENT_CODE must be ^-anchored and $-anchored"
+COMPONENT_CODE_UNION = re.compile(
+    "^(?:" + "|".join(rx.pattern[1:-1] for rx in COMPONENT_CODES) + ")$"
+)
+
 # Audit IDs (`AUDIT_v0.30.11`) are named by the rule alongside
 # workstream IDs, and no COMPONENT_CODE can see one: the shape
 # normalises to (`audit`, `v0`, `30`, `11`) and not one of those
@@ -430,7 +449,7 @@ def is_coded(token: str) -> bool:
     for c in parts:
         if c in BARE_AMBIGUOUS and len(parts) == 1:
             continue
-        if any(rx.match(c) for rx in COMPONENT_CODES):
+        if COMPONENT_CODE_UNION.match(c):
             return True
     # Audit IDs live in an adjacency rather than in any one component,
     # so they are checked over consecutive pairs.
@@ -572,6 +591,23 @@ def _opens_asm_macro(text: str, at: int) -> bool:
 CHAR_LITERAL = re.compile(r"'(?:[^'\\\n]|\\.)'")
 
 
+# The characters at which `strip_pairs` has anything to decide: the first
+# character of the line-comment and block-comment openers, the two quote
+# kinds, the raw-string prefix, and -- only when asm templates are tracked --
+# the delimiters that move the nesting depth.  Everything else passes through
+# unchanged, so the loop copies each run of such characters in one slice
+# instead of one character per iteration (32 of this gate's 54 seconds).
+@functools.lru_cache(maxsize=None)
+def _strip_pairs_triggers(line_comment: str, open_b: str,
+                          asm_templates: bool) -> re.Pattern:
+    chars = {"'", '"', "r", open_b[0]}
+    if line_comment != NEVER:
+        chars.add(line_comment[0])
+    if asm_templates:
+        chars.update("([{)]}")
+    return re.compile("[" + "".join(re.escape(c) for c in sorted(chars)) + "]")
+
+
 def strip_pairs(text: str, line_comment: str, block: tuple[str, str],
                 asm_templates: bool = False) -> str:
     """Blank comments and string literals for C-family / Lean syntax."""
@@ -580,7 +616,16 @@ def strip_pairs(text: str, line_comment: str, block: tuple[str, str],
     # Delimiter nesting depth, and the depth at which an asm macro's
     # argument list opened (None outside one).
     nesting, asm_at = 0, None
+    triggers = _strip_pairs_triggers(line_comment, open_b, asm_templates)
     while i < n:
+        # Skip straight to the next character any branch below can act on;
+        # the run in between would have been appended one character at a
+        # time by the final branch, with nothing else changing.
+        m = triggers.search(text, i)
+        if m is None:
+            out.append(text[i:]); break
+        if m.start() > i:
+            out.append(text[i:m.start()]); i = m.start()
         if line_comment != NEVER and text.startswith(line_comment, i):
             j = text.find("\n", i)
             j = n if j < 0 else j
@@ -632,7 +677,15 @@ FSTRING_PREFIX = re.compile(r"(?:^|[^A-Za-z0-9_])([A-Za-z]{1,3})$")
 
 
 def _is_fstring(text: str, quote_start: int) -> bool:
-    m = FSTRING_PREFIX.search(text[:quote_start])
+    # Only the four characters before the quote can matter: a prefix is at
+    # most three letters, plus the one character that must precede it.
+    # Slicing `text[:quote_start]` and searching it was O(n) per literal and
+    # so O(n^2) per file -- 23 of this gate's 54 seconds.  `pos`/`endpos`
+    # bound the scan to the window: `$` matches at `endpos`, and `^` matches
+    # only at the real start of the string, never at `pos`, so a letter run
+    # at the window's edge counts exactly when it is at the string's edge --
+    # the same answer the slice gave.
+    m = FSTRING_PREFIX.search(text, max(0, quote_start - 4), quote_start)
     return bool(m) and "f" in m.group(1).lower()
 
 

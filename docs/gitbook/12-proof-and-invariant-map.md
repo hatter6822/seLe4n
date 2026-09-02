@@ -243,7 +243,7 @@ SM0..SM10.
 | The proofs themselves | Lean's type checker — no `sorry`, no `axiom` |
 | Named surface still exists | Tier 3 `test_tier3_invariant_surface.sh` anchors |
 | Bundles are not self-assuming | `check_ipc_invariant_dethreading.py` (Tier 0) |
-| No axiom crept in | `check_module_axioms.py`, map-driven |
+| No axiom crept in | `check_module_axioms.py`, environment-driven (one shared dependency walk, cross-checked against `Lean.collectAxioms`) |
 | Proofs are not vacuous one-liners | `check_proof_depth.py` |
 | Production does not import staged | `check_production_staging_partition.sh` |
 | Runtime behaviour matches the model | Tier 2 trace + determinism + negative-state suites |

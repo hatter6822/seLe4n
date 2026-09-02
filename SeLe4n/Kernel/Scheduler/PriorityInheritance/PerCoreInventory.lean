@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
+import SeLe4n.PackedString
 
 /-!
 # WS-SM SM5.F — Per-core PIP theorem inventory
@@ -64,26 +65,47 @@ inductive PerCorePipCategory where
   | dispatch
   deriving Repr, DecidableEq, Inhabited
 
-/-- WS-SM SM5.F: a theorem entry in the SM5.F inventory.  Records a description,
-the fully-qualified name as a `String`, a compile-time elaboration witness, and a
+/-- WS-SM SM5.F: a theorem entry in the SM5.F inventory.  Records a description and
+the fully-qualified name as packed keys (`SeLe4n.PackedString`, read back
+through `description` / `identifier`), a compile-time elaboration witness, and a
 category tag.  The `_elabCheck` field (produced by `ppit!`) forces Lean to resolve
 the referenced declaration at construction time. -/
 structure PerCorePipTheorem where
-  description : String
-  identifier  : String
+  /-- The description as one packed key (`SeLe4n.PackedString`): one
+      base-2²¹ digit per scalar value behind a leading `1`.  Read it back
+      through `description`. -/
+  descriptionKey : Nat
+  /-- The fully-qualified name, packed the same way.  Read it back through
+      `identifier`. -/
+  identifierKey  : Nat
+  /-- The kernel's own check, per entry, that the key packs exactly the valid
+      scalar values it unpacks to — what lets distinctness of the strings be
+      proven from distinctness of the keys. -/
+  descriptionKey_wf : isWellFormedPacked descriptionKey = true := by decide +kernel
+  identifierKey_wf  : isWellFormedPacked identifierKey = true := by decide +kernel
   _elabCheck  : Unit
   category    : PerCorePipCategory
-  deriving Repr, Inhabited
+  deriving Repr
+
+/-- The default entry spells the empty string twice: `1` packs no digits. -/
+instance : Inhabited PerCorePipTheorem :=
+  ⟨{ descriptionKey := 1, identifierKey := 1, _elabCheck := (), category := default }⟩
+
+/-- The entry's description, unpacked from its key. -/
+def PerCorePipTheorem.description (t : PerCorePipTheorem) : String := stringOfPacked t.descriptionKey
+
+/-- The entry's fully-qualified name, unpacked from its key. -/
+def PerCorePipTheorem.identifier (t : PerCorePipTheorem) : String := stringOfPacked t.identifierKey
 
 /-- WS-SM SM5.F: build a `PerCorePipTheorem` with a compile-time-validated identifier. -/
 syntax (name := perCorePipTheoremMacro) "ppit!" str ident term : term
 
 macro_rules
   | `(ppit! $desc:str $ident:ident $cat:term) => do
-      let nameStr : String := ident.getId.toString
-      let nameStxLit := Lean.Syntax.mkStrLit nameStr
-      `(({ description := $desc,
-           identifier := $nameStxLit,
+      let descKey := packedStringLit desc.getString
+      let identKey := packedStringLit ident.getId.toString
+      `(({ descriptionKey := nat_lit $descKey,
+           identifierKey := nat_lit $identKey,
            _elabCheck := (let _ := @$ident; ()),
            category := $cat
          } : PerCorePipTheorem))
@@ -365,19 +387,22 @@ theorem perCorePipTheorems_partition_sum :
     (perCorePipTheorems.filter (fun t => t.category == .dispatch)).length =
     perCorePipTheorems.length := by decide
 
-set_option maxRecDepth 10000 in
-/-- WS-SM SM5.F: every inventory identifier is unique.  Kernel-sound `decide`
-(not `native_decide`): a duplicate identifier — which `native_decide` could mask by
-trusting the compiled evaluation — fails this proof in the kernel.  The elevated
-`maxRecDepth` only raises the recursion *limit* for the `Nodup` decision procedure
-(no extra work, no axioms; the proof stays a kernel-checked `of_decide_eq_true`). -/
+/-- WS-SM SM5.F: every inventory identifier is unique.  Kernel-checked, never
+`native_decide`: the identifiers are stored as packed keys, each entry's
+`identifierKey_wf` field is the kernel's own check that its key is well
+formed, and `SeLe4n.nodup_map_stringOfPacked` turns distinctness of the keys
+— one `decide +kernel` over `Nat`s — into distinctness of the strings they
+spell.  A duplicate identifier fails this proof in the kernel. -/
 theorem perCorePipTheorems_identifiers_nodup :
-    (perCorePipTheorems.map (·.identifier)).Nodup := by decide
+    (perCorePipTheorems.map (·.identifier)).Nodup :=
+  nodup_map_stringOfPacked PerCorePipTheorem.identifierKey (fun t _ => t.identifierKey_wf)
+    (by decide +kernel)
 
-set_option maxRecDepth 10000 in
-/-- WS-SM SM5.F: every inventory description is unique.  Kernel-sound `decide` under
-an elevated `maxRecDepth` (see `perCorePipTheorems_identifiers_nodup`). -/
+/-- WS-SM SM5.F: every inventory description is unique — the same key-level
+argument as `perCorePipTheorems_identifiers_nodup`, over `descriptionKey`. -/
 theorem perCorePipTheorems_descriptions_nodup :
-    (perCorePipTheorems.map (·.description)).Nodup := by decide
+    (perCorePipTheorems.map (·.description)).Nodup :=
+  nodup_map_stringOfPacked PerCorePipTheorem.descriptionKey (fun t _ => t.descriptionKey_wf)
+    (by decide +kernel)
 
 end SeLe4n.Kernel.PriorityInheritance

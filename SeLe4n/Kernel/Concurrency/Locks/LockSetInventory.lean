@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.Concurrency.Locks.LockSet
 import SeLe4n.Kernel.Concurrency.Locks.LockIdProjection
 import SeLe4n.Kernel.Concurrency.Locks.LockSetTransitions
+import SeLe4n.PackedString
 
 /-!
 # WS-SM SM3.B — LockSet theorem inventory
@@ -73,8 +74,8 @@ inductive LockSetCategory where
 
 /-- WS-SM SM3.B: a theorem entry in the LockSet inventory.
 
-Records a description, the theorem's fully-qualified name as a
-`String`, a compile-time elaboration witness, and a category tag.
+Records a description and the theorem's fully-qualified name as packed
+keys (`SeLe4n.PackedString`, read back through `description` / `identifier`), a compile-time elaboration witness, and a category tag.
 
 The `_elabCheck` field is produced by the `lkst!` macro which
 emits a `let _ := @<ident>; ()` term.  The macro forces Lean's
@@ -82,11 +83,31 @@ elaborator to resolve the referenced declaration at construction
 time, so a typo or stale rename fails to elaborate with "unknown
 identifier '<name>'". -/
 structure LockSetTheorem where
-  description : String
-  identifier  : String
+  /-- The description as one packed key (`SeLe4n.PackedString`): one
+      base-2²¹ digit per scalar value behind a leading `1`.  Read it back
+      through `description`. -/
+  descriptionKey : Nat
+  /-- The fully-qualified name, packed the same way.  Read it back through
+      `identifier`. -/
+  identifierKey  : Nat
+  /-- The kernel's own check, per entry, that the key packs exactly the valid
+      scalar values it unpacks to — what lets distinctness of the strings be
+      proven from distinctness of the keys. -/
+  descriptionKey_wf : isWellFormedPacked descriptionKey = true := by decide +kernel
+  identifierKey_wf  : isWellFormedPacked identifierKey = true := by decide +kernel
   _elabCheck  : Unit
   category    : LockSetCategory
-  deriving Repr, Inhabited
+  deriving Repr
+
+/-- The default entry spells the empty string twice: `1` packs no digits. -/
+instance : Inhabited LockSetTheorem :=
+  ⟨{ descriptionKey := 1, identifierKey := 1, _elabCheck := (), category := default }⟩
+
+/-- The entry's description, unpacked from its key. -/
+def LockSetTheorem.description (t : LockSetTheorem) : String := stringOfPacked t.descriptionKey
+
+/-- The entry's fully-qualified name, unpacked from its key. -/
+def LockSetTheorem.identifier (t : LockSetTheorem) : String := stringOfPacked t.identifierKey
 
 /-- WS-SM SM3.B: build a `LockSetTheorem` with a compile-time-validated
 identifier.  See SM3.A's `polt!` for the equivalent pattern. -/
@@ -94,10 +115,10 @@ syntax (name := lkstMacro) "lkst!" str ident term : term
 
 macro_rules
   | `(lkst! $desc:str $ident:ident $cat:term) => do
-      let nameStr : String := ident.getId.toString
-      let nameStxLit := Lean.Syntax.mkStrLit nameStr
-      `(({ description := $desc,
-           identifier := $nameStxLit,
+      let descKey := packedStringLit desc.getString
+      let identKey := packedStringLit ident.getId.toString
+      `(({ descriptionKey := nat_lit $descKey,
+           identifierKey := nat_lit $identKey,
            _elabCheck := (let _ := @$ident; ()),
            category := $cat
          } : LockSetTheorem))
@@ -410,26 +431,23 @@ theorem lockSetTheorems_partition_sum :
     (lockSetTheorems.filter (fun t => t.category == .chainStart)).length =
     lockSetTheorems.length := by decide
 
-set_option maxRecDepth 100000 in
-set_option maxHeartbeats 2000000 in
-/-- WS-SM SM3.B: every inventory identifier is unique.
-
-Kernel-sound `decide` (not `native_decide`): a duplicate identifier — which
-`native_decide` could mask by trusting the compiled `Lean.ofReduceBool`
-evaluation (see the SM5.D audit-pass-2 finding where exactly such a duplicate
-slipped past `native_decide`) — fails this proof in the kernel.  The
-list-of-strings `Nodup` check needs an elevated `maxRecDepth` + `maxHeartbeats`
-budget at this inventory's size, but stays a kernel-checked `of_decide_eq_true`. -/
+/-- WS-SM SM3.B: every inventory identifier is unique.  Kernel-checked, never
+`native_decide`: the identifiers are stored as packed keys, each entry's
+`identifierKey_wf` field is the kernel's own check that its key is well
+formed, and `SeLe4n.nodup_map_stringOfPacked` turns distinctness of the keys
+— one `decide +kernel` over `Nat`s — into distinctness of the strings they
+spell.  A duplicate identifier fails this proof in the kernel. -/
 theorem lockSetTheorems_identifiers_nodup :
-    (lockSetTheorems.map (·.identifier)).Nodup := by decide
+    (lockSetTheorems.map (·.identifier)).Nodup :=
+  nodup_map_stringOfPacked LockSetTheorem.identifierKey (fun t _ => t.identifierKey_wf)
+    (by decide +kernel)
 
-set_option maxRecDepth 100000 in
-set_option maxHeartbeats 2000000 in
-/-- WS-SM SM3.B: every inventory description is unique.  Kernel-sound `decide`
-under an elevated `maxRecDepth` + `maxHeartbeats` (see
-`lockSetTheorems_identifiers_nodup`). -/
+/-- WS-SM SM3.B: every inventory description is unique — the same key-level
+argument as `lockSetTheorems_identifiers_nodup`, over `descriptionKey`. -/
 theorem lockSetTheorems_descriptions_nodup :
-    (lockSetTheorems.map (·.description)).Nodup := by decide
+    (lockSetTheorems.map (·.description)).Nodup :=
+  nodup_map_stringOfPacked LockSetTheorem.descriptionKey (fun t _ => t.descriptionKey_wf)
+    (by decide +kernel)
 
 /-- WS-SM SM3.B.4 aggregate count: there is exactly one consistency
 entry per SyscallId variant.  This pairs with

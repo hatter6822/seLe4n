@@ -74,8 +74,8 @@ not an estimate of what a phase "substantively" proved, and it is deliberately
 the narrower claim: every theorem it counts is named, resolves, and is unique.
 
 Unique *across the whole census*, not merely within its own inventory.  Each
-inventory's `_identifiers_nodup` witness compares the identifier strings it
-stores, in its own list, so it can see neither the same declaration registered
+inventory's `_identifiers_nodup` witness compares the identifiers it stores
+(packed keys, `SeLe4n.PackedString`), in its own list, so it can see neither the same declaration registered
 under two spellings nor the same declaration claimed by two phases.  The
 census below de-duplicates on the *resolved* `Name` and errors on a repeat, so
 the total cannot drift from a count of theorems into a count of

@@ -182,6 +182,7 @@ Both need artefacts SM10.1 has not produced yet.
 ## 5. Repository layout
 
 ```
+SeLe4n/PackedString.lean         Packed strings: one Nat per inventory string, kernel-cheap distinctness
 SeLe4n/Prelude.lean              Typed identifiers, monad foundations
 SeLe4n/Machine.lean              Machine state primitives
 SeLe4n/Model/                    Object types, kernel/system state, builder, freeze
