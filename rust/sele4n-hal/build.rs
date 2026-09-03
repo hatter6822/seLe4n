@@ -1866,36 +1866,95 @@ fn match_arm_spans(text: &str) -> Option<Vec<MatchArm>> {
     Some(arms)
 }
 
-/// Blank every `extern "C" { … }` block in `body` (byte-aligned), so a
+/// Blank every `extern <abi>? { … }` block in `body` (byte-aligned), so a
 /// declaration inside it cannot stand in for a call.
+///
+/// PR #889 review round 17: the block is located by `extern_block_openings`,
+/// which resolves the ABI literal, rather than by searching for the eleven
+/// characters `extern "C" {`.  A declaration inside an `extern r"C" { … }` or
+/// an `extern { … }` block survived the blanking and read as a call.
 fn blank_extern_blocks(body: &str) -> String {
     let mut out = body.as_bytes().to_vec();
-    let mut search = 0usize;
-    while let Some(hit) = body[search..].find("extern \"C\" {") {
-        let open = search + hit + "extern \"C\" ".len();
-        let mut depth = 0usize;
-        let mut end = open;
-        for (index, ch) in body[open..].char_indices() {
-            match ch {
-                '{' => depth += 1,
-                '}' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        end = open + index + 1;
-                        break;
-                    }
-                }
-                _ => {}
-            }
-        }
-        for byte in out.iter_mut().take(end).skip(search + hit) {
+    for (keyword, brace) in extern_block_openings(body) {
+        // An unbalanced block blanks to the end of the text: what this
+        // function protects is the *absence* of a declaration, so the
+        // fail-closed direction is to blank more, never less.
+        let end = matching_close_brace(body, brace).map_or(body.len(), |close| close + 1);
+        for byte in out.iter_mut().take(end).skip(keyword) {
             if *byte != b'\n' {
                 *byte = b' ';
             }
         }
-        search = end.max(open + 1);
     }
     String::from_utf8(out).expect("blanking ASCII bytes keeps the text UTF-8")
+}
+
+/// Every `extern <abi>? { … }` block of `code`, as `(keyword, brace)` byte
+/// offsets.
+///
+/// Rust's grammar after `extern` is closed: `crate`, an optional ABI **string
+/// literal** then `fn`, or an optional ABI literal then `{`.  Only the last
+/// opens a block, and the ABI is a literal in any of its forms — `"C"`,
+/// `r"C"`, `r#"C"#` — naming any convention.  Every such block asks the linker
+/// for its items whatever the convention is, so resolving the literal is what
+/// makes the answer independent of how it is spelled (PR #889 review round
+/// 17); the two callers each searched for `extern "C" {` as a substring.
+fn extern_block_openings(code: &str) -> Vec<(usize, usize)> {
+    let bytes = code.as_bytes();
+    let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let mut openings = Vec::new();
+    let mut search = 0usize;
+    while let Some(hit) = code[search..].find("extern") {
+        let at = search + hit;
+        let end = at + "extern".len();
+        search = end;
+        if (at > 0 && is_ident(bytes[at - 1])) || (end < bytes.len() && is_ident(bytes[end])) {
+            continue;
+        }
+        let mut index = skip_ascii_space(bytes, end);
+        if let Some(past) = string_literal_end(code, index) {
+            index = skip_ascii_space(bytes, past);
+        }
+        if index < bytes.len() && bytes[index] == b'{' {
+            openings.push((at, index));
+        }
+    }
+    openings
+}
+
+fn skip_ascii_space(bytes: &[u8], at: usize) -> usize {
+    let mut index = at;
+    while index < bytes.len() && bytes[index].is_ascii_whitespace() {
+        index += 1;
+    }
+    index
+}
+
+/// Just past the string literal starting at `at`, or `None` when there is none
+/// there.  Handles the raw forms `r"…"`, `r#"…"#`, `r##"…"##`: the closer is
+/// the first `"` followed by the opener's own run of `#`.
+fn string_literal_end(code: &str, at: usize) -> Option<usize> {
+    let bytes = code.as_bytes();
+    let mut index = at;
+    let mut hashes = 0usize;
+    if index < bytes.len() && bytes[index] == b'r' {
+        index += 1;
+        while index < bytes.len() && bytes[index] == b'#' {
+            hashes += 1;
+            index += 1;
+        }
+    }
+    if index >= bytes.len() || bytes[index] != b'"' {
+        return None;
+    }
+    index += 1;
+    let mut closer = String::from('"');
+    for _ in 0..hashes {
+        closer.push('#');
+    }
+    code[index..]
+        .find(&closer)
+        .map(|offset| index + offset + closer.len())
 }
 
 fn scan_lean_ready_gates_intact() {
@@ -3397,6 +3456,76 @@ fn lean_link_name_aliases(
 /// Token-preserving self-check for `lean_link_name_aliases`: every rejected
 /// case keeps a plain `extern "C"` declaration and adds the alias; every
 /// accepted case keeps the `link_name` attribute and points it elsewhere.
+/// Token-preserving self-check for `extern_block_openings`: every case keeps
+/// the `extern` keyword and the declaration and varies only the **spelling of
+/// the ABI**, which is the relation the substring search got wrong (PR #889
+/// review round 17).  The two rejected cases keep the keyword and put it in a
+/// position that opens no block.
+fn verify_extern_block_resolver() {
+    let cases: [(&str, &str, bool); 8] = [
+        (
+            "the canonical spelling opens a block",
+            "extern \"C\" {\n    fn lean_ghost();\n}\n",
+            true,
+        ),
+        (
+            "a raw ABI literal is the same block",
+            "extern r\"C\" {\n    fn lean_ghost();\n}\n",
+            true,
+        ),
+        (
+            "a hashed raw ABI literal is the same block",
+            "extern r#\"C\"# {\n    fn lean_ghost();\n}\n",
+            true,
+        ),
+        (
+            "an omitted ABI defaults to `\"C\"` and still declares symbols",
+            "extern {\n    fn lean_ghost();\n}\n",
+            true,
+        ),
+        (
+            "another ABI declares symbols the linker must resolve just the same",
+            "extern \"C-unwind\" {\n    fn lean_ghost();\n}\n",
+            true,
+        ),
+        (
+            "`unsafe extern` is the 2024 spelling of the same block",
+            "unsafe extern \"C\" {\n    fn lean_ghost();\n}\n",
+            true,
+        ),
+        (
+            "an `extern \"C\" fn` definition is not a block",
+            "pub extern \"C\" fn lean_ghost() {\n    let x = 1;\n}\n",
+            false,
+        ),
+        (
+            "`extern crate` opens no block",
+            "extern crate alloc;\nfn lean_ghost() {}\n",
+            false,
+        ),
+    ];
+    for (name, source, opens) in cases {
+        let (_, code) = rust_code_views(source);
+        assert_eq!(
+            !extern_block_openings(&code).is_empty(),
+            opens,
+            "build.rs self-check: `extern_block_openings` read the case wrongly: {name}"
+        );
+        // The two consumers must agree with it: a block's declaration is
+        // collected and blanked, a non-block's is neither.
+        assert_eq!(
+            extern_block_declarations(&code).contains(&"lean_ghost".to_string()),
+            opens,
+            "build.rs self-check: `extern_block_declarations` read the case wrongly: {name}"
+        );
+        assert_eq!(
+            !blank_extern_blocks(&code).contains("lean_ghost"),
+            opens,
+            "build.rs self-check: `blank_extern_blocks` read the case wrongly: {name}"
+        );
+    }
+}
+
 fn verify_lean_link_name_scanner() {
     let exports = ["lean_alpha"];
     let cases: [(&str, &str, bool); 6] = [
@@ -4459,27 +4588,17 @@ fn matching_close_brace(code: &str, open: usize) -> Option<usize> {
     None
 }
 
-/// The names declared as functions inside `extern "C" { … }` blocks of `code`.
+/// The names declared as functions inside the `extern <abi>? { … }` blocks of
+/// `code`.
+///
+/// PR #889 review round 17: the blocks come from `extern_block_openings`, so a
+/// declaration in an `extern r"C" { … }` or `extern { … }` block is collected
+/// too — before, such a block declared nothing as far as the readiness
+/// derivation could see, and an upcall inside it needed no gate.
 fn extern_block_declarations(code: &str) -> Vec<String> {
     let mut names = Vec::new();
-    let mut search = 0usize;
-    while let Some(hit) = code[search..].find("extern \"C\" {") {
-        let open = search + hit + "extern \"C\" ".len();
-        let mut depth = 0usize;
-        let mut end = open;
-        for (index, ch) in code[open..].char_indices() {
-            match ch {
-                '{' => depth += 1,
-                '}' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        end = open + index;
-                        break;
-                    }
-                }
-                _ => {}
-            }
-        }
+    for (_, open) in extern_block_openings(code) {
+        let end = matching_close_brace(code, open).unwrap_or(code.len());
         let block = &code[open..end];
         let mut inner = 0usize;
         while let Some(f) = block[inner..].find("fn ") {
@@ -4499,7 +4618,6 @@ fn extern_block_declarations(code: &str) -> Vec<String> {
                 names.push(name);
             }
         }
-        search = end.max(open + 1);
     }
     names
 }
@@ -4869,6 +4987,7 @@ fn scan_lean_upcalls_readiness_gated() {
     verify_lean_extern_gating_scanner();
     verify_lean_export_collector();
     verify_lean_link_name_scanner();
+    verify_extern_block_resolver();
     let lean_root = std::path::Path::new("../../SeLe4n");
     println!("cargo:rerun-if-changed=../../SeLe4n");
     let mut exports: Vec<String> = Vec::new();

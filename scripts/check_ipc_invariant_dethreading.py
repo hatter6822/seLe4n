@@ -277,6 +277,9 @@ MACHINERY_PINS = {
     ("SeLe4n/Model/Object/PerObjectLockInventory.lean", "syntax"): 1,
     ("SeLe4n/Platform/FFI.lean", "initialize"): 2,
     ("SeLe4n/Prelude.lean", "initialize"): 1,
+    # PR #889 review round 17: the boot entry's contract, decided over the
+    # elaborated environment.  One `run_cmd`; it mints no declaration.
+    ("SeLe4n/Testing/BootEntryContract.lean", "run_cmd"): 1,
     # The elaborator-backed de-threading census itself: one `run_cmd`
     # running the witnesses and the environment walk.  The census is this
     # pin's own payoff -- the machinery it rides is reviewed here like any

@@ -3413,7 +3413,7 @@ def bootAffinitiesDeclared
     cases hAff : tcb.cpuAffinity with
     | none => rfl
     | some c =>
-      simp [List.contains_iff_mem.mpr (SeLe4n.Kernel.Concurrency.mem_allCores c)]
+      simp [SeLe4n.Kernel.Concurrency.mem_allCores c]
   | _ => rfl
 
 /-- PR #889 review round 3: the idle enqueue over a **declared** core list — the

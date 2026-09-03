@@ -721,8 +721,11 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   recognised as the boot entry *at all* and its contract passes
   vacuously; and `#[link_name = "actual"] fn local();` names a symbol the
   Rust identifier never mentions.  So **resolve the reference before
-  asserting about it**: `resolves_to` applies Lean's own suffix rule
-  against fully-qualified names (`lean_qualified_declarations`), the
+  asserting about it**: `resolves_to` applied Lean's own suffix rule
+  against fully-qualified names (`lean_qualified_declarations`) — that
+  Lean-side machinery was retired at round 17, where the elaborator
+  resolves references with no suffix rule to get wrong; the Rust and
+  attribute halves below are live — the
   candidate set must contain nothing unapproved, a bare name is refused
   where the declaration binds it locally, the attribute list is parsed
   rather than matched (`lean_code_view.attribute_arguments`, shared with
@@ -758,7 +761,8 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   that asked whether the statement *begins* with `return`, while
   `build.rs`'s `statement_may_exit` had asked the right question since
   PR #887), the halt-alias closure resolved by suffix while
-  `reference_failure` in the same file required a *unique* candidate, and
+  `reference_failure` in the same file required a *unique* candidate
+  (both retired at round 17 with the rest of the Lean scan), and
   the recursive shell view lexed `$( … )` while the legacy backtick
   spelling beside it was still copied verbatim.  None was a new class;
   each was a rule already written down, applied at one site and not at
@@ -792,6 +796,48 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   and the bare spelling never counts.  A contract on unwritten code
   costs nothing and makes the question decidable; keep parsing only
   where the subject is code you do not control.
+
+  **A Lean question goes to the Lean elaborator, never to a regular
+  expression** (PR #889 review round 17, and a standing instruction).  The
+  rule above is the last patch this class accepts; the class itself ends
+  here.  From PR #889 review round 3 to round 16 the boot-entry check in
+  `scripts/check_kernel_entry_exports.py` grew into a Lean parser made of
+  regexes, and eleven rounds of findings against it were one defect in
+  eleven costumes — a name is not a definition, a nested construct is not
+  a sibling, a prefix is not the expression, a constructor's head is not
+  its coverage, a `renaming` binds a name no declaration mentions.  Each
+  fix was correct and the next round found more, because the set of Lean
+  spellings that defeat a regex is unbounded.
+
+  So: **if the property is about elaboration — which declaration a name
+  denotes, what an expression evaluates, which values a pattern matches,
+  what a body transitively calls — ask the environment.**  A `run_cmd`
+  over `Environment` that throws is a gate: `getExportNameFor?` finds an
+  `@[export]` whatever its attribute list looks like,
+  `Expr.getUsedConstants` returns *constants*, and a constant has one
+  definition, so aliasing, shadowing, `renaming`, qualification and
+  notation are not questions any more.  Building the module is the check
+  (`scripts/test_tier1_build.sh`), and it carries witnesses so it is
+  decisive before the code it governs exists.  The tree has three such
+  gates: `SeLe4n/Testing/BootEntryContract.lean` (the hardware boot
+  entry's contract), `SeLe4n/Testing/IpcDethreadingEnvironmentCensus.lean`,
+  and the probe-driven `check_live_arm_per_core_routing.py` /
+  `check_content_flow_coverage.py`.
+
+  Two corollaries.  **Prefer making the property structural over checking
+  it at all**: `Platform.FFI.bootAndInitialiseRPi5OrHalt` is the checked
+  boot with its failure handled, so "the entry's `.error` arm ends in a
+  halt" — eight review rounds of parsing — became "the entry calls this
+  constant", which `getUsedConstants` answers.  And **a lexical scan is
+  still right where the question is lexical**: the `@[export]` inventory
+  the archive reconciliation reads is deliberately taken from Lean
+  *source*, because a module outside the import closure exports nothing
+  into the environment and that drift is precisely what it must catch.
+  The test is what the property is *about*, not which language the file
+  is written in.  Where a Lean scan survives for that reason, say so in
+  its docstring; `rust/sele4n-hal/build.rs` keeps one because it cannot
+  depend on a Lean build, and it is pinned against the elaborated
+  inventory rather than trusted.
 - **Invariant/Operations split**: each kernel subsystem has
   `Operations.lean` (transitions) and `Invariant.lean` (proofs). Keep
   this separation.
@@ -1804,20 +1850,17 @@ code may assume:
   first cut required the *intersection* of the Lean exports and the HAL
   declarations, which is exactly the set a rename on either side leaves — the
   unresolved spelling drops out of both and the gate passed (PR #889 review).
-  The gate also holds the boot entry to the checked platform boot from the day
-  it exists: whichever Lean declaration carries `@[export lean_kernel_main]`
-  must **execute** `bootAndInitialiseRPi5` — the generic entry fixed at
-  `RPi5Platform`, round 7; with the generic entry as the callee the gate
-  never read the platform argument — as a top-level statement of its
-  body (bound with `←`, a `match` scrutinee, a bare call or `discard`, with no
-  `return`/`throw` above it) and reference **no other kernel-state installer**
-  — the installers derived by closing "names `kernelStateRef` /
-  `kernelLabelingContextRef` for anything but `.get`" under reference across
-  the Lean tree, pinned against the real tree — over the comment-free,
-  string-free view (`boot_entry_binding_failures`, `kernel_state_writers`;
-  round 3 accepted an identifier occurrence, which a string literal, an unrun
-  `let … :=` binding, a dead branch and a call executed then routed around all
-  satisfy — round 5) — vacuous until SM10.1 writes the entry, decisive after,
+  **The boot entry's contract left this gate at round 17** and is decided by
+  the elaborator in `SeLe4n/Testing/BootEntryContract.lean`: whichever
+  declaration carries `@[export lean_kernel_main]` (found with
+  `getExportNameFor?`, so any attribute list and any namespace) must call
+  `Platform.FFI.bootAndInitialiseRPi5OrHalt` — the checked RPi5 boot with its
+  failure handled, so a refused boot parks the PE — and no path from it may
+  reach a kernel-state installer except through that call, walked over
+  `Expr.getUsedConstants`.  Building the module is the check, and four
+  witnesses (a compliant entry and three token-preserving deviations) keep it
+  decisive before SM10.1 writes the entry.  What the Python gate still holds is
+  the link-level half — vacuous until SM10.1 writes the entry, decisive after,
   so the idle-thread, labeling and reservation guarantees cannot be bypassed
   by an entry that boots through `bootFromPlatform` directly.  Executing the
   call is necessary and not sufficient (round 9): the entry must **branch** on
@@ -1847,13 +1890,13 @@ code may assume:
   matched: the export attribute is parsed from the list
   (`lean_code_view.attribute_arguments`, shared with `build.rs`, so
   `@[inline, export lean_kernel_main]` is the same export on both sides),
-  a reference to the checked boot or to a halt must denote the pinned
-  declaration by Lean's suffix rule and nothing else (`resolves_to`,
-  `lean_qualified_declarations`) and is refused where the declaration
-  binds the name locally, the halt set is derived from the `@[extern
-  "ffi_fatal_halt…"]` primitives and their aliases rather than spelled
-  out, and an `extern` declaration's requirement is its effective linker
-  name, `#[link_name = "…"]` included.  `build.rs` refuses such an alias
+  and an `extern` declaration's requirement is its effective linker
+  name, `#[link_name = "…"]` included — located on the string-free view
+  and read from the aligned kept one (round 17), so an attribute quoted
+  in a doc string renames nothing.  The Lean-side name resolution that
+  used to sit here — the suffix rule, the binder scan, the halt
+  derivation — went with the boot-entry contract to the elaborator at
+  round 17.  `build.rs` refuses a `#[link_name]` alias
   outright for a Lean symbol: the readiness derivation reads the Rust
   identifier, so an aliased seam is attributed to no gate at all.
 - **The WS-SM theorem total is measured, not summed — and it counts

@@ -5199,10 +5199,26 @@ run_check "INVARIANT" rg -n '^fn gate_call_offset' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n '^fn statement_may_exit' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n '^fn collect_lean_exports_from_file' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n 'collect_lean_exports_from_file\(lean_library_root' rust/sele4n-hal/build.rs
-run_check "INVARIANT" rg -n '^def boot_entry_handles_failure' scripts/check_kernel_entry_exports.py
-run_check "INVARIANT" rg -n '^def lean_match_arms' scripts/check_kernel_entry_exports.py
-run_check "INVARIANT" rg -n '^def boot_entry_error_arm_halts' scripts/check_kernel_entry_exports.py
-run_check "INVARIANT" rg -n '^def boot_entry_arm_halts_unconditionally' scripts/check_kernel_entry_exports.py
+# PR #889 review round 17: the boot entry's contract moved off Lean source
+# text and onto the elaborated environment.  The fail-closed wrapper makes the
+# error path a definition; the contract module decides the rest with
+# getExportNameFor?, Expr.getUsedConstants and a reachability walk, and carries
+# four witnesses so it is decisive before SM10.1 writes the entry.
+run_check "INVARIANT" rg -n '^def bootAndInitialiseRPi5OrHalt' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '  \| .error _ => ffiFatalHaltAll' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def approvedBootCall' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^partial def kernelStateWriteInExpr' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^partial def unapprovedKernelStateWrite' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^def bootEntryContractViolations' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^def bootEntryDeclarations' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessBypass' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessSideInstall' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'lake build SeLe4n.Testing.BootEntryContract' scripts/test_tier1_build.sh
+# ...and the link-level half that stays in the Python gate: the extern block is
+# resolved rather than spelled, and unassembled regions provide nothing.
+run_check "INVARIANT" rg -n '^def extern_block_openings' scripts/check_kernel_entry_exports.py
+run_check "INVARIANT" rg -n '^def strip_unassembled_regions' scripts/check_kernel_entry_exports.py
+run_check "INVARIANT" rg -n '^fn extern_block_openings' rust/sele4n-hal/build.rs
 # PR #889 review round 11 (P1): a raw thread/object operand refuses a reserved
 # idle id at the one lift point every such operand passes through — the
 # capability chokepoint decides on the resolved capability's target only.

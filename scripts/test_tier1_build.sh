@@ -48,6 +48,18 @@ run_check "BUILD" lake build SeLe4n.Platform.Staged
 # its own root; the text gate remains the fast pre-commit approximation.
 run_check "BUILD" lake build SeLe4n.Testing.IpcDethreadingEnvironmentCensus
 
+# PR #889 review round 17: the hardware boot entry's contract, decided by the
+# elaborator.  `SM10.1` writes the declaration carrying `@[export
+# lean_kernel_main]`; this module requires it to boot through
+# `bootAndInitialiseRPi5OrHalt` and to install kernel state no other way, over
+# the elaborated environment rather than over Lean source text.  Building it IS
+# the check -- its `run_cmd` throws -- and its four witnesses (one compliant
+# entry, three token-preserving deviations) keep it decisive while the entry is
+# still unwritten.  It replaces eleven review rounds of regular expressions in
+# `check_kernel_entry_exports.py`, each of which read one more Lean spelling
+# wrongly; a resolved constant has one definition and no spelling.
+run_check "BUILD" lake build SeLe4n.Testing.BootEntryContract
+
 # WS-SM SM8.B: no live syscall arm may reach a boot-pinned scheduler primitive.
 # PR #861 review rounds 10 and 12 found this defect three times, one syscall per
 # round — `.tcbResume`, `.send`, `.tcbSetPriority`/`.tcbSetMCPriority` — each

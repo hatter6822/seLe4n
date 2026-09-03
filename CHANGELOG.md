@@ -1141,6 +1141,99 @@ the **kernel**, the second live defect any round has found outside the gates.
   disables the bare spelling for the file — conservative, and the remedy is a
   qualifier.
 
+### The review round, seventeenth pass — the elaborator answers Lean questions
+
+Five findings, and one instruction from the maintainer that supersedes the
+shape of the fix: *using a regular expression instead of the Lean parser is bad
+practice and should be avoided going forward.*  That is the right reading of
+the record.  From PR #889 review round 3 to round 16, the boot-entry half of
+`scripts/check_kernel_entry_exports.py` grew into a Lean parser made of regular
+expressions, and eleven rounds of findings against it were one defect in
+eleven costumes: a name is not the declaration it spells, a nested construct is
+not a sibling, a prefix is not the expression, a constructor's head is not its
+coverage, a `renaming` binds a name no declaration mentions.  The set of Lean
+spellings that defeat a regular expression is not finite, so no round of
+patching converges.
+
+**The boot entry's contract is now decided by the elaborator.**
+`SeLe4n/Testing/BootEntryContract.lean` reads the elaborated `Environment`:
+`getExportNameFor?` finds whichever declaration carries
+`@[export lean_kernel_main]`, `Expr.getUsedConstants` says what it calls, and a
+reachability walk over resolved constants says what installs kernel state.  By
+the time a declaration is in the environment there are no spellings left, only
+constants, and a constant has one definition — so an alias, a `renaming`, a
+local binder of the same name, a qualified or unqualified reference and an
+`@[inline, export …]` attribute list are all the same question, already
+answered.  The module fails its own elaboration, so building it *is* the check
+(`scripts/test_tier1_build.sh`, the pattern
+`SeLe4n.Testing.IpcDethreadingEnvironmentCensus` already established), and four
+witnesses keep it decisive while the entry is still SM10.1's to write: one
+compliant entry that must be accepted, and three token-preserving deviations —
+a bypass that keeps the boot call, the `match`, the `.error` arm and the halt
+while installing the state itself; a side install beside the approved call; and
+an entry that boots nothing — that must each be refused.
+
+**And the error path became a definition rather than syntax.**
+`Platform.FFI.bootAndInitialiseRPi5OrHalt` is the checked RPi5 boot with the
+one correct handling of its failure: `.error` parks the PE
+(`ffiFatalHaltAll`), because a boot that installed nothing must not return to
+Rust and let the image idle as though it had booted.  Eight review rounds went
+into reading "the entry's `.error` arm ends in a halt" out of Lean source; with
+the wrapper there is no arm to read.  This is the repository's own rule — *an
+implicit invariant maintained only by convention → enforce it structurally* —
+applied to the one call that decides whether the kernel exists.
+
+That deleted 43 top-level names and about a thousand lines from the Python
+gate: every Lean regular expression, the halt derivation, the kernel-state
+installer derivation, the suffix-resolution rules, the binder scanner, the
+match-arm parser.  What stays is the part no elaboration can see — object code,
+`nm` output, Rust `extern` declarations, assembly sources — and the Lean
+`@[export]` *source* inventory, which is lexical because the question is
+lexical: a module outside the import closure exports nothing into the
+environment, and that drift is exactly what the archive reconciliation exists
+to catch.
+
+The five findings themselves, all in the surviving link-level half:
+
+* **A constructor pattern's head is not its coverage.**  The `.error` arm check
+  matched `| .error` and stopped, so `| .error "boot failed" => fatalHaltAll`
+  followed by `| _ => pure ()` reported a halting error path while every other
+  failure string fell to the wildcard.  Closed structurally by the wrapper
+  above; the relation is written into `CLAUDE.md` because it generalises — a
+  pattern's head is a prefix, and a prefix is not the pattern.
+* **`extern r"C" { … }` declared nothing.**  Three sites searched for the
+  eleven characters `extern "C" {` as a substring — the Python gate and
+  `blank_extern_blocks` / `extern_block_declarations` in
+  `rust/sele4n-hal/build.rs`.  `extern r"C"`, `extern r#"C"#`, `extern { … }`
+  (ABI `"C"` by default) and `extern "C-unwind"` all compile and all declare
+  symbols the linker must resolve, and all four were invisible: the readiness
+  derivation would not have seen an upcall declared in one, and no gate would
+  have required its symbol.  `extern_block_openings` (both languages) resolves
+  the ABI literal instead, and eight token-preserving cases in each language
+  vary only its spelling.
+* **`#[link_name]` was located on the strings-*kept* view.**  Round 16 fixed
+  exactly this at `halt_definitions` and left its sibling in
+  `extern_declarations_in`, so `#[doc = r#"#[link_name = "lean_kernel_main"]"#]`
+  on an unrelated declaration donated that symbol to it.  Structure comes from
+  the string-free view; only the value's text comes from the aligned kept one.
+  The raw-literal spellings of the attribute's own value are read too.
+* **`.if 0 … .endif` still provided symbols.**  Round 4 blanked cpp's `#if 0`;
+  `.if 0` is the assembler's own spelling of it, one preprocessing stage later,
+  and `.rept`/`.irp` bodies may be emitted zero times.  `strip_unassembled_regions`
+  generalises round 16's macro stripper to all three families, matched by the
+  *shape* of their directives (every GAS conditional opener begins `.if`) rather
+  than by a list of the fifteen spellings, and reads the directive past any
+  labels sharing its line.
+* **A `renaming` alias of a kernel-state installer.**  Reported against the
+  token-intersection check; closed by the move to the elaborator, where
+  `overwrite` and `initialiseKernelState` are the same constant.
+
+Two smaller things went with the pass.  The self-test's `[PASS]` line carried a
+literal that ten rounds had bumped by hand and that by round 16 read one higher
+than the harness's real assertion count; it is now measured from the harness's
+own source (`self_test_case_count`), loop multiplicities included.  And the
+unused `simp` argument round 15 left in `Platform/Boot.lean` is gone.
+
 ### The review round, sixteenth pass — and the contract that ends the class
 
 Codex's sixteenth review (on the round-15 head) raised seven findings, and four

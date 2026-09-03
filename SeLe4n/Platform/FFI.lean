@@ -1249,6 +1249,27 @@ theorem bootAndInitialiseRPi5_eq (config : PlatformConfig) :
     bootAndInitialiseRPi5 config =
       bootAndInitialisePlatform SeLe4n.Platform.RPi5.RPi5Platform config := rfl
 
+/-- **PR #889 review round 17: the hardware boot entry's only correct call.**
+
+`bootAndInitialiseRPi5` returns `Except String SystemState`: on `.error` it has
+installed *nothing*, so a caller that ignores the result returns to the Rust
+boot path with no kernel state and the image idles as though it had booted —
+the fail-open direction on the one call that decides whether the kernel exists.
+The handling is the same on every failure and there is exactly one right answer
+to it, so it belongs here rather than in the caller.
+
+This is what SM10.1's `lean_kernel_main` calls.  Making the failure handling a
+*definition* is what lets the contract on that entry be decided by the
+elaborator (`SeLe4n/Testing/BootEntryContract.lean`): "the entry calls this
+constant, and no path from it installs kernel state except through it" is a
+question about resolved constants, where "the entry's `.error` arm ends in a
+halt" was a question about Lean syntax that eight review rounds of regular
+expressions failed to answer. -/
+def bootAndInitialiseRPi5OrHalt (config : PlatformConfig) : BaseIO Unit := do
+  match ← bootAndInitialiseRPi5 config with
+  | .ok _ => pure ()
+  | .error _ => ffiFatalHaltAll
+
 /-- WS-RR RR5.2: under a binding's labeling the boot entry **cannot** be refused
     on the labeling — it is the checked idle boot followed by the two installs,
     and nothing else.  The proof is the binding-level admission theorem

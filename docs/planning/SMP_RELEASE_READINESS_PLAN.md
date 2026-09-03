@@ -749,6 +749,26 @@ fixed as such: the halt seed locates its attribute on the string-free view, an
 `extern` block is split into items so an attribute binds to the item it
 decorates, and an uninvoked `.macro` body is not an assembly provider.
 
+**Review round 17 (PR #889, same version).**  Five findings, and a standing
+instruction from the maintainer that decides the shape of the fix: a Lean
+question goes to the Lean elaborator, never to a regular expression.  Round 16's
+contract was the last patch this class accepts; round 17 removes the class.
+The boot entry's contract now lives in
+`SeLe4n/Testing/BootEntryContract.lean`, which reads the elaborated
+`Environment` — `getExportNameFor?` for the exporting declaration,
+`Expr.getUsedConstants` for what it calls, a reachability walk for what installs
+kernel state — and fails its own elaboration, with four witnesses (a compliant
+entry and three token-preserving deviations) keeping it decisive before SM10.1
+writes the entry.  `Platform.FFI.bootAndInitialiseRPi5OrHalt` makes the error
+path a definition, so the eight rounds spent reading an `.error` arm out of Lean
+source have no subject left.  That retired 43 top-level names from
+`scripts/check_kernel_entry_exports.py`; what remains is the link-level half,
+where three of the five findings landed: an `extern <abi>? { … }` block is
+resolved rather than spelled (three sites, two of them in `build.rs`), a
+`#[link_name]` is located on the string-free view, and `.if 0` / `.rept` regions
+provide no assembly symbols.  The self-test's case count is measured from the
+harness's own source rather than bumped by hand.
+
 **Note on RR5.10–RR5.14** (the rows that replaced one XL).  Two findings shape
 the split, and the row they replaced named neither: one is an ordering defect
 it inherited, the other is the reason its "cannot be separate PRs" claim is

@@ -49,12 +49,34 @@ list is held in both directions: a listed symbol the HAL no longer declares, or
 one the archive now defines, fails the gate — a stale entry is the exemption
 that outlived its reason.
 
+**What this gate does *not* decide, since PR #889 review round 17.**  Whether
+the boot entry boots through the checked platform boot, what its failure path
+does, and whether anything else installs kernel state are questions about
+*elaboration*: which declaration a name denotes, what an expression evaluates,
+which values a pattern matches.  This file answered them by matching Lean
+source with regular expressions from round 3 to round 16, and every review
+round found the same defect wearing different clothes — a name is not a
+definition, a nested construct is not a sibling, a prefix is not the
+expression, a constructor's head is not its coverage.  The set of Lean
+spellings that defeat a regular expression is not finite, so the answer was to
+stop asking Lean questions this way: `SeLe4n/Testing/BootEntryContract.lean`
+asks the elaborated `Environment` instead, where references are resolved
+constants, and fails its own elaboration.
+
+What stays here is the part no elaboration can see: object code, `nm` output,
+Rust `extern` declarations, assembly sources, and the Lean **source** inventory
+of `@[export]`s — deliberately the source, because a module *outside* the
+import closure exports nothing into the environment and is exactly the drift
+this gate exists to catch.  That inventory is lexical because the question is
+lexical; it is not a stand-in for the elaborator.
+
 Exits 77 (the project's NOT-RUN code) when `nm` is unavailable, so a missing
 binutils cannot be scored as a pass.
 """
 
 from __future__ import annotations
 
+import ast
 import re
 import shutil
 import subprocess
@@ -90,151 +112,44 @@ EXPECTED_UNRESOLVED: dict[str, str] = {
     ),
 }
 
-EXTERN_BLOCK = re.compile(r'extern\s+"C"\s*\{')
+#: The `extern` keyword.  Whether it *opens a block* is decided structurally
+#: by `extern_block_openings`, not by a spelling: PR #889 review round 17 found
+#: this searched for the literal `extern "C" {`, so `extern r"C" { … }` — which
+#: compiles, and declares exactly the same symbols — declared nothing as far as
+#: this gate could see, and `extern { … }` (ABI `"C"` by default) and
+#: `extern "C-unwind" { … }` were invisible the same way.  The ABI names a
+#: calling convention; every `extern` block asks the linker for its items
+#: whatever the convention is, so the requirement does not depend on it.
+EXTERN_KEYWORD = re.compile(r"\bextern\b")
 EXTERN_FN = re.compile(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(")
+#: The symbol SM10.1's boot entry exports.  Only the link-level reconciliation
+#: reads it here — that the archive does not define it yet, and that
+#: `EXPECTED_UNRESOLVED` still says so.  What the entry must *do* is
+#: `SeLe4n/Testing/BootEntryContract.lean`'s, decided over the elaborated
+#: environment (PR #889 review round 17).
+BOOT_ENTRY_SYMBOL = "lean_kernel_main"
 #: `#[link_name = "…"]` — in both spellings — on an `extern` declaration: the
 #: symbol the linker is actually asked for, whatever the Rust item is called.
+#: Matched over the string-free view, where the literal's delimiters survive
+#: and its interior is blanked, so group 1's *span* locates the value and the
+#: byte-aligned strings-kept view supplies its text.  The raw forms (`r"…"`,
+#: `r#"…"#`) are literals too and name the same symbol.
 LINK_NAME_ATTR = re.compile(
-    r'#\[\s*(?:unsafe\s*\(\s*)?link_name\s*=\s*"([^"]*)"'
+    r'#\[\s*(?:unsafe\s*\(\s*)?link_name\s*=\s*r?#*"([^"]*)"'
 )
 ASM_GLOBAL = re.compile(r"^\s*\.(?:global|globl)\s+([A-Za-z_.$][A-Za-z0-9_.$]*)", re.MULTILINE)
+# The directives that open and close a region the assembler does not emit
+# where it is written.  Derived from the directives' shape: every GAS
+# conditional opener begins `.if`, every repeat block closes with `.endr`.
+ASM_REGION_OPEN = re.compile(r"\.(?:macro|if[a-z]*|rept|irpc?)")
+ASM_REGION_CLOSE = re.compile(r"\.(?:endm|endmacro|endif|endr)")
+# Labels leading a line, so a directive sharing the line with one is still read.
+ASM_LEADING_LABELS = re.compile(r"^\s*(?:[A-Za-z0-9_.$][A-Za-z0-9_.$]*\s*:\s*)+")
 # A label definition: the symbol at the start of a line, followed by `:`.
 ASM_LABEL = re.compile(r"^\s*([A-Za-z_.$][A-Za-z0-9_.$]*)\s*:", re.MULTILINE)
 # A `cc::Build` source registration in `build.rs`, read over the comment-blanked
 # view (string contents kept, since the path IS a string).
 CC_FILE_CALL = re.compile(r'\.file\(\s*"([^"]+)"\s*\)')
-# The primary's boot install, and the checked platform boot it must call:
-# `bootAndInitialiseRPi5`, the generic `bootAndInitialisePlatform` fixed at
-# `RPi5Platform` (PR #889 review round 7 — with the generic entry as the callee
-# the gate never inspected the platform argument, so an entry booting
-# `SimSingleCorePlatform` on the hardware image satisfied it).
-BOOT_ENTRY_SYMBOL = "lean_kernel_main"
-BOOT_ENTRY_CALLEE = "bootAndInitialiseRPi5"
-#: Its fully-qualified name — the pin the derivation below must reproduce.  A
-#: reference in the boot entry resolves to *this* declaration or the gate
-#: refuses it (PR #889 review round 12).
-EXPECTED_BOOT_ENTRY_CALLEE = "SeLe4n.Platform.FFI.bootAndInitialiseRPi5"
-# Where a top-level Lean declaration starts, at column 0.
-LEAN_DECL_START = re.compile(
-    r"^(?:@\[|(?:private |protected |noncomputable |unsafe |partial )*"
-    r"(?:def|theorem|abbrev|instance|structure|inductive|class|example|opaque|axiom|"
-    r"initialize|builtin_initialize)\b|end\b|namespace\b|section\b|open\b|"
-    r"set_option\b|variable\b|universe\b|attribute\b|mutual\b|deriving\b)",
-    re.MULTILINE,
-)
-# A declaration's head — attributes, modifiers, keyword, name — at the start of
-# one of the segments `LEAN_DECL_START` delimits.
-LEAN_DECL_HEAD = re.compile(
-    r"^(?:@\[[^\]]*\]\s*)*(?:(?:private|protected|noncomputable|unsafe|partial)\s+)*"
-    r"(?P<kw>def|theorem|abbrev|instance|opaque|initialize|builtin_initialize|example)\b"
-    r"(?:\s+(?P<name>[^\s:(\[{]+))?"
-)
-LEAN_IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_'!?]*")
-# The kernel-state references, and a mention of one for anything but a read.
-KERNEL_STATE_REFS = frozenset({"kernelStateRef", "kernelLabelingContextRef"})
-KERNEL_STATE_REF_WRITE = re.compile(
-    r"\b(?:kernelStateRef|kernelLabelingContextRef)\b(?!\s*\.\s*get\b)"
-)
-#: A statement that **may** leave the block: one carrying an exit anywhere in
-#: it, `if skip then return ()` included (PR #889 review round 14).  Matching
-#: only a statement that *begins* with `return` asked whether the exit is the
-#: whole statement, when the question is whether an exit can be taken before
-#: the next one runs — a conditional exit is the same hazard with a guard in
-#: front of it.  Deliberately an over-approximation (an exit in a branch that
-#: cannot be taken still counts), which is the fail-closed direction, and the
-#: mirror of `build.rs`'s `statement_may_exit` for the same question in Rust.
-LEAN_MAY_EXIT = re.compile(r"(?:^|[^\w'!?.])(?:return|throw|panic!|unreachable!)(?:[^\w'!?]|$)")
-#: A dotted Lean reference: an optional `_root_.`, then namespace components.
-#: Every call this gate reads is captured as one of these and then **resolved**
-#: against the tree's declarations (PR #889 review round 12) — matching the
-#: short name alone accepted `Fake.ffiFatalHalt` as a halt, and matching a bare
-#: name accepted a `let` that shadowed the callee with `fun _ => pure (.ok
-#: default)`.  Both keep the token; neither is the declaration it stands for.
-LEAN_DOTTED = r"(?:_root_\.)?(?:[A-Za-z_][A-Za-z0-9_'!?]*\.)*[A-Za-z_][A-Za-z0-9_'!?]*"
-#: An argument of a call this gate reads: an identifier, a literal, a
-#: projection or a bracketed group — never an operator.  PR #889 review round
-#: 16: the checks captured a call's *head* and ignored the rest of the
-#: expression, so `← bootAndInitialiseRPi5 cfg |> fun _ => pure (.ok default)`
-#: read as executing the checked boot when the pipe discards its action, and
-#: `ffiFatalHalt |> fun _ => pure ()` read as halting.  A prefix is not the
-#: expression: what follows the head must be arguments and nothing else.
-LEAN_CALL_ARGUMENT = r"(?:[A-Za-z_][A-Za-z0-9_'!?.]*|\.[A-Za-z_][A-Za-z0-9_'!?]*|[0-9]+|\([^()]*\))"
-LEAN_CALL_TAIL = r"(?:\s+" + LEAN_CALL_ARGUMENT + r")*\s*"
-# The forms in which a `do` statement *executes* an action: bound with `←` (a
-# `let` pattern, or a `match` scrutinee), a bare action, or `discard`.
-# `let x := …` binds the action without running it; a call under `if`,
-# `match`, `fun` or `=>` on the statement's first line is conditional.
-# PR #889 review round 9: the boot entry must **branch** on the checked
-# boot's `Except` and terminate the error path.  `bootAndInitialiseRPi5`
-# returns `BaseIO (Except String SystemState)`: on `.error` nothing is
-# installed, so an entry that ran the call and ignored its result would fall
-# through to Rust's idle fallback with no kernel state — the boot failure
-# silently becoming an idle machine.  The accepted shape is a `match` on the
-# call (or on a name bound from it) whose error arm reaches a halt; `discard`
-# and `let _ ←` are refused because they drop the result.
-BOOT_CALL_FORMS: tuple[tuple[str, "re.Pattern[str]"], ...] = (
-    ("match", re.compile(
-        r"^match\s+←\s*(?P<head>" + LEAN_DOTTED + r")" + LEAN_CALL_TAIL + r"with\b")),
-    ("bound", re.compile(
-        r"^let\s+(?:(?!:=|\bif\b|\bfun\b|=>|\bmatch\b).)*?←\s*"
-        r"(?P<head>" + LEAN_DOTTED + r")" + LEAN_CALL_TAIL + r"(?=\n|$)")),
-    ("discard", re.compile(
-        r"^discard\s*(?:<\|\s*|\(\s*)?(?P<head>" + LEAN_DOTTED + r")"
-        + LEAN_CALL_TAIL + r"\)?\s*(?=\n|$)")),
-    ("bare", re.compile(
-        r"^(?P<head>" + LEAN_DOTTED + r")" + LEAN_CALL_TAIL + r"(?=\n|$)")),
-)
-#: The `discard`/bare forms alone — a term body is one action, never a block.
-BOOT_TERM_FORMS = tuple(form for form in BOOT_CALL_FORMS if form[0] in ("discard", "bare"))
-#: A `let <name> ← <call>`: the binding whose result the handling `match` must
-#: read.  `let _ ←` is excluded — it drops the `Except`.
-BOOT_ENTRY_BOUND = re.compile(
-    r"^let\s+(?!_\b)(?P<name>[A-Za-z_][A-Za-z0-9_'!?]*)\s*←\s*"
-    r"(?P<head>" + LEAN_DOTTED + r")" + LEAN_CALL_TAIL + r"(?=\n|$)"
-)
-#: A call at the head of a line — the arm's terminal action (PR #889 review
-#: round 11), whatever it calls.  What it must call is decided by resolution,
-#: not by this pattern: round 11's version spelled the four halt names into the
-#: regex with an arbitrary qualifier before them, so `Fake.ffiFatalHalt` and a
-#: local `let ffiFatalHalt : BaseIO Unit := pure ()` both satisfied it.
-BOOT_ENTRY_HALT_CALL = re.compile(
-    r"^(?P<head>" + LEAN_DOTTED + r")" + LEAN_CALL_TAIL + r"$"
-)
-BOOT_ENTRY_ERROR_ARM = re.compile(r"^\|\s*(?:Except\.)?\.?error\b")
-#: The Rust symbols the Lean halt primitives bind to — the seed of the halt
-#: derivation, and the one thing about it that is written down: a Lean rename
-#: is picked up automatically, a Rust rename fails the reconciliation.
-HALT_PRIMITIVE_EXTERNS = ("ffi_fatal_halt", "ffi_fatal_halt_all")
-#: The derivation's expected result on the real tree — the two FFI primitives
-#: and the two `Concurrency` aliases of them.  Held in both directions.
-EXPECTED_HALT_DEFINITIONS = frozenset({
-    "SeLe4n.Platform.FFI.ffiFatalHalt",
-    "SeLe4n.Platform.FFI.ffiFatalHaltAll",
-    "SeLe4n.Kernel.Concurrency.fatalHalt",
-    "SeLe4n.Kernel.Concurrency.fatalHaltAll",
-})
-#: An `open`/`export … renaming <other> → <name>` clause: the one way a
-#: *module*-level alias can make a bare name denote a declaration that is not
-#: the one it resolves to by suffix.  A plain `export Foo (bar)` needs no
-#: special case — it aliases an existing declaration, which the tree-wide
-#: candidate index already sees under the same short name.
-LEAN_RENAMING_ALIAS = r"renaming\s+[^\n]*?(?:\u2192|->)\s*{name}(?:[^\w'!?]|$)"
-#: Where a `namespace` opens and closes, at column 0 — the qualifier a
-#: declaration's own name sits under.
-LEAN_NAMESPACE_OPEN = re.compile(r"^\s*namespace\s+([A-Za-z_][A-Za-z0-9_'.]*)")
-LEAN_NAMESPACE_CLOSE = re.compile(r"^\s*end\s+([A-Za-z_][A-Za-z0-9_'.]*)")
-# The kernel-state installers the derivation must find on the real tree, and
-# the readers it must not: a pin, so a rename on either side is loud.
-EXPECTED_KERNEL_STATE_WRITERS = frozenset({
-    "initialiseKernelState",
-    "initialiseKernelLabelingContext",
-    "modifyGetKernelState",
-    "bootAndInitialiseFromPlatformOn",
-    "bootAndInitialiseFromPlatform",
-    "bootAndInitialisePlatform",
-    BOOT_ENTRY_CALLEE,
-})
-EXPECTED_KERNEL_STATE_READERS = frozenset({"getKernelState", "getKernelLabelingContext"})
 
 
 def lean_exports_in_view(view: str) -> set[str]:
@@ -262,28 +177,6 @@ def lean_exports_in(text: str) -> set[str]:
     return lean_exports_in_view(lean_code_view.code_no_strings(text))
 
 
-def resolves_to(reference: str, canonical: str) -> bool:
-    """Does the dotted `reference` denote the declaration whose fully-qualified
-    name is `canonical`?
-
-    Lean resolves a reference by *suffix*: inside `SeLe4n.Platform.FFI`, or
-    after `open SeLe4n.Platform`, the declaration
-    `SeLe4n.Platform.FFI.ffiFatalHaltAll` is written `ffiFatalHaltAll`,
-    `FFI.ffiFatalHaltAll`, `Platform.FFI.ffiFatalHaltAll` or in full — every
-    non-empty suffix of its components, optionally under `_root_.`.  A
-    qualifier that is *not* such a suffix (`Fake.ffiFatalHalt`) names something
-    else entirely, which is exactly the mutation that kept the token and broke
-    the relation.
-
-    This is an over-approximation in the accepting direction only for a name
-    that several declarations share; the callers therefore also require the
-    reference to resolve to **nothing but** the approved declarations.
-    """
-    parts = reference.removeprefix("_root_.").split(".")
-    full = canonical.split(".")
-    return bool(parts) and len(parts) <= len(full) and full[len(full) - len(parts):] == parts
-
-
 LEAN_LIBRARY_ROOT_MODULE = REPO / "SeLe4n.lean"
 
 
@@ -300,798 +193,6 @@ def lean_sources() -> dict[str, str]:
     return sources
 
 
-def lean_exports() -> set[str]:
-    found: set[str] = set()
-    for text in lean_sources().values():
-        found.update(lean_exports_in(text))
-    return found
-
-
-def lean_declarations(view: str) -> list[tuple[str | None, str | None, str]]:
-    """The top-level declarations of a code view, as `(keyword, name, text)`.
-
-    Segments are delimited by `LEAN_DECL_START`; an attribute line standing on
-    its own (`@[export …]` above its `def`) is merged into the declaration it
-    precedes, so the attribute and the body it governs are one segment.  A
-    segment with no declaration head (`namespace`, `open`, …) is kept with
-    `None` for both, so its tokens are attributed to nothing.
-    """
-    return [(kw, name, view[at:end]) for kw, name, at, end in lean_declaration_spans(view)]
-
-
-def lean_declaration_spans(view: str) -> list[tuple[str | None, str | None, int, int]]:
-    """`lean_declarations`, as `(keyword, name, start, end)` **byte offsets**
-    into the view.
-
-    Every Lean view this module builds is length-preserving, so a span found on
-    the comment-free, string-free view addresses the same declaration on the
-    comment-free, strings-*kept* one.  A scanner that instead segments the two
-    views separately and pairs them up positionally is trusting that no string
-    literal contains something that looks like a declaration — the byte
-    alignment is there precisely so that trust is not needed.
-    """
-    starts = [m.start() for m in LEAN_DECL_START.finditer(view)] + [len(view)]
-    decls: list[tuple[str | None, str | None, int, int]] = []
-    pending: int | None = None
-    for at, nxt in zip(starts, starts[1:]):
-        begin = at if pending is None else pending
-        text = view[begin:nxt]
-        head = LEAN_DECL_HEAD.match(text)
-        if head is None and text.lstrip().startswith("@["):
-            pending = begin
-            continue
-        pending = None
-        decls.append(
-            (head.group("kw") if head else None,
-             head.group("name") if head else None,
-             begin, nxt)
-        )
-    return decls
-
-
-def identifier_tokens(text: str) -> set[str]:
-    return set(LEAN_IDENT.findall(text))
-
-
-def lean_qualified_declarations(view: str) -> list[tuple[str | None, str | None, int, int]]:
-    """The top-level declarations of a code view as `(keyword, full_name,
-    start, end)`, with the enclosing `namespace` tracked.
-
-    A declaration's *fully-qualified* name is what a reference resolves to, so
-    the resolution rules above need it.  The namespace stack is maintained
-    across the same segments `lean_declarations` returns: `namespace A.B`
-    pushes two components, `end A.B` pops them when they are the stack's tail,
-    and a bare `end` (a `section`) pops nothing.  Segments with no declaration
-    head keep `None` for both, so a caller that must not silently skip one — a
-    stray `@[export lean_kernel_main]`, say — still sees it.
-    """
-    stack: list[str] = []
-    out: list[tuple[str | None, str | None, int, int]] = []
-    for kw, name, at, end in lean_declaration_spans(view):
-        text = view[at:end]
-        if kw is None or name is None:
-            opened = LEAN_NAMESPACE_OPEN.match(text)
-            if opened is not None:
-                stack.extend(opened.group(1).split("."))
-            else:
-                closed = LEAN_NAMESPACE_CLOSE.match(text)
-                if closed is not None:
-                    parts = closed.group(1).split(".")
-                    if len(parts) <= len(stack) and stack[len(stack) - len(parts):] == parts:
-                        del stack[len(stack) - len(parts):]
-            out.append((None, None, at, end))
-            continue
-        out.append((kw, ".".join(stack + name.split(".")), at, end))
-    return out
-
-
-def declarations_by_short_name(sources: dict[str, str]) -> dict[str, set[str]]:
-    """Every top-level Lean declaration in `sources`, indexed by its last name
-    component: the candidate set a reference may resolve to.
-
-    Theorems are kept.  A theorem cannot be *called*, but a name a theorem also
-    carries is a name the scanner cannot claim resolves uniquely, and this
-    index exists to answer exactly that — so keeping them fails closed.
-    """
-    index: dict[str, set[str]] = {}
-    for text in sources.values():
-        view = lean_code_view.code_no_strings(text)
-        for kw, full, _, _ in lean_qualified_declarations(view):
-            if kw is None or full is None:
-                continue
-            index.setdefault(full.split(".")[-1], set()).add(full)
-    return index
-
-
-def lean_attribute_arguments_aligned(
-    view: str, kept: str, start: int, end: int, keyword: str
-) -> list[str]:
-    """The `keyword` arguments of the attribute lists in `[start, end)`, with
-    the lists **located** on the string-free `view` and their arguments read
-    from the byte-aligned strings-kept `kept` (PR #889 review round 16).
-
-    The two views are the same length, so an attribute list found at `[a, b)`
-    on one is the same region on the other; the string-free view decides what
-    *is* an attribute list, and only the argument's text comes from the kept
-    one.
-    """
-    if len(view) != len(kept):
-        sys.exit("[FAIL] the Lean views are not byte-aligned")
-    found: list[str] = []
-    at = start
-    while True:
-        opened = view.find("@[", at, end)
-        if opened < 0:
-            return found
-        depth = 1
-        close = None
-        for index in range(opened + 2, end):
-            if view[index] == "[":
-                depth += 1
-            elif view[index] == "]":
-                depth -= 1
-                if depth == 0:
-                    close = index
-                    break
-        if close is None:
-            return found
-        for name in lean_code_view.attribute_arguments(kept[opened : close + 1], keyword):
-            if name not in found:
-                found.append(name)
-        at = close + 1
-
-
-def halt_definitions(sources: dict[str, str]) -> set[str]:
-    """The fully-qualified names of the declarations that **park the PE**,
-    derived from the tree rather than listed (PR #889 review round 12).
-
-    The seed is structural: a Lean `opaque` carrying `@[extern "ffi_fatal_halt"]`
-    or `@[extern "ffi_fatal_halt_all"]` *is* the halt — that attribute is what
-    binds it to the Rust side's `cpu::fatal_halt()`.  The set then closes over
-    **aliases**: a declaration whose entire body is a reference to an approved
-    halt (`def fatalHaltAll : BaseIO Unit := Platform.FFI.ffiFatalHaltAll`) is
-    that halt under another name.
-
-    The closure stops there on purpose.  Closing under mere *reference* — the
-    rule the installer derivation uses, where over-approximating is
-    fail-closed — would run the wrong way here: it would classify
-    `if x then fatalHaltAll else pure ()` as a halt and accept an error arm
-    that returns.  An alias is the only reference that is unconditionally the
-    halt, so an alias is the only thing the closure adds — and only when its
-    body **resolves uniquely** to one (round 14).
-    """
-    index = declarations_by_short_name(sources)
-    approved: set[str] = set()
-    aliases: list[tuple[str, str]] = []
-    for text in sources.values():
-        kept = lean_code_view.strip(text)
-        view = lean_code_view.code_no_strings(text)
-        assert len(kept) == len(view), "the Lean views are not byte-aligned"
-        for kw, full, at, end in lean_qualified_declarations(view):
-            if kw is None or full is None or kw in ("theorem", "example"):
-                continue
-            decl = view[at:end]
-            body_at = declaration_body(decl)
-            head_end = at + (body_at if body_at is not None else end - at)
-            # PR #889 review round 16: the attribute is **located** on the
-            # string-free view and only its quoted argument read from the
-            # aligned kept one.  Handing the kept header to the parser let
-            # attribute-shaped text inside a default-value string — `def
-            # fakeHalt (s : String := r#"@[extern "ffi_fatal_halt"]"#)` — be
-            # read as a real attribute, so a function that *returns* joined
-            # the halt set.  This is round 14's rule (structure from the
-            # string-free view, text from the kept one) at a site that had not
-            # been swept.
-            if any(
-                symbol in lean_attribute_arguments_aligned(view, kept, at, head_end, "extern")
-                for symbol in HALT_PRIMITIVE_EXTERNS
-            ):
-                approved.add(full)
-                continue
-            if body_at is None:
-                continue
-            body = decl[body_at:].strip()
-            if re.fullmatch(LEAN_DOTTED, body) is not None:
-                aliases.append((full, body))
-    changed = True
-    while changed:
-        changed = False
-        for full, body in aliases:
-            if full in approved:
-                continue
-            # PR #889 review round 14: the body must resolve to an approved halt
-            # and to **nothing else** — the same unique-candidate rule
-            # `reference_failure` applies at a call site.  Asking only whether
-            # the spelling is a suffix of *some* approved name ignores which
-            # declaration Lean would select: a nearer
-            # `SeLe4n.Kernel.Concurrency.Platform.FFI.ffiFatalHalt` captures
-            # `Platform.FFI.ffiFatalHalt` inside that namespace, and the alias
-            # would still have been approved as the halt it no longer calls.
-            candidates = {
-                target
-                for target in index.get(body.split(".")[-1], set())
-                if resolves_to(body, target)
-            }
-            if candidates and candidates <= approved:
-                approved.add(full)
-                changed = True
-    return approved
-
-
-def lean_binds_locally(decl: str, body_at: int | None, name: str) -> bool:
-    """Is the single-component `name` bound **locally** in this declaration?
-
-    A bare reference resolves to a global only where nothing nearer binds the
-    name, which is the rule `build.rs`'s `bare_ready_call_resolves` already
-    applies to the readiness guard.  Here the binder forms are Lean's: a
-    parameter or the declaration's own name (anywhere in the head, which is
-    everything before the body's `:=`), a `let`/`have`, a `fun`/`λ` binder
-    group, and a `match` arm's pattern.
-
-    Deliberately an over-approximation: a name this reports as bound is one the
-    author must write qualified, which is always possible, whereas a shadow it
-    missed would be a `let bootAndInitialiseRPi5 := fun _ => pure (.ok default)`
-    that the gate reads as the checked platform boot.
-
-    Passing `body_at = 0` skips the head test, which is how a caller asks the
-    question of a **single statement** — "does this statement bind the name?" —
-    rather than of a whole declaration.
-    """
-    ident = re.escape(name)
-    head = decl[: body_at if body_at is not None else len(decl)]
-    if re.search(rf"(?:^|[^\w'!?.]){ident}(?:[^\w'!?]|$)", head):
-        return True
-    for pattern in (
-        rf"(?:^|[^\w'!?.])(?:let|have)\s+(?:mut\s+)?\(?\s*{ident}(?:[^\w'!?]|$)",
-        # ...and the same binder with a *pattern* on its left (PR #889 review
-        # round 15): `let ⟨bootAndInitialiseRPi5, _⟩ := …` and `let (a, b) := …`
-        # bind every identifier between the keyword and the `:=`/`←`, so the
-        # region is what is searched, not just the first token after `let`.
-        rf"(?:^|[^\w'!?.])(?:let|have)\s+(?:mut\s+)?[^\n]*?\b{ident}\b[^\n]*?(?::=|←)",
-        # A `do` reassignment of a `let mut`, and a `for` binder.  Both bind the
-        # name for everything after them (PR #889 review round 14).
-        rf"^\s*{ident}\s*(?::[^=\n]*)?:=",
-        rf"(?:^|[^\w'!?.])for\b[^\n]*?\b{ident}\b[^\n]*?\bin\b",
-        rf"(?:^|[^\w'!?.])(?:fun|\u03bb)\s+[^\n]*?(?:^|[^\w'!?.]){ident}(?:[^\w'!?]|$)[^\n]*?=>",
-        rf"^\s*\|[^\n]*?(?:^|[^\w'!?.]){ident}(?:[^\w'!?]|$)[^\n]*?=>",
-    ):
-        if re.search(pattern, decl, re.MULTILINE):
-            return True
-    return False
-
-
-def reference_failure(
-    reference: str,
-    decl: str,
-    body_at: int | None,
-    module: str,
-    index: dict[str, set[str]],
-    approved: set[str],
-    what: str,
-    require_qualified: bool = True,
-) -> str | None:
-    """Why `reference`, as written in this declaration, is not `approved` — or
-    `None` when it resolves to one of them and to nothing else.
-
-    Three questions, all of which a name-matching check skips (PR #889 review
-    round 12): does it resolve to a declaration that exists, does it resolve to
-    *only* approved ones, and is the name bound nearer than the global?
-    """
-    candidates = {
-        full for full in index.get(reference.split(".")[-1], set()) if resolves_to(reference, full)
-    }
-    if not candidates:
-        return (
-            f"`{reference}` resolves to no declaration in the tree — {what} must be called by "
-            f"a name that names it"
-        )
-    stray = sorted(candidates - approved)
-    if stray:
-        return (
-            f"`{reference}` may resolve to {', '.join('`' + s + '`' for s in stray)}, which is "
-            f"not {what}"
-        )
-    # PR #889 review round 16: the *fully-qualified* spelling is required, and
-    # the shadowing question then does not arise at all.  Rounds 12, 14 and 15
-    # each taught the binder scanner one more Lean form that can bind a bare
-    # name — a `have`, a `for`, an anonymous-constructor pattern, the same
-    # pattern across lines — and the space of such forms is unbounded, while a
-    # qualified name cannot be bound by any of them: Lean's local binders take
-    # single-component identifiers.  So the gate stops parsing binders and
-    # states a contract instead, which is also what a reader of SM10.1's entry
-    # would rather see.
-    if require_qualified and not any(reference == full for full in candidates):
-        return (
-            f"`{reference}` must be written as the fully-qualified "
-            f"{', '.join('`' + s + '`' for s in sorted(candidates))} — a qualified name cannot "
-            f"be shadowed by a local binder, which is what makes this decidable"
-        )
-    if not require_qualified and "." not in reference and lean_binds_locally(
-        decl, body_at, reference
-    ):
-        return (
-            f"`{reference}` is bound locally in this declaration, so it is not {what} but the "
-            f"local of that name — write it qualified, or drop the binding"
-        )
-    if not require_qualified and "." not in reference and re.search(
-        LEAN_RENAMING_ALIAS.format(name=re.escape(reference)), module
-    ):
-        return (
-            f"`{reference}` is introduced as a module-level alias by a `renaming` clause in "
-            f"this file, so the bare name need not denote {what} — write it qualified"
-        )
-    return None
-
-
-def kernel_state_writers(sources: dict[str, str]) -> set[str]:
-    """PR #889 review round 5: the declarations that can **install kernel
-    state**, derived rather than listed.
-
-    The seeds are the declarations that name a kernel-state reference
-    (`kernelStateRef`, `kernelLabelingContextRef`) for anything but a `.get` —
-    a `.set`, `.modify`, `.modifyGet`, or the reference passed as a value,
-    which is a write a scanner cannot see and so counts as one.  The set is
-    then closed under reference: a declaration whose body names a writer is a
-    writer.  Theorems are skipped (a theorem executes nothing), and the
-    references' own definitions are not writers of themselves.  Names are
-    matched by their last component, so a qualified call is seen and two
-    declarations sharing a short name are merged — both over-approximations,
-    so the derivation fails closed.  `EXPECTED_KERNEL_STATE_WRITERS` and
-    `EXPECTED_KERNEL_STATE_READERS` pin it against the real tree.
-    """
-    bodies: dict[str, set[str]] = {}
-    seeds: set[str] = set()
-    for text in sources.values():
-        view = lean_code_view.code_no_strings(text)
-        for kw, name, decl in lean_declarations(view):
-            if name is None or kw in ("theorem", "example"):
-                continue
-            short = name.split(".")[-1]
-            if short in KERNEL_STATE_REFS:
-                continue
-            bodies[short] = bodies.get(short, set()) | (identifier_tokens(decl) - {short})
-            if KERNEL_STATE_REF_WRITE.search(decl):
-                seeds.add(short)
-    writers = set(seeds)
-    frontier = set(seeds)
-    while frontier:
-        frontier = {
-            name for name, tokens in bodies.items() if name not in writers and tokens & frontier
-        }
-        writers |= frontier
-    return writers
-
-
-def declaration_body(decl: str) -> int | None:
-    """The offset just past the head's `:=` — the first one at bracket depth 0 —
-    or `None` for a declaration with no such body (`where` form, a structure)."""
-    depth = 0
-    i = 0
-    while i < len(decl):
-        c = decl[i]
-        if c in "([{":
-            depth += 1
-        elif c in ")]}":
-            depth -= 1
-        elif c == ":" and depth == 0 and decl.startswith(":=", i):
-            return i + 2
-        i += 1
-    return None
-
-
-def do_block_statements(decl: str, body_at: int) -> list[str] | None:
-    """The **top-level statements** of the `do` block at `body_at`, or `None`
-    when the body is not a `do` block.
-
-    Lean's `do` notation fixes the block's column at its first statement; a
-    later line at that column starts a statement, a deeper line continues the
-    one above it (a `match` arm, an `if` branch), and a shallower non-blank
-    line ends the block.  What a block does unconditionally is what its
-    top-level statements say — a statement nested under `if`, `match` or
-    `for` is a continuation here, never a statement of its own.
-
-    PR #889 review round 9: a line beginning with `|` continues the statement
-    above it whatever its column.  Lean's idiom writes a `match`'s arms at the
-    *same* column as the `match`, so the column rule alone split
-    `match ← boot … with` from its own arms — and a check asking whether that
-    statement carries an `.error` arm then never saw one.
-    """
-    m = re.match(r"\s*do\b", decl[body_at:])
-    if m is None:
-        return None
-    do_end = body_at + m.end()
-    line_start = decl.rfind("\n", 0, do_end) + 1
-    inline, _, rest = decl[do_end:].partition("\n")
-    statements: list[list] = []
-    base: int | None = None
-    if inline.strip():
-        base = (do_end - line_start) + (len(inline) - len(inline.lstrip()))
-        statements.append([base, inline.strip()])
-    for line in rest.split("\n"):
-        if not line.strip():
-            continue
-        indent = len(line) - len(line.lstrip())
-        if base is None:
-            base = indent
-        # PR #889 review round 13: a continuation keeps its indentation
-        # **relative to the block**.  Stripping it flattened the statement into
-        # a list of sibling lines, and a nested `match`'s arms then read as the
-        # outer match's own — which is how a wildcard-only boot-result match
-        # with a nested `.error` arm below it passed as a handled failure.
-        # Depth is the only thing distinguishing the two, so it is preserved.
-        if line.lstrip().startswith("|") and statements:
-            statements[-1][1] += "\n" + (line[base:] if indent >= base else line.strip())
-        elif indent == base:
-            statements.append([indent, line.strip()])
-        elif indent > base and statements:
-            statements[-1][1] += "\n" + line[base:]
-        else:
-            break
-    return [text for _, text in statements]
-
-
-class BootEntry(NamedTuple):
-    """What the boot-entry checks resolve names against.
-
-    `callee` and `halts` are fully-qualified names **derived from the sources**
-    (`declarations_by_short_name`, `halt_definitions`); `index` is every
-    declaration by short name, so a reference can be asked what else it might
-    denote.  `decl` and `body_at` are the declaration the reference is written
-    in, which is where a local binding would shadow the global, and `module` is
-    that declaration's whole file view, which is where a `renaming` alias
-    would.
-    """
-
-    callee: str
-    halts: frozenset[str]
-    index: dict[str, set[str]]
-    decl: str
-    body_at: int | None
-    module: str
-
-
-def boot_entry_call_head(statement: str, forms=BOOT_CALL_FORMS) -> tuple[str, str] | None:
-    """The `(form, dotted head)` of the action a `do` statement executes, or
-    `None` when it executes none.  The head is *resolved* by the caller."""
-    for form, pattern in forms:
-        found = pattern.match(statement)
-        if found is not None:
-            return form, found.group("head")
-    return None
-
-
-def boot_entry_binding_failures(sources: dict[str, str]) -> list[str]:
-    """PR #889 review rounds 3 and 5: the connection from the boot entry to the
-    checked platform boot is repository-enforced from the day the entry exists.
-
-    `lean_kernel_main` is SM10.1's to write (it is the one upcall that cannot
-    sit behind the readiness gate, and the gate's `EXPECTED_UNRESOLVED` entry
-    reconciles its absence).  This check is vacuous until then and decisive
-    after.  Two relations, on the declaration carrying `@[export
-    lean_kernel_main]`, over the comment-free, **string-free** view:
-
-    1. It **executes** `bootAndInitialisePlatform` **unconditionally**: a
-       top-level statement of its `do` block binds the call with `←` (a `let`
-       pattern or a `match` scrutinee), runs it bare, or `discard`s it, with no
-       `return`/`throw` above it — or its body is a term headed by the call.
-       An identifier occurrence satisfied round 3's check; a string literal,
-       a docstring, a `let x := …` that binds the action without running it,
-       and a call nested under `if false` all kept the token (round 5).
-    2. It installs kernel state through **nothing else**: no other member of
-       the derived `kernel_state_writers` set, and no kernel-state reference
-       named directly, appears in its body.  Without this an entry could run
-       the checked boot and then install `bootFromPlatform`'s raw state over
-       it — the token present and executed, the live path routed around it.
-
-    Together: the live boot path *is* the checked boot, so the idle-thread,
-    labeling and reservation guarantees are the hardware boot's.
-    """
-    failures: list[str] = []
-    writers = kernel_state_writers(sources)
-    index = declarations_by_short_name(sources)
-    halts = frozenset(halt_definitions(sources))
-    callees = sorted(index.get(BOOT_ENTRY_CALLEE, set()))
-    for where, text in sources.items():
-        view = lean_code_view.code_no_strings(text)
-        for kw, full, at, end in lean_qualified_declarations(view):
-            decl = view[at:end]
-            if BOOT_ENTRY_SYMBOL not in lean_exports_in_view(decl):
-                continue
-            label = f"{where}: the declaration exporting `{BOOT_ENTRY_SYMBOL}`"
-            if kw is None or full is None:
-                failures.append(f"{label} is not a named declaration")
-                continue
-            if len(callees) != 1:
-                failures.append(
-                    f"{label} cannot be checked: the tree declares "
-                    f"{len(callees)} declarations named `{BOOT_ENTRY_CALLEE}` "
-                    f"({', '.join('`' + c + '`' for c in callees) or 'none'}) — a reference to "
-                    f"it resolves to no single definition"
-                )
-                continue
-            if not halts:
-                failures.append(
-                    f"{label} cannot be checked: no halt primitive was derived from the tree "
-                    f"(an `opaque` carrying `@[extern \"ffi_fatal_halt\"]` or "
-                    f"`@[extern \"ffi_fatal_halt_all\"]`), so no `.error` arm could be "
-                    f"recognised as terminating"
-                )
-                continue
-            body_at = declaration_body(decl)
-            if body_at is None:
-                failures.append(f"{label} has no `:=` body to bind the checked boot in")
-                continue
-            body = decl[body_at:]
-            entry = BootEntry(callees[0], halts, index, decl, body_at, view)
-            statements = do_block_statements(decl, body_at)
-            executed: str | None = None
-            reason: str | None = None
-            if statements is None:
-                statements = [body.strip()]
-                found = boot_entry_call_head(statements[0], BOOT_TERM_FORMS)
-                reason = "its body is neither a `do` block nor a term headed by the call"
-            else:
-                reason = (
-                    "no top-level statement of its `do` block executes the call "
-                    "(`let … ← bootAndInitialiseRPi5 …`, `match ← … with`, a bare call, "
-                    "or `discard`), or a `return`/`throw` precedes it"
-                )
-                found = None
-                for statement in statements:
-                    # PR #889 review round 14: a conditional exit above the call
-                    # means the call is not unconditional either.
-                    if LEAN_MAY_EXIT.search(statement):
-                        break
-                    head = boot_entry_call_head(statement)
-                    if head is not None and head[1].split(".")[-1] == BOOT_ENTRY_CALLEE:
-                        found = head
-                        break
-            if found is not None and found[1].split(".")[-1] == BOOT_ENTRY_CALLEE:
-                # PR #889 review round 12: the spelling is not the definition.
-                # `let bootAndInitialiseRPi5 := fun _ => pure (.ok default)`
-                # above the call keeps every token this check reads and makes
-                # the entry boot nothing at all.
-                refused = reference_failure(
-                    found[1], decl, body_at, entry.module, index, {entry.callee},
-                    "the checked platform boot",
-                )
-                if refused is None:
-                    executed = found[0]
-                else:
-                    reason = refused
-            if executed is None:
-                failures.append(
-                    f"{label} does not execute `{BOOT_ENTRY_CALLEE}` unconditionally: {reason} "
-                    "— the hardware boot must go through the checked platform boot (idle "
-                    "threads, deployment labeling, reserved slots)"
-                )
-            else:
-                # PR #889 review round 9: a term body is one statement; the
-                # only branching term is a `match ← … with`, which is checked
-                # by the same rule.
-                handled = boot_entry_handles_failure(statements, entry)
-                if handled is not None:
-                    failures.append(f"{label} {handled}")
-            short = full.split(".")[-1]
-            others = sorted((identifier_tokens(body) & writers) - {BOOT_ENTRY_CALLEE, short})
-            if KERNEL_STATE_REF_WRITE.search(body):
-                others.append("a kernel-state reference itself")
-            if others:
-                failures.append(
-                    f"{label} installs kernel state through something other than the checked "
-                    f"platform boot: {', '.join(others)} — every state installer in its body but "
-                    f"`{BOOT_ENTRY_CALLEE}` is a path around the checked boot"
-                )
-    return failures
-
-
-def boot_entry_handles_failure(statements: list[str], entry: BootEntry) -> str | None:
-    """PR #889 review round 9: does the boot entry **branch** on the checked
-    boot's `Except` and terminate the error path?  The failure reason, or
-    `None` when it does.
-
-    `bootAndInitialiseRPi5 : BaseIO (Except String SystemState)` installs
-    nothing on `.error`.  Round 5's check required the call to be *executed*,
-    and `discard <| bootAndInitialiseRPi5 cfg` or `let _ ← …` satisfied it —
-    the entry would then return to the Rust caller with no kernel state
-    installed, and the image would idle as if the boot had succeeded, which is
-    the fail-open direction on the one call that decides whether the kernel
-    exists.
-
-    The accepted shape is a `match` — on the call itself, or on a name a
-    `let … ←` bound from it — carrying an `.error` arm whose text reaches a
-    halt (`ffiFatalHalt` / `ffiFatalHaltAll` / `fatalHalt` / `fatalHaltAll`,
-    the fail-closed stops this tree already has).  Anything else fails closed,
-    and the message names the shape, because the entry is SM10.1's to write
-    and this is the contract it will be written against.
-    """
-    for index, statement in enumerate(statements):
-        head = boot_entry_call_head(statement)
-        if (
-            head is not None
-            and head[0] == "match"
-            and resolves_to(head[1], entry.callee)
-        ):
-            return boot_entry_error_arm_halts(statement, entry)
-        bound = BOOT_ENTRY_BOUND.match(statement)
-        if bound is None or not resolves_to(bound.group("head"), entry.callee):
-            continue
-        # PR #889 review round 10: the match must be reached, must be on THIS
-        # value, and its `.error` arm — not the match as a whole — must halt.
-        name = bound.group("name")
-        matcher = re.compile(r"^match\s+" + re.escape(name) + r"\b")
-        for later in statements[index + 1 :]:
-            # PR #889 review round 14: *may* exit, not *is* an exit.  An
-            # `if skip then return ()` between the binding and the match leaves
-            # the entry without ever reaching the handler on the branch it
-            # takes, and round 10's check — which asked whether the statement
-            # began with `return` — read it as an ordinary statement.
-            if LEAN_MAY_EXIT.search(later):
-                return (
-                    f"may return or throw before matching on `{name}` (`{later.splitlines()[0]}`) "
-                    f"— on that path a failed boot leaves the entry without ever reaching the "
-                    f"handler, and the image idles with no kernel state"
-                )
-            # ...and *any* binder of the name shadows it, `have` included.
-            if lean_binds_locally(later, 0, name):
-                return (
-                    f"rebinds `{name}` before matching on it — the match would consume the "
-                    f"shadowing value and a real boot error would be ignored"
-                )
-            if matcher.match(later):
-                return boot_entry_error_arm_halts(later, entry)
-        return (
-            f"binds the checked boot's result as `{name}` and never matches on "
-            f"it — the `Except` must be branched on, and the `.error` arm must "
-            f"halt: on a failed boot nothing is installed, and returning to the "
-            f"Rust caller leaves the image idling with no kernel state"
-        )
-    return (
-        f"executes `{BOOT_ENTRY_CALLEE}` but discards its `Except` (`discard` or `let _ ←`) "
-        f"— a failed boot installs no kernel state, and the entry must branch on the result "
-        f"with an `.error` arm that halts"
-    )
-
-
-def lean_match_arms(statement: str) -> list[str]:
-    """The arms of a `match … with` statement, as text.
-
-    PR #889 review round 10.  An arm starts at a line beginning with `|` and
-    runs to the next such line, so a multi-line arm body stays with its own
-    arm; the lines before the first `|` are the scrutinee and are dropped.
-    Searching from the `.error` marker to the end of the match instead — which
-    is what round 9 did — reads the *following* arms as part of it, so the
-    valid ordering `| .error _ => pure ()  | .ok _ => ffiFatalHalt` reported a
-    halting error arm while a failed boot returned to the Rust caller.
-
-    PR #889 review round 13: arms are those at the match's **own column**.  A
-    `|` deeper than the first one is an arm of a `match` nested inside the arm
-    it sits in, and round 10 read it as a sibling — so a boot-result match with
-    a single wildcard arm, whose body conditionally evaluated another `Except`,
-    borrowed that inner match's `.error => halt` as its own failure handler
-    while a failed boot took the wildcard and returned.  Columns are what
-    distinguish the two, so `do_block_statements` now preserves them.
-    """
-    arms: list[str] = []
-    column: int | None = None
-    for line in statement.split("\n"):
-        text = line.strip()
-        if not text:
-            continue
-        at = len(line) - len(line.lstrip())
-        if text.startswith("|"):
-            if column is None:
-                column = at
-            if at == column:
-                arms.append(text)
-                continue
-            # Deeper: an arm of a `match` *inside* this arm's body.  It belongs
-            # to the arm it sits in, never beside it.  Shallower: not this
-            # match's at all, and the scanner does not guess — it is dropped,
-            # which is the fail-closed direction (an `.error` arm this loses is
-            # an `.error` arm the caller will not find).
-            if at > column and arms:
-                arms[-1] += "\n" + line
-            continue
-        if arms:
-            arms[-1] += "\n" + line
-    return arms
-
-
-def boot_entry_error_arm_halts(statement: str, entry: BootEntry) -> str | None:
-    """The failure reason for a `match` on the checked boot's result, or `None`
-    when every `.error` arm halts.
-
-    A wildcard arm is not accepted in its place: `| _ => …` covers the error
-    case only by position, and this gate fails closed on a shape it cannot
-    read as the error path.
-    """
-    arms = lean_match_arms(statement)
-    error_arms = [arm for arm in arms if BOOT_ENTRY_ERROR_ARM.match(arm)]
-    if not error_arms:
-        return (
-            "matches on the checked boot's result without an explicit `.error` arm — the "
-            "failed boot installs nothing and must not fall through (a wildcard arm is "
-            "refused: the error path must be named)"
-        )
-    for arm in error_arms:
-        refused = boot_entry_arm_halts_unconditionally(arm, entry)
-        if refused is not None:
-            return (
-                f"has an `.error` arm whose terminal action is not a halt: {refused} — a "
-                "failed boot installs no kernel state, so the arm must END in a call to one "
-                "of the derived halts (" + ", ".join("`" + h + "`" for h in sorted(entry.halts))
-                + ") unconditionally, not merely mention one"
-            )
-    return None
-
-
-def boot_entry_arm_halts_unconditionally(arm: str, entry: BootEntry) -> str | None:
-    """Why a halt is *not* the arm's unconditional terminal action, or `None`
-    when it is.
-
-    PR #889 review round 11.  Round 10 parsed the arm boundaries and then
-    searched the arm for a halt *token*, which `| .error _ => if false then
-    ffiFatalHalt else pure ()` satisfies while returning to the Rust caller.
-    A token inside the arm says nothing about what the arm does: the arm's
-    outcome is its last action, and a conditional is not a halt.
-
-    PR #889 review round 12: and the call is **resolved**.  Round 11 spelled
-    the four halt names into the pattern behind an arbitrary qualifier, so
-    `Fake.ffiFatalHalt` — a name in some other namespace — and a local
-    `let ffiFatalHalt : BaseIO Unit := pure ()` both read as the fail-closed
-    stop.  Each keeps the token; neither parks the PE.
-
-    PR #889 review round 13: and the terminal line must be the body's own
-    **top-level** statement.  Round 11's "last non-empty line" was the arm's
-    outcome only while the conditional stayed on one line; written out —
-
-        | .error _ =>
-          if cond then
-            pure ()
-          else
-            Concurrency.fatalHaltAll
-
-    — the last line *is* a halt call and the arm halts only when `cond` is
-    false.  The body's top level is its minimum column; a last line deeper than
-    that is nested inside something, and this scanner cannot see which way that
-    something goes.  A `do` on the `=>` line opens the block below it; any
-    other body that begins on the `=>` line and continues below is refused as
-    unreadable rather than guessed at.
-    """
-    _, sep, body = arm.partition("=>")
-    if not sep:
-        return "the arm has no `=>` body"
-    inline, _, below = body.partition("\n")
-    lines = [
-        (len(line) - len(line.lstrip()), line.strip())
-        for line in below.split("\n")
-        if line.strip()
-    ]
-    if inline.strip() and inline.strip() != "do":
-        if lines:
-            return (
-                f"its body begins on the `=>` line ({inline.strip()!r}) and continues below — "
-                f"a shape this scanner will not read as a sequence of statements"
-            )
-        terminal = inline.strip()
-    else:
-        if not lines:
-            return "the arm's body is empty"
-        top = min(column for column, _ in lines)
-        column, terminal = lines[-1]
-        if column != top:
-            return (
-                f"its last line ({terminal!r}) is nested inside another construct, so it is "
-                f"not what the arm does — the halt must be the body's own terminal statement"
-            )
-    found = BOOT_ENTRY_HALT_CALL.match(terminal)
-    if found is None:
-        return f"its terminal statement ({terminal!r}) does not begin with a call"
-    return reference_failure(
-        found.group("head"), entry.decl, entry.body_at, entry.module, entry.index,
-        set(entry.halts), "a fail-closed halt",
-    )
 def extern_declarations_in(text: str, where: str) -> set[str]:
     """The **linker symbols** declared inside an `extern "C" { … }` block.
 
@@ -1117,10 +218,10 @@ def extern_declarations_in(text: str, where: str) -> set[str]:
     if len(view) != len(kept):
         sys.exit(f"[FAIL] {where}: the Rust code views are not byte-aligned")
     found: set[str] = set()
-    for match in EXTERN_BLOCK.finditer(view):
+    for _, brace_at in extern_block_openings(view):
         depth = 0
         end = None
-        for index in range(match.end() - 1, len(view)):
+        for index in range(brace_at, len(view)):
             if view[index] == "{":
                 depth += 1
             elif view[index] == "}":
@@ -1129,20 +230,84 @@ def extern_declarations_in(text: str, where: str) -> set[str]:
                     end = index
                     break
         if end is None:
-            sys.exit(f'[FAIL] {where}: unbalanced `extern "C"` block')
+            sys.exit(f"[FAIL] {where}: unbalanced `extern` block")
         # PR #889 review round 16: split the block into **items** and read each
         # item's own attributes.  Advancing the attribute window only across
         # `fn` declarations let an intervening `static` donate its
         # `#[link_name]` to the next function — the attribute belongs to the
         # item it decorates, and an `extern` block holds statics and type
         # aliases as well as functions.
-        for item_at, item_end in extern_block_items(view, match.end(), end):
+        for item_at, item_end in extern_block_items(view, brace_at + 1, end):
             declaration = EXTERN_FN.search(view, item_at, item_end)
             if declaration is None:
                 continue  # a `static`, a type alias: not a function requirement
-            renamed = LINK_NAME_ATTR.findall(kept[item_at : declaration.start()])
+            # PR #889 review round 17: the attribute is **located** on the
+            # string-free view and only its value read from the aligned kept
+            # one — round 16 fixed exactly this at `halt_definitions` and left
+            # its sibling here scanning the kept view, where
+            # `#[doc = r#"#[link_name = "lean_kernel_main"]"#]` on an unrelated
+            # declaration donated that symbol to it.  Text inside a literal is
+            # data; what *is* an attribute is structure.
+            renamed = [
+                kept[found_at.start(1) : found_at.end(1)]
+                for found_at in LINK_NAME_ATTR.finditer(view, item_at, declaration.start())
+            ]
             found.add(renamed[-1] if renamed else declaration.group(1))
     return found
+
+
+def extern_block_openings(view: str) -> list[tuple[int, int]]:
+    """Every `extern <abi>? { … }` block in `view`, as `(keyword, brace)`
+    offsets.
+
+    Rust's grammar after `extern` is closed: `crate`, an optional ABI **string
+    literal** then `fn`, or an optional ABI literal then `{`.  Only the last
+    opens a block, and the ABI is a literal in any of its forms — `"C"`,
+    `r"C"`, `r#"C"#` — naming any convention.  Resolving the literal is what
+    makes the answer independent of how it is spelled (PR #889 review round
+    17); the previous check searched for the eleven characters `extern "C" {`.
+    """
+    openings: list[tuple[int, int]] = []
+    for keyword in EXTERN_KEYWORD.finditer(view):
+        at = skip_rust_space(view, keyword.end())
+        past = string_literal_end(view, at)
+        if past is not None:
+            at = skip_rust_space(view, past)
+        if at < len(view) and view[at] == "{":
+            openings.append((keyword.start(), at))
+    return openings
+
+
+def skip_rust_space(view: str, at: int) -> int:
+    """Past the whitespace at `at`.  Comments are already blanked in the view,
+    so whitespace is all there is to skip."""
+    while at < len(view) and view[at].isspace():
+        at += 1
+    return at
+
+
+def string_literal_end(view: str, at: int) -> int | None:
+    """Just past the string literal starting at `at`, or `None` when there is
+    none there.
+
+    Handles the raw forms: `r"…"`, `r#"…"#`, `r##"…"##`.  On the string-free
+    view an interior holds no `"` at all (it is blanked to spaces), and an ABI
+    string is kept verbatim by `rust_code_view` because it is syntax; both read
+    correctly here, since the closer is the first `"` followed by the opener's
+    own run of `#`.
+    """
+    index = at
+    hashes = 0
+    if index < len(view) and view[index] == "r":
+        index += 1
+        while index < len(view) and view[index] == "#":
+            hashes += 1
+            index += 1
+    if index >= len(view) or view[index] != '"':
+        return None
+    closer = '"' + "#" * hashes
+    close = view.find(closer, index + 1)
+    return None if close < 0 else close + len(closer)
 
 
 def extern_block_items(view: str, start: int, end: int) -> list[tuple[int, int]]:
@@ -1261,37 +426,63 @@ def asm_definitions_in(text: str) -> set[str]:
     token-preserving regression this gate exists to catch.  A provider is the
     conjunction, outside any conditional (round 4).
     """
-    view = strip_macro_definitions(strip_cpp_conditionals(asm_code_view(text)))
+    view = strip_unassembled_regions(strip_cpp_conditionals(asm_code_view(text)))
     return set(ASM_GLOBAL.findall(view)) & set(ASM_LABEL.findall(view))
 
 
-def strip_macro_definitions(text: str) -> str:
-    """Blank every `.macro … .endm` region, keeping newlines.
+def strip_unassembled_regions(text: str) -> str:
+    """Blank every region of an assembly source whose directives and labels the
+    assembler does **not** emit where they are written, keeping newlines.
 
-    PR #889 review round 16: a macro *definition* is a template, not emitted
-    code — the assembler produces its directives and labels only where the
-    macro is invoked.  A `.global lean_ghost` and `lean_ghost:` inside an
-    uninvoked macro therefore satisfied the provider conjunction while `nm` on
-    the object showed no such symbol, and a missing HAL extern could be
-    subtracted as "provided by the assembly".  Expanding macros is beyond a
-    scanner, so the fail-closed reading is to credit their bodies with nothing:
-    a symbol that really is defined through a macro invocation must show up in
-    the assembled archive, which is the evidence this check prefers anyway.
+    Three families, matched by the shape of their directives rather than by a
+    list of the fifteen-odd spellings GAS accepts:
+
+    * `.macro … .endm` — a template.  Its `.global` and its label exist only
+      where the macro is *invoked* (PR #889 review round 16: a `.global
+      lean_ghost` and `lean_ghost:` inside an uninvoked macro satisfied the
+      provider conjunction while `nm` on the object showed no such symbol).
+    * `.if… … .endif` — an assembler conditional.  Every GAS conditional opener
+      begins `.if` (`.if`, `.ifdef`, `.ifnotdef`, `.ifeqs`, …), so the shape
+      derives the family; the assembler evaluates the condition and this
+      scanner cannot, so a region under any of them contributes nothing (PR
+      #889 review round 17 — round 4 blanked cpp's `#if 0`, and `.if 0` is the
+      assembler's own spelling of the same thing, one preprocessing stage
+      later).
+    * `.rept` / `.irp` / `.irpc` … `.endr` — a repeat block, whose body is
+      emitted a computed number of times, possibly zero.
+
+    All three under-approximate the providers, which is the fail-closed
+    direction: a symbol really assembled through a macro invocation or a true
+    conditional is reported as *missing* rather than a symbol that is not being
+    reported as provided — and it must then show up in the assembled archive,
+    which is the evidence this check prefers anyway.
     """
     out = list(text)
     depth = 0
     for match in re.finditer(r"^[^\n]*$", text, re.MULTILINE):
         line = match.group(0)
-        token = line.strip().split()[0] if line.strip() else ""
-        if token in (".macro", ".macro:"):
+        token = assembler_directive(line)
+        if ASM_REGION_OPEN.fullmatch(token):
             depth += 1
         if depth:
             for index in range(match.start(), match.end()):
                 if out[index] != "\n":
                     out[index] = " "
-        if token in (".endm", ".endmacro") and depth:
+        if ASM_REGION_CLOSE.fullmatch(token) and depth:
             depth -= 1
     return "".join(out)
+
+
+def assembler_directive(line: str) -> str:
+    """The directive an assembly line issues, `""` when it issues none.
+
+    A label may share the line with the directive it precedes (`retry: .if 0`),
+    so labels are consumed first — reading the *first* token would otherwise
+    take `retry:` and miss the region opener, which keeps every token and
+    breaks the relation.
+    """
+    text = ASM_LEADING_LABELS.sub("", line).strip()
+    return text.split()[0] if text else ""
 
 
 def assembled_sources_in(build_rs: str) -> set[str]:
@@ -1515,6 +706,45 @@ def classify_link_requirements(
     return missing, stale_undeclared, stale_defined, stale_exported
 
 
+def self_test_case_count() -> int:
+    """How many relations `self_test` asserts, **measured** from its own source.
+
+    PR #889 review round 17.  The `[PASS]` line carried a literal that ten
+    review rounds bumped by hand, and by round 16 it read one higher than the
+    harness's real assertion count — a number maintained beside the thing it
+    describes rather than derived from it, which is the shape this file's own
+    scanners are held to.  An assertion is a `failures.append` or a
+    `check_entry` call; a site inside a `for` over a literal sequence runs once
+    per element, which is what makes a loop of token-preserving spellings count
+    as the cases it really is.
+    """
+    tree = ast.parse(Path(__file__).read_text())
+    harness = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "self_test"
+    )
+
+    def count(node: ast.AST, repeats: int) -> int:
+        total = 0
+        for child in ast.iter_child_nodes(node):
+            inner = repeats
+            if isinstance(child, ast.For) and isinstance(child.iter, (ast.Tuple, ast.List)):
+                inner = repeats * len(child.iter.elts)
+            if isinstance(child, ast.Call):
+                called = child.func
+                if (
+                    isinstance(called, ast.Attribute)
+                    and called.attr == "append"
+                    and isinstance(called.value, ast.Name)
+                    and called.value.id == "failures"
+                ) or (isinstance(called, ast.Name) and called.id == "check_entry"):
+                    total += inner
+            total += count(child, inner)
+        return total
+
+    return count(harness, 1)
+
+
 def self_test() -> int:
     """Token-preserving checks on the two derivations.
 
@@ -1642,6 +872,73 @@ def self_test() -> int:
         )
     if "lean_real" not in got:
         failures.append("a real assembly provider beside a macro definition was lost (round 16)")
+
+    # PR #889 review round 17: `.if 0` is the assembler's own `#if 0`, one
+    # preprocessing stage later, and a repeat block may repeat zero times.
+    # Every fixture keeps the `.global` and its label.
+    for label, region in (
+        ("an assembler conditional", ".if 0\n    .global lean_ghost\nlean_ghost:\n    ret\n.endif\n"),
+        ("an `.ifdef` region", ".ifdef SOMETHING\n    .global lean_ghost\nlean_ghost:\n    ret\n.endif\n"),
+        ("the `.else` half of a conditional",
+         ".ifdef X\n    nop\n.else\n    .global lean_ghost\nlean_ghost:\n    ret\n.endif\n"),
+        ("a repeat block", ".rept 0\n    .global lean_ghost\nlean_ghost:\n    ret\n.endr\n"),
+        ("a conditional sharing its line with a label",
+         "retry: .if 0\n    .global lean_ghost\nlean_ghost:\n    ret\n.endif\n"),
+    ):
+        got = asm_definitions_in(region + "    .global lean_real\nlean_real:\n    ret\n")
+        if "lean_ghost" in got:
+            failures.append(
+                f"a `.global`/label pair inside {label} counted as an assembly provider "
+                "(round 17)"
+            )
+        if "lean_real" not in got:
+            failures.append(
+                f"a real assembly provider after {label} was lost (round 17)"
+            )
+
+    # PR #889 review round 17: the attribute is **located** on the string-free
+    # view.  Both fixtures keep the `link_name` text; in neither is it an
+    # attribute of the declaration, so the requirement is the Rust name.
+    renamed_in_raw_doc_rust = (
+        'extern "C" {\n'
+        '    #[doc = r#"#[link_name = \'lean_kernel_main\']"#]\n'
+        '    fn lean_beta(x: u64);\n'
+        '}\n'
+    ).replace("\'", '"')
+    if extern_declarations_in(renamed_in_raw_doc_rust, "fixture") != {"lean_beta"}:
+        failures.append(
+            "a `#[link_name]` quoted inside a raw-string doc attribute renamed the "
+            "declaration beside it (round 17)"
+        )
+    raw_link_name_rust = (
+        'extern "C" {\n'
+        '    #[link_name = r"actual_symbol"]\n'
+        '    fn local_name(x: u64) -> u64;\n'
+        '}\n'
+    )
+    if extern_declarations_in(raw_link_name_rust, "fixture") != {"actual_symbol"}:
+        failures.append(
+            "a `#[link_name]` written with a raw string literal was not honoured (round 17)"
+        )
+    # PR #889 review round 17: what opens an `extern` block is the keyword and a
+    # brace, not the eleven characters `extern "C" {`.  Every accepted spelling
+    # keeps the declaration; the two refused ones keep the keyword.
+    for label, spelling, opens in (
+        ("a raw ABI literal", 'extern r"C" {\n    fn lean_beta(x: u64);\n}\n', True),
+        ("a hashed raw ABI literal", 'extern r#"C"# {\n    fn lean_beta(x: u64);\n}\n', True),
+        ("an omitted ABI", "extern {\n    fn lean_beta(x: u64);\n}\n", True),
+        ("another ABI", 'extern "C-unwind" {\n    fn lean_beta(x: u64);\n}\n', True),
+        ("the 2024 `unsafe extern`", 'unsafe extern "C" {\n    fn lean_beta(x: u64);\n}\n', True),
+        ("an `extern fn` definition",
+         'pub extern "C" fn lean_beta(x: u64) {\n    let _ = x;\n}\n', False),
+        ("an `extern crate`", "extern crate alloc;\nfn lean_beta(x: u64) {}\n", False),
+    ):
+        collected = "lean_beta" in extern_declarations_in(spelling, "fixture")
+        if collected != opens:
+            failures.append(
+                f"{label} was read as {'no ' if opens else ''}`extern` block, so its "
+                f"declaration was {'lost' if opens else 'collected'} (round 17)"
+            )
 
     renamed_in_comment_rust = (
         'extern "C" {\n'
@@ -1842,419 +1139,17 @@ def self_test() -> int:
     if missing != ["lean_alpha"]:
         failures.append("a data object under a function extern's name satisfied the requirement")
 
-    # --- PR #889 review rounds 3 and 5: the boot entry, once exported, IS the checked boot ---
-    # A stand-in for `Platform/FFI.lean`: the two references, one reader, the
-    # writers, and the checked wrapper over them.  The self-test's fixture must be
-    # no thinner than the file it stands for, so it carries a theorem naming the
-    # callee (theorems execute nothing) and a pure boot (`bootFromPlatform`).
-    ffi = (
-        "namespace SeLe4n.Platform.FFI\n"
-        "initialize kernelStateRef : IO.Ref Nat ← IO.mkRef 0\n"
-        "initialize kernelLabelingContextRef : IO.Ref Nat ← IO.mkRef 0\n"
-        "def getKernelState : IO Nat :=\n  kernelStateRef.get\n"
-        "def initialiseKernelState (st : Nat) : IO Unit :=\n  kernelStateRef.set st\n"
-        "def initialiseKernelLabelingContext (ctx : Nat) : IO Unit :=\n"
-        "  kernelLabelingContextRef.set ctx\n"
-        "def modifyGetKernelState (f : Nat → Nat × Nat) : IO Nat :=\n"
-        "  kernelStateRef.modifyGet f\n"
-        "def bootFromPlatform (cfg : Nat) : Nat := cfg\n"
-        "def bootAndInitialiseFromPlatformOn (cores : Nat) (cfg : Nat) : IO Unit := do\n"
-        "  initialiseKernelState (bootFromPlatform cfg)\n"
-        "  initialiseKernelLabelingContext 0\n"
-        "def bootAndInitialiseFromPlatform (cfg : Nat) (ctx : Nat) : IO Unit :=\n"
-        "  bootAndInitialiseFromPlatformOn 4 cfg\n"
-        "def bootAndInitialisePlatform (platform : Type) (cfg : Nat) : IO Unit :=\n"
-        "  bootAndInitialiseFromPlatformOn 4 cfg\n"
-        "def bootAndInitialiseRPi5 (cfg : Nat) : IO Unit :=\n"
-        "  bootAndInitialisePlatform RPi5Platform cfg\n"
-        "theorem bootAndInitialisePlatform_eq (cfg : Nat) :\n"
-        "    bootAndInitialisePlatform Unit cfg = bootAndInitialisePlatform Unit cfg := rfl\n"
-        # PR #889 review round 12: the halts the `.error` arm must reach are
-        # derived from the tree, so the fixture carries the real seeds — the
-        # `@[extern]` primitives — and the aliases that stand for them, under
-        # the namespaces they really live in.  A fixture without them would
-        # exercise a check that could never fire.
-        "@[extern \"ffi_fatal_halt\"]\n"
-        "opaque ffiFatalHalt : BaseIO Unit\n"
-        "@[extern \"ffi_fatal_halt_all\"]\n"
-        "opaque ffiFatalHaltAll : BaseIO Unit\n"
-        "end SeLe4n.Platform.FFI\n"
-        "namespace SeLe4n.Kernel.Concurrency\n"
-        "def fatalHalt : BaseIO Unit :=\n  Platform.FFI.ffiFatalHalt\n"
-        "def fatalHaltAll : BaseIO Unit :=\n  Platform.FFI.ffiFatalHaltAll\n"
-        "def haltIfAsked (b : Bool) : BaseIO Unit :=\n"
-        "  if b then Platform.FFI.ffiFatalHaltAll else pure ()\n"
-        "end SeLe4n.Kernel.Concurrency\n"
-    )
-
-    def entry(body: str, attrs: str = "@[export lean_kernel_main]", params: str = "") -> str:
-        return attrs + "\ndef leanKernelMain" + params + " : IO Unit := " + body + "\n"
-
-    def check_entry(name: str, body: str, accept: bool,
-                    attrs: str = "@[export lean_kernel_main]", params: str = "") -> None:
-        found = boot_entry_binding_failures(
-            {"ffi": ffi, "entry": entry(body, attrs, params)}
-        )
-        if accept and found:
-            failures.append(f"an entry of an accepted shape was refused — {name}: {found}")
-        if not accept and not found:
-            failures.append(f"a boot entry that keeps the token and breaks the relation was accepted — {name}")
-
-    # The executing shapes.  PR #889 review round 9: executing the call is
-    # necessary and not sufficient — the entry must BRANCH on the checked
-    # boot's `Except` and halt on `.error`, since a failed boot installs no
-    # kernel state and returning to Rust would idle the image as if it had
-    # booted.  So the accepted shapes are the two branching ones.
-    check_entry("`match ←` scrutinee with a halting error arm",
-                "do\n  match ← SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n"
-                "  | .ok _ => pure ()\n  | .error _ => SeLe4n.Platform.FFI.ffiFatalHalt", True)
-    check_entry("bound with `←`, matched below, error arm halts",
-                "do\n  let booted ← SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg\n"
-                "  match booted with\n  | .ok _ => pure ()\n"
-                "  | .error _ => SeLe4n.Platform.FFI.ffiFatalHaltAll", True)
-    check_entry("a reader after the branch is not an installer",
-                "do\n  match ← SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n"
-                "  | .ok _ => pure ()\n  | .error _ => SeLe4n.Platform.FFI.ffiFatalHalt\n"
-                "  let st ← getKernelState\n  pure ()", True)
-    # Round 9's token-preserving mutations: the call is executed in every one.
-    check_entry("`let _ ←` discards the boot's result (round 9)",
-                "do\n  let _ ← SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg\n  pure ()", False)
-    check_entry("`discard` drops the boot's result (round 9)",
-                "discard <| SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg", False)
-    check_entry("a bare call as the last statement leaves the failure unhandled (round 9)",
-                "do\n  IO.println \"booting\"\n  SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg", False)
-    check_entry("the result is matched with no `.error` arm (round 9)",
-                "do\n  match ← SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n  | .ok _ => pure ()", False)
-    check_entry("the `.error` arm returns instead of halting (round 9)",
-                "do\n  match ← SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n"
-                "  | .ok _ => pure ()\n  | .error _ => pure ()", False)
-    check_entry("the result is bound and never matched (round 9)",
-                "do\n  let booted ← SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg\n"
-                "  IO.println \"booted\"", False)
-    check_entry("the halt sits in the `.ok` arm, not the `.error` arm (round 9)",
-                "do\n  match ← SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n"
-                "  | .ok _ => SeLe4n.Platform.FFI.ffiFatalHalt\n  | .error _ => pure ()", False)
-    # Round 10: the same two arms in the OTHER order.  Round 9 searched from
-    # the `.error` marker to the end of the match, so this ordering read the
-    # `.ok` arm's halt as the error arm's.
-    check_entry("the halt is in the `.ok` arm, which FOLLOWS the `.error` arm (round 10)",
-                "do\n  match ← SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n"
-                "  | .error _ => pure ()\n  | .ok _ => SeLe4n.Platform.FFI.ffiFatalHalt", False)
-    check_entry("a wildcard stands in for the `.error` arm (round 10)",
-                "do\n  match ← SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n"
-                "  | _ => SeLe4n.Platform.FFI.ffiFatalHalt", False)
-    check_entry("an exit precedes the handling match (round 10)",
-                "do\n  let booted ← SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg\n  return ()\n"
-                "  match booted with\n  | .ok _ => pure ()\n"
-                "  | .error _ => SeLe4n.Platform.FFI.ffiFatalHalt", False)
-    check_entry("the result is rebound before the handling match (round 10)",
-                "do\n  let booted ← SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg\n"
-                "  let booted := Except.ok default\n"
-                "  match booted with\n  | .ok _ => pure ()\n"
-                "  | .error _ => SeLe4n.Platform.FFI.ffiFatalHalt", False)
-    check_entry("a multi-line `.error` arm that halts is still accepted (round 10)",
-                "do\n  match ← SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n"
-                "  | .ok _ => pure ()\n  | .error e =>\n"
-                "    IO.println e\n    SeLe4n.Platform.FFI.ffiFatalHalt", True)
-    # Round 11: the halt is IN the arm but is not what the arm does.
-    check_entry("the `.error` arm's halt sits under a condition (round 11)",
-                "do\n  match ← SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n"
-                "  | .ok _ => pure ()\n"
-                "  | .error _ => if false then SeLe4n.Platform.FFI.ffiFatalHalt else pure ()", False)
-    check_entry("the `.error` arm halts and then continues (round 11)",
-                "do\n  match ← SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n"
-                "  | .ok _ => pure ()\n  | .error e =>\n"
-                "    SeLe4n.Platform.FFI.ffiFatalHalt\n    IO.println e", False)
-    check_entry("the `.error` arm's halt is named in a `let` binding, never run (round 11)",
-                "do\n  match ← SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n"
-                "  | .ok _ => pure ()\n  | .error _ =>\n"
-                "    let stop := SeLe4n.Platform.FFI.ffiFatalHalt\n    pure ()", False)
-    # Round 14: the binder is not always `let`, and the exit is not always the
-    # whole statement.  Both fixtures keep the binding, the match and a halting
-    # `.error` arm exactly where rounds 9-10 require them.
-    check_entry("`have` shadows the boot result before the match (round 14)",
-                "do\n  let booted \u2190 SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg\n"
-                "  have booted : Except String SystemState := .ok default\n"
-                "  match booted with\n  | .ok _ => pure ()\n"
-                "  | .error _ => SeLe4n.Platform.FFI.ffiFatalHaltAll", False)
-    check_entry("a conditional exit precedes the handling match (round 14)",
-                "do\n  let booted \u2190 SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg\n"
-                "  if skip then return ()\n  match booted with\n  | .ok _ => pure ()\n"
-                "  | .error _ => SeLe4n.Platform.FFI.ffiFatalHaltAll", False)
-    check_entry("a conditional exit precedes the call itself (round 14)",
-                "do\n  if skip then return ()\n"
-                "  match \u2190 SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n  | .ok _ => pure ()\n"
-                "  | .error _ => SeLe4n.Platform.FFI.ffiFatalHaltAll", False)
-    check_entry("a `for` binder shadows the boot result (round 14)",
-                "do\n  let booted \u2190 SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg\n"
-                "  for booted in results do\n    IO.println booted\n"
-                "  match booted with\n  | .ok _ => pure ()\n"
-                "  | .error _ => SeLe4n.Platform.FFI.ffiFatalHaltAll", False)
-    # Round 13: a nested `match` is not a sibling.  Every one of these keeps a
-    # `| .error _ => <halt>` line in the declaration, at an accepted position
-    # for round 10's arm parser, and breaks the relation that the arm belongs
-    # to the boot-result match — or that the halt is what the arm *does*.
-    check_entry("a nested `.error` arm stands in for a wildcard-only handler (round 13)",
-                "do\n  match \u2190 SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n  | _ =>\n"
-                "    if cond then\n      match other with\n"
-                "      | .error _ => SeLe4n.Platform.FFI.ffiFatalHaltAll\n"
-                "      | .ok _ => pure ()\n    else\n      pure ()", False)
-    check_entry("a nested `.error` arm halts inside `.ok` while the real one returns (round 13)",
-                "do\n  match \u2190 SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n  | .ok _ =>\n"
-                "    match other with\n    | .error _ => SeLe4n.Platform.FFI.ffiFatalHaltAll\n"
-                "    | .ok _ => pure ()\n  | .error _ => pure ()", False)
-    check_entry("the `.error` arm's halt is nested in a multi-line conditional (round 13)",
-                "do\n  match \u2190 SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n  | .ok _ => pure ()\n"
-                "  | .error _ =>\n    if cond then\n      pure ()\n"
-                "    else\n      SeLe4n.Kernel.Concurrency.fatalHaltAll", False)
-    # ...and the two shapes the column rule must NOT refuse: a nested match
-    # whose own `.error` returns is no business of the outer arm (round 10's
-    # flattening rejected this one), and `=> do` opens the block below it.
-    check_entry("a nested match inside `.ok` does not disqualify a halting `.error` (round 13)",
-                "do\n  match \u2190 SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n  | .ok _ =>\n"
-                "    match other with\n    | .error _ => pure ()\n    | .ok _ => pure ()\n"
-                "  | .error _ => SeLe4n.Platform.FFI.ffiFatalHaltAll", True)
-    check_entry("`=> do` opens the arm's block, whose terminal statement halts (round 13)",
-                "do\n  match \u2190 SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n  | .ok _ => pure ()\n"
-                "  | .error e => do\n    IO.println e\n    SeLe4n.Kernel.Concurrency.fatalHaltAll", True)
-    # Round 16: a prefix is not the expression.  Both mutations keep the
-    # approved qualified name at the accepted position and change what the
-    # expression *does* with the action it names — the pipe passes it to a
-    # function that ignores it, so the boot never runs and the halt never
-    # fires.
-    check_entry("a pipe discards the boot action in the scrutinee (round 16)",
-                "do\n  match \u2190 SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg "
-                "|> fun _ => pure (Except.ok default) with\n"
-                "  | .ok _ => pure ()\n"
-                "  | .error _ => SeLe4n.Platform.FFI.ffiFatalHaltAll", False)
-    check_entry("a pipe discards the halt action in the `.error` arm (round 16)",
-                "do\n  match \u2190 SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n"
-                "  | .ok _ => pure ()\n"
-                "  | .error _ => SeLe4n.Platform.FFI.ffiFatalHaltAll |> fun _ => pure ()", False)
-    check_entry("an operator after the bound boot action is refused (round 16)",
-                "do\n  let booted \u2190 SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg "
-                "<|> pure (Except.ok default)\n"
-                "  match booted with\n  | .ok _ => pure ()\n"
-                "  | .error _ => SeLe4n.Platform.FFI.ffiFatalHaltAll", False)
-    check_entry("a multiline binder pattern cannot shadow a qualified call (round 16)",
-                "do\n  let \u27e8bootAndInitialiseRPi5,\n    _\u27e9 := "
-                "(fun _ => pure (.ok default), ())\n"
-                "  match \u2190 SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n"
-                "  | .ok _ => pure ()\n"
-                "  | .error _ => SeLe4n.Platform.FFI.ffiFatalHaltAll", True)
-    # Round 12: the name is not the definition.  Each of these keeps every
-    # token rounds 3-11 read — the callee's spelling, the halt's spelling, at
-    # the accepted position — and breaks the relation that the spelling
-    # *resolves* to the declaration it stands for.
-    # Round 16: with the qualified spelling required, these three keep their
-    # shadowing binder and are **accepted** — a `let`, a parameter or a
-    # `renaming` clause cannot bind a dotted name, which is exactly why the
-    # contract collapses rounds 12/14/15's binder-parsing problem.
-    check_entry("a local binder cannot shadow the qualified callee (round 16)",
-                "do\n  let bootAndInitialiseRPi5 := fun _ => pure (.ok default)\n"
-                "  match \u2190 SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n"
-                "  | .ok _ => pure ()\n  | .error _ => SeLe4n.Platform.FFI.ffiFatalHaltAll", True)
-    check_entry("a parameter of the same short name cannot shadow it either (round 16)",
-                "do\n  match \u2190 SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n"
-                "  | .ok _ => pure ()\n  | .error _ => SeLe4n.Platform.FFI.ffiFatalHaltAll",
-                True, params=" (bootAndInitialiseRPi5 : Nat \u2192 IO (Except String Nat))")
-    check_entry("the callee under a foreign qualifier (round 12)",
-                "do\n  match \u2190 Fake.bootAndInitialiseRPi5 cfg with\n"
-                "  | .ok _ => pure ()\n  | .error _ => SeLe4n.Platform.FFI.ffiFatalHaltAll", False)
-    check_entry("the callee fully qualified is the same declaration (round 12)",
-                "do\n  match \u2190 SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n"
-                "  | .ok _ => pure ()\n  | .error _ => SeLe4n.Platform.FFI.ffiFatalHaltAll", True)
-    check_entry("the halt is a local of the same name (round 12)",
-                "do\n  let ffiFatalHalt : BaseIO Unit := pure ()\n"
-                "  match \u2190 SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n"
-                "  | .ok _ => pure ()\n  | .error _ => ffiFatalHalt", False)
-    check_entry("the halt under a foreign qualifier (round 12)",
-                "do\n  match \u2190 SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n"
-                "  | .ok _ => pure ()\n  | .error _ => Fake.ffiFatalHalt", False)
-    check_entry("a helper that halts only conditionally is not a halt (round 12)",
-                "do\n  match \u2190 SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n"
-                "  | .ok _ => pure ()\n  | .error _ => SeLe4n.Kernel.Concurrency.haltIfAsked true", False)
-    check_entry("an alias of the primitive is the halt (round 12)",
-                "do\n  match \u2190 SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n"
-                "  | .ok _ => pure ()\n  | .error _ => SeLe4n.Kernel.Concurrency.fatalHaltAll", True)
-    check_entry("the halt fully qualified (round 12)",
-                "do\n  match \u2190 SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n"
-                "  | .ok _ => pure ()\n"
-                "  | .error _ => SeLe4n.Kernel.Concurrency.fatalHalt", True)
-    # Round 12: a module-level `renaming` alias is the one way a bare name can
-    # denote something the suffix rule says it does not.  `export Foo (bar)`
-    # needs no case — it aliases a declaration the candidate index already sees.
-    renamed_entry = (
-        "open Impostor renaming boot \u2192 bootAndInitialiseRPi5\n"
-        "@[export lean_kernel_main]\ndef leanKernelMain : IO Unit := do\n"
-        "  match \u2190 SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n"
-        "  | .ok _ => pure ()\n  | .error _ => SeLe4n.Platform.FFI.ffiFatalHaltAll\n"
-    )
-    if boot_entry_binding_failures({"ffi": ffi, "entry": renamed_entry}):
-        failures.append(
-            "a qualified call was refused because the file renames another declaration to the "
-            "callee's SHORT name (round 16 — a `renaming` clause cannot bind a dotted name)"
-        )
-    qualified_under_renaming = renamed_entry.replace(
-        "match \u2190 SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg",
-        "match \u2190 SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg",
-    )
-    if boot_entry_binding_failures({"ffi": ffi, "entry": qualified_under_renaming}):
-        failures.append(
-            "a qualified call was refused because the file carries an unrelated `renaming` "
-            "clause (round 12)"
-        )
-
-    # Round 12, the attribute list: `@[inline, export lean_kernel_main]` is the
-    # same export, and `build.rs` has read it since round 2.  Here it decided
-    # whether the declaration was checked **at all**, so the broken shape is
-    # the case that matters — it must still be refused.
-    check_entry("a combined attribute list still carries the export (round 12)",
-                "do\n  match \u2190 SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n"
-                "  | .ok _ => pure ()\n  | .error _ => SeLe4n.Platform.FFI.ffiFatalHaltAll", True,
-                attrs="@[inline, export lean_kernel_main]")
-    check_entry("a broken entry behind a combined attribute list is still checked (round 12)",
-                "do\n  let _ \u2190 SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg\n  pure ()", False,
-                attrs="@[inline, export lean_kernel_main]")
-    check_entry("an export attribute broken across lines is still the export (round 12)",
-                "do\n  discard <| SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg", False,
-                attrs="@[export\n  lean_kernel_main]")
-    # Token-preserving mutations: every one keeps `bootAndInitialisePlatform` in
-    # the declaration and breaks the relation (round 3's check passed them all).
-    check_entry("the callee named only in a string literal",
-                "do\n  IO.println \"bootAndInitialiseRPi5\"\n"
-                "  initialiseKernelState (bootFromPlatform cfg)", False)
-    check_entry("the call nested under a dead branch",
-                "do\n  if false then\n    match ← SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n"
-                "    | .ok _ => pure ()\n    | .error _ => SeLe4n.Platform.FFI.ffiFatalHalt\n"
-                "  initialiseKernelState (bootFromPlatform cfg)", False)
-    check_entry("the action bound with `:=` and never run",
-                "do\n  let boot := SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg\n"
-                "  initialiseKernelState (bootFromPlatform cfg)", False)
-    check_entry("the call executed, then the live path routed around it",
-                "do\n  match ← SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n"
-                "  | .ok _ => pure ()\n  | .error _ => SeLe4n.Platform.FFI.ffiFatalHalt\n"
-                "  initialiseKernelState (bootFromPlatform cfg)", False)
-    check_entry("the generic entry at another platform (round 7)",
-                "do\n  match ← bootAndInitialisePlatform SimSingleCorePlatform cfg with\n"
-                "  | .ok _ => pure ()\n  | .error _ => SeLe4n.Platform.FFI.ffiFatalHalt", False)
-    check_entry("the generic entry at the right platform is still not the hardware entry (round 7)",
-                "do\n  match ← bootAndInitialisePlatform RPi5Platform cfg with\n"
-                "  | .ok _ => pure ()\n  | .error _ => SeLe4n.Platform.FFI.ffiFatalHalt", False)
-    check_entry("the unchecked wrapper re-run after the checked one",
-                "do\n  match ← SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n"
-                "  | .ok _ => pure ()\n  | .error _ => SeLe4n.Platform.FFI.ffiFatalHalt\n"
-                "  let _ ← bootAndInitialiseFromPlatform cfg ctx\n  pure ()", False)
-    check_entry("a `return` above the call",
-                "do\n  return ()\n  match ← SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n"
-                "  | .ok _ => pure ()\n  | .error _ => SeLe4n.Platform.FFI.ffiFatalHalt", False)
-    check_entry("an installer reached through a helper",
-                "do\n  match ← SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n"
-                "  | .ok _ => pure ()\n  | .error _ => SeLe4n.Platform.FFI.ffiFatalHalt\n"
-                "  installRaw cfg\n\n"
-                "def installRaw (cfg : Nat) : IO Unit :=\n  kernelStateRef.set (bootFromPlatform cfg)",
-                False)
-    check_entry("the reference written directly",
-                "do\n  match ← SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n"
-                "  | .ok _ => pure ()\n  | .error _ => SeLe4n.Platform.FFI.ffiFatalHalt\n"
-                "  kernelStateRef.set 0",
-                False)
-    check_entry("a `where`-form body with no `:=`", "leanKernelMain where\n  x := 0", False)
-    doc_only = (
-        "/-- calls bootAndInitialiseRPi5 -/\n@[export lean_kernel_main]\n"
-        "def leanKernelMain : IO Unit := pure ()\n"
-    )
-    if not boot_entry_binding_failures({"ffi": ffi, "f": doc_only}):
-        failures.append("a boot entry naming the callee only in its docstring was accepted")
-    elsewhere = (
-        "@[export lean_kernel_main]\ndef leanKernelMain : IO Unit := pure ()\n\n"
-        "def other : IO Unit := do\n  match ← SeLe4n.Platform.FFI.bootAndInitialiseRPi5 cfg with\n"
-        "  | .ok _ => pure ()\n  | .error _ => SeLe4n.Platform.FFI.ffiFatalHalt\n"
-    )
-    if not boot_entry_binding_failures({"ffi": ffi, "f": elsewhere}):
-        failures.append("a boot entry whose neighbour makes the call was accepted")
-    if boot_entry_binding_failures({"ffi": ffi, "f": "def other : Nat := 0\n"}):
-        failures.append("the absence of a boot entry was reported as a binding failure")
-
-    # Round 12: the two derivations the resolution rests on, and the suffix
-    # rule itself.  A halt set that silently came back empty would make every
-    # `.error` arm unrecognisable; one that closed under mere *reference* would
-    # accept `haltIfAsked`, which returns.
-    derived_halts = halt_definitions({"ffi": ffi})
-    for expected in ("SeLe4n.Platform.FFI.ffiFatalHalt", "SeLe4n.Platform.FFI.ffiFatalHaltAll",
-                     "SeLe4n.Kernel.Concurrency.fatalHalt",
-                     "SeLe4n.Kernel.Concurrency.fatalHaltAll"):
-        if expected not in derived_halts:
-            failures.append(f"the halt derivation missed `{expected}`")
-    if "SeLe4n.Kernel.Concurrency.haltIfAsked" in derived_halts:
-        failures.append(
-            "the halt derivation closed under reference, not alias — a conditional caller "
-            "of the primitive was classified as a halt"
-        )
-    # Round 14: an alias counts only where its body resolves to the halt and to
-    # **nothing else**.  A nearer declaration of the same short name captures
-    # the reference, and the alias then calls something that returns.
-    shadowed = ffi + (
-        "namespace SeLe4n.Kernel.Concurrency.Platform.FFI\n"
-        "def ffiFatalHalt : BaseIO Unit := pure ()\n"
-        "end SeLe4n.Kernel.Concurrency.Platform.FFI\n"
-    )
-    if "SeLe4n.Kernel.Concurrency.fatalHalt" in halt_definitions({"ffi": shadowed}):
-        failures.append(
-            "an alias was approved as a halt although a nearer declaration of the same short "
-            "name captures its body (round 14)"
-        )
-    if "SeLe4n.Platform.FFI.ffiFatalHalt" not in halt_definitions({"ffi": shadowed}):
-        failures.append("the structural halt seed was lost when a decoy was added (round 14)")
-    # Round 16: attribute-shaped text inside a default-value string is not an
-    # attribute.  The declaration below has no `@[extern]` of its own and
-    # RETURNS, so classifying it as a halt would let an `.error` arm fall
-    # through to Rust.
-    decoy_attribute = ffi + (
-        "namespace SeLe4n.Kernel.Concurrency\n"
-        "def fakeHalt (s : String := r#\"@[extern \\\"ffi_fatal_halt\\\"]\"#) : BaseIO Unit :=\n"
-        "  pure ()\n"
-        "end SeLe4n.Kernel.Concurrency\n"
-    )
-    if "SeLe4n.Kernel.Concurrency.fakeHalt" in halt_definitions({"ffi": decoy_attribute}):
-        failures.append(
-            "attribute-shaped text inside a string default was read as a live `@[extern]`, so a "
-            "returning function joined the halt set (round 16)"
-        )
-    if "SeLe4n.Platform.FFI.ffiFatalHalt" not in halt_definitions({"ffi": decoy_attribute}):
-        failures.append("the structural halt seed was lost beside the attribute decoy (round 16)")
-    index = declarations_by_short_name({"ffi": ffi})
-    if index.get("ffiFatalHaltAll") != {"SeLe4n.Platform.FFI.ffiFatalHaltAll"}:
-        failures.append("the declaration index lost the namespace a declaration sits in")
-    for reference, canonical, want in (
-        ("ffiFatalHaltAll", "SeLe4n.Platform.FFI.ffiFatalHaltAll", True),
-        ("FFI.ffiFatalHaltAll", "SeLe4n.Platform.FFI.ffiFatalHaltAll", True),
-        ("_root_.SeLe4n.Platform.FFI.ffiFatalHaltAll",
-         "SeLe4n.Platform.FFI.ffiFatalHaltAll", True),
-        ("Fake.ffiFatalHaltAll", "SeLe4n.Platform.FFI.ffiFatalHaltAll", False),
-        ("Platform.ffiFatalHaltAll", "SeLe4n.Platform.FFI.ffiFatalHaltAll", False),
-        ("ffiFatalHalt", "SeLe4n.Platform.FFI.ffiFatalHaltAll", False),
-    ):
-        if resolves_to(reference, canonical) != want:
-            failures.append(
-                f"the suffix resolution read `{reference}` against `{canonical}` wrongly"
-            )
-
-    # The installer derivation: the writers, closed under reference; the reader
-    # and the pure boot outside it; the references and the theorem outside it.
-    derived = kernel_state_writers({"ffi": ffi})
-    if not EXPECTED_KERNEL_STATE_WRITERS <= derived:
-        failures.append(
-            f"the installer derivation missed {sorted(EXPECTED_KERNEL_STATE_WRITERS - derived)}"
-        )
-    for reader in ("getKernelState", "bootFromPlatform", "kernelStateRef",
-                   "bootAndInitialisePlatform_eq"):
-        if reader in derived:
-            failures.append(f"the installer derivation counted `{reader}` as a writer")
-    # One token turns the reader into a writer: `.get` → `.modify`.
-    mutated = kernel_state_writers({"ffi": ffi.replace("kernelStateRef.get", "kernelStateRef.modify id")})
-    if "getKernelState" not in mutated:
-        failures.append("a `.modify` of the reference was not counted as a write")
+    # PR #889 review round 17: the boot entry's contract is no longer decided
+    # here.  What that entry *is* — whether it executes the checked boot, what
+    # its `.error` arm does, whether a name denotes the declaration it spells —
+    # are questions about elaboration, and eleven review rounds of regular
+    # expressions answered them wrongly one Lean spelling at a time.  They are
+    # answered by the elaborator in `SeLe4n/Testing/BootEntryContract.lean`,
+    # over `Environment`, where the references are resolved constants; that
+    # module's own witnesses (a compliant entry and three token-preserving
+    # deviations) keep it from being vacuous while the entry is still SM10.1's
+    # to write.  What remains here is the link-level reconciliation: symbols,
+    # archives and Rust declarations, which no Lean elaboration can see.
 
     # A HAL declaration whose Lean export exists under ANOTHER spelling: the
     # token `lean_alpha` is present on the Lean side, but the HAL's spelling is
@@ -2351,7 +1246,7 @@ def self_test() -> int:
         for line in failures:
             print(f"         {line}")
         return 1
-    print("[PASS] check_kernel_entry_exports self-test (130 cases)")
+    print(f"[PASS] check_kernel_entry_exports self-test ({self_test_case_count()} cases)")
     return 0
 
 
@@ -2398,49 +1293,16 @@ def main() -> int:
             "[FAIL] no defined, exported symbol found in the assembly sources build.rs "
             "assembles — the assembly provider derivation is broken"
         )
-    writers = kernel_state_writers(sources)
-    missing_writers = sorted(EXPECTED_KERNEL_STATE_WRITERS - writers)
-    leaked_readers = sorted(EXPECTED_KERNEL_STATE_READERS & writers)
-    if missing_writers or leaked_readers:
-        print("[FAIL] the kernel-state installer derivation disagrees with its pin:")
-        for name in missing_writers:
-            print(f"         `{name}` was not derived as an installer (renamed, or the reference "
-                  "it writes moved)")
-        for name in leaked_readers:
-            print(f"         `{name}` was derived as an installer, but it only reads")
-        return 1
-    print(f"[PASS] kernel-state installers derived: {len(writers)} declarations, pinned by "
-          f"{len(EXPECTED_KERNEL_STATE_WRITERS)} writers and {len(EXPECTED_KERNEL_STATE_READERS)} readers")
-    # PR #889 review round 12: the two name-resolution derivations, pinned
-    # against the real tree.  Both are read from what the code does — the halt
-    # set from the `@[extern]` primitives and their aliases, the callee from
-    # the declarations named `bootAndInitialiseRPi5` — so a Lean rename is
-    # picked up automatically; a *Rust*-side rename of `ffi_fatal_halt`, or a
-    # second declaration of the callee's short name, is loud here rather than
-    # silently making the boot-entry check unable to read an `.error` arm.
-    halts = halt_definitions(sources)
-    if halts != set(EXPECTED_HALT_DEFINITIONS):
-        print("[FAIL] the halt derivation disagrees with its pin:")
-        for name in sorted(set(EXPECTED_HALT_DEFINITIONS) - halts):
-            print(f"         `{name}` was not derived as a halt (renamed, or its "
-                  f"`@[extern]` binding changed)")
-        for name in sorted(halts - set(EXPECTED_HALT_DEFINITIONS)):
-            print(f"         `{name}` was derived as a halt and is not pinned as one")
-        return 1
-    callees = sorted(declarations_by_short_name(sources).get(BOOT_ENTRY_CALLEE, set()))
-    if callees != [EXPECTED_BOOT_ENTRY_CALLEE]:
-        print("[FAIL] the checked platform boot does not resolve to one declaration:")
-        print(f"         pinned `{EXPECTED_BOOT_ENTRY_CALLEE}`, derived {callees}")
-        return 1
-    print(f"[PASS] name resolution pinned: {len(halts)} halts derived from "
-          f"{len(HALT_PRIMITIVE_EXTERNS)} FFI primitives, and `{BOOT_ENTRY_CALLEE}` resolves "
-          f"to `{EXPECTED_BOOT_ENTRY_CALLEE}` alone")
-    binding_failures = boot_entry_binding_failures(sources)
-    if binding_failures:
-        print("[FAIL] the boot entry is exported but not bound to the checked platform boot:")
-        for line in binding_failures:
-            print(f"         {line}")
-        return 1
+    # PR #889 review round 17: the kernel-state installer derivation, the halt
+    # derivation, the callee resolution and the boot-entry binding check all
+    # lived here and all read Lean source with regular expressions.  They are
+    # now `SeLe4n/Testing/BootEntryContract.lean`, which asks the elaborated
+    # environment instead — `getExportNameFor?` for the entry,
+    # `Expr.getUsedConstants` for what it calls, and a reachability walk for
+    # what installs state — and fails its own elaboration, so
+    # `scripts/test_tier1_build.sh` runs it on every push.  A spelling cannot
+    # defeat it: by the time a declaration is in the environment there are no
+    # spellings left, only constants.
     if not (exports & externs):
         sys.exit(
             "[FAIL] the Lean `@[export]` set and the HAL `extern \"C\"` set are disjoint. "
@@ -2490,7 +1352,7 @@ def main() -> int:
 
     required = link_requirements(externs, asm_globals, EXPECTED_UNRESOLVED, exports)
     boot_entry = (
-        "exported and bound to `bootAndInitialisePlatform`"
+        "exported; its contract is checked by `SeLe4n/Testing/BootEntryContract.lean`"
         if BOOT_ENTRY_SYMBOL in exports
         else "not yet exported (SM10.1), reconciled as expected unresolved"
     )

@@ -358,9 +358,6 @@
  "al1bStateWithNullCapSlot": {
   "tests/ModelIntegritySuite.lean": 5
  },
- "an10_": {
-  "scripts/ak7_cascade_baseline.sh": 1
- },
  "an10_a_validObjId_accepts_nonzero": {
   "tests/An10CascadeSuite.lean": 2
  },
