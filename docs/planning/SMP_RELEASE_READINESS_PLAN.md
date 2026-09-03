@@ -738,6 +738,17 @@ code views parse raw strings, `statement_may_exit` guards the statements inside
 a tripwire's failure branch, and a value binding of `lean_ready` disables the
 bare spelling.
 
+**Review round 16 (PR #889, same version).**  Seven, four of them the shape
+rounds 12, 14 and 15 had each fixed one spelling of.  The response is a
+contract rather than another spelling: the boot entry names the checked boot
+and the halt by their fully-qualified names — nothing local can shadow a dotted
+name — and the accepted expression is the call and its arguments, not a prefix
+of one; the readiness guard is written `crate::lean_ready::lean_ready(..)`,
+which every guard in the HAL already does.  Three genuine parser defects are
+fixed as such: the halt seed locates its attribute on the string-free view, an
+`extern` block is split into items so an attribute binds to the item it
+decorates, and an uninvoked `.macro` body is not an assembly provider.
+
 **Note on RR5.10–RR5.14** (the rows that replaced one XL).  Two findings shape
 the split, and the row they replaced named neither: one is an ordering defect
 it inherited, the other is the reason its "cannot be separate PRs" claim is

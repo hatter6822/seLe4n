@@ -1338,45 +1338,34 @@ fn verify_classifier_scanner() {
              in a file that does not resolve it — a same-scope helper of that name would pass"
         );
     }
-    // ...and the same file WITH the import resolves it, so the idiom is not
-    // refused for its own sake.
-    let imported = format!("use crate::lean_ready::lean_ready;\n{bare}");
-    if let Err(why) = classifier_status(
-        &rust_code_views(&imported).1,
-        &rust_code_views(GOOD_HOST).1,
-        bare_ready_call_resolves(&rust_code_views(&imported).1),
-    ) {
-        panic!("build.rs self-check: an imported bare gate was refused: {why}");
-    }
-    // PR #889 review round 15: a *value* binding shadows it too, and the
-    // import stays used — which is why the `fn`-only test passed it.  Each
-    // mutation keeps the real `use` and the bare call exactly where they are.
-    for (name, binding) in [
+    // PR #889 review round 16: the bare spelling is refused **whatever** the
+    // file imports or binds.  Rounds 9 and 15 each added one more shadowing
+    // form to detect (a same-scope `fn`, a `let` closure, an `as` alias) and
+    // round 16 exhibited another (`let (lean_ready, _) = …`); the set of Rust
+    // binding forms is unbounded, so the gate stops enumerating them and
+    // requires the absolute path, which nothing local can shadow.  Every guard
+    // in this HAL already writes it that way.
+    for (name, prelude) in [
+        ("with the genuine import", "use crate::lean_ready::lean_ready;\n"),
         (
-            "a `let` closure of the same name",
-            "    let lean_ready = |_: usize| true;\n",
+            "with the import and a destructuring shadow",
+            "use crate::lean_ready::lean_ready;\n    let (lean_ready, _) = (|_: usize| true, ());\n",
         ),
-        (
-            "a `mut` binding of the same name",
-            "    let mut lean_ready = |_: usize| true;\n",
-        ),
-        (
-            "an `as` alias of another item",
-            "use crate::other::gate as lean_ready;\n",
-        ),
+        ("with nothing at all", ""),
     ] {
-        let bound = format!("use crate::lean_ready::lean_ready;\n{binding}{bare}");
+        let file = format!("{prelude}{bare}");
         if classifier_status(
-            &rust_code_views(&bound).1,
+            &rust_code_views(&file).1,
             &rust_code_views(GOOD_HOST).1,
-            bare_ready_call_resolves(&rust_code_views(&bound).1),
+            bare_ready_call_resolves(&rust_code_views(&file).1),
         )
         .is_ok()
         {
-            panic!("build.rs self-check: {name} still resolved the bare spelling to the gate");
+            panic!("build.rs self-check: an unqualified gate call was accepted {name}");
         }
     }
-    // ...unless the file also defines a `fn lean_ready` of its own.
+    // ...and a file defining its own `fn lean_ready` is refused too (round 9's
+    // case, kept as a redundant pin now that the bare spelling never counts).
     let shadowed = format!(
         "use crate::lean_ready::lean_ready;\nfn lean_ready(_c: usize) -> bool {{ true }}\n{bare}"
     );
@@ -4204,62 +4193,22 @@ fn gate_call_offset(body: &str, allow_bare: bool) -> Option<usize> {
 /// writes the path in full, so the strict reading costs nothing; the import
 /// form is admitted because refusing a legitimate Rust idiom would push a
 /// future author to the bare spelling this refuses.
-/// **PR #889 review round 15**: is the bare name `lean_ready` *bound* anywhere
-/// in this file — by a `let`, a closure parameter, a function parameter, an
-/// `as` alias or an assignment — rather than only imported and called?
+/// **PR #889 review round 16**: the readiness gate must be called by its
+/// **qualified path**, `crate::lean_ready::lean_ready(..)`.  Bare-name support
+/// is gone, so this is now a constant `false`.
 ///
-/// Over-approximating on purpose: every form here is a way for the spelling to
-/// denote something other than the gate, and refusing the bare spelling costs
-/// an author nothing but a qualifier.  A path segment (`crate::lean_ready::`)
-/// is not a binding and is excluded explicitly.
-fn bare_ready_name_is_bound(file: &str) -> bool {
-    const BINDERS: [&str; 6] = [
-        "let lean_ready",
-        "let mut lean_ready",
-        "as lean_ready",
-        "|lean_ready|",
-        "|lean_ready:",
-        "lean_ready =",
-    ];
-    if BINDERS.iter().any(|form| file.contains(form)) {
-        return true;
-    }
-    // A parameter or field `lean_ready: T`, but not the path segment
-    // `lean_ready::gate`.
-    let needle = "lean_ready:";
-    let mut search = 0usize;
-    while let Some(hit) = file[search..].find(needle) {
-        let at = search + hit;
-        search = at + needle.len();
-        if !file[search..].starts_with(':') {
-            return true;
-        }
-    }
+/// Rounds 9, 15 and 16 each taught this predicate one more way a bare name can
+/// denote something other than the gate — a same-scope `fn`, a `let` closure,
+/// an `as` alias, a destructuring `let (lean_ready, _) = …` — and the space of
+/// Rust binding forms that shadow an imported name is unbounded, so the
+/// enumeration could never be finished.  The contract removes the question
+/// instead: an absolute path cannot be shadowed by any local binding, and
+/// **every** guard in this HAL already writes it that way, so the rule costs
+/// the tree nothing and costs a future author one `use` line they no longer
+/// need.  The parameter stays plumbed through the scanners so the shape of the
+/// question — "may a bare call count here?" — remains visible at each site.
+fn bare_ready_call_resolves(_file: &str) -> bool {
     false
-}
-
-fn bare_ready_call_resolves(file: &str) -> bool {
-    if word_occurrences(file, "fn lean_ready") > 0 {
-        return false;
-    }
-    // **PR #889 review round 15**: a *value* binding shadows the import just as
-    // a same-scope `fn` does.  `let lean_ready = |_: usize| true;` inside a seam
-    // leaves the `use` non-unused, so the import test still passed, and the
-    // dominance check then accepted the closure as the gate — an unready PE
-    // entering Lean behind a predicate that is not the predicate.  File-wide
-    // and therefore conservative: one such binding anywhere in the file
-    // disables the bare spelling for the whole file, and the remedy is to write
-    // the call qualified, which is always available.
-    if bare_ready_name_is_bound(file) {
-        return false;
-    }
-    file.lines().any(|line| {
-        let l = line.trim();
-        l.starts_with("use ")
-            && l.contains("crate::lean_ready::")
-            && (l.contains("lean_ready::lean_ready")
-                || (l.contains('{') && word_occurrences(l, "lean_ready") >= 2))
-    })
 }
 
 /// The argument of the bare readiness call a positive guard's condition

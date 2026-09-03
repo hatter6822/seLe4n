@@ -1141,6 +1141,65 @@ the **kernel**, the second live defect any round has found outside the gates.
   disables the bare spelling for the file — conservative, and the remedy is a
   qualifier.
 
+### The review round, sixteenth pass — and the contract that ends the class
+
+Codex's sixteenth review (on the round-15 head) raised seven findings, and four
+of them are the same shape as findings from rounds 12, 14 and 15.  That is the
+signal to stop patching spellings and look at the cause.
+
+**The cause.**  `check_kernel_entry_exports.py` was being grown into a Lean
+parser out of regexes, one adversarial spelling per round: `have` shadows a
+name, then a `for` binder, then `let ⟨a, _⟩ := …`, then the same pattern across
+lines; a call's head resolves, then the pipe after it discards the action the
+head named.  Each fix was correct and each left the class open, because *the
+set of valid Lean spellings that defeat a regex is unbounded* while the set the
+gate had seen was finite.  The reviewer proposed the exit three times over two
+rounds — "or require the boot call to use a fully qualified name" — and it is
+right: the gate's subject is one declaration that **does not exist yet**
+(`lean_kernel_main` is SM10.1's to write), so a contract on how it must be
+written costs nothing today and makes the question decidable.
+
+**The contract.**  Two rules replace the parsing:
+
+* **The checked boot and the halt are named by their fully-qualified names.**
+  Lean's local binders bind single-component identifiers, so no `let`, `have`,
+  `for`, pattern, parameter or `renaming` clause can shadow
+  `SeLe4n.Platform.FFI.bootAndInitialiseRPi5`.  Rounds 12, 14 and 15's
+  shadowing fixtures are now *acceptances* in the self-test — they keep the
+  shadowing binder and are accepted, because the binder cannot reach the
+  qualified reference.
+* **The whole expression, not its head.**  What follows the callee must be
+  arguments and nothing else (`LEAN_CALL_TAIL`), so
+  `← bootAndInitialiseRPi5 cfg |> fun _ => pure (.ok default)` — which calls
+  the boot only to construct an action the pipe discards — and an arm ending
+  in `ffiFatalHalt |> fun _ => pure ()` are both refused.  A scrutinee or a
+  terminal expression carrying any operator is refused as unreadable rather
+  than read as its prefix.
+
+The same collapse applies to the readiness gate: `bare_ready_call_resolves` is
+now a constant `false`, because the guard must be written
+`crate::lean_ready::lean_ready(..)` — which every guard in the HAL already
+does, so the rule costs the tree nothing and ends the enumeration of Rust
+binding forms that rounds 9, 15 and 16 had been extending.
+
+**Three genuine parser defects** are fixed rather than contracted away:
+
+* `halt_definitions` handed the strings-**kept** declaration header to the
+  attribute parser, so `def fakeHalt (s : String := r#"@[extern
+  "ffi_fatal_halt"]"#)` joined the halt set and a returning function could end
+  an `.error` arm.  The attribute is now *located* on the string-free view and
+  only its quoted argument read from the aligned kept one — round 14's rule at
+  a site the round-14 sweep missed.
+* `extern_declarations_in` advanced its attribute window only across `fn`
+  declarations, so a `#[link_name]` on an intervening `static` was donated to
+  the next function.  The block is split into `;`-terminated **items** and each
+  item's attributes are its own.
+* `asm_definitions_in` counted a `.global` and label inside an **uninvoked**
+  `.macro` as an emitted definition, which could subtract a missing HAL extern
+  as "provided by the assembly".  Macro-definition regions are blanked: a
+  symbol that really is defined through an invocation shows up in the assembled
+  archive, which is the evidence this check prefers anyway.
+
 ### Tests
 
 * `tests/SmpIdleSuite.lean` — 28 surface anchors for the new boot surface

@@ -771,6 +771,27 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   header, because both were taken from the strings-kept view.  Structure
   (braces, attributes, statements) comes from the string-free view; only
   the text a predicate is *about* comes from the aligned kept one.
+
+  **When the enumeration cannot be finished, state a contract instead**
+  (PR #889 review round 16).  The four preceding rules all say *resolve
+  the text into the structure it stands for* — and rounds 12, 14, 15 and
+  16 showed the limit of doing that with regexes over a language you are
+  not parsing: each round taught the binder scan one more Lean form
+  (`have`, `for`, `let ⟨a, _⟩ :=`, the same pattern across lines) and
+  the head-matching call scan one more way to discard what the head
+  named (`f x |> fun _ => …`).  The fixes were right and the class
+  stayed open, because the set of valid spellings that defeat a regex is
+  unbounded while the set a gate has seen is finite.  Where the subject
+  is code **this project writes** — and especially where it does not
+  exist yet — the exit is to require a canonical spelling and refuse the
+  rest: the boot entry names the checked boot and the halt by their
+  *fully-qualified* names (Lean's local binders bind single-component
+  identifiers, so nothing local can shadow one) and the accepted
+  expression is the call *and its arguments*, never a prefix of a larger
+  expression; the readiness guard is written `crate::lean_ready::lean_ready(..)`
+  and the bare spelling never counts.  A contract on unwritten code
+  costs nothing and makes the question decidable; keep parsing only
+  where the subject is code you do not control.
 - **Invariant/Operations split**: each kernel subsystem has
   `Operations.lean` (transitions) and `Invariant.lean` (proofs). Keep
   this separation.
