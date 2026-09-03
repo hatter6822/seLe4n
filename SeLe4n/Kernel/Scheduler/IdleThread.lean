@@ -121,4 +121,23 @@ theorem isIdleThreadId_iff (tid : SeLe4n.ThreadId) :
   · rintro ⟨c, rfl⟩
     exact isIdleThreadId_idleThreadId c
 
+/-- **WS-RR RR5.13** (PR #889 review): is `oid` some core's idle **object** slot?
+    The object-store key form of `isIdleThreadId`, for the boot validator: a
+    platform config may not place an object at an idle slot, or the idle enqueue
+    would overwrite it. -/
+def isIdleObjId (oid : SeLe4n.ObjId) : Bool :=
+  isIdleThreadId (SeLe4n.ThreadId.ofNat oid.toNat)
+
+/-- **WS-RR RR5.13**: every idle thread's object slot is recognised. -/
+theorem isIdleObjId_idleThreadId_toObjId (c : CoreId) :
+    isIdleObjId (idleThreadId c).toObjId = true :=
+  isIdleThreadId_idleThreadId c
+
+/-- **WS-RR RR5.13**: a slot the recogniser rejects is no core's idle slot. -/
+theorem idleThreadId_toObjId_ne_of_not_isIdleObjId (oid : SeLe4n.ObjId)
+    (h : isIdleObjId oid = false) (c : CoreId) : (idleThreadId c).toObjId ≠ oid := by
+  intro hEq
+  rw [← hEq, isIdleObjId_idleThreadId_toObjId] at h
+  exact Bool.noConfusion h
+
 end SeLe4n.Kernel

@@ -170,10 +170,19 @@ pub const KERNEL_ENTRY_ACQUIRE_FUEL: u64 = 1_000_000;
 
 /// **WS-SM SM5.I**: the lock-order tripwire.
 ///
-/// Acquiring the kernel-entry lock while holding
+/// Acquiring the kernel-entry lock while **this core** holds
 /// [`crate::shootdown::SHOOTDOWN_ROUND_LOCK`] is the one edge that
 /// would close a cycle. No caller does it today; this makes a future
 /// one fail loudly at the point of the mistake rather than as a hang.
+///
+/// **PR #889 review**: the question is ownership, not held-ness.  The
+/// round lock is held by *some* core for the whole of every shootdown in
+/// flight — that is its purpose — and during that window every other
+/// core's timer tick, `SVC` or reschedule SGI reaches this bracket and
+/// must **wait** here, self-servicing its own acknowledgment so the
+/// initiator can finish.  A tripwire on the global held flag halted
+/// exactly those innocent cores; it now asks whether the executing core
+/// itself is the holder (`round_lock_held_by`), which the lock records.
 ///
 /// **WS-RR RR5.18**: this was a `debug_assert!`, which a `--release`
 /// build compiles out — and the image that ships is a `--release` build
@@ -190,12 +199,13 @@ pub const KERNEL_ENTRY_ACQUIRE_FUEL: u64 = 1_000_000;
 /// [`crate::cpu::fatal_halt`] is the barrier every other such defect in
 /// this crate takes.
 #[inline]
-pub fn assert_not_holding_round_lock() {
-    if crate::shootdown::round_lock_is_held() {
+pub fn assert_not_holding_round_lock(core_id: usize) {
+    if crate::shootdown::round_lock_held_by(core_id) {
         crate::kprintln!(
-            "[kernel-entry] FATAL: WS-SM SM5.I lock order violated — the \
+            "[kernel-entry] FATAL: WS-SM SM5.I lock order violated on core {} — the \
              kernel-entry lock must be acquired OUTSIDE SHOOTDOWN_ROUND_LOCK; \
-             acquiring it while holding the round lock closes a lock-order cycle"
+             acquiring it while holding the round lock closes a lock-order cycle",
+            core_id
         );
         crate::cpu::fatal_halt();
     }
@@ -251,7 +261,7 @@ pub fn release_kernel_entry_in(lock: &TicketLock) {
 /// stuck inside a transition, so stopping only the core that noticed
 /// would leave the others committing against a state nobody owns.
 pub fn acquire_kernel_entry(core_id: usize) -> u64 {
-    assert_not_holding_round_lock();
+    assert_not_holding_round_lock(core_id);
     if !acquire_kernel_entry_in(
         &KERNEL_ENTRY_LOCK,
         core_id,
@@ -298,6 +308,41 @@ mod tests {
     extern crate std;
 
     use super::*;
+
+    /// **PR #889 review**: the lock-order tripwire asks who *owns* the round
+    /// lock.  Another core holding it is the ordinary state of a shootdown
+    /// in flight, and this core's kernel entry must pass the tripwire and
+    /// wait; only the executing core holding it is the lock-order cycle the
+    /// tripwire exists to stop.  Both halves on the global lock, serialised
+    /// against the shootdown module's own global-lock test through its mutex.
+    #[test]
+    fn tripwire_trips_on_own_round_lock_hold_only() {
+        let _guard = crate::shootdown::GLOBAL_ROUND_LOCK_TEST_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        assert!(
+            crate::shootdown::round_lock_try_acquire_in(&crate::shootdown::SHOOTDOWN_ROUND_LOCK, 3),
+            "the global round lock must be free at the start of this test"
+        );
+        // Another core (3) holds it: core 0's entry passes the tripwire.
+        let other = std::panic::catch_unwind(|| assert_not_holding_round_lock(0));
+        assert!(
+            other.is_ok(),
+            "a round lock held by ANOTHER core must not trip this core's lock-order \
+             tripwire — that halted every innocent core during a shootdown"
+        );
+        // The holder itself (3) taking the kernel-entry lock is the cycle.
+        let own = std::panic::catch_unwind(|| assert_not_holding_round_lock(3));
+        assert!(
+            own.is_err(),
+            "the holder re-entering must halt (a panic on the host lane)"
+        );
+        crate::shootdown::round_lock_release();
+        assert!(
+            std::panic::catch_unwind(|| assert_not_holding_round_lock(3)).is_ok(),
+            "released, nobody trips"
+        );
+    }
 
     /// An uncontended acquire returns immediately and does not need to
     /// service anything.

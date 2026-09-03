@@ -5153,12 +5153,15 @@ run_check "INVARIANT" rg -n '^def bootAndInitialiseFromPlatform' SeLe4n/Platform
 run_check "INVARIANT" rg -n '^def writeFfiRegistersToTcb' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^def readReturnValue' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^def syscallDispatchFromAbi' SeLe4n/Platform/FFI.lean
-# WS-RR RR5.1/RR5.2 (audit round): the platform binding carries the deployment
-# labeling and its admission proof, the RPi5 binding's is the confined
-# production context (pinned by `rfl`), and the FFI boot entry that boots under
-# the binding's labeling is provably the checked idle boot plus the installs.
-run_check "INVARIANT" rg -n '^  deploymentLabeling : SeLe4n.Kernel.LabelingContext' SeLe4n/Platform/Contract.lean
-run_check "INVARIANT" rg -n '^  deploymentLabelingAdmitted :' SeLe4n/Platform/Contract.lean
+# WS-RR RR5.1/RR5.2 (audit round, revised in the review round): the platform
+# binding carries the deployment labeling's source (a `DeploymentLabeling`), so
+# admission and full validity are theorems of every binding rather than fields;
+# the RPi5 binding's labeling is the confined production context (pinned by
+# `rfl`), and the FFI boot entry that boots under the binding's labeling is
+# provably the checked idle boot plus the installs.
+run_check "INVARIANT" rg -n '^  deploymentLabeling : SeLe4n.Kernel.DeploymentLabeling' SeLe4n/Platform/Contract.lean
+run_negative_check "INVARIANT" rg -n '^  deploymentLabelingAdmitted :' SeLe4n/Platform/Contract.lean
+run_check "INVARIANT" rg -n '^theorem _root_.SeLe4n.Platform.PlatformBinding.labeling_valid' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem rpi5_deploymentLabeling ' SeLe4n/Platform/RPi5/Contract.lean
 run_check "INVARIANT" rg -n '^theorem rpi5UpperDomainBase_clears_idle_range' SeLe4n/Platform/RPi5/Contract.lean
 run_check "INVARIANT" rg -n '^def bootAndInitialisePlatform ' SeLe4n/Platform/FFI.lean
@@ -5640,7 +5643,7 @@ import SeLe4n.Platform.RPi5.Contract
 -- Boot-path fail-open closure, labeling rows: the labeling context fails
 -- closed. The exact guard, its admissibility predicate (sentinel and idle
 -- threads excluded), the production context, and the platform binding that
--- carries it with its admission proof.
+-- carries its source, with admission and validity as theorems.
 #check @SeLe4n.Kernel.separationWitnessAdmissible
 #check @SeLe4n.Kernel.separationWitnessAdmissible_iff
 #check @SeLe4n.Kernel.separationWitnessAdmissible_idleThreadId
@@ -5662,6 +5665,18 @@ import SeLe4n.Platform.RPi5.Contract
 #check @SeLe4n.Kernel.isInsecureDefaultContext_harnessLabelingContext
 #check @SeLe4n.Platform.PlatformBinding.labeling
 #check @SeLe4n.Platform.PlatformBinding.labeling_admitted
+#check @SeLe4n.Platform.PlatformBinding.labeling_valid
+#check @SeLe4n.Kernel.confinedDeploymentLabeling
+#check @SeLe4n.Kernel.harnessDeploymentLabeling
+-- Review round: the enqueued idle TCB is the queued form and the production boot
+-- state is thread-state consistent; the checked boot reserves the idle slots.
+#check @SeLe4n.Platform.Boot.queuedIdleThread
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_idle_threadState
+#check @SeLe4n.Platform.Boot.bootFromPlatformChecked_ok_threadStateConsistent
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_threadStateConsistent
+#check @SeLe4n.Platform.Boot.idleSlotsReserved
+#check @SeLe4n.Platform.Boot.bootFromPlatformChecked_ok_shape
+#check @SeLe4n.Platform.Boot.bootFromPlatformChecked_ok_idleSlotsFreshAt
 -- SM0.G — PlatformBinding extension
 #check @SeLe4n.Platform.PlatformBinding.coreCount
 #check @SeLe4n.Platform.PlatformBinding.bootCoreId

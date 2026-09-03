@@ -203,7 +203,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~50413 lines)
+- `CHANGELOG.md` (~50829 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22582 lines)
 - `tests/SmpInformationFlowSuite.lean` (~11772 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~7902 lines)
@@ -214,11 +214,11 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~4997 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4750 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
+- `SeLe4n/Platform/Boot.lean` (~4665 lines)
 - `SeLe4n/Model/State.lean` (~4503 lines)
-- `docs/spec/SELE4N_SPEC.md` (~4261 lines)
+- `docs/spec/SELE4N_SPEC.md` (~4310 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
 - `tests/NegativeStateSuite.lean` (~4115 lines)
-- `SeLe4n/Platform/Boot.lean` (~4104 lines)
 - `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~3924 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3919 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRead.lean` (~3788 lines)
@@ -239,8 +239,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~2844 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2784 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~2755 lines)
+- `SeLe4n/Platform/FFI.lean` (~2689 lines)
 - `SeLe4n/Kernel/Capability/Operations.lean` (~2674 lines)
-- `SeLe4n/Platform/FFI.lean` (~2646 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2639 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean` (~2637 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean` (~2602 lines)
@@ -275,19 +275,19 @@ To find files that need pagination today, run:
 - `docs/dev_history/planning/V3E_IPC_UNWRAP_CAPS_LOOP_COMPOSITION_PLAN.md` (~1891 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean` (~1890 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md` (~1889 lines)
+- `SeLe4n/Kernel/InformationFlow/Policy.lean` (~1881 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1859 lines)
+- `tests/InformationFlowSuite.lean` (~1834 lines)
 - `SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean` (~1833 lines)
 - `SeLe4n/Model/FreezeProofs.lean` (~1827 lines)
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1822 lines)
 - `SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean` (~1822 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.6_WORKSTREAM_PLAN.md` (~1801 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md` (~1800 lines)
-- `tests/InformationFlowSuite.lean` (~1796 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` (~1794 lines)
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~1778 lines)
 - `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` (~1776 lines)
 - `SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean` (~1746 lines)
-- `SeLe4n/Kernel/InformationFlow/Policy.lean` (~1746 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
 - `docs/planning/UNFINISHED_SMP_WORK.md` (~1723 lines)
@@ -326,12 +326,12 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1238 lines)
 - `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean` (~1235 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1233 lines)
+- `tests/SyscallDispatchSuite.lean` (~1226 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1216 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1195 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1186 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
-- `tests/SyscallDispatchSuite.lean` (~1177 lines)
 - `tests/SmpCacheMaintenanceSuite.lean` (~1170 lines)
 - `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1169 lines)
 - `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~1168 lines)
@@ -367,13 +367,13 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.28.0_COMPREHENSIVE.md` (~921 lines)
 - `tests/SmpCbsSuite.lean` (~919 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
+- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~911 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~877 lines)
 - `SeLe4n/Kernel/IPC/Operations/Fault.lean` (~868 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
-- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~853 lines)
 - `docs/planning/SMP_RUST_HAL_PLAN.md` (~848 lines)
 - `tests/SmpTimerSuite.lean` (~840 lines)
 - `tests/DecodingSuite.lean` (~833 lines)
@@ -998,6 +998,12 @@ code may assume:
   timer tick, `.reschedule` SGI receiver, secondary bring-up entry, cross-core
   suspend); the primary's `lean_kernel_main` boot install remains outside and
   its ordering is an SM10.1 obligation (see kernel_entry.rs module docs).
+  The lock-order tripwire asks **ownership**, not held-ness (PR #889 review):
+  the round lock records its holder (`round_lock_held_by`, owner word
+  `core + 1`, `0` free), so a core entering while *another* core's shootdown
+  holds the round lock waits and self-services its acknowledgment, and only
+  the holder itself re-entering halts — a held/free flag halted every innocent
+  core for the length of every shootdown, in release builds.
   Live WCRT is therefore weaker
   than `PerCoreWcrt.lean`'s fine-lock bound, which remains a statement about the
   intended discipline.
@@ -1204,6 +1210,17 @@ code may assume:
   or rescheduled again; returning an error hands it the CPU forever.  New code
   must not read the SVC seam's not-ready arm as recoverable.
 
+  The gate precedes **every** SVC outcome (PR #889 review): `dispatch_svc`
+  consults it before its id and argument-count prefilters, and the trap's SVC
+  arm consults it before the full-width `x7` narrowing and the unknown-syscall
+  delivery — the halt's reason is the resume (a thread on a not-ready core is
+  never preempted again), which no prefilter rejection escapes.  `build.rs`'s
+  `svc_arm_readiness_gate_status` pins the order structurally, because a halt
+  inside an `extern "C"` handler aborts a host test rather than unwinding into
+  it; the behaviour is pinned at the plain-Rust seam in the two readiness
+  integration binaries, and no test in the library binary may assume core 0's
+  readiness in either direction — the timer suite there marks it mid-run.
+
   RR5.8/RR5.9 close the compile-time half: a Lean `extern` may be **declared,
   defined or exported only under `feature = "hw_target"`**, and a host-lane
   stand-in of the same name only under its negation
@@ -1255,11 +1272,17 @@ code may assume:
   that stays the integrator's, stated by `LabelingContextValid`'s other two
   conjuncts and discharged structurally by the constructor.  **Which labeling a
   hardware boot installs is bound, not described**: `PlatformBinding` carries
-  `deploymentLabeling` together with its admission proof
-  (`deploymentLabelingAdmitted`), the RPi5 binding's is
+  the **`DeploymentLabeling` source** (`deploymentLabeling`), and
+  `PlatformBinding.labeling` is the constructor's output on it — so admission
+  (`PlatformBinding.labeling_admitted`) and the whole of `LabelingContextValid`
+  (`PlatformBinding.labeling_valid`) are theorems of every binding rather than
+  obligations each one carries (PR #889 review: the guard decides
+  non-triviality alone, and a stored bare context it admits could still label
+  a thread and its own TCB object incompatibly).  The RPi5 binding's is
+  `confinedDeploymentLabeling rpi5UpperDomainBase`, so its labeling is
   `confinedLabelingContext rpi5UpperDomainBase` (`rpi5_deploymentLabeling`,
   by `rfl`; the boundary clears the boot VSpace root and the idle range), the
-  simulation bindings' is `harnessLabelingContext`, and
+  simulation bindings' is `harnessDeploymentLabeling`, and
   `Platform.FFI.bootAndInitialisePlatform` boots under the binding's labeling —
   provably the checked idle boot plus the two installs, with the refusal arm
   unreachable (`bootAndInitialisePlatform_eq_checked_boot`).
@@ -1280,7 +1303,21 @@ code may assume:
   (`bootFromPlatformCheckedWithIdleThreads_currentAllNone`), because a current
   slot pointing at a queued thread violates `queueCurrentConsistent` from the
   first instruction; each core's first scheduling point dispatches idle out of
-  its own queue.  The boot queue is **characterised, not bounded**: on every
+  its own queue.  The enqueue stores the **queued** idle form
+  (`queuedIdleThread`, `threadState := .Ready`; PR #889 review): storing the
+  dispatched form `createIdleThread` (`.Running`) while queuing it made every
+  successful production boot violate `threadStateConsistent` on every core,
+  which the harness hid by syncing the field before checking it.  With that,
+  and with `bootSafeObjectCheck` requiring every config TCB `.Inactive`, the
+  production boot state is `threadStateConsistent` with no hypothesis beyond
+  the boot (`bootFromPlatformCheckedWithIdleThreads_threadStateConsistent`).
+  The idle slots are **reserved** by `PlatformConfig.wellFormed`
+  (`idleSlotsReserved`: no `initialObjects` entry and no boot VSpace root in
+  `[idleThreadIdBase, idleThreadIdBase + numCores)`), so a successful checked
+  boot is fresh (`bootFromPlatformChecked_ok_idleSlotsFreshAt`) and the idle
+  fold provably overwrites nothing without a freshness hypothesis — before,
+  an accepted config object at an idle id was silently replaced by the fold.
+  The boot queue is **characterised, not bounded**: on every
   core it is exactly the empty queue with that core's idle thread enqueued
   (`bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_eq`, membership
   `…_mem_runQueueOnCore_iff`), so its well-formedness and its members'
@@ -1498,8 +1535,14 @@ code may assume:
   carried **one** `T lean_*` entry symbol while `kernel_entry.rs` declared five
   as hard `extern "C"`.  `scripts/check_kernel_entry_exports.py` (Tier 1) now
   verifies each symbol against the built static archive — object code, not a
-  text anchor — over a requirement *derived* as the intersection of the Lean
-  tree's `@[export]`s and the HAL's `extern "C"` declarations.
+  text anchor — over a requirement *derived* from **every** HAL `extern "C"`
+  declaration: each must be defined by the archive, by the HAL's own assembly
+  (`.global` directives), or by a reconciled `EXPECTED_UNRESOLVED` entry
+  (`lean_kernel_main`, until SM10.1 writes it; an entry the HAL stops
+  declaring or the archive starts defining fails).  The first cut required
+  the *intersection* of the Lean exports and the HAL declarations, which is
+  exactly the set a rename on either side leaves — the unresolved spelling
+  drops out of both and the gate passed (PR #889 review).
 - **The WS-SM theorem total is measured, not summed — and it counts
   propositions, not registrations.**
   `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean` registers one entry per

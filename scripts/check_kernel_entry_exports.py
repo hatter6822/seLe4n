@@ -23,15 +23,31 @@ anchor on the `@[export]` line is satisfied by a module nothing imports.  This
 gate asks the question of the **object code**: build the library a kernel image
 links and read its symbol table.
 
-**The required set is derived, not listed.**  It is the intersection of
+**The required set is derived, not listed — and it is one-sided on purpose.**
+Every symbol the HAL declares inside an `extern "C" { … }` block is a symbol
+the linker must resolve, so every one of them is required to be defined by
+*something*: the built Lean archive (the `@[export]`s), the HAL's own assembly
+(`.global` directives in its `.S` sources), or — reconciled below — a provider
+that does not exist yet.  A sixth seam declared by the HAL joins the
+requirement automatically, and a hand-written table could not see the seam
+that does not exist yet — the mistake this gate exists to avoid making again.
 
-  * the Lean tree's `@[export …]` symbols, and
-  * the symbols the HAL declares inside an `extern "C" { … }` block,
+**Why not the intersection of the two sides** (PR #889 review): the first cut
+required `exports ∩ externs`, which discards exactly the mismatches a link
+would fail on.  Rename a HAL declaration while its Lean `@[export]` keeps the
+old name — or the reverse — and *neither* spelling is in the intersection; as
+long as one other entry still intersects, the requirement is non-empty and the
+gate passes while the eventual image has an unresolved symbol.  Requiring
+every HAL declaration instead catches a rename on either side, because the
+HAL's spelling is then unresolved.  What the Lean side exports beyond what the
+HAL declares is not a link requirement and is not checked here.
 
-so a sixth seam added on either side joins the requirement automatically, and a
-symbol dropped from both leaves it without anyone editing this file.  A
-hand-written table could not see the seam that does not exist yet — the mistake
-this gate exists to avoid making again.
+**Expected-unresolved symbols are reconciled, not exempted.**  `lean_kernel_main`
+is declared by the HAL and provided by nobody until SM10.1 writes the primary's
+boot install.  It is listed in `EXPECTED_UNRESOLVED` with its reason, and the
+list is held in both directions: a listed symbol the HAL no longer declares, or
+one the archive now defines, fails the gate — a stale entry is the exemption
+that outlived its reason.
 
 Exits 77 (the project's NOT-RUN code) when `nm` is unavailable, so a missing
 binutils cannot be scored as a pass.
@@ -51,6 +67,16 @@ LEAN_ROOT = REPO / "SeLe4n"
 HAL_SRC = REPO / "rust" / "sele4n-hal" / "src"
 ARCHIVE = REPO / ".lake" / "build" / "lib" / "libseLe4n_SeLe4n.a"
 
+#: HAL `extern "C"` declarations that no provider defines **yet**, with the
+#: reason.  Reconciled in both directions by `classify_link_requirements`: an
+#: entry the HAL no longer declares, or one the archive now defines, fails.
+EXPECTED_UNRESOLVED: dict[str, str] = {
+    "lean_kernel_main": (
+        "the primary's boot install; SM10.1 provides it — no `@[export lean_kernel_main]` "
+        "exists yet, and the HAL's declaration is the seam waiting for it"
+    ),
+}
+
 LINE_COMMENT = re.compile(r"--[^\n]*")
 BLOCK_COMMENT = re.compile(r"/-.*?-/", re.DOTALL)
 LEAN_EXPORT = re.compile(r"@\[export\s+([A-Za-z_][A-Za-z0-9_]*)\s*\]")
@@ -58,6 +84,9 @@ RUST_LINE_COMMENT = re.compile(r"//[^\n]*")
 RUST_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
 EXTERN_BLOCK = re.compile(r'extern\s+"C"\s*\{')
 EXTERN_FN = re.compile(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(")
+ASM_LINE_COMMENT = re.compile(r"//[^\n]*")
+ASM_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
+ASM_GLOBAL = re.compile(r"^\s*\.(?:global|globl)\s+([A-Za-z_.$][A-Za-z0-9_.$]*)", re.MULTILINE)
 
 
 def strip_lean_comments(text: str) -> str:
@@ -109,6 +138,54 @@ def hal_extern_declarations() -> set[str]:
     return found
 
 
+def asm_globals_in(text: str) -> set[str]:
+    """Symbols the HAL's own assembly exports (`.global` / `.globl` directives).
+
+    Comments (`//`, `/* */`) are blanked first, so a directive that survives
+    only in a comment provides nothing.  A `.global` is a *provider*: a HAL
+    `extern "C"` declaration it names (`secondary_entry`, from `boot.S`) is
+    resolved by the assembly archive, not by Lean, and is not a requirement on
+    the Lean archive.
+    """
+    text = ASM_LINE_COMMENT.sub("", ASM_BLOCK_COMMENT.sub("", text))
+    return set(ASM_GLOBAL.findall(text))
+
+
+def hal_asm_globals() -> set[str]:
+    found: set[str] = set()
+    for path in sorted(HAL_SRC.rglob("*.S")):
+        found.update(asm_globals_in(path.read_text()))
+    return found
+
+
+def classify_link_requirements(
+    externs: set[str],
+    asm_globals: set[str],
+    expected_unresolved: dict[str, str],
+    defined: set[str],
+) -> tuple[list[str], list[str], list[str]]:
+    """Decide the gate from the four derived sets.
+
+    Returns `(missing, stale_undeclared, stale_defined)`:
+
+      * `missing` — HAL declarations no provider defines: not an assembly
+        global, not expected-unresolved, and not in the archive.  A rename on
+        either side of a kernel entry lands here, because the HAL's spelling
+        is then unresolved.
+      * `stale_undeclared` — expected-unresolved entries the HAL no longer
+        declares (the exemption outlived the declaration).
+      * `stale_defined` — expected-unresolved entries the archive now defines
+        (the exemption outlived its reason and must be removed).
+
+    All three must be empty for the gate to pass.
+    """
+    required = sorted(externs - asm_globals - set(expected_unresolved))
+    missing = [symbol for symbol in required if symbol not in defined]
+    stale_undeclared = sorted(s for s in expected_unresolved if s not in externs)
+    stale_defined = sorted(s for s in expected_unresolved if s in defined)
+    return missing, stale_undeclared, stale_defined
+
+
 def self_test() -> int:
     """Token-preserving checks on the two derivations.
 
@@ -148,12 +225,78 @@ def self_test() -> int:
     if extern_declarations_in(commented_rust, "fixture"):
         failures.append("a commented-out `extern \"C\"` block was collected")
 
+    # --- PR #889 review: the link requirement is one-sided, and reconciled ---
+    live_asm = ".global _start\n.globl secondary_entry\n// .global ghost_entry\n/* .global other */\n"
+    if asm_globals_in(live_asm) != {"_start", "secondary_entry"}:
+        failures.append("assembly `.global`/`.globl` providers were not collected exactly")
+
+    # A HAL declaration whose Lean export exists under ANOTHER spelling: the
+    # token `lean_alpha` is present on the Lean side, but the HAL's spelling is
+    # unresolved.  The intersection passed this; the requirement must not.
+    missing, stale_undeclared, stale_defined = classify_link_requirements(
+        externs={"lean_alpah", "lean_beta"},
+        asm_globals=set(),
+        expected_unresolved={},
+        defined={"lean_alpha", "lean_beta"},
+    )
+    if missing != ["lean_alpah"] or stale_undeclared or stale_defined:
+        failures.append(
+            "a HAL declaration misspelt against its Lean export was not reported as missing"
+        )
+
+    # The reverse rename: the Lean export moved and the HAL kept the old name.
+    missing, _, _ = classify_link_requirements(
+        externs={"lean_alpha"}, asm_globals=set(), expected_unresolved={}, defined={"lean_alpha2"}
+    )
+    if missing != ["lean_alpha"]:
+        failures.append("a Lean export renamed away from the HAL's declaration was not reported")
+
+    # An assembly global satisfies a HAL declaration without the archive.
+    missing, _, _ = classify_link_requirements(
+        externs={"secondary_entry", "lean_beta"},
+        asm_globals={"secondary_entry"},
+        expected_unresolved={},
+        defined={"lean_beta"},
+    )
+    if missing:
+        failures.append("an assembly-provided declaration was reported as missing")
+
+    # An expected-unresolved entry is honoured while its reason holds...
+    missing, stale_undeclared, stale_defined = classify_link_requirements(
+        externs={"lean_kernel_main", "lean_beta"},
+        asm_globals=set(),
+        expected_unresolved={"lean_kernel_main": "SM10.1"},
+        defined={"lean_beta"},
+    )
+    if missing or stale_undeclared or stale_defined:
+        failures.append("a live expected-unresolved entry was not honoured")
+
+    # ...fails once the archive defines it (the exemption outlived its reason)...
+    _, _, stale_defined = classify_link_requirements(
+        externs={"lean_kernel_main"},
+        asm_globals=set(),
+        expected_unresolved={"lean_kernel_main": "SM10.1"},
+        defined={"lean_kernel_main"},
+    )
+    if stale_defined != ["lean_kernel_main"]:
+        failures.append("an expected-unresolved entry the archive defines was not reported")
+
+    # ...and fails once the HAL no longer declares it (the entry outlived the seam).
+    _, stale_undeclared, _ = classify_link_requirements(
+        externs={"lean_beta"},
+        asm_globals=set(),
+        expected_unresolved={"lean_kernel_main": "SM10.1"},
+        defined={"lean_beta"},
+    )
+    if stale_undeclared != ["lean_kernel_main"]:
+        failures.append("an expected-unresolved entry the HAL no longer declares was not reported")
+
     if failures:
         print("[FAIL] check_kernel_entry_exports self-test:")
         for line in failures:
             print(f"         {line}")
         return 1
-    print("[PASS] check_kernel_entry_exports self-test (6 cases)")
+    print("[PASS] check_kernel_entry_exports self-test (13 cases)")
     return 0
 
 
@@ -186,6 +329,7 @@ def main() -> int:
 
     exports = lean_exports()
     externs = hal_extern_declarations()
+    asm_globals = hal_asm_globals()
     if not exports:
         sys.exit("[FAIL] no `@[export …]` found under SeLe4n/ — the derivation is broken")
     if not externs:
@@ -193,9 +337,12 @@ def main() -> int:
             '[FAIL] no `extern "C"` declaration found under rust/sele4n-hal/src/ — '
             "the derivation is broken"
         )
-
-    required = sorted(exports & externs)
-    if not required:
+    if not asm_globals:
+        sys.exit(
+            "[FAIL] no `.global` found under rust/sele4n-hal/src/*.S — the assembly "
+            "provider derivation is broken"
+        )
+    if not (exports & externs):
         sys.exit(
             "[FAIL] the Lean `@[export]` set and the HAL `extern \"C\"` set are disjoint. "
             "Every kernel entry is declared on both sides, so an empty intersection means "
@@ -203,24 +350,47 @@ def main() -> int:
         )
 
     defined = archive_defined_symbols(ARCHIVE)
-    missing = [symbol for symbol in required if symbol not in defined]
+    missing, stale_undeclared, stale_defined = classify_link_requirements(
+        externs, asm_globals, EXPECTED_UNRESOLVED, defined
+    )
+    failed = False
     if missing:
-        print("[FAIL] kernel entry symbols missing from the built archive:")
+        failed = True
+        print("[FAIL] HAL `extern \"C\"` declarations no provider defines:")
         for symbol in missing:
+            side = (
+                "the Lean tree exports it, but the archive does not define it — its module is "
+                "outside `SeLe4n.lean`'s import closure (add it there and drop it from "
+                "`scripts/staged_module_allowlist.txt`)"
+                if symbol in exports
+                else "nothing exports it — a Lean `@[export]` under another spelling, a renamed "
+                "seam, or a declaration with no provider (SM10.1 seams go in "
+                "`EXPECTED_UNRESOLVED` with their reason)"
+            )
+            print(f"         {symbol}: {side}")
+    if stale_undeclared:
+        failed = True
+        print("[FAIL] EXPECTED_UNRESOLVED entries the HAL no longer declares (remove them):")
+        for symbol in stale_undeclared:
             print(f"         {symbol}")
-        print()
-        print(
-            "  The HAL declares each of these as `extern \"C\"`, and the Lean tree carries an\n"
-            "  `@[export]` for each, but the archive a kernel image links does not define them.\n"
-            "  An `@[export]` emits a symbol only when its module is in `SeLe4n.lean`'s import\n"
-            "  closure: add the defining module there, and drop it from\n"
-            "  `scripts/staged_module_allowlist.txt` in the same change."
-        )
+    if stale_defined:
+        failed = True
+        print("[FAIL] EXPECTED_UNRESOLVED entries the archive now defines (remove them):")
+        for symbol in stale_defined:
+            print(f"         {symbol}")
+    if failed:
         return 1
 
-    print(f"[PASS] all {len(required)} Lean kernel entry symbols are defined in the archive")
+    required = sorted(externs - asm_globals - set(EXPECTED_UNRESOLVED))
+    print(
+        f"[PASS] all {len(required)} HAL kernel-entry declarations are defined in the archive "
+        f"({len(externs & asm_globals)} resolved by the HAL's assembly, "
+        f"{len(EXPECTED_UNRESOLVED)} expected unresolved and reconciled)"
+    )
     for symbol in required:
         print(f"         {symbol}")
+    for symbol, reason in sorted(EXPECTED_UNRESOLVED.items()):
+        print(f"         {symbol}: expected unresolved — {reason}")
     return 0
 
 

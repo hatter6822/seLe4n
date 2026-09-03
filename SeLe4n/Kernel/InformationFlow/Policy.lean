@@ -1041,17 +1041,42 @@ theorem indexPartitionedLabelingContext_threadLabel_above
 
     This is what the hardware boot installs, and the claim is a definition
     rather than a sentence: the Raspberry Pi 5 binding's `deploymentLabeling`
-    is `confinedLabelingContext rpi5UpperDomainBase`
-    (`Platform.RPi5.rpi5_deploymentLabeling`), and
+    is `confinedDeploymentLabeling rpi5UpperDomainBase`, so its labeling is
+    `confinedLabelingContext rpi5UpperDomainBase`
+    (`Platform.RPi5.rpi5_deploymentLabeling`, by `rfl`), and
     `Platform.FFI.bootAndInitialisePlatform` boots under whatever labeling the
     binding carries.  It is a *deployment* choice in the sense that the boundary
     is configurable, and a *kernel* guarantee in the sense that whatever
     boundary is chosen, the resulting context is `LabelingContextValid` and
-    admitted by the fail-closed guard — which is why `PlatformBinding` can
-    demand the admission proof as a field. -/
+    admitted by the fail-closed guard — which is why `PlatformBinding` stores
+    the `DeploymentLabeling` source and both facts are theorems of every
+    binding (`PlatformBinding.labeling_admitted`,
+    `PlatformBinding.labeling_valid`) rather than proofs it demands. -/
 def confinedLabelingContext (upperDomainBase : Nat) : LabelingContext :=
   indexPartitionedLabelingContext upperDomainBase
     SecurityLabel.lowTrusted SecurityLabel.highUntrusted (by decide)
+
+/-- WS-RR RR5.1 (PR #889 review): the production labeling as a
+    `DeploymentLabeling` — the **source** `confinedLabelingContext` is built from.
+
+    A platform binding carries this rather than the `LabelingContext` it yields,
+    because the structure's constructor is what discharges every
+    `LabelingContextValid` obligation (`deploymentLabelingContext_valid`): a
+    binding that stored a bare context could satisfy the runtime guard — which
+    decides non-triviality alone — with a labeling whose thread and TCB-object
+    labels disagree, and the non-interference theorems would silently stop
+    applying to that deployment.  Storing the source makes coherence structural
+    for every binding, present and future. -/
+def confinedDeploymentLabeling (upperDomainBase : Nat) : DeploymentLabeling :=
+  indexPartitionedDeploymentLabeling upperDomainBase
+    SecurityLabel.lowTrusted SecurityLabel.highUntrusted (by decide)
+
+/-- WS-RR RR5.1: the production context is exactly the constructor's output on
+    its source — definitional, so a binding storing the source yields the same
+    context the theorems below are stated about. -/
+theorem confinedLabelingContext_eq_deploymentLabelingContext (upperDomainBase : Nat) :
+    confinedLabelingContext upperDomainBase =
+      deploymentLabelingContext (confinedDeploymentLabeling upperDomainBase) := rfl
 
 /-- WS-RR RR5.5: the production context is admitted by the guard. -/
 theorem isInsecureDefaultContext_confinedLabelingContext (upperDomainBase : Nat) :
@@ -1103,6 +1128,17 @@ def harnessSeparationBoundary : Nat := 0x10_0000
 def harnessLabelingContext : LabelingContext :=
   indexPartitionedLabelingContext harnessSeparationBoundary
     SecurityLabel.publicLabel SecurityLabel.kernelTrusted (by decide)
+
+/-- WS-RR RR5.4 (PR #889 review): the harness labeling's `DeploymentLabeling`
+    source — what the simulation bindings carry (see
+    `confinedDeploymentLabeling` for why a binding stores the source). -/
+def harnessDeploymentLabeling : DeploymentLabeling :=
+  indexPartitionedDeploymentLabeling harnessSeparationBoundary
+    SecurityLabel.publicLabel SecurityLabel.kernelTrusted (by decide)
+
+/-- WS-RR RR5.4: the harness context is the constructor's output on its source. -/
+theorem harnessLabelingContext_eq_deploymentLabelingContext :
+    harnessLabelingContext = deploymentLabelingContext harnessDeploymentLabeling := rfl
 
 /-- WS-RR RR5.4: the harness labeling is admitted by the guard. -/
 theorem isInsecureDefaultContext_harnessLabelingContext :

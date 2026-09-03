@@ -175,9 +175,12 @@ Nothing detected the original gap: the partition gate reports which modules are
 staged, not which symbols link, and a Tier-3 text anchor on an `@[export]` line
 is satisfied by a module nothing imports.  `scripts/check_kernel_entry_exports.py`
 (Tier 1) asks the question of the object code — `nm --defined-only` over the
-built archive — against a requirement **derived** as the intersection of the
-Lean tree's `@[export]`s and the HAL's `extern "C"` declarations, so a sixth seam
-added on either side joins the requirement without anyone editing the gate.
+built archive — against a requirement **derived** from the HAL's `extern "C"`
+declarations rather than listed, so a sixth seam added on either side joins the
+requirement without anyone editing the gate.  (This cut derived it as the
+intersection with the Lean tree's `@[export]`s; the review round below replaced
+that with the one-sided form, since a rename on either side drops out of an
+intersection.)
 
 ### The two remaining latents (RR5.17, RR5.18)
 
@@ -266,9 +269,10 @@ Four things the rows had shipped short of, each closed in the same version:
   the exclusion and not a coincidence of equal labels.
 * **"This is what a hardware boot installs" was a sentence.**  Nothing installed
   `confinedLabelingContext`; the docstring described an intention.
-  `PlatformBinding` now carries `deploymentLabeling` and its admission proof
-  `deploymentLabelingAdmitted`, so a binding cannot name a labeling the boot
-  would refuse and the obligation is discharged where the labeling is chosen.
+  `PlatformBinding` now carries `deploymentLabeling`, so a binding cannot name
+  a labeling the boot would refuse and the obligation is discharged where the
+  labeling is chosen (the review round below made it the `DeploymentLabeling`
+  *source*, so validity is by construction too).
   The RPi5 binding's is `confinedLabelingContext rpi5UpperDomainBase`
   (`rpi5_deploymentLabeling`, by `rfl`; the boundary clears the boot VSpace
   root and the idle range, so every entity the boot image creates is
@@ -296,13 +300,87 @@ Four things the rows had shipped short of, each closed in the same version:
   gains an `all(…)`-gated extern and six more token-preserving mutations
   (twelve in all).
 
+### The review round
+
+Codex's review of the pull request found six more instances of the same shape
+— a relation asserted at one site and not derived — and all six are closed in
+the same version.
+
+* **The enqueued idle TCB said `.Running` while it sat on a queue.**
+  `enqueueIdleThread` stored `createIdleThread c` (the dispatched form) while
+  queuing it and leaving every current slot `none`, so `inferThreadState`
+  classified it `.Ready` and every successful production boot violated
+  `threadStateConsistent` on every core — hidden by a harness that syncs the
+  field before checking it and installed raw by `bootAndInitialiseFromPlatform`.
+  The enqueue surface (`enqueueIdleThread`, `enqueueIdleThreadOnCore`,
+  `idleThreadEnqueuedOnCore`, the keystone) now stores and states the **queued**
+  form `queuedIdleThread` (`.Ready`; `queuedIdleThread_ne_createIdleThread`
+  pins the difference), `bootSafeObjectCheck` requires every config TCB
+  `.Inactive` — neither current nor queued at boot, so nothing else is
+  consistent — and the production boot state is `threadStateConsistent` with
+  no hypothesis beyond the boot
+  (`bootFromPlatformCheckedWithIdleThreads_threadStateConsistent`, through
+  `bootFromPlatformChecked_ok_shape`, `…_ok_tcb_inactive` and the idle
+  classification `…_idle_threadState`).
+* **The SVC readiness gate came after the prefilters.**  An unknown in-range id
+  or a short message on a not-ready core returned an error frame and resumed
+  the thread — the exact unpreemptible resume the halt exists to prevent — and
+  the trap's oversized-`x7` path did the same through the unknown-syscall
+  delivery.  `dispatch_svc` now consults the gate before its prefilters and the
+  SVC arm before the narrowing.  A behavioural test cannot pin the arm's order
+  (`handle_synchronous_exception` is `extern "C"`; the host lane's halt aborts
+  rather than unwinds), so `build.rs`'s `svc_arm_readiness_gate_status` pins it
+  structurally — one top-level gate ahead of the `dispatched` binding, on the
+  executing core, ending in the diverging halt — with five token-preserving
+  mutations, and the plain-Rust seam is tested on both sides of the mask in the
+  two readiness integration binaries.  Four library-binary tests that assumed
+  core 0's readiness in one direction or the other moved there: the timer
+  suite marks the bit mid-run, so the library binary can assume neither.
+* **The export gate required the intersection of the two symbol sets.**
+  A HAL declaration renamed against its Lean export — or the reverse — drops
+  out of both sides of `exports ∩ externs`, and the gate passed while the image
+  had an unresolved symbol.  `classify_link_requirements` now requires **every**
+  HAL `extern "C"` declaration to be defined by the archive, by the HAL's own
+  assembly (`.global`), or by a reconciled `EXPECTED_UNRESOLVED` entry
+  (`lean_kernel_main`, until SM10.1 writes it) — an entry the HAL stops
+  declaring or the archive starts defining fails.  Seven more self-test cases.
+* **The checked boot accepted configs that occupied idle slots.**  The idle
+  fold then overwrote the object silently; the preservation theorem was true
+  only under an `idleSlotsFreshAt` hypothesis the live path never discharged.
+  `PlatformConfig.wellFormed` now carries `idleSlotsReserved` (no
+  `initialObjects` entry and no boot VSpace root in the idle range), so a
+  successful checked boot is fresh by theorem
+  (`bootFromPlatformChecked_ok_idleSlotsFreshAt`) and
+  `bootFromPlatformCheckedWithIdleThreads_preserves_platform_objects` takes
+  nothing beyond the two boots.
+* **The lock-order tripwire tested held-ness, not ownership.**
+  `round_lock_is_held()` is true for the whole of every shootdown in flight,
+  on every core; the RR5.18 halt on it would have stopped every innocent core
+  that took a timer tick or an `SVC` during one — in release builds, where the
+  `debug_assert!` it replaced had never fired.  The round lock now records its
+  owner (`core + 1`, `0` free) and the tripwire asks `round_lock_held_by(core)`;
+  a waiter waits, the holder re-entering halts.  The Lean model's
+  `roundLockTryAcquire` is owner-agnostic; the owner is a hardware refinement.
+* **The binding proved admission only.**  `isInsecureDefaultContext` decides
+  non-triviality alone, so a binding storing a bare context the guard admits
+  could still have labelled a thread and its own TCB object incompatibly, and
+  the non-interference theorems would have stopped applying to that deployment
+  unnoticed.  `PlatformBinding.deploymentLabeling` is now the `DeploymentLabeling`
+  **source** (`confinedDeploymentLabeling`, `harnessDeploymentLabeling`), the
+  labeling is the constructor's output on it, and admission
+  (`PlatformBinding.labeling_admitted`) and full `LabelingContextValid`-ity
+  (`PlatformBinding.labeling_valid`) are theorems of every binding.
+
 ### Tests
 
 * `tests/SmpIdleSuite.lean` — 28 surface anchors for the new boot surface
   (seven added in the audit round, plus a signature pin that the keystone takes
   no hypothesis beyond the boot), and runtime checks that on the production
   boot state every core's run queue is **exactly** `[idle c]` and its first
-  selection is `idle c`; that every core's idle thread is
+  selection is `idle c`; that the stored idle TCB's thread state is what the
+  classification infers (with the dispatched form shown inconsistent); that
+  an idle-slot squatter config is refused by both entries and its neighbour
+  one slot below is accepted; that every core's idle thread is
   runtime checks that on the production boot state every core's idle thread is
   on its **own** queue and on no other's, resolves to that core's idle TCB, is
   in the core's active domain, and classifies `.Ready` (the RR5.10 × RR5.14
@@ -320,9 +398,13 @@ Four things the rows had shipped short of, each closed in the same version:
 * `rust/sele4n-hal/tests/readiness_gate_before_mark.rs` and
   `…_after_mark.rs` — the readiness mask is process-global and one-way, so both
   sides of the gate are only observable in separate binaries.  Before any mark:
-  the suspend seam refuses with `IllegalState` *instead of* dispatching, the SVC
-  seam halts, and the prefilter still rejects an invalid id before the gate.
-  After: the seams reach their host-lane stand-ins.
+  the suspend seam refuses with `IllegalState` *instead of* dispatching, and
+  the SVC seam halts on a valid id, an out-of-range id and a short message
+  alike (the gate precedes the prefilters).  After: the seams reach their
+  host-lane stand-ins, the prefilters refuse, the unknown-syscall paths publish
+  their status frames, and an `SVC` increments the per-core syscall count.
+  `kernel_entry`'s `tripwire_trips_on_own_round_lock_hold_only` and
+  `shootdown`'s `round_lock_records_its_owner` pin the ownership relation.
 * `tests/InformationFlowSuite.lean` — the guard's rejection of the
   all-public-except-sentinel context, its admission of a constructed deployment
   context, its refusal of a *falsely declared* witness, and (audit round) its

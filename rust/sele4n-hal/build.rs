@@ -2035,7 +2035,7 @@ const RELEASE_SURVIVING_TRIPWIRES: &[(&str, &str, &str)] = &[
     (
         "src/kernel_entry.rs",
         "assert_not_holding_round_lock",
-        "round_lock_is_held(",
+        "round_lock_held_by(",
     ),
     ("src/boot.rs", "install_exception_vectors", "2048"),
 ];
@@ -2127,8 +2127,8 @@ fn scan_release_surviving_tripwires() {
 fn verify_release_surviving_tripwire_scanner() {
     const GOOD: &str = r#"
 #[inline]
-pub fn assert_not_holding_round_lock() {
-    if crate::shootdown::round_lock_is_held() {
+pub fn assert_not_holding_round_lock(core_id: usize) {
+    if crate::shootdown::round_lock_held_by(core_id) {
         crate::kprintln!("[kernel-entry] FATAL: lock order violated");
         crate::cpu::fatal_halt();
     }
@@ -2139,7 +2139,7 @@ pub fn assert_not_holding_round_lock() {
         release_surviving_tripwire_status(
             &code,
             "assert_not_holding_round_lock",
-            "round_lock_is_held(",
+            "round_lock_held_by(",
         )
     };
     if let Err(why) = check(GOOD) {
@@ -2148,8 +2148,8 @@ pub fn assert_not_holding_round_lock() {
     let mutations: [(&str, &str, &str); 4] = [
         (
             "the halt survives but the branch becomes a debug_assert",
-            "    if crate::shootdown::round_lock_is_held() {\n        crate::kprintln!(\"[kernel-entry] FATAL: lock order violated\");\n        crate::cpu::fatal_halt();\n    }",
-            "    debug_assert!(!crate::shootdown::round_lock_is_held());\n    if false {\n        crate::cpu::fatal_halt();\n    }",
+            "    if crate::shootdown::round_lock_held_by(core_id) {\n        crate::kprintln!(\"[kernel-entry] FATAL: lock order violated\");\n        crate::cpu::fatal_halt();\n    }",
+            "    debug_assert!(!crate::shootdown::round_lock_held_by(core_id));\n    if false {\n        crate::cpu::fatal_halt();\n    }",
         ),
         (
             "the halt is kept but nested under an unrelated condition",
@@ -2163,8 +2163,8 @@ pub fn assert_not_holding_round_lock() {
         ),
         (
             "the halt is kept but moves above the branch, so the branch decides nothing",
-            "    if crate::shootdown::round_lock_is_held() {\n        crate::kprintln!(\"[kernel-entry] FATAL: lock order violated\");\n        crate::cpu::fatal_halt();\n    }",
-            "    let held = crate::shootdown::round_lock_is_held();\n    crate::cpu::fatal_halt();\n    if held {\n        crate::kprintln!(\"[kernel-entry] FATAL: lock order violated\");\n    }",
+            "    if crate::shootdown::round_lock_held_by(core_id) {\n        crate::kprintln!(\"[kernel-entry] FATAL: lock order violated\");\n        crate::cpu::fatal_halt();\n    }",
+            "    let held = crate::shootdown::round_lock_held_by(core_id);\n    crate::cpu::fatal_halt();\n    if held {\n        crate::kprintln!(\"[kernel-entry] FATAL: lock order violated\");\n    }",
         ),
     ];
     for (what, from, to) in mutations {
@@ -5765,7 +5765,167 @@ fn faulted_outcome_status(trap_raw: &str, dispatch_raw: &str) -> Result<(), Stri
     let (_, dispatch) = rust_code_views(dispatch_raw);
     dispatch_decodes_faulted(&dispatch)?;
     let (_, trap) = rust_code_views(trap_raw);
-    handler_faulted_arm_halts(&trap)
+    handler_faulted_arm_halts(&trap)?;
+    svc_arm_readiness_gate_status(&trap, &dispatch)
+}
+
+/// The `sync_class::SVC` arm of `handle_synchronous_exception`'s terminal
+/// routing match, as `(block_open, block_close, handler_body_open)`.
+fn svc_arm_block(trap: &str) -> Result<(usize, usize, usize), String> {
+    let needle = "fn handle_synchronous_exception(";
+    if trap.matches(needle).count() != 1 {
+        return Err(format!(
+            "`trap.rs` declares `fn handle_synchronous_exception(` {} times",
+            trap.matches(needle).count()
+        ));
+    }
+    let handler = trap.find(needle).unwrap_or(0);
+    let body_open = block_open_after(trap, handler)
+        .ok_or_else(|| "`handle_synchronous_exception` has no body".to_string())?;
+    let body_close = matching_close_brace(trap, body_open)
+        .ok_or_else(|| "`handle_synchronous_exception`'s body is unbalanced".to_string())?;
+    let routing = terminal_routing_match(trap, body_open, body_close)?;
+    let routing_text = trap[routing.0..routing.1].trim_start();
+    let routing_at = routing.1 - routing_text.len();
+    let arms = match_arm_spans(routing_text)
+        .ok_or_else(|| "the terminal routing match could not be parsed".to_string())?;
+    let svc: Vec<&MatchArm> = arms
+        .iter()
+        .filter(|arm| routing_text[arm.pattern.0..arm.pattern.1].trim() == "sync_class::SVC")
+        .collect();
+    if svc.len() != 1 {
+        return Err(format!(
+            "the terminal routing match has {} `sync_class::SVC` arms",
+            svc.len()
+        ));
+    }
+    let (svc_open, svc_end) = (routing_at + svc[0].body.0, routing_at + svc[0].body.1);
+    if trap.as_bytes().get(svc_open) != Some(&b'{') {
+        return Err("the `sync_class::SVC` arm is not a block".to_string());
+    }
+    Ok((svc_open, svc_end - 1, body_open))
+}
+
+/// **PR #889 review**: in the SVC arm, the readiness gate precedes **every**
+/// outcome.  The relation, on the statement-level view of the arm:
+///
+///   * exactly one top-level statement is `if !crate::lean_ready::lean_ready(<core>) { … }`,
+///     with no `||` or `&&` in the condition, and `<core>` names the executing
+///     PE (`ready_argument_is_executing_core`: `current_core_id_from_tpidr()`
+///     inline, or a binding a dominating statement makes from it);
+///   * that statement comes **before** the `let dispatched = …` binding — so
+///     before the full-width narrowing of `x7`, the prefilters inside
+///     `dispatch_svc`, and the unknown-syscall delivery;
+///   * its block's last top-level statement is a call to
+///     `crate::svc_dispatch::halt_syscall_before_lean_ready(…)`; and
+///   * that helper (in `svc_dispatch.rs`) is declared `-> !` and ends in
+///     `fatal_halt(`.
+///
+/// A behavioural test cannot pin this: `handle_synchronous_exception` is
+/// `extern "C"`, so the host lane's halt (a panic) aborts the test process
+/// rather than unwinding into a `catch_unwind`.  Presence of the guard
+/// somewhere in the arm is not the relation — after the binding, nested under a
+/// condition, on a literal core, or ending in a frame write, the token is there
+/// and the thread still resumes on a not-ready core.
+fn svc_arm_readiness_gate_status(trap: &str, dispatch: &str) -> Result<(), String> {
+    let (svc_open, svc_close, body_open) = svc_arm_block(trap)?;
+    let statements = top_level_statements(trap, svc_open, svc_close);
+    let text = |span: &(usize, usize)| trap[span.0..span.1].trim();
+    let gates: Vec<usize> = (0..statements.len())
+        .filter(|&i| {
+            let t = text(&statements[i]);
+            t.starts_with("if !crate::lean_ready::lean_ready(") || t.starts_with("if !lean_ready(")
+        })
+        .collect();
+    if gates.len() != 1 {
+        return Err(format!(
+            "the SVC arm has {} top-level `if !lean_ready(..)` statements; the readiness gate \
+             must be exactly one, at the arm's top level",
+            gates.len()
+        ));
+    }
+    let gate = gates[0];
+    let dispatched = (0..statements.len()).find(|&i| {
+        let_binding_parts(strip_leading_attributes(text(&statements[i])))
+            .is_some_and(|(pattern, _)| word_occurrences(pattern, "dispatched") > 0)
+    });
+    match dispatched {
+        Some(d) if gate < d => {}
+        Some(_) => {
+            return Err(
+                "the SVC arm's readiness gate comes AFTER the `dispatched` binding — the \
+                 full-width narrowing, the prefilters and the unknown-syscall delivery run \
+                 on a not-ready core before the gate is consulted"
+                    .to_string(),
+            )
+        }
+        None => return Err("the SVC arm binds no `dispatched`".to_string()),
+    }
+    let (gate_lo, gate_hi) = statements[gate];
+    let gate_text = &trap[gate_lo..gate_hi];
+    let cond_open = gate_text
+        .find("lean_ready(")
+        .map(|i| i + "lean_ready(".len())
+        .ok_or_else(|| "the readiness gate has no `lean_ready(`".to_string())?;
+    let cond_close = matching_close_paren(gate_text, cond_open - 1)
+        .ok_or_else(|| "the readiness gate's `lean_ready(` is unbalanced".to_string())?;
+    let condition_end = block_open_after(gate_text, cond_close)
+        .ok_or_else(|| "the readiness gate has no block".to_string())?;
+    let condition = &gate_text[..condition_end];
+    if condition.contains("||") || condition.contains("&&") {
+        return Err(
+            "the SVC arm's readiness gate has a compound condition; the gate must be the \
+             bare readiness test"
+                .to_string(),
+        );
+    }
+    let arg = gate_text[cond_open..cond_close].trim();
+    if !ready_argument_is_executing_core(trap, body_open, gate_lo + cond_open, arg) {
+        return Err(format!(
+            "the SVC arm's readiness gate tests `lean_ready({arg})`, which does not name the \
+             executing core"
+        ));
+    }
+    let block_open = gate_lo + condition_end;
+    let block_close = matching_close_brace(trap, block_open)
+        .ok_or_else(|| "the readiness gate's block is unbalanced".to_string())?;
+    let inner = top_level_statements(trap, block_open, block_close);
+    let last = inner
+        .last()
+        .map(|&(lo, hi)| trap[lo..hi].trim())
+        .unwrap_or("");
+    let calls_halt = last.starts_with("crate::svc_dispatch::halt_syscall_before_lean_ready(")
+        || last.starts_with("halt_syscall_before_lean_ready(");
+    if !calls_halt {
+        return Err(
+            "the SVC arm's readiness gate does not END in `halt_syscall_before_lean_ready(..)` \
+             — a not-ready core would fall through to the dispatch"
+                .to_string(),
+        );
+    }
+    let helper = "fn halt_syscall_before_lean_ready(";
+    if dispatch.matches(helper).count() != 1 {
+        return Err(format!(
+            "`svc_dispatch.rs` declares `{helper}` {} times",
+            dispatch.matches(helper).count()
+        ));
+    }
+    let helper_at = dispatch.find(helper).unwrap_or(0);
+    let helper_open = block_open_after(dispatch, helper_at)
+        .ok_or_else(|| "`halt_syscall_before_lean_ready` has no body".to_string())?;
+    let helper_close = matching_close_brace(dispatch, helper_open)
+        .ok_or_else(|| "`halt_syscall_before_lean_ready`'s body is unbalanced".to_string())?;
+    if !dispatch[helper_at..helper_open].contains("-> !") {
+        return Err("`halt_syscall_before_lean_ready` does not diverge (`-> !`)".to_string());
+    }
+    let helper_last = top_level_statements(dispatch, helper_open, helper_close)
+        .last()
+        .map(|&(lo, hi)| dispatch[lo..hi].trim())
+        .unwrap_or("");
+    if !(statement_diverges(helper_last) && helper_last.contains("fatal_halt(")) {
+        return Err("`halt_syscall_before_lean_ready` does not END in `fatal_halt(`".to_string());
+    }
+    Ok(())
 }
 
 /// In `dispatch_svc` (the strings-blanked `svc_dispatch.rs`): `tag` is bound
@@ -6190,6 +6350,12 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
     match exception_class {
         sync_class::SVC => {
             let _ = crate::per_cpu_stats::record_syscall();
+            if !crate::lean_ready::lean_ready(crate::per_cpu::current_core_id_from_tpidr() as usize) {
+                crate::svc_dispatch::halt_syscall_before_lean_ready(
+                    crate::per_cpu::current_core_id_from_tpidr() as usize,
+                    frame.x7(),
+                );
+            }
             let args = crate::svc_dispatch::SyscallArgs::from_trap_frame(frame);
             let dispatched = match u32::try_from(frame.x7()) {
                 Ok(syscall_id) => crate::svc_dispatch::dispatch_svc(syscall_id, &args),
@@ -6262,6 +6428,10 @@ extern "C" {
 extern "C" fn lean_syscall_dispatch_cross_core(_syscall_id: u32, _msg_info: u64) -> u32 {
     1
 }
+pub(crate) fn halt_syscall_before_lean_ready(core: usize, syscall_word: u64) -> ! {
+    crate::kprintln!("[core {}] SVC before ready (x7=0x{:x})", core, syscall_word);
+    crate::cpu::fatal_halt()
+}
 "#;
     if let Err(why) = faulted_outcome_status(GOOD_TRAP, GOOD_DISPATCH) {
         panic!("build.rs self-check: the good faulted-outcome fixture was refused: {why}");
@@ -6323,6 +6493,33 @@ extern "C" fn lean_syscall_dispatch_cross_core(_syscall_id: u32, _msg_info: u64)
             "a statement after the terminal routing match",
             "        _ => {\n            deliver_fault(frame, error_code::USER_EXCEPTION);\n        }\n    }\n}\n",
             "        _ => {\n            deliver_fault(frame, error_code::USER_EXCEPTION);\n        }\n    }\n    let _ = frame.x0();\n}\n",
+        ),
+        // PR #889 review: the readiness gate precedes every SVC outcome.  Each
+        // mutation keeps the gate's tokens and breaks the relation.
+        (
+            "the readiness gate after the dispatched binding (the narrowing runs ungated)",
+            "            if !crate::lean_ready::lean_ready(crate::per_cpu::current_core_id_from_tpidr() as usize) {\n                crate::svc_dispatch::halt_syscall_before_lean_ready(\n                    crate::per_cpu::current_core_id_from_tpidr() as usize,\n                    frame.x7(),\n                );\n            }\n            let args = crate::svc_dispatch::SyscallArgs::from_trap_frame(frame);\n            let dispatched = match u32::try_from(frame.x7()) {\n                Ok(syscall_id) => crate::svc_dispatch::dispatch_svc(syscall_id, &args),\n                Err(_) => Err(crate::svc_dispatch::DispatchError::InvalidSyscallId),\n            };\n",
+            "            let args = crate::svc_dispatch::SyscallArgs::from_trap_frame(frame);\n            let dispatched = match u32::try_from(frame.x7()) {\n                Ok(syscall_id) => crate::svc_dispatch::dispatch_svc(syscall_id, &args),\n                Err(_) => Err(crate::svc_dispatch::DispatchError::InvalidSyscallId),\n            };\n            if !crate::lean_ready::lean_ready(crate::per_cpu::current_core_id_from_tpidr() as usize) {\n                crate::svc_dispatch::halt_syscall_before_lean_ready(\n                    crate::per_cpu::current_core_id_from_tpidr() as usize,\n                    frame.x7(),\n                );\n            }\n",
+        ),
+        (
+            "the readiness gate nested under an unrelated condition",
+            "            if !crate::lean_ready::lean_ready(crate::per_cpu::current_core_id_from_tpidr() as usize) {\n                crate::svc_dispatch::halt_syscall_before_lean_ready(\n                    crate::per_cpu::current_core_id_from_tpidr() as usize,\n                    frame.x7(),\n                );\n            }\n",
+            "            if frame.x0() == 0 {\n                if !crate::lean_ready::lean_ready(crate::per_cpu::current_core_id_from_tpidr() as usize) {\n                    crate::svc_dispatch::halt_syscall_before_lean_ready(\n                        crate::per_cpu::current_core_id_from_tpidr() as usize,\n                        frame.x7(),\n                    );\n                }\n            }\n",
+        ),
+        (
+            "the readiness gate on a literal core",
+            "            if !crate::lean_ready::lean_ready(crate::per_cpu::current_core_id_from_tpidr() as usize) {\n",
+            "            if !crate::lean_ready::lean_ready(0) {\n",
+        ),
+        (
+            "the readiness gate with a compound condition",
+            "            if !crate::lean_ready::lean_ready(crate::per_cpu::current_core_id_from_tpidr() as usize) {\n",
+            "            if !crate::lean_ready::lean_ready(crate::per_cpu::current_core_id_from_tpidr() as usize) || frame.x0() == 0 {\n",
+        ),
+        (
+            "the readiness gate ending in a frame write instead of the halt",
+            "                crate::svc_dispatch::halt_syscall_before_lean_ready(\n                    crate::per_cpu::current_core_id_from_tpidr() as usize,\n                    frame.x7(),\n                );\n            }\n            let args",
+            "                let _ = \"crate::svc_dispatch::halt_syscall_before_lean_ready\";\n                frame.set_return_frame(crate::svc_dispatch::blocked_resume_sentinel_regs());\n            }\n            let args",
         ),
     ];
     for (what, from, to) in trap_mutations {

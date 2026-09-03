@@ -137,24 +137,30 @@ class PlatformBinding (platform : Type) where
       is single-cluster Cortex-A76 (`.inner`); future big.LITTLE /
       multi-cluster targets use `.outer`. -/
   sharingDomain : SeLe4n.Kernel.Concurrency.SharingDomain
-  /-- **WS-RR RR5.1**: the labeling context this platform's boot installs —
-      the deployment's security-domain assignment, bound here so that "what a
-      hardware boot installs" is a definite object in the tree rather than a
-      sentence about one.  `Platform.FFI.bootAndInitialisePlatform` boots under
-      it.  The RPi5 binding supplies the confined two-domain production labeling
-      (`Kernel.confinedLabelingContext`); the simulation bindings supply the
-      harness labeling (`Kernel.harnessLabelingContext`), under which every
+  /-- **WS-RR RR5.1**: the deployment's security-domain assignment — the
+      **source** of the labeling context this platform's boot installs, bound
+      here so that "what a hardware boot installs" is a definite object in the
+      tree rather than a sentence about one.  `Platform.FFI.bootAndInitialisePlatform`
+      boots under `PlatformBinding.labeling`, the `Kernel.deploymentLabelingContext`
+      of this field.
+
+      **Why the source and not the context** (PR #889 review): the constructor
+      is what discharges every `LabelingContextValid` obligation
+      (`Kernel.deploymentLabelingContext_valid`) — thread/object coherence by
+      construction, non-triviality from the declared witness — and the
+      boot-time guard decides only non-triviality.  A binding that stored a
+      bare `LabelingContext` with a proof the guard admits it could still label
+      a thread and its own TCB object incompatibly, and the non-interference
+      theorems would silently stop applying to that deployment.  With the
+      source stored, admission (`PlatformBinding.labeling_admitted`) and
+      validity (`PlatformBinding.labeling_valid`) are theorems of every
+      binding, present and future, rather than obligations each one carries.
+
+      The RPi5 binding supplies the confined two-domain production labeling
+      (`Kernel.confinedDeploymentLabeling`); the simulation bindings supply the
+      harness labeling (`Kernel.harnessDeploymentLabeling`), under which every
       fixture id sits in one domain. -/
-  deploymentLabeling : SeLe4n.Kernel.LabelingContext
-  /-- **WS-RR RR5.1**: the binding's labeling is admitted by the boot-time
-      fail-closed guard (`Kernel.isInsecureDefaultContext`).  Carried as a field
-      so a binding cannot name a labeling the boot would refuse: the obligation
-      is discharged where the labeling is chosen, at elaboration time, rather
-      than discovered at the first boot — and it is exactly the obligation the
-      guard checks, so `bootAndInitialisePlatform` cannot fail on it
-      (`Platform.FFI.bootAndInitialisePlatform_eq_checked_boot`). -/
-  deploymentLabelingAdmitted :
-    SeLe4n.Kernel.isInsecureDefaultContext deploymentLabeling = false
+  deploymentLabeling : SeLe4n.Kernel.DeploymentLabeling
 
 /-- Extract the runtime contract from a platform binding instance. -/
 @[inline] def PlatformBinding.runtime [PlatformBinding platform] : RuntimeBoundaryContract :=
@@ -190,18 +196,19 @@ class PlatformBinding (platform : Type) where
     Fin (PlatformBinding.coreCount (platform := platform)) :=
   PlatformBinding.bootCoreId (platform := platform)
 
-/-- **WS-RR RR5.1**: extract the labeling context the platform's boot
-    installs. -/
+/-- **WS-RR RR5.1**: the labeling context the platform's boot installs — the
+    constructor's output on the binding's `DeploymentLabeling`. -/
 @[inline] def PlatformBinding.labeling [PlatformBinding platform] :
     SeLe4n.Kernel.LabelingContext :=
-  PlatformBinding.deploymentLabeling (platform := platform)
+  SeLe4n.Kernel.deploymentLabelingContext (PlatformBinding.deploymentLabeling (platform := platform))
 
-/-- **WS-RR RR5.1**: the extracted labeling is admitted by the guard — the
-    binding's own obligation, restated on the accessor. -/
+/-- **WS-RR RR5.1**: every binding's labeling is admitted by the boot-time
+    fail-closed guard — a theorem of the constructor, not an obligation the
+    binding carries (`isInsecureDefaultContext_deploymentLabelingContext`). -/
 theorem PlatformBinding.labeling_admitted [PlatformBinding platform] :
     SeLe4n.Kernel.isInsecureDefaultContext (PlatformBinding.labeling (platform := platform))
       = false :=
-  PlatformBinding.deploymentLabelingAdmitted (platform := platform)
+  SeLe4n.Kernel.isInsecureDefaultContext_deploymentLabelingContext _
 
 /-- **WS-SM SM0.G**: extract the platform's ARMv8 sharing domain. -/
 @[inline] def PlatformBinding.sharing [PlatformBinding platform] :

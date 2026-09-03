@@ -22,12 +22,16 @@
 //! * the SVC seam halts, which on the host lane is a panic — caught here rather
 //!   than aborting the run.
 //!
-//! The SVC seam's prefilter rejections are *not* affected: they precede the
-//! gate, so an invalid syscall id is still refused as an invalid syscall id on
-//! a not-ready core, which the third case checks.
+//! **PR #889 review**: the gate precedes the SVC seam's prefilters, not the
+//! other way round.  The halt exists because a thread on a not-ready core is
+//! never preempted again, so *any* frame returned to it is the CPU forever —
+//! an `invalidSyscallNumber` or `invalidArgument` frame from a prefilter as
+//! much as a dispatched one.  The third and fourth cases pin that an
+//! out-of-range id and a short message halt on a not-ready core rather than
+//! being refused as frames.
 
 use sele4n_hal::ffi::{sele4n_suspend_thread, SUSPEND_BEFORE_LEAN_READY_STATUS};
-use sele4n_hal::svc_dispatch::{dispatch_svc, DispatchError, SyscallArgs, SyscallId};
+use sele4n_hal::svc_dispatch::{dispatch_svc, SyscallArgs, SyscallId};
 
 /// The zero-argument frame the seam tests dispatch with.
 fn zero_args() -> SyscallArgs {
@@ -75,16 +79,38 @@ fn svc_seam_halts_before_any_core_is_ready() {
 }
 
 #[test]
-fn svc_prefilter_still_rejects_before_the_gate() {
-    // The prefilter runs before the readiness gate, so a rejected id is
-    // reported as such rather than halting — the gate did not swallow the
-    // seam's own argument validation.
+fn svc_out_of_range_id_halts_before_the_prefilter() {
+    // PR #889 review: the readiness gate is consulted before the id prefilter,
+    // so an out-of-range id on a not-ready core halts rather than being handed
+    // back as an `InvalidSyscallId` the thread would resume on.
     let args = zero_args();
     let outcome = std::panic::catch_unwind(|| dispatch_svc(SyscallId::COUNT, &args));
-    assert_eq!(
-        outcome.ok(),
-        Some(Err(DispatchError::InvalidSyscallId)),
-        "an out-of-range syscall id must be refused by the prefilter, before \
-         the readiness gate is consulted"
+    assert!(
+        outcome.is_err(),
+        "an out-of-range syscall id on a not-ready core must halt, not be refused \
+         by the prefilter — a refusal is a frame the thread resumes on"
     );
 }
+
+#[test]
+fn svc_short_message_halts_before_the_prefilter() {
+    // A syscall whose message is shorter than its inline-argument minimum is
+    // an `InvalidArgument` refusal on a ready core; on a not-ready core it
+    // halts like every other `SVC`, because the reason is the resume, not the
+    // frame.
+    let args = zero_args();
+    let outcome =
+        std::panic::catch_unwind(|| dispatch_svc(SyscallId::TcbSetPriority.to_u32(), &args));
+    assert!(
+        outcome.is_err(),
+        "a short message on a not-ready core must halt, not be refused as \
+         InvalidArgument"
+    );
+}
+
+// The whole SVC arm — the trap-level gate ahead of the full-width narrowing of
+// `x7`, so an oversized syscall word halts on a not-ready core rather than
+// being delivered as an unknown-syscall frame — cannot be observed here:
+// `handle_synchronous_exception` is `extern "C"`, and the host lane's halt is
+// a panic that cannot unwind through it (the process aborts instead).  That
+// ordering is pinned structurally by `build.rs::svc_arm_readiness_gate_status`.

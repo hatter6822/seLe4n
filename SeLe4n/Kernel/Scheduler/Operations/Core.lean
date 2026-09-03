@@ -1678,11 +1678,13 @@ tests above read `currentOnCore bootCoreId` / `runQueueOnCore bootCoreId`, so a
 thread running on a secondary core classified `.Inactive`: its own core's current
 slot pointed at it, but no boot-core slot did.  That is register §7 finding 42,
 and it stops being latent the moment the boot path installs per-core idle
-threads — `createIdleThread` sets `threadState := .Running`, so core 1's idle TCB
-would be re-inferred `.Inactive`, `threadStateConsistent` would be false of the
-boot state, and `assertStateInvariantsFor` (which syncs before it checks) would
-*rewrite the field* rather than report the mismatch.  RR5.13/RR5.14 make that
-boot state the production one, which is why this lift lands first.
+threads — the boot state queues each core's idle thread as `queuedIdleThread`
+(`.Ready`; before the PR #889 review round it stored the dispatched
+`createIdleThread` form, `.Running`), so under the boot-core tests core 1's idle
+TCB would be re-inferred `.Inactive`, `threadStateConsistent` would be false of
+the boot state, and `assertStateInvariantsFor` (which syncs before it checks)
+would *rewrite the field* rather than report the mismatch.  RR5.13/RR5.14 make
+that boot state the production one, which is why this lift lands first.
 
 The lift is conservative on any state the old definition classified: with
 `currentOnCore c = none` and an empty `runQueueOnCore c` on every secondary — the

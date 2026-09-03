@@ -18,8 +18,13 @@
 
 use sele4n_hal::svc_dispatch::{
     dispatch_svc, error_frame_regs, DispatchError, SvcOutcome, SyscallArgs, SyscallId,
+    ERROR_LABEL_BASE,
 };
-use sele4n_hal::trap::TrapFrame;
+use sele4n_hal::trap::{handle_synchronous_exception, TrapFrame};
+
+/// `ESR_EL1.EC` for an AArch64 `SVC` (the trap module's `ec::SVC_AARCH64`,
+/// which is private to it).
+const EC_SVC_AARCH64: u64 = 0x15;
 
 /// Mark the executing (host) core ready.  Idempotent and monotone, so the
 /// tests below may run in any order and in parallel.
@@ -91,6 +96,90 @@ fn dispatch_svc_accepts_single_register_tcb_management_syscalls() {
             "length-1 call to {sid:?} must not be rejected by the arg-count gate",
         );
     }
+}
+
+/// Moved from `trap`'s unit tests at PR #889 review (the SVC arm halts on a
+/// not-ready core before the narrowing, so the frames these paths publish are
+/// observable only with the core marked ready): a syscall number outside
+/// `SyscallId` takes the unknown-syscall seam, whose host-lane half publishes
+/// the `invalidSyscallNumber` status frame (discriminant 31) — never a
+/// success, never the thread's own request registers.
+#[test]
+fn unknown_syscall_id_on_ready_core_publishes_status_frame() {
+    mark_this_core_ready();
+    let mut frame = zero_frame();
+    frame.esr_el1 = EC_SVC_AARCH64 << 26;
+    frame.gprs[7] = 0xFFFF; // no such syscall
+    frame.gprs[0] = 0xDEAD;
+    handle_synchronous_exception(&mut frame);
+    assert_eq!(frame.x0(), 0);
+    assert_eq!(frame.x1(), (ERROR_LABEL_BASE + 31) << 9);
+    assert_eq!([frame.x2(), frame.x3(), frame.x4(), frame.x5()], [0; 4]);
+}
+
+/// Moved from `trap`'s unit tests at PR #889 review (see above): the syscall
+/// number is validated at its full 64-bit width.  `0x1_0000_0002` narrows to
+/// syscall 2, which an `as u32` would have dispatched (the host stub answers
+/// it with the `notImplemented` frame, discriminant 17); it is an unknown
+/// syscall, and on the host lane that is the `invalidSyscallNumber` status
+/// frame (31).
+#[test]
+fn wide_syscall_number_on_ready_core_is_unknown_syscall() {
+    mark_this_core_ready();
+    let mut frame = zero_frame();
+    frame.esr_el1 = EC_SVC_AARCH64 << 26;
+    frame.gprs[7] = 0x1_0000_0002;
+    handle_synchronous_exception(&mut frame);
+    assert_eq!(frame.x0(), 0);
+    assert_eq!(frame.x1(), (ERROR_LABEL_BASE + 31) << 9);
+    assert_ne!(frame.x1(), (ERROR_LABEL_BASE + 17) << 9);
+}
+
+/// PR #889 review: with the core ready, the prefilters run and refuse as
+/// before — the gate moved ahead of them, it did not replace them.  (These
+/// were `svc_dispatch`'s unit tests `dispatch_svc_rejects_invalid_syscall_id`
+/// and `dispatch_svc_rejects_argument_count_below_minimum`; the gate made
+/// their answer depend on readiness, which the lib binary cannot assume.)
+#[test]
+fn prefilters_still_refuse_on_a_ready_core() {
+    mark_this_core_ready();
+    let args = SyscallArgs::from_trap_frame(&zero_frame());
+    assert_eq!(
+        dispatch_svc(SyscallId::COUNT, &args),
+        Err(DispatchError::InvalidSyscallId),
+        "an out-of-range id is refused by the prefilter once the core is ready"
+    );
+    assert_eq!(
+        dispatch_svc(SyscallId::TcbSetPriority.to_u32(), &args),
+        Err(DispatchError::InvalidArgument),
+        "a short message is refused by the argument-count prefilter once the core is ready"
+    );
+    // CSpaceMint needs four inline words; a zero-length message is short.
+    assert_eq!(
+        dispatch_svc(SyscallId::CSpaceMint.to_u32(), &args),
+        Err(DispatchError::InvalidArgument),
+        "a length-0 CSpaceMint is refused by the argument-count prefilter"
+    );
+}
+
+/// Moved from `trap`'s unit tests at PR #889 review: an `SVC` increments the
+/// executing core's syscall count.  The count is recorded before the readiness
+/// gate; here the core is ready, so the arm runs to a frame and the count is
+/// observed after an ordinary return.  Concurrent tests in this binary can only
+/// raise the counter, so a strict increase is the right observation.
+#[test]
+fn svc_increments_per_core_syscall_count() {
+    mark_this_core_ready();
+    let core = sele4n_hal::per_cpu::current_core_id_from_tpidr() as usize;
+    let before = sele4n_hal::per_cpu_stats::syscall_count_for(core);
+    let mut frame = zero_frame();
+    frame.esr_el1 = EC_SVC_AARCH64 << 26;
+    handle_synchronous_exception(&mut frame);
+    let after = sele4n_hal::per_cpu_stats::syscall_count_for(core);
+    assert!(
+        after > before,
+        "SVC must increment per-core syscall_count (was {before}, now {after})"
+    );
 }
 
 /// Moved from `ffi`'s unit tests at RR5.7 (see this file's header).

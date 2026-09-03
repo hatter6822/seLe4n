@@ -726,10 +726,10 @@ own** labeling (WS-RR RR5.2, audit).
 Under the simulation binding that is `harnessLabelingContext`, and the install
 is observed by reading the reference back — the witness pair and the labels on
 either side of the harness boundary — rather than inferred from the success
-arm.  Success itself is not optional: the binding carries the guard's admission
-proof, so the labeling refusal arm is unreachable from this entry
-(`bootAndInitialisePlatform_eq_checked_boot`), and an error here would mean the
-binding's field and the guard had come apart.  The RPi5 binding's labeling is
+arm.  Success itself is not optional: admission by the guard is a theorem of
+every binding (`PlatformBinding.labeling_admitted`), so the labeling refusal arm
+is unreachable from this entry (`bootAndInitialisePlatform_eq_checked_boot`),
+and an error here would mean the binding's source and the guard had come apart.  The RPi5 binding's labeling is
 the confined production context, pinned by `rpi5_deploymentLabeling` and
 probed below at one id on each side of its boundary. -/
 private def sd046_bootInitialisePlatform_installs_binding_labeling : IO Unit := do

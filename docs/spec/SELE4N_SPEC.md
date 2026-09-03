@@ -51,9 +51,9 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.34.48` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 319,110 across 308 Lean files |
-| **Test LoC** | 67,396 across 70 Lean test suites |
-| **Proved declarations** | 10,597 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 319,602 across 308 Lean files |
+| **Test LoC** | 67,466 across 70 Lean test suites |
+| **Proved declarations** | 10,622 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR5 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -1957,7 +1957,16 @@ Hardware-mode kernel state lives in two `IO.Ref` cells:
   now comes up with its own idle thread **enqueued** on its own run
   queue (and no core's current slot set, so `queueCurrentConsistent`
   holds and each core's first scheduling point dispatches idle out of
-  the queue).  The boot queue is characterised exactly — on every core
+  the queue).  The stored idle TCB is the **queued** form
+  (`queuedIdleThread`, `.Ready`), the state the classification infers for
+  a queued, non-current thread; every config TCB is `.Inactive`
+  (`bootSafeObjectCheck`); so the production boot state is
+  `threadStateConsistent` with no hypothesis beyond the boot
+  (`bootFromPlatformCheckedWithIdleThreads_threadStateConsistent`).  The
+  idle slots are reserved by `PlatformConfig.wellFormed`
+  (`idleSlotsReserved`), so a successful checked boot has them empty
+  (`bootFromPlatformChecked_ok_idleSlotsFreshAt`) and the idle fold
+  overwrites no config object.  The boot queue is characterised exactly — on every core
   it is the empty queue with that core's idle thread enqueued
   (`bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_eq`) — so its
   well-formedness and the resolution of its members are theorems of the
@@ -2092,9 +2101,17 @@ idle ids when the boundary falls among them — so every boundary yields an
 admitted context.
 
 **What a hardware boot installs is bound in the platform contract.**
-`PlatformBinding` carries `deploymentLabeling` and its admission proof
-`deploymentLabelingAdmitted`, so a binding cannot name a labeling the boot
-would refuse.  The RPi5 binding's labeling is
+`PlatformBinding` carries the `DeploymentLabeling` **source**
+(`deploymentLabeling`), and `PlatformBinding.labeling` is
+`deploymentLabelingContext` of it — so admission by the boot-time guard
+(`PlatformBinding.labeling_admitted`) and full `LabelingContextValid`-ity
+(`PlatformBinding.labeling_valid`) are theorems of every binding, not
+obligations a binding carries.  The guard decides non-triviality alone; a
+binding that stored a bare context the guard admits could still have labelled
+a thread and its own TCB object incompatibly, and the non-interference
+theorems would have stopped applying to that deployment without any check
+noticing.  The RPi5 binding's source is `confinedDeploymentLabeling
+rpi5UpperDomainBase`, so its labeling is
 `confinedLabelingContext rpi5UpperDomainBase` (`rpi5_deploymentLabeling`, by
 `rfl`; `rpi5UpperDomainBase = 0x10_0000` clears the boot VSpace root and the
 idle range, `rpi5UpperDomainBase_clears_bootVSpaceRoot` /

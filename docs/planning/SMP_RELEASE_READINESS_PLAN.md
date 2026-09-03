@@ -529,9 +529,12 @@ closed at v0.34.48 before merge:
   exclusion rather than for equal labels.
 * *RR5.1's "what a hardware boot installs" was a sentence.*  Nothing installed
   `confinedLabelingContext`.  `PlatformBinding` now carries
-  `deploymentLabeling` with its admission proof, the RPi5 binding's is the
-  confined context at `rpi5UpperDomainBase` (`rpi5_deploymentLabeling`), the
-  simulation bindings' is the harness labeling, and
+  `deploymentLabeling` (this round: the context with its admission proof; the
+  review round below replaced it with the `DeploymentLabeling` source, so
+  admission and validity are theorems of every binding), the RPi5 binding's
+  labeling is the confined context at `rpi5UpperDomainBase`
+  (`rpi5_deploymentLabeling`), the simulation bindings' is the harness
+  labeling, and
   `bootAndInitialisePlatform` boots under the binding's — provably the checked
   idle boot with the refusal arm unreachable.
 * *RR5.9's `hw_target` verdict was two substring tests.*  A `cfg_attr` or an
@@ -540,6 +543,32 @@ closed at v0.34.48 before merge:
   (`cfg_predicate_entailment`, under-approximating so it fails closed), and
   linker visibility now covers `#[unsafe(no_mangle)]` and `#[export_name]`;
   six more token-preserving mutations pin it.
+
+**Review round (PR #889, same version).**  The pull-request review found six
+more places where a relation was asserted at one site and not derived, all
+closed before merge:
+
+* *RR5.11 stored the dispatched idle form while queuing it.*  The enqueue
+  stores `queuedIdleThread` (`.Ready`), `bootSafeObjectCheck` requires config
+  TCBs `.Inactive`, and the production boot state is proved
+  `threadStateConsistent` (`bootFromPlatformCheckedWithIdleThreads_threadStateConsistent`).
+* *RR5.6's gate came after the SVC prefilters.*  It now precedes every outcome
+  — the prefilters in `dispatch_svc`, the `x7` narrowing and the
+  unknown-syscall delivery in the trap arm — pinned structurally by
+  `svc_arm_readiness_gate_status`, since an `extern "C"` halt aborts a host
+  test rather than unwinding.
+* *RR5.16 required the intersection of the two symbol sets.*  Every HAL
+  declaration must now resolve (archive, assembly global, or a reconciled
+  `EXPECTED_UNRESOLVED` entry), so a rename on either side fails.
+* *RR5.13 folded over configs that occupied idle slots.*  `PlatformConfig.wellFormed`
+  reserves them (`idleSlotsReserved`), and a successful checked boot is fresh
+  by theorem, so the preservation result takes no hypothesis.
+* *RR5.18's tripwire tested held-ness, not ownership.*  The round lock records
+  its owner and the tripwire asks `round_lock_held_by(core)`; another core's
+  shootdown makes an entering core wait, not halt.
+* *RR5.1's binding proved admission only.*  It stores the `DeploymentLabeling`
+  source, so admission and full validity are theorems of every binding
+  (`PlatformBinding.labeling_valid`).
 
 **Note on RR5.10–RR5.14** (the rows that replaced one XL).  Two findings shape
 the split, and the row they replaced named neither: one is an ordering defect

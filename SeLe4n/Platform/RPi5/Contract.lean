@@ -158,11 +158,10 @@ instance rpi5PlatformBinding : SeLe4n.Platform.PlatformBinding RPi5Platform wher
   bootCoreId := ⟨0, by decide⟩
   sharingDomain := .inner
   -- WS-RR RR5.1: the production labeling — two mutually isolated domains
-  -- split at `rpi5UpperDomainBase`.  The admission proof is the constructor's
-  -- own theorem, so the field discharges by name.
-  deploymentLabeling := SeLe4n.Kernel.confinedLabelingContext rpi5UpperDomainBase
-  deploymentLabelingAdmitted :=
-    SeLe4n.Kernel.isInsecureDefaultContext_confinedLabelingContext rpi5UpperDomainBase
+  -- split at `rpi5UpperDomainBase`.  The binding stores the `DeploymentLabeling`
+  -- source (PR #889 review), so admission and full `LabelingContextValid`-ity
+  -- of what the boot installs are theorems of the constructor.
+  deploymentLabeling := SeLe4n.Kernel.confinedDeploymentLabeling rpi5UpperDomainBase
 
 /-- **WS-RR RR5.1**: what the hardware boot installs, pinned — the RPi5
     binding's labeling *is* the confined production context at the RPi5

@@ -188,12 +188,12 @@ instance simPlatformBinding : SeLe4n.Platform.PlatformBinding SimPlatform where
   coreCountPos := by decide
   bootCoreId := ⟨0, by decide⟩
   sharingDomain := .inner
-  -- WS-RR RR5.1: the harness labeling — every fixture id in one domain, with
-  -- the declared separation above `harnessSeparationBoundary` — so the trace
-  -- harness boots under a labeling the fail-closed guard admits without any
+  -- WS-RR RR5.1: the harness labeling's source — every fixture id in one
+  -- domain, with the declared separation above `harnessSeparationBoundary` —
+  -- so the trace harness boots under a labeling the fail-closed guard admits
+  -- (and that is `LabelingContextValid`, by construction) without any
   -- fixture's flow decision changing.
-  deploymentLabeling := SeLe4n.Kernel.harnessLabelingContext
-  deploymentLabelingAdmitted := SeLe4n.Kernel.isInsecureDefaultContext_harnessLabelingContext
+  deploymentLabeling := SeLe4n.Kernel.harnessDeploymentLabeling
 
 /-- S5-D: Marker type for the simulation restrictive (substantive) platform. -/
 structure SimRestrictivePlatform where
@@ -226,8 +226,7 @@ instance simRestrictivePlatformBinding :
   bootCoreId := ⟨0, by decide⟩
   sharingDomain := .inner
   -- WS-RR RR5.1: same labeling as the permissive sim binding.
-  deploymentLabeling := SeLe4n.Kernel.harnessLabelingContext
-  deploymentLabelingAdmitted := SeLe4n.Kernel.isInsecureDefaultContext_harnessLabelingContext
+  deploymentLabeling := SeLe4n.Kernel.harnessDeploymentLabeling
 
 /-- **WS-SM SM4.A.5**: Marker type for the single-core simulation
     platform. -/
@@ -266,8 +265,7 @@ instance simSingleCorePlatformBinding :
   bootCoreId := ⟨0, by decide⟩
   sharingDomain := .inner
   -- WS-RR RR5.1: same labeling as the permissive sim binding.
-  deploymentLabeling := SeLe4n.Kernel.harnessLabelingContext
-  deploymentLabelingAdmitted := SeLe4n.Kernel.isInsecureDefaultContext_harnessLabelingContext
+  deploymentLabeling := SeLe4n.Kernel.harnessDeploymentLabeling
 
 /-- U8-A/U-L16: Compile-time consistency theorem proving that the
     `simSubstantiveMemoryMap` used in `RuntimeContract.lean` is identical to

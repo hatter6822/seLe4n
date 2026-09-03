@@ -613,38 +613,6 @@ pub fn blocked_resume_sentinel_regs() -> [u64; 6] {
 ///                                   surfaces it as a label-encoded error
 ///                                   frame ([`error_frame_regs`]).
 pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<SvcOutcome, DispatchError> {
-    // AN9-F.1.b: reject ids outside the mirror enum's range.
-    let sid = match SyscallId::from_u32(syscall_id) {
-        Some(sid) => sid,
-        None => return Err(DispatchError::InvalidSyscallId),
-    };
-
-    // AN9-F.1.c: validate the inline-arg count from MessageInfo.length
-    let len = args.message_length();
-    if len < sid.min_inline_args() {
-        return Err(DispatchError::InvalidArgument);
-    }
-
-    // AN9-F.2: forward to the Lean-emitted dispatcher.
-    //
-    // WS-SM SM5.I: serialise kernel entry.  The Lean side commits its
-    // post-state through `modifyGetKernelState`, an `IO.Ref.modifyGet`
-    // — a read then a write, not a cross-core atomic — so two cores
-    // dispatching concurrently would both read the same pre-state and
-    // the second write would discard the first core's whole transition
-    // while returning success for it.  The bracket makes the read and
-    // the write one critical section against every other kernel entry.
-    //
-    // The lock is taken OUTSIDE any shootdown round lock the transition
-    // itself may take (`completeShootdownRounds` takes that one inside
-    // here), and its spin self-services this core's pending shootdown
-    // obligation — without that a holder blocked on our acknowledgment
-    // would deadlock against us, since IRQs are masked on this path and
-    // the `.tlbShootdownReq` SGI cannot preempt the spin.
-    //
-    // WS-RA: the mailbox read happens INSIDE the critical section, so the
-    // frame this call returns is the frame this call's commit published.
-    //
     // PR #866 round-2 review: the core index is the TPIDR-derived
     // *logical* id — the same source `ffi_syscall_return_frame` (the
     // mailbox writer) and `ffi_current_core_id` (the Lean dispatch's own
@@ -667,7 +635,46 @@ pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<SvcOutcome, D
     // `scan_lean_upcalls_readiness_gated` collects every Lean upcall in the
     // HAL from the Lean tree's `@[export]`s and fails the build unless a
     // readiness guard on the *executing* PE dominates each one.
+    //
+    // PR #889 review: the gate precedes **every** prefilter, not only the Lean
+    // call.  The halt exists because a thread on a not-ready core can never be
+    // preempted again (the timer seam consults the same mask), so *any* frame
+    // returned to it hands it the CPU forever — an `invalidSyscallNumber` or
+    // `invalidArgument` frame from the prefilters below exactly as much as a
+    // dispatched one.  Consulting readiness after the prefilters left both
+    // rejections as resumable frames on a not-ready core.
     let (tag, regs) = if crate::lean_ready::lean_ready(core) {
+        // AN9-F.1.b: reject ids outside the mirror enum's range.
+        let sid = match SyscallId::from_u32(syscall_id) {
+            Some(sid) => sid,
+            None => return Err(DispatchError::InvalidSyscallId),
+        };
+
+        // AN9-F.1.c: validate the inline-arg count from MessageInfo.length
+        let len = args.message_length();
+        if len < sid.min_inline_args() {
+            return Err(DispatchError::InvalidArgument);
+        }
+
+        // AN9-F.2: forward to the Lean-emitted dispatcher.
+        //
+        // WS-SM SM5.I: serialise kernel entry.  The Lean side commits its
+        // post-state through `modifyGetKernelState`, an `IO.Ref.modifyGet`
+        // — a read then a write, not a cross-core atomic — so two cores
+        // dispatching concurrently would both read the same pre-state and
+        // the second write would discard the first core's whole transition
+        // while returning success for it.  The bracket makes the read and
+        // the write one critical section against every other kernel entry.
+        //
+        // The lock is taken OUTSIDE any shootdown round lock the transition
+        // itself may take (`completeShootdownRounds` takes that one inside
+        // here), and its spin self-services this core's pending shootdown
+        // obligation — without that a holder blocked on our acknowledgment
+        // would deadlock against us, since IRQs are masked on this path and
+        // the `.tlbShootdownReq` SGI cannot preempt the spin.
+        //
+        // WS-RA: the mailbox read happens INSIDE the critical section, so the
+        // frame this call returns is the frame this call's commit published.
         crate::kernel_entry::with_kernel_entry(core, || {
             // SAFETY: `lean_syscall_dispatch_cross_core` is a Lean-emitted
             // extern "C" symbol resolved at link time.  The arguments cross
@@ -696,7 +703,7 @@ pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<SvcOutcome, D
             (tag, return_frame_read_in(&RETURN_FRAMES, core))
         })
     } else {
-        halt_syscall_before_lean_ready(core, sid.to_u32())
+        halt_syscall_before_lean_ready(core, u64::from(syscall_id))
     };
 
     match tag {
@@ -815,38 +822,35 @@ unsafe fn lean_syscall_dispatch_cross_core(
     0
 }
 
-/// **WS-RR RR5.6**: an `SVC` taken on a core whose Lean runtime is not
-/// initialized.
+/// **WS-RR RR5.6**: what an `SVC` does on a core whose Lean runtime is not
+/// initialized — halt.
 ///
-/// The seam has no way to serve the call — there is no model to dispatch into —
-/// and RR5 owns the question of what it should do instead, which PR #887 left
-/// open in `trap.rs` ("what a not-ready core should do with an `SVC` at all is
-/// RR5's question, asked once for the whole SVC seam together with the ungated
-/// `dispatch_svc`").  The answer is to **stop the core**, for a reason that is
-/// about the scheduler rather than about this one syscall.
+/// PR #887 left this decision to RR5 (`trap.rs`, round 3: "what a not-ready
+/// core should do with an `SVC` at all is RR5's question").  A fail-closed
+/// frame would be architecturally coherent — unlike an abort, the `SVC`
+/// advanced the PC — but the per-core timer tick consults the same readiness
+/// mask and degrades to record-and-re-arm on a not-ready core, so a thread
+/// there is never preempted, never charged budget and never rescheduled:
+/// returning an error hands it the CPU forever and converts an initialization
+/// defect into a starvation of every other thread on the core.  Halting the
+/// core is the only outcome that does not resume the thread.
 ///
-/// An `SVC` advances `ELR_EL1` past itself, so publishing a fail-closed error
-/// frame here *would* be architecturally coherent — unlike the abort seam,
-/// where a returned frame is `eret`ed straight back into the fault
-/// (`trap::halt_abort_before_lean_ready`).  What makes it wrong is what else is
-/// gated: the per-core timer tick consults the same readiness mask and degrades
-/// to record-and-re-arm, so a thread running on a not-ready core is never
-/// preempted, never charged budget, and never rescheduled.  Returning an error
-/// hands that thread the CPU back forever — a starvation of every other thread
-/// on the core, produced by an initialization defect the kernel would otherwise
-/// report only as a stream of failing syscalls.  A PE the kernel cannot serve
-/// must not keep running user code on the kernel's behalf.
+/// PR #889 review: this is the outcome of **every** `SVC` on a not-ready
+/// core, whatever `x7` holds — a valid id, an unknown one, a word wider than
+/// the ABI can name (`trap.rs` halts before the narrowing), or a short message
+/// — because the argument above is about resuming the thread, not about which
+/// frame it would resume on.  Hence the raw 64-bit syscall word, not a
+/// narrowed id.
 ///
-/// Unreachable at this cut: nothing marks a core ready, and no user thread
-/// exists before the runtime that would create one.  When SM10.1 marks cores
-/// ready this halt is what makes an ordering mistake in that sequence loud at
-/// the first syscall instead of silent.  Pinned on the host lane by
-/// `syscall_before_lean_ready_halts`, where `fatal_halt` panics.
-fn halt_syscall_before_lean_ready(core: usize, syscall_id: u32) -> ! {
+/// Reachable on hardware only before SM10.1 marks the core ready; on the host
+/// lane `fatal_halt` panics, which the readiness integration tests observe
+/// through `catch_unwind`.
+pub(crate) fn halt_syscall_before_lean_ready(core: usize, syscall_word: u64) -> ! {
     crate::kprintln!(
-        "[svc] core {} took SVC #{} before its Lean runtime was initialized; halting",
+        "[core {}] SVC (x7=0x{:x}) before the Lean runtime is initialized on this core; \
+         halting fail-closed (a returned frame would never be preempted)",
         core,
-        syscall_id
+        syscall_word
     );
     crate::cpu::fatal_halt()
 }
@@ -872,7 +876,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "fail-closed halt reached")]
     fn syscall_before_lean_ready_halts() {
-        halt_syscall_before_lean_ready(3, SyscallId::Send.to_u32());
+        halt_syscall_before_lean_ready(3, u64::from(SyscallId::Send.to_u32()));
     }
 
     fn zero_frame() -> TrapFrame {
@@ -978,23 +982,14 @@ mod tests {
         assert_eq!(args.message_length(), 4);
     }
 
-    #[test]
-    fn dispatch_svc_rejects_invalid_syscall_id() {
-        let frame = zero_frame();
-        let args = SyscallArgs::from_trap_frame(&frame);
-        let result = dispatch_svc(SyscallId::COUNT, &args);
-        assert_eq!(result, Err(DispatchError::InvalidSyscallId));
-    }
-
-    #[test]
-    fn dispatch_svc_rejects_argument_count_below_minimum() {
-        // CSpaceMint requires 4 inline args; supplying length=0 must
-        // be rejected before the inner dispatcher is called.
-        let frame = zero_frame();
-        let args = SyscallArgs::from_trap_frame(&frame); // length=0
-        let result = dispatch_svc(SyscallId::CSpaceMint.to_u32(), &args);
-        assert_eq!(result, Err(DispatchError::InvalidArgument));
-    }
+    // PR #889 review: `dispatch_svc_rejects_invalid_syscall_id` and
+    // `dispatch_svc_rejects_argument_count_below_minimum` moved out of this
+    // binary.  The readiness gate now precedes the prefilters, so what an
+    // invalid id or a short message does depends on whether this core is
+    // ready — and core 0's readiness bit is set mid-run by the timer suite in
+    // this binary, so neither answer can be asserted here.  The not-ready
+    // answer (halt) is `tests/readiness_gate_before_mark.rs`; the ready answer
+    // (the prefilter refusals) is `tests/readiness_gate_after_mark.rs`.
 
     // WS-RR RR5.6: `dispatch_svc_routes_to_inner_dispatcher` moved to
     // `tests/readiness_gate_after_mark.rs` — reaching the dispatch stand-in
