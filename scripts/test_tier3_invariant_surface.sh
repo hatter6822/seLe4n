@@ -5717,8 +5717,8 @@ import SeLe4n.Platform.RPi5.Contract
 -- PR #889 review round 5: the lower witness is a parameter of the family, held
 -- off the boot VSpace root by an obligation on each binding; the declared core
 -- count is bounded by the model; the idle slot of an undeclared core is absent
--- after the boot.  (No apostrophes here: this block sits inside a single-quoted
--- `bash -lc` argument.)
+-- after the boot.  (No apostrophes, backticks or dollar signs here: this block
+-- sits inside a single-quoted bash -lc argument.)
 #check @SeLe4n.Kernel.indexPartitionedDeploymentLabeling_separatedThreads
 #check @SeLe4n.Kernel.harnessLowerWitnessIndex
 #check @SeLe4n.Kernel.harnessLowerWitnessIndex_admissible
