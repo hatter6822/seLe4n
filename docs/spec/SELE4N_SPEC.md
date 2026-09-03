@@ -2196,6 +2196,19 @@ and the two installs with the labeling-refusal arm unreachable
 (`bootAndInitialisePlatform_eq_checked_boot`); SM10.1's `lean_kernel_main` is
 its intended caller.
 
+**The readiness guard resolves to the gate, and the boot entry handles a
+failed boot** (PR #889 review round 9).  An unqualified `lean_ready(..)`
+counts as the gate only where the file imports `crate::lean_ready::lean_ready`
+and defines no function of that name (`bare_ready_call_resolves`) — a
+same-scope helper of that name satisfied every other readiness question while
+being a different predicate.  A release-surviving tripwire's fail-closed
+branch must dominate every exit of its helper, not merely appear in it
+(`statement_may_exit`).  And SM10.1's `lean_kernel_main` must **branch** on
+`bootAndInitialiseRPi5`'s `Except` and halt on `.error`
+(`boot_entry_handles_failure`): a failed boot installs no kernel state, so
+returning to the Rust caller would leave the image idling as though it had
+booted.
+
 **The raw suspend seam refuses idle ids, and the reservation is pinned by
 constructor arity** (PR #889 review round 8).  `suspend_thread_cross_core`
 takes a raw thread id and no capability, so the chokepoint's refusal never

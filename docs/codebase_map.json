@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/rr5-boot-path-fail-open-sandny",
-      "commit_sha": "9c9dd7dac8f33db370634a2d242990c31a663609",
-      "tree_sha": "40c5f20acddabb235563fe3ee44e1751fdee0e6d",
-      "committed_at_utc": "2026-09-03T04:58:15+00:00"
+      "commit_sha": "545cc433c421414a56ed992aa2edd0855d2d25ac",
+      "tree_sha": "7a04079861ecd268b203eb8b5417ef88a7827e11",
+      "committed_at_utc": "2026-09-03T16:04:37+00:00"
     }
   },
   "source_sync": {

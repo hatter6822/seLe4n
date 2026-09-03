@@ -406,20 +406,33 @@ def statement_containing(
 def binding_statement_before(
     view: str, statements: list[tuple[int, int]], name: str, upto: tuple[int, int]
 ) -> tuple[int, int] | None:
-    """The LAST top-level ``let [mut] <name>`` statement strictly before the
-    statement ``upto`` — the binding instance a use of ``name`` in ``upto``
-    refers to (PR #889 review round 8).
+    """The LAST top-level statement strictly before ``upto`` that gives
+    ``name`` a new value — a ``let [mut] <name>`` binding **or** an
+    assignment ``<name> = …`` (PR #889 review rounds 8 and 9).
 
     A receiver's *spelling* does not identify a value: ``let mut asm = …;
     asm.file("ghost.S"); let mut asm = …; asm.file("real.S").compile(…)`` is
     valid Rust in which the first ``.file`` reaches nothing the compile
     sees.  Rust resolves a name to its most recent binding in scope, so the
-    gates do the same: a use belongs to the last ``let`` of that name at or
-    before the use.  Returns ``None`` when the block binds no such name —
-    a parameter, a captured variable or a temporary — which the callers
-    treat as fail-closed (nothing before the using statement counts).
+    gates do the same: a use belongs to the last binding of that name before
+    the use.
+
+    Round 9: a ``mut`` receiver is rebound by **assignment** as well, with no
+    second ``let`` — ``let mut asm = …; asm.file("ghost.S"); asm =
+    cc::Build::new(); asm.file("real.S").compile(…)`` discards the first
+    builder just as the shadowing form does, and a ``let``-only rule left the
+    window open at the original binding.  An assignment is therefore a
+    binding boundary too; a compound assignment (``+=``) is not, since it
+    keeps the value, and ``==`` is a comparison.
+
+    Returns ``None`` when the block gives ``name`` no value — a parameter, a
+    captured variable or a temporary — which the callers treat as fail-closed
+    (nothing before the using statement counts).
     """
-    pattern = re.compile(r"^\s*let\s+(?:mut\s+)?" + re.escape(name) + r"\b")
+    pattern = re.compile(
+        r"^\s*(?:let\s+(?:mut\s+)?" + re.escape(name) + r"\b"
+        r"|" + re.escape(name) + r"\s*=(?!=))"
+    )
     found: tuple[int, int] | None = None
     for lo, hi in statements:
         # A `let` binds from the statement AFTER it: a use inside the binding
@@ -621,6 +634,50 @@ def _self_test() -> int:
         "a `let` after the use is not its binding",
         binding_statement_before(view, stmts, "asm", stmts[0]) is None,
     )
+
+    # PR #889 review round 9: a `mut` receiver rebound by ASSIGNMENT, with no
+    # second `let`.  Every token of the round-8 fixture survives — one `let`,
+    # the same name, the same order — and only the second value's origin
+    # differs.
+    assigned = (
+        "fn assemble() {\n"
+        "    let mut asm = cc::Build::new();\n"
+        '    asm.file("src/ghost.S");\n'
+        "    asm = cc::Build::new();\n"
+        '    asm.file("src/real.S")\n'
+        '        .compile("sele4n_hal_asm");\n'
+        "}\n"
+    )
+    a_view = code_no_strings(assigned)
+    (_, a_start, a_end), = fn_bodies(assigned)
+    a_stmts = top_level_statements(a_view, a_start, a_end)
+    a_holder = statement_containing(a_stmts, assigned.index(".compile("))
+    a_binding = binding_statement_before(a_view, a_stmts, "asm", a_holder)
+    check(
+        "an assignment is a binding boundary",
+        a_binding == a_stmts[2],
+        str(a_binding),
+    )
+    check(
+        "...so the discarded builder's use precedes the live instance",
+        a_binding is not None and assigned.index('.file("src/ghost.S")') < a_binding[0],
+    )
+    # ...while a compound assignment keeps the value and is not a boundary,
+    # and `==` is a comparison.
+    for label, statement in (
+        ("compound assignment", "    asm += other;\n"),
+        ("comparison", "    if asm == other {}\n"),
+    ):
+        kept = assigned.replace("    asm = cc::Build::new();\n", statement)
+        k_view = code_no_strings(kept)
+        (_, k_start, k_end), = fn_bodies(kept)
+        k_stmts = top_level_statements(k_view, k_start, k_end)
+        k_holder = statement_containing(k_stmts, kept.index(".compile("))
+        check(
+            f"a {label} is not a binding boundary",
+            binding_statement_before(k_view, k_stmts, "asm", k_holder) == k_stmts[0],
+            f"{label}: {binding_statement_before(k_view, k_stmts, 'asm', k_holder)}",
+        )
 
     # --- unterminated literals raise rather than truncate ------------------
     for label, text in (

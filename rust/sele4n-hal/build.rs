@@ -1159,7 +1159,11 @@ fn scan_trap_rs_classifies_via_lean() {
     // mirror call; the host classifier's value IS the mirror call.  Round 2
     // looked for the call after the gate and the mirror's presence anywhere,
     // which `else { let _ = mirror(esr); sync_class::SVC }` satisfied.
-    if let Err(why) = classifier_status(classifier_body, host_body) {
+    if let Err(why) = classifier_status(
+        classifier_body,
+        host_body,
+        bare_ready_call_resolves(&stripped),
+    ) {
         panic!("{why} (`{path}`)");
     }
 }
@@ -1185,7 +1189,7 @@ fn scan_trap_rs_classifies_via_lean() {
 ///     `classify_synchronous_exception_mirror(esr)`.
 ///
 /// The host body's only statement is that same mirror call.
-fn classifier_status(hw_body: &str, host_body: &str) -> Result<(), String> {
+fn classifier_status(hw_body: &str, host_body: &str, allow_bare: bool) -> Result<(), String> {
     const LEAN_CALL: &str = "unsafe { lean_classify_synchronous_exception(esr) }";
     const MIRROR_CALL: &str = "classify_synchronous_exception_mirror(esr)";
     let hw = blank_extern_blocks(hw_body);
@@ -1213,7 +1217,7 @@ fn classifier_status(hw_body: &str, host_body: &str) -> Result<(), String> {
         "PR #887 review round 6: the readiness conditional has no block".to_string()
     })?;
     let cond = hw[if_at + 2..true_open].trim();
-    let arg = ready_condition_argument(cond).ok_or_else(|| {
+    let arg = ready_condition_argument(cond, allow_bare).ok_or_else(|| {
         format!(
             "PR #887 review round 6 regression: the hardware classifier's terminal \
              conditional `if {cond}` does not entail readiness — the Lean call must sit \
@@ -1310,10 +1314,55 @@ fn verify_classifier_scanner() {
     let status = |hw: &str, host: &str| {
         let (_, hw_view) = rust_code_views(hw);
         let (_, host_view) = rust_code_views(host);
-        classifier_status(&hw_view, &host_view)
+        classifier_status(&hw_view, &host_view, bare_ready_call_resolves(&hw_view))
     };
     if let Err(why) = status(GOOD_HW, GOOD_HOST) {
         panic!("build.rs self-check: the good classifier fixture was refused: {why}");
+    }
+    // PR #889 review round 9: the gate spelled bare, in a file that neither
+    // imports nor otherwise resolves it — a same-scope helper of that name
+    // would decide readiness.  Every token survives; only the resolution does
+    // not.
+    let bare = GOOD_HW.replace("crate::lean_ready::lean_ready(", "lean_ready(");
+    assert_ne!(
+        bare, GOOD_HW,
+        "build.rs self-check: the bare-gate mutation is inert"
+    );
+    assert!(
+        bare.contains("lean_ready(") && bare.contains("classify_synchronous_exception_mirror"),
+        "build.rs self-check: the bare-gate mutation DELETED a token"
+    );
+    if status(&bare, GOOD_HOST).is_ok() {
+        panic!(
+            "build.rs self-check: `classifier_status` accepted an unqualified `lean_ready(..)` \
+             in a file that does not resolve it — a same-scope helper of that name would pass"
+        );
+    }
+    // ...and the same file WITH the import resolves it, so the idiom is not
+    // refused for its own sake.
+    let imported = format!("use crate::lean_ready::lean_ready;\n{bare}");
+    if let Err(why) = classifier_status(
+        &rust_code_views(&imported).1,
+        &rust_code_views(GOOD_HOST).1,
+        bare_ready_call_resolves(&rust_code_views(&imported).1),
+    ) {
+        panic!("build.rs self-check: an imported bare gate was refused: {why}");
+    }
+    // ...unless the file also defines a `fn lean_ready` of its own.
+    let shadowed = format!(
+        "use crate::lean_ready::lean_ready;\nfn lean_ready(_c: usize) -> bool {{ true }}\n{bare}"
+    );
+    if classifier_status(
+        &rust_code_views(&shadowed).1,
+        &rust_code_views(GOOD_HOST).1,
+        bare_ready_call_resolves(&rust_code_views(&shadowed).1),
+    )
+    .is_ok()
+    {
+        panic!(
+            "build.rs self-check: a file defining its own `fn lean_ready` still resolved the \
+             bare spelling to the gate"
+        );
     }
     let hw_mutations: &[(&str, &str, &str)] = &[
         (
@@ -1900,15 +1949,23 @@ fn scan_lean_ready_gates_intact() {
                  sites."
             )
         });
-        let gate_idx = body.find("lean_ready(").unwrap_or_else(|| {
-            panic!(
-                "WS-SM regression: `{path}`'s `fn {fn_name}` calls into the \
-                 Lean runtime (`{lean_symbol}`) without consulting the per-core \
-                 readiness gate (`crate::lean_ready::lean_ready(core)`) in its \
-                 body.  A PE must never enter a Lean runtime it has not \
-                 initialized; restore the gate around the Lean call."
-            )
-        });
+        // PR #889 review round 9: the gate is the REAL one.  A bare
+        // `lean_ready(` counts only where this file resolves it to
+        // `crate::lean_ready::lean_ready` (`bare_ready_call_resolves`); a
+        // same-scope `fn lean_ready(_: usize) -> bool { true }` is a
+        // predicate of that name, not the gate.
+        let gate_idx =
+            gate_call_offset(body, bare_ready_call_resolves(&stripped)).unwrap_or_else(|| {
+                panic!(
+                    "WS-SM regression: `{path}`'s `fn {fn_name}` calls into the \
+                     Lean runtime (`{lean_symbol}`) without consulting the per-core \
+                     readiness gate (`crate::lean_ready::lean_ready(core)`) in its \
+                     body.  A PE must never enter a Lean runtime it has not \
+                     initialized; restore the gate around the Lean call.  An \
+                     unqualified `lean_ready(..)` counts only where the file \
+                     imports the gate and defines no function of that name."
+                )
+            });
         if gate_idx >= sym_idx {
             panic!(
                 "WS-SM regression: in `{path}`'s `fn {fn_name}`, the readiness \
@@ -2128,8 +2185,25 @@ fn release_surviving_tripwire_status(
     }
     let wanted = condition_key(condition);
     let mut saw_condition = false;
-    if tripwire_branch_halts(body, 1, body.len() - 1, &wanted, &mut saw_condition) {
+    let mut early_exit: Option<String> = None;
+    if tripwire_branch_halts(
+        body,
+        1,
+        body.len() - 1,
+        &wanted,
+        &mut saw_condition,
+        &mut early_exit,
+    ) {
         return Ok(());
+    }
+    if let Some(statement) = early_exit {
+        return Err(format!(
+            "`{fn_name}` can leave the helper before its tripwire branch — the statement \
+             `{statement}` exits, so the branch decides nothing on that path and the caller \
+             proceeds into the operation the tripwire exists to stop.  An `if {condition} \
+             {{ return; }}` above the fail-closed branch returns EXACTLY when the failure \
+             condition holds (PR #889 review round 9)"
+        ));
     }
     if saw_condition {
         Err(format!(
@@ -2254,38 +2328,80 @@ fn condition_key(condition: &str) -> String {
 /// `#[cfg(target_arch = "aarch64")]` — the form `install_exception_vectors`
 /// uses.  A branch under an `if`, a `match` arm, a loop or a closure is not
 /// the helper's own, and neither is one under any other attribute.
+/// **PR #889 review round 9**: nothing may LEAVE the helper before the
+/// branch.  Finding a qualifying branch says the helper halts *if control
+/// reaches it*; `if crate::shootdown::round_lock_held_by(core_id) { return; }`
+/// placed above the fail-closed branch returns precisely when the failure
+/// condition holds, and the dominance check — which asks whether the helper
+/// is *called* before the acquire — still sees an intact call.  So a
+/// statement examined before the branch that can exit (`statement_may_exit`)
+/// stops the walk and is reported: the halt must dominate every exit of the
+/// helper, not merely exist somewhere in it.
 fn tripwire_branch_halts(
     code: &str,
     start: usize,
     end: usize,
     wanted: &str,
     saw_condition: &mut bool,
+    early_exit: &mut Option<String>,
 ) -> bool {
     for (lo, hi) in top_level_statements_in(code, start, end) {
         let statement = &code[lo..hi];
         if let Some((if_at, block_open)) = top_level_if_statement(statement) {
-            if condition_key(&statement[if_at + 2..block_open]) != wanted {
-                continue;
-            }
-            *saw_condition = true;
-            let Some(block_close) = matching_close_brace(statement, block_open) else {
-                continue;
-            };
-            let statements = top_level_statements(statement, block_open, block_close);
-            if statements
-                .last()
-                .map(|&(a, b)| statement_halts(&statement[a..b]))
-                .unwrap_or(false)
-            {
-                return true;
+            if condition_key(&statement[if_at + 2..block_open]) == wanted {
+                *saw_condition = true;
+                if let Some(block_close) = matching_close_brace(statement, block_open) {
+                    let statements = top_level_statements(statement, block_open, block_close);
+                    if statements
+                        .last()
+                        .map(|&(a, b)| statement_halts(&statement[a..b]))
+                        .unwrap_or(false)
+                    {
+                        return true;
+                    }
+                }
             }
         } else if let Some((open, close)) = unconditional_block_interior(statement) {
-            if tripwire_branch_halts(statement, open + 1, close, wanted, saw_condition) {
+            if tripwire_branch_halts(
+                statement,
+                open + 1,
+                close,
+                wanted,
+                saw_condition,
+                early_exit,
+            ) {
                 return true;
             }
+            if early_exit.is_some() {
+                return false;
+            }
+        }
+        if statement_may_exit(statement) {
+            *early_exit = Some(collapse_whitespace(statement.trim()));
+            return false;
         }
     }
     false
+}
+
+/// **PR #889 review round 9**: can this statement leave its function without
+/// halting the core?  A `return` (whole word, at any nesting — a conditional
+/// return is exactly the case this exists to catch), or one of the panicking
+/// macros, which unwind or abort the host process rather than parking the PE.
+///
+/// `fatal_halt` is deliberately NOT an exit: a halt above the branch stops
+/// the core, which is fail-closed, and moving the tripwire's own halt there
+/// is already refused by the branch-must-end-in-halt rule.  The predicate
+/// over-approximates — any `return` token in the statement disqualifies it —
+/// because a scanner cannot decide reachability, and over-approximating fails
+/// closed.
+fn statement_may_exit(statement: &str) -> bool {
+    word_occurrences(statement, "return") > 0
+        || statement.contains("panic!(")
+        || statement.contains("unreachable!(")
+        || statement.contains("todo!(")
+        || statement.contains("unimplemented!(")
+        || statement.contains("process::exit(")
 }
 
 /// **PR #889 review round 8**: the `(open, close)` brace span of a statement
@@ -2443,7 +2559,7 @@ pub fn acquire_kernel_entry(core_id: usize) -> u64 {
             );
         }
     }
-    let mutations: [(&str, &str, &str); 9] = [
+    let mutations: [(&str, &str, &str); 11] = [
         (
             "the predicate is reversed, keeping its call",
             "    if crate::shootdown::round_lock_held_by(core_id) {",
@@ -2453,6 +2569,16 @@ pub fn acquire_kernel_entry(core_id: usize) -> u64 {
             "the branch is kept whole but wrapped under a further condition (round 8)",
             "    if crate::shootdown::round_lock_held_by(core_id) {\n        crate::kprintln!(\"[kernel-entry] FATAL: lock order violated\");\n        crate::cpu::fatal_halt();\n    }",
             "    if crate::shootdown::tripwires_enabled() {\n        if crate::shootdown::round_lock_held_by(core_id) {\n            crate::kprintln!(\"[kernel-entry] FATAL: lock order violated\");\n            crate::cpu::fatal_halt();\n        }\n    }",
+        ),
+        (
+            "an earlier statement returns on exactly the failure condition (round 9)",
+            "    if crate::shootdown::round_lock_held_by(core_id) {\n        crate::kprintln!",
+            "    if crate::shootdown::round_lock_held_by(core_id) {\n        return;\n    }\n    if crate::shootdown::round_lock_held_by(core_id) {\n        crate::kprintln!",
+        ),
+        (
+            "an earlier statement returns on an unrelated condition (round 9)",
+            "    if crate::shootdown::round_lock_held_by(core_id) {\n        crate::kprintln!",
+            "    if crate::shootdown::retry_pending() {\n        return;\n    }\n    if crate::shootdown::round_lock_held_by(core_id) {\n        crate::kprintln!",
         ),
         (
             "the branch returns from the helper instead of halting the core (round 7)",
@@ -2659,7 +2785,7 @@ pub fn install_exception_vectors() {
             );
         }
     }
-    let mutations: [(&str, &str, &str); 5] = [
+    let mutations: [(&str, &str, &str); 6] = [
         (
             "the alignment predicate is reversed: aligned boots halt, misaligned ones proceed",
             "    if !vbar.is_multiple_of(2048) {",
@@ -2669,6 +2795,11 @@ pub fn install_exception_vectors() {
             "the branch is kept whole but wrapped under a further condition (round 8)",
             "    if !vbar.is_multiple_of(2048) {\n        crate::kprintln!(\"[boot] FATAL: exception vector table is not 2048-byte aligned\");\n        crate::cpu::fatal_halt();\n    }\n",
             "    if crate::boot::strict_vectors() {\n        if !vbar.is_multiple_of(2048) {\n            crate::kprintln!(\"[boot] FATAL: exception vector table is not 2048-byte aligned\");\n            crate::cpu::fatal_halt();\n        }\n    }\n",
+        ),
+        (
+            "an earlier statement returns on exactly the failure condition (round 9)",
+            "    if !vbar.is_multiple_of(2048) {\n        crate::kprintln!",
+            "    if !vbar.is_multiple_of(2048) {\n        return;\n    }\n    if !vbar.is_multiple_of(2048) {\n        crate::kprintln!",
         ),
         (
             "the branch returns instead of halting, so the misaligned VBAR is written (round 7)",
@@ -3485,6 +3616,9 @@ fn lean_upcall_sites(code: &str, exports: &[&str]) -> Result<Vec<LeanUpcallSite>
 fn readiness_guard_dominates(code: &str, body_open: usize, call: usize) -> bool {
     let bytes = code.as_bytes();
     let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    // PR #889 review round 9: an unqualified `lean_ready(…)` is the gate only
+    // where this file resolves it to `crate::lean_ready::lean_ready`.
+    let allow_bare = bare_ready_call_resolves(code);
     let mut search = body_open;
     while let Some(hit) = code[search..call].find("lean_ready(") {
         let gate = search + hit;
@@ -3510,7 +3644,7 @@ fn readiness_guard_dominates(code: &str, body_open: usize, call: usize) -> bool 
         // gate on the wrong core, and a parameter is whatever the caller sent.
         let names_executing_core =
             |arg: &str| ready_argument_is_executing_core(code, body_open, if_at, arg);
-        if let Some(arg) = negated_ready_call_argument(cond) {
+        if let Some(arg) = negated_ready_call_argument(cond, allow_bare) {
             if !names_executing_core(arg) {
                 continue;
             }
@@ -3522,7 +3656,7 @@ fn readiness_guard_dominates(code: &str, body_open: usize, call: usize) -> bool 
             if last_diverges && block_close < call {
                 return true;
             }
-        } else if let Some(arg) = ready_condition_argument(cond) {
+        } else if let Some(arg) = ready_condition_argument(cond, allow_bare) {
             if names_executing_core(arg) && block_open < call && call < block_close {
                 return true;
             }
@@ -3817,29 +3951,92 @@ fn dominating_statements(
     out
 }
 
+/// **PR #889 review round 9**: the offset of the first readiness-gate call in
+/// `body` — the qualified path always, the bare spelling only where the file
+/// resolves it (`allow_bare`).
+fn gate_call_offset(body: &str, allow_bare: bool) -> Option<usize> {
+    let qualified = body.find("lean_ready::lean_ready(");
+    if !allow_bare {
+        return qualified;
+    }
+    let bare = {
+        let bytes = body.as_bytes();
+        let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b == b':';
+        let mut search = 0usize;
+        loop {
+            match body[search..].find("lean_ready(") {
+                Some(hit) => {
+                    let at = search + hit;
+                    search = at + "lean_ready(".len();
+                    if at == 0 || !is_ident(bytes[at - 1]) {
+                        break Some(at);
+                    }
+                }
+                None => break None,
+            }
+        }
+    };
+    match (qualified, bare) {
+        (Some(q), Some(b)) => Some(q.min(b)),
+        (q, b) => q.or(b),
+    }
+}
+
+/// **PR #889 review round 9**: does an UNQUALIFIED `lean_ready(…)` in this
+/// file resolve to the real gate?
+///
+/// The scanners matched the bare spelling, so a same-scope
+/// `fn lean_ready(_: usize) -> bool { true }` satisfied every readiness
+/// question — the argument-provenance check still found TPIDR, the seam
+/// stayed in `LEAN_READY_GATED_SEAMS`, and a not-ready PE entered Lean
+/// through a predicate that is not the gate.  A name is not a resolution.
+///
+/// A bare call counts only when the file *imports* the gate
+/// (`use crate::lean_ready::lean_ready`, alone or in a braced group) and
+/// defines no `fn lean_ready` of its own.  Every live call site in this crate
+/// writes the path in full, so the strict reading costs nothing; the import
+/// form is admitted because refusing a legitimate Rust idiom would push a
+/// future author to the bare spelling this refuses.
+fn bare_ready_call_resolves(file: &str) -> bool {
+    if word_occurrences(file, "fn lean_ready") > 0 {
+        return false;
+    }
+    file.lines().any(|line| {
+        let l = line.trim();
+        l.starts_with("use ")
+            && l.contains("crate::lean_ready::")
+            && (l.contains("lean_ready::lean_ready")
+                || (l.contains('{') && word_occurrences(l, "lean_ready") >= 2))
+    })
+}
+
 /// The argument of the bare readiness call a positive guard's condition
 /// carries, when the condition entails readiness: no `||`, and a conjunction
 /// (`&&` at depth zero) one of whose conjuncts is exactly the call.
-fn ready_condition_argument(cond: &str) -> Option<&str> {
+///
+/// `allow_bare` says whether an unqualified spelling resolves to the gate in
+/// the file the condition came from (`bare_ready_call_resolves`).
+fn ready_condition_argument(cond: &str, allow_bare: bool) -> Option<&str> {
     if cond.contains("||") {
         return None;
     }
     split_top_level(cond, "&&")
         .into_iter()
-        .find_map(bare_ready_call_argument)
+        .find_map(|part| bare_ready_call_argument(part, allow_bare))
 }
 
 /// The argument of `!lean_ready(…)` when `cond` is exactly that.
-fn negated_ready_call_argument(cond: &str) -> Option<&str> {
+fn negated_ready_call_argument(cond: &str, allow_bare: bool) -> Option<&str> {
     cond.trim()
         .strip_prefix('!')
-        .and_then(bare_ready_call_argument)
+        .and_then(|rest| bare_ready_call_argument(rest, allow_bare))
 }
 
-/// If `expr` is exactly a `lean_ready(<arg>)` call (optionally path-qualified
-/// or parenthesised, balanced, nothing after the closing parenthesis), its
+/// If `expr` is exactly a `lean_ready(<arg>)` call (path-qualified, or
+/// unqualified where the file resolves it — `allow_bare`; optionally
+/// parenthesised, balanced, nothing after the closing parenthesis), its
 /// argument text.
-fn bare_ready_call_argument(expr: &str) -> Option<&str> {
+fn bare_ready_call_argument(expr: &str, allow_bare: bool) -> Option<&str> {
     let mut e = expr.trim();
     while e.starts_with('(') && e.ends_with(')') && matching_close_paren(e, 0) == Some(e.len() - 1)
     {
@@ -3848,7 +4045,7 @@ fn bare_ready_call_argument(expr: &str) -> Option<&str> {
     let rest = e
         .strip_prefix("crate::lean_ready::lean_ready(")
         .or_else(|| e.strip_prefix("lean_ready::lean_ready("))
-        .or_else(|| e.strip_prefix("lean_ready("))?;
+        .or_else(|| allow_bare.then(|| e.strip_prefix("lean_ready(")).flatten())?;
     let mut depth = 1i32;
     for (index, ch) in rest.char_indices() {
         match ch {
@@ -4108,6 +4305,28 @@ fn extern_block_declarations(code: &str) -> Vec<String> {
 
 /// Every `@[export name]` under `dir`, recursively — the Lean-emitted symbol
 /// set the HAL can call.
+/// **PR #889 review round 9**: the exports of one Lean file, appended to
+/// `out`.  Split out of `collect_lean_exports` so the library root
+/// `SeLe4n.lean` — a file, not a directory entry under the tree — is read by
+/// the same view and the same attribute parser.  A missing root is a hard
+/// failure: it is the module the library is built from, and silently reading
+/// no exports from it is the fail-open direction.
+fn collect_lean_exports_from_file(path: &std::path::Path, out: &mut Vec<String>) {
+    let contents = std::fs::read_to_string(path).unwrap_or_else(|e| {
+        panic!(
+            "Lean upcall scanner: cannot read the Lean library root at {}: {e} — it compiles \
+             into the static library like any module, so an `@[export]` there must be subject \
+             to the readiness gate",
+            path.display()
+        )
+    });
+    for name in lean_exports_in(&lean_code_view(&contents)) {
+        if !out.contains(&name) {
+            out.push(name);
+        }
+    }
+}
+
 fn collect_lean_exports(dir: &std::path::Path, out: &mut Vec<String>) {
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
@@ -4382,6 +4601,16 @@ fn scan_lean_upcalls_readiness_gated() {
     println!("cargo:rerun-if-changed=../../SeLe4n");
     let mut exports: Vec<String> = Vec::new();
     collect_lean_exports(lean_root, &mut exports);
+    // PR #889 review round 9: the library ROOT module.  `SeLe4n.lean` sits
+    // beside the `SeLe4n/` directory, compiles into the static library like
+    // any module, and an `@[export]` there is emitted like any other — but a
+    // walk of the directory never sees it, so a non-`lean_`-prefixed export
+    // defined in the root escaped readiness gating entirely (the extern
+    // fallback below adds only `lean_*` names).  The Python inventory took
+    // the root in round 7; this independent scanner had not.
+    let lean_library_root = std::path::Path::new("../../SeLe4n.lean");
+    println!("cargo:rerun-if-changed=../../SeLe4n.lean");
+    collect_lean_exports_from_file(lean_library_root, &mut exports);
     if exports.is_empty() {
         panic!(
             "Lean upcall scanner: found no `@[export …]` attribute under {} — the Lean \
@@ -6563,13 +6792,17 @@ fn svc_arm_block(trap: &str) -> Result<(usize, usize, usize), String> {
 /// condition, on a literal core, or ending in a frame write, the token is there
 /// and the thread still resumes on a not-ready core.
 fn svc_arm_readiness_gate_status(trap: &str, dispatch: &str) -> Result<(), String> {
+    let allow_bare = bare_ready_call_resolves(trap) && bare_ready_call_resolves(dispatch);
     let (svc_open, svc_close, body_open) = svc_arm_block(trap)?;
     let statements = top_level_statements(trap, svc_open, svc_close);
     let text = |span: &(usize, usize)| trap[span.0..span.1].trim();
     let gates: Vec<usize> = (0..statements.len())
         .filter(|&i| {
             let t = text(&statements[i]);
-            t.starts_with("if !crate::lean_ready::lean_ready(") || t.starts_with("if !lean_ready(")
+            // PR #889 review round 9: the qualified path, or the bare
+            // spelling where this file resolves it to the real gate.
+            t.starts_with("if !crate::lean_ready::lean_ready(")
+                || (allow_bare && t.starts_with("if !lean_ready("))
         })
         .collect();
     if gates.len() != 1 {

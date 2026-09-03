@@ -670,6 +670,15 @@ tripwire branch is a top-level statement of the helper or sits under an
 unconditional block; function externs are satisfied by global text symbols
 only; the assembled sources follow the compiled builder's binding instance.
 
+**Review round 9 (PR #889, same version).**  Five: an unqualified
+`lean_ready(..)` resolves to the gate only where the file imports it and
+defines no function of that name (`bare_ready_call_resolves`, swept across
+every scanner that asks); nothing may leave a tripwire helper before its
+fail-closed branch (`statement_may_exit`); the boot entry must branch on the
+checked boot's `Except` and halt on `.error` (`boot_entry_handles_failure`);
+a receiver rebound by assignment is a binding boundary; and `build.rs`'s
+readiness scanner reads the library root `SeLe4n.lean`.
+
 **Note on RR5.10–RR5.14** (the rows that replaced one XL).  Two findings shape
 the split, and the row they replaced named neither: one is an ordering defect
 it inherited, the other is the reason its "cannot be separate PRs" claim is

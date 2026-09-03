@@ -782,6 +782,73 @@ remaining list-shaped or text-shaped answers to structural questions.
   Witnesses in all three self-tests: the shadowed builder, the parameter
   receiver, and the temporary chain the resolver already failed closed on.
 
+### The review round, ninth pass
+
+Codex's ninth review (on the round-8 head) raised five findings; all closed
+in the same version.  Four are the same shape as the round they follow — a
+name standing in for the thing it names, a check that stops at the first
+qualifying construct — and the fifth is a collector that had not been swept
+when its Python twin was.
+
+* **A bare `lean_ready(…)` was taken as the gate.**  The readiness scanners
+  matched the unqualified spelling, so a same-scope
+  `fn lean_ready(_: usize) -> bool { true }` satisfied every readiness
+  question: the argument-provenance check still found TPIDR, the seam stayed
+  in `LEAN_READY_GATED_SEAMS`, and a not-ready PE would enter Lean through a
+  predicate that is not the gate.  A name is not a resolution.
+  `bare_ready_call_resolves` decides per file — the bare spelling counts only
+  where the file imports `crate::lean_ready::lean_ready` and defines no `fn
+  lean_ready` of its own — and the verdict is threaded through
+  `ready_condition_argument`, `negated_ready_call_argument`,
+  `bare_ready_call_argument`, `classifier_status`,
+  `svc_arm_readiness_gate_status` and the site-table scanner
+  (`gate_call_offset`), which is the sibling asking the same question.  Every
+  live call site in this crate already writes the path in full, so the strict
+  reading costs nothing.  Three witnesses: the bare spelling refused, the same
+  file *with* the import accepted, and the imported file that also defines its
+  own `fn lean_ready` refused again.
+* **The tripwire halt did not dominate the helper's exits.**  Round 8 required
+  the branch to be a top-level statement; the walk still returned success on
+  the first qualifying branch without looking at what came before it, so
+  `if crate::shootdown::round_lock_held_by(core_id) { return; }` above the
+  fail-closed branch returns *exactly* when the failure condition holds while
+  the dominance check still sees an intact call before the acquire.
+  `tripwire_branch_halts` now stops at any earlier statement that can leave
+  the helper (`statement_may_exit`: a whole-word `return` at any nesting, or a
+  panicking macro — `fatal_halt` deliberately excluded, since a halt above the
+  branch is fail-closed), and names it.  Three mutations, one per shape: the
+  conditional return on the failure condition, on an unrelated condition, and
+  the VBAR analogue.
+* **The boot entry could discard the boot's `Except`.**  `BOOT_ENTRY_EXECUTED`
+  accepted `discard <| bootAndInitialiseRPi5 cfg` and `let _ ← …`, so a
+  future `lean_kernel_main` could run the checked boot, ignore a failure that
+  installs *no kernel state*, and return to Rust's idle fallback — the image
+  idling as though it had booted, which is the fail-open direction on the one
+  call that decides whether the kernel exists.  `boot_entry_handles_failure`
+  requires the result to be branched on — a `match` on the call, or on a name
+  a `let … ←` bound from it — with an `.error` arm that reaches a halt
+  (`ffiFatalHalt` / `ffiFatalHaltAll`).  The contract is stated in the failure
+  message because the entry is SM10.1's to write.  Finding this also fixed the
+  statement splitter: Lean writes a `match`'s arms at the *same* column as the
+  `match`, so `do_block_statements` had been splitting a `match ← … with`
+  from its own arms, and a check asking whether that statement carries an
+  `.error` arm would never have seen one.
+* **A builder rebound by assignment kept the old window.**  Round 8 resolved
+  the receiver to its binding instance but recognised only `let`; `let mut asm
+  = …; asm.file("ghost.S"); asm = cc::Build::new(); asm.file("real.S")
+  .compile(…)` discards the first builder with no second `let`, and
+  `ghost.S`'s symbols were still counted as assembly providers.
+  `binding_statement_before` treats an assignment `<name> = …` as a binding
+  boundary too (a compound `+=` keeps the value and `==` is a comparison —
+  both pinned), which fixes the exports gate and the cross gate at once.
+* **The readiness scanner's export collector omitted the library root.**  The
+  Python inventory took `SeLe4n.lean` in round 7; `build.rs`'s independent
+  scanner still walked only the directory, so a non-`lean_`-prefixed export
+  defined in the root — which compiles into the static library like any
+  module — was absent from the symbol set and its call was never checked.
+  `collect_lean_exports_from_file` reads it by the same view and parser, and a
+  missing root is a hard build failure rather than an empty read.
+
 ### Tests
 
 * `tests/SmpIdleSuite.lean` — 28 surface anchors for the new boot surface
@@ -860,7 +927,7 @@ remaining list-shaped or text-shaped answers to structural questions.
   idle 0 with the sentinel's `.invalidArgument` and commit nothing, refuse
   every core's idle id without an SGI, let the inactive lower witness reach
   the transition (`.illegalState`), and keep the sentinel's refusal.
-* `scripts/check_kernel_entry_exports.py --self-test` — 62 cases: the sixteen
+* `scripts/check_kernel_entry_exports.py --self-test` — 71 cases: the sixteen
   boot-entry shapes (five executing, eleven token-preserving refusals, among
   them the call executed and then routed around and, round 7, the generic
   entry at another platform and at the right one), the installer
@@ -869,7 +936,11 @@ remaining list-shaped or text-shaped answers to structural questions.
   export, and (round 7) the executed builder chain, and (round 8) global
   text symbols only — data, bss, local and weak symbols under a function
   extern's name are non-satisfying — with the shadowed builder, the
-  parameter receiver and the temporary chain;
+  parameter receiver, the temporary chain and (round 9) the builder rebound by
+  assignment; and (round 9) the boot entry's failure contract — the two
+  branching shapes accepted, and `discard`, `let _ ←`, a bare call, a `match`
+  with no `.error` arm, an `.error` arm that returns, a bound-and-never-matched
+  result and a halt in the `.ok` arm all refused;
   `scripts/rust_code_view.py --self-test` (round 8) — the statement
   splitter and the binding instance: the last `let` strictly before the
   use, none for an unbound name or a `let` after the use;
@@ -883,7 +954,10 @@ remaining list-shaped or text-shaped answers to structural questions.
   mutations that keep the branch and diverge without halting; (round 8)
   two wrapped-branch mutations, and the VBAR fixture that mirrors the real
   function — the branch under the image's `#[cfg]` block — accepted, with
-  three block mutations refused.
+  three block mutations refused; (round 9) three early-exit mutations that
+  keep the branch and return before it, and three gate-resolution witnesses
+  (the bare spelling refused, the imported one accepted, the imported one
+  shadowed by a local `fn lean_ready` refused).
 * `rust/sele4n-hal/tests/readiness_gate_before_mark.rs` and
   `…_after_mark.rs` — the readiness mask is process-global and one-way, so both
   sides of the gate are only observable in separate binaries.  Before any mark:

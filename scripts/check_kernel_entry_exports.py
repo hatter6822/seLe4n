@@ -133,6 +133,27 @@ LEAN_DIVERGES = re.compile(r"^(?:return|throw|panic!|unreachable!)\b")
 # `←` (a `let` pattern, or a `match` scrutinee), a bare action, or `discard`.
 # `let x := …` binds the action without running it; a call under `if`,
 # `match`, `fun` or `=>` on the statement's first line is conditional.
+# PR #889 review round 9: the boot entry must **branch** on the checked
+# boot's `Except` and terminate the error path.  `bootAndInitialiseRPi5`
+# returns `BaseIO (Except String SystemState)`: on `.error` nothing is
+# installed, so an entry that ran the call and ignored its result would fall
+# through to Rust's idle fallback with no kernel state — the boot failure
+# silently becoming an idle machine.  The accepted shape is a `match` on the
+# call (or on a name bound from it) whose error arm reaches a halt; `discard`
+# and `let _ ←` are refused because they drop the result.
+BOOT_ENTRY_HALTS = re.compile(
+    r"\b(?:ffiFatalHaltAll|ffiFatalHalt|fatalHaltAll|fatalHalt)\b"
+)
+BOOT_ENTRY_ERROR_ARM = re.compile(r"\|\s*(?:Except\.)?\.?error\b")
+BOOT_ENTRY_MATCHED = re.compile(
+    r"^match\s+←\s*\(?\s*" + BOOT_ENTRY_CALLEE + r"\b"
+)
+BOOT_ENTRY_BOUND = re.compile(
+    r"^let\s+(?!_\b)(?P<name>[A-Za-z_][A-Za-z0-9_'!?]*)\s*←\s*\(?\s*"
+    + BOOT_ENTRY_CALLEE
+    + r"\b"
+)
+
 BOOT_ENTRY_EXECUTED = re.compile(
     r"^(?:let\s+(?:(?!:=|\bif\b|\bfun\b|=>|\bmatch\b).)*?←\s*\(?\s*"
     + BOOT_ENTRY_CALLEE + r"\b"
@@ -285,6 +306,12 @@ def do_block_statements(decl: str, body_at: int) -> list[str] | None:
     line ends the block.  What a block does unconditionally is what its
     top-level statements say — a statement nested under `if`, `match` or
     `for` is a continuation here, never a statement of its own.
+
+    PR #889 review round 9: a line beginning with `|` continues the statement
+    above it whatever its column.  Lean's idiom writes a `match`'s arms at the
+    *same* column as the `match`, so the column rule alone split
+    `match ← boot … with` from its own arms — and a check asking whether that
+    statement carries an `.error` arm then never saw one.
     """
     m = re.match(r"\s*do\b", decl[body_at:])
     if m is None:
@@ -303,7 +330,9 @@ def do_block_statements(decl: str, body_at: int) -> list[str] | None:
         indent = len(line) - len(line.lstrip())
         if base is None:
             base = indent
-        if indent == base:
+        if line.lstrip().startswith("|") and statements:
+            statements[-1][1] += "\n" + line.strip()
+        elif indent == base:
             statements.append([indent, line.strip()])
         elif indent > base and statements:
             statements[-1][1] += "\n" + line.strip()
@@ -377,6 +406,15 @@ def boot_entry_binding_failures(sources: dict[str, str]) -> list[str]:
                     "— the hardware boot must go through the checked platform boot (idle "
                     "threads, deployment labeling, reserved slots)"
                 )
+            elif executed:
+                # PR #889 review round 9: a term body is one statement; the
+                # only branching term is a `match ← … with`, which is checked
+                # by the same rule.
+                handled = boot_entry_handles_failure(
+                    statements if statements is not None else [body.strip()]
+                )
+                if handled is not None:
+                    failures.append(f"{label} {handled}")
             short = name.split(".")[-1]
             others = sorted((identifier_tokens(body) & writers) - {BOOT_ENTRY_CALLEE, short})
             if KERNEL_STATE_REF_WRITE.search(body):
@@ -388,6 +426,67 @@ def boot_entry_binding_failures(sources: dict[str, str]) -> list[str]:
                     f"`{BOOT_ENTRY_CALLEE}` is a path around the checked boot"
                 )
     return failures
+
+
+def boot_entry_handles_failure(statements: list[str]) -> str | None:
+    """PR #889 review round 9: does the boot entry **branch** on the checked
+    boot's `Except` and terminate the error path?  The failure reason, or
+    `None` when it does.
+
+    `bootAndInitialiseRPi5 : BaseIO (Except String SystemState)` installs
+    nothing on `.error`.  Round 5's check required the call to be *executed*,
+    and `discard <| bootAndInitialiseRPi5 cfg` or `let _ ← …` satisfied it —
+    the entry would then return to the Rust caller with no kernel state
+    installed, and the image would idle as if the boot had succeeded, which is
+    the fail-open direction on the one call that decides whether the kernel
+    exists.
+
+    The accepted shape is a `match` — on the call itself, or on a name a
+    `let … ←` bound from it — carrying an `.error` arm whose text reaches a
+    halt (`ffiFatalHalt` / `ffiFatalHaltAll` / `fatalHalt` / `fatalHaltAll`,
+    the fail-closed stops this tree already has).  Anything else fails closed,
+    and the message names the shape, because the entry is SM10.1's to write
+    and this is the contract it will be written against.
+    """
+    for index, statement in enumerate(statements):
+        scrutinee = None
+        if BOOT_ENTRY_MATCHED.match(statement):
+            scrutinee = statement
+        else:
+            bound = BOOT_ENTRY_BOUND.match(statement)
+            if bound is not None:
+                name = bound.group("name")
+                pattern = re.compile(r"^match\s+" + re.escape(name) + r"\b")
+                scrutinee = next(
+                    (s for s in statements[index + 1 :] if pattern.match(s)), None
+                )
+                if scrutinee is None:
+                    return (
+                        f"binds the checked boot's result as `{name}` and never matches on "
+                        f"it — the `Except` must be branched on, and the `.error` arm must "
+                        f"halt: on a failed boot nothing is installed, and returning to the "
+                        f"Rust caller leaves the image idling with no kernel state"
+                    )
+        if scrutinee is None:
+            continue
+        if not BOOT_ENTRY_ERROR_ARM.search(scrutinee):
+            return (
+                "matches on the checked boot's result without an `.error` arm — the "
+                "failed boot installs nothing and must not fall through"
+            )
+        arm_at = BOOT_ENTRY_ERROR_ARM.search(scrutinee)
+        if not BOOT_ENTRY_HALTS.search(scrutinee[arm_at.start() :]):
+            return (
+                "has an `.error` arm that does not halt — a failed boot installs no "
+                "kernel state, so the arm must stop the core (`ffiFatalHalt` / "
+                "`ffiFatalHaltAll`) rather than return to the Rust caller"
+            )
+        return None
+    return (
+        f"executes `{BOOT_ENTRY_CALLEE}` but discards its `Except` (`discard` or `let _ ←`) "
+        f"— a failed boot installs no kernel state, and the entry must branch on the result "
+        f"with an `.error` arm that halts"
+    )
 
 
 def extern_declarations_in(text: str, where: str) -> set[str]:
@@ -551,17 +650,20 @@ def assembled_sources_in(build_rs: str) -> set[str]:
         compile_statement = rust_code_view.statement_containing(statements, compile_at)
         if compile_statement is None:
             continue
-        # PR #889 review round 8: the receiver's SPELLING does not identify
-        # the builder.  `let mut asm = …; asm.file("ghost.S"); let mut asm =
-        # …; asm.file("real.S").compile(…)` rebinds the name, and the first
-        # `.file()` reaches a builder the compile never sees — a symbol from
-        # `ghost.S` would then be subtracted as an assembly provider and
-        # mask an unresolved HAL extern.  So a `.file()` counts only from the
-        # receiver's binding instance: the last top-level `let [mut]
-        # <receiver>` at or before the compile statement.  A receiver the
-        # block does not bind — a parameter, a captured variable — has no
-        # instance to resolve against, and then only the compile statement's
-        # own chain counts (fail closed).
+        # PR #889 review rounds 8 and 9: the receiver's SPELLING does not
+        # identify the builder.  `let mut asm = …; asm.file("ghost.S"); let
+        # mut asm = …; asm.file("real.S").compile(…)` rebinds the name, and
+        # the first `.file()` reaches a builder the compile never sees — a
+        # symbol from `ghost.S` would then be subtracted as an assembly
+        # provider and mask an unresolved HAL extern.  Round 9: a `mut`
+        # receiver is rebound by **assignment** too (`asm = cc::Build::new();`),
+        # with no second `let`.  So a `.file()` counts only from the
+        # receiver's binding instance — the last top-level `let [mut]
+        # <receiver>` **or** `<receiver> = …` before the compile statement
+        # (`binding_statement_before`).  A receiver the block never binds —
+        # a parameter, a captured variable — has no instance to resolve
+        # against, and then only the compile statement's own chain counts
+        # (fail closed).
         binding = rust_code_view.binding_statement_before(
             structure, statements, receiver, compile_statement
         )
@@ -896,6 +998,22 @@ def self_test() -> int:
             "a `.file()` on a shadowed, uncompiled builder was counted as assembled "
             f"(got {sorted(assembled_sources_in(shadowed_chain))})"
         )
+    # PR #889 review round 9: the receiver is REBOUND BY ASSIGNMENT, with no
+    # second `let`.  One `let`, the same name, the same order — only the
+    # second value's origin differs, and `ghost.S` is on the discarded builder.
+    assigned_chain = (
+        "fn main() {\n    assemble();\n}\n"
+        "fn assemble() {\n    let mut asm = cc::Build::new();\n"
+        "    asm.file(\"src/ghost.S\");\n"
+        "    asm = cc::Build::new();\n"
+        "    asm.file(\"src/real.S\").compile(\"sele4n_hal_asm\");\n}\n"
+    )
+    if assembled_sources_in(assigned_chain) != {"src/real.S"}:
+        failures.append(
+            "a `.file()` on a builder discarded by a later assignment was counted as "
+            f"assembled (got {sorted(assembled_sources_in(assigned_chain))})"
+        )
+
     # A receiver the block does not bind — a parameter — has no binding
     # instance in the body, so nothing before the compile statement counts.
     parameter_receiver = (
@@ -989,48 +1107,79 @@ def self_test() -> int:
         if not accept and not found:
             failures.append(f"a boot entry that keeps the token and breaks the relation was accepted — {name}")
 
-    # The executing shapes, each with the call at the top level of the block.
-    check_entry("`let _ ←` binding",
-                "do\n  let _ ← bootAndInitialiseRPi5 cfg\n  pure ()", True)
-    check_entry("`match ←` scrutinee",
+    # The executing shapes.  PR #889 review round 9: executing the call is
+    # necessary and not sufficient — the entry must BRANCH on the checked
+    # boot's `Except` and halt on `.error`, since a failed boot installs no
+    # kernel state and returning to Rust would idle the image as if it had
+    # booted.  So the accepted shapes are the two branching ones.
+    check_entry("`match ←` scrutinee with a halting error arm",
                 "do\n  match ← bootAndInitialiseRPi5 cfg with\n"
-                "  | .ok _ => pure ()\n  | .error _ => pure ()", True)
-    check_entry("bare call as the last statement",
-                "do\n  IO.println \"booting\"\n  bootAndInitialiseRPi5 cfg", True)
-    check_entry("term body headed by the call",
-                "discard <| bootAndInitialiseRPi5 cfg", True)
-    check_entry("a reader after the call is not an installer",
-                "do\n  let _ ← bootAndInitialiseRPi5 cfg\n"
+                "  | .ok _ => pure ()\n  | .error _ => Platform.FFI.ffiFatalHalt", True)
+    check_entry("bound with `←`, matched below, error arm halts",
+                "do\n  let booted ← bootAndInitialiseRPi5 cfg\n"
+                "  match booted with\n  | .ok _ => pure ()\n"
+                "  | .error _ => Platform.FFI.ffiFatalHaltAll", True)
+    check_entry("a reader after the branch is not an installer",
+                "do\n  match ← bootAndInitialiseRPi5 cfg with\n"
+                "  | .ok _ => pure ()\n  | .error _ => Platform.FFI.ffiFatalHalt\n"
                 "  let st ← getKernelState\n  pure ()", True)
+    # Round 9's token-preserving mutations: the call is executed in every one.
+    check_entry("`let _ ←` discards the boot's result (round 9)",
+                "do\n  let _ ← bootAndInitialiseRPi5 cfg\n  pure ()", False)
+    check_entry("`discard` drops the boot's result (round 9)",
+                "discard <| bootAndInitialiseRPi5 cfg", False)
+    check_entry("a bare call as the last statement leaves the failure unhandled (round 9)",
+                "do\n  IO.println \"booting\"\n  bootAndInitialiseRPi5 cfg", False)
+    check_entry("the result is matched with no `.error` arm (round 9)",
+                "do\n  match ← bootAndInitialiseRPi5 cfg with\n  | .ok _ => pure ()", False)
+    check_entry("the `.error` arm returns instead of halting (round 9)",
+                "do\n  match ← bootAndInitialiseRPi5 cfg with\n"
+                "  | .ok _ => pure ()\n  | .error _ => pure ()", False)
+    check_entry("the result is bound and never matched (round 9)",
+                "do\n  let booted ← bootAndInitialiseRPi5 cfg\n"
+                "  IO.println \"booted\"", False)
+    check_entry("the halt sits in the `.ok` arm, not the `.error` arm (round 9)",
+                "do\n  match ← bootAndInitialiseRPi5 cfg with\n"
+                "  | .ok _ => Platform.FFI.ffiFatalHalt\n  | .error _ => pure ()", False)
     # Token-preserving mutations: every one keeps `bootAndInitialisePlatform` in
     # the declaration and breaks the relation (round 3's check passed them all).
     check_entry("the callee named only in a string literal",
                 "do\n  IO.println \"bootAndInitialiseRPi5\"\n"
                 "  initialiseKernelState (bootFromPlatform cfg)", False)
     check_entry("the call nested under a dead branch",
-                "do\n  if false then\n    let _ ← bootAndInitialiseRPi5 cfg\n"
+                "do\n  if false then\n    match ← bootAndInitialiseRPi5 cfg with\n"
+                "    | .ok _ => pure ()\n    | .error _ => Platform.FFI.ffiFatalHalt\n"
                 "  initialiseKernelState (bootFromPlatform cfg)", False)
     check_entry("the action bound with `:=` and never run",
                 "do\n  let boot := bootAndInitialiseRPi5 cfg\n"
                 "  initialiseKernelState (bootFromPlatform cfg)", False)
     check_entry("the call executed, then the live path routed around it",
-                "do\n  let _ ← bootAndInitialiseRPi5 cfg\n"
+                "do\n  match ← bootAndInitialiseRPi5 cfg with\n"
+                "  | .ok _ => pure ()\n  | .error _ => Platform.FFI.ffiFatalHalt\n"
                 "  initialiseKernelState (bootFromPlatform cfg)", False)
     check_entry("the generic entry at another platform (round 7)",
-                "do\n  let _ ← bootAndInitialisePlatform SimSingleCorePlatform cfg\n  pure ()", False)
+                "do\n  match ← bootAndInitialisePlatform SimSingleCorePlatform cfg with\n"
+                "  | .ok _ => pure ()\n  | .error _ => Platform.FFI.ffiFatalHalt", False)
     check_entry("the generic entry at the right platform is still not the hardware entry (round 7)",
-                "do\n  let _ ← bootAndInitialisePlatform RPi5Platform cfg\n  pure ()", False)
+                "do\n  match ← bootAndInitialisePlatform RPi5Platform cfg with\n"
+                "  | .ok _ => pure ()\n  | .error _ => Platform.FFI.ffiFatalHalt", False)
     check_entry("the unchecked wrapper re-run after the checked one",
-                "do\n  let _ ← bootAndInitialiseRPi5 cfg\n"
+                "do\n  match ← bootAndInitialiseRPi5 cfg with\n"
+                "  | .ok _ => pure ()\n  | .error _ => Platform.FFI.ffiFatalHalt\n"
                 "  let _ ← bootAndInitialiseFromPlatform cfg ctx\n  pure ()", False)
     check_entry("a `return` above the call",
-                "do\n  return ()\n  let _ ← bootAndInitialiseRPi5 cfg", False)
+                "do\n  return ()\n  match ← bootAndInitialiseRPi5 cfg with\n"
+                "  | .ok _ => pure ()\n  | .error _ => Platform.FFI.ffiFatalHalt", False)
     check_entry("an installer reached through a helper",
-                "do\n  let _ ← bootAndInitialiseRPi5 cfg\n  installRaw cfg\n\n"
+                "do\n  match ← bootAndInitialiseRPi5 cfg with\n"
+                "  | .ok _ => pure ()\n  | .error _ => Platform.FFI.ffiFatalHalt\n"
+                "  installRaw cfg\n\n"
                 "def installRaw (cfg : Nat) : IO Unit :=\n  kernelStateRef.set (bootFromPlatform cfg)",
                 False)
     check_entry("the reference written directly",
-                "do\n  let _ ← bootAndInitialiseRPi5 cfg\n  kernelStateRef.set 0",
+                "do\n  match ← bootAndInitialiseRPi5 cfg with\n"
+                "  | .ok _ => pure ()\n  | .error _ => Platform.FFI.ffiFatalHalt\n"
+                "  kernelStateRef.set 0",
                 False)
     check_entry("a `where`-form body with no `:=`", "leanKernelMain where\n  x := 0", False)
     doc_only = (
@@ -1041,7 +1190,8 @@ def self_test() -> int:
         failures.append("a boot entry naming the callee only in its docstring was accepted")
     elsewhere = (
         "@[export lean_kernel_main]\ndef leanKernelMain : IO Unit := pure ()\n\n"
-        "def other : IO Unit := do\n  let _ ← bootAndInitialiseRPi5 cfg\n  pure ()\n"
+        "def other : IO Unit := do\n  match ← bootAndInitialiseRPi5 cfg with\n"
+        "  | .ok _ => pure ()\n  | .error _ => Platform.FFI.ffiFatalHalt\n"
     )
     if not boot_entry_binding_failures({"ffi": ffi, "f": elsewhere}):
         failures.append("a boot entry whose neighbour makes the call was accepted")
@@ -1159,7 +1309,7 @@ def self_test() -> int:
         for line in failures:
             print(f"         {line}")
         return 1
-    print("[PASS] check_kernel_entry_exports self-test (62 cases)")
+    print("[PASS] check_kernel_entry_exports self-test (71 cases)")
     return 0
 
 

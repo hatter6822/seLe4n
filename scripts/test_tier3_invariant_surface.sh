@@ -5189,6 +5189,18 @@ run_check "INVARIANT" rg -n 'tcb.queueNext.isNone && tcb.queuePrev.isNone && tcb
 run_check "INVARIANT" rg -n '  \| .tcb tcb => tcbReferencesReservedIdleSlot tcb' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '  \| .tcb tcb => bootSafeTcbCheck tcb' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '    idleSlotsReserved config && embeddedIdentitiesMatchSlots config' SeLe4n/Platform/Boot.lean
+# PR #889 review round 9: an unqualified readiness call resolves to the gate
+# only where the file imports it; the tripwire halt dominates every helper
+# exit; the boot entry branches on the checked boot and halts on error; a
+# builder rebound by assignment is a new binding instance; and the readiness
+# scanner reads the library root.
+run_check "INVARIANT" rg -n '^fn bare_ready_call_resolves' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn gate_call_offset' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn statement_may_exit' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn collect_lean_exports_from_file' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n 'collect_lean_exports_from_file\(lean_library_root' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^def boot_entry_handles_failure' scripts/check_kernel_entry_exports.py
+run_check "INVARIANT" rg -n '^def binding_statement_before' scripts/rust_code_view.py
 run_check "INVARIANT" rg -n 'else if ¬ objectIdsUnique config.initialObjects then' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^  auditMonitorClearance : Option SecurityDomain := none' SeLe4n/Kernel/InformationFlow/Policy.lean
 run_check "INVARIANT" rg -n '^theorem deploymentLabelingContext_policy_fields' SeLe4n/Kernel/InformationFlow/Policy.lean

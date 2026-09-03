@@ -1023,7 +1023,11 @@ code may assume:
   `tripwire_branch_halts` / `unconditional_block_interior`): an
   exact-condition `if` nested under a further condition halted only when
   that condition held, and the dominance check, which asks whether the
-  *helper* is called, could not see it.
+  *helper* is called, could not see it.  Nothing may **leave** the helper
+  before that branch either (round 9, `statement_may_exit`): an
+  `if <the same condition> { return; }` above it returns exactly when the
+  failure condition holds, so an earlier statement carrying a `return` or a
+  panicking macro refuses the tripwire.
   Live WCRT is therefore weaker
   than `PerCoreWcrt.lean`'s fine-lock bound, which remains a statement about the
   intended discipline.
@@ -1189,7 +1193,9 @@ code may assume:
   upcall from the Lean tree's `@[export]`s — read over a comment-free,
   string-free Lean view with attribute lists split (`lean_code_view`,
   `lean_exports_in`; PR #889 review round 2: a commented-out `@[export …]`
-  had counted as live) — and the HAL's `lean_`-prefixed
+  had counted as live; round 9: the tree including the library root
+  `SeLe4n.lean`, which compiles into the static library like any module) —
+  and the HAL's `lean_`-prefixed
   externs, attributes each call to its enclosing function, and fails the
   build unless the readiness guard *dominates* it in that body
   (`readiness_guard_dominates`, PR #887 review round 3: the call sits inside
@@ -1202,7 +1208,13 @@ code may assume:
   last binding winning (`ready_argument_is_executing_core`) — so a literal,
   a parameter, a shadowed binding or a `debug_assert_eq!` reads as ungated) —
   `LEAN_READY_GATED_SEAMS`
-  is the pin the derivation must reproduce, and the **one** upcall that runs
+  is the pin the derivation must reproduce.  The guard must also **resolve**
+  to the gate (round 9): an unqualified `lean_ready(..)` counts only where the
+  file imports `crate::lean_ready::lean_ready` and defines no `fn lean_ready`
+  of its own (`bare_ready_call_resolves`, threaded through every scanner that
+  asks — the condition parsers, the classifier, the SVC arm and the
+  site-table's `gate_call_offset`), since a same-scope helper of that name
+  satisfied every other readiness question while being a different predicate, and the **one** upcall that runs
   ungated — the primary's `lean_kernel_main` boot install, which cannot sit
   behind the gate because it is the call that initializes the runtime the gate
   stands for — is `LEAN_UPCALLS_OUTSIDE_THE_GATE`, with its occurrence count
@@ -1698,14 +1710,20 @@ code may assume:
   `let … :=` binding, a dead branch and a call executed then routed around all
   satisfy — round 5) — vacuous until SM10.1 writes the entry, decisive after,
   so the idle-thread, labeling and reservation guarantees cannot be bypassed
-  by an entry that boots through `bootFromPlatform` directly.  The inventory
+  by an entry that boots through `bootFromPlatform` directly.  Executing the
+  call is necessary and not sufficient (round 9): the entry must **branch** on
+  the checked boot's `Except` and halt on `.error`
+  (`boot_entry_handles_failure`), because a failed boot installs no kernel
+  state and returning to Rust would idle the image as though it had booted —
+  `discard` and `let _ ←` are refused.  The inventory
   it reads includes the library root `SeLe4n.lean` (round 7), and the
   assembly providers are read off the compile's *executed* chain — top-level
   statements of its own function, at brace depth zero, at or before the
   compile — rather than by receiver spelling.  Since round 8 the receiver
   is a **binding instance**, not a name: `rust_code_view.binding_statement_before`
-  resolves it to the last top-level `let [mut] <receiver>` strictly before
-  the compile statement, `assembled_sources_in` counts `.file()` calls from
+  resolves it to the last top-level `let [mut] <receiver>` — or, since round
+  9, `<receiver> = …`, since a `mut` builder is rebound by assignment with no
+  second `let` — strictly before the compile statement, `assembled_sources_in` counts `.file()` calls from
   that instance on, the cross gate's build-script check requires the
   instance and refuses a receiver the compile's function does not bind, and
   the archive parsers accept global text (`T`) only
