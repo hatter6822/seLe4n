@@ -711,9 +711,12 @@ theorem objectIdsUnique_empty : objectIdsUnique [] = true := by
     authority would be inert; refusing the config too keeps the boot image free
     of it.  Total over `KernelObject`, so a new kind must say where it stands,
     and the queue links, the notification binding (PR #889 review round 4:
-    `boundTCB`) and every SchedContext reference are included so the check
+    `boundTCB`), every SchedContext reference and an untyped's allocation and
+    ancestry records (round 6: `children`, `parent`) are included so the check
     asks the same question of every field that can hold an object, thread or
-    scheduling-context id. -/
+    scheduling-context id.  The two kinds that hold none — a VSpace root
+    (an ASID and a virtual-to-physical map) and, after round 6, nothing else —
+    answer `false` by inspection of their fields, not by default. -/
 def bootObjectReferencesReservedIdleSlot (obj : KernelObject) : Bool :=
   match obj with
   | .endpoint ep =>
@@ -743,7 +746,13 @@ def bootObjectReferencesReservedIdleSlot (obj : KernelObject) : Bool :=
      | .donated scId owner =>
        SeLe4n.Kernel.isIdleObjId scId.toObjId || SeLe4n.Kernel.isIdleThreadId owner)
   | .vspaceRoot _ => false
-  | .untyped _ => false
+  | .untyped ut =>
+    -- PR #889 review round 6: a boot untyped whose allocation record names an
+    -- idle slot as a child, or whose ancestry names one as its parent, would
+    -- keep user-supplied metadata about an object the idle fold materialises
+    -- — the retype and revoke paths read both.
+    ut.children.any (fun child => SeLe4n.Kernel.isIdleObjId child.objId) ||
+    ut.parent.any SeLe4n.Kernel.isIdleObjId
   | .schedContext sc => sc.boundThread.any SeLe4n.Kernel.isIdleThreadId
   | .reply r =>
     r.caller.any SeLe4n.Kernel.isIdleThreadId ||

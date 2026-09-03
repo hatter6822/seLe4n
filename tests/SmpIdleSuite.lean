@@ -677,6 +677,31 @@ private def runBootValidationParityChecks : IO Unit := do
         (e == idleSlotDiagnostic)
   | .ok _ =>
       assertBool "NEGATIVE: a notification bound to an idle thread must be refused" false
+  -- PR #889 review round 6: a boot untyped whose allocation record names an
+  -- idle slot as a child, or whose ancestry names one as its parent,
+  -- references the slot; ordinary records do not.
+  let untypedWith (child : Option SeLe4n.ObjId) (parent : Option SeLe4n.ObjId) : KernelObject :=
+    .untyped { regionBase := SeLe4n.PAddr.ofNat 0x1000_0000, regionSize := 0x1000,
+               children := (child.map (fun c => ({ objId := c, offset := 0, size := 0x100 } :
+                 UntypedChild))).toList,
+               parent := parent }
+  assertBool "NEGATIVE: a boot untyped recording an idle slot as a child references the slot"
+    (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot (untypedWith (some idle0Obj) none) == true)
+  assertBool "NEGATIVE: a boot untyped recording an idle slot as its parent references the slot"
+    (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot (untypedWith none (some idle0Obj)) == true)
+  assertBool "a boot untyped with ordinary records does not"
+    (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot (untypedWith (some ⟨9⟩) (some ⟨8⟩)) == false)
+  let untypedChildCfg : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [],
+      initialObjects := [ { id := ⟨7⟩, obj := untypedWith (some idle0Obj) none,
+                            hSlots := fun _ h => KernelObject.noConfusion h,
+                            hMappings := fun _ h => KernelObject.noConfusion h } ] }
+  match SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads untypedChildCfg with
+  | .error e =>
+      assertBool "NEGATIVE: ...and the checked boot refuses it with the reservation diagnostic"
+        (e == idleSlotDiagnostic)
+  | .ok _ =>
+      assertBool "NEGATIVE: an untyped recording an idle child must be refused" false
   assertBool "capTargetsReservedIdleObject decides by the capability's target"
     (SeLe4n.Kernel.capTargetsReservedIdleObject
         { target := .object idle0Obj, rights := AccessRightSet.ofList [.write], badge := none } == true &&

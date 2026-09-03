@@ -2031,18 +2031,54 @@ const LEAN_UPCALLS_OUTSIDE_THE_GATE: &[(&str, &str, &str, usize, &str)] = &[
 /// internal consistency claim about a data structure — and is deliberately not
 /// held to this.  What distinguishes these two is that the *documented*
 /// behaviour on failure is a halt, so the check has to be able to produce one.
-const RELEASE_SURVIVING_TRIPWIRES: &[(&str, &str, &str)] = &[
-    (
-        "src/kernel_entry.rs",
-        "assert_not_holding_round_lock",
-        "crate::shootdown::round_lock_held_by(core_id)",
-    ),
-    (
-        "src/boot.rs",
-        "install_exception_vectors",
-        "!vbar.is_multiple_of(2048)",
-    ),
+const RELEASE_SURVIVING_TRIPWIRES: &[ReleaseSurvivingTripwire] = &[
+    ReleaseSurvivingTripwire {
+        path: "src/kernel_entry.rs",
+        branch_fn: "assert_not_holding_round_lock",
+        condition: "crate::shootdown::round_lock_held_by(core_id)",
+        protected_fn: "acquire_kernel_entry",
+        tripwire_statement: "assert_not_holding_round_lock(core_id);",
+        protected_operation: "acquire_kernel_entry_in(",
+    },
+    ReleaseSurvivingTripwire {
+        path: "src/boot.rs",
+        branch_fn: "install_exception_vectors",
+        condition: "!vbar.is_multiple_of(2048)",
+        protected_fn: "install_exception_vectors",
+        tripwire_statement: "if !vbar.is_multiple_of(2048)",
+        protected_operation: "crate::registers::write_vbar_el1(",
+    },
 ];
+
+/// **WS-RR RR5.18 / PR #889 review round 6**: one release-surviving tripwire,
+/// pinned together with the operation it protects.
+///
+/// The first three fields pin the *branch* (`release_surviving_tripwire_status`):
+/// in `branch_fn`, an `if` whose condition is exactly `condition` ends in a
+/// diverging statement.  The last three pin the *dominance*
+/// (`tripwire_dominates_protected_operation`): in `protected_fn`, every
+/// occurrence of `protected_operation` is dominated by a statement that **is**
+/// `tripwire_statement` — a top-level statement of the function body, or of a
+/// block enclosing the operation, ending before it.  A branch alone is a
+/// presence: the helper can stay intact while its call is deleted from the
+/// function it guards, nested under `if false`, or moved below the operation,
+/// and every token survives.
+struct ReleaseSurvivingTripwire {
+    /// The HAL source, relative to the crate root.
+    path: &'static str,
+    /// The function holding the `if … { …; fatal_halt() }` branch.
+    branch_fn: &'static str,
+    /// The branch's exact condition, compared as a predicate.
+    condition: &'static str,
+    /// The function whose operation the tripwire must precede.
+    protected_fn: &'static str,
+    /// The tripwire as a statement of `protected_fn`: a call to `branch_fn`
+    /// (`name(args);`, compared whole) or the branch itself (`if cond`,
+    /// compared by condition).
+    tripwire_statement: &'static str,
+    /// The head of the protected operation, as it appears in `protected_fn`.
+    protected_operation: &'static str,
+}
 
 /// **WS-RR RR5.18**: each pinned tripwire is a real branch to a fail-closed
 /// halt, in every profile.
@@ -2071,19 +2107,7 @@ fn release_surviving_tripwire_status(
     fn_name: &str,
     condition: &str,
 ) -> Result<(), String> {
-    let signature = format!("fn {fn_name}(");
-    let at = code
-        .find(&signature)
-        .ok_or_else(|| format!("`{fn_name}` is not defined here"))?;
-    // An offset *inside* the body: `enclosing_fn_span` resolves the innermost
-    // `fn` whose brace-matched body contains it, and the signature itself sits
-    // outside that span.
-    let brace = at
-        + code[at..]
-            .find('{')
-            .ok_or_else(|| format!("`{fn_name}` has no body"))?;
-    let (_, body_open, body_close) = enclosing_fn_span(code, brace + 1)
-        .ok_or_else(|| format!("`{fn_name}`'s body could not be resolved"))?;
+    let (body_open, body_close) = named_fn_body_span(code, fn_name)?;
     let body = &code[body_open..=body_close];
     if body.contains("debug_assert") {
         return Err(format!(
@@ -2124,6 +2148,95 @@ fn release_surviving_tripwire_status(
     }
 }
 
+/// The brace-matched body span `(open, close)` of the function `fn_name(`
+/// defines in `code`.
+fn named_fn_body_span(code: &str, fn_name: &str) -> Result<(usize, usize), String> {
+    let signature = format!("fn {fn_name}(");
+    let at = code
+        .find(&signature)
+        .ok_or_else(|| format!("`{fn_name}` is not defined here"))?;
+    // An offset *inside* the body: `enclosing_fn_span` resolves the innermost
+    // `fn` whose brace-matched body contains it, and the signature itself sits
+    // outside that span.
+    let brace = at
+        + code[at..]
+            .find('{')
+            .ok_or_else(|| format!("`{fn_name}` has no body"))?;
+    let (_, body_open, body_close) = enclosing_fn_span(code, brace + 1)
+        .ok_or_else(|| format!("`{fn_name}`'s body could not be resolved"))?;
+    Ok((body_open, body_close))
+}
+
+/// **PR #889 review round 6**: the tripwire **dominates** the operation it
+/// protects.
+///
+/// In `protected_fn`'s body, every occurrence of `protected_operation` (a
+/// whole-word match of its head) must have, among the statements that
+/// execute before it on every path — `dominating_statements`: the top-level
+/// statements of the body and of each block enclosing the occurrence, ending
+/// before it — one that *is* the tripwire: a call statement equal, whitespace
+/// aside, to `tripwire_statement`, or an `if` whose condition is exactly the
+/// pinned one (`condition_key`).  A call bound in a closure, nested under a
+/// condition, or placed after the operation is not a dominating statement, so
+/// the pinned branch — which `release_surviving_tripwire_status` has already
+/// checked halts — is provably reached first.  The operation must occur at
+/// least once: a pin protecting an operation the function no longer performs
+/// would pass vacuously.
+fn tripwire_dominates_protected_operation(
+    code: &str,
+    tripwire: &ReleaseSurvivingTripwire,
+) -> Result<(), String> {
+    let (body_open, body_close) = named_fn_body_span(code, tripwire.protected_fn)?;
+    let bytes = code.as_bytes();
+    let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let mut occurrences = Vec::new();
+    let mut search = body_open;
+    while let Some(hit) = code[search..body_close].find(tripwire.protected_operation) {
+        let at = search + hit;
+        search = at + tripwire.protected_operation.len();
+        if at > 0 && is_ident(bytes[at - 1]) {
+            continue;
+        }
+        occurrences.push(at);
+    }
+    if occurrences.is_empty() {
+        return Err(format!(
+            "`{}` no longer performs `{}` — the operation the tripwire protects is gone or \
+             renamed, so update the pin rather than let it pass vacuously",
+            tripwire.protected_fn, tripwire.protected_operation
+        ));
+    }
+    let wanted = if tripwire.tripwire_statement.starts_with("if") {
+        condition_key(tripwire.condition)
+    } else {
+        condition_key(tripwire.tripwire_statement)
+    };
+    for at in occurrences {
+        let dominated = dominating_statements(code, body_open, body_close, at)
+            .into_iter()
+            .any(|(lo, hi)| {
+                let statement = code[lo..hi].trim();
+                if tripwire.tripwire_statement.starts_with("if") {
+                    statement.starts_with("if")
+                        && block_open_after(statement, 2)
+                            .map(|open| condition_key(&statement[2..open]) == wanted)
+                            .unwrap_or(false)
+                } else {
+                    condition_key(statement) == wanted
+                }
+            });
+        if !dominated {
+            return Err(format!(
+                "`{}` reaches `{}` without `{}` as a dominating statement — the tripwire is \
+                 deleted from the function it guards, nested under a condition, bound without \
+                 being run, or placed after the operation it exists to precede",
+                tripwire.protected_fn, tripwire.protected_operation, tripwire.tripwire_statement
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// The whitespace-free spelling of a condition, for comparing predicates
 /// rather than tokens.
 fn condition_key(condition: &str) -> String {
@@ -2157,13 +2270,19 @@ fn if_statements(body: &str) -> Vec<(usize, usize)> {
 /// **WS-RR RR5.18**: run `release_surviving_tripwire_status` over the pin.
 fn scan_release_surviving_tripwires() {
     verify_release_surviving_tripwire_scanner();
-    for (path, fn_name, condition) in RELEASE_SURVIVING_TRIPWIRES {
+    for tripwire in RELEASE_SURVIVING_TRIPWIRES {
+        let path = tripwire.path;
         println!("cargo:rerun-if-changed={path}");
         let contents = std::fs::read_to_string(path)
             .unwrap_or_else(|e| panic!("WS-RR RR5.18 scanner: cannot read `{path}`: {e}"));
         let (_, code) = rust_code_views(&contents);
-        if let Err(why) = release_surviving_tripwire_status(&code, fn_name, condition) {
+        if let Err(why) =
+            release_surviving_tripwire_status(&code, tripwire.branch_fn, tripwire.condition)
+        {
             panic!("WS-RR RR5.18 regression: `{path}`: {why}");
+        }
+        if let Err(why) = tripwire_dominates_protected_operation(&code, tripwire) {
+            panic!("WS-RR RR5.18 regression (PR #889 review round 6): `{path}`: {why}");
         }
     }
 }
@@ -2178,6 +2297,14 @@ pub fn assert_not_holding_round_lock(core_id: usize) {
         crate::cpu::fatal_halt();
     }
 }
+
+pub fn acquire_kernel_entry(core_id: usize) -> u64 {
+    assert_not_holding_round_lock(core_id);
+    if !acquire_kernel_entry_in(&KERNEL_ENTRY_LOCK, core_id, FUEL, service) {
+        crate::gic::halt_all()
+    }
+    KERNEL_ENTRY_LOCK.peek_serving()
+}
 "#;
     let check = |source: &str| -> Result<(), String> {
         let (_, code) = rust_code_views(source);
@@ -2185,12 +2312,67 @@ pub fn assert_not_holding_round_lock(core_id: usize) {
             &code,
             "assert_not_holding_round_lock",
             "crate::shootdown::round_lock_held_by(core_id)",
-        )
+        )?;
+        tripwire_dominates_protected_operation(&code, &RELEASE_SURVIVING_TRIPWIRES[0])
     };
     if let Err(why) = check(GOOD) {
         panic!("build.rs self-check: the good tripwire fixture was refused: {why}");
     }
     verify_release_surviving_tripwire_polarity();
+    // PR #889 review round 6: the branch stays intact in every one of these;
+    // what breaks is its relation to the operation it protects.
+    let dominance_mutations: [(&str, &str, &str); 5] = [
+        (
+            "the call is deleted from the function it guards; the helper stays intact",
+            "    assert_not_holding_round_lock(core_id);\n    if !acquire_kernel_entry_in(",
+            "    if !acquire_kernel_entry_in(",
+        ),
+        (
+            "the call is nested under a dead condition",
+            "    assert_not_holding_round_lock(core_id);\n",
+            "    if false {\n        assert_not_holding_round_lock(core_id);\n    }\n",
+        ),
+        (
+            "the call is bound in a closure and never run",
+            "    assert_not_holding_round_lock(core_id);\n",
+            "    let _check = || assert_not_holding_round_lock(core_id);\n",
+        ),
+        (
+            "the call moves below the acquire it exists to precede",
+            "    assert_not_holding_round_lock(core_id);\n    if !acquire_kernel_entry_in(&KERNEL_ENTRY_LOCK, core_id, FUEL, service) {\n        crate::gic::halt_all()\n    }\n",
+            "    if !acquire_kernel_entry_in(&KERNEL_ENTRY_LOCK, core_id, FUEL, service) {\n        crate::gic::halt_all()\n    }\n    assert_not_holding_round_lock(core_id);\n",
+        ),
+        (
+            "the acquire is gone, so the pin would protect nothing",
+            "    if !acquire_kernel_entry_in(&KERNEL_ENTRY_LOCK, core_id, FUEL, service) {\n        crate::gic::halt_all()\n    }\n",
+            "    if !acquire_kernel_entry_raw(&KERNEL_ENTRY_LOCK, core_id, FUEL, service) {\n        crate::gic::halt_all()\n    }\n",
+        ),
+    ];
+    for (what, from, to) in dominance_mutations {
+        assert!(
+            GOOD.contains(from),
+            "build.rs self-check: tripwire dominance mutation `{what}` does not apply"
+        );
+        let mutated = GOOD.replacen(from, to, 1);
+        assert_ne!(
+            mutated, GOOD,
+            "build.rs self-check: tripwire dominance mutation `{what}` is inert"
+        );
+        // The helper — the branch and its halt — survives every mutation; what
+        // moves, nests, or disappears is its *use* in the function it guards.
+        assert!(
+            mutated.contains("fn assert_not_holding_round_lock(")
+                && mutated.contains("fatal_halt("),
+            "build.rs self-check: tripwire dominance mutation `{what}` DELETED the tripwire; the \
+             mutation must keep the branch and break its reach"
+        );
+        if check(&mutated).is_ok() {
+            panic!(
+                "build.rs self-check: `tripwire_dominates_protected_operation` accepted a \
+                 tripwire that does not dominate its operation: {what}"
+            );
+        }
+    }
     let mutations: [(&str, &str, &str); 6] = [
         (
             "the predicate is reversed, keeping its call",
@@ -2267,10 +2449,61 @@ pub fn install_exception_vectors() {
             &code,
             "install_exception_vectors",
             "!vbar.is_multiple_of(2048)",
-        )
+        )?;
+        tripwire_dominates_protected_operation(&code, &RELEASE_SURVIVING_TRIPWIRES[1])
     };
     if let Err(why) = check(GOOD) {
         panic!("build.rs self-check: the good VBAR tripwire fixture was refused: {why}");
+    }
+    // PR #889 review round 6: the branch is intact and halts; it no longer
+    // dominates the VBAR write.
+    let dominance_mutations: [(&str, &str, &str); 3] = [
+        (
+            "the branch is nested under a dead condition",
+            "    if !vbar.is_multiple_of(2048) {\n        crate::kprintln!(\"[boot] FATAL: exception vector table is not 2048-byte aligned\");\n        crate::cpu::fatal_halt();\n    }\n",
+            "    if false {\n        if !vbar.is_multiple_of(2048) {\n            crate::kprintln!(\"[boot] FATAL: exception vector table is not 2048-byte aligned\");\n            crate::cpu::fatal_halt();\n        }\n    }\n",
+        ),
+        (
+            "the branch moves below the VBAR write it exists to precede",
+            "    if !vbar.is_multiple_of(2048) {\n        crate::kprintln!(\"[boot] FATAL: exception vector table is not 2048-byte aligned\");\n        crate::cpu::fatal_halt();\n    }\n    crate::registers::write_vbar_el1(vbar);\n",
+            "    crate::registers::write_vbar_el1(vbar);\n    if !vbar.is_multiple_of(2048) {\n        crate::kprintln!(\"[boot] FATAL: exception vector table is not 2048-byte aligned\");\n        crate::cpu::fatal_halt();\n    }\n",
+        ),
+        (
+            "a second, unguarded VBAR write is added after the guarded one",
+            "    crate::registers::write_vbar_el1(vbar);\n}",
+            "    crate::registers::write_vbar_el1(vbar);\n}\n\npub fn install_exception_vectors_again(vbar: u64) {\n    crate::registers::write_vbar_el1(vbar);\n}",
+        ),
+    ];
+    for (what, from, to) in dominance_mutations {
+        assert!(
+            GOOD.contains(from),
+            "build.rs self-check: VBAR dominance mutation `{what}` does not apply"
+        );
+        let mutated = GOOD.replacen(from, to, 1);
+        assert_ne!(
+            mutated, GOOD,
+            "build.rs self-check: VBAR dominance mutation `{what}` is inert"
+        );
+        assert!(
+            mutated.contains("2048") && mutated.contains("fatal_halt("),
+            "build.rs self-check: VBAR dominance mutation `{what}` DELETED a token; the \
+             mutation must keep the tokens and break the relation"
+        );
+        let verdict = check(&mutated);
+        if what.starts_with("a second") {
+            // A write in ANOTHER function is outside the pin's function and is
+            // not this pin's to refuse; the pinned function still passes.  The
+            // case documents the scanner's scope rather than a refusal.
+            assert!(
+                verdict.is_ok(),
+                "build.rs self-check: a write outside the pinned function was refused"
+            );
+        } else if verdict.is_ok() {
+            panic!(
+                "build.rs self-check: `tripwire_dominates_protected_operation` accepted a VBAR \
+                 tripwire that does not dominate the write: {what}"
+            );
+        }
     }
     let mutations: [(&str, &str, &str); 3] = [
         (

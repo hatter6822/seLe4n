@@ -1007,7 +1007,14 @@ code may assume:
   `core + 1`, `0` free), so a core entering while *another* core's shootdown
   holds the round lock waits and self-services its acknowledgment, and only
   the holder itself re-entering halts — a held/free flag halted every innocent
-  core for the length of every shootdown, in release builds.
+  core for the length of every shootdown, in release builds.  The two
+  release-surviving tripwires — this one and the VBAR alignment check — are
+  pinned in `build.rs` together with the operation each protects
+  (`RELEASE_SURVIVING_TRIPWIRES`), and the scanner requires the tripwire
+  among the statements **dominating** every occurrence of that operation
+  (`tripwire_dominates_protected_operation`, PR #889 review round 6): a
+  branch that halts but is no longer reached before the acquire or the VBAR
+  write is refused.
   Live WCRT is therefore weaker
   than `PerCoreWcrt.lean`'s fine-lock bound, which remains a statement about the
   intended discipline.
@@ -1368,8 +1375,9 @@ code may assume:
   The reservation also covers every object a config entry *references*
   (`bootObjectReferencesReservedIdleSlot`, total over `KernelObject` and over
   every field that can hold an object, thread or scheduling-context id — a
-  notification's `boundTCB` included, PR #889 review rounds 2 and 4), and a
-  config that fails it is refused with its own
+  notification's `boundTCB` and an untyped's `children` and `parent`
+  included, PR #889 review rounds 2, 4 and 6; a VSpace root holds none), and
+  a config that fails it is refused with its own
   diagnostic rather than as a duplicate id.  Beyond the config, the idle
   objects are unreachable by user authority at all: `syscallResolveCap` — the
   one resolution every invoked capability passes through — refuses a
@@ -1623,7 +1631,13 @@ code may assume:
   directive alone declares binding and defines nothing, PR #889 review
   rounds 3–4), or by a reconciled
   `EXPECTED_UNRESOLVED` entry (`lean_kernel_main`, until SM10.1 writes it; an
-  entry the HAL stops declaring or the archive starts defining fails).  The
+  entry the HAL stops declaring, the archive starts defining, or — round 6 —
+  the Lean tree starts exporting fails, the last because an exported symbol
+  whose module sits outside the import closure is exported and undefined at
+  once).  Every inventory the gate reads — the Lean exports, the HAL
+  declarations, the assembly providers — is read over the shared code views
+  with string contents blanked (round 6), so a quoted attribute, block or
+  directive is not a symbol.  The
   first cut required the *intersection* of the Lean exports and the HAL
   declarations, which is exactly the set a rename on either side leaves — the
   unresolved spelling drops out of both and the gate passed (PR #889 review).

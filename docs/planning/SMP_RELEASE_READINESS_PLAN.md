@@ -645,6 +645,13 @@ kernel-state installer, over a derived installer set — instead of an
 identifier occurrence; and `coreCount ≤ numCores` is a class obligation
 (`coreCountLe`), so `declaredCores` has exactly `coreCount` members.
 
+**Review round 6 (PR #889, same version).**  Four, three of them in the
+gates: the symbol inventories read the shared code views with strings
+blanked; the idle-slot reservation reads an untyped's `children` and
+`parent`; each release-surviving tripwire is pinned with the operation it
+protects and must dominate it; and an expected-unresolved exemption expires
+the moment its export appears.
+
 **Note on RR5.10–RR5.14** (the rows that replaced one XL).  Two findings shape
 the split, and the row they replaced named neither: one is an ordering defect
 it inherited, the other is the reason its "cannot be separate PRs" claim is

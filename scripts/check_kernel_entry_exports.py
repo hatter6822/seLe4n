@@ -90,12 +90,8 @@ EXPECTED_UNRESOLVED: dict[str, str] = {
 }
 
 LEAN_EXPORT = re.compile(r"@\[export\s+([A-Za-z_][A-Za-z0-9_]*)\s*\]")
-RUST_LINE_COMMENT = re.compile(r"//[^\n]*")
-RUST_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
 EXTERN_BLOCK = re.compile(r'extern\s+"C"\s*\{')
 EXTERN_FN = re.compile(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(")
-ASM_LINE_COMMENT = re.compile(r"//[^\n]*")
-ASM_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
 ASM_GLOBAL = re.compile(r"^\s*\.(?:global|globl)\s+([A-Za-z_.$][A-Za-z0-9_.$]*)", re.MULTILINE)
 # A label definition: the symbol at the start of a line, followed by `:`.
 ASM_LABEL = re.compile(r"^\s*([A-Za-z_.$][A-Za-z0-9_.$]*)\s*:", re.MULTILINE)
@@ -158,13 +154,12 @@ EXPECTED_KERNEL_STATE_WRITERS = frozenset({
 EXPECTED_KERNEL_STATE_READERS = frozenset({"getKernelState", "getKernelLabelingContext"})
 
 
-def strip_lean_comments(text: str) -> str:
-    """The comment-free Lean view, so a commented-out `@[export]` is not a symbol."""
-    return lean_code_view.strip(text)
-
-
 def lean_exports_in(text: str) -> set[str]:
-    return set(LEAN_EXPORT.findall(strip_lean_comments(text)))
+    """The `@[export …]` symbols of one Lean source, read over the shared code
+    view with comments — nested block comments included — *and* string
+    contents blanked (PR #889 review round 6): a docstring, a `/- … -/` inside
+    another, or a string literal quoting the attribute is not a symbol."""
+    return set(LEAN_EXPORT.findall(lean_code_view.code_no_strings(text)))
 
 
 def lean_sources() -> dict[str, str]:
@@ -384,8 +379,11 @@ def extern_declarations_in(text: str, where: str) -> set[str]:
     Brace-matched rather than line-scanned: a declaration is a `fn` inside the
     block, and the block ends at its matching `}` — a `fn` *after* the block is
     a definition in the crate, not a symbol the crate expects to link against.
+    Read over the shared Rust code view with string contents blanked (PR #889
+    review round 6): a block quoted in a raw string or in a nested block
+    comment declares nothing.
     """
-    text = RUST_LINE_COMMENT.sub("", RUST_BLOCK_COMMENT.sub("", text))
+    text = rust_code_view.code_no_strings(text)
     found: set[str] = set()
     for match in EXTERN_BLOCK.finditer(text):
         depth = 0
@@ -411,8 +409,48 @@ def hal_extern_declarations() -> set[str]:
     return found
 
 
-def strip_asm_comments(text: str) -> str:
-    return ASM_LINE_COMMENT.sub("", ASM_BLOCK_COMMENT.sub("", text))
+def asm_code_view(text: str) -> str:
+    """The assembly code view: `//` line comments, `/* … */` block comments
+    (cpp's, which do not nest) and the contents of string literals blanked,
+    length-preserving (PR #889 review round 6 — the regex pair it replaces
+    read a `.global` inside a string or a comment as a definition).  `#`
+    lines are preprocessor directives, not comments, and are kept for
+    `strip_cpp_conditionals`."""
+    out = list(text)
+    n = len(text)
+    i = 0
+
+    def blank(j: int) -> None:
+        if out[j] != "\n":
+            out[j] = " "
+
+    while i < n:
+        c = text[i]
+        nxt = text[i + 1] if i + 1 < n else ""
+        if c == "/" and nxt == "/":
+            while i < n and text[i] != "\n":
+                blank(i)
+                i += 1
+            continue
+        if c == "/" and nxt == "*":
+            close = text.find("*/", i + 2)
+            end = n if close == -1 else close + 2
+            for j in range(i, end):
+                blank(j)
+            i = end
+            continue
+        if c == '"':
+            i += 1
+            while i < n and text[i] != '"':
+                if text[i] == "\\" and i + 1 < n:
+                    blank(i)
+                    i += 1
+                blank(i)
+                i += 1
+            i += 1
+            continue
+        i += 1
+    return "".join(out)
 
 
 def strip_cpp_conditionals(text: str) -> str:
@@ -454,7 +492,7 @@ def asm_definitions_in(text: str) -> set[str]:
     token-preserving regression this gate exists to catch.  A provider is the
     conjunction, outside any conditional (round 4).
     """
-    view = strip_cpp_conditionals(strip_asm_comments(text))
+    view = strip_cpp_conditionals(asm_code_view(text))
     return set(ASM_GLOBAL.findall(view)) & set(ASM_LABEL.findall(view))
 
 
@@ -559,32 +597,56 @@ def hal_asm_providers() -> tuple[set[str], str]:
     return from_sources & from_objects, f"sources on the live builder chain ∩ {archive.relative_to(REPO)}"
 
 
+def link_requirements(
+    externs: set[str],
+    asm_globals: set[str],
+    expected_unresolved: dict[str, str],
+    exports: set[str],
+) -> list[str]:
+    """The HAL declarations the archive must define: every `extern "C"` the
+    HAL's own assembly does not provide, minus the expected-unresolved entries
+    **whose export has not appeared** — an entry the Lean tree exports is a
+    requirement again (PR #889 review round 6)."""
+    live_exemptions = {s for s in expected_unresolved if s not in exports}
+    return sorted(externs - asm_globals - live_exemptions)
+
+
 def classify_link_requirements(
     externs: set[str],
     asm_globals: set[str],
     expected_unresolved: dict[str, str],
     defined: set[str],
-) -> tuple[list[str], list[str], list[str]]:
-    """Decide the gate from the four derived sets.
+    exports: set[str] = frozenset(),
+) -> tuple[list[str], list[str], list[str], list[str]]:
+    """Decide the gate from the five derived sets.
 
-    Returns `(missing, stale_undeclared, stale_defined)`:
+    Returns `(missing, stale_undeclared, stale_defined, stale_exported)`:
 
       * `missing` — HAL declarations no provider defines: not an assembly
-        global, not expected-unresolved, and not in the archive.  A rename on
-        either side of a kernel entry lands here, because the HAL's spelling
-        is then unresolved.
+        global, not a *live* expected-unresolved entry, and not in the
+        archive.  A rename on either side of a kernel entry lands here,
+        because the HAL's spelling is then unresolved.
       * `stale_undeclared` — expected-unresolved entries the HAL no longer
         declares (the exemption outlived the declaration).
       * `stale_defined` — expected-unresolved entries the archive now defines
         (the exemption outlived its reason and must be removed).
+      * `stale_exported` — expected-unresolved entries the Lean tree now
+        **exports** (PR #889 review round 6).  The exemption expires the
+        moment the export appears, whether or not the archive defines it: an
+        exported entry whose module sits outside `SeLe4n.lean`'s import
+        closure is exported and undefined at once, and an exemption keyed on
+        the archive alone reported that image as bound and resolved.  Such an
+        entry is also a requirement (`link_requirements`), so it lands in
+        `missing` too when the archive lacks it.
 
-    All three must be empty for the gate to pass.
+    All four must be empty for the gate to pass.
     """
-    required = sorted(externs - asm_globals - set(expected_unresolved))
+    required = link_requirements(externs, asm_globals, expected_unresolved, exports)
     missing = [symbol for symbol in required if symbol not in defined]
     stale_undeclared = sorted(s for s in expected_unresolved if s not in externs)
     stale_defined = sorted(s for s in expected_unresolved if s in defined)
-    return missing, stale_undeclared, stale_defined
+    stale_exported = sorted(s for s in expected_unresolved if s in exports)
+    return missing, stale_undeclared, stale_defined, stale_exported
 
 
 def self_test() -> int:
@@ -608,6 +670,17 @@ def self_test() -> int:
     block_commented_lean = "/- @[export lean_alpha] -/\ndef alpha : Nat := 0\n"
     if lean_exports_in(block_commented_lean):
         failures.append("a block-commented `@[export]` was collected as a symbol")
+    # PR #889 review round 6: the token survives in a string literal and in a
+    # comment nested inside another; neither is a symbol.
+    string_lean = 'def doc : String := "@[export lean_alpha]"\ndef alpha : Nat := 0\n'
+    if lean_exports_in(string_lean):
+        failures.append("an `@[export]` inside a Lean string literal was collected as a symbol")
+    nested_lean = "/- outer /- @[export lean_alpha] -/ still a comment -/\ndef alpha : Nat := 0\n"
+    if lean_exports_in(nested_lean):
+        failures.append("an `@[export]` inside a nested Lean block comment was collected")
+    beside_string_lean = 'def doc : String := "-- not a comment"\n@[export lean_alpha]\ndef alpha : Nat := 0\n'
+    if lean_exports_in(beside_string_lean) != {"lean_alpha"}:
+        failures.append("a live `@[export]` after a string holding `--` was lost")
 
     live_rust = 'extern "C" {\n    fn lean_alpha(x: u64) -> u64;\n}\n'
     if extern_declarations_in(live_rust, "fixture") != {"lean_alpha"}:
@@ -625,6 +698,17 @@ def self_test() -> int:
     commented_rust = '// extern "C" {\n//    fn lean_alpha(x: u64) -> u64;\n// }\n'
     if extern_declarations_in(commented_rust, "fixture"):
         failures.append("a commented-out `extern \"C\"` block was collected")
+    # PR #889 review round 6: a block quoted in a raw string or in a nested
+    # block comment declares nothing; a live block after either is still seen.
+    raw_string_rust = 'const DOC: &str = r#"extern "C" {\n    fn lean_alpha(x: u64) -> u64;\n}"#;\n'
+    if extern_declarations_in(raw_string_rust, "fixture"):
+        failures.append("an `extern \"C\"` block inside a raw string was collected")
+    nested_comment_rust = (
+        '/* outer /* extern "C" {\n    fn lean_alpha(x: u64) -> u64;\n} */ tail */\n'
+        'extern "C" {\n    fn lean_beta(x: u64);\n}\n'
+    )
+    if extern_declarations_in(nested_comment_rust, "fixture") != {"lean_beta"}:
+        failures.append("a nested Rust block comment was not blanked around the live block")
 
     # --- PR #889 review: the link requirement is one-sided, and reconciled ---
     live_asm = (
@@ -633,6 +717,14 @@ def self_test() -> int:
     )
     if asm_definitions_in(live_asm) != {"_start", "secondary_entry"}:
         failures.append("assembly `.global`/`.globl` providers were not collected exactly")
+    # PR #889 review round 6: a directive and label quoted in a string or in a
+    # block comment that spans lines define nothing.
+    quoted_asm = (
+        '.asciz "\\n.global ghost_entry\\nghost_entry:"\n/* .global other\nother:\n */\n'
+        ".global _start\n_start:\n    b .\n"
+    )
+    if asm_definitions_in(quoted_asm) != {"_start"}:
+        failures.append("an assembly definition quoted in a string or a block comment was collected")
 
     # --- PR #889 review round 3: a provider is a DEFINED, ASSEMBLED symbol ---
     # The directive stays; the label moves into a comment.  A directive-only
@@ -806,7 +898,7 @@ def self_test() -> int:
     # A HAL declaration whose Lean export exists under ANOTHER spelling: the
     # token `lean_alpha` is present on the Lean side, but the HAL's spelling is
     # unresolved.  The intersection passed this; the requirement must not.
-    missing, stale_undeclared, stale_defined = classify_link_requirements(
+    missing, stale_undeclared, stale_defined, _ = classify_link_requirements(
         externs={"lean_alpah", "lean_beta"},
         asm_globals=set(),
         expected_unresolved={},
@@ -818,14 +910,14 @@ def self_test() -> int:
         )
 
     # The reverse rename: the Lean export moved and the HAL kept the old name.
-    missing, _, _ = classify_link_requirements(
+    missing, _, _, _ = classify_link_requirements(
         externs={"lean_alpha"}, asm_globals=set(), expected_unresolved={}, defined={"lean_alpha2"}
     )
     if missing != ["lean_alpha"]:
         failures.append("a Lean export renamed away from the HAL's declaration was not reported")
 
     # An assembly global satisfies a HAL declaration without the archive.
-    missing, _, _ = classify_link_requirements(
+    missing, _, _, _ = classify_link_requirements(
         externs={"secondary_entry", "lean_beta"},
         asm_globals={"secondary_entry"},
         expected_unresolved={},
@@ -835,17 +927,18 @@ def self_test() -> int:
         failures.append("an assembly-provided declaration was reported as missing")
 
     # An expected-unresolved entry is honoured while its reason holds...
-    missing, stale_undeclared, stale_defined = classify_link_requirements(
+    missing, stale_undeclared, stale_defined, stale_exported = classify_link_requirements(
         externs={"lean_kernel_main", "lean_beta"},
         asm_globals=set(),
         expected_unresolved={"lean_kernel_main": "SM10.1"},
         defined={"lean_beta"},
+        exports={"lean_beta"},
     )
-    if missing or stale_undeclared or stale_defined:
+    if missing or stale_undeclared or stale_defined or stale_exported:
         failures.append("a live expected-unresolved entry was not honoured")
 
     # ...fails once the archive defines it (the exemption outlived its reason)...
-    _, _, stale_defined = classify_link_requirements(
+    _, _, stale_defined, _ = classify_link_requirements(
         externs={"lean_kernel_main"},
         asm_globals=set(),
         expected_unresolved={"lean_kernel_main": "SM10.1"},
@@ -854,8 +947,36 @@ def self_test() -> int:
     if stale_defined != ["lean_kernel_main"]:
         failures.append("an expected-unresolved entry the archive defines was not reported")
 
+    # PR #889 review round 6: the exemption expires when the EXPORT appears —
+    # the token is in the Lean inventory, the archive still lacks it (the
+    # module is outside the import closure), and the old classification
+    # reported nothing.  Both the expiry and the requirement it restores fire.
+    missing, _, _, stale_exported = classify_link_requirements(
+        externs={"lean_kernel_main"},
+        asm_globals=set(),
+        expected_unresolved={"lean_kernel_main": "SM10.1"},
+        defined=set(),
+        exports={"lean_kernel_main"},
+    )
+    if stale_exported != ["lean_kernel_main"]:
+        failures.append("an expected-unresolved entry the Lean tree exports was not reported stale")
+    if missing != ["lean_kernel_main"]:
+        failures.append(
+            "an exported, undefined expected-unresolved entry was not required of the archive"
+        )
+    # ...and when the archive defines it too, both expiries fire and nothing is missing.
+    missing, _, stale_defined, stale_exported = classify_link_requirements(
+        externs={"lean_kernel_main"},
+        asm_globals=set(),
+        expected_unresolved={"lean_kernel_main": "SM10.1"},
+        defined={"lean_kernel_main"},
+        exports={"lean_kernel_main"},
+    )
+    if missing or stale_defined != ["lean_kernel_main"] or stale_exported != ["lean_kernel_main"]:
+        failures.append("an exported AND defined expected-unresolved entry was not doubly stale")
+
     # ...and fails once the HAL no longer declares it (the entry outlived the seam).
-    _, stale_undeclared, _ = classify_link_requirements(
+    _, stale_undeclared, _, _ = classify_link_requirements(
         externs={"lean_beta"},
         asm_globals=set(),
         expected_unresolved={"lean_kernel_main": "SM10.1"},
@@ -869,7 +990,7 @@ def self_test() -> int:
         for line in failures:
             print(f"         {line}")
         return 1
-    print("[PASS] check_kernel_entry_exports self-test (44 cases)")
+    print("[PASS] check_kernel_entry_exports self-test (54 cases)")
     return 0
 
 
@@ -945,8 +1066,8 @@ def main() -> int:
         )
 
     defined = archive_defined_symbols(ARCHIVE)
-    missing, stale_undeclared, stale_defined = classify_link_requirements(
-        externs, asm_globals, EXPECTED_UNRESOLVED, defined
+    missing, stale_undeclared, stale_defined, stale_exported = classify_link_requirements(
+        externs, asm_globals, EXPECTED_UNRESOLVED, defined, exports
     )
     failed = False
     if missing:
@@ -973,10 +1094,18 @@ def main() -> int:
         print("[FAIL] EXPECTED_UNRESOLVED entries the archive now defines (remove them):")
         for symbol in stale_defined:
             print(f"         {symbol}")
+    if stale_exported:
+        failed = True
+        print(
+            "[FAIL] EXPECTED_UNRESOLVED entries the Lean tree now exports (remove them — the "
+            "exemption expired with the export, and the archive must define the symbol):"
+        )
+        for symbol in stale_exported:
+            print(f"         {symbol}")
     if failed:
         return 1
 
-    required = sorted(externs - asm_globals - set(EXPECTED_UNRESOLVED))
+    required = link_requirements(externs, asm_globals, EXPECTED_UNRESOLVED, exports)
     boot_entry = (
         "exported and bound to `bootAndInitialisePlatform`"
         if BOOT_ENTRY_SYMBOL in exports

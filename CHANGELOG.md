@@ -582,6 +582,52 @@ had to avoid were not visible.  All closed in the same version.
   core embeds in the model (`bootCoreModelId`,
   `bootCoreModelId_mem_declaredCores`).
 
+### The review round, sixth pass
+
+Codex's sixth review (on the round-4 head, concurrently with the fifth)
+raised four findings — three in the gates, one in a reservation arm — all
+closed in the same version.
+
+* **The symbol inventories read regexes, not the code views.**  The Lean
+  export scan kept string contents, the HAL `extern "C"` scan used a
+  non-nesting comment regex pair, and the assembly scan another, so an
+  `@[export]` quoted in a string or a nested comment, an `extern "C"` block
+  in a raw string, and a `.global` inside an `.asciz` were inventory entries.
+  `lean_exports_in` reads `lean_code_view.code_no_strings`,
+  `extern_declarations_in` reads `rust_code_view.code_no_strings`, and the
+  assembly providers read a length-preserving `asm_code_view` (cpp's
+  non-nesting `/* … */`, `//` comments, string contents; `#` lines kept for
+  the conditional scan).  Seven token-preserving cases; the four regexes are
+  gone.
+* **The reservation ignored an untyped's records.**
+  `bootObjectReferencesReservedIdleSlot`'s `.untyped` arm answered `false`
+  by default, so a boot untyped whose allocation record named an idle slot
+  as a child, or whose ancestry named one as its parent, passed and the fold
+  materialised a TCB the retype and revoke paths would read metadata about.
+  The arm reads `children` and `parent`; the `.vspaceRoot` arm's `false` is
+  documented as the inspection of its fields (an ASID and a map hold no id).
+* **A tripwire's branch was checked; its reach was not.**  The scanner found
+  the exact-condition branch with a terminal halt inside the pinned
+  function and stopped: the call to `assert_not_holding_round_lock` could be
+  deleted from `acquire_kernel_entry` with the helper intact, and the VBAR
+  branch nested under `if false` or moved below `write_vbar_el1`, with every
+  token in place.  `RELEASE_SURVIVING_TRIPWIRES` is a struct per entry
+  carrying the protected function, the tripwire statement and the protected
+  operation, and `tripwire_dominates_protected_operation` requires the
+  tripwire among the statements **dominating** every occurrence of the
+  operation (`dominating_statements`) — a call deleted, nested, bound in a
+  closure or moved below is refused, and a pin whose operation no longer
+  occurs cannot pass vacuously.  Eight dominance mutations across the two
+  self-tests.
+* **An expected-unresolved exemption outlived its export.**  `required`
+  subtracted every exemption and the staleness checks read the archive
+  alone, so an `@[export lean_kernel_main]` in a module outside the import
+  closure — exported, undefined — passed and printed "exported and bound".
+  `classify_link_requirements` takes the export set: an exemption whose
+  export appears is `stale_exported`, and `link_requirements` stops
+  subtracting it, so the archive must define it or it is `missing` with the
+  closure diagnosis.  Two expiry cases.
+
 ### Tests
 
 * `tests/SmpIdleSuite.lean` — 28 surface anchors for the new boot surface
@@ -632,12 +678,18 @@ had to avoid were not visible.  All closed in the same version.
 * `tests/SmpFoundationsSuite.lean`, `tests/PerCoreVectorSuite.lean` — the
   `coreCountLe` witness on every binding, `declaredCores.length = coreCount`,
   and the single-core binding's declared list is exactly its boot core.
-* `scripts/check_kernel_entry_exports.py --self-test` — 44 cases: the fourteen
+* `tests/SmpIdleSuite.lean` (round 6) — a boot untyped recording an idle slot
+  as a child or as its parent references the slot and the checked boot
+  refuses it with the reservation diagnostic; ordinary records do not.
+* `scripts/check_kernel_entry_exports.py --self-test` — 54 cases: the fourteen
   boot-entry shapes (five executing, nine token-preserving refusals, among
-  them the call executed and then routed around) and the installer
-  derivation's pin in both directions; `scripts/lean_code_view.py
-  --self-test` — string blanking keeps the quotes, blanks escapes, keeps
-  geometry, and is off by default.
+  them the call executed and then routed around), the installer derivation's
+  pin in both directions, (round 6) the three inventories ignoring strings
+  and nested comments, and the exemption expiring with its export;
+  `scripts/lean_code_view.py --self-test` — string blanking keeps the
+  quotes, blanks escapes, keeps geometry, and is off by default;
+  `build.rs`'s self-check (round 6) — eight dominance mutations that keep
+  each tripwire's branch and halt and break its reach.
 * `rust/sele4n-hal/tests/readiness_gate_before_mark.rs` and
   `…_after_mark.rs` — the readiness mask is process-global and one-way, so both
   sides of the gate are only observable in separate binaries.  Before any mark:
