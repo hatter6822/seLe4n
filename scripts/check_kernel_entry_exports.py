@@ -144,7 +144,7 @@ LEAN_DIVERGES = re.compile(r"^(?:return|throw|panic!|unreachable!)\b")
 BOOT_ENTRY_HALTS = re.compile(
     r"\b(?:ffiFatalHaltAll|ffiFatalHalt|fatalHaltAll|fatalHalt)\b"
 )
-BOOT_ENTRY_ERROR_ARM = re.compile(r"\|\s*(?:Except\.)?\.?error\b")
+BOOT_ENTRY_ERROR_ARM = re.compile(r"^\|\s*(?:Except\.)?\.?error\b")
 BOOT_ENTRY_MATCHED = re.compile(
     r"^match\s+←\s*\(?\s*" + BOOT_ENTRY_CALLEE + r"\b"
 )
@@ -449,44 +449,87 @@ def boot_entry_handles_failure(statements: list[str]) -> str | None:
     and this is the contract it will be written against.
     """
     for index, statement in enumerate(statements):
-        scrutinee = None
         if BOOT_ENTRY_MATCHED.match(statement):
-            scrutinee = statement
-        else:
-            bound = BOOT_ENTRY_BOUND.match(statement)
-            if bound is not None:
-                name = bound.group("name")
-                pattern = re.compile(r"^match\s+" + re.escape(name) + r"\b")
-                scrutinee = next(
-                    (s for s in statements[index + 1 :] if pattern.match(s)), None
-                )
-                if scrutinee is None:
-                    return (
-                        f"binds the checked boot's result as `{name}` and never matches on "
-                        f"it — the `Except` must be branched on, and the `.error` arm must "
-                        f"halt: on a failed boot nothing is installed, and returning to the "
-                        f"Rust caller leaves the image idling with no kernel state"
-                    )
-        if scrutinee is None:
+            return boot_entry_error_arm_halts(statement)
+        bound = BOOT_ENTRY_BOUND.match(statement)
+        if bound is None:
             continue
-        if not BOOT_ENTRY_ERROR_ARM.search(scrutinee):
-            return (
-                "matches on the checked boot's result without an `.error` arm — the "
-                "failed boot installs nothing and must not fall through"
-            )
-        arm_at = BOOT_ENTRY_ERROR_ARM.search(scrutinee)
-        if not BOOT_ENTRY_HALTS.search(scrutinee[arm_at.start() :]):
-            return (
-                "has an `.error` arm that does not halt — a failed boot installs no "
-                "kernel state, so the arm must stop the core (`ffiFatalHalt` / "
-                "`ffiFatalHaltAll`) rather than return to the Rust caller"
-            )
-        return None
+        # PR #889 review round 10: the match must be reached, must be on THIS
+        # value, and its `.error` arm — not the match as a whole — must halt.
+        name = bound.group("name")
+        matcher = re.compile(r"^match\s+" + re.escape(name) + r"\b")
+        rebinder = re.compile(r"^let\s+(?:mut\s+)?" + re.escape(name) + r"\b")
+        for later in statements[index + 1 :]:
+            if LEAN_DIVERGES.match(later):
+                return (
+                    f"returns or throws before matching on `{name}` — a failed boot then "
+                    f"leaves the entry without ever reaching the handler, and the image "
+                    f"idles with no kernel state"
+                )
+            if rebinder.match(later):
+                return (
+                    f"rebinds `{name}` before matching on it — the match would consume the "
+                    f"shadowing value and a real boot error would be ignored"
+                )
+            if matcher.match(later):
+                return boot_entry_error_arm_halts(later)
+        return (
+            f"binds the checked boot's result as `{name}` and never matches on "
+            f"it — the `Except` must be branched on, and the `.error` arm must "
+            f"halt: on a failed boot nothing is installed, and returning to the "
+            f"Rust caller leaves the image idling with no kernel state"
+        )
     return (
         f"executes `{BOOT_ENTRY_CALLEE}` but discards its `Except` (`discard` or `let _ ←`) "
         f"— a failed boot installs no kernel state, and the entry must branch on the result "
         f"with an `.error` arm that halts"
     )
+
+
+def lean_match_arms(statement: str) -> list[str]:
+    """The arms of a `match … with` statement, as text.
+
+    PR #889 review round 10.  An arm starts at a line beginning with `|` and
+    runs to the next such line, so a multi-line arm body stays with its own
+    arm; the lines before the first `|` are the scrutinee and are dropped.
+    Searching from the `.error` marker to the end of the match instead — which
+    is what round 9 did — reads the *following* arms as part of it, so the
+    valid ordering `| .error _ => pure ()  | .ok _ => ffiFatalHalt` reported a
+    halting error arm while a failed boot returned to the Rust caller.
+    """
+    arms: list[str] = []
+    for line in statement.split("\n"):
+        text = line.strip()
+        if text.startswith("|"):
+            arms.append(text)
+        elif arms:
+            arms[-1] += "\n" + text
+    return arms
+
+
+def boot_entry_error_arm_halts(statement: str) -> str | None:
+    """The failure reason for a `match` on the checked boot's result, or `None`
+    when every `.error` arm halts.
+
+    A wildcard arm is not accepted in its place: `| _ => …` covers the error
+    case only by position, and this gate fails closed on a shape it cannot
+    read as the error path.
+    """
+    arms = lean_match_arms(statement)
+    error_arms = [arm for arm in arms if BOOT_ENTRY_ERROR_ARM.match(arm)]
+    if not error_arms:
+        return (
+            "matches on the checked boot's result without an explicit `.error` arm — the "
+            "failed boot installs nothing and must not fall through (a wildcard arm is "
+            "refused: the error path must be named)"
+        )
+    if any(not BOOT_ENTRY_HALTS.search(arm) for arm in error_arms):
+        return (
+            "has an `.error` arm that does not halt — a failed boot installs no "
+            "kernel state, so the arm must stop the core (`ffiFatalHalt` / "
+            "`ffiFatalHaltAll`) rather than return to the Rust caller"
+        )
+    return None
 
 
 def extern_declarations_in(text: str, where: str) -> set[str]:
@@ -1141,6 +1184,28 @@ def self_test() -> int:
     check_entry("the halt sits in the `.ok` arm, not the `.error` arm (round 9)",
                 "do\n  match ← bootAndInitialiseRPi5 cfg with\n"
                 "  | .ok _ => Platform.FFI.ffiFatalHalt\n  | .error _ => pure ()", False)
+    # Round 10: the same two arms in the OTHER order.  Round 9 searched from
+    # the `.error` marker to the end of the match, so this ordering read the
+    # `.ok` arm's halt as the error arm's.
+    check_entry("the halt is in the `.ok` arm, which FOLLOWS the `.error` arm (round 10)",
+                "do\n  match ← bootAndInitialiseRPi5 cfg with\n"
+                "  | .error _ => pure ()\n  | .ok _ => Platform.FFI.ffiFatalHalt", False)
+    check_entry("a wildcard stands in for the `.error` arm (round 10)",
+                "do\n  match ← bootAndInitialiseRPi5 cfg with\n"
+                "  | _ => Platform.FFI.ffiFatalHalt", False)
+    check_entry("an exit precedes the handling match (round 10)",
+                "do\n  let booted ← bootAndInitialiseRPi5 cfg\n  return ()\n"
+                "  match booted with\n  | .ok _ => pure ()\n"
+                "  | .error _ => Platform.FFI.ffiFatalHalt", False)
+    check_entry("the result is rebound before the handling match (round 10)",
+                "do\n  let booted ← bootAndInitialiseRPi5 cfg\n"
+                "  let booted := Except.ok default\n"
+                "  match booted with\n  | .ok _ => pure ()\n"
+                "  | .error _ => Platform.FFI.ffiFatalHalt", False)
+    check_entry("a multi-line `.error` arm that halts is still accepted (round 10)",
+                "do\n  match ← bootAndInitialiseRPi5 cfg with\n"
+                "  | .ok _ => pure ()\n  | .error e =>\n"
+                "    IO.println e\n    Platform.FFI.ffiFatalHalt", True)
     # Token-preserving mutations: every one keeps `bootAndInitialisePlatform` in
     # the declaration and breaks the relation (round 3's check passed them all).
     check_entry("the callee named only in a string literal",
@@ -1309,7 +1374,7 @@ def self_test() -> int:
         for line in failures:
             print(f"         {line}")
         return 1
-    print("[PASS] check_kernel_entry_exports self-test (71 cases)")
+    print("[PASS] check_kernel_entry_exports self-test (77 cases)")
     return 0
 
 

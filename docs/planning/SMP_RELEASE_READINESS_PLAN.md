@@ -679,6 +679,12 @@ checked boot's `Except` and halt on `.error` (`boot_entry_handles_failure`);
 a receiver rebound by assignment is a binding boundary; and `build.rs`'s
 readiness scanner reads the library root `SeLe4n.lean`.
 
+**Review round 10 (PR #889, same version).**  Three, all against round 9's
+failure-handling check and all the same class: the arms are parsed so the
+`.error` arm's own body must halt, a diverging statement before the handling
+match refuses, and the match must be on the binding the boot produced rather
+than on a rebinding of its name.
+
 **Note on RR5.10–RR5.14** (the rows that replaced one XL).  Two findings shape
 the split, and the row they replaced named neither: one is an ordering defect
 it inherited, the other is the reason its "cannot be separate PRs" claim is

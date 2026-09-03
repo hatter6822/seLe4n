@@ -849,6 +849,39 @@ when its Python twin was.
   `collect_lean_exports_from_file` reads it by the same view and parser, and a
   missing root is a hard build failure rather than an empty read.
 
+### The review round, tenth pass
+
+Codex's tenth review (on the round-9 head) raised three findings, all against
+the failure-handling check round 9 had just added, and all the same class it
+was written to close: the check took the first construct that matched a marker
+without resolving order, provenance, or boundaries.  Round 9 supplied one
+mutation per relation and each of the three shapes it did not try is a real
+bypass.
+
+* **The halt was searched to the end of the match, not within the `.error`
+  arm.**  Round 9's mutation put the halt in the `.ok` arm *before* the
+  `.error` arm, which the search (from the `.error` marker onward) missed; the
+  other ordering — `| .error _ => pure ()` then
+  `| .ok _ => ffiFatalHalt`, which is the more natural one — read the `.ok`
+  arm's halt as the error arm's and passed.  `lean_match_arms` parses the arms
+  (an arm runs from its `|` to the next one, so a multi-line body stays with
+  its own arm) and `boot_entry_error_arm_halts` requires **every** `.error`
+  arm to halt.  A wildcard `| _ =>` is refused rather than accepted in the
+  error arm's place: it covers the error case only by position.
+* **The handling match need not have been reached.**  `let result ← boot …;
+  return (); match result with …` was accepted, and on a failed boot the entry
+  returns before the handler runs.  Any diverging statement between the
+  binding and the match now refuses.
+* **The match was related to the boot's result by spelling.**  `let result ←
+  boot …; let result := Except.ok default; match result with …` was accepted
+  while the match consumed the shadowing value.  A rebinding of the name
+  before the match refuses — the same binding-instance question as round 9's
+  builder receiver, one file away, which is why it was worth asking here too.
+
+Six self-test cases: the reviewer's three fixtures verbatim, the wildcard
+stand-in, and a multi-line `.error` arm that halts accepted so the arm parser
+is exercised in both directions.
+
 ### Tests
 
 * `tests/SmpIdleSuite.lean` — 28 surface anchors for the new boot surface
@@ -927,7 +960,7 @@ when its Python twin was.
   idle 0 with the sentinel's `.invalidArgument` and commit nothing, refuse
   every core's idle id without an SGI, let the inactive lower witness reach
   the transition (`.illegalState`), and keep the sentinel's refusal.
-* `scripts/check_kernel_entry_exports.py --self-test` — 71 cases: the sixteen
+* `scripts/check_kernel_entry_exports.py --self-test` — 77 cases: the sixteen
   boot-entry shapes (five executing, eleven token-preserving refusals, among
   them the call executed and then routed around and, round 7, the generic
   entry at another platform and at the right one), the installer
@@ -940,7 +973,11 @@ when its Python twin was.
   assignment; and (round 9) the boot entry's failure contract — the two
   branching shapes accepted, and `discard`, `let _ ←`, a bare call, a `match`
   with no `.error` arm, an `.error` arm that returns, a bound-and-never-matched
-  result and a halt in the `.ok` arm all refused;
+  result and a halt in the `.ok` arm all refused; and (round 10) the arms
+  parsed — the halt in an `.ok` arm that *follows* the `.error` arm, a
+  wildcard standing in for it, an exit before the handling match and a
+  rebinding of the result all refused, a multi-line halting `.error` arm
+  accepted;
   `scripts/rust_code_view.py --self-test` (round 8) — the statement
   splitter and the binding instance: the last `let` strictly before the
   use, none for an unbound name or a `let` after the use;

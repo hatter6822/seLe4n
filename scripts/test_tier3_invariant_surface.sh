@@ -5200,6 +5200,8 @@ run_check "INVARIANT" rg -n '^fn statement_may_exit' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n '^fn collect_lean_exports_from_file' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n 'collect_lean_exports_from_file\(lean_library_root' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n '^def boot_entry_handles_failure' scripts/check_kernel_entry_exports.py
+run_check "INVARIANT" rg -n '^def lean_match_arms' scripts/check_kernel_entry_exports.py
+run_check "INVARIANT" rg -n '^def boot_entry_error_arm_halts' scripts/check_kernel_entry_exports.py
 run_check "INVARIANT" rg -n '^def binding_statement_before' scripts/rust_code_view.py
 run_check "INVARIANT" rg -n 'else if ¬ objectIdsUnique config.initialObjects then' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^  auditMonitorClearance : Option SecurityDomain := none' SeLe4n/Kernel/InformationFlow/Policy.lean

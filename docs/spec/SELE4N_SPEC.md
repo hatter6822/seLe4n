@@ -2207,7 +2207,9 @@ branch must dominate every exit of its helper, not merely appear in it
 `bootAndInitialiseRPi5`'s `Except` and halt on `.error`
 (`boot_entry_handles_failure`): a failed boot installs no kernel state, so
 returning to the Rust caller would leave the image idling as though it had
-booted.
+booted.  The check parses the match's arms, so the `.error` arm's own body
+must halt; a diverging statement before the handling match, or a rebinding of
+the result's name, is refused (review round 10).
 
 **The raw suspend seam refuses idle ids, and the reservation is pinned by
 constructor arity** (PR #889 review round 8).  `suspend_thread_cross_core`

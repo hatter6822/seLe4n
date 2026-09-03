@@ -1715,7 +1715,11 @@ code may assume:
   the checked boot's `Except` and halt on `.error`
   (`boot_entry_handles_failure`), because a failed boot installs no kernel
   state and returning to Rust would idle the image as though it had booted —
-  `discard` and `let _ ←` are refused.  The inventory
+  `discard` and `let _ ←` are refused, the arms are parsed so the `.error`
+  arm's own body must halt (round 10: a halt in a following `.ok` arm read as
+  the error arm's), no diverging statement may precede the handling match, and
+  the match must be on the binding the boot produced rather than on a
+  rebinding of its name.  The inventory
   it reads includes the library root `SeLe4n.lean` (round 7), and the
   assembly providers are read off the compile's *executed* chain — top-level
   statements of its own function, at brace depth zero, at or before the
