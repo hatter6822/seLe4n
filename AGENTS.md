@@ -1349,8 +1349,10 @@ code may assume:
   fold provably overwrites nothing without a freshness hypothesis — before,
   an accepted config object at an idle id was silently replaced by the fold.
   The reservation also covers every object a config entry *references*
-  (`bootObjectReferencesReservedIdleSlot`, total over `KernelObject`; PR #889
-  review round 2), and a config that fails it is refused with its own
+  (`bootObjectReferencesReservedIdleSlot`, total over `KernelObject` and over
+  every field that can hold an object, thread or scheduling-context id — a
+  notification's `boundTCB` included, PR #889 review rounds 2 and 4), and a
+  config that fails it is refused with its own
   diagnostic rather than as a duplicate id.  Beyond the config, the idle
   objects are unreachable by user authority at all: `syscallResolveCap` — the
   one resolution every invoked capability passes through — refuses a
@@ -1586,9 +1588,13 @@ code may assume:
   verifies each symbol against the built static archive — object code, not a
   text anchor — over a requirement *derived* from **every** HAL `extern "C"`
   declaration: each must be defined by the archive, by the HAL's own assembly
-  (a `.global` directive **and** a label for the same name, in a source
-  `build.rs` actually hands to the assembler — a directive alone declares
-  binding and defines nothing, PR #889 review round 3), or by a reconciled
+  (a `.global` directive **and** a label for the same name, outside any
+  preprocessor conditional, in a source on the `cc::Build` chain that
+  `.compile("sele4n_hal_asm")` is called on in a function reachable from
+  `main` — the cross gate's own live-chain resolution — and, when a cross
+  build's assembled archive is present, also defined by that object code; a
+  directive alone declares binding and defines nothing, PR #889 review
+  rounds 3–4), or by a reconciled
   `EXPECTED_UNRESOLVED` entry (`lean_kernel_main`, until SM10.1 writes it; an
   entry the HAL stops declaring or the archive starts defining fails).  The
   first cut required the *intersection* of the Lean exports and the HAL

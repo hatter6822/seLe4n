@@ -710,8 +710,10 @@ theorem objectIdsUnique_empty : objectIdsUnique [] = true := by
     capability at every syscall (`syscallResolveCap_ok_not_reserved`), so the
     authority would be inert; refusing the config too keeps the boot image free
     of it.  Total over `KernelObject`, so a new kind must say where it stands,
-    and the queue links are included so the check asks the same question of
-    every field that can hold an object or thread id. -/
+    and the queue links, the notification binding (PR #889 review round 4:
+    `boundTCB`) and every SchedContext reference are included so the check
+    asks the same question of every field that can hold an object, thread or
+    scheduling-context id. -/
 def bootObjectReferencesReservedIdleSlot (obj : KernelObject) : Bool :=
   match obj with
   | .endpoint ep =>
@@ -720,18 +722,32 @@ def bootObjectReferencesReservedIdleSlot (obj : KernelObject) : Bool :=
     ep.receiveQ.head.any SeLe4n.Kernel.isIdleThreadId ||
     ep.receiveQ.tail.any SeLe4n.Kernel.isIdleThreadId
   | .notification notif =>
-    !notif.waitingThreads.all (fun t => !SeLe4n.Kernel.isIdleThreadId t)
+    !notif.waitingThreads.all (fun t => !SeLe4n.Kernel.isIdleThreadId t) ||
+    -- PR #889 review round 4: a boot notification pre-bound to an idle thread
+    -- would be materialised into a one-sided binding — the idle TCB comes up
+    -- with `boundNotification = none`, a later bind fails on the notification
+    -- side, and no capability can reach the idle TCB to clear it.
+    notif.boundTCB.any SeLe4n.Kernel.isIdleThreadId
   | .cnode cn =>
     cn.slots.toList.any (fun s => SeLe4n.Kernel.capTargetsReservedIdleObject s.2)
   | .tcb tcb =>
     SeLe4n.Kernel.isIdleObjId tcb.cspaceRoot || SeLe4n.Kernel.isIdleObjId tcb.vspaceRoot ||
     tcb.boundNotification.any SeLe4n.Kernel.isIdleObjId ||
     tcb.queueNext.any SeLe4n.Kernel.isIdleThreadId ||
-    tcb.queuePrev.any SeLe4n.Kernel.isIdleThreadId
+    tcb.queuePrev.any SeLe4n.Kernel.isIdleThreadId ||
+    -- Round 4 sweep: every SchedContext reference and the donation owner.
+    tcb.timeoutBudget.any (fun sc => SeLe4n.Kernel.isIdleObjId sc.toObjId) ||
+    (match tcb.schedContextBinding with
+     | .unbound => false
+     | .bound scId => SeLe4n.Kernel.isIdleObjId scId.toObjId
+     | .donated scId owner =>
+       SeLe4n.Kernel.isIdleObjId scId.toObjId || SeLe4n.Kernel.isIdleThreadId owner)
   | .vspaceRoot _ => false
   | .untyped _ => false
   | .schedContext sc => sc.boundThread.any SeLe4n.Kernel.isIdleThreadId
-  | .reply r => r.caller.any SeLe4n.Kernel.isIdleThreadId
+  | .reply r =>
+    r.caller.any SeLe4n.Kernel.isIdleThreadId ||
+    r.donatedSc.any (fun sc => SeLe4n.Kernel.isIdleObjId sc.toObjId)
 
 /-- **WS-RR RR5.13** (PR #889 review): the per-core idle object slots
     `[idleThreadIdBase, idleThreadIdBase + numCores)` are **reserved** — no

@@ -490,6 +490,33 @@ version.
   theorem is a theorem of the hardware boot.  SD-055 pins the single-core
   binding installing idle 0 only and the four-core one installing all four.
 
+### The review round, fourth pass
+
+Codex's fourth review (on the round-2 head) raised three findings, all
+precision gaps in the previous round's closures, all closed in the same
+version.
+
+* **The reservation missed a notification's binding.**  A boot notification
+  with `boundTCB := some (idleThreadId c)` passed the reference check, which
+  read `waitingThreads` only; the idle fold would then have materialised a
+  one-sided binding no capability could clear.  The notification arm reads
+  `boundTCB`, and the sweep the finding prompted added every SchedContext
+  reference (`timeoutBudget`, `schedContextBinding`, a reply's `donatedSc`)
+  and the donation owner.
+* **An assembly provider ignored the preprocessor.**  `.S` sources pass
+  through cpp, so a `.global foo` / `foo:` retained inside `#if 0 … #endif`
+  still counted.  Every preprocessor-conditional region is now blanked before
+  the definition scan (`strip_cpp_conditionals` — nesting-aware, no
+  evaluation, so it under-approximates and fails closed), and when a cross
+  build's assembled archive is present the providers are the intersection of
+  the source-derived set with what `nm` says the object code defines.
+* **An assembled source was any `.file("…")` token.**  A file left on a probe
+  builder, an uncompiled builder or a helper `main` never calls counted as
+  assembled.  `assembled_sources_in` now reuses the cross gate's live-chain
+  resolution — the receiver `.compile("sele4n_hal_asm")` is called on, in a
+  function reachable from `main` — so only that builder's `.file()` calls
+  count.  Five more self-test cases, each keeping the token.
+
 ### Tests
 
 * `tests/SmpIdleSuite.lean` — 28 surface anchors for the new boot surface

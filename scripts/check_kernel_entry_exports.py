@@ -63,12 +63,19 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import rust_code_view  # noqa: E402  (comments blanked, string contents kept)
+import check_aarch64_cross_target as cross_gate  # noqa: E402  (the live builder chain)
 
 SKIP_EXIT = 77
 REPO = Path(__file__).resolve().parent.parent
 LEAN_ROOT = REPO / "SeLe4n"
 HAL_SRC = REPO / "rust" / "sele4n-hal" / "src"
 BUILD_RS = REPO / "rust" / "sele4n-hal" / "build.rs"
+# The assembled HAL archive a cross build leaves behind (`cc::Build::compile`).
+ASM_ARCHIVE_GLOB = "rust/target/aarch64-unknown-none/*/build/sele4n-hal-*/out/libsele4n_hal_asm.a"
+ASM_COMPILE_CALL = '.compile("sele4n_hal_asm")'
+# A preprocessor conditional: `.S` sources pass through cpp before the assembler.
+CPP_CONDITIONAL_OPEN = re.compile(r"^\s*#\s*(?:if|ifdef|ifndef)\b", re.MULTILINE)
+CPP_CONDITIONAL_CLOSE = re.compile(r"^\s*#\s*endif\b", re.MULTILINE)
 ARCHIVE = REPO / ".lake" / "build" / "lib" / "libseLe4n_SeLe4n.a"
 
 #: HAL `extern "C"` declarations that no provider defines **yet**, with the
@@ -204,33 +211,85 @@ def strip_asm_comments(text: str) -> str:
     return ASM_LINE_COMMENT.sub("", ASM_BLOCK_COMMENT.sub("", text))
 
 
+def strip_cpp_conditionals(text: str) -> str:
+    """Blank every preprocessor-conditional region of an assembly source,
+    nesting-aware, keeping newlines.
+
+    PR #889 review round 4: a `.S` source passes through cpp, so a `.global
+    foo` and its `foo:` retained inside `#if 0 … #endif` define nothing for
+    the image while a comment-stripped scan still read them.  This does not
+    evaluate the conditions — a region under *any* conditional contributes
+    nothing, which under-approximates the providers and so fails closed: a
+    symbol that is in fact assembled under a true condition is reported as
+    missing rather than a symbol that is not being reported as provided.
+    """
+    out: list[str] = []
+    depth = 0
+    for line in text.split("\n"):
+        if CPP_CONDITIONAL_OPEN.match(line):
+            depth += 1
+            out.append("")
+            continue
+        if CPP_CONDITIONAL_CLOSE.match(line):
+            depth = max(depth - 1, 0)
+            out.append("")
+            continue
+        out.append("" if depth > 0 else line)
+    return "\n".join(out)
+
+
 def asm_definitions_in(text: str) -> set[str]:
-    """Symbols one assembly source **defines and exports**: a `.global` /
-    `.globl` directive *and* a label `X:` for the same name, both read over the
-    comment-blanked view.
+    """Symbols one assembly source **defines and exports** in code the
+    preprocessor keeps: a `.global` / `.globl` directive *and* a label `X:` for
+    the same name, both read over the comment-blanked view with every
+    preprocessor-conditional region blanked (`strip_cpp_conditionals`).
 
     PR #889 review round 3: a `.global foo` alone declares binding and defines
     nothing — leave the directive and delete the label and the image still has
     an unresolved `foo`, so a directive-only scan passed exactly the
     token-preserving regression this gate exists to catch.  A provider is the
-    conjunction.
+    conjunction, outside any conditional (round 4).
     """
-    view = strip_asm_comments(text)
+    view = strip_cpp_conditionals(strip_asm_comments(text))
     return set(ASM_GLOBAL.findall(view)) & set(ASM_LABEL.findall(view))
 
 
 def assembled_sources_in(build_rs: str) -> set[str]:
-    """The assembly sources `build.rs` hands to the assembler — every
-    `.file("…")` argument in its comment-blanked view.  A source the build no
-    longer assembles defines nothing for the image, whatever its text says."""
-    return set(CC_FILE_CALL.findall(rust_code_view.code(build_rs)))
+    """The assembly sources `build.rs` hands to the assembler on the **live**
+    builder chain: every `.file("…")` on the `cc::Build` receiver that
+    `.compile("sele4n_hal_asm")` is called on, in a function reachable from
+    `main` — the cross gate's own resolution (`chain_root`,
+    `compiled_builder_name`, `reachable_from_main`), reused rather than
+    re-derived.
+
+    PR #889 review round 4: collecting every `.file("…")` token counted a
+    source left on a probe builder, an uncompiled builder or an inactive
+    branch as assembled; a file is assembled only by the builder that is
+    compiled, and only if that builder's function runs.
+    """
+    code = rust_code_view.code(build_rs)
+    found: set[str] = set()
+    for compile_at in cross_gate._occurrences(code, ASM_COMPILE_CALL):
+        owner = rust_code_view.enclosing_fn(code, compile_at)
+        if owner == rust_code_view.FILE_SCOPE or not cross_gate.reachable_from_main(code, owner):
+            continue
+        receiver = cross_gate.compiled_builder_name(code, compile_at)
+        if receiver is None:
+            continue
+        for pos in cross_gate._occurrences(code, ".file("):
+            if pos >= compile_at or cross_gate.chain_root(code, pos) != receiver:
+                continue
+            m = CC_FILE_CALL.match(code, pos)
+            if m:
+                found.add(m.group(1))
+    return found
 
 
 def asm_providers_from(sources: dict[str, str], build_rs: str) -> set[str]:
-    """The symbols the HAL's assembly provides to the link: defined-and-exported
-    (`asm_definitions_in`) in a source `build.rs` assembles
-    (`assembled_sources_in`).  `sources` maps a `src/`-relative path to its
-    text."""
+    """The symbols the HAL's assembly provides to the link according to the
+    **sources**: defined-and-exported (`asm_definitions_in`) in a source the
+    live builder chain assembles (`assembled_sources_in`).  `sources` maps a
+    `src/`-relative path to its text."""
     assembled = assembled_sources_in(build_rs)
     found: set[str] = set()
     for rel, text in sources.items():
@@ -239,12 +298,61 @@ def asm_providers_from(sources: dict[str, str], build_rs: str) -> set[str]:
     return found
 
 
-def hal_asm_providers() -> set[str]:
+def nm_global_definitions(nm_output: str) -> set[str]:
+    """The globally-defined symbols in `nm --defined-only` output: a symbol
+    whose type letter is upper-case and not `N` (debugging)."""
+    found: set[str] = set()
+    for line in nm_output.splitlines():
+        parts = line.split()
+        if len(parts) == 3 and len(parts[1]) == 1 and parts[1].isupper() and parts[1] != "N":
+            found.add(parts[2])
+    return found
+
+
+def assembled_archive() -> Path | None:
+    """The newest assembled HAL archive a cross build left behind, if any."""
+    candidates = sorted(REPO.glob(ASM_ARCHIVE_GLOB), key=lambda p: p.stat().st_mtime)
+    return candidates[-1] if candidates else None
+
+
+def archive_asm_definitions(archive: Path) -> set[str] | None:
+    """The symbols the assembled archive defines, or `None` when `nm` cannot
+    read it (no `nm`, or a format this `nm` does not know)."""
+    if shutil.which("nm") is None:
+        return None
+    result = subprocess.run(
+        ["nm", "--defined-only", str(archive)], capture_output=True, text=True, check=False
+    )
+    if result.returncode != 0:
+        return None
+    return nm_global_definitions(result.stdout)
+
+
+def hal_asm_providers() -> tuple[set[str], str]:
+    """The HAL's assembly providers, and how they were established.
+
+    The source-derived set (`asm_providers_from`) is always computed.  When a
+    cross build's assembled archive is present and readable, the providers are
+    the **intersection** of the two — a symbol counts only if the current
+    sources define it on the live chain *and* the assembled object code
+    defines it (PR #889 review round 4: the object code is the authority on
+    what was emitted, the sources on what this tree says; a stale archive
+    could carry a symbol since deleted, and a source could carry one the
+    assembler drops, so neither alone decides).  Without an archive the
+    source-derived set stands, and the report says so.
+    """
     sources = {
         path.relative_to(HAL_SRC.parent).as_posix(): path.read_text()
         for path in sorted(HAL_SRC.rglob("*.S"))
     }
-    return asm_providers_from(sources, BUILD_RS.read_text())
+    from_sources = asm_providers_from(sources, BUILD_RS.read_text())
+    archive = assembled_archive()
+    if archive is None:
+        return from_sources, "sources on the live builder chain (no assembled archive present)"
+    from_objects = archive_asm_definitions(archive)
+    if from_objects is None:
+        return from_sources, f"sources on the live builder chain (`nm` cannot read {archive})"
+    return from_sources & from_objects, f"sources on the live builder chain ∩ {archive.relative_to(REPO)}"
 
 
 def classify_link_requirements(
@@ -333,7 +441,8 @@ def self_test() -> int:
         failures.append("a label without `.global` was collected as a provider")
     build_rs = (
         "fn main() {\n    let mut asm = cc::Build::new();\n"
-        "    asm.file(\"src/boot.S\").file(\"src/trap.S\");\n"
+        "    asm.file(\"src/boot.S\").file(\"src/trap.S\")\n"
+        "        .compile(\"sele4n_hal_asm\");\n"
         "    // asm.file(\"src/ghost.S\");\n    /* asm.file(\"src/other.S\"); */\n}\n"
     )
     if assembled_sources_in(build_rs) != {"src/boot.S", "src/trap.S"}:
@@ -345,6 +454,43 @@ def self_test() -> int:
         failures.append(
             "a symbol defined in a source build.rs does not assemble was counted as a provider"
         )
+
+    # --- PR #889 review round 4: a provider is emitted code on the compiled chain ---
+    # The directive and the label stay; they move under `#if 0`.
+    inactive_asm = "#if 0\n.global secondary_entry\nsecondary_entry:\n    b .\n#endif\n"
+    if asm_definitions_in(inactive_asm):
+        failures.append("a definition inside `#if 0` was collected as a provider")
+    nested_asm = (
+        "#ifdef FOO\n#if 1\n.global secondary_entry\nsecondary_entry:\n#endif\n#endif\n"
+        ".global _start\n_start:\n"
+    )
+    if asm_definitions_in(nested_asm) != {"_start"}:
+        failures.append("a nested conditional region was not excluded, or code outside it was")
+    if asm_definitions_in(defined_asm) != {"secondary_entry"}:
+        failures.append("an unconditional definition was lost to the conditional filter")
+    # A `.file()` on a probe builder, on a builder never compiled, and in a
+    # helper `main` never calls all keep the token and assemble nothing.
+    live_chain = (
+        "fn main() {\n    assemble();\n}\n"
+        "fn assemble() {\n    let mut probe = cc::Build::new();\n    probe.file(\"src/probe.S\");\n"
+        "    let mut unused = cc::Build::new();\n    unused.file(\"src/ghost.S\");\n"
+        "    let mut asm = cc::Build::new();\n    asm.file(\"src/boot.S\").file(\"src/trap.S\")\n"
+        "        .compile(\"sele4n_hal_asm\");\n}\n"
+        "fn dead() {\n    let mut other = cc::Build::new();\n    other.file(\"src/dead.S\")\n"
+        "        .compile(\"sele4n_hal_asm\");\n}\n"
+    )
+    if assembled_sources_in(live_chain) != {"src/boot.S", "src/trap.S"}:
+        failures.append(
+            "the assembled-source set was not the compiled builder's live chain "
+            f"(got {sorted(assembled_sources_in(live_chain))})"
+        )
+    nm_text = (
+        "0000000000000000 N $d.1\n0000000000000000 t $x.0\n"
+        "0000000000000000 T _start\n000000000000007c T secondary_entry\n"
+        "0000000000000010 D table\n"
+    )
+    if nm_global_definitions(nm_text) != {"_start", "secondary_entry", "table"}:
+        failures.append("`nm` output was not reduced to its global definitions")
 
     # --- PR #889 review round 3: the boot entry, once exported, calls the checked boot ---
     bound = (
@@ -434,7 +580,7 @@ def self_test() -> int:
         for line in failures:
             print(f"         {line}")
         return 1
-    print("[PASS] check_kernel_entry_exports self-test (22 cases)")
+    print("[PASS] check_kernel_entry_exports self-test (27 cases)")
     return 0
 
 
@@ -470,7 +616,7 @@ def main() -> int:
     for text in sources.values():
         exports.update(lean_exports_in(text))
     externs = hal_extern_declarations()
-    asm_globals = hal_asm_providers()
+    asm_globals, provider_basis = hal_asm_providers()
     if not exports:
         sys.exit("[FAIL] no `@[export …]` found under SeLe4n/ — the derivation is broken")
     if not externs:
@@ -536,7 +682,7 @@ def main() -> int:
     )
     print(
         f"[PASS] all {len(required)} HAL kernel-entry declarations are defined in the archive "
-        f"({len(externs & asm_globals)} resolved by the HAL's assembled, defined symbols, "
+        f"({len(externs & asm_globals)} resolved by the HAL's assembly — {provider_basis}; "
         f"{len(EXPECTED_UNRESOLVED)} expected unresolved and reconciled); boot entry "
         f"`{BOOT_ENTRY_SYMBOL}`: {boot_entry}"
     )

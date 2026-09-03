@@ -656,6 +656,27 @@ private def runBootValidationParityChecks : IO Unit := do
     (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot (cnodeWith idle0Obj) == true)
   assertBool "a boot CNode holding a capability to an ordinary object does not"
     (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot (cnodeWith ⟨9⟩) == false)
+  -- PR #889 review round 4: a boot notification pre-bound to an idle thread
+  -- references the slot; bound to an ordinary thread it does not.
+  let ntfnBoundTo (t : SeLe4n.ThreadId) : KernelObject :=
+    .notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+                    pendingBadge := none, boundTCB := some t }
+  assertBool "NEGATIVE: a boot notification bound to an idle thread references the slot"
+    (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
+        (ntfnBoundTo (idleThreadId ⟨0, by decide⟩)) == true)
+  assertBool "a boot notification bound to an ordinary thread does not"
+    (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot (ntfnBoundTo ⟨9⟩) == false)
+  let boundNtfnCfg : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [],
+      initialObjects := [ { id := ⟨6⟩, obj := ntfnBoundTo (idleThreadId ⟨0, by decide⟩),
+                            hSlots := fun _ h => KernelObject.noConfusion h,
+                            hMappings := fun _ h => KernelObject.noConfusion h } ] }
+  match SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads boundNtfnCfg with
+  | .error e =>
+      assertBool "NEGATIVE: ...and the checked boot refuses it with the reservation diagnostic"
+        (e == idleSlotDiagnostic)
+  | .ok _ =>
+      assertBool "NEGATIVE: a notification bound to an idle thread must be refused" false
   assertBool "capTargetsReservedIdleObject decides by the capability's target"
     (SeLe4n.Kernel.capTargetsReservedIdleObject
         { target := .object idle0Obj, rights := AccessRightSet.ofList [.write], badge := none } == true &&

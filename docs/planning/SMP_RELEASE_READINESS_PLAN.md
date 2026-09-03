@@ -627,6 +627,12 @@ the question was a predicate:
   folds over `PlatformBinding.declaredCores`; the RPi5 binding declares every model
   core, so its boot is the all-cores form (`rpi5_cores_eq_allCores`).
 
+**Review round 4 (PR #889, same version).**  Three precision gaps in the
+previous closures: the reference check reads a notification's `boundTCB` (and
+every SchedContext reference); an assembly provider is read outside
+preprocessor conditionals, on the builder chain that reaches `.compile()`,
+and against the assembled archive's object symbols when present.
+
 **Note on RR5.10–RR5.14** (the rows that replaced one XL).  Two findings shape
 the split, and the row they replaced named neither: one is an ordering defect
 it inherited, the other is the reason its "cannot be separate PRs" claim is
