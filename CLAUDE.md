@@ -610,7 +610,11 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   `fn` bodies, byte-aligned) for the Python-side gates, its counterpart
   `rust_code_views` in `rust/sele4n-hal/build.rs`, and a `shell_commands` /
   `argv_of` / `option_values` layer so a flag is read on a **command**
-  rather than on a line.  The rule is unchanged and now has a mechanism:
+  rather than on a line — and, since PR #889 review round 2, a Lean view in
+  `build.rs` (`lean_code_view`) so the export inventory that drives the
+  readiness gate is derived from code rather than from the docstrings that
+  cite retired seams, and a recursive shell view in
+  `check_identifier_naming.py` so a `$( … )` body is lexed rather than copied.  The rule is unchanged and now has a mechanism:
   **resolve the text into the structure it stands for before asserting** —
   expand the script's variables and check the command, take byte offsets
   and check the order, parse the array and check the element, lex the
@@ -1166,7 +1170,10 @@ code may assume:
   New code must not assume a Lean seam executes on hardware merely because it
   is wired.  **The gated set is derived, not listed** (PR #887 review round
   2): `build.rs`'s `scan_lean_upcalls_readiness_gated` collects every Lean
-  upcall from the Lean tree's `@[export]`s and the HAL's `lean_`-prefixed
+  upcall from the Lean tree's `@[export]`s — read over a comment-free,
+  string-free Lean view with attribute lists split (`lean_code_view`,
+  `lean_exports_in`; PR #889 review round 2: a commented-out `@[export …]`
+  had counted as live) — and the HAL's `lean_`-prefixed
   externs, attributes each call to its enclosing function, and fails the
   build unless the readiness guard *dominates* it in that body
   (`readiness_guard_dominates`, PR #887 review round 3: the call sits inside
@@ -1261,7 +1268,12 @@ code may assume:
   (`isInsecureDefaultContext_false_implies_labelNonTriviality`), and the runtime
   guard discharges a deployment obligation instead of approximating it.  New
   contexts are built with `deploymentLabelingContext`, whose output is
-  `LabelingContextValid` unconditionally (`deploymentLabelingContext_valid`);
+  `LabelingContextValid` unconditionally (`deploymentLabelingContext_valid`),
+  and whose source carries the four policy fields — `memoryOwnership`,
+  `endpointPolicy`, `declassificationPolicy`, `auditMonitorClearance` — with
+  their fail-closed defaults (PR #889 review round 2), so a binding configures
+  them where it declares its labeling rather than every hardware boot being
+  forced to the defaults;
   `confinedLabelingContext` is the production two-domain instance (the two
   *incomparable* lattice corners, so neither domain reaches the other in either
   direction — unlike `publicLabel`/`kernelTrusted`, which confine one way),
@@ -1311,12 +1323,32 @@ code may assume:
   and with `bootSafeObjectCheck` requiring every config TCB `.Inactive`, the
   production boot state is `threadStateConsistent` with no hypothesis beyond
   the boot (`bootFromPlatformCheckedWithIdleThreads_threadStateConsistent`).
+  **That is a boot-state theorem, not a preserved invariant** (PR #889 review
+  round 2): no scheduler dispatch writes `.Running` and no rendezvous writes a
+  `.Blocked*`, so `threadStateConsistent` is false after any core's first
+  dispatch, and the harness re-establishes it with `syncThreadStates` before
+  it checks.  What the live decisions read is the inactive flag — `tcbSuspend`
+  / `tcbResume` / the cancellation and fault suspends test the field against
+  `.Inactive` only — stated as `threadInactiveFlagConsistent`, proved of the
+  boot state (`…_threadInactiveFlagConsistent`), and owed across the scheduler
+  and IPC surfaces as registered debt (RR7.36).  New code must not cite
+  `threadStateConsistent` of a post-dispatch state.
   The idle slots are **reserved** by `PlatformConfig.wellFormed`
   (`idleSlotsReserved`: no `initialObjects` entry and no boot VSpace root in
   `[idleThreadIdBase, idleThreadIdBase + numCores)`), so a successful checked
   boot is fresh (`bootFromPlatformChecked_ok_idleSlotsFreshAt`) and the idle
   fold provably overwrites nothing without a freshness hypothesis — before,
   an accepted config object at an idle id was silently replaced by the fold.
+  The reservation also covers every object a config entry *references*
+  (`bootObjectReferencesReservedIdleSlot`, total over `KernelObject`; PR #889
+  review round 2), and a config that fails it is refused with its own
+  diagnostic rather than as a duplicate id.  Beyond the config, the idle
+  objects are unreachable by user authority at all: `syscallResolveCap` — the
+  one resolution every invoked capability passes through — refuses a
+  capability naming a reserved idle object (`capTargetsReservedIdleObject`,
+  `syscallResolveCap_ok_not_reserved`), so a boot CNode or a transfer that
+  carried one yields a slot that resolves like an empty one and no
+  `.tcbSuspend` can remove a core's only guaranteed runnable thread.
   The boot queue is **characterised, not bounded**: on every
   core it is exactly the empty queue with that core's idle thread enqueued
   (`bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_eq`, membership
@@ -1537,12 +1569,21 @@ code may assume:
   verifies each symbol against the built static archive — object code, not a
   text anchor — over a requirement *derived* from **every** HAL `extern "C"`
   declaration: each must be defined by the archive, by the HAL's own assembly
-  (`.global` directives), or by a reconciled `EXPECTED_UNRESOLVED` entry
-  (`lean_kernel_main`, until SM10.1 writes it; an entry the HAL stops
-  declaring or the archive starts defining fails).  The first cut required
-  the *intersection* of the Lean exports and the HAL declarations, which is
-  exactly the set a rename on either side leaves — the unresolved spelling
-  drops out of both and the gate passed (PR #889 review).
+  (a `.global` directive **and** a label for the same name, in a source
+  `build.rs` actually hands to the assembler — a directive alone declares
+  binding and defines nothing, PR #889 review round 3), or by a reconciled
+  `EXPECTED_UNRESOLVED` entry (`lean_kernel_main`, until SM10.1 writes it; an
+  entry the HAL stops declaring or the archive starts defining fails).  The
+  first cut required the *intersection* of the Lean exports and the HAL
+  declarations, which is exactly the set a rename on either side leaves — the
+  unresolved spelling drops out of both and the gate passed (PR #889 review).
+  The gate also holds the boot entry to the checked platform boot from the day
+  it exists: whichever Lean declaration carries `@[export lean_kernel_main]`
+  must call `bootAndInitialisePlatform` in its own body, over the comment-free
+  view (`boot_entry_binding_failures`, round 3) — vacuous until SM10.1 writes
+  the entry, decisive after, so the idle-thread, labeling and reservation
+  guarantees cannot be bypassed by an entry that boots through
+  `bootFromPlatform` directly.
 - **The WS-SM theorem total is measured, not summed — and it counts
   propositions, not registrations.**
   `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean` registers one entry per

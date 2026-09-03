@@ -810,6 +810,16 @@ def command_substitution_end(text: str, at: int) -> int:
         if c == "\\":
             j += 2
             continue
+        # PR #889 review round 2: a `#` comment inside the substitution runs
+        # to the end of its line, and a `)` inside it is text -- so the scan
+        # skips the comment rather than closing on it.  An unterminated `$(`
+        # whose last line is a comment does not close either.
+        if c == "#" and (j == at + 2 or text[j - 1] in " \t\n;&|("):
+            k = text.find("\n", j)
+            if k < 0:
+                return -1
+            j = k
+            continue
         if c == "'":
             k = text.find("'", j + 1)
             if k < 0:
@@ -878,9 +888,20 @@ def keep_expansions(span: str) -> str:
         end = command_substitution_end(span, at)
         if end < 0:
             break
-        out[at:end] = list(span[at:end])
+        out[at:end] = list(command_substitution_view(span, at, end))
         at = end
     return "".join(out)
+
+
+def command_substitution_view(text: str, at: int, end: int) -> str:
+    """The code view of the `$( ... )` spanning `[at, end)`: its body lexed
+    by `strip_shell` recursively, so the commands inside survive while the
+    comments inside are blanked, and nested substitutions get the same
+    treatment (PR #889 review round 2).  Copying the span verbatim kept a
+    `# note` inside `X=$(echo ok # note\n)` as code -- a gate reading prose
+    as code again, one level down.  Byte-aligned: the delimiters are kept
+    and `strip_shell` preserves length."""
+    return "$(" + strip_shell(text[at + 2:end - 1]) + ")"
 
 
 def strip_shell(text: str) -> str:
@@ -918,7 +939,7 @@ def strip_shell(text: str) -> str:
     out, i, n = [], 0, len(text)
     while i < n:
         if text.startswith("$(", i) and (end := command_substitution_end(text, i)) > 0:
-            out.append(text[i:end]); i = end
+            out.append(command_substitution_view(text, i, end)); i = end
         elif (m := SHELL_EXPANSION.match(text, i)):
             out.append(m.group(0)); i = m.end()
         elif text[i] == "#" and (i == 0 or text[i - 1] in " \t\n;&|("):

@@ -847,6 +847,22 @@ structure DeploymentLabeling where
   endpointLabelOf : SeLe4n.ObjId → SecurityLabel
   /-- The security label of each registered service. -/
   serviceLabelOf : ServiceId → SecurityLabel
+  /-- PR #889 review round 2: the deployment's memory-ownership map, carried by
+      the source so a platform binding can configure it — `LabelingContext`'s
+      default, `none`. -/
+  memoryOwnership : Option MemoryDomainOwnership := none
+  /-- PR #889 review round 2: the per-endpoint flow policy the live IPC gates
+      consult (`LabelingContext.endpointPolicy`) — default: no override
+      anywhere.  Its subset obligation, `endpointPolicyRestricted`, is stated
+      where the gate consumes it and stays the deployment's. -/
+  endpointPolicy : EndpointFlowPolicy := { endpointPolicy := fun _ => none }
+  /-- PR #889 review round 2: the declassification policy the live `.declassify`
+      syscall consults — default: deny every downgrade. -/
+  declassificationPolicy : DeclassificationPolicy := { canDeclassify := fun _ _ => false }
+  /-- PR #889 review round 2: the audit-monitor clearance — default: `none`,
+      which denies every audit reader.  `auditMonitorClearanceIsTop` is the
+      operator obligation that makes it a full-dominance gate. -/
+  auditMonitorClearance : Option SecurityDomain := none
   /-- One side of the declared domain-separation witness. -/
   separatedLower : SeLe4n.ThreadId
   /-- The other side of the declared domain-separation witness. -/
@@ -870,16 +886,40 @@ structure DeploymentLabeling where
     goes through it cannot ship a labeling that defeats information-flow
     enforcement by accident.
 
-    The three policy fields the structure does not mention — `endpointPolicy`,
-    `declassificationPolicy`, `auditMonitorClearance` — keep their fail-closed
-    `LabelingContext` defaults (no override anywhere, deny every downgrade, deny
-    every audit reader).  A deployment configures them by updating the result. -/
+    The four policy fields — `memoryOwnership`, `endpointPolicy`,
+    `declassificationPolicy`, `auditMonitorClearance` — are **carried by the
+    source** (PR #889 review round 2) with the same fail-closed defaults
+    `LabelingContext` has (no ownership map, no override anywhere, deny every
+    downgrade, deny every audit reader).  A platform binding therefore
+    configures them where it declares its labeling
+    (`PlatformBinding.deploymentLabeling`), and `bootAndInitialisePlatform`
+    installs them; before this the constructor's result was the only place to
+    set them and the production boot entry never exposed it, so every hardware
+    boot was forced to the defaults — no declassification, no audit monitor.
+    None of the four bears on `LabelingContextValid`, so validity by
+    construction is unaffected; their own obligations
+    (`endpointPolicyRestricted`, `auditMonitorClearanceIsTop`) are stated where
+    the live gates consume them and remain the deployment's. -/
 def deploymentLabelingContext (d : DeploymentLabeling) : LabelingContext :=
-  { objectLabelOf    := fun oid => d.entityLabelOf oid.toNat
-    threadLabelOf    := fun tid => d.entityLabelOf tid.toNat
-    endpointLabelOf  := d.endpointLabelOf
-    serviceLabelOf   := d.serviceLabelOf
-    separatedThreads := some (d.separatedLower, d.separatedUpper) }
+  { objectLabelOf          := fun oid => d.entityLabelOf oid.toNat
+    threadLabelOf          := fun tid => d.entityLabelOf tid.toNat
+    endpointLabelOf        := d.endpointLabelOf
+    serviceLabelOf         := d.serviceLabelOf
+    memoryOwnership        := d.memoryOwnership
+    endpointPolicy         := d.endpointPolicy
+    declassificationPolicy := d.declassificationPolicy
+    auditMonitorClearance  := d.auditMonitorClearance
+    separatedThreads       := some (d.separatedLower, d.separatedUpper) }
+
+/-- PR #889 review round 2: the constructor carries each policy field of its
+    source through unchanged — the fact a binding relies on when it configures
+    one. -/
+theorem deploymentLabelingContext_policy_fields (d : DeploymentLabeling) :
+    (deploymentLabelingContext d).memoryOwnership = d.memoryOwnership ∧
+    (deploymentLabelingContext d).endpointPolicy = d.endpointPolicy ∧
+    (deploymentLabelingContext d).declassificationPolicy = d.declassificationPolicy ∧
+    (deploymentLabelingContext d).auditMonitorClearance = d.auditMonitorClearance :=
+  ⟨rfl, rfl, rfl, rfl⟩
 
 /-- WS-RR RR5.1: a thread and its own TCB object always carry the same label
     under a constructed deployment context — the definitional fact

@@ -1726,6 +1726,44 @@ def threadStateConsistent (st : SystemState) : Prop :=
     st.objects[oid]? = some (.tcb tcb) →
     tcb.threadState = inferThreadState st ⟨oid.toNat⟩ tcb
 
+/-- PR #889 review round 2: the relation the **live** kernel actually keeps on
+the stored `threadState` field, stated on its own so it can be cited honestly.
+
+`threadStateConsistent` is the full classification and holds of the production
+boot state (`bootFromPlatformCheckedWithIdleThreads_threadStateConsistent`); it
+is **not** preserved by the transitions, because no scheduler dispatch writes
+`.Running` and no IPC block writes a `.Blocked*` — `scheduleEffectiveOnCore` /
+`switchToThreadOnCore` move the current slot and the run queue and leave the
+TCB object alone, so after any core's first dispatch the field says `.Ready` of
+a running thread, and after any rendezvous it says `.Ready` of a blocked one.
+The harness re-establishes the full classification with `syncThreadStates`
+before it checks.
+
+What the live decisions read is narrower: `tcbSuspend` / `tcbResume` / the
+cross-core cancellation / the fault suspend test the field against `.Inactive`
+only (`Lifecycle/Suspend.lean`, `IPC/CrossCore/Cancellation.lean`), and the
+writers of the field are exactly the lifecycle transitions that make a thread
+inactive or ready again.  This predicate is that reading: the stored flag says
+`.Inactive` **iff** the observable state classifies the thread `.Inactive`.
+It follows from the full classification (`threadStateConsistent_implies_
+threadInactiveFlagConsistent`), so it holds of the boot state too; its
+preservation across the scheduler and IPC surfaces — or the replacement of the
+stored field by the inferred one — is registered debt
+(`docs/REGISTERED_DEBT.md`, owned by WS-RR RR7.36), not a theorem of this cut.
+New code must not cite `threadStateConsistent` of a post-dispatch state. -/
+def threadInactiveFlagConsistent (st : SystemState) : Prop :=
+  ∀ (oid : SeLe4n.ObjId) (tcb : TCB),
+    st.objects[oid]? = some (.tcb tcb) →
+    (tcb.threadState = .Inactive ↔ inferThreadState st ⟨oid.toNat⟩ tcb = .Inactive)
+
+/-- PR #889 review round 2: the full classification entails the inactive-flag
+relation — what carries the boot-state result over. -/
+theorem threadStateConsistent_implies_threadInactiveFlagConsistent
+    (st : SystemState) (h : threadStateConsistent st) :
+    threadInactiveFlagConsistent st := by
+  intro oid tcb hObj
+  rw [h oid tcb hObj]
+
 /-- **WS-RR RR5.10**: a thread that is some core's current thread classifies
 `.Running` — for **every** core, not only the boot core.  The substantive
 content of the lift: this is false of the pre-RR5.10 definition whenever `c` is

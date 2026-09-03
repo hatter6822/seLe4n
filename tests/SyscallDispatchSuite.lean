@@ -813,6 +813,59 @@ private def sd050_bindNotification_requires_ntfn_cap : IO Unit := do
     "bind with a read-only notification cap should fail with illegalAuthority"
 
 
+/-- SD-054 (PR #889 review round 2): **a capability naming a kernel-reserved
+idle object resolves like an empty slot.**  The caller's CNode holds a writable
+capability to idle 0's object id at slot 0 and one to an ordinary TCB at slot 1;
+the single resolution every syscall passes through (`syscallResolveCap`) refuses
+slot 0 with `.invalidCapability` — the answer an empty slot gives, so the refusal
+discloses nothing about the reservation — and resolves slot 1.  Through the
+dispatcher a `.tcbSuspend` aimed at the idle TCB is refused the same way, so no
+configured or transferred authority can remove a core's only guaranteed
+runnable thread (`syscallResolveCap_ok_not_reserved`). -/
+private def sd054_idleTargetCapabilityUnresolvable : IO Unit := do
+  let caller : SeLe4n.ThreadId := ⟨1⟩
+  let cnId   : SeLe4n.ObjId := ⟨50⟩
+  let tgtTcb : SeLe4n.ObjId := ⟨70⟩
+  let idle0  : SeLe4n.ObjId := (SeLe4n.Kernel.idleThreadId ⟨0, by decide⟩).toObjId
+  let idleCap : Capability := { target := .object idle0, rights := AccessRightSet.ofList [.write] }
+  let tcbCap  : Capability := { target := .object tgtTcb, rights := AccessRightSet.ofList [.write] }
+  let st : SystemState :=
+    mkState [
+      (caller.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnId }),
+      (tgtTcb, .tcb { (mkTcb 70) with cspaceRoot := cnId }),
+      (cnId, .cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.ofListWF
+            [(SeLe4n.Slot.ofNat 0, idleCap), (SeLe4n.Slot.ofNat 1, tcbCap)] })
+    ]
+  let gate (slot : Nat) : SyscallGate :=
+    { callerId := caller, cspaceRoot := cnId, capAddr := SeLe4n.CPtr.ofNat slot,
+      capDepth := 4, requiredRight := .write }
+  expect "sd054_idle_target_cap_resolves_invalidCapability"
+    (match syscallResolveCap (gate 0) st with
+     | .error .invalidCapability => true
+     | _ => false)
+    "a capability to an idle TCB must resolve like an empty slot"
+  expect "sd054_ordinary_target_cap_resolves"
+    (match syscallResolveCap (gate 1) st with
+     | .ok (cap, _) => decide (cap.target = .object tgtTcb)
+     | _ => false)
+    "the ordinary capability beside it must still resolve"
+  expect "sd054_idle_cap_is_the_reserved_kind"
+    (SeLe4n.Kernel.capTargetsReservedIdleObject idleCap &&
+     !SeLe4n.Kernel.capTargetsReservedIdleObject tcbCap)
+    "the capability predicate must decide by target"
+  let decoded : SyscallDecodeResult :=
+    { capAddr := SeLe4n.CPtr.ofNat 0,
+      msgInfo := { length := 0, extraCaps := 0, label := 0 },
+      syscallId := .tcbSuspend,
+      msgRegs := #[], inlineCount := 0, overflowCount := 0 }
+  expect "sd054_tcbSuspend_on_idle_target_refused"
+    (match dispatchSyscall decoded caller st with
+     | .error .invalidCapability => true
+     | _ => false)
+    "a suspend aimed at an idle TCB must be refused at resolution"
+
 /-- SD-051: faithful seL4-MCS receive linkage, folded into `endpointReceiveDual`
     itself (#7.2; formerly the separate `linkReceivedCaller` `.receive`-arm step).
     After `endpointReceiveDual` rendezvouses a `Call` (moving the caller to
@@ -1223,4 +1276,6 @@ def main : IO Unit := do
   sd052c_replyRecv_delegated_returns_recorded_server_donation
   sd053_serverFirstLink
   sd053g_bound_notification_wake_clears_stash
+  IO.println "--- PR #889 review round 2: reserved idle objects are unresolvable ---"
+  sd054_idleTargetCapabilityUnresolvable
   IO.println "=== All WS-RC R2.C SyscallDispatch tests passed ==="

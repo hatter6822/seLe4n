@@ -2035,9 +2035,13 @@ const RELEASE_SURVIVING_TRIPWIRES: &[(&str, &str, &str)] = &[
     (
         "src/kernel_entry.rs",
         "assert_not_holding_round_lock",
-        "round_lock_held_by(",
+        "crate::shootdown::round_lock_held_by(core_id)",
     ),
-    ("src/boot.rs", "install_exception_vectors", "2048"),
+    (
+        "src/boot.rs",
+        "install_exception_vectors",
+        "!vbar.is_multiple_of(2048)",
+    ),
 ];
 
 /// **WS-RR RR5.18**: each pinned tripwire is a real branch to a fail-closed
@@ -2048,17 +2052,24 @@ const RELEASE_SURVIVING_TRIPWIRES: &[(&str, &str, &str)] = &[
 ///
 ///   * the body contains no `debug_assert` — a check that compiles out cannot
 ///     halt anything; and
-///   * some `if` in the body whose condition names the tripwire's subject has a
-///     block whose **last top-level statement diverges**, which is the
-///     statement-level form of "this branch stops the core" rather than "this
-///     branch mentions `fatal_halt` somewhere".
+///   * some `if` in the body whose condition **is** the tripwire's declared
+///     failure condition — the whole predicate, whitespace aside, not a token
+///     it contains (PR #889 review round 2) — has a block whose **last
+///     top-level statement diverges**, which is the statement-level form of
+///     "this branch stops the core" rather than "this branch mentions
+///     `fatal_halt` somewhere".
 ///
-/// The second relation is why a mutation that keeps `fatal_halt()` but nests it
+/// The condition is compared as a predicate because a token is not a
+/// relation: `if vbar.is_multiple_of(2048) { fatal_halt() }` keeps `2048` and
+/// a terminal halt while halting every *aligned* boot and letting a misaligned
+/// VBAR through, and `if !round_lock_held_by(core_id)` keeps the call while
+/// halting exactly the cores that respected the lock order.  The second
+/// relation is also why a mutation that keeps `fatal_halt()` but nests it
 /// under a further condition, or moves it above the branch, is refused.
 fn release_surviving_tripwire_status(
     code: &str,
     fn_name: &str,
-    subject: &str,
+    condition: &str,
 ) -> Result<(), String> {
     let signature = format!("fn {fn_name}(");
     let at = code
@@ -2080,20 +2091,16 @@ fn release_surviving_tripwire_status(
              halt it documents would not exist in the image that ships"
         ));
     }
-    let mut search = 0usize;
-    while let Some(hit) = body[search..].find(subject) {
-        let at = search + hit;
-        search = at + subject.len();
-        let Some(if_at) = enclosing_if_keyword(body, 0, at) else {
+    let wanted = condition_key(condition);
+    let mut saw_condition = false;
+    for (if_at, block_open) in if_statements(body) {
+        if condition_key(&body[if_at + 2..block_open]) != wanted {
             continue;
-        };
-        let Some(block_open) = block_open_after(body, at) else {
-            continue;
-        };
+        }
+        saw_condition = true;
         let Some(block_close) = matching_close_brace(body, block_open) else {
             continue;
         };
-        let _ = if_at;
         let statements = top_level_statements(body, block_open, block_close);
         if statements
             .last()
@@ -2103,21 +2110,59 @@ fn release_surviving_tripwire_status(
             return Ok(());
         }
     }
-    Err(format!(
-        "`{fn_name}` has no `if` on `{subject}` whose block ends in a diverging statement — \
-         the tripwire does not stop the core on the condition it exists to catch"
-    ))
+    if saw_condition {
+        Err(format!(
+            "`{fn_name}` has an `if {condition}` but its block does not end in a diverging \
+             statement — the tripwire does not stop the core on the condition it exists to catch"
+        ))
+    } else {
+        Err(format!(
+            "`{fn_name}` has no `if` whose condition is exactly `{condition}` — a reversed, \
+             widened or rewritten predicate keeps the tripwire's tokens and halts on the wrong \
+             case"
+        ))
+    }
+}
+
+/// The whitespace-free spelling of a condition, for comparing predicates
+/// rather than tokens.
+fn condition_key(condition: &str) -> String {
+    condition.chars().filter(|c| !c.is_whitespace()).collect()
+}
+
+/// Every `if` statement in `body`: the offset of its `if` keyword and the
+/// offset of the `{` opening its block.  An `if` is a keyword only at a word
+/// boundary, so `elif`-like identifiers and field names do not count.
+fn if_statements(body: &str) -> Vec<(usize, usize)> {
+    let bytes = body.as_bytes();
+    let is_ident = |c: u8| c.is_ascii_alphanumeric() || c == b'_';
+    let mut out = Vec::new();
+    let mut search = 0usize;
+    while let Some(hit) = body[search..].find("if") {
+        let if_at = search + hit;
+        search = if_at + 2;
+        let before_ok = if_at == 0 || !is_ident(bytes[if_at - 1]);
+        let after_ok = if_at + 2 < bytes.len()
+            && (bytes[if_at + 2].is_ascii_whitespace() || matches!(bytes[if_at + 2], b'(' | b'!'));
+        if !(before_ok && after_ok) {
+            continue;
+        }
+        if let Some(block_open) = block_open_after(body, if_at + 2) {
+            out.push((if_at, block_open));
+        }
+    }
+    out
 }
 
 /// **WS-RR RR5.18**: run `release_surviving_tripwire_status` over the pin.
 fn scan_release_surviving_tripwires() {
     verify_release_surviving_tripwire_scanner();
-    for (path, fn_name, subject) in RELEASE_SURVIVING_TRIPWIRES {
+    for (path, fn_name, condition) in RELEASE_SURVIVING_TRIPWIRES {
         println!("cargo:rerun-if-changed={path}");
         let contents = std::fs::read_to_string(path)
             .unwrap_or_else(|e| panic!("WS-RR RR5.18 scanner: cannot read `{path}`: {e}"));
         let (_, code) = rust_code_views(&contents);
-        if let Err(why) = release_surviving_tripwire_status(&code, fn_name, subject) {
+        if let Err(why) = release_surviving_tripwire_status(&code, fn_name, condition) {
             panic!("WS-RR RR5.18 regression: `{path}`: {why}");
         }
     }
@@ -2139,13 +2184,24 @@ pub fn assert_not_holding_round_lock(core_id: usize) {
         release_surviving_tripwire_status(
             &code,
             "assert_not_holding_round_lock",
-            "round_lock_held_by(",
+            "crate::shootdown::round_lock_held_by(core_id)",
         )
     };
     if let Err(why) = check(GOOD) {
         panic!("build.rs self-check: the good tripwire fixture was refused: {why}");
     }
-    let mutations: [(&str, &str, &str); 4] = [
+    verify_release_surviving_tripwire_polarity();
+    let mutations: [(&str, &str, &str); 6] = [
+        (
+            "the predicate is reversed, keeping its call",
+            "    if crate::shootdown::round_lock_held_by(core_id) {",
+            "    if !crate::shootdown::round_lock_held_by(core_id) {",
+        ),
+        (
+            "the predicate is widened, keeping its call",
+            "    if crate::shootdown::round_lock_held_by(core_id) {",
+            "    if crate::shootdown::round_lock_held_by(core_id) && crate::shootdown::retry_pending() {",
+        ),
         (
             "the halt survives but the branch becomes a debug_assert",
             "    if crate::shootdown::round_lock_held_by(core_id) {\n        crate::kprintln!(\"[kernel-entry] FATAL: lock order violated\");\n        crate::cpu::fatal_halt();\n    }",
@@ -2186,6 +2242,72 @@ pub fn assert_not_holding_round_lock(core_id: usize) {
             panic!(
                 "build.rs self-check: `release_surviving_tripwire_status` accepted a broken \
                  fixture: {what}"
+            );
+        }
+    }
+}
+
+/// **PR #889 review round 2**: the VBAR tripwire's negated predicate, and the
+/// polarity mutations that keep every token of it.  `2048` and a terminal halt
+/// survive each of them; what changes is which boots halt.
+fn verify_release_surviving_tripwire_polarity() {
+    const GOOD: &str = r#"
+pub fn install_exception_vectors() {
+    let vbar = vector_base();
+    if !vbar.is_multiple_of(2048) {
+        crate::kprintln!("[boot] FATAL: exception vector table is not 2048-byte aligned");
+        crate::cpu::fatal_halt();
+    }
+    crate::registers::write_vbar_el1(vbar);
+}
+"#;
+    let check = |source: &str| -> Result<(), String> {
+        let (_, code) = rust_code_views(source);
+        release_surviving_tripwire_status(
+            &code,
+            "install_exception_vectors",
+            "!vbar.is_multiple_of(2048)",
+        )
+    };
+    if let Err(why) = check(GOOD) {
+        panic!("build.rs self-check: the good VBAR tripwire fixture was refused: {why}");
+    }
+    let mutations: [(&str, &str, &str); 3] = [
+        (
+            "the alignment predicate is reversed: aligned boots halt, misaligned ones proceed",
+            "    if !vbar.is_multiple_of(2048) {",
+            "    if vbar.is_multiple_of(2048) {",
+        ),
+        (
+            "the predicate is rewritten around the same constant with the wrong polarity",
+            "    if !vbar.is_multiple_of(2048) {",
+            "    if vbar % 2048 == 0 {",
+        ),
+        (
+            "the halt is kept but the condition is a stored, later-negated flag",
+            "    if !vbar.is_multiple_of(2048) {",
+            "    let aligned = vbar.is_multiple_of(2048);\n    if aligned {",
+        ),
+    ];
+    for (what, from, to) in mutations {
+        assert!(
+            GOOD.contains(from),
+            "build.rs self-check: VBAR tripwire mutation `{what}` does not apply"
+        );
+        let mutated = GOOD.replacen(from, to, 1);
+        assert_ne!(
+            mutated, GOOD,
+            "build.rs self-check: VBAR tripwire mutation `{what}` is inert"
+        );
+        assert!(
+            mutated.contains("2048") && mutated.contains("fatal_halt("),
+            "build.rs self-check: VBAR tripwire mutation `{what}` DELETED a token; the \
+             mutation must keep the tokens and break the relation"
+        );
+        if check(&mutated).is_ok() {
+            panic!(
+                "build.rs self-check: `release_surviving_tripwire_status` accepted a VBAR \
+                 tripwire with the wrong polarity: {what}"
             );
         }
     }
@@ -3594,18 +3716,218 @@ fn collect_lean_exports(dir: &std::path::Path, out: &mut Vec<String>) {
         let Ok(contents) = std::fs::read_to_string(&path) else {
             continue;
         };
-        let mut search = 0usize;
-        while let Some(hit) = contents[search..].find("@[export ") {
-            let at = search + hit + "@[export ".len();
-            search = at;
-            let name: String = contents[at..]
-                .trim_start()
-                .chars()
-                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
-                .collect();
-            if !name.is_empty() && !out.contains(&name) {
+        for name in lean_exports_in(&lean_code_view(&contents)) {
+            if !out.contains(&name) {
                 out.push(name);
             }
+        }
+    }
+}
+
+/// **PR #889 review round 2**: the comment-free, string-free view of a Lean
+/// source, byte-aligned with it — `--` line comments, nested `/- … -/` block
+/// comments (docstrings and module docs included), string literals and the
+/// `'"'` character literal blanked to spaces, newlines kept.  The same rules
+/// `scripts/lean_code_view.py` applies for the Python-side gates.
+///
+/// `collect_lean_exports` read raw text, so the commented
+/// `@[export lean_endpoint_call_cross_core]` that records a *retired* seam
+/// counted as a live export, and a docstring could add a symbol to the gated
+/// inventory that drives the readiness and declaration classification.  A gate
+/// reads code; prose is not in the inventory.
+fn lean_code_view(src: &str) -> String {
+    let b = src.as_bytes();
+    let mut out = b.to_vec();
+    let is_ident = |c: u8| c.is_ascii_alphanumeric() || c == b'_' || c == b'\'' || c == b'.';
+    let mut i = 0usize;
+    while i < b.len() {
+        if b[i] == b'-' && i + 1 < b.len() && b[i + 1] == b'-' {
+            while i < b.len() && b[i] != b'\n' {
+                out[i] = b' ';
+                i += 1;
+            }
+        } else if b[i] == b'/' && i + 1 < b.len() && b[i + 1] == b'-' {
+            let mut depth = 0usize;
+            while i < b.len() {
+                if b[i] == b'/' && i + 1 < b.len() && b[i + 1] == b'-' {
+                    depth += 1;
+                    out[i] = b' ';
+                    out[i + 1] = b' ';
+                    i += 2;
+                    continue;
+                }
+                if b[i] == b'-' && i + 1 < b.len() && b[i + 1] == b'/' {
+                    depth -= 1;
+                    out[i] = b' ';
+                    out[i + 1] = b' ';
+                    i += 2;
+                    if depth == 0 {
+                        break;
+                    }
+                    continue;
+                }
+                if b[i] != b'\n' {
+                    out[i] = b' ';
+                }
+                i += 1;
+            }
+        } else if b[i] == b'"' {
+            out[i] = b' ';
+            i += 1;
+            while i < b.len() && b[i] != b'"' {
+                if b[i] == b'\\' && i + 1 < b.len() {
+                    out[i] = b' ';
+                    i += 1;
+                }
+                if b[i] != b'\n' {
+                    out[i] = b' ';
+                }
+                i += 1;
+            }
+            if i < b.len() {
+                out[i] = b' ';
+                i += 1;
+            }
+        } else if b[i] == b'\''
+            && i + 2 < b.len()
+            && b[i + 1] == b'"'
+            && b[i + 2] == b'\''
+            && (i == 0 || !is_ident(b[i - 1]))
+        {
+            out[i] = b' ';
+            out[i + 1] = b' ';
+            out[i + 2] = b' ';
+            i += 3;
+        } else {
+            i += 1;
+        }
+    }
+    // Every byte the scan rewrote became an ASCII space, so the view is valid
+    // UTF-8 exactly when the source was.
+    String::from_utf8(out).expect("lean_code_view: the source was not UTF-8")
+}
+
+/// **PR #889 review round 2**: every `export <name>` attribute in `code` — a
+/// Lean code view — in order of first occurrence.  The attribute list
+/// `@[ … ]` is split on commas, so `@[inline, export name]` counts, and the
+/// separator after `export` is any whitespace, so a line break before the
+/// name counts; the old `find("@[export ")` saw neither.
+fn lean_exports_in(code: &str) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    let mut search = 0usize;
+    while let Some(hit) = code[search..].find("@[") {
+        let open = search + hit + 2;
+        let mut depth = 1usize;
+        let mut close = None;
+        for (index, ch) in code[open..].char_indices() {
+            match ch {
+                '[' => depth += 1,
+                ']' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        close = Some(open + index);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let Some(close) = close else {
+            break;
+        };
+        for attr in code[open..close].split(',') {
+            let attr = attr.trim();
+            if let Some(rest) = attr.strip_prefix("export") {
+                if rest.starts_with(|c: char| c.is_whitespace()) {
+                    let name: String = rest
+                        .trim_start()
+                        .chars()
+                        .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                        .collect();
+                    if !name.is_empty() && !names.contains(&name) {
+                        names.push(name);
+                    }
+                }
+            }
+        }
+        search = close + 1;
+    }
+    names
+}
+
+/// Token-preserving self-check for the export collector: every mutation keeps
+/// the `@[export name]` text and breaks the relation that it is *code*.
+fn verify_lean_export_collector() {
+    const GOOD: &str = "/-- doc -/\n@[export lean_alpha]\ndef alpha : Nat := 0\n\n\
+                        @[inline, export lean_beta]\ndef beta : Nat := 1\n\n\
+                        @[export\n  lean_gamma]\ndef gamma : Nat := 2\n";
+    let got = lean_exports_in(&lean_code_view(GOOD));
+    assert_eq!(
+        got,
+        vec!["lean_alpha", "lean_beta", "lean_gamma"],
+        "build.rs self-check: the export collector missed a live attribute form"
+    );
+    assert_eq!(
+        lean_code_view(GOOD).len(),
+        GOOD.len(),
+        "build.rs self-check: the Lean code view is not byte-aligned"
+    );
+    let mutations: [(&str, &str, &str, &str); 6] = [
+        (
+            "the attribute is commented out with `--`",
+            "@[export lean_alpha]\n",
+            "-- @[export lean_alpha]\n",
+            "lean_alpha",
+        ),
+        (
+            "the attribute sits inside a block comment",
+            "@[export lean_alpha]\n",
+            "/- @[export lean_alpha] -/\n",
+            "lean_alpha",
+        ),
+        (
+            "the attribute sits inside a nested block comment",
+            "@[export lean_alpha]\n",
+            "/- outer /- @[export lean_alpha] -/ still a comment -/\n",
+            "lean_alpha",
+        ),
+        (
+            "the attribute is quoted in a docstring",
+            "/-- doc -/",
+            "/-- doc: the former @[export lean_delta] seam -/",
+            "lean_delta",
+        ),
+        (
+            "the attribute is a string literal",
+            "def alpha : Nat := 0\n",
+            "def alpha : Nat := 0\ndef s : String := \"@[export lean_epsilon]\"\n",
+            "lean_epsilon",
+        ),
+        (
+            "the attribute is a trailing line comment after code",
+            "def beta : Nat := 1\n",
+            "def beta : Nat := 1 -- was @[export lean_zeta]\n",
+            "lean_zeta",
+        ),
+    ];
+    for (what, from, to, must_vanish) in mutations {
+        assert!(
+            GOOD.contains(from),
+            "build.rs self-check: export-collector mutation `{what}` does not apply"
+        );
+        let mutated = GOOD.replacen(from, to, 1);
+        assert_ne!(
+            mutated, GOOD,
+            "build.rs self-check: export-collector mutation `{what}` is inert"
+        );
+        assert!(
+            mutated.contains(&format!("export {must_vanish}")),
+            "build.rs self-check: export-collector mutation `{what}` DELETED the attribute; \
+             the mutation must keep the token and break the relation"
+        );
+        let names = lean_exports_in(&lean_code_view(&mutated));
+        if names.iter().any(|n| n == must_vanish) {
+            panic!("build.rs self-check: the export collector read prose as code: {what}");
         }
     }
 }
@@ -3643,6 +3965,7 @@ fn collect_rust_sources(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>
 /// `verify_lean_upcall_scanner` runs the token-preserving mutations first.
 fn scan_lean_upcalls_readiness_gated() {
     verify_lean_extern_gating_scanner();
+    verify_lean_export_collector();
     let lean_root = std::path::Path::new("../../SeLe4n");
     println!("cargo:rerun-if-changed=../../SeLe4n");
     let mut exports: Vec<String> = Vec::new();

@@ -149,6 +149,28 @@ check("the substitution's own contents stay in scope",
       CODED in gate.strip_shell("X=" + dollar + "(grep " + q + CODED + q + " f)"), True)
 check("an unterminated $( does not swallow the lines below it",
       CODED in gate.strip_shell("X=" + dollar + "(echo\n# " + CODED + "\n"), False)
+# PR #889 review round 2: the substitution's BODY is lexed, not copied.
+# A comment inside `$( ... )` is prose one level down, and a `)` inside
+# that comment is text -- copying the span verbatim kept the comment as
+# code and closed the substitution on the paren.  These mutate by KEEPING
+# the substitution and moving the token into a comment inside it.
+check("a comment inside a substitution is blanked",
+      CODED in gate.strip_shell("X=" + dollar + "(echo ok # " + CODED + "\n)\n"), False)
+check("a paren inside a substitution's comment does not close it",
+      CODED in gate.strip_shell(
+          "X=" + dollar + "(echo ok # a) " + CODED + "\n)\n"), False)
+check("a substitution's command survives beside its comment",
+      CODED in gate.strip_shell(
+          "X=" + dollar + "(grep " + CODED + " f # note\n)\n"), True)
+check("a nested substitution's comment is blanked too",
+      CODED in gate.strip_shell(
+          "X=" + dollar + "(a " + dollar + "(b # " + CODED + "\n) c)\n"), False)
+check("a comment inside a double-quoted substitution is blanked",
+      CODED in gate.strip_shell(
+          "echo " + dq + dollar + "(echo ok # " + CODED + "\n)" + dq + "\n"), False)
+check("a command inside a double-quoted substitution is kept",
+      CODED in gate.strip_shell(
+          "echo " + dq + dollar + "(" + CODED + " # note\n)" + dq + "\n"), True)
 # ...and a DOUBLE-quoted payload handed to an interpreter is code for
 # the same reason the single-quoted one is.  The tree writes it both
 # ways -- single-quoted in `test_tier0_hygiene.sh`, double-quoted in

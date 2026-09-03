@@ -9,6 +9,7 @@
 
 import SeLe4n.Prelude
 import SeLe4n.Kernel.Concurrency.Types
+import SeLe4n.Model.Object.Types
 
 /-!
 # Per-core idle-thread identities
@@ -25,6 +26,11 @@ The idle *TCB constructor* (`createIdleThread`) and the *boot installer*
 (`installIdleThread`, `bootFromPlatformWithIdleThreads`) remain in
 `Platform.Boot` (they need the `IntermediateState` / `Builder` machinery); the
 SM5.E theorems (`Scheduler/Operations/PerCoreIdle.lean`) consume both.
+
+The capability predicate `capTargetsReservedIdleObject` (PR #889 review round
+2) lives here too, because both consumers of the reservation — the syscall
+resolution in `Kernel/API.lean` and the boot validation in `Platform.Boot` —
+sit downstream of this module and must decide the same question.
 -/
 
 namespace SeLe4n.Kernel
@@ -132,6 +138,31 @@ def isIdleObjId (oid : SeLe4n.ObjId) : Bool :=
 theorem isIdleObjId_idleThreadId_toObjId (c : CoreId) :
     isIdleObjId (idleThreadId c).toObjId = true :=
   isIdleThreadId_idleThreadId c
+
+/-- PR #889 review round 2: does `cap` name a **kernel-reserved idle object** —
+    a per-core idle TCB, as the object itself or as a CNode to index into?
+    seL4 has no capability to its idle thread at all; here the idle threads are
+    ordinary objects in the store, so the reservation has to be decided
+    wherever user authority names an object.  `syscallResolveCap` refuses such
+    a capability (`syscallResolveCap_ok_not_reserved`), so no syscall can act on
+    an idle TCB through a capability a boot CNode or a transfer happened to
+    carry — a `.tcbSuspend` on one would remove the core's only guaranteed
+    runnable thread — and `PlatformConfig.wellFormed` refuses a config that
+    references one (`idleSlotsReserved`).  Total over `CapTarget`, so a new
+    target kind must say where it stands. -/
+def capTargetsReservedIdleObject (cap : SeLe4n.Model.Capability) : Bool :=
+  match cap.target with
+  | .object oid => isIdleObjId oid
+  | .cnodeSlot cnode _ => isIdleObjId cnode
+  | .replyCap _ => false
+  | .auditTrail => false
+
+/-- PR #889 review round 2: on an object capability the predicate is the idle
+    test of its target. -/
+theorem capTargetsReservedIdleObject_object (oid : SeLe4n.ObjId)
+    (rights : SeLe4n.Model.AccessRightSet) (badge : Option SeLe4n.Badge) :
+    capTargetsReservedIdleObject { target := .object oid, rights := rights, badge := badge } =
+      isIdleObjId oid := rfl
 
 /-- **WS-RR RR5.13**: a slot the recogniser rejects is no core's idle slot. -/
 theorem idleThreadId_toObjId_ne_of_not_isIdleObjId (oid : SeLe4n.ObjId)

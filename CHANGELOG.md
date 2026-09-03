@@ -371,6 +371,101 @@ the same version.
   (`PlatformBinding.labeling_admitted`) and full `LabelingContextValid`-ity
   (`PlatformBinding.labeling_valid`) are theorems of every binding.
 
+### The review round, second pass
+
+Codex's second review (on the review-round head) found seven more places, five
+of them the same shape and two of them scanners asking for a token where the
+question was a predicate.  All seven are closed in the same version.
+
+* **The idle-slot reservation covered object keys only.**  A boot CNode could
+  still carry a writable capability to `(idleThreadId c).toObjId`; the idle
+  fold then *materialised* that dangling target as the kernel's own idle TCB,
+  and a `.tcbSuspend` through it would have removed the core's only guaranteed
+  runnable thread — the no-stall property RR5.11–RR5.14 exist to establish,
+  defeated by configured authority.  Two closures, neither implying the other.
+  The reservation now covers every object a config entry *references*
+  (`bootObjectReferencesReservedIdleSlot`: CNode slot targets, a TCB's roots
+  and binding, queue links; total over `KernelObject`).  And — the chokepoint
+  form — `syscallResolveCap`, the one resolution every invoked capability
+  passes through, refuses a capability naming a reserved idle object
+  (`capTargetsReservedIdleObject`, `syscallResolveCap_ok_not_reserved`) with
+  the answer an empty slot gives, so a config or a transfer that carried one
+  yields inert authority and no syscall can act on an idle TCB.
+* **The reservation's refusal named the wrong fault.**  `idleSlotsReserved` was
+  the third `wellFormed` conjunct and the checked boot's fallback diagnostic was
+  the duplicate-object one, so an otherwise valid config occupying an idle
+  slot was reported as carrying a duplicate id.  The checked boot has an
+  idle-slot branch ahead of that fallback.
+* **The deployment source carried labels only.**  `DeploymentLabeling` had no
+  `memoryOwnership`, `endpointPolicy`, `declassificationPolicy` or
+  `auditMonitorClearance`, and `bootAndInitialisePlatform` never exposed the
+  constructor's result, so every hardware boot was forced to the defaults —
+  no declassification, no audit monitor — while the constructor's docstring
+  said a deployment configures them "by updating the result".  The source
+  carries the four fields with their fail-closed defaults
+  (`deploymentLabelingContext_policy_fields`); none bears on
+  `LabelingContextValid`, so validity by construction is unchanged, and the
+  bindings' sources keep the defaults.
+* **The consistency claim stops at the boot, and now says so.**  The queued
+  idle form made the boot state `threadStateConsistent`; the first dispatch
+  un-makes it, because `scheduleEffectiveOnCore` / `switchToThreadOnCore` move
+  the current slot and the run queue and leave the TCB object alone — and so
+  does every rendezvous, which writes no `.Blocked*`.  Writing the field from
+  every scheduler and IPC transition is a change to the whole verified
+  per-core surface and is not attempted here.  What *is* here is the honest
+  statement: the relation the live decisions read — `tcbSuspend` /
+  `tcbResume` / the cancellation and fault suspends test the field against
+  `.Inactive` only — is `threadInactiveFlagConsistent`, it follows from the
+  full classification and so holds of the boot state
+  (`bootFromPlatformCheckedWithIdleThreads_threadInactiveFlagConsistent`),
+  and its preservation is registered debt owned by RR7.36.  No code may cite
+  `threadStateConsistent` of a post-dispatch state.
+* **The tripwire scanner matched a token.**  `release_surviving_tripwire_status`
+  resolved the enclosing `if`, discarded it, and asked whether the condition
+  *contained* the subject and the block diverged — so
+  `if vbar.is_multiple_of(2048) { fatal_halt() }` passed while halting every
+  aligned boot and admitting a misaligned VBAR.  The pin now carries each
+  tripwire's exact failure condition and the scanner requires an `if` whose
+  condition *is* it, whitespace aside; the self-check gained a VBAR fixture
+  and polarity mutations that keep every token.
+* **The export inventory read raw Lean text.**  `collect_lean_exports` scanned
+  for `@[export ` in the source, so the commented `@[export
+  lean_endpoint_call_cross_core]` that records a retired seam counted as a live
+  export, `@[inline, export name]` did not, and a line break before the name
+  did not.  `build.rs` now reads the Lean tree through its own comment-free,
+  string-free view (`lean_code_view`) and splits attribute lists
+  (`lean_exports_in`), with six token-preserving mutations.
+* **The shell code view copied `$( … )` spans verbatim.**  A `# note` inside a
+  substitution survived into the code view — a gate reading prose as code one
+  level down — and a `)` inside such a comment closed the substitution early.
+  `command_substitution_end` skips comments and the body is lexed recursively
+  (`command_substitution_view`); six witness cases.
+
+### The review round, third pass — the two gate findings
+
+Codex's third review (on the fix-up head) raised four findings; the two on
+the export gate land here, the two on the boot wrapper (the declared
+separation witnesses as installed threads, the binding's core count) follow
+in the next cut.
+
+* **An assembly provider was a `.global` directive.**  A `.global foo`
+  declares binding and defines nothing, so leaving the directive and deleting
+  the `foo:` label — or dropping the source from the assembler's file list —
+  kept `foo` counted as provided while the image had an unresolved symbol.
+  A provider is now a symbol both exported and *defined* (directive and label,
+  over the comment-blanked view) in a source `build.rs` actually hands to the
+  assembler (`asm_definitions_in`, `assembled_sources_in`, read over the shared
+  Rust code view); five token-preserving cases.
+* **The boot entry had no enforced connection to the checked boot.**
+  `lean_kernel_main` is SM10.1's to write, and until then the gate reconciles
+  its absence; but nothing held the entry, once written, to
+  `bootAndInitialisePlatform` — an entry booting through `bootFromPlatform`
+  directly would link and carry none of RR5's guarantees.  The gate now
+  requires that whichever Lean declaration exports `lean_kernel_main` calls
+  the checked platform boot in its own body, over the comment-free view
+  (`boot_entry_binding_failures`; four cases, including the callee named only
+  in a docstring and in a neighbouring declaration).
+
 ### Tests
 
 * `tests/SmpIdleSuite.lean` — 28 surface anchors for the new boot surface
@@ -379,7 +474,11 @@ the same version.
   boot state every core's run queue is **exactly** `[idle c]` and its first
   selection is `idle c`; that the stored idle TCB's thread state is what the
   classification infers (with the dispatched form shown inconsistent); that
-  an idle-slot squatter config is refused by both entries and its neighbour
+  an idle-slot squatter config is refused by both entries with the
+  reservation's own diagnostic, a config whose TCB names an idle CSpace root
+  is refused the same way while the same TCB naming a non-idle root is
+  accepted, a boot CNode holding a capability to an idle TCB is a reference
+  and one holding an ordinary capability is not, and its neighbour
   one slot below is accepted; that every core's idle thread is
   runtime checks that on the production boot state every core's idle thread is
   on its **own** queue and on no other's, resolves to that core's idle TCB, is
@@ -393,8 +492,16 @@ the same version.
   production wrapper's per-core idle state, read back through the live
   reference), SD-046 (`bootAndInitialisePlatform` installs the simulation
   binding's labeling, observed through the reference; the RPi5 binding's
-  labeling is confined in both directions and admitted), and SD-041 now
-  observes the installed context rather than inferring it from the success arm.
+  labeling is confined in both directions and admitted), SD-041 now
+  observes the installed context rather than inferring it from the success arm,
+  and SD-054 (a capability to an idle TCB resolves like an empty slot at the
+  single resolution every syscall passes through, the ordinary capability
+  beside it resolves, and a `.tcbSuspend` aimed at the idle TCB is refused).
+* `tests/InformationFlowSuite.lean` — a deployment source configured with an
+  audit monitor and a permissive declassification policy reaches the context
+  with those fields, is still admitted by the guard and is
+  `LabelingContextValid` by the same constructor theorem; the unconfigured
+  source keeps every fail-closed default.
 * `rust/sele4n-hal/tests/readiness_gate_before_mark.rs` and
   `…_after_mark.rs` — the readiness mask is process-global and one-way, so both
   sides of the gate are only observable in separate binaries.  Before any mark:

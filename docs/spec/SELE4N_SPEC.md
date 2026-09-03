@@ -51,9 +51,9 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.34.48` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 319,613 across 308 Lean files |
-| **Test LoC** | 67,466 across 70 Lean test suites |
-| **Proved declarations** | 10,622 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 319,846 across 308 Lean files |
+| **Test LoC** | 67,619 across 70 Lean test suites |
+| **Proved declarations** | 10,628 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR5 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -1966,7 +1966,21 @@ Hardware-mode kernel state lives in two `IO.Ref` cells:
   idle slots are reserved by `PlatformConfig.wellFormed`
   (`idleSlotsReserved`), so a successful checked boot has them empty
   (`bootFromPlatformChecked_ok_idleSlotsFreshAt`) and the idle fold
-  overwrites no config object.  The boot queue is characterised exactly — on every core
+  overwrites no config object.  That consistency is a **boot-state
+  theorem**, not a preserved invariant (PR #889 review round 2): the
+  dispatch writes no `threadState`, so the relation the live decisions
+  read — the stored flag says `.Inactive` iff the classification does —
+  is stated as `threadInactiveFlagConsistent`, proved of the boot state
+  (`bootFromPlatformCheckedWithIdleThreads_threadInactiveFlagConsistent`),
+  and owed across the transitions as registered debt (RR7.36).  The
+  reservation also covers every object a config entry *references*
+  (`bootObjectReferencesReservedIdleSlot`) and is refused with its own
+  diagnostic, and the idle objects are unreachable by user authority at
+  all: `syscallResolveCap`, the one resolution every invoked capability
+  passes through, refuses a capability naming one
+  (`capTargetsReservedIdleObject`, `syscallResolveCap_ok_not_reserved`),
+  so no `.tcbSuspend` can remove a core's only guaranteed runnable
+  thread.  The boot queue is characterised exactly — on every core
   it is the empty queue with that core's idle thread enqueued
   (`bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_eq`) — so its
   well-formedness and the resolution of its members are theorems of the
@@ -2091,7 +2105,14 @@ constructor production code uses.  Its output is `LabelingContextValid`
 unconditionally (`deploymentLabelingContext_valid`): thread/object coherence
 holds by reflexivity because the constructor derives a thread's label and its
 own TCB object's label from the same assignment, and non-triviality is the
-structure's own field.  `confinedLabelingContext` is the canonical two-domain
+structure's own field.  The source also carries the four policy fields —
+`memoryOwnership`, `endpointPolicy`, `declassificationPolicy`,
+`auditMonitorClearance` — with their fail-closed defaults
+(`deploymentLabelingContext_policy_fields`; PR #889 review round 2), so a
+platform binding configures them where it declares its labeling and the
+production boot entry installs them; none bears on validity, and their own
+obligations (`endpointPolicyRestricted`, `auditMonitorClearanceIsTop`) stay
+where the live gates consume them.  `confinedLabelingContext` is the canonical two-domain
 instance, built from the two *incomparable* corners of the lattice
 (`lowTrusted` / `highUntrusted`), so neither domain can observe or influence the
 other — unlike a `publicLabel` / `kernelTrusted` split, which confines in one

@@ -450,6 +450,42 @@ def runAk6Suite : IO Bool := do
     IO.println "--- AK6 named sub-tests: FAILURES ---"
   return allOk
 
+/-- PR #889 review round 2: a deployment source configured beyond the labels —
+an audit monitor and a permissive declassification policy — the way a platform
+binding would carry them. -/
+private def policyOverlayLabeling : SeLe4n.Kernel.DeploymentLabeling :=
+  { SeLe4n.Kernel.harnessDeploymentLabeling with
+      auditMonitorClearance := some ⟨3⟩,
+      declassificationPolicy := { canDeclassify := fun _ _ => true } }
+
+/-- PR #889 review round 2: configuring the policy fields costs nothing of
+validity by construction. -/
+example : SeLe4n.Kernel.LabelingContextValid
+    (SeLe4n.Kernel.deploymentLabelingContext policyOverlayLabeling) :=
+  SeLe4n.Kernel.deploymentLabelingContext_valid _
+
+/-- PR #889 review round 2: the four policy fields travel with the source, so a
+platform binding configures them where it declares its labeling and the
+production boot entry installs them — before, the constructor's result was the
+only place to set them and `bootAndInitialisePlatform` never exposed it. -/
+private def runDeploymentPolicyCarriageChecks : IO Unit := do
+  let ctx := SeLe4n.Kernel.deploymentLabelingContext policyOverlayLabeling
+  expect "the source's audit-monitor clearance reaches the context"
+    (ctx.auditMonitorClearance == some ⟨3⟩)
+  expect "the source's declassification policy reaches the context"
+    (ctx.declassificationPolicy.canDeclassify ⟨0⟩ ⟨1⟩ == true)
+  expect "a configured source is still admitted by the fail-closed guard"
+    (SeLe4n.Kernel.isInsecureDefaultContext ctx == false)
+  let plain := SeLe4n.Kernel.deploymentLabelingContext SeLe4n.Kernel.harnessDeploymentLabeling
+  expect "NEGATIVE: an unconfigured source keeps the fail-closed defaults"
+    (plain.auditMonitorClearance == none &&
+     plain.declassificationPolicy.canDeclassify ⟨0⟩ ⟨1⟩ == false &&
+     plain.memoryOwnership.isNone &&
+     (plain.endpointPolicy.endpointPolicy ⟨7⟩).isNone)
+  expect "configuring the policies changes no label"
+    (ctx.threadLabelOf ⟨1⟩ == plain.threadLabelOf ⟨1⟩ &&
+     ctx.objectLabelOf ⟨1⟩ == plain.objectLabelOf ⟨1⟩)
+
 /-- WS-RR RR5.4 (audit): the separation witness may name neither the reserved
 sentinel nor a per-core idle thread, and the index-partitioned family stays
 total across the idle range.  Factored out of the main block: that block is
@@ -1479,6 +1515,7 @@ def runInformationFlowChecks : IO Unit := do
       { SeLe4n.Kernel.defaultLabelingContext with
         separatedThreads := some (⟨1⟩, ⟨2⟩) } = true)
   runSeparationWitnessAdmissibilityChecks
+  runDeploymentPolicyCarriageChecks
 
   IO.println "default labeling context insecurity verified"
 

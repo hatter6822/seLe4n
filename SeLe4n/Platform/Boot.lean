@@ -699,9 +699,47 @@ theorem irqsUnique_empty : irqsUnique [] = true := by
 theorem objectIdsUnique_empty : objectIdsUnique [] = true := by
   decide
 
+/-- PR #889 review round 2: does a boot object **reference** a reserved idle
+    slot — hold a capability to one (a CNode), name one as a root or a binding
+    (a TCB), or link one into a queue?  The reservation on object *keys*
+    (`idleSlotsReserved`'s first conjunct) stops the idle fold overwriting a
+    config object; this stops the fold *materialising* a dangling target: a
+    boot CNode carrying a writable capability to `(idleThreadId c).toObjId`
+    would, once the idle TCB exists, hand user space authority over the core's
+    only guaranteed runnable thread.  The resolution gate refuses such a
+    capability at every syscall (`syscallResolveCap_ok_not_reserved`), so the
+    authority would be inert; refusing the config too keeps the boot image free
+    of it.  Total over `KernelObject`, so a new kind must say where it stands,
+    and the queue links are included so the check asks the same question of
+    every field that can hold an object or thread id. -/
+def bootObjectReferencesReservedIdleSlot (obj : KernelObject) : Bool :=
+  match obj with
+  | .endpoint ep =>
+    ep.sendQ.head.any SeLe4n.Kernel.isIdleThreadId ||
+    ep.sendQ.tail.any SeLe4n.Kernel.isIdleThreadId ||
+    ep.receiveQ.head.any SeLe4n.Kernel.isIdleThreadId ||
+    ep.receiveQ.tail.any SeLe4n.Kernel.isIdleThreadId
+  | .notification notif =>
+    !notif.waitingThreads.all (fun t => !SeLe4n.Kernel.isIdleThreadId t)
+  | .cnode cn =>
+    cn.slots.toList.any (fun s => SeLe4n.Kernel.capTargetsReservedIdleObject s.2)
+  | .tcb tcb =>
+    SeLe4n.Kernel.isIdleObjId tcb.cspaceRoot || SeLe4n.Kernel.isIdleObjId tcb.vspaceRoot ||
+    tcb.boundNotification.any SeLe4n.Kernel.isIdleObjId ||
+    tcb.queueNext.any SeLe4n.Kernel.isIdleThreadId ||
+    tcb.queuePrev.any SeLe4n.Kernel.isIdleThreadId
+  | .vspaceRoot _ => false
+  | .untyped _ => false
+  | .schedContext sc => sc.boundThread.any SeLe4n.Kernel.isIdleThreadId
+  | .reply r => r.caller.any SeLe4n.Kernel.isIdleThreadId
+
 /-- **WS-RR RR5.13** (PR #889 review): the per-core idle object slots
     `[idleThreadIdBase, idleThreadIdBase + numCores)` are **reserved** — no
-    `initialObjects` entry and no boot VSpace root may occupy one.
+    `initialObjects` entry and no boot VSpace root may occupy one, and (review
+    round 2) no `initialObjects` entry may *reference* one
+    (`bootObjectReferencesReservedIdleSlot`).  A config that fails this is
+    refused with its own diagnostic (`bootFromPlatformChecked`), not as a
+    duplicate object id.
 
     The production boot (`bootFromPlatformCheckedWithIdleThreads`) installs an
     idle TCB at every one of those slots through `Builder.createObject`, whose
@@ -715,7 +753,8 @@ theorem objectIdsUnique_empty : objectIdsUnique [] = true := by
     boot *implies* the freshness that theorem needs
     (`bootFromPlatformChecked_ok_idleSlotsFreshAt`). -/
 def idleSlotsReserved (config : PlatformConfig) : Bool :=
-  config.initialObjects.all (fun entry => !isIdleObjId entry.id) &&
+  config.initialObjects.all (fun entry =>
+    !isIdleObjId entry.id && !bootObjectReferencesReservedIdleSlot entry.obj) &&
   (match config.bootVSpaceRoot with
    | none => true
    | some entry => !isIdleObjId entry.id)
@@ -737,8 +776,18 @@ theorem idleSlotsReserved_initialObjects (config : PlatformConfig)
     ∀ e ∈ config.initialObjects, isIdleObjId e.id = false := by
   intro e he
   have h1 := ((Bool.and_eq_true _ _).mp h).1
-  have := List.all_eq_true.mp h1 e he
-  simpa using this
+  have hE := (Bool.and_eq_true _ _).mp (List.all_eq_true.mp h1 e he)
+  simpa using hE.1
+
+/-- PR #889 review round 2: no config object references an idle slot under the
+    reservation. -/
+theorem idleSlotsReserved_no_idle_references (config : PlatformConfig)
+    (h : idleSlotsReserved config = true) :
+    ∀ e ∈ config.initialObjects, bootObjectReferencesReservedIdleSlot e.obj = false := by
+  intro e he
+  have h1 := ((Bool.and_eq_true _ _).mp h).1
+  have hE := (Bool.and_eq_true _ _).mp (List.all_eq_true.mp h1 e he)
+  simpa using hE.2
 
 /-- **WS-RR RR5.13**: the boot VSpace root, when present, is not in an idle slot
     under the reservation. -/
@@ -1185,8 +1234,14 @@ def bootFromPlatformChecked (config : PlatformConfig) :
       .error "boot: object fails bootSafe check (invalid state for boot)"
   else if ¬ irqsUnique config.irqTable then
     .error "boot: duplicate IRQ registration detected in platform config"
-  else
+  else if ¬ objectIdsUnique config.initialObjects then
     .error "boot: duplicate object ID detected in platform config"
+  else
+    -- PR #889 review round 2: the third `wellFormed` conjunct has its own
+    -- diagnostic — an otherwise valid config that occupies or references a
+    -- per-core idle slot was reported as a duplicate object id, which names a
+    -- fault the config does not have.
+    .error "boot: platform config occupies or references a reserved per-core idle slot (WS-RR RR5.13 / PR #889 review)"
 
 /-- U6-E/F/AJ3-C/AK9-C/AK9-F/AK9-G + WS-RC R3: Checked boot agrees with
     `bootFromPlatformWithInterrupts` on well-formed, boot-safe,
@@ -1276,7 +1331,7 @@ theorem bootFromPlatformChecked_ok_implies_irqHandlersValid (config : PlatformCo
         · cases hOk
       · cases hOk
     · cases hOk
-  · split at hOk <;> cases hOk
+  · split at hOk <;> (try split at hOk) <;> cases hOk
 
 /-- AK9-F (P-M05): Successful checked boot implies `MachineConfig.wellFormed`.
 
@@ -1302,7 +1357,7 @@ theorem bootFromPlatformChecked_ok_implies_machineConfigWellFormed
         · cases hOk
       · cases hOk
     · cases hOk
-  · split at hOk <;> cases hOk
+  · split at hOk <;> (try split at hOk) <;> cases hOk
 
 /-- AK9-F (P-M05): Successful checked boot implies `physicalAddressWidth ≤ 52`.
 
@@ -1325,7 +1380,7 @@ theorem bootFromPlatformChecked_ok_implies_physicalAddressWidth_bound
         · cases hOk
       · cases hOk
     · cases hOk
-  · split at hOk <;> cases hOk
+  · split at hOk <;> (try split at hOk) <;> cases hOk
 
 /-- AK9-G (P-M06): Successful checked boot produces a state with interrupts
     enabled. Matches the post-HAL hardware state.
@@ -1364,14 +1419,14 @@ theorem bootFromPlatformChecked_ok_interruptsEnabled (config : PlatformConfig)
         · cases hOk
       · cases hOk
     · cases hOk
-  · split at hOk <;> cases hOk
+  · split at hOk <;> (try split at hOk) <;> cases hOk
 
 /-- U6-E/F: Checked boot rejects configs that are not well-formed. -/
 theorem bootFromPlatformChecked_rejects_invalid (config : PlatformConfig)
     (hNotWf : config.wellFormed = false) :
     (bootFromPlatformChecked config).isOk = false := by
   simp [bootFromPlatformChecked, hNotWf]
-  split <;> rfl
+  split <;> (try split) <;> rfl
 
 /-- AJ3-C: Empty config trivially passes bootSafe check. -/
 theorem bootSafeObjectCheck_empty_config :
@@ -2904,7 +2959,7 @@ theorem bootFromPlatformChecked_ok_scheduler_eq (config : PlatformConfig)
         · cases h
       · cases h
     · cases h
-  · split at h <;> cases h
+  · split at h <;> (try split at h) <;> cases h
 
 /-- **WS-RR RR5.13** (PR #889 review): what a successful checked boot **is**.
 
@@ -2949,7 +3004,7 @@ theorem bootFromPlatformChecked_ok_shape (config : PlatformConfig)
         · cases h
       · cases h
     · cases h
-  · split at h <;> cases h
+  · split at h <;> (try split at h) <;> cases h
 
 /-- **WS-RR RR5.13**: the composition's shape — a successful checked boot yields
     a successful idle boot whose state is the fold, and nothing else does.  Every
@@ -4661,5 +4716,17 @@ theorem bootFromPlatformCheckedWithIdleThreads_threadStateConsistent (config : P
           exact ⟨c', by rw [← hEq]; rfl⟩
         rw [hStore]
         exact inferThreadState_eq_of_not_running_not_queued _ _ _ _ hRun₁ hQ₁ hRun₂ hQ₂
+
+/-- PR #889 review round 2: the inactive-flag relation the live decisions read
+    (`threadInactiveFlagConsistent`) holds of the production boot state — a
+    corollary of the full classification, which the boot establishes and the
+    dispatch does not preserve (see `threadInactiveFlagConsistent`'s docstring
+    and the register). -/
+theorem bootFromPlatformCheckedWithIdleThreads_threadInactiveFlagConsistent
+    (config : PlatformConfig) (ist' : IntermediateState)
+    (h : bootFromPlatformCheckedWithIdleThreads config = .ok ist') :
+    threadInactiveFlagConsistent ist'.state :=
+  threadStateConsistent_implies_threadInactiveFlagConsistent _
+    (bootFromPlatformCheckedWithIdleThreads_threadStateConsistent config ist' h)
 
 end SeLe4n.Platform.Boot

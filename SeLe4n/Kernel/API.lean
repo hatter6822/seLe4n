@@ -283,7 +283,16 @@ def syscallResolveCap (gate : SyscallGate) : Kernel Capability :=
     | .ok ref =>
       match SystemState.lookupSlotCap st ref with
       | none => .error .invalidCapability
-      | some cap => .ok (cap, st)
+      | some cap =>
+        -- PR #889 review round 2: a capability naming a kernel-reserved idle
+        -- object is not a capability user space may hold — seL4 has none to
+        -- its idle thread — so it resolves like an empty slot.  This is the
+        -- one resolution every invoked capability passes through
+        -- (`syscallLookupCap` is defined as it plus the rights gate), which
+        -- is what makes `syscallResolveCap_ok_not_reserved` a statement about
+        -- every syscall rather than about the arms that happen to check.
+        if SeLe4n.Kernel.capTargetsReservedIdleObject cap then .error .invalidCapability
+        else .ok (cap, st)
 
 /-- WS-H15c/A-42: Resolve and validate a capability from a syscall gate.
 
@@ -1312,9 +1321,37 @@ theorem syscallResolveCap_implies_capability_at_slot
     split at hOk
     · simp at hOk
     next cap' hLookup =>
-      simp at hOk
-      obtain ⟨hCap, hSt⟩ := hOk
-      exact ⟨ref, hResolve, by rw [hCap.symm]; exact hLookup, hSt.symm⟩
+      split at hOk
+      · simp at hOk
+      · simp at hOk
+        obtain ⟨hCap, hSt⟩ := hOk
+        exact ⟨ref, hResolve, by rw [hCap.symm]; exact hLookup, hSt.symm⟩
+
+/-- PR #889 review round 2: **no resolved capability names a reserved idle
+object.**  Every invoked capability resolves through `syscallResolveCap`, so
+this is the chokepoint form of "no syscall can act on a per-core idle TCB": a
+boot CNode that carried a writable capability to `(idleThreadId c).toObjId`, or
+a transfer that delivered one, yields a slot that resolves `.invalidCapability`
+— exactly as an empty slot does, so the refusal discloses nothing about the
+reservation. -/
+theorem syscallResolveCap_ok_not_reserved
+    (gate : SyscallGate) (st : SystemState) (cap : Capability) (st' : SystemState)
+    (hOk : syscallResolveCap gate st = .ok (cap, st')) :
+    SeLe4n.Kernel.capTargetsReservedIdleObject cap = false := by
+  unfold syscallResolveCap at hOk
+  split at hOk
+  · simp at hOk
+  next ref hResolve =>
+    split at hOk
+    · simp at hOk
+    next cap' hLookup =>
+      split at hOk
+      · simp at hOk
+      next hNot =>
+        simp at hOk
+        obtain ⟨hCap, _⟩ := hOk
+        rw [← hCap]
+        simpa using hNot
 
 /-- PR #870 round 5: a full-lookup success is a resolve success — the rights
 gate only filters, never resolves.  What lets `syscallResolveCap`-based
@@ -6017,7 +6054,11 @@ theorem dispatchSyscallChecked_audit_target_first
       (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
       (SystemState.getCNode?_eq_some_iff st tcb.cspaceRoot rootCn).mp hRoot,
       h, syscallChecksTargetFirst, if_true,
-      syscallInvokeResolved, syscallResolveCap, hResolve, hLookup, hArm]
+      syscallInvokeResolved, syscallResolveCap, hResolve, hLookup]
+    -- PR #889 review round 2: the resolution now refuses a capability naming a
+    -- reserved idle object before the arm runs; either way the answer is
+    -- `.invalidCapability`.
+    by_cases hRes : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true <;> simp [hRes, hArm]
   · have hArm := dispatchWithCapChecked_audit_rejects_non_audit_capability ctx decoded tid
       { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
         capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
@@ -6027,7 +6068,11 @@ theorem dispatchSyscallChecked_audit_target_first
       (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
       (SystemState.getCNode?_eq_some_iff st tcb.cspaceRoot rootCn).mp hRoot,
       h, syscallChecksTargetFirst, if_true,
-      syscallInvokeResolved, syscallResolveCap, hResolve, hLookup, hArm]
+      syscallInvokeResolved, syscallResolveCap, hResolve, hLookup]
+    -- PR #889 review round 2: the resolution now refuses a capability naming a
+    -- reserved idle object before the arm runs; either way the answer is
+    -- `.invalidCapability`.
+    by_cases hRes : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true <;> simp [hRes, hArm]
 
 /-- **WS-SM SM9.A.9 (PR #870 round 5, the order's other half)**: an audit-target
 capability lacking the required right is refused `.illegalAuthority` — after
@@ -6059,7 +6104,13 @@ theorem dispatchSyscallChecked_audit_right_checked_second
       (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
       (SystemState.getCNode?_eq_some_iff st tcb.cspaceRoot rootCn).mp hRoot,
       h, syscallChecksTargetFirst, if_true,
-      syscallInvokeResolved, syscallResolveCap, hResolve, hLookup, hArm]
+      syscallInvokeResolved, syscallResolveCap, hResolve, hLookup]
+    -- PR #889 review round 2: an audit-trail capability names no reserved idle
+    -- object, so the resolution's reservation refusal does not fire and the
+    -- arm's rights verdict is the answer.
+    have hRes : SeLe4n.Kernel.capTargetsReservedIdleObject cap = false := by
+      simp [SeLe4n.Kernel.capTargetsReservedIdleObject, hTarget]
+    simp [hRes, hArm]
   · have hArm := dispatchWithCapChecked_audit_insufficient_right_denied ctx decoded tid
       { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
         capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
@@ -6069,7 +6120,13 @@ theorem dispatchSyscallChecked_audit_right_checked_second
       (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb,
       (SystemState.getCNode?_eq_some_iff st tcb.cspaceRoot rootCn).mp hRoot,
       h, syscallChecksTargetFirst, if_true,
-      syscallInvokeResolved, syscallResolveCap, hResolve, hLookup, hArm]
+      syscallInvokeResolved, syscallResolveCap, hResolve, hLookup]
+    -- PR #889 review round 2: an audit-trail capability names no reserved idle
+    -- object, so the resolution's reservation refusal does not fire and the
+    -- arm's rights verdict is the answer.
+    have hRes : SeLe4n.Kernel.capTargetsReservedIdleObject cap = false := by
+      simp [SeLe4n.Kernel.capTargetsReservedIdleObject, hTarget]
+    simp [hRes, hArm]
 
 /-- **WS-SM SM9.A.10: there is no unchecked audit read.**
 

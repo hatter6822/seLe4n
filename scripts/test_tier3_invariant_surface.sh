@@ -5166,6 +5166,22 @@ run_check "INVARIANT" rg -n '^theorem rpi5_deploymentLabeling ' SeLe4n/Platform/
 run_check "INVARIANT" rg -n '^theorem rpi5UpperDomainBase_clears_idle_range' SeLe4n/Platform/RPi5/Contract.lean
 run_check "INVARIANT" rg -n '^def bootAndInitialisePlatform ' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem bootAndInitialisePlatform_eq_checked_boot' SeLe4n/Platform/FFI.lean
+# PR #889 review round 2: the idle slots are unreachable by user authority — a
+# capability naming one resolves like an empty slot at the single resolution
+# every syscall passes through, and a boot config that references one is
+# refused with its own diagnostic; the deployment source carries the policy
+# fields; the inactive-flag relation the live decisions read is stated and
+# holds of the boot state.
+run_check "INVARIANT" rg -n '^def capTargetsReservedIdleObject' SeLe4n/Kernel/Scheduler/IdleThread.lean
+run_check "INVARIANT" rg -n 'if SeLe4n.Kernel.capTargetsReservedIdleObject cap then .error .invalidCapability' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallResolveCap_ok_not_reserved' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def bootObjectReferencesReservedIdleSlot' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem idleSlotsReserved_no_idle_references' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n 'else if ¬ objectIdsUnique config.initialObjects then' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^  auditMonitorClearance : Option SecurityDomain := none' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^theorem deploymentLabelingContext_policy_fields' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^def threadInactiveFlagConsistent' SeLe4n/Kernel/Scheduler/Operations/Core.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreads_threadInactiveFlagConsistent' SeLe4n/Platform/Boot.lean
 # WS-RR RR5.17: the boot-pinned `suspend_thread_inner` export is REMOVED.  It
 # committed kernel state through a bare `kernelStateRef.set` with no
 # kernel-entry bracket, and `@[export]` made it a live C symbol in the linked
@@ -5666,6 +5682,14 @@ import SeLe4n.Platform.RPi5.Contract
 #check @SeLe4n.Platform.PlatformBinding.labeling
 #check @SeLe4n.Platform.PlatformBinding.labeling_admitted
 #check @SeLe4n.Platform.PlatformBinding.labeling_valid
+#check @SeLe4n.Kernel.capTargetsReservedIdleObject
+#check @SeLe4n.Kernel.syscallResolveCap_ok_not_reserved
+#check @SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
+#check @SeLe4n.Platform.Boot.idleSlotsReserved_no_idle_references
+#check @SeLe4n.Kernel.deploymentLabelingContext_policy_fields
+#check @SeLe4n.Kernel.threadInactiveFlagConsistent
+#check @SeLe4n.Kernel.threadStateConsistent_implies_threadInactiveFlagConsistent
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_threadInactiveFlagConsistent
 #check @SeLe4n.Kernel.confinedDeploymentLabeling
 #check @SeLe4n.Kernel.harnessDeploymentLabeling
 -- Review round: the enqueued idle TCB is the queued form and the production boot

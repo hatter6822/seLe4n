@@ -110,6 +110,12 @@ open SeLe4n.Platform.Boot (createIdleThread queuedIdleThread)
 #check @SeLe4n.Platform.Boot.bootFromPlatformChecked_ok_threadStateConsistent
 #check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_threadStateConsistent
 #check @SeLe4n.Platform.Boot.idleSlotsReserved
+#check @SeLe4n.Platform.Boot.idleSlotsReserved_no_idle_references
+#check @SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
+#check @SeLe4n.Kernel.capTargetsReservedIdleObject
+#check @SeLe4n.Kernel.threadInactiveFlagConsistent
+#check @SeLe4n.Kernel.threadStateConsistent_implies_threadInactiveFlagConsistent
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_threadInactiveFlagConsistent
 #check @SeLe4n.Platform.Boot.bootFromPlatformChecked_ok_shape
 #check @SeLe4n.Platform.Boot.bootFromPlatformChecked_ok_idleSlotsFreshAt
 #check @SeLe4n.Kernel.isIdleObjId
@@ -560,6 +566,11 @@ private def runBootIdleChecks : IO Unit := do
           s!"NEGATIVE core {c.val}: nor installs its idle TCB"
           (plain.state.getTcb? (idleThreadId c)).isNone
 
+/-- PR #889 review round 2: the diagnostic the checked boot answers a config
+that occupies or references a reserved idle slot with. -/
+private def idleSlotDiagnostic : String :=
+  "boot: platform config occupies or references a reserved per-core idle slot (WS-RR RR5.13 / PR #889 review)"
+
 /-- **WS-RR RR5.13** (runtime): the idle entry adds no validation of its own —
 it accepts and rejects exactly what `bootFromPlatformChecked` does. -/
 private def runBootValidationParityChecks : IO Unit := do
@@ -594,8 +605,58 @@ private def runBootValidationParityChecks : IO Unit := do
   | .error ePlain, .error eIdle =>
       assertBool "NEGATIVE: an idle-slot squatter is refused by both entries, with the same error"
         (ePlain == eIdle)
+      -- PR #889 review round 2: the refusal names the reservation.  Before, the
+      -- third `wellFormed` conjunct fell through to the duplicate-object
+      -- diagnostic, which names a fault the config does not have.
+      assertBool "NEGATIVE: ...and the diagnostic names the reservation, not a duplicate id"
+        (ePlain == idleSlotDiagnostic)
   | _, _ =>
       assertBool "NEGATIVE: an idle-slot squatter must be refused by both entries" false
+  -- PR #889 review round 2: a config that merely REFERENCES an idle slot is
+  -- refused too — here a boot-safe TCB whose CSpace root is idle 0's object id.
+  -- The idle fold would have materialised that dangling reference as the
+  -- kernel's own idle TCB.  The same TCB naming a non-idle (and equally absent)
+  -- root is accepted, so the refusal is the reservation and nothing else.
+  let idle0Obj : SeLe4n.ObjId := (idleThreadId ⟨0, by decide⟩).toObjId
+  let referrer (root : SeLe4n.ObjId) : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [],
+      initialObjects := [ { id := ⟨5⟩,
+                            obj := .tcb { tid := ⟨5⟩, priority := ⟨10⟩, domain := ⟨0⟩,
+                                          cspaceRoot := root, vspaceRoot := ⟨0⟩,
+                                          ipcBuffer := SeLe4n.VAddr.ofNat 0,
+                                          threadState := .Inactive },
+                            hSlots := fun _ h => KernelObject.noConfusion h,
+                            hMappings := fun _ h => KernelObject.noConfusion h } ] }
+  assertBool "NEGATIVE: a TCB whose CSpace root is an idle slot fails the reservation"
+    (SeLe4n.Platform.Boot.idleSlotsReserved (referrer idle0Obj) == false)
+  match SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads (referrer idle0Obj) with
+  | .error e =>
+      assertBool "NEGATIVE: ...and the checked boot refuses it with the reservation diagnostic"
+        (e == idleSlotDiagnostic)
+  | .ok _ =>
+      assertBool "NEGATIVE: a config referencing an idle slot must be refused" false
+  assertBool "the same TCB naming a non-idle root is accepted"
+    (SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads (referrer ⟨9⟩)).toOption.isSome
+  -- The reference predicate on the object kinds that hold authority: a CNode
+  -- carrying a capability to an idle object references the slot; the same
+  -- CNode carrying a capability to an ordinary object does not; and the
+  -- capability predicate itself decides by target.
+  let cnodeWith (target : SeLe4n.ObjId) : KernelObject :=
+    .cnode { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+             slots := SeLe4n.UniqueSlotMap.ofListWF
+               [ (SeLe4n.Slot.ofNat 0,
+                  { target := .object target, rights := AccessRightSet.ofList [.write], badge := none }) ] }
+  assertBool "NEGATIVE: a boot CNode holding a capability to an idle TCB references the slot"
+    (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot (cnodeWith idle0Obj) == true)
+  assertBool "a boot CNode holding a capability to an ordinary object does not"
+    (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot (cnodeWith ⟨9⟩) == false)
+  assertBool "capTargetsReservedIdleObject decides by the capability's target"
+    (SeLe4n.Kernel.capTargetsReservedIdleObject
+        { target := .object idle0Obj, rights := AccessRightSet.ofList [.write], badge := none } == true &&
+     SeLe4n.Kernel.capTargetsReservedIdleObject
+        { target := .cnodeSlot idle0Obj (SeLe4n.Slot.ofNat 0), rights := AccessRightSet.ofList [.write], badge := none } == true &&
+     SeLe4n.Kernel.capTargetsReservedIdleObject
+        { target := .object ⟨9⟩, rights := AccessRightSet.ofList [.write], badge := none } == false)
   -- The same object one slot below the idle range is accepted: the refusal is
   -- the reservation, not the object.
   let neighbour : SeLe4n.Platform.Boot.PlatformConfig :=

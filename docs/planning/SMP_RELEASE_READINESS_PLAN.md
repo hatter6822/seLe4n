@@ -570,6 +570,46 @@ closed before merge:
   source, so admission and full validity are theorems of every binding
   (`PlatformBinding.labeling_valid`).
 
+**Review round 2 (PR #889, same version).**  The second pass found seven more,
+five of them the same shape and two of them scanners asking for a token where
+the question was a predicate:
+
+* *RR5.13's reservation covered object keys only.*  A boot CNode could carry a
+  capability to `(idleThreadId c).toObjId`, which the idle fold then
+  materialised, and a `.tcbSuspend` through it would remove the core's only
+  guaranteed runnable thread.  The reservation now covers every object a config
+  entry *references* (`bootObjectReferencesReservedIdleSlot`, total over
+  `KernelObject`), and — the chokepoint form — `syscallResolveCap` refuses any
+  capability naming a reserved idle object (`capTargetsReservedIdleObject`,
+  `syscallResolveCap_ok_not_reserved`), so no syscall can act on an idle TCB
+  through a capability a config or a transfer happened to carry.
+* *RR5.13's refusal named the wrong fault.*  An otherwise valid config occupying
+  an idle slot was reported as a duplicate object id; the checked boot now has
+  an idle-slot branch ahead of that fallback.
+* *RR5.1's source carried labels only.*  `DeploymentLabeling` now carries
+  `memoryOwnership`, `endpointPolicy`, `declassificationPolicy` and
+  `auditMonitorClearance` with their fail-closed defaults, so a binding can
+  configure them where it declares its labeling; before, every hardware boot
+  was forced to the constructor's defaults.
+* *RR5.11's consistency claim stops at the boot.*  The scheduler's dispatch
+  writes no `threadState`, so the full classification is a boot-state theorem
+  and not a preserved invariant.  The relation the live decisions read — the
+  stored flag says `.Inactive` iff the observable state does — is stated as
+  `threadInactiveFlagConsistent`, proved of the boot state, and its
+  preservation across the scheduler and IPC surfaces is registered debt owned
+  by RR7.36.
+* *RR5.18's tripwire scanner matched a token.*  A reversed predicate kept
+  `2048` and the halt and halted every aligned boot; the scanner now requires
+  the `if` condition to be the declared failure predicate, whitespace aside,
+  with polarity mutations in its self-check.
+* *RR5.7's export inventory read raw Lean text.*  A commented-out
+  `@[export …]` counted as a live symbol; `build.rs` now derives the inventory
+  over a comment-free, string-free Lean view and splits attribute lists, so
+  `@[inline, export name]` and a line break before the name count.
+* *The shell code view copied `$( … )` spans verbatim.*  A comment inside a
+  substitution survived into the code view and a `)` inside it closed the
+  substitution early; the body is now lexed recursively.
+
 **Note on RR5.10–RR5.14** (the rows that replaced one XL).  Two findings shape
 the split, and the row they replaced named neither: one is an ordering defect
 it inherited, the other is the reason its "cannot be separate PRs" claim is

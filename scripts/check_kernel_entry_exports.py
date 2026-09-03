@@ -61,10 +61,14 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import rust_code_view  # noqa: E402  (comments blanked, string contents kept)
+
 SKIP_EXIT = 77
 REPO = Path(__file__).resolve().parent.parent
 LEAN_ROOT = REPO / "SeLe4n"
 HAL_SRC = REPO / "rust" / "sele4n-hal" / "src"
+BUILD_RS = REPO / "rust" / "sele4n-hal" / "build.rs"
 ARCHIVE = REPO / ".lake" / "build" / "lib" / "libseLe4n_SeLe4n.a"
 
 #: HAL `extern "C"` declarations that no provider defines **yet**, with the
@@ -87,6 +91,22 @@ EXTERN_FN = re.compile(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(")
 ASM_LINE_COMMENT = re.compile(r"//[^\n]*")
 ASM_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
 ASM_GLOBAL = re.compile(r"^\s*\.(?:global|globl)\s+([A-Za-z_.$][A-Za-z0-9_.$]*)", re.MULTILINE)
+# A label definition: the symbol at the start of a line, followed by `:`.
+ASM_LABEL = re.compile(r"^\s*([A-Za-z_.$][A-Za-z0-9_.$]*)\s*:", re.MULTILINE)
+# A `cc::Build` source registration in `build.rs`, read over the comment-blanked
+# view (string contents kept, since the path IS a string).
+CC_FILE_CALL = re.compile(r'\.file\(\s*"([^"]+)"\s*\)')
+# The primary's boot install, and the checked platform boot it must call.
+BOOT_ENTRY_SYMBOL = "lean_kernel_main"
+BOOT_ENTRY_EXPORT = re.compile(r"@\[export\s+lean_kernel_main\s*\]")
+BOOT_ENTRY_CALLEE = re.compile(r"\bbootAndInitialisePlatform\b")
+# Where a top-level Lean declaration starts, at column 0.
+LEAN_DECL_START = re.compile(
+    r"^(?:@\[|(?:private |protected |noncomputable |unsafe |partial )*"
+    r"(?:def|theorem|abbrev|instance|structure|inductive|example)\b|end\b|namespace\b|"
+    r"section\b|open\b)",
+    re.MULTILINE,
+)
 
 
 def strip_lean_comments(text: str) -> str:
@@ -98,11 +118,53 @@ def lean_exports_in(text: str) -> set[str]:
     return set(LEAN_EXPORT.findall(strip_lean_comments(text)))
 
 
+def lean_sources() -> dict[str, str]:
+    return {str(path.relative_to(REPO)): path.read_text() for path in sorted(LEAN_ROOT.rglob("*.lean"))}
+
+
 def lean_exports() -> set[str]:
     found: set[str] = set()
-    for path in sorted(LEAN_ROOT.rglob("*.lean")):
-        found.update(lean_exports_in(path.read_text()))
+    for text in lean_sources().values():
+        found.update(lean_exports_in(text))
     return found
+
+
+def boot_entry_binding_failures(sources: dict[str, str]) -> list[str]:
+    """PR #889 review round 3: the connection from the boot entry to the checked
+    platform boot is repository-enforced from the day the entry exists.
+
+    `lean_kernel_main` is SM10.1's to write (it is the one upcall that cannot
+    sit behind the readiness gate, and the gate's `EXPECTED_UNRESOLVED` entry
+    reconciles its absence).  This check is vacuous until then and decisive
+    after: whichever Lean declaration carries `@[export lean_kernel_main]` must
+    call `bootAndInitialisePlatform` in its own body — read over the
+    comment-free view, so a docstring that names the callee, or a neighbouring
+    declaration that makes the call, does not satisfy it.  Without this, an
+    entry that boots through `bootFromPlatform` directly would link and carry
+    none of the idle-thread, labeling or reservation guarantees.
+    """
+    failures: list[str] = []
+    for where, text in sources.items():
+        view = strip_lean_comments(text)
+        for m in BOOT_ENTRY_EXPORT.finditer(view):
+            rest = view[m.end():]
+            head = LEAN_DECL_START.search(rest)
+            while head is not None and rest.startswith("@[", head.start()):
+                head = LEAN_DECL_START.search(rest, head.end())
+            if head is None:
+                failures.append(
+                    f"{where}: `@[export {BOOT_ENTRY_SYMBOL}]` is not followed by a declaration"
+                )
+                continue
+            following = LEAN_DECL_START.search(rest, head.end())
+            body = rest[head.start(): following.start() if following else len(rest)]
+            if not BOOT_ENTRY_CALLEE.search(body):
+                failures.append(
+                    f"{where}: the declaration exporting `{BOOT_ENTRY_SYMBOL}` does not call "
+                    "`bootAndInitialisePlatform` — the hardware boot must go through the "
+                    "checked platform boot (idle threads, deployment labeling, reserved slots)"
+                )
+    return failures
 
 
 def extern_declarations_in(text: str, where: str) -> set[str]:
@@ -138,24 +200,51 @@ def hal_extern_declarations() -> set[str]:
     return found
 
 
-def asm_globals_in(text: str) -> set[str]:
-    """Symbols the HAL's own assembly exports (`.global` / `.globl` directives).
+def strip_asm_comments(text: str) -> str:
+    return ASM_LINE_COMMENT.sub("", ASM_BLOCK_COMMENT.sub("", text))
 
-    Comments (`//`, `/* */`) are blanked first, so a directive that survives
-    only in a comment provides nothing.  A `.global` is a *provider*: a HAL
-    `extern "C"` declaration it names (`secondary_entry`, from `boot.S`) is
-    resolved by the assembly archive, not by Lean, and is not a requirement on
-    the Lean archive.
+
+def asm_definitions_in(text: str) -> set[str]:
+    """Symbols one assembly source **defines and exports**: a `.global` /
+    `.globl` directive *and* a label `X:` for the same name, both read over the
+    comment-blanked view.
+
+    PR #889 review round 3: a `.global foo` alone declares binding and defines
+    nothing — leave the directive and delete the label and the image still has
+    an unresolved `foo`, so a directive-only scan passed exactly the
+    token-preserving regression this gate exists to catch.  A provider is the
+    conjunction.
     """
-    text = ASM_LINE_COMMENT.sub("", ASM_BLOCK_COMMENT.sub("", text))
-    return set(ASM_GLOBAL.findall(text))
+    view = strip_asm_comments(text)
+    return set(ASM_GLOBAL.findall(view)) & set(ASM_LABEL.findall(view))
 
 
-def hal_asm_globals() -> set[str]:
+def assembled_sources_in(build_rs: str) -> set[str]:
+    """The assembly sources `build.rs` hands to the assembler — every
+    `.file("…")` argument in its comment-blanked view.  A source the build no
+    longer assembles defines nothing for the image, whatever its text says."""
+    return set(CC_FILE_CALL.findall(rust_code_view.code(build_rs)))
+
+
+def asm_providers_from(sources: dict[str, str], build_rs: str) -> set[str]:
+    """The symbols the HAL's assembly provides to the link: defined-and-exported
+    (`asm_definitions_in`) in a source `build.rs` assembles
+    (`assembled_sources_in`).  `sources` maps a `src/`-relative path to its
+    text."""
+    assembled = assembled_sources_in(build_rs)
     found: set[str] = set()
-    for path in sorted(HAL_SRC.rglob("*.S")):
-        found.update(asm_globals_in(path.read_text()))
+    for rel, text in sources.items():
+        if rel in assembled:
+            found |= asm_definitions_in(text)
     return found
+
+
+def hal_asm_providers() -> set[str]:
+    sources = {
+        path.relative_to(HAL_SRC.parent).as_posix(): path.read_text()
+        for path in sorted(HAL_SRC.rglob("*.S"))
+    }
+    return asm_providers_from(sources, BUILD_RS.read_text())
 
 
 def classify_link_requirements(
@@ -226,9 +315,58 @@ def self_test() -> int:
         failures.append("a commented-out `extern \"C\"` block was collected")
 
     # --- PR #889 review: the link requirement is one-sided, and reconciled ---
-    live_asm = ".global _start\n.globl secondary_entry\n// .global ghost_entry\n/* .global other */\n"
-    if asm_globals_in(live_asm) != {"_start", "secondary_entry"}:
+    live_asm = (
+        ".global _start\n.globl secondary_entry\n// .global ghost_entry\n/* .global other */\n"
+        "_start:\n    b .\nsecondary_entry:\n    b .\nghost_entry:\nother:\n"
+    )
+    if asm_definitions_in(live_asm) != {"_start", "secondary_entry"}:
         failures.append("assembly `.global`/`.globl` providers were not collected exactly")
+
+    # --- PR #889 review round 3: a provider is a DEFINED, ASSEMBLED symbol ---
+    # The directive stays; the label moves into a comment.  A directive-only
+    # scan kept reporting `secondary_entry` as provided.
+    directive_only = ".global secondary_entry\n// secondary_entry:\n    b .\n"
+    if asm_definitions_in(directive_only):
+        failures.append("a `.global` whose label is gone was collected as a provider")
+    label_only = "secondary_entry:\n    b .\n"
+    if asm_definitions_in(label_only):
+        failures.append("a label without `.global` was collected as a provider")
+    build_rs = (
+        "fn main() {\n    let mut asm = cc::Build::new();\n"
+        "    asm.file(\"src/boot.S\").file(\"src/trap.S\");\n"
+        "    // asm.file(\"src/ghost.S\");\n    /* asm.file(\"src/other.S\"); */\n}\n"
+    )
+    if assembled_sources_in(build_rs) != {"src/boot.S", "src/trap.S"}:
+        failures.append("the assembled-source set was not derived from the live `.file()` calls")
+    defined_asm = ".global secondary_entry\nsecondary_entry:\n    b .\n"
+    ghost_asm = ".global ghost_entry\nghost_entry:\n    b .\n"
+    providers = asm_providers_from({"src/boot.S": defined_asm, "src/ghost.S": ghost_asm}, build_rs)
+    if providers != {"secondary_entry"}:
+        failures.append(
+            "a symbol defined in a source build.rs does not assemble was counted as a provider"
+        )
+
+    # --- PR #889 review round 3: the boot entry, once exported, calls the checked boot ---
+    bound = (
+        "@[export lean_kernel_main]\ndef leanKernelMain : IO Unit := do\n"
+        "  let _ ← bootAndInitialisePlatform RPi5Platform cfg\n  pure ()\n\ndef other : Nat := 0\n"
+    )
+    if boot_entry_binding_failures({"f": bound}):
+        failures.append("a boot entry that calls the checked platform boot was refused")
+    doc_only = (
+        "/-- calls bootAndInitialisePlatform -/\n@[export lean_kernel_main]\n"
+        "def leanKernelMain : IO Unit := pure ()\n"
+    )
+    if not boot_entry_binding_failures({"f": doc_only}):
+        failures.append("a boot entry naming the callee only in its docstring was accepted")
+    elsewhere = (
+        "@[export lean_kernel_main]\ndef leanKernelMain : IO Unit := pure ()\n\n"
+        "def other : IO Unit := do\n  let _ ← bootAndInitialisePlatform RPi5Platform cfg\n  pure ()\n"
+    )
+    if not boot_entry_binding_failures({"f": elsewhere}):
+        failures.append("a boot entry whose neighbour makes the call was accepted")
+    if boot_entry_binding_failures({"f": "def other : Nat := 0\n"}):
+        failures.append("the absence of a boot entry was reported as a binding failure")
 
     # A HAL declaration whose Lean export exists under ANOTHER spelling: the
     # token `lean_alpha` is present on the Lean side, but the HAL's spelling is
@@ -296,7 +434,7 @@ def self_test() -> int:
         for line in failures:
             print(f"         {line}")
         return 1
-    print("[PASS] check_kernel_entry_exports self-test (13 cases)")
+    print("[PASS] check_kernel_entry_exports self-test (22 cases)")
     return 0
 
 
@@ -327,9 +465,12 @@ def main() -> int:
             f"[FAIL] {ARCHIVE} does not exist. Build it first: `lake build SeLe4n:static`"
         )
 
-    exports = lean_exports()
+    sources = lean_sources()
+    exports = set()
+    for text in sources.values():
+        exports.update(lean_exports_in(text))
     externs = hal_extern_declarations()
-    asm_globals = hal_asm_globals()
+    asm_globals = hal_asm_providers()
     if not exports:
         sys.exit("[FAIL] no `@[export …]` found under SeLe4n/ — the derivation is broken")
     if not externs:
@@ -339,9 +480,15 @@ def main() -> int:
         )
     if not asm_globals:
         sys.exit(
-            "[FAIL] no `.global` found under rust/sele4n-hal/src/*.S — the assembly "
-            "provider derivation is broken"
+            "[FAIL] no defined, exported symbol found in the assembly sources build.rs "
+            "assembles — the assembly provider derivation is broken"
         )
+    binding_failures = boot_entry_binding_failures(sources)
+    if binding_failures:
+        print("[FAIL] the boot entry is exported but not bound to the checked platform boot:")
+        for line in binding_failures:
+            print(f"         {line}")
+        return 1
     if not (exports & externs):
         sys.exit(
             "[FAIL] the Lean `@[export]` set and the HAL `extern \"C\"` set are disjoint. "
@@ -382,10 +529,16 @@ def main() -> int:
         return 1
 
     required = sorted(externs - asm_globals - set(EXPECTED_UNRESOLVED))
+    boot_entry = (
+        "exported and bound to `bootAndInitialisePlatform`"
+        if BOOT_ENTRY_SYMBOL in exports
+        else "not yet exported (SM10.1), reconciled as expected unresolved"
+    )
     print(
         f"[PASS] all {len(required)} HAL kernel-entry declarations are defined in the archive "
-        f"({len(externs & asm_globals)} resolved by the HAL's assembly, "
-        f"{len(EXPECTED_UNRESOLVED)} expected unresolved and reconciled)"
+        f"({len(externs & asm_globals)} resolved by the HAL's assembled, defined symbols, "
+        f"{len(EXPECTED_UNRESOLVED)} expected unresolved and reconciled); boot entry "
+        f"`{BOOT_ENTRY_SYMBOL}`: {boot_entry}"
     )
     for symbol in required:
         print(f"         {symbol}")
