@@ -1282,7 +1282,7 @@ theorem bootAndInitialisePlatform_rpi5_all_cores (config : PlatformConfig) :
         (PlatformBinding.declaredCores (platform := SeLe4n.Platform.RPi5.RPi5Platform)) config =
       bootFromPlatformCheckedWithIdleThreads config := by
   rw [SeLe4n.Platform.RPi5.rpi5_cores_eq_allCores]
-  rfl
+  exact bootFromPlatformCheckedWithIdleThreadsFor_allCores config
 
 /-- PR #889 review round 7: the hardware boot carries the **canonical** RPi5
 boot VSpace root and machine configuration whatever the caller's config said —

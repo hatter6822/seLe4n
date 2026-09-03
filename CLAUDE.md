@@ -1544,6 +1544,19 @@ code may assume:
   `bootFromPlatformWithIdleThreads` remains as the SM4.G install-and-dispatch
   wrapper and is **not** the production path.
 
+- **A boot TCB is pinned to a core the platform declares, or to none**
+  (PR #889 review round 15).  `bootFromPlatformCheckedWithIdleThreadsFor`
+  refuses a config whose TCB carries a `cpuAffinity` outside the core list
+  it is given (`bootAffinitiesDeclared`, diagnostic
+  `undeclaredAffinityBootError`), because `determineTargetCore` reads that
+  field on the first resume or wake and would enqueue the thread on a PE
+  the binding does not have.  The checked boot cannot decide this — it is
+  binding-agnostic by design, one validation path — so the check lives
+  where the core list arrives.  On `allCores` it is vacuous
+  (`bootAffinitiesDeclared_allCores`), so the all-cores boot and the RPi5
+  boot are unchanged; a `coreCount < numCores` binding now rejects a
+  config the model would have accepted.
+
 - **Thread-state classification is per-core** (WS-RR RR5.10).
   `inferThreadState` read `currentOnCore bootCoreId` / `runQueueOnCore
   bootCoreId` only, so a thread running or queued on a secondary core

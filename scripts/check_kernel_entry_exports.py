@@ -482,6 +482,11 @@ def lean_binds_locally(decl: str, body_at: int | None, name: str) -> bool:
         return True
     for pattern in (
         rf"(?:^|[^\w'!?.])(?:let|have)\s+(?:mut\s+)?\(?\s*{ident}(?:[^\w'!?]|$)",
+        # ...and the same binder with a *pattern* on its left (PR #889 review
+        # round 15): `let ⟨bootAndInitialiseRPi5, _⟩ := …` and `let (a, b) := …`
+        # bind every identifier between the keyword and the `:=`/`←`, so the
+        # region is what is searched, not just the first token after `let`.
+        rf"(?:^|[^\w'!?.])(?:let|have)\s+(?:mut\s+)?[^\n]*?\b{ident}\b[^\n]*?(?::=|←)",
         # A `do` reassignment of a `let mut`, and a `for` binder.  Both bind the
         # name for everything after them (PR #889 review round 14).
         rf"^\s*{ident}\s*(?::[^=\n]*)?:=",

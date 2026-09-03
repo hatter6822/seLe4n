@@ -5775,6 +5775,14 @@ import SeLe4n.Platform.RPi5.Contract
 #check @SeLe4n.Platform.RPi5.rpi5_deploymentLabeling_separatedThreads
 #check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor_map_ok
 #check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor_undeclared_idle_absent
+-- PR #889 review round 15: a configured thread pinned to a core the binding
+-- does not declare is refused before anything is committed, and every thread
+-- of a successful boot is pinned to a declared core.
+#check @SeLe4n.Platform.Boot.bootAffinitiesDeclared
+#check @SeLe4n.Platform.Boot.tcbAffinityDeclared
+#check @SeLe4n.Platform.Boot.bootAffinitiesDeclared_allCores
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor_ok_affinitiesDeclared
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor_undeclared_affinity_refused
 -- PR #889 review round 7: a boot TCB is stored under its own thread id; the
 -- hardware entry is fixed at the RPi5 binding, which supplies the machine
 -- configuration and the boot VSpace root.

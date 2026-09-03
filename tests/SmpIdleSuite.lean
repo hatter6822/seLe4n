@@ -747,6 +747,39 @@ private def runBootValidationParityChecks : IO Unit := do
     (SeLe4n.Platform.Boot.tcbIdentitiesMatchSlots aliasCfg == false &&
      SeLe4n.Platform.Boot.tcbIdentitiesMatchSlots idleTidCfg == false &&
      SeLe4n.Platform.Boot.tcbIdentitiesMatchSlots ownIdCfg == true)
+  -- PR #889 review round 15: a configured thread pinned to a core the BINDING
+  -- does not declare.  The checked boot is binding-agnostic and cannot see it;
+  -- `determineTargetCore` reads the affinity on the first resume or wake and
+  -- enqueues the thread on a PE that does not exist.
+  let pinnedTo (c : SeLe4n.Kernel.Concurrency.CoreId) : TCB :=
+    { tcbWithTid ⟨9⟩ with cpuAffinity := some c }
+  let core0 : SeLe4n.Kernel.Concurrency.CoreId := ⟨0, by decide⟩
+  let core2 : SeLe4n.Kernel.Concurrency.CoreId := ⟨2, by decide⟩
+  let pinnedCfg (c : SeLe4n.Kernel.Concurrency.CoreId) : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [], initialObjects := [entryAt 9 (pinnedTo c)] }
+  assertBool "the affinity check reads the declared list, not the model's cores"
+    (SeLe4n.Platform.Boot.bootAffinitiesDeclared [core0] (pinnedCfg core2) == false &&
+     SeLe4n.Platform.Boot.bootAffinitiesDeclared [core0] (pinnedCfg core0) == true &&
+     SeLe4n.Platform.Boot.bootAffinitiesDeclared [core0] ownIdCfg == true)
+  assertBool "on the model's full core list every affinity is declared"
+    (SeLe4n.Platform.Boot.bootAffinitiesDeclared SeLe4n.Kernel.Concurrency.allCores
+      (pinnedCfg core2) == true)
+  match SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor [core0]
+      (pinnedCfg core2) with
+  | .error e =>
+      assertBool "NEGATIVE: a single-core binding refuses a thread pinned to core 2"
+        (e == SeLe4n.Platform.Boot.undeclaredAffinityBootError)
+  | .ok _ =>
+      assertBool "NEGATIVE: a thread pinned to an undeclared core must not boot" false
+  assertBool "the same thread pinned to the declared core boots"
+    (SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor [core0]
+      (pinnedCfg core0)).toOption.isSome
+  assertBool "an unpinned thread boots on a single-core binding"
+    (SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor [core0]
+      ownIdCfg).toOption.isSome
+  assertBool "the all-cores production boot is unchanged by the affinity check"
+    (SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads
+      (pinnedCfg core2)).toOption.isSome
   -- PR #889 review round 8: the THIRD queue link.  `queuePPrev = some (.tcbNext t)`
   -- names thread `t`; the projection-based arm never read it, so a boot TCB
   -- carrying an idle thread there passed both the reservation and the

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/rr5-boot-path-fail-open-sandny",
-      "commit_sha": "d00ed137a92edacde074d128b5a135c90058ed76",
-      "tree_sha": "3849fe0772392218118f212cf8c76a0297d92331",
-      "committed_at_utc": "2026-09-03T19:00:56+00:00"
+      "commit_sha": "97218e7c099c33d65dc3efe9569db0bdb76fc2ba",
+      "tree_sha": "7a5c0ec7646b4445b472a4770935c6c4a93fa760",
+      "committed_at_utc": "2026-09-03T19:27:16+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "942fe16fec1638d31bf1c28ecd38aa204f9836ce219f37be2a44d42b586dcbf7"
+    "source_digest": "261ef2e40e34af205064f21f5abce21c897b76dc3ddd0836d54761e8b2f47d07"
   },
   "summary": {
     "module_count": 378,
-    "declaration_count": 18560
+    "declaration_count": 18568
   },
   "readme_sync": {
     "version": "0.34.48",
     "lean_toolchain": "v4.28.0",
     "production_files": 308,
-    "production_loc": 320942,
+    "production_loc": 321063,
     "test_files": 70,
-    "test_loc": 68205,
-    "proved_theorem_lemma_decls": 10679,
+    "test_loc": 68238,
+    "proved_theorem_lemma_decls": 10683,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -207690,7 +207690,7 @@
     {
       "module": "SeLe4n.Platform.Boot",
       "path": "SeLe4n/Platform/Boot.lean",
-      "declaration_count": 327,
+      "declaration_count": 335,
       "declarations": [
         {
           "kind": "namespace",
@@ -210767,25 +210767,101 @@
         },
         {
           "kind": "def",
+          "name": "undeclaredAffinityBootError",
+          "line": 3353,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "tcbAffinityDeclared",
+          "line": 3370,
+          "called": [
+            "CoreId",
+            "TCB",
+            "contains",
+            "cores",
+            "none"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "tcbAffinityDeclared_def",
+          "line": 3381,
+          "called": [
+            "CoreId",
+            "TCB",
+            "contains",
+            "cores",
+            "none",
+            "tcbAffinityDeclared"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "objectAffinityDeclared",
+          "line": 3390,
+          "called": [
+            "CoreId",
+            "KernelObject",
+            "cores",
+            "tcbAffinityDeclared"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bootAffinitiesDeclared",
+          "line": 3398,
+          "called": [
+            "CoreId",
+            "PlatformConfig",
+            "all",
+            "config",
+            "cores",
+            "objectAffinityDeclared"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootAffinitiesDeclared_allCores",
+          "line": 3404,
+          "called": [
+            "PlatformConfig",
+            "allCores",
+            "bootAffinitiesDeclared",
+            "config",
+            "mem_allCores",
+            "none",
+            "objectAffinityDeclared",
+            "tcbAffinityDeclared_def"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "bootFromPlatformCheckedWithIdleThreadsFor",
-          "line": 3362,
+          "line": 3430,
           "called": [
             "CoreId",
             "IntermediateState",
             "PlatformConfig",
+            "bind",
+            "bootAffinitiesDeclared",
             "bootFromPlatformChecked",
             "config",
             "cores",
-            "enqueueIdleThread"
+            "enqueueIdleThread",
+            "undeclaredAffinityBootError"
           ]
         },
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreadsFor_allCores",
-          "line": 3369,
+          "line": 3441,
           "called": [
             "PlatformConfig",
             "allCores",
+            "bind",
+            "bootAffinitiesDeclared_allCores",
+            "bootFromPlatformChecked",
             "bootFromPlatformCheckedWithIdleThreads",
             "bootFromPlatformCheckedWithIdleThreadsFor",
             "config"
@@ -210794,7 +210870,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreadsFor_rejects_invalid",
-          "line": 3375,
+          "line": 3451,
           "called": [
             "CoreId",
             "PlatformConfig",
@@ -210807,11 +210883,13 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreadsFor_map_ok",
-          "line": 3385,
+          "line": 3461,
           "called": [
             "CoreId",
             "IntermediateState",
             "PlatformConfig",
+            "bind",
+            "bootAffinitiesDeclared",
             "bootFromPlatformChecked",
             "bootFromPlatformCheckedWithIdleThreadsFor",
             "config",
@@ -210820,9 +210898,41 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "bootFromPlatformCheckedWithIdleThreadsFor_ok_affinitiesDeclared",
+          "line": 3482,
+          "called": [
+            "CoreId",
+            "IntermediateState",
+            "PlatformConfig",
+            "bind",
+            "bootAffinitiesDeclared",
+            "bootFromPlatformChecked",
+            "bootFromPlatformCheckedWithIdleThreadsFor",
+            "bootFromPlatformCheckedWithIdleThreadsFor_rejects_invalid",
+            "config",
+            "cores"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootFromPlatformCheckedWithIdleThreadsFor_undeclared_affinity_refused",
+          "line": 3503,
+          "called": [
+            "CoreId",
+            "IntermediateState",
+            "PlatformConfig",
+            "bootAffinitiesDeclared",
+            "bootFromPlatformCheckedWithIdleThreadsFor",
+            "bootFromPlatformCheckedWithIdleThreadsFor_ok_affinitiesDeclared",
+            "config",
+            "cores"
+          ]
+        },
+        {
           "kind": "def",
           "name": "declaredWitnessesInstalled",
-          "line": 3403,
+          "line": 3523,
           "called": [
             "LabelingContext",
             "SystemState",
@@ -210834,7 +210944,7 @@
         {
           "kind": "theorem",
           "name": "installBootVSpaceRoot_scheduler",
-          "line": 3412,
+          "line": 3532,
           "called": [
             "IntermediateState",
             "ObjId",
@@ -210846,7 +210956,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformChecked_ok_scheduler_eq",
-          "line": 3427,
+          "line": 3547,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -210862,7 +210972,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformChecked_ok_shape",
-          "line": 3469,
+          "line": 3589,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -210880,7 +210990,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_map_ok",
-          "line": 3509,
+          "line": 3629,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -210893,7 +211003,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_rejects_invalid",
-          "line": 3519,
+          "line": 3639,
           "called": [
             "PlatformConfig",
             "bootFromPlatformChecked",
@@ -210904,7 +211014,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_isOk_iff",
-          "line": 3528,
+          "line": 3648,
           "called": [
             "PlatformConfig",
             "bootFromPlatformChecked",
@@ -210915,7 +211025,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_machine",
-          "line": 3539,
+          "line": 3659,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -210929,7 +211039,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_currentAllNone",
-          "line": 3558,
+          "line": 3678,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -210947,7 +211057,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_idle_available",
-          "line": 3589,
+          "line": 3709,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -210973,7 +211083,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_eq",
-          "line": 3624,
+          "line": 3744,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -210998,7 +211108,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_mem_runQueueOnCore_iff",
-          "line": 3649,
+          "line": 3769,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -211019,7 +211129,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_wellFormed",
-          "line": 3672,
+          "line": 3792,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -211037,7 +211147,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_runnable_resolve",
-          "line": 3687,
+          "line": 3807,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -211056,7 +211166,7 @@
         {
           "kind": "theorem",
           "name": "_root_.SeLe4n.Platform.PlatformBinding.labeling_valid",
-          "line": 3717,
+          "line": 3837,
           "called": [
             "LabelingContextValid",
             "PlatformBinding",
@@ -211067,7 +211177,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_cdt_eq",
-          "line": 3723,
+          "line": 3843,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -211083,7 +211193,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_services_eq",
-          "line": 3730,
+          "line": 3850,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -211099,7 +211209,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_serviceRegistry_eq",
-          "line": 3737,
+          "line": 3857,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -211115,7 +211225,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_interfaceRegistry_eq",
-          "line": 3744,
+          "line": 3864,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -211131,7 +211241,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_asidTable_eq",
-          "line": 3751,
+          "line": 3871,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -211147,7 +211257,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_tlb_eq",
-          "line": 3758,
+          "line": 3878,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -211163,7 +211273,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_tlbShootdown_eq",
-          "line": 3767,
+          "line": 3887,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -211179,7 +211289,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_perCoreTlb_eq",
-          "line": 3778,
+          "line": 3898,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -211195,7 +211305,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_perCoreICache_eq",
-          "line": 3789,
+          "line": 3909,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -211211,7 +211321,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_pendingIcacheMaintenance_eq",
-          "line": 3801,
+          "line": 3921,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -211227,7 +211337,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_declassificationAuditLog_eq",
-          "line": 3813,
+          "line": 3933,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -211243,7 +211353,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_declassificationAuditEpoch_eq",
-          "line": 3826,
+          "line": 3946,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -211259,7 +211369,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_declassificationRefusals_eq",
-          "line": 3839,
+          "line": 3959,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -211275,7 +211385,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_declassificationTaint_eq",
-          "line": 3853,
+          "line": 3973,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -211291,7 +211401,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_machine_physicalAddressWidth",
-          "line": 3865,
+          "line": 3985,
           "called": [
             "PlatformConfig",
             "applyMachineConfig_physicalAddressWidth",
@@ -211302,7 +211412,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_machine_non_config_fields",
-          "line": 3894,
+          "line": 4014,
           "called": [
             "MachineState.regs",
             "MachineState.regsOnCore",
@@ -211321,7 +211431,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformWithIdleThreads_currentThreadInActiveDomain",
-          "line": 3909,
+          "line": 4029,
           "called": [
             "PlatformConfig",
             "activeDomainOnCore",
@@ -211338,7 +211448,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformWithIdleThreads_schedulerInvariantBundleFull",
-          "line": 3936,
+          "line": 4056,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -211371,7 +211481,7 @@
         {
           "kind": "theorem",
           "name": "foldIrqs_capabilityRefs",
-          "line": 3992,
+          "line": 4112,
           "called": [
             "IntermediateState",
             "IrqEntry",
@@ -211382,7 +211492,7 @@
         {
           "kind": "theorem",
           "name": "applyMachineConfig_capabilityRefs_eq",
-          "line": 3999,
+          "line": 4119,
           "called": [
             "IntermediateState",
             "MachineConfig",
@@ -211393,7 +211503,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_capabilityRefs_eq",
-          "line": 4003,
+          "line": 4123,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -211408,7 +211518,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_cdtNodeSlot_eq",
-          "line": 4012,
+          "line": 4132,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -211424,7 +211534,7 @@
         {
           "kind": "def",
           "name": "bootSafeObject",
-          "line": 4053,
+          "line": 4173,
           "called": [
             "KernelObject",
             "badge",
@@ -211444,7 +211554,7 @@
         {
           "kind": "def",
           "name": "PlatformConfig.bootSafe",
-          "line": 4100,
+          "line": 4220,
           "called": [
             "PlatformConfig",
             "bootSafeObject",
@@ -211454,7 +211564,7 @@
         {
           "kind": "theorem",
           "name": "bootSafeObject_admits_rpi5BootVSpaceRoot",
-          "line": 4108,
+          "line": 4228,
           "called": [
             "bootSafeObject",
             "rpi5BootVSpaceRoot",
@@ -211464,7 +211574,7 @@
         {
           "kind": "def",
           "name": "PlatformConfig.untypedRegionsDisjoint",
-          "line": 4140,
+          "line": 4260,
           "called": [
             "ObjectEntry",
             "PlatformConfig",
@@ -211475,7 +211585,7 @@
         {
           "kind": "theorem",
           "name": "PlatformConfig.untypedRegionsDisjoint_empty",
-          "line": 4153,
+          "line": 4273,
           "called": [
             "PlatformConfig.untypedRegionsDisjoint"
           ]
@@ -211483,7 +211593,7 @@
         {
           "kind": "theorem",
           "name": "foldObjects_objects_bootSafe",
-          "line": 4164,
+          "line": 4284,
           "called": [
             "IntermediateState",
             "KernelObject",
@@ -211502,7 +211612,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_objects_bootSafe",
-          "line": 4192,
+          "line": 4312,
           "called": [
             "KernelObject",
             "ObjId",
@@ -211521,7 +211631,7 @@
         {
           "kind": "theorem",
           "name": "foldObjects_objects_reachable",
-          "line": 4213,
+          "line": 4333,
           "called": [
             "IntermediateState",
             "KernelObject",
@@ -211539,7 +211649,7 @@
         {
           "kind": "theorem",
           "name": "idleSlotsFreshAt_of_initialObjects_below_base",
-          "line": 4248,
+          "line": 4368,
           "called": [
             "PlatformConfig",
             "RHTable_get",
@@ -211565,7 +211675,7 @@
         {
           "kind": "theorem",
           "name": "idleSlotsFreshAt_of_idleSlotsReserved",
-          "line": 4286,
+          "line": 4406,
           "called": [
             "PlatformConfig",
             "RHTable_get",
@@ -211594,7 +211704,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_untypedRegionsDisjoint",
-          "line": 4315,
+          "line": 4435,
           "called": [
             "PlatformConfig",
             "RHTable_get",
@@ -211612,7 +211722,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_proofLayerInvariantBundle_general",
-          "line": 4387,
+          "line": 4507,
           "called": [
             "ICacheState.empty",
             "ObjId",
@@ -211728,7 +211838,7 @@
         {
           "kind": "theorem",
           "name": "bootToRuntime_invariantBridge_general",
-          "line": 4958,
+          "line": 5078,
           "called": [
             "PlatformConfig",
             "apiInvariantBundle_frozen",
@@ -211745,7 +211855,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformChecked_ok_idleSlotsFreshAt",
-          "line": 4981,
+          "line": 5101,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -211765,7 +211875,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_preserves_platform_objects",
-          "line": 5013,
+          "line": 5133,
           "called": [
             "IntermediateState",
             "KernelObject",
@@ -211785,7 +211895,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreadsFor_undeclared_idle_absent",
-          "line": 5041,
+          "line": 5161,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -211793,6 +211903,7 @@
             "bootFromPlatformChecked",
             "bootFromPlatformCheckedWithIdleThreadsFor",
             "bootFromPlatformCheckedWithIdleThreadsFor_map_ok",
+            "bootFromPlatformCheckedWithIdleThreadsFor_ok_affinitiesDeclared",
             "bootFromPlatformCheckedWithIdleThreadsFor_rejects_invalid",
             "bootFromPlatformChecked_ok_idleSlotsFreshAt",
             "config",
@@ -211806,7 +211917,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_idle_threadState",
-          "line": 5074,
+          "line": 5195,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -211827,7 +211938,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformChecked_ok_tcb_inactive",
-          "line": 5094,
+          "line": 5215,
           "called": [
             "IntermediateState",
             "ObjId",
@@ -211859,7 +211970,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformChecked_ok_not_running_not_queued",
-          "line": 5128,
+          "line": 5249,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -211880,7 +211991,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformChecked_ok_threadStateConsistent",
-          "line": 5154,
+          "line": 5275,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -211896,7 +212007,7 @@
         {
           "kind": "theorem",
           "name": "inferThreadState_eq_of_not_running_not_queued",
-          "line": 5167,
+          "line": 5288,
           "called": [
             "SystemState",
             "TCB",
@@ -211910,7 +212021,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_threadStateConsistent",
-          "line": 5189,
+          "line": 5310,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -211943,7 +212054,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_threadInactiveFlagConsistent",
-          "line": 5249,
+          "line": 5370,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -213517,6 +213628,7 @@
             "RPi5Platform",
             "bootFromPlatformCheckedWithIdleThreads",
             "bootFromPlatformCheckedWithIdleThreadsFor",
+            "bootFromPlatformCheckedWithIdleThreadsFor_allCores",
             "config",
             "rpi5_cores_eq_allCores"
           ]
@@ -254196,6 +254308,7 @@
           "line": 588,
           "called": [
             "Capability",
+            "CoreId",
             "KernelObject",
             "ObjId",
             "ObjectEntry",
@@ -254205,13 +254318,18 @@
             "TCB",
             "ThreadId",
             "UntypedChild",
+            "allCores",
             "assertBool",
             "badge",
+            "bootAffinitiesDeclared",
             "bootFromPlatformChecked",
             "bootFromPlatformCheckedWithIdleThreads",
+            "bootFromPlatformCheckedWithIdleThreadsFor",
             "bootObjectReferencesReservedIdleSlot",
             "bootSafeObjectCheck",
             "capTargetsReservedIdleObject",
+            "core0",
+            "core2",
             "embeddedIdentitiesMatchSlots",
             "empty",
             "handler",
@@ -254231,13 +254349,14 @@
             "tcbIdentityDiagnostic",
             "toList",
             "toNat",
-            "toObjId"
+            "toObjId",
+            "undeclaredAffinityBootError"
           ]
         },
         {
           "kind": "def",
           "name": "runSmpIdleChecks",
-          "line": 846,
+          "line": 879,
           "called": [
             "runAlwaysSucceedsChecks",
             "runBootIdleChecks",
@@ -254253,7 +254372,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 863,
+          "line": 896,
           "called": [
             "runSmpIdleChecks"
           ]

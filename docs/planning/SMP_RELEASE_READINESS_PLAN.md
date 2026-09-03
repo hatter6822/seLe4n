@@ -727,6 +727,17 @@ supplied both the brace nesting and the `#[cfg]` attribute that decided an
 `extern` block's gate, so structure is now located on the string-free view and
 only the feature name read from the aligned kept one.
 
+**Review round 15 (PR #889, same version).**  Five, one of them in the kernel:
+a configured TCB's `cpuAffinity` was unconstrained, so a binding with
+`coreCount < numCores` booted a thread pinned to a core it does not have and
+`determineTargetCore` would enqueue it on a PE that does not exist.  The
+refusal is at `bootFromPlatformCheckedWithIdleThreadsFor`, the point the core
+list reaches, and is vacuous on `allCores` so the hardware boot is unchanged.
+The other four harden the gates: a constructor pattern binds a name, both Lean
+code views parse raw strings, `statement_may_exit` guards the statements inside
+a tripwire's failure branch, and a value binding of `lean_ready` disables the
+bare spelling.
+
 **Note on RR5.10–RR5.14** (the rows that replaced one XL).  Two findings shape
 the split, and the row they replaced named neither: one is an ordering defect
 it inherited, the other is the reason its "cannot be separate PRs" claim is

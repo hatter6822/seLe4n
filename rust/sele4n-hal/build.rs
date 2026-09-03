@@ -1348,6 +1348,34 @@ fn verify_classifier_scanner() {
     ) {
         panic!("build.rs self-check: an imported bare gate was refused: {why}");
     }
+    // PR #889 review round 15: a *value* binding shadows it too, and the
+    // import stays used — which is why the `fn`-only test passed it.  Each
+    // mutation keeps the real `use` and the bare call exactly where they are.
+    for (name, binding) in [
+        (
+            "a `let` closure of the same name",
+            "    let lean_ready = |_: usize| true;\n",
+        ),
+        (
+            "a `mut` binding of the same name",
+            "    let mut lean_ready = |_: usize| true;\n",
+        ),
+        (
+            "an `as` alias of another item",
+            "use crate::other::gate as lean_ready;\n",
+        ),
+    ] {
+        let bound = format!("use crate::lean_ready::lean_ready;\n{binding}{bare}");
+        if classifier_status(
+            &rust_code_views(&bound).1,
+            &rust_code_views(GOOD_HOST).1,
+            bare_ready_call_resolves(&rust_code_views(&bound).1),
+        )
+        .is_ok()
+        {
+            panic!("build.rs self-check: {name} still resolved the bare spelling to the gate");
+        }
+    }
     // ...unless the file also defines a `fn lean_ready` of its own.
     let shadowed = format!(
         "use crate::lean_ready::lean_ready;\nfn lean_ready(_c: usize) -> bool {{ true }}\n{bare}"
@@ -2352,6 +2380,31 @@ fn tripwire_branch_halts(
                 *saw_condition = true;
                 if let Some(block_close) = matching_close_brace(statement, block_open) {
                     let statements = top_level_statements(statement, block_open, block_close);
+                    // **PR #889 review round 15**: nothing may leave the branch
+                    // *before* its halt either.  `if held { if bypass { return; }
+                    // fatal_halt(); }` ends in the halt and still returns to the
+                    // caller when `bypass` holds — the helper's dominance check
+                    // cannot see it, because the helper is still called.  The
+                    // rule that guards the statements before the branch guards
+                    // the statements inside it, for the same reason.
+                    let leaves = statements
+                        .split_last()
+                        .map(|(_, before)| {
+                            before
+                                .iter()
+                                .any(|&(a, b)| statement_may_exit(&statement[a..b]))
+                        })
+                        .unwrap_or(false);
+                    if leaves {
+                        *early_exit = Some(collapse_whitespace(
+                            statements
+                                .iter()
+                                .find(|&&(a, b)| statement_may_exit(&statement[a..b]))
+                                .map(|&(a, b)| statement[a..b].trim())
+                                .unwrap_or(""),
+                        ));
+                        return false;
+                    }
                     if statements
                         .last()
                         .map(|&(a, b)| statement_halts(&statement[a..b]))
@@ -2559,7 +2612,17 @@ pub fn acquire_kernel_entry(core_id: usize) -> u64 {
             );
         }
     }
-    let mutations: [(&str, &str, &str); 11] = [
+    let mutations: [(&str, &str, &str); 13] = [
+        (
+            "an exit sits INSIDE the branch, above its halt (round 15)",
+            "        crate::kprintln!(\"[kernel-entry] FATAL: lock order violated\");\n        crate::cpu::fatal_halt();",
+            "        if bypass {\n            return;\n        }\n        crate::cpu::fatal_halt();",
+        ),
+        (
+            "the exit inside the branch is a panicking macro (round 15)",
+            "        crate::kprintln!(\"[kernel-entry] FATAL: lock order violated\");\n        crate::cpu::fatal_halt();",
+            "        if bypass {\n            unreachable!();\n        }\n        crate::cpu::fatal_halt();",
+        ),
         (
             "the predicate is reversed, keeping its call",
             "    if crate::shootdown::round_lock_held_by(core_id) {",
@@ -4141,8 +4204,53 @@ fn gate_call_offset(body: &str, allow_bare: bool) -> Option<usize> {
 /// writes the path in full, so the strict reading costs nothing; the import
 /// form is admitted because refusing a legitimate Rust idiom would push a
 /// future author to the bare spelling this refuses.
+/// **PR #889 review round 15**: is the bare name `lean_ready` *bound* anywhere
+/// in this file — by a `let`, a closure parameter, a function parameter, an
+/// `as` alias or an assignment — rather than only imported and called?
+///
+/// Over-approximating on purpose: every form here is a way for the spelling to
+/// denote something other than the gate, and refusing the bare spelling costs
+/// an author nothing but a qualifier.  A path segment (`crate::lean_ready::`)
+/// is not a binding and is excluded explicitly.
+fn bare_ready_name_is_bound(file: &str) -> bool {
+    const BINDERS: [&str; 6] = [
+        "let lean_ready",
+        "let mut lean_ready",
+        "as lean_ready",
+        "|lean_ready|",
+        "|lean_ready:",
+        "lean_ready =",
+    ];
+    if BINDERS.iter().any(|form| file.contains(form)) {
+        return true;
+    }
+    // A parameter or field `lean_ready: T`, but not the path segment
+    // `lean_ready::gate`.
+    let needle = "lean_ready:";
+    let mut search = 0usize;
+    while let Some(hit) = file[search..].find(needle) {
+        let at = search + hit;
+        search = at + needle.len();
+        if !file[search..].starts_with(':') {
+            return true;
+        }
+    }
+    false
+}
+
 fn bare_ready_call_resolves(file: &str) -> bool {
     if word_occurrences(file, "fn lean_ready") > 0 {
+        return false;
+    }
+    // **PR #889 review round 15**: a *value* binding shadows the import just as
+    // a same-scope `fn` does.  `let lean_ready = |_: usize| true;` inside a seam
+    // leaves the `use` non-unused, so the import test still passed, and the
+    // dominance check then accepted the closure as the gate — an unready PE
+    // entering Lean behind a predicate that is not the predicate.  File-wide
+    // and therefore conservative: one such binding anywhere in the file
+    // disables the bare spelling for the whole file, and the remedy is to write
+    // the call qualified, which is always available.
+    if bare_ready_name_is_bound(file) {
         return false;
     }
     file.lines().any(|line| {
@@ -4510,6 +4618,42 @@ fn collect_lean_exports(dir: &std::path::Path, out: &mut Vec<String>) {
 /// counted as a live export, and a docstring could add a symbol to the gated
 /// inventory that drives the readiness and declaration classification.  A gate
 /// reads code; prose is not in the inventory.
+/// **PR #889 review round 15**: the body and end of a Lean raw string literal
+/// opened at `at` (`r"…"`, `r#"…"#`, `r##"…"##`), or `None` when `at` does not
+/// open one.  The body ends at a `"` followed by exactly the opening run of
+/// `#`s; an unterminated literal runs to the end of the source, which is the
+/// fail-closed reading (everything after it is text, not code).
+fn lean_raw_string_body(b: &[u8], at: usize) -> Option<(usize, usize, usize)> {
+    if b.get(at) != Some(&b'r') {
+        return None;
+    }
+    let mut hashes = 0usize;
+    let mut j = at + 1;
+    while b.get(j) == Some(&b'#') {
+        hashes += 1;
+        j += 1;
+    }
+    if b.get(j) != Some(&b'"') {
+        return None;
+    }
+    let body_start = j + 1;
+    let mut k = body_start;
+    while k < b.len() {
+        if b[k] == b'"'
+            && b[k + 1..]
+                .iter()
+                .take(hashes)
+                .filter(|c| **c == b'#')
+                .count()
+                == hashes
+        {
+            return Some((body_start, k, k + 1 + hashes));
+        }
+        k += 1;
+    }
+    Some((body_start, b.len(), b.len()))
+}
+
 fn lean_code_view(src: &str) -> String {
     let b = src.as_bytes();
     let mut out = b.to_vec();
@@ -4546,6 +4690,23 @@ fn lean_code_view(src: &str) -> String {
                 }
                 i += 1;
             }
+        } else if b[i] == b'r'
+            && (i == 0 || !is_ident(b[i - 1]))
+            && lean_raw_string_body(b, i).is_some()
+        {
+            // A **raw** string literal: `r"…"`, `r#"…"#`, `r##"…"##` (PR #889
+            // review round 15).  An ordinary `"` inside one is text, so the
+            // quote-delimited arm below closes it early, reads the real
+            // terminator as an opening quote, and blanks the live code that
+            // follows — including an `@[export …]`, which would drop a Lean
+            // symbol out of the readiness gating set entirely.
+            let (body_start, body_end, end) = lean_raw_string_body(b, i).unwrap();
+            for slot in out.iter_mut().take(body_end).skip(body_start) {
+                if *slot != b'\n' {
+                    *slot = b' ';
+                }
+            }
+            i = end;
         } else if b[i] == b'"' {
             out[i] = b' ';
             i += 1;
@@ -4636,6 +4797,23 @@ fn verify_lean_export_collector() {
     const GOOD: &str = "/-- doc -/\n@[export lean_alpha]\ndef alpha : Nat := 0\n\n\
                         @[inline, export lean_beta]\ndef beta : Nat := 1\n\n\
                         @[export\n  lean_gamma]\ndef gamma : Nat := 2\n";
+    // PR #889 review round 15: a raw string whose body contains an ordinary
+    // quote.  Treating every `"` as a delimiter closes it early and blanks the
+    // live export below it — the token is present and the symbol vanishes.
+    const RAW: &str = "def s := r#\"hello \" raw\"#\n@[export lean_alpha]\n\
+                       def alpha : Nat := 0\n";
+    assert_eq!(
+        lean_exports_in(&lean_code_view(RAW)),
+        vec!["lean_alpha"],
+        "build.rs self-check: a raw string literal swallowed the export below it"
+    );
+    const RAW_QUOTED_EXPORT: &str = "def s := r#\"@[export lean_beta]\"#\n\
+                                     @[export lean_alpha]\ndef alpha : Nat := 0\n";
+    assert_eq!(
+        lean_exports_in(&lean_code_view(RAW_QUOTED_EXPORT)),
+        vec!["lean_alpha"],
+        "build.rs self-check: an attribute quoted inside a raw string counted as a symbol"
+    );
     let got = lean_exports_in(&lean_code_view(GOOD));
     assert_eq!(
         got,

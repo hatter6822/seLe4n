@@ -136,6 +136,29 @@ def strip(src: str, blank_strings: bool = False) -> str:
             i += 1
             continue
 
+        # A **raw** string literal: `r"…"`, `r#"…"#`, `r##"…"##` (PR #889
+        # review round 15).  Its body ends at a `"` followed by exactly the
+        # opening run of `#`s, and an ordinary `"` inside it is text — so a
+        # scanner that treats every quote as a delimiter closes the literal
+        # early, reads the real terminator as an *opening* quote, and blanks
+        # the live code that follows.  With `def s := r#"hello " raw"#` above
+        # it, an `@[export lean_kernel_main]` disappeared from the view.
+        if c == "r" and (i == 0 or src[i - 1] not in _IDENT_TAIL):
+            hashes = 0
+            j = i + 1
+            while j < n and src[j] == "#":
+                hashes += 1
+                j += 1
+            if j < n and src[j] == '"':
+                terminator = '"' + "#" * hashes
+                close = src.find(terminator, j + 1)
+                end = n if close == -1 else close + len(terminator)
+                if blank_strings:
+                    for k in range(j + 1, min(end - len(terminator), n) if close != -1 else n):
+                        blank(k)
+                i = end
+                continue
+
         if c == '"':
             in_string = True
             i += 1
@@ -351,6 +374,13 @@ _ATTRIBUTE_ARGUMENTS: list[tuple[str, str, str, list[str]]] = [
      "@[extern \"ffi_fatal_halt\"]\nopaque h : Unit\n", "export", []),
     ("an `extern` argument is blanked with its string, over a strings-free view",
      "@[extern \"ffi_fatal_halt\"]\nopaque h : Unit\n", "extern", []),
+    ("a raw string's body is blanked and its quote is not a delimiter",
+     'def s := r#"hi " raw"#\n@[export lean_alpha]\ndef a := 0\n', "export", ["lean_alpha"]),
+    ("an attribute quoted inside a raw string is not a live one",
+     'def s := r#"@[export lean_beta]"#\n@[export lean_alpha]\ndef a := 0\n',
+     "export", ["lean_alpha"]),
+    ("a simple raw string still closes at its own quote",
+     'def s := r"plain"\n@[export lean_alpha]\ndef a := 0\n', "export", ["lean_alpha"]),
 ]
 
 #: The same parser over the **strings-kept** view, where a quoted argument is

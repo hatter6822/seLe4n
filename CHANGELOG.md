@@ -1089,6 +1089,58 @@ offsets (lossily, since an offset that is a char boundary in the blanked view
 can fall inside a multi-byte character preserved in the kept one, and a panic
 in `build.rs` is a hard build failure).
 
+### The review round, fifteenth pass
+
+Codex's fifteenth review (on the round-14 head) raised five findings — one in
+the **kernel**, the second live defect any round has found outside the gates.
+
+* **A boot TCB could be pinned to a core the platform does not declare.**
+  `bootAndInitialisePlatform` installs idle threads for the binding's
+  `declaredCores` only (round 3), but nothing looked at a configured TCB's
+  `cpuAffinity`: `bootSafeTcbCheck` leaves the field unconstrained, and it has
+  to — the checked boot is binding-agnostic by design, one validation path, and
+  the declared core set is the *binding's*.  So on a `coreCount < numCores`
+  binding a config pinning a thread to core 2 booted cleanly, and the first
+  `tcbResume` or wake read the affinity through `determineTargetCore`, enqueued
+  the thread on a PE that does not exist, reported success and possibly fired
+  an SGI at it — stranding the thread permanently.  The check now lives where
+  the core list arrives: `bootFromPlatformCheckedWithIdleThreadsFor` refuses a
+  config whose TCBs are not all pinned to declared cores (or to none), with its
+  own diagnostic, before producing any state.  `tcbAffinityDeclared` is
+  destructured like `bootSafeTcbCheck`, so a new TCB field must be classified;
+  `bootAffinitiesDeclared_allCores` proves the check vacuous on the model's
+  full core list, so the all-cores production boot — and therefore the RPi5
+  boot, which declares every model core — is unchanged;
+  `…_ok_affinitiesDeclared` gives the property of a successful boot and
+  `…_undeclared_affinity_refused` its contrapositive as the refusal.
+* **A constructor pattern could shadow the boot callee.**
+  `let ⟨bootAndInitialiseRPi5, _⟩ := (fun _ => pure (.ok default), ())` binds the
+  name, and round 14's binder scan looked only at the first token after `let`.
+  It now searches the whole binder region — everything between the keyword and
+  the `:=`/`←` — so tuple and anonymous-constructor patterns count, for the
+  callee and for the halt alike.
+* **The Lean code view did not know raw strings.**  `r#"hello " raw"#` is valid
+  Lean; treating every `"` as a delimiter closes the literal at the embedded
+  quote, reads the real terminator as an opening quote, and blanks the live
+  code after it — with such a string above it, an `@[export lean_kernel_main]`
+  vanished from the view entirely, which is the boot-entry contract passing
+  vacuously *and* a Lean symbol dropping out of readiness gating.  Both views
+  (`lean_code_view.py` and `build.rs`'s counterpart) parse `r"…"`, `r#"…"#` and
+  `r##"…"##`, with witnesses on both sides.
+* **The tripwire's failure branch could be left before its halt.**
+  `if held { if bypass { return; } fatal_halt(); }` ends in the halt and still
+  returns to the caller when `bypass` holds; the helper is still called, so the
+  dominance check cannot see it.  `statement_may_exit` — which has guarded the
+  statements *before* the branch since round 9 — now guards the statements
+  *inside* it too.
+* **A value binding could shadow the readiness gate.**  `bare_ready_call_resolves`
+  refused a same-scope `fn lean_ready` but not `let lean_ready = |_: usize| true;`:
+  the import stays used, so the import test passed, and the dominance check then
+  accepted the closure as the gate.  A `let`, a `mut` binding, a closure or
+  function parameter, an `as` alias or an assignment of the bare name now
+  disables the bare spelling for the file — conservative, and the remedy is a
+  qualifier.
+
 ### Tests
 
 * `tests/SmpIdleSuite.lean` — 28 surface anchors for the new boot surface

@@ -3348,6 +3348,74 @@ def bootFromPlatformCheckedWithIdleThreads (config : PlatformConfig) :
   (bootFromPlatformChecked config).map fun ist =>
     SeLe4n.Kernel.Concurrency.allCores.foldl enqueueIdleThread ist
 
+/-- **PR #889 review round 15**: the boot error for a configured thread pinned
+    to a core the platform does not declare. -/
+def undeclaredAffinityBootError : String :=
+  "boot: a configured TCB's cpuAffinity names a core the platform does not " ++
+  "declare (PR #889 review round 15)"
+
+/-- **PR #889 review round 15**: does this TCB's `cpuAffinity` name a core the
+    platform **declares**?
+
+    `cpuAffinity = none` is fine: `determineTargetCore` routes such a thread to
+    `bootCoreId`, which every binding declares (`coreCount ≥ 1`).  A `some c`
+    with `c` outside the declared list is not: nothing rejects it today, the
+    boot succeeds, and the first `tcbResume`/wake reads the affinity through
+    `determineTargetCore` and enqueues the thread on a PE that does not exist —
+    reporting success, possibly firing an SGI at it, and stranding the thread
+    permanently.
+
+    Destructured like `bootSafeTcbCheck`, so a new TCB field must be classified
+    rather than silently ignored (the round-8 arity discipline). -/
+def tcbAffinityDeclared (cores : List SeLe4n.Kernel.Concurrency.CoreId) (tcb : TCB) : Bool :=
+  match tcb with
+  | ⟨_tid, _priority, _domain, _cspaceRoot, _vspaceRoot, _ipcBuffer, _ipcState, _threadState,
+     _timeSlice, _deadline, _queuePrev, _queuePPrev, _queueNext, _pendingMessage,
+     _registerContext, _faultHandler, _boundNotification, _schedContextBinding, _timeoutBudget,
+     _maxControlledPriority, _pipBoost, _timedOut, _lock, _cpuAffinity, _replyObject,
+     _pendingReceiveReply, _pendingFault⟩ =>
+    match tcb.cpuAffinity with
+    | some c => cores.contains c
+    | none   => true
+
+@[simp] theorem tcbAffinityDeclared_def
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (tcb : TCB) :
+    tcbAffinityDeclared cores tcb =
+      (match tcb.cpuAffinity with
+       | some c => cores.contains c
+       | none   => true) := rfl
+
+/-- **PR #889 review round 15**: only a TCB carries an affinity; every other
+    kernel object is declared-core-agnostic. -/
+def objectAffinityDeclared
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (obj : KernelObject) : Bool :=
+  match obj with
+  | .tcb tcb => tcbAffinityDeclared cores tcb
+  | _ => true
+
+/-- **PR #889 review round 15**: every configured TCB is pinned to a core the
+    platform declares, or to none at all. -/
+def bootAffinitiesDeclared
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig) : Bool :=
+  config.initialObjects.all fun entry => objectAffinityDeclared cores entry.obj
+
+/-- **PR #889 review round 15**: on the model's full core list the check is
+    vacuous — every `CoreId` is a member of `allCores`. -/
+@[simp] theorem bootAffinitiesDeclared_allCores (config : PlatformConfig) :
+    bootAffinitiesDeclared SeLe4n.Kernel.Concurrency.allCores config = true := by
+  unfold bootAffinitiesDeclared
+  apply List.all_eq_true.mpr
+  intro entry _
+  unfold objectAffinityDeclared
+  cases entry.obj with
+  | tcb tcb =>
+    simp only [tcbAffinityDeclared_def]
+    cases hAff : tcb.cpuAffinity with
+    | none => rfl
+    | some c =>
+      simp [List.contains_iff_mem.mpr (SeLe4n.Kernel.Concurrency.mem_allCores c)]
+  | _ => rfl
+
 /-- PR #889 review round 3: the idle enqueue over a **declared** core list — the
     cores a platform binding says exist (`PlatformBinding.declaredCores`), rather than
     the model's `allCores`.  A single-core binding (`SimSingleCorePlatform`,
@@ -3362,13 +3430,21 @@ def bootFromPlatformCheckedWithIdleThreads (config : PlatformConfig) :
 def bootFromPlatformCheckedWithIdleThreadsFor
     (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig) :
     Except String IntermediateState :=
-  (bootFromPlatformChecked config).map fun ist => cores.foldl enqueueIdleThread ist
+  (bootFromPlatformChecked config).bind fun ist =>
+    if bootAffinitiesDeclared cores config then
+      .ok (cores.foldl enqueueIdleThread ist)
+    else
+      .error undeclaredAffinityBootError
 
 /-- PR #889 review round 3: on every core the declared-list form **is** the
     all-cores form. -/
 theorem bootFromPlatformCheckedWithIdleThreadsFor_allCores (config : PlatformConfig) :
     bootFromPlatformCheckedWithIdleThreadsFor SeLe4n.Kernel.Concurrency.allCores config =
-      bootFromPlatformCheckedWithIdleThreads config := rfl
+      bootFromPlatformCheckedWithIdleThreads config := by
+  unfold bootFromPlatformCheckedWithIdleThreadsFor bootFromPlatformCheckedWithIdleThreads
+  cases bootFromPlatformChecked config with
+  | error e => rfl
+  | ok ist => simp [Except.bind, Except.map, bootAffinitiesDeclared_allCores]
 
 /-- PR #889 review round 3: the declared-list form rejects exactly what the
     checked boot rejects, whatever the list. -/
@@ -3384,12 +3460,56 @@ theorem bootFromPlatformCheckedWithIdleThreadsFor_rejects_invalid
     is the fold over the declared cores, and nothing else. -/
 theorem bootFromPlatformCheckedWithIdleThreadsFor_map_ok
     (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
-    (ist : IntermediateState) (h : bootFromPlatformChecked config = .ok ist) :
+    (ist : IntermediateState) (h : bootFromPlatformChecked config = .ok ist)
+    (hAff : bootAffinitiesDeclared cores config = true) :
     bootFromPlatformCheckedWithIdleThreadsFor cores config =
       .ok (cores.foldl enqueueIdleThread ist) := by
   unfold bootFromPlatformCheckedWithIdleThreadsFor
   rw [h]
-  rfl
+  simp [Except.bind, hAff]
+
+/-- **PR #889 review round 15**: a **successful** boot's configured threads are
+    all pinned to cores the platform declares, so `determineTargetCore` on any
+    of them names a PE the platform has.
+
+    Nothing rejected an undeclared affinity before: the boot succeeded, and the
+    first `tcbResume` or wake enqueued the thread on a core that does not
+    exist — reporting success, possibly firing an SGI at it, and stranding the
+    thread permanently.  `bootSafeTcbCheck` cannot decide this: the declared
+    core set is the *binding's*, and the checked boot is binding-agnostic by
+    design (one validation path).  So the check lives where the core list
+    arrives. -/
+theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_affinitiesDeclared
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
+    (ist : IntermediateState)
+    (h : bootFromPlatformCheckedWithIdleThreadsFor cores config = .ok ist) :
+    bootAffinitiesDeclared cores config = true := by
+  cases hAff : bootAffinitiesDeclared cores config with
+  | true => rfl
+  | false =>
+    exfalso
+    cases hChecked : bootFromPlatformChecked config with
+    | error e =>
+      rw [bootFromPlatformCheckedWithIdleThreadsFor_rejects_invalid cores config e hChecked] at h
+      cases h
+    | ok base =>
+      unfold bootFromPlatformCheckedWithIdleThreadsFor at h
+      rw [hChecked] at h
+      simp [Except.bind, hAff] at h
+
+/-- **PR #889 review round 15**: the contrapositive, as the refusal — a config
+    pinning a thread to an undeclared core produces no state at all, so the
+    caller never reaches `initialiseKernelState`. -/
+theorem bootFromPlatformCheckedWithIdleThreadsFor_undeclared_affinity_refused
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
+    (hAff : bootAffinitiesDeclared cores config = false)
+    (ist : IntermediateState) :
+    bootFromPlatformCheckedWithIdleThreadsFor cores config ≠ .ok ist := by
+  intro h
+  have hTrue := bootFromPlatformCheckedWithIdleThreadsFor_ok_affinitiesDeclared cores config ist h
+  rw [hAff] at hTrue
+  cases hTrue
+
 
 /-- PR #889 review round 3: are the labeling's **declared separation witnesses**
     installed threads of `st`?  `isInsecureDefaultContext` decides that the
@@ -5049,7 +5169,8 @@ theorem bootFromPlatformCheckedWithIdleThreadsFor_undeclared_idle_absent
     rw [bootFromPlatformCheckedWithIdleThreadsFor_rejects_invalid cores config e hChecked] at h
     cases h
   | ok base =>
-    rw [bootFromPlatformCheckedWithIdleThreadsFor_map_ok cores config base hChecked] at h
+    rw [bootFromPlatformCheckedWithIdleThreadsFor_map_ok cores config base hChecked
+      (bootFromPlatformCheckedWithIdleThreadsFor_ok_affinitiesDeclared cores config ist h)] at h
     injection h with h
     subst h
     rw [foldl_enqueueIdleThread_objects_frame cores base c
