@@ -547,14 +547,27 @@ def assembled_sources_in(build_rs: str) -> set[str]:
         if body is None:
             continue
         body_start, body_end = body
-        statements = rust_top_level_statements(structure, body_start, body_end)
-        compile_statement = next(
-            ((lo, hi) for lo, hi in statements if lo <= compile_at < hi), None
-        )
+        statements = rust_code_view.top_level_statements(structure, body_start, body_end)
+        compile_statement = rust_code_view.statement_containing(statements, compile_at)
         if compile_statement is None:
             continue
+        # PR #889 review round 8: the receiver's SPELLING does not identify
+        # the builder.  `let mut asm = …; asm.file("ghost.S"); let mut asm =
+        # …; asm.file("real.S").compile(…)` rebinds the name, and the first
+        # `.file()` reaches a builder the compile never sees — a symbol from
+        # `ghost.S` would then be subtracted as an assembly provider and
+        # mask an unresolved HAL extern.  So a `.file()` counts only from the
+        # receiver's binding instance: the last top-level `let [mut]
+        # <receiver>` at or before the compile statement.  A receiver the
+        # block does not bind — a parameter, a captured variable — has no
+        # instance to resolve against, and then only the compile statement's
+        # own chain counts (fail closed).
+        binding = rust_code_view.binding_statement_before(
+            structure, statements, receiver, compile_statement
+        )
+        window_start = binding[0] if binding is not None else compile_statement[0]
         for lo, hi in statements:
-            if lo > compile_statement[0]:
+            if lo > compile_statement[0] or lo < window_start:
                 continue
             for pos in cross_gate._occurrences(code[lo:hi], ".file("):
                 at = lo + pos
@@ -581,47 +594,6 @@ def innermost_body(
     return best
 
 
-def rust_top_level_statements(view: str, start: int, end: int) -> list[tuple[int, int]]:
-    """The top-level statements of a Rust block interior `[start, end)` as
-    `(lo, hi)` spans over the string-free view: a statement ends at a `;` at
-    brace depth zero, or at the `}` that closes a depth-zero block not
-    followed by `else`.  The Python twin of `build.rs`'s
-    `top_level_statements_in`, so the two gates ask the same question of the
-    same shape."""
-    out: list[tuple[int, int]] = []
-    depth = 0
-    paren = 0
-    stmt_start = start
-    i = start
-    while i < end:
-        c = view[i]
-        if c in "([":
-            paren += 1
-        elif c in ")]":
-            paren -= 1
-        elif c == "{":
-            depth += 1
-        elif c == "}":
-            depth -= 1
-            if depth == 0 and paren == 0:
-                nxt = i + 1
-                while nxt < end and view[nxt].isspace():
-                    nxt += 1
-                if not view[nxt:end].startswith("else"):
-                    stmt_end = nxt + 1 if nxt < end and view[nxt] == ";" else i + 1
-                    out.append((stmt_start, stmt_end))
-                    stmt_start = stmt_end
-                    i = stmt_end
-                    continue
-        elif c == ";" and depth == 0 and paren == 0:
-            out.append((stmt_start, i + 1))
-            stmt_start = i + 1
-        i += 1
-    if view[stmt_start:end].strip():
-        out.append((stmt_start, end))
-    return out
-
-
 def asm_providers_from(sources: dict[str, str], build_rs: str) -> set[str]:
     """The symbols the HAL's assembly provides to the link according to the
     **sources**: defined-and-exported (`asm_definitions_in`) in a source the
@@ -635,13 +607,28 @@ def asm_providers_from(sources: dict[str, str], build_rs: str) -> set[str]:
     return found
 
 
-def nm_global_definitions(nm_output: str) -> set[str]:
-    """The globally-defined symbols in `nm --defined-only` output: a symbol
-    whose type letter is upper-case and not `N` (debugging)."""
+def executable_definitions(nm_output: str) -> set[str]:
+    """The **global text** symbols in `nm --defined-only` output — type letter
+    `T` exactly.
+
+    PR #889 review round 8: every requirement this gate reconciles is an
+    `extern "C" fn` — `extern_declarations_in` collects `fn` declarations
+    and nothing else — and a function requirement is satisfied only by
+    executable code.  The earlier parsers accepted `D`/`B` (the archive) and
+    any upper-case letter (the assembled archive), so a removed or renamed
+    Lean export that left a global *data* object under the old linker name
+    reported the function resolved while the call would have jumped into
+    data.  `t` (local text) is refused too: a local symbol does not resolve a
+    reference from another object, and the archive is read with `-g` anyway.
+    The HAL's one non-function extern (`static __exception_vectors`, an
+    address the vector-table install takes) is outside this inventory by
+    construction; a data requirement is a different question and is not
+    answered here.
+    """
     found: set[str] = set()
     for line in nm_output.splitlines():
         parts = line.split()
-        if len(parts) == 3 and len(parts[1]) == 1 and parts[1].isupper() and parts[1] != "N":
+        if len(parts) == 3 and parts[1] == "T":
             found.add(parts[2])
     return found
 
@@ -662,7 +649,7 @@ def archive_asm_definitions(archive: Path) -> set[str] | None:
     )
     if result.returncode != 0:
         return None
-    return nm_global_definitions(result.stdout)
+    return executable_definitions(result.stdout)
 
 
 def hal_asm_providers() -> tuple[set[str], str]:
@@ -893,13 +880,76 @@ def self_test() -> int:
             "the assembled-source set was not the executed builder chain "
             f"(got {sorted(assembled_sources_in(executed_chain))})"
         )
+    # PR #889 review round 8: the receiver is REBOUND between two `.file()`
+    # calls.  Every token of the round-7 fixture survives — the same name,
+    # top-level statements, one compile — and only the first `.file()`'s
+    # binding instance differs from the compile's.
+    shadowed_chain = (
+        "fn main() {\n    assemble();\n}\n"
+        "fn assemble() {\n    let mut asm = cc::Build::new();\n"
+        "    asm.file(\"src/ghost.S\");\n"
+        "    let mut asm = cc::Build::new();\n"
+        "    asm.file(\"src/real.S\").compile(\"sele4n_hal_asm\");\n}\n"
+    )
+    if assembled_sources_in(shadowed_chain) != {"src/real.S"}:
+        failures.append(
+            "a `.file()` on a shadowed, uncompiled builder was counted as assembled "
+            f"(got {sorted(assembled_sources_in(shadowed_chain))})"
+        )
+    # A receiver the block does not bind — a parameter — has no binding
+    # instance in the body, so nothing before the compile statement counts.
+    parameter_receiver = (
+        "fn main() {\n    let mut asm = cc::Build::new();\n    assemble(&mut asm);\n}\n"
+        "fn assemble(asm: &mut cc::Build) {\n"
+        "    asm.file(\"src/outer.S\");\n"
+        "    asm.compile(\"sele4n_hal_asm\");\n}\n"
+    )
+    if assembled_sources_in(parameter_receiver) != set():
+        failures.append(
+            "a receiver bound outside the compile's body resolved to a binding instance "
+            f"(got {sorted(assembled_sources_in(parameter_receiver))})"
+        )
+    # ...and a temporary chain has no receiver identifier at all: the cross
+    # gate's `chain_root` answers `None` for it (fail closed), the Tier 0
+    # build-script check refuses it, and nothing is counted here either.
+    temporary_chain = (
+        "fn main() {\n    assemble();\n}\n"
+        "fn assemble() {\n"
+        "    cc::Build::new().file(\"src/one.S\").file(\"src/two.S\")\n"
+        "        .compile(\"sele4n_hal_asm\");\n}\n"
+    )
+    if assembled_sources_in(temporary_chain) != set():
+        failures.append(
+            "a temporary builder chain, which the receiver resolver fails closed on, "
+            f"counted sources (got {sorted(assembled_sources_in(temporary_chain))})"
+        )
     nm_text = (
         "0000000000000000 N $d.1\n0000000000000000 t $x.0\n"
         "0000000000000000 T _start\n000000000000007c T secondary_entry\n"
-        "0000000000000010 D table\n"
+        "0000000000000010 D table\n0000000000000020 B scratch\n"
+        "0000000000000030 t local_helper\n0000000000000040 W weak_fn\n"
     )
-    if nm_global_definitions(nm_text) != {"_start", "secondary_entry", "table"}:
-        failures.append("`nm` output was not reduced to its global definitions")
+    # PR #889 review round 8: a function requirement is satisfied by global
+    # TEXT only.  `table` (data), `scratch` (bss), `local_helper` (local
+    # text) and `weak_fn` (weak) all keep the symbol name and are not
+    # executable global definitions.
+    if executable_definitions(nm_text) != {"_start", "secondary_entry"}:
+        failures.append(
+            "`nm` output was not reduced to its global text definitions "
+            f"(got {sorted(executable_definitions(nm_text))})"
+        )
+    # ...and the classification reads the same set: a Lean export renamed
+    # away that leaves a global DATA object under the old name is missing.
+    missing, _, _, _ = classify_link_requirements(
+        externs={"lean_alpha"},
+        asm_globals=set(),
+        expected_unresolved={},
+        defined=executable_definitions(
+            "0000000000000000 D lean_alpha\n0000000000000008 T lean_alpha_renamed\n"
+        ),
+    )
+    if missing != ["lean_alpha"]:
+        failures.append("a data object under a function extern's name satisfied the requirement")
 
     # --- PR #889 review rounds 3 and 5: the boot entry, once exported, IS the checked boot ---
     # A stand-in for `Platform/FFI.lean`: the two references, one reader, the
@@ -1109,7 +1159,7 @@ def self_test() -> int:
         for line in failures:
             print(f"         {line}")
         return 1
-    print("[PASS] check_kernel_entry_exports self-test (57 cases)")
+    print("[PASS] check_kernel_entry_exports self-test (62 cases)")
     return 0
 
 
@@ -1120,13 +1170,9 @@ def archive_defined_symbols(archive: Path) -> set[str]:
         capture_output=True,
         text=True,
     ).stdout
-    defined: set[str] = set()
-    for line in out.splitlines():
-        parts = line.split()
-        # `<addr> <type> <name>`; archive member headers have fewer fields.
-        if len(parts) == 3 and parts[1] in {"T", "t", "D", "B"}:
-            defined.add(parts[2])
-    return defined
+    # `<addr> <type> <name>`; archive member headers have fewer fields, and
+    # only global text (`T`) resolves a function requirement (round 8).
+    return executable_definitions(out)
 
 
 def main() -> int:

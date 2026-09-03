@@ -577,10 +577,11 @@ that occupies or references a reserved idle slot with. -/
 private def idleSlotDiagnostic : String :=
   "boot: platform config occupies or references a reserved per-core idle slot (WS-RR RR5.13 / PR #889 review)"
 
-/-- PR #889 review round 7: the diagnostic the checked boot refuses a config
-whose TCB entry is stored under an id other than its own thread id with. -/
+/-- PR #889 review rounds 7 and 8: the diagnostic the checked boot refuses a
+config whose TCB, SchedContext or Reply entry is stored under an id other than
+the one it carries with. -/
 private def tcbIdentityDiagnostic : String :=
-  "boot: a TCB entry's embedded thread id is not its own object id (PR #889 review round 7)"
+  "boot: an entry's embedded identity (a TCB's thread id, a SchedContext's id or a Reply's id) is not its own object id (PR #889 review rounds 7 and 8)"
 
 /-- **WS-RR RR5.13** (runtime): the idle entry adds no validation of its own —
 it accepts and rejects exactly what `bootFromPlatformChecked` does. -/
@@ -746,6 +747,83 @@ private def runBootValidationParityChecks : IO Unit := do
     (SeLe4n.Platform.Boot.tcbIdentitiesMatchSlots aliasCfg == false &&
      SeLe4n.Platform.Boot.tcbIdentitiesMatchSlots idleTidCfg == false &&
      SeLe4n.Platform.Boot.tcbIdentitiesMatchSlots ownIdCfg == true)
+  -- PR #889 review round 8: the THIRD queue link.  `queuePPrev = some (.tcbNext t)`
+  -- names thread `t`; the projection-based arm never read it, so a boot TCB
+  -- carrying an idle thread there passed both the reservation and the
+  -- boot-safety check.  The reservation now reads the payload, and the
+  -- boot-safety check requires all three links empty.
+  let linkedTo (t : SeLe4n.ThreadId) : TCB :=
+    { tcbWithTid ⟨9⟩ with queuePPrev := some (.tcbNext t) }
+  assertBool "NEGATIVE: a boot TCB whose queuePPrev names an idle thread references the slot"
+    (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot (.tcb (linkedTo idle0Tid)) == true)
+  assertBool "a queuePPrev naming an ordinary thread does not reference the slot"
+    (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot (.tcb (linkedTo ⟨7⟩)) == false &&
+     SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
+       (.tcb { tcbWithTid ⟨9⟩ with queuePPrev := some .endpointHead }) == false)
+  assertBool "NEGATIVE: ...but a boot TCB with ANY queuePPrev fails the boot-safety check"
+    (SeLe4n.Platform.Boot.bootSafeObjectCheck (.tcb (linkedTo ⟨7⟩)) == false &&
+     SeLe4n.Platform.Boot.bootSafeObjectCheck
+       (.tcb { tcbWithTid ⟨9⟩ with queuePPrev := some .endpointHead }) == false &&
+     SeLe4n.Platform.Boot.bootSafeObjectCheck (.tcb (tcbWithTid ⟨9⟩)) == true)
+  let idleLinkCfg : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [], initialObjects := [entryAt 9 (linkedTo idle0Tid)] }
+  match SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads idleLinkCfg with
+  | .error e =>
+      assertBool "NEGATIVE: ...and the checked boot refuses it with the reservation diagnostic"
+        (e == idleSlotDiagnostic)
+  | .ok _ =>
+      assertBool "NEGATIVE: a TCB whose queuePPrev names an idle thread must be refused" false
+  -- Round 8 sweep (the arity pin): the fields the hand-written arms had never
+  -- read — a TCB's reply references and carried capabilities, a Reply's own
+  -- id and `prev` link, a SchedContext's own id.
+  let idleReplyId : SeLe4n.ReplyId := SeLe4n.ReplyId.ofNat idle0Obj.toNat
+  let idleCap : Capability :=
+    { target := .object idle0Obj, rights := AccessRightSet.ofList [.write], badge := none }
+  assertBool "NEGATIVE: a boot TCB's reply references and carried capabilities are read"
+    (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
+       (.tcb { tcbWithTid ⟨9⟩ with replyObject := some idleReplyId }) == true &&
+     SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
+       (.tcb { tcbWithTid ⟨9⟩ with pendingReceiveReply := some idleReplyId }) == true &&
+     SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
+       (.tcb { tcbWithTid ⟨9⟩ with
+                pendingMessage := some { registers := #[],
+                                         caps := #[{ cap := idleCap, srcNode := ⟨0⟩ }] } }) == true)
+  assertBool "NEGATIVE: a boot Reply's own id and its prev link are read"
+    (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
+       (.reply { replyId := idleReplyId }) == true &&
+     SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
+       (.reply { replyId := ⟨9⟩, prev := some idleReplyId }) == true &&
+     SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
+       (.reply { replyId := ⟨9⟩ }) == false)
+  assertBool "NEGATIVE: a boot SchedContext's own id is read"
+    (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
+       (.schedContext (SchedContext.empty (SeLe4n.SchedContextId.ofNat idle0Obj.toNat))) == true &&
+     SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
+       (.schedContext (SchedContext.empty ⟨9⟩)) == false)
+  -- Round 8: the identity relation covers every object that carries its own id.
+  let scAliasCfg : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [],
+      initialObjects := [ { id := ⟨9⟩, obj := .schedContext (SchedContext.empty ⟨12⟩),
+                            hSlots := fun _ h => KernelObject.noConfusion h,
+                            hMappings := fun _ h => KernelObject.noConfusion h } ] }
+  let replyAliasCfg : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [],
+      initialObjects := [ { id := ⟨9⟩, obj := .reply { replyId := ⟨12⟩ },
+                            hSlots := fun _ h => KernelObject.noConfusion h,
+                            hMappings := fun _ h => KernelObject.noConfusion h } ] }
+  match SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads scAliasCfg,
+        SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads replyAliasCfg with
+  | .error eSc, .error eReply =>
+      assertBool "NEGATIVE: a SchedContext or a Reply stored under another id is refused for the identity relation"
+        (eSc == tcbIdentityDiagnostic && eReply == tcbIdentityDiagnostic)
+  | _, _ =>
+      assertBool "NEGATIVE: a SchedContext or Reply whose id is not its own slot must be refused" false
+  assertBool "embeddedIdentitiesMatchSlots decides the relation for all three kinds"
+    (SeLe4n.Platform.Boot.embeddedIdentitiesMatchSlots scAliasCfg == false &&
+     SeLe4n.Platform.Boot.schedContextIdentitiesMatchSlots scAliasCfg == false &&
+     SeLe4n.Platform.Boot.embeddedIdentitiesMatchSlots replyAliasCfg == false &&
+     SeLe4n.Platform.Boot.replyIdentitiesMatchSlots replyAliasCfg == false &&
+     SeLe4n.Platform.Boot.embeddedIdentitiesMatchSlots ownIdCfg == true)
   assertBool "capTargetsReservedIdleObject decides by the capability's target"
     (SeLe4n.Kernel.capTargetsReservedIdleObject
         { target := .object idle0Obj, rights := AccessRightSet.ofList [.write], badge := none } == true &&

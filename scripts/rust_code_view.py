@@ -353,6 +353,85 @@ def enclosing_fn(text: str, offset: int, bodies=None) -> str:
     return best[0] if best else FILE_SCOPE
 
 
+def top_level_statements(view: str, start: int, end: int) -> list[tuple[int, int]]:
+    """The top-level statements of a Rust block interior ``[start, end)`` as
+    ``(lo, hi)`` spans over a string-free view: a statement ends at a ``;``
+    at brace depth zero, or at the ``}`` that closes a depth-zero block not
+    followed by ``else``.  The Python twin of ``build.rs``'s
+    ``top_level_statements_in``, shared here (PR #889 review round 8) so
+    every gate that asks a question of a function's statements asks it of
+    the same shape.
+    """
+    out: list[tuple[int, int]] = []
+    depth = 0
+    paren = 0
+    stmt_start = start
+    i = start
+    while i < end:
+        c = view[i]
+        if c in "([":
+            paren += 1
+        elif c in ")]":
+            paren -= 1
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0 and paren == 0:
+                nxt = i + 1
+                while nxt < end and view[nxt].isspace():
+                    nxt += 1
+                if not view[nxt:end].startswith("else"):
+                    stmt_end = nxt + 1 if nxt < end and view[nxt] == ";" else i + 1
+                    out.append((stmt_start, stmt_end))
+                    stmt_start = stmt_end
+                    i = stmt_end
+                    continue
+        elif c == ";" and depth == 0 and paren == 0:
+            out.append((stmt_start, i + 1))
+            stmt_start = i + 1
+        i += 1
+    if view[stmt_start:end].strip():
+        out.append((stmt_start, end))
+    return out
+
+
+def statement_containing(
+    statements: list[tuple[int, int]], offset: int
+) -> tuple[int, int] | None:
+    """The ``(lo, hi)`` statement span holding ``offset``, if any."""
+    return next(((lo, hi) for lo, hi in statements if lo <= offset < hi), None)
+
+
+def binding_statement_before(
+    view: str, statements: list[tuple[int, int]], name: str, upto: tuple[int, int]
+) -> tuple[int, int] | None:
+    """The LAST top-level ``let [mut] <name>`` statement strictly before the
+    statement ``upto`` — the binding instance a use of ``name`` in ``upto``
+    refers to (PR #889 review round 8).
+
+    A receiver's *spelling* does not identify a value: ``let mut asm = …;
+    asm.file("ghost.S"); let mut asm = …; asm.file("real.S").compile(…)`` is
+    valid Rust in which the first ``.file`` reaches nothing the compile
+    sees.  Rust resolves a name to its most recent binding in scope, so the
+    gates do the same: a use belongs to the last ``let`` of that name at or
+    before the use.  Returns ``None`` when the block binds no such name —
+    a parameter, a captured variable or a temporary — which the callers
+    treat as fail-closed (nothing before the using statement counts).
+    """
+    pattern = re.compile(r"^\s*let\s+(?:mut\s+)?" + re.escape(name) + r"\b")
+    found: tuple[int, int] | None = None
+    for lo, hi in statements:
+        # A `let` binds from the statement AFTER it: a use inside the binding
+        # statement's own initialiser refers to the previous binding, so the
+        # using statement itself is never its own instance.
+        if lo >= upto[0]:
+            break
+        if pattern.match(view[lo:hi]):
+            found = (lo, hi)
+    return found
+
+
 # ---------------------------------------------------------------------------
 # Self-test.
 #
@@ -499,6 +578,48 @@ def _self_test() -> int:
         "a bodyless declaration does not claim the next item's braces",
         enclosing_fn(decl_only, decl_only.index("TOKEN")) == "real",
         enclosing_fn(decl_only, decl_only.index("TOKEN")),
+    )
+
+    # --- statements and binding instances (PR #889 review round 8) ----------
+    block = (
+        "fn assemble() {\n"
+        "    let mut asm = cc::Build::new();\n"
+        '    asm.file("src/ghost.S");\n'
+        "    let mut asm = cc::Build::new();\n"
+        "    if false {\n"
+        '        asm.file("src/dead.S");\n'
+        "    }\n"
+        '    asm.file("src/real.S")\n'
+        '        .compile("sele4n_hal_asm");\n'
+        "}\n"
+    )
+    view = code_no_strings(block)
+    (_, b_start, b_end), = fn_bodies(block)
+    stmts = top_level_statements(view, b_start, b_end)
+    check("five top-level statements", len(stmts) == 5, str(len(stmts)))
+    compile_at = block.index(".compile(")
+    holder = statement_containing(stmts, compile_at)
+    check("the compile sits in the last statement", holder == stmts[-1], str(holder))
+    binding = binding_statement_before(view, stmts, "asm", holder)
+    # THE relation-breaking witness: both `let mut asm` statements are
+    # present; the one a use of `asm` refers to is the LAST before the use.
+    check(
+        "the binding instance is the last `let` before the use",
+        binding == stmts[2],
+        str(binding),
+    )
+    ghost_at = block.index('.file("src/ghost.S")')
+    check(
+        "a use before the rebinding precedes the instance the compile sees",
+        binding is not None and ghost_at < binding[0],
+    )
+    check(
+        "an unbound name has no binding instance",
+        binding_statement_before(view, stmts, "other", holder) is None,
+    )
+    check(
+        "a `let` after the use is not its binding",
+        binding_statement_before(view, stmts, "asm", stmts[0]) is None,
     )
 
     # --- unterminated literals raise rather than truncate ------------------

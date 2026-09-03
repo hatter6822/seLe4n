@@ -1210,6 +1210,14 @@ pub extern "C" fn ffi_rw_lock_release_write_count(handle: u64) -> u64 {
 /// Returns: `KernelError::Ok = 0` on success, the kernel-error
 /// discriminant otherwise.
 ///
+/// The Lean entry refuses the sentinel `tid` **and every kernel-reserved
+/// idle thread id** with `InvalidArgument` before the transition runs
+/// (`suspendThreadCrossCoreStep_idle_refused`, PR #889 review round 8):
+/// this seam takes a raw id and no capability, so the capability
+/// chokepoint's refusal of a capability naming an idle object did not
+/// cover it, and a caller handing it `idleThreadId(c)` would have removed
+/// core `c`'s only guaranteed runnable thread.
+///
 /// Lean binding: see comment on `suspend_thread_cross_core` below.
 #[no_mangle]
 pub extern "C" fn sele4n_suspend_thread(tid: u64) -> u32 {

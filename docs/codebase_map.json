@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/rr5-boot-path-fail-open-sandny",
-      "commit_sha": "a212ea237adf1002fc3f5dd6a17a15cee712fe6c",
-      "tree_sha": "1b042d55078a8100c40f3d2bd42ff6d9fa4bf0a6",
-      "committed_at_utc": "2026-09-03T04:16:02+00:00"
+      "commit_sha": "9c9dd7dac8f33db370634a2d242990c31a663609",
+      "tree_sha": "40c5f20acddabb235563fe3ee44e1751fdee0e6d",
+      "committed_at_utc": "2026-09-03T04:58:15+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "b1639b0dca126207f4c1449b6562dfa40438d399968b3be5164f1f424bb9db96"
+    "source_digest": "1d2fd5757789f0863dfa2454cad315befd8aa8eba0a2fe73d78e47e429dc130b"
   },
   "summary": {
     "module_count": 378,
-    "declaration_count": 18520
+    "declaration_count": 18556
   },
   "readme_sync": {
     "version": "0.34.48",
     "lean_toolchain": "v4.28.0",
     "production_files": 308,
-    "production_loc": 320472,
+    "production_loc": 320857,
     "test_files": 70,
-    "test_loc": 68011,
-    "proved_theorem_lemma_decls": 10658,
+    "test_loc": 68162,
+    "proved_theorem_lemma_decls": 10675,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -193855,7 +193855,7 @@
     {
       "module": "SeLe4n.Kernel.SyscallDispatchEntry",
       "path": "SeLe4n/Kernel/SyscallDispatchEntry.lean",
-      "declaration_count": 20,
+      "declaration_count": 23,
       "declarations": [
         {
           "kind": "namespace",
@@ -194102,8 +194102,8 @@
         },
         {
           "kind": "def",
-          "name": "suspendThreadCrossCoreEntry",
-          "line": 739,
+          "name": "suspendThreadCrossCoreStep",
+          "line": 747,
           "called": [
             "CoreId",
             "KernelError.toUInt32",
@@ -194111,14 +194111,11 @@
             "SystemState",
             "callerTid",
             "computeCrossCoreSgis",
-            "currentCoreId",
             "currentOnCore",
-            "fireCrossCoreSgis",
+            "isIdleThreadId",
             "lockSetForSyscall",
-            "modifyGetKernelState",
             "none",
             "ofNat",
-            "pure",
             "scheduleLocalSuccessorLive",
             "st",
             "suspendThreadOnCore",
@@ -194129,8 +194126,50 @@
         },
         {
           "kind": "theorem",
+          "name": "suspendThreadCrossCoreStep_idle_refused",
+          "line": 814,
+          "called": [
+            "CoreId",
+            "KernelError.toUInt32",
+            "SgiKind",
+            "SystemState",
+            "isIdleThreadId",
+            "ofNat",
+            "st",
+            "suspendThreadCrossCoreStep",
+            "toNat",
+            "toValid"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "suspendThreadCrossCoreStep_sentinel_refused",
+          "line": 829,
+          "called": [
+            "CoreId",
+            "KernelError.toUInt32",
+            "SgiKind",
+            "SystemState",
+            "st",
+            "suspendThreadCrossCoreStep"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "suspendThreadCrossCoreEntry",
+          "line": 836,
+          "called": [
+            "currentCoreId",
+            "fireCrossCoreSgis",
+            "modifyGetKernelState",
+            "pure",
+            "suspendThreadCrossCoreStep"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "computeCrossCoreSgis_recordSyscallRefusal_eq",
-          "line": 817,
+          "line": 862,
           "called": [
             "CoreId",
             "Kernel",
@@ -207594,7 +207633,7 @@
     {
       "module": "SeLe4n.Platform.Boot",
       "path": "SeLe4n/Platform/Boot.lean",
-      "declaration_count": 295,
+      "declaration_count": 327,
       "declarations": [
         {
           "kind": "namespace",
@@ -208365,11 +208404,41 @@
         },
         {
           "kind": "def",
-          "name": "bootObjectReferencesReservedIdleSlot",
-          "line": 720,
+          "name": "endpointReferencesReservedIdleSlot",
+          "line": 706,
           "called": [
-            "KernelObject",
+            "Endpoint",
+            "any",
+            "isIdleThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "notificationReferencesReservedIdleSlot",
+          "line": 719,
+          "called": [
+            "Notification",
             "all",
+            "any",
+            "isIdleThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "cnodeReferencesReservedIdleSlot",
+          "line": 727,
+          "called": [
+            "CNode",
+            "any",
+            "capTargetsReservedIdleObject"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tcbReferencesReservedIdleSlot",
+          "line": 758,
+          "called": [
+            "TCB",
             "any",
             "capTargetsReservedIdleObject",
             "isIdleObjId",
@@ -208379,9 +208448,84 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "tcbReferencesReservedIdleSlot_def",
+          "line": 790,
+          "called": [
+            "TCB",
+            "any",
+            "capTargetsReservedIdleObject",
+            "isIdleObjId",
+            "isIdleThreadId",
+            "scId",
+            "tcbReferencesReservedIdleSlot",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "vspaceRootReferencesReservedIdleSlot",
+          "line": 816,
+          "called": [
+            "VSpaceRoot"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "untypedReferencesReservedIdleSlot",
+          "line": 825,
+          "called": [
+            "UntypedObject",
+            "any",
+            "isIdleObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "schedContextReferencesReservedIdleSlot",
+          "line": 834,
+          "called": [
+            "SchedContext",
+            "any",
+            "isIdleObjId",
+            "isIdleThreadId",
+            "scId",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "replyReferencesReservedIdleSlot",
+          "line": 844,
+          "called": [
+            "Reply",
+            "any",
+            "isIdleObjId",
+            "isIdleThreadId",
+            "replyId",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bootObjectReferencesReservedIdleSlot",
+          "line": 872,
+          "called": [
+            "KernelObject",
+            "cnodeReferencesReservedIdleSlot",
+            "endpointReferencesReservedIdleSlot",
+            "notificationReferencesReservedIdleSlot",
+            "replyReferencesReservedIdleSlot",
+            "schedContextReferencesReservedIdleSlot",
+            "tcbReferencesReservedIdleSlot",
+            "untypedReferencesReservedIdleSlot",
+            "vspaceRootReferencesReservedIdleSlot"
+          ]
+        },
+        {
           "kind": "def",
           "name": "idleSlotsReserved",
-          "line": 803,
+          "line": 919,
           "called": [
             "PlatformConfig",
             "all",
@@ -208394,7 +208538,7 @@
         {
           "kind": "def",
           "name": "tcbIdentitiesMatchSlots",
-          "line": 826,
+          "line": 942,
           "called": [
             "PlatformConfig",
             "all",
@@ -208404,43 +208548,113 @@
         },
         {
           "kind": "def",
-          "name": "PlatformConfig.wellFormed",
-          "line": 835,
+          "name": "schedContextIdentitiesMatchSlots",
+          "line": 955,
+          "called": [
+            "PlatformConfig",
+            "all",
+            "config",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "replyIdentitiesMatchSlots",
+          "line": 965,
+          "called": [
+            "PlatformConfig",
+            "all",
+            "config",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "embeddedIdentitiesMatchSlots",
+          "line": 976,
           "called": [
             "PlatformConfig",
             "config",
+            "replyIdentitiesMatchSlots",
+            "schedContextIdentitiesMatchSlots",
+            "tcbIdentitiesMatchSlots"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "PlatformConfig.wellFormed",
+          "line": 984,
+          "called": [
+            "PlatformConfig",
+            "config",
+            "embeddedIdentitiesMatchSlots",
             "idleSlotsReserved",
             "irqsUnique",
-            "objectIdsUnique",
-            "tcbIdentitiesMatchSlots"
+            "objectIdsUnique"
           ]
         },
         {
           "kind": "theorem",
           "name": "PlatformConfig.wellFormed_idleSlotsReserved",
-          "line": 840,
+          "line": 989,
           "called": [
             "PlatformConfig",
             "config",
             "idleSlotsReserved",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "PlatformConfig.wellFormed_embeddedIdentitiesMatchSlots",
+          "line": 995,
+          "called": [
+            "PlatformConfig",
+            "config",
+            "embeddedIdentitiesMatchSlots",
             "wellFormed"
           ]
         },
         {
           "kind": "theorem",
           "name": "PlatformConfig.wellFormed_tcbIdentitiesMatchSlots",
-          "line": 846,
+          "line": 1001,
           "called": [
             "PlatformConfig",
             "config",
             "tcbIdentitiesMatchSlots",
-            "wellFormed"
+            "wellFormed",
+            "wellFormed_embeddedIdentitiesMatchSlots"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "PlatformConfig.wellFormed_schedContextIdentitiesMatchSlots",
+          "line": 1008,
+          "called": [
+            "PlatformConfig",
+            "config",
+            "schedContextIdentitiesMatchSlots",
+            "wellFormed",
+            "wellFormed_embeddedIdentitiesMatchSlots"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "PlatformConfig.wellFormed_replyIdentitiesMatchSlots",
+          "line": 1015,
+          "called": [
+            "PlatformConfig",
+            "config",
+            "replyIdentitiesMatchSlots",
+            "wellFormed",
+            "wellFormed_embeddedIdentitiesMatchSlots"
           ]
         },
         {
           "kind": "theorem",
           "name": "tcbIdentitiesMatchSlots_tid_eq",
-          "line": 851,
+          "line": 1020,
           "called": [
             "PlatformConfig",
             "TCB",
@@ -208451,8 +208665,32 @@
         },
         {
           "kind": "theorem",
+          "name": "schedContextIdentitiesMatchSlots_scId_eq",
+          "line": 1029,
+          "called": [
+            "PlatformConfig",
+            "SchedContext",
+            "config",
+            "schedContextIdentitiesMatchSlots",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replyIdentitiesMatchSlots_replyId_eq",
+          "line": 1039,
+          "called": [
+            "PlatformConfig",
+            "Reply",
+            "config",
+            "replyIdentitiesMatchSlots",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "idleSlotsReserved_initialObjects",
-          "line": 860,
+          "line": 1049,
           "called": [
             "PlatformConfig",
             "config",
@@ -208463,7 +208701,7 @@
         {
           "kind": "theorem",
           "name": "idleSlotsReserved_no_idle_references",
-          "line": 870,
+          "line": 1059,
           "called": [
             "PlatformConfig",
             "bootObjectReferencesReservedIdleSlot",
@@ -208474,7 +208712,7 @@
         {
           "kind": "theorem",
           "name": "idleSlotsReserved_no_idle_tid",
-          "line": 880,
+          "line": 1069,
           "called": [
             "PlatformConfig",
             "TCB",
@@ -208482,13 +208720,29 @@
             "config",
             "idleSlotsReserved",
             "idleSlotsReserved_no_idle_references",
-            "isIdleThreadId"
+            "isIdleThreadId",
+            "tcbReferencesReservedIdleSlot_def"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "idleSlotsReserved_no_idle_queuePPrev",
+          "line": 1082,
+          "called": [
+            "PlatformConfig",
+            "TCB",
+            "bootObjectReferencesReservedIdleSlot",
+            "config",
+            "idleSlotsReserved",
+            "idleSlotsReserved_no_idle_references",
+            "isIdleThreadId",
+            "tcbReferencesReservedIdleSlot_def"
           ]
         },
         {
           "kind": "theorem",
           "name": "idleSlotsReserved_bootVSpaceRoot",
-          "line": 892,
+          "line": 1098,
           "called": [
             "BootVSpaceRootEntry",
             "PlatformConfig",
@@ -208500,7 +208754,7 @@
         {
           "kind": "theorem",
           "name": "PlatformConfig.wellFormed_empty",
-          "line": 900,
+          "line": 1106,
           "called": [
             "PlatformConfig.wellFormed"
           ]
@@ -208508,7 +208762,7 @@
         {
           "kind": "theorem",
           "name": "irqsUniqueTransparent_empty",
-          "line": 905,
+          "line": 1111,
           "called": [
             "irqsUniqueTransparent"
           ]
@@ -208516,38 +208770,180 @@
         {
           "kind": "theorem",
           "name": "objectIdsUniqueTransparent_empty",
-          "line": 909,
+          "line": 1115,
           "called": [
             "objectIdsUniqueTransparent"
           ]
         },
         {
           "kind": "def",
-          "name": "bootSafeObjectCheck",
-          "line": 934,
+          "name": "bootSafeEndpointCheck",
+          "line": 1143,
           "called": [
-            "KernelObject",
-            "all",
+            "Endpoint"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootSafeEndpointCheck_def",
+          "line": 1149,
+          "called": [
+            "Endpoint",
+            "bootSafeEndpointCheck"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bootSafeNotificationCheck",
+          "line": 1158,
+          "called": [
+            "Notification",
+            "isEmpty"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootSafeNotificationCheck_def",
+          "line": 1164,
+          "called": [
+            "Notification",
+            "bootSafeNotificationCheck",
+            "isEmpty"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bootSafeCnodeCheck",
+          "line": 1172,
+          "called": [
+            "CNode",
             "bitsConsumed",
-            "bootSafeVSpaceRootCheck",
             "guardBounded",
-            "isEmpty",
-            "isPositive",
-            "length",
             "maxCSpaceDepth",
-            "maxReplenishments",
             "size",
             "slotCount"
           ]
         },
         {
           "kind": "theorem",
+          "name": "bootSafeCnodeCheck_def",
+          "line": 1179,
+          "called": [
+            "CNode",
+            "bitsConsumed",
+            "bootSafeCnodeCheck",
+            "guardBounded",
+            "maxCSpaceDepth",
+            "size",
+            "slotCount"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bootSafeTcbCheck",
+          "line": 1204,
+          "called": [
+            "TCB"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootSafeTcbCheck_def",
+          "line": 1219,
+          "called": [
+            "TCB",
+            "bootSafeTcbCheck"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bootSafeUntypedCheck",
+          "line": 1235,
+          "called": [
+            "UntypedObject"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootSafeUntypedCheck_def",
+          "line": 1239,
+          "called": [
+            "UntypedObject",
+            "bootSafeUntypedCheck"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bootSafeSchedContextCheck",
+          "line": 1245,
+          "called": [
+            "SchedContext",
+            "all",
+            "isPositive",
+            "length",
+            "maxReplenishments"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootSafeSchedContextCheck_def",
+          "line": 1257,
+          "called": [
+            "SchedContext",
+            "all",
+            "bootSafeSchedContextCheck",
+            "isPositive",
+            "length",
+            "maxReplenishments"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bootSafeReplyCheck",
+          "line": 1270,
+          "called": [
+            "Reply"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootSafeReplyCheck_def",
+          "line": 1275,
+          "called": [
+            "Reply",
+            "bootSafeReplyCheck"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bootSafeObjectCheck",
+          "line": 1296,
+          "called": [
+            "KernelObject",
+            "bootSafeCnodeCheck",
+            "bootSafeEndpointCheck",
+            "bootSafeNotificationCheck",
+            "bootSafeReplyCheck",
+            "bootSafeSchedContextCheck",
+            "bootSafeTcbCheck",
+            "bootSafeUntypedCheck",
+            "bootSafeVSpaceRootCheck"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "bootSafeObjectCheck_sound_structural",
-          "line": 978,
+          "line": 1313,
           "called": [
             "KernelObject",
             "bitsConsumed",
+            "bootSafeCnodeCheck_def",
+            "bootSafeEndpointCheck_def",
+            "bootSafeNotificationCheck_def",
             "bootSafeObjectCheck",
+            "bootSafeReplyCheck_def",
+            "bootSafeSchedContextCheck_def",
+            "bootSafeTcbCheck_def",
             "bootSafeVSpaceRoot",
             "bootSafeVSpaceRootCheck_iff",
             "head",
@@ -208562,7 +208958,7 @@
         {
           "kind": "theorem",
           "name": "bootSafeObjectCheck_admits_rpi5BootVSpaceRoot",
-          "line": 1100,
+          "line": 1439,
           "called": [
             "bootSafeObjectCheck",
             "rpi5BootVSpaceRoot",
@@ -208572,7 +208968,7 @@
         {
           "kind": "def",
           "name": "irqHandlersReferenceNotifications",
-          "line": 1129,
+          "line": 1468,
           "called": [
             "PlatformConfig",
             "all",
@@ -208584,7 +208980,7 @@
         {
           "kind": "theorem",
           "name": "irqHandlersReferenceNotifications_empty_irqs",
-          "line": 1139,
+          "line": 1478,
           "called": [
             "ObjectEntry",
             "irqHandlersReferenceNotifications"
@@ -208593,7 +208989,7 @@
         {
           "kind": "def",
           "name": "bootVSpaceRootObjIdDistinct",
-          "line": 1157,
+          "line": 1496,
           "called": [
             "PlatformConfig",
             "any",
@@ -208604,7 +209000,7 @@
         {
           "kind": "def",
           "name": "bootVSpaceRootSafe",
-          "line": 1167,
+          "line": 1506,
           "called": [
             "PlatformConfig",
             "bootSafeVSpaceRootCheck",
@@ -208615,7 +209011,7 @@
         {
           "kind": "theorem",
           "name": "bootVSpaceRootObjIdDistinct_none",
-          "line": 1175,
+          "line": 1514,
           "called": [
             "PlatformConfig",
             "bootVSpaceRootObjIdDistinct",
@@ -208626,7 +209022,7 @@
         {
           "kind": "theorem",
           "name": "bootVSpaceRootSafe_none",
-          "line": 1181,
+          "line": 1520,
           "called": [
             "PlatformConfig",
             "bootVSpaceRootSafe",
@@ -208637,7 +209033,7 @@
         {
           "kind": "def",
           "name": "noVSpaceRootsInInitialObjects",
-          "line": 1205,
+          "line": 1544,
           "called": [
             "PlatformConfig",
             "any",
@@ -208647,7 +209043,7 @@
         {
           "kind": "theorem",
           "name": "noVSpaceRootsInInitialObjects_empty",
-          "line": 1212,
+          "line": 1551,
           "called": [
             "PlatformConfig",
             "config",
@@ -208657,7 +209053,7 @@
         {
           "kind": "def",
           "name": "bootVSpaceRootObjIdNonSentinel",
-          "line": 1226,
+          "line": 1565,
           "called": [
             "PlatformConfig",
             "config",
@@ -208668,7 +209064,7 @@
         {
           "kind": "theorem",
           "name": "bootVSpaceRootObjIdNonSentinel_none",
-          "line": 1233,
+          "line": 1572,
           "called": [
             "PlatformConfig",
             "bootVSpaceRootObjIdNonSentinel",
@@ -208679,7 +209075,7 @@
         {
           "kind": "def",
           "name": "bootFromPlatformChecked",
-          "line": 1260,
+          "line": 1599,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -208705,7 +209101,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformChecked_eq_bootFromPlatform",
-          "line": 1369,
+          "line": 1708,
           "called": [
             "PlatformConfig",
             "all",
@@ -208729,7 +209125,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformChecked_admits_bootVSpace",
-          "line": 1397,
+          "line": 1736,
           "called": [
             "BootVSpaceRootEntry",
             "PlatformConfig",
@@ -208751,7 +209147,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformChecked_ok_implies_irqHandlersValid",
-          "line": 1422,
+          "line": 1761,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -208763,7 +209159,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformChecked_ok_implies_machineConfigWellFormed",
-          "line": 1441,
+          "line": 1780,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -208775,7 +209171,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformChecked_ok_implies_physicalAddressWidth_bound",
-          "line": 1467,
+          "line": 1806,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -208786,7 +209182,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformChecked_ok_interruptsEnabled",
-          "line": 1493,
+          "line": 1832,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -208798,7 +209194,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformChecked_rejects_invalid",
-          "line": 1526,
+          "line": 1865,
           "called": [
             "PlatformConfig",
             "bootFromPlatformChecked",
@@ -208809,7 +209205,7 @@
         {
           "kind": "theorem",
           "name": "bootSafeObjectCheck_empty_config",
-          "line": 1533,
+          "line": 1872,
           "called": [
             "ObjectEntry",
             "all",
@@ -208819,7 +209215,7 @@
         {
           "kind": "def",
           "name": "bootFromPlatformWithWarnings",
-          "line": 1552,
+          "line": 1891,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -208833,7 +209229,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformWithWarnings_wellFormed_no_warnings",
-          "line": 1571,
+          "line": 1910,
           "called": [
             "PlatformConfig",
             "PlatformConfig.wellFormed",
@@ -208847,7 +209243,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_empty_state",
-          "line": 1615,
+          "line": 1954,
           "called": [
             "SystemState",
             "bootFromPlatform",
@@ -208857,7 +209253,7 @@
         {
           "kind": "theorem",
           "name": "emptyBoot_proofLayerInvariantBundle",
-          "line": 1621,
+          "line": 1960,
           "called": [
             "apiInvariantBundle_default",
             "bootFromPlatform",
@@ -208868,7 +209264,7 @@
         {
           "kind": "theorem",
           "name": "emptyBoot_freeze_preserves",
-          "line": 1629,
+          "line": 1968,
           "called": [
             "apiInvariantBundle_frozen",
             "bootFromPlatform",
@@ -208880,7 +209276,7 @@
         {
           "kind": "theorem",
           "name": "bootToRuntime_invariantBridge_empty",
-          "line": 1646,
+          "line": 1985,
           "called": [
             "apiInvariantBundle_frozen",
             "bootFromPlatform",
@@ -208893,7 +209289,7 @@
         {
           "kind": "theorem",
           "name": "registerIrq_state_fields_eq",
-          "line": 1745,
+          "line": 2084,
           "called": [
             "IntermediateState",
             "Irq",
@@ -208906,7 +209302,7 @@
         {
           "kind": "theorem",
           "name": "registerIrq_scheduler",
-          "line": 1797,
+          "line": 2136,
           "called": [
             "IntermediateState",
             "handler",
@@ -208916,7 +209312,7 @@
         {
           "kind": "theorem",
           "name": "registerIrq_cdt",
-          "line": 1799,
+          "line": 2138,
           "called": [
             "IntermediateState",
             "handler",
@@ -208926,7 +209322,7 @@
         {
           "kind": "theorem",
           "name": "registerIrq_services",
-          "line": 1801,
+          "line": 2140,
           "called": [
             "IntermediateState",
             "handler",
@@ -208936,7 +209332,7 @@
         {
           "kind": "theorem",
           "name": "registerIrq_serviceRegistry",
-          "line": 1803,
+          "line": 2142,
           "called": [
             "IntermediateState",
             "handler",
@@ -208946,7 +209342,7 @@
         {
           "kind": "theorem",
           "name": "registerIrq_interfaceRegistry",
-          "line": 1805,
+          "line": 2144,
           "called": [
             "IntermediateState",
             "handler",
@@ -208956,7 +209352,7 @@
         {
           "kind": "theorem",
           "name": "registerIrq_asidTable",
-          "line": 1807,
+          "line": 2146,
           "called": [
             "IntermediateState",
             "handler",
@@ -208966,7 +209362,7 @@
         {
           "kind": "theorem",
           "name": "registerIrq_tlb",
-          "line": 1809,
+          "line": 2148,
           "called": [
             "IntermediateState",
             "handler",
@@ -208976,7 +209372,7 @@
         {
           "kind": "theorem",
           "name": "registerIrq_machine",
-          "line": 1811,
+          "line": 2150,
           "called": [
             "IntermediateState",
             "handler",
@@ -208986,7 +209382,7 @@
         {
           "kind": "theorem",
           "name": "registerIrq_objects",
-          "line": 1813,
+          "line": 2152,
           "called": [
             "IntermediateState",
             "handler",
@@ -208996,7 +209392,7 @@
         {
           "kind": "theorem",
           "name": "registerIrq_lifecycle",
-          "line": 1815,
+          "line": 2154,
           "called": [
             "IntermediateState",
             "handler",
@@ -209006,7 +209402,7 @@
         {
           "kind": "theorem",
           "name": "registerIrq_objectIndex",
-          "line": 1817,
+          "line": 2156,
           "called": [
             "IntermediateState",
             "handler",
@@ -209016,7 +209412,7 @@
         {
           "kind": "theorem",
           "name": "registerIrq_objectIndexSet",
-          "line": 1819,
+          "line": 2158,
           "called": [
             "IntermediateState",
             "handler",
@@ -209026,7 +209422,7 @@
         {
           "kind": "theorem",
           "name": "registerIrq_cdtNodeSlot",
-          "line": 1821,
+          "line": 2160,
           "called": [
             "IntermediateState",
             "handler",
@@ -209036,7 +209432,7 @@
         {
           "kind": "theorem",
           "name": "createObject_scheduler",
-          "line": 1825,
+          "line": 2164,
           "called": [
             "IntermediateState",
             "createObject"
@@ -209045,7 +209441,7 @@
         {
           "kind": "theorem",
           "name": "createObject_cdt",
-          "line": 1827,
+          "line": 2166,
           "called": [
             "IntermediateState",
             "createObject"
@@ -209054,7 +209450,7 @@
         {
           "kind": "theorem",
           "name": "createObject_services",
-          "line": 1829,
+          "line": 2168,
           "called": [
             "IntermediateState",
             "createObject"
@@ -209063,7 +209459,7 @@
         {
           "kind": "theorem",
           "name": "createObject_serviceRegistry",
-          "line": 1831,
+          "line": 2170,
           "called": [
             "IntermediateState",
             "createObject"
@@ -209072,7 +209468,7 @@
         {
           "kind": "theorem",
           "name": "createObject_interfaceRegistry",
-          "line": 1833,
+          "line": 2172,
           "called": [
             "IntermediateState",
             "createObject"
@@ -209081,7 +209477,7 @@
         {
           "kind": "theorem",
           "name": "createObject_asidTable",
-          "line": 1835,
+          "line": 2174,
           "called": [
             "IntermediateState",
             "createObject"
@@ -209090,7 +209486,7 @@
         {
           "kind": "theorem",
           "name": "createObject_tlb",
-          "line": 1837,
+          "line": 2176,
           "called": [
             "IntermediateState",
             "createObject"
@@ -209099,7 +209495,7 @@
         {
           "kind": "theorem",
           "name": "createObject_machine",
-          "line": 1839,
+          "line": 2178,
           "called": [
             "IntermediateState",
             "createObject"
@@ -209108,7 +209504,7 @@
         {
           "kind": "theorem",
           "name": "createObject_capabilityRefs",
-          "line": 1841,
+          "line": 2180,
           "called": [
             "IntermediateState",
             "createObject"
@@ -209117,7 +209513,7 @@
         {
           "kind": "theorem",
           "name": "createObject_irqHandlers",
-          "line": 1844,
+          "line": 2183,
           "called": [
             "IntermediateState",
             "createObject"
@@ -209126,7 +209522,7 @@
         {
           "kind": "theorem",
           "name": "createObject_cdtNodeSlot",
-          "line": 1846,
+          "line": 2185,
           "called": [
             "IntermediateState",
             "createObject"
@@ -209135,7 +209531,7 @@
         {
           "kind": "theorem",
           "name": "createObject_objects",
-          "line": 1848,
+          "line": 2187,
           "called": [
             "IntermediateState",
             "createObject",
@@ -209145,7 +209541,7 @@
         {
           "kind": "theorem",
           "name": "foldIrqs_scheduler",
-          "line": 1852,
+          "line": 2191,
           "called": [
             "IntermediateState",
             "IrqEntry",
@@ -209156,7 +209552,7 @@
         {
           "kind": "theorem",
           "name": "foldIrqs_cdt",
-          "line": 1858,
+          "line": 2197,
           "called": [
             "IntermediateState",
             "IrqEntry",
@@ -209167,7 +209563,7 @@
         {
           "kind": "theorem",
           "name": "foldIrqs_objects",
-          "line": 1864,
+          "line": 2203,
           "called": [
             "IntermediateState",
             "IrqEntry",
@@ -209178,7 +209574,7 @@
         {
           "kind": "theorem",
           "name": "foldIrqs_services",
-          "line": 1870,
+          "line": 2209,
           "called": [
             "IntermediateState",
             "IrqEntry",
@@ -209189,7 +209585,7 @@
         {
           "kind": "theorem",
           "name": "foldIrqs_serviceRegistry",
-          "line": 1876,
+          "line": 2215,
           "called": [
             "IntermediateState",
             "IrqEntry",
@@ -209200,7 +209596,7 @@
         {
           "kind": "theorem",
           "name": "foldIrqs_interfaceRegistry",
-          "line": 1882,
+          "line": 2221,
           "called": [
             "IntermediateState",
             "IrqEntry",
@@ -209211,7 +209607,7 @@
         {
           "kind": "theorem",
           "name": "foldIrqs_asidTable",
-          "line": 1888,
+          "line": 2227,
           "called": [
             "IntermediateState",
             "IrqEntry",
@@ -209222,7 +209618,7 @@
         {
           "kind": "theorem",
           "name": "foldIrqs_tlb",
-          "line": 1894,
+          "line": 2233,
           "called": [
             "IntermediateState",
             "IrqEntry",
@@ -209233,7 +209629,7 @@
         {
           "kind": "theorem",
           "name": "foldIrqs_tlbShootdown",
-          "line": 1900,
+          "line": 2239,
           "called": [
             "IntermediateState",
             "IrqEntry",
@@ -209244,7 +209640,7 @@
         {
           "kind": "theorem",
           "name": "foldIrqs_perCoreTlb",
-          "line": 1906,
+          "line": 2245,
           "called": [
             "IntermediateState",
             "IrqEntry",
@@ -209255,7 +209651,7 @@
         {
           "kind": "theorem",
           "name": "foldIrqs_perCoreICache",
-          "line": 1912,
+          "line": 2251,
           "called": [
             "IntermediateState",
             "IrqEntry",
@@ -209266,7 +209662,7 @@
         {
           "kind": "theorem",
           "name": "foldIrqs_pendingIcacheMaintenance",
-          "line": 1918,
+          "line": 2257,
           "called": [
             "IntermediateState",
             "IrqEntry",
@@ -209277,7 +209673,7 @@
         {
           "kind": "theorem",
           "name": "foldIrqs_declassificationAuditLog",
-          "line": 1926,
+          "line": 2265,
           "called": [
             "IntermediateState",
             "IrqEntry",
@@ -209288,7 +209684,7 @@
         {
           "kind": "theorem",
           "name": "foldIrqs_declassificationAuditEpoch",
-          "line": 1934,
+          "line": 2273,
           "called": [
             "IntermediateState",
             "IrqEntry",
@@ -209299,7 +209695,7 @@
         {
           "kind": "theorem",
           "name": "foldIrqs_declassificationRefusals",
-          "line": 1942,
+          "line": 2281,
           "called": [
             "IntermediateState",
             "IrqEntry",
@@ -209310,7 +209706,7 @@
         {
           "kind": "theorem",
           "name": "foldIrqs_declassificationTaint",
-          "line": 1950,
+          "line": 2289,
           "called": [
             "IntermediateState",
             "IrqEntry",
@@ -209321,7 +209717,7 @@
         {
           "kind": "theorem",
           "name": "foldIrqs_machine",
-          "line": 1958,
+          "line": 2297,
           "called": [
             "IntermediateState",
             "IrqEntry",
@@ -209332,7 +209728,7 @@
         {
           "kind": "theorem",
           "name": "foldIrqs_lifecycle",
-          "line": 1964,
+          "line": 2303,
           "called": [
             "IntermediateState",
             "IrqEntry",
@@ -209343,7 +209739,7 @@
         {
           "kind": "theorem",
           "name": "foldIrqs_objectIndex",
-          "line": 1970,
+          "line": 2309,
           "called": [
             "IntermediateState",
             "IrqEntry",
@@ -209354,7 +209750,7 @@
         {
           "kind": "theorem",
           "name": "foldIrqs_objectIndexSet",
-          "line": 1976,
+          "line": 2315,
           "called": [
             "IntermediateState",
             "IrqEntry",
@@ -209365,7 +209761,7 @@
         {
           "kind": "theorem",
           "name": "foldIrqs_cdtNodeSlot",
-          "line": 1982,
+          "line": 2321,
           "called": [
             "IntermediateState",
             "IrqEntry",
@@ -209376,7 +209772,7 @@
         {
           "kind": "theorem",
           "name": "foldObjects_scheduler",
-          "line": 1989,
+          "line": 2328,
           "called": [
             "IntermediateState",
             "ObjectEntry",
@@ -209387,7 +209783,7 @@
         {
           "kind": "theorem",
           "name": "foldObjects_cdt",
-          "line": 1995,
+          "line": 2334,
           "called": [
             "IntermediateState",
             "ObjectEntry",
@@ -209398,7 +209794,7 @@
         {
           "kind": "theorem",
           "name": "foldObjects_services",
-          "line": 2001,
+          "line": 2340,
           "called": [
             "IntermediateState",
             "ObjectEntry",
@@ -209409,7 +209805,7 @@
         {
           "kind": "theorem",
           "name": "foldObjects_serviceRegistry",
-          "line": 2007,
+          "line": 2346,
           "called": [
             "IntermediateState",
             "ObjectEntry",
@@ -209420,7 +209816,7 @@
         {
           "kind": "theorem",
           "name": "foldObjects_interfaceRegistry",
-          "line": 2013,
+          "line": 2352,
           "called": [
             "IntermediateState",
             "ObjectEntry",
@@ -209431,7 +209827,7 @@
         {
           "kind": "theorem",
           "name": "foldObjects_asidTable",
-          "line": 2019,
+          "line": 2358,
           "called": [
             "IntermediateState",
             "ObjectEntry",
@@ -209442,7 +209838,7 @@
         {
           "kind": "theorem",
           "name": "foldObjects_tlb",
-          "line": 2025,
+          "line": 2364,
           "called": [
             "IntermediateState",
             "ObjectEntry",
@@ -209453,7 +209849,7 @@
         {
           "kind": "theorem",
           "name": "foldObjects_tlbShootdown",
-          "line": 2031,
+          "line": 2370,
           "called": [
             "IntermediateState",
             "ObjectEntry",
@@ -209464,7 +209860,7 @@
         {
           "kind": "theorem",
           "name": "foldObjects_perCoreTlb",
-          "line": 2037,
+          "line": 2376,
           "called": [
             "IntermediateState",
             "ObjectEntry",
@@ -209475,7 +209871,7 @@
         {
           "kind": "theorem",
           "name": "foldObjects_perCoreICache",
-          "line": 2043,
+          "line": 2382,
           "called": [
             "IntermediateState",
             "ObjectEntry",
@@ -209486,7 +209882,7 @@
         {
           "kind": "theorem",
           "name": "foldObjects_pendingIcacheMaintenance",
-          "line": 2049,
+          "line": 2388,
           "called": [
             "IntermediateState",
             "ObjectEntry",
@@ -209497,7 +209893,7 @@
         {
           "kind": "theorem",
           "name": "foldObjects_declassificationAuditLog",
-          "line": 2057,
+          "line": 2396,
           "called": [
             "IntermediateState",
             "ObjectEntry",
@@ -209508,7 +209904,7 @@
         {
           "kind": "theorem",
           "name": "foldObjects_declassificationAuditEpoch",
-          "line": 2065,
+          "line": 2404,
           "called": [
             "IntermediateState",
             "ObjectEntry",
@@ -209519,7 +209915,7 @@
         {
           "kind": "theorem",
           "name": "foldObjects_declassificationRefusals",
-          "line": 2073,
+          "line": 2412,
           "called": [
             "IntermediateState",
             "ObjectEntry",
@@ -209530,7 +209926,7 @@
         {
           "kind": "theorem",
           "name": "foldObjects_declassificationTaint",
-          "line": 2081,
+          "line": 2420,
           "called": [
             "IntermediateState",
             "ObjectEntry",
@@ -209541,7 +209937,7 @@
         {
           "kind": "theorem",
           "name": "foldObjects_machine",
-          "line": 2089,
+          "line": 2428,
           "called": [
             "IntermediateState",
             "ObjectEntry",
@@ -209552,7 +209948,7 @@
         {
           "kind": "theorem",
           "name": "foldObjects_capabilityRefs",
-          "line": 2095,
+          "line": 2434,
           "called": [
             "IntermediateState",
             "ObjectEntry",
@@ -209563,7 +209959,7 @@
         {
           "kind": "theorem",
           "name": "foldObjects_irqHandlers",
-          "line": 2102,
+          "line": 2441,
           "called": [
             "IntermediateState",
             "ObjectEntry",
@@ -209574,7 +209970,7 @@
         {
           "kind": "theorem",
           "name": "foldObjects_cdtNodeSlot",
-          "line": 2108,
+          "line": 2447,
           "called": [
             "IntermediateState",
             "ObjectEntry",
@@ -209585,7 +209981,7 @@
         {
           "kind": "theorem",
           "name": "mkEmpty_state_eq_default",
-          "line": 2115,
+          "line": 2454,
           "called": [
             "SystemState",
             "default"
@@ -209594,7 +209990,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_scheduler_eq",
-          "line": 2120,
+          "line": 2459,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -209610,7 +210006,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_smp_currentAllNone",
-          "line": 2167,
+          "line": 2506,
           "called": [
             "CoreId",
             "PlatformConfig",
@@ -209625,7 +210021,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_smp_witness",
-          "line": 2200,
+          "line": 2539,
           "called": [
             "CoreId",
             "PlatformConfig",
@@ -209640,7 +210036,7 @@
         {
           "kind": "def",
           "name": "createIdleThread",
-          "line": 2234,
+          "line": 2573,
           "called": [
             "CoreId",
             "TCB",
@@ -209652,7 +210048,7 @@
         {
           "kind": "def",
           "name": "queuedIdleThread",
-          "line": 2261,
+          "line": 2600,
           "called": [
             "CoreId",
             "TCB",
@@ -209662,7 +210058,7 @@
         {
           "kind": "theorem",
           "name": "queuedIdleThread_threadState",
-          "line": 2266,
+          "line": 2605,
           "called": [
             "CoreId",
             "queuedIdleThread"
@@ -209671,7 +210067,7 @@
         {
           "kind": "def",
           "name": "installIdleThread",
-          "line": 2280,
+          "line": 2619,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -209685,7 +210081,7 @@
         {
           "kind": "theorem",
           "name": "installIdleThread_objects",
-          "line": 2296,
+          "line": 2635,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -209699,7 +210095,7 @@
         {
           "kind": "theorem",
           "name": "installIdleThread_scheduler",
-          "line": 2304,
+          "line": 2643,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -209711,7 +210107,7 @@
         {
           "kind": "theorem",
           "name": "installIdleThread_currentOnCore_self",
-          "line": 2311,
+          "line": 2650,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -209725,7 +210121,7 @@
         {
           "kind": "theorem",
           "name": "installIdleThread_currentOnCore_ne",
-          "line": 2319,
+          "line": 2658,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -209738,7 +210134,7 @@
         {
           "kind": "theorem",
           "name": "installIdleThread_objects_self",
-          "line": 2328,
+          "line": 2667,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -209754,7 +210150,7 @@
         {
           "kind": "theorem",
           "name": "installIdleThread_objects_ne",
-          "line": 2338,
+          "line": 2677,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -209770,7 +210166,7 @@
         {
           "kind": "def",
           "name": "bootFromPlatformWithIdleThreads",
-          "line": 2395,
+          "line": 2734,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -209782,7 +210178,7 @@
         {
           "kind": "theorem",
           "name": "foldl_installIdleThread_currentOnCore_frame",
-          "line": 2400,
+          "line": 2739,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -209795,7 +210191,7 @@
         {
           "kind": "theorem",
           "name": "foldl_installIdleThread_objects_frame",
-          "line": 2414,
+          "line": 2753,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -209810,7 +210206,7 @@
         {
           "kind": "theorem",
           "name": "foldl_installIdleThread_installs",
-          "line": 2432,
+          "line": 2771,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -209829,7 +210225,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformWithIdleThreads_all_cores_have_idle",
-          "line": 2464,
+          "line": 2803,
           "called": [
             "CoreId",
             "PlatformConfig",
@@ -209848,7 +210244,7 @@
         {
           "kind": "def",
           "name": "idleSlotsFreshAt",
-          "line": 2483,
+          "line": 2822,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -209860,7 +210256,7 @@
         {
           "kind": "theorem",
           "name": "foldl_installIdleThread_objects_frame_of_not_idle",
-          "line": 2491,
+          "line": 2830,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -209875,7 +210271,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformWithIdleThreads_preserves_platform_objects",
-          "line": 2512,
+          "line": 2851,
           "called": [
             "KernelObject",
             "ObjId",
@@ -209893,7 +210289,7 @@
         {
           "kind": "theorem",
           "name": "installIdleThread_runQueueOnCore",
-          "line": 2530,
+          "line": 2869,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -209906,7 +210302,7 @@
         {
           "kind": "theorem",
           "name": "foldl_installIdleThread_runQueueOnCore",
-          "line": 2539,
+          "line": 2878,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -209919,7 +210315,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformWithIdleThreads_runnable_nil",
-          "line": 2554,
+          "line": 2893,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -209940,7 +210336,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformWithIdleThreads_schedulerInvariantBundle",
-          "line": 2574,
+          "line": 2913,
           "called": [
             "PlatformConfig",
             "bootCoreId",
@@ -209958,7 +210354,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformWithIdleThreads_valid",
-          "line": 2595,
+          "line": 2934,
           "called": [
             "PlatformConfig",
             "allTablesInvExtK",
@@ -209972,7 +210368,7 @@
         {
           "kind": "theorem",
           "name": "installIdleThread_machine",
-          "line": 2609,
+          "line": 2948,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -209982,7 +210378,7 @@
         {
           "kind": "theorem",
           "name": "foldl_installIdleThread_machine",
-          "line": 2614,
+          "line": 2953,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -209994,7 +210390,7 @@
         {
           "kind": "theorem",
           "name": "foldl_installIdleThread_domainTimeRemainingOnCore",
-          "line": 2626,
+          "line": 2965,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -210008,7 +210404,7 @@
         {
           "kind": "theorem",
           "name": "foldl_installIdleThread_activeDomainOnCore",
-          "line": 2639,
+          "line": 2978,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -210022,7 +210418,7 @@
         {
           "kind": "theorem",
           "name": "foldl_installIdleThread_domainSchedule",
-          "line": 2653,
+          "line": 2992,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -210035,7 +210431,7 @@
         {
           "kind": "def",
           "name": "enqueueIdleThread",
-          "line": 2705,
+          "line": 3044,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -210053,7 +210449,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThread_objects",
-          "line": 2749,
+          "line": 3088,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -210067,7 +210463,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThread_scheduler",
-          "line": 2757,
+          "line": 3096,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -210083,7 +210479,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThread_runQueueOnCore_self",
-          "line": 2766,
+          "line": 3105,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -210100,7 +210496,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThread_runQueueOnCore_ne",
-          "line": 2779,
+          "line": 3118,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -210113,7 +210509,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThread_currentOnCore",
-          "line": 2790,
+          "line": 3129,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -210126,7 +210522,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThread_activeDomainOnCore",
-          "line": 2798,
+          "line": 3137,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -210139,7 +210535,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThread_machine",
-          "line": 2806,
+          "line": 3145,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -210149,7 +210545,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThread_objects_self",
-          "line": 2812,
+          "line": 3151,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -210165,7 +210561,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThread_objects_ne",
-          "line": 2822,
+          "line": 3161,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -210181,7 +210577,7 @@
         {
           "kind": "theorem",
           "name": "foldl_enqueueIdleThread_runQueueOnCore_frame",
-          "line": 2833,
+          "line": 3172,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -210194,7 +210590,7 @@
         {
           "kind": "theorem",
           "name": "foldl_enqueueIdleThread_objects_frame",
-          "line": 2847,
+          "line": 3186,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -210209,7 +210605,7 @@
         {
           "kind": "theorem",
           "name": "foldl_enqueueIdleThread_currentOnCore",
-          "line": 2863,
+          "line": 3202,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -210222,7 +210618,7 @@
         {
           "kind": "theorem",
           "name": "foldl_enqueueIdleThread_activeDomainOnCore",
-          "line": 2876,
+          "line": 3215,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -210235,7 +210631,7 @@
         {
           "kind": "theorem",
           "name": "foldl_enqueueIdleThread_machine",
-          "line": 2889,
+          "line": 3228,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -210247,7 +210643,7 @@
         {
           "kind": "theorem",
           "name": "foldl_enqueueIdleThread_objects_frame_of_not_idle",
-          "line": 2903,
+          "line": 3242,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -210262,7 +210658,7 @@
         {
           "kind": "theorem",
           "name": "foldl_enqueueIdleThread_installs",
-          "line": 2920,
+          "line": 3259,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -210284,7 +210680,7 @@
         {
           "kind": "theorem",
           "name": "foldl_enqueueIdleThread_runQueueOnCore_eq",
-          "line": 2958,
+          "line": 3297,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -210303,7 +210699,7 @@
         {
           "kind": "def",
           "name": "bootFromPlatformCheckedWithIdleThreads",
-          "line": 3007,
+          "line": 3346,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -210315,7 +210711,7 @@
         {
           "kind": "def",
           "name": "bootFromPlatformCheckedWithIdleThreadsFor",
-          "line": 3023,
+          "line": 3362,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -210329,7 +210725,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreadsFor_allCores",
-          "line": 3030,
+          "line": 3369,
           "called": [
             "PlatformConfig",
             "allCores",
@@ -210341,7 +210737,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreadsFor_rejects_invalid",
-          "line": 3036,
+          "line": 3375,
           "called": [
             "CoreId",
             "PlatformConfig",
@@ -210354,7 +210750,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreadsFor_map_ok",
-          "line": 3046,
+          "line": 3385,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -210369,7 +210765,7 @@
         {
           "kind": "def",
           "name": "declaredWitnessesInstalled",
-          "line": 3064,
+          "line": 3403,
           "called": [
             "LabelingContext",
             "SystemState",
@@ -210381,7 +210777,7 @@
         {
           "kind": "theorem",
           "name": "installBootVSpaceRoot_scheduler",
-          "line": 3073,
+          "line": 3412,
           "called": [
             "IntermediateState",
             "ObjId",
@@ -210393,7 +210789,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformChecked_ok_scheduler_eq",
-          "line": 3088,
+          "line": 3427,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -210409,7 +210805,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformChecked_ok_shape",
-          "line": 3130,
+          "line": 3469,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -210427,7 +210823,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_map_ok",
-          "line": 3170,
+          "line": 3509,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -210440,7 +210836,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_rejects_invalid",
-          "line": 3180,
+          "line": 3519,
           "called": [
             "PlatformConfig",
             "bootFromPlatformChecked",
@@ -210451,7 +210847,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_isOk_iff",
-          "line": 3189,
+          "line": 3528,
           "called": [
             "PlatformConfig",
             "bootFromPlatformChecked",
@@ -210462,7 +210858,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_machine",
-          "line": 3200,
+          "line": 3539,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -210476,7 +210872,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_currentAllNone",
-          "line": 3219,
+          "line": 3558,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -210494,7 +210890,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_idle_available",
-          "line": 3250,
+          "line": 3589,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -210520,7 +210916,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_eq",
-          "line": 3285,
+          "line": 3624,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -210545,7 +210941,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_mem_runQueueOnCore_iff",
-          "line": 3310,
+          "line": 3649,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -210566,7 +210962,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_wellFormed",
-          "line": 3333,
+          "line": 3672,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -210584,7 +210980,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_runnable_resolve",
-          "line": 3348,
+          "line": 3687,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -210603,7 +210999,7 @@
         {
           "kind": "theorem",
           "name": "_root_.SeLe4n.Platform.PlatformBinding.labeling_valid",
-          "line": 3378,
+          "line": 3717,
           "called": [
             "LabelingContextValid",
             "PlatformBinding",
@@ -210614,7 +211010,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_cdt_eq",
-          "line": 3384,
+          "line": 3723,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -210630,7 +211026,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_services_eq",
-          "line": 3391,
+          "line": 3730,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -210646,7 +211042,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_serviceRegistry_eq",
-          "line": 3398,
+          "line": 3737,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -210662,7 +211058,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_interfaceRegistry_eq",
-          "line": 3405,
+          "line": 3744,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -210678,7 +211074,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_asidTable_eq",
-          "line": 3412,
+          "line": 3751,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -210694,7 +211090,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_tlb_eq",
-          "line": 3419,
+          "line": 3758,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -210710,7 +211106,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_tlbShootdown_eq",
-          "line": 3428,
+          "line": 3767,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -210726,7 +211122,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_perCoreTlb_eq",
-          "line": 3439,
+          "line": 3778,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -210742,7 +211138,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_perCoreICache_eq",
-          "line": 3450,
+          "line": 3789,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -210758,7 +211154,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_pendingIcacheMaintenance_eq",
-          "line": 3462,
+          "line": 3801,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -210774,7 +211170,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_declassificationAuditLog_eq",
-          "line": 3474,
+          "line": 3813,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -210790,7 +211186,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_declassificationAuditEpoch_eq",
-          "line": 3487,
+          "line": 3826,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -210806,7 +211202,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_declassificationRefusals_eq",
-          "line": 3500,
+          "line": 3839,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -210822,7 +211218,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_declassificationTaint_eq",
-          "line": 3514,
+          "line": 3853,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -210838,7 +211234,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_machine_physicalAddressWidth",
-          "line": 3526,
+          "line": 3865,
           "called": [
             "PlatformConfig",
             "applyMachineConfig_physicalAddressWidth",
@@ -210849,7 +211245,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_machine_non_config_fields",
-          "line": 3555,
+          "line": 3894,
           "called": [
             "MachineState.regs",
             "MachineState.regsOnCore",
@@ -210868,7 +211264,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformWithIdleThreads_currentThreadInActiveDomain",
-          "line": 3570,
+          "line": 3909,
           "called": [
             "PlatformConfig",
             "activeDomainOnCore",
@@ -210885,7 +211281,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformWithIdleThreads_schedulerInvariantBundleFull",
-          "line": 3597,
+          "line": 3936,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -210918,7 +211314,7 @@
         {
           "kind": "theorem",
           "name": "foldIrqs_capabilityRefs",
-          "line": 3653,
+          "line": 3992,
           "called": [
             "IntermediateState",
             "IrqEntry",
@@ -210929,7 +211325,7 @@
         {
           "kind": "theorem",
           "name": "applyMachineConfig_capabilityRefs_eq",
-          "line": 3660,
+          "line": 3999,
           "called": [
             "IntermediateState",
             "MachineConfig",
@@ -210940,7 +211336,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_capabilityRefs_eq",
-          "line": 3664,
+          "line": 4003,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -210955,7 +211351,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_cdtNodeSlot_eq",
-          "line": 3673,
+          "line": 4012,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -210971,7 +211367,7 @@
         {
           "kind": "def",
           "name": "bootSafeObject",
-          "line": 3714,
+          "line": 4053,
           "called": [
             "KernelObject",
             "badge",
@@ -210991,7 +211387,7 @@
         {
           "kind": "def",
           "name": "PlatformConfig.bootSafe",
-          "line": 3760,
+          "line": 4100,
           "called": [
             "PlatformConfig",
             "bootSafeObject",
@@ -211001,7 +211397,7 @@
         {
           "kind": "theorem",
           "name": "bootSafeObject_admits_rpi5BootVSpaceRoot",
-          "line": 3768,
+          "line": 4108,
           "called": [
             "bootSafeObject",
             "rpi5BootVSpaceRoot",
@@ -211011,7 +211407,7 @@
         {
           "kind": "def",
           "name": "PlatformConfig.untypedRegionsDisjoint",
-          "line": 3800,
+          "line": 4140,
           "called": [
             "ObjectEntry",
             "PlatformConfig",
@@ -211022,7 +211418,7 @@
         {
           "kind": "theorem",
           "name": "PlatformConfig.untypedRegionsDisjoint_empty",
-          "line": 3813,
+          "line": 4153,
           "called": [
             "PlatformConfig.untypedRegionsDisjoint"
           ]
@@ -211030,7 +211426,7 @@
         {
           "kind": "theorem",
           "name": "foldObjects_objects_bootSafe",
-          "line": 3824,
+          "line": 4164,
           "called": [
             "IntermediateState",
             "KernelObject",
@@ -211049,7 +211445,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_objects_bootSafe",
-          "line": 3852,
+          "line": 4192,
           "called": [
             "KernelObject",
             "ObjId",
@@ -211068,7 +211464,7 @@
         {
           "kind": "theorem",
           "name": "foldObjects_objects_reachable",
-          "line": 3873,
+          "line": 4213,
           "called": [
             "IntermediateState",
             "KernelObject",
@@ -211086,7 +211482,7 @@
         {
           "kind": "theorem",
           "name": "idleSlotsFreshAt_of_initialObjects_below_base",
-          "line": 3908,
+          "line": 4248,
           "called": [
             "PlatformConfig",
             "RHTable_get",
@@ -211112,7 +211508,7 @@
         {
           "kind": "theorem",
           "name": "idleSlotsFreshAt_of_idleSlotsReserved",
-          "line": 3946,
+          "line": 4286,
           "called": [
             "PlatformConfig",
             "RHTable_get",
@@ -211141,7 +211537,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_untypedRegionsDisjoint",
-          "line": 3975,
+          "line": 4315,
           "called": [
             "PlatformConfig",
             "RHTable_get",
@@ -211159,7 +211555,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_proofLayerInvariantBundle_general",
-          "line": 4047,
+          "line": 4387,
           "called": [
             "ICacheState.empty",
             "ObjId",
@@ -211275,7 +211671,7 @@
         {
           "kind": "theorem",
           "name": "bootToRuntime_invariantBridge_general",
-          "line": 4618,
+          "line": 4958,
           "called": [
             "PlatformConfig",
             "apiInvariantBundle_frozen",
@@ -211292,7 +211688,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformChecked_ok_idleSlotsFreshAt",
-          "line": 4641,
+          "line": 4981,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -211312,7 +211708,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_preserves_platform_objects",
-          "line": 4673,
+          "line": 5013,
           "called": [
             "IntermediateState",
             "KernelObject",
@@ -211332,7 +211728,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreadsFor_undeclared_idle_absent",
-          "line": 4701,
+          "line": 5041,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -211353,7 +211749,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_idle_threadState",
-          "line": 4734,
+          "line": 5074,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -211374,7 +211770,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformChecked_ok_tcb_inactive",
-          "line": 4754,
+          "line": 5094,
           "called": [
             "IntermediateState",
             "ObjId",
@@ -211406,7 +211802,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformChecked_ok_not_running_not_queued",
-          "line": 4788,
+          "line": 5128,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -211427,7 +211823,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformChecked_ok_threadStateConsistent",
-          "line": 4814,
+          "line": 5154,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -211443,7 +211839,7 @@
         {
           "kind": "theorem",
           "name": "inferThreadState_eq_of_not_running_not_queued",
-          "line": 4827,
+          "line": 5167,
           "called": [
             "SystemState",
             "TCB",
@@ -211457,7 +211853,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_threadStateConsistent",
-          "line": 4849,
+          "line": 5189,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -211490,7 +211886,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformCheckedWithIdleThreads_threadInactiveFlagConsistent",
-          "line": 4909,
+          "line": 5249,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -253734,19 +254130,21 @@
         {
           "kind": "def",
           "name": "tcbIdentityDiagnostic",
-          "line": 582,
+          "line": 583,
           "called": []
         },
         {
           "kind": "def",
           "name": "runBootValidationParityChecks",
-          "line": 587,
+          "line": 588,
           "called": [
+            "Capability",
             "KernelObject",
             "ObjId",
             "ObjectEntry",
             "PlatformConfig",
             "PlatformConfig.wellFormed",
+            "ReplyId",
             "TCB",
             "ThreadId",
             "UntypedChild",
@@ -253755,7 +254153,9 @@
             "bootFromPlatformChecked",
             "bootFromPlatformCheckedWithIdleThreads",
             "bootObjectReferencesReservedIdleSlot",
+            "bootSafeObjectCheck",
             "capTargetsReservedIdleObject",
+            "embeddedIdentitiesMatchSlots",
             "empty",
             "handler",
             "idleSlotDiagnostic",
@@ -253766,17 +254166,21 @@
             "ofList",
             "ofListWF",
             "ofNat",
+            "replyId",
+            "replyIdentitiesMatchSlots",
+            "schedContextIdentitiesMatchSlots",
             "size",
             "tcbIdentitiesMatchSlots",
             "tcbIdentityDiagnostic",
             "toList",
+            "toNat",
             "toObjId"
           ]
         },
         {
           "kind": "def",
           "name": "runSmpIdleChecks",
-          "line": 768,
+          "line": 846,
           "called": [
             "runAlwaysSucceedsChecks",
             "runBootIdleChecks",
@@ -253792,7 +254196,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 785,
+          "line": 863,
           "called": [
             "runSmpIdleChecks"
           ]
@@ -274832,7 +275236,7 @@
     {
       "module": "tests.SyscallDispatchSuite",
       "path": "tests/SyscallDispatchSuite.lean",
-      "declaration_count": 47,
+      "declaration_count": 48,
       "declarations": [
         {
           "kind": "namespace",
@@ -275517,8 +275921,38 @@
         },
         {
           "kind": "def",
+          "name": "sd057_rawSuspendSeamRefusesIdleIds",
+          "line": 1128,
+          "called": [
+            "CoreId",
+            "KernelError.toUInt32",
+            "SimPlatform",
+            "ThreadId",
+            "all",
+            "boot",
+            "bootAndInitialisePlatform",
+            "c0",
+            "expect",
+            "failLine",
+            "getKernelState",
+            "getTcb",
+            "idleThreadId",
+            "isEmpty",
+            "modifyGetKernelState",
+            "none",
+            "runQueueOnCore",
+            "st",
+            "suspendThreadCrossCoreStep",
+            "suspendThreadOnCore",
+            "toList",
+            "toValid",
+            "witnessedCfg"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "sd051_receiveLinkCaller",
-          "line": 1121,
+          "line": 1193,
           "called": [
             "ObjId",
             "ReplyId",
@@ -275547,7 +275981,7 @@
         {
           "kind": "def",
           "name": "sd052_replyRecvBody",
-          "line": 1174,
+          "line": 1246,
           "called": [
             "IpcMessage",
             "ObjId",
@@ -275581,7 +276015,7 @@
         {
           "kind": "def",
           "name": "sd052b_replyRecv_donation_switch",
-          "line": 1214,
+          "line": 1286,
           "called": [
             "IpcMessage",
             "ObjId",
@@ -275615,7 +276049,7 @@
         {
           "kind": "def",
           "name": "sd052c_replyRecv_delegated_returns_recorded_server_donation",
-          "line": 1269,
+          "line": 1341,
           "called": [
             "IpcMessage",
             "ObjId",
@@ -275647,7 +276081,7 @@
         {
           "kind": "def",
           "name": "sd053_serverFirstLink",
-          "line": 1314,
+          "line": 1386,
           "called": [
             "ObjId",
             "ReplyId",
@@ -275676,7 +276110,7 @@
         {
           "kind": "def",
           "name": "sd053g_bound_notification_wake_clears_stash",
-          "line": 1443,
+          "line": 1515,
           "called": [
             "ObjId",
             "ReplyId",
@@ -275704,7 +276138,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1486,
+          "line": 1558,
           "called": [
             "sd001_kernelErrorDiscriminants",
             "sd002_errorLabelCarriage",
@@ -275737,7 +276171,8 @@
             "sd053g_bound_notification_wake_clears_stash",
             "sd054_idleTargetCapabilityUnresolvable",
             "sd055_witnesses_installed_and_binding_cores",
-            "sd056_witnesses_off_boot_root_and_structural_cores"
+            "sd056_witnesses_off_boot_root_and_structural_cores",
+            "sd057_rawSuspendSeamRefusesIdleIds"
           ]
         }
       ]

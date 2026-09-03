@@ -699,70 +699,186 @@ theorem irqsUnique_empty : irqsUnique [] = true := by
 theorem objectIdsUnique_empty : objectIdsUnique [] = true := by
   decide
 
-/-- PR #889 review round 2: does a boot object **reference** a reserved idle
-    slot — hold a capability to one (a CNode), name one as a root or a binding
-    (a TCB), or link one into a queue?  The reservation on object *keys*
-    (`idleSlotsReserved`'s first conjunct) stops the idle fold overwriting a
-    config object; this stops the fold *materialising* a dangling target: a
-    boot CNode carrying a writable capability to `(idleThreadId c).toObjId`
-    would, once the idle TCB exists, hand user space authority over the core's
-    only guaranteed runnable thread.  The resolution gate refuses such a
-    capability at every syscall (`syscallResolveCap_ok_not_reserved`), so the
-    authority would be inert; refusing the config too keeps the boot image free
-    of it.  Total over `KernelObject`, so a new kind must say where it stands,
-    and the queue links, the notification binding (PR #889 review round 4:
-    `boundTCB`), every SchedContext reference and an untyped's allocation and
-    ancestry records (round 6: `children`, `parent`) are included so the check
-    asks the same question of every field that can hold an object, thread or
-    scheduling-context id.  The two kinds that hold none — a VSpace root
-    (an ASID and a virtual-to-physical map) and, after round 6, nothing else —
-    answer `false` by inspection of their fields, not by default. -/
-def bootObjectReferencesReservedIdleSlot (obj : KernelObject) : Bool :=
-  match obj with
-  | .endpoint ep =>
-    ep.sendQ.head.any SeLe4n.Kernel.isIdleThreadId ||
-    ep.sendQ.tail.any SeLe4n.Kernel.isIdleThreadId ||
-    ep.receiveQ.head.any SeLe4n.Kernel.isIdleThreadId ||
-    ep.receiveQ.tail.any SeLe4n.Kernel.isIdleThreadId
-  | .notification notif =>
-    !notif.waitingThreads.all (fun t => !SeLe4n.Kernel.isIdleThreadId t) ||
-    -- PR #889 review round 4: a boot notification pre-bound to an idle thread
-    -- would be materialised into a one-sided binding — the idle TCB comes up
-    -- with `boundNotification = none`, a later bind fails on the notification
-    -- side, and no capability can reach the idle TCB to clear it.
-    notif.boundTCB.any SeLe4n.Kernel.isIdleThreadId
-  | .cnode cn =>
-    cn.slots.toList.any (fun s => SeLe4n.Kernel.capTargetsReservedIdleObject s.2)
-  | .tcb tcb =>
-    -- PR #889 review round 7: the TCB's *own* identity.  A boot TCB stored at
-    -- an ordinary id whose `tid` is an idle thread's passed every field check
-    -- while naming the idle thread in the one field the lifecycle paths read
-    -- back: retyping that object runs `cleanupTcbReferences` on `tcb.tid` and
-    -- dequeues the real idle thread, around the capability chokepoint.
-    SeLe4n.Kernel.isIdleThreadId tcb.tid ||
-    SeLe4n.Kernel.isIdleObjId tcb.cspaceRoot || SeLe4n.Kernel.isIdleObjId tcb.vspaceRoot ||
-    tcb.boundNotification.any SeLe4n.Kernel.isIdleObjId ||
-    tcb.queueNext.any SeLe4n.Kernel.isIdleThreadId ||
-    tcb.queuePrev.any SeLe4n.Kernel.isIdleThreadId ||
-    -- Round 4 sweep: every SchedContext reference and the donation owner.
-    tcb.timeoutBudget.any (fun sc => SeLe4n.Kernel.isIdleObjId sc.toObjId) ||
-    (match tcb.schedContextBinding with
+/-- PR #889 review round 8: the fields of a boot **endpoint** that can hold a
+    thread id — the two intrusive queues' heads and tails.  Destructured by the
+    constructor so that a new `Endpoint` field fails this definition and has to
+    be classified. -/
+def endpointReferencesReservedIdleSlot (ep : Endpoint) : Bool :=
+  match ep with
+  | ⟨sendQ, receiveQ, _lock⟩ =>
+    sendQ.head.any SeLe4n.Kernel.isIdleThreadId ||
+    sendQ.tail.any SeLe4n.Kernel.isIdleThreadId ||
+    receiveQ.head.any SeLe4n.Kernel.isIdleThreadId ||
+    receiveQ.tail.any SeLe4n.Kernel.isIdleThreadId
+
+/-- PR #889 review round 8: a boot **notification**'s waiters and (round 4) its
+    bound TCB — a boot notification pre-bound to an idle thread would be
+    materialised into a one-sided binding: the idle TCB comes up with
+    `boundNotification = none`, a later bind fails on the notification side,
+    and no capability can reach the idle TCB to clear it. -/
+def notificationReferencesReservedIdleSlot (notif : Notification) : Bool :=
+  match notif with
+  | ⟨_state, waitingThreads, _pendingBadge, boundTCB, _lock⟩ =>
+    !waitingThreads.all (fun t => !SeLe4n.Kernel.isIdleThreadId t) ||
+    boundTCB.any SeLe4n.Kernel.isIdleThreadId
+
+/-- PR #889 review round 8: a boot **CNode**'s capabilities, by their targets
+    (`capTargetsReservedIdleObject`). -/
+def cnodeReferencesReservedIdleSlot (cn : CNode) : Bool :=
+  match cn with
+  | ⟨_depth, _guardWidth, _guardValue, _radixWidth, slots, _lock⟩ =>
+    slots.toList.any (fun s => SeLe4n.Kernel.capTargetsReservedIdleObject s.2)
+
+/-- PR #889 review round 8: every field of a boot **TCB** that can hold an
+    object, thread, scheduling-context or reply id, classified one by one.
+
+    The constructor pattern is the pin: the TCB arm was extended in review
+    rounds 2, 4, 7 and 8 — the queue links, the SchedContext references and
+    the donation owner, the TCB's own `tid`, and then `queuePPrev`, whose
+    `.tcbNext` payload is a thread id the projection-based arm never read —
+    because a hand-written field list cannot see the field it omits.  Adding
+    a field to `TCB` now fails this definition with an arity error, and the
+    author says where the new field stands.  What each field holds:
+
+    * `tid` (round 7) — the TCB's own identity, which `cleanupTcbReferences`
+      reads back; `cspaceRoot`, `vspaceRoot`, `boundNotification` — object
+      ids; `queuePrev`, `queueNext` and `queuePPrev`'s `.tcbNext` — thread
+      ids (a stale `queuePPrev` also makes `endpointQueueEnqueue` refuse the
+      otherwise detached thread with `.illegalState`, so the boot-safety
+      check requires all three links empty); `pendingMessage` — carried
+      capabilities, by their targets; `schedContextBinding`,
+      `timeoutBudget` — SchedContext ids and the donation owner;
+      `replyObject`, `pendingReceiveReply` — reply object ids.
+    * `priority`, `domain`, `ipcBuffer` (a virtual address), `ipcState`,
+      `threadState`, `timeSlice`, `deadline`, `registerContext`,
+      `faultHandler` (a CPtr into the thread's own CSpace, not an id),
+      `maxControlledPriority`, `pipBoost`, `timedOut`, `lock`,
+      `cpuAffinity` (a core) and `pendingFault` (addresses, syndromes and a
+      register window) hold no id. -/
+def tcbReferencesReservedIdleSlot (tcb : TCB) : Bool :=
+  match tcb with
+  | ⟨tid, _priority, _domain, cspaceRoot, vspaceRoot, _ipcBuffer, _ipcState, _threadState,
+     _timeSlice, _deadline, queuePrev, queuePPrev, queueNext, pendingMessage, _registerContext,
+     _faultHandler, boundNotification, schedContextBinding, timeoutBudget,
+     _maxControlledPriority, _pipBoost, _timedOut, _lock, _cpuAffinity, replyObject,
+     pendingReceiveReply, _pendingFault⟩ =>
+    SeLe4n.Kernel.isIdleThreadId tid ||
+    SeLe4n.Kernel.isIdleObjId cspaceRoot || SeLe4n.Kernel.isIdleObjId vspaceRoot ||
+    boundNotification.any SeLe4n.Kernel.isIdleObjId ||
+    queueNext.any SeLe4n.Kernel.isIdleThreadId ||
+    queuePrev.any SeLe4n.Kernel.isIdleThreadId ||
+    (match queuePPrev with
+     | some (.tcbNext prev) => SeLe4n.Kernel.isIdleThreadId prev
+     | _ => false) ||
+    pendingMessage.any (fun msg =>
+      msg.caps.any (fun tc => SeLe4n.Kernel.capTargetsReservedIdleObject tc.cap)) ||
+    timeoutBudget.any (fun sc => SeLe4n.Kernel.isIdleObjId sc.toObjId) ||
+    (match schedContextBinding with
      | .unbound => false
      | .bound scId => SeLe4n.Kernel.isIdleObjId scId.toObjId
      | .donated scId owner =>
-       SeLe4n.Kernel.isIdleObjId scId.toObjId || SeLe4n.Kernel.isIdleThreadId owner)
-  | .vspaceRoot _ => false
-  | .untyped ut =>
-    -- PR #889 review round 6: a boot untyped whose allocation record names an
-    -- idle slot as a child, or whose ancestry names one as its parent, would
-    -- keep user-supplied metadata about an object the idle fold materialises
-    -- — the retype and revoke paths read both.
-    ut.children.any (fun child => SeLe4n.Kernel.isIdleObjId child.objId) ||
-    ut.parent.any SeLe4n.Kernel.isIdleObjId
-  | .schedContext sc => sc.boundThread.any SeLe4n.Kernel.isIdleThreadId
-  | .reply r =>
-    r.caller.any SeLe4n.Kernel.isIdleThreadId ||
-    r.donatedSc.any (fun sc => SeLe4n.Kernel.isIdleObjId sc.toObjId)
+       SeLe4n.Kernel.isIdleObjId scId.toObjId || SeLe4n.Kernel.isIdleThreadId owner) ||
+    replyObject.any (fun rid => SeLe4n.Kernel.isIdleObjId rid.toObjId) ||
+    pendingReceiveReply.any (fun rid => SeLe4n.Kernel.isIdleObjId rid.toObjId)
+
+/-- PR #889 review round 8: the TCB reference check in projection form —
+    the same Boolean, read off the fields rather than the constructor.  Proved
+    by `rfl` (structure eta), so proofs can rewrite with it cheaply: Lean's
+    equation lemmas for a 27-field constructor match are expensive to
+    generate, and `simp only [tcbReferencesReservedIdleSlot]` timed out where
+    this rewrite does not. -/
+theorem tcbReferencesReservedIdleSlot_def (tcb : TCB) :
+    tcbReferencesReservedIdleSlot tcb =
+      (SeLe4n.Kernel.isIdleThreadId tcb.tid ||
+       SeLe4n.Kernel.isIdleObjId tcb.cspaceRoot || SeLe4n.Kernel.isIdleObjId tcb.vspaceRoot ||
+       tcb.boundNotification.any SeLe4n.Kernel.isIdleObjId ||
+       tcb.queueNext.any SeLe4n.Kernel.isIdleThreadId ||
+       tcb.queuePrev.any SeLe4n.Kernel.isIdleThreadId ||
+       (match tcb.queuePPrev with
+        | some (.tcbNext prev) => SeLe4n.Kernel.isIdleThreadId prev
+        | _ => false) ||
+       tcb.pendingMessage.any (fun msg =>
+         msg.caps.any (fun tc => SeLe4n.Kernel.capTargetsReservedIdleObject tc.cap)) ||
+       tcb.timeoutBudget.any (fun sc => SeLe4n.Kernel.isIdleObjId sc.toObjId) ||
+       (match tcb.schedContextBinding with
+        | .unbound => false
+        | .bound scId => SeLe4n.Kernel.isIdleObjId scId.toObjId
+        | .donated scId owner =>
+          SeLe4n.Kernel.isIdleObjId scId.toObjId || SeLe4n.Kernel.isIdleThreadId owner) ||
+       tcb.replyObject.any (fun rid => SeLe4n.Kernel.isIdleObjId rid.toObjId) ||
+       tcb.pendingReceiveReply.any (fun rid => SeLe4n.Kernel.isIdleObjId rid.toObjId)) :=
+  rfl
+
+/-- PR #889 review round 8: a **VSpace root** — an ASID, a virtual-to-physical
+    map and a lock — holds no object, thread or scheduling-context id.  The
+    answer is by inspection of the constructor's fields, and the pattern fails
+    when a field is added. -/
+def vspaceRootReferencesReservedIdleSlot (vsr : VSpaceRoot) : Bool :=
+  match vsr with
+  | ⟨_asid, _mappings, _lock⟩ => false
+
+/-- PR #889 review round 8 (the round-6 check, pinned by arity): a boot
+    **untyped** whose allocation record names an idle slot as a child, or whose
+    ancestry names one as its parent, would keep user-supplied metadata about
+    an object the idle fold materialises — the retype and revoke paths read
+    both. -/
+def untypedReferencesReservedIdleSlot (ut : UntypedObject) : Bool :=
+  match ut with
+  | ⟨_regionBase, _regionSize, _watermark, children, _isDevice, parent, _lock⟩ =>
+    children.any (fun child => SeLe4n.Kernel.isIdleObjId child.objId) ||
+    parent.any SeLe4n.Kernel.isIdleObjId
+
+/-- PR #889 review round 8: a boot **SchedContext**'s own id (`scId`, which
+    `replenishScOnCore` keys the replenishment queue by) and its bound thread.
+    Budgets, periods, priorities and replenishment entries hold no id. -/
+def schedContextReferencesReservedIdleSlot (sc : SchedContext) : Bool :=
+  match sc with
+  | ⟨scId, _budget, _period, _priority, _deadline, _domain, _budgetRemaining, _periodStart,
+     _replenishments, boundThread, _isActive, _lock⟩ =>
+    SeLe4n.Kernel.isIdleObjId scId.toObjId ||
+    boundThread.any SeLe4n.Kernel.isIdleThreadId
+
+/-- PR #889 review round 8: a boot **Reply**'s own id, its blocked caller, its
+    donated SchedContext and its `prev` link — a reply object id the round-6
+    arm did not read. -/
+def replyReferencesReservedIdleSlot (r : Reply) : Bool :=
+  match r with
+  | ⟨replyId, caller, donatedSc, prev, _lock⟩ =>
+    SeLe4n.Kernel.isIdleObjId replyId.toObjId ||
+    caller.any SeLe4n.Kernel.isIdleThreadId ||
+    donatedSc.any (fun sc => SeLe4n.Kernel.isIdleObjId sc.toObjId) ||
+    prev.any (fun p => SeLe4n.Kernel.isIdleObjId p.toObjId)
+
+/-- PR #889 review round 2: does a boot object **reference** a reserved idle
+    slot?  A config entry at an ordinary id can still name an idle thread in
+    a queue link, a capability, a binding or a donation record, and the
+    checked boot would then materialise an idle thread already reachable
+    from user-supplied state — a `.tcbSuspend` through a boot CNode's
+    capability, or a stale queue link, would remove the thread the no-stall
+    guarantee rests on before the first instruction runs.  The reservation
+    therefore refuses references as well as occupancy.
+
+    Total over `KernelObject`, so a new kind must say where it stands — and,
+    since review round 8, total over every kind's **fields** as well: each
+    arm delegates to a per-kind helper that destructures the constructor, so
+    a field added to any kernel object fails the helper with an arity error
+    rather than defaulting to "unread".  The round-8 finding was exactly that
+    default: `queuePPrev`'s `.tcbNext` payload is a thread id, and a TCB arm
+    listing fields by hand had never named it (rounds 2, 4, 6 and 7 each
+    extended the same list).  The sweep that pinned the arity also found the
+    id-carrying fields the list still omitted — a reply's `prev` link, the
+    two reply references and the carried capabilities of a TCB, and the own
+    ids of a SchedContext and a Reply. -/
+def bootObjectReferencesReservedIdleSlot (obj : KernelObject) : Bool :=
+  match obj with
+  | .endpoint ep => endpointReferencesReservedIdleSlot ep
+  | .notification notif => notificationReferencesReservedIdleSlot notif
+  | .cnode cn => cnodeReferencesReservedIdleSlot cn
+  | .tcb tcb => tcbReferencesReservedIdleSlot tcb
+  | .vspaceRoot vsr => vspaceRootReferencesReservedIdleSlot vsr
+  | .untyped ut => untypedReferencesReservedIdleSlot ut
+  | .schedContext sc => schedContextReferencesReservedIdleSlot sc
+  | .reply r => replyReferencesReservedIdleSlot r
 
 /-- **WS-RR RR5.13** (PR #889 review): the per-core idle object slots
     `[idleThreadIdBase, idleThreadIdBase + numCores)` are **reserved** — no
@@ -829,29 +945,102 @@ def tcbIdentitiesMatchSlots (config : PlatformConfig) : Bool :=
     | .tcb tcb => tcb.tid.toObjId == entry.id
     | _ => true)
 
+/-- PR #889 review round 8 (the round-7 relation, swept across the kinds that
+    carry their own id): every boot **SchedContext** is stored under its own
+    `scId` — `replenishScOnCore` keys the per-core replenishment queue by
+    `sc.scId`, and `getSchedContext?` resolves that key to
+    `objects[scId.toObjId]`, so a SchedContext at slot `9` carrying
+    `scId = 12` would have its budget replenished on whatever object `12`
+    is. -/
+def schedContextIdentitiesMatchSlots (config : PlatformConfig) : Bool :=
+  config.initialObjects.all (fun entry =>
+    match entry.obj with
+    | .schedContext sc => sc.scId.toObjId == entry.id
+    | _ => true)
+
+/-- PR #889 review round 8: every boot **Reply** is stored under its own
+    `replyId` — the sentinel `replyId` marks `Reply.empty` for the observer
+    projection, and a reply's identity is the slot the reply capability
+    names. -/
+def replyIdentitiesMatchSlots (config : PlatformConfig) : Bool :=
+  config.initialObjects.all (fun entry =>
+    match entry.obj with
+    | .reply r => r.replyId.toObjId == entry.id
+    | _ => true)
+
+/-- PR #889 review round 8: the fourth `wellFormed` conjunct — every object
+    that carries its own id is stored under it.  Round 7 stated it for TCBs;
+    a SchedContext and a Reply carry theirs too, and each is read back by a
+    live path (`replenishScOnCore` keys by `scId`; the observer projection
+    classifies a Reply by `replyId`). -/
+def embeddedIdentitiesMatchSlots (config : PlatformConfig) : Bool :=
+  tcbIdentitiesMatchSlots config && schedContextIdentitiesMatchSlots config &&
+    replyIdentitiesMatchSlots config
+
 /-- U6-E/F: A well-formed PlatformConfig has unique IRQs, unique object IDs,
     (WS-RR RR5.13, PR #889 review) keeps the per-core idle slots free and
-    (PR #889 review round 7) stores every TCB under its own thread id. -/
+    (PR #889 review rounds 7 and 8) stores every TCB, SchedContext and Reply
+    under its own id. -/
 def PlatformConfig.wellFormed (config : PlatformConfig) : Bool :=
   irqsUnique config.irqTable && objectIdsUnique config.initialObjects &&
-    idleSlotsReserved config && tcbIdentitiesMatchSlots config
+    idleSlotsReserved config && embeddedIdentitiesMatchSlots config
 
 /-- **WS-RR RR5.13**: a well-formed config reserves the idle slots. -/
 theorem PlatformConfig.wellFormed_idleSlotsReserved (config : PlatformConfig)
     (h : config.wellFormed = true) : idleSlotsReserved config = true :=
   ((Bool.and_eq_true _ _).mp ((Bool.and_eq_true _ _).mp h).1).2
 
+/-- PR #889 review round 8: a well-formed config stores every id-carrying
+    object under its own id. -/
+theorem PlatformConfig.wellFormed_embeddedIdentitiesMatchSlots (config : PlatformConfig)
+    (h : config.wellFormed = true) : embeddedIdentitiesMatchSlots config = true :=
+  ((Bool.and_eq_true _ _).mp h).2
+
 /-- PR #889 review round 7: a well-formed config stores every TCB under its
     own thread id. -/
 theorem PlatformConfig.wellFormed_tcbIdentitiesMatchSlots (config : PlatformConfig)
     (h : config.wellFormed = true) : tcbIdentitiesMatchSlots config = true :=
-  ((Bool.and_eq_true _ _).mp h).2
+  ((Bool.and_eq_true _ _).mp
+    ((Bool.and_eq_true _ _).mp (config.wellFormed_embeddedIdentitiesMatchSlots h)).1).1
+
+/-- PR #889 review round 8: a well-formed config stores every SchedContext
+    under its own id. -/
+theorem PlatformConfig.wellFormed_schedContextIdentitiesMatchSlots (config : PlatformConfig)
+    (h : config.wellFormed = true) : schedContextIdentitiesMatchSlots config = true :=
+  ((Bool.and_eq_true _ _).mp
+    ((Bool.and_eq_true _ _).mp (config.wellFormed_embeddedIdentitiesMatchSlots h)).1).2
+
+/-- PR #889 review round 8: a well-formed config stores every Reply under its
+    own id. -/
+theorem PlatformConfig.wellFormed_replyIdentitiesMatchSlots (config : PlatformConfig)
+    (h : config.wellFormed = true) : replyIdentitiesMatchSlots config = true :=
+  ((Bool.and_eq_true _ _).mp (config.wellFormed_embeddedIdentitiesMatchSlots h)).2
 
 /-- PR #889 review round 7: the identity relation, entry by entry. -/
 theorem tcbIdentitiesMatchSlots_tid_eq (config : PlatformConfig)
     (h : tcbIdentitiesMatchSlots config = true) :
     ∀ e ∈ config.initialObjects, ∀ tcb : TCB, e.obj = .tcb tcb → tcb.tid.toObjId = e.id := by
   intro e he tcb hObj
+  have hE := List.all_eq_true.mp h e he
+  simp only [hObj, beq_iff_eq] at hE
+  exact hE
+
+/-- PR #889 review round 8: the SchedContext identity relation, entry by entry. -/
+theorem schedContextIdentitiesMatchSlots_scId_eq (config : PlatformConfig)
+    (h : schedContextIdentitiesMatchSlots config = true) :
+    ∀ e ∈ config.initialObjects, ∀ sc : SchedContext,
+      e.obj = .schedContext sc → sc.scId.toObjId = e.id := by
+  intro e he sc hObj
+  have hE := List.all_eq_true.mp h e he
+  simp only [hObj, beq_iff_eq] at hE
+  exact hE
+
+/-- PR #889 review round 8: the Reply identity relation, entry by entry. -/
+theorem replyIdentitiesMatchSlots_replyId_eq (config : PlatformConfig)
+    (h : replyIdentitiesMatchSlots config = true) :
+    ∀ e ∈ config.initialObjects, ∀ r : Reply,
+      e.obj = .reply r → r.replyId.toObjId = e.id := by
+  intro e he r hObj
   have hE := List.all_eq_true.mp h e he
   simp only [hObj, beq_iff_eq] at hE
   exact hE
@@ -884,8 +1073,25 @@ theorem idleSlotsReserved_no_idle_tid (config : PlatformConfig)
   intro e he tcb hObj
   have hRef := idleSlotsReserved_no_idle_references config h e he
   rw [hObj] at hRef
-  simp only [bootObjectReferencesReservedIdleSlot, Bool.or_eq_false_iff, and_assoc] at hRef
+  simp only [bootObjectReferencesReservedIdleSlot, tcbReferencesReservedIdleSlot_def,
+    Bool.or_eq_false_iff, and_assoc] at hRef
   exact hRef.1
+
+/-- PR #889 review round 8: no boot TCB's `queuePPrev` names an idle thread —
+    the link the projection-based arm never read. -/
+theorem idleSlotsReserved_no_idle_queuePPrev (config : PlatformConfig)
+    (h : idleSlotsReserved config = true) :
+    ∀ e ∈ config.initialObjects, ∀ tcb : TCB, e.obj = .tcb tcb →
+      ∀ prev, tcb.queuePPrev = some (.tcbNext prev) →
+        SeLe4n.Kernel.isIdleThreadId prev = false := by
+  intro e he tcb hObj prev hPrev
+  have hRef := idleSlotsReserved_no_idle_references config h e he
+  rw [hObj] at hRef
+  simp only [bootObjectReferencesReservedIdleSlot, tcbReferencesReservedIdleSlot_def,
+    Bool.or_eq_false_iff, and_assoc] at hRef
+  have hLink := hRef.2.2.2.2.2.2.1
+  rw [hPrev] at hLink
+  exact hLink
 
 /-- **WS-RR RR5.13**: the boot VSpace root, when present, is not in an idle slot
     under the reservation. -/
@@ -913,6 +1119,162 @@ theorem objectIdsUniqueTransparent_empty : objectIdsUniqueTransparent [] = true 
 -- AJ3-C (M-16): bootSafeObjectCheck — Bool mirror of bootSafeObject
 -- ============================================================================
 
+/-! ### The per-kind boot-safety checks, pinned by constructor arity
+
+PR #889 review round 8 (the sweep the reservation's fix implies).  The
+reservation's TCB arm and this check's TCB arm were the same shape — a
+hand-written list of fields — and the review found `queuePPrev` missing from
+**both**.  Pinning one list and leaving its sibling is exactly the "fix applied
+at one site and not its siblings" this project keeps re-learning, so each arm
+below destructures its constructor: the pattern names every field (the ones the
+check does not constrain as `_`), so a field added to any kernel object fails
+this file with an arity error until the author says whether a boot object may
+carry it.
+
+The bodies are unchanged; each is restated in projection form by a `…_def`
+lemma proved by `rfl` (structure eta), because a `simp only` that unfolds a
+27-field constructor match times out at `whnf` while the rewrite does not.
+
+`.vspaceRoot` is the one arm with no pin, and needs none: it passes the whole
+object to `bootSafeVSpaceRootCheck`, so there is no enumeration here to drift —
+a new `VSpaceRoot` field is that checker's to classify, in its own module. -/
+
+/-- A boot **endpoint** is inert: both intrusive queues empty. -/
+def bootSafeEndpointCheck (ep : Endpoint) : Bool :=
+  match ep with
+  | ⟨_sendQ, _receiveQ, _lock⟩ =>
+    ep.sendQ.head.isNone && ep.sendQ.tail.isNone &&
+    ep.receiveQ.head.isNone && ep.receiveQ.tail.isNone
+
+@[simp] theorem bootSafeEndpointCheck_def (ep : Endpoint) :
+    bootSafeEndpointCheck ep =
+      (ep.sendQ.head.isNone && ep.sendQ.tail.isNone &&
+       ep.receiveQ.head.isNone && ep.receiveQ.tail.isNone) := rfl
+
+/-- A boot **notification** is idle, unwaited and unbadged.  `boundTCB` is
+    unconstrained here — a boot notification may be pre-bound to a config
+    thread; what it may not be bound to is an idle thread, which is the
+    reservation's `notificationReferencesReservedIdleSlot`. -/
+def bootSafeNotificationCheck (notif : Notification) : Bool :=
+  match notif with
+  | ⟨_state, _waitingThreads, _pendingBadge, _boundTCB, _lock⟩ =>
+    decide (notif.state = .idle) && notif.waitingThreads.isEmpty &&
+    notif.pendingBadge.isNone
+
+@[simp] theorem bootSafeNotificationCheck_def (notif : Notification) :
+    bootSafeNotificationCheck notif =
+      (decide (notif.state = .idle) && notif.waitingThreads.isEmpty &&
+       notif.pendingBadge.isNone) := rfl
+
+/-- A boot **CNode** is structurally well-formed.  The conditions are over
+    derived projections (`slotCount`, `bitsConsumed`, `guardBounded`), which
+    the pattern's fields determine. -/
+def bootSafeCnodeCheck (cn : CNode) : Bool :=
+  match cn with
+  | ⟨_depth, _guardWidth, _guardValue, _radixWidth, _slots, _lock⟩ =>
+    decide (cn.slots.size ≤ cn.slotCount) &&
+    decide (cn.depth ≤ maxCSpaceDepth) &&
+    decide (cn.bitsConsumed > 0 → cn.bitsConsumed ≤ cn.depth ∧ 0 < cn.bitsConsumed ∧ cn.guardBounded)
+
+@[simp] theorem bootSafeCnodeCheck_def (cn : CNode) :
+    bootSafeCnodeCheck cn =
+      (decide (cn.slots.size ≤ cn.slotCount) &&
+       decide (cn.depth ≤ maxCSpaceDepth) &&
+       decide (cn.bitsConsumed > 0 →
+         cn.bitsConsumed ≤ cn.depth ∧ 0 < cn.bitsConsumed ∧ cn.guardBounded)) := rfl
+
+/-- A boot **TCB** is detached and inactive: no pending message, ready IPC
+    state, all three queue links empty (PR #889 review round 8 for
+    `queuePPrev` — `endpointQueueEnqueue` refuses a node whose `queuePPrev` is
+    set as already queued, so a boot TCB carrying one could never block on an
+    endpoint), no timeout budget, no SchedContext binding, no reply
+    references, and `threadState = .Inactive` (it is neither current nor
+    queued, so `inferThreadState` classifies it `.Inactive` and the stored
+    field must agree, or the checked boot installs a `threadStateConsistent`
+    violation).
+
+    Unconstrained, and why: the scheduling parameters (`priority`, `domain`,
+    `timeSlice`, `deadline`, `maxControlledPriority`, `cpuAffinity`) and the
+    address-space fields (`cspaceRoot`, `vspaceRoot`, `ipcBuffer`,
+    `boundNotification`, `faultHandler`) are the deployment's to choose;
+    `tid` is pinned to the slot by `PlatformConfig.wellFormed`; `pipBoost`,
+    `timedOut`, `registerContext`, `lock` and `pendingFault` are zero-valued
+    by their own defaults and a config that sets them describes a thread mid
+    flight, which `threadState = .Inactive` already excludes. -/
+def bootSafeTcbCheck (tcb : TCB) : Bool :=
+  match tcb with
+  | ⟨_tid, _priority, _domain, _cspaceRoot, _vspaceRoot, _ipcBuffer, _ipcState, _threadState,
+     _timeSlice, _deadline, _queuePrev, _queuePPrev, _queueNext, _pendingMessage,
+     _registerContext, _faultHandler, _boundNotification, _schedContextBinding, _timeoutBudget,
+     _maxControlledPriority, _pipBoost, _timedOut, _lock, _cpuAffinity, _replyObject,
+     _pendingReceiveReply, _pendingFault⟩ =>
+    tcb.pendingMessage.isNone && decide (tcb.ipcState = .ready) &&
+    tcb.queueNext.isNone && tcb.queuePrev.isNone && tcb.queuePPrev.isNone &&
+    tcb.timeoutBudget.isNone &&
+    decide (tcb.schedContextBinding = .unbound) &&
+    tcb.replyObject.isNone &&
+    tcb.pendingReceiveReply.isNone &&
+    decide (tcb.threadState = .Inactive)
+
+@[simp] theorem bootSafeTcbCheck_def (tcb : TCB) :
+    bootSafeTcbCheck tcb =
+      (tcb.pendingMessage.isNone && decide (tcb.ipcState = .ready) &&
+       tcb.queueNext.isNone && tcb.queuePrev.isNone && tcb.queuePPrev.isNone &&
+       tcb.timeoutBudget.isNone &&
+       decide (tcb.schedContextBinding = .unbound) &&
+       tcb.replyObject.isNone &&
+       tcb.pendingReceiveReply.isNone &&
+       decide (tcb.threadState = .Inactive)) := rfl
+
+/-- A boot **untyped** region carries no boot-safety condition: its region,
+    watermark, allocation records, device flag and ancestry are the
+    deployment's description of memory it owns, and what it may *not* record
+    is a reserved idle slot (`untypedReferencesReservedIdleSlot`).  The
+    pattern is the pin: a new field is classified here rather than inheriting
+    this `true`. -/
+def bootSafeUntypedCheck (ut : UntypedObject) : Bool :=
+  match ut with
+  | ⟨_regionBase, _regionSize, _watermark, _children, _isDevice, _parent, _lock⟩ => true
+
+@[simp] theorem bootSafeUntypedCheck_def (ut : UntypedObject) :
+    bootSafeUntypedCheck ut = true := rfl
+
+/-- A boot **SchedContext** has a well-formed CBS budget and no bound thread.
+    `scId` is pinned to the slot by `PlatformConfig.wellFormed`; `priority`,
+    `deadline`, `domain`, `periodStart` and `isActive` are the deployment's. -/
+def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
+  match sc with
+  | ⟨_scId, _budget, _period, _priority, _deadline, _domain, _budgetRemaining, _periodStart,
+     _replenishments, _boundThread, _isActive, _lock⟩ =>
+    sc.period.isPositive &&
+    decide (sc.budget.val ≤ sc.period.val) &&
+    decide (sc.budgetRemaining.val ≤ sc.budget.val) &&
+    decide (sc.replenishments.length ≤ maxReplenishments) &&
+    sc.replenishments.all (fun r => decide (r.amount.val > 0)) &&
+    sc.replenishments.all (fun r => decide (r.amount.val ≤ sc.budget.val)) &&
+    sc.boundThread.isNone
+
+@[simp] theorem bootSafeSchedContextCheck_def (sc : SchedContext) :
+    bootSafeSchedContextCheck sc =
+      (sc.period.isPositive &&
+       decide (sc.budget.val ≤ sc.period.val) &&
+       decide (sc.budgetRemaining.val ≤ sc.budget.val) &&
+       decide (sc.replenishments.length ≤ maxReplenishments) &&
+       sc.replenishments.all (fun r => decide (r.amount.val > 0)) &&
+       sc.replenishments.all (fun r => decide (r.amount.val ≤ sc.budget.val)) &&
+       sc.boundThread.isNone) := rfl
+
+/-- WS-SM SM6.D: a boot **Reply** is inert — no blocked caller, no donated SC,
+    no `prev` link.  `replyId` is pinned to the slot by
+    `PlatformConfig.wellFormed`. -/
+def bootSafeReplyCheck (r : Reply) : Bool :=
+  match r with
+  | ⟨_replyId, _caller, _donatedSc, _prev, _lock⟩ =>
+    r.caller.isNone && r.donatedSc.isNone && r.prev.isNone
+
+@[simp] theorem bootSafeReplyCheck_def (r : Reply) :
+    bootSafeReplyCheck r = (r.caller.isNone && r.donatedSc.isNone && r.prev.isNone) := rfl
+
 /-- AJ3-C (M-16): Bool-valued runtime check for boot-safe objects.
     Validates structural boot safety constraints that can be checked at
     runtime. Used by `bootFromPlatformChecked` to reject invalid objects.
@@ -933,42 +1295,15 @@ theorem objectIdsUniqueTransparent_empty : objectIdsUniqueTransparent [] = true 
     structure inert at runtime. -/
 def bootSafeObjectCheck (obj : KernelObject) : Bool :=
   match obj with
-  | .endpoint ep =>
-    ep.sendQ.head.isNone && ep.sendQ.tail.isNone &&
-    ep.receiveQ.head.isNone && ep.receiveQ.tail.isNone
-  | .notification notif =>
-    decide (notif.state = .idle) && notif.waitingThreads.isEmpty &&
-    notif.pendingBadge.isNone
-  | .cnode cn =>
-    decide (cn.slots.size ≤ cn.slotCount) &&
-    decide (cn.depth ≤ maxCSpaceDepth) &&
-    decide (cn.bitsConsumed > 0 → cn.bitsConsumed ≤ cn.depth ∧ 0 < cn.bitsConsumed ∧ cn.guardBounded)
-  | .tcb tcb =>
-    tcb.pendingMessage.isNone && decide (tcb.ipcState = .ready) &&
-    tcb.queueNext.isNone && tcb.queuePrev.isNone &&
-    tcb.timeoutBudget.isNone &&
-    decide (tcb.schedContextBinding = .unbound) &&
-    tcb.replyObject.isNone &&
-    tcb.pendingReceiveReply.isNone &&
-    -- PR #889 review: a boot TCB is neither current nor queued, so the state
-    -- `inferThreadState` classifies it is `.Inactive`; the stored field must
-    -- say so, or the checked boot installs a `threadStateConsistent` violation
-    -- (`bootFromPlatformChecked_ok_threadStateConsistent`).
-    decide (tcb.threadState = .Inactive)
+  | .endpoint ep => bootSafeEndpointCheck ep
+  | .notification notif => bootSafeNotificationCheck notif
+  | .cnode cn => bootSafeCnodeCheck cn
+  | .tcb tcb => bootSafeTcbCheck tcb
   | .vspaceRoot vsr =>
     SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeVSpaceRootCheck vsr
-  | .untyped _ => true
-  | .schedContext sc =>
-    sc.period.isPositive &&
-    decide (sc.budget.val ≤ sc.period.val) &&
-    decide (sc.budgetRemaining.val ≤ sc.budget.val) &&
-    decide (sc.replenishments.length ≤ maxReplenishments) &&
-    sc.replenishments.all (fun r => decide (r.amount.val > 0)) &&
-    sc.replenishments.all (fun r => decide (r.amount.val ≤ sc.budget.val)) &&
-    sc.boundThread.isNone
-  | .reply r =>
-    -- WS-SM SM6.D: a boot Reply is inert — no blocked caller, no donated SC.
-    r.caller.isNone && r.donatedSc.isNone && r.prev.isNone
+  | .untyped ut => bootSafeUntypedCheck ut
+  | .schedContext sc => bootSafeSchedContextCheck sc
+  | .reply r => bootSafeReplyCheck r
 
 set_option maxHeartbeats 400000 in
 /-- AJ3-C (M-16): Partial soundness bridge — `bootSafeObjectCheck = true` implies
@@ -993,7 +1328,7 @@ theorem bootSafeObjectCheck_sound_structural (obj : KernelObject)
     -- PR #822: a boot TCB carries no reply object.
     (∀ tcb, obj = .tcb tcb →
       tcb.pendingMessage = none ∧ tcb.ipcState = .ready ∧
-      tcb.queueNext = none ∧ tcb.queuePrev = none ∧
+      tcb.queueNext = none ∧ tcb.queuePrev = none ∧ tcb.queuePPrev = none ∧
       tcb.timeoutBudget = none ∧
       tcb.schedContextBinding = .unbound ∧
       tcb.replyObject = none ∧
@@ -1013,32 +1348,35 @@ theorem bootSafeObjectCheck_sound_structural (obj : KernelObject)
   -- injection hypotheses, discharged by `intro _ h; cases h`.
   cases obj with
   | endpoint ep =>
-    simp only [bootSafeObjectCheck, Bool.and_eq_true] at h
+    simp only [bootSafeObjectCheck, bootSafeEndpointCheck_def, Bool.and_eq_true] at h
     obtain ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ := h
     exact ⟨fun _ he => by injection he; subst_vars; exact ⟨Option.eq_none_of_isNone h1, Option.eq_none_of_isNone h2, Option.eq_none_of_isNone h3, Option.eq_none_of_isNone h4⟩,
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he⟩
   | notification notif =>
-    simp only [bootSafeObjectCheck, Bool.and_eq_true, decide_eq_true_eq] at h
+    simp only [bootSafeObjectCheck, bootSafeNotificationCheck_def, Bool.and_eq_true,
+      decide_eq_true_eq] at h
     obtain ⟨⟨h1, h2⟩, h3⟩ := h
     exact ⟨fun _ he => by injection he, fun _ he => by injection he; subst_vars; exact ⟨h1, List.isEmpty_iff.mp h2, Option.eq_none_of_isNone h3⟩,
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he⟩
   | cnode cn =>
-    simp only [bootSafeObjectCheck, Bool.and_eq_true, decide_eq_true_eq] at h
+    simp only [bootSafeObjectCheck, bootSafeCnodeCheck_def, Bool.and_eq_true,
+      decide_eq_true_eq] at h
     obtain ⟨⟨hSlots, hDepth⟩, hWf⟩ := h
     exact ⟨fun _ he => by injection he, fun _ he => by injection he,
            fun c hc => by injection hc; subst_vars; exact ⟨hSlots, hDepth, hWf⟩,
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he⟩
   | tcb tcb =>
-    simp only [bootSafeObjectCheck, Bool.and_eq_true, decide_eq_true_eq] at h
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩ := h
+    simp only [bootSafeObjectCheck, bootSafeTcbCheck_def, Bool.and_eq_true,
+      decide_eq_true_eq] at h
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h4b⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩ := h
     exact ⟨fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he,
-           fun _ he => by injection he; subst_vars; exact ⟨Option.eq_none_of_isNone h1, h2, Option.eq_none_of_isNone h3, Option.eq_none_of_isNone h4, Option.eq_none_of_isNone h5, h6, Option.eq_none_of_isNone h7, Option.eq_none_of_isNone h8, h9⟩,
+           fun _ he => by injection he; subst_vars; exact ⟨Option.eq_none_of_isNone h1, h2, Option.eq_none_of_isNone h3, Option.eq_none_of_isNone h4, Option.eq_none_of_isNone h4b, Option.eq_none_of_isNone h5, h6, Option.eq_none_of_isNone h7, Option.eq_none_of_isNone h8, h9⟩,
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he⟩
   | vspaceRoot vsr =>
@@ -1058,14 +1396,15 @@ theorem bootSafeObjectCheck_sound_structural (obj : KernelObject)
   | reply r =>
     -- WS-SM SM6.D / PR #822: the check's `.reply` arm verifies the three
     -- inert-Reply fields; thread them to the `.reply` conclusion clause.
-    simp only [bootSafeObjectCheck, Bool.and_eq_true] at h
+    simp only [bootSafeObjectCheck, bootSafeReplyCheck_def, Bool.and_eq_true] at h
     obtain ⟨⟨hCaller, hDonated⟩, hPrev⟩ := h
     exact ⟨fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he; subst_vars; exact ⟨Option.eq_none_of_isNone hCaller, Option.eq_none_of_isNone hDonated, Option.eq_none_of_isNone hPrev⟩⟩
   | schedContext sc =>
-    simp only [bootSafeObjectCheck, Bool.and_eq_true, decide_eq_true_eq] at h
+    simp only [bootSafeObjectCheck, bootSafeSchedContextCheck_def, Bool.and_eq_true,
+      decide_eq_true_eq] at h
     obtain ⟨⟨⟨⟨⟨⟨hPeriod, hBudgetPeriod⟩, hRemaining⟩, hRepLen⟩, hRepPos⟩, hRepBound⟩, hUnbound⟩ := h
     refine ⟨fun _ he => by injection he, fun _ he => by injection he,
             fun _ he => by injection he, fun _ he => by injection he,
@@ -1341,8 +1680,8 @@ def bootFromPlatformChecked (config : PlatformConfig) :
     -- fault the config does not have.
     .error "boot: platform config occupies or references a reserved per-core idle slot (WS-RR RR5.13 / PR #889 review)"
   else
-    -- PR #889 review round 7: the fourth conjunct's own diagnostic.
-    .error "boot: a TCB entry's embedded thread id is not its own object id (PR #889 review round 7)"
+    -- PR #889 review rounds 7 and 8: the fourth conjunct's own diagnostic.
+    .error "boot: an entry's embedded identity (a TCB's thread id, a SchedContext's id or a Reply's id) is not its own object id (PR #889 review rounds 7 and 8)"
 
 /-- U6-E/F/AJ3-C/AK9-C/AK9-F/AK9-G + WS-RC R3: Checked boot agrees with
     `bootFromPlatformWithInterrupts` on well-formed, boot-safe,
@@ -3734,10 +4073,11 @@ def bootSafeObject (obj : KernelObject) : Prop :=
     (∀ slot cap rid, cn.lookup slot = some cap →
       cap.target ≠ .replyCap rid)) ∧
   -- TCBs must have clean boot state: no pending messages, ready IPC state,
-  -- no queue links (queueNext/queuePrev = none), no timeout budget
+  -- no queue links (queueNext/queuePrev/queuePPrev = none, PR #889 review
+  -- round 8 for the third), no timeout budget
   (∀ tcb, obj = .tcb tcb →
     tcb.pendingMessage = none ∧ tcb.ipcState = .ready ∧
-    tcb.queueNext = none ∧ tcb.queuePrev = none ∧
+    tcb.queueNext = none ∧ tcb.queuePrev = none ∧ tcb.queuePPrev = none ∧
     tcb.timeoutBudget = none ∧
     tcb.schedContextBinding = .unbound ∧
     tcb.replyObject = none ∧
@@ -4269,15 +4609,15 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
     · -- blockedThreadTimeoutConsistent
       intro tid tcb scId hObj hTimeout
       have hTcb := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
-      rw [hTcb.2.2.2.2.1] at hTimeout; exact absurd hTimeout (by simp)
+      rw [hTcb.2.2.2.2.2.1] at hTimeout; exact absurd hTimeout (by simp)
     · -- Z7: donationChainAcyclic (vacuous: boot TCBs have .unbound binding)
       intro tid1 _ tcb1 _ _ _ h1 _ hB1 _
       have hTcb1 := (hBS tid1.toObjId _ h1).2.2.2.1 tcb1 rfl
-      rw [hTcb1.2.2.2.2.2.1] at hB1; cases hB1
+      rw [hTcb1.2.2.2.2.2.2.1] at hB1; cases hB1
     · -- Z7: donationOwnerValid (vacuous: no donated bindings at boot)
       intro tid tcb _ _ h hBinding
       have hTcb := (hBS tid.toObjId _ h).2.2.2.1 tcb rfl
-      rw [hTcb.2.2.2.2.2.1] at hBinding; cases hBinding
+      rw [hTcb.2.2.2.2.2.2.1] at hBinding; cases hBinding
     · -- Z7: passiveServerIdle (boot TCBs have ipcState = .ready)
       intro tid tcb h _ _ _
       have hTcb := (hBS tid.toObjId _ h).2.2.2.1 tcb rfl
@@ -4285,7 +4625,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
     · -- Z7: donationBudgetTransfer (vacuous: all TCBs have .unbound → scId? = none)
       intro tid1 _ tcb1 _ _ h1 _ _ hB1 _
       have hTcb1 := (hBS tid1.toObjId _ h1).2.2.2.1 tcb1 rfl
-      simp [hTcb1.2.2.2.2.2.1, SchedContextBinding.scId?] at hB1
+      simp [hTcb1.2.2.2.2.2.2.1, SchedContextBinding.scId?] at hB1
     · -- AJ1-B: blockedOnReplyHasTarget (boot TCBs have ipcState = .ready)
       intro tid tcb _ _ hObj hIpc
       have hTcb := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
@@ -4302,7 +4642,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
         ?_,
         ?_⟩
       · have hTcb := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
-        rw [hTcb.2.2.2.2.2.2.1] at hRep; cases hRep
+        rw [hTcb.2.2.2.2.2.2.2.1] at hRep; cases hRep
       · have hR := (hBS rid.toObjId _ hObj).2.2.2.2.2.2 r rfl
         rw [hR.1] at hCaller; cases hCaller
       · -- WS-SM SM6.D (#7.4): replyCallerLinkage third clause (vacuous — boot TCBs
@@ -4311,14 +4651,14 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
         rw [hTcb.2.1] at hIpc; cases hIpc
       · have hObjRaw := (SystemState.getTcb?_eq_some_iff _ tid tcb).mp hObj
         have hTcb := (hBS tid.toObjId _ hObjRaw).2.2.2.1 tcb rfl
-        rw [hTcb.2.2.2.2.2.2.2.1] at hRep; cases hRep
+        rw [hTcb.2.2.2.2.2.2.2.2.1] at hRep; cases hRep
       · -- pendingReceiveReplyWellFormed uniqueness (17th.2): boot TCBs carry no stash.
         have hObjRaw := (SystemState.getTcb?_eq_some_iff _ tid₁ tcb₁).mp hObj₁
         have hTcb := (hBS tid₁.toObjId _ hObjRaw).2.2.2.1 tcb₁ rfl
-        rw [hTcb.2.2.2.2.2.2.2.1] at hRep₁; cases hRep₁
+        rw [hTcb.2.2.2.2.2.2.2.2.1] at hRep₁; cases hRep₁
       · -- IPC de-threading D6: donationOwnerUnique (18th, vacuous — boot TCBs are .unbound).
         have hTcb := (hBS tidA.toObjId _ hA).2.2.2.1 tcbA rfl
-        rw [hTcb.2.2.2.2.2.1] at hBA; cases hBA
+        rw [hTcb.2.2.2.2.2.2.1] at hBA; cases hBA
       · -- IPC de-threading D4 (Finding F-2): endpointQueueTailBlockedConsistent (19th, vacuous —
         -- boot endpoints have empty send/receive queues).
         intro epId ep tl tcb hObjEp _
@@ -4445,12 +4785,12 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
     · -- Z9-A: schedContextStoreConsistent — all TCBs have .unbound binding at boot
       intro tid tcb hObj scId hBinding
       have hTcbProps := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
-      rw [hTcbProps.2.2.2.2.2.1] at hBinding
+      rw [hTcbProps.2.2.2.2.2.2.1] at hBinding
       simp [SchedContextBinding.scId?] at hBinding
     · -- Z9-B: schedContextNotDualBound — all TCBs have .unbound at boot, so no scId matches
       intro tid₁ tid₂ tcb₁ tcb₂ scId h₁ h₂ hB₁ hB₂
       have hTcb₁ := (hBS tid₁.toObjId _ h₁).2.2.2.1 tcb₁ rfl
-      rw [hTcb₁.2.2.2.2.2.1] at hB₁
+      rw [hTcb₁.2.2.2.2.2.2.1] at hB₁
       simp [SchedContextBinding.scId?] at hB₁
     · -- Z9-C: schedContextRunQueueConsistent — empty runnable list at boot
       intro tid hMem; rw [hRun] at hMem; simp at hMem
@@ -4517,7 +4857,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       constructor
       · intro tid tcb hTcb scId hBound
         have hTcbProps := (hBS tid.toObjId _ hTcb).2.2.2.1 tcb rfl
-        rw [hTcbProps.2.2.2.2.2.1] at hBound; cases hBound
+        rw [hTcbProps.2.2.2.2.2.2.1] at hBound; cases hBound
       · intro scId sc hSc tid hBound
         -- At boot, all SchedContexts have boundThread = none (Z9-I bootSafeObject)
         have hNone := ((hBS scId.toObjId _ hSc).2.2.2.2.2.1 sc rfl).2
@@ -4539,7 +4879,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
         | tcb tcb =>
           intro hBound
           have hTcbProps := (hBS tid.toObjId _ hLookup).2.2.2.1 tcb rfl
-          rw [hTcbProps.2.2.2.2.2.1] at hBound; cases hBound
+          rw [hTcbProps.2.2.2.2.2.2.1] at hBound; cases hBound
         | _ => trivial
   -- AG7-D: notificationWaiterConsistent — boot notifications have empty waitingThreads
   have hNtfnWaiter : notificationWaiterConsistent (bootFromPlatform config).state := by
@@ -4776,7 +5116,7 @@ theorem bootFromPlatformChecked_ok_tcb_inactive (config : PlatformConfig)
   · have hCheck : bootSafeObjectCheck e.obj = true := List.all_eq_true.mp hSafe e hMem
     rw [hEObj] at hCheck
     have hTcb := (bootSafeObjectCheck_sound_structural _ hCheck).2.2.2.1 tcb rfl
-    exact ⟨hTcb.2.2.2.2.2.2.2.2, hTcb.2.1⟩
+    exact ⟨hTcb.2.2.2.2.2.2.2.2.2, hTcb.2.1⟩
   · rw [foldIrqs_objects, mkEmpty_state_eq_default] at hBase
     have hEmpty : (default : SystemState).objects[oid]? = none := by
       simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)

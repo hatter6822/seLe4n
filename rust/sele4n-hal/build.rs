@@ -2102,6 +2102,17 @@ struct ReleaseSurvivingTripwire {
 /// halting exactly the cores that respected the lock order.  The second
 /// relation is also why a mutation that keeps `fatal_halt()` but nests it
 /// under a further condition, or moves it above the branch, is refused.
+///
+/// The branch must be a **top-level statement of the helper** (PR #889
+/// review round 8).  An `if` found anywhere inside the body accepted
+/// `if disabled { if round_lock_held_by(core_id) { fatal_halt(); } }`, whose
+/// exact-condition branch halts while the helper as a whole does not: when
+/// the outer condition is false the caller proceeds into the acquire with
+/// the round lock held, and the dominance check — which asks only whether
+/// the *helper* is called before the acquire — sees nothing wrong.  So the
+/// question is asked of the helper's statements, on the same statement view
+/// the halt question uses: the branch is one of them, or there is no
+/// tripwire.
 fn release_surviving_tripwire_status(
     code: &str,
     fn_name: &str,
@@ -2117,22 +2128,8 @@ fn release_surviving_tripwire_status(
     }
     let wanted = condition_key(condition);
     let mut saw_condition = false;
-    for (if_at, block_open) in if_statements(body) {
-        if condition_key(&body[if_at + 2..block_open]) != wanted {
-            continue;
-        }
-        saw_condition = true;
-        let Some(block_close) = matching_close_brace(body, block_open) else {
-            continue;
-        };
-        let statements = top_level_statements(body, block_open, block_close);
-        if statements
-            .last()
-            .map(|&(lo, hi)| statement_halts(&body[lo..hi]))
-            .unwrap_or(false)
-        {
-            return Ok(());
-        }
+    if tripwire_branch_halts(body, 1, body.len() - 1, &wanted, &mut saw_condition) {
+        return Ok(());
     }
     if saw_condition {
         Err(format!(
@@ -2143,9 +2140,10 @@ fn release_surviving_tripwire_status(
         ))
     } else {
         Err(format!(
-            "`{fn_name}` has no `if` whose condition is exactly `{condition}` — a reversed, \
-             widened or rewritten predicate keeps the tripwire's tokens and halts on the wrong \
-             case"
+            "`{fn_name}` has no top-level `if` whose condition is exactly `{condition}` — a \
+             reversed, widened or rewritten predicate keeps the tripwire's tokens and halts on \
+             the wrong case, and a branch nested under a further condition (PR #889 review \
+             round 8) halts only when that condition holds"
         ))
     }
 }
@@ -2245,28 +2243,98 @@ fn condition_key(condition: &str) -> String {
     condition.chars().filter(|c| !c.is_whitespace()).collect()
 }
 
-/// Every `if` statement in `body`: the offset of its `if` keyword and the
-/// offset of the `{` opening its block.  An `if` is a keyword only at a word
-/// boundary, so `elif`-like identifiers and field names do not count.
-fn if_statements(body: &str) -> Vec<(usize, usize)> {
-    let bytes = body.as_bytes();
-    let is_ident = |c: u8| c.is_ascii_alphanumeric() || c == b'_';
-    let mut out = Vec::new();
-    let mut search = 0usize;
-    while let Some(hit) = body[search..].find("if") {
-        let if_at = search + hit;
-        search = if_at + 2;
-        let before_ok = if_at == 0 || !is_ident(bytes[if_at - 1]);
-        let after_ok = if_at + 2 < bytes.len()
-            && (bytes[if_at + 2].is_ascii_whitespace() || matches!(bytes[if_at + 2], b'(' | b'!'));
-        if !(before_ok && after_ok) {
-            continue;
-        }
-        if let Some(block_open) = block_open_after(body, if_at + 2) {
-            out.push((if_at, block_open));
+/// **PR #889 review round 8**: does one of the top-level statements of the
+/// block interior `[start, end)` — or of a block inside it that executes
+/// unconditionally — begin with `if <wanted>` and end in the fail-closed
+/// halt?  `saw_condition` records whether such an `if` was found at all, so
+/// the caller can name the right failure.
+///
+/// The walk descends through `unconditional_block_interior` only: a bare
+/// block, an `unsafe` block, or either under the image's own
+/// `#[cfg(target_arch = "aarch64")]` — the form `install_exception_vectors`
+/// uses.  A branch under an `if`, a `match` arm, a loop or a closure is not
+/// the helper's own, and neither is one under any other attribute.
+fn tripwire_branch_halts(
+    code: &str,
+    start: usize,
+    end: usize,
+    wanted: &str,
+    saw_condition: &mut bool,
+) -> bool {
+    for (lo, hi) in top_level_statements_in(code, start, end) {
+        let statement = &code[lo..hi];
+        if let Some((if_at, block_open)) = top_level_if_statement(statement) {
+            if condition_key(&statement[if_at + 2..block_open]) != wanted {
+                continue;
+            }
+            *saw_condition = true;
+            let Some(block_close) = matching_close_brace(statement, block_open) else {
+                continue;
+            };
+            let statements = top_level_statements(statement, block_open, block_close);
+            if statements
+                .last()
+                .map(|&(a, b)| statement_halts(&statement[a..b]))
+                .unwrap_or(false)
+            {
+                return true;
+            }
+        } else if let Some((open, close)) = unconditional_block_interior(statement) {
+            if tripwire_branch_halts(statement, open + 1, close, wanted, saw_condition) {
+                return true;
+            }
         }
     }
-    out
+    false
+}
+
+/// **PR #889 review round 8**: the `(open, close)` brace span of a statement
+/// that executes its block **unconditionally** on the image: `{ … }`,
+/// `unsafe { … }`, or either under exactly `#[cfg(target_arch = "aarch64")]`.
+/// Any other attribute — a feature gate, a `not(…)`, `debug_assertions` — is
+/// a condition the shipped image may not satisfy, so the statement is not
+/// transparent and a tripwire under it is not found (fail closed).
+fn unconditional_block_interior(statement: &str) -> Option<(usize, usize)> {
+    let image_cfg = condition_key(&rust_code_views("#[cfg(target_arch = \"aarch64\")]").1);
+    let mut rest = statement.trim_start();
+    while let Some(after_hash) = rest.strip_prefix("#[") {
+        let close = after_hash.find(']')?;
+        let attribute = &rest[..close + 3];
+        if condition_key(attribute) != image_cfg {
+            return None;
+        }
+        rest = rest[close + 3..].trim_start();
+    }
+    if let Some(after_unsafe) = rest.strip_prefix("unsafe") {
+        if after_unsafe.starts_with(char::is_whitespace) || after_unsafe.starts_with('{') {
+            rest = after_unsafe.trim_start();
+        }
+    }
+    if !rest.starts_with('{') {
+        return None;
+    }
+    let open = statement.len() - rest.len();
+    let close = matching_close_brace(statement, open)?;
+    Some((open, close))
+}
+
+/// **PR #889 review round 8**: is this top-level statement an `if`?  The
+/// offset of its `if` keyword and of the `{` opening its block, when the
+/// statement *starts* with the keyword (a word, so `elif`-like identifiers
+/// and field names do not count) — an `if` that appears later in the
+/// statement, nested under another construct, is not the statement's.
+fn top_level_if_statement(statement: &str) -> Option<(usize, usize)> {
+    let bytes = statement.as_bytes();
+    let if_at = statement.len() - statement.trim_start().len();
+    if !statement[if_at..].starts_with("if") {
+        return None;
+    }
+    let after_ok = if_at + 2 < bytes.len()
+        && (bytes[if_at + 2].is_ascii_whitespace() || matches!(bytes[if_at + 2], b'(' | b'!'));
+    if !after_ok {
+        return None;
+    }
+    block_open_after(statement, if_at + 2).map(|block_open| (if_at, block_open))
 }
 
 /// **WS-RR RR5.18**: run `release_surviving_tripwire_status` over the pin.
@@ -2375,11 +2443,16 @@ pub fn acquire_kernel_entry(core_id: usize) -> u64 {
             );
         }
     }
-    let mutations: [(&str, &str, &str); 8] = [
+    let mutations: [(&str, &str, &str); 9] = [
         (
             "the predicate is reversed, keeping its call",
             "    if crate::shootdown::round_lock_held_by(core_id) {",
             "    if !crate::shootdown::round_lock_held_by(core_id) {",
+        ),
+        (
+            "the branch is kept whole but wrapped under a further condition (round 8)",
+            "    if crate::shootdown::round_lock_held_by(core_id) {\n        crate::kprintln!(\"[kernel-entry] FATAL: lock order violated\");\n        crate::cpu::fatal_halt();\n    }",
+            "    if crate::shootdown::tripwires_enabled() {\n        if crate::shootdown::round_lock_held_by(core_id) {\n            crate::kprintln!(\"[kernel-entry] FATAL: lock order violated\");\n            crate::cpu::fatal_halt();\n        }\n    }",
         ),
         (
             "the branch returns from the helper instead of halting the core (round 7)",
@@ -2467,6 +2540,75 @@ pub fn install_exception_vectors() {
     if let Err(why) = check(GOOD) {
         panic!("build.rs self-check: the good VBAR tripwire fixture was refused: {why}");
     }
+    // PR #889 review round 8: the shape `install_exception_vectors` actually
+    // has — the branch and the write under the image's own `#[cfg]` block,
+    // beside an `extern` block — is accepted, and the same branch under any
+    // other attribute, or under a runtime `cfg!` condition, is not: a
+    // fixture thinner than the file it stands for would have accepted the
+    // top-level rule without ever exercising the block descent.
+    const GOOD_UNDER_IMAGE_CFG: &str = r#"
+pub fn install_exception_vectors() {
+    #[cfg(target_arch = "aarch64")]
+    {
+        extern "C" {
+            static __exception_vectors: u8;
+        }
+        let vbar = &raw const __exception_vectors as u64;
+        if !vbar.is_multiple_of(2048) {
+            crate::kprintln!("[boot] FATAL: exception vector table is not 2048-byte aligned");
+            crate::cpu::fatal_halt();
+        }
+        crate::registers::write_vbar_el1(vbar);
+    }
+}
+"#;
+    if let Err(why) = check(GOOD_UNDER_IMAGE_CFG) {
+        panic!(
+            "build.rs self-check: the VBAR tripwire under the image's `#[cfg]` block was \
+             refused: {why}"
+        );
+    }
+    let block_mutations: [(&str, &str, &str); 3] = [
+        (
+            "the block's attribute gains a feature gate the image may not carry",
+            "    #[cfg(target_arch = \"aarch64\")]\n    {",
+            "    #[cfg(all(target_arch = \"aarch64\", feature = \"strict_vectors\"))]\n    {",
+        ),
+        (
+            "the block's attribute is negated",
+            "    #[cfg(target_arch = \"aarch64\")]\n    {",
+            "    #[cfg(not(target_arch = \"aarch64\"))]\n    {",
+        ),
+        (
+            "the block becomes a runtime condition",
+            "    #[cfg(target_arch = \"aarch64\")]\n    {",
+            "    if cfg!(target_arch = \"aarch64\") {",
+        ),
+    ];
+    for (what, from, to) in block_mutations {
+        assert!(
+            GOOD_UNDER_IMAGE_CFG.contains(from),
+            "build.rs self-check: VBAR block mutation `{what}` does not apply"
+        );
+        let mutated = GOOD_UNDER_IMAGE_CFG.replacen(from, to, 1);
+        assert_ne!(
+            mutated, GOOD_UNDER_IMAGE_CFG,
+            "build.rs self-check: VBAR block mutation `{what}` is inert"
+        );
+        assert!(
+            mutated.contains("2048")
+                && mutated.contains("fatal_halt(")
+                && mutated.contains("aarch64"),
+            "build.rs self-check: VBAR block mutation `{what}` DELETED a token; the mutation \
+             must keep the tokens and break the relation"
+        );
+        if check(&mutated).is_ok() {
+            panic!(
+                "build.rs self-check: `release_surviving_tripwire_status` accepted a VBAR \
+                 tripwire under a block that may not execute: {what}"
+            );
+        }
+    }
     // PR #889 review round 6: the branch is intact and halts; it no longer
     // dominates the VBAR write.
     let dominance_mutations: [(&str, &str, &str); 3] = [
@@ -2517,11 +2659,16 @@ pub fn install_exception_vectors() {
             );
         }
     }
-    let mutations: [(&str, &str, &str); 4] = [
+    let mutations: [(&str, &str, &str); 5] = [
         (
             "the alignment predicate is reversed: aligned boots halt, misaligned ones proceed",
             "    if !vbar.is_multiple_of(2048) {",
             "    if vbar.is_multiple_of(2048) {",
+        ),
+        (
+            "the branch is kept whole but wrapped under a further condition (round 8)",
+            "    if !vbar.is_multiple_of(2048) {\n        crate::kprintln!(\"[boot] FATAL: exception vector table is not 2048-byte aligned\");\n        crate::cpu::fatal_halt();\n    }\n",
+            "    if crate::boot::strict_vectors() {\n        if !vbar.is_multiple_of(2048) {\n            crate::kprintln!(\"[boot] FATAL: exception vector table is not 2048-byte aligned\");\n            crate::cpu::fatal_halt();\n        }\n    }\n",
         ),
         (
             "the branch returns instead of halting, so the misaligned VBAR is written (round 7)",

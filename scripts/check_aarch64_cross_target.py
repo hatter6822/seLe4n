@@ -1194,12 +1194,51 @@ def check_build_script(root: str) -> list[str]:
             f"restructured, update this gate so the `.S` sources stay "
             f"pinned to the builder that is actually compiled."
         ]
+    # The receiver's SPELLING does not identify the builder either (PR #889
+    # review round 8): `let mut asm = …; asm.file("src/trap.S"); let mut asm
+    # = …; asm.file("src/boot.S").compile(…)` rebinds the name, and the
+    # first `.file()` reaches a builder the compile never sees while every
+    # token above stays in place.  Rust resolves a name to its most recent
+    # `let`, so the `.file()` calls that count are those at or after the
+    # receiver's binding instance — the last top-level `let [mut] <receiver>`
+    # of the compile's own function before the compile statement.  A
+    # receiver the function does not bind (a parameter, a captured builder)
+    # has no instance this gate can relate the calls to, and is refused.
+    structure = _shared_rust_view.code_no_strings(text)
+    body: tuple[int, int] | None = None
+    for _name, start, end in _shared_rust_view.fn_bodies(text):
+        if start <= compile_at < end and (body is None or start > body[0]):
+            body = (start, end)
+    statements = (
+        _shared_rust_view.top_level_statements(structure, body[0], body[1]) if body else []
+    )
+    compile_statement = _shared_rust_view.statement_containing(statements, compile_at)
+    binding = (
+        _shared_rust_view.binding_statement_before(
+            structure, statements, receiver, compile_statement
+        )
+        if compile_statement is not None
+        else None
+    )
+    if binding is None:
+        return [
+            f"{BUILD_SCRIPT}: `{receiver}`, the builder that "
+            f'`.compile("sele4n_hal_asm")` is called on, is not bound by a '
+            f"`let` in the compile's own function before the compile. A "
+            f"builder passed in as a parameter or captured from elsewhere "
+            f"cannot be shown to be the instance the `.file()` calls were "
+            f"made on, so the `.S` sources would have no compile coverage "
+            f"this gate can see."
+        ]
+    binding_at = binding[0]
     sources = sorted(set(ASM_SOURCES) | assembly_sources(root))
     missing = [
         src
         for src in sources
         if not any(
-            gate_at < pos < compile_at and chain_root(code, pos) == receiver
+            gate_at < pos < compile_at
+            and binding_at <= pos
+            and chain_root(code, pos) == receiver
             for pos in _occurrences(code, f'.file("{src}")')
         )
     ]
@@ -1599,6 +1638,35 @@ def self_test() -> int:
     ) + '\nfn unused_helper() {\n    cc::Build::new().file("src/boot.S");\n}\n'
     cases.append(Case("build.rs keeps `.file(\"src/boot.S\")` only in an unreachable helper",
             asm_in_dead_code,
+            True, check="build_script", mutation="preserving"))
+
+    # PR #889 review round 8: the receiver is REBOUND between the first
+    # `.file()` and the compile.  Same name, same function, same order, one
+    # compile — `boot.S` sits on the builder the compile never sees.
+    shadowed_builder = baseline()
+    shadowed_builder[BUILD_SCRIPT] = GOOD_BUILD_RS.replace(
+        '    let mut asm = cc::Build::new();\n    asm.file("src/boot.S")\n',
+        '    let mut asm = cc::Build::new();\n    asm.file("src/boot.S");\n'
+        '    let mut asm = cc::Build::new();\n    asm\n',
+    )
+    cases.append(Case("build.rs rebinds `asm` between `.file(\"src/boot.S\")` and the compile",
+            shadowed_builder,
+            True, check="build_script", mutation="preserving"))
+
+    # ...and a builder the compile's function does not bind at all — a
+    # parameter — has no binding instance to relate the `.file()` calls to.
+    parameter_builder = baseline()
+    parameter_builder[BUILD_SCRIPT] = GOOD_BUILD_RS.replace(
+        '    let mut asm = cc::Build::new();\n    asm.file("src/boot.S")\n'
+        '        .file("src/vectors.S")\n        .file("src/trap.S")\n'
+        '        .compile("sele4n_hal_asm");\n}\n',
+        '    let mut asm = cc::Build::new();\n    assemble(&mut asm);\n}\n\n'
+        'fn assemble(asm: &mut cc::Build) {\n    asm.file("src/boot.S")\n'
+        '        .file("src/vectors.S")\n        .file("src/trap.S")\n'
+        '        .compile("sele4n_hal_asm");\n}\n',
+    )
+    cases.append(Case("build.rs compiles a builder it receives as a parameter",
+            parameter_builder,
             True, check="build_script", mutation="preserving"))
 
     toolchain_prefix_target = baseline()

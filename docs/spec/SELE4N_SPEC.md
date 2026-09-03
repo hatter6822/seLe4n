@@ -51,9 +51,9 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.34.48` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 320,472 across 308 Lean files |
-| **Test LoC** | 68,011 across 70 Lean test suites |
-| **Proved declarations** | 10,658 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 320,857 across 308 Lean files |
+| **Test LoC** | 68,162 across 70 Lean test suites |
+| **Proved declarations** | 10,675 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR5 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -2195,6 +2195,24 @@ threads), and is provably the checked idle boot followed by the witness check
 and the two installs with the labeling-refusal arm unreachable
 (`bootAndInitialisePlatform_eq_checked_boot`); SM10.1's `lean_kernel_main` is
 its intended caller.
+
+**The raw suspend seam refuses idle ids, and the reservation is pinned by
+constructor arity** (PR #889 review round 8).  `suspend_thread_cross_core`
+takes a raw thread id and no capability, so the chokepoint's refusal never
+reached it; its whole step is the pure `Kernel.suspendThreadCrossCoreStep`,
+which refuses an idle id with the sentinel's `.invalidArgument` before the
+transition runs, and `suspendThreadCrossCoreStep_idle_refused` proves the
+refusal commits nothing.  `bootObjectReferencesReservedIdleSlot` dispatches
+to per-kind helpers that destructure each kernel object's constructor
+(`tcbReferencesReservedIdleSlot` and seven siblings), so a new field of any
+kind fails the build until it is classified; the sweep added `queuePPrev`
+(`idleSlotsReserved_no_idle_queuePPrev`), a TCB's reply references and
+carried capabilities, a Reply's `replyId` and `prev`, and a SchedContext's
+`scId`.  `bootSafeObjectCheck` requires all three queue links of a boot TCB
+empty, and the fourth `wellFormed` conjunct is `embeddedIdentitiesMatchSlots`:
+every TCB, SchedContext and Reply is stored under the id it carries
+(`schedContextIdentitiesMatchSlots_scId_eq`,
+`replyIdentitiesMatchSlots_replyId_eq`).
 
 **Test helper**: `testLabelingContext` is retained as a **negative fixture** —
 the all-public-except-the-sentinel labeling the guard now rejects

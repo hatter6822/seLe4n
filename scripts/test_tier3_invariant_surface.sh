@@ -5177,6 +5177,18 @@ run_check "INVARIANT" rg -n 'if SeLe4n.Kernel.capTargetsReservedIdleObject cap t
 run_check "INVARIANT" rg -n '^theorem syscallResolveCap_ok_not_reserved' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^def bootObjectReferencesReservedIdleSlot' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem idleSlotsReserved_no_idle_references' SeLe4n/Platform/Boot.lean
+# PR #889 review round 8: the raw suspend seam checks the idle reservation
+# before the transition and the export runs exactly the pure step; the
+# boot-safety check reads all three queue links; the reference check
+# dispatches to the per-kind helpers, whose constructor patterns pin every
+# field.
+run_check "INVARIANT" rg -n 'if SeLe4n.Kernel.isIdleThreadId vtid.val then' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n 'modifyGetKernelState \(suspendThreadCrossCoreStep tid execCore\)' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^theorem suspendThreadCrossCoreStep_idle_refused' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n 'tcb.queueNext.isNone && tcb.queuePrev.isNone && tcb.queuePPrev.isNone &&' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '  \| .tcb tcb => tcbReferencesReservedIdleSlot tcb' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '  \| .tcb tcb => bootSafeTcbCheck tcb' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '    idleSlotsReserved config && embeddedIdentitiesMatchSlots config' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n 'else if ¬ objectIdsUnique config.initialObjects then' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^  auditMonitorClearance : Option SecurityDomain := none' SeLe4n/Kernel/InformationFlow/Policy.lean
 run_check "INVARIANT" rg -n '^theorem deploymentLabelingContext_policy_fields' SeLe4n/Kernel/InformationFlow/Policy.lean
@@ -5576,6 +5588,7 @@ import SeLe4n.Kernel.Concurrency.Anchors
 import SeLe4n.Kernel.Concurrency.Assumptions
 import SeLe4n.Kernel.Concurrency.Runtime
 import SeLe4n.Kernel.SecondaryEntry
+import SeLe4n.Kernel.SyscallDispatchEntry
 import SeLe4n.Kernel.Architecture.Assumptions
 import SeLe4n.Kernel.Architecture.TlbiForSharing
 import SeLe4n.Platform.FFI
@@ -5756,6 +5769,37 @@ import SeLe4n.Platform.RPi5.Contract
 #check @SeLe4n.Platform.FFI.bootAndInitialiseRPi5_bound_config
 #check @SeLe4n.Platform.Boot.bootFromPlatformChecked_ok_shape
 #check @SeLe4n.Platform.Boot.bootFromPlatformChecked_ok_idleSlotsFreshAt
+-- PR #889 review round 8: the raw suspend seam refuses idle ids and commits
+-- nothing; the reservation reads every field of every kind by constructor
+-- arity, the boot-safety check reads all three queue links, and the embedded
+-- identities of SchedContexts and Replies are their slots.
+#check @SeLe4n.Kernel.suspendThreadCrossCoreStep
+#check @SeLe4n.Kernel.suspendThreadCrossCoreStep_idle_refused
+#check @SeLe4n.Kernel.suspendThreadCrossCoreStep_sentinel_refused
+#check @SeLe4n.Platform.Boot.endpointReferencesReservedIdleSlot
+#check @SeLe4n.Platform.Boot.notificationReferencesReservedIdleSlot
+#check @SeLe4n.Platform.Boot.cnodeReferencesReservedIdleSlot
+#check @SeLe4n.Platform.Boot.tcbReferencesReservedIdleSlot
+#check @SeLe4n.Platform.Boot.vspaceRootReferencesReservedIdleSlot
+#check @SeLe4n.Platform.Boot.untypedReferencesReservedIdleSlot
+#check @SeLe4n.Platform.Boot.schedContextReferencesReservedIdleSlot
+#check @SeLe4n.Platform.Boot.replyReferencesReservedIdleSlot
+#check @SeLe4n.Platform.Boot.bootSafeEndpointCheck
+#check @SeLe4n.Platform.Boot.bootSafeNotificationCheck
+#check @SeLe4n.Platform.Boot.bootSafeCnodeCheck
+#check @SeLe4n.Platform.Boot.bootSafeTcbCheck
+#check @SeLe4n.Platform.Boot.bootSafeUntypedCheck
+#check @SeLe4n.Platform.Boot.bootSafeSchedContextCheck
+#check @SeLe4n.Platform.Boot.bootSafeReplyCheck
+#check @SeLe4n.Platform.Boot.idleSlotsReserved_no_idle_queuePPrev
+#check @SeLe4n.Platform.Boot.embeddedIdentitiesMatchSlots
+#check @SeLe4n.Platform.Boot.schedContextIdentitiesMatchSlots
+#check @SeLe4n.Platform.Boot.replyIdentitiesMatchSlots
+#check @SeLe4n.Platform.Boot.PlatformConfig.wellFormed_embeddedIdentitiesMatchSlots
+#check @SeLe4n.Platform.Boot.PlatformConfig.wellFormed_schedContextIdentitiesMatchSlots
+#check @SeLe4n.Platform.Boot.PlatformConfig.wellFormed_replyIdentitiesMatchSlots
+#check @SeLe4n.Platform.Boot.schedContextIdentitiesMatchSlots_scId_eq
+#check @SeLe4n.Platform.Boot.replyIdentitiesMatchSlots_replyId_eq
 -- SM0.G — PlatformBinding extension
 #check @SeLe4n.Platform.PlatformBinding.coreCount
 #check @SeLe4n.Platform.PlatformBinding.bootCoreId

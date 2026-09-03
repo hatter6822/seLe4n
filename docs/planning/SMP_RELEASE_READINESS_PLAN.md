@@ -661,6 +661,15 @@ root); the tripwire branch must end in `fatal_halt`; the assembly providers
 are read off the compile's executed chain; the export inventory includes the
 library root.
 
+**Review round 8 (PR #889, same version).**  Five: the raw suspend seam
+refuses idle ids before the transition
+(`suspendThreadCrossCoreStep_idle_refused`); the reservation reads `queuePPrev`
+and is pinned by constructor arity, with the sweep's fields and the identity
+relation over SchedContexts and Replies (`embeddedIdentitiesMatchSlots`); the
+tripwire branch is a top-level statement of the helper or sits under an
+unconditional block; function externs are satisfied by global text symbols
+only; the assembled sources follow the compiled builder's binding instance.
+
 **Note on RR5.10–RR5.14** (the rows that replaced one XL).  Two findings shape
 the split, and the row they replaced named neither: one is an ordering defect
 it inherited, the other is the reason its "cannot be separate PRs" claim is

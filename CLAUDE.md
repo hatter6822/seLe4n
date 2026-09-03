@@ -203,7 +203,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~50963 lines)
+- `CHANGELOG.md` (~51307 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22582 lines)
 - `tests/SmpInformationFlowSuite.lean` (~11772 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~7902 lines)
@@ -211,12 +211,12 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5738 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~5186 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5127 lines)
+- `SeLe4n/Platform/Boot.lean` (~5127 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~4997 lines)
-- `SeLe4n/Platform/Boot.lean` (~4778 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4750 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `SeLe4n/Model/State.lean` (~4503 lines)
-- `docs/spec/SELE4N_SPEC.md` (~4337 lines)
+- `docs/spec/SELE4N_SPEC.md` (~4401 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
 - `tests/NegativeStateSuite.lean` (~4115 lines)
 - `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~3924 lines)
@@ -237,9 +237,9 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean` (~2993 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~2948 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~2844 lines)
+- `SeLe4n/Platform/FFI.lean` (~2824 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2784 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~2755 lines)
-- `SeLe4n/Platform/FFI.lean` (~2741 lines)
 - `SeLe4n/Kernel/Capability/Operations.lean` (~2674 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2639 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean` (~2637 lines)
@@ -267,16 +267,16 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean` (~2042 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2034 lines)
 - `SeLe4n/Kernel/Architecture/Invariant.lean` (~2033 lines)
+- `SeLe4n/Kernel/InformationFlow/Policy.lean` (~2028 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1967 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
-- `SeLe4n/Kernel/InformationFlow/Policy.lean` (~1924 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md` (~1917 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean` (~1909 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean` (~1901 lines)
 - `docs/dev_history/planning/V3E_IPC_UNWRAP_CAPS_LOOP_COMPOSITION_PLAN.md` (~1891 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean` (~1890 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md` (~1889 lines)
-- `tests/InformationFlowSuite.lean` (~1871 lines)
+- `tests/InformationFlowSuite.lean` (~1885 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1859 lines)
 - `SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean` (~1833 lines)
 - `SeLe4n/Model/FreezeProofs.lean` (~1827 lines)
@@ -295,6 +295,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
 - `tests/FaultHandlingSuite.lean` (~1660 lines)
 - `tests/SmpIpcSuite.lean` (~1660 lines)
+- `tests/SyscallDispatchSuite.lean` (~1595 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1508 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~1491 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~1488 lines)
@@ -309,7 +310,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~1394 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean` (~1393 lines)
 - `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md` (~1382 lines)
-- `tests/SyscallDispatchSuite.lean` (~1381 lines)
 - `tests/LockSetSuite.lean` (~1377 lines)
 - `docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` (~1370 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
@@ -319,7 +319,7 @@ To find files that need pagination today, run:
 - `tests/FrozenOpsSuite.lean` (~1324 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1317 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~1296 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1291 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1294 lines)
 - `SeLe4n/Kernel/InformationFlow/Taint.lean` (~1261 lines)
 - `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
 - `tests/SmpCancellationSuite.lean` (~1246 lines)
@@ -349,13 +349,13 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1046 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
 - `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1030 lines)
+- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1014 lines)
 - `SeLe4n/Model/FrozenState.lean` (~1007 lines)
 - `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~998 lines)
 - `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean` (~995 lines)
+- `tests/SmpFoundationsSuite.lean` (~990 lines)
 - `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md` (~984 lines)
-- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~971 lines)
 - `docs/planning/SMP_PER_CORE_STATE_PLAN.md` (~968 lines)
-- `tests/SmpFoundationsSuite.lean` (~965 lines)
 - `docs/dev_history/planning/WS_X_LEAN_ETHEREUM_FORMALIZATION_PLAN.md` (~958 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~950 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` (~943 lines)
@@ -372,13 +372,14 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~877 lines)
+- `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~875 lines)
 - `SeLe4n/Kernel/IPC/Operations/Fault.lean` (~868 lines)
+- `tests/SmpIdleSuite.lean` (~865 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
 - `docs/planning/SMP_RUST_HAL_PLAN.md` (~848 lines)
 - `tests/SmpTimerSuite.lean` (~840 lines)
 - `tests/DecodingSuite.lean` (~833 lines)
 - `tests/SmpCrossCoreCallSuite.lean` (~833 lines)
-- `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~830 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean` (~824 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` (~823 lines)
 - `docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
@@ -1016,6 +1017,13 @@ code may assume:
   branch that halts but is no longer reached before the acquire or the VBAR
   write is refused, and (round 7) the branch must end in `fatal_halt` itself
   (`statement_halts`) — a `return` diverges from the helper, not the core.
+  The branch must be a top-level statement of the helper, or sit under a
+  block that executes unconditionally on the image — a bare or `unsafe`
+  block, or one under exactly `#[cfg(target_arch = "aarch64")]` (round 8,
+  `tripwire_branch_halts` / `unconditional_block_interior`): an
+  exact-condition `if` nested under a further condition halted only when
+  that condition held, and the dominance check, which asks whether the
+  *helper* is called, could not see it.
   Live WCRT is therefore weaker
   than `PerCoreWcrt.lean`'s fine-lock bound, which remains a statement about the
   intended discipline.
@@ -1382,23 +1390,43 @@ code may assume:
   The reservation also covers every object a config entry *references*
   (`bootObjectReferencesReservedIdleSlot`, total over `KernelObject` and over
   every field that can hold an object, thread or scheduling-context id — a
-  notification's `boundTCB`, an untyped's `children` and `parent` and a
-  TCB's own `tid` included, PR #889 review rounds 2, 4, 6 and 7; a VSpace
-  root holds none), and a config that fails it is refused with its own
-  diagnostic rather than as a duplicate id.  **A boot TCB is stored under
+  notification's `boundTCB`, an untyped's `children` and `parent`, a
+  TCB's own `tid` and (round 8) its `queuePPrev`, reply references and
+  carried capabilities, a Reply's own id and `prev` link and a
+  SchedContext's own id included, PR #889 review rounds 2, 4, 6, 7 and 8; a
+  VSpace root holds none — and, since round 8, **pinned by constructor
+  arity**: each kind's arm destructures its constructor
+  (`tcbReferencesReservedIdleSlot` and seven siblings), so a field added to
+  any kernel object fails the build until it is classified, where five
+  rounds had each extended the same hand-written list), and a config that
+  fails it is refused with its own diagnostic rather than as a duplicate
+  id.  **A boot TCB is stored under
   its own thread id** (round 7): `PlatformConfig.wellFormed`'s fourth
   conjunct, `tcbIdentitiesMatchSlots`, requires every `.tcb` entry's
   `tid.toObjId` to be its `id` — the object store is keyed by `ObjId`, the
   TCB carries its `ThreadId`, and the lifecycle paths read the latter back
   (`cleanupTcbReferences`), so a TCB stored under a foreign id — an idle
   thread's, in the finding — would have let a retype dequeue a thread the
-  config never owned.  New boot fixtures set `tid := ⟨id⟩`.  Beyond the config, the idle
+  config never owned.  New boot fixtures set `tid := ⟨id⟩`.  Round 8 swept
+  the relation across the kinds that carry their own id: the fourth conjunct
+  is `embeddedIdentitiesMatchSlots` — TCB, SchedContext (`scId`, which
+  `replenishScOnCore` keys the replenishment queue by) and Reply
+  (`replyId`) — with `tcbIdentitiesMatchSlots` and its two siblings as its
+  parts, so a boot SchedContext or Reply is stored under its own id too; and
+  `bootSafeObjectCheck` requires all three queue links of a boot TCB empty,
+  `queuePPrev` included.  Beyond the config, the idle
   objects are unreachable by user authority at all: `syscallResolveCap` — the
   one resolution every invoked capability passes through — refuses a
   capability naming a reserved idle object (`capTargetsReservedIdleObject`,
   `syscallResolveCap_ok_not_reserved`), so a boot CNode or a transfer that
   carried one yields a slot that resolves like an empty one and no
-  `.tcbSuspend` can remove a core's only guaranteed runnable thread.
+  `.tcbSuspend` can remove a core's only guaranteed runnable thread.  The
+  one live seam that takes a **raw** id, `suspend_thread_cross_core`,
+  refuses an idle id itself (round 8): its whole step is the pure
+  `suspendThreadCrossCoreStep`, and `suspendThreadCrossCoreStep_idle_refused`
+  proves the refusal — the sentinel's `.invalidArgument` — commits nothing,
+  where before it ran `suspendThreadOnCore`, which dequeues an idle TCB like
+  any other.
   The boot queue is **characterised, not bounded**: on every
   core it is exactly the empty queue with that core's idle thread enqueued
   (`bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_eq`, membership
@@ -1674,7 +1702,16 @@ code may assume:
   it reads includes the library root `SeLe4n.lean` (round 7), and the
   assembly providers are read off the compile's *executed* chain — top-level
   statements of its own function, at brace depth zero, at or before the
-  compile — rather than by receiver spelling.
+  compile — rather than by receiver spelling.  Since round 8 the receiver
+  is a **binding instance**, not a name: `rust_code_view.binding_statement_before`
+  resolves it to the last top-level `let [mut] <receiver>` strictly before
+  the compile statement, `assembled_sources_in` counts `.file()` calls from
+  that instance on, the cross gate's build-script check requires the
+  instance and refuses a receiver the compile's function does not bind, and
+  the archive parsers accept global text (`T`) only
+  (`executable_definitions`), since every requirement the gate reconciles
+  is an `extern "C" fn` and a data object under the old name would have
+  resolved a call into data.
 - **The WS-SM theorem total is measured, not summed — and it counts
   propositions, not registrations.**
   `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean` registers one entry per

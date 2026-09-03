@@ -682,6 +682,106 @@ questions.
   walked `SeLe4n/` and missed `SeLe4n.lean`, which compiles into the static
   library like any module; the root is in the inventory, pinned in `main`.
 
+### The review round, eighth pass
+
+Codex's eighth review (on the round-7 head) raised five findings; all
+closed in the same version.  One is a live seam the capability chokepoint
+never covered; the other four are the reservation's and the gates'
+remaining list-shaped or text-shaped answers to structural questions.
+
+* **The raw suspend seam took any non-sentinel id.**  `syscallResolveCap`
+  refuses a capability naming an idle object (round 2), but
+  `suspend_thread_cross_core` takes a raw `tid` and no capability, and
+  `suspendThreadOnCore` dequeues an idle TCB like any other: once a core is
+  ready, `sele4n_suspend_thread(idleThreadId c)` from any in-kernel caller
+  removed core `c`'s only guaranteed runnable thread.  The seam's whole step
+  is now the pure `suspendThreadCrossCoreStep`, which refuses an idle id
+  with the sentinel's `.invalidArgument` before the transition runs, and
+  `suspendThreadCrossCoreStep_idle_refused` proves the refusal commits
+  nothing — no SGI, the state untouched; the export runs exactly that
+  step.  SD-057 reproduces the finding first (`suspendThreadOnCore` alone
+  dequeues idle 0 on the boot state), then observes the seam's refusal, the
+  untouched queue, every core's idle id refused, and an ordinary inactive
+  thread still reaching the transition.
+* **The reservation's TCB arm omitted `queuePPrev` — and was a list.**
+  `queuePPrev = some (.tcbNext t)` names thread `t`; a boot TCB carrying an
+  idle thread there passed both the reservation and the boot-safety check,
+  and a stale `queuePPrev` also makes `endpointQueueEnqueue` refuse the
+  otherwise detached thread with `.illegalState`.  The field is read, and
+  `bootSafeObjectCheck` requires all three links empty (the Prop and the
+  soundness bridge follow; `idleSlotsReserved_no_idle_queuePPrev`).  The
+  deeper fix is to the shape: rounds 2, 4, 6, 7 and 8 each extended the
+  same hand-written field list, because a list cannot see the field it
+  omits.  `bootObjectReferencesReservedIdleSlot` now dispatches to a
+  per-kind helper (`tcbReferencesReservedIdleSlot` and seven siblings)
+  that destructures the constructor — every field named, the id-free ones
+  as `_` — so adding a field to any kernel object fails the helper with an
+  arity error and the author says where it stands
+  (`tcbReferencesReservedIdleSlot_def` is the projection form, by `rfl`,
+  because Lean's equation lemmas for a 27-field match time out).  The
+  sweep that pinned the arity found the id-carrying fields the lists still
+  omitted: a TCB's `replyObject`, `pendingReceiveReply` and carried
+  capabilities, a Reply's own `replyId` and `prev` link, and a
+  SchedContext's own `scId`.  The last two are read back by live paths
+  (`replenishScOnCore` keys the replenishment queue by `sc.scId`), so the
+  round-7 identity relation is swept across the kinds that carry their own
+  id: `embeddedIdentitiesMatchSlots` — TCB, SchedContext and Reply — is the
+  fourth `wellFormed` conjunct, with per-kind accessors, entry-wise
+  theorems and one diagnostic naming all three.
+
+  The same sweep is applied to the check's **sibling in the same file**,
+  unprompted: `bootSafeObjectCheck` was the other hand-written field list
+  over the same constructors, and `queuePPrev` was missing from it too — the
+  review found one instance of a defect both lists had.  Its arms are now
+  per-kind checks that destructure their constructors (`bootSafeTcbCheck`
+  and five siblings, each with a `…_def` projection lemma by `rfl`;
+  `.vspaceRoot` needs no pin because it passes the whole object to
+  `bootSafeVSpaceRootCheck`, so there is no enumeration here to drift), and
+  the untyped arm's `true` is a classified verdict over named fields rather
+  than a silent default.  Bodies unchanged; the soundness bridge rewrites
+  with the projection lemmas.
+* **The tripwire branch could sit under another condition.**  The scanner
+  accepted the exact-condition `if` anywhere in the helper, so `if disabled
+  { if round_lock_held_by(core_id) { fatal_halt(); } }` passed while the
+  dominance check — which asks only whether the helper is *called* before
+  the acquire — saw nothing wrong; when the outer condition is false the
+  acquire proceeds with the round lock held.  `tripwire_branch_halts` walks
+  the helper's top-level statements and descends only through blocks that
+  execute unconditionally on the image — a bare block, an `unsafe` block,
+  or either under exactly `#[cfg(target_arch = "aarch64")]`, the shape
+  `install_exception_vectors` has (`unconditional_block_interior`; any
+  other attribute fails closed).  Two wrapped-branch mutations, one per
+  fixture, and a second VBAR fixture no thinner than the file — the branch
+  under the image's `#[cfg]` block beside an `extern` block — with three
+  block mutations (a feature gate added to the attribute, the attribute
+  negated, the block made a runtime `cfg!` condition).
+* **A data symbol satisfied a function extern.**  `archive_defined_symbols`
+  accepted `D` and `B`, and the assembled-archive parser any upper-case
+  letter, so a removed or renamed Lean export that left a global data
+  object under the old linker name reported the function resolved while
+  the call would have jumped into data.  Every requirement the gate
+  reconciles is an `extern "C" fn`, and `executable_definitions` — one
+  parser for both archives — accepts global text (`T`) only; the HAL's one
+  non-function extern (`static __exception_vectors`) is outside the `fn`
+  inventory by construction.  The self-test pins `D`, `B`, local `t` and
+  weak `W` as non-satisfying, and a `D lean_alpha` beside a renamed `T` as
+  missing.
+* **A `.file()` counted by receiver spelling, still.**  Round 7 resolved
+  the calls through the compile's executed chain and related them to the
+  receiver by *name*; `let mut asm = …; asm.file("ghost.S"); let mut asm =
+  …; asm.file("real.S").compile(…)` rebinds the name, and `ghost.S`'s
+  symbols were subtracted as providers.  Rust resolves a name to its most
+  recent `let`, so both gates do: `rust_code_view.binding_statement_before`
+  finds the last top-level `let [mut] <receiver>` strictly before the
+  compile statement (the shared view now carries `top_level_statements`
+  too — the exports gate's twin of `build.rs`'s moved there),
+  `assembled_sources_in` counts `.file()` calls from that instance on, and
+  `check_aarch64_cross_target.py`'s build-script check — the sibling
+  asking the same question — requires the instance and refuses a receiver
+  the compile's function does not bind (a parameter, a captured builder).
+  Witnesses in all three self-tests: the shadowed builder, the parameter
+  receiver, and the temporary chain the resolver already failed closed on.
+
 ### Tests
 
 * `tests/SmpIdleSuite.lean` — 28 surface anchors for the new boot surface
@@ -739,25 +839,51 @@ questions.
   the slot and is refused with the reservation diagnostic, the same TCB with
   `tid := ⟨7⟩` is refused with the identity diagnostic, and under its own
   id it is accepted; `tcbIdentitiesMatchSlots` decides the relation entry by
-  entry.
+  entry.  Round 8: a boot TCB whose `queuePPrev` names an idle thread
+  references the slot and is refused with the reservation diagnostic, any
+  `queuePPrev` fails the boot-safety check, the reply references and carried
+  capabilities of a TCB, a Reply's own id and `prev` link and a
+  SchedContext's own id are read, and a SchedContext or Reply stored under
+  another id is refused with the identity diagnostic
+  (`embeddedIdentitiesMatchSlots` decides all three kinds).
 * `tests/SyscallDispatchSuite.lean` (round 7) — SD-056 boots a bare config
   (the two witness TCBs, no boot root, the default machine configuration)
   through `bootAndInitialiseRPi5` and observes the canonical root installed
   at its reserved id and the live state carrying the BCM2712's 44-bit
   physical address width; `bindPlatformConfig` keeps the caller's objects
-  and applies the binding's hardware fields.
-* `scripts/check_kernel_entry_exports.py --self-test` — 57 cases: the sixteen
+  and applies the binding's hardware fields.  Round 8: SD-057 reproduces
+  the raw-seam finding (`suspendThreadOnCore` alone dequeues idle 0 on the
+  installed boot state), then observes the seam's step — committed through
+  `modifyGetKernelState` exactly as the export commits it; the export also
+  fires the diff-derived SGIs through the HAL's `ffi_send_sgi`, which no host
+  suite links, so its body is pinned to the step by a Tier 3 anchor — refuse
+  idle 0 with the sentinel's `.invalidArgument` and commit nothing, refuse
+  every core's idle id without an SGI, let the inactive lower witness reach
+  the transition (`.illegalState`), and keep the sentinel's refusal.
+* `scripts/check_kernel_entry_exports.py --self-test` — 62 cases: the sixteen
   boot-entry shapes (five executing, eleven token-preserving refusals, among
   them the call executed and then routed around and, round 7, the generic
   entry at another platform and at the right one), the installer
   derivation's pin in both directions, (round 6) the three inventories
   ignoring strings and nested comments, the exemption expiring with its
-  export, and (round 7) the executed builder chain;
+  export, and (round 7) the executed builder chain, and (round 8) global
+  text symbols only — data, bss, local and weak symbols under a function
+  extern's name are non-satisfying — with the shadowed builder, the
+  parameter receiver and the temporary chain;
+  `scripts/rust_code_view.py --self-test` (round 8) — the statement
+  splitter and the binding instance: the last `let` strictly before the
+  use, none for an unbound name or a `let` after the use;
+  `scripts/check_aarch64_cross_target.py --self-test` — 58 cases, the two
+  round-8 ones token-preserving: the builder rebound between a `.file()`
+  and the compile, and a builder received as a parameter;
   `scripts/lean_code_view.py --self-test` — string blanking keeps the
   quotes, blanks escapes, keeps geometry, and is off by default;
   `build.rs`'s self-check (round 6) — eight dominance mutations that keep
   each tripwire's branch and halt and break its reach; (round 7) three halt
-  mutations that keep the branch and diverge without halting.
+  mutations that keep the branch and diverge without halting; (round 8)
+  two wrapped-branch mutations, and the VBAR fixture that mirrors the real
+  function — the branch under the image's `#[cfg]` block — accepted, with
+  three block mutations refused.
 * `rust/sele4n-hal/tests/readiness_gate_before_mark.rs` and
   `…_after_mark.rs` — the readiness mask is process-global and one-way, so both
   sides of the gate are only observable in separate binaries.  Before any mark:
