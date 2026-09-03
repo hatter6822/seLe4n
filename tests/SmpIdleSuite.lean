@@ -876,6 +876,53 @@ private def runBootValidationParityChecks : IO Unit := do
   assertBool "the same object just below the idle range is accepted"
     (SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads neighbour).toOption.isSome
 
+/-- PR #889 review round 18: a successful boot must leave the object index
+    inside `maxObjects`.  Nothing bounded the count before: the checked boot
+    did not, and the idle fold adds one entry per core on top of it, so a
+    config sized to fit exactly would boot to `maxObjects + numCores - 1`. -/
+private def runObjectBudgetChecks : IO Unit := do
+  let cap := SeLe4n.Model.maxObjects
+  let cores := SeLe4n.Kernel.Concurrency.numCores
+  -- A config filled to the old ceiling: every other conjunct holds, and the
+  -- boot root plus the idle threads would take it past the cap.
+  let filler (n : Nat) : List SeLe4n.Platform.Boot.ObjectEntry :=
+    (List.range n).map fun i =>
+      { id := ⟨SeLe4n.Kernel.idleThreadIdBase + SeLe4n.Kernel.Concurrency.numCores + i⟩,
+        obj := .notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+                               pendingBadge := none },
+        hSlots := fun _ h => KernelObject.noConfusion h,
+        hMappings := fun _ h => KernelObject.noConfusion h }
+  let atCap : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [], initialObjects := filler cap }
+  assertBool "NEGATIVE: a config filling the object index to maxObjects is refused"
+    (SeLe4n.Platform.Boot.PlatformConfig.wellFormed atCap == false)
+  assertBool "NEGATIVE: ...and specifically by the object budget"
+    (SeLe4n.Platform.Boot.objectBudgetRespected atCap == false)
+  -- One object short of the reserved headroom is still refused: the boot root
+  -- and every core's idle thread must fit.
+  let justOver : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [], initialObjects := filler (cap - cores) }
+  assertBool "NEGATIVE: a config leaving no room for the boot root is refused"
+    (SeLe4n.Platform.Boot.objectBudgetRespected justOver == false)
+  -- The largest config that boots: the cap less the root and the idle threads.
+  let atBudget : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [], initialObjects := filler (cap - cores - 1) }
+  assertBool "the largest config that leaves room for the root and the idle threads is accepted"
+    (SeLe4n.Platform.Boot.objectBudgetRespected atBudget == true)
+  -- ...and the boot really lands inside the cap, idle threads included.
+  match SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads atBudget with
+  | .ok ist =>
+      assertBool "the boot state's object index is within maxObjects"
+        (ist.state.objectIndex.length <= cap)
+      assertBool "...and it carries the config's objects plus one idle thread per core"
+        (ist.state.objectIndex.length == cap - 1)
+  | .error e =>
+      assertBool s!"the budget-respecting config must boot (got: {e})" false
+  -- The ordinary fixtures are unaffected: the budget is about size alone.
+  let small : SeLe4n.Platform.Boot.PlatformConfig := { irqTable := [], initialObjects := [] }
+  assertBool "an ordinary small config respects the budget"
+    (SeLe4n.Platform.Boot.objectBudgetRespected small == true)
+
 def runSmpIdleChecks : IO Unit := do
   IO.println "WS-SM SM5.E — Per-core idle thread suite"
   IO.println "===================================="
@@ -888,6 +935,7 @@ def runSmpIdleChecks : IO Unit := do
   runInventoryChecks
   runBootIdleChecks
   runBootValidationParityChecks
+  runObjectBudgetChecks
   IO.println "===================================="
   IO.println "All SM5.E per-core idle thread checks PASS."
 

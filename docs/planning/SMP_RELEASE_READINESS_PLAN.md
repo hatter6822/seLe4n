@@ -769,6 +769,21 @@ resolved rather than spelled (three sites, two of them in `build.rs`), a
 provide no assembly symbols.  The self-test's case count is measured from the
 harness's own source rather than bumped by hand.
 
+**Review round 18 (PR #889, same version).**  Four, three against the round-17
+replacement and one against the kernel model.  The first is this project's
+oldest defect one level below text: `Expr.getUsedConstants` says a constant
+*occurs*, not that it *runs*, so an entry that boots inside an `if` satisfied
+the contract — resolved by walking the structure that cannot branch
+(`unconditionalActions`) and requiring the approved call to head an action it
+reaches.  The second is the seam's ABI: a C symbol carries no type, so the
+contract now requires the entry's type to be `UInt64 → BaseIO Unit`, what
+`boot.rs` calls it at.  The third is which environment the contract reads —
+`Platform.Staged` alone would miss an entry in a `SeLe4n.lean`-only module, so
+both roots are imported and the module list pins it.  The fourth: `wellFormed`
+did not bound the object count while the idle fold adds one entry per core, so
+a config filled to `maxObjects` booted past it; `objectBudgetRespected` reserves
+the headroom and `objectIndexBounded` is now a theorem of the production boot.
+
 **Note on RR5.10–RR5.14** (the rows that replaced one XL).  Two findings shape
 the split, and the row they replaced named neither: one is an ordering defect
 it inherited, the other is the reason its "cannot be separate PRs" claim is

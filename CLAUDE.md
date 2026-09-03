@@ -349,7 +349,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1046 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
 - `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1030 lines)
-- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1014 lines)
+- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1128 lines)
 - `SeLe4n/Model/FrozenState.lean` (~1007 lines)
 - `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~998 lines)
 - `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean` (~995 lines)
@@ -823,6 +823,28 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   entry's contract), `SeLe4n/Testing/IpcDethreadingEnvironmentCensus.lean`,
   and the probe-driven `check_live_arm_per_core_routing.py` /
   `check_content_flow_coverage.py`.
+
+  **And occurrence is not execution** (PR #889 review round 18).  Asking the
+  environment answers *which declaration*, not *whether it runs*:
+  `Expr.getUsedConstants` reports that a constant occurs in the elaborated
+  term, so `if cond then bootAndInitialiseRPi5OrHalt config else pure ()`
+  satisfies a used-constants test and boots nothing on the path a real
+  configuration takes.  That is this file's oldest rule — a presence check is
+  not a relation check — one level below text, and the resolution is the same
+  in kind: **walk the structure that cannot branch** and ask the question of
+  what it reaches.  `unconditionalActions` follows binders, `let`s, metadata
+  and both action arguments of a monadic bind; a conditional or a `match`
+  appears there as one action whose head is `ite` / `dite` / a matcher, which
+  is not the call being required, so it satisfies nothing.  The mutation for
+  this class keeps the call and nests it in a branch.  A second relation the
+  environment does not volunteer is the **type**: an `@[export]`ed declaration
+  links under its C name whatever its Lean type, so a seam's contract states
+  the type its `extern` declaration is called at
+  (`expectedBootEntryType`, `UInt64 → BaseIO Unit`).  And the environment a
+  contract reads is itself a relation — `SeLe4n/Testing/BootEntryContract.lean`
+  imports the production root as well as `Platform.Staged`, and pins that with
+  `env.header.moduleNames`, because a declaration outside the imported closure
+  is indistinguishable from one that does not exist.
 
   Two corollaries.  **Prefer making the property structural over checking
   it at all**: `Platform.FFI.bootAndInitialiseRPi5OrHalt` is the checked
@@ -1524,6 +1546,16 @@ code may assume:
   boot state (`…_threadInactiveFlagConsistent`), and owed across the scheduler
   and IPC surfaces as registered debt (RR7.36).  New code must not cite
   `threadStateConsistent` of a post-dispatch state.
+  **A successful boot respects the object-capacity invariant** (PR #889
+  review round 18): `wellFormed`'s fifth conjunct `objectBudgetRespected`
+  requires `initialObjects.length + 1 + numCores ≤ maxObjects` — room for the
+  boot VSpace root and one idle thread per *model* core, since the idle slots
+  are reserved model-wide — and
+  `bootFromPlatformCheckedWithIdleThreadsFor_objectIndexBounded` proves
+  `objectIndexBounded` of the boot state from it.  Before, nothing bounded the
+  count at all: a config filled to `maxObjects` booted, the idle fold added
+  four more entries, and the state violated the invariant
+  `retypeFromUntyped` enforces at every later allocation.
   The idle slots are **reserved** by `PlatformConfig.wellFormed`
   (`idleSlotsReserved`: no `initialObjects` entry and no boot VSpace root in
   `[idleThreadIdBase, idleThreadIdBase + numCores)`), so a successful checked

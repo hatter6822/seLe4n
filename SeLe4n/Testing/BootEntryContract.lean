@@ -7,6 +7,15 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 import Lean.Elab.Command
+-- Both roots.  `SeLe4n` is the production library — the import closure Lake
+-- compiles into `SeLe4n:static`, and therefore the set of modules whose
+-- `@[export]` can emit a symbol a kernel image links.  `Platform.Staged` pulls
+-- the staged modules in beside it.  PR #889 review round 18: with `Staged`
+-- alone, an entry SM10.1 defines in a module imported only by `SeLe4n.lean`
+-- would be a symbol in the archive and *absent from this environment*, so the
+-- contract would log itself vacuous while the Python link check saw the symbol
+-- — the two halves disagreeing in the one direction neither can catch.
+import SeLe4n
 import SeLe4n.Platform.Staged
 
 /-!
@@ -172,16 +181,79 @@ partial def unapprovedKernelStateWrite (env : Environment) (stop : Std.HashSet N
             | none => []
           unapprovedKernelStateWrite env stop (rest ++ next) seen
 
+/-- The actions `e` performs **unconditionally**, in order.
+
+PR #889 review round 18: `getUsedConstants` says a constant *occurs* in the
+elaborated term, which is a presence check — the very substitution this
+repository's scanners are held against, one level down from text.
+`if config.initialObjects.isEmpty then bootAndInitialiseRPi5OrHalt config else
+pure ()` mentions the approved call, reaches no other state writer, and boots
+nothing on the path any real configuration takes.
+
+Occurrence becomes execution along the structure that cannot branch: binders,
+`let`s, metadata, and a monadic bind, whose two action arguments both run.  A
+conditional or a `match` is *not* on that spine — it appears here as one action
+whose head is `ite` / `dite` / a matcher, which is not the approved call, so it
+satisfies nothing.  An entry may still branch (`do foo; if c then a else b;
+boot cfg` is accepted, because the boot is on the spine regardless of `c`);
+what it may not do is put the boot itself inside a branch. -/
+partial def unconditionalActions (e : Expr) : List Expr :=
+  match e with
+  | .mdata _ body => unconditionalActions body
+  | .lam _ _ body _ => unconditionalActions body
+  | .letE _ _ _ body _ => unconditionalActions body
+  | .app .. =>
+      if e.getAppFn.constName? == some ``Bind.bind then
+        let args := e.getAppArgs
+        if args.size ≥ 2 then
+          -- `@Bind.bind m inst α β (action) (continuation)`: the action runs
+          -- here, the continuation after it.  Read from the end, so a change
+          -- in the instance arguments cannot shift the index.
+          args[args.size - 2]! :: unconditionalActions args[args.size - 1]!
+        else [e]
+      else [e]
+  | _ => [e]
+
+/-- Is `approvedBootCall` the head of an action the entry performs on every
+path?  `unconditionalActions` explains why this is the honest form of the
+question. -/
+def executesApprovedBootCall (env : Environment) (entry : Name) : Bool :=
+  match declarationValue env entry with
+  | some value =>
+      (unconditionalActions value).any fun action =>
+        action.getAppFn.constName? == some approvedBootCall
+  | none => false
+
+/-- The type the exported entry must have.
+
+`rust/sele4n-hal/src/boot.rs` declares `extern "C" { fn lean_kernel_main(dtb_ptr:
+u64); }`, and a C symbol carries no type information, so the linker accepts a
+Lean declaration of *any* shape under that name and Rust then calls it with an
+incompatible ABI — passing the DTB address where the wrapper expects a boxed
+`lean_object*`, for instance.  `UInt64 → BaseIO Unit` is the same Lean type the
+tree's other `fn lean_x(arg: u64)` seams already carry
+(`lean_per_core_timer_tick`, `lean_secondary_kernel_main`), so this pins the
+convention rather than inventing one (PR #889 review round 18). -/
+def expectedBootEntryType : Expr :=
+  .forallE `dtbPointer (mkConst ``UInt64) (mkApp (mkConst ``BaseIO) (mkConst ``Unit)) .default
+
 /-- Why `entry` does not meet the boot-entry contract; `[]` when it does. -/
-def bootEntryContractViolations (env : Environment) (entry : Name) : List String :=
-  let uses := match declarationValue env entry with
-    | some value => value.getUsedConstants.toList
-    | none => []
+def bootEntryContractViolations (entry : Name) : MetaM (List String) := do
+  let env ← getEnv
+  let typed ← match env.find? entry with
+    | some info =>
+        if ← Meta.isDefEq info.type expectedBootEntryType then pure []
+        else pure [s!"`{entry}` has type `{info.type}`, and the hardware boot entry must have \
+                      the type its `extern \"C\"` declaration is called at — \
+                      `UInt64 → BaseIO Unit`, the DTB pointer `rust_boot_main` passes.  A C \
+                      symbol carries no type, so the link succeeds and the ABI does not"]
+    | none => pure [s!"`{entry}` is not a declaration of this environment"]
   let missing :=
-    if uses.contains approvedBootCall then []
-    else [s!"`{entry}` does not call `{approvedBootCall}` — the hardware boot entry must \
-           boot through the checked platform boot with its failure handled, so a refused \
-           boot parks the PE instead of returning to Rust with no kernel state"]
+    if executesApprovedBootCall env entry then []
+    else [s!"`{entry}` does not perform `{approvedBootCall}` as an unconditional action — the \
+             hardware boot entry must boot through the checked platform boot with its failure \
+             handled, so a refused boot parks the PE instead of returning to Rust with no \
+             kernel state, and it must do so on every path rather than merely mention the call"]
   let bypass :=
     match unapprovedKernelStateWrite env (stateReferenceSet.insert approvedBootCall)
             [entry] {} with
@@ -191,7 +263,7 @@ def bootEntryContractViolations (env : Environment) (entry : Name) : List String
             without the idle threads, the deployment labeling and the reserved slots it \
             establishes"]
     | none => []
-  missing ++ bypass
+  return typed ++ missing ++ bypass
 
 /-- Every declaration exporting `bootEntrySymbol`.  Read off the environment,
 so an `@[inline, export lean_kernel_main]`, an `@[export]` in any namespace and
@@ -205,35 +277,72 @@ def bootEntryDeclarations (env : Environment) : List Name :=
 /-! ## Witnesses
 
 The check above is vacuous until SM10.1 writes the entry, and a vacuous check
-reads exactly like a passing one.  These four declarations are what a boot
-entry could be; the elaboration below requires the analysis to accept the first
-and refuse the other three.  Each deviation **keeps** the tokens a text scanner
-looks for — the boot call, the halt, the `match`, the `.error` arm — and breaks
-the relation, which is the mutation this repository's gates are tested by. -/
+reads exactly like a passing one.  These declarations are what a boot entry
+could be; the elaboration below requires the analysis to accept the first and
+refuse the others.  Each deviation **keeps** the tokens a text scanner looks
+for — the boot call, the halt, the `match`, the `.error` arm — and breaks the
+relation, which is the mutation this repository's gates are tested by. -/
 
-/-- The shape SM10.1's entry must have. -/
-private def bootEntryWitnessCompliant (config : Platform.Boot.PlatformConfig) : BaseIO Unit :=
+/-- The configuration SM10.1 derives from the DTB pointer.  A placeholder: the
+witnesses need *a* pure `UInt64 → PlatformConfig`, and the real derivation
+(`Platform.DeviceTree` against the blob `rust_boot_main` passes) is SM10.1's. -/
+private def bootEntryWitnessConfig (_dtbPointer : UInt64) : Platform.Boot.PlatformConfig :=
+  { irqTable := [], initialObjects := [] }
+
+/-- The shape SM10.1's entry must have, at the type its `extern "C"`
+declaration is called at. -/
+private def bootEntryWitnessCompliant (dtbPointer : UInt64) : BaseIO Unit :=
+  Platform.FFI.bootAndInitialiseRPi5OrHalt (bootEntryWitnessConfig dtbPointer)
+
+/-- The approved call reached through a `do` chain — the continuation of a
+bind rather than its first action.  Accepted: a sequence has no paths, so the
+boot still runs unconditionally.  This witness is what makes the bind recursion
+in `unconditionalActions` load-bearing; without it, a recursion that stopped at
+the first action would pass every other case here. -/
+private def bootEntryWitnessSequenced (dtbPointer : UInt64) : BaseIO Unit := do
+  let _ ← Platform.FFI.getKernelState
+  Platform.FFI.bootAndInitialiseRPi5OrHalt (bootEntryWitnessConfig dtbPointer)
+
+/-- Keeps the approved call and puts it *inside a branch* (PR #889 review round
+18).  Every token a scanner reads is present and no other state writer is
+reachable; on the path any real configuration takes, nothing boots. -/
+private def bootEntryWitnessConditional (dtbPointer : UInt64) : BaseIO Unit :=
+  if dtbPointer == 0 then
+    Platform.FFI.bootAndInitialiseRPi5OrHalt (bootEntryWitnessConfig dtbPointer)
+  else pure ()
+
+/-- Keeps the approved call and takes the *wrong* argument type (PR #889 review
+round 18).  A C symbol carries no type, so this links and Rust then calls it
+with the DTB address in a boxed-pointer position. -/
+private def bootEntryWitnessWrongType (config : Platform.Boot.PlatformConfig) : BaseIO Unit :=
   Platform.FFI.bootAndInitialiseRPi5OrHalt config
 
 /-- Keeps the checked boot, the `match`, the `.error` arm and the halt, and
 installs the state itself — so a *later* change to what the checked boot
 establishes would not reach the live state. -/
-private def bootEntryWitnessBypass (config : Platform.Boot.PlatformConfig) : BaseIO Unit := do
-  match ← Platform.FFI.bootAndInitialiseRPi5 config with
+private def bootEntryWitnessBypass (dtbPointer : UInt64) : BaseIO Unit := do
+  match ← Platform.FFI.bootAndInitialiseRPi5 (bootEntryWitnessConfig dtbPointer) with
   | .ok st => Platform.FFI.initialiseKernelState st
   | .error _ => Platform.FFI.ffiFatalHaltAll
 
 /-- Keeps the approved call *and* installs state beside it. -/
-private def bootEntryWitnessSideInstall (config : Platform.Boot.PlatformConfig) : BaseIO Unit := do
-  Platform.FFI.bootAndInitialiseRPi5OrHalt config
+private def bootEntryWitnessSideInstall (dtbPointer : UInt64) : BaseIO Unit := do
+  Platform.FFI.bootAndInitialiseRPi5OrHalt (bootEntryWitnessConfig dtbPointer)
   Platform.FFI.initialiseKernelState default
 
 /-- Installs nothing at all: the image would idle with no kernel. -/
-private def bootEntryWitnessUnbooted (_config : Platform.Boot.PlatformConfig) : BaseIO Unit :=
+private def bootEntryWitnessUnbooted (_dtbPointer : UInt64) : BaseIO Unit :=
   pure ()
 
-run_cmd do
-  let env ← liftCoreM getEnv
+run_cmd Command.liftTermElabM do
+  let env ← getEnv
+  -- The environment is the production one.  A witness cannot pin this — the
+  -- harm appears only once an entry exists in a module `SeLe4n.lean` alone
+  -- imports — but the module list can, exactly (PR #889 review round 18).
+  unless env.header.moduleNames.contains `SeLe4n do
+    throwError "boot-entry contract: the production library root `SeLe4n` is not in this \
+      environment, so an entry defined in a module only it imports would read as absent and \
+      the contract would pass vacuously while the archive carried the symbol"
   -- The write detector sees a write and does not see a read.
   unless declarationWritesKernelState env `SeLe4n.Platform.FFI.initialiseKernelState do
     throwError "boot-entry contract: the kernel-state write detector does not see \
@@ -249,20 +358,23 @@ run_cmd do
     throwError "boot-entry contract: no kernel-state write is reachable from the checked \
       boot, so the reachability half detects nothing"
   -- The witnesses.
-  unless (bootEntryContractViolations env ``bootEntryWitnessCompliant).isEmpty do
-    throwError "boot-entry contract: the compliant witness was refused: \
-      {bootEntryContractViolations env ``bootEntryWitnessCompliant}"
-  for witness in [``bootEntryWitnessBypass, ``bootEntryWitnessSideInstall,
+  for witness in [``bootEntryWitnessCompliant, ``bootEntryWitnessSequenced] do
+    let violations ← bootEntryContractViolations witness
+    unless violations.isEmpty do
+      throwError "boot-entry contract: the compliant witness `{witness}` was refused: \
+        {violations}"
+  for witness in [``bootEntryWitnessConditional, ``bootEntryWitnessWrongType,
+                  ``bootEntryWitnessBypass, ``bootEntryWitnessSideInstall,
                   ``bootEntryWitnessUnbooted] do
-    if (bootEntryContractViolations env witness).isEmpty then
+    if (← bootEntryContractViolations witness).isEmpty then
       throwError "boot-entry contract: the deviating witness `{witness}` was accepted"
   -- The contract itself.
   match bootEntryDeclarations env with
   | [] =>
       logInfo m!"boot-entry contract: no declaration exports `{bootEntrySymbol}` yet \
-        (SM10.1 writes it); the analysis is pinned by its four witnesses"
+        (SM10.1 writes it); the analysis is pinned by its seven witnesses"
   | [entry] =>
-      match bootEntryContractViolations env entry with
+      match ← bootEntryContractViolations entry with
       | [] => logInfo m!"boot-entry contract: `{entry}` boots through `{approvedBootCall}` \
                 and installs kernel state no other way"
       | violations => throwError "boot-entry contract: {violations}"

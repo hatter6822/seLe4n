@@ -977,24 +977,50 @@ def embeddedIdentitiesMatchSlots (config : PlatformConfig) : Bool :=
   tcbIdentitiesMatchSlots config && schedContextIdentitiesMatchSlots config &&
     replyIdentitiesMatchSlots config
 
+/-- PR #889 review round 18: the fifth `wellFormed` conjunct — the config
+    leaves room for everything a successful boot installs beyond it.
+
+    A boot state holds one object per `initialObjects` entry, at most one boot
+    VSpace root, and — since WS-RR RR5.13 — one idle TCB per core.  Nothing
+    bounded that: a config with 65 533 objects and a boot root satisfies every
+    other conjunct, boots, and the idle fold takes the object index to 65 537,
+    past `maxObjects` — so a *successful production boot* produced a state
+    violating `objectIndexBounded`, the invariant `retypeFromUntyped` enforces
+    at every later allocation.  The headroom is `numCores`, not the binding's
+    `coreCount`: the idle slots are reserved model-wide, so the budget must
+    hold for any binding this config could boot on. -/
+def objectBudgetRespected (config : PlatformConfig) : Bool :=
+  config.initialObjects.length + 1 + SeLe4n.Kernel.Concurrency.numCores ≤ maxObjects
+
 /-- U6-E/F: A well-formed PlatformConfig has unique IRQs, unique object IDs,
-    (WS-RR RR5.13, PR #889 review) keeps the per-core idle slots free and
+    (WS-RR RR5.13, PR #889 review) keeps the per-core idle slots free,
     (PR #889 review rounds 7 and 8) stores every TCB, SchedContext and Reply
-    under its own id. -/
+    under its own id, and (round 18) leaves object-index room for the boot
+    root and the per-core idle threads. -/
 def PlatformConfig.wellFormed (config : PlatformConfig) : Bool :=
   irqsUnique config.irqTable && objectIdsUnique config.initialObjects &&
-    idleSlotsReserved config && embeddedIdentitiesMatchSlots config
+    idleSlotsReserved config && embeddedIdentitiesMatchSlots config &&
+    objectBudgetRespected config
+
+/-- PR #889 review round 18: a well-formed config leaves room for the boot
+    root and the idle threads. -/
+theorem PlatformConfig.wellFormed_objectBudgetRespected (config : PlatformConfig)
+    (h : config.wellFormed = true) : objectBudgetRespected config = true := by
+  simp only [PlatformConfig.wellFormed, Bool.and_eq_true] at h
+  exact h.2
 
 /-- **WS-RR RR5.13**: a well-formed config reserves the idle slots. -/
 theorem PlatformConfig.wellFormed_idleSlotsReserved (config : PlatformConfig)
-    (h : config.wellFormed = true) : idleSlotsReserved config = true :=
-  ((Bool.and_eq_true _ _).mp ((Bool.and_eq_true _ _).mp h).1).2
+    (h : config.wellFormed = true) : idleSlotsReserved config = true := by
+  simp only [PlatformConfig.wellFormed, Bool.and_eq_true] at h
+  exact h.1.1.2
 
 /-- PR #889 review round 8: a well-formed config stores every id-carrying
     object under its own id. -/
 theorem PlatformConfig.wellFormed_embeddedIdentitiesMatchSlots (config : PlatformConfig)
-    (h : config.wellFormed = true) : embeddedIdentitiesMatchSlots config = true :=
-  ((Bool.and_eq_true _ _).mp h).2
+    (h : config.wellFormed = true) : embeddedIdentitiesMatchSlots config = true := by
+  simp only [PlatformConfig.wellFormed, Bool.and_eq_true] at h
+  exact h.1.2
 
 /-- PR #889 review round 7: a well-formed config stores every TCB under its
     own thread id. -/
@@ -1914,11 +1940,11 @@ theorem bootFromPlatformWithWarnings_wellFormed_no_warnings (config : PlatformCo
   constructor
   · -- irqsUnique holds when wellFormed
     have : irqsUnique config.irqTable = true := by
-      unfold PlatformConfig.wellFormed at hWf; simp [Bool.and_eq_true] at hWf; exact hWf.1.1.1
+      unfold PlatformConfig.wellFormed at hWf; simp [Bool.and_eq_true] at hWf; exact hWf.1.1.1.1
     simp [this]
   · -- objectIdsUnique holds when wellFormed
     have : objectIdsUnique config.initialObjects = true := by
-      unfold PlatformConfig.wellFormed at hWf; simp [Bool.and_eq_true] at hWf; exact hWf.1.1.2
+      unfold PlatformConfig.wellFormed at hWf; simp [Bool.and_eq_true] at hWf; exact hWf.1.1.1.2
     simp [this]
 
 -- ============================================================================
@@ -3622,6 +3648,137 @@ theorem bootFromPlatformChecked_ok_shape (config : PlatformConfig)
       · cases h
     · cases h
   · split at h <;> (try split at h) <;> (try split at h) <;> cases h
+
+/-! ### The object-capacity invariant of a successful boot (PR #889 review round 18)
+
+`objectIndexBounded` is the allocation-boundary invariant `retypeFromUntyped`
+enforces, and nothing in the boot path established it: the checked boot did not
+bound the object count, and the idle fold — live since WS-RR RR5.13 — adds one
+entry per core on top of whatever the config brought.  The chain below derives
+the count from the config, so `objectBudgetRespected` (the fifth `wellFormed`
+conjunct) is what makes a successful boot bounded. -/
+
+/-- `createObject` prepends at most one entry: an id already present leaves the
+    index alone. -/
+theorem createObject_objectIndex_length_le (ist : IntermediateState)
+    (id : SeLe4n.ObjId) (obj : KernelObject)
+    (hSlots : ∀ cn, obj = KernelObject.cnode cn → cn.slotsUnique)
+    (hMappings : ∀ vs, obj = KernelObject.vspaceRoot vs → vs.mappings.invExt) :
+    (Builder.createObject ist id obj hSlots hMappings).state.objectIndex.length ≤
+      ist.state.objectIndex.length + 1 := by
+  unfold Builder.createObject
+  by_cases h : ist.state.objectIndexSet.contains id
+  · simp [h]
+  · simp [h]
+
+/-- Folding the config's objects adds at most one index entry each. -/
+theorem foldObjects_objectIndex_length_le (objs : List ObjectEntry)
+    (ist : IntermediateState) :
+    (foldObjects objs ist).state.objectIndex.length ≤
+      ist.state.objectIndex.length + objs.length := by
+  unfold foldObjects
+  induction objs generalizing ist with
+  | nil => simp
+  | cons entry rest ih =>
+      simp only [List.foldl_cons, List.length_cons]
+      refine Nat.le_trans (ih _) ?_
+      have := createObject_objectIndex_length_le ist entry.id entry.obj entry.hSlots
+        entry.hMappings
+      omega
+
+/-- The raw boot installs one index entry per config object at most. -/
+theorem bootFromPlatform_objectIndex_length_le (config : PlatformConfig) :
+    (bootFromPlatform config).state.objectIndex.length ≤ config.initialObjects.length := by
+  have hEmpty : (foldIrqs config.irqTable mkEmptyIntermediateState).state.objectIndex = [] := by
+    rw [foldIrqs_objectIndex]; rfl
+  have := foldObjects_objectIndex_length_le config.initialObjects
+    (foldIrqs config.irqTable mkEmptyIntermediateState)
+  rw [hEmpty] at this
+  simpa [bootFromPlatform, applyMachineConfig] using this
+
+/-- Enabling interrupts touches `machine` only. -/
+@[simp] theorem bootEnableInterruptsOp_objectIndex (ist : IntermediateState) :
+    (bootEnableInterruptsOp ist).state.objectIndex = ist.state.objectIndex := rfl
+
+/-- A successful checked boot holds one entry per config object, plus at most
+    the boot VSpace root. -/
+theorem bootFromPlatformChecked_ok_objectIndex_length_le (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformChecked config = .ok ist) :
+    ist.state.objectIndex.length ≤ config.initialObjects.length + 1 := by
+  obtain ⟨_, _, hShape⟩ := bootFromPlatformChecked_ok_shape config ist h
+  have hBase := bootFromPlatform_objectIndex_length_le config
+  rcases hShape with ⟨_, hEq⟩ | ⟨entry, _, hEq⟩
+  · subst hEq; simpa using Nat.le_trans hBase (Nat.le_succ _)
+  · subst hEq
+    simp only [bootEnableInterruptsOp_objectIndex, installBootVSpaceRoot]
+    exact Nat.le_trans (createObject_objectIndex_length_le _ _ _ _ _) (by omega)
+
+/-- The idle enqueue adds at most one index entry: it stores one TCB, and the
+    run-queue write beside it leaves the object index alone. -/
+theorem enqueueIdleThread_objectIndex_length_le (ist : IntermediateState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (enqueueIdleThread ist c).state.objectIndex.length ≤ ist.state.objectIndex.length + 1 :=
+  createObject_objectIndex_length_le ist (idleThreadId c).toObjId
+    (KernelObject.tcb (queuedIdleThread c)) (fun _ hEq => by cases hEq)
+    (fun _ hEq => by cases hEq)
+
+/-- ...so the fold adds at most one per core. -/
+theorem foldl_enqueueIdleThread_objectIndex_length_le
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (ist : IntermediateState) :
+    (cores.foldl enqueueIdleThread ist).state.objectIndex.length ≤
+      ist.state.objectIndex.length + cores.length := by
+  induction cores generalizing ist with
+  | nil => simp
+  | cons c rest ih =>
+      simp only [List.foldl_cons, List.length_cons]
+      refine Nat.le_trans (ih _) ?_
+      have := enqueueIdleThread_objectIndex_length_le ist c
+      omega
+
+/-- **PR #889 review round 18**: a successful production boot satisfies
+    `objectIndexBounded`.
+
+    The budget conjunct reserves `numCores` slots, so any core list no longer
+    than the model's — every binding's, by `PlatformBinding.coreCountLe` —
+    leaves the object index inside `maxObjects`. -/
+theorem bootFromPlatformCheckedWithIdleThreadsFor_objectIndexBounded
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
+    (ist : IntermediateState)
+    (hCores : cores.length ≤ SeLe4n.Kernel.Concurrency.numCores)
+    (h : bootFromPlatformCheckedWithIdleThreadsFor cores config = .ok ist) :
+    objectIndexBounded ist.state := by
+  unfold bootFromPlatformCheckedWithIdleThreadsFor at h
+  cases hBase : bootFromPlatformChecked config with
+  | error e => rw [hBase] at h; simp [Except.bind] at h
+  | ok base =>
+      rw [hBase] at h
+      simp only [Except.bind] at h
+      by_cases hAff : bootAffinitiesDeclared cores config
+      · simp only [hAff, if_true] at h
+        obtain ⟨hWf, _, _⟩ := bootFromPlatformChecked_ok_shape config base hBase
+        have hBudget := PlatformConfig.wellFormed_objectBudgetRespected config hWf
+        unfold objectBudgetRespected at hBudget
+        have hBudget' : config.initialObjects.length + 1 +
+            SeLe4n.Kernel.Concurrency.numCores ≤ maxObjects := by
+          simpa using decide_eq_true_eq.mp hBudget
+        have hChecked := bootFromPlatformChecked_ok_objectIndex_length_le config base hBase
+        have hFold := foldl_enqueueIdleThread_objectIndex_length_le cores base
+        have hIst : ist = cores.foldl enqueueIdleThread base := by
+          simpa using h.symm
+        subst hIst
+        unfold objectIndexBounded
+        omega
+      · simp [hAff] at h
+
+/-- The all-cores production boot is bounded: `allCores` has exactly `numCores`
+    members, which is the headroom the budget conjunct reserves. -/
+theorem bootFromPlatformCheckedWithIdleThreads_objectIndexBounded (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformCheckedWithIdleThreads config = .ok ist) :
+    objectIndexBounded ist.state := by
+  refine bootFromPlatformCheckedWithIdleThreadsFor_objectIndexBounded
+    SeLe4n.Kernel.Concurrency.allCores config ist ?_ ?_
+  · simp [SeLe4n.Kernel.Concurrency.allCores]
+  · rw [bootFromPlatformCheckedWithIdleThreadsFor_allCores]; exact h
 
 /-- **WS-RR RR5.13**: the composition's shape — a successful checked boot yields
     a successful idle boot whose state is the fold, and nothing else does.  Every

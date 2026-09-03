@@ -5199,6 +5199,22 @@ run_check "INVARIANT" rg -n '^fn gate_call_offset' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n '^fn statement_may_exit' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n '^fn collect_lean_exports_from_file' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n 'collect_lean_exports_from_file\(lean_library_root' rust/sele4n-hal/build.rs
+# PR #889 review round 18: the contract reads the production environment, the
+# approved call must be an unconditional action, the entry's FFI type is pinned,
+# and a successful boot leaves object-index room for the root and the idle
+# threads.
+run_check "INVARIANT" rg -n '^import SeLe4n$' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^partial def unconditionalActions' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^def executesApprovedBootCall' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^def expectedBootEntryType' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessConditional' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessWrongType' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessSequenced' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^def objectBudgetRespected' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n 'objectBudgetRespected config$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_objectIndexBounded' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreads_objectIndexBounded' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem foldl_enqueueIdleThread_objectIndex_length_le' SeLe4n/Platform/Boot.lean
 # PR #889 review round 17: the boot entry's contract moved off Lean source
 # text and onto the elaborated environment.  The fail-closed wrapper makes the
 # error path a definition; the contract module decides the rest with

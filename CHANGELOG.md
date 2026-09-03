@@ -1141,6 +1141,65 @@ the **kernel**, the second live defect any round has found outside the gates.
   disables the bare spelling for the file — conservative, and the remedy is a
   qualifier.
 
+### The review round, eighteenth pass — occurrence is not execution
+
+Four findings against the round-17 replacement, and the first of them is the
+class this repository has been fighting all along, one level down from text:
+**`Expr.getUsedConstants` says a constant *occurs*, not that it runs.**
+`if config.initialObjects.isEmpty then bootAndInitialiseRPi5OrHalt config else
+pure ()` mentions the approved call, reaches no other state writer, and boots
+nothing on the path any real configuration takes — a presence check standing in
+for a relation, now over elaborated terms rather than source. Occurrence becomes
+execution along the structure that cannot branch: `unconditionalActions` walks
+binders, `let`s, metadata and the two action arguments of a monadic bind, and
+requires the approved call to head one of the actions it reaches. An entry may
+still branch — `do foo; if c then a else b; boot cfg` is accepted, because the
+boot is on the spine regardless of `c` — but it may not put the boot itself
+inside a branch.
+
+The second is the seam's **ABI**: `boot.rs` declares `extern "C" { fn
+lean_kernel_main(dtb_ptr: u64); }`, a C symbol carries no type, and the contract
+checked only the body — so a declaration of any shape would link and Rust would
+then call it with the DTB address in a boxed-pointer position. The contract now
+requires the exporting declaration's type to be `UInt64 → BaseIO Unit`, the same
+Lean type the tree's other `fn lean_x(arg: u64)` seams already carry
+(`lean_per_core_timer_tick`, `lean_secondary_kernel_main`), so this pins the
+convention rather than inventing one. The compliant witness was itself the wrong
+shape and is fixed.
+
+The third is the module the contract reads. It imported `Platform.Staged` only,
+and the production closure is `SeLe4n.lean`'s: an entry SM10.1 defines in a
+module only the library root imports would be a symbol in the archive and
+absent from this environment, so the contract would log itself vacuous while
+the Python link check saw the symbol — the two halves disagreeing in the one
+direction neither can catch. Both roots are imported now, and because no
+*witness* can pin an import (the harm needs an entry that does not exist yet),
+the module list pins it exactly: the elaboration fails unless `SeLe4n` is in
+`env.header.moduleNames`.
+
+The fourth is a kernel-model defect rather than a gate one. `PlatformConfig.wellFormed`
+had four conjuncts and none of them bounded the **object count**, while the idle
+fold — live since RR5.13 — adds one index entry per core. A config with 65 533
+objects and a boot VSpace root satisfies every other conjunct, boots, and lands
+at 65 537 entries: past `maxObjects`, so a *successful production boot* produced
+a state violating `objectIndexBounded`, the invariant `retypeFromUntyped`
+enforces at every later allocation. The fifth conjunct `objectBudgetRespected`
+reserves the headroom (`initialObjects.length + 1 + numCores ≤ maxObjects` — the
+model-wide `numCores`, not a binding's `coreCount`, since the idle slots are
+reserved model-wide), and the bound is now a *theorem* of the production boot
+rather than an assumption: `createObject` adds at most one index entry, so the
+config fold adds at most `initialObjects.length`, the boot root at most one and
+the idle fold at most one per core
+(`bootFromPlatformCheckedWithIdleThreadsFor_objectIndexBounded`, with the
+all-cores corollary). `tests/SmpIdleSuite.lean` refuses a config filled to the
+old ceiling, refuses one leaving no room for the root, accepts the largest that
+fits, and checks the resulting boot state's index length.
+
+The witness set grew to seven, and the addition matters: mutating the bind
+recursion to stop at a bind's first action was *not* caught by the six, because
+none of them reached the boot through a continuation. `bootEntryWitnessSequenced`
+does, and is accepted; the mutation now fails the build.
+
 ### The review round, seventeenth pass — the elaborator answers Lean questions
 
 Five findings, and one instruction from the maintainer that supersedes the
