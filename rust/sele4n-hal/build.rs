@@ -3275,6 +3275,107 @@ fn lean_symbol_declarations(
     out
 }
 
+/// **PR #889 review round 12**: a Lean symbol may not be declared under an
+/// *alias*.  `#[link_name = "lean_x"] fn upcall();` makes the linker demand
+/// `lean_x` while every scanner here reads the Rust name: the readiness
+/// derivation collects HAL externs by their `lean_` prefix (`upcall` has
+/// none), and `lean_upcall_sites` resolves calls by the symbol's own
+/// identifier (the call goes through `upcall`).  The seam would be invisible
+/// to both — no gate attributed, no table entry demanded — which is the same
+/// unattributable-reference class the scanner already refuses for a Lean
+/// symbol taken as a value.  A `link_name` for a *non*-Lean symbol is
+/// untouched; the rule is that a Lean entry is declared under its own name.
+///
+/// Returned as `(path, symbol)` pairs; read over the comment-blanked view for
+/// the attribute and the strings-kept view for its value, which are
+/// byte-aligned.
+fn lean_link_name_aliases(
+    views: &[(String, String, String)],
+    exports: &[&str],
+) -> Vec<(String, String)> {
+    let mut found = Vec::new();
+    for (path, code, strings_kept) in views {
+        let bytes = code.as_bytes();
+        let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+        let mut search = 0usize;
+        while let Some(hit) = code[search..].find("link_name") {
+            let at = search + hit;
+            let end = at + "link_name".len();
+            search = end;
+            if (at > 0 && is_ident(bytes[at - 1])) || (end < bytes.len() && is_ident(bytes[end])) {
+                continue;
+            }
+            // The attribute's value is the first string literal before the
+            // attribute list closes.  Bounded by that `]` so a `link_name`
+            // outside an attribute cannot borrow a later string.
+            let limit = match code[end..].find(']') {
+                Some(offset) => end + offset,
+                None => continue,
+            };
+            let Some(open) = strings_kept[end..limit].find('"') else {
+                continue;
+            };
+            let start = end + open + 1;
+            let Some(close) = strings_kept[start..limit].find('"') else {
+                continue;
+            };
+            let value = &strings_kept[start..start + close];
+            if value.starts_with("lean_") || exports.contains(&value) {
+                found.push((path.clone(), value.to_string()));
+            }
+        }
+    }
+    found
+}
+
+/// Token-preserving self-check for `lean_link_name_aliases`: every rejected
+/// case keeps a plain `extern "C"` declaration and adds the alias; every
+/// accepted case keeps the `link_name` attribute and points it elsewhere.
+fn verify_lean_link_name_scanner() {
+    let exports = ["lean_alpha"];
+    let cases: [(&str, &str, bool); 6] = [
+        (
+            "an alias of a Lean export is refused",
+            "extern \"C\" {\n    #[link_name = \"lean_alpha\"]\n    fn upcall(a: u64) -> u32;\n}\n",
+            true,
+        ),
+        (
+            "the `unsafe(..)` spelling is the same attribute",
+            "extern \"C\" {\n    #[unsafe(link_name = \"lean_alpha\")]\n    fn upcall(a: u64) -> u32;\n}\n",
+            true,
+        ),
+        (
+            "an alias of a `lean_`-prefixed symbol the Lean tree has not exported yet",
+            "extern \"C\" {\n    #[link_name = \"lean_kernel_main\"]\n    fn boot();\n}\n",
+            true,
+        ),
+        (
+            "an alias of a symbol that is not a Lean entry is allowed",
+            "extern \"C\" {\n    #[link_name = \"memcpy\"]\n    fn my_memcpy(a: u64);\n}\n",
+            false,
+        ),
+        (
+            "a commented-out alias aliases nothing",
+            "extern \"C\" {\n    // #[link_name = \"lean_alpha\"]\n    fn lean_alpha(a: u64) -> u32;\n}\n",
+            false,
+        ),
+        (
+            "the attribute quoted in a string literal is text",
+            "const DOC: &str = \"#[link_name = \\\"lean_alpha\\\"]\";\n",
+            false,
+        ),
+    ];
+    for (name, source, refused) in cases {
+        let (strings_kept, code) = rust_code_views(source);
+        let views = vec![("fixture.rs".to_string(), code, strings_kept)];
+        let found = !lean_link_name_aliases(&views, &exports).is_empty();
+        assert_eq!(
+            found, refused,
+            "build.rs self-check: `lean_link_name_aliases` read the case wrongly: {name}"
+        );
+    }
+}
+
 /// **WS-RR RR5.9**: no Lean symbol is declared, defined or exported outside a
 /// `hw_target` region.
 ///
@@ -4597,6 +4698,7 @@ fn collect_rust_sources(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>
 fn scan_lean_upcalls_readiness_gated() {
     verify_lean_extern_gating_scanner();
     verify_lean_export_collector();
+    verify_lean_link_name_scanner();
     let lean_root = std::path::Path::new("../../SeLe4n");
     println!("cargo:rerun-if-changed=../../SeLe4n");
     let mut exports: Vec<String> = Vec::new();
@@ -4670,6 +4772,23 @@ fn scan_lean_upcalls_readiness_gated() {
     // the same name only under its negation.  Shares this scan's derived export
     // set and code views, so the two checks can never disagree about which
     // names are Lean symbols.
+    // PR #889 review round 12: no Lean symbol is declared under an alias, so
+    // every scanner below may keep reading the Rust name as the symbol.
+    let aliases = lean_link_name_aliases(&views, &export_refs);
+    if !aliases.is_empty() {
+        let listed: Vec<String> = aliases
+            .iter()
+            .map(|(path, symbol)| format!("{path}: `{symbol}`"))
+            .collect();
+        panic!(
+            "PR #889 review round 12: a Lean symbol is declared under a `#[link_name]` \
+             alias ({}).  The readiness derivation collects HAL externs by their `lean_` \
+             prefix and resolves calls by the symbol's own identifier, so an aliased seam \
+             is attributed to no readiness gate and demands no `LEAN_READY_GATED_SEAMS` \
+             entry.  Declare the entry under its own name.",
+            listed.join(", ")
+        );
+    }
     match lean_extern_gating_status(&views, &export_refs) {
         Ok(0) => panic!(
             "WS-RR RR5.9: the extern-gating scanner found no Lean symbol declaration in \

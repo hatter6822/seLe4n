@@ -191,6 +191,73 @@ def code_no_strings(src: str) -> str:
     return strip(src, blank_strings=True)
 
 
+def attribute_arguments(view: str, keyword: str) -> list[str]:
+    """Every `@[… , <keyword> <name>, …]` argument in a Lean **code view**, in
+    order of first occurrence, without duplicates.
+
+    Lean's attribute syntax is a bracketed, comma-separated list, so the
+    argument of one attribute is not the whole bracket: `@[inline, export
+    lean_kernel_main]` carries the export just as `@[export lean_kernel_main]`
+    does, and a line break after `export` is whitespace like any other.  A
+    scanner that greps for the literal `@[export ` sees neither — which is how
+    `check_kernel_entry_exports.py` came to have an export inventory and a
+    boot-entry locator that `build.rs`'s parser (which has split the list
+    since PR #889 review round 2) disagreed with.  This is that parser, shared,
+    so the two cannot drift again.
+
+    Brackets nest (`@[simp, foo[bar]]`), so the list ends at the *matching*
+    `]`.  A quoted argument (`@[extern "ffi_fatal_halt"]`) is read as the
+    string's contents, so the same parser answers "which Rust symbol does this
+    `opaque` bind to?".  The caller passes a view — `strip`ped where a quoted
+    argument must be readable, `code_no_strings` where a quoted *attribute*
+    must not count.
+    """
+    names: list[str] = []
+    search = 0
+    while True:
+        hit = view.find("@[", search)
+        if hit < 0:
+            return names
+        open_at = hit + 2
+        depth = 1
+        close = None
+        for index in range(open_at, len(view)):
+            if view[index] == "[":
+                depth += 1
+            elif view[index] == "]":
+                depth -= 1
+                if depth == 0:
+                    close = index
+                    break
+        if close is None:
+            return names
+        for attr in view[open_at:close].split(","):
+            attr = attr.strip()
+            if not attr.startswith(keyword):
+                continue
+            rest = attr[len(keyword):]
+            if not rest[:1].isspace():
+                continue
+            argument = rest.strip()
+            if argument.startswith('"'):
+                # A quoted argument — `@[extern "ffi_fatal_halt"]`.  Read it
+                # only where the caller kept string contents; over
+                # `code_no_strings` the quotes survive and the name does not,
+                # which is the right answer there (a blanked string names
+                # nothing).
+                name = argument[1:].split('"', 1)[0].strip()
+            else:
+                name = ""
+                for ch in argument:
+                    if ch.isascii() and (ch.isalnum() or ch == "_"):
+                        name += ch
+                    else:
+                        break
+            if name and name not in names:
+                names.append(name)
+        search = close + 1
+
+
 # ---------------------------------------------------------------------------
 # The witness suite.
 #
@@ -255,8 +322,74 @@ _STRING_BLANKED: list[tuple[str, str, str, str]] = [
 ]
 
 
+#: Witnesses for `attribute_arguments`: `(name, source, keyword, expected)`.
+#: The mutations that matter here **keep** the attribute text and change its
+#: structure — a second attribute beside it, a line break after the keyword, a
+#: nested bracket, the whole list quoted — because a `find("@[export ")`
+#: scanner reads all four wrongly while the token is plainly present.
+_ATTRIBUTE_ARGUMENTS: list[tuple[str, str, str, list[str]]] = [
+    ("a lone attribute", "@[export lean_alpha]\ndef a := 0\n", "export", ["lean_alpha"]),
+    ("a combined attribute list", "@[inline, export lean_alpha]\ndef a := 0\n",
+     "export", ["lean_alpha"]),
+    ("the keyword last in the list", "@[export lean_alpha, inline]\ndef a := 0\n",
+     "export", ["lean_alpha"]),
+    ("a line break after the keyword", "@[export\n  lean_alpha]\ndef a := 0\n",
+     "export", ["lean_alpha"]),
+    ("a nested bracket does not end the list",
+     "@[simp, foo[bar], export lean_alpha]\ndef a := 0\n", "export", ["lean_alpha"]),
+    ("two attribute lists in one source",
+     "@[export lean_alpha]\ndef a := 0\n@[inline, export lean_beta]\ndef b := 1\n",
+     "export", ["lean_alpha", "lean_beta"]),
+    ("the same name twice is one symbol",
+     "@[export lean_alpha]\ndef a := 0\n@[export lean_alpha]\ndef b := 1\n",
+     "export", ["lean_alpha"]),
+    ("a keyword prefix is not the keyword",
+     "@[exported lean_alpha]\ndef a := 0\n", "export", []),
+    ("the keyword with no separator is not an attribute",
+     "@[exportlean_alpha]\ndef a := 0\n", "export", []),
+    ("another attribute's argument is not this one's",
+     "@[extern \"ffi_fatal_halt\"]\nopaque h : Unit\n", "export", []),
+    ("an `extern` argument is blanked with its string, over a strings-free view",
+     "@[extern \"ffi_fatal_halt\"]\nopaque h : Unit\n", "extern", []),
+]
+
+#: The same parser over the **strings-kept** view, where a quoted argument is
+#: readable: `(name, source, keyword, expected)`.
+_ATTRIBUTE_ARGUMENTS_KEPT: list[tuple[str, str, str, list[str]]] = [
+    ("a quoted argument is the string's contents",
+     '@[extern "ffi_fatal_halt"]\nopaque h : Unit\n', "extern", ["ffi_fatal_halt"]),
+    ("a quoted argument in a combined list",
+     '@[inline, extern "ffi_fatal_halt_all"]\nopaque h : Unit\n', "extern",
+     ["ffi_fatal_halt_all"]),
+    ("a commented-out quoted argument is not one",
+     '-- @[extern "ffi_fatal_halt"]\nopaque h : Unit\n', "extern", []),
+]
+
+
 def _self_test() -> int:
     failures = 0
+    for name, source, keyword, want in _ATTRIBUTE_ARGUMENTS:
+        got = attribute_arguments(code_no_strings(source), keyword)
+        if got != want:
+            failures += 1
+            print(f"[lean-code-view] FAIL attribute_arguments {name}: "
+                  f"want {want!r}, got {got!r}")
+    for name, source, keyword, want in _ATTRIBUTE_ARGUMENTS_KEPT:
+        got = attribute_arguments(strip(source), keyword)
+        if got != want:
+            failures += 1
+            print(f"[lean-code-view] FAIL attribute_arguments (strings kept) {name}: "
+                  f"want {want!r}, got {got!r}")
+    quoted = 'def doc : String := "@[export lean_alpha]"\n'
+    if attribute_arguments(code_no_strings(quoted), "export"):
+        failures += 1
+        print("[lean-code-view] FAIL attribute_arguments: an attribute quoted in a "
+              "string literal was read as a live one")
+    commented = "-- @[inline, export lean_alpha]\ndef a := 0\n"
+    if attribute_arguments(code_no_strings(commented), "export"):
+        failures += 1
+        print("[lean-code-view] FAIL attribute_arguments: a commented-out attribute "
+              "was read as a live one")
     for name, src, want_code, token in _STRING_BLANKED:
         got = code_no_strings(src)
         if " ".join(got.split()) != want_code:
@@ -360,7 +493,10 @@ def _self_test() -> int:
     if failures:
         print(f"[lean-code-view] SELF-TEST FAILED ({failures})")
         return 1
-    print(f"[lean-code-view] SELF-TEST PASS ({len(_CASES) + len(_PRESERVED)} cases, "
+    cases = (len(_CASES) + len(_PRESERVED) + len(_STRING_BLANKED)
+             + len(_ATTRIBUTE_ARGUMENTS)
+             + len(_ATTRIBUTE_ARGUMENTS_KEPT) + 2)
+    print(f"[lean-code-view] SELF-TEST PASS ({cases} cases, "
           f"{checked} tree files, overlay prune witnessed)")
     return 0
 

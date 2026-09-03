@@ -707,6 +707,32 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   the siblings — the sweep rule above, failing in the way it says.  The
   mutation for this class keeps the token and changes its provenance, adds
   a second consumer, or puts a decoy ahead of the live occurrence.
+
+  **A name is not a definition** (PR #889 review round 12).  The last
+  relation in this family is the one a scanner performs implicitly every
+  time it matches an identifier: that the spelling *denotes* the
+  declaration it stands for.  It does not.  `let bootAndInitialiseRPi5 :=
+  fun _ => pure (.ok default)` above the call satisfies every
+  executed-call and branch-and-halt check written against the callee's
+  name; `Fake.ffiFatalHalt` and a local `let ffiFatalHalt : BaseIO Unit
+  := pure ()` both satisfy a halt pattern that allows an arbitrary
+  qualifier; `@[inline, export lean_kernel_main]` is invisible to a
+  `@\[export\s+…\]` regex, so the declaration carrying it is not
+  recognised as the boot entry *at all* and its contract passes
+  vacuously; and `#[link_name = "actual"] fn local();` names a symbol the
+  Rust identifier never mentions.  So **resolve the reference before
+  asserting about it**: `resolves_to` applies Lean's own suffix rule
+  against fully-qualified names (`lean_qualified_declarations`), the
+  candidate set must contain nothing unapproved, a bare name is refused
+  where the declaration binds it locally, the attribute list is parsed
+  rather than matched (`lean_code_view.attribute_arguments`, shared with
+  `build.rs`'s parser so the two inventories cannot disagree), and an
+  `extern` declaration's symbol is its *effective linker name*.  Where
+  resolution is beyond a scanner — an alias for a Lean upcall, which no
+  gate can attribute to a readiness guard — refuse the alias
+  (`lean_link_name_aliases`) rather than read past it.  The mutation for
+  this class keeps the name and changes what it denotes: rebind it, put
+  it in another namespace, spell the attribute a second legal way.
 - **Invariant/Operations split**: each kernel subsystem has
   `Operations.lean` (transitions) and `Invariant.lean` (proofs). Keep
   this separation.
@@ -1745,6 +1771,19 @@ code may assume:
   (`executable_definitions`), since every requirement the gate reconciles
   is an `extern "C" fn` and a data object under the old name would have
   resolved a call into data.
+  Since round 12 every one of those names is **resolved** rather than
+  matched: the export attribute is parsed from the list
+  (`lean_code_view.attribute_arguments`, shared with `build.rs`, so
+  `@[inline, export lean_kernel_main]` is the same export on both sides),
+  a reference to the checked boot or to a halt must denote the pinned
+  declaration by Lean's suffix rule and nothing else (`resolves_to`,
+  `lean_qualified_declarations`) and is refused where the declaration
+  binds the name locally, the halt set is derived from the `@[extern
+  "ffi_fatal_halt…"]` primitives and their aliases rather than spelled
+  out, and an `extern` declaration's requirement is its effective linker
+  name, `#[link_name = "…"]` included.  `build.rs` refuses such an alias
+  outright for a Lean symbol: the readiness derivation reads the Rust
+  identifier, so an aliased seam is attributed to no gate at all.
 - **The WS-SM theorem total is measured, not summed — and it counts
   propositions, not registrations.**
   `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean` registers one entry per

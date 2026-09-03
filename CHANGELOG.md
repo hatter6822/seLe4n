@@ -918,6 +918,79 @@ one more gap in the boot-entry check.
   non-empty line must begin with the halt call, so a conditional, a trailing
   statement after the halt, or a `let` that merely names it are all refused.
 
+### The review round, twelfth pass
+
+Codex's twelfth review (on the round-11 head) raised four findings, all in
+`scripts/check_kernel_entry_exports.py` and all one shape: **a name is not a
+definition**.  Every check the last three rounds added asked its question of a
+*spelling* — the callee's name at an accepted position, the halt's name behind
+some qualifier, the export attribute in its plainest form, the Rust name of an
+`extern` declaration — and a spelling can be made to denote something else
+while every token a scanner reads stays exactly where it was.  The fix is the
+same resolution step in all four places, so the checks now ask what a
+reference *denotes*:
+
+* **The callee could be rebound.**  `let bootAndInitialiseRPi5 := fun _ =>
+  pure (.ok default)` above the `match` satisfied round 5's executed-call
+  patterns and round 9's branch-and-halt shape, and the writer check exempted
+  that very spelling — so an entry that booted nothing at all passed as the
+  checked platform boot.  A reference now resolves by Lean's own rule (its
+  components are a suffix of a declaration's fully-qualified name), must
+  resolve to *only* the pinned `SeLe4n.Platform.FFI.bootAndInitialiseRPi5`,
+  and a bare name is refused where the declaration binds it locally — a
+  parameter, a `let`/`have`, a `fun` binder, a `match` pattern — or where the
+  file introduces it as a module-level alias with an `open … renaming`
+  clause, the one aliasing form the candidate index cannot see (a plain
+  `export Foo (bar)` aliases a declaration the index already carries under
+  that short name, so it is refused by the resolution itself).
+* **The error arm's halt could be anything named like one.**  The round-11
+  pattern spelled the four halt names behind an arbitrary qualifier, so
+  `Fake.ffiFatalHalt` — a declaration in some other namespace, or none — and a
+  local `let ffiFatalHalt : BaseIO Unit := pure ()` both read as the
+  fail-closed stop.  The halt set is now **derived**: the seed is structural
+  (an `opaque` carrying `@[extern "ffi_fatal_halt"]` or
+  `@[extern "ffi_fatal_halt_all"]` — the attribute that binds it to
+  `cpu::fatal_halt()`), closed over *aliases* only, since closing under mere
+  reference would classify `if b then fatalHaltAll else pure ()` as a halt and
+  accept an arm that returns.  `EXPECTED_HALT_DEFINITIONS` pins the result in
+  both directions, so a Lean rename is picked up automatically and a Rust-side
+  rename of the primitive is loud.
+* **A combined attribute list hid the boot entry.**  `@[inline, export
+  lean_kernel_main]` is the same export, and `build.rs` has read it since the
+  second pass; the Python inventory still matched `@\[export\s+…\]`, so such
+  an export was missing from the link requirement *and* its declaration was
+  not recognised as the boot entry — the whole boot-entry contract passing
+  vacuously.  Both sides now share one parser,
+  `lean_code_view.attribute_arguments`, which splits the list, accepts a line
+  break after the keyword, matches brackets so a nested `foo[bar]` does not end
+  the list, and reads a quoted argument as its string (which is what lets the
+  halt derivation ask an `opaque` which Rust symbol it binds to).
+* **`#[link_name]` was ignored.**  `#[link_name = "actual_symbol"] fn
+  local_name();` makes the linker demand `actual_symbol` and never
+  `local_name`, so deriving the requirement from the Rust name got it wrong in
+  both directions: the archive was asked for a symbol nothing references, and
+  the symbol a link would fail on was required of nobody.
+  `extern_declarations_in` now reads the effective linker name off the
+  strings-kept view at the same offsets as the structure.  The sweep found the
+  sibling in `build.rs`, where an alias would be worse than wrong: the
+  readiness derivation collects HAL externs by their `lean_` prefix and
+  resolves calls by the symbol's own identifier, so an aliased Lean seam is
+  attributed to no readiness gate and demands no `LEAN_READY_GATED_SEAMS`
+  entry — invisible to the gate rather than misread by it.  `build.rs` refuses
+  a `#[link_name]` naming a Lean symbol outright, which is the same treatment
+  it already gives a Lean symbol taken as a value.
+
+Two supporting changes fall out.  `lean_declaration_spans` returns byte offsets
+rather than text, so a question about structure and a question about string
+contents are answered at the *same position* on two byte-aligned views instead
+of by pairing up two independently-segmented lists; and
+`lean_qualified_declarations` tracks the enclosing `namespace`, which is what
+makes a fully-qualified name — and therefore resolution — available at all.
+The self-test's fixture grew the halt primitives, their aliases, a conditional
+caller of one (which must *not* be read as a halt) and the namespaces they
+really live in, per the standing rule that a fixture must be no thinner than
+the file it stands for.
+
 ### Tests
 
 * `tests/SmpIdleSuite.lean` — 28 surface anchors for the new boot surface
@@ -931,8 +1004,7 @@ one more gap in the boot-entry check.
   is refused the same way while the same TCB naming a non-idle root is
   accepted, a boot CNode holding a capability to an idle TCB is a reference
   and one holding an ordinary capability is not, and its neighbour
-  one slot below is accepted; that every core's idle thread is
-  runtime checks that on the production boot state every core's idle thread is
+  one slot below is accepted; and that every core's idle thread is
   on its **own** queue and on no other's, resolves to that core's idle TCB, is
   in the core's active domain, and classifies `.Ready` (the RR5.10 × RR5.14
   composition); with the negative that the pre-RR5.14 entry enqueues and installs

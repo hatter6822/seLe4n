@@ -692,6 +692,21 @@ re-prioritise a core's idle TCB; the refusal is at the raw-operand lift points
 `validateThreadIdArg` / `validateObjIdArg` — and the boot entry's `.error` arm
 must halt as its terminal action rather than merely mention a halt.
 
+**Review round 12 (PR #889, same version).**  Four, all against
+`check_kernel_entry_exports.py` and all one shape — *a name is not a
+definition*.  The callee could be rebound (`let bootAndInitialiseRPi5 := fun _
+=> pure (.ok default)`); the `.error` arm's halt could be `Fake.ffiFatalHalt`
+or a local of that name; `@[inline, export lean_kernel_main]` was invisible to
+the export inventory and the boot-entry locator, so the whole contract passed
+vacuously; and `#[link_name = "…"]` renamed a symbol the requirement then got
+wrong in both directions.  Every reference is now resolved by Lean's suffix
+rule against fully-qualified declarations, must denote only the pinned one, and
+is refused where the declaration binds the name locally; the halt set is
+derived from the `@[extern "ffi_fatal_halt…"]` primitives and their aliases;
+the attribute list is parsed by one parser shared with `build.rs`; and the link
+requirement is the effective linker name, with `build.rs` refusing an alias of
+a Lean symbol outright, since no readiness gate can be attributed to one.
+
 **Note on RR5.10–RR5.14** (the rows that replaced one XL).  Two findings shape
 the split, and the row they replaced named neither: one is an ordering defect
 it inherited, the other is the reason its "cannot be separate PRs" claim is
