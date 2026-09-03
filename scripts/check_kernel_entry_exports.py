@@ -98,10 +98,14 @@ ASM_LABEL = re.compile(r"^\s*([A-Za-z_.$][A-Za-z0-9_.$]*)\s*:", re.MULTILINE)
 # A `cc::Build` source registration in `build.rs`, read over the comment-blanked
 # view (string contents kept, since the path IS a string).
 CC_FILE_CALL = re.compile(r'\.file\(\s*"([^"]+)"\s*\)')
-# The primary's boot install, and the checked platform boot it must call.
+# The primary's boot install, and the checked platform boot it must call:
+# `bootAndInitialiseRPi5`, the generic `bootAndInitialisePlatform` fixed at
+# `RPi5Platform` (PR #889 review round 7 — with the generic entry as the callee
+# the gate never inspected the platform argument, so an entry booting
+# `SimSingleCorePlatform` on the hardware image satisfied it).
 BOOT_ENTRY_SYMBOL = "lean_kernel_main"
 BOOT_ENTRY_EXPORT = re.compile(r"@\[export\s+lean_kernel_main\s*\]")
-BOOT_ENTRY_CALLEE = "bootAndInitialisePlatform"
+BOOT_ENTRY_CALLEE = "bootAndInitialiseRPi5"
 # Where a top-level Lean declaration starts, at column 0.
 LEAN_DECL_START = re.compile(
     r"^(?:@\[|(?:private |protected |noncomputable |unsafe |partial )*"
@@ -149,6 +153,7 @@ EXPECTED_KERNEL_STATE_WRITERS = frozenset({
     "modifyGetKernelState",
     "bootAndInitialiseFromPlatformOn",
     "bootAndInitialiseFromPlatform",
+    "bootAndInitialisePlatform",
     BOOT_ENTRY_CALLEE,
 })
 EXPECTED_KERNEL_STATE_READERS = frozenset({"getKernelState", "getKernelLabelingContext"})
@@ -162,8 +167,20 @@ def lean_exports_in(text: str) -> set[str]:
     return set(LEAN_EXPORT.findall(lean_code_view.code_no_strings(text)))
 
 
+LEAN_LIBRARY_ROOT_MODULE = REPO / "SeLe4n.lean"
+
+
 def lean_sources() -> dict[str, str]:
-    return {str(path.relative_to(REPO)): path.read_text() for path in sorted(LEAN_ROOT.rglob("*.lean"))}
+    """Every Lean source the static library is built from: the tree under
+    `SeLe4n/` **and the library root module `SeLe4n.lean`** (PR #889 review
+    round 7 — the root compiles into `SeLe4n:static` like any other module, so
+    an `@[export]` placed there is in the archive; walking the directory alone
+    left it outside the export inventory and the boot-entry check)."""
+    sources = {
+        str(path.relative_to(REPO)): path.read_text() for path in sorted(LEAN_ROOT.rglob("*.lean"))
+    }
+    sources[str(LEAN_LIBRARY_ROOT_MODULE.relative_to(REPO))] = LEAN_LIBRARY_ROOT_MODULE.read_text()
+    return sources
 
 
 def lean_exports() -> set[str]:
@@ -510,21 +527,99 @@ def assembled_sources_in(build_rs: str) -> set[str]:
     compiled, and only if that builder's function runs.
     """
     code = rust_code_view.code(build_rs)
+    structure = rust_code_view.code_no_strings(build_rs)
+    bodies = rust_code_view.fn_bodies(build_rs)
     found: set[str] = set()
     for compile_at in cross_gate._occurrences(code, ASM_COMPILE_CALL):
-        owner = rust_code_view.enclosing_fn(code, compile_at)
+        owner = rust_code_view.enclosing_fn(code, compile_at, bodies)
         if owner == rust_code_view.FILE_SCOPE or not cross_gate.reachable_from_main(code, owner):
             continue
         receiver = cross_gate.compiled_builder_name(code, compile_at)
         if receiver is None:
             continue
-        for pos in cross_gate._occurrences(code, ".file("):
-            if pos >= compile_at or cross_gate.chain_root(code, pos) != receiver:
+        # PR #889 review round 7: the `.file()` calls that reach the assembler
+        # are the ones on the compiled builder's *executed* chain — top-level
+        # statements of the compile's own function body, at or before the
+        # statement holding the compile.  A `.file()` under `if false { … }`
+        # in that function, or in another function whose local happens to
+        # share the receiver's name, keeps the token and assembles nothing.
+        body = innermost_body(bodies, compile_at)
+        if body is None:
+            continue
+        body_start, body_end = body
+        statements = rust_top_level_statements(structure, body_start, body_end)
+        compile_statement = next(
+            ((lo, hi) for lo, hi in statements if lo <= compile_at < hi), None
+        )
+        if compile_statement is None:
+            continue
+        for lo, hi in statements:
+            if lo > compile_statement[0]:
                 continue
-            m = CC_FILE_CALL.match(code, pos)
-            if m:
-                found.add(m.group(1))
+            for pos in cross_gate._occurrences(code[lo:hi], ".file("):
+                at = lo + pos
+                if at >= compile_at or cross_gate.chain_root(code, at) != receiver:
+                    continue
+                # A `.file()` inside a block the statement opens — `if false
+                # { asm.file(…); }` — is nested, not executed by the statement.
+                if structure[lo:at].count("{") != structure[lo:at].count("}"):
+                    continue
+                m = CC_FILE_CALL.match(code, at)
+                if m:
+                    found.add(m.group(1))
     return found
+
+
+def innermost_body(
+    bodies: list[tuple[str, int, int]], offset: int
+) -> tuple[int, int] | None:
+    """The `(start, end)` of the innermost `fn` body containing `offset`."""
+    best: tuple[int, int] | None = None
+    for _, start, end in bodies:
+        if start <= offset < end and (best is None or start > best[0]):
+            best = (start, end)
+    return best
+
+
+def rust_top_level_statements(view: str, start: int, end: int) -> list[tuple[int, int]]:
+    """The top-level statements of a Rust block interior `[start, end)` as
+    `(lo, hi)` spans over the string-free view: a statement ends at a `;` at
+    brace depth zero, or at the `}` that closes a depth-zero block not
+    followed by `else`.  The Python twin of `build.rs`'s
+    `top_level_statements_in`, so the two gates ask the same question of the
+    same shape."""
+    out: list[tuple[int, int]] = []
+    depth = 0
+    paren = 0
+    stmt_start = start
+    i = start
+    while i < end:
+        c = view[i]
+        if c in "([":
+            paren += 1
+        elif c in ")]":
+            paren -= 1
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0 and paren == 0:
+                nxt = i + 1
+                while nxt < end and view[nxt].isspace():
+                    nxt += 1
+                if not view[nxt:end].startswith("else"):
+                    stmt_end = nxt + 1 if nxt < end and view[nxt] == ";" else i + 1
+                    out.append((stmt_start, stmt_end))
+                    stmt_start = stmt_end
+                    i = stmt_end
+                    continue
+        elif c == ";" and depth == 0 and paren == 0:
+            out.append((stmt_start, i + 1))
+            stmt_start = i + 1
+        i += 1
+    if view[stmt_start:end].strip():
+        out.append((stmt_start, end))
+    return out
 
 
 def asm_providers_from(sources: dict[str, str], build_rs: str) -> set[str]:
@@ -780,6 +875,24 @@ def self_test() -> int:
             "the assembled-source set was not the compiled builder's live chain "
             f"(got {sorted(assembled_sources_in(live_chain))})"
         )
+    # PR #889 review round 7: a `.file()` under a dead branch of the compiling
+    # function, and one in an unreachable helper whose local shares the
+    # receiver's name, keep the token and assemble nothing; a separate
+    # top-level `.file()` statement before the compile does assemble.
+    executed_chain = (
+        "fn main() {\n    assemble();\n}\n"
+        "fn stale() {\n    let mut asm = cc::Build::new();\n    asm.file(\"src/stale.S\");\n}\n"
+        "fn assemble() {\n    let mut asm = cc::Build::new();\n"
+        "    asm.file(\"src/vectors.S\");\n"
+        "    if false {\n        asm.file(\"src/ghost.S\");\n    }\n"
+        "    asm.file(\"src/boot.S\").file(\"src/trap.S\")\n"
+        "        .compile(\"sele4n_hal_asm\");\n}\n"
+    )
+    if assembled_sources_in(executed_chain) != {"src/vectors.S", "src/boot.S", "src/trap.S"}:
+        failures.append(
+            "the assembled-source set was not the executed builder chain "
+            f"(got {sorted(assembled_sources_in(executed_chain))})"
+        )
     nm_text = (
         "0000000000000000 N $d.1\n0000000000000000 t $x.0\n"
         "0000000000000000 T _start\n000000000000007c T secondary_entry\n"
@@ -810,6 +923,8 @@ def self_test() -> int:
         "  bootAndInitialiseFromPlatformOn 4 cfg\n"
         "def bootAndInitialisePlatform (platform : Type) (cfg : Nat) : IO Unit :=\n"
         "  bootAndInitialiseFromPlatformOn 4 cfg\n"
+        "def bootAndInitialiseRPi5 (cfg : Nat) : IO Unit :=\n"
+        "  bootAndInitialisePlatform RPi5Platform cfg\n"
         "theorem bootAndInitialisePlatform_eq (cfg : Nat) :\n"
         "    bootAndInitialisePlatform Unit cfg = bootAndInitialisePlatform Unit cfg := rfl\n"
     )
@@ -826,53 +941,57 @@ def self_test() -> int:
 
     # The executing shapes, each with the call at the top level of the block.
     check_entry("`let _ ←` binding",
-                "do\n  let _ ← bootAndInitialisePlatform RPi5Platform cfg\n  pure ()", True)
+                "do\n  let _ ← bootAndInitialiseRPi5 cfg\n  pure ()", True)
     check_entry("`match ←` scrutinee",
-                "do\n  match ← bootAndInitialisePlatform RPi5Platform cfg with\n"
+                "do\n  match ← bootAndInitialiseRPi5 cfg with\n"
                 "  | .ok _ => pure ()\n  | .error _ => pure ()", True)
     check_entry("bare call as the last statement",
-                "do\n  IO.println \"booting\"\n  bootAndInitialisePlatform RPi5Platform cfg", True)
+                "do\n  IO.println \"booting\"\n  bootAndInitialiseRPi5 cfg", True)
     check_entry("term body headed by the call",
-                "discard <| bootAndInitialisePlatform RPi5Platform cfg", True)
+                "discard <| bootAndInitialiseRPi5 cfg", True)
     check_entry("a reader after the call is not an installer",
-                "do\n  let _ ← bootAndInitialisePlatform RPi5Platform cfg\n"
+                "do\n  let _ ← bootAndInitialiseRPi5 cfg\n"
                 "  let st ← getKernelState\n  pure ()", True)
     # Token-preserving mutations: every one keeps `bootAndInitialisePlatform` in
     # the declaration and breaks the relation (round 3's check passed them all).
     check_entry("the callee named only in a string literal",
-                "do\n  IO.println \"bootAndInitialisePlatform\"\n"
+                "do\n  IO.println \"bootAndInitialiseRPi5\"\n"
                 "  initialiseKernelState (bootFromPlatform cfg)", False)
     check_entry("the call nested under a dead branch",
-                "do\n  if false then\n    let _ ← bootAndInitialisePlatform RPi5Platform cfg\n"
+                "do\n  if false then\n    let _ ← bootAndInitialiseRPi5 cfg\n"
                 "  initialiseKernelState (bootFromPlatform cfg)", False)
     check_entry("the action bound with `:=` and never run",
-                "do\n  let boot := bootAndInitialisePlatform RPi5Platform cfg\n"
+                "do\n  let boot := bootAndInitialiseRPi5 cfg\n"
                 "  initialiseKernelState (bootFromPlatform cfg)", False)
     check_entry("the call executed, then the live path routed around it",
-                "do\n  let _ ← bootAndInitialisePlatform RPi5Platform cfg\n"
+                "do\n  let _ ← bootAndInitialiseRPi5 cfg\n"
                 "  initialiseKernelState (bootFromPlatform cfg)", False)
+    check_entry("the generic entry at another platform (round 7)",
+                "do\n  let _ ← bootAndInitialisePlatform SimSingleCorePlatform cfg\n  pure ()", False)
+    check_entry("the generic entry at the right platform is still not the hardware entry (round 7)",
+                "do\n  let _ ← bootAndInitialisePlatform RPi5Platform cfg\n  pure ()", False)
     check_entry("the unchecked wrapper re-run after the checked one",
-                "do\n  let _ ← bootAndInitialisePlatform RPi5Platform cfg\n"
+                "do\n  let _ ← bootAndInitialiseRPi5 cfg\n"
                 "  let _ ← bootAndInitialiseFromPlatform cfg ctx\n  pure ()", False)
     check_entry("a `return` above the call",
-                "do\n  return ()\n  let _ ← bootAndInitialisePlatform RPi5Platform cfg", False)
+                "do\n  return ()\n  let _ ← bootAndInitialiseRPi5 cfg", False)
     check_entry("an installer reached through a helper",
-                "do\n  let _ ← bootAndInitialisePlatform RPi5Platform cfg\n  installRaw cfg\n\n"
+                "do\n  let _ ← bootAndInitialiseRPi5 cfg\n  installRaw cfg\n\n"
                 "def installRaw (cfg : Nat) : IO Unit :=\n  kernelStateRef.set (bootFromPlatform cfg)",
                 False)
     check_entry("the reference written directly",
-                "do\n  let _ ← bootAndInitialisePlatform RPi5Platform cfg\n  kernelStateRef.set 0",
+                "do\n  let _ ← bootAndInitialiseRPi5 cfg\n  kernelStateRef.set 0",
                 False)
     check_entry("a `where`-form body with no `:=`", "leanKernelMain where\n  x := 0", False)
     doc_only = (
-        "/-- calls bootAndInitialisePlatform -/\n@[export lean_kernel_main]\n"
+        "/-- calls bootAndInitialiseRPi5 -/\n@[export lean_kernel_main]\n"
         "def leanKernelMain : IO Unit := pure ()\n"
     )
     if not boot_entry_binding_failures({"ffi": ffi, "f": doc_only}):
         failures.append("a boot entry naming the callee only in its docstring was accepted")
     elsewhere = (
         "@[export lean_kernel_main]\ndef leanKernelMain : IO Unit := pure ()\n\n"
-        "def other : IO Unit := do\n  let _ ← bootAndInitialisePlatform RPi5Platform cfg\n  pure ()\n"
+        "def other : IO Unit := do\n  let _ ← bootAndInitialiseRPi5 cfg\n  pure ()\n"
     )
     if not boot_entry_binding_failures({"ffi": ffi, "f": elsewhere}):
         failures.append("a boot entry whose neighbour makes the call was accepted")
@@ -990,7 +1109,7 @@ def self_test() -> int:
         for line in failures:
             print(f"         {line}")
         return 1
-    print("[PASS] check_kernel_entry_exports self-test (54 cases)")
+    print("[PASS] check_kernel_entry_exports self-test (57 cases)")
     return 0
 
 
@@ -1022,6 +1141,8 @@ def main() -> int:
         )
 
     sources = lean_sources()
+    if str(LEAN_LIBRARY_ROOT_MODULE.relative_to(REPO)) not in sources:
+        sys.exit("[FAIL] the Lean source inventory does not include the library root module")
     exports = set()
     for text in sources.values():
         exports.update(lean_exports_in(text))

@@ -2128,7 +2128,7 @@ fn release_surviving_tripwire_status(
         let statements = top_level_statements(body, block_open, block_close);
         if statements
             .last()
-            .map(|&(lo, hi)| statement_diverges(&body[lo..hi]))
+            .map(|&(lo, hi)| statement_halts(&body[lo..hi]))
             .unwrap_or(false)
         {
             return Ok(());
@@ -2136,8 +2136,10 @@ fn release_surviving_tripwire_status(
     }
     if saw_condition {
         Err(format!(
-            "`{fn_name}` has an `if {condition}` but its block does not end in a diverging \
-             statement — the tripwire does not stop the core on the condition it exists to catch"
+            "`{fn_name}` has an `if {condition}` but its block does not end in the fail-closed \
+             halt — a `return` or a `panic!` diverges from the helper, not from the core, and \
+             the caller then proceeds into the operation the tripwire exists to stop \
+             (PR #889 review round 7)"
         ))
     } else {
         Err(format!(
@@ -2373,11 +2375,21 @@ pub fn acquire_kernel_entry(core_id: usize) -> u64 {
             );
         }
     }
-    let mutations: [(&str, &str, &str); 6] = [
+    let mutations: [(&str, &str, &str); 8] = [
         (
             "the predicate is reversed, keeping its call",
             "    if crate::shootdown::round_lock_held_by(core_id) {",
             "    if !crate::shootdown::round_lock_held_by(core_id) {",
+        ),
+        (
+            "the branch returns from the helper instead of halting the core (round 7)",
+            "        crate::cpu::fatal_halt();\n    }",
+            "        if false {\n            crate::cpu::fatal_halt();\n        }\n        return;\n    }",
+        ),
+        (
+            "the branch panics — the host lane's abort, no halt on the image (round 7)",
+            "        crate::cpu::fatal_halt();\n    }",
+            "        let _keep = || crate::cpu::fatal_halt();\n        panic!(\"lock order\");\n    }",
         ),
         (
             "the predicate is widened, keeping its call",
@@ -2505,11 +2517,16 @@ pub fn install_exception_vectors() {
             );
         }
     }
-    let mutations: [(&str, &str, &str); 3] = [
+    let mutations: [(&str, &str, &str); 4] = [
         (
             "the alignment predicate is reversed: aligned boots halt, misaligned ones proceed",
             "    if !vbar.is_multiple_of(2048) {",
             "    if vbar.is_multiple_of(2048) {",
+        ),
+        (
+            "the branch returns instead of halting, so the misaligned VBAR is written (round 7)",
+            "        crate::cpu::fatal_halt();\n    }",
+            "        if false {\n            crate::cpu::fatal_halt();\n        }\n        return;\n    }",
         ),
         (
             "the predicate is rewritten around the same constant with the wrong polarity",
@@ -3808,6 +3825,21 @@ fn top_level_statements_in(code: &str, start: usize, end: usize) -> Vec<(usize, 
         out.push((stmt_start, end));
     }
     out
+}
+
+/// **PR #889 review round 7**: does a top-level statement **halt the core**?
+/// Only a call to `fatal_halt` — the release-surviving tripwires must end in
+/// it, not in any divergence: a `return` from `assert_not_holding_round_lock`
+/// hands control back to `acquire_kernel_entry`, which proceeds into the
+/// acquire while the same core holds the round lock, recreating the deadlock
+/// the tripwire exists to prevent; a `panic!` is the host lane's abort and no
+/// halt at all on the image.  `statement_diverges` stays the right question
+/// for the readiness guard, whose not-ready arm legitimately returns.
+fn statement_halts(statement: &str) -> bool {
+    let s = statement.trim().trim_end_matches(';').trim();
+    s.starts_with("crate::cpu::fatal_halt(")
+        || s.starts_with("cpu::fatal_halt(")
+        || s.starts_with("fatal_halt(")
 }
 
 /// Does a top-level statement diverge unconditionally?  A `return`, a

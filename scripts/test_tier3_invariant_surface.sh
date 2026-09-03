@@ -5739,6 +5739,21 @@ import SeLe4n.Platform.RPi5.Contract
 #check @SeLe4n.Platform.RPi5.rpi5_deploymentLabeling_separatedThreads
 #check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor_map_ok
 #check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor_undeclared_idle_absent
+-- PR #889 review round 7: a boot TCB is stored under its own thread id; the
+-- hardware entry is fixed at the RPi5 binding, which supplies the machine
+-- configuration and the boot VSpace root.
+#check @SeLe4n.Platform.Boot.tcbIdentitiesMatchSlots
+#check @SeLe4n.Platform.Boot.PlatformConfig.wellFormed_tcbIdentitiesMatchSlots
+#check @SeLe4n.Platform.Boot.tcbIdentitiesMatchSlots_tid_eq
+#check @SeLe4n.Platform.Boot.idleSlotsReserved_no_idle_tid
+#check @SeLe4n.Platform.FFI.bindPlatformConfig
+#check @SeLe4n.Platform.FFI.bindPlatformConfig_machineConfig
+#check @SeLe4n.Platform.FFI.bindPlatformConfig_bootVSpaceRoot
+#check @SeLe4n.Platform.FFI.bindPlatformConfig_initialObjects
+#check @SeLe4n.Platform.FFI.bindPlatformConfig_irqTable
+#check @SeLe4n.Platform.FFI.bootAndInitialiseRPi5
+#check @SeLe4n.Platform.FFI.bootAndInitialiseRPi5_eq
+#check @SeLe4n.Platform.FFI.bootAndInitialiseRPi5_bound_config
 #check @SeLe4n.Platform.Boot.bootFromPlatformChecked_ok_shape
 #check @SeLe4n.Platform.Boot.bootFromPlatformChecked_ok_idleSlotsFreshAt
 -- SM0.G — PlatformBinding extension

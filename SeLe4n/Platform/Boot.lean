@@ -734,6 +734,12 @@ def bootObjectReferencesReservedIdleSlot (obj : KernelObject) : Bool :=
   | .cnode cn =>
     cn.slots.toList.any (fun s => SeLe4n.Kernel.capTargetsReservedIdleObject s.2)
   | .tcb tcb =>
+    -- PR #889 review round 7: the TCB's *own* identity.  A boot TCB stored at
+    -- an ordinary id whose `tid` is an idle thread's passed every field check
+    -- while naming the idle thread in the one field the lifecycle paths read
+    -- back: retyping that object runs `cleanupTcbReferences` on `tcb.tid` and
+    -- dequeues the real idle thread, around the capability chokepoint.
+    SeLe4n.Kernel.isIdleThreadId tcb.tid ||
     SeLe4n.Kernel.isIdleObjId tcb.cspaceRoot || SeLe4n.Kernel.isIdleObjId tcb.vspaceRoot ||
     tcb.boundNotification.any SeLe4n.Kernel.isIdleObjId ||
     tcb.queueNext.any SeLe4n.Kernel.isIdleThreadId ||
@@ -801,16 +807,54 @@ def idleSlotsReserved (config : PlatformConfig) : Bool :=
    | none => true
    | some entry => !isIdleObjId entry.id)
 
-/-- U6-E/F: A well-formed PlatformConfig has unique IRQs, unique object IDs and
-    (WS-RR RR5.13, PR #889 review) keeps the per-core idle slots free. -/
+/-- PR #889 review round 7: every boot TCB's **embedded identity is its own
+    slot** — `tcb.tid.toObjId = entry.id` for every `.tcb` entry.
+
+    A `TCB` carries its `ThreadId`, and the object store is keyed by `ObjId`;
+    `getTcb? tid` reads `objects[tid.toObjId]`, and the lifecycle paths that
+    take a TCB *object* read its `tid` back to find it in the queues
+    (`cleanupTcbReferences`).  Nothing at boot related the two: a config could
+    store, at ordinary id `9`, a TCB whose `tid` was `idleThreadId 0`, and a
+    later retype of object `9` would dequeue idle `0` — the no-stall guarantee
+    defeated through a field no reservation read, and no capability to the idle
+    object needed.  Requiring the identity to be the slot is the relation
+    itself, not the idle instance of it: with it, a TCB's `tid` names an object
+    the config placed at that id, so every id-keyed lookup and every
+    tid-keyed walk agree on which thread a boot TCB is.  The idle case follows
+    (`idleSlotsReserved_no_idle_tid`), and the reference check reads `tid`
+    directly as well, so the two refusals name different faults. -/
+def tcbIdentitiesMatchSlots (config : PlatformConfig) : Bool :=
+  config.initialObjects.all (fun entry =>
+    match entry.obj with
+    | .tcb tcb => tcb.tid.toObjId == entry.id
+    | _ => true)
+
+/-- U6-E/F: A well-formed PlatformConfig has unique IRQs, unique object IDs,
+    (WS-RR RR5.13, PR #889 review) keeps the per-core idle slots free and
+    (PR #889 review round 7) stores every TCB under its own thread id. -/
 def PlatformConfig.wellFormed (config : PlatformConfig) : Bool :=
   irqsUnique config.irqTable && objectIdsUnique config.initialObjects &&
-    idleSlotsReserved config
+    idleSlotsReserved config && tcbIdentitiesMatchSlots config
 
 /-- **WS-RR RR5.13**: a well-formed config reserves the idle slots. -/
 theorem PlatformConfig.wellFormed_idleSlotsReserved (config : PlatformConfig)
     (h : config.wellFormed = true) : idleSlotsReserved config = true :=
+  ((Bool.and_eq_true _ _).mp ((Bool.and_eq_true _ _).mp h).1).2
+
+/-- PR #889 review round 7: a well-formed config stores every TCB under its
+    own thread id. -/
+theorem PlatformConfig.wellFormed_tcbIdentitiesMatchSlots (config : PlatformConfig)
+    (h : config.wellFormed = true) : tcbIdentitiesMatchSlots config = true :=
   ((Bool.and_eq_true _ _).mp h).2
+
+/-- PR #889 review round 7: the identity relation, entry by entry. -/
+theorem tcbIdentitiesMatchSlots_tid_eq (config : PlatformConfig)
+    (h : tcbIdentitiesMatchSlots config = true) :
+    ∀ e ∈ config.initialObjects, ∀ tcb : TCB, e.obj = .tcb tcb → tcb.tid.toObjId = e.id := by
+  intro e he tcb hObj
+  have hE := List.all_eq_true.mp h e he
+  simp only [hObj, beq_iff_eq] at hE
+  exact hE
 
 /-- **WS-RR RR5.13**: no config object sits in an idle slot under the reservation. -/
 theorem idleSlotsReserved_initialObjects (config : PlatformConfig)
@@ -830,6 +874,18 @@ theorem idleSlotsReserved_no_idle_references (config : PlatformConfig)
   have h1 := ((Bool.and_eq_true _ _).mp h).1
   have hE := (Bool.and_eq_true _ _).mp (List.all_eq_true.mp h1 e he)
   simpa using hE.2
+
+/-- PR #889 review round 7: no boot TCB's own identity is an idle thread's —
+    the first disjunct of the reference check's TCB arm. -/
+theorem idleSlotsReserved_no_idle_tid (config : PlatformConfig)
+    (h : idleSlotsReserved config = true) :
+    ∀ e ∈ config.initialObjects, ∀ tcb : TCB, e.obj = .tcb tcb →
+      SeLe4n.Kernel.isIdleThreadId tcb.tid = false := by
+  intro e he tcb hObj
+  have hRef := idleSlotsReserved_no_idle_references config h e he
+  rw [hObj] at hRef
+  simp only [bootObjectReferencesReservedIdleSlot, Bool.or_eq_false_iff, and_assoc] at hRef
+  exact hRef.1
 
 /-- **WS-RR RR5.13**: the boot VSpace root, when present, is not in an idle slot
     under the reservation. -/
@@ -1278,12 +1334,15 @@ def bootFromPlatformChecked (config : PlatformConfig) :
     .error "boot: duplicate IRQ registration detected in platform config"
   else if ¬ objectIdsUnique config.initialObjects then
     .error "boot: duplicate object ID detected in platform config"
-  else
+  else if ¬ idleSlotsReserved config then
     -- PR #889 review round 2: the third `wellFormed` conjunct has its own
     -- diagnostic — an otherwise valid config that occupies or references a
     -- per-core idle slot was reported as a duplicate object id, which names a
     -- fault the config does not have.
     .error "boot: platform config occupies or references a reserved per-core idle slot (WS-RR RR5.13 / PR #889 review)"
+  else
+    -- PR #889 review round 7: the fourth conjunct's own diagnostic.
+    .error "boot: a TCB entry's embedded thread id is not its own object id (PR #889 review round 7)"
 
 /-- U6-E/F/AJ3-C/AK9-C/AK9-F/AK9-G + WS-RC R3: Checked boot agrees with
     `bootFromPlatformWithInterrupts` on well-formed, boot-safe,
@@ -1373,7 +1432,7 @@ theorem bootFromPlatformChecked_ok_implies_irqHandlersValid (config : PlatformCo
         · cases hOk
       · cases hOk
     · cases hOk
-  · split at hOk <;> (try split at hOk) <;> cases hOk
+  · split at hOk <;> (try split at hOk) <;> (try split at hOk) <;> cases hOk
 
 /-- AK9-F (P-M05): Successful checked boot implies `MachineConfig.wellFormed`.
 
@@ -1399,7 +1458,7 @@ theorem bootFromPlatformChecked_ok_implies_machineConfigWellFormed
         · cases hOk
       · cases hOk
     · cases hOk
-  · split at hOk <;> (try split at hOk) <;> cases hOk
+  · split at hOk <;> (try split at hOk) <;> (try split at hOk) <;> cases hOk
 
 /-- AK9-F (P-M05): Successful checked boot implies `physicalAddressWidth ≤ 52`.
 
@@ -1422,7 +1481,7 @@ theorem bootFromPlatformChecked_ok_implies_physicalAddressWidth_bound
         · cases hOk
       · cases hOk
     · cases hOk
-  · split at hOk <;> (try split at hOk) <;> cases hOk
+  · split at hOk <;> (try split at hOk) <;> (try split at hOk) <;> cases hOk
 
 /-- AK9-G (P-M06): Successful checked boot produces a state with interrupts
     enabled. Matches the post-HAL hardware state.
@@ -1461,14 +1520,14 @@ theorem bootFromPlatformChecked_ok_interruptsEnabled (config : PlatformConfig)
         · cases hOk
       · cases hOk
     · cases hOk
-  · split at hOk <;> (try split at hOk) <;> cases hOk
+  · split at hOk <;> (try split at hOk) <;> (try split at hOk) <;> cases hOk
 
 /-- U6-E/F: Checked boot rejects configs that are not well-formed. -/
 theorem bootFromPlatformChecked_rejects_invalid (config : PlatformConfig)
     (hNotWf : config.wellFormed = false) :
     (bootFromPlatformChecked config).isOk = false := by
   simp [bootFromPlatformChecked, hNotWf]
-  split <;> (try split) <;> rfl
+  split <;> (try split) <;> (try split) <;> rfl
 
 /-- AJ3-C: Empty config trivially passes bootSafe check. -/
 theorem bootSafeObjectCheck_empty_config :
@@ -1516,11 +1575,11 @@ theorem bootFromPlatformWithWarnings_wellFormed_no_warnings (config : PlatformCo
   constructor
   · -- irqsUnique holds when wellFormed
     have : irqsUnique config.irqTable = true := by
-      unfold PlatformConfig.wellFormed at hWf; simp [Bool.and_eq_true] at hWf; exact hWf.1.1
+      unfold PlatformConfig.wellFormed at hWf; simp [Bool.and_eq_true] at hWf; exact hWf.1.1.1
     simp [this]
   · -- objectIdsUnique holds when wellFormed
     have : objectIdsUnique config.initialObjects = true := by
-      unfold PlatformConfig.wellFormed at hWf; simp [Bool.and_eq_true] at hWf; exact hWf.1.2
+      unfold PlatformConfig.wellFormed at hWf; simp [Bool.and_eq_true] at hWf; exact hWf.1.1.2
     simp [this]
 
 -- ============================================================================
@@ -3058,7 +3117,7 @@ theorem bootFromPlatformChecked_ok_scheduler_eq (config : PlatformConfig)
         · cases h
       · cases h
     · cases h
-  · split at h <;> (try split at h) <;> cases h
+  · split at h <;> (try split at h) <;> (try split at h) <;> cases h
 
 /-- **WS-RR RR5.13** (PR #889 review): what a successful checked boot **is**.
 
@@ -3103,7 +3162,7 @@ theorem bootFromPlatformChecked_ok_shape (config : PlatformConfig)
         · cases h
       · cases h
     · cases h
-  · split at h <;> (try split at h) <;> cases h
+  · split at h <;> (try split at h) <;> (try split at h) <;> cases h
 
 /-- **WS-RR RR5.13**: the composition's shape — a successful checked boot yields
     a successful idle boot whose state is the fold, and nothing else does.  Every

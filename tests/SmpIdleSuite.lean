@@ -577,6 +577,11 @@ that occupies or references a reserved idle slot with. -/
 private def idleSlotDiagnostic : String :=
   "boot: platform config occupies or references a reserved per-core idle slot (WS-RR RR5.13 / PR #889 review)"
 
+/-- PR #889 review round 7: the diagnostic the checked boot refuses a config
+whose TCB entry is stored under an id other than its own thread id with. -/
+private def tcbIdentityDiagnostic : String :=
+  "boot: a TCB entry's embedded thread id is not its own object id (PR #889 review round 7)"
+
 /-- **WS-RR RR5.13** (runtime): the idle entry adds no validation of its own —
 it accepts and rejects exactly what `bootFromPlatformChecked` does. -/
 private def runBootValidationParityChecks : IO Unit := do
@@ -702,6 +707,45 @@ private def runBootValidationParityChecks : IO Unit := do
         (e == idleSlotDiagnostic)
   | .ok _ =>
       assertBool "NEGATIVE: an untyped recording an idle child must be refused" false
+  -- PR #889 review round 7: a boot TCB's OWN identity.  Stored at an ordinary
+  -- id with an idle thread's tid it references the slot through the one field
+  -- the lifecycle paths read back (a retype of that object would dequeue the
+  -- real idle thread); stored under any id but its own thread id it is refused
+  -- for the identity relation itself; stored under its own id it is accepted.
+  let tcbWithTid (t : SeLe4n.ThreadId) : TCB :=
+    { tid := t, priority := ⟨10⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩,
+      ipcBuffer := SeLe4n.VAddr.ofNat 0, threadState := .Inactive }
+  let entryAt (id : Nat) (tcb : TCB) : SeLe4n.Platform.Boot.ObjectEntry :=
+    { id := ⟨id⟩, obj := .tcb tcb,
+      hSlots := fun _ h => KernelObject.noConfusion h,
+      hMappings := fun _ h => KernelObject.noConfusion h }
+  let idle0Tid : SeLe4n.ThreadId := idleThreadId ⟨0, by decide⟩
+  assertBool "NEGATIVE: a boot TCB whose own tid is an idle thread's references the slot"
+    (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot (.tcb (tcbWithTid idle0Tid)) == true)
+  let idleTidCfg : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [], initialObjects := [entryAt 9 (tcbWithTid idle0Tid)] }
+  match SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads idleTidCfg with
+  | .error e =>
+      assertBool "NEGATIVE: ...and the checked boot refuses it with the reservation diagnostic"
+        (e == idleSlotDiagnostic)
+  | .ok _ =>
+      assertBool "NEGATIVE: a TCB carrying an idle thread id at an ordinary slot must be refused" false
+  let aliasCfg : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [], initialObjects := [entryAt 9 (tcbWithTid ⟨7⟩)] }
+  match SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads aliasCfg with
+  | .error e =>
+      assertBool "NEGATIVE: a TCB stored under another thread's id is refused for the identity relation"
+        (e == tcbIdentityDiagnostic)
+  | .ok _ =>
+      assertBool "NEGATIVE: a TCB whose tid is not its own slot must be refused" false
+  let ownIdCfg : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [], initialObjects := [entryAt 9 (tcbWithTid ⟨9⟩)] }
+  assertBool "a TCB stored under its own thread id is accepted"
+    (SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads ownIdCfg).toOption.isSome
+  assertBool "tcbIdentitiesMatchSlots decides the identity relation entry by entry"
+    (SeLe4n.Platform.Boot.tcbIdentitiesMatchSlots aliasCfg == false &&
+     SeLe4n.Platform.Boot.tcbIdentitiesMatchSlots idleTidCfg == false &&
+     SeLe4n.Platform.Boot.tcbIdentitiesMatchSlots ownIdCfg == true)
   assertBool "capTargetsReservedIdleObject decides by the capability's target"
     (SeLe4n.Kernel.capTargetsReservedIdleObject
         { target := .object idle0Obj, rights := AccessRightSet.ofList [.write], badge := none } == true &&

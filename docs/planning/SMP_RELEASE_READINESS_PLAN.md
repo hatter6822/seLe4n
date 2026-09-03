@@ -652,6 +652,15 @@ blanked; the idle-slot reservation reads an untyped's `children` and
 protects and must dominate it; and an expected-unresolved exemption expires
 the moment its export appears.
 
+**Review round 7 (PR #889, same version).**  Six: a boot TCB is stored under
+its own thread id (`tcbIdentitiesMatchSlots`) and the reference check reads
+its `tid`; the hardware entry is `bootAndInitialiseRPi5`, the generic entry
+fixed at the RPi5 binding, and the platform entry boots the bound config
+(`bindPlatformConfig`: the binding's machine configuration and boot VSpace
+root); the tripwire branch must end in `fatal_halt`; the assembly providers
+are read off the compile's executed chain; the export inventory includes the
+library root.
+
 **Note on RR5.10–RR5.14** (the rows that replaced one XL).  Two findings shape
 the split, and the row they replaced named neither: one is an ordering defect
 it inherited, the other is the reason its "cannot be separate PRs" claim is

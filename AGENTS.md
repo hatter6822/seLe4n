@@ -1014,7 +1014,8 @@ code may assume:
   among the statements **dominating** every occurrence of that operation
   (`tripwire_dominates_protected_operation`, PR #889 review round 6): a
   branch that halts but is no longer reached before the acquire or the VBAR
-  write is refused.
+  write is refused, and (round 7) the branch must end in `fatal_halt` itself
+  (`statement_halts`) — a `return` diverges from the helper, not the core.
   Live WCRT is therefore weaker
   than `PerCoreWcrt.lean`'s fine-lock bound, which remains a statement about the
   intended discipline.
@@ -1307,7 +1308,13 @@ code may assume:
   `Platform.FFI.bootAndInitialisePlatform` boots under the binding's labeling —
   provably the checked idle boot on the binding's declared cores, then the
   witness check, then the two installs, with the labeling-refusal arm
-  unreachable (`bootAndInitialisePlatform_eq_checked_boot`).  **The declared
+  unreachable (`bootAndInitialisePlatform_eq_checked_boot`) — of the
+  **bound** config (round 7): `bindPlatformConfig` puts the caller's IRQ
+  table and objects under the binding's `machineConfig` and `bootVSpaceRoot`,
+  so a caller cannot omit the canonical root or describe other hardware.
+  The hardware entry is `bootAndInitialiseRPi5`, the generic entry fixed at
+  `RPi5Platform`; SM10.1's `lean_kernel_main` calls it and nothing else.
+  **The declared
   separation witnesses must be installed threads of the boot state** (PR #889
   review round 3): the guard decides that the labeling separates two
   admissible *ids*, and only the boot state can say whether those ids are
@@ -1375,10 +1382,17 @@ code may assume:
   The reservation also covers every object a config entry *references*
   (`bootObjectReferencesReservedIdleSlot`, total over `KernelObject` and over
   every field that can hold an object, thread or scheduling-context id — a
-  notification's `boundTCB` and an untyped's `children` and `parent`
-  included, PR #889 review rounds 2, 4 and 6; a VSpace root holds none), and
-  a config that fails it is refused with its own
-  diagnostic rather than as a duplicate id.  Beyond the config, the idle
+  notification's `boundTCB`, an untyped's `children` and `parent` and a
+  TCB's own `tid` included, PR #889 review rounds 2, 4, 6 and 7; a VSpace
+  root holds none), and a config that fails it is refused with its own
+  diagnostic rather than as a duplicate id.  **A boot TCB is stored under
+  its own thread id** (round 7): `PlatformConfig.wellFormed`'s fourth
+  conjunct, `tcbIdentitiesMatchSlots`, requires every `.tcb` entry's
+  `tid.toObjId` to be its `id` — the object store is keyed by `ObjId`, the
+  TCB carries its `ThreadId`, and the lifecycle paths read the latter back
+  (`cleanupTcbReferences`), so a TCB stored under a foreign id — an idle
+  thread's, in the finding — would have let a retype dequeue a thread the
+  config never owned.  New boot fixtures set `tid := ⟨id⟩`.  Beyond the config, the idle
   objects are unreachable by user authority at all: `syscallResolveCap` — the
   one resolution every invoked capability passes through — refuses a
   capability naming a reserved idle object (`capTargetsReservedIdleObject`,
@@ -1643,7 +1657,9 @@ code may assume:
   unresolved spelling drops out of both and the gate passed (PR #889 review).
   The gate also holds the boot entry to the checked platform boot from the day
   it exists: whichever Lean declaration carries `@[export lean_kernel_main]`
-  must **execute** `bootAndInitialisePlatform` as a top-level statement of its
+  must **execute** `bootAndInitialiseRPi5` — the generic entry fixed at
+  `RPi5Platform`, round 7; with the generic entry as the callee the gate
+  never read the platform argument — as a top-level statement of its
   body (bound with `←`, a `match` scrutinee, a bare call or `discard`, with no
   `return`/`throw` above it) and reference **no other kernel-state installer**
   — the installers derived by closing "names `kernelStateRef` /
@@ -1654,7 +1670,11 @@ code may assume:
   `let … :=` binding, a dead branch and a call executed then routed around all
   satisfy — round 5) — vacuous until SM10.1 writes the entry, decisive after,
   so the idle-thread, labeling and reservation guarantees cannot be bypassed
-  by an entry that boots through `bootFromPlatform` directly.
+  by an entry that boots through `bootFromPlatform` directly.  The inventory
+  it reads includes the library root `SeLe4n.lean` (round 7), and the
+  assembly providers are read off the compile's *executed* chain — top-level
+  statements of its own function, at brace depth zero, at or before the
+  compile — rather than by receiver spelling.
 - **The WS-SM theorem total is measured, not summed — and it counts
   propositions, not registrations.**
   `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean` registers one entry per

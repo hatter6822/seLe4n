@@ -1148,6 +1148,46 @@ def bootAndInitialiseFromPlatform
     BaseIO (Except String SystemState) :=
   bootAndInitialiseFromPlatformOn SeLe4n.Kernel.Concurrency.allCores config ctx
 
+/-- PR #889 review round 7: the binding's own boot configuration — the caller's
+IRQ table and initial objects under the **binding's** machine configuration and
+boot VSpace root.
+
+A `PlatformConfig` carries four fields.  Two of them describe what the boot
+image creates and only the caller can know (`irqTable`, `initialObjects`); the
+other two describe the hardware (`machineConfig`) and the platform-reserved
+boot VSpace root (`bootVSpaceRoot`), which the binding already states
+(`PlatformBinding.machineConfig`, `PlatformBinding.bootVSpaceRoot`).  The
+platform entry used to take the caller's word for the latter two, so a caller
+could boot the RPi5 binding without its canonical root or under another
+machine's address widths.  Applying the binding's values is the fail-safe
+direction — a caller cannot make the hardware boot describe hardware it is not
+running on — and it is what makes the checked boot's canonical-root theorems
+theorems of the hardware boot rather than of a config a caller happened to
+pass.  The four projections below are definitional. -/
+def bindPlatformConfig (platform : Type) [PlatformBinding platform]
+    (config : PlatformConfig) : PlatformConfig :=
+  { config with
+    machineConfig := PlatformBinding.machineConfig (platform := platform)
+    bootVSpaceRoot := PlatformBinding.bootVSpaceRoot (platform := platform) }
+
+theorem bindPlatformConfig_machineConfig (platform : Type) [PlatformBinding platform]
+    (config : PlatformConfig) :
+    (bindPlatformConfig platform config).machineConfig =
+      PlatformBinding.machineConfig (platform := platform) := rfl
+
+theorem bindPlatformConfig_bootVSpaceRoot (platform : Type) [PlatformBinding platform]
+    (config : PlatformConfig) :
+    (bindPlatformConfig platform config).bootVSpaceRoot =
+      PlatformBinding.bootVSpaceRoot (platform := platform) := rfl
+
+theorem bindPlatformConfig_initialObjects (platform : Type) [PlatformBinding platform]
+    (config : PlatformConfig) :
+    (bindPlatformConfig platform config).initialObjects = config.initialObjects := rfl
+
+theorem bindPlatformConfig_irqTable (platform : Type) [PlatformBinding platform]
+    (config : PlatformConfig) :
+    (bindPlatformConfig platform config).irqTable = config.irqTable := rfl
+
 /-- WS-RR RR5.2: boot under the **platform binding's own** labeling.
 
 `bootAndInitialiseFromPlatform` takes the labeling as an argument, which is the
@@ -1169,12 +1209,45 @@ Because the binding stores the source, the guard's admission
 proofs each one carries, so the refusal arm of `bootAndInitialiseFromPlatform`
 is unreachable from here — machine-checked as
 `bootAndInitialisePlatform_eq_checked_boot`: this entry accepts and rejects
-exactly what `bootFromPlatformCheckedWithIdleThreads` does.  SM10.1's
-`lean_kernel_main` is the intended caller, with `RPi5Platform`. -/
+exactly what `bootFromPlatformCheckedWithIdleThreads` does.
+
+**The binding supplies the machine configuration and the boot VSpace root too**
+(PR #889 review round 7).  This entry used to take the binding's cores and
+labeling and pass the caller's `machineConfig` and `bootVSpaceRoot` through, so
+an `RPi5Platform` boot with `bootVSpaceRoot := none`, or with a machine
+configuration other than the BCM2712's, succeeded and left the live state
+without the canonical ASID root, modelling a memory map and address widths the
+hardware adapters do not have.  Those two fields are the binding's decisions in
+exactly the sense the labeling and the cores are — made once, where the platform
+is described — so the entry boots `bindPlatformConfig platform config`: the
+caller's IRQ table and initial objects under the binding's machine configuration
+and boot VSpace root.  SM10.1's `lean_kernel_main` calls `bootAndInitialiseRPi5`,
+the instance of this entry fixed at `RPi5Platform`. -/
 def bootAndInitialisePlatform (platform : Type) [PlatformBinding platform]
     (config : PlatformConfig) : BaseIO (Except String SystemState) :=
-  bootAndInitialiseFromPlatformOn (PlatformBinding.declaredCores (platform := platform)) config
-    (PlatformBinding.labeling (platform := platform))
+  bootAndInitialiseFromPlatformOn (PlatformBinding.declaredCores (platform := platform))
+    (bindPlatformConfig platform config) (PlatformBinding.labeling (platform := platform))
+
+/-- PR #889 review round 7: **the hardware boot entry** — `bootAndInitialisePlatform`
+fixed at `RPi5Platform`, so the platform is a definition rather than an argument
+the exported entry could vary.
+
+The boot-entry gate (`scripts/check_kernel_entry_exports.py`) holds whichever
+declaration carries `@[export lean_kernel_main]` to executing *this* function
+and no other kernel-state installer.  With the generic entry as the callee the
+gate never inspected the platform argument, so an entry executing
+`bootAndInitialisePlatform SimSingleCorePlatform config` — the harness labeling
+and a single idle thread, on an image whose Rust boot releases four PEs —
+satisfied it.  Here the platform cannot be chosen at all. -/
+def bootAndInitialiseRPi5 (config : PlatformConfig) : BaseIO (Except String SystemState) :=
+  bootAndInitialisePlatform SeLe4n.Platform.RPi5.RPi5Platform config
+
+/-- PR #889 review round 7: the hardware entry is the generic one at the RPi5
+binding — definitional, so every theorem about `bootAndInitialisePlatform` at
+`RPi5Platform` is a theorem about the hardware entry. -/
+theorem bootAndInitialiseRPi5_eq (config : PlatformConfig) :
+    bootAndInitialiseRPi5 config =
+      bootAndInitialisePlatform SeLe4n.Platform.RPi5.RPi5Platform config := rfl
 
 /-- WS-RR RR5.2: under a binding's labeling the boot entry **cannot** be refused
     on the labeling — it is the checked idle boot followed by the two installs,
@@ -1185,7 +1258,8 @@ theorem bootAndInitialisePlatform_eq_checked_boot (platform : Type) [PlatformBin
     (config : PlatformConfig) :
     bootAndInitialisePlatform platform config =
       (match bootFromPlatformCheckedWithIdleThreadsFor
-          (PlatformBinding.declaredCores (platform := platform)) config with
+          (PlatformBinding.declaredCores (platform := platform))
+          (bindPlatformConfig platform config) with
         | Except.error e => pure (Except.error e)
         | Except.ok ist =>
             if declaredWitnessesInstalled ist.state (PlatformBinding.labeling (platform := platform)) then do
@@ -1209,6 +1283,15 @@ theorem bootAndInitialisePlatform_rpi5_all_cores (config : PlatformConfig) :
       bootFromPlatformCheckedWithIdleThreads config := by
   rw [SeLe4n.Platform.RPi5.rpi5_cores_eq_allCores]
   rfl
+
+/-- PR #889 review round 7: the hardware boot carries the **canonical** RPi5
+boot VSpace root and machine configuration whatever the caller's config said —
+the bound config's two hardware fields are the binding's, by definition. -/
+theorem bootAndInitialiseRPi5_bound_config (config : PlatformConfig) :
+    (bindPlatformConfig SeLe4n.Platform.RPi5.RPi5Platform config).bootVSpaceRoot =
+        some SeLe4n.Platform.RPi5.rpi5BootVSpaceRootEntry ∧
+    (bindPlatformConfig SeLe4n.Platform.RPi5.RPi5Platform config).machineConfig =
+        SeLe4n.Platform.RPi5.rpi5MachineConfig := ⟨rfl, rfl⟩
 
 /-- WS-RC R2.B.1 helper: Write the FFI-passed register values into the
     given thread's TCB register file.

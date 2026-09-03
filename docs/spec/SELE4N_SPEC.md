@@ -51,9 +51,9 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.34.48` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 320,330 across 308 Lean files |
-| **Test LoC** | 67,937 across 70 Lean test suites |
-| **Proved declarations** | 10,649 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 320,472 across 308 Lean files |
+| **Test LoC** | 68,011 across 70 Lean test suites |
+| **Proved declarations** | 10,658 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR5 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -2165,6 +2165,25 @@ is a class obligation, so `PlatformBinding.declaredCores` (the prefix
 (`bootCoreModelId`); the idle-slot reservation stays model-wide, and an
 undeclared core's slot is absent after the boot
 (`bootFromPlatformCheckedWithIdleThreadsFor_undeclared_idle_absent`).
+
+**The hardware entry is fixed at the RPi5 binding and boots the binding's
+own configuration** (PR #889 review round 7).  `Platform.FFI.bootAndInitialiseRPi5`
+is `bootAndInitialisePlatform RPi5Platform` by definition
+(`bootAndInitialiseRPi5_eq`), and the boot-entry gate requires SM10.1's
+`lean_kernel_main` to execute it and no other kernel-state installer — the
+generic entry included, so the platform cannot be varied by the entry.  The
+platform entry boots `bindPlatformConfig platform config`: the caller's IRQ
+table and initial objects under the binding's `machineConfig` and
+`bootVSpaceRoot` (`bindPlatformConfig_machineConfig`,
+`bindPlatformConfig_bootVSpaceRoot`, `bindPlatformConfig_initialObjects`,
+`bindPlatformConfig_irqTable`, all definitional; `bootAndInitialiseRPi5_bound_config`
+pins the RPi5 pair), so a caller can neither omit the canonical ASID root nor
+describe hardware the image does not run on.  And a boot TCB is stored under
+its own thread id: `PlatformConfig.wellFormed`'s fourth conjunct
+`tcbIdentitiesMatchSlots` requires every `.tcb` entry's `tid.toObjId` to be
+its `id` (`tcbIdentitiesMatchSlots_tid_eq`), the reference check reads the
+`tid` directly (`idleSlotsReserved_no_idle_tid`), and a config that fails
+either is refused with its own diagnostic.
 `Platform.FFI.bootAndInitialisePlatform platform config` boots under the
 binding's labeling on the binding's declared cores (`PlatformBinding.declaredCores`;
 the RPi5 binding declares every model core, `rpi5_cores_eq_allCores`, so its

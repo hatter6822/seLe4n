@@ -628,6 +628,60 @@ closed in the same version.
   subtracting it, so the archive must define it or it is `missing` with the
   closure diagnosis.  Two expiry cases.
 
+### The review round, seventh pass
+
+Codex's seventh review (on the round-6 head) raised six findings; all
+closed in the same version.  One is a relation nothing at boot had stated;
+the other five are the gates' remaining text-shaped answers to structural
+questions.
+
+* **A boot TCB's own identity was never related to its slot** (P1).  A
+  `TCB` carries its `ThreadId`, the object store is keyed by `ObjId`,
+  `getTcb? tid` reads `objects[tid.toObjId]`, and the lifecycle paths that
+  hold a TCB *object* read its `tid` back to find it in the queues
+  (`cleanupTcbReferences`).  A config could therefore store, at ordinary
+  id `9`, a TCB whose `tid` was `idleThreadId 0`: every field check passed,
+  the object stayed reachable through an ordinary capability, and a later
+  retype of object `9` would have dequeued idle `0` — the no-stall guarantee
+  defeated around the capability chokepoint.  `PlatformConfig.wellFormed`
+  carries a fourth conjunct, `tcbIdentitiesMatchSlots` — every `.tcb`
+  entry's `tid.toObjId` is its own `id` — with its own diagnostic and the
+  entry-wise theorem `tcbIdentitiesMatchSlots_tid_eq`; the reference check
+  reads `tcb.tid` directly as well (`idleSlotsReserved_no_idle_tid`), so
+  the two refusals name different faults.
+* **The hardware entry could choose its platform.**  The boot-entry gate
+  required `bootAndInitialisePlatform` and never read its argument, so an
+  entry booting `SimSingleCorePlatform` on the RPi5 image — the harness
+  labeling, one idle thread, four PEs released — satisfied it.
+  `Platform.FFI.bootAndInitialiseRPi5` is the generic entry fixed at
+  `RPi5Platform` (`bootAndInitialiseRPi5_eq`, `rfl`); the gate requires
+  *it*, and the generic entry is an installer like any other, so an entry
+  executing it at any platform is refused.
+* **The platform entry took the caller's word for the hardware.**
+  `bootAndInitialisePlatform` applied the binding's cores and labeling and
+  passed the caller's `machineConfig` and `bootVSpaceRoot` through, so an
+  RPi5 boot without the canonical root, or under another machine's address
+  widths, succeeded.  It boots `bindPlatformConfig platform config` — the
+  caller's IRQ table and objects under the binding's machine configuration
+  and boot VSpace root (four definitional projections;
+  `bootAndInitialiseRPi5_bound_config` pins the RPi5 pair).
+* **The tripwire branch could diverge without halting.**  The scanner
+  accepted any diverging last statement, a `return` included — which
+  returns to `acquire_kernel_entry`, which proceeds into the acquire while
+  the core holds the round lock.  `statement_halts` requires `fatal_halt`;
+  three mutations (`return` in both fixtures, a `panic!` with the halt kept
+  in an uncalled closure) keep the branch and break the relation.
+* **A `.file()` counted by receiver spelling.**  `assembled_sources_in`
+  resolves the calls through the compile's *executed* chain: top-level
+  statements of the compile's own function body (`rust_top_level_statements`,
+  the Python twin of `build.rs`'s), at brace depth zero, at or before the
+  compile statement, on the compiled receiver.  A `.file()` under `if
+  false` in that function, or in another function whose local shares the
+  receiver's name, assembles nothing.
+* **The export inventory omitted the library root.**  `lean_sources`
+  walked `SeLe4n/` and missed `SeLe4n.lean`, which compiles into the static
+  library like any module; the root is in the inventory, pinned in `main`.
+
 ### Tests
 
 * `tests/SmpIdleSuite.lean` — 28 surface anchors for the new boot surface
@@ -681,15 +735,29 @@ closed in the same version.
 * `tests/SmpIdleSuite.lean` (round 6) — a boot untyped recording an idle slot
   as a child or as its parent references the slot and the checked boot
   refuses it with the reservation diagnostic; ordinary records do not.
-* `scripts/check_kernel_entry_exports.py --self-test` — 54 cases: the fourteen
-  boot-entry shapes (five executing, nine token-preserving refusals, among
-  them the call executed and then routed around), the installer derivation's
-  pin in both directions, (round 6) the three inventories ignoring strings
-  and nested comments, and the exemption expiring with its export;
+  Round 7: a boot-safe TCB at id `9` with `tid := idleThreadId 0` references
+  the slot and is refused with the reservation diagnostic, the same TCB with
+  `tid := ⟨7⟩` is refused with the identity diagnostic, and under its own
+  id it is accepted; `tcbIdentitiesMatchSlots` decides the relation entry by
+  entry.
+* `tests/SyscallDispatchSuite.lean` (round 7) — SD-056 boots a bare config
+  (the two witness TCBs, no boot root, the default machine configuration)
+  through `bootAndInitialiseRPi5` and observes the canonical root installed
+  at its reserved id and the live state carrying the BCM2712's 44-bit
+  physical address width; `bindPlatformConfig` keeps the caller's objects
+  and applies the binding's hardware fields.
+* `scripts/check_kernel_entry_exports.py --self-test` — 57 cases: the sixteen
+  boot-entry shapes (five executing, eleven token-preserving refusals, among
+  them the call executed and then routed around and, round 7, the generic
+  entry at another platform and at the right one), the installer
+  derivation's pin in both directions, (round 6) the three inventories
+  ignoring strings and nested comments, the exemption expiring with its
+  export, and (round 7) the executed builder chain;
   `scripts/lean_code_view.py --self-test` — string blanking keeps the
   quotes, blanks escapes, keeps geometry, and is off by default;
   `build.rs`'s self-check (round 6) — eight dominance mutations that keep
-  each tripwire's branch and halt and break its reach.
+  each tripwire's branch and halt and break its reach; (round 7) three halt
+  mutations that keep the branch and diverge without halting.
 * `rust/sele4n-hal/tests/readiness_gate_before_mark.rs` and
   `…_after_mark.rs` — the readiness mask is process-global and one-way, so both
   sides of the gate are only observable in separate binaries.  Before any mark:

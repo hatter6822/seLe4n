@@ -1079,6 +1079,36 @@ private def sd056_witnesses_off_boot_root_and_structural_cores : IO Unit := do
       expect "sd056_undeclared_core_idle_slot_absent"
         (st.objects[(SeLe4n.Kernel.idleThreadId c1).toObjId]?).isNone
         "an undeclared core's idle object slot must be absent after the boot"
+  -- PR #889 review round 7: the hardware entry is the generic one fixed at the
+  -- RPi5 binding, and the binding supplies the machine configuration and the
+  -- boot VSpace root — a caller's config carrying no root, under the default
+  -- machine configuration, still boots with the canonical root at its reserved
+  -- id and the BCM2712's address width.
+  let bare : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [],
+      initialObjects :=
+        [witnessEntry SeLe4n.Platform.RPi5.rpi5LowerWitnessIndex, witnessEntry rpi5Upper],
+      machineConfig := SeLe4n.defaultMachineConfig, bootVSpaceRoot := none }
+  match ← bootAndInitialiseRPi5 bare with
+  | Except.error e =>
+      failLine "sd056_rpi5_entry_unexpected_error"
+        s!"the hardware entry must boot a bare config under the binding's root and machine configuration, got: {e}"
+  | Except.ok st =>
+      expect "sd056_rpi5_entry_installs_the_canonical_root"
+        (st.objects[SeLe4n.Platform.RPi5.rpi5BootVSpaceRootObjId]?).isSome
+        "the binding's boot VSpace root must be installed even when the caller's config carries none"
+      expect "sd056_rpi5_entry_applies_the_binding_machine_config"
+        (st.machine.physicalAddressWidth ==
+            SeLe4n.Platform.RPi5.rpi5MachineConfig.physicalAddressWidth &&
+         st.machine.physicalAddressWidth != SeLe4n.defaultMachineConfig.physicalAddressWidth)
+        "the binding's machine configuration must replace the caller's"
+  let bound := bindPlatformConfig SeLe4n.Platform.RPi5.RPi5Platform bare
+  expect "sd056_bound_config_keeps_objects_and_applies_hardware_fields"
+    (bound.bootVSpaceRoot.isSome &&
+     bound.machineConfig.physicalAddressWidth ==
+       SeLe4n.Platform.RPi5.rpi5MachineConfig.physicalAddressWidth &&
+     bound.initialObjects.length == 2 && bound.irqTable.isEmpty)
+    "bindPlatformConfig must keep the caller's objects and apply the binding's hardware fields"
 
 /-- SD-051: faithful seL4-MCS receive linkage, folded into `endpointReceiveDual`
     itself (#7.2; formerly the separate `linkReceivedCaller` `.receive`-arm step).
