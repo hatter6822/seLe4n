@@ -135,8 +135,15 @@ KERNEL_STATE_REFS = frozenset({"kernelStateRef", "kernelLabelingContextRef"})
 KERNEL_STATE_REF_WRITE = re.compile(
     r"\b(?:kernelStateRef|kernelLabelingContextRef)\b(?!\s*\.\s*get\b)"
 )
-# A `do` statement after which nothing in the block runs.
-LEAN_DIVERGES = re.compile(r"^(?:return|throw|panic!|unreachable!)\b")
+#: A statement that **may** leave the block: one carrying an exit anywhere in
+#: it, `if skip then return ()` included (PR #889 review round 14).  Matching
+#: only a statement that *begins* with `return` asked whether the exit is the
+#: whole statement, when the question is whether an exit can be taken before
+#: the next one runs — a conditional exit is the same hazard with a guard in
+#: front of it.  Deliberately an over-approximation (an exit in a branch that
+#: cannot be taken still counts), which is the fail-closed direction, and the
+#: mirror of `build.rs`'s `statement_may_exit` for the same question in Rust.
+LEAN_MAY_EXIT = re.compile(r"(?:^|[^\w'!?.])(?:return|throw|panic!|unreachable!)(?:[^\w'!?]|$)")
 #: A dotted Lean reference: an optional `_root_.`, then namespace components.
 #: Every call this gate reads is captured as one of these and then **resolved**
 #: against the tree's declarations (PR #889 review round 12) — matching the
@@ -398,8 +405,10 @@ def halt_definitions(sources: dict[str, str]) -> set[str]:
     fail-closed — would run the wrong way here: it would classify
     `if x then fatalHaltAll else pure ()` as a halt and accept an error arm
     that returns.  An alias is the only reference that is unconditionally the
-    halt, so an alias is the only thing the closure adds.
+    halt, so an alias is the only thing the closure adds — and only when its
+    body **resolves uniquely** to one (round 14).
     """
+    index = declarations_by_short_name(sources)
     approved: set[str] = set()
     aliases: list[tuple[str, str]] = []
     for text in sources.values():
@@ -429,7 +438,20 @@ def halt_definitions(sources: dict[str, str]) -> set[str]:
         for full, body in aliases:
             if full in approved:
                 continue
-            if any(resolves_to(body, target) for target in approved):
+            # PR #889 review round 14: the body must resolve to an approved halt
+            # and to **nothing else** — the same unique-candidate rule
+            # `reference_failure` applies at a call site.  Asking only whether
+            # the spelling is a suffix of *some* approved name ignores which
+            # declaration Lean would select: a nearer
+            # `SeLe4n.Kernel.Concurrency.Platform.FFI.ffiFatalHalt` captures
+            # `Platform.FFI.ffiFatalHalt` inside that namespace, and the alias
+            # would still have been approved as the halt it no longer calls.
+            candidates = {
+                target
+                for target in index.get(body.split(".")[-1], set())
+                if resolves_to(body, target)
+            }
+            if candidates and candidates <= approved:
                 approved.add(full)
                 changed = True
     return approved
@@ -449,6 +471,10 @@ def lean_binds_locally(decl: str, body_at: int | None, name: str) -> bool:
     author must write qualified, which is always possible, whereas a shadow it
     missed would be a `let bootAndInitialiseRPi5 := fun _ => pure (.ok default)`
     that the gate reads as the checked platform boot.
+
+    Passing `body_at = 0` skips the head test, which is how a caller asks the
+    question of a **single statement** — "does this statement bind the name?" —
+    rather than of a whole declaration.
     """
     ident = re.escape(name)
     head = decl[: body_at if body_at is not None else len(decl)]
@@ -456,6 +482,10 @@ def lean_binds_locally(decl: str, body_at: int | None, name: str) -> bool:
         return True
     for pattern in (
         rf"(?:^|[^\w'!?.])(?:let|have)\s+(?:mut\s+)?\(?\s*{ident}(?:[^\w'!?]|$)",
+        # A `do` reassignment of a `let mut`, and a `for` binder.  Both bind the
+        # name for everything after them (PR #889 review round 14).
+        rf"^\s*{ident}\s*(?::[^=\n]*)?:=",
+        rf"(?:^|[^\w'!?.])for\b[^\n]*?\b{ident}\b[^\n]*?\bin\b",
         rf"(?:^|[^\w'!?.])(?:fun|\u03bb)\s+[^\n]*?(?:^|[^\w'!?.]){ident}(?:[^\w'!?]|$)[^\n]*?=>",
         rf"^\s*\|[^\n]*?(?:^|[^\w'!?.]){ident}(?:[^\w'!?]|$)[^\n]*?=>",
     ):
@@ -724,7 +754,9 @@ def boot_entry_binding_failures(sources: dict[str, str]) -> list[str]:
                 )
                 found = None
                 for statement in statements:
-                    if LEAN_DIVERGES.match(statement):
+                    # PR #889 review round 14: a conditional exit above the call
+                    # means the call is not unconditional either.
+                    if LEAN_MAY_EXIT.search(statement):
                         break
                     head = boot_entry_call_head(statement)
                     if head is not None and head[1].split(".")[-1] == BOOT_ENTRY_CALLEE:
@@ -804,15 +836,20 @@ def boot_entry_handles_failure(statements: list[str], entry: BootEntry) -> str |
         # value, and its `.error` arm — not the match as a whole — must halt.
         name = bound.group("name")
         matcher = re.compile(r"^match\s+" + re.escape(name) + r"\b")
-        rebinder = re.compile(r"^let\s+(?:mut\s+)?" + re.escape(name) + r"\b")
         for later in statements[index + 1 :]:
-            if LEAN_DIVERGES.match(later):
+            # PR #889 review round 14: *may* exit, not *is* an exit.  An
+            # `if skip then return ()` between the binding and the match leaves
+            # the entry without ever reaching the handler on the branch it
+            # takes, and round 10's check — which asked whether the statement
+            # began with `return` — read it as an ordinary statement.
+            if LEAN_MAY_EXIT.search(later):
                 return (
-                    f"returns or throws before matching on `{name}` — a failed boot then "
-                    f"leaves the entry without ever reaching the handler, and the image "
-                    f"idles with no kernel state"
+                    f"may return or throw before matching on `{name}` (`{later.splitlines()[0]}`) "
+                    f"— on that path a failed boot leaves the entry without ever reaching the "
+                    f"handler, and the image idles with no kernel state"
                 )
-            if rebinder.match(later):
+            # ...and *any* binder of the name shadows it, `have` included.
+            if lean_binds_locally(later, 0, name):
                 return (
                     f"rebinds `{name}` before matching on it — the match would consume the "
                     f"shadowing value and a real boot error would be ignored"
@@ -1745,6 +1782,27 @@ def self_test() -> int:
                 "do\n  match ← bootAndInitialiseRPi5 cfg with\n"
                 "  | .ok _ => pure ()\n  | .error _ =>\n"
                 "    let stop := Platform.FFI.ffiFatalHalt\n    pure ()", False)
+    # Round 14: the binder is not always `let`, and the exit is not always the
+    # whole statement.  Both fixtures keep the binding, the match and a halting
+    # `.error` arm exactly where rounds 9-10 require them.
+    check_entry("`have` shadows the boot result before the match (round 14)",
+                "do\n  let booted \u2190 bootAndInitialiseRPi5 cfg\n"
+                "  have booted : Except String SystemState := .ok default\n"
+                "  match booted with\n  | .ok _ => pure ()\n"
+                "  | .error _ => Platform.FFI.ffiFatalHaltAll", False)
+    check_entry("a conditional exit precedes the handling match (round 14)",
+                "do\n  let booted \u2190 bootAndInitialiseRPi5 cfg\n"
+                "  if skip then return ()\n  match booted with\n  | .ok _ => pure ()\n"
+                "  | .error _ => Platform.FFI.ffiFatalHaltAll", False)
+    check_entry("a conditional exit precedes the call itself (round 14)",
+                "do\n  if skip then return ()\n"
+                "  match \u2190 bootAndInitialiseRPi5 cfg with\n  | .ok _ => pure ()\n"
+                "  | .error _ => Platform.FFI.ffiFatalHaltAll", False)
+    check_entry("a `for` binder shadows the boot result (round 14)",
+                "do\n  let booted \u2190 bootAndInitialiseRPi5 cfg\n"
+                "  for booted in results do\n    IO.println booted\n"
+                "  match booted with\n  | .ok _ => pure ()\n"
+                "  | .error _ => Platform.FFI.ffiFatalHaltAll", False)
     # Round 13: a nested `match` is not a sibling.  Every one of these keeps a
     # `| .error _ => <halt>` line in the declaration, at an accepted position
     # for round 10's arm parser, and breaks the relation that the arm belongs
@@ -1917,6 +1975,21 @@ def self_test() -> int:
             "the halt derivation closed under reference, not alias — a conditional caller "
             "of the primitive was classified as a halt"
         )
+    # Round 14: an alias counts only where its body resolves to the halt and to
+    # **nothing else**.  A nearer declaration of the same short name captures
+    # the reference, and the alias then calls something that returns.
+    shadowed = ffi + (
+        "namespace SeLe4n.Kernel.Concurrency.Platform.FFI\n"
+        "def ffiFatalHalt : BaseIO Unit := pure ()\n"
+        "end SeLe4n.Kernel.Concurrency.Platform.FFI\n"
+    )
+    if "SeLe4n.Kernel.Concurrency.fatalHalt" in halt_definitions({"ffi": shadowed}):
+        failures.append(
+            "an alias was approved as a halt although a nearer declaration of the same short "
+            "name captures its body (round 14)"
+        )
+    if "SeLe4n.Platform.FFI.ffiFatalHalt" not in halt_definitions({"ffi": shadowed}):
+        failures.append("the structural halt seed was lost when a decoy was added (round 14)")
     index = declarations_by_short_name({"ffi": ffi})
     if index.get("ffiFatalHaltAll") != {"SeLe4n.Platform.FFI.ffiFatalHaltAll"}:
         failures.append("the declaration index lost the namespace a declaration sits in")
@@ -2045,7 +2118,7 @@ def self_test() -> int:
         for line in failures:
             print(f"         {line}")
         return 1
-    print("[PASS] check_kernel_entry_exports self-test (114 cases)")
+    print("[PASS] check_kernel_entry_exports self-test (120 cases)")
     return 0
 
 

@@ -788,8 +788,43 @@ def strip_hash(text: str) -> str:
 # `command_substitution_end` scans it properly instead: quote-aware, so
 # a paren inside a quoted regex is text, and nesting-aware, so
 # `$(a $(b) c)` closes where it actually closes.
+#
+# The legacy backtick spelling is scanned rather than matched too (PR #889
+# review round 14): `` `[^`]*` `` copied the span verbatim, so a `# note`
+# inside `` X="`echo ok  # note` "`` survived as code -- the same
+# prose-read-as-code the `$( … )` scan was written to stop, one spelling
+# over.  Both substitution forms now route through `strip_shell`
+# recursively.
 SHELL_EXPANSION = re.compile(
-    r"\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*|`[^`]*`")
+    r"\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*")
+
+
+def backtick_substitution_end(text: str, at: int) -> int:
+    """Index just past the backtick closing the substitution opened at `at`,
+    or `-1`.
+
+    Legacy `` ` … ` `` substitutions do not nest, so the end is the next
+    unescaped backtick; a backslash escapes the character after it, the
+    delimiter included.  Returns `-1` when the construct does not close,
+    which callers treat as "not a substitution" rather than consuming a
+    prefix -- consuming one unbalances everything after it, which is how the
+    Tier-3 script lost every comment below line 4982.
+    """
+    i = at + 1
+    while i < len(text):
+        if text[i] == "\\":
+            i += 2
+            continue
+        if text[i] == "`":
+            return i + 1
+        i += 1
+    return -1
+
+
+def backtick_substitution_view(text: str, at: int, end: int) -> str:
+    """The code view of the `` ` … ` `` spanning `[at, end)`: its body lexed
+    by `strip_shell` recursively, the delimiters kept, length preserved."""
+    return "`" + strip_shell(text[at + 1:end - 1]) + "`"
 
 
 def command_substitution_end(text: str, at: int) -> int:
@@ -890,6 +925,15 @@ def keep_expansions(span: str) -> str:
             break
         out[at:end] = list(command_substitution_view(span, at, end))
         at = end
+    # ...and the legacy backtick spelling, which is live inside double quotes
+    # exactly as `$( … )` is (PR #889 review round 14).
+    at = 0
+    while (at := span.find("`", at)) >= 0:
+        end = backtick_substitution_end(span, at)
+        if end < 0:
+            break
+        out[at:end] = list(backtick_substitution_view(span, at, end))
+        at = end
     return "".join(out)
 
 
@@ -940,6 +984,8 @@ def strip_shell(text: str) -> str:
     while i < n:
         if text.startswith("$(", i) and (end := command_substitution_end(text, i)) > 0:
             out.append(command_substitution_view(text, i, end)); i = end
+        elif text[i] == "`" and (end := backtick_substitution_end(text, i)) > 0:
+            out.append(backtick_substitution_view(text, i, end)); i = end
         elif (m := SHELL_EXPANSION.match(text, i)):
             out.append(m.group(0)); i = m.end()
         elif text[i] == "#" and (i == 0 or text[i - 1] in " \t\n;&|("):

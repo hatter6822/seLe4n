@@ -1036,6 +1036,59 @@ returns must not disqualify a halting `.error` arm beside it — round 10's
 flattening rejected that valid entry — and `| .error e => do` followed by an
 indented block whose last statement halts is accepted.
 
+### The review round, fourteenth pass
+
+Codex's fourteenth review (on the round-13 head) raised five findings, and
+**four of them are one rule failing**: *having built the resolver, sweep every
+site that asks the same question*.  Each was a check that had been fixed in one
+place and left unfixed in the sibling that asks the same thing.
+
+* **`let` was not every binder.**  Round 10's shadow check for the boot result
+  matched `^let\s+(?:mut\s+)?<name>`, so `have booted : Except String
+  SystemState := .ok default` shadowed it and the handling `match` consumed the
+  fabricated `.ok`.  The statement now goes through `lean_binds_locally` —
+  which already covered `let`/`have`/`fun`/`λ`/`match` patterns for the callee
+  and the halt — with a `do` reassignment (`x := e`) and a `for` binder added,
+  so the three call sites share one binder scanner.
+* **An exit is not always the whole statement.**  `LEAN_DIVERGES` matched a
+  statement *beginning* with `return`/`throw`, so `if skip then return ()`
+  between the binding and the match read as an ordinary statement — and on that
+  branch the entry leaves before handling a real `.error`.  `LEAN_MAY_EXIT`
+  asks whether an exit can be taken *anywhere* in the statement, which is the
+  question, and is the mirror of `build.rs`'s `statement_may_exit` — a rule
+  that had existed on the Rust side since PR #887 round 9 and had never been
+  carried to the Lean one.  It also guards the unconditional-call loop: a
+  conditional exit above the call means the call is not unconditional either.
+* **The alias closure resolved loosely.**  `halt_definitions` approved an alias
+  when its body's spelling was a suffix of *some* approved halt, while
+  `reference_failure` — four hundred lines away, for the same question at a
+  call site — requires the reference to resolve to the approved set and to
+  **nothing else**.  A nearer `SeLe4n.Kernel.Concurrency.Platform.FFI.ffiFatalHalt`
+  captures `Platform.FFI.ffiFatalHalt` inside that namespace, and `fatalHalt`
+  would still have been approved as a halt it no longer calls.  The closure now
+  applies the unique-candidate rule.
+* **`$( … )` was not every substitution.**  The round-2 recursive shell view
+  lexed `$( … )` bodies and left the legacy backtick spelling matched by
+  `` `[^`]*` `` and copied verbatim, so a comment inside `` `echo ok # note` ``
+  survived as code — the same prose-read-as-code, one spelling over.  Backticks
+  are scanned by `backtick_substitution_end` and lexed by
+  `backtick_substitution_view`, in `strip_shell` and inside double-quoted spans
+  alike.  (This one fails *closed*: it could reject a valid script, never
+  accept an invalid identifier.)
+
+The fifth is a view-selection defect, and its shape is worth stating on its
+own: **the view you read depends on the question, and one walk can need
+both**.  `hw_target_region` located the enclosing braces *and* read the `#[cfg]`
+attribute from the strings-kept view, so a
+`const DECOY: &str = r#"#[cfg(feature = "hw_target")] {"#;` above an ungated
+`extern "C"` block supplied both halves of its own verdict — the fake `{` read
+as an enclosing block, the fake attribute as that block's header.  Braces and
+attributes are *structure* and are now located on the string-free view; only
+the feature name is *text* and is read from the aligned kept view at the same
+offsets (lossily, since an offset that is a char boundary in the blanked view
+can fall inside a multi-byte character preserved in the kept one, and a panic
+in `build.rs` is a hard build failure).
+
 ### Tests
 
 * `tests/SmpIdleSuite.lean` — 28 surface anchors for the new boot surface

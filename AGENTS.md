@@ -750,6 +750,27 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   a body's terminal statement is the last line at the body's *minimum*
   column.  The mutation for this class keeps the token at an accepted
   position and moves it one level in or out.
+
+  Round 14 of the same review is that sweep rule failing four times at
+  once, and is the clearest evidence for it: `let` was not every binder
+  (`have` shadowed the value the boot-result match reads), an exit is not
+  always the whole statement (`if skip then return ()` passed a check
+  that asked whether the statement *begins* with `return`, while
+  `build.rs`'s `statement_may_exit` had asked the right question since
+  PR #887), the halt-alias closure resolved by suffix while
+  `reference_failure` in the same file required a *unique* candidate, and
+  the recursive shell view lexed `$( … )` while the legacy backtick
+  spelling beside it was still copied verbatim.  None was a new class;
+  each was a rule already written down, applied at one site and not at
+  its sibling.  **When a fix names a relation, grep for every other place
+  that asks it** — the same file, the other language, the other
+  spelling.  Its fifth finding adds the one genuinely new point:
+  **the view you read depends on the question, and one walk can need
+  both** — a string literal supplied a `{` that a nesting walk read as an
+  enclosing block *and* a `#[cfg]` that the verdict read as that block's
+  header, because both were taken from the strings-kept view.  Structure
+  (braces, attributes, statements) comes from the string-free view; only
+  the text a predicate is *about* comes from the aligned kept one.
 - **Invariant/Operations split**: each kernel subsystem has
   `Operations.lean` (transitions) and `Invariant.lean` (proofs). Keep
   this separation.

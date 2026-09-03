@@ -165,6 +165,23 @@ check("a substitution's command survives beside its comment",
 check("a nested substitution's comment is blanked too",
       CODED in gate.strip_shell(
           "X=" + dollar + "(a " + dollar + "(b # " + CODED + "\n) c)\n"), False)
+# PR #889 review round 14: the LEGACY spelling gets the same treatment.
+# `` `[^`]*` `` matched the span and copied it verbatim, so a comment inside
+# a backtick substitution read as code -- the same defect the `$( ... )`
+# scan above was written to stop, one spelling over.  These mutate by
+# KEEPING the substitution and moving the token into a comment inside it.
+check("a comment inside a backtick substitution is blanked",
+      CODED in gate.strip_shell("X=`echo ok # " + CODED + "\n`\n"), False)
+check("a backtick substitution's command survives beside its comment",
+      CODED in gate.strip_shell("X=`grep " + CODED + " f # note\n`\n"), True)
+check("a comment inside a double-quoted backtick substitution is blanked",
+      CODED in gate.strip_shell(
+          "echo " + dq + "`echo ok # " + CODED + "\necho done`" + dq + "\n"), False)
+check("a command inside a double-quoted backtick substitution is kept",
+      CODED in gate.strip_shell(
+          "echo " + dq + "`" + CODED + " # note\n`" + dq + "\n"), True)
+check("an unterminated backtick does not swallow the lines below it",
+      CODED in gate.strip_shell("X=`echo\n# " + CODED + "\n"), False)
 check("a comment inside a double-quoted substitution is blanked",
       CODED in gate.strip_shell(
           "echo " + dq + dollar + "(echo ok # " + CODED + "\n)" + dq + "\n"), False)

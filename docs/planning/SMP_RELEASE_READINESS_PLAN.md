@@ -716,6 +716,17 @@ down — an arm's terminal statement is the last line at its body's *minimum*
 column, so a halt in the `else` branch of a multi-line conditional is no
 longer read as what the arm does.
 
+**Review round 14 (PR #889, same version).**  Five, four of which are the sweep
+rule failing: `let` was not every binder (`have` shadows the boot result), an
+exit is not always the whole statement (`if skip then return ()`, where
+`build.rs` had asked the right question since PR #887), the halt-alias closure
+resolved by suffix where `reference_failure` required a unique candidate, and
+the recursive shell view lexed `$( … )` while the legacy backtick spelling was
+copied verbatim.  The fifth is a view-selection defect: a string literal
+supplied both the brace nesting and the `#[cfg]` attribute that decided an
+`extern` block's gate, so structure is now located on the string-free view and
+only the feature name read from the aligned kept one.
+
 **Note on RR5.10–RR5.14** (the rows that replaced one XL).  Two findings shape
 the split, and the row they replaced named neither: one is an ordering defect
 it inherited, the other is the reason its "cannot be separate PRs" claim is

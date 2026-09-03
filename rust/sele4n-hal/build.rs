@@ -3102,10 +3102,19 @@ fn header_verdict(header: &str) -> Option<bool> {
 /// `code` must be a comment-blanked view: a comment naming the feature would
 /// otherwise gate an item that no attribute gates — the presence-versus-relation
 /// mistake, in the direction that fails *open*.
-fn hw_target_region(code: &str, at: usize) -> Option<bool> {
-    // The header of the construct whose body/text contains `pos`: back to the
-    // previous statement boundary.
-    fn header_before(code: &str, pos: usize) -> &str {
+fn hw_target_region(code: &str, strings_kept: &str, at: usize) -> Option<bool> {
+    // **PR #889 review round 14**: the nesting is read from the **string-free**
+    // view and the predicate's text from the aligned strings-kept one.  Walking
+    // the kept view let a string literal supply both halves of the answer: a
+    // `const DECOY: &str = r#"#[cfg(feature = "hw_target")] {"#;` above an
+    // `extern "C"` block contributed a `{` the walk read as an enclosing block
+    // and a `#[cfg]` the verdict read as that block's header, so an extern
+    // compiled with no feature gate at all classified as `hw_target`-only.
+    // Braces and attributes are structure; only the feature name is text.
+    debug_assert_eq!(code.len(), strings_kept.len());
+    // The span of the header of the construct whose body/text contains `pos`:
+    // back to the previous statement boundary, located on the string-free view.
+    fn header_span(code: &str, pos: usize) -> (usize, usize) {
         let bytes = code.as_bytes();
         let mut i = pos;
         while i > 0 {
@@ -3114,9 +3123,16 @@ fn hw_target_region(code: &str, at: usize) -> Option<bool> {
                 _ => i -= 1,
             }
         }
-        &code[i..pos]
+        (i, pos)
     }
-    if let Some(v) = header_verdict(header_before(code, at)) {
+    // Sliced as bytes and read lossily: an offset that is a char boundary in
+    // the blanked view can fall inside a multi-byte character preserved in the
+    // kept one, and a panic in `build.rs` is a hard build failure.
+    let verdict = |span: (usize, usize)| {
+        let text = String::from_utf8_lossy(&strings_kept.as_bytes()[span.0..span.1]);
+        header_verdict(&text)
+    };
+    if let Some(v) = verdict(header_span(code, at)) {
         return Some(v);
     }
     let bytes = code.as_bytes();
@@ -3141,7 +3157,7 @@ fn hw_target_region(code: &str, at: usize) -> Option<bool> {
             }
         }
         let open = open?;
-        if let Some(v) = header_verdict(header_before(code, open)) {
+        if let Some(v) = verdict(header_span(code, open)) {
             return Some(v);
         }
         pos = open;
@@ -3217,7 +3233,7 @@ fn lean_symbol_declarations(
                 out.push(LeanSymbolDeclaration {
                     symbol: (*symbol).to_string(),
                     linker_visible: true,
-                    hw_target: hw_target_region(strings_kept, at),
+                    hw_target: hw_target_region(code, strings_kept, at),
                 });
             }
         }
@@ -3261,14 +3277,12 @@ fn lean_symbol_declarations(
             out.push(LeanSymbolDeclaration {
                 symbol: (*symbol).to_string(),
                 linker_visible: header_is_linker_visible(&header),
-                // The cfg attributes are read from the **strings-kept** view,
-                // byte-aligned with this one: `feature = "hw_target"` is a
-                // string literal, and the blanked view the declarations are
-                // located in has erased it.  A gate read from a view that
-                // blanked the gate is the round-3 defect where an `asm!`
-                // template's own directives were counted off a view that had
-                // blanked the template.
-                hw_target: hw_target_region(strings_kept, at),
+                // The cfg attributes' *text* is read from the strings-kept
+                // view, byte-aligned with this one — `feature = "hw_target"`
+                // is a string literal the blanked view has erased — while the
+                // brace nesting that decides which attribute governs this
+                // declaration is read from the blanked one (round 14).
+                hw_target: hw_target_region(code, strings_kept, at),
             });
         }
     }
@@ -3502,6 +3516,35 @@ fn lean_gamma() -> u64 {
         Err(why) => {
             panic!("build.rs self-check: the good extern-gating fixture was refused: {why}")
         }
+    }
+    // PR #889 review round 14: a *string literal* may not supply the nesting
+    // or the attribute.  The decoy keeps a real, ungated `extern "C"` block and
+    // adds text above it that looks like a gate; on the strings-kept view the
+    // walk read the decoy's `{` as an enclosing block and its `#[cfg]` as that
+    // block's header, and the ungated extern classified as `hw_target`-only.
+    const DECOY: &str = "const D: &str = r#\"#[cfg(feature = \"hw_target\")] {\"#;\n\
+                         extern \"C\" {\n    fn lean_alpha(x: u64) -> u64;\n}\n";
+    match check(DECOY) {
+        Err(_) => {}
+        Ok(n) => panic!(
+            "build.rs self-check: a string literal supplied the cfg nesting — an ungated \
+             `extern \"C\"` block classified as gated ({n} declarations checked)"
+        ),
+    }
+    // ...and the same text as *code* still gates the block, so the fix did not
+    // simply stop reading attributes.
+    const REAL: &str = "#[cfg(feature = \"hw_target\")]\n\
+                        extern \"C\" {\n    fn lean_alpha(x: u64) -> u64;\n}\n";
+    match check(REAL) {
+        Ok(1) => {}
+        Ok(n) => panic!(
+            "build.rs self-check: a genuinely gated extern classified {n} declarations, \
+             expected 1"
+        ),
+        Err(why) => panic!(
+            "build.rs self-check: a genuinely gated extern was refused after the round-14 \
+             view change: {why}"
+        ),
     }
     let mutations: [(&str, &str, &str); 12] = [
         (
