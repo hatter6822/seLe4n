@@ -51,9 +51,9 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.34.48` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 319,846 across 308 Lean files |
-| **Test LoC** | 67,619 across 70 Lean test suites |
-| **Proved declarations** | 10,628 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 319,965 across 308 Lean files |
+| **Test LoC** | 67,725 across 70 Lean test suites |
+| **Proved declarations** | 10,633 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR5 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -2139,8 +2139,14 @@ idle range, `rpi5UpperDomainBase_clears_bootVSpaceRoot` /
 `…_clears_idle_range`, so every entity the boot image creates is `lowTrusted`);
 the three simulation bindings carry `harnessLabelingContext`.
 `Platform.FFI.bootAndInitialisePlatform platform config` boots under the
-binding's labeling, and is provably the checked idle boot followed by the two
-installs with the labeling-refusal arm unreachable
+binding's labeling on the binding's declared cores (`PlatformBinding.declaredCores`;
+the RPi5 binding declares every model core, `rpi5_cores_eq_allCores`, so its
+boot is the all-cores form), refuses a boot whose labeling's declared
+separation witnesses are not installed threads of the boot state
+(`declaredWitnessesInstalled`, PR #889 review round 3 — the guard decides
+that two admissible ids are separated, only the boot state can say they are
+threads), and is provably the checked idle boot followed by the witness check
+and the two installs with the labeling-refusal arm unreachable
 (`bootAndInitialisePlatform_eq_checked_boot`); SM10.1's `lean_kernel_main` is
 its intended caller.
 

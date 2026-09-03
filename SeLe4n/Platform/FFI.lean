@@ -10,6 +10,7 @@ import SeLe4n.Kernel.API
 import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.Lifecycle.Suspend
 import SeLe4n.Platform.Boot
+import SeLe4n.Platform.RPi5.Contract
 
 /-!
 # FFI Bridge: Lean Kernel ↔ Rust HAL
@@ -1048,6 +1049,43 @@ def insecureLabelingContextBootError : String :=
    separation (LabelingContext.separatedThreads); build one with \
    Kernel.deploymentLabelingContext"
 
+/-- PR #889 review round 3: the refusal for a labeling whose declared separation
+witnesses are not installed threads of the boot state. -/
+def uninstalledSeparationWitnessBootError : String :=
+  "boot: the labeling's declared separation witnesses are not installed threads of the boot state (PR #889 review round 3)"
+
+/-- PR #889 review round 3: the boot wrapper over a **declared core list** and a
+labeling — the shared body of `bootAndInitialiseFromPlatform` (every model
+core) and `bootAndInitialisePlatform` (the binding's cores).
+
+Three refusals, in order, and none commits anything: the labeling guard
+(`insecureLabelingContextBootError`), the checked boot's own rejection
+(forwarded verbatim), and — new in this round — a boot whose labeling's
+declared separation witnesses are not installed threads of the boot state
+(`uninstalledSeparationWitnessBootError`, `declaredWitnessesInstalled`).  The
+guard decides that the labeling separates two admissible *ids*; only the boot
+state can say whether those ids are threads the deployment creates, and a
+partition that separates no running thread is exactly the vacuous deployment
+the guard exists to refuse. -/
+def bootAndInitialiseFromPlatformOn
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId)
+    (config : PlatformConfig)
+    (ctx : LabelingContext) :
+    BaseIO (Except String SystemState) := do
+  if isInsecureDefaultContext ctx then
+    pure (Except.error insecureLabelingContextBootError)
+  else
+    match bootFromPlatformCheckedWithIdleThreadsFor cores config with
+    | Except.error e => pure (Except.error e)
+    | Except.ok ist =>
+      if declaredWitnessesInstalled ist.state ctx then
+        let st := ist.state
+        initialiseKernelState st
+        initialiseKernelLabelingContext ctx
+        pure (Except.ok st)
+      else
+        pure (Except.error uninstalledSeparationWitnessBootError)
+
 /-- WS-RC R2.A.3 / **WS-RR RR5.2, RR5.3**: Boot wrapper that validates the
     deployment labeling context, runs `bootFromPlatformChecked`, installs the
     resulting `SystemState` into `kernelStateRef` and the context into
@@ -1107,17 +1145,8 @@ failure explicitly without seeing partial state. -/
 def bootAndInitialiseFromPlatform
     (config : PlatformConfig)
     (ctx : LabelingContext) :
-    BaseIO (Except String SystemState) := do
-  if isInsecureDefaultContext ctx then
-    pure (Except.error insecureLabelingContextBootError)
-  else
-    match bootFromPlatformCheckedWithIdleThreads config with
-    | Except.error e => pure (Except.error e)
-    | Except.ok ist =>
-      let st := ist.state
-      initialiseKernelState st
-      initialiseKernelLabelingContext ctx
-      pure (Except.ok st)
+    BaseIO (Except String SystemState) :=
+  bootAndInitialiseFromPlatformOn SeLe4n.Kernel.Concurrency.allCores config ctx
 
 /-- WS-RR RR5.2: boot under the **platform binding's own** labeling.
 
@@ -1144,7 +1173,8 @@ exactly what `bootFromPlatformCheckedWithIdleThreads` does.  SM10.1's
 `lean_kernel_main` is the intended caller, with `RPi5Platform`. -/
 def bootAndInitialisePlatform (platform : Type) [PlatformBinding platform]
     (config : PlatformConfig) : BaseIO (Except String SystemState) :=
-  bootAndInitialiseFromPlatform config (PlatformBinding.labeling (platform := platform))
+  bootAndInitialiseFromPlatformOn (PlatformBinding.declaredCores (platform := platform)) config
+    (PlatformBinding.labeling (platform := platform))
 
 /-- WS-RR RR5.2: under a binding's labeling the boot entry **cannot** be refused
     on the labeling — it is the checked idle boot followed by the two installs,
@@ -1154,14 +1184,30 @@ def bootAndInitialisePlatform (platform : Type) [PlatformBinding platform]
 theorem bootAndInitialisePlatform_eq_checked_boot (platform : Type) [PlatformBinding platform]
     (config : PlatformConfig) :
     bootAndInitialisePlatform platform config =
-      (match bootFromPlatformCheckedWithIdleThreads config with
+      (match bootFromPlatformCheckedWithIdleThreadsFor
+          (PlatformBinding.declaredCores (platform := platform)) config with
         | Except.error e => pure (Except.error e)
-        | Except.ok ist => do
-            initialiseKernelState ist.state
-            initialiseKernelLabelingContext (PlatformBinding.labeling (platform := platform))
-            pure (Except.ok ist.state)) := by
-  unfold bootAndInitialisePlatform bootAndInitialiseFromPlatform
+        | Except.ok ist =>
+            if declaredWitnessesInstalled ist.state (PlatformBinding.labeling (platform := platform)) then do
+              initialiseKernelState ist.state
+              initialiseKernelLabelingContext (PlatformBinding.labeling (platform := platform))
+              pure (Except.ok ist.state)
+            else
+              pure (Except.error uninstalledSeparationWitnessBootError)) := by
+  unfold bootAndInitialisePlatform bootAndInitialiseFromPlatformOn
   rw [PlatformBinding.labeling_admitted]
+  rfl
+
+/-- PR #889 review round 3: on the Raspberry Pi 5 the checked platform boot's
+idle install is the **all-cores** one — the binding declares every model core
+(`rpi5_cores_eq_allCores`) — so the all-cores boot theorems (the characterised
+queues, `threadStateConsistent`, the reservation) are theorems of the hardware
+boot and not of a form it never runs. -/
+theorem bootAndInitialisePlatform_rpi5_all_cores (config : PlatformConfig) :
+    bootFromPlatformCheckedWithIdleThreadsFor
+        (PlatformBinding.declaredCores (platform := SeLe4n.Platform.RPi5.RPi5Platform)) config =
+      bootFromPlatformCheckedWithIdleThreads config := by
+  rw [SeLe4n.Platform.RPi5.rpi5_cores_eq_allCores]
   rfl
 
 /-- WS-RC R2.B.1 helper: Write the FFI-passed register values into the

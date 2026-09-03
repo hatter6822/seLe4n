@@ -441,12 +441,11 @@ question was a predicate.  All seven are closed in the same version.
   `command_substitution_end` skips comments and the body is lexed recursively
   (`command_substitution_view`); six witness cases.
 
-### The review round, third pass — the two gate findings
+### The review round, third pass
 
-Codex's third review (on the fix-up head) raised four findings; the two on
-the export gate land here, the two on the boot wrapper (the declared
-separation witnesses as installed threads, the binding's core count) follow
-in the next cut.
+Codex's third review (on the fix-up head) raised four findings: two on the
+export gate, two on the boot wrapper.  All four are closed in the same
+version.
 
 * **An assembly provider was a `.global` directive.**  A `.global foo`
   declares binding and defines nothing, so leaving the directive and deleting
@@ -465,6 +464,31 @@ in the next cut.
   the checked platform boot in its own body, over the comment-free view
   (`boot_entry_binding_failures`; four cases, including the callee named only
   in a docstring and in a neighbouring declaration).
+* **The declared separation witnesses were ids, not threads.**  The guard
+  decides that the labeling separates two admissible ids; nothing asked
+  whether either id was a thread the deployment creates, so the empty config —
+  whose only TCBs are the idle threads — booted under the RPi5 labeling with a
+  partition that separated nothing running, the vacuous deployment the guard
+  exists to refuse.  The boot wrapper now refuses, before committing anything,
+  a boot whose labeling's witnesses do not resolve to TCBs in the boot state
+  (`declaredWitnessesInstalled`, `uninstalledSeparationWitnessBootError`);
+  the dispatch suite's boot fixtures install the harness labeling's two
+  witnesses as inactive boot-safe TCBs, and SD-055 pins the empty and the
+  one-witness configs as refused.
+* **The idle install ignored the binding's core count.**  The checked platform
+  boot folded the idle enqueue over the model's `allCores` whatever the
+  binding declared, so `SimSingleCorePlatform` (`coreCount = 1`) came up with
+  idle TCBs and runnable queues on three cores it does not have, and reserved
+  their slots.  `bootAndInitialisePlatform` now boots
+  `bootFromPlatformCheckedWithIdleThreadsFor (PlatformBinding.declaredCores platform)`
+  — the first `coreCount` model cores — and the all-cores form is that
+  instance on the full core count by `rfl`
+  (`bootFromPlatformCheckedWithIdleThreadsFor_allCores`,
+  `PlatformBinding.declaredCores_eq_allCores_of_full`); the RPi5 binding declares every
+  model core (`rpi5_cores_eq_allCores`), so its boot is the all-cores form
+  (`bootAndInitialisePlatform_rpi5_all_cores`) and every all-cores boot
+  theorem is a theorem of the hardware boot.  SD-055 pins the single-core
+  binding installing idle 0 only and the four-core one installing all four.
 
 ### Tests
 

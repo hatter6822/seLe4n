@@ -2908,6 +2908,52 @@ def bootFromPlatformCheckedWithIdleThreads (config : PlatformConfig) :
   (bootFromPlatformChecked config).map fun ist =>
     SeLe4n.Kernel.Concurrency.allCores.foldl enqueueIdleThread ist
 
+/-- PR #889 review round 3: the idle enqueue over a **declared** core list — the
+    cores a platform binding says exist (`PlatformBinding.declaredCores`), rather than
+    the model's `allCores`.  A single-core binding (`SimSingleCorePlatform`,
+    `coreCount = 1`) booted through the all-cores form came up with idle TCBs
+    and runnable queues on three cores the binding does not have, and reserved
+    their slots; the binding's topology never reached the boot.  On the full
+    core count the two forms coincide definitionally
+    (`bootFromPlatformCheckedWithIdleThreadsFor_allCores`), which is the RPi5
+    case (`rpi5_cores_eq_allCores`), so every all-cores theorem is a theorem of
+    the hardware boot.  Same validation, same rejections: the checked boot is
+    the one validation path, and the fold adds none. -/
+def bootFromPlatformCheckedWithIdleThreadsFor
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig) :
+    Except String IntermediateState :=
+  (bootFromPlatformChecked config).map fun ist => cores.foldl enqueueIdleThread ist
+
+/-- PR #889 review round 3: on every core the declared-list form **is** the
+    all-cores form. -/
+theorem bootFromPlatformCheckedWithIdleThreadsFor_allCores (config : PlatformConfig) :
+    bootFromPlatformCheckedWithIdleThreadsFor SeLe4n.Kernel.Concurrency.allCores config =
+      bootFromPlatformCheckedWithIdleThreads config := rfl
+
+/-- PR #889 review round 3: the declared-list form rejects exactly what the
+    checked boot rejects, whatever the list. -/
+theorem bootFromPlatformCheckedWithIdleThreadsFor_rejects_invalid
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig) (e : String)
+    (h : bootFromPlatformChecked config = .error e) :
+    bootFromPlatformCheckedWithIdleThreadsFor cores config = .error e := by
+  unfold bootFromPlatformCheckedWithIdleThreadsFor
+  rw [h]
+  rfl
+
+/-- PR #889 review round 3: are the labeling's **declared separation witnesses**
+    installed threads of `st`?  `isInsecureDefaultContext` decides that the
+    labeling separates two admissible *ids*; it cannot see whether either id is
+    a thread the deployment actually creates, so a boot whose every live thread
+    sits on one side of the boundary — the empty config's, whose only TCBs are
+    the idle threads — was admitted with a partition that separated nothing
+    running.  The boot wrapper refuses such a boot before committing anything
+    (`uninstalledSeparationWitnessBootError`).  A labeling with no declared
+    witness fails closed here too, though the guard has already refused it. -/
+def declaredWitnessesInstalled (st : SystemState) (ctx : LabelingContext) : Bool :=
+  match ctx.separatedThreads with
+  | none => false
+  | some (lo, hi) => (st.getTcb? lo).isSome && (st.getTcb? hi).isSome
+
 /-- **WS-RR RR5.13**: `installBootVSpaceRoot` frames the scheduler — it writes
     the object store and `asidTable`, neither of which the scheduler reads.
     Definitional, and the missing step in

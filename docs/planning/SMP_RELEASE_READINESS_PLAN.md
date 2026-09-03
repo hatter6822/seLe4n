@@ -610,6 +610,23 @@ the question was a predicate:
   substitution survived into the code view and a `)` inside it closed the
   substitution early; the body is now lexed recursively.
 
+**Review round 3 (PR #889, same version).**  Four more:
+
+* *RR5.2's boot entry had no enforced connection to SM10.1's caller.*
+  `lean_kernel_main` stays SM10.1's to write (a transition goes live after
+  its proofs, and the entry needs the DTB-derived configuration); the export
+  gate now requires that whichever declaration exports it calls
+  `bootAndInitialisePlatform` in its own body (`boot_entry_binding_failures`).
+* *RR5.4's witnesses were ids, not threads.*  The boot wrapper refuses a boot
+  whose labeling's declared witnesses are not installed threads of the boot
+  state (`declaredWitnessesInstalled`), so a partition that separates no
+  running thread does not boot.
+* *RR5.16's assembly providers were `.global` directives.*  A provider is a
+  defined symbol (directive and label) in a source `build.rs` assembles.
+* *RR5.14's idle install ignored the binding's core count.*  The binding boot
+  folds over `PlatformBinding.declaredCores`; the RPi5 binding declares every model
+  core, so its boot is the all-cores form (`rpi5_cores_eq_allCores`).
+
 **Note on RR5.10–RR5.14** (the rows that replaced one XL).  Two findings shape
 the split, and the row they replaced named neither: one is an ordering defect
 it inherited, the other is the reason its "cannot be separate PRs" claim is

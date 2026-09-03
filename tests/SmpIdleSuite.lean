@@ -116,6 +116,12 @@ open SeLe4n.Platform.Boot (createIdleThread queuedIdleThread)
 #check @SeLe4n.Kernel.threadInactiveFlagConsistent
 #check @SeLe4n.Kernel.threadStateConsistent_implies_threadInactiveFlagConsistent
 #check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_threadInactiveFlagConsistent
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor_allCores
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor_rejects_invalid
+#check @SeLe4n.Platform.Boot.declaredWitnessesInstalled
+#check @SeLe4n.Platform.PlatformBinding.declaredCores
+#check @SeLe4n.Platform.PlatformBinding.declaredCores_eq_allCores_of_full
 #check @SeLe4n.Platform.Boot.bootFromPlatformChecked_ok_shape
 #check @SeLe4n.Platform.Boot.bootFromPlatformChecked_ok_idleSlotsFreshAt
 #check @SeLe4n.Kernel.isIdleObjId

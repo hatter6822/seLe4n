@@ -542,7 +542,36 @@ private def sd035_sequentialDispatches : IO Unit := do
 -- R2.A — bootAndInitialiseFromPlatform integration
 -- ============================================================================
 
-/-- SD-040: `bootAndInitialiseFromPlatform` on a well-formed (empty)
+/-- PR #889 review round 3: the minimally well-formed config whose boot the
+harness labeling **admits** — it installs the labeling's two declared
+separation witnesses (`⟨1⟩` and `⟨upperWitnessIndex harnessSeparationBoundary⟩`)
+as boot-safe, inactive TCBs.  The boot wrapper now refuses a boot whose
+witnesses are not installed threads (`declaredWitnessesInstalled`), so the
+empty config — whose only TCBs are the idle threads — is the negative, not
+the fixture. -/
+private def witnessTcb (id : Nat) : TCB :=
+  { tid := ⟨id⟩, priority := ⟨10⟩, domain := ⟨0⟩,
+    cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0),
+    threadState := .Inactive }
+
+private def witnessEntry (id : Nat) : SeLe4n.Platform.Boot.ObjectEntry :=
+  { id := ⟨id⟩, obj := .tcb (witnessTcb id),
+    hSlots := fun _ h => KernelObject.noConfusion h,
+    hMappings := fun _ h => KernelObject.noConfusion h }
+
+private def harnessUpperWitness : Nat :=
+  SeLe4n.Kernel.upperWitnessIndex SeLe4n.Kernel.harnessSeparationBoundary
+
+/-- The witnessed config for an index-partitioned labeling whose upper witness is
+`upper` — the harness labeling's is `harnessUpperWitness`, a confined context at
+boundary `b` has `upperWitnessIndex b`. -/
+private def witnessedCfgFor (upper : Nat) : SeLe4n.Platform.Boot.PlatformConfig :=
+  { irqTable := [], initialObjects := [witnessEntry 1, witnessEntry upper] }
+
+private def witnessedCfg : SeLe4n.Platform.Boot.PlatformConfig :=
+  witnessedCfgFor harnessUpperWitness
+
+/-- SD-040: `bootAndInitialiseFromPlatform` on a well-formed (witnessed)
     config installs the post-boot state into `kernelStateRef`. -/
 private def sd040_bootInitialise_emptyConfig_succeeds : IO Unit := do
   -- Seed the IO.Ref with a sentinel state so we can detect mutation.
@@ -552,8 +581,7 @@ private def sd040_bootInitialise_emptyConfig_succeeds : IO Unit := do
   -- A PlatformConfig with empty IRQ + initialObjects tables is the
   -- minimally well-formed config (`PlatformConfig.wellFormed_empty`
   -- in Boot.lean).
-  let cfg : SeLe4n.Platform.Boot.PlatformConfig :=
-    { irqTable := [], initialObjects := [] }
+  let cfg : SeLe4n.Platform.Boot.PlatformConfig := witnessedCfg
   match ← bootAndInitialiseFromPlatform cfg SeLe4n.Kernel.harnessLabelingContext with
   | Except.ok _ =>
       -- The IO.Ref has been overwritten with the post-boot state.
@@ -576,8 +604,11 @@ the boot state while leaving whatever policy the reference already held.  This
 test now also reads the reference back, so the install is observed rather than
 inferred from the success arm. -/
 private def sd041_bootInitialise_withLabelingContext : IO Unit := do
+  -- PR #889 review round 3: the config installs THIS labeling's witnesses —
+  -- the confined context at boundary 64 separates ⟨1⟩ from
+  -- ⟨upperWitnessIndex 64⟩, not the harness labeling's pair.
   let cfg : SeLe4n.Platform.Boot.PlatformConfig :=
-    { irqTable := [], initialObjects := [] }
+    witnessedCfgFor (SeLe4n.Kernel.upperWitnessIndex 64)
   -- Install a context distinguishable from whatever is currently live.
   let deployed := SeLe4n.Kernel.confinedLabelingContext 64
   match ← bootAndInitialiseFromPlatform cfg deployed with
@@ -648,8 +679,7 @@ private def sd043_bootInitialise_insecureContext_rejects : IO Unit := do
   let sentinelSt := mkState [(⟨456⟩, .tcb (mkTcb 456 .Ready))] (some sentinelTid)
   initialiseKernelState sentinelSt
   initialiseKernelLabelingContext SeLe4n.Kernel.harnessLabelingContext
-  let cfg : SeLe4n.Platform.Boot.PlatformConfig :=
-    { irqTable := [], initialObjects := [] }
+  let cfg : SeLe4n.Platform.Boot.PlatformConfig := witnessedCfg
   match ← bootAndInitialiseFromPlatform cfg SeLe4n.Kernel.defaultLabelingContext with
   | Except.ok _ =>
       failLine "sd043_unexpected_success"
@@ -694,8 +724,7 @@ This asserts the property end to end, through the wrapper the Rust HAL's
 kernel-init path calls and against the state it actually installs in
 `kernelStateRef` — not against a boot entry a test constructed. -/
 private def sd045_bootInitialise_installs_percore_idle : IO Unit := do
-  let cfg : SeLe4n.Platform.Boot.PlatformConfig :=
-    { irqTable := [], initialObjects := [] }
+  let cfg : SeLe4n.Platform.Boot.PlatformConfig := witnessedCfg
   match ← bootAndInitialiseFromPlatform cfg SeLe4n.Kernel.harnessLabelingContext with
   | Except.error e =>
       failLine "sd045_bootInitialise_unexpected_error"
@@ -733,8 +762,7 @@ and an error here would mean the binding's source and the guard had come apart. 
 the confined production context, pinned by `rpi5_deploymentLabeling` and
 probed below at one id on each side of its boundary. -/
 private def sd046_bootInitialisePlatform_installs_binding_labeling : IO Unit := do
-  let cfg : SeLe4n.Platform.Boot.PlatformConfig :=
-    { irqTable := [], initialObjects := [] }
+  let cfg : SeLe4n.Platform.Boot.PlatformConfig := witnessedCfg
   match ← bootAndInitialisePlatform SeLe4n.Platform.Sim.SimPlatform cfg with
   | Except.ok _ =>
       let installed ← getKernelLabelingContext
@@ -865,6 +893,76 @@ private def sd054_idleTargetCapabilityUnresolvable : IO Unit := do
      | .error .invalidCapability => true
      | _ => false)
     "a suspend aimed at an idle TCB must be refused at resolution"
+
+/-- SD-055 (PR #889 review round 3): **the declared separation witnesses must
+be installed threads**, and **the binding's cores bound the idle install**.
+
+The guard decides that the labeling separates two admissible ids; only the boot
+state can say whether those ids are threads the deployment creates.  The empty
+config — idle threads only — and a config installing one witness are both
+refused with `uninstalledSeparationWitnessBootError`, before anything is
+committed.  And `bootAndInitialisePlatform` folds the idle enqueue over the
+binding's declared cores: the single-core simulation binding comes up with idle
+0 only, the four-core one with all four. -/
+private def sd055_witnesses_installed_and_binding_cores : IO Unit := do
+  let empty : SeLe4n.Platform.Boot.PlatformConfig := { irqTable := [], initialObjects := [] }
+  match ← bootAndInitialiseFromPlatform empty SeLe4n.Kernel.harnessLabelingContext with
+  | Except.error e =>
+      expect "sd055_empty_config_refused_for_uninstalled_witnesses"
+        (e == uninstalledSeparationWitnessBootError)
+        s!"expected the witness refusal, got: {e}"
+  | Except.ok _ =>
+      failLine "sd055_empty_config_unexpected_success"
+        "a boot installing neither declared witness must be refused"
+  let lowerOnly : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [], initialObjects := [witnessEntry 1] }
+  match ← bootAndInitialiseFromPlatform lowerOnly SeLe4n.Kernel.harnessLabelingContext with
+  | Except.error e =>
+      expect "sd055_one_witness_refused"
+        (e == uninstalledSeparationWitnessBootError)
+        s!"expected the witness refusal, got: {e}"
+  | Except.ok _ =>
+      failLine "sd055_one_witness_unexpected_success"
+        "a boot installing one declared witness must be refused"
+  expect "sd055_witness_predicate_on_the_boot_state"
+    (match SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads witnessedCfg,
+           SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads empty with
+     | Except.ok w, Except.ok e =>
+         SeLe4n.Platform.Boot.declaredWitnessesInstalled w.state SeLe4n.Kernel.harnessLabelingContext &&
+         !SeLe4n.Platform.Boot.declaredWitnessesInstalled e.state SeLe4n.Kernel.harnessLabelingContext
+     | _, _ => false)
+    "the predicate must hold of the witnessed boot state and fail of the empty one"
+  -- The binding's cores bound the idle install.
+  match ← bootAndInitialisePlatform SeLe4n.Platform.Sim.SimSingleCorePlatform witnessedCfg with
+  | Except.error e =>
+      failLine "sd055_single_core_unexpected_error" s!"the single-core binding should boot, got: {e}"
+  | Except.ok _ =>
+      let st ← getKernelState
+      let c0 : SeLe4n.Kernel.Concurrency.CoreId := ⟨0, by decide⟩
+      let c1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
+      expect "sd055_single_core_installs_idle_0"
+        ((st.getTcb? (SeLe4n.Kernel.idleThreadId c0)).isSome &&
+         decide (SeLe4n.Kernel.idleThreadId c0 ∈ (st.scheduler.runQueueOnCore c0).toList))
+        "the single-core binding must install and enqueue idle 0"
+      expect "sd055_single_core_installs_no_idle_1"
+        ((st.getTcb? (SeLe4n.Kernel.idleThreadId c1)).isNone &&
+         (st.scheduler.runQueueOnCore c1).toList.isEmpty)
+        "the single-core binding must not install idle threads for cores it does not declare"
+  match ← bootAndInitialisePlatform SeLe4n.Platform.Sim.SimPlatform witnessedCfg with
+  | Except.error e =>
+      failLine "sd055_four_core_unexpected_error" s!"the four-core binding should boot, got: {e}"
+  | Except.ok _ =>
+      let st ← getKernelState
+      for c in SeLe4n.Kernel.Concurrency.allCores do
+        expect s!"sd055_four_core_installs_idle_{c.val}"
+          (st.getTcb? (SeLe4n.Kernel.idleThreadId c)).isSome
+          "the four-core binding installs every idle thread"
+  expect "sd055_binding_cores_are_derived"
+    (SeLe4n.Platform.PlatformBinding.declaredCores (platform := SeLe4n.Platform.Sim.SimSingleCorePlatform) ==
+       [⟨0, by decide⟩] &&
+     SeLe4n.Platform.PlatformBinding.declaredCores (platform := SeLe4n.Platform.Sim.SimPlatform) ==
+       SeLe4n.Kernel.Concurrency.allCores)
+    "the binding's core list is the first coreCount model cores"
 
 /-- SD-051: faithful seL4-MCS receive linkage, folded into `endpointReceiveDual`
     itself (#7.2; formerly the separate `linkReceivedCaller` `.receive`-arm step).
@@ -1278,4 +1376,6 @@ def main : IO Unit := do
   sd053g_bound_notification_wake_clears_stash
   IO.println "--- PR #889 review round 2: reserved idle objects are unresolvable ---"
   sd054_idleTargetCapabilityUnresolvable
+  IO.println "--- PR #889 review round 3: installed witnesses, the binding's cores ---"
+  sd055_witnesses_installed_and_binding_cores
   IO.println "=== All WS-RC R2.C SyscallDispatch tests passed ==="

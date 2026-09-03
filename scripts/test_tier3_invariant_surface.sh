@@ -5182,6 +5182,16 @@ run_check "INVARIANT" rg -n '^  auditMonitorClearance : Option SecurityDomain :=
 run_check "INVARIANT" rg -n '^theorem deploymentLabelingContext_policy_fields' SeLe4n/Kernel/InformationFlow/Policy.lean
 run_check "INVARIANT" rg -n '^def threadInactiveFlagConsistent' SeLe4n/Kernel/Scheduler/Operations/Core.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreads_threadInactiveFlagConsistent' SeLe4n/Platform/Boot.lean
+# PR #889 review round 3: the declared separation witnesses must be installed
+# threads of the boot state, and the binding boot installs idle threads on the
+# binding's declared cores only — the RPi5 binding declares every model core,
+# so the all-cores theorems are the hardware boot's.
+run_check "INVARIANT" rg -n '^def declaredWitnessesInstalled' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n 'if declaredWitnessesInstalled ist.state ctx then' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def bootFromPlatformCheckedWithIdleThreadsFor' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^def PlatformBinding.declaredCores ' SeLe4n/Platform/Contract.lean
+run_check "INVARIANT" rg -n '^theorem rpi5_cores_eq_allCores' SeLe4n/Platform/RPi5/Contract.lean
+run_check "INVARIANT" rg -n '^theorem bootAndInitialisePlatform_rpi5_all_cores' SeLe4n/Platform/FFI.lean
 # WS-RR RR5.17: the boot-pinned `suspend_thread_inner` export is REMOVED.  It
 # committed kernel state through a bare `kernelStateRef.set` with no
 # kernel-entry bracket, and `@[export]` made it a live C symbol in the linked
@@ -5690,6 +5700,11 @@ import SeLe4n.Platform.RPi5.Contract
 #check @SeLe4n.Kernel.threadInactiveFlagConsistent
 #check @SeLe4n.Kernel.threadStateConsistent_implies_threadInactiveFlagConsistent
 #check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_threadInactiveFlagConsistent
+#check @SeLe4n.Platform.Boot.declaredWitnessesInstalled
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor_allCores
+#check @SeLe4n.Platform.PlatformBinding.declaredCores_eq_allCores_of_full
+#check @SeLe4n.Platform.RPi5.rpi5_cores_eq_allCores
+#check @SeLe4n.Platform.FFI.bootAndInitialisePlatform_rpi5_all_cores
 #check @SeLe4n.Kernel.confinedDeploymentLabeling
 #check @SeLe4n.Kernel.harnessDeploymentLabeling
 -- Review round: the enqueued idle TCB is the queued form and the production boot

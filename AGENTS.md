@@ -203,20 +203,20 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~50829 lines)
+- `CHANGELOG.md` (~50963 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22582 lines)
 - `tests/SmpInformationFlowSuite.lean` (~11772 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~7902 lines)
-- `SeLe4n/Kernel/API.lean` (~6784 lines)
+- `SeLe4n/Kernel/API.lean` (~6841 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5738 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~5186 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5127 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~4997 lines)
+- `SeLe4n/Platform/Boot.lean` (~4778 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4750 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
-- `SeLe4n/Platform/Boot.lean` (~4665 lines)
 - `SeLe4n/Model/State.lean` (~4503 lines)
-- `docs/spec/SELE4N_SPEC.md` (~4310 lines)
+- `docs/spec/SELE4N_SPEC.md` (~4337 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
 - `tests/NegativeStateSuite.lean` (~4115 lines)
 - `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~3924 lines)
@@ -239,7 +239,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~2844 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2784 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~2755 lines)
-- `SeLe4n/Platform/FFI.lean` (~2689 lines)
+- `SeLe4n/Platform/FFI.lean` (~2741 lines)
 - `SeLe4n/Kernel/Capability/Operations.lean` (~2674 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2639 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean` (~2637 lines)
@@ -260,24 +260,24 @@ To find files that need pagination today, run:
 - `SeLe4n/Model/Object/Types.lean` (~2264 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2243 lines)
 - `SeLe4n/Prelude.lean` (~2137 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2099 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2079 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~2074 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2059 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2059 lines)
 - `SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean` (~2042 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2034 lines)
 - `SeLe4n/Kernel/Architecture/Invariant.lean` (~2033 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1967 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
+- `SeLe4n/Kernel/InformationFlow/Policy.lean` (~1924 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md` (~1917 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean` (~1909 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean` (~1901 lines)
 - `docs/dev_history/planning/V3E_IPC_UNWRAP_CAPS_LOOP_COMPOSITION_PLAN.md` (~1891 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean` (~1890 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md` (~1889 lines)
-- `SeLe4n/Kernel/InformationFlow/Policy.lean` (~1881 lines)
+- `tests/InformationFlowSuite.lean` (~1871 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1859 lines)
-- `tests/InformationFlowSuite.lean` (~1834 lines)
 - `SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean` (~1833 lines)
 - `SeLe4n/Model/FreezeProofs.lean` (~1827 lines)
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1822 lines)
@@ -309,6 +309,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~1394 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean` (~1393 lines)
 - `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md` (~1382 lines)
+- `tests/SyscallDispatchSuite.lean` (~1381 lines)
 - `tests/LockSetSuite.lean` (~1377 lines)
 - `docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` (~1370 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
@@ -326,7 +327,6 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1238 lines)
 - `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean` (~1235 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1233 lines)
-- `tests/SyscallDispatchSuite.lean` (~1226 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1216 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1195 lines)
@@ -353,6 +353,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~998 lines)
 - `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean` (~995 lines)
 - `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md` (~984 lines)
+- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~971 lines)
 - `docs/planning/SMP_PER_CORE_STATE_PLAN.md` (~968 lines)
 - `tests/SmpFoundationsSuite.lean` (~965 lines)
 - `docs/dev_history/planning/WS_X_LEAN_ETHEREUM_FORMALIZATION_PLAN.md` (~958 lines)
@@ -367,7 +368,6 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.28.0_COMPREHENSIVE.md` (~921 lines)
 - `tests/SmpCbsSuite.lean` (~919 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
-- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~911 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
@@ -1296,8 +1296,17 @@ code may assume:
   by `rfl`; the boundary clears the boot VSpace root and the idle range), the
   simulation bindings' is `harnessDeploymentLabeling`, and
   `Platform.FFI.bootAndInitialisePlatform` boots under the binding's labeling —
-  provably the checked idle boot plus the two installs, with the refusal arm
-  unreachable (`bootAndInitialisePlatform_eq_checked_boot`).
+  provably the checked idle boot on the binding's declared cores, then the
+  witness check, then the two installs, with the labeling-refusal arm
+  unreachable (`bootAndInitialisePlatform_eq_checked_boot`).  **The declared
+  separation witnesses must be installed threads of the boot state** (PR #889
+  review round 3): the guard decides that the labeling separates two
+  admissible *ids*, and only the boot state can say whether those ids are
+  threads the deployment creates, so a boot whose labeling's witnesses do not
+  resolve to TCBs — the empty config's, whose only TCBs are the idle threads —
+  is refused before anything is committed (`declaredWitnessesInstalled`,
+  `uninstalledSeparationWitnessBootError`).  A deployment therefore installs
+  the two threads its labeling names as separated, or does not boot.
 
 - **The boot state enqueues each core's idle thread; it does not dispatch it**
   (WS-RR RR5.11–RR5.14).  `bootAndInitialiseFromPlatform` runs
@@ -1358,6 +1367,14 @@ code may assume:
   `bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_succeeds` takes
   **no hypothesis beyond the boot**, and each core's first selection is pinned
   to its own idle thread (`…_chooseThreadOnCore_idle`).
+  **The binding boot installs idle threads on the binding's declared cores**
+  (PR #889 review round 3): `bootAndInitialisePlatform` runs
+  `bootFromPlatformCheckedWithIdleThreadsFor (PlatformBinding.declaredCores platform)`,
+  the first `coreCount` model cores, so a single-core binding boots one idle
+  thread rather than four; the RPi5 binding declares every model core
+  (`rpi5_cores_eq_allCores`), so its boot is the all-cores form by `rfl`
+  (`bootAndInitialisePlatform_rpi5_all_cores`) and every all-cores boot
+  theorem is a theorem of the hardware boot.
   `bootFromPlatformWithIdleThreads` remains as the SM4.G install-and-dispatch
   wrapper and is **not** the production path.
 

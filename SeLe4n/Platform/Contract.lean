@@ -210,6 +210,25 @@ theorem PlatformBinding.labeling_admitted [PlatformBinding platform] :
       = false :=
   SeLe4n.Kernel.isInsecureDefaultContext_deploymentLabelingContext _
 
+/-- PR #889 review round 3: the cores the binding **declares**, as model core
+    ids — the first `coreCount` of `allCores` (`cores` is the count itself).  What the checked platform boot
+    installs idle threads on (`bootFromPlatformCheckedWithIdleThreadsFor`), so
+    a single-core binding boots a single idle thread; on the full core count
+    this is `allCores` (`declaredCores_eq_allCores_of_full`). -/
+def PlatformBinding.declaredCores [PlatformBinding platform] :
+    List SeLe4n.Kernel.Concurrency.CoreId :=
+  SeLe4n.Kernel.Concurrency.allCores.filter
+    (fun c => decide (c.val < PlatformBinding.coreCount (platform := platform)))
+
+/-- PR #889 review round 3: a binding declaring every model core declares
+    `allCores` — the bridge from the declared-list boot to the all-cores theorems. -/
+theorem PlatformBinding.declaredCores_eq_allCores_of_full [PlatformBinding platform]
+    (h : PlatformBinding.coreCount (platform := platform) = SeLe4n.Kernel.Concurrency.numCores) :
+    PlatformBinding.declaredCores (platform := platform) = SeLe4n.Kernel.Concurrency.allCores := by
+  unfold PlatformBinding.declaredCores
+  rw [h]
+  exact List.filter_eq_self.mpr (fun c _ => decide_eq_true c.isLt)
+
 /-- **WS-SM SM0.G**: extract the platform's ARMv8 sharing domain. -/
 @[inline] def PlatformBinding.sharing [PlatformBinding platform] :
     SeLe4n.Kernel.Concurrency.SharingDomain :=

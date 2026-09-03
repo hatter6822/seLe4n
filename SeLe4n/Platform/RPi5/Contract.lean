@@ -216,6 +216,14 @@ theorem numCores_eq_rpi5_coreCount :
       SeLe4n.Platform.PlatformBinding.coreCount (platform := RPi5Platform) := by
   rfl
 
+/-- PR #889 review round 3: the RPi5 binding declares every model core, so the
+    checked platform boot's declared-list idle install is the all-cores one and
+    every all-cores boot theorem is a theorem of the hardware boot. -/
+theorem rpi5_cores_eq_allCores :
+    SeLe4n.Platform.PlatformBinding.declaredCores (platform := RPi5Platform) =
+      SeLe4n.Kernel.Concurrency.allCores :=
+  SeLe4n.Platform.PlatformBinding.declaredCores_eq_allCores_of_full numCores_eq_rpi5_coreCount.symm
+
 /-- **WS-SM SM0.E / SM0.G**: parallel pinning for `bootCoreId.val`.
     Both the SM0.E literal (`bootCoreId := ⟨0, _⟩`) and the RPi5
     binding (`bootCoreId := ⟨0, _⟩`) agree on the underlying core
