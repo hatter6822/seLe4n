@@ -897,6 +897,49 @@ private def sd054_idleTargetCapabilityUnresolvable : IO Unit := do
      | .error .invalidCapability => true
      | _ => false)
     "a suspend aimed at an idle TCB must be refused at resolution"
+  -- PR #889 review round 11 (P1): the chokepoint decides on the *resolved
+  -- capability's* target, so an arm whose operand is a RAW id from a message
+  -- register escapes it.  `.schedContextBind` resolves its capability to the
+  -- SchedContext and takes the thread from `args.threadId`: with an ordinary
+  -- writable SchedContext capability a caller could name `idleThreadId c`,
+  -- and `schedContextBind` would bind the idle TCB, overwrite its priority
+  -- with the SchedContext's and re-bucket it — a high-priority SchedContext
+  -- making idle outrank ordinary runnable threads.  The refusal is at the
+  -- one lift point every raw thread operand passes through.
+  let scObj : SeLe4n.ObjId := ⟨60⟩
+  let scCap : Capability :=
+    { target := .object scObj, rights := AccessRightSet.ofList [.write] }
+  let bindDecoded (threadId : Nat) : SyscallDecodeResult :=
+    { capAddr := SeLe4n.CPtr.ofNat 2,
+      msgInfo := { length := 1, extraCaps := 0, label := 0 },
+      syscallId := .schedContextBind,
+      msgRegs := #[⟨threadId⟩], inlineCount := 1, overflowCount := 0 }
+  let idle0Tid : SeLe4n.ThreadId := SeLe4n.Kernel.idleThreadId ⟨0, by decide⟩
+  expect "sd054_raw_thread_operand_naming_idle_is_refused"
+    (match dispatchCapabilityOnly (bindDecoded idle0Tid.toNat) scCap caller with
+     | some f =>
+       match f st with
+       | .error .invalidArgument => true
+       | _ => false
+     | none => false)
+    "a schedContextBind whose raw thread operand names an idle thread must be refused"
+  expect "sd054_raw_thread_operand_validator_refuses_every_core"
+    (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
+      match validateThreadIdArg (SeLe4n.Kernel.idleThreadId c) with
+      | .error .invalidArgument => true
+      | _ => false))
+    "the raw-operand validator refuses every core's idle thread id"
+  expect "sd054_raw_operand_validators_admit_ordinary_ids"
+    ((match validateThreadIdArg ⟨7⟩ with
+      | .ok v => decide (v.val = (⟨7⟩ : SeLe4n.ThreadId))
+      | _ => false) &&
+     (match validateObjIdArg ⟨7⟩ with
+      | .ok v => decide (v.val = (⟨7⟩ : SeLe4n.ObjId))
+      | _ => false) &&
+     (match validateObjIdArg (SeLe4n.Kernel.idleThreadId ⟨1, by decide⟩).toObjId with
+      | .error .invalidArgument => true
+      | _ => false))
+    "an ordinary raw id still lifts, and a reserved idle object id does not"
 
 /-- SD-055 (PR #889 review round 3): **the declared separation witnesses must
 be installed threads**, and **the binding's cores bound the idle install**.

@@ -882,6 +882,42 @@ Six self-test cases: the reviewer's three fixtures verbatim, the wildcard
 stand-in, and a multi-line `.error` arm that halts accepted so the arm parser
 is exercised in both directions.
 
+### The review round, eleventh pass
+
+Codex's eleventh review (on the round-10 head) raised two findings: a **P1 in
+the kernel** — the first live defect any round found outside the gates — and
+one more gap in the boot-entry check.
+
+* **A raw thread-id operand escaped the idle chokepoint** (P1).
+  `syscallResolveCap` refuses a *capability* naming a reserved idle object,
+  which covers every arm whose operand is the resolved capability's own
+  target.  `.schedContextBind` is not such an arm: its capability resolves to
+  the **SchedContext**, and the thread arrives as a bare number in
+  `args.threadId`.  A caller holding an ordinary writable SchedContext
+  capability could therefore name `idleThreadId c`; `schedContextBind` would
+  find the boot-installed idle TCB, bind it, overwrite its priority with the
+  SchedContext's and re-bucket it — a high-priority SchedContext making idle
+  outrank ordinary runnable threads and starving them, with no idle capability
+  anywhere in the story.  The refusal is placed at `validateThreadIdArg`, the
+  one lift point every raw thread operand passes through, rather than in the
+  arm: an arm-level fix is an enumeration and the next raw operand would miss
+  it.  `validateObjIdArg` gets the same refusal for raw object operands (every
+  live use lifts a capability-derived id today, so it is covered on the day
+  such an operand is written rather than the day it is reviewed), and both
+  carry `…_ok_not_reserved` theorems.
+  `dispatchCapabilityOnly_schedContextBind_idle_operand_refused` states the
+  consequence at the arm the review found.  The sweep also confirms the other
+  raw operand is safe: `.lifecycleRetype` takes `args.targetObj` as a bare
+  number, but `lifecycleRetypeAuthority` binds it to the capability
+  (`cap.target = .object target`), so the chokepoint covers it.
+* **The boot entry's `.error` arm could halt conditionally.**  Round 10 parsed
+  the arm boundaries and then searched the arm for a halt *token*, which
+  `| .error _ => if false then ffiFatalHalt else pure ()` satisfies while
+  returning to the Rust caller.  `boot_entry_arm_halts_unconditionally`
+  requires the halt to be the arm's **terminal action**: its body's last
+  non-empty line must begin with the halt call, so a conditional, a trailing
+  statement after the halt, or a `let` that merely names it are all refused.
+
 ### Tests
 
 * `tests/SmpIdleSuite.lean` — 28 surface anchors for the new boot surface
@@ -951,7 +987,10 @@ is exercised in both directions.
   through `bootAndInitialiseRPi5` and observes the canonical root installed
   at its reserved id and the live state carrying the BCM2712's 44-bit
   physical address width; `bindPlatformConfig` keeps the caller's objects
-  and applies the binding's hardware fields.  Round 8: SD-057 reproduces
+  and applies the binding's hardware fields.  Round 11: SD-054 checks that a
+  `.schedContextBind` whose raw thread operand names an idle thread is refused
+  `.invalidArgument`, that the validator refuses every core's idle id, and
+  that ordinary raw ids still lift while a reserved idle object id does not.  Round 8: SD-057 reproduces
   the raw-seam finding (`suspendThreadOnCore` alone dequeues idle 0 on the
   installed boot state), then observes the seam's step — committed through
   `modifyGetKernelState` exactly as the export commits it; the export also
@@ -960,7 +999,7 @@ is exercised in both directions.
   idle 0 with the sentinel's `.invalidArgument` and commit nothing, refuse
   every core's idle id without an SGI, let the inactive lower witness reach
   the transition (`.illegalState`), and keep the sentinel's refusal.
-* `scripts/check_kernel_entry_exports.py --self-test` — 77 cases: the sixteen
+* `scripts/check_kernel_entry_exports.py --self-test` — 80 cases: the sixteen
   boot-entry shapes (five executing, eleven token-preserving refusals, among
   them the call executed and then routed around and, round 7, the generic
   entry at another platform and at the right one), the installer
@@ -977,7 +1016,9 @@ is exercised in both directions.
   parsed — the halt in an `.ok` arm that *follows* the `.error` arm, a
   wildcard standing in for it, an exit before the handling match and a
   rebinding of the result all refused, a multi-line halting `.error` arm
-  accepted;
+  accepted; and (round 11) the halt required to be the arm's terminal action —
+  a halt under an `if`, a halt followed by another statement, and a halt named
+  in a `let` all refused;
   `scripts/rust_code_view.py --self-test` (round 8) — the statement
   splitter and the binding instance: the last `let` strictly before the
   use, none for an unbound name or a `let` after the use;

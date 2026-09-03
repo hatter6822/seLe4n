@@ -1792,12 +1792,58 @@ match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
 ```
 The guard fires BEFORE any handler entry so sentinel IDs never reach
 downstream object-store lookups. Defense-in-depth (graceful
-`.objectNotFound` at lookup time) remains intact. -/
+`.objectNotFound` at lookup time) remains intact.
+
+**PR #889 review round 11 (P1): a reserved idle thread id is refused here.**
+`syscallResolveCap` refuses a *capability* naming a reserved idle object, and
+that covers every arm whose operand is the resolved capability's own target.
+It does not cover an arm whose operand is a **raw id from a message
+register**: `.schedContextBind` resolves its capability to the *SchedContext*
+and takes the thread from `args.threadId`, so a caller holding an ordinary
+writable SchedContext capability could name `idleThreadId c` — and
+`schedContextBind` would bind the boot-installed idle TCB, overwrite its
+priority with the SchedContext's and re-bucket it, letting a high-priority
+SchedContext make idle outrank ordinary runnable threads and starve them.
+No idle capability is needed for that; the name alone sufficed.
+
+This validator is the one lift point every raw thread-id operand passes
+through, so the refusal is placed here rather than in the arm — the arm-level
+fix would be an enumeration, and the next raw operand would miss it.  The
+capability-derived call sites (`.tcbSuspend`, `.tcbResume`, the priority
+arms, which pass `cap.target`'s object id) can never see an idle id anyway,
+since the chokepoint refused their capability first; refusing again costs
+them nothing and holds if that order ever changes.  The idle threads are the
+kernel's own scheduling reserve — no user operand may name one
+(`validateThreadIdArg_ok_not_reserved`). -/
 @[inline] def validateThreadIdArg (tid : SeLe4n.ThreadId) :
     Except KernelError SeLe4n.ValidThreadId :=
-  match tid.toValid? with
-  | none => .error .invalidArgument
-  | some v => .ok v
+  if SeLe4n.Kernel.isIdleThreadId tid then .error .invalidArgument
+  else
+    match tid.toValid? with
+    | none => .error .invalidArgument
+    | some v => .ok v
+
+/-- **PR #889 review round 11**: a validated raw thread operand is never a
+reserved idle thread — the guarantee `syscallResolveCap_ok_not_reserved` gives
+for capability targets, for the operands that arrive as bare numbers. -/
+theorem validateThreadIdArg_ok_not_reserved (tid : SeLe4n.ThreadId)
+    (vtid : SeLe4n.ValidThreadId) (h : validateThreadIdArg tid = .ok vtid) :
+    SeLe4n.Kernel.isIdleThreadId tid = false := by
+  unfold validateThreadIdArg at h
+  split at h
+  · exact absurd h (by simp)
+  · rename_i hIdle
+    simpa using hIdle
+
+/-- **PR #889 review round 11**: and the refusal is `.invalidArgument` — the
+answer an out-of-range id gives, so it discloses nothing about the
+reservation. -/
+theorem validateThreadIdArg_idle_refused (tid : SeLe4n.ThreadId)
+    (h : SeLe4n.Kernel.isIdleThreadId tid = true) :
+    validateThreadIdArg tid = .error .invalidArgument := by
+  unfold validateThreadIdArg
+  simp [h]
+
 
 /-- AL7-A (WS-AL / AK7-E.cascade): lift a raw `SchedContextId` to
 `ValidSchedContextId` at the dispatch boundary. Mirrors
@@ -1814,9 +1860,26 @@ Used by dispatch arms whose handlers operate on `ObjId` directly (e.g.,
 going through `SchedContextId.toObjId`). Rejects `ObjId.sentinel`. -/
 @[inline] def validateObjIdArg (oid : SeLe4n.ObjId) :
     Except KernelError SeLe4n.ValidObjId :=
-  match oid.toValid? with
-  | none => .error .invalidArgument
-  | some v => .ok v
+  if SeLe4n.Kernel.isIdleObjId oid then .error .invalidArgument
+  else
+    match oid.toValid? with
+    | none => .error .invalidArgument
+    | some v => .ok v
+
+/-- **PR #889 review round 11**: the object-operand sibling of
+`validateThreadIdArg_ok_not_reserved`.  Every live use of this validator today
+lifts an id taken from a resolved capability's target, which the chokepoint
+already refused; the refusal is here so that a *raw* object operand — the
+shape `.schedContextBind`'s thread operand had — is covered on the day it is
+written rather than on the day it is reviewed. -/
+theorem validateObjIdArg_ok_not_reserved (oid : SeLe4n.ObjId)
+    (void : SeLe4n.ValidObjId) (h : validateObjIdArg oid = .ok void) :
+    SeLe4n.Kernel.isIdleObjId oid = false := by
+  unfold validateObjIdArg at h
+  split at h
+  · exact absurd h (by simp)
+  · rename_i hIdle
+    simpa using hIdle
 
 /-- **Capability binding for the VSpace syscalls** (PR #845 review, P1).
 
@@ -6836,6 +6899,28 @@ theorem syscallDelegates_schedContextUnbind : syscallDelegates .schedContextUnbi
   intro decoded tid gate cap scId vScId st hSyscall hTarget hDecode hValid
   exact dispatchWithCap_schedContextUnbind_delegates decoded tid gate cap scId vScId st
     hSyscall hTarget hDecode hValid
+
+/-- **PR #889 review round 11**: the dispatch-level consequence — a
+`.schedContextBind` whose raw thread operand names a reserved idle thread is
+refused, whatever SchedContext capability the caller holds.  This is the arm
+the review found: its capability resolves to the SchedContext, so the
+chokepoint never sees the thread. -/
+theorem dispatchCapabilityOnly_schedContextBind_idle_operand_refused
+    (decoded : SyscallDecodeResult) (cap : Capability) (tid : SeLe4n.ThreadId)
+    (st : SystemState) (scId : SeLe4n.ObjId) (args : SchedContextBindArgs)
+    (vScId : SeLe4n.ValidObjId)
+    (hSyscall : decoded.syscallId = .schedContextBind)
+    (hTarget : cap.target = .object scId)
+    (hArgs : decodeSchedContextBindArgs decoded = .ok args)
+    (hSc : validateObjIdArg scId = .ok vScId)
+    (hIdle : SeLe4n.Kernel.isIdleThreadId (SeLe4n.ThreadId.ofNat args.threadId) = true) :
+    (dispatchCapabilityOnly decoded cap tid).map (fun f => f st)
+      = some (.error .invalidArgument) := by
+  unfold dispatchCapabilityOnly
+  rw [hSyscall, hTarget]
+  simp only [Option.map_some, hArgs, hSc,
+    validateThreadIdArg_idle_refused _ hIdle]
+
 
 
 end SeLe4n.Kernel

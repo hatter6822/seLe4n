@@ -51,9 +51,9 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.34.48` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 320,857 across 308 Lean files |
-| **Test LoC** | 68,162 across 70 Lean test suites |
-| **Proved declarations** | 10,675 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 320,942 across 308 Lean files |
+| **Test LoC** | 68,205 across 70 Lean test suites |
+| **Proved declarations** | 10,679 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR5 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -2209,7 +2209,17 @@ branch must dominate every exit of its helper, not merely appear in it
 returning to the Rust caller would leave the image idling as though it had
 booted.  The check parses the match's arms, so the `.error` arm's own body
 must halt; a diverging statement before the handling match, or a rebinding of
-the result's name, is refused (review round 10).
+the result's name, is refused (review round 10), and the halt must be the
+arm's terminal action rather than a token inside it (review round 11).
+
+**A raw id operand is refused at its lift point** (PR #889 review round 11).
+`syscallResolveCap` refuses a *capability* naming a reserved idle object,
+which covers every arm whose operand is the resolved capability's target;
+`.schedContextBind` resolves its capability to the SchedContext and takes the
+thread from `args.threadId`, so `validateThreadIdArg` and `validateObjIdArg` —
+the lift points every raw operand passes through — refuse a reserved idle id
+(`validateThreadIdArg_ok_not_reserved`,
+`dispatchCapabilityOnly_schedContextBind_idle_operand_refused`).
 
 **The raw suspend seam refuses idle ids, and the reservation is pinned by
 constructor arity** (PR #889 review round 8).  `suspend_thread_cross_core`

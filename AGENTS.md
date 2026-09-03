@@ -1432,7 +1432,18 @@ code may assume:
   capability naming a reserved idle object (`capTargetsReservedIdleObject`,
   `syscallResolveCap_ok_not_reserved`), so a boot CNode or a transfer that
   carried one yields a slot that resolves like an empty one and no
-  `.tcbSuspend` can remove a core's only guaranteed runnable thread.  The
+  `.tcbSuspend` can remove a core's only guaranteed runnable thread.  That
+  chokepoint decides on the **resolved capability's target**, so an arm whose
+  operand is a raw id from a message register escapes it: `.schedContextBind`
+  resolves its capability to the SchedContext and takes the thread from
+  `args.threadId`, which let an ordinary SchedContext capability bind the idle
+  TCB and re-prioritise it (round 11, P1).  Raw operands are therefore refused
+  at their lift points — `validateThreadIdArg` and `validateObjIdArg` reject a
+  reserved idle id (`validateThreadIdArg_ok_not_reserved`,
+  `dispatchCapabilityOnly_schedContextBind_idle_operand_refused`) — so a new
+  arm taking a bare id is covered the day it is written.  `.lifecycleRetype`'s
+  raw `targetObj` needs no separate guard: `lifecycleRetypeAuthority` binds it
+  to the capability.  The
   one live seam that takes a **raw** id, `suspend_thread_cross_core`,
   refuses an idle id itself (round 8): its whole step is the pure
   `suspendThreadCrossCoreStep`, and `suspendThreadCrossCoreStep_idle_refused`

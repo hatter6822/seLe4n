@@ -144,6 +144,12 @@ LEAN_DIVERGES = re.compile(r"^(?:return|throw|panic!|unreachable!)\b")
 BOOT_ENTRY_HALTS = re.compile(
     r"\b(?:ffiFatalHaltAll|ffiFatalHalt|fatalHaltAll|fatalHalt)\b"
 )
+# The same names as a *call at the head of a statement* (PR #889 review round
+# 11): the arm's terminal action, not a token anywhere inside it.
+BOOT_ENTRY_HALT_CALL = re.compile(
+    r"^(?:[A-Za-z_][A-Za-z0-9_']*\.)*"
+    r"(?:ffiFatalHaltAll|ffiFatalHalt|fatalHaltAll|fatalHalt)\b"
+)
 BOOT_ENTRY_ERROR_ARM = re.compile(r"^\|\s*(?:Except\.)?\.?error\b")
 BOOT_ENTRY_MATCHED = re.compile(
     r"^match\s+←\s*\(?\s*" + BOOT_ENTRY_CALLEE + r"\b"
@@ -523,13 +529,39 @@ def boot_entry_error_arm_halts(statement: str) -> str | None:
             "failed boot installs nothing and must not fall through (a wildcard arm is "
             "refused: the error path must be named)"
         )
-    if any(not BOOT_ENTRY_HALTS.search(arm) for arm in error_arms):
+    if any(not boot_entry_arm_halts_unconditionally(arm) for arm in error_arms):
         return (
-            "has an `.error` arm that does not halt — a failed boot installs no "
-            "kernel state, so the arm must stop the core (`ffiFatalHalt` / "
-            "`ffiFatalHaltAll`) rather than return to the Rust caller"
+            "has an `.error` arm whose terminal action is not the halt — a failed boot "
+            "installs no kernel state, so the arm must END in `ffiFatalHalt` / "
+            "`ffiFatalHaltAll` unconditionally, not merely mention it (a halt under an "
+            "`if`, or followed by another action, is not the arm's outcome)"
         )
     return None
+
+
+def boot_entry_arm_halts_unconditionally(arm: str) -> bool:
+    """Is a halt the arm's **unconditional terminal action**?
+
+    PR #889 review round 11.  Round 10 parsed the arm boundaries and then
+    searched the arm for a halt *token*, which `| .error _ => if false then
+    ffiFatalHalt else pure ()` satisfies while returning to the Rust caller.
+    A token inside the arm says nothing about what the arm does: the arm's
+    outcome is its last action, and a conditional is not a halt.
+
+    So the arm's body — the text after `=>` — is split into lines, and its
+    last non-empty line must *begin* with a halt call (optionally qualified).
+    A line beginning with `if`, `match`, `unless`, `when`, `do` or any other
+    construct is refused, because the scanner cannot see which way it goes;
+    that is the fail-closed direction on the entry that decides whether the
+    kernel exists.
+    """
+    _, sep, body = arm.partition("=>")
+    if not sep:
+        return False
+    lines = [line.strip() for line in body.split("\n") if line.strip()]
+    if not lines:
+        return False
+    return BOOT_ENTRY_HALT_CALL.match(lines[-1]) is not None
 
 
 def extern_declarations_in(text: str, where: str) -> set[str]:
@@ -1206,6 +1238,19 @@ def self_test() -> int:
                 "do\n  match ← bootAndInitialiseRPi5 cfg with\n"
                 "  | .ok _ => pure ()\n  | .error e =>\n"
                 "    IO.println e\n    Platform.FFI.ffiFatalHalt", True)
+    # Round 11: the halt is IN the arm but is not what the arm does.
+    check_entry("the `.error` arm's halt sits under a condition (round 11)",
+                "do\n  match ← bootAndInitialiseRPi5 cfg with\n"
+                "  | .ok _ => pure ()\n"
+                "  | .error _ => if false then Platform.FFI.ffiFatalHalt else pure ()", False)
+    check_entry("the `.error` arm halts and then continues (round 11)",
+                "do\n  match ← bootAndInitialiseRPi5 cfg with\n"
+                "  | .ok _ => pure ()\n  | .error e =>\n"
+                "    Platform.FFI.ffiFatalHalt\n    IO.println e", False)
+    check_entry("the `.error` arm's halt is named in a `let` binding, never run (round 11)",
+                "do\n  match ← bootAndInitialiseRPi5 cfg with\n"
+                "  | .ok _ => pure ()\n  | .error _ =>\n"
+                "    let stop := Platform.FFI.ffiFatalHalt\n    pure ()", False)
     # Token-preserving mutations: every one keeps `bootAndInitialisePlatform` in
     # the declaration and breaks the relation (round 3's check passed them all).
     check_entry("the callee named only in a string literal",
@@ -1374,7 +1419,7 @@ def self_test() -> int:
         for line in failures:
             print(f"         {line}")
         return 1
-    print("[PASS] check_kernel_entry_exports self-test (77 cases)")
+    print("[PASS] check_kernel_entry_exports self-test (80 cases)")
     return 0
 
 

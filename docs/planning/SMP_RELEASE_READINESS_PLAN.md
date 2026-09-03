@@ -685,6 +685,13 @@ failure-handling check and all the same class: the arms are parsed so the
 match refuses, and the match must be on the binding the boot produced rather
 than on a rebinding of its name.
 
+**Review round 11 (PR #889, same version).**  Two: a **P1 in the kernel** — a
+raw thread-id operand (`.schedContextBind`'s `args.threadId`) escaped the
+capability chokepoint, so an ordinary SchedContext capability could bind and
+re-prioritise a core's idle TCB; the refusal is at the raw-operand lift points
+`validateThreadIdArg` / `validateObjIdArg` — and the boot entry's `.error` arm
+must halt as its terminal action rather than merely mention a halt.
+
 **Note on RR5.10–RR5.14** (the rows that replaced one XL).  Two findings shape
 the split, and the row they replaced named neither: one is an ordering defect
 it inherited, the other is the reason its "cannot be separate PRs" claim is

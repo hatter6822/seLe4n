@@ -5202,6 +5202,15 @@ run_check "INVARIANT" rg -n 'collect_lean_exports_from_file\(lean_library_root' 
 run_check "INVARIANT" rg -n '^def boot_entry_handles_failure' scripts/check_kernel_entry_exports.py
 run_check "INVARIANT" rg -n '^def lean_match_arms' scripts/check_kernel_entry_exports.py
 run_check "INVARIANT" rg -n '^def boot_entry_error_arm_halts' scripts/check_kernel_entry_exports.py
+run_check "INVARIANT" rg -n '^def boot_entry_arm_halts_unconditionally' scripts/check_kernel_entry_exports.py
+# PR #889 review round 11 (P1): a raw thread/object operand refuses a reserved
+# idle id at the one lift point every such operand passes through — the
+# capability chokepoint decides on the resolved capability's target only.
+run_check "INVARIANT" rg -n 'if SeLe4n.Kernel.isIdleThreadId tid then .error .invalidArgument' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'if SeLe4n.Kernel.isIdleObjId oid then .error .invalidArgument' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem validateThreadIdArg_ok_not_reserved' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem validateObjIdArg_ok_not_reserved' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchCapabilityOnly_schedContextBind_idle_operand_refused' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^def binding_statement_before' scripts/rust_code_view.py
 run_check "INVARIANT" rg -n 'else if ¬ objectIdsUnique config.initialObjects then' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^  auditMonitorClearance : Option SecurityDomain := none' SeLe4n/Kernel/InformationFlow/Policy.lean
