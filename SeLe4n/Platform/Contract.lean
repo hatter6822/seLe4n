@@ -126,6 +126,20 @@ class PlatformBinding (platform : Type) where
       `Fin coreCount` typed identifiers) needs at least one core to
       inhabit `Fin coreCount`. -/
   coreCountPos : coreCount > 0
+  /-- PR #889 review round 5: the binding declares **no more cores than the
+      model has**.  Every per-core kernel structure is a `Vector` of
+      `Concurrency.numCores` entries — run queues, current slots, register
+      banks, the idle threads' ids — so a core the model has no entry for can
+      hold no state, and a `bootCoreId : Fin coreCount` past the model's range
+      would name no `CoreId` at all.  Stated as an obligation rather than a
+      theorem because it relates two independent choices: the model's width,
+      pinned to the hardware target by `numCores_eq_rpi5_coreCount`, and each
+      binding's own count.  A single-core binding declares fewer
+      (`SimSingleCorePlatform`); none may declare more.  What it buys:
+      `declaredCores` has exactly `coreCount` members (`declaredCores_length`),
+      membership in it is `c.val < coreCount` (`mem_declaredCores_iff`), and the
+      boot core embeds in the model (`bootCoreModelId`). -/
+  coreCountLe : coreCount ≤ SeLe4n.Kernel.Concurrency.numCores
   /-- **WS-SM SM0.G**: the boot core id, scoped to `Fin coreCount`
       so it is structurally in-range.  Always `0` in practice
       (PSCI brings up secondaries from `Aff0 = 0`); typeclass-
@@ -161,6 +175,26 @@ class PlatformBinding (platform : Type) where
       harness labeling (`Kernel.harnessDeploymentLabeling`), under which every
       fixture id sits in one domain. -/
   deploymentLabeling : SeLe4n.Kernel.DeploymentLabeling
+  /-- PR #889 review round 5: the labeling's declared separation witnesses are
+      **not the boot VSpace root's object id**.
+
+      A witness must be an installed thread of the boot state
+      (`Platform.Boot.declaredWitnessesInstalled`), and the checked boot refuses
+      a config that places an object at the root's id
+      (`bootVSpaceRootObjIdDistinct`), so a witness at that id can never be
+      installed: every boot carrying the binding's own root was refused for an
+      uninstalled witness — on both bindings, since the labeling family fixed
+      its lower witness at `1` and both roots sit at `ObjId.ofNat 1`.  The root
+      and the labeling are two choices of the *same* binding, so their coherence
+      is that binding's obligation; the constructor cannot discharge it, because
+      the root is not visible where the labeling is built.  Every current
+      binding discharges it by evaluation, and it is vacuous for a binding
+      without a boot root.  The Prop form is
+      `PlatformBinding.witnesses_ne_bootVSpaceRoot`. -/
+  witnessesOffBootVSpaceRoot :
+    bootVSpaceRoot.all (fun root =>
+      deploymentLabeling.separatedLower.toNat != root.id.toNat &&
+      deploymentLabeling.separatedUpper.toNat != root.id.toNat) = true
 
 /-- Extract the runtime contract from a platform binding instance. -/
 @[inline] def PlatformBinding.runtime [PlatformBinding platform] : RuntimeBoundaryContract :=
@@ -211,14 +245,48 @@ theorem PlatformBinding.labeling_admitted [PlatformBinding platform] :
   SeLe4n.Kernel.isInsecureDefaultContext_deploymentLabelingContext _
 
 /-- PR #889 review round 3: the cores the binding **declares**, as model core
-    ids — the first `coreCount` of `allCores` (`cores` is the count itself).  What the checked platform boot
-    installs idle threads on (`bootFromPlatformCheckedWithIdleThreadsFor`), so
-    a single-core binding boots a single idle thread; on the full core count
-    this is `allCores` (`declaredCores_eq_allCores_of_full`). -/
+    ids — the first `coreCount` of `allCores` (`cores` is the count itself).
+    What the checked platform boot installs idle threads on
+    (`bootFromPlatformCheckedWithIdleThreadsFor`), so a single-core binding
+    boots a single idle thread; on the full core count this is `allCores`
+    (`declaredCores_eq_allCores_of_full`).
+
+    A prefix (`List.take`), not a filter (round 5): with `coreCountLe` the list
+    has exactly `coreCount` members (`declaredCores_length`) and membership is
+    `c.val < coreCount` (`mem_declaredCores_iff`) — the filter form stated
+    neither, so a binding declaring more cores than the model has would have
+    booted fewer idle threads than it declared, silently. -/
 def PlatformBinding.declaredCores [PlatformBinding platform] :
     List SeLe4n.Kernel.Concurrency.CoreId :=
-  SeLe4n.Kernel.Concurrency.allCores.filter
-    (fun c => decide (c.val < PlatformBinding.coreCount (platform := platform)))
+  SeLe4n.Kernel.Concurrency.allCores.take (PlatformBinding.coreCount (platform := platform))
+
+/-- PR #889 review round 5: the binding declares exactly `coreCount` model
+    cores — the count and the list agree, by `coreCountLe`. -/
+theorem PlatformBinding.declaredCores_length [PlatformBinding platform] :
+    (PlatformBinding.declaredCores (platform := platform)).length =
+      PlatformBinding.coreCount (platform := platform) := by
+  unfold PlatformBinding.declaredCores
+  simp only [List.length_take, SeLe4n.Kernel.Concurrency.allCores, List.length_finRange]
+  exact Nat.min_eq_left (PlatformBinding.coreCountLe (platform := platform))
+
+/-- PR #889 review round 5: a model core is declared iff its index is below
+    the declared count. -/
+theorem PlatformBinding.mem_declaredCores_iff [PlatformBinding platform]
+    (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    c ∈ PlatformBinding.declaredCores (platform := platform) ↔
+      c.val < PlatformBinding.coreCount (platform := platform) := by
+  unfold PlatformBinding.declaredCores
+  rw [List.mem_take_iff_getElem]
+  constructor
+  · rintro ⟨j, hj, hEq⟩
+    have hv := congrArg Fin.val hEq
+    simp only [SeLe4n.Kernel.Concurrency.allCores, List.getElem_finRange, Fin.val_cast] at hv
+    have := (Nat.lt_min.mp hj).1
+    omega
+  · intro h
+    refine ⟨c.val, Nat.lt_min.mpr ⟨h, by simp [SeLe4n.Kernel.Concurrency.allCores]⟩, ?_⟩
+    apply Fin.ext
+    simp [SeLe4n.Kernel.Concurrency.allCores]
 
 /-- PR #889 review round 3: a binding declaring every model core declares
     `allCores` — the bridge from the declared-list boot to the all-cores theorems. -/
@@ -227,7 +295,46 @@ theorem PlatformBinding.declaredCores_eq_allCores_of_full [PlatformBinding platf
     PlatformBinding.declaredCores (platform := platform) = SeLe4n.Kernel.Concurrency.allCores := by
   unfold PlatformBinding.declaredCores
   rw [h]
-  exact List.filter_eq_self.mpr (fun c _ => decide_eq_true c.isLt)
+  exact List.take_of_length_le (by simp [SeLe4n.Kernel.Concurrency.allCores])
+
+/-- PR #889 review round 5: the binding's boot core as a **model** core id —
+    total because of `coreCountLe`; before it, a `bootCoreId : Fin coreCount`
+    had no model counterpart in general. -/
+def PlatformBinding.bootCoreModelId [PlatformBinding platform] :
+    SeLe4n.Kernel.Concurrency.CoreId :=
+  ⟨(PlatformBinding.bootCoreId (platform := platform)).val,
+    Nat.lt_of_lt_of_le (PlatformBinding.bootCoreId (platform := platform)).isLt
+      (PlatformBinding.coreCountLe (platform := platform))⟩
+
+/-- PR #889 review round 5: the boot core is a declared core — so the checked
+    platform boot enqueues an idle thread on it. -/
+theorem PlatformBinding.bootCoreModelId_mem_declaredCores [PlatformBinding platform] :
+    PlatformBinding.bootCoreModelId (platform := platform) ∈
+      PlatformBinding.declaredCores (platform := platform) :=
+  (PlatformBinding.mem_declaredCores_iff _).mpr
+    (PlatformBinding.bootCoreId (platform := platform)).isLt
+
+/-- PR #889 review round 5: the Prop form of the binding's witness obligation —
+    when the binding carries a boot VSpace root, neither declared separation
+    witness is the root's object id. -/
+theorem PlatformBinding.witnesses_ne_bootVSpaceRoot [PlatformBinding platform]
+    (root : BootVSpaceRootEntry)
+    (h : PlatformBinding.bootVSpaceRoot (platform := platform) = some root) :
+    (PlatformBinding.deploymentLabeling (platform := platform)).separatedLower.toNat ≠
+        root.id.toNat ∧
+    (PlatformBinding.deploymentLabeling (platform := platform)).separatedUpper.toNat ≠
+        root.id.toNat := by
+  have hAll := PlatformBinding.witnessesOffBootVSpaceRoot (platform := platform)
+  rw [h] at hAll
+  simpa only [Option.all_some, Bool.and_eq_true, bne_iff_ne, ne_eq] using hAll
+
+/-- PR #889 review round 5: the witnesses the binding's labeling declares are
+    its source's — so a binding's witness obligation, stated on the source, is
+    a fact about what the boot installs. -/
+theorem PlatformBinding.labeling_separatedThreads [PlatformBinding platform] :
+    (PlatformBinding.labeling (platform := platform)).separatedThreads =
+      some ((PlatformBinding.deploymentLabeling (platform := platform)).separatedLower,
+        (PlatformBinding.deploymentLabeling (platform := platform)).separatedUpper) := rfl
 
 /-- **WS-SM SM0.G**: extract the platform's ARMv8 sharing domain. -/
 @[inline] def PlatformBinding.sharing [PlatformBinding platform] :

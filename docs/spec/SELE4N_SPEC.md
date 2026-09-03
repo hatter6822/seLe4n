@@ -51,9 +51,9 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.34.48` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 319,981 across 308 Lean files |
-| **Test LoC** | 67,746 across 70 Lean test suites |
-| **Proved declarations** | 10,633 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 320,321 across 308 Lean files |
+| **Test LoC** | 67,912 across 70 Lean test suites |
+| **Proved declarations** | 10,649 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR5 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -2132,12 +2132,39 @@ binding that stored a bare context the guard admits could still have labelled
 a thread and its own TCB object incompatibly, and the non-interference
 theorems would have stopped applying to that deployment without any check
 noticing.  The RPi5 binding's source is `confinedDeploymentLabeling
-rpi5UpperDomainBase`, so its labeling is
-`confinedLabelingContext rpi5UpperDomainBase` (`rpi5_deploymentLabeling`, by
-`rfl`; `rpi5UpperDomainBase = 0x10_0000` clears the boot VSpace root and the
-idle range, `rpi5UpperDomainBase_clears_bootVSpaceRoot` /
-`…_clears_idle_range`, so every entity the boot image creates is `lowTrusted`);
-the three simulation bindings carry `harnessLabelingContext`.
+rpi5UpperDomainBase rpi5LowerWitnessIndex …`, so its labeling is
+`confinedLabelingContext rpi5UpperDomainBase rpi5LowerWitnessIndex …`
+(`rpi5_deploymentLabeling`, by `rfl`; `rpi5UpperDomainBase = 0x10_0000` clears
+the boot VSpace root and the idle range,
+`rpi5UpperDomainBase_clears_bootVSpaceRoot` / `…_clears_idle_range`, so every
+entity the boot image creates is `lowTrusted`); the three simulation bindings
+carry `harnessLabelingContext`.
+
+**The lower separation witness is the deployment's parameter, held off the
+boot VSpace root by the binding** (PR #889 review round 5).  The
+index-partitioned family used to fix its lower witness at thread `1`, and `1`
+is the boot VSpace root's object id on every binding (`rpi5BootVSpaceRootObjId`,
+`simBootVSpaceRootObjId`); a witness must be an installed thread of the boot
+state, and a config carrying the canonical root cannot install a TCB at the
+root's id (`bootVSpaceRootObjIdDistinct`), so every hardware boot carrying its
+own root was refused for an uninstalled witness.
+`indexPartitionedDeploymentLabeling` and `confinedLabelingContext` take
+`lowerWitness` with its admissibility and its position below the boundary as
+the caller's obligations; the RPi5 binding declares `rpi5LowerWitnessIndex`
+(`2`, `rpi5LowerWitnessIndex_ne_bootVSpaceRoot`) and the harness
+`harnessLowerWitnessIndex`; and `PlatformBinding.witnessesOffBootVSpaceRoot` —
+neither declared witness is the binding's boot root's id — is a class
+obligation every binding discharges by evaluation
+(`witnesses_ne_bootVSpaceRoot` is its Prop form), because the root is not
+visible where the labeling is built.  The binding's core count is bounded by
+the model the same way: `PlatformBinding.coreCountLe : coreCount ≤ numCores`
+is a class obligation, so `PlatformBinding.declaredCores` (the prefix
+`allCores.take coreCount`) has exactly `coreCount` members
+(`declaredCores_length`), membership is `c.val < coreCount`
+(`mem_declaredCores_iff`) and the boot core embeds in the model
+(`bootCoreModelId`); the idle-slot reservation stays model-wide, and an
+undeclared core's slot is absent after the boot
+(`bootFromPlatformCheckedWithIdleThreadsFor_undeclared_idle_absent`).
 `Platform.FFI.bootAndInitialisePlatform platform config` boots under the
 binding's labeling on the binding's declared cores (`PlatformBinding.declaredCores`;
 the RPi5 binding declares every model core, `rpi5_cores_eq_allCores`, so its

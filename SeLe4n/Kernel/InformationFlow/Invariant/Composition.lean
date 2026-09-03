@@ -843,8 +843,11 @@ theorem deploymentLabelingContext_valid (d : DeploymentLabeling) :
 /-- **WS-RR RR5.1**: the production two-domain context is `LabelingContextValid`
     — the corollary a platform binding cites when it installs
     `confinedLabelingContext` at boot. -/
-theorem confinedLabelingContext_valid (upperDomainBase : Nat) :
-    LabelingContextValid (confinedLabelingContext upperDomainBase) :=
+theorem confinedLabelingContext_valid (upperDomainBase lowerWitness : Nat)
+    (hLowerAdmissible : separationWitnessAdmissible ⟨lowerWitness⟩ = true)
+    (hLowerBelow : lowerWitness < separationBoundary upperDomainBase) :
+    LabelingContextValid
+      (confinedLabelingContext upperDomainBase lowerWitness hLowerAdmissible hLowerBelow) :=
   deploymentLabelingContext_valid _
 
 /-- **WS-RR RR5.1**: the harness context is `LabelingContextValid` too, so the

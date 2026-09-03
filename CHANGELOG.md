@@ -517,6 +517,71 @@ version.
   function reachable from `main` — so only that builder's `.file()` calls
   count.  Five more self-test cases, each keeping the token.
 
+### The review round, fifth pass
+
+Codex's fifth review (on the round-4 head) raised four findings.  Three are
+the shape every round before them found — a relation asserted at one site and
+not at its siblings — and the fourth is a fixed default chosen where the ids it
+had to avoid were not visible.  All closed in the same version.
+
+* **The labeling family's lower witness was the boot VSpace root's id.**
+  `indexPartitionedDeploymentLabeling` fixed its lower witness at thread `1`,
+  and `1` is `rpi5BootVSpaceRootObjId` — and `simBootVSpaceRootObjId` — on
+  every binding.  A witness must be an installed thread of the boot state
+  (round 3's `declaredWitnessesInstalled`), and a config carrying the
+  canonical root cannot install a TCB at the root's id
+  (`bootVSpaceRootObjIdDistinct` refuses it), so every hardware boot that
+  carried its own boot VSpace root was refused for an uninstalled witness.
+  The witness is now a **parameter** of the family, with its admissibility
+  and its position below the boundary as the caller's obligations
+  (`indexPartitionedDeploymentLabeling upperDomainBase lowerWitness …`;
+  `confinedLabelingContext` and `confinedDeploymentLabeling` likewise); the
+  RPi5 binding declares `rpi5LowerWitnessIndex` (`2`, the first slot the root
+  leaves free — `rpi5LowerWitnessIndex_ne_bootVSpaceRoot`) and the harness
+  `harnessLowerWitnessIndex`; and the platform contract carries the obligation
+  the constructor cannot discharge, because the root is not visible where the
+  labeling is built: `PlatformBinding.witnessesOffBootVSpaceRoot` — neither
+  declared witness is the binding's boot root's id — decided by evaluation on
+  every binding (`witnesses_ne_bootVSpaceRoot` is its Prop form).  SD-056
+  boots the RPi5 binding with its canonical root and the two witness TCBs, and
+  shows the two refusals that together made every such boot fail under the
+  fixed witness.
+* **The idle-slot reservation is model-wide, and now says so.**  The
+  single-core binding installs idle `0` only, yet the reservation and the
+  capability chokepoint cover all four model slots.  That is the right shape:
+  the ids belong to the model — every per-core structure is `numCores` wide
+  whatever a binding declares, the dispatcher names `idleThreadId c` for every
+  model core, and `syscallResolveCap` decides on the kernel state alone, which
+  carries no binding — so an undeclared core's slot must be *absent*, never
+  free (`bootFromPlatformCheckedWithIdleThreadsFor_undeclared_idle_absent`,
+  from the checked boot's freshness and the fold's frame).  Stated on
+  `idleSlotsReserved` rather than left implicit.
+* **The boot-entry gate accepted an identifier occurrence.**  Round 3's
+  `boot_entry_binding_failures` looked for the callee's token in the exporting
+  declaration's comment-free text: a string literal, a `let boot := …` that
+  binds the action without running it, a call nested under `if false`, and a
+  call executed and then routed around by
+  `initialiseKernelState (bootFromPlatform cfg)` all passed.  The gate now
+  reads the declaration's **statements** over the comment-free, string-free
+  view (`lean_code_view.code_no_strings`, new): a top-level statement of its
+  `do` block must *execute* `bootAndInitialisePlatform` — bound with `←`, as a
+  `match` scrutinee, as a bare call or under `discard` — with no `return` or
+  `throw` above it, or the body must be a term headed by the call; and the
+  body may reference **no other kernel-state installer**, a set *derived* by
+  closing "names a kernel-state reference for anything but `.get`" under
+  reference across the Lean tree (`kernel_state_writers`) and pinned in both
+  directions against the real tree.  Fourteen token-preserving cases, each
+  keeping `bootAndInitialisePlatform` in the declaration.
+* **`coreCount ≤ numCores` was assumed, not declared.**  `declaredCores`
+  filtered `allCores` by the declared count, so a binding declaring more cores
+  than the model has would have booted fewer idle threads than it declared,
+  and a `bootCoreId : Fin coreCount` could name no model core.
+  `PlatformBinding.coreCountLe` is a class obligation (`by decide` on every
+  binding), `declaredCores` is the prefix `allCores.take coreCount` with
+  `declaredCores_length` and `mem_declaredCores_iff` as theorems, and the boot
+  core embeds in the model (`bootCoreModelId`,
+  `bootCoreModelId_mem_declaredCores`).
+
 ### Tests
 
 * `tests/SmpIdleSuite.lean` — 28 surface anchors for the new boot surface
@@ -548,11 +613,31 @@ version.
   and SD-054 (a capability to an idle TCB resolves like an empty slot at the
   single resolution every syscall passes through, the ordinary capability
   beside it resolves, and a `.tcbSuspend` aimed at the idle TCB is refused).
+  Round 5: SD-056 — the RPi5 binding boots with its canonical boot VSpace root
+  and the two witness TCBs and installs the pair it declares; the same boot
+  under a labeling witnessed at the root's id is refused for the uninstalled
+  witness, and a config placing a TCB at that id is refused by the checked
+  boot; every binding's witnesses avoid its root; `declaredCores` has exactly
+  `coreCount` members, the boot core is declared, and an undeclared core's
+  idle slot is absent after the boot.  The witnessed fixtures install
+  `harnessLowerWitnessIndex` rather than thread `1`, and SD-041 chooses a
+  witness of its own.
 * `tests/InformationFlowSuite.lean` — a deployment source configured with an
   audit monitor and a permissive declassification policy reaches the context
   with those fields, is still admitted by the guard and is
   `LabelingContextValid` by the same constructor theorem; the unconfigured
-  source keeps every fail-closed default.
+  source keeps every fail-closed default.  Round 5: the family declares the
+  lower witness it is given, and the harness pair is pinned with its lower
+  witness not `1`.
+* `tests/SmpFoundationsSuite.lean`, `tests/PerCoreVectorSuite.lean` — the
+  `coreCountLe` witness on every binding, `declaredCores.length = coreCount`,
+  and the single-core binding's declared list is exactly its boot core.
+* `scripts/check_kernel_entry_exports.py --self-test` — 44 cases: the fourteen
+  boot-entry shapes (five executing, nine token-preserving refusals, among
+  them the call executed and then routed around) and the installer
+  derivation's pin in both directions; `scripts/lean_code_view.py
+  --self-test` — string blanking keeps the quotes, blanks escapes, keeps
+  geometry, and is off by default.
 * `rust/sele4n-hal/tests/readiness_gate_before_mark.rs` and
   `…_after_mark.rs` — the readiness mask is process-global and one-way, so both
   sides of the gate are only observable in separate binaries.  Before any mark:

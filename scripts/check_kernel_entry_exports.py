@@ -62,6 +62,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import lean_code_view  # noqa: E402  (the Lean code view; strings blanked on request)
 import rust_code_view  # noqa: E402  (comments blanked, string contents kept)
 import check_aarch64_cross_target as cross_gate  # noqa: E402  (the live builder chain)
 
@@ -88,8 +89,6 @@ EXPECTED_UNRESOLVED: dict[str, str] = {
     ),
 }
 
-LINE_COMMENT = re.compile(r"--[^\n]*")
-BLOCK_COMMENT = re.compile(r"/-.*?-/", re.DOTALL)
 LEAN_EXPORT = re.compile(r"@\[export\s+([A-Za-z_][A-Za-z0-9_]*)\s*\]")
 RUST_LINE_COMMENT = re.compile(r"//[^\n]*")
 RUST_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
@@ -106,19 +105,62 @@ CC_FILE_CALL = re.compile(r'\.file\(\s*"([^"]+)"\s*\)')
 # The primary's boot install, and the checked platform boot it must call.
 BOOT_ENTRY_SYMBOL = "lean_kernel_main"
 BOOT_ENTRY_EXPORT = re.compile(r"@\[export\s+lean_kernel_main\s*\]")
-BOOT_ENTRY_CALLEE = re.compile(r"\bbootAndInitialisePlatform\b")
+BOOT_ENTRY_CALLEE = "bootAndInitialisePlatform"
 # Where a top-level Lean declaration starts, at column 0.
 LEAN_DECL_START = re.compile(
     r"^(?:@\[|(?:private |protected |noncomputable |unsafe |partial )*"
-    r"(?:def|theorem|abbrev|instance|structure|inductive|example)\b|end\b|namespace\b|"
-    r"section\b|open\b)",
+    r"(?:def|theorem|abbrev|instance|structure|inductive|class|example|opaque|axiom|"
+    r"initialize|builtin_initialize)\b|end\b|namespace\b|section\b|open\b|"
+    r"set_option\b|variable\b|universe\b|attribute\b|mutual\b|deriving\b)",
     re.MULTILINE,
 )
+# A declaration's head — attributes, modifiers, keyword, name — at the start of
+# one of the segments `LEAN_DECL_START` delimits.
+LEAN_DECL_HEAD = re.compile(
+    r"^(?:@\[[^\]]*\]\s*)*(?:(?:private|protected|noncomputable|unsafe|partial)\s+)*"
+    r"(?P<kw>def|theorem|abbrev|instance|opaque|initialize|builtin_initialize|example)\b"
+    r"(?:\s+(?P<name>[^\s:(\[{]+))?"
+)
+LEAN_IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_'!?]*")
+# The kernel-state references, and a mention of one for anything but a read.
+KERNEL_STATE_REFS = frozenset({"kernelStateRef", "kernelLabelingContextRef"})
+KERNEL_STATE_REF_WRITE = re.compile(
+    r"\b(?:kernelStateRef|kernelLabelingContextRef)\b(?!\s*\.\s*get\b)"
+)
+# A `do` statement after which nothing in the block runs.
+LEAN_DIVERGES = re.compile(r"^(?:return|throw|panic!|unreachable!)\b")
+# The forms in which a `do` statement *executes* the checked boot: bound with
+# `←` (a `let` pattern, or a `match` scrutinee), a bare action, or `discard`.
+# `let x := …` binds the action without running it; a call under `if`,
+# `match`, `fun` or `=>` on the statement's first line is conditional.
+BOOT_ENTRY_EXECUTED = re.compile(
+    r"^(?:let\s+(?:(?!:=|\bif\b|\bfun\b|=>|\bmatch\b).)*?←\s*\(?\s*"
+    + BOOT_ENTRY_CALLEE + r"\b"
+    r"|match\s+←\s*\(?\s*" + BOOT_ENTRY_CALLEE + r"\b"
+    r"|\(?\s*" + BOOT_ENTRY_CALLEE + r"\b"
+    r"|discard\s*(?:<\|\s*|\(\s*)?" + BOOT_ENTRY_CALLEE + r"\b)"
+)
+# ...and a term body headed by it.
+BOOT_ENTRY_TERM_EXECUTED = re.compile(
+    r"^(?:\(?\s*" + BOOT_ENTRY_CALLEE + r"\b"
+    r"|discard\s*(?:<\|\s*|\(\s*)?" + BOOT_ENTRY_CALLEE + r"\b)"
+)
+# The kernel-state installers the derivation must find on the real tree, and
+# the readers it must not: a pin, so a rename on either side is loud.
+EXPECTED_KERNEL_STATE_WRITERS = frozenset({
+    "initialiseKernelState",
+    "initialiseKernelLabelingContext",
+    "modifyGetKernelState",
+    "bootAndInitialiseFromPlatformOn",
+    "bootAndInitialiseFromPlatform",
+    BOOT_ENTRY_CALLEE,
+})
+EXPECTED_KERNEL_STATE_READERS = frozenset({"getKernelState", "getKernelLabelingContext"})
 
 
 def strip_lean_comments(text: str) -> str:
-    """Blank Lean comments so a commented-out `@[export]` is not a symbol."""
-    return LINE_COMMENT.sub("", BLOCK_COMMENT.sub("", text))
+    """The comment-free Lean view, so a commented-out `@[export]` is not a symbol."""
+    return lean_code_view.strip(text)
 
 
 def lean_exports_in(text: str) -> set[str]:
@@ -136,40 +178,202 @@ def lean_exports() -> set[str]:
     return found
 
 
+def lean_declarations(view: str) -> list[tuple[str | None, str | None, str]]:
+    """The top-level declarations of a code view, as `(keyword, name, text)`.
+
+    Segments are delimited by `LEAN_DECL_START`; an attribute line standing on
+    its own (`@[export …]` above its `def`) is merged into the declaration it
+    precedes, so the attribute and the body it governs are one segment.  A
+    segment with no declaration head (`namespace`, `open`, …) is kept with
+    `None` for both, so its tokens are attributed to nothing.
+    """
+    starts = [m.start() for m in LEAN_DECL_START.finditer(view)] + [len(view)]
+    decls: list[tuple[str | None, str | None, str]] = []
+    pending = ""
+    for at, nxt in zip(starts, starts[1:]):
+        text = pending + view[at:nxt]
+        head = LEAN_DECL_HEAD.match(text)
+        if head is None and text.lstrip().startswith("@["):
+            pending = text
+            continue
+        pending = ""
+        decls.append(
+            (head.group("kw") if head else None, head.group("name") if head else None, text)
+        )
+    return decls
+
+
+def identifier_tokens(text: str) -> set[str]:
+    return set(LEAN_IDENT.findall(text))
+
+
+def kernel_state_writers(sources: dict[str, str]) -> set[str]:
+    """PR #889 review round 5: the declarations that can **install kernel
+    state**, derived rather than listed.
+
+    The seeds are the declarations that name a kernel-state reference
+    (`kernelStateRef`, `kernelLabelingContextRef`) for anything but a `.get` —
+    a `.set`, `.modify`, `.modifyGet`, or the reference passed as a value,
+    which is a write a scanner cannot see and so counts as one.  The set is
+    then closed under reference: a declaration whose body names a writer is a
+    writer.  Theorems are skipped (a theorem executes nothing), and the
+    references' own definitions are not writers of themselves.  Names are
+    matched by their last component, so a qualified call is seen and two
+    declarations sharing a short name are merged — both over-approximations,
+    so the derivation fails closed.  `EXPECTED_KERNEL_STATE_WRITERS` and
+    `EXPECTED_KERNEL_STATE_READERS` pin it against the real tree.
+    """
+    bodies: dict[str, set[str]] = {}
+    seeds: set[str] = set()
+    for text in sources.values():
+        view = lean_code_view.code_no_strings(text)
+        for kw, name, decl in lean_declarations(view):
+            if name is None or kw in ("theorem", "example"):
+                continue
+            short = name.split(".")[-1]
+            if short in KERNEL_STATE_REFS:
+                continue
+            bodies[short] = bodies.get(short, set()) | (identifier_tokens(decl) - {short})
+            if KERNEL_STATE_REF_WRITE.search(decl):
+                seeds.add(short)
+    writers = set(seeds)
+    frontier = set(seeds)
+    while frontier:
+        frontier = {
+            name for name, tokens in bodies.items() if name not in writers and tokens & frontier
+        }
+        writers |= frontier
+    return writers
+
+
+def declaration_body(decl: str) -> int | None:
+    """The offset just past the head's `:=` — the first one at bracket depth 0 —
+    or `None` for a declaration with no such body (`where` form, a structure)."""
+    depth = 0
+    i = 0
+    while i < len(decl):
+        c = decl[i]
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        elif c == ":" and depth == 0 and decl.startswith(":=", i):
+            return i + 2
+        i += 1
+    return None
+
+
+def do_block_statements(decl: str, body_at: int) -> list[str] | None:
+    """The **top-level statements** of the `do` block at `body_at`, or `None`
+    when the body is not a `do` block.
+
+    Lean's `do` notation fixes the block's column at its first statement; a
+    later line at that column starts a statement, a deeper line continues the
+    one above it (a `match` arm, an `if` branch), and a shallower non-blank
+    line ends the block.  What a block does unconditionally is what its
+    top-level statements say — a statement nested under `if`, `match` or
+    `for` is a continuation here, never a statement of its own.
+    """
+    m = re.match(r"\s*do\b", decl[body_at:])
+    if m is None:
+        return None
+    do_end = body_at + m.end()
+    line_start = decl.rfind("\n", 0, do_end) + 1
+    inline, _, rest = decl[do_end:].partition("\n")
+    statements: list[list] = []
+    base: int | None = None
+    if inline.strip():
+        base = (do_end - line_start) + (len(inline) - len(inline.lstrip()))
+        statements.append([base, inline.strip()])
+    for line in rest.split("\n"):
+        if not line.strip():
+            continue
+        indent = len(line) - len(line.lstrip())
+        if base is None:
+            base = indent
+        if indent == base:
+            statements.append([indent, line.strip()])
+        elif indent > base and statements:
+            statements[-1][1] += "\n" + line.strip()
+        else:
+            break
+    return [text for _, text in statements]
+
+
 def boot_entry_binding_failures(sources: dict[str, str]) -> list[str]:
-    """PR #889 review round 3: the connection from the boot entry to the checked
-    platform boot is repository-enforced from the day the entry exists.
+    """PR #889 review rounds 3 and 5: the connection from the boot entry to the
+    checked platform boot is repository-enforced from the day the entry exists.
 
     `lean_kernel_main` is SM10.1's to write (it is the one upcall that cannot
     sit behind the readiness gate, and the gate's `EXPECTED_UNRESOLVED` entry
     reconciles its absence).  This check is vacuous until then and decisive
-    after: whichever Lean declaration carries `@[export lean_kernel_main]` must
-    call `bootAndInitialisePlatform` in its own body — read over the
-    comment-free view, so a docstring that names the callee, or a neighbouring
-    declaration that makes the call, does not satisfy it.  Without this, an
-    entry that boots through `bootFromPlatform` directly would link and carry
-    none of the idle-thread, labeling or reservation guarantees.
+    after.  Two relations, on the declaration carrying `@[export
+    lean_kernel_main]`, over the comment-free, **string-free** view:
+
+    1. It **executes** `bootAndInitialisePlatform` **unconditionally**: a
+       top-level statement of its `do` block binds the call with `←` (a `let`
+       pattern or a `match` scrutinee), runs it bare, or `discard`s it, with no
+       `return`/`throw` above it — or its body is a term headed by the call.
+       An identifier occurrence satisfied round 3's check; a string literal,
+       a docstring, a `let x := …` that binds the action without running it,
+       and a call nested under `if false` all kept the token (round 5).
+    2. It installs kernel state through **nothing else**: no other member of
+       the derived `kernel_state_writers` set, and no kernel-state reference
+       named directly, appears in its body.  Without this an entry could run
+       the checked boot and then install `bootFromPlatform`'s raw state over
+       it — the token present and executed, the live path routed around it.
+
+    Together: the live boot path *is* the checked boot, so the idle-thread,
+    labeling and reservation guarantees are the hardware boot's.
     """
     failures: list[str] = []
+    writers = kernel_state_writers(sources)
     for where, text in sources.items():
-        view = strip_lean_comments(text)
-        for m in BOOT_ENTRY_EXPORT.finditer(view):
-            rest = view[m.end():]
-            head = LEAN_DECL_START.search(rest)
-            while head is not None and rest.startswith("@[", head.start()):
-                head = LEAN_DECL_START.search(rest, head.end())
-            if head is None:
-                failures.append(
-                    f"{where}: `@[export {BOOT_ENTRY_SYMBOL}]` is not followed by a declaration"
-                )
+        view = lean_code_view.code_no_strings(text)
+        for kw, name, decl in lean_declarations(view):
+            if not BOOT_ENTRY_EXPORT.search(decl):
                 continue
-            following = LEAN_DECL_START.search(rest, head.end())
-            body = rest[head.start(): following.start() if following else len(rest)]
-            if not BOOT_ENTRY_CALLEE.search(body):
+            label = f"{where}: the declaration exporting `{BOOT_ENTRY_SYMBOL}`"
+            if kw is None or name is None:
+                failures.append(f"{label} is not a named declaration")
+                continue
+            body_at = declaration_body(decl)
+            if body_at is None:
+                failures.append(f"{label} has no `:=` body to bind the checked boot in")
+                continue
+            body = decl[body_at:]
+            statements = do_block_statements(decl, body_at)
+            if statements is None:
+                executed = BOOT_ENTRY_TERM_EXECUTED.match(body.strip()) is not None
+                reason = "its body is neither a `do` block nor a term headed by the call"
+            else:
+                executed = False
+                reason = (
+                    "no top-level statement of its `do` block executes the call "
+                    "(`let … ← bootAndInitialisePlatform …`, `match ← … with`, a bare call, "
+                    "or `discard`), or a `return`/`throw` precedes it"
+                )
+                for statement in statements:
+                    if LEAN_DIVERGES.match(statement):
+                        break
+                    if BOOT_ENTRY_EXECUTED.match(statement):
+                        executed = True
+                        break
+            if not executed:
                 failures.append(
-                    f"{where}: the declaration exporting `{BOOT_ENTRY_SYMBOL}` does not call "
-                    "`bootAndInitialisePlatform` — the hardware boot must go through the "
-                    "checked platform boot (idle threads, deployment labeling, reserved slots)"
+                    f"{label} does not execute `{BOOT_ENTRY_CALLEE}` unconditionally: {reason} "
+                    "— the hardware boot must go through the checked platform boot (idle "
+                    "threads, deployment labeling, reserved slots)"
+                )
+            short = name.split(".")[-1]
+            others = sorted((identifier_tokens(body) & writers) - {BOOT_ENTRY_CALLEE, short})
+            if KERNEL_STATE_REF_WRITE.search(body):
+                others.append("a kernel-state reference itself")
+            if others:
+                failures.append(
+                    f"{label} installs kernel state through something other than the checked "
+                    f"platform boot: {', '.join(others)} — every state installer in its body but "
+                    f"`{BOOT_ENTRY_CALLEE}` is a path around the checked boot"
                 )
     return failures
 
@@ -492,27 +696,112 @@ def self_test() -> int:
     if nm_global_definitions(nm_text) != {"_start", "secondary_entry", "table"}:
         failures.append("`nm` output was not reduced to its global definitions")
 
-    # --- PR #889 review round 3: the boot entry, once exported, calls the checked boot ---
-    bound = (
-        "@[export lean_kernel_main]\ndef leanKernelMain : IO Unit := do\n"
-        "  let _ ← bootAndInitialisePlatform RPi5Platform cfg\n  pure ()\n\ndef other : Nat := 0\n"
+    # --- PR #889 review rounds 3 and 5: the boot entry, once exported, IS the checked boot ---
+    # A stand-in for `Platform/FFI.lean`: the two references, one reader, the
+    # writers, and the checked wrapper over them.  The self-test's fixture must be
+    # no thinner than the file it stands for, so it carries a theorem naming the
+    # callee (theorems execute nothing) and a pure boot (`bootFromPlatform`).
+    ffi = (
+        "initialize kernelStateRef : IO.Ref Nat ← IO.mkRef 0\n"
+        "initialize kernelLabelingContextRef : IO.Ref Nat ← IO.mkRef 0\n"
+        "def getKernelState : IO Nat :=\n  kernelStateRef.get\n"
+        "def initialiseKernelState (st : Nat) : IO Unit :=\n  kernelStateRef.set st\n"
+        "def initialiseKernelLabelingContext (ctx : Nat) : IO Unit :=\n"
+        "  kernelLabelingContextRef.set ctx\n"
+        "def modifyGetKernelState (f : Nat → Nat × Nat) : IO Nat :=\n"
+        "  kernelStateRef.modifyGet f\n"
+        "def bootFromPlatform (cfg : Nat) : Nat := cfg\n"
+        "def bootAndInitialiseFromPlatformOn (cores : Nat) (cfg : Nat) : IO Unit := do\n"
+        "  initialiseKernelState (bootFromPlatform cfg)\n"
+        "  initialiseKernelLabelingContext 0\n"
+        "def bootAndInitialiseFromPlatform (cfg : Nat) (ctx : Nat) : IO Unit :=\n"
+        "  bootAndInitialiseFromPlatformOn 4 cfg\n"
+        "def bootAndInitialisePlatform (platform : Type) (cfg : Nat) : IO Unit :=\n"
+        "  bootAndInitialiseFromPlatformOn 4 cfg\n"
+        "theorem bootAndInitialisePlatform_eq (cfg : Nat) :\n"
+        "    bootAndInitialisePlatform Unit cfg = bootAndInitialisePlatform Unit cfg := rfl\n"
     )
-    if boot_entry_binding_failures({"f": bound}):
-        failures.append("a boot entry that calls the checked platform boot was refused")
+
+    def entry(body: str) -> str:
+        return "@[export lean_kernel_main]\ndef leanKernelMain : IO Unit := " + body + "\n"
+
+    def check_entry(name: str, body: str, accept: bool) -> None:
+        found = boot_entry_binding_failures({"ffi": ffi, "entry": entry(body)})
+        if accept and found:
+            failures.append(f"an entry of an accepted shape was refused — {name}: {found}")
+        if not accept and not found:
+            failures.append(f"a boot entry that keeps the token and breaks the relation was accepted — {name}")
+
+    # The executing shapes, each with the call at the top level of the block.
+    check_entry("`let _ ←` binding",
+                "do\n  let _ ← bootAndInitialisePlatform RPi5Platform cfg\n  pure ()", True)
+    check_entry("`match ←` scrutinee",
+                "do\n  match ← bootAndInitialisePlatform RPi5Platform cfg with\n"
+                "  | .ok _ => pure ()\n  | .error _ => pure ()", True)
+    check_entry("bare call as the last statement",
+                "do\n  IO.println \"booting\"\n  bootAndInitialisePlatform RPi5Platform cfg", True)
+    check_entry("term body headed by the call",
+                "discard <| bootAndInitialisePlatform RPi5Platform cfg", True)
+    check_entry("a reader after the call is not an installer",
+                "do\n  let _ ← bootAndInitialisePlatform RPi5Platform cfg\n"
+                "  let st ← getKernelState\n  pure ()", True)
+    # Token-preserving mutations: every one keeps `bootAndInitialisePlatform` in
+    # the declaration and breaks the relation (round 3's check passed them all).
+    check_entry("the callee named only in a string literal",
+                "do\n  IO.println \"bootAndInitialisePlatform\"\n"
+                "  initialiseKernelState (bootFromPlatform cfg)", False)
+    check_entry("the call nested under a dead branch",
+                "do\n  if false then\n    let _ ← bootAndInitialisePlatform RPi5Platform cfg\n"
+                "  initialiseKernelState (bootFromPlatform cfg)", False)
+    check_entry("the action bound with `:=` and never run",
+                "do\n  let boot := bootAndInitialisePlatform RPi5Platform cfg\n"
+                "  initialiseKernelState (bootFromPlatform cfg)", False)
+    check_entry("the call executed, then the live path routed around it",
+                "do\n  let _ ← bootAndInitialisePlatform RPi5Platform cfg\n"
+                "  initialiseKernelState (bootFromPlatform cfg)", False)
+    check_entry("the unchecked wrapper re-run after the checked one",
+                "do\n  let _ ← bootAndInitialisePlatform RPi5Platform cfg\n"
+                "  let _ ← bootAndInitialiseFromPlatform cfg ctx\n  pure ()", False)
+    check_entry("a `return` above the call",
+                "do\n  return ()\n  let _ ← bootAndInitialisePlatform RPi5Platform cfg", False)
+    check_entry("an installer reached through a helper",
+                "do\n  let _ ← bootAndInitialisePlatform RPi5Platform cfg\n  installRaw cfg\n\n"
+                "def installRaw (cfg : Nat) : IO Unit :=\n  kernelStateRef.set (bootFromPlatform cfg)",
+                False)
+    check_entry("the reference written directly",
+                "do\n  let _ ← bootAndInitialisePlatform RPi5Platform cfg\n  kernelStateRef.set 0",
+                False)
+    check_entry("a `where`-form body with no `:=`", "leanKernelMain where\n  x := 0", False)
     doc_only = (
         "/-- calls bootAndInitialisePlatform -/\n@[export lean_kernel_main]\n"
         "def leanKernelMain : IO Unit := pure ()\n"
     )
-    if not boot_entry_binding_failures({"f": doc_only}):
+    if not boot_entry_binding_failures({"ffi": ffi, "f": doc_only}):
         failures.append("a boot entry naming the callee only in its docstring was accepted")
     elsewhere = (
         "@[export lean_kernel_main]\ndef leanKernelMain : IO Unit := pure ()\n\n"
         "def other : IO Unit := do\n  let _ ← bootAndInitialisePlatform RPi5Platform cfg\n  pure ()\n"
     )
-    if not boot_entry_binding_failures({"f": elsewhere}):
+    if not boot_entry_binding_failures({"ffi": ffi, "f": elsewhere}):
         failures.append("a boot entry whose neighbour makes the call was accepted")
-    if boot_entry_binding_failures({"f": "def other : Nat := 0\n"}):
+    if boot_entry_binding_failures({"ffi": ffi, "f": "def other : Nat := 0\n"}):
         failures.append("the absence of a boot entry was reported as a binding failure")
+
+    # The installer derivation: the writers, closed under reference; the reader
+    # and the pure boot outside it; the references and the theorem outside it.
+    derived = kernel_state_writers({"ffi": ffi})
+    if not EXPECTED_KERNEL_STATE_WRITERS <= derived:
+        failures.append(
+            f"the installer derivation missed {sorted(EXPECTED_KERNEL_STATE_WRITERS - derived)}"
+        )
+    for reader in ("getKernelState", "bootFromPlatform", "kernelStateRef",
+                   "bootAndInitialisePlatform_eq"):
+        if reader in derived:
+            failures.append(f"the installer derivation counted `{reader}` as a writer")
+    # One token turns the reader into a writer: `.get` → `.modify`.
+    mutated = kernel_state_writers({"ffi": ffi.replace("kernelStateRef.get", "kernelStateRef.modify id")})
+    if "getKernelState" not in mutated:
+        failures.append("a `.modify` of the reference was not counted as a write")
 
     # A HAL declaration whose Lean export exists under ANOTHER spelling: the
     # token `lean_alpha` is present on the Lean side, but the HAL's spelling is
@@ -580,7 +869,7 @@ def self_test() -> int:
         for line in failures:
             print(f"         {line}")
         return 1
-    print("[PASS] check_kernel_entry_exports self-test (27 cases)")
+    print("[PASS] check_kernel_entry_exports self-test (44 cases)")
     return 0
 
 
@@ -629,6 +918,19 @@ def main() -> int:
             "[FAIL] no defined, exported symbol found in the assembly sources build.rs "
             "assembles — the assembly provider derivation is broken"
         )
+    writers = kernel_state_writers(sources)
+    missing_writers = sorted(EXPECTED_KERNEL_STATE_WRITERS - writers)
+    leaked_readers = sorted(EXPECTED_KERNEL_STATE_READERS & writers)
+    if missing_writers or leaked_readers:
+        print("[FAIL] the kernel-state installer derivation disagrees with its pin:")
+        for name in missing_writers:
+            print(f"         `{name}` was not derived as an installer (renamed, or the reference "
+                  "it writes moved)")
+        for name in leaked_readers:
+            print(f"         `{name}` was derived as an installer, but it only reads")
+        return 1
+    print(f"[PASS] kernel-state installers derived: {len(writers)} declarations, pinned by "
+          f"{len(EXPECTED_KERNEL_STATE_WRITERS)} writers and {len(EXPECTED_KERNEL_STATE_READERS)} readers")
     binding_failures = boot_entry_binding_failures(sources)
     if binding_failures:
         print("[FAIL] the boot entry is exported but not bound to the checked platform boot:")

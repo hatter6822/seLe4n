@@ -944,7 +944,7 @@ Simulation and test paths install `Kernel.harnessLabelingContext` explicitly
 two-domain deployment labeling rather than a guard-evading one.  The hardware
 boot installs the platform binding's own labeling through
 `bootAndInitialisePlatform` — for `RPi5Platform`,
-`Kernel.confinedLabelingContext rpi5UpperDomainBase`
+`Kernel.confinedLabelingContext rpi5UpperDomainBase rpi5LowerWitnessIndex …`
 (`Platform.RPi5.rpi5_deploymentLabeling`). -/
 initialize kernelLabelingContextRef : IO.Ref LabelingContext ←
   IO.mkRef Kernel.defaultLabelingContext
@@ -1158,8 +1158,8 @@ re-made by whoever writes the boot call.  `PlatformBinding.deploymentLabeling`
 (`Platform/Contract.lean`) is that decision — the `DeploymentLabeling` *source*,
 not a context — and this entry boots under `PlatformBinding.labeling`, the
 constructor's output on it: the RPi5 binding's source is
-`Kernel.confinedDeploymentLabeling rpi5UpperDomainBase`, so its labeling is
-`Kernel.confinedLabelingContext rpi5UpperDomainBase`
+`Kernel.confinedDeploymentLabeling rpi5UpperDomainBase rpi5LowerWitnessIndex …`, so its labeling is
+`Kernel.confinedLabelingContext rpi5UpperDomainBase rpi5LowerWitnessIndex …`
 (`Platform.RPi5.rpi5_deploymentLabeling`, by `rfl`); the simulation bindings'
 source is `Kernel.harnessDeploymentLabeling`.
 

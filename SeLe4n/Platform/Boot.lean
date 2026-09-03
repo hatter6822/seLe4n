@@ -767,7 +767,24 @@ def bootObjectReferencesReservedIdleSlot (obj : KernelObject) : Bool :=
     discharged.  Folded into `PlatformConfig.wellFormed` so it is decided on the
     one validation path every boot entry shares, and so a successful checked
     boot *implies* the freshness that theorem needs
-    (`bootFromPlatformChecked_ok_idleSlotsFreshAt`). -/
+    (`bootFromPlatformChecked_ok_idleSlotsFreshAt`).
+
+    **The reservation is model-wide, not binding-wide** (PR #889 review round
+    5).  It covers `[idleThreadIdBase, idleThreadIdBase + numCores)` for the
+    model's `numCores`, not for the `coreCount` a binding declares, although
+    the checked platform boot installs idle threads on the declared cores only
+    (`bootFromPlatformCheckedWithIdleThreadsFor`).  The ids belong to the
+    **model**: every per-core structure is `numCores` wide whatever a binding
+    declares, the per-core dispatcher names `idleThreadId c` for every model
+    core, and `syscallResolveCap` decides the reservation on the kernel state
+    alone — which carries no binding, so a chokepoint parameterised by the
+    declared cores would answer from state the kernel does not have.  Leaving
+    an undeclared core's slot open would make it the one model core whose idle
+    id could resolve to a config object: usable through a capability, and
+    dispatchable by a core that is never brought up.  The cost is three object
+    ids out of a 64-bit space on a single-core binding.  An undeclared core's
+    slot is therefore *absent* after the declared-cores boot, never free
+    (`bootFromPlatformCheckedWithIdleThreadsFor_undeclared_idle_absent`). -/
 def idleSlotsReserved (config : PlatformConfig) : Bool :=
   config.initialObjects.all (fun entry =>
     !isIdleObjId entry.id && !bootObjectReferencesReservedIdleSlot entry.obj) &&
@@ -2956,6 +2973,17 @@ theorem bootFromPlatformCheckedWithIdleThreadsFor_rejects_invalid
   rw [h]
   rfl
 
+/-- PR #889 review round 5: on a successful checked boot the declared-list form
+    is the fold over the declared cores, and nothing else. -/
+theorem bootFromPlatformCheckedWithIdleThreadsFor_map_ok
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformChecked config = .ok ist) :
+    bootFromPlatformCheckedWithIdleThreadsFor cores config =
+      .ok (cores.foldl enqueueIdleThread ist) := by
+  unfold bootFromPlatformCheckedWithIdleThreadsFor
+  rw [h]
+  rfl
+
 /-- PR #889 review round 3: are the labeling's **declared separation witnesses**
     installed threads of `st`?  `isInsecureDefaultContext` decides that the
     labeling separates two admissible *ids*; it cannot see whether either id is
@@ -4593,6 +4621,32 @@ theorem bootFromPlatformCheckedWithIdleThreads_preserves_platform_objects
       rw [hEq]; exact hPlat
     rw [hFresh c'] at hAt
     simp at hAt
+
+/-- PR #889 review round 5: after the declared-cores boot, a core the binding
+    does **not** declare has no idle object at all — the checked boot leaves
+    every model idle slot fresh (`bootFromPlatformChecked_ok_idleSlotsFreshAt`,
+    by the model-wide reservation) and the fold writes only the declared cores'
+    slots (`foldl_enqueueIdleThread_objects_frame`).  The reservation's other
+    half: an undeclared core's slot is *absent*, not available, so no
+    capability can resolve to it (`syscallResolveCap_ok_not_reserved`) and no
+    config object can be dispatched from it. -/
+theorem bootFromPlatformCheckedWithIdleThreadsFor_undeclared_idle_absent
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
+    (ist : IntermediateState)
+    (h : bootFromPlatformCheckedWithIdleThreadsFor cores config = .ok ist)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (hc : c ∉ cores) :
+    ist.state.objects[(idleThreadId c).toObjId]? = none := by
+  cases hChecked : bootFromPlatformChecked config with
+  | error e =>
+    rw [bootFromPlatformCheckedWithIdleThreadsFor_rejects_invalid cores config e hChecked] at h
+    cases h
+  | ok base =>
+    rw [bootFromPlatformCheckedWithIdleThreadsFor_map_ok cores config base hChecked] at h
+    injection h with h
+    subst h
+    rw [foldl_enqueueIdleThread_objects_frame cores base c
+      (fun c' hc' hEq => hc (hEq ▸ hc'))]
+    exact bootFromPlatformChecked_ok_idleSlotsFreshAt config base hChecked c
 
 -- ============================================================================
 -- PR #889 review: the boot state is `threadStateConsistent`

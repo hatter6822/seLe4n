@@ -633,6 +633,18 @@ every SchedContext reference); an assembly provider is read outside
 preprocessor conditionals, on the builder chain that reaches `.compile()`,
 and against the assembled archive's object symbols when present.
 
+**Review round 5 (PR #889, same version).**  Four: the labeling family's lower
+witness was thread `1`, the boot VSpace root's object id on every binding, so a
+hardware boot carrying its own root was refused for an uninstalled witness —
+the witness is a parameter, the RPi5 binding declares `rpi5LowerWitnessIndex`,
+and `PlatformBinding.witnessesOffBootVSpaceRoot` holds every binding's
+witnesses apart from its root; the idle-slot reservation is model-wide by
+design and now says so (an undeclared core's slot is absent, not free); the
+boot-entry gate reads statements — an executed top-level call and no other
+kernel-state installer, over a derived installer set — instead of an
+identifier occurrence; and `coreCount ≤ numCores` is a class obligation
+(`coreCountLe`), so `declaredCores` has exactly `coreCount` members.
+
 **Note on RR5.10–RR5.14** (the rows that replaced one XL).  Two findings shape
 the split, and the row they replaced named neither: one is an ordering defect
 it inherited, the other is the reason its "cannot be separate PRs" claim is

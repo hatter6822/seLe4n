@@ -5714,6 +5714,31 @@ import SeLe4n.Platform.RPi5.Contract
 #check @SeLe4n.Platform.Boot.bootFromPlatformChecked_ok_threadStateConsistent
 #check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_threadStateConsistent
 #check @SeLe4n.Platform.Boot.idleSlotsReserved
+-- PR #889 review round 5: the lower witness is a parameter of the family, held
+-- off the boot VSpace root by an obligation on each binding; the declared core
+-- count is bounded by the model; the idle slot of an undeclared core is absent
+-- after the boot.  (No apostrophes here: this block sits inside a single-quoted
+-- `bash -lc` argument.)
+#check @SeLe4n.Kernel.indexPartitionedDeploymentLabeling_separatedThreads
+#check @SeLe4n.Kernel.harnessLowerWitnessIndex
+#check @SeLe4n.Kernel.harnessLowerWitnessIndex_admissible
+#check @SeLe4n.Kernel.harnessLowerWitnessIndex_below_boundary
+#check @SeLe4n.Kernel.harnessLabelingContext_separatedThreads
+#check @SeLe4n.Platform.PlatformBinding.coreCountLe
+#check @SeLe4n.Platform.PlatformBinding.witnessesOffBootVSpaceRoot
+#check @SeLe4n.Platform.PlatformBinding.witnesses_ne_bootVSpaceRoot
+#check @SeLe4n.Platform.PlatformBinding.labeling_separatedThreads
+#check @SeLe4n.Platform.PlatformBinding.declaredCores_length
+#check @SeLe4n.Platform.PlatformBinding.mem_declaredCores_iff
+#check @SeLe4n.Platform.PlatformBinding.bootCoreModelId
+#check @SeLe4n.Platform.PlatformBinding.bootCoreModelId_mem_declaredCores
+#check @SeLe4n.Platform.RPi5.rpi5LowerWitnessIndex
+#check @SeLe4n.Platform.RPi5.rpi5LowerWitnessIndex_admissible
+#check @SeLe4n.Platform.RPi5.rpi5LowerWitnessIndex_below_boundary
+#check @SeLe4n.Platform.RPi5.rpi5LowerWitnessIndex_ne_bootVSpaceRoot
+#check @SeLe4n.Platform.RPi5.rpi5_deploymentLabeling_separatedThreads
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor_map_ok
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor_undeclared_idle_absent
 #check @SeLe4n.Platform.Boot.bootFromPlatformChecked_ok_shape
 #check @SeLe4n.Platform.Boot.bootFromPlatformChecked_ok_idleSlotsFreshAt
 -- SM0.G — PlatformBinding extension

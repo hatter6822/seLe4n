@@ -544,11 +544,11 @@ private def sd035_sequentialDispatches : IO Unit := do
 
 /-- PR #889 review round 3: the minimally well-formed config whose boot the
 harness labeling **admits** — it installs the labeling's two declared
-separation witnesses (`⟨1⟩` and `⟨upperWitnessIndex harnessSeparationBoundary⟩`)
-as boot-safe, inactive TCBs.  The boot wrapper now refuses a boot whose
-witnesses are not installed threads (`declaredWitnessesInstalled`), so the
-empty config — whose only TCBs are the idle threads — is the negative, not
-the fixture. -/
+separation witnesses (`⟨harnessLowerWitnessIndex⟩` and
+`⟨upperWitnessIndex harnessSeparationBoundary⟩`) as boot-safe, inactive TCBs.
+The boot wrapper now refuses a boot whose witnesses are not installed threads
+(`declaredWitnessesInstalled`), so the empty config — whose only TCBs are the
+idle threads — is the negative, not the fixture. -/
 private def witnessTcb (id : Nat) : TCB :=
   { tid := ⟨id⟩, priority := ⟨10⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0),
@@ -562,14 +562,17 @@ private def witnessEntry (id : Nat) : SeLe4n.Platform.Boot.ObjectEntry :=
 private def harnessUpperWitness : Nat :=
   SeLe4n.Kernel.upperWitnessIndex SeLe4n.Kernel.harnessSeparationBoundary
 
-/-- The witnessed config for an index-partitioned labeling whose upper witness is
-`upper` — the harness labeling's is `harnessUpperWitness`, a confined context at
-boundary `b` has `upperWitnessIndex b`. -/
-private def witnessedCfgFor (upper : Nat) : SeLe4n.Platform.Boot.PlatformConfig :=
-  { irqTable := [], initialObjects := [witnessEntry 1, witnessEntry upper] }
+/-- The witnessed config for an index-partitioned labeling with lower witness
+`lower` and upper witness `upper` — the harness labeling's pair is
+(`harnessLowerWitnessIndex`, `harnessUpperWitness`); a confined context at
+boundary `b` with witness `w` has (`w`, `upperWitnessIndex b`).  Round 5: the
+lower witness is a parameter of the family, not thread `1` — `1` is the boot
+VSpace root's object id on every binding (SD-056). -/
+private def witnessedCfgFor (lower upper : Nat) : SeLe4n.Platform.Boot.PlatformConfig :=
+  { irqTable := [], initialObjects := [witnessEntry lower, witnessEntry upper] }
 
 private def witnessedCfg : SeLe4n.Platform.Boot.PlatformConfig :=
-  witnessedCfgFor harnessUpperWitness
+  witnessedCfgFor SeLe4n.Kernel.harnessLowerWitnessIndex harnessUpperWitness
 
 /-- SD-040: `bootAndInitialiseFromPlatform` on a well-formed (witnessed)
     config installs the post-boot state into `kernelStateRef`. -/
@@ -605,12 +608,13 @@ test now also reads the reference back, so the install is observed rather than
 inferred from the success arm. -/
 private def sd041_bootInitialise_withLabelingContext : IO Unit := do
   -- PR #889 review round 3: the config installs THIS labeling's witnesses —
-  -- the confined context at boundary 64 separates ⟨1⟩ from
-  -- ⟨upperWitnessIndex 64⟩, not the harness labeling's pair.
+  -- the confined context at boundary 64 with lower witness 5 (round 5: the
+  -- witness is the deployment's parameter) separates ⟨5⟩ from
+  -- ⟨upperWitnessIndex 64⟩, neither the harness labeling's pair nor RPi5's.
   let cfg : SeLe4n.Platform.Boot.PlatformConfig :=
-    witnessedCfgFor (SeLe4n.Kernel.upperWitnessIndex 64)
+    witnessedCfgFor 5 (SeLe4n.Kernel.upperWitnessIndex 64)
   -- Install a context distinguishable from whatever is currently live.
-  let deployed := SeLe4n.Kernel.confinedLabelingContext 64
+  let deployed := SeLe4n.Kernel.confinedLabelingContext 64 5 (by decide) (by decide)
   match ← bootAndInitialiseFromPlatform cfg deployed with
   | Except.ok _ =>
       let installed ← getKernelLabelingContext
@@ -915,7 +919,7 @@ private def sd055_witnesses_installed_and_binding_cores : IO Unit := do
       failLine "sd055_empty_config_unexpected_success"
         "a boot installing neither declared witness must be refused"
   let lowerOnly : SeLe4n.Platform.Boot.PlatformConfig :=
-    { irqTable := [], initialObjects := [witnessEntry 1] }
+    { irqTable := [], initialObjects := [witnessEntry SeLe4n.Kernel.harnessLowerWitnessIndex] }
   match ← bootAndInitialiseFromPlatform lowerOnly SeLe4n.Kernel.harnessLabelingContext with
   | Except.error e =>
       expect "sd055_one_witness_refused"
@@ -963,6 +967,118 @@ private def sd055_witnesses_installed_and_binding_cores : IO Unit := do
      SeLe4n.Platform.PlatformBinding.declaredCores (platform := SeLe4n.Platform.Sim.SimPlatform) ==
        SeLe4n.Kernel.Concurrency.allCores)
     "the binding's core list is the first coreCount model cores"
+
+/-- SD-056 (PR #889 review round 5): **the declared witnesses are not the boot
+VSpace root's id, and the binding's core count is structural.**
+
+Both boot roots sit at `ObjId.ofNat 1` (`rpi5BootVSpaceRootObjId`,
+`simBootVSpaceRootObjId`) and the labeling family used to fix its lower witness
+at thread `1`; a config carrying the canonical root cannot install a TCB there
+(`bootVSpaceRootObjIdDistinct`), so every hardware boot that carried its own
+root was refused for an uninstalled witness.  Now the witness is a parameter of
+the family, the RPi5 binding declares `rpi5LowerWitnessIndex`, and the platform
+contract holds every binding's witnesses apart from its root
+(`witnessesOffBootVSpaceRoot`): the RPi5 boot with the canonical root and the
+two witness TCBs succeeds and installs the pair it declares; the same boot under
+a labeling witnessed at `1` is refused for the uninstalled witness; and a config
+that tries to install a TCB at the root's id is refused by the checked boot
+itself — the two refusals that together made every canonical-root boot fail.
+
+The binding's cores (`coreCountLe`): `declaredCores` has exactly `coreCount`
+members, the boot core is one of them (`bootCoreModelId`), and an undeclared
+core's idle *object* slot is absent after the boot
+(`bootFromPlatformCheckedWithIdleThreadsFor_undeclared_idle_absent`) — the
+model-wide reservation's other half. -/
+private def sd056_witnesses_off_boot_root_and_structural_cores : IO Unit := do
+  let rpi5Upper : Nat :=
+    SeLe4n.Kernel.upperWitnessIndex SeLe4n.Platform.RPi5.rpi5UpperDomainBase
+  let rpi5Cfg : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [],
+      initialObjects :=
+        [witnessEntry SeLe4n.Platform.RPi5.rpi5LowerWitnessIndex, witnessEntry rpi5Upper],
+      bootVSpaceRoot := some SeLe4n.Platform.RPi5.rpi5BootVSpaceRootEntry }
+  match ← bootAndInitialisePlatform SeLe4n.Platform.RPi5.RPi5Platform rpi5Cfg with
+  | Except.error e =>
+      failLine "sd056_rpi5_canonical_root_boot_unexpected_error"
+        s!"the RPi5 boot with its canonical root and witness TCBs must succeed, got: {e}"
+  | Except.ok st =>
+      expect "sd056_rpi5_canonical_root_installed"
+        (st.objects[SeLe4n.Platform.RPi5.rpi5BootVSpaceRootObjId]?).isSome
+        "the canonical boot VSpace root must be installed at its reserved id"
+      expect "sd056_rpi5_witnesses_installed"
+        ((st.getTcb? ⟨SeLe4n.Platform.RPi5.rpi5LowerWitnessIndex⟩).isSome &&
+         (st.getTcb? ⟨rpi5Upper⟩).isSome)
+        "both declared witnesses must be installed TCBs of the boot state"
+      let installed ← getKernelLabelingContext
+      expect "sd056_rpi5_installed_labeling_declares_its_witnesses"
+        (installed.separatedThreads ==
+          some (⟨SeLe4n.Platform.RPi5.rpi5LowerWitnessIndex⟩, ⟨rpi5Upper⟩))
+        "the installed labeling must declare the RPi5 witness pair"
+  -- The round-4 shape: a labeling witnessed at thread 1 — the root's id — over
+  -- a config carrying the root.  The root is a VSpace, not a TCB, so the
+  -- witness can never be installed: refused, before anything is committed.
+  let witnessedAtRoot := SeLe4n.Kernel.confinedLabelingContext
+    SeLe4n.Platform.RPi5.rpi5UpperDomainBase 1 (by decide) (by decide)
+  match ← bootAndInitialiseFromPlatform rpi5Cfg witnessedAtRoot with
+  | Except.error e =>
+      expect "sd056_witness_at_root_refused"
+        (e == uninstalledSeparationWitnessBootError)
+        s!"expected the witness refusal, got: {e}"
+  | Except.ok _ =>
+      failLine "sd056_witness_at_root_unexpected_success"
+        "a labeling whose witness is the boot root's id can never see it installed"
+  -- ...and a config that tries to install a TCB at the root's id is refused by
+  -- the checked boot itself.
+  let tcbAtRoot : SeLe4n.Platform.Boot.PlatformConfig :=
+    { rpi5Cfg with initialObjects := [witnessEntry 1, witnessEntry rpi5Upper] }
+  expect "sd056_tcb_at_root_refused_by_the_checked_boot"
+    (match SeLe4n.Platform.Boot.bootFromPlatformChecked tcbAtRoot with
+     | Except.error _ => true
+     | Except.ok _ => false)
+    "a config placing an object at the boot root's id must be refused"
+  -- Every binding's labeling avoids its own root — the obligation the platform
+  -- contract states (`witnessesOffBootVSpaceRoot`), observed on the values.
+  let offRoot (lab : SeLe4n.Kernel.LabelingContext)
+      (root : Option SeLe4n.Platform.BootVSpaceRootEntry) : Bool :=
+    match lab.separatedThreads, root with
+    | some (lo, hi), some r => lo.toNat != r.id.toNat && hi.toNat != r.id.toNat
+    | _, _ => false
+  expect "sd056_every_binding_labeling_avoids_its_root"
+    (offRoot (SeLe4n.Platform.PlatformBinding.labeling (platform := SeLe4n.Platform.RPi5.RPi5Platform))
+        (SeLe4n.Platform.PlatformBinding.bootVSpaceRoot (platform := SeLe4n.Platform.RPi5.RPi5Platform)) &&
+     offRoot (SeLe4n.Platform.PlatformBinding.labeling (platform := SeLe4n.Platform.Sim.SimPlatform))
+        (SeLe4n.Platform.PlatformBinding.bootVSpaceRoot (platform := SeLe4n.Platform.Sim.SimPlatform)) &&
+     offRoot (SeLe4n.Platform.PlatformBinding.labeling (platform := SeLe4n.Platform.Sim.SimRestrictivePlatform))
+        (SeLe4n.Platform.PlatformBinding.bootVSpaceRoot (platform := SeLe4n.Platform.Sim.SimRestrictivePlatform)) &&
+     offRoot (SeLe4n.Platform.PlatformBinding.labeling (platform := SeLe4n.Platform.Sim.SimSingleCorePlatform))
+        (SeLe4n.Platform.PlatformBinding.bootVSpaceRoot (platform := SeLe4n.Platform.Sim.SimSingleCorePlatform)))
+    "every binding's declared witnesses must avoid its boot VSpace root's id"
+  -- The binding's core count is structural: the declared list has exactly
+  -- `coreCount` members, the boot core is declared, and an undeclared core's
+  -- idle object slot is absent — not free — after the boot.
+  expect "sd056_declared_cores_length_is_the_count"
+    ((SeLe4n.Platform.PlatformBinding.declaredCores
+        (platform := SeLe4n.Platform.Sim.SimSingleCorePlatform)).length ==
+      SeLe4n.Platform.PlatformBinding.coreCount
+        (platform := SeLe4n.Platform.Sim.SimSingleCorePlatform) &&
+     (SeLe4n.Platform.PlatformBinding.declaredCores
+        (platform := SeLe4n.Platform.RPi5.RPi5Platform)).length ==
+      SeLe4n.Platform.PlatformBinding.coreCount (platform := SeLe4n.Platform.RPi5.RPi5Platform))
+    "declaredCores must have exactly coreCount members"
+  expect "sd056_boot_core_is_declared"
+    (decide (SeLe4n.Platform.PlatformBinding.bootCoreModelId
+        (platform := SeLe4n.Platform.Sim.SimSingleCorePlatform) ∈
+      SeLe4n.Platform.PlatformBinding.declaredCores
+        (platform := SeLe4n.Platform.Sim.SimSingleCorePlatform)))
+    "the boot core embeds in the model and is a declared core"
+  match ← bootAndInitialisePlatform SeLe4n.Platform.Sim.SimSingleCorePlatform witnessedCfg with
+  | Except.error e =>
+      failLine "sd056_single_core_unexpected_error" s!"the single-core binding should boot, got: {e}"
+  | Except.ok st =>
+      let c1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
+      expect "sd056_undeclared_core_idle_slot_absent"
+        (st.objects[(SeLe4n.Kernel.idleThreadId c1).toObjId]?).isNone
+        "an undeclared core's idle object slot must be absent after the boot"
 
 /-- SD-051: faithful seL4-MCS receive linkage, folded into `endpointReceiveDual`
     itself (#7.2; formerly the separate `linkReceivedCaller` `.receive`-arm step).
@@ -1378,4 +1494,6 @@ def main : IO Unit := do
   sd054_idleTargetCapabilityUnresolvable
   IO.println "--- PR #889 review round 3: installed witnesses, the binding's cores ---"
   sd055_witnesses_installed_and_binding_cores
+  IO.println "--- PR #889 review round 5: witnesses off the boot root, structural cores ---"
+  sd056_witnesses_off_boot_root_and_structural_cores
   IO.println "=== All WS-RC R2.C SyscallDispatch tests passed ==="

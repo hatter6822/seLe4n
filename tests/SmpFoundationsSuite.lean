@@ -578,6 +578,31 @@ private def runPlatformBindingChecks : IO Unit := do
   assertBool "SimRestrictive.coreCountPos witness exists (4 > 0)"
     (decide (SeLe4n.Platform.PlatformBinding.coreCount
               (platform := SeLe4n.Platform.Sim.SimRestrictivePlatform) > 0))
+  -- PR #889 review round 5: the `coreCountLe` obligation on every binding —
+  -- no binding declares more cores than the model has — so `declaredCores`
+  -- has exactly `coreCount` members and the boot core embeds in the model.
+  assertBool "RPi5.coreCountLe witness exists (4 ≤ numCores)"
+    (decide (SeLe4n.Platform.PlatformBinding.coreCount
+              (platform := SeLe4n.Platform.RPi5.RPi5Platform) ≤
+              SeLe4n.Kernel.Concurrency.numCores))
+  assertBool "Sim.coreCountLe witness exists (4 ≤ numCores)"
+    (decide (SeLe4n.Platform.PlatformBinding.coreCount
+              (platform := SeLe4n.Platform.Sim.SimPlatform) ≤
+              SeLe4n.Kernel.Concurrency.numCores))
+  assertBool "SimRestrictive.coreCountLe witness exists (4 ≤ numCores)"
+    (decide (SeLe4n.Platform.PlatformBinding.coreCount
+              (platform := SeLe4n.Platform.Sim.SimRestrictivePlatform) ≤
+              SeLe4n.Kernel.Concurrency.numCores))
+  assertBool "RPi5.declaredCores.length = coreCount"
+    (decide ((SeLe4n.Platform.PlatformBinding.declaredCores
+              (platform := SeLe4n.Platform.RPi5.RPi5Platform)).length =
+              SeLe4n.Platform.PlatformBinding.coreCount
+              (platform := SeLe4n.Platform.RPi5.RPi5Platform)))
+  assertBool "RPi5.bootCoreModelId = bootCoreId (as a model core)"
+    (decide ((SeLe4n.Platform.PlatformBinding.bootCoreModelId
+              (platform := SeLe4n.Platform.RPi5.RPi5Platform)).val =
+              (SeLe4n.Platform.PlatformBinding.bootCoreId
+              (platform := SeLe4n.Platform.RPi5.RPi5Platform)).val))
 
 private def runLockKindUniquenessChecks : IO Unit := do
   IO.println "--- §2.11 LockKind pairwise distinctness (full lattice) ---"

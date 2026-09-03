@@ -500,7 +500,8 @@ private def runSeparationWitnessAdmissibilityChecks : IO Unit := do
   -- `separationWitnessAdmissible` can be what refuses it.
   let idle0 : SeLe4n.ThreadId := SeLe4n.Kernel.idleThreadId ⟨0, by decide⟩
   let idleWitnessed : SeLe4n.Kernel.LabelingContext :=
-    { SeLe4n.Kernel.confinedLabelingContext 64 with separatedThreads := some (⟨1⟩, idle0) }
+    { SeLe4n.Kernel.confinedLabelingContext 64 2 (by decide) (by decide) with
+        separatedThreads := some (⟨1⟩, idle0) }
   expect "the idle-witnessed context really does separate its declared pair"
     (idleWitnessed.threadLabelOf ⟨1⟩ != idleWitnessed.threadLabelOf idle0)
   expect "isInsecureDefaultContext refuses a witness naming an idle thread"
@@ -521,7 +522,19 @@ private def runSeparationWitnessAdmissibilityChecks : IO Unit := do
       SeLe4n.Kernel.harnessSeparationBoundary)
   expect "isInsecureDefaultContext admits the confined context at an in-range boundary"
     (SeLe4n.Kernel.isInsecureDefaultContext
-      (SeLe4n.Kernel.confinedLabelingContext (SeLe4n.Kernel.idleThreadIdBase + 1)) = false)
+      (SeLe4n.Kernel.confinedLabelingContext (SeLe4n.Kernel.idleThreadIdBase + 1) 2
+        (by decide) (by decide)) = false)
+  -- Round 5: the lower witness is the deployment's parameter, declared
+  -- verbatim, and the harness pair is pinned — the family's old fixed witness
+  -- `1` is the boot VSpace root's id on every binding, so it is nobody's
+  -- default any more.
+  expect "the family declares the lower witness it was given"
+    ((SeLe4n.Kernel.confinedLabelingContext 64 7 (by decide) (by decide)).separatedThreads ==
+      some (⟨7⟩, ⟨SeLe4n.Kernel.upperWitnessIndex 64⟩))
+  expect "the harness labeling's witnesses are pinned, and its lower witness is not 1"
+    (SeLe4n.Kernel.harnessLabelingContext.separatedThreads ==
+      some (⟨SeLe4n.Kernel.harnessLowerWitnessIndex⟩, ⟨SeLe4n.Kernel.harnessSeparationBoundary⟩) &&
+     SeLe4n.Kernel.harnessLowerWitnessIndex != 1)
 
 def runInformationFlowChecks : IO Unit := do
   -- === Policy relation checks ===
@@ -1505,7 +1518,8 @@ def runInformationFlowChecks : IO Unit := do
   -- ...and a real two-domain deployment labeling is admitted, so the guard is
   -- fail-closed rather than closed.
   expect "isInsecureDefaultContext admits a constructed deployment context"
-    (SeLe4n.Kernel.isInsecureDefaultContext (SeLe4n.Kernel.confinedLabelingContext 64) = false)
+    (SeLe4n.Kernel.isInsecureDefaultContext
+      (SeLe4n.Kernel.confinedLabelingContext 64 2 (by decide) (by decide)) = false)
   expect "isInsecureDefaultContext admits the harness deployment labeling"
     (SeLe4n.Kernel.isInsecureDefaultContext SeLe4n.Kernel.harnessLabelingContext = false)
   -- The declaration is checked, not trusted: a context naming a pair it does

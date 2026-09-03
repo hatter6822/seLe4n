@@ -990,55 +990,91 @@ def indexPartitionedLabel (upperDomainBase : Nat) (lowerLabel upperLabel : Secur
 
 /-- WS-RR RR5.1: the canonical `DeploymentLabeling` family — a two-domain
     partition of the entity index space at `upperDomainBase`, with the two
-    domains carrying `lowerLabel` and `upperLabel`.
+    domains carrying `lowerLabel` and `upperLabel`, and **`lowerWitness`** the
+    lower domain's declared separation witness.
 
-    The only obligation the caller discharges is that the two labels differ;
-    everything else the structure requires follows from the clamped boundary
-    (`separationBoundary`).  The declared witness is thread `1` (the first
-    non-sentinel index, always below the boundary and below the idle range)
-    against the thread at `upperWitnessIndex` — the boundary itself, or the
-    first index past the idle range when the boundary falls inside it; either
-    way in the upper domain and admissible.
+    The caller discharges three obligations: the two labels differ, the lower
+    witness is admissible (`separationWitnessAdmissible` — neither the reserved
+    sentinel nor a per-core idle thread), and it lies below the clamped boundary
+    (`separationBoundary`).  Everything else the structure requires follows: the
+    upper witness is the thread at `upperWitnessIndex` — the boundary itself,
+    or the first index past the idle range when the boundary falls inside it;
+    either way in the upper domain and admissible.
+
+    **Why the lower witness is a parameter** (PR #889 review round 5).  The
+    family used to fix it at thread `1` — the first non-sentinel index — and
+    that index is the boot VSpace root's object id on every platform binding
+    (`rpi5BootVSpaceRootObjId`, `simBootVSpaceRootObjId`, both `ObjId.ofNat 1`).
+    A witness must be an *installed thread* of the boot state
+    (`Platform.Boot.declaredWitnessesInstalled`); a config carrying the canonical
+    root cannot install a TCB at the root's id (`bootVSpaceRootObjIdDistinct`
+    refuses it), so every hardware boot that included the binding's own boot
+    VSpace root was refused for an uninstalled witness.  Which id witnesses the
+    lower domain is a deployment choice that has to be coherent with the
+    deployment's *other* reserved ids, so the family asks for it and the
+    platform contract holds it apart from the binding's boot root
+    (`PlatformBinding.witnessesOffBootVSpaceRoot`) — a fixed default here was a
+    choice made where the ids it had to avoid are not visible.
 
     A deployment with more than two domains supplies its own
     `DeploymentLabeling`; this family is the one the boot path and the platform
     bindings use, and it is what makes `confinedLabelingContext` concrete. -/
 def indexPartitionedDeploymentLabeling
-    (upperDomainBase : Nat) (lowerLabel upperLabel : SecurityLabel)
-    (hLabels : lowerLabel ≠ upperLabel) : DeploymentLabeling :=
+    (upperDomainBase lowerWitness : Nat) (lowerLabel upperLabel : SecurityLabel)
+    (hLabels : lowerLabel ≠ upperLabel)
+    (hLowerAdmissible : separationWitnessAdmissible ⟨lowerWitness⟩ = true)
+    (hLowerBelow : lowerWitness < separationBoundary upperDomainBase) : DeploymentLabeling :=
   { entityLabelOf   := indexPartitionedLabel upperDomainBase lowerLabel upperLabel
     endpointLabelOf := fun oid =>
       indexPartitionedLabel upperDomainBase lowerLabel upperLabel oid.toNat
     serviceLabelOf  := fun sid =>
       indexPartitionedLabel upperDomainBase lowerLabel upperLabel sid.toNat
-    separatedLower  := ⟨1⟩
+    separatedLower  := ⟨lowerWitness⟩
     separatedUpper  := ⟨upperWitnessIndex upperDomainBase⟩
-    hLowerReal      := by decide
+    hLowerReal      := hLowerAdmissible
     hUpperReal      := separationWitnessAdmissible_upperWitnessIndex upperDomainBase
     hSeparated      := by
-      have h := two_le_separationBoundary upperDomainBase
-      simp only [SeLe4n.ThreadId.toNat, indexPartitionedLabel,
-        if_pos (show 1 < separationBoundary upperDomainBase by omega),
+      simp only [SeLe4n.ThreadId.toNat, indexPartitionedLabel, if_pos hLowerBelow,
         if_neg (Nat.not_lt.mpr (separationBoundary_le_upperWitnessIndex upperDomainBase))]
       exact hLabels }
+
+/-- PR #889 review round 5: the family's witnesses are the ones it was given —
+    the lower one verbatim, the upper one at `upperWitnessIndex`.  Definitional;
+    stated so a binding's witness obligation can be discharged by evaluation. -/
+theorem indexPartitionedDeploymentLabeling_separatedThreads
+    (upperDomainBase lowerWitness : Nat) (lowerLabel upperLabel : SecurityLabel)
+    (hLabels : lowerLabel ≠ upperLabel)
+    (hLowerAdmissible : separationWitnessAdmissible ⟨lowerWitness⟩ = true)
+    (hLowerBelow : lowerWitness < separationBoundary upperDomainBase) :
+    (indexPartitionedDeploymentLabeling upperDomainBase lowerWitness lowerLabel upperLabel
+        hLabels hLowerAdmissible hLowerBelow).separatedLower = ⟨lowerWitness⟩ ∧
+    (indexPartitionedDeploymentLabeling upperDomainBase lowerWitness lowerLabel upperLabel
+        hLabels hLowerAdmissible hLowerBelow).separatedUpper =
+      ⟨upperWitnessIndex upperDomainBase⟩ := ⟨rfl, rfl⟩
 
 /-- WS-RR RR5.1: the `LabelingContext` of an index-partitioned deployment —
     `deploymentLabelingContext` over `indexPartitionedDeploymentLabeling`, so it
     inherits that constructor's validity and admission unconditionally.  The
     two members the tree uses are `confinedLabelingContext` (production) and
     `harnessLabelingContext` (the simulation harness and the fixtures). -/
-def indexPartitionedLabelingContext (upperDomainBase : Nat)
-    (lowerLabel upperLabel : SecurityLabel) (hLabels : lowerLabel ≠ upperLabel) :
+def indexPartitionedLabelingContext (upperDomainBase lowerWitness : Nat)
+    (lowerLabel upperLabel : SecurityLabel) (hLabels : lowerLabel ≠ upperLabel)
+    (hLowerAdmissible : separationWitnessAdmissible ⟨lowerWitness⟩ = true)
+    (hLowerBelow : lowerWitness < separationBoundary upperDomainBase) :
     LabelingContext :=
   deploymentLabelingContext
-    (indexPartitionedDeploymentLabeling upperDomainBase lowerLabel upperLabel hLabels)
+    (indexPartitionedDeploymentLabeling upperDomainBase lowerWitness lowerLabel upperLabel
+      hLabels hLowerAdmissible hLowerBelow)
 
 /-- WS-RR RR5.5: every index-partitioned context is admitted by the guard. -/
 theorem isInsecureDefaultContext_indexPartitionedLabelingContext
-    (upperDomainBase : Nat) (lowerLabel upperLabel : SecurityLabel)
-    (hLabels : lowerLabel ≠ upperLabel) :
+    (upperDomainBase lowerWitness : Nat) (lowerLabel upperLabel : SecurityLabel)
+    (hLabels : lowerLabel ≠ upperLabel)
+    (hLowerAdmissible : separationWitnessAdmissible ⟨lowerWitness⟩ = true)
+    (hLowerBelow : lowerWitness < separationBoundary upperDomainBase) :
     isInsecureDefaultContext
-        (indexPartitionedLabelingContext upperDomainBase lowerLabel upperLabel hLabels) = false :=
+        (indexPartitionedLabelingContext upperDomainBase lowerWitness lowerLabel upperLabel
+          hLabels hLowerAdmissible hLowerBelow) = false :=
   isInsecureDefaultContext_deploymentLabelingContext _
 
 /-- WS-RR RR5.1: every index-partitioned context labels an index below the
@@ -1046,21 +1082,25 @@ theorem isInsecureDefaultContext_indexPartitionedLabelingContext
     entities to keep the label they had before the labeling gained a declared
     separation. -/
 theorem indexPartitionedLabelingContext_threadLabel_below
-    (upperDomainBase : Nat) (lowerLabel upperLabel : SecurityLabel)
-    (hLabels : lowerLabel ≠ upperLabel) (tid : SeLe4n.ThreadId)
-    (h : tid.toNat < separationBoundary upperDomainBase) :
-    (indexPartitionedLabelingContext upperDomainBase lowerLabel upperLabel hLabels).threadLabelOf
-      tid = lowerLabel := by
+    (upperDomainBase lowerWitness : Nat) (lowerLabel upperLabel : SecurityLabel)
+    (hLabels : lowerLabel ≠ upperLabel)
+    (hLowerAdmissible : separationWitnessAdmissible ⟨lowerWitness⟩ = true)
+    (hLowerBelow : lowerWitness < separationBoundary upperDomainBase)
+    (tid : SeLe4n.ThreadId) (h : tid.toNat < separationBoundary upperDomainBase) :
+    (indexPartitionedLabelingContext upperDomainBase lowerWitness lowerLabel upperLabel
+        hLabels hLowerAdmissible hLowerBelow).threadLabelOf tid = lowerLabel := by
   simp only [indexPartitionedLabelingContext, deploymentLabelingContext,
     indexPartitionedDeploymentLabeling, indexPartitionedLabel, if_pos h]
 
 /-- WS-RR RR5.1: the companion of the lemma above for the upper domain. -/
 theorem indexPartitionedLabelingContext_threadLabel_above
-    (upperDomainBase : Nat) (lowerLabel upperLabel : SecurityLabel)
-    (hLabels : lowerLabel ≠ upperLabel) (tid : SeLe4n.ThreadId)
-    (h : separationBoundary upperDomainBase ≤ tid.toNat) :
-    (indexPartitionedLabelingContext upperDomainBase lowerLabel upperLabel hLabels).threadLabelOf
-      tid = upperLabel := by
+    (upperDomainBase lowerWitness : Nat) (lowerLabel upperLabel : SecurityLabel)
+    (hLabels : lowerLabel ≠ upperLabel)
+    (hLowerAdmissible : separationWitnessAdmissible ⟨lowerWitness⟩ = true)
+    (hLowerBelow : lowerWitness < separationBoundary upperDomainBase)
+    (tid : SeLe4n.ThreadId) (h : separationBoundary upperDomainBase ≤ tid.toNat) :
+    (indexPartitionedLabelingContext upperDomainBase lowerWitness lowerLabel upperLabel
+        hLabels hLowerAdmissible hLowerBelow).threadLabelOf tid = upperLabel := by
   simp only [indexPartitionedLabelingContext, deploymentLabelingContext,
     indexPartitionedDeploymentLabeling, indexPartitionedLabel,
     if_neg (Nat.not_lt.mpr h)]
@@ -1074,27 +1114,37 @@ theorem indexPartitionedLabelingContext_threadLabel_above
     `publicLabel` / `kernelTrusted` split, under which every low entity may still
     write into every high one.
 
-    `upperDomainBase` is the one number a deployment must choose — the entity
-    index at which its untrusted domain begins.  Everything below it (the boot
-    system's threads, objects, endpoints and services) is `lowTrusted`;
-    everything from it upward is `highUntrusted`.
+    A deployment chooses two numbers.  `upperDomainBase` is the entity index at
+    which its untrusted domain begins: everything below it (the boot system's
+    threads, objects, endpoints and services) is `lowTrusted`; everything from
+    it upward is `highUntrusted`.  `lowerWitness` is the boot-domain thread the
+    labeling declares as its separation witness — an installed thread the boot
+    state must contain (`Platform.Boot.declaredWitnessesInstalled`), admissible
+    and below the boundary by the two obligations, and held apart from the
+    deployment's boot VSpace root by the platform contract
+    (`PlatformBinding.witnessesOffBootVSpaceRoot`; PR #889 review round 5 — the
+    family's old fixed witness `1` *was* that root's id).
 
     This is what the hardware boot installs, and the claim is a definition
     rather than a sentence: the Raspberry Pi 5 binding's `deploymentLabeling`
-    is `confinedDeploymentLabeling rpi5UpperDomainBase`, so its labeling is
-    `confinedLabelingContext rpi5UpperDomainBase`
+    is `confinedDeploymentLabeling rpi5UpperDomainBase rpi5LowerWitnessIndex …`,
+    so its labeling is
+    `confinedLabelingContext rpi5UpperDomainBase rpi5LowerWitnessIndex …`
     (`Platform.RPi5.rpi5_deploymentLabeling`, by `rfl`), and
     `Platform.FFI.bootAndInitialisePlatform` boots under whatever labeling the
     binding carries.  It is a *deployment* choice in the sense that the boundary
-    is configurable, and a *kernel* guarantee in the sense that whatever
-    boundary is chosen, the resulting context is `LabelingContextValid` and
+    and the witness are configurable, and a *kernel* guarantee in the sense that
+    whatever is chosen, the resulting context is `LabelingContextValid` and
     admitted by the fail-closed guard — which is why `PlatformBinding` stores
     the `DeploymentLabeling` source and both facts are theorems of every
     binding (`PlatformBinding.labeling_admitted`,
     `PlatformBinding.labeling_valid`) rather than proofs it demands. -/
-def confinedLabelingContext (upperDomainBase : Nat) : LabelingContext :=
-  indexPartitionedLabelingContext upperDomainBase
+def confinedLabelingContext (upperDomainBase lowerWitness : Nat)
+    (hLowerAdmissible : separationWitnessAdmissible ⟨lowerWitness⟩ = true)
+    (hLowerBelow : lowerWitness < separationBoundary upperDomainBase) : LabelingContext :=
+  indexPartitionedLabelingContext upperDomainBase lowerWitness
     SecurityLabel.lowTrusted SecurityLabel.highUntrusted (by decide)
+    hLowerAdmissible hLowerBelow
 
 /-- WS-RR RR5.1 (PR #889 review): the production labeling as a
     `DeploymentLabeling` — the **source** `confinedLabelingContext` is built from.
@@ -1107,21 +1157,33 @@ def confinedLabelingContext (upperDomainBase : Nat) : LabelingContext :=
     labels disagree, and the non-interference theorems would silently stop
     applying to that deployment.  Storing the source makes coherence structural
     for every binding, present and future. -/
-def confinedDeploymentLabeling (upperDomainBase : Nat) : DeploymentLabeling :=
-  indexPartitionedDeploymentLabeling upperDomainBase
+def confinedDeploymentLabeling (upperDomainBase lowerWitness : Nat)
+    (hLowerAdmissible : separationWitnessAdmissible ⟨lowerWitness⟩ = true)
+    (hLowerBelow : lowerWitness < separationBoundary upperDomainBase) : DeploymentLabeling :=
+  indexPartitionedDeploymentLabeling upperDomainBase lowerWitness
     SecurityLabel.lowTrusted SecurityLabel.highUntrusted (by decide)
+    hLowerAdmissible hLowerBelow
 
 /-- WS-RR RR5.1: the production context is exactly the constructor's output on
     its source — definitional, so a binding storing the source yields the same
     context the theorems below are stated about. -/
-theorem confinedLabelingContext_eq_deploymentLabelingContext (upperDomainBase : Nat) :
-    confinedLabelingContext upperDomainBase =
-      deploymentLabelingContext (confinedDeploymentLabeling upperDomainBase) := rfl
+theorem confinedLabelingContext_eq_deploymentLabelingContext
+    (upperDomainBase lowerWitness : Nat)
+    (hLowerAdmissible : separationWitnessAdmissible ⟨lowerWitness⟩ = true)
+    (hLowerBelow : lowerWitness < separationBoundary upperDomainBase) :
+    confinedLabelingContext upperDomainBase lowerWitness hLowerAdmissible hLowerBelow =
+      deploymentLabelingContext
+        (confinedDeploymentLabeling upperDomainBase lowerWitness hLowerAdmissible hLowerBelow) :=
+  rfl
 
 /-- WS-RR RR5.5: the production context is admitted by the guard. -/
-theorem isInsecureDefaultContext_confinedLabelingContext (upperDomainBase : Nat) :
-    isInsecureDefaultContext (confinedLabelingContext upperDomainBase) = false :=
-  isInsecureDefaultContext_indexPartitionedLabelingContext _ _ _ _
+theorem isInsecureDefaultContext_confinedLabelingContext
+    (upperDomainBase lowerWitness : Nat)
+    (hLowerAdmissible : separationWitnessAdmissible ⟨lowerWitness⟩ = true)
+    (hLowerBelow : lowerWitness < separationBoundary upperDomainBase) :
+    isInsecureDefaultContext
+      (confinedLabelingContext upperDomainBase lowerWitness hLowerAdmissible hLowerBelow) = false :=
+  isInsecureDefaultContext_indexPartitionedLabelingContext _ _ _ _ _ _ _
 
 /-- WS-RR RR5.1: the production context genuinely confines — an entity below the
     boundary and one at or above it cannot reach each other in *either*
@@ -1129,16 +1191,27 @@ theorem isInsecureDefaultContext_confinedLabelingContext (upperDomainBase : Nat)
     had before: `testLabelingContext`'s two "domains" are comparable, so its
     separation restricts nothing. -/
 theorem confinedLabelingContext_confines
-    (upperDomainBase : Nat) (tidLo tidHi : SeLe4n.ThreadId)
+    (upperDomainBase lowerWitness : Nat)
+    (hLowerAdmissible : separationWitnessAdmissible ⟨lowerWitness⟩ = true)
+    (hLowerBelow : lowerWitness < separationBoundary upperDomainBase)
+    (tidLo tidHi : SeLe4n.ThreadId)
     (hLo : tidLo.toNat < separationBoundary upperDomainBase)
     (hHi : separationBoundary upperDomainBase ≤ tidHi.toNat) :
-    securityFlowsTo ((confinedLabelingContext upperDomainBase).threadLabelOf tidLo)
-        ((confinedLabelingContext upperDomainBase).threadLabelOf tidHi) = false ∧
-    securityFlowsTo ((confinedLabelingContext upperDomainBase).threadLabelOf tidHi)
-        ((confinedLabelingContext upperDomainBase).threadLabelOf tidLo) = false := by
+    securityFlowsTo
+        (LabelingContext.threadLabelOf
+          (confinedLabelingContext upperDomainBase lowerWitness hLowerAdmissible hLowerBelow) tidLo)
+        (LabelingContext.threadLabelOf
+          (confinedLabelingContext upperDomainBase lowerWitness hLowerAdmissible hLowerBelow) tidHi)
+      = false ∧
+    securityFlowsTo
+        (LabelingContext.threadLabelOf
+          (confinedLabelingContext upperDomainBase lowerWitness hLowerAdmissible hLowerBelow) tidHi)
+        (LabelingContext.threadLabelOf
+          (confinedLabelingContext upperDomainBase lowerWitness hLowerAdmissible hLowerBelow) tidLo)
+      = false := by
   rw [confinedLabelingContext,
-    indexPartitionedLabelingContext_threadLabel_below _ _ _ _ tidLo hLo,
-    indexPartitionedLabelingContext_threadLabel_above _ _ _ _ tidHi hHi]
+    indexPartitionedLabelingContext_threadLabel_below _ _ _ _ _ _ _ tidLo hLo,
+    indexPartitionedLabelingContext_threadLabel_above _ _ _ _ _ _ _ tidHi hHi]
   exact lowTrusted_highUntrusted_mutually_isolated
 
 /-- WS-RR RR5.1: the index every entity of the simulation harness and the test
@@ -1149,6 +1222,25 @@ theorem confinedLabelingContext_confines
     room for fixtures that allocate above idle. -/
 def harnessSeparationBoundary : Nat := 0x10_0000
 
+/-- PR #889 review round 5: the harness labeling's lower separation witness.
+
+    `1` — the first non-sentinel index, and the family's old fixed witness — is
+    the simulation boot VSpace root's object id (`simBootVSpaceRootObjId`, like
+    `rpi5BootVSpaceRootObjId`, is `ObjId.ofNat 1`), so a harness boot carrying
+    that root could never install a thread there and was refused for an
+    uninstalled witness.  `2` is the first index the root leaves free; the
+    simulation bindings discharge `PlatformBinding.witnessesOffBootVSpaceRoot`
+    on it by evaluation, and the witnessed fixtures install a TCB here. -/
+def harnessLowerWitnessIndex : Nat := 2
+
+/-- PR #889 review round 5: the harness witness is admissible. -/
+theorem harnessLowerWitnessIndex_admissible :
+    separationWitnessAdmissible ⟨harnessLowerWitnessIndex⟩ = true := by decide
+
+/-- PR #889 review round 5: the harness witness lies in the lower domain. -/
+theorem harnessLowerWitnessIndex_below_boundary :
+    harnessLowerWitnessIndex < separationBoundary harnessSeparationBoundary := by decide
+
 /-- WS-RR RR5.4: the labeling the simulation harness and the test suites run
     the **checked** entries under.
 
@@ -1157,7 +1249,7 @@ def harnessSeparationBoundary : Nat := 0x10_0000
     `publicLabel`.  Every fixture entity is therefore `publicLabel` — exactly the
     label `testLabelingContext` gave them, so no fixture's flow decision changes
     — while the labeling declares, and the guard verifies, a real separation
-    between thread `1` and the thread at the boundary.
+    between thread `harnessLowerWitnessIndex` and the thread at the boundary.
 
     It exists so the checked entries are exercised under a labeling the
     fail-closed guard *admits*, which is the thing `testLabelingContext` used to
@@ -1166,15 +1258,17 @@ def harnessSeparationBoundary : Nat := 0x10_0000
     their own separated labelings for that, and `confinedLabelingContext` is the
     production shape. -/
 def harnessLabelingContext : LabelingContext :=
-  indexPartitionedLabelingContext harnessSeparationBoundary
+  indexPartitionedLabelingContext harnessSeparationBoundary harnessLowerWitnessIndex
     SecurityLabel.publicLabel SecurityLabel.kernelTrusted (by decide)
+    harnessLowerWitnessIndex_admissible harnessLowerWitnessIndex_below_boundary
 
 /-- WS-RR RR5.4 (PR #889 review): the harness labeling's `DeploymentLabeling`
     source — what the simulation bindings carry (see
     `confinedDeploymentLabeling` for why a binding stores the source). -/
 def harnessDeploymentLabeling : DeploymentLabeling :=
-  indexPartitionedDeploymentLabeling harnessSeparationBoundary
+  indexPartitionedDeploymentLabeling harnessSeparationBoundary harnessLowerWitnessIndex
     SecurityLabel.publicLabel SecurityLabel.kernelTrusted (by decide)
+    harnessLowerWitnessIndex_admissible harnessLowerWitnessIndex_below_boundary
 
 /-- WS-RR RR5.4: the harness context is the constructor's output on its source. -/
 theorem harnessLabelingContext_eq_deploymentLabelingContext :
@@ -1183,7 +1277,15 @@ theorem harnessLabelingContext_eq_deploymentLabelingContext :
 /-- WS-RR RR5.4: the harness labeling is admitted by the guard. -/
 theorem isInsecureDefaultContext_harnessLabelingContext :
     isInsecureDefaultContext harnessLabelingContext = false :=
-  isInsecureDefaultContext_indexPartitionedLabelingContext _ _ _ _
+  isInsecureDefaultContext_indexPartitionedLabelingContext _ _ _ _ _ _ _
+
+/-- PR #889 review round 5: the harness labeling's witnesses, pinned — the
+    declared lower witness and the harness boundary (which lies past the idle
+    range, so the lift is the identity).  What the witnessed fixtures install. -/
+theorem harnessLabelingContext_separatedThreads :
+    harnessLabelingContext.separatedThreads =
+      some (⟨harnessLowerWitnessIndex⟩, ⟨harnessSeparationBoundary⟩) := by
+  decide
 
 /-- WS-RR RR5.4: the *uniform* fixture labeling — every index a fixture uses
     carries `insideLabel`, and the declared separation lives above
@@ -1199,14 +1301,16 @@ theorem isInsecureDefaultContext_harnessLabelingContext :
     `harnessLabelingContext` is the `publicLabel` member of this family. -/
 def uniformFixtureLabelingContext (insideLabel outsideLabel : SecurityLabel)
     (hLabels : insideLabel ≠ outsideLabel) : LabelingContext :=
-  indexPartitionedLabelingContext harnessSeparationBoundary insideLabel outsideLabel hLabels
+  indexPartitionedLabelingContext harnessSeparationBoundary harnessLowerWitnessIndex
+    insideLabel outsideLabel hLabels
+    harnessLowerWitnessIndex_admissible harnessLowerWitnessIndex_below_boundary
 
 /-- WS-RR RR5.4: the uniform fixture labeling is admitted by the guard. -/
 theorem isInsecureDefaultContext_uniformFixtureLabelingContext
     (insideLabel outsideLabel : SecurityLabel) (hLabels : insideLabel ≠ outsideLabel) :
     isInsecureDefaultContext (uniformFixtureLabelingContext insideLabel outsideLabel hLabels)
       = false :=
-  isInsecureDefaultContext_indexPartitionedLabelingContext _ _ _ _
+  isInsecureDefaultContext_indexPartitionedLabelingContext _ _ _ _ _ _ _
 
 /-- WS-RR RR5.4: every entity index the fixtures use carries `publicLabel` under
     the harness labeling — the fact that keeps every pre-RR5 fixture flow
@@ -1217,7 +1321,7 @@ theorem harnessLabelingContext_threadLabel_public
   have hb : tid.toNat < separationBoundary harnessSeparationBoundary := by
     simp only [separationBoundary, harnessSeparationBoundary] at *
     omega
-  exact indexPartitionedLabelingContext_threadLabel_below _ _ _ _ tid hb
+  exact indexPartitionedLabelingContext_threadLabel_below _ _ _ _ _ _ _ tid hb
 
 theorem confidentialityFlowsTo_refl (c : Confidentiality) :
     confidentialityFlowsTo c c = true := by

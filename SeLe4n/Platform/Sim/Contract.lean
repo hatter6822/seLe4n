@@ -186,6 +186,8 @@ instance simPlatformBinding : SeLe4n.Platform.PlatformBinding SimPlatform where
   -- minimal topology) can use `coreCount := 1` in its own binding.
   coreCount := 4
   coreCountPos := by decide
+  -- PR #889 review round 5: no binding declares more cores than the model has.
+  coreCountLe := by decide
   bootCoreId := ⟨0, by decide⟩
   sharingDomain := .inner
   -- WS-RR RR5.1: the harness labeling's source — every fixture id in one
@@ -194,6 +196,10 @@ instance simPlatformBinding : SeLe4n.Platform.PlatformBinding SimPlatform where
   -- (and that is `LabelingContextValid`, by construction) without any
   -- fixture's flow decision changing.
   deploymentLabeling := SeLe4n.Kernel.harnessDeploymentLabeling
+  -- PR #889 review round 5: the harness witnesses (`harnessLowerWitnessIndex`,
+  -- the harness boundary) are not the simulation boot root's id
+  -- (`simBootVSpaceRootObjId`, `ObjId.ofNat 1`) — decided by evaluation.
+  witnessesOffBootVSpaceRoot := by decide
 
 /-- S5-D: Marker type for the simulation restrictive (substantive) platform. -/
 structure SimRestrictivePlatform where
@@ -223,10 +229,16 @@ instance simRestrictivePlatformBinding :
   -- WS-SM SM0.G: same 4-core topology as the permissive sim binding.
   coreCount := 4
   coreCountPos := by decide
+  -- PR #889 review round 5: no binding declares more cores than the model has.
+  coreCountLe := by decide
   bootCoreId := ⟨0, by decide⟩
   sharingDomain := .inner
   -- WS-RR RR5.1: same labeling as the permissive sim binding.
   deploymentLabeling := SeLe4n.Kernel.harnessDeploymentLabeling
+  -- PR #889 review round 5: the harness witnesses (`harnessLowerWitnessIndex`,
+  -- the harness boundary) are not the simulation boot root's id
+  -- (`simBootVSpaceRootObjId`, `ObjId.ofNat 1`) — decided by evaluation.
+  witnessesOffBootVSpaceRoot := by decide
 
 /-- **WS-SM SM4.A.5**: Marker type for the single-core simulation
     platform. -/
@@ -262,10 +274,16 @@ instance simSingleCorePlatformBinding :
   -- valid `Fin 1` value; `coreCountPos` discharges `1 > 0`.
   coreCount := 1
   coreCountPos := by decide
+  -- PR #889 review round 5: no binding declares more cores than the model has.
+  coreCountLe := by decide
   bootCoreId := ⟨0, by decide⟩
   sharingDomain := .inner
   -- WS-RR RR5.1: same labeling as the permissive sim binding.
   deploymentLabeling := SeLe4n.Kernel.harnessDeploymentLabeling
+  -- PR #889 review round 5: the harness witnesses (`harnessLowerWitnessIndex`,
+  -- the harness boundary) are not the simulation boot root's id
+  -- (`simBootVSpaceRootObjId`, `ObjId.ofNat 1`) — decided by evaluation.
+  witnessesOffBootVSpaceRoot := by decide
 
 /-- U8-A/U-L16: Compile-time consistency theorem proving that the
     `simSubstantiveMemoryMap` used in `RuntimeContract.lean` is identical to

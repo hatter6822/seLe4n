@@ -62,13 +62,21 @@ class UnterminatedComment(Exception):
     """
 
 
-def strip(src: str) -> str:
+def strip(src: str, blank_strings: bool = False) -> str:
     """Blank Lean comments, preserving length, line count and column offsets.
 
     Handles `--` line comments, `/- -/` block comments *with nesting* (so `/--`
     docstrings, which are block comments, close correctly even when they quote
     another comment), string literals with backslash escapes, and char
     literals.
+
+    With `blank_strings`, the *contents* of string literals are blanked too —
+    the delimiting quotes stay, so a scanner asking "does this declaration call
+    `f`" cannot be satisfied by `IO.println "f"` (PR #889 review round 5: the
+    boot-entry gate asked exactly that and a string literal answered it).  The
+    default keeps string contents, because some gates read them — a `.file(…)`
+    path, an `#[export_name = "…"]` — and an anchor over such a string must
+    keep seeing it.
 
     Char literals need the identifier check: `'` is both a char delimiter and a
     legal identifier suffix, so `foo'` must not open one.  Getting this wrong
@@ -115,10 +123,16 @@ def strip(src: str) -> str:
 
         if in_string:
             if c == "\\":
+                if blank_strings:
+                    blank(i)
+                    if i + 1 < n:
+                        blank(i + 1)
                 i += 2
                 continue
             if c == '"':
                 in_string = False
+            elif blank_strings:
+                blank(i)
             i += 1
             continue
 
@@ -170,6 +184,13 @@ def strip(src: str) -> str:
     return "".join(out)
 
 
+def code_no_strings(src: str) -> str:
+    """The comment-free view with string contents blanked as well — for a
+    scanner whose question is about identifiers and calls, never about text.
+    Named after `rust_code_view.code_no_strings`, its Rust counterpart."""
+    return strip(src, blank_strings=True)
+
+
 # ---------------------------------------------------------------------------
 # The witness suite.
 #
@@ -218,8 +239,39 @@ _PRESERVED: list[tuple[str, str]] = [
 ]
 
 
+# PR #889 review round 5: what `blank_strings` must and must not do.  Each
+# case is (name, source, code that must survive, token that must not).
+# Blanking is length-preserving, so a blanked literal normalises to `" "`.
+_STRING_BLANKED: list[tuple[str, str, str, str]] = [
+    ("a string literal's contents are blanked, its quotes kept",
+     'def f := IO.println "bootAndInitialisePlatform"\n',
+     'def f := IO.println " "', "bootAndInitialisePlatform"),
+    ("an escaped quote inside the string is blanked with the rest",
+     'def f := "a \\" sorry"\n', 'def f := " "', "sorry"),
+    ("a char literal is not a string and survives",
+     "def q := '\"'\ndef g := \"sorry\"\n", "def q := '\"' def g := \" \"", "sorry"),
+    ("a comment after a blanked string is still a comment",
+     'def f := "sorry" -- sorry\n', 'def f := " "', "sorry"),
+]
+
+
 def _self_test() -> int:
     failures = 0
+    for name, src, want_code, token in _STRING_BLANKED:
+        got = code_no_strings(src)
+        if " ".join(got.split()) != want_code:
+            failures += 1
+            print(f"[lean-code-view] FAIL {name}: code\n  want {want_code!r}\n"
+                  f"  got  {' '.join(got.split())!r}")
+        if token in got:
+            failures += 1
+            print(f"[lean-code-view] FAIL {name}: string token survived blanking")
+        if len(got) != len(src):
+            failures += 1
+            print(f"[lean-code-view] FAIL {name}: geometry changed under string blanking")
+        if token not in strip(src) and "--" not in src:
+            failures += 1
+            print(f"[lean-code-view] FAIL {name}: string contents blanked by default")
     for name, src, want_code in _CASES:
         got = strip(src)
         if " ".join(got.split()) != want_code:

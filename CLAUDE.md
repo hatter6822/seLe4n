@@ -1291,10 +1291,12 @@ code may assume:
   obligations each one carries (PR #889 review: the guard decides
   non-triviality alone, and a stored bare context it admits could still label
   a thread and its own TCB object incompatibly).  The RPi5 binding's is
-  `confinedDeploymentLabeling rpi5UpperDomainBase`, so its labeling is
-  `confinedLabelingContext rpi5UpperDomainBase` (`rpi5_deploymentLabeling`,
-  by `rfl`; the boundary clears the boot VSpace root and the idle range), the
-  simulation bindings' is `harnessDeploymentLabeling`, and
+  `confinedDeploymentLabeling rpi5UpperDomainBase rpi5LowerWitnessIndex …`, so
+  its labeling is
+  `confinedLabelingContext rpi5UpperDomainBase rpi5LowerWitnessIndex …`
+  (`rpi5_deploymentLabeling`, by `rfl`; the boundary clears the boot VSpace
+  root and the idle range), the simulation bindings' is
+  `harnessDeploymentLabeling`, and
   `Platform.FFI.bootAndInitialisePlatform` boots under the binding's labeling —
   provably the checked idle boot on the binding's declared cores, then the
   witness check, then the two installs, with the labeling-refusal arm
@@ -1307,6 +1309,21 @@ code may assume:
   is refused before anything is committed (`declaredWitnessesInstalled`,
   `uninstalledSeparationWitnessBootError`).  A deployment therefore installs
   the two threads its labeling names as separated, or does not boot.
+  **The lower witness is the deployment's parameter, held off the boot VSpace
+  root by the binding** (PR #889 review round 5): the family fixed it at
+  thread `1`, which is the boot VSpace root's object id on every binding
+  (`rpi5BootVSpaceRootObjId`, `simBootVSpaceRootObjId`), so a witness there
+  could never be installed and every boot carrying the binding's own root was
+  refused.  `indexPartitionedDeploymentLabeling` / `confinedLabelingContext`
+  take `lowerWitness` with its admissibility and its position below the
+  boundary as obligations; the RPi5 binding declares `rpi5LowerWitnessIndex`
+  (`2`) and the harness `harnessLowerWitnessIndex` (`2`); and
+  `PlatformBinding.witnessesOffBootVSpaceRoot` — neither declared witness is
+  the binding's root's id — is a class obligation every binding discharges by
+  evaluation, because the root is not visible where the labeling is built
+  (`witnesses_ne_bootVSpaceRoot` is its Prop form).  A new binding chooses its
+  witness against its own reserved ids; new code must not assume thread `1`
+  is a witness.
 
 - **The boot state enqueues each core's idle thread; it does not dispatch it**
   (WS-RR RR5.11–RR5.14).  `bootAndInitialiseFromPlatform` runs
@@ -1376,7 +1393,17 @@ code may assume:
   thread rather than four; the RPi5 binding declares every model core
   (`rpi5_cores_eq_allCores`), so its boot is the all-cores form by `rfl`
   (`bootAndInitialisePlatform_rpi5_all_cores`) and every all-cores boot
-  theorem is a theorem of the hardware boot.
+  theorem is a theorem of the hardware boot.  **No binding declares more cores
+  than the model has** (PR #889 review round 5): `PlatformBinding.coreCountLe :
+  coreCount ≤ numCores` is a class obligation, so `declaredCores` — the prefix
+  `allCores.take coreCount` — has exactly `coreCount` members
+  (`declaredCores_length`), membership is `c.val < coreCount`
+  (`mem_declaredCores_iff`), and the boot core embeds in the model
+  (`bootCoreModelId`).  **The idle-slot reservation is model-wide**: an
+  undeclared core's slot is reserved and *absent* after the boot
+  (`bootFromPlatformCheckedWithIdleThreadsFor_undeclared_idle_absent`), never
+  free — the ids belong to the `numCores`-wide model, and the capability
+  chokepoint decides on the kernel state alone, which carries no binding.
   `bootFromPlatformWithIdleThreads` remains as the SM4.G install-and-dispatch
   wrapper and is **not** the production path.
 
@@ -1602,11 +1629,18 @@ code may assume:
   unresolved spelling drops out of both and the gate passed (PR #889 review).
   The gate also holds the boot entry to the checked platform boot from the day
   it exists: whichever Lean declaration carries `@[export lean_kernel_main]`
-  must call `bootAndInitialisePlatform` in its own body, over the comment-free
-  view (`boot_entry_binding_failures`, round 3) — vacuous until SM10.1 writes
-  the entry, decisive after, so the idle-thread, labeling and reservation
-  guarantees cannot be bypassed by an entry that boots through
-  `bootFromPlatform` directly.
+  must **execute** `bootAndInitialisePlatform` as a top-level statement of its
+  body (bound with `←`, a `match` scrutinee, a bare call or `discard`, with no
+  `return`/`throw` above it) and reference **no other kernel-state installer**
+  — the installers derived by closing "names `kernelStateRef` /
+  `kernelLabelingContextRef` for anything but `.get`" under reference across
+  the Lean tree, pinned against the real tree — over the comment-free,
+  string-free view (`boot_entry_binding_failures`, `kernel_state_writers`;
+  round 3 accepted an identifier occurrence, which a string literal, an unrun
+  `let … :=` binding, a dead branch and a call executed then routed around all
+  satisfy — round 5) — vacuous until SM10.1 writes the entry, decisive after,
+  so the idle-thread, labeling and reservation guarantees cannot be bypassed
+  by an entry that boots through `bootFromPlatform` directly.
 - **The WS-SM theorem total is measured, not summed — and it counts
   propositions, not registrations.**
   `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean` registers one entry per
