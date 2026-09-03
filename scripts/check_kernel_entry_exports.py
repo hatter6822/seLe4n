@@ -599,12 +599,18 @@ def do_block_statements(decl: str, body_at: int) -> list[str] | None:
         indent = len(line) - len(line.lstrip())
         if base is None:
             base = indent
+        # PR #889 review round 13: a continuation keeps its indentation
+        # **relative to the block**.  Stripping it flattened the statement into
+        # a list of sibling lines, and a nested `match`'s arms then read as the
+        # outer match's own — which is how a wildcard-only boot-result match
+        # with a nested `.error` arm below it passed as a handled failure.
+        # Depth is the only thing distinguishing the two, so it is preserved.
         if line.lstrip().startswith("|") and statements:
-            statements[-1][1] += "\n" + line.strip()
+            statements[-1][1] += "\n" + (line[base:] if indent >= base else line.strip())
         elif indent == base:
             statements.append([indent, line.strip()])
         elif indent > base and statements:
-            statements[-1][1] += "\n" + line.strip()
+            statements[-1][1] += "\n" + line[base:]
         else:
             break
     return [text for _, text in statements]
@@ -836,14 +842,38 @@ def lean_match_arms(statement: str) -> list[str]:
     is what round 9 did — reads the *following* arms as part of it, so the
     valid ordering `| .error _ => pure ()  | .ok _ => ffiFatalHalt` reported a
     halting error arm while a failed boot returned to the Rust caller.
+
+    PR #889 review round 13: arms are those at the match's **own column**.  A
+    `|` deeper than the first one is an arm of a `match` nested inside the arm
+    it sits in, and round 10 read it as a sibling — so a boot-result match with
+    a single wildcard arm, whose body conditionally evaluated another `Except`,
+    borrowed that inner match's `.error => halt` as its own failure handler
+    while a failed boot took the wildcard and returned.  Columns are what
+    distinguish the two, so `do_block_statements` now preserves them.
     """
     arms: list[str] = []
+    column: int | None = None
     for line in statement.split("\n"):
         text = line.strip()
+        if not text:
+            continue
+        at = len(line) - len(line.lstrip())
         if text.startswith("|"):
-            arms.append(text)
-        elif arms:
-            arms[-1] += "\n" + text
+            if column is None:
+                column = at
+            if at == column:
+                arms.append(text)
+                continue
+            # Deeper: an arm of a `match` *inside* this arm's body.  It belongs
+            # to the arm it sits in, never beside it.  Shallower: not this
+            # match's at all, and the scanner does not guess — it is dropped,
+            # which is the fail-closed direction (an `.error` arm this loses is
+            # an `.error` arm the caller will not find).
+            if at > column and arms:
+                arms[-1] += "\n" + line
+            continue
+        if arms:
+            arms[-1] += "\n" + line
     return arms
 
 
@@ -885,32 +915,62 @@ def boot_entry_arm_halts_unconditionally(arm: str, entry: BootEntry) -> str | No
     A token inside the arm says nothing about what the arm does: the arm's
     outcome is its last action, and a conditional is not a halt.
 
-    So the arm's body — the text after `=>` — is split into lines, and its last
-    non-empty line must *begin* with a call.  A line beginning with `if`,
-    `match`, `unless`, `when`, `do` or any other construct is refused, because
-    the scanner cannot see which way it goes; that is the fail-closed direction
-    on the entry that decides whether the kernel exists.
-
     PR #889 review round 12: and the call is **resolved**.  Round 11 spelled
     the four halt names into the pattern behind an arbitrary qualifier, so
     `Fake.ffiFatalHalt` — a name in some other namespace — and a local
     `let ffiFatalHalt : BaseIO Unit := pure ()` both read as the fail-closed
     stop.  Each keeps the token; neither parks the PE.
+
+    PR #889 review round 13: and the terminal line must be the body's own
+    **top-level** statement.  Round 11's "last non-empty line" was the arm's
+    outcome only while the conditional stayed on one line; written out —
+
+        | .error _ =>
+          if cond then
+            pure ()
+          else
+            Concurrency.fatalHaltAll
+
+    — the last line *is* a halt call and the arm halts only when `cond` is
+    false.  The body's top level is its minimum column; a last line deeper than
+    that is nested inside something, and this scanner cannot see which way that
+    something goes.  A `do` on the `=>` line opens the block below it; any
+    other body that begins on the `=>` line and continues below is refused as
+    unreadable rather than guessed at.
     """
     _, sep, body = arm.partition("=>")
     if not sep:
         return "the arm has no `=>` body"
-    lines = [line.strip() for line in body.split("\n") if line.strip()]
-    if not lines:
-        return "the arm's body is empty"
-    found = BOOT_ENTRY_HALT_CALL.match(lines[-1])
+    inline, _, below = body.partition("\n")
+    lines = [
+        (len(line) - len(line.lstrip()), line.strip())
+        for line in below.split("\n")
+        if line.strip()
+    ]
+    if inline.strip() and inline.strip() != "do":
+        if lines:
+            return (
+                f"its body begins on the `=>` line ({inline.strip()!r}) and continues below — "
+                f"a shape this scanner will not read as a sequence of statements"
+            )
+        terminal = inline.strip()
+    else:
+        if not lines:
+            return "the arm's body is empty"
+        top = min(column for column, _ in lines)
+        column, terminal = lines[-1]
+        if column != top:
+            return (
+                f"its last line ({terminal!r}) is nested inside another construct, so it is "
+                f"not what the arm does — the halt must be the body's own terminal statement"
+            )
+    found = BOOT_ENTRY_HALT_CALL.match(terminal)
     if found is None:
-        return f"its last line ({lines[-1]!r}) does not begin with a call"
+        return f"its terminal statement ({terminal!r}) does not begin with a call"
     return reference_failure(
         found.group("head"), entry.decl, entry.body_at, entry.module, entry.index,
         set(entry.halts), "a fail-closed halt",
     )
-
 def extern_declarations_in(text: str, where: str) -> set[str]:
     """The **linker symbols** declared inside an `extern "C" { … }` block.
 
@@ -1685,6 +1745,33 @@ def self_test() -> int:
                 "do\n  match ← bootAndInitialiseRPi5 cfg with\n"
                 "  | .ok _ => pure ()\n  | .error _ =>\n"
                 "    let stop := Platform.FFI.ffiFatalHalt\n    pure ()", False)
+    # Round 13: a nested `match` is not a sibling.  Every one of these keeps a
+    # `| .error _ => <halt>` line in the declaration, at an accepted position
+    # for round 10's arm parser, and breaks the relation that the arm belongs
+    # to the boot-result match — or that the halt is what the arm *does*.
+    check_entry("a nested `.error` arm stands in for a wildcard-only handler (round 13)",
+                "do\n  match \u2190 bootAndInitialiseRPi5 cfg with\n  | _ =>\n"
+                "    if cond then\n      match other with\n"
+                "      | .error _ => Platform.FFI.ffiFatalHaltAll\n"
+                "      | .ok _ => pure ()\n    else\n      pure ()", False)
+    check_entry("a nested `.error` arm halts inside `.ok` while the real one returns (round 13)",
+                "do\n  match \u2190 bootAndInitialiseRPi5 cfg with\n  | .ok _ =>\n"
+                "    match other with\n    | .error _ => Platform.FFI.ffiFatalHaltAll\n"
+                "    | .ok _ => pure ()\n  | .error _ => pure ()", False)
+    check_entry("the `.error` arm's halt is nested in a multi-line conditional (round 13)",
+                "do\n  match \u2190 bootAndInitialiseRPi5 cfg with\n  | .ok _ => pure ()\n"
+                "  | .error _ =>\n    if cond then\n      pure ()\n"
+                "    else\n      Concurrency.fatalHaltAll", False)
+    # ...and the two shapes the column rule must NOT refuse: a nested match
+    # whose own `.error` returns is no business of the outer arm (round 10's
+    # flattening rejected this one), and `=> do` opens the block below it.
+    check_entry("a nested match inside `.ok` does not disqualify a halting `.error` (round 13)",
+                "do\n  match \u2190 bootAndInitialiseRPi5 cfg with\n  | .ok _ =>\n"
+                "    match other with\n    | .error _ => pure ()\n    | .ok _ => pure ()\n"
+                "  | .error _ => Platform.FFI.ffiFatalHaltAll", True)
+    check_entry("`=> do` opens the arm's block, whose terminal statement halts (round 13)",
+                "do\n  match \u2190 bootAndInitialiseRPi5 cfg with\n  | .ok _ => pure ()\n"
+                "  | .error e => do\n    IO.println e\n    Concurrency.fatalHaltAll", True)
     # Round 12: the name is not the definition.  Each of these keeps every
     # token rounds 3-11 read — the callee's spelling, the halt's spelling, at
     # the accepted position — and breaks the relation that the spelling
@@ -1958,7 +2045,7 @@ def self_test() -> int:
         for line in failures:
             print(f"         {line}")
         return 1
-    print("[PASS] check_kernel_entry_exports self-test (109 cases)")
+    print("[PASS] check_kernel_entry_exports self-test (114 cases)")
     return 0
 
 

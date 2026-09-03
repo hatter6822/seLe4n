@@ -991,6 +991,51 @@ caller of one (which must *not* be read as a halt) and the namespaces they
 really live in, per the standing rule that a fixture must be no thinner than
 the file it stands for.
 
+### The review round, thirteenth pass
+
+Codex's thirteenth review (on the round-12 head) raised one finding, against
+the arm parser round 10 introduced and round 11 and 12 refined: **a nested
+`match` is not a sibling**.  `do_block_statements` stripped every
+continuation line's indentation, so the joined statement was a flat list of
+lines and `lean_match_arms` could not tell an arm of the boot-result match
+from an arm of a `match` *inside* one of its arms.  An entry whose
+boot-result match carried only a wildcard arm, and whose body conditionally
+evaluated another `Except`, therefore borrowed that inner match's
+`| .error _ => ffiFatalHaltAll` as its own failure handler — the wildcard
+took the failed boot and returned with nothing installed, and round 10's
+"a wildcard is refused, the error path must be named" check saw a named
+error arm.
+
+Depth is the only thing that distinguishes the two, so it is now kept:
+continuations retain their indentation *relative to the block*, arms are
+those at the match's own column, a deeper `|` belongs to the arm it sits in,
+and a shallower one is dropped rather than guessed at.
+
+The sweep found the same blindness one level down, in the round-11 check
+beside it.  "The arm's terminal action is its last non-empty line" is the
+arm's outcome only while the conditional stays on one line; written out —
+
+```lean
+| .error _ =>
+  if cond then
+    pure ()
+  else
+    Concurrency.fatalHaltAll
+```
+
+— the last line *is* a halt call, and the arm halts only when `cond` is
+false.  `boot_entry_arm_halts_unconditionally` now takes the body's top level
+to be its minimum column and requires the terminal statement to sit there; a
+`do` on the `=>` line opens the block below it, and any other body that begins
+on the `=>` line and continues below is refused as unreadable rather than
+guessed at.
+
+Two of the five new cases are **acceptances**, because the column rule has to
+cut both ways: a nested `match` inside the `.ok` arm whose own `.error`
+returns must not disqualify a halting `.error` arm beside it — round 10's
+flattening rejected that valid entry — and `| .error e => do` followed by an
+indented block whose last statement halts is accepted.
+
 ### Tests
 
 * `tests/SmpIdleSuite.lean` — 28 surface anchors for the new boot surface

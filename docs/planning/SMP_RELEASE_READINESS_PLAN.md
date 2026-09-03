@@ -707,6 +707,15 @@ the attribute list is parsed by one parser shared with `build.rs`; and the link
 requirement is the effective linker name, with `build.rs` refusing an alias of
 a Lean symbol outright, since no readiness gate can be attributed to one.
 
+**Review round 13 (PR #889, same version).**  One, against the arm parser: a
+`match` nested inside an arm donated its `| .error _ => halt` to the
+boot-result match's own arm list, because the statement's continuation lines
+had been stripped of the indentation that distinguishes them.  Columns are
+kept now, arms are those at the match's own column, and — the sweep, one level
+down — an arm's terminal statement is the last line at its body's *minimum*
+column, so a halt in the `else` branch of a multi-line conditional is no
+longer read as what the arm does.
+
 **Note on RR5.10–RR5.14** (the rows that replaced one XL).  Two findings shape
 the split, and the row they replaced named neither: one is an ordering defect
 it inherited, the other is the reason its "cannot be separate PRs" claim is

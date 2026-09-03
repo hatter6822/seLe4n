@@ -733,6 +733,23 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   (`lean_link_name_aliases`) rather than read past it.  The mutation for
   this class keeps the name and changes what it denotes: rebind it, put
   it in another namespace, spell the attribute a second legal way.
+
+  **A nested construct is not a sibling** (PR #889 review round 13).  The
+  same substitution one level down: a scanner that splits a multi-line
+  construct into lines and treats them as peers has thrown away the
+  nesting, and nesting is what says which construct a line belongs to.
+  Stripping each continuation's indentation let a `match` *inside* an arm
+  donate its `| .error _ => halt` to the arm list of the match that
+  contains it, so a boot-result match with only a wildcard arm read as
+  having a named, halting error handler; and "the arm's last non-empty
+  line" is the arm's outcome only until the conditional is written across
+  lines, where the halt in an `else` branch is the last line and runs
+  only when the condition is false.  **Keep the depth and ask the
+  question of the level you mean**: continuations retain their column
+  relative to the block, arms are the `|`s at the match's own column, and
+  a body's terminal statement is the last line at the body's *minimum*
+  column.  The mutation for this class keeps the token at an accepted
+  position and moves it one level in or out.
 - **Invariant/Operations split**: each kernel subsystem has
   `Operations.lean` (transitions) and `Invariant.lean` (proofs). Keep
   this separation.
