@@ -1,14 +1,25 @@
 # SM2.C Deferred Completion Plan — Verified RwLock (pre-v1.0.0)
 
-> **Status**: **PARTIAL — OPEN**, re-scoped **pre**-v1.0.0.  Most of
-> D-1..D-6 landed; the residue concentrates in one theme — the refinement
-> bridges connect the Lean specs to transliterations and to their own
-> assumptions rather than to the lock the kernel deploys.
-> **Closure target**: WS-RR phase **RR6**
-> ([`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md));
-> RR6.26 registers SM2.C-defer in
-> [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md), which it had
-> never reached.
+> **Status**: **COMPLETE at v0.34.49** — closed by WS-RR phase **RR6**
+> ([`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md), all
+> twenty-seven sub-tasks).  The residue this plan carried was one theme — the
+> refinement bridges connected the Lean specs to transliterations and to their
+> own assumptions rather than to the lock the kernel deploys — and RR6 closed
+> it at the source: the deployed lock is now `QueuedRwLock`, whose refinement
+> to the FIFO spec was proved **before** the pool was repointed
+> (`queuedRwLock_refines_rwLockSpec`,
+> [`QueuedRwLockRefinement.lean`](../../SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean)),
+> the CAS-retry lock's own D-4 bridge was *completed* rather than deleted
+> (`rust_rwLock_refines_lean_honest`, no `ListBlockBisim` premise), the ticket
+> lock's counter arithmetic became a trace correspondence, and the Tier-5
+> oracle drives both real implementations instead of modelling one.
+> **Registered**: RR6.26 closed SM2.C-defer's row in
+> [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) table A, which the item had
+> never reached before, and re-registered the two SM2.C **datatype** debts RR6
+> deliberately did not absorb — **SM2.C-T** (timestamps on `RwLockExecution`)
+> and **SM2.C-C** (a cancel constructor on `RwLockOp`) — as individual rows in
+> table C, since each changes a datatype the whole SM2.C liveness surface
+> quantifies over and neither can ride along with a lock-implementation cut.
 
 > **Phase**: SM2.C-defer (closure of WS-SM SM2.C) — **re-scoped pre-v1.0.0**
 > and absorbed by WS-RR phase RR6
@@ -21,8 +32,8 @@
 > **Audited closure cut**: PR #784 (SM2.C closure with three audit passes)
 > **Target releases**: originally v1.x.x post-v1.0.0; substantively
 > delivered early in the pre-v0.31.10 SM2.C-defer cut (see the landing
-> annotations in the §1 table — D-4 partial and the D-1.9 full
-> transition-edge theorem are the remaining residue)
+> annotations in the §1 table), with the D-4 residue closed by RR6 at
+> **v0.34.49**
 > **Calendar estimate**: 12–20 weeks across 6 items (as planned)
 > **Sub-task count**: ~30 across 6 deferred items (D-1..D-6)
 
@@ -38,7 +49,7 @@ gaps:
 
 | # | Deferred item | Plan reference | State at deferral | Target | Landing |
 |---|--------------|----------------|---------------|--------|---------|
-| D-1 | Temporal FIFO admission | §3.3.7.1 (R-03) | Structural drop-prefix only | Trace-based temporal claim | **LANDED** (SM2.C-defer temporal FIFO family; the D-1.9 full transition-edge theorem remains) |
+| D-1 | Temporal FIFO admission | §3.3.7.1 (R-03) | Structural drop-prefix only | Trace-based temporal claim | **LANDED** (SM2.C-defer temporal FIFO family, D-1.9 included: `rwLock_fifo_admission_temporal` in `Locks/RwLock.lean`. The row read "the D-1.9 full transition-edge theorem remains" until WS-RR RR6.25 — the theorem had landed and the row had not been updated) |
 | D-2 | Writer-specific bounded wait | §3.3.8.2 (R-05) | Alias of `_read` | Distinct structural bound | **LANDED** (`writerWaitDepth` distinct bound; refined through SM2.C-defer D-2.3) |
 | D-3 | Full liveness theorem | §3.3.10.1 (R-10) | Single-step safety only | Multi-step liveness under fairness | **LANDED** (full `d × maxDelay` bound under strict FIFO; refined through D-3.10) |
 | D-4 | Full bisimulation refinement | §3.4.2 (F-02) | `rwLockSim` + witnesses + no-op | Trace-based refinement theorem | **PARTIAL** (landed as stated in the SM2.C-defer cut; the full trace-based theorem remains open) |
@@ -860,10 +871,40 @@ enforced at impl level.
 **Gap**: a queued Rust impl that preserves the Lean spec's FIFO
 admission property.
 
-**Optimal target**: an **MCS-style queued RwLock** with per-core fixed
-slots (NOT a lock-free linked-list).  The design rationale follows.
+**Optimal target**: a **FIFO-preserving** queued RwLock.  The design
+rationale below is the *historical* one; read the correction that
+follows it first.
 
-#### Design choice: per-core MCS slots, not lock-free linked-list
+> ### The design this section describes was retired at v0.32.148
+>
+> **WS-RR RR6.25.**  Everything from here to the end of the sub-task
+> table describes an **MCS-style per-core-slot queue** — a `tail` index,
+> per-slot `next` links, and a four-state `parked` machine.  That design
+> shipped and then **deadlocked**, for a structural reason rather than a
+> missing case: a core's slot is reused the moment it re-acquires, while
+> other cores still hold references to it, so a `next` link can be a
+> fossil, a walk can dead-end on a slot that has since been reset, and
+> the duty to admit the next waiter can be dropped with the lock free.
+> Five successive guards were patches on consequences of that one cause.
+>
+> `queued_rw_lock.rs` has been a **ticket lock** since v0.32.148: two
+> monotone counters (`next_ticket`, `now_serving`), no links, no slot
+> reuse, no walk.  `now_serving` is advanced exactly once per issued
+> ticket by whoever that ticket admits — a reader on entry, a writer on
+> exit — and that single property is the whole deadlock-freedom
+> argument.  The module docstring in `queued_rw_lock.rs` carries the
+> captured failure trace and the reasoning; `build.rs`'s
+> `scan_queued_rw_lock_protocol_intact` pins the three primitives that
+> make it work; and
+> `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (WS-RR
+> RR6.4..RR6.9) is its refinement to this plan's own specification.
+>
+> The section is kept rather than deleted because the audit findings it
+> records (H-1, H-2, M-7) are why a lock-free linked list was rejected,
+> and a future contributor reaching for one should read them.  Nothing
+> below describes code that exists.
+
+#### Design choice (historical): per-core MCS slots, not lock-free linked-list
 
 The original §5.5 sketch proposed a stack-allocated `WaiterNode` with
 `AtomicPtr<WaiterNode>` linked-list management.  Three audit findings
@@ -887,7 +928,8 @@ ruled that design out:
   to verify.  Per CLAUDE.md's "trusted computing base must stay small"
   principle, we adopt the simplest sound design.
 
-**Adopted design**: an MCS-style FIFO queue where each core has ONE
+**Adopted design (superseded — see the correction above)**: an
+MCS-style FIFO queue where each core has ONE
 preallocated slot in a per-lock `[WaiterSlot; numCores]` array
 (`numCores = 4`).  Lock holds `(tail_slot_idx : AtomicU8)` indexing
 into the array (or `NONE_SENTINEL = u8::MAX` if empty).  Each
@@ -1302,23 +1344,38 @@ lake exe rw_lock_suite                  # Existing SM2.C tests
 # Tier 5 (D-6) — two-oracle process-boundary harness.  Each oracle
 # is invoked separately by the driver script; they DO NOT link
 # against each other.  This preserves the fail-closed FFI discipline.
+# Since WS-RR RR6.2 the Rust oracle drives the *real* locks rather
+# than a software model of them.
 lake exe rw_lock_oracle                 # Lean oracle (reads sequence on stdin)
-cargo run --bin rw_lock_oracle          # Rust oracle (reads sequence on stdin)
+# `--features host_tools` is not optional: WS-RR RR1.3 gave the oracle a
+# `required-features` gate so the bare-metal build does not try to
+# compile a `std` binary for `aarch64-unknown-none`.  Without it cargo
+# reports "target `rw_lock_oracle` … requires the features: `host_tools`"
+# and builds nothing.  (The line here read `cargo run --bin
+# rw_lock_oracle` until WS-RR RR6.25 — a command that produced no
+# binary.)
+cargo run -p sele4n-hal --features host_tools --bin rw_lock_oracle
 scripts/test_tier5_cross_language.sh    # Driver: feeds both, diffs
 
-NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # Includes Tier 5
+NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # Tier 5 + miri
 
 # Cargo (post-D-5):
-cargo test -p sele4n-hal --lib rw_lock         # Existing CAS-retry impl tests
-cargo test -p sele4n-hal --lib queued_rw_lock  # NEW (D-5) queued impl tests
+cargo test -p sele4n-hal --lib rw_lock         # CAS-retry impl tests
+cargo test -p sele4n-hal --lib queued_rw_lock  # deployed queued impl tests
 
-# Miri (REQUIRED acceptance gate for D-5, per §8 audit-M-10 update):
-cargo +nightly miri test -p sele4n-hal --lib queued_rw_lock \
-    -- -Zmiri-strict-provenance
+# Miri (REQUIRED acceptance gate for D-5, per §8 audit-M-10 update).
+# Run it through the gate script: miri flags belong in `MIRIFLAGS`, not
+# after `--` (which forwards to the *test harness*), and the script also
+# installs the nightly component on demand and skips cleanly without it.
+./scripts/test_miri_queued_rw_lock.sh
 
-# Loom exhaustive interleavings (REQUIRED acceptance gate for D-5):
-RUSTFLAGS="--cfg loom" cargo test -p sele4n-hal --lib queued_rw_lock \
-    --release
+# Loom exhaustive interleavings (REQUIRED acceptance gate for D-5).
+# Likewise through the gate script: the run needs `--cfg loom` *and* a
+# filter to `queued_rw_lock::loom_model`, because under that cfg the
+# crate's other thread tests would drive loom atomics from real `std`
+# threads, which loom rejects.  `--release` is not wanted — the
+# `debug_assert`s are part of what the model checks.
+./scripts/test_loom_queued_rw_lock.sh
 ```
 
 ---

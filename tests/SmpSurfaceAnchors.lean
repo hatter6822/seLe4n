@@ -14,6 +14,7 @@ import SeLe4n.Kernel.Concurrency.Locks.TicketLock
 import SeLe4n.Kernel.Concurrency.Locks.TicketLockRefinement
 import SeLe4n.Kernel.Concurrency.Locks.RwLock
 import SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement
+import SeLe4n.Kernel.Concurrency.Locks.QueuedRwLockRefinement
 import SeLe4n.Kernel.Concurrency.LockSet
 import SeLe4n.Platform.FFI
 import SeLe4n.Kernel.InformationFlow.ObservableStatePerCore
@@ -193,6 +194,102 @@ namespace SeLe4n.Testing.SmpSurfaceAnchors
 #check @SeLe4n.Kernel.Concurrency.ticketLockSim_preserved_by_observeServing
 #check @SeLe4n.Kernel.Concurrency.rust_ticketLock_refines_lean
 
+-- WS-RR RR6.12-RR6.14 — the TicketLock refinement raised to the RwLock
+-- standard: an operational concrete step, a state-indexed block relation with
+-- a stutter prefix for the unbounded `now_serving` spin, trace composition
+-- that does not assume its own per-block conclusion, and a falsifiability
+-- witness in place of the tautological conjunct the audit found.
+#check @SeLe4n.Kernel.Concurrency.ConcreteTicketLockOp
+#check @SeLe4n.Kernel.Concurrency.TicketLockConcrete.applyOp
+#check @SeLe4n.Kernel.Concurrency.ticketFoldBlock
+#check @SeLe4n.Kernel.Concurrency.TicketStutter
+#check @SeLe4n.Kernel.Concurrency.ticketBlock
+#check @SeLe4n.Kernel.Concurrency.ticketBlock_preserves_ticketLockSim
+#check @SeLe4n.Kernel.Concurrency.ListTicketBlocks
+#check @SeLe4n.Kernel.Concurrency.ticketTrace_preserves_ticketLockSim
+#check @SeLe4n.Kernel.Concurrency.ticketBlock_release_moves_serving
+-- The relation is falsifiable: this exhibits a pair it does NOT relate, so
+-- `ticketLockSim` cannot be discharged by a tautology.
+#check @SeLe4n.Kernel.Concurrency.ticketLockSim_not_universal
+
+-- ============================================================================
+-- §6a-i — WS-RR RR6.4-RR6.9 — the DEPLOYED queued lock's refinement bridge
+-- ============================================================================
+--
+-- `STATIC_RW_LOCK_POOL` is `[QueuedRwLock; 4]`, so this is the refinement that
+-- covers the lock the kernel actually runs.  `rwLockSim` (§6a below) relates
+-- only the writer bit and the reader count and says so; `queuedSim` adds what
+-- the FIFO spec is *about* — the abstract `waiters` list against the half-open
+-- ticket interval `[now_serving, next_ticket)`, in order.
+
+#check @SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete
+#check @SeLe4n.Kernel.Concurrency.QueuedRwLockOp
+#check @SeLe4n.Kernel.Concurrency.QueuedRwLockOp.isObservation
+#check @SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete.applyOp
+#check @SeLe4n.Kernel.Concurrency.queuedFoldBlock
+#check @SeLe4n.Kernel.Concurrency.QueuedStutter
+
+-- The ticket protocol's own well-formedness, stated over the concrete model
+-- alone: it is the mutual-exclusion argument, and it is what makes the two
+-- unbounded spins terminate.
+#check @SeLe4n.Kernel.Concurrency.QueuedTicketWf
+#check @SeLe4n.Kernel.Concurrency.queued_entry_is_exclusive
+#check @SeLe4n.Kernel.Concurrency.queued_no_reader_entry_while_served
+#check @SeLe4n.Kernel.Concurrency.queued_release_read_strictly_decreases
+#check @SeLe4n.Kernel.Concurrency.queued_await_turn_terminates
+
+-- The simulation relation and its block decomposition.
+#check @SeLe4n.Kernel.Concurrency.queuedSim
+#check @SeLe4n.Kernel.Concurrency.queuedBlock
+#check @SeLe4n.Kernel.Concurrency.queuedBlock_preserves_queuedSim
+#check @SeLe4n.Kernel.Concurrency.ListQueuedBlocks
+#check @SeLe4n.Kernel.Concurrency.queuedTrace_preserves_queuedSim
+
+-- The payoff: the deployed lock refines the Lean FIFO spec end to end, and
+-- admits in the spec's order.
+#check @SeLe4n.Kernel.Concurrency.queuedRwLock_refines_rwLockSpec
+#check @SeLe4n.Kernel.Concurrency.queuedRwLock_admits_in_spec_order
+
+-- ============================================================================
+-- §6a-ii — WS-RR RR6.15-RR6.19 — the CAS-retry lock's D-4 bridge, completed
+-- ============================================================================
+--
+-- `rust_rwLock_refines_lean` used to take `ListBlockBisim` — which is its own
+-- conclusion, one block at a time — as a hypothesis.  `honestBlock` is the
+-- load-then-CAS trace-shape predicate that derives it instead: each CAS's
+-- `expected` is the value the block's own preceding load observed.  The
+-- `_honest` forms below therefore carry NO `ListBlockBisim` premise.
+
+#check @SeLe4n.Kernel.Concurrency.honestBlock
+#check @SeLe4n.Kernel.Concurrency.honestBlock_opCorresponds
+#check @SeLe4n.Kernel.Concurrency.honestBlock_blockBisim
+#check @SeLe4n.Kernel.Concurrency.ListHonestBlocks
+#check @SeLe4n.Kernel.Concurrency.listHonestBlocks_listBlockBisim
+#check @SeLe4n.Kernel.Concurrency.listHonestBlocks_listCorresponds
+
+-- The crux: a release block carries the promoted waiters' re-acquisition, so
+-- the promoting discharges close rather than dodging via `_no_promote`.
+#check @SeLe4n.Kernel.Concurrency.casPromoteOps
+#check @SeLe4n.Kernel.Concurrency.casPromoteOps_preserves_rwLockSim
+
+#check @SeLe4n.Kernel.Concurrency.rust_rwLock_refines_lean_honest
+#check @SeLe4n.Kernel.Concurrency.rust_rwLock_refines_lean_via_rustImplementsRwLock_honest
+#check @SeLe4n.Kernel.Concurrency.rust_rwLock_refines_lean_from_unheld
+
+-- ============================================================================
+-- §6a-iii — WS-RR RR6.23 — the D-2.5 writer bounded-wait statement
+-- ============================================================================
+--
+-- The gate named a theorem over distinct admission steps; only a single-state
+-- `_weak` corollary had landed.  Both now exist, and the budget form states
+-- the bound a deployment can act on.
+
+#check @SeLe4n.Kernel.Concurrency.AdmissionSequence
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.countEffectiveReleases
+#check @SeLe4n.Kernel.Concurrency.writerWaitDepth_release_count_bound_offset
+#check @SeLe4n.Kernel.Concurrency.rwLock_bounded_wait_write_distinct
+#check @SeLe4n.Kernel.Concurrency.rwLock_writer_admitted_within_release_budget
+
 -- ============================================================================
 -- §6b — WS-SM SM3.E.8 — Serializability major-theorem surface anchors
 -- ============================================================================
@@ -234,7 +331,7 @@ example : 0 < SeLe4n.Kernel.Concurrency.staticRwLockPoolSize := by decide
 
 /-! ## Aggregator structure (SM2.D.7) -/
 
-example : SeLe4n.Kernel.Concurrency.lockPrimitives.length = 22 := by decide
+example : SeLe4n.Kernel.Concurrency.lockPrimitives.length = 25 := by decide
 
 example :
     (SeLe4n.Kernel.Concurrency.lockPrimitives.filter
@@ -248,12 +345,12 @@ example :
 
 example :
     (SeLe4n.Kernel.Concurrency.lockPrimitives.filter
-      (·.category = SeLe4n.Kernel.Concurrency.LockPrimitiveCategory.rwLock)).length = 10 := by
+      (·.category = SeLe4n.Kernel.Concurrency.LockPrimitiveCategory.rwLock)).length = 11 := by
   decide
 
 example :
     (SeLe4n.Kernel.Concurrency.lockPrimitives.filter
-      (·.category = SeLe4n.Kernel.Concurrency.LockPrimitiveCategory.refinement)).length = 2 := by
+      (·.category = SeLe4n.Kernel.Concurrency.LockPrimitiveCategory.refinement)).length = 4 := by
   decide
 
 /-! ## Bit-layout extractors (SM2.D.1) -/
@@ -351,8 +448,8 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
   assertBool "rH3.isValid: raw.toNat < poolSize" (decide (rH3.raw.toNat < 4))
 
   IO.println "--- §3 Aggregator size + per-category counts ---"
-  assertBool "lockPrimitives.length = 22"
-    (decide (SeLe4n.Kernel.Concurrency.lockPrimitives.length = 22))
+  assertBool "lockPrimitives.length = 25"
+    (decide (SeLe4n.Kernel.Concurrency.lockPrimitives.length = 25))
   assertBool "memory-model count = 4"
     (decide
       ((SeLe4n.Kernel.Concurrency.lockPrimitives.filter
@@ -363,16 +460,16 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
       ((SeLe4n.Kernel.Concurrency.lockPrimitives.filter
         (·.category =
           SeLe4n.Kernel.Concurrency.LockPrimitiveCategory.ticketLock)).length = 6))
-  assertBool "RwLock count = 10"
+  assertBool "RwLock count = 11"
     (decide
       ((SeLe4n.Kernel.Concurrency.lockPrimitives.filter
         (·.category =
-          SeLe4n.Kernel.Concurrency.LockPrimitiveCategory.rwLock)).length = 10))
-  assertBool "refinement count = 2"
+          SeLe4n.Kernel.Concurrency.LockPrimitiveCategory.rwLock)).length = 11))
+  assertBool "refinement count = 4"
     (decide
       ((SeLe4n.Kernel.Concurrency.lockPrimitives.filter
         (·.category =
-          SeLe4n.Kernel.Concurrency.LockPrimitiveCategory.refinement)).length = 2))
+          SeLe4n.Kernel.Concurrency.LockPrimitiveCategory.refinement)).length = 4))
 
   IO.println "--- §4 Bit-layout extractor algebra ---"
   -- Standard cases.

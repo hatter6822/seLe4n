@@ -68,6 +68,29 @@ moves D.1 … D.3 rather than discharging them:
 * §5 (SM8.D.5) — the secure-information-flow witness for a 2PL-bracketed live
   syscall entry, including the sharpened fail-closed statement.
 
+## Which runtime lock §3's bound is about (WS-RR RR6.10)
+
+§3's contention bound is denominated in **lock operations** and rests on the
+SM2.C fairness assumption over `RwLockExecution`, i.e. over the *abstract*
+`RwLockState` and its strict-FIFO `applyOp`.  For that to bound a channel in
+the kernel that runs, the lock the kernel deploys has to be the one the spec
+describes.
+
+Through v0.34.48 it was not.  `lock_bridge.rs`'s `STATIC_RW_LOCK_POOL` held
+`rw_lock::RwLock`, the CAS-retry implementation, whose refinement relation
+(`rwLockSim`) represents no queue at all: a reader arriving while a writer is
+queued may be admitted ahead of it, so a contending core's admission delay is
+not bounded by its position in any queue and §3's alphabet bound described a
+lock nothing ran.
+
+WS-RR RR6.10 points the pool at `queued_rw_lock::QueuedRwLock`, the ticket
+FIFO lock, whose refinement
+(`Concurrency/Locks/QueuedRwLockRefinement.lean`) relates the abstract
+`waiters` queue to the half-open ticket interval `[now_serving, next_ticket)`
+**in order**, so admission order is the spec's queue order as a theorem
+(`queuedRwLock_admits_in_spec_order`).  §3's bound is therefore about the
+deployed primitive.
+
 Axiom-clean: every declaration depends only on the standard foundational
 axioms (`propext` / `Quot.sound` / `Classical.choice`), checked exhaustively
 by `scripts/check_module_axioms.py`.

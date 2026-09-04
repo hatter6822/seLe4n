@@ -424,6 +424,11 @@ def concreteFoldBlock (initial_conc : UInt64)
     (conc_block : List ConcreteRwLockOp) : UInt64 :=
   conc_block.foldl (fun s op => (concreteApplyOp s op).1) initial_conc
 
+theorem concreteFoldBlock_append (conc : UInt64) (a b : List ConcreteRwLockOp) :
+    concreteFoldBlock conc (a ++ b)
+      = concreteFoldBlock (concreteFoldBlock conc a) b := by
+  unfold concreteFoldBlock; rw [List.foldl_append]
+
 /-- **WS-SM SM2.C-defer D-4.9 (block bisim)**: per-block bisim
 obligation — after applying `abs_op` to `abs` and folding `conc_block`
 over `conc`, the resulting states are sim-related (via the
@@ -939,5 +944,674 @@ theorem blockBisim_releaseWrite_with_sev_empty_queue
     simp [concreteApplyOp]
   rw [h_sev]
   exact h_base
+
+-- ============================================================================
+-- WS-RR RR6.15 … RR6.19 — Closing D-4: an honest trace, a promoting release,
+-- total discharges, and a main theorem that no longer assumes its conclusion
+-- ============================================================================
+--
+-- What was open, and why each piece exists:
+--
+-- * `rust_rwLock_refines_lean` above takes `ListBlockBisim` as a hypothesis —
+--   the per-block simulation obligation — and concludes the trace-level
+--   simulation.  That is the conclusion assumed block by block: an "honest
+--   Rust trace satisfies it by construction", as its docstring says, but
+--   nothing in the tree said what an honest trace *is*.  RR6.15 says it.
+--
+-- * `opCorresponds` parameterizes `tryRead_success` by arbitrary CAS
+--   operands, so the bare inductive admits `tryRead_success c 999 999` — an
+--   abstract direct-acquire whose concrete CAS fails.  The honest predicate
+--   pins the operands to the state the block starts in.
+--
+-- * The four release discharges carry `_no_promote` / `_empty_queue` side
+--   conditions, which dodge the only interesting case: the abstract release
+--   *promotes*.  RR6.16 extends the block contract with the admission tail
+--   and discharges the promoting case over it.
+--
+-- * `tryWrite_cas_retry` and `tryWrite_park_retry` are named by none of the
+--   nine `blockBisim_*` lemmas, so a case analysis over the inductive could
+--   not close whatever the trace shape.  RR6.17's coverage theorem is a case
+--   analysis over the honest predicate's own constructors, so a shape added
+--   later is a missing case rather than a silent gap.
+
+-- ----------------------------------------------------------------------------
+-- RR6.16 — the promotion block and its fold
+-- ----------------------------------------------------------------------------
+
+/-- **WS-RR RR6.16**: the concrete ops a promoted run of readers
+performs as it re-acquires — one `[load, CAS]` pair per admitted core,
+each CAS taking the state the previous one left. -/
+def casPromoteReaderOps (conc : UInt64) : List CoreId → List ConcreteRwLockOp
+  | [] => []
+  | c :: rest =>
+      [.load c, .casAcquireRead c conc (conc + 1)] ++ casPromoteReaderOps (conc + 1) rest
+
+/-- **WS-RR RR6.16**: the concrete ops that carry out the abstract
+promotion, mirroring `promoteWaitersOnWriterRelease`'s three cases —
+nothing queued, a writer at the head admitted alone, or a contiguous run
+of readers admitted together. -/
+def casPromoteOps (conc : UInt64) (waiters : List (CoreId × AccessMode)) :
+    List ConcreteRwLockOp :=
+  match waiters with
+  | [] => []
+  | (w, .write) :: _ => [.load w, .casAcquireWrite w]
+  | (_, .read) :: _ =>
+      casPromoteReaderOps conc ((waiters.takeWhile (fun x => x.2 = .read)).map Prod.fst)
+
+/-- **WS-RR RR6.16**: the packed word after a run of `n` admissions
+from `conc`.  Written as a recursion so the no-wrap side condition is
+discharged where it is needed rather than assumed in the statement. -/
+def casPromotePost (conc : UInt64) : Nat → UInt64
+  | 0 => conc
+  | n + 1 => casPromotePost (conc + 1) n
+
+theorem concreteFoldBlock_casPromoteReaderOps (conc : UInt64) (cores : List CoreId) :
+    concreteFoldBlock conc (casPromoteReaderOps conc cores)
+      = casPromotePost conc cores.length := by
+  induction cores generalizing conc with
+  | nil => rfl
+  | cons c rest ih =>
+    rw [casPromoteReaderOps, concreteFoldBlock, List.foldl_append]
+    have hHead : ([ConcreteRwLockOp.load c, .casAcquireRead c conc (conc + 1)].foldl
+        (fun s op => (concreteApplyOp s op).1) conc) = conc + 1 := by
+      simp [concreteApplyOp]
+    rw [hHead]
+    have hTail := ih (conc + 1)
+    rw [concreteFoldBlock] at hTail
+    rw [hTail]
+    rfl
+
+/-- **Helper**: `UInt64` increment is `Nat` increment below the wrap
+boundary.  The side condition is stated over `UInt64.size` rather than
+its numeral so callers can discharge it from a hypothesis in the same
+form — `omega` treats the two as unrelated atoms. -/
+private theorem uInt64_add_one_toNat (x : UInt64) (h : x.toNat + 1 < UInt64.size) :
+    (x + 1).toNat = x.toNat + 1 := by
+  rw [UInt64.toNat_add]
+  have hOne : (1 : UInt64).toNat = 1 := by decide
+  rw [hOne, Nat.mod_eq_of_lt h]
+
+theorem casPromotePost_toNat (conc : UInt64) (n : Nat)
+    (h : conc.toNat + n < UInt64.size) :
+    (casPromotePost conc n).toNat = conc.toNat + n := by
+  induction n generalizing conc with
+  | zero => simp [casPromotePost]
+  | succ k ih =>
+    have hStep : (conc + 1).toNat = conc.toNat + 1 :=
+      uInt64_add_one_toNat conc (by omega)
+    have hRec : (casPromotePost (conc + 1) k).toNat = (conc + 1).toNat + k :=
+      ih (conc + 1) (by rw [hStep]; omega)
+    show (casPromotePost (conc + 1) k).toNat = conc.toNat + (k + 1)
+    rw [hRec, hStep]
+    omega
+
+/-- **WS-RR RR6.16 (the promoting release, discharged)**: from a
+quiescent sim-related pair, the promotion block reaches the state the
+abstract promotion produces.
+
+This is the case the four pre-existing release discharges exclude with
+their `_no_promote` / `_empty_queue` side conditions, and the reason the
+composition provably could not close over them: the abstract release
+admits the head of the queue and a block that stops at `fetch_sub` /
+`fetch_and` has not. -/
+theorem casPromoteOps_preserves_rwLockSim
+    {abs : RwLockState} {conc : UInt64}
+    (hSim : rwLockSim abs conc.toNat)
+    (hBound : abs.waiters.length ≤ numCores)
+    (hW : abs.writerHeld = none) (hR : abs.readers = []) :
+    rwLockSim abs.promoteWaitersOnWriterRelease
+      (concreteFoldBlock conc (casPromoteOps conc abs.waiters)).toNat := by
+  have hZero : conc = 0 := by
+    apply UInt64.toNat_inj.mp
+    unfold rwLockSim at hSim
+    rw [hSim, hW, hR]
+    simp [encodeRwLock]
+  cases hQ : abs.waiters with
+  | nil =>
+    rw [promote_noop_on_empty_waiters abs hQ, ← hQ]
+    have hOps : casPromoteOps conc abs.waiters = [] := by rw [hQ]; rfl
+    rw [hOps]
+    simpa [concreteFoldBlock] using hSim
+  | cons hd tl =>
+    obtain ⟨c, m⟩ := hd
+    cases m with
+    | write =>
+      rw [← hQ]
+      have hPromote : abs.promoteWaitersOnWriterRelease
+          = { abs with writerHeld := some c, waiters := tl } := by
+        unfold RwLockState.promoteWaitersOnWriterRelease; rw [hQ]
+      have hOps : casPromoteOps conc abs.waiters
+          = [ConcreteRwLockOp.load c, .casAcquireWrite c] := by rw [hQ]; rfl
+      rw [hPromote, hOps]
+      have hFold : concreteFoldBlock conc [ConcreteRwLockOp.load c, .casAcquireWrite c]
+          = writerBit.toUInt64 := by
+        simp [concreteFoldBlock, concreteApplyOp, hZero]
+      rw [hFold]
+      unfold rwLockSim encodeRwLock
+      show (writerBit.toUInt64).toNat = _
+      simp only [Option.isSome_some, if_true]
+      rw [hR]
+      simp only [List.length_nil, Nat.add_zero]
+      decide
+    | read =>
+      rw [← hQ]
+      have hPromote : abs.promoteWaitersOnWriterRelease
+          = { abs with
+                readers := (abs.waiters.takeWhile (fun w => w.2 = .read)).map Prod.fst
+                  ++ abs.readers
+                waiters := abs.waiters.dropWhile (fun w => w.2 = .read) } := by
+        unfold RwLockState.promoteWaitersOnWriterRelease; rw [hQ]
+      have hOps : casPromoteOps conc abs.waiters
+          = casPromoteReaderOps conc
+              ((abs.waiters.takeWhile (fun w => w.2 = .read)).map Prod.fst) := by
+        rw [hQ]; rfl
+      rw [hPromote, hOps, concreteFoldBlock_casPromoteReaderOps]
+      have hSplit : (abs.waiters.takeWhile (fun w => w.2 = .read))
+          ++ (abs.waiters.dropWhile (fun w => w.2 = .read)) = abs.waiters :=
+        List.takeWhile_append_dropWhile
+      have hKle : (abs.waiters.takeWhile (fun w => w.2 = .read)).length
+          ≤ abs.waiters.length := by
+        have := congrArg List.length hSplit
+        simp only [List.length_append] at this
+        omega
+      have hSizeBound : (numCores : Nat) < UInt64.size := by decide
+      have hZeroNat : conc.toNat = 0 := by rw [hZero]; rfl
+      rw [casPromotePost_toNat _ _ (by rw [hZeroNat]; simp; omega)]
+      unfold rwLockSim encodeRwLock
+      rw [hZeroNat, hW, hR]
+      simp
+
+/-- **WS-RR RR6.16**: a promotion block is an admission sequence, so it
+is the tail `opCorresponds`'s promoting release constructors accept. -/
+theorem casPromoteReaderOps_admissionSequence (conc : UInt64) (cores : List CoreId) :
+    AdmissionSequence (casPromoteReaderOps conc cores) := by
+  induction cores generalizing conc with
+  | nil => exact .nil
+  | cons c rest ih => exact .reader c conc (conc + 1) _ (ih (conc + 1))
+
+theorem casPromoteOps_admissionSequence (conc : UInt64)
+    (waiters : List (CoreId × AccessMode)) :
+    AdmissionSequence (casPromoteOps conc waiters) := by
+  unfold casPromoteOps
+  match waiters with
+  | [] => exact .nil
+  | (_, .write) :: _ => exact .writer _ [] .nil
+  | (_, .read) :: _ => exact casPromoteReaderOps_admissionSequence _ _
+
+-- ----------------------------------------------------------------------------
+-- RR6.15 — the honest-trace predicate
+-- ----------------------------------------------------------------------------
+
+/-- **WS-RR RR6.15**: an *honest* concrete block for an abstract
+operation, indexed on **both** pre-states.
+
+This is the trace-shape predicate D-4 was missing.  `opCorresponds`
+alone parameterizes `tryRead_success` by arbitrary `(e n : UInt64)`, so
+the bare inductive admits `tryRead_success c 999 999` — an abstract
+direct-acquire whose concrete CAS *fails* — and any composition over it
+is unsound.  Honesty pins each CAS to the state the block starts in:
+a **succeeding** CAS carries `expected = conc` and the `new` the
+implementation computes from it, and a **failing** CAS (the contention
+retry) is required to actually fail.  Which of the two a block is comes
+from the abstract branch, which is why the predicate is indexed on the
+abstract state as well.
+
+The blocks also cover the abstract outcomes `opCorresponds`'s original
+ten could not express — the no-ops and the enqueues (WS-RR RR6.16) —
+and the release blocks carry the promotion (RR6.16), without which the
+composition provably cannot close. -/
+inductive honestBlock :
+    RwLockState → UInt64 → RwLockOp → List ConcreteRwLockOp → Prop where
+  /-- A core already involved re-acquiring: the spec no-ops and the
+  implementation performs no atomic access. -/
+  | acquireRead_noop (abs : RwLockState) (conc : UInt64) (c : CoreId) :
+      abs.coreInvolved c → honestBlock abs conc (.tryAcquireRead c) []
+  /-- Direct acquire: load, then CAS `conc → conc + 1`.  The operands
+  are the state the block starts in, which is what makes the CAS
+  succeed — the pinning RR6.15 exists for. -/
+  | acquireRead_success (abs : RwLockState) (conc : UInt64) (c : CoreId) :
+      ¬ abs.coreInvolved c → abs.writerHeld = none → abs.waiters = [] →
+      honestBlock abs conc (.tryAcquireRead c)
+        [.load c, .casAcquireRead c conc (conc + 1)]
+  /-- Enqueue: the reader parks and the block ends there.  The spec
+  appends to `waiters` and no atomic access moves the packed word. -/
+  | acquireRead_enqueue (abs : RwLockState) (conc : UInt64) (c : CoreId) :
+      ¬ abs.coreInvolved c → (abs.writerHeld.isSome ∨ abs.waiters ≠ []) →
+      honestBlock abs conc (.tryAcquireRead c) [.load c, .wfeWait c]
+  /-- CAS-retry under contention: the CAS **fails**, which is the
+  honest reading of "another core moved the state between the load and
+  the CAS".  A failing CAS is a no-op whatever its operands, so the
+  block continues with any honest block for the same operation. -/
+  | acquireRead_cas_retry (abs : RwLockState) (conc : UInt64) (c : CoreId)
+      (e n : UInt64) (tail : List ConcreteRwLockOp) :
+      conc ≠ e → honestBlock abs conc (.tryAcquireRead c) tail →
+      honestBlock abs conc (.tryAcquireRead c)
+        ([.load c, .casAcquireRead c e n] ++ tail)
+  /-- Park-retry: load, park, retry. -/
+  | acquireRead_park_retry (abs : RwLockState) (conc : UInt64) (c : CoreId)
+      (tail : List ConcreteRwLockOp) :
+      honestBlock abs conc (.tryAcquireRead c) tail →
+      honestBlock abs conc (.tryAcquireRead c) ([.load c, .wfeWait c] ++ tail)
+  /-- Spec no-op for a core already involved. -/
+  | acquireWrite_noop (abs : RwLockState) (conc : UInt64) (c : CoreId) :
+      abs.coreInvolved c → honestBlock abs conc (.tryAcquireWrite c) []
+  /-- Direct acquire: load, then CAS from exactly `0`. -/
+  | acquireWrite_success (abs : RwLockState) (conc : UInt64) (c : CoreId) :
+      ¬ abs.coreInvolved c → abs.writerHeld = none → abs.readers = [] →
+      abs.waiters = [] →
+      honestBlock abs conc (.tryAcquireWrite c) [.load c, .casAcquireWrite c]
+  /-- Enqueue: the writer parks. -/
+  | acquireWrite_enqueue (abs : RwLockState) (conc : UInt64) (c : CoreId) :
+      ¬ abs.coreInvolved c →
+      (abs.writerHeld.isSome ∨ abs.readers ≠ [] ∨ abs.waiters ≠ []) →
+      honestBlock abs conc (.tryAcquireWrite c) [.load c, .wfeWait c]
+  /-- **WS-RR RR6.17**: the writer CAS-retry, which no `blockBisim_*`
+  lemma named.  Honest exactly when the state is not `0`, which is what
+  makes the CAS fail. -/
+  | acquireWrite_cas_retry (abs : RwLockState) (conc : UInt64) (c : CoreId)
+      (tail : List ConcreteRwLockOp) :
+      conc ≠ 0 → honestBlock abs conc (.tryAcquireWrite c) tail →
+      honestBlock abs conc (.tryAcquireWrite c)
+        ([.load c, .casAcquireWrite c] ++ tail)
+  /-- **WS-RR RR6.17**: the writer park-retry, likewise. -/
+  | acquireWrite_park_retry (abs : RwLockState) (conc : UInt64) (c : CoreId)
+      (tail : List ConcreteRwLockOp) :
+      honestBlock abs conc (.tryAcquireWrite c) tail →
+      honestBlock abs conc (.tryAcquireWrite c) ([.load c, .wfeWait c] ++ tail)
+  /-- Releasing a read lock one does not hold: spec no-op. -/
+  | releaseRead_noop (abs : RwLockState) (conc : UInt64) (c : CoreId) :
+      c ∉ abs.readers → honestBlock abs conc (.releaseRead c) []
+  /-- `release_read` leaving holders behind: the count drops and nobody
+  is promoted. -/
+  | releaseRead_noPromote (abs : RwLockState) (conc : UInt64) (c : CoreId) :
+      c ∈ abs.readers →
+      (abs.readers.filter (· ≠ c) ≠ [] ∨ abs.writerHeld.isSome) →
+      honestBlock abs conc (.releaseRead c) [.fetchSubRead c, .sev c]
+  /-- **WS-RR RR6.16**: `release_read` draining the lock, with the
+  promotion the spec performs carried in the block. -/
+  | releaseRead_promote (abs : RwLockState) (conc : UInt64) (c : CoreId) :
+      c ∈ abs.readers → abs.readers.filter (· ≠ c) = [] → abs.writerHeld = none →
+      honestBlock abs conc (.releaseRead c)
+        ([.fetchSubRead c, .sev c] ++ casPromoteOps (conc - 1) abs.waiters)
+  /-- Releasing a write lock one does not hold: spec no-op. -/
+  | releaseWrite_noop (abs : RwLockState) (conc : UInt64) (c : CoreId) :
+      abs.writerHeld ≠ some c → honestBlock abs conc (.releaseWrite c) []
+  /-- **WS-RR RR6.16**: `release_write`, with the promotion carried. -/
+  | releaseWrite_effective (abs : RwLockState) (conc : UInt64) (c : CoreId) :
+      abs.writerHeld = some c →
+      honestBlock abs conc (.releaseWrite c)
+        ([.fetchAndWrite c, .sev c]
+          ++ casPromoteOps (conc &&& readerMask.toUInt64) abs.waiters)
+
+/-- **WS-RR RR6.17 (coverage)**: every honest block is an admissible
+`opCorresponds` block.
+
+A case analysis over `honestBlock`'s own constructors, so the coverage
+is derived from the inventory rather than from a hand-kept list: a
+shape added to `honestBlock` later is a missing case here, not a silent
+gap.  This is what the `tryWrite_cas_retry` / `tryWrite_park_retry`
+constructors lacked — nine `blockBisim_*` lemmas named eight of the ten
+`opCorresponds` shapes and nothing said the family was complete. -/
+theorem honestBlock_opCorresponds
+    {abs : RwLockState} {conc : UInt64} {op : RwLockOp}
+    {blk : List ConcreteRwLockOp} (h : honestBlock abs conc op blk) :
+    opCorresponds op blk := by
+  induction h with
+  | acquireRead_noop c _ => exact .noop _
+  | acquireRead_success c _ _ _ => exact .tryRead_success c _ _
+  | acquireRead_enqueue c _ _ => exact .tryRead_enqueue c
+  | acquireRead_cas_retry c e n tail _ _ ih => exact .tryRead_cas_retry c e n tail ih
+  | acquireRead_park_retry c tail _ ih => exact .tryRead_park_retry c tail ih
+  | acquireWrite_noop c _ => exact .noop _
+  | acquireWrite_success c _ _ _ _ => exact .tryWrite_success c
+  | acquireWrite_enqueue c _ _ => exact .tryWrite_enqueue c
+  | acquireWrite_cas_retry c tail _ _ ih => exact .tryWrite_cas_retry c tail ih
+  | acquireWrite_park_retry c tail _ ih => exact .tryWrite_park_retry c tail ih
+  | releaseRead_noop c _ => exact .noop _
+  | releaseRead_noPromote c _ _ => exact .releaseRead_with_sev c
+  | releaseRead_promote c _ _ _ =>
+      exact .releaseRead_promoting c _ (casPromoteOps_admissionSequence _ _)
+  | releaseWrite_noop c _ => exact .noop _
+  | releaseWrite_effective c _ =>
+      exact .releaseWrite_promoting c _ (casPromoteOps_admissionSequence _ _)
+
+-- ----------------------------------------------------------------------------
+-- RR6.16 / RR6.17 — the discharge family, now total over the honest shapes
+-- ----------------------------------------------------------------------------
+
+/-- A failing read CAS is a no-op, so a retry prefix leaves the fold
+where it started. -/
+private theorem concreteFoldBlock_failed_read_cas (conc e n : UInt64) (c : CoreId)
+    (h : conc ≠ e) (tail : List ConcreteRwLockOp) :
+    concreteFoldBlock conc ([.load c, .casAcquireRead c e n] ++ tail)
+      = concreteFoldBlock conc tail := by
+  unfold concreteFoldBlock
+  rw [List.foldl_append]
+  simp [concreteApplyOp, h]
+
+/-- A failing write CAS is a no-op, likewise. -/
+private theorem concreteFoldBlock_failed_write_cas (conc : UInt64) (c : CoreId)
+    (h : conc ≠ 0) (tail : List ConcreteRwLockOp) :
+    concreteFoldBlock conc ([.load c, .casAcquireWrite c] ++ tail)
+      = concreteFoldBlock conc tail := by
+  unfold concreteFoldBlock
+  rw [List.foldl_append]
+  simp [concreteApplyOp, h]
+
+/-- A park prefix is a no-op. -/
+private theorem concreteFoldBlock_park (conc : UInt64) (c : CoreId)
+    (tail : List ConcreteRwLockOp) :
+    concreteFoldBlock conc ([.load c, .wfeWait c] ++ tail)
+      = concreteFoldBlock conc tail := by
+  unfold concreteFoldBlock
+  rw [List.foldl_append]
+  simp [concreteApplyOp]
+
+/-- **WS-RR RR6.16 / RR6.17 (the discharge family, total)**: every
+honest block satisfies the per-block simulation obligation.
+
+An induction over `honestBlock`'s constructors, so the family is total
+by construction: the two write-retry shapes that no `blockBisim_*`
+lemma named are cases here, and a shape added later is a missing case
+rather than a gap.  The promoting release cases are discharged over the
+admission tail (RR6.16), which is what the pre-existing
+`_no_promote` / `_empty_queue` discharges excluded. -/
+theorem honestBlock_blockBisim
+    {abs : RwLockState} {conc : UInt64} {op : RwLockOp} {blk : List ConcreteRwLockOp}
+    (hSim : rwLockSim abs conc.toNat) (hWfAbs : abs.wf)
+    (hHonest : honestBlock abs conc op blk) :
+    blockBisim abs conc op blk := by
+  have hReadersBound : abs.readers.length ≤ numCores := by
+    have := rwLock_bounded_wait_read abs hWfAbs; omega
+  have hWaitersBound : abs.waiters.length ≤ numCores := by
+    have := rwLock_bounded_wait_read abs hWfAbs; omega
+  induction hHonest with
+  | acquireRead_noop c hInv =>
+    unfold blockBisim
+    rw [RwLockState.applyOp_noop_acquireRead hInv]
+    simpa [concreteFoldBlock] using hSim
+  | acquireRead_success c hNotInv hW hQ =>
+    have hShape := tryAcquireRead_direct_acquire_shape abs c hNotInv hW hQ
+    have hStateNat : conc.toNat = abs.readers.length := by
+      unfold rwLockSim at hSim; rw [hSim, hW]; simp [encodeRwLock]
+    have hNoWrap : conc.toNat + 1 < UInt64.size := by
+      have : (numCores : Nat) + 1 < UInt64.size := by decide
+      omega
+    unfold blockBisim rwLockSim
+    have hFold : concreteFoldBlock conc
+        [ConcreteRwLockOp.load c, .casAcquireRead c conc (conc + 1)] = conc + 1 := by
+      simp [concreteFoldBlock, concreteApplyOp]
+    rw [hFold, hShape.1, hShape.2.1, hW, uInt64_add_one_toNat _ hNoWrap, hStateNat]
+    simp [encodeRwLock]
+  | acquireRead_enqueue c hNotInv hBusy =>
+    have hPost : abs.applyOp (.tryAcquireRead c)
+        = { abs with waiters := abs.waiters ++ [(c, AccessMode.read)] } := by
+      unfold RwLockState.applyOp
+      simp only [hNotInv, ↓reduceIte]
+      have : (abs.writerHeld.isSome = true ∨ abs.waiters ≠ []) := hBusy
+      simp [this]
+    unfold blockBisim
+    rw [hPost]
+    have hFold : concreteFoldBlock conc [ConcreteRwLockOp.load c, .wfeWait c] = conc := by
+      simp [concreteFoldBlock, concreteApplyOp]
+    rw [hFold]
+    exact hSim
+  | acquireRead_cas_retry c e n tail hNe _ ih =>
+    unfold blockBisim at ih ⊢
+    rw [concreteFoldBlock_failed_read_cas conc e n c hNe tail]
+    exact ih
+  | acquireRead_park_retry c tail _ ih =>
+    unfold blockBisim at ih ⊢
+    rw [concreteFoldBlock_park conc c tail]
+    exact ih
+  | acquireWrite_noop c hInv =>
+    unfold blockBisim
+    rw [RwLockState.applyOp_noop_acquireWrite hInv]
+    simpa [concreteFoldBlock] using hSim
+  | acquireWrite_success c hNotInv hW hR hQ =>
+    have hZero : conc = 0 := by
+      apply UInt64.toNat_inj.mp
+      unfold rwLockSim at hSim
+      rw [hSim, hW, hR]; simp [encodeRwLock]
+    have hShape := tryAcquireWrite_direct_acquire_shape abs c hNotInv hW hR hQ
+    unfold blockBisim rwLockSim
+    have hFold : concreteFoldBlock conc
+        [ConcreteRwLockOp.load c, .casAcquireWrite c] = writerBit.toUInt64 := by
+      simp [concreteFoldBlock, concreteApplyOp, hZero]
+    rw [hFold, hShape.1, hShape.2.1, hR]
+    simp only [Option.isSome_some, encodeRwLock, if_true, List.length_nil, Nat.add_zero]
+    decide
+  | acquireWrite_enqueue c hNotInv hBusy =>
+    have hPost : abs.applyOp (.tryAcquireWrite c)
+        = { abs with waiters := abs.waiters ++ [(c, AccessMode.write)] } := by
+      unfold RwLockState.applyOp
+      simp only [hNotInv, ↓reduceIte]
+      have : (abs.writerHeld.isSome = true ∨ abs.readers ≠ [] ∨ abs.waiters ≠ []) := hBusy
+      simp [this]
+    unfold blockBisim
+    rw [hPost]
+    have hFold : concreteFoldBlock conc [ConcreteRwLockOp.load c, .wfeWait c] = conc := by
+      simp [concreteFoldBlock, concreteApplyOp]
+    rw [hFold]
+    exact hSim
+  | acquireWrite_cas_retry c tail hNe _ ih =>
+    unfold blockBisim at ih ⊢
+    rw [concreteFoldBlock_failed_write_cas conc c hNe tail]
+    exact ih
+  | acquireWrite_park_retry c tail _ ih =>
+    unfold blockBisim at ih ⊢
+    rw [concreteFoldBlock_park conc c tail]
+    exact ih
+  | releaseRead_noop c hNotHolder =>
+    unfold blockBisim
+    rw [RwLockState.applyOp_noop_releaseRead hNotHolder]
+    simpa [concreteFoldBlock] using hSim
+  | releaseRead_noPromote c hHolder hNoPromote =>
+    have hLenStep := filter_ne_length_of_nodup abs.readers hWfAbs.2.1 c hHolder
+    have hFilterLen : (abs.readers.filter (· ≠ c)).length = abs.readers.length - 1 := by
+      rw [← hLenStep]; omega
+    have hPos : 1 ≤ abs.readers.length := by rw [← hLenStep]; omega
+    have hPost : abs.applyOp (.releaseRead c)
+        = ({ writerHeld := abs.writerHeld, readers := abs.readers.filter (· ≠ c),
+             waiters := abs.waiters } : RwLockState) := by
+      rw [releaseRead_effective_post abs c hHolder]
+      exact promoteWaitersIfReadersEmpty_noop _ hNoPromote
+    have hGe : 1 ≤ conc.toNat := by
+      unfold rwLockSim at hSim
+      rw [hSim]; exact encodeRwLock_at_least_one_when_reader abs c hHolder
+    have hFold : concreteFoldBlock conc [ConcreteRwLockOp.fetchSubRead c, .sev c]
+        = conc - 1 := by simp [concreteFoldBlock, concreteApplyOp]
+    -- Rewrite the post-state's *projections* rather than the state
+    -- itself: `rw [hPost]` would leave `{ … }.writerHeld` — a record
+    -- projection that is definitionally `abs.writerHeld` but not
+    -- syntactically, so `omega` would abstract the two writer-bit terms
+    -- to different atoms and fail on an identity.
+    have hPostW : (abs.applyOp (.releaseRead c)).writerHeld = abs.writerHeld := by
+      rw [hPost]
+    have hPostR : (abs.applyOp (.releaseRead c)).readers
+        = abs.readers.filter (· ≠ c) := by rw [hPost]
+    unfold blockBisim
+    rw [hFold]
+    unfold rwLockSim at hSim ⊢
+    rw [uInt64_sub_one_toNat _ hGe, hSim, hPostW, hPostR, hFilterLen]
+    -- Both sides now carry the same writer-bit term.  Generalise it —
+    -- `writerBit` is `2 ^ writerBitPos`, which `omega` will not abstract
+    -- on its own — leaving `w + n - 1 = w + (n - 1)` under `1 ≤ n`.
+    unfold encodeRwLock
+    exact Nat.add_sub_assoc hPos _
+  | releaseRead_promote c hHolder hFilterNil hW =>
+    have hLenStep := filter_ne_length_of_nodup abs.readers hWfAbs.2.1 c hHolder
+    have hOne : abs.readers.length = 1 := by
+      rw [hFilterNil] at hLenStep; simpa using hLenStep.symm
+    have hStateOne : conc.toNat = 1 := by
+      unfold rwLockSim at hSim; rw [hSim, hW, hOne]; simp [encodeRwLock]
+    have hPost : abs.applyOp (.releaseRead c)
+        = ({ writerHeld := abs.writerHeld, readers := [], waiters := abs.waiters }
+            : RwLockState).promoteWaitersOnWriterRelease := by
+      rw [releaseRead_effective_post abs c hHolder, hFilterNil]
+      exact promoteIfReadersEmpty_eq_onWriterRelease _ rfl hW
+    have hFold : concreteFoldBlock conc [ConcreteRwLockOp.fetchSubRead c, .sev c]
+        = conc - 1 := by simp [concreteFoldBlock, concreteApplyOp]
+    unfold blockBisim
+    rw [hPost, concreteFoldBlock_append, hFold]
+    refine casPromoteOps_preserves_rwLockSim ?_ hWaitersBound hW rfl
+    show rwLockSim _ (conc - 1).toNat
+    unfold rwLockSim
+    rw [uInt64_sub_one_toNat _ (by omega), hStateOne, hW]
+    simp [encodeRwLock]
+  | releaseWrite_noop c hNotWriter =>
+    unfold blockBisim
+    rw [RwLockState.applyOp_noop_releaseWrite hNotWriter]
+    simpa [concreteFoldBlock] using hSim
+  | releaseWrite_effective c hW =>
+    have hNoReaders : abs.readers = [] := RwLockState.wf_writerReadersExclusion hWfAbs c hW
+    have hSimUnfold : conc.toNat = writerBit := by
+      unfold rwLockSim at hSim
+      rw [hSim, hW, hNoReaders]
+      simp [encodeRwLock]
+    have hStateW : conc = writerBit.toUInt64 := by
+      apply UInt64.toNat_inj.mp
+      rw [hSimUnfold]
+      decide
+    have hPost : abs.applyOp (.releaseWrite c)
+        = ({ writerHeld := none, readers := abs.readers, waiters := abs.waiters }
+            : RwLockState).promoteWaitersOnWriterRelease := by
+      unfold RwLockState.applyOp
+      have hNe : ¬ (abs.writerHeld ≠ some c) := fun h => h hW
+      simp only [hNe, ↓reduceIte]
+    have hFold : concreteFoldBlock conc [ConcreteRwLockOp.fetchAndWrite c, .sev c]
+        = conc &&& readerMask.toUInt64 := by simp [concreteFoldBlock, concreteApplyOp]
+    unfold blockBisim
+    rw [hPost, concreteFoldBlock_append, hFold]
+    refine casPromoteOps_preserves_rwLockSim ?_ hWaitersBound rfl hNoReaders
+    show rwLockSim _ (conc &&& readerMask.toUInt64).toNat
+    unfold rwLockSim
+    rw [hStateW, hNoReaders]
+    have hMask : writerBit.toUInt64 &&& readerMask.toUInt64 = 0 := by decide
+    rw [hMask]
+    simp [encodeRwLock]
+
+-- ----------------------------------------------------------------------------
+-- RR6.18 — the composition, and RR6.19 — the hypothesis retired
+-- ----------------------------------------------------------------------------
+
+/-- **WS-RR RR6.15**: an abstract op-list paired with its concrete block
+list, every block honest at the state pair it executes in.
+
+This is `ListCorresponds` with the trace shape: `honestBlock_opCorresponds`
+shows each block is an admissible `opCorresponds` block, and the
+state indices pin the CAS operands the bare inductive left free. -/
+inductive ListHonestBlocks :
+    RwLockState → UInt64 → List RwLockOp → List (List ConcreteRwLockOp) → Prop where
+  | nil (abs : RwLockState) (conc : UInt64) : ListHonestBlocks abs conc [] []
+  | cons (abs : RwLockState) (conc : UInt64) (a : RwLockOp) (b : List ConcreteRwLockOp)
+      (as : List RwLockOp) (bs : List (List ConcreteRwLockOp)) :
+      honestBlock abs conc a b →
+      ListHonestBlocks (abs.applyOp a) (concreteFoldBlock conc b) as bs →
+      ListHonestBlocks abs conc (a :: as) (b :: bs)
+
+/-- **WS-RR RR6.18 (the composition)**: an honest trace **implies** the
+per-block bisimulation obligation.
+
+This is the step that turns the discharge lemmas from a collection into
+a proof.  `ListBlockBisim` — the hypothesis `rust_rwLock_refines_lean`
+took — is now a *consequence* of the trace's shape rather than something
+a caller must supply, which is what WS-RR RR6.19 needs to retire it. -/
+theorem listHonestBlocks_listBlockBisim
+    {abs : RwLockState} {conc : UInt64}
+    {ops : List RwLockOp} {blocks : List (List ConcreteRwLockOp)}
+    (hSim : rwLockSim abs conc.toNat) (hWfAbs : abs.wf)
+    (hChain : ListHonestBlocks abs conc ops blocks) :
+    ListBlockBisim abs conc ops blocks := by
+  induction hChain with
+  | nil a c => exact .nil a c
+  | cons a c op blk restOps restBlocks hBlk _hRest ih =>
+    have hStep := honestBlock_blockBisim hSim hWfAbs hBlk
+    refine .cons a c op blk restOps restBlocks hStep ?_
+    exact ih hStep (RwLockState.applyOp_preserves_wf hWfAbs op)
+
+/-- **WS-RR RR6.18 (coverage of the shape inductive)**: an honest trace
+is a corresponding trace.
+
+Together with `listHonestBlocks_listBlockBisim` this is the plan's
+`ListCorresponds` + trace shape ⇒ `ListBlockBisim`: honesty is a
+*restriction* of the shape inductive, not a replacement for it. -/
+theorem listHonestBlocks_listCorresponds
+    {abs : RwLockState} {conc : UInt64}
+    {ops : List RwLockOp} {blocks : List (List ConcreteRwLockOp)}
+    (hChain : ListHonestBlocks abs conc ops blocks) :
+    ListCorresponds ops blocks := by
+  induction hChain with
+  | nil _ _ => exact .nil
+  | cons _ _ op blk _ _ hBlk _ ih =>
+    exact .cons (honestBlock_opCorresponds hBlk) ih
+
+/-- **WS-RR RR6.19 (the hypothesis retired)**: for an honest trace, the
+abstract fold and the concrete fold end sim-related — with **no**
+per-block obligation assumed.
+
+`rust_rwLock_refines_lean` above takes `ListBlockBisim` as a hypothesis,
+i.e. assumes the simulation block by block and concludes it for the
+trace.  Here the only hypotheses are the initial simulation, the
+abstract well-formedness, and the trace's *shape*; the per-block
+obligation is discharged by `listHonestBlocks_listBlockBisim`.
+
+The assumed form is kept (it is a true statement, and a caller with a
+block-by-block obligation from some other source may still use it), but
+it is no longer what the refinement rests on, and the SM2.D.7 inventory
+registers this one. -/
+theorem rust_rwLock_refines_lean_honest
+    {initial_abs : RwLockState} {initial_conc : UInt64}
+    (h_sim_init : rwLockSim initial_abs initial_conc.toNat)
+    (h_wf : initial_abs.wf)
+    (abs_ops : List RwLockOp)
+    (conc_blocks : List (List ConcreteRwLockOp))
+    (h_honest : ListHonestBlocks initial_abs initial_conc abs_ops conc_blocks) :
+    rwLockSim
+      (abs_ops.foldl RwLockState.applyOp initial_abs)
+      (concreteFoldBlock initial_conc conc_blocks.flatten).toNat :=
+  rust_rwLock_refines_lean initial_abs initial_conc h_sim_init abs_ops conc_blocks
+    (listHonestBlocks_listBlockBisim h_sim_init h_wf h_honest)
+
+/-- **WS-RR RR6.19 (corollary — via `rustImplementsRwLock`)**: the same,
+stated through the structural correspondence predicate the plan's §5.4
+uses.
+
+The `ListBlockBisim` precondition the previous corollary carried is
+gone: `listHonestBlocks_listCorresponds` supplies the `ListCorresponds`
+half from the honest trace, and `listHonestBlocks_listBlockBisim`
+supplies the simulation half. -/
+theorem rust_rwLock_refines_lean_via_rustImplementsRwLock_honest
+    {initial_abs : RwLockState} {initial_conc : UInt64}
+    (h_sim_init : rwLockSim initial_abs initial_conc.toNat)
+    (h_wf : initial_abs.wf)
+    (abs_ops : List RwLockOp)
+    (conc_ops : List ConcreteRwLockOp)
+    (h_honest : ∃ blocks : List (List ConcreteRwLockOp),
+        blocks.flatten = conc_ops ∧
+        ListHonestBlocks initial_abs initial_conc abs_ops blocks) :
+    rustImplementsRwLock conc_ops abs_ops ∧
+    rwLockSim
+      (abs_ops.foldl RwLockState.applyOp initial_abs)
+      (concreteFoldBlock initial_conc conc_ops).toNat := by
+  obtain ⟨blocks, hFlatten, hChain⟩ := h_honest
+  refine ⟨⟨blocks, hFlatten, listHonestBlocks_listCorresponds hChain⟩, ?_⟩
+  rw [← hFlatten]
+  exact rust_rwLock_refines_lean_honest h_sim_init h_wf abs_ops blocks hChain
+
+/-- **WS-RR RR6.19 (the end-to-end statement)**: from the
+implementations' initial states — `RwLock::new` and
+`RwLockState.unheld` — every honest trace ends sim-related.
+
+No hypothesis beyond the trace's shape. -/
+theorem rust_rwLock_refines_lean_from_unheld
+    (abs_ops : List RwLockOp) (conc_blocks : List (List ConcreteRwLockOp))
+    (h_honest : ListHonestBlocks RwLockState.unheld 0 abs_ops conc_blocks) :
+    rwLockSim
+      (abs_ops.foldl RwLockState.applyOp RwLockState.unheld)
+      (concreteFoldBlock 0 conc_blocks.flatten).toNat :=
+  rust_rwLock_refines_lean_honest
+    (by show (0 : UInt64).toNat = _; exact rwLockSim_unheld)
+    RwLockState.unheld_wf abs_ops conc_blocks h_honest
 
 end SeLe4n.Kernel.Concurrency

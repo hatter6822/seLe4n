@@ -51,10 +51,12 @@ shootdown and cache maintenance, SMP information flow, and declassification.
 The syscall return ABI is complete.
 
 **SM10 — release closure at v1.0.0 — is blocked on WS-RR**, the pre-1.0
-remediation phase now in flight: 184 sub-tasks across nine phases, of which
-RR0–RR4 have landed. The remaining phases close the boot-path fail-open
-latents, complete the verified lock primitives, and sweep the medium-severity
-findings.
+remediation phase now in flight: 187 sub-tasks across nine phases, of which
+RR0–RR6 have landed — most recently the boot-path fail-open closure (v0.34.48)
+and the verified lock primitives (v0.34.49), which made the deployed
+reader-writer lock the ticket-FIFO one the Lean spec describes and refined it
+to that spec before the switch. The remaining phases sweep the
+medium-severity findings and hand off to SM10.
 
 **The kernel does not boot yet.** Producing a bootable image is SM10.1's work;
 until it lands, every runtime seam behind the per-core readiness gate is wired

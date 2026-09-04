@@ -207,6 +207,27 @@ The memory model, the verified `TicketLock` and `RwLock` with mutex and
 fairness theorems, per-object lock sets, two-phase locking, deadlock-freedom
 and serializability.
 
+**Each lock is refined to the Rust the kernel runs, and each bridge derives
+its trace correspondence rather than assuming it** (WS-RR RR6, v0.34.49).
+Three bridges, one per lock kind:
+
+| Lock | Bridge | Relation | Capstone |
+|------|--------|----------|----------|
+| `TicketLock` | `Locks/TicketLockRefinement.lean` | `ticketLockSim` | `ticketTrace_preserves_ticketLockSim` |
+| CAS-retry `RwLock` | `Locks/RwLockRefinement.lean` | `rwLockSim` (writer bit + reader count) | `rust_rwLock_refines_lean_honest` |
+| **deployed** `QueuedRwLock` | `Locks/QueuedRwLockRefinement.lean` | `queuedSim` (adds waiters ↔ ticket interval) | `queuedRwLock_refines_rwLockSpec` |
+
+Two things the table is making precise. The **deployed** reader-writer lock is
+the ticket-FIFO `QueuedRwLock` — `STATIC_RW_LOCK_POOL` is `[QueuedRwLock; 4]`,
+pinned by `build.rs` — so the lock the kernel runs is the one the Lean FIFO
+spec describes, and its refinement was proved *before* the pool was repointed.
+And no capstone takes its own conclusion as a hypothesis: the CAS-retry
+bridge's `_honest` forms carry no `ListBlockBisim` premise (`honestBlock`, the
+load-then-CAS trace-shape predicate, derives it), the ticket bridge's fourth
+conjunct is a real "a pure load leaves both states unchanged" statement rather
+than a tautology, and `ticketLockSim_not_universal` exhibits a pair the
+relation does **not** relate.
+
 > Two standing caveats. **Kernel entry is serialised by one global ticket
 > lock**, so live WCRT is weaker than the fine-lock bound `PerCoreWcrt.lean`
 > proves. And **SM3.C.9 is deferred**: the `@[export]` bodies are, with one
@@ -225,9 +246,9 @@ Per-phase theorem inventories are registered in
 `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean`, one entry per phase
 SM0..SM10.
 
-> **The SMP theorem total is measured, not summed.** The inventories hold 1113
-> entries, of which **903 are theorems** — the rest are `def`s (lock-set
-> footprints, per-core predicates, WCRT cost functions). Quote 903, and quote
+> **The SMP theorem total is measured, not summed.** The inventories hold 1116
+> entries, of which **906 are theorems** — the rest are `def`s (lock-set
+> footprints, per-core predicates, WCRT cost functions). Quote 906, and quote
 > it as theorems. A propositionality census resolves each identifier against the
 > environment and fails elaboration on drift; adding a phase without an entry
 > fails elaboration, and adding an inventory no phase claims fails Tier 0.

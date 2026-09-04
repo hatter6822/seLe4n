@@ -13,13 +13,13 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.34.48` |
+| Version | `0.34.49` |
 | Lean toolchain | `v4.28.0` |
 | Production LoC | refresh via `scripts/generate_codebase_map.py` (regenerated each phase) |
 | Test LoC | refresh via `scripts/generate_codebase_map.py` (regenerated each phase) |
 | Proved declarations | refresh via `scripts/generate_codebase_map.py` (zero sorry/axiom maintained) |
 | Latest audit | [`AUDIT_v0.30.11_COMPREHENSIVE`](../audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) — pre-1.0 readiness audit cut after WS-AN closure. Remediation plan: [`AUDIT_v0.30.11_WORKSTREAM_PLAN`](../audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md) (WS-RC, 15 phases R0..R14). Plan-author errata: [`AUDIT_v0.30.11_ERRATA.md`](../audits/AUDIT_v0.30.11_ERRATA.md) (E-1 DEEP-ARCH-01 verification rationale corrected; E-2 DEEP-ARCH-02 consumer count corrected; E-3 DEEP-RUST-01/02 partial-verification clarification; E-4 plan-internal corrections). WS-AN remediation artefacts archived: [`AUDIT_v0.30.6_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md). Discharge index: [`AUDIT_v0.30.6_DISCHARGE_INDEX.md`](../dev_history/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md). Predecessor (also archived): [`AUDIT_v0.29.0_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md), [`AUDIT_v0.29.0_ERRATA.md`](../dev_history/audits/AUDIT_v0.29.0_ERRATA.md), [`AUDIT_v0.29.0_DEFERRED.md`](../dev_history/audits/AUDIT_v0.29.0_DEFERRED.md) (14/15 RESOLVED at WS-AN closure). |
-| Active workstream | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR5 landed. SM10 (release closure → v1.0.0) is blocked on it |
+| Active workstream | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it |
 | Registered debt | [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
@@ -29,7 +29,7 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 | Stage | What it delivers | Status |
 |-------|------------------|--------|
 | SM0–SM9 | SMP foundations, HAL bring-up, verified locks, per-object locking, per-core scheduling, cross-core IPC, TLB shootdown, SMP information flow, declassification | landed |
-| WS-RR | Pre-SM10 remediation: aarch64 compile coverage, live-path invariants, `ipcInvariantFull` de-threading, fault IPC, boot-path fail-open closure, lock-primitive completion, medium sweep | RR0–RR5 landed; RR6–RR8 open |
+| WS-RR | Pre-SM10 remediation: aarch64 compile coverage, live-path invariants, `ipcInvariantFull` de-threading, fault IPC, boot-path fail-open closure, lock-primitive completion, medium sweep | RR0–RR6 landed; RR7–RR8 open |
 | SM10.1 | The bootable image: a `[[bin]]`, aarch64 Lean object code, bare-metal runtime hosting, `lean_kernel_main` | blocked on WS-RR |
 | SM10.2–SM10.6 | Documentation sweep, hardware validation, spec closure, archive, tag | after SM10.1 |
 | v1.0.0 | A bootable verified SMP microkernel on Raspberry Pi 5 | the release |

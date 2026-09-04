@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.34.48` (`lakefile.toml`) |
+| **Package version** | `0.34.49` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 321,991 across 309 Lean files |
-| **Test LoC** | 68,397 across 70 Lean test suites |
-| **Proved declarations** | 10,707 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 325,198 across 310 Lean files |
+| **Test LoC** | 68,515 across 70 Lean test suites |
+| **Proved declarations** | 10,820 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
-| **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR5 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
+| **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Workstream history** | [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -698,10 +698,42 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    (`rwLockSim_unheld`, `rwLockSim_writer_only`,
    `rwLockSim_readers_only`, `rwLockSim_writer_bit_iff`,
    `rwLockSim_reader_count_iff`).  Documents the **FIFO
-   divergence**: the Rust CAS-retry impl satisfies the mutex +
-   exclusion invariants but not the spec's FIFO admission (no
-   explicit waiters queue in the Rust state).  SM3 review
-   verifies which kernel paths require strict FIFO.
+   divergence**: the CAS-retry `rw_lock.rs` satisfies the mutex +
+   exclusion invariants but not the spec's FIFO admission — it has
+   no waiters queue, so `rwLockSim` relates the writer bit and the
+   reader count only, and says so.  **WS-RR RR6 (v0.34.49) closed
+   the bridge in both directions.**
+
+   *The bridge no longer assumes its own conclusion.*
+   `rust_rwLock_refines_lean` used to take `ListBlockBisim` as a
+   hypothesis, which is that theorem's own conclusion one block at
+   a time.  `honestBlock` is the load-then-CAS trace-shape
+   predicate that **derives** it — each CAS's `expected` is the
+   value the block's own preceding load observed, and its `new` is
+   what `rw_lock.rs` computes from that value — and
+   `listHonestBlocks_listBlockBisim` composes the now-total
+   `honestBlock_blockBisim` family over a chain.  The crux was the
+   promoting release (`releaseWrite` batch-promotes the abstract
+   queue head while `fetch_and(READER_MASK)` leaves the concrete
+   word at `0`), closed by extending the block contract so a
+   release block carries the promoted waiters' re-acquisition
+   (`casPromoteOps`).  `rust_rwLock_refines_lean_honest` and
+   `rust_rwLock_refines_lean_via_rustImplementsRwLock_honest`
+   therefore carry **no** `ListBlockBisim` premise.
+
+   *The deployed lock has its own bridge, and it is a FIFO one.*
+   `STATIC_RW_LOCK_POOL` is `[QueuedRwLock; 4]` as of v0.34.49, so
+   the lock the kernel runs is the ticket-FIFO implementation.
+   `SeLe4n.Kernel.Concurrency.Locks.QueuedRwLockRefinement` relates
+   it to the spec with `queuedSim`, which adds what the FIFO spec
+   is *about*: the abstract `waiters : List (CoreId × AccessMode)`
+   against the half-open ticket interval
+   `[now_serving, next_ticket)`, in order, under a ghost ledger
+   pinned to the machine words by `QueuedTicketWf`.  The capstones
+   are `queuedRwLock_refines_rwLockSpec` and
+   `queuedRwLock_admits_in_spec_order`; they were proved **before**
+   the pool was repointed, so no released version carried an
+   unrefined core lock.
 
    **Rust impl** (`rust/sele4n-hal/src/rw_lock.rs`): bit-packed
    `RwLock` `#[repr(C, align(64))]` with one `AtomicU64` `state`
@@ -766,9 +798,16 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    **Rust FFI bridge** (`rust/sele4n-hal/src/lock_bridge.rs`
    ~1170 LoC + 16 exports in `ffi.rs`):
    - Two static lock pools (`STATIC_TICKET_LOCK_POOL: [TicketLock;
-     4]`, `STATIC_RW_LOCK_POOL: [RwLock; 4]`) sized to match
+     4]`, `STATIC_RW_LOCK_POOL: [QueuedRwLock; 4]`) sized to match
      `PlatformBinding.coreCount = 4` so cross-core tests can
-     exercise one lock per core.
+     exercise one lock per core.  The reader-writer pool is the
+     **ticket-FIFO** `QueuedRwLock` as of v0.34.49 (WS-RR RR6.10),
+     so the deployed lock is the one the Lean FIFO spec describes;
+     `build.rs` pins the element type, so a revert to the
+     CAS-retry `RwLock` fails the build.  The four `rw_lock_*`
+     helpers pass the executing PE's id
+     (`per_cpu::current_core_id_from_tpidr()`), which the ticket
+     protocol needs and the CAS-retry lock did not.
    - Always-on Relaxed atomic trace counters (6 arrays × 4
      entries) recording acquire/release call counts per slot;
      wait-free, off the correctness path.
@@ -796,15 +835,42 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    `rust_ticketLock_refines_lean` packages all four witnesses.
    Mirrors the `Locks/RwLockRefinement.lean` structure.
 
-   **SM2.D.7 lockPrimitives aggregator** (NEW MODULE
-   `SeLe4n/Kernel/Concurrency/LockPrimitives.lean` ~250 LoC):
-   typed `LockPrimitiveTheorem` list aggregating all 22 SM2
-   theorems (4 memory-model + 6 TicketLock + 10 RwLock + 2
+   **WS-RR RR6.12–RR6.14 (v0.34.49)** raised F-01 to the RwLock
+   standard.  What landed originally related two counters by
+   hand-written record updates on both sides, and its fourth
+   conjunct was `∀ abs conc, ticketLockSim abs conc →
+   ticketLockSim abs conc` — true independent of φ.  The module
+   now carries an operational concrete step
+   (`ConcreteTicketLockOp`, `TicketLockConcrete.applyOp`), a
+   state-indexed block relation `ticketBlock` with a stutter
+   prefix for the unbounded `now_serving` spin, and trace
+   composition `ticketTrace_preserves_ticketLockSim` stated so it
+   does **not** take its own per-block conclusion as a hypothesis.
+   The step conjuncts read `TicketLockState.applyOp` rather than
+   hand-written updates, the tautology is replaced by
+   `TicketLockState.observeServing_noop` (a pure load leaves both
+   states unchanged, over the concrete step), and
+   `ticketLockSim_not_universal` exhibits a pair the relation does
+   **not** relate — so φ is falsifiable rather than vacuous.
+
+   **SM2.D.7 lockPrimitives aggregator** (MODULE
+   `SeLe4n/Kernel/Concurrency/LockPrimitives.lean`):
+   typed `LockPrimitiveTheorem` list aggregating **25** SM2
+   theorems (4 memory-model + 6 TicketLock + 11 RwLock + 4
    refinement) with size + per-category count + NoDup witnesses.
-   Cross-language symmetry: the Rust-side
-   `LOCK_THEOREM_COUNT = 22` constant in `lock_bridge.rs` is
-   enforced equal via `scripts/check_lock_ffi_symmetry.sh`
-   (wired into Tier 0 hygiene).
+   The four refinement entries are one per lock kind — TicketLock,
+   the CAS-retry RwLock, the deployed `QueuedRwLock` — plus the
+   deployed lock's FIFO-admission payoff.  WS-RR RR6.24 also
+   repointed the R-10 aggregator entry at the theorem that proves
+   writer *liveness*
+   (`rwLock_writer_admitted_within_release_budget`); the
+   single-step *safety* theorem it used to stand in for keeps its
+   own entry under its accurate name, which is why the RwLock
+   category went from 10 to 11.  Cross-language symmetry: the
+   Rust-side `LOCK_THEOREM_COUNT = 25` constant in
+   `lock_bridge.rs` is enforced equal via
+   `scripts/check_lock_ffi_symmetry.sh` (wired into Tier 0
+   hygiene).
 
    **SM2.D.5 cross-language symmetry**:
    `scripts/check_lock_ffi_symmetry.sh` verifies:

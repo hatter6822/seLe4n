@@ -50,7 +50,10 @@ inventory was written:
 
 - `SeLe4n/Kernel/Concurrency/` — SMP foundations: `Types.lean` (`CoreId`,
   `numCores`, `SharingDomain`), `MemoryModel.lean`, `Locks/` (verified
-  `TicketLock`, `RwLock` + refinement, `Kind.lean` lock hierarchy levels
+  `TicketLock` and `RwLock`, plus a refinement bridge per lock kind —
+  `TicketLockRefinement.lean`, `RwLockRefinement.lean` for the CAS-retry
+  lock, and `QueuedRwLockRefinement.lean` for the **deployed** ticket-FIFO
+  `QueuedRwLock`; `Kind.lean` lock hierarchy levels
   0–9, `LockSet` two-phase locking, `Deadlock.lean`/`Serializability.lean`
   with their inventories), `Sgi.lean`, `Runtime.lean` (live entry seams),
   `Anchors.lean`.

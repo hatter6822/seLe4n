@@ -4,8 +4,8 @@
 > **RR1 LANDED at v0.34.41** (all twelve sub-tasks); **RR2 LANDED at v0.34.42**
 > (all twenty sub-tasks; RR2.18 partial — see its acceptance note);
 > **RR3 LANDED at v0.34.43** (all twenty-six); **RR4 LANDED at v0.34.44** (all
-> twenty-seven); **RR5 LANDED at v0.34.48** (all eighteen); RR6..RR8 not
-> started.
+> twenty-seven); **RR5 LANDED at v0.34.48** (all eighteen);
+> **RR6 LANDED at v0.34.49** (all twenty-seven); RR7..RR8 not started.
 > **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Source register**: [`UNFINISHED_SMP_WORK.md`](UNFINISHED_SMP_WORK.md) (171 confirmed findings)
 > **Successor**: [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) (SM10) — opens when this phase closes
@@ -153,7 +153,7 @@ Nothing else may overlap without re-reading the dependency list above.
 | RR3 | `ipcInvariantFull` de-threading closure (D1, D6, D8).  **LANDED v0.34.43** (RR3.1–RR3.26, the dispatch payoff included) | 26 | XL |
 | RR4 | Fault handling: full fault IPC with reply-based restart.  **LANDED v0.34.44** (RR4.1–RR4.27) | 27 | XL |
 | RR5 | Boot-path fail-open closure.  **LANDED v0.34.48** (RR5.1–RR5.18) | 18 | M–L |
-| RR6 | Verified lock primitives completion (SM2.C-defer, pre-v1.0.0) | 27 | L |
+| RR6 | Verified lock primitives completion (SM2.C-defer, pre-v1.0.0).  **LANDED v0.34.49** (RR6.1–RR6.27) | 27 | L |
 | RR7 | Medium-severity sweep, plus the §7 rows RR0.11 routes here | 41 | M |
 | RR8 | Phase closure and hand-off to SM10 | 5 | S |
 
@@ -984,6 +984,21 @@ Three verified facts frame the phase:
 So the deployed lock is not the one the spec describes, and the harness that
 would have caught that drives neither.
 
+> **LANDED at v0.34.49.**  The three facts above are the state this phase was
+> written against, not the state of the tree.  All three are closed:
+> `STATIC_RW_LOCK_POOL` is `[QueuedRwLock; 4]` (with `build.rs` pinning the
+> element type, so a revert fails the build), the queued lock's refinement to
+> the FIFO spec was proved *before* the pool was repointed
+> (`queuedRwLock_refines_rwLockSpec`, `queuedRwLock_admits_in_spec_order`), and
+> the Tier-5 oracle drives both real implementations and checks them against
+> each other, against the abstract ticket interval and against `encodeRwLock`
+> after every operation.  The CAS-retry lock is **retained**, per RR6.11, for
+> three reasons recorded in its own module docs: it is the oracle's second
+> implementation, it owns the `WRITER_BIT` / `READER_MASK` layout the queued
+> lock now imports rather than re-declares, and its D-4 refinement was
+> *completed* (`rust_rwLock_refines_lean_honest`, stated without the
+> `ListBlockBisim` premise it used to assume) rather than deleted.
+
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
 | RR6.1 | Add non-blocking `try_acquire_read` / `try_acquire_write` to the real `RwLock`, removing the oracle's stated reason for modelling instead of driving | `rust/sele4n-hal/src/rw_lock.rs` | M |
@@ -1231,7 +1246,7 @@ PASS — the contract landed at `v0.34.2` and pinned by
 - **Successor**: [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) (SM10)
 - **Overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
 - **Absorbed by RR3**: [`IPC_INVARIANT_DETHREADING_PLAN.md`](../dev_history/planning/IPC_INVARIANT_DETHREADING_PLAN.md)
-- **Absorbed by RR6**: [`SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md`](SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md), [`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
+- **Absorbed by RR6** (both COMPLETE at v0.34.49): [`SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md`](SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md), [`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
 - **Canonical status**: [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md)
 - **Out of scope**: [`HARDWARE_PARTITION_ISOLATION_PLAN.md`](HARDWARE_PARTITION_ISOLATION_PLAN.md)
 

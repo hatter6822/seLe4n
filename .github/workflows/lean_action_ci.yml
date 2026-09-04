@@ -259,6 +259,54 @@ jobs:
       - name: Run Rust tests, conformance, format and lint gates
         run: ./scripts/test_rust.sh
 
+  test-loom-concurrency-model:
+    name: Loom Concurrency Model (deployed RwLock)
+    runs-on: ubuntu-latest
+
+    # WS-RR RR6.20: the plan's D-5 acceptance gate lists "`cfg(loom)`
+    # exhaustive-interleaving runs pass on op-sequences of length <= 4",
+    # and until this job existed nothing ran it.  A `loom`
+    # dev-dependency on its own explores nothing — loom instruments its
+    # own atomic types, and `queued_rw_lock.rs` imported
+    # `core::sync::atomic` directly — so the gate was satisfiable by a
+    # manifest entry.
+    #
+    # Separate job rather than a step inside `test-rust`: it builds the
+    # crate with `RUSTFLAGS='--cfg loom'`, which resolves a different
+    # dependency graph and would poison that job's cache.  A failure
+    # here reads as "an interleaving breaks the lock", which is not a
+    # host test failure.
+    #
+    # Fast enough for a per-PR lane: the models are two threads with one
+    # or two operations each, and the whole run is a few seconds after
+    # the loom compile.
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Same SHA-pinned action and toolchain version as `test-rust`.
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: 1.94.1
+
+      - name: Cache Cargo registry and build artifacts
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          # Distinct key from `test-rust`: the `--cfg loom` graph pulls
+          # in loom and its transitive crates, and sharing a key would
+          # have the two jobs invalidate each other every run.
+          key: ${{ runner.os }}-cargo-loom-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-loom-
+
+      - name: Run the loom exhaustive-interleaving gate
+        run: ./scripts/test_loom_queued_rw_lock.sh
+
   test-aarch64-cross:
     name: aarch64 Cross Build
     runs-on: ubuntu-latest

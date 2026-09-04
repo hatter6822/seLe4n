@@ -1,3 +1,232 @@
+## v0.34.49 — the lock the kernel runs is the lock the spec describes
+
+**WS-RR RR6 (all twenty-seven sub-tasks), closing SM2.C-defer.**  One theme,
+stated by the phase plan and confirmed by the pre-SM10 audit: *the refinement
+bridges connected the Lean specs to transliterations and to their own
+assumptions, rather than to the locks the kernel actually deploys.*  Four
+consequences, each closed here.
+
+The deployed reader-writer lock was the CAS-retry `rw_lock.rs` while the Lean
+spec had been tightened to strict FIFO, and `QueuedRwLock` — the FIFO
+implementation — had **zero** consumers outside its own module.  The Tier-5
+oracle that would have caught the mismatch drove neither lock: it was a
+re-derivation of the Lean spec in Rust, so it validated a Lean↔Lean identity.
+`rust_rwLock_refines_lean` took `ListBlockBisim` as a hypothesis, which is that
+theorem's own conclusion one block at a time.  And the `loom` and `miri` gates
+the RwLock plan declares mandatory did not exist.
+
+### The deployed lock, and the order the switch had to happen in (RR6.4–RR6.11)
+
+`STATIC_RW_LOCK_POOL` is now `[QueuedRwLock; 4]`.  The switch is one line; what
+took the phase is that it may not land first.
+
+`SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` is a new module,
+and it landed **before** the pool was repointed, so no released version carries
+an unrefined core lock.  Four layers:
+
+* **The concrete model.**  `ConcreteRwLockOp` models a *single* `AtomicU64`,
+  and `QueuedRwLock` holds four atomic words — `state`, `next_ticket`,
+  `now_serving`, `last_enqueued` — so the CAS-retry alphabet cannot express a
+  ticket at all.  `QueuedRwLockConcrete` and `QueuedRwLockOp` carry the ticket
+  operations (`next_ticket.fetch_add`, the `now_serving` load and `fetch_add`,
+  the four `state` operations, `sev`, a bounded `wfe`), reusing the existing
+  `writerBit` / `readerMask` lemmas for the `state` word.
+* **The ticket protocol's own well-formedness**, stated over the concrete model
+  alone: `now_serving ≤ next_ticket`, each issued ticket held by at most one
+  core, and `now_serving` advancing exactly once per issued ticket.
+  `QueuedTicketWf` pins the ghost ledger to the machine words, and it is the
+  load-bearing layer — it is the mutual-exclusion argument
+  (`queued_entry_is_exclusive`) and it is what makes both unbounded spins
+  terminate: holding the ticket is what admits a reader, so no *new* reader can
+  enter while a writer is being served
+  (`queued_no_reader_entry_while_served`), the reader count is therefore
+  monotonically decreasing (`queued_release_read_strictly_decreases`), and
+  `queued_await_turn_terminates` follows.
+* **The simulation relation.**  `rwLockSim` relates the writer bit and the
+  reader count and says in as many words that the abstract `waiters` field is
+  *not* represented — honest for a lock with no queue, and useless here, since
+  `waiters` is the whole of what the FIFO spec constrains.  `queuedSim` relates
+  it to the half-open ticket interval `[now_serving, next_ticket)`, in order.
+* **Blocks and traces.**  `queuedBlock` maps one abstract `RwLockOp` to one
+  concrete block, each admitting an arbitrary `await_turn` **stutter prefix** —
+  the spin is unbounded in the implementation and has to appear as stuttering
+  that leaves `queuedSim` intact, not as a step.
+  `queuedTrace_preserves_queuedSim` composes them, and is stated so that it
+  does **not** take the per-block obligation as a hypothesis; reproducing that
+  shape in a new module would have shipped the known defect twice.
+
+The payoff is `queuedRwLock_refines_rwLockSpec` and
+`queuedRwLock_admits_in_spec_order`.
+
+`rw_lock.rs` is **retained**, and its module docs now record why, so the answer
+does not have to be re-derived: it is the Tier-5 oracle's second
+implementation, it owns the `WRITER_BIT` / `READER_MASK` layout that
+`queued_rw_lock.rs` now *imports* rather than re-declares (one definition of
+the bit layout, where there were two), and its own refinement was **completed**
+rather than deleted.  The kernel instantiates it nowhere.
+
+`build.rs` pins the pool's element type, and the gate was checked by breaking
+the relation rather than deleting a token: reverting the pool to `[RwLock; 4]`
+— which leaves every symbol in place — fails the build.  The four `rw_lock_*`
+bridge helpers now pass the executing PE's id from
+`per_cpu::current_core_id_from_tpidr()`, which the ticket protocol needs and
+the CAS-retry lock did not.
+
+### The oracle drives the locks it is comparing (RR6.1–RR6.3)
+
+The Tier-5 binary's own docstring was headed "Why a software model, not the
+real RwLock?", and the objection was real: the lock blocks under contention, so
+a single-threaded driver cannot call `acquire_write` and expect to return.
+
+The answer is the first of the two designs the plan already specified.
+`rw_lock::RwLock` gains non-blocking `try_acquire_read` / `try_acquire_write`,
+each a single CAS attempt mirroring exactly one iteration of the blocking loop
+— so the probe cannot admit where the loop would not — and `QueuedRwLock` gains
+the same pair, where a served-but-refused writer calls `pass_turn()` so a
+refusal can never strand the waiters behind it.
+
+The oracle's `Driver` now holds **both** real locks in process memory, runs
+every generated operation through them, and checks three relations after
+**every** operation: that the two implementations agree, that the queued lock's
+ticket interval matches the abstract waiter queue, and that the state word is
+`encodeRwLock` of the abstract state.  The state it renders is read back from
+the lock's own word.  D-6's "zero mismatches" gate is met against the real
+locks; 1000 sequences pass.
+
+### The bridges derive their correspondence instead of assuming it (RR6.12–RR6.19)
+
+Two bridges had the same shape of defect, and the fixes are the phase's proof
+work.
+
+**The CAS-retry RwLock (D-4).**  `blockBisim` is *defined* as the simulation
+its own main theorem concludes, one block at a time, so
+`rust_rwLock_refines_lean` asked the caller to supply the conclusion; the
+corollary bound its correspondence hypothesis as `_h_corresponds` and never
+used it.  `honestBlock` is the missing predicate: a state-indexed inductive in
+which every CAS's `expected` is the value the block's own preceding load
+observed and its `new` is what `rw_lock.rs` computes from that value, so
+`tryRead_success c 999 999` — an abstract direct-acquire whose concrete CAS
+fails — is not an `honestBlock`.  `listHonestBlocks_listBlockBisim` derives
+`ListBlockBisim` from it by induction, discharged by a now-**total**
+`honestBlock_blockBisim` family: the two constructors that had no discharge
+lemma at all (`tryWrite_cas_retry`, `tryWrite_park_retry`) are covered, and the
+coverage is derived from the constructor inventory rather than a hand-kept
+list, so a constructor added later is a missing case rather than a silent gap.
+
+The crux was the promoting release, and it needed a contract change rather than
+a lemma.  `RwLockState.applyOp` enqueues a contended acquirer and `releaseWrite`
+batch-promotes the head, while the CAS-retry lock has no queue: from `unheld`,
+`tryAcquireWrite c₀ · tryAcquireRead c₁ · releaseWrite c₀` leaves the abstract
+state with `readers = [c₁]` (encoding `1`) and the concrete
+`fetch_and(READER_MASK)` at `0`, so `rwLockSim` is false — which is exactly why
+the four original release discharges carried `_no_promote` / `_empty_queue`
+side conditions and dodged the only interesting case.  A release block now
+carries the promoted waiters' re-acquisition (`casPromoteOps`,
+`casPromotePost`), and the promoting discharges are proved over it.
+`rust_rwLock_refines_lean_honest` and
+`rust_rwLock_refines_lean_via_rustImplementsRwLock_honest` therefore carry no
+`ListBlockBisim` premise, and the corollary uses its correspondence hypothesis.
+
+**The TicketLock (F-01).**  What had landed related two `UInt64` counters by
+record updates written by hand on both sides — which did not merely fail to
+*use* `TicketLockState.applyOp`, they did not agree with it — and its fourth
+conjunct was `∀ abs conc, ticketLockSim abs conc → ticketLockSim abs conc`,
+proved `:= h_sim`.  The module now carries `ConcreteTicketLockOp` and
+`TicketLockConcrete.applyOp`, a `ticketBlock` relation with a stutter prefix
+for the unbounded `now_serving` spin, and
+`ticketTrace_preserves_ticketLockSim` — again stated so it does not assume its
+own per-block conclusion.  The step conjuncts read `applyOp`; the tautology is
+replaced by `TicketLockState.observeServing_noop`, a real "a pure load leaves
+both states unchanged" statement over the concrete step; and
+`ticketLockSim_not_universal` exhibits a pair the relation does **not** relate,
+so φ is falsifiable rather than vacuously true.
+
+### The writer's bounded wait, as specified (RR6.23–RR6.24)
+
+D-2's acceptance gate named a bounded-wait theorem over *distinct* admission
+steps; only the single-state `_weak` corollary had landed.
+`rwLock_bounded_wait_write_distinct` is the named statement, and
+`rwLock_writer_admitted_within_release_budget` is the form a deployment can act
+on: a queued writer is admitted within a budget counted in *effective
+releases*, via `writerWaitDepth_release_count_bound_offset`.
+
+RR6.24 repointed the R-10 aggregator entry, which had advertised
+`rwLock_no_writer_starvation` as writer liveness while it resolved to a
+single-step safety alias.  The liveness theorem now holds that entry and the
+safety theorem keeps its own under an accurate name, which is why the RwLock
+category goes 10 → 11 and the inventory 22 → 25 (the other two are the queued
+bridge and its FIFO-admission payoff).  `LOCK_THEOREM_COUNT` follows in
+lockstep; `scripts/check_lock_ffi_symmetry.sh` enforces the agreement.
+
+### The concurrency gates that did not exist (RR6.20–RR6.22)
+
+A `loom` entry in the manifest explores nothing: `queued_rw_lock.rs` imported
+`core::sync::atomic` directly, and loom only sees its own instrumented atomics.
+The lock now aliases them under `cfg(loom)`, its `new()` splits into a
+`const fn` and a loom-compatible form, and `#[cfg(loom)] mod loom_model` holds
+five models, run by `scripts/test_loom_queued_rw_lock.sh` and by the new
+`test-loom-concurrency-model` CI job.  `scripts/test_miri_queued_rw_lock.sh`
+runs the lock's suite under `-Zmiri-strict-provenance` (35 tests, 8.7 s) and is
+wired into `test_nightly.sh` behind `NIGHTLY_ENABLE_EXPERIMENTAL=1`.  The
+FIFO and stress iteration counts reach the plan's thresholds through named
+constants that scale under `cfg(miri)` (`STRESS_ITER`, `FIFO_ACQUISITIONS`)
+rather than being lowered outright.
+
+Both gates were verified decisive the way this project requires — by breaking
+the *relation*, not by deleting the token: removing `await_turn` from
+`acquire_read`, which leaves every symbol in place, fails two of the five loom
+models.
+
+### Registration (RR6.25–RR6.27)
+
+SM2.C-defer's plan is **COMPLETE**, and the three false statements it carried
+are corrected in place rather than quietly dropped: a "LANDED" row that
+understated the tree (the D-1.9 theorem `rwLock_fifo_admission_temporal`
+exists), a design section describing the MCS queue that v0.32.148 deleted, and
+Appendix B commands naming a binary target and gate scripts that did not exist.
+`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` §3.2.6.1's false theorem statement is
+corrected to name only the kernel-facing transitions.
+
+The four RR6 rows in `REGISTERED_DEBT.md` table A are closed.  The two SM2.C
+debts RR6 deliberately does **not** absorb are re-registered individually in
+table C — **SM2.C-T** (timestamps on `RwLockExecution`, so `writerWaitDepth` is
+denominated in ticks rather than lock operations) and **SM2.C-C** (a cancel
+constructor on `RwLockOp`, so a refused 2PL growing phase can withdraw a queued
+request).  Each changes a datatype the whole SM2.C liveness surface quantifies
+over, which is a foundation move rather than something that rides along with a
+lock-implementation cut; both were previously assigned to a phase already
+CLOSED and appeared in no live plan.
+
+Fine-lock migration **Track D** — commit partitioning, the one part of the
+fine-lock work WS-RR cannot land, because that plan seam-gates it to SM10.1 —
+is now a named dependency in `SMP_RELEASE_CLOSURE_PLAN.md` §2, with the three
+obligations SM10.1 inherits stated there.
+
+### Also in this cut
+
+* `THIRD_PARTY_LICENSES.md` gains a **model-checking dependencies** section
+  for `loom` — verbatim MIT notice, upstream links, and the transitive tree —
+  even though `[target.'cfg(loom)'.dependencies]` keeps it out of every build
+  graph this project ships, including the bare-metal cross build.  Attribution
+  should not depend on a reader knowing which `cfg` a dependency table is
+  keyed on, and the section states the condition under which the fuller
+  obligation would apply.  The **Runtime Dependencies** section still reads
+  **None**: nothing third-party is linked into the kernel binary.
+* Two pre-existing dead-code warnings in `boot.rs` are fixed at the source:
+  `LEAN_DECLARED_CORE_COUNT` and `SECONDARY_READY_TIMEOUT_TICKS` are gated to
+  the configurations that use them, rather than silenced.
+* Stale docstrings that named the retired MCS design in `queued_rw_lock.rs`,
+  the CAS-retry lock as deployed in `FineLockFlow.lean` and
+  `Model/Object/Types.lean`, and the `waiters` field in `RwLock.lean` are
+  corrected — the same slice as the switch, since landing them apart ships a
+  version whose canonical concurrency documentation names the wrong runtime
+  primitive.
+* Tier-3 anchors and `tests/SmpSurfaceAnchors.lean` cover the whole new
+  surface, and the aggregator's size and partition witnesses are re-pinned at
+  25 = 4 + 6 + 11 + 4.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR6
+
 ## v0.34.48 — the boot path fails closed
 
 **WS-RR RR5 (all eighteen sub-tasks).**  Six latents that were unreachable only

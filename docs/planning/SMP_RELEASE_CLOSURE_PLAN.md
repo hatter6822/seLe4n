@@ -204,6 +204,28 @@ what RR1.11 owed the estimate; the numbering has an owner and a place.
   `dispatchSyscall_preserves_ipcInvariantFull` staged with the `.call` surface
   they compose, under pre-state quiescence packs), and retired the plan at
   RR3.26 to `docs/dev_history/planning/`.
+- **Fine-lock migration Track D — commit partitioning**
+  ([`SMP_FINE_LOCK_MIGRATION_PLAN.md`](SMP_FINE_LOCK_MIGRATION_PLAN.md) §4,
+  PRs 10–12), registered in [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md)
+  table B.  That plan **seam-gates Track D to SM10.1 itself**, so it is the one
+  part of the fine-lock work WS-RR cannot land: PR 12 replaces
+  `modifyGetKernelState`'s read-then-write with a compute-from-snapshot CAS
+  commit and retires SM5.I's global kernel-entry ticket lock behind a flag, and
+  a commit model may only flip after the hardware validation SM10.1 produces.
+  **Three obligations SM10.1 inherits.**  (1) **The runtime object-store
+  representation**: Track A's key-local reading of the object-store lock is
+  sound only once `SystemState.objects` is realised as per-object storage —
+  the obligation `storeObject` already carries, and the premise PR 10's
+  `OBJECT_STRIPE_POOL` and `objid_stripe` hash exist to serve.  (2) **The
+  measured WCRT claim**: while the entry lock stands, every kernel entry is
+  serialised system-wide, so the live worst-case response time is the
+  global-lock bound and `PerCoreWcrt.lean`'s fine-lock bound remains a
+  statement about the *intended* discipline (CLAUDE.md standing constraint).
+  SM10.4's performance rows and any v1.0.0 latency claim must quote the bound
+  the shipped image actually realises.  (3) **The named follow-on
+  `SM3.C.9.b`** — the timer tick's `SchedLockId` `withLockSet` bracket, which
+  Track D's own PR 12 step 4 defers to WS-RR **RR7.39**; SM10.1 must not read
+  Track D's completion as covering it.
 - Tier 0..5 tests green at HEAD.
 
 ## 3. Sub-tasks
@@ -616,20 +638,20 @@ count proved equal to the real inventory lengths.
 manifest, the Lean total, or the JSON disagree.  Read the number; do not
 re-derive it.
 
-**What the number counts, and what it does not.**  903 is the number of
+**What the number counts, and what it does not.**  906 is the number of
 **theorems** registered in a machine-checked inventory: named, resolving at
 elaboration, duplicate-free, and — verified by the propositionality census —
 of a type that is a `Prop`.
 
 That last clause is not decoration.  The inventories register a phase's whole
-surface, so 210 of their 1113 entries are `def`s: `wakeThreadLockSet` and
+surface, so 210 of their 1116 entries are `def`s: `wakeThreadLockSet` and
 `determineTargetCore` in SM5.C's, `replenishOnCore` and
 `migrateSchedContextReplenishment` in SM5.H's, the per-core invariant
 *predicates* in SM5.I's, the WCRT cost functions in SM5.J's.  Every
 inventory's construction macro proves its identifier resolves; none checks the
 type.  A `List.length` therefore measures registrations, and quoting it as a
 theorem count is the mistake this plan made at `v0.34.26` and corrected at
-`v0.34.27` after review.  **`entryTotal` is 1113; `theoremTotal` is 903; quote
+`v0.34.27` after review.  **`entryTotal` is 1116; `theoremTotal` is 906; quote
 the second.**
 
 Neither figure is the earlier "~210 substantive theorems", which was an
@@ -640,7 +662,7 @@ and SM4 carry assumption ledgers** (`smpLatentInventory`,
 `smpRetiredInventory`), which `smpPhaseTheoremCount` excludes by design, so
 their own theorem catalogues are unmeasured for a different reason and by the
 same amount.  All eight are registered as contributing zero rather than given a
-plausible figure, so 903 *understates* what those phases prove.  Building the
+plausible figure, so 906 *understates* what those phases prove.  Building the
 missing inventories — **eight phases, not six** — is registered debt with
 closure target **SM10.3.13**
 (`docs/REGISTERED_DEBT.md`); until they exist, the release note must say

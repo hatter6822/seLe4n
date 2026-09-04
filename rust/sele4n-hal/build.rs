@@ -24,6 +24,12 @@
 /// diagnostic during `cargo build`, not during a downstream binary
 /// link or QEMU boot.
 fn main() {
+    // WS-RR RR6.20: declare the `loom` cfg so `--check-cfg` (on by
+    // default since Rust 1.80) does not warn on the atomics alias in
+    // `queued_rw_lock.rs`.  Nothing sets it except
+    // `scripts/test_loom_queued_rw_lock.sh`.
+    println!("cargo::rustc-check-cfg=cfg(loom)");
+
     // AN8-B.5: scan boot.S for the legacy literal pattern on every target
     // (not gated on aarch64) so the regression check fires even in host
     // test builds. The scanner is a simple whitespace-tolerant substring
@@ -155,14 +161,17 @@ fn main() {
     scan_ffi_rs_exposes_timer_shadow_advance_export();
 
     // WS-SM SM2.E (closes the queued_rw_lock protocol contract):
-    // verify that the mode-encoded four-state parked machine and the
-    // stale-self tail detection are intact in `queued_rw_lock.rs`.
-    // A refactor that re-introduces `AtomicBool` parked, drops any
-    // of the four states (especially the WAITING_READER vs
-    // WAITING_WRITER distinction that closes the stale-mode-read
-    // race), or removes the stale-self check would re-open the
-    // writer-readers exclusion panic that the Stream B protocol fix
-    // closed.
+    // verify the ticket hand-off primitives are intact in
+    // `queued_rw_lock.rs` — `now_serving` advanced by a monotone
+    // `fetch_add`, tickets issued by a monotone `fetch_add`, and writer
+    // admission by CAS from exactly `0` rather than `fetch_or`.  Those
+    // three are the whole deadlock-freedom and mutual-exclusion
+    // argument; the MCS queue this protocol replaced deadlocked with
+    // the lock free because the duty to admit the next waiter could be
+    // dropped.  (The comment here described that retired MCS machine —
+    // a four-state parked flag and a stale-self tail check — until
+    // WS-RR RR6.10; the scanner below has checked the ticket protocol
+    // since v0.32.148.)
     scan_queued_rw_lock_protocol_intact();
 
     // WS-RR RR1.4 (closes the FEAT_TLBIOS contract): verify every
@@ -5631,7 +5640,16 @@ fn scan_lock_bridge_rs_intact() {
         "pub const STATIC_TICKET_LOCK_POOL_SIZE: usize",
         "pub const STATIC_RW_LOCK_POOL_SIZE: usize",
         "pub static STATIC_TICKET_LOCK_POOL:",
-        "pub static STATIC_RW_LOCK_POOL:",
+        // WS-RR RR6.10: the reader-writer pool holds the **ticket FIFO**
+        // lock, not the CAS-retry one.  The element type is named here
+        // rather than just the static, because "a pool exists" is not
+        // the property that matters — the property is *which lock the
+        // kernel deploys*, and it is the ticket lock precisely because
+        // that is the one `QueuedRwLockRefinement.lean` proves refines
+        // the FIFO specification this bridge is claimed to satisfy.
+        // A revert to `[RwLock; …]` would leave every other check here
+        // passing.
+        "pub static STATIC_RW_LOCK_POOL: [QueuedRwLock;",
         // SM2.D.4 trace counters: per-pool-slot atomic counters used
         // by the cross-core test (SM2.D.8) to verify FFI serialisation.
         // Each is `pub static` so a removal would fail the build (the
@@ -5664,7 +5682,7 @@ fn scan_lock_bridge_rs_intact() {
         "pub fn rw_lock_acquire_write_count(",
         "pub fn rw_lock_release_write_count(",
         // SM2.D.7 theorem-count constant + build anchor.
-        "pub const LOCK_THEOREM_COUNT: usize = 22",
+        "pub const LOCK_THEOREM_COUNT: usize = 25",
         "pub const LOCK_BRIDGE_BUILD_ANCHOR:",
     ];
     for needle in required {
@@ -5915,16 +5933,14 @@ fn scan_queued_rw_lock_protocol_intact() {
         Err(_) => return,
     };
 
-    // Strip comments to avoid false positives from documentation.
-    let mut stripped = String::new();
-    for line in contents.lines() {
-        let trimmed = line.trim_start();
-        if trimmed.starts_with("//") || trimmed.starts_with("/*") || trimmed.starts_with("*") {
-            continue;
-        }
-        stripped.push_str(line);
-        stripped.push('\n');
-    }
+    // WS-RR RR6.10: read the shared code view rather than a local
+    // line-leading-comment filter.  The local one missed a trailing
+    // `//` comment and every block comment that did not start its own
+    // line, so a `self.now_serving.fetch_add(1` *mentioned* in either
+    // would have satisfied check (1) with the call deleted — the
+    // presence-versus-relation shape CLAUDE.md's key conventions
+    // describe.  One question, one implementation.
+    let (_, stripped) = rust_code_views(&contents);
 
     // Check (1): the ticket hand-off primitives.
     let required = [

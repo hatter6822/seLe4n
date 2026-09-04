@@ -133,6 +133,14 @@ What each tier is for:
 | 4 | `test_tier4_smp_bootcheck.sh`, `_nightly_candidates.sh` | SMP acceptance — **needs the bootable image**, so it cannot run until SM10.1 |
 | 5 | `test_tier5_cross_language.sh` | Do the Rust lock primitives agree with their Lean specs? |
 
+The Tier-5 oracle **drives** both real reader-writer locks — a
+`rw_lock::RwLock` and the deployed `queued_rw_lock::QueuedRwLock` — through
+every generated operation and checks three relations after each one: that the
+two implementations agree, that the queued lock's `[now_serving, next_ticket)`
+interval matches the abstract waiter queue, and that the state word is
+`encodeRwLock` of the abstract state.  It does not model them; the state it
+renders is read back from the lock's own word.
+
 ### Rust, and the cross target
 
 ```bash
@@ -152,6 +160,35 @@ lints the cross target with `-D warnings`. It runs in CI as the
 **`cargo check` is not a substitute.** It stops before code generation, so it
 never hands an `asm!` template to an assembler. The first real cross build
 found six defects and three lints; four of the defects were `check`-clean.
+
+### Concurrency model checking and miri
+
+The deployed reader-writer lock is exercised by two tools the host test lane
+cannot substitute for:
+
+```bash
+./scripts/test_loom_queued_rw_lock.sh   # bounded-interleaving model checking
+./scripts/test_miri_queued_rw_lock.sh   # UB / strict-provenance checking
+```
+
+`loom` explores the lock's interleavings exhaustively within a bounded model,
+which is what catches an ordering bug a stress test only makes *unlikely*.  It
+needs the lock compiled against its own instrumented atomics, so
+`queued_rw_lock.rs` aliases `core::sync::atomic` under `cfg(loom)` and its
+models live in a `#[cfg(loom)] mod loom_model`; a `loom` entry in the manifest
+alone explores nothing.  The gate runs in CI as the
+`test-loom-concurrency-model` job.
+
+`miri` runs the lock's own suite under `-Zmiri-strict-provenance` and is wired
+into `test_nightly.sh` behind `NIGHTLY_ENABLE_EXPERIMENTAL=1`.  The stress and
+FIFO iteration counts scale down under `cfg(miri)` (`STRESS_ITER`,
+`FIFO_ACQUISITIONS`) so the interpreter finishes, without weakening the
+native-speed thresholds.
+
+Both gates were verified decisive by a **relation-breaking** mutation rather
+than by deleting a token: removing `await_turn` from `acquire_read` — which
+leaves every symbol the gate might grep for in place — fails two of the five
+loom models.
 
 ### Running one suite
 

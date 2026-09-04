@@ -155,9 +155,17 @@ lock at the operational-semantics level:
 * `waiters` — the FIFO queue of cores blocked waiting for the lock,
   each tagged with their requested access mode.  Used for FIFO
   admission ordering (`rwLock_fifo_admission`) and writer-starvation
-  freedom (`rwLock_no_writer_starvation`).  The Rust impl tracks
-  waiters implicitly through the CAS-retry spin-loop, weakening the
-  FIFO guarantee (documented in SM2.C.20).
+  freedom (`rwLock_no_writer_starvation`).  The **deployed** Rust lock
+  represents this queue: `queued_rw_lock::QueuedRwLock` is a ticket
+  protocol, and `queuedSim` (WS-RR RR6.6) relates `waiters` to the
+  half-open ticket interval `[now_serving, next_ticket)` in order, so
+  FIFO admission is a theorem of the implementation
+  (`queuedRwLock_admits_in_spec_order`).  The *other* Rust lock,
+  `rw_lock::RwLock`, tracks waiters implicitly through its CAS-retry
+  spin-loop and does not preserve FIFO (documented in SM2.C.20); it is
+  retained as the second implementation the Tier-5 oracle cross-checks
+  (WS-RR RR6.11) and is no longer what `lock_bridge.rs` deploys
+  (WS-RR RR6.10).
 
 `Inhabited` is derived (every field has `Inhabited` — `Option` via
 `none`, `List` via `[]`).  Per WS-SM SM3.A audit-pass-5, the
@@ -4115,6 +4123,140 @@ theorem rwLock_bounded_wait_write_distinct_weak
     writerWaitDepth s c ≤ numCores - 1 :=
   writerWaitDepth_bounded s h_wf c h_queued
 
+/-- **WS-RR RR6.23 (helper)**: an empty window counts no releases. -/
+@[simp] theorem RwLockExecution.countEffectiveReleases_self
+    (e : RwLockExecution) (k : Nat) : e.countEffectiveReleases k k = 0 := by
+  unfold RwLockExecution.countEffectiveReleases
+  simp
+
+/-- **WS-RR RR6.23 (helper)**: extending the window by one position adds
+that position's own contribution. -/
+theorem RwLockExecution.countEffectiveReleases_succ
+    (e : RwLockExecution) (k₀ d : Nat) :
+    e.countEffectiveReleases k₀ (k₀ + d + 1)
+      = e.countEffectiveReleases k₀ (k₀ + d)
+        + (if e.isEffectiveReleaseAt (k₀ + d) then 1 else 0) := by
+  unfold RwLockExecution.countEffectiveReleases
+  have h1 : k₀ + d + 1 - k₀ = d + 1 := by omega
+  have h2 : k₀ + d - k₀ = d := by omega
+  rw [h1, h2, List.range_succ, List.map_append, List.countP_append]
+  simp [List.countP_cons]
+
+/-- **WS-SM SM2.C-defer D-2.5 / WS-RR RR6.23 (offset form)**: every
+effective release that fires while a writer stays queued costs it at
+least one unit of wait depth.
+
+This is the trace-level statement D-2.5 asks for, and the ingredient the
+`_weak` corollary below lacked: that one bounds the depth at a *single*
+state and says nothing about how the depth relates to the release events
+that have fired.  Here the two are tied together — `countEffectiveReleases`
+of the window plus the depth at its end is bounded by the depth at its
+start — which is what makes "bounded admission **via release-event
+count**" a claim about a trace rather than about a state.
+
+Proof: induction on the window's width.  At each position the op is
+either an effective release, and
+`writerWaitDepth_strict_decrease_under_effective_release` pays for the
+count's increment, or it is not, and
+`writerWaitDepth_non_increase_step_queued` keeps the depth from rising. -/
+theorem writerWaitDepth_release_count_bound_offset
+    (e : RwLockExecution) (c : CoreId) (k₀ d : Nat)
+    (h_range : k₀ + d ≤ e.ops.length)
+    (h_queued_all : ∀ k, k₀ ≤ k ∧ k ≤ k₀ + d →
+      (c, AccessMode.write) ∈ (e.stateAt k).waiters) :
+    e.countEffectiveReleases k₀ (k₀ + d) + writerWaitDepth (e.stateAt (k₀ + d)) c
+      ≤ writerWaitDepth (e.stateAt k₀) c := by
+  induction d with
+  | zero => simp
+  | succ d ih =>
+    have hStepInRange : k₀ + d < e.ops.length := by omega
+    have hQueuedInner : ∀ k, k₀ ≤ k ∧ k ≤ k₀ + d →
+        (c, AccessMode.write) ∈ (e.stateAt k).waiters := by
+      intro k ⟨hLo, hHi⟩; exact h_queued_all k ⟨hLo, by omega⟩
+    have hIh := ih (by omega) hQueuedInner
+    have hQueuedAtD : (c, AccessMode.write) ∈ (e.stateAt (k₀ + d)).waiters :=
+      hQueuedInner (k₀ + d) ⟨by omega, Nat.le_refl _⟩
+    have hQueuedAtD1 : (c, AccessMode.write) ∈ (e.stateAt (k₀ + d + 1)).waiters :=
+      h_queued_all (k₀ + d + 1) ⟨by omega, by omega⟩
+    have hSucc := RwLockExecution.stateAt_succ e hStepInRange
+    have hWf := e.stateAt_wf (k₀ + d)
+    have hQueuedPost : (c, AccessMode.write) ∈
+        ((e.stateAt (k₀ + d)).applyOp (e.ops[k₀ + d]'hStepInRange)).waiters := by
+      rw [← hSucc]; exact hQueuedAtD1
+    have hCount := e.countEffectiveReleases_succ k₀ d
+    have hSuccIdx : k₀ + (d + 1) = k₀ + d + 1 := by omega
+    rw [hSuccIdx, hCount]
+    by_cases hEff : (e.stateAt (k₀ + d)).isEffectiveRelease (e.ops[k₀ + d]'hStepInRange)
+    · have hStrict := writerWaitDepth_strict_decrease_under_effective_release
+        (e.stateAt (k₀ + d)) hWf c hQueuedAtD (e.ops[k₀ + d]'hStepInRange) hEff hQueuedPost
+      rw [hSucc]
+      have hAt : e.isEffectiveReleaseAt (k₀ + d) = true := by
+        unfold RwLockExecution.isEffectiveReleaseAt
+        simp [hStepInRange, hEff]
+      rw [hAt]
+      simp only [if_true]
+      omega
+    · have hNonInc := writerWaitDepth_non_increase_step_queued
+        (e.stateAt (k₀ + d)) hWf c hQueuedAtD (e.ops[k₀ + d]'hStepInRange) hQueuedPost
+      rw [hSucc]
+      have hAt : e.isEffectiveReleaseAt (k₀ + d) = false := by
+        unfold RwLockExecution.isEffectiveReleaseAt
+        simp [hStepInRange, hEff]
+      rw [hAt]
+      simp only [Bool.false_eq_true, if_false]
+      omega
+
+/-- **WS-SM SM2.C-defer D-2.5 / WS-RR RR6.23**: `rwLock_bounded_wait_write_distinct`
+— **bounded admission via release-event count**.
+
+At most `numCores - 1` effective releases can fire while a queued writer
+stays queued.  This is the plan's D-2.5 target: the writer's admission
+window is denominated in *release events*, not in states, and the bound
+is the tight `numCores - 1` that D-2.3 established for the depth.
+
+The single-state corollary below (`_weak`) bounds the depth and is what
+had landed; it says nothing about how many releases may pass.  A
+deployment reading the two together gets what the plan asked for: after
+`numCores - 1` effective releases the queued writer is no longer
+queued — it has been admitted. -/
+theorem rwLock_bounded_wait_write_distinct
+    (e : RwLockExecution) (c : CoreId) (k₁ k₂ : Nat)
+    (h_le : k₁ ≤ k₂) (h_range : k₂ ≤ e.ops.length)
+    (h_queued_all : ∀ k, k₁ ≤ k ∧ k ≤ k₂ →
+      (c, AccessMode.write) ∈ (e.stateAt k).waiters) :
+    e.countEffectiveReleases k₁ k₂ ≤ numCores - 1 := by
+  have hWidth : k₂ = k₁ + (k₂ - k₁) := by omega
+  have hBound := writerWaitDepth_bounded (e.stateAt k₁) (e.stateAt_wf k₁) c
+    (h_queued_all k₁ ⟨Nat.le_refl _, h_le⟩)
+  have hChain := writerWaitDepth_release_count_bound_offset e c k₁ (k₂ - k₁)
+    (by omega) (by intro k hk; exact h_queued_all k ⟨hk.1, by omega⟩)
+  rw [← hWidth] at hChain
+  omega
+
+/-- **WS-RR RR6.23 (the admission reading)**: once `numCores` effective
+releases have fired, a writer queued at the window's start is no longer
+queued at every point in it — it has been admitted.
+
+The contrapositive of the count bound, stated in the form a deployment
+reads: a queued writer's wait is bounded by `numCores - 1` release
+events, so the `numCores`-th cannot find it still waiting. -/
+theorem rwLock_writer_admitted_within_release_budget
+    (e : RwLockExecution) (c : CoreId) (k₁ k₂ : Nat)
+    (h_le : k₁ ≤ k₂) (h_range : k₂ ≤ e.ops.length)
+    (h_count : numCores ≤ e.countEffectiveReleases k₁ k₂) :
+    ∃ k, k₁ ≤ k ∧ k ≤ k₂ ∧ (c, AccessMode.write) ∉ (e.stateAt k).waiters := by
+  apply Classical.byContradiction
+  intro hNo
+  have hAll : ∀ k, k₁ ≤ k ∧ k ≤ k₂ →
+      (c, AccessMode.write) ∈ (e.stateAt k).waiters := by
+    intro k hk
+    apply Decidable.byContradiction
+    intro hMem
+    exact hNo ⟨k, hk.1, hk.2, hMem⟩
+  have hBound := rwLock_bounded_wait_write_distinct e c k₁ k₂ h_le h_range hAll
+  have hPos : 0 < numCores := numCores_pos
+  omega
+
 /-- **WS-SM SM2.C-defer D-2.5 (alternate form)**: the writer-specific
 bound is symmetric to the reader bound at the structural level (both
 share `numCores - 1` as the worst-case admission window in terms of
@@ -4236,6 +4378,82 @@ theorem writer_at_head_promoted
     rfl
 
 -- ============================================================================
+-- WS-RR RR6.7 / RR6.16 — Promotion helpers shared by both refinement bridges
+-- ============================================================================
+
+/-- **WS-RR RR6.8 / RR6.18**: abstract well-formedness survives every
+step, so the trace compositions in both refinement bridges thread it
+without a side condition. -/
+theorem RwLockState.applyOp_preserves_wf {s : RwLockState} (h : s.wf) (op : RwLockOp) :
+    (s.applyOp op).wf := by
+  obtain ⟨h1, h2, h3, h4⟩ := rwLock_wf_invariant s h
+  cases op with
+  | tryAcquireRead c => exact h1 c
+  | releaseRead c => exact h2 c
+  | tryAcquireWrite c => exact h3 c
+  | releaseWrite c => exact h4 c
+
+
+/-- **WS-RR RR6.16**: the abstract no-op cases, so the four `*_noop`
+constructors share one argument. -/
+theorem RwLockState.applyOp_noop_acquireRead {abs : RwLockState} {c : CoreId}
+    (h : abs.coreInvolved c) : abs.applyOp (.tryAcquireRead c) = abs := by
+  unfold RwLockState.applyOp; simp [h]
+
+theorem RwLockState.applyOp_noop_acquireWrite {abs : RwLockState} {c : CoreId}
+    (h : abs.coreInvolved c) : abs.applyOp (.tryAcquireWrite c) = abs := by
+  unfold RwLockState.applyOp; simp [h]
+
+theorem RwLockState.applyOp_noop_releaseRead {abs : RwLockState} {c : CoreId}
+    (h : c ∉ abs.readers) : abs.applyOp (.releaseRead c) = abs := by
+  unfold RwLockState.applyOp; simp [h]
+
+theorem RwLockState.applyOp_noop_releaseWrite {abs : RwLockState} {c : CoreId}
+    (h : abs.writerHeld ≠ some c) : abs.applyOp (.releaseWrite c) = abs := by
+  unfold RwLockState.applyOp; simp [h]
+
+
+
+/-- **WS-RR RR6.16**: the abstract reader-release promotion does not fire
+while holders remain. -/
+theorem promoteWaitersIfReadersEmpty_noop (s : RwLockState)
+    (h : s.readers ≠ [] ∨ s.writerHeld.isSome = true) :
+    s.promoteWaitersIfReadersEmpty = s := by
+  unfold RwLockState.promoteWaitersIfReadersEmpty
+  by_cases hE : s.readers.isEmpty = true
+  · have hW : s.writerHeld.isSome = true := by
+      rcases h with hR | hW
+      · exact absurd (List.isEmpty_iff.mp hE) hR
+      · exact hW
+    simp [hE, hW]
+  · simp [hE]
+
+
+/-- **WS-RR RR6.7 / RR6.16**: on a quiescent state — no writer, no readers — the
+two abstract promotion helpers agree.
+
+`releaseRead` reaches `promoteWaitersIfReadersEmpty` and `releaseWrite`
+reaches `promoteWaitersOnWriterRelease`, and they differ only in the
+reader-batch branch's `++ s.readers`, which is `++ []` here.  Proving
+the two equal lets one concrete promotion block serve both release
+paths. -/
+theorem promoteIfReadersEmpty_eq_onWriterRelease (s : RwLockState)
+    (hR : s.readers = []) (hW : s.writerHeld = none) :
+    s.promoteWaitersIfReadersEmpty = s.promoteWaitersOnWriterRelease := by
+  unfold RwLockState.promoteWaitersIfReadersEmpty RwLockState.promoteWaitersOnWriterRelease
+  rw [hR, hW]
+  simp only [List.isEmpty_nil, Bool.not_true, Bool.false_eq_true, if_false,
+    Option.isSome_none]
+  cases hQ : s.waiters with
+  | nil => rfl
+  | cons hd tl =>
+    obtain ⟨c, m⟩ := hd
+    cases m with
+    | write => rfl
+    | read => simp
+
+
+-- ============================================================================
 -- SM2.C-defer §4.4 + D-4 — Concrete event model + bisimulation infrastructure
 -- ============================================================================
 
@@ -4290,6 +4508,28 @@ def concreteApplyOp (state : UInt64) (op : ConcreteRwLockOp) :
   | .sev _ => (state, true)
   | .wfeWait _ => (state, true)
 
+/-- **WS-RR RR6.16**: a run of admissions — the concrete ops the cores a
+release promotes perform as they re-acquire.
+
+The abstract release helpers admit either a single writer or a
+contiguous run of readers, so a promotion is a sequence of
+`[load, CAS]` pairs, one per admitted core.  This is the shape the
+release blocks below carry as a tail. -/
+inductive AdmissionSequence : List ConcreteRwLockOp → Prop where
+  /-- Nothing queued: the release admits nobody. -/
+  | nil : AdmissionSequence []
+  /-- One promoted reader joins the count, then the rest of the run. -/
+  | reader (c : CoreId) (e n : UInt64) (rest : List ConcreteRwLockOp) :
+      AdmissionSequence rest →
+      AdmissionSequence ([.load c, .casAcquireRead c e n] ++ rest)
+  /-- A promoted writer takes the lock; the spec admits at most one, so
+  the run ends there — but the inductive does not need to say so, and
+  the honest-trace predicate in `RwLockRefinement.lean` is what pins the
+  tail to what the spec actually promotes. -/
+  | writer (c : CoreId) (rest : List ConcreteRwLockOp) :
+      AdmissionSequence rest →
+      AdmissionSequence ([.load c, .casAcquireWrite c] ++ rest)
+
 /-- **WS-SM SM2.C-defer D-4.2**: admissible concrete sequences for each
 abstract op.
 
@@ -4343,6 +4583,55 @@ inductive opCorresponds : RwLockOp → List ConcreteRwLockOp → Prop where
   /-- releaseWrite: SEV-emitted. -/
   | releaseWrite_with_sev (c : CoreId) :
       opCorresponds (.releaseWrite c) [.fetchAndWrite c, .sev c]
+  -- ---------------------------------------------------------------
+  -- WS-RR RR6.16 — the outcomes the original ten could not express
+  -- ---------------------------------------------------------------
+  /-- **WS-RR RR6.16**: `tryAcquireRead` **enqueues**.
+  Under contention the reader parks and the block *ends there* — the
+  abstract op appends to `waiters` and no atomic access changes the
+  packed word.  The original ten constructors had no such shape: every
+  `tryAcquireRead` block ended in a CAS, so the correspondence could
+  only express the branch of `applyOp` that acquires.  A correspondence
+  that cannot express two of the four outcomes of the operation it
+  corresponds to is incomplete, not conservative. -/
+  | tryRead_enqueue (c : CoreId) :
+      opCorresponds (.tryAcquireRead c) [.load c, .wfeWait c]
+  /-- **WS-RR RR6.16**: `tryAcquireWrite` enqueues.  Symmetric. -/
+  | tryWrite_enqueue (c : CoreId) :
+      opCorresponds (.tryAcquireWrite c) [.load c, .wfeWait c]
+  /-- **WS-RR RR6.16**: the abstract **no-op** outcomes.
+  `applyOp` no-ops when the acquiring core is already involved, when a
+  releasing core holds nothing, or when a releasing core is not the
+  writer.  The implementation performs no atomic access on any of those
+  paths (the RAII guards make the release cases unreachable and the
+  `debug_assert`s reject them), so the corresponding block is empty. -/
+  | noop (op : RwLockOp) :
+      opCorresponds op []
+  /-- **WS-RR RR6.16**: a release block **carrying the promotion**.
+
+  This is the block-contract extension the composition needs.
+  `applyOp .releaseRead` and `.releaseWrite` do not merely drop a
+  holder: they run `promoteWaitersIfReadersEmpty` /
+  `promoteWaitersOnWriterRelease`, which admit the head of the queue.
+  The concrete lock has no queue to promote from, so the cores the spec
+  admits re-acquire — and a concrete block that stops at `fetch_sub` or
+  `fetch_and` has modelled the drop and not the admission.
+
+  Concretely: from `unheld`, the trace
+  `tryAcquireWrite c₀ · tryAcquireRead c₁ · releaseWrite c₀` leaves the
+  abstract state with `readers = [c₁]` (encoding `1`) while
+  `fetch_and(READER_MASK)` leaves the word at `0`, so the simulation is
+  **false** at that point.  The four release discharges that predate
+  this carry `_no_promote` / `_empty_queue` side conditions precisely to
+  dodge it.  With the admission tail the case is covered rather than
+  excluded. -/
+  | releaseRead_promoting (c : CoreId) (tail : List ConcreteRwLockOp) :
+      AdmissionSequence tail →
+      opCorresponds (.releaseRead c) ([.fetchSubRead c, .sev c] ++ tail)
+  /-- **WS-RR RR6.16**: the writer-release counterpart. -/
+  | releaseWrite_promoting (c : CoreId) (tail : List ConcreteRwLockOp) :
+      AdmissionSequence tail →
+      opCorresponds (.releaseWrite c) ([.fetchAndWrite c, .sev c] ++ tail)
 
 /-- **WS-SM SM2.C-defer D-4.4**: `load` doesn't modify state.
 

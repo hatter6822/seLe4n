@@ -184,7 +184,7 @@ structure PhaseTheoremEntry where
   /-- **Theorems** among those entries: the entries whose declaration type is a
       `Prop`.  This is the number `smpInventoriedTheoremCount` sums, and it is
       *not* `entryCount`: the inventories register a phase's whole surface, so
-      210 of the 1113 entries are `def`s — lock-set footprints, per-core
+      210 of the 1116 entries are `def`s — lock-set footprints, per-core
       invariant predicates, WCRT cost functions — rather than proofs.  Checked
       against the environment by the census at the end of this module, which
       fails elaboration on drift; zero for every non-theorem kind. -/
@@ -213,8 +213,8 @@ def smpPhaseTheoremManifest : List PhaseTheoremEntry :=
       label := "SM2 — verified lock primitives",
       kind := .theoremInventory,
       inventories := ["lockPrimitives"],
-      entryCount := 22,
-      theoremCount := 22 },
+      entryCount := 25,
+      theoremCount := 25 },
     { phase := .perObjectLocks,
       label := "SM3 — per-object locks",
       kind := .theoremInventory,
@@ -412,13 +412,13 @@ here is written twice. -/
     summands are each pinned to a real inventory length above.  Changing any
     inventory changes this number, and the Tier-0 gate fails until the
     manifest and `docs/smp_theorem_manifest.json` agree with the tree. -/
-theorem smp_inventoried_theorem_count : smpInventoriedTheoremCount = 903 := by
+theorem smp_inventoried_theorem_count : smpInventoriedTheoremCount = 906 := by
   decide
 
-/-- Entries in the same inventories: 1113, of which 210 are `def`s rather than
+/-- Entries in the same inventories: 1116, of which 210 are `def`s rather than
     proofs.  Kept beside the theorem count so the gap is a number a reader can
     see, not a caveat they have to be told. -/
-theorem smp_inventoried_entry_count : smpInventoriedEntryCount = 1113 := by
+theorem smp_inventoried_entry_count : smpInventoriedEntryCount = 1116 := by
   decide
 
 /-- The two differ, and by how much.  Stated so that collapsing them — quoting

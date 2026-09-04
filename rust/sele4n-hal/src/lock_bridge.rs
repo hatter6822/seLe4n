@@ -4,8 +4,51 @@
 //! **WS-SM SM2.D** (FFI bridge + integration): bridges the verified Lean lock
 //! specifications (`SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean` and
 //! `RwLock.lean`) and the Rust implementations (`ticket_lock.rs`,
-//! `rw_lock.rs`) into a stable C-callable surface that the Lean kernel can
-//! consume via `@[extern]` declarations.
+//! `queued_rw_lock.rs`) into a stable C-callable surface that the Lean kernel
+//! can consume via `@[extern]` declarations.
+//!
+//! ## Which reader-writer lock this pool holds (WS-RR RR6.10)
+//!
+//! `STATIC_RW_LOCK_POOL` holds [`QueuedRwLock`](crate::queued_rw_lock::QueuedRwLock),
+//! the **ticket FIFO** lock — not `rw_lock::RwLock`, the CAS-retry one it
+//! held through v0.34.48.
+//!
+//! The Lean specification this pool is claimed to satisfy was tightened to
+//! strict FIFO admission at SM2.C-defer D-3, and the CAS-retry lock does not
+//! satisfy it: a reader that arrives while a writer is queued can be admitted
+//! ahead of that writer, because there is no queue in the concrete state to
+//! order them.  `rwLockSim`, the CAS-retry lock's simulation relation, says
+//! so in as many words — the abstract `waiters` field is **not represented**.
+//! So the deployed lock was not the lock the spec described.
+//!
+//! `QueuedRwLock` is.  Its refinement —
+//! `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` — relates
+//! the abstract `waiters` queue to the half-open ticket interval
+//! `[now_serving, next_ticket)`, in order, so FIFO admission is a theorem
+//! (`queuedRwLock_admits_in_spec_order`) rather than a documented
+//! divergence.  It was proved before this switch, so no version ships a
+//! deployed lock with no refinement to its own specification.
+//!
+//! `rw_lock::RwLock` is **retained** (WS-RR RR6.11): it is the second
+//! implementation the Tier-5 oracle checks the ticket lock against
+//! (`src/bin/rw_lock_oracle.rs` drives both and fails on any disagreement),
+//! and its own D-4 refinement is completed rather than deleted.  Two
+//! independent algorithms refining one specification and agreeing word for
+//! word on every generated trace is worth more than one algorithm agreeing
+//! with itself.
+//!
+//! ## The `core_id` the queued entry points take
+//!
+//! `QueuedRwLock`'s entry points take the executing PE's id; the FFI's
+//! `u64` handle carries none, and adding one would let a caller name a PE it
+//! is not running on.  The bridge therefore reads it from the hardware —
+//! `per_cpu::current_core_id_from_tpidr()`, whose documented range invariant
+//! is `core_id < PlatformBinding.coreCount` — which is the same
+//! executing-PE discipline the readiness gate requires of `lean_ready`'s
+//! argument.  The id is bookkeeping in the protocol (`last_enqueued`, which
+//! `peek_tail` reports, and the range assert); no admission decision reads
+//! it, so a stale value could not break mutual exclusion — but naming the
+//! executing PE is still the only answer that is *true*.
 //!
 //! ## Architecture
 //!
@@ -21,7 +64,7 @@
 //!
 //! * It mirrors `PlatformBinding.coreCount = 4` on RPi5, so cross-core
 //!   tests can exercise one lock per core.
-//! * Each `TicketLock` / `RwLock` is `#[repr(C, align(64))]` (one cache
+//! * Each `TicketLock` / `QueuedRwLock` is `#[repr(C, align(64))]` (one cache
 //!   line); 4 instances per pool = 256 bytes total.  Static allocation
 //!   keeps the kernel's BSS footprint flat.
 //! * Larger pools at SM2.D would imply we expect Lean callers to want
@@ -83,7 +126,7 @@ extern crate std;
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use crate::rw_lock::RwLock;
+use crate::queued_rw_lock::QueuedRwLock;
 use crate::ticket_lock::TicketLock;
 
 // ============================================================================
@@ -169,11 +212,35 @@ pub static STATIC_TICKET_LOCK_POOL: [TicketLock; STATIC_TICKET_LOCK_POOL_SIZE] =
     TicketLock::new(),
 ];
 
-/// **WS-SM SM2.D**: static pool of 4 `RwLock`s.
+/// **WS-SM SM2.D / WS-RR RR6.10**: static pool of 4 `QueuedRwLock`s.
 ///
-/// See [`STATIC_TICKET_LOCK_POOL`] for the design notes.
-pub static STATIC_RW_LOCK_POOL: [RwLock; STATIC_RW_LOCK_POOL_SIZE] =
-    [RwLock::new(), RwLock::new(), RwLock::new(), RwLock::new()];
+/// See [`STATIC_TICKET_LOCK_POOL`] for the design notes, and this
+/// module's header for why the entries are the ticket FIFO lock rather
+/// than the CAS-retry one.
+#[cfg(not(loom))]
+pub static STATIC_RW_LOCK_POOL: [QueuedRwLock; STATIC_RW_LOCK_POOL_SIZE] = [
+    QueuedRwLock::new(),
+    QueuedRwLock::new(),
+    QueuedRwLock::new(),
+    QueuedRwLock::new(),
+];
+
+// **WS-RR RR6.20**: the loom build's pool.
+//
+// `loom`'s atomics are not `const`-constructible, so the `static` above
+// does not compile under `--cfg loom`.  `loom::lazy_static!` is loom's
+// own answer to exactly this, and it `Deref`s to the array so every
+// `STATIC_RW_LOCK_POOL[idx]` below reads unchanged.  This is the only
+// place in the HAL the loom cfg reaches outside `queued_rw_lock.rs`.
+#[cfg(loom)]
+loom::lazy_static! {
+    pub static ref STATIC_RW_LOCK_POOL: [QueuedRwLock; STATIC_RW_LOCK_POOL_SIZE] = [
+        QueuedRwLock::new(),
+        QueuedRwLock::new(),
+        QueuedRwLock::new(),
+        QueuedRwLock::new(),
+    ];
+}
 
 // ============================================================================
 // SM2.D.4 — Tracing counters
@@ -450,6 +517,32 @@ pub fn ticket_lock_release_count(handle: u64) -> u64 {
 // SM2.D.2 — RwLock FFI helpers
 // ============================================================================
 
+/// **WS-RR RR6.10**: the executing PE's id, as `QueuedRwLock`'s entry
+/// points take it.
+///
+/// Read from `TPIDR_EL1` through `per_cpu::current_core_id_from_tpidr`,
+/// whose documented range invariant is
+/// `core_id < PlatformBinding.coreCount`; the pool is sized by the same
+/// number (`STATIC_RW_LOCK_POOL_SIZE`), so the value is always in range
+/// for `QueuedRwLock::MAX_WAITERS`.
+///
+/// It names the PE that is *running*, never one a caller supplied: the
+/// FFI handle carries no core id, and inventing a parameter for one
+/// would let a caller enqueue under another PE's name.  See the module
+/// header for what the protocol does and does not read it for.
+#[inline]
+fn executing_core_id() -> u8 {
+    // The invariant above bounds this well below `u8::MAX`; the
+    // saturating cast is belt-and-braces for a mis-populated per-CPU
+    // slot, and `QueuedRwLock`'s own range assert is the backstop.
+    let id = crate::per_cpu::current_core_id_from_tpidr();
+    debug_assert!(
+        (id as usize) < crate::queued_rw_lock::MAX_WAITERS,
+        "executing core id {id} out of range for the queued RwLock pool"
+    );
+    u8::try_from(id).unwrap_or(u8::MAX)
+}
+
 /// **WS-SM SM2.D.2**: get a handle to a static RwLock by pool index.
 ///
 /// Symmetric to [`ticket_lock_static_handle`].
@@ -477,7 +570,7 @@ pub fn rw_lock_acquire_read(handle: u64) {
         )
     });
     let _ = RW_LOCK_ACQUIRE_READ_COUNT[idx].fetch_add(1, Ordering::Relaxed);
-    STATIC_RW_LOCK_POOL[idx].acquire_read();
+    STATIC_RW_LOCK_POOL[idx].acquire_read(executing_core_id());
 }
 
 /// **WS-SM SM2.D.2**: release a read lock on the RwLock identified by `handle`.
@@ -489,7 +582,7 @@ pub fn rw_lock_release_read(handle: u64) {
         )
     });
     let _ = RW_LOCK_RELEASE_READ_COUNT[idx].fetch_add(1, Ordering::Relaxed);
-    STATIC_RW_LOCK_POOL[idx].release_read();
+    STATIC_RW_LOCK_POOL[idx].release_read(executing_core_id());
 }
 
 /// **WS-SM SM2.D.2**: acquire a write lock on the RwLock identified by `handle`.
@@ -501,7 +594,7 @@ pub fn rw_lock_acquire_write(handle: u64) {
         )
     });
     let _ = RW_LOCK_ACQUIRE_WRITE_COUNT[idx].fetch_add(1, Ordering::Relaxed);
-    STATIC_RW_LOCK_POOL[idx].acquire_write();
+    STATIC_RW_LOCK_POOL[idx].acquire_write(executing_core_id());
 }
 
 /// **WS-SM SM2.D.2**: release a write lock on the RwLock identified by `handle`.
@@ -513,7 +606,7 @@ pub fn rw_lock_release_write(handle: u64) {
         )
     });
     let _ = RW_LOCK_RELEASE_WRITE_COUNT[idx].fetch_add(1, Ordering::Relaxed);
-    STATIC_RW_LOCK_POOL[idx].release_write();
+    STATIC_RW_LOCK_POOL[idx].release_write(executing_core_id());
 }
 
 /// **WS-SM SM2.D.2**: snapshot of the RwLock state.
@@ -540,18 +633,15 @@ pub fn rw_lock_snapshot(handle: u64) -> u64 {
             handle, STATIC_RW_LOCK_POOL_SIZE
         )
     });
-    // RwLock::snapshot returns ((s & WRITER_BIT) != 0, s & READER_MASK).
-    // The `count` value is already pre-masked, so re-masking would be
-    // a no-op.  Recompose by OR-ing the writer bit (encoded as
-    // WRITER_BIT or 0) with the count — matches the abstract
-    // `encodeRwLock` form documented at SM2.C.16.
-    let (writer, count) = STATIC_RW_LOCK_POOL[idx].snapshot();
-    let writer_bit = if writer {
-        crate::rw_lock::WRITER_BIT
-    } else {
-        0
-    };
-    writer_bit | count
+    // WS-RR RR6.10: `QueuedRwLock::peek_state` returns the packed word
+    // itself, which already *is* the abstract `encodeRwLock` form
+    // documented at SM2.C.16 — bit 63 the writer flag, bits 0..62 the
+    // reader count — because the two locks share one definition of that
+    // layout (`queued_rw_lock.rs` imports `rw_lock`'s constants).  So
+    // there is nothing to recompose here; decomposing and reassembling
+    // it would be a second answer to a question the word already
+    // answers.
+    STATIC_RW_LOCK_POOL[idx].peek_state()
 }
 
 /// **WS-SM SM2.D.4**: read the per-slot RwLock acquire-read counter.
@@ -625,11 +715,18 @@ pub fn rw_lock_release_write_count(handle: u64) -> u64 {
 ///   aggregate partial-order)
 /// * 6 TicketLock theorems (mutex, FIFO, bounded-wait, RA-pairing,
 ///   wf-invariant, reachability)
-/// * 10 RwLock theorems (writer-readers exclusion, reader multiplicity,
+/// * 11 RwLock theorems (writer-readers exclusion, reader multiplicity,
 ///   FIFO admission, bounded-wait × 2, RA-pairing × 2, wf-invariant,
-///   reader batching, no-writer-starvation)
-/// * 2 refinement theorems (TicketLock refinement, RwLock refinement)
-pub const LOCK_THEOREM_COUNT: usize = 22;
+///   reader batching, writer liveness, writer safety)
+/// * 4 refinement theorems (TicketLock, CAS-retry RwLock, deployed
+///   QueuedRwLock, and the deployed lock's FIFO-admission payoff)
+///
+/// **WS-RR RR6.9 / RR6.19 / RR6.24 moved this from 22 to 25.**  The
+/// liveness entry pointed at a single-step *safety* alias, the RwLock
+/// refinement entry pointed at the form that assumes its own conclusion
+/// block by block, and the lock the kernel actually deploys had no
+/// entry at all.  See `LockPrimitives.lean`'s header for the detail.
+pub const LOCK_THEOREM_COUNT: usize = 25;
 
 // ============================================================================
 // SM2.D.5 — Static linker-time check (build.rs scanner anchor)
@@ -793,6 +890,63 @@ mod tests {
         assert_eq!(STATIC_RW_LOCK_POOL.len(), STATIC_RW_LOCK_POOL_SIZE);
     }
 
+    /// **WS-RR RR6.10**: the deployed reader-writer lock is the ticket
+    /// FIFO one.
+    ///
+    /// A type-level pin, not a size or a name: the binding below only
+    /// elaborates if the pool's element type *is*
+    /// `queued_rw_lock::QueuedRwLock`.  Reverting the pool to
+    /// `rw_lock::RwLock` — which has no queue, and so does not satisfy
+    /// the strict-FIFO specification this bridge is claimed to
+    /// implement — fails to compile here as well as failing
+    /// `build.rs`'s `scan_lock_bridge_rs_intact`.
+    ///
+    /// No state is asserted: the pool is global and the runtime tests
+    /// below drive its slots concurrently, so a `peek_state() == 0`
+    /// here would be a race rather than a check.
+    #[test]
+    fn deployed_rw_lock_is_the_ticket_fifo_lock() {
+        let deployed: &[crate::queued_rw_lock::QueuedRwLock; STATIC_RW_LOCK_POOL_SIZE] =
+            &STATIC_RW_LOCK_POOL;
+        assert_eq!(deployed.len(), STATIC_RW_LOCK_POOL_SIZE);
+    }
+
+    /// **WS-RR RR6.10**: the deployed lock's packed word *is* the
+    /// abstract `encodeRwLock` form, read through the layout constants
+    /// `rw_lock` owns and `queued_rw_lock` imports.
+    ///
+    /// This is why `rw_lock_snapshot` can hand `peek_state()` straight
+    /// to Lean with nothing to recompose.  Driven on a local lock, not
+    /// a pool slot, so it asserts about the encoding rather than
+    /// racing the runtime tests below.
+    #[test]
+    fn deployed_lock_state_word_is_the_abstract_encoding() {
+        let lock = crate::queued_rw_lock::QueuedRwLock::new();
+        assert_eq!(lock.peek_state(), 0, "unheld encodes as 0");
+
+        lock.acquire_read(0);
+        assert_eq!(
+            lock.peek_state() & crate::rw_lock::READER_MASK,
+            1,
+            "one reader is reader-count 1"
+        );
+        assert_eq!(
+            lock.peek_state() & crate::rw_lock::WRITER_BIT,
+            0,
+            "and the writer bit is clear"
+        );
+        lock.release_read(0);
+
+        lock.acquire_write(0);
+        assert_eq!(
+            lock.peek_state(),
+            crate::rw_lock::WRITER_BIT,
+            "a writer encodes as exactly the writer bit"
+        );
+        lock.release_write(0);
+        assert_eq!(lock.peek_state(), 0);
+    }
+
     #[test]
     fn trace_counter_arrays_match_pool_size() {
         assert_eq!(
@@ -814,11 +968,11 @@ mod tests {
     // --------------------------------------------------------------------
 
     #[test]
-    fn theorem_count_is_22() {
-        assert_eq!(LOCK_THEOREM_COUNT, 22);
+    fn theorem_count_is_25() {
+        assert_eq!(LOCK_THEOREM_COUNT, 25);
         // Cross-check the breakdown:
-        //   4 memory-model + 6 TicketLock + 10 RwLock + 2 refinement = 22.
-        assert_eq!(4 + 6 + 10 + 2, LOCK_THEOREM_COUNT);
+        //   4 memory-model + 6 TicketLock + 11 RwLock + 4 refinement = 25.
+        assert_eq!(4 + 6 + 11 + 4, LOCK_THEOREM_COUNT);
     }
 
     // --------------------------------------------------------------------

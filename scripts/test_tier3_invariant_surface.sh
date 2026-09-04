@@ -6411,6 +6411,39 @@ import SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement
 #check @SeLe4n.Kernel.Concurrency.blockBisim_releaseRead_no_promote_with_sev
 #check @SeLe4n.Kernel.Concurrency.blockBisim_releaseWrite_no_sev_empty_queue
 #check @SeLe4n.Kernel.Concurrency.blockBisim_releaseWrite_with_sev_empty_queue
+-- The trace-shape predicate of the CAS-retry bridge, which DERIVES
+-- ListBlockBisim, so the main theorem no longer takes its own conclusion.
+#check @SeLe4n.Kernel.Concurrency.honestBlock
+#check @SeLe4n.Kernel.Concurrency.honestBlock_opCorresponds
+#check @SeLe4n.Kernel.Concurrency.honestBlock_blockBisim
+#check @SeLe4n.Kernel.Concurrency.ListHonestBlocks
+#check @SeLe4n.Kernel.Concurrency.listHonestBlocks_listBlockBisim
+#check @SeLe4n.Kernel.Concurrency.listHonestBlocks_listCorresponds
+#check @SeLe4n.Kernel.Concurrency.concreteFoldBlock_append
+-- The promoting release: a release block carries the promoted
+-- waiters re-acquisition, so the promoting discharges close.
+#check @SeLe4n.Kernel.Concurrency.casPromoteReaderOps
+#check @SeLe4n.Kernel.Concurrency.casPromoteOps
+#check @SeLe4n.Kernel.Concurrency.casPromotePost
+#check @SeLe4n.Kernel.Concurrency.casPromotePost_toNat
+#check @SeLe4n.Kernel.Concurrency.casPromoteOps_preserves_rwLockSim
+#check @SeLe4n.Kernel.Concurrency.casPromoteOps_admissionSequence
+-- The premise-free restatements (no `ListBlockBisim` hypothesis).
+#check @SeLe4n.Kernel.Concurrency.rust_rwLock_refines_lean_honest
+#check @SeLe4n.Kernel.Concurrency.rust_rwLock_refines_lean_via_rustImplementsRwLock_honest
+#check @SeLe4n.Kernel.Concurrency.rust_rwLock_refines_lean_from_unheld
+-- The writer bounded-wait statement over DISTINCT
+-- admission steps, and the release-budget form a deployment can act on.
+#check @SeLe4n.Kernel.Concurrency.AdmissionSequence
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.countEffectiveReleases_self
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.countEffectiveReleases_succ
+#check @SeLe4n.Kernel.Concurrency.writerWaitDepth_release_count_bound_offset
+#check @SeLe4n.Kernel.Concurrency.rwLock_bounded_wait_write_distinct
+#check @SeLe4n.Kernel.Concurrency.rwLock_writer_admitted_within_release_budget
+-- Shared helpers (used by both the honest and the queued bridge).
+#check @SeLe4n.Kernel.Concurrency.RwLockState.applyOp_preserves_wf
+#check @SeLe4n.Kernel.Concurrency.promoteWaitersIfReadersEmpty_noop
+#check @SeLe4n.Kernel.Concurrency.promoteIfReadersEmpty_eq_onWriterRelease
 EOF'
 
 # WS-SM SM2.D — LockBridge typed FFI wrapper + RAII combinator surface
@@ -6581,6 +6614,82 @@ import SeLe4n.Kernel.Concurrency.Locks.TicketLockRefinement
 #check @SeLe4n.Kernel.Concurrency.ticketLockSim_preserved_by_release
 #check @SeLe4n.Kernel.Concurrency.ticketLockSim_preserved_by_observeServing
 #check @SeLe4n.Kernel.Concurrency.rust_ticketLock_refines_lean
+-- The ticket lock bridge raised to the RwLock standard: an operational
+-- concrete step function, a state-indexed block relation with a stutter
+-- prefix for the unbounded now_serving spin, trace composition that does not
+-- assume its own per-block conclusion, and a falsifiability witness in place
+-- of the tautological fourth conjunct.
+#check @SeLe4n.Kernel.Concurrency.ConcreteTicketLockOp
+#check @SeLe4n.Kernel.Concurrency.TicketLockConcrete.applyOp
+#check @SeLe4n.Kernel.Concurrency.ticketFoldBlock
+#check @SeLe4n.Kernel.Concurrency.TicketStutter
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.tryAcquire_counters
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.tryAcquire_noop_of_pending
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.tryAcquire_noop_of_held
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.release_counters
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.release_noop
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.observeServing_noop
+#check @SeLe4n.Kernel.Concurrency.ticketBlock
+#check @SeLe4n.Kernel.Concurrency.ticketBlock_preserves_ticketLockSim
+#check @SeLe4n.Kernel.Concurrency.ListTicketBlocks
+#check @SeLe4n.Kernel.Concurrency.ticketTrace_preserves_ticketLockSim
+#check @SeLe4n.Kernel.Concurrency.ticketBlock_release_moves_serving
+#check @SeLe4n.Kernel.Concurrency.ticketLockSim_not_universal
+EOF'
+
+# The refinement bridge of the DEPLOYED queued lock.
+# `STATIC_RW_LOCK_POOL` is `[QueuedRwLock; 4]`, so this covers the lock the
+# kernel actually runs.  `rwLockSim` relates only the writer bit and the
+# reader count; `queuedSim` adds what the FIFO spec is about — the abstract
+# `waiters` list against the half-open ticket interval, in order.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Concurrency.Locks.QueuedRwLockRefinement'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.Concurrency.Locks.QueuedRwLockRefinement
+
+-- The concrete state and its ticket-carrying operation alphabet.
+#check @SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete
+#check @SeLe4n.Kernel.Concurrency.QueuedRwLockOp
+#check @SeLe4n.Kernel.Concurrency.QueuedRwLockOp.isObservation
+#check @SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete.applyOp
+#check @SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete.opEnabled
+#check @SeLe4n.Kernel.Concurrency.queuedFoldBlock
+#check @SeLe4n.Kernel.Concurrency.QueuedStutter
+-- The ticket protocol well-formedness, over the concrete model
+-- alone: the mutual-exclusion argument, and what makes both spins terminate.
+#check @SeLe4n.Kernel.Concurrency.ticketRange
+#check @SeLe4n.Kernel.Concurrency.QueuedTicketWf
+#check @SeLe4n.Kernel.Concurrency.QueuedTicketWf.preserved
+#check @SeLe4n.Kernel.Concurrency.queued_entry_is_exclusive
+#check @SeLe4n.Kernel.Concurrency.queued_no_reader_entry_while_served
+#check @SeLe4n.Kernel.Concurrency.queued_release_read_strictly_decreases
+#check @SeLe4n.Kernel.Concurrency.queued_await_turn_terminates
+-- The simulation relation and its characterizations.
+#check @SeLe4n.Kernel.Concurrency.queuedWriterOffset
+#check @SeLe4n.Kernel.Concurrency.queuedLedgerCores
+#check @SeLe4n.Kernel.Concurrency.queuedSim
+#check @SeLe4n.Kernel.Concurrency.queuedSim_unheld
+#check @SeLe4n.Kernel.Concurrency.queuedSim_outstanding
+#check @SeLe4n.Kernel.Concurrency.queuedSim_writer_held
+#check @SeLe4n.Kernel.Concurrency.queuedSim_head_waiter
+#check @SeLe4n.Kernel.Concurrency.queuedSim_waiter_ticket
+-- The per-entry-point block step relation.
+#check @SeLe4n.Kernel.Concurrency.takeTicketOps
+#check @SeLe4n.Kernel.Concurrency.readerEnterOps
+#check @SeLe4n.Kernel.Concurrency.writerEnterOps
+#check @SeLe4n.Kernel.Concurrency.readerAdmitOps
+#check @SeLe4n.Kernel.Concurrency.releaseWriteOps
+#check @SeLe4n.Kernel.Concurrency.promoteOps
+#check @SeLe4n.Kernel.Concurrency.promoteOps_preserves_queuedSim
+#check @SeLe4n.Kernel.Concurrency.queuedBlock
+#check @SeLe4n.Kernel.Concurrency.queuedBlock_preserves_queuedSim
+-- Trace composition, stated so it does NOT take its own per-block
+-- conclusion as a hypothesis (the defect the D-4 rows exist to remove).
+#check @SeLe4n.Kernel.Concurrency.ListQueuedBlocks
+#check @SeLe4n.Kernel.Concurrency.queuedTrace_preserves_queuedSim
+-- The payoff: the deployed lock refines the Lean FIFO spec end to
+-- end, and admits in the spec order.
+#check @SeLe4n.Kernel.Concurrency.queuedRwLock_refines_rwLockSpec
+#check @SeLe4n.Kernel.Concurrency.queuedRwLock_admits_in_spec_order
 EOF'
 
 # WS-SM SM2.D — Lean-side FFI declarations.  Covers every SM2.D

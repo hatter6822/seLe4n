@@ -26,6 +26,20 @@ sele4n-types = { path = "../sele4n-types" }
 # introduces no cycle and no runtime dependency.
 sele4n-abi = { path = "../sele4n-abi" }
 
+# WS-RR RR6.20: `loom` is a **cfg-conditional** dependency, not a plain
+# dev-dependency.  It is pulled in only when the crate is compiled with
+# `RUSTFLAGS='--cfg loom'`, which is how `scripts/test_loom_queued_rw_lock.sh`
+# runs the exhaustive-interleaving model over `queued_rw_lock.rs`.  A
+# normal `cargo build`, `cargo test`, `cargo clippy` or the bare-metal
+# cross build resolves no `loom` at all, so the kernel's trusted
+# computing base is unchanged and `Cargo.lock`'s runtime graph does not
+# grow.  (This is loom's own documented setup; a plain dev-dependency
+# would compile the crate against `core::sync::atomic`, which loom
+# cannot see — the reason §8's "loom gate runs" was satisfiable by a
+# manifest entry alone.)
+[target.'cfg(loom)'.dependencies]
+loom = "0.7"
+
 [features]
 default = []
 hw_target = []
