@@ -489,6 +489,56 @@ theorem cancelLockOnObject_reply (s : SystemState) (core : CoreId)
       updateObjectLockAt s ⟨.reply, oid⟩ (m.toCancelOp core) := by
   unfold cancelLockOnObject; rfl
 
+-- ----------------------------------------------------------------------------
+-- The object store's extension invariant, across the three lock primitives
+-- ----------------------------------------------------------------------------
+
+/-! Re-homed at **WS-LC LC4.5**.  These lived in two places at once —
+`LockSetHeld` (as `*_preserves_invExt`) and `NonInterferencePerCore` (as
+`*_preserves_objects_invExt`) — because neither module is in the other's
+import closure and each branch needed the same fact.  That is one question
+with two answers, and the withdrawal would have made it three.  They belong
+here, beside `updateObjectLockAt`, which both branches import. -/
+
+/-- The lock-only object rewrite preserves the RHTable extension invariant. -/
+theorem updateObjectAt_updateLock_preserves_invExt (s : SystemState)
+    (oid : SeLe4n.ObjId) (op : RwLockOp) (hInv : s.objects.invExt) :
+    (updateObjectAt s oid (fun obj => obj.updateLock op)).objects.invExt := by
+  unfold updateObjectAt
+  cases hGet : s.objects.get? oid with
+  | none => exact hInv
+  | some obj =>
+      exact SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt s.objects oid _ hInv
+
+/-- So does the kind-checked per-object lock update; both fail-closed branches
+leave the table untouched. -/
+theorem updateObjectLockAt_preserves_invExt (s : SystemState)
+    (l : LockId) (op : RwLockOp) (hInv : s.objects.invExt) :
+    (updateObjectLockAt s l op).objects.invExt := by
+  unfold updateObjectLockAt
+  cases hLookup : LockId.lookup s l with
+  | none => exact hInv
+  | some _ => exact updateObjectAt_updateLock_preserves_invExt s l.objId op hInv
+
+/-- And each of the three per-object primitives. -/
+theorem acquireLockOnObject_preserves_invExt (s : SystemState)
+    (core : CoreId) (l : LockId) (m : AccessMode) (hInv : s.objects.invExt) :
+    (acquireLockOnObject s core l m).objects.invExt := by
+  unfold acquireLockOnObject
+  cases l.kind <;> first | exact hInv | exact updateObjectLockAt_preserves_invExt s l _ hInv
+
+theorem releaseLockOnObject_preserves_invExt (s : SystemState)
+    (core : CoreId) (l : LockId) (m : AccessMode) (hInv : s.objects.invExt) :
+    (releaseLockOnObject s core l m).objects.invExt := by
+  unfold releaseLockOnObject
+  cases l.kind <;> first | exact hInv | exact updateObjectLockAt_preserves_invExt s l _ hInv
+
+theorem cancelLockOnObject_preserves_invExt (s : SystemState)
+    (core : CoreId) (l : LockId) (m : AccessMode) (hInv : s.objects.invExt) :
+    (cancelLockOnObject s core l m).objects.invExt := by
+  unfold cancelLockOnObject
+  cases l.kind <;> first | exact hInv | exact updateObjectLockAt_preserves_invExt s l _ hInv
+
 /-- **WS-LC LC4.1**: `cancelLockOnObject` on a `.page` LockId is identity. -/
 @[simp] theorem cancelLockOnObject_page (s : SystemState) (core : CoreId)
     (oid : SeLe4n.ObjId) (m : AccessMode) :
@@ -560,6 +610,19 @@ theorem releaseLockOnObject_preserves_objStoreLock_of_modeled
   | vspaceRoot | untyped | schedContext | reply =>
     all_goals exact updateObjectLockAt_preserves_objStoreLock s l _
 
+/-- **WS-LC LC4.5**: and the withdrawal, the third sibling. -/
+theorem cancelLockOnObject_preserves_objStoreLock_of_modeled
+    (s : SystemState) (core : CoreId) (l : LockId) (m : AccessMode)
+    (hKind : l.kind ≠ .objStore) :
+    (cancelLockOnObject s core l m).objStoreLock = s.objStoreLock := by
+  unfold cancelLockOnObject
+  cases hK : l.kind with
+  | objStore => exact absurd hK hKind
+  | page => rfl
+  | tcb | endpoint | notification | cnode
+  | vspaceRoot | untyped | schedContext | reply =>
+    all_goals exact updateObjectLockAt_preserves_objStoreLock s l _
+
 /-- WS-SM SM7.B: `updateObjectAt` frames the TLB-shootdown state (a
 per-object store write).  Leaf of the SM7.B debt-(5) `withLockSet`
 carriage below. -/
@@ -598,6 +661,18 @@ theorem releaseLockOnObject_tlbShootdown_eq (s : SystemState)
     (core : CoreId) (l : LockId) (m : AccessMode) :
     (releaseLockOnObject s core l m).tlbShootdown = s.tlbShootdown := by
   unfold releaseLockOnObject
+  cases l.kind with
+  | objStore => rfl
+  | page => rfl
+  | tcb | endpoint | notification | cnode
+  | vspaceRoot | untyped | schedContext | reply =>
+    all_goals exact updateObjectLockAt_tlbShootdown_eq s l _
+
+/-- **WS-LC LC4.2**: and the withdrawal primitive. -/
+theorem cancelLockOnObject_tlbShootdown_eq (s : SystemState)
+    (core : CoreId) (l : LockId) (m : AccessMode) :
+    (cancelLockOnObject s core l m).tlbShootdown = s.tlbShootdown := by
+  unfold cancelLockOnObject
   cases l.kind with
   | objStore => rfl
   | page => rfl
@@ -756,6 +831,44 @@ both halves are. -/
 @[simp] theorem unwindAll_nil (core : CoreId) (s : SystemState) :
     unwindAll core [] s = s := rfl
 
+/-- **WS-LC LC4.5**: the growing phase preserves the extension invariant. -/
+theorem acquireAll_preserves_invExt (core : CoreId)
+    (pairs : List (LockId × AccessMode)) (s : SystemState) (hInv : s.objects.invExt) :
+    (acquireAll core pairs s).objects.invExt := by
+  induction pairs generalizing s with
+  | nil => exact hInv
+  | cons p rest ih =>
+    obtain ⟨l, m⟩ := p
+    rw [acquireAll_cons]
+    exact ih _ (acquireLockOnObject_preserves_invExt s core l m hInv)
+
+/-- **WS-LC LC4.5**: so does each half of the shrinking phase. -/
+theorem releaseAll_preserves_invExt (core : CoreId)
+    (pairs : List (LockId × AccessMode)) (s : SystemState) (hInv : s.objects.invExt) :
+    (releaseAll core pairs s).objects.invExt := by
+  induction pairs generalizing s with
+  | nil => exact hInv
+  | cons p rest ih =>
+    obtain ⟨l, m⟩ := p
+    rw [releaseAll_cons]
+    exact ih _ (releaseLockOnObject_preserves_invExt s core l m hInv)
+
+theorem cancelAll_preserves_invExt (core : CoreId)
+    (pairs : List (LockId × AccessMode)) (s : SystemState) (hInv : s.objects.invExt) :
+    (cancelAll core pairs s).objects.invExt := by
+  induction pairs generalizing s with
+  | nil => exact hInv
+  | cons p rest ih =>
+    obtain ⟨l, m⟩ := p
+    rw [cancelAll_cons]
+    exact ih _ (cancelLockOnObject_preserves_invExt s core l m hInv)
+
+/-- **WS-LC LC4.5**: and hence the shrinking phase as a whole. -/
+theorem unwindAll_preserves_invExt (core : CoreId)
+    (pairs : List (LockId × AccessMode)) (s : SystemState) (hInv : s.objects.invExt) :
+    (unwindAll core pairs s).objects.invExt :=
+  releaseAll_preserves_invExt core pairs _ (cancelAll_preserves_invExt core pairs s hInv)
+
 /-- **WS-LC LC4.1**: the shrinking phase is the withdrawal fold followed by
 the release fold, over the same sequence.
 
@@ -881,9 +994,17 @@ SystemState × α`, and a pre-state `s`:
    hypothesis; the SM8.D information-flow results deliberately do
    not, being frame arguments over lock writes.  Live exclusion
    today comes from the SM5.I global kernel-entry ticket lock.
-3. **Shrinking phase**: fold `releaseLockOnObject` over
-   `ordered.reverse` (sorted descending by `LockId`), starting
-   from the post-action state.
+3. **Shrinking phase**: `unwindAll` over `ordered.reverse` (sorted
+   descending by `LockId`), starting from the post-action state —
+   **withdraw, then release**.
+
+   A release is the identity for a core that is not a holder, so a
+   release-only shrinking phase gave back exactly the members the
+   growing phase had granted and left the *contended* ones queued,
+   to be promoted later and strand the lock.  Withdrawing first
+   closes that (`unwindAll_leaves_no_queued_request`), and it costs
+   the granted members nothing: a withdrawal by a holder is the
+   identity, because INV-R4 keeps holders out of the wait queue.
 
 The result is the post-release state and the action's output
 value.
@@ -919,8 +1040,8 @@ def withLockSet {α : Type} (S : LockSet) (core : CoreId)
   let ordered := S.lockAcquireSequence
   let acquired := acquireAll core ordered s
   let (postAction, result) := action acquired
-  let released := releaseAll core ordered.reverse postAction
-  (released, result)
+  let unwound := unwindAll core ordered.reverse postAction
+  (unwound, result)
 
 /-- WS-SM SM3.C.1: `withLockSet` on the empty lock set reduces to
 the action applied to the input state. -/
@@ -939,8 +1060,8 @@ theorem withLockSet_unfold {α : Type} (S : LockSet) (core : CoreId)
       let ordered := S.lockAcquireSequence
       let acquired := acquireAll core ordered s
       let (postAction, result) := action acquired
-      let released := releaseAll core ordered.reverse postAction
-      (released, result) := rfl
+      let unwound := unwindAll core ordered.reverse postAction
+      (unwound, result) := rfl
 
 /-- WS-SM SM3.C.1: the result of `withLockSet` is determined by the
 3-phase structural decomposition.  Useful for case analysis on
@@ -948,18 +1069,18 @@ theorem withLockSet_unfold {α : Type} (S : LockSet) (core : CoreId)
 theorem withLockSet_eq_decomposition {α : Type} (S : LockSet) (core : CoreId)
     (action : SystemState → SystemState × α) (s : SystemState) :
     withLockSet S core action s =
-      ( releaseAll core S.lockAcquireSequence.reverse
+      ( unwindAll core S.lockAcquireSequence.reverse
           (action (acquireAll core S.lockAcquireSequence s)).1,
         (action (acquireAll core S.lockAcquireSequence s)).2 ) := by
   unfold withLockSet
   rfl
 
 /-- WS-SM SM3.C.1: the first component of `withLockSet`'s output
-(the post-release SystemState). -/
+(the post-unwind SystemState). -/
 @[simp] theorem withLockSet_fst {α : Type} (S : LockSet) (core : CoreId)
     (action : SystemState → SystemState × α) (s : SystemState) :
     (withLockSet S core action s).1 =
-      releaseAll core S.lockAcquireSequence.reverse
+      unwindAll core S.lockAcquireSequence.reverse
         (action (acquireAll core S.lockAcquireSequence s)).1 := by
   unfold withLockSet
   rfl
@@ -1004,6 +1125,22 @@ theorem releaseAll_tlbShootdown_eq (core : CoreId)
   | cons p rest ih =>
     rw [releaseAll_cons, ih, releaseLockOnObject_tlbShootdown_eq]
 
+/-- **WS-LC LC4.2**: the withdrawal fold frames the TLB-shootdown state. -/
+theorem cancelAll_tlbShootdown_eq (core : CoreId)
+    (pairs : List (LockId × AccessMode)) (s : SystemState) :
+    (cancelAll core pairs s).tlbShootdown = s.tlbShootdown := by
+  induction pairs generalizing s with
+  | nil => rfl
+  | cons p rest ih =>
+    rw [cancelAll_cons, ih, cancelLockOnObject_tlbShootdown_eq]
+
+/-- **WS-LC LC4.2**: so does the shrinking phase as a whole. -/
+theorem unwindAll_tlbShootdown_eq (core : CoreId)
+    (pairs : List (LockId × AccessMode)) (s : SystemState) :
+    (unwindAll core pairs s).tlbShootdown = s.tlbShootdown := by
+  rw [unwindAll_eq_releaseAll_cancelAll, releaseAll_tlbShootdown_eq,
+      cancelAll_tlbShootdown_eq]
+
 /-- WS-SM SM7.B: `withLockSet` frames the TLB-shootdown state exactly
 when its guarded action does — the 2PL bracket itself never touches the
 field. -/
@@ -1011,7 +1148,7 @@ theorem withLockSet_tlbShootdown_eq {α : Type} (S : LockSet) (core : CoreId)
     (action : SystemState → SystemState × α) (s : SystemState)
     (hAction : ∀ s', ((action s').1).tlbShootdown = s'.tlbShootdown) :
     ((withLockSet S core action s).1).tlbShootdown = s.tlbShootdown := by
-  rw [withLockSet_fst, releaseAll_tlbShootdown_eq, hAction,
+  rw [withLockSet_fst, unwindAll_tlbShootdown_eq, hAction,
       acquireAll_tlbShootdown_eq]
 
 /-- WS-SM SM7.B (debt (5) slice, the carriage theorem): `withLockSet`

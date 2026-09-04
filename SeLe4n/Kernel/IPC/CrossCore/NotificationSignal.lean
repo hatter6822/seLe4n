@@ -570,7 +570,7 @@ theorem notificationWaitOnCore_atomic_under_lockSet
     (cnRoot : SeLe4n.ObjId) (s : SystemState) :
     withLockSet (lockSet_notificationWait caller cnRoot notificationId) executingCore
         (notificationWaitOnCore notificationId caller executingCore) s
-      = (releaseAll executingCore
+      = (unwindAll executingCore
           (lockSet_notificationWait caller cnRoot notificationId).lockAcquireSequence.reverse
           (notificationWaitOnCore notificationId caller executingCore
             (acquireAll executingCore
@@ -588,7 +588,7 @@ theorem notificationSignalOnCore_atomic_under_lockSet
     (waiter? : Option SeLe4n.ThreadId) (s : SystemState) :
     withLockSet (lockSet_notificationSignal signaller cnRoot notificationId waiter?) executingCore
         (notificationSignalOnCore notificationId badge executingCore) s
-      = (releaseAll executingCore
+      = (unwindAll executingCore
           (lockSet_notificationSignal signaller cnRoot notificationId waiter?).lockAcquireSequence.reverse
           (notificationSignalOnCore notificationId badge executingCore
             (acquireAll executingCore

@@ -315,8 +315,8 @@ def serializabilityTheorems : List SerializabilityTheorem :=
       releaseLockOnObject_preserves_scheduler .atomicityBridge,
     serlt! "schedulerObserver_acquireInsensitive — concrete acquire-insensitive observer (non-vacuity)"
       schedulerObserver_acquireInsensitive .atomicityBridge,
-    serlt! "schedulerObserver_releaseInsensitive — concrete release-insensitive observer (non-vacuity)"
-      schedulerObserver_releaseInsensitive .atomicityBridge,
+    serlt! "schedulerObserver_unwindInsensitive — concrete release-insensitive observer (non-vacuity)"
+      schedulerObserver_unwindInsensitive .atomicityBridge,
     serlt! "withLockSet_observation_scheduler_witness — bridge applied non-vacuously to a scheduler write"
       withLockSet_observation_scheduler_witness .atomicityBridge,
     -- §10 observational (18)

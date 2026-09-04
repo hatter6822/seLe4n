@@ -171,10 +171,10 @@ open SeLe4n.Kernel.Concurrency
 /-! ## SM3.C.7 observational atomicity (lock-insensitive observer) -/
 
 #check @AcquireInsensitive
-#check @ReleaseInsensitive
+#check @UnwindInsensitive
 #check @acquireAll_lockInsensitive
 #check @releaseAll_lockInsensitive
-#check @withLockSet_release_invisible
+#check @withLockSet_unwind_invisible
 #check @lockSet_observer_atomic
 
 /-! ## SM3.C.11.c/d dynamic chain — conjunct-1, capstone, deadlock-freedom -/

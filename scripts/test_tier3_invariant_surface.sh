@@ -1948,18 +1948,18 @@ run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_objectIndex_eq' 
 run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_services_eq' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_irqHandlers_eq' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem updateObjectLockAt_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_preserves_objects_invExt' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem updateObjectLockAt_preserves_objects_invExt' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_preserves_invExt' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem updateObjectLockAt_preserves_invExt' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem acquireLockOnObject_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem releaseLockOnObject_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem acquireLockOnObject_preserves_objects_invExt' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem releaseLockOnObject_preserves_objects_invExt' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem acquireLockOnObject_preserves_invExt' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem releaseLockOnObject_preserves_invExt' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem updateObjectLockAt_scheduler_eq' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem updateObjectLockAt_machine_eq' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem acquireLockOnObject_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem releaseLockOnObject_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem acquireAll_preserves_objects_invExt' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem releaseAll_preserves_objects_invExt' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem acquireAll_preserves_invExt' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem releaseAll_preserves_invExt' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem acquireAll_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem releaseAll_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem acquireAll_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
@@ -2879,7 +2879,7 @@ run_check "INVARIANT" rg -n 'rootCn.depth . rootCn.guardWidth . rootCn.radixWidt
 # state to HOLD the footprint, and releases it on refusal.
 run_check "INVARIANT" rg -n '^inductive RevalidatedEntryOutcome' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n 'lockSetHeld lockCore S observed' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem syscallEntryUnderRevalidatedLockSet_refused_releases' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryUnderRevalidatedLockSet_refused_unwinds' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # NEGATIVE: the refusal branch must not go back to returning `none`, which is
 # what stranded the acquired footprint on the caller.
 run_negative_check "INVARIANT" rg -n 'observed = none := by' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
@@ -7122,10 +7122,10 @@ import SeLe4n.Kernel.Concurrency.Locks.WithLockSetInventory
 #check @SeLe4n.Kernel.Concurrency.lockAcquireSequence_distinct_objId_of_resolves
 -- SM3.C.7 (Group-B): observational atomicity (lock-insensitive observer).
 #check @SeLe4n.Kernel.Concurrency.AcquireInsensitive
-#check @SeLe4n.Kernel.Concurrency.ReleaseInsensitive
+#check @SeLe4n.Kernel.Concurrency.UnwindInsensitive
 #check @SeLe4n.Kernel.Concurrency.acquireAll_lockInsensitive
 #check @SeLe4n.Kernel.Concurrency.releaseAll_lockInsensitive
-#check @SeLe4n.Kernel.Concurrency.withLockSet_release_invisible
+#check @SeLe4n.Kernel.Concurrency.withLockSet_unwind_invisible
 #check @SeLe4n.Kernel.Concurrency.lockSet_observer_atomic
 -- SM3.C.11 dynamic chain walker + deadlock-freedom witness.
 #check @SeLe4n.Kernel.Concurrency.MAX_PIP_RETRIES
@@ -7390,7 +7390,7 @@ import SeLe4n.Kernel.Concurrency.Locks.SerializabilityInventory
 #check @SeLe4n.Kernel.Concurrency.acquireLockOnObject_preserves_scheduler
 #check @SeLe4n.Kernel.Concurrency.releaseLockOnObject_preserves_scheduler
 #check @SeLe4n.Kernel.Concurrency.schedulerObserver_acquireInsensitive
-#check @SeLe4n.Kernel.Concurrency.schedulerObserver_releaseInsensitive
+#check @SeLe4n.Kernel.Concurrency.schedulerObserver_unwindInsensitive
 #check @SeLe4n.Kernel.Concurrency.withLockSet_observation_scheduler_witness
 #check @SeLe4n.Kernel.Concurrency.ActionObsCongr
 #check @SeLe4n.Kernel.Concurrency.ActionPreservesInvExt

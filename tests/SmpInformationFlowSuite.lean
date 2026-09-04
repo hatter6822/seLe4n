@@ -378,18 +378,18 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @updateObjectAt_updateLock_services_eq
 #check @updateObjectAt_updateLock_irqHandlers_eq
 #check @updateObjectLockAt_preserves_projection
-#check @updateObjectAt_updateLock_preserves_objects_invExt
-#check @updateObjectLockAt_preserves_objects_invExt
+#check @updateObjectAt_updateLock_preserves_invExt
+#check @updateObjectLockAt_preserves_invExt
 #check @acquireLockOnObject_preserves_projection
 #check @releaseLockOnObject_preserves_projection
-#check @acquireLockOnObject_preserves_objects_invExt
-#check @releaseLockOnObject_preserves_objects_invExt
+#check @acquireLockOnObject_preserves_invExt
+#check @releaseLockOnObject_preserves_invExt
 #check @updateObjectLockAt_scheduler_eq
 #check @updateObjectLockAt_machine_eq
 #check @acquireLockOnObject_confinedToCore
 #check @releaseLockOnObject_confinedToCore
-#check @acquireAll_preserves_objects_invExt
-#check @releaseAll_preserves_objects_invExt
+#check @acquireAll_preserves_invExt
+#check @releaseAll_preserves_invExt
 #check @acquireAll_preserves_projection
 #check @releaseAll_preserves_projection
 #check @acquireAll_confinedToCore
@@ -1235,7 +1235,7 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @syscallEntryUnderRevalidatedLockSet_refuses_on_change
 #check @syscallEntryUnderRevalidatedLockSet_not_refines_in_general
 #check @RevalidatedEntryOutcome
-#check @syscallEntryUnderRevalidatedLockSet_refused_releases
+#check @syscallEntryUnderRevalidatedLockSet_refused_unwinds
 #check @rwLock_release_by_nonholder_preserves_waiters
 #check @elapsedBetween
 #check @elapsedBetween_le
@@ -7900,7 +7900,7 @@ private def runDeclaredFootprintChecks : IO Unit := do
      have _r := @syscallEntryUnderRevalidatedLockSet_refuses_on_change
      have _q := @syscallEntryUnderRevalidatedLockSet_refuses_on_change_while_held
      have _w := @revalidationRefusalReachable
-     have _u := @syscallEntryUnderRevalidatedLockSet_refused_releases
+     have _u := @syscallEntryUnderRevalidatedLockSet_refused_unwinds
      have _f := @syscallEntryUnderRevalidatedLockSet_not_refines_in_general
      have _c := @withLockSet_eq_continueFromAcquired
      have _a := @syscallEntryUnderLockSet_eq_fromAcquired

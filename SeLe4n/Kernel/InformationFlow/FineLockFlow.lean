@@ -480,6 +480,17 @@ theorem releaseLockOnObject_lockWritesOnly (s : SystemState) (core : CoreId)
       | exact lockWritesOnly_refl s
       | exact updateObjectLockAt_lockWritesOnly s l _ hInv
 
+/-- **WS-LC LC4.2**: and the withdrawal primitive, the third sibling. -/
+theorem cancelLockOnObject_lockWritesOnly (s : SystemState) (core : CoreId)
+    (l : LockId) (m : AccessMode) (hInv : s.objects.invExt) :
+    lockWritesOnly s (SeLe4n.Kernel.Concurrency.cancelLockOnObject s core l m) := by
+  unfold SeLe4n.Kernel.Concurrency.cancelLockOnObject
+  cases l.kind <;>
+    first
+      | exact objStoreLock_write_lockWritesOnly s _
+      | exact lockWritesOnly_refl s
+      | exact updateObjectLockAt_lockWritesOnly s l _ hInv
+
 /-- SM8.D.1: the 2PL **growing phase** writes only lock words. -/
 theorem acquireAll_lockWritesOnly (core : CoreId) (pairs : List (LockId × AccessMode))
     (s : SystemState) (hInv : s.objects.invExt) :
@@ -490,7 +501,7 @@ theorem acquireAll_lockWritesOnly (core : CoreId) (pairs : List (LockId × Acces
     obtain ⟨l, m⟩ := p
     rw [SeLe4n.Kernel.Concurrency.acquireAll_cons]
     exact lockWritesOnly_trans (acquireLockOnObject_lockWritesOnly s core l m hInv)
-      (ih _ (acquireLockOnObject_preserves_objects_invExt s core l m hInv))
+      (ih _ (SeLe4n.Kernel.Concurrency.acquireLockOnObject_preserves_invExt s core l m hInv))
 
 /-- SM8.D.1: the 2PL **shrinking phase** writes only lock words. -/
 theorem releaseAll_lockWritesOnly (core : CoreId) (pairs : List (LockId × AccessMode))
@@ -502,7 +513,32 @@ theorem releaseAll_lockWritesOnly (core : CoreId) (pairs : List (LockId × Acces
     obtain ⟨l, m⟩ := p
     rw [SeLe4n.Kernel.Concurrency.releaseAll_cons]
     exact lockWritesOnly_trans (releaseLockOnObject_lockWritesOnly s core l m hInv)
-      (ih _ (releaseLockOnObject_preserves_objects_invExt s core l m hInv))
+      (ih _ (SeLe4n.Kernel.Concurrency.releaseLockOnObject_preserves_invExt s core l m hInv))
+
+/-- **WS-LC LC4.2**: the withdrawal fold writes only lock words. -/
+theorem cancelAll_lockWritesOnly (core : CoreId) (pairs : List (LockId × AccessMode))
+    (s : SystemState) (hInv : s.objects.invExt) :
+    lockWritesOnly s (SeLe4n.Kernel.Concurrency.cancelAll core pairs s) := by
+  induction pairs generalizing s with
+  | nil => exact lockWritesOnly_refl s
+  | cons p rest ih =>
+    obtain ⟨l, m⟩ := p
+    rw [SeLe4n.Kernel.Concurrency.cancelAll_cons]
+    exact lockWritesOnly_trans (cancelLockOnObject_lockWritesOnly s core l m hInv)
+      (ih _ (SeLe4n.Kernel.Concurrency.cancelLockOnObject_preserves_invExt s core l m hInv))
+
+/-- **WS-LC LC4.2**: so does the shrinking phase as a whole.
+
+The composite every §4 and §5 result now factors through: adding the
+withdrawal to the bracket adds lock-word writes and nothing else, so the
+integrity and information-flow arguments carry over unchanged. -/
+theorem unwindAll_lockWritesOnly (core : CoreId) (pairs : List (LockId × AccessMode))
+    (s : SystemState) (hInv : s.objects.invExt) :
+    lockWritesOnly s (SeLe4n.Kernel.Concurrency.unwindAll core pairs s) := by
+  rw [SeLe4n.Kernel.Concurrency.unwindAll_eq_releaseAll_cancelAll]
+  exact lockWritesOnly_trans (cancelAll_lockWritesOnly core pairs s hInv)
+    (releaseAll_lockWritesOnly core pairs _
+      (SeLe4n.Kernel.Concurrency.cancelAll_preserves_invExt core pairs s hInv))
 
 /-- SM8.D.1 (**the bracket**): `withLockSet` writes only lock words beyond
 whatever its guarded action writes.
@@ -518,10 +554,10 @@ theorem withLockSet_lockWritesOnly {α : Type} (S : LockSet) (core : CoreId)
     (hActionLock : ∀ s', s'.objects.invExt → lockWritesOnly s' (action s').1) :
     lockWritesOnly s (SeLe4n.Kernel.Concurrency.withLockSet S core action s).1 := by
   rw [SeLe4n.Kernel.Concurrency.withLockSet_fst]
-  have hAcqInv := acquireAll_preserves_objects_invExt core S.lockAcquireSequence s hInv
+  have hAcqInv := SeLe4n.Kernel.Concurrency.acquireAll_preserves_invExt core S.lockAcquireSequence s hInv
   exact lockWritesOnly_trans (acquireAll_lockWritesOnly core S.lockAcquireSequence s hInv)
     (lockWritesOnly_trans (hActionLock _ hAcqInv)
-      (releaseAll_lockWritesOnly core _ _ (hActionInv _ hAcqInv)))
+      (unwindAll_lockWritesOnly core _ _ (hActionInv _ hAcqInv)))
 
 -- ============================================================================
 -- §2  SM8.D.2 — reader multiplicity is not directly observable
@@ -1737,13 +1773,13 @@ theorem withLockSet_noUnpermittedWrite {α : Type} (permitted : SeLe4n.ObjId →
     (hAction : ∀ s', s'.objects.invExt → noUnpermittedWrite permitted s' (action s').1) :
     noUnpermittedWrite permitted s (SeLe4n.Kernel.Concurrency.withLockSet S core action s).1 := by
   rw [SeLe4n.Kernel.Concurrency.withLockSet_fst]
-  have hAcqInv := acquireAll_preserves_objects_invExt core S.lockAcquireSequence s hInv
+  have hAcqInv := SeLe4n.Kernel.Concurrency.acquireAll_preserves_invExt core S.lockAcquireSequence s hInv
   refine noUnpermittedWrite_trans
     (lockWritesOnly_noUnpermittedWrite permitted
       (acquireAll_lockWritesOnly core S.lockAcquireSequence s hInv))
     (noUnpermittedWrite_trans (hAction _ hAcqInv)
       (lockWritesOnly_noUnpermittedWrite permitted
-        (releaseAll_lockWritesOnly core _ _ (hActionInv _ hAcqInv))))
+        (unwindAll_lockWritesOnly core _ _ (hActionInv _ hAcqInv))))
 
 /-- SM8.D.4 (**the headline, standard BIBA**): under per-object locks, a
 subject at integrity `subject.integrity` running on **any** core writes no
@@ -2078,7 +2114,7 @@ theorem syscallEntryUnderLockSet_fst (ctx : LabelingContext) (S : LockSet) (lock
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
     (s : SystemState) :
     (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1
-      = SeLe4n.Kernel.Concurrency.releaseAll lockCore S.lockAcquireSequence.reverse
+      = SeLe4n.Kernel.Concurrency.unwindAll lockCore S.lockAcquireSequence.reverse
           (commitKernelAction (syscallEntryChecked ctx layout executingCore regCount)
             (lockSetAcquiredState S lockCore s)).1 :=
   SeLe4n.Kernel.Concurrency.withLockSet_fst _ _ _ _
@@ -2114,7 +2150,7 @@ theorem syscallEntryUnderLockSet_preserves_projectionOnCore_atCore (ctx : Labeli
     lowEquivalent_smp ctx observer
       (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1 s := by
   have hAcqInv : (lockSetAcquiredState S lockCore s).objects.invExt :=
-    acquireAll_preserves_objects_invExt lockCore S.lockAcquireSequence s hInv
+    SeLe4n.Kernel.Concurrency.acquireAll_preserves_invExt lockCore S.lockAcquireSequence s hInv
   have hCommit : (commitKernelAction (syscallEntryChecked ctx layout executingCore regCount)
       (lockSetAcquiredState S lockCore s)) = (st', .ok ()) :=
     commitKernelAction_ok _ _ _ _ hOk
@@ -2125,10 +2161,10 @@ theorem syscallEntryUnderLockSet_preserves_projectionOnCore_atCore (ctx : Labeli
     -- invisible on *every* core by §1 — which is why generalising the core costs
     -- nothing here that the boot form was not already paying.
     calc projectStateOnCore ctx observer
-          (SeLe4n.Kernel.Concurrency.releaseAll lockCore S.lockAcquireSequence.reverse st') c'
+          (SeLe4n.Kernel.Concurrency.unwindAll lockCore S.lockAcquireSequence.reverse st') c'
         = projectStateOnCore ctx observer st' c' :=
           lockWritesOnly_preserves_projectionOnCore ctx observer c'
-            (releaseAll_lockWritesOnly lockCore S.lockAcquireSequence.reverse st' hOutInv)
+            (unwindAll_lockWritesOnly lockCore S.lockAcquireSequence.reverse st' hOutInv)
       _ = projectStateOnCore ctx observer (lockSetAcquiredState S lockCore s) c' := hProjOn
       _ = projectStateOnCore ctx observer s c' :=
           lockWritesOnly_preserves_projectionOnCore ctx observer c'
@@ -2136,7 +2172,7 @@ theorem syscallEntryUnderLockSet_preserves_projectionOnCore_atCore (ctx : Labeli
   · exact observableSlotsConfinedToCore_trans
       (acquireAll_confinedToCore lockCore S.lockAcquireSequence s c')
       (observableSlotsConfinedToCore_trans hConfined
-        (releaseAll_confinedToCore lockCore _ st' c'))
+        (unwindAll_confinedToCore lockCore _ st' c'))
 
 /-- SM8.D.5 (**the headline**): a 2PL-bracketed live syscall entry is
 non-interfering on **every core** exactly when the operation it dispatches is.
@@ -2190,14 +2226,14 @@ theorem syscallEntryUnderLockSet_failClosed (ctx : LabelingContext) (S : LockSet
       ∧ (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).2
           = .error e := by
   have hAcqInv : (lockSetAcquiredState S lockCore s).objects.invExt :=
-    acquireAll_preserves_objects_invExt lockCore S.lockAcquireSequence s hInv
+    SeLe4n.Kernel.Concurrency.acquireAll_preserves_invExt lockCore S.lockAcquireSequence s hInv
   have hCommit : (commitKernelAction (syscallEntryChecked ctx layout executingCore regCount)
       (lockSetAcquiredState S lockCore s)) = (lockSetAcquiredState S lockCore s, .error e) :=
     commitKernelAction_error _ _ _ hDenied
   constructor
   · rw [syscallEntryUnderLockSet_fst, hCommit]
     exact lockWritesOnly_trans (acquireAll_lockWritesOnly lockCore S.lockAcquireSequence s hInv)
-      (releaseAll_lockWritesOnly lockCore _ _ hAcqInv)
+      (unwindAll_lockWritesOnly lockCore _ _ hAcqInv)
   · show (SeLe4n.Kernel.Concurrency.withLockSet S lockCore _ s).2 = _
     rw [SeLe4n.Kernel.Concurrency.withLockSet_snd]
     show (commitKernelAction (syscallEntryChecked ctx layout executingCore regCount)
@@ -2277,13 +2313,13 @@ theorem secureInformationFlow_underFineLocks_atCore (ctx : LabelingContext) (L :
         (acquireAll_lockWritesOnly lockCore S.lockAcquireSequence s hInv))
       (noUnpermittedWrite_trans hBiba
         (lockWritesOnly_noUnpermittedWrite _
-          (releaseAll_lockWritesOnly lockCore _ st' hOutInv)))
+          (unwindAll_lockWritesOnly lockCore _ st' hOutInv)))
   · exact noUnpermittedWrite_trans
       (lockWritesOnly_noUnpermittedWrite _
         (acquireAll_lockWritesOnly lockCore S.lockAcquireSequence s hInv))
       (noUnpermittedWrite_trans hAuthority
         (lockWritesOnly_noUnpermittedWrite _
-          (releaseAll_lockWritesOnly lockCore _ st' hOutInv)))
+          (unwindAll_lockWritesOnly lockCore _ st' hOutInv)))
 
 /-- SM8.D.5: the boot-core instance of the combined witness.
 
@@ -2353,16 +2389,16 @@ theorem syscallEntryUnderLockSet_preserves_projectionOnCore_of_entry (ctx : Labe
   rw [syscallEntryUnderLockSet_fst, hCommit]
   refine lowEquivalent_smp_of_projection_and_confinement ctx observer ?_ ?_
   · calc projectState ctx observer
-          (SeLe4n.Kernel.Concurrency.releaseAll lockCore S.lockAcquireSequence.reverse st')
+          (SeLe4n.Kernel.Concurrency.unwindAll lockCore S.lockAcquireSequence.reverse st')
         = projectState ctx observer st' :=
-          releaseAll_preserves_projection ctx observer lockCore _ st' hOutInv
+          unwindAll_preserves_projection ctx observer lockCore _ st' hOutInv
       _ = projectState ctx observer (lockSetAcquiredState S lockCore s) := hProj
       _ = projectState ctx observer s :=
           acquireAll_preserves_projection ctx observer lockCore S.lockAcquireSequence s hInv
   · exact observableSlotsConfinedToCore_trans
       (acquireAll_confinedToCore lockCore S.lockAcquireSequence s bootCoreId)
       (observableSlotsConfinedToCore_trans hConfined
-        (releaseAll_confinedToCore lockCore _ st' bootCoreId))
+        (unwindAll_confinedToCore lockCore _ st' bootCoreId))
 
 -- ----------------------------------------------------------------------------
 -- SM8.D.5 — at the one footprint SM3.C.9 has declared
@@ -3226,11 +3262,11 @@ def syscallEntryUnderDeclaredLockSet (ctx : LabelingContext) (lockCore : CoreId)
 /-- SM8.D.5: the bracket's **action and shrinking phases**, run from a state in
 which the growing phase has already happened.
 
-`withLockSet` is acquire → action → release from a pre-acquire state.  A
+`withLockSet` is acquire → action → unwind from a pre-acquire state.  A
 revalidating bracket has already acquired, and then *looked* at the state it
 ended up in; re-running the whole bracket from the original `s` would throw that
 state away and act on a snapshot the revalidation did not check.  This is the
-continuation: it runs the action on the acquired state it is handed and releases,
+continuation: it runs the action on the acquired state it is handed and unwinds,
 without re-acquiring.
 
 `withLockSet_eq_continueFromAcquired` is the decomposition that ties it back — a
@@ -3239,7 +3275,7 @@ two forms cannot drift. -/
 def continueFromAcquired {α : Type} (S : LockSet) (lockCore : CoreId)
     (action : SystemState → SystemState × α) (acquired : SystemState) : SystemState × α :=
   let (postAction, result) := action acquired
-  (SeLe4n.Kernel.Concurrency.releaseAll lockCore S.lockAcquireSequence.reverse postAction, result)
+  (SeLe4n.Kernel.Concurrency.unwindAll lockCore S.lockAcquireSequence.reverse postAction, result)
 
 /-- SM8.D.5: the decomposition — the bracket is its growing phase followed by the
 continuation.  Definitional, so it is a naming of `withLockSet`'s own structure
@@ -3266,16 +3302,23 @@ theorem syscallEntryUnderLockSet_eq_fromAcquired (ctx : LabelingContext) (S : Lo
       = syscallEntryFromAcquired ctx S lockCore layout executingCore regCount
           (lockSetAcquiredState S lockCore s) := rfl
 
-/-- SM8.D.5 (**why a refusal's unwind is release-only**): a release by a core
-that is not a holder is the identity, so it cannot remove that core's *queued*
-request.
+/-- SM8.D.5 (**why the shrinking phase needs a withdrawal**): a release by a
+core that is not a holder is the identity, so it cannot remove that core's
+*queued* request.
 
 Both release arms of `applyOp` guard on holdership — `releaseRead` on membership
 in `readers`, `releaseWrite` on `writerHeld = some core` — and return the state
-unchanged otherwise.  A queued acquisition is therefore untouched by the whole
-shrinking phase, which is what makes the refusal path's unwind partial under
-contention.  `RwLockOp` has no cancel constructor to fix that with; see the
-`syscallEntryUnderRevalidatedLockSet` docstring for the SM2.C registration. -/
+unchanged otherwise.  A queued acquisition is therefore untouched by a
+release-only shrinking phase, which is what made the refusal path's unwind
+partial under contention.
+
+The theorem is unchanged; what changed is what it implies about this tree.
+`RwLockOp.cancel` exists (WS-LC LC1), the shrinking phase is `unwindAll` and
+withdraws before it releases (LC4.1), and
+`unwindAll_leaves_no_queued_request` closes the gap this result identifies.
+It is kept, and kept in this form, because it is the *reason* the withdrawal
+has to exist: delete the withdrawal and this theorem is exactly the defect
+that comes back. -/
 theorem rwLock_release_by_nonholder_preserves_waiters (l : RwLockState) (c : CoreId)
     (hNotReader : c ∉ l.readers) (hNotWriter : l.writerHeld ≠ some c) :
     (l.applyOp (.releaseRead c)).waiters = l.waiters ∧
@@ -3326,18 +3369,26 @@ blocked every later user of those objects.  Lock unwinding is now part of the
 result: `.refused` carries the **released** state, so there is no way to observe
 a refusal without also receiving the state the shrinking phase produced.
 
-**What "released" does and does not mean.**  `releaseAll` applies
-`releaseRead` / `releaseWrite`, and both are the *identity* for a core that is
-not a holder (`rwLock_release_by_nonholder_preserves_waiters`).  So when the
-growing phase found a member contended, `lockCore` is **queued** on it rather
-than holding it, and the unwind cannot remove that request — `RwLockOp` has no
-cancel operation.  The refusal therefore releases what was granted and leaves
-what was merely requested, which can still be promoted later and strand the
-lock.  Adding a cancel is registered as **SM2.C debt**: a new `RwLockOp`
-constructor changes `applyOp`, all five INV-R invariants and every `cases op` in
-the SM2.C liveness surface, so it is that phase's datatype to extend.  Stated
-here rather than left implicit, because a reader who takes "released" to mean
-"the footprint is fully unwound" would be wrong under contention. -/
+**What "released" means (WS-LC LC4.4).**  It means the footprint is unwound,
+including the members the growing phase only managed to *queue* on.
+
+That was not always so, and the difference is worth stating because it is the
+whole reason `RwLockOp` gained a fifth constructor.  `releaseRead` /
+`releaseWrite` are the *identity* for a core that is not a holder
+(`rwLock_release_by_nonholder_preserves_waiters`), so where the growing phase
+found a member contended, `lockCore` is **queued** on it rather than holding
+it, and a release-only unwind could not remove that request — it stayed to be
+promoted later and strand the lock.  The shrinking phase is now
+`unwindAll`, which withdraws before it releases, and
+`unwindAll_leaves_no_queued_request` is the theorem: after a refusal
+`lockCore` has no queued request at any member of the footprint, with no
+hypothesis beyond the object store's own structural invariant.
+
+What it still does not mean is that `lockCore` holds *nothing* at those
+members.  A core holding a write lock, unwound at a member declared `.read`,
+keeps `writerHeld`; ruling that out needs the growing phase's mode agreement
+threaded through, which is a different claim from the one this docstring used
+to have to disclaim. -/
 inductive RevalidatedEntryOutcome where
   /-- No footprint is declared for the operation the entry runs, so nothing was
   acquired and nothing needs releasing — the caller keeps its coarser
@@ -3345,8 +3396,9 @@ inductive RevalidatedEntryOutcome where
   | undeclared
   /-- A footprint was declared and acquired, and then the resolution moved (or
   the observed state does not hold it).  Carries the state with the footprint
-  **released**, so a refusal cannot be observed without the unwinding. -/
-  | refused (released : SystemState)
+  **unwound** — released where it was granted, withdrawn where it was only
+  queued — so a refusal cannot be observed without the unwinding. -/
+  | refused (unwound : SystemState)
   /-- The guard passed: the transition ran from the observed state and the
   footprint was released after it. -/
   | committed (result : SystemState × Except KernelError Unit)
@@ -3372,8 +3424,11 @@ def syscallEntryUnderRevalidatedLockSet (ctx : LabelingContext) (lockCore : Core
       .committed (syscallEntryFromAcquired ctx S lockCore layout executingCore regCount observed)
     else
       -- Refusing still has to unwind: the footprint was acquired before the
-      -- guard ran, so returning without releasing strands it on `lockCore`.
-      .refused (SeLe4n.Kernel.Concurrency.releaseAll lockCore
+      -- guard ran, so returning without unwinding strands it on `lockCore`.
+      -- `unwindAll`, not `releaseAll` (WS-LC LC4.4): a release is the identity
+      -- for a non-holder, so a release-only unwind left every *contended*
+      -- member queued.
+      .refused (SeLe4n.Kernel.Concurrency.unwindAll lockCore
         S.lockAcquireSequence.reverse observed)
 
 /-- SM8.D.5: the instance this pure model can run — the growing phase ends at
@@ -3429,7 +3484,7 @@ theorem syscallEntryUnderRevalidatedLockSet_refuses_on_change (ctx : LabelingCon
     (hRes : declaredLockSetForEntry ctx layout executingCore regCount s = some S)
     (hMoved : declaredLockSetForEntry ctx layout executingCore regCount observed ≠ some S) :
     syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
-      observed = .refused (SeLe4n.Kernel.Concurrency.releaseAll lockCore
+      observed = .refused (SeLe4n.Kernel.Concurrency.unwindAll lockCore
         S.lockAcquireSequence.reverse observed) := by
   unfold syscallEntryUnderRevalidatedLockSet
   rw [hRes]
@@ -3444,13 +3499,13 @@ This is the property whose absence stranded the footprint: with an `Option`
 result there was no payload to carry the release, so the shrinking phase simply
 did not run on the refusal path and a caller taking the documented fallback kept
 holding every lock it had acquired. -/
-theorem syscallEntryUnderRevalidatedLockSet_refused_releases (ctx : LabelingContext)
+theorem syscallEntryUnderRevalidatedLockSet_refused_unwinds (ctx : LabelingContext)
     (lockCore : CoreId) (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId)
-    (regCount : Nat) (s observed released : SystemState)
+    (regCount : Nat) (s observed unwound : SystemState)
     (h : syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
-      observed = .refused released) :
+      observed = .refused unwound) :
     ∃ S, declaredLockSetForEntry ctx layout executingCore regCount s = some S ∧
-      released = SeLe4n.Kernel.Concurrency.releaseAll lockCore
+      unwound = SeLe4n.Kernel.Concurrency.unwindAll lockCore
         S.lockAcquireSequence.reverse observed := by
   unfold syscallEntryUnderRevalidatedLockSet at h
   cases hRes : declaredLockSetForEntry ctx layout executingCore regCount s with
@@ -3461,6 +3516,40 @@ theorem syscallEntryUnderRevalidatedLockSet_refused_releases (ctx : LabelingCont
     split at h
     · exact absurd h (by simp)
     · exact ⟨S, rfl, by simpa using h.symm⟩
+
+/-- **WS-LC LC4.4 (the refusal's payoff)**: a refused entry leaves `lockCore`
+with **no queued request at any member of the declared footprint**.
+
+This is the theorem the "what 'released' does and does not mean" caveat was
+written to disclaim, and it is why that caveat is gone.  A release is the
+identity for a non-holder, so before the shrinking phase gained a withdrawal
+this statement was false of exactly the members the growing phase found
+contended — the ones a refusal most needs to give back.
+
+The only hypothesis is `observed.objects.invExt`, the object store's own
+structural invariant.  Nothing is assumed about the footprint: not that its
+members resolve, not that they are distinct, not that `lockCore` holds any of
+them.  What it does not claim is that `lockCore` holds nothing at those
+members — see `unwindAll_leaves_no_queued_request` for why that is a
+different, mode-sensitive statement. -/
+theorem syscallEntryUnderRevalidatedLockSet_refused_leaves_no_queued_request
+    (ctx : LabelingContext) (lockCore : CoreId)
+    (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId)
+    (regCount : Nat) (s observed unwound : SystemState)
+    (hExt : observed.objects.invExt)
+    (h : syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
+      observed = .refused unwound) :
+    ∃ S, declaredLockSetForEntry ctx layout executingCore regCount s = some S ∧
+      ∀ p ∈ S.lockAcquireSequence,
+        ¬ SeLe4n.Kernel.Concurrency.lockQueued lockCore p.fst unwound := by
+  obtain ⟨S, hRes, hEq⟩ :=
+    syscallEntryUnderRevalidatedLockSet_refused_unwinds ctx lockCore layout executingCore
+      regCount s observed unwound h
+  refine ⟨S, hRes, ?_⟩
+  intro p hp
+  rw [hEq]
+  exact SeLe4n.Kernel.Concurrency.unwindAll_leaves_no_queued_request lockCore
+    S.lockAcquireSequence.reverse observed hExt p (List.mem_reverse.mpr hp)
 
 /-- SM8.D.5 (**the refusal is reachable**): a state on which the guard fires.
 
@@ -3510,7 +3599,7 @@ theorem syscallEntryUnderRevalidatedLockSet_refuses_on_change_while_held
     (hDiffers : declaredLockSetForEntry ctx layout executingCore regCount observed ≠ some S) :
     syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
         observed
-      = .refused (SeLe4n.Kernel.Concurrency.releaseAll lockCore
+      = .refused (SeLe4n.Kernel.Concurrency.unwindAll lockCore
           S.lockAcquireSequence.reverse observed) :=
   -- The held hypothesis is deliberately unused in the *proof*: the guard is a
   -- conjunction, so the resolution change alone already forces the refusal.
@@ -3800,7 +3889,7 @@ def fineLockClaimTheorem : FineLockClaimId → String
   | .failClosedUnderFineLocks => niName! syscallEntryUnderLockSet_failClosed_invisible
   | .contentionChannelRegistered => niName! acceptedCovertChannel_lockContention_bounded
   | .revalidatedCommitTracked => niName! syscallEntryUnderRevalidatedLockSet_footprint_stable
-  | .revalidatedRefusalUnwinds => niName! syscallEntryUnderRevalidatedLockSet_refused_releases
+  | .revalidatedRefusalUnwinds => niName! syscallEntryUnderRevalidatedLockSet_refused_unwinds
 
 theorem fineLockClaimTheorem_nodup :
     (FineLockClaimId.all.map fineLockClaimTheorem).Nodup := by decide
@@ -3923,11 +4012,11 @@ def FineLockClaimId.evidenceProp : FineLockClaimId → Prop
   | .revalidatedRefusalUnwinds =>
       ∀ (ctx : LabelingContext) (lockCore : CoreId)
         (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
-        (s observed released : SystemState),
+        (s observed unwound : SystemState),
         syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
-            observed = .refused released →
+            observed = .refused unwound →
         ∃ S, declaredLockSetForEntry ctx layout executingCore regCount s = some S ∧
-          released = SeLe4n.Kernel.Concurrency.releaseAll lockCore
+          unwound = SeLe4n.Kernel.Concurrency.unwindAll lockCore
             S.lockAcquireSequence.reverse observed
 
 /-- SM8.D: **the evidence** — every claim discharged by citation.  This
@@ -3975,9 +4064,9 @@ def fineLockClaimEvidence : (id : FineLockClaimId) → id.evidenceProp
         syscallEntryUnderRevalidatedLockSet_footprint_stable ctx lockCore layout executingCore
           regCount s observed r h
   | .revalidatedRefusalUnwinds =>
-      fun ctx lockCore layout executingCore regCount s observed released h =>
-        syscallEntryUnderRevalidatedLockSet_refused_releases ctx lockCore layout executingCore
-          regCount s observed released h
+      fun ctx lockCore layout executingCore regCount s observed unwound h =>
+        syscallEntryUnderRevalidatedLockSet_refused_unwinds ctx lockCore layout executingCore
+          regCount s observed unwound h
 
 /-- SM8.D: the evidence is non-empty at every claim — the sanity check that the
 table is inhabited rather than a family of vacuous `True`s. -/

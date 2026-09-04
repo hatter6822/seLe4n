@@ -271,8 +271,8 @@ def withLockSetTheorems : List WithLockSetTheorem :=
       acquireAll_lockInsensitive .atomicity,
     wlst! "releaseAll_lockInsensitive: SM3.C.7 release fold invisible to lock-insensitive observer"
       releaseAll_lockInsensitive .atomicity,
-    wlst! "withLockSet_release_invisible: SM3.C.7 observational form (release contributes nothing)"
-      withLockSet_release_invisible .atomicity,
+    wlst! "withLockSet_unwind_invisible: SM3.C.7 observational form (the shrinking phase contributes nothing)"
+      withLockSet_unwind_invisible .atomicity,
     wlst! "lockSet_observer_atomic: SM3.C.7 Thm 2.1.10 observer-atomicity capstone"
       lockSet_observer_atomic .atomicity,
     -- §5 dynamicChain (8 entries: SM3.C.11.a-e)
@@ -332,7 +332,7 @@ expanded 71→86 (+5 held: the SM3.C.8 establishment lemmas
 `acquireAll_establishes_lockHeld_of_distinct_present_unheld` /
 `acquireAll_establishes_lockSetHeld`; +4 atomicity: the SM3.C.7
 observational-atomicity theorems `acquireAll_lockInsensitive` /
-`releaseAll_lockInsensitive` / `withLockSet_release_invisible` /
+`releaseAll_lockInsensitive` / `withLockSet_unwind_invisible` /
 `lockSet_observer_atomic`; +6 dynamicChain: SM3.C.11.c conjunct-1
 establishment + `blockingServer` frame/transport + the full
 `dynamicChainHeld` capstone + the SM3.C.11.d two-core deadlock-freedom

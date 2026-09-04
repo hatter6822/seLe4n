@@ -160,8 +160,8 @@ open SeLe4n.Testing
 #check @cancelDonationOnCore_preserves_ipcInvariant
 #check @descheduleThread_preserves_ipcInvariant
 #check @updateObjectLockAt_getTcb?_ipcState
-#check @acquireLockOnObject_preserves_objects_invExt
-#check @releaseLockOnObject_preserves_objects_invExt
+#check @acquireLockOnObject_preserves_invExt
+#check @releaseLockOnObject_preserves_invExt
 #check @cancellationObserver_acquireInsensitiveOn
 #check @cancellationObserver_releaseInsensitiveOn
 #check @cancelIpcBlockingOnCore_observer_atomic

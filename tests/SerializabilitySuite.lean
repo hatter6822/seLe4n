@@ -142,7 +142,7 @@ open SeLe4n.Kernel.Concurrency
 #check @acquireLockOnObject_preserves_scheduler
 #check @releaseLockOnObject_preserves_scheduler
 #check @schedulerObserver_acquireInsensitive
-#check @schedulerObserver_releaseInsensitive
+#check @schedulerObserver_unwindInsensitive
 #check @withLockSet_observation_scheduler_witness
 
 /-! ## SM3.E.3/E.5 — Observational serializability (covers write/write) -/
@@ -347,7 +347,7 @@ example (interleaved : List KernelTransitionInstance) (s : SystemState)
 -- that `applySequential` faithfully represents the real `withLockSet` execution.
 example (β : Type) (π : SystemState → β)
     (hAcq : ∀ c : CoreId, AcquireInsensitive c π)
-    (hRel : ∀ c : CoreId, ReleaseInsensitive c π)
+    (hRel : ∀ c : CoreId, UnwindInsensitive c π)
     (sched : List KernelTransitionInstance)
     (hCongr : ∀ τ ∈ sched, ActionPiCongr π τ.action) (s : SystemState) :
     π (applySequentialWithLockSet sched s) = π (applySequential sched s) :=

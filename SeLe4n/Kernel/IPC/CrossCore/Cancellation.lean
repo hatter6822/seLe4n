@@ -1154,7 +1154,7 @@ theorem cancelIpcBlocking_atomic_under_lockSet
     (s : SystemState) :
     withLockSet (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId)
         executingCore (fun st => (cancelIpcBlocking st victim tcb, ())) s
-      = (releaseAll executingCore
+      = (unwindAll executingCore
           (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId).lockAcquireSequence.reverse
           (cancelIpcBlocking
             (acquireAll executingCore
@@ -1172,7 +1172,7 @@ theorem cancelIpcBlockingOnCore_atomic_under_lockSet
     (s : SystemState) :
     withLockSet (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId)
         executingCore (cancelIpcBlockingOnCore victim tcb executingCore) s
-      = (releaseAll executingCore
+      = (unwindAll executingCore
           (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId).lockAcquireSequence.reverse
           (cancelIpcBlockingOnCore victim tcb executingCore
             (acquireAll executingCore
@@ -1197,7 +1197,7 @@ theorem cancelDonation_atomic_under_lockSet
         (fun st => match cancelDonation st victim tcb with
           | .ok st' => (st', Except.ok ())
           | .error e => (st, Except.error e)) s
-      = (releaseAll executingCore
+      = (unwindAll executingCore
           (lockSet_cancelDonation victim bindingScId donatedOriginalOwnerTid).lockAcquireSequence.reverse
           ((fun st => match cancelDonation st victim tcb with
             | .ok st' => (st', Except.ok ())
@@ -1220,7 +1220,7 @@ theorem cancelDonationOnCore_atomic_under_lockSet
     (s : SystemState) :
     withLockSet (lockSet_cancelDonation victim bindingScId donatedOriginalOwnerTid)
         executingCore (cancelDonationOnCore victim tcb) s
-      = (releaseAll executingCore
+      = (unwindAll executingCore
           (lockSet_cancelDonation victim bindingScId donatedOriginalOwnerTid).lockAcquireSequence.reverse
           (cancelDonationOnCore victim tcb
             (acquireAll executingCore
@@ -2302,7 +2302,7 @@ end Lifecycle.Suspend
 
 /-- WS-SM SM6.E: acquiring a per-object lock preserves the store invariant —
 its only store write is an `updateObjectAt` insert. -/
-theorem acquireLockOnObject_preserves_objects_invExt (s : SystemState)
+theorem acquireLockOnObject_preserves_invExt (s : SystemState)
     (core : CoreId) (l : LockId) (m : Concurrency.AccessMode)
     (h : s.objects.invExt) :
     (acquireLockOnObject s core l m).objects.invExt := by
@@ -2319,7 +2319,7 @@ theorem acquireLockOnObject_preserves_objects_invExt (s : SystemState)
        · exact h)
 
 /-- WS-SM SM6.E: releasing a per-object lock preserves the store invariant. -/
-theorem releaseLockOnObject_preserves_objects_invExt (s : SystemState)
+theorem releaseLockOnObject_preserves_invExt (s : SystemState)
     (core : CoreId) (l : LockId) (m : Concurrency.AccessMode)
     (h : s.objects.invExt) :
     (releaseLockOnObject s core l m).objects.invExt := by
@@ -2409,18 +2409,27 @@ theorem cancellationObserver_acquireInsensitiveOn (core : CoreId)
 
 /-- WS-SM SM6.E: the victim-`ipcState` observer is `invExt`-guardedly
 release-insensitive. -/
-theorem cancellationObserver_releaseInsensitiveOn (core : CoreId)
+theorem cancellationObserver_unwindInsensitiveOn (core : CoreId)
     (victim : SeLe4n.ThreadId) :
-    ReleaseInsensitiveOn (fun s => s.objects.invExt) core
+    UnwindInsensitiveOn (fun s => s.objects.invExt) core
       (cancellationVictimIpcStateObserver victim) := by
-  intro s l m hExt
-  show ((releaseLockOnObject s core l m).getTcb? victim).map TCB.ipcState
-    = (s.getTcb? victim).map TCB.ipcState
-  unfold releaseLockOnObject
-  split
-  all_goals first
-    | rfl
-    | exact updateObjectLockAt_getTcb?_ipcState s l _ victim hExt
+  constructor
+  · intro s l m hExt
+    show ((releaseLockOnObject s core l m).getTcb? victim).map TCB.ipcState
+      = (s.getTcb? victim).map TCB.ipcState
+    unfold releaseLockOnObject
+    split
+    all_goals first
+      | rfl
+      | exact updateObjectLockAt_getTcb?_ipcState s l _ victim hExt
+  · intro s l m hExt
+    show ((cancelLockOnObject s core l m).getTcb? victim).map TCB.ipcState
+      = (s.getTcb? victim).map TCB.ipcState
+    unfold cancelLockOnObject
+    split
+    all_goals first
+      | rfl
+      | exact updateObjectLockAt_getTcb?_ipcState s l _ victim hExt
 
 /-- WS-SM SM6.E (observational atomicity, plan §5.3 for the cancellation):
 under the cancellation's declared 2PL lock-set the victim-`ipcState`
@@ -2449,7 +2458,7 @@ theorem cancelIpcBlockingOnCore_observer_atomic
                 consumedReplyId).lockAcquireSequence s)).1 := by
   have hAcqStable : ∀ (s' : SystemState) l m, s'.objects.invExt →
       (acquireLockOnObject s' executingCore l m).objects.invExt :=
-    fun s' l m h => acquireLockOnObject_preserves_objects_invExt s' executingCore l m h
+    fun s' l m h => acquireLockOnObject_preserves_invExt s' executingCore l m h
   have hInvAcq : (acquireAll executingCore
       (lockSet_cancelIpcBlocking victim blEp blN
         consumedReplyId).lockAcquireSequence s).objects.invExt :=
@@ -2460,9 +2469,10 @@ theorem cancelIpcBlockingOnCore_observer_atomic
     (fun st => st.objects.invExt)
     (cancellationVictimIpcStateObserver victim)
     (cancellationObserver_acquireInsensitiveOn executingCore victim)
-    (cancellationObserver_releaseInsensitiveOn executingCore victim)
+    (cancellationObserver_unwindInsensitiveOn executingCore victim)
     hAcqStable
-    (fun s' l m h => releaseLockOnObject_preserves_objects_invExt s' executingCore l m h)
+    (fun s' l m h => releaseLockOnObject_preserves_invExt s' executingCore l m h)
+    (fun s' l m h => cancelLockOnObject_preserves_invExt s' executingCore l m h)
     hInv
     (cancelIpcBlockingOnCore_preserves_objects_invExt victim tcb executingCore _ hInvAcq)
 
@@ -2486,18 +2496,27 @@ theorem cancellationBindingObserver_acquireInsensitiveOn (core : CoreId)
     | exact updateObjectLockAt_getTcb?_schedContextBinding s l _ victim hExt
 
 /-- The binding observer is `invExt`-guardedly release-insensitive. -/
-theorem cancellationBindingObserver_releaseInsensitiveOn (core : CoreId)
+theorem cancellationBindingObserver_unwindInsensitiveOn (core : CoreId)
     (victim : SeLe4n.ThreadId) :
-    ReleaseInsensitiveOn (fun s => s.objects.invExt) core
+    UnwindInsensitiveOn (fun s => s.objects.invExt) core
       (cancellationVictimBindingObserver victim) := by
-  intro s l m hExt
-  show ((releaseLockOnObject s core l m).getTcb? victim).map TCB.schedContextBinding
-    = (s.getTcb? victim).map TCB.schedContextBinding
-  unfold releaseLockOnObject
-  split
-  all_goals first
-    | rfl
-    | exact updateObjectLockAt_getTcb?_schedContextBinding s l _ victim hExt
+  constructor
+  · intro s l m hExt
+    show ((releaseLockOnObject s core l m).getTcb? victim).map TCB.schedContextBinding
+      = (s.getTcb? victim).map TCB.schedContextBinding
+    unfold releaseLockOnObject
+    split
+    all_goals first
+      | rfl
+      | exact updateObjectLockAt_getTcb?_schedContextBinding s l _ victim hExt
+  · intro s l m hExt
+    show ((cancelLockOnObject s core l m).getTcb? victim).map TCB.schedContextBinding
+      = (s.getTcb? victim).map TCB.schedContextBinding
+    unfold cancelLockOnObject
+    split
+    all_goals first
+      | rfl
+      | exact updateObjectLockAt_getTcb?_schedContextBinding s l _ victim hExt
 
 /-- Audit closure (F3ii): the **donation-side observer capstone** — the 2PL
 machinery around `cancelDonationOnCore` is invisible to the cancellation's
@@ -2525,7 +2544,7 @@ theorem cancelDonationOnCore_observer_atomic
                 donatedOwner).lockAcquireSequence s)).1 := by
   have hAcqStable : ∀ (s' : SystemState) l m, s'.objects.invExt →
       (acquireLockOnObject s' executingCore l m).objects.invExt :=
-    fun s' l m h => acquireLockOnObject_preserves_objects_invExt s' executingCore l m h
+    fun s' l m h => acquireLockOnObject_preserves_invExt s' executingCore l m h
   have hInvAcq : (acquireAll executingCore
       (lockSet_cancelDonation victim bindingScId
         donatedOwner).lockAcquireSequence s).objects.invExt :=
@@ -2536,9 +2555,10 @@ theorem cancelDonationOnCore_observer_atomic
     (fun st => st.objects.invExt)
     (cancellationVictimBindingObserver victim)
     (cancellationBindingObserver_acquireInsensitiveOn executingCore victim)
-    (cancellationBindingObserver_releaseInsensitiveOn executingCore victim)
+    (cancellationBindingObserver_unwindInsensitiveOn executingCore victim)
     hAcqStable
-    (fun s' l m h => releaseLockOnObject_preserves_objects_invExt s' executingCore l m h)
+    (fun s' l m h => releaseLockOnObject_preserves_invExt s' executingCore l m h)
+    (fun s' l m h => cancelLockOnObject_preserves_invExt s' executingCore l m h)
     hInv
     (cancelDonationOnCore_preserves_objects_invExt victim tcb _ hInvAcq)
 

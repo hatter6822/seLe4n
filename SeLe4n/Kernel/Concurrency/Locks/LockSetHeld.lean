@@ -516,80 +516,6 @@ theorem acquireLockOnObject_objects_getElem?_of_ne (s : SystemState)
   | vspaceRoot | untyped | schedContext | reply =>
       all_goals exact updateObjectLockAt_objects_getElem?_of_ne s l _ oid hExt hNe
 
-/-- WS-SM SM3.C.8 foundation: `updateObjectLockAt` preserves the RHTable
-extension invariant (`insert` preserves `invExt`; the fail-closed branches
-leave the table untouched). -/
-theorem updateObjectLockAt_preserves_invExt (s : SystemState)
-    (l : LockId) (op : RwLockOp) (hExt : s.objects.invExt) :
-    (updateObjectLockAt s l op).objects.invExt := by
-  unfold updateObjectLockAt
-  cases LockId.lookup s l with
-  | none => exact hExt
-  | some _ =>
-      unfold updateObjectAt
-      cases hG : s.objects.get? l.objId with
-      | none => exact hExt
-      | some obj =>
-          show (s.objects.insert l.objId (obj.updateLock op)).invExt
-          exact SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt
-            s.objects l.objId (obj.updateLock op) hExt
-
-/-- WS-SM SM3.C.8 foundation: `acquireLockOnObject` preserves the RHTable
-extension invariant.  Needed to thread `invExt` through the `acquireAll`
-fold's induction. -/
-theorem acquireLockOnObject_preserves_invExt (s : SystemState)
-    (core : CoreId) (l : LockId) (m : AccessMode) (hExt : s.objects.invExt) :
-    (acquireLockOnObject s core l m).objects.invExt := by
-  unfold acquireLockOnObject
-  cases l.kind with
-  | objStore => exact hExt
-  | page => exact hExt
-  | tcb | endpoint | notification | cnode
-  | vspaceRoot | untyped | schedContext | reply =>
-      all_goals exact updateObjectLockAt_preserves_invExt s l _ hExt
-
-/-- **WS-SM SM3.E.6** (re-homed at **WS-LC LC4.3**): `releaseLockOnObject`
-preserves the RHTable extension invariant.  Sibling of the acquire form
-above, needed to thread `invExt` through the `releaseAll` fold's induction.
-
-It lived in `Serializability`, two modules downstream of its own acquire
-sibling, which put it out of reach of the shrinking phase's fold. -/
-theorem releaseLockOnObject_preserves_invExt (s : SystemState)
-    (core : CoreId) (l : LockId) (m : AccessMode) (hExt : s.objects.invExt) :
-    (releaseLockOnObject s core l m).objects.invExt := by
-  unfold releaseLockOnObject
-  cases l.kind with
-  | objStore => exact hExt
-  | page => exact hExt
-  | tcb | endpoint | notification | cnode
-  | vspaceRoot | untyped | schedContext | reply =>
-      all_goals exact updateObjectLockAt_preserves_invExt s l _ hExt
-
-/-- **WS-LC LC4.3**: `cancelLockOnObject` preserves the RHTable extension
-invariant.  Third sibling, for the withdrawal fold's induction. -/
-theorem cancelLockOnObject_preserves_invExt (s : SystemState)
-    (core : CoreId) (l : LockId) (m : AccessMode) (hExt : s.objects.invExt) :
-    (cancelLockOnObject s core l m).objects.invExt := by
-  unfold cancelLockOnObject
-  cases l.kind with
-  | objStore => exact hExt
-  | page => exact hExt
-  | tcb | endpoint | notification | cnode
-  | vspaceRoot | untyped | schedContext | reply =>
-      all_goals exact updateObjectLockAt_preserves_invExt s l _ hExt
-
-/-- **WS-LC LC4.3**: the withdrawal fold preserves the RHTable extension
-invariant. -/
-theorem cancelAll_preserves_invExt (s : SystemState) (core : CoreId)
-    (pairs : List (LockId × AccessMode)) (hExt : s.objects.invExt) :
-    (cancelAll core pairs s).objects.invExt := by
-  induction pairs generalizing s with
-  | nil => exact hExt
-  | cons head tail ih =>
-      obtain ⟨hl, hm⟩ := head
-      rw [cancelAll_cons]
-      exact ih _ (cancelLockOnObject_preserves_invExt s core hl hm hExt)
-
 /-- WS-SM SM3.C.8 foundation: after `updateObjectLockAt s l op` on a present,
 kind-matching object `o`, looking up `l` recovers the lock-advanced object.
 
@@ -1131,7 +1057,7 @@ theorem unwindAll_leaves_no_queued_request (core : CoreId)
   intro p hp
   rw [unwindAll_eq_releaseAll_cancelAll]
   exact releaseAll_preserves_not_queued core core p.fst pairs _
-    (cancelAll_preserves_invExt s core pairs hExt)
+    (cancelAll_preserves_invExt core pairs s hExt)
     (cancelAll_leaves_no_queued_request core pairs s hExt p hp)
 
 end SeLe4n.Kernel.Concurrency
