@@ -16,7 +16,7 @@
 //! Phase 6: Handoff to Lean kernel (AG7 — FFI bridge)
 
 /// Kernel version string — matches Lean lakefile.toml version.
-const KERNEL_VERSION: &str = "0.34.48";
+const KERNEL_VERSION: &str = "0.34.49";
 
 /// **PR #889 review round 21**: how many PEs the linked Lean kernel declares.
 ///
@@ -618,7 +618,7 @@ mod tests {
         // update this test in lockstep with `lakefile.toml`.
         // `scripts/check_version_sync.sh` (Tier 0) provides the
         // canonical drift check; this test is the local pin.
-        assert_eq!(KERNEL_VERSION, "0.34.48");
+        assert_eq!(KERNEL_VERSION, "0.34.49");
     }
 
     /// PR #889 review round 21: the declared PE count this handoff enforces is

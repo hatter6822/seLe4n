@@ -108,6 +108,7 @@ constrains what v1.0.0 may claim, and RR8.4's hand-off check reads this table.
 
 | Debt | Why it may wait | Owner / closure target |
 |------|-----------------|------------------------|
+| **WS-CB** — scheduling contexts are flat: a reservation cannot contain reservations, so a component's bandwidth is the sum of its threads' and nothing bounds a group jointly; admission sums every SchedContext in the store against one 1000 ‰ ceiling rather than per core; and `schedContextConfigure` applies `priority` and `domain` to the bound TCB under the SchedContext write right alone, with no caller-MCP check and no domain authority | The hierarchy is feature work, not a soundness defect of the flat model — every flat theorem stands.  The configure authority gap is **not** a deferral: it is CB0.3, the first implementation cut, recommended as the next PR regardless of when the rest of the workstream opens | [`docs/planning/HIERARCHICAL_CBS_PLAN.md`](planning/HIERARCHICAL_CBS_PLAN.md); post-v1.0.0 unless the maintainer opens it beside RR6–RR8; CB0.3 next |
 | **WS-SL** — the scheduler liveness trace step relation (`stepPrecondition` / `stepPost` / `ValidTrace`) is `bootCoreId`-pinned, so no `ValidTrace` exhibits a step on a secondary core; and `hBandProgress` is an externalized deployment hypothesis whose FIFO/bucket-rotation composition was never built | Model completeness, not soundness: the per-core liveness *predicates* were lifted by SM5.J, and the capstones state their hypothesis explicitly.  v1.0.0 must therefore not claim unconditional SMP starvation-freedom | **WS-SL**, post-v1.0.0 (section below) |
 | WS-RC **R7** — CDT `descendantsOf` fuel-sufficiency proofs; `descendantsOf_fuel_sufficient` proves only `edges.length ≥ 0` | Proof hygiene: CDT operations are sound under the fuel-bound discipline; the sufficiency theorem is defence in depth | post-v1.0.0 hardening |
 | WS-RC **R14** — the v1.x backlog the WS-RC plan deferred | Explicitly scoped out of v1.0 closure by that plan | post-v1.0.0 |
@@ -249,6 +250,7 @@ Scope, findings and evidence for any of these are in
 
 | Workstream | Versions |
 |------------|----------|
+| **WS-CB** | v0.34.49– (planned; opens after WS-RR, or beside RR6–RR8 under the file partition in its plan's §2.3) |
 | **WS-RR** | v0.34.26– |
 | **WS-SL** | v0.34.26– (closure post-v1.0.0) |
 | **WS-IN** | v0.34.48– (closure: the PR after v0.34.48) |

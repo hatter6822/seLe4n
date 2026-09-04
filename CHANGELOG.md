@@ -1,3 +1,38 @@
+## v0.34.49 — WS-CB: the hierarchical constant-bandwidth server plan
+
+**WS-CB registered (CB0.1).**  A planning cut — no kernel code changes.
+`docs/planning/HIERARCHICAL_CBS_PLAN.md` schedules Hierarchical Constant
+Bandwidth Servers: a `SchedContext` that holds members instead of a thread, is
+charged whenever a thread in its subtree runs, and admits its members against
+its own budget, so a component's threads share one reservation by priority and
+nothing outside the component is delayed by more than that reservation.  The
+plan is 78 sub-tasks across eight phases (CB0..CB7), numbered in execution
+order and held by the plan gate; its binding decisions are in its §3 — a server
+is a `SchedContext` with hierarchy fields, the root run queue stays a queue of
+threads ordered by lexicographic key paths, servers are core-homed, admission
+is hierarchical and per core, members share the server's security label, and
+enforcement stays tick-quantised with no new upcall and no ABI version change.
+Every generalising sub-task carries the theorem that the flat model is
+unchanged on states without servers.
+
+Two things the survey behind the plan found in the flat tree, both recorded in
+the plan and in the debt register:
+
+* `schedContextConfigure` applies `priority` and `domain` to the bound TCB
+  under the SchedContext write right alone — no `validatePriorityAuthority`
+  against the caller's `maxControlledPriority`, where `setPriorityOp` has one,
+  and no authority over the domain.  A thread holding a write capability to
+  its own SchedContext escalates past its MCP.  CB0.3 closes it, and the plan
+  recommends that cut regardless of when the rest of the workstream opens.
+* Admission folds every SchedContext in the object store against one 1000 ‰
+  ceiling, so a four-core machine admits 100 % in total rather than per core.
+  CB4.2 makes root-level admission per core.
+
+The workstream prefix is `CB` rather than `HC` because the identifier-naming
+gate derives its family grammar from the workstream registry: `hc<digit>`
+already names two hypotheses in the Robin Hood preservation proofs, and
+`cb<digit>` names nothing in the tree.
+
 ## v0.34.48 — the boot path fails closed
 
 **WS-RR RR5 (all eighteen sub-tasks).**  Six latents that were unreachable only

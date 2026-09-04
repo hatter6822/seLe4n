@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.48.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.49.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1273,6 +1273,22 @@ a success.  A caller that took a fault at the seam is outcome tag 2
 (PR #887 review round 5).
 
 Plan: [`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](docs/planning/SYSCALL_RETURN_ABI_PLAN.md).
+
+### WS-CB Hierarchical constant-bandwidth servers — PLANNED (registered v0.34.49)
+
+A `SchedContext` will be able to contain other scheduling contexts: a *server*
+holds members instead of a thread, is charged whenever a thread in its subtree
+runs, and admits its members against its own budget, so a component's threads
+share one reservation by priority and nothing outside the component is delayed
+by more than that reservation.  Roots stay ordered by today's priority/EDF/FIFO
+rule on each core, servers are core-homed, members share the server's security
+label, and every generalising cut carries the theorem that the flat model is
+unchanged on states without servers.  No sub-task has started.  The plan also
+records a pre-existing authority gap it closes first (CB0.3):
+`schedContextConfigure` applies priority and domain to the bound thread under
+the SchedContext write right alone, with no caller-MCP check.
+
+Plan: [`docs/planning/HIERARCHICAL_CBS_PLAN.md`](docs/planning/HIERARCHICAL_CBS_PLAN.md).
 
 ### WS-SM SMP multi-core completion — IN FLIGHT (v0.31.2 → v1.0.0)
 
