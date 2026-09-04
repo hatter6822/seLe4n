@@ -112,6 +112,32 @@ counterpart to `toAcquireOp`. -/
   | .read  => .releaseRead core
   | .write => .releaseWrite core
 
+/-- **WS-LC LC4.1**: the **withdrawal** op for a declared footprint member.
+
+Third sibling of `toAcquireOp` / `toReleaseOp`, and the one that does not
+branch: `RwLockOp.cancel` carries no mode, because a queued request is
+withdrawn whatever mode it was queued in.  The `AccessMode` argument is
+taken anyway so the three conversions have one signature and the three
+folds below can share one `List (LockId × AccessMode)` sequence — the
+alternative, a fold over bare `LockId`s, would need the pair list
+projected at every call site and would let the withdrawal sequence drift
+out of step with the acquisition sequence it must mirror.
+
+A withdrawal is not a release: it admits nobody
+(`RwLockState.applyOp_cancel_readers` / `_writerHeld` are `rfl`), so it
+cannot break exclusion, and it costs the waiters behind it nothing. -/
+@[inline] def AccessMode.toCancelOp (_m : AccessMode) (core : CoreId) :
+    RwLockOp :=
+  .cancel core
+
+/-- **WS-LC LC4.1**: the withdrawal op does not depend on the mode.
+
+Stated rather than left to `rfl` at use sites: it is the reason the
+shrinking phase needs no mode-agreement hypothesis, and a future
+mode-sensitive withdrawal would have to break this theorem to exist. -/
+@[simp] theorem AccessMode.toCancelOp_eq_cancel (m : AccessMode) (core : CoreId) :
+    m.toCancelOp core = .cancel core := rfl
+
 end SeLe4n.Kernel.Concurrency
 
 -- ============================================================================
@@ -294,6 +320,39 @@ def updateObjectLockAt (s : SystemState) (l : LockId) (op : RwLockOp) :
   | some _ => updateObjectAt s l.objId (fun obj => obj.updateLock op)
   | none => s   -- absent OR kind mismatch → fail closed
 
+/-- **WS-SM SM3.E.5** (re-homed at **WS-LC LC4.3** beside the definition it
+characterises): closed-form characterisation of `updateObjectAt`'s effect on a
+lookup.  Looking up `k` after `updateObjectAt s oid f` returns `f`-mapped
+content at the target key `oid`, and the unchanged content at every other key.
+Unifies the present/absent branches: when `oid` is absent, `(s.get? oid).map f =
+none` agrees with the unchanged lookup.
+
+It lived in `Serializability` — three modules downstream of the function it is
+about — which put it out of reach of everything in between.  The shrinking
+phase's payoff needs exactly this at-any-key reading, and duplicating it would
+leave one question with two answers. -/
+theorem updateObjectAt_get? (s : SystemState) (oid k : SeLe4n.ObjId)
+    (f : KernelObject → KernelObject) (hExt : s.objects.invExt) :
+    (updateObjectAt s oid f).objects.get? k
+      = if k = oid then (s.objects.get? oid).map f else s.objects.get? k := by
+  unfold updateObjectAt
+  by_cases hk : k = oid
+  · subst hk
+    rw [if_pos rfl]
+    cases hg : s.objects.get? k with
+    | none => simp [hg]
+    | some o =>
+        show (s.objects.insert k (f o)).get? k = (some o).map f
+        rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self s.objects k (f o) hExt]
+        rfl
+  · rw [if_neg hk]
+    cases hg : s.objects.get? oid with
+    | none => rfl
+    | some o =>
+        show (s.objects.insert oid (f o)).get? k = s.objects.get? k
+        exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne s.objects oid k (f o)
+          (by simp [Ne.symm hk]) hExt
+
 /-- WS-SM SM3.C.2: `acquireLockOnObject` — the SM3.C.1 acquire
 primitive's per-object body.
 
@@ -352,6 +411,31 @@ def releaseLockOnObject (s : SystemState) (core : CoreId)
   | .vspaceRoot | .untyped | .schedContext | .reply =>
       updateObjectLockAt s l (mode.toReleaseOp core)
 
+/-- **WS-LC LC4.1**: `cancelLockOnObject` — the per-object **withdrawal**.
+
+Third sibling of `acquireLockOnObject` / `releaseLockOnObject`, with the
+same kind dispatch: `.objStore` advances the state-level lock word
+directly, `.page` is the SM3.A.8 no-op, and the nine modeled kinds route
+through `updateObjectLockAt`, which is where the fail-closed kind check
+lives (an absent object, or one whose variant does not match `l.kind`,
+leaves the state unchanged).
+
+Withdrawing is what a release cannot do.  Both release arms guard on
+holdership and are the identity for a core that is not a holder
+(`rwLock_release_by_nonholder_preserves_waiters`), so where the growing
+phase found a member contended — `tryAcquire*` **enqueues** rather than
+granting — the shrinking phase could not remove the request it had left
+behind.  This can. -/
+def cancelLockOnObject (s : SystemState) (core : CoreId)
+    (l : LockId) (mode : AccessMode) : SystemState :=
+  match l.kind with
+  | .objStore =>
+      { s with objStoreLock := s.objStoreLock.applyOp (mode.toCancelOp core) }
+  | .page => s    -- SM3.A.8 N/A
+  | .tcb | .endpoint | .notification | .cnode
+  | .vspaceRoot | .untyped | .schedContext | .reply =>
+      updateObjectLockAt s l (mode.toCancelOp core)
+
 /-- WS-SM SM3.A.10 / PR #870 round 7: the SystemState-level singleton's
 `objId` is decorative — the `.objStore` arms of `acquireLockOnObject` and
 `releaseLockOnObject` dispatch on the kind alone and advance
@@ -396,6 +480,20 @@ identity. -/
     (oid : SeLe4n.ObjId) (m : AccessMode) :
     releaseLockOnObject s core ⟨.page, oid⟩ m = s := by
   unfold releaseLockOnObject; rfl
+
+/-- **WS-LC LC4.1**: `cancelLockOnObject` on a `.reply` LockId routes through
+`updateObjectLockAt` (symmetric to `acquireLockOnObject_reply`). -/
+theorem cancelLockOnObject_reply (s : SystemState) (core : CoreId)
+    (oid : SeLe4n.ObjId) (m : AccessMode) :
+    cancelLockOnObject s core ⟨.reply, oid⟩ m =
+      updateObjectLockAt s ⟨.reply, oid⟩ (m.toCancelOp core) := by
+  unfold cancelLockOnObject; rfl
+
+/-- **WS-LC LC4.1**: `cancelLockOnObject` on a `.page` LockId is identity. -/
+@[simp] theorem cancelLockOnObject_page (s : SystemState) (core : CoreId)
+    (oid : SeLe4n.ObjId) (m : AccessMode) :
+    cancelLockOnObject s core ⟨.page, oid⟩ m = s := by
+  unfold cancelLockOnObject; rfl
 
 -- ============================================================================
 -- §2b — Substantive structural-preservation lemmas (SM3.C.8 foundation)
@@ -576,6 +674,48 @@ def releaseAll (core : CoreId) (pairs : List (LockId × AccessMode))
     (s : SystemState) : SystemState :=
   pairs.foldl (init := s) (fun st p => releaseLockOnObject st core p.fst p.snd)
 
+/-- **WS-LC LC4.1**: fold `cancelLockOnObject` over a list of
+`(LockId, AccessMode)` pairs — the **withdrawal** half of the shrinking
+phase.
+
+Order is irrelevant here (a withdrawal at one lock cannot enable or
+disable a withdrawal at another), but the caller passes the same reversed
+sequence the release fold takes, so the two halves visit the footprint in
+one order and `unwindAll` reads as a single pass. -/
+def cancelAll (core : CoreId) (pairs : List (LockId × AccessMode))
+    (s : SystemState) : SystemState :=
+  pairs.foldl (init := s) (fun st p => cancelLockOnObject st core p.fst p.snd)
+
+/-- **WS-LC LC4.1**: the 2PL **shrinking phase** — withdraw, then release.
+
+This is the one definition of "what a two-phase-locking bracket does on
+the way out", consumed by both `withLockSet` below and by the revalidated
+entry's refusal path (`FineLockFlow`).  A second, separately spelled
+unwind on either of those paths is the defect this naming exists to
+prevent: the two would answer the same question and drift.
+
+## Why withdraw *before* release, and not the other way round
+
+Two identities meet at every member.  A release by a non-holder is the
+identity — both arms of `applyOp` guard on holdership.  A withdrawal by a
+holder is the identity — INV-R4 keeps holders out of `waiters`.  So on a
+well-formed state both orders are correct, and neither needs a branch, a
+holdership test or a decidability instance.
+
+Withdrawing first is what makes the payoff *unconditional*.  The release
+arms promote **from** `waiters` (`promoteWaitersIfReadersEmpty`,
+`promoteWaitersOnWriterRelease`), so a core still queued when its own
+release runs can be promoted into a holder slot that the withdrawal has
+already passed.  Cancelling first removes the request before any
+promotion can see it, and the fold-level result then needs no distinctness
+hypothesis on the footprint and no resolvability hypothesis on the state:
+`cancelAll` establishes "no queued request from `core`" at every member,
+and **no release arm ever enqueues**, so `releaseAll` preserves it
+everywhere at once.  That is `unwindAll_leaves_no_queued_request`. -/
+def unwindAll (core : CoreId) (pairs : List (LockId × AccessMode))
+    (s : SystemState) : SystemState :=
+  releaseAll core pairs (cancelAll core pairs s)
+
 /-- WS-SM SM3.C.1 helper: `acquireAll` on the empty list is
 identity (no locks to acquire ⇒ state unchanged). -/
 @[simp] theorem acquireAll_nil (core : CoreId) (s : SystemState) :
@@ -599,6 +739,113 @@ release followed by the tail release on the new state. -/
     (rest : List (LockId × AccessMode)) (s : SystemState) :
     releaseAll core ((l, m) :: rest) s =
       releaseAll core rest (releaseLockOnObject s core l m) := rfl
+
+/-- **WS-LC LC4.1**: `cancelAll` on the empty list is identity. -/
+@[simp] theorem cancelAll_nil (core : CoreId) (s : SystemState) :
+    cancelAll core [] s = s := rfl
+
+/-- **WS-LC LC4.1**: `cancelAll` on a cons unfolds to the head withdrawal
+followed by the tail withdrawal on the new state. -/
+@[simp] theorem cancelAll_cons (core : CoreId) (l : LockId) (m : AccessMode)
+    (rest : List (LockId × AccessMode)) (s : SystemState) :
+    cancelAll core ((l, m) :: rest) s =
+      cancelAll core rest (cancelLockOnObject s core l m) := rfl
+
+/-- **WS-LC LC4.1**: the shrinking phase on the empty list is identity —
+both halves are. -/
+@[simp] theorem unwindAll_nil (core : CoreId) (s : SystemState) :
+    unwindAll core [] s = s := rfl
+
+/-- **WS-LC LC4.1**: the shrinking phase is the withdrawal fold followed by
+the release fold, over the same sequence.
+
+Stated as a lemma rather than left to `unfold` because it is the shape
+every `unwindAll_*` frame corollary composes through: a property that both
+`cancelAll` and `releaseAll` preserve is preserved by the shrinking phase,
+and the proof is this rewrite plus the two siblings. -/
+theorem unwindAll_eq_releaseAll_cancelAll (core : CoreId)
+    (pairs : List (LockId × AccessMode)) (s : SystemState) :
+    unwindAll core pairs s = releaseAll core pairs (cancelAll core pairs s) := rfl
+
+-- ============================================================================
+-- §3b — The shrinking phase's abstract payoff (WS-LC LC4.3)
+-- ============================================================================
+
+/-! The two facts the whole unwind rests on, both at the abstract
+`RwLockState` level and both free of hypotheses.  Everything the
+`SystemState` layer proves about a footprint is these two lifted through
+`updateObjectLockAt`. -/
+
+/-- **WS-LC LC4.3**: a withdrawal leaves the withdrawing core with no queued
+request — unconditionally, and by computation.
+
+`applyOp`'s cancel arm is `waiters.filter (·.1 ≠ core)`, so this is the
+filter's own specification.  No `wf` hypothesis: the arm has no enabling
+guard, which is exactly why it was written without one. -/
+theorem rwLock_cancel_not_queued (l : RwLockState) (c : CoreId) :
+    c ∉ (l.applyOp (.cancel c)).waiters.map Prod.fst := by
+  rw [RwLockState.applyOp_cancel_waiters]
+  intro hMem
+  obtain ⟨w, hw, hEq⟩ := List.mem_map.mp hMem
+  exact (of_decide_eq_true (List.mem_filter.mp hw).2) hEq
+
+/-- **WS-LC LC4.3**: no withdrawal ever enqueues — including for a core
+other than the one withdrawing.
+
+`rwLock_cancel_not_queued` is the sharper statement about the *withdrawing*
+core; this is the frame every other core needs, and it is what lets the
+shrinking phase's fold carry an already-established absence past members
+withdrawn later. -/
+theorem rwLock_cancel_preserves_not_queued (l : RwLockState) (c canceller : CoreId)
+    (h : c ∉ l.waiters.map Prod.fst) :
+    c ∉ (l.applyOp (.cancel canceller)).waiters.map Prod.fst :=
+  fun hMem => h ((RwLockState.applyOp_cancel_waiters_sublist l canceller).map Prod.fst
+    |>.subset hMem)
+
+/-- **WS-LC LC4.3**: no release ever enqueues.
+
+Both release arms either no-op or drop a prefix of `waiters` by promotion
+(`release_waiters_sublist`), so a core absent from the queue before a
+release is absent after it — whichever core released, and in whichever
+mode.  This is the half that lets the fold-level payoff dispense with any
+distinctness hypothesis on the footprint: the withdrawal fold establishes
+absence at every member, and the release fold cannot undo it anywhere. -/
+theorem rwLock_release_preserves_not_queued (l : RwLockState) (c releaser : CoreId)
+    (m : AccessMode) (h : c ∉ l.waiters.map Prod.fst) :
+    c ∉ (l.applyOp (m.toReleaseOp releaser)).waiters.map Prod.fst := by
+  have hSub : (l.applyOp (m.toReleaseOp releaser)).waiters.Sublist l.waiters := by
+    refine release_waiters_sublist l _ ?_
+    cases m with
+    | read => exact Or.inl ⟨releaser, rfl⟩
+    | write => exact Or.inr ⟨releaser, rfl⟩
+  exact fun hMem => h (hSub.map Prod.fst |>.subset hMem)
+
+/-- **WS-LC LC4.3**: withdraw-then-release leaves no queued request — the
+single-lock statement the whole shrinking phase is built from.
+
+This is the theorem that replaces the "what 'released' does and does not
+mean" caveat.  Note what it does **not** say: `¬ coreInvolved`, which is
+false here — a core holding a *write* lock, unwound at a member declared
+`.read`, keeps `writerHeld`, and ruling that out needs a mode-agreement
+hypothesis threaded from the growing phase.  The caveat's claim was that
+the unwind *cannot remove a queued request*; this is its exact negation,
+and it holds with no hypotheses at all. -/
+theorem rwLock_unwind_not_queued (l : RwLockState) (c : CoreId) (m : AccessMode) :
+    c ∉ ((l.applyOp (.cancel c)).applyOp (m.toReleaseOp c)).waiters.map Prod.fst :=
+  rwLock_release_preserves_not_queued _ c c m (rwLock_cancel_not_queued l c)
+
+/-- **WS-LC LC4.3**: the *other* order does not give the same theorem.
+
+Release-then-withdraw is correct on a well-formed state, but it is not
+unconditional: the release arms promote **from** `waiters`, so a core still
+queued when its own release runs can be promoted into a holder slot the
+withdrawal has already passed.  Recorded as the reason `unwindAll` is
+ordered the way it is — a future refactor that swaps the two folds has to
+answer this. -/
+theorem rwLock_release_then_cancel_not_queued (l : RwLockState) (c : CoreId)
+    (m : AccessMode) :
+    c ∉ ((l.applyOp (m.toReleaseOp c)).applyOp (.cancel c)).waiters.map Prod.fst :=
+  rwLock_cancel_not_queued _ c
 
 -- ============================================================================
 -- §4 — withLockSet 2PL combinator (SM3.C.1)

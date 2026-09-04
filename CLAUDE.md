@@ -1346,7 +1346,7 @@ footprints unwindable.
 | LC5 | NOT STARTED | — | SM2.C-T: the timed execution and the cycle-denominated bounds; LC5.10 retires both debt rows |
 
 **Plan**: [`docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md`](docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md)
-(53 sub-tasks across LC1..LC5).
+(51 sub-tasks across LC1..LC5).
 
 ### Standing constraints and registered debt
 

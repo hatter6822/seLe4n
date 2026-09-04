@@ -7,7 +7,7 @@
 > **Predecessor**: [`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md) RR6 (v0.34.49), which closed SM2.C-defer's refinement work and deliberately did not absorb these two
 > **Debt rows closed**: `docs/REGISTERED_DEBT.md` table C — **SM2.C-T** and **SM2.C-C**
 > **Target releases**: v0.34.50 → v0.34.53
-> **Sub-task count**: 53 across 5 phases (LC1..LC5), each phase numbered in
+> **Sub-task count**: 51 across 5 phases (LC1..LC5), each phase numbered in
 > the order it is to be implemented
 
 ## 1. Phase goal
@@ -56,7 +56,7 @@ covered is being un-covered; a documented model limitation is being closed.
 | LC1 | The abstract cancel, its invariant preservation, the liveness restatement, and the CAS-retry bridge | 18 | L | v0.34.50 |
 | LC2 | The ticket-FIFO refinement of the withdrawal: the withdrawal word, skip-aware promotion, and the capstones over live entries | 8 | L | v0.34.51 |
 | LC3 | The deployed withdrawal: `QueuedRwLock::cancel`, loom, miri, Tier-5, and the foreign-function surface | 7 | L | v0.34.52 |
-| LC4 | The two-phase-locking consumers: `cancelAll`, the revalidated refusal unwind, the `withLockSet` unwind | 9 | M | v0.34.53 |
+| LC4 | The two-phase-locking consumers: `cancelAll`, the revalidated refusal unwind, the `withLockSet` unwind | 7 | M | v0.34.53 |
 | LC5 | SM2.C-T: the timed execution and the cycle-denominated bounds | 11 | M | v0.34.54 |
 
 ### 2.2 Why this order
@@ -190,21 +190,46 @@ Tier-5 oracle exercises the new letter in both languages.
 ## 6. LC4 — the two-phase-locking consumers
 
 **Acceptance**: a refused revalidated entry withdraws every request its growing
-phase queued, `withLockSet`'s shrinking phase is release-or-withdraw on every
-member, the strict two-phase-locking and serializability results are re-proved
-over the new fold, and the golden trace is byte-identical.
+phase queued, `withLockSet`'s shrinking phase withdraws what it cannot release
+on every member, the "what released does and does not mean" caveat is replaced
+by the theorem that makes it false, and the golden trace is byte-identical.
+
+**The shrinking phase withdraws *before* it releases**, and that order is
+load-bearing rather than stylistic.  Two identities meet: a release by a
+non-holder is the identity (both arms guard on holdership), and a withdrawal by
+a holder is the identity (INV-R4 keeps holders out of `waiters`).  So both
+orders are correct on a well-formed state and neither needs a branch or a
+holdership inspection.  Withdrawing first is what makes the payoff
+*unconditional*: the release arms promote **from** `waiters`, so a core still
+queued when its own release runs can be promoted into a holder slot the
+withdrawal has already passed.  Cancelling first removes it before any
+promotion can see it, and the fold-level result then needs no distinctness and
+no resolvability hypothesis — the withdrawal fold establishes the property at
+every member, and no release arm ever enqueues, so the release fold preserves
+it.
+
+**The payoff is about `waiters`, not about `coreInvolved`.**  An unconditional
+"the core is uninvolved afterwards" is *false* per lock — a core holding a write
+lock, unwound at a member declared `.read`, keeps `writerHeld` — and making it
+true needs a mode-agreement hypothesis threaded from the growing phase, for a
+conclusion the caveat never claimed.  The caveat's claim is that the unwind
+cannot remove a queued request; its replacement is that the unwind leaves no
+queued request from the unwinding core, at every member, with no hypotheses.
+
+**`releaseAll` keeps its present meaning.**  Over a hundred references depend on
+it and every one is true; the withdrawal fold sits beside it and the composite
+is named once, so the bracket and the refusal path cannot answer "what is the
+shrinking phase" differently.
 
 | ID | Sub-task | Consumes | Evidence |
 |----|----------|----------|----------|
-| LC4.1 | `AccessMode.toCancelOp` beside its acquire and release siblings, and the `cancelAll` fold over a reversed acquisition sequence | LC3.7 | the two definitions and their unfold lemmas |
-| LC4.2 | The revalidated entry's refusal path becomes a full unwind; the "what released does and does not mean" caveat is deleted and replaced by the theorem that makes it true | LC4.1 | the refusal releases *and* withdraws |
-| LC4.3 | The typed evidence arm for the refusal claim re-proved over the new outcome, and the non-holder release theorem's docstring corrected — the theorem stays, its statement about the tree changes | LC4.2 | `fineLockClaimEvidence` elaborates |
-| LC4.4 | `withLockSet`'s shrinking phase becomes release-or-withdraw on each member, keeping the bracket projection-invisible | LC4.3 | `withLockSet_unfold` |
-| LC4.5 | The strict two-phase-locking results re-proved over the new fold | LC4.4 | `strictly_2pl_preserved` |
-| LC4.6 | The serializability results re-proved over the new fold | LC4.5 | the conflict-serializability capstones |
-| LC4.7 | The dynamic chain extension swept the same way, since it uses the same folds | LC4.6 | `withDynamicChainExtension` elaborates |
-| LC4.8 | Suites and the golden trace: the bracket is invisible to the projection, so the fixture must be **byte-identical**, not regenerated | LC4.7 | `tests/fixtures/main_trace_smoke.expected` unchanged |
-| LC4.9 | Anchors, inventory, documentation sync, and the version cut | LC4.8 | Tier 0-3 green |
+| LC4.1 | `AccessMode.toCancelOp` beside its acquire and release siblings; the per-object withdrawal mirroring the release primitive's kind dispatch; the withdrawal fold with its nil and cons unfoldings | LC3.7 | the definitions and their unfoldings |
+| LC4.2 | The withdrawal fold's frame twins of every release-fold lever — lock-insensitivity, lock-writes-only, core confinement, projection preservation, the object-type and scheduler frames — and the composite shrinking phase built from them | LC4.1 | every release lever has a shrinking-phase sibling |
+| LC4.3 | The unconditional payoff: the single-lock step, then the fold form over every member of the footprint | LC4.2 | the shrinking phase leaves no queued request |
+| LC4.4 | The revalidated entry's refusal path becomes a full unwind; the "what released does and does not mean" caveat is deleted and replaced by the payoff; the non-holder release theorem keeps its statement and loses its stale claim about the tree; the refusal characterisation restated | LC4.3 | the refusal releases *and* withdraws |
+| LC4.5 | `withLockSet`'s shrinking phase becomes the composite; the atomicity characterisations that name the release fold move with it, all discharged by the one generic lemma; the empty-set and structural unfoldings re-established | LC4.4 | `withLockSet_unfold`; the lock-set suite |
+| LC4.6 | The dynamic chain extension swept the same way, since it uses the same folds; the typed evidence arm for the refusal claim re-proved; the strict-2PL and serializability results confirmed unchanged — both are statements about acquire/commit *times* and conflict graphs over the declared pairs, and neither unfolds the shrinking fold | LC4.5 | `fineLockClaimEvidence` elaborates; `strictly_2pl_preserved` untouched |
+| LC4.7 | Suites, anchors, the inventory counts, documentation sync, and the version cut.  The bracket is invisible to the projection and the traced path never reaches the one live `withLockSet` call, so the fixture must be verified **byte-identical**, never regenerated | LC4.6 | Tier 0-3 green; `tests/fixtures/main_trace_smoke.expected` unchanged |
 
 ## 7. LC5 — SM2.C-T, the timed execution
 
@@ -216,7 +241,7 @@ only per lock operation.
 
 | ID | Sub-task | Consumes | Evidence |
 |----|----------|----------|----------|
-| LC5.1 | The per-step cost field with no default, every construction site declaring its cost model, and an early check that the decidable fairness fixtures still reduce with a function field present | LC4.9 | one fixture verified before the rest are touched |
+| LC5.1 | The per-step cost field with no default, every construction site declaring its cost model, and an early check that the decidable fairness fixtures still reduce with a function field present | LC4.7 | one fixture verified before the rest are touched |
 | LC5.2 | Elapsed time across a step interval and the bounded-critical-section predicate, as Props about the field rather than structure invariants | LC5.1 | the two definitions |
 | LC5.3 | The writer's cycle-denominated capstone, derived from the existing step bound | LC5.2 | the capstone instantiates to the step bound at unit cost |
 | LC5.4 | The mode-generic twin, which must move with the writer form or the definitional bridge between the two wait depths breaks | LC5.3 | both elaborate |

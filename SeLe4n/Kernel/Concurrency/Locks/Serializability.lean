@@ -1067,33 +1067,6 @@ theorem updateObjectAt_preserves_invExt (s : SystemState) (oid : SeLe4n.ObjId)
       exact SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt s.objects oid
         (f obj) hExt
 
-/-- WS-SM SM3.E.5: closed-form characterisation of `updateObjectAt`'s effect on a
-lookup.  Looking up `k` after `updateObjectAt s oid f` returns `f`-mapped
-content at the target key `oid`, and the unchanged content at every other key.
-Unifies the present/absent branches: when `oid` is absent, `(s.get? oid).map f =
-none` agrees with the unchanged lookup. -/
-theorem updateObjectAt_get? (s : SystemState) (oid k : SeLe4n.ObjId)
-    (f : KernelObject → KernelObject) (hExt : s.objects.invExt) :
-    (updateObjectAt s oid f).objects.get? k
-      = if k = oid then (s.objects.get? oid).map f else s.objects.get? k := by
-  unfold updateObjectAt
-  by_cases hk : k = oid
-  · subst hk
-    rw [if_pos rfl]
-    cases hg : s.objects.get? k with
-    | none => simp [hg]
-    | some o =>
-        show (s.objects.insert k (f o)).get? k = (some o).map f
-        rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self s.objects k (f o) hExt]
-        rfl
-  · rw [if_neg hk]
-    cases hg : s.objects.get? oid with
-    | none => rfl
-    | some o =>
-        show (s.objects.insert oid (f o)).get? k = s.objects.get? k
-        exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne s.objects oid k (f o)
-          (by simp [Ne.symm hk]) hExt
-
 /-- WS-SM SM3.E.5 (observational write/write commute — the realistic
 non-conflicting write pair): two `updateObjectAt` writes to **different** objects
 commute observationally — applying them in either order yields object stores that
@@ -1291,20 +1264,6 @@ theorem withLockSet_preserves_objStoreLock_wf {α : Type} (S : LockSet)
 -- RHTable insert/lookup characterisation), so the invariant is bundled with
 -- `invExt` and threaded through — showing the lever works on the realistic,
 -- `invExt`-dependent invariant class, not only the `invExt`-free table lock.
-
-/-- WS-SM SM3.E.6 foundation: releasing a lock preserves `invExt` (symmetric to
-the imported `acquireLockOnObject_preserves_invExt`; both route through
-`updateObjectLockAt_preserves_invExt`). -/
-theorem releaseLockOnObject_preserves_invExt (s : SystemState) (core : CoreId)
-    (l : LockId) (m : AccessMode) (hExt : s.objects.invExt) :
-    (releaseLockOnObject s core l m).objects.invExt := by
-  unfold releaseLockOnObject
-  cases l.kind with
-  | objStore => exact hExt
-  | page => exact hExt
-  | tcb | endpoint | notification | cnode
-  | vspaceRoot | untyped | schedContext | reply =>
-      all_goals exact updateObjectLockAt_preserves_invExt s l _ hExt
 
 /-- WS-SM SM3.E.6 foundation: `updateObjectLockAt` preserves the `objectType` tag
 at every key.  The kind-matched branch re-inserts `obj.updateLock op`, which
