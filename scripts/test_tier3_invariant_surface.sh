@@ -5208,7 +5208,7 @@ run_check "INVARIANT" rg -n 'collect_lean_exports_from_file\(lean_library_root' 
 # one `isDefEq`, which zeta- and beta-reduces, so the forms rounds 18-21 each
 # taught the walk are not questions any more.
 run_check "INVARIANT" rg -n '^def isApprovedBootApplication' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -n 'Meta.isDefEq body \\(mkApp \\(mkConst approvedBootCall\\) config\\)' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -nF 'Meta.isDefEq body (mkApp (mkConst approvedBootCall) config)' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n 'private def bootEntryWitnessLetBoundConfig' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n 'private def bootEntryWitnessLetBoundHalt' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n 'private def bootEntryWitnessAliasedBoot' SeLe4n/Testing/BootEntryContract.lean
