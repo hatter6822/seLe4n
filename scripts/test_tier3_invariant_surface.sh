@@ -5153,7 +5153,258 @@ run_check "INVARIANT" rg -n '^def bootAndInitialiseFromPlatform' SeLe4n/Platform
 run_check "INVARIANT" rg -n '^def writeFfiRegistersToTcb' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^def readReturnValue' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^def syscallDispatchFromAbi' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^@\[export suspend_thread_inner\]' SeLe4n/Platform/FFI.lean
+# WS-RR RR5.1/RR5.2 (audit round, revised in the review round): the platform
+# binding carries the deployment labeling's source (a `DeploymentLabeling`), so
+# admission and full validity are theorems of every binding rather than fields;
+# the RPi5 binding's labeling is the confined production context (pinned by
+# `rfl`), and the FFI boot entry that boots under the binding's labeling is
+# provably the checked idle boot plus the installs.
+run_check "INVARIANT" rg -n '^  deploymentLabeling : SeLe4n.Kernel.DeploymentLabeling' SeLe4n/Platform/Contract.lean
+run_negative_check "INVARIANT" rg -n '^  deploymentLabelingAdmitted :' SeLe4n/Platform/Contract.lean
+run_check "INVARIANT" rg -n '^theorem _root_.SeLe4n.Platform.PlatformBinding.labeling_valid' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem rpi5_deploymentLabeling ' SeLe4n/Platform/RPi5/Contract.lean
+run_check "INVARIANT" rg -n '^theorem rpi5UpperDomainBase_clears_idle_range' SeLe4n/Platform/RPi5/Contract.lean
+run_check "INVARIANT" rg -n '^def bootAndInitialisePlatform ' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem bootAndInitialisePlatform_eq_checked_boot' SeLe4n/Platform/FFI.lean
+# PR #889 review round 2: the idle slots are unreachable by user authority — a
+# capability naming one resolves like an empty slot at the single resolution
+# every syscall passes through, and a boot config that references one is
+# refused with its own diagnostic; the deployment source carries the policy
+# fields; the inactive-flag relation the live decisions read is stated and
+# holds of the boot state.
+run_check "INVARIANT" rg -n '^def capTargetsReservedIdleObject' SeLe4n/Kernel/Scheduler/IdleThread.lean
+run_check "INVARIANT" rg -n 'if SeLe4n.Kernel.capTargetsReservedIdleObject cap then .error .invalidCapability' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallResolveCap_ok_not_reserved' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def bootObjectReferencesReservedIdleSlot' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem idleSlotsReserved_no_idle_references' SeLe4n/Platform/Boot.lean
+# PR #889 review round 8: the raw suspend seam checks the idle reservation
+# before the transition and the export runs exactly the pure step; the
+# boot-safety check reads all three queue links; the reference check
+# dispatches to the per-kind helpers, whose constructor patterns pin every
+# field.
+run_check "INVARIANT" rg -n 'if SeLe4n.Kernel.isIdleThreadId vtid.val then' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n 'modifyGetKernelState \(suspendThreadCrossCoreStep tid execCore\)' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^theorem suspendThreadCrossCoreStep_idle_refused' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n 'tcb.queueNext.isNone && tcb.queuePrev.isNone && tcb.queuePPrev.isNone &&' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '  \| .tcb tcb => tcbReferencesReservedIdleSlot tcb' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '  \| .tcb tcb => bootSafeTcbCheck tcb' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '    idleSlotsReserved config && embeddedIdentitiesMatchSlots config' SeLe4n/Platform/Boot.lean
+# PR #889 review round 9: an unqualified readiness call resolves to the gate
+# only where the file imports it; the tripwire halt dominates every helper
+# exit; the boot entry branches on the checked boot and halts on error; a
+# builder rebound by assignment is a new binding instance; and the readiness
+# scanner reads the library root.
+run_check "INVARIANT" rg -n '^fn bare_ready_call_resolves' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn gate_call_offset' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn statement_may_exit' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n '^fn collect_lean_exports_from_file' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -n 'collect_lean_exports_from_file\(lean_library_root' rust/sele4n-hal/build.rs
+# PR #889 review round 20: the action walk stops at a diverging action, project
+# provenance is decided by excluding dependency roots, the shell view skips
+# balanced parameter expansions, and the live affinity path is bounded by the
+# PEs the platform declares.
+# PR #889 review round 23: the handoff waits for the readiness fact the tree
+# already publishes rather than trusting the PSCI-return proxy, and a
+# configuration must declare between one and numCores PEs — round 22's
+# derivation bounded the count from above only, and at zero the boot installs
+# no idle thread on any core.
+# PR #889 review round 24: the wait is a counter-polled spin, not a `wfe` —
+# `cpu::wfe_bounded`'s own docstring says its `max_ticks` is informational and
+# "does not bound the actual `wfe`", so a secondary that dies in init sends no
+# event and the first sleep never returns, making the topology refusal
+# unreachable.  This is the pattern `shootdown::wait_all_acked_bounded_in`
+# already chose, for the reason it already wrote down.
+run_check "INVARIANT" rg -n '^pub fn irq_ready_core_count_within_in' rust/sele4n-hal/src/smp.rs
+run_check "INVARIANT" rg -n '^pub fn irq_ready_core_count_within' rust/sele4n-hal/src/smp.rs
+run_check "INVARIANT" rg -nF 'crate::timer::read_counter' rust/sele4n-hal/src/smp.rs
+run_check "INVARIANT" rg -nF 'core::hint::spin_loop();' rust/sele4n-hal/src/smp.rs
+# NOT a file-wide negative on `wfe_bounded`: the secondary's own idle wait uses
+# it legitimately (it is woken by the primary's SEV), and this file's docstrings
+# name it to explain why the readiness wait does not.  A file-scoped negative
+# here would be the region-scoped-presence-check mistake this repository has
+# been burned by — the positive anchors above say what the wait *is*.
+run_check "INVARIANT" rg -nF 'crate::smp::irq_ready_core_count_within(' rust/sele4n-hal/src/boot.rs
+run_negative_check "INVARIANT" rg -nF 'let running_cores = 1 + online;' rust/sele4n-hal/src/boot.rs
+run_check "INVARIANT" rg -n '^const SECONDARY_READY_TIMEOUT_TICKS' rust/sele4n-hal/src/boot.rs
+run_check "INVARIANT" rg -n '^def declaredCoreCountInRange' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -nF '0 < config.machineConfig.declaredCoreCount' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -nF 'objectBudgetRespected config && declaredCoreCountInRange config' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -nF '(declaredCoreCountInRange config, declaredCoreCountBootError)' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem PlatformConfig.wellFormed_declaredCoreCountInRange' SeLe4n/Platform/Boot.lean
+# PR #889 review round 22: one question answered in two places diverges.  The
+# generic boot wrapper derives its core list from the configuration that the
+# machine will carry (it hardcoded `allCores` while `applyMachineConfig`
+# installed a narrower count); the handoff refusal uses the system-wide
+# barrier rather than the per-PE park; and the assembly source fallback asks
+# the same section question the archive parser has asked since round 8.
+run_check "INVARIANT" rg -n '^def declaredCoresOfConfig' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -nF 'bootAndInitialiseFromPlatformOn (declaredCoresOfConfig config) config ctx' SeLe4n/Platform/FFI.lean
+run_negative_check "INVARIANT" rg -nF 'bootAndInitialiseFromPlatformOn SeLe4n.Kernel.Concurrency.allCores config ctx' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem declaredCoresOfConfig_allCores' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem declaredCoresOfConfig_length_le' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -nF 'crate::gic::halt_all();' rust/sele4n-hal/src/boot.rs
+run_check "INVARIANT" rg -n '^def executable_label_names' scripts/check_kernel_entry_exports.py
+# PR #889 review round 25 repointed this off the `set(ASM_GLOBAL.findall(view))`
+# spelling: both halves of the conjunction now read `asm_statements`, because a
+# provider is a directive *and* a label and the two must agree on what a
+# statement is.
+run_check "INVARIANT" rg -nF 'return exported & executable_label_names(view)' scripts/check_kernel_entry_exports.py
+# PR #889 review round 25: each scanner's "I do not recognise this" path was
+# fail-open — it skipped the input and asserted nothing.  Round 21 had already
+# established the fail-closed shape (refuse an item macro in an `extern` block)
+# and it was applied to that one case; these are its siblings.  The current
+# assembly section is GAS's, stack and all: `.pushsection` / `.popsection` /
+# `.previous`, with an unresolvable change leaving it unknown, which is never
+# executable.
+run_check "INVARIANT" rg -n '^def asm_statements' scripts/check_kernel_entry_exports.py
+run_check "INVARIANT" rg -n '^def section_name_is_executable' scripts/check_kernel_entry_exports.py
+run_check "INVARIANT" rg -nF 'if name in ("section", "pushsection"):' scripts/check_kernel_entry_exports.py
+run_check "INVARIANT" rg -nF 'restored = stack.pop() if stack else None' scripts/check_kernel_entry_exports.py
+run_check "INVARIANT" rg -nF 'if name.endswith("section") or name in ASM_UNMODELLED_SECTION_CHANGE:' scripts/check_kernel_entry_exports.py
+# ...and the statement split's own edge: cpp runs a stage earlier, so a
+# `#define` body is a template whose directives and label exist where it is
+# invoked.  Splitting one would set the section from code that never executes
+# there and register a macro parameter as a provider — round 16's `.macro`
+# hazard, reachable again through the split this round added.
+run_check "INVARIANT" rg -nF 'if line.lstrip().startswith("#"):' scripts/check_kernel_entry_exports.py
+run_negative_check "INVARIANT" rg -nF 'in_text = name == "text"' scripts/check_kernel_entry_exports.py
+# ...a raw identifier names the same linker symbol as the bare spelling, and an
+# `extern` item that is neither a readable `fn` nor a symbol-free item stops the
+# build rather than declaring nothing.
+run_check "INVARIANT" rg -nF 'EXTERN_FN = re.compile(r"' scripts/check_kernel_entry_exports.py
+# Anchored on the raw-identifier escape alone: the character-class spelling
+# contains a letter-digit pair the identifier-naming gate reads as a workstream
+# code, and the escape is the relation this round added anyway.
+run_check "INVARIANT" rg -nF 'fn\s+(?:r#)?' scripts/check_kernel_entry_exports.py
+run_check "INVARIANT" rg -n '^EXTERN_NON_FN_ITEM' scripts/check_kernel_entry_exports.py
+run_check "INVARIANT" rg -nF 'if not EXTERN_NON_FN_ITEM.search(view, item_at, item_end):' scripts/check_kernel_entry_exports.py
+# ...and the same question is asked in three other places, all swept: `build.rs`
+# collects the HAL's extern declarations for the readiness seam set, and both
+# `enclosing_fn` implementations name the function a reference is attributed to.
+# A raw-identifier `fn` read as `r` leaves the seam ungated and every
+# name-keyed lookup — allowlist, exemption, attribution — pointed at nothing.
+run_check "INVARIANT" rg -nF 'let ident = rest.strip_prefix("r#").unwrap_or(rest);' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -nF 'let ident = after.strip_prefix("r#").unwrap_or(after);' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -nF 'fn r#lean_raw(x: u64)' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -nF '_FN_RE = re.compile(r"' scripts/rust_code_view.py
+# Backtick-free on purpose: shellcheck reads a backtick inside single quotes as
+# a command substitution the author meant to expand (SC2016).
+run_check "INVARIANT" rg -nF 'is named without its escape' scripts/rust_code_view.py
+# ...and a Lean export written as a guillemet identifier is read by BOTH
+# parsers that answer that question, with an unreadable argument refused.  The
+# Rust half is the one the readiness derivation reads: a non-`lean_`-prefixed
+# export missing from it is a seam no gate is required for.
+run_check "INVARIANT" rg -nF 'elif argument.startswith("\u00ab"):' scripts/lean_code_view.py
+run_check "INVARIANT" rg -nF 'raise ValueError(' scripts/lean_code_view.py
+run_check "INVARIANT" rg -nF "argument.strip_prefix('\\u{ab}')" rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -nF 'const GUILLEMET: &str' rust/sele4n-hal/build.rs
+# PR #889 review round 21: the hand-written action walk is gone.  The entry is
+# required to *be* `bootAndInitialiseRPi5OrHalt` applied to a configuration —
+# one `isDefEq`, which zeta- and beta-reduces, so the forms rounds 18-21 each
+# taught the walk are not questions any more.
+run_check "INVARIANT" rg -n '^def isApprovedBootApplication' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -nF 'Meta.isDefEq body (mkApp (mkConst approvedBootCall) config)' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessLetBoundConfig' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessLetBoundHalt' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessAliasedBoot' SeLe4n/Testing/BootEntryContract.lean
+run_negative_check "INVARIANT" rg -n 'partial def unconditionalActions' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessHaltedFirst' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessAliasHaltedFirst' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^def parameter_expansion_end' scripts/check_identifier_naming.py
+# ...the declared PE count travels config → machine → transition, every binding
+# proves its machine agrees with its own coreCount, and the affinity write
+# refuses a core the platform does not have.
+run_check "INVARIANT" rg -n '  declaredCoreCount : Nat := SeLe4n.Kernel.Concurrency.numCores' SeLe4n/Machine.lean
+run_check "INVARIANT" rg -n 'declaredCoreCount := config.declaredCoreCount' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^  declaredCoreCountAgrees :' SeLe4n/Platform/Contract.lean
+run_check "INVARIANT" rg -n '^def simSingleCoreMachineConfig' SeLe4n/Platform/Sim/Contract.lean
+run_check "INVARIANT" rg -n '  machineConfig := simSingleCoreMachineConfig' SeLe4n/Platform/Sim/Contract.lean
+run_check "INVARIANT" rg -n 'if affinity.any \(fun c => c.val . st.machine.declaredCoreCount\) then' SeLe4n/Kernel/Scheduler/Operations/Core.lean
+run_check "INVARIANT" rg -n '^theorem setThreadCpuAffinityWithMigration_rejects_undeclared_core' SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_declaredCoreCount' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformChecked_ok_declaredCoreCount' SeLe4n/Platform/Boot.lean
+# PR #889 review round 19: the bind instance is validated before the walk
+# treats it as sequencing, opaque bodies are read, and the object budget has
+# its own boot diagnostic.
+run_check "INVARIANT" rg -n 'allowOpaque := true' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessBogusBind' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessOpaqueBypass' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^def objectBudgetBootError' SeLe4n/Platform/Boot.lean
+# ...and the diagnostic is derived from one conjunct list rather than a second
+# enumeration of it, with a pin that fails when the two diverge.
+run_check "INVARIANT" rg -n '^def wellFormedConjuncts' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^def wellFormedDiagnostic' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem wellFormed_eq_all_conjuncts' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem wellFormedDiagnostic_reports_a_fault' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n 'error \(wellFormedDiagnostic config\)' SeLe4n/Platform/Boot.lean
+# PR #889 review round 18: the contract reads the production environment, the
+# approved call must be an unconditional action, the entry's FFI type is pinned,
+# and a successful boot leaves object-index room for the root and the idle
+# threads.
+run_check "INVARIANT" rg -n '^import SeLe4n$' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^def expectedBootEntryType' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessConditional' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessWrongType' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessSequenced' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^def objectBudgetRespected' SeLe4n/Platform/Boot.lean
+# PR #889 review round 23: repointed off the end-of-line spelling, which broke
+# the moment a sixth conjunct followed it in `wellFormed`.  The conjunct-list
+# pairing is the stable form and is what round 19 made canonical.
+run_check "INVARIANT" rg -nF '(objectBudgetRespected config, objectBudgetBootError)' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_objectIndexBounded' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreads_objectIndexBounded' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem foldl_enqueueIdleThread_objectIndex_length_le' SeLe4n/Platform/Boot.lean
+# PR #889 review round 17: the boot entry's contract moved off Lean source
+# text and onto the elaborated environment.  The fail-closed wrapper makes the
+# error path a definition; the contract module decides the rest with
+# getExportNameFor?, Expr.getUsedConstants and a reachability walk, and carries
+# four witnesses so it is decisive before SM10.1 writes the entry.
+run_check "INVARIANT" rg -n '^def bootAndInitialiseRPi5OrHalt' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '  \| .error _ => ffiFatalHaltAll' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def approvedBootCall' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^def bootEntryContractViolations' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^def bootEntryDeclarations' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessBypass' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessSideInstall' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'lake build SeLe4n.Testing.BootEntryContract' scripts/test_tier1_build.sh
+# ...and the link-level half that stays in the Python gate: the extern block is
+# resolved rather than spelled, and unassembled regions provide nothing.
+run_check "INVARIANT" rg -n '^def extern_block_openings' scripts/check_kernel_entry_exports.py
+run_check "INVARIANT" rg -n '^def strip_unassembled_regions' scripts/check_kernel_entry_exports.py
+run_check "INVARIANT" rg -n '^fn extern_block_openings' rust/sele4n-hal/build.rs
+# PR #889 review round 11 (P1): a raw thread/object operand refuses a reserved
+# idle id at the one lift point every such operand passes through — the
+# capability chokepoint decides on the resolved capability's target only.
+run_check "INVARIANT" rg -n 'if SeLe4n.Kernel.isIdleThreadId tid then .error .invalidArgument' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'if SeLe4n.Kernel.isIdleObjId oid then .error .invalidArgument' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem validateThreadIdArg_ok_not_reserved' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem validateObjIdArg_ok_not_reserved' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchCapabilityOnly_schedContextBind_idle_operand_refused' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def binding_statement_before' scripts/rust_code_view.py
+run_check "INVARIANT" rg -n 'objectIdsUnique config.initialObjects, objectIdDuplicateBootError' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^  auditMonitorClearance : Option SecurityDomain := none' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^theorem deploymentLabelingContext_policy_fields' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^def threadInactiveFlagConsistent' SeLe4n/Kernel/Scheduler/Operations/Core.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreads_threadInactiveFlagConsistent' SeLe4n/Platform/Boot.lean
+# PR #889 review round 3: the declared separation witnesses must be installed
+# threads of the boot state, and the binding boot installs idle threads on the
+# binding's declared cores only — the RPi5 binding declares every model core,
+# so the all-cores theorems are the hardware boot's.
+run_check "INVARIANT" rg -n '^def declaredWitnessesInstalled' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n 'if declaredWitnessesInstalled ist.state ctx then' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def bootFromPlatformCheckedWithIdleThreadsFor' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^def PlatformBinding.declaredCores ' SeLe4n/Platform/Contract.lean
+run_check "INVARIANT" rg -n '^theorem rpi5_cores_eq_allCores' SeLe4n/Platform/RPi5/Contract.lean
+run_check "INVARIANT" rg -n '^theorem bootAndInitialisePlatform_rpi5_all_cores' SeLe4n/Platform/FFI.lean
+# WS-RR RR5.17: the boot-pinned `suspend_thread_inner` export is REMOVED.  It
+# committed kernel state through a bare `kernelStateRef.set` with no
+# kernel-entry bracket, and `@[export]` made it a live C symbol in the linked
+# image — so its only protection was that nothing called it yet.  The definition
+# stays as the single-core reference path the dispatch suite exercises; the C
+# symbol does not.  Positive anchor on the definition, negative on the export,
+# so neither the path nor its absence can drift.
+run_check "INVARIANT" rg -n '^def suspendThreadInner' SeLe4n/Platform/FFI.lean
+run_negative_check "INVARIANT" rg -n '@\[export suspend_thread_inner\]' SeLe4n/Platform/FFI.lean
 # WS-RA: the vestigial `syscall_dispatch_inner` export is REMOVED (it was the
 # last other speaker of the retired bit-63 protocol; no Rust source declared
 # the symbol since v0.31.67).  Negative anchor so a dead export cannot return.
@@ -5272,9 +5523,9 @@ run_check "INVARIANT" rg -n 'fn lean_syscall_dispatch_cross_core' rust/sele4n-ha
 # WS-SM SM6.E: the suspend atomicity bracket is flipped to the cross-core
 # entry `suspend_thread_cross_core` (`@[export]` in `SyscallDispatchEntry`,
 # backed by the verified per-core `suspendThreadOnCore`: home-core deschedule
-# + remote `.reschedule` SGI after the commit).  The boot-pinned
-# `suspend_thread_inner` (`@[export]` in `Platform.FFI`) stays as the
-# single-core entry.
+# + remote `.reschedule` SGI after the commit).  WS-RR RR5.17 retired the
+# boot-pinned `suspend_thread_inner` export, so this is the ONLY C-callable
+# suspend entry a linked image carries.
 run_check "INVARIANT" rg -n 'fn suspend_thread_cross_core' rust/sele4n-hal/src/ffi.rs
 run_check "INVARIANT" rg -n '^@\[export suspend_thread_cross_core\]' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^def suspendThreadOnCore' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
@@ -5529,6 +5780,7 @@ import SeLe4n.Kernel.Concurrency.Anchors
 import SeLe4n.Kernel.Concurrency.Assumptions
 import SeLe4n.Kernel.Concurrency.Runtime
 import SeLe4n.Kernel.SecondaryEntry
+import SeLe4n.Kernel.SyscallDispatchEntry
 import SeLe4n.Kernel.Architecture.Assumptions
 import SeLe4n.Kernel.Architecture.TlbiForSharing
 import SeLe4n.Platform.FFI
@@ -5602,6 +5854,152 @@ import SeLe4n.Platform.RPi5.Contract
 #check @SeLe4n.Platform.Boot.idleSlotsFreshAt
 #check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_preserves_platform_objects
 #check @SeLe4n.Platform.Boot.idleSlotsFreshAt_of_initialObjects_below_base
+-- Boot-path fail-open closure, idle enqueue rows: the production boot enqueues
+-- every core idle thread without dispatching it, and the boot queue is
+-- characterised exactly, so well-formedness and TCB resolution are proved of
+-- the boot state rather than assumed of it.
+#check @SeLe4n.Platform.Boot.enqueueIdleThread
+#check @SeLe4n.Platform.Boot.foldl_enqueueIdleThread_installs
+#check @SeLe4n.Platform.Boot.foldl_enqueueIdleThread_runQueueOnCore_eq
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_map_ok
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_rejects_invalid
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_currentAllNone
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_idle_available
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_preserves_platform_objects
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_eq
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_mem_runQueueOnCore_iff
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_wellFormed
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_runnable_resolve
+-- Boot-path fail-open closure, labeling rows: the labeling context fails
+-- closed. The exact guard, its admissibility predicate (sentinel and idle
+-- threads excluded), the production context, and the platform binding that
+-- carries its source, with admission and validity as theorems.
+#check @SeLe4n.Kernel.separationWitnessAdmissible
+#check @SeLe4n.Kernel.separationWitnessAdmissible_iff
+#check @SeLe4n.Kernel.separationWitnessAdmissible_idleThreadId
+#check @SeLe4n.Kernel.verifiesDeclaredSeparation
+#check @SeLe4n.Kernel.isInsecureDefaultContext_false_implies_labelNonTriviality
+#check @SeLe4n.Kernel.isInsecureDefaultContext_false_implies_real_witness
+#check @SeLe4n.Kernel.isInsecureDefaultContext_false_implies_witness_not_idle
+#check @SeLe4n.Kernel.isInsecureDefaultContext_defaultLabelingContext
+#check @SeLe4n.Kernel.isInsecureDefaultContext_testLabelingContext
+#check @SeLe4n.Kernel.DeploymentLabeling
+#check @SeLe4n.Kernel.deploymentLabelingContext
+#check @SeLe4n.Kernel.isInsecureDefaultContext_deploymentLabelingContext
+#check @SeLe4n.Kernel.upperWitnessIndex
+#check @SeLe4n.Kernel.separationWitnessAdmissible_upperWitnessIndex
+#check @SeLe4n.Kernel.confinedLabelingContext
+#check @SeLe4n.Kernel.isInsecureDefaultContext_confinedLabelingContext
+#check @SeLe4n.Kernel.confinedLabelingContext_confines
+#check @SeLe4n.Kernel.harnessLabelingContext
+#check @SeLe4n.Kernel.isInsecureDefaultContext_harnessLabelingContext
+#check @SeLe4n.Platform.PlatformBinding.labeling
+#check @SeLe4n.Platform.PlatformBinding.labeling_admitted
+#check @SeLe4n.Platform.PlatformBinding.labeling_valid
+#check @SeLe4n.Kernel.capTargetsReservedIdleObject
+#check @SeLe4n.Kernel.syscallResolveCap_ok_not_reserved
+#check @SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
+#check @SeLe4n.Platform.Boot.idleSlotsReserved_no_idle_references
+#check @SeLe4n.Kernel.deploymentLabelingContext_policy_fields
+#check @SeLe4n.Kernel.threadInactiveFlagConsistent
+#check @SeLe4n.Kernel.threadStateConsistent_implies_threadInactiveFlagConsistent
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_threadInactiveFlagConsistent
+#check @SeLe4n.Platform.Boot.declaredWitnessesInstalled
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor_allCores
+#check @SeLe4n.Platform.PlatformBinding.declaredCores_eq_allCores_of_full
+#check @SeLe4n.Platform.RPi5.rpi5_cores_eq_allCores
+#check @SeLe4n.Platform.FFI.bootAndInitialisePlatform_rpi5_all_cores
+#check @SeLe4n.Kernel.confinedDeploymentLabeling
+#check @SeLe4n.Kernel.harnessDeploymentLabeling
+-- Review round: the enqueued idle TCB is the queued form and the production boot
+-- state is thread-state consistent; the checked boot reserves the idle slots.
+#check @SeLe4n.Platform.Boot.queuedIdleThread
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_idle_threadState
+#check @SeLe4n.Platform.Boot.bootFromPlatformChecked_ok_threadStateConsistent
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_threadStateConsistent
+#check @SeLe4n.Platform.Boot.idleSlotsReserved
+-- PR #889 review round 5: the lower witness is a parameter of the family, held
+-- off the boot VSpace root by an obligation on each binding; the declared core
+-- count is bounded by the model; the idle slot of an undeclared core is absent
+-- after the boot.  (No apostrophes, backticks or dollar signs here: this block
+-- sits inside a single-quoted bash -lc argument.)
+#check @SeLe4n.Kernel.indexPartitionedDeploymentLabeling_separatedThreads
+#check @SeLe4n.Kernel.harnessLowerWitnessIndex
+#check @SeLe4n.Kernel.harnessLowerWitnessIndex_admissible
+#check @SeLe4n.Kernel.harnessLowerWitnessIndex_below_boundary
+#check @SeLe4n.Kernel.harnessLabelingContext_separatedThreads
+#check @SeLe4n.Platform.PlatformBinding.coreCountLe
+#check @SeLe4n.Platform.PlatformBinding.witnessesOffBootVSpaceRoot
+#check @SeLe4n.Platform.PlatformBinding.witnesses_ne_bootVSpaceRoot
+#check @SeLe4n.Platform.PlatformBinding.labeling_separatedThreads
+#check @SeLe4n.Platform.PlatformBinding.declaredCores_length
+#check @SeLe4n.Platform.PlatformBinding.mem_declaredCores_iff
+#check @SeLe4n.Platform.PlatformBinding.bootCoreModelId
+#check @SeLe4n.Platform.PlatformBinding.bootCoreModelId_mem_declaredCores
+#check @SeLe4n.Platform.RPi5.rpi5LowerWitnessIndex
+#check @SeLe4n.Platform.RPi5.rpi5LowerWitnessIndex_admissible
+#check @SeLe4n.Platform.RPi5.rpi5LowerWitnessIndex_below_boundary
+#check @SeLe4n.Platform.RPi5.rpi5LowerWitnessIndex_ne_bootVSpaceRoot
+#check @SeLe4n.Platform.RPi5.rpi5_deploymentLabeling_separatedThreads
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor_map_ok
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor_undeclared_idle_absent
+-- PR #889 review round 15: a configured thread pinned to a core the binding
+-- does not declare is refused before anything is committed, and every thread
+-- of a successful boot is pinned to a declared core.
+#check @SeLe4n.Platform.Boot.bootAffinitiesDeclared
+#check @SeLe4n.Platform.Boot.tcbAffinityDeclared
+#check @SeLe4n.Platform.Boot.bootAffinitiesDeclared_allCores
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor_ok_affinitiesDeclared
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor_undeclared_affinity_refused
+-- PR #889 review round 7: a boot TCB is stored under its own thread id; the
+-- hardware entry is fixed at the RPi5 binding, which supplies the machine
+-- configuration and the boot VSpace root.
+#check @SeLe4n.Platform.Boot.tcbIdentitiesMatchSlots
+#check @SeLe4n.Platform.Boot.PlatformConfig.wellFormed_tcbIdentitiesMatchSlots
+#check @SeLe4n.Platform.Boot.tcbIdentitiesMatchSlots_tid_eq
+#check @SeLe4n.Platform.Boot.idleSlotsReserved_no_idle_tid
+#check @SeLe4n.Platform.FFI.bindPlatformConfig
+#check @SeLe4n.Platform.FFI.bindPlatformConfig_machineConfig
+#check @SeLe4n.Platform.FFI.bindPlatformConfig_bootVSpaceRoot
+#check @SeLe4n.Platform.FFI.bindPlatformConfig_initialObjects
+#check @SeLe4n.Platform.FFI.bindPlatformConfig_irqTable
+#check @SeLe4n.Platform.FFI.bootAndInitialiseRPi5
+#check @SeLe4n.Platform.FFI.bootAndInitialiseRPi5_eq
+#check @SeLe4n.Platform.FFI.bootAndInitialiseRPi5_bound_config
+#check @SeLe4n.Platform.Boot.bootFromPlatformChecked_ok_shape
+#check @SeLe4n.Platform.Boot.bootFromPlatformChecked_ok_idleSlotsFreshAt
+-- PR #889 review round 8: the raw suspend seam refuses idle ids and commits
+-- nothing; the reservation reads every field of every kind by constructor
+-- arity, the boot-safety check reads all three queue links, and the embedded
+-- identities of SchedContexts and Replies are their slots.
+#check @SeLe4n.Kernel.suspendThreadCrossCoreStep
+#check @SeLe4n.Kernel.suspendThreadCrossCoreStep_idle_refused
+#check @SeLe4n.Kernel.suspendThreadCrossCoreStep_sentinel_refused
+#check @SeLe4n.Platform.Boot.endpointReferencesReservedIdleSlot
+#check @SeLe4n.Platform.Boot.notificationReferencesReservedIdleSlot
+#check @SeLe4n.Platform.Boot.cnodeReferencesReservedIdleSlot
+#check @SeLe4n.Platform.Boot.tcbReferencesReservedIdleSlot
+#check @SeLe4n.Platform.Boot.vspaceRootReferencesReservedIdleSlot
+#check @SeLe4n.Platform.Boot.untypedReferencesReservedIdleSlot
+#check @SeLe4n.Platform.Boot.schedContextReferencesReservedIdleSlot
+#check @SeLe4n.Platform.Boot.replyReferencesReservedIdleSlot
+#check @SeLe4n.Platform.Boot.bootSafeEndpointCheck
+#check @SeLe4n.Platform.Boot.bootSafeNotificationCheck
+#check @SeLe4n.Platform.Boot.bootSafeCnodeCheck
+#check @SeLe4n.Platform.Boot.bootSafeTcbCheck
+#check @SeLe4n.Platform.Boot.bootSafeUntypedCheck
+#check @SeLe4n.Platform.Boot.bootSafeSchedContextCheck
+#check @SeLe4n.Platform.Boot.bootSafeReplyCheck
+#check @SeLe4n.Platform.Boot.idleSlotsReserved_no_idle_queuePPrev
+#check @SeLe4n.Platform.Boot.embeddedIdentitiesMatchSlots
+#check @SeLe4n.Platform.Boot.schedContextIdentitiesMatchSlots
+#check @SeLe4n.Platform.Boot.replyIdentitiesMatchSlots
+#check @SeLe4n.Platform.Boot.PlatformConfig.wellFormed_embeddedIdentitiesMatchSlots
+#check @SeLe4n.Platform.Boot.PlatformConfig.wellFormed_schedContextIdentitiesMatchSlots
+#check @SeLe4n.Platform.Boot.PlatformConfig.wellFormed_replyIdentitiesMatchSlots
+#check @SeLe4n.Platform.Boot.schedContextIdentitiesMatchSlots_scId_eq
+#check @SeLe4n.Platform.Boot.replyIdentitiesMatchSlots_replyId_eq
 -- SM0.G — PlatformBinding extension
 #check @SeLe4n.Platform.PlatformBinding.coreCount
 #check @SeLe4n.Platform.PlatformBinding.bootCoreId
@@ -7929,6 +8327,18 @@ open SeLe4n.Platform.Boot (createIdleThread)
 #check @enqueueIdleThreadOnCore_establishes_idleThreadEnqueuedOnCore
 #check @chooseThreadOnCore_always_succeeds
 #check @enqueueIdleThreadOnCore_chooseThreadOnCore_succeeds
+-- The production boot state discharges the keystone on every core with no
+-- hypothesis beyond the boot, and its first selection is pinned to that core
+-- idle thread.
+#check @bootFromPlatformCheckedWithIdleThreads_idleThreadEnqueuedOnCore
+#check @bootFromPlatformCheckedWithIdleThreads_runnableThreadsAreTCBsOnCore
+#check @bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_succeeds
+#check @bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_idle
+example (config : SeLe4n.Platform.Boot.PlatformConfig) (ist : SeLe4n.Model.IntermediateState)
+    (h : SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads config = .ok ist)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    ∃ tid, chooseThreadOnCore ist.state c = .ok (some tid) :=
+  bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_succeeds config ist h c
 -- SM5.E.4 core locality + no-starvation.
 #check @runQueueAffinityConsistentOnCore
 #check @idleThread_core_locality

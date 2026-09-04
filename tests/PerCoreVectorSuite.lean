@@ -294,6 +294,15 @@ private def runPlatformCoreCountChecks : IO Unit := do
     (decide ((PlatformBinding.bootCoreId (platform := SimSingleCorePlatform)).val = 0))
   assertBool "SimSingleCore.coreCountPos witness (1 > 0)"
     (decide (PlatformBinding.coreCount (platform := SimSingleCorePlatform) > 0))
+  -- PR #889 review round 5: the single-core binding declares fewer cores than
+  -- the model has, never more (`coreCountLe`), and its declared list has
+  -- exactly one member — the boot core.
+  assertBool "SimSingleCore.coreCountLe witness (1 ≤ numCores)"
+    (decide (PlatformBinding.coreCount (platform := SimSingleCorePlatform) ≤
+              SeLe4n.Kernel.Concurrency.numCores))
+  assertBool "SimSingleCore.declaredCores = [bootCoreModelId]"
+    (decide (PlatformBinding.declaredCores (platform := SimSingleCorePlatform) =
+              [PlatformBinding.bootCoreModelId (platform := SimSingleCorePlatform)]))
   assertBool "SimPlatform.coreCount = 4"
     (decide (PlatformBinding.coreCount (platform := SimPlatform) = 4))
   assertBool "SimRestrictivePlatform.coreCount = 4"

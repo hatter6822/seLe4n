@@ -1645,15 +1645,55 @@ theorem scheduleDomainOnCore_singleDomain_inert (st : SystemState) (c : CoreId)
 -- V8-G3: ThreadState synchronization
 -- ============================================================================
 
+/-- **WS-SM SM4.C.11 / WS-RR RR5.10**: is `tid` the current thread of **some**
+core?
+
+The per-core lift of the `currentOnCore bootCoreId` test `inferThreadState` used
+to make.  A thread runs on exactly one core, but the classification has to look
+at every core to find out which — asking the boot core alone answers "no" for a
+thread running on a secondary, which is a different claim.
+
+Decidable by construction: `allCores` is `List.finRange numCores`, so the
+existential is a fold over a finite list rather than a quantifier. -/
+def threadRunningOnSomeCore (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
+  SeLe4n.Kernel.Concurrency.allCores.any fun c =>
+    (st.scheduler.currentOnCore c) == some tid
+
+/-- **WS-SM SM4.C.11 / WS-RR RR5.10**: is `tid` in **some** core's run queue?
+The per-core lift of the `runQueueOnCore bootCoreId` test (see
+`threadRunningOnSomeCore`). -/
+def threadQueuedOnSomeCore (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
+  SeLe4n.Kernel.Concurrency.allCores.any fun c =>
+    decide (tid ∈ st.scheduler.runQueueOnCore c)
+
 /-- V8-G3: Infer the `ThreadState` for a thread based on observable system state.
 This is the canonical definition of what each `ThreadState` value means:
-- `Running`: thread is `scheduler.current`
-- `Ready`: thread is in the run queue
+- `Running`: thread is the current thread of some core
+- `Ready`: thread is in some core's run queue
 - `BlockedSend`/`BlockedRecv`/`BlockedCall`/`BlockedReply`/`BlockedNotif`: matches `ipcState`
-- `Inactive`: none of the above (ipcState.ready but not queued/current) -/
+- `Inactive`: none of the above (ipcState.ready but not queued/current)
+
+**WS-RR RR5.10 — the classification is no longer boot-core-pinned.**  The two
+tests above read `currentOnCore bootCoreId` / `runQueueOnCore bootCoreId`, so a
+thread running on a secondary core classified `.Inactive`: its own core's current
+slot pointed at it, but no boot-core slot did.  That is register §7 finding 42,
+and it stops being latent the moment the boot path installs per-core idle
+threads — the boot state queues each core's idle thread as `queuedIdleThread`
+(`.Ready`; before the PR #889 review round it stored the dispatched
+`createIdleThread` form, `.Running`), so under the boot-core tests core 1's idle
+TCB would be re-inferred `.Inactive`, `threadStateConsistent` would be false of
+the boot state, and `assertStateInvariantsFor` (which syncs before it checks)
+would *rewrite the field* rather than report the mismatch.  RR5.13/RR5.14 make
+that boot state the production one, which is why this lift lands first.
+
+The lift is conservative on any state the old definition classified: with
+`currentOnCore c = none` and an empty `runQueueOnCore c` on every secondary — the
+shape of every pre-RR5.14 boot state — `threadRunningOnSomeCore` and
+`threadQueuedOnSomeCore` agree with the boot-core tests
+(`inferThreadState_eq_bootCore_of_secondaries_quiescent`). -/
 def inferThreadState (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) : ThreadState :=
-  if (st.scheduler.currentOnCore bootCoreId) == some tid then .Running
-  else if tid ∈ (st.scheduler.runQueueOnCore bootCoreId) then .Ready
+  if threadRunningOnSomeCore st tid then .Running
+  else if threadQueuedOnSomeCore st tid then .Ready
   else match tcb.ipcState with
   | .blockedOnSend _ => .BlockedSend
   | .blockedOnReceive _ => .BlockedRecv
@@ -1677,11 +1717,149 @@ def syncThreadStates (st : SystemState) : SystemState :=
   { st with objects := objs }
 
 /-- V8-G2: ThreadState consistency predicate — the `threadState` field of every
-TCB matches the state inferred from queue membership and IPC state. -/
+TCB matches the state inferred from queue membership and IPC state.
+
+**WS-RR RR5.10**: inherits the per-core lift from `inferThreadState`, so a thread
+running on a secondary core satisfies this rather than falsifying it. -/
 def threadStateConsistent (st : SystemState) : Prop :=
   ∀ (oid : SeLe4n.ObjId) (tcb : TCB),
     st.objects[oid]? = some (.tcb tcb) →
     tcb.threadState = inferThreadState st ⟨oid.toNat⟩ tcb
+
+/-- PR #889 review round 2: the relation the **live** kernel actually keeps on
+the stored `threadState` field, stated on its own so it can be cited honestly.
+
+`threadStateConsistent` is the full classification and holds of the production
+boot state (`bootFromPlatformCheckedWithIdleThreads_threadStateConsistent`); it
+is **not** preserved by the transitions, because no scheduler dispatch writes
+`.Running` and no IPC block writes a `.Blocked*` — `scheduleEffectiveOnCore` /
+`switchToThreadOnCore` move the current slot and the run queue and leave the
+TCB object alone, so after any core's first dispatch the field says `.Ready` of
+a running thread, and after any rendezvous it says `.Ready` of a blocked one.
+The harness re-establishes the full classification with `syncThreadStates`
+before it checks.
+
+What the live decisions read is narrower: `tcbSuspend` / `tcbResume` / the
+cross-core cancellation / the fault suspend test the field against `.Inactive`
+only (`Lifecycle/Suspend.lean`, `IPC/CrossCore/Cancellation.lean`), and the
+writers of the field are exactly the lifecycle transitions that make a thread
+inactive or ready again.  This predicate is that reading: the stored flag says
+`.Inactive` **iff** the observable state classifies the thread `.Inactive`.
+It follows from the full classification (`threadStateConsistent_implies_
+threadInactiveFlagConsistent`), so it holds of the boot state too; its
+preservation across the scheduler and IPC surfaces — or the replacement of the
+stored field by the inferred one — is registered debt
+(`docs/REGISTERED_DEBT.md`, owned by WS-RR RR7.36), not a theorem of this cut.
+New code must not cite `threadStateConsistent` of a post-dispatch state. -/
+def threadInactiveFlagConsistent (st : SystemState) : Prop :=
+  ∀ (oid : SeLe4n.ObjId) (tcb : TCB),
+    st.objects[oid]? = some (.tcb tcb) →
+    (tcb.threadState = .Inactive ↔ inferThreadState st ⟨oid.toNat⟩ tcb = .Inactive)
+
+/-- PR #889 review round 2: the full classification entails the inactive-flag
+relation — what carries the boot-state result over. -/
+theorem threadStateConsistent_implies_threadInactiveFlagConsistent
+    (st : SystemState) (h : threadStateConsistent st) :
+    threadInactiveFlagConsistent st := by
+  intro oid tcb hObj
+  rw [h oid tcb hObj]
+
+/-- **WS-RR RR5.10**: a thread that is some core's current thread classifies
+`.Running` — for **every** core, not only the boot core.  The substantive
+content of the lift: this is false of the pre-RR5.10 definition whenever `c` is
+a secondary. -/
+theorem inferThreadState_running_of_currentOnCore (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (h : st.scheduler.currentOnCore c = some tid) :
+    inferThreadState st tid tcb = .Running := by
+  have hRun : threadRunningOnSomeCore st tid = true := by
+    simp only [threadRunningOnSomeCore, List.any_eq_true]
+    exact ⟨c, SeLe4n.Kernel.Concurrency.mem_allCores c, by simp [h]⟩
+  simp only [inferThreadState, hRun, if_true]
+
+/-- **WS-RR RR5.10**: a thread in some core's run queue that is nobody's current
+thread classifies `.Ready` — again for every core. -/
+theorem inferThreadState_ready_of_runQueueOnCore (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hQueued : tid ∈ st.scheduler.runQueueOnCore c)
+    (hNotCurrent : threadRunningOnSomeCore st tid = false) :
+    inferThreadState st tid tcb = .Ready := by
+  have hQ : threadQueuedOnSomeCore st tid = true := by
+    simp only [threadQueuedOnSomeCore, List.any_eq_true]
+    exact ⟨c, SeLe4n.Kernel.Concurrency.mem_allCores c, by simp [hQueued]⟩
+  simp only [inferThreadState, hNotCurrent, hQ, Bool.false_eq_true, if_false, if_true]
+
+/-- **WS-RR RR5.10** (conservativity): on a state whose secondary cores are
+quiescent — no current thread and an empty run queue on every core but the boot
+core — the lifted classification is exactly the boot-core-pinned one it replaced.
+
+This is what makes the lift safe for every state the tree already reasons about:
+the pre-RR5.14 boot path leaves `currentOnCore c = none` on every core
+(`bootFromPlatform_smp_currentAllNone`), and the single-core fixtures the suites
+build populate the boot core only.  The theorem is stated over the two tests
+rather than over `inferThreadState` itself so it composes with either branch. -/
+theorem threadRunningOnSomeCore_eq_bootCore_of_secondaries_quiescent
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hQuiet : ∀ c : SeLe4n.Kernel.Concurrency.CoreId, c ≠ bootCoreId →
+      st.scheduler.currentOnCore c = none) :
+    threadRunningOnSomeCore st tid =
+      ((st.scheduler.currentOnCore bootCoreId) == some tid) := by
+  simp only [threadRunningOnSomeCore]
+  cases hBoot : (st.scheduler.currentOnCore bootCoreId) == some tid with
+  | true =>
+      simp only [List.any_eq_true]
+      exact ⟨bootCoreId, SeLe4n.Kernel.Concurrency.mem_allCores bootCoreId, hBoot⟩
+  | false =>
+      simp only [List.any_eq_false]
+      intro c _
+      by_cases hc : c = bootCoreId
+      · subst hc; simp [hBoot]
+      · simp [hQuiet c hc]
+
+/-- **WS-RR RR5.10** (conservativity, the run-queue half). -/
+theorem threadQueuedOnSomeCore_eq_bootCore_of_secondaries_quiescent
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hQuiet : ∀ c : SeLe4n.Kernel.Concurrency.CoreId, c ≠ bootCoreId →
+      tid ∉ st.scheduler.runQueueOnCore c) :
+    threadQueuedOnSomeCore st tid =
+      decide (tid ∈ st.scheduler.runQueueOnCore bootCoreId) := by
+  simp only [threadQueuedOnSomeCore]
+  cases hBoot : decide (tid ∈ st.scheduler.runQueueOnCore bootCoreId) with
+  | true =>
+      simp only [List.any_eq_true]
+      exact ⟨bootCoreId, SeLe4n.Kernel.Concurrency.mem_allCores bootCoreId, hBoot⟩
+  | false =>
+      have hNotBoot : tid ∉ st.scheduler.runQueueOnCore bootCoreId := by
+        simpa using hBoot
+      simp only [List.any_eq_false]
+      intro c _
+      by_cases hc : c = bootCoreId
+      · subst hc; simpa using hNotBoot
+      · simpa using hQuiet c hc
+
+/-- **WS-RR RR5.10** (conservativity, composed): on a quiescent-secondary state
+the lifted `inferThreadState` returns exactly what the boot-core-pinned
+definition returned. -/
+theorem inferThreadState_eq_bootCore_of_secondaries_quiescent
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hCurrent : ∀ c : SeLe4n.Kernel.Concurrency.CoreId, c ≠ bootCoreId →
+      st.scheduler.currentOnCore c = none)
+    (hQueue : ∀ c : SeLe4n.Kernel.Concurrency.CoreId, c ≠ bootCoreId →
+      tid ∉ st.scheduler.runQueueOnCore c) :
+    inferThreadState st tid tcb =
+      (if (st.scheduler.currentOnCore bootCoreId) == some tid then .Running
+       else if tid ∈ (st.scheduler.runQueueOnCore bootCoreId) then .Ready
+       else match tcb.ipcState with
+         | .blockedOnSend _ => .BlockedSend
+         | .blockedOnReceive _ => .BlockedRecv
+         | .blockedOnCall _ => .BlockedCall
+         | .blockedOnNotification _ => .BlockedNotif
+         | .blockedOnReply _ _ => .BlockedReply
+         | .ready => .Inactive) := by
+  simp only [inferThreadState,
+    threadRunningOnSomeCore_eq_bootCore_of_secondaries_quiescent st tid hCurrent,
+    threadQueuedOnSomeCore_eq_bootCore_of_secondaries_quiescent st tid hQueue,
+    decide_eq_true_eq]
 
 -- ============================================================================
 -- WS-SM SM5.H — Per-core CBS (production operations)
@@ -1812,6 +1990,17 @@ def setThreadCpuAffinityWithMigration (st : SystemState) (targetTid : SeLe4n.Thr
     Except KernelError (SystemState × Option (CoreId × SgiKind)) :=
   match st.getTcb? targetTid with
   | some tcb =>
+      -- PR #889 review round 20: a core the platform does not have is not a
+      -- home.  The model is `numCores` wide and a binding may declare fewer
+      -- (`SimSingleCorePlatform` declares one); RR5's `bootAffinitiesDeclared`
+      -- refuses a *configured* TCB pinned outside that set, and this is the
+      -- same relation on the live path — without it a thread migrates onto an
+      -- absent PE, is queued where nothing runs it, and the reschedule SGI
+      -- goes to a core that cannot take it.  Inert on a full-width machine,
+      -- since `declaredCoreCount` defaults to `numCores`.
+      if affinity.any (fun c => c.val ≥ st.machine.declaredCoreCount) then
+        .error .invalidArgument
+      else
       -- #2 (Codex P1 review): reject rebinding a thread currently RUNNING on a core
       -- its new affinity would forbid.  Dequeue-on-dispatch means such a target is in
       -- no run queue, so `migrateRunQueueOnAffinityChange` cannot move it off the old
@@ -1903,7 +2092,9 @@ theorem setThreadCpuAffinityOnCore_state_core_independent (st : SystemState)
   split
   · split
     · rfl
-    · split <;> rfl
+    · split
+      · rfl
+      · split <;> rfl
   · rfl
 
 /-- WS-SM SM8.B: and hence the retained boot-core op agrees with the per-core

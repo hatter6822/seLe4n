@@ -4,7 +4,7 @@
 
 This document defines the active testing baseline and near-term expansion path after M5 closeout.
 
-Current stage context: **Active workstream: WS-RR (SMP release readiness) — pre-SM10 remediation, RR0–RR4 landed; SM10 (release closure → v1.0.0) is blocked on it. For live codebase figures run `python3 scripts/report_current_state.py`; the source of truth is `docs/codebase_map.json` → `readme_sync`. The tier ladder spans Tier 0–5 (§2).** (This document's baseline sections were written at the WS-R era and record that testing architecture; tier contents below are updated to the current scripts.)
+Current stage context: **Active workstream: WS-RR (SMP release readiness) — pre-SM10 remediation, RR0–RR5 landed; SM10 (release closure → v1.0.0) is blocked on it. For live codebase figures run `python3 scripts/report_current_state.py`; the source of truth is `docs/codebase_map.json` → `readme_sync`. The tier ladder spans Tier 0–5 (§2).** (This document's baseline sections were written at the WS-R era and record that testing architecture; tier contents below are updated to the current scripts.)
 
 ## 2. Current enforced tiers
 

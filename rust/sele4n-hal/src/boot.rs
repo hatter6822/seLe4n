@@ -16,7 +16,26 @@
 //! Phase 6: Handoff to Lean kernel (AG7 — FFI bridge)
 
 /// Kernel version string — matches Lean lakefile.toml version.
-const KERNEL_VERSION: &str = "0.34.47";
+const KERNEL_VERSION: &str = "0.34.48";
+
+/// **PR #889 review round 21**: how many PEs the linked Lean kernel declares.
+///
+/// Pinned against `SeLe4n/Platform/RPi5/Board.lean`'s
+/// `rpi5MachineConfig.declaredCoreCount` and `rpi5PlatformBinding.coreCount`,
+/// which `PlatformBinding.declaredCoreCountAgrees` holds equal.  The Lean side
+/// installs idle threads on exactly this many cores and bounds
+/// `.tcbSetAffinity` by the same number, so a handoff to a narrower machine is
+/// refused at Phase 6 rather than stranding threads on PEs that do not exist.
+const LEAN_DECLARED_CORE_COUNT: u32 = 4;
+
+/// **PR #889 review round 23**: how long the handoff waits for every declared
+/// PE to publish `CORE_IRQ_READY` before refusing the topology.
+///
+/// Bounded on purpose: a secondary that never publishes must make the boot
+/// *fail*, not hang, so the wait has a ceiling and the refusal below is what
+/// runs when it expires.  The unit is `wfe_bounded` ticks, the same clock the
+/// shootdown protocol's bounded waits use.
+const SECONDARY_READY_TIMEOUT_TICKS: u64 = crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS * 16;
 
 /// Rust entry point called from assembly `_start` after BSS zeroing and
 /// stack setup. Receives the DTB pointer from U-Boot in x0.
@@ -346,6 +365,59 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
     // object. On simulation/test builds, it falls through to idle_loop().
     #[cfg(feature = "hw_target")]
     {
+        // PR #889 review round 21: the linked Lean kernel declares its PE count
+        // at compile time (`PlatformBinding.coreCount` = 4 for `RPi5Platform`,
+        // carried into the live machine as `MachineState.declaredCoreCount`),
+        // and since round 20 that number bounds `.tcbSetAffinity`.  `online` is
+        // a *runtime* fact: `smp_enabled=false` starts no secondaries, an
+        // `smp_max_cores` cap starts fewer, and a PSCI `CPU_ON` can fail.
+        // Handing a 4-PE kernel a narrower machine strands every thread pinned
+        // to an absent core — queued where nothing runs it, with the reschedule
+        // SGI sent to a PE that cannot take it — and reports success.
+        //
+        // The two numbers are not reconcilable at this seam: `lean_kernel_main`
+        // takes the DTB pointer and nothing else, and a kernel that adapts its
+        // topology at runtime is SM10.1's to build.  So the mismatch is
+        // refused rather than papered over, which is what this whole cut is
+        // about.  An operator who wants fewer PEs declares a binding with that
+        // `coreCount`, exactly as `SimSingleCorePlatform` does; `smp_enabled=false`
+        // remains fully supported for a HAL-only image, which links no Lean
+        // kernel and never reaches this block.
+        // PR #889 review round 23: `online` counts PSCI `CPU_ON` calls that
+        // returned `Success` or `AlreadyOn` — a *proxy* for "this PE will
+        // service kernel work", incremented before the secondary has run a
+        // single instruction of its own init.  A PE can still halt in MMU, GIC
+        // or timer setup, and an `AlreadyOn` PE may never reach
+        // `secondary_entry` at all, while `online` stays at three.  The fact
+        // itself is `CORE_IRQ_READY[c]`, which core `c` publishes *itself*
+        // after `enable_irq` and which `shootdown.rs` already reads as the
+        // IRQ-serviceable set — so this waits for it, bounded, rather than
+        // trusting the proxy.  A core that never publishes leaves
+        // `running_cores` short and the topology refusal below fires.
+        let running_cores = crate::smp::irq_ready_core_count_within(
+            LEAN_DECLARED_CORE_COUNT,
+            SECONDARY_READY_TIMEOUT_TICKS,
+        );
+        if running_cores != LEAN_DECLARED_CORE_COUNT {
+            crate::kprintln!(
+                "[boot] FATAL: {} PE(s) IRQ-ready but the linked Lean kernel declares {} \
+                 ({} PSCI CPU_ON call(s) succeeded)",
+                running_cores,
+                LEAN_DECLARED_CORE_COUNT,
+                1 + online
+            );
+            // PR #889 review round 22: `halt_all`, not `fatal_halt`.  This
+            // condition is reached *after* the secondaries that did start have
+            // entered `rust_secondary_main`, unmasked IRQs and begun servicing
+            // timer and SGI handlers, so parking only the boot PE leaves them
+            // running Rust-side interrupt work for a kernel that was never
+            // handed off to.  A boot-fatal condition needs a system-wide
+            // barrier, which is what this function is for and why
+            // `ffi_fatal_halt_all`, the kernel-entry tripwire and the
+            // shootdown timeout all use it.  Per-PE `fatal_halt` stays correct
+            // for a per-PE fault — the VBAR check below is one.
+            crate::gic::halt_all();
+        }
         extern "C" {
             fn lean_kernel_main(dtb_ptr: u64);
         }
@@ -370,11 +442,13 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
 /// D1.10.2; the alignment is enforced statically by the `.balign 2048`
 /// directive in `vectors.S` plus the linker's section ordering
 /// (`.text.vectors : ALIGN(2048) { ... }` in `link.ld`).  A runtime
-/// `debug_assert!` re-checks the alignment before writing `VBAR_EL1`
+/// runtime check re-checks the alignment before writing `VBAR_EL1`
 /// so a regressed assembler/linker chain surfaces as a clean halt
 /// rather than the architectural UNDEFINED instruction the next
 /// exception would produce (ARM ARM D17.2.135: writes with bits
-/// [10:0] non-zero are UNDEFINED).
+/// [10:0] non-zero are UNDEFINED).  **WS-RR RR5.18**: unconditional,
+/// not a `debug_assert!` — the image that ships is a `--release` build,
+/// which compiled the old form out.
 ///
 /// **Caller obligations**: must be invoked at EL1 with IRQs disabled.
 /// The boot core and every secondary satisfy this on entry from PSCI
@@ -394,7 +468,8 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
 /// `assert_eq!(align_of_val(...) % 2048, 0)` would require accessing
 /// the linker-provided symbol's value at compile time, which Rust does
 /// not currently support; the check is therefore deferred to runtime
-/// via `write_vbar_el1`.
+/// — and, since WS-RR RR5.18, is a real runtime check in every profile
+/// rather than a debug-only one.
 pub fn install_exception_vectors() {
     #[cfg(target_arch = "aarch64")]
     {
@@ -409,19 +484,31 @@ pub fn install_exception_vectors() {
         // structurally: `__exception_vectors` is a linker-provided symbol
         // defined in `vectors.S` under `.balign 2048`, and only its
         // address is taken here — the value is never read.  The
-        // `debug_assert_eq!` below re-checks the alignment that
-        // `write_vbar_el1` depends on.
+        // check below re-checks the alignment that `write_vbar_el1`
+        // depends on.
         let vbar = &raw const __exception_vectors as u64;
         // AN8-E (R-HAL-L9): runtime alignment check before VBAR_EL1 write.
         // ARM ARM D17.2.135: VBAR_EL1 bits [10:0] are RES0 — a misaligned
         // address produces an UNDEFINED instruction on the next exception
         // entry. We catch this here so the kernel halts in a debuggable
         // state rather than at exception time.
-        debug_assert_eq!(
-            vbar % 2048,
-            0,
-            "exception vector table must be 2048-byte aligned (ARM ARM D1.10.2)"
-        );
+        //
+        // **WS-RR RR5.18**: this was a `debug_assert_eq!`, which is compiled
+        // out of a `--release` build — and a `kernel8.img` is built
+        // `--release` (`scripts/test_qemu.sh`).  The check therefore existed
+        // in exactly the configuration that cannot use it and vanished from
+        // the one that ships, so the documented "clean halt rather than the
+        // architectural UNDEFINED instruction" was true only of a debug
+        // image.  It is now an unconditional branch to the fail-closed halt:
+        // one modulo and one comparison, once per core at boot.
+        if !vbar.is_multiple_of(2048) {
+            crate::kprintln!(
+                "[boot] FATAL: exception vector table is not 2048-byte aligned \
+                 (VBAR=0x{:016x}); ARM ARM D1.10.2 / D17.2.135",
+                vbar
+            );
+            crate::cpu::fatal_halt();
+        }
         crate::registers::write_vbar_el1(vbar);
     }
     crate::barriers::dsb_sy();
@@ -531,7 +618,25 @@ mod tests {
         // update this test in lockstep with `lakefile.toml`.
         // `scripts/check_version_sync.sh` (Tier 0) provides the
         // canonical drift check; this test is the local pin.
-        assert_eq!(KERNEL_VERSION, "0.34.47");
+        assert_eq!(KERNEL_VERSION, "0.34.48");
+    }
+
+    /// PR #889 review round 21: the declared PE count this handoff enforces is
+    /// the Lean binding's.  Pinned here so a change to `rpi5MachineConfig`'s
+    /// `declaredCoreCount` (or to `rpi5PlatformBinding.coreCount`, which
+    /// `declaredCoreCountAgrees` holds equal to it) fails the Rust build too,
+    /// rather than silently letting the handoff enforce a stale number.
+    #[test]
+    fn lean_declared_core_count_matches_the_rpi5_binding() {
+        assert_eq!(
+            LEAN_DECLARED_CORE_COUNT,
+            (crate::smp::MAX_SECONDARY_CORES + 1) as u32,
+            "the handoff's declared PE count must be the topology the HAL brings up"
+        );
+        assert_eq!(
+            LEAN_DECLARED_CORE_COUNT, 4,
+            "RPi5Platform declares coreCount := 4"
+        );
     }
 
     #[test]

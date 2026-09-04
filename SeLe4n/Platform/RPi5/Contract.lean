@@ -101,6 +101,71 @@ def rpi5BootVSpaceRootEntry : SeLe4n.Platform.BootVSpaceRootEntry where
   root := SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot
   hMappings := SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot_mappings_invExt
 
+/-- **WS-RR RR5.1**: the entity index at which the RPi5 deployment's untrusted
+    domain begins — the one number `confinedLabelingContext` asks a deployment
+    for.
+
+    Everything the boot image creates lives below it and is therefore
+    `lowTrusted`: the config's `initialObjects` (the canonical configs keep
+    theirs below `idleThreadIdBase`, which is how they discharge
+    `idleSlotsFreshAt`), the boot VSpace root at `rpi5BootVSpaceRootObjId`
+    (`rpi5UpperDomainBase_clears_bootVSpaceRoot`) and the four per-core idle
+    threads (`rpi5UpperDomainBase_clears_idle_range`).  Every entity a running
+    system creates at or above it is `highUntrusted`, and the two domains cannot
+    reach each other in either direction (`confinedLabelingContext_confines`).
+
+    Numerically equal to `Kernel.harnessSeparationBoundary`, and deliberately
+    **not** defined as it: the harness boundary is a fixture parameter that may
+    move with the fixtures, while this one is the hardware deployment's choice
+    and moves only with the deployment. -/
+def rpi5UpperDomainBase : Nat := 0x10_0000
+
+/-- **WS-RR RR5.1**: the per-core idle threads sit below the RPi5 domain
+    boundary, so they carry the boot domain's label. -/
+theorem rpi5UpperDomainBase_clears_idle_range :
+    SeLe4n.Kernel.idleThreadIdBase + SeLe4n.Kernel.Concurrency.numCores ≤
+      rpi5UpperDomainBase := by
+  decide
+
+/-- **WS-RR RR5.1**: the boot VSpace root sits below the RPi5 domain boundary. -/
+theorem rpi5UpperDomainBase_clears_bootVSpaceRoot :
+    rpi5BootVSpaceRootObjId.toNat < rpi5UpperDomainBase := by
+  decide
+
+/-- PR #889 review round 5: the RPi5 deployment's lower-domain separation
+    witness — the boot-domain thread whose label the labeling separates from
+    the untrusted domain's, and which the boot image must therefore install as
+    a TCB (`Platform.Boot.declaredWitnessesInstalled`).
+
+    `2`, not `1`: `1` is `rpi5BootVSpaceRootObjId`, and a config carrying the
+    canonical root cannot install a thread at the root's own id
+    (`bootVSpaceRootObjIdDistinct` refuses it), so under the labeling family's
+    old fixed witness every hardware boot that carried its own boot VSpace root
+    was refused for an uninstalled witness.  This is the first slot the root
+    leaves free — below `idleThreadIdBase` and below the domain boundary
+    (`rpi5LowerWitnessIndex_admissible`, `rpi5LowerWitnessIndex_below_boundary`)
+    and distinct from the root (`rpi5LowerWitnessIndex_ne_bootVSpaceRoot`).
+    SM10.1's boot config installs the initial thread here; the binding's
+    obligation `witnessesOffBootVSpaceRoot` holds the choice apart from the root
+    by evaluation, so moving either one without the other fails to elaborate. -/
+def rpi5LowerWitnessIndex : Nat := 2
+
+/-- PR #889 review round 5: the RPi5 witness is admissible — neither the
+    reserved sentinel nor a per-core idle thread. -/
+theorem rpi5LowerWitnessIndex_admissible :
+    SeLe4n.Kernel.separationWitnessAdmissible ⟨rpi5LowerWitnessIndex⟩ = true := by
+  decide
+
+/-- PR #889 review round 5: the RPi5 witness lies in the boot domain. -/
+theorem rpi5LowerWitnessIndex_below_boundary :
+    rpi5LowerWitnessIndex < SeLe4n.Kernel.separationBoundary rpi5UpperDomainBase := by
+  decide
+
+/-- PR #889 review round 5: the RPi5 witness is not the boot VSpace root's id. -/
+theorem rpi5LowerWitnessIndex_ne_bootVSpaceRoot :
+    rpi5LowerWitnessIndex ≠ rpi5BootVSpaceRootObjId.toNat := by
+  decide
+
 /-- The Raspberry Pi 5 platform binding instance.
 
     **WS-RC R3 (DEEP-BOOT-01)**: `bootVSpaceRoot` is now populated with
@@ -124,8 +189,72 @@ instance rpi5PlatformBinding : SeLe4n.Platform.PlatformBinding RPi5Platform wher
   -- Aff0 = 1, 2, 3 (see `rust/sele4n-hal/src/smp.rs::SECONDARY_MPIDR_TABLE`).
   coreCount := 4
   coreCountPos := by decide
+  -- PR #889 review round 5: the model is exactly this wide
+  -- (`numCores_eq_rpi5_coreCount`), so the bound is an equality here.
+  coreCountLe := by decide
+  -- PR #889 review round 20: the machine the boot installs has exactly the
+  -- PEs this binding declares (`rpi5MachineConfig.declaredCoreCount = 4`).
+  declaredCoreCountAgrees := by decide
   bootCoreId := ⟨0, by decide⟩
   sharingDomain := .inner
+  -- WS-RR RR5.1: the production labeling — two mutually isolated domains
+  -- split at `rpi5UpperDomainBase`, witnessed below by `rpi5LowerWitnessIndex`.
+  -- The binding stores the `DeploymentLabeling` source (PR #889 review), so
+  -- admission and full `LabelingContextValid`-ity of what the boot installs
+  -- are theorems of the constructor.
+  deploymentLabeling :=
+    SeLe4n.Kernel.confinedDeploymentLabeling rpi5UpperDomainBase rpi5LowerWitnessIndex
+      rpi5LowerWitnessIndex_admissible rpi5LowerWitnessIndex_below_boundary
+  -- PR #889 review round 5: neither witness is the canonical boot root's id
+  -- (`rpi5BootVSpaceRootObjId`, `ObjId.ofNat 1`) — decided by evaluation.
+  witnessesOffBootVSpaceRoot := by decide
+
+/-- **WS-RR RR5.1**: what the hardware boot installs, pinned — the RPi5
+    binding's labeling *is* the confined production context at the RPi5
+    boundary.  `Kernel.confinedLabelingContext`'s docstring cites this theorem
+    for its "what a hardware boot installs" claim; if the binding ever carried
+    something else, this is the line that would fail. -/
+theorem rpi5_deploymentLabeling :
+    SeLe4n.Platform.PlatformBinding.labeling (platform := RPi5Platform) =
+      SeLe4n.Kernel.confinedLabelingContext rpi5UpperDomainBase rpi5LowerWitnessIndex
+        rpi5LowerWitnessIndex_admissible rpi5LowerWitnessIndex_below_boundary := by
+  rfl
+
+/-- PR #889 review round 5: the witnesses the RPi5 boot declares, pinned — the
+    lower witness at `rpi5LowerWitnessIndex` and the upper one at the domain
+    boundary (which lies past the idle range, so the lift is the identity).  A
+    hardware boot config installs a TCB at each, or the boot is refused
+    (`Platform.Boot.declaredWitnessesInstalled`). -/
+theorem rpi5_deploymentLabeling_separatedThreads :
+    (SeLe4n.Platform.PlatformBinding.labeling (platform := RPi5Platform)).separatedThreads =
+      some (⟨rpi5LowerWitnessIndex⟩, ⟨rpi5UpperDomainBase⟩) := by
+  decide
+
+/-- **WS-RR RR5.1**: every entity the boot image creates is in the boot
+    domain — an index below `idleThreadIdBase` (where the canonical configs keep
+    their objects) carries `lowTrusted` under the RPi5 labeling. -/
+theorem rpi5_deploymentLabeling_boot_entities_lowTrusted (tid : SeLe4n.ThreadId)
+    (h : tid.toNat < SeLe4n.Kernel.idleThreadIdBase) :
+    (SeLe4n.Platform.PlatformBinding.labeling (platform := RPi5Platform)).threadLabelOf tid =
+      SeLe4n.Kernel.SecurityLabel.lowTrusted := by
+  rw [rpi5_deploymentLabeling, SeLe4n.Kernel.confinedLabelingContext]
+  apply SeLe4n.Kernel.indexPartitionedLabelingContext_threadLabel_below
+  simp only [SeLe4n.Kernel.separationBoundary, rpi5UpperDomainBase,
+    SeLe4n.Kernel.idleThreadIdBase] at h ⊢
+  omega
+
+/-- **WS-RR RR5.1**: the per-core idle threads are in the boot domain too. -/
+theorem rpi5_deploymentLabeling_idle_lowTrusted (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (SeLe4n.Platform.PlatformBinding.labeling (platform := RPi5Platform)).threadLabelOf
+        (SeLe4n.Kernel.idleThreadId c) =
+      SeLe4n.Kernel.SecurityLabel.lowTrusted := by
+  rw [rpi5_deploymentLabeling, SeLe4n.Kernel.confinedLabelingContext]
+  apply SeLe4n.Kernel.indexPartitionedLabelingContext_threadLabel_below
+  have hc := c.isLt
+  simp only [SeLe4n.Kernel.separationBoundary, rpi5UpperDomainBase, SeLe4n.Kernel.idleThreadId,
+    SeLe4n.Kernel.idleThreadIdBase, SeLe4n.ThreadId.toNat, SeLe4n.ThreadId.ofNat,
+    SeLe4n.Kernel.Concurrency.numCores] at hc ⊢
+  omega
 
 /-- **WS-SM SM0.E / SM0.G**: structural pinning of the
     `Concurrency.numCores` literal to the RPi5 binding's
@@ -143,6 +272,14 @@ theorem numCores_eq_rpi5_coreCount :
     SeLe4n.Kernel.Concurrency.numCores =
       SeLe4n.Platform.PlatformBinding.coreCount (platform := RPi5Platform) := by
   rfl
+
+/-- PR #889 review round 3: the RPi5 binding declares every model core, so the
+    checked platform boot's declared-list idle install is the all-cores one and
+    every all-cores boot theorem is a theorem of the hardware boot. -/
+theorem rpi5_cores_eq_allCores :
+    SeLe4n.Platform.PlatformBinding.declaredCores (platform := RPi5Platform) =
+      SeLe4n.Kernel.Concurrency.allCores :=
+  SeLe4n.Platform.PlatformBinding.declaredCores_eq_allCores_of_full numCores_eq_rpi5_coreCount.symm
 
 /-- **WS-SM SM0.E / SM0.G**: parallel pinning for `bootCoreId.val`.
     Both the SM0.E literal (`bootCoreId := ⟨0, _⟩`) and the RPi5

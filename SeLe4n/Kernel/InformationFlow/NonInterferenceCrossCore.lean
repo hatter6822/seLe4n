@@ -3406,56 +3406,60 @@ theorem setThreadCpuAffinityWithMigration_confinedToCores
   unfold setThreadCpuAffinityWithMigration at hStep
   split at hStep
   · next tcb hTcb =>
+    -- PR #889 review round 20: the declared-core refusal is a new leading
+    -- branch, ahead of the running-on-a-forbidden-core guard below.
     split at hStep
     · exact absurd hStep (by simp)
     · split at hStep
-      · next stSet hSet =>
-        rw [Except.ok.injEq, Prod.mk.injEq] at hStep
-        obtain ⟨hs, -⟩ := hStep
-        subst hs
-        obtain ⟨hSched, hMach⟩ :=
-          setThreadCpuAffinity_scheduler_machine_eq st stSet targetTid affinity hSet
-        have hNew := setThreadCpuAffinity_determineTargetCore_eq st stSet targetTid affinity
-          hInv hSet
-        -- The mid-state after the (optional) replenishment migration.  Written
-        -- out rather than named: `set` cannot bind a `match` body here.
-        have hRepl : observableSlotsConfinedToCores stSet
+      · exact absurd hStep (by simp)
+      · split at hStep
+        · next stSet hSet =>
+          rw [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨hs, -⟩ := hStep
+          subst hs
+          obtain ⟨hSched, hMach⟩ :=
+            setThreadCpuAffinity_scheduler_machine_eq st stSet targetTid affinity hSet
+          have hNew := setThreadCpuAffinity_determineTargetCore_eq st stSet targetTid affinity
+            hInv hSet
+          -- The mid-state after the (optional) replenishment migration.  Written
+          -- out rather than named: `set` cannot bind a `match` body here.
+          have hRepl : observableSlotsConfinedToCores stSet
+              (match tcb.schedContextBinding.scId? with
+                | some scId => migrateSchedContextReplenishment stSet scId
+                    (determineTargetCore st targetTid) (determineTargetCore stSet targetTid)
+                | none => stSet) [] := by
+            cases tcb.schedContextBinding.scId? with
+            | none => exact ⟨fun _ _ => rfl, fun _ _ => rfl, fun _ _ => rfl,
+                             fun _ _ => rfl, fun _ _ => rfl, fun _ _ => rfl⟩
+            | some scId => exact migrateSchedContextReplenishment_confinedToCores _ _ _ _
+          have hRun := migrateRunQueueOnAffinityChange_confinedToCores
             (match tcb.schedContextBinding.scId? with
               | some scId => migrateSchedContextReplenishment stSet scId
                   (determineTargetCore st targetTid) (determineTargetCore stSet targetTid)
-              | none => stSet) [] := by
-          cases tcb.schedContextBinding.scId? with
-          | none => exact ⟨fun _ _ => rfl, fun _ _ => rfl, fun _ _ => rfl,
-                           fun _ _ => rfl, fun _ _ => rfl, fun _ _ => rfl⟩
-          | some scId => exact migrateSchedContextReplenishment_confinedToCores _ _ _ _
-        have hRun := migrateRunQueueOnAffinityChange_confinedToCores
-          (match tcb.schedContextBinding.scId? with
-            | some scId => migrateSchedContextReplenishment stSet scId
-                (determineTargetCore st targetTid) (determineTargetCore stSet targetTid)
-            | none => stSet) targetTid
-          (determineTargetCore st targetTid) (determineTargetCore stSet targetTid)
-        have key : ∀ c, c ∉ setThreadCpuAffinityWriteSet st targetTid affinity →
-            c ∉ [determineTargetCore st targetTid, determineTargetCore stSet targetTid] := by
-          intro c hc
-          simp only [setThreadCpuAffinityWriteSet, List.mem_cons, List.not_mem_nil,
-            or_false, not_or] at hc ⊢
-          rw [hNew]
-          exact hc
-        refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
-        all_goals intro c hc
-        all_goals have hcPair := key c hc
-        · exact ((hRun.runQueue c hcPair).trans (hRepl.runQueue c (by simp))).trans
-            (by rw [hSched])
-        · exact ((hRun.current c hcPair).trans (hRepl.current c (by simp))).trans
-            (by rw [hSched])
-        · exact ((hRun.activeDomain c hcPair).trans (hRepl.activeDomain c (by simp))).trans
-            (by rw [hSched])
-        · exact ((hRun.domainTimeRemaining c hcPair).trans
-            (hRepl.domainTimeRemaining c (by simp))).trans (by rw [hSched])
-        · exact ((hRun.domainScheduleIndex c hcPair).trans
-            (hRepl.domainScheduleIndex c (by simp))).trans (by rw [hSched])
-        · exact ((hRun.regs c hcPair).trans (hRepl.regs c (by simp))).trans (by rw [hMach])
-      · exact absurd hStep (by simp)
+              | none => stSet) targetTid
+            (determineTargetCore st targetTid) (determineTargetCore stSet targetTid)
+          have key : ∀ c, c ∉ setThreadCpuAffinityWriteSet st targetTid affinity →
+              c ∉ [determineTargetCore st targetTid, determineTargetCore stSet targetTid] := by
+            intro c hc
+            simp only [setThreadCpuAffinityWriteSet, List.mem_cons, List.not_mem_nil,
+              or_false, not_or] at hc ⊢
+            rw [hNew]
+            exact hc
+          refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+          all_goals intro c hc
+          all_goals have hcPair := key c hc
+          · exact ((hRun.runQueue c hcPair).trans (hRepl.runQueue c (by simp))).trans
+              (by rw [hSched])
+          · exact ((hRun.current c hcPair).trans (hRepl.current c (by simp))).trans
+              (by rw [hSched])
+          · exact ((hRun.activeDomain c hcPair).trans (hRepl.activeDomain c (by simp))).trans
+              (by rw [hSched])
+          · exact ((hRun.domainTimeRemaining c hcPair).trans
+              (hRepl.domainTimeRemaining c (by simp))).trans (by rw [hSched])
+          · exact ((hRun.domainScheduleIndex c hcPair).trans
+              (hRepl.domainScheduleIndex c (by simp))).trans (by rw [hSched])
+          · exact ((hRun.regs c hcPair).trans (hRepl.regs c (by simp))).trans (by rw [hMach])
+        · exact absurd hStep (by simp)
   · exact absurd hStep (by simp)
 
 /-- SM8.B.2 (**the live `.tcbSetAffinity` non-interference**): a migration is

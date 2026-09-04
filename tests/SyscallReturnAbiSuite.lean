@@ -150,15 +150,20 @@ private def ntfnCap : Capability :=
   { target := .object ntfnId,
     rights := AccessRightSet.ofList [.read, .write] }
 
-/-- Every entity labelled `kernelTrusted` — distinguishable from
-`publicLabel` at all three sentinel probes, so `isInsecureDefaultContext`
-does not fire, and uniform, so every flow gate on the dispatch path is
-reflexively satisfied. -/
+/-- Every entity the fixture uses is labelled `kernelTrusted`, so every flow
+gate on the dispatch path is reflexively satisfied and the ABI shape is what the
+scenario isolates.
+
+**WS-RR RR5.4**: this was a *constant* function — one label for the whole id
+space — chosen because it differed from `publicLabel` at the three sentinel ids
+the old guard probed.  A one-label labelling separates nothing, and the guard now
+refuses it.  `uniformFixtureLabelingContext` gives the fixture the uniformity it
+wants over every id it allocates, with the declared (and verified) second domain
+living above `harnessSeparationBoundary`, so the labelling meets the same
+obligation a deployment does. -/
 private def trustedLabeling : LabelingContext :=
-  { objectLabelOf   := fun _ => SecurityLabel.kernelTrusted
-    threadLabelOf   := fun _ => SecurityLabel.kernelTrusted
-    endpointLabelOf := fun _ => SecurityLabel.kernelTrusted
-    serviceLabelOf  := fun _ => SecurityLabel.kernelTrusted }
+  SeLe4n.Kernel.uniformFixtureLabelingContext
+    SecurityLabel.kernelTrusted SecurityLabel.publicLabel (by decide)
 
 private def witnessState : SystemState :=
   BootstrapBuilder.empty

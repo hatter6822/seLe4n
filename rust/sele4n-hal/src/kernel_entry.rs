@@ -52,9 +52,28 @@
 //! access to `kernelStateRef`; it does not make the Lean runtime exist
 //! on a PE.  Every hardware seam above therefore also consults the
 //! per-core readiness gate ([`crate::lean_ready`]) before its Lean
-//! call — a core SM10.1's initialization has not marked ready degrades
-//! to its Rust-only half instead of entering a runtime it never
-//! initialized.
+//! call — a core SM10.1's initialization has not marked ready refuses
+//! instead of entering a runtime it never initialized.
+//!
+//! **WS-RR RR5.6/RR5.7**: that sentence was false when it was written.
+//! Three of the five seams consulted the gate; the SVC dispatch seam and
+//! the cross-core suspend seam — the two that reach Lean through the
+//! `svc_dispatch` / `ffi` boundary rather than an ISR — did not, and the
+//! suspend seam is invisible to a `lean_` sweep besides.  Both now do,
+//! and the claim is checked rather than asserted:
+//! `build.rs::scan_lean_upcalls_readiness_gated` derives the upcall set
+//! from the Lean tree's `@[export]`s and fails the build unless a
+//! readiness guard on the *executing* PE dominates each call.
+//!
+//! What a not-ready core does differs by seam, because what it can
+//! safely do differs.  The three ISR seams degrade to their Rust-only
+//! halves (record-and-re-arm, EOI-and-drop, skip).  The suspend seam
+//! returns `KernelError::IllegalState`: it is a C-callable API with an
+//! error channel and no trapped thread waiting on it.  The SVC seam
+//! **halts the core** — an `SVC` advanced the PC, so a frame *could* be
+//! returned, but the timer seam consults the same mask, so a thread on a
+//! not-ready core would never be preempted again
+//! ([`crate::svc_dispatch`]'s `halt_syscall_before_lean_ready`).
 //!
 //! `lean_kernel_main` (the primary's boot seam, owed by the SM10.1
 //! image target) is the one committing path outside the bracket today.
@@ -64,9 +83,16 @@
 //! take this bracket around it (recorded in
 //! `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`).
 //!
-//! `syscall_dispatch_inner` and `suspend_thread_inner` are the legacy
-//! boot-pinned seams the cross-core entries replaced; they are not
-//! reachable from the trap path and are not bracketed.
+//! `syscall_dispatch_inner` and `suspend_thread_inner` were the legacy
+//! boot-pinned seams the cross-core entries replaced.  **Both exports
+//! are now retired** — the second by WS-RR RR5.17.  Until then this
+//! module said `suspend_thread_inner` "is not reachable from the trap
+//! path and is not bracketed", which was a statement about the HAL as it
+//! stood rather than about the artefact: `@[export]` put a
+//! kernel-state-committing C symbol in the linked image whose only
+//! protection was that no Rust source declared it yet.  The Lean
+//! definition survives as a single-core reference path for the dispatch
+//! suite; no symbol does, so a future caller cannot reach it at all.
 //!
 //! # Why the spin self-services
 //!
@@ -144,18 +170,45 @@ pub const KERNEL_ENTRY_ACQUIRE_FUEL: u64 = 1_000_000;
 
 /// **WS-SM SM5.I**: the lock-order tripwire.
 ///
-/// Acquiring the kernel-entry lock while holding
+/// Acquiring the kernel-entry lock while **this core** holds
 /// [`crate::shootdown::SHOOTDOWN_ROUND_LOCK`] is the one edge that
 /// would close a cycle. No caller does it today; this makes a future
 /// one fail loudly at the point of the mistake rather than as a hang.
+///
+/// **PR #889 review**: the question is ownership, not held-ness.  The
+/// round lock is held by *some* core for the whole of every shootdown in
+/// flight — that is its purpose — and during that window every other
+/// core's timer tick, `SVC` or reschedule SGI reaches this bracket and
+/// must **wait** here, self-servicing its own acknowledgment so the
+/// initiator can finish.  A tripwire on the global held flag halted
+/// exactly those innocent cores; it now asks whether the executing core
+/// itself is the holder (`round_lock_held_by`), which the lock records.
+///
+/// **WS-RR RR5.18**: this was a `debug_assert!`, which a `--release`
+/// build compiles out — and the image that ships is a `--release` build
+/// (`scripts/test_qemu.sh` builds `kernel8.img` that way).  So the
+/// tripwire existed only in the configuration where a deadlock is
+/// cheapest to debug and was absent from the one where it is a hung
+/// board, which inverts the point of having it.  It is now an
+/// unconditional branch: one relaxed atomic load on a path that already
+/// takes a ticket, against a fail-closed halt on the edge that would
+/// otherwise hang two cores until the shootdown deadline fires.
+///
+/// Halting rather than panicking is deliberate: a cycle here is a
+/// kernel-internal ordering defect, not a recoverable condition, and
+/// [`crate::cpu::fatal_halt`] is the barrier every other such defect in
+/// this crate takes.
 #[inline]
-pub fn assert_not_holding_round_lock() {
-    debug_assert!(
-        !crate::shootdown::round_lock_is_held(),
-        "WS-SM SM5.I: kernel-entry lock must be acquired OUTSIDE \
-         SHOOTDOWN_ROUND_LOCK; acquiring it while holding the round \
-         lock closes a lock-order cycle"
-    );
+pub fn assert_not_holding_round_lock(core_id: usize) {
+    if crate::shootdown::round_lock_held_by(core_id) {
+        crate::kprintln!(
+            "[kernel-entry] FATAL: WS-SM SM5.I lock order violated on core {} — the \
+             kernel-entry lock must be acquired OUTSIDE SHOOTDOWN_ROUND_LOCK; \
+             acquiring it while holding the round lock closes a lock-order cycle",
+            core_id
+        );
+        crate::cpu::fatal_halt();
+    }
 }
 
 /// **WS-SM SM5.I** (testable inner form): acquire `lock`, self-servicing
@@ -208,7 +261,7 @@ pub fn release_kernel_entry_in(lock: &TicketLock) {
 /// stuck inside a transition, so stopping only the core that noticed
 /// would leave the others committing against a state nobody owns.
 pub fn acquire_kernel_entry(core_id: usize) -> u64 {
-    assert_not_holding_round_lock();
+    assert_not_holding_round_lock(core_id);
     if !acquire_kernel_entry_in(
         &KERNEL_ENTRY_LOCK,
         core_id,
@@ -255,6 +308,41 @@ mod tests {
     extern crate std;
 
     use super::*;
+
+    /// **PR #889 review**: the lock-order tripwire asks who *owns* the round
+    /// lock.  Another core holding it is the ordinary state of a shootdown
+    /// in flight, and this core's kernel entry must pass the tripwire and
+    /// wait; only the executing core holding it is the lock-order cycle the
+    /// tripwire exists to stop.  Both halves on the global lock, serialised
+    /// against the shootdown module's own global-lock test through its mutex.
+    #[test]
+    fn tripwire_trips_on_own_round_lock_hold_only() {
+        let _guard = crate::shootdown::GLOBAL_ROUND_LOCK_TEST_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        assert!(
+            crate::shootdown::round_lock_try_acquire_in(&crate::shootdown::SHOOTDOWN_ROUND_LOCK, 3),
+            "the global round lock must be free at the start of this test"
+        );
+        // Another core (3) holds it: core 0's entry passes the tripwire.
+        let other = std::panic::catch_unwind(|| assert_not_holding_round_lock(0));
+        assert!(
+            other.is_ok(),
+            "a round lock held by ANOTHER core must not trip this core's lock-order \
+             tripwire — that halted every innocent core during a shootdown"
+        );
+        // The holder itself (3) taking the kernel-entry lock is the cycle.
+        let own = std::panic::catch_unwind(|| assert_not_holding_round_lock(3));
+        assert!(
+            own.is_err(),
+            "the holder re-entering must halt (a panic on the host lane)"
+        );
+        crate::shootdown::round_lock_release();
+        assert!(
+            std::panic::catch_unwind(|| assert_not_holding_round_lock(3)).is_ok(),
+            "released, nobody trips"
+        );
+    }
 
     /// An uncontended acquire returns immediately and does not need to
     /// service anything.

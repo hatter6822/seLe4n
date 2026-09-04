@@ -764,16 +764,187 @@ def strip_hash(text: str) -> str:
     return "".join(out)
 
 
-# A `$` expansion inside double quotes is live code.  `$(...)` nests in
-# general; the non-greedy form covers the flat case and anything longer
-# degrades to keeping less, never to blanking a name outright.
-# Backticks are the legacy spelling of `$(...)` and are executable in
-# exactly the same places, including inside double quotes.  Leaving
-# them out meant `x="`phase5_helper`"` was blanked as message text
-# while the bare `x=`phase5_helper`` one line below survived -- the
-# same command, visible or not depending on surrounding quotes.
+# A `$` expansion inside double quotes is live code.  Backticks are the
+# legacy spelling of `$(...)` and are executable in exactly the same
+# places, including inside double quotes.  Leaving them out meant
+# `x="`phase5_helper`"` was blanked as message text while the bare
+# `x=`phase5_helper`` one line below survived -- the same command,
+# visible or not depending on surrounding quotes.
+#
+# `$(...)` is deliberately NOT in this pattern.  It used to be, as the
+# flat `\$\([^)]*\)`, on the reasoning that a longer substitution
+# "degrades to keeping less, never to blanking a name outright".  That
+# reasoning is false, and the tree proved it: `$(sed -n '/^x/,/^\(a\|b\)/p'
+# f | grep -c '^\s*| ')` has its `$(` closed by the ESCAPED paren inside
+# the sed regex, so the scan resumes mid-command with an ODD number of
+# single quotes left on the line -- and `strip_shell`'s single-quote
+# branch, finding no partner, keeps the rest of the FILE verbatim.
+# Comment blanking stopped there: in `scripts/test_tier3_invariant_surface.sh`
+# every `#` comment below line 4982 survived into the "code view", which
+# is a gate reading prose as code (a false positive here, and an AK7
+# count of tokens that are not in the code at all).  Consuming a prefix
+# of a quoted construct does not keep less; it unbalances what follows.
+#
+# `command_substitution_end` scans it properly instead: quote-aware, so
+# a paren inside a quoted regex is text, and nesting-aware, so
+# `$(a $(b) c)` closes where it actually closes.
+#
+# The legacy backtick spelling is scanned rather than matched too (PR #889
+# review round 14): `` `[^`]*` `` copied the span verbatim, so a `# note`
+# inside `` X="`echo ok  # note` "`` survived as code -- the same
+# prose-read-as-code the `$( … )` scan was written to stop, one spelling
+# over.  Both substitution forms now route through `strip_shell`
+# recursively.
 SHELL_EXPANSION = re.compile(
-    r"\$\{[^}]*\}|\$\([^)]*\)|\$[A-Za-z_][A-Za-z0-9_]*|`[^`]*`")
+    r"\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*")
+
+
+def backtick_substitution_end(text: str, at: int) -> int:
+    """Index just past the backtick closing the substitution opened at `at`,
+    or `-1`.
+
+    Legacy `` ` … ` `` substitutions do not nest, so the end is the next
+    unescaped backtick; a backslash escapes the character after it, the
+    delimiter included.  Returns `-1` when the construct does not close,
+    which callers treat as "not a substitution" rather than consuming a
+    prefix -- consuming one unbalances everything after it, which is how the
+    Tier-3 script lost every comment below line 4982.
+    """
+    i = at + 1
+    while i < len(text):
+        if text[i] == "\\":
+            i += 2
+            continue
+        if text[i] == "`":
+            return i + 1
+        i += 1
+    return -1
+
+
+def backtick_substitution_view(text: str, at: int, end: int) -> str:
+    """The code view of the `` ` … ` `` spanning `[at, end)`: its body lexed
+    by `strip_shell` recursively, the delimiters kept, length preserved."""
+    return "`" + strip_shell(text[at + 1:end - 1]) + "`"
+
+
+def command_substitution_end(text: str, at: int) -> int:
+    """Index just past the `)` closing the `$(` at `at`, or `-1`.
+
+    Quotes inside a substitution suppress paren structure -- `'\)'` and
+    `"a)b"` are text -- and substitutions nest, so both are tracked.
+    Returns `-1` when the construct does not close, which callers treat
+    as "not an expansion" rather than as a span reaching the end of the
+    file: an unterminated `$(` is a syntax error in the script, and
+    guessing a span for it is what unbalanced the scan before.
+    """
+    if not text.startswith("$(", at):
+        return -1
+    j, depth, n = at + 2, 1, len(text)
+    while j < n:
+        c = text[j]
+        if c == "\\":
+            j += 2
+            continue
+        # PR #889 review round 2: a `#` comment inside the substitution runs
+        # to the end of its line, and a `)` inside it is text -- so the scan
+        # skips the comment rather than closing on it.  An unterminated `$(`
+        # whose last line is a comment does not close either.
+        if c == "#" and (j == at + 2 or text[j - 1] in " \t\n;&|("):
+            k = text.find("\n", j)
+            if k < 0:
+                return -1
+            j = k
+            continue
+        if c == "'":
+            k = text.find("'", j + 1)
+            if k < 0:
+                return -1
+            j = k + 1
+            continue
+        if c == '"':
+            k = j + 1
+            while k < n and text[k] != '"':
+                k += 2 if text[k] == "\\" else 1
+            if k >= n:
+                return -1
+            j = k + 1
+            continue
+        # PR #889 review round 20: a parameter expansion is a brace-delimited
+        # region in which `)` is *pattern text*, not structure.  Bash accepts
+        # `x="$(echo ${y%)} ok)"` — verified — and closing on the `)` inside
+        # `${y%)}` ended the substitution early, so `strip_shell` blanked live
+        # code after it and every identifier there stopped being scanned.
+        if c == "$" and j + 1 < n and text[j + 1] == "{":
+            k = parameter_expansion_end(text, j)
+            if k < 0:
+                return -1
+            j = k
+            continue
+        if c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                return j + 1
+        j += 1
+    return -1
+
+
+def parameter_expansion_end(text: str, at: int) -> int:
+    """Index just past the `}` closing the `${` at `at`, or `-1`.
+
+    Expansions nest (`${a:-${b}}`) and their quoted and escaped spans hide
+    braces, so those are tracked exactly as `command_substitution_end` tracks
+    them; a `$( … )` inside an expansion is handed back to that function, so
+    the two are mutually recursive in the same way the shell's grammar is.
+    Unterminated returns `-1`, which the caller treats as "not an expansion".
+    """
+    if not text.startswith("${", at):
+        return -1
+    j, depth, n = at + 2, 1, len(text)
+    while j < n:
+        c = text[j]
+        if c == "\\":
+            j += 2
+            continue
+        if c == "'":
+            k = text.find("'", j + 1)
+            if k < 0:
+                return -1
+            j = k + 1
+            continue
+        if c == '"':
+            k = j + 1
+            while k < n and text[k] != '"':
+                k += 2 if text[k] == "\\" else 1
+            if k >= n:
+                return -1
+            j = k + 1
+            continue
+        if c == "$" and j + 1 < n and text[j + 1] == "(":
+            k = command_substitution_end(text, j)
+            if k < 0:
+                return -1
+            j = k
+            continue
+        if c == "$" and j + 1 < n and text[j + 1] == "{":
+            k = parameter_expansion_end(text, j)
+            if k < 0:
+                return -1
+            j = k
+            continue
+        # PR #889 review round 21: only `${` opens an expansion.  A bare `{`
+        # inside a removal pattern -- `${y%{}`, which bash accepts -- is
+        # literal text, and counting it left `depth` at 1 forever, so the
+        # scan ran off the end, `command_substitution_end` returned -1, and
+        # `strip_shell` blanked the rest of the line including any
+        # identifier there.  The `${` case above is the only increment.
+        if c == "}":
+            depth -= 1
+            if depth == 0:
+                return j + 1
+        j += 1
+    return -1
 
 
 # A double-quoted span handed to an interpreter is a COMMAND, not a
@@ -812,7 +983,37 @@ def keep_expansions(span: str) -> str:
     out = [c if c == "\n" else " " for c in span]
     for m in SHELL_EXPANSION.finditer(span):
         out[m.start():m.end()] = list(span[m.start():m.end()])
+    # `$(...)` is scanned rather than matched, for the reason
+    # `SHELL_EXPANSION` records: a flat pattern closes on the first `)`,
+    # including one that is text inside a quoted regex.
+    at = 0
+    while (at := span.find("$(", at)) >= 0:
+        end = command_substitution_end(span, at)
+        if end < 0:
+            break
+        out[at:end] = list(command_substitution_view(span, at, end))
+        at = end
+    # ...and the legacy backtick spelling, which is live inside double quotes
+    # exactly as `$( … )` is (PR #889 review round 14).
+    at = 0
+    while (at := span.find("`", at)) >= 0:
+        end = backtick_substitution_end(span, at)
+        if end < 0:
+            break
+        out[at:end] = list(backtick_substitution_view(span, at, end))
+        at = end
     return "".join(out)
+
+
+def command_substitution_view(text: str, at: int, end: int) -> str:
+    """The code view of the `$( ... )` spanning `[at, end)`: its body lexed
+    by `strip_shell` recursively, so the commands inside survive while the
+    comments inside are blanked, and nested substitutions get the same
+    treatment (PR #889 review round 2).  Copying the span verbatim kept a
+    `# note` inside `X=$(echo ok # note\n)` as code -- a gate reading prose
+    as code again, one level down.  Byte-aligned: the delimiters are kept
+    and `strip_shell` preserves length."""
+    return "$(" + strip_shell(text[at + 2:end - 1]) + ")"
 
 
 def strip_shell(text: str) -> str:
@@ -849,7 +1050,11 @@ def strip_shell(text: str) -> str:
     """
     out, i, n = [], 0, len(text)
     while i < n:
-        if (m := SHELL_EXPANSION.match(text, i)):
+        if text.startswith("$(", i) and (end := command_substitution_end(text, i)) > 0:
+            out.append(command_substitution_view(text, i, end)); i = end
+        elif text[i] == "`" and (end := backtick_substitution_end(text, i)) > 0:
+            out.append(backtick_substitution_view(text, i, end)); i = end
+        elif (m := SHELL_EXPANSION.match(text, i)):
             out.append(m.group(0)); i = m.end()
         elif text[i] == "#" and (i == 0 or text[i - 1] in " \t\n;&|("):
             j = text.find("\n", i)

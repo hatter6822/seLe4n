@@ -291,6 +291,64 @@ pub extern "C" fn secondary_entry() {
 ///      wake immediately.
 ///
 /// Returns the number of secondaries successfully brought up.
+/// **PR #889 review round 23**: how many of the first `expected` PEs have
+/// published [`CORE_IRQ_READY`], polled until they all have or `timeout_ticks`
+/// have elapsed on `now`.
+///
+/// `bring_up_secondaries` returns the number of PSCI `CPU_ON` calls that were
+/// accepted, which is a *proxy* for "this PE will service kernel work": it is
+/// incremented before the secondary has executed any of its own init, so a PE
+/// that halts in MMU, GIC or timer setup — or an `AlreadyOn` PE that never
+/// reaches [`secondary_entry`] — still counts.  `CORE_IRQ_READY[c]` is the
+/// fact: core `c` sets it *itself* after `enable_irq`, and the shootdown
+/// protocol already treats it as the IRQ-serviceable set.
+///
+/// **Why a counted spin rather than `wfe` (PR #889 review round 24).**  The
+/// first cut of this paced the wait with [`crate::cpu::wfe_bounded`], whose
+/// name is not its contract: its own docstring says `max_ticks` is
+/// *informational* and "does not bound the actual `wfe`", and its body opens
+/// `let _ = max_ticks;`.  A bare `wfe` returns on an event, and a secondary
+/// that dies in init sends none — so the first iteration could sleep forever,
+/// `waited` would never advance, and the caller's topology refusal would be
+/// unreachable: a wait that cannot time out cannot fail closed.
+/// [`crate::shootdown::wait_all_acked_bounded_in`] had reached the same
+/// conclusion and written it down; this is that pattern, for the same reason.
+/// The clock is injected so the bound is testable on the host, exactly as the
+/// shootdown wait does it.
+pub fn irq_ready_core_count_within_in<C: FnMut() -> u64>(
+    expected: u32,
+    timeout_ticks: u64,
+    mut now: C,
+) -> u32 {
+    let expected = (expected as usize).min(CORE_IRQ_READY.len());
+    let ready_now = |expected: usize| -> u32 {
+        CORE_IRQ_READY[..expected]
+            .iter()
+            .filter(|flag| flag.load(Ordering::Acquire))
+            .count() as u32
+    };
+    let start = now();
+    loop {
+        let ready = ready_now(expected);
+        if ready as usize == expected {
+            return ready;
+        }
+        if now().saturating_sub(start) >= timeout_ticks {
+            // One final read: a straggler may have published between the last
+            // poll and the deadline read, and reporting it short would refuse
+            // a topology that is in fact complete.
+            return ready_now(expected);
+        }
+        core::hint::spin_loop();
+    }
+}
+
+/// **PR #889 review round 23**: the production form, clocked by the generic
+/// timer (`CNTPCT_EL0`) — the same clock the shootdown's bounded wait uses.
+pub fn irq_ready_core_count_within(expected: u32, timeout_ticks: u64) -> u32 {
+    irq_ready_core_count_within_in(expected, timeout_ticks, crate::timer::read_counter)
+}
+
 pub fn bring_up_secondaries_inner(
     enabled: &AtomicBool,
     core_ready: &[AtomicBool],
@@ -824,6 +882,80 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
 
 #[cfg(test)]
 mod tests {
+    // ── PR #889 review round 24: the readiness wait is actually bounded ──
+    //
+    // The first cut paced this with `cpu::wfe_bounded`, whose `max_ticks` is
+    // informational and whose body opens `let _ = max_ticks;` — so a secondary
+    // that dies in init sends no event, the first `wfe` sleeps forever, and the
+    // caller's topology refusal is unreachable.  These pin that the wait now
+    // terminates on a clock the caller controls.
+
+    /// A clock that advances one tick per read, so any finite timeout expires.
+    fn ticking_clock() -> impl FnMut() -> u64 {
+        let mut t = 0u64;
+        move || {
+            t += 1;
+            t
+        }
+    }
+
+    #[test]
+    fn irq_ready_wait_returns_on_timeout_when_a_core_never_publishes() {
+        // Ask for more cores than can ever be ready in this process: the boot
+        // core is `true` by construction, the rest are only set by their own
+        // `secondary_entry`, which no host test runs.
+        let ready = super::irq_ready_core_count_within_in(
+            super::CORE_IRQ_READY.len() as u32,
+            8,
+            ticking_clock(),
+        );
+        assert!(
+            (ready as usize) < super::CORE_IRQ_READY.len(),
+            "the wait must return the honest short count on timeout, not hang \
+             or report success"
+        );
+    }
+
+    #[test]
+    fn irq_ready_wait_returns_immediately_when_every_expected_core_is_ready() {
+        // The boot core alone: `CORE_IRQ_READY[0]` is `true` from primary boot,
+        // so this must not consult the clock at all beyond the initial read.
+        let mut reads = 0u64;
+        let ready = super::irq_ready_core_count_within_in(1, u64::MAX, || {
+            reads += 1;
+            reads
+        });
+        assert_eq!(ready, 1, "the boot core is IRQ-ready from primary boot");
+        assert!(
+            reads <= 1,
+            "a satisfied wait must not spin: the common case costs one pass"
+        );
+    }
+
+    #[test]
+    fn irq_ready_wait_clamps_expected_to_the_flag_array() {
+        // A caller asking for more PEs than the model has must not index out of
+        // bounds; the count returned is over the flags that exist.
+        let ready = super::irq_ready_core_count_within_in(
+            super::CORE_IRQ_READY.len() as u32 + 8,
+            4,
+            ticking_clock(),
+        );
+        assert!((ready as usize) <= super::CORE_IRQ_READY.len());
+    }
+
+    #[test]
+    fn irq_ready_wait_with_a_zero_timeout_still_terminates() {
+        // The degenerate budget: one poll, then the final read.  A wait that
+        // needed a positive budget to terminate would hang here.
+        let ready = super::irq_ready_core_count_within_in(
+            super::CORE_IRQ_READY.len() as u32,
+            0,
+            ticking_clock(),
+        );
+        assert!((ready as usize) < super::CORE_IRQ_READY.len());
+    }
+
     use super::*;
 
     // AN9-J test discipline: the inner-state-injection refactor

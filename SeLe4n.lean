@@ -40,6 +40,35 @@ import SeLe4n.Platform.RPi5.Contract
 -- `Scheduler.PriorityInheritance.PerCore`) into the production library so the
 -- `@[export]` symbol is emitted into the kernel image.
 import SeLe4n.Kernel.SyscallDispatchEntry
+-- WS-RR RR5.15: the other three state-committing kernel entries, promoted into
+-- the production library for exactly the reason `SyscallDispatchEntry` was.
+-- `kernel_entry.rs` tabulates five Lean entries that commit kernel state and
+-- declares each as a hard `extern "C"` symbol; only one was production-reachable,
+-- so `lake build SeLe4n:static` emitted a single `T lean_*` entry symbol and a
+-- linked image would have failed to resolve the other three — the three whose
+-- Rust seams the SM10.1 image needs on every secondary core.  Their modules were
+-- staged-only, reachable from `Platform.Staged` and nothing else.
+--
+-- The `@[export]` symbol is emitted iff the defining module is in this library's
+-- import closure, so promotion is the whole fix; `scripts/check_kernel_entry_exports.sh`
+-- (RR5.16) verifies each symbol against the built archive rather than against
+-- this import list, so a future regression is caught by object code.
+--
+-- WS-SM SM5.I: the per-core timer-tick entry `perCoreTimerTickEntry`
+-- (`@[export lean_per_core_timer_tick]`) — the driver `timer::per_core_timer_tick_isr`
+-- resolves against, committing `perCoreTimerTickStep` through
+-- `modifyGetKernelState` and firing the recovered cross-core `.reschedule` SGIs.
+import SeLe4n.Kernel.PerCoreTimerEntry
+-- WS-SM SM5.C.5: the per-core reschedule entry `perCoreRescheduleEntry`
+-- (`@[export lean_per_core_reschedule]`) — the receiver seam of the cross-core
+-- wake protocol, resolved by `trap.rs::reschedule_sgi_handler` (SGI INTID 0).
+import SeLe4n.Kernel.PerCoreRescheduleEntry
+-- WS-SM SM1.C.6 / SM5.C.5: the secondary-core bring-up entry
+-- `secondaryKernelMain` (`@[export lean_secondary_kernel_main]`), called by
+-- `smp::rust_secondary_main` inside the kernel-entry bracket before `enable_irq`.
+-- Definitionally the core's first reschedule
+-- (`secondaryKernelMain_eq_perCoreRescheduleEntry`).
+import SeLe4n.Kernel.SecondaryEntry
 -- WS-SM SM6.D: the per-core IPC invariant bundle (`ipcInvariantFull_perCore`,
 -- the four named per-core conjuncts, exact-decomposition bridges) and its
 -- per-operation preservation layer (send/receive/call/reply/replyRecv/

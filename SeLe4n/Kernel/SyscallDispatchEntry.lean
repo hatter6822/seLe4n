@@ -719,8 +719,17 @@ chain members' effective run-queue buckets, and each such member's home
 core must re-run its scheduler (PR #831 review: the pre-fix entry fired
 only the surfaced victim SGI, leaving the re-bucketed cores unpoked until
 their next timer tick).  Sentinel `tid`s are rejected at the boundary
-Sentinel `tid`s are rejected at the boundary
-exactly as `suspendThreadInner`.
+exactly as `suspendThreadInner`, and (PR #889 review round 8) so are the
+kernel-reserved **idle thread ids**: the capability chokepoint refuses a
+capability naming an idle object (`syscallResolveCap_ok_not_reserved`), but
+this seam takes a raw id and no capability, so without its own check an
+in-kernel caller could hand it `idleThreadId c` and remove core `c`'s only
+guaranteed runnable thread — `suspendThreadOnCore` would dequeue the idle
+TCB like any other.  The refusal is `.invalidArgument`, the sentinel's
+discriminant: the id is outside the set this seam serves.  The whole step
+is the pure `suspendThreadCrossCoreStep`, and
+`suspendThreadCrossCoreStep_idle_refused` proves the refusal commits
+nothing.
 
 **Authority obligation (audit note).**  This export performs NO capability
 check — it is the *mechanism* seam below the dispatch layer.  Its only
@@ -735,16 +744,20 @@ one is a privilege-escalation bug, not a supported use.
 **Single-core inertness (trace safety).**  On an all-boot deployment every
 diff-derived SGI list is empty (`computeCrossCoreSgis_nil_single_core`), so
 the entry commits the same post-state with no IPI. -/
-@[export suspend_thread_cross_core]
-def suspendThreadCrossCoreEntry (tid : UInt64) : BaseIO UInt32 := do
-  let execCore ← Concurrency.currentCoreId
-  let result ← Platform.FFI.modifyGetKernelState (fun st =>
+def suspendThreadCrossCoreStep (tid : UInt64) (execCore : CoreId) (st : SystemState) :
+    (UInt32 × List (CoreId × SgiKind)) × SystemState :=
     let threadId := SeLe4n.ThreadId.ofNat tid.toNat
     match threadId.toValid? with
     | none =>
         ((Platform.FFI.KernelError.toUInt32 .invalidArgument,
           ([] : List (CoreId × SgiKind))), st)
     | some vtid =>
+      -- PR #889 review round 8: a reserved idle thread id is refused before
+      -- the transition runs — see the entry's docstring.
+      if SeLe4n.Kernel.isIdleThreadId vtid.val then
+        ((Platform.FFI.KernelError.toUInt32 .invalidArgument,
+          ([] : List (CoreId × SgiKind))), st)
+      else
         -- **WS-SM SM3.C.9**: run the transition inside its declared
         -- per-object lock set.  `suspend_thread_cross_core` is the first
         -- live export to do this, which is what makes SM3's 2PL and
@@ -790,7 +803,39 @@ def suspendThreadCrossCoreEntry (tid : UInt64) : BaseIO UInt32 := do
             (r, st')
         | none =>
             let (st', r) := action st
-            (r, st'))
+            (r, st')
+
+/-- PR #889 review round 8: the raw suspend seam **refuses a reserved idle
+    thread id and commits nothing** — the status is the sentinel's
+    `.invalidArgument`, no SGI is derived, and the state is returned
+    untouched.  The capability chokepoint keeps user authority off the idle
+    objects; this is the same guarantee for the one live seam that takes a
+    raw id. -/
+theorem suspendThreadCrossCoreStep_idle_refused (tid : UInt64) (execCore : CoreId)
+    (st : SystemState)
+    (hIdle : SeLe4n.Kernel.isIdleThreadId (SeLe4n.ThreadId.ofNat tid.toNat) = true) :
+    suspendThreadCrossCoreStep tid execCore st =
+      ((Platform.FFI.KernelError.toUInt32 .invalidArgument,
+        ([] : List (CoreId × SgiKind))), st) := by
+  unfold suspendThreadCrossCoreStep
+  dsimp only
+  split
+  · rfl
+  · rename_i vtid hSome
+    rw [SeLe4n.ThreadId.toValid?_some_val_eq _ _ hSome, hIdle]
+    rfl
+
+/-- PR #889 review round 8: the sentinel is refused the same way. -/
+theorem suspendThreadCrossCoreStep_sentinel_refused (execCore : CoreId) (st : SystemState) :
+    suspendThreadCrossCoreStep 0 execCore st =
+      ((Platform.FFI.KernelError.toUInt32 .invalidArgument,
+        ([] : List (CoreId × SgiKind))), st) := by
+  rfl
+
+@[export suspend_thread_cross_core]
+def suspendThreadCrossCoreEntry (tid : UInt64) : BaseIO UInt32 := do
+  let execCore ← Concurrency.currentCoreId
+  let result ← Platform.FFI.modifyGetKernelState (suspendThreadCrossCoreStep tid execCore)
   Concurrency.fireCrossCoreSgis result.2
   pure result.1
 

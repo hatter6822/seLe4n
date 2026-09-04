@@ -5777,16 +5777,18 @@ private def declassHop1 : Option (DeclassificationAuditLog × SystemState) :=
 /-- PR #874 review — the labeling the live entries below run under.  Every
 scenario entity is public, so the checked wait and signal gates pass
 reflexively and the GENERIC `declassContext` stays the only source of the
-chain's domains; object 0 (inert to the scenario) is labelled trusted so the
-AI5-C insecure-default probe is defeated and the entry serves the deployment
-instead of refusing `.policyDenied` before the taint seam runs. -/
+chain's domains.
+
+**WS-RR RR5.4**: this used to label object `0` trusted, with the stated purpose
+of defeating the insecure-default probe so the entry would serve rather than
+refuse `.policyDenied` before the taint seam runs.  That evasion is exactly what
+RR5.4 closed, so the fixture now uses `harnessLabelingContext` — a real
+two-domain deployment labeling whose lower domain covers every id the scenario
+allocates, so every scenario entity is still `publicLabel` and every gate below
+still passes reflexively, but the labeling is *admitted* by the guard rather
+than slipping past it. -/
 private def declassChainEntryLabeling : LabelingContext :=
-  { objectLabelOf := fun oid =>
-      if oid = SeLe4n.ObjId.ofNat 0 then SecurityLabel.kernelTrusted
-      else SecurityLabel.publicLabel
-    threadLabelOf := fun _ => SecurityLabel.publicLabel
-    endpointLabelOf := fun _ => SecurityLabel.publicLabel
-    serviceLabelOf := fun _ => SecurityLabel.publicLabel }
+  SeLe4n.Kernel.harnessLabelingContext
 
 /-- PR #874 review — a single-level CSpace for the chain's live entries: slot 2
 carries read+write on `declassTargetA` (the wait and the refill signal), slot 4
@@ -7300,18 +7302,20 @@ words. -/
 private def fineLockSet : SeLe4n.Kernel.Concurrency.LockSet :=
   { pairs := lockPairs, hUniqueKeys := by decide }
 
-/-- The §7.6 labelling.  `niLabeling` labels only its own OID band (1000+), so
-it agrees with `defaultLabelingContext` at the three sentinel ids the AJ2-C
-heuristic probes (0, 1, 42) and `isInsecureDefaultContext` flags it — which
-would make `syscallEntryChecked` refuse at its *first* gate and leave the rest
-of the entry unexercised.  Labelling sentinel id 0 non-public is exactly the
-`testLabelingContext` evasion the heuristic documents as sufficient evidence of
-non-default labelling, and it moves nothing in the fixture's own band. -/
+/-- The §7.6 labelling.  `niLabeling` separates its own thread band — 1011 and
+1013 are high, 1010 and 1012 low — but declares no separation witness, so the
+fail-closed guard refuses it and `syscallEntryChecked` would stop at its *first*
+gate, leaving the rest of the entry unexercised.
+
+**WS-RR RR5.4**: the adjustment is to *declare the separation the labelling
+already has*, not to relabel a sentinel id.  Before RR5.4 this fixture labelled
+object `0` trusted, which defeated the three-sentinel probe without changing any
+flow the scenario exercises — the `testLabelingContext` evasion, in miniature.
+The witness below names two real threads the fixture genuinely puts in different
+domains, so the guard verifies it rather than being stepped around, and nothing
+in the fixture's own band moves. -/
 private def fineLockEntryLabeling : LabelingContext :=
-  { niLabeling with
-    objectLabelOf := fun oid =>
-      if oid = (⟨0⟩ : SeLe4n.ObjId) then SecurityLabel.kernelTrusted
-      else niLabeling.objectLabelOf oid }
+  { niLabeling with separatedThreads := some (highCurrent, lowCurrent) }
 
 private def bracketAcquiredState : SystemState :=
   lockSetAcquiredState fineLockSet c1 niState
@@ -7330,10 +7334,20 @@ private def runFineLockEntryChecks : IO Unit := do
   IO.println "--- §7.6 the 2PL-bracketed live syscall entry (SM8.D.5) ---"
   -- NEGATIVE: the *unadjusted* fixture labelling IS flagged, so the adjustment
   -- below is load-bearing — without it the entry never reaches its second gate.
-  assertBool "NEGATIVE: the plain fixture labelling trips the insecure-default heuristic"
+  assertBool "NEGATIVE: the plain fixture labelling declares no separation, so it is refused"
     (decide (isInsecureDefaultContext niLabeling = true))
-  assertBool "the entry labelling does NOT (so that gate is not what refuses)"
+  assertBool "the entry labelling declares one, and it verifies (so that gate is not what refuses)"
     (decide (isInsecureDefaultContext fineLockEntryLabeling = false))
+  -- WS-RR RR5.4: the declaration is *checked*, not trusted — a labelling that
+  -- names a pair it does not separate is refused just like one that names none.
+  assertBool "NEGATIVE: a falsely declared witness is refused"
+    (decide (isInsecureDefaultContext
+      { niLabeling with separatedThreads := some (lowCurrent, lowQueued) } = true))
+  -- WS-RR RR5.4: and a declaration naming the reserved sentinel is refused —
+  -- separating id 0 from the real threads separates nothing that can run.
+  assertBool "NEGATIVE: a witness naming the reserved sentinel is refused"
+    (decide (isInsecureDefaultContext
+      { niLabeling with separatedThreads := some (⟨0⟩, highCurrent) } = true))
   assertBool "core 2 is idle, so the entry has no caller to decode"
     (decide (niState.scheduler.currentOnCore c2 = none) &&
      decide (bracketAcquiredState.scheduler.currentOnCore c2 = none))
@@ -11291,21 +11305,19 @@ first, confidentiality on the second), so the second — onward to the public
 waiter — is refused by the policy, at the receiver's own gate. -/
 private def signalReceiverDeniedLabeling : LabelingContext :=
   { niLabeling with
+      -- WS-RR RR5.4: the deployment declares the separation it genuinely has —
+      -- the secret-trusted subject against the public waiter, two real threads
+      -- the labeler below puts in different domains.  Before RR5.4 this fixture
+      -- relabelled the sentinel object id `0` instead, which defeated the
+      -- three-sample probe without separating anything that runs.
+      separatedThreads := some (highCurrent, crossCoreWaiter)
       threadLabelOf := fun tid =>
         if tid = highCurrent then SecurityLabel.kernelTrusted
         else if tid = crossCoreWaiter then SecurityLabel.publicLabel
-        -- The inherited labeler keeps the AI5-C insecure-default probe
-        -- defeated; the two threads the scenario reads are pinned above.
         else niLabeling.threadLabelOf tid
       objectLabelOf := fun oid =>
         if oid = highNotification then
           { confidentiality := .high, integrity := .untrusted }
-        -- Object 0 is inert to the scenario and defeats the AI5-C
-        -- insecure-default probe, which samples ids 0, 1 and 42 across all
-        -- four entity classes and fires only when EVERY sample is public —
-        -- so the checked entry serves this deployment rather than refusing
-        -- it outright with `.policyDenied`.
-        else if oid = SeLe4n.ObjId.ofNat 0 then SecurityLabel.kernelTrusted
         else niLabeling.objectLabelOf oid
       declassificationPolicy :=
         { canDeclassify := fun src dst =>
@@ -11313,9 +11325,9 @@ private def signalReceiverDeniedLabeling : LabelingContext :=
             decide (dst = embedLegacyLabel
               { confidentiality := .high, integrity := .untrusted }) } }
 
-/-- §13.2 fixture — the deny-all control deployment: the same labelers (the
-probe is defeated the same way), with NO declassification policy configured,
-so the `.declassify` control's refusal is `.declassificationDenied` itself. -/
+/-- §13.2 fixture — the deny-all control deployment: the same labelers (and the
+same declared separation), with NO declassification policy configured, so the
+`.declassify` control's refusal is `.declassificationDenied` itself. -/
 private def declassifyDenyAllLabeling : LabelingContext :=
   { signalReceiverDeniedLabeling with
       declassificationPolicy := { canDeclassify := fun _ _ => false } }

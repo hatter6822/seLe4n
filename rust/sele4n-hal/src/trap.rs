@@ -636,6 +636,13 @@ fn halt_abort_before_lean_ready(core_id: u64, esr: u64, elr: u64) -> ! {
 /// would re-execute the faulting instruction (PR #887 review round 3).  What
 /// a not-ready core should do with an `SVC` at all is RR5's question, asked
 /// once for the whole SVC seam together with the ungated `dispatch_svc`.
+///
+/// **WS-RR RR5.6 / PR #889 review**: answered — a not-ready core **halts** on
+/// every `SVC`, in the routing arm, *before* this delivery is reached (see the
+/// `sync_class::SVC` arm).  So on hardware the readiness branch below is only
+/// ever taken with the core ready; the status-frame fallback after it is the
+/// host lane's observable (no `hw_target`, no gate compiled), reached by the
+/// integration tests that mark the host core ready first.
 #[allow(unused_variables)]
 fn deliver_unknown_syscall(frame: &mut TrapFrame) {
     #[cfg(feature = "hw_target")]
@@ -749,6 +756,25 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
             // (single AtomicU64::fetch_add) and not on any
             // correctness path.
             let _ = crate::per_cpu_stats::record_syscall();
+            // PR #889 review: the readiness decision precedes **every** SVC
+            // outcome — the full-width narrowing below, the id and
+            // argument-count prefilters inside `dispatch_svc`, and the
+            // unknown-syscall delivery — because the halt's reason (a thread on
+            // a not-ready core is never preempted again, so any frame returned
+            // to it is the CPU forever) does not depend on which of those
+            // outcomes the `SVC` would otherwise take.  Before this the
+            // oversized-`x7` and prefilter paths resumed the caller on a
+            // not-ready core with an error frame.  `dispatch_svc` consults the
+            // gate again on its own path, which is where `build.rs` derives the
+            // Lean call's dominance from; this one covers the outcomes that
+            // never reach it.
+            if !crate::lean_ready::lean_ready(crate::per_cpu::current_core_id_from_tpidr() as usize)
+            {
+                crate::svc_dispatch::halt_syscall_before_lean_ready(
+                    crate::per_cpu::current_core_id_from_tpidr() as usize,
+                    frame.x7(),
+                );
+            }
             let args = crate::svc_dispatch::SyscallArgs::from_trap_frame(frame);
             // PR #887 review round 3: the syscall number is the FULL 64-bit
             // `x7`.  Narrowing first would make `0x1_0000_0002` syscall 2; a
@@ -1425,48 +1451,20 @@ mod tests {
         halt_on_kernel_abort(&frame, frame.esr_el1);
     }
 
-    /// **PR #887 review**: a syscall number outside `SyscallId` takes the
-    /// unknown-syscall seam.  On the host lane no core is Lean-ready, so the
-    /// seam's fail-closed half publishes the `invalidSyscallNumber` status
-    /// frame (discriminant 31) — never a success, never the thread's own
-    /// request registers.
-    #[test]
-    fn handle_sync_unknown_syscall_id_not_ready_publishes_status_frame() {
-        let mut frame = zero_frame();
-        frame.esr_el1 = ec::SVC_AARCH64 << 26;
-        frame.gprs[7] = 0xFFFF; // no such syscall
-        frame.gprs[0] = 0xDEAD;
-        drive_sync(&mut frame);
-        assert_eq!(frame.x0(), 0);
-        assert_eq!(
-            frame.x1(),
-            (crate::svc_dispatch::ERROR_LABEL_BASE + 31) << 9
-        );
-        assert_eq!([frame.x2(), frame.x3(), frame.x4(), frame.x5()], [0; 4]);
-    }
-
-    /// **PR #887 review round 3**: the syscall number is validated at its
-    /// full 64-bit width.  `0x1_0000_0002` narrows to syscall 2, which the
-    /// old `as u32` would have dispatched (the host stub answers it with the
-    /// `notImplemented` frame, discriminant 17); it is an unknown syscall,
-    /// and on the not-ready host lane that is the `invalidSyscallNumber`
-    /// status frame (31).
-    #[test]
-    fn handle_sync_wide_syscall_number_is_unknown_syscall() {
-        let mut frame = zero_frame();
-        frame.esr_el1 = ec::SVC_AARCH64 << 26;
-        frame.gprs[7] = 0x1_0000_0002;
-        drive_sync(&mut frame);
-        assert_eq!(frame.x0(), 0);
-        assert_eq!(
-            frame.x1(),
-            (crate::svc_dispatch::ERROR_LABEL_BASE + 31) << 9
-        );
-        assert_ne!(
-            frame.x1(),
-            (crate::svc_dispatch::ERROR_LABEL_BASE + 17) << 9
-        );
-    }
+    // PR #889 review: the SVC arm's not-ready behaviour — every `SVC` halts,
+    // an unknown id and an oversized `x7` included, *before* the narrowing —
+    // is not observable from a host test: `handle_synchronous_exception` is
+    // `extern "C"`, and a panic (the host lane's `fatal_halt`) cannot unwind
+    // through it, so the process aborts instead of the test catching it.  The
+    // ordering is pinned structurally by `build.rs`'s
+    // `svc_arm_readiness_gate_status` (the gate is a top-level statement of
+    // the arm, ahead of the `dispatched` binding, on the executing core,
+    // ending in the diverging halt); the behaviour is pinned at the plain-Rust
+    // seam `dispatch_svc` in `tests/readiness_gate_before_mark.rs`.  The
+    // frames the unknown-syscall paths publish on a *ready* core moved to
+    // `tests/readiness_gate_after_mark.rs`
+    // (`unknown_syscall_id_on_ready_core_publishes_status_frame`,
+    // `wide_syscall_number_on_ready_core_is_unknown_syscall`).
 
     /// **WS-RR RR4.25**: the low ESR bits (IL, ISS) do not change the class —
     /// the classification reads EC alone, exactly as the Lean
@@ -1758,25 +1756,11 @@ mod tests {
     // increment the same global counters.
     // ========================================================================
 
-    #[test]
-    fn handle_sync_svc_increments_per_core_syscall_count() {
-        // Audit-pass-3: serialise via PER_CORE_STATS_OBSERVATION_MUTEX so concurrent
-        // trap-handler tests don't race on PER_CPU_STATS[0].syscall_count.
-        let _guard = PER_CORE_STATS_OBSERVATION_MUTEX
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let before = crate::per_cpu_stats::syscall_count_for(0);
-        let mut frame = zero_frame();
-        frame.esr_el1 = ec::SVC_AARCH64 << 26;
-        handle_synchronous_exception(&mut frame);
-        let after = crate::per_cpu_stats::syscall_count_for(0);
-        assert!(
-            after > before,
-            "SVC must increment per-core syscall_count (was {}, now {})",
-            before,
-            after
-        );
-    }
+    // PR #889 review: `handle_sync_svc_increments_per_core_syscall_count` moved
+    // to `tests/readiness_gate_after_mark.rs` (`svc_increments_per_core_syscall_count`):
+    // driving an `SVC` through the handler now halts on a not-ready core, which
+    // in this binary is an abort (see the note above), and core 0's readiness
+    // is not this binary's to assume in either direction.
 
     #[test]
     fn handle_sync_dabt_increments_per_core_vm_fault_count() {

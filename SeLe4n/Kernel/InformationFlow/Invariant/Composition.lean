@@ -805,6 +805,59 @@ theorem labelingContextValid_is_deployment_requirement
     securityFlowsTo (ctx.threadLabelOf tid) (ctx.objectLabelOf tid.toObjId) = true :=
   hValid.threadObjectCoherence
 
+/-- **WS-RR RR5.1**: the deployment obligation above, *discharged* — every
+    context built by `deploymentLabelingContext` is `LabelingContextValid`,
+    unconditionally.
+
+    This is what turns `labelingContextValid_is_deployment_requirement` from a
+    statement of an obligation into a statement about the shape that meets it.
+    Each conjunct comes from a structural feature of the constructor rather than
+    from a hypothesis the integrator supplies:
+
+    * `threadObjectCoherence` — `deploymentLabelingContext` derives both
+      `threadLabelOf tid` and `objectLabelOf tid.toObjId` from the same
+      `entityLabelOf tid.toNat` (`ThreadId.toObjId` is the identity on the
+      index), so the flow is `securityFlowsTo l l`, true by
+      `securityFlowsTo_refl`.  A labeling *cannot* be built through this
+      constructor with a thread at one label and its own TCB at another.
+    * `coherenceImpliesObjectHigh` — the same equality, transported through the
+      two observability gates, which read exactly those two labels.
+    * `labelNonTriviality` — the `DeploymentLabeling.hSeparated` field, which
+      the structure demands at construction.
+
+    A deployment therefore discharges all three by choosing a partition, and the
+    non-triviality half is additionally *checked at runtime* by
+    `isInsecureDefaultContext` (RR5.4), so the two halves of the obligation —
+    proof-side and boot-side — cannot drift apart. -/
+theorem deploymentLabelingContext_valid (d : DeploymentLabeling) :
+    LabelingContextValid (deploymentLabelingContext d) where
+  threadObjectCoherence := fun tid => by
+    rw [deploymentLabelingContext_thread_object_label_eq d tid]
+    exact securityFlowsTo_refl _
+  coherenceImpliesObjectHigh := fun _ tid h => by
+    simpa only [objectObservable, threadObservable,
+      deploymentLabelingContext_thread_object_label_eq d tid] using h
+  labelNonTriviality :=
+    ⟨d.separatedLower, d.separatedUpper, d.hSeparated⟩
+
+/-- **WS-RR RR5.1**: the production two-domain context is `LabelingContextValid`
+    — the corollary a platform binding cites when it installs
+    `confinedLabelingContext` at boot. -/
+theorem confinedLabelingContext_valid (upperDomainBase lowerWitness : Nat)
+    (hLowerAdmissible : separationWitnessAdmissible ⟨lowerWitness⟩ = true)
+    (hLowerBelow : lowerWitness < separationBoundary upperDomainBase) :
+    LabelingContextValid
+      (confinedLabelingContext upperDomainBase lowerWitness hLowerAdmissible hLowerBelow) :=
+  deploymentLabelingContext_valid _
+
+/-- **WS-RR RR5.1**: the harness context is `LabelingContextValid` too, so the
+    simulation suites exercise the checked entries under a labeling that meets
+    the same obligation a hardware deployment does — rather than under one that
+    merely evaded the guard. -/
+theorem harnessLabelingContext_valid :
+    LabelingContextValid harnessLabelingContext :=
+  deploymentLabelingContext_valid _
+
 -- ============================================================================
 -- WS-H10/A-39: Declassification non-interference (C.10)
 -- ============================================================================

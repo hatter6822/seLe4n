@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.34.47` (`lakefile.toml`) |
+| **Package version** | `0.34.48` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 317,352 across 308 Lean files |
-| **Test LoC** | 67,037 across 70 Lean test suites |
-| **Proved declarations** | 10,524 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 321,991 across 309 Lean files |
+| **Test LoC** | 68,397 across 70 Lean test suites |
+| **Proved declarations** | 10,707 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
-| **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR4 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
+| **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR5 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Workstream history** | [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -1571,8 +1571,9 @@ from `kernelStateRef`, spilled the FFI register values into the
 current TCB via `writeFfiRegistersToTcb`, invoked the verified
 `Kernel.syscallEntryChecked`, encoded the result into a bit-63
 error-flag UInt64, and wrote the post-state back to the IO.Ref.
-`@[export suspend_thread_inner]` is the analogous substantive bridge
-into `Kernel.Lifecycle.Suspend.suspendThread`.  The
+`suspendThreadInner` is the analogous substantive bridge
+into `Kernel.Lifecycle.Suspend.suspendThread` (its `@[export]` was
+retired at **WS-RR RR5.17** — see §6.5.5).  The
 `NotImplemented = 17` discriminant is no longer emitted by either
 bridge on any non-error code path — every error corresponds to a
 substantive kernel rejection.  **WS-RA (v0.33.37)** retired both the
@@ -1936,23 +1937,70 @@ handling an exception bracket.  The live bridges:
 - `@[export lean_per_core_timer_tick]`
   (`SeLe4n/Kernel/PerCoreTimerEntry.lean`, SM5) — the per-core CNTP
   ISR seam.
-- `@[export suspend_thread_inner]` (`SeLe4n/Platform/FFI.lean`) —
-  the boot-pinned single-core suspend entry retained beside the
-  cross-core form; routes into
-  `Kernel.Lifecycle.Suspend.suspendThread` after sentinel rejection
-  via `ThreadId.toValid?`.  Returns `0` on success or the
-  `KernelError as u32` discriminant on failure.
+**WS-RR RR5.17** retired `@[export suspend_thread_inner]`.  The
+boot-pinned single-core suspend entry committed kernel state through a
+bare `kernelStateRef.set` with no kernel-entry bracket, and `@[export]`
+made it a live C symbol in the linked image — so its only protection was
+that no Rust source declared it.  `Platform.FFI.suspendThreadInner`
+survives as a Lean-side reference path the dispatch suite exercises; the
+symbol does not, and a Tier-3 negative anchor keeps it retired.  Every
+C-callable kernel entry a linked image carries is now bracketed by
+`kernel_entry::with_kernel_entry` and gated on `lean_ready`.
 
 Hardware-mode kernel state lives in two `IO.Ref` cells:
 
 - `kernelStateRef : IO.Ref SystemState` — the live kernel state.
   Initialised by `bootAndInitialiseFromPlatform` (which composes
-  `bootFromPlatformChecked` with the IO.Ref seed) on hardware boot.
+  `bootFromPlatformCheckedWithIdleThreads` with the IO.Ref seed) on
+  hardware boot.  **WS-RR RR5.14** switched the composed entry from
+  `bootFromPlatformChecked`, which installs no idle threads: every core
+  now comes up with its own idle thread **enqueued** on its own run
+  queue (and no core's current slot set, so `queueCurrentConsistent`
+  holds and each core's first scheduling point dispatches idle out of
+  the queue).  The stored idle TCB is the **queued** form
+  (`queuedIdleThread`, `.Ready`), the state the classification infers for
+  a queued, non-current thread; every config TCB is `.Inactive`
+  (`bootSafeObjectCheck`); so the production boot state is
+  `threadStateConsistent` with no hypothesis beyond the boot
+  (`bootFromPlatformCheckedWithIdleThreads_threadStateConsistent`).  The
+  idle slots are reserved by `PlatformConfig.wellFormed`
+  (`idleSlotsReserved`), so a successful checked boot has them empty
+  (`bootFromPlatformChecked_ok_idleSlotsFreshAt`) and the idle fold
+  overwrites no config object.  That consistency is a **boot-state
+  theorem**, not a preserved invariant (PR #889 review round 2): the
+  dispatch writes no `threadState`, so the relation the live decisions
+  read — the stored flag says `.Inactive` iff the classification does —
+  is stated as `threadInactiveFlagConsistent`, proved of the boot state
+  (`bootFromPlatformCheckedWithIdleThreads_threadInactiveFlagConsistent`),
+  and owed across the transitions as registered debt (RR7.36).  The
+  reservation also covers every object a config entry *references*
+  (`bootObjectReferencesReservedIdleSlot`) and is refused with its own
+  diagnostic, and the idle objects are unreachable by user authority at
+  all: `syscallResolveCap`, the one resolution every invoked capability
+  passes through, refuses a capability naming one
+  (`capTargetsReservedIdleObject`, `syscallResolveCap_ok_not_reserved`),
+  so no `.tcbSuspend` can remove a core's only guaranteed runnable
+  thread.  The boot queue is characterised exactly — on every core
+  it is the empty queue with that core's idle thread enqueued
+  (`bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_eq`) — so its
+  well-formedness and the resolution of its members are theorems of the
+  boot state, the staged keystone
+  `bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_succeeds`
+  takes no hypothesis beyond the boot, and each core's first selection
+  is its own idle thread (`…_chooseThreadOnCore_idle`).
+  `bootAndInitialisePlatform platform config` is the same entry under
+  the platform binding's own labeling (§6.7).
 - `kernelLabelingContextRef : IO.Ref LabelingContext` — the
-  deployment's information-flow labeling policy.  Defaults to
-  `Kernel.testLabelingContext` (which passes the
-  `isInsecureDefaultContext` runtime gate); production deployments
-  override it with their domain-specific policy at boot.
+  deployment's information-flow labeling policy.  **WS-RR RR5.3**: it
+  now defaults to `Kernel.defaultLabelingContext`, which the
+  `isInsecureDefaultContext` gate **rejects**, so every checked entry
+  fails closed until a boot installs a real deployment context.  It
+  defaulted to `Kernel.testLabelingContext`, chosen because it *passed*
+  that gate; combined with the boot wrapper's optional labeling argument,
+  a hardware boot that supplied no context came up with information-flow
+  enforcement vacuous.  The argument is now mandatory, and an
+  inadmissible context fails the boot closed before any state is
+  committed.
 
 The IO.Ref design was chosen over thread-local register-decoded
 snapshots and pure functional reconstruction because (a) the Rust
@@ -2025,15 +2073,179 @@ The `defaultLabelingContext` assigns `publicLabel` to all entities, defeating
 all information-flow enforcement. This is formally proven insecure by
 `defaultLabelingContext_insecure` and `defaultLabelingContext_all_threads_observable`.
 
-**Runtime guard** (AI5-C, v0.27.11): `syscallEntryChecked` rejects contexts
-detected as insecure by `isInsecureDefaultContext`, returning `.error .policyDenied`.
-The detector checks sentinel labels at ID 0 across all four entity classes
-(threads, objects, endpoints, services) in O(1) time.
+**Runtime guard** (AI5-C, v0.27.11; **exact since WS-RR RR5.4, v0.34.48**):
+`syscallEntryChecked` rejects contexts `isInsecureDefaultContext` flags,
+returning `.error .policyDenied`, and `bootAndInitialiseFromPlatform` runs the
+same guard before it commits anything.
 
-**Test helper**: `testLabelingContext` assigns `kernelTrusted` to ID 0 entities,
-passing the guard while remaining structurally valid for test execution. Test
-harnesses should use this context instead of `defaultLabelingContext` when
-exercising `syscallEntryChecked`.
+The detector was a *sample*: three sentinel ids (0, 1, 42) across the four
+entity classes, flagging a context only when all twelve lookups returned
+`publicLabel`.  A sample cannot decide a property of a total function, and the
+gap was not hypothetical — `testLabelingContext` labelled id `0` alone and
+passed, while every entity that can actually run stayed `publicLabel`.
+
+It is now an **exact** check of a *declared* witness.
+`LabelingContext.separatedThreads` names two **admissible** threads the
+deployment claims its labeling separates — neither the reserved sentinel nor a
+per-core idle thread (`separationWitnessAdmissible`; an idle thread runs but
+never originates or receives a flow, so a labeling that differs only on the
+idle range separates nothing observable) — and the kernel evaluates that
+inequality: a context declaring nothing is refused (fail-closed), one declaring
+a pair it does not separate is refused too, and so is one whose witness names
+an inadmissible id.  So `isInsecureDefaultContext ctx = false` *entails*
+`LabelingContextValid.labelNonTriviality`
+(`isInsecureDefaultContext_false_implies_labelNonTriviality`) with an
+admissible witness (`…_false_implies_real_witness`,
+`…_false_implies_witness_not_idle`) — the runtime guard discharges a
+deployment obligation rather than approximating it.  It is O(1): one `Option`
+match, two range checks and one label comparison.
+
+**Production contexts** (WS-RR RR5.1): `deploymentLabelingContext` is the
+constructor production code uses.  Its output is `LabelingContextValid`
+unconditionally (`deploymentLabelingContext_valid`): thread/object coherence
+holds by reflexivity because the constructor derives a thread's label and its
+own TCB object's label from the same assignment, and non-triviality is the
+structure's own field.  The source also carries the four policy fields —
+`memoryOwnership`, `endpointPolicy`, `declassificationPolicy`,
+`auditMonitorClearance` — with their fail-closed defaults
+(`deploymentLabelingContext_policy_fields`; PR #889 review round 2), so a
+platform binding configures them where it declares its labeling and the
+production boot entry installs them; none bears on validity, and their own
+obligations (`endpointPolicyRestricted`, `auditMonitorClearanceIsTop`) stay
+where the live gates consume them.  `confinedLabelingContext` is the canonical two-domain
+instance, built from the two *incomparable* corners of the lattice
+(`lowTrusted` / `highUntrusted`), so neither domain can observe or influence the
+other — unlike a `publicLabel` / `kernelTrusted` split, which confines in one
+direction only.  The index-partitioned family stays total across the idle
+range: its upper witness is `upperWitnessIndex` — the boundary, lifted past the
+idle ids when the boundary falls among them — so every boundary yields an
+admitted context.
+
+**What a hardware boot installs is bound in the platform contract.**
+`PlatformBinding` carries the `DeploymentLabeling` **source**
+(`deploymentLabeling`), and `PlatformBinding.labeling` is
+`deploymentLabelingContext` of it — so admission by the boot-time guard
+(`PlatformBinding.labeling_admitted`) and full `LabelingContextValid`-ity
+(`PlatformBinding.labeling_valid`) are theorems of every binding, not
+obligations a binding carries.  The guard decides non-triviality alone; a
+binding that stored a bare context the guard admits could still have labelled
+a thread and its own TCB object incompatibly, and the non-interference
+theorems would have stopped applying to that deployment without any check
+noticing.  The RPi5 binding's source is `confinedDeploymentLabeling
+rpi5UpperDomainBase rpi5LowerWitnessIndex …`, so its labeling is
+`confinedLabelingContext rpi5UpperDomainBase rpi5LowerWitnessIndex …`
+(`rpi5_deploymentLabeling`, by `rfl`; `rpi5UpperDomainBase = 0x10_0000` clears
+the boot VSpace root and the idle range,
+`rpi5UpperDomainBase_clears_bootVSpaceRoot` / `…_clears_idle_range`, so every
+entity the boot image creates is `lowTrusted`); the three simulation bindings
+carry `harnessLabelingContext`.
+
+**The lower separation witness is the deployment's parameter, held off the
+boot VSpace root by the binding** (PR #889 review round 5).  The
+index-partitioned family used to fix its lower witness at thread `1`, and `1`
+is the boot VSpace root's object id on every binding (`rpi5BootVSpaceRootObjId`,
+`simBootVSpaceRootObjId`); a witness must be an installed thread of the boot
+state, and a config carrying the canonical root cannot install a TCB at the
+root's id (`bootVSpaceRootObjIdDistinct`), so every hardware boot carrying its
+own root was refused for an uninstalled witness.
+`indexPartitionedDeploymentLabeling` and `confinedLabelingContext` take
+`lowerWitness` with its admissibility and its position below the boundary as
+the caller's obligations; the RPi5 binding declares `rpi5LowerWitnessIndex`
+(`2`, `rpi5LowerWitnessIndex_ne_bootVSpaceRoot`) and the harness
+`harnessLowerWitnessIndex`; and `PlatformBinding.witnessesOffBootVSpaceRoot` —
+neither declared witness is the binding's boot root's id — is a class
+obligation every binding discharges by evaluation
+(`witnesses_ne_bootVSpaceRoot` is its Prop form), because the root is not
+visible where the labeling is built.  The binding's core count is bounded by
+the model the same way: `PlatformBinding.coreCountLe : coreCount ≤ numCores`
+is a class obligation, so `PlatformBinding.declaredCores` (the prefix
+`allCores.take coreCount`) has exactly `coreCount` members
+(`declaredCores_length`), membership is `c.val < coreCount`
+(`mem_declaredCores_iff`) and the boot core embeds in the model
+(`bootCoreModelId`); the idle-slot reservation stays model-wide, and an
+undeclared core's slot is absent after the boot
+(`bootFromPlatformCheckedWithIdleThreadsFor_undeclared_idle_absent`).
+
+**The hardware entry is fixed at the RPi5 binding and boots the binding's
+own configuration** (PR #889 review round 7).  `Platform.FFI.bootAndInitialiseRPi5`
+is `bootAndInitialisePlatform RPi5Platform` by definition
+(`bootAndInitialiseRPi5_eq`), and the boot-entry gate requires SM10.1's
+`lean_kernel_main` to execute it and no other kernel-state installer — the
+generic entry included, so the platform cannot be varied by the entry.  The
+platform entry boots `bindPlatformConfig platform config`: the caller's IRQ
+table and initial objects under the binding's `machineConfig` and
+`bootVSpaceRoot` (`bindPlatformConfig_machineConfig`,
+`bindPlatformConfig_bootVSpaceRoot`, `bindPlatformConfig_initialObjects`,
+`bindPlatformConfig_irqTable`, all definitional; `bootAndInitialiseRPi5_bound_config`
+pins the RPi5 pair), so a caller can neither omit the canonical ASID root nor
+describe hardware the image does not run on.  And a boot TCB is stored under
+its own thread id: `PlatformConfig.wellFormed`'s fourth conjunct
+`tcbIdentitiesMatchSlots` requires every `.tcb` entry's `tid.toObjId` to be
+its `id` (`tcbIdentitiesMatchSlots_tid_eq`), the reference check reads the
+`tid` directly (`idleSlotsReserved_no_idle_tid`), and a config that fails
+either is refused with its own diagnostic.
+`Platform.FFI.bootAndInitialisePlatform platform config` boots under the
+binding's labeling on the binding's declared cores (`PlatformBinding.declaredCores`;
+the RPi5 binding declares every model core, `rpi5_cores_eq_allCores`, so its
+boot is the all-cores form), refuses a boot whose labeling's declared
+separation witnesses are not installed threads of the boot state
+(`declaredWitnessesInstalled`, PR #889 review round 3 — the guard decides
+that two admissible ids are separated, only the boot state can say they are
+threads), and is provably the checked idle boot followed by the witness check
+and the two installs with the labeling-refusal arm unreachable
+(`bootAndInitialisePlatform_eq_checked_boot`); SM10.1's `lean_kernel_main` is
+its intended caller.
+
+**The readiness guard resolves to the gate, and the boot entry handles a
+failed boot** (PR #889 review round 9).  An unqualified `lean_ready(..)`
+counts as the gate only where the file imports `crate::lean_ready::lean_ready`
+and defines no function of that name (`bare_ready_call_resolves`) — a
+same-scope helper of that name satisfied every other readiness question while
+being a different predicate.  A release-surviving tripwire's fail-closed
+branch must dominate every exit of its helper, not merely appear in it
+(`statement_may_exit`).  And SM10.1's `lean_kernel_main` must **branch** on
+`bootAndInitialiseRPi5`'s `Except` and halt on `.error`
+(`boot_entry_handles_failure`): a failed boot installs no kernel state, so
+returning to the Rust caller would leave the image idling as though it had
+booted.  The check parses the match's arms, so the `.error` arm's own body
+must halt; a diverging statement before the handling match, or a rebinding of
+the result's name, is refused (review round 10), and the halt must be the
+arm's terminal action rather than a token inside it (review round 11).
+
+**A raw id operand is refused at its lift point** (PR #889 review round 11).
+`syscallResolveCap` refuses a *capability* naming a reserved idle object,
+which covers every arm whose operand is the resolved capability's target;
+`.schedContextBind` resolves its capability to the SchedContext and takes the
+thread from `args.threadId`, so `validateThreadIdArg` and `validateObjIdArg` —
+the lift points every raw operand passes through — refuse a reserved idle id
+(`validateThreadIdArg_ok_not_reserved`,
+`dispatchCapabilityOnly_schedContextBind_idle_operand_refused`).
+
+**The raw suspend seam refuses idle ids, and the reservation is pinned by
+constructor arity** (PR #889 review round 8).  `suspend_thread_cross_core`
+takes a raw thread id and no capability, so the chokepoint's refusal never
+reached it; its whole step is the pure `Kernel.suspendThreadCrossCoreStep`,
+which refuses an idle id with the sentinel's `.invalidArgument` before the
+transition runs, and `suspendThreadCrossCoreStep_idle_refused` proves the
+refusal commits nothing.  `bootObjectReferencesReservedIdleSlot` dispatches
+to per-kind helpers that destructure each kernel object's constructor
+(`tcbReferencesReservedIdleSlot` and seven siblings), so a new field of any
+kind fails the build until it is classified; the sweep added `queuePPrev`
+(`idleSlotsReserved_no_idle_queuePPrev`), a TCB's reply references and
+carried capabilities, a Reply's `replyId` and `prev`, and a SchedContext's
+`scId`.  `bootSafeObjectCheck` requires all three queue links of a boot TCB
+empty, and the fourth `wellFormed` conjunct is `embeddedIdentitiesMatchSlots`:
+every TCB, SchedContext and Reply is stored under the id it carries
+(`schedContextIdentitiesMatchSlots_scId_eq`,
+`replyIdentitiesMatchSlots_replyId_eq`).
+
+**Test helper**: `testLabelingContext` is retained as a **negative fixture** —
+the all-public-except-the-sentinel labeling the guard now rejects
+(`isInsecureDefaultContext_testLabelingContext = true`).  Harnesses exercising
+`syscallEntryChecked` use `harnessLabelingContext` (a real two-domain deployment
+labeling whose lower domain covers every id the fixtures allocate, so no fixture
+flow decision changes) or `uniformFixtureLabelingContext` when a fixture wants
+one label over its whole id range.
 
 ### 6.8 SMP-Latent Single-Core Assumptions
 WS-AN Phase AN9-J landed the secondary-core bring-up infrastructure

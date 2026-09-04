@@ -263,7 +263,13 @@ def code_no_strings(text: str) -> str:
     return "".join(out)
 
 
-_FN_RE = re.compile(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)")
+#: A `fn` and its name.  `r#` is Rust's raw-identifier escape and is part of
+#: the *spelling*, not the name — `fn r#lean_real()` is the function
+#: `lean_real` and links under that symbol (PR #889 review round 25, swept
+#: from the sibling finding against `check_kernel_entry_exports.py`).  Without
+#: it the name read as `r`, so every allowlist entry, exemption and dominance
+#: attribution keyed on the enclosing function's name looked at the wrong one.
+_FN_RE = re.compile(r"\bfn\s+(?:r#)?([A-Za-z_][A-Za-z0-9_]*)")
 
 
 @functools.lru_cache(maxsize=None)
@@ -351,6 +357,98 @@ def enclosing_fn(text: str, offset: int, bodies=None) -> str:
         if start <= offset < end and (best is None or start > best[1]):
             best = (name, start)
     return best[0] if best else FILE_SCOPE
+
+
+def top_level_statements(view: str, start: int, end: int) -> list[tuple[int, int]]:
+    """The top-level statements of a Rust block interior ``[start, end)`` as
+    ``(lo, hi)`` spans over a string-free view: a statement ends at a ``;``
+    at brace depth zero, or at the ``}`` that closes a depth-zero block not
+    followed by ``else``.  The Python twin of ``build.rs``'s
+    ``top_level_statements_in``, shared here (PR #889 review round 8) so
+    every gate that asks a question of a function's statements asks it of
+    the same shape.
+    """
+    out: list[tuple[int, int]] = []
+    depth = 0
+    paren = 0
+    stmt_start = start
+    i = start
+    while i < end:
+        c = view[i]
+        if c in "([":
+            paren += 1
+        elif c in ")]":
+            paren -= 1
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0 and paren == 0:
+                nxt = i + 1
+                while nxt < end and view[nxt].isspace():
+                    nxt += 1
+                if not view[nxt:end].startswith("else"):
+                    stmt_end = nxt + 1 if nxt < end and view[nxt] == ";" else i + 1
+                    out.append((stmt_start, stmt_end))
+                    stmt_start = stmt_end
+                    i = stmt_end
+                    continue
+        elif c == ";" and depth == 0 and paren == 0:
+            out.append((stmt_start, i + 1))
+            stmt_start = i + 1
+        i += 1
+    if view[stmt_start:end].strip():
+        out.append((stmt_start, end))
+    return out
+
+
+def statement_containing(
+    statements: list[tuple[int, int]], offset: int
+) -> tuple[int, int] | None:
+    """The ``(lo, hi)`` statement span holding ``offset``, if any."""
+    return next(((lo, hi) for lo, hi in statements if lo <= offset < hi), None)
+
+
+def binding_statement_before(
+    view: str, statements: list[tuple[int, int]], name: str, upto: tuple[int, int]
+) -> tuple[int, int] | None:
+    """The LAST top-level statement strictly before ``upto`` that gives
+    ``name`` a new value — a ``let [mut] <name>`` binding **or** an
+    assignment ``<name> = …`` (PR #889 review rounds 8 and 9).
+
+    A receiver's *spelling* does not identify a value: ``let mut asm = …;
+    asm.file("ghost.S"); let mut asm = …; asm.file("real.S").compile(…)`` is
+    valid Rust in which the first ``.file`` reaches nothing the compile
+    sees.  Rust resolves a name to its most recent binding in scope, so the
+    gates do the same: a use belongs to the last binding of that name before
+    the use.
+
+    Round 9: a ``mut`` receiver is rebound by **assignment** as well, with no
+    second ``let`` — ``let mut asm = …; asm.file("ghost.S"); asm =
+    cc::Build::new(); asm.file("real.S").compile(…)`` discards the first
+    builder just as the shadowing form does, and a ``let``-only rule left the
+    window open at the original binding.  An assignment is therefore a
+    binding boundary too; a compound assignment (``+=``) is not, since it
+    keeps the value, and ``==`` is a comparison.
+
+    Returns ``None`` when the block gives ``name`` no value — a parameter, a
+    captured variable or a temporary — which the callers treat as fail-closed
+    (nothing before the using statement counts).
+    """
+    pattern = re.compile(
+        r"^\s*(?:let\s+(?:mut\s+)?" + re.escape(name) + r"\b"
+        r"|" + re.escape(name) + r"\s*=(?!=))"
+    )
+    found: tuple[int, int] | None = None
+    for lo, hi in statements:
+        # A `let` binds from the statement AFTER it: a use inside the binding
+        # statement's own initialiser refers to the previous binding, so the
+        # using statement itself is never its own instance.
+        if lo >= upto[0]:
+            break
+        if pattern.match(view[lo:hi]):
+            found = (lo, hi)
+    return found
 
 
 # ---------------------------------------------------------------------------
@@ -471,6 +569,17 @@ def _self_test() -> int:
         enclosing_fn(nested_fn, nested_fn.index("TOKEN")),
     )
 
+    # PR #889 review round 25: `r#` is part of the spelling, not the name.
+    # The mutation KEEPS the `fn`, the body and the name and only escapes it —
+    # which read `r`, so every lookup keyed on the enclosing function's name
+    # (an allowlist entry, an exemption, a gate attribution) missed.
+    raw_fn = "fn r#lean_raw() {\n    TOKEN;\n}\n"
+    check(
+        "a raw-identifier `fn` is named without its escape",
+        enclosing_fn(raw_fn, raw_fn.index("TOKEN")) == "lean_raw",
+        enclosing_fn(raw_fn, raw_fn.index("TOKEN")),
+    )
+
     brace_in_string = 'fn a() {\n    let s = "}";\n    TOKEN;\n}\nstatic S: u8 = 0;\n'
     check(
         "a brace inside a literal does not close the body",
@@ -500,6 +609,92 @@ def _self_test() -> int:
         enclosing_fn(decl_only, decl_only.index("TOKEN")) == "real",
         enclosing_fn(decl_only, decl_only.index("TOKEN")),
     )
+
+    # --- statements and binding instances (PR #889 review round 8) ----------
+    block = (
+        "fn assemble() {\n"
+        "    let mut asm = cc::Build::new();\n"
+        '    asm.file("src/ghost.S");\n'
+        "    let mut asm = cc::Build::new();\n"
+        "    if false {\n"
+        '        asm.file("src/dead.S");\n'
+        "    }\n"
+        '    asm.file("src/real.S")\n'
+        '        .compile("sele4n_hal_asm");\n'
+        "}\n"
+    )
+    view = code_no_strings(block)
+    (_, b_start, b_end), = fn_bodies(block)
+    stmts = top_level_statements(view, b_start, b_end)
+    check("five top-level statements", len(stmts) == 5, str(len(stmts)))
+    compile_at = block.index(".compile(")
+    holder = statement_containing(stmts, compile_at)
+    check("the compile sits in the last statement", holder == stmts[-1], str(holder))
+    binding = binding_statement_before(view, stmts, "asm", holder)
+    # THE relation-breaking witness: both `let mut asm` statements are
+    # present; the one a use of `asm` refers to is the LAST before the use.
+    check(
+        "the binding instance is the last `let` before the use",
+        binding == stmts[2],
+        str(binding),
+    )
+    ghost_at = block.index('.file("src/ghost.S")')
+    check(
+        "a use before the rebinding precedes the instance the compile sees",
+        binding is not None and ghost_at < binding[0],
+    )
+    check(
+        "an unbound name has no binding instance",
+        binding_statement_before(view, stmts, "other", holder) is None,
+    )
+    check(
+        "a `let` after the use is not its binding",
+        binding_statement_before(view, stmts, "asm", stmts[0]) is None,
+    )
+
+    # PR #889 review round 9: a `mut` receiver rebound by ASSIGNMENT, with no
+    # second `let`.  Every token of the round-8 fixture survives — one `let`,
+    # the same name, the same order — and only the second value's origin
+    # differs.
+    assigned = (
+        "fn assemble() {\n"
+        "    let mut asm = cc::Build::new();\n"
+        '    asm.file("src/ghost.S");\n'
+        "    asm = cc::Build::new();\n"
+        '    asm.file("src/real.S")\n'
+        '        .compile("sele4n_hal_asm");\n'
+        "}\n"
+    )
+    a_view = code_no_strings(assigned)
+    (_, a_start, a_end), = fn_bodies(assigned)
+    a_stmts = top_level_statements(a_view, a_start, a_end)
+    a_holder = statement_containing(a_stmts, assigned.index(".compile("))
+    a_binding = binding_statement_before(a_view, a_stmts, "asm", a_holder)
+    check(
+        "an assignment is a binding boundary",
+        a_binding == a_stmts[2],
+        str(a_binding),
+    )
+    check(
+        "...so the discarded builder's use precedes the live instance",
+        a_binding is not None and assigned.index('.file("src/ghost.S")') < a_binding[0],
+    )
+    # ...while a compound assignment keeps the value and is not a boundary,
+    # and `==` is a comparison.
+    for label, statement in (
+        ("compound assignment", "    asm += other;\n"),
+        ("comparison", "    if asm == other {}\n"),
+    ):
+        kept = assigned.replace("    asm = cc::Build::new();\n", statement)
+        k_view = code_no_strings(kept)
+        (_, k_start, k_end), = fn_bodies(kept)
+        k_stmts = top_level_statements(k_view, k_start, k_end)
+        k_holder = statement_containing(k_stmts, kept.index(".compile("))
+        check(
+            f"a {label} is not a binding boundary",
+            binding_statement_before(k_view, k_stmts, "asm", k_holder) == k_stmts[0],
+            f"{label}: {binding_statement_before(k_view, k_stmts, 'asm', k_holder)}",
+        )
 
     # --- unterminated literals raise rather than truncate ------------------
     for label, text in (

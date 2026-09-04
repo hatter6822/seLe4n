@@ -790,40 +790,44 @@ theorem setThreadCpuAffinityOnCore_preserves_ipcInvariantFull
   unfold setThreadCpuAffinityOnCore setThreadCpuAffinityWithMigration at hStep
   split at hStep
   · rename_i tcb hT
+    -- PR #889 review round 20: the declared-core refusal is a new leading
+    -- branch; `hStep` says it did not fire.
     split at hStep
     · contradiction
     · split at hStep
-      · rename_i stSet hSet
-        have hSetEq : stSet = { st with objects := st.objects.insert vtid.val.toObjId (.tcb { tcb with cpuAffinity := affinity }) } := by
-          unfold setThreadCpuAffinity at hSet
-          rw [hT] at hSet
-          exact (Except.ok.inj hSet).symm
-        subst hSetEq
-        dsimp only [] at hStep
-        cases hStep
-        have hPreRaw := (SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hT
-        have hInvSet := insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st vtid.val
-          tcb { tcb with cpuAffinity := affinity } hObjInv hInv hPreRaw
-          rfl rfl rfl rfl rfl rfl rfl rfl rfl
-        have hAtSet := insertObjects_getElem_self st vtid.val.toObjId
-          (.tcb { tcb with cpuAffinity := affinity }) hObjInv
-        have hQueuedSet := unboundQueuedThreadsIdleAllowed_of_tcbFieldUpdate
-          vtid.val.toObjId tcb { tcb with cpuAffinity := affinity } hPreRaw hAtSet
-          (fun oid hNe => insertObjects_getElem_ne st vtid.val.toObjId
-            (.tcb { tcb with cpuAffinity := affinity }) oid hNe hObjInv)
-          rfl rfl (fun _ => rfl) hQueued
-        cases hScid : tcb.schedContextBinding.scId? with
-        | some scId =>
-            exact migrateRunQueueOnAffinityChange_preserves_ipcInvariantFull _ _ _ _
-              (unboundQueuedThreadsIdleAllowed_of_objects_runQueues_eq
-                (migrateSchedContextReplenishment_objects _ _ _ _)
-                (fun c => migrateSchedContextReplenishment_runQueueOnCore _ _ _ _ c)
-                hQueuedSet)
-              (migrateSchedContextReplenishment_preserves_ipcInvariantFull _ _ _ _ hInvSet)
-        | none =>
-            exact migrateRunQueueOnAffinityChange_preserves_ipcInvariantFull _ _ _ _
-              hQueuedSet hInvSet
       · contradiction
+      · split at hStep
+        · rename_i stSet hSet
+          have hSetEq : stSet = { st with objects := st.objects.insert vtid.val.toObjId (.tcb { tcb with cpuAffinity := affinity }) } := by
+            unfold setThreadCpuAffinity at hSet
+            rw [hT] at hSet
+            exact (Except.ok.inj hSet).symm
+          subst hSetEq
+          dsimp only [] at hStep
+          cases hStep
+          have hPreRaw := (SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hT
+          have hInvSet := insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st vtid.val
+            tcb { tcb with cpuAffinity := affinity } hObjInv hInv hPreRaw
+            rfl rfl rfl rfl rfl rfl rfl rfl rfl
+          have hAtSet := insertObjects_getElem_self st vtid.val.toObjId
+            (.tcb { tcb with cpuAffinity := affinity }) hObjInv
+          have hQueuedSet := unboundQueuedThreadsIdleAllowed_of_tcbFieldUpdate
+            vtid.val.toObjId tcb { tcb with cpuAffinity := affinity } hPreRaw hAtSet
+            (fun oid hNe => insertObjects_getElem_ne st vtid.val.toObjId
+              (.tcb { tcb with cpuAffinity := affinity }) oid hNe hObjInv)
+            rfl rfl (fun _ => rfl) hQueued
+          cases hScid : tcb.schedContextBinding.scId? with
+          | some scId =>
+              exact migrateRunQueueOnAffinityChange_preserves_ipcInvariantFull _ _ _ _
+                (unboundQueuedThreadsIdleAllowed_of_objects_runQueues_eq
+                  (migrateSchedContextReplenishment_objects _ _ _ _)
+                  (fun c => migrateSchedContextReplenishment_runQueueOnCore _ _ _ _ c)
+                  hQueuedSet)
+                (migrateSchedContextReplenishment_preserves_ipcInvariantFull _ _ _ _ hInvSet)
+          | none =>
+              exact migrateRunQueueOnAffinityChange_preserves_ipcInvariantFull _ _ _ _
+                hQueuedSet hInvSet
+        · contradiction
   · contradiction
 
 -- ============================================================================

@@ -9,6 +9,7 @@
 
 import SeLe4n.Prelude
 import SeLe4n.Kernel.Concurrency.Types
+import SeLe4n.Model.Object.Types
 
 /-!
 # Per-core idle-thread identities
@@ -25,6 +26,11 @@ The idle *TCB constructor* (`createIdleThread`) and the *boot installer*
 (`installIdleThread`, `bootFromPlatformWithIdleThreads`) remain in
 `Platform.Boot` (they need the `IntermediateState` / `Builder` machinery); the
 SM5.E theorems (`Scheduler/Operations/PerCoreIdle.lean`) consume both.
+
+The capability predicate `capTargetsReservedIdleObject` (PR #889 review round
+2) lives here too, because both consumers of the reservation — the syscall
+resolution in `Kernel/API.lean` and the boot validation in `Platform.Boot` —
+sit downstream of this module and must decide the same question.
 -/
 
 namespace SeLe4n.Kernel
@@ -85,5 +91,84 @@ theorem idleThreadId_toObjId_ne {c₁ c₂ : CoreId}
           (SeLe4n.ThreadId.ofNat_toNat _).symm
     _ = SeLe4n.ThreadId.ofNat (idleThreadId c₂).toNat := by rw [this]
     _ = idleThreadId c₂ := SeLe4n.ThreadId.ofNat_toNat _
+
+/-- **WS-RR RR5.4** (audit): is `tid` some core's idle thread?  Decides
+    membership in the idle id range `[idleThreadIdBase, idleThreadIdBase + numCores)`,
+    which `idleThreadId` enumerates exactly (`isIdleThreadId_iff`).
+
+    The information-flow labeling guard excludes these ids from a deployment's
+    declared separation witness (`separationWitnessAdmissible`,
+    `InformationFlow/Policy.lean`): an idle thread is kernel-owned, issues no
+    syscall and sends no message, so a labeling that differs only on idle threads
+    separates nothing a flow decision can observe — the same reason the reserved
+    sentinel is excluded. -/
+def isIdleThreadId (tid : SeLe4n.ThreadId) : Bool :=
+  idleThreadIdBase ≤ tid.toNat && tid.toNat < idleThreadIdBase + SeLe4n.Kernel.Concurrency.numCores
+
+/-- **WS-RR RR5.4** (audit): every per-core idle id is recognised. -/
+theorem isIdleThreadId_idleThreadId (c : CoreId) : isIdleThreadId (idleThreadId c) = true := by
+  have hc := c.isLt
+  simp only [isIdleThreadId, idleThreadId, SeLe4n.ThreadId.toNat, SeLe4n.ThreadId.ofNat,
+    Bool.and_eq_true, decide_eq_true_eq]
+  omega
+
+/-- **WS-RR RR5.4** (audit): the recogniser is exact — it accepts precisely the
+    ids `idleThreadId` produces, so excluding what it accepts excludes the idle
+    threads and nothing else. -/
+theorem isIdleThreadId_iff (tid : SeLe4n.ThreadId) :
+    isIdleThreadId tid = true ↔ ∃ c : CoreId, tid = idleThreadId c := by
+  constructor
+  · intro h
+    simp only [isIdleThreadId, SeLe4n.ThreadId.toNat, Bool.and_eq_true, decide_eq_true_eq] at h
+    refine ⟨⟨tid.val - idleThreadIdBase, by omega⟩, ?_⟩
+    apply SeLe4n.ThreadId.ext
+    show tid.val = idleThreadIdBase + (tid.val - idleThreadIdBase)
+    omega
+  · rintro ⟨c, rfl⟩
+    exact isIdleThreadId_idleThreadId c
+
+/-- **WS-RR RR5.13** (PR #889 review): is `oid` some core's idle **object** slot?
+    The object-store key form of `isIdleThreadId`, for the boot validator: a
+    platform config may not place an object at an idle slot, or the idle enqueue
+    would overwrite it. -/
+def isIdleObjId (oid : SeLe4n.ObjId) : Bool :=
+  isIdleThreadId (SeLe4n.ThreadId.ofNat oid.toNat)
+
+/-- **WS-RR RR5.13**: every idle thread's object slot is recognised. -/
+theorem isIdleObjId_idleThreadId_toObjId (c : CoreId) :
+    isIdleObjId (idleThreadId c).toObjId = true :=
+  isIdleThreadId_idleThreadId c
+
+/-- PR #889 review round 2: does `cap` name a **kernel-reserved idle object** —
+    a per-core idle TCB, as the object itself or as a CNode to index into?
+    seL4 has no capability to its idle thread at all; here the idle threads are
+    ordinary objects in the store, so the reservation has to be decided
+    wherever user authority names an object.  `syscallResolveCap` refuses such
+    a capability (`syscallResolveCap_ok_not_reserved`), so no syscall can act on
+    an idle TCB through a capability a boot CNode or a transfer happened to
+    carry — a `.tcbSuspend` on one would remove the core's only guaranteed
+    runnable thread — and `PlatformConfig.wellFormed` refuses a config that
+    references one (`idleSlotsReserved`).  Total over `CapTarget`, so a new
+    target kind must say where it stands. -/
+def capTargetsReservedIdleObject (cap : SeLe4n.Model.Capability) : Bool :=
+  match cap.target with
+  | .object oid => isIdleObjId oid
+  | .cnodeSlot cnode _ => isIdleObjId cnode
+  | .replyCap _ => false
+  | .auditTrail => false
+
+/-- PR #889 review round 2: on an object capability the predicate is the idle
+    test of its target. -/
+theorem capTargetsReservedIdleObject_object (oid : SeLe4n.ObjId)
+    (rights : SeLe4n.Model.AccessRightSet) (badge : Option SeLe4n.Badge) :
+    capTargetsReservedIdleObject { target := .object oid, rights := rights, badge := badge } =
+      isIdleObjId oid := rfl
+
+/-- **WS-RR RR5.13**: a slot the recogniser rejects is no core's idle slot. -/
+theorem idleThreadId_toObjId_ne_of_not_isIdleObjId (oid : SeLe4n.ObjId)
+    (h : isIdleObjId oid = false) (c : CoreId) : (idleThreadId c).toObjId ≠ oid := by
+  intro hEq
+  rw [← hEq, isIdleObjId_idleThreadId_toObjId] at h
+  exact Bool.noConfusion h
 
 end SeLe4n.Kernel

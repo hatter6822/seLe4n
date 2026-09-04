@@ -14,6 +14,10 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsAffinity
 import SeLe4n.Kernel.SchedContext.BindingAffinity
 import SeLe4n.Kernel.Concurrency.Locks.LockSetTransitions
 import SeLe4n.Testing.StateBuilder
+-- PR #889 review round 20: the declared-core scenario reads the RPi5 and
+-- single-core simulation bindings, so the platform contracts come in here.
+import SeLe4n.Platform.RPi5.Contract
+import SeLe4n.Platform.Sim.Contract
 
 /-!
 # WS-SM SM5.H — Per-core CBS test suite
@@ -163,6 +167,10 @@ example (oldCore newCore : SeLe4n.Kernel.Concurrency.CoreId) :
 -- #2 (Codex P1): rebinding a thread RUNNING on a core its new affinity forbids is
 -- rejected fail-closed (`.threadOnDifferentCore`).
 #check @setThreadCpuAffinityWithMigration_rejects_running_on_forbidden_core
+-- PR #889 review round 20: an affinity naming a PE the platform does not
+-- declare is refused fail-closed (`.invalidArgument`), and unpinning is not.
+#check @setThreadCpuAffinityWithMigration_rejects_undeclared_core
+#check @setThreadCpuAffinityWithMigration_none_passes_declared_check
 
 -- SM5.H.4 (D15 composite, §17) the full affinity composite preserves SM4.C
 -- run-queue↔budget consistency on every core:
@@ -492,6 +500,55 @@ private def runAffinityScenarios : IO Unit := do
     (determineTargetCore stCbs tid0 == core1)
   assertBool "stCbs: core 1's replenish queue holds exactly scId0's entry"
     ((stCbs.scheduler.replenishQueueOnCore core1).entries == [(scId0, 5000)])
+
+/-- §3.5b **PR #889 review round 20**: the live affinity path refuses a PE the
+    platform does not have.
+
+    `stCbs`'s machine carries the default `declaredCoreCount = numCores`, so
+    core 1 is a legal home there; `stSingleCore` is the same state on a machine
+    that declares one PE, which is what
+    `bootAndInitialisePlatform SimSingleCorePlatform` installs (its binding's
+    `machineConfig` is `simSingleCoreMachineConfig`, and
+    `declaredCoreCountAgrees` holds it equal to `coreCount = 1`).  The pair is
+    the point: the same request is accepted on one machine and refused on the
+    other, so this is a *bound* and not a blanket refusal. -/
+private def stSingleCore : SystemState :=
+  { stCbs with machine := { stCbs.machine with declaredCoreCount := 1 } }
+
+private def runDeclaredCoreScenarios : IO Unit := do
+  IO.println "--- §3.5b PR #889 round 20: declared-core bound on .tcbSetAffinity ---"
+  -- The four bindings agree with their own machine configuration, so the number
+  -- the boot enforces is the number the live transition reads.
+  assertBool "RPi5 binding: machineConfig.declaredCoreCount = coreCount (4)"
+    (SeLe4n.Platform.RPi5.rpi5MachineConfig.declaredCoreCount ==
+      SeLe4n.Platform.PlatformBinding.coreCount
+        (platform := SeLe4n.Platform.RPi5.RPi5Platform))
+  assertBool "single-core sim binding: machineConfig.declaredCoreCount = coreCount (1)"
+    (SeLe4n.Platform.Sim.simSingleCoreMachineConfig.declaredCoreCount ==
+      SeLe4n.Platform.PlatformBinding.coreCount
+        (platform := SeLe4n.Platform.Sim.SimSingleCorePlatform))
+  assertBool "single-core sim binding declares exactly one PE"
+    (SeLe4n.Platform.Sim.simSingleCoreMachineConfig.declaredCoreCount == 1)
+  -- The refusal, on a one-PE machine.
+  assertBool "one-PE machine: .tcbSetAffinity to core 1 is refused (.invalidArgument)"
+    (match setThreadCpuAffinityWithMigration stSingleCore tid0 (some core1) bootCoreId with
+     | .error .invalidArgument => true
+     | _ => false)
+  -- ...and it commits nothing: the pinned affinity is unchanged.
+  assertBool "one-PE machine: a refused affinity write leaves the TCB pinned as it was"
+    (match stSingleCore.getTcb? tid0 with
+     | some tcb => tcb.cpuAffinity == some core1
+     | none => false)
+  -- The bound is narrow: core 0 is a PE this machine has.
+  assertBool "one-PE machine: .tcbSetAffinity to core 0 is accepted"
+    (setThreadCpuAffinityWithMigration stSingleCore tid0 (some bootCoreId) bootCoreId).isOk
+  -- ...and unpinning names no core at all, so it is never refused by this check.
+  assertBool "one-PE machine: unpinning (.tcbSetAffinity none) is accepted"
+    (setThreadCpuAffinityWithMigration stSingleCore tid0 none bootCoreId).isOk
+  -- The same request on the full-width machine is accepted — the refusal is the
+  -- platform's declared width, not a new blanket rule.
+  assertBool "four-PE machine: the same core-1 request is accepted"
+    (setThreadCpuAffinityWithMigration stCbs tid0 (some core1) bootCoreId).isOk
 
 /-- §3.6: SM5.H.4 full-thread-migration — the run-queue entry moves cores. -/
 private def runRunQueueMigrationScenarios : IO Unit := do
@@ -906,6 +963,7 @@ def main : IO Unit := do
   runCompositeScenarios
   runBudgetScenarios
   runAffinityScenarios
+  runDeclaredCoreScenarios
   runRunQueueMigrationScenarios
   runLiveTickScenarios
   runSm5hCompletionScenarios

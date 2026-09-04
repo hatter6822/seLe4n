@@ -1210,19 +1210,48 @@ pub extern "C" fn ffi_rw_lock_release_write_count(handle: u64) -> u64 {
 /// Returns: `KernelError::Ok = 0` on success, the kernel-error
 /// discriminant otherwise.
 ///
+/// The Lean entry refuses the sentinel `tid` **and every kernel-reserved
+/// idle thread id** with `InvalidArgument` before the transition runs
+/// (`suspendThreadCrossCoreStep_idle_refused`, PR #889 review round 8):
+/// this seam takes a raw id and no capability, so the capability
+/// chokepoint's refusal of a capability naming an idle object did not
+/// cover it, and a caller handing it `idleThreadId(c)` would have removed
+/// core `c`'s only guaranteed runnable thread.
+///
 /// Lean binding: see comment on `suspend_thread_cross_core` below.
 #[no_mangle]
 pub extern "C" fn sele4n_suspend_thread(tid: u64) -> u32 {
+    // The TPIDR-derived *logical* core index, read once.  `TPIDR_EL1` is banked
+    // per-PE and set at boot, so reading it before the interrupt bracket below
+    // yields the same value as reading it inside: an interrupt taken in between
+    // returns to this same PE.
+    let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
+    // WS-RR RR5.7: the per-core readiness gate.  This is the second of the two
+    // seams `kernel_entry.rs`'s five-entry table claimed consulted it while
+    // neither did, and the one easiest to miss — it reaches Lean through
+    // `sele4n_suspend_thread` rather than a `lean_*` symbol, so a sweep for
+    // `lean_` does not find it.  `build.rs` derives the Lean symbol set from the
+    // Lean tree's `@[export]`s, which is how `suspend_thread_cross_core` is in
+    // scope for the gate check at all.
+    //
+    // Unlike the SVC seam, the refusal here is a **status**, not a halt.  This
+    // is a C-callable API with an error channel of its own and no trapped thread
+    // waiting to be resumed: a caller told the suspend did not happen can act on
+    // that, and nothing keeps running on the kernel's behalf if it does not.
+    // `IllegalState` is the honest discriminant — the request is well-formed,
+    // the kernel is not in a state to serve it on this PE.  The check precedes
+    // the interrupt bracket because it commits nothing and refusing early costs
+    // the caller no masked window.
+    if !crate::lean_ready::lean_ready(core) {
+        return SUSPEND_BEFORE_LEAN_READY_STATUS;
+    }
     crate::interrupts::with_interrupts_disabled(|| {
-        // WS-SM SM5.I: the third kernel entry that commits state, and
-        // the one easiest to miss — it reaches Lean through
-        // `sele4n_suspend_thread` rather than a `lean_*` symbol, so a
-        // sweep for `lean_` does not find it.  `suspendThreadCrossCoreEntry`
-        // commits through the same `modifyGetKernelState` read-then-write,
-        // so it needs the same exclusion: a suspend racing a syscall on
-        // another core can otherwise lose either commit whole, and a lost
-        // suspend is a thread that keeps running after its caller was told
-        // it stopped.
+        // WS-SM SM5.I: the third kernel entry that commits state.
+        // `suspendThreadCrossCoreEntry` commits through the same
+        // `modifyGetKernelState` read-then-write the syscall path uses, so it
+        // needs the same exclusion: a suspend racing a syscall on another core
+        // can otherwise lose either commit whole, and a lost suspend is a
+        // thread that keeps running after its caller was told it stopped.
         //
         // Interrupt disabling (outside) is per-core and orthogonal: it
         // stops this core re-entering, not another core committing.
@@ -1235,23 +1264,34 @@ pub extern "C" fn sele4n_suspend_thread(tid: u64) -> u32 {
         // that core discharging its own shootdown obligation while it
         // spins — recreating the ack deadlock the self-service exists to
         // prevent.
-        crate::kernel_entry::with_kernel_entry(
-            crate::per_cpu::current_core_id_from_tpidr() as usize,
-            || {
-                // SAFETY: in production builds `suspend_thread_cross_core` is a
-                // Lean-emitted `extern "C"` symbol; calling an extern "C"
-                // function is unsafe.  In test builds it is a Rust-side
-                // safe stub.  We use `unsafe` unconditionally so the
-                // production path is correct; the `#[allow(unused_unsafe)]`
-                // suppresses the test-only warning.
-                #[allow(unused_unsafe)]
-                unsafe {
-                    suspend_thread_cross_core(tid)
-                }
-            },
-        )
+        crate::kernel_entry::with_kernel_entry(core, || {
+            // SAFETY: `suspend_thread_cross_core` is the Lean-emitted
+            // `extern "C"` symbol for `suspendThreadCrossCoreEntry`; calling
+            // it is sound from EL1 kernel context once this core's Lean
+            // runtime is initialized, which the readiness guard above
+            // established before this bracket was entered.
+            #[cfg(feature = "hw_target")]
+            {
+                unsafe { suspend_thread_cross_core(tid) }
+            }
+            // The host lane calls the Rust stand-in under a name of its own, so
+            // no bare-metal Lean symbol is declared, defined or called outside
+            // `hw_target` (WS-RR RR5.8).
+            #[cfg(not(feature = "hw_target"))]
+            {
+                host_lane_suspend_thread(tid)
+            }
+        })
     })
 }
+
+/// **WS-RR RR5.7**: the status `sele4n_suspend_thread` returns when the
+/// executing core's Lean runtime is not initialized.
+///
+/// `KernelError::IllegalState = 2` in the canonical `sele4n-types` enum, which
+/// the HAL mirrors rather than depends on (see this module's header).  Pinned
+/// against that enum by `suspend_before_lean_ready_status_matches_kernel_error`.
+pub const SUSPEND_BEFORE_LEAN_READY_STATUS: u32 = 2;
 
 // ============================================================================
 // AN9-A (DEF-A-M04): Cache + TLB composition FFI witnesses
@@ -1373,17 +1413,28 @@ pub extern "C" fn cache_ic_maintenance(op_tag: u32, addr: u64, size: u64) {
 // kernel's emitted dispatch routine.  Under cargo test the symbol
 // is provided by a Rust-side stub (see below) so the bracket
 // discipline can still be exercised without a full Lean build.
-#[cfg(not(test))]
+//
+// **WS-RR RR5.8**: gated on `feature = "hw_target"`, not `cfg(not(test))`.  A
+// host build that is not a test build compiled this declaration and a call to
+// it, so the default host profile carried a call path to a bare-metal Lean
+// symbol nothing on the host provides; the readiness gate cannot close that,
+// because it decides whether the call executes rather than whether it is
+// compiled.  `build.rs`'s `scan_lean_externs_hw_target_gated` refuses any Lean
+// symbol declared, defined or called outside a `hw_target` region.
+#[cfg(feature = "hw_target")]
 extern "C" {
     fn suspend_thread_cross_core(tid: u64) -> u32;
 }
 
-/// AN9-D test stub: returns `KernelError::NotImplemented = 17` so the
+/// AN9-D host-lane stand-in: returns `KernelError::NotImplemented = 17` so the
 /// bracket discipline can be unit-tested on host without pulling in
 /// the full Lean kernel build artefact.
-#[cfg(test)]
-#[no_mangle]
-extern "C" fn suspend_thread_cross_core(_tid: u64) -> u32 {
+///
+/// **WS-RR RR5.8**: a plain Rust function under a name of its own, where it used
+/// to be a `#[no_mangle] extern "C"` *definition of the Lean symbol* — which put
+/// a bare-metal kernel entry point into every host test binary's symbol table.
+#[cfg(not(feature = "hw_target"))]
+fn host_lane_suspend_thread(_tid: u64) -> u32 {
     17 // KernelError::NotImplemented
 }
 
@@ -1457,41 +1508,33 @@ mod tests {
     // AN9-D (DEF-C-M04): suspendThread atomicity bracket tests
     // ========================================================================
 
+    /// **WS-RR RR5.7**: the not-ready status is `KernelError::IllegalState`.
+    ///
+    /// The HAL mirrors the canonical `sele4n-types` enum rather than depending
+    /// on it (this module's header), so the mirror is pinned against the real
+    /// discriminant here — a drift would otherwise hand a caller a status that
+    /// decodes as some other error.
     #[test]
-    fn sele4n_suspend_thread_brackets_inner_call() {
-        // The wrapper must invoke the inner stub (which returns
-        // NotImplemented = 17 in test builds) and return its result.
-        // This proves the bracket dispatches into the inner symbol.
-        let result = sele4n_suspend_thread(42);
+    fn suspend_before_lean_ready_status_matches_kernel_error() {
         assert_eq!(
-            result, 17,
-            "suspendThread bracket must forward inner stub return"
+            SUSPEND_BEFORE_LEAN_READY_STATUS,
+            sele4n_types::KernelError::IllegalState as u32,
+            "the not-ready suspend status must be KernelError::IllegalState"
+        );
+        assert_ne!(
+            SUSPEND_BEFORE_LEAN_READY_STATUS, 0,
+            "the refusal must not decode as success"
         );
     }
 
-    #[test]
-    fn sele4n_suspend_thread_handles_zero_tid() {
-        // ThreadId 0 is the sentinel; the wrapper must still invoke the
-        // inner dispatch (which performs sentinel rejection at the Lean
-        // layer).  This proves the bracket is a transparent forwarder
-        // and does not pre-filter ids.
-        let result = sele4n_suspend_thread(0);
-        assert_eq!(result, 17, "bracket must not pre-filter sentinel");
-    }
-
-    #[test]
-    fn sele4n_suspend_thread_disables_interrupts_during_call() {
-        // The bracket calls `with_interrupts_disabled`, which on host
-        // is a no-op closure call.  We assert that it does not
-        // panic and that the return value matches the inner stub.
-        // The atomicity contract (interrupts actually disabled on
-        // hardware) is enforced by the aarch64 implementation of
-        // `interrupts::with_interrupts_disabled` which is exercised
-        // in the corresponding `interrupts_no_panic` test.
-        let r1 = sele4n_suspend_thread(1);
-        let r2 = sele4n_suspend_thread(2);
-        assert_eq!(r1, r2, "bracket must be deterministic");
-    }
+    // WS-RR RR5.7: the three bracket tests that reach the suspend stand-in
+    // moved to `tests/readiness_gate_after_mark.rs`.  The seam now consults the
+    // per-core readiness gate on the host lane too, and reaching the stand-in
+    // means marking core 0 ready — a bit the timer suite in this same binary
+    // owns (`per_core_timer_tick_isr_never_advances_global_tick_count` asserts
+    // it is unset).  A separate integration binary is a separate process, so
+    // both sides of the gate stay observable without either test moving the
+    // other's mask.
 
     // ========================================================================
     // WS-SM SM1.B.5 — ffi_current_core_id export tests

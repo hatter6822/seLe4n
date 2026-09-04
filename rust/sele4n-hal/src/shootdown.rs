@@ -141,7 +141,7 @@
 //! | `handleTlbShootdownReqOnCore` per-descriptor effect | `retire_per_descriptor_counts_operands`, `mailbox_publish_snapshot_roundtrip` |
 //! | coalescing / fail-safe fallback (`collapseShootdownOps`) | `mailbox_overflow_collapses_to_vmalle1`, `retire_torn_read_falls_back_to_full_flush` |
 
-use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
 use crate::smp::MAX_SECONDARY_CORES;
 
@@ -434,35 +434,79 @@ pub fn all_acked_for_round(gen: u64, initiator: usize) -> bool {
 /// (`SyscallDispatchEntry.completeShootdownRounds`) is the sole
 /// acquirer.  Fairness is not load-bearing: rounds are rare
 /// (unmap-family syscalls only) and sub-microsecond.
-pub static SHOOTDOWN_ROUND_LOCK: AtomicBool = AtomicBool::new(false);
+///
+/// **PR #889 review — the lock records its owner.**  The word is `0` when
+/// free and `core + 1` while core `core` holds it (`round_lock_owner_word`),
+/// so `round_lock_held_by(core)` is a single load compared against the
+/// executing core.  A bare held/free flag was enough for mutual exclusion but
+/// not for the lock-order tripwire in `kernel_entry.rs`: that tripwire must
+/// halt a core that would take the kernel-entry lock *while itself holding*
+/// the round lock, and a flag cannot tell "held by me" from "held by the
+/// initiator of the round in flight" — under which every other core's timer
+/// tick or `SVC` would have halted an innocent core.  The Lean model's
+/// `roundLockTryAcquire` (`TlbShootdownWait.lean`) is owner-agnostic (success
+/// iff free); the owner is a refinement the hardware carries for the
+/// tripwire, invisible to the model's transitions.
+pub static SHOOTDOWN_ROUND_LOCK: AtomicUsize = AtomicUsize::new(ROUND_LOCK_FREE);
+
+/// **PR #889 review**: the round-lock word while no core holds it.
+pub const ROUND_LOCK_FREE: usize = 0;
+
+/// **PR #889 review**: the round-lock word while `core` holds it — never
+/// `ROUND_LOCK_FREE`, whatever `core` is, which is why the encoding is
+/// `core + 1` rather than `core` with a sentinel at `usize::MAX`.
+#[inline]
+#[must_use]
+pub const fn round_lock_owner_word(core: usize) -> usize {
+    core + 1
+}
 
 /// **WS-SM SM7.B.7** (testable inner form): the round-lock CAS over an
-/// explicit lock cell — `compare_exchange(false, true, Acquire,
-/// Relaxed)`.  The pure state machine is the Lean
-/// `roundLockTryAcquire` (`TlbShootdownWait.lean`: success iff free,
-/// held afterwards either way, two consecutive attempts never both
+/// explicit lock cell — `compare_exchange(ROUND_LOCK_FREE,
+/// round_lock_owner_word(core), Acquire, Relaxed)`.  The pure state machine
+/// is the Lean `roundLockTryAcquire` (`TlbShootdownWait.lean`: success iff
+/// free, held afterwards either way, two consecutive attempts never both
 /// succeed); the multithreaded exclusivity stress
 /// (`round_lock_mutex_stress`) exercises this form on a local
 /// cell so it can hammer the CAS without perturbing the global lock
 /// other tests observe.
 #[inline]
-pub fn round_lock_try_acquire_in(lock: &AtomicBool) -> bool {
-    lock.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-        .is_ok()
+pub fn round_lock_try_acquire_in(lock: &AtomicUsize, core: usize) -> bool {
+    lock.compare_exchange(
+        ROUND_LOCK_FREE,
+        round_lock_owner_word(core),
+        Ordering::Acquire,
+        Ordering::Relaxed,
+    )
+    .is_ok()
 }
 
 /// **WS-SM SM7.B.7** (testable inner form): the release store over an
 /// explicit lock cell (Release ordering).
 #[inline]
-pub fn round_lock_release_in(lock: &AtomicBool) {
-    lock.store(false, Ordering::Release);
+pub fn round_lock_release_in(lock: &AtomicUsize) {
+    lock.store(ROUND_LOCK_FREE, Ordering::Release);
 }
 
-/// **WS-SM SM7.B.7**: try to acquire the global round lock.  `true` =
-/// acquired (Acquire ordering — the previous round's writes, including
-/// its final flag state, are visible).  Never blocks.
+/// **PR #889 review** (testable inner form): does `core` hold `lock`?  One
+/// Acquire load compared against the owner word.
+#[inline]
+#[must_use]
+pub fn round_lock_held_by_in(lock: &AtomicUsize, core: usize) -> bool {
+    lock.load(Ordering::Acquire) == round_lock_owner_word(core)
+}
+
+/// **WS-SM SM7.B.7**: try to acquire the global round lock for the
+/// executing core.  `true` = acquired (Acquire ordering — the previous
+/// round's writes, including its final flag state, are visible).  Never
+/// blocks.  The owner recorded is the TPIDR-derived logical core id, the
+/// same index the kernel-entry bracket is given, so the tripwire compares
+/// like with like.
 pub fn round_lock_try_acquire() -> bool {
-    round_lock_try_acquire_in(&SHOOTDOWN_ROUND_LOCK)
+    round_lock_try_acquire_in(
+        &SHOOTDOWN_ROUND_LOCK,
+        crate::per_cpu::current_core_id_from_tpidr() as usize,
+    )
 }
 
 /// **WS-SM SM7.B.7**: release the global round lock (Release ordering —
@@ -471,17 +515,29 @@ pub fn round_lock_release() {
     round_lock_release_in(&SHOOTDOWN_ROUND_LOCK)
 }
 
-/// **WS-SM SM5.I**: is the global round lock currently held?
+/// **WS-SM SM5.I**: is the global round lock currently held by **any**
+/// core?
 ///
 /// Diagnostic only — the value is a snapshot and any caller that
-/// *acted* on it would be racing. Its one use is
-/// `kernel_entry::assert_not_holding_round_lock`, the lock-order
-/// tripwire: the kernel-entry lock is acquired strictly outside this
-/// one, and taking them in the other order is the single edge that
-/// would close a cycle.
+/// *acted* on it would be racing.  Not the lock-order tripwire's
+/// question (PR #889 review): that one is `round_lock_held_by`, which
+/// asks whether the *executing* core holds it.
 #[must_use]
 pub fn round_lock_is_held() -> bool {
-    SHOOTDOWN_ROUND_LOCK.load(Ordering::Acquire)
+    SHOOTDOWN_ROUND_LOCK.load(Ordering::Acquire) != ROUND_LOCK_FREE
+}
+
+/// **PR #889 review**: does core `core` hold the global round lock?
+///
+/// The lock-order tripwire's question (`kernel_entry::assert_not_holding_round_lock`):
+/// the kernel-entry lock is acquired strictly outside this one, and a core
+/// taking it while *itself* holding the round lock is the single edge that
+/// would close a cycle.  Another core holding the round lock is the ordinary
+/// state of a shootdown in flight, and this core's kernel entry must then
+/// wait (self-servicing its own acknowledgment), not halt.
+#[must_use]
+pub fn round_lock_held_by(core: usize) -> bool {
+    round_lock_held_by_in(&SHOOTDOWN_ROUND_LOCK, core)
 }
 
 // ============================================================================
@@ -1176,6 +1232,18 @@ pub fn online_mask_of(online: &[bool]) -> u64 {
     mask
 }
 
+/// **PR #889 review**: the one lock the global-round-lock tests share.
+/// `tests::round_lock_try_acquire_exclusive_roundtrip` here and
+/// `kernel_entry::tests::tripwire_trips_on_own_round_lock_hold_only` both take
+/// and release [`SHOOTDOWN_ROUND_LOCK`] itself; cargo runs tests in parallel
+/// threads, so without a mutex the two interleave and one sees the other's
+/// hold.  Module-level (not inside `mod tests`) so the sibling module can name
+/// it.
+#[cfg(test)]
+extern crate std;
+#[cfg(test)]
+pub(crate) static GLOBAL_ROUND_LOCK_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[cfg(test)]
 mod tests {
     // The crate is `no_std`; tests may use std (threads for the SM7.B.7
@@ -1183,6 +1251,9 @@ mod tests {
     extern crate std;
 
     use super::*;
+    // The round lock no longer uses a flag (PR #889 review); the stress
+    // harnesses below still do.
+    use core::sync::atomic::AtomicBool;
 
     // ------------------------------------------------------------------------
     // SM7.A.3.A — struct layout invariants
@@ -1578,6 +1649,9 @@ mod tests {
     /// its scope because it is the only test touching it.)
     #[test]
     fn round_lock_try_acquire_exclusive_roundtrip() {
+        let _guard = GLOBAL_ROUND_LOCK_TEST_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         assert!(round_lock_try_acquire(), "free lock must be acquirable");
         assert!(
             !round_lock_try_acquire(),
@@ -1586,6 +1660,36 @@ mod tests {
         round_lock_release();
         assert!(round_lock_try_acquire(), "released lock re-acquirable");
         round_lock_release();
+    }
+
+    /// **PR #889 review**: the lock knows *who* holds it.  On a local cell,
+    /// core 1's acquisition is held by core 1 and by nobody else; after the
+    /// release it is held by nobody.  This is the relation the lock-order
+    /// tripwire needs and a held/free flag could not provide.
+    #[test]
+    fn round_lock_records_its_owner() {
+        let lock = AtomicUsize::new(ROUND_LOCK_FREE);
+        assert!(
+            !round_lock_held_by_in(&lock, 1),
+            "a free lock is held by nobody"
+        );
+        assert!(round_lock_try_acquire_in(&lock, 1));
+        assert!(round_lock_held_by_in(&lock, 1), "the acquirer holds it");
+        assert!(
+            !round_lock_held_by_in(&lock, 2),
+            "a different core does NOT hold it — the answer the tripwire acts on"
+        );
+        assert!(
+            !round_lock_try_acquire_in(&lock, 2),
+            "held by 1 means not acquirable by 2"
+        );
+        // Core 0's owner word is 1, not 0: a core-0 hold must not read as free.
+        round_lock_release_in(&lock);
+        assert!(round_lock_try_acquire_in(&lock, 0));
+        assert_ne!(lock.load(Ordering::SeqCst), ROUND_LOCK_FREE);
+        assert!(round_lock_held_by_in(&lock, 0));
+        round_lock_release_in(&lock);
+        assert!(!round_lock_held_by_in(&lock, 0));
     }
 
     /// SM7.F.3 (PR #854 review P1): the runtime generation allocator is
@@ -2157,20 +2261,23 @@ mod tests {
             .map(|n| n.get())
             .unwrap_or(4)
             .clamp(2, 8);
-        let lock = AtomicBool::new(false);
+        let lock = AtomicUsize::new(ROUND_LOCK_FREE);
         let in_crit = AtomicU32::new(0);
         let max_seen = AtomicU32::new(0);
         let acquisitions = AtomicUsize::new(0);
+        let (lock, in_crit, max_seen, acquisitions) = (&lock, &in_crit, &max_seen, &acquisitions);
         std::thread::scope(|s| {
-            for _ in 0..threads {
-                s.spawn(|| {
+            for contender in 0..threads {
+                // Each contender acquires as its own core id, so the owner word
+                // the lock records is that contender's and no other's.
+                s.spawn(move || {
                     for _ in 0..1000 {
-                        if round_lock_try_acquire_in(&lock) {
+                        if round_lock_try_acquire_in(lock, contender) {
                             let now = in_crit.fetch_add(1, Ordering::SeqCst) + 1;
                             max_seen.fetch_max(now, Ordering::SeqCst);
                             in_crit.fetch_sub(1, Ordering::SeqCst);
                             acquisitions.fetch_add(1, Ordering::SeqCst);
-                            round_lock_release_in(&lock);
+                            round_lock_release_in(lock);
                         } else {
                             std::thread::yield_now();
                         }

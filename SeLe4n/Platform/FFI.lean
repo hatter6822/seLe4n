@@ -10,6 +10,7 @@ import SeLe4n.Kernel.API
 import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.Lifecycle.Suspend
 import SeLe4n.Platform.Boot
+import SeLe4n.Platform.RPi5.Contract
 
 /-!
 # FFI Bridge: Lean Kernel ↔ Rust HAL
@@ -117,13 +118,18 @@ open SeLe4n.Platform.Boot
     `IO.Ref LabelingContext` may be created at module load time via
     `initialize`.  We use `Nonempty` (not `Inhabited`) so the witness
     does NOT propagate as `(default : LabelingContext)` to downstream
-    code that imports this module — preventing accidental use of the
-    test labeling context as a "default" in contexts that should fail
-    closed instead.  The witness value is `Kernel.testLabelingContext`,
-    the same context used by `MainTraceHarness` and the dispatch test
-    suite — it passes the `isInsecureDefaultContext` gate that
-    `syscallEntryChecked` enforces. -/
-instance : Nonempty LabelingContext := ⟨Kernel.testLabelingContext⟩
+    code that imports this module — preventing accidental use of a
+    non-deployment labeling context as a "default" in contexts that
+    should fail closed instead.
+
+    **WS-RR RR5.3**: the witness is `Kernel.defaultLabelingContext`, a context
+    `isInsecureDefaultContext` *rejects*.  It used to be
+    `Kernel.testLabelingContext`, chosen because it passed that gate — which is
+    the fail-open this phase closes: the witness is the value the labeling
+    reference holds before a boot installs one, so choosing an admitted context
+    for it meant every checked syscall entry was served under an all-public
+    policy until (and unless) a boot overrode it. -/
+instance : Nonempty LabelingContext := ⟨Kernel.defaultLabelingContext⟩
 
 -- ============================================================================
 -- AG7-A-iii: Timer FFI declarations
@@ -920,13 +926,28 @@ initialize kernelStateRef : IO.Ref SystemState ← IO.mkRef (default : SystemSta
 /-- WS-RC R2.A.1: The deployment's labeling context.
 
 The labeling context is a deployment-time configuration that
-`syscallEntryChecked` consults to reject the insecure default
-(`isInsecureDefaultContext` returns true for `defaultLabelingContext`).
-Initialised to `Kernel.testLabelingContext` so the simulation
-(non-hardware) test path passes the insecure-default gate; the boot
-wrapper overrides it with the production policy on hardware. -/
+`syscallEntryChecked` consults to reject a labeling that provides no
+domain separation (`isInsecureDefaultContext`).
+
+**WS-RR RR5.3**: initialised to `Kernel.defaultLabelingContext`, which that
+gate **rejects** — so every checked entry fails closed with `.policyDenied`
+until `bootAndInitialiseFromPlatform` installs a real deployment context.
+Before RR5.3 the initial value was `Kernel.testLabelingContext`, chosen
+precisely because it passed the gate; combined with the boot wrapper's
+`Option`-defaulting-to-`none` labeling argument, a boot that supplied no
+context left an all-public policy live and every checked entry served under
+it.  Both halves are closed: the argument is mandatory and the pre-boot value
+is refused.
+
+Simulation and test paths install `Kernel.harnessLabelingContext` explicitly
+(via `initialiseKernelLabelingContext` or the boot wrapper), which is a real
+two-domain deployment labeling rather than a guard-evading one.  The hardware
+boot installs the platform binding's own labeling through
+`bootAndInitialisePlatform` — for `RPi5Platform`,
+`Kernel.confinedLabelingContext rpi5UpperDomainBase rpi5LowerWitnessIndex …`
+(`Platform.RPi5.rpi5_deploymentLabeling`). -/
 initialize kernelLabelingContextRef : IO.Ref LabelingContext ←
-  IO.mkRef Kernel.testLabelingContext
+  IO.mkRef Kernel.defaultLabelingContext
 
 /-- WS-RC R2.A.2: Install a fresh `SystemState` into `kernelStateRef`.
 
@@ -1017,35 +1038,316 @@ def initialiseKernelLabelingContext (ctx : LabelingContext) : BaseIO Unit :=
 def getKernelLabelingContext : BaseIO LabelingContext :=
   kernelLabelingContextRef.get
 
-/-- WS-RC R2.A.3: Boot wrapper that runs `bootFromPlatformChecked`,
-    installs the resulting `SystemState` into `kernelStateRef`, and
-    optionally installs a labeling context.
+/-- WS-RR RR5.3: the boot error a deployment labeling context that declares no
+    verified domain separation is refused with.
+
+Kept as a named definition rather than an inline literal so the fail-closed
+arm has an identity a test can match on and a caller can recognise without
+string-matching on prose. -/
+def insecureLabelingContextBootError : String :=
+  "boot refused: the deployment labeling context declares no verified domain \
+   separation (LabelingContext.separatedThreads); build one with \
+   Kernel.deploymentLabelingContext"
+
+/-- PR #889 review round 3: the refusal for a labeling whose declared separation
+witnesses are not installed threads of the boot state. -/
+def uninstalledSeparationWitnessBootError : String :=
+  "boot: the labeling's declared separation witnesses are not installed threads of the boot state (PR #889 review round 3)"
+
+/-- PR #889 review round 3: the boot wrapper over a **declared core list** and a
+labeling — the shared body of `bootAndInitialiseFromPlatform` (every model
+core) and `bootAndInitialisePlatform` (the binding's cores).
+
+Three refusals, in order, and none commits anything: the labeling guard
+(`insecureLabelingContextBootError`), the checked boot's own rejection
+(forwarded verbatim), and — new in this round — a boot whose labeling's
+declared separation witnesses are not installed threads of the boot state
+(`uninstalledSeparationWitnessBootError`, `declaredWitnessesInstalled`).  The
+guard decides that the labeling separates two admissible *ids*; only the boot
+state can say whether those ids are threads the deployment creates, and a
+partition that separates no running thread is exactly the vacuous deployment
+the guard exists to refuse. -/
+def bootAndInitialiseFromPlatformOn
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId)
+    (config : PlatformConfig)
+    (ctx : LabelingContext) :
+    BaseIO (Except String SystemState) := do
+  if isInsecureDefaultContext ctx then
+    pure (Except.error insecureLabelingContextBootError)
+  else
+    match bootFromPlatformCheckedWithIdleThreadsFor cores config with
+    | Except.error e => pure (Except.error e)
+    | Except.ok ist =>
+      if declaredWitnessesInstalled ist.state ctx then
+        let st := ist.state
+        initialiseKernelState st
+        initialiseKernelLabelingContext ctx
+        pure (Except.ok st)
+      else
+        pure (Except.error uninstalledSeparationWitnessBootError)
+
+/-- **PR #889 review round 22**: the cores a configuration declares.
+
+`bootAndInitialiseFromPlatform` used `allCores` unconditionally while
+`applyMachineConfig` installed `config.machineConfig.declaredCoreCount` into the
+machine — two answers to one question, and on a narrow configuration they
+disagreed: a TCB pinned to core 3 passed `bootAffinitiesDeclared allCores`, the
+boot succeeded, and the installed machine said only core 0 existed, so the
+thread's first resume or wake queued it on a PE the configuration does not have.
+That is the round-20 relation (the boot's core set and the machine's PE count are
+one fact) at the one entry that had no binding to tie them together.
+
+So the wrapper derives its list from the configuration instead of naming one.
+A count above the model's width is clamped, which is the fail-closed direction:
+`allCores.take n` with `n > numCores` is `allCores`, so a nonsense count widens
+to the model rather than producing a list with members the `Vector`-shaped
+per-core state has no slots for. -/
+def declaredCoresOfConfig (config : PlatformConfig) :
+    List SeLe4n.Kernel.Concurrency.CoreId :=
+  SeLe4n.Kernel.Concurrency.allCores.take config.machineConfig.declaredCoreCount
+
+/-- The derivation is the identity on a full-width configuration, so every
+existing caller, fixture and theorem about the all-cores boot is unchanged. -/
+theorem declaredCoresOfConfig_allCores (config : PlatformConfig)
+    (h : config.machineConfig.declaredCoreCount = SeLe4n.Kernel.Concurrency.numCores) :
+    declaredCoresOfConfig config = SeLe4n.Kernel.Concurrency.allCores := by
+  unfold declaredCoresOfConfig
+  rw [h, ← SeLe4n.Kernel.Concurrency.allCores_length, List.take_length]
+
+/-- ...and it never names a core the model does not have. -/
+theorem declaredCoresOfConfig_length_le (config : PlatformConfig) :
+    (declaredCoresOfConfig config).length ≤ SeLe4n.Kernel.Concurrency.numCores := by
+  unfold declaredCoresOfConfig
+  rw [List.length_take, SeLe4n.Kernel.Concurrency.allCores_length]
+  exact Nat.min_le_right _ _
+
+/-- WS-RC R2.A.3 / **WS-RR RR5.2, RR5.3**: Boot wrapper that validates the
+    deployment labeling context, runs `bootFromPlatformChecked`, installs the
+    resulting `SystemState` into `kernelStateRef` and the context into
+    `kernelLabelingContextRef`.
 
 On a hardware build the Rust HAL's kernel-init path calls this
 function exactly once after low-level (assembly + Rust) init; the
 returned `SystemState` is then live in `kernelStateRef` for every
 subsequent SVC entry.  On a simulation build the function is a no-op
-beyond what `bootFromPlatformChecked` already does — `MainTraceHarness`
+beyond what the boot entry already does — `MainTraceHarness`
 keeps using `bootFromPlatformChecked` directly because every test path
 threads state explicitly.
 
-Returns the post-boot state on success or the boot error string on
-failure (the same shape as `bootFromPlatformChecked`).  The IO.Ref is
-NOT updated on the failure path — callers can detect the failure
-explicitly without seeing partial state. -/
+**WS-RR RR5.14 — the boot entry is now `bootFromPlatformCheckedWithIdleThreads`.**
+It used to be `bootFromPlatformChecked`, which installs no idle threads at all:
+`currentOnCore c = none` on every core and `getTcb? (idleThreadId c) = none`, so
+`idleDispatchableOnCore` was `false` everywhere and `idleFallbackOnCore` took its
+`setCurrentOnCore c none` arm — every core would stall with nothing to run at its
+first scheduling point.  Meanwhile SM5.J's `schedulerNoStall_smp` and the
+`no_starvation_under_smp` capstone both take `hIdle : ∀ c,
+idleThreadEnqueuedOnCore st c` **by hypothesis**, and no reachable state
+discharged it.  The idle-installing wrapper that existed
+(`bootFromPlatformWithIdleThreads`) had no runtime caller and, because it sets
+current slots without enqueuing, would not have discharged it either.
+
+The new entry is a thin composition over `bootFromPlatformChecked` — same
+validation, same rejections, the seven results characterizing it unchanged — that
+folds a per-core idle enqueue over `allCores`.  The hypothesis is discharged from
+the state the kernel actually comes up in
+(`bootFromPlatformCheckedWithIdleThreads_idleThreadEnqueuedOnCore`).
+
+**RR5.2 — the labeling context is mandatory.**  It used to be
+`ctx : Option LabelingContext := none`, and on the `none` path the wrapper
+installed the boot state and left whatever the labeling reference already held
+— which was `testLabelingContext`, an all-public-except-the-sentinel policy the
+pre-RR5 guard admitted.  A hardware boot that simply did not pass a context
+therefore came up with information-flow enforcement vacuous, silently.  The
+argument now has no default, so "no context" is not expressible.
+
+**RR5.3 — an inadmissible context fails the boot closed.**  Making the argument
+mandatory removes *absence*; it does not remove a caller passing
+`defaultLabelingContext` or any other labeling with no real separation.  The
+wrapper therefore runs the same guard `syscallEntryChecked` runs
+(`isInsecureDefaultContext`) **before** committing anything, and refuses with
+`insecureLabelingContextBootError`.  Ordering is load-bearing: the check
+precedes `initialiseKernelState`, so a refused boot leaves *both* references
+untouched — the kernel-state reference at `default : SystemState` and the
+labeling reference at its fail-closed pre-boot value — rather than leaving a
+live post-boot state paired with a policy that enforces nothing.
+
+Returns the post-boot state on success, or an error string on failure: the boot
+error from `bootFromPlatformChecked` (which the idle entry forwards verbatim —
+`bootFromPlatformCheckedWithIdleThreads_rejects_invalid`), or
+`insecureLabelingContextBootError`.
+Neither IO.Ref is updated on either failure path — callers can detect the
+failure explicitly without seeing partial state. -/
 def bootAndInitialiseFromPlatform
     (config : PlatformConfig)
-    (ctx : Option LabelingContext := none) :
-    BaseIO (Except String SystemState) := do
-  match bootFromPlatformChecked config with
-  | Except.error e => pure (Except.error e)
-  | Except.ok ist =>
-    let st := ist.state
-    initialiseKernelState st
-    match ctx with
-    | none      => pure ()
-    | some lctx => initialiseKernelLabelingContext lctx
-    pure (Except.ok st)
+    (ctx : LabelingContext) :
+    BaseIO (Except String SystemState) :=
+  bootAndInitialiseFromPlatformOn (declaredCoresOfConfig config) config ctx
+
+/-- PR #889 review round 7: the binding's own boot configuration — the caller's
+IRQ table and initial objects under the **binding's** machine configuration and
+boot VSpace root.
+
+A `PlatformConfig` carries four fields.  Two of them describe what the boot
+image creates and only the caller can know (`irqTable`, `initialObjects`); the
+other two describe the hardware (`machineConfig`) and the platform-reserved
+boot VSpace root (`bootVSpaceRoot`), which the binding already states
+(`PlatformBinding.machineConfig`, `PlatformBinding.bootVSpaceRoot`).  The
+platform entry used to take the caller's word for the latter two, so a caller
+could boot the RPi5 binding without its canonical root or under another
+machine's address widths.  Applying the binding's values is the fail-safe
+direction — a caller cannot make the hardware boot describe hardware it is not
+running on — and it is what makes the checked boot's canonical-root theorems
+theorems of the hardware boot rather than of a config a caller happened to
+pass.  The four projections below are definitional. -/
+def bindPlatformConfig (platform : Type) [PlatformBinding platform]
+    (config : PlatformConfig) : PlatformConfig :=
+  { config with
+    machineConfig := PlatformBinding.machineConfig (platform := platform)
+    bootVSpaceRoot := PlatformBinding.bootVSpaceRoot (platform := platform) }
+
+theorem bindPlatformConfig_machineConfig (platform : Type) [PlatformBinding platform]
+    (config : PlatformConfig) :
+    (bindPlatformConfig platform config).machineConfig =
+      PlatformBinding.machineConfig (platform := platform) := rfl
+
+theorem bindPlatformConfig_bootVSpaceRoot (platform : Type) [PlatformBinding platform]
+    (config : PlatformConfig) :
+    (bindPlatformConfig platform config).bootVSpaceRoot =
+      PlatformBinding.bootVSpaceRoot (platform := platform) := rfl
+
+theorem bindPlatformConfig_initialObjects (platform : Type) [PlatformBinding platform]
+    (config : PlatformConfig) :
+    (bindPlatformConfig platform config).initialObjects = config.initialObjects := rfl
+
+theorem bindPlatformConfig_irqTable (platform : Type) [PlatformBinding platform]
+    (config : PlatformConfig) :
+    (bindPlatformConfig platform config).irqTable = config.irqTable := rfl
+
+/-- WS-RR RR5.2: boot under the **platform binding's own** labeling.
+
+`bootAndInitialiseFromPlatform` takes the labeling as an argument, which is the
+right shape for a caller that has one — the SD suite installs a dozen — and the
+wrong shape for the hardware boot, where *which* labeling is a deployment
+decision that should be made once, where the platform is described, and not
+re-made by whoever writes the boot call.  `PlatformBinding.deploymentLabeling`
+(`Platform/Contract.lean`) is that decision — the `DeploymentLabeling` *source*,
+not a context — and this entry boots under `PlatformBinding.labeling`, the
+constructor's output on it: the RPi5 binding's source is
+`Kernel.confinedDeploymentLabeling rpi5UpperDomainBase rpi5LowerWitnessIndex …`, so its labeling is
+`Kernel.confinedLabelingContext rpi5UpperDomainBase rpi5LowerWitnessIndex …`
+(`Platform.RPi5.rpi5_deploymentLabeling`, by `rfl`); the simulation bindings'
+source is `Kernel.harnessDeploymentLabeling`.
+
+Because the binding stores the source, the guard's admission
+(`PlatformBinding.labeling_admitted`) and the whole of `LabelingContextValid`
+(`PlatformBinding.labeling_valid`) are theorems of every binding rather than
+proofs each one carries, so the refusal arm of `bootAndInitialiseFromPlatform`
+is unreachable from here — machine-checked as
+`bootAndInitialisePlatform_eq_checked_boot`: this entry accepts and rejects
+exactly what `bootFromPlatformCheckedWithIdleThreads` does.
+
+**The binding supplies the machine configuration and the boot VSpace root too**
+(PR #889 review round 7).  This entry used to take the binding's cores and
+labeling and pass the caller's `machineConfig` and `bootVSpaceRoot` through, so
+an `RPi5Platform` boot with `bootVSpaceRoot := none`, or with a machine
+configuration other than the BCM2712's, succeeded and left the live state
+without the canonical ASID root, modelling a memory map and address widths the
+hardware adapters do not have.  Those two fields are the binding's decisions in
+exactly the sense the labeling and the cores are — made once, where the platform
+is described — so the entry boots `bindPlatformConfig platform config`: the
+caller's IRQ table and initial objects under the binding's machine configuration
+and boot VSpace root.  SM10.1's `lean_kernel_main` calls `bootAndInitialiseRPi5`,
+the instance of this entry fixed at `RPi5Platform`. -/
+def bootAndInitialisePlatform (platform : Type) [PlatformBinding platform]
+    (config : PlatformConfig) : BaseIO (Except String SystemState) :=
+  bootAndInitialiseFromPlatformOn (PlatformBinding.declaredCores (platform := platform))
+    (bindPlatformConfig platform config) (PlatformBinding.labeling (platform := platform))
+
+/-- PR #889 review round 7: **the hardware boot entry** — `bootAndInitialisePlatform`
+fixed at `RPi5Platform`, so the platform is a definition rather than an argument
+the exported entry could vary.
+
+The boot-entry gate (`scripts/check_kernel_entry_exports.py`) holds whichever
+declaration carries `@[export lean_kernel_main]` to executing *this* function
+and no other kernel-state installer.  With the generic entry as the callee the
+gate never inspected the platform argument, so an entry executing
+`bootAndInitialisePlatform SimSingleCorePlatform config` — the harness labeling
+and a single idle thread, on an image whose Rust boot releases four PEs —
+satisfied it.  Here the platform cannot be chosen at all. -/
+def bootAndInitialiseRPi5 (config : PlatformConfig) : BaseIO (Except String SystemState) :=
+  bootAndInitialisePlatform SeLe4n.Platform.RPi5.RPi5Platform config
+
+/-- PR #889 review round 7: the hardware entry is the generic one at the RPi5
+binding — definitional, so every theorem about `bootAndInitialisePlatform` at
+`RPi5Platform` is a theorem about the hardware entry. -/
+theorem bootAndInitialiseRPi5_eq (config : PlatformConfig) :
+    bootAndInitialiseRPi5 config =
+      bootAndInitialisePlatform SeLe4n.Platform.RPi5.RPi5Platform config := rfl
+
+/-- **PR #889 review round 17: the hardware boot entry's only correct call.**
+
+`bootAndInitialiseRPi5` returns `Except String SystemState`: on `.error` it has
+installed *nothing*, so a caller that ignores the result returns to the Rust
+boot path with no kernel state and the image idles as though it had booted —
+the fail-open direction on the one call that decides whether the kernel exists.
+The handling is the same on every failure and there is exactly one right answer
+to it, so it belongs here rather than in the caller.
+
+This is what SM10.1's `lean_kernel_main` calls.  Making the failure handling a
+*definition* is what lets the contract on that entry be decided by the
+elaborator (`SeLe4n/Testing/BootEntryContract.lean`): "the entry calls this
+constant, and no path from it installs kernel state except through it" is a
+question about resolved constants, where "the entry's `.error` arm ends in a
+halt" was a question about Lean syntax that eight review rounds of regular
+expressions failed to answer. -/
+def bootAndInitialiseRPi5OrHalt (config : PlatformConfig) : BaseIO Unit := do
+  match ← bootAndInitialiseRPi5 config with
+  | .ok _ => pure ()
+  | .error _ => ffiFatalHaltAll
+
+/-- WS-RR RR5.2: under a binding's labeling the boot entry **cannot** be refused
+    on the labeling — it is the checked idle boot followed by the two installs,
+    and nothing else.  The proof is the binding-level admission theorem
+    (`PlatformBinding.labeling_admitted`) rewriting the guard to `false`; there
+    is no case analysis, because there is no case. -/
+theorem bootAndInitialisePlatform_eq_checked_boot (platform : Type) [PlatformBinding platform]
+    (config : PlatformConfig) :
+    bootAndInitialisePlatform platform config =
+      (match bootFromPlatformCheckedWithIdleThreadsFor
+          (PlatformBinding.declaredCores (platform := platform))
+          (bindPlatformConfig platform config) with
+        | Except.error e => pure (Except.error e)
+        | Except.ok ist =>
+            if declaredWitnessesInstalled ist.state (PlatformBinding.labeling (platform := platform)) then do
+              initialiseKernelState ist.state
+              initialiseKernelLabelingContext (PlatformBinding.labeling (platform := platform))
+              pure (Except.ok ist.state)
+            else
+              pure (Except.error uninstalledSeparationWitnessBootError)) := by
+  unfold bootAndInitialisePlatform bootAndInitialiseFromPlatformOn
+  rw [PlatformBinding.labeling_admitted]
+  rfl
+
+/-- PR #889 review round 3: on the Raspberry Pi 5 the checked platform boot's
+idle install is the **all-cores** one — the binding declares every model core
+(`rpi5_cores_eq_allCores`) — so the all-cores boot theorems (the characterised
+queues, `threadStateConsistent`, the reservation) are theorems of the hardware
+boot and not of a form it never runs. -/
+theorem bootAndInitialisePlatform_rpi5_all_cores (config : PlatformConfig) :
+    bootFromPlatformCheckedWithIdleThreadsFor
+        (PlatformBinding.declaredCores (platform := SeLe4n.Platform.RPi5.RPi5Platform)) config =
+      bootFromPlatformCheckedWithIdleThreads config := by
+  rw [SeLe4n.Platform.RPi5.rpi5_cores_eq_allCores]
+  exact bootFromPlatformCheckedWithIdleThreadsFor_allCores config
+
+/-- PR #889 review round 7: the hardware boot carries the **canonical** RPi5
+boot VSpace root and machine configuration whatever the caller's config said —
+the bound config's two hardware fields are the binding's, by definition. -/
+theorem bootAndInitialiseRPi5_bound_config (config : PlatformConfig) :
+    (bindPlatformConfig SeLe4n.Platform.RPi5.RPi5Platform config).bootVSpaceRoot =
+        some SeLe4n.Platform.RPi5.rpi5BootVSpaceRootEntry ∧
+    (bindPlatformConfig SeLe4n.Platform.RPi5.RPi5Platform config).machineConfig =
+        SeLe4n.Platform.RPi5.rpi5MachineConfig := ⟨rfl, rfl⟩
 
 /-- WS-RC R2.B.1 helper: Write the FFI-passed register values into the
     given thread's TCB register file.
@@ -1967,12 +2269,39 @@ opaque ffiSuspendThread : UInt64 → BaseIO UInt32
       kernel state and return `0` (`KernelError::Ok`-equivalent slot).
 
     **WS-SM SM6.E**: the live Rust atomicity bracket
-    (`sele4n_suspend_thread`) now resolves the **cross-core** entry
+    (`sele4n_suspend_thread`) resolves the **cross-core** entry
     `suspend_thread_cross_core` (`SyscallDispatchEntry.suspendThreadCrossCoreEntry`,
     backed by the verified per-core `suspendThreadOnCore`: home-core
-    deschedule + remote `.reschedule` SGI after the commit).  This
-    boot-pinned form remains the single-core entry. -/
-@[export suspend_thread_inner]
+    deschedule + remote `.reschedule` SGI after the commit).
+
+    **WS-RR RR5.17 — the `@[export]` is RETIRED; this is a Lean-side
+    reference path, not a C symbol.**
+
+    The body commits through `initialiseKernelState`, a bare
+    `kernelStateRef.set`, with no kernel-entry bracket around the
+    read-modify-write.  `kernel_entry.rs` acknowledged that and argued it was
+    harmless because nothing on the trap path reached it — which was true of the
+    HAL as it stood, and is not a property of the artefact: `@[export]` makes it
+    a live C symbol in the linked image, so *any* future Rust caller would get an
+    unserialised kernel-state write, and a lost suspend is a thread that keeps
+    running after its caller was told it stopped.
+
+    Two remediations were open (register §5 finding 9): bracket the body, or
+    retire the export and keep the definition for the suites.  Retiring is the
+    stronger one and the one with precedent in this file — WS-RA removed the
+    twin `syscall_dispatch_inner` for the same reason, and the tombstone below
+    keeps it gone.  It removes the hazard rather than mitigating it: there is no
+    symbol for a future caller to reach, so no bracket can be forgotten.
+    Bracketing would also have needed the Lean body to take the kernel-entry
+    lock through new FFI, which the simulation build cannot link — the suites
+    that exercise this definition run with no HAL.
+
+    What remains is a **single-core reference path** with no production caller,
+    exercised by `tests/SyscallDispatchSuite.lean` (SD-020..SD-023) as the
+    boot-pinned counterpart of the live cross-core entry.  New code must not
+    call it: the live suspend is `suspendThreadCrossCoreEntry`, whose Rust
+    wrapper takes the kernel-entry bracket and consults the per-core readiness
+    gate (RR5.7). -/
 def suspendThreadInner (tid : UInt64) : BaseIO UInt32 := do
   let st ← getKernelState
   let threadId := SeLe4n.ThreadId.ofNat tid.toNat

@@ -12,6 +12,8 @@ import SeLe4n.Platform.FFI
 import SeLe4n.Testing.StateBuilder
 import SeLe4n.Kernel.Lifecycle.Suspend
 import SeLe4n.Kernel.InformationFlow.Policy
+import SeLe4n.Platform.Sim.Contract
+import SeLe4n.Platform.RPi5.Contract
 
 /-!
 # WS-RC R2.C — Hardware syscall dispatch regression suite
@@ -268,29 +270,37 @@ private def sd011_updateKernelState : IO Unit := do
     context; `getKernelLabelingContext` reads it.
 
 Indirectly verifies the round-trip via `isInsecureDefaultContext`:
-- Installing `defaultLabelingContext` (insecure) makes
-  `isInsecureDefaultContext` return `true`.
-- Installing `testLabelingContext` (secure-shaped) makes it return
-  `false`.
+- Installing `harnessLabelingContext` (a real two-domain deployment
+  labeling) makes `isInsecureDefaultContext` return `false`.
+- Installing `defaultLabelingContext` (no separation at all) makes it
+  return `true`.
 
 Two different installed contexts producing two different gate
 results witnesses that the read API observes the most recently
 installed value. -/
 private def sd012_labelingContextRoundtrip : IO Unit := do
-  -- Install the test context: insecure-default detector should be false.
-  initialiseKernelLabelingContext SeLe4n.Kernel.testLabelingContext
+  -- Install the harness deployment labeling: the guard should admit it.
+  initialiseKernelLabelingContext SeLe4n.Kernel.harnessLabelingContext
   let ctx1 ← getKernelLabelingContext
-  expect "sd012a_test_context_not_insecure"
+  expect "sd012a_harness_context_not_insecure"
     (¬ SeLe4n.Kernel.isInsecureDefaultContext ctx1)
-    "testLabelingContext must NOT be detected as insecure-default"
+    "harnessLabelingContext must NOT be detected as insecure-default"
   -- Install the default (insecure) context: detector should now be true.
   initialiseKernelLabelingContext SeLe4n.Kernel.defaultLabelingContext
   let ctx2 ← getKernelLabelingContext
   expect "sd012b_default_context_insecure"
     (SeLe4n.Kernel.isInsecureDefaultContext ctx2)
     "defaultLabelingContext must BE detected as insecure-default"
-  -- Restore the test context for downstream tests.
+  -- WS-RR RR5.4: the all-public-except-the-sentinel context is now REJECTED.
+  -- Before RR5.4 the guard sampled sentinel ids 0/1/42 and this context passed
+  -- by labeling id 0 alone, which is the fail-open the phase closes.
   initialiseKernelLabelingContext SeLe4n.Kernel.testLabelingContext
+  let ctx3 ← getKernelLabelingContext
+  expect "sd012c_sentinel_only_context_insecure"
+    (SeLe4n.Kernel.isInsecureDefaultContext ctx3)
+    "testLabelingContext (all-public except the sentinel) must BE rejected"
+  -- Restore the harness deployment labeling for downstream tests.
+  initialiseKernelLabelingContext SeLe4n.Kernel.harnessLabelingContext
 
 -- ============================================================================
 -- R2.B — suspendThreadInner integration via IO.Ref
@@ -412,7 +422,7 @@ private def sd030_dispatch_noCurrent : IO Unit := do
   -- Empty scheduler.current = none.
   let st := mkState [] none
   initialiseKernelState st
-  initialiseKernelLabelingContext SeLe4n.Kernel.testLabelingContext
+  initialiseKernelLabelingContext SeLe4n.Kernel.harnessLabelingContext
   let outcome ← dispatchViaRef 0 0 0 0 0 0 0 0 0
   expect "sd030_illegalState_error_frame"
     (isErrorFrameFor outcome .illegalState)
@@ -426,7 +436,7 @@ private def sd031_dispatch_spillsRegs : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨7⟩
   let st := mkState [(⟨7⟩, .tcb (mkTcb 7 .Ready))] (some tid)
   initialiseKernelState st
-  initialiseKernelLabelingContext SeLe4n.Kernel.testLabelingContext
+  initialiseKernelLabelingContext SeLe4n.Kernel.harnessLabelingContext
   -- Invoke with a syscallId that's out of the modeled range; the call
   -- must return an error frame and preserve the spilled registers.
   let _ ← dispatchViaRef 0xFFFFFFFF 0 0xDEADBEEF 0 0 0 0 0 0
@@ -447,7 +457,7 @@ private def sd032_dispatch_invalidSyscall : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨8⟩
   let st := mkState [(⟨8⟩, .tcb (mkTcb 8 .Ready))] (some tid)
   initialiseKernelState st
-  initialiseKernelLabelingContext SeLe4n.Kernel.testLabelingContext
+  initialiseKernelLabelingContext SeLe4n.Kernel.harnessLabelingContext
   -- syscallId 99 is outside the modeled set.
   let outcome ← dispatchViaRef 99 0 0 0 0 0 0 0 0
   expect "sd032_invalid_syscall_error_frame"
@@ -481,7 +491,7 @@ private def sd034_dispatch_abiMismatch : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨10⟩
   let st := mkState [(⟨10⟩, .tcb (mkTcb 10 .Ready))] (some tid)
   initialiseKernelState st
-  initialiseKernelLabelingContext SeLe4n.Kernel.testLabelingContext
+  initialiseKernelLabelingContext SeLe4n.Kernel.harnessLabelingContext
   -- Pass msgInfo=0xAAAA and x1=0xBBBB (≠ msgInfo).  Per the FFI ABI
   -- contract these must agree; the dispatcher rejects.
   let outcome ← dispatchViaRef 0 0xAAAA 0 0xBBBB 0 0 0 0 0
@@ -508,7 +518,7 @@ private def sd035_sequentialDispatches : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨11⟩
   let st := mkState [(⟨11⟩, .tcb (mkTcb 11 .Ready))] (some tid)
   initialiseKernelState st
-  initialiseKernelLabelingContext SeLe4n.Kernel.testLabelingContext
+  initialiseKernelLabelingContext SeLe4n.Kernel.harnessLabelingContext
   -- First dispatch: spills x0=0x111 into the TCB.
   let _ ← dispatchViaRef 99 0 0x111 0 0 0 0 0 0
   let st1 ← getKernelState
@@ -532,7 +542,39 @@ private def sd035_sequentialDispatches : IO Unit := do
 -- R2.A — bootAndInitialiseFromPlatform integration
 -- ============================================================================
 
-/-- SD-040: `bootAndInitialiseFromPlatform` on a well-formed (empty)
+/-- PR #889 review round 3: the minimally well-formed config whose boot the
+harness labeling **admits** — it installs the labeling's two declared
+separation witnesses (`⟨harnessLowerWitnessIndex⟩` and
+`⟨upperWitnessIndex harnessSeparationBoundary⟩`) as boot-safe, inactive TCBs.
+The boot wrapper now refuses a boot whose witnesses are not installed threads
+(`declaredWitnessesInstalled`), so the empty config — whose only TCBs are the
+idle threads — is the negative, not the fixture. -/
+private def witnessTcb (id : Nat) : TCB :=
+  { tid := ⟨id⟩, priority := ⟨10⟩, domain := ⟨0⟩,
+    cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0),
+    threadState := .Inactive }
+
+private def witnessEntry (id : Nat) : SeLe4n.Platform.Boot.ObjectEntry :=
+  { id := ⟨id⟩, obj := .tcb (witnessTcb id),
+    hSlots := fun _ h => KernelObject.noConfusion h,
+    hMappings := fun _ h => KernelObject.noConfusion h }
+
+private def harnessUpperWitness : Nat :=
+  SeLe4n.Kernel.upperWitnessIndex SeLe4n.Kernel.harnessSeparationBoundary
+
+/-- The witnessed config for an index-partitioned labeling with lower witness
+`lower` and upper witness `upper` — the harness labeling's pair is
+(`harnessLowerWitnessIndex`, `harnessUpperWitness`); a confined context at
+boundary `b` with witness `w` has (`w`, `upperWitnessIndex b`).  Round 5: the
+lower witness is a parameter of the family, not thread `1` — `1` is the boot
+VSpace root's object id on every binding (SD-056). -/
+private def witnessedCfgFor (lower upper : Nat) : SeLe4n.Platform.Boot.PlatformConfig :=
+  { irqTable := [], initialObjects := [witnessEntry lower, witnessEntry upper] }
+
+private def witnessedCfg : SeLe4n.Platform.Boot.PlatformConfig :=
+  witnessedCfgFor SeLe4n.Kernel.harnessLowerWitnessIndex harnessUpperWitness
+
+/-- SD-040: `bootAndInitialiseFromPlatform` on a well-formed (witnessed)
     config installs the post-boot state into `kernelStateRef`. -/
 private def sd040_bootInitialise_emptyConfig_succeeds : IO Unit := do
   -- Seed the IO.Ref with a sentinel state so we can detect mutation.
@@ -542,9 +584,8 @@ private def sd040_bootInitialise_emptyConfig_succeeds : IO Unit := do
   -- A PlatformConfig with empty IRQ + initialObjects tables is the
   -- minimally well-formed config (`PlatformConfig.wellFormed_empty`
   -- in Boot.lean).
-  let cfg : SeLe4n.Platform.Boot.PlatformConfig :=
-    { irqTable := [], initialObjects := [] }
-  match ← bootAndInitialiseFromPlatform cfg with
+  let cfg : SeLe4n.Platform.Boot.PlatformConfig := witnessedCfg
+  match ← bootAndInitialiseFromPlatform cfg SeLe4n.Kernel.harnessLabelingContext with
   | Except.ok _ =>
       -- The IO.Ref has been overwritten with the post-boot state.
       -- The post-boot state has no objects, so `scheduler.current`
@@ -557,16 +598,31 @@ private def sd040_bootInitialise_emptyConfig_succeeds : IO Unit := do
       failLine "sd040_bootInitialise_unexpected_error"
         s!"empty config should be well-formed, got error: {e}"
 
-/-- SD-041: `bootAndInitialiseFromPlatform` accepts an optional
-    labeling context and installs it into `kernelLabelingContextRef`. -/
+/-- SD-041: `bootAndInitialiseFromPlatform` installs the deployment labeling
+    context it is given into `kernelLabelingContextRef`.
+
+WS-RR RR5.2: the argument is mandatory — it used to be
+`Option LabelingContext := none`, and on the `none` path the wrapper installed
+the boot state while leaving whatever policy the reference already held.  This
+test now also reads the reference back, so the install is observed rather than
+inferred from the success arm. -/
 private def sd041_bootInitialise_withLabelingContext : IO Unit := do
+  -- PR #889 review round 3: the config installs THIS labeling's witnesses —
+  -- the confined context at boundary 64 with lower witness 5 (round 5: the
+  -- witness is the deployment's parameter) separates ⟨5⟩ from
+  -- ⟨upperWitnessIndex 64⟩, neither the harness labeling's pair nor RPi5's.
   let cfg : SeLe4n.Platform.Boot.PlatformConfig :=
-    { irqTable := [], initialObjects := [] }
-  -- Use the test labeling context as a proxy for a production policy.
-  match ← bootAndInitialiseFromPlatform cfg
-        (some SeLe4n.Kernel.testLabelingContext) with
+    witnessedCfgFor 5 (SeLe4n.Kernel.upperWitnessIndex 64)
+  -- Install a context distinguishable from whatever is currently live.
+  let deployed := SeLe4n.Kernel.confinedLabelingContext 64 5 (by decide) (by decide)
+  match ← bootAndInitialiseFromPlatform cfg deployed with
   | Except.ok _ =>
-      passLine "sd041_bootInitialise_with_labeling_context"
+      let installed ← getKernelLabelingContext
+      expect "sd041_bootInitialise_installs_labeling_context"
+        (installed.separatedThreads == deployed.separatedThreads &&
+         installed.threadLabelOf ⟨1⟩ == deployed.threadLabelOf ⟨1⟩ &&
+         installed.threadLabelOf ⟨64⟩ == deployed.threadLabelOf ⟨64⟩)
+        "the boot wrapper must install the labeling context it was given"
   | Except.error e =>
       failLine "sd041_bootInitialise_unexpected_error"
         s!"empty config + labeling context should succeed, got: {e}"
@@ -591,7 +647,7 @@ private def sd042_bootInitialise_malformed_config_rejects : IO Unit := do
         , { irq := ⟨1⟩, handler := ⟨43⟩ }  -- duplicate IRQ id
         ]
       initialObjects := [] }
-  match ← bootAndInitialiseFromPlatform cfg with
+  match ← bootAndInitialiseFromPlatform cfg SeLe4n.Kernel.harnessLabelingContext with
   | Except.ok _ =>
       failLine "sd042_unexpected_success"
         "malformed config (duplicate IRQ) must fail bootFromPlatformChecked"
@@ -606,9 +662,141 @@ private def sd042_bootInitialise_malformed_config_rejects : IO Unit := do
       let cleanSt := mkState [] none
       initialiseKernelState cleanSt
 
+/-- SD-043 (**WS-RR RR5.3**): a boot whose deployment labeling context declares
+    no verified domain separation is refused, and neither reference moves.
+
+The config is the minimally well-formed one SD-040 boots successfully, so the
+only difference is the labeling context — the refusal is attributable to the
+policy and not to the platform description.  Three things are checked, and the
+third is the one that makes this a *fail-closed* boot rather than a reported
+one: the error is `insecureLabelingContextBootError`, the kernel-state reference
+still holds the pre-boot sentinel (so no post-boot state went live), and the
+labeling reference still holds the pre-boot policy (so the refused context did
+not become the live one anyway).
+
+Ordering is the property under test.  Were the guard consulted after
+`initialiseKernelState`, a refused boot would leave a live post-boot state
+paired with whatever policy the reference happened to hold — which is exactly
+the fail-open shape RR5.2 and RR5.3 close, one level up. -/
+private def sd043_bootInitialise_insecureContext_rejects : IO Unit := do
+  let sentinelTid : SeLe4n.ThreadId := ⟨456⟩
+  let sentinelSt := mkState [(⟨456⟩, .tcb (mkTcb 456 .Ready))] (some sentinelTid)
+  initialiseKernelState sentinelSt
+  initialiseKernelLabelingContext SeLe4n.Kernel.harnessLabelingContext
+  let cfg : SeLe4n.Platform.Boot.PlatformConfig := witnessedCfg
+  match ← bootAndInitialiseFromPlatform cfg SeLe4n.Kernel.defaultLabelingContext with
+  | Except.ok _ =>
+      failLine "sd043_unexpected_success"
+        "a labeling context with no declared separation must fail the boot closed"
+  | Except.error e =>
+      expect "sd043_insecure_context_error_identity"
+        (e == SeLe4n.Platform.FFI.insecureLabelingContextBootError)
+        "the refusal must be the labeling-context refusal, not a platform error"
+      let st' ← getKernelState
+      expect "sd043_kernel_state_unchanged_on_insecure_context"
+        ((st'.scheduler.currentOnCore bootCoreId) == some sentinelTid)
+        "a refused boot must NOT install the post-boot state"
+      let ctx' ← getKernelLabelingContext
+      expect "sd043_labeling_ref_unchanged_on_insecure_context"
+        (¬ SeLe4n.Kernel.isInsecureDefaultContext ctx')
+        "a refused boot must NOT install the refused labeling context"
+  -- SD-044 (**WS-RR RR5.4**): the all-public-except-the-sentinel context is
+  -- refused by the same arm — the context the pre-RR5 boot path left live.
+  match ← bootAndInitialiseFromPlatform cfg SeLe4n.Kernel.testLabelingContext with
+  | Except.ok _ =>
+      failLine "sd044_unexpected_success"
+        "the all-public-except-the-sentinel context must fail the boot closed"
+  | Except.error e =>
+      expect "sd044_sentinel_only_context_rejected"
+        (e == SeLe4n.Platform.FFI.insecureLabelingContextBootError)
+        "testLabelingContext must be refused by the labeling-context guard"
+      -- Restore a clean state for downstream tests.
+      let cleanSt := mkState [] none
+      initialiseKernelState cleanSt
+
+/-- SD-045 (**WS-RR RR5.14**): the *production* boot wrapper comes up with a
+    dispatchable idle thread on every core.
+
+Before RR5.14 `bootAndInitialiseFromPlatform` ran `bootFromPlatformChecked`,
+which installs no idle threads at all: `getTcb? (idleThreadId c) = none` and an
+empty run queue on every core, so `idleDispatchableOnCore` was `false`
+everywhere and each core's first scheduling point would have taken
+`idleFallbackOnCore`'s `setCurrentOnCore c none` arm — a core with nothing to
+run and nothing to fall back on.
+
+This asserts the property end to end, through the wrapper the Rust HAL's
+kernel-init path calls and against the state it actually installs in
+`kernelStateRef` — not against a boot entry a test constructed. -/
+private def sd045_bootInitialise_installs_percore_idle : IO Unit := do
+  let cfg : SeLe4n.Platform.Boot.PlatformConfig := witnessedCfg
+  match ← bootAndInitialiseFromPlatform cfg SeLe4n.Kernel.harnessLabelingContext with
+  | Except.error e =>
+      failLine "sd045_bootInitialise_unexpected_error"
+        s!"the minimally well-formed config should boot, got: {e}"
+  | Except.ok _ =>
+      -- Read the state back through the live reference, so what is checked is
+      -- what a subsequent syscall entry would see.
+      let st ← getKernelState
+      for c in SeLe4n.Kernel.Concurrency.allCores do
+        expect s!"sd045_idle_enqueued_core_{c.val}"
+          (decide (SeLe4n.Kernel.idleThreadId c ∈
+            (st.scheduler.runQueueOnCore c).toList))
+          "each core's idle thread must be on that core's own run queue"
+        expect s!"sd045_idle_resolves_core_{c.val}"
+          (st.getTcb? (SeLe4n.Kernel.idleThreadId c)).isSome
+          "each core's idle TCB must be in the object store"
+        expect s!"sd045_nothing_dispatched_core_{c.val}"
+          (decide (st.scheduler.currentOnCore c = none))
+          "boot enqueues idle without dispatching it (queueCurrentConsistent)"
+
 -- ============================================================================
 -- Driver
 -- ============================================================================
+
+/-- SD-046: `bootAndInitialisePlatform` boots under the **platform binding's
+own** labeling (WS-RR RR5.2, audit).
+
+Under the simulation binding that is `harnessLabelingContext`, and the install
+is observed by reading the reference back — the witness pair and the labels on
+either side of the harness boundary — rather than inferred from the success
+arm.  Success itself is not optional: admission by the guard is a theorem of
+every binding (`PlatformBinding.labeling_admitted`), so the labeling refusal arm
+is unreachable from this entry (`bootAndInitialisePlatform_eq_checked_boot`),
+and an error here would mean the binding's source and the guard had come apart.  The RPi5 binding's labeling is
+the confined production context, pinned by `rpi5_deploymentLabeling` and
+probed below at one id on each side of its boundary. -/
+private def sd046_bootInitialisePlatform_installs_binding_labeling : IO Unit := do
+  let cfg : SeLe4n.Platform.Boot.PlatformConfig := witnessedCfg
+  match ← bootAndInitialisePlatform SeLe4n.Platform.Sim.SimPlatform cfg with
+  | Except.ok _ =>
+      let installed ← getKernelLabelingContext
+      let expected := SeLe4n.Kernel.harnessLabelingContext
+      let boundary : SeLe4n.ThreadId := ⟨SeLe4n.Kernel.harnessSeparationBoundary⟩
+      expect "sd046_bootInitialisePlatform_installs_harness_labeling"
+        (installed.separatedThreads == expected.separatedThreads &&
+         installed.threadLabelOf ⟨1⟩ == expected.threadLabelOf ⟨1⟩ &&
+         installed.threadLabelOf boundary == expected.threadLabelOf boundary &&
+         installed.threadLabelOf ⟨1⟩ != installed.threadLabelOf boundary)
+        "the binding boot entry must install the simulation binding's labeling"
+  | Except.error e =>
+      failLine "sd046_bootInitialisePlatform_unexpected_error"
+        s!"the binding's labeling is admitted by construction, so the boot must succeed; got: {e}"
+  -- The hardware binding's labeling: the confined two-domain context, with
+  -- the boot domain below `rpi5UpperDomainBase` and the untrusted domain at
+  -- and above it — mutually isolated (`confinedLabelingContext_confines`).
+  let rpi5 := SeLe4n.Platform.PlatformBinding.labeling
+    (platform := SeLe4n.Platform.RPi5.RPi5Platform)
+  let below : SeLe4n.ThreadId := ⟨1⟩
+  let above : SeLe4n.ThreadId := ⟨SeLe4n.Platform.RPi5.rpi5UpperDomainBase⟩
+  expect "sd046_rpi5_binding_labeling_is_confined"
+    (rpi5.threadLabelOf below == SeLe4n.Kernel.SecurityLabel.lowTrusted &&
+     rpi5.threadLabelOf above == SeLe4n.Kernel.SecurityLabel.highUntrusted &&
+     SeLe4n.Kernel.securityFlowsTo (rpi5.threadLabelOf below) (rpi5.threadLabelOf above) == false &&
+     SeLe4n.Kernel.securityFlowsTo (rpi5.threadLabelOf above) (rpi5.threadLabelOf below) == false)
+    "the RPi5 binding must carry the confined production labeling"
+  expect "sd046_rpi5_binding_labeling_admitted"
+    (SeLe4n.Kernel.isInsecureDefaultContext rpi5 == false)
+    "the RPi5 binding's labeling must be admitted by the boot guard"
 
 /-- WS-SM SM6.B (review #1 dispatch coverage): `.tcbBindNotification` resolves the
 notification through a CAPABILITY in the caller's CSpace.  A caller holding a TCB
@@ -656,6 +844,386 @@ private def sd050_bindNotification_requires_ntfn_cap : IO Unit := do
     (match rRO with | .error .illegalAuthority => true | _ => false)
     "bind with a read-only notification cap should fail with illegalAuthority"
 
+
+/-- SD-054 (PR #889 review round 2): **a capability naming a kernel-reserved
+idle object resolves like an empty slot.**  The caller's CNode holds a writable
+capability to idle 0's object id at slot 0 and one to an ordinary TCB at slot 1;
+the single resolution every syscall passes through (`syscallResolveCap`) refuses
+slot 0 with `.invalidCapability` — the answer an empty slot gives, so the refusal
+discloses nothing about the reservation — and resolves slot 1.  Through the
+dispatcher a `.tcbSuspend` aimed at the idle TCB is refused the same way, so no
+configured or transferred authority can remove a core's only guaranteed
+runnable thread (`syscallResolveCap_ok_not_reserved`). -/
+private def sd054_idleTargetCapabilityUnresolvable : IO Unit := do
+  let caller : SeLe4n.ThreadId := ⟨1⟩
+  let cnId   : SeLe4n.ObjId := ⟨50⟩
+  let tgtTcb : SeLe4n.ObjId := ⟨70⟩
+  let idle0  : SeLe4n.ObjId := (SeLe4n.Kernel.idleThreadId ⟨0, by decide⟩).toObjId
+  let idleCap : Capability := { target := .object idle0, rights := AccessRightSet.ofList [.write] }
+  let tcbCap  : Capability := { target := .object tgtTcb, rights := AccessRightSet.ofList [.write] }
+  let st : SystemState :=
+    mkState [
+      (caller.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnId }),
+      (tgtTcb, .tcb { (mkTcb 70) with cspaceRoot := cnId }),
+      (cnId, .cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.ofListWF
+            [(SeLe4n.Slot.ofNat 0, idleCap), (SeLe4n.Slot.ofNat 1, tcbCap)] })
+    ]
+  let gate (slot : Nat) : SyscallGate :=
+    { callerId := caller, cspaceRoot := cnId, capAddr := SeLe4n.CPtr.ofNat slot,
+      capDepth := 4, requiredRight := .write }
+  expect "sd054_idle_target_cap_resolves_invalidCapability"
+    (match syscallResolveCap (gate 0) st with
+     | .error .invalidCapability => true
+     | _ => false)
+    "a capability to an idle TCB must resolve like an empty slot"
+  expect "sd054_ordinary_target_cap_resolves"
+    (match syscallResolveCap (gate 1) st with
+     | .ok (cap, _) => decide (cap.target = .object tgtTcb)
+     | _ => false)
+    "the ordinary capability beside it must still resolve"
+  expect "sd054_idle_cap_is_the_reserved_kind"
+    (SeLe4n.Kernel.capTargetsReservedIdleObject idleCap &&
+     !SeLe4n.Kernel.capTargetsReservedIdleObject tcbCap)
+    "the capability predicate must decide by target"
+  let decoded : SyscallDecodeResult :=
+    { capAddr := SeLe4n.CPtr.ofNat 0,
+      msgInfo := { length := 0, extraCaps := 0, label := 0 },
+      syscallId := .tcbSuspend,
+      msgRegs := #[], inlineCount := 0, overflowCount := 0 }
+  expect "sd054_tcbSuspend_on_idle_target_refused"
+    (match dispatchSyscall decoded caller st with
+     | .error .invalidCapability => true
+     | _ => false)
+    "a suspend aimed at an idle TCB must be refused at resolution"
+  -- PR #889 review round 11 (P1): the chokepoint decides on the *resolved
+  -- capability's* target, so an arm whose operand is a RAW id from a message
+  -- register escapes it.  `.schedContextBind` resolves its capability to the
+  -- SchedContext and takes the thread from `args.threadId`: with an ordinary
+  -- writable SchedContext capability a caller could name `idleThreadId c`,
+  -- and `schedContextBind` would bind the idle TCB, overwrite its priority
+  -- with the SchedContext's and re-bucket it — a high-priority SchedContext
+  -- making idle outrank ordinary runnable threads.  The refusal is at the
+  -- one lift point every raw thread operand passes through.
+  let scObj : SeLe4n.ObjId := ⟨60⟩
+  let scCap : Capability :=
+    { target := .object scObj, rights := AccessRightSet.ofList [.write] }
+  let bindDecoded (threadId : Nat) : SyscallDecodeResult :=
+    { capAddr := SeLe4n.CPtr.ofNat 2,
+      msgInfo := { length := 1, extraCaps := 0, label := 0 },
+      syscallId := .schedContextBind,
+      msgRegs := #[⟨threadId⟩], inlineCount := 1, overflowCount := 0 }
+  let idle0Tid : SeLe4n.ThreadId := SeLe4n.Kernel.idleThreadId ⟨0, by decide⟩
+  expect "sd054_raw_thread_operand_naming_idle_is_refused"
+    (match dispatchCapabilityOnly (bindDecoded idle0Tid.toNat) scCap caller with
+     | some f =>
+       match f st with
+       | .error .invalidArgument => true
+       | _ => false
+     | none => false)
+    "a schedContextBind whose raw thread operand names an idle thread must be refused"
+  expect "sd054_raw_thread_operand_validator_refuses_every_core"
+    (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
+      match validateThreadIdArg (SeLe4n.Kernel.idleThreadId c) with
+      | .error .invalidArgument => true
+      | _ => false))
+    "the raw-operand validator refuses every core's idle thread id"
+  expect "sd054_raw_operand_validators_admit_ordinary_ids"
+    ((match validateThreadIdArg ⟨7⟩ with
+      | .ok v => decide (v.val = (⟨7⟩ : SeLe4n.ThreadId))
+      | _ => false) &&
+     (match validateObjIdArg ⟨7⟩ with
+      | .ok v => decide (v.val = (⟨7⟩ : SeLe4n.ObjId))
+      | _ => false) &&
+     (match validateObjIdArg (SeLe4n.Kernel.idleThreadId ⟨1, by decide⟩).toObjId with
+      | .error .invalidArgument => true
+      | _ => false))
+    "an ordinary raw id still lifts, and a reserved idle object id does not"
+
+/-- SD-055 (PR #889 review round 3): **the declared separation witnesses must
+be installed threads**, and **the binding's cores bound the idle install**.
+
+The guard decides that the labeling separates two admissible ids; only the boot
+state can say whether those ids are threads the deployment creates.  The empty
+config — idle threads only — and a config installing one witness are both
+refused with `uninstalledSeparationWitnessBootError`, before anything is
+committed.  And `bootAndInitialisePlatform` folds the idle enqueue over the
+binding's declared cores: the single-core simulation binding comes up with idle
+0 only, the four-core one with all four. -/
+private def sd055_witnesses_installed_and_binding_cores : IO Unit := do
+  let empty : SeLe4n.Platform.Boot.PlatformConfig := { irqTable := [], initialObjects := [] }
+  match ← bootAndInitialiseFromPlatform empty SeLe4n.Kernel.harnessLabelingContext with
+  | Except.error e =>
+      expect "sd055_empty_config_refused_for_uninstalled_witnesses"
+        (e == uninstalledSeparationWitnessBootError)
+        s!"expected the witness refusal, got: {e}"
+  | Except.ok _ =>
+      failLine "sd055_empty_config_unexpected_success"
+        "a boot installing neither declared witness must be refused"
+  let lowerOnly : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [], initialObjects := [witnessEntry SeLe4n.Kernel.harnessLowerWitnessIndex] }
+  match ← bootAndInitialiseFromPlatform lowerOnly SeLe4n.Kernel.harnessLabelingContext with
+  | Except.error e =>
+      expect "sd055_one_witness_refused"
+        (e == uninstalledSeparationWitnessBootError)
+        s!"expected the witness refusal, got: {e}"
+  | Except.ok _ =>
+      failLine "sd055_one_witness_unexpected_success"
+        "a boot installing one declared witness must be refused"
+  expect "sd055_witness_predicate_on_the_boot_state"
+    (match SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads witnessedCfg,
+           SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads empty with
+     | Except.ok w, Except.ok e =>
+         SeLe4n.Platform.Boot.declaredWitnessesInstalled w.state SeLe4n.Kernel.harnessLabelingContext &&
+         !SeLe4n.Platform.Boot.declaredWitnessesInstalled e.state SeLe4n.Kernel.harnessLabelingContext
+     | _, _ => false)
+    "the predicate must hold of the witnessed boot state and fail of the empty one"
+  -- The binding's cores bound the idle install.
+  match ← bootAndInitialisePlatform SeLe4n.Platform.Sim.SimSingleCorePlatform witnessedCfg with
+  | Except.error e =>
+      failLine "sd055_single_core_unexpected_error" s!"the single-core binding should boot, got: {e}"
+  | Except.ok _ =>
+      let st ← getKernelState
+      let c0 : SeLe4n.Kernel.Concurrency.CoreId := ⟨0, by decide⟩
+      let c1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
+      expect "sd055_single_core_installs_idle_0"
+        ((st.getTcb? (SeLe4n.Kernel.idleThreadId c0)).isSome &&
+         decide (SeLe4n.Kernel.idleThreadId c0 ∈ (st.scheduler.runQueueOnCore c0).toList))
+        "the single-core binding must install and enqueue idle 0"
+      expect "sd055_single_core_installs_no_idle_1"
+        ((st.getTcb? (SeLe4n.Kernel.idleThreadId c1)).isNone &&
+         (st.scheduler.runQueueOnCore c1).toList.isEmpty)
+        "the single-core binding must not install idle threads for cores it does not declare"
+  match ← bootAndInitialisePlatform SeLe4n.Platform.Sim.SimPlatform witnessedCfg with
+  | Except.error e =>
+      failLine "sd055_four_core_unexpected_error" s!"the four-core binding should boot, got: {e}"
+  | Except.ok _ =>
+      let st ← getKernelState
+      for c in SeLe4n.Kernel.Concurrency.allCores do
+        expect s!"sd055_four_core_installs_idle_{c.val}"
+          (st.getTcb? (SeLe4n.Kernel.idleThreadId c)).isSome
+          "the four-core binding installs every idle thread"
+  expect "sd055_binding_cores_are_derived"
+    (SeLe4n.Platform.PlatformBinding.declaredCores (platform := SeLe4n.Platform.Sim.SimSingleCorePlatform) ==
+       [⟨0, by decide⟩] &&
+     SeLe4n.Platform.PlatformBinding.declaredCores (platform := SeLe4n.Platform.Sim.SimPlatform) ==
+       SeLe4n.Kernel.Concurrency.allCores)
+    "the binding's core list is the first coreCount model cores"
+
+/-- SD-056 (PR #889 review round 5): **the declared witnesses are not the boot
+VSpace root's id, and the binding's core count is structural.**
+
+Both boot roots sit at `ObjId.ofNat 1` (`rpi5BootVSpaceRootObjId`,
+`simBootVSpaceRootObjId`) and the labeling family used to fix its lower witness
+at thread `1`; a config carrying the canonical root cannot install a TCB there
+(`bootVSpaceRootObjIdDistinct`), so every hardware boot that carried its own
+root was refused for an uninstalled witness.  Now the witness is a parameter of
+the family, the RPi5 binding declares `rpi5LowerWitnessIndex`, and the platform
+contract holds every binding's witnesses apart from its root
+(`witnessesOffBootVSpaceRoot`): the RPi5 boot with the canonical root and the
+two witness TCBs succeeds and installs the pair it declares; the same boot under
+a labeling witnessed at `1` is refused for the uninstalled witness; and a config
+that tries to install a TCB at the root's id is refused by the checked boot
+itself — the two refusals that together made every canonical-root boot fail.
+
+The binding's cores (`coreCountLe`): `declaredCores` has exactly `coreCount`
+members, the boot core is one of them (`bootCoreModelId`), and an undeclared
+core's idle *object* slot is absent after the boot
+(`bootFromPlatformCheckedWithIdleThreadsFor_undeclared_idle_absent`) — the
+model-wide reservation's other half. -/
+private def sd056_witnesses_off_boot_root_and_structural_cores : IO Unit := do
+  let rpi5Upper : Nat :=
+    SeLe4n.Kernel.upperWitnessIndex SeLe4n.Platform.RPi5.rpi5UpperDomainBase
+  let rpi5Cfg : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [],
+      initialObjects :=
+        [witnessEntry SeLe4n.Platform.RPi5.rpi5LowerWitnessIndex, witnessEntry rpi5Upper],
+      bootVSpaceRoot := some SeLe4n.Platform.RPi5.rpi5BootVSpaceRootEntry }
+  match ← bootAndInitialisePlatform SeLe4n.Platform.RPi5.RPi5Platform rpi5Cfg with
+  | Except.error e =>
+      failLine "sd056_rpi5_canonical_root_boot_unexpected_error"
+        s!"the RPi5 boot with its canonical root and witness TCBs must succeed, got: {e}"
+  | Except.ok st =>
+      expect "sd056_rpi5_canonical_root_installed"
+        (st.objects[SeLe4n.Platform.RPi5.rpi5BootVSpaceRootObjId]?).isSome
+        "the canonical boot VSpace root must be installed at its reserved id"
+      expect "sd056_rpi5_witnesses_installed"
+        ((st.getTcb? ⟨SeLe4n.Platform.RPi5.rpi5LowerWitnessIndex⟩).isSome &&
+         (st.getTcb? ⟨rpi5Upper⟩).isSome)
+        "both declared witnesses must be installed TCBs of the boot state"
+      let installed ← getKernelLabelingContext
+      expect "sd056_rpi5_installed_labeling_declares_its_witnesses"
+        (installed.separatedThreads ==
+          some (⟨SeLe4n.Platform.RPi5.rpi5LowerWitnessIndex⟩, ⟨rpi5Upper⟩))
+        "the installed labeling must declare the RPi5 witness pair"
+  -- The round-4 shape: a labeling witnessed at thread 1 — the root's id — over
+  -- a config carrying the root.  The root is a VSpace, not a TCB, so the
+  -- witness can never be installed: refused, before anything is committed.
+  let witnessedAtRoot := SeLe4n.Kernel.confinedLabelingContext
+    SeLe4n.Platform.RPi5.rpi5UpperDomainBase 1 (by decide) (by decide)
+  match ← bootAndInitialiseFromPlatform rpi5Cfg witnessedAtRoot with
+  | Except.error e =>
+      expect "sd056_witness_at_root_refused"
+        (e == uninstalledSeparationWitnessBootError)
+        s!"expected the witness refusal, got: {e}"
+  | Except.ok _ =>
+      failLine "sd056_witness_at_root_unexpected_success"
+        "a labeling whose witness is the boot root's id can never see it installed"
+  -- ...and a config that tries to install a TCB at the root's id is refused by
+  -- the checked boot itself.
+  let tcbAtRoot : SeLe4n.Platform.Boot.PlatformConfig :=
+    { rpi5Cfg with initialObjects := [witnessEntry 1, witnessEntry rpi5Upper] }
+  expect "sd056_tcb_at_root_refused_by_the_checked_boot"
+    (match SeLe4n.Platform.Boot.bootFromPlatformChecked tcbAtRoot with
+     | Except.error _ => true
+     | Except.ok _ => false)
+    "a config placing an object at the boot root's id must be refused"
+  -- Every binding's labeling avoids its own root — the obligation the platform
+  -- contract states (`witnessesOffBootVSpaceRoot`), observed on the values.
+  let offRoot (lab : SeLe4n.Kernel.LabelingContext)
+      (root : Option SeLe4n.Platform.BootVSpaceRootEntry) : Bool :=
+    match lab.separatedThreads, root with
+    | some (lo, hi), some r => lo.toNat != r.id.toNat && hi.toNat != r.id.toNat
+    | _, _ => false
+  expect "sd056_every_binding_labeling_avoids_its_root"
+    (offRoot (SeLe4n.Platform.PlatformBinding.labeling (platform := SeLe4n.Platform.RPi5.RPi5Platform))
+        (SeLe4n.Platform.PlatformBinding.bootVSpaceRoot (platform := SeLe4n.Platform.RPi5.RPi5Platform)) &&
+     offRoot (SeLe4n.Platform.PlatformBinding.labeling (platform := SeLe4n.Platform.Sim.SimPlatform))
+        (SeLe4n.Platform.PlatformBinding.bootVSpaceRoot (platform := SeLe4n.Platform.Sim.SimPlatform)) &&
+     offRoot (SeLe4n.Platform.PlatformBinding.labeling (platform := SeLe4n.Platform.Sim.SimRestrictivePlatform))
+        (SeLe4n.Platform.PlatformBinding.bootVSpaceRoot (platform := SeLe4n.Platform.Sim.SimRestrictivePlatform)) &&
+     offRoot (SeLe4n.Platform.PlatformBinding.labeling (platform := SeLe4n.Platform.Sim.SimSingleCorePlatform))
+        (SeLe4n.Platform.PlatformBinding.bootVSpaceRoot (platform := SeLe4n.Platform.Sim.SimSingleCorePlatform)))
+    "every binding's declared witnesses must avoid its boot VSpace root's id"
+  -- The binding's core count is structural: the declared list has exactly
+  -- `coreCount` members, the boot core is declared, and an undeclared core's
+  -- idle object slot is absent — not free — after the boot.
+  expect "sd056_declared_cores_length_is_the_count"
+    ((SeLe4n.Platform.PlatformBinding.declaredCores
+        (platform := SeLe4n.Platform.Sim.SimSingleCorePlatform)).length ==
+      SeLe4n.Platform.PlatformBinding.coreCount
+        (platform := SeLe4n.Platform.Sim.SimSingleCorePlatform) &&
+     (SeLe4n.Platform.PlatformBinding.declaredCores
+        (platform := SeLe4n.Platform.RPi5.RPi5Platform)).length ==
+      SeLe4n.Platform.PlatformBinding.coreCount (platform := SeLe4n.Platform.RPi5.RPi5Platform))
+    "declaredCores must have exactly coreCount members"
+  expect "sd056_boot_core_is_declared"
+    (decide (SeLe4n.Platform.PlatformBinding.bootCoreModelId
+        (platform := SeLe4n.Platform.Sim.SimSingleCorePlatform) ∈
+      SeLe4n.Platform.PlatformBinding.declaredCores
+        (platform := SeLe4n.Platform.Sim.SimSingleCorePlatform)))
+    "the boot core embeds in the model and is a declared core"
+  match ← bootAndInitialisePlatform SeLe4n.Platform.Sim.SimSingleCorePlatform witnessedCfg with
+  | Except.error e =>
+      failLine "sd056_single_core_unexpected_error" s!"the single-core binding should boot, got: {e}"
+  | Except.ok st =>
+      let c1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
+      expect "sd056_undeclared_core_idle_slot_absent"
+        (st.objects[(SeLe4n.Kernel.idleThreadId c1).toObjId]?).isNone
+        "an undeclared core's idle object slot must be absent after the boot"
+  -- PR #889 review round 7: the hardware entry is the generic one fixed at the
+  -- RPi5 binding, and the binding supplies the machine configuration and the
+  -- boot VSpace root — a caller's config carrying no root, under the default
+  -- machine configuration, still boots with the canonical root at its reserved
+  -- id and the BCM2712's address width.
+  let bare : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [],
+      initialObjects :=
+        [witnessEntry SeLe4n.Platform.RPi5.rpi5LowerWitnessIndex, witnessEntry rpi5Upper],
+      machineConfig := SeLe4n.defaultMachineConfig, bootVSpaceRoot := none }
+  match ← bootAndInitialiseRPi5 bare with
+  | Except.error e =>
+      failLine "sd056_rpi5_entry_unexpected_error"
+        s!"the hardware entry must boot a bare config under the binding's root and machine configuration, got: {e}"
+  | Except.ok st =>
+      expect "sd056_rpi5_entry_installs_the_canonical_root"
+        (st.objects[SeLe4n.Platform.RPi5.rpi5BootVSpaceRootObjId]?).isSome
+        "the binding's boot VSpace root must be installed even when the caller's config carries none"
+      expect "sd056_rpi5_entry_applies_the_binding_machine_config"
+        (st.machine.physicalAddressWidth ==
+            SeLe4n.Platform.RPi5.rpi5MachineConfig.physicalAddressWidth &&
+         st.machine.physicalAddressWidth != SeLe4n.defaultMachineConfig.physicalAddressWidth)
+        "the binding's machine configuration must replace the caller's"
+  let bound := bindPlatformConfig SeLe4n.Platform.RPi5.RPi5Platform bare
+  expect "sd056_bound_config_keeps_objects_and_applies_hardware_fields"
+    (bound.bootVSpaceRoot.isSome &&
+     bound.machineConfig.physicalAddressWidth ==
+       SeLe4n.Platform.RPi5.rpi5MachineConfig.physicalAddressWidth &&
+     bound.initialObjects.length == 2 && bound.irqTable.isEmpty)
+    "bindPlatformConfig must keep the caller's objects and apply the binding's hardware fields"
+
+/-- SD-057 (PR #889 review round 8): **the raw suspend seam refuses a reserved
+idle thread id, and commits nothing.**  `suspend_thread_cross_core` takes a raw
+id and no capability, so `syscallResolveCap`'s refusal of a capability naming an
+idle object (SD-054) never reached it: with the boot state installed, the
+transition `suspendThreadOnCore` dequeues idle 0 like any other thread — the
+finding, reproduced first — and the seam now refuses the id with the sentinel's
+`.invalidArgument` before the transition runs
+(`suspendThreadCrossCoreStep_idle_refused`).  An ordinary installed thread still
+reaches the transition (the inactive lower witness is refused by the
+transition's own `.illegalState`), so the guard is the idle reservation and
+nothing wider.  The step is committed through `modifyGetKernelState`, the
+same read-then-write the export performs; the export itself also fires the
+diff-derived SGIs through the HAL's `ffi_send_sgi`, which no host suite links,
+so the export body is pinned to the step by a Tier 3 anchor rather than
+executed here. -/
+private def sd057_rawSuspendSeamRefusesIdleIds : IO Unit := do
+  match ← bootAndInitialisePlatform SeLe4n.Platform.Sim.SimPlatform witnessedCfg with
+  | Except.error e =>
+      failLine "sd057_boot_unexpected_error" s!"the four-core binding should boot, got: {e}"
+  | Except.ok _ =>
+      let c0 : SeLe4n.Kernel.Concurrency.CoreId := ⟨0, by decide⟩
+      let idle0 : SeLe4n.ThreadId := SeLe4n.Kernel.idleThreadId c0
+      let invalidArgument := KernelError.toUInt32 .invalidArgument
+      let st ← getKernelState
+      -- The finding: the transition alone removes the idle thread.
+      expect "sd057_transition_alone_would_dequeue_idle"
+        (match idle0.toValid? with
+         | some vIdle =>
+           match suspendThreadOnCore st vIdle c0 with
+           | Except.ok (st', _) =>
+             decide (idle0 ∉ (st'.scheduler.runQueueOnCore c0).toList)
+           | Except.error _ => false
+         | none => false)
+        "without the seam's check, suspendThreadOnCore dequeues idle 0"
+      -- The seam refuses before the transition runs — the step, committed
+      -- through the kernel-state reference exactly as the export commits it.
+      let (status, sgis) ← modifyGetKernelState
+        (suspendThreadCrossCoreStep idle0.toNat.toUInt64 c0)
+      expect "sd057_idle_id_refused_with_invalidArgument"
+        (status == invalidArgument && sgis.isEmpty)
+        s!"expected the sentinel's discriminant {invalidArgument} and no SGI, got {status}"
+      let st' ← getKernelState
+      expect "sd057_idle_thread_still_installed_queued_and_ready"
+        ((st'.getTcb? idle0).isSome &&
+         decide (idle0 ∈ (st'.scheduler.runQueueOnCore c0).toList) &&
+         ((st'.getTcb? idle0).map (·.threadState) == some .Ready))
+        "the refusal must commit nothing"
+      -- The pure step, the theorem's subject: refused, no SGI, state untouched.
+      expect "sd057_pure_step_idle_refused_no_sgi"
+        (match suspendThreadCrossCoreStep idle0.toNat.toUInt64 c0 st with
+         | ((code, sgis), stAfter) =>
+           code == invalidArgument && sgis.isEmpty &&
+           decide (idle0 ∈ (stAfter.scheduler.runQueueOnCore c0).toList))
+        "the pure step must refuse an idle id without deriving an SGI"
+      expect "sd057_every_core_idle_id_refused"
+        (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
+          match suspendThreadCrossCoreStep
+              (SeLe4n.Kernel.idleThreadId c).toNat.toUInt64 c0 st with
+          | ((code, _), _) => code == invalidArgument))
+        "every core's idle id is refused"
+      -- An ordinary installed thread reaches the transition: the inactive
+      -- lower witness is refused by `suspendThreadOnCore`'s own `.illegalState`.
+      let (witnessStatus, _) ← modifyGetKernelState
+        (suspendThreadCrossCoreStep SeLe4n.Kernel.harnessLowerWitnessIndex.toUInt64 c0)
+      expect "sd057_ordinary_thread_reaches_the_transition"
+        (witnessStatus == KernelError.toUInt32 .illegalState)
+        s!"an inactive witness is refused by the transition, got {witnessStatus}"
+      -- The sentinel keeps its refusal.
+      let (sentinelStatus, _) ← modifyGetKernelState (suspendThreadCrossCoreStep 0 c0)
+      expect "sd057_sentinel_refused" (sentinelStatus == invalidArgument)
+        "the sentinel is refused with the same discriminant"
 
 /-- SD-051: faithful seL4-MCS receive linkage, folded into `endpointReceiveDual`
     itself (#7.2; formerly the separate `linkReceivedCaller` `.receive`-arm step).
@@ -1056,6 +1624,9 @@ def main : IO Unit := do
   sd040_bootInitialise_emptyConfig_succeeds
   sd041_bootInitialise_withLabelingContext
   sd042_bootInitialise_malformed_config_rejects
+  sd043_bootInitialise_insecureContext_rejects
+  sd045_bootInitialise_installs_percore_idle
+  sd046_bootInitialisePlatform_installs_binding_labeling
   IO.println "--- WS-SM SM6.B: tcbBindNotification capability authority ---"
   sd050_bindNotification_requires_ntfn_cap
   sd051_receiveLinkCaller
@@ -1064,4 +1635,11 @@ def main : IO Unit := do
   sd052c_replyRecv_delegated_returns_recorded_server_donation
   sd053_serverFirstLink
   sd053g_bound_notification_wake_clears_stash
+  IO.println "--- PR #889 review round 2: reserved idle objects are unresolvable ---"
+  sd054_idleTargetCapabilityUnresolvable
+  IO.println "--- PR #889 review round 3: installed witnesses, the binding's cores ---"
+  sd055_witnesses_installed_and_binding_cores
+  IO.println "--- PR #889 review round 5: witnesses off the boot root, structural cores ---"
+  sd056_witnesses_off_boot_root_and_structural_cores
+  sd057_rawSuspendSeamRefusesIdleIds
   IO.println "=== All WS-RC R2.C SyscallDispatch tests passed ==="

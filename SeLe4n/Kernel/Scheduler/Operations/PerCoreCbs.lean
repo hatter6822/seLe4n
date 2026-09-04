@@ -650,9 +650,13 @@ theorem setThreadCpuAffinityWithMigration_bound_state_eq (st : SystemState)
         (determineTargetCore st targetTid) (determineTargetCore stSet targetTid))
       targetTid (determineTargetCore st targetTid) (determineTargetCore stSet targetTid) := by
   simp only [setThreadCpuAffinityWithMigration, hTcb, hSet, hBind] at hStep
+  -- PR #889 review round 20: the declared-core refusal precedes the
+  -- running-on-a-forbidden-core one; `hStep` says neither fired.
   split at hStep
   · simp at hStep
-  · rw [← Except.ok.inj hStep]
+  · split at hStep
+    · simp at hStep
+    · rw [← Except.ok.inj hStep]
 
 /-- WS-SM SM5.H.4: for an **unbound** target (no SchedContext), the full composite's
 state component is the affinity write `stSet` followed by the run-queue migration —
@@ -667,9 +671,13 @@ theorem setThreadCpuAffinityWithMigration_unbound_state_eq (st : SystemState)
     st'.1 = migrateRunQueueOnAffinityChange stSet
       targetTid (determineTargetCore st targetTid) (determineTargetCore stSet targetTid) := by
   simp only [setThreadCpuAffinityWithMigration, hTcb, hSet, hBind] at hStep
+  -- PR #889 review round 20: the declared-core refusal precedes the
+  -- running-on-a-forbidden-core one; `hStep` says neither fired.
   split at hStep
   · simp at hStep
-  · rw [← Except.ok.inj hStep]
+  · split at hStep
+    · simp at hStep
+    · rw [← Except.ok.inj hStep]
 
 /-- WS-SM SM5.I (#2, Codex P1 safety witness): the affinity-change-with-migration
 composite **rejects** rebinding a thread currently *running* on a core `c` that its
@@ -683,6 +691,8 @@ theorem setThreadCpuAffinityWithMigration_rejects_running_on_forbidden_core
     (st : SystemState) (targetTid : SeLe4n.ThreadId) (affinity : Option CoreId)
     (executingCore : CoreId) (tcb : TCB) (c : CoreId)
     (hTcb : st.getTcb? targetTid = some tcb)
+    (hDeclared :
+      (affinity.any fun c' => c'.val ≥ st.machine.declaredCoreCount) = false)
     (hRun : st.scheduler.currentOnCore c = some targetTid)
     (hForbid : affinityAdmitsCore { tcb with cpuAffinity := affinity } c = false) :
     setThreadCpuAffinityWithMigration st targetTid affinity executingCore
@@ -692,7 +702,49 @@ theorem setThreadCpuAffinityWithMigration_rejects_running_on_forbidden_core
       && !affinityAdmitsCore { tcb with cpuAffinity := affinity } c')) = true := by
     refine List.any_eq_true.mpr ⟨c, List.mem_finRange c, ?_⟩
     simp [hRun, hForbid]
-  simp only [setThreadCpuAffinityWithMigration, hTcb, hAny, if_true]
+  simp only [setThreadCpuAffinityWithMigration, hTcb, hDeclared, Bool.false_eq_true,
+    if_false, hAny, if_true]
+
+/-- **PR #889 review round 20**: the affinity-change composite **refuses** an
+    affinity naming a PE the platform does not have — fail-closed with
+    `.invalidArgument`, committing nothing.
+
+    The model is `numCores` wide and a binding may declare fewer
+    (`SimSingleCorePlatform` declares one, and `PlatformBinding.coreCountLe`
+    only bounds the count from above).  WS-RR RR5's `bootAffinitiesDeclared`
+    refuses a *configured* TCB pinned outside the declared set, but the live
+    `.tcbSetAffinity` accepted any `CoreId` the *model* admits: a thread could
+    be migrated onto an absent PE immediately after a successful boot, queued
+    where nothing runs it, with the reschedule SGI sent to a core that cannot
+    take it.  This is the same relation as the boot check, on the live path.
+
+    The count reaches the transition through `SystemState.machine`
+    (`bootFromPlatformCheckedWithIdleThreadsFor_declaredCoreCount`), since a
+    kernel transition sees the machine and not the binding, and
+    `PlatformBinding.declaredCoreCountAgrees` holds the two equal.  It defaults
+    to `numCores`, so this refusal is inert on a full-width machine and no
+    existing fixture changes behaviour. -/
+theorem setThreadCpuAffinityWithMigration_rejects_undeclared_core
+    (st : SystemState) (targetTid : SeLe4n.ThreadId) (c : CoreId)
+    (executingCore : CoreId)
+    (hUndeclared : c.val ≥ st.machine.declaredCoreCount) :
+    setThreadCpuAffinityWithMigration st targetTid (some c) executingCore
+      = .error .invalidArgument := by
+  unfold setThreadCpuAffinityWithMigration
+  cases hTcb : st.getTcb? targetTid with
+  | none => rfl
+  | some tcb =>
+      have hAny : ((some c).any fun c' => c'.val ≥ st.machine.declaredCoreCount) = true := by
+        simpa using hUndeclared
+      simp only [hAny, if_true]
+
+/-- **PR #889 review round 20**: and unpinning is never refused by that check —
+    a thread with no affinity names no core, so `.tcbSetAffinity none` reaches
+    the migration on every machine.  This is what keeps the refusal a *bound*
+    rather than a second way to fail. -/
+theorem setThreadCpuAffinityWithMigration_none_passes_declared_check
+    (st : SystemState) :
+    ((none : Option CoreId).any fun c' => c'.val ≥ st.machine.declaredCoreCount) = false := rfl
 
 /-- WS-SM SM5.H.4 (plan §6.1 `schedContextMigration_consistent`, the headline): the
 **full** affinity-change-with-migration composite (for **any** affinity — bind or
@@ -1775,7 +1827,7 @@ theorem setThreadCpuAffinityWithMigration_preserves_schedContextRunQueueConsiste
   cases hSet : setThreadCpuAffinity st targetTid affinity with
   | error e =>
       simp only [setThreadCpuAffinityWithMigration, hTcb, hSet] at hStep
-      split at hStep <;> simp at hStep
+      split at hStep <;> (try split at hStep) <;> simp at hStep
   | ok stSet =>
       simp only [setThreadCpuAffinityWithMigration, hTcb, hSet] at hStep
       have hConsSet : ∀ c, schedContextRunQueueConsistent_perCore stSet c :=
@@ -1783,15 +1835,17 @@ theorem setThreadCpuAffinityWithMigration_preserves_schedContextRunQueueConsiste
           st targetTid affinity stSet c hInv (hCons c) hSet
       split at hStep
       · simp at hStep
-      · simp only [Except.ok.injEq] at hStep
-        subst hStep
-        apply migrateRunQueueOnAffinityChange_preserves_schedContextRunQueueConsistent_perCore
-        intro c
-        cases hb : tcb.schedContextBinding.scId? with
-        | none => exact hConsSet c
-        | some scId =>
-            exact migrateSchedContextReplenishment_preserves_schedContextRunQueueConsistent_perCore
-              stSet scId _ _ c (hConsSet c)
+      · split at hStep
+        · simp at hStep
+        · simp only [Except.ok.injEq] at hStep
+          subst hStep
+          apply migrateRunQueueOnAffinityChange_preserves_schedContextRunQueueConsistent_perCore
+          intro c
+          cases hb : tcb.schedContextBinding.scId? with
+          | none => exact hConsSet c
+          | some scId =>
+              exact migrateSchedContextReplenishment_preserves_schedContextRunQueueConsistent_perCore
+                stSet scId _ _ c (hConsSet c)
 
 -- ============================================================================
 -- §18  SM5.H.4 (B8/SGI) — the cross-core `.reschedule` SGI the composite emits
@@ -1820,9 +1874,11 @@ theorem setThreadCpuAffinityWithMigration_sgi_eq
   simp only [setThreadCpuAffinityWithMigration, hTcb, hSet] at hStep
   split at hStep
   · simp at hStep
-  · simp only [Except.ok.injEq] at hStep
-    subst hStep
-    rfl
+  · split at hStep
+    · simp at hStep
+    · simp only [Except.ok.injEq] at hStep
+      subst hStep
+      rfl
 
 /-- WS-SM SM5.H.4: a local affinity change (new home = executing core) emits no
 cross-core SGI. -/

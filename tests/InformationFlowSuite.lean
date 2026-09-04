@@ -450,6 +450,92 @@ def runAk6Suite : IO Bool := do
     IO.println "--- AK6 named sub-tests: FAILURES ---"
   return allOk
 
+/-- PR #889 review round 2: a deployment source configured beyond the labels —
+an audit monitor and a permissive declassification policy — the way a platform
+binding would carry them. -/
+private def policyOverlayLabeling : SeLe4n.Kernel.DeploymentLabeling :=
+  { SeLe4n.Kernel.harnessDeploymentLabeling with
+      auditMonitorClearance := some ⟨3⟩,
+      declassificationPolicy := { canDeclassify := fun _ _ => true } }
+
+/-- PR #889 review round 2: configuring the policy fields costs nothing of
+validity by construction. -/
+example : SeLe4n.Kernel.LabelingContextValid
+    (SeLe4n.Kernel.deploymentLabelingContext policyOverlayLabeling) :=
+  SeLe4n.Kernel.deploymentLabelingContext_valid _
+
+/-- PR #889 review round 2: the four policy fields travel with the source, so a
+platform binding configures them where it declares its labeling and the
+production boot entry installs them — before, the constructor's result was the
+only place to set them and `bootAndInitialisePlatform` never exposed it. -/
+private def runDeploymentPolicyCarriageChecks : IO Unit := do
+  let ctx := SeLe4n.Kernel.deploymentLabelingContext policyOverlayLabeling
+  expect "the source's audit-monitor clearance reaches the context"
+    (ctx.auditMonitorClearance == some ⟨3⟩)
+  expect "the source's declassification policy reaches the context"
+    (ctx.declassificationPolicy.canDeclassify ⟨0⟩ ⟨1⟩ == true)
+  expect "a configured source is still admitted by the fail-closed guard"
+    (SeLe4n.Kernel.isInsecureDefaultContext ctx == false)
+  let plain := SeLe4n.Kernel.deploymentLabelingContext SeLe4n.Kernel.harnessDeploymentLabeling
+  expect "NEGATIVE: an unconfigured source keeps the fail-closed defaults"
+    (plain.auditMonitorClearance == none &&
+     plain.declassificationPolicy.canDeclassify ⟨0⟩ ⟨1⟩ == false &&
+     plain.memoryOwnership.isNone &&
+     (plain.endpointPolicy.endpointPolicy ⟨7⟩).isNone)
+  expect "configuring the policies changes no label"
+    (ctx.threadLabelOf ⟨1⟩ == plain.threadLabelOf ⟨1⟩ &&
+     ctx.objectLabelOf ⟨1⟩ == plain.objectLabelOf ⟨1⟩)
+
+/-- WS-RR RR5.4 (audit): the separation witness may name neither the reserved
+sentinel nor a per-core idle thread, and the index-partitioned family stays
+total across the idle range.  Factored out of the main block: that block is
+already at the elaborator's nesting limit, and every `let` added to it deepens
+the `do`-chain — the same shape `tests/NegativeStateSuite.lean`'s thin
+dispatcher exists to avoid. -/
+private def runSeparationWitnessAdmissibilityChecks : IO Unit := do
+  -- A witness naming a per-core idle thread is refused — and refused for the
+  -- exclusion, not for equal labels: under
+  -- `confinedLabelingContext 64` thread 1 is `lowTrusted` and idle 0 (id
+  -- 0x1_0000) is `highUntrusted`, so the pair IS separated and only
+  -- `separationWitnessAdmissible` can be what refuses it.
+  let idle0 : SeLe4n.ThreadId := SeLe4n.Kernel.idleThreadId ⟨0, by decide⟩
+  let idleWitnessed : SeLe4n.Kernel.LabelingContext :=
+    { SeLe4n.Kernel.confinedLabelingContext 64 2 (by decide) (by decide) with
+        separatedThreads := some (⟨1⟩, idle0) }
+  expect "the idle-witnessed context really does separate its declared pair"
+    (idleWitnessed.threadLabelOf ⟨1⟩ != idleWitnessed.threadLabelOf idle0)
+  expect "isInsecureDefaultContext refuses a witness naming an idle thread"
+    (SeLe4n.Kernel.isInsecureDefaultContext idleWitnessed = true)
+  expect "the idle id is recognised by the exclusion"
+    (SeLe4n.Kernel.isIdleThreadId idle0 = true &&
+     SeLe4n.Kernel.separationWitnessAdmissible idle0 = false)
+  expect "the first non-sentinel id is admissible"
+    (SeLe4n.Kernel.separationWitnessAdmissible ⟨1⟩ = true)
+  -- The index-partitioned family stays total across the idle range: a
+  -- boundary INSIDE the range lifts its upper witness past it
+  -- (`upperWitnessIndex`), and the result is still admitted.
+  expect "a boundary inside the idle range lifts the upper witness past it"
+    (SeLe4n.Kernel.upperWitnessIndex (SeLe4n.Kernel.idleThreadIdBase + 1) =
+      SeLe4n.Kernel.idleThreadIdBase + SeLe4n.Kernel.Concurrency.numCores)
+  expect "a boundary outside the idle range keeps its own witness"
+    (SeLe4n.Kernel.upperWitnessIndex SeLe4n.Kernel.harnessSeparationBoundary =
+      SeLe4n.Kernel.harnessSeparationBoundary)
+  expect "isInsecureDefaultContext admits the confined context at an in-range boundary"
+    (SeLe4n.Kernel.isInsecureDefaultContext
+      (SeLe4n.Kernel.confinedLabelingContext (SeLe4n.Kernel.idleThreadIdBase + 1) 2
+        (by decide) (by decide)) = false)
+  -- Round 5: the lower witness is the deployment's parameter, declared
+  -- verbatim, and the harness pair is pinned — the family's old fixed witness
+  -- `1` is the boot VSpace root's id on every binding, so it is nobody's
+  -- default any more.
+  expect "the family declares the lower witness it was given"
+    ((SeLe4n.Kernel.confinedLabelingContext 64 7 (by decide) (by decide)).separatedThreads ==
+      some (⟨7⟩, ⟨SeLe4n.Kernel.upperWitnessIndex 64⟩))
+  expect "the harness labeling's witnesses are pinned, and its lower witness is not 1"
+    (SeLe4n.Kernel.harnessLabelingContext.separatedThreads ==
+      some (⟨SeLe4n.Kernel.harnessLowerWitnessIndex⟩, ⟨SeLe4n.Kernel.harnessSeparationBoundary⟩) &&
+     SeLe4n.Kernel.harnessLowerWitnessIndex != 1)
+
 def runInformationFlowChecks : IO Unit := do
   -- === Policy relation checks ===
   expect "security flow is reflexive"
@@ -1423,8 +1509,27 @@ def runInformationFlowChecks : IO Unit := do
   -- AI5-C (M-19): Verify isInsecureDefaultContext runtime detector
   expect "isInsecureDefaultContext detects default context"
     (SeLe4n.Kernel.isInsecureDefaultContext defaultCtx = true)
-  expect "isInsecureDefaultContext rejects test context"
-    (SeLe4n.Kernel.isInsecureDefaultContext SeLe4n.Kernel.testLabelingContext = false)
+  -- WS-RR RR5.4/RR5.5: the all-public-except-the-sentinel context is REJECTED.
+  -- It used to be admitted (this line read `= false`), because the guard sampled
+  -- ids 0/1/42 and that context labels id 0 alone — while every entity that can
+  -- actually run stays `publicLabel`, so every flow between them is permitted.
+  expect "isInsecureDefaultContext rejects the all-public-except-sentinel context"
+    (SeLe4n.Kernel.isInsecureDefaultContext SeLe4n.Kernel.testLabelingContext = true)
+  -- ...and a real two-domain deployment labeling is admitted, so the guard is
+  -- fail-closed rather than closed.
+  expect "isInsecureDefaultContext admits a constructed deployment context"
+    (SeLe4n.Kernel.isInsecureDefaultContext
+      (SeLe4n.Kernel.confinedLabelingContext 64 2 (by decide) (by decide)) = false)
+  expect "isInsecureDefaultContext admits the harness deployment labeling"
+    (SeLe4n.Kernel.isInsecureDefaultContext SeLe4n.Kernel.harnessLabelingContext = false)
+  -- The declaration is checked, not trusted: a context naming a pair it does
+  -- not separate is refused.
+  expect "isInsecureDefaultContext refuses a falsely declared witness"
+    (SeLe4n.Kernel.isInsecureDefaultContext
+      { SeLe4n.Kernel.defaultLabelingContext with
+        separatedThreads := some (⟨1⟩, ⟨2⟩) } = true)
+  runSeparationWitnessAdmissibilityChecks
+  runDeploymentPolicyCarriageChecks
 
   IO.println "default labeling context insecurity verified"
 

@@ -41,7 +41,7 @@ open SeLe4n.Kernel.Concurrency
 open SeLe4n.Testing
 -- WS-SM SM5.E: `idleThreadId` now lives in `SeLe4n.Kernel.Scheduler.IdleThread`
 -- (resolved via `open SeLe4n.Kernel`); only `createIdleThread` is still in `Boot`.
-open SeLe4n.Platform.Boot (createIdleThread)
+open SeLe4n.Platform.Boot (createIdleThread queuedIdleThread)
 
 -- ============================================================================
 -- §1  Surface anchors (Tier-3): every SM5.E public symbol resolves
@@ -75,6 +75,78 @@ open SeLe4n.Platform.Boot (createIdleThread)
 -- SM5.E.6 always-succeeds:
 #check @idleThreadEnqueuedOnCore
 #check @enqueueIdleThreadOnCore_establishes_idleThreadEnqueuedOnCore
+
+-- WS-RR RR5.11/RR5.12: the boot-level idle enqueue, its fold, and the
+-- production boot state's discharge of the no-stall premise.
+#check @SeLe4n.Platform.Boot.enqueueIdleThread
+#check @SeLe4n.Platform.Boot.enqueueIdleThread_runQueueOnCore_self
+#check @SeLe4n.Platform.Boot.enqueueIdleThread_runQueueOnCore_ne
+#check @SeLe4n.Platform.Boot.enqueueIdleThread_currentOnCore
+#check @SeLe4n.Platform.Boot.enqueueIdleThread_activeDomainOnCore
+#check @SeLe4n.Platform.Boot.enqueueIdleThread_objects_self
+#check @SeLe4n.Platform.Boot.enqueueIdleThread_objects_ne
+#check @SeLe4n.Platform.Boot.foldl_enqueueIdleThread_installs
+#check @SeLe4n.Platform.Boot.foldl_enqueueIdleThread_currentOnCore
+#check @SeLe4n.Platform.Boot.foldl_enqueueIdleThread_objects_frame_of_not_idle
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_map_ok
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_rejects_invalid
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_isOk_iff
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_currentAllNone
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_idle_available
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_preserves_platform_objects
+#check @SeLe4n.Platform.Boot.foldl_enqueueIdleThread_runQueueOnCore_eq
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_eq
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_mem_runQueueOnCore_iff
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_wellFormed
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_runnable_resolve
+-- PR #889 review: the enqueued idle TCB is the queued form, the boot state is
+-- threadStateConsistent, and the checked boot reserves the idle slots.
+#check @SeLe4n.Platform.Boot.queuedIdleThread
+#check @SeLe4n.Platform.Boot.queuedIdleThread_threadState
+#check @queuedIdleThread_ne_createIdleThread
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_idle_threadState
+#check @SeLe4n.Platform.Boot.bootFromPlatformChecked_ok_tcb_inactive
+#check @SeLe4n.Platform.Boot.bootFromPlatformChecked_ok_threadStateConsistent
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_threadStateConsistent
+#check @SeLe4n.Platform.Boot.idleSlotsReserved
+#check @SeLe4n.Platform.Boot.idleSlotsReserved_no_idle_references
+#check @SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
+#check @SeLe4n.Kernel.capTargetsReservedIdleObject
+#check @SeLe4n.Kernel.threadInactiveFlagConsistent
+#check @SeLe4n.Kernel.threadStateConsistent_implies_threadInactiveFlagConsistent
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_threadInactiveFlagConsistent
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor_allCores
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor_rejects_invalid
+#check @SeLe4n.Platform.Boot.declaredWitnessesInstalled
+#check @SeLe4n.Platform.PlatformBinding.declaredCores
+#check @SeLe4n.Platform.PlatformBinding.declaredCores_eq_allCores_of_full
+#check @SeLe4n.Platform.Boot.bootFromPlatformChecked_ok_shape
+#check @SeLe4n.Platform.Boot.bootFromPlatformChecked_ok_idleSlotsFreshAt
+#check @SeLe4n.Kernel.isIdleObjId
+-- The preservation theorem takes no freshness hypothesis any more — a
+-- signature pin (PR #889 review).
+example (config : SeLe4n.Platform.Boot.PlatformConfig)
+    (ist ist' : SeLe4n.Model.IntermediateState)
+    (hChecked : SeLe4n.Platform.Boot.bootFromPlatformChecked config = .ok ist)
+    (h : SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads config = .ok ist')
+    (oid : SeLe4n.ObjId) (o : SeLe4n.Model.KernelObject)
+    (hPlat : ist.state.objects[oid]? = some o) : ist'.state.objects[oid]? = some o :=
+  SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_preserves_platform_objects
+    config ist ist' hChecked h oid o hPlat
+#check @SeLe4n.Platform.Boot.idleSlotsFreshAt_of_initialObjects_below_base
+#check @bootFromPlatformCheckedWithIdleThreads_idleThreadEnqueuedOnCore
+#check @bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_succeeds
+#check @bootFromPlatformCheckedWithIdleThreads_runnableThreadsAreTCBsOnCore
+#check @bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_idle
+-- WS-RR RR5.12 (audit): the payoff takes NO hypotheses beyond the boot — a
+-- signature pin, so a hypothesis cannot be reintroduced without this line
+-- failing to elaborate.
+example (config : SeLe4n.Platform.Boot.PlatformConfig) (ist : SeLe4n.Model.IntermediateState)
+    (h : SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads config = .ok ist)
+    (c : CoreId) : ∃ tid, chooseThreadOnCore ist.state c = .ok (some tid) :=
+  bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_succeeds config ist h c
 #check @chooseThreadOnCore_always_succeeds
 #check @enqueueIdleThreadOnCore_chooseThreadOnCore_succeeds
 
@@ -138,8 +210,10 @@ example (st : SystemState) (c : CoreId) (hInv : st.objects.invExt)
   enqueueIdleThreadOnCore_chooseThreadOnCore_succeeds st c hInv hwf hRunnable hDom
 
 -- SM5.E.4: affinity-based core locality — idle `c` is never on another core's queue.
+-- PR #889 review: the installed idle TCB is the *queued* form (`.Ready`), which
+-- is what the enqueue surface stores and what the locality theorem reads.
 example (st : SystemState) (c c' : CoreId) (h : c ≠ c')
-    (hIdleTcb : st.getTcb? (idleThreadId c) = some (createIdleThread c))
+    (hIdleTcb : st.getTcb? (idleThreadId c) = some (queuedIdleThread c))
     (hAff : runQueueAffinityConsistentOnCore st c') :
     idleThreadId c ∉ (st.scheduler.runQueueOnCore c').toList :=
   idleThread_core_locality st c c' h hIdleTcb hAff
@@ -419,6 +493,488 @@ private def runInventoryChecks : IO Unit := do
   assertBool "inventory identifiers are duplicate-free"
     (decide (perCoreIdleTheorems.map (·.identifier)).Nodup)
 
+/-- **WS-RR RR5.12** (runtime): the *production* boot state discharges the
+no-stall premise on every core, and the entry it replaced does not.
+
+The negative half is the point of the test.  `bootFromPlatformChecked` — the
+entry `Platform.FFI.bootAndInitialiseFromPlatform` ran until RR5.14 — leaves
+every core's run queue empty, so `idleThreadEnqueuedOnCore` was false on every
+core and `schedulerNoStall_smp`'s `hIdle` had no reachable discharge. -/
+private def runBootIdleChecks : IO Unit := do
+  IO.println "--- WS-RR RR5.12: the production boot state discharges the no-stall premise ---"
+  let cfg : SeLe4n.Platform.Boot.PlatformConfig := { irqTable := [], initialObjects := [] }
+  match SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads cfg with
+  | .error e =>
+      assertBool s!"the minimally well-formed config must boot (got: {e})" false
+  | .ok ist =>
+      for c in allCores do
+        assertBool s!"core {c.val}: its idle thread is on its OWN run queue"
+          (decide (idleThreadId c ∈ (ist.state.scheduler.runQueueOnCore c).toList))
+        assertBool s!"core {c.val}: its idle thread resolves to THIS core's idle TCB"
+          (match ist.state.getTcb? (idleThreadId c) with
+           | some tcb =>
+               decide (tcb.tid = idleThreadId c) && decide (tcb.domain = ⟨0⟩) &&
+                 decide (tcb.cpuAffinity = some c) && decide (tcb.priority = ⟨0⟩)
+           | none => false)
+        -- PR #889 review: the STORED thread state is the one the classification
+        -- infers — `.Ready` for a queued, non-current thread.  The dispatched
+        -- form (`createIdleThread`, `.Running`) would fail this on every core.
+        assertBool s!"core {c.val}: its stored idle thread state is what the classification infers"
+          (match ist.state.getTcb? (idleThreadId c) with
+           | some tcb =>
+               decide (tcb.threadState = ThreadState.Ready) &&
+                 decide (tcb.threadState = inferThreadState ist.state (idleThreadId c) tcb)
+           | none => false)
+        assertBool s!"NEGATIVE core {c.val}: the dispatched idle form would NOT be consistent here"
+          (decide ((createIdleThread c).threadState ≠
+            inferThreadState ist.state (idleThreadId c) (createIdleThread c)))
+        assertBool s!"core {c.val}: idle is in the core's active domain"
+          (decide ((createIdleThread c).domain = ist.state.scheduler.activeDomainOnCore c))
+        -- Enqueued, NOT dispatched: a current slot pointing at a queued thread
+        -- would violate `queueCurrentConsistent` from the first instruction.
+        assertBool s!"core {c.val}: nothing is dispatched yet"
+          (decide (ist.state.scheduler.currentOnCore c = none))
+        -- Core locality: core `c`'s idle thread is on no OTHER core's queue.
+        for c' in allCores do
+          if c' ≠ c then
+            assertBool s!"core {c.val}: its idle thread is NOT on core {c'.val}'s queue"
+              (decide (idleThreadId c ∉ (ist.state.scheduler.runQueueOnCore c').toList))
+        -- WS-RR RR5.10 against RR5.14, the two rows composed: with the
+        -- classification lifted off the boot core, a SECONDARY core's queued
+        -- idle thread classifies `.Ready`.  Under the boot-core-pinned
+        -- definition it classified `.Inactive` — its own core's queue held it,
+        -- but no boot-core slot did — so `threadStateConsistent` would have been
+        -- false of this very state and `assertStateInvariantsFor` would have
+        -- rewritten the field instead of reporting the mismatch.  That is why
+        -- the lift lands before the switch.
+        assertBool s!"core {c.val}: its queued idle thread classifies .Ready, not .Inactive"
+          (decide (inferThreadState ist.state (idleThreadId c) (createIdleThread c)
+            = ThreadState.Ready))
+        -- WS-RR RR5.12 (audit): the boot queue holds idle and NOTHING else —
+        -- the runtime face of `bootFromPlatformCheckedWithIdleThreads_mem_runQueueOnCore_iff`.
+        assertBool s!"core {c.val}: its run queue holds exactly its idle thread"
+          (decide ((ist.state.scheduler.runQueueOnCore c).toList = [idleThreadId c]))
+        -- ...so the core's FIRST selection is its idle thread
+        -- (`bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_idle`).
+        assertBool s!"core {c.val}: its first selection is its own idle thread"
+          (match chooseThreadOnCore ist.state c with
+           | .ok (some tid) => decide (tid = idleThreadId c)
+           | _ => false)
+  match SeLe4n.Platform.Boot.bootFromPlatformChecked cfg with
+  | .error e =>
+      assertBool s!"the plain checked boot must also accept the config (got: {e})" false
+  | .ok plain =>
+      for c in allCores do
+        assertBool
+          s!"NEGATIVE core {c.val}: the pre-RR5.14 entry enqueues no idle thread"
+          (decide (idleThreadId c ∉ (plain.state.scheduler.runQueueOnCore c).toList))
+        assertBool
+          s!"NEGATIVE core {c.val}: nor installs its idle TCB"
+          (plain.state.getTcb? (idleThreadId c)).isNone
+
+/-- PR #889 review round 2: the diagnostic the checked boot answers a config
+that occupies or references a reserved idle slot with. -/
+private def idleSlotDiagnostic : String :=
+  SeLe4n.Platform.Boot.idleSlotReservationBootError
+
+/-- PR #889 review rounds 7 and 8: the diagnostic the checked boot refuses a
+config whose TCB, SchedContext or Reply entry is stored under an id other than
+the one it carries with. -/
+private def tcbIdentityDiagnostic : String :=
+  SeLe4n.Platform.Boot.embeddedIdentityBootError
+
+/-- **WS-RR RR5.13** (runtime): the idle entry adds no validation of its own —
+it accepts and rejects exactly what `bootFromPlatformChecked` does. -/
+private def runBootValidationParityChecks : IO Unit := do
+  IO.println "--- WS-RR RR5.13: one validation path, not two ---"
+  let malformed : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [ { irq := ⟨1⟩, handler := ⟨42⟩ }, { irq := ⟨1⟩, handler := ⟨43⟩ } ],
+      initialObjects := [] }
+  match SeLe4n.Platform.Boot.bootFromPlatformChecked malformed,
+        SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads malformed with
+  | .error ePlain, .error eIdle =>
+      assertBool "a duplicate-IRQ config is refused with the SAME error by both entries"
+        (ePlain == eIdle)
+  | _, _ =>
+      assertBool "a duplicate-IRQ config must be refused by both entries" false
+  -- PR #889 review: a config that occupies an idle slot is refused on the one
+  -- validation path — before, the checked boot accepted it and the idle fold
+  -- silently overwrote the object.  The object is otherwise boot-safe (an
+  -- idle notification), so the reservation is the only thing refusing it.
+  let squatter : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [],
+      initialObjects := [ { id := (idleThreadId ⟨0, by decide⟩).toObjId,
+                            obj := .notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+                                                   pendingBadge := none },
+                            hSlots := fun _ h => KernelObject.noConfusion h,
+                            hMappings := fun _ h => KernelObject.noConfusion h } ] }
+  assertBool "NEGATIVE: an object at an idle slot fails the config validator"
+    (SeLe4n.Platform.Boot.PlatformConfig.wellFormed squatter == false)
+  assertBool "NEGATIVE: ...and specifically the idle-slot reservation"
+    (SeLe4n.Platform.Boot.idleSlotsReserved squatter == false)
+  match SeLe4n.Platform.Boot.bootFromPlatformChecked squatter,
+        SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads squatter with
+  | .error ePlain, .error eIdle =>
+      assertBool "NEGATIVE: an idle-slot squatter is refused by both entries, with the same error"
+        (ePlain == eIdle)
+      -- PR #889 review round 2: the refusal names the reservation.  Before, the
+      -- third `wellFormed` conjunct fell through to the duplicate-object
+      -- diagnostic, which names a fault the config does not have.
+      assertBool "NEGATIVE: ...and the diagnostic names the reservation, not a duplicate id"
+        (ePlain == idleSlotDiagnostic)
+  | _, _ =>
+      assertBool "NEGATIVE: an idle-slot squatter must be refused by both entries" false
+  -- PR #889 review round 2: a config that merely REFERENCES an idle slot is
+  -- refused too — here a boot-safe TCB whose CSpace root is idle 0's object id.
+  -- The idle fold would have materialised that dangling reference as the
+  -- kernel's own idle TCB.  The same TCB naming a non-idle (and equally absent)
+  -- root is accepted, so the refusal is the reservation and nothing else.
+  let idle0Obj : SeLe4n.ObjId := (idleThreadId ⟨0, by decide⟩).toObjId
+  let referrer (root : SeLe4n.ObjId) : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [],
+      initialObjects := [ { id := ⟨5⟩,
+                            obj := .tcb { tid := ⟨5⟩, priority := ⟨10⟩, domain := ⟨0⟩,
+                                          cspaceRoot := root, vspaceRoot := ⟨0⟩,
+                                          ipcBuffer := SeLe4n.VAddr.ofNat 0,
+                                          threadState := .Inactive },
+                            hSlots := fun _ h => KernelObject.noConfusion h,
+                            hMappings := fun _ h => KernelObject.noConfusion h } ] }
+  assertBool "NEGATIVE: a TCB whose CSpace root is an idle slot fails the reservation"
+    (SeLe4n.Platform.Boot.idleSlotsReserved (referrer idle0Obj) == false)
+  match SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads (referrer idle0Obj) with
+  | .error e =>
+      assertBool "NEGATIVE: ...and the checked boot refuses it with the reservation diagnostic"
+        (e == idleSlotDiagnostic)
+  | .ok _ =>
+      assertBool "NEGATIVE: a config referencing an idle slot must be refused" false
+  assertBool "the same TCB naming a non-idle root is accepted"
+    (SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads (referrer ⟨9⟩)).toOption.isSome
+  -- The reference predicate on the object kinds that hold authority: a CNode
+  -- carrying a capability to an idle object references the slot; the same
+  -- CNode carrying a capability to an ordinary object does not; and the
+  -- capability predicate itself decides by target.
+  let cnodeWith (target : SeLe4n.ObjId) : KernelObject :=
+    .cnode { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+             slots := SeLe4n.UniqueSlotMap.ofListWF
+               [ (SeLe4n.Slot.ofNat 0,
+                  { target := .object target, rights := AccessRightSet.ofList [.write], badge := none }) ] }
+  assertBool "NEGATIVE: a boot CNode holding a capability to an idle TCB references the slot"
+    (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot (cnodeWith idle0Obj) == true)
+  assertBool "a boot CNode holding a capability to an ordinary object does not"
+    (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot (cnodeWith ⟨9⟩) == false)
+  -- PR #889 review round 4: a boot notification pre-bound to an idle thread
+  -- references the slot; bound to an ordinary thread it does not.
+  let ntfnBoundTo (t : SeLe4n.ThreadId) : KernelObject :=
+    .notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+                    pendingBadge := none, boundTCB := some t }
+  assertBool "NEGATIVE: a boot notification bound to an idle thread references the slot"
+    (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
+        (ntfnBoundTo (idleThreadId ⟨0, by decide⟩)) == true)
+  assertBool "a boot notification bound to an ordinary thread does not"
+    (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot (ntfnBoundTo ⟨9⟩) == false)
+  let boundNtfnCfg : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [],
+      initialObjects := [ { id := ⟨6⟩, obj := ntfnBoundTo (idleThreadId ⟨0, by decide⟩),
+                            hSlots := fun _ h => KernelObject.noConfusion h,
+                            hMappings := fun _ h => KernelObject.noConfusion h } ] }
+  match SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads boundNtfnCfg with
+  | .error e =>
+      assertBool "NEGATIVE: ...and the checked boot refuses it with the reservation diagnostic"
+        (e == idleSlotDiagnostic)
+  | .ok _ =>
+      assertBool "NEGATIVE: a notification bound to an idle thread must be refused" false
+  -- PR #889 review round 6: a boot untyped whose allocation record names an
+  -- idle slot as a child, or whose ancestry names one as its parent,
+  -- references the slot; ordinary records do not.
+  let untypedWith (child : Option SeLe4n.ObjId) (parent : Option SeLe4n.ObjId) : KernelObject :=
+    .untyped { regionBase := SeLe4n.PAddr.ofNat 0x1000_0000, regionSize := 0x1000,
+               children := (child.map (fun c => ({ objId := c, offset := 0, size := 0x100 } :
+                 UntypedChild))).toList,
+               parent := parent }
+  assertBool "NEGATIVE: a boot untyped recording an idle slot as a child references the slot"
+    (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot (untypedWith (some idle0Obj) none) == true)
+  assertBool "NEGATIVE: a boot untyped recording an idle slot as its parent references the slot"
+    (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot (untypedWith none (some idle0Obj)) == true)
+  assertBool "a boot untyped with ordinary records does not"
+    (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot (untypedWith (some ⟨9⟩) (some ⟨8⟩)) == false)
+  let untypedChildCfg : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [],
+      initialObjects := [ { id := ⟨7⟩, obj := untypedWith (some idle0Obj) none,
+                            hSlots := fun _ h => KernelObject.noConfusion h,
+                            hMappings := fun _ h => KernelObject.noConfusion h } ] }
+  match SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads untypedChildCfg with
+  | .error e =>
+      assertBool "NEGATIVE: ...and the checked boot refuses it with the reservation diagnostic"
+        (e == idleSlotDiagnostic)
+  | .ok _ =>
+      assertBool "NEGATIVE: an untyped recording an idle child must be refused" false
+  -- PR #889 review round 7: a boot TCB's OWN identity.  Stored at an ordinary
+  -- id with an idle thread's tid it references the slot through the one field
+  -- the lifecycle paths read back (a retype of that object would dequeue the
+  -- real idle thread); stored under any id but its own thread id it is refused
+  -- for the identity relation itself; stored under its own id it is accepted.
+  let tcbWithTid (t : SeLe4n.ThreadId) : TCB :=
+    { tid := t, priority := ⟨10⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩,
+      ipcBuffer := SeLe4n.VAddr.ofNat 0, threadState := .Inactive }
+  let entryAt (id : Nat) (tcb : TCB) : SeLe4n.Platform.Boot.ObjectEntry :=
+    { id := ⟨id⟩, obj := .tcb tcb,
+      hSlots := fun _ h => KernelObject.noConfusion h,
+      hMappings := fun _ h => KernelObject.noConfusion h }
+  let idle0Tid : SeLe4n.ThreadId := idleThreadId ⟨0, by decide⟩
+  assertBool "NEGATIVE: a boot TCB whose own tid is an idle thread's references the slot"
+    (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot (.tcb (tcbWithTid idle0Tid)) == true)
+  let idleTidCfg : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [], initialObjects := [entryAt 9 (tcbWithTid idle0Tid)] }
+  match SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads idleTidCfg with
+  | .error e =>
+      assertBool "NEGATIVE: ...and the checked boot refuses it with the reservation diagnostic"
+        (e == idleSlotDiagnostic)
+  | .ok _ =>
+      assertBool "NEGATIVE: a TCB carrying an idle thread id at an ordinary slot must be refused" false
+  let aliasCfg : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [], initialObjects := [entryAt 9 (tcbWithTid ⟨7⟩)] }
+  match SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads aliasCfg with
+  | .error e =>
+      assertBool "NEGATIVE: a TCB stored under another thread's id is refused for the identity relation"
+        (e == tcbIdentityDiagnostic)
+  | .ok _ =>
+      assertBool "NEGATIVE: a TCB whose tid is not its own slot must be refused" false
+  let ownIdCfg : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [], initialObjects := [entryAt 9 (tcbWithTid ⟨9⟩)] }
+  assertBool "a TCB stored under its own thread id is accepted"
+    (SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads ownIdCfg).toOption.isSome
+  assertBool "tcbIdentitiesMatchSlots decides the identity relation entry by entry"
+    (SeLe4n.Platform.Boot.tcbIdentitiesMatchSlots aliasCfg == false &&
+     SeLe4n.Platform.Boot.tcbIdentitiesMatchSlots idleTidCfg == false &&
+     SeLe4n.Platform.Boot.tcbIdentitiesMatchSlots ownIdCfg == true)
+  -- PR #889 review round 15: a configured thread pinned to a core the BINDING
+  -- does not declare.  The checked boot is binding-agnostic and cannot see it;
+  -- `determineTargetCore` reads the affinity on the first resume or wake and
+  -- enqueues the thread on a PE that does not exist.
+  let pinnedTo (c : SeLe4n.Kernel.Concurrency.CoreId) : TCB :=
+    { tcbWithTid ⟨9⟩ with cpuAffinity := some c }
+  let core0 : SeLe4n.Kernel.Concurrency.CoreId := ⟨0, by decide⟩
+  let core2 : SeLe4n.Kernel.Concurrency.CoreId := ⟨2, by decide⟩
+  let pinnedCfg (c : SeLe4n.Kernel.Concurrency.CoreId) : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [], initialObjects := [entryAt 9 (pinnedTo c)] }
+  assertBool "the affinity check reads the declared list, not the model's cores"
+    (SeLe4n.Platform.Boot.bootAffinitiesDeclared [core0] (pinnedCfg core2) == false &&
+     SeLe4n.Platform.Boot.bootAffinitiesDeclared [core0] (pinnedCfg core0) == true &&
+     SeLe4n.Platform.Boot.bootAffinitiesDeclared [core0] ownIdCfg == true)
+  assertBool "on the model's full core list every affinity is declared"
+    (SeLe4n.Platform.Boot.bootAffinitiesDeclared SeLe4n.Kernel.Concurrency.allCores
+      (pinnedCfg core2) == true)
+  match SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor [core0]
+      (pinnedCfg core2) with
+  | .error e =>
+      assertBool "NEGATIVE: a single-core binding refuses a thread pinned to core 2"
+        (e == SeLe4n.Platform.Boot.undeclaredAffinityBootError)
+  | .ok _ =>
+      assertBool "NEGATIVE: a thread pinned to an undeclared core must not boot" false
+  assertBool "the same thread pinned to the declared core boots"
+    (SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor [core0]
+      (pinnedCfg core0)).toOption.isSome
+  assertBool "an unpinned thread boots on a single-core binding"
+    (SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor [core0]
+      ownIdCfg).toOption.isSome
+  assertBool "the all-cores production boot is unchanged by the affinity check"
+    (SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads
+      (pinnedCfg core2)).toOption.isSome
+  -- PR #889 review round 8: the THIRD queue link.  `queuePPrev = some (.tcbNext t)`
+  -- names thread `t`; the projection-based arm never read it, so a boot TCB
+  -- carrying an idle thread there passed both the reservation and the
+  -- boot-safety check.  The reservation now reads the payload, and the
+  -- boot-safety check requires all three links empty.
+  let linkedTo (t : SeLe4n.ThreadId) : TCB :=
+    { tcbWithTid ⟨9⟩ with queuePPrev := some (.tcbNext t) }
+  assertBool "NEGATIVE: a boot TCB whose queuePPrev names an idle thread references the slot"
+    (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot (.tcb (linkedTo idle0Tid)) == true)
+  assertBool "a queuePPrev naming an ordinary thread does not reference the slot"
+    (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot (.tcb (linkedTo ⟨7⟩)) == false &&
+     SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
+       (.tcb { tcbWithTid ⟨9⟩ with queuePPrev := some .endpointHead }) == false)
+  assertBool "NEGATIVE: ...but a boot TCB with ANY queuePPrev fails the boot-safety check"
+    (SeLe4n.Platform.Boot.bootSafeObjectCheck (.tcb (linkedTo ⟨7⟩)) == false &&
+     SeLe4n.Platform.Boot.bootSafeObjectCheck
+       (.tcb { tcbWithTid ⟨9⟩ with queuePPrev := some .endpointHead }) == false &&
+     SeLe4n.Platform.Boot.bootSafeObjectCheck (.tcb (tcbWithTid ⟨9⟩)) == true)
+  let idleLinkCfg : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [], initialObjects := [entryAt 9 (linkedTo idle0Tid)] }
+  match SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads idleLinkCfg with
+  | .error e =>
+      assertBool "NEGATIVE: ...and the checked boot refuses it with the reservation diagnostic"
+        (e == idleSlotDiagnostic)
+  | .ok _ =>
+      assertBool "NEGATIVE: a TCB whose queuePPrev names an idle thread must be refused" false
+  -- Round 8 sweep (the arity pin): the fields the hand-written arms had never
+  -- read — a TCB's reply references and carried capabilities, a Reply's own
+  -- id and `prev` link, a SchedContext's own id.
+  let idleReplyId : SeLe4n.ReplyId := SeLe4n.ReplyId.ofNat idle0Obj.toNat
+  let idleCap : Capability :=
+    { target := .object idle0Obj, rights := AccessRightSet.ofList [.write], badge := none }
+  assertBool "NEGATIVE: a boot TCB's reply references and carried capabilities are read"
+    (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
+       (.tcb { tcbWithTid ⟨9⟩ with replyObject := some idleReplyId }) == true &&
+     SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
+       (.tcb { tcbWithTid ⟨9⟩ with pendingReceiveReply := some idleReplyId }) == true &&
+     SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
+       (.tcb { tcbWithTid ⟨9⟩ with
+                pendingMessage := some { registers := #[],
+                                         caps := #[{ cap := idleCap, srcNode := ⟨0⟩ }] } }) == true)
+  assertBool "NEGATIVE: a boot Reply's own id and its prev link are read"
+    (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
+       (.reply { replyId := idleReplyId }) == true &&
+     SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
+       (.reply { replyId := ⟨9⟩, prev := some idleReplyId }) == true &&
+     SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
+       (.reply { replyId := ⟨9⟩ }) == false)
+  assertBool "NEGATIVE: a boot SchedContext's own id is read"
+    (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
+       (.schedContext (SchedContext.empty (SeLe4n.SchedContextId.ofNat idle0Obj.toNat))) == true &&
+     SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
+       (.schedContext (SchedContext.empty ⟨9⟩)) == false)
+  -- Round 8: the identity relation covers every object that carries its own id.
+  let scAliasCfg : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [],
+      initialObjects := [ { id := ⟨9⟩, obj := .schedContext (SchedContext.empty ⟨12⟩),
+                            hSlots := fun _ h => KernelObject.noConfusion h,
+                            hMappings := fun _ h => KernelObject.noConfusion h } ] }
+  let replyAliasCfg : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [],
+      initialObjects := [ { id := ⟨9⟩, obj := .reply { replyId := ⟨12⟩ },
+                            hSlots := fun _ h => KernelObject.noConfusion h,
+                            hMappings := fun _ h => KernelObject.noConfusion h } ] }
+  match SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads scAliasCfg,
+        SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads replyAliasCfg with
+  | .error eSc, .error eReply =>
+      assertBool "NEGATIVE: a SchedContext or a Reply stored under another id is refused for the identity relation"
+        (eSc == tcbIdentityDiagnostic && eReply == tcbIdentityDiagnostic)
+  | _, _ =>
+      assertBool "NEGATIVE: a SchedContext or Reply whose id is not its own slot must be refused" false
+  assertBool "embeddedIdentitiesMatchSlots decides the relation for all three kinds"
+    (SeLe4n.Platform.Boot.embeddedIdentitiesMatchSlots scAliasCfg == false &&
+     SeLe4n.Platform.Boot.schedContextIdentitiesMatchSlots scAliasCfg == false &&
+     SeLe4n.Platform.Boot.embeddedIdentitiesMatchSlots replyAliasCfg == false &&
+     SeLe4n.Platform.Boot.replyIdentitiesMatchSlots replyAliasCfg == false &&
+     SeLe4n.Platform.Boot.embeddedIdentitiesMatchSlots ownIdCfg == true)
+  assertBool "capTargetsReservedIdleObject decides by the capability's target"
+    (SeLe4n.Kernel.capTargetsReservedIdleObject
+        { target := .object idle0Obj, rights := AccessRightSet.ofList [.write], badge := none } == true &&
+     SeLe4n.Kernel.capTargetsReservedIdleObject
+        { target := .cnodeSlot idle0Obj (SeLe4n.Slot.ofNat 0), rights := AccessRightSet.ofList [.write], badge := none } == true &&
+     SeLe4n.Kernel.capTargetsReservedIdleObject
+        { target := .object ⟨9⟩, rights := AccessRightSet.ofList [.write], badge := none } == false)
+  -- The same object one slot below the idle range is accepted: the refusal is
+  -- the reservation, not the object.
+  let neighbour : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [],
+      initialObjects := [ { id := SeLe4n.ObjId.ofNat (idleThreadIdBase - 1),
+                            obj := .notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+                                                   pendingBadge := none },
+                            hSlots := fun _ h => KernelObject.noConfusion h,
+                            hMappings := fun _ h => KernelObject.noConfusion h } ] }
+  assertBool "the same object just below the idle range is accepted"
+    (SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads neighbour).toOption.isSome
+
+/-- §**PR #889 review round 23**: a configuration must declare at least one PE.
+
+Round 22's `declaredCoresOfConfig` clamped the count from above and said nothing
+about zero, where the derivation yields the **empty** core list: no idle thread
+is installed on any core, `bootAffinitiesDeclared []` is satisfied by any config
+whose TCBs are unpinned, and the boot returns `.ok` with nowhere to run.  These
+assert the refusal, its diagnostic, and — in both directions — that a legitimate
+narrow count is still accepted. -/
+private def runDeclaredCoreCountChecks : IO Unit := do
+  IO.println "--- PR #889 round 23: a config must declare 1..numCores PEs ---"
+  let withCount (n : Nat) : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [], initialObjects := [],
+      machineConfig := { SeLe4n.defaultMachineConfig with declaredCoreCount := n } }
+  assertBool "a zero declared-core config is not well-formed"
+    ((withCount 0).wellFormed == false)
+  assertBool "...and its refusal names the declared-core count, not another conjunct"
+    (SeLe4n.Platform.Boot.wellFormedDiagnostic (withCount 0) ==
+      SeLe4n.Platform.Boot.declaredCoreCountBootError)
+  assertBool "a zero declared-core config is refused by the checked boot"
+    ((SeLe4n.Platform.Boot.bootFromPlatformChecked (withCount 0)).isOk == false)
+  -- The bound is narrow: one PE is a legitimate deployment, and the full width
+  -- is what every existing fixture declares.
+  assertBool "a single-PE config is well-formed"
+    ((withCount 1).wellFormed == true)
+  assertBool "a full-width config is well-formed"
+    ((withCount SeLe4n.Kernel.Concurrency.numCores).wellFormed == true)
+  -- ...and a count above the model is refused rather than silently widened.
+  assertBool "a config declaring more PEs than the model has is refused"
+    ((withCount (SeLe4n.Kernel.Concurrency.numCores + 1)).wellFormed == false)
+
+/-- PR #889 review round 18: a successful boot must leave the object index
+    inside `maxObjects`.  Nothing bounded the count before: the checked boot
+    did not, and the idle fold adds one entry per core on top of it, so a
+    config sized to fit exactly would boot to `maxObjects + numCores - 1`. -/
+private def runObjectBudgetChecks : IO Unit := do
+  let cap := SeLe4n.Model.maxObjects
+  let cores := SeLe4n.Kernel.Concurrency.numCores
+  -- A config filled to the old ceiling: every other conjunct holds, and the
+  -- boot root plus the idle threads would take it past the cap.
+  let filler (n : Nat) : List SeLe4n.Platform.Boot.ObjectEntry :=
+    (List.range n).map fun i =>
+      { id := ⟨SeLe4n.Kernel.idleThreadIdBase + SeLe4n.Kernel.Concurrency.numCores + i⟩,
+        obj := .notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+                               pendingBadge := none },
+        hSlots := fun _ h => KernelObject.noConfusion h,
+        hMappings := fun _ h => KernelObject.noConfusion h }
+  let atCap : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [], initialObjects := filler cap }
+  assertBool "NEGATIVE: a config filling the object index to maxObjects is refused"
+    (SeLe4n.Platform.Boot.PlatformConfig.wellFormed atCap == false)
+  assertBool "NEGATIVE: ...and specifically by the object budget"
+    (SeLe4n.Platform.Boot.objectBudgetRespected atCap == false)
+  -- One object short of the reserved headroom is still refused: the boot root
+  -- and every core's idle thread must fit.
+  let justOver : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [], initialObjects := filler (cap - cores) }
+  assertBool "NEGATIVE: a config leaving no room for the boot root is refused"
+    (SeLe4n.Platform.Boot.objectBudgetRespected justOver == false)
+  -- The largest config that boots: the cap less the root and the idle threads.
+  let atBudget : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [], initialObjects := filler (cap - cores - 1) }
+  assertBool "the largest config that leaves room for the root and the idle threads is accepted"
+    (SeLe4n.Platform.Boot.objectBudgetRespected atBudget == true)
+  -- ...and the boot really lands inside the cap, idle threads included.
+  match SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads atBudget with
+  | .ok ist =>
+      assertBool "the boot state's object index is within maxObjects"
+        (ist.state.objectIndex.length <= cap)
+      assertBool "...and it carries the config's objects plus one idle thread per core"
+        (ist.state.objectIndex.length == cap - 1)
+  | .error e =>
+      assertBool s!"the budget-respecting config must boot (got: {e})" false
+  -- PR #889 review round 19: the budget has its own diagnostic.  Round 18 added
+  -- the conjunct without a branch in the error cascade, so a config whose only
+  -- fault was its size was reported as an embedded-identity mismatch — naming a
+  -- fault it does not have.  `atCap` carries no id-bearing objects at all.
+  assertBool "the over-budget config's identities are in fact all valid"
+    (SeLe4n.Platform.Boot.embeddedIdentitiesMatchSlots atCap == true)
+  match SeLe4n.Platform.Boot.bootFromPlatformChecked atCap with
+  | .error e =>
+      assertBool "NEGATIVE: ...and the refusal names the budget, not an identity mismatch"
+        (e == SeLe4n.Platform.Boot.objectBudgetBootError)
+  | .ok _ =>
+      assertBool "NEGATIVE: an over-budget config must be refused" false
+  -- PR #889 review round 19 (maintainer follow-up): the diagnostic is derived
+  -- from one conjunct list, so each conjunct's refusal names that conjunct and
+  -- no other.  Every entry of the list is exercised here, which is what stops
+  -- the list and `wellFormed` from drifting the way the old cascade did.
+  assertBool "the conjunct list and wellFormed enumerate the same conjuncts"
+    (SeLe4n.Platform.Boot.PlatformConfig.wellFormed atCap ==
+      ((SeLe4n.Platform.Boot.wellFormedConjuncts atCap).all (·.1)))
+  assertBool "each failing conjunct is reported in its own words"
+    (SeLe4n.Platform.Boot.wellFormedDiagnostic atCap ==
+      SeLe4n.Platform.Boot.objectBudgetBootError)
+  -- The ordinary fixtures are unaffected: the budget is about size alone.
+  let small : SeLe4n.Platform.Boot.PlatformConfig := { irqTable := [], initialObjects := [] }
+  assertBool "an ordinary small config respects the budget"
+    (SeLe4n.Platform.Boot.objectBudgetRespected small == true)
+
 def runSmpIdleChecks : IO Unit := do
   IO.println "WS-SM SM5.E — Per-core idle thread suite"
   IO.println "===================================="
@@ -429,6 +985,10 @@ def runSmpIdleChecks : IO Unit := do
   runDispatcherChecks
   runLockSetChecks
   runInventoryChecks
+  runBootIdleChecks
+  runBootValidationParityChecks
+  runObjectBudgetChecks
+  runDeclaredCoreCountChecks
   IO.println "===================================="
   IO.println "All SM5.E per-core idle thread checks PASS."
 

@@ -62,13 +62,21 @@ class UnterminatedComment(Exception):
     """
 
 
-def strip(src: str) -> str:
+def strip(src: str, blank_strings: bool = False) -> str:
     """Blank Lean comments, preserving length, line count and column offsets.
 
     Handles `--` line comments, `/- -/` block comments *with nesting* (so `/--`
     docstrings, which are block comments, close correctly even when they quote
     another comment), string literals with backslash escapes, and char
     literals.
+
+    With `blank_strings`, the *contents* of string literals are blanked too —
+    the delimiting quotes stay, so a scanner asking "does this declaration call
+    `f`" cannot be satisfied by `IO.println "f"` (PR #889 review round 5: the
+    boot-entry gate asked exactly that and a string literal answered it).  The
+    default keeps string contents, because some gates read them — a `.file(…)`
+    path, an `#[export_name = "…"]` — and an anchor over such a string must
+    keep seeing it.
 
     Char literals need the identifier check: `'` is both a char delimiter and a
     legal identifier suffix, so `foo'` must not open one.  Getting this wrong
@@ -115,12 +123,41 @@ def strip(src: str) -> str:
 
         if in_string:
             if c == "\\":
+                if blank_strings:
+                    blank(i)
+                    if i + 1 < n:
+                        blank(i + 1)
                 i += 2
                 continue
             if c == '"':
                 in_string = False
+            elif blank_strings:
+                blank(i)
             i += 1
             continue
+
+        # A **raw** string literal: `r"…"`, `r#"…"#`, `r##"…"##` (PR #889
+        # review round 15).  Its body ends at a `"` followed by exactly the
+        # opening run of `#`s, and an ordinary `"` inside it is text — so a
+        # scanner that treats every quote as a delimiter closes the literal
+        # early, reads the real terminator as an *opening* quote, and blanks
+        # the live code that follows.  With `def s := r#"hello " raw"#` above
+        # it, an `@[export lean_kernel_main]` disappeared from the view.
+        if c == "r" and (i == 0 or src[i - 1] not in _IDENT_TAIL):
+            hashes = 0
+            j = i + 1
+            while j < n and src[j] == "#":
+                hashes += 1
+                j += 1
+            if j < n and src[j] == '"':
+                terminator = '"' + "#" * hashes
+                close = src.find(terminator, j + 1)
+                end = n if close == -1 else close + len(terminator)
+                if blank_strings:
+                    for k in range(j + 1, min(end - len(terminator), n) if close != -1 else n):
+                        blank(k)
+                i = end
+                continue
 
         if c == '"':
             in_string = True
@@ -168,6 +205,109 @@ def strip(src: str) -> str:
         raise UnterminatedComment(f"block comment still open at end of input (depth {depth})")
 
     return "".join(out)
+
+
+def code_no_strings(src: str) -> str:
+    """The comment-free view with string contents blanked as well — for a
+    scanner whose question is about identifiers and calls, never about text.
+    Named after `rust_code_view.code_no_strings`, its Rust counterpart."""
+    return strip(src, blank_strings=True)
+
+
+def attribute_arguments(view: str, keyword: str) -> list[str]:
+    """Every `@[… , <keyword> <name>, …]` argument in a Lean **code view**, in
+    order of first occurrence, without duplicates.
+
+    Lean's attribute syntax is a bracketed, comma-separated list, so the
+    argument of one attribute is not the whole bracket: `@[inline, export
+    lean_kernel_main]` carries the export just as `@[export lean_kernel_main]`
+    does, and a line break after `export` is whitespace like any other.  A
+    scanner that greps for the literal `@[export ` sees neither — which is how
+    `check_kernel_entry_exports.py` came to have an export inventory and a
+    boot-entry locator that `build.rs`'s parser (which has split the list
+    since PR #889 review round 2) disagreed with.  This is that parser, shared,
+    so the two cannot drift again.
+
+    Brackets nest (`@[simp, foo[bar]]`), so the list ends at the *matching*
+    `]`.  A quoted argument (`@[extern "ffi_fatal_halt"]`) is read as the
+    string's contents, so the same parser answers "which Rust symbol does this
+    `opaque` bind to?".  The caller passes a view — `strip`ped where a quoted
+    argument must be readable, `code_no_strings` where a quoted *attribute*
+    must not count.
+    """
+    names: list[str] = []
+    search = 0
+    while True:
+        hit = view.find("@[", search)
+        if hit < 0:
+            return names
+        open_at = hit + 2
+        depth = 1
+        close = None
+        for index in range(open_at, len(view)):
+            if view[index] == "[":
+                depth += 1
+            elif view[index] == "]":
+                depth -= 1
+                if depth == 0:
+                    close = index
+                    break
+        if close is None:
+            return names
+        for attr in view[open_at:close].split(","):
+            attr = attr.strip()
+            if not attr.startswith(keyword):
+                continue
+            rest = attr[len(keyword):]
+            if not rest[:1].isspace():
+                continue
+            argument = rest.strip()
+            if argument.startswith('"'):
+                # A quoted argument — `@[extern "ffi_fatal_halt"]`.  Read it
+                # only where the caller kept string contents; over
+                # `code_no_strings` the quotes survive and the name does not,
+                # which is the right answer there (a blanked string names
+                # nothing).
+                name = argument[1:].split('"', 1)[0].strip()
+                # A blanked string names nothing, and that is the intended
+                # answer over `code_no_strings` — so the refusal below covers
+                # the *identifier* forms only.
+                if not name:
+                    continue
+            elif argument.startswith("\u00ab"):
+                # PR #889 review round 25: a *guillemet* identifier.  Lean
+                # accepts `@[export \u00absuspend_generated\u00bb]`, and the emitted C
+                # symbol is the text between the brackets — which the ASCII
+                # scan below stopped at immediately, dropping the export from
+                # the inventory.  Fail-open: the archive was never required to
+                # define it, and `build.rs`'s readiness derivation (whose Rust
+                # fallback only recovers `lean_`-prefixed names) could not see
+                # an ungated call to it either.
+                closing = argument.find("\u00bb", 1)
+                name = argument[1:closing] if closing > 0 else ""
+            else:
+                name = ""
+                for ch in argument:
+                    if ch.isascii() and (ch.isalnum() or ch == "_"):
+                        name += ch
+                    else:
+                        break
+            if not name:
+                # PR #889 review round 25: an argument this parser cannot read
+                # is **refused**, not skipped.  Skipping is the fail-open
+                # direction — the attribute is there, the symbol is emitted,
+                # and every inventory derived from this parser is silently
+                # short.  A spelling Lean accepts and this does not is a gate
+                # defect and must stop the build that depends on it.
+                raise ValueError(
+                    f"lean_code_view.attribute_arguments: `@[{keyword} "
+                    f"{argument[:40]}]` is a spelling this parser cannot read. "
+                    f"Teach it that form, or write the attribute as a plain or "
+                    f"guillemet identifier."
+                )
+            if name not in names:
+                names.append(name)
+        search = close + 1
 
 
 # ---------------------------------------------------------------------------
@@ -218,8 +358,156 @@ _PRESERVED: list[tuple[str, str]] = [
 ]
 
 
+# PR #889 review round 5: what `blank_strings` must and must not do.  Each
+# case is (name, source, code that must survive, token that must not).
+# Blanking is length-preserving, so a blanked literal normalises to `" "`.
+_STRING_BLANKED: list[tuple[str, str, str, str]] = [
+    ("a string literal's contents are blanked, its quotes kept",
+     'def f := IO.println "bootAndInitialisePlatform"\n',
+     'def f := IO.println " "', "bootAndInitialisePlatform"),
+    ("an escaped quote inside the string is blanked with the rest",
+     'def f := "a \\" sorry"\n', 'def f := " "', "sorry"),
+    ("a char literal is not a string and survives",
+     "def q := '\"'\ndef g := \"sorry\"\n", "def q := '\"' def g := \" \"", "sorry"),
+    ("a comment after a blanked string is still a comment",
+     'def f := "sorry" -- sorry\n', 'def f := " "', "sorry"),
+]
+
+
+#: Witnesses for `attribute_arguments`: `(name, source, keyword, expected)`.
+#: The mutations that matter here **keep** the attribute text and change its
+#: structure — a second attribute beside it, a line break after the keyword, a
+#: nested bracket, the whole list quoted — because a `find("@[export ")`
+#: scanner reads all four wrongly while the token is plainly present.
+_ATTRIBUTE_ARGUMENTS: list[tuple[str, str, str, list[str]]] = [
+    ("a lone attribute", "@[export lean_alpha]\ndef a := 0\n", "export", ["lean_alpha"]),
+    ("a combined attribute list", "@[inline, export lean_alpha]\ndef a := 0\n",
+     "export", ["lean_alpha"]),
+    ("the keyword last in the list", "@[export lean_alpha, inline]\ndef a := 0\n",
+     "export", ["lean_alpha"]),
+    ("a line break after the keyword", "@[export\n  lean_alpha]\ndef a := 0\n",
+     "export", ["lean_alpha"]),
+    ("a nested bracket does not end the list",
+     "@[simp, foo[bar], export lean_alpha]\ndef a := 0\n", "export", ["lean_alpha"]),
+    ("two attribute lists in one source",
+     "@[export lean_alpha]\ndef a := 0\n@[inline, export lean_beta]\ndef b := 1\n",
+     "export", ["lean_alpha", "lean_beta"]),
+    ("the same name twice is one symbol",
+     "@[export lean_alpha]\ndef a := 0\n@[export lean_alpha]\ndef b := 1\n",
+     "export", ["lean_alpha"]),
+    ("a keyword prefix is not the keyword",
+     "@[exported lean_alpha]\ndef a := 0\n", "export", []),
+    ("the keyword with no separator is not an attribute",
+     "@[exportlean_alpha]\ndef a := 0\n", "export", []),
+    ("another attribute's argument is not this one's",
+     "@[extern \"ffi_fatal_halt\"]\nopaque h : Unit\n", "export", []),
+    ("an `extern` argument is blanked with its string, over a strings-free view",
+     "@[extern \"ffi_fatal_halt\"]\nopaque h : Unit\n", "extern", []),
+    ("a raw string's body is blanked and its quote is not a delimiter",
+     'def s := r#"hi " raw"#\n@[export lean_alpha]\ndef a := 0\n', "export", ["lean_alpha"]),
+    ("an attribute quoted inside a raw string is not a live one",
+     'def s := r#"@[export lean_beta]"#\n@[export lean_alpha]\ndef a := 0\n',
+     "export", ["lean_alpha"]),
+    ("a simple raw string still closes at its own quote",
+     'def s := r"plain"\n@[export lean_alpha]\ndef a := 0\n', "export", ["lean_alpha"]),
+    # PR #889 review round 25: Lean's *guillemet* identifier.  The C symbol is
+    # the text between the brackets, and the ASCII scan stopped at the opening
+    # one and collected nothing — so the export left both inventories, and with
+    # them the readiness-gate seam set, one entry short.
+    ("a guillemet identifier is the text between the brackets",
+     "@[export \u00ablean_alpha\u00bb]\ndef a := 0\n", "export", ["lean_alpha"]),
+    ("a guillemet identifier in a combined list",
+     "@[inline, export \u00absuspend_generated\u00bb]\ndef a := 0\n", "export",
+     ["suspend_generated"]),
+    ("a guillemet identifier may hold characters an identifier scan stops at",
+     "@[export \u00abfoo.bar\u00bb]\ndef a := 0\n", "export", ["foo.bar"]),
+    ("a commented-out guillemet attribute is not a live one",
+     "-- @[export \u00ablean_alpha\u00bb]\ndef a := 0\n", "export", []),
+]
+
+#: The same parser over the **strings-kept** view, where a quoted argument is
+#: readable: `(name, source, keyword, expected)`.
+_ATTRIBUTE_ARGUMENTS_KEPT: list[tuple[str, str, str, list[str]]] = [
+    ("a quoted argument is the string's contents",
+     '@[extern "ffi_fatal_halt"]\nopaque h : Unit\n', "extern", ["ffi_fatal_halt"]),
+    ("a quoted argument in a combined list",
+     '@[inline, extern "ffi_fatal_halt_all"]\nopaque h : Unit\n', "extern",
+     ["ffi_fatal_halt_all"]),
+    ("a commented-out quoted argument is not one",
+     '-- @[extern "ffi_fatal_halt"]\nopaque h : Unit\n', "extern", []),
+]
+
+
 def _self_test() -> int:
     failures = 0
+    for name, source, keyword, want in _ATTRIBUTE_ARGUMENTS:
+        try:
+            got = attribute_arguments(code_no_strings(source), keyword)
+        except ValueError as refusal:
+            # A case in this table is a spelling the parser must *read*; a
+            # refusal here is the parser having lost a form, not the input
+            # being unreadable.  Reported as a failure rather than allowed to
+            # abort the suite, so the message names the case.
+            failures += 1
+            print(f"[lean-code-view] FAIL attribute_arguments {name}: refused "
+                  f"a readable argument ({refusal})")
+            continue
+        if got != want:
+            failures += 1
+            print(f"[lean-code-view] FAIL attribute_arguments {name}: "
+                  f"want {want!r}, got {got!r}")
+    for name, source, keyword, want in _ATTRIBUTE_ARGUMENTS_KEPT:
+        try:
+            got = attribute_arguments(strip(source), keyword)
+        except ValueError as refusal:
+            failures += 1
+            print(f"[lean-code-view] FAIL attribute_arguments (strings kept) {name}: "
+                  f"refused a readable argument ({refusal})")
+            continue
+        if got != want:
+            failures += 1
+            print(f"[lean-code-view] FAIL attribute_arguments (strings kept) {name}: "
+                  f"want {want!r}, got {got!r}")
+    quoted = 'def doc : String := "@[export lean_alpha]"\n'
+    if attribute_arguments(code_no_strings(quoted), "export"):
+        failures += 1
+        print("[lean-code-view] FAIL attribute_arguments: an attribute quoted in a "
+              "string literal was read as a live one")
+    commented = "-- @[inline, export lean_alpha]\ndef a := 0\n"
+    if attribute_arguments(code_no_strings(commented), "export"):
+        failures += 1
+        print("[lean-code-view] FAIL attribute_arguments: a commented-out attribute "
+              "was read as a live one")
+    # PR #889 review round 25: an argument in neither identifier form is
+    # **refused**.  Skipping it is the fail-open direction — the attribute is
+    # there, the symbol is emitted, and every inventory derived from this
+    # parser is silently short.  The mutation that finds this keeps the
+    # `@[export …]` and changes only the spelling of its argument.
+    for unreadable in ("@[export $weird]\ndef a := 0\n",
+                       "@[export \u00abunterminated]\ndef a := 0\n"):
+        try:
+            attribute_arguments(code_no_strings(unreadable), "export")
+        except ValueError:
+            pass
+        else:
+            failures += 1
+            print("[lean-code-view] FAIL attribute_arguments: an unreadable argument "
+                  f"was skipped rather than refused ({unreadable.splitlines()[0]!r})")
+    for name, src, want_code, token in _STRING_BLANKED:
+        got = code_no_strings(src)
+        if " ".join(got.split()) != want_code:
+            failures += 1
+            print(f"[lean-code-view] FAIL {name}: code\n  want {want_code!r}\n"
+                  f"  got  {' '.join(got.split())!r}")
+        if token in got:
+            failures += 1
+            print(f"[lean-code-view] FAIL {name}: string token survived blanking")
+        if len(got) != len(src):
+            failures += 1
+            print(f"[lean-code-view] FAIL {name}: geometry changed under string blanking")
+        if token not in strip(src) and "--" not in src:
+            failures += 1
+            print(f"[lean-code-view] FAIL {name}: string contents blanked by default")
     for name, src, want_code in _CASES:
         got = strip(src)
         if " ".join(got.split()) != want_code:
@@ -308,7 +596,10 @@ def _self_test() -> int:
     if failures:
         print(f"[lean-code-view] SELF-TEST FAILED ({failures})")
         return 1
-    print(f"[lean-code-view] SELF-TEST PASS ({len(_CASES) + len(_PRESERVED)} cases, "
+    cases = (len(_CASES) + len(_PRESERVED) + len(_STRING_BLANKED)
+             + len(_ATTRIBUTE_ARGUMENTS)
+             + len(_ATTRIBUTE_ARGUMENTS_KEPT) + 2)
+    print(f"[lean-code-view] SELF-TEST PASS ({cases} cases, "
           f"{checked} tree files, overlay prune witnessed)")
     return 0
 

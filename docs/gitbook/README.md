@@ -5,14 +5,14 @@
 This GitBook is the long-form guide for seLe4n — a production-oriented microkernel written in Lean 4 with machine-checked proofs, targeting Raspberry Pi 5.
 
 ## Current project state
-- **Version:** 0.34.47 (Lean v4.28.0).
+- **Version:** 0.34.48 (Lean v4.28.0).
 - **Codebase metrics:** 316,818 production LoC across 307 Lean files, 67,030 test LoC across 70 suites, 10,514 proved declarations, zero `sorry` and zero `axiom`. Regenerate with `python3 scripts/report_current_state.py`.
 - **Registered debt:** [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) — every deferred item, with an owner and a closure target.
 - **Hardware target:** Raspberry Pi 5 (ARM64).
 - **Metrics source of truth:** [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key). Cross-check with `./scripts/report_current_state.py`.
 - **Historical records:** Milestone closeouts and prior audits in [`docs/dev_history/`](../dev_history/README.md).
 - **Latest audit:** the pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings.
-- **Active workstream:** **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR4 landed. SM10 (release closure → v1.0.0) is blocked on it.
+- **Active workstream:** **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR5 landed. SM10 (release closure → v1.0.0) is blocked on it.
 - **What changed in a version:** [`CHANGELOG.md`](../../CHANGELOG.md), one entry per merged PR. **What is deferred:** [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md).
 
 Specification documents:

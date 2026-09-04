@@ -117,6 +117,12 @@ fn main() {
     scan_lean_ready_gates_intact();
     scan_lean_upcalls_readiness_gated();
 
+    // WS-RR RR5.18: the two safety tripwires whose documented behaviour is a
+    // clean halt were `debug_assert!`s, which a `--release` build — the way a
+    // `kernel8.img` is built — compiles out.  Each is now a real branch to
+    // `cpu::fatal_halt()`, and this scanner holds them to that.
+    scan_release_surviving_tripwires();
+
     // WS-RR RR4.25 (single classification path): verify `trap.rs` routes
     // synchronous exceptions on the class the **Lean model** returns, and
     // does not re-derive one from a local `esr_ec` match.  Two
@@ -1153,7 +1159,11 @@ fn scan_trap_rs_classifies_via_lean() {
     // mirror call; the host classifier's value IS the mirror call.  Round 2
     // looked for the call after the gate and the mirror's presence anywhere,
     // which `else { let _ = mirror(esr); sync_class::SVC }` satisfied.
-    if let Err(why) = classifier_status(classifier_body, host_body) {
+    if let Err(why) = classifier_status(
+        classifier_body,
+        host_body,
+        bare_ready_call_resolves(&stripped),
+    ) {
         panic!("{why} (`{path}`)");
     }
 }
@@ -1179,7 +1189,7 @@ fn scan_trap_rs_classifies_via_lean() {
 ///     `classify_synchronous_exception_mirror(esr)`.
 ///
 /// The host body's only statement is that same mirror call.
-fn classifier_status(hw_body: &str, host_body: &str) -> Result<(), String> {
+fn classifier_status(hw_body: &str, host_body: &str, allow_bare: bool) -> Result<(), String> {
     const LEAN_CALL: &str = "unsafe { lean_classify_synchronous_exception(esr) }";
     const MIRROR_CALL: &str = "classify_synchronous_exception_mirror(esr)";
     let hw = blank_extern_blocks(hw_body);
@@ -1207,7 +1217,7 @@ fn classifier_status(hw_body: &str, host_body: &str) -> Result<(), String> {
         "PR #887 review round 6: the readiness conditional has no block".to_string()
     })?;
     let cond = hw[if_at + 2..true_open].trim();
-    let arg = ready_condition_argument(cond).ok_or_else(|| {
+    let arg = ready_condition_argument(cond, allow_bare).ok_or_else(|| {
         format!(
             "PR #887 review round 6 regression: the hardware classifier's terminal \
              conditional `if {cond}` does not entail readiness — the Lean call must sit \
@@ -1304,10 +1314,72 @@ fn verify_classifier_scanner() {
     let status = |hw: &str, host: &str| {
         let (_, hw_view) = rust_code_views(hw);
         let (_, host_view) = rust_code_views(host);
-        classifier_status(&hw_view, &host_view)
+        classifier_status(&hw_view, &host_view, bare_ready_call_resolves(&hw_view))
     };
     if let Err(why) = status(GOOD_HW, GOOD_HOST) {
         panic!("build.rs self-check: the good classifier fixture was refused: {why}");
+    }
+    // PR #889 review round 9: the gate spelled bare, in a file that neither
+    // imports nor otherwise resolves it — a same-scope helper of that name
+    // would decide readiness.  Every token survives; only the resolution does
+    // not.
+    let bare = GOOD_HW.replace("crate::lean_ready::lean_ready(", "lean_ready(");
+    assert_ne!(
+        bare, GOOD_HW,
+        "build.rs self-check: the bare-gate mutation is inert"
+    );
+    assert!(
+        bare.contains("lean_ready(") && bare.contains("classify_synchronous_exception_mirror"),
+        "build.rs self-check: the bare-gate mutation DELETED a token"
+    );
+    if status(&bare, GOOD_HOST).is_ok() {
+        panic!(
+            "build.rs self-check: `classifier_status` accepted an unqualified `lean_ready(..)` \
+             in a file that does not resolve it — a same-scope helper of that name would pass"
+        );
+    }
+    // PR #889 review round 16: the bare spelling is refused **whatever** the
+    // file imports or binds.  Rounds 9 and 15 each added one more shadowing
+    // form to detect (a same-scope `fn`, a `let` closure, an `as` alias) and
+    // round 16 exhibited another (`let (lean_ready, _) = …`); the set of Rust
+    // binding forms is unbounded, so the gate stops enumerating them and
+    // requires the absolute path, which nothing local can shadow.  Every guard
+    // in this HAL already writes it that way.
+    for (name, prelude) in [
+        ("with the genuine import", "use crate::lean_ready::lean_ready;\n"),
+        (
+            "with the import and a destructuring shadow",
+            "use crate::lean_ready::lean_ready;\n    let (lean_ready, _) = (|_: usize| true, ());\n",
+        ),
+        ("with nothing at all", ""),
+    ] {
+        let file = format!("{prelude}{bare}");
+        if classifier_status(
+            &rust_code_views(&file).1,
+            &rust_code_views(GOOD_HOST).1,
+            bare_ready_call_resolves(&rust_code_views(&file).1),
+        )
+        .is_ok()
+        {
+            panic!("build.rs self-check: an unqualified gate call was accepted {name}");
+        }
+    }
+    // ...and a file defining its own `fn lean_ready` is refused too (round 9's
+    // case, kept as a redundant pin now that the bare spelling never counts).
+    let shadowed = format!(
+        "use crate::lean_ready::lean_ready;\nfn lean_ready(_c: usize) -> bool {{ true }}\n{bare}"
+    );
+    if classifier_status(
+        &rust_code_views(&shadowed).1,
+        &rust_code_views(GOOD_HOST).1,
+        bare_ready_call_resolves(&rust_code_views(&shadowed).1),
+    )
+    .is_ok()
+    {
+        panic!(
+            "build.rs self-check: a file defining its own `fn lean_ready` still resolved the \
+             bare spelling to the gate"
+        );
     }
     let hw_mutations: &[(&str, &str, &str)] = &[
         (
@@ -1794,36 +1866,95 @@ fn match_arm_spans(text: &str) -> Option<Vec<MatchArm>> {
     Some(arms)
 }
 
-/// Blank every `extern "C" { … }` block in `body` (byte-aligned), so a
+/// Blank every `extern <abi>? { … }` block in `body` (byte-aligned), so a
 /// declaration inside it cannot stand in for a call.
+///
+/// PR #889 review round 17: the block is located by `extern_block_openings`,
+/// which resolves the ABI literal, rather than by searching for the eleven
+/// characters `extern "C" {`.  A declaration inside an `extern r"C" { … }` or
+/// an `extern { … }` block survived the blanking and read as a call.
 fn blank_extern_blocks(body: &str) -> String {
     let mut out = body.as_bytes().to_vec();
-    let mut search = 0usize;
-    while let Some(hit) = body[search..].find("extern \"C\" {") {
-        let open = search + hit + "extern \"C\" ".len();
-        let mut depth = 0usize;
-        let mut end = open;
-        for (index, ch) in body[open..].char_indices() {
-            match ch {
-                '{' => depth += 1,
-                '}' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        end = open + index + 1;
-                        break;
-                    }
-                }
-                _ => {}
-            }
-        }
-        for byte in out.iter_mut().take(end).skip(search + hit) {
+    for (keyword, brace) in extern_block_openings(body) {
+        // An unbalanced block blanks to the end of the text: what this
+        // function protects is the *absence* of a declaration, so the
+        // fail-closed direction is to blank more, never less.
+        let end = matching_close_brace(body, brace).map_or(body.len(), |close| close + 1);
+        for byte in out.iter_mut().take(end).skip(keyword) {
             if *byte != b'\n' {
                 *byte = b' ';
             }
         }
-        search = end.max(open + 1);
     }
     String::from_utf8(out).expect("blanking ASCII bytes keeps the text UTF-8")
+}
+
+/// Every `extern <abi>? { … }` block of `code`, as `(keyword, brace)` byte
+/// offsets.
+///
+/// Rust's grammar after `extern` is closed: `crate`, an optional ABI **string
+/// literal** then `fn`, or an optional ABI literal then `{`.  Only the last
+/// opens a block, and the ABI is a literal in any of its forms — `"C"`,
+/// `r"C"`, `r#"C"#` — naming any convention.  Every such block asks the linker
+/// for its items whatever the convention is, so resolving the literal is what
+/// makes the answer independent of how it is spelled (PR #889 review round
+/// 17); the two callers each searched for `extern "C" {` as a substring.
+fn extern_block_openings(code: &str) -> Vec<(usize, usize)> {
+    let bytes = code.as_bytes();
+    let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let mut openings = Vec::new();
+    let mut search = 0usize;
+    while let Some(hit) = code[search..].find("extern") {
+        let at = search + hit;
+        let end = at + "extern".len();
+        search = end;
+        if (at > 0 && is_ident(bytes[at - 1])) || (end < bytes.len() && is_ident(bytes[end])) {
+            continue;
+        }
+        let mut index = skip_ascii_space(bytes, end);
+        if let Some(past) = string_literal_end(code, index) {
+            index = skip_ascii_space(bytes, past);
+        }
+        if index < bytes.len() && bytes[index] == b'{' {
+            openings.push((at, index));
+        }
+    }
+    openings
+}
+
+fn skip_ascii_space(bytes: &[u8], at: usize) -> usize {
+    let mut index = at;
+    while index < bytes.len() && bytes[index].is_ascii_whitespace() {
+        index += 1;
+    }
+    index
+}
+
+/// Just past the string literal starting at `at`, or `None` when there is none
+/// there.  Handles the raw forms `r"…"`, `r#"…"#`, `r##"…"##`: the closer is
+/// the first `"` followed by the opener's own run of `#`.
+fn string_literal_end(code: &str, at: usize) -> Option<usize> {
+    let bytes = code.as_bytes();
+    let mut index = at;
+    let mut hashes = 0usize;
+    if index < bytes.len() && bytes[index] == b'r' {
+        index += 1;
+        while index < bytes.len() && bytes[index] == b'#' {
+            hashes += 1;
+            index += 1;
+        }
+    }
+    if index >= bytes.len() || bytes[index] != b'"' {
+        return None;
+    }
+    index += 1;
+    let mut closer = String::from('"');
+    for _ in 0..hashes {
+        closer.push('#');
+    }
+    code[index..]
+        .find(&closer)
+        .map(|offset| index + offset + closer.len())
 }
 
 fn scan_lean_ready_gates_intact() {
@@ -1894,15 +2025,23 @@ fn scan_lean_ready_gates_intact() {
                  sites."
             )
         });
-        let gate_idx = body.find("lean_ready(").unwrap_or_else(|| {
-            panic!(
-                "WS-SM regression: `{path}`'s `fn {fn_name}` calls into the \
-                 Lean runtime (`{lean_symbol}`) without consulting the per-core \
-                 readiness gate (`crate::lean_ready::lean_ready(core)`) in its \
-                 body.  A PE must never enter a Lean runtime it has not \
-                 initialized; restore the gate around the Lean call."
-            )
-        });
+        // PR #889 review round 9: the gate is the REAL one.  A bare
+        // `lean_ready(` counts only where this file resolves it to
+        // `crate::lean_ready::lean_ready` (`bare_ready_call_resolves`); a
+        // same-scope `fn lean_ready(_: usize) -> bool { true }` is a
+        // predicate of that name, not the gate.
+        let gate_idx =
+            gate_call_offset(body, bare_ready_call_resolves(&stripped)).unwrap_or_else(|| {
+                panic!(
+                    "WS-SM regression: `{path}`'s `fn {fn_name}` calls into the \
+                     Lean runtime (`{lean_symbol}`) without consulting the per-core \
+                     readiness gate (`crate::lean_ready::lean_ready(core)`) in its \
+                     body.  A PE must never enter a Lean runtime it has not \
+                     initialized; restore the gate around the Lean call.  An \
+                     unqualified `lean_ready(..)` counts only where the file \
+                     imports the gate and defines no function of that name."
+                )
+            });
         if gate_idx >= sym_idx {
             panic!(
                 "WS-SM regression: in `{path}`'s `fn {fn_name}`, the readiness \
@@ -1960,6 +2099,22 @@ const LEAN_READY_GATED_SEAMS: &[(&str, &str, &str)] = &[
         "classify_synchronous_exception",
         "lean_classify_synchronous_exception",
     ),
+    // WS-RR RR5.6: the SVC dispatch seam — the highest-traffic route into the
+    // Lean runtime, and one of the two `kernel_entry.rs`'s five-entry table
+    // claimed consulted the gate while neither did.
+    (
+        "src/svc_dispatch.rs",
+        "dispatch_svc",
+        "lean_syscall_dispatch_cross_core",
+    ),
+    // WS-RR RR5.7: the cross-core suspend seam.  It reaches Lean through
+    // `sele4n_suspend_thread` rather than a `lean_*` symbol, which is why the
+    // derived scan — over the Lean tree's `@[export]`s — is what finds it.
+    (
+        "src/ffi.rs",
+        "sele4n_suspend_thread",
+        "suspend_thread_cross_core",
+    ),
 ];
 
 /// **Lean upcalls that run outside the readiness gate, by design or as
@@ -1988,22 +2143,1715 @@ const LEAN_UPCALLS_OUTSIDE_THE_GATE: &[(&str, &str, &str, usize, &str)] = &[
          the Lean runtime the gate stands for, so it cannot sit behind the gate; \
          the boot core is marked ready after it, the image target's obligation",
     ),
-    (
-        "src/svc_dispatch.rs",
-        "dispatch_svc",
-        "lean_syscall_dispatch_cross_core",
-        1,
-        "the SVC dispatch seam: registered debt, closed by the release-readiness \
-         plan's boot-path fail-open phase (docs/REGISTERED_DEBT.md)",
-    ),
-    (
-        "src/ffi.rs",
-        "sele4n_suspend_thread",
-        "suspend_thread_cross_core",
-        1,
-        "the cross-core suspend seam: the same registered debt as the SVC seam",
-    ),
+    // WS-RR RR5.6/RR5.7 shrank this table from three entries to one: the SVC
+    // dispatch seam and the cross-core suspend seam now consult the gate and
+    // have moved to `LEAN_READY_GATED_SEAMS`.  What remains is the boot
+    // install, which cannot sit behind the gate because it is the call that
+    // initializes the runtime the gate stands for.
 ];
+
+/// **WS-RR RR5.18**: the two safety tripwires that must survive a release
+/// build, as `(source, enclosing fn, a token the condition must name)`.
+///
+/// This list is a *pin*, and deliberately short: both entries are checks whose
+/// documented purpose is to convert a latent hardware-level failure into a
+/// clean halt, and both were written as `debug_assert!`, which a `--release`
+/// build compiles out.  A `kernel8.img` is built `--release`
+/// (`scripts/test_qemu.sh`), so each existed only in the configuration that did
+/// not need it.
+///
+/// Every other `debug_assert!` in the crate is a genuine debug aid — an
+/// internal consistency claim about a data structure — and is deliberately not
+/// held to this.  What distinguishes these two is that the *documented*
+/// behaviour on failure is a halt, so the check has to be able to produce one.
+const RELEASE_SURVIVING_TRIPWIRES: &[ReleaseSurvivingTripwire] = &[
+    ReleaseSurvivingTripwire {
+        path: "src/kernel_entry.rs",
+        branch_fn: "assert_not_holding_round_lock",
+        condition: "crate::shootdown::round_lock_held_by(core_id)",
+        protected_fn: "acquire_kernel_entry",
+        tripwire_statement: "assert_not_holding_round_lock(core_id);",
+        protected_operation: "acquire_kernel_entry_in(",
+    },
+    ReleaseSurvivingTripwire {
+        path: "src/boot.rs",
+        branch_fn: "install_exception_vectors",
+        condition: "!vbar.is_multiple_of(2048)",
+        protected_fn: "install_exception_vectors",
+        tripwire_statement: "if !vbar.is_multiple_of(2048)",
+        protected_operation: "crate::registers::write_vbar_el1(",
+    },
+];
+
+/// **WS-RR RR5.18 / PR #889 review round 6**: one release-surviving tripwire,
+/// pinned together with the operation it protects.
+///
+/// The first three fields pin the *branch* (`release_surviving_tripwire_status`):
+/// in `branch_fn`, an `if` whose condition is exactly `condition` ends in a
+/// diverging statement.  The last three pin the *dominance*
+/// (`tripwire_dominates_protected_operation`): in `protected_fn`, every
+/// occurrence of `protected_operation` is dominated by a statement that **is**
+/// `tripwire_statement` — a top-level statement of the function body, or of a
+/// block enclosing the operation, ending before it.  A branch alone is a
+/// presence: the helper can stay intact while its call is deleted from the
+/// function it guards, nested under `if false`, or moved below the operation,
+/// and every token survives.
+struct ReleaseSurvivingTripwire {
+    /// The HAL source, relative to the crate root.
+    path: &'static str,
+    /// The function holding the `if … { …; fatal_halt() }` branch.
+    branch_fn: &'static str,
+    /// The branch's exact condition, compared as a predicate.
+    condition: &'static str,
+    /// The function whose operation the tripwire must precede.
+    protected_fn: &'static str,
+    /// The tripwire as a statement of `protected_fn`: a call to `branch_fn`
+    /// (`name(args);`, compared whole) or the branch itself (`if cond`,
+    /// compared by condition).
+    tripwire_statement: &'static str,
+    /// The head of the protected operation, as it appears in `protected_fn`.
+    protected_operation: &'static str,
+}
+
+/// **WS-RR RR5.18**: each pinned tripwire is a real branch to a fail-closed
+/// halt, in every profile.
+///
+/// Two relations per entry, both asked of the function's own brace-matched
+/// body over the comment-blanked view:
+///
+///   * the body contains no `debug_assert` — a check that compiles out cannot
+///     halt anything; and
+///   * some `if` in the body whose condition **is** the tripwire's declared
+///     failure condition — the whole predicate, whitespace aside, not a token
+///     it contains (PR #889 review round 2) — has a block whose **last
+///     top-level statement diverges**, which is the statement-level form of
+///     "this branch stops the core" rather than "this branch mentions
+///     `fatal_halt` somewhere".
+///
+/// The condition is compared as a predicate because a token is not a
+/// relation: `if vbar.is_multiple_of(2048) { fatal_halt() }` keeps `2048` and
+/// a terminal halt while halting every *aligned* boot and letting a misaligned
+/// VBAR through, and `if !round_lock_held_by(core_id)` keeps the call while
+/// halting exactly the cores that respected the lock order.  The second
+/// relation is also why a mutation that keeps `fatal_halt()` but nests it
+/// under a further condition, or moves it above the branch, is refused.
+///
+/// The branch must be a **top-level statement of the helper** (PR #889
+/// review round 8).  An `if` found anywhere inside the body accepted
+/// `if disabled { if round_lock_held_by(core_id) { fatal_halt(); } }`, whose
+/// exact-condition branch halts while the helper as a whole does not: when
+/// the outer condition is false the caller proceeds into the acquire with
+/// the round lock held, and the dominance check — which asks only whether
+/// the *helper* is called before the acquire — sees nothing wrong.  So the
+/// question is asked of the helper's statements, on the same statement view
+/// the halt question uses: the branch is one of them, or there is no
+/// tripwire.
+fn release_surviving_tripwire_status(
+    code: &str,
+    fn_name: &str,
+    condition: &str,
+) -> Result<(), String> {
+    let (body_open, body_close) = named_fn_body_span(code, fn_name)?;
+    let body = &code[body_open..=body_close];
+    if body.contains("debug_assert") {
+        return Err(format!(
+            "`{fn_name}` uses `debug_assert`, which a `--release` build compiles out — the \
+             halt it documents would not exist in the image that ships"
+        ));
+    }
+    let wanted = condition_key(condition);
+    let mut saw_condition = false;
+    let mut early_exit: Option<String> = None;
+    if tripwire_branch_halts(
+        body,
+        1,
+        body.len() - 1,
+        &wanted,
+        &mut saw_condition,
+        &mut early_exit,
+    ) {
+        return Ok(());
+    }
+    if let Some(statement) = early_exit {
+        return Err(format!(
+            "`{fn_name}` can leave the helper before its tripwire branch — the statement \
+             `{statement}` exits, so the branch decides nothing on that path and the caller \
+             proceeds into the operation the tripwire exists to stop.  An `if {condition} \
+             {{ return; }}` above the fail-closed branch returns EXACTLY when the failure \
+             condition holds (PR #889 review round 9)"
+        ));
+    }
+    if saw_condition {
+        Err(format!(
+            "`{fn_name}` has an `if {condition}` but its block does not end in the fail-closed \
+             halt — a `return` or a `panic!` diverges from the helper, not from the core, and \
+             the caller then proceeds into the operation the tripwire exists to stop \
+             (PR #889 review round 7)"
+        ))
+    } else {
+        Err(format!(
+            "`{fn_name}` has no top-level `if` whose condition is exactly `{condition}` — a \
+             reversed, widened or rewritten predicate keeps the tripwire's tokens and halts on \
+             the wrong case, and a branch nested under a further condition (PR #889 review \
+             round 8) halts only when that condition holds"
+        ))
+    }
+}
+
+/// The brace-matched body span `(open, close)` of the function `fn_name(`
+/// defines in `code`.
+fn named_fn_body_span(code: &str, fn_name: &str) -> Result<(usize, usize), String> {
+    let signature = format!("fn {fn_name}(");
+    let at = code
+        .find(&signature)
+        .ok_or_else(|| format!("`{fn_name}` is not defined here"))?;
+    // An offset *inside* the body: `enclosing_fn_span` resolves the innermost
+    // `fn` whose brace-matched body contains it, and the signature itself sits
+    // outside that span.
+    let brace = at
+        + code[at..]
+            .find('{')
+            .ok_or_else(|| format!("`{fn_name}` has no body"))?;
+    let (_, body_open, body_close) = enclosing_fn_span(code, brace + 1)
+        .ok_or_else(|| format!("`{fn_name}`'s body could not be resolved"))?;
+    Ok((body_open, body_close))
+}
+
+/// **PR #889 review round 6**: the tripwire **dominates** the operation it
+/// protects.
+///
+/// In `protected_fn`'s body, every occurrence of `protected_operation` (a
+/// whole-word match of its head) must have, among the statements that
+/// execute before it on every path — `dominating_statements`: the top-level
+/// statements of the body and of each block enclosing the occurrence, ending
+/// before it — one that *is* the tripwire: a call statement equal, whitespace
+/// aside, to `tripwire_statement`, or an `if` whose condition is exactly the
+/// pinned one (`condition_key`).  A call bound in a closure, nested under a
+/// condition, or placed after the operation is not a dominating statement, so
+/// the pinned branch — which `release_surviving_tripwire_status` has already
+/// checked halts — is provably reached first.  The operation must occur at
+/// least once: a pin protecting an operation the function no longer performs
+/// would pass vacuously.
+fn tripwire_dominates_protected_operation(
+    code: &str,
+    tripwire: &ReleaseSurvivingTripwire,
+) -> Result<(), String> {
+    let (body_open, body_close) = named_fn_body_span(code, tripwire.protected_fn)?;
+    let bytes = code.as_bytes();
+    let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let mut occurrences = Vec::new();
+    let mut search = body_open;
+    while let Some(hit) = code[search..body_close].find(tripwire.protected_operation) {
+        let at = search + hit;
+        search = at + tripwire.protected_operation.len();
+        if at > 0 && is_ident(bytes[at - 1]) {
+            continue;
+        }
+        occurrences.push(at);
+    }
+    if occurrences.is_empty() {
+        return Err(format!(
+            "`{}` no longer performs `{}` — the operation the tripwire protects is gone or \
+             renamed, so update the pin rather than let it pass vacuously",
+            tripwire.protected_fn, tripwire.protected_operation
+        ));
+    }
+    let wanted = if tripwire.tripwire_statement.starts_with("if") {
+        condition_key(tripwire.condition)
+    } else {
+        condition_key(tripwire.tripwire_statement)
+    };
+    for at in occurrences {
+        let dominated = dominating_statements(code, body_open, body_close, at)
+            .into_iter()
+            .any(|(lo, hi)| {
+                let statement = code[lo..hi].trim();
+                if tripwire.tripwire_statement.starts_with("if") {
+                    statement.starts_with("if")
+                        && block_open_after(statement, 2)
+                            .map(|open| condition_key(&statement[2..open]) == wanted)
+                            .unwrap_or(false)
+                } else {
+                    condition_key(statement) == wanted
+                }
+            });
+        if !dominated {
+            return Err(format!(
+                "`{}` reaches `{}` without `{}` as a dominating statement — the tripwire is \
+                 deleted from the function it guards, nested under a condition, bound without \
+                 being run, or placed after the operation it exists to precede",
+                tripwire.protected_fn, tripwire.protected_operation, tripwire.tripwire_statement
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The whitespace-free spelling of a condition, for comparing predicates
+/// rather than tokens.
+fn condition_key(condition: &str) -> String {
+    condition.chars().filter(|c| !c.is_whitespace()).collect()
+}
+
+/// **PR #889 review round 8**: does one of the top-level statements of the
+/// block interior `[start, end)` — or of a block inside it that executes
+/// unconditionally — begin with `if <wanted>` and end in the fail-closed
+/// halt?  `saw_condition` records whether such an `if` was found at all, so
+/// the caller can name the right failure.
+///
+/// The walk descends through `unconditional_block_interior` only: a bare
+/// block, an `unsafe` block, or either under the image's own
+/// `#[cfg(target_arch = "aarch64")]` — the form `install_exception_vectors`
+/// uses.  A branch under an `if`, a `match` arm, a loop or a closure is not
+/// the helper's own, and neither is one under any other attribute.
+/// **PR #889 review round 9**: nothing may LEAVE the helper before the
+/// branch.  Finding a qualifying branch says the helper halts *if control
+/// reaches it*; `if crate::shootdown::round_lock_held_by(core_id) { return; }`
+/// placed above the fail-closed branch returns precisely when the failure
+/// condition holds, and the dominance check — which asks whether the helper
+/// is *called* before the acquire — still sees an intact call.  So a
+/// statement examined before the branch that can exit (`statement_may_exit`)
+/// stops the walk and is reported: the halt must dominate every exit of the
+/// helper, not merely exist somewhere in it.
+fn tripwire_branch_halts(
+    code: &str,
+    start: usize,
+    end: usize,
+    wanted: &str,
+    saw_condition: &mut bool,
+    early_exit: &mut Option<String>,
+) -> bool {
+    for (lo, hi) in top_level_statements_in(code, start, end) {
+        let statement = &code[lo..hi];
+        if let Some((if_at, block_open)) = top_level_if_statement(statement) {
+            if condition_key(&statement[if_at + 2..block_open]) == wanted {
+                *saw_condition = true;
+                if let Some(block_close) = matching_close_brace(statement, block_open) {
+                    let statements = top_level_statements(statement, block_open, block_close);
+                    // **PR #889 review round 15**: nothing may leave the branch
+                    // *before* its halt either.  `if held { if bypass { return; }
+                    // fatal_halt(); }` ends in the halt and still returns to the
+                    // caller when `bypass` holds — the helper's dominance check
+                    // cannot see it, because the helper is still called.  The
+                    // rule that guards the statements before the branch guards
+                    // the statements inside it, for the same reason.
+                    let leaves = statements
+                        .split_last()
+                        .map(|(_, before)| {
+                            before
+                                .iter()
+                                .any(|&(a, b)| statement_may_exit(&statement[a..b]))
+                        })
+                        .unwrap_or(false);
+                    if leaves {
+                        *early_exit = Some(collapse_whitespace(
+                            statements
+                                .iter()
+                                .find(|&&(a, b)| statement_may_exit(&statement[a..b]))
+                                .map(|&(a, b)| statement[a..b].trim())
+                                .unwrap_or(""),
+                        ));
+                        return false;
+                    }
+                    if statements
+                        .last()
+                        .map(|&(a, b)| statement_halts(&statement[a..b]))
+                        .unwrap_or(false)
+                    {
+                        return true;
+                    }
+                }
+            }
+        } else if let Some((open, close)) = unconditional_block_interior(statement) {
+            if tripwire_branch_halts(
+                statement,
+                open + 1,
+                close,
+                wanted,
+                saw_condition,
+                early_exit,
+            ) {
+                return true;
+            }
+            if early_exit.is_some() {
+                return false;
+            }
+        }
+        if statement_may_exit(statement) {
+            *early_exit = Some(collapse_whitespace(statement.trim()));
+            return false;
+        }
+    }
+    false
+}
+
+/// **PR #889 review round 9**: can this statement leave its function without
+/// halting the core?  A `return` (whole word, at any nesting — a conditional
+/// return is exactly the case this exists to catch), or one of the panicking
+/// macros, which unwind or abort the host process rather than parking the PE.
+///
+/// `fatal_halt` is deliberately NOT an exit: a halt above the branch stops
+/// the core, which is fail-closed, and moving the tripwire's own halt there
+/// is already refused by the branch-must-end-in-halt rule.  The predicate
+/// over-approximates — any `return` token in the statement disqualifies it —
+/// because a scanner cannot decide reachability, and over-approximating fails
+/// closed.
+fn statement_may_exit(statement: &str) -> bool {
+    word_occurrences(statement, "return") > 0
+        || statement.contains("panic!(")
+        || statement.contains("unreachable!(")
+        || statement.contains("todo!(")
+        || statement.contains("unimplemented!(")
+        || statement.contains("process::exit(")
+}
+
+/// **PR #889 review round 8**: the `(open, close)` brace span of a statement
+/// that executes its block **unconditionally** on the image: `{ … }`,
+/// `unsafe { … }`, or either under exactly `#[cfg(target_arch = "aarch64")]`.
+/// Any other attribute — a feature gate, a `not(…)`, `debug_assertions` — is
+/// a condition the shipped image may not satisfy, so the statement is not
+/// transparent and a tripwire under it is not found (fail closed).
+fn unconditional_block_interior(statement: &str) -> Option<(usize, usize)> {
+    let image_cfg = condition_key(&rust_code_views("#[cfg(target_arch = \"aarch64\")]").1);
+    let mut rest = statement.trim_start();
+    while let Some(after_hash) = rest.strip_prefix("#[") {
+        let close = after_hash.find(']')?;
+        let attribute = &rest[..close + 3];
+        if condition_key(attribute) != image_cfg {
+            return None;
+        }
+        rest = rest[close + 3..].trim_start();
+    }
+    if let Some(after_unsafe) = rest.strip_prefix("unsafe") {
+        if after_unsafe.starts_with(char::is_whitespace) || after_unsafe.starts_with('{') {
+            rest = after_unsafe.trim_start();
+        }
+    }
+    if !rest.starts_with('{') {
+        return None;
+    }
+    let open = statement.len() - rest.len();
+    let close = matching_close_brace(statement, open)?;
+    Some((open, close))
+}
+
+/// **PR #889 review round 8**: is this top-level statement an `if`?  The
+/// offset of its `if` keyword and of the `{` opening its block, when the
+/// statement *starts* with the keyword (a word, so `elif`-like identifiers
+/// and field names do not count) — an `if` that appears later in the
+/// statement, nested under another construct, is not the statement's.
+fn top_level_if_statement(statement: &str) -> Option<(usize, usize)> {
+    let bytes = statement.as_bytes();
+    let if_at = statement.len() - statement.trim_start().len();
+    if !statement[if_at..].starts_with("if") {
+        return None;
+    }
+    let after_ok = if_at + 2 < bytes.len()
+        && (bytes[if_at + 2].is_ascii_whitespace() || matches!(bytes[if_at + 2], b'(' | b'!'));
+    if !after_ok {
+        return None;
+    }
+    block_open_after(statement, if_at + 2).map(|block_open| (if_at, block_open))
+}
+
+/// **WS-RR RR5.18**: run `release_surviving_tripwire_status` over the pin.
+fn scan_release_surviving_tripwires() {
+    verify_release_surviving_tripwire_scanner();
+    for tripwire in RELEASE_SURVIVING_TRIPWIRES {
+        let path = tripwire.path;
+        println!("cargo:rerun-if-changed={path}");
+        let contents = std::fs::read_to_string(path)
+            .unwrap_or_else(|e| panic!("WS-RR RR5.18 scanner: cannot read `{path}`: {e}"));
+        let (_, code) = rust_code_views(&contents);
+        if let Err(why) =
+            release_surviving_tripwire_status(&code, tripwire.branch_fn, tripwire.condition)
+        {
+            panic!("WS-RR RR5.18 regression: `{path}`: {why}");
+        }
+        if let Err(why) = tripwire_dominates_protected_operation(&code, tripwire) {
+            panic!("WS-RR RR5.18 regression (PR #889 review round 6): `{path}`: {why}");
+        }
+    }
+}
+
+/// Token-preserving self-check for `release_surviving_tripwire_status`.
+fn verify_release_surviving_tripwire_scanner() {
+    const GOOD: &str = r#"
+#[inline]
+pub fn assert_not_holding_round_lock(core_id: usize) {
+    if crate::shootdown::round_lock_held_by(core_id) {
+        crate::kprintln!("[kernel-entry] FATAL: lock order violated");
+        crate::cpu::fatal_halt();
+    }
+}
+
+pub fn acquire_kernel_entry(core_id: usize) -> u64 {
+    assert_not_holding_round_lock(core_id);
+    if !acquire_kernel_entry_in(&KERNEL_ENTRY_LOCK, core_id, FUEL, service) {
+        crate::gic::halt_all()
+    }
+    KERNEL_ENTRY_LOCK.peek_serving()
+}
+"#;
+    let check = |source: &str| -> Result<(), String> {
+        let (_, code) = rust_code_views(source);
+        release_surviving_tripwire_status(
+            &code,
+            "assert_not_holding_round_lock",
+            "crate::shootdown::round_lock_held_by(core_id)",
+        )?;
+        tripwire_dominates_protected_operation(&code, &RELEASE_SURVIVING_TRIPWIRES[0])
+    };
+    if let Err(why) = check(GOOD) {
+        panic!("build.rs self-check: the good tripwire fixture was refused: {why}");
+    }
+    verify_release_surviving_tripwire_polarity();
+    // PR #889 review round 6: the branch stays intact in every one of these;
+    // what breaks is its relation to the operation it protects.
+    let dominance_mutations: [(&str, &str, &str); 5] = [
+        (
+            "the call is deleted from the function it guards; the helper stays intact",
+            "    assert_not_holding_round_lock(core_id);\n    if !acquire_kernel_entry_in(",
+            "    if !acquire_kernel_entry_in(",
+        ),
+        (
+            "the call is nested under a dead condition",
+            "    assert_not_holding_round_lock(core_id);\n",
+            "    if false {\n        assert_not_holding_round_lock(core_id);\n    }\n",
+        ),
+        (
+            "the call is bound in a closure and never run",
+            "    assert_not_holding_round_lock(core_id);\n",
+            "    let _check = || assert_not_holding_round_lock(core_id);\n",
+        ),
+        (
+            "the call moves below the acquire it exists to precede",
+            "    assert_not_holding_round_lock(core_id);\n    if !acquire_kernel_entry_in(&KERNEL_ENTRY_LOCK, core_id, FUEL, service) {\n        crate::gic::halt_all()\n    }\n",
+            "    if !acquire_kernel_entry_in(&KERNEL_ENTRY_LOCK, core_id, FUEL, service) {\n        crate::gic::halt_all()\n    }\n    assert_not_holding_round_lock(core_id);\n",
+        ),
+        (
+            "the acquire is gone, so the pin would protect nothing",
+            "    if !acquire_kernel_entry_in(&KERNEL_ENTRY_LOCK, core_id, FUEL, service) {\n        crate::gic::halt_all()\n    }\n",
+            "    if !acquire_kernel_entry_raw(&KERNEL_ENTRY_LOCK, core_id, FUEL, service) {\n        crate::gic::halt_all()\n    }\n",
+        ),
+    ];
+    for (what, from, to) in dominance_mutations {
+        assert!(
+            GOOD.contains(from),
+            "build.rs self-check: tripwire dominance mutation `{what}` does not apply"
+        );
+        let mutated = GOOD.replacen(from, to, 1);
+        assert_ne!(
+            mutated, GOOD,
+            "build.rs self-check: tripwire dominance mutation `{what}` is inert"
+        );
+        // The helper — the branch and its halt — survives every mutation; what
+        // moves, nests, or disappears is its *use* in the function it guards.
+        assert!(
+            mutated.contains("fn assert_not_holding_round_lock(")
+                && mutated.contains("fatal_halt("),
+            "build.rs self-check: tripwire dominance mutation `{what}` DELETED the tripwire; the \
+             mutation must keep the branch and break its reach"
+        );
+        if check(&mutated).is_ok() {
+            panic!(
+                "build.rs self-check: `tripwire_dominates_protected_operation` accepted a \
+                 tripwire that does not dominate its operation: {what}"
+            );
+        }
+    }
+    let mutations: [(&str, &str, &str); 13] = [
+        (
+            "an exit sits INSIDE the branch, above its halt (round 15)",
+            "        crate::kprintln!(\"[kernel-entry] FATAL: lock order violated\");\n        crate::cpu::fatal_halt();",
+            "        if bypass {\n            return;\n        }\n        crate::cpu::fatal_halt();",
+        ),
+        (
+            "the exit inside the branch is a panicking macro (round 15)",
+            "        crate::kprintln!(\"[kernel-entry] FATAL: lock order violated\");\n        crate::cpu::fatal_halt();",
+            "        if bypass {\n            unreachable!();\n        }\n        crate::cpu::fatal_halt();",
+        ),
+        (
+            "the predicate is reversed, keeping its call",
+            "    if crate::shootdown::round_lock_held_by(core_id) {",
+            "    if !crate::shootdown::round_lock_held_by(core_id) {",
+        ),
+        (
+            "the branch is kept whole but wrapped under a further condition (round 8)",
+            "    if crate::shootdown::round_lock_held_by(core_id) {\n        crate::kprintln!(\"[kernel-entry] FATAL: lock order violated\");\n        crate::cpu::fatal_halt();\n    }",
+            "    if crate::shootdown::tripwires_enabled() {\n        if crate::shootdown::round_lock_held_by(core_id) {\n            crate::kprintln!(\"[kernel-entry] FATAL: lock order violated\");\n            crate::cpu::fatal_halt();\n        }\n    }",
+        ),
+        (
+            "an earlier statement returns on exactly the failure condition (round 9)",
+            "    if crate::shootdown::round_lock_held_by(core_id) {\n        crate::kprintln!",
+            "    if crate::shootdown::round_lock_held_by(core_id) {\n        return;\n    }\n    if crate::shootdown::round_lock_held_by(core_id) {\n        crate::kprintln!",
+        ),
+        (
+            "an earlier statement returns on an unrelated condition (round 9)",
+            "    if crate::shootdown::round_lock_held_by(core_id) {\n        crate::kprintln!",
+            "    if crate::shootdown::retry_pending() {\n        return;\n    }\n    if crate::shootdown::round_lock_held_by(core_id) {\n        crate::kprintln!",
+        ),
+        (
+            "the branch returns from the helper instead of halting the core (round 7)",
+            "        crate::cpu::fatal_halt();\n    }",
+            "        if false {\n            crate::cpu::fatal_halt();\n        }\n        return;\n    }",
+        ),
+        (
+            "the branch panics — the host lane's abort, no halt on the image (round 7)",
+            "        crate::cpu::fatal_halt();\n    }",
+            "        let _keep = || crate::cpu::fatal_halt();\n        panic!(\"lock order\");\n    }",
+        ),
+        (
+            "the predicate is widened, keeping its call",
+            "    if crate::shootdown::round_lock_held_by(core_id) {",
+            "    if crate::shootdown::round_lock_held_by(core_id) && crate::shootdown::retry_pending() {",
+        ),
+        (
+            "the halt survives but the branch becomes a debug_assert",
+            "    if crate::shootdown::round_lock_held_by(core_id) {\n        crate::kprintln!(\"[kernel-entry] FATAL: lock order violated\");\n        crate::cpu::fatal_halt();\n    }",
+            "    debug_assert!(!crate::shootdown::round_lock_held_by(core_id));\n    if false {\n        crate::cpu::fatal_halt();\n    }",
+        ),
+        (
+            "the halt is kept but nested under an unrelated condition",
+            "        crate::cpu::fatal_halt();\n    }",
+            "        if crate::shootdown::retry_pending() {\n            crate::cpu::fatal_halt();\n        }\n    }",
+        ),
+        (
+            "the halt is kept but is no longer the branch's last statement",
+            "        crate::cpu::fatal_halt();\n    }",
+            "        crate::cpu::fatal_halt();\n        crate::kprintln!(\"unreached\");\n    }",
+        ),
+        (
+            "the halt is kept but moves above the branch, so the branch decides nothing",
+            "    if crate::shootdown::round_lock_held_by(core_id) {\n        crate::kprintln!(\"[kernel-entry] FATAL: lock order violated\");\n        crate::cpu::fatal_halt();\n    }",
+            "    let held = crate::shootdown::round_lock_held_by(core_id);\n    crate::cpu::fatal_halt();\n    if held {\n        crate::kprintln!(\"[kernel-entry] FATAL: lock order violated\");\n    }",
+        ),
+    ];
+    for (what, from, to) in mutations {
+        assert!(
+            GOOD.contains(from),
+            "build.rs self-check: tripwire mutation `{what}` does not apply"
+        );
+        let mutated = GOOD.replacen(from, to, 1);
+        assert_ne!(
+            mutated, GOOD,
+            "build.rs self-check: tripwire mutation `{what}` is inert"
+        );
+        assert!(
+            mutated.contains("fatal_halt("),
+            "build.rs self-check: tripwire mutation `{what}` DELETED the halt; the mutation \
+             must keep the token and break the relation"
+        );
+        if check(&mutated).is_ok() {
+            panic!(
+                "build.rs self-check: `release_surviving_tripwire_status` accepted a broken \
+                 fixture: {what}"
+            );
+        }
+    }
+}
+
+/// **PR #889 review round 2**: the VBAR tripwire's negated predicate, and the
+/// polarity mutations that keep every token of it.  `2048` and a terminal halt
+/// survive each of them; what changes is which boots halt.
+fn verify_release_surviving_tripwire_polarity() {
+    const GOOD: &str = r#"
+pub fn install_exception_vectors() {
+    let vbar = vector_base();
+    if !vbar.is_multiple_of(2048) {
+        crate::kprintln!("[boot] FATAL: exception vector table is not 2048-byte aligned");
+        crate::cpu::fatal_halt();
+    }
+    crate::registers::write_vbar_el1(vbar);
+}
+"#;
+    let check = |source: &str| -> Result<(), String> {
+        let (_, code) = rust_code_views(source);
+        release_surviving_tripwire_status(
+            &code,
+            "install_exception_vectors",
+            "!vbar.is_multiple_of(2048)",
+        )?;
+        tripwire_dominates_protected_operation(&code, &RELEASE_SURVIVING_TRIPWIRES[1])
+    };
+    if let Err(why) = check(GOOD) {
+        panic!("build.rs self-check: the good VBAR tripwire fixture was refused: {why}");
+    }
+    // PR #889 review round 8: the shape `install_exception_vectors` actually
+    // has — the branch and the write under the image's own `#[cfg]` block,
+    // beside an `extern` block — is accepted, and the same branch under any
+    // other attribute, or under a runtime `cfg!` condition, is not: a
+    // fixture thinner than the file it stands for would have accepted the
+    // top-level rule without ever exercising the block descent.
+    const GOOD_UNDER_IMAGE_CFG: &str = r#"
+pub fn install_exception_vectors() {
+    #[cfg(target_arch = "aarch64")]
+    {
+        extern "C" {
+            static __exception_vectors: u8;
+        }
+        let vbar = &raw const __exception_vectors as u64;
+        if !vbar.is_multiple_of(2048) {
+            crate::kprintln!("[boot] FATAL: exception vector table is not 2048-byte aligned");
+            crate::cpu::fatal_halt();
+        }
+        crate::registers::write_vbar_el1(vbar);
+    }
+}
+"#;
+    if let Err(why) = check(GOOD_UNDER_IMAGE_CFG) {
+        panic!(
+            "build.rs self-check: the VBAR tripwire under the image's `#[cfg]` block was \
+             refused: {why}"
+        );
+    }
+    let block_mutations: [(&str, &str, &str); 3] = [
+        (
+            "the block's attribute gains a feature gate the image may not carry",
+            "    #[cfg(target_arch = \"aarch64\")]\n    {",
+            "    #[cfg(all(target_arch = \"aarch64\", feature = \"strict_vectors\"))]\n    {",
+        ),
+        (
+            "the block's attribute is negated",
+            "    #[cfg(target_arch = \"aarch64\")]\n    {",
+            "    #[cfg(not(target_arch = \"aarch64\"))]\n    {",
+        ),
+        (
+            "the block becomes a runtime condition",
+            "    #[cfg(target_arch = \"aarch64\")]\n    {",
+            "    if cfg!(target_arch = \"aarch64\") {",
+        ),
+    ];
+    for (what, from, to) in block_mutations {
+        assert!(
+            GOOD_UNDER_IMAGE_CFG.contains(from),
+            "build.rs self-check: VBAR block mutation `{what}` does not apply"
+        );
+        let mutated = GOOD_UNDER_IMAGE_CFG.replacen(from, to, 1);
+        assert_ne!(
+            mutated, GOOD_UNDER_IMAGE_CFG,
+            "build.rs self-check: VBAR block mutation `{what}` is inert"
+        );
+        assert!(
+            mutated.contains("2048")
+                && mutated.contains("fatal_halt(")
+                && mutated.contains("aarch64"),
+            "build.rs self-check: VBAR block mutation `{what}` DELETED a token; the mutation \
+             must keep the tokens and break the relation"
+        );
+        if check(&mutated).is_ok() {
+            panic!(
+                "build.rs self-check: `release_surviving_tripwire_status` accepted a VBAR \
+                 tripwire under a block that may not execute: {what}"
+            );
+        }
+    }
+    // PR #889 review round 6: the branch is intact and halts; it no longer
+    // dominates the VBAR write.
+    let dominance_mutations: [(&str, &str, &str); 3] = [
+        (
+            "the branch is nested under a dead condition",
+            "    if !vbar.is_multiple_of(2048) {\n        crate::kprintln!(\"[boot] FATAL: exception vector table is not 2048-byte aligned\");\n        crate::cpu::fatal_halt();\n    }\n",
+            "    if false {\n        if !vbar.is_multiple_of(2048) {\n            crate::kprintln!(\"[boot] FATAL: exception vector table is not 2048-byte aligned\");\n            crate::cpu::fatal_halt();\n        }\n    }\n",
+        ),
+        (
+            "the branch moves below the VBAR write it exists to precede",
+            "    if !vbar.is_multiple_of(2048) {\n        crate::kprintln!(\"[boot] FATAL: exception vector table is not 2048-byte aligned\");\n        crate::cpu::fatal_halt();\n    }\n    crate::registers::write_vbar_el1(vbar);\n",
+            "    crate::registers::write_vbar_el1(vbar);\n    if !vbar.is_multiple_of(2048) {\n        crate::kprintln!(\"[boot] FATAL: exception vector table is not 2048-byte aligned\");\n        crate::cpu::fatal_halt();\n    }\n",
+        ),
+        (
+            "a second, unguarded VBAR write is added after the guarded one",
+            "    crate::registers::write_vbar_el1(vbar);\n}",
+            "    crate::registers::write_vbar_el1(vbar);\n}\n\npub fn install_exception_vectors_again(vbar: u64) {\n    crate::registers::write_vbar_el1(vbar);\n}",
+        ),
+    ];
+    for (what, from, to) in dominance_mutations {
+        assert!(
+            GOOD.contains(from),
+            "build.rs self-check: VBAR dominance mutation `{what}` does not apply"
+        );
+        let mutated = GOOD.replacen(from, to, 1);
+        assert_ne!(
+            mutated, GOOD,
+            "build.rs self-check: VBAR dominance mutation `{what}` is inert"
+        );
+        assert!(
+            mutated.contains("2048") && mutated.contains("fatal_halt("),
+            "build.rs self-check: VBAR dominance mutation `{what}` DELETED a token; the \
+             mutation must keep the tokens and break the relation"
+        );
+        let verdict = check(&mutated);
+        if what.starts_with("a second") {
+            // A write in ANOTHER function is outside the pin's function and is
+            // not this pin's to refuse; the pinned function still passes.  The
+            // case documents the scanner's scope rather than a refusal.
+            assert!(
+                verdict.is_ok(),
+                "build.rs self-check: a write outside the pinned function was refused"
+            );
+        } else if verdict.is_ok() {
+            panic!(
+                "build.rs self-check: `tripwire_dominates_protected_operation` accepted a VBAR \
+                 tripwire that does not dominate the write: {what}"
+            );
+        }
+    }
+    let mutations: [(&str, &str, &str); 6] = [
+        (
+            "the alignment predicate is reversed: aligned boots halt, misaligned ones proceed",
+            "    if !vbar.is_multiple_of(2048) {",
+            "    if vbar.is_multiple_of(2048) {",
+        ),
+        (
+            "the branch is kept whole but wrapped under a further condition (round 8)",
+            "    if !vbar.is_multiple_of(2048) {\n        crate::kprintln!(\"[boot] FATAL: exception vector table is not 2048-byte aligned\");\n        crate::cpu::fatal_halt();\n    }\n",
+            "    if crate::boot::strict_vectors() {\n        if !vbar.is_multiple_of(2048) {\n            crate::kprintln!(\"[boot] FATAL: exception vector table is not 2048-byte aligned\");\n            crate::cpu::fatal_halt();\n        }\n    }\n",
+        ),
+        (
+            "an earlier statement returns on exactly the failure condition (round 9)",
+            "    if !vbar.is_multiple_of(2048) {\n        crate::kprintln!",
+            "    if !vbar.is_multiple_of(2048) {\n        return;\n    }\n    if !vbar.is_multiple_of(2048) {\n        crate::kprintln!",
+        ),
+        (
+            "the branch returns instead of halting, so the misaligned VBAR is written (round 7)",
+            "        crate::cpu::fatal_halt();\n    }",
+            "        if false {\n            crate::cpu::fatal_halt();\n        }\n        return;\n    }",
+        ),
+        (
+            "the predicate is rewritten around the same constant with the wrong polarity",
+            "    if !vbar.is_multiple_of(2048) {",
+            "    if vbar % 2048 == 0 {",
+        ),
+        (
+            "the halt is kept but the condition is a stored, later-negated flag",
+            "    if !vbar.is_multiple_of(2048) {",
+            "    let aligned = vbar.is_multiple_of(2048);\n    if aligned {",
+        ),
+    ];
+    for (what, from, to) in mutations {
+        assert!(
+            GOOD.contains(from),
+            "build.rs self-check: VBAR tripwire mutation `{what}` does not apply"
+        );
+        let mutated = GOOD.replacen(from, to, 1);
+        assert_ne!(
+            mutated, GOOD,
+            "build.rs self-check: VBAR tripwire mutation `{what}` is inert"
+        );
+        assert!(
+            mutated.contains("2048") && mutated.contains("fatal_halt("),
+            "build.rs self-check: VBAR tripwire mutation `{what}` DELETED a token; the \
+             mutation must keep the tokens and break the relation"
+        );
+        if check(&mutated).is_ok() {
+            panic!(
+                "build.rs self-check: `release_surviving_tripwire_status` accepted a VBAR \
+                 tripwire with the wrong polarity: {what}"
+            );
+        }
+    }
+}
+
+/// **WS-RR RR5.9**: where a Lean symbol's declaration or definition sits, as
+/// the scanner classifies it.
+#[derive(Debug, PartialEq, Eq)]
+struct LeanSymbolDeclaration {
+    /// The Lean symbol declared or defined.
+    symbol: String,
+    /// Is this an `extern "C"` declaration or definition, or does it carry
+    /// `#[no_mangle]`?  Either way it puts the Lean name in the linker's hands.
+    linker_visible: bool,
+    /// The verdict of the innermost decisive `cfg` region enclosing it:
+    /// `Some(true)` when the enclosing `#[cfg(..)]` attributes **entail**
+    /// `feature = "hw_target"` (the item is compiled only with the feature on),
+    /// `Some(false)` when they entail its negation, `None` when the scanner can
+    /// establish neither (`hw_target_region`).
+    hw_target: Option<bool>,
+}
+
+/// **WS-RR RR5.9**: what one `cfg` predicate entails about `feature =
+/// "hw_target"`.
+///
+/// Four entailments, every one **under-approximated**: `true` is an entailment
+/// the evaluator established, `false` says only that it established none.  A
+/// verdict built from them can therefore refuse a gate that is in fact sound —
+/// `any(feature = "hw_target", feature = "hw_target")`, say — and can never
+/// accept one that is not, which is the direction that fails closed.  The
+/// combinators follow the `cfg` grammar (`not`, `all`, `any`); an atom other
+/// than the feature itself entails nothing in either direction.
+///
+/// This replaced two substring tests (`contains("not(feature = \"hw_target\")")`
+/// first, then `contains("feature = \"hw_target\"")`), which read the *token*
+/// off the header and not the *predicate*: a `cfg_attr(feature = "hw_target",
+/// ..)` — which gates nothing — and an `any(feature = "hw_target", ..)` — which
+/// compiles the item without the feature — both carried the token and both
+/// passed as a positive gate.  Presence is not a relation; the relation here is
+/// entailment, and it is computed.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct HwTargetEntailment {
+    /// `P → hw_target`: the item exists only with the feature on.
+    needs_hw: bool,
+    /// `P → ¬hw_target`: the item exists only with the feature off.
+    needs_not_hw: bool,
+    /// `hw_target → P`: the feature on suffices for the item to exist.
+    given_hw: bool,
+    /// `¬hw_target → P`: the feature off suffices for the item to exist.
+    given_not_hw: bool,
+}
+
+impl HwTargetEntailment {
+    /// `true` (the empty conjunction): entailed by everything, entails nothing.
+    const TRIVIAL: Self = Self {
+        needs_hw: false,
+        needs_not_hw: false,
+        given_hw: true,
+        given_not_hw: true,
+    };
+
+    /// The conjunction `all(self, other)`.
+    fn and(self, other: Self) -> Self {
+        Self {
+            needs_hw: self.needs_hw || other.needs_hw,
+            needs_not_hw: self.needs_not_hw || other.needs_not_hw,
+            given_hw: self.given_hw && other.given_hw,
+            given_not_hw: self.given_not_hw && other.given_not_hw,
+        }
+    }
+}
+
+/// **WS-RR RR5.9**: split `args` at the commas outside parentheses and string
+/// literals — the arguments of one `cfg` combinator.
+fn split_top_level_commas(args: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+    let mut start = 0usize;
+    for (i, b) in args.bytes().enumerate() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if b == b'\\' {
+                escaped = true;
+            } else if b == b'"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match b {
+            b'"' => in_string = true,
+            b'(' => depth += 1,
+            b')' => depth = depth.saturating_sub(1),
+            b',' if depth == 0 => {
+                out.push(&args[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    out.push(&args[start..]);
+    out.into_iter()
+        .map(str::trim)
+        .filter(|a| !a.is_empty())
+        .collect()
+}
+
+/// **WS-RR RR5.9**: the entailment of one `cfg` predicate (`hw_target_region`).
+fn cfg_predicate_entailment(pred: &str) -> HwTargetEntailment {
+    let pred = pred.trim();
+    // `feature = "hw_target"`, whitespace-insensitively: the atom.
+    let squeezed: String = pred.split_whitespace().collect();
+    if squeezed == "feature=\"hw_target\"" {
+        return HwTargetEntailment {
+            needs_hw: true,
+            needs_not_hw: false,
+            given_hw: true,
+            given_not_hw: false,
+        };
+    }
+    let Some(open) = pred.find('(') else {
+        return HwTargetEntailment::default();
+    };
+    if !pred.ends_with(')') {
+        return HwTargetEntailment::default();
+    }
+    let head = pred[..open].trim();
+    let args: Vec<HwTargetEntailment> = split_top_level_commas(&pred[open + 1..pred.len() - 1])
+        .into_iter()
+        .map(cfg_predicate_entailment)
+        .collect();
+    match head {
+        // `¬P → hw` iff `¬hw → P`, and so on: the four entailments of a
+        // negation are the four of its operand, read across the diagonal.
+        "not" if args.len() == 1 => {
+            let p = args[0];
+            HwTargetEntailment {
+                needs_hw: p.given_not_hw,
+                needs_not_hw: p.given_hw,
+                given_hw: p.needs_not_hw,
+                given_not_hw: p.needs_hw,
+            }
+        }
+        "all" => args
+            .iter()
+            .fold(HwTargetEntailment::TRIVIAL, |acc, p| acc.and(*p)),
+        // A disjunction needs the feature only when every disjunct does, and
+        // is given by the feature when any disjunct is.
+        "any" => HwTargetEntailment {
+            needs_hw: !args.is_empty() && args.iter().all(|p| p.needs_hw),
+            needs_not_hw: !args.is_empty() && args.iter().all(|p| p.needs_not_hw),
+            given_hw: args.iter().any(|p| p.given_hw),
+            given_not_hw: args.iter().any(|p| p.given_not_hw),
+        },
+        _ => HwTargetEntailment::default(),
+    }
+}
+
+/// **WS-RR RR5.9**: the predicates of the `#[cfg(..)]` attributes in one item
+/// header, in order.  Only `cfg` — `cfg_attr` and every other attribute are
+/// skipped, whatever they mention.
+fn cfg_attribute_predicates(header: &str) -> Vec<&str> {
+    let bytes = header.as_bytes();
+    let mut out = Vec::new();
+    let mut search = 0usize;
+    while let Some(hit) = header[search..].find("#[") {
+        let mut i = search + hit + 2;
+        search = i;
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        let name_start = i;
+        while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+            i += 1;
+        }
+        if &header[name_start..i] != "cfg" {
+            continue;
+        }
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if i >= bytes.len() || bytes[i] != b'(' {
+            continue;
+        }
+        let pred_start = i + 1;
+        let mut depth = 0usize;
+        let mut in_string = false;
+        let mut escaped = false;
+        let mut pred_end = None;
+        let mut j = i;
+        while j < bytes.len() {
+            let b = bytes[j];
+            if in_string {
+                if escaped {
+                    escaped = false;
+                } else if b == b'\\' {
+                    escaped = true;
+                } else if b == b'"' {
+                    in_string = false;
+                }
+            } else {
+                match b {
+                    b'"' => in_string = true,
+                    b'(' => depth += 1,
+                    b')' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            pred_end = Some(j);
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            j += 1;
+        }
+        let Some(pred_end) = pred_end else { break };
+        let mut k = pred_end + 1;
+        while k < bytes.len() && bytes[k].is_ascii_whitespace() {
+            k += 1;
+        }
+        if k < bytes.len() && bytes[k] == b']' {
+            out.push(&header[pred_start..pred_end]);
+        }
+        search = pred_end + 1;
+    }
+    out
+}
+
+/// **WS-RR RR5.9**: the verdict of one item header — `Some(true)` when its
+/// `cfg` attributes, conjoined, entail `feature = "hw_target"`, `Some(false)`
+/// when they entail its negation, `None` when the evaluator can establish
+/// neither (no `cfg`, a `cfg` that does not mention the feature, or one that
+/// mentions it without deciding it).  A header entailing both is contradictory
+/// — the item is never compiled — and is `None` too, so it satisfies nothing.
+fn header_verdict(header: &str) -> Option<bool> {
+    let preds = cfg_attribute_predicates(header);
+    if preds.is_empty() {
+        return None;
+    }
+    let e = preds
+        .iter()
+        .map(|p| cfg_predicate_entailment(p))
+        .fold(HwTargetEntailment::TRIVIAL, HwTargetEntailment::and);
+    match (e.needs_hw, e.needs_not_hw) {
+        (true, false) => Some(true),
+        (false, true) => Some(false),
+        _ => None,
+    }
+}
+
+/// **WS-RR RR5.9**: the `hw_target` cfg region enclosing byte `at`, or `None`.
+///
+/// Walks outward from `at`: first the *item header* ending at `at` (the text
+/// back to the previous statement boundary, which carries the attributes of a
+/// module-level item), then each enclosing block's own header, innermost first.
+/// The first header with a decisive verdict (`header_verdict`) decides: a
+/// `cfg` on an enclosing module or block gates everything inside it, and an
+/// inner header whose `cfg` does not mention the feature leaves the decision
+/// to the next one out.
+///
+/// `code` must be a comment-blanked view: a comment naming the feature would
+/// otherwise gate an item that no attribute gates — the presence-versus-relation
+/// mistake, in the direction that fails *open*.
+fn hw_target_region(code: &str, strings_kept: &str, at: usize) -> Option<bool> {
+    // **PR #889 review round 14**: the nesting is read from the **string-free**
+    // view and the predicate's text from the aligned strings-kept one.  Walking
+    // the kept view let a string literal supply both halves of the answer: a
+    // `const DECOY: &str = r#"#[cfg(feature = "hw_target")] {"#;` above an
+    // `extern "C"` block contributed a `{` the walk read as an enclosing block
+    // and a `#[cfg]` the verdict read as that block's header, so an extern
+    // compiled with no feature gate at all classified as `hw_target`-only.
+    // Braces and attributes are structure; only the feature name is text.
+    debug_assert_eq!(code.len(), strings_kept.len());
+    // The span of the header of the construct whose body/text contains `pos`:
+    // back to the previous statement boundary, located on the string-free view.
+    fn header_span(code: &str, pos: usize) -> (usize, usize) {
+        let bytes = code.as_bytes();
+        let mut i = pos;
+        while i > 0 {
+            match bytes[i - 1] {
+                b';' | b'{' | b'}' => break,
+                _ => i -= 1,
+            }
+        }
+        (i, pos)
+    }
+    // Sliced as bytes and read lossily: an offset that is a char boundary in
+    // the blanked view can fall inside a multi-byte character preserved in the
+    // kept one, and a panic in `build.rs` is a hard build failure.
+    let verdict = |span: (usize, usize)| {
+        let text = String::from_utf8_lossy(&strings_kept.as_bytes()[span.0..span.1]);
+        header_verdict(&text)
+    };
+    if let Some(v) = verdict(header_span(code, at)) {
+        return Some(v);
+    }
+    let bytes = code.as_bytes();
+    let mut pos = at;
+    loop {
+        // The innermost unmatched `{` before `pos`.
+        let mut depth = 0usize;
+        let mut open = None;
+        let mut i = pos;
+        while i > 0 {
+            i -= 1;
+            match bytes[i] {
+                b'}' => depth += 1,
+                b'{' => {
+                    if depth == 0 {
+                        open = Some(i);
+                        break;
+                    }
+                    depth -= 1;
+                }
+                _ => {}
+            }
+        }
+        let open = open?;
+        if let Some(v) = verdict(header_span(code, open)) {
+            return Some(v);
+        }
+        pos = open;
+    }
+}
+
+/// **WS-RR RR5.9**: does an item header put the item's name in the symbol
+/// table?  The `extern` keyword (an `extern "C" fn`, or the header of the
+/// `extern "C" { .. }` block a declaration sits in), or a `no_mangle` attribute
+/// in either spelling — `#[no_mangle]` and the edition-2024 `#[unsafe(no_mangle)]`,
+/// which the 2021 edition this crate builds under accepts as well.  Read as
+/// whole words on the blanked view, not as substrings: an attribute *string*
+/// is blanked before this sees it, and an identifier that merely contains the
+/// letters is not the keyword.
+fn header_is_linker_visible(header: &str) -> bool {
+    contains_word(header, "extern") || contains_word(header, "no_mangle")
+}
+
+/// **WS-RR RR5.9**: `word` occurs in `text` as a whole identifier.
+fn contains_word(text: &str, word: &str) -> bool {
+    let bytes = text.as_bytes();
+    let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let mut search = 0usize;
+    while let Some(hit) = text[search..].find(word) {
+        let at = search + hit;
+        let end = at + word.len();
+        search = end;
+        if (at == 0 || !is_ident(bytes[at - 1])) && (end == bytes.len() || !is_ident(bytes[end])) {
+            return true;
+        }
+    }
+    false
+}
+
+/// **WS-RR RR5.9**: every declaration or definition of a Lean symbol in one
+/// comment- and string-blanked source view, with where it sits.
+///
+/// A declaration is the symbol preceded by the `fn` keyword — the same
+/// classification `lean_upcall_sites` uses to tell a declaration from a call,
+/// so the two scanners cannot disagree about what a site is.  `linker_visible`
+/// is true when the item is `extern` (an `extern "C" { … }` block's contents, or
+/// an `extern "C" fn` definition) or carries `#[no_mangle]`: those are the forms
+/// that put the Lean name in the symbol table, which is what RR5.8 confines to
+/// `hw_target`.
+fn lean_symbol_declarations(
+    code: &str,
+    strings_kept: &str,
+    exports: &[&str],
+) -> Vec<LeanSymbolDeclaration> {
+    let bytes = code.as_bytes();
+    let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let mut out = Vec::new();
+    for symbol in exports {
+        // `#[export_name = "<symbol>"]` (or `#[unsafe(export_name = ..)]`) puts
+        // the *string* in the symbol table, whatever the item is called, so it
+        // is a linker-visible declaration of the Lean symbol wherever it sits.
+        // Read off the strings-kept view, where the name still exists.
+        let needle = format!("\"{symbol}\"");
+        let mut search = 0usize;
+        while let Some(hit) = strings_kept[search..].find(&needle) {
+            let at = search + hit;
+            search = at + needle.len();
+            let lead: String = strings_kept[..at]
+                .chars()
+                .rev()
+                .take_while(|c| *c != '#')
+                .collect::<String>()
+                .chars()
+                .rev()
+                .filter(|c| !c.is_whitespace())
+                .collect();
+            if lead == "[export_name=" || lead == "[unsafe(export_name=" {
+                out.push(LeanSymbolDeclaration {
+                    symbol: (*symbol).to_string(),
+                    linker_visible: true,
+                    hw_target: hw_target_region(code, strings_kept, at),
+                });
+            }
+        }
+        let mut search = 0usize;
+        while let Some(hit) = code[search..].find(*symbol) {
+            let at = search + hit;
+            let end = at + symbol.len();
+            search = end;
+            if (at > 0 && is_ident(bytes[at - 1])) || (end < bytes.len() && is_ident(bytes[end])) {
+                continue;
+            }
+            let mut before = at;
+            while before > 0 && matches!(bytes[before - 1], b' ' | b'\t' | b'\n' | b'\r') {
+                before -= 1;
+            }
+            let declared = before >= 2
+                && &code[before - 2..before] == "fn"
+                && (before == 2 || !is_ident(bytes[before - 3]));
+            if !declared {
+                continue;
+            }
+            // The item's own header, plus — for a declaration inside an
+            // `extern "C" { … }` block — that block's header.
+            let header = {
+                let mut i = before - 2;
+                while i > 0 && !matches!(bytes[i - 1], b';' | b'{' | b'}') {
+                    i -= 1;
+                }
+                let own = &code[i..before];
+                let mut enclosing = String::new();
+                if i > 0 && bytes[i - 1] == b'{' {
+                    let block_open = i - 1;
+                    let mut j = block_open;
+                    while j > 0 && !matches!(bytes[j - 1], b';' | b'{' | b'}') {
+                        j -= 1;
+                    }
+                    enclosing.push_str(&code[j..block_open]);
+                }
+                format!("{enclosing}\n{own}")
+            };
+            out.push(LeanSymbolDeclaration {
+                symbol: (*symbol).to_string(),
+                linker_visible: header_is_linker_visible(&header),
+                // The cfg attributes' *text* is read from the strings-kept
+                // view, byte-aligned with this one — `feature = "hw_target"`
+                // is a string literal the blanked view has erased — while the
+                // brace nesting that decides which attribute governs this
+                // declaration is read from the blanked one (round 14).
+                hw_target: hw_target_region(code, strings_kept, at),
+            });
+        }
+    }
+    out
+}
+
+/// **PR #889 review round 12**: a Lean symbol may not be declared under an
+/// *alias*.  `#[link_name = "lean_x"] fn upcall();` makes the linker demand
+/// `lean_x` while every scanner here reads the Rust name: the readiness
+/// derivation collects HAL externs by their `lean_` prefix (`upcall` has
+/// none), and `lean_upcall_sites` resolves calls by the symbol's own
+/// identifier (the call goes through `upcall`).  The seam would be invisible
+/// to both — no gate attributed, no table entry demanded — which is the same
+/// unattributable-reference class the scanner already refuses for a Lean
+/// symbol taken as a value.  A `link_name` for a *non*-Lean symbol is
+/// untouched; the rule is that a Lean entry is declared under its own name.
+///
+/// Returned as `(path, symbol)` pairs; read over the comment-blanked view for
+/// the attribute and the strings-kept view for its value, which are
+/// byte-aligned.
+fn lean_link_name_aliases(
+    views: &[(String, String, String)],
+    exports: &[&str],
+) -> Vec<(String, String)> {
+    let mut found = Vec::new();
+    for (path, code, strings_kept) in views {
+        let bytes = code.as_bytes();
+        let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+        let mut search = 0usize;
+        while let Some(hit) = code[search..].find("link_name") {
+            let at = search + hit;
+            let end = at + "link_name".len();
+            search = end;
+            if (at > 0 && is_ident(bytes[at - 1])) || (end < bytes.len() && is_ident(bytes[end])) {
+                continue;
+            }
+            // The attribute's value is the first string literal before the
+            // attribute list closes.  Bounded by that `]` so a `link_name`
+            // outside an attribute cannot borrow a later string.
+            let limit = match code[end..].find(']') {
+                Some(offset) => end + offset,
+                None => continue,
+            };
+            let Some(open) = strings_kept[end..limit].find('"') else {
+                continue;
+            };
+            let start = end + open + 1;
+            let Some(close) = strings_kept[start..limit].find('"') else {
+                continue;
+            };
+            let value = &strings_kept[start..start + close];
+            if value.starts_with("lean_") || exports.contains(&value) {
+                found.push((path.clone(), value.to_string()));
+            }
+        }
+    }
+    found
+}
+
+/// Token-preserving self-check for `lean_link_name_aliases`: every rejected
+/// case keeps a plain `extern "C"` declaration and adds the alias; every
+/// accepted case keeps the `link_name` attribute and points it elsewhere.
+/// Token-preserving self-check for `extern_block_openings`: every case keeps
+/// the `extern` keyword and the declaration and varies only the **spelling of
+/// the ABI**, which is the relation the substring search got wrong (PR #889
+/// review round 17).  The two rejected cases keep the keyword and put it in a
+/// position that opens no block.
+fn verify_extern_block_resolver() {
+    let cases: [(&str, &str, bool); 8] = [
+        (
+            "the canonical spelling opens a block",
+            "extern \"C\" {\n    fn lean_ghost();\n}\n",
+            true,
+        ),
+        (
+            "a raw ABI literal is the same block",
+            "extern r\"C\" {\n    fn lean_ghost();\n}\n",
+            true,
+        ),
+        (
+            "a hashed raw ABI literal is the same block",
+            "extern r#\"C\"# {\n    fn lean_ghost();\n}\n",
+            true,
+        ),
+        (
+            "an omitted ABI defaults to `\"C\"` and still declares symbols",
+            "extern {\n    fn lean_ghost();\n}\n",
+            true,
+        ),
+        (
+            "another ABI declares symbols the linker must resolve just the same",
+            "extern \"C-unwind\" {\n    fn lean_ghost();\n}\n",
+            true,
+        ),
+        (
+            "`unsafe extern` is the 2024 spelling of the same block",
+            "unsafe extern \"C\" {\n    fn lean_ghost();\n}\n",
+            true,
+        ),
+        (
+            "an `extern \"C\" fn` definition is not a block",
+            "pub extern \"C\" fn lean_ghost() {\n    let x = 1;\n}\n",
+            false,
+        ),
+        (
+            "`extern crate` opens no block",
+            "extern crate alloc;\nfn lean_ghost() {}\n",
+            false,
+        ),
+    ];
+    for (name, source, opens) in cases {
+        let (_, code) = rust_code_views(source);
+        assert_eq!(
+            !extern_block_openings(&code).is_empty(),
+            opens,
+            "build.rs self-check: `extern_block_openings` read the case wrongly: {name}"
+        );
+        // The two consumers must agree with it: a block's declaration is
+        // collected and blanked, a non-block's is neither.
+        assert_eq!(
+            extern_block_declarations(&code).contains(&"lean_ghost".to_string()),
+            opens,
+            "build.rs self-check: `extern_block_declarations` read the case wrongly: {name}"
+        );
+        assert_eq!(
+            !blank_extern_blocks(&code).contains("lean_ghost"),
+            opens,
+            "build.rs self-check: `blank_extern_blocks` read the case wrongly: {name}"
+        );
+    }
+    // PR #889 review round 25: a raw-identifier declaration names the same
+    // linker symbol as the bare spelling, so it is the same seam and must join
+    // the readiness set.  The mutation KEEPS the block, the `fn` and the name
+    // and only escapes it — which collected `r`, a name no `lean_` test can
+    // match, so the seam left the set and its call needed no guard.
+    {
+        let (_, raw_code) = rust_code_views("extern \"C\" {\n    fn r#lean_raw(x: u64);\n}\n");
+        assert!(
+            extern_block_declarations(&raw_code).contains(&"lean_raw".to_string()),
+            "build.rs self-check: a raw-identifier `extern` declaration left the \
+             readiness seam set"
+        );
+        // ...and a function-pointer *type* in a parameter list declares no
+        // symbol, so the refusal above is a bound rather than a rejection of
+        // every `fn ` the scan meets.
+        let (_, ptr_code) =
+            rust_code_views("extern \"C\" {\n    fn lean_takes(cb: extern \"C\" fn (u64));\n}\n");
+        assert_eq!(
+            extern_block_declarations(&ptr_code),
+            vec!["lean_takes"],
+            "build.rs self-check: a function-pointer parameter type was read as a \
+             declaration"
+        );
+        // ...and `enclosing_fn_span`, the sibling that asks the same question
+        // of a *definition*, reads the escape too: the body span was always
+        // right, but the name it is reported under keys every allowlist entry,
+        // exemption and gate attribution.
+        let raw_def = "fn r#lean_raw() {\n    let token = 1;\n}\n";
+        assert_eq!(
+            enclosing_fn_name(raw_def, raw_def.find("let token").unwrap()).as_deref(),
+            Some("lean_raw"),
+            "build.rs self-check: a raw-identifier `fn` definition was named with its \
+             escape"
+        );
+    }
+}
+
+fn verify_lean_link_name_scanner() {
+    let exports = ["lean_alpha"];
+    let cases: [(&str, &str, bool); 6] = [
+        (
+            "an alias of a Lean export is refused",
+            "extern \"C\" {\n    #[link_name = \"lean_alpha\"]\n    fn upcall(a: u64) -> u32;\n}\n",
+            true,
+        ),
+        (
+            "the `unsafe(..)` spelling is the same attribute",
+            "extern \"C\" {\n    #[unsafe(link_name = \"lean_alpha\")]\n    fn upcall(a: u64) -> u32;\n}\n",
+            true,
+        ),
+        (
+            "an alias of a `lean_`-prefixed symbol the Lean tree has not exported yet",
+            "extern \"C\" {\n    #[link_name = \"lean_kernel_main\"]\n    fn boot();\n}\n",
+            true,
+        ),
+        (
+            "an alias of a symbol that is not a Lean entry is allowed",
+            "extern \"C\" {\n    #[link_name = \"memcpy\"]\n    fn my_memcpy(a: u64);\n}\n",
+            false,
+        ),
+        (
+            "a commented-out alias aliases nothing",
+            "extern \"C\" {\n    // #[link_name = \"lean_alpha\"]\n    fn lean_alpha(a: u64) -> u32;\n}\n",
+            false,
+        ),
+        (
+            "the attribute quoted in a string literal is text",
+            "const DOC: &str = \"#[link_name = \\\"lean_alpha\\\"]\";\n",
+            false,
+        ),
+    ];
+    for (name, source, refused) in cases {
+        let (strings_kept, code) = rust_code_views(source);
+        let views = vec![("fixture.rs".to_string(), code, strings_kept)];
+        let found = !lean_link_name_aliases(&views, &exports).is_empty();
+        assert_eq!(
+            found, refused,
+            "build.rs self-check: `lean_link_name_aliases` read the case wrongly: {name}"
+        );
+    }
+}
+
+/// **WS-RR RR5.9**: no Lean symbol is declared, defined or exported outside a
+/// `hw_target` region.
+///
+/// The second half of the finding RR5.6/RR5.7 close.  The readiness gate decides
+/// whether a Lean call *executes*; it says nothing about whether the call path is
+/// *compiled*, and both seams declared their Lean `extern` under
+/// `#[cfg(not(test))]` — so `cargo build -p sele4n-hal`, the default host
+/// profile, compiled a call to a bare-metal symbol nothing on the host provides,
+/// and `cargo test` linked one into every test binary through a `#[no_mangle]`
+/// stub.  Two rules, both structural:
+///
+///   * a **linker-visible** form (an `extern "C"` declaration or definition, or
+///     any `#[no_mangle]` item) may exist only under
+///     `#[cfg(feature = "hw_target")]`; and
+///   * a plain Rust definition of the same name — a host-lane stand-in — may
+///     exist only under `#[cfg(not(feature = "hw_target"))]`, so it cannot
+///     shadow the real entry point on hardware.
+///
+/// Calls are not this scanner's business: `scan_lean_upcalls_readiness_gated`
+/// owns them, and a call to a symbol declared only under `hw_target` is a
+/// compile error on any other configuration.
+fn lean_extern_gating_status(
+    views: &[(String, String, String)],
+    exports: &[&str],
+) -> Result<usize, String> {
+    let mut checked = 0usize;
+    for (path, code, strings_kept) in views {
+        for decl in lean_symbol_declarations(code, strings_kept, exports) {
+            checked += 1;
+            let LeanSymbolDeclaration {
+                symbol,
+                linker_visible,
+                hw_target,
+            } = decl;
+            match (linker_visible, hw_target) {
+                (true, Some(true)) => {}
+                (false, Some(false)) => {}
+                (true, _) => {
+                    return Err(format!(
+                        "`{path}` declares or exports the Lean symbol `{symbol}` outside \
+                         `#[cfg(feature = \"hw_target\")]`.  An `extern \"C\"` declaration or a \
+                         `#[no_mangle]` definition puts a bare-metal kernel entry point in the \
+                         linker's hands on every configuration that compiles it — including the \
+                         default host profile, which has nothing to resolve it against.  Gate the \
+                         item on `feature = \"hw_target\"`; a host lane needs a plain Rust \
+                         stand-in under `cfg(not(feature = \"hw_target\"))`, not an `extern`"
+                    ));
+                }
+                (false, _) => {
+                    return Err(format!(
+                        "`{path}` defines a plain Rust function named after the Lean symbol \
+                         `{symbol}` outside `#[cfg(not(feature = \"hw_target\"))]`.  A host-lane \
+                         stand-in must be confined to the host lane, or it shadows the real \
+                         entry point in a build that links the kernel"
+                    ));
+                }
+            }
+        }
+    }
+    Ok(checked)
+}
+
+/// **WS-RR RR5.9**: token-preserving self-check for `lean_extern_gating_status`.
+///
+/// Every mutation **keeps** the tokens a presence check would look for — the
+/// `extern "C"`, the symbol name, and the literal `hw_target` — and breaks only
+/// the *relation* the scanner is about: which cfg region the item sits in, and
+/// whether the item is linker-visible there.  A fixture that mutated by deleting
+/// the gate would be survived by any scanner that merely greps for it, which is
+/// the failure mode CLAUDE.md's "test a gate by breaking the relation" rule
+/// names.
+///
+/// The fixture is no thinner than the real sources: it carries a gated `extern`
+/// block, a gated `extern` nested two blocks deep (the `timer.rs` shape), a
+/// negation-gated host stand-in, and a comment naming the feature — so a
+/// scanner reading the raw text rather than the comment-blanked view fails the
+/// last case.
+fn verify_lean_extern_gating_scanner() {
+    const GOOD: &str = r#"
+#[cfg(feature = "hw_target")]
+extern "C" {
+    fn lean_alpha(x: u64) -> u64;
+}
+
+#[cfg(not(feature = "hw_target"))]
+unsafe fn lean_alpha(_x: u64) -> u64 {
+    0
+}
+
+fn beta_seam(core: usize) {
+    #[cfg(feature = "hw_target")]
+    {
+        if crate::lean_ready::lean_ready(core) {
+            extern "C" {
+                fn lean_beta(core_id: u64);
+            }
+            unsafe { lean_beta(core as u64) };
+        }
+    }
+}
+
+#[cfg(all(feature = "hw_target", target_arch = "aarch64"))]
+extern "C" {
+    fn lean_gamma() -> u64;
+}
+
+#[cfg(not(feature = "hw_target"))]
+fn lean_gamma() -> u64 {
+    0
+}
+"#;
+    let exports = ["lean_alpha", "lean_beta", "lean_gamma"];
+    let check = |source: &str| -> Result<usize, String> {
+        let (kept, blanked) = rust_code_views(source);
+        lean_extern_gating_status(&[("fixture.rs".to_string(), blanked, kept)], &exports)
+    };
+    match check(GOOD) {
+        Ok(5) => {}
+        Ok(n) => panic!(
+            "build.rs self-check: the good extern-gating fixture classified {n} declarations, \
+             expected 5 (the gated extern, the host stand-in, the nested extern, the \
+             `all`-gated extern and its stand-in)"
+        ),
+        Err(why) => {
+            panic!("build.rs self-check: the good extern-gating fixture was refused: {why}")
+        }
+    }
+    // PR #889 review round 14: a *string literal* may not supply the nesting
+    // or the attribute.  The decoy keeps a real, ungated `extern "C"` block and
+    // adds text above it that looks like a gate; on the strings-kept view the
+    // walk read the decoy's `{` as an enclosing block and its `#[cfg]` as that
+    // block's header, and the ungated extern classified as `hw_target`-only.
+    const DECOY: &str = "const D: &str = r#\"#[cfg(feature = \"hw_target\")] {\"#;\n\
+                         extern \"C\" {\n    fn lean_alpha(x: u64) -> u64;\n}\n";
+    match check(DECOY) {
+        Err(_) => {}
+        Ok(n) => panic!(
+            "build.rs self-check: a string literal supplied the cfg nesting — an ungated \
+             `extern \"C\"` block classified as gated ({n} declarations checked)"
+        ),
+    }
+    // ...and the same text as *code* still gates the block, so the fix did not
+    // simply stop reading attributes.
+    const REAL: &str = "#[cfg(feature = \"hw_target\")]\n\
+                        extern \"C\" {\n    fn lean_alpha(x: u64) -> u64;\n}\n";
+    match check(REAL) {
+        Ok(1) => {}
+        Ok(n) => panic!(
+            "build.rs self-check: a genuinely gated extern classified {n} declarations, \
+             expected 1"
+        ),
+        Err(why) => panic!(
+            "build.rs self-check: a genuinely gated extern was refused after the round-14 \
+             view change: {why}"
+        ),
+    }
+    let mutations: [(&str, &str, &str); 12] = [
+        (
+            "the extern keeps its cfg but the gate becomes a different feature",
+            "#[cfg(feature = \"hw_target\")]\nextern \"C\" {\n    fn lean_alpha",
+            "#[cfg(feature = \"host_tools\")]\nextern \"C\" {\n    fn lean_alpha",
+        ),
+        (
+            "the extern keeps the literal `hw_target` but under its negation",
+            "#[cfg(feature = \"hw_target\")]\nextern \"C\" {\n    fn lean_alpha",
+            "#[cfg(not(feature = \"hw_target\"))]\nextern \"C\" {\n    fn lean_alpha",
+        ),
+        (
+            "the host stand-in keeps its body but loses the negated gate",
+            "#[cfg(not(feature = \"hw_target\"))]\nunsafe fn lean_alpha",
+            "unsafe fn lean_alpha",
+        ),
+        (
+            "the host stand-in stays negation-gated but becomes linker-visible",
+            "#[cfg(not(feature = \"hw_target\"))]\nunsafe fn lean_alpha",
+            "#[cfg(not(feature = \"hw_target\"))]\n#[no_mangle]\nunsafe fn lean_alpha",
+        ),
+        (
+            "the nested extern keeps every enclosing block but the outer gate moves off it",
+            "    #[cfg(feature = \"hw_target\")]\n    {\n        if crate::lean_ready",
+            "    {\n        if crate::lean_ready",
+        ),
+        (
+            "the gate is present only as a comment",
+            "#[cfg(feature = \"hw_target\")]\nextern \"C\" {\n    fn lean_alpha",
+            "// #[cfg(feature = \"hw_target\")]\nextern \"C\" {\n    fn lean_alpha",
+        ),
+        (
+            "the extern keeps the literal in a `cfg_attr`, which gates nothing",
+            "#[cfg(feature = \"hw_target\")]\nextern \"C\" {\n    fn lean_alpha",
+            "#[cfg_attr(feature = \"hw_target\", allow(dead_code))]\nextern \"C\" {\n    fn lean_alpha",
+        ),
+        (
+            "the extern's gate becomes an `any` the feature does not decide",
+            "#[cfg(feature = \"hw_target\")]\nextern \"C\" {\n    fn lean_alpha",
+            "#[cfg(any(feature = \"hw_target\", feature = \"host_tools\"))]\nextern \"C\" {\n    \
+             fn lean_alpha",
+        ),
+        (
+            "the host stand-in's negation wraps an `all` the feature does not decide",
+            "#[cfg(not(feature = \"hw_target\"))]\nunsafe fn lean_alpha",
+            "#[cfg(not(all(feature = \"hw_target\", feature = \"host_tools\")))]\nunsafe fn lean_alpha",
+        ),
+        (
+            "the `all`-gated extern keeps every conjunct but under `any`",
+            "#[cfg(all(feature = \"hw_target\", target_arch = \"aarch64\"))]\nextern \"C\" {\n    \
+             fn lean_gamma",
+            "#[cfg(any(feature = \"hw_target\", target_arch = \"aarch64\"))]\nextern \"C\" {\n    \
+             fn lean_gamma",
+        ),
+        (
+            "the host stand-in stays negation-gated but becomes linker-visible through the \
+             edition-2024 attribute spelling",
+            "#[cfg(not(feature = \"hw_target\"))]\nunsafe fn lean_alpha",
+            "#[cfg(not(feature = \"hw_target\"))]\n#[unsafe(no_mangle)]\nunsafe fn lean_alpha",
+        ),
+        (
+            "a host item of another name is exported under the Lean symbol's name",
+            "#[cfg(not(feature = \"hw_target\"))]\nfn lean_gamma() -> u64 {",
+            "#[cfg(not(feature = \"hw_target\"))]\n#[export_name = \"lean_gamma\"]\nfn \
+             host_gamma() -> u64 {",
+        ),
+    ];
+    for (what, from, to) in mutations {
+        assert!(
+            GOOD.contains(from),
+            "build.rs self-check: extern-gating mutation `{what}` does not apply"
+        );
+        let mutated = GOOD.replacen(from, to, 1);
+        assert_ne!(
+            mutated, GOOD,
+            "build.rs self-check: extern-gating mutation `{what}` is inert"
+        );
+        assert!(
+            mutated.contains("hw_target"),
+            "build.rs self-check: extern-gating mutation `{what}` DELETED the token; the \
+             mutation must keep it and break the relation"
+        );
+        if check(&mutated).is_ok() {
+            panic!(
+                "build.rs self-check: `lean_extern_gating_status` accepted a broken fixture: \
+                 {what}"
+            );
+        }
+    }
+}
 
 /// One call from HAL Rust into a Lean-emitted symbol, as the scanner found it.
 #[derive(Debug, PartialEq, Eq)]
@@ -2128,6 +3976,9 @@ fn lean_upcall_sites(code: &str, exports: &[&str]) -> Result<Vec<LeanUpcallSite>
 fn readiness_guard_dominates(code: &str, body_open: usize, call: usize) -> bool {
     let bytes = code.as_bytes();
     let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    // PR #889 review round 9: an unqualified `lean_ready(…)` is the gate only
+    // where this file resolves it to `crate::lean_ready::lean_ready`.
+    let allow_bare = bare_ready_call_resolves(code);
     let mut search = body_open;
     while let Some(hit) = code[search..call].find("lean_ready(") {
         let gate = search + hit;
@@ -2153,7 +4004,7 @@ fn readiness_guard_dominates(code: &str, body_open: usize, call: usize) -> bool 
         // gate on the wrong core, and a parameter is whatever the caller sent.
         let names_executing_core =
             |arg: &str| ready_argument_is_executing_core(code, body_open, if_at, arg);
-        if let Some(arg) = negated_ready_call_argument(cond) {
+        if let Some(arg) = negated_ready_call_argument(cond, allow_bare) {
             if !names_executing_core(arg) {
                 continue;
             }
@@ -2165,7 +4016,7 @@ fn readiness_guard_dominates(code: &str, body_open: usize, call: usize) -> bool 
             if last_diverges && block_close < call {
                 return true;
             }
-        } else if let Some(arg) = ready_condition_argument(cond) {
+        } else if let Some(arg) = ready_condition_argument(cond, allow_bare) {
             if names_executing_core(arg) && block_open < call && call < block_close {
                 return true;
             }
@@ -2460,29 +4311,97 @@ fn dominating_statements(
     out
 }
 
+/// **PR #889 review round 9**: the offset of the first readiness-gate call in
+/// `body` — the qualified path always, the bare spelling only where the file
+/// resolves it (`allow_bare`).
+fn gate_call_offset(body: &str, allow_bare: bool) -> Option<usize> {
+    let qualified = body.find("lean_ready::lean_ready(");
+    if !allow_bare {
+        return qualified;
+    }
+    let bare = {
+        let bytes = body.as_bytes();
+        let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b == b':';
+        let mut search = 0usize;
+        loop {
+            match body[search..].find("lean_ready(") {
+                Some(hit) => {
+                    let at = search + hit;
+                    search = at + "lean_ready(".len();
+                    if at == 0 || !is_ident(bytes[at - 1]) {
+                        break Some(at);
+                    }
+                }
+                None => break None,
+            }
+        }
+    };
+    match (qualified, bare) {
+        (Some(q), Some(b)) => Some(q.min(b)),
+        (q, b) => q.or(b),
+    }
+}
+
+/// **PR #889 review round 9**: does an UNQUALIFIED `lean_ready(…)` in this
+/// file resolve to the real gate?
+///
+/// The scanners matched the bare spelling, so a same-scope
+/// `fn lean_ready(_: usize) -> bool { true }` satisfied every readiness
+/// question — the argument-provenance check still found TPIDR, the seam
+/// stayed in `LEAN_READY_GATED_SEAMS`, and a not-ready PE entered Lean
+/// through a predicate that is not the gate.  A name is not a resolution.
+///
+/// A bare call counts only when the file *imports* the gate
+/// (`use crate::lean_ready::lean_ready`, alone or in a braced group) and
+/// defines no `fn lean_ready` of its own.  Every live call site in this crate
+/// writes the path in full, so the strict reading costs nothing; the import
+/// form is admitted because refusing a legitimate Rust idiom would push a
+/// future author to the bare spelling this refuses.
+/// **PR #889 review round 16**: the readiness gate must be called by its
+/// **qualified path**, `crate::lean_ready::lean_ready(..)`.  Bare-name support
+/// is gone, so this is now a constant `false`.
+///
+/// Rounds 9, 15 and 16 each taught this predicate one more way a bare name can
+/// denote something other than the gate — a same-scope `fn`, a `let` closure,
+/// an `as` alias, a destructuring `let (lean_ready, _) = …` — and the space of
+/// Rust binding forms that shadow an imported name is unbounded, so the
+/// enumeration could never be finished.  The contract removes the question
+/// instead: an absolute path cannot be shadowed by any local binding, and
+/// **every** guard in this HAL already writes it that way, so the rule costs
+/// the tree nothing and costs a future author one `use` line they no longer
+/// need.  The parameter stays plumbed through the scanners so the shape of the
+/// question — "may a bare call count here?" — remains visible at each site.
+fn bare_ready_call_resolves(_file: &str) -> bool {
+    false
+}
+
 /// The argument of the bare readiness call a positive guard's condition
 /// carries, when the condition entails readiness: no `||`, and a conjunction
 /// (`&&` at depth zero) one of whose conjuncts is exactly the call.
-fn ready_condition_argument(cond: &str) -> Option<&str> {
+///
+/// `allow_bare` says whether an unqualified spelling resolves to the gate in
+/// the file the condition came from (`bare_ready_call_resolves`).
+fn ready_condition_argument(cond: &str, allow_bare: bool) -> Option<&str> {
     if cond.contains("||") {
         return None;
     }
     split_top_level(cond, "&&")
         .into_iter()
-        .find_map(bare_ready_call_argument)
+        .find_map(|part| bare_ready_call_argument(part, allow_bare))
 }
 
 /// The argument of `!lean_ready(…)` when `cond` is exactly that.
-fn negated_ready_call_argument(cond: &str) -> Option<&str> {
+fn negated_ready_call_argument(cond: &str, allow_bare: bool) -> Option<&str> {
     cond.trim()
         .strip_prefix('!')
-        .and_then(bare_ready_call_argument)
+        .and_then(|rest| bare_ready_call_argument(rest, allow_bare))
 }
 
-/// If `expr` is exactly a `lean_ready(<arg>)` call (optionally path-qualified
-/// or parenthesised, balanced, nothing after the closing parenthesis), its
+/// If `expr` is exactly a `lean_ready(<arg>)` call (path-qualified, or
+/// unqualified where the file resolves it — `allow_bare`; optionally
+/// parenthesised, balanced, nothing after the closing parenthesis), its
 /// argument text.
-fn bare_ready_call_argument(expr: &str) -> Option<&str> {
+fn bare_ready_call_argument(expr: &str, allow_bare: bool) -> Option<&str> {
     let mut e = expr.trim();
     while e.starts_with('(') && e.ends_with(')') && matching_close_paren(e, 0) == Some(e.len() - 1)
     {
@@ -2491,7 +4410,7 @@ fn bare_ready_call_argument(expr: &str) -> Option<&str> {
     let rest = e
         .strip_prefix("crate::lean_ready::lean_ready(")
         .or_else(|| e.strip_prefix("lean_ready::lean_ready("))
-        .or_else(|| e.strip_prefix("lean_ready("))?;
+        .or_else(|| allow_bare.then(|| e.strip_prefix("lean_ready(")).flatten())?;
     let mut depth = 1i32;
     for (index, ch) in rest.char_indices() {
         match ch {
@@ -2617,6 +4536,21 @@ fn top_level_statements_in(code: &str, start: usize, end: usize) -> Vec<(usize, 
     out
 }
 
+/// **PR #889 review round 7**: does a top-level statement **halt the core**?
+/// Only a call to `fatal_halt` — the release-surviving tripwires must end in
+/// it, not in any divergence: a `return` from `assert_not_holding_round_lock`
+/// hands control back to `acquire_kernel_entry`, which proceeds into the
+/// acquire while the same core holds the round lock, recreating the deadlock
+/// the tripwire exists to prevent; a `panic!` is the host lane's abort and no
+/// halt at all on the image.  `statement_diverges` stays the right question
+/// for the readiness guard, whose not-ready arm legitimately returns.
+fn statement_halts(statement: &str) -> bool {
+    let s = statement.trim().trim_end_matches(';').trim();
+    s.starts_with("crate::cpu::fatal_halt(")
+        || s.starts_with("cpu::fatal_halt(")
+        || s.starts_with("fatal_halt(")
+}
+
 /// Does a top-level statement diverge unconditionally?  A `return`, a
 /// `panic!`, an `unreachable!`, or a call to `fatal_halt` — the four forms the
 /// HAL's fail-closed paths use.  A conditional that *contains* one does not:
@@ -2689,27 +4623,17 @@ fn matching_close_brace(code: &str, open: usize) -> Option<usize> {
     None
 }
 
-/// The names declared as functions inside `extern "C" { … }` blocks of `code`.
+/// The names declared as functions inside the `extern <abi>? { … }` blocks of
+/// `code`.
+///
+/// PR #889 review round 17: the blocks come from `extern_block_openings`, so a
+/// declaration in an `extern r"C" { … }` or `extern { … }` block is collected
+/// too — before, such a block declared nothing as far as the readiness
+/// derivation could see, and an upcall inside it needed no gate.
 fn extern_block_declarations(code: &str) -> Vec<String> {
     let mut names = Vec::new();
-    let mut search = 0usize;
-    while let Some(hit) = code[search..].find("extern \"C\" {") {
-        let open = search + hit + "extern \"C\" ".len();
-        let mut depth = 0usize;
-        let mut end = open;
-        for (index, ch) in code[open..].char_indices() {
-            match ch {
-                '{' => depth += 1,
-                '}' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        end = open + index;
-                        break;
-                    }
-                }
-                _ => {}
-            }
-        }
+    for (_, open) in extern_block_openings(code) {
+        let end = matching_close_brace(code, open).unwrap_or(code.len());
         let block = &code[open..end];
         let mut inner = 0usize;
         while let Some(f) = block[inner..].find("fn ") {
@@ -2721,21 +4645,65 @@ fn extern_block_declarations(code: &str) -> Vec<String> {
             {
                 continue;
             }
-            let name: String = block[at + 3..]
+            // PR #889 review round 25: `r#` is Rust's raw-identifier escape
+            // and names the *same* linker symbol as the bare spelling, so
+            // `fn r#lean_real();` declares `lean_real`.  Without it the scan
+            // collected `r` — which does not start with `lean_`, so the seam
+            // dropped out of the readiness set and its call needed no guard.
+            // The sibling of the finding filed against the Python collector;
+            // fixing one and not the other is the mistake round 14 named.
+            let rest = block[at + 3..].trim_start();
+            let ident = rest.strip_prefix("r#").unwrap_or(rest);
+            let name: String = ident
                 .chars()
                 .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
                 .collect();
-            if !name.is_empty() && !names.contains(&name) {
+            if name.is_empty() {
+                // A `fn ` that names nothing is a function-pointer *type* in a
+                // parameter list (`cb: extern "C" fn (u64)`), which declares no
+                // symbol.  Anything else is a spelling this scan cannot read,
+                // and a declaration it cannot read is a seam no readiness gate
+                // is required for — so it stops the build rather than being
+                // skipped.
+                assert!(
+                    rest.starts_with('('),
+                    "build.rs: an `fn` inside an `extern` block whose name this scanner \
+                     cannot read ({:?}) would declare a seam subject to no readiness \
+                     gate.  Teach it that form, or write the declaration out.",
+                    rest.chars().take(40).collect::<String>()
+                );
+            } else if !names.contains(&name) {
                 names.push(name);
             }
         }
-        search = end.max(open + 1);
     }
     names
 }
 
 /// Every `@[export name]` under `dir`, recursively — the Lean-emitted symbol
 /// set the HAL can call.
+/// **PR #889 review round 9**: the exports of one Lean file, appended to
+/// `out`.  Split out of `collect_lean_exports` so the library root
+/// `SeLe4n.lean` — a file, not a directory entry under the tree — is read by
+/// the same view and the same attribute parser.  A missing root is a hard
+/// failure: it is the module the library is built from, and silently reading
+/// no exports from it is the fail-open direction.
+fn collect_lean_exports_from_file(path: &std::path::Path, out: &mut Vec<String>) {
+    let contents = std::fs::read_to_string(path).unwrap_or_else(|e| {
+        panic!(
+            "Lean upcall scanner: cannot read the Lean library root at {}: {e} — it compiles \
+             into the static library like any module, so an `@[export]` there must be subject \
+             to the readiness gate",
+            path.display()
+        )
+    });
+    for name in lean_exports_in(&lean_code_view(&contents)) {
+        if !out.contains(&name) {
+            out.push(name);
+        }
+    }
+}
+
 fn collect_lean_exports(dir: &std::path::Path, out: &mut Vec<String>) {
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
@@ -2756,18 +4724,331 @@ fn collect_lean_exports(dir: &std::path::Path, out: &mut Vec<String>) {
         let Ok(contents) = std::fs::read_to_string(&path) else {
             continue;
         };
-        let mut search = 0usize;
-        while let Some(hit) = contents[search..].find("@[export ") {
-            let at = search + hit + "@[export ".len();
-            search = at;
-            let name: String = contents[at..]
-                .trim_start()
-                .chars()
-                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
-                .collect();
-            if !name.is_empty() && !out.contains(&name) {
+        for name in lean_exports_in(&lean_code_view(&contents)) {
+            if !out.contains(&name) {
                 out.push(name);
             }
+        }
+    }
+}
+
+/// **PR #889 review round 2**: the comment-free, string-free view of a Lean
+/// source, byte-aligned with it — `--` line comments, nested `/- … -/` block
+/// comments (docstrings and module docs included), string literals and the
+/// `'"'` character literal blanked to spaces, newlines kept.  The same rules
+/// `scripts/lean_code_view.py` applies for the Python-side gates.
+///
+/// `collect_lean_exports` read raw text, so the commented
+/// `@[export lean_endpoint_call_cross_core]` that records a *retired* seam
+/// counted as a live export, and a docstring could add a symbol to the gated
+/// inventory that drives the readiness and declaration classification.  A gate
+/// reads code; prose is not in the inventory.
+/// **PR #889 review round 15**: the body and end of a Lean raw string literal
+/// opened at `at` (`r"…"`, `r#"…"#`, `r##"…"##`), or `None` when `at` does not
+/// open one.  The body ends at a `"` followed by exactly the opening run of
+/// `#`s; an unterminated literal runs to the end of the source, which is the
+/// fail-closed reading (everything after it is text, not code).
+fn lean_raw_string_body(b: &[u8], at: usize) -> Option<(usize, usize, usize)> {
+    if b.get(at) != Some(&b'r') {
+        return None;
+    }
+    let mut hashes = 0usize;
+    let mut j = at + 1;
+    while b.get(j) == Some(&b'#') {
+        hashes += 1;
+        j += 1;
+    }
+    if b.get(j) != Some(&b'"') {
+        return None;
+    }
+    let body_start = j + 1;
+    let mut k = body_start;
+    while k < b.len() {
+        if b[k] == b'"'
+            && b[k + 1..]
+                .iter()
+                .take(hashes)
+                .filter(|c| **c == b'#')
+                .count()
+                == hashes
+        {
+            return Some((body_start, k, k + 1 + hashes));
+        }
+        k += 1;
+    }
+    Some((body_start, b.len(), b.len()))
+}
+
+fn lean_code_view(src: &str) -> String {
+    let b = src.as_bytes();
+    let mut out = b.to_vec();
+    let is_ident = |c: u8| c.is_ascii_alphanumeric() || c == b'_' || c == b'\'' || c == b'.';
+    let mut i = 0usize;
+    while i < b.len() {
+        if b[i] == b'-' && i + 1 < b.len() && b[i + 1] == b'-' {
+            while i < b.len() && b[i] != b'\n' {
+                out[i] = b' ';
+                i += 1;
+            }
+        } else if b[i] == b'/' && i + 1 < b.len() && b[i + 1] == b'-' {
+            let mut depth = 0usize;
+            while i < b.len() {
+                if b[i] == b'/' && i + 1 < b.len() && b[i + 1] == b'-' {
+                    depth += 1;
+                    out[i] = b' ';
+                    out[i + 1] = b' ';
+                    i += 2;
+                    continue;
+                }
+                if b[i] == b'-' && i + 1 < b.len() && b[i + 1] == b'/' {
+                    depth -= 1;
+                    out[i] = b' ';
+                    out[i + 1] = b' ';
+                    i += 2;
+                    if depth == 0 {
+                        break;
+                    }
+                    continue;
+                }
+                if b[i] != b'\n' {
+                    out[i] = b' ';
+                }
+                i += 1;
+            }
+        } else if b[i] == b'r'
+            && (i == 0 || !is_ident(b[i - 1]))
+            && lean_raw_string_body(b, i).is_some()
+        {
+            // A **raw** string literal: `r"…"`, `r#"…"#`, `r##"…"##` (PR #889
+            // review round 15).  An ordinary `"` inside one is text, so the
+            // quote-delimited arm below closes it early, reads the real
+            // terminator as an opening quote, and blanks the live code that
+            // follows — including an `@[export …]`, which would drop a Lean
+            // symbol out of the readiness gating set entirely.
+            let (body_start, body_end, end) = lean_raw_string_body(b, i).unwrap();
+            for slot in out.iter_mut().take(body_end).skip(body_start) {
+                if *slot != b'\n' {
+                    *slot = b' ';
+                }
+            }
+            i = end;
+        } else if b[i] == b'"' {
+            out[i] = b' ';
+            i += 1;
+            while i < b.len() && b[i] != b'"' {
+                if b[i] == b'\\' && i + 1 < b.len() {
+                    out[i] = b' ';
+                    i += 1;
+                }
+                if b[i] != b'\n' {
+                    out[i] = b' ';
+                }
+                i += 1;
+            }
+            if i < b.len() {
+                out[i] = b' ';
+                i += 1;
+            }
+        } else if b[i] == b'\''
+            && i + 2 < b.len()
+            && b[i + 1] == b'"'
+            && b[i + 2] == b'\''
+            && (i == 0 || !is_ident(b[i - 1]))
+        {
+            out[i] = b' ';
+            out[i + 1] = b' ';
+            out[i + 2] = b' ';
+            i += 3;
+        } else {
+            i += 1;
+        }
+    }
+    // Every byte the scan rewrote became an ASCII space, so the view is valid
+    // UTF-8 exactly when the source was.
+    String::from_utf8(out).expect("lean_code_view: the source was not UTF-8")
+}
+
+/// **PR #889 review round 2**: every `export <name>` attribute in `code` — a
+/// Lean code view — in order of first occurrence.  The attribute list
+/// `@[ … ]` is split on commas, so `@[inline, export name]` counts, and the
+/// separator after `export` is any whitespace, so a line break before the
+/// name counts; the old `find("@[export ")` saw neither.
+///
+/// **PR #889 review round 25**: the argument is an *identifier*, and Lean
+/// spells identifiers two ways — bare, and between guillemets, where any
+/// character may appear.  Both are read here, and an argument in neither form
+/// **panics** rather than being skipped: this inventory drives the readiness
+/// derivation and the archive requirement, so an export it silently drops is
+/// an ungated Lean upcall and an unrequired symbol at once.  Kept in step with
+/// `scripts/lean_code_view.attribute_arguments`, which answers the same
+/// question for the Python-side gates.
+fn lean_exports_in(code: &str) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    let mut search = 0usize;
+    while let Some(hit) = code[search..].find("@[") {
+        let open = search + hit + 2;
+        let mut depth = 1usize;
+        let mut close = None;
+        for (index, ch) in code[open..].char_indices() {
+            match ch {
+                '[' => depth += 1,
+                ']' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        close = Some(open + index);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let Some(close) = close else {
+            break;
+        };
+        for attr in code[open..close].split(',') {
+            let attr = attr.trim();
+            if let Some(rest) = attr.strip_prefix("export") {
+                if rest.starts_with(|c: char| c.is_whitespace()) {
+                    let argument = rest.trim_start();
+                    // PR #889 review round 25: Lean accepts a *guillemet*
+                    // identifier, `@[export «suspend_generated»]`, and emits
+                    // the text between the brackets as the C symbol.  The
+                    // ASCII scan below stops at the opening `«` and collects
+                    // nothing, so the export dropped out of this inventory —
+                    // fail-open, since a symbol nobody requires is a symbol
+                    // nobody notices going missing.
+                    let name: String = if let Some(body) = argument.strip_prefix('\u{ab}') {
+                        match body.find('\u{bb}') {
+                            Some(end) => body[..end].to_string(),
+                            None => String::new(),
+                        }
+                    } else {
+                        argument
+                            .chars()
+                            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                            .collect()
+                    };
+                    // An argument this parser cannot read is **refused**, not
+                    // skipped: skipping leaves every inventory derived from it
+                    // silently short, which is exactly the failure the round
+                    // found.  Panicking fails the build that depends on it.
+                    assert!(
+                        !name.is_empty(),
+                        "build.rs: `@[export {}]` is a spelling this parser \
+                         cannot read.  Teach it that form, or write the \
+                         attribute as a plain or guillemet identifier.",
+                        argument.chars().take(40).collect::<String>()
+                    );
+                    if !names.contains(&name) {
+                        names.push(name);
+                    }
+                }
+            }
+        }
+        search = close + 1;
+    }
+    names
+}
+
+/// Token-preserving self-check for the export collector: every mutation keeps
+/// the `@[export name]` text and breaks the relation that it is *code*.
+fn verify_lean_export_collector() {
+    const GOOD: &str = "/-- doc -/\n@[export lean_alpha]\ndef alpha : Nat := 0\n\n\
+                        @[inline, export lean_beta]\ndef beta : Nat := 1\n\n\
+                        @[export\n  lean_gamma]\ndef gamma : Nat := 2\n";
+    // PR #889 review round 15: a raw string whose body contains an ordinary
+    // quote.  Treating every `"` as a delimiter closes it early and blanks the
+    // live export below it — the token is present and the symbol vanishes.
+    const RAW: &str = "def s := r#\"hello \" raw\"#\n@[export lean_alpha]\n\
+                       def alpha : Nat := 0\n";
+    assert_eq!(
+        lean_exports_in(&lean_code_view(RAW)),
+        vec!["lean_alpha"],
+        "build.rs self-check: a raw string literal swallowed the export below it"
+    );
+    const RAW_QUOTED_EXPORT: &str = "def s := r#\"@[export lean_beta]\"#\n\
+                                     @[export lean_alpha]\ndef alpha : Nat := 0\n";
+    assert_eq!(
+        lean_exports_in(&lean_code_view(RAW_QUOTED_EXPORT)),
+        vec!["lean_alpha"],
+        "build.rs self-check: an attribute quoted inside a raw string counted as a symbol"
+    );
+    // PR #889 review round 25: a guillemet identifier.  Lean accepts it and
+    // emits the bracketed text as the C symbol, so the inventory must carry it
+    // — the ASCII scan stopped at the opening bracket and collected nothing.
+    const GUILLEMET: &str = "@[export \u{ab}lean_guillemet\u{bb}]\ndef g : Nat := 0\n";
+    assert_eq!(
+        lean_exports_in(&lean_code_view(GUILLEMET)),
+        vec!["lean_guillemet"],
+        "build.rs self-check: a guillemet-spelled export was dropped from the inventory"
+    );
+    let got = lean_exports_in(&lean_code_view(GOOD));
+    assert_eq!(
+        got,
+        vec!["lean_alpha", "lean_beta", "lean_gamma"],
+        "build.rs self-check: the export collector missed a live attribute form"
+    );
+    assert_eq!(
+        lean_code_view(GOOD).len(),
+        GOOD.len(),
+        "build.rs self-check: the Lean code view is not byte-aligned"
+    );
+    let mutations: [(&str, &str, &str, &str); 6] = [
+        (
+            "the attribute is commented out with `--`",
+            "@[export lean_alpha]\n",
+            "-- @[export lean_alpha]\n",
+            "lean_alpha",
+        ),
+        (
+            "the attribute sits inside a block comment",
+            "@[export lean_alpha]\n",
+            "/- @[export lean_alpha] -/\n",
+            "lean_alpha",
+        ),
+        (
+            "the attribute sits inside a nested block comment",
+            "@[export lean_alpha]\n",
+            "/- outer /- @[export lean_alpha] -/ still a comment -/\n",
+            "lean_alpha",
+        ),
+        (
+            "the attribute is quoted in a docstring",
+            "/-- doc -/",
+            "/-- doc: the former @[export lean_delta] seam -/",
+            "lean_delta",
+        ),
+        (
+            "the attribute is a string literal",
+            "def alpha : Nat := 0\n",
+            "def alpha : Nat := 0\ndef s : String := \"@[export lean_epsilon]\"\n",
+            "lean_epsilon",
+        ),
+        (
+            "the attribute is a trailing line comment after code",
+            "def beta : Nat := 1\n",
+            "def beta : Nat := 1 -- was @[export lean_zeta]\n",
+            "lean_zeta",
+        ),
+    ];
+    for (what, from, to, must_vanish) in mutations {
+        assert!(
+            GOOD.contains(from),
+            "build.rs self-check: export-collector mutation `{what}` does not apply"
+        );
+        let mutated = GOOD.replacen(from, to, 1);
+        assert_ne!(
+            mutated, GOOD,
+            "build.rs self-check: export-collector mutation `{what}` is inert"
+        );
+        assert!(
+            mutated.contains(&format!("export {must_vanish}")),
+            "build.rs self-check: export-collector mutation `{what}` DELETED the attribute; \
+             the mutation must keep the token and break the relation"
+        );
+        let names = lean_exports_in(&lean_code_view(&mutated));
+        if names.iter().any(|n| n == must_vanish) {
+            panic!("build.rs self-check: the export collector read prose as code: {what}");
         }
     }
 }
@@ -2804,10 +5085,24 @@ fn collect_rust_sources(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>
 /// forces a table entry with its docstring and a stale entry fails the build.
 /// `verify_lean_upcall_scanner` runs the token-preserving mutations first.
 fn scan_lean_upcalls_readiness_gated() {
+    verify_lean_extern_gating_scanner();
+    verify_lean_export_collector();
+    verify_lean_link_name_scanner();
+    verify_extern_block_resolver();
     let lean_root = std::path::Path::new("../../SeLe4n");
     println!("cargo:rerun-if-changed=../../SeLe4n");
     let mut exports: Vec<String> = Vec::new();
     collect_lean_exports(lean_root, &mut exports);
+    // PR #889 review round 9: the library ROOT module.  `SeLe4n.lean` sits
+    // beside the `SeLe4n/` directory, compiles into the static library like
+    // any module, and an `@[export]` there is emitted like any other — but a
+    // walk of the directory never sees it, so a non-`lean_`-prefixed export
+    // defined in the root escaped readiness gating entirely (the extern
+    // fallback below adds only `lean_*` names).  The Python inventory took
+    // the root in round 7; this independent scanner had not.
+    let lean_library_root = std::path::Path::new("../../SeLe4n.lean");
+    println!("cargo:rerun-if-changed=../../SeLe4n.lean");
+    collect_lean_exports_from_file(lean_library_root, &mut exports);
     if exports.is_empty() {
         panic!(
             "Lean upcall scanner: found no `@[export …]` attribute under {} — the Lean \
@@ -2819,7 +5114,7 @@ fn scan_lean_upcalls_readiness_gated() {
     let mut sources: Vec<std::path::PathBuf> = Vec::new();
     collect_rust_sources(std::path::Path::new("src"), &mut sources);
     sources.sort();
-    let mut views: Vec<(String, String)> = Vec::new();
+    let mut views: Vec<(String, String, String)> = Vec::new();
     for path in &sources {
         let contents = match std::fs::read_to_string(path) {
             Ok(s) => s,
@@ -2828,7 +5123,7 @@ fn scan_lean_upcalls_readiness_gated() {
                 path.display()
             ),
         };
-        let (_, code) = rust_code_views(&contents);
+        let (strings_kept, code) = rust_code_views(&contents);
         // HAL-declared `lean_*` externs join the set: the toolchain-emitted
         // entry is declared here and nowhere in the Lean sources.
         for name in extern_block_declarations(&code) {
@@ -2836,14 +5131,18 @@ fn scan_lean_upcalls_readiness_gated() {
                 exports.push(name);
             }
         }
-        views.push((path.to_string_lossy().replace('\\', "/"), code));
+        views.push((
+            path.to_string_lossy().replace('\\', "/"),
+            code,
+            strings_kept,
+        ));
     }
     exports.sort();
     let export_refs: Vec<&str> = exports.iter().map(String::as_str).collect();
 
     let mut gated_found: Vec<(String, String, String)> = Vec::new();
     let mut ungated_found: Vec<(String, String, String)> = Vec::new();
-    for (path, code) in &views {
+    for (path, code, _) in &views {
         let sites = match lean_upcall_sites(code, &export_refs) {
             Ok(s) => s,
             Err(e) => panic!("Lean upcall scanner: `{path}`: {e}"),
@@ -2858,6 +5157,39 @@ fn scan_lean_upcalls_readiness_gated() {
             }
         }
     }
+    // WS-RR RR5.9: the other half of the finding — a Lean symbol may be
+    // declared or exported only under `hw_target`, and a host-lane stand-in of
+    // the same name only under its negation.  Shares this scan's derived export
+    // set and code views, so the two checks can never disagree about which
+    // names are Lean symbols.
+    // PR #889 review round 12: no Lean symbol is declared under an alias, so
+    // every scanner below may keep reading the Rust name as the symbol.
+    let aliases = lean_link_name_aliases(&views, &export_refs);
+    if !aliases.is_empty() {
+        let listed: Vec<String> = aliases
+            .iter()
+            .map(|(path, symbol)| format!("{path}: `{symbol}`"))
+            .collect();
+        panic!(
+            "PR #889 review round 12: a Lean symbol is declared under a `#[link_name]` \
+             alias ({}).  The readiness derivation collects HAL externs by their `lean_` \
+             prefix and resolves calls by the symbol's own identifier, so an aliased seam \
+             is attributed to no readiness gate and demands no `LEAN_READY_GATED_SEAMS` \
+             entry.  Declare the entry under its own name.",
+            listed.join(", ")
+        );
+    }
+    match lean_extern_gating_status(&views, &export_refs) {
+        Ok(0) => panic!(
+            "WS-RR RR5.9: the extern-gating scanner found no Lean symbol declaration in \
+             `src/` at all.  Every seam declares its Lean entry point somewhere; a zero \
+             here means the classification stopped matching and the check passes \
+             vacuously."
+        ),
+        Ok(_) => {}
+        Err(why) => panic!("WS-RR RR5.9 regression: {why}"),
+    }
+
     // PR #887 review round 6: the ungated calls are reconciled against the
     // exemption table by OCCURRENCE — every ungated call is covered by an
     // entry, and every entry covers exactly the calls that exist.
@@ -4189,7 +6521,15 @@ fn enclosing_fn_span(code: &str, offset: usize) -> Option<(String, usize, usize)
         if at > 0 && (bytes[at - 1].is_ascii_alphanumeric() || bytes[at - 1] == b'_') {
             continue;
         }
-        let name: String = code[at + 3..]
+        // PR #889 review round 25: `r#` is part of the *spelling*, not the
+        // name — `fn r#lean_real()` is `lean_real` — so a raw-identifier
+        // definition read as `r`, and every allowlist entry, exemption and
+        // gate attribution keyed on the enclosing function looked at the
+        // wrong one.  Swept from the sibling finding against the Python
+        // declaration collector; the body span below is unchanged.
+        let after = code[at + 3..].trim_start();
+        let ident = after.strip_prefix("r#").unwrap_or(after);
+        let name: String = ident
             .chars()
             .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
             .collect();
@@ -4906,7 +7246,171 @@ fn faulted_outcome_status(trap_raw: &str, dispatch_raw: &str) -> Result<(), Stri
     let (_, dispatch) = rust_code_views(dispatch_raw);
     dispatch_decodes_faulted(&dispatch)?;
     let (_, trap) = rust_code_views(trap_raw);
-    handler_faulted_arm_halts(&trap)
+    handler_faulted_arm_halts(&trap)?;
+    svc_arm_readiness_gate_status(&trap, &dispatch)
+}
+
+/// The `sync_class::SVC` arm of `handle_synchronous_exception`'s terminal
+/// routing match, as `(block_open, block_close, handler_body_open)`.
+fn svc_arm_block(trap: &str) -> Result<(usize, usize, usize), String> {
+    let needle = "fn handle_synchronous_exception(";
+    if trap.matches(needle).count() != 1 {
+        return Err(format!(
+            "`trap.rs` declares `fn handle_synchronous_exception(` {} times",
+            trap.matches(needle).count()
+        ));
+    }
+    let handler = trap.find(needle).unwrap_or(0);
+    let body_open = block_open_after(trap, handler)
+        .ok_or_else(|| "`handle_synchronous_exception` has no body".to_string())?;
+    let body_close = matching_close_brace(trap, body_open)
+        .ok_or_else(|| "`handle_synchronous_exception`'s body is unbalanced".to_string())?;
+    let routing = terminal_routing_match(trap, body_open, body_close)?;
+    let routing_text = trap[routing.0..routing.1].trim_start();
+    let routing_at = routing.1 - routing_text.len();
+    let arms = match_arm_spans(routing_text)
+        .ok_or_else(|| "the terminal routing match could not be parsed".to_string())?;
+    let svc: Vec<&MatchArm> = arms
+        .iter()
+        .filter(|arm| routing_text[arm.pattern.0..arm.pattern.1].trim() == "sync_class::SVC")
+        .collect();
+    if svc.len() != 1 {
+        return Err(format!(
+            "the terminal routing match has {} `sync_class::SVC` arms",
+            svc.len()
+        ));
+    }
+    let (svc_open, svc_end) = (routing_at + svc[0].body.0, routing_at + svc[0].body.1);
+    if trap.as_bytes().get(svc_open) != Some(&b'{') {
+        return Err("the `sync_class::SVC` arm is not a block".to_string());
+    }
+    Ok((svc_open, svc_end - 1, body_open))
+}
+
+/// **PR #889 review**: in the SVC arm, the readiness gate precedes **every**
+/// outcome.  The relation, on the statement-level view of the arm:
+///
+///   * exactly one top-level statement is `if !crate::lean_ready::lean_ready(<core>) { … }`,
+///     with no `||` or `&&` in the condition, and `<core>` names the executing
+///     PE (`ready_argument_is_executing_core`: `current_core_id_from_tpidr()`
+///     inline, or a binding a dominating statement makes from it);
+///   * that statement comes **before** the `let dispatched = …` binding — so
+///     before the full-width narrowing of `x7`, the prefilters inside
+///     `dispatch_svc`, and the unknown-syscall delivery;
+///   * its block's last top-level statement is a call to
+///     `crate::svc_dispatch::halt_syscall_before_lean_ready(…)`; and
+///   * that helper (in `svc_dispatch.rs`) is declared `-> !` and ends in
+///     `fatal_halt(`.
+///
+/// A behavioural test cannot pin this: `handle_synchronous_exception` is
+/// `extern "C"`, so the host lane's halt (a panic) aborts the test process
+/// rather than unwinding into a `catch_unwind`.  Presence of the guard
+/// somewhere in the arm is not the relation — after the binding, nested under a
+/// condition, on a literal core, or ending in a frame write, the token is there
+/// and the thread still resumes on a not-ready core.
+fn svc_arm_readiness_gate_status(trap: &str, dispatch: &str) -> Result<(), String> {
+    let allow_bare = bare_ready_call_resolves(trap) && bare_ready_call_resolves(dispatch);
+    let (svc_open, svc_close, body_open) = svc_arm_block(trap)?;
+    let statements = top_level_statements(trap, svc_open, svc_close);
+    let text = |span: &(usize, usize)| trap[span.0..span.1].trim();
+    let gates: Vec<usize> = (0..statements.len())
+        .filter(|&i| {
+            let t = text(&statements[i]);
+            // PR #889 review round 9: the qualified path, or the bare
+            // spelling where this file resolves it to the real gate.
+            t.starts_with("if !crate::lean_ready::lean_ready(")
+                || (allow_bare && t.starts_with("if !lean_ready("))
+        })
+        .collect();
+    if gates.len() != 1 {
+        return Err(format!(
+            "the SVC arm has {} top-level `if !lean_ready(..)` statements; the readiness gate \
+             must be exactly one, at the arm's top level",
+            gates.len()
+        ));
+    }
+    let gate = gates[0];
+    let dispatched = (0..statements.len()).find(|&i| {
+        let_binding_parts(strip_leading_attributes(text(&statements[i])))
+            .is_some_and(|(pattern, _)| word_occurrences(pattern, "dispatched") > 0)
+    });
+    match dispatched {
+        Some(d) if gate < d => {}
+        Some(_) => {
+            return Err(
+                "the SVC arm's readiness gate comes AFTER the `dispatched` binding — the \
+                 full-width narrowing, the prefilters and the unknown-syscall delivery run \
+                 on a not-ready core before the gate is consulted"
+                    .to_string(),
+            )
+        }
+        None => return Err("the SVC arm binds no `dispatched`".to_string()),
+    }
+    let (gate_lo, gate_hi) = statements[gate];
+    let gate_text = &trap[gate_lo..gate_hi];
+    let cond_open = gate_text
+        .find("lean_ready(")
+        .map(|i| i + "lean_ready(".len())
+        .ok_or_else(|| "the readiness gate has no `lean_ready(`".to_string())?;
+    let cond_close = matching_close_paren(gate_text, cond_open - 1)
+        .ok_or_else(|| "the readiness gate's `lean_ready(` is unbalanced".to_string())?;
+    let condition_end = block_open_after(gate_text, cond_close)
+        .ok_or_else(|| "the readiness gate has no block".to_string())?;
+    let condition = &gate_text[..condition_end];
+    if condition.contains("||") || condition.contains("&&") {
+        return Err(
+            "the SVC arm's readiness gate has a compound condition; the gate must be the \
+             bare readiness test"
+                .to_string(),
+        );
+    }
+    let arg = gate_text[cond_open..cond_close].trim();
+    if !ready_argument_is_executing_core(trap, body_open, gate_lo + cond_open, arg) {
+        return Err(format!(
+            "the SVC arm's readiness gate tests `lean_ready({arg})`, which does not name the \
+             executing core"
+        ));
+    }
+    let block_open = gate_lo + condition_end;
+    let block_close = matching_close_brace(trap, block_open)
+        .ok_or_else(|| "the readiness gate's block is unbalanced".to_string())?;
+    let inner = top_level_statements(trap, block_open, block_close);
+    let last = inner
+        .last()
+        .map(|&(lo, hi)| trap[lo..hi].trim())
+        .unwrap_or("");
+    let calls_halt = last.starts_with("crate::svc_dispatch::halt_syscall_before_lean_ready(")
+        || last.starts_with("halt_syscall_before_lean_ready(");
+    if !calls_halt {
+        return Err(
+            "the SVC arm's readiness gate does not END in `halt_syscall_before_lean_ready(..)` \
+             — a not-ready core would fall through to the dispatch"
+                .to_string(),
+        );
+    }
+    let helper = "fn halt_syscall_before_lean_ready(";
+    if dispatch.matches(helper).count() != 1 {
+        return Err(format!(
+            "`svc_dispatch.rs` declares `{helper}` {} times",
+            dispatch.matches(helper).count()
+        ));
+    }
+    let helper_at = dispatch.find(helper).unwrap_or(0);
+    let helper_open = block_open_after(dispatch, helper_at)
+        .ok_or_else(|| "`halt_syscall_before_lean_ready` has no body".to_string())?;
+    let helper_close = matching_close_brace(dispatch, helper_open)
+        .ok_or_else(|| "`halt_syscall_before_lean_ready`'s body is unbalanced".to_string())?;
+    if !dispatch[helper_at..helper_open].contains("-> !") {
+        return Err("`halt_syscall_before_lean_ready` does not diverge (`-> !`)".to_string());
+    }
+    let helper_last = top_level_statements(dispatch, helper_open, helper_close)
+        .last()
+        .map(|&(lo, hi)| dispatch[lo..hi].trim())
+        .unwrap_or("");
+    if !(statement_diverges(helper_last) && helper_last.contains("fatal_halt(")) {
+        return Err("`halt_syscall_before_lean_ready` does not END in `fatal_halt(`".to_string());
+    }
+    Ok(())
 }
 
 /// In `dispatch_svc` (the strings-blanked `svc_dispatch.rs`): `tag` is bound
@@ -5331,6 +7835,12 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
     match exception_class {
         sync_class::SVC => {
             let _ = crate::per_cpu_stats::record_syscall();
+            if !crate::lean_ready::lean_ready(crate::per_cpu::current_core_id_from_tpidr() as usize) {
+                crate::svc_dispatch::halt_syscall_before_lean_ready(
+                    crate::per_cpu::current_core_id_from_tpidr() as usize,
+                    frame.x7(),
+                );
+            }
             let args = crate::svc_dispatch::SyscallArgs::from_trap_frame(frame);
             let dispatched = match u32::try_from(frame.x7()) {
                 Ok(syscall_id) => crate::svc_dispatch::dispatch_svc(syscall_id, &args),
@@ -5403,6 +7913,10 @@ extern "C" {
 extern "C" fn lean_syscall_dispatch_cross_core(_syscall_id: u32, _msg_info: u64) -> u32 {
     1
 }
+pub(crate) fn halt_syscall_before_lean_ready(core: usize, syscall_word: u64) -> ! {
+    crate::kprintln!("[core {}] SVC before ready (x7=0x{:x})", core, syscall_word);
+    crate::cpu::fatal_halt()
+}
 "#;
     if let Err(why) = faulted_outcome_status(GOOD_TRAP, GOOD_DISPATCH) {
         panic!("build.rs self-check: the good faulted-outcome fixture was refused: {why}");
@@ -5464,6 +7978,33 @@ extern "C" fn lean_syscall_dispatch_cross_core(_syscall_id: u32, _msg_info: u64)
             "a statement after the terminal routing match",
             "        _ => {\n            deliver_fault(frame, error_code::USER_EXCEPTION);\n        }\n    }\n}\n",
             "        _ => {\n            deliver_fault(frame, error_code::USER_EXCEPTION);\n        }\n    }\n    let _ = frame.x0();\n}\n",
+        ),
+        // PR #889 review: the readiness gate precedes every SVC outcome.  Each
+        // mutation keeps the gate's tokens and breaks the relation.
+        (
+            "the readiness gate after the dispatched binding (the narrowing runs ungated)",
+            "            if !crate::lean_ready::lean_ready(crate::per_cpu::current_core_id_from_tpidr() as usize) {\n                crate::svc_dispatch::halt_syscall_before_lean_ready(\n                    crate::per_cpu::current_core_id_from_tpidr() as usize,\n                    frame.x7(),\n                );\n            }\n            let args = crate::svc_dispatch::SyscallArgs::from_trap_frame(frame);\n            let dispatched = match u32::try_from(frame.x7()) {\n                Ok(syscall_id) => crate::svc_dispatch::dispatch_svc(syscall_id, &args),\n                Err(_) => Err(crate::svc_dispatch::DispatchError::InvalidSyscallId),\n            };\n",
+            "            let args = crate::svc_dispatch::SyscallArgs::from_trap_frame(frame);\n            let dispatched = match u32::try_from(frame.x7()) {\n                Ok(syscall_id) => crate::svc_dispatch::dispatch_svc(syscall_id, &args),\n                Err(_) => Err(crate::svc_dispatch::DispatchError::InvalidSyscallId),\n            };\n            if !crate::lean_ready::lean_ready(crate::per_cpu::current_core_id_from_tpidr() as usize) {\n                crate::svc_dispatch::halt_syscall_before_lean_ready(\n                    crate::per_cpu::current_core_id_from_tpidr() as usize,\n                    frame.x7(),\n                );\n            }\n",
+        ),
+        (
+            "the readiness gate nested under an unrelated condition",
+            "            if !crate::lean_ready::lean_ready(crate::per_cpu::current_core_id_from_tpidr() as usize) {\n                crate::svc_dispatch::halt_syscall_before_lean_ready(\n                    crate::per_cpu::current_core_id_from_tpidr() as usize,\n                    frame.x7(),\n                );\n            }\n",
+            "            if frame.x0() == 0 {\n                if !crate::lean_ready::lean_ready(crate::per_cpu::current_core_id_from_tpidr() as usize) {\n                    crate::svc_dispatch::halt_syscall_before_lean_ready(\n                        crate::per_cpu::current_core_id_from_tpidr() as usize,\n                        frame.x7(),\n                    );\n                }\n            }\n",
+        ),
+        (
+            "the readiness gate on a literal core",
+            "            if !crate::lean_ready::lean_ready(crate::per_cpu::current_core_id_from_tpidr() as usize) {\n",
+            "            if !crate::lean_ready::lean_ready(0) {\n",
+        ),
+        (
+            "the readiness gate with a compound condition",
+            "            if !crate::lean_ready::lean_ready(crate::per_cpu::current_core_id_from_tpidr() as usize) {\n",
+            "            if !crate::lean_ready::lean_ready(crate::per_cpu::current_core_id_from_tpidr() as usize) || frame.x0() == 0 {\n",
+        ),
+        (
+            "the readiness gate ending in a frame write instead of the halt",
+            "                crate::svc_dispatch::halt_syscall_before_lean_ready(\n                    crate::per_cpu::current_core_id_from_tpidr() as usize,\n                    frame.x7(),\n                );\n            }\n            let args",
+            "                let _ = \"crate::svc_dispatch::halt_syscall_before_lean_ready\";\n                frame.set_return_frame(crate::svc_dispatch::blocked_resume_sentinel_regs());\n            }\n            let args",
         ),
     ];
     for (what, from, to) in trap_mutations {

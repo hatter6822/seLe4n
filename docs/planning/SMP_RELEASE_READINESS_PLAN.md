@@ -4,7 +4,8 @@
 > **RR1 LANDED at v0.34.41** (all twelve sub-tasks); **RR2 LANDED at v0.34.42**
 > (all twenty sub-tasks; RR2.18 partial — see its acceptance note);
 > **RR3 LANDED at v0.34.43** (all twenty-six); **RR4 LANDED at v0.34.44** (all
-> twenty-seven); RR5..RR8 not started.
+> twenty-seven); **RR5 LANDED at v0.34.48** (all eighteen); RR6..RR8 not
+> started.
 > **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Source register**: [`UNFINISHED_SMP_WORK.md`](UNFINISHED_SMP_WORK.md) (171 confirmed findings)
 > **Successor**: [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) (SM10) — opens when this phase closes
@@ -151,7 +152,7 @@ Nothing else may overlap without re-reading the dependency list above.
 | RR2 | Live-path correctness: dispatch-arm bundles + donation queue migration, wired live.  **LANDED v0.34.42** | 20 | M–L |
 | RR3 | `ipcInvariantFull` de-threading closure (D1, D6, D8).  **LANDED v0.34.43** (RR3.1–RR3.26, the dispatch payoff included) | 26 | XL |
 | RR4 | Fault handling: full fault IPC with reply-based restart.  **LANDED v0.34.44** (RR4.1–RR4.27) | 27 | XL |
-| RR5 | Boot-path fail-open closure | 18 | M–L |
+| RR5 | Boot-path fail-open closure.  **LANDED v0.34.48** (RR5.1–RR5.18) | 18 | M–L |
 | RR6 | Verified lock primitives completion (SM2.C-defer, pre-v1.0.0) | 27 | L |
 | RR7 | Medium-severity sweep, plus the §7 rows RR0.11 routes here | 41 | M |
 | RR8 | Phase closure and hand-off to SM10 | 5 | S |
@@ -483,6 +484,453 @@ context fails closed; every seam consults the readiness gate; idle threads
 are installed **and enqueued** on the production path, so `∀ c,
 idleThreadEnqueuedOnCore st c` holds of the live boot state rather than being
 assumed; the staged-module count falls by three.
+
+**Acceptance met at v0.34.48**, with three deviations worth recording:
+
+* *The staged-module count fell by **five**, not three.*  Promoting the three
+  kernel entries pulls their import closure into production with them —
+  `Scheduler.Operations.PerCoreRunLoop` and `.PerCoreTimerTick` — and the
+  partition gate is what said so.  The acceptance number counted the entries,
+  not the closure.
+* *RR5.17 retired the export rather than bracketing it.*  The row said
+  "bracket `suspend_thread_inner`"; the register's own remediation offered
+  either that or retiring the `@[export]` and keeping the Lean definition for
+  the suites (§5 finding 9), and retiring is the stronger outcome — it removes
+  the hazard instead of mitigating it, and matches what WS-RA did to the twin
+  `syscall_dispatch_inner`.  Bracketing would additionally have needed the Lean
+  body to take the kernel-entry lock through new FFI, which the simulation build
+  cannot link.  A Tier-3 negative anchor now keeps the export gone; the positive
+  anchor moved to the definition.
+* *The SVC seam's not-ready arm **halts**.*  PR #887 left that decision to RR5
+  (`trap.rs`, round 3: "what a not-ready core should do with an `SVC` at all is
+  RR5's question").  A fail-closed frame would be architecturally coherent — the
+  `SVC` advanced the PC — but the timer seam consults the same readiness mask, so
+  a thread on a not-ready core would never be preempted again; returning an error
+  hands it the CPU forever.  The suspend seam, which has an error channel and no
+  trapped thread, returns `KernelError::IllegalState` instead.
+
+**Audit round (same version).**  A deep re-read of the cut against the code,
+not the docstrings, found four things the rows above had shipped short of, all
+closed at v0.34.48 before merge:
+
+* *RR5.12's keystone took two hypotheses about the state it was discharged
+  from.*  `bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_succeeds`
+  assumed the boot queue well-formed and its members resolvable.  The boot
+  queue is now characterised exactly (on every core, the empty queue with idle
+  enqueued — `…_runQueueOnCore_eq`), both premises are theorems of the boot
+  state, the keystone takes nothing beyond the boot, and each core's first
+  selection is pinned to its idle thread (`…_chooseThreadOnCore_idle`).
+* *RR5.4's witness admissibility stopped at the sentinel.*  A labeling that
+  gave only the four idle threads a label of their own — every user-visible
+  entity `publicLabel` — could name two idle threads and pass.  Idle ids are
+  excluded (`separationWitnessAdmissible`, `isIdleThreadId`), the
+  index-partitioned family lifts its upper witness past the idle range so it
+  stays total (`upperWitnessIndex`), and the refusal is tested for the
+  exclusion rather than for equal labels.
+* *RR5.1's "what a hardware boot installs" was a sentence.*  Nothing installed
+  `confinedLabelingContext`.  `PlatformBinding` now carries
+  `deploymentLabeling` (this round: the context with its admission proof; the
+  review round below replaced it with the `DeploymentLabeling` source, so
+  admission and validity are theorems of every binding), the RPi5 binding's
+  labeling is the confined context at `rpi5UpperDomainBase`
+  (`rpi5_deploymentLabeling`), the simulation bindings' is the harness
+  labeling, and
+  `bootAndInitialisePlatform` boots under the binding's — provably the checked
+  idle boot with the refusal arm unreachable.
+* *RR5.9's `hw_target` verdict was two substring tests.*  A `cfg_attr` or an
+  `any(feature = "hw_target", …)` carried the token and read as a gate.  The
+  verdict is computed over the parsed `cfg` predicate
+  (`cfg_predicate_entailment`, under-approximating so it fails closed), and
+  linker visibility now covers `#[unsafe(no_mangle)]` and `#[export_name]`;
+  six more token-preserving mutations pin it.
+
+**Review round (PR #889, same version).**  The pull-request review found six
+more places where a relation was asserted at one site and not derived, all
+closed before merge:
+
+* *RR5.11 stored the dispatched idle form while queuing it.*  The enqueue
+  stores `queuedIdleThread` (`.Ready`), `bootSafeObjectCheck` requires config
+  TCBs `.Inactive`, and the production boot state is proved
+  `threadStateConsistent` (`bootFromPlatformCheckedWithIdleThreads_threadStateConsistent`).
+* *RR5.6's gate came after the SVC prefilters.*  It now precedes every outcome
+  — the prefilters in `dispatch_svc`, the `x7` narrowing and the
+  unknown-syscall delivery in the trap arm — pinned structurally by
+  `svc_arm_readiness_gate_status`, since an `extern "C"` halt aborts a host
+  test rather than unwinding.
+* *RR5.16 required the intersection of the two symbol sets.*  Every HAL
+  declaration must now resolve (archive, assembly global, or a reconciled
+  `EXPECTED_UNRESOLVED` entry), so a rename on either side fails.
+* *RR5.13 folded over configs that occupied idle slots.*  `PlatformConfig.wellFormed`
+  reserves them (`idleSlotsReserved`), and a successful checked boot is fresh
+  by theorem, so the preservation result takes no hypothesis.
+* *RR5.18's tripwire tested held-ness, not ownership.*  The round lock records
+  its owner and the tripwire asks `round_lock_held_by(core)`; another core's
+  shootdown makes an entering core wait, not halt.
+* *RR5.1's binding proved admission only.*  It stores the `DeploymentLabeling`
+  source, so admission and full validity are theorems of every binding
+  (`PlatformBinding.labeling_valid`).
+
+**Review round 2 (PR #889, same version).**  The second pass found seven more,
+five of them the same shape and two of them scanners asking for a token where
+the question was a predicate:
+
+* *RR5.13's reservation covered object keys only.*  A boot CNode could carry a
+  capability to `(idleThreadId c).toObjId`, which the idle fold then
+  materialised, and a `.tcbSuspend` through it would remove the core's only
+  guaranteed runnable thread.  The reservation now covers every object a config
+  entry *references* (`bootObjectReferencesReservedIdleSlot`, total over
+  `KernelObject`), and — the chokepoint form — `syscallResolveCap` refuses any
+  capability naming a reserved idle object (`capTargetsReservedIdleObject`,
+  `syscallResolveCap_ok_not_reserved`), so no syscall can act on an idle TCB
+  through a capability a config or a transfer happened to carry.
+* *RR5.13's refusal named the wrong fault.*  An otherwise valid config occupying
+  an idle slot was reported as a duplicate object id; the checked boot now has
+  an idle-slot branch ahead of that fallback.
+* *RR5.1's source carried labels only.*  `DeploymentLabeling` now carries
+  `memoryOwnership`, `endpointPolicy`, `declassificationPolicy` and
+  `auditMonitorClearance` with their fail-closed defaults, so a binding can
+  configure them where it declares its labeling; before, every hardware boot
+  was forced to the constructor's defaults.
+* *RR5.11's consistency claim stops at the boot.*  The scheduler's dispatch
+  writes no `threadState`, so the full classification is a boot-state theorem
+  and not a preserved invariant.  The relation the live decisions read — the
+  stored flag says `.Inactive` iff the observable state does — is stated as
+  `threadInactiveFlagConsistent`, proved of the boot state, and its
+  preservation across the scheduler and IPC surfaces is registered debt owned
+  by RR7.36.
+* *RR5.18's tripwire scanner matched a token.*  A reversed predicate kept
+  `2048` and the halt and halted every aligned boot; the scanner now requires
+  the `if` condition to be the declared failure predicate, whitespace aside,
+  with polarity mutations in its self-check.
+* *RR5.7's export inventory read raw Lean text.*  A commented-out
+  `@[export …]` counted as a live symbol; `build.rs` now derives the inventory
+  over a comment-free, string-free Lean view and splits attribute lists, so
+  `@[inline, export name]` and a line break before the name count.
+* *The shell code view copied `$( … )` spans verbatim.*  A comment inside a
+  substitution survived into the code view and a `)` inside it closed the
+  substitution early; the body is now lexed recursively.
+
+**Review round 3 (PR #889, same version).**  Four more:
+
+* *RR5.2's boot entry had no enforced connection to SM10.1's caller.*
+  `lean_kernel_main` stays SM10.1's to write (a transition goes live after
+  its proofs, and the entry needs the DTB-derived configuration); the export
+  gate now requires that whichever declaration exports it calls
+  `bootAndInitialisePlatform` in its own body (`boot_entry_binding_failures`).
+* *RR5.4's witnesses were ids, not threads.*  The boot wrapper refuses a boot
+  whose labeling's declared witnesses are not installed threads of the boot
+  state (`declaredWitnessesInstalled`), so a partition that separates no
+  running thread does not boot.
+* *RR5.16's assembly providers were `.global` directives.*  A provider is a
+  defined symbol (directive and label) in a source `build.rs` assembles.
+* *RR5.14's idle install ignored the binding's core count.*  The binding boot
+  folds over `PlatformBinding.declaredCores`; the RPi5 binding declares every model
+  core, so its boot is the all-cores form (`rpi5_cores_eq_allCores`).
+
+**Review round 4 (PR #889, same version).**  Three precision gaps in the
+previous closures: the reference check reads a notification's `boundTCB` (and
+every SchedContext reference); an assembly provider is read outside
+preprocessor conditionals, on the builder chain that reaches `.compile()`,
+and against the assembled archive's object symbols when present.
+
+**Review round 5 (PR #889, same version).**  Four: the labeling family's lower
+witness was thread `1`, the boot VSpace root's object id on every binding, so a
+hardware boot carrying its own root was refused for an uninstalled witness —
+the witness is a parameter, the RPi5 binding declares `rpi5LowerWitnessIndex`,
+and `PlatformBinding.witnessesOffBootVSpaceRoot` holds every binding's
+witnesses apart from its root; the idle-slot reservation is model-wide by
+design and now says so (an undeclared core's slot is absent, not free); the
+boot-entry gate reads statements — an executed top-level call and no other
+kernel-state installer, over a derived installer set — instead of an
+identifier occurrence; and `coreCount ≤ numCores` is a class obligation
+(`coreCountLe`), so `declaredCores` has exactly `coreCount` members.
+
+**Review round 6 (PR #889, same version).**  Four, three of them in the
+gates: the symbol inventories read the shared code views with strings
+blanked; the idle-slot reservation reads an untyped's `children` and
+`parent`; each release-surviving tripwire is pinned with the operation it
+protects and must dominate it; and an expected-unresolved exemption expires
+the moment its export appears.
+
+**Review round 7 (PR #889, same version).**  Six: a boot TCB is stored under
+its own thread id (`tcbIdentitiesMatchSlots`) and the reference check reads
+its `tid`; the hardware entry is `bootAndInitialiseRPi5`, the generic entry
+fixed at the RPi5 binding, and the platform entry boots the bound config
+(`bindPlatformConfig`: the binding's machine configuration and boot VSpace
+root); the tripwire branch must end in `fatal_halt`; the assembly providers
+are read off the compile's executed chain; the export inventory includes the
+library root.
+
+**Review round 8 (PR #889, same version).**  Five: the raw suspend seam
+refuses idle ids before the transition
+(`suspendThreadCrossCoreStep_idle_refused`); the reservation reads `queuePPrev`
+and is pinned by constructor arity, with the sweep's fields and the identity
+relation over SchedContexts and Replies (`embeddedIdentitiesMatchSlots`); the
+tripwire branch is a top-level statement of the helper or sits under an
+unconditional block; function externs are satisfied by global text symbols
+only; the assembled sources follow the compiled builder's binding instance.
+
+**Review round 9 (PR #889, same version).**  Five: an unqualified
+`lean_ready(..)` resolves to the gate only where the file imports it and
+defines no function of that name (`bare_ready_call_resolves`, swept across
+every scanner that asks); nothing may leave a tripwire helper before its
+fail-closed branch (`statement_may_exit`); the boot entry must branch on the
+checked boot's `Except` and halt on `.error` (`boot_entry_handles_failure`);
+a receiver rebound by assignment is a binding boundary; and `build.rs`'s
+readiness scanner reads the library root `SeLe4n.lean`.
+
+**Review round 10 (PR #889, same version).**  Three, all against round 9's
+failure-handling check and all the same class: the arms are parsed so the
+`.error` arm's own body must halt, a diverging statement before the handling
+match refuses, and the match must be on the binding the boot produced rather
+than on a rebinding of its name.
+
+**Review round 11 (PR #889, same version).**  Two: a **P1 in the kernel** — a
+raw thread-id operand (`.schedContextBind`'s `args.threadId`) escaped the
+capability chokepoint, so an ordinary SchedContext capability could bind and
+re-prioritise a core's idle TCB; the refusal is at the raw-operand lift points
+`validateThreadIdArg` / `validateObjIdArg` — and the boot entry's `.error` arm
+must halt as its terminal action rather than merely mention a halt.
+
+**Review round 12 (PR #889, same version).**  Four, all against
+`check_kernel_entry_exports.py` and all one shape — *a name is not a
+definition*.  The callee could be rebound (`let bootAndInitialiseRPi5 := fun _
+=> pure (.ok default)`); the `.error` arm's halt could be `Fake.ffiFatalHalt`
+or a local of that name; `@[inline, export lean_kernel_main]` was invisible to
+the export inventory and the boot-entry locator, so the whole contract passed
+vacuously; and `#[link_name = "…"]` renamed a symbol the requirement then got
+wrong in both directions.  Every reference is now resolved by Lean's suffix
+rule against fully-qualified declarations, must denote only the pinned one, and
+is refused where the declaration binds the name locally; the halt set is
+derived from the `@[extern "ffi_fatal_halt…"]` primitives and their aliases;
+the attribute list is parsed by one parser shared with `build.rs`; and the link
+requirement is the effective linker name, with `build.rs` refusing an alias of
+a Lean symbol outright, since no readiness gate can be attributed to one.
+
+**Review round 13 (PR #889, same version).**  One, against the arm parser: a
+`match` nested inside an arm donated its `| .error _ => halt` to the
+boot-result match's own arm list, because the statement's continuation lines
+had been stripped of the indentation that distinguishes them.  Columns are
+kept now, arms are those at the match's own column, and — the sweep, one level
+down — an arm's terminal statement is the last line at its body's *minimum*
+column, so a halt in the `else` branch of a multi-line conditional is no
+longer read as what the arm does.
+
+**Review round 14 (PR #889, same version).**  Five, four of which are the sweep
+rule failing: `let` was not every binder (`have` shadows the boot result), an
+exit is not always the whole statement (`if skip then return ()`, where
+`build.rs` had asked the right question since PR #887), the halt-alias closure
+resolved by suffix where `reference_failure` required a unique candidate, and
+the recursive shell view lexed `$( … )` while the legacy backtick spelling was
+copied verbatim.  The fifth is a view-selection defect: a string literal
+supplied both the brace nesting and the `#[cfg]` attribute that decided an
+`extern` block's gate, so structure is now located on the string-free view and
+only the feature name read from the aligned kept one.
+
+**Review round 15 (PR #889, same version).**  Five, one of them in the kernel:
+a configured TCB's `cpuAffinity` was unconstrained, so a binding with
+`coreCount < numCores` booted a thread pinned to a core it does not have and
+`determineTargetCore` would enqueue it on a PE that does not exist.  The
+refusal is at `bootFromPlatformCheckedWithIdleThreadsFor`, the point the core
+list reaches, and is vacuous on `allCores` so the hardware boot is unchanged.
+The other four harden the gates: a constructor pattern binds a name, both Lean
+code views parse raw strings, `statement_may_exit` guards the statements inside
+a tripwire's failure branch, and a value binding of `lean_ready` disables the
+bare spelling.
+
+**Review round 16 (PR #889, same version).**  Seven, four of them the shape
+rounds 12, 14 and 15 had each fixed one spelling of.  The response is a
+contract rather than another spelling: the boot entry names the checked boot
+and the halt by their fully-qualified names — nothing local can shadow a dotted
+name — and the accepted expression is the call and its arguments, not a prefix
+of one; the readiness guard is written `crate::lean_ready::lean_ready(..)`,
+which every guard in the HAL already does.  Three genuine parser defects are
+fixed as such: the halt seed locates its attribute on the string-free view, an
+`extern` block is split into items so an attribute binds to the item it
+decorates, and an uninvoked `.macro` body is not an assembly provider.
+
+**Review round 17 (PR #889, same version).**  Five findings, and a standing
+instruction from the maintainer that decides the shape of the fix: a Lean
+question goes to the Lean elaborator, never to a regular expression.  Round 16's
+contract was the last patch this class accepts; round 17 removes the class.
+The boot entry's contract now lives in
+`SeLe4n/Testing/BootEntryContract.lean`, which reads the elaborated
+`Environment` — `getExportNameFor?` for the exporting declaration,
+`Expr.getUsedConstants` for what it calls, a reachability walk for what installs
+kernel state — and fails its own elaboration, with four witnesses (a compliant
+entry and three token-preserving deviations) keeping it decisive before SM10.1
+writes the entry.  `Platform.FFI.bootAndInitialiseRPi5OrHalt` makes the error
+path a definition, so the eight rounds spent reading an `.error` arm out of Lean
+source have no subject left.  That retired 43 top-level names from
+`scripts/check_kernel_entry_exports.py`; what remains is the link-level half,
+where three of the five findings landed: an `extern <abi>? { … }` block is
+resolved rather than spelled (three sites, two of them in `build.rs`), a
+`#[link_name]` is located on the string-free view, and `.if 0` / `.rept` regions
+provide no assembly symbols.  The self-test's case count is measured from the
+harness's own source rather than bumped by hand.
+
+**Review round 18 (PR #889, same version).**  Four, three against the round-17
+replacement and one against the kernel model.  The first is this project's
+oldest defect one level below text: `Expr.getUsedConstants` says a constant
+*occurs*, not that it *runs*, so an entry that boots inside an `if` satisfied
+the contract — resolved by walking the structure that cannot branch
+(`unconditionalActions`) and requiring the approved call to head an action it
+reaches.  The second is the seam's ABI: a C symbol carries no type, so the
+contract now requires the entry's type to be `UInt64 → BaseIO Unit`, what
+`boot.rs` calls it at.  The third is which environment the contract reads —
+`Platform.Staged` alone would miss an entry in a `SeLe4n.lean`-only module, so
+both roots are imported and the module list pins it.  The fourth: `wellFormed`
+did not bound the object count while the idle fold adds one entry per core, so
+a config filled to `maxObjects` booted past it; `objectBudgetRespected` reserves
+the headroom and `objectIndexBounded` is now a theorem of the production boot.
+
+**Review round 19 (PR #889, same version).**  Three, two of them against round
+18's own answers and both the same shape — an `Expr` walk assuming something
+about what it looks at.  A `Bind.bind` application sequences only under a lawful
+*instance*, which is an argument: a `Bind` on a type definitionally equal to
+`BaseIO Unit` may discard both, so the instance is now compared against the one
+synthesis finds.  `ConstantInfo.value?` hides an `opaque` body by default, so an
+`opaque` alias of a kernel-state installer read as a harmless leaf; the walk
+passes `allowOpaque := true`, and what it still cannot see (a foreign
+`@[extern]` body) is stated rather than assumed away.  The third: round 18's new
+`wellFormed` conjunct had no branch in the boot error cascade, so a size fault
+was reported as an embedded-identity mismatch — the defect round 2 fixed for the
+idle-slot reservation, repeated by the same omission.
+
+**Review round 25 (PR #889, same version).**  Three findings, three scanners,
+three languages — and one defect: each, handed input it could not parse,
+**silently did nothing**, and doing nothing was fail-open every time.  A Rust
+raw identifier (`fn r#lean_real();`) matched no `fn` pattern, so the item
+declared no link requirement at all.  GAS's `.pushsection` / `.popsection`
+stack was unmodelled and a quoted `.section ".data"` matched no directive
+pattern (the code view blanks a string's contents), so a `.data` label reported
+as an executable provider — round 22's finding, reintroduced by spellings round
+22 did not enumerate.  And both `@[export]` collectors read ASCII identifier
+characters only, so a guillemet-spelled export (`@[export «suspend_generated»]`,
+which Lean accepts and emits) left the readiness-gate seam set one entry short.
+
+Two sweeps came with the fixes rather than with the next round.  The
+raw-identifier question is asked in four places — the Python declaration
+collector the review named, `build.rs`'s `extern_block_declarations` (which
+feeds the readiness *seam set*) and both `enclosing_fn` implementations, which
+key every allowlist entry and exemption on the function's name — and all four
+now read the escape.  And the statement split this round introduced brought its
+own edge: a `#define` body is a cpp *template*, so splitting it would set the
+section from code that never executes there and register a macro parameter as a
+provider (round 16's `.macro` hazard, arriving through the fix for a different
+one).  A preprocessor line is never split.
+
+The rule for this plan: **a scanner's default branch is a decision.**
+Enumerate the inputs that legitimately produce nothing and stop the build on
+anything else — round 21 had already established that shape for one case
+(a macro inside an `extern` block) and it was not applied to the branch it was
+a case of.  **And which direction is closed depends on what the scanner
+produces**: a *requirements* scanner fails closed by refusing unreadable input,
+a *providers* scanner by dropping it.  The same unreadable `.section` operand
+therefore makes `executable_label_names` report the section unknown (and so not
+executable) while it makes `extern_declarations_in` and both export inventories
+stop outright.
+
+**Review round 24 (PR #889, same version).**  One, against round 23's own fix.
+The wait was paced with `cpu::wfe_bounded`, whose `max_ticks` is documented as
+*informational* — "does not bound the actual `wfe`" — so a secondary that dies in
+init sends no event, the first sleep never returns, and the topology refusal is
+unreachable: a wait that cannot time out cannot fail closed.  The name was the
+only thing that said bounded.
+
+The deeper point for this plan: `shootdown::wait_all_acked_bounded_in` had
+already hit the hazard and written the answer down, in the same words.  Writing
+a third bounded-wait rather than using it is round 22's rule at the point where
+the tree had already answered.  **Before writing a wait, a barrier, a retry or a
+timeout, find the one this tree already has and read why it is shaped that way.**
+
+**Review round 23 (PR #889, same version).**  Two, both against rounds 21/22's
+own answers, and both corollaries of round 22's rule.  *A proxy is not the
+fact*: the handoff compared PSCI `CPU_ON` acceptances against the declared PE
+count, while the fact — `CORE_IRQ_READY`, published by each core after
+`enable_irq` and already read by the shootdown protocol — says whether the PE
+will service work at all; the wait for it is bounded so a PE that never
+publishes fails the boot rather than hanging it.  *A bound has two sides*:
+round 22 clamped `declaredCoreCount` from above and left zero, where the boot
+installs no idle thread anywhere and returns `.ok` with nothing to run;
+`declaredCoreCountInRange` is `wellFormed`'s sixth conjunct.
+
+Two mechanical notes worth carrying: projection paths into the `wellFormed`
+conjunction shift on every addition (the accessors are nesting-independent
+now), and a Tier 3 anchor written against a line's *end* breaks when a conjunct
+is appended (anchors name the conjunct-list pairing instead).
+
+**Review round 22 (PR #889, same version).**  Three, and one shape: a question
+implemented twice with only one implementation right.  The generic boot wrapper
+passed `allCores` while the machine it installed carried a narrower
+`declaredCoreCount` (round 20's relation at the one entry with no binding to tie
+it); round 21's handoff refusal used the per-PE `fatal_halt` where the tree's
+system-wide barrier is `gic::halt_all()`, so already-online secondaries kept
+servicing interrupts after a refused handoff; and the assembly *source* fallback
+accepted a `.data` label as a function provider, a question the *archive* parser
+has answered correctly since round 8.
+
+The rule this adds is the proactive form of the sweep already in `AGENTS.md`:
+**derive both answers from one, or make the second impossible.**  Where a second
+implementation must exist — a source fallback for when the object code is not
+built — it must ask the same question and under-approximate, so divergence shows
+up as a false missing symbol rather than a false provider.
+
+**Review round 21 (PR #889, same version).**  Five, and four of them are one
+defect that this plan should record because the *diagnosis* is the deliverable.
+Round 17 applied "a Lean question goes to the elaborator" to **names** and
+closed that class outright.  It did not apply it to *behaviour*, and nothing in
+the environment answers what a program does — so round 17 also wrote a
+hand-rolled abstract interpreter over `Expr`, and rounds 18, 19, 20 and 21 are
+four consecutive findings against it (a conditional, a lawless `Bind`, a hidden
+`opaque` body, a non-returning action, a `let`-bound head).  That is round 16's
+sentence about regular expressions with one word changed: the set of inputs
+defeating a partial analysis is unbounded, the set it has seen is finite.
+Substituting `Expr` for text moved the class down a level rather than closing
+it.
+
+The exit is round 16's own, applied to the program rather than to its names:
+the boot entry is no longer analysed but **required to be** one program —
+`bootAndInitialiseRPi5OrHalt` applied to a configuration, decided by a single
+`isDefEq`.  Stronger than the walk (which admitted any extra action that did
+not write kernel state), and it deletes eleven analysis definitions.  The
+corollary for scanners with no elaborator to ask is the rule already stated:
+fail closed on what cannot be decided — a macro inside a Rust `extern` block is
+refused rather than read past, and `${` alone opens a parameter expansion.
+
+The fifth is the kernel one: round 20 gave `declaredCoreCount` a live consumer
+while `rust_boot_main` computed `online` and passed it nowhere, so a
+`smp_enabled=false` or capped bring-up could hand a 4-PE kernel a narrower
+machine.  Refused at the `hw_target` handoff, with the constant pinned against
+the binding.
+
+**Review round 20 (PR #889, same version).**  Four.  Three are the same shape
+one more time: a walk or a lexer assuming something about what it is looking at.
+`unconditionalActions` treated the tail of a `Bind` chain as reachable, so an
+entry that halted *before* the approved boot still reported it — the walk now
+truncates at the first provably non-returning action, seeded from the
+`@[extern]` halt primitives by *symbol* and closed over aliases.  The
+reachability walk classified project modules by a `SeLe4n` prefix, which is an
+enumeration of the project's roots and cannot see one that does not exist yet;
+it now excludes the dependency roots and reconciles that list against the
+environment's own, so a new dependency root fails the build rather than opening
+a hole.  And the recursive shell view closed a `$( … )` at the first unbalanced
+`)`, which `${x:-(}` supplies.
+
+The fourth is a kernel defect and the reason this round is not purely about
+gates: **a boot-time check with no live counterpart is a bound on the
+configuration, not on the kernel.**  Round 15 refused a *configured* TCB pinned
+outside the binding's declared cores; `decodeAffinity` accepts any
+`v < numCores`, so `.tcbSetAffinity` could migrate a thread onto an absent PE
+the instant after that boot succeeded — enqueued where nothing runs it, with the
+reschedule SGI sent to a core that cannot take it, and success returned.  The
+declared count now travels with the machine (`MachineConfig.declaredCoreCount` →
+`applyMachineConfig` → `MachineState.declaredCoreCount`), because the machine is
+what a transition can read; `PlatformBinding.declaredCoreCountAgrees` holds it
+equal to the `coreCount` the boot enforces, so the two are one fact rather than
+two that can drift — and the one binding whose machine config had to change is
+the single-core simulation, which was sharing the four-PE `simMachineConfig`.
+That is the gap, stated by the obligation that now refuses it.
 
 **Note on RR5.10–RR5.14** (the rows that replaced one XL).  Two findings shape
 the split, and the row they replaced named neither: one is an ordering defect

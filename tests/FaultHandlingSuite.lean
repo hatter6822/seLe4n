@@ -1191,13 +1191,21 @@ private def runConfigureAndResumeChecks : IO Unit := do
 -- ============================================================================
 
 /-- A labeling context the checked entry admits.  `permissiveCtx` is, to the
-letter, the insecure default `syscallEntryChecked` refuses
-(`isInsecureDefaultContext`: every class `publicLabel`), so the seam tests
-label *objects* `kernelTrusted` — the fault gate reads `endpointLabelOf`, not
-`objectLabelOf` (§6c), so the delivery is unaffected, and the lookups the
-seam runs never reach a label. -/
+letter, the labelling `syscallEntryChecked` refuses — one label for every entity,
+so it separates no two domains and `isInsecureDefaultContext` rejects it.
+
+**WS-RR RR5.4**: the seam therefore runs under `harnessLabelingContext`, a real
+two-domain deployment labelling whose lower domain covers every id this fixture
+allocates — so every thread and endpoint the scenario touches is still
+`publicLabel` and the delivery is unaffected — with `objectLabelOf` overridden to
+`kernelTrusted` exactly as before, because the fault gate reads `endpointLabelOf`
+rather than `objectLabelOf` (§6c) and the seam's lookups never reach a label.
+Overriding the object labeller keeps thread/object coherence
+(`securityFlowsTo publicLabel kernelTrusted` is `true` by design) and leaves the
+declared thread separation intact, which is what the guard checks. -/
 private def seamCtx : LabelingContext :=
-  { permissiveCtx with objectLabelOf := fun _ => SecurityLabel.kernelTrusted }
+  { SeLe4n.Kernel.harnessLabelingContext with
+    objectLabelOf := fun _ => SecurityLabel.kernelTrusted }
 
 /-- The trap frame's words at the `SVC`: `ELR_EL1` is the return address, one
 instruction past the `SVC`; `SP_EL0` and `x30` are chosen to differ from
