@@ -992,6 +992,41 @@ def embeddedIdentitiesMatchSlots (config : PlatformConfig) : Bool :=
 def objectBudgetRespected (config : PlatformConfig) : Bool :=
   config.initialObjects.length + 1 + SeLe4n.Kernel.Concurrency.numCores ≤ maxObjects
 
+/-- PR #889 review round 19: the object budget's own boot diagnostic.  Round 18
+    added the conjunct without a branch in `bootFromPlatformChecked`'s error
+    cascade, so a config whose only fault was its *size* fell through to the
+    embedded-identity message — naming a fault it does not have.  A plain
+    literal rather than an interpolation: the cascade's arms are scrutinised by
+    `split` in the downstream `_ok_` results, and a `toString` application there
+    defeats the dependent elimination. -/
+def objectBudgetBootError : String :=
+  "boot: platform config leaves no object-index room for the boot VSpace root and the " ++
+    "per-core idle threads (initialObjects + 1 + numCores must not exceed maxObjects) " ++
+    "(PR #889 review rounds 18 and 19)"
+
+/-- The first `wellFormed` conjunct's diagnostic. -/
+def irqDuplicateBootError : String :=
+  "boot: duplicate IRQ registration detected in platform config"
+
+/-- The second's. -/
+def objectIdDuplicateBootError : String :=
+  "boot: duplicate object ID detected in platform config"
+
+/-- The third's (PR #889 review round 2). -/
+def idleSlotReservationBootError : String :=
+  "boot: platform config occupies or references a reserved per-core idle slot " ++
+    "(WS-RR RR5.13 / PR #889 review)"
+
+/-- The fourth's (PR #889 review rounds 7 and 8). -/
+def embeddedIdentityBootError : String :=
+  "boot: an entry's embedded identity (a TCB's thread id, a SchedContext's id or a " ++
+    "Reply's id) is not its own object id (PR #889 review rounds 7 and 8)"
+
+/-- Returned only where no conjunct fails, which `wellFormedDiagnostic_reports_a_fault`
+    shows the refusal path never reaches. -/
+def wellFormedNoFaultBootError : String :=
+  "boot: platform config rejected with no failing well-formedness conjunct (unreachable)"
+
 /-- U6-E/F: A well-formed PlatformConfig has unique IRQs, unique object IDs,
     (WS-RR RR5.13, PR #889 review) keeps the per-core idle slots free,
     (PR #889 review rounds 7 and 8) stores every TCB, SchedContext and Reply
@@ -1008,6 +1043,53 @@ theorem PlatformConfig.wellFormed_objectBudgetRespected (config : PlatformConfig
     (h : config.wellFormed = true) : objectBudgetRespected config = true := by
   simp only [PlatformConfig.wellFormed, Bool.and_eq_true] at h
   exact h.2
+
+/-- PR #889 review round 19 (maintainer follow-up): the `wellFormed` conjuncts
+    paired with the diagnostic each one owns.
+
+    The `else if` cascade this replaces was a *second* enumeration of the same
+    conjuncts, and the two drifted twice: round 2 found `idleSlotsReserved`
+    reported as a duplicate object id, and round 19 found
+    `objectBudgetRespected` reported as an embedded-identity mismatch — each
+    time because a conjunct was added to `wellFormed` and not to the cascade.
+    One list read by both cannot drift that way, `wellFormed_eq_all_conjuncts`
+    fails to elaborate if a conjunct is added to only one of them, and the
+    refusal's *depth* is no longer encoded in five downstream tactic scripts. -/
+def wellFormedConjuncts (config : PlatformConfig) : List (Bool × String) :=
+  [(irqsUnique config.irqTable, irqDuplicateBootError),
+   (objectIdsUnique config.initialObjects, objectIdDuplicateBootError),
+   (idleSlotsReserved config, idleSlotReservationBootError),
+   (embeddedIdentitiesMatchSlots config, embeddedIdentityBootError),
+   (objectBudgetRespected config, objectBudgetBootError)]
+
+/-- The first conjunct `config` fails, reported in its own words. -/
+def wellFormedDiagnostic (config : PlatformConfig) : String :=
+  match (wellFormedConjuncts config).find? (fun row => !row.1) with
+  | some row => row.2
+  | none => wellFormedNoFaultBootError
+
+/-- The pin: `wellFormed` and the diagnostic list enumerate the same conjuncts.
+    A conjunct added to one and not the other fails here. -/
+theorem wellFormed_eq_all_conjuncts (config : PlatformConfig) :
+    config.wellFormed = (wellFormedConjuncts config).all (·.1) := by
+  simp [PlatformConfig.wellFormed, wellFormedConjuncts, Bool.and_assoc]
+
+/-- A refused config always has a failing conjunct to name, so the refusal path
+    never returns `wellFormedNoFaultBootError`. -/
+theorem wellFormedDiagnostic_reports_a_fault (config : PlatformConfig)
+    (h : config.wellFormed = false) :
+    ((wellFormedConjuncts config).find? (fun row => !row.1)).isSome = true := by
+  rw [wellFormed_eq_all_conjuncts] at h
+  cases hFind : (wellFormedConjuncts config).find? (fun row => !row.1) with
+  | some _ => rfl
+  | none =>
+      rw [List.find?_eq_none] at hFind
+      have hAll : ((wellFormedConjuncts config).all (·.1)) = true := by
+        simp only [List.all_eq_true]
+        intro row hRow
+        simpa using hFind row hRow
+      rw [hAll] at h
+      exact absurd h (by simp)
 
 /-- **WS-RR RR5.13**: a well-formed config reserves the idle slots. -/
 theorem PlatformConfig.wellFormed_idleSlotsReserved (config : PlatformConfig)
@@ -1695,19 +1777,11 @@ def bootFromPlatformChecked (config : PlatformConfig) :
         .error "boot: VSpaceRoot kernel object found in initialObjects — boot VSpaceRoots must use the dedicated PlatformConfig.bootVSpaceRoot field so asidTable consistency is maintained (WS-RC R3 / DEEP-BOOT-01 audit fix)"
     else
       .error "boot: object fails bootSafe check (invalid state for boot)"
-  else if ¬ irqsUnique config.irqTable then
-    .error "boot: duplicate IRQ registration detected in platform config"
-  else if ¬ objectIdsUnique config.initialObjects then
-    .error "boot: duplicate object ID detected in platform config"
-  else if ¬ idleSlotsReserved config then
-    -- PR #889 review round 2: the third `wellFormed` conjunct has its own
-    -- diagnostic — an otherwise valid config that occupies or references a
-    -- per-core idle slot was reported as a duplicate object id, which names a
-    -- fault the config does not have.
-    .error "boot: platform config occupies or references a reserved per-core idle slot (WS-RR RR5.13 / PR #889 review)"
   else
-    -- PR #889 review rounds 7 and 8: the fourth conjunct's own diagnostic.
-    .error "boot: an entry's embedded identity (a TCB's thread id, a SchedContext's id or a Reply's id) is not its own object id (PR #889 review rounds 7 and 8)"
+    -- PR #889 review round 19 (maintainer follow-up): one branch, reading the
+    -- conjunct list that `wellFormed` is pinned against.  The five-deep `else
+    -- if` chain this replaces was the second enumeration that kept drifting.
+    .error (wellFormedDiagnostic config)
 
 /-- U6-E/F/AJ3-C/AK9-C/AK9-F/AK9-G + WS-RC R3: Checked boot agrees with
     `bootFromPlatformWithInterrupts` on well-formed, boot-safe,
@@ -1797,7 +1871,7 @@ theorem bootFromPlatformChecked_ok_implies_irqHandlersValid (config : PlatformCo
         · cases hOk
       · cases hOk
     · cases hOk
-  · split at hOk <;> (try split at hOk) <;> (try split at hOk) <;> cases hOk
+  · cases hOk
 
 /-- AK9-F (P-M05): Successful checked boot implies `MachineConfig.wellFormed`.
 
@@ -1823,7 +1897,7 @@ theorem bootFromPlatformChecked_ok_implies_machineConfigWellFormed
         · cases hOk
       · cases hOk
     · cases hOk
-  · split at hOk <;> (try split at hOk) <;> (try split at hOk) <;> cases hOk
+  · cases hOk
 
 /-- AK9-F (P-M05): Successful checked boot implies `physicalAddressWidth ≤ 52`.
 
@@ -1846,7 +1920,7 @@ theorem bootFromPlatformChecked_ok_implies_physicalAddressWidth_bound
         · cases hOk
       · cases hOk
     · cases hOk
-  · split at hOk <;> (try split at hOk) <;> (try split at hOk) <;> cases hOk
+  · cases hOk
 
 /-- AK9-G (P-M06): Successful checked boot produces a state with interrupts
     enabled. Matches the post-HAL hardware state.
@@ -1885,14 +1959,14 @@ theorem bootFromPlatformChecked_ok_interruptsEnabled (config : PlatformConfig)
         · cases hOk
       · cases hOk
     · cases hOk
-  · split at hOk <;> (try split at hOk) <;> (try split at hOk) <;> cases hOk
+  · cases hOk
 
 /-- U6-E/F: Checked boot rejects configs that are not well-formed. -/
 theorem bootFromPlatformChecked_rejects_invalid (config : PlatformConfig)
     (hNotWf : config.wellFormed = false) :
     (bootFromPlatformChecked config).isOk = false := by
   simp [bootFromPlatformChecked, hNotWf]
-  split <;> (try split) <;> (try split) <;> rfl
+  rfl
 
 /-- AJ3-C: Empty config trivially passes bootSafe check. -/
 theorem bootSafeObjectCheck_empty_config :
@@ -3602,7 +3676,7 @@ theorem bootFromPlatformChecked_ok_scheduler_eq (config : PlatformConfig)
         · cases h
       · cases h
     · cases h
-  · split at h <;> (try split at h) <;> (try split at h) <;> cases h
+  · cases h
 
 /-- **WS-RR RR5.13** (PR #889 review): what a successful checked boot **is**.
 
@@ -3647,7 +3721,7 @@ theorem bootFromPlatformChecked_ok_shape (config : PlatformConfig)
         · cases h
       · cases h
     · cases h
-  · split at h <;> (try split at h) <;> (try split at h) <;> cases h
+  · cases h
 
 /-! ### The object-capacity invariant of a successful boot (PR #889 review round 18)
 

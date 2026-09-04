@@ -5199,6 +5199,21 @@ run_check "INVARIANT" rg -n '^fn gate_call_offset' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n '^fn statement_may_exit' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n '^fn collect_lean_exports_from_file' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n 'collect_lean_exports_from_file\(lean_library_root' rust/sele4n-hal/build.rs
+# PR #889 review round 19: the bind instance is validated before the walk
+# treats it as sequencing, opaque bodies are read, and the object budget has
+# its own boot diagnostic.
+run_check "INVARIANT" rg -n '^def isCanonicalBaseIOBind' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'allowOpaque := true' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessBogusBind' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessOpaqueBypass' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^def objectBudgetBootError' SeLe4n/Platform/Boot.lean
+# ...and the diagnostic is derived from one conjunct list rather than a second
+# enumeration of it, with a pin that fails when the two diverge.
+run_check "INVARIANT" rg -n '^def wellFormedConjuncts' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^def wellFormedDiagnostic' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem wellFormed_eq_all_conjuncts' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem wellFormedDiagnostic_reports_a_fault' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n 'error \(wellFormedDiagnostic config\)' SeLe4n/Platform/Boot.lean
 # PR #889 review round 18: the contract reads the production environment, the
 # approved call must be an unconditional action, the entry's FFI type is pinned,
 # and a successful boot leaves object-index room for the root and the idle
@@ -5244,7 +5259,7 @@ run_check "INVARIANT" rg -n '^theorem validateThreadIdArg_ok_not_reserved' SeLe4
 run_check "INVARIANT" rg -n '^theorem validateObjIdArg_ok_not_reserved' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchCapabilityOnly_schedContextBind_idle_operand_refused' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^def binding_statement_before' scripts/rust_code_view.py
-run_check "INVARIANT" rg -n 'else if ¬ objectIdsUnique config.initialObjects then' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n 'objectIdsUnique config.initialObjects, objectIdDuplicateBootError' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^  auditMonitorClearance : Option SecurityDomain := none' SeLe4n/Kernel/InformationFlow/Policy.lean
 run_check "INVARIANT" rg -n '^theorem deploymentLabelingContext_policy_fields' SeLe4n/Kernel/InformationFlow/Policy.lean
 run_check "INVARIANT" rg -n '^def threadInactiveFlagConsistent' SeLe4n/Kernel/Scheduler/Operations/Core.lean

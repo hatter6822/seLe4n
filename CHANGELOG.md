@@ -1141,6 +1141,63 @@ the **kernel**, the second live defect any round has found outside the gates.
   disables the bare spelling for the file — conservative, and the remedy is a
   qualifier.
 
+### The review round, nineteenth pass — the instance decides, and an `opaque` is not a leaf
+
+Three findings, two of them against round 18's own answers and both of the same
+shape: an `Expr` walk assumes something about what it is looking at, and the
+assumption is not checked.
+
+**A `Bind.bind` application sequences only under a lawful instance.**
+`unconditionalActions` treated every `Bind.bind` head as sequencing, but the
+instance is an argument. `BootEntryBogusMonad α := BaseIO Unit` with a `Bind`
+that returns `pure ()` while discarding both arguments type-checks at the
+entry's pinned `BaseIO Unit`, and putting the approved boot in the action
+position then satisfied the walk while nothing ran. The instance must now be the
+one instance synthesis finds for `Bind BaseIO`, compared by `isDefEq` — so a
+different but definitionally equal spelling still passes and a lawless one is
+one opaque action, which is not the approved call and satisfies nothing.
+
+**An `opaque` body is hidden by default.** `ConstantInfo.value?` takes
+`allowOpaque := false`, so the reachability walk read
+`opaque overwrite : SystemState → BaseIO Unit := initialiseKernelState` as a
+harmless leaf and an entry calling it after the approved boot replaced the
+checked state while passing. `declarationValue` now passes
+`allowOpaque := true`. What that still cannot see is stated in its docstring
+rather than assumed away: an `@[extern]` `opaque` has a foreign body, and its
+Lean-side value is the synthesised inhabitation witness — such a body cannot
+name `kernelStateRef`, an `IO.Ref` no foreign code holds, so the walk is sound
+for the property it states.
+
+**The object budget had no diagnostic.** Round 18 added the fifth `wellFormed`
+conjunct without a branch in `bootFromPlatformChecked`'s error cascade, so a
+config whose only fault was its *size* was reported as an embedded-identity
+mismatch — naming a fault it does not have, and sending an integrator to the
+wrong data. This is exactly the defect round 2 fixed for the idle-slot
+reservation, repeated by the same omission. `objectBudgetBootError` is the
+branch; the test asserts that the over-budget fixture's identities are in fact
+all valid and that the refusal names the budget.
+
+**And the cascade itself is gone.** The third finding was the *second* time the
+same omission shipped, which makes the cascade the defect rather than either
+instance: `PlatformConfig.wellFormed`'s conjuncts and the `else if` chain
+reporting them were two parallel enumerations, and adding to one without the
+other is invisible until an integrator reads the wrong diagnostic. They are one
+list now — `wellFormedConjuncts`, each conjunct paired with the diagnostic it
+owns — read by `wellFormedDiagnostic`, with `wellFormed_eq_all_conjuncts`
+pinning it against `wellFormed` so a conjunct added to only one of them fails to
+elaborate (verified: dropping a row from the list breaks that theorem).
+`wellFormedDiagnostic_reports_a_fault` shows the refusal path always has a
+failing conjunct to name. The refusal's *depth* is no longer encoded in five
+downstream tactic scripts either — `· split at hOk <;> (try split at hOk) <;> …`
+became `· cases hOk`, because the error side is one arm.
+
+The diagnostic is a plain `String` constant rather than an interpolation: the
+error arms are scrutinised structurally by `split`, and a `toString` application
+where the dependent elimination expects a literal fails. The witness set is
+nine: `bootEntryWitnessBogusBind` and `bootEntryWitnessOpaqueBypass` each keep
+every token the checks read and break the relation, and each is refused only
+because of this round's fix.
+
 ### The review round, eighteenth pass — occurrence is not execution
 
 Four findings against the round-17 replacement, and the first of them is the

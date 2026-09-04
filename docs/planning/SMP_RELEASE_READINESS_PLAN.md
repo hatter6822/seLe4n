@@ -784,6 +784,19 @@ did not bound the object count while the idle fold adds one entry per core, so
 a config filled to `maxObjects` booted past it; `objectBudgetRespected` reserves
 the headroom and `objectIndexBounded` is now a theorem of the production boot.
 
+**Review round 19 (PR #889, same version).**  Three, two of them against round
+18's own answers and both the same shape — an `Expr` walk assuming something
+about what it looks at.  A `Bind.bind` application sequences only under a lawful
+*instance*, which is an argument: a `Bind` on a type definitionally equal to
+`BaseIO Unit` may discard both, so the instance is now compared against the one
+synthesis finds.  `ConstantInfo.value?` hides an `opaque` body by default, so an
+`opaque` alias of a kernel-state installer read as a harmless leaf; the walk
+passes `allowOpaque := true`, and what it still cannot see (a foreign
+`@[extern]` body) is stated rather than assumed away.  The third: round 18's new
+`wellFormed` conjunct had no branch in the boot error cascade, so a size fault
+was reported as an embedded-identity mismatch — the defect round 2 fixed for the
+idle-slot reservation, repeated by the same omission.
+
 **Note on RR5.10–RR5.14** (the rows that replaced one XL).  Two findings shape
 the split, and the row they replaced named neither: one is an ordering defect
 it inherited, the other is the reason its "cannot be separate PRs" claim is

@@ -113,10 +113,24 @@ partial def kernelStateWriteInExpr (e : Expr) : Bool :=
   | .proj _ _ b => kernelStateWriteInExpr b
   | _ => false
 
-/-- The value of `n`, or `none` for a declaration that has none (an `opaque`,
-an axiom, a constructor). -/
+/-- The value of `n`, or `none` for a declaration that has none (an axiom, a
+constructor).
+
+`allowOpaque := true` (PR #889 review round 19).  `ConstantInfo.value?` hides
+an `opaque` declaration's body by default, so the reachability walk treated one
+as a harmless leaf and
+`opaque overwrite : SystemState → BaseIO Unit := initialiseKernelState`, called
+after the approved boot, replaced the checked state while passing the contract.
+
+What this still cannot see is a body that is not Lean's: an `@[extern]`
+`opaque` has a foreign implementation, and its Lean-side value is the
+`Inhabited`/`Nonempty` witness the elaborator synthesised.  Such a body cannot
+name `kernelStateRef` — an `IO.Ref` no foreign code holds — so the walk is
+sound for the property it states; a foreign function that called *back* into an
+exported Lean installer would be outside it, and is the readiness-gate and
+export-inventory surface's question rather than this one's. -/
 def declarationValue (env : Environment) (n : Name) : Option Expr :=
-  (env.find? n).bind (·.value?)
+  (env.find? n).bind (·.value? (allowOpaque := true))
 
 /-- Does `n`'s own body install kernel state?
 
@@ -181,6 +195,11 @@ partial def unapprovedKernelStateWrite (env : Environment) (stop : Std.HashSet N
             | none => []
           unapprovedKernelStateWrite env stop (rest ++ next) seen
 
+/-- Is `inst` the `Bind BaseIO` instance, up to definitional equality? -/
+def isCanonicalBaseIOBind (inst : Expr) : MetaM Bool := do
+  let canonical ← Meta.synthInstance (← Meta.mkAppM ``Bind #[mkConst ``BaseIO])
+  Meta.isDefEq inst canonical
+
 /-- The actions `e` performs **unconditionally**, in order.
 
 PR #889 review round 18: `getUsedConstants` says a constant *occurs* in the
@@ -197,7 +216,7 @@ whose head is `ite` / `dite` / a matcher, which is not the approved call, so it
 satisfies nothing.  An entry may still branch (`do foo; if c then a else b;
 boot cfg` is accepted, because the boot is on the spine regardless of `c`);
 what it may not do is put the boot itself inside a branch. -/
-partial def unconditionalActions (e : Expr) : List Expr :=
+partial def unconditionalActions (e : Expr) : MetaM (List Expr) := do
   match e with
   | .mdata _ body => unconditionalActions body
   | .lam _ _ body _ => unconditionalActions body
@@ -205,24 +224,29 @@ partial def unconditionalActions (e : Expr) : List Expr :=
   | .app .. =>
       if e.getAppFn.constName? == some ``Bind.bind then
         let args := e.getAppArgs
-        if args.size ≥ 2 then
-          -- `@Bind.bind m inst α β (action) (continuation)`: the action runs
-          -- here, the continuation after it.  Read from the end, so a change
-          -- in the instance arguments cannot shift the index.
-          args[args.size - 2]! :: unconditionalActions args[args.size - 1]!
-        else [e]
-      else [e]
-  | _ => [e]
+        -- `@Bind.bind m inst α β (action) (continuation)`.  The *instance*
+        -- decides whether this sequences at all (PR #889 review round 19): a
+        -- lawless `Bind` on a type definitionally equal to `BaseIO Unit` can
+        -- return `pure ()` while ignoring both arguments, and the entry's
+        -- pinned type would not notice.  So the instance must be the one
+        -- instance synthesis finds for `Bind BaseIO`; anything else is one
+        -- opaque action, which is not the approved call and satisfies nothing.
+        if args.size < 2 then return [e]
+        else if ← isCanonicalBaseIOBind args[1]! then
+          return args[args.size - 2]! :: (← unconditionalActions args[args.size - 1]!)
+        else return [e]
+      else return [e]
+  | _ => return [e]
 
 /-- Is `approvedBootCall` the head of an action the entry performs on every
 path?  `unconditionalActions` explains why this is the honest form of the
 question. -/
-def executesApprovedBootCall (env : Environment) (entry : Name) : Bool :=
+def executesApprovedBootCall (env : Environment) (entry : Name) : MetaM Bool := do
   match declarationValue env entry with
   | some value =>
-      (unconditionalActions value).any fun action =>
+      return (← unconditionalActions value).any fun action =>
         action.getAppFn.constName? == some approvedBootCall
-  | none => false
+  | none => return false
 
 /-- The type the exported entry must have.
 
@@ -249,7 +273,7 @@ def bootEntryContractViolations (entry : Name) : MetaM (List String) := do
                       symbol carries no type, so the link succeeds and the ABI does not"]
     | none => pure [s!"`{entry}` is not a declaration of this environment"]
   let missing :=
-    if executesApprovedBootCall env entry then []
+    if ← executesApprovedBootCall env entry then []
     else [s!"`{entry}` does not perform `{approvedBootCall}` as an unconditional action — the \
              hardware boot entry must boot through the checked platform boot with its failure \
              handled, so a refused boot parks the PE instead of returning to Rust with no \
@@ -311,6 +335,35 @@ private def bootEntryWitnessConditional (dtbPointer : UInt64) : BaseIO Unit :=
     Platform.FFI.bootAndInitialiseRPi5OrHalt (bootEntryWitnessConfig dtbPointer)
   else pure ()
 
+/-! The bogus-monad witness (PR #889 review round 19).  `BootEntryBogusMonad α`
+is definitionally `BaseIO Unit`, so an application of `Bind.bind` at *this*
+instance has the type the entry is pinned to — and the instance discards both
+arguments, so nothing it is handed runs. -/
+private def BootEntryBogusMonad (_α : Type) : Type := BaseIO Unit
+
+private instance : Bind BootEntryBogusMonad where
+  bind _ _ := (pure () : BaseIO Unit)
+
+/-- Keeps the approved call in a bind's action position, under an instance that
+never runs it.  The head is `Bind.bind` and the entry's type is right; only the
+*instance* distinguishes this from the sequenced witness. -/
+private def bootEntryWitnessBogusBind (dtbPointer : UInt64) : BaseIO Unit :=
+  @Bind.bind BootEntryBogusMonad inferInstance PUnit PUnit
+    (Platform.FFI.bootAndInitialiseRPi5OrHalt (bootEntryWitnessConfig dtbPointer))
+    (fun _ => (pure () : BaseIO Unit))
+
+/-- An `opaque` alias of a kernel-state installer (PR #889 review round 19).
+`ConstantInfo.value?` hid its body by default, so the reachability walk read it
+as a leaf. -/
+private opaque bootEntryWitnessOpaqueInstaller : Model.SystemState → BaseIO Unit :=
+  Platform.FFI.initialiseKernelState
+
+/-- Boots through the approved call and then installs state through that
+opaque alias. -/
+private def bootEntryWitnessOpaqueBypass (dtbPointer : UInt64) : BaseIO Unit := do
+  Platform.FFI.bootAndInitialiseRPi5OrHalt (bootEntryWitnessConfig dtbPointer)
+  bootEntryWitnessOpaqueInstaller default
+
 /-- Keeps the approved call and takes the *wrong* argument type (PR #889 review
 round 18).  A C symbol carries no type, so this links and Rust then calls it
 with the DTB address in a boxed-pointer position. -/
@@ -365,14 +418,15 @@ run_cmd Command.liftTermElabM do
         {violations}"
   for witness in [``bootEntryWitnessConditional, ``bootEntryWitnessWrongType,
                   ``bootEntryWitnessBypass, ``bootEntryWitnessSideInstall,
-                  ``bootEntryWitnessUnbooted] do
+                  ``bootEntryWitnessUnbooted, ``bootEntryWitnessBogusBind,
+                  ``bootEntryWitnessOpaqueBypass] do
     if (← bootEntryContractViolations witness).isEmpty then
       throwError "boot-entry contract: the deviating witness `{witness}` was accepted"
   -- The contract itself.
   match bootEntryDeclarations env with
   | [] =>
       logInfo m!"boot-entry contract: no declaration exports `{bootEntrySymbol}` yet \
-        (SM10.1 writes it); the analysis is pinned by its seven witnesses"
+        (SM10.1 writes it); the analysis is pinned by its nine witnesses"
   | [entry] =>
       match ← bootEntryContractViolations entry with
       | [] => logInfo m!"boot-entry contract: `{entry}` boots through `{approvedBootCall}` \

@@ -575,13 +575,13 @@ private def runBootIdleChecks : IO Unit := do
 /-- PR #889 review round 2: the diagnostic the checked boot answers a config
 that occupies or references a reserved idle slot with. -/
 private def idleSlotDiagnostic : String :=
-  "boot: platform config occupies or references a reserved per-core idle slot (WS-RR RR5.13 / PR #889 review)"
+  SeLe4n.Platform.Boot.idleSlotReservationBootError
 
 /-- PR #889 review rounds 7 and 8: the diagnostic the checked boot refuses a
 config whose TCB, SchedContext or Reply entry is stored under an id other than
 the one it carries with. -/
 private def tcbIdentityDiagnostic : String :=
-  "boot: an entry's embedded identity (a TCB's thread id, a SchedContext's id or a Reply's id) is not its own object id (PR #889 review rounds 7 and 8)"
+  SeLe4n.Platform.Boot.embeddedIdentityBootError
 
 /-- **WS-RR RR5.13** (runtime): the idle entry adds no validation of its own —
 it accepts and rejects exactly what `bootFromPlatformChecked` does. -/
@@ -918,6 +918,28 @@ private def runObjectBudgetChecks : IO Unit := do
         (ist.state.objectIndex.length == cap - 1)
   | .error e =>
       assertBool s!"the budget-respecting config must boot (got: {e})" false
+  -- PR #889 review round 19: the budget has its own diagnostic.  Round 18 added
+  -- the conjunct without a branch in the error cascade, so a config whose only
+  -- fault was its size was reported as an embedded-identity mismatch — naming a
+  -- fault it does not have.  `atCap` carries no id-bearing objects at all.
+  assertBool "the over-budget config's identities are in fact all valid"
+    (SeLe4n.Platform.Boot.embeddedIdentitiesMatchSlots atCap == true)
+  match SeLe4n.Platform.Boot.bootFromPlatformChecked atCap with
+  | .error e =>
+      assertBool "NEGATIVE: ...and the refusal names the budget, not an identity mismatch"
+        (e == SeLe4n.Platform.Boot.objectBudgetBootError)
+  | .ok _ =>
+      assertBool "NEGATIVE: an over-budget config must be refused" false
+  -- PR #889 review round 19 (maintainer follow-up): the diagnostic is derived
+  -- from one conjunct list, so each conjunct's refusal names that conjunct and
+  -- no other.  Every entry of the list is exercised here, which is what stops
+  -- the list and `wellFormed` from drifting the way the old cascade did.
+  assertBool "the conjunct list and wellFormed enumerate the same conjuncts"
+    (SeLe4n.Platform.Boot.PlatformConfig.wellFormed atCap ==
+      ((SeLe4n.Platform.Boot.wellFormedConjuncts atCap).all (·.1)))
+  assertBool "each failing conjunct is reported in its own words"
+    (SeLe4n.Platform.Boot.wellFormedDiagnostic atCap ==
+      SeLe4n.Platform.Boot.objectBudgetBootError)
   -- The ordinary fixtures are unaffected: the budget is about size alone.
   let small : SeLe4n.Platform.Boot.PlatformConfig := { irqTable := [], initialObjects := [] }
   assertBool "an ordinary small config respects the budget"

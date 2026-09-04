@@ -374,7 +374,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~877 lines)
 - `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~875 lines)
 - `SeLe4n/Kernel/IPC/Operations/Fault.lean` (~868 lines)
-- `tests/SmpIdleSuite.lean` (~865 lines)
+- `tests/SmpIdleSuite.lean` (~968 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
 - `docs/planning/SMP_RUST_HAL_PLAN.md` (~848 lines)
 - `tests/SmpTimerSuite.lean` (~840 lines)
@@ -836,7 +836,24 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   and both action arguments of a monadic bind; a conditional or a `match`
   appears there as one action whose head is `ite` / `dite` / a matcher, which
   is not the call being required, so it satisfies nothing.  The mutation for
-  this class keeps the call and nests it in a branch.  A second relation the
+  this class keeps the call and nests it in a branch.  **And the walk's own
+  assumptions are relations too** (PR #889 review round 19): a `Bind.bind`
+  application sequences only under a lawful *instance*, which is an argument —
+  a `Bind` on a type definitionally equal to `BaseIO Unit` may discard both of
+  them, so the instance is compared against the one synthesis finds
+  (`isCanonicalBaseIOBind`); and `ConstantInfo.value?` hides an `opaque` body
+  by default, so a walk that does not pass `allowOpaque := true` reads
+  `opaque overwrite := initialiseKernelState` as a harmless leaf.  Where the
+  environment still cannot answer — an `@[extern]` body is foreign — say so in
+  the docstring and state why the property survives, rather than assuming it
+  away.  The same round's third finding is the *enumeration* rule again, and
+  the second instance of it in the same place: `PlatformConfig.wellFormed`'s
+  conjuncts and the `else if` chain reporting them were two lists that had to
+  agree, and twice a conjunct was added to one and not the other, so a config
+  was refused in the words of a fault it did not have.  **A diagnostic belongs
+  with the predicate it reports**: `wellFormedConjuncts` pairs each conjunct
+  with its message, `wellFormedDiagnostic` reads that list, and
+  `wellFormed_eq_all_conjuncts` fails to elaborate if the two ever diverge.  A second relation the
   environment does not volunteer is the **type**: an `@[export]`ed declaration
   links under its C name whatever its Lean type, so a seam's contract states
   the type its `extern` declaration is called at
