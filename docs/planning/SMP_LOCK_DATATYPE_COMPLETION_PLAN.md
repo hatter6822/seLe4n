@@ -181,12 +181,34 @@ Tier-5 oracle exercises the new letter in both languages.
 | ID | Sub-task | Consumes | Evidence |
 |----|----------|----------|----------|
 | LC3.1 | The per-core withdrawal slot array and `cancel()` with **publish-then-check**: publish the withdrawal, then test whether we are the head.  Ordering is the whole protocol — a check before the publish loses the race in the direction that stalls the lock | LC2.8 | `cargo test`; the build script's protocol needles still hold |
-| LC3.2 | The bounded skip loop in `pass_turn`, with compare-and-swap **arbitration** so exactly one of {the canceller, the previous holder} clears a given slot and advances past it | LC3.1 | the loop terminates in at most one pass per slot |
+| LC3.2 | The skip loop in `pass_turn`, with compare-and-swap **arbitration** so exactly one of {the canceller, the previous holder} clears a given slot and advances past it | LC3.1 | the loop retires at most one withdrawal per iteration, each for a distinct issued ticket |
 | LC3.3 | Loom models: mutual exclusion under a mid-queue withdrawal, the ticket interval closing when a withdrawn ticket is skipped, a withdrawal racing a turn-pass from both sides, and a withdrawal of an already-served ticket | LC3.2 | `scripts/test_loom_queued_rw_lock.sh` |
 | LC3.4 | Gate decisiveness by **relation-breaking** mutation, per the project's own rule: keep the withdrawal call and move its publish *after* the head check; keep the skip loop and delete only the arbitration.  Each must fail a model | LC3.3 | both mutations red |
 | LC3.5 | Unit tests and miri under strict provenance, at the iteration counts the existing harness scales | LC3.4 | `scripts/test_miri_queued_rw_lock.sh` |
 | LC3.6 | Tier-5: widen both oracles' alphabet in the same commit, and **re-derive** the ticket-interval check rather than patching its constant — with tombstones the outstanding count is no longer a function of the writer bit | LC3.5 | `scripts/test_tier5_cross_language.sh` |
 | LC3.7 | The foreign-function surface (the unwind's caller is on the Lean side, so a Rust-only operation would be unreachable from the runtime), anchors, inventory, documentation sync, and the version cut | LC3.6 | `check_lock_ffi_symmetry.sh`; cross build green |
+
+**Closure audit (v0.34.55).**  The slot is one word per core, and LC3.1 let a
+core take a second ticket while its first withdrawal was still unclaimed: a
+second `cancel` overwrote the publication, the release ahead stopped
+`now_serving` on a ticket nobody held, and the lock stalled — on the
+contract-respecting sequence enqueue, withdraw, enqueue, withdraw.  LC3.3's four
+models withdrew once per core and could not see it, and the Tier-5 oracle
+counted the lost withdrawal as "pending outstanding", so its interval check
+balanced on the stalled state.  The fix is at the issue, not the withdrawal:
+`enqueue` parks until the slot is empty (`await_withdrawal_retired`), a wait
+that ends before any later ticket could be served; `cancel` refuses a ticket
+the lock has already passed; the skip loop's per-core iteration cap — which
+fires on a correct execution, since a core whose tombstone was just retired may
+re-enqueue at the head and withdraw again — is replaced by the invariant
+`now_serving ≤ next_ticket`; the Lean model enables the issue only for a core
+holding no ticket (`ledgerCoresNodup`, `publish_slot_empty`) and the
+`acquire*_enqueue` blocks require `¬ withdrawalPending`; two loom models and a
+fourth relation-breaking mutation pin it; and the Tier-5 oracle checks the
+served ticket's liveness and each core's slot, and excludes (counted, under a
+ceiling) a trace that asks a core to acquire while its own withdrawal is
+unclaimed.  Not a new sub-task: LC3's rows stand as written, this is the
+correction the closure audit owed them.
 
 ## 6. LC4 — the two-phase-locking consumers
 

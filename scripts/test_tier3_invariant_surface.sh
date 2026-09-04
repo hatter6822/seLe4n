@@ -6745,7 +6745,8 @@ import SeLe4n.Kernel.Concurrency.Locks.QueuedRwLockRefinement
 #check @SeLe4n.Kernel.Concurrency.queuedTrace_preserves_queuedSim
 -- The payoff: the deployed lock refines the Lean FIFO spec end to
 -- end, and admits in the spec order.
--- The queued bridge covers cancel-free traces only, and says so.
+-- The queued bridge carries the withdrawal: the tombstoned ledger, the live
+-- projection, the skip loop, and the withdrawal blocks.
 #check @SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete.liveLedger
 #check @SeLe4n.Kernel.Concurrency.queuedHeadLive
 #check @SeLe4n.Kernel.Concurrency.skipDeadOps
@@ -6756,6 +6757,33 @@ import SeLe4n.Kernel.Concurrency.Locks.QueuedRwLockRefinement
 #check @SeLe4n.Kernel.Concurrency.promoteFrom_preserves_queuedSim
 #check @SeLe4n.Kernel.Concurrency.queuedBlock_step_cancel_noop
 #check @SeLe4n.Kernel.Concurrency.queuedBlock_step_cancel_queued
+-- The withdrawal slot as a precondition of the issue (WS-LC closure audit):
+-- one outstanding ticket per core, so at most one withdrawal to publish per
+-- core, so the unconditional store in cancel never overwrites, and the
+-- enqueue blocks require the slot empty, as enqueue waits for it.
+#check @SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete.holdsTicket
+#check @SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete.withdrawalPending
+#check @SeLe4n.Kernel.Concurrency.QueuedTicketWf.holder_ticket_unique
+#check @SeLe4n.Kernel.Concurrency.QueuedTicketWf.publish_slot_empty
+#check @SeLe4n.Kernel.Concurrency.queuedSim_not_holdsTicket
+-- Relation anchors, not presence: the precondition of the issue HAS the
+-- no-outstanding-ticket conjunct, the invariant HAS the one-ticket-per-core
+-- conjunct, and the enqueue blocks REQUIRE the slot empty.  Deleting any of
+-- the three keeps every name above and fails here.
+example (s : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (h : s.opEnabled (.nextTicketFetchAdd c)) : ¬ s.holdsTicket c := h.2
+example (s : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete)
+    (h : SeLe4n.Kernel.Concurrency.QueuedTicketWf s) : (s.ledger.map Prod.snd).Nodup :=
+  h.ledgerCoresNodup
+example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
+    (conc : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (spin : List SeLe4n.Kernel.Concurrency.QueuedRwLockOp)
+    (h₁ : ¬ abs.coreInvolved c) (h₂ : abs.writerHeld.isSome ∨ abs.waiters ≠ [])
+    (h₃ : SeLe4n.Kernel.Concurrency.QueuedStutter spin)
+    (h₄ : conc.nextTicket.toNat + 1 < UInt64.size) (h₅ : ¬ conc.withdrawalPending c) :
+    SeLe4n.Kernel.Concurrency.queuedBlock abs conc (.tryAcquireRead c)
+      (SeLe4n.Kernel.Concurrency.takeTicketOps c ++ spin) :=
+  .acquireRead_enqueue abs conc c spin h₁ h₂ h₃ h₄ h₅
 #check @SeLe4n.Kernel.Concurrency.queuedRwLock_refines_rwLockSpec
 #check @SeLe4n.Kernel.Concurrency.queuedRwLock_admits_in_spec_order
 EOF'

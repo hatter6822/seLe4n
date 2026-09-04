@@ -80,7 +80,8 @@ exactly what the FIFO property is about.
   control flow establishes).
 * §2 (RR6.5) — the ticket protocol's own well-formedness, stated over
   the concrete model alone: `now_serving ≤ next_ticket`, one core per
-  issued ticket, and `now_serving` advancing exactly once per issue.
+  issued ticket, one issued ticket per core, and `now_serving` advancing
+  exactly once per issue.
   Plus the two consequences the rest of the phase rests on — the
   entitlement is a singleton (mutual exclusion) and both spin loops
   terminate.
@@ -126,12 +127,18 @@ structure QueuedRwLockConcrete where
 
   This is a machine word, not ghost state: the withdrawal has to reach
   the core that will skip the ticket, and an array is how it does.  The
-  per-core *indexing* is abstracted away because its only consequences
-  are that a core can publish at most one withdrawal and that the
-  published tickets are distinct, and `QueuedTicketWf` states both
-  (`cancelledOutstanding`, `cancelledNodup`) — a model carrying four
-  slots would re-derive them from the array shape and prove nothing
-  more. -/
+  per-core *indexing* is abstracted away, and what the array shape
+  imposes is stated instead: the published tickets are distinct
+  (`cancelledNodup`), and a core can have at most one withdrawal to
+  publish because it holds at most one outstanding ticket
+  (`ledgerCoresNodup`, WS-LC closure audit).  The second is the one the
+  first cut left out, and it is not decoration: `cancel` stores into the
+  slot unconditionally, so a core allowed a second ticket while its
+  first withdrawal was unclaimed could overwrite that publication and
+  leave the lock stalled on a ticket nobody would ever retire.  The
+  issue is therefore enabled only for a core holding no ticket
+  (`opEnabled`), and `publish_slot_empty` is the theorem that the store
+  never overwrites. -/
   cancelled : List Nat
   deriving Repr, DecidableEq
 
@@ -165,7 +172,7 @@ theorem liveOf_cons (cancelled : List Nat) (e : Nat × CoreId)
     liveOf cancelled (e :: rest)
       = if e.1 ∈ cancelled then liveOf cancelled rest
         else e :: liveOf cancelled rest := by
-  by_cases h : e.1 ∈ cancelled <;> simp [liveOf, List.filter_cons, h]
+  by_cases h : e.1 ∈ cancelled <;> simp [liveOf, h]
 
 @[simp] theorem liveOf_nil_cancelled (l : List (Nat × CoreId)) : liveOf [] l = l := by
   induction l with
@@ -185,6 +192,44 @@ theorem mem_liveOf {cancelled : List Nat} {l : List (Nat × CoreId)}
 def QueuedRwLockConcrete.liveLedger (s : QueuedRwLockConcrete) :
     List (Nat × CoreId) :=
   liveOf s.cancelled s.ledger
+
+/-- **WS-LC closure audit**: core `c` holds an outstanding ticket at this
+lock — it appears in the ledger, live or withdrawn.
+
+This is the subject of the "one outstanding ticket per core per lock"
+contract.  The implementation records a withdrawal in one word per core,
+so a core with two outstanding tickets could not withdraw both; the issue
+is enabled only when this is false (`opEnabled`). -/
+def QueuedRwLockConcrete.holdsTicket (s : QueuedRwLockConcrete) (c : CoreId) : Prop :=
+  c ∈ s.ledger.map Prod.snd
+
+instance QueuedRwLockConcrete.decidableHoldsTicket (s : QueuedRwLockConcrete) (c : CoreId) :
+    Decidable (s.holdsTicket c) :=
+  inferInstanceAs (Decidable (c ∈ s.ledger.map Prod.snd))
+
+/-- **WS-LC closure audit**: core `c` has published a withdrawal nobody
+has claimed yet — the implementation's `cancelled[c] != NO_WITHDRAWAL`,
+which is the condition `QueuedRwLock::enqueue` parks on before it issues
+a ticket.
+
+A published withdrawal names an outstanding ticket
+(`QueuedTicketWf.cancelledOutstanding`), so this is `holdsTicket`
+restricted to the withdrawn entries — the half of the issue's
+precondition the implementation enforces by waiting; the live half is
+the caller's contract. -/
+def QueuedRwLockConcrete.withdrawalPending (s : QueuedRwLockConcrete) (c : CoreId) : Prop :=
+  ∃ t ∈ s.cancelled, (t, c) ∈ s.ledger
+
+instance QueuedRwLockConcrete.decidableWithdrawalPending
+    (s : QueuedRwLockConcrete) (c : CoreId) : Decidable (s.withdrawalPending c) := by
+  unfold QueuedRwLockConcrete.withdrawalPending
+  exact inferInstance
+
+/-- A pending withdrawal is an outstanding ticket. -/
+theorem QueuedRwLockConcrete.holdsTicket_of_withdrawalPending {s : QueuedRwLockConcrete}
+    {c : CoreId} (h : s.withdrawalPending c) : s.holdsTicket c := by
+  obtain ⟨t, _, hMem⟩ := h
+  exact List.mem_map.mpr ⟨(t, c), hMem, rfl⟩
 
 /-- **WS-RR RR6.4**: one atomic access the implementation performs.
 
@@ -302,12 +347,22 @@ This is not a claim that the hardware refuses a disabled access — it is
 the statement of what `queued_rw_lock.rs` guarantees before performing
 it.  The ticket-carrying ops require the executing core to hold the
 ticket `now_serving` names, which `await_turn` is what enforces; the
-issue requires ticket headroom; the reader ops require the writer bit
-clear and the count in range, which is `acquire_read`'s overflow gate
-and `release_read`'s `debug_assert`. -/
+issue requires ticket headroom and a core holding **no** outstanding
+ticket — the withdrawn half of that is the slot wait in `enqueue`, the
+live half the one-outstanding-ticket-per-core contract; the reader ops
+require the writer bit clear and the count in range, which is
+`acquire_read`'s overflow gate and `release_read`'s `debug_assert`. -/
 def QueuedRwLockConcrete.opEnabled (s : QueuedRwLockConcrete) :
     QueuedRwLockOp → Prop
-  | .nextTicketFetchAdd _ => s.nextTicket.toNat + 1 < UInt64.size
+  -- **WS-LC closure audit**: `¬ s.holdsTicket c` is what keeps the
+  -- implementation's one-word-per-core withdrawal slot sufficient.  A
+  -- core issued a second ticket while its first withdrawal was unclaimed
+  -- could withdraw the second over it, and the first ticket would then
+  -- never be retired: the lock stalls on a ticket nobody holds.  The
+  -- implementation parks the issue until the slot is empty
+  -- (`await_withdrawal_retired`), which is this precondition's withdrawn
+  -- half (`withdrawalPending`); the live half is the caller's contract.
+  | .nextTicketFetchAdd c => s.nextTicket.toNat + 1 < UInt64.size ∧ ¬ s.holdsTicket c
   -- `t ∉ s.cancelled` is the protocol rule that makes the invariant hold:
   -- a turn may be passed for a ticket **nobody has withdrawn**, and a skip
   -- reaches that state by claiming the withdrawal first (which erases it).
@@ -325,8 +380,12 @@ def QueuedRwLockConcrete.opEnabled (s : QueuedRwLockConcrete) :
   | .stateFetchSubReader _ => 1 ≤ s.state.toNat ∧ s.state.toNat < writerBit
   | .stateFetchAndReaderMask _ => writerBit ≤ s.state.toNat
   -- A core may publish a withdrawal only of a ticket it actually holds,
-  -- and only once: the implementation's slot is per core, so a second
-  -- publication would overwrite the first rather than add to it.
+  -- and only once.  The implementation's slot is per core and its store
+  -- is unconditional, so a second publication would overwrite the first
+  -- rather than add to it — and under `ledgerCoresNodup` this
+  -- precondition is exactly what rules that out: the core's only
+  -- outstanding ticket is `t`, and `t` is not yet published
+  -- (`QueuedTicketWf.publish_slot_empty`).
   | .cancelPublish c t => (t, c) ∈ s.ledger ∧ t ∉ s.cancelled
   -- The claim has **no** precondition on purpose: it is a
   -- compare-exchange, so failing is a legitimate outcome and the model
@@ -486,12 +545,21 @@ structure QueuedTicketWf (s : QueuedRwLockConcrete) : Prop where
   would make the skip loop advance `now_serving` past a ticket somebody
   is being served on — the exact hazard `pass_turn` off the head is. -/
   cancelledOutstanding : ∀ t ∈ s.cancelled, t ∈ s.ledger.map Prod.fst
-  /-- **WS-LC LC2.1**: the published withdrawals are distinct.  This is
-  what the per-core slot array gives structurally: a core holds at most
-  one outstanding ticket, so it can publish at most one withdrawal, and
-  two cores cannot publish the same ticket because a ticket has one
-  holder (`ticket_holder_unique`). -/
+  /-- **WS-LC LC2.1**: the published withdrawals are distinct.  Two
+  cores cannot publish the same ticket because a ticket has one holder
+  (`ticket_holder_unique`), and one core cannot publish twice because
+  it holds at most one outstanding ticket (`ledgerCoresNodup`, below). -/
   cancelledNodup : s.cancelled.Nodup
+  /-- **WS-LC closure audit**: one outstanding ticket per core.  The
+  issue is enabled only for a core holding none (`opEnabled`), so the
+  ledger's core column stays distinct.  This is what makes the
+  implementation's one-word-per-core withdrawal slot sufficient: a core
+  has at most one withdrawal to record (`holder_ticket_unique`), and an
+  enabled publication finds its slot empty (`publish_slot_empty`).  The
+  first cut of this invariant did not carry it, and the model then
+  admitted the sequence — enqueue, withdraw, enqueue, withdraw — on
+  which the deployed lock lost a withdrawal and stalled. -/
+  ledgerCoresNodup : (s.ledger.map Prod.snd).Nodup
 
 /-- The initial state satisfies the invariant. -/
 theorem QueuedTicketWf.unheld : QueuedTicketWf QueuedRwLockConcrete.unheld := by
@@ -514,6 +582,7 @@ theorem QueuedTicketWf.copy {s t : QueuedRwLockConcrete} (h : QueuedTicketWf s)
   ledgerTickets := by rw [hLedger, hServ, hNext]; exact h.ledgerTickets
   cancelledOutstanding := by rw [hCancelled, hLedger]; exact h.cancelledOutstanding
   cancelledNodup := by rw [hCancelled]; exact h.cancelledNodup
+  ledgerCoresNodup := by rw [hLedger]; exact h.ledgerCoresNodup
 
 /-- **WS-RR RR6.5**: the number of outstanding tickets is the width of
 the interval. -/
@@ -566,6 +635,46 @@ theorem QueuedTicketWf.ticket_holder_unique {s : QueuedRwLockConcrete}
     (h : QueuedTicketWf s) {t : Nat} {c₁ c₂ : CoreId}
     (h₁ : (t, c₁) ∈ s.ledger) (h₂ : (t, c₂) ∈ s.ledger) : c₁ = c₂ :=
   snd_unique_of_map_fst_nodup s.ledger h.ledger_tickets_nodup h₁ h₂
+
+/-- **Helper (WS-LC LC2.6)**: with distinct second components, an entry
+is determined by that component. -/
+private theorem eq_of_snd_eq_of_nodup {l : List (Nat × CoreId)}
+    (hNodup : (l.map Prod.snd).Nodup) {e f : Nat × CoreId}
+    (hE : e ∈ l) (hF : f ∈ l) (hEq : e.2 = f.2) : e = f := by
+  induction l with
+  | nil => exact absurd hE (by simp)
+  | cons hd tl ih =>
+    rw [List.map_cons, List.nodup_cons] at hNodup
+    rcases List.mem_cons.mp hE with h1 | h1 <;> rcases List.mem_cons.mp hF with h2 | h2
+    · rw [h1, h2]
+    · exact absurd (List.mem_map.mpr ⟨f, h2, by rw [← hEq, ← h1]⟩) hNodup.1
+    · exact absurd (List.mem_map.mpr ⟨e, h1, by rw [hEq, ← h2]⟩) hNodup.1
+    · exact ih hNodup.2 h1 h2
+
+/-- **WS-LC closure audit (one ticket per holder)**: two ledger entries
+carrying the same core name the same ticket — the dual of
+`ticket_holder_unique`, and what the implementation's one-word-per-core
+withdrawal slot needs: a core has at most one withdrawal to record. -/
+theorem QueuedTicketWf.holder_ticket_unique {s : QueuedRwLockConcrete}
+    (h : QueuedTicketWf s) {t₁ t₂ : Nat} {c : CoreId}
+    (h₁ : (t₁, c) ∈ s.ledger) (h₂ : (t₂, c) ∈ s.ledger) : t₁ = t₂ :=
+  congrArg Prod.fst (eq_of_snd_eq_of_nodup h.ledgerCoresNodup h₁ h₂ rfl)
+
+/-- **WS-LC closure audit (the publish never overwrites)**: an enabled
+withdrawal publication finds the publishing core's slot empty.
+
+`QueuedRwLock::cancel` stores into the slot unconditionally, so this is
+the statement that the store is a *publication* and not an overwrite —
+the property whose failure stalled the lock.  It follows from the
+invariant alone: the core's only outstanding ticket is the one it is
+withdrawing (`holder_ticket_unique`), and that one is not yet published
+(`opEnabled`'s second conjunct). -/
+theorem QueuedTicketWf.publish_slot_empty {s : QueuedRwLockConcrete}
+    (h : QueuedTicketWf s) {c : CoreId} {t : Nat}
+    (hEn : s.opEnabled (.cancelPublish c t)) : ¬ s.withdrawalPending c := by
+  obtain ⟨hHeld, hFresh⟩ := hEn
+  rintro ⟨t', ht'Dead, ht'Mem⟩
+  exact hFresh (h.holder_ticket_unique ht'Mem hHeld ▸ ht'Dead)
 
 /-- **WS-RR RR6.5**: a ticket in the ledger lies in the interval, so the
 number of pass-turns ahead of it is `t - now_serving`.
@@ -701,10 +810,10 @@ theorem QueuedTicketWf.preserved {s : QueuedRwLockConcrete}
     QueuedTicketWf (s.applyOp op).1 := by
   cases op with
   | nextTicketFetchAdd c =>
-    have hNoWrap : s.nextTicket.toNat + 1 < UInt64.size := hEn
+    obtain ⟨hNoWrap, hFree⟩ := hEn
     have hNext : (s.nextTicket + 1).toNat = s.nextTicket.toNat + 1 :=
       uInt64_add_one_toNat _ hNoWrap
-    refine ⟨?_, ?_, ?_, hWf.cancelledNodup⟩
+    refine ⟨?_, ?_, ?_, hWf.cancelledNodup, ?_⟩
     · show s.nowServing.toNat ≤ (s.nextTicket + 1).toNat
       rw [hNext]; have := hWf.servingLeNext; omega
     · show (s.ledger ++ [(s.nextTicket.toNat, c)]).map Prod.fst
@@ -725,6 +834,16 @@ theorem QueuedTicketWf.preserved {s : QueuedRwLockConcrete}
       show t' ∈ (s.ledger ++ [(s.nextTicket.toNat, c)]).map Prod.fst
       rw [List.map_append]
       exact List.mem_append_left _ this
+    · -- The issued ticket goes to a core holding none, so the core
+      -- column stays distinct — `opEnabled`'s second conjunct.
+      show ((s.ledger ++ [(s.nextTicket.toNat, c)]).map Prod.snd).Nodup
+      rw [List.map_append]
+      simp only [List.nodup_append]
+      refine ⟨hWf.ledgerCoresNodup, by simp, ?_⟩
+      intro a ha b hb hEq
+      simp only [List.map_cons, List.map_nil, List.mem_singleton] at hb
+      subst hb
+      exact hFree (hEq ▸ ha)
   | nowServingFetchAdd c t =>
     obtain ⟨hHead, _hT, hNotCancelled⟩ := hEn
     obtain ⟨tlLedger, hCons⟩ := ledger_head?_cons hHead
@@ -734,7 +853,7 @@ theorem QueuedTicketWf.preserved {s : QueuedRwLockConcrete}
     have hSize : s.nextTicket.toNat < UInt64.size := s.nextTicket.toNat_lt_size
     have hServing : (s.nowServing + 1).toNat = s.nowServing.toNat + 1 :=
       uInt64_add_one_toNat _ (by omega)
-    refine ⟨?_, ?_, ?_, hWf.cancelledNodup⟩
+    refine ⟨?_, ?_, ?_, hWf.cancelledNodup, ?_⟩
     · show (s.nowServing + 1).toNat ≤ s.nextTicket.toNat
       rw [hServing]; omega
     · show s.ledger.tail.map Prod.fst
@@ -762,9 +881,15 @@ theorem QueuedTicketWf.preserved {s : QueuedRwLockConcrete}
       rcases hMem with hEq | hRest
       · exact absurd (hEq ▸ ht') hNotCancelled
       · exact hRest
+    · -- Dropping the head keeps the core column distinct.
+      have hCores := hWf.ledgerCoresNodup
+      rw [hCons, List.map_cons, List.nodup_cons] at hCores
+      show (s.ledger.tail.map Prod.snd).Nodup
+      rw [hCons]
+      exact hCores.2
   | cancelPublish c t =>
     obtain ⟨hHeld, hFresh⟩ := hEn
-    refine ⟨hWf.servingLeNext, hWf.ledgerTickets, ?_, ?_⟩
+    refine ⟨hWf.servingLeNext, hWf.ledgerTickets, ?_, ?_, hWf.ledgerCoresNodup⟩
     · -- The published ticket is one the publishing core holds.
       intro t' ht'
       show t' ∈ s.ledger.map Prod.fst
@@ -781,11 +906,11 @@ theorem QueuedTicketWf.preserved {s : QueuedRwLockConcrete}
   | cancelClaim c t =>
     by_cases hC : t ∈ s.cancelled
     · simp only [QueuedRwLockConcrete.applyOp, hC, if_pos]
-      refine ⟨hWf.servingLeNext, hWf.ledgerTickets, ?_, ?_⟩
+      refine ⟨hWf.servingLeNext, hWf.ledgerTickets, ?_, ?_, hWf.ledgerCoresNodup⟩
       · intro t' ht'
         exact hWf.cancelledOutstanding t' (List.mem_of_mem_erase ht')
       · exact List.Nodup.erase t hWf.cancelledNodup
-    · simp only [QueuedRwLockConcrete.applyOp, hC, if_neg, if_false]
+    · simp only [QueuedRwLockConcrete.applyOp, hC, if_false]
       exact (hWf.copy rfl rfl rfl rfl)
   | stateLoad _ | nowServingLoad _ | nextTicketLoad _ | lastEnqueuedLoad _
   | sev _ | wfeWait _ | lastEnqueuedStore _ | stateFetchAddReader _ _
@@ -1456,7 +1581,7 @@ theorem QueuedTicketWf.skipStep {s : QueuedRwLockConcrete} (hWf : QueuedTicketWf
   have hServing : (s.nowServing + 1).toNat = s.nowServing.toNat + 1 :=
     uInt64_add_one_toNat _ (by omega)
   rw [queuedFoldBlock_skipStep s t c hDead]
-  refine ⟨?_, ?_, ?_, List.Nodup.erase t hWf.cancelledNodup⟩
+  refine ⟨?_, ?_, ?_, List.Nodup.erase t hWf.cancelledNodup, ?_⟩
   · show (s.nowServing + 1).toNat ≤ s.nextTicket.toNat
     rw [hServing]; omega
   · show s.ledger.tail.map Prod.fst
@@ -1477,6 +1602,11 @@ theorem QueuedTicketWf.skipStep {s : QueuedRwLockConcrete} (hWf : QueuedTicketWf
     rw [hL] at hMem ⊢
     simp only [List.map_cons, List.mem_cons, List.tail_cons] at hMem ⊢
     exact hMem.resolve_left hNe
+  · have hCores := hWf.ledgerCoresNodup
+    rw [hL, List.map_cons, List.nodup_cons] at hCores
+    show (s.ledger.tail.map Prod.snd).Nodup
+    rw [hL]
+    exact hCores.2
 
 /-- **WS-LC LC2.3**: what the skip loop does, in one statement.
 
@@ -1642,7 +1772,7 @@ theorem QueuedTicketWf.readerEnterStep {s : QueuedRwLockConcrete}
   have hServing : (s.nowServing + 1).toNat = s.nowServing.toNat + 1 :=
     uInt64_add_one_toNat _ (by omega)
   rw [queuedFoldBlock_readerEnterOps]
-  refine ⟨?_, ?_, ?_, hWf.cancelledNodup⟩
+  refine ⟨?_, ?_, ?_, hWf.cancelledNodup, ?_⟩
   · show (s.nowServing + 1).toNat ≤ s.nextTicket.toNat
     rw [hServing]; omega
   · show s.ledger.tail.map Prod.fst
@@ -1663,6 +1793,11 @@ theorem QueuedTicketWf.readerEnterStep {s : QueuedRwLockConcrete}
     rw [hL] at hMem ⊢
     simp only [List.map_cons, List.mem_cons, List.tail_cons] at hMem ⊢
     exact hMem.resolve_left hNe
+  · have hCores := hWf.ledgerCoresNodup
+    rw [hL, List.map_cons, List.nodup_cons] at hCores
+    show (s.ledger.tail.map Prod.snd).Nodup
+    rw [hL]
+    exact hCores.2
 
 /-- **WS-LC LC2.3**: admit a run of served readers, retiring any
 tombstone that comes up in front of one.
@@ -2007,10 +2142,18 @@ inductive queuedBlock :
         (takeTicketOps c ++ spin ++ readerEnterOps c conc.nextTicket.toNat)
   /-- `acquire_read` behind a holder or a queued waiter: take a ticket
   and spin.  The block ends in `await_turn`, which is exactly what the
-  spec's enqueue models. -/
+  spec's enqueue models.
+
+  **The core's withdrawal slot must be empty** (WS-LC closure audit):
+  `enqueue` parks until it is, so a block that issued a ticket over a
+  pending withdrawal would describe an execution the implementation
+  refuses — and the one on which, before the wait existed, it lost the
+  withdrawal and stalled.  On a calm lock nothing is published, so the
+  `_admit` shapes need no such hypothesis. -/
   | acquireRead_enqueue (abs conc c spin) :
       ¬ abs.coreInvolved c → (abs.writerHeld.isSome ∨ abs.waiters ≠ []) →
       QueuedStutter spin → conc.nextTicket.toNat + 1 < UInt64.size →
+      ¬ conc.withdrawalPending c →
       queuedBlock abs conc (.tryAcquireRead c) (takeTicketOps c ++ spin)
   /-- Spec no-op for a core already involved. -/
   | acquireWrite_noop (abs conc c spin) :
@@ -2029,6 +2172,7 @@ inductive queuedBlock :
       ¬ abs.coreInvolved c →
       (abs.writerHeld.isSome ∨ abs.readers ≠ [] ∨ abs.waiters ≠ []) →
       QueuedStutter spin → conc.nextTicket.toNat + 1 < UInt64.size →
+      ¬ conc.withdrawalPending c →
       queuedBlock abs conc (.tryAcquireWrite c) (takeTicketOps c ++ spin)
   /-- **WS-LC LC2.6**: a core with no queued request withdrawing is a
   spec no-op, and the implementation publishes nothing. -/
@@ -2089,14 +2233,42 @@ inductive queuedBlock :
               (queuedFoldBlock conc (releaseWriteOps c conc.nowServing.toNat))
               abs.waiters)
 
-/-- **Helper**: `take_ticket` preserves the protocol invariant. -/
+/-- **Helper**: `take_ticket` preserves the protocol invariant, for a
+core holding no outstanding ticket. -/
 theorem QueuedTicketWf.takeTicket {conc : QueuedRwLockConcrete}
     (hWf : QueuedTicketWf conc) (c : CoreId)
-    (hNoWrap : conc.nextTicket.toNat + 1 < UInt64.size) :
+    (hNoWrap : conc.nextTicket.toNat + 1 < UInt64.size)
+    (hFree : ¬ conc.holdsTicket c) :
     QueuedTicketWf (queuedFoldBlock conc (takeTicketOps c)) := by
   rw [queuedFoldBlock_takeTicketOps]
-  have hStep := hWf.preserved (.nextTicketFetchAdd c) hNoWrap
+  have hStep := hWf.preserved (.nextTicketFetchAdd c) ⟨hNoWrap, hFree⟩
   exact (hStep.copy rfl rfl rfl rfl)
+
+/-- **WS-LC closure audit**: a core the spec has neither holding nor
+queued, with no withdrawal pending, holds no ticket at all — the issue's
+precondition, assembled from one fact on each side of the relation.  A
+ledger entry of `c` is either live, in which case `queuedSim`'s queue
+conjunct puts `c` among the spec's holders and waiters, or withdrawn, in
+which case it is a pending withdrawal. -/
+theorem queuedSim_not_holdsTicket {abs : RwLockState} {conc : QueuedRwLockConcrete}
+    {c : CoreId} (hSim : queuedSim abs conc) (hNotInv : ¬ abs.coreInvolved c)
+    (hNoPending : ¬ conc.withdrawalPending c) : ¬ conc.holdsTicket c := by
+  intro hHold
+  obtain ⟨e, hE, hEc⟩ := List.mem_map.mp hHold
+  by_cases hDead : e.1 ∈ conc.cancelled
+  · exact hNoPending ⟨e.1, hDead, by rw [← hEc]; exact hE⟩
+  · have hLive : e ∈ conc.liveLedger := mem_liveOf.mpr ⟨hE, hDead⟩
+    have hCore : c ∈ conc.liveLedger.map Prod.snd := List.mem_map.mpr ⟨e, hLive, hEc⟩
+    rw [hSim.2.2.1] at hCore
+    unfold queuedLedgerCores at hCore
+    apply hNotInv
+    unfold RwLockState.coreInvolved
+    rcases List.mem_append.mp hCore with hW | hQ
+    · right; left
+      cases hWH : abs.writerHeld with
+      | none => rw [hWH] at hW; simp at hW
+      | some w => rw [hWH] at hW; simp at hW; rw [hW]
+    · right; right; exact hQ
 
 -- ----------------------------------------------------------------------------
 -- Per-block step lemmas, one per entry point
@@ -2136,7 +2308,7 @@ theorem queuedBlock_step_acquireRead_admit
   rw [queuedFoldBlock_append, queuedFoldBlock_append,
     queuedFoldBlock_takeTicketOps, queuedFoldBlock_stutter _ _ hSpin,
     queuedFoldBlock_readerEnterOps]
-  refine ⟨?_, ⟨?_, ?_, ?_, ?_⟩, ?_, ?_⟩
+  refine ⟨?_, ⟨?_, ?_, ?_, ?_, ?_⟩, ?_, ?_⟩
   · show (conc.state + 1).toNat
         = encodeRwLock (abs.applyOp (.tryAcquireRead c)).writerHeld.isSome
             (abs.applyOp (.tryAcquireRead c)).readers.length
@@ -2152,6 +2324,7 @@ theorem queuedBlock_step_acquireRead_admit
     simp
   · intro t' ht'; rw [hCancNil] at ht'; simp at ht'
   · rw [hCancNil]; simp
+  · rw [hLedgerNil]; simp
   · show (liveOf conc.cancelled ((conc.ledger ++ [(conc.nextTicket.toNat, c)]).tail)).map
           Prod.snd = queuedLedgerCores (abs.applyOp (.tryAcquireRead c))
     rw [hCancNil, liveOf_nil_cancelled, hLedgerNil]
@@ -2170,9 +2343,11 @@ theorem queuedBlock_step_acquireRead_enqueue
     (hNotInv : ¬ abs.coreInvolved c)
     (hBusy : abs.writerHeld.isSome ∨ abs.waiters ≠ [])
     (hSpin : QueuedStutter spin)
-    (hNoWrap : conc.nextTicket.toNat + 1 < UInt64.size) :
+    (hNoWrap : conc.nextTicket.toNat + 1 < UInt64.size)
+    (hNoPending : ¬ conc.withdrawalPending c) :
     queuedSim (abs.applyOp (.tryAcquireRead c))
       (queuedFoldBlock conc (takeTicketOps c ++ spin)) := by
+  have hFree : ¬ conc.holdsTicket c := queuedSim_not_holdsTicket hSim hNotInv hNoPending
   obtain ⟨hState, hWf, hCores, hHeadLive⟩ := hSim
   have hPost : abs.applyOp (.tryAcquireRead c)
       = { abs with waiters := abs.waiters ++ [(c, AccessMode.read)] } := by
@@ -2180,7 +2355,7 @@ theorem queuedBlock_step_acquireRead_enqueue
     simp only [hNotInv, ↓reduceIte]
     have : (abs.writerHeld.isSome = true ∨ abs.waiters ≠ []) := hBusy
     simp [this]
-  have hWfPost := hWf.takeTicket c hNoWrap
+  have hWfPost := hWf.takeTicket c hNoWrap hFree
   rw [queuedFoldBlock_append, queuedFoldBlock_takeTicketOps,
     queuedFoldBlock_stutter _ _ hSpin]
   rw [queuedFoldBlock_takeTicketOps] at hWfPost
@@ -2242,7 +2417,7 @@ theorem queuedBlock_step_acquireWrite_admit
       (by rw [queuedFoldBlock_takeTicketOps]; exact hStateZero)
   rw [queuedFoldBlock_append, queuedFoldBlock_append,
     queuedFoldBlock_stutter _ _ hSpin, hFoldWriter, queuedFoldBlock_takeTicketOps]
-  refine ⟨?_, ⟨?_, ?_, ?_, ?_⟩, ?_, ?_⟩
+  refine ⟨?_, ⟨?_, ?_, ?_, ?_, ?_⟩, ?_, ?_⟩
   · show (writerBit.toUInt64).toNat
         = encodeRwLock (abs.applyOp (.tryAcquireWrite c)).writerHeld.isSome
             (abs.applyOp (.tryAcquireWrite c)).readers.length
@@ -2258,6 +2433,7 @@ theorem queuedBlock_step_acquireWrite_admit
     simp [ticketRange]
   · intro t' ht'; rw [hCancNil] at ht'; simp at ht'
   · rw [hCancNil]; simp
+  · rw [hLedgerNil]; simp
   · show (liveOf conc.cancelled (conc.ledger ++ [(conc.nextTicket.toNat, c)])).map Prod.snd
         = queuedLedgerCores (abs.applyOp (.tryAcquireWrite c))
     rw [hCancNil, liveOf_nil_cancelled, hLedgerNil]
@@ -2274,9 +2450,11 @@ theorem queuedBlock_step_acquireWrite_enqueue
     (hNotInv : ¬ abs.coreInvolved c)
     (hBusy : abs.writerHeld.isSome ∨ abs.readers ≠ [] ∨ abs.waiters ≠ [])
     (hSpin : QueuedStutter spin)
-    (hNoWrap : conc.nextTicket.toNat + 1 < UInt64.size) :
+    (hNoWrap : conc.nextTicket.toNat + 1 < UInt64.size)
+    (hNoPending : ¬ conc.withdrawalPending c) :
     queuedSim (abs.applyOp (.tryAcquireWrite c))
       (queuedFoldBlock conc (takeTicketOps c ++ spin)) := by
+  have hFree : ¬ conc.holdsTicket c := queuedSim_not_holdsTicket hSim hNotInv hNoPending
   obtain ⟨hState, hWf, hCores, hHeadLive⟩ := hSim
   have hPost : abs.applyOp (.tryAcquireWrite c)
       = { abs with waiters := abs.waiters ++ [(c, AccessMode.write)] } := by
@@ -2284,7 +2462,7 @@ theorem queuedBlock_step_acquireWrite_enqueue
     simp only [hNotInv, ↓reduceIte]
     have : (abs.writerHeld.isSome = true ∨ abs.readers ≠ [] ∨ abs.waiters ≠ []) := hBusy
     simp [this]
-  have hWfPost := hWf.takeTicket c hNoWrap
+  have hWfPost := hWf.takeTicket c hNoWrap hFree
   rw [queuedFoldBlock_append, queuedFoldBlock_takeTicketOps,
     queuedFoldBlock_stutter _ _ hSpin]
   rw [queuedFoldBlock_takeTicketOps] at hWfPost
@@ -2442,7 +2620,7 @@ theorem queuedBlock_step_releaseWrite
         = (conc.nowServing.toNat, c) :: liveOf conc.cancelled conc.ledger.tail := by
       show liveOf conc.cancelled conc.ledger = _
       rw [hLedgerCons, liveOf_cons, if_neg hServedLive']
-      simp [hLedgerCons]
+      simp
     rw [hLive] at hCores
     unfold queuedLedgerCores at hCores
     rw [hW] at hCores
@@ -2509,21 +2687,6 @@ theorem queuedBlock_step_cancel_noop
     rw [hFilter]
   rw [hPost, queuedFoldBlock_stutter _ _ hSpin]
   exact hSim
-
-/-- **Helper (WS-LC LC2.6)**: with distinct second components, an entry
-is determined by that component. -/
-private theorem eq_of_snd_eq_of_nodup {l : List (Nat × CoreId)}
-    (hNodup : (l.map Prod.snd).Nodup) {e f : Nat × CoreId}
-    (hE : e ∈ l) (hF : f ∈ l) (hEq : e.2 = f.2) : e = f := by
-  induction l with
-  | nil => exact absurd hE (by simp)
-  | cons hd tl ih =>
-    rw [List.map_cons, List.nodup_cons] at hNodup
-    rcases List.mem_cons.mp hE with h1 | h1 <;> rcases List.mem_cons.mp hF with h2 | h2
-    · rw [h1, h2]
-    · exact absurd (List.mem_map.mpr ⟨f, h2, by rw [← hEq, ← h1]⟩) hNodup.1
-    · exact absurd (List.mem_map.mpr ⟨e, h1, by rw [hEq, ← h2]⟩) hNodup.1
-    · exact ih hNodup.2 h1 h2
 
 /-- **Helper (WS-LC LC2.6)**: inside the live ledger, "this is ticket `t`"
 and "this is core `c`" name the same entry.
@@ -2639,15 +2802,15 @@ theorem queuedBlock_preserves_queuedSim
     exact hSim
   | acquireRead_admit c spin hNotInv hW hQ hSpin _hNoWrap =>
     exact queuedBlock_step_acquireRead_admit hSim hWfAbs hNotInv hW hQ hSpin
-  | acquireRead_enqueue c spin hNotInv hBusy hSpin hNoWrap =>
-    exact queuedBlock_step_acquireRead_enqueue hSim hNotInv hBusy hSpin hNoWrap
+  | acquireRead_enqueue c spin hNotInv hBusy hSpin hNoWrap hNoPending =>
+    exact queuedBlock_step_acquireRead_enqueue hSim hNotInv hBusy hSpin hNoWrap hNoPending
   | acquireWrite_noop c spin hInv hSpin =>
     rw [RwLockState.applyOp_noop_acquireWrite hInv, queuedFoldBlock_stutter _ _ hSpin]
     exact hSim
   | acquireWrite_admit c spin hNotInv hW hR hQ hSpin hNoWrap =>
     exact queuedBlock_step_acquireWrite_admit hSim hNotInv hW hR hQ hSpin hNoWrap
-  | acquireWrite_enqueue c spin hNotInv hBusy hSpin hNoWrap =>
-    exact queuedBlock_step_acquireWrite_enqueue hSim hNotInv hBusy hSpin hNoWrap
+  | acquireWrite_enqueue c spin hNotInv hBusy hSpin hNoWrap hNoPending =>
+    exact queuedBlock_step_acquireWrite_enqueue hSim hNotInv hBusy hSpin hNoWrap hNoPending
   | cancel_noop c spin hNotQueued hSpin =>
     exact queuedBlock_step_cancel_noop hSim hNotQueued hSpin
   | cancel_queued c t spin hQueued hLive hSpin =>

@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.34.54` (`lakefile.toml`) |
+| **Package version** | `0.34.55` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 328,426 across 311 Lean files |
-| **Test LoC** | 68,657 across 70 Lean test suites |
-| **Proved declarations** | 10,932 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 328,592 across 311 Lean files |
+| **Test LoC** | 68,685 across 70 Lean test suites |
+| **Proved declarations** | 10,936 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -899,7 +899,8 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    ticket that is never terminated stalls the lock.  `cancel`
    publishes `ticket + 1` into the withdrawing core's own slot and
    only then asks whether it is being served; `pass_turn` skips
-   withdrawn tickets, bounded by the slot count.  Both directions
+   withdrawn tickets, one iteration per withdrawal published while
+   it runs.  Both directions
    carry a `SeqCst` fence: the shape is a store to one location
    followed by a load of another (Dekker's), which sequentially
    consistent *accesses* alone do not order — loom exhibited the
@@ -907,19 +908,48 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    fences are what removed it.  A compare-exchange on the slot is
    the arbiter, so exactly one of the withdrawing core and the
    previous holder's skip loop advances past a given ticket.
-   Evidence: four loom models under `--cfg loom` (a mid-queue
+   Evidence: six loom models under `--cfg loom` (a mid-queue
    withdrawal skipped by the core ahead, a withdrawal racing a
    turn-pass from both sides, a withdrawal of an already-served
-   ticket, and writer exclusivity across a withdrawal), whose
-   decisiveness is established by three *relation-breaking*
-   mutations rather than by deletion; miri under strict
-   provenance; and a fifth Tier-5 alphabet letter driving both the
-   Lean and the Rust oracle, with the ticket-interval check
-   re-derived from the tombstoned invariant rather than patched.
-   The split acquisition crosses the FFI as six new symbols
-   (`ffi_rw_lock_enqueue`, `_is_served`, `_complete_read`,
-   `_complete_write`, `_cancel`, `_cancel_count`), taking the
-   SM2.D bridge surface from 16 to 22.
+   ticket, writer exclusivity across a withdrawal, and the two
+   below), whose decisiveness is established by four
+   *relation-breaking* mutations rather than by deletion; miri
+   under strict provenance; and a fifth Tier-5 alphabet letter
+   driving both the Lean and the Rust oracle, with the
+   ticket-interval check re-derived from the tombstoned invariant
+   rather than patched.  The split acquisition crosses the FFI as
+   six new symbols (`ffi_rw_lock_enqueue`, `_is_served`,
+   `_complete_read`, `_complete_write`, `_cancel`,
+   `_cancel_count`), taking the SM2.D bridge surface from 16 to 22.
+
+   **The closure audit's finding** (v0.34.55): the slot is one word
+   per core, and the first cut let a core take a second ticket while
+   its first withdrawal was still unclaimed — so a second `cancel`
+   overwrote the publication, the release ahead stopped
+   `now_serving` on a ticket nobody held, and the lock stalled on
+   the contract-respecting sequence enqueue, withdraw, enqueue,
+   withdraw.  The four loom models above withdrew once per core and
+   could not see it.  `enqueue` now parks until the core's slot is
+   empty (`await_withdrawal_retired`), a wait that ends before any
+   later ticket could be served; the non-blocking attempts are
+   refused in that state; `cancel` refuses a ticket the lock has
+   already passed, since a stale publication would park the next
+   `enqueue` for good; and the skip loop's per-core iteration cap,
+   which fired on a correct execution, is replaced by the invariant
+   `now_serving ≤ next_ticket`.  On the Lean side the issue is
+   enabled only for a core holding no ticket, `QueuedTicketWf`
+   carries `ledgerCoresNodup`, `publish_slot_empty` is the theorem
+   that the store never overwrites, and the `acquire*_enqueue`
+   blocks require `¬ withdrawalPending`, so the model no longer
+   admits the trace the lock refuses.  Two loom models
+   (`double_withdrawal_by_one_core_does_not_strand_the_lock`,
+   `pending_withdrawal_refuses_the_non_blocking_attempt`) and a
+   fourth mutation pin it; the Tier-5 oracle gained the two checks
+   that see a stalled lock — the served ticket is never a recorded
+   withdrawal, and each core's slot holds exactly the spec's pending
+   withdrawal — and excludes, counted and under a ceiling, a trace
+   that asks a core to acquire while its own withdrawal is
+   unclaimed, which no single-threaded replay can execute.
 
    **WS-LC LC4 — the two-phase-locking consumers** (MODULES
    `SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean`,
@@ -990,23 +1020,28 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
 
    **SM2.D.7 lockPrimitives aggregator** (MODULE
    `SeLe4n/Kernel/Concurrency/LockPrimitives.lean`):
-   typed `LockPrimitiveTheorem` list aggregating **28** SM2
-   theorems (4 memory-model + 6 TicketLock + 14 RwLock + 4
+   typed `LockPrimitiveTheorem` list aggregating **30** SM2
+   theorems (4 memory-model + 6 TicketLock + 16 RwLock + 4
    refinement) with size + per-category count + NoDup witnesses.
    The four refinement entries are one per lock kind — TicketLock,
    the CAS-retry RwLock, the deployed `QueuedRwLock` — plus the
    deployed lock's FIFO-admission payoff.  WS-RR RR6.24 also
    repointed the R-10 aggregator entry at the theorem that proves
-   writer *liveness*
-   (`rwLock_writer_admitted_within_release_budget`); the
-   single-step *safety* theorem it used to stand in for keeps its
-   own entry under its accurate name, which is why the RwLock
-   category went from 10 to 11.  WS-LC LC1 took it to 14 with the
-   withdrawal's three payoff entries
+   writer *liveness* (`rwLock_writer_liveness`: admission under
+   `FairTrace`, which WS-LC LC1 gave its explicit no-withdrawal
+   premise); the single-step *safety* theorem it used to stand in
+   for keeps its own entry under its accurate name, which is why
+   the RwLock category went from 10 to 11.  RR6.23's release-count
+   bound (`rwLock_writer_admitted_within_release_budget`) is the
+   "leaves the queue" form and is not the entry.  WS-LC LC1 took
+   the category to 14 with the withdrawal's three payoff entries
    (`rwLock_cancel_preserves_wf`, `rwLock_cancel_admits_no_one`,
-   `rwLock_cancel_does_not_increase_wait_depth`).
+   `rwLock_cancel_does_not_increase_wait_depth`), and WS-LC LC5 to
+   16 with the two cycle-denominated admission bounds
+   (`rwLock_writer_admitted_within_cycle_budget`,
+   `rwLock_writer_cycle_budget_at_unit_cost`).
    Cross-language symmetry: the
-   Rust-side `LOCK_THEOREM_COUNT = 28` constant in
+   Rust-side `LOCK_THEOREM_COUNT = 30` constant in
    `lock_bridge.rs` is enforced equal via
    `scripts/check_lock_ffi_symmetry.sh` (wired into Tier 0
    hygiene).

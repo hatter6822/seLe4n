@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.54.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.55.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1331,7 +1331,7 @@ SGI INTID 0..4 reserved for kernel SMP coordination (SM0.H).
 [`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md);
 per-phase plans at `docs/planning/SMP_*.md`.
 
-### WS-LC Lock datatype completion — COMPLETE (v0.34.50 → v0.34.54)
+### WS-LC Lock datatype completion — COMPLETE (v0.34.50 → v0.34.54; closure audit v0.34.55)
 
 The two SM2.C **datatype** residuals RR6 re-registered rather than absorbed —
 `RwLockOp` had no withdrawal and `RwLockExecution` no notion of time.  Scoped
@@ -2111,17 +2111,27 @@ code may assume:
   RR6 exists to remove.  (3) **`rw_lock.rs` is retained deliberately**, for
   three reasons recorded in its own module docs: it is the Tier-5 oracle's
   second implementation (the oracle drives *both* real locks and checks them
-  against each other, against the ticket interval and against `encodeRwLock`
-  after every operation), it owns the `WRITER_BIT` / `READER_MASK` layout
+  against each other, against the ticket interval, the served ticket's
+  liveness and the per-core withdrawal slots, and against `encodeRwLock`
+  after every operation — and it *excludes*, counted and under a ceiling
+  rather than silently, a trace that asks a core to acquire while its own
+  withdrawal is unclaimed, which parks on hardware and no single-threaded
+  replay can execute), it owns the `WRITER_BIT` / `READER_MASK` layout
   `queued_rw_lock.rs` now imports rather than re-declares, and its D-4
   refinement was *completed* rather than deleted.  It is not a fallback: the
-  kernel instantiates it nowhere.  (4) **The lock inventory is 28**, partitioned
-  4 memory-model + 6 TicketLock + 14 RwLock + 4 refinement, and
+  kernel instantiates it nowhere.  (4) **The lock inventory is 30**, partitioned
+  4 memory-model + 6 TicketLock + 16 RwLock + 4 refinement (25 at RR6; WS-LC
+  LC1 added the withdrawal's three payoff entries and LC5 the two
+  cycle-denominated bounds), and
   `LOCK_THEOREM_COUNT` in `lock_bridge.rs` must equal
   `lockPrimitives_count` (`scripts/check_lock_ffi_symmetry.sh`, Tier 0).  The
-  R-10 entry names the *liveness* theorem
-  (`rwLock_writer_admitted_within_release_budget`); the single-step safety
-  theorem it used to stand in for keeps its own entry under its accurate name.
+  R-10 entry names the *liveness* theorem `rwLock_writer_liveness` — admission
+  under `FairTrace`, with WS-LC LC1's explicit no-withdrawal premise — and the
+  single-step safety theorem it used to stand in for keeps its own entry under
+  its accurate name; RR6.23's release-count bound
+  (`rwLock_writer_admitted_within_release_budget`) is the "leaves the queue"
+  form and is not the entry (the closure audit found both this file and the
+  spec naming it as such).
   The two SM2.C **datatype** extensions RR6 did not absorb are WS-LC's (see
   below), and both are closed: **SM2.C-C** at v0.34.53 (spec, both refinements,
   the deployed lock and both consumers) and **SM2.C-T** at v0.34.54 (the timed
@@ -2202,10 +2212,33 @@ code may assume:
   withdrawing core, the previous holder's skip loop} succeeds in clearing a
   given slot, and that one advances `now_serving` past the ticket; the loser
   does nothing.  Deleting the arbitration and testing the slot instead admits
-  two cores at once.  (4) **One outstanding ticket per core per lock.**  The
-  slot array is indexed by core id (`MAX_WAITERS` entries, asserted in range),
-  which is the concrete form of INV-R3's `waiters` Nodup; a core that enqueues
-  twice without terminating the first ticket overwrites its own withdrawal.
+  two cores at once.  (4) **One outstanding ticket per core per lock, and
+  `enqueue` waits for the core's last withdrawal to be retired.**  The slot
+  array is indexed by core id (`MAX_WAITERS` entries, asserted in range) and
+  holds one withdrawal, so a core may not take a second ticket while its
+  first withdrawal is unclaimed: the second `cancel` would overwrite the
+  publication and the first ticket would never be retired — `now_serving`
+  stops on it and the lock stalls — on the contract-respecting sequence
+  enqueue, withdraw, enqueue, withdraw (WS-LC closure audit, v0.34.55: the
+  first cut shipped it, and all four LC3 loom models withdrew once per core).
+  `enqueue` therefore parks until the slot is empty
+  (`await_withdrawal_retired`), a wait that ends before any later ticket
+  could be served and so costs nothing a fresh ticket would not, and the
+  non-blocking `try_acquire_*` are refused in that state; `cancel` refuses a
+  ticket `now_serving` has already passed, since a stale publication would
+  park the core's next `enqueue` for good, and a `debug_assert` refuses a
+  withdrawal of a ticket already completed as a write.  The Lean model
+  carries the rule as `QueuedTicketWf.ledgerCoresNodup` with the issue enabled
+  only for a core holding no ticket, `publish_slot_empty` is the theorem that
+  the unconditional store never overwrites, and the `acquire*_enqueue` blocks
+  require `¬ withdrawalPending`, so the model no longer admits the trace the
+  lock refuses.  A live double enqueue — two tickets, neither terminated —
+  remains the caller's contract: `ledgerCoresNodup` states it and nothing at
+  runtime checks it.  `pass_turn`'s skip loop is bounded by the withdrawals
+  published while it runs, **not** by `MAX_WAITERS` — a core whose tombstone
+  was just retired may re-enqueue at the head and withdraw again — so the
+  per-core iteration cap that used to sit there fired on a correct execution
+  and is gone; the invariant it checks now is `now_serving ≤ next_ticket`.
   `NO_WITHDRAWAL` is `0` and slots hold `ticket + 1`, so ticket `0` is
   withdrawable.  (5) **The split surface crosses the FFI**, because the unwind's
   caller is on the Lean side: `ffiRwLockEnqueue`, `ffiRwLockIsServed`,

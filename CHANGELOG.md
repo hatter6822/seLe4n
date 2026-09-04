@@ -1,3 +1,113 @@
+## v0.34.55 — the closure audit finds a stall in the deployed lock
+
+**WS-LC closure audit.**  A deep audit of the whole workstream against its
+code — the twenty-seven RR6 rows, the five LC phases, every changed file —
+with one finding that changes what a reader of `queued_rw_lock.rs` may assume,
+and a set of corrections to the gates that should have seen it.
+
+### The finding: a double withdrawal stalls `QueuedRwLock`
+
+The withdrawal slot is one word per core, and `cancel` stores into it
+unconditionally.  Nothing stopped a core from taking a second ticket while its
+first withdrawal was still published and unclaimed, so the sequence enqueue,
+withdraw, enqueue, withdraw — every step of which the documented contract
+permits — overwrote the first publication.  When the core ahead released, its
+skip loop uncovered the first ticket, found no publication for it, and stopped:
+`now_serving` sat on a ticket no core held, and every later waiter was behind
+it for good.  A denial of service on a kernel lock, reachable by a
+contract-respecting caller.  Latent today — the global kernel-entry ticket lock
+serialises entries and no core is marked ready — and live the moment SM3.C.9's
+fine-lock migration puts a two-phase-locking unwind on a syscall arm, which is
+exactly what WS-LC exists to make possible.  Reported before it was fixed, per
+the vulnerability rule.
+
+Why nothing caught it: all four LC3 loom models withdrew at most once per core;
+the Lean model represented the slot array as a *set* of published tickets, on
+which a second publication is an append rather than an overwrite, so the model
+admitted the trace and its skip loop retired both tombstones; and the Tier-5
+oracle counted the lost withdrawal as "pending outstanding", so its
+ticket-interval check balanced exactly on the stalled state.  Three gates, one
+blind spot, and the blind spot was the shape none of them had been asked
+about.
+
+### The fix, at the issue rather than the withdrawal
+
+`enqueue` now parks until the calling core's slot is empty
+(`await_withdrawal_retired`).  The slot is cleared only by the compare-exchange
+that retires the withdrawn ticket, which `now_serving` must pass before it can
+reach any later one, so the wait ends strictly before a fresh ticket would have
+been served: it adds no blocking the acquisition would not have incurred, and
+the same progress argument that covers `await_turn` covers it.  Blocking the
+*withdrawal* instead was rejected — the unwind is what releases the locks other
+cores wait on.  The non-blocking `try_acquire_*` are refused in the same state,
+as a consequence of their compare-exchange rather than a wait, and a
+`debug_assert` pins the derivation on every interleaving loom explores.
+`cancel` refuses a ticket `now_serving` has already passed — race-free, since a
+live ticket is passed by nobody but its holder — because a stale publication
+would now park the core's next `enqueue` forever; and a `debug_assert` refuses
+a withdrawal of a ticket already completed as a write, which would pass the
+turn while the lock is held.  The skip loop's per-core iteration cap is gone:
+a core whose tombstone was just retired may re-enqueue at the head and withdraw
+again before the next scan, so the cap fired on a *correct* execution; the
+invariant it checks now is the real one, `now_serving ≤ next_ticket`.
+
+On the Lean side (`QueuedRwLockRefinement.lean`) the issue is enabled only for
+a core holding no outstanding ticket (`opEnabled` on `nextTicketFetchAdd`, with
+`holdsTicket` and `withdrawalPending` naming the two halves), `QueuedTicketWf`
+carries **one outstanding ticket per core** (`ledgerCoresNodup`, preserved by
+every enabled op), `holder_ticket_unique` is its consequence, and
+`publish_slot_empty` is the theorem the fix was missing: an enabled
+publication finds its slot empty, so the unconditional store never overwrites.
+The `acquireRead_enqueue` / `acquireWrite_enqueue` blocks require
+`¬ withdrawalPending`, with `queuedSim_not_holdsTicket` assembling the
+precondition from one fact on each side of the relation — so the model no
+longer admits the trace the lock refuses.  Every construction site of the
+invariant took the fifth conjunct; the three pre-existing `unusedSimpArgs`
+warnings in the module went with it.
+
+Two loom models (`double_withdrawal_by_one_core_does_not_strand_the_lock`,
+`pending_withdrawal_refuses_the_non_blocking_attempt`), a cross-thread stress
+test and two sequential tests pin the behaviour; the decisiveness mutation, in
+the project's own discipline, keeps the slot load, the comparison and the park
+and turns the `while` into an `if` — every token survives and the model fails
+with the stall's exact signature.  Moving the wait after the ticket issue is
+*not* a relation break (it still precedes the second `cancel`), and the model
+correctly passes it; the loom script's rationale says so.
+
+### The Tier-5 oracle learns to see a stalled lock
+
+Two checks it did not have: the ticket being served is never a withdrawal the
+spec still records (`check_head_live`, `queuedSim`'s `queuedHeadLive` at the
+block boundary every op ends on), and each core's slot holds exactly the one
+withdrawal the spec says is pending for it (`check_withdrawal_slots` — lost and
+stale publications both fail it, and the driver's tombstones now carry their
+core).  A trace that asks a core to acquire while its own withdrawal is
+unclaimed would park the oracle's one thread on a release only another thread
+could perform, so the Rust oracle reports it as not sequentially executable
+(exit status 3) instead of guessing a linearisation, and the harness counts it
+— 20 of 1000 — under a ceiling, with two shapes pinned as *required* to be
+excluded so a lock that stopped waiting could not pass by printing the abstract
+state.  The generator was decorrelated in the same cut: its op and core were
+affine in the position (`(17n + 31i) % 5`, `(17n + 31i) / 5 % 4`), and over
+983 sequences a core that withdrew never requested again — the one shape the
+fix is about, and the one the exclusion count measures — so "0 excluded" would
+have meant nothing.  A per-op linear congruential step gives ~35 such
+re-acquisitions at the same budget.
+
+### Corrections the audit owed elsewhere
+
+The Tier 3 anchors' "the queued bridge covers cancel-free traces only" comment
+(false since LC2), the oracle's module docstring (the pre-LC3.6 interval
+sentence), the plan's LC3.2 acceptance ("one pass per slot", the unsound
+bound), the spec's "bounded by the slot count", CLAUDE.md's standing
+constraint (4) — which described the overwrite as the caller's problem — and
+the claim index's model count.  One new anchor comment was caught by the
+naming gate for the right reason: an apostrophe inside a `bash -lc '…'`
+payload terminates the shell string, which read every comment below it as
+code; the gate's failure was the script's defect, and the wording changed.
+
+Refs: docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md §5 (closure audit)
+
 ## v0.34.54 — the lock execution learns what a step costs
 
 **WS-LC LC5 (all eleven sub-tasks), and the workstream closes.**  Both SM2.C

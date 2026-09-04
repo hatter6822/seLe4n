@@ -21,9 +21,12 @@ import SeLe4n.Kernel.Concurrency.Locks.QueuedRwLockRefinement
 /-!
 # WS-SM SM2.D.7 — Lock-primitive theorem inventory
 
-This module aggregates the 25 substantive lock-primitive theorems
-(4 memory model + 6 TicketLock + 11 RwLock + 4 refinement) into a
+This module aggregates the 30 substantive lock-primitive theorems
+(4 memory model + 6 TicketLock + 16 RwLock + 4 refinement) into a
 single typed inventory with a size witness `lockPrimitives.length = 30`.
+The RwLock category was 11 at WS-RR RR6 (inventory 25); WS-LC LC1 added
+the withdrawal's three payoff entries (28) and WS-LC LC5 the two
+cycle-denominated admission bounds (30).
 
 **WS-RR RR6.9 / RR6.19 / RR6.24 repointed two entries and added three.**
 
@@ -116,8 +119,8 @@ structure LockPrimitiveTheorem where
   category    : LockPrimitiveCategory
   deriving Repr, Inhabited
 
-/-- **WS-SM SM2.D.7 / WS-RR RR6**: the inventory of 25 substantive
-    lock-primitive theorems.
+/-- **WS-SM SM2.D.7 / WS-RR RR6 / WS-LC**: the inventory of 30
+    substantive lock-primitive theorems.
 
     The order is canonical: memory model → TicketLock → RwLock →
     refinement.  Each entry maps to a `Lean.Name` that resolves at
@@ -222,7 +225,7 @@ def lockPrimitives : List LockPrimitiveTheorem := [
 ]
 
 /-- **WS-SM SM2.D.7**: size witness — the inventory contains exactly
-    25 substantive lock-primitive theorems.
+    30 substantive lock-primitive theorems.
 
     The Rust-side `LOCK_THEOREM_COUNT = 30` constant in
     `rust/sele4n-hal/src/lock_bridge.rs` mirrors this value; the

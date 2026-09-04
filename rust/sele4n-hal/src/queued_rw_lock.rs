@@ -171,11 +171,27 @@ pub struct QueuedRwLock {
     /// reserving a ticket value, and it costs the same wraparound
     /// assumption the ticket counters already make.
     ///
-    /// A core holds at most one outstanding ticket, so one slot per core
-    /// is enough — which is also why the Lean model abstracts the array
-    /// to a *set* of withdrawn tickets and states the two consequences
-    /// (at most one publication per core, distinct tickets) as
-    /// invariants rather than deriving them from the array shape.
+    /// **One slot holds one withdrawal, so a core may not take a second
+    /// ticket while its slot is published** (WS-LC closure audit).  A
+    /// slot is cleared only by the compare-exchange that retires the
+    /// ticket it names — the skip loop's when `now_serving` uncovers
+    /// that ticket, or the withdrawing core's own when it was already
+    /// the head — and until then the ticket is owed an advance that
+    /// nothing but that claim will make.  A second `cancel` by the same
+    /// core would overwrite the publication, and the first ticket would
+    /// then never be retired: `now_serving` stops on it, and the lock is
+    /// stalled with every later waiter behind a ticket no core holds.
+    /// That was reachable through a contract-respecting sequence —
+    /// enqueue, withdraw, enqueue, withdraw, with the first withdrawal
+    /// still unclaimed — so `enqueue` refuses to issue until the slot is
+    /// empty (`await_withdrawal_retired`), a wait strictly shorter than
+    /// the fresh ticket would have faced anyway.  The Lean model states
+    /// the same rule as the issue's precondition (`opEnabled` on
+    /// `nextTicketFetchAdd`) and carries "one outstanding ticket per
+    /// core" as a `QueuedTicketWf` conjunct (`ledgerCoresNodup`), from
+    /// which "at most one publication per core" is a theorem
+    /// (`QueuedTicketWf.withdrawal_unique`) rather than a property read
+    /// off this array's shape.
     ///
     /// 32 bytes on top of the 25 the other four words use, so the lock
     /// is still one 64-byte cache line.
@@ -298,6 +314,31 @@ impl QueuedRwLock {
         ticket
     }
 
+    /// **WS-LC closure audit**: park until this core's withdrawal slot
+    /// is empty, so the ticket about to be issued cannot share the slot
+    /// with a withdrawal nobody has claimed yet.
+    ///
+    /// The slot is cleared by exactly one compare-exchange — the skip
+    /// loop's when `now_serving` uncovers the withdrawn ticket, or the
+    /// withdrawing core's own when it was already the head — so this
+    /// returns once the lock has retired that ticket.  That is strictly
+    /// sooner than a fresh ticket would be served: `now_serving` has to
+    /// pass the withdrawn ticket before it can reach any later one.  So
+    /// the wait adds no blocking the acquisition would not have incurred
+    /// on its own, and every progress argument that covers `await_turn`
+    /// covers it.  Every claim is followed by a `pass_turn` advance and
+    /// its `sev`, which is what wakes a core parked here.
+    ///
+    /// Only the executing core stores a non-zero value into its own slot
+    /// (`cancel`), so once this observes the slot empty it stays empty
+    /// until the core itself withdraws again.
+    #[inline]
+    fn await_withdrawal_retired(&self, core_id: u8) {
+        while self.cancelled[core_id as usize].load(Ordering::SeqCst) != NO_WITHDRAWAL {
+            Self::park_hint();
+        }
+    }
+
     /// Spin until `ticket` is the one being served.
     #[inline]
     fn await_turn(&self, ticket: u64) {
@@ -331,29 +372,49 @@ impl QueuedRwLock {
     ///
     /// # Termination
     ///
-    /// Each iteration *consumes* a published withdrawal, and a core can
-    /// publish one only for a ticket it has been issued — so the loop
-    /// exits as soon as the uncovered ticket is live, which is after at
-    /// most one iteration per outstanding withdrawal.  There is
-    /// deliberately no iteration cap: a cap that fired would leave a
-    /// tombstone at the head with nobody left to retire it, which is the
-    /// stall this loop exists to prevent.  `debug_assert` bounds it in
-    /// debug builds so a protocol regression is loud rather than slow.
+    /// Each iteration *claims* a published withdrawal — a
+    /// compare-exchange from `ticket + 1` to empty, so no publication is
+    /// consumed twice — and a withdrawal is published only for an issued
+    /// ticket, by the core that holds it, into that core's one slot.
+    /// So the loop runs at most one iteration per withdrawal published
+    /// while it runs, each for a distinct issued ticket, and exits as
+    /// soon as the uncovered ticket is live.  It is **not** bounded by
+    /// `MAX_WAITERS`: a core whose withdrawal this loop has just retired
+    /// may enqueue again at the head and withdraw again before the next
+    /// scan, and lose the arbitration a second time — that is a new
+    /// ticket, not a refilled slot, so a per-core iteration cap would
+    /// fire on a correct execution (WS-LC closure audit; the cap that
+    /// used to be here did).  The bound that *is* a protocol invariant,
+    /// `now_serving <= next_ticket`, is what `advance_now_serving`
+    /// checks.  There is deliberately no iteration cap: a cap that fired
+    /// would leave a tombstone at the head with nobody left to retire
+    /// it, which is the stall this loop exists to prevent.
     #[inline]
     fn pass_turn(&self) {
-        let mut uncovered = self.now_serving.fetch_add(1, Ordering::SeqCst) + 1;
-        crate::cpu::sev();
-        let mut skipped = 0usize;
+        let mut uncovered = self.advance_now_serving();
         while self.claim_withdrawal_of(uncovered) {
-            uncovered = self.now_serving.fetch_add(1, Ordering::SeqCst) + 1;
-            crate::cpu::sev();
-            skipped += 1;
-            debug_assert!(
-                skipped <= MAX_WAITERS,
-                "skip loop exceeded one withdrawal per core; a slot is being \
-                 refilled below the ticket being served"
-            );
+            uncovered = self.advance_now_serving();
         }
+    }
+
+    /// Advance `now_serving` by one, wake every parked core, and return
+    /// the ticket that is now being served.
+    ///
+    /// `now_serving <= next_ticket` is the protocol invariant
+    /// (`QueuedTicketWf.servingLeNext`, `QueuedRwLockRefinement.lean`),
+    /// and an advance that runs past `next_ticket` is exactly a ticket
+    /// retired twice — the failure the withdrawal arbitration exists to
+    /// prevent.  `next_ticket` is read after the advance and only grows,
+    /// so the check can miss a violation but never invent one.
+    #[inline]
+    fn advance_now_serving(&self) -> u64 {
+        let uncovered = self.now_serving.fetch_add(1, Ordering::SeqCst) + 1;
+        crate::cpu::sev();
+        debug_assert!(
+            uncovered <= self.next_ticket.load(Ordering::SeqCst),
+            "now_serving ran past next_ticket: a ticket was retired twice"
+        );
+        uncovered
     }
 
     /// **WS-LC LC3.2**: claim the withdrawal of `ticket`, if one is
@@ -412,9 +473,24 @@ impl QueuedRwLock {
     /// The blocking [`acquire_read`](Self::acquire_read) and
     /// [`acquire_write`](Self::acquire_write) are written *on* it rather
     /// than beside it, so there is one implementation of each step.
+    ///
+    /// # Blocks while the core's last withdrawal is unclaimed
+    ///
+    /// A ticket is issued only once this core's withdrawal slot is
+    /// empty (`await_withdrawal_retired`).  The slot holds one
+    /// withdrawal, and a second ticket taken while the first is still
+    /// published could be withdrawn over it — losing the first
+    /// publication and stalling the lock on a ticket nobody holds.  The
+    /// wait ends when the lock retires the withdrawn ticket, which
+    /// happens before any later ticket could be served, so it costs the
+    /// caller nothing a fresh ticket would not have cost.  The
+    /// non-blocking [`try_acquire_read`](Self::try_acquire_read) and
+    /// [`try_acquire_write`](Self::try_acquire_write) are *refused* in
+    /// the same state, since the withdrawn ticket is still outstanding.
     #[must_use]
     pub fn enqueue(&self, core_id: u8) -> u64 {
         assert!((core_id as usize) < MAX_WAITERS, "core_id out of range");
+        self.await_withdrawal_retired(core_id);
         self.take_ticket(core_id)
     }
 
@@ -540,13 +616,44 @@ impl QueuedRwLock {
     /// `ldar` are already sequentially consistent, so the fence adds one
     /// `dmb ish` and nothing else changes.
     ///
+    /// # A ticket the lock has already retired is not withdrawn
+    ///
+    /// A withdrawal of a ticket `now_serving` has moved past publishes
+    /// nothing (WS-LC closure audit).  Such a ticket is no longer
+    /// outstanding: no skip loop will ever look for its publication, so
+    /// one would sit in this core's slot for good — and since
+    /// [`enqueue`](Self::enqueue) waits on that slot, the core's next
+    /// acquisition would park forever.  The refusal is race-free because
+    /// the condition is monotone in both directions: a live ticket is
+    /// passed by nobody but its holder, so `now_serving` cannot exceed
+    /// it until the holder acts, and once the counter has passed a
+    /// ticket it never comes back.  It is *not* the head check that the
+    /// section above forbids moving in front of the publish — that one
+    /// asks whether `now_serving == ticket`, which a concurrent
+    /// `pass_turn` can make true after the load.
+    ///
     /// # Refinement
     ///
     /// Corresponds to the Lean block `queuedBlock.cancel_queued` — the
     /// publish followed by `skipDeadOps`, one shape covering both cases
-    /// this function branches on (`QueuedRwLockRefinement.lean`).
+    /// this function branches on (`QueuedRwLockRefinement.lean`).  A
+    /// withdrawal of a retired ticket is the model's `cancel_noop`
+    /// block: `cancelPublish` is enabled only for an outstanding ticket.
     pub fn cancel(&self, core_id: u8, ticket: u64) {
         assert!((core_id as usize) < MAX_WAITERS, "core_id out of range");
+        if self.now_serving.load(Ordering::SeqCst) > ticket {
+            return;
+        }
+        // While `now_serving == ticket` the writer bit can be set only by
+        // the served ticket's holder, so a set bit here means this
+        // ticket was already completed as a write: withdrawing it would
+        // pass the turn while the lock is held.  Nobody can move
+        // `now_serving` off `ticket` between the two reads — its holder
+        // has not published, so there is no tombstone to skip.
+        debug_assert!(
+            !(self.is_served(ticket) && (self.state.load(Ordering::Acquire) & WRITER_BIT) != 0),
+            "cancel called on a ticket its core has already completed as a writer"
+        );
         self.cancelled[core_id as usize].store(ticket + 1, Ordering::SeqCst);
         fence(Ordering::SeqCst);
         if self.is_served(ticket) && self.claim_withdrawal_of(ticket) {
@@ -653,6 +760,17 @@ impl QueuedRwLock {
     /// `await_turn`; every protocol property the pair establishes is
     /// established here, and the issued ticket is still retired exactly
     /// once (by `pass_turn` on the caller's entry or exit path).
+    ///
+    /// # Why a pending withdrawal is refused without a slot read
+    ///
+    /// The blocking `enqueue` waits until the caller's withdrawal slot
+    /// is empty (WS-LC closure audit).  Here that condition is a
+    /// consequence rather than a wait: a published withdrawal names a
+    /// ticket that is still outstanding — `now_serving` passes a
+    /// withdrawn ticket only through the claim that clears its slot —
+    /// so while one is published `next_ticket != now_serving` and the
+    /// exchange fails.  The `debug_assert` pins the derivation on every
+    /// interleaving the loom models explore.
     #[inline]
     fn try_take_served_ticket(&self, core_id: u8) -> Option<u64> {
         let serving = self.now_serving.load(Ordering::Acquire);
@@ -664,6 +782,10 @@ impl QueuedRwLock {
             return None;
         }
         self.last_enqueued.store(core_id, Ordering::Release);
+        debug_assert!(
+            self.cancelled[core_id as usize].load(Ordering::SeqCst) == NO_WITHDRAWAL,
+            "a served ticket was issued to a core whose withdrawal is still published"
+        );
         Some(serving)
     }
 
@@ -1051,6 +1173,94 @@ mod loom_model {
             assert_eq!(next, 2);
             assert_eq!(lock.peek_state(), 0);
             assert_eq!(lock.peek_withdrawal(0), None);
+        });
+    }
+
+    // ------------------------------------------------------------------
+    // WS-LC closure audit — the double withdrawal, and the slot as a
+    // precondition of the issue
+    // ------------------------------------------------------------------
+    //
+    // The four models above withdraw at most once per core, which is why
+    // none of them saw this: with one slot per core, a second withdrawal
+    // published while the first is unclaimed overwrote it, and the ticket
+    // the first named was never retired.  The sequence is one every
+    // documented contract permits — enqueue, withdraw, enqueue, withdraw —
+    // so the fix is at the issue, not at the withdrawal: `enqueue` parks
+    // until the slot is empty, and the non-blocking attempts are refused
+    // in the same state.  Both models assert the interval closes, which
+    // is what a lost tombstone breaks.
+
+    /// A core withdraws twice — enqueue, withdraw, enqueue, withdraw —
+    /// while the core ahead of it holds and then releases.  The second
+    /// `enqueue` parks until the release has retired the first
+    /// withdrawal; the release's skip loop and the second withdrawal then
+    /// arbitrate the second ticket as usual.  Every interleaving must end
+    /// with both tickets retired and the slot empty.
+    ///
+    /// Decisiveness (see `scripts/test_loom_queued_rw_lock.sh`): keep the
+    /// slot wait in `enqueue` and move it *after* `take_ticket`, and this
+    /// model fails with `now_serving` one short of `next_ticket`.
+    #[test]
+    fn double_withdrawal_by_one_core_does_not_strand_the_lock() {
+        loom::model(|| {
+            let lock = Arc::new(QueuedRwLock::new());
+            let a = Arc::clone(&lock);
+            lock.acquire_write(0);
+            let t = loom::thread::spawn(move || {
+                let first = a.enqueue(1);
+                a.cancel(1, first);
+                let second = a.enqueue(1);
+                a.cancel(1, second);
+            });
+            lock.release_write(0);
+            t.join().unwrap();
+            let (next, serving) = lock.peek_tickets();
+            assert_eq!(
+                serving,
+                next,
+                "a withdrawn ticket was never retired: the lock is stalled \
+                 (slot={:?}, state={:#x})",
+                lock.peek_withdrawal(1),
+                lock.peek_state()
+            );
+            assert_eq!(next, 3, "exactly one ticket per enqueue");
+            assert_eq!(lock.peek_withdrawal(1), None, "the slot was reclaimed");
+            assert_eq!(lock.peek_state(), 0, "a withdrawal releases nothing");
+        });
+    }
+
+    /// A non-blocking attempt by a core whose withdrawal is still
+    /// published is refused, and issues nothing: the withdrawn ticket is
+    /// outstanding, so `next_ticket != now_serving`.  Once the release
+    /// has retired it the attempt may succeed.  Either way the interval
+    /// closes, and `try_take_served_ticket`'s `debug_assert` — a served
+    /// ticket is never issued over a published slot — is checked on
+    /// every interleaving.
+    #[test]
+    fn pending_withdrawal_refuses_the_non_blocking_attempt() {
+        loom::model(|| {
+            let lock = Arc::new(QueuedRwLock::new());
+            let a = Arc::clone(&lock);
+            lock.acquire_write(0);
+            let ticket = lock.enqueue(1);
+            let t = loom::thread::spawn(move || {
+                a.cancel(1, ticket);
+                if a.try_acquire_read(1) {
+                    a.release_read(1);
+                }
+            });
+            lock.release_write(0);
+            t.join().unwrap();
+            let (next, serving) = lock.peek_tickets();
+            assert_eq!(serving, next, "a ticket was issued and never retired");
+            assert!(
+                next == 2 || next == 3,
+                "the attempt either issued nothing (2 tickets) or was served \
+                 after the retirement (3), never over the published slot: {next}"
+            );
+            assert_eq!(lock.peek_withdrawal(1), None);
+            assert_eq!(lock.peek_state(), 0);
         });
     }
 
@@ -1472,7 +1682,10 @@ mod sequential_tests {
     }
 
     /// Withdrawing a request one no longer has — the slot is already
-    /// reclaimed — is not a second retirement.
+    /// reclaimed — is not a second retirement, and (WS-LC closure audit)
+    /// it publishes nothing: a publication for a retired ticket is one
+    /// no skip loop will ever claim, and `enqueue` waits on the slot, so
+    /// it would park this core's next acquisition for good.
     #[test]
     fn cancel_does_not_retire_a_ticket_twice() {
         let lock = QueuedRwLock::new();
@@ -1483,9 +1696,8 @@ mod sequential_tests {
         let (next, serving) = lock.peek_tickets();
         assert_eq!(serving, next);
 
-        // The slot is empty, so a repeat publish is a fresh tombstone for
-        // a ticket that is no longer outstanding; the head check refuses
-        // it because `now_serving` has moved past it.
+        // `now_serving` has moved past the ticket, so the withdrawal is
+        // refused before anything is published.
         lock.cancel(1, ticket);
         let (next_after, serving_after) = lock.peek_tickets();
         assert_eq!(next_after, next, "no ticket was issued");
@@ -1493,6 +1705,36 @@ mod sequential_tests {
             serving_after, serving,
             "a stale withdrawal must not advance now_serving"
         );
+        assert_eq!(
+            lock.peek_withdrawal(1),
+            None,
+            "a stale withdrawal must publish nothing"
+        );
+
+        // And the core is not wedged: its next acquisition is issued at
+        // once (an occupied slot would park it here forever).
+        let again = lock.enqueue(1);
+        assert!(lock.is_served(again));
+        lock.complete_write(1, again);
+        assert_eq!(lock.peek_state(), WRITER_BIT);
+        lock.release_write(1);
+        let (next_end, serving_end) = lock.peek_tickets();
+        assert_eq!(serving_end, next_end);
+    }
+
+    /// **WS-LC closure audit**: withdrawing a ticket already completed
+    /// as a write would pass the turn while the lock is held — a second
+    /// terminator for one ticket, and the one the stale check cannot
+    /// see because the writer keeps `now_serving` on its own ticket.
+    /// The debug assertion refuses it.
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "already completed as a writer")]
+    fn cancel_of_a_completed_write_ticket_is_refused() {
+        let lock = QueuedRwLock::new();
+        let ticket = lock.enqueue(0);
+        lock.complete_write(0, ticket);
+        lock.cancel(0, ticket);
     }
 
     /// The two-phase form composes to exactly what the blocking acquire
@@ -1534,6 +1776,76 @@ mod cross_thread_tests {
     use std::sync::Arc;
     use std::thread;
     use std::vec::Vec;
+
+    /// **WS-LC closure audit**: the double withdrawal.
+    ///
+    /// A core withdraws from behind a holder, re-enqueues and withdraws
+    /// again while its first withdrawal is still unclaimed.  With one
+    /// slot per core the second publication used to overwrite the
+    /// first, and the holder's release then stopped `now_serving` on a
+    /// ticket nobody held: the lock stalled with the tombstone lost, on
+    /// a sequence every documented contract permits.  `enqueue` now
+    /// waits for the slot, so the second ticket is issued only after the
+    /// release has retired the first.
+    ///
+    /// The withdrawing thread signals just before its second `enqueue`,
+    /// and the holder yields a few times after seeing the signal before
+    /// releasing, so the wait is exercised rather than skipped on most
+    /// iterations; `double_withdrawal_by_one_core_does_not_strand_the_lock`
+    /// in the loom module is the exhaustive form.
+    #[test]
+    fn cross_thread_double_withdrawal_does_not_strand_the_lock() {
+        const ITER: usize = if STRESS_ITER >= 100 {
+            STRESS_ITER / 100
+        } else {
+            1
+        };
+        for _ in 0..ITER {
+            let lock = Arc::new(QueuedRwLock::new());
+            let reached_second_enqueue = Arc::new(AtomicBool::new(false));
+            lock.acquire_write(0);
+
+            let lock_w = Arc::clone(&lock);
+            let flag = Arc::clone(&reached_second_enqueue);
+            let withdrawer = thread::spawn(move || {
+                let first = lock_w.enqueue(1);
+                lock_w.cancel(1, first);
+                flag.store(true, StdOrdering::SeqCst);
+                // Parks until core 0's release has retired `first`.
+                let second = lock_w.enqueue(1);
+                lock_w.cancel(1, second);
+            });
+
+            while !reached_second_enqueue.load(StdOrdering::SeqCst) {
+                thread::yield_now();
+            }
+            for _ in 0..8 {
+                thread::yield_now();
+            }
+            lock.release_write(0);
+            withdrawer.join().unwrap();
+
+            let (next, serving) = lock.peek_tickets();
+            assert_eq!(next, 3, "exactly three tickets were issued");
+            assert_eq!(
+                serving,
+                next,
+                "a withdrawn ticket was never retired: the lock is stalled \
+                 (slot={:?}, state={:#x})",
+                lock.peek_withdrawal(1),
+                lock.peek_state()
+            );
+            assert_eq!(lock.peek_withdrawal(1), None, "the slot was reclaimed");
+            assert_eq!(lock.peek_state(), 0, "a withdrawal releases nothing");
+
+            // The lock is usable afterwards, by the withdrawing core too.
+            lock.acquire_write(1);
+            assert_eq!(lock.peek_state(), WRITER_BIT);
+            lock.release_write(1);
+            let (next_end, serving_end) = lock.peek_tickets();
+            assert_eq!(serving_end, next_end);
+        }
+    }
 
     /// **WS-RR RR6.22**: iterations per cross-thread stress test.
     ///

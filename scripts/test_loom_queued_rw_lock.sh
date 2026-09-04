@@ -29,7 +29,7 @@
 # WS-LC LC3.3/LC3.4 — the withdrawal models, and what makes them decisive
 # ---------------------------------------------------------------------
 #
-# Four of the nine models cover `QueuedRwLock::cancel`.  They are not
+# Six of the eleven models cover `QueuedRwLock::cancel`.  They are not
 # decorative: the *first* version of that function failed two of them,
 # and the reported state was the one they are written to catch —
 # `now_serving` one short of `next_ticket`, the withdrawal slot still
@@ -54,6 +54,29 @@
 #
 # Deleting the `cancel` call, or the loop, would of course also fail —
 # and would prove nothing, because a presence check survives removal.
+#
+# WS-LC closure audit — the double withdrawal
+# ---------------------------------------------
+#
+# The four models above withdraw at most once per core, and that is why
+# none of them saw the stall the closure audit found: the withdrawal slot
+# is one word per core, so a core that withdrew, re-enqueued and withdrew
+# again while its first withdrawal was unclaimed overwrote the
+# publication, and the release ahead of it then stopped `now_serving` on
+# a ticket nobody held.  `enqueue` now parks until the slot is empty, and
+# `double_withdrawal_by_one_core_does_not_strand_the_lock` is the model;
+# `pending_withdrawal_refuses_the_non_blocking_attempt` covers the
+# `try_*` path, whose refusal is a consequence of the CAS rather than a
+# wait.  Their decisiveness mutation, in the same discipline:
+#
+#   4. Keep the slot load, the comparison and the park in
+#      `await_withdrawal_retired`, and turn the `while` into an `if` —
+#      one observation, then proceed regardless.  Every token survives;
+#      the model fails with `now_serving` one short of `next_ticket` and
+#      the slot still published.  (Moving the whole wait *after*
+#      `take_ticket` is NOT a relation break — the wait still precedes
+#      the second `cancel`, which is the write that overwrote — and the
+#      model correctly passes it.)
 
 set -euo pipefail
 

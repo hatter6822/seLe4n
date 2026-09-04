@@ -248,7 +248,7 @@ Scope, findings and evidence for any of these are in
 
 | Workstream | Versions |
 |------------|----------|
-| **WS-LC** | v0.34.50–v0.34.54 |
+| **WS-LC** | v0.34.50–v0.34.55 |
 | **WS-RR** | v0.34.26– |
 | **WS-SL** | v0.34.26– (closure post-v1.0.0) |
 | **WS-IN** | v0.34.48– (closure: the PR after v0.34.48) |

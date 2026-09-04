@@ -234,7 +234,15 @@ skip-aware promotion in the ticket-FIFO refinement (v0.34.51), and
 `QueuedRwLock::cancel` in the deployed lock (v0.34.52). The deployed form
 splits the acquisition — `enqueue`, spin on `is_served`, then exactly one of
 `complete_read`, `complete_write` or `cancel` — because the fused
-`acquire_read` / `acquire_write` never expose an abandonable ticket. What
+`acquire_read` / `acquire_write` never expose an abandonable ticket. The
+withdrawal slot is one word per core, so `enqueue` parks until the core's
+previous withdrawal has been retired (v0.34.55, the workstream's closure
+audit): the first cut let a second ticket be taken over an unclaimed
+withdrawal, and a second `cancel` then overwrote it and stalled the lock on a
+ticket nobody held — a sequence every documented contract permitted, which the
+four withdrawal models missed because each withdrew once per core. The Lean
+model enables the issue only for a core holding no ticket and proves the
+publish never overwrites (`QueuedTicketWf.publish_slot_empty`). What
 withdrawal changes for a reader of these theorems: a conclusion of the form
 "`c` *leaves the queue*" is satisfied by a withdrawal and is unchanged, while
 one of the form "`c` *becomes the holder*" now carries an explicit

@@ -49,18 +49,38 @@
 //! The queue has to be the driver's, in both cases and for different
 //! reasons.  The CAS-retry lock has no queue at all — that is the
 //! documented non-representation in `rwLockSim`.  The ticket lock does
-//! have one, but a waiter occupies it by *spinning in `await_turn`*,
-//! which a single-threaded driver cannot do; and the access **mode** of
-//! a queued waiter is core-local in the real protocol and appears in no
-//! shared word.  What the driver checks instead, after every operation,
-//! is the ticket interval the queue does expose
-//! (`check_ticket_interval` below): outstanding tickets are exactly the
-//! held writer's, so `next_ticket - now_serving` is `1` while a writer
-//! holds and `0` otherwise.  That is the state-level half of the
-//! `queuedSim` relation proved in
+//! have one, and since WS-LC LC3.6 every queued waiter holds a *real*
+//! ticket of it; but a waiter occupies the queue by *spinning in
+//! `await_turn`*, which a single-threaded driver cannot do, and the
+//! access **mode** of a queued waiter is core-local in the real
+//! protocol and appears in no shared word.  So the driver keeps the
+//! queue and checks, after every operation, everything the ticket lock
+//! does expose: the ticket interval is exactly the held writer plus the
+//! queued waiters plus the withdrawals nobody has skipped yet
+//! (`check_ticket_interval`); the ticket being served is never one of
+//! those withdrawals (`check_head_live` — `queuedSim`'s
+//! `queuedHeadLive`, and the check that sees a stalled lock); and each
+//! core's withdrawal slot holds exactly the withdrawal the spec says is
+//! pending for it (`check_withdrawal_slots`).  Those are the state-level
+//! half of the `queuedSim` relation proved in
 //! `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean`; the
 //! waiters-to-interval half is the part the proof carries and the
 //! single-threaded harness cannot.
+//!
+//! ## Traces a single thread cannot execute
+//!
+//! `QueuedRwLock::enqueue` parks until the calling core's previous
+//! withdrawal has been retired by the core ahead of it (WS-LC closure
+//! audit — issuing over a published slot is how the lock lost a
+//! withdrawal and stalled).  A trace that asks a core to acquire while
+//! its own withdrawal is still published therefore asks this thread to
+//! wait for a release only another thread could perform.  That is not
+//! a sequential execution of the deployed lock at all — the
+//! refinement's `acquire*_enqueue` blocks require the slot empty — so
+//! the driver reports it as such (`Halt::NotSequential`, exit status 3)
+//! rather than guess a linearisation, and the harness counts the
+//! exclusion instead of comparing outputs the two oracles cannot both
+//! have.
 //!
 //! Admission order **is** exercised: when the abstract promotes a batch
 //! of readers or a single writer, the driver replays exactly those
@@ -71,7 +91,8 @@
 //! ## Wire format
 //!
 //! `R<core>` = tryAcquireRead, `r<core>` = releaseRead,
-//! `W<core>` = tryAcquireWrite, `w<core>` = releaseWrite.
+//! `W<core>` = tryAcquireWrite, `w<core>` = releaseWrite,
+//! `c<core>` = cancel (WS-LC LC3.6).
 //! Each op is terminated by a comma `,`.
 //!
 //! ## Output format
@@ -135,10 +156,27 @@ fn parse_trace(input: &str) -> Option<Vec<Op>> {
     Some(ops)
 }
 
-/// A mismatch between the two deployed implementations, or between an
-/// implementation and the admission the spec dictates.
+/// Why a replay stopped short of a post-state.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct DivergenceReport(String);
+enum Halt {
+    /// A mismatch between the two deployed implementations, between an
+    /// implementation and the admission the spec dictates, or between
+    /// the ticket lock's words and the expectation derived from the
+    /// spec.  Exit status 1.
+    Divergence(String),
+    /// The trace asks a core to acquire while its own withdrawal is
+    /// still published — see the module docs.  Exit status 3; the
+    /// harness counts these rather than comparing outputs.
+    NotSequential(String),
+}
+
+impl Halt {
+    fn message(&self) -> &str {
+        match self {
+            Halt::Divergence(m) | Halt::NotSequential(m) => m,
+        }
+    }
+}
 
 /// The driver: the abstract queue the concrete locks do not carry, plus
 /// one live instance of each deployed implementation.
@@ -160,12 +198,15 @@ struct Driver {
     /// withdraw.  The CAS-retry lock has no queue and so takes no part in
     /// this; that asymmetry is `opCorresponds.cancel_no_queue`.
     waiters: Vec<(u8, bool, u64)>,
-    /// **WS-LC LC3.6**: tickets whose holder withdrew, oldest first.
+    /// **WS-LC LC3.6**: `(core, ticket)` for each withdrawn ticket the
+    /// lock has not yet skipped, oldest first.
     ///
-    /// Driver-side, so `check_ticket_interval` compares the lock's
-    /// counters against an expectation derived from the *spec* rather
-    /// than from the lock's own slot array.
-    tombstones: Vec<u64>,
+    /// Driver-side, so the checks compare the lock's counters and slots
+    /// against an expectation derived from the *spec* rather than read
+    /// back out of the lock.  The core is recorded (WS-LC closure audit)
+    /// so `check_withdrawal_slots` can hold each per-core slot to the
+    /// one withdrawal the spec says is pending for that core.
+    tombstones: Vec<(u8, u64)>,
     /// The deployed CAS-retry lock (`rust/sele4n-hal/src/rw_lock.rs`).
     cas: RwLock,
     /// The deployed ticket FIFO lock
@@ -200,15 +241,15 @@ impl Driver {
     /// Admit `c` as a reader on both real locks.  Both attempts must
     /// succeed: the spec admits here, so an implementation that refuses
     /// has diverged from it.
-    fn admit_reader(&mut self, c: u8, ticket: u64) -> Result<(), DivergenceReport> {
+    fn admit_reader(&mut self, c: u8, ticket: u64) -> Result<(), Halt> {
         if !self.cas.try_acquire_read() {
-            return Err(DivergenceReport(format!(
+            return Err(Halt::Divergence(format!(
                 "cas-retry lock refused a read admission the spec grants (core {c}, state 0x{:x})",
                 self.packed_cas()
             )));
         }
         if !self.queued.is_served(ticket) {
-            return Err(DivergenceReport(format!(
+            return Err(Halt::Divergence(format!(
                 "ticket lock is not serving the ticket the spec admits (core {c}, ticket \
                  {ticket}, tickets {:?})",
                 self.queued.peek_tickets()
@@ -220,15 +261,15 @@ impl Driver {
     }
 
     /// Admit `c` as the writer on both real locks.
-    fn admit_writer(&mut self, c: u8, ticket: u64) -> Result<(), DivergenceReport> {
+    fn admit_writer(&mut self, c: u8, ticket: u64) -> Result<(), Halt> {
         if !self.cas.try_acquire_write() {
-            return Err(DivergenceReport(format!(
+            return Err(Halt::Divergence(format!(
                 "cas-retry lock refused a write admission the spec grants (core {c}, state 0x{:x})",
                 self.packed_cas()
             )));
         }
         if !self.queued.is_served(ticket) {
-            return Err(DivergenceReport(format!(
+            return Err(Halt::Divergence(format!(
                 "ticket lock is not serving the ticket the spec admits (core {c}, ticket \
                  {ticket}, tickets {:?})",
                 self.queued.peek_tickets()
@@ -259,12 +300,13 @@ impl Driver {
 
     /// Apply one operation.  The branch taken is the abstract spec's;
     /// every state change it dictates is performed on the real locks.
-    fn apply(&mut self, op: Op) -> Result<(), DivergenceReport> {
+    fn apply(&mut self, op: Op) -> Result<(), Halt> {
         match op {
             Op::AcquireRead(c) => {
                 if self.core_involved(c) {
                     return Ok(()); // no-op gate
                 }
+                self.refuse_parked_issue(c)?;
                 // Every acquisition takes a real ticket, whether it is
                 // admitted at once or queued — that is what makes a
                 // queued waiter concrete (WS-LC LC3.6).
@@ -297,6 +339,7 @@ impl Driver {
                 if self.core_involved(c) {
                     return Ok(());
                 }
+                self.refuse_parked_issue(c)?;
                 let ticket = self.queued.enqueue(c);
                 if self.writer_held.is_some()
                     || !self.readers.is_empty()
@@ -332,7 +375,7 @@ impl Driver {
                 // back out of the lock's own slots.
                 let (_, serving) = self.queued.peek_tickets();
                 if ticket >= serving {
-                    self.tombstones.push(ticket);
+                    self.tombstones.push((c, ticket));
                 }
                 self.retire_passed_tombstones();
                 Ok(())
@@ -347,7 +390,26 @@ impl Driver {
     /// too wide.
     fn retire_passed_tombstones(&mut self) {
         let (_, serving) = self.queued.peek_tickets();
-        self.tombstones.retain(|&t| t >= serving);
+        self.tombstones.retain(|&(_, t)| t >= serving);
+    }
+
+    /// **WS-LC closure audit**: refuse to replay an acquisition the
+    /// deployed lock would park.
+    ///
+    /// `QueuedRwLock::enqueue` waits until the core's withdrawal slot is
+    /// empty, and only a release or an entry by the core ahead can empty
+    /// it — which, on this thread, would be a later op in the trace.
+    /// The decision reads the lock's own slot, which is the fact; the
+    /// spec-derived bookkeeping is held to it by `check_withdrawal_slots`
+    /// after every op, so the two cannot disagree here unnoticed.
+    fn refuse_parked_issue(&self, c: u8) -> Result<(), Halt> {
+        match self.queued.peek_withdrawal(c) {
+            None => Ok(()),
+            Some(ticket) => Err(Halt::NotSequential(format!(
+                "core {c} would park in enqueue: its withdrawal of ticket {ticket} is \
+                 still published, and only another core's release can retire it"
+            ))),
+        }
     }
 
     /// Promote the head of the queue: a single writer, or the whole
@@ -356,7 +418,7 @@ impl Driver {
     /// The promoted cores are replayed against the real locks in exactly
     /// this order, and each attempt must succeed — which is where the
     /// ticket lock's admission order is checked against the spec's.
-    fn promote_head(&mut self) -> Result<(), DivergenceReport> {
+    fn promote_head(&mut self) -> Result<(), Halt> {
         // The release that brought us here ran the skip loop, so whatever
         // tombstones it uncovered are gone.
         self.retire_passed_tombstones();
@@ -398,11 +460,11 @@ impl Driver {
     /// Both deployed implementations must hold the same packed state
     /// after every operation.  They are different algorithms refining
     /// one spec; a disagreement is a refinement defect in one of them.
-    fn check_implementations_agree(&self) -> Result<(), DivergenceReport> {
+    fn check_implementations_agree(&self) -> Result<(), Halt> {
         let cas = self.packed_cas();
         let queued = self.queued.peek_state();
         if cas != queued {
-            return Err(DivergenceReport(format!(
+            return Err(Halt::Divergence(format!(
                 "deployed implementations disagree: cas-retry 0x{cas:x} vs ticket 0x{queued:x}"
             )));
         }
@@ -428,18 +490,22 @@ impl Driver {
     /// entry, so a holding reader contributes none.  That partition is
     /// the reachable-state instance of `queuedSim`'s ticket-interval
     /// relation, now including its `liveLedger` half.
-    fn check_ticket_interval(&self) -> Result<(), DivergenceReport> {
+    fn check_ticket_interval(&self) -> Result<(), Halt> {
         let (next, serving) = self.queued.peek_tickets();
         if serving > next {
-            return Err(DivergenceReport(format!(
+            return Err(Halt::Divergence(format!(
                 "ticket lock regressed: now_serving {serving} > next_ticket {next}"
             )));
         }
-        let pending = self.tombstones.iter().filter(|&&t| t >= serving).count() as u64;
+        let pending = self
+            .tombstones
+            .iter()
+            .filter(|&&(_, t)| t >= serving)
+            .count() as u64;
         let expected = u64::from(self.writer_held.is_some()) + self.waiters.len() as u64 + pending;
         let outstanding = next - serving;
         if outstanding != expected {
-            return Err(DivergenceReport(format!(
+            return Err(Halt::Divergence(format!(
                 "ticket interval is {outstanding} (next {next}, serving {serving}) but the \
                  spec state has writer_held={:?}, {} waiter(s) and {pending} tombstone(s)",
                 self.writer_held,
@@ -452,7 +518,7 @@ impl Driver {
     /// The concrete words must encode the abstract holder state, per
     /// `encodeRwLock`: bit 63 is `writerHeld.isSome`, bits 0..62 are
     /// `readers.length`.
-    fn check_encoding(&self) -> Result<(), DivergenceReport> {
+    fn check_encoding(&self) -> Result<(), Halt> {
         let packed = self.packed_cas();
         let expected = (if self.writer_held.is_some() {
             WRITER_BIT
@@ -460,7 +526,7 @@ impl Driver {
             0
         }) | self.readers.len() as u64;
         if packed != expected {
-            return Err(DivergenceReport(format!(
+            return Err(Halt::Divergence(format!(
                 "concrete state 0x{packed:x} does not encode the spec state \
                  (writer_held={:?}, readers={:?}) — expected 0x{expected:x}",
                 self.writer_held, self.readers
@@ -469,10 +535,73 @@ impl Driver {
         Ok(())
     }
 
+    /// **WS-LC closure audit**: the ticket being served is never a
+    /// withdrawn one — `queuedSim`'s `queuedHeadLive`, at the block
+    /// boundary every op ends on.
+    ///
+    /// This is the check that sees a stalled lock, and the interval
+    /// check alone does not: when a withdrawal is *lost* — overwritten
+    /// in its core's slot before anything skipped it — the ticket stays
+    /// outstanding, the driver still counts it as pending, and the
+    /// interval balances exactly while `now_serving` sits on a ticket
+    /// nobody will ever retire.  The double-withdrawal stall passed
+    /// `check_ticket_interval` for that reason; it fails here.
+    fn check_head_live(&self) -> Result<(), Halt> {
+        let (next, serving) = self.queued.peek_tickets();
+        if serving < next && self.tombstones.iter().any(|&(_, t)| t == serving) {
+            return Err(Halt::Divergence(format!(
+                "the ticket being served ({serving}) is a withdrawn one nobody retired: \
+                 the lock is stalled (next {next}, tombstones {:?})",
+                self.tombstones
+            )));
+        }
+        Ok(())
+    }
+
+    /// **WS-LC closure audit**: each core's withdrawal slot holds exactly
+    /// the withdrawal the spec says is pending for that core.
+    ///
+    /// Three relations at once, each the concrete form of a
+    /// `QueuedTicketWf` fact: a slot is published iff a withdrawal of
+    /// that core is outstanding (`cancelledOutstanding`), it names that
+    /// withdrawal's ticket, and no core has two pending withdrawals
+    /// (`holder_ticket_unique`).  A stale publication — a slot naming a
+    /// ticket the lock has passed — and a lost one — a pending withdrawal
+    /// whose slot is empty — both fail here.
+    fn check_withdrawal_slots(&self) -> Result<(), Halt> {
+        let (_, serving) = self.queued.peek_tickets();
+        for core in 0..NUM_CORES {
+            let pending: Vec<u64> = self
+                .tombstones
+                .iter()
+                .filter(|&&(c, t)| c == core && t >= serving)
+                .map(|&(_, t)| t)
+                .collect();
+            if pending.len() > 1 {
+                return Err(Halt::Divergence(format!(
+                    "core {core} has {} pending withdrawals {pending:?}; a core holds one \
+                     outstanding ticket and can withdraw at most one",
+                    pending.len()
+                )));
+            }
+            let expected = pending.first().copied();
+            let slot = self.queued.peek_withdrawal(core);
+            if slot != expected {
+                return Err(Halt::Divergence(format!(
+                    "withdrawal slot of core {core} holds {slot:?} but the spec-derived \
+                     pending withdrawal is {expected:?} (serving {serving})"
+                )));
+            }
+        }
+        Ok(())
+    }
+
     /// Every invariant checked after each operation.
-    fn check_all(&self) -> Result<(), DivergenceReport> {
+    fn check_all(&self) -> Result<(), Halt> {
         self.check_implementations_agree()?;
         self.check_ticket_interval()?;
+        self.check_head_live()?;
+        self.check_withdrawal_slots()?;
         self.check_encoding()
     }
 
@@ -487,7 +616,7 @@ impl Driver {
 }
 
 /// Replay a whole trace, checking after every operation.
-fn run_trace(ops: &[Op]) -> Result<String, DivergenceReport> {
+fn run_trace(ops: &[Op]) -> Result<String, Halt> {
     let mut driver = Driver::new();
     driver.check_all()?;
     for op in ops {
@@ -508,9 +637,13 @@ fn main() {
     };
     match run_trace(&ops) {
         Ok(rendered) => println!("{rendered}"),
-        Err(DivergenceReport(why)) => {
-            eprintln!("rw_lock_oracle: DIVERGENCE — {why}");
-            std::process::exit(1);
+        Err(halt) => {
+            let (label, status) = match halt {
+                Halt::Divergence(_) => ("DIVERGENCE", 1),
+                Halt::NotSequential(_) => ("NOT SEQUENTIALLY EXECUTABLE", 3),
+            };
+            eprintln!("rw_lock_oracle: {label} — {}", halt.message());
+            std::process::exit(status);
         }
     }
 }
@@ -690,6 +823,73 @@ mod tests {
         run_trace(&ops).expect("no divergence over 256 ops");
     }
 
+    /// **WS-LC closure audit**: a core re-acquiring while its own
+    /// withdrawal is unclaimed would park in `enqueue`, so the trace is
+    /// refused as not sequentially executable — never replayed with a
+    /// guessed linearisation, and never a hang.
+    #[test]
+    fn reacquire_over_a_pending_withdrawal_is_not_sequential() {
+        let ops = parse_trace("W0,W1,c1,W1,").expect("parse");
+        match run_trace(&ops) {
+            Err(Halt::NotSequential(why)) => assert!(why.contains("would park"), "{why}"),
+            other => panic!("expected NotSequential, got {other:?}"),
+        }
+        let ops = parse_trace("W0,R1,c1,R1,w0,").expect("parse");
+        assert!(matches!(run_trace(&ops), Err(Halt::NotSequential(_))));
+    }
+
+    /// **WS-LC closure audit**: the double withdrawal — the trace on
+    /// which the deployed lock lost a withdrawal and stalled — cannot be
+    /// replayed at all now, because its second acquisition is the parked
+    /// one; and once the release has retired the first withdrawal, the
+    /// same core withdraws again without incident.
+    #[test]
+    fn double_withdrawal_is_excluded_and_the_retired_form_replays() {
+        let ops = parse_trace("W0,W1,c1,W1,c1,w0,").expect("parse");
+        assert!(matches!(run_trace(&ops), Err(Halt::NotSequential(_))));
+        // Retired by the release, core 1 acquires the free lock directly and
+        // its second withdrawal is a holder's no-op.
+        assert_eq!(render("W0,W1,c1,w0,W1,c1,"), "W=1;R=0;Q=0");
+        // Retired by the release, queued again behind a new holder, and
+        // withdrawn again — the second withdrawal is retired by that
+        // holder's release.
+        assert_eq!(render("W0,W1,c1,w0,W2,W1,c1,w2,"), "W=0;R=0;Q=0");
+    }
+
+    /// **WS-LC closure audit**: a withdrawn ticket left at the head —
+    /// the stalled lock's signature — is reported.  Constructed by hand:
+    /// the spec records a pending withdrawal of the served ticket.
+    #[test]
+    fn check_head_live_reports_a_planted_stall() {
+        let mut driver = Driver::new();
+        let ticket = driver.queued.enqueue(1);
+        driver.tombstones.push((1, ticket));
+        let err = driver.check_head_live().expect_err("must report");
+        assert!(
+            err.message().contains("the lock is stalled"),
+            "unexpected report: {}",
+            err.message()
+        );
+    }
+
+    /// **WS-LC closure audit**: a pending withdrawal whose slot is empty
+    /// (a lost publication) and a published slot the spec has no
+    /// withdrawal for (a stale publication) are both reported.
+    #[test]
+    fn check_withdrawal_slots_reports_lost_and_stale_publications() {
+        let mut driver = Driver::new();
+        driver.queued.acquire_write(0);
+        let ticket = driver.queued.enqueue(1);
+        driver.tombstones.push((1, ticket));
+        let err = driver.check_withdrawal_slots().expect_err("lost");
+        assert!(err.message().contains("holds None"), "{}", err.message());
+
+        driver.tombstones.clear();
+        driver.queued.cancel(1, ticket);
+        let err = driver.check_withdrawal_slots().expect_err("stale");
+        assert!(err.message().contains("holds Some"), "{}", err.message());
+    }
+
     /// The driver reports a divergence rather than papering over it.
     /// Constructed by hand: a state the spec says is writer-held, with
     /// the real lock left unheld underneath it.
@@ -699,9 +899,9 @@ mod tests {
         driver.writer_held = Some(0);
         let err = driver.check_encoding().expect_err("must report");
         assert!(
-            err.0.contains("does not encode the spec state"),
+            err.message().contains("does not encode the spec state"),
             "unexpected report: {}",
-            err.0
+            err.message()
         );
     }
 
@@ -713,9 +913,9 @@ mod tests {
         driver.writer_held = Some(1);
         let err = driver.check_ticket_interval().expect_err("must report");
         assert!(
-            err.0.contains("ticket interval is 0"),
+            err.message().contains("ticket interval is 0"),
             "unexpected report: {}",
-            err.0
+            err.message()
         );
     }
 
@@ -729,9 +929,9 @@ mod tests {
             .check_implementations_agree()
             .expect_err("must report");
         assert!(
-            err.0.contains("deployed implementations disagree"),
+            err.message().contains("deployed implementations disagree"),
             "unexpected report: {}",
-            err.0
+            err.message()
         );
         driver.cas.release_read();
     }
