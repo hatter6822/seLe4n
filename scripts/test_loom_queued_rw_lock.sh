@@ -83,13 +83,30 @@ set -euo pipefail
 REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")/.." rev-parse --show-toplevel)"
 cd "$REPO_ROOT/rust"
 
+# A gate that cannot run reports NOT RUN (`SELE4N_SKIP_EXIT`, recorded by
+# `run_gate_check`), never PASS; invoked directly by a CI job, the status
+# fails the job, which is the right answer to a runner without cargo.
 if ! command -v cargo >/dev/null 2>&1; then
-    echo "loom: SKIP — cargo not in PATH"
-    exit 0
+    echo "loom: SKIP (NOT RUN) — cargo not in PATH"
+    exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
-echo "loom: exploring interleavings of queued_rw_lock (deployed lock)..."
-RUSTFLAGS="--cfg loom" LOOM_MAX_PREEMPTIONS="${LOOM_MAX_PREEMPTIONS:-3}" \
+# Exhaustive means UNBOUNDED (PR #890 review).  loom's `Builder` reads
+# `LOOM_MAX_PREEMPTIONS` as its preemption bound and explores every
+# interleaving when it is unset; the first cut pinned it at 3, which omits
+# every schedule needing four or more preemptions — and the operations under
+# test have many atomic and yield points, so a two-operation model does not
+# imply a three-preemption bound.  Unbounded, the eleven models take ~35 s;
+# bounded at 3 they took under a second.  The gate is the unbounded run.  A
+# caller may still set `LOOM_MAX_PREEMPTIONS=n` in the environment for a
+# quick local pass, and that pass is not the gate — say so when quoting it.
+if [ -n "${LOOM_MAX_PREEMPTIONS:-}" ]; then
+    echo "loom: WARNING — LOOM_MAX_PREEMPTIONS=${LOOM_MAX_PREEMPTIONS} bounds the"
+    echo "loom:           exploration; this is a quick pass, not the exhaustive gate."
+else
+    echo "loom: exploring ALL interleavings of queued_rw_lock (deployed lock; unbounded)..."
+fi
+RUSTFLAGS="--cfg loom" \
     cargo test -p sele4n-hal --lib queued_rw_lock::loom_model -- --test-threads=1
 
 echo "loom: PASS — every explored interleaving upholds mutual exclusion,"

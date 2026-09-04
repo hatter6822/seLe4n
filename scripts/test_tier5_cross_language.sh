@@ -32,14 +32,18 @@ if [ -f "$HOME/.elan/env" ]; then
 fi
 
 # Confirm both oracles are available.
+# A harness that cannot run reports NOT RUN — the reserved exit status
+# `SELE4N_SKIP_EXIT`, which `run_gate_check` records as incomplete coverage —
+# never PASS.  Exiting 0 here let `test_nightly.sh` count a run in which no
+# oracle executed as a passed acceptance gate (PR #890 review).
 if ! command -v lake >/dev/null 2>&1; then
-    echo "tier5: SKIP — lake not in PATH"
-    exit 0
+    echo "tier5: SKIP (NOT RUN) — lake not in PATH"
+    exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 if ! command -v cargo >/dev/null 2>&1; then
-    echo "tier5: SKIP — cargo not in PATH"
-    exit 0
+    echo "tier5: SKIP (NOT RUN) — cargo not in PATH"
+    exit "${SELE4N_SKIP_EXIT:-77}"
 fi
 
 echo "tier5: building Lean oracle..."
@@ -217,11 +221,14 @@ if [ "$mismatches" -gt 0 ]; then
 fi
 
 excluded=$(wc -l < "$EXCLUDED_LOG" 2>/dev/null || echo 0)
-excluded_percent=$(( excluded * 100 / NUM_SEQUENCES ))
-if [ "$excluded_percent" -gt "$EXCLUDED_CEILING_PERCENT" ]; then
-    echo "tier5: FAIL — $excluded of $NUM_SEQUENCES sequences ($excluded_percent%) were"
-    echo "tier5:        excluded as not sequentially executable, above the"
-    echo "tier5:        ${EXCLUDED_CEILING_PERCENT}% ceiling; first few:"
+# Compared by cross-multiplication, never through an integer percentage: the
+# percentage rounds DOWN, so 101..109 excluded of 1000 would read as 10% and
+# pass a 10% ceiling they exceed (PR #890 review).
+if [ $(( excluded * 100 )) -gt $(( EXCLUDED_CEILING_PERCENT * NUM_SEQUENCES )) ]; then
+    echo "tier5: FAIL — $excluded of $NUM_SEQUENCES sequences were excluded as not"
+    echo "tier5:        sequentially executable, above the ${EXCLUDED_CEILING_PERCENT}%"
+    echo "tier5:        ceiling ($(( EXCLUDED_CEILING_PERCENT * NUM_SEQUENCES / 100 )) of"
+    echo "tier5:        $NUM_SEQUENCES); first few:"
     head -10 "$EXCLUDED_LOG"
     exit 1
 fi

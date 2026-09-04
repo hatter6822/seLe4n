@@ -112,6 +112,27 @@ shellcheck, never ran — so the branch's `Tiered Tests / Fast` and `ARM64
 Fast Gate` checks had been red since v0.34.50 and nobody had read them.
 Reworded, reproduced and verified with shellcheck installed.
 
+### Review round 1 (Codex, on `3a6bd5c1`)
+
+Three findings, all on gates this cut wrote, all fixed.  (1) The Tier-5
+exclusion ceiling was compared through an integer percentage, which rounds
+down: 101–109 excluded of 1000 read as 10% and passed a 10% ceiling they
+exceed.  Compared by cross-multiplication now.  (2) The loom gate pinned
+`LOOM_MAX_PREEMPTIONS` at 3 and called the run exhaustive; loom explores
+every interleaving only when the bound is unset, and a two-operation model
+does not imply a three-preemption bound.  The gate is unbounded now — the
+eleven models take ~35 s rather than under a second — and a caller who sets
+the variable is told the run is a quick pass, not the gate.  (3) The miri
+gate exited 0 when rustup, the nightly toolchain or the miri component was
+unavailable, and `test_nightly.sh` invoked it through `run_check` and then
+logged "miri gate executed" unconditionally — so a nightly on a machine
+without miri recorded a passed gate that never ran.  The miri, loom and
+Tier-5 scripts now exit the reserved `SELE4N_SKIP_EXIT` on their tooling
+branches, and the nightly invokes miri and Tier-5 through `run_gate_check`,
+which records NOT RUN; the "executed" lines are gone, since the gate's own
+record is the evidence.  The third is the same shape in three scripts, and
+the sweep rule says fix the siblings when the finding names one.
+
 Refs: docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md §5 (closure audit)
 
 ## v0.34.54 — the lock execution learns what a step costs

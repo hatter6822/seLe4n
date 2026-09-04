@@ -171,12 +171,16 @@ The deployed reader-writer lock is exercised by two tools the host test lane
 cannot substitute for:
 
 ```bash
-./scripts/test_loom_queued_rw_lock.sh   # bounded-interleaving model checking
+./scripts/test_loom_queued_rw_lock.sh   # exhaustive-interleaving model checking (~35 s)
 ./scripts/test_miri_queued_rw_lock.sh   # UB / strict-provenance checking
 ```
 
-`loom` explores the lock's interleavings exhaustively within a bounded model,
-which is what catches an ordering bug a stress test only makes *unlikely*.  It
+`loom` explores the lock's interleavings exhaustively — every schedule of each
+two-thread model, with no preemption bound (the first cut capped it at three
+preemptions and still called the run exhaustive; PR #890 review) — which is what
+catches an ordering bug a stress test only makes *unlikely*.  Setting
+`LOOM_MAX_PREEMPTIONS=n` bounds the run for a quick local pass, and that pass is
+not the gate.  It
 needs the lock compiled against its own instrumented atomics, so
 `queued_rw_lock.rs` aliases `core::sync::atomic` under `cfg(loom)` and its
 models live in a `#[cfg(loom)] mod loom_model`; a `loom` entry in the manifest
