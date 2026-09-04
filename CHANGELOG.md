@@ -1,3 +1,111 @@
+## v0.34.53 — the two-phase-locking bracket learns to unwind
+
+**WS-LC LC4 (all seven sub-tasks).**  The withdrawal existed at every level —
+spec (v0.34.50), both refinements (v0.34.51), the deployed lock and its FFI
+(v0.34.52) — and nothing consumed it.  Both two-phase-locking unwinds still
+called release-only folds, and a release is the identity for a non-holder, so
+where the growing phase found a member contended the core was left *queued*
+on it, to be promoted later and strand the lock.  This closes that.
+
+`FineLockFlow.lean` stated the gap exactly, in a caveat headed **"What
+'released' does and does not mean"**, whose reason — "`RwLockOp` has no cancel
+operation" — stopped being true at v0.34.50.  The caveat is deleted, and the
+theorem that makes it false stands where it stood.
+
+### Withdraw, then release — and the order is the design (LC4.1)
+
+`AccessMode.toCancelOp` joins its acquire and release siblings; it is the one
+that does not branch, since a queued request is withdrawn whatever mode it was
+queued in.  `cancelLockOnObject` mirrors `releaseLockOnObject`'s kind dispatch
+including the fail-closed kind check, `cancelAll` folds it, and `unwindAll` —
+withdraw, then release — is the shrinking phase.  One definition, consumed by
+both the bracket and the refusal path, so the two cannot answer "what does a
+bracket do on the way out" differently.
+
+Two identities meet at every member: a release by a non-holder is the identity,
+and a withdrawal by a holder is the identity, because INV-R4 keeps holders out
+of the wait queue.  So both orders are correct on a well-formed state and
+neither needs a branch, a holdership test or a decidability instance.
+Withdrawing first is what makes the payoff *unconditional*: the release arms
+promote **from** the wait queue, so a core still queued when its own release
+runs can be promoted into a holder slot the withdrawal has already passed.
+`rwLock_release_then_cancel_not_queued` records the other order so a refactor
+that swaps the folds has to answer it.
+
+### The payoff, and what it deliberately does not say (LC4.2–LC4.3)
+
+`unwindAll_leaves_no_queued_request`: after the shrinking phase the unwinding
+core has no queued request at any member of the footprint.  No distinctness
+condition on the footprint and no resolvability condition on the state — the
+withdrawal fold establishes the property everywhere before the release fold
+runs, and no release arm ever enqueues.  Its only hypothesis is the object
+store's own structural invariant; the two abstract facts underneath carry
+none at all.
+
+It does **not** say the core is uninvolved.  That is false per lock — a core
+holding a write lock, unwound at a member declared read, keeps the writer bit
+— and making it true needs a mode-agreement hypothesis threaded from the
+growing phase, for a conclusion the caveat never made.  The caveat's claim was
+that the unwind cannot remove a queued request; the theorem is its exact
+negation.
+
+Decisiveness was checked by breaking the relation rather than deleting the
+token: with `cancelAll` still defined and still named in `unwindAll`'s
+docstring, making the shrinking phase release-only fails four proofs.
+
+### Both consumers (LC4.4–LC4.6)
+
+`RevalidatedEntryOutcome.refused` carries the state with the footprint
+**unwound**, and
+`syscallEntryUnderRevalidatedLockSet_refused_leaves_no_queued_request` says so
+at the refusal itself.  `rwLock_release_by_nonholder_preserves_waiters` keeps
+its statement and loses its stale claim about the tree; it is kept, and kept in
+that form, because it is the *reason* the withdrawal has to exist — delete the
+withdrawal and this theorem is exactly the defect that returns.
+
+`withLockSet`'s third phase is the shrinking phase, the ~20 atomicity
+characterisations that named the release fold now name it, and the dynamic
+priority-inheritance chain extension is swept the same way.
+
+Two consequences worth stating.  The insensitivity predicate is now about the
+*phase*, not one of its halves: `ReleaseInsensitive` becomes
+`UnwindInsensitive` with two clauses.  A separate `CancelInsensitive` beside it
+would have been one question with two answers, and every capstone would have
+had to remember to demand both; discharging the pair costs nothing, since each
+witness is its release half with one name changed.  And every
+invariant-carriage lemma across the bracket gained a withdrawal-stability
+hypothesis for the same reason.
+
+The strict-2PL and serializability results are **untouched**, and that was
+predicted rather than discovered: `strictly_2pl_preserved` is a statement about
+acquire and commit *times*, and the serializability capstones reason over
+conflict graphs on the declared pairs.  Neither unfolds the shrinking fold.
+LC4 was renumbered from nine sub-tasks to seven on that finding, before any of
+its IDs reached a commit message; the plan's declared total is 51.
+
+### Three lemmas re-homed, one added (LC4.7)
+
+Each had lived downstream of the definition it characterises.  The at-any-key
+characterisation of the object-store update moved up out of `Serializability`.
+The per-primitive extension-invariant preservation lemmas existed in **three**
+copies — `LockSetHeld`, `NonInterferencePerCore` and
+`IPC/CrossCore/Cancellation` — because no two of those modules are in each
+other's import closure; the withdrawal would have made it four.  They now sit
+once, beside `updateObjectLockAt` in `WithLockSet`, which all three import.
+
+And `LockId.lookup_object_eq` was added: the missing third sibling of the
+lookup's kind and lock-state projections.  Without it a caller that knows what
+the object store holds at a key can conclude nothing about what a lookup there
+returned, which is exactly the step the shrinking phase's frame argument needs.
+
+The golden trace is **byte-identical**, verified rather than regenerated — the
+bracket is invisible to the projection, so adding an operation to it changes
+nothing observable.
+
+What remains of SM2.C-C is nothing; LC5.10 retires its debt row.
+
+Refs: docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md §6 (LC4)
+
 ## v0.34.52 — the deployed lock learns to withdraw
 
 **WS-LC LC3 (all seven sub-tasks).**  The withdrawal existed at the spec

@@ -312,6 +312,7 @@ example (core : CoreId) (op : SystemState → SystemState × Unit) (s : SystemSt
     (fun _ => True) (withLockSet lsW5 core op s).1 :=
   singleCore_proof_preservation lsW5 core op s (fun _ => True) (fun _ => True)
     trivial (fun _ _ _ _ => trivial) (fun _ _ => trivial) (fun _ _ _ _ => trivial)
+    (fun _ _ _ _ => trivial)
 
 /-! ## SM3.E.3 — conflict-graph orientation completeness (uses the conflict relation) -/
 

@@ -238,9 +238,12 @@ splits the acquisition — `enqueue`, spin on `is_served`, then exactly one of
 withdrawal changes for a reader of these theorems: a conclusion of the form
 "`c` *leaves the queue*" is satisfied by a withdrawal and is unchanged, while
 one of the form "`c` *becomes the holder*" now carries an explicit
-no-withdrawal-in-window premise. The remaining gap is the two-phase-locking
-consumers, which still release what was granted and leave what was merely
-requested; that is registered debt with a closure target.
+no-withdrawal-in-window premise. Both two-phase-locking consumers emit a
+withdrawal since v0.34.53: `withLockSet`'s shrinking phase and the revalidated
+entry's refusal path are one definition, `unwindAll`, which withdraws before it
+releases — the order is what lets `unwindAll_leaves_no_queued_request` hold with
+no distinctness or resolvability condition on the footprint. The bracket stays
+invisible to every observer, so the golden trace is byte-identical.
 
 > Two standing caveats. **Kernel entry is serialised by one global ticket
 > lock**, so live WCRT is weaker than the fine-lock bound `PerCoreWcrt.lean`

@@ -1948,18 +1948,27 @@ run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_objectIndex_eq' 
 run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_services_eq' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_irqHandlers_eq' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem updateObjectLockAt_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_preserves_invExt' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem updateObjectLockAt_preserves_invExt' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_preserves_invExt' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
+run_check "INVARIANT" rg -n '^theorem updateObjectLockAt_preserves_invExt' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
 run_check "INVARIANT" rg -n '^theorem acquireLockOnObject_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem releaseLockOnObject_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem acquireLockOnObject_preserves_invExt' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem releaseLockOnObject_preserves_invExt' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cancelLockOnObject_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cancelAll_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem unwindAll_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem acquireLockOnObject_preserves_invExt' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
+run_check "INVARIANT" rg -n '^theorem releaseLockOnObject_preserves_invExt' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
+run_check "INVARIANT" rg -n '^theorem cancelLockOnObject_preserves_invExt' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
+run_check "INVARIANT" rg -n '^theorem cancelAll_preserves_invExt' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
+run_check "INVARIANT" rg -n '^theorem unwindAll_preserves_invExt' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
 run_check "INVARIANT" rg -n '^theorem updateObjectLockAt_scheduler_eq' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem updateObjectLockAt_machine_eq' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem acquireLockOnObject_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem releaseLockOnObject_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem acquireAll_preserves_invExt' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem releaseAll_preserves_invExt' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cancelLockOnObject_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cancelAll_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem unwindAll_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem acquireAll_preserves_invExt' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
+run_check "INVARIANT" rg -n '^theorem releaseAll_preserves_invExt' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
 run_check "INVARIANT" rg -n '^theorem acquireAll_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem releaseAll_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem acquireAll_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
@@ -7125,8 +7134,26 @@ import SeLe4n.Kernel.Concurrency.Locks.WithLockSetInventory
 #check @SeLe4n.Kernel.Concurrency.UnwindInsensitive
 #check @SeLe4n.Kernel.Concurrency.acquireAll_lockInsensitive
 #check @SeLe4n.Kernel.Concurrency.releaseAll_lockInsensitive
+#check @SeLe4n.Kernel.Concurrency.cancelAll_lockInsensitive
+#check @SeLe4n.Kernel.Concurrency.unwindAll_lockInsensitive
 #check @SeLe4n.Kernel.Concurrency.withLockSet_unwind_invisible
 #check @SeLe4n.Kernel.Concurrency.lockSet_observer_atomic
+-- The shrinking phase withdraws before it releases, and the payoff that
+-- makes the old "released is not fully unwound" caveat false.
+#check @SeLe4n.Kernel.Concurrency.AccessMode.toCancelOp
+#check @SeLe4n.Kernel.Concurrency.cancelLockOnObject
+#check @SeLe4n.Kernel.Concurrency.cancelAll
+#check @SeLe4n.Kernel.Concurrency.unwindAll
+#check @SeLe4n.Kernel.Concurrency.unwindAll_eq_releaseAll_cancelAll
+#check @SeLe4n.Kernel.Concurrency.rwLock_cancel_not_queued
+#check @SeLe4n.Kernel.Concurrency.rwLock_release_preserves_not_queued
+#check @SeLe4n.Kernel.Concurrency.rwLock_unwind_not_queued
+#check @SeLe4n.Kernel.Concurrency.rwLock_release_then_cancel_not_queued
+#check @SeLe4n.Kernel.Concurrency.lockQueued
+#check @SeLe4n.Kernel.Concurrency.cancelLockOnObject_withdraws
+#check @SeLe4n.Kernel.Concurrency.cancelAll_leaves_no_queued_request
+#check @SeLe4n.Kernel.Concurrency.unwindAll_leaves_no_queued_request
+#check @SeLe4n.Model.LockId.lookup_object_eq
 -- SM3.C.11 dynamic chain walker + deadlock-freedom witness.
 #check @SeLe4n.Kernel.Concurrency.MAX_PIP_RETRIES
 #check @SeLe4n.Kernel.Concurrency.MAX_PIP_RETRIES_pos

@@ -288,8 +288,8 @@ example {α : Type} (S : LockSet) (core : CoreId)
       let ordered := S.lockAcquireSequence
       let acquired := acquireAll core ordered s
       let (postAction, result) := action acquired
-      let released := releaseAll core ordered.reverse postAction
-      (released, result) := withLockSet_unfold S core action s
+      let unwound := unwindAll core ordered.reverse postAction
+      (unwound, result) := withLockSet_unfold S core action s
 
 -- ============================================================================
 -- §4 — Runtime assertions
@@ -470,23 +470,25 @@ private def runDynamicChainChecks : IO Unit := do
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §8 SM3.C — Inventory aggregator ---"
-  -- The inventory has 86 entries (Group-B: +5 held, +4 atomicity, +6 dynamicChain).
-  assertBool "withLockSetTheorems.length = 86"
-    (decide (withLockSetTheorems.length = 86))
+  -- The inventory has 98 entries (Group-B: +5 held, +4 atomicity, +6
+  -- dynamicChain; WS-LC LC4.7: +10 combinator, +2 atomicity for the
+  -- withdrawal surface and the shrinking phase).
+  assertBool "the withLockSet inventory has its full entry count"
+    (decide (withLockSetTheorems.length = 98))
   -- Per-category counts.
-  assertBool "withLockSetTheorems combinator count = 31"
+  assertBool "withLockSetTheorems combinator category count"
     (decide ((withLockSetTheorems.filter
-      (fun t => t.category == .combinator)).length = 31))
-  assertBool "withLockSetTheorems held count = 16"
+      (fun t => t.category == .combinator)).length = 41))
+  assertBool "withLockSetTheorems held category count"
     (decide ((withLockSetTheorems.filter
       (fun t => t.category == .held)).length = 16))
-  assertBool "withLockSetTheorems ordering count = 3"
+  assertBool "withLockSetTheorems ordering category count"
     (decide ((withLockSetTheorems.filter
       (fun t => t.category == .ordering)).length = 3))
-  assertBool "withLockSetTheorems atomicity count = 13"
+  assertBool "withLockSetTheorems atomicity category count"
     (decide ((withLockSetTheorems.filter
-      (fun t => t.category == .atomicity)).length = 13))
-  assertBool "withLockSetTheorems dynamicChain count = 23"
+      (fun t => t.category == .atomicity)).length = 15))
+  assertBool "withLockSetTheorems dynamicChain category count"
     (decide ((withLockSetTheorems.filter
       (fun t => t.category == .dynamicChain)).length = 23))
   -- Partition-sum is total.

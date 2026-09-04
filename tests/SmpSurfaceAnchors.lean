@@ -366,6 +366,20 @@ and then exactly one of `ffiRwLockCompleteRead`, `ffiRwLockCompleteWrite` or
 #check @SeLe4n.Kernel.Concurrency.serializability_under_2pl
 #check @SeLe4n.Kernel.Concurrency.conflictGraph_acyclic
 -- SM3.E.4 — strict-2PL preservation.
+/-! ## WS-LC LC4 — the shrinking phase withdraws before it releases.
+
+`releaseAll` is the identity for a core that is not a holder, so a
+release-only shrinking phase gave back the members the growing phase had
+granted and left the *contended* ones queued.  `unwindAll` is the phase, and
+`unwindAll_leaves_no_queued_request` is what the old "what 'released' does
+and does not mean" caveat used to disclaim. -/
+#check @SeLe4n.Kernel.Concurrency.unwindAll
+#check @SeLe4n.Kernel.Concurrency.unwindAll_eq_releaseAll_cancelAll
+#check @SeLe4n.Kernel.Concurrency.lockQueued
+#check @SeLe4n.Kernel.Concurrency.unwindAll_leaves_no_queued_request
+#check @SeLe4n.Kernel.Concurrency.rwLock_release_then_cancel_not_queued
+#check @SeLe4n.Kernel.Concurrency.UnwindInsensitive
+
 #check @SeLe4n.Kernel.Concurrency.strictly_2pl_preserved
 -- SM3.E.5 — commutativity (the realistic write/write observational lemma).
 #check @SeLe4n.Kernel.Concurrency.updateObjectAt_objStoreEquiv_comm

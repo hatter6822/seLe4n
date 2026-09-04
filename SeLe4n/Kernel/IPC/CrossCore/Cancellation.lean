@@ -2300,40 +2300,11 @@ end Lifecycle.Suspend
 -- through the whole `withLockSet` bracket, never a lock-machinery
 -- intermediate (`lockSet_observer_atomic_on`, the SM3.C.7 guarded capstone).
 
-/-- WS-SM SM6.E: acquiring a per-object lock preserves the store invariant —
-its only store write is an `updateObjectAt` insert. -/
-theorem acquireLockOnObject_preserves_invExt (s : SystemState)
-    (core : CoreId) (l : LockId) (m : Concurrency.AccessMode)
-    (h : s.objects.invExt) :
-    (acquireLockOnObject s core l m).objects.invExt := by
-  unfold acquireLockOnObject
-  split
-  all_goals first
-    | exact h
-    | (unfold updateObjectLockAt
-       split
-       · unfold updateObjectAt
-         split
-         · exact RobinHood.RHTable.insert_preserves_invExt _ _ _ h
-         · exact h
-       · exact h)
-
-/-- WS-SM SM6.E: releasing a per-object lock preserves the store invariant. -/
-theorem releaseLockOnObject_preserves_invExt (s : SystemState)
-    (core : CoreId) (l : LockId) (m : Concurrency.AccessMode)
-    (h : s.objects.invExt) :
-    (releaseLockOnObject s core l m).objects.invExt := by
-  unfold releaseLockOnObject
-  split
-  all_goals first
-    | exact h
-    | (unfold updateObjectLockAt
-       split
-       · unfold updateObjectAt
-         split
-         · exact RobinHood.RHTable.insert_preserves_invExt _ _ _ h
-         · exact h
-       · exact h)
+-- WS-LC LC4.7: the per-primitive `invExt` preservation lemmas that stood here
+-- are gone.  This file carried a *third* copy of them — `LockSetHeld` and
+-- `NonInterferencePerCore` each had one too — because no two of those modules
+-- are in each other's import closure.  They now live once, beside
+-- `updateObjectLockAt` in `WithLockSet`, which all three import.
 
 /-- WS-SM SM6.E: a lock-only object write is invisible to the victim's
 `ipcState` observer — `updateObjectLockAt` rewrites only the stored object's

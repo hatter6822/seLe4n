@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.52.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.53.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,9 +203,9 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~52846 lines)
+- `CHANGELOG.md` (~52951 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22582 lines)
-- `tests/SmpInformationFlowSuite.lean` (~11784 lines)
+- `tests/SmpInformationFlowSuite.lean` (~11788 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~8882 lines)
 - `SeLe4n/Kernel/API.lean` (~6926 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5742 lines)
@@ -215,11 +215,11 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5001 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4750 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
-- `docs/spec/SELE4N_SPEC.md` (~4528 lines)
+- `docs/spec/SELE4N_SPEC.md` (~4564 lines)
 - `SeLe4n/Model/State.lean` (~4503 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
 - `tests/NegativeStateSuite.lean` (~4115 lines)
-- `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~3987 lines)
+- `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~4076 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3919 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRead.lean` (~3788 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (~3456 lines)
@@ -233,10 +233,10 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~3140 lines)
 - `docs/dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` (~3134 lines)
 - `SeLe4n/Model/Object/Structures.lean` (~3116 lines)
-- `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean` (~3087 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean` (~2993 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~2948 lines)
-- `SeLe4n/Platform/FFI.lean` (~2880 lines)
+- `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean` (~3105 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean` (~2994 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~2939 lines)
+- `SeLe4n/Platform/FFI.lean` (~2930 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~2844 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2784 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (~2776 lines)
@@ -278,7 +278,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/planning/V3E_IPC_UNWRAP_CAPS_LOOP_COMPOSITION_PLAN.md` (~1891 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md` (~1889 lines)
 - `tests/InformationFlowSuite.lean` (~1885 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1859 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1878 lines)
 - `SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean` (~1833 lines)
 - `SeLe4n/Model/FreezeProofs.lean` (~1827 lines)
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1822 lines)
@@ -316,8 +316,8 @@ To find files that need pagination today, run:
 - `tests/LockSetSuite.lean` (~1377 lines)
 - `docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` (~1370 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
+- `tests/SmpSurfaceAnchors.lean` (~1352 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
-- `tests/SmpSurfaceAnchors.lean` (~1337 lines)
 - `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1326 lines)
 - `tests/FrozenOpsSuite.lean` (~1324 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1317 lines)
@@ -327,15 +327,16 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/Taint.lean` (~1261 lines)
 - `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1261 lines)
 - `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
-- `tests/SmpCancellationSuite.lean` (~1246 lines)
+- `tests/SmpCancellationSuite.lean` (~1247 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean` (~1241 lines)
 - `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean` (~1235 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1233 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1216 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1186 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1188 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
 - `tests/SmpCacheMaintenanceSuite.lean` (~1170 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean` (~1169 lines)
 - `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1169 lines)
 - `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~1168 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` (~1165 lines)
@@ -349,6 +350,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1076 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
 - `tests/SyscallReturnAbiSuite.lean` (~1068 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/LockSetHeld.lean` (~1063 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1046 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
 - `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1030 lines)
@@ -386,7 +388,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
 - `SeLe4n/Kernel/SchedContext/BindingAffinity.lean` (~816 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRecord.lean` (~811 lines)
-- `tests/WithLockSetSuite.lean` (~809 lines)
+- `tests/WithLockSetSuite.lean` (~811 lines)
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
 - `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` (~800 lines)
@@ -1342,7 +1344,7 @@ footprints unwindable.
 | LC1 | LANDED | v0.34.50 | The abstract withdrawal: `RwLockOp.cancel`, INV-R preservation, the liveness restatement, the CAS-retry bridge |
 | LC2 | LANDED | v0.34.51 | The ticket-FIFO refinement of the withdrawal: the withdrawal word, skip-aware promotion, the capstones over live entries |
 | LC3 | LANDED | v0.34.52 | The deployed withdrawal: `QueuedRwLock::cancel`, loom, miri, Tier-5, and the foreign-function surface |
-| LC4 | NOT STARTED | — | The two-phase-locking consumers: `cancelAll`, the revalidated refusal unwind, the `withLockSet` unwind |
+| LC4 | LANDED | v0.34.53 | The two-phase-locking consumers: `cancelAll`, the revalidated refusal unwind, the `withLockSet` unwind |
 | LC5 | NOT STARTED | — | SM2.C-T: the timed execution and the cycle-denominated bounds; LC5.10 retires both debt rows |
 
 **Plan**: [`docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md`](docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md)
@@ -2124,8 +2126,8 @@ code may assume:
   below): **SM2.C-T** is untouched, so until LC5 lands a delay bound from this
   surface is a count of *lock operations* and reading it as wall-clock needs
   the explicit per-step cost ceiling `FineLockFlow.lean` §3 takes as a
-  hypothesis; **SM2.C-C** is closed except for its consumers — see the two
-  withdrawal bullets below.
+  hypothesis; **SM2.C-C** is closed at v0.34.53 — spec, both refinements, the
+  deployed lock and both consumers — and LC5.10 retires its debt row.
 - **A queued core may withdraw its request.**
   `RwLockOp.cancel` (v0.34.50) removes `c`'s entry from `waiters` and writes
   nothing else — three frame facts by `rfl` — preserves all five INV-R
@@ -2149,10 +2151,8 @@ code may assume:
   `honestBlock.cancel_no_queue`) — a queueless lock has no queue for a
   withdrawal to disturb.  The ticket-FIFO one (v0.34.51) carries it properly;
   see the next bullet, and the deployed lock carries it at v0.34.52 — the one
-  after that.  (4) **No 2PL unwind emits one yet**, so
-  `RevalidatedEntryOutcome.refused` and `withLockSet`'s shrinking phase still
-  release what was granted and leave what was merely requested.  WS-LC phase
-  LC4 closes that.
+  after that.  (4) **Both 2PL unwinds emit one** since v0.34.53 — see the
+  shrinking-phase bullet below.
 - **The ticket lock's ledger tombstones; the queue it represents is the
   *live* one** (WS-LC LC2, v0.34.51).  `now_serving` owes one advance per
   ticket ever issued, so a withdrawal cannot remove a ticket from the middle
@@ -2214,6 +2214,52 @@ code may assume:
   `ffiRwLockCompleteRead`, `ffiRwLockCompleteWrite`, `ffiRwLockCancel` and
   `ffiRwLockCancelCount` join the sixteen SM2.D symbols, reconciled across the
   three surfaces by `scripts/check_lock_ffi_symmetry.sh`.
+- **The two-phase-locking shrinking phase withdraws before it releases**
+  (WS-LC LC4, v0.34.53).  `withLockSet`'s third phase and the revalidated
+  entry's refusal path are both `unwindAll` — one definition, so the two
+  cannot answer "what does a bracket do on the way out" differently.  Five
+  things new code must respect.  (1) **The order is load-bearing.**  Two
+  identities meet at each member: a release by a non-holder is the identity,
+  and a withdrawal by a holder is the identity (INV-R4 keeps holders out of
+  `waiters`), so both orders are correct on a well-formed state and neither
+  needs a branch.  Withdrawing first is what makes the payoff
+  *unconditional* — the release arms promote **from** `waiters`, so a core
+  still queued when its own release runs can be promoted into a holder slot
+  the withdrawal already passed.  `rwLock_release_then_cancel_not_queued`
+  records the other order so a refactor that swaps the folds has to answer
+  it.  (2) **The payoff is about `waiters`, not about holding.**
+  `unwindAll_leaves_no_queued_request` says the unwinding core has no queued
+  request at any member, with no distinctness and no resolvability condition
+  on the footprint — the withdrawal fold establishes it everywhere and no
+  release arm enqueues.  It deliberately does **not** say the core is
+  uninvolved: a core holding a *write* lock, unwound at a member declared
+  `.read`, keeps `writerHeld`, and ruling that out needs the growing phase's
+  mode agreement threaded through.  (3) **The insensitivity predicate is
+  about the phase**: `UnwindInsensitive` / `UnwindInsensitiveOn` carry two
+  clauses, one per operation.  A separate `CancelInsensitive` beside a
+  `ReleaseInsensitive` would be one question with two answers and every
+  capstone would have to remember to demand both; discharging the pair costs
+  nothing, since each witness is its release half with one name changed.
+  Every `withLockSet` invariant-carriage lemma likewise gained a
+  withdrawal-stability hypothesis.  (4) **`releaseAll` still means release
+  only** and every theorem about it is unchanged; `cancelAll` sits beside it
+  and `unwindAll` is the composite.  A statement characterising what a
+  *bracket* does names `unwindAll`.  (5) **The bracket stays
+  projection-invisible**: the golden trace is byte-identical, and
+  `unwindAll_lockWritesOnly` / `_preserves_projection` / `_confinedToCore`
+  carry the information-flow results across unchanged.
+
+  Two things were **re-homed rather than duplicated** in the same cut, each
+  having lived downstream of the definition it is about: the at-any-key
+  characterisation of the object-store update, and the per-primitive
+  extension-invariant preservation lemmas — which existed in *three* copies
+  (`LockSetHeld`, `NonInterferencePerCore`, `IPC/CrossCore/Cancellation`)
+  because no two of those modules are in each other's import closure.  They
+  now sit once, beside `updateObjectLockAt` in `WithLockSet`, which all three
+  import.  `LockId.lookup_object_eq` — the missing third sibling of the
+  lookup's kind and lock-state projections — was added, since without it a
+  caller that knows what the store holds at a key could conclude nothing
+  about what a lookup there returned.
 - **Registered uncovered lock domains** are enumerated in Lean, not in prose:
   `UncoveredLockDomain` (`InformationFlow/FineLockFlow.lean`) names each gap and
   its owner, and its completeness theorem forces a new domain to be registered.
@@ -2300,11 +2346,11 @@ code may assume:
   propositions, not registrations.**
   `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean` registers one entry per
   phase SM0..SM10, each naming the theorem inventories that phase owns.  Those
-  inventories hold **1119 entries**, of which **909 are theorems**: the
-  inventories register a phase's whole surface, so 210 entries are `def`s —
+  inventories hold **1131 entries**, of which **917 are theorems**: the
+  inventories register a phase's whole surface, so 214 entries are `def`s —
   lock-set footprints, per-core invariant predicates, WCRT cost functions — and
   every inventory's construction macro proves only that the name *resolves*,
-  never that its type is a `Prop`.  **Quote 909, and quote it as theorems; 1119
+  never that its type is a `Prop`.  **Quote 917, and quote it as theorems; 1131
   is the entry count.**  A `List.length` cannot tell the two apart, so the
   propositionality census at the end of that module resolves each identifier
   against the environment and fails elaboration on drift.  **Eight of the eleven

@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.34.52` (`lakefile.toml`) |
+| **Package version** | `0.34.53` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 326,946 across 310 Lean files |
-| **Test LoC** | 68,597 across 70 Lean test suites |
-| **Proved declarations** | 10,874 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 327,977 across 310 Lean files |
+| **Test LoC** | 68,619 across 70 Lean test suites |
+| **Proved declarations** | 10,918 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -920,6 +920,39 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    (`ffi_rw_lock_enqueue`, `_is_served`, `_complete_read`,
    `_complete_write`, `_cancel`, `_cancel_count`), taking the
    SM2.D bridge surface from 16 to 22.
+
+   **WS-LC LC4 — the two-phase-locking consumers** (MODULES
+   `SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean`,
+   `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean`, v0.34.53):
+   the withdrawal reaches the discipline that needs it.
+   `withLockSet`'s shrinking phase and the revalidated entry's
+   refusal path are one definition, `unwindAll`, which
+   **withdraws before it releases**.  The order is load-bearing:
+   two identities meet at each member — a release by a non-holder
+   is the identity, and a withdrawal by a holder is the identity,
+   since INV-R4 keeps holders out of the wait queue — so both
+   orders are correct on a well-formed state, but the release
+   arms promote *from* the wait queue, so under release-first a
+   core still queued when its own release runs can be promoted
+   into a holder slot the withdrawal has already passed.
+   `unwindAll_leaves_no_queued_request` is the payoff: the
+   unwinding core has no queued request at any member of the
+   footprint, with no distinctness and no resolvability condition
+   on it, because the withdrawal fold establishes the property
+   everywhere and no release arm enqueues.  It deliberately does
+   not claim the core holds nothing there — a core holding a
+   write lock, unwound at a member declared read, keeps the
+   writer bit, and ruling that out needs the growing phase's mode
+   agreement threaded through.  The insensitivity predicate is
+   named for the phase rather than one of its halves
+   (`UnwindInsensitive`, two clauses), so no capstone can demand
+   one operation's invisibility and silently ignore the other's;
+   and the bracket stays projection-invisible, so the golden
+   trace is byte-identical and the SM8 information-flow results
+   carry across unchanged.  The strict-2PL and serializability
+   results are untouched: both are statements about acquire and
+   commit *times* and about conflict graphs over the declared
+   pairs, and neither unfolds the shrinking fold.
 
    **SM2.D.7 lockPrimitives aggregator** (MODULE
    `SeLe4n/Kernel/Concurrency/LockPrimitives.lean`):
