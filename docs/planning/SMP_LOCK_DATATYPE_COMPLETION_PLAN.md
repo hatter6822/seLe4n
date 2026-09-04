@@ -1,12 +1,13 @@
 # WS-LC — Lock datatype completion (the two SM2.C residuals)
 
-> **Status**: IN FLIGHT — **LC1 LANDED at v0.34.50** (all eighteen sub-tasks);
-> **LC2 LANDED at v0.34.51** (all eight); **LC3 LANDED at v0.34.52** (all
-> seven); **LC4 LANDED at v0.34.53** (all seven); LC5 not started.
+> **Status**: **COMPLETE** — LC1 at v0.34.50 (eighteen sub-tasks), LC2 at
+> v0.34.51 (eight), LC3 at v0.34.52 (seven), LC4 at v0.34.53 (seven), LC5 at
+> v0.34.54 (eleven).  Both SM2.C debt rows are retired from
+> `docs/REGISTERED_DEBT.md` table C.
 > **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Predecessor**: [`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md) RR6 (v0.34.49), which closed SM2.C-defer's refinement work and deliberately did not absorb these two
 > **Debt rows closed**: `docs/REGISTERED_DEBT.md` table C — **SM2.C-T** and **SM2.C-C**
-> **Target releases**: v0.34.50 → v0.34.53
+> **Target releases**: v0.34.50 → v0.34.54
 > **Sub-task count**: 51 across 5 phases (LC1..LC5), each phase numbered in
 > the order it is to be implemented
 

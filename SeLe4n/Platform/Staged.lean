@@ -99,6 +99,7 @@ import SeLe4n.Kernel.Concurrency.Locks.RwLock
 -- and the CAS-retry lock's bit-packed AtomicU64 (`rw_lock.rs`).
 -- Documents that lock's FIFO divergence and exports the simulation φ
 -- (`rwLockSim`).  The *deployed* lock's bridge is the next import.
+import SeLe4n.Kernel.Concurrency.Locks.ReleaseBudgetTiming
 import SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement
 -- WS-RR RR6.4 … RR6.9: QueuedRwLock refinement bridge between the Lean
 -- abstract state and the *deployed* ticket lock's four atomic words.

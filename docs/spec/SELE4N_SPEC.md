@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.34.53` (`lakefile.toml`) |
+| **Package version** | `0.34.54` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 327,977 across 310 Lean files |
-| **Test LoC** | 68,619 across 70 Lean test suites |
-| **Proved declarations** | 10,918 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 328,426 across 311 Lean files |
+| **Test LoC** | 68,657 across 70 Lean test suites |
+| **Proved declarations** | 10,932 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -953,6 +953,40 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    results are untouched: both are statements about acquire and
    commit *times* and about conflict graphs over the declared
    pairs, and neither unfolds the shrinking fold.
+
+   **WS-LC LC5 — the timed execution** (MODULES
+   `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean`,
+   `Locks/ReleaseBudgetTiming.lean`,
+   `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean`, v0.34.54):
+   `RwLockExecution` carries `stepCost : Nat → Nat`, the cycles
+   between one step and the next, **with no default** — so each of
+   the nine construction sites declares a cost model where a
+   reviewer can see it, rather than inheriting one silently.  The
+   field is plain data and the timing obligation is a Prop about
+   it (`BoundedCriticalSection`), so no execution is refused for
+   its cost model, every theorem quantifying over executions is
+   unchanged, and the decidable fairness fixtures still reduce
+   because nothing in `stateAt`, `FairTrace` or the admission
+   machinery reads it.
+
+   The point is that a delay figure now names its denominator.  A
+   bound in **lock operations** is unconditional given fairness; a
+   bound in **cycles** needs a per-critical-section ceiling, which
+   is a fact about a deployment's code and is therefore a stated
+   hypothesis (`rwLock_writer_admitted_within_cycle_budget` and
+   its mode-generic twin; `lockContention_elapsed_bounded` for the
+   CC-5 chain); a bound in **hardware ticks** needs a counter
+   frequency, which is a fact about a board and therefore lives in
+   a staged module beside the timer model, reusing that model's
+   own counter-to-tick conversion rather than restating the
+   division.  Each cycle-denominated result states its own
+   collapse back to the step bound at unit cost, because a
+   denomination that had quietly weakened a claim would look
+   exactly like one that had not.  `MAX_RELEASE_DELAY`'s 1024 is
+   accordingly 1024 *operations*: on the Raspberry Pi 5's 54 MHz
+   counter with 1 ms ticks the same budget spans from under one
+   tick to 1024 ticks depending on the ceiling assumed, which is
+   why the step figure alone was never a time.
 
    **SM2.D.7 lockPrimitives aggregator** (MODULE
    `SeLe4n/Kernel/Concurrency/LockPrimitives.lean`):

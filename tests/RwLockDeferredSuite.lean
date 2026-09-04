@@ -262,7 +262,11 @@ example :
     let e : RwLockExecution :=
       { initial := RwLockState.unheld
         ops := []
-        initial_reachable := RwLockReachable.base }
+        initial_reachable := RwLockReachable.base
+        -- WS-LC LC5.1: the cost model is present and irrelevant here — the
+        -- point of these three is that `decide` still reduces, and it does
+        -- because no decidable predicate over an execution reads `stepCost`.
+        stepCost := fun _ => 1 }
     FairTrace e 8 := by decide
 
 -- **D-3.2 bounded form `decide` example**: the bounded form is also
@@ -272,7 +276,11 @@ example :
     let e : RwLockExecution :=
       { initial := RwLockState.unheld
         ops := []
-        initial_reachable := RwLockReachable.base }
+        initial_reachable := RwLockReachable.base
+        -- WS-LC LC5.1: the cost model is present and irrelevant here — the
+        -- point of these three is that `decide` still reduces, and it does
+        -- because no decidable predicate over an execution reads `stepCost`.
+        stepCost := fun _ => 1 }
     fairTraceBoundedProp e 8 := by decide
 
 -- **D-3.2 truncation lemma applied**: an empty trace's `stateAt 100`
@@ -281,7 +289,11 @@ example :
     let e : RwLockExecution :=
       { initial := RwLockState.unheld
         ops := []
-        initial_reachable := RwLockReachable.base }
+        initial_reachable := RwLockReachable.base
+        -- WS-LC LC5.1: the cost model is present and irrelevant here — the
+        -- point of these three is that `decide` still reduces, and it does
+        -- because no decidable predicate over an execution reads `stepCost`.
+        stepCost := fun _ => 1 }
     e.stateAt 100 = e.finalState := by decide
 
 -- ============================================================================

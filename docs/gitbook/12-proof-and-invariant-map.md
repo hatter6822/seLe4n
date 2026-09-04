@@ -245,6 +245,14 @@ releases — the order is what lets `unwindAll_leaves_no_queued_request` hold wi
 no distinctness or resolvability condition on the footprint. The bracket stays
 invisible to every observer, so the golden trace is byte-identical.
 
+And a delay bound now names its denominator. `RwLockExecution` carries a per-step
+cost (v0.34.54), so the admission and contention bounds have cycle-denominated
+forms alongside the step forms — each conditional on a per-critical-section
+ceiling, which is an assumption about a deployment's code rather than something
+the kernel derives, and each collapsing back to the step bound at unit cost. The
+hardware-tick conversion needs a counter frequency, so it lives with the
+platform rather than with the lock.
+
 > Two standing caveats. **Kernel entry is serialised by one global ticket
 > lock**, so live WCRT is weaker than the fine-lock bound `PerCoreWcrt.lean`
 > proves. And **SM3.C.9 is deferred**: the `@[export]` bodies are, with one

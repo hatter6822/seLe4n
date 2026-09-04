@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.53.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.54.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1331,7 +1331,7 @@ SGI INTID 0..4 reserved for kernel SMP coordination (SM0.H).
 [`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md);
 per-phase plans at `docs/planning/SMP_*.md`.
 
-### WS-LC Lock datatype completion — IN FLIGHT (v0.34.50 → v0.34.54)
+### WS-LC Lock datatype completion — COMPLETE (v0.34.50 → v0.34.54)
 
 The two SM2.C **datatype** residuals RR6 re-registered rather than absorbed —
 `RwLockOp` had no withdrawal and `RwLockExecution` no notion of time.  Scoped
@@ -1345,7 +1345,7 @@ footprints unwindable.
 | LC2 | LANDED | v0.34.51 | The ticket-FIFO refinement of the withdrawal: the withdrawal word, skip-aware promotion, the capstones over live entries |
 | LC3 | LANDED | v0.34.52 | The deployed withdrawal: `QueuedRwLock::cancel`, loom, miri, Tier-5, and the foreign-function surface |
 | LC4 | LANDED | v0.34.53 | The two-phase-locking consumers: `cancelAll`, the revalidated refusal unwind, the `withLockSet` unwind |
-| LC5 | NOT STARTED | — | SM2.C-T: the timed execution and the cycle-denominated bounds; LC5.10 retires both debt rows |
+| LC5 | LANDED | v0.34.54 | SM2.C-T: the timed execution and the cycle-denominated bounds; LC5.10 retired both debt rows |
 
 **Plan**: [`docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md`](docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md)
 (51 sub-tasks across LC1..LC5).
@@ -2123,11 +2123,9 @@ code may assume:
   (`rwLock_writer_admitted_within_release_budget`); the single-step safety
   theorem it used to stand in for keeps its own entry under its accurate name.
   The two SM2.C **datatype** extensions RR6 did not absorb are WS-LC's (see
-  below): **SM2.C-T** is untouched, so until LC5 lands a delay bound from this
-  surface is a count of *lock operations* and reading it as wall-clock needs
-  the explicit per-step cost ceiling `FineLockFlow.lean` §3 takes as a
-  hypothesis; **SM2.C-C** is closed at v0.34.53 — spec, both refinements, the
-  deployed lock and both consumers — and LC5.10 retires its debt row.
+  below), and both are closed: **SM2.C-C** at v0.34.53 (spec, both refinements,
+  the deployed lock and both consumers) and **SM2.C-T** at v0.34.54 (the timed
+  execution) — see the two bullets below.
 - **A queued core may withdraw its request.**
   `RwLockOp.cancel` (v0.34.50) removes `c`'s entry from `waiters` and writes
   nothing else — three frame facts by `rfl` — preserves all five INV-R
@@ -2260,6 +2258,48 @@ code may assume:
   lookup's kind and lock-state projections — was added, since without it a
   caller that knows what the store holds at a key could conclude nothing
   about what a lookup there returned.
+- **A lock-delay bound is denominated, and by an assumption the kernel does not
+  make** (WS-LC LC5, v0.34.54).  `RwLockExecution` carries `stepCost : Nat →
+  Nat` — the cycles between step `k` and `k+1` — **with no default**, so all
+  nine construction sites declare a cost model where a reviewer can see it.
+  Five things new code must respect.  (1) **Three denominations, three
+  assumptions.**  A bound in *lock operations* is unconditional given fairness
+  (`rwLock_writer_admissionStep_bounded`).  A bound in *cycles* needs a
+  per-critical-section ceiling (`RwLockExecution.BoundedCriticalSection`,
+  supplied as a hypothesis: `rwLock_writer_admitted_within_cycle_budget`,
+  `lockContention_elapsed_bounded`).  A bound in *hardware ticks* needs a
+  counter frequency, which is a board fact, so it lives in a **staged** module
+  (`Locks/ReleaseBudgetTiming.lean`) and not in the production lock model at
+  all.  Quoting a figure as a time without naming which conversion produced it
+  is quoting a number with no denominator.  (2) **`BoundedCriticalSection` is a
+  Prop about the field, never a structure invariant.**  An execution whose
+  critical sections are unbounded is a perfectly good execution and every step
+  bound still holds of it; what fails is only the *reading* of that bound as
+  wall-clock.  Do not add it to `RwLockExecution` as a field or a well-formedness
+  conjunct — that would refuse executions the model should admit, and would make
+  the step bounds conditional on something they do not need.  (3) **The cycle
+  forms are corollaries, and each one collapses back.**
+  `rwLock_writer_cycle_budget_at_unit_cost` and
+  `lockContention_elapsed_at_unit_cost` instantiate the cycle bound to the step
+  bound it came from, because a denomination that had quietly weakened the claim
+  would look exactly like one that had not.  A new cycle-denominated result
+  states its own collapse.  (4) **The generic and execution-level forms both
+  stay.**  `lockContention_wallClock_bounded` takes a cost function (the general
+  statement, over any cost model); `lockContention_elapsed_bounded` reads
+  `e.stepCost` (the instance at this execution's own).  A caller holding an
+  execution should reach for the latter and not re-supply what the execution
+  already carries; the typed evidence arms consume the execution-level forms
+  precisely because that pins both.  (5) **`MAX_RELEASE_DELAY` is 1024 *lock
+  operations*.**  `releaseBudgetCycles` converts it under a ceiling and
+  `releaseBudgetTicks` under a timer configuration; on the RPi5's 54 MHz /
+  1 ms timer the same 1024 steps span from under one tick to 1024 ticks
+  depending on the ceiling assumed (`releaseBudgetTicks_rpi5_range`), which is
+  why the step figure alone was never a time.
+
+  `elapsedBetween` and its two bounds moved here from
+  `InformationFlow/FineLockFlow`, where they had been introduced with a note
+  that the execution datatype "has no such notion" — it has one now, so the
+  vocabulary belongs beside the datatype that carries it.
 - **Registered uncovered lock domains** are enumerated in Lean, not in prose:
   `UncoveredLockDomain` (`InformationFlow/FineLockFlow.lean`) names each gap and
   its owner, and its completeness theorem forces a new domain to be registered.
@@ -2346,11 +2386,11 @@ code may assume:
   propositions, not registrations.**
   `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean` registers one entry per
   phase SM0..SM10, each naming the theorem inventories that phase owns.  Those
-  inventories hold **1131 entries**, of which **917 are theorems**: the
+  inventories hold **1133 entries**, of which **919 are theorems**: the
   inventories register a phase's whole surface, so 214 entries are `def`s —
   lock-set footprints, per-core invariant predicates, WCRT cost functions — and
   every inventory's construction macro proves only that the name *resolves*,
-  never that its type is a `Prop`.  **Quote 917, and quote it as theorems; 1131
+  never that its type is a `Prop`.  **Quote 919, and quote it as theorems; 1133
   is the entry count.**  A `List.length` cannot tell the two apart, so the
   propositionality census at the end of that module resolves each identifier
   against the environment and fails elaboration on drift.  **Eight of the eleven

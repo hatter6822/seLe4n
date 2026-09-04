@@ -2705,6 +2705,149 @@ structure RwLockExecution where
   ops                : List RwLockOp
   /-- Proof that `initial` is reachable from `unheld` via kernel steps. -/
   initial_reachable  : RwLockReachable initial
+  /-- **WS-LC LC5.1**: the cost, in counter cycles, of the interval between
+  step `k` and step `k+1` — the critical section, when step `k` is an
+  admission.
+
+  Deliberately **without a default**.  Every bound this surface proves is
+  denominated in *lock operations*, and reading one as wall-clock is only
+  valid under a cost model; a default would let a construction site inherit
+  one silently and a reader take the resulting figure for a time bound.
+  Nine sites declare theirs explicitly, and the declaration is where a
+  reviewer can see what the figure means.
+
+  It is a plain field, not a structure invariant: timing obligations are
+  Props *about* it (`BoundedCriticalSection`), so no execution is refused for
+  its cost model and every existing theorem quantifying over executions is
+  unchanged.  Nothing in `stateAt`, `FairTrace` or the admission machinery
+  reads it, so the decidable fixtures still reduce. -/
+  stepCost           : Nat → Nat
+
+
+-- ============================================================================
+-- WS-LC LC5.1/LC5.2 — the timed execution: cost across an interval
+-- ============================================================================
+
+/-- **WS-SM SM8.D.3** (re-homed at **WS-LC LC5.1**): elapsed time across a step
+interval, under a per-step cost model.
+
+`cost k` is the real time the execution spends between step `k` and step `k+1` —
+the critical section, when step `k` is an admission.
+
+It lived in `InformationFlow/FineLockFlow`, where the CC-5 bound that consumes it
+lives, with a note that the execution datatype "has no such notion".  It has one
+now (`RwLockExecution.stepCost`), so the vocabulary belongs beside the datatype
+that carries it, where every consumer of an execution can reach it. -/
+def elapsedBetween (cost : Nat → Nat) (a b : Nat) : Nat :=
+  ((List.range (b - a)).map (fun i => cost (a + i))).sum
+
+/-- **WS-SM SM8.D.3** (**the step bound reads as a time bound only under a cost ceiling**).
+
+Given that no single interval costs more than `tCs`, a delay of `n` steps costs
+at most `n * tCs`.  The hypothesis is the whole point: without it the left side
+is unbounded while the right side is fixed, which is why the step figure alone
+does not bound a timing channel. -/
+theorem elapsedBetween_le (cost : Nat → Nat) (tCs : Nat) (hCost : ∀ k, cost k ≤ tCs)
+    (a b : Nat) : elapsedBetween cost a b ≤ (b - a) * tCs := by
+  unfold elapsedBetween
+  -- Induction on the interval width, bounding one summand at a time.
+  suffices h : ∀ (n a : Nat), ((List.range n).map (fun i => cost (a + i))).sum ≤ n * tCs by
+    exact h (b - a) a
+  intro n
+  induction n with
+  | zero => intro a; simp
+  | succ m ih =>
+    intro a
+    rw [List.range_succ_eq_map]
+    simp only [List.map_cons, List.map_map, List.sum_cons, Function.comp_def]
+    have hTail : ((List.range m).map (fun i => cost (a + (i + 1)))).sum ≤ m * tCs := by
+      have := ih (a + 1)
+      simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using this
+    have hHead : cost (a + 0) ≤ tCs := hCost _
+    calc cost (a + 0) + ((List.range m).map (fun i => cost (a + (i + 1)))).sum
+        ≤ tCs + m * tCs := Nat.add_le_add hHead hTail
+      _ = (m + 1) * tCs := by rw [Nat.succ_mul]; omega
+
+
+/-- **WS-SM SM8.D.3** (**the dual — a floor on elapsed time**): if no interval costs less
+than `tMin`, then `n` steps take at least `n * tMin`.
+
+`elapsedBetween_le` bounds how long one wait can be; this bounds how many waits
+can fit in a window, which is what a *rate* needs. -/
+theorem elapsedBetween_ge (cost : Nat → Nat) (tMin : Nat) (hCost : ∀ k, tMin ≤ cost k)
+    (a b : Nat) : (b - a) * tMin ≤ elapsedBetween cost a b := by
+  unfold elapsedBetween
+  suffices h : ∀ (n a : Nat), n * tMin ≤ ((List.range n).map (fun i => cost (a + i))).sum by
+    exact h (b - a) a
+  intro n
+  induction n with
+  | zero => intro a; simp
+  | succ m ih =>
+    intro a
+    rw [List.range_succ_eq_map]
+    simp only [List.map_cons, List.map_map, List.sum_cons, Function.comp_def]
+    have hTail : m * tMin ≤ ((List.range m).map (fun i => cost (a + (i + 1)))).sum := by
+      have := ih (a + 1)
+      simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using this
+    calc (m + 1) * tMin = tMin + m * tMin := by rw [Nat.succ_mul]; omega
+      _ ≤ cost (a + 0) + ((List.range m).map (fun i => cost (a + (i + 1)))).sum :=
+          Nat.add_le_add (hCost _) hTail
+
+/-- **WS-LC LC5.2**: the time an execution spends between two of its steps, in
+counter cycles.
+
+The execution's own cost model, applied to its own interval — which is what
+`elapsedBetween` could not say before `stepCost` existed, since it had to take
+the cost function as an argument and no caller was obliged to supply the
+execution's. -/
+def RwLockExecution.elapsed (e : RwLockExecution) (a b : Nat) : Nat :=
+  elapsedBetween e.stepCost a b
+
+/-- **WS-LC LC5.2**: the deployment hypothesis that turns a step count into a
+time — no interval of this execution costs more than `tCs` cycles.
+
+A **Prop about the field**, not a structure invariant: an execution whose
+critical sections are unbounded is a perfectly good execution, and every step
+bound still holds of it.  What fails without this is only the *reading* of that
+bound as wall-clock, which is exactly the distinction SM2.C-T existed to
+record. -/
+def RwLockExecution.BoundedCriticalSection (e : RwLockExecution) (tCs : Nat) : Prop :=
+  ∀ k, e.stepCost k ≤ tCs
+
+/-- **WS-LC LC5.2**: and the dual — no interval costs less than `tMin`.  Needed
+for a *rate*: a ceiling bounds how long one wait can be, a floor bounds how many
+waits fit in a window. -/
+def RwLockExecution.CostedCriticalSection (e : RwLockExecution) (tMin : Nat) : Prop :=
+  ∀ k, tMin ≤ e.stepCost k
+
+/-- **WS-LC LC5.2**: a step interval of `n` steps costs at most `n * tCs`
+cycles.  The execution-level form of `elapsedBetween_le`. -/
+theorem RwLockExecution.elapsed_le (e : RwLockExecution) (tCs : Nat)
+    (h : e.BoundedCriticalSection tCs) (a b : Nat) :
+    e.elapsed a b ≤ (b - a) * tCs :=
+  elapsedBetween_le e.stepCost tCs h a b
+
+/-- **WS-LC LC5.2**: and at least `n * tMin`. -/
+theorem RwLockExecution.elapsed_ge (e : RwLockExecution) (tMin : Nat)
+    (h : e.CostedCriticalSection tMin) (a b : Nat) :
+    (b - a) * tMin ≤ e.elapsed a b :=
+  elapsedBetween_ge e.stepCost tMin h a b
+
+/-- **WS-LC LC5.2**: at unit cost the cycle figure *is* the step figure.
+
+The sanity check that the denomination is a refinement rather than a
+replacement: every cycle-denominated bound below instantiates to the step
+bound it was derived from, so nothing was lost in gaining the unit. -/
+theorem RwLockExecution.elapsed_unit_cost (e : RwLockExecution)
+    (h : e.stepCost = fun _ => 1) (a b : Nat) : e.elapsed a b = b - a := by
+  -- Unit cost satisfies both the ceiling and the floor at 1, so the two
+  -- bounds above squeeze the figure onto the step count.  Reusing them keeps
+  -- this a *corollary* of the denomination rather than a second derivation.
+  have hLe : e.elapsed a b ≤ (b - a) * 1 :=
+    e.elapsed_le 1 (fun k => by rw [h]; exact Nat.le_refl 1) a b
+  have hGe : (b - a) * 1 ≤ e.elapsed a b :=
+    e.elapsed_ge 1 (fun k => by rw [h]; exact Nat.le_refl 1) a b
+  omega
 
 /-- **WS-SM SM2.C-defer D-1.2**: an RwLockExecution's initial state is wf. -/
 theorem RwLockExecution.initial_wf (e : RwLockExecution) : e.initial.wf :=
@@ -4720,9 +4863,46 @@ structure FairTrace (e : RwLockExecution) (maxDelay : Nat) where
         (e.stateAt (k_rel + 1)).writerHeld ≠ some c
 
 /-- **WS-SM SM2.C-defer D-3.7**: a runtime configuration symbol for the
-maximum release delay.  Set to a placeholder value of `1024` (steps);
-SM3 will tune this against actual kernel critical-section budgets. -/
+maximum release delay, in **lock operations**.
+
+The unit is the model's own and is not negotiable here: `FairTrace` bounds a
+release by a count of *steps*, because a step is the only thing the execution
+records.  1024 of them is a placeholder; SM3 tunes it against real kernel
+critical-section budgets.
+
+**What it costs in time** is a separate question with a separate answer
+(**WS-LC LC5.5**).  A step budget becomes a cycle budget under a
+per-critical-section ceiling — `releaseBudgetCycles` below — and a cycle
+budget becomes a hardware tick count under a counter frequency, which is a
+platform fact rather than a lock fact and therefore lives with the platform
+(`Locks/ReleaseBudgetTiming.lean`).  Reading `1024` as any interval of real
+time without one of those conversions is reading a number with no
+denominator. -/
 def MAX_RELEASE_DELAY : Nat := 1024
+
+/-- **WS-LC LC5.5**: the release budget in **cycles**, under a
+per-critical-section ceiling of `tCs`.
+
+This is the whole of the step-to-time conversion that belongs in the lock
+model: `maxDelay` steps, each costing at most `tCs`, cost at most
+`maxDelay * tCs`.  Anything further — what a cycle is worth in seconds —
+needs the counter's frequency and is not something this module can know. -/
+def releaseBudgetCycles (maxDelay tCs : Nat) : Nat := maxDelay * tCs
+
+/-- **WS-LC LC5.5**: and the budget really does bound the elapsed time of a
+window that many steps wide.
+
+Stated so `releaseBudgetCycles` is a *theorem's* figure rather than a
+definition nobody applies: a delay of at most `maxDelay` steps costs at most
+the budget, under the execution's own cost model. -/
+theorem releaseBudgetCycles_bounds_elapsed (e : RwLockExecution) (maxDelay tCs : Nat)
+    (h_cost : e.BoundedCriticalSection tCs) (a b : Nat) (h : b - a ≤ maxDelay) :
+    e.elapsed a b ≤ releaseBudgetCycles maxDelay tCs :=
+  Nat.le_trans (e.elapsed_le tCs h_cost a b) (Nat.mul_le_mul_right tCs h)
+
+/-- **WS-LC LC5.5**: at unit cost the cycle budget is the step budget. -/
+@[simp] theorem releaseBudgetCycles_unit (maxDelay : Nat) :
+    releaseBudgetCycles maxDelay 1 = maxDelay := Nat.mul_one maxDelay
 
 /-- **WS-SM SM2.C-defer D-3 (single-step safety / building block)**:
 under a wf state where a writer `c` is queued, a tryAcquireRead from a
@@ -8878,5 +9058,102 @@ anyone. -/
     ¬ s.isEffectiveRelease (.cancel c) := by
   unfold RwLockState.isEffectiveRelease
   exact fun h => h
+
+-- ============================================================================
+-- WS-LC LC5.3/LC5.4 — the same bounds, denominated in cycles
+-- ============================================================================
+
+/-! Every bound above counts **lock operations**.  That is the honest unit for
+a model whose only notion of progress is "an operation happened", and it is
+what SM2.C-T recorded as the gap: a holder may occupy its critical section for
+an unbounded real interval with no operation recorded, so a step figure read as
+wall-clock is a figure with no denominator.
+
+`RwLockExecution.stepCost` supplies the denominator, and the two results below
+are the step bounds with it applied.  They are **corollaries**, not
+replacements: each instantiates back to the step bound it came from at unit
+cost, so the step forms remain the primitive statements and nothing about them
+moved. -/
+
+/-- **WS-LC LC5.3**: a queued writer is admitted within
+`depth × (maxDelay + 1) × tCs` **cycles** of enqueueing.
+
+The cycle-denominated form of `rwLock_writer_admissionStep_bounded`.  `tCs` is
+the deployment's per-critical-section ceiling, supplied as
+`BoundedCriticalSection` — the assumption that makes a step count a time, and
+the one the kernel does not itself establish. -/
+theorem rwLock_writer_admitted_within_cycle_budget
+    (e : RwLockExecution) (maxDelay tCs : Nat) (h_fair : FairTrace e maxDelay)
+    (h_init : e.initial = RwLockState.unheld)
+    (c : CoreId) (k_enq : Nat)
+    (h_queued : (c, AccessMode.write) ∈ (e.stateAt k_enq).waiters)
+    (h_within : k_enq + writerWaitDepth (e.stateAt k_enq) c * (maxDelay + 1) <
+                e.ops.length)
+    (h_no_cancel : e.noCancelIn c k_enq
+      (k_enq + writerWaitDepth (e.stateAt k_enq) c * (maxDelay + 1) + 1))
+    (h_cost : e.BoundedCriticalSection tCs) :
+    ∃ a, e.admissionStep c = some a ∧
+         e.elapsed k_enq a ≤
+           writerWaitDepth (e.stateAt k_enq) c * (maxDelay + 1) * tCs := by
+  obtain ⟨a, h_eq, h_le⟩ :=
+    rwLock_writer_admissionStep_bounded e maxDelay h_fair h_init c k_enq h_queued
+      h_within h_no_cancel
+  refine ⟨a, h_eq, ?_⟩
+  calc e.elapsed k_enq a ≤ (a - k_enq) * tCs := e.elapsed_le tCs h_cost k_enq a
+    _ ≤ writerWaitDepth (e.stateAt k_enq) c * (maxDelay + 1) * tCs :=
+        Nat.mul_le_mul_right tCs (by omega)
+
+/-- **WS-LC LC5.4**: the mode-generic twin, over `queueWaitDepth`.
+
+It has to move with the writer form or the definitional bridge between the two
+depths (`queueWaitDepth_write`, an `rfl`) stops being a bridge: a cycle bound
+that existed for writers and not for the generic queue would leave the `.write`
+instance of this statement unprovable from the very theorem it unfolds to. -/
+theorem rwLock_queued_admitted_within_cycle_budget
+    (e : RwLockExecution) (maxDelay tCs : Nat) (h_fair : FairTrace e maxDelay)
+    (h_init : e.initial = RwLockState.unheld)
+    (c : CoreId) (m : AccessMode) (k_enq : Nat)
+    (h_queued : (c, m) ∈ (e.stateAt k_enq).waiters)
+    (h_within : k_enq + queueWaitDepth (e.stateAt k_enq) c m * (maxDelay + 1) <
+                e.ops.length)
+    (h_no_cancel : e.noCancelIn c k_enq
+      (k_enq + queueWaitDepth (e.stateAt k_enq) c m * (maxDelay + 1) + 1))
+    (h_cost : e.BoundedCriticalSection tCs) :
+    ∃ a, e.admissionStepAfter c k_enq = some a ∧ k_enq < a ∧
+         e.elapsed k_enq a ≤
+           queueWaitDepth (e.stateAt k_enq) c m * (maxDelay + 1) * tCs := by
+  obtain ⟨a, h_eq, h_gt, h_le⟩ :=
+    rwLock_queued_admissionStepAfter_bounded e maxDelay h_fair h_init c m k_enq
+      h_queued h_within h_no_cancel
+  refine ⟨a, h_eq, h_gt, ?_⟩
+  calc e.elapsed k_enq a ≤ (a - k_enq) * tCs := e.elapsed_le tCs h_cost k_enq a
+    _ ≤ queueWaitDepth (e.stateAt k_enq) c m * (maxDelay + 1) * tCs :=
+        Nat.mul_le_mul_right tCs (by omega)
+
+/-- **WS-LC LC5.3** (**the denomination is a refinement, not a replacement**):
+at unit cost the cycle bound *is* the step bound.
+
+The check that nothing was traded away in gaining the unit.  Without it a
+reader could not tell whether the cycle form is the same claim in new units or
+a weaker claim dressed up — and a bound that had quietly weakened would look
+exactly like this one. -/
+theorem rwLock_writer_cycle_budget_at_unit_cost
+    (e : RwLockExecution) (maxDelay : Nat) (h_fair : FairTrace e maxDelay)
+    (h_init : e.initial = RwLockState.unheld)
+    (c : CoreId) (k_enq : Nat)
+    (h_queued : (c, AccessMode.write) ∈ (e.stateAt k_enq).waiters)
+    (h_within : k_enq + writerWaitDepth (e.stateAt k_enq) c * (maxDelay + 1) <
+                e.ops.length)
+    (h_no_cancel : e.noCancelIn c k_enq
+      (k_enq + writerWaitDepth (e.stateAt k_enq) c * (maxDelay + 1) + 1))
+    (h_unit : e.stepCost = fun _ => 1) :
+    ∃ a, e.admissionStep c = some a ∧
+         a - k_enq ≤ writerWaitDepth (e.stateAt k_enq) c * (maxDelay + 1) := by
+  obtain ⟨a, h_eq, h_le⟩ :=
+    rwLock_writer_admitted_within_cycle_budget e maxDelay 1 h_fair h_init c k_enq
+      h_queued h_within h_no_cancel (fun k => by rw [h_unit]; exact Nat.le_refl 1)
+  refine ⟨a, h_eq, ?_⟩
+  rw [e.elapsed_unit_cost h_unit] at h_le
+  omega
 
 end SeLe4n.Kernel.Concurrency

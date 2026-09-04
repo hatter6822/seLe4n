@@ -2894,13 +2894,28 @@ run_check "INVARIANT" rg -n '^theorem syscallEntryUnderRevalidatedLockSet_refuse
 run_negative_check "INVARIANT" rg -n 'observed = none := by' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # CC-5's bound is denominated in LOCK OPERATIONS; reading it as time needs an
 # explicit per-critical-section ceiling.
-run_check "INVARIANT" rg -n '^def elapsedBetween' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem elapsedBetween_le' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^def elapsedBetween' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem elapsedBetween_le' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
 run_check "INVARIANT" rg -n '^theorem lockContention_wallClock_bounded' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # PR #864 review round 9.  The rate bound must be in elapsed time, not lock
 # operations; the domain inventory must quantify over constructors; and the
 # Biba predicate's lock erasure is a stated scope, not an unnoticed gap.
-run_check "INVARIANT" rg -n '^theorem elapsedBetween_ge' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem elapsedBetween_ge' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^  stepCost           : Nat . Nat' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^def RwLockExecution.elapsed' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^def RwLockExecution.BoundedCriticalSection' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^def RwLockExecution.CostedCriticalSection' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem RwLockExecution.elapsed_le' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem RwLockExecution.elapsed_ge' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem RwLockExecution.elapsed_unit_cost' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^def releaseBudgetCycles' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem releaseBudgetCycles_bounds_elapsed' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem rwLock_writer_admitted_within_cycle_budget' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem rwLock_queued_admitted_within_cycle_budget' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem rwLock_writer_cycle_budget_at_unit_cost' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem lockContention_elapsed_bounded' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockContention_elapsed_at_unit_cost' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockContentionChannel_rate_per_execution_time' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem lockContentionChannel_rate_per_elapsed_time' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # PR #864 review round 10 (both P1).  The rate must be measured over the
 # execution's OWN window — `ops.length` intervals, not one more — and the

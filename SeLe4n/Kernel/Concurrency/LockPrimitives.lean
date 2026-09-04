@@ -23,7 +23,7 @@ import SeLe4n.Kernel.Concurrency.Locks.QueuedRwLockRefinement
 
 This module aggregates the 25 substantive lock-primitive theorems
 (4 memory model + 6 TicketLock + 11 RwLock + 4 refinement) into a
-single typed inventory with a size witness `lockPrimitives.length = 28`.
+single typed inventory with a size witness `lockPrimitives.length = 30`.
 
 **WS-RR RR6.9 / RR6.19 / RR6.24 repointed two entries and added three.**
 
@@ -60,7 +60,7 @@ The inventory serves three purposes:
    regression that renames or removes a theorem fails the surface
    check.
 3. **Cross-language symmetry** (`scripts/check_lock_ffi_symmetry.sh`):
-   the Rust-side `LOCK_THEOREM_COUNT = 28` constant in
+   the Rust-side `LOCK_THEOREM_COUNT = 30` constant in
    `lock_bridge.rs` is cross-checked against `lockPrimitives.length`
    in this module.  A regression on either side without updating the
    other fails the symmetry script.
@@ -183,8 +183,14 @@ def lockPrimitives : List LockPrimitiveTheorem := [
   { description := "RwLock reader batching: contiguous readers acquire together",
     identifier  := `SeLe4n.Kernel.Concurrency.rwLock_reader_batching,
     category    := .rwLock },
-  { description := "RwLock writer liveness: a queued writer that does not withdraw is admitted within depth x (maxDelay+1) steps under FairTrace",
+  { description := "RwLock writer liveness: a queued writer that does not withdraw is admitted within depth x (maxDelay+1) LOCK OPERATIONS under FairTrace",
     identifier  := `SeLe4n.Kernel.Concurrency.rwLock_writer_liveness,
+    category    := .rwLock },
+  { description := "RwLock writer liveness in CYCLES: the same admission bound denominated by the execution's own per-step cost, under a per-critical-section ceiling",
+    identifier  := `SeLe4n.Kernel.Concurrency.rwLock_writer_admitted_within_cycle_budget,
+    category    := .rwLock },
+  { description := "RwLock denomination is a refinement: at unit cost the cycle bound is the step bound it was derived from",
+    identifier  := `SeLe4n.Kernel.Concurrency.rwLock_writer_cycle_budget_at_unit_cost,
     category    := .rwLock },
   { description := "RwLock writer safety: one reader acquire does not displace a queued writer",
     identifier  := `SeLe4n.Kernel.Concurrency.rwLock_writer_safety_under_reader_acquire,
@@ -218,11 +224,11 @@ def lockPrimitives : List LockPrimitiveTheorem := [
 /-- **WS-SM SM2.D.7**: size witness — the inventory contains exactly
     25 substantive lock-primitive theorems.
 
-    The Rust-side `LOCK_THEOREM_COUNT = 28` constant in
+    The Rust-side `LOCK_THEOREM_COUNT = 30` constant in
     `rust/sele4n-hal/src/lock_bridge.rs` mirrors this value; the
     cross-language symmetry script (`scripts/check_lock_ffi_symmetry.sh`)
     verifies both sides agree. -/
-theorem lockPrimitives_count : lockPrimitives.length = 28 := by
+theorem lockPrimitives_count : lockPrimitives.length = 30 := by
   unfold lockPrimitives; decide
 
 /-- **WS-SM SM2.D.7**: count of memory-model theorems.  Pins the
@@ -238,12 +244,14 @@ theorem lockPrimitives_ticketLock_count :
   unfold lockPrimitives; decide
 
 /-- **WS-SM SM2.D.7**: count of RwLock theorems.  Pins the SM2.C
-    portion at 14 — ten originally, plus the writer-safety theorem the
+    portion at 16 — ten originally, plus the writer-safety theorem the
     liveness entry used to stand in for (WS-RR RR6.24), plus the three
     withdrawal theorems (WS-LC LC1): safety, exclusion, and fairness to
-    the waiters behind the core that gives up. -/
+    the waiters behind the core that gives up; plus the two denomination
+    theorems (WS-LC LC5): the admission bound in cycles, and its collapse
+    back to the step bound at unit cost. -/
 theorem lockPrimitives_rwLock_count :
-    (lockPrimitives.filter (·.category = .rwLock)).length = 14 := by
+    (lockPrimitives.filter (·.category = .rwLock)).length = 16 := by
   unfold lockPrimitives; decide
 
 /-- **WS-SM SM2.D.7**: count of refinement theorems.  Pins the

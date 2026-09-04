@@ -1241,9 +1241,9 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @RevalidatedEntryOutcome
 #check @syscallEntryUnderRevalidatedLockSet_refused_unwinds
 #check @rwLock_release_by_nonholder_preserves_waiters
-#check @elapsedBetween
-#check @elapsedBetween_le
-#check @elapsedBetween_ge
+#check @SeLe4n.Kernel.Concurrency.elapsedBetween
+#check @SeLe4n.Kernel.Concurrency.elapsedBetween_le
+#check @SeLe4n.Kernel.Concurrency.elapsedBetween_ge
 #check @lockContentionChannel_rate_per_elapsed_time
 #check @lockContention_wallClock_bounded
 #check @continueFromAcquired
@@ -6934,7 +6934,10 @@ private def contendedExecution : SeLe4n.Kernel.Concurrency.RwLockExecution :=
     ops := [ .tryAcquireWrite c0, .tryAcquireWrite c1, .releaseWrite c0, .releaseWrite c1
            , .releaseRead c2, .releaseRead c2, .releaseRead c2, .releaseRead c2
            , .releaseRead c2 ]
-    initial_reachable := .base }
+    initial_reachable := .base
+    -- WS-LC LC5.1: unit cost, so the cycle figure this witness carries is
+    -- its step figure (`RwLockExecution.elapsed_unit_cost`).
+    stepCost := fun _ => 1 }
 
 /-- The fairness parameter the execution satisfies: every critical section it
 contains is released within one step of being entered. -/
@@ -7023,7 +7026,10 @@ private def repeatAcquirerExecution : SeLe4n.Kernel.Concurrency.RwLockExecution 
   { initial := SeLe4n.Kernel.Concurrency.RwLockState.unheld
     ops := [ .tryAcquireWrite c1, .releaseWrite c1, .tryAcquireWrite c0
            , .tryAcquireWrite c1, .releaseWrite c0 ]
-    initial_reachable := .base }
+    initial_reachable := .base
+    -- WS-LC LC5.1: unit cost, so the cycle figure this witness carries is
+    -- its step figure (`RwLockExecution.elapsed_unit_cost`).
+    stepCost := fun _ => 1 }
 
 /-- §7.4b  SM8.D.3 — the observation belongs to *this* acquisition. -/
 private def runRepeatAcquirerChecks : IO Unit := do
@@ -7133,7 +7139,10 @@ private def readerContendedExecution : SeLe4n.Kernel.Concurrency.RwLockExecution
     ops := [ .tryAcquireWrite c0, .tryAcquireRead c1, .releaseWrite c0, .releaseRead c1
            , .releaseRead c2, .releaseRead c2, .releaseRead c2, .releaseRead c2
            , .releaseRead c2 ]
-    initial_reachable := .base }
+    initial_reachable := .base
+    -- WS-LC LC5.1: unit cost, so the cycle figure this witness carries is
+    -- its step figure (`RwLockExecution.elapsed_unit_cost`).
+    stepCost := fun _ => 1 }
 
 private theorem readerContendedExecution_fair :
     SeLe4n.Kernel.Concurrency.FairTrace readerContendedExecution contendedMaxDelay :=

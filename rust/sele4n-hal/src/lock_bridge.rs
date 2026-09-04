@@ -834,7 +834,7 @@ pub fn rw_lock_release_write_count(handle: u64) -> u64 {
 /// refinement entry pointed at the form that assumes its own conclusion
 /// block by block, and the lock the kernel actually deploys had no
 /// entry at all.  See `LockPrimitives.lean`'s header for the detail.
-pub const LOCK_THEOREM_COUNT: usize = 28;
+pub const LOCK_THEOREM_COUNT: usize = 30;
 
 // ============================================================================
 // SM2.D.5 — Static linker-time check (build.rs scanner anchor)
@@ -1085,9 +1085,9 @@ mod tests {
     /// a test whose name says one thing and whose body checks another.
     #[test]
     fn theorem_count_equals_its_category_breakdown() {
-        assert_eq!(LOCK_THEOREM_COUNT, 28);
-        // 4 memory-model + 6 TicketLock + 14 RwLock + 4 refinement = 28.
-        assert_eq!(4 + 6 + 14 + 4, LOCK_THEOREM_COUNT);
+        assert_eq!(LOCK_THEOREM_COUNT, 30);
+        // 4 memory-model + 6 TicketLock + 16 RwLock + 4 refinement = 30.
+        assert_eq!(4 + 6 + 16 + 4, LOCK_THEOREM_COUNT);
     }
 
     // --------------------------------------------------------------------

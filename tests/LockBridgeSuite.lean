@@ -233,8 +233,8 @@ def runLockBridgeChecks : IO Unit := do
     (decide (SeLe4n.Kernel.Concurrency.peekTicketLockServing packed_max = max32))
 
   IO.println "--- §4 Aggregator size verification ---"
-  assertBool "lockPrimitives.length = 28"
-    (decide (SeLe4n.Kernel.Concurrency.lockPrimitives.length = 28))
+  assertBool "the lock inventory has its full entry count"
+    (decide (SeLe4n.Kernel.Concurrency.lockPrimitives.length = 30))
   -- The partition, so a miscategorised entry cannot hide behind the total.
   assertBool "memory-model count = 4"
     (decide
@@ -246,11 +246,11 @@ def runLockBridgeChecks : IO Unit := do
       ((SeLe4n.Kernel.Concurrency.lockPrimitives.filter
         (·.category =
           SeLe4n.Kernel.Concurrency.LockPrimitiveCategory.ticketLock)).length = 6))
-  assertBool "RwLock count = 14"
+  assertBool "the RwLock category has its full count"
     (decide
       ((SeLe4n.Kernel.Concurrency.lockPrimitives.filter
         (·.category =
-          SeLe4n.Kernel.Concurrency.LockPrimitiveCategory.rwLock)).length = 14))
+          SeLe4n.Kernel.Concurrency.LockPrimitiveCategory.rwLock)).length = 16))
   assertBool "refinement count = 4"
     (decide
       ((SeLe4n.Kernel.Concurrency.lockPrimitives.filter

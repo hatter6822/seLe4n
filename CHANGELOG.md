@@ -1,3 +1,97 @@
+## v0.34.54 — the lock execution learns what a step costs
+
+**WS-LC LC5 (all eleven sub-tasks), and the workstream closes.**  Both SM2.C
+debt rows are retired from `docs/REGISTERED_DEBT.md` table C: SM2.C-C at
+v0.34.53, SM2.C-T here.
+
+A delay bound on this surface counted **lock operations**, which is the only
+unit an execution that records nothing but operations can speak in.  A holder
+may occupy its critical section for an arbitrarily long real interval with no
+operation recorded, so a step figure read as wall-clock was a figure with no
+denominator.  `FineLockFlow.lean` said so in a comment block, in the right
+terms, and registered the fix as debt against the phase that owns the datatype.
+
+### The field, and why it has no default (LC5.1)
+
+`RwLockExecution` carries `stepCost : Nat → Nat` — the cycles between step `k`
+and step `k+1`.  It has **no default**, so all nine construction sites declare a
+cost model where a reviewer can see it; a default would let a site inherit one
+silently and a reader take the resulting figure for a time bound.
+
+It is plain data, not a structure invariant.  The timing obligation is a Prop
+*about* it (`BoundedCriticalSection`), so no execution is refused for its cost
+model, every theorem quantifying over executions is unchanged, and — the risk
+the plan flagged first and the reason it was checked before anything else moved
+— the decidable fairness fixtures still reduce, because nothing in `stateAt`,
+`FairTrace` or the admission machinery reads the field.  That was verified on a
+standalone copy of the structure before the real one was touched.
+
+`elapsedBetween` and its two bounds moved here from `FineLockFlow`, where they
+had been introduced with a note that the execution datatype "has no such
+notion".  It has one now, so the vocabulary belongs beside the datatype that
+carries it.
+
+### Three denominations, three assumptions (LC5.2–LC5.6)
+
+The substance of the cut is that a figure now names its denominator, and each
+conversion names the assumption that makes it valid:
+
+* **lock operations** — unconditional given fairness.  Unchanged; these remain
+  the primitive statements.
+* **cycles** — needs a per-critical-section ceiling.  That is a fact about a
+  deployment's code, not something the kernel derives, so it is a stated
+  hypothesis: `rwLock_writer_admitted_within_cycle_budget` and its mode-generic
+  twin, and `lockContention_elapsed_bounded` for the CC-5 chain.
+* **hardware ticks** — needs a counter frequency.  That is a fact about a
+  board, so it lives in a staged module beside the timer model and reuses that
+  model's own counter-to-tick conversion rather than restating the division.
+
+Every cycle-denominated result states its own collapse back to the step bound
+at unit cost (`rwLock_writer_cycle_budget_at_unit_cost`,
+`lockContention_elapsed_at_unit_cost`), because a denomination that had quietly
+weakened a claim would look exactly like one that had not.
+
+The generic and execution-level forms both stay, and the pair is deliberate:
+`lockContention_wallClock_bounded` takes a cost function and is the general
+statement over any cost model; `lockContention_elapsed_bounded` reads the
+execution's own.  A caller holding an execution should not have to re-supply
+what the execution already carries — and might supply differently from what the
+rest of its reasoning assumes.
+
+### What the placeholder is worth (LC5.5)
+
+`MAX_RELEASE_DELAY`'s 1024 is 1024 *lock operations*, and its docstring now says
+so.  `releaseBudgetCycles` converts it under a ceiling; `releaseBudgetTicks`
+converts that under a timer configuration.  On the Raspberry Pi 5's 54 MHz
+counter with 1 ms ticks the same budget is under one tick at a one-cycle
+ceiling and 1024 ticks at a full-millisecond one — three orders of magnitude,
+turning on an assumption the lock model does not make, which is precisely why
+the step figure alone was never a time.  `releaseBudgetTicks_rpi5_range` is that
+arithmetic as a theorem rather than as prose.
+
+The tick module is **staged**, and that is the right partition rather than an
+obstacle: it imports the H3 timer model, production must not import staged, and
+a conversion that needs a counter frequency cannot belong to a lock model even
+in principle.  The steps-to-cycles half, which needs only a ceiling, is
+production.
+
+### The docstrings, the evidence arms, the inventory (LC5.7–LC5.9)
+
+Two docstrings said the figure was available per lock operation and not per unit
+time.  The per-unit-time form now exists, so they say what it is and where.
+
+The two typed evidence arms consume the **execution-level** rate theorem rather
+than the generic one.  That is the stronger pin: the generic form is what proves
+it, so consuming the specific one forces both to exist — consuming the generic
+one would have let the execution-level statement, and with it the field the
+whole denomination rests on, be deleted while the arms kept elaborating.
+
+The lock inventory gains the two denomination theorems and its R-10 description
+says which unit it means; the count moves 28 → 30 across its four sites in
+lockstep, and the phase manifest with it (1133 entries, 919 theorems).
+
+Refs: docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md §7 (LC5)
+
 ## v0.34.53 — the two-phase-locking bracket learns to unwind
 
 **WS-LC LC4 (all seven sub-tasks).**  The withdrawal existed at every level —

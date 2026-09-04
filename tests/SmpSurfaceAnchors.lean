@@ -380,6 +380,23 @@ and does not mean" caveat used to disclaim. -/
 #check @SeLe4n.Kernel.Concurrency.rwLock_release_then_cancel_not_queued
 #check @SeLe4n.Kernel.Concurrency.UnwindInsensitive
 
+/-! ## WS-LC LC5 — the timed execution.
+
+A bound in lock operations is unconditional given fairness; a bound in cycles
+needs a per-critical-section ceiling, stated as a hypothesis rather than
+derived; a bound in hardware ticks needs a counter frequency and therefore
+lives with the platform.  Each cycle form collapses back to its step form at
+unit cost, so the denomination is a refinement and not a weakening. -/
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.stepCost
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.elapsed
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.BoundedCriticalSection
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.CostedCriticalSection
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.elapsed_unit_cost
+#check @SeLe4n.Kernel.Concurrency.releaseBudgetCycles
+#check @SeLe4n.Kernel.Concurrency.rwLock_writer_admitted_within_cycle_budget
+#check @SeLe4n.Kernel.Concurrency.rwLock_queued_admitted_within_cycle_budget
+#check @SeLe4n.Kernel.Concurrency.rwLock_writer_cycle_budget_at_unit_cost
+
 #check @SeLe4n.Kernel.Concurrency.strictly_2pl_preserved
 -- SM3.E.5 — commutativity (the realistic write/write observational lemma).
 #check @SeLe4n.Kernel.Concurrency.updateObjectAt_objStoreEquiv_comm
@@ -405,7 +422,7 @@ example : 0 < SeLe4n.Kernel.Concurrency.staticRwLockPoolSize := by decide
 
 /-! ## Aggregator structure (SM2.D.7) -/
 
-example : SeLe4n.Kernel.Concurrency.lockPrimitives.length = 28 := by decide
+example : SeLe4n.Kernel.Concurrency.lockPrimitives.length = 30 := by decide
 
 example :
     (SeLe4n.Kernel.Concurrency.lockPrimitives.filter
@@ -419,7 +436,7 @@ example :
 
 example :
     (SeLe4n.Kernel.Concurrency.lockPrimitives.filter
-      (·.category = SeLe4n.Kernel.Concurrency.LockPrimitiveCategory.rwLock)).length = 14 := by
+      (·.category = SeLe4n.Kernel.Concurrency.LockPrimitiveCategory.rwLock)).length = 16 := by
   decide
 
 example :
@@ -522,8 +539,8 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
   assertBool "rH3.isValid: raw.toNat < poolSize" (decide (rH3.raw.toNat < 4))
 
   IO.println "--- §3 Aggregator size + per-category counts ---"
-  assertBool "lockPrimitives.length = 28"
-    (decide (SeLe4n.Kernel.Concurrency.lockPrimitives.length = 28))
+  assertBool "the lock inventory has its full entry count"
+    (decide (SeLe4n.Kernel.Concurrency.lockPrimitives.length = 30))
   assertBool "memory-model count = 4"
     (decide
       ((SeLe4n.Kernel.Concurrency.lockPrimitives.filter
@@ -534,11 +551,11 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
       ((SeLe4n.Kernel.Concurrency.lockPrimitives.filter
         (·.category =
           SeLe4n.Kernel.Concurrency.LockPrimitiveCategory.ticketLock)).length = 6))
-  assertBool "RwLock count = 14"
+  assertBool "the RwLock category has its full count"
     (decide
       ((SeLe4n.Kernel.Concurrency.lockPrimitives.filter
         (·.category =
-          SeLe4n.Kernel.Concurrency.LockPrimitiveCategory.rwLock)).length = 14))
+          SeLe4n.Kernel.Concurrency.LockPrimitiveCategory.rwLock)).length = 16))
   assertBool "refinement count = 4"
     (decide
       ((SeLe4n.Kernel.Concurrency.lockPrimitives.filter

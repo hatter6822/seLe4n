@@ -776,71 +776,23 @@ theorem lockContentionObservation_is_own_acquisition
 -- earlier "wall-clock delay" wording overclaim — it is a parameter here, and the
 -- bridge theorem below is stated with it as an explicit hypothesis.
 --
--- The stronger result (timestamps on `RwLockExecution` itself, with `maxDelay`
--- denominated in ticks) is **tracked debt against SM2.C**: it changes the core
--- execution datatype every SM2.C liveness theorem quantifies over, so it is that
--- phase's foundation to move, not this one's.  Registered in
--- `docs/planning/SMP_INFORMATION_FLOW_PLAN.md` §SM8.D.
-
-/-- SM8.D.3: elapsed time across a step interval, under a per-step cost model.
-
-`cost k` is the real time the execution spends between step `k` and step `k+1` —
-the critical section, when step `k` is a lock acquisition.  The SM2.C execution
-model has no such notion, which is exactly the gap this makes visible. -/
-def elapsedBetween (cost : Nat → Nat) (a b : Nat) : Nat :=
-  ((List.range (b - a)).map (fun i => cost (a + i))).sum
-
-/-- SM8.D.3 (**the step bound reads as a time bound only under a cost ceiling**).
-
-Given that no single interval costs more than `tCs`, a delay of `n` steps costs
-at most `n * tCs`.  The hypothesis is the whole point: without it the left side
-is unbounded while the right side is fixed, which is why the step figure alone
-does not bound a timing channel. -/
-theorem elapsedBetween_le (cost : Nat → Nat) (tCs : Nat) (hCost : ∀ k, cost k ≤ tCs)
-    (a b : Nat) : elapsedBetween cost a b ≤ (b - a) * tCs := by
-  unfold elapsedBetween
-  -- Induction on the interval width, bounding one summand at a time.
-  suffices h : ∀ (n a : Nat), ((List.range n).map (fun i => cost (a + i))).sum ≤ n * tCs by
-    exact h (b - a) a
-  intro n
-  induction n with
-  | zero => intro a; simp
-  | succ m ih =>
-    intro a
-    rw [List.range_succ_eq_map]
-    simp only [List.map_cons, List.map_map, List.sum_cons, Function.comp_def]
-    have hTail : ((List.range m).map (fun i => cost (a + (i + 1)))).sum ≤ m * tCs := by
-      have := ih (a + 1)
-      simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using this
-    have hHead : cost (a + 0) ≤ tCs := hCost _
-    calc cost (a + 0) + ((List.range m).map (fun i => cost (a + (i + 1)))).sum
-        ≤ tCs + m * tCs := Nat.add_le_add hHead hTail
-      _ = (m + 1) * tCs := by rw [Nat.succ_mul]; omega
-
-
-/-- SM8.D.3 (**the dual — a floor on elapsed time**): if no interval costs less
-than `tMin`, then `n` steps take at least `n * tMin`.
-
-`elapsedBetween_le` bounds how long one wait can be; this bounds how many waits
-can fit in a window, which is what a *rate* needs. -/
-theorem elapsedBetween_ge (cost : Nat → Nat) (tMin : Nat) (hCost : ∀ k, tMin ≤ cost k)
-    (a b : Nat) : (b - a) * tMin ≤ elapsedBetween cost a b := by
-  unfold elapsedBetween
-  suffices h : ∀ (n a : Nat), n * tMin ≤ ((List.range n).map (fun i => cost (a + i))).sum by
-    exact h (b - a) a
-  intro n
-  induction n with
-  | zero => intro a; simp
-  | succ m ih =>
-    intro a
-    rw [List.range_succ_eq_map]
-    simp only [List.map_cons, List.map_map, List.sum_cons, Function.comp_def]
-    have hTail : m * tMin ≤ ((List.range m).map (fun i => cost (a + (i + 1)))).sum := by
-      have := ih (a + 1)
-      simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using this
-    calc (m + 1) * tMin = tMin + m * tMin := by rw [Nat.succ_mul]; omega
-      _ ≤ cost (a + 0) + ((List.range m).map (fun i => cost (a + (i + 1)))).sum :=
-          Nat.add_le_add (hCost _) hTail
+-- The stronger result landed at **WS-LC LC5**: `RwLockExecution` carries a
+-- per-step cost (`stepCost`, with no default, so every construction site
+-- declares its cost model), and `lockContention_elapsed_bounded` below is this
+-- bound read through the execution's own costs rather than through a cost
+-- function a caller happened to supply.  Both forms are kept, and the pair is
+-- the point: the generic one is the general statement about *any* cost model,
+-- the execution-level one is the statement about *this* execution's, and a
+-- caller that has an execution should not have to re-supply what the execution
+-- already carries.
+--
+-- What is still an assumption rather than a theorem is the ceiling itself.
+-- `BoundedCriticalSection` is a Prop about the field, not a structure
+-- invariant: an execution whose critical sections are unbounded is a perfectly
+-- good execution and every step bound still holds of it.  What fails without
+-- the ceiling is only the *reading* of that bound as wall-clock — which is the
+-- distinction this comment block existed to record, and the one the
+-- denomination makes checkable instead of merely stated.
 
 /-- SM8.D.3: the observation as a single natural number, with `0` reserved for
 "no admission in this execution". -/
@@ -950,16 +902,66 @@ theorem lockContention_wallClock_bounded (e : SeLe4n.Kernel.Concurrency.RwLockEx
     ∃ delay admitStep, lockContentionObservation e c kEnq = some delay ∧
       e.admissionStepAfter c kEnq = some admitStep ∧
       delay ≤ lockContentionDelayBound maxDelay ∧
-      elapsedBetween cost kEnq admitStep ≤ lockContentionDelayBound maxDelay * tCs := by
+      SeLe4n.Kernel.Concurrency.elapsedBetween cost kEnq admitStep ≤ lockContentionDelayBound maxDelay * tCs := by
   obtain ⟨delay, hObs, hLe⟩ :=
     lockContention_delay_bounded e maxDelay hFair hInit c m kEnq hQueued hWithin hNoCancel
   obtain ⟨admitStep, hStep, _, hDelay, _⟩ :=
     lockContentionObservation_is_own_acquisition e c kEnq delay hObs
   refine ⟨delay, admitStep, hObs, hStep, hLe, ?_⟩
-  calc elapsedBetween cost kEnq admitStep
-      ≤ (admitStep - kEnq) * tCs := elapsedBetween_le cost tCs hCost kEnq admitStep
+  calc SeLe4n.Kernel.Concurrency.elapsedBetween cost kEnq admitStep
+      ≤ (admitStep - kEnq) * tCs := SeLe4n.Kernel.Concurrency.elapsedBetween_le cost tCs hCost kEnq admitStep
     _ ≤ lockContentionDelayBound maxDelay * tCs := by
         exact Nat.mul_le_mul_right tCs (hDelay ▸ hLe)
+
+/-- **WS-LC LC5.6** (**the same bound, in the execution's own cycles**).
+
+`lockContention_wallClock_bounded` above takes a cost function as an argument,
+because when it was written `RwLockExecution` had none.  It does now, so this
+is the form a caller who *has* an execution should reach for: the cost model is
+the execution's, not one the caller re-supplies and might supply differently
+from the one the rest of its reasoning assumes.
+
+The generic form is kept deliberately.  It is the general statement — a bound
+under *any* cost model, including one attributed to an execution externally —
+and it is what a caller reasoning about a family of cost models needs.  This
+one is the instance at the execution's own. -/
+theorem lockContention_elapsed_bounded (e : SeLe4n.Kernel.Concurrency.RwLockExecution)
+    (maxDelay : Nat) (hFair : SeLe4n.Kernel.Concurrency.FairTrace e maxDelay)
+    (hInit : e.initial = RwLockState.unheld) (c : CoreId) (m : AccessMode) (kEnq : Nat)
+    (hQueued : (c, m) ∈ (e.stateAt kEnq).waiters)
+    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length)
+    (hNoCancel : e.noCancelIn c kEnq (kEnq + lockContentionDelayBound maxDelay + 1))
+    (tCs : Nat) (hCost : e.BoundedCriticalSection tCs) :
+    ∃ delay admitStep, lockContentionObservation e c kEnq = some delay ∧
+      e.admissionStepAfter c kEnq = some admitStep ∧
+      delay ≤ lockContentionDelayBound maxDelay ∧
+      e.elapsed kEnq admitStep ≤ lockContentionDelayBound maxDelay * tCs :=
+  lockContention_wallClock_bounded e maxDelay hFair hInit c m kEnq hQueued hWithin
+    hNoCancel e.stepCost tCs hCost
+
+/-- **WS-LC LC5.6**: and at unit cost it is the step bound.
+
+The instantiation check for the CC-5 chain, matching the one the lock model
+carries for the admission bound: a denomination that had quietly weakened the
+claim would look exactly like one that had not, so the collapse back to steps
+is stated rather than assumed. -/
+theorem lockContention_elapsed_at_unit_cost
+    (e : SeLe4n.Kernel.Concurrency.RwLockExecution)
+    (maxDelay : Nat) (hFair : SeLe4n.Kernel.Concurrency.FairTrace e maxDelay)
+    (hInit : e.initial = RwLockState.unheld) (c : CoreId) (m : AccessMode) (kEnq : Nat)
+    (hQueued : (c, m) ∈ (e.stateAt kEnq).waiters)
+    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length)
+    (hNoCancel : e.noCancelIn c kEnq (kEnq + lockContentionDelayBound maxDelay + 1))
+    (hUnit : e.stepCost = fun _ => 1) :
+    ∃ delay admitStep, lockContentionObservation e c kEnq = some delay ∧
+      e.admissionStepAfter c kEnq = some admitStep ∧
+      admitStep - kEnq ≤ lockContentionDelayBound maxDelay := by
+  obtain ⟨delay, admitStep, hObs, hStep, hLe, hElapsed⟩ :=
+    lockContention_elapsed_bounded e maxDelay hFair hInit c m kEnq hQueued hWithin
+      hNoCancel 1 (fun k => by rw [hUnit]; exact Nat.le_refl 1)
+  refine ⟨delay, admitStep, hObs, hStep, ?_⟩
+  rw [e.elapsed_unit_cost hUnit] at hElapsed
+  omega
 
 /-- SM8.D.3: the writer instance of the delay bound. -/
 theorem writerContention_delay_bounded (e : SeLe4n.Kernel.Concurrency.RwLockExecution)
@@ -1083,7 +1085,13 @@ releases it, and core 1 queues behind it forever. -/
 def starvingExecution : SeLe4n.Kernel.Concurrency.RwLockExecution :=
   { initial := RwLockState.unheld
     ops := [.tryAcquireWrite bootCoreId, .tryAcquireWrite ⟨1, by decide⟩]
-    initial_reachable := .base }
+    initial_reachable := .base
+    -- WS-LC LC5.1: unit cost.  These witnesses exist to exhibit a *step*
+    -- count, and at unit cost the cycle figure is that step count
+    -- (`RwLockExecution.elapsed_unit_cost`) — so the observation they
+    -- carry means the same thing in either denomination, which is exactly
+    -- what a witness for a step bound should say.
+    stepCost := fun _ => 1 }
 
 /-- SM8.D.3: core 1 really is queued in it. -/
 theorem starvingExecution_queued :
@@ -1169,7 +1177,13 @@ def singleWaiterExecution : SeLe4n.Kernel.Concurrency.RwLockExecution :=
            , .releaseRead padCore, .releaseRead padCore, .releaseRead padCore
            , .releaseRead padCore, .releaseRead padCore, .releaseRead padCore
            , .releaseRead padCore, .releaseRead padCore ]
-    initial_reachable := .base }
+    initial_reachable := .base
+    -- WS-LC LC5.1: unit cost.  These witnesses exist to exhibit a *step*
+    -- count, and at unit cost the cycle figure is that step count
+    -- (`RwLockExecution.elapsed_unit_cost`) — so the observation they
+    -- carry means the same thing in either denomination, which is exactly
+    -- what a witness for a step bound should say.
+    stepCost := fun _ => 1 }
 
 /-- SM8.D.3: and the same waiter with `aheadCore` queued **ahead** of it, so its
 admission waits for two releases — a delay of two steps.
@@ -1187,7 +1201,13 @@ def twoWaiterExecution : SeLe4n.Kernel.Concurrency.RwLockExecution :=
            , .releaseRead padCore, .releaseRead padCore, .releaseRead padCore
            , .releaseRead padCore, .releaseRead padCore, .releaseRead padCore
            , .releaseRead padCore ]
-    initial_reachable := .base }
+    initial_reachable := .base
+    -- WS-LC LC5.1: unit cost.  These witnesses exist to exhibit a *step*
+    -- count, and at unit cost the cycle figure is that step count
+    -- (`RwLockExecution.elapsed_unit_cost`) — so the observation they
+    -- carry means the same thing in either denomination, which is exactly
+    -- what a witness for a step bound should say.
+    stepCost := fun _ => 1 }
 
 /-- SM8.D.3: both traces are fair at the same budget, so the two observations are
 comparable and neither is obtained by relaxing the premises. -/
@@ -1303,19 +1323,20 @@ def lockContentionTrace (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (c : Cor
 /-- SM8.D.3 (**the CC-5 pacing bound, in lock operations**): a core cannot make
 more observations than the execution has steps.
 
-**This is a bound per lock operation, not per unit time**, and on its own it is
-close to a tautology: distinct acquisitions have distinct enqueue steps, and an
-execution of `n` operations has `n + 1` steps.  It does *not* by itself make
-CC-5's capacity comparable with CC-1's, whose pacing
+**This is a bound per lock operation**, and on its own it is close to a
+tautology: distinct acquisitions have distinct enqueue steps, and an execution
+of `n` operations has `n + 1` steps.  It does *not* by itself make CC-5's
+capacity comparable with CC-1's, whose pacing
 (`schedulingObservation_changes_on_domain_tick`) is per **timer tick** — real
-time — because `RwLockExecution` carries no ticks and many lock operations may
-fall between two ticks.
+time — because many lock operations may fall between two ticks.
 
-`lockContentionChannel_rate_per_elapsed_time` is the statement that does bound
-observations per unit time, and like the delay bound it needs a cost model: a
-*floor* on how long an inter-operation interval takes.  The two are duals —
-`elapsedBetween_le` needs a ceiling to bound one wait, this needs a floor to
-bound how many waits fit in a window.
+The per-unit-time form exists (WS-LC LC5.7):
+`lockContentionChannel_rate_per_elapsed_time` bounds observations against
+elapsed time, and `lockContentionChannel_rate_per_execution_time` states it at
+the execution's own cost model.  Like the delay bound it needs one: a *floor*
+on how long an inter-operation interval takes.  The two are duals —
+`SeLe4n.Kernel.Concurrency.elapsedBetween_le` needs a ceiling to bound one
+wait, this needs a floor to bound how many waits fit in a window.
 
 CC-1's capacity figure needs two factors — how much one observation carries and
 how often one can be made — and `schedulingObservation_changes_on_domain_tick`
@@ -1347,17 +1368,21 @@ execution's own window** — states `0 … ops.length`, which is `ops.length`
 intervals, not one more.  Read as a rate, at most one observation per `tMin`.
 
 The floor is a hypothesis, exactly as the ceiling is in
-`lockContention_wallClock_bounded`, and for the same reason: the SM2.C execution
-model has no notion of duration.  Both halves of CC-5's bandwidth figure —
-how much one observation carries, and how often one can be made — are therefore
-conditional on a cost model, and the alphabet result is the only unconditional
-half. -/
+`lockContention_wallClock_bounded`, and for the same reason — but the reason is
+no longer that the model has no notion of duration.  It has one since WS-LC
+LC5.1 (`RwLockExecution.stepCost`); what it does not have, and cannot, is a
+*derivation* of what a deployment's critical sections cost.  Both halves of
+CC-5's bandwidth figure — how much one observation carries, and how often one
+can be made — are therefore conditional on a declared cost model, and the
+alphabet result is the only unconditional half.
+`lockContentionChannel_rate_per_execution_time` is this statement at the
+execution's own model. -/
 theorem lockContentionChannel_rate_per_elapsed_time
     (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (cost : Nat → Nat) (tMin : Nat)
     (hCost : ∀ k, tMin ≤ cost k) (steps : List Nat)
     (hNodup : steps.Nodup) (hRange : ∀ k ∈ steps, k ≤ e.ops.length)
     (hPos : ∀ k ∈ steps, 1 ≤ k) :
-    steps.length * tMin ≤ elapsedBetween cost 0 e.ops.length := by
+    steps.length * tMin ≤ SeLe4n.Kernel.Concurrency.elapsedBetween cost 0 e.ops.length := by
   -- An execution of `n` operations spans states `0 … n`, so it has exactly `n`
   -- intervals — measuring through `n + 1` would sum a `cost n` that no step of
   -- the execution occupies, and let an observation be paid for with time after
@@ -1378,8 +1403,24 @@ theorem lockContentionChannel_rate_per_elapsed_time
     simp only [List.length_cons] at this
     omega
   calc steps.length * tMin ≤ e.ops.length * tMin := Nat.mul_le_mul_right tMin hLen
-    _ ≤ elapsedBetween cost 0 e.ops.length := by
-        simpa using elapsedBetween_ge cost tMin hCost 0 e.ops.length
+    _ ≤ SeLe4n.Kernel.Concurrency.elapsedBetween cost 0 e.ops.length := by
+        simpa using SeLe4n.Kernel.Concurrency.elapsedBetween_ge cost tMin hCost 0 e.ops.length
+
+/-- **WS-LC LC5.7** (**the rate, at the execution's own cost model**).
+
+`lockContentionChannel_rate_per_elapsed_time` takes a cost function as an
+argument, because when it was written an execution carried none.  This is that
+statement read through the execution's own — the pacing dual of
+`lockContention_elapsed_bounded`, and the reason no docstring in this section
+still says the figure is available only per lock operation. -/
+theorem lockContentionChannel_rate_per_execution_time
+    (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (tMin : Nat)
+    (hCost : e.CostedCriticalSection tMin) (steps : List Nat)
+    (hNodup : steps.Nodup) (hRange : ∀ k ∈ steps, k ≤ e.ops.length)
+    (hPos : ∀ k ∈ steps, 1 ≤ k) :
+    steps.length * tMin ≤ e.elapsed 0 e.ops.length :=
+  lockContentionChannel_rate_per_elapsed_time e e.stepCost tMin hCost steps hNodup
+    hRange hPos
 
 /-- SM8.D.3 (**the CC-5 capacity bound**): over a run of `n` contended
 acquisitions the core's whole trace is one element of
@@ -1571,16 +1612,18 @@ theorem acceptedCovertChannel_lockContention_severity_basis (maxDelay : Nat) :
       -- this conjunct the elapsed-time result could be deleted while the
       -- severity justification — which reads as a bandwidth argument — kept
       -- elaborating on the operation-count bound alone.
-      (∀ (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (cost : Nat → Nat) (tMin : Nat),
-        (∀ k, tMin ≤ cost k) → ∀ steps : List Nat, steps.Nodup →
+      -- WS-LC LC5.8: at the execution's own cost model, for the reason the
+      -- registration arm gives.
+      (∀ (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (tMin : Nat),
+        e.CostedCriticalSection tMin → ∀ steps : List Nat, steps.Nodup →
         (∀ k ∈ steps, k ≤ e.ops.length) → (∀ k ∈ steps, 1 ≤ k) →
-        steps.length * tMin ≤ elapsedBetween cost 0 e.ops.length) :=
+        steps.length * tMin ≤ e.elapsed 0 e.ops.length) :=
   ⟨rfl, rfl, lockContentionAlphabet_at_least_two maxDelay, rfl,
    contentionWitnesses_fair.1, contentionWitnesses_fair.2,
    contentionWitnesses_in_premises.1, contentionWitnesses_in_premises.2,
    lockContentionChannel_two_codes_reachable.2.2,
-   fun e cost tMin hCost steps hNodup hRange hPos =>
-     lockContentionChannel_rate_per_elapsed_time e cost tMin hCost steps hNodup hRange hPos⟩
+   fun e tMin hCost steps hNodup hRange hPos =>
+     lockContentionChannel_rate_per_execution_time e tMin hCost steps hNodup hRange hPos⟩
 
 -- ============================================================================
 -- §4  SM8.D.4 — Biba integrity under per-core locks
@@ -3992,10 +4035,17 @@ def FineLockClaimId.evidenceProp : FineLockClaimId → Prop
             lockContentionCode e c kEnq < lockContentionAlphabet maxDelay ∧
               -- The rate half, in elapsed time.  CC-5's registration is a
               -- bandwidth claim, so the inventory must consume both halves.
+              --
+              -- WS-LC LC5.8: stated at **the execution's own** cost model, which
+              -- is the stronger pin.  The generic form is what proves it, so
+              -- consuming this one forces both to exist; consuming the generic
+              -- one would have let the execution-level statement — and with it
+              -- the `stepCost` field the denomination rests on — be deleted
+              -- while this arm kept elaborating.
               (∀ (steps : List Nat), steps.Nodup → (∀ k ∈ steps, k ≤ e.ops.length) →
                 (∀ k ∈ steps, 1 ≤ k) →
-                ∀ (cost : Nat → Nat) (tMin : Nat), (∀ k, tMin ≤ cost k) →
-                  steps.length * tMin ≤ elapsedBetween cost 0 e.ops.length)
+                ∀ tMin : Nat, e.CostedCriticalSection tMin →
+                  steps.length * tMin ≤ e.elapsed 0 e.ops.length)
   | .revalidatedCommitTracked =>
       -- Over an ARBITRARY `observed`, so a concurrent kernel's foreign commits
       -- are in scope: a committed outcome ran from the state the guard checked
@@ -4056,8 +4106,8 @@ def fineLockClaimEvidence : (id : FineLockClaimId) → id.evidenceProp
             hWithin hNoCancel).2.1,
          (acceptedCovertChannel_lockContention_bounded maxDelay e hFair hInit c m kEnq hQueued
             hWithin hNoCancel).2.2,
-         fun steps hNodup hRange hPos cost tMin hCost =>
-           lockContentionChannel_rate_per_elapsed_time e cost tMin hCost steps hNodup hRange
+         fun steps hNodup hRange hPos tMin hCost =>
+           lockContentionChannel_rate_per_execution_time e tMin hCost steps hNodup hRange
              hPos⟩
   | .revalidatedCommitTracked =>
       fun ctx lockCore layout executingCore regCount s observed r h =>
