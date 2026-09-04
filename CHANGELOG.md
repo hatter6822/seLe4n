@@ -6,29 +6,32 @@ Bandwidth Servers: a `SchedContext` that holds members instead of a thread, is
 charged whenever a thread in its subtree runs, and admits its members against
 its own budget, so a component's threads share one reservation and nothing
 outside the component is delayed by more than that reservation.  The plan is
-92 sub-tasks across nine phases (CB0..CB8), numbered in execution order and
-held by the plan gate; its binding decisions are in its §3.
+93 sub-tasks across nine phases (CB0..CB8), numbered in execution order and
+held by the plan gate; its binding decisions are in §3 and its implementation
+specification — types, the CBS engine rules, the order, selection, charging
+and activation, admission, deadline inheritance, every transition's refusal
+table, the ABI values, the invariants, the key theorem statements with their
+hypotheses, lock footprints, staging and the test scenarios — is §4, which
+every sub-task row points into.
 
 **The root becomes EDF-first** (the maintainer's decision at planning time,
-plan §3.11).  Today's root order is fixed priority with the CBS deadline as a
+plan §3.1).  Today's root order is fixed priority with the CBS deadline as a
 tie-break inside a band, which is why the CBS *guarantee* — an admitted server
-receives its budget every period — is not a statement the model can make.
+receives its budget every window — is not a statement the model can make.
 Under an EDF-first root that guarantee is the classical theorem, and per-core
 admission (`Σ U ≤ 1`) is its hypothesis.  The change reaches the flat model, so
-the plan's first implementation phase (CB1) lands it before any server exists,
-with three consequences the plan spells out: deadlines become **kernel-owned**
-(the configure syscall's caller-supplied `deadline` would otherwise be an
-unbounded escalation channel — it becomes `0`-only, and the kernel assigns
-`periodStart + period` at configure, refill and activation); the CBS wake-up
-rule is needed so an entity that idled with a stale deadline does not return
-at the head of the queue (deadline reset only — this model's refills are
-deferred, so a refill at activation would mint budget); and priority
-inheritance becomes **deadline inheritance** for deadline-bearing threads,
-since a priority boost under EDF changes nothing but ties.  Unbound legacy
-threads keep their fixed-priority order below every deadline-bearing thread,
-so the idle thread stays last and the selector is proved unchanged on states
-without deadlines.  The fixtures built from bound threads are refreshed once,
-in CB1.13, with the rationale recorded.
+the plan's first implementation phase (CB1) lands it before any server exists:
+deadlines become **kernel-owned** window ends (the configure syscall's
+caller-supplied `deadline` would otherwise be an unbounded escalation channel
+— it becomes `0`-only), refills become **per window** (one refill of the full
+budget at the window's end), the classical CBS wake-up rule handles an entity
+that idled with a stale deadline, and priority inheritance becomes **deadline
+inheritance** for deadline-bearing threads, since a priority boost under EDF
+changes nothing but ties.  Unbound legacy threads keep their fixed-priority
+order below every deadline-bearing thread, so the idle thread stays last and
+the selector is proved unchanged on states without deadlines.  The fixtures
+built from bound threads are refreshed once, in CB1.14, with the rationale
+recorded.
 
 The rest of the design: a server is a `SchedContext` with hierarchy fields;
 the root run queue stays a queue of threads, selection is a scan in the
@@ -39,8 +42,8 @@ tick-quantised with no new upcall and no ABI version change; and every
 generalising sub-task after CB1 carries the theorem that the model is
 unchanged on states without servers.
 
-Two things the survey behind the plan found in the flat tree, both recorded in
-the plan and in the debt register:
+Three things the survey behind the plan found in the flat tree, all recorded
+in the plan (§1.1, §3.3) and in the debt register:
 
 * `schedContextConfigure` applies `priority`, `domain` and a caller-supplied
   absolute `deadline` under the SchedContext write right alone — no
@@ -50,6 +53,18 @@ the plan and in the debt register:
   CB0.3 closes the priority and domain half, and the plan recommends that cut
   regardless of when the rest of the workstream opens; CB1.3 retires the
   deadline argument.
+* **The live CBS engine refills at most one tick per exhaustion.**  Both tick
+  arms (`timerTickBudget`, `timerTickBudgetOnCore`) run their exhaustion
+  branch when `budgetRemaining ≤ 1` and schedule `consumedAmount :=
+  budgetRemaining` — one tick — one period later, while the docstring beside
+  them says the full consumed budget is recorded; the only full-budget refill
+  is the entry `schedContextConfigure` installs for one period after
+  configuration, and budget consumed without exhaustion is never returned.  A
+  bound thread therefore receives about one tick per period after its first
+  window.  No theorem caught it: `cbs_bandwidth_bounded` is an upper bound and
+  the WCRT theorems take per-band budgets as hypotheses.  CB1.4 replaces the
+  scheme with per-window refills (plan §4.2), which is also the shape the EDF
+  guarantee's proof assumes.
 * Admission folds every SchedContext in the object store against one 1000 ‰
   ceiling, so a four-core machine admits 100 % in total rather than per core.
   CB5.2 makes root-level admission per core — which is also what the EDF

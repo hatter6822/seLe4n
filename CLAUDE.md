@@ -388,7 +388,7 @@ To find files that need pagination today, run:
 - `tests/WithLockSetSuite.lean` (~809 lines)
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
-- `docs/planning/HIERARCHICAL_CBS_PLAN.md` (~908 lines)
+- `docs/planning/HIERARCHICAL_CBS_PLAN.md` (~1399 lines)
 - `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` (~800 lines)
 This bullet block is a **curated snapshot**, not a static enumeration.
 `scripts/find_large_lean_files.sh --check` (called from
@@ -1289,10 +1289,13 @@ EDF class — a change to the flat model that CB1 lands, with one intended
 fixture refresh, before any server exists.  Servers are core-homed, members
 share the server's security label, and every generalising cut after CB1
 carries the theorem that the model is unchanged on states without servers.
-No sub-task has started.  The plan also records a pre-existing authority gap it
-closes first (CB0.3): `schedContextConfigure` applies priority and domain to
-the bound thread under the SchedContext write right alone, with no caller-MCP
-check.
+No sub-task has started.  The plan also records three pre-existing findings it
+closes first: `schedContextConfigure` applies priority, domain and a
+caller-supplied deadline to the bound thread under the SchedContext write right
+alone, with no caller-MCP check (CB0.3, CB1.3); and the live tick's exhaustion
+arm schedules a refill of at most one tick, so a bound thread receives about one
+tick per period after its first window (CB1.4, which moves the engine to
+per-window refills).
 
 Plan: [`docs/planning/HIERARCHICAL_CBS_PLAN.md`](docs/planning/HIERARCHICAL_CBS_PLAN.md).
 
