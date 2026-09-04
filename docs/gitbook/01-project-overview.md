@@ -58,6 +58,14 @@ reader-writer lock the ticket-FIFO one the Lean spec describes and refined it
 to that spec before the switch. The remaining phases sweep the
 medium-severity findings and hand off to SM10.
 
+**WS-LC** runs ahead of RR7 and closes the two lock **datatype** residuals
+RR6 re-registered rather than absorbed. LC1 (v0.34.50) added the abstract
+withdrawal — a queued core may take its request back — with all five
+reader-writer invariants preserved and the liveness results that conclude
+"becomes the holder" restated under an explicit no-withdrawal window. The
+deployed lock cannot withdraw yet, and no bound on that surface is denominated
+in time; both are open phases of the same plan.
+
 **The kernel does not boot yet.** Producing a bootable image is SM10.1's work;
 until it lands, every runtime seam behind the per-core readiness gate is wired
 and dormant. What the project does and does not claim is enumerated in

@@ -20,6 +20,10 @@
 > and **SM2.C-C** (a cancel constructor on `RwLockOp`) — as individual rows in
 > table C, since each changes a datatype the whole SM2.C liveness surface
 > quantifies over and neither can ride along with a lock-implementation cut.
+> **Both are now owned by WS-LC**
+> ([`SMP_LOCK_DATATYPE_COMPLETION_PLAN.md`](SMP_LOCK_DATATYPE_COMPLETION_PLAN.md)),
+> scoped ahead of WS-RR RR7; its LC1 (v0.34.50) landed the abstract withdrawal
+> and its LC4 retires both rows.
 
 > **Phase**: SM2.C-defer (closure of WS-SM SM2.C) — **re-scoped pre-v1.0.0**
 > and absorbed by WS-RR phase RR6

@@ -23,7 +23,7 @@ import SeLe4n.Kernel.Concurrency.Locks.QueuedRwLockRefinement
 
 This module aggregates the 25 substantive lock-primitive theorems
 (4 memory model + 6 TicketLock + 11 RwLock + 4 refinement) into a
-single typed inventory with a size witness `lockPrimitives.length = 25`.
+single typed inventory with a size witness `lockPrimitives.length = 28`.
 
 **WS-RR RR6.9 / RR6.19 / RR6.24 repointed two entries and added three.**
 
@@ -60,7 +60,7 @@ The inventory serves three purposes:
    regression that renames or removes a theorem fails the surface
    check.
 3. **Cross-language symmetry** (`scripts/check_lock_ffi_symmetry.sh`):
-   the Rust-side `LOCK_THEOREM_COUNT = 25` constant in
+   the Rust-side `LOCK_THEOREM_COUNT = 28` constant in
    `lock_bridge.rs` is cross-checked against `lockPrimitives.length`
    in this module.  A regression on either side without updating the
    other fails the symmetry script.
@@ -183,11 +183,20 @@ def lockPrimitives : List LockPrimitiveTheorem := [
   { description := "RwLock reader batching: contiguous readers acquire together",
     identifier  := `SeLe4n.Kernel.Concurrency.rwLock_reader_batching,
     category    := .rwLock },
-  { description := "RwLock writer liveness: a queued writer is admitted within depth x (maxDelay+1) steps under FairTrace",
+  { description := "RwLock writer liveness: a queued writer that does not withdraw is admitted within depth x (maxDelay+1) steps under FairTrace",
     identifier  := `SeLe4n.Kernel.Concurrency.rwLock_writer_liveness,
     category    := .rwLock },
   { description := "RwLock writer safety: one reader acquire does not displace a queued writer",
     identifier  := `SeLe4n.Kernel.Concurrency.rwLock_writer_safety_under_reader_acquire,
+    category    := .rwLock },
+  { description := "RwLock withdrawal safety: cancelling a queued request preserves all five INV-R conjuncts",
+    identifier  := `SeLe4n.Kernel.Concurrency.rwLock_cancel_preserves_wf,
+    category    := .rwLock },
+  { description := "RwLock withdrawal exclusion: a cancel writes neither readers nor writerHeld, so it admits no one",
+    identifier  := `SeLe4n.Kernel.Concurrency.rwLock_cancel_admits_no_one,
+    category    := .rwLock },
+  { description := "RwLock withdrawal fairness: a cancel never increases another core's wait depth",
+    identifier  := `SeLe4n.Kernel.Concurrency.rwLock_cancel_does_not_increase_wait_depth,
     category    := .rwLock },
   -- Refinement (4) — one per lock kind, plus the deployed lock's FIFO
   -- payoff.  See `Locks.TicketLockRefinement`, `Locks.RwLockRefinement`
@@ -209,11 +218,11 @@ def lockPrimitives : List LockPrimitiveTheorem := [
 /-- **WS-SM SM2.D.7**: size witness — the inventory contains exactly
     25 substantive lock-primitive theorems.
 
-    The Rust-side `LOCK_THEOREM_COUNT = 25` constant in
+    The Rust-side `LOCK_THEOREM_COUNT = 28` constant in
     `rust/sele4n-hal/src/lock_bridge.rs` mirrors this value; the
     cross-language symmetry script (`scripts/check_lock_ffi_symmetry.sh`)
     verifies both sides agree. -/
-theorem lockPrimitives_count : lockPrimitives.length = 25 := by
+theorem lockPrimitives_count : lockPrimitives.length = 28 := by
   unfold lockPrimitives; decide
 
 /-- **WS-SM SM2.D.7**: count of memory-model theorems.  Pins the
@@ -229,10 +238,12 @@ theorem lockPrimitives_ticketLock_count :
   unfold lockPrimitives; decide
 
 /-- **WS-SM SM2.D.7**: count of RwLock theorems.  Pins the SM2.C
-    portion at 11 — ten as before, plus the writer-safety theorem the
-    liveness entry used to stand in for (WS-RR RR6.24). -/
+    portion at 14 — ten originally, plus the writer-safety theorem the
+    liveness entry used to stand in for (WS-RR RR6.24), plus the three
+    withdrawal theorems (WS-LC LC1): safety, exclusion, and fairness to
+    the waiters behind the core that gives up. -/
 theorem lockPrimitives_rwLock_count :
-    (lockPrimitives.filter (·.category = .rwLock)).length = 11 := by
+    (lockPrimitives.filter (·.category = .rwLock)).length = 14 := by
   unfold lockPrimitives; decide
 
 /-- **WS-SM SM2.D.7**: count of refinement theorems.  Pins the

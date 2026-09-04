@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.34.49` (`lakefile.toml`) |
+| **Package version** | `0.34.50` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 325,198 across 310 Lean files |
-| **Test LoC** | 68,515 across 70 Lean test suites |
-| **Proved declarations** | 10,820 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 325,997 across 310 Lean files |
+| **Test LoC** | 68,574 across 70 Lean test suites |
+| **Proved declarations** | 10,844 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -584,9 +584,13 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    `AccessMode` inductive (`.read` / `.write`).  `RwLockState`
    3-field structure (`writerHeld : Option CoreId`, `readers :
    List CoreId`, `waiters : List (CoreId × AccessMode)`).
-   `unheld` canonical seed.  `RwLockOp` 4-constructor inductive
+   `unheld` canonical seed.  `RwLockOp` 5-constructor inductive
    (`tryAcquireRead`, `releaseRead`, `tryAcquireWrite`,
-   `releaseWrite`).  Operational semantics: `applyOp` with a
+   `releaseWrite`, `cancel`).  `cancel` (v0.34.50) is the
+   withdrawal a two-phase-locking growing phase needs: it
+   removes the core's entry from `waiters` and writes nothing
+   else, so it is neither a release nor an admission.
+   Operational semantics: `applyOp` with a
    uniform `coreInvolved` top-level no-op gate (audit-fixed —
    the plan's pseudocode had three separate "is core already
    involved" checks that missed sub-cases, allowing INV-R4
@@ -646,8 +650,11 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
      lifts to happens-before.
    * `rwLock_wf_invariant` — wf preserved by every kernel-facing
      transition (`tryAcquireRead`, `releaseRead`,
-     `tryAcquireWrite`, `releaseWrite`).  Aggregates four
-     per-op preservation theorems.  The release-side
+     `tryAcquireWrite`, `releaseWrite`, `cancel`).  Aggregates
+     five per-op preservation theorems; the withdrawal's
+     (`rwLock_cancel_preserves_wf`) is unconditional, since a
+     cancel only shrinks `waiters` and INV-R5 can only be
+     helped.  The release-side
      preservation uses a partial-wf intermediate
      (`wfPartial` = 4 invariants without INV-R5) because
      `releaseRead` / `releaseWrite` transiently violate INV-R5
@@ -855,8 +862,8 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
 
    **SM2.D.7 lockPrimitives aggregator** (MODULE
    `SeLe4n/Kernel/Concurrency/LockPrimitives.lean`):
-   typed `LockPrimitiveTheorem` list aggregating **25** SM2
-   theorems (4 memory-model + 6 TicketLock + 11 RwLock + 4
+   typed `LockPrimitiveTheorem` list aggregating **28** SM2
+   theorems (4 memory-model + 6 TicketLock + 14 RwLock + 4
    refinement) with size + per-category count + NoDup witnesses.
    The four refinement entries are one per lock kind — TicketLock,
    the CAS-retry RwLock, the deployed `QueuedRwLock` — plus the
@@ -866,8 +873,12 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    (`rwLock_writer_admitted_within_release_budget`); the
    single-step *safety* theorem it used to stand in for keeps its
    own entry under its accurate name, which is why the RwLock
-   category went from 10 to 11.  Cross-language symmetry: the
-   Rust-side `LOCK_THEOREM_COUNT = 25` constant in
+   category went from 10 to 11.  WS-LC LC1 took it to 14 with the
+   withdrawal's three payoff entries
+   (`rwLock_cancel_preserves_wf`, `rwLock_cancel_admits_no_one`,
+   `rwLock_cancel_does_not_increase_wait_depth`).
+   Cross-language symmetry: the
+   Rust-side `LOCK_THEOREM_COUNT = 28` constant in
    `lock_bridge.rs` is enforced equal via
    `scripts/check_lock_ffi_symmetry.sh` (wired into Tier 0
    hygiene).

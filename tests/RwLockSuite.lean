@@ -85,6 +85,8 @@ open SeLe4n.Kernel.Concurrency
 #check @SeLe4n.Kernel.Concurrency.RwLockOp.releaseRead
 #check @SeLe4n.Kernel.Concurrency.RwLockOp.tryAcquireWrite
 #check @SeLe4n.Kernel.Concurrency.RwLockOp.releaseWrite
+#check @SeLe4n.Kernel.Concurrency.RwLockOp.cancel
+#check @SeLe4n.Kernel.Concurrency.RwLockOp.isCancel
 
 /-! ## SM2.C.4 — Operations -/
 #check @SeLe4n.Kernel.Concurrency.RwLockState.coreInvolved

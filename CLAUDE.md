@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.49.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.50.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -370,7 +370,7 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` (~924 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_COMPREHENSIVE.md` (~921 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
-- `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
+- `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~906 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~877 lines)
@@ -1329,6 +1329,24 @@ SGI INTID 0..4 reserved for kernel SMP coordination (SM0.H).
 [`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md);
 per-phase plans at `docs/planning/SMP_*.md`.
 
+### WS-LC Lock datatype completion — IN FLIGHT (v0.34.50 → v0.34.53)
+
+The two SM2.C **datatype** residuals RR6 re-registered rather than absorbed —
+`RwLockOp` had no withdrawal and `RwLockExecution` no notion of time.  Scoped
+ahead of WS-RR RR7 because the fine-lock migration tracks widen `withLockSet`
+footprints onto more syscall arms, and the withdrawal is what makes those
+footprints unwindable.
+
+| Phase | Status | Version | Scope (one line — detail in the canonical sources) |
+|-------|--------|---------|----------------------------------------------------|
+| LC1 | LANDED | v0.34.50 | The abstract withdrawal: `RwLockOp.cancel`, INV-R preservation, the liveness restatement, the CAS-retry bridge |
+| LC2 | NOT STARTED | — | The deployed withdrawal: tombstoned ledger, skip prefix, `QueuedRwLock::cancel`, loom/miri, Tier-5 |
+| LC3 | NOT STARTED | — | The two-phase-locking consumers: `cancelAll`, the revalidated refusal unwind, the `withLockSet` unwind |
+| LC4 | NOT STARTED | — | SM2.C-T: the timed execution and the cycle-denominated bounds; LC4.10 retires both debt rows |
+
+**Plan**: [`docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md`](docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md)
+(51 sub-tasks across LC1..LC4).
+
 ### Standing constraints and registered debt
 
 These are *current facts about the tree*, not history — they change what new
@@ -2094,21 +2112,48 @@ code may assume:
   after every operation), it owns the `WRITER_BIT` / `READER_MASK` layout
   `queued_rw_lock.rs` now imports rather than re-declares, and its D-4
   refinement was *completed* rather than deleted.  It is not a fallback: the
-  kernel instantiates it nowhere.  (4) **The lock inventory is 25**, partitioned
-  4 memory-model + 6 TicketLock + 11 RwLock + 4 refinement, and
+  kernel instantiates it nowhere.  (4) **The lock inventory is 28**, partitioned
+  4 memory-model + 6 TicketLock + 14 RwLock + 4 refinement, and
   `LOCK_THEOREM_COUNT` in `lock_bridge.rs` must equal
   `lockPrimitives_count` (`scripts/check_lock_ffi_symmetry.sh`, Tier 0).  The
   R-10 entry names the *liveness* theorem
   (`rwLock_writer_admitted_within_release_budget`); the single-step safety
   theorem it used to stand in for keeps its own entry under its accurate name.
-  Two SM2.C **datatype** extensions stay open and are registered individually
-  in `docs/REGISTERED_DEBT.md` table C: **SM2.C-T** (timestamps on
-  `RwLockExecution`, so `writerWaitDepth` is denominated in ticks rather than
-  lock operations) and **SM2.C-C** (a cancel constructor on `RwLockOp`, so a
-  refused 2PL growing phase can withdraw a queued request).  Until SM2.C-T
-  lands, a delay bound from this surface is a count of *lock operations*, and
-  reading it as wall-clock needs the explicit per-step cost ceiling
-  `FineLockFlow.lean` §3 takes as a hypothesis.
+  The two SM2.C **datatype** extensions RR6 did not absorb are WS-LC's (see
+  below): **SM2.C-T** is untouched, so until LC4 lands a delay bound from this
+  surface is a count of *lock operations* and reading it as wall-clock needs
+  the explicit per-step cost ceiling `FineLockFlow.lean` §3 takes as a
+  hypothesis; **SM2.C-C** is half closed at v0.34.50 — see the withdrawal
+  bullet below.
+- **A queued core may withdraw its request, in the model only.**
+  `RwLockOp.cancel` (v0.34.50) removes `c`'s entry from `waiters` and writes
+  nothing else — three frame facts by `rfl` — preserves all five INV-R
+  conjuncts, and is neither a release nor an admission
+  (`rwLock_cancel_not_effective_release`, `rwLock_cancel_admits_no_one`), so it
+  costs the waiters behind it nothing.  Four things new code must respect.
+  (1) **Which liveness conclusion you may cite changed.**  A theorem concluding
+  "`c` *leaves the queue*" is satisfied by a withdrawal and is unchanged
+  (`rwLock_writer_admitted_within_release_budget`); a theorem concluding "`c`
+  *becomes the holder*" is false of a window in which `c` withdraws, so
+  `rwLock_writer_liveness`, `rwLock_queued_liveness`, `rwLock_reader_liveness`
+  and every `admissionStep*_bounded` now take an explicit
+  `RwLockExecution.noCancelIn c k₁ k₂` premise.  It narrows by `.mono`, and a
+  concrete trace discharges it through the decidable whole-trace form
+  `cancelFree`.  The premise reaches CC-5: `lockContention_delay_bounded` and
+  the alphabet bound carry it, and `lockContentionRun` carries it per step, so
+  an accepted run supplies it for free.  (2) **`leave_waiters_implies_holder`
+  has a third disjunct**, not a narrower hypothesis — withdrawing *is* a way to
+  leave the queue.  (3) **The deployed lock cannot withdraw yet.**
+  `QueuedRwLock` has no `cancel()`, and the ticket-FIFO refinement bridge
+  covers only cancel-free traces — stated as the theorem
+  `ListQueuedBlocks_cancel_free`, which is written to *break* when the
+  withdrawal block is added rather than to sit as an omission.  The CAS-retry
+  bridge does relate it (`opCorresponds.cancel_no_queue`,
+  `honestBlock.cancel_no_queue`), honestly: a queueless lock performs no atomic
+  access for a withdrawal.  (4) **No 2PL unwind emits one yet**, so
+  `RevalidatedEntryOutcome.refused` and `withLockSet`'s shrinking phase still
+  release what was granted and leave what was merely requested.  WS-LC phases
+  LC2 and LC3 close those two.
 - **Registered uncovered lock domains** are enumerated in Lean, not in prose:
   `UncoveredLockDomain` (`InformationFlow/FineLockFlow.lean`) names each gap and
   its owner, and its completeness theorem forces a new domain to be registered.
@@ -2195,11 +2240,11 @@ code may assume:
   propositions, not registrations.**
   `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean` registers one entry per
   phase SM0..SM10, each naming the theorem inventories that phase owns.  Those
-  inventories hold **1116 entries**, of which **906 are theorems**: the
+  inventories hold **1119 entries**, of which **909 are theorems**: the
   inventories register a phase's whole surface, so 210 entries are `def`s —
   lock-set footprints, per-core invariant predicates, WCRT cost functions — and
   every inventory's construction macro proves only that the name *resolves*,
-  never that its type is a `Prop`.  **Quote 906, and quote it as theorems; 1116
+  never that its type is a `Prop`.  **Quote 909, and quote it as theorems; 1119
   is the entry count.**  A `List.length` cannot tell the two apart, so the
   propositionality census at the end of that module resolves each identifier
   against the environment and fails elaboration on drift.  **Eight of the eleven

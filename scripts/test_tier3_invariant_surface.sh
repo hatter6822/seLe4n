@@ -6442,6 +6442,39 @@ import SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement
 #check @SeLe4n.Kernel.Concurrency.rwLock_writer_admitted_within_release_budget
 -- Shared helpers (used by both the honest and the queued bridge).
 #check @SeLe4n.Kernel.Concurrency.RwLockState.applyOp_preserves_wf
+-- The withdrawal operation: the fifth RwLockOp constructor, its frame
+-- facts, its invariant preservation, and the window predicate the
+-- becomes-the-holder liveness family is conditional on.
+#check @SeLe4n.Kernel.Concurrency.RwLockOp.cancel
+#check @SeLe4n.Kernel.Concurrency.RwLockOp.isCancel
+#check @SeLe4n.Kernel.Concurrency.RwLockOp.isCancel_cancel
+#check @SeLe4n.Kernel.Concurrency.RwLockKernelStep.cancel
+#check @SeLe4n.Kernel.Concurrency.RwLockState.applyOp_cancel_readers
+#check @SeLe4n.Kernel.Concurrency.RwLockState.applyOp_cancel_writerHeld
+#check @SeLe4n.Kernel.Concurrency.RwLockState.applyOp_cancel_waiters
+#check @SeLe4n.Kernel.Concurrency.RwLockState.applyOp_cancel_waiters_sublist
+#check @SeLe4n.Kernel.Concurrency.RwLockState.mem_applyOp_cancel_waiters
+#check @SeLe4n.Kernel.Concurrency.RwLockState.not_mem_applyOp_cancel_waiters
+#check @SeLe4n.Kernel.Concurrency.rwLock_cancel_preserves_wf
+-- The window predicate, and the two lemmas that let a caller DERIVE
+-- "this step is not a withdrawal" from an admission rather than assume it.
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.noCancelIn
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.noCancelIn.not_cancel_at
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.noCancelIn.mono
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.noCancelIn_self
+-- The decidable whole-trace form a fixture discharges: `noCancelIn` quantifies
+-- over an unbounded step index and cannot be `decide`d, so the two coexist.
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.cancelFree
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.cancelFree.noCancelIn
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.holderAt_succ_iff_of_cancel
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.not_cancel_of_becomes_holder
+-- What a withdrawal buys, in the form a two-phase-locking unwind cites.
+#check @SeLe4n.Kernel.Concurrency.rwLock_cancel_removes_request
+#check @SeLe4n.Kernel.Concurrency.rwLock_cancel_leaves_other_requests
+#check @SeLe4n.Kernel.Concurrency.rwLock_cancel_preserves_waiter_order
+#check @SeLe4n.Kernel.Concurrency.rwLock_cancel_admits_no_one
+#check @SeLe4n.Kernel.Concurrency.rwLock_cancel_does_not_increase_wait_depth
+#check @SeLe4n.Kernel.Concurrency.rwLock_cancel_not_effective_release
 #check @SeLe4n.Kernel.Concurrency.promoteWaitersIfReadersEmpty_noop
 #check @SeLe4n.Kernel.Concurrency.promoteIfReadersEmpty_eq_onWriterRelease
 EOF'
@@ -6688,6 +6721,8 @@ import SeLe4n.Kernel.Concurrency.Locks.QueuedRwLockRefinement
 #check @SeLe4n.Kernel.Concurrency.queuedTrace_preserves_queuedSim
 -- The payoff: the deployed lock refines the Lean FIFO spec end to
 -- end, and admits in the spec order.
+-- The queued bridge covers cancel-free traces only, and says so.
+#check @SeLe4n.Kernel.Concurrency.ListQueuedBlocks_cancel_free
 #check @SeLe4n.Kernel.Concurrency.queuedRwLock_refines_rwLockSpec
 #check @SeLe4n.Kernel.Concurrency.queuedRwLock_admits_in_spec_order
 EOF'

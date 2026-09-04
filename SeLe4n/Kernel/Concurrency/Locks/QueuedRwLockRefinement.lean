@@ -1793,6 +1793,40 @@ theorem queuedTrace_preserves_queuedSim
     rw [List.foldl_cons, hFlatten, queuedFoldBlock_append]
     exact ih hStep hWfStep
 
+
+/-- **The queued bridge does not cover withdrawals — stated, not implied.**
+
+`RwLockOp.cancel` exists in the specification, and `queuedBlock` has no
+constructor for it.  That is not a silent narrowing: this theorem says
+in as many words that every trace `ListQueuedBlocks` relates is
+**cancel-free**, so a reader of `queuedRwLock_refines_rwLockSpec` can
+see precisely which abstract executions it covers.
+
+Two consequences, both deliberate.  A withdrawal is not a `queuedBlock`,
+so no chain containing one is inhabited and the capstones below say
+nothing about such a trace — which is honest rather than vacuous only
+because this theorem is here to say so.  And when the queued lock gains
+its withdrawal model — a tombstoned ledger, with `pass_turn` skipping a
+withdrawn head — the new constructor makes this proof fail, which is the
+intended forcing function: the restriction cannot outlive the gap it
+records.
+
+The CAS-retry bridge is already unrestricted: `honestBlock.cancel_no_queue`
+covers a withdrawal there, because that lock has no queue for a
+withdrawal to disturb. -/
+theorem ListQueuedBlocks_cancel_free
+    {abs : RwLockState} {conc : QueuedRwLockConcrete}
+    {ops : List RwLockOp} {blocks : List (List QueuedRwLockOp)}
+    (h : ListQueuedBlocks abs conc ops blocks) :
+    ∀ op ∈ ops, op.isCancel = false := by
+  induction h with
+  | nil a c => intro op hop; simp at hop
+  | cons a c op blk restOps restBlocks hBlk _hRest ih =>
+    intro o ho
+    rcases List.mem_cons.mp ho with hEq | hRest
+    · subst hEq; cases hBlk <;> rfl
+    · exact ih o hRest
+
 -- ============================================================================
 -- §6 (RR6.9) — The end-to-end refinement corollary
 -- ============================================================================

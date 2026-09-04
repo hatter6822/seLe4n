@@ -850,12 +850,28 @@ long the wait was.
 as a queued writer: SM2.C-defer D-3.10 generalises the liveness chain — keystone
 included — to an arbitrary access mode, and `queueWaitDepth_bounded` caps the
 depth without ever mentioning the waiter's mode.  `blockedReaderContention_delay_bounded`
-and `writerContention_delay_bounded` are the two instances. -/
+and `writerContention_delay_bounded` are the two instances.
+
+**The waiter does not withdraw** (`hNoCancel`).  `RwLockOp.cancel` lets a queued
+core take its request back, and a core that withdraws is never admitted — so the
+conclusion "there *is* an observation, and it is bounded" is false of a window
+containing `c`'s own cancellation, at any fairness budget.  The hypothesis is the
+one `rwLock_queued_admissionStepAfter_bounded` carries, stated here over the
+*outer* window `[kEnq, kEnq + lockContentionDelayBound maxDelay + 1)` so a caller
+supplies it once against the figure the bound is denominated in, rather than
+against an inner window computed from `queueWaitDepth`; `noCancelIn.mono`
+narrows it.
+
+This is a premise about the *observation*, not a weakening of the channel bound:
+a withdrawn acquisition produces no contention observation to bound, and
+`lockContentionRun` carries the same condition per step so an accepted run
+supplies it for free. -/
 theorem lockContention_delay_bounded (e : SeLe4n.Kernel.Concurrency.RwLockExecution)
     (maxDelay : Nat) (hFair : SeLe4n.Kernel.Concurrency.FairTrace e maxDelay)
     (hInit : e.initial = RwLockState.unheld) (c : CoreId) (m : AccessMode) (kEnq : Nat)
     (hQueued : (c, m) ∈ (e.stateAt kEnq).waiters)
-    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length) :
+    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length)
+    (hNoCancel : e.noCancelIn c kEnq (kEnq + lockContentionDelayBound maxDelay + 1)) :
     ∃ delay, lockContentionObservation e c kEnq = some delay ∧
       delay ≤ lockContentionDelayBound maxDelay := by
   have hDepth : SeLe4n.Kernel.Concurrency.queueWaitDepth (e.stateAt kEnq) c m ≤ numCores - 1 :=
@@ -869,7 +885,7 @@ theorem lockContention_delay_bounded (e : SeLe4n.Kernel.Concurrency.RwLockExecut
     Nat.lt_of_le_of_lt (Nat.add_le_add_left hMul kEnq) hWithin
   obtain ⟨admitStep, hStep, _, hLe⟩ :=
     SeLe4n.Kernel.Concurrency.rwLock_queued_admissionStepAfter_bounded e maxDelay hFair hInit c m
-      kEnq hQueued hInner
+      kEnq hQueued hInner (hNoCancel.mono (Nat.le_refl _) (by omega))
   have hBound : admitStep ≤ kEnq + lockContentionDelayBound maxDelay :=
     Nat.le_trans hLe (Nat.add_le_add_left hMul kEnq)
   refine ⟨admitStep - kEnq, ?_, by omega⟩
@@ -893,13 +909,14 @@ theorem lockContention_wallClock_bounded (e : SeLe4n.Kernel.Concurrency.RwLockEx
     (hInit : e.initial = RwLockState.unheld) (c : CoreId) (m : AccessMode) (kEnq : Nat)
     (hQueued : (c, m) ∈ (e.stateAt kEnq).waiters)
     (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length)
+    (hNoCancel : e.noCancelIn c kEnq (kEnq + lockContentionDelayBound maxDelay + 1))
     (cost : Nat → Nat) (tCs : Nat) (hCost : ∀ k, cost k ≤ tCs) :
     ∃ delay admitStep, lockContentionObservation e c kEnq = some delay ∧
       e.admissionStepAfter c kEnq = some admitStep ∧
       delay ≤ lockContentionDelayBound maxDelay ∧
       elapsedBetween cost kEnq admitStep ≤ lockContentionDelayBound maxDelay * tCs := by
   obtain ⟨delay, hObs, hLe⟩ :=
-    lockContention_delay_bounded e maxDelay hFair hInit c m kEnq hQueued hWithin
+    lockContention_delay_bounded e maxDelay hFair hInit c m kEnq hQueued hWithin hNoCancel
   obtain ⟨admitStep, hStep, _, hDelay, _⟩ :=
     lockContentionObservation_is_own_acquisition e c kEnq delay hObs
   refine ⟨delay, admitStep, hObs, hStep, hLe, ?_⟩
@@ -913,10 +930,12 @@ theorem writerContention_delay_bounded (e : SeLe4n.Kernel.Concurrency.RwLockExec
     (maxDelay : Nat) (hFair : SeLe4n.Kernel.Concurrency.FairTrace e maxDelay)
     (hInit : e.initial = RwLockState.unheld) (c : CoreId) (kEnq : Nat)
     (hQueued : (c, AccessMode.write) ∈ (e.stateAt kEnq).waiters)
-    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length) :
+    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length)
+    (hNoCancel : e.noCancelIn c kEnq (kEnq + lockContentionDelayBound maxDelay + 1)) :
     ∃ delay, lockContentionObservation e c kEnq = some delay ∧
       delay ≤ lockContentionDelayBound maxDelay :=
   lockContention_delay_bounded e maxDelay hFair hInit c AccessMode.write kEnq hQueued hWithin
+    hNoCancel
 
 /-- SM8.D.3 (**the blocked reader's temporal bound**): a *reader* waiting behind
 a writer measures a delay bounded by the same figure.
@@ -931,10 +950,12 @@ theorem blockedReaderContention_delay_bounded (e : SeLe4n.Kernel.Concurrency.RwL
     (maxDelay : Nat) (hFair : SeLe4n.Kernel.Concurrency.FairTrace e maxDelay)
     (hInit : e.initial = RwLockState.unheld) (c : CoreId) (kEnq : Nat)
     (hQueued : (c, AccessMode.read) ∈ (e.stateAt kEnq).waiters)
-    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length) :
+    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length)
+    (hNoCancel : e.noCancelIn c kEnq (kEnq + lockContentionDelayBound maxDelay + 1)) :
     ∃ delay, lockContentionObservation e c kEnq = some delay ∧
       delay ≤ lockContentionDelayBound maxDelay :=
   lockContention_delay_bounded e maxDelay hFair hInit c AccessMode.read kEnq hQueued hWithin
+    hNoCancel
 
 /-- SM8.D.3 (**the reader's structural bound**): at most `numCores - 1` cores
 can be ahead of a blocked reader.
@@ -960,10 +981,11 @@ theorem lockContentionChannel_alphabet_bounded (e : SeLe4n.Kernel.Concurrency.Rw
     (maxDelay : Nat) (hFair : SeLe4n.Kernel.Concurrency.FairTrace e maxDelay)
     (hInit : e.initial = RwLockState.unheld) (c : CoreId) (m : AccessMode) (kEnq : Nat)
     (hQueued : (c, m) ∈ (e.stateAt kEnq).waiters)
-    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length) :
+    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length)
+    (hNoCancel : e.noCancelIn c kEnq (kEnq + lockContentionDelayBound maxDelay + 1)) :
     lockContentionCode e c kEnq < lockContentionAlphabet maxDelay := by
   obtain ⟨delay, hObs, hLe⟩ :=
-    lockContention_delay_bounded e maxDelay hFair hInit c m kEnq hQueued hWithin
+    lockContention_delay_bounded e maxDelay hFair hInit c m kEnq hQueued hWithin hNoCancel
   unfold lockContentionCode lockContentionAlphabet
   rw [hObs]
   show delay + 1 < lockContentionDelayBound maxDelay + 2
@@ -1218,7 +1240,14 @@ The mode is existential **per step**: one core's successive contended
 acquisitions need not all be writes, and after SM2.C-defer D-3.10 the delay bound
 does not care which they are.  It is bound inside the edge condition rather than
 outside it so the "not queued before" half is about the *same* mode — a core
-switching modes between acquisitions is still two edges, not one. -/
+switching modes between acquisitions is still two edges, not one.
+
+Each listed step also carries the delay bound's own two premises, so a run
+supplies them and a consumer need not re-impose them: the recording is long
+enough to contain the admission, and the core does not **withdraw** inside the
+window (`RwLockOp.cancel` — a withdrawn acquisition never becomes an admission,
+so it yields no observation to code).  A run is therefore exactly the set of
+acquisitions the channel can actually be read off. -/
 def lockContentionRun (maxDelay : Nat) (e : SeLe4n.Kernel.Concurrency.RwLockExecution)
     (c : CoreId) (enqueueSteps : List Nat) : Prop :=
   SeLe4n.Kernel.Concurrency.FairTrace e maxDelay ∧
@@ -1227,7 +1256,8 @@ def lockContentionRun (maxDelay : Nat) (e : SeLe4n.Kernel.Concurrency.RwLockExec
   ∀ k ∈ enqueueSteps,
     (1 ≤ k ∧ ∃ m : AccessMode,
       (c, m) ∈ (e.stateAt k).waiters ∧ (c, m) ∉ (e.stateAt (k - 1)).waiters) ∧
-    k + lockContentionDelayBound maxDelay < e.ops.length
+    k + lockContentionDelayBound maxDelay < e.ops.length ∧
+    e.noCancelIn c k (k + lockContentionDelayBound maxDelay + 1)
 
 /-- SM8.D.3: the sequence of codes a contending core reads off a run. -/
 def lockContentionTrace (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (c : CoreId)
@@ -1338,8 +1368,9 @@ theorem lockContentionChannel_trace_capacity (maxDelay : Nat)
   intro x hx
   simp only [lockContentionTrace, List.mem_map] at hx
   obtain ⟨k, hk, rfl⟩ := hx
-  obtain ⟨⟨_, m, hQueued, _⟩, hWithin⟩ := hSteps k hk
+  obtain ⟨⟨_, m, hQueued, _⟩, hWithin, hNoCancel⟩ := hSteps k hk
   exact lockContentionChannel_alphabet_bounded e maxDelay hFair hInit c m k hQueued hWithin
+    hNoCancel
 
 /-- SM8.D.3 (**the composed per-execution bound**): from a run alone — no extra
 hypotheses — the core's trace is one of `alphabet ^ n` **and** `n` is at most the
@@ -1363,7 +1394,7 @@ theorem lockContentionChannel_run_capacity (maxDelay : Nat)
   obtain ⟨_, _, hNodup, hSteps⟩ := hRun
   refine lockContentionChannel_observation_rate_bounded e c enqueueSteps hNodup ?_
   intro k hk
-  exact Nat.le_of_lt (Nat.lt_of_le_of_lt (Nat.le_add_right k _) (hSteps k hk).2)
+  exact Nat.le_of_lt (Nat.lt_of_le_of_lt (Nat.le_add_right k _) (hSteps k hk).2.1)
 
 /-- SM8.D.3 (**the load-bearing negative**): a list that repeats a queued step is
 **not** an accepted run, however well-behaved the execution is.
@@ -1442,12 +1473,14 @@ theorem acceptedCovertChannel_lockContention_bounded (maxDelay : Nat)
     (hFair : SeLe4n.Kernel.Concurrency.FairTrace e maxDelay)
     (hInit : e.initial = RwLockState.unheld) (c : CoreId) (m : AccessMode) (kEnq : Nat)
     (hQueued : (c, m) ∈ (e.stateAt kEnq).waiters)
-    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length) :
+    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length)
+    (hNoCancel : e.noCancelIn c kEnq (kEnq + lockContentionDelayBound maxDelay + 1)) :
     acceptedCovertChannel_lockContention.modelVisible = false ∧
       acceptedCovertChannel_lockContention.severity = .medium ∧
       lockContentionCode e c kEnq < lockContentionAlphabet maxDelay :=
   ⟨rfl, rfl,
-   lockContentionChannel_alphabet_bounded e maxDelay hFair hInit c m kEnq hQueued hWithin⟩
+   lockContentionChannel_alphabet_bounded e maxDelay hFair hInit c m kEnq hQueued hWithin
+     hNoCancel⟩
 
 /-- SM8.D.3 (**what the severity is a judgement about**): CC-5's `.medium` is
 not derived from the bound — a severity is an engineering judgement, and
@@ -3806,6 +3839,12 @@ def FineLockClaimId.evidenceProp : FineLockClaimId → Prop
         ∀ (c : CoreId) (m : AccessMode) (kEnq : Nat),
           (c, m) ∈ (e.stateAt kEnq).waiters →
           kEnq + lockContentionDelayBound maxDelay < e.ops.length →
+          -- The waiter does not withdraw inside the window the bound covers:
+          -- a cancelled request is never admitted, so there is no observation
+          -- to bound.  Carried in the evidence obligation rather than left to
+          -- the theorem alone, so a future weakening of the premise is a type
+          -- error here too.
+          e.noCancelIn c kEnq (kEnq + lockContentionDelayBound maxDelay + 1) →
           ∃ delay, lockContentionObservation e c kEnq = some delay ∧
             delay ≤ lockContentionDelayBound maxDelay
   | .integrityUnderLocks =>
@@ -3858,6 +3897,7 @@ def FineLockClaimId.evidenceProp : FineLockClaimId → Prop
         ∀ (c : CoreId) (m : AccessMode) (kEnq : Nat),
           (c, m) ∈ (e.stateAt kEnq).waiters →
           kEnq + lockContentionDelayBound maxDelay < e.ops.length →
+          e.noCancelIn c kEnq (kEnq + lockContentionDelayBound maxDelay + 1) →
           acceptedCovertChannel_lockContention.modelVisible = false ∧
             acceptedCovertChannel_lockContention.severity = CovertChannelSeverity.medium ∧
             lockContentionCode e c kEnq < lockContentionAlphabet maxDelay ∧
@@ -3902,8 +3942,8 @@ def fineLockClaimEvidence : (id : FineLockClaimId) → id.evidenceProp
       fun ctx c L s oid holder mode hInv =>
         blockedAcquirer_observes_nothing ctx c L s oid holder mode hInv
   | .contentionDelayBounded =>
-      fun e maxDelay hFair hInit c m kEnq hQueued hWithin =>
-        lockContention_delay_bounded e maxDelay hFair hInit c m kEnq hQueued hWithin
+      fun e maxDelay hFair hInit c m kEnq hQueued hWithin hNoCancel =>
+        lockContention_delay_bounded e maxDelay hFair hInit c m kEnq hQueued hWithin hNoCancel
   | .integrityUnderLocks =>
       fun _α ctx subject S core action s hInv hActionInv hAction =>
         bibaIntegrity_underLockSet ctx subject S core action s hInv hActionInv hAction
@@ -3920,13 +3960,13 @@ def fineLockClaimEvidence : (id : FineLockClaimId) → id.evidenceProp
         syscallEntryUnderLockSet_failClosed_invisible ctx S lockCore layout executingCore
           regCount s e L hInv hDenied
   | .contentionChannelRegistered =>
-      fun maxDelay e hFair hInit c m kEnq hQueued hWithin =>
+      fun maxDelay e hFair hInit c m kEnq hQueued hWithin hNoCancel =>
         ⟨(acceptedCovertChannel_lockContention_bounded maxDelay e hFair hInit c m kEnq hQueued
-            hWithin).1,
+            hWithin hNoCancel).1,
          (acceptedCovertChannel_lockContention_bounded maxDelay e hFair hInit c m kEnq hQueued
-            hWithin).2.1,
+            hWithin hNoCancel).2.1,
          (acceptedCovertChannel_lockContention_bounded maxDelay e hFair hInit c m kEnq hQueued
-            hWithin).2.2,
+            hWithin hNoCancel).2.2,
          fun steps hNodup hRange hPos cost tMin hCost =>
            lockContentionChannel_rate_per_elapsed_time e cost tMin hCost steps hNodup hRange
              hPos⟩

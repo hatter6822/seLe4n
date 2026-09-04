@@ -1,3 +1,129 @@
+## v0.34.50 — a queued core may take its request back
+
+**WS-LC LC1 (all eighteen sub-tasks), opening the workstream that closes the
+two SM2.C datatype residuals.**  WS-RR RR6 finished SM2.C-defer's *refinement*
+work and deliberately did not absorb two rows it re-registered in the debt
+register: `RwLockOp` had no withdrawal, and `RwLockExecution` has no notion of
+time.  This cut closes the abstract half of the first.
+
+The gap was concrete.  A two-phase-locking growing phase that queues on a
+contended member and is then refused has nothing to undo the request with:
+`releaseRead` / `releaseWrite` are the identity for a non-holder
+(`rwLock_release_by_nonholder_preserves_waiters`), so `releaseAll` unwinds what
+was *granted* and leaves what was merely *requested*, to be promoted later and
+handed a lock nobody will use.  The remedy is an operation, not a lemma.
+
+### The operation, and what it deliberately does not do (LC1.1–LC1.5)
+
+`RwLockOp.cancel (core : CoreId)` removes `core`'s entry from `waiters` and
+writes nothing else — the three frame facts (`applyOp_cancel_readers`,
+`_writerHeld`, `_waiters`) hold by `rfl`, because the arm is a `List.filter` on
+one field.  It performs **no promotion**: a cancel is not a release, and INV-R5
+forbids the state a promotion would be needed for.
+
+All five INV-R conjuncts survive unconditionally
+(`rwLock_cancel_preserves_wf`), since the withdrawal only *shrinks* `waiters`:
+a sublist keeps `Nodup` and the two disjointness invariants, and INV-R5 — no
+waiter while the lock is free — can only be helped by removing one.
+`RwLockKernelStep.cancel` puts withdrawing traces inside `RwLockReachable`, so
+every reachability consequence follows for them too.
+
+Two catch-all arms had to go.  `modeOfOp` ended `| _ => .read`, which would
+have silently reported a withdrawing *writer* as a reader; it and `coreOfOp`
+are now written out per constructor, so the next operation added to this type
+is a compile error rather than a wrong answer.
+
+### Which liveness conclusion still holds (LC1.6–LC1.13)
+
+The interesting half.  The SM2.C liveness surface splits into two families, and
+only one of them moves:
+
+* **"`c` leaves the queue"** — `rwLock_writer_admitted_within_release_budget`
+  and its siblings — is *satisfied* by a withdrawal.  Untouched.
+* **"`c` becomes the holder"** — `rwLock_writer_liveness`,
+  `rwLock_queued_liveness`, `rwLock_reader_liveness` and every
+  `admissionStep*_bounded` — is **false** of a window in which `c` withdraws,
+  at any fairness budget: no assumption about how promptly others release can
+  admit a core that took its request back.
+
+So those carry `RwLockExecution.noCancelIn c k₁ k₂` explicitly rather than
+quietly continuing to claim something the new operation falsifies.  It narrows
+by `.mono`, and a concrete trace discharges it through the decidable
+whole-trace form `cancelFree` — `noCancelIn`'s own `∀ k : Nat` ranges past the
+trace and cannot be `decide`d, which is why both forms exist.
+
+Two supporting shapes are worth naming because the alternative was worse.
+`leave_waiters_implies_holder` gained a **third disjunct** in its conclusion
+rather than a narrower hypothesis: withdrawing really is a way to leave the
+queue, and hypothesis-narrowing would have hidden that behind a premise
+callers must discharge.  `promote_prefix_inclusion` is gated on
+`isCancel = false` because its conclusion is genuinely *false* for a cancel,
+and `not_cancel_of_becomes_holder` lets a caller **derive** that gate from an
+admission instead of assuming it.
+
+`rwLock_fifo_admission_temporal` — the largest proof on the surface — was
+repaired first, before the cheaper sites, so the design would have been
+revisited while little was spent.  The depth arithmetic needed no reshaping: a
+withdrawal ahead of you only *decreases* your wait depth, and every depth
+theorem is an inequality in that direction.
+
+Five payoff theorems state what the operation buys, in the form a 2PL unwind
+cites: the request is gone, nobody else's is disturbed, the queue is not
+reordered, nobody is admitted (`rwLock_cancel_admits_no_one`), and nobody waits
+longer.  `rwLock_cancel_not_effective_release` is the safety half — a
+withdrawal cannot break exclusion because it releases nothing.
+
+### The bridges, and the restriction that is a theorem (LC1.15–LC1.16)
+
+The CAS-retry lock relates the new operation honestly:
+`opCorresponds.cancel_no_queue` and `honestBlock.cancel_no_queue` say the
+implementation performs no atomic access for a withdrawal, which is true
+*because that lock has no queue* — stated explicitly rather than absorbed by
+the polymorphic no-op constructor, whose reading is "no atomic access" without
+the reason.  Without the `honestBlock` arm, `rust_rwLock_refines_lean_honest`
+would have silently covered only cancel-free traces, which is the vacuity RR6
+existed to remove.
+
+The ticket-FIFO bridge is a different matter: `QueuedTicketWf.ledgerTickets`
+holds the ghost ledger's ticket column to a *contiguous* interval, and a
+mid-queue withdrawal leaves a hole.  Closing that needs a tombstoned ledger and
+a skip prefix, which is LC2's work.  Rather than leave the restriction
+unstated, it is proved: `ListQueuedBlocks_cancel_free` shows every trace the
+queued block relation covers is cancel-free — a theorem written so it **breaks**
+when the withdrawal block is added, rather than an omission that would pass
+review by being invisible.
+
+### CC-5 carries the premise too (LC1.17)
+
+`lockContention_delay_bounded` composes `rwLock_queued_admissionStepAfter_bounded`,
+so the no-withdrawal window reaches the lock-contention channel: the delay
+bound, its wall-clock composition, both mode instances, the alphabet bound and
+the inventory tie-in all carry it, stated over the *outer* window so a caller
+supplies it once against the figure the bound is denominated in.
+`lockContentionRun` carries it per step, so an accepted run supplies it for
+free — a withdrawn acquisition produces no contention observation to bound, so
+this is a premise about the observation rather than a weakening of the channel
+result.  Both typed `FineLockClaimId` evidence arms carry it as well, so a
+future weakening is a type error and not a prose edit.
+
+### Counts and registration (LC1.18)
+
+The lock inventory is **28** (4 memory-model + 6 TicketLock + **14** RwLock + 4
+refinement), with `LOCK_THEOREM_COUNT` moved in lockstep at all four sites.
+The phase-theorem manifest measures **909 theorems** across **1119** registered
+entries.
+
+WS-LC is registered in the workstream registry with its own plan,
+[`docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md`](docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md)
+— 51 sub-tasks across LC1..LC4, scoped ahead of WS-RR RR7 because the fine-lock
+migration tracks widen `withLockSet` footprints onto more syscall arms and the
+withdrawal is what makes those footprints unwindable.  What is still open, and
+is now claimed nowhere: the deployed `QueuedRwLock` cannot withdraw (LC2),
+neither 2PL unwind emits a withdrawal (LC3), and no bound on this surface is
+denominated in time (LC4).
+
+Refs: docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md §3 (LC1)
+
 ## v0.34.49 — the lock the kernel runs is the lock the spec describes
 
 **WS-RR RR6 (all twenty-seven sub-tasks), closing SM2.C-defer.**  One theme,

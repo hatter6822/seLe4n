@@ -421,7 +421,7 @@ theorem RwLockState.unheld_wf : RwLockState.unheld.wf := by
 
 /-- **WS-SM SM2.C.3**: the operational-semantics operations on an RwLock.
 
-Four operations cover the full lifecycle:
+Five operations cover the full lifecycle:
 
 * `tryAcquireRead core` — attempts to acquire a read lock for `core`.
   Either succeeds (adding to `readers`), enqueues (adding to `waiters`),
@@ -433,7 +433,27 @@ Four operations cover the full lifecycle:
   Either succeeds (setting `writerHeld`), enqueues (adding to `waiters`),
   or no-ops (already a holder/waiter).
 * `releaseWrite core` — releases the write lock if held by `core`.
-  Clears `writerHeld` and triggers `promoteWaitersOnWriterRelease`. -/
+  Clears `writerHeld` and triggers `promoteWaitersOnWriterRelease`.
+* `cancel core` — withdraws `core`'s *queued* request.  Removes it from
+  `waiters` and touches nothing else.
+
+**Why `cancel` is a distinct operation and not a release.**  The two
+release arms guard on holdership, so for a core that is merely queued
+they are the identity (`rwLock_release_by_nonholder_preserves_waiters`).
+A two-phase-locking growing phase that found a member contended is
+*queued* on it rather than holding it, so its shrinking phase releases
+what was granted and leaves what was merely requested — a request that
+can still be promoted later and strand the lock on a core that has
+walked away.  `cancel` is the withdrawal that unwind needs, and it is a
+separate constructor because it is a genuinely different transition: a
+release hands the lock **on** (and may promote), a cancel hands nothing
+on and never promotes.
+
+A cancel is deliberately **not** enabled-conditional: it is total, and
+on a state where `core` holds nothing and waits for nothing it is the
+identity.  Fail-closed in the direction that matters — it cannot
+release a lock, because it does not write `readers` or `writerHeld` at
+all. -/
 inductive RwLockOp where
   /-- `core` attempts to acquire a read lock. -/
   | tryAcquireRead  (core : CoreId)
@@ -443,7 +463,26 @@ inductive RwLockOp where
   | tryAcquireWrite (core : CoreId)
   /-- `core` releases the write lock (if it holds it). -/
   | releaseWrite    (core : CoreId)
+  /-- `core` withdraws its queued acquisition request (if it has one). -/
+  | cancel          (core : CoreId)
   deriving Repr
+
+/-- Is this operation a withdrawal?
+
+Written out over all five constructors rather than with a `| _ => false`
+fallback **on purpose**: a sixth operation must be classified by whoever
+adds it, not silently answered `false` by a catch-all.  Several results
+below are conditional on `isCancel = false`, and a new operation
+wrongly admitted into that class would weaken them invisibly. -/
+def RwLockOp.isCancel : RwLockOp → Bool
+  | .tryAcquireRead  _ => false
+  | .releaseRead     _ => false
+  | .tryAcquireWrite _ => false
+  | .releaseWrite    _ => false
+  | .cancel          _ => true
+
+@[simp] theorem RwLockOp.isCancel_cancel (c : CoreId) :
+    (RwLockOp.cancel c).isCancel = true := rfl
 
 -- ============================================================================
 -- SM2.C.4 — promoteWaitersOnWriterRelease (helper for releaseWrite)
@@ -684,6 +723,60 @@ def RwLockState.applyOp (s : RwLockState) (op : RwLockOp) :
       else
         let s' := { s with writerHeld := none }
         s'.promoteWaitersOnWriterRelease
+  | .cancel core =>
+      -- Withdraw `core`'s queued request.  `readers` and `writerHeld` are
+      -- untouched **by construction**, which is the whole safety argument:
+      -- a cancel cannot release a lock, so it cannot admit anyone, so it
+      -- never promotes.  On a `wf` state INV-R4 keeps holders out of
+      -- `waiters`, so this is also the identity for a holder.
+      { s with waiters := s.waiters.filter (fun w => w.1 ≠ core) }
+
+-- ============================================================================
+-- Cancel: the three frame facts, by `rfl`
+-- ============================================================================
+
+/-! The cancel arm is a bare record update, so its frame is definitional.
+That is the point of writing it without an enabling guard: "a cancel
+cannot admit anyone" is not an argument to be made at each use site, it
+is `rfl`.  Everything conditional on `isCancel = false` downstream is
+discharged through these three. -/
+
+/-- A cancel does not touch `readers`. -/
+@[simp] theorem RwLockState.applyOp_cancel_readers (s : RwLockState) (c : CoreId) :
+    (s.applyOp (.cancel c)).readers = s.readers := rfl
+
+/-- A cancel does not touch `writerHeld` — so it can never admit a writer,
+and never turns a non-holder into a holder. -/
+@[simp] theorem RwLockState.applyOp_cancel_writerHeld (s : RwLockState) (c : CoreId) :
+    (s.applyOp (.cancel c)).writerHeld = s.writerHeld := rfl
+
+/-- A cancel removes exactly the cancelling core's queued entries. -/
+@[simp] theorem RwLockState.applyOp_cancel_waiters (s : RwLockState) (c : CoreId) :
+    (s.applyOp (.cancel c)).waiters = s.waiters.filter (fun w => w.1 ≠ c) := rfl
+
+/-- The post-state waiters of a cancel are a sublist of the pre-state's:
+a withdrawal only ever shrinks the queue, and preserves its order. -/
+theorem RwLockState.applyOp_cancel_waiters_sublist (s : RwLockState) (c : CoreId) :
+    (s.applyOp (.cancel c)).waiters.Sublist s.waiters := by
+  rw [RwLockState.applyOp_cancel_waiters]
+  exact List.filter_sublist
+
+/-- Membership after a cancel: everyone but the cancelling core stays. -/
+theorem RwLockState.mem_applyOp_cancel_waiters {s : RwLockState} {c c' : CoreId}
+    {m : AccessMode} (h_ne : c' ≠ c) (h_in : (c', m) ∈ s.waiters) :
+    (c', m) ∈ (s.applyOp (.cancel c)).waiters := by
+  rw [RwLockState.applyOp_cancel_waiters]
+  exact List.mem_filter.mpr ⟨h_in, by simp [h_ne]⟩
+
+/-- The cancelling core is gone from `waiters` afterwards — the property
+the whole operation exists to provide. -/
+theorem RwLockState.not_mem_applyOp_cancel_waiters (s : RwLockState) (c : CoreId)
+    (m : AccessMode) :
+    (c, m) ∉ (s.applyOp (.cancel c)).waiters := by
+  rw [RwLockState.applyOp_cancel_waiters]
+  intro h_mem
+  have := (List.mem_filter.mp h_mem).2
+  simp at this
 
 -- ============================================================================
 -- Foundational helpers for wf reasoning
@@ -1709,6 +1802,63 @@ theorem rwLock_releaseWrite_preserves_wf
   · -- readers = [] in intermediate (= s.readers = []).
     exact h_r_empty
 
+
+/-- **Theorem: `cancel` preserves wf (all five INV-R conjuncts).**
+
+A withdrawal writes only `waiters`, and only ever shrinks it, so each
+conjunct falls out of one structural fact:
+
+* **INV-R1** (writer/reader exclusion) and **INV-R2** (`readers` Nodup)
+  read `writerHeld` and `readers`, which a cancel does not touch.
+* **INV-R3** (waiter cores Nodup) — the post-waiters are a *sublist* of
+  the pre-waiters, and `Nodup` is downward-closed along sublists.
+* **INV-R4** (waiters disjoint from holders) — the waiter set shrinks
+  while the holder set is unchanged, so a disjointness that held before
+  holds after.
+* **INV-R5** (FIFO admission discipline: a non-empty queue implies some
+  holder) — the only way a cancel could break this is by *creating* a
+  queue out of nothing, which shrinking cannot do.  If the queue empties
+  the conjunct is vacuous; otherwise the pre-state queue was non-empty
+  too, and it supplied the holder.
+
+This is the fifth member of the SM2.C.12 per-op family. -/
+theorem rwLock_cancel_preserves_wf (s : RwLockState) (core : CoreId) (h : s.wf) :
+    (s.applyOp (.cancel core)).wf := by
+  have h_sub : (s.applyOp (.cancel core)).waiters.Sublist s.waiters :=
+    RwLockState.applyOp_cancel_waiters_sublist s core
+  have h_readers : (s.applyOp (.cancel core)).readers = s.readers := rfl
+  have h_writer : (s.applyOp (.cancel core)).writerHeld = s.writerHeld := rfl
+  obtain ⟨h1, h2, h3, h4, h5⟩ := h
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  · -- INV-R1: reads only the two untouched fields.
+    unfold RwLockState.writerReadersExclusion at h1 ⊢
+    rw [h_writer, h_readers]; exact h1
+  · -- INV-R2: `readers` is untouched.
+    rw [h_readers]; exact h2
+  · -- INV-R3: Nodup is downward-closed along the sublist.
+    exact (h_sub.map Prod.fst).nodup h3
+  · -- INV-R4: fewer waiters, same holders.
+    unfold RwLockState.waitersDisjointFromHolders at h4 ⊢
+    rw [h_readers, h_writer]
+    rw [List.all_eq_true] at h4 ⊢
+    exact fun w hw => h4 w (h_sub.mem hw)
+  · -- INV-R5: shrinking cannot create a queue.
+    unfold RwLockState.fifoAdmissionDiscipline at h5 ⊢
+    rw [h_readers, h_writer]
+    rcases List.eq_nil_or_concat (s.applyOp (.cancel core)).waiters with h_nil | ⟨_, _, h_cons⟩
+    · simp [h_nil]
+    · have h_pre_ne : s.waiters ≠ [] := by
+        intro h_eq
+        rw [h_eq] at h_sub
+        have := List.eq_nil_of_sublist_nil h_sub
+        rw [this] at h_cons
+        exact absurd h_cons (by simp)
+      simp only [Bool.or_eq_true, decide_eq_true_eq] at h5 ⊢
+      rcases h5 with (h_w_nil | h_writer) | h_readers
+      · exact absurd h_w_nil h_pre_ne
+      · exact Or.inl (Or.inr h_writer)
+      · exact Or.inr h_readers
+
 -- ============================================================================
 -- SM2.C.12 — Aggregator: rwLock_wf_invariant
 -- ============================================================================
@@ -1721,18 +1871,24 @@ For any `RwLockState s` satisfying `s.wf` and any core `c`:
 * `applyOp .releaseRead c` preserves wf.
 * `applyOp .tryAcquireWrite c` preserves wf.
 * `applyOp .releaseWrite c` preserves wf.
+* `applyOp .cancel c` preserves wf.
 
 This is the canonical surface anchor that SM3 / kernel-level proofs cite
-when reasoning about long sequences of RwLock operations. -/
+when reasoning about long sequences of RwLock operations.  It covers
+**every** constructor of `RwLockOp`: the aggregate is what
+`RwLockState.applyOp_preserves_wf` destructures, so an operation missing
+here would be an operation with no preservation proof at all. -/
 theorem rwLock_wf_invariant (s : RwLockState) (h : s.wf) :
     (∀ c, (s.applyOp (.tryAcquireRead c)).wf)
     ∧ (∀ c, (s.applyOp (.releaseRead c)).wf)
     ∧ (∀ c, (s.applyOp (.tryAcquireWrite c)).wf)
-    ∧ (∀ c, (s.applyOp (.releaseWrite c)).wf) :=
+    ∧ (∀ c, (s.applyOp (.releaseWrite c)).wf)
+    ∧ (∀ c, (s.applyOp (.cancel c)).wf) :=
   ⟨fun c => rwLock_tryAcquireRead_preserves_wf s c h
   , fun c => rwLock_releaseRead_preserves_wf s c h
   , fun c => rwLock_tryAcquireWrite_preserves_wf s c h
-  , fun c => rwLock_releaseWrite_preserves_wf s c h⟩
+  , fun c => rwLock_releaseWrite_preserves_wf s c h
+  , fun c => rwLock_cancel_preserves_wf s c h⟩
 
 -- ============================================================================
 -- SM2.C.15 — Closure-form preservation aliases
@@ -2477,6 +2633,9 @@ inductive RwLockKernelStep : RwLockState → RwLockState → Prop where
   /-- Writer-release (or no-op if `core` is not the current writer). -/
   | releaseWrite    (s : RwLockState) (core : CoreId) :
       RwLockKernelStep s (s.applyOp (.releaseWrite core))
+  /-- Withdrawal of a queued request (or no-op if `core` is not queued). -/
+  | cancel          (s : RwLockState) (core : CoreId) :
+      RwLockKernelStep s (s.applyOp (.cancel core))
 
 /-- **WS-SM SM2.C-defer D-1.1**: reflexive-transitive closure of
 `RwLockKernelStep` from `unheld`.
@@ -2526,6 +2685,7 @@ theorem RwLockReachable_implies_wf {s : RwLockState} (h : RwLockReachable s) : s
     | releaseRead     c => exact rwLock_releaseRead_preserves_wf     _ c ih
     | tryAcquireWrite c => exact rwLock_tryAcquireWrite_preserves_wf _ c ih
     | releaseWrite    c => exact rwLock_releaseWrite_preserves_wf    _ c ih
+    | cancel          c => exact rwLock_cancel_preserves_wf          _ c ih
 
 /-- **WS-SM SM2.C-defer D-1.1**: trace-based execution from a
 `RwLockReachable` initial state.
@@ -2595,6 +2755,66 @@ theorem RwLockExecution.stateAt_succ (e : RwLockExecution) {k : Nat}
   rw [List.foldl_append]
   simp
 
+/-- **The window in which a core does not withdraw.**
+
+`c` issues no `cancel` in the half-open step window `[k₁, k₂)`.
+
+Every result whose conclusion is "`c` *becomes the holder*" is
+conditional on this, and necessarily so: a core that withdraws its
+request is never admitted, so no fairness assumption can make it a
+holder.  Results whose conclusion is "`c` *leaves the queue*" — which a
+withdrawal satisfies — take no such hypothesis and are unchanged.
+
+Stated over `ops[k]?` rather than `ops[k]'h` so a caller never has to
+carry a range proof to say a step is not a cancellation; steps past the
+end of the trace are vacuously not cancellations, which matches
+`stateAt`'s own truncation at `ops.length`. -/
+def RwLockExecution.noCancelIn (e : RwLockExecution) (c : CoreId)
+    (k₁ k₂ : Nat) : Prop :=
+  ∀ k, k₁ ≤ k → k < k₂ → e.ops[k]? ≠ some (RwLockOp.cancel c)
+
+/-- The in-range form: inside the window, the indexed operation is not
+`c`'s cancellation. -/
+theorem RwLockExecution.noCancelIn.not_cancel_at {e : RwLockExecution} {c : CoreId}
+    {k₁ k₂ : Nat} (h : e.noCancelIn c k₁ k₂) {k : Nat}
+    (h₁ : k₁ ≤ k) (h₂ : k < k₂) (hk : k < e.ops.length) :
+    (e.ops[k]'hk) ≠ RwLockOp.cancel c := by
+  intro hEq
+  exact h k h₁ h₂ (by rw [List.getElem?_eq_getElem hk, hEq])
+
+/-- A window may always be narrowed. -/
+theorem RwLockExecution.noCancelIn.mono {e : RwLockExecution} {c : CoreId}
+    {k₁ k₂ j₁ j₂ : Nat} (h : e.noCancelIn c k₁ k₂)
+    (h₁ : k₁ ≤ j₁) (h₂ : j₂ ≤ k₂) : e.noCancelIn c j₁ j₂ :=
+  fun k hk₁ hk₂ => h k (Nat.le_trans h₁ hk₁) (Nat.lt_of_lt_of_le hk₂ h₂)
+
+/-- An empty window constrains nothing. -/
+theorem RwLockExecution.noCancelIn_self (e : RwLockExecution) (c : CoreId) (k : Nat) :
+    e.noCancelIn c k k := fun _ h₁ h₂ => absurd (Nat.lt_of_le_of_lt h₁ h₂) (Nat.lt_irrefl _)
+
+/-- **A trace in which nobody withdraws at all.**
+
+The blunt sufficient condition for every `noCancelIn` window, and the one
+a *fixture* can discharge: it quantifies over the operation list rather
+than over an unbounded step index, so `List.decidableBAll` makes it
+`Decidable` and a concrete execution settles it by `decide`.  A window
+predicate cannot be decided that way — `noCancelIn`'s `∀ k : Nat` ranges
+past the trace — which is why the two forms coexist rather than one
+being the other's `simp` normal form. -/
+def RwLockExecution.cancelFree (e : RwLockExecution) : Prop :=
+  ∀ op ∈ e.ops, op.isCancel = false
+
+instance (e : RwLockExecution) : Decidable e.cancelFree :=
+  inferInstanceAs (Decidable (∀ op ∈ e.ops, op.isCancel = false))
+
+/-- A cancel-free trace has no withdrawal in any window, for any core. -/
+theorem RwLockExecution.cancelFree.noCancelIn {e : RwLockExecution}
+    (h : e.cancelFree) (c : CoreId) (k₁ k₂ : Nat) : e.noCancelIn c k₁ k₂ := by
+  intro k _ _ hEq
+  have hMem : RwLockOp.cancel c ∈ e.ops := List.mem_of_getElem? hEq
+  have := h _ hMem
+  simp at this
+
 /-- **WS-SM SM2.C-defer D-1.2**: every RwLockExecution state is RwLockReachable.
 
 By induction on `k`.  Base: `stateAt 0 = initial`, reachable by
@@ -2615,6 +2835,7 @@ theorem RwLockExecution.stateAt_reachable (e : RwLockExecution) (k : Nat) :
       | releaseRead     c => exact RwLockKernelStep.releaseRead     _ c
       | tryAcquireWrite c => exact RwLockKernelStep.tryAcquireWrite _ c
       | releaseWrite    c => exact RwLockKernelStep.releaseWrite    _ c
+      | cancel          c => exact RwLockKernelStep.cancel          _ c
     · -- k ≥ length: stateAt (k+1) = stateAt k (truncation).
       have h_eq : e.stateAt (k + 1) = e.stateAt k := by
         unfold RwLockExecution.stateAt
@@ -2629,6 +2850,96 @@ theorem RwLockExecution.stateAt_reachable (e : RwLockExecution) (k : Nat) :
 Composition of `stateAt_reachable` and `RwLockReachable_implies_wf`. -/
 theorem RwLockExecution.stateAt_wf (e : RwLockExecution) (k : Nat) : (e.stateAt k).wf :=
   RwLockReachable_implies_wf (e.stateAt_reachable k)
+
+-- ============================================================================
+-- List positional helpers for withdrawal reasoning
+-- ============================================================================
+
+/-! A withdrawal filters the waiter queue, and every depth result below has
+to relate a position in the filtered queue to the position in the original.
+Core's `List` API has the `append` and `drop` forms these proofs already use
+(`idxOf_append`, `drop_idxOf_eq_of_nodup`); it has no `filter` form, so the
+lemmas here supply it.
+
+They are stated over `[BEq α] [LawfulBEq α]` rather than `[DecidableEq α]`
+because `List.idxOf` is indexed by the `BEq` instance, and a `DecidableEq`
+formulation elaborates to a *derived* `BEq` that does not unify with the one
+in the goal — `omega` then reads two syntactically identical `idxOf` terms as
+different atoms and cannot close an inequality between them. -/
+
+/-- Indexing past a distinct head. -/
+private theorem idxOf_cons_of_ne {α : Type} [BEq α] [LawfulBEq α] {a hd : α} (tl : List α)
+    (h : a ≠ hd) : (hd :: tl).idxOf a = tl.idxOf a + 1 := by
+  have hb : (hd == a) = false := beq_eq_false_iff_ne.mpr (Ne.symm h)
+  simp [List.idxOf, List.findIdx_cons, hb]
+
+/-- **Filtering never moves a surviving element later.**  Removing entries
+from a list can only bring the ones that remain closer to the head, so an
+element that survives a filter is at no greater index than before.
+
+This is the positional content of "a withdrawal never makes anyone wait
+longer": the cancelling core's entry is removed, and everybody behind it
+moves up. -/
+private theorem idxOf_filter_le {α : Type} [BEq α] [LawfulBEq α] (p : α → Bool) (l : List α)
+    (a : α) (h : a ∈ l.filter p) : (l.filter p).idxOf a ≤ l.idxOf a := by
+  induction l with
+  | nil => simp at h
+  | cons hd tl ih =>
+    by_cases hp : p hd = true
+    · rw [List.filter_cons_of_pos hp] at h ⊢
+      by_cases ha : a = hd
+      · subst ha; simp
+      · have h3 : a ∈ tl.filter p := by
+          rcases List.mem_cons.mp h with he | ht
+          · exact absurd he ha
+          · exact ht
+        rw [idxOf_cons_of_ne _ ha, idxOf_cons_of_ne _ ha]
+        exact Nat.succ_le_succ (ih h3)
+    · rw [List.filter_cons_of_neg hp] at h ⊢
+      have ha : a ≠ hd := by
+        intro he; subst he; exact hp (List.mem_filter.mp h).2
+      rw [idxOf_cons_of_ne _ ha]
+      exact Nat.le_succ_of_le (ih h)
+
+/-- **Filtering preserves relative order.**  Two elements that both
+survive a filter keep the order they had.
+
+This is what makes a withdrawal *fair*: removing one core's request
+re-indexes the queue but never reorders it, so the FIFO discipline the
+spec is about is untouched by a cancellation. -/
+private theorem idxOf_filter_lt {α : Type} [BEq α] [LawfulBEq α] (p : α → Bool) (l : List α)
+    (a b : α) (ha : a ∈ l.filter p) (hb : b ∈ l.filter p)
+    (h : l.idxOf a < l.idxOf b) : (l.filter p).idxOf a < (l.filter p).idxOf b := by
+  induction l with
+  | nil => simp at ha
+  | cons hd tl ih =>
+    by_cases hp : p hd = true
+    · rw [List.filter_cons_of_pos hp] at ha hb ⊢
+      by_cases hbh : b = hd
+      · subst hbh
+        rw [List.idxOf_cons_self] at h
+        omega
+      · by_cases hah : a = hd
+        · subst hah
+          rw [List.idxOf_cons_self, idxOf_cons_of_ne _ hbh]
+          omega
+        · have ha' : a ∈ tl.filter p := by
+            rcases List.mem_cons.mp ha with he | ht
+            · exact absurd he hah
+            · exact ht
+          have hb' : b ∈ tl.filter p := by
+            rcases List.mem_cons.mp hb with he | ht
+            · exact absurd he hbh
+            · exact ht
+          rw [idxOf_cons_of_ne _ hah, idxOf_cons_of_ne _ hbh] at h ⊢
+          exact Nat.succ_lt_succ (ih ha' hb' (by omega))
+    · rw [List.filter_cons_of_neg hp] at ha hb ⊢
+      have hah : a ≠ hd := by
+        intro he; subst he; exact hp (List.mem_filter.mp ha).2
+      have hbh : b ≠ hd := by
+        intro he; subst he; exact hp (List.mem_filter.mp hb).2
+      rw [idxOf_cons_of_ne _ hah, idxOf_cons_of_ne _ hbh] at h
+      exact ih ha hb (by omega)
 
 -- ============================================================================
 -- SM2.C-defer §4.3 + D-2 — writerWaitDepth + writer-specific bounded wait
@@ -3344,6 +3655,11 @@ theorem writerWaitDepth_monotone_under_effective_release
                      List.length_nil, Nat.add_zero, h_effective, Option.isSome_some,
                      Option.isSome_none, Bool.false_eq_true, ite_true, ite_false]
           omega
+  | cancel c' =>
+    -- A withdrawal is not a release: it hands no lock on, so
+    -- `isEffectiveRelease` is `False` for it and the case is vacuous.
+    unfold RwLockState.isEffectiveRelease at h_effective
+    exact absurd h_effective (by trivial)
 
 -- ============================================================================
 -- SM2.C-defer §4.2 — Waiter / Holder predicates + enqueueStep / admissionStep
@@ -3372,6 +3688,36 @@ instance RwLockExecution.decidableHolderAt (e : RwLockExecution) (k : Nat) (core
     Decidable (e.holderAt k core) := by
   unfold RwLockExecution.holderAt
   exact inferInstance
+
+/-- **A withdrawal admits nobody.**  Across a `cancel` step every core's
+holder status is unchanged, because the operation writes neither
+`readers` nor `writerHeld` (both by `rfl`). -/
+theorem RwLockExecution.holderAt_succ_iff_of_cancel (e : RwLockExecution) {k : Nat}
+    (hk : k < e.ops.length) {c' : CoreId}
+    (hop : (e.ops[k]'hk) = RwLockOp.cancel c') (c : CoreId) :
+    e.holderAt (k + 1) c ↔ e.holderAt k c := by
+  unfold RwLockExecution.holderAt
+  rw [e.stateAt_succ hk, hop, RwLockState.applyOp_cancel_readers,
+    RwLockState.applyOp_cancel_writerHeld]
+
+/-- The contrapositive, in the form callers need: **a step that turns a
+non-holder into a holder is not a withdrawal**.
+
+This is what keeps `isCancel = false` a *derived* fact at the sites that
+need it rather than a hypothesis threaded through the whole surface.  A
+caller that already knows someone was admitted at a step knows, by this,
+that the step was not a cancellation. -/
+theorem RwLockExecution.not_cancel_of_becomes_holder (e : RwLockExecution) {k : Nat}
+    (hk : k < e.ops.length) {c : CoreId}
+    (h_post : e.holderAt (k + 1) c) (h_pre : ¬ e.holderAt k c) :
+    (e.ops[k]'hk).isCancel = false := by
+  cases hop : (e.ops[k]'hk) with
+  | tryAcquireRead _  => rfl
+  | releaseRead _     => rfl
+  | tryAcquireWrite _ => rfl
+  | releaseWrite _    => rfl
+  | cancel c' =>
+    exact absurd ((e.holderAt_succ_iff_of_cancel hk hop c).mp h_post) h_pre
 
 /-- **WS-SM SM2.C-defer D-1.4**: the step at which `(core, mode)` is
 enqueued — the smallest `k ≥ 1` such that membership transitions from
@@ -3441,14 +3787,28 @@ def RwLockOp.coreOfOp : RwLockOp → CoreId
   | .tryAcquireWrite c => c
   | .releaseRead     c => c
   | .releaseWrite    c => c
+  | .cancel          c => c
 
 /-- **WS-SM SM2.C-defer D-1.6 (predicate helper)**: extract the access
-mode from an acquire op (returns `.read` by convention for release ops;
-only called when guarded by an op-shape hypothesis in D-1.6). -/
+mode from an acquire op.
+
+Only the two acquire arms carry a mode.  The others are `.read` **by
+convention**, and every use of this function is guarded by an op-shape
+hypothesis that excludes them — a release names no mode, and a
+withdrawal removes whichever entry the core had queued, of either mode.
+
+The arms are written out rather than closed with a `| _ => .read`
+catch-all so that convention is stated per constructor: a sixth
+operation must be classified by whoever adds it.  A catch-all here
+would have answered `.read` for a cancelled **writer**, which is not a
+convention but a wrong answer waiting for a caller that forgets the
+guard. -/
 def RwLockOp.modeOfOp : RwLockOp → AccessMode
   | .tryAcquireRead  _ => .read
   | .tryAcquireWrite _ => .write
-  | _                  => .read
+  | .releaseRead     _ => .read
+  | .releaseWrite    _ => .read
+  | .cancel          _ => .read
 
 /-- **WS-SM SM2.C-defer D-1.6**: `tryAcquireRead c` either is a no-op or
 appends EXACTLY `(c, .read)` at the tail.
@@ -3856,26 +4216,30 @@ private theorem promoteIfReadersEmpty_persistence
 
 /-- **WS-SM SM2.C-defer D-3.6 (foundation lemma — full persistence)**:
 under strict-FIFO, for a queued writer `c` and any op, the post-op state
-EITHER admits c (writerHeld = some c) OR retains c in waiters.
+EITHER admits c (writerHeld = some c), OR retains c in waiters, OR the
+op is `c`'s own withdrawal.
 
-This is the canonical "no-loss" lemma: a queued writer can never
-"vanish" from the lock state; it can only transition forward to
-admission.  Does NOT require s.wf (the structural lemmas it relies on
-are wf-free). -/
+This is the canonical "no-loss" lemma.  A queued writer cannot be
+*lost*: nothing another core does can remove it from the lock state
+without admitting it.  The one way out that is not admission is the
+writer withdrawing its own request, which is the third disjunct — and
+saying so is the point of `RwLockOp.cancel` existing at all.  Does NOT
+require s.wf (the structural lemmas it relies on are wf-free). -/
 theorem queued_writer_persists_or_admitted
     (s : RwLockState)
     (c : CoreId) (h_queued : (c, AccessMode.write) ∈ s.waiters)
     (op : RwLockOp) :
     (s.applyOp op).writerHeld = some c ∨
-    (c, AccessMode.write) ∈ (s.applyOp op).waiters := by
+    (c, AccessMode.write) ∈ (s.applyOp op).waiters ∨
+    op = RwLockOp.cancel c := by
   cases op with
   | tryAcquireRead c' =>
-    right
+    refine Or.inr (Or.inl ?_)
     rcases tryAcquireRead_waiters_append_or_noop s c' with h | h
     · rw [h]; exact h_queued
     · rw [h]; exact List.mem_append_left _ h_queued
   | tryAcquireWrite c' =>
-    right
+    refine Or.inr (Or.inl ?_)
     rcases tryAcquireWrite_waiters_append_or_noop s c' with h | h
     · rw [h]; exact h_queued
     · rw [h]; exact List.mem_append_left _ h_queued
@@ -3883,22 +4247,29 @@ theorem queued_writer_persists_or_admitted
     by_cases h_in : c' ∈ s.readers
     · rw [releaseRead_effective_post s c' h_in]
       -- Intermediate state has same waiters as s.  Apply persistence on intermediate.
-      exact promoteIfReadersEmpty_persistence
+      exact Or.imp_right Or.inl (promoteIfReadersEmpty_persistence
         ({ writerHeld := s.writerHeld,
            readers := s.readers.filter (· ≠ c'),
-           waiters := s.waiters }) c h_queued
-    · right
+           waiters := s.waiters }) c h_queued)
+    · refine Or.inr (Or.inl ?_)
       rw [releaseRead_noop_post s c' h_in]
       exact h_queued
   | releaseWrite c' =>
     by_cases h_eq : s.writerHeld = some c'
     · rw [releaseWrite_effective_post s c' h_eq]
       -- Intermediate state has same waiters as s.  Apply persistence on intermediate.
-      exact promoteOnWriterRelease_persistence
-        ({ writerHeld := none, readers := s.readers, waiters := s.waiters }) c h_queued
-    · right
+      exact Or.imp_right Or.inl (promoteOnWriterRelease_persistence
+        ({ writerHeld := none, readers := s.readers, waiters := s.waiters }) c h_queued)
+    · refine Or.inr (Or.inl ?_)
       rw [releaseWrite_noop_post s c' h_eq]
       exact h_queued
+  | cancel c' =>
+    -- The one operation that CAN make a queued writer vanish, and only when
+    -- the writer withdraws its own request.  Another core's withdrawal
+    -- leaves `c` queued.
+    by_cases h_eq : c = c'
+    · exact Or.inr (Or.inr (by rw [h_eq]))
+    · exact Or.inr (Or.inl (RwLockState.mem_applyOp_cancel_waiters h_eq h_queued))
 
 /-- **WS-SM SM2.C-defer D-3.6 (foundation lemma — depth non-increase
 under queued-preservation)**: under wf + strict-FIFO, for a writer `c`
@@ -3941,6 +4312,16 @@ theorem writerWaitDepth_non_increase_step_queued
     · have h_eq := writerWaitDepth_unchanged_under_noneffective_release s c (.releaseWrite c')
             h_eff (Or.inr ⟨c', rfl⟩)
       omega
+  | cancel c' =>
+    -- A withdrawal removes one entry and writes nothing else, so a core
+    -- that is still queued afterwards is at no greater index than before.
+    have h_mem : (c, AccessMode.write) ∈ s.waiters.filter (fun w => w.1 ≠ c') := by
+      rw [← RwLockState.applyOp_cancel_waiters]; exact h_queued_post
+    have h_idx := idxOf_filter_le _ s.waiters (c, AccessMode.write) h_mem
+    rw [writerWaitDepth_simp, writerWaitDepth_simp,
+      RwLockState.applyOp_cancel_readers, RwLockState.applyOp_cancel_writerHeld,
+      RwLockState.applyOp_cancel_waiters]
+    omega
 
 /-- **WS-SM SM2.C-defer D-3.6 (foundation lemma — strict decrease under
 effective release)**: under wf + strict-FIFO + queued-preservation,
@@ -4025,6 +4406,12 @@ theorem applyOp_preserves_waiter_order
       have h₂ := drop_idxOf_eq_of_nodup s.waiters h_nodup k w₂ h_in₂_post
       omega
     · rw [releaseWrite_noop_post s c h_eq]; exact h_order
+  | cancel c' =>
+    -- Filtering re-indexes the queue but never reorders it: two entries that
+    -- both survive keep their relative order.  This is what makes a
+    -- withdrawal fair to the waiters behind it.
+    simp only [RwLockState.applyOp_cancel_waiters] at h_in₁_post h_in₂_post ⊢
+    exact idxOf_filter_lt _ s.waiters w₁ w₂ h_in₁_post h_in₂_post h_order
 
 -- ============================================================================
 -- SM2.C-defer D-1.9 — Main temporal FIFO admission theorem (partial form)
@@ -4386,12 +4773,13 @@ step, so the trace compositions in both refinement bridges thread it
 without a side condition. -/
 theorem RwLockState.applyOp_preserves_wf {s : RwLockState} (h : s.wf) (op : RwLockOp) :
     (s.applyOp op).wf := by
-  obtain ⟨h1, h2, h3, h4⟩ := rwLock_wf_invariant s h
+  obtain ⟨h1, h2, h3, h4, h5⟩ := rwLock_wf_invariant s h
   cases op with
   | tryAcquireRead c => exact h1 c
   | releaseRead c => exact h2 c
   | tryAcquireWrite c => exact h3 c
   | releaseWrite c => exact h4 c
+  | cancel c => exact h5 c
 
 
 /-- **WS-RR RR6.16**: the abstract no-op cases, so the four `*_noop`
@@ -4607,6 +4995,24 @@ inductive opCorresponds : RwLockOp → List ConcreteRwLockOp → Prop where
   `debug_assert`s reject them), so the corresponding block is empty. -/
   | noop (op : RwLockOp) :
       opCorresponds op []
+  /-- A **withdrawal**, on a lock with no queue.
+
+  `rw_lock.rs` is the CAS-retry implementation: a core that fails to
+  acquire simply has not acquired, and no record of the attempt exists
+  anywhere in the lock word.  There is therefore nothing for a cancel to
+  withdraw, and the honest concrete block is empty — not as a
+  convenience, but because a withdrawal is a *queue* operation and this
+  lock has no queue.  That is the same absence `rwLockSim` records when
+  it declines to represent `waiters` at all, and it is exactly why the
+  FIFO half of the specification is carried by
+  `QueuedRwLockRefinement.lean` instead.
+
+  Stated as its own constructor rather than left to `noop` so the claim
+  is legible: `noop` says "the abstract step did nothing", whereas this
+  says "the abstract step did something the implementation cannot
+  observe, and here is why that is sound". -/
+  | cancel_no_queue (c : CoreId) :
+      opCorresponds (.cancel c) []
   /-- **WS-RR RR6.16**: a release block **carrying the promotion**.
 
   This is the block-contract extension the composition needs.
@@ -4941,13 +5347,28 @@ Proof: case-by-case on `op`.
   in the dropped prefix.  By the promote logic, c is now in the
   post-state's readers (reader-prefix promote) or `writerHeld` (writer
   head promote).
-- `releaseWrite c'`: same structure. -/
+- `releaseWrite c'`: same structure.
+- `cancel c'`: the one way out of `waiters` that is **not** an admission.
+  The filter removes exactly `c'`'s entry, so `(c, m)` can only leave
+  when `c = c'` — the third disjunct.
+
+**Why the conclusion is a three-way disjunction and not a hypothesis.**
+Before `RwLockOp.cancel` existed, leaving the queue and being admitted
+were the same event, and this lemma said so.  They are no longer the
+same event, and there are two ways to record that: add a
+`op ≠ .cancel c` hypothesis, or widen the conclusion.  The conclusion
+is widened, because that keeps the lemma **unconditionally true** and
+leaves each caller to discharge the cancel disjunct from the facts it
+already has — a caller that genuinely rules out cancellation over a
+window says so once, in its own statement, instead of every lemma on
+the path carrying the same side condition. -/
 theorem leave_waiters_implies_holder
     (s : RwLockState) (h_wf : s.wf)
     (c : CoreId) (m : AccessMode) (op : RwLockOp)
     (h_in : (c, m) ∈ s.waiters)
     (h_out : (c, m) ∉ (s.applyOp op).waiters) :
-    c ∈ (s.applyOp op).readers ∨ (s.applyOp op).writerHeld = some c := by
+    c ∈ (s.applyOp op).readers ∨ (s.applyOp op).writerHeld = some c
+      ∨ op = RwLockOp.cancel c := by
   cases op with
   | tryAcquireRead c' =>
     -- D-1.6: tryAcquireRead waiters = pre OR pre ++ [(c', .read)].
@@ -5108,6 +5529,18 @@ theorem leave_waiters_implies_holder
       have h_no : s.applyOp (.releaseWrite c') = s := by
         unfold RwLockState.applyOp; simp [h_eff]
       rw [h_no] at h_out; exact absurd h_in h_out
+  | cancel c' =>
+    -- The one exit from `waiters` that is not an admission.  A cancel writes
+    -- neither `readers` nor `writerHeld`, so neither of the first two
+    -- disjuncts can be established here — and neither needs to be: the
+    -- filter removes exactly `c'`, so `(c, m)` leaving forces `c = c'`.
+    right; right
+    by_cases h_eq : c = c'
+    · rw [h_eq]
+    · exfalso
+      apply h_out
+      simp only [RwLockState.applyOp, List.mem_filter]
+      exact ⟨h_in, by simp [h_eq]⟩
 
 /-- **WS-SM SM2.C-defer (operational invariant)**: at a release+promote
 step, if `w₂ = (c₂, m₂)` leaves waiters (becomes a holder) and `w₁ =
@@ -5129,6 +5562,7 @@ theorem promote_prefix_inclusion
     (w₁ w₂ : CoreId × AccessMode) (op : RwLockOp)
     (_h_in₁_pre : w₁ ∈ s.waiters) (h_in₂_pre : w₂ ∈ s.waiters)
     (h_idx_lt : s.waiters.idxOf w₁ < s.waiters.idxOf w₂)
+    (h_not_cancel : op.isCancel = false)
     (h_out₂ : w₂ ∉ (s.applyOp op).waiters) :
     w₁ ∉ (s.applyOp op).waiters := by
   -- The waiters are Nodup (from wf via INV-R3).
@@ -5258,6 +5692,14 @@ theorem promote_prefix_inclusion
     · have h_no : s.applyOp (.releaseWrite c') = s := by
         unfold RwLockState.applyOp; simp [h_eff]
       rw [h_no] at h_out₂; exact absurd h_in₂_pre h_out₂
+  | cancel c' =>
+    -- Excluded by hypothesis, and necessarily so: prefix inclusion is a
+    -- property of **promotion**, which drops a contiguous head of the queue.
+    -- A withdrawal removes one interior entry, and INV-R3 (waiter cores are
+    -- Nodup) then says the *lower*-indexed waiter is a different core and
+    -- survives the filter — so the conclusion is false for a cancel, not
+    -- merely unproven.
+    exact absurd h_not_cancel (by simp)
 
 -- ============================================================================
 -- SM2.C-defer D-1.9 (third operational invariant + main theorem)
@@ -5272,13 +5714,21 @@ all k ∈ [p, a), `(c, m) ∈ stateAt k . waiters`.
 Proof: by induction on k - p, using `leave_waiters_implies_holder`'s
 contrapositive (c not a holder at k+1 ⇒ (c, m) stays in waiters).
 `admissionStep c = some a` means c is NOT a holder at any step < a
-(by minimality of the find?-form). -/
+(by minimality of the find?-form).
+
+**Why `noCancelIn` is a hypothesis and not a lemma.**  Staying queued
+until admission is exactly what a withdrawal refuses to do, so this is
+not a technicality to be discharged — it is the substantive difference
+between "waiting" and "gave up".  Without it the statement is false:
+`c` may cancel inside `[p, a)`, re-enqueue later, and still be admitted
+at `a`, with `(c, m)` absent from `waiters` in between. -/
 theorem c_in_waiters_through_admission
     (e : RwLockExecution) (h_init : e.initial = RwLockState.unheld)
     (c : CoreId) (m : AccessMode) (p a : Nat)
     (h_enq : e.enqueueStep c m = some p)
     (h_admit : e.admissionStep c = some a)
-    (h_p_lt_a : p < a) :
+    (h_p_lt_a : p < a)
+    (h_no_cancel : e.noCancelIn c p a) :
     ∀ k, p ≤ k → k < a → (c, m) ∈ (e.stateAt k).waiters := by
   -- Get the enqueueStep characterization: (c, m) in waiters at p.
   obtain ⟨h_p_ge_1, h_waiter_p, _h_not_waiter_prev⟩ :=
@@ -5358,8 +5808,20 @@ theorem c_in_waiters_through_admission
         | isFalse h_not_in =>
           exfalso
           have h_wf_pd : (e.stateAt (p + d)).wf := e.stateAt_wf (p + d)
-          have h_holder := leave_waiters_implies_holder (e.stateAt (p + d)) h_wf_pd
-                            c m (e.ops[p + d]'h_k_in_range) h_prev h_not_in
+          -- Eliminate the withdrawal disjunct from the hypothesis: `c` does
+          -- not cancel anywhere in `[p, a)`, and `p + d` is inside it.
+          have h_not_cancel_here :
+              (e.ops[p + d]'h_k_in_range) ≠ RwLockOp.cancel c :=
+            h_no_cancel.not_cancel_at (Nat.le_add_right _ _) (by omega) h_k_in_range
+          have h_holder :
+              c ∈ ((e.stateAt (p + d)).applyOp (e.ops[p + d]'h_k_in_range)).readers ∨
+              ((e.stateAt (p + d)).applyOp (e.ops[p + d]'h_k_in_range)).writerHeld
+                = some c := by
+            rcases leave_waiters_implies_holder (e.stateAt (p + d)) h_wf_pd
+                     c m (e.ops[p + d]'h_k_in_range) h_prev h_not_in with h | h | h
+            · exact Or.inl h
+            · exact Or.inr h
+            · exact absurd h h_not_cancel_here
           have h_holder_at : e.holderAt (p + d + 1) c := by
             unfold RwLockExecution.holderAt
             rw [h_state_succ]
@@ -5422,7 +5884,9 @@ theorem rwLock_fifo_admission_temporal
     (h_enqueue₂ : e.enqueueStep c₂ m₂ = some p₂)
     (h_order : p₁ < p₂)
     (h_admitted₂ : e.admissionStep c₂ = some a₂)
-    (h_p2_lt_a2 : p₂ < a₂) :
+    (h_p2_lt_a2 : p₂ < a₂)
+    (h_no_cancel₁ : e.noCancelIn c₁ p₁ a₂)
+    (h_no_cancel₂ : e.noCancelIn c₂ p₂ a₂) :
     ∃ a₁, e.admissionStep c₁ = some a₁ ∧ a₁ ≤ a₂ := by
   obtain ⟨h_a2_ge_1, h_a2_holder_c2, h_a2_prev_not_holder⟩ :=
     e.admissionStep_characterization c₂ a₂ h_admitted₂
@@ -5480,8 +5944,23 @@ theorem rwLock_fifo_admission_temporal
             | isFalse h_not_in =>
               exfalso
               have h_wf_pd : (e.stateAt (p₁ + d)).wf := e.stateAt_wf (p₁ + d)
-              have h_holder := leave_waiters_implies_holder (e.stateAt (p₁ + d)) h_wf_pd
-                                c₁ m₁ (e.ops[p₁ + d]'h_k_in_range) h_prev h_not_in
+              -- `c₁` does not withdraw anywhere in `[p₁, a₂)`, and `p₁ + d`
+              -- is inside that window, so the withdrawal disjunct is closed.
+              have h_not_cancel_here :
+                  (e.ops[p₁ + d]'h_k_in_range) ≠ RwLockOp.cancel c₁ :=
+                h_no_cancel₁.not_cancel_at (Nat.le_add_right _ _) (by omega)
+                  h_k_in_range
+              have h_holder :
+                  c₁ ∈ ((e.stateAt (p₁ + d)).applyOp
+                          (e.ops[p₁ + d]'h_k_in_range)).readers ∨
+                  ((e.stateAt (p₁ + d)).applyOp
+                          (e.ops[p₁ + d]'h_k_in_range)).writerHeld = some c₁ := by
+                rcases leave_waiters_implies_holder (e.stateAt (p₁ + d)) h_wf_pd
+                         c₁ m₁ (e.ops[p₁ + d]'h_k_in_range) h_prev h_not_in
+                  with h | h | h
+                · exact Or.inl h
+                · exact Or.inr h
+                · exact absurd h h_not_cancel_here
               have h_holder_at : e.holderAt (p₁ + d + 1) c₁ := by
                 unfold RwLockExecution.holderAt
                 rw [h_state_succ]
@@ -5505,7 +5984,7 @@ theorem rwLock_fifo_admission_temporal
     -- Step B: c₂ stays in waiters through a₂-1 (via the proven helper).
     have h_c2_in_waiters : ∀ k, p₂ ≤ k → k < a₂ → (c₂, m₂) ∈ (e.stateAt k).waiters :=
       c_in_waiters_through_admission e h_initial_unheld c₂ m₂ p₂ a₂
-        h_enqueue₂ h_admitted₂ h_p2_lt_a2
+        h_enqueue₂ h_admitted₂ h_p2_lt_a2 h_no_cancel₂
     -- Step C: at step a₂-1, both c₁ and c₂ are in waiters.
     have h_a2_m1_pos : a₂ - 1 ≥ p₂ := by omega -- since p₂ < a₂.
     have h_a2_m1_lt : a₂ - 1 < a₂ := by omega
@@ -5667,6 +6146,16 @@ theorem rwLock_fifo_admission_temporal
         have h_c2_in_pre : (c₂, m₂) ∈ (e.stateAt (p₂ - 1)).waiters :=
           h_post_sub.mem h_c2_at_p2
         exact h_c2_not_at_p2m1 h_c2_in_pre
+      | cancel c' =>
+        -- A withdrawal only shrinks `waiters`, so it cannot be the step that
+        -- put `(c₂, m₂)` there.  Identical shape to the two release arms.
+        exfalso
+        have h_sub := RwLockState.applyOp_cancel_waiters_sublist (e.stateAt (p₂ - 1)) c'
+        have h_post_sub : (e.stateAt p₂).waiters.Sublist (e.stateAt (p₂ - 1)).waiters := by
+          rw [h_state_eq, h_op_def]; exact h_sub
+        have h_c2_in_pre : (c₂, m₂) ∈ (e.stateAt (p₂ - 1)).waiters :=
+          h_post_sub.mem h_c2_at_p2
+        exact h_c2_not_at_p2m1 h_c2_in_pre
     -- Get c₁ at p₂ for the structural call.
     have h_c1_at_p2 : (c₁, m₁) ∈ (e.stateAt p₂).waiters :=
       h_c1_in_waiters p₂ (by omega) (by omega)
@@ -5703,13 +6192,29 @@ theorem rwLock_fifo_admission_temporal
       exact h_succ
     rw [h_state_a2] at h_c2_leaves
     have h_wf_a2_m1 : (e.stateAt (a₂ - 1)).wf := e.stateAt_wf (a₂ - 1)
+    -- The step that admits `c₂` is not a withdrawal.  **Derived, not assumed**:
+    -- a cancel leaves every core's holder status alone, and this step turns
+    -- `c₂` from a non-holder into a holder.
+    have h_a2_not_cancel : (e.ops[a₂ - 1]'h_a2_m1_in_range).isCancel = false := by
+      refine e.not_cancel_of_becomes_holder h_a2_m1_in_range ?_ h_a2_prev_not_holder
+      rw [h_a2_eq]; exact h_a2_holder_c2
     have h_c1_leaves : (c₁, m₁) ∉ ((e.stateAt (a₂ - 1)).applyOp (e.ops[a₂ - 1]'h_a2_m1_in_range)).waiters :=
       promote_prefix_inclusion (e.stateAt (a₂ - 1)) h_wf_a2_m1
         (c₁, m₁) (c₂, m₂) (e.ops[a₂ - 1]'h_a2_m1_in_range)
-        h_c1_at_a2_m1 h_c2_at_a2_m1 h_order_at_a2_m1 h_c2_leaves
+        h_c1_at_a2_m1 h_c2_at_a2_m1 h_order_at_a2_m1 h_a2_not_cancel h_c2_leaves
     -- Step I: by leave_waiters_implies_holder, c₁ becomes a holder at a₂.
-    have h_c1_holder := leave_waiters_implies_holder (e.stateAt (a₂ - 1)) h_wf_a2_m1
-                          c₁ m₁ (e.ops[a₂ - 1]'h_a2_m1_in_range) h_c1_at_a2_m1 h_c1_leaves
+    -- The withdrawal disjunct is closed by the same derived fact.
+    have h_c1_holder :
+        c₁ ∈ ((e.stateAt (a₂ - 1)).applyOp
+                (e.ops[a₂ - 1]'h_a2_m1_in_range)).readers ∨
+        ((e.stateAt (a₂ - 1)).applyOp
+                (e.ops[a₂ - 1]'h_a2_m1_in_range)).writerHeld = some c₁ := by
+      rcases leave_waiters_implies_holder (e.stateAt (a₂ - 1)) h_wf_a2_m1
+               c₁ m₁ (e.ops[a₂ - 1]'h_a2_m1_in_range) h_c1_at_a2_m1 h_c1_leaves
+        with h | h | h
+      · exact Or.inl h
+      · exact Or.inr h
+      · exact absurd (h ▸ h_a2_not_cancel) (by simp)
     have h_c1_holder_at_a2 : e.holderAt a₂ c₁ := by
       unfold RwLockExecution.holderAt
       rw [h_state_a2]
@@ -6070,21 +6575,28 @@ private theorem queued_writer_persists_across_window
     (e : RwLockExecution)
     (c : CoreId) (k_start : Nat)
     (h_queued_start : (c, AccessMode.write) ∈ (e.stateAt k_start).waiters)
-    (w : Nat) :
+    (w : Nat)
+    (h_no_cancel : e.noCancelIn c k_start (k_start + w)) :
     -- Either c is admitted at some step in (k_start, k_start + w], OR
     -- c is queued at every step in [k_start, k_start + w].
     (∃ k_admit, k_start < k_admit ∧ k_admit ≤ k_start + w ∧
                 (e.stateAt k_admit).writerHeld = some c) ∨
     (∀ k, k_start ≤ k ∧ k ≤ k_start + w →
           (c, AccessMode.write) ∈ (e.stateAt k).waiters) := by
+  -- `h_no_cancel` mentions `w`, so it is reverted into the goal and
+  -- re-introduced in each branch; the successor step narrows the window.
+  revert h_no_cancel
   induction w with
   | zero =>
+    intro _
     right
     intro k ⟨h_le, h_ge⟩
     have : k = k_start := by omega
     rw [this]; exact h_queued_start
   | succ w ih =>
-    rcases ih with ⟨k_admit, h_lt, h_le, h_admit⟩ | h_all_queued
+    intro h_no_cancel
+    rcases ih (h_no_cancel.mono (Nat.le_refl _) (by omega))
+      with ⟨k_admit, h_lt, h_le, h_admit⟩ | h_all_queued
     · -- Already admitted in (k_start, k_start + w]: extend to ≤ k_start + (w+1).
       left
       exact ⟨k_admit, h_lt, by omega, h_admit⟩
@@ -6095,7 +6607,7 @@ private theorem queued_writer_persists_across_window
         have h_queued_at_w := h_all_queued (k_start + w) ⟨by omega, Nat.le_refl _⟩
         have h_step := queued_writer_persists_or_admitted (e.stateAt (k_start + w))
                        c h_queued_at_w (e.ops[k_start + w]'h_in_range)
-        rcases h_step with h_admit | h_queued_succ
+        rcases h_step with h_admit | h_queued_succ | h_is_cancel
         · -- Admitted at k_start + w + 1.
           left
           refine ⟨k_start + w + 1, by omega, by omega, ?_⟩
@@ -6109,6 +6621,10 @@ private theorem queued_writer_persists_across_window
             apply h_all_queued
             refine ⟨h_le, ?_⟩
             omega
+        · -- The step is `c`'s own withdrawal, which the window hypothesis
+          -- excludes: `k_start + w` lies inside `[k_start, k_start + w + 1)`.
+          exact absurd h_is_cancel
+            (h_no_cancel.not_cancel_at (Nat.le_add_right _ _) (by omega) h_in_range)
       · -- k_start + w ≥ ops.length: stateAt is truncated, state doesn't change.
         have h_eq : e.stateAt (k_start + w + 1) = e.stateAt (k_start + w) := by
           unfold RwLockExecution.stateAt
@@ -6484,6 +7000,12 @@ theorem writerHeld_transition_implies_releaseWrite
         exact h_eq h_eq'.symm
       rw [releaseWrite_noop_post s c' h_ne]
       exact h_pre
+  | cancel c' =>
+    -- A withdrawal does not write `writerHeld`, so it cannot end a write hold.
+    exfalso
+    apply h_post
+    rw [RwLockState.applyOp_cancel_writerHeld]
+    exact h_pre
 
 /-- **WS-SM SM2.C-defer D-3.6 (effective-release helper, reader side —
 proof structure)**: if `c_h` transitions out of `readers` between
@@ -6618,6 +7140,12 @@ theorem reader_transition_implies_releaseRead
           exact List.mem_append_right _ h_pre
     · -- No-op: readers unchanged.
       rw [releaseWrite_noop_post s c' h_eq]; exact h_pre
+  | cancel c' =>
+    -- A withdrawal does not write `readers`, so it cannot end a read hold.
+    exfalso
+    apply h_post
+    rw [RwLockState.applyOp_cancel_readers]
+    exact h_pre
 
 /-- **WS-SM SM2.C-defer D-3.6 (effective-release helper, trace form)**:
 the release transition at step `k_rel` from `fair_release_witness_in_window`
@@ -6669,7 +7197,8 @@ theorem fair_progress_one_step
     (h_init : e.initial = RwLockState.unheld)
     (c : CoreId) (k : Nat)
     (h_queued : (c, AccessMode.write) ∈ (e.stateAt k).waiters)
-    (h_in_range : k + maxDelay < e.ops.length) :
+    (h_in_range : k + maxDelay < e.ops.length)
+    (h_no_cancel : e.noCancelIn c k (k + maxDelay + 1)) :
     (∃ k_admit, k < k_admit ∧ k_admit ≤ k + maxDelay + 1 ∧
                 (e.stateAt k_admit).writerHeld = some c) ∨
     (∃ k_next, k < k_next ∧ k_next ≤ k + maxDelay + 1 ∧
@@ -6689,6 +7218,7 @@ theorem fair_progress_one_step
     -- Step 3: Multi-step depth non-increase from k to k_rel.
     -- Then strict decrease via effective release at k_rel.
     have h_persists := queued_writer_persists_across_window e c k h_queued (k_rel - k)
+      (h_no_cancel.mono (Nat.le_refl _) (by omega))
     rcases h_persists with ⟨k_admit, h_lt_admit, h_le_admit, h_held_admit⟩ | h_all_queued
     · -- Already admitted in [k+1, k_rel].
       left
@@ -6710,7 +7240,7 @@ theorem fair_progress_one_step
       have h_step_persists := queued_writer_persists_or_admitted
         (e.stateAt k_rel) c h_queued_at_krel (e.ops[k_rel]'h_k_rel_in_range)
       have h_succ_state := RwLockExecution.stateAt_succ e h_k_rel_in_range
-      rcases h_step_persists with h_admit | h_queued_succ
+      rcases h_step_persists with h_admit | h_queued_succ | h_is_cancel
       · -- Admitted at k_rel + 1.
         left
         refine ⟨k_rel + 1, by omega, by omega, ?_⟩
@@ -6732,12 +7262,16 @@ theorem fair_progress_one_step
                       (e.ops[k_rel]'h_k_rel_in_range)) c + 1 ≤
                     writerWaitDepth (e.stateAt k_rel) c := h_strict
           omega
+      · -- `c`'s own withdrawal at `k_rel`, excluded by the window hypothesis.
+        exact absurd h_is_cancel
+          (h_no_cancel.not_cancel_at (by omega) (by omega) h_k_rel_in_range)
   · -- Reader-release case.  Same structure as writer.
     have h_k_rel_in_range : k_rel < e.ops.length := by omega
     have h_eff : (e.stateAt k_rel).isEffectiveRelease (e.ops[k_rel]'h_k_rel_in_range) :=
       release_transition_implies_effective_release_at_step e k_rel h_k_rel_in_range
         (Or.inr ⟨c_h, h_in, h_out⟩)
     have h_persists := queued_writer_persists_across_window e c k h_queued (k_rel - k)
+      (h_no_cancel.mono (Nat.le_refl _) (by omega))
     rcases h_persists with ⟨k_admit, h_lt_admit, h_le_admit, h_held_admit⟩ | h_all_queued
     · left
       refine ⟨k_admit, h_lt_admit, ?_, h_held_admit⟩
@@ -6754,7 +7288,7 @@ theorem fair_progress_one_step
       have h_step_persists := queued_writer_persists_or_admitted
         (e.stateAt k_rel) c h_queued_at_krel (e.ops[k_rel]'h_k_rel_in_range)
       have h_succ_state := RwLockExecution.stateAt_succ e h_k_rel_in_range
-      rcases h_step_persists with h_admit | h_queued_succ
+      rcases h_step_persists with h_admit | h_queued_succ | h_is_cancel
       · left
         refine ⟨k_rel + 1, by omega, by omega, ?_⟩
         rw [h_succ_state]; exact h_admit
@@ -6770,6 +7304,9 @@ theorem fair_progress_one_step
                       (e.ops[k_rel]'h_k_rel_in_range)) c + 1 ≤
                     writerWaitDepth (e.stateAt k_rel) c := h_strict
           omega
+      · -- `c`'s own withdrawal at `k_rel`, excluded by the window hypothesis.
+        exact absurd h_is_cancel
+          (h_no_cancel.not_cancel_at (by omega) (by omega) h_k_rel_in_range)
 
 /-- **WS-SM SM2.C-defer D-3.6 (FULL substantive bound — main theorem)**:
 under FairTrace + initial = unheld + c queued at step k_enq, c is
@@ -6806,7 +7343,9 @@ theorem rwLock_writer_liveness
     (c : CoreId) (k_enq : Nat)
     (h_queued : (c, AccessMode.write) ∈ (e.stateAt k_enq).waiters)
     (h_within : k_enq + writerWaitDepth (e.stateAt k_enq) c * (maxDelay + 1) <
-                e.ops.length) :
+                e.ops.length)
+    (h_no_cancel : e.noCancelIn c k_enq
+      (k_enq + writerWaitDepth (e.stateAt k_enq) c * (maxDelay + 1) + 1)) :
     ∃ k_admit, k_enq ≤ k_admit ∧
                k_admit ≤ k_enq + writerWaitDepth (e.stateAt k_enq) c * (maxDelay + 1) ∧
                (e.stateAt k_admit).writerHeld = some c := by
@@ -6820,18 +7359,20 @@ theorem rwLock_writer_liveness
       (c, AccessMode.write) ∈ (e.stateAt k_start).waiters →
       writerWaitDepth (e.stateAt k_start) c ≤ d →
       k_start + d * (maxDelay + 1) < e.ops.length →
+      e.noCancelIn c k_start (k_start + d * (maxDelay + 1) + 1) →
       ∃ k_admit, k_start ≤ k_admit ∧
                  k_admit ≤ k_start + d * (maxDelay + 1) ∧
                  (e.stateAt k_admit).writerHeld = some c by
     have h_depth_le : writerWaitDepth (e.stateAt k_enq) c ≤
                       writerWaitDepth (e.stateAt k_enq) c := Nat.le_refl _
     exact h (writerWaitDepth (e.stateAt k_enq) c) k_enq h_queued h_depth_le h_within
+      h_no_cancel
   -- Now prove the helper by strong induction on d.
   intro d
   induction d with
   | zero =>
     -- d = 0: depth ≤ 0 ⇒ depth = 0.  But c queued ⇒ depth ≥ 1 (INV-R5).
-    intro k_start h_q h_depth_le _h_within
+    intro k_start h_q h_depth_le _h_within _h_nc
     exfalso
     -- depth ≥ 1 from INV-R5.
     have h_wf := e.stateAt_wf k_start
@@ -6870,17 +7411,19 @@ theorem rwLock_writer_liveness
     have : writerWaitDepth (e.stateAt k_start) c ≥ 1 := h_depth_pos
     omega
   | succ d ih =>
-    intro k_start h_q h_depth_le h_within
+    intro k_start h_q h_depth_le h_within h_nc
     -- Apply fair_progress_one_step: get either admission or depth decrease.
-    have h_in_range_progress : k_start + maxDelay < e.ops.length := by
-      have h_bound : (d + 1) * (maxDelay + 1) ≥ maxDelay + 1 := by
-        have : 1 * (maxDelay + 1) ≤ (d + 1) * (maxDelay + 1) :=
-          Nat.mul_le_mul_right (maxDelay + 1) (by omega)
-        rw [Nat.one_mul] at this
-        exact this
-      omega
+    -- Hoisted: `omega` cannot multiply, and both the range bound and the
+    -- window narrowing below need this one product comparison.
+    have h_bound : (d + 1) * (maxDelay + 1) ≥ maxDelay + 1 := by
+      have : 1 * (maxDelay + 1) ≤ (d + 1) * (maxDelay + 1) :=
+        Nat.mul_le_mul_right (maxDelay + 1) (by omega)
+      rw [Nat.one_mul] at this
+      exact this
+    have h_in_range_progress : k_start + maxDelay < e.ops.length := by omega
     have h_progress := fair_progress_one_step e maxDelay h_fair h_init c k_start
                        h_q h_in_range_progress
+                       (h_nc.mono (Nat.le_refl _) (by omega))
     rcases h_progress with ⟨k_admit, h_lt_admit, h_le_admit, h_held⟩ |
                           ⟨k_next, h_lt_next, h_le_next, h_q_next, h_depth_dec⟩
     · -- Admitted in this window.
@@ -6901,8 +7444,16 @@ theorem rwLock_writer_liveness
             rw [Nat.add_mul, Nat.one_mul]
           omega
         omega
+      -- The narrower window the IH needs: `k_next` is at most one delay past
+      -- `k_start`, so `k_next + d * (maxDelay + 1)` stays inside this one.
+      have h_split : k_start + (d + 1) * (maxDelay + 1) =
+                     k_start + d * (maxDelay + 1) + (maxDelay + 1) := by
+        have h1 : (d + 1) * (maxDelay + 1) = d * (maxDelay + 1) + (maxDelay + 1) := by
+          rw [Nat.add_mul, Nat.one_mul]
+        omega
       obtain ⟨k_admit_ih, _h_ge_admit_ih, h_le_admit_ih, h_held_ih⟩ :=
         ih k_next h_q_next h_depth_le_d h_within_next
+          (h_nc.mono (by omega) (by omega))
       refine ⟨k_admit_ih, by omega, ?_, h_held_ih⟩
       have h_eq2 : k_start + (d + 1) * (maxDelay + 1) =
                    k_start + d * (maxDelay + 1) + (maxDelay + 1) := by
@@ -6921,11 +7472,14 @@ theorem rwLock_writer_admissionStep_bounded
     (c : CoreId) (k_enq : Nat)
     (h_queued : (c, AccessMode.write) ∈ (e.stateAt k_enq).waiters)
     (h_within : k_enq + writerWaitDepth (e.stateAt k_enq) c * (maxDelay + 1) <
-                e.ops.length) :
+                e.ops.length)
+    (h_no_cancel : e.noCancelIn c k_enq
+      (k_enq + writerWaitDepth (e.stateAt k_enq) c * (maxDelay + 1) + 1)) :
     ∃ a, e.admissionStep c = some a ∧
          a ≤ k_enq + writerWaitDepth (e.stateAt k_enq) c * (maxDelay + 1) := by
   obtain ⟨k_admit, _, h_le, h_held⟩ :=
     rwLock_writer_liveness e maxDelay h_fair h_init c k_enq h_queued h_within
+      h_no_cancel
   have h_holder : e.holderAt k_admit c := by
     unfold RwLockExecution.holderAt
     right; exact h_held
@@ -7003,11 +7557,14 @@ theorem rwLock_writer_admissionStepAfter_bounded
     (c : CoreId) (k_enq : Nat)
     (h_queued : (c, AccessMode.write) ∈ (e.stateAt k_enq).waiters)
     (h_within : k_enq + writerWaitDepth (e.stateAt k_enq) c * (maxDelay + 1) <
-                e.ops.length) :
+                e.ops.length)
+    (h_no_cancel : e.noCancelIn c k_enq
+      (k_enq + writerWaitDepth (e.stateAt k_enq) c * (maxDelay + 1) + 1)) :
     ∃ a, e.admissionStepAfter c k_enq = some a ∧
          k_enq < a ∧ a ≤ k_enq + writerWaitDepth (e.stateAt k_enq) c * (maxDelay + 1) := by
   obtain ⟨k_admit, h_ge, h_le, h_held⟩ :=
     rwLock_writer_liveness e maxDelay h_fair h_init c k_enq h_queued h_within
+      h_no_cancel
   -- `k_admit` is strictly after the enqueue: the core is queued at `k_enq`, and a
   -- queued core is not a holder there (INV-R4).
   have h_holder_admit : e.holderAt k_admit c := Or.inr h_held
@@ -7110,17 +7667,21 @@ single operation a queued core is either a holder or still queued.
 
 `queued_writer_persists_or_admitted` is the `.write` instance with the holder
 disjunct specialised to `writerHeld`; this form keeps both holder shapes, which
-is what a queued *reader* needs (it is admitted into `readers`). -/
+is what a queued *reader* needs (it is admitted into `readers`).
+
+As with the `.write` instance, the fourth disjunct is the core's own
+withdrawal — the one exit from the queue that is not an admission. -/
 theorem queued_persists_or_admitted
     (s : RwLockState) (h_wf : s.wf) (c : CoreId) (m : AccessMode) (op : RwLockOp)
     (h_queued : (c, m) ∈ s.waiters) :
     c ∈ (s.applyOp op).readers ∨ (s.applyOp op).writerHeld = some c ∨
-      (c, m) ∈ (s.applyOp op).waiters := by
+      (c, m) ∈ (s.applyOp op).waiters ∨ op = RwLockOp.cancel c := by
   by_cases h_still : (c, m) ∈ (s.applyOp op).waiters
-  · exact Or.inr (Or.inr h_still)
-  · rcases leave_waiters_implies_holder s h_wf c m op h_queued h_still with h | h
+  · exact Or.inr (Or.inr (Or.inl h_still))
+  · rcases leave_waiters_implies_holder s h_wf c m op h_queued h_still with h | h | h
     · exact Or.inl h
     · exact Or.inr (Or.inl h)
+    · exact Or.inr (Or.inr (Or.inr h))
 
 /-- **WS-SM SM2.C-defer D-3.9 (the SM8.D.3 scenario, operationally)**: a reader
 at the head of the wait queue is admitted by the very release that ends the
@@ -7451,6 +8012,11 @@ theorem queueWaitDepth_monotone_under_effective_release
                    h_effective, Option.isSome_some, Option.isSome_none, Bool.false_eq_true,
                    if_true, if_false]
         omega
+  | cancel c' =>
+    -- A withdrawal is not a release: it hands no lock on, so
+    -- `isEffectiveRelease` is `False` for it and the case is vacuous.
+    unfold RwLockState.isEffectiveRelease at h_effective
+    exact absurd h_effective (by trivial)
 
 /-- **WS-SM SM2.C-defer D-3.10**: the `.write` instance of the mode-generic
 keystone is the writer keystone.  Stated so the generalisation is checked
@@ -7567,6 +8133,15 @@ theorem queueWaitDepth_non_increase_step_queued
       omega
     · exact Nat.le_of_eq (queueWaitDepth_unchanged_under_noneffective_release s c m
         (.releaseWrite c') h_eff (Or.inr ⟨c', rfl⟩))
+  | cancel c' =>
+    -- Mode-generic twin of the writer-specific arm: same filter, same bound.
+    have h_mem : (c, m) ∈ s.waiters.filter (fun w => w.1 ≠ c') := by
+      rw [← RwLockState.applyOp_cancel_waiters]; exact h_queued_post
+    have h_idx := idxOf_filter_le _ s.waiters (c, m) h_mem
+    unfold queueWaitDepth
+    rw [RwLockState.applyOp_cancel_readers, RwLockState.applyOp_cancel_writerHeld,
+      RwLockState.applyOp_cancel_waiters]
+    omega
 
 /-- **WS-SM SM2.C-defer D-3.10 (helper)**: INV-R3 (`waiters.map Prod.fst` is
 `Nodup`) says a core appears in the wait queue at most once, hence at exactly
@@ -7687,6 +8262,9 @@ theorem queued_reader_not_write_holder_after_step
     · simp only [h_held, ne_eq, not_true_eq_false, if_false]
       exact promoteOnWriterRelease_writerHeld_ne _ c (by simp) h_no_write_wait
     · simp only [h_held, ne_eq, not_false_eq_true, if_true]; exact h_pre
+  | cancel c' =>
+    rw [RwLockState.applyOp_cancel_writerHeld]
+    exact h_pre
 
 /-- **WS-SM SM2.C-defer D-3.10 (helper)**: a batch promote admits only cores that
 were queued **as readers** — the promoted prefix is `takeWhile (·.2 = .read)`. -/
@@ -7803,6 +8381,9 @@ theorem queued_writer_not_reader_after_step
     · simp only [h_held, ne_eq, not_true_eq_false, if_false]
       exact promoteOnWriterRelease_readers_ne _ c h_pre h_no_read_wait
     · simp only [h_held, ne_eq, not_false_eq_true, if_true]; exact h_pre
+  | cancel c' =>
+    rw [RwLockState.applyOp_cancel_readers]
+    exact h_pre
 
 /-- **WS-SM SM2.C-defer D-3.10**: holding *at a given access mode* — a reader is
 in `readers`, a writer is `writerHeld`.
@@ -7835,38 +8416,48 @@ theorem RwLockExecution.holderAt_of_admittedAt (e : RwLockExecution) (k : Nat)
   | write => exact Or.inr h
 
 /-- **WS-SM SM2.C-defer D-3.10**: the mode-exact single-step persistence — after
-any operation a queued core is either admitted **at its own mode** or still
-queued.  `queued_persists_or_admitted`'s three-way disjunction collapses to two
-because the cross-mode admissions are impossible. -/
+any operation a queued core is either admitted **at its own mode**, still
+queued, or has withdrawn.  The two *cross-mode* admissions of
+`queued_persists_or_admitted` are impossible and collapse away; the withdrawal
+disjunct survives, because it is the one exit from the queue that is not an
+admission at any mode. -/
 theorem queued_persists_or_admitted_at_mode
     (s : RwLockState) (h_wf : s.wf) (c : CoreId) (m : AccessMode) (op : RwLockOp)
     (h_queued : (c, m) ∈ s.waiters) :
-    (s.applyOp op).admits c m ∨ (c, m) ∈ (s.applyOp op).waiters := by
-  rcases queued_persists_or_admitted s h_wf c m op h_queued with h_read | h_write | h_queued'
+    (s.applyOp op).admits c m ∨ (c, m) ∈ (s.applyOp op).waiters ∨
+      op = RwLockOp.cancel c := by
+  rcases queued_persists_or_admitted s h_wf c m op h_queued
+    with h_read | h_write | h_queued' | h_cancel
   · cases m with
     | read => exact Or.inl h_read
     | write => exact absurd h_read (queued_writer_not_reader_after_step s h_wf c h_queued op)
   · cases m with
     | read => exact absurd h_write (queued_reader_not_write_holder_after_step s h_wf c h_queued op)
     | write => exact Or.inl h_write
-  · exact Or.inr h_queued'
+  · exact Or.inr (Or.inl h_queued')
+  · exact Or.inr (Or.inr h_cancel)
 
 /-- **WS-SM SM2.C-defer D-3.10 (persistence across a window, mode-generic)**:
 over any window a queued core either becomes a holder inside it or stays queued
 at every step of it. -/
 private theorem queued_persists_across_window_mode
     (e : RwLockExecution) (c : CoreId) (m : AccessMode) (k_start : Nat)
-    (h_queued_start : (c, m) ∈ (e.stateAt k_start).waiters) (w : Nat) :
+    (h_queued_start : (c, m) ∈ (e.stateAt k_start).waiters) (w : Nat)
+    (h_no_cancel : e.noCancelIn c k_start (k_start + w)) :
     (∃ k_admit, k_start < k_admit ∧ k_admit ≤ k_start + w ∧ e.admittedAt k_admit c m) ∨
     (∀ k, k_start ≤ k ∧ k ≤ k_start + w → (c, m) ∈ (e.stateAt k).waiters) := by
+  revert h_no_cancel
   induction w with
   | zero =>
+    intro _
     right
     intro k ⟨h_le, h_ge⟩
     have : k = k_start := by omega
     rw [this]; exact h_queued_start
   | succ w ih =>
-    rcases ih with ⟨k_admit, h_lt, h_le, h_admit⟩ | h_all_queued
+    intro h_no_cancel
+    rcases ih (h_no_cancel.mono (Nat.le_refl _) (by omega))
+      with ⟨k_admit, h_lt, h_le, h_admit⟩ | h_all_queued
     · exact Or.inl ⟨k_admit, h_lt, by omega, h_admit⟩
     · by_cases h_in_range : k_start + w < e.ops.length
       · have h_succ := e.stateAt_succ h_in_range
@@ -7874,7 +8465,7 @@ private theorem queued_persists_across_window_mode
         have h_step := queued_persists_or_admitted_at_mode (e.stateAt (k_start + w))
                        (e.stateAt_wf (k_start + w)) c m
                        (e.ops[k_start + w]'h_in_range) h_queued_at_w
-        rcases h_step with h_admit | h_queued_succ
+        rcases h_step with h_admit | h_queued_succ | h_is_cancel
         · refine Or.inl ⟨k_start + w + 1, by omega, by omega, ?_⟩
           show e.admittedAt (k_start + w + 1) c m
           unfold RwLockExecution.admittedAt
@@ -7885,6 +8476,8 @@ private theorem queued_persists_across_window_mode
           by_cases h_eq_top : k = k_start + (w + 1)
           · rw [h_eq_top, ← Nat.add_assoc, h_succ]; exact h_queued_succ
           · exact h_all_queued k ⟨h_le, by omega⟩
+        · exact absurd h_is_cancel
+            (h_no_cancel.not_cancel_at (Nat.le_add_right _ _) (by omega) h_in_range)
       · -- Past the end of the trace the state is stationary.
         right
         have h_eq : e.stateAt (k_start + w + 1) = e.stateAt (k_start + w) := by
@@ -7988,7 +8581,8 @@ theorem fair_progress_one_step_mode
     (h_init : e.initial = RwLockState.unheld)
     (c : CoreId) (m : AccessMode) (k : Nat)
     (h_queued : (c, m) ∈ (e.stateAt k).waiters)
-    (h_in_range : k + maxDelay < e.ops.length) :
+    (h_in_range : k + maxDelay < e.ops.length)
+    (h_no_cancel : e.noCancelIn c k (k + maxDelay + 1)) :
     (∃ k_admit, k < k_admit ∧ k_admit ≤ k + maxDelay + 1 ∧ e.admittedAt k_admit c m) ∨
     (∃ k_next, k < k_next ∧ k_next ≤ k + maxDelay + 1 ∧
                (c, m) ∈ (e.stateAt k_next).waiters ∧
@@ -8009,7 +8603,8 @@ theorem fair_progress_one_step_mode
           (Or.inr ⟨c_h, h_in, h_out⟩)⟩
   have h_k_rel_in_range : k_rel < e.ops.length := by omega
   have h_eff := h_eff_at h_k_rel_in_range
-  rcases queued_persists_across_window_mode e c m k h_queued (k_rel - k) with
+  rcases queued_persists_across_window_mode e c m k h_queued (k_rel - k)
+      (h_no_cancel.mono (Nat.le_refl _) (by omega)) with
     ⟨k_admit, h_lt_admit, h_le_admit, h_admitted⟩ | h_all_queued
   · exact Or.inl ⟨k_admit, h_lt_admit, by omega, h_admitted⟩
   · have h_depth_le_at_krel : queueWaitDepth (e.stateAt k_rel) c m ≤
@@ -8023,7 +8618,7 @@ theorem fair_progress_one_step_mode
     have h_succ_state := RwLockExecution.stateAt_succ e h_k_rel_in_range
     rcases queued_persists_or_admitted_at_mode (e.stateAt k_rel) (e.stateAt_wf k_rel) c m
         (e.ops[k_rel]'h_k_rel_in_range) h_queued_at_krel with
-      h_admit | h_queued_succ
+      h_admit | h_queued_succ | h_is_cancel
     · refine Or.inl ⟨k_rel + 1, by omega, by omega, ?_⟩
       show e.admittedAt (k_rel + 1) c m
       unfold RwLockExecution.admittedAt
@@ -8036,6 +8631,9 @@ theorem fair_progress_one_step_mode
       refine ⟨k_rel + 1, by omega, by omega, ?_, ?_⟩
       · rw [h_succ_state]; exact h_queued_succ
       · rw [h_succ_state]; omega
+    · -- `c`'s own withdrawal at `k_rel`, excluded by the window hypothesis.
+      exact absurd h_is_cancel
+        (h_no_cancel.not_cancel_at (by omega) (by omega) h_k_rel_in_range)
 
 /-- **WS-SM SM2.C-defer D-3.10 (helper)**: a queued core has positive wait
 depth.  INV-R5 (`fifoAdmissionDiscipline`) forces a holder whenever the queue is
@@ -8074,7 +8672,9 @@ theorem rwLock_queued_liveness
     (c : CoreId) (m : AccessMode) (k_enq : Nat)
     (h_queued : (c, m) ∈ (e.stateAt k_enq).waiters)
     (h_within : k_enq + queueWaitDepth (e.stateAt k_enq) c m * (maxDelay + 1) <
-                e.ops.length) :
+                e.ops.length)
+    (h_no_cancel : e.noCancelIn c k_enq
+      (k_enq + queueWaitDepth (e.stateAt k_enq) c m * (maxDelay + 1) + 1)) :
     ∃ k_admit, k_enq < k_admit ∧
                k_admit ≤ k_enq + queueWaitDepth (e.stateAt k_enq) c m * (maxDelay + 1) ∧
                e.admittedAt k_admit c m := by
@@ -8082,18 +8682,20 @@ theorem rwLock_queued_liveness
       (c, m) ∈ (e.stateAt k_start).waiters →
       queueWaitDepth (e.stateAt k_start) c m ≤ d →
       k_start + d * (maxDelay + 1) < e.ops.length →
+      e.noCancelIn c k_start (k_start + d * (maxDelay + 1) + 1) →
       ∃ k_admit, k_start < k_admit ∧
                  k_admit ≤ k_start + d * (maxDelay + 1) ∧
                  e.admittedAt k_admit c m by
     exact h (queueWaitDepth (e.stateAt k_enq) c m) k_enq h_queued (Nat.le_refl _) h_within
+      h_no_cancel
   intro d
   induction d with
   | zero =>
-    intro k_start h_q h_depth_le _h_within
+    intro k_start h_q h_depth_le _h_within _h_nc
     exact absurd (Nat.le_trans (queueWaitDepth_pos_of_queued (e.stateAt k_start)
       (e.stateAt_wf k_start) c m h_q) h_depth_le) (by omega)
   | succ d ih =>
-    intro k_start h_q h_depth_le h_within
+    intro k_start h_q h_depth_le h_within h_nc
     have h_one_le : 1 * (maxDelay + 1) ≤ (d + 1) * (maxDelay + 1) :=
       Nat.mul_le_mul_right (maxDelay + 1) (by omega)
     rw [Nat.one_mul] at h_one_le
@@ -8101,12 +8703,13 @@ theorem rwLock_queued_liveness
       rw [Nat.add_mul, Nat.one_mul]
     have h_in_range_progress : k_start + maxDelay < e.ops.length := by omega
     rcases fair_progress_one_step_mode e maxDelay h_fair h_init c m k_start h_q
-        h_in_range_progress with
+        h_in_range_progress (h_nc.mono (Nat.le_refl _) (by omega)) with
       ⟨k_admit, h_lt_admit, h_le_admit, h_admitted⟩ |
       ⟨k_next, h_lt_next, h_le_next, h_q_next, h_depth_dec⟩
     · exact ⟨k_admit, h_lt_admit, by omega, h_admitted⟩
     · obtain ⟨k_admit_ih, h_gt_admit_ih, h_le_admit_ih, h_admitted_ih⟩ :=
         ih k_next h_q_next (by omega) (by omega)
+          (h_nc.mono (by omega) (by omega))
       exact ⟨k_admit_ih, by omega, by omega, h_admitted_ih⟩
 
 /-- **WS-SM SM2.C-defer D-3.10**: the reader instance — a blocked reader's wait
@@ -8122,11 +8725,14 @@ theorem rwLock_reader_liveness
     (c : CoreId) (k_enq : Nat)
     (h_queued : (c, AccessMode.read) ∈ (e.stateAt k_enq).waiters)
     (h_within : k_enq + readerWaitDepth (e.stateAt k_enq) c * (maxDelay + 1) <
-                e.ops.length) :
+                e.ops.length)
+    (h_no_cancel : e.noCancelIn c k_enq
+      (k_enq + readerWaitDepth (e.stateAt k_enq) c * (maxDelay + 1) + 1)) :
     ∃ k_admit, k_enq < k_admit ∧
                k_admit ≤ k_enq + readerWaitDepth (e.stateAt k_enq) c * (maxDelay + 1) ∧
                c ∈ (e.stateAt k_admit).readers :=
   rwLock_queued_liveness e maxDelay h_fair h_init c AccessMode.read k_enq h_queued h_within
+    h_no_cancel
 
 /-- **WS-SM SM2.C-defer D-3.10 (the bound WS-SM SM8.D reads, mode-generic)**: a
 queued core's **own** admission — the one following its enqueue — is within
@@ -8142,11 +8748,14 @@ theorem rwLock_queued_admissionStepAfter_bounded
     (c : CoreId) (m : AccessMode) (k_enq : Nat)
     (h_queued : (c, m) ∈ (e.stateAt k_enq).waiters)
     (h_within : k_enq + queueWaitDepth (e.stateAt k_enq) c m * (maxDelay + 1) <
-                e.ops.length) :
+                e.ops.length)
+    (h_no_cancel : e.noCancelIn c k_enq
+      (k_enq + queueWaitDepth (e.stateAt k_enq) c m * (maxDelay + 1) + 1)) :
     ∃ a, e.admissionStepAfter c k_enq = some a ∧
          k_enq < a ∧ a ≤ k_enq + queueWaitDepth (e.stateAt k_enq) c m * (maxDelay + 1) := by
   obtain ⟨k_admit, h_gt, h_le, h_admitted⟩ :=
     rwLock_queued_liveness e maxDelay h_fair h_init c m k_enq h_queued h_within
+      h_no_cancel
   have h_holder : e.holderAt k_admit c := e.holderAt_of_admittedAt k_admit c m h_admitted
   have h_pred : (fun k => decide (k_enq < k) && decide (e.holderAt k c)) k_admit = true := by
     simp [h_gt, h_holder]
@@ -8164,11 +8773,13 @@ theorem rwLock_reader_admissionStepAfter_bounded
     (c : CoreId) (k_enq : Nat)
     (h_queued : (c, AccessMode.read) ∈ (e.stateAt k_enq).waiters)
     (h_within : k_enq + readerWaitDepth (e.stateAt k_enq) c * (maxDelay + 1) <
-                e.ops.length) :
+                e.ops.length)
+    (h_no_cancel : e.noCancelIn c k_enq
+      (k_enq + readerWaitDepth (e.stateAt k_enq) c * (maxDelay + 1) + 1)) :
     ∃ a, e.admissionStepAfter c k_enq = some a ∧
          k_enq < a ∧ a ≤ k_enq + readerWaitDepth (e.stateAt k_enq) c * (maxDelay + 1) :=
   rwLock_queued_admissionStepAfter_bounded e maxDelay h_fair h_init c AccessMode.read k_enq
-    h_queued h_within
+    h_queued h_within h_no_cancel
 
 /-- **WS-SM SM2.C-defer D-3.10**: the `.write` instance of the mode-generic
 admission bound is `rwLock_writer_admissionStepAfter_bounded`.
@@ -8182,10 +8793,90 @@ theorem rwLock_queued_admissionStepAfter_bounded_write
     (c : CoreId) (k_enq : Nat)
     (h_queued : (c, AccessMode.write) ∈ (e.stateAt k_enq).waiters)
     (h_within : k_enq + writerWaitDepth (e.stateAt k_enq) c * (maxDelay + 1) <
-                e.ops.length) :
+                e.ops.length)
+    (h_no_cancel : e.noCancelIn c k_enq
+      (k_enq + writerWaitDepth (e.stateAt k_enq) c * (maxDelay + 1) + 1)) :
     ∃ a, e.admissionStepAfter c k_enq = some a ∧
          k_enq < a ∧ a ≤ k_enq + writerWaitDepth (e.stateAt k_enq) c * (maxDelay + 1) :=
   rwLock_queued_admissionStepAfter_bounded e maxDelay h_fair h_init c AccessMode.write k_enq
-    h_queued h_within
+    h_queued h_within h_no_cancel
+
+-- ============================================================================
+-- Withdrawal: what a cancel buys, stated for callers
+-- ============================================================================
+
+/-! The frame facts near `applyOp` say what a cancel *does not* write.  These
+say what it *achieves*, in the form a two-phase-locking unwind cites:
+
+* the request is gone (`rwLock_cancel_removes_request`),
+* nobody else's request is disturbed (`rwLock_cancel_leaves_other_requests`),
+* the queue is not reordered (`rwLock_cancel_preserves_waiter_order`),
+* nobody is admitted by it (`rwLock_cancel_admits_no_one`), and
+* nobody waits longer for it (`rwLock_cancel_does_not_increase_wait_depth`).
+
+Together these are the contract that makes a cancel a *safe* unwind: it
+releases nothing, so it cannot break exclusion, and it costs the waiters
+behind it nothing. -/
+
+/-- **The point of the operation**: after `c` withdraws, `c` has no queued
+request at either mode. -/
+theorem rwLock_cancel_removes_request (s : RwLockState) (c : CoreId) (m : AccessMode) :
+    (c, m) ∉ (s.applyOp (.cancel c)).waiters :=
+  RwLockState.not_mem_applyOp_cancel_waiters s c m
+
+/-- **A withdrawal is private to the withdrawer**: every other core's queued
+request survives it, at its own mode. -/
+theorem rwLock_cancel_leaves_other_requests {s : RwLockState} {c c' : CoreId}
+    {m : AccessMode} (h_ne : c' ≠ c) (h_in : (c', m) ∈ s.waiters) :
+    (c', m) ∈ (s.applyOp (.cancel c)).waiters :=
+  RwLockState.mem_applyOp_cancel_waiters h_ne h_in
+
+/-- **A withdrawal does not reorder the queue**: two requests that both survive
+keep the order they had, so the FIFO discipline is untouched. -/
+theorem rwLock_cancel_preserves_waiter_order
+    (s : RwLockState) (h_wf : s.wf) (c : CoreId)
+    (w₁ w₂ : CoreId × AccessMode)
+    (h_in₁_pre : w₁ ∈ s.waiters) (h_in₂_pre : w₂ ∈ s.waiters)
+    (h_in₁_post : w₁ ∈ (s.applyOp (.cancel c)).waiters)
+    (h_in₂_post : w₂ ∈ (s.applyOp (.cancel c)).waiters)
+    (h_order : s.waiters.idxOf w₁ < s.waiters.idxOf w₂) :
+    (s.applyOp (.cancel c)).waiters.idxOf w₁ <
+      (s.applyOp (.cancel c)).waiters.idxOf w₂ :=
+  applyOp_preserves_waiter_order s h_wf (.cancel c) w₁ w₂
+    h_in₁_pre h_in₂_pre h_in₁_post h_in₂_post h_order
+
+/-- **A withdrawal admits nobody**, at either mode: it writes neither `readers`
+nor `writerHeld`, so no core's holder status changes.
+
+This is what makes a cancel sound to issue at any moment.  A release hands the
+lock on and may promote a waiter; a cancel cannot, so it can never violate
+exclusion however it interleaves. -/
+theorem rwLock_cancel_admits_no_one (s : RwLockState) (c holder : CoreId) :
+    (holder ∈ (s.applyOp (.cancel c)).readers ↔ holder ∈ s.readers) ∧
+    ((s.applyOp (.cancel c)).writerHeld = some holder ↔ s.writerHeld = some holder) := by
+  constructor
+  · rw [RwLockState.applyOp_cancel_readers]
+  · rw [RwLockState.applyOp_cancel_writerHeld]
+
+/-- **A withdrawal never makes anyone wait longer.**  Removing one entry can
+only bring the requests behind it closer to the head, and the holder counts are
+untouched, so every still-queued core's wait depth is no greater than before.
+
+Mode-generic; the `.write` instance is the one the writer-liveness bound reads. -/
+theorem rwLock_cancel_does_not_increase_wait_depth
+    (s : RwLockState) (h_wf : s.wf) (c c' : CoreId) (m : AccessMode)
+    (h_queued_pre : (c, m) ∈ s.waiters)
+    (h_queued_post : (c, m) ∈ (s.applyOp (.cancel c')).waiters) :
+    queueWaitDepth (s.applyOp (.cancel c')) c m ≤ queueWaitDepth s c m :=
+  queueWaitDepth_non_increase_step_queued s h_wf c m h_queued_pre (.cancel c') h_queued_post
+
+/-- **A withdrawal is not a release.**  `isEffectiveRelease` is `false` for it,
+which is what keeps every "an effective release fires within `maxDelay`"
+fairness argument honest: a core that gives up has not made progress for
+anyone. -/
+@[simp] theorem rwLock_cancel_not_effective_release (s : RwLockState) (c : CoreId) :
+    ¬ s.isEffectiveRelease (.cancel c) := by
+  unfold RwLockState.isEffectiveRelease
+  exact fun h => h
 
 end SeLe4n.Kernel.Concurrency

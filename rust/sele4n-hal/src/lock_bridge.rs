@@ -726,7 +726,7 @@ pub fn rw_lock_release_write_count(handle: u64) -> u64 {
 /// refinement entry pointed at the form that assumes its own conclusion
 /// block by block, and the lock the kernel actually deploys had no
 /// entry at all.  See `LockPrimitives.lean`'s header for the detail.
-pub const LOCK_THEOREM_COUNT: usize = 25;
+pub const LOCK_THEOREM_COUNT: usize = 28;
 
 // ============================================================================
 // SM2.D.5 — Static linker-time check (build.rs scanner anchor)
@@ -967,12 +967,19 @@ mod tests {
     // LOCK_THEOREM_COUNT pinning
     // --------------------------------------------------------------------
 
+    /// The count and its category breakdown must move together.
+    ///
+    /// Two assertions, because either alone is satisfiable by a drift: the
+    /// literal catches a category changing without the total, and the sum
+    /// catches the total changing without a category.  The test is named for
+    /// the *relation* rather than for the number — a name carrying the figure
+    /// has to be renamed on every bump, and a rename that is forgotten leaves
+    /// a test whose name says one thing and whose body checks another.
     #[test]
-    fn theorem_count_is_25() {
-        assert_eq!(LOCK_THEOREM_COUNT, 25);
-        // Cross-check the breakdown:
-        //   4 memory-model + 6 TicketLock + 11 RwLock + 4 refinement = 25.
-        assert_eq!(4 + 6 + 11 + 4, LOCK_THEOREM_COUNT);
+    fn theorem_count_equals_its_category_breakdown() {
+        assert_eq!(LOCK_THEOREM_COUNT, 28);
+        // 4 memory-model + 6 TicketLock + 14 RwLock + 4 refinement = 28.
+        assert_eq!(4 + 6 + 14 + 4, LOCK_THEOREM_COUNT);
     }
 
     // --------------------------------------------------------------------

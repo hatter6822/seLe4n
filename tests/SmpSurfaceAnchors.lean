@@ -247,6 +247,8 @@ namespace SeLe4n.Testing.SmpSurfaceAnchors
 
 -- The payoff: the deployed lock refines the Lean FIFO spec end to end, and
 -- admits in the spec's order.
+-- The queued bridge covers cancel-free traces only, and says so.
+#check @SeLe4n.Kernel.Concurrency.ListQueuedBlocks_cancel_free
 #check @SeLe4n.Kernel.Concurrency.queuedRwLock_refines_rwLockSpec
 #check @SeLe4n.Kernel.Concurrency.queuedRwLock_admits_in_spec_order
 
@@ -290,6 +292,40 @@ namespace SeLe4n.Testing.SmpSurfaceAnchors
 #check @SeLe4n.Kernel.Concurrency.rwLock_bounded_wait_write_distinct
 #check @SeLe4n.Kernel.Concurrency.rwLock_writer_admitted_within_release_budget
 
+-- The withdrawal operation: the fifth RwLockOp constructor, its frame
+-- facts, its invariant preservation, and the window predicate the
+-- becomes-the-holder liveness family is conditional on.
+#check @SeLe4n.Kernel.Concurrency.RwLockOp.cancel
+#check @SeLe4n.Kernel.Concurrency.RwLockOp.isCancel
+#check @SeLe4n.Kernel.Concurrency.RwLockOp.isCancel_cancel
+#check @SeLe4n.Kernel.Concurrency.RwLockKernelStep.cancel
+#check @SeLe4n.Kernel.Concurrency.RwLockState.applyOp_cancel_readers
+#check @SeLe4n.Kernel.Concurrency.RwLockState.applyOp_cancel_writerHeld
+#check @SeLe4n.Kernel.Concurrency.RwLockState.applyOp_cancel_waiters
+#check @SeLe4n.Kernel.Concurrency.RwLockState.applyOp_cancel_waiters_sublist
+#check @SeLe4n.Kernel.Concurrency.RwLockState.mem_applyOp_cancel_waiters
+#check @SeLe4n.Kernel.Concurrency.RwLockState.not_mem_applyOp_cancel_waiters
+#check @SeLe4n.Kernel.Concurrency.rwLock_cancel_preserves_wf
+-- The window predicate, and the two lemmas that let a caller DERIVE
+-- "this step is not a withdrawal" from an admission rather than assume it.
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.noCancelIn
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.noCancelIn.not_cancel_at
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.noCancelIn.mono
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.noCancelIn_self
+-- The decidable whole-trace form a fixture discharges: `noCancelIn` quantifies
+-- over an unbounded step index and cannot be `decide`d, so the two coexist.
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.cancelFree
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.cancelFree.noCancelIn
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.holderAt_succ_iff_of_cancel
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.not_cancel_of_becomes_holder
+-- What a withdrawal buys, in the form a two-phase-locking unwind cites.
+#check @SeLe4n.Kernel.Concurrency.rwLock_cancel_removes_request
+#check @SeLe4n.Kernel.Concurrency.rwLock_cancel_leaves_other_requests
+#check @SeLe4n.Kernel.Concurrency.rwLock_cancel_preserves_waiter_order
+#check @SeLe4n.Kernel.Concurrency.rwLock_cancel_admits_no_one
+#check @SeLe4n.Kernel.Concurrency.rwLock_cancel_does_not_increase_wait_depth
+#check @SeLe4n.Kernel.Concurrency.rwLock_cancel_not_effective_release
+
 -- ============================================================================
 -- §6b — WS-SM SM3.E.8 — Serializability major-theorem surface anchors
 -- ============================================================================
@@ -331,7 +367,7 @@ example : 0 < SeLe4n.Kernel.Concurrency.staticRwLockPoolSize := by decide
 
 /-! ## Aggregator structure (SM2.D.7) -/
 
-example : SeLe4n.Kernel.Concurrency.lockPrimitives.length = 25 := by decide
+example : SeLe4n.Kernel.Concurrency.lockPrimitives.length = 28 := by decide
 
 example :
     (SeLe4n.Kernel.Concurrency.lockPrimitives.filter
@@ -345,7 +381,7 @@ example :
 
 example :
     (SeLe4n.Kernel.Concurrency.lockPrimitives.filter
-      (·.category = SeLe4n.Kernel.Concurrency.LockPrimitiveCategory.rwLock)).length = 11 := by
+      (·.category = SeLe4n.Kernel.Concurrency.LockPrimitiveCategory.rwLock)).length = 14 := by
   decide
 
 example :
@@ -448,8 +484,8 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
   assertBool "rH3.isValid: raw.toNat < poolSize" (decide (rH3.raw.toNat < 4))
 
   IO.println "--- §3 Aggregator size + per-category counts ---"
-  assertBool "lockPrimitives.length = 25"
-    (decide (SeLe4n.Kernel.Concurrency.lockPrimitives.length = 25))
+  assertBool "lockPrimitives.length = 28"
+    (decide (SeLe4n.Kernel.Concurrency.lockPrimitives.length = 28))
   assertBool "memory-model count = 4"
     (decide
       ((SeLe4n.Kernel.Concurrency.lockPrimitives.filter
@@ -460,11 +496,11 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
       ((SeLe4n.Kernel.Concurrency.lockPrimitives.filter
         (·.category =
           SeLe4n.Kernel.Concurrency.LockPrimitiveCategory.ticketLock)).length = 6))
-  assertBool "RwLock count = 11"
+  assertBool "RwLock count = 14"
     (decide
       ((SeLe4n.Kernel.Concurrency.lockPrimitives.filter
         (·.category =
-          SeLe4n.Kernel.Concurrency.LockPrimitiveCategory.rwLock)).length = 11))
+          SeLe4n.Kernel.Concurrency.LockPrimitiveCategory.rwLock)).length = 14))
   assertBool "refinement count = 4"
     (decide
       ((SeLe4n.Kernel.Concurrency.lockPrimitives.filter

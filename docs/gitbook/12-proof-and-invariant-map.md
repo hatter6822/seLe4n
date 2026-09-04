@@ -246,9 +246,9 @@ Per-phase theorem inventories are registered in
 `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean`, one entry per phase
 SM0..SM10.
 
-> **The SMP theorem total is measured, not summed.** The inventories hold 1116
-> entries, of which **906 are theorems** — the rest are `def`s (lock-set
-> footprints, per-core predicates, WCRT cost functions). Quote 906, and quote
+> **The SMP theorem total is measured, not summed.** The inventories hold 1119
+> entries, of which **909 are theorems** — the rest are `def`s (lock-set
+> footprints, per-core predicates, WCRT cost functions). Quote 909, and quote
 > it as theorems. A propositionality census resolves each identifier against the
 > environment and fails elaboration on drift; adding a phase without an entry
 > fails elaboration, and adding an inventory no phase claims fails Tier 0.

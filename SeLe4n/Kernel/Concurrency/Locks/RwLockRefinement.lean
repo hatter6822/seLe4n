@@ -1242,6 +1242,22 @@ inductive honestBlock :
       honestBlock abs conc (.releaseWrite c)
         ([.fetchAndWrite c, .sev c]
           ++ casPromoteOps (conc &&& readerMask.toUInt64) abs.waiters)
+  /-- A **withdrawal**: the spec drops `c`'s queued request, and the
+  CAS-retry implementation performs no atomic access, because it has no
+  queue in which the request was ever recorded.
+
+  Without this constructor no trace containing a `cancel` would have an
+  honest block at all, and `rust_rwLock_refines_lean_honest` would cover
+  only cancel-free traces — silently, since the theorem would still
+  elaborate.  That is the vacuity WS-RR RR6 removed everywhere else, so
+  it is not reintroduced here.
+
+  Soundness is immediate rather than argued: a cancel writes neither
+  `readers` nor `writerHeld` (`RwLockState.applyOp_cancel_readers`,
+  `_writerHeld`, both `rfl`), and those two fields are the whole of what
+  `rwLockSim` relates. -/
+  | cancel_no_queue (abs : RwLockState) (conc : UInt64) (c : CoreId) :
+      honestBlock abs conc (.cancel c) []
 
 /-- **WS-RR RR6.17 (coverage)**: every honest block is an admissible
 `opCorresponds` block.
@@ -1274,6 +1290,7 @@ theorem honestBlock_opCorresponds
   | releaseWrite_noop c _ => exact .noop _
   | releaseWrite_effective c _ =>
       exact .releaseWrite_promoting c _ (casPromoteOps_admissionSequence _ _)
+  | cancel_no_queue c => exact .cancel_no_queue _
 
 -- ----------------------------------------------------------------------------
 -- RR6.16 / RR6.17 — the discharge family, now total over the honest shapes
@@ -1490,6 +1507,12 @@ theorem honestBlock_blockBisim
     have hMask : writerBit.toUInt64 &&& readerMask.toUInt64 = 0 := by decide
     rw [hMask]
     simp [encodeRwLock]
+  | cancel_no_queue c =>
+    -- The spec drops `c`'s request; `rwLockSim` reads only the writer bit
+    -- and the reader count, and a cancel writes neither (both `rfl`).
+    unfold blockBisim
+    simpa [concreteFoldBlock, rwLockSim, RwLockState.applyOp_cancel_readers,
+      RwLockState.applyOp_cancel_writerHeld] using hSim
 
 -- ----------------------------------------------------------------------------
 -- RR6.18 — the composition, and RR6.19 — the hypothesis retired

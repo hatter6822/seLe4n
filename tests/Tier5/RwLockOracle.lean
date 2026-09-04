@@ -33,6 +33,15 @@ Each op is terminated by a comma `,`.  Whitespace between ops is
 ignored.  Example: `"R0,R1,r0,W2,w2,"` is the 5-op sequence
 `tryAcquireRead 0; tryAcquireRead 1; releaseRead 0; tryAcquireWrite 2; releaseWrite 2`.
 
+**`RwLockOp.cancel` has no letter, deliberately.**  This harness is a
+*cross-language* correspondence check: it drives the real Rust locks and
+compares them against this fold, so an operation the Rust side cannot
+perform has nothing to correspond to.  `QueuedRwLock` has no `cancel()`
+yet, so a fifth letter here would fold on one side and be unrepresentable
+on the other.  The alphabet widens in the same cut that gives the deployed
+lock its withdrawal — see
+`docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md` §4.
+
 ## Output format
 
 `W=<flag>;R=<count>;Q=<n>`

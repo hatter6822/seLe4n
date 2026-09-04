@@ -638,20 +638,20 @@ count proved equal to the real inventory lengths.
 manifest, the Lean total, or the JSON disagree.  Read the number; do not
 re-derive it.
 
-**What the number counts, and what it does not.**  906 is the number of
+**What the number counts, and what it does not.**  909 is the number of
 **theorems** registered in a machine-checked inventory: named, resolving at
 elaboration, duplicate-free, and — verified by the propositionality census —
 of a type that is a `Prop`.
 
 That last clause is not decoration.  The inventories register a phase's whole
-surface, so 210 of their 1116 entries are `def`s: `wakeThreadLockSet` and
+surface, so 210 of their 1119 entries are `def`s: `wakeThreadLockSet` and
 `determineTargetCore` in SM5.C's, `replenishOnCore` and
 `migrateSchedContextReplenishment` in SM5.H's, the per-core invariant
 *predicates* in SM5.I's, the WCRT cost functions in SM5.J's.  Every
 inventory's construction macro proves its identifier resolves; none checks the
 type.  A `List.length` therefore measures registrations, and quoting it as a
 theorem count is the mistake this plan made at `v0.34.26` and corrected at
-`v0.34.27` after review.  **`entryTotal` is 1116; `theoremTotal` is 906; quote
+`v0.34.27` after review.  **`entryTotal` is 1119; `theoremTotal` is 909; quote
 the second.**
 
 Neither figure is the earlier "~210 substantive theorems", which was an
@@ -662,7 +662,7 @@ and SM4 carry assumption ledgers** (`smpLatentInventory`,
 `smpRetiredInventory`), which `smpPhaseTheoremCount` excludes by design, so
 their own theorem catalogues are unmeasured for a different reason and by the
 same amount.  All eight are registered as contributing zero rather than given a
-plausible figure, so 906 *understates* what those phases prove.  Building the
+plausible figure, so 909 *understates* what those phases prove.  Building the
 missing inventories — **eight phases, not six** — is registered debt with
 closure target **SM10.3.13**
 (`docs/REGISTERED_DEBT.md`); until they exist, the release note must say

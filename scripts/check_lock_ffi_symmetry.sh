@@ -115,11 +115,11 @@ done
 # Check 4: Lean and Rust agree on the SM2 theorem count.
 echo "[4/4] Verifying SM2 theorem count agreement..."
 
-# Lean: `theorem lockPrimitives_count : lockPrimitives.length = 25`
+# Lean: `theorem lockPrimitives_count : lockPrimitives.length = 28`
 # The literal "= 25" appears on the same line as the theorem statement;
 # we extract the integer after the final `=` (PCRE lookbehind).
 lean_count=$(grep -oP '^theorem lockPrimitives_count\s*:\s*lockPrimitives\.length\s*=\s*\K\d+' "${LOCK_PRIMITIVES_LEAN}" || echo "0")
-# Rust: `pub const LOCK_THEOREM_COUNT: usize = 25;`
+# Rust: `pub const LOCK_THEOREM_COUNT: usize = 28;`
 rust_count=$(grep -oP 'pub const LOCK_THEOREM_COUNT:\s*usize\s*=\s*\K\d+' "${LOCK_BRIDGE_RUST}" || echo "0")
 
 if [[ "${lean_count}" != "${rust_count}" ]]; then

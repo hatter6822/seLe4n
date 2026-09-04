@@ -2682,10 +2682,11 @@ example (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (maxDelay : Nat)
     (hInit : e.initial = SeLe4n.Kernel.Concurrency.RwLockState.unheld) (c : CoreId)
     (m : SeLe4n.Kernel.Concurrency.AccessMode) (kEnq : Nat)
     (hQueued : (c, m) ∈ (e.stateAt kEnq).waiters)
-    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length) :
+    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length)
+    (hNoCancel : e.noCancelIn c kEnq (kEnq + lockContentionDelayBound maxDelay + 1)) :
     ∃ delay, lockContentionObservation e c kEnq = some delay ∧
       delay ≤ lockContentionDelayBound maxDelay :=
-  lockContention_delay_bounded e maxDelay hFair hInit c m kEnq hQueued hWithin
+  lockContention_delay_bounded e maxDelay hFair hInit c m kEnq hQueued hWithin hNoCancel
 
 -- SM8.D.3: and its blocked-reader instance — the temporal figure D.3's own
 -- subject was missing until SM2.C-defer D-3.10 generalised the liveness chain.
@@ -2693,10 +2694,12 @@ example (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (maxDelay : Nat)
     (hFair : SeLe4n.Kernel.Concurrency.FairTrace e maxDelay)
     (hInit : e.initial = SeLe4n.Kernel.Concurrency.RwLockState.unheld) (c : CoreId) (kEnq : Nat)
     (hQueued : (c, SeLe4n.Kernel.Concurrency.AccessMode.read) ∈ (e.stateAt kEnq).waiters)
-    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length) :
+    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length)
+    (hNoCancel : e.noCancelIn c kEnq (kEnq + lockContentionDelayBound maxDelay + 1)) :
     ∃ delay, lockContentionObservation e c kEnq = some delay ∧
       delay ≤ lockContentionDelayBound maxDelay :=
   blockedReaderContention_delay_bounded e maxDelay hFair hInit c kEnq hQueued hWithin
+    hNoCancel
 
 -- SM8.D.3: the blocked reader's structural bound — at most `numCores - 1` cores
 -- ahead of it, whatever the fairness budget.
@@ -6945,6 +6948,11 @@ private theorem contendedExecution_queued :
 private theorem contendedExecution_within :
     2 + lockContentionDelayBound contendedMaxDelay < contendedExecution.ops.length := by decide
 
+/-- Nobody withdraws in this execution, so the bound's no-cancel premise holds
+of every window.  Discharged over the operation *list* — `noCancelIn` itself
+quantifies over an unbounded step index and cannot be `decide`d. -/
+private theorem contendedExecution_cancelFree : contendedExecution.cancelFree := by decide
+
 /-- §7.4  SM8.D.3 (timing half) — the CC-5 delay, computed and bounded. -/
 private def runLockContentionBoundChecks : IO Unit := do
   IO.println "--- §7.4 the CC-5 contention delay is bounded (SM8.D.3) ---"
@@ -6972,12 +6980,12 @@ private def runLockContentionBoundChecks : IO Unit := do
   assertBool "lockContention_delay_bounded applies to this execution (theorem)"
     (have _h := lockContention_delay_bounded contendedExecution contendedMaxDelay
         contendedExecution_fair rfl c1 .write 2 contendedExecution_queued
-        contendedExecution_within
+        contendedExecution_within (contendedExecution_cancelFree.noCancelIn c1 _ _)
      true)
   assertBool "…and so does the alphabet bound"
     (have _h := lockContentionChannel_alphabet_bounded contendedExecution contendedMaxDelay
         contendedExecution_fair rfl c1 .write 2 contendedExecution_queued
-        contendedExecution_within
+        contendedExecution_within (contendedExecution_cancelFree.noCancelIn c1 _ _)
      true)
   -- The RPi5 figures.
   assertBool "at RPi5 (4 cores) with the SM2.C release budget: bound 3075, alphabet 3077"
@@ -7136,6 +7144,10 @@ private theorem readerContendedExecution_within :
     2 + lockContentionDelayBound contendedMaxDelay < readerContendedExecution.ops.length := by
   decide
 
+/-- The reader fixture is cancel-free too. -/
+private theorem readerContendedExecution_cancelFree : readerContendedExecution.cancelFree := by
+  decide
+
 /-- §7.4g  SM8.D.3 — the blocked reader's **temporal** bound, computed and
 applied.  This is the group that the writer-only bound could not have. -/
 private def runBlockedReaderTemporalChecks : IO Unit := do
@@ -7160,12 +7172,12 @@ private def runBlockedReaderTemporalChecks : IO Unit := do
   assertBool "blockedReaderContention_delay_bounded applies to this execution (theorem)"
     (have _h := blockedReaderContention_delay_bounded readerContendedExecution contendedMaxDelay
         readerContendedExecution_fair rfl c1 2 readerContendedExecution_queued
-        readerContendedExecution_within
+        readerContendedExecution_within (readerContendedExecution_cancelFree.noCancelIn c1 _ _)
      true)
   assertBool "…and so does the alphabet bound, at read mode (theorem)"
     (have _h := lockContentionChannel_alphabet_bounded readerContendedExecution contendedMaxDelay
         readerContendedExecution_fair rfl c1 .read 2 readerContendedExecution_queued
-        readerContendedExecution_within
+        readerContendedExecution_within (readerContendedExecution_cancelFree.noCancelIn c1 _ _)
      true)
   -- NEGATIVE: the mode-generic bound is not the writer bound in disguise — this
   -- core is queued at `.read` and is NOT queued at `.write`, so the writer

@@ -36,11 +36,11 @@
         {
           "name": "lockPrimitives",
           "module": "SeLe4n/Kernel/Concurrency/LockPrimitives.lean",
-          "count": 25
+          "count": 28
         }
       ],
-      "entryCount": 25,
-      "theoremCount": 25
+      "entryCount": 28,
+      "theoremCount": 28
     },
     {
       "phase": "SM3",
@@ -188,10 +188,10 @@
       "theoremCount": 0
     }
   ],
-  "entryTotal": 1116,
-  "theoremTotal": 906,
+  "entryTotal": 1119,
+  "theoremTotal": 909,
   "ledgerEntryTotal": 16,
-  "registeredEntryTotal": 1132,
+  "registeredEntryTotal": 1135,
   "theoremInventoryCount": 14,
   "ledgerInventoryCount": 2
 }

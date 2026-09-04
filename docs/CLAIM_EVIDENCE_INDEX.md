@@ -66,11 +66,13 @@ stands behind.
 | TLB shootdown is a verified protocol with bounded wait and generation-tagged descriptors | `SELE4N_SPEC.md` | `lake exe smp_tlb_shootdown_suite` | `Architecture/TlbShootdownProtocol.lean` |
 | Non-interference holds per core, and accepted covert channels are enumerated rather than assumed away | `SELE4N_SPEC.md` | `lake exe smp_information_flow_suite` | `acceptedCovertChannel_perCoreCount` |
 | Declassification is audited, with causal provenance and refusal recording | `SELE4N_SPEC.md` | `lake exe smp_information_flow_suite` | `InformationFlow/Declassification*.lean` |
-| The WS-SM theorem total is measured, not hand-summed — **906 theorems** across 1116 registered entries (210 are `def`s) | `SELE4N_SPEC.md`, GitBook 12 | `python3 scripts/generate_smp_theorem_manifest.py --check`; `lake build SeLe4n.Kernel.Concurrency.PhaseTheoremManifest` | `docs/smp_theorem_manifest.json` |
+| The WS-SM theorem total is measured, not hand-summed — **909 theorems** across 1119 registered entries (210 are `def`s) | `SELE4N_SPEC.md`, GitBook 12 | `python3 scripts/generate_smp_theorem_manifest.py --check`; `lake build SeLe4n.Kernel.Concurrency.PhaseTheoremManifest` | `docs/smp_theorem_manifest.json` |
 | The deployed reader-writer lock is the one the Lean FIFO spec describes: `STATIC_RW_LOCK_POOL` is `[QueuedRwLock; 4]`, and its refinement was proved before the pool was repointed | `SELE4N_SPEC.md`, GitBook 12 | `lake build SeLe4n.Kernel.Concurrency.Locks.QueuedRwLockRefinement`; `./scripts/test_full.sh` | `queuedSim`, `queuedRwLock_refines_rwLockSpec`, `queuedRwLock_admits_in_spec_order` |
 | Each lock refinement bridge derives its trace correspondence instead of assuming it: no `_honest` capstone takes `ListBlockBisim` as a premise, and no conjunct is a tautology | `SELE4N_SPEC.md` | `./scripts/test_full.sh` | `honestBlock`, `listHonestBlocks_listBlockBisim`, `rust_rwLock_refines_lean_honest`, `ticketTrace_preserves_ticketLockSim`, `ticketLockSim_not_universal` |
 | The Tier-5 correspondence oracle drives both real Rust locks rather than modelling them, checking implementation agreement, the ticket interval and the state encoding after every operation | `SELE4N_SPEC.md` | `./scripts/test_tier5_cross_language.sh` | `rust/sele4n-hal/src/bin/rw_lock_oracle.rs` |
 | The deployed lock is exercised under a concurrency model checker and under miri | `DEVELOPMENT.md` | `./scripts/test_loom_queued_rw_lock.sh`; `./scripts/test_miri_queued_rw_lock.sh` | `queued_rw_lock::loom_model`, CI job `test-loom-concurrency-model` |
+| A queued core may withdraw its request in the **abstract** lock: the withdrawal preserves every INV-R conjunct, admits nobody, releases nothing, and lengthens nobody else's wait | `SELE4N_SPEC.md`, `CLAUDE.md` | `lake build SeLe4n.Kernel.Concurrency.Locks.RwLock`; `./scripts/test_full.sh` | `RwLockOp.cancel`, `rwLock_cancel_preserves_wf`, `rwLock_cancel_admits_no_one`, `rwLock_cancel_not_effective_release` |
+| The liveness results that conclude "becomes the holder" say so under an explicit no-withdrawal window, and the ones that conclude "leaves the queue" need none | `CLAUDE.md` | `./scripts/test_full.sh` | `RwLockExecution.noCancelIn`, `rwLock_writer_liveness`, `rwLock_writer_admitted_within_release_budget` |
 
 ## 5. Data structures and performance
 
@@ -112,6 +114,9 @@ an owner, not an oversight.
 | That live WCRT matches the fine-lock bound | Kernel entry is serialised by one global ticket lock, so the live bound is weaker than `PerCoreWcrt.lean`'s | SM10.1 |
 | That Tier 4 acceptance gates have passed | They need the bootable image, so they have never executed. They report NOT RUN rather than PASS | SM10.1 |
 | That a fault message's `MR4` onward reaches a handler on hardware | No receive path writes past `MR3` into the IPC buffer yet | WS-RR |
+| That the **deployed** lock can withdraw a queued request | `RwLockOp.cancel` is model-only at v0.34.50: `QueuedRwLock` has no `cancel()`, and the ticket-FIFO refinement covers cancel-free traces only — stated as `ListQueuedBlocks_cancel_free`, a theorem written to break when the withdrawal block is added | WS-LC LC2 |
+| That a refused two-phase-locking growing phase fully unwinds | The unwind releases what was granted and leaves what was merely requested, because neither `RevalidatedEntryOutcome.refused` nor `withLockSet`'s shrinking phase emits a withdrawal yet | WS-LC LC3 |
+| That any lock-delay bound is denominated in time | `RwLockExecution` carries no per-step cost, so every bound built on `writerWaitDepth` counts *lock operations*; reading one as wall-clock needs the explicit ceiling `FineLockFlow.lean` §3 takes as a hypothesis | WS-LC LC4 |
 
 ## Proof claim qualification
 
