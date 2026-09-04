@@ -975,6 +975,29 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   moment a conjunct follows `X`, so anchors name the conjunct-list pairing
   round 19 made canonical instead.
 
+  **And a name is not a contract — read the docstring of what you reach for**
+  (PR #889 review round 24).  Round 23's fix for *a proxy is not the fact* was
+  paced with `cpu::wfe_bounded`, and its `max_ticks` is **informational**: the
+  docstring says in terms that it "does not bound the actual `wfe`", and the
+  body opens `let _ = max_ticks;`.  A bare `wfe` returns on an event and a
+  secondary that dies in init sends none, so the first iteration could sleep
+  forever, the elapsed count never advanced, and the caller's topology refusal
+  was unreachable — *a wait that cannot time out cannot fail closed*.  The name
+  was the only thing that said "bounded", and the name is not the contract.
+
+  Worse, and this is the point: **`shootdown::wait_all_acked_bounded_in` had
+  already reached that conclusion and written it down** — same hazard, same
+  word ("asleep FOREVER"), same remedy ("a counted spin is strictly more
+  robust"), with an injected clock so the bound is testable.  Writing a third
+  bounded-wait instead of using it is the round-22 rule (*one question, two
+  answers*) at the point where the tree had already answered.  **Before writing
+  a wait, a barrier, a retry or a timeout, find the one this tree already has
+  and read why it is shaped that way.**  The readiness wait is now that
+  pattern, clocked by `crate::timer::read_counter`, with four host tests that
+  the bound actually terminates — a timeout with a straggler, an immediate
+  return costing no clock reads, a clamp above the flag array, and a zero
+  budget.
+
 - **Invariant/Operations split**: each kernel subsystem has
   `Operations.lean` (transitions) and `Invariant.lean` (proofs). Keep
   this separation.

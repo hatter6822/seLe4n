@@ -797,6 +797,19 @@ passes `allowOpaque := true`, and what it still cannot see (a foreign
 was reported as an embedded-identity mismatch — the defect round 2 fixed for the
 idle-slot reservation, repeated by the same omission.
 
+**Review round 24 (PR #889, same version).**  One, against round 23's own fix.
+The wait was paced with `cpu::wfe_bounded`, whose `max_ticks` is documented as
+*informational* — "does not bound the actual `wfe`" — so a secondary that dies in
+init sends no event, the first sleep never returns, and the topology refusal is
+unreachable: a wait that cannot time out cannot fail closed.  The name was the
+only thing that said bounded.
+
+The deeper point for this plan: `shootdown::wait_all_acked_bounded_in` had
+already hit the hazard and written the answer down, in the same words.  Writing
+a third bounded-wait rather than using it is round 22's rule at the point where
+the tree had already answered.  **Before writing a wait, a barrier, a retry or a
+timeout, find the one this tree already has and read why it is shaped that way.**
+
 **Review round 23 (PR #889, same version).**  Two, both against rounds 21/22's
 own answers, and both corollaries of round 22's rule.  *A proxy is not the
 fact*: the handoff compared PSCI `CPU_ON` acceptances against the declared PE

@@ -5208,7 +5208,21 @@ run_check "INVARIANT" rg -n 'collect_lean_exports_from_file\(lean_library_root' 
 # configuration must declare between one and numCores PEs — round 22's
 # derivation bounded the count from above only, and at zero the boot installs
 # no idle thread on any core.
+# PR #889 review round 24: the wait is a counter-polled spin, not a `wfe` —
+# `cpu::wfe_bounded`'s own docstring says its `max_ticks` is informational and
+# "does not bound the actual `wfe`", so a secondary that dies in init sends no
+# event and the first sleep never returns, making the topology refusal
+# unreachable.  This is the pattern `shootdown::wait_all_acked_bounded_in`
+# already chose, for the reason it already wrote down.
+run_check "INVARIANT" rg -n '^pub fn irq_ready_core_count_within_in' rust/sele4n-hal/src/smp.rs
 run_check "INVARIANT" rg -n '^pub fn irq_ready_core_count_within' rust/sele4n-hal/src/smp.rs
+run_check "INVARIANT" rg -nF 'crate::timer::read_counter' rust/sele4n-hal/src/smp.rs
+run_check "INVARIANT" rg -nF 'core::hint::spin_loop();' rust/sele4n-hal/src/smp.rs
+# NOT a file-wide negative on `wfe_bounded`: the secondary's own idle wait uses
+# it legitimately (it is woken by the primary's SEV), and this file's docstrings
+# name it to explain why the readiness wait does not.  A file-scoped negative
+# here would be the region-scoped-presence-check mistake this repository has
+# been burned by — the positive anchors above say what the wait *is*.
 run_check "INVARIANT" rg -nF 'crate::smp::irq_ready_core_count_within(' rust/sele4n-hal/src/boot.rs
 run_negative_check "INVARIANT" rg -nF 'let running_cores = 1 + online;' rust/sele4n-hal/src/boot.rs
 run_check "INVARIANT" rg -n '^const SECONDARY_READY_TIMEOUT_TICKS' rust/sele4n-hal/src/boot.rs

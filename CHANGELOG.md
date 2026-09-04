@@ -1141,6 +1141,51 @@ the **kernel**, the second live defect any round has found outside the gates.
   disables the bare spelling for the file — conservative, and the remedy is a
   qualifier.
 
+### The review round, twenty-fourth pass — a name is not a contract
+
+One finding, against round 23's own fix, and it is the sharpest instance of this
+repository's oldest rule that the session has produced.
+
+Round 23 replaced a proxy with the fact and paced the wait with
+`cpu::wfe_bounded`.  That function's `max_ticks` is **informational**.  Its
+docstring says so in terms — "does not bound the actual `wfe`.  Practical
+bounding requires arming a timer to fire within `max_ticks`; without one, `wfe`
+blocks until an event arrives" — and its body opens `let _ = max_ticks;`.  A
+secondary that dies in MMU, GIC or timer init sends no event, so the first
+iteration could sleep forever, the elapsed count never advanced past zero, and
+the topology refusal the wait exists to enable was unreachable.  **A wait that
+cannot time out cannot fail closed.**  The only thing that said "bounded" was
+the name, and I wrote "bounded" three times against it — in the constant, in the
+docstring, and in the review reply.
+
+The deeper failure is not the misreading.  `shootdown::wait_all_acked_bounded_in`
+had already hit this hazard and written the answer down, in the same words:
+
+> a bare `wfe` blocks until an event or interrupt — … a hung target would leave
+> the initiator asleep FOREVER, making the timeout (and its diagnosable
+> fail-closed panic) unreachable.  A counted spin is strictly more robust.
+
+That is round 22's rule (*one question, two answers*) at the point where the
+tree had already answered it.  `irq_ready_core_count_within_in` is now that
+pattern — a counted spin clocked by `crate::timer::read_counter`, with the clock
+injected exactly as the shootdown wait injects it, and a final re-read so a
+straggler that publishes between the last poll and the deadline is not reported
+short.
+
+Four host tests, which the injected clock is what makes possible: a timeout
+returning the honest short count when a core never publishes; an immediate
+return that consults the clock at most once, so the common case still costs one
+pass; a clamp when a caller asks for more PEs than the model has; and a
+zero-tick budget, which a wait needing a positive budget to terminate would hang
+on.
+
+The Tier 3 anchors are positive — `irq_ready_core_count_within_in`,
+`read_counter`, `spin_loop` — and deliberately *not* a file-wide negative on
+`wfe_bounded`: the secondary's own idle wait uses it legitimately (the primary's
+SEV wakes it) and this file's docstrings name it to explain why the readiness
+wait does not.  A file-scoped negative there would be the region-scoped
+presence check this repository has been burned by.
+
 ### The review round, twenty-third pass — a proxy is not the fact, and a bound has two sides
 
 Two findings, both against round 21/22's own answers.
