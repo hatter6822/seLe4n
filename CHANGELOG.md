@@ -105,6 +105,12 @@ the claim index's model count.  One new anchor comment was caught by the
 naming gate for the right reason: an apostrophe inside a `bash -lc '…'`
 payload terminates the shell string, which read every comment below it as
 code; the gate's failure was the script's defect, and the wording changed.
+The same file had a second instance of the same shape from LC1: three
+anchor comments with backticks inside the single-quoted payload, which
+CI's shellcheck reports as SC2016 and which the local environment, lacking
+shellcheck, never ran — so the branch's `Tiered Tests / Fast` and `ARM64
+Fast Gate` checks had been red since v0.34.50 and nobody had read them.
+Reworded, reproduced and verified with shellcheck installed.
 
 Refs: docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md §5 (closure audit)
 

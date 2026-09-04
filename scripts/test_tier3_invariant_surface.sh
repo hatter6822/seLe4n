@@ -6452,7 +6452,7 @@ import SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement
 #check @SeLe4n.Kernel.Concurrency.casPromotePost_toNat
 #check @SeLe4n.Kernel.Concurrency.casPromoteOps_preserves_rwLockSim
 #check @SeLe4n.Kernel.Concurrency.casPromoteOps_admissionSequence
--- The premise-free restatements (no `ListBlockBisim` hypothesis).
+-- The premise-free restatements (no ListBlockBisim hypothesis).
 #check @SeLe4n.Kernel.Concurrency.rust_rwLock_refines_lean_honest
 #check @SeLe4n.Kernel.Concurrency.rust_rwLock_refines_lean_via_rustImplementsRwLock_honest
 #check @SeLe4n.Kernel.Concurrency.rust_rwLock_refines_lean_from_unheld
@@ -6486,8 +6486,9 @@ import SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement
 #check @SeLe4n.Kernel.Concurrency.RwLockExecution.noCancelIn.not_cancel_at
 #check @SeLe4n.Kernel.Concurrency.RwLockExecution.noCancelIn.mono
 #check @SeLe4n.Kernel.Concurrency.RwLockExecution.noCancelIn_self
--- The decidable whole-trace form a fixture discharges: `noCancelIn` quantifies
--- over an unbounded step index and cannot be `decide`d, so the two coexist.
+-- The decidable whole-trace form a fixture discharges: noCancelIn quantifies
+-- over an unbounded step index and cannot be decided by evaluation, so the two
+-- coexist.
 #check @SeLe4n.Kernel.Concurrency.RwLockExecution.cancelFree
 #check @SeLe4n.Kernel.Concurrency.RwLockExecution.cancelFree.noCancelIn
 #check @SeLe4n.Kernel.Concurrency.RwLockExecution.holderAt_succ_iff_of_cancel
