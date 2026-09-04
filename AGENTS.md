@@ -388,6 +388,7 @@ To find files that need pagination today, run:
 - `tests/WithLockSetSuite.lean` (~809 lines)
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
+- `docs/planning/HIERARCHICAL_CBS_PLAN.md` (~908 lines)
 - `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` (~800 lines)
 This bullet block is a **curated snapshot**, not a static enumeration.
 `scripts/find_large_lean_files.sh --check` (called from
@@ -1279,14 +1280,19 @@ Plan: [`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](docs/planning/SYSCALL_RETURN_
 A `SchedContext` will be able to contain other scheduling contexts: a *server*
 holds members instead of a thread, is charged whenever a thread in its subtree
 runs, and admits its members against its own budget, so a component's threads
-share one reservation by priority and nothing outside the component is delayed
-by more than that reservation.  Roots stay ordered by today's priority/EDF/FIFO
-rule on each core, servers are core-homed, members share the server's security
-label, and every generalising cut carries the theorem that the flat model is
-unchanged on states without servers.  No sub-task has started.  The plan also
-records a pre-existing authority gap it closes first (CB0.3):
-`schedContextConfigure` applies priority and domain to the bound thread under
-the SchedContext write right alone, with no caller-MCP check.
+share one reservation and nothing outside the component is delayed by more than
+that reservation.  The root scheduler becomes **EDF-first** (maintainer's
+decision at planning time): deadlines are kernel-owned CBS deadlines, priority
+is the tie-break for deadline-bearing threads and the order of the legacy
+unbound class, and priority inheritance becomes deadline inheritance for the
+EDF class — a change to the flat model that CB1 lands, with one intended
+fixture refresh, before any server exists.  Servers are core-homed, members
+share the server's security label, and every generalising cut after CB1
+carries the theorem that the model is unchanged on states without servers.
+No sub-task has started.  The plan also records a pre-existing authority gap it
+closes first (CB0.3): `schedContextConfigure` applies priority and domain to
+the bound thread under the SchedContext write right alone, with no caller-MCP
+check.
 
 Plan: [`docs/planning/HIERARCHICAL_CBS_PLAN.md`](docs/planning/HIERARCHICAL_CBS_PLAN.md).
 

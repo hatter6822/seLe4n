@@ -4,29 +4,56 @@
 `docs/planning/HIERARCHICAL_CBS_PLAN.md` schedules Hierarchical Constant
 Bandwidth Servers: a `SchedContext` that holds members instead of a thread, is
 charged whenever a thread in its subtree runs, and admits its members against
-its own budget, so a component's threads share one reservation by priority and
-nothing outside the component is delayed by more than that reservation.  The
-plan is 78 sub-tasks across eight phases (CB0..CB7), numbered in execution
-order and held by the plan gate; its binding decisions are in its §3 — a server
-is a `SchedContext` with hierarchy fields, the root run queue stays a queue of
-threads ordered by lexicographic key paths, servers are core-homed, admission
-is hierarchical and per core, members share the server's security label, and
-enforcement stays tick-quantised with no new upcall and no ABI version change.
-Every generalising sub-task carries the theorem that the flat model is
+its own budget, so a component's threads share one reservation and nothing
+outside the component is delayed by more than that reservation.  The plan is
+92 sub-tasks across nine phases (CB0..CB8), numbered in execution order and
+held by the plan gate; its binding decisions are in its §3.
+
+**The root becomes EDF-first** (the maintainer's decision at planning time,
+plan §3.11).  Today's root order is fixed priority with the CBS deadline as a
+tie-break inside a band, which is why the CBS *guarantee* — an admitted server
+receives its budget every period — is not a statement the model can make.
+Under an EDF-first root that guarantee is the classical theorem, and per-core
+admission (`Σ U ≤ 1`) is its hypothesis.  The change reaches the flat model, so
+the plan's first implementation phase (CB1) lands it before any server exists,
+with three consequences the plan spells out: deadlines become **kernel-owned**
+(the configure syscall's caller-supplied `deadline` would otherwise be an
+unbounded escalation channel — it becomes `0`-only, and the kernel assigns
+`periodStart + period` at configure, refill and activation); the CBS wake-up
+rule is needed so an entity that idled with a stale deadline does not return
+at the head of the queue (deadline reset only — this model's refills are
+deferred, so a refill at activation would mint budget); and priority
+inheritance becomes **deadline inheritance** for deadline-bearing threads,
+since a priority boost under EDF changes nothing but ties.  Unbound legacy
+threads keep their fixed-priority order below every deadline-bearing thread,
+so the idle thread stays last and the selector is proved unchanged on states
+without deadlines.  The fixtures built from bound threads are refreshed once,
+in CB1.13, with the rationale recorded.
+
+The rest of the design: a server is a `SchedContext` with hierarchy fields;
+the root run queue stays a queue of threads, selection is a scan in the
+EDF-first order over lexicographic key paths (a deadline-ordered index is a
+registered follow-up); servers are core-homed; admission is hierarchical and
+per core; members share the server's security label; enforcement stays
+tick-quantised with no new upcall and no ABI version change; and every
+generalising sub-task after CB1 carries the theorem that the model is
 unchanged on states without servers.
 
 Two things the survey behind the plan found in the flat tree, both recorded in
 the plan and in the debt register:
 
-* `schedContextConfigure` applies `priority` and `domain` to the bound TCB
-  under the SchedContext write right alone — no `validatePriorityAuthority`
-  against the caller's `maxControlledPriority`, where `setPriorityOp` has one,
-  and no authority over the domain.  A thread holding a write capability to
-  its own SchedContext escalates past its MCP.  CB0.3 closes it, and the plan
-  recommends that cut regardless of when the rest of the workstream opens.
+* `schedContextConfigure` applies `priority`, `domain` and a caller-supplied
+  absolute `deadline` under the SchedContext write right alone — no
+  `validatePriorityAuthority` against the caller's `maxControlledPriority`,
+  where `setPriorityOp` has one, and no authority over the domain.  A thread
+  holding a write capability to its own SchedContext escalates past its MCP.
+  CB0.3 closes the priority and domain half, and the plan recommends that cut
+  regardless of when the rest of the workstream opens; CB1.3 retires the
+  deadline argument.
 * Admission folds every SchedContext in the object store against one 1000 ‰
   ceiling, so a four-core machine admits 100 % in total rather than per core.
-  CB4.2 makes root-level admission per core.
+  CB5.2 makes root-level admission per core — which is also what the EDF
+  guarantee needs.
 
 The workstream prefix is `CB` rather than `HC` because the identifier-naming
 gate derives its family grammar from the workstream registry: `hc<digit>`
