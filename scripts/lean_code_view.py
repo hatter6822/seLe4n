@@ -269,6 +269,22 @@ def attribute_arguments(view: str, keyword: str) -> list[str]:
                 # which is the right answer there (a blanked string names
                 # nothing).
                 name = argument[1:].split('"', 1)[0].strip()
+                # A blanked string names nothing, and that is the intended
+                # answer over `code_no_strings` — so the refusal below covers
+                # the *identifier* forms only.
+                if not name:
+                    continue
+            elif argument.startswith("\u00ab"):
+                # PR #889 review round 25: a *guillemet* identifier.  Lean
+                # accepts `@[export \u00absuspend_generated\u00bb]`, and the emitted C
+                # symbol is the text between the brackets — which the ASCII
+                # scan below stopped at immediately, dropping the export from
+                # the inventory.  Fail-open: the archive was never required to
+                # define it, and `build.rs`'s readiness derivation (whose Rust
+                # fallback only recovers `lean_`-prefixed names) could not see
+                # an ungated call to it either.
+                closing = argument.find("\u00bb", 1)
+                name = argument[1:closing] if closing > 0 else ""
             else:
                 name = ""
                 for ch in argument:
@@ -276,7 +292,20 @@ def attribute_arguments(view: str, keyword: str) -> list[str]:
                         name += ch
                     else:
                         break
-            if name and name not in names:
+            if not name:
+                # PR #889 review round 25: an argument this parser cannot read
+                # is **refused**, not skipped.  Skipping is the fail-open
+                # direction — the attribute is there, the symbol is emitted,
+                # and every inventory derived from this parser is silently
+                # short.  A spelling Lean accepts and this does not is a gate
+                # defect and must stop the build that depends on it.
+                raise ValueError(
+                    f"lean_code_view.attribute_arguments: `@[{keyword} "
+                    f"{argument[:40]}]` is a spelling this parser cannot read. "
+                    f"Teach it that form, or write the attribute as a plain or "
+                    f"guillemet identifier."
+                )
+            if name not in names:
                 names.append(name)
         search = close + 1
 
@@ -381,6 +410,19 @@ _ATTRIBUTE_ARGUMENTS: list[tuple[str, str, str, list[str]]] = [
      "export", ["lean_alpha"]),
     ("a simple raw string still closes at its own quote",
      'def s := r"plain"\n@[export lean_alpha]\ndef a := 0\n', "export", ["lean_alpha"]),
+    # PR #889 review round 25: Lean's *guillemet* identifier.  The C symbol is
+    # the text between the brackets, and the ASCII scan stopped at the opening
+    # one and collected nothing — so the export left both inventories, and with
+    # them the readiness-gate seam set, one entry short.
+    ("a guillemet identifier is the text between the brackets",
+     "@[export \u00ablean_alpha\u00bb]\ndef a := 0\n", "export", ["lean_alpha"]),
+    ("a guillemet identifier in a combined list",
+     "@[inline, export \u00absuspend_generated\u00bb]\ndef a := 0\n", "export",
+     ["suspend_generated"]),
+    ("a guillemet identifier may hold characters an identifier scan stops at",
+     "@[export \u00abfoo.bar\u00bb]\ndef a := 0\n", "export", ["foo.bar"]),
+    ("a commented-out guillemet attribute is not a live one",
+     "-- @[export \u00ablean_alpha\u00bb]\ndef a := 0\n", "export", []),
 ]
 
 #: The same parser over the **strings-kept** view, where a quoted argument is
@@ -399,13 +441,29 @@ _ATTRIBUTE_ARGUMENTS_KEPT: list[tuple[str, str, str, list[str]]] = [
 def _self_test() -> int:
     failures = 0
     for name, source, keyword, want in _ATTRIBUTE_ARGUMENTS:
-        got = attribute_arguments(code_no_strings(source), keyword)
+        try:
+            got = attribute_arguments(code_no_strings(source), keyword)
+        except ValueError as refusal:
+            # A case in this table is a spelling the parser must *read*; a
+            # refusal here is the parser having lost a form, not the input
+            # being unreadable.  Reported as a failure rather than allowed to
+            # abort the suite, so the message names the case.
+            failures += 1
+            print(f"[lean-code-view] FAIL attribute_arguments {name}: refused "
+                  f"a readable argument ({refusal})")
+            continue
         if got != want:
             failures += 1
             print(f"[lean-code-view] FAIL attribute_arguments {name}: "
                   f"want {want!r}, got {got!r}")
     for name, source, keyword, want in _ATTRIBUTE_ARGUMENTS_KEPT:
-        got = attribute_arguments(strip(source), keyword)
+        try:
+            got = attribute_arguments(strip(source), keyword)
+        except ValueError as refusal:
+            failures += 1
+            print(f"[lean-code-view] FAIL attribute_arguments (strings kept) {name}: "
+                  f"refused a readable argument ({refusal})")
+            continue
         if got != want:
             failures += 1
             print(f"[lean-code-view] FAIL attribute_arguments (strings kept) {name}: "
@@ -420,6 +478,21 @@ def _self_test() -> int:
         failures += 1
         print("[lean-code-view] FAIL attribute_arguments: a commented-out attribute "
               "was read as a live one")
+    # PR #889 review round 25: an argument in neither identifier form is
+    # **refused**.  Skipping it is the fail-open direction — the attribute is
+    # there, the symbol is emitted, and every inventory derived from this
+    # parser is silently short.  The mutation that finds this keeps the
+    # `@[export …]` and changes only the spelling of its argument.
+    for unreadable in ("@[export $weird]\ndef a := 0\n",
+                       "@[export \u00abunterminated]\ndef a := 0\n"):
+        try:
+            attribute_arguments(code_no_strings(unreadable), "export")
+        except ValueError:
+            pass
+        else:
+            failures += 1
+            print("[lean-code-view] FAIL attribute_arguments: an unreadable argument "
+                  f"was skipped rather than refused ({unreadable.splitlines()[0]!r})")
     for name, src, want_code, token in _STRING_BLANKED:
         got = code_no_strings(src)
         if " ".join(got.split()) != want_code:

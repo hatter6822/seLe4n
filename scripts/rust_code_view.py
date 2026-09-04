@@ -263,7 +263,13 @@ def code_no_strings(text: str) -> str:
     return "".join(out)
 
 
-_FN_RE = re.compile(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)")
+#: A `fn` and its name.  `r#` is Rust's raw-identifier escape and is part of
+#: the *spelling*, not the name — `fn r#lean_real()` is the function
+#: `lean_real` and links under that symbol (PR #889 review round 25, swept
+#: from the sibling finding against `check_kernel_entry_exports.py`).  Without
+#: it the name read as `r`, so every allowlist entry, exemption and dominance
+#: attribution keyed on the enclosing function's name looked at the wrong one.
+_FN_RE = re.compile(r"\bfn\s+(?:r#)?([A-Za-z_][A-Za-z0-9_]*)")
 
 
 @functools.lru_cache(maxsize=None)
@@ -561,6 +567,17 @@ def _self_test() -> int:
         "innermost body wins",
         enclosing_fn(nested_fn, nested_fn.index("TOKEN")) == "inner",
         enclosing_fn(nested_fn, nested_fn.index("TOKEN")),
+    )
+
+    # PR #889 review round 25: `r#` is part of the spelling, not the name.
+    # The mutation KEEPS the `fn`, the body and the name and only escapes it —
+    # which read `r`, so every lookup keyed on the enclosing function's name
+    # (an allowlist entry, an exemption, a gate attribution) missed.
+    raw_fn = "fn r#lean_raw() {\n    TOKEN;\n}\n"
+    check(
+        "a raw-identifier `fn` is named without its escape",
+        enclosing_fn(raw_fn, raw_fn.index("TOKEN")) == "lean_raw",
+        enclosing_fn(raw_fn, raw_fn.index("TOKEN")),
     )
 
     brace_in_string = 'fn a() {\n    let s = "}";\n    TOKEN;\n}\nstatic S: u8 = 0;\n'

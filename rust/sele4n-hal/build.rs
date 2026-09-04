@@ -3524,6 +3524,41 @@ fn verify_extern_block_resolver() {
             "build.rs self-check: `blank_extern_blocks` read the case wrongly: {name}"
         );
     }
+    // PR #889 review round 25: a raw-identifier declaration names the same
+    // linker symbol as the bare spelling, so it is the same seam and must join
+    // the readiness set.  The mutation KEEPS the block, the `fn` and the name
+    // and only escapes it — which collected `r`, a name no `lean_` test can
+    // match, so the seam left the set and its call needed no guard.
+    {
+        let (_, raw_code) = rust_code_views("extern \"C\" {\n    fn r#lean_raw(x: u64);\n}\n");
+        assert!(
+            extern_block_declarations(&raw_code).contains(&"lean_raw".to_string()),
+            "build.rs self-check: a raw-identifier `extern` declaration left the \
+             readiness seam set"
+        );
+        // ...and a function-pointer *type* in a parameter list declares no
+        // symbol, so the refusal above is a bound rather than a rejection of
+        // every `fn ` the scan meets.
+        let (_, ptr_code) =
+            rust_code_views("extern \"C\" {\n    fn lean_takes(cb: extern \"C\" fn (u64));\n}\n");
+        assert_eq!(
+            extern_block_declarations(&ptr_code),
+            vec!["lean_takes"],
+            "build.rs self-check: a function-pointer parameter type was read as a \
+             declaration"
+        );
+        // ...and `enclosing_fn_span`, the sibling that asks the same question
+        // of a *definition*, reads the escape too: the body span was always
+        // right, but the name it is reported under keys every allowlist entry,
+        // exemption and gate attribution.
+        let raw_def = "fn r#lean_raw() {\n    let token = 1;\n}\n";
+        assert_eq!(
+            enclosing_fn_name(raw_def, raw_def.find("let token").unwrap()).as_deref(),
+            Some("lean_raw"),
+            "build.rs self-check: a raw-identifier `fn` definition was named with its \
+             escape"
+        );
+    }
 }
 
 fn verify_lean_link_name_scanner() {
@@ -4610,11 +4645,34 @@ fn extern_block_declarations(code: &str) -> Vec<String> {
             {
                 continue;
             }
-            let name: String = block[at + 3..]
+            // PR #889 review round 25: `r#` is Rust's raw-identifier escape
+            // and names the *same* linker symbol as the bare spelling, so
+            // `fn r#lean_real();` declares `lean_real`.  Without it the scan
+            // collected `r` — which does not start with `lean_`, so the seam
+            // dropped out of the readiness set and its call needed no guard.
+            // The sibling of the finding filed against the Python collector;
+            // fixing one and not the other is the mistake round 14 named.
+            let rest = block[at + 3..].trim_start();
+            let ident = rest.strip_prefix("r#").unwrap_or(rest);
+            let name: String = ident
                 .chars()
                 .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
                 .collect();
-            if !name.is_empty() && !names.contains(&name) {
+            if name.is_empty() {
+                // A `fn ` that names nothing is a function-pointer *type* in a
+                // parameter list (`cb: extern "C" fn (u64)`), which declares no
+                // symbol.  Anything else is a spelling this scan cannot read,
+                // and a declaration it cannot read is a seam no readiness gate
+                // is required for — so it stops the build rather than being
+                // skipped.
+                assert!(
+                    rest.starts_with('('),
+                    "build.rs: an `fn` inside an `extern` block whose name this scanner \
+                     cannot read ({:?}) would declare a seam subject to no readiness \
+                     gate.  Teach it that form, or write the declaration out.",
+                    rest.chars().take(40).collect::<String>()
+                );
+            } else if !names.contains(&name) {
                 names.push(name);
             }
         }
@@ -4815,6 +4873,15 @@ fn lean_code_view(src: &str) -> String {
 /// `@[ … ]` is split on commas, so `@[inline, export name]` counts, and the
 /// separator after `export` is any whitespace, so a line break before the
 /// name counts; the old `find("@[export ")` saw neither.
+///
+/// **PR #889 review round 25**: the argument is an *identifier*, and Lean
+/// spells identifiers two ways — bare, and between guillemets, where any
+/// character may appear.  Both are read here, and an argument in neither form
+/// **panics** rather than being skipped: this inventory drives the readiness
+/// derivation and the archive requirement, so an export it silently drops is
+/// an ungated Lean upcall and an unrequired symbol at once.  Kept in step with
+/// `scripts/lean_code_view.attribute_arguments`, which answers the same
+/// question for the Python-side gates.
 fn lean_exports_in(code: &str) -> Vec<String> {
     let mut names: Vec<String> = Vec::new();
     let mut search = 0usize;
@@ -4842,12 +4909,37 @@ fn lean_exports_in(code: &str) -> Vec<String> {
             let attr = attr.trim();
             if let Some(rest) = attr.strip_prefix("export") {
                 if rest.starts_with(|c: char| c.is_whitespace()) {
-                    let name: String = rest
-                        .trim_start()
-                        .chars()
-                        .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
-                        .collect();
-                    if !name.is_empty() && !names.contains(&name) {
+                    let argument = rest.trim_start();
+                    // PR #889 review round 25: Lean accepts a *guillemet*
+                    // identifier, `@[export «suspend_generated»]`, and emits
+                    // the text between the brackets as the C symbol.  The
+                    // ASCII scan below stops at the opening `«` and collects
+                    // nothing, so the export dropped out of this inventory —
+                    // fail-open, since a symbol nobody requires is a symbol
+                    // nobody notices going missing.
+                    let name: String = if let Some(body) = argument.strip_prefix('\u{ab}') {
+                        match body.find('\u{bb}') {
+                            Some(end) => body[..end].to_string(),
+                            None => String::new(),
+                        }
+                    } else {
+                        argument
+                            .chars()
+                            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                            .collect()
+                    };
+                    // An argument this parser cannot read is **refused**, not
+                    // skipped: skipping leaves every inventory derived from it
+                    // silently short, which is exactly the failure the round
+                    // found.  Panicking fails the build that depends on it.
+                    assert!(
+                        !name.is_empty(),
+                        "build.rs: `@[export {}]` is a spelling this parser \
+                         cannot read.  Teach it that form, or write the \
+                         attribute as a plain or guillemet identifier.",
+                        argument.chars().take(40).collect::<String>()
+                    );
+                    if !names.contains(&name) {
                         names.push(name);
                     }
                 }
@@ -4880,6 +4972,15 @@ fn verify_lean_export_collector() {
         lean_exports_in(&lean_code_view(RAW_QUOTED_EXPORT)),
         vec!["lean_alpha"],
         "build.rs self-check: an attribute quoted inside a raw string counted as a symbol"
+    );
+    // PR #889 review round 25: a guillemet identifier.  Lean accepts it and
+    // emits the bracketed text as the C symbol, so the inventory must carry it
+    // — the ASCII scan stopped at the opening bracket and collected nothing.
+    const GUILLEMET: &str = "@[export \u{ab}lean_guillemet\u{bb}]\ndef g : Nat := 0\n";
+    assert_eq!(
+        lean_exports_in(&lean_code_view(GUILLEMET)),
+        vec!["lean_guillemet"],
+        "build.rs self-check: a guillemet-spelled export was dropped from the inventory"
     );
     let got = lean_exports_in(&lean_code_view(GOOD));
     assert_eq!(
@@ -6420,7 +6521,15 @@ fn enclosing_fn_span(code: &str, offset: usize) -> Option<(String, usize, usize)
         if at > 0 && (bytes[at - 1].is_ascii_alphanumeric() || bytes[at - 1] == b'_') {
             continue;
         }
-        let name: String = code[at + 3..]
+        // PR #889 review round 25: `r#` is part of the *spelling*, not the
+        // name — `fn r#lean_real()` is `lean_real` — so a raw-identifier
+        // definition read as `r`, and every allowlist entry, exemption and
+        // gate attribution keyed on the enclosing function looked at the
+        // wrong one.  Swept from the sibling finding against the Python
+        // declaration collector; the body span below is unchanged.
+        let after = code[at + 3..].trim_start();
+        let ident = after.strip_prefix("r#").unwrap_or(after);
+        let name: String = ident
             .chars()
             .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
             .collect();

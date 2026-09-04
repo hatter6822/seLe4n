@@ -5244,7 +5244,60 @@ run_check "INVARIANT" rg -n '^theorem declaredCoresOfConfig_allCores' SeLe4n/Pla
 run_check "INVARIANT" rg -n '^theorem declaredCoresOfConfig_length_le' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -nF 'crate::gic::halt_all();' rust/sele4n-hal/src/boot.rs
 run_check "INVARIANT" rg -n '^def executable_label_names' scripts/check_kernel_entry_exports.py
-run_check "INVARIANT" rg -nF 'set(ASM_GLOBAL.findall(view)) & executable_label_names(view)' scripts/check_kernel_entry_exports.py
+# PR #889 review round 25 repointed this off the `set(ASM_GLOBAL.findall(view))`
+# spelling: both halves of the conjunction now read `asm_statements`, because a
+# provider is a directive *and* a label and the two must agree on what a
+# statement is.
+run_check "INVARIANT" rg -nF 'return exported & executable_label_names(view)' scripts/check_kernel_entry_exports.py
+# PR #889 review round 25: each scanner's "I do not recognise this" path was
+# fail-open — it skipped the input and asserted nothing.  Round 21 had already
+# established the fail-closed shape (refuse an item macro in an `extern` block)
+# and it was applied to that one case; these are its siblings.  The current
+# assembly section is GAS's, stack and all: `.pushsection` / `.popsection` /
+# `.previous`, with an unresolvable change leaving it unknown, which is never
+# executable.
+run_check "INVARIANT" rg -n '^def asm_statements' scripts/check_kernel_entry_exports.py
+run_check "INVARIANT" rg -n '^def section_name_is_executable' scripts/check_kernel_entry_exports.py
+run_check "INVARIANT" rg -nF 'if name in ("section", "pushsection"):' scripts/check_kernel_entry_exports.py
+run_check "INVARIANT" rg -nF 'restored = stack.pop() if stack else None' scripts/check_kernel_entry_exports.py
+run_check "INVARIANT" rg -nF 'if name.endswith("section") or name in ASM_UNMODELLED_SECTION_CHANGE:' scripts/check_kernel_entry_exports.py
+# ...and the statement split's own edge: cpp runs a stage earlier, so a
+# `#define` body is a template whose directives and label exist where it is
+# invoked.  Splitting one would set the section from code that never executes
+# there and register a macro parameter as a provider — round 16's `.macro`
+# hazard, reachable again through the split this round added.
+run_check "INVARIANT" rg -nF 'if line.lstrip().startswith("#"):' scripts/check_kernel_entry_exports.py
+run_negative_check "INVARIANT" rg -nF 'in_text = name == "text"' scripts/check_kernel_entry_exports.py
+# ...a raw identifier names the same linker symbol as the bare spelling, and an
+# `extern` item that is neither a readable `fn` nor a symbol-free item stops the
+# build rather than declaring nothing.
+run_check "INVARIANT" rg -nF 'EXTERN_FN = re.compile(r"' scripts/check_kernel_entry_exports.py
+# Anchored on the raw-identifier escape alone: the character-class spelling
+# contains a letter-digit pair the identifier-naming gate reads as a workstream
+# code, and the escape is the relation this round added anyway.
+run_check "INVARIANT" rg -nF 'fn\s+(?:r#)?' scripts/check_kernel_entry_exports.py
+run_check "INVARIANT" rg -n '^EXTERN_NON_FN_ITEM' scripts/check_kernel_entry_exports.py
+run_check "INVARIANT" rg -nF 'if not EXTERN_NON_FN_ITEM.search(view, item_at, item_end):' scripts/check_kernel_entry_exports.py
+# ...and the same question is asked in three other places, all swept: `build.rs`
+# collects the HAL's extern declarations for the readiness seam set, and both
+# `enclosing_fn` implementations name the function a reference is attributed to.
+# A raw-identifier `fn` read as `r` leaves the seam ungated and every
+# name-keyed lookup — allowlist, exemption, attribution — pointed at nothing.
+run_check "INVARIANT" rg -nF 'let ident = rest.strip_prefix("r#").unwrap_or(rest);' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -nF 'let ident = after.strip_prefix("r#").unwrap_or(after);' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -nF 'fn r#lean_raw(x: u64)' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -nF '_FN_RE = re.compile(r"' scripts/rust_code_view.py
+# Backtick-free on purpose: shellcheck reads a backtick inside single quotes as
+# a command substitution the author meant to expand (SC2016).
+run_check "INVARIANT" rg -nF 'is named without its escape' scripts/rust_code_view.py
+# ...and a Lean export written as a guillemet identifier is read by BOTH
+# parsers that answer that question, with an unreadable argument refused.  The
+# Rust half is the one the readiness derivation reads: a non-`lean_`-prefixed
+# export missing from it is a seam no gate is required for.
+run_check "INVARIANT" rg -nF 'elif argument.startswith("\u00ab"):' scripts/lean_code_view.py
+run_check "INVARIANT" rg -nF 'raise ValueError(' scripts/lean_code_view.py
+run_check "INVARIANT" rg -nF "argument.strip_prefix('\\u{ab}')" rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -nF 'const GUILLEMET: &str' rust/sele4n-hal/build.rs
 # PR #889 review round 21: the hand-written action walk is gone.  The entry is
 # required to *be* `bootAndInitialiseRPi5OrHalt` applied to a configuration —
 # one `isDefEq`, which zeta- and beta-reduces, so the forms rounds 18-21 each

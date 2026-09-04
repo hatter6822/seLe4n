@@ -349,7 +349,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1046 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
 - `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1030 lines)
-- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1128 lines)
+- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1265 lines)
 - `SeLe4n/Model/FrozenState.lean` (~1007 lines)
 - `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~998 lines)
 - `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean` (~995 lines)
@@ -997,6 +997,52 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   the bound actually terminates — a timeout with a straggler, an immediate
   return costing no clock reads, a clamp above the flag array, and a zero
   budget.
+
+  **And a scanner's default branch is a decision — refuse what you cannot
+  read** (PR #889 review round 25).  Every rule above is about a scanner that
+  asked the wrong question of input it *did* recognise.  This one is about the
+  other branch: three separate scanners, asked something they could not parse,
+  silently did nothing — and doing nothing is the fail-open answer in all
+  three.  An `extern` item that was not a `fn` declared no link requirement, so
+  `fn r#lean_real();` — a raw identifier, which names the very same symbol —
+  asked the archive for nothing and Tier 1 passed with no provider.  A
+  `.section` whose operand the code view had blanked (the quotes make it a
+  string literal) matched no section-directive pattern at all, so the scanner
+  stayed in whatever section preceded it.  An `@[export]` argument spelled with
+  guillemets — `@[export «suspend_generated»]`, which Lean accepts and emits —
+  left the export inventory, and with it the readiness-gate seam set, one entry
+  short.  In each case the artefact is real and *present*: the symbol links,
+  the label is emitted, the export compiles.  Only the gate is silent.
+
+  This is the presence-check family's dual, and it is why they keep appearing
+  together: a presence check asserts too little about a token it *found*; a
+  silent skip asserts nothing at all about input it did not recognise.  Round
+  21 had already established the right shape — an item macro inside an `extern`
+  block is refused, not read past, because "where a scanner cannot decide, it
+  fails closed" — and applied it to that one case, which is the sweep rule
+  failing exactly as it says.  **So make the default branch explicit: enumerate
+  the inputs that legitimately produce nothing, and stop the build on anything
+  else.**  A spelling the language accepts and the gate does not is a gate
+  defect; it should say so, on the day it is introduced, rather than quietly
+  checking less.
+
+  **And which direction is closed depends on what the scanner produces.**  A
+  scanner that builds a set of **requirements** fails closed by *refusing*
+  unreadable input — a requirement it drops is a check nobody runs.  A scanner
+  that builds a set of **providers** fails closed by *dropping* it — a provider
+  it invents satisfies a requirement that was never met.  So the same
+  unreadable `.section` operand makes `executable_label_names` treat the
+  section as unknown and therefore **not** executable (a symbol reported
+  missing, the gate failing), while it makes `extern_declarations_in` and both
+  `@[export]` inventories stop outright.  Choosing the wrong direction is
+  indistinguishable from not choosing.  A new mechanism brings its own edge, so
+  check it: reading assembler *statements* rather than lines (AArch64 GAS
+  separates them with `;`) would have split a `#define ENTRY(x) .text;
+  .global x; x:` — a cpp **template**, whose directives and label exist where it
+  is invoked — setting the section from a body that never executes there and
+  registering the parameter as a provider.  That is round 16's `.macro` hazard
+  arriving through the fix for a different one; a preprocessor line is not split
+  and contributes nothing.
 
 - **Invariant/Operations split**: each kernel subsystem has
   `Operations.lean` (transitions) and `Invariant.lean` (proofs). Keep

@@ -121,7 +121,19 @@ EXPECTED_UNRESOLVED: dict[str, str] = {
 #: calling convention; every `extern` block asks the linker for its items
 #: whatever the convention is, so the requirement does not depend on it.
 EXTERN_KEYWORD = re.compile(r"\bextern\b")
-EXTERN_FN = re.compile(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(")
+#: A foreign function declaration.  `r#` is Rust's raw-identifier escape and
+#: names the *same* linker symbol as the bare spelling — `fn r#lean_real();`
+#: asks for `lean_real` (PR #889 review round 25).  Without the prefix this
+#: matched nothing, `extern_declarations_in` skipped the item, and the
+#: requirement silently did not exist: a HAL seam written that way could
+#: disappear from the derived link requirements and Tier 1 would pass with no
+#: provider.
+EXTERN_FN = re.compile(r"\bfn\s+(?:r#)?([A-Za-z_][A-Za-z0-9_]*)\s*\(")
+#: An item a foreign block may hold that declares no *function* symbol: a
+#: `static` (a data object — the archive parsers reject those as function
+#: providers anyway), a type alias, or a `use`.  Anything in a block that is
+#: none of these and not a `fn` is refused rather than skipped (round 25).
+EXTERN_NON_FN_ITEM = re.compile(r"\b(?:static|type|use)\b")
 #: The symbol SM10.1's boot entry exports.  Only the link-level reconciliation
 #: reads it here — that the archive does not define it yet, and that
 #: `EXPECTED_UNRESOLVED` still says so.  What the entry must *do* is
@@ -257,6 +269,22 @@ def extern_declarations_in(text: str, where: str) -> set[str]:
                         f"({view[item_at:item_end].strip()[:60]!r}) expands to declarations "
                         f"this scanner cannot see.  Write the `fn` declarations out, or "
                         f"teach this gate to read the expansion."
+                    )
+                # PR #889 review round 25: round 21 refused *macros* and let
+                # every other unrecognised item fall through to `continue`,
+                # which is the fail-open direction — an item whose form this
+                # scanner does not know declares no requirement and signals
+                # nothing.  Only the items that genuinely declare no function
+                # symbol may be skipped; anything else stops the build.  That
+                # is round 21's own rule, applied to the default branch rather
+                # than to one case of it.
+                if not EXTERN_NON_FN_ITEM.search(view, item_at, item_end):
+                    sys.exit(
+                        f"[FAIL] {where}: an item inside an `extern` block "
+                        f"({view[item_at:item_end].strip()[:60]!r}) is neither a `fn` this "
+                        f"scanner can read nor a `static`/`type`/`use`.  If it declares a "
+                        f"function symbol the link requirement is missing; teach this gate "
+                        f"the form, or write the declaration out."
                     )
                 continue  # a `static`, a type alias: not a function requirement
             # PR #889 review round 17: the attribute is **located** on the
@@ -441,12 +469,69 @@ def strip_cpp_conditionals(text: str) -> str:
 
 # PR #889 review round 22: which section a label lands in.  `.text` and its
 # named variants (`.section .text.foo`) hold code; `.data`, `.bss`, `.rodata`
-# and their variants hold objects.  A `.section` directive names its section
-# directly; `.text` / `.data` / `.bss` are shorthands for the standard three.
-ASM_SECTION_DIRECTIVE = re.compile(
-    r"^\s*\.(?:section\s+\"?(?P<named>[A-Za-z0-9_.$-]+)\"?|(?P<shorthand>text|data|bss|rodata)\b)",
-    re.MULTILINE,
+# and their variants hold objects.
+#
+# PR #889 review round 25: directives are classified by **name first, operand
+# second**, and every directive line is recognised as a directive.  The regex
+# this replaces required the whole directive *and a readable operand* to match
+# before it counted as a section change, so `.section ".data"` — whose operand
+# the code view blanks, the quotes being a string literal — matched nothing at
+# all and left the scanner in whatever section preceded it.  A directive whose
+# name is section-changing but whose operand this scanner cannot read now
+# leaves the section **unknown**, which is never executable.
+ASM_DIRECTIVE = re.compile(
+    r"^\s*\.(?P<directive>[A-Za-z_][A-Za-z0-9_]*)"
+    r'(?:\s+"?(?P<operand>[A-Za-z0-9_.$-]+)"?)?'
 )
+# The shorthands whose own name is the section they select.
+ASM_SECTION_SHORTHANDS = frozenset({"text", "data", "bss", "rodata"})
+# Section-changing directives whose effect this scanner does not model: GAS's
+# `.struct` and `.offset` switch to an absolute section.  `.subsection` is
+# deliberately absent — it selects a subsection *of the current section*, so it
+# cannot change whether labels after it land in code.
+ASM_UNMODELLED_SECTION_CHANGE = frozenset({"struct", "offset"})
+# AArch64 GAS separates statements with `;`, so one source line can hold a
+# section change and the labels that follow it.  Comments and string contents
+# are already blanked by `asm_code_view`, so no `;` here is quoted or commented.
+ASM_STATEMENT_SEPARATOR = ";"
+
+
+def asm_statements(view: str) -> list[str]:
+    """The assembler statements of a code view, in source order.
+
+    AArch64 GAS separates statements with `;`, so one source line can hold
+    several and a line-per-statement reading loses their order — which is the
+    whole content of a section scan.  Comments and string literal contents are
+    already blanked by `asm_code_view`, so no separator reaching here is quoted
+    or commented out.  Both halves of `asm_definitions_in` read this, since a
+    provider is the conjunction of a directive and a label and the two must
+    agree on what a statement is.
+
+    A preprocessor line is the exception and is never split: cpp runs a stage
+    earlier, so `#define ENTRY(x) .text; .global x; x:` is a template whose
+    symbols exist where it is *invoked*, not where it is written.
+    """
+    statements: list[str] = []
+    for line in view.split("\n"):
+        # A preprocessor line is not a list of assembler statements.  cpp runs
+        # a stage earlier and a `#define ENTRY(x) .text; .global x; x:` is a
+        # *template*: its directives and its label exist where the macro is
+        # invoked, under whatever name the argument supplies.  Splitting it
+        # would set the section from a body that never executes there and
+        # register the parameter `x` as a provider — the `.macro` hazard round
+        # 16 closed, arriving through the statement split this round added.
+        # Left whole, it matches neither the directive nor the label pattern,
+        # so it contributes nothing: the fail-closed direction for providers.
+        if line.lstrip().startswith("#"):
+            statements.append(line)
+            continue
+        statements.extend(line.split(ASM_STATEMENT_SEPARATOR))
+    return statements
+
+
+def section_name_is_executable(name: str) -> bool:
+    """Whether a section *name* holds code: `.text` and its named variants."""
+    return name == "text" or name.startswith(".text") or name.startswith("text.")
 
 
 def executable_label_names(view: str) -> set[str]:
@@ -466,22 +551,69 @@ def executable_label_names(view: str) -> set[str]:
     keeps only global text symbols, `T`); the source fallback is the same
     question at a second site and was left asking less.
 
-    Sections are tracked in source order and default to `.text`, which is what
-    GAS assumes before any directive.  A section this scanner does not
-    recognise is treated as **non**-executable: the fallback under-approximates
-    the providers, so an unrecognised section reports a symbol as missing
-    rather than reporting a data object as a function.
+    PR #889 review round 25: the current section is not the operand of the last
+    `.section`.  GAS keeps a **section stack** (`.pushsection` / `.popsection`)
+    and a previous-section slot (`.previous`), so
+
+        .text
+        .pushsection .data
+        .global lean_data
+        lean_data:
+
+    left round 22's scanner reporting `lean_data` as executable while the
+    assembler emits `D`, which is the very substitution round 22 closed —
+    reintroduced by a spelling it did not enumerate.  Section state is
+    therefore modelled as GAS defines it: a current section, a previous
+    section, and a stack.
+
+    Executability is tracked as a three-valued fact — executable, not
+    executable, or **unknown** — and only `executable` admits a label.  Unknown
+    is what an unresolvable section change yields: an operand the code view
+    blanked, an unbalanced `.popsection`, a directive whose name is
+    section-changing but whose semantics this scanner does not model.  The
+    fallback under-approximates the providers, so an unknown section reports a
+    symbol as *missing* — the gate fails — rather than reporting a data object
+    as a function.
     """
     executable: set[str] = set()
-    in_text = True  # GAS starts in .text
-    for line in view.split("\n"):
-        section = ASM_SECTION_DIRECTIVE.match(line)
-        if section is not None:
-            name = section.group("named") or section.group("shorthand")
-            in_text = name == "text" or name.startswith(".text") or name.startswith("text.")
-            continue
-        if in_text:
-            label = ASM_LABEL.match(line)
+    # `None` is "unknown", which is never executable.  GAS starts in `.text`.
+    current: bool | None = True
+    previous: bool | None = True
+    stack: list[bool | None] = []
+    for statement in asm_statements(view):
+        directive = ASM_DIRECTIVE.match(statement)
+        if directive is not None:
+            name = directive.group("directive")
+            operand = directive.group("operand")
+            if name in ASM_SECTION_SHORTHANDS:
+                previous, current = current, section_name_is_executable(name)
+                continue
+            if name in ("section", "pushsection"):
+                if name == "pushsection":
+                    stack.append(current)
+                resolved = (
+                    None if operand is None else section_name_is_executable(operand)
+                )
+                previous, current = current, resolved
+                continue
+            if name == "popsection":
+                # An unbalanced pop is a source this scanner cannot follow.
+                restored = stack.pop() if stack else None
+                previous, current = current, restored
+                continue
+            if name == "previous":
+                previous, current = current, previous
+                continue
+            if name == "subsection":
+                # Selects a subsection *of the current section*, so it cannot
+                # change whether the labels after it land in code.  Named
+                # before the catch-all below, whose shape it otherwise matches.
+                continue
+            if name.endswith("section") or name in ASM_UNMODELLED_SECTION_CHANGE:
+                previous, current = current, None
+                continue
+        if current:
+            label = ASM_LABEL.match(statement)
             if label is not None:
                 executable.add(label.group(1))
     return executable
@@ -503,7 +635,12 @@ def asm_definitions_in(text: str) -> set[str]:
     a call into data).
     """
     view = strip_unassembled_regions(strip_cpp_conditionals(asm_code_view(text)))
-    return set(ASM_GLOBAL.findall(view)) & executable_label_names(view)
+    exported = {
+        match.group(1)
+        for match in (ASM_GLOBAL.match(statement) for statement in asm_statements(view))
+        if match is not None
+    }
+    return exported & executable_label_names(view)
 
 
 def strip_unassembled_regions(text: str) -> str:
@@ -962,6 +1099,146 @@ def self_test() -> int:
     default_section_asm = "    .global lean_default\nlean_default:\n    ret\n"
     if asm_definitions_in(default_section_asm) != {"lean_default"}:
         failures.append("a label before any section directive was refused (round 22)")
+    # PR #889 review round 25: the current section is not the last `.section`
+    # operand.  Each mutation below KEEPS the `.text`, the `.global` and the
+    # label — everything round 22's check reads — and changes only the section
+    # *state* the assembler is in when the label is emitted.
+    pushed_data_asm = (
+        "    .text\n"
+        "    .pushsection .data\n"
+        "    .global lean_pushed\n"
+        "lean_pushed:\n"
+        "    .quad 0\n"
+    )
+    if asm_definitions_in(pushed_data_asm):
+        failures.append(
+            "a label under `.pushsection .data` was accepted as a function "
+            "provider (round 25)"
+        )
+    # ...and the stack is tracked rather than refused wholesale: a balanced
+    # push/pop puts the label back in `.text`, where it really does provide.
+    popped_text_asm = (
+        "    .text\n"
+        "    .pushsection .data\n"
+        "    .quad 0\n"
+        "    .popsection\n"
+        "    .global lean_popped\n"
+        "lean_popped:\n"
+        "    ret\n"
+    )
+    if asm_definitions_in(popped_text_asm) != {"lean_popped"}:
+        failures.append("a label after a balanced `.popsection` was refused (round 25)")
+    # ...as is `.previous`, which swaps the current section with the one before.
+    previous_text_asm = (
+        "    .text\n"
+        "    .section .data\n"
+        "    .quad 0\n"
+        "    .previous\n"
+        "    .global lean_previous\n"
+        "lean_previous:\n"
+        "    ret\n"
+    )
+    if asm_definitions_in(previous_text_asm) != {"lean_previous"}:
+        failures.append("a label after `.previous` restored `.text` was refused (round 25)")
+    # ...while a pop with nothing pushed is a source this scanner cannot
+    # follow, so the section is unknown and the label provides nothing.
+    unbalanced_pop_asm = (
+        "    .text\n"
+        "    .popsection\n"
+        "    .global lean_unbalanced\n"
+        "lean_unbalanced:\n"
+        "    ret\n"
+    )
+    if asm_definitions_in(unbalanced_pop_asm):
+        failures.append("a label after an unbalanced `.popsection` provided (round 25)")
+    # ...as is a section whose name the code view blanks, the quotes making it
+    # a string literal.  The mutation KEEPS `.section` and its operand and only
+    # quotes it — which the regex this replaced failed to match at all, leaving
+    # the scanner in the section that preceded it.
+    quoted_section_asm = (
+        "    .text\n"
+        '    .section ".data"\n'
+        "    .global lean_quoted\n"
+        "lean_quoted:\n"
+        "    .quad 0\n"
+    )
+    if asm_definitions_in(quoted_section_asm):
+        failures.append(
+            "a label under a quoted `.section` name was accepted as a function "
+            "provider (round 25)"
+        )
+    # ...and an unmodelled section-changing directive is unknown, not ignored.
+    unknown_section_asm = (
+        "    .text\n"
+        "    .foosection bar\n"
+        "    .global lean_unknown\n"
+        "lean_unknown:\n"
+        "    ret\n"
+    )
+    if asm_definitions_in(unknown_section_asm):
+        failures.append("a label after an unmodelled section change provided (round 25)")
+    # ...while `.subsection`, whose shape matches that catch-all, changes the
+    # subsection of the current section and so cannot change executability.
+    subsection_asm = (
+        "    .text\n"
+        "    .subsection 2\n"
+        "    .global lean_subsection\n"
+        "lean_subsection:\n"
+        "    ret\n"
+    )
+    if asm_definitions_in(subsection_asm) != {"lean_subsection"}:
+        failures.append("a label after `.subsection` was refused (round 25)")
+    # ...and AArch64 GAS separates statements with `;`, so a section change and
+    # the labels it governs can share a line.  The mutation KEEPS every token
+    # of the accepted form and only joins the lines.
+    inline_pushed_asm = (
+        "    .text; .pushsection .data; .global lean_inline; lean_inline:; .quad 0\n"
+    )
+    if asm_definitions_in(inline_pushed_asm):
+        failures.append(
+            "a `;`-separated `.pushsection .data` was read as `.text` (round 25)"
+        )
+    inline_text_asm = "    .text; .global lean_joined; lean_joined:; ret\n"
+    if asm_definitions_in(inline_text_asm) != {"lean_joined"}:
+        failures.append("a `;`-separated provider in `.text` was refused (round 25)")
+    # ...but a preprocessor line is not a list of assembler statements.  cpp
+    # runs a stage earlier, so a `#define` body is a template whose directives
+    # and label exist where it is *invoked* — the `.macro` hazard round 16
+    # closed, reachable again through the statement split this round added.
+    # The mutation KEEPS every token of a real provider and puts it in a macro
+    # definition, which declares nothing where it is written.
+    cpp_macro_asm = (
+        "#define ENTRY(x) .text; .global lean_templated; lean_templated:\n"
+        "    .global lean_real\n"
+        "lean_real:\n"
+        "    ret\n"
+    )
+    got = asm_definitions_in(cpp_macro_asm)
+    if "lean_templated" in got:
+        failures.append(
+            "a `.global`/label pair inside a `#define` body counted as an assembly "
+            "provider (round 25)"
+        )
+    if "lean_real" not in got:
+        failures.append(
+            "a real provider beside a `#define` was lost to the statement split "
+            "(round 25)"
+        )
+    # ...and a `#define` does not change the section either: its body never
+    # executes where it is written, so a `.data` in one must not follow through
+    # to the labels below it.
+    cpp_section_asm = (
+        "    .text\n"
+        "#define SWITCH .section .data\n"
+        "    .global lean_after\n"
+        "lean_after:\n"
+        "    ret\n"
+    )
+    if asm_definitions_in(cpp_section_asm) != {"lean_after"}:
+        failures.append(
+            "a section directive inside a `#define` body changed the section for the "
+            "code below it (round 25)"
+        )
     # PR #889 review round 21: an item macro inside a foreign block expands to
     # declarations this scanner cannot see, so it is refused rather than read
     # past.  The mutation KEEPS the block and the `extern "C"` and puts the
@@ -989,6 +1266,54 @@ def self_test() -> int:
         'extern "C" {\n    fn lean_real(x: u64) -> u64;\n}\n', "fixture"
     ) != {"lean_real"}:
         failures.append("the macro refusal rejected an ordinary `extern` block (round 21)")
+    # PR #889 review round 25: `r#` is Rust's raw-identifier escape and names
+    # the *same* linker symbol as the bare spelling, so `fn r#lean_real();`
+    # requires `lean_real` of somebody.  The mutation KEEPS the block, the `fn`
+    # and the name and only escapes it — which matched no `fn` pattern at all,
+    # so the item declared nothing and Tier 1 passed with no provider.
+    raw_ident_rust = 'extern "C" {\n    fn r#lean_real(x: u64) -> u64;\n}\n'
+    if extern_declarations_in(raw_ident_rust, "fixture") != {"lean_real"}:
+        failures.append(
+            "a raw-identifier `fn` declaration required no symbol, so its seam has no "
+            "provider (round 25)"
+        )
+    # ...and the items that legitimately declare no *function* symbol are
+    # enumerated rather than implied: a `static`, a type alias and a `use` are
+    # skipped, and anything else stops the build.  Round 21 refused macros and
+    # let every other unrecognised item fall through, which is the fail-open
+    # direction — an item whose form this scanner does not know signals nothing.
+    for what, block in (
+        ("a `static`", 'extern "C" {\n    static COUNT: u64;\n'
+                        '    fn lean_real(x: u64) -> u64;\n}\n'),
+        ("a type alias", 'extern "C" {\n    type Opaque;\n'
+                         '    fn lean_real(x: u64) -> u64;\n}\n'),
+    ):
+        try:
+            got = extern_declarations_in(block, "fixture")
+        except SystemExit:
+            failures.append(f"{what} inside an `extern` block was refused (round 25)")
+        else:
+            if got != {"lean_real"}:
+                failures.append(
+                    f"{what} beside a live declaration changed the requirement set "
+                    f"(round 25): {sorted(got)}"
+                )
+    unclassified_rust = (
+        'extern "C" {\n'
+        "    const unsafe fine: u64;\n"
+        '    fn lean_real(x: u64) -> u64;\n'
+        "}\n"
+    )
+    refused_unclassified = False
+    try:
+        extern_declarations_in(unclassified_rust, "fixture")
+    except SystemExit:
+        refused_unclassified = True
+    if not refused_unclassified:
+        failures.append(
+            "an `extern` item this scanner cannot classify was skipped rather than "
+            "refused, so any symbol it declares is required of nobody (round 25)"
+        )
     # PR #889 review round 16: an uninvoked `.macro` body emits nothing, so its
     # directive and label are not a provider.  Both tokens stay in the fixture.
     macro_asm = (

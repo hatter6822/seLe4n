@@ -1141,6 +1141,110 @@ the **kernel**, the second live defect any round has found outside the gates.
   disables the bare spelling for the file — conservative, and the remedy is a
   qualifier.
 
+### The review round, twenty-fifth pass — the default branch is a decision
+
+Three findings, in three different scanners, in three different languages — and
+one defect.  Each scanner, handed input it could not parse, **silently did
+nothing**, and doing nothing was the fail-open answer every time.
+
+* `extern_declarations_in`'s `fn` pattern did not match Rust's raw-identifier
+  escape.  `extern "C" { fn r#lean_real(); }` compiles and asks the linker for
+  `lean_real` — the same symbol as the bare spelling — but the item matched no
+  `fn`, declared no requirement, and the archive was asked for nothing.  A HAL
+  seam written that way would leave Tier 1 green with no provider at all.
+* `executable_label_names` recognised `.section` and the three shorthands and
+  nothing else.  GAS keeps a **section stack**: `.pushsection` /
+  `.popsection` / `.previous`.  So `.text`, then `.pushsection .data`, then
+  `.global lean_data` and `lean_data:` reported an executable provider while
+  the assembler emits `D` — reintroducing, by a spelling round 22 had not
+  enumerated, the exact substitution round 22 closed.  A quoted section name
+  did the same by a different route: the code view blanks a string literal's
+  contents, so `.section ".data"` matched the directive pattern *not at all*
+  and left the scanner in the preceding section.
+* Both `@[export]` collectors — `scripts/lean_code_view.attribute_arguments`
+  and `build.rs`'s `lean_exports_in` — read the argument as ASCII identifier
+  characters and stopped at the first one that was not.  Lean also spells
+  identifiers between guillemets, so `@[export «suspend_generated»]` collected
+  the empty string and was dropped.  That inventory *is* the readiness-gate
+  seam set (`scan_lean_upcalls_readiness_gated` seeds it from the Lean exports
+  and adds only `lean_`-prefixed HAL externs), so a non-prefixed export spelled
+  that way is a Lean upcall no gate is ever required for.
+
+In all three the artefact is real and present — the symbol links, the label is
+emitted, the export compiles.  Only the gate is silent.  This is the
+presence-check family's dual: a presence check asserts too little about a token
+it found; a silent skip asserts nothing at all about input it did not
+recognise.  And round 21 had already established the right shape, refusing an
+item macro inside an `extern` block because "where a scanner cannot decide, it
+fails closed" — applied to that one case and not to the default branch it was
+a case of, which is the sweep rule failing exactly as it says it does.
+
+**The fix, at the mechanism:**
+
+* The default branch is enumerated rather than implicit.  An `extern` block
+  item that is not a readable `fn` must be a `static`, a `type` or a `use` —
+  the items that genuinely declare no function symbol — and anything else
+  exits with a reason (`EXTERN_NON_FN_ITEM`).  `EXTERN_FN` reads `r#`.
+* Section state is GAS's, stack and all.  Directives are classified by **name
+  first, operand second**, so a directive whose operand is unreadable is still
+  recognised as a section change; `.pushsection` pushes, `.popsection` pops,
+  `.previous` swaps, `.subsection` is a no-op by its own semantics, and any
+  other directive whose name ends in `section` (or is `.struct` / `.offset`)
+  leaves the section **unknown**.  Executability is three-valued and only
+  `executable` admits a label.  Both halves of `asm_definitions_in` now read
+  `asm_statements`, since AArch64 GAS separates statements with `;` and a
+  provider is a directive *and* a label — the two must agree on what a
+  statement is.
+* Both export collectors read `«…»` and **refuse** an argument in neither
+  form: `ValueError` on the Python side, a panic on the Rust side.  A spelling
+  Lean accepts and the parser does not is a gate defect, and it now says so on
+  the day it is introduced.
+
+**And the direction is not the same at every site,** which is the part worth
+keeping.  A scanner that builds a set of **requirements** fails closed by
+refusing unreadable input — a requirement it drops is a check nobody runs.  A
+scanner that builds a set of **providers** fails closed by *dropping* it — a
+provider it invents satisfies a requirement that was never met.  So the same
+unreadable `.section` operand makes `executable_label_names` report the section
+unknown and therefore not executable (the symbol reads as missing, the gate
+fails), while it makes `extern_declarations_in` and both export inventories
+stop outright.  Choosing the wrong direction is indistinguishable from not
+choosing.
+
+And the raw-identifier finding was filed against one collector while the same
+question is asked in three other places, so all four were swept: `build.rs`'s
+`extern_block_declarations` (which feeds the readiness *seam set*, and read
+`fn r#lean_real();` as the name `r` — no `lean_` prefix, so the seam left the
+set and its call needed no guard), and both `enclosing_fn` implementations,
+`build.rs`'s `enclosing_fn_span` and `scripts/rust_code_view.py`'s `_FN_RE`,
+which name the function a reference is attributed to and so key every
+allowlist entry, exemption and dominance check.  Those two always resolved the
+right *body*; they reported it under the wrong name.  Fixing the site a review
+names and not its siblings is the failure round 14 recorded, and this is the
+first round where the sweep was run before the next one could find them.
+
+One self-inflicted edge came with the statement split and was closed in the
+same cut: cpp runs a stage earlier than the assembler, so a
+`#define ENTRY(x) .text; .global x; x:` is a *template* whose directives and
+label exist where the macro is **invoked**.  Splitting it would set the section
+from a body that never executes there and register the parameter as a provider
+— round 16's `.macro` hazard, arriving through the mechanism this round added.
+A preprocessor line is therefore never split, matches neither pattern whole,
+and contributes nothing: the fail-closed direction for providers, and the same
+answer round 16 gave the assembler's own macros.
+
+Twelve new witnesses in `check_kernel_entry_exports.py` (88 cases), seven of them
+mutation-tested by keeping every token and changing only the section *state*:
+`.pushsection .data` refused, a balanced `.popsection` accepted, `.previous`
+accepted, an unbalanced pop refused, a quoted section name refused, an
+unmodelled section-changing directive refused, `.subsection` accepted, and the
+`;`-joined forms of both, plus the `#define` body whose provider and whose
+section change must both stop at the macro.  Four of the twelve are
+acceptances on purpose — a scanner that refused every directive it had not
+seen would pass its own refusal witnesses while breaking every real source.
+`build.rs` gains the guillemet acceptance beside its six existing
+token-preserving mutations.
+
 ### The review round, twenty-fourth pass — a name is not a contract
 
 One finding, against round 23's own fix, and it is the sharpest instance of this

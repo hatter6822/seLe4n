@@ -797,6 +797,40 @@ passes `allowOpaque := true`, and what it still cannot see (a foreign
 was reported as an embedded-identity mismatch — the defect round 2 fixed for the
 idle-slot reservation, repeated by the same omission.
 
+**Review round 25 (PR #889, same version).**  Three findings, three scanners,
+three languages — and one defect: each, handed input it could not parse,
+**silently did nothing**, and doing nothing was fail-open every time.  A Rust
+raw identifier (`fn r#lean_real();`) matched no `fn` pattern, so the item
+declared no link requirement at all.  GAS's `.pushsection` / `.popsection`
+stack was unmodelled and a quoted `.section ".data"` matched no directive
+pattern (the code view blanks a string's contents), so a `.data` label reported
+as an executable provider — round 22's finding, reintroduced by spellings round
+22 did not enumerate.  And both `@[export]` collectors read ASCII identifier
+characters only, so a guillemet-spelled export (`@[export «suspend_generated»]`,
+which Lean accepts and emits) left the readiness-gate seam set one entry short.
+
+Two sweeps came with the fixes rather than with the next round.  The
+raw-identifier question is asked in four places — the Python declaration
+collector the review named, `build.rs`'s `extern_block_declarations` (which
+feeds the readiness *seam set*) and both `enclosing_fn` implementations, which
+key every allowlist entry and exemption on the function's name — and all four
+now read the escape.  And the statement split this round introduced brought its
+own edge: a `#define` body is a cpp *template*, so splitting it would set the
+section from code that never executes there and register a macro parameter as a
+provider (round 16's `.macro` hazard, arriving through the fix for a different
+one).  A preprocessor line is never split.
+
+The rule for this plan: **a scanner's default branch is a decision.**
+Enumerate the inputs that legitimately produce nothing and stop the build on
+anything else — round 21 had already established that shape for one case
+(a macro inside an `extern` block) and it was not applied to the branch it was
+a case of.  **And which direction is closed depends on what the scanner
+produces**: a *requirements* scanner fails closed by refusing unreadable input,
+a *providers* scanner by dropping it.  The same unreadable `.section` operand
+therefore makes `executable_label_names` report the section unknown (and so not
+executable) while it makes `extern_declarations_in` and both export inventories
+stop outright.
+
 **Review round 24 (PR #889, same version).**  One, against round 23's own fix.
 The wait was paced with `cpu::wfe_bounded`, whose `max_ticks` is documented as
 *informational* — "does not bound the actual `wfe`" — so a secondary that dies in
