@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.34.50` (`lakefile.toml`) |
+| **Package version** | `0.34.51` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 325,997 across 310 Lean files |
-| **Test LoC** | 68,574 across 70 Lean test suites |
-| **Proved declarations** | 10,844 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 326,896 across 310 Lean files |
+| **Test LoC** | 68,583 across 70 Lean test suites |
+| **Proved declarations** | 10,874 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -859,6 +859,31 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    states unchanged, over the concrete step), and
    `ticketLockSim_not_universal` exhibits a pair the relation does
    **not** relate — so φ is falsifiable rather than vacuous.
+
+   **WS-LC LC2 — the ticket lock's withdrawal** (MODULE
+   `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean`,
+   v0.34.51): `QueuedRwLockConcrete` gains a fifth machine word,
+   `cancelled` — the implementation's per-core withdrawal slot
+   array, abstracted to the published-and-unclaimed ticket set —
+   and three ops (`cancelledLoad`, `cancelPublish`, the
+   compare-exchange `cancelClaim`).  `now_serving` owes one
+   advance per ticket ever issued, so a withdrawal *tombstones*
+   its ticket rather than removing it: `ledgerTickets` still
+   pins the ticket column to `[now_serving, next_ticket)`, and
+   `liveLedger` — the ledger minus the withdrawn — is what
+   `queuedSim`'s queue conjunct relates to the spec's waiters.
+   `queuedSim` gains a fourth conjunct, `queuedHeadLive` (the
+   served ticket is never a tombstone), which holds at block
+   boundaries and is restored inside a block by the skip loop
+   `skipDeadOps`; a turn may be passed only for a ticket nobody
+   has withdrawn, so a skip claims the slot first and the
+   compare-exchange arbitrates.  Promotion is read off the
+   ledger (`promoteFrom` / `readerAdmitFrom`) rather than
+   computed from the served ticket, because the old form gave
+   promoted readers consecutive tickets and a mid-queue
+   withdrawal falsifies that.  `queuedRwLock_admits_in_spec_order`
+   is restated over live entries: the `i`-th waiter is the `i`-th
+   live entry, which is what FIFO is about.
 
    **SM2.D.7 lockPrimitives aggregator** (MODULE
    `SeLe4n/Kernel/Concurrency/LockPrimitives.lean`):

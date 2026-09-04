@@ -248,7 +248,16 @@ namespace SeLe4n.Testing.SmpSurfaceAnchors
 -- The payoff: the deployed lock refines the Lean FIFO spec end to end, and
 -- admits in the spec's order.
 -- The queued bridge covers cancel-free traces only, and says so.
-#check @SeLe4n.Kernel.Concurrency.ListQueuedBlocks_cancel_free
+#check @SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete.liveLedger
+#check @SeLe4n.Kernel.Concurrency.queuedHeadLive
+#check @SeLe4n.Kernel.Concurrency.skipDeadOps
+#check @SeLe4n.Kernel.Concurrency.skipDeadOps_spec
+#check @SeLe4n.Kernel.Concurrency.readerAdmitFrom
+#check @SeLe4n.Kernel.Concurrency.readerAdmitFrom_spec
+#check @SeLe4n.Kernel.Concurrency.promoteFrom
+#check @SeLe4n.Kernel.Concurrency.promoteFrom_preserves_queuedSim
+#check @SeLe4n.Kernel.Concurrency.queuedBlock_step_cancel_noop
+#check @SeLe4n.Kernel.Concurrency.queuedBlock_step_cancel_queued
 #check @SeLe4n.Kernel.Concurrency.queuedRwLock_refines_rwLockSpec
 #check @SeLe4n.Kernel.Concurrency.queuedRwLock_admits_in_spec_order
 

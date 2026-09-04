@@ -1,3 +1,97 @@
+## v0.34.51 — the ticket lock's ledger learns to tombstone
+
+**WS-LC LC2 (all eight sub-tasks).**  LC1 gave the abstract lock a
+withdrawal and left the deployed lock's refinement covering only cancel-free
+traces — stated, not hidden, as a theorem written to break when the gap was
+closed.  This cut closes it: `queuedRwLock_refines_rwLockSpec` and
+`queuedRwLock_admits_in_spec_order` now hold of traces containing
+withdrawals, and that theorem is deleted because it has become false.
+
+### Why a ticket cannot simply leave the queue (LC2.1–LC2.2)
+
+`now_serving` advances by one per `pass_turn`, and the protocol's whole
+correctness rests on it advancing **exactly once per ticket ever issued**.  A
+withdrawal in the middle of the queue therefore cannot remove its ticket —
+somebody still has to pass it — so it *tombstones* it instead.
+
+`QueuedRwLockConcrete` gains a fifth machine word, `cancelled`: the
+implementation's per-core withdrawal slot array, abstracted to the
+published-and-unclaimed ticket set.  The per-core indexing is left out
+because its only consequences are that a core publishes at most one
+withdrawal and that the published tickets are distinct, and `QueuedTicketWf`
+states both.  Three ops join the alphabet — the slot load, the publish, and
+the compare-exchange `cancelClaim`, which is the **arbiter**: exactly one of
+{the canceller, the previous holder's skip loop} clears a given slot, and
+only that one may advance past the ticket.
+
+The consequence for the invariant is one line in `opEnabled` and it is the
+load-bearing one: **a turn may be passed only for a ticket nobody has
+withdrawn.**  A skip therefore claims the slot first — the claim erases it —
+and a normal pass is unaffected.  Without that, `pass_turn` could retire a
+ticket whose slot was still published, leaving a withdrawal naming a served
+ticket and the next skip loop advancing past a live head.
+
+`ledgerTickets` is **unchanged**: the ticket column is still exactly
+`[now_serving, next_ticket)`, so `await_turn`'s spin bound, the outstanding
+count and every other arithmetic consequence survive verbatim.  What moved is
+the queue, and `liveLedger` — the ledger minus the withdrawn — is what
+carries it.
+
+### The skip loop, and where the head is allowed to be dead (LC2.3–LC2.5)
+
+`queuedSim` gains a fourth conjunct, `queuedHeadLive`: the served ticket is
+never a tombstone.  It is a **block-boundary** property, not a state
+invariant, which is why it lives in the simulation relation rather than in
+`QueuedTicketWf` — inside a block a `pass_turn` uncovers a head that may be
+withdrawn, and the skip loop restores it before the block ends.  With it,
+"no live request" and "no outstanding ticket" say the same thing, so the
+calm-lock block shapes are exactly what they were.
+
+`skipDeadOps` is that loop, and `skipDeadOps_spec` says what it does in one
+statement.  Five of its six facts are bookkeeping; the load-bearing one is
+that the **live** ledger is untouched — retiring a tombstone moves
+`now_serving` and shortens the ledger but removes no request, which is what
+lets a skip be interleaved wherever a `pass_turn` uncovers a dead head
+without disturbing the refinement.
+
+The promotion family had to be rewritten for it.  `promoteOps` assigned the
+promoted readers **consecutive** tickets, which was right while every
+outstanding ticket carried a request and is false the moment one does not:
+the reader that would have taken the withdrawn ticket is a different core
+from the one the spec promotes.  `promoteFrom` and `readerAdmitFrom` read the
+ticket and the core off the ledger instead, retiring tombstones as they come,
+so the correspondence holds by construction rather than by arithmetic.
+`promoteFrom_preserves_queuedSim` deliberately does **not** take
+`queuedHeadLive` as a hypothesis: a promotion is reached through a
+`pass_turn`, so demanding a live head would make it unusable at the one place
+it is used.
+
+### One block shape for both branches (LC2.6–LC2.7)
+
+`queuedBlock` gains `cancel_noop` and `cancel_queued`.  The second covers
+*both* cases `queued_rw_lock.rs` branches on, and publishing first is what
+makes it so: if the withdrawing core was not the head, the served ticket is
+still live and the skip loop is empty — "publish and return", with somebody
+ahead retiring the ticket when they pass; if it *was* the head, its own
+ticket is now a tombstone and the loop retires it and any that follow.  The
+implementation's head check is the loop's first iteration rather than a
+separate path, which is also why the publish may not be moved after it.
+
+The FIFO capstone is restated over live entries: the `i`-th waiter is the
+`i`-th live entry, holding some outstanding ticket.  That is a **sharper**
+claim than the `now_serving + offset + i` it replaces, not a weaker one —
+the arithmetic form is simply false once anything has withdrawn, and
+position is what FIFO is about.
+
+### What is still open
+
+`QueuedRwLock` has no `cancel()`: this cut is the refinement, so the Rust
+protocol lands against proofs rather than ahead of them (LC3).  Neither
+two-phase-locking unwind emits a withdrawal yet (LC4), and no bound on this
+surface is denominated in time (LC5).
+
+Refs: docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md §4 (LC2)
+
 ## v0.34.50 — a queued core may take its request back
 
 **WS-LC LC1 (all eighteen sub-tasks), opening the workstream that closes the

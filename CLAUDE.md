@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.50.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.51.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,10 +203,10 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~52397 lines)
+- `CHANGELOG.md` (~52846 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22582 lines)
-- `tests/SmpInformationFlowSuite.lean` (~11772 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~8191 lines)
+- `tests/SmpInformationFlowSuite.lean` (~11784 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~8882 lines)
 - `SeLe4n/Kernel/API.lean` (~6926 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5742 lines)
 - `SeLe4n/Platform/Boot.lean` (~5724 lines)
@@ -215,11 +215,11 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5001 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4750 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
+- `docs/spec/SELE4N_SPEC.md` (~4528 lines)
 - `SeLe4n/Model/State.lean` (~4503 lines)
-- `docs/spec/SELE4N_SPEC.md` (~4492 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
 - `tests/NegativeStateSuite.lean` (~4115 lines)
-- `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~3947 lines)
+- `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~3987 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3919 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRead.lean` (~3788 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (~3456 lines)
@@ -239,6 +239,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Platform/FFI.lean` (~2880 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~2844 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2784 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (~2776 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~2755 lines)
 - `SeLe4n/Kernel/Capability/Operations.lean` (~2674 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2639 lines)
@@ -278,7 +279,6 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md` (~1889 lines)
 - `tests/InformationFlowSuite.lean` (~1885 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1859 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (~1843 lines)
 - `SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean` (~1833 lines)
 - `SeLe4n/Model/FreezeProofs.lean` (~1827 lines)
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1822 lines)
@@ -297,7 +297,7 @@ To find files that need pagination today, run:
 - `tests/FaultHandlingSuite.lean` (~1660 lines)
 - `tests/SmpIpcSuite.lean` (~1660 lines)
 - `tests/SyscallDispatchSuite.lean` (~1645 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` (~1617 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` (~1640 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1508 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~1491 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~1488 lines)
@@ -311,22 +311,22 @@ To find files that need pagination today, run:
 - `docs/dev_history/AUDIT_v0.23.21_WORKSTREAM_PLAN.md` (~1411 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~1394 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean` (~1393 lines)
-- `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~1388 lines)
+- `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~1392 lines)
 - `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md` (~1382 lines)
 - `tests/LockSetSuite.lean` (~1377 lines)
 - `docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` (~1370 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
+- `tests/SmpSurfaceAnchors.lean` (~1337 lines)
 - `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1326 lines)
 - `tests/FrozenOpsSuite.lean` (~1324 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1317 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~1296 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1294 lines)
-- `tests/SmpSurfaceAnchors.lean` (~1292 lines)
 - `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1291 lines)
 - `SeLe4n/Kernel/InformationFlow/Taint.lean` (~1261 lines)
+- `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1261 lines)
 - `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
-- `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1252 lines)
 - `tests/SmpCancellationSuite.lean` (~1246 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean` (~1241 lines)
 - `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean` (~1235 lines)
@@ -370,7 +370,7 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` (~924 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_COMPREHENSIVE.md` (~921 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
-- `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~906 lines)
+- `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~877 lines)
@@ -1329,7 +1329,7 @@ SGI INTID 0..4 reserved for kernel SMP coordination (SM0.H).
 [`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md);
 per-phase plans at `docs/planning/SMP_*.md`.
 
-### WS-LC Lock datatype completion — IN FLIGHT (v0.34.50 → v0.34.53)
+### WS-LC Lock datatype completion — IN FLIGHT (v0.34.50 → v0.34.54)
 
 The two SM2.C **datatype** residuals RR6 re-registered rather than absorbed —
 `RwLockOp` had no withdrawal and `RwLockExecution` no notion of time.  Scoped
@@ -1340,12 +1340,13 @@ footprints unwindable.
 | Phase | Status | Version | Scope (one line — detail in the canonical sources) |
 |-------|--------|---------|----------------------------------------------------|
 | LC1 | LANDED | v0.34.50 | The abstract withdrawal: `RwLockOp.cancel`, INV-R preservation, the liveness restatement, the CAS-retry bridge |
-| LC2 | NOT STARTED | — | The deployed withdrawal: tombstoned ledger, skip prefix, `QueuedRwLock::cancel`, loom/miri, Tier-5 |
-| LC3 | NOT STARTED | — | The two-phase-locking consumers: `cancelAll`, the revalidated refusal unwind, the `withLockSet` unwind |
-| LC4 | NOT STARTED | — | SM2.C-T: the timed execution and the cycle-denominated bounds; LC4.10 retires both debt rows |
+| LC2 | LANDED | v0.34.51 | The ticket-FIFO refinement of the withdrawal: the withdrawal word, skip-aware promotion, the capstones over live entries |
+| LC3 | NOT STARTED | — | The deployed withdrawal: `QueuedRwLock::cancel`, loom, miri, Tier-5, and the foreign-function surface |
+| LC4 | NOT STARTED | — | The two-phase-locking consumers: `cancelAll`, the revalidated refusal unwind, the `withLockSet` unwind |
+| LC5 | NOT STARTED | — | SM2.C-T: the timed execution and the cycle-denominated bounds; LC5.10 retires both debt rows |
 
 **Plan**: [`docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md`](docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md)
-(51 sub-tasks across LC1..LC4).
+(53 sub-tasks across LC1..LC5).
 
 ### Standing constraints and registered debt
 
@@ -2143,17 +2144,41 @@ code may assume:
   the alphabet bound carry it, and `lockContentionRun` carries it per step, so
   an accepted run supplies it for free.  (2) **`leave_waiters_implies_holder`
   has a third disjunct**, not a narrower hypothesis — withdrawing *is* a way to
-  leave the queue.  (3) **The deployed lock cannot withdraw yet.**
-  `QueuedRwLock` has no `cancel()`, and the ticket-FIFO refinement bridge
-  covers only cancel-free traces — stated as the theorem
-  `ListQueuedBlocks_cancel_free`, which is written to *break* when the
-  withdrawal block is added rather than to sit as an omission.  The CAS-retry
-  bridge does relate it (`opCorresponds.cancel_no_queue`,
-  `honestBlock.cancel_no_queue`), honestly: a queueless lock performs no atomic
-  access for a withdrawal.  (4) **No 2PL unwind emits one yet**, so
+  leave the queue.  (3) **Both refinement bridges relate it.**  The CAS-retry
+  one honestly performs no atomic access (`opCorresponds.cancel_no_queue`,
+  `honestBlock.cancel_no_queue`) — a queueless lock has no queue for a
+  withdrawal to disturb.  The ticket-FIFO one (v0.34.51) carries it properly;
+  see the next bullet.  (4) **No 2PL unwind emits one yet**, so
   `RevalidatedEntryOutcome.refused` and `withLockSet`'s shrinking phase still
   release what was granted and leave what was merely requested.  WS-LC phases
-  LC2 and LC3 close those two.
+  LC3 and LC4 close that and the deployed half.
+- **The ticket lock's ledger tombstones; the queue it represents is the
+  *live* one** (WS-LC LC2, v0.34.51).  `now_serving` owes one advance per
+  ticket ever issued, so a withdrawal cannot remove a ticket from the middle
+  of the interval — `QueuedRwLockConcrete.cancelled` (the implementation's
+  per-core slot array) marks it instead, and `liveLedger` is the ledger minus
+  those.  Five things new code must respect.  (1) **`ledgerTickets` is
+  unchanged**: the ticket column is still exactly `[now_serving,
+  next_ticket)`, so `await_turn`'s spin bound and every other arithmetic
+  consequence are untouched.  What moved is `queuedSim`'s queue conjunct,
+  which now reads `liveLedger`.  (2) **`queuedSim` has a fourth conjunct**,
+  `queuedHeadLive`: the served ticket is never a tombstone.  It is a
+  *block-boundary* property — a `pass_turn` uncovers a head that may be
+  withdrawn, and the skip loop restores it before the block ends — which is
+  why it is not in `QueuedTicketWf`.  With it, "no live request" and "no
+  outstanding ticket" are the same statement, so the calm-lock block shapes
+  are as they were.  (3) **A turn may be passed only for a ticket nobody has
+  withdrawn** (`opEnabled`), so a skip must *claim* the slot first; the claim
+  is a compare-exchange and it is the arbiter between the canceller and the
+  previous holder's loop.  (4) **Promotion is read off the ledger, not
+  computed from the served ticket**: `promoteFrom` / `readerAdmitFrom` walk
+  the live entries and retire tombstones between them, because the old
+  `promoteOps` gave promoted readers *consecutive* tickets, which a mid-queue
+  withdrawal falsifies.  (5) **The FIFO capstone is about position, not
+  arithmetic**: `queuedRwLock_admits_in_spec_order` says the `i`-th waiter is
+  the `i`-th live entry, holding some outstanding ticket — a sharper claim
+  than the `now_serving + offset + i` it replaces, since that formula is
+  simply false once anything has withdrawn.
 - **Registered uncovered lock domains** are enumerated in Lean, not in prose:
   `UncoveredLockDomain` (`InformationFlow/FineLockFlow.lean`) names each gap and
   its owner, and its completeness theorem forces a new domain to be registered.

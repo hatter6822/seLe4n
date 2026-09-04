@@ -1,12 +1,12 @@
 # WS-LC — Lock datatype completion (the two SM2.C residuals)
 
 > **Status**: IN FLIGHT — **LC1 LANDED at v0.34.50** (all eighteen sub-tasks);
-> LC2..LC4 not started.
+> **LC2 LANDED at v0.34.51** (all eight); LC3..LC5 not started.
 > **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Predecessor**: [`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md) RR6 (v0.34.49), which closed SM2.C-defer's refinement work and deliberately did not absorb these two
 > **Debt rows closed**: `docs/REGISTERED_DEBT.md` table C — **SM2.C-T** and **SM2.C-C**
 > **Target releases**: v0.34.50 → v0.34.53
-> **Sub-task count**: 51 across 4 phases (LC1..LC4), each phase numbered in
+> **Sub-task count**: 53 across 5 phases (LC1..LC5), each phase numbered in
 > the order it is to be implemented
 
 ## 1. Phase goal
@@ -39,9 +39,11 @@ covered is being un-covered; a documented model limitation is being closed.
    live changes.
 2. **LC2** — the *deployed* `QueuedRwLock` can withdraw a mid-queue ticket, and
    the ticket-FIFO refinement relates that to the abstract operation.
-3. **LC3** — the two consumers: `revalidatedEntry`'s refusal path and
+3. **LC3** — the deployed `QueuedRwLock` gains `cancel()`, with the loom,
+   miri and Tier-5 coverage that makes the race argument evidence.
+4. **LC4** — the two consumers: `revalidatedEntry`'s refusal path and
    `withLockSet`'s shrinking phase both perform a full unwind.
-4. **LC4** — SM2.C-T: the execution carries a per-step cost, so the CC-5
+5. **LC5** — SM2.C-T: the execution carries a per-step cost, so the CC-5
    contention bound and the release budget have a cycle denomination.
 
 ## 2. Scope and sequencing
@@ -51,29 +53,35 @@ covered is being un-covered; a documented model limitation is being closed.
 | Phase | Scope | Sub-tasks | Size | Version |
 |-------|-------|-----------|------|---------|
 | LC1 | The abstract cancel, its invariant preservation, the liveness restatement, and the CAS-retry bridge | 18 | L | v0.34.50 |
-| LC2 | The queued lock's withdrawal: tombstoned ledger, skip prefix, Rust protocol, loom/miri, Tier-5 | 13 | L | v0.34.51 |
-| LC3 | The two-phase-locking consumers: `cancelAll`, the revalidated refusal unwind, the `withLockSet` unwind | 9 | M | v0.34.52 |
-| LC4 | SM2.C-T: the timed execution and the cycle-denominated bounds | 11 | M | v0.34.53 |
+| LC2 | The ticket-FIFO refinement of the withdrawal: the withdrawal word, skip-aware promotion, and the capstones over live entries | 8 | L | v0.34.51 |
+| LC3 | The deployed withdrawal: `QueuedRwLock::cancel`, loom, miri, Tier-5, and the foreign-function surface | 7 | L | v0.34.52 |
+| LC4 | The two-phase-locking consumers: `cancelAll`, the revalidated refusal unwind, the `withLockSet` unwind | 9 | M | v0.34.53 |
+| LC5 | SM2.C-T: the timed execution and the cycle-denominated bounds | 11 | M | v0.34.54 |
 
 ### 2.2 Why this order
 
-**LC1 before LC2** is the semantic half of the numbering rule: LC2 makes a
-concrete transition reachable, and the abstract operation it refines — with its
-invariant preservation — must exist first, or the deployed lock would gain a
-withdrawal three sub-tasks ahead of the theorems that cover it.
+**LC1 before LC2** is the semantic half of the numbering rule: the abstract
+operation and its invariant preservation must exist before anything refines it.
 
-**LC2 before LC3** for the same reason one level up: LC3's `withLockSet` unwind
-is live on the `.tcbSuspend` arm, so the operation it emits must already be
-refined by the lock the kernel instantiates.
+**LC2 before LC3** for the same reason one level down: LC3 makes a *concrete*
+transition reachable — the deployed lock gains a withdrawal — so the refinement
+that covers it lands first.  This is also why the two were split, having been
+scoped as one phase: the ticket-FIFO bridge needs **skip-aware promotion**
+(crux 1), which is a rewrite of the promotion op family and its preservation
+lemma, and a cut carrying that *and* the Rust protocol with its loom coverage
+would not be one coherent slice.
 
-**LC4 last** because the cancel changes *which* liveness conclusions hold —
+**LC3 before LC4** one level up again: LC4's `withLockSet` unwind is live on
+the `.tcbSuspend` arm, so the operation it emits must already be performed by
+the lock the kernel instantiates.
+
+**LC5 last** because the cancel changes *which* liveness conclusions hold —
 "becomes the holder" gains a no-withdrawal premise, "leaves the queue" does not
 — and the cycle layer should be built on the final statements rather than
 restated after them.
 
-**No phases may overlap.** LC1 and LC4 both edit `Locks/RwLock.lean`; LC2 and
-LC3 both edit `Locks/WithLockSet.lean` and the Rust lock bridge. Sequential
-execution is the contract.
+**No phases may overlap.** LC1 and LC5 both edit `Locks/RwLock.lean`; LC3 and
+LC4 both edit the Rust lock bridge. Sequential execution is the contract.
 
 ### 2.3 Three design cruxes, decided up front
 
@@ -137,34 +145,48 @@ bridge's cancel-free restriction is a proved theorem rather than an omission.
 | LC1.13 | The wait-depth family re-audited: the persistence disjunctions gain a withdrawal alternative, and the depth inequalities are confirmed to run in the safe direction — a withdrawal ahead of you only *decreases* your depth | LC1.12 | `queued_writer_persists_or_admitted`, `queued_persists_or_admitted_at_mode` |
 | LC1.14 | The payoff theorems a two-phase-locking unwind cites: the request is gone, nobody else's is disturbed, the order is preserved, nobody is admitted, nobody waits longer, and a withdrawal is not an effective release | LC1.13 | `rwLock_cancel_removes_request`, `rwLock_cancel_admits_no_one`, `rwLock_cancel_not_effective_release` |
 | LC1.15 | The CAS-retry bridge: a withdrawal performs no atomic access on a queueless lock, stated explicitly rather than absorbed by the polymorphic no-op constructor, plus the two derived-lemma arms it forces | LC1.14 | `opCorresponds.cancel_no_queue`, `honestBlock.cancel_no_queue` |
-| LC1.16 | The queued bridge's restriction made explicit and self-invalidating: every trace the ticket-FIFO block relation covers is proved cancel-free, so the omission is a theorem that *breaks* when the withdrawal block is added | LC1.15 | `ListQueuedBlocks_cancel_free` |
+| LC1.16 | The queued bridge's restriction made explicit and self-invalidating: every trace the ticket-FIFO block relation covers is proved cancel-free, so the omission is a theorem that *breaks* when the withdrawal block is added | LC1.15 | the restriction theorem (retired one phase later, when it became false) |
 | LC1.17 | The CC-5 contention chain threaded through `InformationFlow/FineLockFlow.lean`: the delay bound, its wall-clock composition, both mode instances, the alphabet bound, the inventory tie-in, the run predicate, and both typed evidence arms | LC1.12 | `lockContention_delay_bounded`, `lockContentionRun` |
 | LC1.18 | Anchors, suites, the lock inventory and its four count sites, the phase-theorem manifest, the documentation sync, and the version cut | LC1.17 | Tier 0-3 green; `check_lock_ffi_symmetry.sh` |
 
-## 4. LC2 — the deployed cancel
+## 4. LC2 — the ticket-FIFO refinement of the withdrawal
 
-**Acceptance**: `QueuedRwLock::cancel` withdraws a **mid-queue** ticket without
-stalling the lock or admitting two cores; the ticket-FIFO refinement relates it
-to `RwLockOp.cancel`; loom is decisive against two relation-breaking mutations;
-and the Tier-5 oracle exercises the new letter in both languages.
+**Acceptance**: the deployed lock's concrete model carries a withdrawal, the
+protocol invariant is preserved by it, promotion retires tombstones instead of
+mistaking them for waiters, and `queuedRwLock_refines_rwLockSpec` /
+`queuedRwLock_admits_in_spec_order` hold over traces that contain withdrawals —
+so the cancel-free restriction theorem is deleted because it has become false,
+not because it was dropped.
 
 | ID | Sub-task | Consumes | Evidence |
 |----|----------|----------|----------|
-| LC2.1 | The tombstoned ledger: `Nat × Option CoreId`, the live-entry projection, and the well-formedness conjunct that every withdrawn ticket was issued | — | `QueuedTicketWf` elaborates with the contiguity conjunct unchanged |
-| LC2.2 | The withdrawal instruction in the concrete operation type, its `applyOp` arm, and the `QueuedTicketWf.preserved` case | LC2.1 | `QueuedTicketWf.preserved` |
-| LC2.3 | The simulation relation's holder-column conjunct restated over live entries, and the three consequences that read it | LC2.2 | `queuedSim_waiter_ticket`, `queuedSim_outstanding` |
-| LC2.4 | Generalise the stutter prefix to a **skip** prefix, so a turn-pass may step past a withdrawn head — the piece that made this phase separable from the abstract one | LC2.3 | `queued_await_turn_terminates` survives |
-| LC2.5 | The withdrawal block in the queued block relation and its preservation arm; the cancel-free restriction theorem is deleted in the same commit that makes it false | LC2.4 | the block relation elaborates; the restriction theorem is gone |
-| LC2.6 | The two capstones restated over live entries — a sharper claim than the old one, since admission order is still ticket order | LC2.5 | `queuedRwLock_refines_rwLockSpec`, `queuedRwLock_admits_in_spec_order` |
-| LC2.7 | The Rust protocol: the per-core withdrawal slot array, `cancel()` with publish-then-check, and the bounded skip loop in `pass_turn` with compare-and-swap arbitration | LC2.6 | `cargo test`; the build script's protocol needles still hold |
-| LC2.8 | Loom models: mutual exclusion under a mid-queue withdrawal, the ticket interval closing when a withdrawn ticket is skipped, a withdrawal racing a turn-pass from both sides, and a withdrawal of an already-served ticket | LC2.7 | `scripts/test_loom_queued_rw_lock.sh` |
-| LC2.9 | Gate decisiveness by **relation-breaking** mutation, per the project's own rule: keep the withdrawal call and move its publish *after* the head check; keep the skip loop and delete only the arbitration. Each must fail a model | LC2.8 | both mutations red |
-| LC2.10 | Unit tests and miri under strict provenance, at the iteration counts the existing harness scales | LC2.9 | `scripts/test_miri_queued_rw_lock.sh` |
-| LC2.11 | Tier-5: widen both oracles' alphabet in the same commit, and **re-derive** the ticket-interval check rather than patching its constant — with tombstones the outstanding count is no longer a function of the writer bit | LC2.10 | `scripts/test_tier5_cross_language.sh` |
-| LC2.12 | Expose the withdrawal across the foreign-function bridge, since the unwind's caller is on the Lean side and a Lean-only operation would be unreachable from the runtime | LC2.11 | `check_lock_ffi_symmetry.sh` |
-| LC2.13 | Anchors, inventory, documentation sync, and the version cut | LC2.12 | Tier 0-3 green; cross build green |
+| LC2.1 | The withdrawal **word** (the implementation's per-core slot array, abstracted to the published-and-unclaimed ticket set), the live-entry projection, and the two well-formedness conjuncts that pin it — every published withdrawal names an outstanding ticket, and the published tickets are distinct | — | `QueuedTicketWf` elaborates with its contiguity conjunct unchanged |
+| LC2.2 | The three concrete ops — the slot load, the publish, and the **arbiter** compare-exchange — with their `applyOp` arms, their preconditions, and the pass-turn precondition that makes the invariant hold: a turn may be passed only for a ticket that is *not* published as withdrawn, so a skip must claim first | LC2.1 | `QueuedTicketWf.preserved` |
+| LC2.3 | **Skip-aware promotion**: the promotion op family read off the concrete ledger rather than off the abstract waiter list, so a tombstone is retired rather than counted as the next waiter.  The rewrite this phase exists for — the current family assigns promoted waiters consecutive tickets, which a withdrawal in the middle of the queue falsifies | LC2.2 | the promotion family elaborates against a ledger with a tombstone |
+| LC2.4 | The promotion preservation lemma re-proved over the ledger-driven family | LC2.3 | `promoteOps_preserves_queuedSim` |
+| LC2.5 | The simulation relation's holder-column conjunct restated over **live** entries, and the four consequences that read it — the outstanding count, the empty characterization, the head waiter, and the waiter-to-ticket correspondence, which becomes "the `i`-th live entry" | LC2.4 | `queuedSim_waiter_ticket`, `queuedSim_outstanding` |
+| LC2.6 | The withdrawal's own block shapes — at the head (the canceller claims and passes itself) and mid-queue (it publishes and returns) — plus the skip **suffix** every releasing block admits, and their step lemmas | LC2.5 | the block relation covers `RwLockOp.cancel` |
+| LC2.7 | The two capstones restated over live entries — a sharper claim than the old one, since admission order is still ticket order — and the cancel-free restriction theorem deleted in the same commit that makes it false | LC2.6 | `queuedRwLock_refines_rwLockSpec`, `queuedRwLock_admits_in_spec_order`; the restriction theorem is gone |
+| LC2.8 | Anchors, inventory, documentation sync, and the version cut | LC2.7 | Tier 0-3 green |
 
-## 5. LC3 — the two-phase-locking consumers
+## 5. LC3 — the deployed withdrawal
+
+**Acceptance**: `QueuedRwLock::cancel` withdraws a **mid-queue** ticket without
+stalling the lock or admitting two cores; loom is decisive against two
+relation-breaking mutations; miri is clean under strict provenance; and the
+Tier-5 oracle exercises the new letter in both languages.
+
+| ID | Sub-task | Consumes | Evidence |
+|----|----------|----------|----------|
+| LC3.1 | The per-core withdrawal slot array and `cancel()` with **publish-then-check**: publish the withdrawal, then test whether we are the head.  Ordering is the whole protocol — a check before the publish loses the race in the direction that stalls the lock | LC2.8 | `cargo test`; the build script's protocol needles still hold |
+| LC3.2 | The bounded skip loop in `pass_turn`, with compare-and-swap **arbitration** so exactly one of {the canceller, the previous holder} clears a given slot and advances past it | LC3.1 | the loop terminates in at most one pass per slot |
+| LC3.3 | Loom models: mutual exclusion under a mid-queue withdrawal, the ticket interval closing when a withdrawn ticket is skipped, a withdrawal racing a turn-pass from both sides, and a withdrawal of an already-served ticket | LC3.2 | `scripts/test_loom_queued_rw_lock.sh` |
+| LC3.4 | Gate decisiveness by **relation-breaking** mutation, per the project's own rule: keep the withdrawal call and move its publish *after* the head check; keep the skip loop and delete only the arbitration.  Each must fail a model | LC3.3 | both mutations red |
+| LC3.5 | Unit tests and miri under strict provenance, at the iteration counts the existing harness scales | LC3.4 | `scripts/test_miri_queued_rw_lock.sh` |
+| LC3.6 | Tier-5: widen both oracles' alphabet in the same commit, and **re-derive** the ticket-interval check rather than patching its constant — with tombstones the outstanding count is no longer a function of the writer bit | LC3.5 | `scripts/test_tier5_cross_language.sh` |
+| LC3.7 | The foreign-function surface (the unwind's caller is on the Lean side, so a Rust-only operation would be unreachable from the runtime), anchors, inventory, documentation sync, and the version cut | LC3.6 | `check_lock_ffi_symmetry.sh`; cross build green |
+
+## 6. LC4 — the two-phase-locking consumers
 
 **Acceptance**: a refused revalidated entry withdraws every request its growing
 phase queued, `withLockSet`'s shrinking phase is release-or-withdraw on every
@@ -173,17 +195,17 @@ over the new fold, and the golden trace is byte-identical.
 
 | ID | Sub-task | Consumes | Evidence |
 |----|----------|----------|----------|
-| LC3.1 | `AccessMode.toCancelOp` beside its acquire and release siblings, and the `cancelAll` fold over a reversed acquisition sequence | — | the two definitions and their unfold lemmas |
-| LC3.2 | The revalidated entry's refusal path becomes a full unwind; the "what released does and does not mean" caveat is deleted and replaced by the theorem that makes it true | LC3.1 | the refusal releases *and* withdraws |
-| LC3.3 | The typed evidence arm for the refusal claim re-proved over the new outcome, and the non-holder release theorem's docstring corrected — the theorem stays, its statement about the tree changes | LC3.2 | `fineLockClaimEvidence` elaborates |
-| LC3.4 | `withLockSet`'s shrinking phase becomes release-or-withdraw on each member, keeping the bracket projection-invisible | LC3.3 | `withLockSet_unfold` |
-| LC3.5 | The strict two-phase-locking results re-proved over the new fold | LC3.4 | `strictly_2pl_preserved` |
-| LC3.6 | The serializability results re-proved over the new fold | LC3.5 | the conflict-serializability capstones |
-| LC3.7 | The dynamic chain extension swept the same way, since it uses the same folds | LC3.6 | `withDynamicChainExtension` elaborates |
-| LC3.8 | Suites and the golden trace: the bracket is invisible to the projection, so the fixture must be **byte-identical**, not regenerated | LC3.7 | `tests/fixtures/main_trace_smoke.expected` unchanged |
-| LC3.9 | Anchors, inventory, documentation sync, and the version cut | LC3.8 | Tier 0-3 green |
+| LC4.1 | `AccessMode.toCancelOp` beside its acquire and release siblings, and the `cancelAll` fold over a reversed acquisition sequence | LC3.7 | the two definitions and their unfold lemmas |
+| LC4.2 | The revalidated entry's refusal path becomes a full unwind; the "what released does and does not mean" caveat is deleted and replaced by the theorem that makes it true | LC4.1 | the refusal releases *and* withdraws |
+| LC4.3 | The typed evidence arm for the refusal claim re-proved over the new outcome, and the non-holder release theorem's docstring corrected — the theorem stays, its statement about the tree changes | LC4.2 | `fineLockClaimEvidence` elaborates |
+| LC4.4 | `withLockSet`'s shrinking phase becomes release-or-withdraw on each member, keeping the bracket projection-invisible | LC4.3 | `withLockSet_unfold` |
+| LC4.5 | The strict two-phase-locking results re-proved over the new fold | LC4.4 | `strictly_2pl_preserved` |
+| LC4.6 | The serializability results re-proved over the new fold | LC4.5 | the conflict-serializability capstones |
+| LC4.7 | The dynamic chain extension swept the same way, since it uses the same folds | LC4.6 | `withDynamicChainExtension` elaborates |
+| LC4.8 | Suites and the golden trace: the bracket is invisible to the projection, so the fixture must be **byte-identical**, not regenerated | LC4.7 | `tests/fixtures/main_trace_smoke.expected` unchanged |
+| LC4.9 | Anchors, inventory, documentation sync, and the version cut | LC4.8 | Tier 0-3 green |
 
-## 6. LC4 — SM2.C-T, the timed execution
+## 7. LC5 — SM2.C-T, the timed execution
 
 **Acceptance**: `RwLockExecution` carries a per-step cost with no default; the
 CC-5 contention bound has a cycle-denominated form that instantiates to the
@@ -193,17 +215,17 @@ only per lock operation.
 
 | ID | Sub-task | Consumes | Evidence |
 |----|----------|----------|----------|
-| LC4.1 | The `stepCost` field with no default, every construction site declaring its cost model, and an early check that the decidable fairness fixtures still reduce with a function field present | — | one fixture verified before the rest are touched |
-| LC4.2 | Elapsed time across a step interval and the bounded-critical-section predicate, as Props about the field rather than structure invariants | LC4.1 | the two definitions |
-| LC4.3 | The writer's cycle-denominated capstone, derived from the existing step bound | LC4.2 | the capstone instantiates to the step bound at unit cost |
-| LC4.4 | The mode-generic twin, which must move with the writer form or the definitional bridge between the two wait depths breaks | LC4.3 | both elaborate |
-| LC4.5 | The release budget's unit made explicit, with the counter-to-tick conversions built on the existing timer model so the placeholder gains a real hardware meaning | LC4.4 | the conversion lemmas |
-| LC4.6 | The wall-clock contention bound reads the execution's own cost rather than taking one as an argument; the generic form is kept as the general statement, and the debt comment block is replaced by the result | LC4.5 | `lockContention_wallClock_bounded` |
-| LC4.7 | The two docstrings that say the figure is per lock operation and not per unit time, corrected — the per-unit-time form now exists | LC4.6 | no such sentence remains |
-| LC4.8 | The two typed evidence arms that inline full statements, updated with the theorems | LC4.7 | `fineLockClaimEvidence` elaborates |
-| LC4.9 | The lock inventory's unit-bearing description strings and any entries whose denomination changed | LC4.8 | `check_lock_ffi_symmetry.sh` |
-| LC4.10 | Closure: both debt rows out of table C, the workstream registry row added, and the status index and standing constraints updated to stop naming the two residuals as open | LC4.9 | `docs/REGISTERED_DEBT.md` |
-| LC4.11 | Anchors, documentation sync, the regenerated maps, and the version cut | LC4.10 | Tier 0-3 green |
+| LC5.1 | The per-step cost field with no default, every construction site declaring its cost model, and an early check that the decidable fairness fixtures still reduce with a function field present | LC4.9 | one fixture verified before the rest are touched |
+| LC5.2 | Elapsed time across a step interval and the bounded-critical-section predicate, as Props about the field rather than structure invariants | LC5.1 | the two definitions |
+| LC5.3 | The writer's cycle-denominated capstone, derived from the existing step bound | LC5.2 | the capstone instantiates to the step bound at unit cost |
+| LC5.4 | The mode-generic twin, which must move with the writer form or the definitional bridge between the two wait depths breaks | LC5.3 | both elaborate |
+| LC5.5 | The release budget's unit made explicit, with the counter-to-tick conversions built on the existing timer model so the placeholder gains a real hardware meaning | LC5.4 | the conversion lemmas |
+| LC5.6 | The wall-clock contention bound reads the execution's own cost rather than taking one as an argument; the generic form is kept as the general statement, and the debt comment block is replaced by the result | LC5.5 | `lockContention_wallClock_bounded` |
+| LC5.7 | The two docstrings that say the figure is per lock operation and not per unit time, corrected — the per-unit-time form now exists | LC5.6 | no such sentence remains |
+| LC5.8 | The two typed evidence arms that inline full statements, updated with the theorems | LC5.7 | `fineLockClaimEvidence` elaborates |
+| LC5.9 | The lock inventory's unit-bearing description strings and any entries whose denomination changed | LC5.8 | `check_lock_ffi_symmetry.sh` |
+| LC5.10 | Closure: both debt rows out of table C, and the status index and standing constraints updated to stop naming the two residuals as open | LC5.9 | `docs/REGISTERED_DEBT.md` |
+| LC5.11 | Anchors, documentation sync, the regenerated maps, and the version cut | LC5.10 | Tier 0-3 green |
 
 ## 7. Verification
 
@@ -230,5 +252,6 @@ git add -A && python3 scripts/check_identifier_naming.py
 |---|---|
 | The largest liveness proof cannot absorb the withdrawal case | Attempt it first inside LC1, before the cheaper sites, so the design is revisited while little is spent |
 | The Rust withdrawal race is subtle | Loom is written before the implementation is called correct, and its decisiveness is proved by mutation rather than asserted |
-| A function field breaks the decidable fixtures on the execution type | LC4.1 verifies this on one fixture before the rest are touched |
-| The ticket-interval check is silently weakened rather than re-derived | LC2.11 requires re-derivation from the tombstoned invariant; a patched constant is a review failure |
+| Skip-aware promotion is a rewrite of a 130-line preservation lemma | It is LC2.3–LC2.4's whole content, scheduled before anything depends on it, and it is why the deployed protocol is a separate phase |
+| A function field breaks the decidable fixtures on the execution type | LC5.1 verifies this on one fixture before the rest are touched |
+| The ticket-interval check is silently weakened rather than re-derived | LC3.6 requires re-derivation from the tombstoned invariant; a patched constant is a review failure |

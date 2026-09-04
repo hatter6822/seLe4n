@@ -6709,10 +6709,10 @@ import SeLe4n.Kernel.Concurrency.Locks.QueuedRwLockRefinement
 #check @SeLe4n.Kernel.Concurrency.takeTicketOps
 #check @SeLe4n.Kernel.Concurrency.readerEnterOps
 #check @SeLe4n.Kernel.Concurrency.writerEnterOps
-#check @SeLe4n.Kernel.Concurrency.readerAdmitOps
 #check @SeLe4n.Kernel.Concurrency.releaseWriteOps
-#check @SeLe4n.Kernel.Concurrency.promoteOps
-#check @SeLe4n.Kernel.Concurrency.promoteOps_preserves_queuedSim
+#check @SeLe4n.Kernel.Concurrency.readerAdmitFrom
+#check @SeLe4n.Kernel.Concurrency.promoteFrom
+#check @SeLe4n.Kernel.Concurrency.promoteFrom_preserves_queuedSim
 #check @SeLe4n.Kernel.Concurrency.queuedBlock
 #check @SeLe4n.Kernel.Concurrency.queuedBlock_preserves_queuedSim
 -- Trace composition, stated so it does NOT take its own per-block
@@ -6722,7 +6722,16 @@ import SeLe4n.Kernel.Concurrency.Locks.QueuedRwLockRefinement
 -- The payoff: the deployed lock refines the Lean FIFO spec end to
 -- end, and admits in the spec order.
 -- The queued bridge covers cancel-free traces only, and says so.
-#check @SeLe4n.Kernel.Concurrency.ListQueuedBlocks_cancel_free
+#check @SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete.liveLedger
+#check @SeLe4n.Kernel.Concurrency.queuedHeadLive
+#check @SeLe4n.Kernel.Concurrency.skipDeadOps
+#check @SeLe4n.Kernel.Concurrency.skipDeadOps_spec
+#check @SeLe4n.Kernel.Concurrency.readerAdmitFrom
+#check @SeLe4n.Kernel.Concurrency.readerAdmitFrom_spec
+#check @SeLe4n.Kernel.Concurrency.promoteFrom
+#check @SeLe4n.Kernel.Concurrency.promoteFrom_preserves_queuedSim
+#check @SeLe4n.Kernel.Concurrency.queuedBlock_step_cancel_noop
+#check @SeLe4n.Kernel.Concurrency.queuedBlock_step_cancel_queued
 #check @SeLe4n.Kernel.Concurrency.queuedRwLock_refines_rwLockSpec
 #check @SeLe4n.Kernel.Concurrency.queuedRwLock_admits_in_spec_order
 EOF'
