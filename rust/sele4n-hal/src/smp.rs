@@ -291,6 +291,36 @@ pub extern "C" fn secondary_entry() {
 ///      wake immediately.
 ///
 /// Returns the number of secondaries successfully brought up.
+/// **PR #889 review round 23**: how many of the first `expected` PEs have
+/// published `CORE_IRQ_READY`, waiting up to `max_ticks` for stragglers.
+///
+/// `bring_up_secondaries` returns the number of PSCI `CPU_ON` calls that were
+/// accepted, which is a *proxy* for "this PE will service kernel work": it is
+/// incremented before the secondary has executed any of its own init, so a PE
+/// that halts in MMU, GIC or timer setup — or an `AlreadyOn` PE that never
+/// reaches [`secondary_entry`] — still counts.  [`CORE_IRQ_READY`] is the fact:
+/// core `c` sets it *itself* after `enable_irq`, and the shootdown protocol
+/// already treats it as the IRQ-serviceable set.
+///
+/// The wait is **bounded** so a PE that never publishes makes the caller's
+/// topology check *fail* rather than hang; the count returned at expiry is the
+/// honest one.  Returns early as soon as every expected PE is ready, so the
+/// common case costs one pass.
+pub fn irq_ready_core_count_within(expected: u32, max_ticks: u64) -> u32 {
+    let expected = (expected as usize).min(CORE_IRQ_READY.len());
+    let mut waited: u64 = 0;
+    loop {
+        let ready = CORE_IRQ_READY[..expected]
+            .iter()
+            .filter(|flag| flag.load(Ordering::Acquire))
+            .count() as u32;
+        if ready as usize == expected || waited >= max_ticks {
+            return ready;
+        }
+        waited = waited.saturating_add(crate::cpu::wfe_bounded(max_ticks - waited).max(1));
+    }
+}
+
 pub fn bring_up_secondaries_inner(
     enabled: &AtomicBool,
     core_ready: &[AtomicBool],

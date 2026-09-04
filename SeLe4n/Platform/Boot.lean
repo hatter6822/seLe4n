@@ -1043,6 +1043,33 @@ def embeddedIdentityBootError : String :=
 def wellFormedNoFaultBootError : String :=
   "boot: platform config rejected with no failing well-formedness conjunct (unreachable)"
 
+/-- **PR #889 review round 23**: the refusal for a configuration that declares
+no PEs, or more than the model has.  A plain constant, like its siblings: the
+error arms are scrutinised structurally by `split`, and an interpolation where
+the dependent elimination expects a literal fails. -/
+def declaredCoreCountBootError : String :=
+  "PlatformConfig.machineConfig.declaredCoreCount must be between 1 and numCores"
+
+/-- **PR #889 review round 23**: the configuration declares between one and
+`numCores` PEs.
+
+`MachineConfig.declaredCoreCount` had an upper bound only — round 22's
+`declaredCoresOfConfig` clamps a too-large count to `allCores`, and said nothing
+about zero.  At zero the derivation yields the *empty* core list, so the boot
+installs no idle thread on any core and enqueues no runnable fallback, while
+`bootAffinitiesDeclared []` is satisfied by any config whose TCBs are unpinned.
+Such a boot returns `.ok` and its first scheduling point finds `currentOnCore`
+empty on every core with nothing to select — the machine is not merely narrow,
+it has nowhere to run.
+
+`numCores_pos` makes the range non-empty, so this refuses exactly the degenerate
+count and nothing a real deployment declares.  The upper bound is stated here
+too rather than left to the clamp: a config asking for more PEs than the model
+has is a mistake worth a diagnostic, not something to silently widen. -/
+def declaredCoreCountInRange (config : PlatformConfig) : Bool :=
+  0 < config.machineConfig.declaredCoreCount &&
+    config.machineConfig.declaredCoreCount ≤ SeLe4n.Kernel.Concurrency.numCores
+
 /-- U6-E/F: A well-formed PlatformConfig has unique IRQs, unique object IDs,
     (WS-RR RR5.13, PR #889 review) keeps the per-core idle slots free,
     (PR #889 review rounds 7 and 8) stores every TCB, SchedContext and Reply
@@ -1051,14 +1078,21 @@ def wellFormedNoFaultBootError : String :=
 def PlatformConfig.wellFormed (config : PlatformConfig) : Bool :=
   irqsUnique config.irqTable && objectIdsUnique config.initialObjects &&
     idleSlotsReserved config && embeddedIdentitiesMatchSlots config &&
-    objectBudgetRespected config
+    objectBudgetRespected config && declaredCoreCountInRange config
+
+/-- **PR #889 review round 23**: a well-formed config declares at least one PE
+    and no more than the model has.  Zero is what this refuses: the derivation
+    would hand the boot an empty core list, so no core would get an idle thread
+    and the first scheduling point would find nothing to select anywhere. -/
+theorem PlatformConfig.wellFormed_declaredCoreCountInRange (config : PlatformConfig)
+    (h : config.wellFormed = true) : declaredCoreCountInRange config = true := by
+  simp_all only [PlatformConfig.wellFormed, Bool.and_eq_true]
 
 /-- PR #889 review round 18: a well-formed config leaves room for the boot
     root and the idle threads. -/
 theorem PlatformConfig.wellFormed_objectBudgetRespected (config : PlatformConfig)
     (h : config.wellFormed = true) : objectBudgetRespected config = true := by
-  simp only [PlatformConfig.wellFormed, Bool.and_eq_true] at h
-  exact h.2
+  simp_all only [PlatformConfig.wellFormed, Bool.and_eq_true]
 
 /-- PR #889 review round 19 (maintainer follow-up): the `wellFormed` conjuncts
     paired with the diagnostic each one owns.
@@ -1076,7 +1110,8 @@ def wellFormedConjuncts (config : PlatformConfig) : List (Bool × String) :=
    (objectIdsUnique config.initialObjects, objectIdDuplicateBootError),
    (idleSlotsReserved config, idleSlotReservationBootError),
    (embeddedIdentitiesMatchSlots config, embeddedIdentityBootError),
-   (objectBudgetRespected config, objectBudgetBootError)]
+   (objectBudgetRespected config, objectBudgetBootError),
+   (declaredCoreCountInRange config, declaredCoreCountBootError)]
 
 /-- The first conjunct `config` fails, reported in its own words. -/
 def wellFormedDiagnostic (config : PlatformConfig) : String :=
@@ -1107,18 +1142,30 @@ theorem wellFormedDiagnostic_reports_a_fault (config : PlatformConfig)
       rw [hAll] at h
       exact absurd h (by simp)
 
+/-- **PR #889 review round 23**: a well-formed config has a duplicate-free IRQ
+    table.  Added to complete the accessor family: the two call sites that
+    needed this fact were writing their own projection path into the
+    conjunction, which is the thing that breaks every time a conjunct is
+    added. -/
+theorem PlatformConfig.wellFormed_irqsUnique (config : PlatformConfig)
+    (h : config.wellFormed = true) : irqsUnique config.irqTable = true := by
+  simp_all only [PlatformConfig.wellFormed, Bool.and_eq_true]
+
+/-- **PR #889 review round 23**: ...and duplicate-free object ids. -/
+theorem PlatformConfig.wellFormed_objectIdsUnique (config : PlatformConfig)
+    (h : config.wellFormed = true) : objectIdsUnique config.initialObjects = true := by
+  simp_all only [PlatformConfig.wellFormed, Bool.and_eq_true]
+
 /-- **WS-RR RR5.13**: a well-formed config reserves the idle slots. -/
 theorem PlatformConfig.wellFormed_idleSlotsReserved (config : PlatformConfig)
     (h : config.wellFormed = true) : idleSlotsReserved config = true := by
-  simp only [PlatformConfig.wellFormed, Bool.and_eq_true] at h
-  exact h.1.1.2
+  simp_all only [PlatformConfig.wellFormed, Bool.and_eq_true]
 
 /-- PR #889 review round 8: a well-formed config stores every id-carrying
     object under its own id. -/
 theorem PlatformConfig.wellFormed_embeddedIdentitiesMatchSlots (config : PlatformConfig)
     (h : config.wellFormed = true) : embeddedIdentitiesMatchSlots config = true := by
-  simp only [PlatformConfig.wellFormed, Bool.and_eq_true] at h
-  exact h.1.2
+  simp_all only [PlatformConfig.wellFormed, Bool.and_eq_true]
 
 /-- PR #889 review round 7: a well-formed config stores every TCB under its
     own thread id. -/
@@ -2030,11 +2077,11 @@ theorem bootFromPlatformWithWarnings_wellFormed_no_warnings (config : PlatformCo
   constructor
   · -- irqsUnique holds when wellFormed
     have : irqsUnique config.irqTable = true := by
-      unfold PlatformConfig.wellFormed at hWf; simp [Bool.and_eq_true] at hWf; exact hWf.1.1.1.1
+      exact PlatformConfig.wellFormed_irqsUnique config hWf
     simp [this]
   · -- objectIdsUnique holds when wellFormed
     have : objectIdsUnique config.initialObjects = true := by
-      unfold PlatformConfig.wellFormed at hWf; simp [Bool.and_eq_true] at hWf; exact hWf.1.1.1.2
+      exact PlatformConfig.wellFormed_objectIdsUnique config hWf
     simp [this]
 
 -- ============================================================================

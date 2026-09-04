@@ -876,6 +876,36 @@ private def runBootValidationParityChecks : IO Unit := do
   assertBool "the same object just below the idle range is accepted"
     (SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads neighbour).toOption.isSome
 
+/-- §**PR #889 review round 23**: a configuration must declare at least one PE.
+
+Round 22's `declaredCoresOfConfig` clamped the count from above and said nothing
+about zero, where the derivation yields the **empty** core list: no idle thread
+is installed on any core, `bootAffinitiesDeclared []` is satisfied by any config
+whose TCBs are unpinned, and the boot returns `.ok` with nowhere to run.  These
+assert the refusal, its diagnostic, and — in both directions — that a legitimate
+narrow count is still accepted. -/
+private def runDeclaredCoreCountChecks : IO Unit := do
+  IO.println "--- PR #889 round 23: a config must declare 1..numCores PEs ---"
+  let withCount (n : Nat) : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [], initialObjects := [],
+      machineConfig := { SeLe4n.defaultMachineConfig with declaredCoreCount := n } }
+  assertBool "a zero declared-core config is not well-formed"
+    ((withCount 0).wellFormed == false)
+  assertBool "...and its refusal names the declared-core count, not another conjunct"
+    (SeLe4n.Platform.Boot.wellFormedDiagnostic (withCount 0) ==
+      SeLe4n.Platform.Boot.declaredCoreCountBootError)
+  assertBool "a zero declared-core config is refused by the checked boot"
+    ((SeLe4n.Platform.Boot.bootFromPlatformChecked (withCount 0)).isOk == false)
+  -- The bound is narrow: one PE is a legitimate deployment, and the full width
+  -- is what every existing fixture declares.
+  assertBool "a single-PE config is well-formed"
+    ((withCount 1).wellFormed == true)
+  assertBool "a full-width config is well-formed"
+    ((withCount SeLe4n.Kernel.Concurrency.numCores).wellFormed == true)
+  -- ...and a count above the model is refused rather than silently widened.
+  assertBool "a config declaring more PEs than the model has is refused"
+    ((withCount (SeLe4n.Kernel.Concurrency.numCores + 1)).wellFormed == false)
+
 /-- PR #889 review round 18: a successful boot must leave the object index
     inside `maxObjects`.  Nothing bounded the count before: the checked boot
     did not, and the idle fold adds one entry per core on top of it, so a
@@ -958,6 +988,7 @@ def runSmpIdleChecks : IO Unit := do
   runBootIdleChecks
   runBootValidationParityChecks
   runObjectBudgetChecks
+  runDeclaredCoreCountChecks
   IO.println "===================================="
   IO.println "All SM5.E per-core idle thread checks PASS."
 

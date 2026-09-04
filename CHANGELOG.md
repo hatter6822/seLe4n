@@ -1141,6 +1141,62 @@ the **kernel**, the second live defect any round has found outside the gates.
   disables the bare spelling for the file — conservative, and the remedy is a
   qualifier.
 
+### The review round, twenty-third pass — a proxy is not the fact, and a bound has two sides
+
+Two findings, both against round 21/22's own answers.
+
+**A proxy is not the fact.**  Round 21's handoff refusal compared `1 + online`
+against the linked kernel's declared PE count, and `online` is the number of
+PSCI `CPU_ON` calls that returned `Success` or `AlreadyOn` —
+`bring_up_secondaries_inner` increments it *before the secondary has executed a
+single instruction of its own init*.  A PE that halts in MMU, GIC or timer
+setup, or an `AlreadyOn` PE that never reaches `secondary_entry`, still counts;
+`running_cores` stays at four, the refusal does not fire, and the Lean machine
+then permits affinities and shootdowns to a PE that cannot service them.
+
+The fact was already in the tree: `smp::CORE_IRQ_READY[c]` is set by core `c`
+**itself** after `enable_irq`, and `shootdown.rs` has read it as the
+IRQ-serviceable set all along.  `irq_ready_core_count_within` waits for it,
+**bounded** — a PE that never publishes must make the boot *fail*, not hang, so
+the wait has a ceiling and the count returned at expiry is the honest one — and
+returns early once every expected PE is ready, so the common case costs one
+pass.  The diagnostic now prints both numbers, since the gap between them is
+exactly the diagnosis.
+
+That is the round-22 rule in the case where the second "implementation" is a
+*stand-in*: when a cheap number sits beside the expensive fact, check which one
+the property is about.
+
+**A bound has two sides.**  Round 22's `declaredCoresOfConfig` clamped
+`declaredCoreCount` from above — `declaredCoresOfConfig_length_le` — and said
+nothing about zero.  At zero the derivation yields the **empty** core list: the
+boot installs no idle thread on any core, `bootAffinitiesDeclared []` is
+satisfied by any config whose TCBs are unpinned, and the boot returns `.ok` with
+`currentOnCore` empty everywhere and nothing to select.  The machine is not
+narrow, it has nowhere to run.
+
+`declaredCoreCountInRange` is `PlatformConfig.wellFormed`'s sixth conjunct, with
+its own diagnostic in the round-19 pairing, so the refusal names the count
+rather than another conjunct's fault.  Six runtime assertions in
+`tests/SmpIdleSuite.lean` state both directions — zero refused, the diagnostic
+correct, the checked boot refusing it, one PE accepted, full width accepted, and
+a count above the model refused rather than silently widened.
+
+**Two mechanical lessons, both earned twice.**  Adding the conjunct shifted
+every projection path into the `wellFormed` conjunction, exactly as round 18's
+addition had; the accessors are now `simp_all only [PlatformConfig.wellFormed,
+Bool.and_eq_true]` and depend on no nesting at all, and the family is complete
+(`wellFormed_irqsUnique` / `wellFormed_objectIdsUnique` were missing, so two
+call sites had been writing their own paths).  And a Tier 3 anchor written as
+`objectBudgetRespected config$` broke the moment a conjunct followed it —
+anchors on the conjunct list's pairing, the form round 19 made canonical, do
+not.
+
+Verified by mutation in both directions: dropping the conjunct from `wellFormed`
+while leaving it in the list fails `wellFormed_eq_all_conjuncts` (round 19's pin
+doing its job), and dropping the `0 <` while keeping the predicate, the conjunct
+and the diagnostic fails the runtime witness.
+
 ### The review round, twenty-second pass — one question, two answers
 
 Three findings, and they are one shape: **a question implemented twice, with

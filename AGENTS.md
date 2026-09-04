@@ -211,7 +211,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5738 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~5186 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5127 lines)
-- `SeLe4n/Platform/Boot.lean` (~5127 lines)
+- `SeLe4n/Platform/Boot.lean` (~5724 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~4997 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4750 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
@@ -948,6 +948,32 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   object code is not built — it answers the *same* question and
   under-approximates, so the divergence direction is a false missing symbol
   rather than a false provider.
+
+  **And a proxy is not the fact** (PR #889 review round 23).  The corollary of
+  the rule above, for the case where the second "implementation" is a
+  *stand-in*: `bring_up_secondaries` returns how many PSCI `CPU_ON` calls were
+  accepted, and the round-21 handoff compared that against the declared PE
+  count — but the number is incremented before the secondary has executed any
+  of its own init, so a PE that halts in MMU, GIC or timer setup, or an
+  `AlreadyOn` PE that never reaches `secondary_entry`, still counts.  The fact
+  is `smp::CORE_IRQ_READY[c]`, which core `c` publishes *itself* after
+  `enable_irq` and which the shootdown protocol already reads as the
+  IRQ-serviceable set.  `irq_ready_core_count_within` waits for it, **bounded**,
+  so a PE that never publishes makes the boot *fail* rather than hang.  When a
+  cheap number is available beside the expensive fact, check which one the
+  property is about.
+
+  **And a bound has two sides.**  Round 22's `declaredCoresOfConfig` clamped
+  `declaredCoreCount` from above and said nothing about zero, where the
+  derivation yields the *empty* core list: no idle thread on any core,
+  `bootAffinitiesDeclared []` satisfied by any unpinned config, and a boot that
+  returns `.ok` with nowhere to run.  `declaredCoreCountInRange` is
+  `wellFormed`'s sixth conjunct.  Two mechanical notes from adding it, both
+  earned twice now: projection paths into the `wellFormed` conjunction shift
+  whenever a conjunct is added, so the accessors are `simp_all only [...]` and
+  depend on no nesting; and a Tier 3 anchor written as `X config$` breaks the
+  moment a conjunct follows `X`, so anchors name the conjunct-list pairing
+  round 19 made canonical instead.
 
 - **Invariant/Operations split**: each kernel subsystem has
   `Operations.lean` (transitions) and `Invariant.lean` (proofs). Keep

@@ -28,6 +28,15 @@ const KERNEL_VERSION: &str = "0.34.48";
 /// refused at Phase 6 rather than stranding threads on PEs that do not exist.
 const LEAN_DECLARED_CORE_COUNT: u32 = 4;
 
+/// **PR #889 review round 23**: how long the handoff waits for every declared
+/// PE to publish `CORE_IRQ_READY` before refusing the topology.
+///
+/// Bounded on purpose: a secondary that never publishes must make the boot
+/// *fail*, not hang, so the wait has a ceiling and the refusal below is what
+/// runs when it expires.  The unit is `wfe_bounded` ticks, the same clock the
+/// shootdown protocol's bounded waits use.
+const SECONDARY_READY_TIMEOUT_TICKS: u64 = crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS * 16;
+
 /// Rust entry point called from assembly `_start` after BSS zeroing and
 /// stack setup. Receives the DTB pointer from U-Boot in x0.
 ///
@@ -374,12 +383,28 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
         // `coreCount`, exactly as `SimSingleCorePlatform` does; `smp_enabled=false`
         // remains fully supported for a HAL-only image, which links no Lean
         // kernel and never reaches this block.
-        let running_cores = 1 + online;
+        // PR #889 review round 23: `online` counts PSCI `CPU_ON` calls that
+        // returned `Success` or `AlreadyOn` — a *proxy* for "this PE will
+        // service kernel work", incremented before the secondary has run a
+        // single instruction of its own init.  A PE can still halt in MMU, GIC
+        // or timer setup, and an `AlreadyOn` PE may never reach
+        // `secondary_entry` at all, while `online` stays at three.  The fact
+        // itself is `CORE_IRQ_READY[c]`, which core `c` publishes *itself*
+        // after `enable_irq` and which `shootdown.rs` already reads as the
+        // IRQ-serviceable set — so this waits for it, bounded, rather than
+        // trusting the proxy.  A core that never publishes leaves
+        // `running_cores` short and the topology refusal below fires.
+        let running_cores = crate::smp::irq_ready_core_count_within(
+            LEAN_DECLARED_CORE_COUNT,
+            SECONDARY_READY_TIMEOUT_TICKS,
+        );
         if running_cores != LEAN_DECLARED_CORE_COUNT {
             crate::kprintln!(
-                "[boot] FATAL: {} PE(s) online but the linked Lean kernel declares {}",
+                "[boot] FATAL: {} PE(s) IRQ-ready but the linked Lean kernel declares {} \
+                 ({} PSCI CPU_ON call(s) succeeded)",
                 running_cores,
-                LEAN_DECLARED_CORE_COUNT
+                LEAN_DECLARED_CORE_COUNT,
+                1 + online
             );
             // PR #889 review round 22: `halt_all`, not `fatal_halt`.  This
             // condition is reached *after* the secondaries that did start have

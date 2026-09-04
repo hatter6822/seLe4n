@@ -5203,6 +5203,20 @@ run_check "INVARIANT" rg -n 'collect_lean_exports_from_file\(lean_library_root' 
 # provenance is decided by excluding dependency roots, the shell view skips
 # balanced parameter expansions, and the live affinity path is bounded by the
 # PEs the platform declares.
+# PR #889 review round 23: the handoff waits for the readiness fact the tree
+# already publishes rather than trusting the PSCI-return proxy, and a
+# configuration must declare between one and numCores PEs — round 22's
+# derivation bounded the count from above only, and at zero the boot installs
+# no idle thread on any core.
+run_check "INVARIANT" rg -n '^pub fn irq_ready_core_count_within' rust/sele4n-hal/src/smp.rs
+run_check "INVARIANT" rg -nF 'crate::smp::irq_ready_core_count_within(' rust/sele4n-hal/src/boot.rs
+run_negative_check "INVARIANT" rg -nF 'let running_cores = 1 + online;' rust/sele4n-hal/src/boot.rs
+run_check "INVARIANT" rg -n '^const SECONDARY_READY_TIMEOUT_TICKS' rust/sele4n-hal/src/boot.rs
+run_check "INVARIANT" rg -n '^def declaredCoreCountInRange' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -nF '0 < config.machineConfig.declaredCoreCount' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -nF 'objectBudgetRespected config && declaredCoreCountInRange config' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -nF '(declaredCoreCountInRange config, declaredCoreCountBootError)' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem PlatformConfig.wellFormed_declaredCoreCountInRange' SeLe4n/Platform/Boot.lean
 # PR #889 review round 22: one question answered in two places diverges.  The
 # generic boot wrapper derives its core list from the configuration that the
 # machine will carry (it hardcoded `allCores` while `applyMachineConfig`
@@ -5266,7 +5280,10 @@ run_check "INVARIANT" rg -n 'private def bootEntryWitnessConditional' SeLe4n/Tes
 run_check "INVARIANT" rg -n 'private def bootEntryWitnessWrongType' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n 'private def bootEntryWitnessSequenced' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n '^def objectBudgetRespected' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n 'objectBudgetRespected config$' SeLe4n/Platform/Boot.lean
+# PR #889 review round 23: repointed off the end-of-line spelling, which broke
+# the moment a sixth conjunct followed it in `wellFormed`.  The conjunct-list
+# pairing is the stable form and is what round 19 made canonical.
+run_check "INVARIANT" rg -nF '(objectBudgetRespected config, objectBudgetBootError)' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_objectIndexBounded' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreads_objectIndexBounded' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem foldl_enqueueIdleThread_objectIndex_length_le' SeLe4n/Platform/Boot.lean

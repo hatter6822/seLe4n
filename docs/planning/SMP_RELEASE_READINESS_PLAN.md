@@ -797,6 +797,22 @@ passes `allowOpaque := true`, and what it still cannot see (a foreign
 was reported as an embedded-identity mismatch — the defect round 2 fixed for the
 idle-slot reservation, repeated by the same omission.
 
+**Review round 23 (PR #889, same version).**  Two, both against rounds 21/22's
+own answers, and both corollaries of round 22's rule.  *A proxy is not the
+fact*: the handoff compared PSCI `CPU_ON` acceptances against the declared PE
+count, while the fact — `CORE_IRQ_READY`, published by each core after
+`enable_irq` and already read by the shootdown protocol — says whether the PE
+will service work at all; the wait for it is bounded so a PE that never
+publishes fails the boot rather than hanging it.  *A bound has two sides*:
+round 22 clamped `declaredCoreCount` from above and left zero, where the boot
+installs no idle thread anywhere and returns `.ok` with nothing to run;
+`declaredCoreCountInRange` is `wellFormed`'s sixth conjunct.
+
+Two mechanical notes worth carrying: projection paths into the `wellFormed`
+conjunction shift on every addition (the accessors are nesting-independent
+now), and a Tier 3 anchor written against a line's *end* breaks when a conjunct
+is appended (anchors name the conjunct-list pairing instead).
+
 **Review round 22 (PR #889, same version).**  Three, and one shape: a question
 implemented twice with only one implementation right.  The generic boot wrapper
 passed `allCores` while the machine it installed carried a narrower
