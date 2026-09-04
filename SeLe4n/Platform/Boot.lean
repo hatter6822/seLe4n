@@ -218,7 +218,10 @@ def applyMachineConfig (ist : IntermediateState) (config : MachineConfig) :
       pageSize := config.pageSize
       maxASID := config.maxASID
       memoryMap := config.memoryMap
-      registerCount := config.registerCount } }
+      registerCount := config.registerCount
+      -- PR #889 review round 20: the declared PE count travels with the rest
+      -- of the machine description, so the live affinity check can read it.
+      declaredCoreCount := config.declaredCoreCount } }
   hAllTables := ist.hAllTables
   hPerObjectSlots := ist.hPerObjectSlots
   hPerObjectMappings := ist.hPerObjectMappings
@@ -266,6 +269,13 @@ theorem applyMachineConfig_objects_eq (ist : IntermediateState) (config : Machin
 theorem applyMachineConfig_physicalAddressWidth (ist : IntermediateState) (config : MachineConfig) :
     (applyMachineConfig ist config).state.machine.physicalAddressWidth =
     config.physicalAddressWidth := rfl
+
+/-- **PR #889 review round 20**: `applyMachineConfig` sets `declaredCoreCount`
+    from config — the first link in the chain that carries a binding's PE count
+    into the live state the affinity transition reads. -/
+theorem applyMachineConfig_declaredCoreCount (ist : IntermediateState) (config : MachineConfig) :
+    (applyMachineConfig ist config).state.machine.declaredCoreCount =
+    config.declaredCoreCount := rfl
 
 /-- AG3-B: `applyMachineConfig` sets `registerWidth` from config. -/
 theorem applyMachineConfig_registerWidth (ist : IntermediateState) (config : MachineConfig) :
@@ -468,6 +478,12 @@ theorem bootEnableInterruptsOp_objectIndex_eq (ist : IntermediateState) :
 theorem bootEnableInterruptsOp_physicalAddressWidth_eq (ist : IntermediateState) :
     (bootEnableInterruptsOp ist).state.machine.physicalAddressWidth =
       ist.state.machine.physicalAddressWidth := rfl
+
+/-- **PR #889 review round 20**: `bootEnableInterruptsOp` preserves the declared
+    PE count — it writes `interruptsEnabled` and nothing else. -/
+theorem bootEnableInterruptsOp_declaredCoreCount_eq (ist : IntermediateState) :
+    (bootEnableInterruptsOp ist).state.machine.declaredCoreCount =
+      ist.state.machine.declaredCoreCount := rfl
 
 /-- AK9-G: `bootEnableInterruptsOp` preserves machine.memoryMap. -/
 theorem bootEnableInterruptsOp_memoryMap_eq (ist : IntermediateState) :
@@ -3787,6 +3803,32 @@ theorem bootFromPlatformChecked_ok_objectIndex_length_le (config : PlatformConfi
     simp only [bootEnableInterruptsOp_objectIndex, installBootVSpaceRoot]
     exact Nat.le_trans (createObject_objectIndex_length_le _ _ _ _ _) (by omega)
 
+/-- **PR #889 review round 20**: the unchecked boot installs the config's
+    declared PE count.  `applyMachineConfig` is the only writer of `machine`
+    on this path, and the two folds beneath it leave `machine` alone. -/
+theorem bootFromPlatform_machine_declaredCoreCount (config : PlatformConfig) :
+    (bootFromPlatform config).state.machine.declaredCoreCount =
+    config.machineConfig.declaredCoreCount := by
+  show _ = _; unfold bootFromPlatform
+  rw [applyMachineConfig_declaredCoreCount]
+
+/-- **PR #889 review round 20**: ...and the checked boot's two shapes preserve
+    it — `installBootVSpaceRoot` writes the object store and the ASID table,
+    `bootEnableInterruptsOp` writes one machine flag, neither touches the PE
+    count. -/
+theorem bootFromPlatformChecked_ok_declaredCoreCount (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformChecked config = .ok ist) :
+    ist.state.machine.declaredCoreCount = config.machineConfig.declaredCoreCount := by
+  obtain ⟨_, _, hShape⟩ := bootFromPlatformChecked_ok_shape config ist h
+  rcases hShape with ⟨_, hEq⟩ | ⟨entry, _, hEq⟩
+  · subst hEq
+    rw [bootEnableInterruptsOp_declaredCoreCount_eq]
+    exact bootFromPlatform_machine_declaredCoreCount config
+  · subst hEq
+    rw [bootEnableInterruptsOp_declaredCoreCount_eq]
+    show (bootFromPlatform config).state.machine.declaredCoreCount = _
+    exact bootFromPlatform_machine_declaredCoreCount config
+
 /-- The idle enqueue adds at most one index entry: it stores one TCB, and the
     run-queue write beside it leaves the object index alone. -/
 theorem enqueueIdleThread_objectIndex_length_le (ist : IntermediateState)
@@ -3896,6 +3938,33 @@ theorem bootFromPlatformCheckedWithIdleThreads_machine (config : PlatformConfig)
   injection h' with h'
   rw [← h']
   exact foldl_enqueueIdleThread_machine _ ist
+
+/-- **PR #889 review round 20**: the production boot state carries the config's
+    declared PE count, whichever core list the binding supplies.
+
+    This is the link that makes `PlatformBinding.declaredCoreCountAgrees`
+    operative: the boot enforces the binding's `coreCount`
+    (`bootAffinitiesDeclared`, round 15), while the live affinity transition
+    reads `SystemState.machine.declaredCoreCount`, because a kernel transition
+    sees the machine and not the binding.  With the obligation discharged by
+    every binding, the two are the same number on any state this entry
+    produces. -/
+theorem bootFromPlatformCheckedWithIdleThreadsFor_declaredCoreCount
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
+    (ist' : IntermediateState)
+    (h : bootFromPlatformCheckedWithIdleThreadsFor cores config = .ok ist') :
+    ist'.state.machine.declaredCoreCount = config.machineConfig.declaredCoreCount := by
+  unfold bootFromPlatformCheckedWithIdleThreadsFor at h
+  cases hChecked : bootFromPlatformChecked config with
+  | error e => rw [hChecked] at h; simp [Except.bind] at h
+  | ok ist =>
+      rw [hChecked] at h
+      simp only [Except.bind] at h
+      split at h
+      · injection h with h
+        rw [← h, foldl_enqueueIdleThread_machine]
+        exact bootFromPlatformChecked_ok_declaredCoreCount config ist hChecked
+      · cases h
 
 /-- **WS-RR RR5.13**: every core's current slot is still `none` after the idle
     enqueue.

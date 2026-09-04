@@ -153,18 +153,45 @@ def isExecutableDeclaration (env : Environment) (n : Name) : Bool :=
   | some _ => true
   | none => false
 
-/-- Is `n` this project's?  Only project declarations are walked: a constant
-from Lean core or `Std` was compiled before these references existed and
-cannot name them.  A declaration with no defining module is one being
-elaborated right now — the witnesses below — and is walked, which is the
-fail-closed answer. -/
+/-- The module roots of the **precompiled dependencies**: code that was built
+before this project's references existed and therefore cannot name them.
+
+The list is of what to *skip*, not of what to walk (PR #889 review round 20).
+Round 18 asked whether the defining module's root was `SeLe4n`, which is a
+claim about naming rather than about provenance: a same-repository top-level
+module — `SeLe4n.lean` importing a `HardwareBoot`, say — would have been
+skipped, and an entry there could call the approved wrapper and then
+`initialiseKernelState` with no bypass reported.  Inverted, an unclassified
+root is *walked*, so the failure direction of an omission is a slower scan
+rather than a missed installer.
+
+Stated honestly: on today's environment the two rules agree, because the only
+non-dependency root present *is* `SeLe4n` — so no witness here can separate
+them.  What makes the inversion load-bearing is the reconciliation below: a new
+top-level module in the production closure fails the build before it can be
+mis-skipped, and the exclusion rule is then the one that is already right. -/
+def dependencyModuleRoots : List Name := [`Init, `Lean, `Std, `Lake]
+
+/-- Is `n` this project's — that is, not a precompiled dependency's?
+
+A declaration with no defining module is one being elaborated right now (the
+witnesses below) and is walked. -/
 def isProjectDeclaration (env : Environment) (n : Name) : Bool :=
   match env.getModuleIdxFor? n with
   | some index =>
       match env.header.moduleNames[index.toNat]? with
-      | some name => Name.getRoot name == `SeLe4n
+      | some name => !dependencyModuleRoots.contains (Name.getRoot name)
       | none => true
   | none => true
+
+/-- Every module root this environment carries.  Reconciled below against
+`dependencyModuleRoots` plus this project's own, so a new top-level module in
+the production closure fails the build until someone classifies it — the
+enumeration is pinned rather than trusted. -/
+def moduleRootsPresent (env : Environment) : List Name :=
+  env.header.moduleNames.foldl (init := ([] : List Name)) fun acc «module» =>
+    let root := Name.getRoot «module»
+    if acc.contains root then acc else root :: acc
 
 /-- The first declaration reachable from `frontier` that installs kernel state,
 not descending into `stop`.
@@ -194,6 +221,49 @@ partial def unapprovedKernelStateWrite (env : Environment) (stop : Std.HashSet N
             | some value => value.getUsedConstants.toList
             | none => []
           unapprovedKernelStateWrite env stop (rest ++ next) seen
+
+/-- The Rust symbols the Lean halt primitives bind to.  The seeds of the
+never-returning derivation, and the one thing about it that is written down: a
+Lean rename is picked up automatically, a Rust rename fails the pin below. -/
+def haltPrimitiveSymbols : List String := ["ffi_fatal_halt", "ffi_fatal_halt_all"]
+
+/-- The C symbol `n`'s `@[extern]` binds to, when it has one. -/
+def externSymbol? (env : Environment) (n : Name) : Option String :=
+  (getExternAttrData? env n).bind fun data =>
+    data.entries.findSome? fun entry =>
+      match entry with
+      | .standard _ symbol => some symbol
+      | _ => none
+
+/-- Does `n` never return?
+
+`ffiFatalHaltAll` is typed `BaseIO Unit` — the FFI convention, not a claim that
+it returns; the Rust side is `-> !`.  Lean's types therefore do not express
+this, and PR #889 review round 20 found the consequence: `do ffiFatalHaltAll;
+bootAndInitialiseRPi5OrHalt cfg` put the approved call on the spine while the
+PE was already parked, so an entry that boots nothing satisfied the contract.
+
+Derived rather than listed: a constant never returns if its `@[extern]` names a
+halt primitive, or if it is an *alias* of one — a body that is exactly that
+constant, modulo binders and metadata.  `Concurrency.fatalHalt` is such an
+alias; `bootAndInitialiseRPi5OrHalt`, whose body is a `match`, is not, and must
+not be, since it returns on `.ok`. -/
+partial def neverReturns (env : Environment) (n : Name) (fuel : Nat := 8) : Bool :=
+  if (externSymbol? env n).any haltPrimitiveSymbols.contains then true
+  else match fuel with
+    | 0 => false
+    | fuel + 1 =>
+        match declarationValue env n with
+        | some value =>
+            let rec strip : Expr → Option Name
+              | .mdata _ body => strip body
+              | .lam _ _ body _ => strip body
+              | .const alias _ => some alias
+              | _ => none
+            match strip value with
+            | some alias => neverReturns env alias fuel
+            | none => false
+        | none => false
 
 /-- Is `inst` the `Bind BaseIO` instance, up to definitional equality? -/
 def isCanonicalBaseIOBind (inst : Expr) : MetaM Bool := do
@@ -233,7 +303,13 @@ partial def unconditionalActions (e : Expr) : MetaM (List Expr) := do
         -- opaque action, which is not the approved call and satisfies nothing.
         if args.size < 2 then return [e]
         else if ← isCanonicalBaseIOBind args[1]! then
-          return args[args.size - 2]! :: (← unconditionalActions args[args.size - 1]!)
+          let action := args[args.size - 2]!
+          -- The continuation runs only if the action returns (PR #889 review
+          -- round 20).  A halt parks the PE, so nothing after it is reached
+          -- and nothing after it belongs on this list.
+          if (action.getAppFn.constName?).any (neverReturns (← getEnv) ·) then
+            return [action]
+          return action :: (← unconditionalActions args[args.size - 1]!)
         else return [e]
       else return [e]
   | _ => return [e]
@@ -335,6 +411,18 @@ private def bootEntryWitnessConditional (dtbPointer : UInt64) : BaseIO Unit :=
     Platform.FFI.bootAndInitialiseRPi5OrHalt (bootEntryWitnessConfig dtbPointer)
   else pure ()
 
+/-- Parks the PE and *then* boots (PR #889 review round 20).  Every token is
+present, the `Bind` instance is canonical, and the boot is unreachable. -/
+private def bootEntryWitnessHaltedFirst (dtbPointer : UInt64) : BaseIO Unit := do
+  Platform.FFI.ffiFatalHaltAll
+  Platform.FFI.bootAndInitialiseRPi5OrHalt (bootEntryWitnessConfig dtbPointer)
+
+/-- The same through an *alias* of the primitive, so the derivation is
+exercised rather than a name match. -/
+private def bootEntryWitnessAliasHaltedFirst (dtbPointer : UInt64) : BaseIO Unit := do
+  Kernel.Concurrency.fatalHaltAll
+  Platform.FFI.bootAndInitialiseRPi5OrHalt (bootEntryWitnessConfig dtbPointer)
+
 /-! The bogus-monad witness (PR #889 review round 19).  `BootEntryBogusMonad α`
 is definitionally `BaseIO Unit`, so an application of `Bind.bind` at *this*
 instance has the type the entry is pinned to — and the instance discards both
@@ -396,6 +484,26 @@ run_cmd Command.liftTermElabM do
     throwError "boot-entry contract: the production library root `SeLe4n` is not in this \
       environment, so an entry defined in a module only it imports would read as absent and \
       the contract would pass vacuously while the archive carried the symbol"
+  -- The module roots are classified.  A new top-level module in the production
+  -- closure must be judged a dependency or this project's, not silently walked
+  -- either way (PR #889 review round 20).
+  let unclassified := (moduleRootsPresent env).filter fun root =>
+    !dependencyModuleRoots.contains root && root != `SeLe4n
+  unless unclassified.isEmpty do
+    throwError "boot-entry contract: unclassified module roots {unclassified} — a module \
+      outside `SeLe4n` and outside the precompiled dependencies is in the production \
+      closure; add it to `dependencyModuleRoots` if it is one, or leave it walked and \
+      widen this reconciliation"
+  -- The never-returning derivation reaches the primitives and their aliases,
+  -- and does *not* reach the wrapper, which returns on `.ok`.
+  for halt in [`SeLe4n.Platform.FFI.ffiFatalHalt, `SeLe4n.Platform.FFI.ffiFatalHaltAll,
+               `SeLe4n.Kernel.Concurrency.fatalHalt, `SeLe4n.Kernel.Concurrency.fatalHaltAll] do
+    unless neverReturns env halt do
+      throwError "boot-entry contract: `{halt}` is not derived as never-returning, so an \
+        entry that parks the PE before booting would satisfy the action walk"
+  if neverReturns env approvedBootCall then
+    throwError "boot-entry contract: `{approvedBootCall}` is derived as never-returning, \
+      which would truncate the spine at the very call the contract requires"
   -- The write detector sees a write and does not see a read.
   unless declarationWritesKernelState env `SeLe4n.Platform.FFI.initialiseKernelState do
     throwError "boot-entry contract: the kernel-state write detector does not see \
@@ -419,14 +527,15 @@ run_cmd Command.liftTermElabM do
   for witness in [``bootEntryWitnessConditional, ``bootEntryWitnessWrongType,
                   ``bootEntryWitnessBypass, ``bootEntryWitnessSideInstall,
                   ``bootEntryWitnessUnbooted, ``bootEntryWitnessBogusBind,
-                  ``bootEntryWitnessOpaqueBypass] do
+                  ``bootEntryWitnessOpaqueBypass, ``bootEntryWitnessHaltedFirst,
+                  ``bootEntryWitnessAliasHaltedFirst] do
     if (← bootEntryContractViolations witness).isEmpty then
       throwError "boot-entry contract: the deviating witness `{witness}` was accepted"
   -- The contract itself.
   match bootEntryDeclarations env with
   | [] =>
       logInfo m!"boot-entry contract: no declaration exports `{bootEntrySymbol}` yet \
-        (SM10.1 writes it); the analysis is pinned by its nine witnesses"
+        (SM10.1 writes it); the analysis is pinned by its eleven witnesses"
   | [entry] =>
       match ← bootEntryContractViolations entry with
       | [] => logInfo m!"boot-entry contract: `{entry}` boots through `{approvedBootCall}` \

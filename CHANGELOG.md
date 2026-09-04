@@ -1141,6 +1141,81 @@ the **kernel**, the second live defect any round has found outside the gates.
   disables the bare spelling for the file — conservative, and the remedy is a
   qualifier.
 
+### The review round, twentieth pass — a declared core is not a model core
+
+Four findings.  Three are the same shape one more time — a walk or a lexer
+assumes something about what it is looking at — and the fourth is a kernel
+defect: a boot-time check with no live counterpart.
+
+**A diverging action ends the sequence.**  `unconditionalActions` walked
+`Bind.bind` to the end of the chain, so an entry that halted *before* the
+approved boot still reported the boot among its unconditional actions:
+`ffiFatalHaltAll` never returns, and everything sequenced after it is
+unreachable.  The walk now truncates at the first action that provably does not
+return — seeded from the `@[extern]` halt primitives
+(`ffi_fatal_halt`, `ffi_fatal_halt_all`, resolved by *symbol* so a Lean-side
+rename cannot lose them) and closed over aliases with bounded fuel.  Two
+witnesses, `HaltedFirst` and `AliasHaltedFirst`, keep every token the check
+reads — the approved call is right there in the body — and are refused because
+it cannot run.
+
+**Project provenance is an exclusion, not a prefix.**  The reachability walk
+skipped declarations whose module started with `SeLe4n`, which is a list of the
+project's roots — and a list cannot see a root that does not exist yet.  A
+future `SeLe4nRuntime` or a top-level helper module would have been treated as a
+dependency and its body never walked, so a bypass written there would pass.
+`isProjectDeclaration` now classifies by *excluding* the dependency roots
+(`Init`, `Lean`, `Std`, `Lake`), and the contract reconciles that list against
+the environment's own module roots at elaboration time: a new dependency root
+fails the build until it is classified, which is the direction that fails
+closed.
+
+**A `${…}` inside `$( … )` is not a closing paren.**  `check_identifier_naming`'s
+recursive shell view closed a command substitution at the first unbalanced `)`,
+and `${x:-(}` supplies one, so the rest of the substitution body — identifiers
+included — fell out of the scanned region.  `parameter_expansion_end` skips a
+balanced `${…}` (mutually recursive with the substitution scanner, since either
+may nest in the other), with four witnesses added to the gate's own suite.
+
+**And a declared core is not a model core.**  `PlatformBinding.coreCount` says
+how many PEs a platform has, `SimSingleCorePlatform` declares one, and round
+15's `bootAffinitiesDeclared` refuses a *configured* TCB pinned outside that
+set.  The live path had no such bound: `decodeAffinity` accepts any
+`v < numCores`, so `.tcbSetAffinity` could migrate a thread onto core 3 of a
+one-PE machine the instant after a successful boot — enqueued on a run queue
+nothing services, with the reschedule SGI sent to a core that cannot take it,
+and no error returned.  A boot-time check with no live counterpart is not a
+bound; it is a bound on the *configuration*.
+
+The count now travels with the machine it describes, which is the only thing a
+kernel transition can read: `MachineConfig.declaredCoreCount` →
+`applyMachineConfig` → `MachineState.declaredCoreCount` →
+`setThreadCpuAffinityWithMigration`, proved end to end
+(`bootFromPlatformChecked_ok_declaredCoreCount`,
+`bootFromPlatformCheckedWithIdleThreadsFor_declaredCoreCount`).  It defaults to
+`numCores`, so the refusal is inert on every existing state and fixture, and
+narrows only where a binding declares fewer.
+
+The two halves are held together rather than restated.  `PlatformBinding` gains
+`declaredCoreCountAgrees : machineConfig.declaredCoreCount = coreCount`, so the
+number the *boot* enforces and the number the *transition* reads are one fact
+with two names; `simSingleCoreMachineConfig` is the one machine config that had
+to change, because the single-core binding was sharing the four-PE
+`simMachineConfig` — which *is* the reported bug, and the obligation now names
+it (`Tactic 'decide' proved that … simMachineConfig.declaredCoreCount = 1 is
+false`).  `setThreadCpuAffinityWithMigration_rejects_undeclared_core` proves the
+refusal commits nothing, and
+`setThreadCpuAffinityWithMigration_none_passes_declared_check` proves unpinning
+is never caught by it — a bound, not a second way to fail.  The runtime
+scenario asserts both directions: the same core-1 request is refused on a
+one-PE machine and accepted on a four-PE one.
+
+Mutation-tested by breaking the relation while keeping the token: a guard that
+reads `numCores` instead of `st.machine.declaredCoreCount` is still a
+declared-core guard, still refuses *some* cores, and fails both transition
+theorems; a single-core binding that keeps `machineConfig := simMachineConfig`
+still declares `coreCount := 1` and fails its own obligation.
+
 ### The review round, nineteenth pass — the instance decides, and an `opaque` is not a leaf
 
 Three findings, two of them against round 18's own answers and both of the same

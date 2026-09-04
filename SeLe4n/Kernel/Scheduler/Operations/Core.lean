@@ -1990,6 +1990,17 @@ def setThreadCpuAffinityWithMigration (st : SystemState) (targetTid : SeLe4n.Thr
     Except KernelError (SystemState × Option (CoreId × SgiKind)) :=
   match st.getTcb? targetTid with
   | some tcb =>
+      -- PR #889 review round 20: a core the platform does not have is not a
+      -- home.  The model is `numCores` wide and a binding may declare fewer
+      -- (`SimSingleCorePlatform` declares one); RR5's `bootAffinitiesDeclared`
+      -- refuses a *configured* TCB pinned outside that set, and this is the
+      -- same relation on the live path — without it a thread migrates onto an
+      -- absent PE, is queued where nothing runs it, and the reschedule SGI
+      -- goes to a core that cannot take it.  Inert on a full-width machine,
+      -- since `declaredCoreCount` defaults to `numCores`.
+      if affinity.any (fun c => c.val ≥ st.machine.declaredCoreCount) then
+        .error .invalidArgument
+      else
       -- #2 (Codex P1 review): reject rebinding a thread currently RUNNING on a core
       -- its new affinity would forbid.  Dequeue-on-dispatch means such a target is in
       -- no run queue, so `migrateRunQueueOnAffinityChange` cannot move it off the old
@@ -2081,7 +2092,9 @@ theorem setThreadCpuAffinityOnCore_state_core_independent (st : SystemState)
   split
   · split
     · rfl
-    · split <;> rfl
+    · split
+      · rfl
+      · split <;> rfl
   · rfl
 
 /-- WS-SM SM8.B: and hence the retained boot-core op agrees with the per-core

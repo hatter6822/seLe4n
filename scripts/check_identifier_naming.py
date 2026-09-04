@@ -869,9 +869,73 @@ def command_substitution_end(text: str, at: int) -> int:
                 return -1
             j = k + 1
             continue
+        # PR #889 review round 20: a parameter expansion is a brace-delimited
+        # region in which `)` is *pattern text*, not structure.  Bash accepts
+        # `x="$(echo ${y%)} ok)"` — verified — and closing on the `)` inside
+        # `${y%)}` ended the substitution early, so `strip_shell` blanked live
+        # code after it and every identifier there stopped being scanned.
+        if c == "$" and j + 1 < n and text[j + 1] == "{":
+            k = parameter_expansion_end(text, j)
+            if k < 0:
+                return -1
+            j = k
+            continue
         if c == "(":
             depth += 1
         elif c == ")":
+            depth -= 1
+            if depth == 0:
+                return j + 1
+        j += 1
+    return -1
+
+
+def parameter_expansion_end(text: str, at: int) -> int:
+    """Index just past the `}` closing the `${` at `at`, or `-1`.
+
+    Expansions nest (`${a:-${b}}`) and their quoted and escaped spans hide
+    braces, so those are tracked exactly as `command_substitution_end` tracks
+    them; a `$( … )` inside an expansion is handed back to that function, so
+    the two are mutually recursive in the same way the shell's grammar is.
+    Unterminated returns `-1`, which the caller treats as "not an expansion".
+    """
+    if not text.startswith("${", at):
+        return -1
+    j, depth, n = at + 2, 1, len(text)
+    while j < n:
+        c = text[j]
+        if c == "\\":
+            j += 2
+            continue
+        if c == "'":
+            k = text.find("'", j + 1)
+            if k < 0:
+                return -1
+            j = k + 1
+            continue
+        if c == '"':
+            k = j + 1
+            while k < n and text[k] != '"':
+                k += 2 if text[k] == "\\" else 1
+            if k >= n:
+                return -1
+            j = k + 1
+            continue
+        if c == "$" and j + 1 < n and text[j + 1] == "(":
+            k = command_substitution_end(text, j)
+            if k < 0:
+                return -1
+            j = k
+            continue
+        if c == "$" and j + 1 < n and text[j + 1] == "{":
+            k = parameter_expansion_end(text, j)
+            if k < 0:
+                return -1
+            j = k
+            continue
+        if c == "{":
+            depth += 1
+        elif c == "}":
             depth -= 1
             if depth == 0:
                 return j + 1

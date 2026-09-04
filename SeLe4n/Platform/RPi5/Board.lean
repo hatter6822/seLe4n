@@ -132,6 +132,12 @@ def rpi5MachineConfig : SeLe4n.MachineConfig :=
     pageSize := 4096             -- 4 KiB granule (standard)
     maxASID := 65536             -- 16-bit ASID with TTBR.ASID
     memoryMap := rpi5MemoryMap
+    -- PR #889 review round 20: the BCM2712 is a quad-core Cortex-A76, so the
+    -- machine the kernel runs on has exactly four PEs.  The binding's
+    -- `coreCount` says the same thing to the boot; `declaredCoreCountAgrees`
+    -- holds the two together, and this is the copy the *live* affinity
+    -- transitions read out of `SystemState.machine`.
+    declaredCoreCount := 4
   }
 
 -- ============================================================================

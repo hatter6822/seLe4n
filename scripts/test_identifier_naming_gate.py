@@ -182,6 +182,23 @@ check("a command inside a double-quoted backtick substitution is kept",
           "echo " + dq + "`" + CODED + " # note\n`" + dq + "\n"), True)
 check("an unterminated backtick does not swallow the lines below it",
       CODED in gate.strip_shell("X=`echo\n# " + CODED + "\n"), False)
+# PR #889 review round 20: a parameter expansion is a brace-delimited region
+# in which `)` is pattern text.  `x="$(echo ${y%)} <token>)"` is accepted by
+# bash (verified), and closing the substitution on the `)` inside `${y%)}`
+# blanked the live command after it.  These mutate by KEEPING the
+# substitution and putting a `)` in an expansion ahead of the token.
+check("a command after a `)`-bearing parameter expansion survives",
+      CODED in gate.strip_shell(
+          "X=" + dq + dollar + "(echo ${y%)} " + CODED + ")" + dq + "\n"), True)
+check("...and the expansion does not leak past its own closing brace",
+      CODED in gate.strip_shell(
+          "X=" + dq + dollar + "(echo ${y%)} ok)" + dq + " # " + CODED + "\n"), False)
+check("a nested expansion inside a substitution closes at the right brace",
+      CODED in gate.strip_shell(
+          "X=" + dq + dollar + "(echo ${a:-${b%)}} " + CODED + ")" + dq + "\n"), True)
+check("an unterminated parameter expansion does not swallow the lines below",
+      CODED in gate.strip_shell(
+          "X=" + dq + dollar + "(echo ${y%)" + dq + "\n# " + CODED + "\n"), False)
 check("a comment inside a double-quoted substitution is blanked",
       CODED in gate.strip_shell(
           "echo " + dq + dollar + "(echo ok # " + CODED + "\n)" + dq + "\n"), False)

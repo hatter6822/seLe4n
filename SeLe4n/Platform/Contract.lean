@@ -140,6 +140,18 @@ class PlatformBinding (platform : Type) where
       membership in it is `c.val < coreCount` (`mem_declaredCores_iff`), and the
       boot core embeds in the model (`bootCoreModelId`). -/
   coreCountLe : coreCount ≤ SeLe4n.Kernel.Concurrency.numCores
+  /-- **PR #889 review round 20**: the machine description a binding installs
+      declares the same number of PEs the binding does.
+
+      `coreCount` is what the *boot* enforces (`bootAffinitiesDeclared`, RR5);
+      `machineConfig.declaredCoreCount` is what the *live* affinity path reads,
+      since a kernel transition sees `SystemState.machine` and not the binding.
+      They are two statements of one fact, so a binding proves them equal
+      rather than restating them — otherwise a binding could declare one PE and
+      install a four-PE machine, and `.tcbSetAffinity` would strand a thread on
+      a core that does not exist, which is exactly the gap this closes. -/
+  declaredCoreCountAgrees :
+    machineConfig.declaredCoreCount = coreCount
   /-- **WS-SM SM0.G**: the boot core id, scoped to `Fin coreCount`
       so it is structurally in-range.  Always `0` in practice
       (PSCI brings up secondaries from `Aff0 = 0`); typeclass-

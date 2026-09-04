@@ -797,6 +797,34 @@ passes `allowOpaque := true`, and what it still cannot see (a foreign
 was reported as an embedded-identity mismatch — the defect round 2 fixed for the
 idle-slot reservation, repeated by the same omission.
 
+**Review round 20 (PR #889, same version).**  Four.  Three are the same shape
+one more time: a walk or a lexer assuming something about what it is looking at.
+`unconditionalActions` treated the tail of a `Bind` chain as reachable, so an
+entry that halted *before* the approved boot still reported it — the walk now
+truncates at the first provably non-returning action, seeded from the
+`@[extern]` halt primitives by *symbol* and closed over aliases.  The
+reachability walk classified project modules by a `SeLe4n` prefix, which is an
+enumeration of the project's roots and cannot see one that does not exist yet;
+it now excludes the dependency roots and reconciles that list against the
+environment's own, so a new dependency root fails the build rather than opening
+a hole.  And the recursive shell view closed a `$( … )` at the first unbalanced
+`)`, which `${x:-(}` supplies.
+
+The fourth is a kernel defect and the reason this round is not purely about
+gates: **a boot-time check with no live counterpart is a bound on the
+configuration, not on the kernel.**  Round 15 refused a *configured* TCB pinned
+outside the binding's declared cores; `decodeAffinity` accepts any
+`v < numCores`, so `.tcbSetAffinity` could migrate a thread onto an absent PE
+the instant after that boot succeeded — enqueued where nothing runs it, with the
+reschedule SGI sent to a core that cannot take it, and success returned.  The
+declared count now travels with the machine (`MachineConfig.declaredCoreCount` →
+`applyMachineConfig` → `MachineState.declaredCoreCount`), because the machine is
+what a transition can read; `PlatformBinding.declaredCoreCountAgrees` holds it
+equal to the `coreCount` the boot enforces, so the two are one fact rather than
+two that can drift — and the one binding whose machine config had to change is
+the single-core simulation, which was sharing the four-PE `simMachineConfig`.
+That is the gap, stated by the obligation that now refuses it.
+
 **Note on RR5.10–RR5.14** (the rows that replaced one XL).  Two findings shape
 the split, and the row they replaced named neither: one is an ordering defect
 it inherited, the other is the reason its "cannot be separate PRs" claim is

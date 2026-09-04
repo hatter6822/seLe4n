@@ -455,6 +455,13 @@ structure MachineState where
   memoryMap : List MemoryRegion := []
   /-- AG3-B: Number of general-purpose registers (ARM64: 32). -/
   registerCount : Nat := 32
+  /-- **PR #889 review round 20**: how many PEs the platform actually has,
+      carried in machine state so live transitions can enforce it without a
+      `MachineConfig` parameter — the same reason `physicalAddressWidth` is
+      here.  Set at boot by `applyMachineConfig` from
+      `MachineConfig.declaredCoreCount`; defaults to the model width, so the
+      affinity refusal that reads it is inert on a full-width machine. -/
+  declaredCoreCount : Nat := SeLe4n.Kernel.Concurrency.numCores
   /-- AG3-G: ARM64 system registers (exception, MMU configuration). -/
   systemRegisters : SystemRegisterFile := default
   /-- AG5-G/AJ3-E (L-04): Interrupt state — models PSTATE.I (IRQ mask bit).
@@ -1012,6 +1019,22 @@ structure MachineConfig where
       ARM64: 32 (x0–x30 plus xzr). Used by the register decode layer to
       validate register indices at syscall boundaries. -/
   registerCount : Nat := 32
+  /-- **PR #889 review round 20**: how many PEs the platform actually has.
+
+      The model is `numCores` wide, and a binding may declare fewer
+      (`PlatformBinding.coreCount`; `SimSingleCorePlatform` declares one).
+      WS-RR RR5's `bootAffinitiesDeclared` refuses a *configured* TCB pinned to
+      an undeclared core, but `.tcbSetAffinity` accepted any `CoreId` the model
+      admits, so a thread could be migrated onto a PE that does not exist —
+      queued where nothing runs it — immediately after a successful boot.  The
+      count travels with the machine because that is what it describes, and it
+      reaches the live state through `applyMachineConfig` like every other
+      field here.
+
+      The default is `numCores`, so every existing configuration and fixture
+      keeps the full-width model and the affinity refusal below is inert on
+      them; only a binding that declares fewer narrows it. -/
+  declaredCoreCount : Nat := SeLe4n.Kernel.Concurrency.numCores
   deriving Repr
 
 /-- AH2-E: Default machine configuration for use as a `PlatformConfig` default.

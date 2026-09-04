@@ -162,7 +162,26 @@ def simMachineConfig : SeLe4n.MachineConfig :=
     pageSize := 4096
     maxASID := 65536
     memoryMap := simSubstantiveMemoryMap
+    -- PR #889 review round 20: the 4-core simulation topology, stated where
+    -- the machine is described.  `simSingleCoreMachineConfig` below narrows it
+    -- for the one binding that declares fewer PEs.
+    declaredCoreCount := 4
   }
+
+/-- **PR #889 review round 20**: the single-core simulation's machine.
+
+    `SimSingleCorePlatform` declares `coreCount := 1`, and a binding's
+    `declaredCoreCountAgrees` obligation requires its machine config to say the
+    same — the boot enforces the binding's count
+    (`bootAffinitiesDeclared`, WS-RR RR5), while the *live* affinity transition
+    reads `SystemState.machine.declaredCoreCount`, since a kernel transition
+    sees the machine and not the binding.  Sharing `simMachineConfig` here
+    would have installed a four-PE machine under a one-PE binding, and
+    `.tcbSetAffinity` could then have stranded a thread on a core that does not
+    exist.  Every other field is the permissive sim binding's, so the two
+    topologies agree wherever the per-core dimension is irrelevant. -/
+def simSingleCoreMachineConfig : SeLe4n.MachineConfig :=
+  { simMachineConfig with declaredCoreCount := 1 }
 
 /-- The simulation platform binding instance.
 
@@ -188,6 +207,8 @@ instance simPlatformBinding : SeLe4n.Platform.PlatformBinding SimPlatform where
   coreCountPos := by decide
   -- PR #889 review round 5: no binding declares more cores than the model has.
   coreCountLe := by decide
+  -- PR #889 review round 20: machine and binding agree on the PE count.
+  declaredCoreCountAgrees := by decide
   bootCoreId := ⟨0, by decide⟩
   sharingDomain := .inner
   -- WS-RR RR5.1: the harness labeling's source — every fixture id in one
@@ -231,6 +252,8 @@ instance simRestrictivePlatformBinding :
   coreCountPos := by decide
   -- PR #889 review round 5: no binding declares more cores than the model has.
   coreCountLe := by decide
+  -- PR #889 review round 20: machine and binding agree on the PE count.
+  declaredCoreCountAgrees := by decide
   bootCoreId := ⟨0, by decide⟩
   sharingDomain := .inner
   -- WS-RR RR5.1: same labeling as the permissive sim binding.
@@ -265,7 +288,10 @@ structure SimSingleCorePlatform where
 instance simSingleCorePlatformBinding :
     SeLe4n.Platform.PlatformBinding SimSingleCorePlatform where
   name := "Simulation (single-core)"
-  machineConfig := simMachineConfig
+  -- PR #889 review round 20: the one field that is *not* the permissive sim
+  -- binding's — a one-PE binding must install a one-PE machine, or the live
+  -- affinity path would admit cores the platform does not have.
+  machineConfig := simSingleCoreMachineConfig
   runtimeContract := simRuntimeContractPermissive
   bootContract := simBootContract
   interruptContract := simInterruptContract
@@ -276,6 +302,8 @@ instance simSingleCorePlatformBinding :
   coreCountPos := by decide
   -- PR #889 review round 5: no binding declares more cores than the model has.
   coreCountLe := by decide
+  -- PR #889 review round 20: machine and binding agree on the PE count.
+  declaredCoreCountAgrees := by decide
   bootCoreId := ⟨0, by decide⟩
   sharingDomain := .inner
   -- WS-RR RR5.1: same labeling as the permissive sim binding.

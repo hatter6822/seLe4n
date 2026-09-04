@@ -5199,6 +5199,28 @@ run_check "INVARIANT" rg -n '^fn gate_call_offset' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n '^fn statement_may_exit' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n '^fn collect_lean_exports_from_file' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n 'collect_lean_exports_from_file\(lean_library_root' rust/sele4n-hal/build.rs
+# PR #889 review round 20: the action walk stops at a diverging action, project
+# provenance is decided by excluding dependency roots, the shell view skips
+# balanced parameter expansions, and the live affinity path is bounded by the
+# PEs the platform declares.
+run_check "INVARIANT" rg -n '^partial def neverReturns' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^def dependencyModuleRoots' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^def isProjectDeclaration' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessHaltedFirst' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessAliasHaltedFirst' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^def parameter_expansion_end' scripts/check_identifier_naming.py
+# ...the declared PE count travels config → machine → transition, every binding
+# proves its machine agrees with its own coreCount, and the affinity write
+# refuses a core the platform does not have.
+run_check "INVARIANT" rg -n '  declaredCoreCount : Nat := SeLe4n.Kernel.Concurrency.numCores' SeLe4n/Machine.lean
+run_check "INVARIANT" rg -n 'declaredCoreCount := config.declaredCoreCount' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^  declaredCoreCountAgrees :' SeLe4n/Platform/Contract.lean
+run_check "INVARIANT" rg -n '^def simSingleCoreMachineConfig' SeLe4n/Platform/Sim/Contract.lean
+run_check "INVARIANT" rg -n '  machineConfig := simSingleCoreMachineConfig' SeLe4n/Platform/Sim/Contract.lean
+run_check "INVARIANT" rg -n 'if affinity.any \(fun c => c.val . st.machine.declaredCoreCount\) then' SeLe4n/Kernel/Scheduler/Operations/Core.lean
+run_check "INVARIANT" rg -n '^theorem setThreadCpuAffinityWithMigration_rejects_undeclared_core' SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_declaredCoreCount' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformChecked_ok_declaredCoreCount' SeLe4n/Platform/Boot.lean
 # PR #889 review round 19: the bind instance is validated before the walk
 # treats it as sequencing, opaque bodies are read, and the object budget has
 # its own boot diagnostic.

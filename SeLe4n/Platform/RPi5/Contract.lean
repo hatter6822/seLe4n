@@ -192,6 +192,9 @@ instance rpi5PlatformBinding : SeLe4n.Platform.PlatformBinding RPi5Platform wher
   -- PR #889 review round 5: the model is exactly this wide
   -- (`numCores_eq_rpi5_coreCount`), so the bound is an equality here.
   coreCountLe := by decide
+  -- PR #889 review round 20: the machine the boot installs has exactly the
+  -- PEs this binding declares (`rpi5MachineConfig.declaredCoreCount = 4`).
+  declaredCoreCountAgrees := by decide
   bootCoreId := ⟨0, by decide⟩
   sharingDomain := .inner
   -- WS-RR RR5.1: the production labeling — two mutually isolated domains

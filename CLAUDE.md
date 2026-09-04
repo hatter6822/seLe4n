@@ -1673,6 +1673,32 @@ code may assume:
   boot are unchanged; a `coreCount < numCores` binding now rejects a
   config the model would have accepted.
 
+- **...and a running thread is too** (PR #889 review round 20).  The boot check
+  above had no live counterpart: `decodeAffinity` accepts any `v < numCores`, so
+  `.tcbSetAffinity` could migrate a thread onto a PE the binding does not have
+  the instant after a successful boot — queued where nothing runs it, with the
+  reschedule SGI sent to a core that cannot take it, and no error returned.  The
+  declared count therefore travels with the machine it describes, which is the
+  only thing a transition can read: `MachineConfig.declaredCoreCount` →
+  `applyMachineConfig` → `MachineState.declaredCoreCount` →
+  `setThreadCpuAffinityWithMigration`, which refuses an out-of-range affinity
+  with `.invalidArgument` and commits nothing
+  (`setThreadCpuAffinityWithMigration_rejects_undeclared_core`); unpinning names
+  no core and is never caught by it
+  (`setThreadCpuAffinityWithMigration_none_passes_declared_check`).  The count
+  reaches the live state proved rather than by convention
+  (`bootFromPlatformChecked_ok_declaredCoreCount`,
+  `bootFromPlatformCheckedWithIdleThreadsFor_declaredCoreCount`), and
+  `PlatformBinding.declaredCoreCountAgrees :
+  machineConfig.declaredCoreCount = coreCount` holds the boot's number and the
+  transition's number to one fact — `simSingleCoreMachineConfig` exists because
+  the single-core binding was sharing the four-PE `simMachineConfig`, which is
+  what the gap was.  The field defaults to `numCores`, so the refusal is inert
+  on every existing state and fixture; a new binding that declares fewer PEs
+  must give its machine config the matching count, or its instance will not
+  elaborate.  New code must not read `numCores` as the set of cores a thread may
+  be pinned to.
+
 - **Thread-state classification is per-core** (WS-RR RR5.10).
   `inferThreadState` read `currentOnCore bootCoreId` / `runQueueOnCore
   bootCoreId` only, so a thread running or queued on a secondary core
