@@ -923,6 +923,32 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   declarations no `fn`-shaped search can see, so the gate refuses the input
   rather than reading past it.
 
+  **And one question answered in two places will diverge** (PR #889 review
+  round 22).  The sweep rule above is reactive — *when a fix names a relation,
+  grep for every other place that asks it* — and round 22 is three findings
+  where it had not been run, which is the signal that the reactive form is not
+  enough.  All three were a question with two implementations and only one of
+  them right: "which cores does this boot install idle threads on?" answered by
+  `bootAndInitialisePlatform` from the binding and by
+  `bootAndInitialiseFromPlatform` as a hardcoded `allCores`, so a narrow
+  configuration booted a TCB pinned to a PE the machine it installed does not
+  have; "how does a boot-fatal condition fail closed?" answered by
+  `gic::halt_all()` at three sites and by the per-PE `cpu::fatal_halt()` at the
+  handoff refusal, which parks the boot core while the secondaries that *did*
+  start keep servicing interrupts; and "is this a function provider?" answered
+  by `executable_definitions` (global **text** symbols, since round 8) for the
+  archive and by an unqualified `.global` + label conjunction for the source
+  fallback, so a `.section .data` object satisfied an `extern "C" fn`.
+
+  **Derive both answers from one, or make the second impossible.**  The core
+  list is now `declaredCoresOfConfig`, read off the configuration the machine
+  will carry; the refusal calls the barrier the rest of the tree calls; the two
+  provider paths both ask the section question (`executable_label_names`).
+  Where a second implementation must exist — a source fallback for when the
+  object code is not built — it answers the *same* question and
+  under-approximates, so the divergence direction is a false missing symbol
+  rather than a false provider.
+
 - **Invariant/Operations split**: each kernel subsystem has
   `Operations.lean` (transitions) and `Invariant.lean` (proofs). Keep
   this separation.

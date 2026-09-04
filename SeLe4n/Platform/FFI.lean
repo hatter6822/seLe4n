@@ -1086,6 +1086,41 @@ def bootAndInitialiseFromPlatformOn
       else
         pure (Except.error uninstalledSeparationWitnessBootError)
 
+/-- **PR #889 review round 22**: the cores a configuration declares.
+
+`bootAndInitialiseFromPlatform` used `allCores` unconditionally while
+`applyMachineConfig` installed `config.machineConfig.declaredCoreCount` into the
+machine — two answers to one question, and on a narrow configuration they
+disagreed: a TCB pinned to core 3 passed `bootAffinitiesDeclared allCores`, the
+boot succeeded, and the installed machine said only core 0 existed, so the
+thread's first resume or wake queued it on a PE the configuration does not have.
+That is the round-20 relation (the boot's core set and the machine's PE count are
+one fact) at the one entry that had no binding to tie them together.
+
+So the wrapper derives its list from the configuration instead of naming one.
+A count above the model's width is clamped, which is the fail-closed direction:
+`allCores.take n` with `n > numCores` is `allCores`, so a nonsense count widens
+to the model rather than producing a list with members the `Vector`-shaped
+per-core state has no slots for. -/
+def declaredCoresOfConfig (config : PlatformConfig) :
+    List SeLe4n.Kernel.Concurrency.CoreId :=
+  SeLe4n.Kernel.Concurrency.allCores.take config.machineConfig.declaredCoreCount
+
+/-- The derivation is the identity on a full-width configuration, so every
+existing caller, fixture and theorem about the all-cores boot is unchanged. -/
+theorem declaredCoresOfConfig_allCores (config : PlatformConfig)
+    (h : config.machineConfig.declaredCoreCount = SeLe4n.Kernel.Concurrency.numCores) :
+    declaredCoresOfConfig config = SeLe4n.Kernel.Concurrency.allCores := by
+  unfold declaredCoresOfConfig
+  rw [h, ← SeLe4n.Kernel.Concurrency.allCores_length, List.take_length]
+
+/-- ...and it never names a core the model does not have. -/
+theorem declaredCoresOfConfig_length_le (config : PlatformConfig) :
+    (declaredCoresOfConfig config).length ≤ SeLe4n.Kernel.Concurrency.numCores := by
+  unfold declaredCoresOfConfig
+  rw [List.length_take, SeLe4n.Kernel.Concurrency.allCores_length]
+  exact Nat.min_le_right _ _
+
 /-- WS-RC R2.A.3 / **WS-RR RR5.2, RR5.3**: Boot wrapper that validates the
     deployment labeling context, runs `bootFromPlatformChecked`, installs the
     resulting `SystemState` into `kernelStateRef` and the context into
@@ -1146,7 +1181,7 @@ def bootAndInitialiseFromPlatform
     (config : PlatformConfig)
     (ctx : LabelingContext) :
     BaseIO (Except String SystemState) :=
-  bootAndInitialiseFromPlatformOn SeLe4n.Kernel.Concurrency.allCores config ctx
+  bootAndInitialiseFromPlatformOn (declaredCoresOfConfig config) config ctx
 
 /-- PR #889 review round 7: the binding's own boot configuration — the caller's
 IRQ table and initial objects under the **binding's** machine configuration and

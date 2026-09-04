@@ -439,6 +439,54 @@ def strip_cpp_conditionals(text: str) -> str:
     return "\n".join(out)
 
 
+# PR #889 review round 22: which section a label lands in.  `.text` and its
+# named variants (`.section .text.foo`) hold code; `.data`, `.bss`, `.rodata`
+# and their variants hold objects.  A `.section` directive names its section
+# directly; `.text` / `.data` / `.bss` are shorthands for the standard three.
+ASM_SECTION_DIRECTIVE = re.compile(
+    r"^\s*\.(?:section\s+\"?(?P<named>[A-Za-z0-9_.$-]+)\"?|(?P<shorthand>text|data|bss|rodata)\b)",
+    re.MULTILINE,
+)
+
+
+def executable_label_names(view: str) -> set[str]:
+    """The labels an assembly source defines **in executable sections**.
+
+    PR #889 review round 22: `asm_definitions_in` paired `.global X` with a
+    label `X:` and asked no more, so
+
+        .section .data
+        .global lean_data
+        lean_data:
+
+    satisfied an `extern "C" fn` requirement while `nm` classifies the emitted
+    symbol `D` — a data object standing in for a missing Lean *function*, which
+    the linker resolves and a call then enters as if it were code.  Round 8 had
+    already made the archive path reject exactly this (`executable_definitions`
+    keeps only global text symbols, `T`); the source fallback is the same
+    question at a second site and was left asking less.
+
+    Sections are tracked in source order and default to `.text`, which is what
+    GAS assumes before any directive.  A section this scanner does not
+    recognise is treated as **non**-executable: the fallback under-approximates
+    the providers, so an unrecognised section reports a symbol as missing
+    rather than reporting a data object as a function.
+    """
+    executable: set[str] = set()
+    in_text = True  # GAS starts in .text
+    for line in view.split("\n"):
+        section = ASM_SECTION_DIRECTIVE.match(line)
+        if section is not None:
+            name = section.group("named") or section.group("shorthand")
+            in_text = name == "text" or name.startswith(".text") or name.startswith("text.")
+            continue
+        if in_text:
+            label = ASM_LABEL.match(line)
+            if label is not None:
+                executable.add(label.group(1))
+    return executable
+
+
 def asm_definitions_in(text: str) -> set[str]:
     """Symbols one assembly source **defines and exports** in code the
     preprocessor keeps: a `.global` / `.globl` directive *and* a label `X:` for
@@ -449,10 +497,13 @@ def asm_definitions_in(text: str) -> set[str]:
     nothing — leave the directive and delete the label and the image still has
     an unresolved `foo`, so a directive-only scan passed exactly the
     token-preserving regression this gate exists to catch.  A provider is the
-    conjunction, outside any conditional (round 4).
+    conjunction, outside any conditional (round 4), **in an executable
+    section** (round 22 — `executable_label_names`; every requirement this gate
+    reconciles is an `extern "C" fn`, so a data object under the name resolves
+    a call into data).
     """
     view = strip_unassembled_regions(strip_cpp_conditionals(asm_code_view(text)))
-    return set(ASM_GLOBAL.findall(view)) & set(ASM_LABEL.findall(view))
+    return set(ASM_GLOBAL.findall(view)) & executable_label_names(view)
 
 
 def strip_unassembled_regions(text: str) -> str:
@@ -877,6 +928,40 @@ def self_test() -> int:
     )
     if extern_declarations_in(renamed_fn_after_static_rust, "fixture") != {"actual_symbol"}:
         failures.append("an attribute on the function after a `static` was lost (round 16)")
+    # PR #889 review round 22: a label in a data section is not a function
+    # provider.  The mutation KEEPS the `.global` and the label — every token
+    # the round-3 conjunction reads — and moves them into `.data`.
+    data_label_asm = (
+        "    .section .data\n"
+        "    .global lean_data\n"
+        "lean_data:\n"
+        "    .quad 0\n"
+        "    .text\n"
+        "    .global lean_real\n"
+        "lean_real:\n"
+        "    ret\n"
+    )
+    got = asm_definitions_in(data_label_asm)
+    if got != {"lean_real"}:
+        failures.append(
+            "a `.global` + label pair in `.data` was accepted as a function provider: "
+            f"{sorted(got)} (round 22)"
+        )
+    # ...and a named text section still provides, so the check is a bound on
+    # the section rather than a rejection of every directive it has not seen.
+    named_text_asm = (
+        "    .section .text.boot\n"
+        "    .global lean_named\n"
+        "lean_named:\n"
+        "    ret\n"
+    )
+    if asm_definitions_in(named_text_asm) != {"lean_named"}:
+        failures.append("a label in a named `.text.*` section was refused (round 22)")
+    # ...and a source with no section directive at all is `.text` by default,
+    # which is what GAS assumes and what every `.S` in this tree relies on.
+    default_section_asm = "    .global lean_default\nlean_default:\n    ret\n"
+    if asm_definitions_in(default_section_asm) != {"lean_default"}:
+        failures.append("a label before any section directive was refused (round 22)")
     # PR #889 review round 21: an item macro inside a foreign block expands to
     # declarations this scanner cannot see, so it is refused rather than read
     # past.  The mutation KEEPS the block and the `extern "C"` and puts the

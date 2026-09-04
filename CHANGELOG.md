@@ -1141,6 +1141,64 @@ the **kernel**, the second live defect any round has found outside the gates.
   disables the bare spelling for the file — conservative, and the remedy is a
   qualifier.
 
+### The review round, twenty-second pass — one question, two answers
+
+Three findings, and they are one shape: **a question implemented twice, with
+only one of the implementations right.**  The repository already carries the
+reactive form of this rule — *when a fix names a relation, grep for every other
+place that asks it* — and all three of these are places it had not been run.
+
+**Which cores does this boot install idle threads on?**
+`bootAndInitialisePlatform` derives them from the binding (round 3);
+`bootAndInitialiseFromPlatform`, the generic wrapper, passed `allCores`
+unconditionally while `applyMachineConfig` installed
+`config.machineConfig.declaredCoreCount` into the machine.  On a narrow
+configuration the two disagreed: a TCB pinned to core 3 passed
+`bootAffinitiesDeclared allCores`, the boot succeeded, and the installed machine
+said only core 0 existed — so the thread's first resume or wake queued it on a PE
+the configuration does not have.  That is round 20's relation (the boot's core
+set and the machine's PE count are one fact) at the one entry with no binding to
+tie them together.  `declaredCoresOfConfig` reads the list off the configuration;
+`declaredCoresOfConfig_allCores` shows the derivation is the identity at full
+width, so every existing caller, fixture and theorem is unchanged, and
+`declaredCoresOfConfig_length_le` states the clamp — a count above the model's
+width widens to `allCores` rather than naming cores the per-core `Vector` state
+has no slots for.
+
+**How does a boot-fatal condition fail closed?**  `gic::halt_all()` at three
+sites (`ffi_fatal_halt_all`, the kernel-entry tripwire, the shootdown timeout);
+the per-PE `cpu::fatal_halt()` at round 21's handoff refusal.  That refusal is
+reached *after* the secondaries that did start have entered
+`rust_secondary_main`, unmasked IRQs and begun servicing timer and SGI handlers,
+so parking only the boot PE left them running Rust-side interrupt work for a
+kernel that was never handed off to.  A failure barrier that closes one PE is
+not a barrier.  It calls `halt_all` now.  The sweep across every `fatal_halt`
+call site found one other boot-path use — the VBAR alignment tripwire — and left
+it: that condition *is* per-PE (this core's vector table, during this core's own
+init), which is the distinction, and it is a pinned release-surviving tripwire.
+
+**Is this a function provider?**  `executable_definitions` has kept only global
+**text** symbols since round 8; the source fallback paired `.global X` with a
+label `X:` and asked no more, so
+
+    .section .data
+    .global lean_data
+    lean_data:
+
+satisfied an `extern "C" fn` requirement while `nm` classifies the emitted symbol
+`D` — a data object standing in for a missing Lean *function*, which the linker
+resolves and a call then enters as code.  `executable_label_names` tracks
+sections in source order, defaults to `.text` (what GAS assumes before any
+directive), and treats an unrecognised section as **non**-executable, so the
+fallback still under-approximates: an unknown section reports a symbol missing
+rather than reporting data as a function.  Three witnesses — the `.data` pair
+refused, a named `.text.boot` section accepted, and a label before any directive
+accepted — because a section check that refused everything would also "pass".
+
+Each mutation-tested by keeping the tokens and breaking the relation: the
+wrapper handed `allCores` again (a Tier 3 negative anchor now catches it), and
+`executable_label_names` computed but ignored.
+
 ### The review round, twenty-first pass — a hand-written `Expr` walk is not the elaborator
 
 Five findings, and the first thing to say is that four of them are one defect

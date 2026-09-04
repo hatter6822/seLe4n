@@ -797,6 +797,22 @@ passes `allowOpaque := true`, and what it still cannot see (a foreign
 was reported as an embedded-identity mismatch — the defect round 2 fixed for the
 idle-slot reservation, repeated by the same omission.
 
+**Review round 22 (PR #889, same version).**  Three, and one shape: a question
+implemented twice with only one implementation right.  The generic boot wrapper
+passed `allCores` while the machine it installed carried a narrower
+`declaredCoreCount` (round 20's relation at the one entry with no binding to tie
+it); round 21's handoff refusal used the per-PE `fatal_halt` where the tree's
+system-wide barrier is `gic::halt_all()`, so already-online secondaries kept
+servicing interrupts after a refused handoff; and the assembly *source* fallback
+accepted a `.data` label as a function provider, a question the *archive* parser
+has answered correctly since round 8.
+
+The rule this adds is the proactive form of the sweep already in `AGENTS.md`:
+**derive both answers from one, or make the second impossible.**  Where a second
+implementation must exist — a source fallback for when the object code is not
+built — it must ask the same question and under-approximate, so divergence shows
+up as a false missing symbol rather than a false provider.
+
 **Review round 21 (PR #889, same version).**  Five, and four of them are one
 defect that this plan should record because the *diagnosis* is the deliverable.
 Round 17 applied "a Lean question goes to the elaborator" to **names** and

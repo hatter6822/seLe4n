@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/rr5-boot-path-fail-open-sandny",
-      "commit_sha": "20c74cbfde36bc2c551adfbdaa342812c5647773",
-      "tree_sha": "a987e57baf8a69323176ff40ef024daef0fe2119",
-      "committed_at_utc": "2026-09-04T01:59:03+00:00"
+      "commit_sha": "8515a71729d464a4e028b7fe35f256ce97fe9504",
+      "tree_sha": "f5e91917a2884fa517e8fecadeb85dfb7a5baf41",
+      "committed_at_utc": "2026-09-04T02:10:09+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "79cb097613ab44ccf77a6e72b478e96105c32a60c3539e82a05e68854aeeacd6"
+    "source_digest": "5c4f55f099f65ce8051ad2a4bfddb7c35f09cdcb994caeaac228095f5afc4535"
   },
   "summary": {
     "module_count": 379,
-    "declaration_count": 18628
+    "declaration_count": 18631
   },
   "readme_sync": {
     "version": "0.34.48",
     "lean_toolchain": "v4.28.0",
     "production_files": 309,
-    "production_loc": 321909,
+    "production_loc": 321944,
     "test_files": 70,
     "test_loc": 68366,
-    "proved_theorem_lemma_decls": 10702,
+    "proved_theorem_lemma_decls": 10704,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -213326,7 +213326,7 @@
     {
       "module": "SeLe4n.Platform.FFI",
       "path": "SeLe4n/Platform/FFI.lean",
-      "declaration_count": 145,
+      "declaration_count": 148,
       "declarations": [
         {
           "kind": "namespace",
@@ -213846,21 +213846,57 @@
         },
         {
           "kind": "def",
+          "name": "declaredCoresOfConfig",
+          "line": 1105,
+          "called": [
+            "CoreId",
+            "PlatformConfig",
+            "config"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "declaredCoresOfConfig_allCores",
+          "line": 1111,
+          "called": [
+            "PlatformConfig",
+            "allCores",
+            "allCores_length",
+            "config",
+            "declaredCoresOfConfig",
+            "numCores"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "declaredCoresOfConfig_length_le",
+          "line": 1118,
+          "called": [
+            "PlatformConfig",
+            "allCores_length",
+            "config",
+            "declaredCoresOfConfig",
+            "length",
+            "numCores"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "bootAndInitialiseFromPlatform",
-          "line": 1145,
+          "line": 1180,
           "called": [
             "LabelingContext",
             "PlatformConfig",
             "SystemState",
-            "allCores",
             "bootAndInitialiseFromPlatformOn",
-            "config"
+            "config",
+            "declaredCoresOfConfig"
           ]
         },
         {
           "kind": "def",
           "name": "bindPlatformConfig",
-          "line": 1167,
+          "line": 1202,
           "called": [
             "PlatformBinding",
             "PlatformConfig",
@@ -213870,7 +213906,7 @@
         {
           "kind": "theorem",
           "name": "bindPlatformConfig_machineConfig",
-          "line": 1173,
+          "line": 1208,
           "called": [
             "PlatformBinding",
             "PlatformConfig",
@@ -213881,7 +213917,7 @@
         {
           "kind": "theorem",
           "name": "bindPlatformConfig_bootVSpaceRoot",
-          "line": 1178,
+          "line": 1213,
           "called": [
             "PlatformBinding",
             "PlatformConfig",
@@ -213892,7 +213928,7 @@
         {
           "kind": "theorem",
           "name": "bindPlatformConfig_initialObjects",
-          "line": 1183,
+          "line": 1218,
           "called": [
             "PlatformBinding",
             "PlatformConfig",
@@ -213903,7 +213939,7 @@
         {
           "kind": "theorem",
           "name": "bindPlatformConfig_irqTable",
-          "line": 1187,
+          "line": 1222,
           "called": [
             "PlatformBinding",
             "PlatformConfig",
@@ -213914,7 +213950,7 @@
         {
           "kind": "def",
           "name": "bootAndInitialisePlatform",
-          "line": 1226,
+          "line": 1261,
           "called": [
             "PlatformBinding",
             "PlatformBinding.declaredCores",
@@ -213929,7 +213965,7 @@
         {
           "kind": "def",
           "name": "bootAndInitialiseRPi5",
-          "line": 1242,
+          "line": 1277,
           "called": [
             "PlatformConfig",
             "RPi5Platform",
@@ -213941,7 +213977,7 @@
         {
           "kind": "theorem",
           "name": "bootAndInitialiseRPi5_eq",
-          "line": 1248,
+          "line": 1283,
           "called": [
             "PlatformConfig",
             "RPi5Platform",
@@ -213953,7 +213989,7 @@
         {
           "kind": "def",
           "name": "bootAndInitialiseRPi5OrHalt",
-          "line": 1268,
+          "line": 1303,
           "called": [
             "PlatformConfig",
             "bootAndInitialiseRPi5",
@@ -213965,7 +214001,7 @@
         {
           "kind": "theorem",
           "name": "bootAndInitialisePlatform_eq_checked_boot",
-          "line": 1278,
+          "line": 1313,
           "called": [
             "PlatformBinding",
             "PlatformBinding.declaredCores",
@@ -213987,7 +214023,7 @@
         {
           "kind": "theorem",
           "name": "bootAndInitialisePlatform_rpi5_all_cores",
-          "line": 1301,
+          "line": 1336,
           "called": [
             "PlatformBinding.declaredCores",
             "PlatformConfig",
@@ -214002,7 +214038,7 @@
         {
           "kind": "theorem",
           "name": "bootAndInitialiseRPi5_bound_config",
-          "line": 1311,
+          "line": 1346,
           "called": [
             "PlatformConfig",
             "RPi5Platform",
@@ -214015,7 +214051,7 @@
         {
           "kind": "def",
           "name": "writeFfiRegistersToTcb",
-          "line": 1340,
+          "line": 1375,
           "called": [
             "SystemState",
             "ThreadId",
@@ -214030,7 +214066,7 @@
         {
           "kind": "def",
           "name": "readReturnValue",
-          "line": 1384,
+          "line": 1419,
           "called": [
             "SystemState",
             "ThreadId",
@@ -214041,7 +214077,7 @@
         {
           "kind": "theorem",
           "name": "readReturnValue_eq_readReturnFrame_x0",
-          "line": 1409,
+          "line": 1444,
           "called": [
             "SystemState",
             "ThreadId",
@@ -214056,7 +214092,7 @@
         {
           "kind": "def",
           "name": "syscallReturnOutcome",
-          "line": 1425,
+          "line": 1460,
           "called": [
             "SyscallOutcome",
             "SystemState",
@@ -214075,7 +214111,7 @@
         {
           "kind": "def",
           "name": "refusedSignalReceiver",
-          "line": 1486,
+          "line": 1521,
           "called": [
             "CPtr",
             "SystemState",
@@ -214089,7 +214125,7 @@
         {
           "kind": "theorem",
           "name": "refusedSignalReceiver",
-          "line": 1504,
+          "line": 1539,
           "called": [
             "CNode",
             "CPtr",
@@ -214111,7 +214147,7 @@
         {
           "kind": "def",
           "name": "refusalReceiverFor",
-          "line": 1524,
+          "line": 1559,
           "called": [
             "KernelError",
             "SyscallId",
@@ -214127,7 +214163,7 @@
         {
           "kind": "theorem",
           "name": "refusalReceiverFor_receiver_hop",
-          "line": 1531,
+          "line": 1566,
           "called": [
             "SystemState",
             "ThreadId",
@@ -214141,7 +214177,7 @@
         {
           "kind": "theorem",
           "name": "refusalReceiverFor_other",
-          "line": 1538,
+          "line": 1573,
           "called": [
             "KernelError",
             "SyscallId",
@@ -214155,7 +214191,7 @@
         {
           "kind": "def",
           "name": "recordSyscallRefusal",
-          "line": 1559,
+          "line": 1594,
           "called": [
             "CoreId",
             "KernelError",
@@ -214176,7 +214212,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_exempt",
-          "line": 1583,
+          "line": 1618,
           "called": [
             "CoreId",
             "KernelError",
@@ -214194,7 +214230,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_undecodable",
-          "line": 1595,
+          "line": 1630,
           "called": [
             "CoreId",
             "KernelError",
@@ -214211,7 +214247,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_records",
-          "line": 1606,
+          "line": 1641,
           "called": [
             "CoreId",
             "KernelError",
@@ -214233,7 +214269,7 @@
         {
           "kind": "theorem",
           "name": "refusalRecord_names_failed_hop",
-          "line": 1643,
+          "line": 1678,
           "called": [
             "CNode",
             "Capability",
@@ -214269,7 +214305,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_frame",
-          "line": 1689,
+          "line": 1724,
           "called": [
             "CoreId",
             "KernelError",
@@ -214284,7 +214320,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_preserves_proofLayerInvariantBundle",
-          "line": 1717,
+          "line": 1752,
           "called": [
             "CoreId",
             "KernelError",
@@ -214301,7 +214337,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_objects_eq",
-          "line": 1731,
+          "line": 1766,
           "called": [
             "CoreId",
             "KernelError",
@@ -214315,7 +214351,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_scheduler_eq",
-          "line": 1742,
+          "line": 1777,
           "called": [
             "CoreId",
             "KernelError",
@@ -214329,7 +214365,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_machine_eq",
-          "line": 1753,
+          "line": 1788,
           "called": [
             "CoreId",
             "KernelError",
@@ -214343,7 +214379,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_readReturnFrame_eq",
-          "line": 1769,
+          "line": 1804,
           "called": [
             "CoreId",
             "KernelError",
@@ -214360,7 +214396,7 @@
         {
           "kind": "theorem",
           "name": "refusalRecord_domain_is_seam_resolved_at_seam",
-          "line": 1788,
+          "line": 1823,
           "called": [
             "CoreId",
             "DeclassificationRefusal",
@@ -214384,7 +214420,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_ledger_congr",
-          "line": 1827,
+          "line": 1862,
           "called": [
             "CoreId",
             "KernelError",
@@ -214404,7 +214440,7 @@
         {
           "kind": "theorem",
           "name": "refusalWrite_declassificationAuditLog_eq",
-          "line": 1864,
+          "line": 1899,
           "called": [
             "CoreId",
             "KernelError",
@@ -214418,7 +214454,7 @@
         {
           "kind": "theorem",
           "name": "refusalWrite_cannot_exhaust_trail",
-          "line": 1885,
+          "line": 1920,
           "called": [
             "CoreId",
             "DeclassificationEvent",
@@ -214435,7 +214471,7 @@
         {
           "kind": "def",
           "name": "syscallWindow",
-          "line": 1902,
+          "line": 1937,
           "called": [
             "FaultRegisterWindow"
           ]
@@ -214443,13 +214479,13 @@
         {
           "kind": "def",
           "name": "svcFaultIP",
-          "line": 1910,
+          "line": 1945,
           "called": []
         },
         {
           "kind": "def",
           "name": "capFaultReceivePhase",
-          "line": 1936,
+          "line": 1971,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -214467,7 +214503,7 @@
         {
           "kind": "theorem",
           "name": "capFaultReceivePhase",
-          "line": 1977,
+          "line": 2012,
           "called": [
             "SyscallId",
             "refusalSeamClass"
@@ -214476,7 +214512,7 @@
         {
           "kind": "def",
           "name": "syscallCapFaultOf",
-          "line": 2013,
+          "line": 2048,
           "called": [
             "Fault",
             "KernelError",
@@ -214499,7 +214535,7 @@
         {
           "kind": "def",
           "name": "deliverSyscallCapFault",
-          "line": 2046,
+          "line": 2081,
           "called": [
             "CoreId",
             "Fault",
@@ -214517,7 +214553,7 @@
         {
           "kind": "theorem",
           "name": "syscallCapFaultOf_none_of_no_fault_phase",
-          "line": 2057,
+          "line": 2092,
           "called": [
             "KernelError",
             "SyscallDecodeResult",
@@ -214536,7 +214572,7 @@
         {
           "kind": "theorem",
           "name": "syscallCapFaultOf_none_of_resolve_ok",
-          "line": 2070,
+          "line": 2105,
           "called": [
             "CNode",
             "Capability",
@@ -214559,7 +214595,7 @@
         {
           "kind": "def",
           "name": "syscallDispatchFromAbi",
-          "line": 2133,
+          "line": 2168,
           "called": [
             "CoreId",
             "Kernel",
@@ -214582,13 +214618,13 @@
         {
           "kind": "opaque",
           "name": "ffiSuspendThread",
-          "line": 2206,
+          "line": 2241,
           "called": []
         },
         {
           "kind": "def",
           "name": "suspendThreadInner",
-          "line": 2270,
+          "line": 2305,
           "called": [
             "KernelError.toUInt32",
             "getKernelState",
@@ -214605,19 +214641,19 @@
         {
           "kind": "opaque",
           "name": "ffiIcIalluIs",
-          "line": 2305,
+          "line": 2340,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiIcMaintenance",
-          "line": 2341,
+          "line": 2376,
           "called": []
         },
         {
           "kind": "def",
           "name": "icMaintenanceBroadcast",
-          "line": 2376,
+          "line": 2411,
           "called": [
             "ICacheInvalidation",
             "ffiIcMaintenance",
@@ -214629,7 +214665,7 @@
         {
           "kind": "theorem",
           "name": "icMaintenanceBroadcast_iallu_encoding",
-          "line": 2381,
+          "line": 2416,
           "called": [
             "toOpTag",
             "toPaddr"
@@ -214638,7 +214674,7 @@
         {
           "kind": "theorem",
           "name": "icMaintenanceBroadcast_ivauPage_encoding",
-          "line": 2388,
+          "line": 2423,
           "called": [
             "PAddr",
             "ofNat",
@@ -214650,7 +214686,7 @@
         {
           "kind": "theorem",
           "name": "icMaintenanceBroadcast_cleanRangeIallu_encoding",
-          "line": 2397,
+          "line": 2432,
           "called": [
             "PAddr",
             "ofNat",
@@ -214663,19 +214699,19 @@
         {
           "kind": "opaque",
           "name": "ffiCacheCleanPagetableRange",
-          "line": 2432,
+          "line": 2467,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiIcIallu",
-          "line": 2445,
+          "line": 2480,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_total",
-          "line": 2461,
+          "line": 2496,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -214699,7 +214735,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok",
-          "line": 2514,
+          "line": 2549,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -214717,7 +214753,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_error_of_syscallEntryChecked_error",
-          "line": 2545,
+          "line": 2580,
           "called": [
             "CoreId",
             "KernelError",
@@ -214739,7 +214775,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_capFault_faulted",
-          "line": 2574,
+          "line": 2609,
           "called": [
             "CoreId",
             "Fault",
@@ -214761,7 +214797,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_error_stages_no_frame",
-          "line": 2610,
+          "line": 2645,
           "called": [
             "CoreId",
             "KernelError",
@@ -214785,7 +214821,7 @@
         {
           "kind": "theorem",
           "name": "refusalLedger_write_is_caller_invisible",
-          "line": 2651,
+          "line": 2686,
           "called": [
             "CoreId",
             "KernelError",
@@ -214807,7 +214843,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_records_refusal",
-          "line": 2679,
+          "line": 2714,
           "called": [
             "CoreId",
             "KernelError",
@@ -214839,7 +214875,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_exempt_refusal_frames_ledger",
-          "line": 2726,
+          "line": 2761,
           "called": [
             "CoreId",
             "KernelError",
@@ -214865,7 +214901,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_illegalState_when_no_current",
-          "line": 2756,
+          "line": 2791,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -214880,7 +214916,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_abiMismatch_rejected",
-          "line": 2779,
+          "line": 2814,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -214893,7 +214929,7 @@
         {
           "kind": "theorem",
           "name": "writeFfiRegistersToTcb_id_when_not_tcb",
-          "line": 2801,
+          "line": 2836,
           "called": [
             "SystemState",
             "TCB",
@@ -214907,7 +214943,7 @@
         {
           "kind": "theorem",
           "name": "readReturnValue_zero_when_not_tcb",
-          "line": 2826,
+          "line": 2861,
           "called": [
             "SystemState",
             "TCB",

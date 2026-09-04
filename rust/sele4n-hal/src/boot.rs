@@ -381,7 +381,17 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
                 running_cores,
                 LEAN_DECLARED_CORE_COUNT
             );
-            crate::cpu::fatal_halt();
+            // PR #889 review round 22: `halt_all`, not `fatal_halt`.  This
+            // condition is reached *after* the secondaries that did start have
+            // entered `rust_secondary_main`, unmasked IRQs and begun servicing
+            // timer and SGI handlers, so parking only the boot PE leaves them
+            // running Rust-side interrupt work for a kernel that was never
+            // handed off to.  A boot-fatal condition needs a system-wide
+            // barrier, which is what this function is for and why
+            // `ffi_fatal_halt_all`, the kernel-entry tripwire and the
+            // shootdown timeout all use it.  Per-PE `fatal_halt` stays correct
+            // for a per-PE fault — the VBAR check below is one.
+            crate::gic::halt_all();
         }
         extern "C" {
             fn lean_kernel_main(dtb_ptr: u64);

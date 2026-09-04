@@ -5203,6 +5203,20 @@ run_check "INVARIANT" rg -n 'collect_lean_exports_from_file\(lean_library_root' 
 # provenance is decided by excluding dependency roots, the shell view skips
 # balanced parameter expansions, and the live affinity path is bounded by the
 # PEs the platform declares.
+# PR #889 review round 22: one question answered in two places diverges.  The
+# generic boot wrapper derives its core list from the configuration that the
+# machine will carry (it hardcoded `allCores` while `applyMachineConfig`
+# installed a narrower count); the handoff refusal uses the system-wide
+# barrier rather than the per-PE park; and the assembly source fallback asks
+# the same section question the archive parser has asked since round 8.
+run_check "INVARIANT" rg -n '^def declaredCoresOfConfig' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -nF 'bootAndInitialiseFromPlatformOn (declaredCoresOfConfig config) config ctx' SeLe4n/Platform/FFI.lean
+run_negative_check "INVARIANT" rg -nF 'bootAndInitialiseFromPlatformOn SeLe4n.Kernel.Concurrency.allCores config ctx' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem declaredCoresOfConfig_allCores' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem declaredCoresOfConfig_length_le' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -nF 'crate::gic::halt_all();' rust/sele4n-hal/src/boot.rs
+run_check "INVARIANT" rg -n '^def executable_label_names' scripts/check_kernel_entry_exports.py
+run_check "INVARIANT" rg -nF 'set(ASM_GLOBAL.findall(view)) & executable_label_names(view)' scripts/check_kernel_entry_exports.py
 # PR #889 review round 21: the hand-written action walk is gone.  The entry is
 # required to *be* `bootAndInitialiseRPi5OrHalt` applied to a configuration —
 # one `isDefEq`, which zeta- and beta-reduces, so the forms rounds 18-21 each
