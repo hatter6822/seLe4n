@@ -28,19 +28,17 @@ prints the canonical serialised post-state on stdout.
 * `r<core>` — `releaseRead core`
 * `W<core>` — `tryAcquireWrite core`
 * `w<core>` — `releaseWrite core`
+* `c<core>` — `cancel core` (WS-LC LC3.6)
 
 Each op is terminated by a comma `,`.  Whitespace between ops is
 ignored.  Example: `"R0,R1,r0,W2,w2,"` is the 5-op sequence
 `tryAcquireRead 0; tryAcquireRead 1; releaseRead 0; tryAcquireWrite 2; releaseWrite 2`.
 
-**`RwLockOp.cancel` has no letter, deliberately.**  This harness is a
-*cross-language* correspondence check: it drives the real Rust locks and
-compares them against this fold, so an operation the Rust side cannot
-perform has nothing to correspond to.  `QueuedRwLock` has no `cancel()`
-yet, so a fifth letter here would fold on one side and be unrepresentable
-on the other.  The alphabet widens in the same cut that gives the deployed
-lock its withdrawal — see
-`docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md` §4.
+**`c` is the withdrawal**, and it means something on the Rust side only
+because that side now drives *queued* waiters: the oracle's driver takes a
+real ticket for every acquisition, admitted or not, so a withdrawal has a
+request to withdraw.  The CAS-retry lock takes no part — it has no queue —
+which is the same asymmetry `opCorresponds.cancel_no_queue` states.
 
 ## Output format
 
@@ -81,6 +79,7 @@ def parseOp (token : String) : Option RwLockOp :=
       | 'r' => some (.releaseRead     c)
       | 'W' => some (.tryAcquireWrite c)
       | 'w' => some (.releaseWrite    c)
+      | 'c' => some (.cancel          c)
       | _   => none
 
 /-- Parse a comma-separated sequence of ops.  Returns `none` on any

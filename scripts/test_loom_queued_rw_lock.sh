@@ -25,6 +25,35 @@
 # The filter is deliberate: under `--cfg loom` the crate's *other*
 # thread tests would drive loom atomics from real `std` threads, which
 # loom rejects.  Only the `loom_model` module runs.
+#
+# WS-LC LC3.3/LC3.4 — the withdrawal models, and what makes them decisive
+# ---------------------------------------------------------------------
+#
+# Four of the nine models cover `QueuedRwLock::cancel`.  They are not
+# decorative: the *first* version of that function failed two of them,
+# and the reported state was the one they are written to catch —
+# `now_serving` one short of `next_ticket`, the withdrawal slot still
+# published, the lock stalled with a tombstone at the head.  The cause
+# was the store-buffer window between publishing a withdrawal and
+# checking whether one is the head; the fix is a `SeqCst` fence on each
+# side, and making the four accesses themselves `SeqCst` was tried first
+# and was not enough.
+#
+# Decisiveness is proved by **relation-breaking** mutation, per
+# CLAUDE.md: each of the three below keeps every token a presence check
+# would look for and breaks only the relation, and each fails
+# `mid_queue_withdrawal_is_skipped_by_the_core_ahead` and
+# `withdrawal_races_pass_turn_from_both_sides`:
+#
+#   1. Keep the publish, and move it *after* the head check
+#      (`let served_first = self.is_served(ticket);` above the store).
+#   2. Keep the skip loop, and delete only the compare-exchange
+#      arbitration (`slot.store(NO_WITHDRAWAL, ..); return true;`).
+#   3. Keep both fence call sites, and delete the one at the top of
+#      `claim_withdrawal_of`.
+#
+# Deleting the `cancel` call, or the loop, would of course also fail —
+# and would prove nothing, because a presence check survives removal.
 
 set -euo pipefail
 

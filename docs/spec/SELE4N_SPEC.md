@@ -49,10 +49,10 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.34.51` (`lakefile.toml`) |
+| **Package version** | `0.34.52` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 326,896 across 310 Lean files |
-| **Test LoC** | 68,583 across 70 Lean test suites |
+| **Production LoC** | 326,946 across 310 Lean files |
+| **Test LoC** | 68,597 across 70 Lean test suites |
 | **Proved declarations** | 10,874 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
@@ -884,6 +884,42 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    withdrawal falsifies that.  `queuedRwLock_admits_in_spec_order`
    is restated over live entries: the `i`-th waiter is the `i`-th
    live entry, which is what FIFO is about.
+
+   **WS-LC LC3 — the deployed withdrawal** (MODULE
+   `rust/sele4n-hal/src/queued_rw_lock.rs`, v0.34.52): the
+   ticket-FIFO lock the kernel actually instantiates carries the
+   withdrawal the refinement above describes.  `acquire_read` and
+   `acquire_write` remain the *fused* spellings — one call takes a
+   ticket and spins to completion, so there is no instant at which
+   a caller holds an abandonable ticket.  A caller that may have to
+   unwind calls `enqueue`, spins on `is_served`, and terminates the
+   ticket with exactly one of `complete_read`, `complete_write` or
+   `cancel`; because `next_ticket` is an unconditional `fetch_add`
+   and `now_serving` owes one advance per ticket ever issued, a
+   ticket that is never terminated stalls the lock.  `cancel`
+   publishes `ticket + 1` into the withdrawing core's own slot and
+   only then asks whether it is being served; `pass_turn` skips
+   withdrawn tickets, bounded by the slot count.  Both directions
+   carry a `SeqCst` fence: the shape is a store to one location
+   followed by a load of another (Dekker's), which sequentially
+   consistent *accesses* alone do not order — loom exhibited the
+   interleaving in which neither side retired the ticket, and the
+   fences are what removed it.  A compare-exchange on the slot is
+   the arbiter, so exactly one of the withdrawing core and the
+   previous holder's skip loop advances past a given ticket.
+   Evidence: four loom models under `--cfg loom` (a mid-queue
+   withdrawal skipped by the core ahead, a withdrawal racing a
+   turn-pass from both sides, a withdrawal of an already-served
+   ticket, and writer exclusivity across a withdrawal), whose
+   decisiveness is established by three *relation-breaking*
+   mutations rather than by deletion; miri under strict
+   provenance; and a fifth Tier-5 alphabet letter driving both the
+   Lean and the Rust oracle, with the ticket-interval check
+   re-derived from the tombstoned invariant rather than patched.
+   The split acquisition crosses the FFI as six new symbols
+   (`ffi_rw_lock_enqueue`, `_is_served`, `_complete_read`,
+   `_complete_write`, `_cancel`, `_cancel_count`), taking the
+   SM2.D bridge surface from 16 to 22.
 
    **SM2.D.7 lockPrimitives aggregator** (MODULE
    `SeLe4n/Kernel/Concurrency/LockPrimitives.lean`):

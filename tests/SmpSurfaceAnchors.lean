@@ -73,6 +73,21 @@ namespace SeLe4n.Testing.SmpSurfaceAnchors
 #check @SeLe4n.Platform.FFI.ffiRwLockAcquireWriteCount
 #check @SeLe4n.Platform.FFI.ffiRwLockReleaseWriteCount
 
+/-! ## WS-LC LC3.7 — the cancellable acquisition's FFI declarations.
+
+The fused `ffiRwLockAcquireRead` / `ffiRwLockAcquireWrite` above cannot be
+withdrawn: they take a ticket and spin to completion inside one call.  A
+caller that may have to abandon its request — the two-phase-locking unwind —
+splits the acquisition into `ffiRwLockEnqueue`, a `ffiRwLockIsServed` spin,
+and then exactly one of `ffiRwLockCompleteRead`, `ffiRwLockCompleteWrite` or
+`ffiRwLockCancel`. -/
+#check @SeLe4n.Platform.FFI.ffiRwLockEnqueue
+#check @SeLe4n.Platform.FFI.ffiRwLockIsServed
+#check @SeLe4n.Platform.FFI.ffiRwLockCompleteRead
+#check @SeLe4n.Platform.FFI.ffiRwLockCompleteWrite
+#check @SeLe4n.Platform.FFI.ffiRwLockCancel
+#check @SeLe4n.Platform.FFI.ffiRwLockCancelCount
+
 -- ============================================================================
 -- §2 — SM2.D.1 / SM2.D.2 — Typed handles + pool constants
 -- ============================================================================

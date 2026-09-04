@@ -69,13 +69,20 @@ if [ ! -x "$RUST_ORACLE" ]; then
 fi
 
 # Deterministic op-sequence generator.  Generates `$NUM_SEQUENCES`
-# pseudo-random sequences of length 0..16 from a 4-core alphabet,
-# seeded by sequence index for reproducibility.
+# pseudo-random sequences of length 0..16 over a **five**-letter alphabet
+# across four cores, seeded by sequence index for reproducibility.
+#
+# WS-LC LC3.6: the fifth letter is `c`, the withdrawal.  Both the op
+# selector and the core selector move with the alphabet — `seed % 5` and
+# `seed / 5 % 4` — because leaving the divisor at 4 would select cores
+# from a different stride than the ops and silently narrow the space the
+# generator claims to cover.
 #
 # Plus structured edge cases (empty trace, single ops, mutex,
-# reader-batching, sequential writer chain) at the start.
+# reader-batching, sequential writer chain, and the withdrawal shapes) at
+# the start.
 generate_sequences() {
-    # Edge cases (10 fixed sequences).
+    # Edge cases (17 fixed sequences).
     echo ""                                            # empty
     echo "R0,"                                         # single reader
     echo "W0,"                                         # single writer
@@ -86,23 +93,32 @@ generate_sequences() {
     echo "W0,R1,r1,w0,"                                # writer with queued reader
     echo "W0,W1,W2,W3,"                                # writer queue
     echo "R0,R1,W2,r0,r1,w2,"                          # mixed mode
+    # WS-LC LC3.6 — the withdrawal shapes.
+    echo "c0,"                                         # withdraw with no request
+    echo "W0,c0,"                                      # a holder withdraws: no-op
+    echo "W0,W1,c1,w0,"                                # mid-queue, skipped by the release
+    echo "W0,W1,W2,c1,c2,w0,"                          # a run of tombstones
+    echo "W0,W1,W2,c1,w0,w2,"                          # a live waiter behind a tombstone
+    echo "W0,R1,R2,c1,w0,r2,"                          # a withdrawn reader in a batch
+    echo "W0,W1,c1,W1,w0,w1,"                          # withdraw then re-enqueue
 
     # Pseudo-random sequences (deterministic seed via sequence index).
     local n
-    for ((n=0; n<NUM_SEQUENCES-10; n++)); do
+    for ((n=0; n<NUM_SEQUENCES-17; n++)); do
         local seq=""
         local len=$((n % 16 + 1))
         local i
         # Use $n + $i as a deterministic seed for the op selection.
         for ((i=0; i<len; i++)); do
             local seed=$((n * 17 + i * 31))
-            local op_type=$((seed % 4))
-            local core=$((seed / 4 % 4))
+            local op_type=$((seed % 5))
+            local core=$((seed / 5 % 4))
             case "$op_type" in
                 0) seq="${seq}R${core}," ;;
                 1) seq="${seq}r${core}," ;;
                 2) seq="${seq}W${core}," ;;
                 3) seq="${seq}w${core}," ;;
+                4) seq="${seq}c${core}," ;;
             esac
         done
         echo "$seq"

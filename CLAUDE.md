@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.51.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.52.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1341,7 +1341,7 @@ footprints unwindable.
 |-------|--------|---------|----------------------------------------------------|
 | LC1 | LANDED | v0.34.50 | The abstract withdrawal: `RwLockOp.cancel`, INV-R preservation, the liveness restatement, the CAS-retry bridge |
 | LC2 | LANDED | v0.34.51 | The ticket-FIFO refinement of the withdrawal: the withdrawal word, skip-aware promotion, the capstones over live entries |
-| LC3 | NOT STARTED | — | The deployed withdrawal: `QueuedRwLock::cancel`, loom, miri, Tier-5, and the foreign-function surface |
+| LC3 | LANDED | v0.34.52 | The deployed withdrawal: `QueuedRwLock::cancel`, loom, miri, Tier-5, and the foreign-function surface |
 | LC4 | NOT STARTED | — | The two-phase-locking consumers: `cancelAll`, the revalidated refusal unwind, the `withLockSet` unwind |
 | LC5 | NOT STARTED | — | SM2.C-T: the timed execution and the cycle-denominated bounds; LC5.10 retires both debt rows |
 
@@ -2121,12 +2121,12 @@ code may assume:
   (`rwLock_writer_admitted_within_release_budget`); the single-step safety
   theorem it used to stand in for keeps its own entry under its accurate name.
   The two SM2.C **datatype** extensions RR6 did not absorb are WS-LC's (see
-  below): **SM2.C-T** is untouched, so until LC4 lands a delay bound from this
+  below): **SM2.C-T** is untouched, so until LC5 lands a delay bound from this
   surface is a count of *lock operations* and reading it as wall-clock needs
   the explicit per-step cost ceiling `FineLockFlow.lean` §3 takes as a
-  hypothesis; **SM2.C-C** is half closed at v0.34.50 — see the withdrawal
-  bullet below.
-- **A queued core may withdraw its request, in the model only.**
+  hypothesis; **SM2.C-C** is closed except for its consumers — see the two
+  withdrawal bullets below.
+- **A queued core may withdraw its request.**
   `RwLockOp.cancel` (v0.34.50) removes `c`'s entry from `waiters` and writes
   nothing else — three frame facts by `rfl` — preserves all five INV-R
   conjuncts, and is neither a release nor an admission
@@ -2148,10 +2148,11 @@ code may assume:
   one honestly performs no atomic access (`opCorresponds.cancel_no_queue`,
   `honestBlock.cancel_no_queue`) — a queueless lock has no queue for a
   withdrawal to disturb.  The ticket-FIFO one (v0.34.51) carries it properly;
-  see the next bullet.  (4) **No 2PL unwind emits one yet**, so
+  see the next bullet, and the deployed lock carries it at v0.34.52 — the one
+  after that.  (4) **No 2PL unwind emits one yet**, so
   `RevalidatedEntryOutcome.refused` and `withLockSet`'s shrinking phase still
-  release what was granted and leave what was merely requested.  WS-LC phases
-  LC3 and LC4 close that and the deployed half.
+  release what was granted and leave what was merely requested.  WS-LC phase
+  LC4 closes that.
 - **The ticket lock's ledger tombstones; the queue it represents is the
   *live* one** (WS-LC LC2, v0.34.51).  `now_serving` owes one advance per
   ticket ever issued, so a withdrawal cannot remove a ticket from the middle
@@ -2179,6 +2180,40 @@ code may assume:
   the `i`-th live entry, holding some outstanding ticket — a sharper claim
   than the `now_serving + offset + i` it replaces, since that formula is
   simply false once anything has withdrawn.
+- **The deployed lock's acquisition splits when it may have to be withdrawn**
+  (WS-LC LC3, v0.34.52).  `QueuedRwLock::acquire_read` / `acquire_write` are
+  the *fused* spellings — they take a ticket and spin to completion inside one
+  call, so there is no instant at which a caller holds a ticket and could
+  abandon it.  A caller that may have to unwind takes `enqueue(core)`, spins on
+  `is_served(ticket)`, and then calls **exactly one** of `complete_read`,
+  `complete_write` or `cancel` for that ticket.  Five things new code must
+  respect.  (1) **Exactly one terminator per ticket, always.**  `next_ticket`
+  is an unconditional `fetch_add` and `now_serving` owes one advance per ticket
+  ever issued, so a ticket that is neither completed nor withdrawn stalls the
+  lock permanently — the failure is a hang, not a data race, and no assertion
+  catches it.  (2) **The withdrawal is published before the head is checked,
+  and both directions carry a `SeqCst` fence.**  `cancel` stores `ticket + 1`
+  into its own slot, fences, and only then asks whether it is being served;
+  `claim_withdrawal_of` fences before reading the slots.  This is the
+  store-buffer (Dekker) shape — a store to one location followed by a load of
+  another — and **`SeqCst` on the four accesses alone is not sufficient**: loom
+  found the interleaving in which neither side retires the ticket, and the
+  fences are what removed it.  Reordering the publish after the head check, or
+  dropping either fence, loses the race in the direction that stalls the lock.
+  (3) **The compare-exchange is the arbiter.**  Exactly one of {the
+  withdrawing core, the previous holder's skip loop} succeeds in clearing a
+  given slot, and that one advances `now_serving` past the ticket; the loser
+  does nothing.  Deleting the arbitration and testing the slot instead admits
+  two cores at once.  (4) **One outstanding ticket per core per lock.**  The
+  slot array is indexed by core id (`MAX_WAITERS` entries, asserted in range),
+  which is the concrete form of INV-R3's `waiters` Nodup; a core that enqueues
+  twice without terminating the first ticket overwrites its own withdrawal.
+  `NO_WITHDRAWAL` is `0` and slots hold `ticket + 1`, so ticket `0` is
+  withdrawable.  (5) **The split surface crosses the FFI**, because the unwind's
+  caller is on the Lean side: `ffiRwLockEnqueue`, `ffiRwLockIsServed`,
+  `ffiRwLockCompleteRead`, `ffiRwLockCompleteWrite`, `ffiRwLockCancel` and
+  `ffiRwLockCancelCount` join the sixteen SM2.D symbols, reconciled across the
+  three surfaces by `scripts/check_lock_ffi_symmetry.sh`.
 - **Registered uncovered lock domains** are enumerated in Lean, not in prose:
   `UncoveredLockDomain` (`InformationFlow/FineLockFlow.lean`) names each gap and
   its owner, and its completeness theorem forces a new domain to be registered.

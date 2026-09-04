@@ -228,6 +228,20 @@ conjunct is a real "a pure load leaves both states unchanged" statement rather
 than a tautology, and `ticketLockSim_not_universal` exhibits a pair the
 relation does **not** relate.
 
+A queued core may **withdraw** its request. The operation exists at every
+level: `RwLockOp.cancel` in the spec (v0.34.50), a tombstoned ledger and
+skip-aware promotion in the ticket-FIFO refinement (v0.34.51), and
+`QueuedRwLock::cancel` in the deployed lock (v0.34.52). The deployed form
+splits the acquisition — `enqueue`, spin on `is_served`, then exactly one of
+`complete_read`, `complete_write` or `cancel` — because the fused
+`acquire_read` / `acquire_write` never expose an abandonable ticket. What
+withdrawal changes for a reader of these theorems: a conclusion of the form
+"`c` *leaves the queue*" is satisfied by a withdrawal and is unchanged, while
+one of the form "`c` *becomes the holder*" now carries an explicit
+no-withdrawal-in-window premise. The remaining gap is the two-phase-locking
+consumers, which still release what was granted and leave what was merely
+requested; that is registered debt with a closure target.
+
 > Two standing caveats. **Kernel entry is serialised by one global ticket
 > lock**, so live WCRT is weaker than the fine-lock bound `PerCoreWcrt.lean`
 > proves. And **SM3.C.9 is deferred**: the `@[export]` bodies are, with one

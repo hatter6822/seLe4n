@@ -303,6 +303,18 @@ pub static RW_LOCK_RELEASE_WRITE_COUNT: [AtomicU64; STATIC_RW_LOCK_POOL_SIZE] = 
     AtomicU64::new(0),
 ];
 
+/// **WS-LC LC3.7**: per-pool-slot RwLock **withdrawal** counter.
+///
+/// A withdrawal is neither an acquisition nor a release — it removes a
+/// request — so it gets its own counter rather than sharing one and
+/// making both figures mean two things.
+pub static RW_LOCK_CANCEL_COUNT: [AtomicU64; STATIC_RW_LOCK_POOL_SIZE] = [
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+];
+
 // ============================================================================
 // SM2.D handle decoding
 // ============================================================================
@@ -607,6 +619,102 @@ pub fn rw_lock_release_write(handle: u64) {
     });
     let _ = RW_LOCK_RELEASE_WRITE_COUNT[idx].fetch_add(1, Ordering::Relaxed);
     STATIC_RW_LOCK_POOL[idx].release_write(executing_core_id());
+}
+
+// ---------------------------------------------------------------------
+// WS-LC LC3.7 — the cancellable acquisition
+// ---------------------------------------------------------------------
+//
+// The four entry points above are the *blocking* form: they enqueue, wait
+// and complete in one call, so a caller that changes its mind has no
+// moment at which to do so.  A two-phase-locking growing phase that is
+// refused needs exactly that moment, so the bridge exposes the phases.
+//
+// `rw_lock_acquire_read` and `rw_lock_complete_read` both count as one
+// read acquisition, because they are: the blocking form *is* enqueue plus
+// complete.  A withdrawal is a different event and gets its own counter.
+
+/// **WS-LC LC3.7**: begin a cancellable acquisition on `handle`, taking a
+/// ticket without waiting for it.
+///
+/// The caller must follow with exactly one of `rw_lock_complete_read`,
+/// `rw_lock_complete_write` or `rw_lock_cancel` for the ticket returned.
+#[must_use]
+pub fn rw_lock_enqueue(handle: u64) -> u64 {
+    let idx = decode_rw_lock_handle(handle).unwrap_or_else(|| {
+        panic!(
+            "WS-LC LC3.7: rw_lock_enqueue: malformed handle {} (must be < {})",
+            handle, STATIC_RW_LOCK_POOL_SIZE
+        )
+    });
+    STATIC_RW_LOCK_POOL[idx].enqueue(executing_core_id())
+}
+
+/// **WS-LC LC3.7**: whether `ticket` is the one `handle` is serving, so a
+/// caller polling rather than parking can tell when to complete.
+#[must_use]
+pub fn rw_lock_is_served(handle: u64, ticket: u64) -> bool {
+    let idx = decode_rw_lock_handle(handle).unwrap_or_else(|| {
+        panic!(
+            "WS-LC LC3.7: rw_lock_is_served: malformed handle {} (must be < {})",
+            handle, STATIC_RW_LOCK_POOL_SIZE
+        )
+    });
+    STATIC_RW_LOCK_POOL[idx].is_served(ticket)
+}
+
+/// **WS-LC LC3.7**: complete a read acquisition begun with
+/// [`rw_lock_enqueue`].
+pub fn rw_lock_complete_read(handle: u64, ticket: u64) {
+    let idx = decode_rw_lock_handle(handle).unwrap_or_else(|| {
+        panic!(
+            "WS-LC LC3.7: rw_lock_complete_read: malformed handle {} (must be < {})",
+            handle, STATIC_RW_LOCK_POOL_SIZE
+        )
+    });
+    let _ = RW_LOCK_ACQUIRE_READ_COUNT[idx].fetch_add(1, Ordering::Relaxed);
+    STATIC_RW_LOCK_POOL[idx].complete_read(executing_core_id(), ticket);
+}
+
+/// **WS-LC LC3.7**: complete a write acquisition begun with
+/// [`rw_lock_enqueue`].
+pub fn rw_lock_complete_write(handle: u64, ticket: u64) {
+    let idx = decode_rw_lock_handle(handle).unwrap_or_else(|| {
+        panic!(
+            "WS-LC LC3.7: rw_lock_complete_write: malformed handle {} (must be < {})",
+            handle, STATIC_RW_LOCK_POOL_SIZE
+        )
+    });
+    let _ = RW_LOCK_ACQUIRE_WRITE_COUNT[idx].fetch_add(1, Ordering::Relaxed);
+    STATIC_RW_LOCK_POOL[idx].complete_write(executing_core_id(), ticket);
+}
+
+/// **WS-LC LC3.7**: withdraw a request begun with [`rw_lock_enqueue`].
+///
+/// Releases nothing, admits nobody, and costs the waiters behind it
+/// nothing — the contract `rwLock_cancel_not_effective_release` and
+/// `rwLock_cancel_admits_no_one` state on the Lean side.
+pub fn rw_lock_cancel(handle: u64, ticket: u64) {
+    let idx = decode_rw_lock_handle(handle).unwrap_or_else(|| {
+        panic!(
+            "WS-LC LC3.7: rw_lock_cancel: malformed handle {} (must be < {})",
+            handle, STATIC_RW_LOCK_POOL_SIZE
+        )
+    });
+    let _ = RW_LOCK_CANCEL_COUNT[idx].fetch_add(1, Ordering::Relaxed);
+    STATIC_RW_LOCK_POOL[idx].cancel(executing_core_id(), ticket);
+}
+
+/// **WS-LC LC3.7**: how many withdrawals `handle` has seen.
+#[must_use]
+pub fn rw_lock_cancel_count(handle: u64) -> u64 {
+    let idx = decode_rw_lock_handle(handle).unwrap_or_else(|| {
+        panic!(
+            "WS-LC LC3.7: rw_lock_cancel_count: malformed handle {} (must be < {})",
+            handle, STATIC_RW_LOCK_POOL_SIZE
+        )
+    });
+    RW_LOCK_CANCEL_COUNT[idx].load(Ordering::Relaxed)
 }
 
 /// **WS-SM SM2.D.2**: snapshot of the RwLock state.

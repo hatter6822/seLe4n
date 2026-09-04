@@ -1,3 +1,108 @@
+## v0.34.52 — the deployed lock learns to withdraw
+
+**WS-LC LC3 (all seven sub-tasks).**  The withdrawal existed at the spec
+level (v0.34.50) and in the ticket-FIFO refinement (v0.34.51); the lock the
+kernel actually instantiates could not perform one.  This cut closes that
+half.  `STATIC_RW_LOCK_POOL` is `[QueuedRwLock; 4]`, so this is the lock a
+booted image runs.
+
+### The acquisition splits, because a fused one has no abandonable instant
+(LC3.1)
+
+`acquire_read` and `acquire_write` take a ticket and spin to completion
+inside one call.  There is no point at which the caller holds a ticket and
+could decide not to want it — which is exactly why they cannot be the
+withdrawal's entry point.  A caller that may have to unwind now uses
+`enqueue(core)`, spins on `is_served(ticket)`, and terminates the ticket with
+**exactly one** of `complete_read`, `complete_write` or `cancel`.  The fused
+spellings remain, as that sequence with the spin inlined.
+
+The obligation the split creates is stated where it binds: `next_ticket` is
+an unconditional `fetch_add` and `now_serving` owes one advance per ticket
+ever issued, so a ticket that is neither completed nor withdrawn stalls the
+lock permanently.  The failure mode is a hang, not a race, and no assertion
+catches it.
+
+### Publish before you check, and fence both ways (LC3.1–LC3.2)
+
+`cancel` stores `ticket + 1` into the withdrawing core's own slot and *then*
+asks whether it is being served.  The other order loses the race in the
+direction that stalls the lock: the previous holder passes the turn, sees no
+withdrawal, and moves on, while the canceller sees itself not-yet-served and
+also moves on — with the ticket outstanding and nobody left to retire it.
+
+Sequential consistency on the four accesses is **not** sufficient, and this
+is the finding worth recording.  The shape is a store to one location
+followed by a load of another — Dekker's — and loom exhibited the
+interleaving in which neither side retires the ticket even with every access
+`SeqCst`.  A `fence(SeqCst)` after the publish in `cancel`, and another at
+the top of `claim_withdrawal_of`, is what removes it.  Both fences are
+load-bearing; deleting either reproduces the original failure.
+
+`pass_turn` gained a bounded skip loop: after advancing, it claims and
+retires withdrawn tickets until the head is live, at most one pass per slot.
+The claim is a compare-exchange, and it is the **arbiter** — exactly one of
+{the withdrawing core, the previous holder's loop} clears a given slot and
+advances past its ticket.  Testing the slot instead of claiming it admits two
+cores at once.
+
+### Loom, and proving the models decisive (LC3.3–LC3.5)
+
+Four new models, taking the harness to nine: a mid-queue withdrawal skipped
+by the core ahead, a withdrawal racing a turn-pass from both sides, a
+withdrawal of an already-served ticket retiring itself, and writer
+exclusivity across a withdrawal.
+
+Their decisiveness is established by **relation-breaking** mutation, per the
+project's own rule — each mutation keeps every token a presence check would
+look for and breaks only the relation: the publish moved after the head
+check, the compare-exchange replaced by a load-and-store, and the fences
+removed.  Each fails at least one model.  Deleting the `cancel` call, which
+is what a deletion-style mutation would do, proves nothing here.
+
+Eight sequential unit tests and miri under strict provenance cover the
+single-threaded shapes: withdrawing the head, withdrawing from the middle,
+withdrawing an already-served ticket, double withdrawal by one core, and the
+interval closing in each case.
+
+### Tier-5 drives real tickets now (LC3.6)
+
+The cross-language oracle's alphabet grows to five letters.  Making the new
+letter mean anything required a change to the driver itself: before this cut
+it admitted every core the spec admits, so queued waiters were abstract and
+the real lock never carried more than one outstanding ticket — a withdrawal
+would have had nothing to withdraw.  The driver now takes a real ticket for
+every acquisition and holds it until the operation completes or is
+withdrawn.
+
+`check_ticket_interval` is **re-derived**, not patched: with tombstones the
+outstanding count is no longer a function of the writer bit, and is instead
+the live waiters plus the withdrawn tickets the served position has not yet
+passed.  The generator's arithmetic shifts with the alphabet, and the new
+letter was confirmed *reached* by instrumenting the generator rather than
+inferred from the modulus — 1665 withdrawals across 859 of 983 sequences, on
+all four cores — and confirmed *observable* by a pair of sequences that
+differ only in whether the withdrawal is present.
+
+### The withdrawal crosses the foreign-function boundary (LC3.7)
+
+The unwind's caller is on the Lean side, so a Rust-only operation would be
+unreachable from the runtime.  Six symbols join the bridge — `enqueue`,
+`is_served`, `complete_read`, `complete_write`, `cancel` and `cancel_count` —
+taking the SM2.D FFI surface from 16 to 22, reconciled across the three
+surfaces (Lean `@[extern]`, `ffi.rs` exports, `lock_bridge.rs` helpers) by
+`scripts/check_lock_ffi_symmetry.sh` and pinned by the two `build.rs`
+scanners.  `RW_LOCK_CANCEL_COUNT` joins the per-slot trace counters.
+
+The lock theorem inventory is unchanged at 28: this cut adds no Lean theorem,
+only the deployed protocol and the declarations that reach it.
+
+What remains of SM2.C-C is the two consumers — `RevalidatedEntryOutcome`'s
+refusal path and `withLockSet`'s shrinking phase still release what was
+granted and leave what was merely requested.  That is WS-LC LC4.
+
+Refs: docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md §5 (LC3)
+
 ## v0.34.51 — the ticket lock's ledger learns to tombstone
 
 **WS-LC LC2 (all eight sub-tasks).**  LC1 gave the abstract lock a

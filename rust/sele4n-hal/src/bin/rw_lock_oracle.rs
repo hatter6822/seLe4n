@@ -95,6 +95,8 @@ enum Op {
     ReleaseRead(u8),
     AcquireWrite(u8),
     ReleaseWrite(u8),
+    /// **WS-LC LC3.6**: withdraw a queued request (`RwLockOp.cancel`).
+    Cancel(u8),
 }
 
 /// Parse one token (no comma).  Returns `None` on parse error, which
@@ -115,6 +117,7 @@ fn parse_op(tok: &str) -> Option<Op> {
         'r' => Some(Op::ReleaseRead(core)),
         'W' => Some(Op::AcquireWrite(core)),
         'w' => Some(Op::ReleaseWrite(core)),
+        'c' => Some(Op::Cancel(core)),
         _ => None,
     }
 }
@@ -146,9 +149,23 @@ struct Driver {
     /// Reader cores currently holding, per the abstract spec.  Same
     /// role: identity is abstract, the *count* reported is concrete.
     readers: Vec<u8>,
-    /// Waiters in FIFO order: `(core, mode_is_write)`.  Not represented
-    /// in either concrete lock — see the module docs.
-    waiters: Vec<(u8, bool)>,
+    /// Waiters in FIFO order: `(core, mode_is_write, ticket)`.
+    ///
+    /// **WS-LC LC3.6**: the ticket is the queued lock's, and carrying it
+    /// is what makes a waiter *concrete*.  Before this the driver
+    /// admitted every core the spec admits and left queued waiters
+    /// abstract, so the ticket lock never had more than one outstanding
+    /// ticket and its queue was never exercised — and a withdrawal, which
+    /// is an operation *on* the queue, would have had nothing to
+    /// withdraw.  The CAS-retry lock has no queue and so takes no part in
+    /// this; that asymmetry is `opCorresponds.cancel_no_queue`.
+    waiters: Vec<(u8, bool, u64)>,
+    /// **WS-LC LC3.6**: tickets whose holder withdrew, oldest first.
+    ///
+    /// Driver-side, so `check_ticket_interval` compares the lock's
+    /// counters against an expectation derived from the *spec* rather
+    /// than from the lock's own slot array.
+    tombstones: Vec<u64>,
     /// The deployed CAS-retry lock (`rust/sele4n-hal/src/rw_lock.rs`).
     cas: RwLock,
     /// The deployed ticket FIFO lock
@@ -162,6 +179,7 @@ impl Driver {
             writer_held: None,
             readers: Vec::new(),
             waiters: Vec::new(),
+            tombstones: Vec::new(),
             cas: RwLock::new(),
             queued: QueuedRwLock::new(),
         }
@@ -182,39 +200,41 @@ impl Driver {
     /// Admit `c` as a reader on both real locks.  Both attempts must
     /// succeed: the spec admits here, so an implementation that refuses
     /// has diverged from it.
-    fn admit_reader(&mut self, c: u8) -> Result<(), DivergenceReport> {
+    fn admit_reader(&mut self, c: u8, ticket: u64) -> Result<(), DivergenceReport> {
         if !self.cas.try_acquire_read() {
             return Err(DivergenceReport(format!(
                 "cas-retry lock refused a read admission the spec grants (core {c}, state 0x{:x})",
                 self.packed_cas()
             )));
         }
-        if !self.queued.try_acquire_read(c) {
+        if !self.queued.is_served(ticket) {
             return Err(DivergenceReport(format!(
-                "ticket lock refused a read admission the spec grants (core {c}, state 0x{:x}, tickets {:?})",
-                self.queued.peek_state(),
+                "ticket lock is not serving the ticket the spec admits (core {c}, ticket \
+                 {ticket}, tickets {:?})",
                 self.queued.peek_tickets()
             )));
         }
+        self.queued.complete_read(c, ticket);
         self.readers.insert(0, c);
         Ok(())
     }
 
     /// Admit `c` as the writer on both real locks.
-    fn admit_writer(&mut self, c: u8) -> Result<(), DivergenceReport> {
+    fn admit_writer(&mut self, c: u8, ticket: u64) -> Result<(), DivergenceReport> {
         if !self.cas.try_acquire_write() {
             return Err(DivergenceReport(format!(
                 "cas-retry lock refused a write admission the spec grants (core {c}, state 0x{:x})",
                 self.packed_cas()
             )));
         }
-        if !self.queued.try_acquire_write(c) {
+        if !self.queued.is_served(ticket) {
             return Err(DivergenceReport(format!(
-                "ticket lock refused a write admission the spec grants (core {c}, state 0x{:x}, tickets {:?})",
-                self.queued.peek_state(),
+                "ticket lock is not serving the ticket the spec admits (core {c}, ticket \
+                 {ticket}, tickets {:?})",
                 self.queued.peek_tickets()
             )));
         }
+        self.queued.complete_write(c, ticket);
         self.writer_held = Some(c);
         Ok(())
     }
@@ -245,6 +265,10 @@ impl Driver {
                 if self.core_involved(c) {
                     return Ok(()); // no-op gate
                 }
+                // Every acquisition takes a real ticket, whether it is
+                // admitted at once or queued — that is what makes a
+                // queued waiter concrete (WS-LC LC3.6).
+                let ticket = self.queued.enqueue(c);
                 // Strict FIFO (SM2.C-defer §5.3): a new reader enqueues
                 // iff any holder OR any queued waiter exists.  This is
                 // `applyOp`'s branch verbatim; the pre-RR6.2 model here
@@ -252,10 +276,10 @@ impl Driver {
                 // differs on states the spec's INV-R5 rules out but which
                 // nothing in this binary ruled out.
                 if self.writer_held.is_some() || !self.waiters.is_empty() {
-                    self.waiters.push((c, false));
+                    self.waiters.push((c, false, ticket));
                     Ok(())
                 } else {
-                    self.admit_reader(c)
+                    self.admit_reader(c, ticket)
                 }
             }
             Op::ReleaseRead(c) => {
@@ -273,14 +297,15 @@ impl Driver {
                 if self.core_involved(c) {
                     return Ok(());
                 }
+                let ticket = self.queued.enqueue(c);
                 if self.writer_held.is_some()
                     || !self.readers.is_empty()
                     || !self.waiters.is_empty()
                 {
-                    self.waiters.push((c, true));
+                    self.waiters.push((c, true, ticket));
                     Ok(())
                 } else {
-                    self.admit_writer(c)
+                    self.admit_writer(c, ticket)
                 }
             }
             Op::ReleaseWrite(c) => {
@@ -291,7 +316,38 @@ impl Driver {
                 // `promoteWaitersOnWriterRelease`.
                 self.promote_head()
             }
+            Op::Cancel(c) => {
+                // `applyOp .cancel`: drop `c`'s queued request, and
+                // nothing else.  A core that is holding, or that has no
+                // request, is untouched on both sides.
+                let Some(i) = self.waiters.iter().position(|w| w.0 == c) else {
+                    return Ok(());
+                };
+                let (_, _, ticket) = self.waiters.remove(i);
+                self.queued.cancel(c, ticket);
+                // The withdrawal is retired at once when the core was the
+                // head, and left as a tombstone otherwise.  Recording it
+                // driver-side is what lets `check_ticket_interval` derive
+                // the expected interval from the spec rather than read it
+                // back out of the lock's own slots.
+                let (_, serving) = self.queued.peek_tickets();
+                if ticket >= serving {
+                    self.tombstones.push(ticket);
+                }
+                self.retire_passed_tombstones();
+                Ok(())
+            }
         }
+    }
+
+    /// **WS-LC LC3.6**: forget tombstones the lock has already skipped.
+    ///
+    /// A withdrawn ticket below `now_serving` has been retired by
+    /// somebody's skip loop; keeping it would make the expected interval
+    /// too wide.
+    fn retire_passed_tombstones(&mut self) {
+        let (_, serving) = self.queued.peek_tickets();
+        self.tombstones.retain(|&t| t >= serving);
     }
 
     /// Promote the head of the queue: a single writer, or the whole
@@ -301,22 +357,28 @@ impl Driver {
     /// this order, and each attempt must succeed — which is where the
     /// ticket lock's admission order is checked against the spec's.
     fn promote_head(&mut self) -> Result<(), DivergenceReport> {
+        // The release that brought us here ran the skip loop, so whatever
+        // tombstones it uncovered are gone.
+        self.retire_passed_tombstones();
         match self.waiters.first().copied() {
             None => Ok(()),
-            Some((c, true)) => {
+            Some((c, true, ticket)) => {
                 self.waiters.remove(0);
-                self.admit_writer(c)
+                self.admit_writer(c, ticket)
             }
-            Some((_, false)) => {
+            Some((_, false, _)) => {
                 let mut batch = Vec::new();
-                while let Some((c, false)) = self.waiters.first().copied() {
-                    batch.push(c);
+                while let Some((c, false, ticket)) = self.waiters.first().copied() {
+                    batch.push((c, ticket));
                     self.waiters.remove(0);
                 }
                 // Admit in queue order: the spec's batch order is the
                 // ticket lock's ticket order.
-                for c in batch {
-                    self.admit_reader(c)?;
+                for (c, ticket) in batch {
+                    self.admit_reader(c, ticket)?;
+                    // Each admission passes its own ticket on, which can
+                    // uncover a tombstone the skip loop then retires.
+                    self.retire_passed_tombstones();
                 }
                 Ok(())
             }
@@ -347,14 +409,25 @@ impl Driver {
         Ok(())
     }
 
-    /// The ticket lock's outstanding-ticket count must be `1` exactly
-    /// while a writer holds, and `0` otherwise.
+    /// The ticket lock's outstanding-ticket count is the held writer,
+    /// plus the queued waiters, plus the withdrawals nobody has skipped
+    /// yet.
     ///
-    /// A reader passes its ticket on at entry, so a holding reader is
-    /// not outstanding; a writer holds its ticket until `release_write`.
-    /// The driver never leaves a waiter spinning, so those are the only
-    /// two cases — which makes this the reachable-state instance of the
-    /// `queuedSim` ticket-interval relation.
+    /// **WS-LC LC3.6 — re-derived, not patched.**  This used to read
+    /// `expected = writer_held.is_some()`, and it was right *because the
+    /// driver never left a waiter spinning*: every core the spec queued
+    /// was abstract, so the only outstanding ticket was a holding
+    /// writer's.  Once waiters hold real tickets that constant is simply
+    /// a different quantity, and a withdrawal adds a third kind of
+    /// outstanding ticket that is neither a holder's nor a waiter's.
+    /// Widening the constant would have hidden both.
+    ///
+    /// Every ticket in `[now_serving, next_ticket)` is therefore exactly
+    /// one of: the writer's (it holds its ticket until `release_write`),
+    /// a waiter's, or a tombstone.  A *reader* passes its ticket on at
+    /// entry, so a holding reader contributes none.  That partition is
+    /// the reachable-state instance of `queuedSim`'s ticket-interval
+    /// relation, now including its `liveLedger` half.
     fn check_ticket_interval(&self) -> Result<(), DivergenceReport> {
         let (next, serving) = self.queued.peek_tickets();
         if serving > next {
@@ -362,13 +435,15 @@ impl Driver {
                 "ticket lock regressed: now_serving {serving} > next_ticket {next}"
             )));
         }
-        let expected = u64::from(self.writer_held.is_some());
+        let pending = self.tombstones.iter().filter(|&&t| t >= serving).count() as u64;
+        let expected = u64::from(self.writer_held.is_some()) + self.waiters.len() as u64 + pending;
         let outstanding = next - serving;
         if outstanding != expected {
             return Err(DivergenceReport(format!(
                 "ticket interval is {outstanding} (next {next}, serving {serving}) but the \
-                 spec state has writer_held={:?}",
-                self.writer_held
+                 spec state has writer_held={:?}, {} waiter(s) and {pending} tombstone(s)",
+                self.writer_held,
+                self.waiters.len()
             )));
         }
         Ok(())

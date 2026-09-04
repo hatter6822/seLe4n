@@ -6760,6 +6760,12 @@ import SeLe4n.Platform.FFI
 #check @SeLe4n.Platform.FFI.ffiRwLockReleaseReadCount
 #check @SeLe4n.Platform.FFI.ffiRwLockAcquireWriteCount
 #check @SeLe4n.Platform.FFI.ffiRwLockReleaseWriteCount
+#check @SeLe4n.Platform.FFI.ffiRwLockEnqueue
+#check @SeLe4n.Platform.FFI.ffiRwLockIsServed
+#check @SeLe4n.Platform.FFI.ffiRwLockCompleteRead
+#check @SeLe4n.Platform.FFI.ffiRwLockCompleteWrite
+#check @SeLe4n.Platform.FFI.ffiRwLockCancel
+#check @SeLe4n.Platform.FFI.ffiRwLockCancelCount
 EOF'
 
 # WS-SM SM3.A — Per-object lock field surface anchors.  Every per-object

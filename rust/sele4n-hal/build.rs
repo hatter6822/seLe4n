@@ -5634,8 +5634,12 @@ fn scan_lock_bridge_rs_intact() {
     // a literal is a mention, not a call. See `rust_code_views`.
     let (_, stripped) = rust_code_views(&contents);
 
-    // The 16 required public helpers in `lock_bridge.rs` that the
-    // SM2.D FFI exports forward to.  Plus the build anchor constant.
+    // Every public helper in `lock_bridge.rs` that an `ffi.rs` export
+    // forwards to, plus the pool statics, the trace counters and the
+    // build anchor constant.  The set is *reconciled* against the two
+    // other surfaces by `scripts/check_lock_ffi_symmetry.sh`, which
+    // derives it from the exports rather than restating it; this list
+    // is the pin that fails when the two diverge.
     let required = [
         "pub const STATIC_TICKET_LOCK_POOL_SIZE: usize",
         "pub const STATIC_RW_LOCK_POOL_SIZE: usize",
@@ -5661,6 +5665,8 @@ fn scan_lock_bridge_rs_intact() {
         "pub static RW_LOCK_RELEASE_READ_COUNT:",
         "pub static RW_LOCK_ACQUIRE_WRITE_COUNT:",
         "pub static RW_LOCK_RELEASE_WRITE_COUNT:",
+        // WS-LC LC3.7: the withdrawal's trace counter.
+        "pub static RW_LOCK_CANCEL_COUNT:",
         // SM2.D handle decoders.
         "pub const fn decode_ticket_lock_handle(",
         "pub const fn decode_rw_lock_handle(",
@@ -5681,6 +5687,17 @@ fn scan_lock_bridge_rs_intact() {
         "pub fn rw_lock_release_read_count(",
         "pub fn rw_lock_acquire_write_count(",
         "pub fn rw_lock_release_write_count(",
+        // WS-LC LC3.7: the cancellable acquisition.  `acquire_read` /
+        // `acquire_write` are the fused spellings; a caller that may
+        // have to withdraw takes its ticket with `rw_lock_enqueue`,
+        // spins on `rw_lock_is_served`, and then either completes the
+        // acquisition or withdraws the request.
+        "pub fn rw_lock_enqueue(",
+        "pub fn rw_lock_is_served(",
+        "pub fn rw_lock_complete_read(",
+        "pub fn rw_lock_complete_write(",
+        "pub fn rw_lock_cancel(",
+        "pub fn rw_lock_cancel_count(",
         // SM2.D.7 theorem-count constant + build anchor.
         "pub const LOCK_THEOREM_COUNT: usize = 28",
         "pub const LOCK_BRIDGE_BUILD_ANCHOR:",
@@ -5738,6 +5755,13 @@ fn scan_ffi_rs_exposes_lock_ffi_exports() {
         "pub extern \"C\" fn ffi_rw_lock_release_read_count(",
         "pub extern \"C\" fn ffi_rw_lock_acquire_write_count(",
         "pub extern \"C\" fn ffi_rw_lock_release_write_count(",
+        // WS-LC LC3.7 — the cancellable acquisition.
+        "pub extern \"C\" fn ffi_rw_lock_enqueue(",
+        "pub extern \"C\" fn ffi_rw_lock_is_served(",
+        "pub extern \"C\" fn ffi_rw_lock_complete_read(",
+        "pub extern \"C\" fn ffi_rw_lock_complete_write(",
+        "pub extern \"C\" fn ffi_rw_lock_cancel(",
+        "pub extern \"C\" fn ffi_rw_lock_cancel_count(",
     ];
     for needle in required_ffi_symbols {
         if !stripped.contains(needle) {
