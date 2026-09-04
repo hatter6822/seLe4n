@@ -933,9 +933,13 @@ def parameter_expansion_end(text: str, at: int) -> int:
                 return -1
             j = k
             continue
-        if c == "{":
-            depth += 1
-        elif c == "}":
+        # PR #889 review round 21: only `${` opens an expansion.  A bare `{`
+        # inside a removal pattern -- `${y%{}`, which bash accepts -- is
+        # literal text, and counting it left `depth` at 1 forever, so the
+        # scan ran off the end, `command_substitution_end` returned -1, and
+        # `strip_shell` blanked the rest of the line including any
+        # identifier there.  The `${` case above is the only increment.
+        if c == "}":
             depth -= 1
             if depth == 0:
                 return j + 1

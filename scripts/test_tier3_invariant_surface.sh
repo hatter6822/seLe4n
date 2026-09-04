@@ -5203,9 +5203,16 @@ run_check "INVARIANT" rg -n 'collect_lean_exports_from_file\(lean_library_root' 
 # provenance is decided by excluding dependency roots, the shell view skips
 # balanced parameter expansions, and the live affinity path is bounded by the
 # PEs the platform declares.
-run_check "INVARIANT" rg -n '^partial def neverReturns' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -n '^def dependencyModuleRoots' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -n '^def isProjectDeclaration' SeLe4n/Testing/BootEntryContract.lean
+# PR #889 review round 21: the hand-written action walk is gone.  The entry is
+# required to *be* `bootAndInitialiseRPi5OrHalt` applied to a configuration —
+# one `isDefEq`, which zeta- and beta-reduces, so the forms rounds 18-21 each
+# taught the walk are not questions any more.
+run_check "INVARIANT" rg -n '^def isApprovedBootApplication' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'Meta.isDefEq body \\(mkApp \\(mkConst approvedBootCall\\) config\\)' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessLetBoundConfig' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessLetBoundHalt' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessAliasedBoot' SeLe4n/Testing/BootEntryContract.lean
+run_negative_check "INVARIANT" rg -n 'partial def unconditionalActions' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n 'private def bootEntryWitnessHaltedFirst' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n 'private def bootEntryWitnessAliasHaltedFirst' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n '^def parameter_expansion_end' scripts/check_identifier_naming.py
@@ -5224,7 +5231,6 @@ run_check "INVARIANT" rg -n '^theorem bootFromPlatformChecked_ok_declaredCoreCou
 # PR #889 review round 19: the bind instance is validated before the walk
 # treats it as sequencing, opaque bodies are read, and the object budget has
 # its own boot diagnostic.
-run_check "INVARIANT" rg -n '^def isCanonicalBaseIOBind' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n 'allowOpaque := true' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n 'private def bootEntryWitnessBogusBind' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n 'private def bootEntryWitnessOpaqueBypass' SeLe4n/Testing/BootEntryContract.lean
@@ -5241,8 +5247,6 @@ run_check "INVARIANT" rg -n 'error \(wellFormedDiagnostic config\)' SeLe4n/Platf
 # and a successful boot leaves object-index room for the root and the idle
 # threads.
 run_check "INVARIANT" rg -n '^import SeLe4n$' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -n '^partial def unconditionalActions' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -n '^def executesApprovedBootCall' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n '^def expectedBootEntryType' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n 'private def bootEntryWitnessConditional' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n 'private def bootEntryWitnessWrongType' SeLe4n/Testing/BootEntryContract.lean
@@ -5260,8 +5264,6 @@ run_check "INVARIANT" rg -n '^theorem foldl_enqueueIdleThread_objectIndex_length
 run_check "INVARIANT" rg -n '^def bootAndInitialiseRPi5OrHalt' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '  \| .error _ => ffiFatalHaltAll' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^def approvedBootCall' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -n '^partial def kernelStateWriteInExpr' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -n '^partial def unapprovedKernelStateWrite' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n '^def bootEntryContractViolations' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n '^def bootEntryDeclarations' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n 'private def bootEntryWitnessBypass' SeLe4n/Testing/BootEntryContract.lean

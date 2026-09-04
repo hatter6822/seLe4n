@@ -797,6 +797,34 @@ passes `allowOpaque := true`, and what it still cannot see (a foreign
 was reported as an embedded-identity mismatch — the defect round 2 fixed for the
 idle-slot reservation, repeated by the same omission.
 
+**Review round 21 (PR #889, same version).**  Five, and four of them are one
+defect that this plan should record because the *diagnosis* is the deliverable.
+Round 17 applied "a Lean question goes to the elaborator" to **names** and
+closed that class outright.  It did not apply it to *behaviour*, and nothing in
+the environment answers what a program does — so round 17 also wrote a
+hand-rolled abstract interpreter over `Expr`, and rounds 18, 19, 20 and 21 are
+four consecutive findings against it (a conditional, a lawless `Bind`, a hidden
+`opaque` body, a non-returning action, a `let`-bound head).  That is round 16's
+sentence about regular expressions with one word changed: the set of inputs
+defeating a partial analysis is unbounded, the set it has seen is finite.
+Substituting `Expr` for text moved the class down a level rather than closing
+it.
+
+The exit is round 16's own, applied to the program rather than to its names:
+the boot entry is no longer analysed but **required to be** one program —
+`bootAndInitialiseRPi5OrHalt` applied to a configuration, decided by a single
+`isDefEq`.  Stronger than the walk (which admitted any extra action that did
+not write kernel state), and it deletes eleven analysis definitions.  The
+corollary for scanners with no elaborator to ask is the rule already stated:
+fail closed on what cannot be decided — a macro inside a Rust `extern` block is
+refused rather than read past, and `${` alone opens a parameter expansion.
+
+The fifth is the kernel one: round 20 gave `declaredCoreCount` a live consumer
+while `rust_boot_main` computed `online` and passed it nowhere, so a
+`smp_enabled=false` or capped bring-up could hand a 4-PE kernel a narrower
+machine.  Refused at the `hw_target` handoff, with the constant pinned against
+the binding.
+
 **Review round 20 (PR #889, same version).**  Four.  Three are the same shape
 one more time: a walk or a lexer assuming something about what it is looking at.
 `unconditionalActions` treated the tail of a `Bind` chain as reachable, so an

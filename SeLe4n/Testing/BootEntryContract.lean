@@ -71,258 +71,68 @@ failure handled (`Platform.FFI.bootAndInitialiseRPi5OrHalt`).  Naming the
 this file: the halt is in that definition, once. -/
 def approvedBootCall : Name := `SeLe4n.Platform.FFI.bootAndInitialiseRPi5OrHalt
 
-/-- The live kernel state.  A declaration that names one of these outside a
-read is an installer, whatever it is called. -/
-def kernelStateReferences : List Name :=
-  [`SeLe4n.Platform.FFI.kernelStateRef, `SeLe4n.Platform.FFI.kernelLabelingContextRef]
-
-private def stateReferenceSet : Std.HashSet Name :=
-  kernelStateReferences.foldl (fun acc n => acc.insert n) {}
-
-/-- Does `e` name a kernel-state reference anywhere that is not the reference
-argument of a read?
-
-`ST.Ref.get r` reads `r`; every other position — `set`, `modify`, `modifyGet`,
-or the reference passed along as a value — either writes it or hands it to
-something this analysis cannot follow, and both count as a write.  That is an
-over-approximation in the fail-closed direction: a reader misread as an
-installer refuses a boot entry, never admits one. -/
-partial def kernelStateWriteInExpr (e : Expr) : Bool :=
-  match e with
-  | .const n _ => stateReferenceSet.contains n
-  | .app .. =>
-      let fn := e.getAppFn
-      let args := e.getAppArgs
-      if let .const head _ := fn then
-        if head == ``ST.Ref.get then
-          -- The reference itself is read here; anything *computed* to produce
-          -- it is still walked.
-          args.any fun a =>
-            match a.consumeMData with
-            | .const _ _ => false
-            | a => kernelStateWriteInExpr a
-        else
-          stateReferenceSet.contains head || args.any kernelStateWriteInExpr
-      else
-        kernelStateWriteInExpr fn || args.any kernelStateWriteInExpr
-  | .lam _ t b _ => kernelStateWriteInExpr t || kernelStateWriteInExpr b
-  | .forallE _ t b _ => kernelStateWriteInExpr t || kernelStateWriteInExpr b
-  | .letE _ t v b _ =>
-      kernelStateWriteInExpr t || kernelStateWriteInExpr v || kernelStateWriteInExpr b
-  | .mdata _ b => kernelStateWriteInExpr b
-  | .proj _ _ b => kernelStateWriteInExpr b
-  | _ => false
-
 /-- The value of `n`, or `none` for a declaration that has none (an axiom, a
 constructor).
 
-`allowOpaque := true` (PR #889 review round 19).  `ConstantInfo.value?` hides
-an `opaque` declaration's body by default, so the reachability walk treated one
-as a harmless leaf and
-`opaque overwrite : SystemState → BaseIO Unit := initialiseKernelState`, called
-after the approved boot, replaced the checked state while passing the contract.
-
-What this still cannot see is a body that is not Lean's: an `@[extern]`
-`opaque` has a foreign implementation, and its Lean-side value is the
-`Inhabited`/`Nonempty` witness the elaborator synthesised.  Such a body cannot
-name `kernelStateRef` — an `IO.Ref` no foreign code holds — so the walk is
-sound for the property it states; a foreign function that called *back* into an
-exported Lean installer would be outside it, and is the readiness-gate and
-export-inventory surface's question rather than this one's. -/
+`allowOpaque := true`: an `opaque` declaration's body is hidden by default, and
+an entry must be *seen* to be refused rather than treated as absent. -/
 def declarationValue (env : Environment) (n : Name) : Option Expr :=
   (env.find? n).bind (·.value? (allowOpaque := true))
 
-/-- Does `n`'s own body install kernel state?
+/-- **PR #889 review round 21: the entry is required to be one program, not
+analysed as an arbitrary one.**
 
-The positional walk above is a *tree* walk over an `Expr` that is a DAG with
-heavy sharing, so it is run only where it can say anything: `getUsedConstants`
-is cached and linear, and a body that never names a reference cannot write one.
-On this tree that filter leaves a dozen declarations out of thirty thousand. -/
-def declarationWritesKernelState (env : Environment) (n : Name) : Bool :=
-  match declarationValue env n with
-  | some value =>
-      value.getUsedConstants.any stateReferenceSet.contains && kernelStateWriteInExpr value
-  | none => false
+Rounds 18 through 21 were four consecutive findings against a hand-written
+abstract interpreter this file used to carry — `unconditionalActions`, a walk
+that tried to decide *what an arbitrary `BaseIO` term does*: whether the boot
+ran on every path (round 18), whether the `Bind` instance sequencing it was
+lawful (round 19), whether an `opaque` body hid an installer (round 19),
+whether an action before it returned at all (round 20), whether a `let`-bound
+head denoted a halt (round 21).  Each fix was correct and the next round found
+another form, for the reason round 16 had already written down about regular
+expressions: *the set of inputs that defeats a partial analysis is unbounded
+while the set it has seen is finite.*  Round 17 moved the **name** questions to
+the elaborator and ended that sub-class outright, because a constant has one
+definition; it left the **behavioural** question to a new hand-rolled walk, and
+the elaborator does not answer "what does this program do".
 
-/-- Does `n` execute?  A theorem's value is a proof, which installs nothing and
-whose term is usually far larger than any definition's, so the walk skips them
-— the same exclusion the derivation this replaces made. -/
-def isExecutableDeclaration (env : Environment) (n : Name) : Bool :=
-  match env.find? n with
-  | some (.thmInfo _) => false
-  | some _ => true
-  | none => false
+So the walk is gone, and the contract is the exit round 16 named for exactly
+this situation — code this project writes, which does not exist yet: *require a
+canonical spelling and refuse the rest.*  The entry's body must **be** the
+approved boot applied to a configuration:
 
-/-- The module roots of the **precompiled dependencies**: code that was built
-before this project's references existed and therefore cannot name them.
+    fun dtbPointer => Platform.FFI.bootAndInitialiseRPi5OrHalt (config dtbPointer)
 
-The list is of what to *skip*, not of what to walk (PR #889 review round 20).
-Round 18 asked whether the defining module's root was `SeLe4n`, which is a
-claim about naming rather than about provenance: a same-repository top-level
-module — `SeLe4n.lean` importing a `HardwareBoot`, say — would have been
-skipped, and an entry there could call the approved wrapper and then
-`initialiseKernelState` with no bypass reported.  Inverted, an unclassified
-root is *walked*, so the failure direction of an omission is a slower scan
-rather than a missed installer.
+Every question the walk approximated is then either answered exactly or has no
+subject.  Does the boot execute?  The entry *is* the boot.  Does anything
+diverge before it?  Nothing precedes it.  Is the `Bind` instance lawful?  There
+is no bind.  Is a `let`-bound head normalized?  `isDefEq` zeta-reduces, and
+beta-reduces, and sees through `mdata`, aliases and notation, because that is
+what definitional equality is.  Does some reachable declaration install kernel
+state?  Nothing else runs — which makes this contract *stronger* than the walk
+it replaces, not weaker: that one permitted arbitrary extra actions provided
+none of them wrote kernel state.
 
-Stated honestly: on today's environment the two rules agree, because the only
-non-dependency root present *is* `SeLe4n` — so no witness here can separate
-them.  What makes the inversion load-bearing is the reconciliation below: a new
-top-level module in the production closure fails the build before it can be
-mis-skipped, and the exclusion rule is then the one that is already right. -/
-def dependencyModuleRoots : List Name := [`Init, `Lean, `Std, `Lake]
+The argument is where the strength comes from, and it is type-theoretic rather
+than analysed: `PlatformConfig` is **data**.  A term of that type performs no
+effects, installs nothing, cannot halt and has no monadic structure, so no
+walk over it is needed or possible.  Whatever SM10.1 derives from the DTB
+pointer, deriving it cannot bypass the checked boot.
 
-/-- Is `n` this project's — that is, not a precompiled dependency's?
+What this deliberately refuses is an entry that needs *effects* to build its
+configuration (`do let cfg ← readDtb ptr; boot cfg`).  That is not an oversight:
+such a prologue is an arbitrary `BaseIO` program again, and this file has four
+rounds of evidence that it cannot be analysed.  If SM10.1 needs one, the
+kernel supplies it as a definition — `bootAndInitialiseRPi5FromDtb`, wrapping
+the read and the boot — and `approvedBootCall` moves to that wrapper, which is
+a one-line change here and a reviewed one there.  Refusing what cannot be
+decided is the posture; silently admitting it is what the walk did. -/
+def isApprovedBootApplication (value : Expr) : MetaM Bool :=
+  Meta.lambdaTelescope value fun _ body => do
+    let configType := mkConst ``SeLe4n.Platform.Boot.PlatformConfig
+    let config ← Meta.mkFreshExprMVar configType
+    Meta.isDefEq body (mkApp (mkConst approvedBootCall) config)
 
-A declaration with no defining module is one being elaborated right now (the
-witnesses below) and is walked. -/
-def isProjectDeclaration (env : Environment) (n : Name) : Bool :=
-  match env.getModuleIdxFor? n with
-  | some index =>
-      match env.header.moduleNames[index.toNat]? with
-      | some name => !dependencyModuleRoots.contains (Name.getRoot name)
-      | none => true
-  | none => true
-
-/-- Every module root this environment carries.  Reconciled below against
-`dependencyModuleRoots` plus this project's own, so a new top-level module in
-the production closure fails the build until someone classifies it — the
-enumeration is pinned rather than trusted. -/
-def moduleRootsPresent (env : Environment) : List Name :=
-  env.header.moduleNames.foldl (init := ([] : List Name)) fun acc «module» =>
-    let root := Name.getRoot «module»
-    if acc.contains root then acc else root :: acc
-
-/-- The first declaration reachable from `frontier` that installs kernel state,
-not descending into `stop`.
-
-`Expr.getUsedConstants` is what makes this a question about the program rather
-than about its text: the entry's references are already resolved, so an alias,
-a `renaming`, a local binder of the same name, a qualified or unqualified
-spelling are all the same constant here — and a name that resolves to
-*something else* is that something else, with no suffix rule to get wrong. -/
-partial def unapprovedKernelStateWrite (env : Environment) (stop : Std.HashSet Name) :
-    List Name → Std.HashSet Name → Option Name
-  | [], _ => none
-  | n :: rest, seen =>
-      if seen.contains n then
-        unapprovedKernelStateWrite env stop rest seen
-      else
-        let seen := seen.insert n
-        if stop.contains n || !isProjectDeclaration env n || !isExecutableDeclaration env n then
-          unapprovedKernelStateWrite env stop rest seen
-        else if declarationWritesKernelState env n then
-          some n
-        else
-          -- Breadth-first (`rest ++ next`): a write sits a few references below
-          -- the boot, and depth-first would descend an instance's elaborated
-          -- term first and take a hundred times as long to reach it.
-          let next := match declarationValue env n with
-            | some value => value.getUsedConstants.toList
-            | none => []
-          unapprovedKernelStateWrite env stop (rest ++ next) seen
-
-/-- The Rust symbols the Lean halt primitives bind to.  The seeds of the
-never-returning derivation, and the one thing about it that is written down: a
-Lean rename is picked up automatically, a Rust rename fails the pin below. -/
-def haltPrimitiveSymbols : List String := ["ffi_fatal_halt", "ffi_fatal_halt_all"]
-
-/-- The C symbol `n`'s `@[extern]` binds to, when it has one. -/
-def externSymbol? (env : Environment) (n : Name) : Option String :=
-  (getExternAttrData? env n).bind fun data =>
-    data.entries.findSome? fun entry =>
-      match entry with
-      | .standard _ symbol => some symbol
-      | _ => none
-
-/-- Does `n` never return?
-
-`ffiFatalHaltAll` is typed `BaseIO Unit` — the FFI convention, not a claim that
-it returns; the Rust side is `-> !`.  Lean's types therefore do not express
-this, and PR #889 review round 20 found the consequence: `do ffiFatalHaltAll;
-bootAndInitialiseRPi5OrHalt cfg` put the approved call on the spine while the
-PE was already parked, so an entry that boots nothing satisfied the contract.
-
-Derived rather than listed: a constant never returns if its `@[extern]` names a
-halt primitive, or if it is an *alias* of one — a body that is exactly that
-constant, modulo binders and metadata.  `Concurrency.fatalHalt` is such an
-alias; `bootAndInitialiseRPi5OrHalt`, whose body is a `match`, is not, and must
-not be, since it returns on `.ok`. -/
-partial def neverReturns (env : Environment) (n : Name) (fuel : Nat := 8) : Bool :=
-  if (externSymbol? env n).any haltPrimitiveSymbols.contains then true
-  else match fuel with
-    | 0 => false
-    | fuel + 1 =>
-        match declarationValue env n with
-        | some value =>
-            let rec strip : Expr → Option Name
-              | .mdata _ body => strip body
-              | .lam _ _ body _ => strip body
-              | .const alias _ => some alias
-              | _ => none
-            match strip value with
-            | some alias => neverReturns env alias fuel
-            | none => false
-        | none => false
-
-/-- Is `inst` the `Bind BaseIO` instance, up to definitional equality? -/
-def isCanonicalBaseIOBind (inst : Expr) : MetaM Bool := do
-  let canonical ← Meta.synthInstance (← Meta.mkAppM ``Bind #[mkConst ``BaseIO])
-  Meta.isDefEq inst canonical
-
-/-- The actions `e` performs **unconditionally**, in order.
-
-PR #889 review round 18: `getUsedConstants` says a constant *occurs* in the
-elaborated term, which is a presence check — the very substitution this
-repository's scanners are held against, one level down from text.
-`if config.initialObjects.isEmpty then bootAndInitialiseRPi5OrHalt config else
-pure ()` mentions the approved call, reaches no other state writer, and boots
-nothing on the path any real configuration takes.
-
-Occurrence becomes execution along the structure that cannot branch: binders,
-`let`s, metadata, and a monadic bind, whose two action arguments both run.  A
-conditional or a `match` is *not* on that spine — it appears here as one action
-whose head is `ite` / `dite` / a matcher, which is not the approved call, so it
-satisfies nothing.  An entry may still branch (`do foo; if c then a else b;
-boot cfg` is accepted, because the boot is on the spine regardless of `c`);
-what it may not do is put the boot itself inside a branch. -/
-partial def unconditionalActions (e : Expr) : MetaM (List Expr) := do
-  match e with
-  | .mdata _ body => unconditionalActions body
-  | .lam _ _ body _ => unconditionalActions body
-  | .letE _ _ _ body _ => unconditionalActions body
-  | .app .. =>
-      if e.getAppFn.constName? == some ``Bind.bind then
-        let args := e.getAppArgs
-        -- `@Bind.bind m inst α β (action) (continuation)`.  The *instance*
-        -- decides whether this sequences at all (PR #889 review round 19): a
-        -- lawless `Bind` on a type definitionally equal to `BaseIO Unit` can
-        -- return `pure ()` while ignoring both arguments, and the entry's
-        -- pinned type would not notice.  So the instance must be the one
-        -- instance synthesis finds for `Bind BaseIO`; anything else is one
-        -- opaque action, which is not the approved call and satisfies nothing.
-        if args.size < 2 then return [e]
-        else if ← isCanonicalBaseIOBind args[1]! then
-          let action := args[args.size - 2]!
-          -- The continuation runs only if the action returns (PR #889 review
-          -- round 20).  A halt parks the PE, so nothing after it is reached
-          -- and nothing after it belongs on this list.
-          if (action.getAppFn.constName?).any (neverReturns (← getEnv) ·) then
-            return [action]
-          return action :: (← unconditionalActions args[args.size - 1]!)
-        else return [e]
-      else return [e]
-  | _ => return [e]
-
-/-- Is `approvedBootCall` the head of an action the entry performs on every
-path?  `unconditionalActions` explains why this is the honest form of the
-question. -/
-def executesApprovedBootCall (env : Environment) (entry : Name) : MetaM Bool := do
-  match declarationValue env entry with
-  | some value =>
-      return (← unconditionalActions value).any fun action =>
-        action.getAppFn.constName? == some approvedBootCall
-  | none => return false
 
 /-- The type the exported entry must have.
 
@@ -348,22 +158,19 @@ def bootEntryContractViolations (entry : Name) : MetaM (List String) := do
                       `UInt64 → BaseIO Unit`, the DTB pointer `rust_boot_main` passes.  A C \
                       symbol carries no type, so the link succeeds and the ABI does not"]
     | none => pure [s!"`{entry}` is not a declaration of this environment"]
-  let missing :=
-    if ← executesApprovedBootCall env entry then []
-    else [s!"`{entry}` does not perform `{approvedBootCall}` as an unconditional action — the \
-             hardware boot entry must boot through the checked platform boot with its failure \
-             handled, so a refused boot parks the PE instead of returning to Rust with no \
-             kernel state, and it must do so on every path rather than merely mention the call"]
-  let bypass :=
-    match unapprovedKernelStateWrite env (stateReferenceSet.insert approvedBootCall)
-            [entry] {} with
-    | some writer =>
-        [s!"`{entry}` reaches `{writer}`, which installs kernel state without going through \
-            `{approvedBootCall}` — a path around the checked boot leaves the live state \
-            without the idle threads, the deployment labeling and the reserved slots it \
-            establishes"]
-    | none => []
-  return typed ++ missing ++ bypass
+  let shaped ← match declarationValue env entry with
+    | some value =>
+        if ← isApprovedBootApplication value then pure []
+        else pure [s!"`{entry}` is not `{approvedBootCall}` applied to a configuration.  The \
+                      hardware boot entry must *be* that application — the checked platform \
+                      boot with its failure handled, so a refused boot parks the PE instead of \
+                      returning to Rust with no kernel state — and nothing else, so no other \
+                      path can install kernel state around it.  A prologue that computes the \
+                      configuration with effects is refused deliberately: the kernel supplies \
+                      such a wrapper as a definition and this contract names it"]
+    | none => pure [s!"`{entry}` has no value to check — a declaration without a body cannot \
+                       be the boot entry"]
+  return typed ++ shaped
 
 /-- Every declaration exporting `bootEntrySymbol`.  Read off the environment,
 so an `@[inline, export lean_kernel_main]`, an `@[export]` in any namespace and
@@ -378,10 +185,21 @@ def bootEntryDeclarations (env : Environment) : List Name :=
 
 The check above is vacuous until SM10.1 writes the entry, and a vacuous check
 reads exactly like a passing one.  These declarations are what a boot entry
-could be; the elaboration below requires the analysis to accept the first and
-refuse the others.  Each deviation **keeps** the tokens a text scanner looks
-for — the boot call, the halt, the `match`, the `.error` arm — and breaks the
-relation, which is the mutation this repository's gates are tested by. -/
+could be; the elaboration below requires the contract to accept the compliant
+ones and refuse the rest.  Each deviation **keeps** the tokens a text scanner
+looks for — the boot call, the halt, the `match`, the `.error` arm — and breaks
+the relation, which is the mutation this repository's gates are tested by.
+
+Round 21 changed which side several of these fall on, and that is the point of
+the change: the walk they were written against admitted any entry whose extra
+actions happened not to write kernel state, so a *sequence* around the boot
+passed.  Under the contract nothing runs but the boot, so `Sequenced`,
+`HaltedFirst`, `AliasHaltedFirst`, `BogusBind`, `OpaqueBypass` and `SideInstall`
+are refused for one reason instead of six — which is what it means for a class
+to be closed rather than enumerated.  Two accepted witnesses keep the contract
+from being merely restrictive: an entry that binds its configuration with a
+`let`, and one that reaches the same program through an alias — both are that
+application after reduction, and `isDefEq` says so. -/
 
 /-- The configuration SM10.1 derives from the DTB pointer.  A placeholder: the
 witnesses need *a* pure `UInt64 → PlatformConfig`, and the real derivation
@@ -389,19 +207,38 @@ witnesses need *a* pure `UInt64 → PlatformConfig`, and the real derivation
 private def bootEntryWitnessConfig (_dtbPointer : UInt64) : Platform.Boot.PlatformConfig :=
   { irqTable := [], initialObjects := [] }
 
+/-- An alias of the approved boot, for the acceptance witness below. -/
+private def bootEntryWitnessBootAlias : Platform.Boot.PlatformConfig → BaseIO Unit :=
+  Platform.FFI.bootAndInitialiseRPi5OrHalt
+
 /-- The shape SM10.1's entry must have, at the type its `extern "C"`
 declaration is called at. -/
 private def bootEntryWitnessCompliant (dtbPointer : UInt64) : BaseIO Unit :=
   Platform.FFI.bootAndInitialiseRPi5OrHalt (bootEntryWitnessConfig dtbPointer)
 
-/-- The approved call reached through a `do` chain — the continuation of a
-bind rather than its first action.  Accepted: a sequence has no paths, so the
-boot still runs unconditionally.  This witness is what makes the bind recursion
-in `unconditionalActions` load-bearing; without it, a recursion that stopped at
-the first action would pass every other case here. -/
+/-- The approved call reached through a `do` chain.  **Refused** since round 21,
+where the walk accepted it: a sequence is an arbitrary `BaseIO` program in the
+action position, and four rounds of findings are the evidence that such a
+program cannot be analysed — a lawless `Bind`, an `opaque` body, a halt, a
+`let`-bound head each defeated one version of the walk.  The entry performs the
+boot and nothing else. -/
 private def bootEntryWitnessSequenced (dtbPointer : UInt64) : BaseIO Unit := do
   let _ ← Platform.FFI.getKernelState
   Platform.FFI.bootAndInitialiseRPi5OrHalt (bootEntryWitnessConfig dtbPointer)
+
+/-- The configuration bound by a `let` — round 21's finding, in the position it
+was reported at.  **Accepted**: `isDefEq` zeta-reduces, so this *is* the
+approved application, and no `letE` arm has to be written to see it. -/
+private def bootEntryWitnessLetBoundConfig (dtbPointer : UInt64) : BaseIO Unit :=
+  let config := bootEntryWitnessConfig dtbPointer
+  Platform.FFI.bootAndInitialiseRPi5OrHalt config
+
+/-- The same program reached through an alias of the approved call.
+**Accepted**, and it is what keeps the contract from being a name match: the
+alias is a different constant and the same program, which is exactly the
+distinction definitional equality makes and a spelling comparison does not. -/
+private def bootEntryWitnessAliasedBoot (dtbPointer : UInt64) : BaseIO Unit :=
+  bootEntryWitnessBootAlias (bootEntryWitnessConfig dtbPointer)
 
 /-- Keeps the approved call and puts it *inside a branch* (PR #889 review round
 18).  Every token a scanner reads is present and no other state writer is
@@ -417,10 +254,20 @@ private def bootEntryWitnessHaltedFirst (dtbPointer : UInt64) : BaseIO Unit := d
   Platform.FFI.ffiFatalHaltAll
   Platform.FFI.bootAndInitialiseRPi5OrHalt (bootEntryWitnessConfig dtbPointer)
 
-/-- The same through an *alias* of the primitive, so the derivation is
-exercised rather than a name match. -/
+/-- The same through an *alias* of the primitive, so a name match is not what
+decides it. -/
 private def bootEntryWitnessAliasHaltedFirst (dtbPointer : UInt64) : BaseIO Unit := do
   Kernel.Concurrency.fatalHaltAll
+  Platform.FFI.bootAndInitialiseRPi5OrHalt (bootEntryWitnessConfig dtbPointer)
+
+/-- Round 21's reported case, verbatim: the halt reached through a `let`-bound
+name, so the first action's head is a bound variable rather than a constant.
+That defeated the walk's non-returning derivation — which is the last such form
+this file will have to know about, since the contract does not ask what the
+first action is. -/
+private def bootEntryWitnessLetBoundHalt (dtbPointer : UInt64) : BaseIO Unit := do
+  let halt := Platform.FFI.ffiFatalHaltAll
+  halt
   Platform.FFI.bootAndInitialiseRPi5OrHalt (bootEntryWitnessConfig dtbPointer)
 
 /-! The bogus-monad witness (PR #889 review round 19).  `BootEntryBogusMonad α`
@@ -484,62 +331,40 @@ run_cmd Command.liftTermElabM do
     throwError "boot-entry contract: the production library root `SeLe4n` is not in this \
       environment, so an entry defined in a module only it imports would read as absent and \
       the contract would pass vacuously while the archive carried the symbol"
-  -- The module roots are classified.  A new top-level module in the production
-  -- closure must be judged a dependency or this project's, not silently walked
-  -- either way (PR #889 review round 20).
-  let unclassified := (moduleRootsPresent env).filter fun root =>
-    !dependencyModuleRoots.contains root && root != `SeLe4n
-  unless unclassified.isEmpty do
-    throwError "boot-entry contract: unclassified module roots {unclassified} — a module \
-      outside `SeLe4n` and outside the precompiled dependencies is in the production \
-      closure; add it to `dependencyModuleRoots` if it is one, or leave it walked and \
-      widen this reconciliation"
-  -- The never-returning derivation reaches the primitives and their aliases,
-  -- and does *not* reach the wrapper, which returns on `.ok`.
-  for halt in [`SeLe4n.Platform.FFI.ffiFatalHalt, `SeLe4n.Platform.FFI.ffiFatalHaltAll,
-               `SeLe4n.Kernel.Concurrency.fatalHalt, `SeLe4n.Kernel.Concurrency.fatalHaltAll] do
-    unless neverReturns env halt do
-      throwError "boot-entry contract: `{halt}` is not derived as never-returning, so an \
-        entry that parks the PE before booting would satisfy the action walk"
-  if neverReturns env approvedBootCall then
-    throwError "boot-entry contract: `{approvedBootCall}` is derived as never-returning, \
-      which would truncate the spine at the very call the contract requires"
-  -- The write detector sees a write and does not see a read.
-  unless declarationWritesKernelState env `SeLe4n.Platform.FFI.initialiseKernelState do
-    throwError "boot-entry contract: the kernel-state write detector does not see \
-      `initialiseKernelState`, so every entry would pass"
-  if declarationWritesKernelState env `SeLe4n.Platform.FFI.getKernelState then
-    throwError "boot-entry contract: the kernel-state write detector reports a read \
-      (`getKernelState`) as an installer"
-  -- The reach half: a write is reachable from the checked boot when nothing
-  -- stops the walk, and is not when the approved wrapper does.
-  if (unapprovedKernelStateWrite env stateReferenceSet
-        [`SeLe4n.Platform.FFI.bootAndInitialiseRPi5] {}).isNone
-  then
-    throwError "boot-entry contract: no kernel-state write is reachable from the checked \
-      boot, so the reachability half detects nothing"
+  -- The contract is not vacuously satisfiable: the approved call must resolve
+  -- to a declaration of *this* environment, or every entry would be refused
+  -- for the same uninformative reason and the witnesses below would pass by
+  -- accident.
+  unless (env.find? approvedBootCall).isSome do
+    throwError "boot-entry contract: `{approvedBootCall}` is not a declaration of this \
+      environment, so the shape the entry is held to does not exist"
   -- The witnesses.
-  for witness in [``bootEntryWitnessCompliant, ``bootEntryWitnessSequenced] do
+  -- Accepted: the required program, however it is spelled.  Without these the
+  -- contract could be refusing everything and read exactly the same.
+  for witness in [``bootEntryWitnessCompliant, ``bootEntryWitnessLetBoundConfig,
+                  ``bootEntryWitnessAliasedBoot] do
     let violations ← bootEntryContractViolations witness
     unless violations.isEmpty do
       throwError "boot-entry contract: the compliant witness `{witness}` was refused: \
         {violations}"
+  -- Refused: every other program.  Each keeps the tokens a scanner reads.
   for witness in [``bootEntryWitnessConditional, ``bootEntryWitnessWrongType,
                   ``bootEntryWitnessBypass, ``bootEntryWitnessSideInstall,
                   ``bootEntryWitnessUnbooted, ``bootEntryWitnessBogusBind,
                   ``bootEntryWitnessOpaqueBypass, ``bootEntryWitnessHaltedFirst,
-                  ``bootEntryWitnessAliasHaltedFirst] do
+                  ``bootEntryWitnessAliasHaltedFirst, ``bootEntryWitnessSequenced,
+                  ``bootEntryWitnessLetBoundHalt] do
     if (← bootEntryContractViolations witness).isEmpty then
       throwError "boot-entry contract: the deviating witness `{witness}` was accepted"
   -- The contract itself.
   match bootEntryDeclarations env with
   | [] =>
       logInfo m!"boot-entry contract: no declaration exports `{bootEntrySymbol}` yet \
-        (SM10.1 writes it); the analysis is pinned by its eleven witnesses"
+        (SM10.1 writes it); the contract is pinned by its thirteen witnesses"
   | [entry] =>
       match ← bootEntryContractViolations entry with
-      | [] => logInfo m!"boot-entry contract: `{entry}` boots through `{approvedBootCall}` \
-                and installs kernel state no other way"
+      | [] => logInfo m!"boot-entry contract: `{entry}` is `{approvedBootCall}` applied \
+                to a configuration, and nothing else"
       | violations => throwError "boot-entry contract: {violations}"
   | entries =>
       throwError "boot-entry contract: {entries.length} declarations export \

@@ -877,6 +877,52 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   its docstring; `rust/sele4n-hal/build.rs` keeps one because it cannot
   depend on a Lean build, and it is pinned against the elaborated
   inventory rather than trusted.
+  **And a hand-written analysis over `Expr` is not the elaborator** (PR #889
+  review round 21, and the correction to round 17).  Round 17's instruction —
+  *a Lean question goes to the Lean elaborator, never to a regular expression*
+  — was applied to **names** and ended that sub-class outright, because
+  `getExportNameFor?` and `getUsedConstants` return constants and a constant
+  has one definition.  It was **not** applied to *behaviour*, and nothing in
+  the environment answers "what does this program do": rounds 18, 19, 20 and 21
+  are four consecutive findings against `unconditionalActions`, a hand-rolled
+  abstract interpreter written in round 17 to decide whether an arbitrary
+  `BaseIO` term boots.  A conditional (18), a lawless `Bind` instance (19), a
+  hidden `opaque` body (19), a non-returning action (20), a `let`-bound head
+  (21) — each fix correct, each round finding another form, for the reason
+  round 16 had already written down about regexes: *the set of inputs that
+  defeats a partial analysis is unbounded while the set it has seen is finite.*
+  Substituting `Expr` for text moved the class down a level; it did not close
+  it.
+
+  The exit is the one round 16 named, applied to the **program** rather than to
+  its names: **where the subject is code this project writes and does not exist
+  yet, require a canonical spelling and refuse the rest.**
+  `SeLe4n/Testing/BootEntryContract.lean` no longer analyses the boot entry —
+  it requires the entry to *be* `Platform.FFI.bootAndInitialiseRPi5OrHalt`
+  applied to a configuration, decided by one `Meta.isDefEq` against a
+  metavariable.  Every question the walk approximated is then answered exactly
+  or has no subject: the entry *is* the boot, so nothing precedes it, there is
+  no bind whose instance could be lawless, `isDefEq` zeta- and beta-reduces so
+  a `let`-bound head is not a form to know about, and nothing else runs at all
+  — which makes the contract **stronger** than the walk, not weaker, since that
+  one admitted any extra action which happened not to write kernel state.  The
+  argument carries the rest type-theoretically: `PlatformConfig` is *data*, so
+  no term of that type can install state, diverge or sequence.  Thirteen
+  witnesses pin it, and three of them are **acceptances** — the required
+  program spelled with a `let`, through an alias, and directly — because a
+  contract that refuses everything reads exactly like one that decides.  What
+  it deliberately refuses is an entry needing *effects* to build its
+  configuration; if SM10.1 needs one, the kernel supplies that wrapper as a
+  definition and this contract names it, which is a reviewed one-line change
+  rather than a return to analysing arbitrary programs.  Eleven analysis
+  definitions and 253 lines went with the walk.
+
+  The corollary for scanners that have no elaborator to ask — a shell lexer, a
+  Rust foreign block — is unchanged and is the same rule: **fail closed on what
+  you cannot decide.**  A macro invocation inside an `extern` block expands to
+  declarations no `fn`-shaped search can see, so the gate refuses the input
+  rather than reading past it.
+
 - **Invariant/Operations split**: each kernel subsystem has
   `Operations.lean` (transitions) and `Invariant.lean` (proofs). Keep
   this separation.

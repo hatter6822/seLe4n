@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/rr5-boot-path-fail-open-sandny",
-      "commit_sha": "cbfa0d2a0cd44ae1ce3575483daadc574106eb53",
-      "tree_sha": "21e5df9928890c5c6796068f4970c1425c6244db",
-      "committed_at_utc": "2026-09-04T00:38:27+00:00"
+      "commit_sha": "b9757f0cfe842d9de3adc54d2ae978b807f04bf4",
+      "tree_sha": "ce6de7d39bc3f25ff4878a213ffc5ef36b28d437",
+      "committed_at_utc": "2026-09-04T01:31:35+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "e69abfbd0fd37b5ce5748888df98ff6187ad24571633339e7ed1605edef4639a"
+    "source_digest": "015c912ead478419d32e73788df4cdc2dac357a1834ac8dd969f39618b9dea9d"
   },
   "summary": {
     "module_count": 379,
-    "declaration_count": 18638
+    "declaration_count": 18628
   },
   "readme_sync": {
     "version": "0.34.48",
     "lean_toolchain": "v4.28.0",
     "production_files": 309,
-    "production_loc": 322084,
+    "production_loc": 321909,
     "test_files": 70,
     "test_loc": 68366,
     "proved_theorem_lemma_decls": 10702,
@@ -221049,7 +221049,7 @@
     {
       "module": "SeLe4n.Testing.BootEntryContract",
       "path": "SeLe4n/Testing/BootEntryContract.lean",
-      "declaration_count": 37,
+      "declaration_count": 27,
       "declarations": [
         {
           "kind": "namespace",
@@ -221073,162 +221073,26 @@
         },
         {
           "kind": "def",
-          "name": "kernelStateReferences",
-          "line": 76,
-          "called": [
-            "kernelLabelingContextRef",
-            "kernelStateRef"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "stateReferenceSet",
-          "line": 79,
-          "called": [
-            "insert"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "kernelStateWriteInExpr",
-          "line": 90,
-          "called": [
-            "any",
-            "contains",
-            "get",
-            "head"
-          ]
-        },
-        {
-          "kind": "def",
           "name": "declarationValue",
-          "line": 132,
+          "line": 79,
           "called": [
             "bind"
           ]
         },
         {
           "kind": "def",
-          "name": "declarationWritesKernelState",
-          "line": 141,
+          "name": "isApprovedBootApplication",
+          "line": 130,
           "called": [
-            "any",
-            "contains",
-            "declarationValue",
-            "kernelStateWriteInExpr",
-            "none"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "isExecutableDeclaration",
-          "line": 150,
-          "called": [
-            "none"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "dependencyModuleRoots",
-          "line": 173,
-          "called": []
-        },
-        {
-          "kind": "def",
-          "name": "isProjectDeclaration",
-          "line": 179,
-          "called": [
-            "contains",
-            "none",
-            "toNat"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "moduleRootsPresent",
-          "line": 191,
-          "called": [
-            "contains"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "unapprovedKernelStateWrite",
-          "line": 204,
-          "called": [
-            "contains",
-            "declarationValue",
-            "declarationWritesKernelState",
-            "insert",
-            "isExecutableDeclaration",
-            "isProjectDeclaration",
-            "none",
-            "toList"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "haltPrimitiveSymbols",
-          "line": 228,
-          "called": []
-        },
-        {
-          "kind": "def",
-          "name": "externSymbol",
-          "line": 231,
-          "called": [
-            "bind",
-            "none"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "neverReturns",
-          "line": 251,
-          "called": [
-            "any",
-            "contains",
-            "declarationValue",
-            "externSymbol",
-            "none"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "isCanonicalBaseIOBind",
-          "line": 269,
-          "called": [
-            "canonical"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "unconditionalActions",
-          "line": 289,
-          "called": [
-            "any",
-            "bind",
-            "isCanonicalBaseIOBind",
-            "neverReturns",
-            "size"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "executesApprovedBootCall",
-          "line": 320,
-          "called": [
-            "any",
+            "PlatformConfig",
             "approvedBootCall",
-            "declarationValue",
-            "none",
-            "unconditionalActions"
+            "config"
           ]
         },
         {
           "kind": "def",
           "name": "expectedBootEntryType",
-          "line": 337,
+          "line": 147,
           "called": [
             "default"
           ]
@@ -221236,24 +221100,21 @@
         {
           "kind": "def",
           "name": "bootEntryContractViolations",
-          "line": 341,
+          "line": 151,
           "called": [
             "approvedBootCall",
             "boot",
-            "executesApprovedBootCall",
+            "declarationValue",
             "expectedBootEntryType",
-            "insert",
-            "labeling",
-            "leaves",
+            "isApprovedBootApplication",
             "none",
-            "pure",
-            "unapprovedKernelStateWrite"
+            "pure"
           ]
         },
         {
           "kind": "def",
           "name": "bootEntryDeclarations",
-          "line": 372,
+          "line": 179,
           "called": [
             "bootEntrySymbol"
           ]
@@ -221261,15 +221122,24 @@
         {
           "kind": "def",
           "name": "bootEntryWitnessConfig",
-          "line": 389,
+          "line": 207,
           "called": [
             "PlatformConfig"
           ]
         },
         {
           "kind": "def",
+          "name": "bootEntryWitnessBootAlias",
+          "line": 211,
+          "called": [
+            "PlatformConfig",
+            "bootAndInitialiseRPi5OrHalt"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "bootEntryWitnessCompliant",
-          "line": 394,
+          "line": 216,
           "called": [
             "bootAndInitialiseRPi5OrHalt",
             "bootEntryWitnessConfig"
@@ -221278,7 +221148,7 @@
         {
           "kind": "def",
           "name": "bootEntryWitnessSequenced",
-          "line": 402,
+          "line": 225,
           "called": [
             "bootAndInitialiseRPi5OrHalt",
             "bootEntryWitnessConfig",
@@ -221287,8 +221157,27 @@
         },
         {
           "kind": "def",
+          "name": "bootEntryWitnessLetBoundConfig",
+          "line": 232,
+          "called": [
+            "bootAndInitialiseRPi5OrHalt",
+            "bootEntryWitnessConfig",
+            "config"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bootEntryWitnessAliasedBoot",
+          "line": 240,
+          "called": [
+            "bootEntryWitnessBootAlias",
+            "bootEntryWitnessConfig"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "bootEntryWitnessConditional",
-          "line": 409,
+          "line": 246,
           "called": [
             "bootAndInitialiseRPi5OrHalt",
             "bootEntryWitnessConfig",
@@ -221298,7 +221187,7 @@
         {
           "kind": "def",
           "name": "bootEntryWitnessHaltedFirst",
-          "line": 416,
+          "line": 253,
           "called": [
             "bootAndInitialiseRPi5OrHalt",
             "bootEntryWitnessConfig",
@@ -221308,7 +221197,7 @@
         {
           "kind": "def",
           "name": "bootEntryWitnessAliasHaltedFirst",
-          "line": 422,
+          "line": 259,
           "called": [
             "bootAndInitialiseRPi5OrHalt",
             "bootEntryWitnessConfig",
@@ -221317,14 +221206,24 @@
         },
         {
           "kind": "def",
+          "name": "bootEntryWitnessLetBoundHalt",
+          "line": 268,
+          "called": [
+            "bootAndInitialiseRPi5OrHalt",
+            "bootEntryWitnessConfig",
+            "ffiFatalHaltAll"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "BootEntryBogusMonad",
-          "line": 430,
+          "line": 277,
           "called": []
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:432>",
-          "line": 432,
+          "name": "<anonymous:instance:279>",
+          "line": 279,
           "called": [
             "BootEntryBogusMonad",
             "bind",
@@ -221334,7 +221233,7 @@
         {
           "kind": "def",
           "name": "bootEntryWitnessBogusBind",
-          "line": 438,
+          "line": 285,
           "called": [
             "BootEntryBogusMonad",
             "bind",
@@ -221346,7 +221245,7 @@
         {
           "kind": "opaque",
           "name": "bootEntryWitnessOpaqueInstaller",
-          "line": 446,
+          "line": 293,
           "called": [
             "SystemState",
             "initialiseKernelState"
@@ -221355,7 +221254,7 @@
         {
           "kind": "def",
           "name": "bootEntryWitnessOpaqueBypass",
-          "line": 451,
+          "line": 298,
           "called": [
             "bootAndInitialiseRPi5OrHalt",
             "bootEntryWitnessConfig",
@@ -221366,7 +221265,7 @@
         {
           "kind": "def",
           "name": "bootEntryWitnessWrongType",
-          "line": 458,
+          "line": 305,
           "called": [
             "PlatformConfig",
             "bootAndInitialiseRPi5OrHalt",
@@ -221376,7 +221275,7 @@
         {
           "kind": "def",
           "name": "bootEntryWitnessBypass",
-          "line": 464,
+          "line": 311,
           "called": [
             "bootAndInitialiseRPi5",
             "bootEntryWitnessConfig",
@@ -221388,7 +221287,7 @@
         {
           "kind": "def",
           "name": "bootEntryWitnessSideInstall",
-          "line": 470,
+          "line": 317,
           "called": [
             "bootAndInitialiseRPi5OrHalt",
             "bootEntryWitnessConfig",
@@ -221399,40 +221298,29 @@
         {
           "kind": "def",
           "name": "bootEntryWitnessUnbooted",
-          "line": 475,
+          "line": 322,
           "called": [
             "approvedBootCall",
             "boot",
-            "bootAndInitialiseRPi5",
             "bootEntryContractViolations",
             "bootEntryDeclarations",
             "bootEntrySymbol",
             "bootEntryWitnessAliasHaltedFirst",
+            "bootEntryWitnessAliasedBoot",
             "bootEntryWitnessBogusBind",
             "bootEntryWitnessBypass",
             "bootEntryWitnessCompliant",
             "bootEntryWitnessConditional",
             "bootEntryWitnessHaltedFirst",
+            "bootEntryWitnessLetBoundConfig",
+            "bootEntryWitnessLetBoundHalt",
             "bootEntryWitnessOpaqueBypass",
             "bootEntryWitnessSequenced",
             "bootEntryWitnessSideInstall",
             "bootEntryWitnessWrongType",
             "contains",
-            "declarationWritesKernelState",
-            "dependencyModuleRoots",
-            "fatalHalt",
-            "fatalHaltAll",
-            "ffiFatalHalt",
-            "ffiFatalHaltAll",
-            "filter",
-            "getKernelState",
-            "initialiseKernelState",
             "isEmpty",
-            "moduleRootsPresent",
-            "neverReturns",
-            "pure",
-            "stateReferenceSet",
-            "unapprovedKernelStateWrite"
+            "pure"
           ]
         }
       ]

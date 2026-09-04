@@ -18,6 +18,16 @@
 /// Kernel version string — matches Lean lakefile.toml version.
 const KERNEL_VERSION: &str = "0.34.48";
 
+/// **PR #889 review round 21**: how many PEs the linked Lean kernel declares.
+///
+/// Pinned against `SeLe4n/Platform/RPi5/Board.lean`'s
+/// `rpi5MachineConfig.declaredCoreCount` and `rpi5PlatformBinding.coreCount`,
+/// which `PlatformBinding.declaredCoreCountAgrees` holds equal.  The Lean side
+/// installs idle threads on exactly this many cores and bounds
+/// `.tcbSetAffinity` by the same number, so a handoff to a narrower machine is
+/// refused at Phase 6 rather than stranding threads on PEs that do not exist.
+const LEAN_DECLARED_CORE_COUNT: u32 = 4;
+
 /// Rust entry point called from assembly `_start` after BSS zeroing and
 /// stack setup. Receives the DTB pointer from U-Boot in x0.
 ///
@@ -346,6 +356,33 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
     // object. On simulation/test builds, it falls through to idle_loop().
     #[cfg(feature = "hw_target")]
     {
+        // PR #889 review round 21: the linked Lean kernel declares its PE count
+        // at compile time (`PlatformBinding.coreCount` = 4 for `RPi5Platform`,
+        // carried into the live machine as `MachineState.declaredCoreCount`),
+        // and since round 20 that number bounds `.tcbSetAffinity`.  `online` is
+        // a *runtime* fact: `smp_enabled=false` starts no secondaries, an
+        // `smp_max_cores` cap starts fewer, and a PSCI `CPU_ON` can fail.
+        // Handing a 4-PE kernel a narrower machine strands every thread pinned
+        // to an absent core — queued where nothing runs it, with the reschedule
+        // SGI sent to a PE that cannot take it — and reports success.
+        //
+        // The two numbers are not reconcilable at this seam: `lean_kernel_main`
+        // takes the DTB pointer and nothing else, and a kernel that adapts its
+        // topology at runtime is SM10.1's to build.  So the mismatch is
+        // refused rather than papered over, which is what this whole cut is
+        // about.  An operator who wants fewer PEs declares a binding with that
+        // `coreCount`, exactly as `SimSingleCorePlatform` does; `smp_enabled=false`
+        // remains fully supported for a HAL-only image, which links no Lean
+        // kernel and never reaches this block.
+        let running_cores = 1 + online;
+        if running_cores != LEAN_DECLARED_CORE_COUNT {
+            crate::kprintln!(
+                "[boot] FATAL: {} PE(s) online but the linked Lean kernel declares {}",
+                running_cores,
+                LEAN_DECLARED_CORE_COUNT
+            );
+            crate::cpu::fatal_halt();
+        }
         extern "C" {
             fn lean_kernel_main(dtb_ptr: u64);
         }
@@ -547,6 +584,24 @@ mod tests {
         // `scripts/check_version_sync.sh` (Tier 0) provides the
         // canonical drift check; this test is the local pin.
         assert_eq!(KERNEL_VERSION, "0.34.48");
+    }
+
+    /// PR #889 review round 21: the declared PE count this handoff enforces is
+    /// the Lean binding's.  Pinned here so a change to `rpi5MachineConfig`'s
+    /// `declaredCoreCount` (or to `rpi5PlatformBinding.coreCount`, which
+    /// `declaredCoreCountAgrees` holds equal to it) fails the Rust build too,
+    /// rather than silently letting the handoff enforce a stale number.
+    #[test]
+    fn lean_declared_core_count_matches_the_rpi5_binding() {
+        assert_eq!(
+            LEAN_DECLARED_CORE_COUNT,
+            (crate::smp::MAX_SECONDARY_CORES + 1) as u32,
+            "the handoff's declared PE count must be the topology the HAL brings up"
+        );
+        assert_eq!(
+            LEAN_DECLARED_CORE_COUNT, 4,
+            "RPi5Platform declares coreCount := 4"
+        );
     }
 
     #[test]

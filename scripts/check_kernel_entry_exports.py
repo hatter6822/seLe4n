@@ -240,6 +240,24 @@ def extern_declarations_in(text: str, where: str) -> set[str]:
         for item_at, item_end in extern_block_items(view, brace_at + 1, end):
             declaration = EXTERN_FN.search(view, item_at, item_end)
             if declaration is None:
+                # PR #889 review round 21: a foreign block may hold an **item
+                # macro**, and Rust expands it into real declarations.
+                # `extern "C" { decl!(); }` where `decl!` expands to
+                # `fn lean_generated();` declares a symbol this scanner cannot
+                # see, so the requirement would silently not exist and Tier 1
+                # would pass with no provider.  Expanding Rust macros is out of
+                # this scanner's scope and always will be, so the input is
+                # refused rather than read past: the rule this file follows is
+                # that where a scanner cannot decide, it fails closed.  The HAL
+                # contains no such macro, so this costs nothing today and turns
+                # the day one is added into a build failure with a reason.
+                if MACRO_INVOCATION.search(view, item_at, item_end):
+                    sys.exit(
+                        f"[FAIL] {where}: a macro invocation inside an `extern` block "
+                        f"({view[item_at:item_end].strip()[:60]!r}) expands to declarations "
+                        f"this scanner cannot see.  Write the `fn` declarations out, or "
+                        f"teach this gate to read the expansion."
+                    )
                 continue  # a `static`, a type alias: not a function requirement
             # PR #889 review round 17: the attribute is **located** on the
             # string-free view and only its value read from the aligned kept
@@ -254,6 +272,13 @@ def extern_declarations_in(text: str, where: str) -> set[str]:
             ]
             found.add(renamed[-1] if renamed else declaration.group(1))
     return found
+
+
+# PR #889 review round 21: an item macro inside a foreign block.  `name ! (`,
+# `name ! [` or `name ! {` at item position — the three bracket forms Rust
+# accepts for an invocation.  Matched on the string-free view, so a `!` inside
+# a literal is not one.
+MACRO_INVOCATION = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\s*!\s*[(\[{]")
 
 
 def extern_block_openings(view: str) -> list[tuple[int, int]]:
@@ -852,6 +877,33 @@ def self_test() -> int:
     )
     if extern_declarations_in(renamed_fn_after_static_rust, "fixture") != {"actual_symbol"}:
         failures.append("an attribute on the function after a `static` was lost (round 16)")
+    # PR #889 review round 21: an item macro inside a foreign block expands to
+    # declarations this scanner cannot see, so it is refused rather than read
+    # past.  The mutation KEEPS the block and the `extern "C"` and puts the
+    # declaration behind a macro, which a `fn`-shaped search silently skips.
+    macro_extern_rust = (
+        "macro_rules! decl { () => { fn lean_generated(); } }\n"
+        'extern "C" {\n'
+        "    decl!();\n"
+        '    fn lean_real(x: u64) -> u64;\n'
+        "}\n"
+    )
+    refused = False
+    try:
+        extern_declarations_in(macro_extern_rust, "fixture")
+    except SystemExit:
+        refused = True
+    if not refused:
+        failures.append(
+            "a macro invocation inside an `extern` block was read past rather than "
+            "refused, so its expanded declaration is required of nobody (round 21)"
+        )
+    # ...and an ordinary block with no macro is still accepted, so the refusal
+    # is a bound rather than a blanket rejection of foreign blocks.
+    if extern_declarations_in(
+        'extern "C" {\n    fn lean_real(x: u64) -> u64;\n}\n', "fixture"
+    ) != {"lean_real"}:
+        failures.append("the macro refusal rejected an ordinary `extern` block (round 21)")
     # PR #889 review round 16: an uninvoked `.macro` body emits nothing, so its
     # directive and label are not a provider.  Both tokens stay in the fixture.
     macro_asm = (

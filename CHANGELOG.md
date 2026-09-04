@@ -1141,6 +1141,102 @@ the **kernel**, the second live defect any round has found outside the gates.
   disables the bare spelling for the file — conservative, and the remedy is a
   qualifier.
 
+### The review round, twenty-first pass — a hand-written `Expr` walk is not the elaborator
+
+Five findings, and the first thing to say is that four of them are one defect
+and it is **mine, not the reviewer's to keep finding**.
+
+Round 17 acted on the instruction *a Lean question goes to the Lean elaborator,
+never to a regular expression*, and applied it to **names**: `getExportNameFor?`
+finds an export whatever its attribute list, `getUsedConstants` returns
+constants, a constant has one definition, and eleven rounds of shadowing,
+aliasing, `renaming` and qualification defects ended at once.  It did **not**
+apply it to *behaviour* — and nothing in the environment answers "what does this
+program do".  So round 17 also wrote `unconditionalActions`: a hand-rolled
+abstract interpreter deciding whether an arbitrary `BaseIO` term boots on every
+path.  Rounds 18, 19, 20 and 21 are four consecutive findings against it — a
+conditional, a lawless `Bind` instance, a hidden `opaque` body, a non-returning
+action, a `let`-bound head — each fix correct and each round producing another
+form, which is exactly the sentence round 16 wrote about regular expressions
+with one word changed: *the set of inputs that defeats a partial analysis is
+unbounded while the set it has seen is finite.*  Substituting `Expr` for text
+moved the class one level down and closed nothing.
+
+**The exit is round 16's, applied to the program instead of to its names.**
+Where the subject is code this project writes and which does not exist yet,
+require a canonical spelling and refuse the rest.  The contract no longer
+analyses the boot entry; it requires the entry to **be**
+`Platform.FFI.bootAndInitialiseRPi5OrHalt` applied to a configuration, decided
+by one `Meta.isDefEq` against a metavariable.  Every question the walk
+approximated is then answered exactly or has no subject:
+
+| the walk asked | the contract |
+|---|---|
+| does the boot execute on every path? | the entry *is* the boot |
+| does anything diverge before it? | nothing precedes it |
+| is the `Bind` instance lawful? | there is no bind |
+| is a `let`-bound head normalized? | `isDefEq` zeta- and beta-reduces |
+| does a reachable declaration install state? | nothing else runs |
+| is the module a dependency or ours? | there is no walk |
+
+It is **stronger** than what it replaces, not weaker: the walk admitted any
+extra action that happened not to write kernel state, so a sequence around the
+boot passed; the contract admits none.  The argument carries the rest
+type-theoretically rather than by analysis — `PlatformConfig` is *data*, so no
+term of that type can install state, diverge, or sequence, whatever SM10.1
+derives from the DTB pointer.
+
+Thirteen witnesses pin it, and the partition moved: `Sequenced`, `HaltedFirst`,
+`AliasHaltedFirst`, `BogusBind`, `OpaqueBypass` and `SideInstall` are now
+refused **for one reason instead of six**, which is what a closed class looks
+like next to an enumerated one.  Three are **acceptances** — the required
+program spelled directly, with a `let`-bound configuration (round 21's reported
+form, accepted because `isDefEq` reduces it), and through an alias of the boot
+— because a contract that refuses everything reads exactly like one that
+decides.  A `LetBoundHalt` witness carries the reported case verbatim and is
+refused.  Verified by mutation in both directions: forcing the check true makes
+a deviating witness pass, forcing it false makes a compliant one fail.  Eleven
+analysis definitions and 253 lines went with the walk.
+
+What the contract deliberately refuses is an entry that needs *effects* to build
+its configuration.  That is not an oversight: such a prologue is an arbitrary
+`BaseIO` program again, and this file now has four rounds of evidence that one
+cannot be analysed.  If SM10.1 needs it, the kernel supplies the wrapper as a
+definition and the contract names it — a reviewed one-line change here, rather
+than a return to reading arbitrary programs.
+
+**The corollary for scanners with no elaborator to ask** is unchanged and is the
+same rule: fail closed on what you cannot decide.  A macro invocation inside a
+Rust `extern` block expands into real foreign declarations that no `fn`-shaped
+search can see (`extern "C" { decl!(); }`), so `check_kernel_entry_exports.py`
+now **refuses** such a block instead of reading past it — the HAL contains no
+such macro, so it costs nothing today and turns the day one is added into a
+build failure with a reason.  Two self-test cases, one of them an acceptance so
+the refusal is a bound rather than a rejection of foreign blocks.
+
+**A literal brace is not an opener.**  `parameter_expansion_end` incremented its
+depth on every `{`, but a bare `{` in a removal pattern is pattern text —
+`${y%{}` is valid and its sole `}` closes it — so the depth never returned to
+zero, the substitution scan ran off the end, and `strip_shell` blanked the live
+command after it.  Only `${` opens an expansion now; four witnesses, each
+keeping the expansion and putting a literal brace in its pattern.
+
+**And a declared PE count is not an online one.**  Round 20 made
+`MachineState.declaredCoreCount` bound `.tcbSetAffinity`; the RPi5 binding
+declares 4, and `rust_boot_main` computes `online` at Phase 5 and never passes
+it anywhere.  `smp_enabled=false` starts no secondaries, an `smp_max_cores` cap
+starts fewer, and a PSCI `CPU_ON` can fail — so a 4-PE kernel could be handed a
+narrower machine and strand every thread pinned to an absent core, reporting
+success.  The two numbers are not reconcilable at that seam (`lean_kernel_main`
+takes the DTB pointer and nothing else, and a kernel that adapts its topology at
+runtime is SM10.1's), so the mismatch is **refused**: the `hw_target` handoff
+compares `1 + online` against `LEAN_DECLARED_CORE_COUNT` and halts with a
+diagnostic.  An operator wanting fewer PEs declares a binding with that
+`coreCount`, as `SimSingleCorePlatform` does; `smp_enabled=false` stays fully
+supported for a HAL-only image, which links no Lean kernel and never reaches the
+block.  The constant is pinned against the binding by a Rust test, so a change
+to `rpi5MachineConfig.declaredCoreCount` fails the Rust build too.
+
 ### The review round, twentieth pass — a declared core is not a model core
 
 Four findings.  Three are the same shape one more time — a walk or a lexer

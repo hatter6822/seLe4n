@@ -199,6 +199,23 @@ check("a nested expansion inside a substitution closes at the right brace",
 check("an unterminated parameter expansion does not swallow the lines below",
       CODED in gate.strip_shell(
           "X=" + dq + dollar + "(echo ${y%)" + dq + "\n# " + CODED + "\n"), False)
+# PR #889 review round 21: a bare `{` inside a removal pattern is literal
+# text, not a nested expansion.  `${y%{}` is accepted by bash (verified) and
+# the sole `}` closes it; counting the `{` left `depth` at 1, so the scan ran
+# off the end and blanked the live command.  These mutate by KEEPING the
+# expansion and putting a literal brace in its pattern.
+check("a command after a `{`-bearing parameter expansion survives",
+      CODED in gate.strip_shell(
+          "X=" + dq + dollar + "(echo ${y%{} " + CODED + ")" + dq + "\n"), True)
+check("...and a `{`-bearing expansion still ends at its own brace",
+      CODED in gate.strip_shell(
+          "X=" + dq + dollar + "(echo ${y%{} ok)" + dq + " # " + CODED + "\n"), False)
+check("both brace kinds in one pattern still close the expansion",
+      CODED in gate.strip_shell(
+          "X=" + dq + dollar + "(echo ${y%%{)} " + CODED + ")" + dq + "\n"), True)
+check("a genuine nested expansion beside a literal brace still nests",
+      CODED in gate.strip_shell(
+          "X=" + dq + dollar + "(echo ${a:-${b%{}} " + CODED + ")" + dq + "\n"), True)
 check("a comment inside a double-quoted substitution is blanked",
       CODED in gate.strip_shell(
           "echo " + dq + dollar + "(echo ok # " + CODED + "\n)" + dq + "\n"), False)
