@@ -203,7 +203,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~53653 lines)
+- `CHANGELOG.md` (~53864 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22582 lines)
 - `tests/SmpInformationFlowSuite.lean` (~11797 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
@@ -245,6 +245,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2639 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean` (~2637 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean` (~2602 lines)
+- `docs/planning/HIERARCHICAL_CBS_PLAN.md` (~2581 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdown.lean` (~2562 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~2542 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~2505 lines)
@@ -1277,6 +1278,36 @@ a success.  A caller that took a fault at the seam is outcome tag 2
 (PR #887 review round 5).
 
 Plan: [`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](docs/planning/SYSCALL_RETURN_ABI_PLAN.md).
+
+### WS-CB Hierarchical constant-bandwidth servers — PLANNED (registered v0.34.49)
+
+A `SchedContext` will be able to contain other scheduling contexts: a *server*
+holds members instead of a thread, is charged whenever a thread in its subtree
+runs, and admits its members against its own budget, so a component's threads
+share one reservation and nothing outside the component is delayed by more than
+that reservation.  The root scheduler becomes **EDF-first** (maintainer's
+decision at planning time): deadlines are kernel-owned CBS deadlines, priority
+is the tie-break for deadline-bearing threads and the order of the legacy
+unbound class, and priority inheritance becomes deadline inheritance for the
+EDF class — a change to the flat model that CB1 lands as three switch cuts,
+each with its proofs and its fixture refresh, before any server exists.  Servers are core-homed, members
+share the server's security label, and every generalising cut after CB1
+carries the theorem that the model is unchanged on states without servers.
+No sub-task has started.  The plan also records three pre-existing findings it
+closes first: `schedContextConfigure` applies priority, domain and a
+caller-supplied deadline to the bound thread under the SchedContext write right
+alone, with no caller-MCP check (CB0.3, CB1.6); and the live tick's exhaustion
+arm schedules a refill of at most one tick, so a bound thread receives about one
+tick per period after its first window (CB1.6, which moves the engine to
+per-window refills).  Thirteen review rounds on the planning PR reshaped the design
+before any code exists — a transitive tie-break, a key-worsening reschedule
+seam, reconfiguration that never mints budget, every reservation move
+re-admitted per core, label uniformity over bindings, inheritance for bound
+blockers only, the guarantee scoped to roots — and the plan's §14 records each
+finding against its fix, and its §14 names the five classes the findings
+fell into with the rule that closes each.
+
+Plan: [`docs/planning/HIERARCHICAL_CBS_PLAN.md`](docs/planning/HIERARCHICAL_CBS_PLAN.md).
 
 ### WS-SM SMP multi-core completion — IN FLIGHT (v0.31.2 → v1.0.0)
 

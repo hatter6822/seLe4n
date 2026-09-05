@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/rr6-verified-lock-primitives-gt3eiv",
-      "commit_sha": "525d365fc2daa2849e33741770f499c6845f09b4",
-      "tree_sha": "a3de7557fbbd83782cc330e0a05cb797f4d26dce",
-      "committed_at_utc": "2026-09-05T02:52:02+00:00"
+      "commit_sha": "bb61196fad5baa8e189ade361570f7547b0cfaa6",
+      "tree_sha": "9a03444b09334633b6cd28d2c476bf840fdb955c",
+      "committed_at_utc": "2026-09-05T15:04:11+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "c69199402939fce8c805da6e8d6276bb4cf0e99045d5409f03f320fbb3d36bcf"
+    "source_digest": "bdc85722687bda8b68127e35f5e49c2eb402455d940c6a95d75eb658263ab810"
   },
   "summary": {
     "module_count": 381,
