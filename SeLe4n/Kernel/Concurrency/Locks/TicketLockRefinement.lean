@@ -97,6 +97,31 @@ concrete CAS fails (the defect WS-RR RR6.15 removes) — no
 nothing to get wrong, so `ticketBlock` needs no concrete-state index to
 pin one.
 
+## What the bridge covers, and what it deliberately does not (PR #890 review round 4)
+
+Through v0.34.55 `ticketBlock` had two shapes for calls the implementation
+does not define: a core already queued or holding re-acquiring, and a
+non-holder releasing, each mapped to an observation-only block because the
+spec no-ops on them.  `ticket_lock.rs` does not: it has no per-core word,
+so `acquire` takes a ticket for whoever calls it — a holder re-acquiring
+parks forever on a ticket nothing will serve while it holds the first —
+and `release` advances `serving` for whoever calls it, admitting the next
+waiter under the real holder, guarded by a `debug_assert` that vanishes in
+release builds.  Those two constructors described a stutter no code path
+performs — the fiction PR #890 review round 2 removed from the CAS-retry
+bridge (`honestBlock`'s `_noop` constructors), and this bridge is the
+sweep that fix owed its sibling.  They are gone: the relation has **no
+shape** for either call, `TicketLockState.callerContract` states which
+operations it covers, and `ticketBlock_respects_contract` /
+`ListTicketBlocks_contractTrace` say that every block, and every trace,
+is inside that contract.
+
+The deployed `QueuedRwLock` makes the opposite choice for the same spec
+no-ops — its per-core words turn them into branches — because the
+two-phase-locking unwind relies on them there.  Nothing relies on them
+here: the kernel-entry consumers treat a re-entry as a fault to halt on
+(`assert_not_holding_round_lock`), which a silent no-op would mask.
+
 ## Reachability
 
 `Concurrency.Locks.TicketLockRefinement` is reachable in the
@@ -392,16 +417,15 @@ blocks — no concrete operand needs pinning, because no
 `ConcreteTicketLockOp` has one.
 
 `spin` is `acquire`'s wait: an arbitrary run of `serving.load` /
-`wfe_bounded`, unbounded in the implementation and stuttering here. -/
+`wfe_bounded`, unbounded in the implementation and stuttering here.
+
+**No shape exists** for a re-acquisition by a core already queued or
+holding, or for a release by a non-holder (PR #890 review round 4).  The
+spec no-ops on both; the implementation performs an atomic access on
+both and defines neither — see `TicketLockState.callerContract`, which
+`ticketBlock_respects_contract` shows every shape here satisfies. -/
 inductive ticketBlock :
     TicketLockState → TicketLockOp → List ConcreteTicketLockOp → Prop where
-  /-- A core already queued or holding re-acquiring is a spec no-op; the
-  implementation has no such path, so the block only observes. -/
-  | tryAcquire_noop (abs : TicketLockState) (c : CoreId)
-      (spin : List ConcreteTicketLockOp) :
-      (c ∈ abs.pending.map Prod.fst ∨ abs.held.map Prod.fst = some c) →
-      TicketStutter spin →
-      ticketBlock abs (.tryAcquire c) spin
   /-- `acquire`: capture the ticket, then spin on `serving` until it is
   served.  The abstract fast path may fuse the promotion into the same
   step; that moves `pending` / `held`, which the concrete state does not
@@ -411,12 +435,6 @@ inductive ticketBlock :
       c ∉ abs.pending.map Prod.fst → abs.held.map Prod.fst ≠ some c →
       TicketStutter spin → abs.nextTicket + 1 < UInt64.size →
       ticketBlock abs (.tryAcquire c) (.nextTicketFetchAdd c :: spin)
-  /-- Releasing a lock one does not hold is a spec no-op; the
-  implementation's `debug_assert` rejects it. -/
-  | release_noop (abs : TicketLockState) (c : CoreId)
-      (spin : List ConcreteTicketLockOp) :
-      (∀ t, abs.held ≠ some (c, t)) → TicketStutter spin →
-      ticketBlock abs (.release c) spin
   /-- `release`: advance `serving`, read `next_ticket` for the
   `debug_assert`, and wake the waiters. -/
   | release_effective (abs : TicketLockState) (c : CoreId) (t : Nat) :
@@ -429,6 +447,47 @@ inductive ticketBlock :
       TicketStutter spin →
       ticketBlock abs (.observeServing c v) spin
 
+/-- **PR #890 review round 4**: the implementation's caller contract,
+stated on the abstract state an operation is issued in.
+
+`ticket_lock.rs` has no per-core word: `acquire` takes a ticket for
+whoever calls it, so a core already queued or holding that calls it takes
+a second ticket and parks on it forever (its first is the one being
+served); `release` advances `serving` for whoever calls it, so a
+non-holder's release admits the next waiter under the real holder.  Both
+are the failure modes that file's own docstrings record, guarded there by
+a `debug_assert` that vanishes in release builds.  The spec no-ops on
+both.  A block relation that mapped those spec no-ops to an
+observation-only block would describe a stutter the code does not perform
+— the shape PR #890 review round 2 removed from the CAS-retry bridge, and
+this bridge's `tryAcquire_noop` / `release_noop` constructors were the
+same fiction, missed by the sweep that fix owed its siblings.  So
+`ticketBlock` has no shape for either call, and this predicate is the
+statement of which operations it covers: exactly the ones inside the
+contract. -/
+def TicketLockState.callerContract (s : TicketLockState) : TicketLockOp → Prop
+  | .tryAcquire c => c ∉ s.pending.map Prod.fst ∧ s.held.map Prod.fst ≠ some c
+  | .release c => s.held.map Prod.fst = some c
+  | .observeServing _ _ => True
+
+/-- `callerContract` is decidable, so a fixture can `decide` it. -/
+instance TicketLockState.decidableCallerContract (s : TicketLockState) (op : TicketLockOp) :
+    Decidable (s.callerContract op) := by
+  cases op <;> simp only [TicketLockState.callerContract] <;> exact inferInstance
+
+/-- **PR #890 review round 4**: every block shape is an operation inside the
+contract — the relation covers no call the implementation does not
+define.  Stated as a theorem over the constructors, so a shape added later
+for a call outside the contract is a failing case here rather than a
+silent widening. -/
+theorem ticketBlock_respects_contract {abs : TicketLockState} {op : TicketLockOp}
+    {blk : List ConcreteTicketLockOp} (h : ticketBlock abs op blk) :
+    abs.callerContract op := by
+  cases h with
+  | tryAcquire_capture c spin hNotPending hNotHeld _ _ => exact ⟨hNotPending, hNotHeld⟩
+  | release_effective c t hHeld _ => simp [TicketLockState.callerContract, hHeld]
+  | observeServing c v spin _ => trivial
+
 /-- **WS-RR RR6.13 (the per-block step theorem)**: every block shape
 carries the simulation across its abstract operation.
 
@@ -440,11 +499,6 @@ theorem ticketBlock_preserves_ticketLockSim
     (hSim : ticketLockSim abs conc) (hBlk : ticketBlock abs op blk) :
     ticketLockSim (abs.applyOp op) (ticketFoldBlock conc blk) := by
   cases hBlk with
-  | tryAcquire_noop c spin hInv hSpin =>
-    rw [ticketFoldBlock_stutter _ _ hSpin]
-    rcases hInv with hp | hh
-    · rw [TicketLockState.tryAcquire_noop_of_pending _ _ hp]; exact hSim
-    · rw [TicketLockState.tryAcquire_noop_of_held _ _ hh]; exact hSim
   | tryAcquire_capture c spin hNotPending hNotHeld hSpin hNoWrap =>
     obtain ⟨hNext, hServ⟩ := hSim
     obtain ⟨hPostNext, hPostServ⟩ :=
@@ -461,9 +515,6 @@ theorem ticketBlock_preserves_ticketLockSim
       rw [hOne, Nat.mod_eq_of_lt (by rw [hNext]; exact hNoWrap), hNext]
     · show conc.serving.toNat = (abs.applyOp (.tryAcquire c)).serving
       rw [hPostServ]; exact hServ
-  | release_noop c spin hNotHolder hSpin =>
-    rw [TicketLockState.release_noop _ _ hNotHolder, ticketFoldBlock_stutter _ _ hSpin]
-    exact hSim
   | release_effective c t hHeld hNoWrap =>
     obtain ⟨hNext, hServ⟩ := hSim
     obtain ⟨hPostServ, hPostNext⟩ := TicketLockState.release_counters _ c t hHeld
@@ -498,6 +549,24 @@ inductive ListTicketBlocks :
       ticketBlock abs a b →
       ListTicketBlocks (abs.applyOp a) as bs →
       ListTicketBlocks abs (a :: as) (b :: bs)
+
+/-- **PR #890 review round 4**: a trace respects the contract when each of
+its operations does, at the state it is issued in. -/
+def TicketLockState.contractTrace : TicketLockState → List TicketLockOp → Prop
+  | _, [] => True
+  | s, op :: rest => s.callerContract op ∧ (s.applyOp op).contractTrace rest
+
+/-- **PR #890 review round 4**: every trace the block relation admits
+respects the contract along its whole length — the trace-level form of
+`ticketBlock_respects_contract`, and the precise statement of what
+`rust_ticketLock_refines_lean` quantifies over. -/
+theorem ListTicketBlocks_contractTrace {abs : TicketLockState} {ops : List TicketLockOp}
+    {blocks : List (List ConcreteTicketLockOp)} (h : ListTicketBlocks abs ops blocks) :
+    abs.contractTrace ops := by
+  induction h with
+  | nil a => trivial
+  | cons a op blk restOps restBlocks hBlk _ ih =>
+    exact ⟨ticketBlock_respects_contract hBlk, ih⟩
 
 /-- **WS-RR RR6.13 (trace composition)**: from any sim-related starting
 pair, an abstract op-list and its concrete block list end sim-related. -/
@@ -559,6 +628,12 @@ Two conjuncts, and both can fail:
    (`ListTicketBlocks`, whose constructors are the per-entry-point
    shapes in `ticketBlock`), folding `applyOp` over the spec and folding
    the atomic accesses over the two counters end in related states.
+   Every such op-list respects the implementation's caller contract
+   (`ListTicketBlocks_contractTrace`, PR #890 review round 4): a
+   re-acquisition by a queued or holding core and a release by a
+   non-holder are spec no-ops the implementation does not define, and
+   the relation has no block for them rather than a stutter it does not
+   perform.
 
 What changed at WS-RR RR6.14: the previous form was four conjuncts of
 per-step counter arithmetic, the fourth of which was

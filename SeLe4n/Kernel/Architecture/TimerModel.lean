@@ -94,6 +94,61 @@ theorem hardwareTimerToModelTick_monotone (cfg : HardwareTimerConfig)
   · omega
   · exact Nat.div_le_div_right hab
 
+/-- **PR #890 review round 4**: the number of model ticks an interval of
+    `cycles` counter cycles can span — the **ceiling** of the division.
+
+    A different question from `hardwareTimerToModelTick`, which converts an
+    *absolute* counter value to the tick it falls in and floors.  An
+    interval is not an absolute value: one that begins mid-tick crosses
+    one boundary more than its length alone suggests, so a duration bound
+    read through the absolute conversion under-counts by one (1024 cycles
+    at 54000 per tick is 0 ticks by the floor and 1 boundary at counter
+    53500).  `hardwareTimerToModelTick_sub_le_duration` is the relation
+    between the two: the ticks elapsed between any start counter and that
+    counter plus the interval are at most this figure. -/
+def hardwareDurationToModelTicks (cfg : HardwareTimerConfig) (cycles : Nat) : Nat :=
+  if cfg.countsPerTick = 0 then 0
+  else (cycles + cfg.countsPerTick - 1) / cfg.countsPerTick
+
+/-- A longer interval spans no fewer ticks. -/
+theorem hardwareDurationToModelTicks_monotone (cfg : HardwareTimerConfig)
+    (a b : Nat) (hab : a ≤ b) :
+    cfg.hardwareDurationToModelTicks a ≤ cfg.hardwareDurationToModelTicks b := by
+  simp only [hardwareDurationToModelTicks]
+  split
+  · omega
+  · exact Nat.div_le_div_right (by omega)
+
+/-- **PR #890 review round 4**: the ticks elapsed across an interval, from
+    **any** start counter, are bounded by the interval's duration in ticks.
+
+    With `start = q * p + r` (`r < p`) the absolute tick after the
+    interval is `q + (r + d) / p`, so the difference is `(r + d) / p`,
+    which is at most `(d + p - 1) / p` because `r ≤ p - 1`.  The floor
+    conversion alone gives `d / p`, which the phase `r` can exceed by one
+    — the bound a duration budget needs is this one. -/
+theorem hardwareTimerToModelTick_sub_le_duration (cfg : HardwareTimerConfig)
+    (start d : Nat) :
+    cfg.hardwareTimerToModelTick (start + d) - cfg.hardwareTimerToModelTick start
+      ≤ cfg.hardwareDurationToModelTicks d := by
+  by_cases h : cfg.countsPerTick = 0
+  · simp [hardwareTimerToModelTick, hardwareDurationToModelTicks, h]
+  · simp only [hardwareTimerToModelTick, hardwareDurationToModelTicks, h, if_false]
+    have hp : 0 < cfg.countsPerTick := Nat.pos_of_ne_zero h
+    have hSplit : start
+        = cfg.countsPerTick * (start / cfg.countsPerTick) + start % cfg.countsPerTick :=
+      (Nat.div_add_mod start cfg.countsPerTick).symm
+    have hR : start % cfg.countsPerTick < cfg.countsPerTick := Nat.mod_lt _ hp
+    have hEq : (start + d) / cfg.countsPerTick
+        = start / cfg.countsPerTick
+            + (start % cfg.countsPerTick + d) / cfg.countsPerTick := by
+      have hMul :=
+        Nat.mul_add_div hp (start / cfg.countsPerTick) (start % cfg.countsPerTick + d)
+      rw [← Nat.add_assoc, ← hSplit] at hMul
+      exact hMul
+    rw [hEq, Nat.add_sub_cancel_left]
+    exact Nat.div_le_div_right (by omega)
+
 /-- AG3-E: Reprogramming the comparator advances it by exactly one tick interval. -/
 theorem reprogramComparator_advances (cfg : HardwareTimerConfig) :
     (cfg.reprogramComparator).comparatorValue = cfg.comparatorValue + cfg.countsPerTick := rfl

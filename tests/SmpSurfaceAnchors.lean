@@ -222,6 +222,24 @@ and then exactly one of `ffiRwLockCompleteRead`, `ffiRwLockCompleteWrite` or
 #check @SeLe4n.Kernel.Concurrency.ticketBlock_preserves_ticketLockSim
 #check @SeLe4n.Kernel.Concurrency.ListTicketBlocks
 #check @SeLe4n.Kernel.Concurrency.ticketTrace_preserves_ticketLockSim
+-- PR #890 review round 4: the ticket bridge covers exactly the calls the
+-- implementation defines.  A re-acquisition by a queued or holding core and
+-- a release by a non-holder are spec no-ops with NO block shape; the contract
+-- is a predicate every shape satisfies, and every admitted trace respects it.
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.callerContract
+#check @SeLe4n.Kernel.Concurrency.ticketBlock_respects_contract
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.contractTrace
+#check @SeLe4n.Kernel.Concurrency.ListTicketBlocks_contractTrace
+example (abs : SeLe4n.Kernel.Concurrency.TicketLockState) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (blk : List SeLe4n.Kernel.Concurrency.ConcreteTicketLockOp)
+    (h : SeLe4n.Kernel.Concurrency.ticketBlock abs (.release c) blk) :
+    abs.held.map Prod.fst = some c :=
+  SeLe4n.Kernel.Concurrency.ticketBlock_respects_contract h
+example (abs : SeLe4n.Kernel.Concurrency.TicketLockState) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (blk : List SeLe4n.Kernel.Concurrency.ConcreteTicketLockOp)
+    (h : SeLe4n.Kernel.Concurrency.ticketBlock abs (.tryAcquire c) blk) :
+    c ∉ abs.pending.map Prod.fst :=
+  (SeLe4n.Kernel.Concurrency.ticketBlock_respects_contract h).1
 #check @SeLe4n.Kernel.Concurrency.ticketBlock_release_moves_serving
 -- The relation is falsifiable: this exhibits a pair it does NOT relate, so
 -- `ticketLockSim` cannot be discharged by a tautology.
@@ -295,16 +313,18 @@ example (s : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete)
 example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
     (conc : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete) (c : SeLe4n.Kernel.Concurrency.CoreId)
     (spin : List SeLe4n.Kernel.Concurrency.QueuedRwLockOp)
-    (h₁ : ¬ abs.coreInvolved c) (h₂ : abs.writerHeld.isSome ∨ abs.waiters ≠ [])
-    (h₃ : SeLe4n.Kernel.Concurrency.QueuedStutter spin)
-    (h₄ : conc.nextTicket.toNat + 1 < UInt64.size) (h₅ : ¬ conc.withdrawalPending c) :
+    (h₁ : c ∉ conc.heldRead) (h₂ : c ∉ conc.heldWrite) (h₃ : ∀ t, (c, t) ∉ conc.requests)
+    (h₄ : abs.writerHeld.isSome ∨ abs.waiters ≠ [])
+    (h₅ : SeLe4n.Kernel.Concurrency.QueuedStutter spin)
+    (h₆ : conc.nextTicket.toNat + 1 < UInt64.size) (h₇ : ¬ conc.withdrawalPending c) :
     SeLe4n.Kernel.Concurrency.queuedBlock abs conc (.tryAcquireRead c)
-      (.heldLoad c :: (SeLe4n.Kernel.Concurrency.takeTicketOps c ++ spin)) :=
-  .acquireRead_enqueue abs conc c spin h₁ h₂ h₃ h₄ h₅
+      (.heldLoad c :: .requestLoad c
+        :: (SeLe4n.Kernel.Concurrency.takeTicketOps c conc.nextTicket.toNat ++ spin)) :=
+  .acquireRead_enqueue abs conc c spin h₁ h₂ h₃ h₄ h₅ h₆ h₇
 -- PR #890 review round 2: the held words.  The relation has a fifth conjunct
 -- that represents the holders, every acquire and release block opens with the
--- held-word load, and the four no-op blocks are that one load, derived from
--- the relation rather than assumed of a stutter no code path performed.
+-- held-word load, and the no-op blocks are that load, derived from the
+-- relation rather than assumed of a stutter no code path performed.
 #check @SeLe4n.Kernel.Concurrency.queuedHeldSim
 #check @SeLe4n.Kernel.Concurrency.queuedHeldSim.copy
 #check @SeLe4n.Kernel.Concurrency.QueuedRwLockOp.heldLoad
@@ -312,42 +332,97 @@ example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
 #check @SeLe4n.Kernel.Concurrency.releaseReadOps
 #check @SeLe4n.Kernel.Concurrency.heldLoad_stutter
 #check @SeLe4n.Kernel.Concurrency.queuedFoldBlock_heldLoad_cons
--- Relation anchors: the fifth conjunct IS the held relation; a release by a
--- non-holder IS the one load; a re-acquire no-op REQUIRES holding, not mere
--- involvement; and the effective release clears the word BEFORE the count
--- moves.  Each keeps every name above and fails if its relation is broken.
+-- The class closure behind rounds 2 and 3: the request words.  The relation
+-- has a sixth conjunct that represents the one live request of each core; the
+-- issue records it; the entry of a reader, the release of the writer and the
+-- withdrawal clear it; and the queued no-op blocks are the two loads.
+#check @SeLe4n.Kernel.Concurrency.queuedRequestsSim
+#check @SeLe4n.Kernel.Concurrency.queuedRequestsSim.copy
+#check @SeLe4n.Kernel.Concurrency.QueuedRwLockOp.requestLoad
+#check @SeLe4n.Kernel.Concurrency.QueuedRwLockOp.requestStore
+#check @SeLe4n.Kernel.Concurrency.queuedSim_involved_of_request
+#check @SeLe4n.Kernel.Concurrency.queuedSim_involved_of_held
+#check @SeLe4n.Kernel.Concurrency.queuedSim_not_involved
+#check @SeLe4n.Kernel.Concurrency.queuedRequestsSim_issue
+#check @SeLe4n.Kernel.Concurrency.heldRequestLoads_stutter
+-- Relation anchors: the fifth conjunct IS the held relation and the sixth IS
+-- the request relation; every no-op block is decided by the words the
+-- implementation reads, never by an abstract fact; the effective release
+-- clears the word BEFORE the count moves; the issue records the request; and
+-- the writer release clears it between the held clear and the bit clear.
+-- Each keeps every name above and fails if its relation is broken.
 example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
     (conc : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete)
     (h : SeLe4n.Kernel.Concurrency.queuedSim abs conc) :
-    SeLe4n.Kernel.Concurrency.queuedHeldSim abs conc := h.2.2.2.2
+    SeLe4n.Kernel.Concurrency.queuedHeldSim abs conc := h.2.2.2.2.1
+example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
+    (conc : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete)
+    (h : SeLe4n.Kernel.Concurrency.queuedSim abs conc) :
+    SeLe4n.Kernel.Concurrency.queuedRequestsSim conc := h.2.2.2.2.2
 example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
     (conc : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete) (c : SeLe4n.Kernel.Concurrency.CoreId)
-    (h : c ∉ abs.readers) :
+    (h : c ∉ conc.heldRead) :
     SeLe4n.Kernel.Concurrency.queuedBlock abs conc (.releaseRead c) [.heldLoad c] :=
   .releaseRead_noop abs conc c h
 example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
     (conc : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete) (c : SeLe4n.Kernel.Concurrency.CoreId)
-    (h : c ∈ abs.readers ∨ abs.writerHeld = some c) :
+    (h : c ∈ conc.heldRead ∨ c ∈ conc.heldWrite) :
     SeLe4n.Kernel.Concurrency.queuedBlock abs conc (.tryAcquireRead c) [.heldLoad c] :=
-  .acquireRead_noop abs conc c h
+  .acquireRead_holder abs conc c h
+example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
+    (conc : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (t : Nat) (h₁ : c ∉ conc.heldRead) (h₂ : c ∉ conc.heldWrite) (h₃ : (c, t) ∈ conc.requests) :
+    SeLe4n.Kernel.Concurrency.queuedBlock abs conc (.tryAcquireRead c)
+      [.heldLoad c, .requestLoad c] :=
+  .acquireRead_queued abs conc c t h₁ h₂ h₃
+example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
+    (conc : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (t : Nat) (h₁ : c ∉ conc.heldRead) (h₂ : c ∉ conc.heldWrite) (h₃ : (c, t) ∈ conc.requests) :
+    SeLe4n.Kernel.Concurrency.queuedBlock abs conc (.tryAcquireWrite c)
+      [.heldLoad c, .requestLoad c] :=
+  .acquireWrite_queued abs conc c t h₁ h₂ h₃
 example (c : SeLe4n.Kernel.Concurrency.CoreId) :
     SeLe4n.Kernel.Concurrency.releaseReadOps c
       = [.heldLoad c, .heldStore c none, .stateFetchSubReader c, .sev c] := rfl
+example (c : SeLe4n.Kernel.Concurrency.CoreId) (t : Nat) :
+    SeLe4n.Kernel.Concurrency.releaseWriteOps c t
+      = [.heldLoad c, .heldStore c none, .requestStore c none,
+         .stateFetchAndReaderMask c, .nowServingFetchAdd c t, .sev c] := rfl
+example (c : SeLe4n.Kernel.Concurrency.CoreId) (t : Nat) :
+    SeLe4n.Kernel.Concurrency.takeTicketOps c t
+      = [.nextTicketFetchAdd c, .requestStore c (some t), .lastEnqueuedStore c] := rfl
+example (c : SeLe4n.Kernel.Concurrency.CoreId) (t : Nat) :
+    SeLe4n.Kernel.Concurrency.readerEnterOps c t
+      = [.nowServingLoad c, .stateLoad c, .stateFetchAddReader c t, .heldStore c (some .read),
+         .requestStore c none, .nowServingFetchAdd c t, .sev c] := rfl
 -- PR #890 review round 3: the publish of a withdrawal REQUIRES a core holding
 -- nothing (a holder withdraws nothing, decided by the same word), and the
--- withdrawal block OPENS with that load.
+-- withdrawal block OPENS with that load, then the request load, and clears
+-- the request BEFORE it publishes; a holder and a core with no request each
+-- take a no-op shape decided by its own word.
 example (s : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete) (c : SeLe4n.Kernel.Concurrency.CoreId)
     (t : Nat) (h : s.opEnabled (.cancelPublish c t)) :
     c ∉ s.heldRead ∧ c ∉ s.heldWrite := ⟨h.2.2.1, h.2.2.2⟩
 example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
     (conc : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete) (c : SeLe4n.Kernel.Concurrency.CoreId)
     (t : Nat) (spin : List SeLe4n.Kernel.Concurrency.QueuedRwLockOp)
-    (h₁ : ∃ m, (c, m) ∈ abs.waiters) (h₂ : (t, c) ∈ conc.liveLedger)
-    (h₃ : SeLe4n.Kernel.Concurrency.QueuedStutter spin) :
+    (h₁ : c ∉ conc.heldRead) (h₂ : c ∉ conc.heldWrite) (h₃ : (c, t) ∈ conc.requests)
+    (h₄ : SeLe4n.Kernel.Concurrency.QueuedStutter spin) :
     SeLe4n.Kernel.Concurrency.queuedBlock abs conc (.cancel c)
-      (.heldLoad c :: .nowServingLoad c :: .cancelPublish c t
+      (.heldLoad c :: .requestLoad c :: .nowServingLoad c :: .requestStore c none
+        :: .cancelPublish c t
         :: spin ++ SeLe4n.Kernel.Concurrency.skipDeadOps (conc.cancelled ++ [t]) conc.ledger) :=
-  .cancel_queued abs conc c t spin h₁ h₂ h₃
+  .cancel_queued abs conc c t spin h₁ h₂ h₃ h₄
+example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
+    (conc : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (h : c ∈ conc.heldRead ∨ c ∈ conc.heldWrite) :
+    SeLe4n.Kernel.Concurrency.queuedBlock abs conc (.cancel c) [.heldLoad c] :=
+  .cancel_holder abs conc c h
+example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
+    (conc : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (h₁ : c ∉ conc.heldRead) (h₂ : c ∉ conc.heldWrite) (h₃ : ∀ t, (c, t) ∉ conc.requests) :
+    SeLe4n.Kernel.Concurrency.queuedBlock abs conc (.cancel c) [.heldLoad c, .requestLoad c] :=
+  .cancel_noRequest abs conc c h₁ h₂ h₃
 #check @SeLe4n.Kernel.Concurrency.queuedRwLock_refines_rwLockSpec
 #check @SeLe4n.Kernel.Concurrency.queuedRwLock_admits_in_spec_order
 

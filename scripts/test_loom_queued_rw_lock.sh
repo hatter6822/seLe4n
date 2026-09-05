@@ -88,11 +88,13 @@
 # existed `release_read` was an unconditional `fetch_sub` that the refinement
 # had described as a stutter.  `every_pair_of_units_is_safe` is the
 # enumeration the acceptance criterion cited in the header always asked for:
-# every unordered pair of the lock's nine operation units — the fused and
+# every unordered pair of the lock's eleven operation units — the fused and
 # split acquisitions in both modes, both non-blocking attempts, a
-# withdrawal followed by the unwind, and (review round 3) the unwind at a
-# member the core holds, as a reader and as the writer — one unit per
-# thread, at most five lock operations, unbounded.  The handwritten models
+# withdrawal followed by the unwind, (review round 3) the unwind at a
+# member the core holds, as a reader and as the writer, and (the class
+# closure behind rounds 2 and 3) enqueue twice, the fused acquisition, then
+# the split completion, in both modes — one unit per thread, at most five
+# lock operations, unbounded.  The handwritten models
 # are scenarios; this is the closure, and a unit added to the lock's list is
 # paired with every other automatically.
 #
@@ -107,6 +109,25 @@
 # the held-word load in `cancel` and invert its comparison (`== HELD_NONE`),
 # so a holder's withdrawal reaches the publish; the enumeration fails at
 # the pairs that hold and withdraw.
+#
+# The class closure behind rounds 2 and 3 — the request word
+# ------------------------------------------------------------
+#
+# Rounds 2 and 3 were one defect: the lock did not know the executing
+# core's own situation.  A third per-core word, `request`, records the
+# core's one live ticket, so `enqueue` by a queued core returns the ticket
+# it holds, the fused acquisitions return on `involved`, and a terminator
+# is verified against the record.  The two `EnqueueTwiceThen*` units are
+# that path: enqueue twice (the same ticket), the fused acquisition (nothing
+# acquired), then the split completion and the release.  Their decisiveness
+# mutation keeps the `involved` load in `acquire_read` and inverts its
+# comparison, so a queued core proceeds into a fused acquisition: the
+# unit's "a queued core acquired nothing new" fails, and so does the lock's
+# own `per_core_state_matrix` in the host lane.  The mutation that drops the
+# request store from `take_ticket` is not the one to quote here — it is
+# refused by `build.rs` (the request-load-before-write pin has nothing to
+# read) before loom could see it, and by the host lane's
+# `a_queued_core_is_issued_no_second_ticket`.
 
 set -euo pipefail
 

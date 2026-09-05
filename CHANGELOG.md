@@ -222,6 +222,133 @@ still relied on.  A guard now records whether it acquired and releases only
 what it took; `acquired()` reports which, and three tests pin the nesting in
 both modes and across them.
 
+### The class behind rounds 2 and 3, closed at the cause
+
+Rounds 2 and 3 were one defect in two costumes, and the closure audit's
+stall was a third: the deployed lock did not know the executing core's own
+situation.  It had no held word (round 2); then it had one that `cancel` did
+not read (round 3); and it had no record of a core's live request at all, so
+"one outstanding ticket per core" was a caller contract policed by nothing,
+a terminator trusted whatever ticket its caller named, and the fused
+acquisitions had no branch for a queued core — which is why the refinement
+had no block for one and said so.  Fixing the instance each review named
+was not converging, because the set of entry points that could decide on a
+contract instead of a word was the whole API.
+
+The cause is closed by completing the lock's per-core knowledge.  A third
+word per core, `request`, records the core's one live ticket (`ticket + 1`,
+`NO_REQUEST` for none): set by `take_ticket`, cleared at a reader's entry,
+the writer's release, a withdrawal's publish and a refused single attempt's
+pass.  With it every entry point decides the core's case — idle, queued,
+withdrawn, holding — on the three words before it writes anything shared,
+and each of the spec's no-ops is a branch rather than a contract: `enqueue`
+by a queued core returns the ticket it already holds (one outstanding ticket
+per core is now a fact the lock establishes), the fused acquisitions and the
+guards return on `involved`, a terminator verifies the caller's ticket
+against the lock's record (`own_request`) and refuses a core with no
+request outright, `complete_*` wait for their own turn rather than trusting
+that the caller polled, and `cancel` withdraws the request the lock
+recorded, whatever ticket was named.  A reader holder's `enqueue` returns
+the `HELD_TICKET` sentinel, served at once and a no-op at every terminator.
+The struct grows to 128 bytes on purpose: the shared words fill the first
+line and the owner-only `request` array the second.
+
+The property is pinned four ways, none of them a name.  `per_core_state_matrix`
+drives core 0 into each of five states and calls every per-core entry point
+in each, requiring the no-op the spec has, the refusal where the core has
+nothing to terminate, and a real state change otherwise — a state or an
+entry point added without a classification fails it.  `build.rs` holds the
+matrix's entry-point list to the lock's `pub fn`s that take `core_id`
+(derived from the code view, so a new entry point fails the build until it
+is classified), and pins, for all twelve, that the core's own words are
+*loaded* before the first shared write — within each brace-matched body,
+which corrects round 2's scanner: `enclosing_fn_body` ends a body at the
+first column-zero brace, the end of the `impl` block for a method, so the
+order it pinned held by the accident of which method came next.  Seven
+relation-breaking mutations — a load moved below the write, a helper that
+stops reading a word, a matrix entry dropped, a new entry point without one,
+a call replaced by its name in a string — are each refused.  The Tier-5
+oracle issues a queued waiter's re-acquisition and an uninvolved core's
+withdrawal to the ticket lock and holds every core's request word to the
+spec's queue and held writer after each op (`check_requests`); the loom
+enumeration gains the enqueue-twice-then-acquire units in both modes (eleven
+units, 55 pairs, thirteen models, about a minute unbounded), and its round-4
+mutation keeps the `involved` load in `acquire_read` and inverts it — the
+queued core is then admitted and the unit's "acquired nothing new" fails.
+
+On the Lean side the model carries the word (`requests`, `requestLoad`,
+`requestStore`), `queuedSim` gains a sixth conjunct `queuedRequestsSim` —
+a core's word records `t` iff `(t, c)` is a live ledger entry — and, the
+substantive change, **every per-core branch hypothesis of `queuedBlock` is
+now stated on the words the implementation reads** (`c ∈ conc.heldRead`,
+`(c, t) ∈ conc.requests`) rather than on the abstract fact the spec's branch
+needs.  The abstract fact is derived from the two relations inside
+`queuedBlock_preserves_queuedSim` (`queuedSim_involved_of_request`,
+`queuedSim_involved_of_held`, `queuedSim_not_involved`), so the round-2
+docstring's claim that the no-op blocks were "derived from the relation" is
+true now and was not before: the step cases had consumed the abstract
+hypothesis and consulted the relation nowhere.  The queued core's
+re-acquisition has its block at last (`acquireRead_queued` /
+`acquireWrite_queued`: the two loads), `cancel` has three shapes decided by
+the words (`cancel_holder`, `cancel_noRequest`, `cancel_queued`), the issue
+records the request and the reader entry, writer release and withdrawal
+clear it, and the promotion carries the relation through the admitted
+readers' cleared requests — which is where the live cores' distinctness
+(INV-R3) enters the bridge for the first time.
+
+### Review round 4 (Codex, on `97cd735e`)
+
+Three findings.  **(1) Order is not control** (P1).  Round 2's `build.rs`
+check compared the first textual `self.held[core_id as usize]` against the
+first state write, so a harmless earlier read satisfied it while the real
+`if` was inverted or its `return` moved below the write — the
+"region-scoped presence check" shape CLAUDE.md's key conventions describe.
+The pin now asks the question of **statements** (`core_entry_point_status`):
+each per-core entry point's decision must be a top-level `if` of its own
+brace-matched body whose condition is exactly the pinned comparison and
+whose block ends in a diverging `return`, placed before the statement that
+performs the shared write; a name the condition reads must be bound by the
+pinned load and not rebound in between; `complete_*` must call
+`own_request` at top level before the state word moves; and a guard's
+acquisition must be the only occurrence of the call, inside `if acquired`.
+The two helpers are pinned the same way (`involved` is exactly the
+disjunction of the two loads; `own_request` binds the load and refuses with
+an `assert!`, not a `debug_assert!`).  `verify_core_entry_point_scanner`
+holds the checker to nine token-preserving mutations of three fixture
+shapes, and ten more on the real file — an inverted comparison, a return
+moved out, a harmless read with the branch moved below the write, a nested
+branch, a rebinding, an acquisition moved outside its guard, a demoted
+assert, a conjunction for the disjunction, a trusted caller ticket, a
+dropped matrix entry — are each refused.  **(2) The ticket bridge's no-ops
+were fictional** (P2).  `TicketLockRefinement`'s `tryAcquire_noop` and
+`release_noop` mapped the spec's no-ops to observation-only blocks, but
+`ticket_lock.rs` has no per-core word: `acquire` takes a ticket for whoever
+calls it and parks a re-acquiring holder forever, `release` advances
+`serving` for a non-holder under the real holder.  The same fiction round 2
+removed from the CAS-retry bridge, missed by the sweep that fix owed its
+sibling.  Both constructors are gone; `TicketLockState.callerContract`
+states which operations the bridge covers, `ticketBlock_respects_contract`
+proves every shape is inside it and `ListTicketBlocks_contractTrace` every
+admitted trace, and `ticket_lock.rs`'s `acquire` docstring now carries the
+contract its `release` always had.  The deployed `QueuedRwLock` keeps the
+opposite choice — its per-core words make the same spec no-ops branches —
+because the two-phase-locking unwind relies on them there; nothing relies
+on them at the ticket lock, whose kernel-entry consumers treat a re-entry as
+a fault to halt on.  **(3) A duration is not an absolute counter** (P2).
+`releaseBudgetTicks` converted the cycle budget with
+`hardwareTimerToModelTick`, which floors an absolute counter value, so
+`elapsed_ticks_le_releaseBudgetTicks` bounded `floor(delay / period)` by
+`floor(budget / period)` and said nothing about the ticks a timer counts
+between two arbitrary counter values — a 1024-cycle interval starting at
+counter 53500 crosses the 54000 boundary the floor reports as zero ticks.
+`TimerModel` gains the duration conversion `hardwareDurationToModelTicks`
+(the ceiling), with `hardwareTimerToModelTick_sub_le_duration` relating
+the two — the ticks elapsed from **any** start counter across an interval
+are at most the interval's duration in ticks — and the budget theorem is
+restated over an arbitrary start; the RPi5 figure at unit cost is one tick,
+not zero, with `releaseBudgetTicks_rpi5_phase_witness` deciding the case
+the floor could not.
+
 Refs: docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md §5 (closure audit)
 
 ## v0.34.54 — the lock execution learns what a step costs

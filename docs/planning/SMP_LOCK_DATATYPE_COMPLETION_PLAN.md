@@ -228,6 +228,18 @@ withdrawal that reached the publish passed the turn under the set bit and
 the release passed it again — and the RAII guards release only what they
 acquired.  Again not a new sub-task: LC3's and LC4's rows stand.
 
+**The class behind rounds 2 and 3** (same version) was closed at its cause
+rather than one entry point at a time: the lock did not know the executing
+core's own situation.  `QueuedRwLock` carries a third per-core word,
+`request` (the core's one live ticket), every entry point decides the
+core's case on its three words before it writes, the per-core state matrix
+classifies every entry point in every state with `build.rs` holding its
+list to the code, `queuedSim` gains `queuedRequestsSim`, and every per-core
+branch hypothesis of `queuedBlock` is stated on the words the implementation
+reads with the spec's branch derived from the relations.  LC3's "one
+outstanding ticket per core" is therefore a fact the lock establishes, not
+the caller contract LC3.4 recorded; the row stands as history.
+
 ## 6. LC4 — the two-phase-locking consumers
 
 **Acceptance**: a refused revalidated entry withdraws every request its growing

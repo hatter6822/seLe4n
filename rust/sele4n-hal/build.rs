@@ -5920,6 +5920,464 @@ fn scan_ffi_rs_exposes_timer_shadow_advance_export() {
     }
 }
 
+/// **PR #890 review round 4**: one guard by which a per-core entry point of
+/// `queued_rw_lock.rs` decides the executing core's case, in the form the
+/// entry point spells it.
+///
+/// A canonical spelling is required and every other refused (CLAUDE.md,
+/// "when the enumeration cannot be finished, state a contract instead"):
+/// the subject is code this project writes, so the scanner does not parse
+/// arbitrary Rust — it asks whether the pinned statement is there, at top
+/// level, in the pinned position.
+#[derive(Clone, Copy)]
+enum CoreGuard {
+    /// A top-level `if <cond> { … }` whose condition is exactly this text
+    /// (whitespace aside) and whose block's last top-level statement
+    /// diverges — the refusal branch.
+    Refuses(&'static str),
+    /// A top-level `let <name> = <rhs>;` — the load a later guard reads,
+    /// which nothing may rebind before that guard.
+    Binds(&'static str, &'static str),
+    /// A top-level statement beginning with this text — a call to a helper
+    /// that refuses inside (`own_request`).
+    CallsPrefix(&'static str),
+    /// A top-level `if <cond> { <call>; }` that is the ONLY occurrence of
+    /// `<call>` in the body — the operation performed inside the branch and
+    /// nowhere else (the RAII guards).
+    Encloses(&'static str, &'static str),
+}
+
+/// A per-core entry point of `queued_rw_lock.rs`: its signature, the guards
+/// in the order they decide, and the first write another core reads —
+/// `None` where the operation is the `Encloses` guard's own call.
+struct CoreEntryPoint {
+    signature: &'static str,
+    guards: &'static [CoreGuard],
+    shared_write: Option<&'static str>,
+}
+
+const REQUEST_LOAD_EXPR: &str = "self.request[core_id as usize].load(Ordering::Acquire)";
+
+/// The twelve per-core entry points and how each decides.  Check (4) of
+/// `scan_queued_rw_lock_protocol_intact` holds the set of `pub fn`s taking
+/// `core_id` to the lock's `per_core_state_matrix` list; this table is held
+/// to the same set by the scan, so an entry point added to the lock is
+/// classified here or the build fails.
+const CORE_ENTRY_POINTS: &[CoreEntryPoint] = &[
+    CoreEntryPoint {
+        signature: "pub fn release_read(&self, core_id: u8) {",
+        guards: &[CoreGuard::Refuses(
+            "self.held[core_id as usize].load(Ordering::Acquire) != HELD_READ",
+        )],
+        shared_write: Some("self.state.fetch_sub(1"),
+    },
+    CoreEntryPoint {
+        signature: "pub fn release_write(&self, core_id: u8) {",
+        guards: &[CoreGuard::Refuses(
+            "self.held[core_id as usize].load(Ordering::Acquire) != HELD_WRITE",
+        )],
+        shared_write: Some("self.state.fetch_and(READER_MASK"),
+    },
+    CoreEntryPoint {
+        signature: "pub fn cancel(&self, core_id: u8, ticket: u64) {",
+        guards: &[
+            CoreGuard::Refuses("self.held[core_id as usize].load(Ordering::Acquire) != HELD_NONE"),
+            CoreGuard::Binds("own", REQUEST_LOAD_EXPR),
+            CoreGuard::Refuses("own == NO_REQUEST"),
+        ],
+        shared_write: Some("self.cancelled[core_id as usize].store("),
+    },
+    CoreEntryPoint {
+        signature: "pub fn complete_read(&self, core_id: u8, ticket: u64) {",
+        guards: &[
+            CoreGuard::Refuses("self.held[core_id as usize].load(Ordering::Acquire) != HELD_NONE"),
+            CoreGuard::CallsPrefix("let ticket = self.own_request(core_id, ticket,"),
+        ],
+        shared_write: Some("self.state.fetch_add(1"),
+    },
+    CoreEntryPoint {
+        signature: "pub fn complete_write(&self, core_id: u8, ticket: u64) {",
+        guards: &[
+            CoreGuard::Refuses("self.held[core_id as usize].load(Ordering::Acquire) != HELD_NONE"),
+            CoreGuard::CallsPrefix("let ticket = self.own_request(core_id, ticket,"),
+        ],
+        shared_write: Some("compare_exchange(0, WRITER_BIT"),
+    },
+    CoreEntryPoint {
+        signature: "pub fn enqueue(&self, core_id: u8) -> u64 {",
+        guards: &[
+            CoreGuard::Binds("own", REQUEST_LOAD_EXPR),
+            CoreGuard::Refuses("own != NO_REQUEST"),
+            CoreGuard::Refuses("self.held[core_id as usize].load(Ordering::Acquire) != HELD_NONE"),
+        ],
+        shared_write: Some("self.take_ticket(core_id)"),
+    },
+    CoreEntryPoint {
+        signature: "pub fn acquire_read(&self, core_id: u8) {",
+        guards: &[CoreGuard::Refuses("self.involved(core_id)")],
+        shared_write: Some("self.enqueue(core_id)"),
+    },
+    CoreEntryPoint {
+        signature: "pub fn acquire_write(&self, core_id: u8) {",
+        guards: &[CoreGuard::Refuses("self.involved(core_id)")],
+        shared_write: Some("self.enqueue(core_id)"),
+    },
+    CoreEntryPoint {
+        signature: "pub fn try_acquire_read(&self, core_id: u8) -> bool {",
+        guards: &[CoreGuard::Refuses("self.involved(core_id)")],
+        shared_write: Some("self.try_take_served_ticket("),
+    },
+    CoreEntryPoint {
+        signature: "pub fn try_acquire_write(&self, core_id: u8) -> bool {",
+        guards: &[CoreGuard::Refuses("self.involved(core_id)")],
+        shared_write: Some("self.try_take_served_ticket("),
+    },
+    CoreEntryPoint {
+        signature: "pub fn acquire_read_guard(&self, core_id: u8) -> QueuedRwLockReadGuard<'_> {",
+        guards: &[
+            CoreGuard::Binds("acquired", "!self.involved(core_id)"),
+            CoreGuard::Encloses("acquired", "self.acquire_read(core_id)"),
+        ],
+        shared_write: None,
+    },
+    CoreEntryPoint {
+        signature: "pub fn acquire_write_guard(&self, core_id: u8) -> QueuedRwLockWriteGuard<'_> {",
+        guards: &[
+            CoreGuard::Binds("acquired", "!self.involved(core_id)"),
+            CoreGuard::Encloses("acquired", "self.acquire_write(core_id)"),
+        ],
+        shared_write: None,
+    },
+];
+
+/// The two helpers the guards above go through, held to what they promise:
+/// `involved` is exactly the disjunction of the two loads, and
+/// `own_request` binds the request load and refuses on it with an
+/// `assert!` that survives release builds.
+const CORE_HELPERS: &[CoreEntryPoint] = &[
+    CoreEntryPoint {
+        signature: "fn involved(&self, core_id: u8) -> bool {",
+        guards: &[CoreGuard::CallsPrefix(
+            "self.held[core_id as usize].load(Ordering::Acquire) != HELD_NONE \
+             || self.request[core_id as usize].load(Ordering::Acquire) != NO_REQUEST",
+        )],
+        shared_write: None,
+    },
+    CoreEntryPoint {
+        signature: "fn own_request(&self, core_id: u8, ticket: u64, entry: &str) -> u64 {",
+        guards: &[
+            CoreGuard::Binds("own", REQUEST_LOAD_EXPR),
+            CoreGuard::CallsPrefix("assert!(own != NO_REQUEST,"),
+        ],
+        shared_write: None,
+    },
+];
+
+/// Does this top-level statement rebind `name`?  A `let`, a `let mut`, or
+/// an assignment — the last binding wins, so a rebinding between the pinned
+/// load and the guard that reads the name changes what the guard decides
+/// on while keeping every token.
+fn statement_rebinds(key: &str, name: &str) -> bool {
+    key.starts_with(&format!("let{name}="))
+        || key.starts_with(&format!("letmut{name}="))
+        || key.starts_with(&format!("let{name}:"))
+        || (key.starts_with(&format!("{name}=")) && !key.starts_with(&format!("{name}==")))
+}
+
+/// Is this top-level statement `if <wanted> { …; return … }` — the pinned
+/// condition, and a block whose last top-level statement diverges?  The
+/// block's own earlier statements may not leave either, for the reason
+/// `tripwire_branch_halts` gives: a return before the return decides on
+/// something else.
+fn refusing_branch(statement: &str, wanted: &str) -> bool {
+    let Some((if_at, block_open)) = top_level_if_statement(statement) else {
+        return false;
+    };
+    if condition_key(&statement[if_at + 2..block_open]) != wanted {
+        return false;
+    }
+    let Some(block_close) = matching_close_brace(statement, block_open) else {
+        return false;
+    };
+    let statements = top_level_statements(statement, block_open, block_close);
+    let Some((&(a, b), before)) = statements.split_last() else {
+        return false;
+    };
+    statement_diverges(&statement[a..b])
+        && !before
+            .iter()
+            .any(|&(x, y)| statement_may_exit(&statement[x..y]))
+}
+
+/// **PR #890 review round 4**: does `body` decide the executing core's case
+/// the way `entry` pins?  Each guard must be a top-level statement of the
+/// body in the pinned form, placed before the statement that performs the
+/// shared write; a bound name a later guard reads must not be rebound in
+/// between; and an `Encloses` guard's call must occur nowhere else.
+fn core_entry_point_status(body: &str, entry: &CoreEntryPoint) -> Result<(), String> {
+    let statements = top_level_statements_in(body, 0, body.len());
+    let keys: Vec<String> = statements
+        .iter()
+        .map(|&(a, b)| condition_key(&body[a..b]))
+        .collect();
+    let write_index = match entry.shared_write {
+        Some(write) => Some(
+            statements
+                .iter()
+                .position(|&(a, b)| body[a..b].contains(write))
+                .ok_or_else(|| {
+                    format!("no longer performs `{write}`, so the pin on it would pass vacuously")
+                })?,
+        ),
+        None => None,
+    };
+    let before_write = |index: usize, what: &str| -> Result<(), String> {
+        match write_index {
+            Some(w) if index >= w => Err(format!(
+                "{what} is not a statement before the one performing `{}`: the decision \
+                 has to precede the write it controls",
+                entry.shared_write.unwrap_or("")
+            )),
+            _ => Ok(()),
+        }
+    };
+    let mut last_binding: Option<(&str, usize)> = None;
+    let not_rebound = |name: &str, from: usize, to: usize| -> Result<(), String> {
+        if let Some((k, _)) = keys[from + 1..to]
+            .iter()
+            .enumerate()
+            .find(|(_, key)| statement_rebinds(key, name))
+        {
+            let (a, b) = statements[from + 1 + k];
+            return Err(format!(
+                "`{name}` is rebound by `{}` between the pinned load and the guard that reads it",
+                collapse_whitespace(body[a..b].trim())
+            ));
+        }
+        Ok(())
+    };
+    for guard in entry.guards {
+        match *guard {
+            CoreGuard::Refuses(cond) => {
+                let wanted = condition_key(cond);
+                let index = statements
+                    .iter()
+                    .position(|&(a, b)| refusing_branch(&body[a..b], &wanted))
+                    .ok_or_else(|| {
+                        format!(
+                            "no top-level `if {cond} {{ … }}` whose block ends in a diverging \
+                             `return` — an inverted, widened or rewritten condition keeps the \
+                             tokens and decides the wrong case, a `return` moved out of the \
+                             block decides nothing, and a branch nested under a further \
+                             condition or attribute decides only when that holds"
+                        )
+                    })?;
+                before_write(index, &format!("the branch `if {cond}`"))?;
+                if let Some((name, at)) = last_binding {
+                    if word_occurrences(cond, name) > 0 {
+                        not_rebound(name, at, index)?;
+                    }
+                }
+            }
+            CoreGuard::Binds(name, rhs) => {
+                let wanted = condition_key(&format!("let {name} = {rhs};"));
+                let index = keys.iter().position(|k| *k == wanted).ok_or_else(|| {
+                    format!("no top-level `let {name} = {rhs};` — the load the guard reads")
+                })?;
+                before_write(index, &format!("the load `let {name} = …`"))?;
+                last_binding = Some((name, index));
+            }
+            CoreGuard::CallsPrefix(prefix) => {
+                let wanted = condition_key(prefix);
+                let index = keys
+                    .iter()
+                    .position(|k| k.starts_with(&wanted))
+                    .ok_or_else(|| format!("no top-level statement `{prefix} …`"))?;
+                before_write(index, &format!("the statement `{prefix} …`"))?;
+                if let Some((name, at)) = last_binding {
+                    if word_occurrences(prefix, name) > 0 {
+                        not_rebound(name, at, index)?;
+                    }
+                }
+            }
+            CoreGuard::Encloses(cond, call) => {
+                let occurrences = body.matches(call).count();
+                if occurrences != 1 {
+                    return Err(format!(
+                        "`{call}` occurs {occurrences} times; the acquisition must be performed \
+                         inside `if {cond}` and nowhere else"
+                    ));
+                }
+                let wanted = condition_key(cond);
+                let call_key = condition_key(&format!("{call};"));
+                let index = statements
+                    .iter()
+                    .position(|&(a, b)| {
+                        let statement = &body[a..b];
+                        let Some((if_at, block_open)) = top_level_if_statement(statement) else {
+                            return false;
+                        };
+                        if condition_key(&statement[if_at + 2..block_open]) != wanted {
+                            return false;
+                        }
+                        let Some(block_close) = matching_close_brace(statement, block_open) else {
+                            return false;
+                        };
+                        let inner = top_level_statements(statement, block_open, block_close);
+                        inner.len() == 1
+                            && condition_key(&statement[inner[0].0..inner[0].1]) == call_key
+                    })
+                    .ok_or_else(|| {
+                        format!(
+                            "no top-level `if {cond} {{ {call}; }}` — the acquisition must be \
+                             the branch's only statement"
+                        )
+                    })?;
+                if let Some((name, at)) = last_binding {
+                    if word_occurrences(cond, name) > 0 {
+                        not_rebound(name, at, index)?;
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Token-preserving self-check for `core_entry_point_status`.  Every
+/// mutation keeps the tokens a presence check would look for and breaks
+/// the relation; each must be refused, the good body accepted, and no
+/// mutation may leave its fixture unchanged.
+fn verify_core_entry_point_scanner() {
+    const RELEASE: &str = "
+        assert!((core_id as usize) < MAX_WAITERS, \"\");
+        if self.held[core_id as usize].load(Ordering::Acquire) != HELD_READ {
+            return;
+        }
+        self.held[core_id as usize].store(HELD_NONE, Ordering::Release);
+        let prev = self.state.fetch_sub(1, Ordering::AcqRel);
+        crate::cpu::sev();
+";
+    const CANCEL: &str = "
+        if self.held[core_id as usize].load(Ordering::Acquire) != HELD_NONE {
+            return;
+        }
+        let own = self.request[core_id as usize].load(Ordering::Acquire);
+        if own == NO_REQUEST {
+            return;
+        }
+        let ticket = own - 1;
+        self.request[core_id as usize].store(NO_REQUEST, Ordering::Release);
+        self.cancelled[core_id as usize].store(own, Ordering::SeqCst);
+";
+    const GUARD: &str = "
+        let acquired = !self.involved(core_id);
+        if acquired {
+            self.acquire_read(core_id);
+        }
+        QueuedRwLockReadGuard {
+            lock: self,
+            core_id,
+            acquired,
+        }
+";
+    let release = &CORE_ENTRY_POINTS[0];
+    let cancel = &CORE_ENTRY_POINTS[2];
+    let guard = &CORE_ENTRY_POINTS[10];
+    for (fixture, entry) in [(RELEASE, release), (CANCEL, cancel), (GUARD, guard)] {
+        if let Err(why) = core_entry_point_status(fixture, entry) {
+            panic!(
+                "core_entry_point_status self-check: the good `{}` is refused: {why}",
+                entry.signature
+            );
+        }
+    }
+    // (fixture, entry, from, to, what the mutation keeps and breaks)
+    let mutations: [(&str, &CoreEntryPoint, &str, &str, &str); 9] = [
+        (
+            RELEASE,
+            release,
+            "!= HELD_READ {",
+            "== HELD_READ {",
+            "the load and the branch, with the comparison inverted",
+        ),
+        (
+            RELEASE,
+            release,
+            "!= HELD_READ {\n            return;\n        }",
+            "!= HELD_READ {\n        }",
+            "the branch, with its return removed",
+        ),
+        (
+            RELEASE,
+            release,
+            "        if self.held[core_id as usize].load(Ordering::Acquire) != HELD_READ {\n            return;\n        }\n        self.held[core_id as usize].store(HELD_NONE, Ordering::Release);\n        let prev = self.state.fetch_sub(1, Ordering::AcqRel);\n",
+            "        let _seen = self.held[core_id as usize].load(Ordering::Acquire);\n        self.held[core_id as usize].store(HELD_NONE, Ordering::Release);\n        let prev = self.state.fetch_sub(1, Ordering::AcqRel);\n        if self.held[core_id as usize].load(Ordering::Acquire) != HELD_READ {\n            return;\n        }\n",
+            "a harmless earlier read, with the real branch moved below the write",
+        ),
+        (
+            RELEASE,
+            release,
+            "        if self.held[core_id as usize].load(Ordering::Acquire) != HELD_READ {\n            return;\n        }\n",
+            "        if prev_ok() {\n            if self.held[core_id as usize].load(Ordering::Acquire) != HELD_READ {\n                return;\n            }\n        }\n",
+            "the branch, nested under a further condition",
+        ),
+        (
+            RELEASE,
+            release,
+            "        if self.held[core_id as usize].load(Ordering::Acquire) != HELD_READ {\n",
+            "        #[cfg(debug_assertions)]\n        if self.held[core_id as usize].load(Ordering::Acquire) != HELD_READ {\n",
+            "the branch, under a debug-only attribute",
+        ),
+        (
+            CANCEL,
+            cancel,
+            "        if own == NO_REQUEST {\n",
+            "        let own = NO_REQUEST + 1;\n        if own == NO_REQUEST {\n",
+            "the load and the branch, with the name rebound in between",
+        ),
+        (
+            CANCEL,
+            cancel,
+            "        if own == NO_REQUEST {\n            return;\n        }\n        let ticket = own - 1;\n        self.request[core_id as usize].store(NO_REQUEST, Ordering::Release);\n        self.cancelled[core_id as usize].store(own, Ordering::SeqCst);\n",
+            "        let ticket = own - 1;\n        self.request[core_id as usize].store(NO_REQUEST, Ordering::Release);\n        self.cancelled[core_id as usize].store(own, Ordering::SeqCst);\n        if own == NO_REQUEST {\n            return;\n        }\n",
+            "the request branch, moved below the publish",
+        ),
+        (
+            GUARD,
+            guard,
+            "        if acquired {\n            self.acquire_read(core_id);\n        }\n",
+            "        self.acquire_read(core_id);\n        if acquired {\n        }\n",
+            "the recorded decision, with the acquisition moved outside its branch",
+        ),
+        (
+            GUARD,
+            guard,
+            "        let acquired = !self.involved(core_id);\n",
+            "        let acquired = !self.involved(core_id);\n        let acquired = true;\n",
+            "the recorded decision, rebound before the branch reads it",
+        ),
+    ];
+    for (fixture, entry, from, to, what) in mutations {
+        assert_eq!(
+            fixture.matches(from).count(),
+            1,
+            "core_entry_point_status self-check: mutation `{what}` does not apply once"
+        );
+        let mutated = fixture.replacen(from, to, 1);
+        assert_ne!(
+            mutated, fixture,
+            "core_entry_point_status self-check: `{what}` is inert"
+        );
+        if core_entry_point_status(&mutated, entry).is_ok() {
+            panic!(
+                "core_entry_point_status self-check: `{}` keeps {what} and is still accepted",
+                entry.signature
+            );
+        }
+    }
+}
+
 /// **WS-SM SM2** (closes the queued_rw_lock protocol contract): verify
 /// that `queued_rw_lock.rs` retains the invariants that make the ticket
 /// protocol deadlock-free.
@@ -5950,16 +6408,39 @@ fn scan_ffi_rs_exposes_timer_shadow_advance_export() {
 ///    reader bits are set, producing the `WRITER_BIT | reader_bits` state
 ///    that directly violates writer-readers exclusion.
 ///
-/// 3. **A release consults the holder word before it writes the state
-///    word** (PR #890 review round 2).  `release_read` reads `self.held[..]`
-///    before `self.state.fetch_sub(1`, and `release_write` before
-///    `self.state.fetch_and(READER_MASK`.  That order is what makes a
-///    release by a non-holder the spec's no-op: with the read after the
-///    write, the count has already been decremented under the real holder
-///    (or the turn passed) by the time the branch returns.  Checked as
-///    ORDER within each function's body, not as presence in the file — a
-///    holder read moved below the state write keeps every token and breaks
-///    the relation.
+/// 3. **Every per-core entry point decides the executing core's case on
+///    its own words, in a branch that controls the first shared write**
+///    (PR #890 review rounds 2 and 3, the class behind them, and review
+///    round 4).  `release_read` returns unless its held word reads
+///    `HELD_READ`, before `self.state.fetch_sub(1`; `cancel` returns for a
+///    holder and for a core with no request before it publishes its slot;
+///    `complete_*` return for a holder and verify the request through
+///    `own_request` before the state word moves; `enqueue` returns the
+///    recorded ticket, or the holder's sentinel, before it takes one; the
+///    fused and single-attempt acquisitions return on `involved` before
+///    they enqueue; and the guards acquire only inside `if acquired`.
+///    That is what makes a release by a non-holder, a withdrawal or
+///    re-acquisition by a holder, and a second acquisition by a queued
+///    core the spec's no-ops.  Round 2 checked the ORDER of the first
+///    textual word read against the first write, and round 4 found the
+///    gap that leaves: a harmless earlier read satisfies the order while
+///    the real branch is inverted, or its `return` moved below the write.
+///    So the check asks the question of **statements**
+///    (`core_entry_point_status`): the controlling branch must be a
+///    top-level `if` of the body whose condition is exactly the pinned
+///    comparison and whose block ends in a diverging `return`, placed
+///    before the statement that performs the write; a name the condition
+///    reads must be bound by the pinned load and not rebound in between;
+///    a helper that refuses inside is a pinned top-level call; and a
+///    guard's acquisition must be the only occurrence of the call, inside
+///    the pinned branch.  `verify_core_entry_point_scanner` holds the
+///    checker itself to token-preserving mutations of each shape.
+///
+/// 4. **The per-core state matrix covers every entry point.**  The set of
+///    `pub fn`s taking the executing core's id is derived from the code
+///    and must equal the list the lock's `per_core_state_matrix` test
+///    iterates, so an entry point added without a classification in
+///    every per-core state fails the build rather than going untested.
 fn scan_queued_rw_lock_protocol_intact() {
     let path = "src/queued_rw_lock.rs";
     println!("cargo:rerun-if-changed={path}");
@@ -5975,7 +6456,7 @@ fn scan_queued_rw_lock_protocol_intact() {
     // would have satisfied check (1) with the call deleted — the
     // presence-versus-relation shape CLAUDE.md's key conventions
     // describe.  One question, one implementation.
-    let (_, stripped) = rust_code_views(&contents);
+    let (kept, stripped) = rust_code_views(&contents);
 
     // Check (1): the ticket hand-off primitives.
     let required = [
@@ -6006,48 +6487,146 @@ fn scan_queued_rw_lock_protocol_intact() {
         }
     }
 
-    // Check (3): each release reads the holder word before it writes the
-    // state word, and the withdrawal reads it before it publishes its slot
-    // (PR #890 review round 3: a writer still holds its ticket, so a
-    // holder's withdrawal that reached the publish passed the turn under a
-    // set writer bit).  Located within the function's own body so a read
-    // in another function, or a docstring, cannot satisfy it.
-    for (signature, state_write) in [
-        (
-            "pub fn release_read(&self, core_id: u8) {",
-            "self.state.fetch_sub(1",
-        ),
-        (
-            "pub fn release_write(&self, core_id: u8) {",
-            "self.state.fetch_and(READER_MASK",
-        ),
-        (
-            "pub fn cancel(&self, core_id: u8, ticket: u64) {",
-            "self.cancelled[core_id as usize].store(",
-        ),
-    ] {
-        let body = enclosing_fn_body(&stripped, signature).unwrap_or_else(|| {
+    // Check (3): every entry point that takes the executing core's id
+    // decides that core's case on its own words, in a branch that controls
+    // the first write another core reads.  This is the class behind PR
+    // #890 review rounds 2 and 3 — the held word first missing, then unread
+    // by the withdrawal — closed by completing the lock's per-core
+    // knowledge with the request word and pinning the decision at every
+    // entry point rather than at the three the reviews named.  Round 2
+    // pinned the ORDER of the first textual word read against the first
+    // write; round 4 found the gap that leaves — a harmless earlier read
+    // satisfies the order while the real `if` is inverted or its `return`
+    // moved below the write — so the question is asked of statements
+    // (`core_entry_point_status`, self-tested by
+    // `verify_core_entry_point_scanner` on token-preserving mutations).
+    // Located within the function's own brace-matched body: round 2 used
+    // `enclosing_fn_body`, which ends a body at the first column-zero `}` —
+    // for a method, the end of the `impl` block — so the "body" of
+    // `release_read` ran to the lock's last method.
+    //
+    // What this pins is the CONTROL; that each entry point then does what
+    // the words say — a no-op where the spec no-ops, a refusal where the
+    // core has nothing to terminate, the operation otherwise — is decided
+    // behaviourally by the lock's `per_core_state_matrix` test, whose
+    // coverage check (4) holds to the code.
+    verify_core_entry_point_scanner();
+    for entry in CORE_ENTRY_POINTS {
+        let definitions = stripped.matches(entry.signature).count();
+        if definitions != 1 {
             panic!(
-                "PR #890 review round 2 protocol regression: `{path}` no longer \
-                 defines `{signature}`; the release entry points are part of \
-                 the deployed lock's contract and their bodies are scanned here."
+                "PR #890 protocol regression: `{path}` defines `{}` {definitions} \
+                 times; the per-core entry points are part of the deployed lock's \
+                 contract and each body is scanned here, which needs exactly one.",
+                entry.signature
+            );
+        }
+        let body = braced_block_after(&stripped, entry.signature).unwrap_or_else(|| {
+            panic!(
+                "PR #890 protocol regression: `{path}`'s `{}` has no brace-matched \
+                 body to scan.",
+                entry.signature
             )
         });
-        let holder_read = body.find("self.held[core_id as usize]");
-        let write = body.find(state_write);
-        match (holder_read, write) {
-            (Some(read_at), Some(write_at)) if read_at < write_at => {}
-            _ => panic!(
-                "PR #890 review round 2 protocol regression: in `{path}`, \
-                 `{signature}` must read `self.held[core_id as usize]` BEFORE \
-                 `{state_write}` (found holder read at {holder_read:?}, state \
-                 write at {write:?}).  A release by a core that does not hold \
-                 the lock, and a withdrawal by a core that does, must be the \
-                 spec's no-ops — `unwindAll` withdraws at and releases every \
-                 member of a footprint, holding or not — and only a holder \
-                 check that precedes the write makes them so."
-            ),
+        if let Err(why) = core_entry_point_status(body, entry) {
+            panic!(
+                "PR #890 protocol regression (review round 4): in `{path}`, `{}`: {why}.  \
+                 Every entry point decides the executing core's case — holding, queued, \
+                 withdrawn, or none of these — on that core's own words, in a branch \
+                 that returns before anything another core reads is written; that is \
+                 what makes a release by a non-holder, a withdrawal or re-acquisition \
+                 by a holder, and a second acquisition by a queued core the spec's \
+                 no-ops, which the two-phase-locking unwind and the fused acquisitions \
+                 rely on.",
+                entry.signature
+            );
         }
+    }
+
+    // The two helpers the guards go through.  A helper that stopped reading
+    // a word, or refused only in debug builds, would let every entry point
+    // above keep its call and lose its decision.
+    for helper in CORE_HELPERS {
+        let body = braced_block_after(&stripped, helper.signature).unwrap_or_else(|| {
+            panic!(
+                "PR #890 protocol regression: `{path}` no longer defines `{}`; the entry \
+                 points decide the executing core's case through it.",
+                helper.signature
+            )
+        });
+        if let Err(why) = core_entry_point_status(body, helper) {
+            panic!(
+                "PR #890 protocol regression (review round 4): in `{path}`, `{}`: {why}.  \
+                 Every entry point that calls it would keep the call and lose the decision \
+                 it stands for.",
+                helper.signature
+            );
+        }
+    }
+
+    // Check (4): the per-core state matrix covers every entry point.  The
+    // set of `pub fn`s taking the executing core's id is DERIVED from the
+    // code view; the list the lock's `per_core_state_matrix` test iterates
+    // (`PER_CORE_ENTRY_POINTS`) is read from the string-keeping view; the
+    // two must be the same set, so an entry point added to the lock
+    // without a classification in every per-core state fails the build
+    // rather than going untested.  An enumeration standing in for a
+    // derivation is silent exactly when something new is added — the
+    // shape CLAUDE.md's key conventions describe.
+    let per_core_signature = "(&self, core_id: u8";
+    let mut derived: Vec<String> = Vec::new();
+    let mut search = 0usize;
+    while let Some(hit) = stripped[search..].find("pub fn ") {
+        let at = search + hit + "pub fn ".len();
+        search = at;
+        let name: String = stripped[at..]
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+            .collect();
+        if name.is_empty() {
+            continue;
+        }
+        if stripped[at + name.len()..].starts_with(per_core_signature) && !derived.contains(&name) {
+            derived.push(name);
+        }
+    }
+    derived.sort();
+    let list_header = "const PER_CORE_ENTRY_POINTS: &[&str] = &[";
+    let list_definitions = kept.matches(list_header).count();
+    if list_definitions != 1 {
+        panic!(
+            "PR #890 protocol regression: `{path}` defines `{list_header}` \
+             {list_definitions} times; the per-core state matrix test iterates that \
+             list and this check holds it to the lock's `pub fn`s taking `core_id`, \
+             which needs exactly one."
+        );
+    }
+    let list_start = kept
+        .find(list_header)
+        .map(|i| i + list_header.len())
+        .unwrap();
+    let list_end = list_start
+        + kept[list_start..].find("];").unwrap_or_else(|| {
+            panic!(
+                "PR #890 protocol regression: `{path}`'s `PER_CORE_ENTRY_POINTS` is unterminated."
+            )
+        });
+    let mut listed: Vec<String> = kept[list_start..list_end]
+        .split('"')
+        .skip(1)
+        .step_by(2)
+        .map(str::to_string)
+        .collect();
+    listed.sort();
+    if derived != listed {
+        panic!(
+            "PR #890 protocol regression: `{path}`'s `PER_CORE_ENTRY_POINTS` \
+             ({listed:?}) is not the set of its `pub fn`s that take the executing \
+             core's id ({derived:?}).  Every such entry point is classified in every \
+             per-core state by `per_core_state_matrix`; add the entry point to the \
+             list and classify it, or remove the classification of one that no \
+             longer exists."
+        );
     }
 
     // Check (2): forbidden fetch_or for writer admission.

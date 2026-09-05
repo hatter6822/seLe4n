@@ -51,9 +51,9 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.34.55` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 328,927 across 311 Lean files |
-| **Test LoC** | 68,732 across 70 Lean test suites |
-| **Proved declarations** | 10,944 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 329,535 across 311 Lean files |
+| **Test LoC** | 68,807 across 70 Lean test suites |
+| **Proved declarations** | 10,963 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -752,12 +752,42 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    passed the turn under the set bit), and a guard that acquired
    nothing releases nothing.  `queuedSim`'s fifth conjunct
    `queuedHeldSim` relates the
-   words to `readers` / `writerHeld`, so the four `_noop` shapes of
+   words to `readers` / `writerHeld`, so the holder no-op shapes of
    `queuedBlock` are the one held-word load and follow from the
    relation rather than being asserted of a stutter no code path
    performed — which is the identity the two-phase-locking unwind
    (`unwindAll`, WS-LC LC4 below) relies on at every footprint
-   member the core did not hold.  The CAS-retry `rw_lock.rs` keeps
+   member the core did not hold.
+
+   *The class behind rounds 2 and 3, closed at the cause.*  Both
+   rounds, and the closure audit's stall, were the lock not knowing
+   the executing core's own situation, so `QueuedRwLock` now carries
+   a third word per core, `request` — the core's one live ticket,
+   set at the issue and cleared at a reader's entry, the writer's
+   release, a withdrawal's publish and a refused single attempt's
+   pass — and every entry point decides the core's case (idle,
+   queued, withdrawn, holding) on `held`, `request` and `cancelled`
+   before it writes anything shared.  One outstanding ticket per
+   core is a fact the lock establishes rather than a contract:
+   `enqueue` by a queued core returns the ticket it holds, the fused
+   acquisitions and the guards return on `involved`, and a
+   terminator is verified against the lock's record (`own_request`),
+   refusing a core with no request.  `queuedSim`'s sixth conjunct
+   `queuedRequestsSim` relates the word to the live ledger, and
+   every per-core branch hypothesis of `queuedBlock` is stated on
+   the words the implementation reads (`c ∈ conc.heldRead`,
+   `(c, t) ∈ conc.requests`), with the spec's branch derived from
+   the relations in `queuedBlock_preserves_queuedSim` — so the
+   derivation the round-2 text above describes is what the proof
+   does, where before the step cases consumed the abstract
+   hypothesis and consulted the relation nowhere.  The queued
+   core's re-acquisition is the `acquireRead_queued` /
+   `acquireWrite_queued` block; `cancel` has three shapes decided
+   by the words.  `per_core_state_matrix` pins every per-core entry
+   point in every state, and `build.rs` holds that matrix's list to
+   the lock's `pub fn`s taking `core_id` and pins, for all twelve,
+   that the words are loaded before the first shared write within
+   the entry point's own brace-matched body.  The CAS-retry `rw_lock.rs` keeps
    no such word: its `honestBlock` has no `_noop` constructor, and
    its trace-level theorems cover exactly the traces that respect
    its caller contract (acquire only while uninvolved, release only
@@ -881,6 +911,21 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    `ticketLockSim_not_universal` exhibits a pair the relation does
    **not** relate — so φ is falsifiable rather than vacuous.
 
+   **PR #890 review round 4**: the bridge covers exactly the calls
+   the implementation defines.  `ticketBlock`'s `tryAcquire_noop`
+   and `release_noop` mapped the spec's no-ops — a re-acquisition
+   by a queued or holding core, a release by a non-holder — to
+   observation-only blocks, but `ticket_lock.rs` has no per-core
+   word and performs an atomic access on both (a re-acquiring
+   holder parks forever; a non-holder's release admits the next
+   waiter under the holder).  Both constructors are gone;
+   `TicketLockState.callerContract` states the operations the
+   bridge covers, `ticketBlock_respects_contract` proves every
+   shape is inside it, and `ListTicketBlocks_contractTrace` every
+   admitted trace.  The deployed `QueuedRwLock` alone implements
+   the spec's no-ops as branches, because the two-phase-locking
+   unwind relies on them there.
+
    **WS-LC LC2 — the ticket lock's withdrawal** (MODULE
    `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean`,
    v0.34.51): `QueuedRwLockConcrete` gains a fifth machine word,
@@ -989,7 +1034,10 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    first identity is the deployed lock's and not only the spec's
    since PR #890 review round 2: `QueuedRwLock`'s held word makes a
    non-holder's `release_*` return before it touches the state
-   word (see the refinement bridge above).
+   word, and since the class closure behind rounds 2 and 3 its
+   request word makes a queued core's second acquisition, and a
+   withdrawal by a core with no request, return the same way (see
+   the refinement bridge above).
    `unwindAll_leaves_no_queued_request` is the payoff: the
    unwinding core has no queued request at any member of the
    footprint, with no distinctness and no resolvability condition
@@ -2103,6 +2151,12 @@ bridges abstract timer ticks to the ARM Generic Timer:
   comparator). At 1000 Hz tick rate: 54,000 counter increments per tick
 - **Monotonicity**: `hardwareTimerToModelTick_monotone` proves the hardware-to-
   model conversion is monotonically non-decreasing
+- **Durations convert by the ceiling** (PR #890 review round 4):
+  `hardwareDurationToModelTicks` is the number of ticks an interval of
+  counter cycles can span, and `hardwareTimerToModelTick_sub_le_duration`
+  bounds the ticks elapsed from any start counter across an interval by it —
+  the absolute conversion floors and under-counts an interval that begins
+  mid-tick by one; `releaseBudgetTicks` (WS-LC LC5) is its consumer
 - **`TimerInterruptBinding`**: Structure capturing the bidirectional relationship
   between hardware timer events and model timer ticks
 

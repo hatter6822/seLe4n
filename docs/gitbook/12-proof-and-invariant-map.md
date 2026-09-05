@@ -226,7 +226,13 @@ bridge's `_honest` forms carry no `ListBlockBisim` premise (`honestBlock`, the
 load-then-CAS trace-shape predicate, derives it), the ticket bridge's fourth
 conjunct is a real "a pure load leaves both states unchanged" statement rather
 than a tautology, and `ticketLockSim_not_universal` exhibits a pair the
-relation does **not** relate.
+relation does **not** relate. And no bridge claims a no-op the code does not
+perform: the ticket bridge has no block for a re-acquisition by a queued or
+holding core or a release by a non-holder (`TicketLockState.callerContract`
+states what it covers, `ticketBlock_respects_contract` that every shape is
+inside it — PR #890 review round 4, the sweep round 2's CAS-retry fix owed its
+sibling), while the deployed `QueuedRwLock` alone turns those spec no-ops into
+branches, because the unwind relies on them there.
 
 A queued core may **withdraw** its request. The operation exists at every
 level: `RwLockOp.cancel` in the spec (v0.34.50), a tombstoned ledger and
@@ -258,10 +264,20 @@ The identity that unwind relies on — a release by a non-holder changes nothing
 `QueuedRwLock` keeps a held word per core, every entry point — the withdrawal
 included, since round 3 — reads the caller's word first, and `queuedSim`'s
 fifth conjunct (`queuedHeldSim`) relates the
-words to `readers` / `writerHeld`, so the bridge's four no-op blocks are the one
-held-word load, derived from the relation rather than asserted of a stutter the
-code never performed. The CAS-retry bridge makes the opposite honest choice for
-the undeployed lock: no no-op block at all, and a stated caller contract.
+words to `readers` / `writerHeld`, so the bridge's holder no-op blocks are the
+one held-word load, derived from the relation rather than asserted of a stutter
+the code never performed. The class behind rounds 2 and 3 — the lock not knowing
+the executing core's own situation — is closed at the cause: a third per-core
+word, `request`, records the core's one live ticket, every entry point decides
+the core's case on its three words before it writes, `queuedSim`'s sixth
+conjunct (`queuedRequestsSim`) relates that word to the live ledger, and every
+per-core branch hypothesis of `queuedBlock` is now stated on the words the
+implementation reads, with the spec's branch derived from the relations inside
+`queuedBlock_preserves_queuedSim` — so a queued core's second acquisition is a
+derived no-op block too (`acquireRead_queued`), and a relation that pinned a
+word to the wrong fact would fail the proof. The CAS-retry bridge makes the
+opposite honest choice for the undeployed lock: no no-op block at all, and a
+stated caller contract.
 
 And a delay bound now names its denominator. `RwLockExecution` carries a per-step
 cost (v0.34.54), so the admission and contention bounds have cycle-denominated

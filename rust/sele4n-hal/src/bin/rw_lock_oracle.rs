@@ -88,20 +88,25 @@
 //! one of those attempts must succeed.  A ticket lock that admitted a
 //! different core, or refused one the spec admits, fails the run.
 //!
-//! **So are the spec's no-ops** (PR #890 review round 2).  A release by
-//! a non-holder and a re-acquisition by a holder are issued to the real
-//! ticket lock, whose per-core held word must make each return without
-//! touching anything; `check_holders` then holds every core's word to
-//! the spec's `readers` / `writerHeld` (`queuedSim`'s `queuedHeldSim`).
-//! Before the word existed the driver gated both no-ops itself, so the
-//! lock was never asked the question the two-phase-locking unwind asks
-//! of it.  The CAS-retry lock is still not sent them: it has no holder
-//! bookkeeping, a non-holder's release there is an unconditional
-//! `fetch_sub`, and its refinement bridge carries no block for the call
-//! — that is its caller contract, not a no-op.  A queued *waiter*
-//! re-acquiring is issued to neither: it is inside its own acquisition,
-//! and a second ticket would be the one-outstanding-ticket contract's
-//! violation rather than a path the lock has.
+//! **So are the spec's no-ops** (PR #890 review round 2, completed by
+//! the class closure behind rounds 2 and 3).  A release by a non-holder,
+//! a withdrawal by a holder or by a core with no request, and a
+//! re-acquisition by any *involved* core — a holder or a queued waiter
+//! — are issued to the real ticket lock, which must decide each on the
+//! executing core's own words and return without touching anything;
+//! `check_holders` then holds every core's held word to the spec's
+//! `readers` / `writerHeld` (`queuedSim`'s `queuedHeldSim`) and
+//! `check_requests` every core's request word to the spec's queue and
+//! held writer (`queuedRequestsSim`).  Before the words existed the
+//! driver gated the no-ops itself, so the lock was never asked the
+//! question the two-phase-locking unwind asks of it; and until the
+//! request word existed a queued waiter's re-acquisition was issued to
+//! neither lock, because the lock had no record of the waiter's request
+//! and a second ticket was the caller contract's violation rather than
+//! a path the lock had.  The CAS-retry lock is still not sent the
+//! no-ops: it has no holder bookkeeping, a non-holder's release there is
+//! an unconditional `fetch_sub`, and its refinement bridge carries no
+//! block for the call — that is its caller contract, not a no-op.
 //!
 //! ## Wire format
 //!
@@ -303,24 +308,25 @@ impl Driver {
         Ok(())
     }
 
-    /// **PR #890 review round 2**: issue a *holder's* re-acquisition to
-    /// the real ticket lock — the spec's no-op for an involved core,
-    /// which the lock's held word implements by returning at once.
-    ///
-    /// A queued waiter is involved too and is deliberately **not**
-    /// issued: it is inside its own acquisition, and a second ticket is
-    /// the one-outstanding-ticket contract's violation, not a path the
-    /// lock has.  The word is read first so a lock that had forgotten
-    /// the hold fails the run instead of parking this single thread on
-    /// a ticket nobody would ever serve.
-    fn reacquire_as_holder(&self, c: u8, write: bool) -> Result<(), Halt> {
-        if !(self.reader_ticket(c).is_some() || self.writer_held == Some(c)) {
+    /// **PR #890 review round 2**, widened by the class closure: issue an
+    /// *involved* core's re-acquisition to the real ticket lock — the
+    /// spec's no-op, which the lock decides on the core's own words: a
+    /// holder returns on its held word, a queued waiter on its request
+    /// word.  A waiter used to be issued to neither lock, because the
+    /// lock had no record of its request and a second ticket was the
+    /// caller contract's violation rather than a path the lock had; now
+    /// the fused acquisition *is* that path, and returns.  The words are
+    /// read first so a lock that had forgotten both fails the run
+    /// instead of parking this single thread on a ticket nobody would
+    /// ever serve.
+    fn reacquire_as_involved(&self, c: u8, write: bool) -> Result<(), Halt> {
+        if !self.core_involved(c) {
             return Ok(());
         }
-        if self.queued.peek_held(c).is_none() {
+        if self.queued.peek_held(c).is_none() && self.queued.peek_request(c).is_none() {
             return Err(Halt::Divergence(format!(
-                "core {c} holds per the spec but its held word is clear; re-acquiring \
-                 would take a ticket and park"
+                "core {c} is involved per the spec but both its words are clear; \
+                 re-acquiring would take a ticket and park"
             )));
         }
         if write {
@@ -355,7 +361,7 @@ impl Driver {
         match op {
             Op::AcquireRead(c) => {
                 if self.core_involved(c) {
-                    return self.reacquire_as_holder(c, false);
+                    return self.reacquire_as_involved(c, false);
                 }
                 self.refuse_parked_issue(c)?;
                 // Every acquisition takes a real ticket, whether it is
@@ -394,7 +400,7 @@ impl Driver {
             }
             Op::AcquireWrite(c) => {
                 if self.core_involved(c) {
-                    return self.reacquire_as_holder(c, true);
+                    return self.reacquire_as_involved(c, true);
                 }
                 self.refuse_parked_issue(c)?;
                 let ticket = self.queued.enqueue(c);
@@ -422,12 +428,16 @@ impl Driver {
             Op::Cancel(c) => {
                 // `applyOp .cancel`: drop `c`'s queued request, and
                 // nothing else.  A core that is holding, or that has no
-                // request, is untouched on both sides — and a *holder's*
-                // withdrawal is issued to the real ticket lock (PR #890
-                // review round 3), with the ticket the core actually
-                // held: the writer still holds its own, a reader's was
-                // passed at entry.  The lock's held word must make it
-                // publish nothing, which `check_all` then verifies.
+                // request, is untouched on both sides — and both are
+                // issued to the real ticket lock: a *holder's* withdrawal
+                // (PR #890 review round 3) with the ticket the core
+                // actually held — the writer still holds its own, a
+                // reader's was passed at entry — and (the class closure)
+                // an uninvolved core's with the ticket being served, a
+                // belief the lock must refuse on its own record of the
+                // core's request rather than on the ticket named.  The
+                // lock's words must make each publish nothing, which
+                // `check_all` then verifies.
                 if self.writer_held == Some(c) {
                     let (_, serving) = self.queued.peek_tickets();
                     self.queued.cancel(c, serving);
@@ -438,6 +448,8 @@ impl Driver {
                     return Ok(());
                 }
                 let Some(i) = self.waiters.iter().position(|w| w.0 == c) else {
+                    let (_, serving) = self.queued.peek_tickets();
+                    self.queued.cancel(c, serving);
                     return Ok(());
                 };
                 let (_, _, ticket) = self.waiters.remove(i);
@@ -702,6 +714,40 @@ impl Driver {
         Ok(())
     }
 
+    /// **The class closure behind PR #890 review rounds 2 and 3**: every
+    /// core's request word reads exactly the live request the spec has
+    /// for it — the served ticket for the held writer, its own ticket
+    /// for a queued waiter, and nothing for a reader (a reader passes
+    /// its ticket on at entry), a withdrawn core or an uninvolved one.
+    /// `queuedSim`'s `queuedRequestsSim`.
+    ///
+    /// This is the word the fused acquisitions and `enqueue` decide a
+    /// queued core's no-op on, and the one the terminators verify a
+    /// caller's ticket against.  A word reading a request the spec does
+    /// not have would refuse that core's next acquisition; one reading
+    /// clear for a waiter would issue it a second ticket, which is the
+    /// stall the one-outstanding-ticket contract used to guard against
+    /// by convention alone.
+    fn check_requests(&self) -> Result<(), Halt> {
+        let (_, serving) = self.queued.peek_tickets();
+        for core in 0..NUM_CORES {
+            let expected = if self.writer_held == Some(core) {
+                Some(serving)
+            } else {
+                self.waiters.iter().find(|w| w.0 == core).map(|w| w.2)
+            };
+            let actual = self.queued.peek_request(core);
+            if actual != expected {
+                return Err(Halt::Divergence(format!(
+                    "request word of core {core} reads {actual:?} but the spec has \
+                     writer_held={:?}, waiters={:?} (expected {expected:?})",
+                    self.writer_held, self.waiters
+                )));
+            }
+        }
+        Ok(())
+    }
+
     /// Every invariant checked after each operation.
     fn check_all(&self) -> Result<(), Halt> {
         self.check_implementations_agree()?;
@@ -709,6 +755,7 @@ impl Driver {
         self.check_head_live()?;
         self.check_withdrawal_slots()?;
         self.check_holders()?;
+        self.check_requests()?;
         self.check_encoding()
     }
 
@@ -893,8 +940,35 @@ mod tests {
         assert_eq!(render("R0,W0,"), "W=0;R=1;Q=0");
         assert_eq!(render("W0,R0,"), "W=1;R=0;Q=0");
         // A queued waiter re-acquiring is the spec's no-op too, and is
-        // issued to neither lock (the one-outstanding-ticket contract).
+        // issued to the ticket lock, which returns on the core's request
+        // word (`a_waiter_reacquiring_is_issued_and_changes_nothing`).
         assert_eq!(render("W0,R1,R1,"), "W=1;R=0;Q=1");
+    }
+
+    /// A queued waiter re-acquiring is the spec's no-op and **reaches the
+    /// real ticket lock** (the class closure behind PR #890 review rounds
+    /// 2 and 3): the fused acquisition returns on the core's request
+    /// word, taking no second ticket, and the queue is unchanged in
+    /// length and in order — the waiter is still admitted, once, when
+    /// its turn comes.  Before the request word existed a second ticket
+    /// was what this call would have taken, and the driver issued it to
+    /// neither lock.
+    #[test]
+    fn a_waiter_reacquiring_is_issued_and_changes_nothing() {
+        assert_eq!(render("W0,R1,R1,W1,"), "W=1;R=0;Q=1");
+        assert_eq!(render("W0,R1,R1,w0,"), "W=0;R=1;Q=0");
+        assert_eq!(render("R0,W1,W1,R1,r0,"), "W=1;R=0;Q=0");
+    }
+
+    /// A withdrawal by a core with no request is the spec's no-op and
+    /// **reaches the real ticket lock**, which refuses it on its own
+    /// record of the core's request — not on the ticket named, which is
+    /// the one being served.
+    #[test]
+    fn cancel_by_an_uninvolved_core_is_a_noop_on_the_ticket_lock() {
+        assert_eq!(render("c0,"), "W=0;R=0;Q=0");
+        assert_eq!(render("W0,c1,"), "W=1;R=0;Q=0");
+        assert_eq!(render("W0,R1,c1,c1,w0,"), "W=0;R=0;Q=0");
     }
 
     /// Releasing without holding is a no-op.  It **reaches the real
@@ -967,18 +1041,57 @@ mod tests {
         );
     }
 
-    /// A holder whose word the lock has lost is reported, not parked:
-    /// `reacquire_as_holder` reads the word before it re-acquires, so the
-    /// single-threaded driver never enqueues behind a ticket nobody
-    /// would serve.
+    /// An involved core whose words the lock has lost is reported, not
+    /// parked: `reacquire_as_involved` reads both words before it
+    /// re-acquires, so the single-threaded driver never enqueues behind
+    /// a ticket nobody would serve — for a lost hold and for a lost
+    /// request alike.
     #[test]
-    fn reacquire_as_holder_fails_closed_on_a_lost_hold() {
+    fn reacquire_as_involved_fails_closed_on_lost_words() {
         let mut driver = Driver::new();
         driver.readers.push((0, 0));
-        match driver.reacquire_as_holder(0, false) {
-            Err(Halt::Divergence(why)) => assert!(why.contains("held word is clear"), "{why}"),
+        match driver.reacquire_as_involved(0, false) {
+            Err(Halt::Divergence(why)) => {
+                assert!(why.contains("both its words are clear"), "{why}")
+            }
             other => panic!("expected a divergence, got {other:?}"),
         }
+        let mut driver = Driver::new();
+        driver.waiters.push((3, true, 0));
+        match driver.reacquire_as_involved(3, true) {
+            Err(Halt::Divergence(why)) => {
+                assert!(why.contains("both its words are clear"), "{why}")
+            }
+            other => panic!("expected a divergence, got {other:?}"),
+        }
+    }
+
+    /// `check_requests` reports a request word the spec does not account
+    /// for, in both directions: a request the lock records and the spec
+    /// does not, and a request the spec records and the lock has lost.
+    #[test]
+    fn check_requests_reports_a_planted_divergence() {
+        let driver = Driver::new();
+        let _ = driver.queued.enqueue(2);
+        let err = driver
+            .check_requests()
+            .expect_err("must report the extra request");
+        assert!(
+            err.message().contains("request word of core 2"),
+            "unexpected report: {}",
+            err.message()
+        );
+
+        let mut driver = Driver::new();
+        driver.waiters.push((1, false, 0));
+        let err = driver
+            .check_requests()
+            .expect_err("must report the lost request");
+        assert!(
+            err.message().contains("request word of core 1"),
+            "unexpected report: {}",
+            err.message()
+        );
     }
 
     /// The ticket interval closes on every trace the harness generates:
