@@ -612,21 +612,37 @@ def lockSet_notificationWait (callerTid : ThreadId)
 
 Caller TCB (read — non-mutating; cap pointers are derived from
 state); source CNode (read — original cap is unchanged); target
-CNode (write — minted cap is stored). -/
+CNode (write — minted cap is stored).
+
+**WS-RR RR7.9 — the CDT maps.**  All four capability operations write
+`SystemState`-level derivation structure, not only CNode slots: `cspaceMint`,
+`cspaceCopy` and `cspaceMove` mint nodes for both endpoints
+(`ensureCdtNodeForSlot`, which advances the global `cdtNextNode` counter and
+both keyed maps) and add an edge to `cdt`; `cspaceDelete` removes a node.  None
+of that decomposes by object, so with per-object members alone two of these on
+disjoint CNodes have provably disjoint footprints while allocating from one
+counter — the later commit either collides on a node id or loses a slot
+mapping.  `stateLevelLock` is the declared subject for `SystemState`-level
+auxiliary structures (SM3.A.10), and it is unconditional here because these
+operations always write the CDT when they succeed. -/
 def lockSet_cspaceMint (callerTid : ThreadId)
     (srcCnodeObjId dstCnodeObjId : ObjId) : LockSet :=
   lockSetOfList
     [(tcbLock callerTid, .read),
      (cnodeLock srcCnodeObjId, .read),
-     (cnodeLock dstCnodeObjId, .write)]
+     (cnodeLock dstCnodeObjId, .write),
+     (stateLevelLock, .write)]
 
-/-- WS-SM SM3.B.3: `lockSet` for `cspaceCopy`.  Same shape as `mint`. -/
+/-- WS-SM SM3.B.3: `lockSet` for `cspaceCopy`.  Same shape as `mint`,
+including WS-RR RR7.9's state-level member — it mints the same two CDT nodes
+and adds the same edge. -/
 def lockSet_cspaceCopy (callerTid : ThreadId)
     (srcCnodeObjId dstCnodeObjId : ObjId) : LockSet :=
   lockSetOfList
     [(tcbLock callerTid, .read),
      (cnodeLock srcCnodeObjId, .read),
-     (cnodeLock dstCnodeObjId, .write)]
+     (cnodeLock dstCnodeObjId, .write),
+     (stateLevelLock, .write)]
 
 /-- WS-SM SM6.D / PR #822 Phase H: `lockSet` for `mintReplyCap`.
 
@@ -641,24 +657,29 @@ def lockSet_mintReplyCap (callerTid : ThreadId)
 /-- WS-SM SM3.B.3: `lockSet` for `cspaceMove`.
 
 Both source and destination CNodes are mutated (cap removed from
-src, inserted to dst). -/
+src, inserted to dst), and — WS-RR RR7.9 — the CDT, exactly as `mint` and
+`copy` do. -/
 def lockSet_cspaceMove (callerTid : ThreadId)
     (srcCnodeObjId dstCnodeObjId : ObjId) : LockSet :=
   lockSetOfList
     [(tcbLock callerTid, .read),
      (cnodeLock srcCnodeObjId, .write),
-     (cnodeLock dstCnodeObjId, .write)]
+     (cnodeLock dstCnodeObjId, .write),
+     (stateLevelLock, .write)]
 
 /-- WS-SM SM3.B.3: `lockSet` for `cspaceDelete`.
 
-The target CNode is the only structural mutation; the caller's
-CSpace root is read for the cap-lookup path. -/
+The target CNode is the object-level mutation; the caller's CSpace root is
+read for the cap-lookup path.  WS-RR RR7.9: and the CDT, from the other
+direction — a delete **removes** the slot's node (`cdt.removeNode`), which is
+the same global structure the three creating operations allocate in. -/
 def lockSet_cspaceDelete (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (targetCnodeObjId : ObjId) : LockSet :=
   lockSetOfList
     [(tcbLock callerTid, .read),
      (cnodeLock cnodeRootObjId, .read),
-     (cnodeLock targetCnodeObjId, .write)]
+     (cnodeLock targetCnodeObjId, .write),
+     (stateLevelLock, .write)]
 
 /-! ## Lifecycle syscalls (1 transition: lifecycleRetype) -/
 
@@ -1044,6 +1065,92 @@ theorem lockSet_auditRead_stateLevel_read_mem (callerTid : ThreadId)
   unfold lockSet_auditRead lockSetOfList
   simp only [List.foldl]
   exact List.mem_cons_self ..
+
+/-- **WS-RR RR7.9**: each of the four capability operations declares the
+state-level **write** its CDT mutation needs.
+
+The membership half of the closure.  `cspaceMint`, `cspaceCopy` and
+`cspaceMove` mint CDT nodes for both endpoints — advancing the global
+`cdtNextNode` counter and both keyed maps — and add an edge; `cspaceDelete`
+removes a node.  None of that is keyed by an object, so a footprint of
+per-object members alone lets two of these on disjoint CNodes run concurrently
+against one counter.
+
+Stated four times rather than once over a shared shape, because the four
+footprints are four definitions and a cut that drops the member from any one of
+them must stop elaborating here — which is the whole point of pinning a member
+rather than trusting a docstring. -/
+theorem lockSet_cspaceMint_stateLevel_write_mem (callerTid : ThreadId)
+    (srcCnodeObjId dstCnodeObjId : ObjId) :
+    (stateLevelLock, AccessMode.write)
+      ∈ (lockSet_cspaceMint callerTid srcCnodeObjId dstCnodeObjId).pairs := by
+  unfold lockSet_cspaceMint lockSetOfList
+  simp only [List.foldl]
+  exact LockSet.mem_insertOrMerge_write_self _ _
+
+/-- **WS-RR RR7.9**: `cspaceCopy`'s — and so `mintReplyCap`'s, which is defined
+as it. -/
+theorem lockSet_cspaceCopy_stateLevel_write_mem (callerTid : ThreadId)
+    (srcCnodeObjId dstCnodeObjId : ObjId) :
+    (stateLevelLock, AccessMode.write)
+      ∈ (lockSet_cspaceCopy callerTid srcCnodeObjId dstCnodeObjId).pairs := by
+  unfold lockSet_cspaceCopy lockSetOfList
+  simp only [List.foldl]
+  exact LockSet.mem_insertOrMerge_write_self _ _
+
+/-- **WS-RR RR7.9**: `cspaceMove`'s. -/
+theorem lockSet_cspaceMove_stateLevel_write_mem (callerTid : ThreadId)
+    (srcCnodeObjId dstCnodeObjId : ObjId) :
+    (stateLevelLock, AccessMode.write)
+      ∈ (lockSet_cspaceMove callerTid srcCnodeObjId dstCnodeObjId).pairs := by
+  unfold lockSet_cspaceMove lockSetOfList
+  simp only [List.foldl]
+  exact LockSet.mem_insertOrMerge_write_self _ _
+
+/-- **WS-RR RR7.9**: `cspaceDelete`'s — the removal direction, on the same
+global structure the three creating operations allocate in. -/
+theorem lockSet_cspaceDelete_stateLevel_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId targetCnodeObjId : ObjId) :
+    (stateLevelLock, AccessMode.write)
+      ∈ (lockSet_cspaceDelete callerTid cnodeRootObjId targetCnodeObjId).pairs := by
+  unfold lockSet_cspaceDelete lockSetOfList
+  simp only [List.foldl]
+  exact LockSet.mem_insertOrMerge_write_self _ _
+
+/-- **WS-RR RR7.9**: `mintReplyCap` inherits the member, by definition rather
+than by repetition. -/
+theorem lockSet_mintReplyCap_stateLevel_write_mem (callerTid : ThreadId)
+    (srcCnodeObjId dstCnodeObjId : ObjId) :
+    (stateLevelLock, AccessMode.write)
+      ∈ (lockSet_mintReplyCap callerTid srcCnodeObjId dstCnodeObjId).pairs :=
+  lockSet_cspaceCopy_stateLevel_write_mem callerTid srcCnodeObjId dstCnodeObjId
+
+/-- **WS-RR RR7.9**: the four operations' footprints are pairwise
+**non-disjoint** — every pair shares the state-level lock, whatever CNodes they
+name.
+
+This is the statement `UncoveredLockDomain.cdtNodeAllocation` was registered
+for — deleted in the same cut, because a domain entry goes when the domain is
+covered — and the reason the member is unconditional.  Two capability operations on
+otherwise disjoint CSpaces used to have provably disjoint footprints while both
+allocating from `cdtNextNode`; a two-phase-locking consumer is entitled to run
+disjoint footprints concurrently, so the later commit would collide on a node
+id or lose a slot mapping.  With the member declared, no two of them are ever
+disjoint, so no consumer may. -/
+theorem capabilityOps_footprints_share_serialization
+    (callerA callerB : ThreadId) (srcA dstA srcB dstB : ObjId) :
+    ((stateLevelLock, AccessMode.write)
+        ∈ (lockSet_cspaceMint callerA srcA dstA).pairs ∧
+      (stateLevelLock, AccessMode.write)
+        ∈ (lockSet_cspaceCopy callerB srcB dstB).pairs) ∧
+    ((stateLevelLock, AccessMode.write)
+        ∈ (lockSet_cspaceMove callerA srcA dstA).pairs ∧
+      (stateLevelLock, AccessMode.write)
+        ∈ (lockSet_cspaceDelete callerB srcB dstB).pairs) :=
+  ⟨⟨lockSet_cspaceMint_stateLevel_write_mem callerA srcA dstA,
+    lockSet_cspaceCopy_stateLevel_write_mem callerB srcB dstB⟩,
+   ⟨lockSet_cspaceMove_stateLevel_write_mem callerA srcA dstA,
+    lockSet_cspaceDelete_stateLevel_write_mem callerB srcB dstB⟩⟩
 
 /-- WS-SM SM8.C.9 (PR #870 round 7): the declassification's trail append is a
 declared **write** on the state-level lock. -/
@@ -1765,8 +1872,12 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- Capability syscalls.  `.mintReplyCap` (PR #822 Phase H) derives a `.replyCap`
   -- from an `.object`-to-Reply cap into a CNode slot — same CNode/TCB footprint as
   -- the other cap-insert ops (it does not write the Reply object itself).
+  -- WS-RR RR7.9: `.objStore` — all four write the CDT (three mint nodes and add
+  -- an edge, the delete removes one), and the CDT is `SystemState`-level
+  -- structure whose declared subject is `stateLevelLock`.  Level 0, so it is
+  -- acquired first and the by-kind ladder stays acyclic.
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .mintReplyCap =>
-      [.tcb, .cnode]
+      [.tcb, .cnode, .objStore]
   -- Lifecycle.  **Every kind, for the reason `.declassify` admits every kind**
   -- (PR #873 round 7): SM9.D.12 makes the retype the arm that *clears*
   -- provenance at `args.targetObj`, so `lockSet_lifecycleRetype` carries that
@@ -2421,6 +2532,9 @@ theorem lockSet_consistent_cspaceMint (callerTid : ThreadId)
         · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
+        -- WS-RR RR7.9: the state-level member.
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [stateLevelLock]; decide
         exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM3.B.4 for `.cspaceCopy`. -/
@@ -2436,6 +2550,9 @@ theorem lockSet_consistent_cspaceCopy (callerTid : ThreadId)
         · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
+        -- WS-RR RR7.9: the state-level member.
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [stateLevelLock]; decide
         exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM6.D / PR #822 Phase H: the `mintReplyCap` lock-set's kinds
@@ -2453,6 +2570,9 @@ theorem lockSet_consistent_mintReplyCap (callerTid : ThreadId)
         · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
+        -- WS-RR RR7.9: the state-level member.
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [stateLevelLock]; decide
         exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM3.B.4 for `.cspaceMove`. -/
@@ -2468,6 +2588,9 @@ theorem lockSet_consistent_cspaceMove (callerTid : ThreadId)
         · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
+        -- WS-RR RR7.9: the state-level member.
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [stateLevelLock]; decide
         exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM3.B.4 for `.cspaceDelete`. -/
@@ -2483,6 +2606,9 @@ theorem lockSet_consistent_cspaceDelete (callerTid : ThreadId)
         · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
+        -- WS-RR RR7.9: the state-level member.
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [stateLevelLock]; decide
         exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM3.B.4 for `.lifecycleRetype`.

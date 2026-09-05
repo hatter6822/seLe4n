@@ -589,10 +589,15 @@ private def runIntegrationChecks : IO Unit := do
   -- Within-level (objId) tie-break: cspaceMove locks two CNodes (level 2)
   -- + caller TCB (read, level 3).  The two cnodes sort by objId.val
   -- ascending (7 before 9), then the tcb.
+  --
+  -- **WS-RR RR7.9**: and the state-level lock leads, because `.objStore` is
+  -- hierarchy level 0.  That is the ladder doing its job rather than an
+  -- inconvenience: the coarsest lock is taken first, so a capability operation
+  -- can never be holding a CNode while it waits for the CDT.
   let cmSet := lockSet_cspaceMove ⟨5⟩ (SeLe4n.ObjId.ofNat 7) (SeLe4n.ObjId.ofNat 9)
-  assertBool "acquireOrder(cspaceMove) kinds = [cnode, cnode, tcb] (within-level objId sort)"
+  assertBool "acquireOrder(cspaceMove) kinds = [objStore, cnode, cnode, tcb] (level 0 first, then within-level objId sort)"
     (decide ((acquireOrder cmSet).map (·.kind)
-              = [LockKind.cnode, LockKind.cnode, LockKind.tcb]))
+              = [LockKind.objStore, LockKind.cnode, LockKind.cnode, LockKind.tcb]))
   assertBool "acquireOrder(cspaceMove) cnode objIds ascending = [7, 9]"
     (decide (((acquireOrder cmSet).filterMap
         (fun l => if l.kind = .cnode then some l.objId.val else none)) = [7, 9]))
@@ -602,9 +607,13 @@ private def runIntegrationChecks : IO Unit := do
     (decide ((acquireOrder cmSet).Pairwise (· ≤ ·)))
   -- acquireAll over the real sequence on the empty default state leaves
   -- objStoreLock unheld (all per-object acquires fail-closed: objects absent).
+  -- WS-RR RR7.9: the state-level lock IS in this set now, so acquiring the
+  -- sequence advances `objStoreLock` — the previous assertion said it stayed
+  -- unheld, which was a property of the footprint lacking the member, not of
+  -- the acquire.  What the acquire still does not do is take it twice.
   let cmAcq := acquireAll bootCoreId cmSet.lockAcquireSequence s₀
-  assertBool "acquireAll(cspaceMove seq) on default preserves objStoreLock"
-    (decide (cmAcq.objStoreLock = RwLockState.unheld))
+  assertBool "acquireAll(cspaceMove seq) takes the state-level lock it declares"
+    (decide (cmAcq.objStoreLock ≠ RwLockState.unheld))
   -- endpointSend with a receiver: 4 locks (caller tcb, cnode, endpoint,
   -- receiver tcb).  Exercises the Option-extended lockSet + sort.
   let esSet := lockSet_endpointSend ⟨5⟩ (SeLe4n.ObjId.ofNat 10)

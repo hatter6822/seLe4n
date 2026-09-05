@@ -3105,34 +3105,6 @@ inductive UncoveredLockDomain where
   the difference between an obligation a later cut must discharge and one it can
   forget: the completeness theorem below now fails until this entry is removed. -/
   | taintTablePerKeyStore
-  /-- WS-SM (PR #873 round 13): the **CDT node allocator's global counter**.
-
-  Resolving an extra capability whose source slot has no CDT node yet mints one
-  through `ensureCdtNodeForSlotChecked`, which writes `cdtNextNode` (a global
-  monotone counter) and both keyed maps (`cdtSlotNode` / `cdtNodeSlot`).  That
-  happens on the `.send` and `.call` paths, whose footprints
-  (`lockSet_endpointSend` / `lockSet_endpointCall`) hold the source CNode in
-  **read** mode and declare no state-level or CDT write at all.
-
-  Under the declared fine locks two sends on otherwise disjoint endpoints would
-  hold disjoint footprints while allocating from the same pre-state counter, and
-  the later commit would either collide on a node id or lose one slot mapping.
-  Not live today for the same reason the sibling domains are not — SM5.I's global
-  entry ticket lock serialises every commit and `withLockSet` is deferred at the
-  export bodies (SM3.C.9).
-
-  The counter is not key-decomposable, so covering it means `stateLevelLock` in
-  **write** mode on the two hottest IPC arms, which moves the resolved-footprint
-  WCRT arithmetic the IPC suites pin — the cost that kept its sibling
-  `capTransferReceiverCnode` registered until WS-RR RR7.7 paid it.  That cut
-  declares `(stateLevelLock, .write)` on the send and call footprints exactly
-  when a capability transfer is carried — which is exactly when this counter is
-  written — so the IPC half of this domain is covered.  What keeps the entry is
-  the other half: the four `cspace*` operations write the identical fields and
-  declare no state-level lock, so two of *those* still have provably disjoint
-  footprints while allocating from one counter.  WS-RR RR7.9 declares it on
-  them and deletes this entry. -/
-  | cdtNodeAllocation
   /-- PR #887 review round 3: the **interior CNodes of a multi-level CSpace
   walk**.  `resolveCapAddress` descends through child CNodes while address
   bits remain, and every per-object footprint names only the walk's *root*
@@ -3175,7 +3147,6 @@ def declaredFootprintUncoveredDomains : List (UncoveredLockDomain × String) :=
    (.dynamicPipChain, "WS-RR RR7.40 (fine-lock Track C closure)"),
    (.queueOwnershipProtocol, "WS-RR RR7.38"),
    (.taintTablePerKeyStore, "SM10.1 (fine-lock Track D)"),
-   (.cdtNodeAllocation, "WS-RR RR7.9 (fine-lock Track B)"),
    (.cspaceWalkInteriorCnodes, "WS-RR RR7.41 (fine-lock Track C closure)")]
 
 /-- SM8.D.5: the exhaustive list of uncovered domains, in the shape the claim
@@ -3183,7 +3154,7 @@ inventory uses — so completeness can be quantified over the *constructors*
 rather than compared against a literal. -/
 def UncoveredLockDomain.all : List UncoveredLockDomain :=
   [.schedulerDomain, .dynamicPipChain, .queueOwnershipProtocol,
-   .taintTablePerKeyStore, .cdtNodeAllocation, .cspaceWalkInteriorCnodes]
+   .taintTablePerKeyStore, .cspaceWalkInteriorCnodes]
 
 /-- SM8.D.5: every constructor is listed.  This is the clause a literal
 comparison cannot supply: adding a new domain makes `cases d` non-exhaustive

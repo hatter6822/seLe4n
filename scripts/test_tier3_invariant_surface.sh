@@ -4416,13 +4416,31 @@ run_check "INVARIANT" rg -n 'endpointCallOnCore endpointId caller \{ msg with ca
 # fixture deliberately does not prepare -- `chain12c` sets the field from the same
 # rights it passes, so it cannot see the two inputs disagree.
 run_check "INVARIANT" rg -n 'endpointGrantDecidesBothOrderings' tests/OperationChainSuite.lean
-# The CDT node allocator's global counter is the footprint gap the caps path
-# opened: minting a node for a source slot writes `cdtNextNode` while the send's
-# declared footprint holds the source CNode in READ mode and declares no
-# state-level write.  Registered rather than papered over, so enabling fine locks
-# has to delete the entry deliberately.
-run_check "INVARIANT" rg -n 'cdtNodeAllocation' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '\(\.cdtNodeAllocation, "' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# WS-RR RR7.9: the CDT node allocator's global counter is COVERED, and these are
+# the pins.  It was the footprint gap the caps path opened -- minting a node
+# writes `cdtNextNode` while the declaring footprints held their CNodes in read
+# mode and declared no state-level write -- registered as
+# `UncoveredLockDomain.cdtNodeAllocation` with two positive anchors.  RR7.7
+# declared the state-level write on the IPC half and RR7.9 on the four
+# capability operations, so the anchors become negatives and the closure is
+# pinned instead.
+run_negative_check "INVARIANT" rg -n 'cdtNodeAllocation' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.Concurrency.Locks.LockSetTransitions
+open SeLe4n.Kernel.Concurrency
+#check @lockSet_cspaceMint_stateLevel_write_mem
+#check @lockSet_cspaceCopy_stateLevel_write_mem
+#check @lockSet_cspaceMove_stateLevel_write_mem
+#check @lockSet_cspaceDelete_stateLevel_write_mem
+#check @lockSet_mintReplyCap_stateLevel_write_mem
+#check @capabilityOps_footprints_share_serialization
+EOF'
+run_check "INVARIANT" rg -n 'every capability operation declares the state-level CDT write' tests/LockSetSuite.lean
+# …and the modified-field list the operations were described by, which stopped
+# at `.objects` while all four write CDT structure.  These lists support
+# DISJOINTNESS arguments, so an omission makes two contending operations look
+# independent.
+run_check "INVARIANT" rg -n 'cdtSlotNode, .cdtNodeSlot, .cdtNextNode\]' SeLe4n/Kernel/CrossSubsystem.lean
 # PR #873 round 14: **the frozen/live correspondence, as something that runs.**
 # Each frozen operation re-implements a live transition, and which one it
 # re-implements was recorded in a markdown table and a `mirrors X` sentence.

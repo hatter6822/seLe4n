@@ -1,3 +1,60 @@
+## v0.34.62 — the derivation tree gets a lock
+
+**WS-RR RR7.9** — fine locks, Track B: CDT coverage on `cspaceMint`,
+`cspaceCopy`, `cspaceMove` and `cspaceDelete`.
+
+All four write `SystemState`-level derivation structure, not only CNode slots.
+The three creating operations call `ensureCdtNodeForSlot` on both endpoints —
+which advances the global `cdtNextNode` counter and inserts into `cdtSlotNode`
+and `cdtNodeSlot` — and then `cdt.addEdge`; the delete calls `cdt.removeNode`.
+None of that decomposes by object, and their footprints declared only
+per-object members, so two capability operations on disjoint CSpaces had
+**provably disjoint footprints while allocating from one counter**.  A
+two-phase-locking consumer is entitled to run disjoint footprints concurrently,
+so the later commit would collide on a node id or lose a slot mapping.
+
+### The member, five times over
+
+`(stateLevelLock, .write)` is now an unconditional member of all four
+footprints — unconditional because these operations always write the CDT when
+they succeed, unlike the IPC transfer RR7.7 declared conditionally.
+`permittedKinds` gains `.objStore` on the four plus `.mintReplyCap` (hierarchy
+level 0, acquired first, ladder unchanged).
+
+The membership is pinned once per footprint —
+`lockSet_cspace{Mint,Copy,Move,Delete}_stateLevel_write_mem` and
+`lockSet_mintReplyCap_stateLevel_write_mem` — rather than once over a shared
+shape, because the four are four definitions and a cut that drops the member
+from any single one must stop elaborating.  That is what pinning a member
+buys over a docstring.
+
+`capabilityOps_footprints_share_serialization` is the statement the registered
+domain existed for: **no two capability operations are ever disjoint**,
+whatever CNodes they name.
+
+### The modified-field list said less than the code does
+
+`capabilityOp_modifiedFields` read `[.objects, .lifecycle]` and omitted all
+four CDT `StateField` constructors.  The direction matters: these lists exist
+to support *disjointness* arguments, so an omission makes two operations that
+contend look independent.  It now names `.cdt`, `.cdtSlotNode`, `.cdtNodeSlot`
+and `.cdtNextNode` as well.
+
+### Then the deletion
+
+`UncoveredLockDomain.cdtNodeAllocation` is gone — constructor, docstring,
+inventory arithmetic — with its two Tier-3 `run_check`s replaced by a negative
+and the closure anchored in their place.  The registry is **five** domains,
+down from seven at the start of Track B, and both steps down were a domain
+closing rather than a count being made to fall.
+
+What remains registered, and honestly: the scheduler domain, the dynamic PIP
+chain, the queue-ownership protocol, the taint table's per-key realisation, and
+the interior CNodes of a multi-level CSpace walk.
+
+**Sub-tasks**: WS-RR RR7.9.
+**Refs**: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR7 (RR7.9)
+
 ## v0.34.61 — the transfer's destination is the lock the bracket took
 
 **WS-RR RR7.8** — fine locks, Track B: `ipcUnwrapCaps` coverage, and the debt

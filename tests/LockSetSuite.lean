@@ -523,10 +523,13 @@ example : permittedKinds .replyRecv = [.tcb, .cnode, .endpoint, .schedContext, .
 -- it from its endpoint); `.notificationWait` is unchanged.
 example : permittedKinds .notificationSignal = [.tcb, .cnode, .notification, .endpoint] := by decide
 example : permittedKinds .notificationWait = [.tcb, .cnode, .notification] := by decide
-example : permittedKinds .cspaceMint = [.tcb, .cnode] := by decide
-example : permittedKinds .cspaceCopy = [.tcb, .cnode] := by decide
-example : permittedKinds .cspaceMove = [.tcb, .cnode] := by decide
-example : permittedKinds .cspaceDelete = [.tcb, .cnode] := by decide
+-- WS-RR RR7.9: `.objStore` joins all four — every capability operation writes
+-- the CDT (three mint nodes and add an edge, the delete removes one), and
+-- `stateLevelLock` is that structure's declared subject.
+example : permittedKinds .cspaceMint = [.tcb, .cnode, .objStore] := by decide
+example : permittedKinds .cspaceCopy = [.tcb, .cnode, .objStore] := by decide
+example : permittedKinds .cspaceMove = [.tcb, .cnode, .objStore] := by decide
+example : permittedKinds .cspaceDelete = [.tcb, .cnode, .objStore] := by decide
 -- PR #873 round 7: `.lifecycleRetype` admits EVERY kind too, and for the same
 -- reason `.declassify` does below.  SM9.D.12 makes the retype the arm that
 -- *clears* taint at `args.targetObj`, so `lockSet_lifecycleRetype` carries that
@@ -945,11 +948,24 @@ private def runPerTransitionShapeChecks : IO Unit := do
   assertBool "endpointSend size (with receiver) = 4"
     (decide ((lockSet_endpointSend ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
               (some ⟨2⟩)).size = 4))
-  -- Capability paths: 3 locks each.
-  assertBool "cspaceMint size = 3"
-    (decide ((lockSet_cspaceMint ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).size = 3))
-  assertBool "cspaceMove size = 3"
-    (decide ((lockSet_cspaceMove ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).size = 3))
+  -- Capability paths: 4 locks each since WS-RR RR7.9 — three per-object members
+  -- plus the state-level write the CDT mutation needs.
+  assertBool "cspaceMint size = 4"
+    (decide ((lockSet_cspaceMint ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).size = 4))
+  assertBool "cspaceMove size = 4"
+    (decide ((lockSet_cspaceMove ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).size = 4))
+  -- …and the member is present in all four, which the size alone would not say.
+  assertBool "every capability operation declares the state-level CDT write"
+    (decide ((stateLevelLock, AccessMode.write)
+        ∈ (lockSet_cspaceMint ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).pairs) &&
+     decide ((stateLevelLock, AccessMode.write)
+        ∈ (lockSet_cspaceCopy ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).pairs) &&
+     decide ((stateLevelLock, AccessMode.write)
+        ∈ (lockSet_cspaceMove ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).pairs) &&
+     decide ((stateLevelLock, AccessMode.write)
+        ∈ (lockSet_cspaceDelete ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).pairs) &&
+     decide ((stateLevelLock, AccessMode.write)
+        ∈ (lockSet_mintReplyCap ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).pairs))
   -- VSpace: 3 locks each.
   assertBool "vspaceMap size = 3"
     (decide ((lockSet_vspaceMap ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).size = 3))

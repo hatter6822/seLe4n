@@ -1194,11 +1194,21 @@ def ipcEndpointOp_modifiedFields : List StateField :=
   [.objects, .lifecycle]
 
 /-- W2-A1: Fields modified by capability operations (`cspaceMint`, `cspaceCopy`,
-    etc.). Modify CNode slots within objects via `storeObject`, which also
-    updates lifecycle metadata. For in-place CNode mutations, `objectIndex`/
-    `objectIndexSet` are unchanged. -/
+    `cspaceMove`, `cspaceDelete`). Modify CNode slots within objects via
+    `storeObject`, which also updates lifecycle metadata. For in-place CNode
+    mutations, `objectIndex`/`objectIndexSet` are unchanged.
+
+    **WS-RR RR7.9: and the four CDT fields**, which this list omitted.  All four
+    operations write derivation structure as well as slots: `cspaceMint`,
+    `cspaceCopy` and `cspaceMove` call `ensureCdtNodeForSlot` on both endpoints
+    — which advances `cdtNextNode` and inserts into `cdtSlotNode` and
+    `cdtNodeSlot` — and then `cdt.addEdge`; `cspaceDelete` calls
+    `cdt.removeNode`.  A modified-field list that stops at `.objects` describes
+    an operation that does less than the code does, and the direction matters:
+    these lists exist to support *disjointness* arguments, so an omission makes
+    two operations look independent when they contend. -/
 def capabilityOp_modifiedFields : List StateField :=
-  [.objects, .lifecycle]
+  [.objects, .lifecycle, .cdt, .cdtSlotNode, .cdtNodeSlot, .cdtNextNode]
 
 /-- W2-A1: Fields modified by `revokeService` / `removeDependenciesOf`.
     `revokeService` erases from `serviceRegistry`, then `removeDependenciesOf`

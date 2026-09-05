@@ -7956,20 +7956,19 @@ private def runDeclaredFootprintChecks : IO Unit := do
      true)
   -- The bracket covers the OBJECT domain only; the scheduler domain, the
   -- dynamic PIP chain, the queue-ownership protocol, (SM9.D audit) the taint
-  -- table's
-  -- per-key realisation and (PR #873 round 13) the CDT node allocator's global
-  -- counter and (PR #887 review round 3) the interior CNodes of a multi-level
-  -- CSpace walk are named as data with owners rather than left implicit.
-  -- WS-RR RR7.8: **six**, not seven — the capability-transfer destination CNode
-  -- is covered and its entry deleted.  The count falls because the domain
-  -- closed, which is the only reason it may.
-  assertBool "the six uncovered lock domains are registered, each with an owner"
-    (decide (declaredFootprintUncoveredDomains.length = 6) &&
+  -- table's per-key realisation and (PR #887 review round 3) the interior
+  -- CNodes of a multi-level CSpace walk are named as data with owners rather
+  -- than left implicit.
+  -- WS-RR RR7.8 then RR7.9: **five**, from seven.  The capability-transfer
+  -- destination CNode and the CDT node allocator are both covered and their
+  -- entries deleted.  The count falls because domains closed, which is the only
+  -- reason it may.
+  assertBool "the five uncovered lock domains are registered, each with an owner"
+    (decide (declaredFootprintUncoveredDomains.length = 5) &&
      decide (declaredFootprintUncoveredDomains.map Prod.fst
        = [UncoveredLockDomain.schedulerDomain, UncoveredLockDomain.dynamicPipChain,
           UncoveredLockDomain.queueOwnershipProtocol,
           UncoveredLockDomain.taintTablePerKeyStore,
-          UncoveredLockDomain.cdtNodeAllocation,
           UncoveredLockDomain.cspaceWalkInteriorCnodes]) &&
      declaredFootprintUncoveredDomains.all (fun d => !d.2.isEmpty))
   -- LOAD-BEARING NEGATIVE: completeness is quantified over the *constructors*,
@@ -7977,7 +7976,7 @@ private def runDeclaredFootprintChecks : IO Unit := do
   assertBool "NEGATIVE: every uncovered-domain constructor is registered"
     (UncoveredLockDomain.all.all
        (fun d => declaredFootprintUncoveredDomains.map Prod.fst |>.contains d) &&
-     decide (UncoveredLockDomain.all.length = 6))
+     decide (UncoveredLockDomain.all.length = 5))
   -- PR #873 round 6: the inventory is no longer data alone.  Relying on declared
   -- footprints as a complete serialization discipline is gated on it being
   -- EMPTY, so the per-key taint store — the entry the review pressed twice — is
