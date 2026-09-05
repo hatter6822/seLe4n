@@ -255,8 +255,9 @@ invisible to every observer, so the golden trace is byte-identical.
 
 The identity that unwind relies on — a release by a non-holder changes nothing
 — is the deployed lock's own since PR #890 review round 2, not only the spec's:
-`QueuedRwLock` keeps a held word per core, every entry point reads the caller's
-word first, and `queuedSim`'s fifth conjunct (`queuedHeldSim`) relates the
+`QueuedRwLock` keeps a held word per core, every entry point — the withdrawal
+included, since round 3 — reads the caller's word first, and `queuedSim`'s
+fifth conjunct (`queuedHeldSim`) relates the
 words to `readers` / `writerHeld`, so the bridge's four no-op blocks are the one
 held-word load, derived from the relation rather than asserted of a stutter the
 code never performed. The CAS-retry bridge makes the opposite honest choice for

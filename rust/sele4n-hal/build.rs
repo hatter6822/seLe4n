@@ -6007,8 +6007,11 @@ fn scan_queued_rw_lock_protocol_intact() {
     }
 
     // Check (3): each release reads the holder word before it writes the
-    // state word.  Located within the function's own body so a read in
-    // another function, or a docstring, cannot satisfy it.
+    // state word, and the withdrawal reads it before it publishes its slot
+    // (PR #890 review round 3: a writer still holds its ticket, so a
+    // holder's withdrawal that reached the publish passed the turn under a
+    // set writer bit).  Located within the function's own body so a read
+    // in another function, or a docstring, cannot satisfy it.
     for (signature, state_write) in [
         (
             "pub fn release_read(&self, core_id: u8) {",
@@ -6017,6 +6020,10 @@ fn scan_queued_rw_lock_protocol_intact() {
         (
             "pub fn release_write(&self, core_id: u8) {",
             "self.state.fetch_and(READER_MASK",
+        ),
+        (
+            "pub fn cancel(&self, core_id: u8, ticket: u64) {",
+            "self.cancelled[core_id as usize].store(",
         ),
     ] {
         let body = enclosing_fn_body(&stripped, signature).unwrap_or_else(|| {
@@ -6035,9 +6042,10 @@ fn scan_queued_rw_lock_protocol_intact() {
                  `{signature}` must read `self.held[core_id as usize]` BEFORE \
                  `{state_write}` (found holder read at {holder_read:?}, state \
                  write at {write:?}).  A release by a core that does not hold \
-                 the lock must be the spec's no-op — `unwindAll` releases every \
+                 the lock, and a withdrawal by a core that does, must be the \
+                 spec's no-ops — `unwindAll` withdraws at and releases every \
                  member of a footprint, holding or not — and only a holder \
-                 check that precedes the state write makes it one."
+                 check that precedes the write makes them so."
             ),
         }
     }

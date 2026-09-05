@@ -88,12 +88,13 @@
 # existed `release_read` was an unconditional `fetch_sub` that the refinement
 # had described as a stutter.  `every_pair_of_units_is_safe` is the
 # enumeration the acceptance criterion cited in the header always asked for:
-# every unordered pair of the lock's seven operation units — the fused and
-# split acquisitions in both modes, both non-blocking attempts, and a
-# withdrawal followed by the unwind — one unit per thread, at most four lock
-# operations, unbounded.  The handwritten models are scenarios; this is the
-# closure, and a unit added to the lock's list is paired with every other
-# automatically.
+# every unordered pair of the lock's nine operation units — the fused and
+# split acquisitions in both modes, both non-blocking attempts, a
+# withdrawal followed by the unwind, and (review round 3) the unwind at a
+# member the core holds, as a reader and as the writer — one unit per
+# thread, at most five lock operations, unbounded.  The handwritten models
+# are scenarios; this is the closure, and a unit added to the lock's list is
+# paired with every other automatically.
 #
 # Their decisiveness mutation keeps the held-word load *and* the comparison
 # in `release_read` (and, separately, in `release_write`) and drops only the
@@ -102,7 +103,10 @@
 # release's own `debug_assert` on the underflowed count or the cleared writer
 # bit.  The other tempting mutation — the load moved below the state write —
 # is refused by `build.rs` before loom could see it, so it is not the one to
-# quote for this gate.
+# quote for this gate.  Round 3's mutation, for the held-member units: keep
+# the held-word load in `cancel` and invert its comparison (`== HELD_NONE`),
+# so a holder's withdrawal reaches the publish; the enumeration fails at
+# the pairs that hold and withdraw.
 
 set -euo pipefail
 

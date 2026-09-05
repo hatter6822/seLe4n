@@ -221,8 +221,12 @@ constructors and states that lock's caller contract instead; the Tier-5
 oracle issues both no-ops to the ticket lock and checks every core's word
 (`check_holders`); and the loom gate enumerates every pair of the lock's
 operation units (`every_pair_of_units_is_safe`), which is what the D-5
-"op-sequences of length ≤ 4" criterion now says.  Again not a new sub-task:
-LC3's and LC4's rows stand.
+"op-sequences of length ≤ 4" criterion now says.  Round 3 (same version)
+carried the word to the two entry points it had not reached: `cancel`
+returns on it before publishing — a writer holds its ticket, so a holder's
+withdrawal that reached the publish passed the turn under the set bit and
+the release passed it again — and the RAII guards release only what they
+acquired.  Again not a new sub-task: LC3's and LC4's rows stand.
 
 ## 6. LC4 — the two-phase-locking consumers
 

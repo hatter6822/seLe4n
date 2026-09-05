@@ -192,6 +192,36 @@ relation, a non-holder's release block is the one load, a re-acquire no-op
 requires *holding* rather than involvement, and `releaseReadOps` clears the
 word before the count moves.
 
+### Review round 3 (Codex, on `c89c1266`)
+
+Two findings, both the round-2 word applied to the two entry points it had
+not reached.  **(1) A holder's withdrawal was a `debug_assert`.**  The
+unwind withdraws at every member before it releases, holding or not, and the
+spec's `cancel` is the identity for a holder; but a writer still holds its
+ticket, so `QueuedRwLock::cancel` on it was refused only by an assertion that
+vanishes in release builds — there it published, was claimed at once, and
+`pass_turn` advanced `now_serving` under the set writer bit, after which
+`release_write` advanced it again, past a live waiter.  `cancel` now returns
+on the held word before anything is published, `build.rs` pins that order
+alongside the two releases, and the assertion that remains reports the one
+misuse left — a withdrawal naming *another* core's served write ticket.
+`enqueue` by a holder is reported in debug builds too: the fused entry
+points are the holder's no-ops, and there is no ticket to return for one.
+On the Lean side `cancelPublish` is enabled only for a core holding nothing
+(`opEnabled`), and the `cancel_queued` block opens with the held-word and
+counter loads the implementation performs before it publishes.  The Tier-5
+oracle issues a holder's withdrawal to the ticket lock with the ticket the
+core actually held — its readers now carry theirs — and the loom units gain
+the unwind at a held member, as a reader and as the writer (nine units, 45
+pairs); the decisiveness mutation inverts the held comparison in `cancel`,
+keeping every token, and the enumeration fails.  **(2) A guard armed after
+the no-op.**  `acquire_read_guard` / `acquire_write_guard` constructed a
+guard whose `Drop` released unconditionally, so a nested same-core guard —
+which acquires nothing since round 2 — released the hold the outer scope
+still relied on.  A guard now records whether it acquired and releases only
+what it took; `acquired()` reports which, and three tests pin the nesting in
+both modes and across them.
+
 Refs: docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md §5 (closure audit)
 
 ## v0.34.54 — the lock execution learns what a step costs

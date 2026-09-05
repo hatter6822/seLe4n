@@ -2227,8 +2227,11 @@ code may assume:
   could be served and so costs nothing a fresh ticket would not, and the
   non-blocking `try_acquire_*` are refused in that state; `cancel` refuses a
   ticket `now_serving` has already passed, since a stale publication would
-  park the core's next `enqueue` for good, and a `debug_assert` refuses a
-  withdrawal of a ticket already completed as a write.  The Lean model
+  park the core's next `enqueue` for good; a holder's withdrawal returns on
+  the held word before it publishes (PR #890 review round 3 — the
+  `debug_assert` that stood there vanishes in release builds), and a
+  `debug_assert` still refuses a withdrawal naming another core's served
+  write ticket.  The Lean model
   carries the rule as `QueuedTicketWf.ledgerCoresNodup` with the issue enabled
   only for a core holding no ticket, `publish_slot_empty` is the theorem that
   the unconditional store never overwrites, and the `acquire*_enqueue` blocks
@@ -2246,14 +2249,22 @@ code may assume:
   `ffiRwLockCompleteRead`, `ffiRwLockCompleteWrite`, `ffiRwLockCancel` and
   `ffiRwLockCancelCount` join the sixteen SM2.D symbols, reconciled across the
   three surfaces by `scripts/check_lock_ffi_symmetry.sh`.
-- **A release by a non-holder, and a re-acquisition by a holder, are the
-  deployed lock's no-ops — decided by its held word, not by the caller**
-  (PR #890 review round 2).  `QueuedRwLock` carries one `held` word per core
-  (`HELD_NONE` / `HELD_READ` / `HELD_WRITE`), set at the core's admission and
-  cleared at its release, and `acquire_read` / `acquire_write` /
-  `release_read` / `release_write` each read the caller's word before they
-  touch anything else: a holder re-acquiring returns, a non-holder releasing
-  returns.  Before the word existed `release_read` was an unconditional
+- **A release by a non-holder, a re-acquisition by a holder, and a
+  withdrawal by a holder are the deployed lock's no-ops — decided by its held
+  word, not by the caller** (PR #890 review rounds 2 and 3).  `QueuedRwLock`
+  carries one `held` word per core (`HELD_NONE` / `HELD_READ` /
+  `HELD_WRITE`), set at the core's admission and cleared at its release, and
+  `acquire_read` / `acquire_write` / `release_read` / `release_write` /
+  `cancel` each read the caller's word before they touch anything else: a
+  holder re-acquiring returns, a non-holder releasing returns, a holder
+  withdrawing returns before anything is published (round 3 — a writer still
+  holds its ticket, so a withdrawal that reached the publish was claimed at
+  once and passed the turn under the set bit, and the release passed it
+  again, past a live waiter; a `debug_assert` had stood in for the identity
+  and vanishes in release builds).  The RAII guards record whether they
+  acquired, so a nested same-core guard is a no-op both ways rather than a
+  release of the outer scope's hold (round 3); `enqueue` by a holder is
+  outside the contract and reported in debug builds.  Before the word existed `release_read` was an unconditional
   `fetch_sub` and `release_write` an unconditional clear-and-pass-turn, so a
   non-holder's release in a release build underflowed the reader count or
   handed the turn on while the real writer still held — and the
@@ -2267,8 +2278,11 @@ code may assume:
   `_noop` blocks of `queuedBlock` are the one held-word load and are
   *derived* in `queuedBlock_preserves_queuedSim`; every acquire and release
   block opens with that load (`heldLoad`), and the effective releases clear
-  the word (`heldStore c none`) **before** the state word moves, an order
-  `build.rs` pins (`scan_queued_rw_lock_protocol_intact`, its third check).
+  the word (`heldStore c none`) **before** the state word moves, and the
+  withdrawal block opens with the held load before the publish
+  (`cancelPublish` is enabled only for a core holding nothing) — orders
+  `build.rs` pins for both releases and for `cancel`
+  (`scan_queued_rw_lock_protocol_intact`, its third check).
   (2) **A queued waiter re-acquiring has no block**: the spec no-ops on it
   and the lock has no branch for it — the core is inside its own
   acquisition, or holds a split-API ticket it must terminate first — so the
@@ -2281,9 +2295,10 @@ code may assume:
   — are gone, and its trace-level theorems cover exactly the traces that
   respect its caller contract (acquire only while uninvolved, release only
   what you hold), stated in its module docs.  (4) **The gates ask the lock
-  the question.**  The Tier-5 oracle issues a non-holder's release and a
-  holder's re-acquisition to the real ticket lock and holds every core's
-  word to the spec's holders after each op (`check_holders`); a queued
+  the question.**  The Tier-5 oracle issues a non-holder's release, a
+  holder's re-acquisition and a holder's withdrawal (with the ticket the
+  core actually held) to the real ticket lock and holds every core's word
+  to the spec's holders after each op (`check_holders`); a queued
   waiter's re-acquisition is issued to neither lock, and the CAS-retry lock
   is sent neither call.  On the host a std thread stands in for a PE and the
   per-CPU stub answers core 0 to every thread, so the bridge's cross-thread
@@ -2293,10 +2308,12 @@ code may assume:
   the first host lane after the word landed hung in exactly that shape.
   The loom gate gained
   `unwind_by_a_non_holder_never_touches_the_holder` and
-  `every_pair_of_units_is_safe` — every unordered pair of the lock's seven
+  `every_pair_of_units_is_safe` — every unordered pair of the lock's nine
   operation units on two threads, unbounded, which is the SM2.C-defer plan's
   "op-sequences of length ≤ 4" acceptance criterion stated as the
-  enumeration it always should have been — so the model count is thirteen.
+  enumeration it always should have been; two of the nine are the unwind at
+  a member the core holds, as a reader and as the writer (round 3) — so the
+  model count is thirteen.
 - **The two-phase-locking shrinking phase withdraws before it releases**
   (WS-LC LC4, v0.34.53).  `withLockSet`'s third phase and the revalidated
   entry's refusal path are both `unwindAll` — one definition, so the two

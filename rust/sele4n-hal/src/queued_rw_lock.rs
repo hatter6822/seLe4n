@@ -555,6 +555,15 @@ impl QueuedRwLock {
     #[must_use]
     pub fn enqueue(&self, core_id: u8) -> u64 {
         assert!((core_id as usize) < MAX_WAITERS, "core_id out of range");
+        // A holder acquires only through the fused entry points, where
+        // its word makes the call the spec's no-op; a second ticket for
+        // a core that already holds is the one-outstanding-ticket
+        // contract's violation, and there is no ticket to return for a
+        // no-op.  Reported in debug builds (PR #890 review round 3).
+        debug_assert!(
+            self.held[core_id as usize].load(Ordering::Acquire) == HELD_NONE,
+            "enqueue called by core {core_id}, which already holds the lock"
+        );
         self.await_withdrawal_retired(core_id);
         self.take_ticket(core_id)
     }
@@ -683,6 +692,21 @@ impl QueuedRwLock {
     /// `ldar` are already sequentially consistent, so the fence adds one
     /// `dmb ish` and nothing else changes.
     ///
+    /// # A holder withdraws nothing
+    ///
+    /// The two-phase-locking unwind (`unwindAll`, WS-LC LC4) withdraws at
+    /// every member of a footprint before it releases, holding or not,
+    /// and the spec's `cancel` is the identity for a holder (INV-R4 keeps
+    /// holders out of the queue).  A writer still **holds its ticket** —
+    /// `now_serving` names it — so a withdrawal of it would be claimed at
+    /// once and `pass_turn` would advance the counter under a set writer
+    /// bit; `release_write` then advanced it again, past a live waiter.
+    /// A `debug_assert` stood in for the identity and vanished in release
+    /// builds (PR #890 review round 3).  The held word decides now: a
+    /// core whose word reads held returns before anything is published.
+    /// A reader's ticket was passed at entry and is refused as stale
+    /// below either way.
+    ///
     /// # A ticket the lock has already retired is not withdrawn
     ///
     /// A withdrawal of a ticket `now_serving` has moved past publishes
@@ -702,24 +726,31 @@ impl QueuedRwLock {
     /// # Refinement
     ///
     /// Corresponds to the Lean block `queuedBlock.cancel_queued` — the
-    /// publish followed by `skipDeadOps`, one shape covering both cases
-    /// this function branches on (`QueuedRwLockRefinement.lean`).  A
-    /// withdrawal of a retired ticket is the model's `cancel_noop`
-    /// block: `cancelPublish` is enabled only for an outstanding ticket.
+    /// held-word and counter loads, the publish, then `skipDeadOps`, one
+    /// shape covering both cases this function branches on
+    /// (`QueuedRwLockRefinement.lean`).  A holder's withdrawal and a
+    /// withdrawal of a retired ticket are the model's `cancel_noop`
+    /// block: `cancelPublish` is enabled only for an outstanding ticket
+    /// of a core holding nothing (`opEnabled`).
     pub fn cancel(&self, core_id: u8, ticket: u64) {
         assert!((core_id as usize) < MAX_WAITERS, "core_id out of range");
+        // A holder withdraws nothing — see the section above.  This
+        // core's own word, read before anything is published.
+        if self.held[core_id as usize].load(Ordering::Acquire) != HELD_NONE {
+            return;
+        }
         if self.now_serving.load(Ordering::SeqCst) > ticket {
             return;
         }
         // While `now_serving == ticket` the writer bit can be set only by
-        // the served ticket's holder, so a set bit here means this
-        // ticket was already completed as a write: withdrawing it would
-        // pass the turn while the lock is held.  Nobody can move
-        // `now_serving` off `ticket` between the two reads — its holder
-        // has not published, so there is no tombstone to skip.
+        // the served ticket's holder, and this core holds nothing, so a
+        // set bit here means the caller passed **another core's** ticket
+        // — outside the contract, and reported in debug builds.  Nobody
+        // can move `now_serving` off `ticket` between the two reads — its
+        // holder has not published, so there is no tombstone to skip.
         debug_assert!(
             !(self.is_served(ticket) && (self.state.load(Ordering::Acquire) & WRITER_BIT) != 0),
-            "cancel called on a ticket its core has already completed as a writer"
+            "cancel called with another core's served write ticket"
         );
         self.cancelled[core_id as usize].store(ticket + 1, Ordering::SeqCst);
         fence(Ordering::SeqCst);
@@ -1007,23 +1038,50 @@ impl QueuedRwLock {
         false
     }
 
+    /// Whether `core_id`'s own held word reads held — read by the guards
+    /// before they acquire, so a guard armed on a holder releases nothing.
+    /// The word is written by its own core only, so this read cannot race
+    /// the acquisition it precedes.
+    #[inline]
+    fn holds(&self, core_id: u8) -> bool {
+        self.held[core_id as usize].load(Ordering::Acquire) != HELD_NONE
+    }
+
     /// Acquire a read lock, returning an RAII guard.
+    ///
+    /// A guard taken by a core that already holds the lock acquires
+    /// nothing — the spec's no-op, which [`acquire_read`](Self::acquire_read)
+    /// implements — and therefore **releases nothing** when it drops
+    /// (PR #890 review round 3): a nested same-core guard used to release
+    /// the hold the outer scope still relied on.  The guard records
+    /// whether it acquired, and the hold ends with the guard that took it.
     #[must_use]
     pub fn acquire_read_guard(&self, core_id: u8) -> QueuedRwLockReadGuard<'_> {
-        self.acquire_read(core_id);
+        let acquired = !self.holds(core_id);
+        if acquired {
+            self.acquire_read(core_id);
+        }
         QueuedRwLockReadGuard {
             lock: self,
             core_id,
+            acquired,
         }
     }
 
     /// Acquire a write lock, returning an RAII guard.
+    ///
+    /// Same contract as [`acquire_read_guard`](Self::acquire_read_guard):
+    /// a guard taken by a holder acquires nothing and releases nothing.
     #[must_use]
     pub fn acquire_write_guard(&self, core_id: u8) -> QueuedRwLockWriteGuard<'_> {
-        self.acquire_write(core_id);
+        let acquired = !self.holds(core_id);
+        if acquired {
+            self.acquire_write(core_id);
+        }
         QueuedRwLockWriteGuard {
             lock: self,
             core_id,
+            acquired,
         }
     }
 }
@@ -1032,27 +1090,55 @@ impl QueuedRwLock {
 // RAII guards
 // ============================================================================
 
-/// RAII read guard — releases on drop, including during unwind.
+/// RAII read guard — releases on drop, including during unwind, the
+/// hold it took; a guard that took none (its core already held) releases
+/// none (PR #890 review round 3).
 pub struct QueuedRwLockReadGuard<'a> {
     lock: &'a QueuedRwLock,
     core_id: u8,
+    /// Whether this guard's construction acquired the lock.
+    acquired: bool,
+}
+
+impl QueuedRwLockReadGuard<'_> {
+    /// Whether this guard holds an acquisition of its own, as opposed to
+    /// riding on one its core already had.
+    #[must_use]
+    pub fn acquired(&self) -> bool {
+        self.acquired
+    }
 }
 
 impl Drop for QueuedRwLockReadGuard<'_> {
     fn drop(&mut self) {
-        self.lock.release_read(self.core_id);
+        if self.acquired {
+            self.lock.release_read(self.core_id);
+        }
     }
 }
 
-/// RAII write guard — releases on drop, including during unwind.
+/// RAII write guard — releases on drop, including during unwind, the
+/// hold it took; a guard that took none releases none.
 pub struct QueuedRwLockWriteGuard<'a> {
     lock: &'a QueuedRwLock,
     core_id: u8,
+    /// Whether this guard's construction acquired the lock.
+    acquired: bool,
+}
+
+impl QueuedRwLockWriteGuard<'_> {
+    /// Whether this guard holds an acquisition of its own.
+    #[must_use]
+    pub fn acquired(&self) -> bool {
+        self.acquired
+    }
 }
 
 impl Drop for QueuedRwLockWriteGuard<'_> {
     fn drop(&mut self) {
-        self.lock.release_write(self.core_id);
+        if self.acquired {
+            self.lock.release_write(self.core_id);
+        }
     }
 }
 // ============================================================================
@@ -1439,8 +1525,9 @@ mod loom_model {
     // at the bound that is both meaningful and affordable: every
     // two-thread program with **one contract-respecting unit per thread**
     // — a unit being a complete acquisition-and-release in one of the
-    // lock's spellings, or a withdrawal followed by the unwind's releases
-    // — which is at most four lock operations in total.  Arbitrary
+    // lock's spellings, a withdrawal followed by the unwind's releases, or
+    // (review round 3) an acquisition followed by the unwind at the held
+    // member — which is at most five lock operations per thread.  Arbitrary
     // operation sequences would include contract violations (a release
     // without a hold was one, until round 2 made it the spec's no-op; two
     // live tickets on one core still is), which the lock does not define.
@@ -1464,9 +1551,19 @@ mod loom_model {
         TryWrite,
         /// `enqueue`, `cancel`, then the unwind's two releases.
         WithdrawAndUnwind,
+        /// `enqueue`, poll, `complete_read`, then the unwind at a member
+        /// the core **holds** as a reader: `cancel` of its own (passed)
+        /// ticket, then both releases (PR #890 review round 3).
+        HoldReadThenUnwind,
+        /// `enqueue`, poll, `complete_write`, then the unwind at a member
+        /// the core **holds** as the writer: `cancel` of the ticket it
+        /// still holds, then both releases.  This is the shape on which a
+        /// withdrawal that reached the publish advanced `now_serving`
+        /// under a set writer bit, and the release advanced it again.
+        HoldWriteThenUnwind,
     }
 
-    const UNITS: [Unit; 7] = [
+    const UNITS: [Unit; 9] = [
         Unit::ReadHold,
         Unit::WriteHold,
         Unit::SplitRead,
@@ -1474,6 +1571,8 @@ mod loom_model {
         Unit::TryRead,
         Unit::TryWrite,
         Unit::WithdrawAndUnwind,
+        Unit::HoldReadThenUnwind,
+        Unit::HoldWriteThenUnwind,
     ];
 
     /// Run `unit` on `core`.  `writers` counts writers inside their
@@ -1551,6 +1650,30 @@ mod loom_model {
             Unit::WithdrawAndUnwind => {
                 let t = lock.enqueue(core);
                 lock.cancel(core, t);
+                lock.release_read(core);
+                lock.release_write(core);
+            }
+            Unit::HoldReadThenUnwind => {
+                let t = lock.enqueue(core);
+                while !lock.is_served(t) {
+                    loom::thread::yield_now();
+                }
+                lock.complete_read(core, t);
+                in_read();
+                lock.cancel(core, t);
+                in_read();
+                lock.release_read(core);
+                lock.release_write(core);
+            }
+            Unit::HoldWriteThenUnwind => {
+                let t = lock.enqueue(core);
+                while !lock.is_served(t) {
+                    loom::thread::yield_now();
+                }
+                lock.complete_write(core, t);
+                in_write();
+                lock.cancel(core, t);
+                in_write();
                 lock.release_read(core);
                 lock.release_write(core);
             }
@@ -2081,19 +2204,146 @@ mod sequential_tests {
         assert_eq!(serving_end, next_end);
     }
 
-    /// **WS-LC closure audit**: withdrawing a ticket already completed
-    /// as a write would pass the turn while the lock is held — a second
-    /// terminator for one ticket, and the one the stale check cannot
-    /// see because the writer keeps `now_serving` on its own ticket.
-    /// The debug assertion refuses it.
+    /// A withdrawal naming **another core's** served write ticket is
+    /// outside the contract — a core withdraws only what it holds — and
+    /// the debug assertion reports it (a holder's own withdrawal is the
+    /// no-op the held word decides, `cancel_by_a_holder_is_a_noop`).
     #[test]
     #[cfg(debug_assertions)]
-    #[should_panic(expected = "already completed as a writer")]
-    fn cancel_of_a_completed_write_ticket_is_refused() {
+    #[should_panic(expected = "another core's served write ticket")]
+    fn cancel_of_another_cores_served_write_ticket_is_refused() {
         let lock = QueuedRwLock::new();
         let ticket = lock.enqueue(0);
         lock.complete_write(0, ticket);
-        lock.cancel(0, ticket);
+        // Core 1 holds nothing and names the writer's live ticket.
+        lock.cancel(1, ticket);
+    }
+
+    // ------------------------------------------------------------------
+    // PR #890 review round 3 — a holder withdraws nothing; a guard
+    // releases only what it acquired
+    // ------------------------------------------------------------------
+
+    /// The unwind at a member the core holds: `cancel` of the ticket a
+    /// writer still holds, or of the ticket a reader passed at entry,
+    /// publishes nothing and moves nothing — decided by the held word,
+    /// so it holds in release builds too.  Before, a writer's withdrawal
+    /// was refused by a `debug_assert` only.
+    #[test]
+    fn cancel_by_a_holder_is_a_noop() {
+        let lock = QueuedRwLock::new();
+        let t = lock.enqueue(0);
+        lock.complete_write(0, t);
+        let before = (lock.peek_state(), lock.peek_tickets());
+        lock.cancel(0, t);
+        assert_eq!((lock.peek_state(), lock.peek_tickets()), before);
+        assert_eq!(lock.peek_withdrawal(0), None, "nothing published");
+        assert_eq!(lock.peek_held(0), Some(HeldMode::Write));
+        // The turn is passed exactly once, by the release.
+        let waiter = lock.enqueue(1);
+        assert!(!lock.is_served(waiter));
+        lock.release_write(0);
+        assert!(
+            lock.is_served(waiter),
+            "the release hands the turn to the waiter"
+        );
+        lock.complete_read(1, waiter);
+        let before = (lock.peek_state(), lock.peek_tickets());
+        lock.cancel(1, waiter);
+        assert_eq!((lock.peek_state(), lock.peek_tickets()), before);
+        assert_eq!(lock.peek_withdrawal(1), None);
+        assert_eq!(lock.peek_held(1), Some(HeldMode::Read));
+        lock.release_read(1);
+        let (next, serving) = lock.peek_tickets();
+        assert_eq!(serving, next, "two tickets issued, two retired");
+        assert_eq!(lock.peek_state(), 0);
+        // And through the fused spelling, naming the served ticket.
+        lock.acquire_write(2);
+        let (_, serving) = lock.peek_tickets();
+        lock.cancel(2, serving);
+        assert_eq!(lock.peek_state(), WRITER_BIT);
+        assert_eq!(lock.peek_tickets().1, serving);
+        lock.release_write(2);
+        assert_eq!(lock.peek_state(), 0);
+    }
+
+    /// A nested same-core read guard acquires nothing and releases
+    /// nothing: the hold ends with the guard that took it.  Before, the
+    /// inner guard's drop released the outer scope's hold.
+    #[test]
+    fn nested_read_guards_on_one_core_release_once() {
+        let lock = QueuedRwLock::new();
+        let outer = lock.acquire_read_guard(0);
+        assert!(outer.acquired());
+        {
+            let inner = lock.acquire_read_guard(0);
+            assert!(!inner.acquired(), "a holder acquires nothing");
+            assert_eq!(lock.peek_state(), 1);
+        }
+        assert_eq!(lock.peek_state(), 1, "the inner guard released nothing");
+        assert_eq!(lock.peek_held(0), Some(HeldMode::Read));
+        drop(outer);
+        assert_eq!(lock.peek_state(), 0);
+        assert_eq!(lock.peek_held(0), None);
+        let (next, serving) = lock.peek_tickets();
+        assert_eq!(serving, next);
+    }
+
+    /// The same for the write guard, and for a read guard taken under a
+    /// write guard (a holder in either mode acquires nothing).
+    #[test]
+    fn nested_write_guards_on_one_core_release_once() {
+        let lock = QueuedRwLock::new();
+        let outer = lock.acquire_write_guard(1);
+        assert!(outer.acquired());
+        {
+            let inner = lock.acquire_write_guard(1);
+            assert!(!inner.acquired());
+            let read_under_write = lock.acquire_read_guard(1);
+            assert!(!read_under_write.acquired());
+            assert_eq!(lock.peek_state(), WRITER_BIT);
+        }
+        assert_eq!(
+            lock.peek_state(),
+            WRITER_BIT,
+            "still held by the outer guard"
+        );
+        assert_eq!(lock.peek_held(1), Some(HeldMode::Write));
+        drop(outer);
+        assert_eq!(lock.peek_state(), 0);
+        let (next, serving) = lock.peek_tickets();
+        assert_eq!(serving, next, "one ticket issued and retired");
+    }
+
+    /// A guard on a core that holds nothing is an ordinary acquisition
+    /// and release — the round-3 change costs the common case nothing.
+    #[test]
+    fn guards_on_distinct_cores_acquire_and_release() {
+        let lock = QueuedRwLock::new();
+        {
+            let a = lock.acquire_read_guard(0);
+            let b = lock.acquire_read_guard(1);
+            assert!(a.acquired() && b.acquired());
+            assert_eq!(lock.peek_state(), 2);
+        }
+        assert_eq!(lock.peek_state(), 0);
+        {
+            let w = lock.acquire_write_guard(2);
+            assert!(w.acquired());
+            assert_eq!(lock.peek_state(), WRITER_BIT);
+        }
+        assert_eq!(lock.peek_state(), 0);
+    }
+
+    /// `enqueue` by a holder is outside the contract and is reported in
+    /// debug builds: the fused entry points are the holder's no-ops, and
+    /// there is no ticket to return for one.
+    #[test]
+    #[should_panic(expected = "already holds the lock")]
+    fn enqueue_by_a_holder_is_refused() {
+        let lock = QueuedRwLock::new();
+        lock.acquire_read(0);
+        let _ = lock.enqueue(0);
     }
 
     // ------------------------------------------------------------------

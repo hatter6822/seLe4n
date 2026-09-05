@@ -333,6 +333,21 @@ example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
 example (c : SeLe4n.Kernel.Concurrency.CoreId) :
     SeLe4n.Kernel.Concurrency.releaseReadOps c
       = [.heldLoad c, .heldStore c none, .stateFetchSubReader c, .sev c] := rfl
+-- PR #890 review round 3: the publish of a withdrawal REQUIRES a core holding
+-- nothing (a holder withdraws nothing, decided by the same word), and the
+-- withdrawal block OPENS with that load.
+example (s : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (t : Nat) (h : s.opEnabled (.cancelPublish c t)) :
+    c ∉ s.heldRead ∧ c ∉ s.heldWrite := ⟨h.2.2.1, h.2.2.2⟩
+example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
+    (conc : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (t : Nat) (spin : List SeLe4n.Kernel.Concurrency.QueuedRwLockOp)
+    (h₁ : ∃ m, (c, m) ∈ abs.waiters) (h₂ : (t, c) ∈ conc.liveLedger)
+    (h₃ : SeLe4n.Kernel.Concurrency.QueuedStutter spin) :
+    SeLe4n.Kernel.Concurrency.queuedBlock abs conc (.cancel c)
+      (.heldLoad c :: .nowServingLoad c :: .cancelPublish c t
+        :: spin ++ SeLe4n.Kernel.Concurrency.skipDeadOps (conc.cancelled ++ [t]) conc.ledger) :=
+  .cancel_queued abs conc c t spin h₁ h₂ h₃
 #check @SeLe4n.Kernel.Concurrency.queuedRwLock_refines_rwLockSpec
 #check @SeLe4n.Kernel.Concurrency.queuedRwLock_admits_in_spec_order
 

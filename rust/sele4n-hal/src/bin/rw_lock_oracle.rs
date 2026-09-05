@@ -199,9 +199,12 @@ struct Driver {
     /// Writer holder, per the abstract spec.  Drives which concrete
     /// operation is issued; the *flag* reported is read from the locks.
     writer_held: Option<u8>,
-    /// Reader cores currently holding, per the abstract spec.  Same
-    /// role: identity is abstract, the *count* reported is concrete.
-    readers: Vec<u8>,
+    /// Reader cores currently holding, per the abstract spec, each with
+    /// the ticket it was admitted on.  Same role as the writer: identity
+    /// is abstract, the *count* reported is concrete.  The ticket is kept
+    /// (PR #890 review round 3) so a holder's withdrawal can be issued to
+    /// the ticket lock with the ticket the core actually held.
+    readers: Vec<(u8, u64)>,
     /// Waiters in FIFO order: `(core, mode_is_write, ticket)`.
     ///
     /// **WS-LC LC3.6**: the ticket is the queued lock's, and carrying it
@@ -244,9 +247,14 @@ impl Driver {
     /// Predicate: `c` is already a holder or a waiter.  The abstract
     /// spec's `RwLockState.coreInvolved`.
     fn core_involved(&self, c: u8) -> bool {
-        self.readers.contains(&c)
+        self.reader_ticket(c).is_some()
             || self.writer_held == Some(c)
             || self.waiters.iter().any(|w| w.0 == c)
+    }
+
+    /// The ticket `c` was admitted on as a reader, if it holds as one.
+    fn reader_ticket(&self, c: u8) -> Option<u64> {
+        self.readers.iter().find(|r| r.0 == c).map(|r| r.1)
     }
 
     // ---------------------------------------------------------------
@@ -271,7 +279,7 @@ impl Driver {
             )));
         }
         self.queued.complete_read(c, ticket);
-        self.readers.insert(0, c);
+        self.readers.insert(0, (c, ticket));
         Ok(())
     }
 
@@ -306,7 +314,7 @@ impl Driver {
     /// the hold fails the run instead of parking this single thread on
     /// a ticket nobody would ever serve.
     fn reacquire_as_holder(&self, c: u8, write: bool) -> Result<(), Halt> {
-        if !(self.readers.contains(&c) || self.writer_held == Some(c)) {
+        if !(self.reader_ticket(c).is_some() || self.writer_held == Some(c)) {
             return Ok(());
         }
         if self.queued.peek_held(c).is_none() {
@@ -325,7 +333,7 @@ impl Driver {
 
     /// Release `c`'s read lock on both real locks.
     fn release_reader(&mut self, c: u8) {
-        self.readers.retain(|x| *x != c);
+        self.readers.retain(|x| x.0 != c);
         self.cas.release_read();
         self.queued.release_read(c);
     }
@@ -368,7 +376,7 @@ impl Driver {
                 }
             }
             Op::ReleaseRead(c) => {
-                if !self.readers.contains(&c) {
+                if self.reader_ticket(c).is_none() {
                     // The spec's no-op, issued to the real ticket lock:
                     // its held word must make `release_read` return
                     // without touching the count, which `check_all`
@@ -414,7 +422,21 @@ impl Driver {
             Op::Cancel(c) => {
                 // `applyOp .cancel`: drop `c`'s queued request, and
                 // nothing else.  A core that is holding, or that has no
-                // request, is untouched on both sides.
+                // request, is untouched on both sides — and a *holder's*
+                // withdrawal is issued to the real ticket lock (PR #890
+                // review round 3), with the ticket the core actually
+                // held: the writer still holds its own, a reader's was
+                // passed at entry.  The lock's held word must make it
+                // publish nothing, which `check_all` then verifies.
+                if self.writer_held == Some(c) {
+                    let (_, serving) = self.queued.peek_tickets();
+                    self.queued.cancel(c, serving);
+                    return Ok(());
+                }
+                if let Some(ticket) = self.reader_ticket(c) {
+                    self.queued.cancel(c, ticket);
+                    return Ok(());
+                }
                 let Some(i) = self.waiters.iter().position(|w| w.0 == c) else {
                     return Ok(());
                 };
@@ -663,7 +685,7 @@ impl Driver {
         for core in 0..NUM_CORES {
             let expected = if self.writer_held == Some(core) {
                 Some(HeldMode::Write)
-            } else if self.readers.contains(&core) {
+            } else if self.reader_ticket(core).is_some() {
                 Some(HeldMode::Read)
             } else {
                 None
@@ -896,6 +918,25 @@ mod tests {
         assert_eq!(render("R0,W1,w1,"), "W=0;R=1;Q=1");
     }
 
+    /// A holder's withdrawal is the spec's no-op and now **reaches the
+    /// real ticket lock** (PR #890 review round 3), whose held word must
+    /// make it publish nothing: the writer keeps its turn, a reader keeps
+    /// its count, and the waiter behind a withdrawing writer is admitted
+    /// by the release — exactly once.  Before the word, a writer's
+    /// withdrawal that reached the publish passed the turn under the set
+    /// bit and the release passed it again.
+    #[test]
+    fn cancel_by_a_holder_is_a_noop_on_the_ticket_lock() {
+        assert_eq!(render("W0,c0,"), "W=1;R=0;Q=0");
+        assert_eq!(render("R0,c0,"), "W=0;R=1;Q=0");
+        assert_eq!(render("R0,R1,c1,c0,"), "W=0;R=2;Q=0");
+        // The waiter behind a withdrawing writer is admitted by the
+        // release, and the turn is passed once.
+        assert_eq!(render("W0,R1,c0,w0,"), "W=0;R=1;Q=0");
+        assert_eq!(render("W0,W1,c0,w0,"), "W=1;R=0;Q=0");
+        assert_eq!(render("R0,W1,c0,r0,"), "W=1;R=0;Q=0");
+    }
+
     /// `check_holders` reports a held word the spec does not account
     /// for, in both directions: a hold the lock records and the spec
     /// does not, and a hold the spec records and the lock has lost.
@@ -915,7 +956,7 @@ mod tests {
         driver.check_holders().expect("released: consistent again");
 
         let mut driver = Driver::new();
-        driver.readers.push(1);
+        driver.readers.push((1, 0));
         let err = driver
             .check_holders()
             .expect_err("must report the lost hold");
@@ -933,7 +974,7 @@ mod tests {
     #[test]
     fn reacquire_as_holder_fails_closed_on_a_lost_hold() {
         let mut driver = Driver::new();
-        driver.readers.push(0);
+        driver.readers.push((0, 0));
         match driver.reacquire_as_holder(0, false) {
             Err(Halt::Divergence(why)) => assert!(why.contains("held word is clear"), "{why}"),
             other => panic!("expected a divergence, got {other:?}"),

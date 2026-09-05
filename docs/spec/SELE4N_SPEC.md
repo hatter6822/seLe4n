@@ -51,8 +51,8 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.34.55` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 328,905 across 311 Lean files |
-| **Test LoC** | 68,717 across 70 Lean test suites |
+| **Production LoC** | 328,927 across 311 Lean files |
+| **Test LoC** | 68,732 across 70 Lean test suites |
 | **Proved declarations** | 10,944 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
@@ -746,8 +746,12 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    `QueuedRwLock` keeps one held word per core (PR #890 review
    round 2), set at admission and cleared at release, and every
    entry point reads the caller's word before it touches anything
-   else: a holder re-acquiring and a non-holder releasing both
-   return.  `queuedSim`'s fifth conjunct `queuedHeldSim` relates the
+   else: a holder re-acquiring, a non-holder releasing and a holder
+   withdrawing all return (the last since review round 3 — a writer
+   still holds its ticket, so a withdrawal that reached the publish
+   passed the turn under the set bit), and a guard that acquired
+   nothing releases nothing.  `queuedSim`'s fifth conjunct
+   `queuedHeldSim` relates the
    words to `readers` / `writerHeld`, so the four `_noop` shapes of
    `queuedBlock` are the one held-word load and follow from the
    relation rather than being asserted of a stutter no code path

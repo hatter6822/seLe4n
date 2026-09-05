@@ -433,8 +433,14 @@ def QueuedRwLockConcrete.opEnabled (s : QueuedRwLockConcrete) :
   -- rather than add to it — and under `ledgerCoresNodup` this
   -- precondition is exactly what rules that out: the core's only
   -- outstanding ticket is `t`, and `t` is not yet published
-  -- (`QueuedTicketWf.publish_slot_empty`).
-  | .cancelPublish c t => (t, c) ∈ s.ledger ∧ t ∉ s.cancelled
+  -- (`QueuedTicketWf.publish_slot_empty`).  **And only by a core holding
+  -- nothing** (PR #890 review round 3): `cancel` returns on the held word
+  -- before it publishes, because a writer still holds its ticket and a
+  -- withdrawal of it would pass the turn under the set bit — the spec's
+  -- cancel is the identity for a holder, and the implementation now
+  -- establishes that before the store rather than in a `debug_assert`.
+  | .cancelPublish c t =>
+      (t, c) ∈ s.ledger ∧ t ∉ s.cancelled ∧ c ∉ s.heldRead ∧ c ∉ s.heldWrite
   -- The claim has **no** precondition on purpose: it is a
   -- compare-exchange, so failing is a legitimate outcome and the model
   -- reports it in the `Bool` rather than forbidding the attempt.  What
@@ -720,7 +726,7 @@ withdrawing (`holder_ticket_unique`), and that one is not yet published
 theorem QueuedTicketWf.publish_slot_empty {s : QueuedRwLockConcrete}
     (h : QueuedTicketWf s) {c : CoreId} {t : Nat}
     (hEn : s.opEnabled (.cancelPublish c t)) : ¬ s.withdrawalPending c := by
-  obtain ⟨hHeld, hFresh⟩ := hEn
+  obtain ⟨hHeld, hFresh, _, _⟩ := hEn
   rintro ⟨t', ht'Dead, ht'Mem⟩
   exact hFresh (h.holder_ticket_unique ht'Mem hHeld ▸ ht'Dead)
 
@@ -939,7 +945,7 @@ theorem QueuedTicketWf.preserved {s : QueuedRwLockConcrete}
       rw [hCons]
       exact hCores.2
   | cancelPublish c t =>
-    obtain ⟨hHeld, hFresh⟩ := hEn
+    obtain ⟨hHeld, hFresh, _, _⟩ := hEn
     refine ⟨hWf.servingLeNext, hWf.ledgerTickets, ?_, ?_, hWf.ledgerCoresNodup⟩
     · -- The published ticket is one the publishing core holds.
       intro t' ht'
@@ -2430,12 +2436,19 @@ inductive queuedBlock :
 
   The ticket is required to be `c`'s **live** one: a core that has already
   withdrawn has nothing left to withdraw, and the concrete block would
-  otherwise retire a ticket the spec no longer has a request for. -/
+  otherwise retire a ticket the spec no longer has a request for.
+
+  The block opens with the two loads `cancel` performs before it
+  publishes — the caller's held word, which for a holder ends the call
+  (PR #890 review round 3), and the served counter, which for a retired
+  ticket does — so a withdrawal that reaches the publish is one by a core
+  holding nothing, which is what `opEnabled` requires of the publish. -/
   | cancel_queued (abs conc c t spin) :
       (∃ m, (c, m) ∈ abs.waiters) → (t, c) ∈ conc.liveLedger →
       QueuedStutter spin →
       queuedBlock abs conc (.cancel c)
-        (.cancelPublish c t :: spin ++ skipDeadOps (conc.cancelled ++ [t]) conc.ledger)
+        (.heldLoad c :: .nowServingLoad c :: .cancelPublish c t
+          :: spin ++ skipDeadOps (conc.cancelled ++ [t]) conc.ledger)
   /-- Releasing a read lock one does not hold: the word does not read
   `HELD_READ`, and `release_read` returns on that load — the spec's
   no-op.  The two-phase-locking unwind (`unwindAll`) relies on exactly
@@ -3030,21 +3043,30 @@ theorem queuedBlock_step_cancel_queued
     (hSpin : QueuedStutter spin) :
     queuedSim (abs.applyOp (.cancel c))
       (queuedFoldBlock conc
-        (.cancelPublish c t :: spin ++ skipDeadOps (conc.cancelled ++ [t]) conc.ledger)) := by
+        (.heldLoad c :: .nowServingLoad c :: .cancelPublish c t
+          :: spin ++ skipDeadOps (conc.cancelled ++ [t]) conc.ledger)) := by
   obtain ⟨hState, hWf, hCores, _, hHeld⟩ := hSim
   obtain ⟨hMemLedger, hNotCancelled⟩ := mem_liveOf.mp hLive
+  -- A queued core holds nothing (INV-R4), so its word reads clear on both
+  -- sides of the relation — the publish's precondition.
+  have hNotHolding : c ∉ conc.heldRead ∧ c ∉ conc.heldWrite := by
+    obtain ⟨m, hmQ⟩ := hQueued
+    have hR4 := RwLockState.wf_waitersDisjointFromHolders hWfAbs (c, m) hmQ
+    exact ⟨fun hx => hR4.1 ((hHeld.1 c).mp hx), fun hx => hR4.2 ((hHeld.2 c).mp hx)⟩
   have hPub : (conc.applyOp (.cancelPublish c t)).1
       = { conc with cancelled := conc.cancelled ++ [t] } := rfl
   obtain ⟨p, hp⟩ : ∃ x, x = { conc with cancelled := conc.cancelled ++ [t] } := ⟨_, rfl⟩
   have hWfP : QueuedTicketWf p := by
     rw [hp, ← hPub]
-    exact hWf.preserved (.cancelPublish c t) ⟨hMemLedger, hNotCancelled⟩
+    exact hWf.preserved (.cancelPublish c t)
+      ⟨hMemLedger, hNotCancelled, hNotHolding.1, hNotHolding.2⟩
   have hPLive : p.liveLedger = conc.liveLedger.filter (fun e => decide (e.1 ≠ t)) := by
     rw [hp]; exact liveOf_publish _ _ _
   obtain ⟨hSkS, hSkN, _, _, hSkLive, hSkWf, hSkHead, hSkHR, hSkHW⟩ :=
     skipDeadOps_spec p.ledger.length p (Nat.le_refl _) hWfP
   have hFold : queuedFoldBlock conc
-      (.cancelPublish c t :: spin ++ skipDeadOps (conc.cancelled ++ [t]) conc.ledger)
+      (.heldLoad c :: .nowServingLoad c :: .cancelPublish c t
+        :: spin ++ skipDeadOps (conc.cancelled ++ [t]) conc.ledger)
       = queuedFoldBlock p (skipDeadOps p.cancelled p.ledger) := by
     show queuedFoldBlock (conc.applyOp (.cancelPublish c t)).1
         (spin ++ skipDeadOps (conc.cancelled ++ [t]) conc.ledger) = _

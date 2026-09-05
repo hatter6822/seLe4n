@@ -198,7 +198,7 @@ than by deleting a token: removing `await_turn` from `acquire_read` — which
 leaves every symbol the gate might grep for in place — fails two of the five
 loom models.  The two models PR #890 review round 2 added — a non-holder's
 unwind against a holder, and `every_pair_of_units_is_safe`, every unordered
-pair of the lock's seven operation units on two threads — are pinned the same
+pair of the lock's nine operation units on two threads — are pinned the same
 way: keeping a release's held-word load and comparison and dropping only its
 early return fails both.
 
