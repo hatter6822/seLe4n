@@ -1005,8 +1005,10 @@ structure TCB where
       for the per-object lock-field rollout, and SM2.C
       (`Locks/RwLock.lean`) for the abstract operational spec the field
       refines.  Refines bit 63 (writer) + bits 0..62 (readers) of the Rust
-      HAL's packed `AtomicU64` state in
-      `rust/sele4n-hal/src/rw_lock.rs`. -/
+      HAL's packed `AtomicU64` state — the layout both HAL locks share,
+      defined once in `rust/sele4n-hal/src/rw_lock.rs` and imported by
+      `queued_rw_lock.rs`, which is the lock `lock_bridge.rs` deploys
+      (WS-RR RR6.10). -/
   lock : SeLe4n.Kernel.Concurrency.RwLockState :=
     SeLe4n.Kernel.Concurrency.RwLockState.unheld
   /-- WS-SM SM5.B.4 (plan `docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md`

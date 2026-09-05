@@ -76,9 +76,13 @@ existing SM2.C wf-preservation theorems.
   (or warnings explicitly justified in test docstrings).
 * Tier 0+1+2+3 green; Tier 4 SMP nightly green or SKIP-clean.
 * `lockPrimitives` aggregator's NoDup-checked identifiers all
-  resolve; `LockPrimitives.lean`'s 22-theorem count witness still
-  holds (or grows by exactly the number of new substantive theorems
-  Stream B introduces, with the corresponding `_count` re-pinned).
+  resolve; `LockPrimitives.lean`'s count witness still holds (or
+  grows by exactly the number of new substantive theorems Stream B
+  introduces, with the corresponding `_count` re-pinned).  The
+  witness read **22** when this plan was written and reads **25**
+  at v0.34.50: WS-RR RR6 added the deployed queued lock's
+  refinement and its FIFO-admission payoff, and split the R-10 row
+  that had advertised a safety alias as writer liveness.
 * CLAUDE.md flips the "occasionally deadlock under heavy host-side
   load" note for queued_rw_lock to "closed at vX.Y.Z".
 

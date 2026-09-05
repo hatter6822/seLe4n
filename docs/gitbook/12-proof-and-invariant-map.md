@@ -207,6 +207,105 @@ The memory model, the verified `TicketLock` and `RwLock` with mutex and
 fairness theorems, per-object lock sets, two-phase locking, deadlock-freedom
 and serializability.
 
+**Each lock is refined to the Rust the kernel runs, and each bridge derives
+its trace correspondence rather than assuming it** (WS-RR RR6, v0.34.50).
+Three bridges, one per lock kind:
+
+| Lock | Bridge | Relation | Capstone |
+|------|--------|----------|----------|
+| `TicketLock` | `Locks/TicketLockRefinement.lean` | `ticketLockSim` | `ticketTrace_preserves_ticketLockSim` |
+| CAS-retry `RwLock` | `Locks/RwLockRefinement.lean` | `rwLockSim` (writer bit + reader count) | `rust_rwLock_refines_lean_honest` |
+| **deployed** `QueuedRwLock` | `Locks/QueuedRwLockRefinement.lean` | `queuedSim` (adds waiters ↔ ticket interval) | `queuedRwLock_refines_rwLockSpec` |
+
+Two things the table is making precise. The **deployed** reader-writer lock is
+the ticket-FIFO `QueuedRwLock` — `STATIC_RW_LOCK_POOL` is `[QueuedRwLock; 4]`,
+pinned by `build.rs` — so the lock the kernel runs is the one the Lean FIFO
+spec describes, and its refinement was proved *before* the pool was repointed.
+And no capstone takes its own conclusion as a hypothesis: the CAS-retry
+bridge's `_honest` forms carry no `ListBlockBisim` premise (`honestBlock`, the
+load-then-CAS trace-shape predicate, derives it), the ticket bridge's fourth
+conjunct is a real "a pure load leaves both states unchanged" statement rather
+than a tautology, and `ticketLockSim_not_universal` exhibits a pair the
+relation does **not** relate. And no bridge claims a no-op the code does not
+perform: the ticket bridge has no block for a re-acquisition by a queued or
+holding core or a release by a non-holder (`TicketLockState.callerContract`
+states what it covers, `ticketBlock_respects_contract` that every shape is
+inside it — PR #890 review round 4, the sweep round 2's CAS-retry fix owed its
+sibling), while the deployed `QueuedRwLock` alone turns those spec no-ops into
+branches, because the unwind relies on them there.
+
+A queued core may **withdraw** its request. The operation exists at every
+level: `RwLockOp.cancel` in the spec (v0.34.51), a tombstoned ledger and
+skip-aware promotion in the ticket-FIFO refinement (v0.34.52), and
+`QueuedRwLock::cancel` in the deployed lock (v0.34.53). The deployed form
+splits the acquisition — `enqueue`, spin on `is_served`, then exactly one of
+`complete_read`, `complete_write` or `cancel` — because the fused
+`acquire_read` / `acquire_write` never expose an abandonable ticket. The
+withdrawal slot is one word per core, so `enqueue` parks until the core's
+previous withdrawal has been retired (v0.34.56, the workstream's closure
+audit): the first cut let a second ticket be taken over an unclaimed
+withdrawal, and a second `cancel` then overwrote it and stalled the lock on a
+ticket nobody held — a sequence every documented contract permitted, which the
+four withdrawal models missed because each withdrew once per core. The Lean
+model enables the issue only for a core holding no ticket and proves the
+publish never overwrites (`QueuedTicketWf.publish_slot_empty`). What
+withdrawal changes for a reader of these theorems: a conclusion of the form
+"`c` *leaves the queue*" is satisfied by a withdrawal and is unchanged, while
+one of the form "`c` *becomes the holder*" now carries an explicit
+no-withdrawal-in-window premise. Both two-phase-locking consumers emit a
+withdrawal since v0.34.54: `withLockSet`'s shrinking phase and the revalidated
+entry's refusal path are one definition, `unwindAll`, which withdraws before it
+releases — the order is what lets `unwindAll_leaves_no_queued_request` hold with
+no distinctness or resolvability condition on the footprint. The bracket stays
+invisible to every observer, so the golden trace is byte-identical.
+
+The identity that unwind relies on — a release by a non-holder changes nothing
+— is the deployed lock's own since PR #890 review round 2, not only the spec's:
+`QueuedRwLock` keeps a held word per core, every entry point — the withdrawal
+included, since round 3 — reads the caller's word first, and `queuedSim`'s
+fifth conjunct (`queuedHeldSim`) relates the
+words to `readers` / `writerHeld`, so the bridge's holder no-op blocks are the
+one held-word load, derived from the relation rather than asserted of a stutter
+the code never performed. The class behind rounds 2 and 3 — the lock not knowing
+the executing core's own situation — is closed at the cause: a third per-core
+word, `request`, records the core's one live ticket, every entry point decides
+the core's case on its three words before it writes, `queuedSim`'s sixth
+conjunct (`queuedRequestsSim`) relates that word to the live ledger, and every
+per-core branch hypothesis of `queuedBlock` is now stated on the words the
+implementation reads, with the spec's branch derived from the relations inside
+`queuedBlock_preserves_queuedSim` — so a queued core's second acquisition is a
+derived no-op block too (`acquireRead_queued`), and a relation that pinned a
+word to the wrong fact would fail the proof. The CAS-retry bridge makes the
+opposite honest choice for the undeployed lock: no no-op block at all, and a
+stated caller contract.
+
+Round 5 of the same review found the interval the bridge folds away: after a
+writer's release the head waiter is *served* but not yet *completed*, the spec
+had promoted it, and the deployed `cancel` there retired the served ticket —
+one holder fewer than the spec. The spec was wrong in the same place: its
+`cancel` was the neutral filter while the lock's withdrawal of a served head
+passes the turn to the readers behind it, so whether a queued reader was a
+spec holder depended on how it had been queued. The spec moved: a withdrawal
+at the head now promotes the reader run it uncovers
+(`RwLockState.cancelPromotes`, `rwLock_cancel_admits_only_the_head_reader_run`),
+both bridges fold that promotion, and with it the deployed lock can decide on
+its own words which withdrawals the spec has already admitted — a served
+writer with no reader, a reader with no live write request ahead of it, found
+through a fourth per-core word that records each request's **mode** — and
+realises the admission instead (`CancelOutcome::Holding`; the release that
+follows every withdrawal releases it). `queuedSim`'s seventh conjunct
+(`queuedRequestModesSim`) pins that mode word to the spec's queued mode, the
+Tier-5 oracle holds every withdrawal's verdict to the spec's and prints
+identities per step, and the loom models tally that both verdicts occur.
+
+And a delay bound now names its denominator. `RwLockExecution` carries a per-step
+cost (v0.34.55), so the admission and contention bounds have cycle-denominated
+forms alongside the step forms — each conditional on a per-critical-section
+ceiling, which is an assumption about a deployment's code rather than something
+the kernel derives, and each collapsing back to the step bound at unit cost. The
+hardware-tick conversion needs a counter frequency, so it lives with the
+platform rather than with the lock.
+
 > Two standing caveats. **Kernel entry is serialised by one global ticket
 > lock**, so live WCRT is weaker than the fine-lock bound `PerCoreWcrt.lean`
 > proves. And **SM3.C.9 is deferred**: the `@[export]` bodies are, with one
@@ -225,9 +324,9 @@ Per-phase theorem inventories are registered in
 `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean`, one entry per phase
 SM0..SM10.
 
-> **The SMP theorem total is measured, not summed.** The inventories hold 1113
-> entries, of which **903 are theorems** — the rest are `def`s (lock-set
-> footprints, per-core predicates, WCRT cost functions). Quote 903, and quote
+> **The SMP theorem total is measured, not summed.** The inventories hold 1119
+> entries, of which **909 are theorems** — the rest are `def`s (lock-set
+> footprints, per-core predicates, WCRT cost functions). Quote 909, and quote
 > it as theorems. A propositionality census resolves each identifier against the
 > environment and fails elaboration on drift; adding a phase without an entry
 > fails elaboration, and adding an inventory no phase claims fails Tier 0.

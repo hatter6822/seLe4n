@@ -795,6 +795,66 @@ opaque ffiRwLockAcquireRead : (handle : UInt64) → BaseIO Unit
 @[extern "ffi_rw_lock_release_read"]
 opaque ffiRwLockReleaseRead : (handle : UInt64) → BaseIO Unit
 
+/-- **WS-LC LC3.7**: begin a *cancellable* acquisition on `handle` —
+    take a ticket without waiting for it — in `mode` (`0` a read request,
+    `1` a write request; PR #890 review round 5).  The lock records the
+    mode at the issue, because whether the spec has already admitted the
+    request — which `ffiRwLockCancel` decides — depends on it.
+
+    The caller must follow with exactly one of `ffiRwLockCompleteRead`,
+    `ffiRwLockCompleteWrite` or `ffiRwLockCancel` for the ticket
+    returned: the ticket protocol owes one advance of `now_serving` per
+    issue, and those three are what deliver it.  A completion in the
+    other mode is refused on the lock's record.
+
+    Rust: `ffi_rw_lock_enqueue` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_rw_lock_enqueue"]
+opaque ffiRwLockEnqueue : (handle : UInt64) → (mode : UInt64) → BaseIO UInt64
+
+/-- **WS-LC LC3.7**: whether `ticket` is the one `handle` is serving, so
+    a caller polling rather than parking can tell when to complete.
+
+    Rust: `ffi_rw_lock_is_served` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_rw_lock_is_served"]
+opaque ffiRwLockIsServed : (handle : UInt64) → (ticket : UInt64) → BaseIO UInt64
+
+/-- **WS-LC LC3.7**: complete a read acquisition begun with
+    `ffiRwLockEnqueue`.
+
+    Rust: `ffi_rw_lock_complete_read` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_rw_lock_complete_read"]
+opaque ffiRwLockCompleteRead : (handle : UInt64) → (ticket : UInt64) → BaseIO Unit
+
+/-- **WS-LC LC3.7**: complete a write acquisition begun with
+    `ffiRwLockEnqueue`.
+
+    Rust: `ffi_rw_lock_complete_write` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_rw_lock_complete_write"]
+opaque ffiRwLockCompleteWrite : (handle : UInt64) → (ticket : UInt64) → BaseIO Unit
+
+/-- **WS-LC LC3.7**: withdraw a request begun with `ffiRwLockEnqueue` —
+    or, when the spec has already admitted it, realise that admission
+    (PR #890 review round 5).
+
+    The deployed counterpart of `RwLockOp.cancel`: it releases nothing
+    and never installs a writer; it admits only the reader run behind a
+    withdrawn head, exactly as the spec's `cancel` does
+    (`rwLock_cancel_not_effective_release`,
+    `rwLock_cancel_admits_only_the_head_reader_run`).  Returns `0` when
+    the request was withdrawn and `1` when the core holds and owes a
+    release — the deployed `CancelOutcome`.
+
+    Rust: `ffi_rw_lock_cancel` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_rw_lock_cancel"]
+opaque ffiRwLockCancel : (handle : UInt64) → (ticket : UInt64) → BaseIO UInt64
+
+/-- **WS-LC LC3.7**: how many withdrawals `handle` has seen.
+
+    Rust: `ffi_rw_lock_cancel_count` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_rw_lock_cancel_count"]
+opaque ffiRwLockCancelCount : (handle : UInt64) → BaseIO UInt64
+
+
 /-- **WS-SM SM2.D.2**: acquire a write lock on the RwLock identified
     by `handle`.
 

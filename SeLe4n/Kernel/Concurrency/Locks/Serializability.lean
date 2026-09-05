@@ -1067,33 +1067,6 @@ theorem updateObjectAt_preserves_invExt (s : SystemState) (oid : SeLe4n.ObjId)
       exact SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt s.objects oid
         (f obj) hExt
 
-/-- WS-SM SM3.E.5: closed-form characterisation of `updateObjectAt`'s effect on a
-lookup.  Looking up `k` after `updateObjectAt s oid f` returns `f`-mapped
-content at the target key `oid`, and the unchanged content at every other key.
-Unifies the present/absent branches: when `oid` is absent, `(s.get? oid).map f =
-none` agrees with the unchanged lookup. -/
-theorem updateObjectAt_get? (s : SystemState) (oid k : SeLe4n.ObjId)
-    (f : KernelObject → KernelObject) (hExt : s.objects.invExt) :
-    (updateObjectAt s oid f).objects.get? k
-      = if k = oid then (s.objects.get? oid).map f else s.objects.get? k := by
-  unfold updateObjectAt
-  by_cases hk : k = oid
-  · subst hk
-    rw [if_pos rfl]
-    cases hg : s.objects.get? k with
-    | none => simp [hg]
-    | some o =>
-        show (s.objects.insert k (f o)).get? k = (some o).map f
-        rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self s.objects k (f o) hExt]
-        rfl
-  · rw [if_neg hk]
-    cases hg : s.objects.get? oid with
-    | none => rfl
-    | some o =>
-        show (s.objects.insert oid (f o)).get? k = s.objects.get? k
-        exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne s.objects oid k (f o)
-          (by simp [Ne.symm hk]) hExt
-
 /-- WS-SM SM3.E.5 (observational write/write commute — the realistic
 non-conflicting write pair): two `updateObjectAt` writes to **different** objects
 commute observationally — applying them in either order yields object stores that
@@ -1147,9 +1120,12 @@ theorem singleCore_invariant_preservation {α : Type} (S : LockSet) (core : Core
       inv s' → inv (acquireLockOnObject s' core l m))
     (hAction : ∀ s', inv s' → inv (action s').1)
     (hRel : ∀ (l : LockId) (m : AccessMode) (s' : SystemState),
-      inv s' → inv (releaseLockOnObject s' core l m)) :
+      inv s' → inv (releaseLockOnObject s' core l m))
+    -- WS-LC LC4.5: the shrinking phase withdraws before it releases.
+    (hCan : ∀ (l : LockId) (m : AccessMode) (s' : SystemState),
+      inv s' → inv (cancelLockOnObject s' core l m)) :
     inv (withLockSet S core action s).1 :=
-  withLockSet_invariant_preserved S core action s inv hPre hAcq hAction hRel
+  withLockSet_invariant_preserved S core action s inv hPre hAcq hAction hRel hCan
 
 /-- WS-SM SM3.E.6 (Corollary 2.1.11, **pre→post** meta-theorem — the general
 form): if a single-core transition `op` establishes a postcondition `post` from a
@@ -1161,8 +1137,10 @@ The three phases mirror `withLockSet`:
   fold, and the action runs on a state satisfying `pre`;
 * **action** — the single-core theorem `hSingleCore` gives `post` on the action's
   output (its proof is reused verbatim — this is the lever);
-* **shrinking** — `post` is lock-insensitive on release (`hPostRel`), so it
-  survives the release fold.
+* **shrinking** — `post` is lock-insensitive on both steps the phase takes
+  (`hPostCan`, `hPostRel`), so it survives the withdrawal fold and then the
+  release fold.  The withdrawal half is WS-LC LC4.5; every discharge in the
+  tree is the release form with one name changed.
 
 No re-proof of `op` is needed: the single-core argument applies because, under
 `lockSetHeld` (established by the growing phase, see
@@ -1175,7 +1153,9 @@ theorem singleCore_proof_preservation {α : Type} (S : LockSet) (core : CoreId)
       pre s' → pre (acquireLockOnObject s' core l m))
     (hSingleCore : ∀ s', pre s' → post (op s').1)
     (hPostRel : ∀ (l : LockId) (m : AccessMode) (s' : SystemState),
-      post s' → post (releaseLockOnObject s' core l m)) :
+      post s' → post (releaseLockOnObject s' core l m))
+    (hPostCan : ∀ (l : LockId) (m : AccessMode) (s' : SystemState),
+      post s' → post (cancelLockOnObject s' core l m)) :
     post (withLockSet S core op s).1 := by
   rw [withLockSet_fst]
   -- Phase 1 (growing): `pre` survives the acquire fold.
@@ -1184,7 +1164,8 @@ theorem singleCore_proof_preservation {α : Type} (S : LockSet) (core : CoreId)
   -- Phase 2 (action): the single-core theorem establishes `post`.
   have hPostAfterAction : post (op (acquireAll core S.lockAcquireSequence s)).1 :=
     hSingleCore _ hPreAfter
-  -- Phase 3 (shrinking): `post` survives the release fold.
+  -- Phase 3 (shrinking): `post` survives the withdrawal fold, then the release
+  -- fold (WS-LC LC4.5).
   have hRelFold : ∀ (pairs : List (LockId × AccessMode)) (s₀ : SystemState),
       post s₀ → post (releaseAll core pairs s₀) := by
     intro pairs
@@ -1194,7 +1175,17 @@ theorem singleCore_proof_preservation {α : Type} (S : LockSet) (core : CoreId)
         intro s₀ h
         show post (releaseAll core rest (releaseLockOnObject s₀ core head.fst head.snd))
         exact ih _ (hPostRel head.fst head.snd s₀ h)
-  exact hRelFold S.lockAcquireSequence.reverse _ hPostAfterAction
+  have hCanFold : ∀ (pairs : List (LockId × AccessMode)) (s₀ : SystemState),
+      post s₀ → post (cancelAll core pairs s₀) := by
+    intro pairs
+    induction pairs with
+    | nil => intro s₀ h; exact h
+    | cons head rest ih =>
+        intro s₀ h
+        show post (cancelAll core rest (cancelLockOnObject s₀ core head.fst head.snd))
+        exact ih _ (hPostCan head.fst head.snd s₀ h)
+  exact hRelFold S.lockAcquireSequence.reverse _
+    (hCanFold S.lockAcquireSequence.reverse _ hPostAfterAction)
 
 /-- WS-SM SM3.E.6: the `lockSetHeld` precondition the meta-theorem rests on is a
 **consequence** of `withLockSet`, not an external assumption.  When every lock in
@@ -1256,6 +1247,20 @@ theorem releaseLockOnObject_preserves_objStoreLock_wf (s : SystemState)
   · rw [releaseLockOnObject_preserves_objStoreLock_of_modeled s core l m hKind]
     exact h
 
+/-- **WS-LC LC4.5**: and the withdrawal.  A withdrawal preserves INV-R for the
+same reason a release does — `rwLock_cancel_preserves_wf` (WS-LC LC1) — and the
+modeled kinds never touch the table-level word. -/
+theorem cancelLockOnObject_preserves_objStoreLock_wf (s : SystemState)
+    (core : CoreId) (l : LockId) (m : AccessMode) (h : s.objStoreLock.wf) :
+    (cancelLockOnObject s core l m).objStoreLock.wf := by
+  by_cases hKind : l.kind = .objStore
+  · unfold cancelLockOnObject
+    rw [hKind]
+    simp only
+    exact rwLock_cancel_preserves_wf _ core h
+  · rw [cancelLockOnObject_preserves_objStoreLock_of_modeled s core l m hKind]
+    exact h
+
 /-- WS-SM SM3.E.6 (NON-VACUOUS Corollary 2.1.11 witness): the table-level
 `objStoreLock.wf` invariant survives a `withLockSet`-wrapped transition whose
 action preserves it.  This instantiates `singleCore_proof_preservation` on the
@@ -1277,6 +1282,7 @@ theorem withLockSet_preserves_objStoreLock_wf {α : Type} (S : LockSet)
     (fun l m s' h => acquireLockOnObject_preserves_objStoreLock_wf s' core l m h)
     hActionWf
     (fun l m s' h => releaseLockOnObject_preserves_objStoreLock_wf s' core l m h)
+    (fun l m s' h => cancelLockOnObject_preserves_objStoreLock_wf s' core l m h)
 
 -- ============================================================================
 -- §8c — A SECOND non-vacuous Cor 2.1.11 witness: the kind-discipline invariant
@@ -1291,20 +1297,6 @@ theorem withLockSet_preserves_objStoreLock_wf {α : Type} (S : LockSet)
 -- RHTable insert/lookup characterisation), so the invariant is bundled with
 -- `invExt` and threaded through — showing the lever works on the realistic,
 -- `invExt`-dependent invariant class, not only the `invExt`-free table lock.
-
-/-- WS-SM SM3.E.6 foundation: releasing a lock preserves `invExt` (symmetric to
-the imported `acquireLockOnObject_preserves_invExt`; both route through
-`updateObjectLockAt_preserves_invExt`). -/
-theorem releaseLockOnObject_preserves_invExt (s : SystemState) (core : CoreId)
-    (l : LockId) (m : AccessMode) (hExt : s.objects.invExt) :
-    (releaseLockOnObject s core l m).objects.invExt := by
-  unfold releaseLockOnObject
-  cases l.kind with
-  | objStore => exact hExt
-  | page => exact hExt
-  | tcb | endpoint | notification | cnode
-  | vspaceRoot | untyped | schedContext | reply =>
-      all_goals exact updateObjectLockAt_preserves_invExt s l _ hExt
 
 /-- WS-SM SM3.E.6 foundation: `updateObjectLockAt` preserves the `objectType` tag
 at every key.  The kind-matched branch re-inserts `obj.updateLock op`, which
@@ -1353,6 +1345,19 @@ theorem releaseLockOnObject_preserves_objectType_at (s : SystemState) (core : Co
   | vspaceRoot | untyped | schedContext | reply =>
       all_goals exact updateObjectLockAt_preserves_objectType_at s l (m.toReleaseOp core) k hExt
 
+/-- **WS-LC LC4.5**: and withdrawing one. -/
+theorem cancelLockOnObject_preserves_objectType_at (s : SystemState) (core : CoreId)
+    (l : LockId) (m : AccessMode) (k : SeLe4n.ObjId) (hExt : s.objects.invExt) :
+    Option.map KernelObject.objectType ((cancelLockOnObject s core l m).objects.get? k)
+      = Option.map KernelObject.objectType (s.objects.get? k) := by
+  unfold cancelLockOnObject
+  cases l.kind with
+  | objStore => rfl
+  | page => rfl
+  | tcb | endpoint | notification | cnode
+  | vspaceRoot | untyped | schedContext | reply =>
+      all_goals exact updateObjectLockAt_preserves_objectType_at s l (m.toCancelOp core) k hExt
+
 /-- WS-SM SM3.E.6 (SECOND non-vacuous Cor 2.1.11 witness): the **kind-discipline**
 invariant — every object's `objectType` tag equals the reference state `s₀`'s —
 survives a `withLockSet`-wrapped transition whose action preserves it.
@@ -1395,6 +1400,9 @@ theorem withLockSet_preserves_objectType_at {α : Type} (S : LockSet) (core : Co
     (fun l m s' hpost => ⟨releaseLockOnObject_preserves_invExt s' core l m hpost.1,
       fun k => by
         rw [releaseLockOnObject_preserves_objectType_at s' core l m k hpost.1]; exact hpost.2 k⟩)
+    (fun l m s' hpost => ⟨cancelLockOnObject_preserves_invExt s' core l m hpost.1,
+      fun k => by
+        rw [cancelLockOnObject_preserves_objectType_at s' core l m k hpost.1]; exact hpost.2 k⟩)
 
 -- ============================================================================
 -- §9 — Atomicity bridge: `applySequential` faithfully models the `withLockSet`
@@ -1444,7 +1452,7 @@ is the formal content behind "`applySequential` models the interleaved
 execution" — not an assumption but a theorem grounded in the SM3.C semantics. -/
 theorem withLockSet_observation_eq_action {β : Type} (S : LockSet) (core : CoreId)
     (businessAction : SystemState → SystemState) (s : SystemState) (π : SystemState → β)
-    (hAcq : AcquireInsensitive core π) (hRel : ReleaseInsensitive core π)
+    (hAcq : AcquireInsensitive core π) (hRel : UnwindInsensitive core π)
     (hCongr : ActionPiCongr π businessAction) :
     π (withLockSet S core (fun st => (businessAction st, ())) s).1 = π (businessAction s) := by
   obtain ⟨hAcqEq, hRelEq⟩ :=
@@ -1483,7 +1491,7 @@ tail fold.  This closes the "`applySequential` models the interleaved execution"
 gap with a theorem rather than prose. -/
 theorem applySequentialWithLockSet_observation {β : Type} (π : SystemState → β)
     (hAcq : ∀ c : CoreId, AcquireInsensitive c π)
-    (hRel : ∀ c : CoreId, ReleaseInsensitive c π) :
+    (hRel : ∀ c : CoreId, UnwindInsensitive c π) :
     ∀ (sched : List KernelTransitionInstance),
       (∀ τ ∈ sched, ActionPiCongr π τ.action) →
       ∀ s, π (applySequentialWithLockSet sched s) = π (applySequential sched s)
@@ -1503,7 +1511,7 @@ theorem applySequentialWithLockSet_observation {β : Type} (π : SystemState →
 -- §9b — Concrete NON-VACUOUS witness for the atomicity bridge
 -- ============================================================================
 --
--- §9's bridge takes `AcquireInsensitive` / `ReleaseInsensitive` as hypotheses.
+-- §9's bridge takes `AcquireInsensitive` / `UnwindInsensitive` as hypotheses.
 -- To prove the bridge is a usable result — not one resting on unsatisfiable
 -- hypotheses — this section exhibits a genuine non-trivial business-state
 -- observer (the `scheduler` projection) that discharges BOTH insensitivity
@@ -1549,6 +1557,16 @@ theorem releaseLockOnObject_preserves_scheduler (s : SystemState) (core : CoreId
       | rfl
       | exact updateObjectLockAt_preserves_scheduler s l (m.toReleaseOp core)
 
+/-- **WS-LC LC4.5**: and withdrawing one, the third sibling. -/
+theorem cancelLockOnObject_preserves_scheduler (s : SystemState) (core : CoreId)
+    (l : LockId) (m : AccessMode) :
+    (cancelLockOnObject s core l m).scheduler = s.scheduler := by
+  unfold cancelLockOnObject
+  cases l.kind <;>
+    first
+      | rfl
+      | exact updateObjectLockAt_preserves_scheduler s l (m.toCancelOp core)
+
 /-- WS-SM SM3.E.2 (CONCRETE non-vacuity witness): the `scheduler` projection is a
 genuine non-trivial business-state observer that is **acquire-insensitive** —
 discharging the `AcquireInsensitive` hypothesis of the §9 bridge for a real
@@ -1558,12 +1576,13 @@ theorem schedulerObserver_acquireInsensitive (core : CoreId) :
   fun s l m => acquireLockOnObject_preserves_scheduler s core l m
 
 /-- WS-SM SM3.E.2 (CONCRETE non-vacuity witness): the `scheduler` projection is
-**release-insensitive**.  Together with `schedulerObserver_acquireInsensitive`
-this discharges both hypotheses of `withLockSet_observation_eq_action` for a real
-observer. -/
-theorem schedulerObserver_releaseInsensitive (core : CoreId) :
-    ReleaseInsensitive core (fun s => s.scheduler) :=
-  fun s l m => releaseLockOnObject_preserves_scheduler s core l m
+insensitive to the **whole shrinking phase** — both the withdrawal and the
+release.  Together with `schedulerObserver_acquireInsensitive` this discharges
+both hypotheses of `withLockSet_observation_eq_action` for a real observer. -/
+theorem schedulerObserver_unwindInsensitive (core : CoreId) :
+    UnwindInsensitive core (fun s => s.scheduler) :=
+  ⟨fun s l m => releaseLockOnObject_preserves_scheduler s core l m,
+   fun s l m => cancelLockOnObject_preserves_scheduler s core l m⟩
 
 /-- WS-SM SM3.E.2 (the atomicity bridge applied NON-VACUOUSLY): a transition that
 writes the scheduler (`setSchedulerAction sch`), wrapped in the full `withLockSet`
@@ -1578,7 +1597,7 @@ theorem withLockSet_observation_scheduler_witness (S : LockSet) (core : CoreId)
   withLockSet_observation_eq_action S core (setSchedulerAction sch) s
     (fun s => s.scheduler)
     (schedulerObserver_acquireInsensitive core)
-    (schedulerObserver_releaseInsensitive core)
+    (schedulerObserver_unwindInsensitive core)
     (fun _ _ _ => rfl)
 
 -- ============================================================================

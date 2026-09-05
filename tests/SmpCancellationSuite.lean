@@ -160,10 +160,11 @@ open SeLe4n.Testing
 #check @cancelDonationOnCore_preserves_ipcInvariant
 #check @descheduleThread_preserves_ipcInvariant
 #check @updateObjectLockAt_getTcb?_ipcState
-#check @acquireLockOnObject_preserves_objects_invExt
-#check @releaseLockOnObject_preserves_objects_invExt
+#check @acquireLockOnObject_preserves_invExt
+#check @releaseLockOnObject_preserves_invExt
+#check @cancelLockOnObject_preserves_invExt
 #check @cancellationObserver_acquireInsensitiveOn
-#check @cancellationObserver_releaseInsensitiveOn
+#check @cancellationObserver_unwindInsensitiveOn
 #check @cancelIpcBlockingOnCore_observer_atomic
 #check @cancelIpcBlockingOnCore_bootHome_state_eq
 #check @descheduleThread_fully_descheduled
@@ -240,7 +241,7 @@ example (h1 : st.getTcb? victim = some tcb0)
 example :
     withLockSet (lockSet_cancelIpcBlocking victim blEp blN r?) ec
         (fun st => (cancelIpcBlocking st victim tcb, ())) s
-      = (releaseAll ec
+      = (unwindAll ec
           (lockSet_cancelIpcBlocking victim blEp blN r?).lockAcquireSequence.reverse
           (cancelIpcBlocking
             (acquireAll ec (lockSet_cancelIpcBlocking victim blEp blN r?).lockAcquireSequence s)
@@ -252,7 +253,7 @@ example :
 example :
     withLockSet (lockSet_cancelDonation victim sc? ot?) ec
         (cancelDonationOnCore victim tcb) s
-      = (releaseAll ec
+      = (unwindAll ec
           (lockSet_cancelDonation victim sc? ot?).lockAcquireSequence.reverse
           (cancelDonationOnCore victim tcb
             (acquireAll ec (lockSet_cancelDonation victim sc? ot?).lockAcquireSequence s)).1,

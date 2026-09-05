@@ -157,8 +157,8 @@ theorem withLockSet_three_phase_decomposition {α : Type} (S : LockSet)
     (s : SystemState) :
     let acquired := acquireAll core S.lockAcquireSequence s
     let (postAction, result) := action acquired
-    let released := releaseAll core S.lockAcquireSequence.reverse postAction
-    withLockSet S core action s = (released, result) := by
+    let unwound := unwindAll core S.lockAcquireSequence.reverse postAction
+    withLockSet S core action s = (unwound, result) := by
   rfl
 
 /-- WS-SM SM3.C.7 (plan §5.3 Theorem 2.1.10 operational form):
@@ -185,7 +185,7 @@ theorem lockSet_atomic_under_2pl {α : Type} (S : LockSet) (core : CoreId)
     let acquired := acquireAll core S.lockAcquireSequence s
     let (postAction, result) := action acquired
     withLockSet S core action s =
-      (releaseAll core S.lockAcquireSequence.reverse postAction, result) := by
+      (unwindAll core S.lockAcquireSequence.reverse postAction, result) := by
   rfl
 
 -- ============================================================================
@@ -212,10 +212,26 @@ def AcquireInsensitive {β : Type} (core : CoreId) (π : SystemState → β) : P
   ∀ (s : SystemState) (l : LockId) (m : AccessMode),
     π (acquireLockOnObject s core l m) = π s
 
-/-- WS-SM SM3.C.7: the release-side counterpart of `AcquireInsensitive`. -/
-def ReleaseInsensitive {β : Type} (core : CoreId) (π : SystemState → β) : Prop :=
-  ∀ (s : SystemState) (l : LockId) (m : AccessMode),
-    π (releaseLockOnObject s core l m) = π s
+/-- WS-SM SM3.C.7 (broadened at **WS-LC LC4.5**): the shrinking-phase
+counterpart of `AcquireInsensitive` — the projection is unchanged by either
+step the shrinking phase takes at a member.
+
+Two clauses, because the shrinking phase is two operations since LC4.1: it
+**withdraws** and then **releases**, since a release is the identity for a
+core that is not a holder and so could not give back the members the growing
+phase only managed to queue on.  Naming the predicate after the *phase*
+rather than after one of its halves is deliberate — a separate
+`CancelInsensitive` beside a `UnwindInsensitive` would be one question with
+two answers, and the capstones would then have to remember to demand both.
+
+Discharging it costs nothing over the old single clause: both operations
+write the same `lock` fields through the same two writers, so a witness for
+one is the witness for the other with a single name changed. -/
+def UnwindInsensitive {β : Type} (core : CoreId) (π : SystemState → β) : Prop :=
+  (∀ (s : SystemState) (l : LockId) (m : AccessMode),
+    π (releaseLockOnObject s core l m) = π s) ∧
+  (∀ (s : SystemState) (l : LockId) (m : AccessMode),
+    π (cancelLockOnObject s core l m) = π s)
 
 /-- WS-SM SM3.C.7: the acquire fold is invisible to an acquire-insensitive
 observer — `π (acquireAll core pairs s) = π s`.  Induction on the sequence. -/
@@ -235,7 +251,7 @@ theorem acquireAll_lockInsensitive {β : Type} (core : CoreId) (π : SystemState
 /-- WS-SM SM3.C.7: the release fold is invisible to a release-insensitive
 observer — `π (releaseAll core pairs s) = π s`. -/
 theorem releaseAll_lockInsensitive {β : Type} (core : CoreId) (π : SystemState → β)
-    (h : ReleaseInsensitive core π) :
+    (h : UnwindInsensitive core π) :
     ∀ (pairs : List (LockId × AccessMode)) (s : SystemState),
       π (releaseAll core pairs s) = π s := by
   intro pairs
@@ -245,20 +261,43 @@ theorem releaseAll_lockInsensitive {β : Type} (core : CoreId) (π : SystemState
       intro s
       show π (releaseAll core tail (releaseLockOnObject s core head.fst head.snd)) = π s
       rw [ih (releaseLockOnObject s core head.fst head.snd)]
-      exact h s head.fst head.snd
+      exact h.1 s head.fst head.snd
+
+/-- **WS-LC LC4.5**: the withdrawal fold is invisible to the same observer. -/
+theorem cancelAll_lockInsensitive {β : Type} (core : CoreId) (π : SystemState → β)
+    (h : UnwindInsensitive core π) :
+    ∀ (pairs : List (LockId × AccessMode)) (s : SystemState),
+      π (cancelAll core pairs s) = π s := by
+  intro pairs
+  induction pairs with
+  | nil => intro s; rfl
+  | cons head tail ih =>
+      intro s
+      show π (cancelAll core tail (cancelLockOnObject s core head.fst head.snd)) = π s
+      rw [ih (cancelLockOnObject s core head.fst head.snd)]
+      exact h.2 s head.fst head.snd
+
+/-- **WS-LC LC4.5**: hence the whole shrinking phase is. -/
+theorem unwindAll_lockInsensitive {β : Type} (core : CoreId) (π : SystemState → β)
+    (h : UnwindInsensitive core π) :
+    ∀ (pairs : List (LockId × AccessMode)) (s : SystemState),
+      π (unwindAll core pairs s) = π s := by
+  intro pairs s
+  rw [unwindAll_eq_releaseAll_cancelAll, releaseAll_lockInsensitive core π h,
+      cancelAll_lockInsensitive core π h]
 
 /-- WS-SM SM3.C.7 (plan §5.3 Theorem 2.1.10, **observational** form): for a
 release-insensitive observer `π`, the post-`withLockSet` projection equals the
 projection of the action applied to the post-acquire state — the release fold
 contributes nothing observable.  Lifts `releaseAll_lockInsensitive` through
 `withLockSet_fst`. -/
-theorem withLockSet_release_invisible {α β : Type} (S : LockSet) (core : CoreId)
+theorem withLockSet_unwind_invisible {α β : Type} (S : LockSet) (core : CoreId)
     (action : SystemState → SystemState × α) (s : SystemState)
-    (π : SystemState → β) (hRel : ReleaseInsensitive core π) :
+    (π : SystemState → β) (hRel : UnwindInsensitive core π) :
     π (withLockSet S core action s).1
       = π (action (acquireAll core S.lockAcquireSequence s)).1 := by
   rw [withLockSet_fst]
-  exact releaseAll_lockInsensitive core π hRel S.lockAcquireSequence.reverse _
+  exact unwindAll_lockInsensitive core π hRel S.lockAcquireSequence.reverse _
 
 /-- WS-SM SM3.C.7 (plan §5.3 Theorem 2.1.10, observer-atomicity capstone): for
 an observer `π` that is BOTH acquire- and release-insensitive, the entire 2PL
@@ -278,12 +317,12 @@ folds are projection-invariant and only `action` moves `π`. -/
 theorem lockSet_observer_atomic {α β : Type} (S : LockSet) (core : CoreId)
     (action : SystemState → SystemState × α) (s : SystemState)
     (π : SystemState → β)
-    (hAcq : AcquireInsensitive core π) (hRel : ReleaseInsensitive core π) :
+    (hAcq : AcquireInsensitive core π) (hRel : UnwindInsensitive core π) :
     π (acquireAll core S.lockAcquireSequence s) = π s ∧
     π (withLockSet S core action s).1
       = π (action (acquireAll core S.lockAcquireSequence s)).1 :=
   ⟨acquireAll_lockInsensitive core π hAcq S.lockAcquireSequence s,
-   withLockSet_release_invisible S core action s π hRel⟩
+   withLockSet_unwind_invisible S core action s π hRel⟩
 
 -- ============================================================================
 -- §4c — WS-SM SM6.E: guarded observer atomicity
@@ -304,11 +343,15 @@ def AcquireInsensitiveOn {β : Type} (P : SystemState → Prop) (core : CoreId)
   ∀ (s : SystemState) (l : LockId) (m : AccessMode),
     P s → π (acquireLockOnObject s core l m) = π s
 
-/-- WS-SM SM6.E: the release-side counterpart of `AcquireInsensitiveOn`. -/
-def ReleaseInsensitiveOn {β : Type} (P : SystemState → Prop) (core : CoreId)
+/-- WS-SM SM6.E (broadened at **WS-LC LC4.5**): the shrinking-phase
+counterpart of `AcquireInsensitiveOn`.  Two clauses, for the reason
+`UnwindInsensitive` gives. -/
+def UnwindInsensitiveOn {β : Type} (P : SystemState → Prop) (core : CoreId)
     (π : SystemState → β) : Prop :=
-  ∀ (s : SystemState) (l : LockId) (m : AccessMode),
-    P s → π (releaseLockOnObject s core l m) = π s
+  (∀ (s : SystemState) (l : LockId) (m : AccessMode),
+    P s → π (releaseLockOnObject s core l m) = π s) ∧
+  (∀ (s : SystemState) (l : LockId) (m : AccessMode),
+    P s → π (cancelLockOnObject s core l m) = π s)
 
 /-- WS-SM SM6.E: the acquire fold is invisible to a `P`-guardedly
 acquire-insensitive observer, and threads the guard — provided `P` is stable
@@ -336,7 +379,7 @@ theorem acquireAll_lockInsensitiveOn {β : Type} (P : SystemState → Prop)
 release-insensitive observer, and threads the guard. -/
 theorem releaseAll_lockInsensitiveOn {β : Type} (P : SystemState → Prop)
     (core : CoreId) (π : SystemState → β)
-    (hIns : ReleaseInsensitiveOn P core π)
+    (hIns : UnwindInsensitiveOn P core π)
     (hStable : ∀ s l m, P s → P (releaseLockOnObject s core l m)) :
     ∀ (pairs : List (LockId × AccessMode)) (s : SystemState), P s →
       π (releaseAll core pairs s) = π s ∧ P (releaseAll core pairs s) := by
@@ -351,7 +394,41 @@ theorem releaseAll_lockInsensitiveOn {β : Type} (P : SystemState → Prop)
       show π (releaseAll core tail (releaseLockOnObject s core head.fst head.snd))
         = π s
       rw [hTail.1]
-      exact hIns s head.fst head.snd hP
+      exact hIns.1 s head.fst head.snd hP
+
+/-- **WS-LC LC4.5**: the withdrawal fold, guarded the same way. -/
+theorem cancelAll_lockInsensitiveOn {β : Type} (P : SystemState → Prop)
+    (core : CoreId) (π : SystemState → β)
+    (hIns : UnwindInsensitiveOn P core π)
+    (hStable : ∀ s l m, P s → P (cancelLockOnObject s core l m)) :
+    ∀ (pairs : List (LockId × AccessMode)) (s : SystemState), P s →
+      π (cancelAll core pairs s) = π s ∧ P (cancelAll core pairs s) := by
+  intro pairs
+  induction pairs with
+  | nil => intro s hP; exact ⟨rfl, hP⟩
+  | cons head tail ih =>
+      intro s hP
+      have hP' := hStable s head.fst head.snd hP
+      have hTail := ih (cancelLockOnObject s core head.fst head.snd) hP'
+      refine ⟨?_, hTail.2⟩
+      show π (cancelAll core tail (cancelLockOnObject s core head.fst head.snd))
+        = π s
+      rw [hTail.1]
+      exact hIns.2 s head.fst head.snd hP
+
+/-- **WS-LC LC4.5**: hence the whole guarded shrinking phase. -/
+theorem unwindAll_lockInsensitiveOn {β : Type} (P : SystemState → Prop)
+    (core : CoreId) (π : SystemState → β)
+    (hIns : UnwindInsensitiveOn P core π)
+    (hRelStable : ∀ s l m, P s → P (releaseLockOnObject s core l m))
+    (hCanStable : ∀ s l m, P s → P (cancelLockOnObject s core l m)) :
+    ∀ (pairs : List (LockId × AccessMode)) (s : SystemState), P s →
+      π (unwindAll core pairs s) = π s ∧ P (unwindAll core pairs s) := by
+  intro pairs s hP
+  have hCan := cancelAll_lockInsensitiveOn P core π hIns hCanStable pairs s hP
+  have hRel := releaseAll_lockInsensitiveOn P core π hIns hRelStable pairs _ hCan.2
+  exact ⟨by rw [unwindAll_eq_releaseAll_cancelAll, hRel.1, hCan.1],
+    by rw [unwindAll_eq_releaseAll_cancelAll]; exact hRel.2⟩
 
 /-- WS-SM SM6.E (guarded observer-atomicity capstone): the `P`-guarded
 generalisation of `lockSet_observer_atomic` — for an observer insensitive on
@@ -363,9 +440,13 @@ fields, guarded by `invExt`) usable in the observer-atomicity contract. -/
 theorem lockSet_observer_atomic_on {α β : Type} (S : LockSet) (core : CoreId)
     (action : SystemState → SystemState × α) (s : SystemState)
     (P : SystemState → Prop) (π : SystemState → β)
-    (hAcq : AcquireInsensitiveOn P core π) (hRel : ReleaseInsensitiveOn P core π)
+    (hAcq : AcquireInsensitiveOn P core π) (hRel : UnwindInsensitiveOn P core π)
     (hAcqStable : ∀ s' l m, P s' → P (acquireLockOnObject s' core l m))
     (hRelStable : ∀ s' l m, P s' → P (releaseLockOnObject s' core l m))
+    -- WS-LC LC4.5: the shrinking phase withdraws before it releases, so the
+    -- guard must survive a withdrawal too.  Every discharge in the tree is
+    -- the release form with one name changed.
+    (hCanStable : ∀ s' l m, P s' → P (cancelLockOnObject s' core l m))
     (hP : P s)
     (hActionP : P (action (acquireAll core S.lockAcquireSequence s)).1) :
     π (acquireAll core S.lockAcquireSequence s) = π s ∧
@@ -374,7 +455,7 @@ theorem lockSet_observer_atomic_on {α β : Type} (S : LockSet) (core : CoreId)
   refine ⟨(acquireAll_lockInsensitiveOn P core π hAcq hAcqStable
     S.lockAcquireSequence s hP).1, ?_⟩
   rw [withLockSet_fst]
-  exact (releaseAll_lockInsensitiveOn P core π hRel hRelStable
+  exact (unwindAll_lockInsensitiveOn P core π hRel hRelStable hCanStable
     S.lockAcquireSequence.reverse _ hActionP).1
 
 -- ============================================================================
@@ -452,7 +533,11 @@ theorem withLockSet_invariant_preserved {α : Type} (S : LockSet) (core : CoreId
       post s' → post (acquireLockOnObject s' core l m))
     (hActionPreserves : ∀ s', post s' → post (action s').1)
     (hReleaseInsensitive : ∀ (l : LockId) (m : AccessMode) (s' : SystemState),
-      post s' → post (releaseLockOnObject s' core l m)) :
+      post s' → post (releaseLockOnObject s' core l m))
+    -- WS-LC LC4.5: the shrinking phase withdraws before it releases, so an
+    -- invariant carried across the bracket must survive a withdrawal too.
+    (hCancelInsensitive : ∀ (l : LockId) (m : AccessMode) (s' : SystemState),
+      post s' → post (cancelLockOnObject s' core l m)) :
     post (withLockSet S core action s).1 := by
   rw [withLockSet_fst]
   -- Phase 1: acquire fold preserves post.
@@ -461,8 +546,9 @@ theorem withLockSet_invariant_preserved {α : Type} (S : LockSet) (core : CoreId
   -- Phase 2: action preserves post.
   have hAfterAction : post (action (acquireAll core S.lockAcquireSequence s)).1 :=
     hActionPreserves _ hAfterAcquire
-  -- Phase 3: release fold preserves post.
-  have hFold : ∀ (pairs : List (LockId × AccessMode)) (s₀ : SystemState),
+  -- Phase 3: the shrinking phase preserves post — the withdrawal fold, then
+  -- the release fold (WS-LC LC4.5).
+  have hRelFold : ∀ (pairs : List (LockId × AccessMode)) (s₀ : SystemState),
       post s₀ →
       post (pairs.foldl
         (fun st p => releaseLockOnObject st core p.fst p.snd) s₀) := by
@@ -474,10 +560,24 @@ theorem withLockSet_invariant_preserved {α : Type} (S : LockSet) (core : CoreId
       simp only [List.foldl_cons]
       apply ih
       exact hReleaseInsensitive head.fst head.snd s₀ h
-  show post (releaseAll core S.lockAcquireSequence.reverse
+  have hCanFold : ∀ (pairs : List (LockId × AccessMode)) (s₀ : SystemState),
+      post s₀ →
+      post (pairs.foldl
+        (fun st p => cancelLockOnObject st core p.fst p.snd) s₀) := by
+    intro pairs
+    induction pairs with
+    | nil => intro s₀ h; exact h
+    | cons head rest ih =>
+      intro s₀ h
+      simp only [List.foldl_cons]
+      apply ih
+      exact hCancelInsensitive head.fst head.snd s₀ h
+  show post (unwindAll core S.lockAcquireSequence.reverse
     (action (acquireAll core S.lockAcquireSequence s)).1)
+  rw [unwindAll_eq_releaseAll_cancelAll]
   unfold releaseAll
-  exact hFold S.lockAcquireSequence.reverse _ hAfterAction
+  exact hRelFold S.lockAcquireSequence.reverse _
+    (hCanFold S.lockAcquireSequence.reverse _ hAfterAction)
 
 /-- WS-SM SM3.C.8 (audit-pass-2): **worked instantiation** of
 `lockSet_invariant_preserved` — demonstrates the metatheorem's lever
@@ -668,7 +768,7 @@ construction. -/
 theorem withLockSet_computation {α : Type} (S : LockSet) (core : CoreId)
     (action : SystemState → SystemState × α) (s : SystemState) :
     withLockSet S core action s =
-      ( releaseAll core S.lockAcquireSequence.reverse
+      ( unwindAll core S.lockAcquireSequence.reverse
           (action (acquireAll core S.lockAcquireSequence s)).1,
         (action (acquireAll core S.lockAcquireSequence s)).2 ) :=
   withLockSet_eq_decomposition S core action s

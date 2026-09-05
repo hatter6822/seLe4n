@@ -120,7 +120,7 @@ run_cargo_step() {
 # bare-metal `aarch64-unknown-none` build does not try to compile it.
 # A `required-features` target is not merely skipped from the build:
 # `cargo test` does not run its `#[cfg(test)]` module either, so
-# without the flag here the oracle's 14 tests silently stop running and
+# without the flag here the oracle's test module silently stops running and
 # the step still reports a clean pass over one fewer binary.  That is
 # the same shape as a skipped test, which this script already rejects,
 # and `scripts/check_aarch64_cross_target.py` pins the flag.

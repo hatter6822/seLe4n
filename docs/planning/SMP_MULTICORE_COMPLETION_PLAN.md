@@ -588,6 +588,13 @@ WS-SM is complete and v1.0.0 ships when:
 | SM10 | [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) | 25-35 | ~500 |
 | **Total** | | **611-786** | **~29,500 LoC of new code** |
 
+Two remediation workstreams run against this schedule rather than inside it:
+WS-RR ([`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md), 187
+sub-tasks) is the pre-SM10 remediation SM10 is blocked on, and WS-LC
+([`SMP_LOCK_DATATYPE_COMPLETION_PLAN.md`](SMP_LOCK_DATATYPE_COMPLETION_PLAN.md),
+51 sub-tasks) closes the two SM2 lock **datatype** residuals ahead of WS-RR's
+fine-lock migration tracks.
+
 ## Appendix B — Verification commands
 
 ```bash

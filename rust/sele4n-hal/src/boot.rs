@@ -16,7 +16,7 @@
 //! Phase 6: Handoff to Lean kernel (AG7 — FFI bridge)
 
 /// Kernel version string — matches Lean lakefile.toml version.
-const KERNEL_VERSION: &str = "0.34.49";
+const KERNEL_VERSION: &str = "0.34.56";
 
 /// **PR #889 review round 21**: how many PEs the linked Lean kernel declares.
 ///
@@ -26,6 +26,12 @@ const KERNEL_VERSION: &str = "0.34.49";
 /// installs idle threads on exactly this many cores and bounds
 /// `.tcbSetAffinity` by the same number, so a handoff to a narrower machine is
 /// refused at Phase 6 rather than stranding threads on PEs that do not exist.
+///
+/// Compiled where it is read: the Phase-6 handoff below is `hw_target`-only,
+/// and `lean_declared_core_count_matches_the_rpi5_binding` pins it under
+/// `cfg(test)`.  Without the gate the default host profile warns it is dead,
+/// which is true of that profile and of no other.
+#[cfg(any(feature = "hw_target", test))]
 const LEAN_DECLARED_CORE_COUNT: u32 = 4;
 
 /// **PR #889 review round 23**: how long the handoff waits for every declared
@@ -35,6 +41,10 @@ const LEAN_DECLARED_CORE_COUNT: u32 = 4;
 /// *fail*, not hang, so the wait has a ceiling and the refusal below is what
 /// runs when it expires.  The unit is `wfe_bounded` ticks, the same clock the
 /// shootdown protocol's bounded waits use.
+///
+/// `hw_target`-only for the same reason as `LEAN_DECLARED_CORE_COUNT`: its one
+/// reader is the Phase-6 handoff.
+#[cfg(feature = "hw_target")]
 const SECONDARY_READY_TIMEOUT_TICKS: u64 = crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS * 16;
 
 /// Rust entry point called from assembly `_start` after BSS zeroing and
@@ -618,7 +628,7 @@ mod tests {
         // update this test in lockstep with `lakefile.toml`.
         // `scripts/check_version_sync.sh` (Tier 0) provides the
         // canonical drift check; this test is the local pin.
-        assert_eq!(KERNEL_VERSION, "0.34.49");
+        assert_eq!(KERNEL_VERSION, "0.34.56");
     }
 
     /// PR #889 review round 21: the declared PE count this handoff enforces is

@@ -378,20 +378,24 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @updateObjectAt_updateLock_services_eq
 #check @updateObjectAt_updateLock_irqHandlers_eq
 #check @updateObjectLockAt_preserves_projection
-#check @updateObjectAt_updateLock_preserves_objects_invExt
-#check @updateObjectLockAt_preserves_objects_invExt
+#check @SeLe4n.Kernel.Concurrency.updateObjectAt_updateLock_preserves_invExt
+#check @SeLe4n.Kernel.Concurrency.updateObjectLockAt_preserves_invExt
 #check @acquireLockOnObject_preserves_projection
 #check @releaseLockOnObject_preserves_projection
-#check @acquireLockOnObject_preserves_objects_invExt
-#check @releaseLockOnObject_preserves_objects_invExt
+#check @cancelLockOnObject_preserves_projection
+#check @SeLe4n.Kernel.Concurrency.acquireLockOnObject_preserves_invExt
+#check @SeLe4n.Kernel.Concurrency.releaseLockOnObject_preserves_invExt
 #check @updateObjectLockAt_scheduler_eq
 #check @updateObjectLockAt_machine_eq
 #check @acquireLockOnObject_confinedToCore
 #check @releaseLockOnObject_confinedToCore
-#check @acquireAll_preserves_objects_invExt
-#check @releaseAll_preserves_objects_invExt
+#check @cancelLockOnObject_confinedToCore
+#check @SeLe4n.Kernel.Concurrency.acquireAll_preserves_invExt
+#check @SeLe4n.Kernel.Concurrency.releaseAll_preserves_invExt
 #check @acquireAll_preserves_projection
 #check @releaseAll_preserves_projection
+#check @cancelAll_preserves_projection
+#check @unwindAll_preserves_projection
 #check @acquireAll_confinedToCore
 #check @releaseAll_confinedToCore
 #check @withLockSet_preserves_projection
@@ -1235,11 +1239,11 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @syscallEntryUnderRevalidatedLockSet_refuses_on_change
 #check @syscallEntryUnderRevalidatedLockSet_not_refines_in_general
 #check @RevalidatedEntryOutcome
-#check @syscallEntryUnderRevalidatedLockSet_refused_releases
+#check @syscallEntryUnderRevalidatedLockSet_refused_unwinds
 #check @rwLock_release_by_nonholder_preserves_waiters
-#check @elapsedBetween
-#check @elapsedBetween_le
-#check @elapsedBetween_ge
+#check @SeLe4n.Kernel.Concurrency.elapsedBetween
+#check @SeLe4n.Kernel.Concurrency.elapsedBetween_le
+#check @SeLe4n.Kernel.Concurrency.elapsedBetween_ge
 #check @lockContentionChannel_rate_per_elapsed_time
 #check @lockContention_wallClock_bounded
 #check @continueFromAcquired
@@ -2682,10 +2686,11 @@ example (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (maxDelay : Nat)
     (hInit : e.initial = SeLe4n.Kernel.Concurrency.RwLockState.unheld) (c : CoreId)
     (m : SeLe4n.Kernel.Concurrency.AccessMode) (kEnq : Nat)
     (hQueued : (c, m) ∈ (e.stateAt kEnq).waiters)
-    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length) :
+    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length)
+    (hNoCancel : e.noCancelIn c kEnq (kEnq + lockContentionDelayBound maxDelay + 1)) :
     ∃ delay, lockContentionObservation e c kEnq = some delay ∧
       delay ≤ lockContentionDelayBound maxDelay :=
-  lockContention_delay_bounded e maxDelay hFair hInit c m kEnq hQueued hWithin
+  lockContention_delay_bounded e maxDelay hFair hInit c m kEnq hQueued hWithin hNoCancel
 
 -- SM8.D.3: and its blocked-reader instance — the temporal figure D.3's own
 -- subject was missing until SM2.C-defer D-3.10 generalised the liveness chain.
@@ -2693,10 +2698,12 @@ example (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (maxDelay : Nat)
     (hFair : SeLe4n.Kernel.Concurrency.FairTrace e maxDelay)
     (hInit : e.initial = SeLe4n.Kernel.Concurrency.RwLockState.unheld) (c : CoreId) (kEnq : Nat)
     (hQueued : (c, SeLe4n.Kernel.Concurrency.AccessMode.read) ∈ (e.stateAt kEnq).waiters)
-    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length) :
+    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length)
+    (hNoCancel : e.noCancelIn c kEnq (kEnq + lockContentionDelayBound maxDelay + 1)) :
     ∃ delay, lockContentionObservation e c kEnq = some delay ∧
       delay ≤ lockContentionDelayBound maxDelay :=
   blockedReaderContention_delay_bounded e maxDelay hFair hInit c kEnq hQueued hWithin
+    hNoCancel
 
 -- SM8.D.3: the blocked reader's structural bound — at most `numCores - 1` cores
 -- ahead of it, whatever the fairness budget.
@@ -6927,7 +6934,10 @@ private def contendedExecution : SeLe4n.Kernel.Concurrency.RwLockExecution :=
     ops := [ .tryAcquireWrite c0, .tryAcquireWrite c1, .releaseWrite c0, .releaseWrite c1
            , .releaseRead c2, .releaseRead c2, .releaseRead c2, .releaseRead c2
            , .releaseRead c2 ]
-    initial_reachable := .base }
+    initial_reachable := .base
+    -- WS-LC LC5.1: unit cost, so the cycle figure this witness carries is
+    -- its step figure (`RwLockExecution.elapsed_unit_cost`).
+    stepCost := fun _ => 1 }
 
 /-- The fairness parameter the execution satisfies: every critical section it
 contains is released within one step of being entered. -/
@@ -6944,6 +6954,11 @@ private theorem contendedExecution_queued :
 
 private theorem contendedExecution_within :
     2 + lockContentionDelayBound contendedMaxDelay < contendedExecution.ops.length := by decide
+
+/-- Nobody withdraws in this execution, so the bound's no-cancel premise holds
+of every window.  Discharged over the operation *list* — `noCancelIn` itself
+quantifies over an unbounded step index and cannot be `decide`d. -/
+private theorem contendedExecution_cancelFree : contendedExecution.cancelFree := by decide
 
 /-- §7.4  SM8.D.3 (timing half) — the CC-5 delay, computed and bounded. -/
 private def runLockContentionBoundChecks : IO Unit := do
@@ -6972,12 +6987,12 @@ private def runLockContentionBoundChecks : IO Unit := do
   assertBool "lockContention_delay_bounded applies to this execution (theorem)"
     (have _h := lockContention_delay_bounded contendedExecution contendedMaxDelay
         contendedExecution_fair rfl c1 .write 2 contendedExecution_queued
-        contendedExecution_within
+        contendedExecution_within (contendedExecution_cancelFree.noCancelIn c1 _ _)
      true)
   assertBool "…and so does the alphabet bound"
     (have _h := lockContentionChannel_alphabet_bounded contendedExecution contendedMaxDelay
         contendedExecution_fair rfl c1 .write 2 contendedExecution_queued
-        contendedExecution_within
+        contendedExecution_within (contendedExecution_cancelFree.noCancelIn c1 _ _)
      true)
   -- The RPi5 figures.
   assertBool "at RPi5 (4 cores) with the SM2.C release budget: bound 3075, alphabet 3077"
@@ -7011,7 +7026,10 @@ private def repeatAcquirerExecution : SeLe4n.Kernel.Concurrency.RwLockExecution 
   { initial := SeLe4n.Kernel.Concurrency.RwLockState.unheld
     ops := [ .tryAcquireWrite c1, .releaseWrite c1, .tryAcquireWrite c0
            , .tryAcquireWrite c1, .releaseWrite c0 ]
-    initial_reachable := .base }
+    initial_reachable := .base
+    -- WS-LC LC5.1: unit cost, so the cycle figure this witness carries is
+    -- its step figure (`RwLockExecution.elapsed_unit_cost`).
+    stepCost := fun _ => 1 }
 
 /-- §7.4b  SM8.D.3 — the observation belongs to *this* acquisition. -/
 private def runRepeatAcquirerChecks : IO Unit := do
@@ -7121,7 +7139,10 @@ private def readerContendedExecution : SeLe4n.Kernel.Concurrency.RwLockExecution
     ops := [ .tryAcquireWrite c0, .tryAcquireRead c1, .releaseWrite c0, .releaseRead c1
            , .releaseRead c2, .releaseRead c2, .releaseRead c2, .releaseRead c2
            , .releaseRead c2 ]
-    initial_reachable := .base }
+    initial_reachable := .base
+    -- WS-LC LC5.1: unit cost, so the cycle figure this witness carries is
+    -- its step figure (`RwLockExecution.elapsed_unit_cost`).
+    stepCost := fun _ => 1 }
 
 private theorem readerContendedExecution_fair :
     SeLe4n.Kernel.Concurrency.FairTrace readerContendedExecution contendedMaxDelay :=
@@ -7134,6 +7155,10 @@ private theorem readerContendedExecution_queued :
 
 private theorem readerContendedExecution_within :
     2 + lockContentionDelayBound contendedMaxDelay < readerContendedExecution.ops.length := by
+  decide
+
+/-- The reader fixture is cancel-free too. -/
+private theorem readerContendedExecution_cancelFree : readerContendedExecution.cancelFree := by
   decide
 
 /-- §7.4g  SM8.D.3 — the blocked reader's **temporal** bound, computed and
@@ -7160,12 +7185,12 @@ private def runBlockedReaderTemporalChecks : IO Unit := do
   assertBool "blockedReaderContention_delay_bounded applies to this execution (theorem)"
     (have _h := blockedReaderContention_delay_bounded readerContendedExecution contendedMaxDelay
         readerContendedExecution_fair rfl c1 2 readerContendedExecution_queued
-        readerContendedExecution_within
+        readerContendedExecution_within (readerContendedExecution_cancelFree.noCancelIn c1 _ _)
      true)
   assertBool "…and so does the alphabet bound, at read mode (theorem)"
     (have _h := lockContentionChannel_alphabet_bounded readerContendedExecution contendedMaxDelay
         readerContendedExecution_fair rfl c1 .read 2 readerContendedExecution_queued
-        readerContendedExecution_within
+        readerContendedExecution_within (readerContendedExecution_cancelFree.noCancelIn c1 _ _)
      true)
   -- NEGATIVE: the mode-generic bound is not the writer bound in disguise — this
   -- core is queued at `.read` and is NOT queued at `.write`, so the writer
@@ -7888,7 +7913,7 @@ private def runDeclaredFootprintChecks : IO Unit := do
      have _r := @syscallEntryUnderRevalidatedLockSet_refuses_on_change
      have _q := @syscallEntryUnderRevalidatedLockSet_refuses_on_change_while_held
      have _w := @revalidationRefusalReachable
-     have _u := @syscallEntryUnderRevalidatedLockSet_refused_releases
+     have _u := @syscallEntryUnderRevalidatedLockSet_refused_unwinds
      have _f := @syscallEntryUnderRevalidatedLockSet_not_refines_in_general
      have _c := @withLockSet_eq_continueFromAcquired
      have _a := @syscallEntryUnderLockSet_eq_fromAcquired

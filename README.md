@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.34.49-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.34.56-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -86,11 +86,11 @@ architectural improvements enabled by the Lean 4 proof framework:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.34.49` |
+| **Version** | `0.34.56` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 321,991 across 309 files |
-| **Test Lean LoC** | 68,397 across 70 test suites |
-| **Proved declarations** | 10,707 theorem/lemma declarations (zero sorry/axiom) |
+| **Production Lean LoC** | 330,569 across 311 files |
+| **Test Lean LoC** | 68,907 across 70 test suites |
+| **Proved declarations** | 11,000 theorem/lemma declarations (zero sorry/axiom) |
 | **Rust crates** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) across 48 source files |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Hardware binding** | **H3 COMPLETE** (WS-AG AG1–AG10): HAL, GIC-400, timer, ARMv8 page tables, FFI bridge, QEMU boot |
@@ -247,14 +247,27 @@ ABI workstream (**WS-RA**) is complete.
 **SM10 is blocked on WS-RR** (SMP release readiness), the pre-1.0 remediation
 phase now in flight
 ([`SMP_RELEASE_READINESS_PLAN.md`](docs/planning/SMP_RELEASE_READINESS_PLAN.md)):
-187 sub-tasks across nine phases, of which RR0–RR5 have landed (registration
+187 sub-tasks across nine phases, of which RR0–RR6 have landed (registration
 and plan correction; the aarch64 cross-build gate; the invariant gaps behind
 the live dispatch arms; `ipcInvariantFull` de-threading and its dispatch
-payoff; full fault IPC with reply-based restart; and the boot-path fail-open
+payoff; full fault IPC with reply-based restart; the boot-path fail-open
 closure — a required deployment labeling context, the readiness gate on every
 seam, per-core idle threads enqueued at boot, and the kernel entries a linked
-image needs made production-reachable, at v0.34.48). RR6–RR8 remain, then
-**SM10** (release closure → v1.0.0).
+image needs made production-reachable, at v0.34.48; and the verified lock
+primitives — the deployed reader-writer lock is now the ticket-FIFO
+`QueuedRwLock` the Lean spec describes, refined to it before the switch, with
+each refinement bridge deriving its trace correspondence instead of assuming
+it, at v0.34.50). RR7–RR8 remain, then **SM10** (release closure → v1.0.0).
+
+Running ahead of RR7 is **WS-LC** (lock datatype completion,
+[`SMP_LOCK_DATATYPE_COMPLETION_PLAN.md`](docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md)):
+51 sub-tasks closing the two lock **datatype** residuals RR6 re-registered
+rather than absorbed. LC1 landed at v0.34.51 — a queued core may now withdraw
+its request in the abstract lock, with all five reader-writer invariants
+preserved and the liveness results that conclude "becomes the holder" restated
+under an explicit no-withdrawal window. The deployed lock cannot withdraw yet
+(LC2), neither two-phase-locking unwind emits one (LC3), and no bound on that
+surface is denominated in time (LC4).
 
 Master plan: [`SMP_MULTICORE_COMPLETION_PLAN.md`](docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md),
 with per-phase plans in `docs/planning/SMP_*.md`. The canonical per-phase

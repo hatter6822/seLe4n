@@ -406,8 +406,10 @@ The combinator (audit-pass-1, Comment 1):
    every TCB in the path** via `acquireAll caller chainLocks`
    (the path is `ObjId.val`-ascending, so this acquire sequence
    respects the SM0.I lock ladder), executes `action` on the
-   lock-acquired state, then **releases in reverse order** via
-   `releaseAll caller chainLocks.reverse`.
+   lock-acquired state, then **unwinds in reverse order** via
+   `unwindAll caller chainLocks.reverse` — withdrawing before
+   releasing, since the chain walk can find a member contended
+   and a release is the identity for a non-holder (WS-LC LC4.6).
 3. On `.exhausted` / `.extended` (no terminating chain), returns
    the input state unchanged with the fallback value.
 
@@ -438,8 +440,8 @@ def withDynamicChainExtension {α : Type} (caller : CoreId)
         path.path.map (fun tid => (⟨.tcb, tid.toObjId⟩, AccessMode.write))
       let acquired := acquireAll caller chainLocks s
       let (postAction, result) := action acquired
-      let released := releaseAll caller chainLocks.reverse postAction
-      (released, result)
+      let unwound := unwindAll caller chainLocks.reverse postAction
+      (unwound, result)
   | .extended _ =>
     -- Walker didn't reach a terminating chain step (still in middle of walk).
     -- At the abstract level, treat as exhausted.
@@ -459,8 +461,8 @@ theorem withDynamicChainExtension_unfold {α : Type} (caller : CoreId)
              path.path.map (fun tid => (⟨.tcb, tid.toObjId⟩, AccessMode.write))
            let acquired := acquireAll caller chainLocks s
            let (postAction, result) := action acquired
-           let released := releaseAll caller chainLocks.reverse postAction
-           (released, result)
+           let unwound := unwindAll caller chainLocks.reverse postAction
+           (unwound, result)
        | .extended _ => (s, fallback)
        | .exhausted => (s, fallback)) := rfl
 

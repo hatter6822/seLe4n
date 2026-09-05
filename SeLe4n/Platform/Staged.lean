@@ -95,10 +95,18 @@ import SeLe4n.Kernel.Concurrency.Locks.TicketLock
 -- Reachability: staged at SM2.C; SM3 per-object lock proofs are the
 -- first runtime exercisers.
 import SeLe4n.Kernel.Concurrency.Locks.RwLock
--- WS-SM SM2.C.20: RwLock refinement bridge between the Lean abstract
--- state and the Rust bit-packed AtomicU64 representation.  Documents
--- the FIFO divergence and exports the simulation φ (`rwLockSim`).
+-- WS-SM SM2.C.20: refinement bridge between the Lean abstract state
+-- and the CAS-retry lock's bit-packed AtomicU64 (`rw_lock.rs`).
+-- Documents that lock's FIFO divergence and exports the simulation φ
+-- (`rwLockSim`).  The *deployed* lock's bridge is the next import.
+import SeLe4n.Kernel.Concurrency.Locks.ReleaseBudgetTiming
 import SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement
+-- WS-RR RR6.4 … RR6.9: QueuedRwLock refinement bridge between the Lean
+-- abstract state and the *deployed* ticket lock's four atomic words.
+-- Unlike `rwLockSim`, `queuedSim` represents the abstract `waiters`
+-- queue (as the half-open ticket interval), so FIFO admission is a
+-- theorem here rather than a documented divergence.
+import SeLe4n.Kernel.Concurrency.Locks.QueuedRwLockRefinement
 -- WS-SM SM2.D: TicketLock refinement bridge between the Lean abstract
 -- state and the Rust two-u64 concrete representation.  Defines
 -- `ticketLockSim` and exports the F-01 anchor theorem

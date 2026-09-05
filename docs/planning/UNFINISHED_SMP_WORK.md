@@ -405,6 +405,29 @@ RR3 slice, since it is the same obligation stated one level up.
 
 **Remediation.** Close the gap in the direction the plan states, not by re-wording it: prove `opCorresponds`-chain + an explicit load-then-CAS trace-shape predicate ⇒ `ListBlockBisim`, so the 12 discharge lemmas compose into the main theorem without the caller supplying the conclusion. Until then, correct §5.4 there to agree with §1's PARTIAL (the §1 wording is the honest one) and state in §8's D-4 gate that the gate is unmet, with the `opCorresponds ⇒ ListBlockBisim` derivation named as the remaining obligation.
 
+**CLOSED at `v0.34.50` (WS-RR RR6.15–RR6.19), in the direction the plan
+states.**  The derivation exists: `honestBlock` is the load-then-CAS trace-shape
+predicate as a *state-indexed* inductive — each constructor's CAS `expected` is
+the value the block's own preceding load observed and its `new` is what
+`rw_lock.rs` computes from it, so `tryRead_success c 999 999` is not a
+`honestBlock` — and `listHonestBlocks_listBlockBisim` derives `ListBlockBisim`
+from it by induction over the chain, discharged by the now-**total**
+`honestBlock_blockBisim` family.  The two constructors with no discharge lemma
+(`tryWrite_cas_retry`, `tryWrite_park_retry`) are covered, and the coverage is
+derived from the constructor inventory rather than a hand-kept list, so a
+constructor added later is a missing case rather than a silent gap.  The crux
+was the promoting release: from `unheld`, `tryAcquireWrite c₀ · tryAcquireRead c₁
+· releaseWrite c₀` leaves the abstract state with `readers = [c₁]` while the
+concrete `fetch_and(READER_MASK)` is `0`, which is why the four original
+discharges carried `_no_promote` / `_empty_queue` side conditions.  The block
+contract was extended so a release block **carries the promoted waiters'
+re-acquisition** (`casPromoteOps`, `casPromotePost`), and the promoting
+discharges are proved over it — a contract change, not a lemma.
+`rust_rwLock_refines_lean_honest` and
+`rust_rwLock_refines_lean_via_rustImplementsRwLock_honest` therefore state the
+result **without** the `ListBlockBisim` premise, and the corollary's
+correspondence hypothesis is used rather than bound as `_h_corresponds`.
+
 #### 9. suspend_thread_inner is still exported and commits kernel state outside the kernel-entry bracket
 
 - **Severity**: low · **Kind**: `soundness` · **Blocks SM10 start**: no
@@ -654,6 +677,22 @@ cannot outlive its call site.  The four local wrappers are now
 
 **Remediation.** Implement the improvement the plan already specifies: drive the real lock. The blocking-under-contention objection in the oracle's docstring is solvable without abandoning the real impl — either expose non-blocking `try_acquire_*` probes on `rw_lock::RwLock` and have the oracle model *admission* while the real lock supplies *state*, or adopt the plan's own "driving multiple OS threads for concurrent op blocks" design with a join barrier per block. Do not retitle D-6 or weaken §5.6; until the oracle links `sele4n_hal::rw_lock`, D-6 should be re-marked PARTIAL in the §1 table with the real-lock driver as its closure target.
 
+**CLOSED at `v0.34.50` (WS-RR RR6.1–RR6.3), by the first of the two designs
+this remediation names.**  `rw_lock::RwLock` gained non-blocking
+`try_acquire_read` / `try_acquire_write` — each a single CAS attempt mirroring
+exactly one iteration of the blocking loop, so the probe cannot admit where the
+loop would not — and the oracle's `Driver` holds **both** real locks (a
+`RwLock` and a `QueuedRwLock`) in process memory and drives every generated
+operation through them.  The abstract side models *admission* only; the state
+the oracle renders is read back from the deployed lock's own word
+(`peek_state`), which is what makes the comparison an implementation check
+rather than the Lean↔Lean identity the finding measured.  Three relations are
+checked after **every** operation, not just at the end: that the two
+implementations agree, that the queued lock's `[now_serving, next_ticket)`
+interval matches the abstract waiter queue, and that the state word is
+`encodeRwLock` of the abstract state.  D-6's "zero mismatches" gate is
+therefore met against the real locks; §5.6 stands unweakened.
+
 #### 8. F-01 `rust_ticketLock_refines_lean` is counter arithmetic, not an operational simulation — and one conjunct is a tautology
 
 - **Severity**: high · **Kind**: `false-completeness-claim` · **Blocks SM10 start**: no
@@ -666,6 +705,22 @@ cannot outlive its call site.  The four local wrappers are now
 **Independent verification.** CONFIRMED, and the finding understates the defect. Corrected blocksSm10 to false. WHAT I VERIFIED IN THE TREE 1. The theorem is counter arithmetic, not a simulation. SeLe4n/Kernel/Concurrency/Locks/TicketLockRefinement.lean (ticketLockSim) defines `ticketLockSim abstract concrete := concrete.nextTicket.toNat = abstract.nextTicket ∧ concrete.serving.toNat = abstract.serving`. Abstract `pending`/`held` appear in no theorem. `grep -n applyOp` on the file returns only and (ticketLockSim_preserved_by_observeServing), both inside docstrings; `MemoryTrace`/`MemoryEvent` return zero hits. Confirmed. 2. The tautology is real. rust_ticketLock_refines_lean's fourth conjunct (SeLe4n/Kernel/Concurrency/Locks/TicketLockRefinement.lean (rust_ticketLock_refines_lean)) is `∀ abs conc, ticketLockSim abs conc → ticketLockSim abs conc`, discharged by `ticketLockSim_preserved_by_observeServing` ( (ticketLockSim_preserved_by_observeServing)) whose proof is literally `:= h_sim`. True independent of φ. 3. STRONGER THAN CLAIMED — the hand-written steps do not merely fail to *use* `applyOp`, they do not *match* it. `TicketLockState.applyOp`…
 
 **Remediation.** Implement the improvement: raise F-01 to the same standard as F-02. Add a `TicketLockConcrete` operational step function and a `blockBisim`/`ListBlockBisim`-style trace correspondence (mirroring RwLockRefinement.lean's D-4.9 structure), state the step conjuncts over `TicketLockState.applyOp` rather than hand-written record updates, and delete the tautological `observeServing` conjunct in favour of a real "pure-load leaves both states unchanged" statement over the concrete step relation. Do not weaken the plan's F-01 row to match the current theorem. If the full closure genuinely cannot land before v1.0.0, lift it out of the source docstring into a registered debt row (docs/planning/ + CLAUDE.md standing constraints) with an explicit closure target, per the CLAUDE.md rule forbidding deferred items that live only in source comments.
+
+**CLOSED at `v0.34.50` (WS-RR RR6.12–RR6.14).**  F-01 is now built to F-02's
+standard: `ConcreteTicketLockOp` and `TicketLockConcrete.applyOp` are the
+operational step function, `ticketBlock` is the state-indexed block relation
+(one abstract op to one concrete block, with a stutter prefix for the unbounded
+`now_serving` spin), and `ticketTrace_preserves_ticketLockSim` composes them
+over a chain — stated so it does **not** take its own per-block conclusion as a
+hypothesis, which is the defect the sibling finding above records.  The
+tautological fourth conjunct is gone: `observeServing` is discharged by a real
+"a pure load leaves both states unchanged" statement over the concrete step
+(`observeServing_noop`), and `ticketLockSim_not_universal` exhibits a concrete
+and an abstract state the relation **does not** relate, so the relation is
+falsifiable rather than vacuously true.  The step conjuncts read
+`TicketLockState.applyOp` rather than hand-written record updates, so the
+mismatch the independent verification found — the hand-written steps did not
+merely fail to use `applyOp`, they did not agree with it — cannot recur.
 
 #### 9. Three of the five state-committing kernel entries are staged-only, outside the production closure a kernel image links
 

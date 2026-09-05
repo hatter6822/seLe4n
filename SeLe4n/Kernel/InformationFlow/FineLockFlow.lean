@@ -68,6 +68,29 @@ moves D.1 … D.3 rather than discharging them:
 * §5 (SM8.D.5) — the secure-information-flow witness for a 2PL-bracketed live
   syscall entry, including the sharpened fail-closed statement.
 
+## Which runtime lock §3's bound is about (WS-RR RR6.10)
+
+§3's contention bound is denominated in **lock operations** and rests on the
+SM2.C fairness assumption over `RwLockExecution`, i.e. over the *abstract*
+`RwLockState` and its strict-FIFO `applyOp`.  For that to bound a channel in
+the kernel that runs, the lock the kernel deploys has to be the one the spec
+describes.
+
+Through v0.34.48 it was not.  `lock_bridge.rs`'s `STATIC_RW_LOCK_POOL` held
+`rw_lock::RwLock`, the CAS-retry implementation, whose refinement relation
+(`rwLockSim`) represents no queue at all: a reader arriving while a writer is
+queued may be admitted ahead of it, so a contending core's admission delay is
+not bounded by its position in any queue and §3's alphabet bound described a
+lock nothing ran.
+
+WS-RR RR6.10 points the pool at `queued_rw_lock::QueuedRwLock`, the ticket
+FIFO lock, whose refinement
+(`Concurrency/Locks/QueuedRwLockRefinement.lean`) relates the abstract
+`waiters` queue to the half-open ticket interval `[now_serving, next_ticket)`
+**in order**, so admission order is the spec's queue order as a theorem
+(`queuedRwLock_admits_in_spec_order`).  §3's bound is therefore about the
+deployed primitive.
+
 Axiom-clean: every declaration depends only on the standard foundational
 axioms (`propext` / `Quot.sound` / `Classical.choice`), checked exhaustively
 by `scripts/check_module_axioms.py`.
@@ -457,6 +480,17 @@ theorem releaseLockOnObject_lockWritesOnly (s : SystemState) (core : CoreId)
       | exact lockWritesOnly_refl s
       | exact updateObjectLockAt_lockWritesOnly s l _ hInv
 
+/-- **WS-LC LC4.2**: and the withdrawal primitive, the third sibling. -/
+theorem cancelLockOnObject_lockWritesOnly (s : SystemState) (core : CoreId)
+    (l : LockId) (m : AccessMode) (hInv : s.objects.invExt) :
+    lockWritesOnly s (SeLe4n.Kernel.Concurrency.cancelLockOnObject s core l m) := by
+  unfold SeLe4n.Kernel.Concurrency.cancelLockOnObject
+  cases l.kind <;>
+    first
+      | exact objStoreLock_write_lockWritesOnly s _
+      | exact lockWritesOnly_refl s
+      | exact updateObjectLockAt_lockWritesOnly s l _ hInv
+
 /-- SM8.D.1: the 2PL **growing phase** writes only lock words. -/
 theorem acquireAll_lockWritesOnly (core : CoreId) (pairs : List (LockId × AccessMode))
     (s : SystemState) (hInv : s.objects.invExt) :
@@ -467,7 +501,7 @@ theorem acquireAll_lockWritesOnly (core : CoreId) (pairs : List (LockId × Acces
     obtain ⟨l, m⟩ := p
     rw [SeLe4n.Kernel.Concurrency.acquireAll_cons]
     exact lockWritesOnly_trans (acquireLockOnObject_lockWritesOnly s core l m hInv)
-      (ih _ (acquireLockOnObject_preserves_objects_invExt s core l m hInv))
+      (ih _ (SeLe4n.Kernel.Concurrency.acquireLockOnObject_preserves_invExt s core l m hInv))
 
 /-- SM8.D.1: the 2PL **shrinking phase** writes only lock words. -/
 theorem releaseAll_lockWritesOnly (core : CoreId) (pairs : List (LockId × AccessMode))
@@ -479,7 +513,32 @@ theorem releaseAll_lockWritesOnly (core : CoreId) (pairs : List (LockId × Acces
     obtain ⟨l, m⟩ := p
     rw [SeLe4n.Kernel.Concurrency.releaseAll_cons]
     exact lockWritesOnly_trans (releaseLockOnObject_lockWritesOnly s core l m hInv)
-      (ih _ (releaseLockOnObject_preserves_objects_invExt s core l m hInv))
+      (ih _ (SeLe4n.Kernel.Concurrency.releaseLockOnObject_preserves_invExt s core l m hInv))
+
+/-- **WS-LC LC4.2**: the withdrawal fold writes only lock words. -/
+theorem cancelAll_lockWritesOnly (core : CoreId) (pairs : List (LockId × AccessMode))
+    (s : SystemState) (hInv : s.objects.invExt) :
+    lockWritesOnly s (SeLe4n.Kernel.Concurrency.cancelAll core pairs s) := by
+  induction pairs generalizing s with
+  | nil => exact lockWritesOnly_refl s
+  | cons p rest ih =>
+    obtain ⟨l, m⟩ := p
+    rw [SeLe4n.Kernel.Concurrency.cancelAll_cons]
+    exact lockWritesOnly_trans (cancelLockOnObject_lockWritesOnly s core l m hInv)
+      (ih _ (SeLe4n.Kernel.Concurrency.cancelLockOnObject_preserves_invExt s core l m hInv))
+
+/-- **WS-LC LC4.2**: so does the shrinking phase as a whole.
+
+The composite every §4 and §5 result now factors through: adding the
+withdrawal to the bracket adds lock-word writes and nothing else, so the
+integrity and information-flow arguments carry over unchanged. -/
+theorem unwindAll_lockWritesOnly (core : CoreId) (pairs : List (LockId × AccessMode))
+    (s : SystemState) (hInv : s.objects.invExt) :
+    lockWritesOnly s (SeLe4n.Kernel.Concurrency.unwindAll core pairs s) := by
+  rw [SeLe4n.Kernel.Concurrency.unwindAll_eq_releaseAll_cancelAll]
+  exact lockWritesOnly_trans (cancelAll_lockWritesOnly core pairs s hInv)
+    (releaseAll_lockWritesOnly core pairs _
+      (SeLe4n.Kernel.Concurrency.cancelAll_preserves_invExt core pairs s hInv))
 
 /-- SM8.D.1 (**the bracket**): `withLockSet` writes only lock words beyond
 whatever its guarded action writes.
@@ -495,10 +554,10 @@ theorem withLockSet_lockWritesOnly {α : Type} (S : LockSet) (core : CoreId)
     (hActionLock : ∀ s', s'.objects.invExt → lockWritesOnly s' (action s').1) :
     lockWritesOnly s (SeLe4n.Kernel.Concurrency.withLockSet S core action s).1 := by
   rw [SeLe4n.Kernel.Concurrency.withLockSet_fst]
-  have hAcqInv := acquireAll_preserves_objects_invExt core S.lockAcquireSequence s hInv
+  have hAcqInv := SeLe4n.Kernel.Concurrency.acquireAll_preserves_invExt core S.lockAcquireSequence s hInv
   exact lockWritesOnly_trans (acquireAll_lockWritesOnly core S.lockAcquireSequence s hInv)
     (lockWritesOnly_trans (hActionLock _ hAcqInv)
-      (releaseAll_lockWritesOnly core _ _ (hActionInv _ hAcqInv)))
+      (unwindAll_lockWritesOnly core _ _ (hActionInv _ hAcqInv)))
 
 -- ============================================================================
 -- §2  SM8.D.2 — reader multiplicity is not directly observable
@@ -717,71 +776,23 @@ theorem lockContentionObservation_is_own_acquisition
 -- earlier "wall-clock delay" wording overclaim — it is a parameter here, and the
 -- bridge theorem below is stated with it as an explicit hypothesis.
 --
--- The stronger result (timestamps on `RwLockExecution` itself, with `maxDelay`
--- denominated in ticks) is **tracked debt against SM2.C**: it changes the core
--- execution datatype every SM2.C liveness theorem quantifies over, so it is that
--- phase's foundation to move, not this one's.  Registered in
--- `docs/planning/SMP_INFORMATION_FLOW_PLAN.md` §SM8.D.
-
-/-- SM8.D.3: elapsed time across a step interval, under a per-step cost model.
-
-`cost k` is the real time the execution spends between step `k` and step `k+1` —
-the critical section, when step `k` is a lock acquisition.  The SM2.C execution
-model has no such notion, which is exactly the gap this makes visible. -/
-def elapsedBetween (cost : Nat → Nat) (a b : Nat) : Nat :=
-  ((List.range (b - a)).map (fun i => cost (a + i))).sum
-
-/-- SM8.D.3 (**the step bound reads as a time bound only under a cost ceiling**).
-
-Given that no single interval costs more than `tCs`, a delay of `n` steps costs
-at most `n * tCs`.  The hypothesis is the whole point: without it the left side
-is unbounded while the right side is fixed, which is why the step figure alone
-does not bound a timing channel. -/
-theorem elapsedBetween_le (cost : Nat → Nat) (tCs : Nat) (hCost : ∀ k, cost k ≤ tCs)
-    (a b : Nat) : elapsedBetween cost a b ≤ (b - a) * tCs := by
-  unfold elapsedBetween
-  -- Induction on the interval width, bounding one summand at a time.
-  suffices h : ∀ (n a : Nat), ((List.range n).map (fun i => cost (a + i))).sum ≤ n * tCs by
-    exact h (b - a) a
-  intro n
-  induction n with
-  | zero => intro a; simp
-  | succ m ih =>
-    intro a
-    rw [List.range_succ_eq_map]
-    simp only [List.map_cons, List.map_map, List.sum_cons, Function.comp_def]
-    have hTail : ((List.range m).map (fun i => cost (a + (i + 1)))).sum ≤ m * tCs := by
-      have := ih (a + 1)
-      simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using this
-    have hHead : cost (a + 0) ≤ tCs := hCost _
-    calc cost (a + 0) + ((List.range m).map (fun i => cost (a + (i + 1)))).sum
-        ≤ tCs + m * tCs := Nat.add_le_add hHead hTail
-      _ = (m + 1) * tCs := by rw [Nat.succ_mul]; omega
-
-
-/-- SM8.D.3 (**the dual — a floor on elapsed time**): if no interval costs less
-than `tMin`, then `n` steps take at least `n * tMin`.
-
-`elapsedBetween_le` bounds how long one wait can be; this bounds how many waits
-can fit in a window, which is what a *rate* needs. -/
-theorem elapsedBetween_ge (cost : Nat → Nat) (tMin : Nat) (hCost : ∀ k, tMin ≤ cost k)
-    (a b : Nat) : (b - a) * tMin ≤ elapsedBetween cost a b := by
-  unfold elapsedBetween
-  suffices h : ∀ (n a : Nat), n * tMin ≤ ((List.range n).map (fun i => cost (a + i))).sum by
-    exact h (b - a) a
-  intro n
-  induction n with
-  | zero => intro a; simp
-  | succ m ih =>
-    intro a
-    rw [List.range_succ_eq_map]
-    simp only [List.map_cons, List.map_map, List.sum_cons, Function.comp_def]
-    have hTail : m * tMin ≤ ((List.range m).map (fun i => cost (a + (i + 1)))).sum := by
-      have := ih (a + 1)
-      simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using this
-    calc (m + 1) * tMin = tMin + m * tMin := by rw [Nat.succ_mul]; omega
-      _ ≤ cost (a + 0) + ((List.range m).map (fun i => cost (a + (i + 1)))).sum :=
-          Nat.add_le_add (hCost _) hTail
+-- The stronger result landed at **WS-LC LC5**: `RwLockExecution` carries a
+-- per-step cost (`stepCost`, with no default, so every construction site
+-- declares its cost model), and `lockContention_elapsed_bounded` below is this
+-- bound read through the execution's own costs rather than through a cost
+-- function a caller happened to supply.  Both forms are kept, and the pair is
+-- the point: the generic one is the general statement about *any* cost model,
+-- the execution-level one is the statement about *this* execution's, and a
+-- caller that has an execution should not have to re-supply what the execution
+-- already carries.
+--
+-- What is still an assumption rather than a theorem is the ceiling itself.
+-- `BoundedCriticalSection` is a Prop about the field, not a structure
+-- invariant: an execution whose critical sections are unbounded is a perfectly
+-- good execution and every step bound still holds of it.  What fails without
+-- the ceiling is only the *reading* of that bound as wall-clock — which is the
+-- distinction this comment block existed to record, and the one the
+-- denomination makes checkable instead of merely stated.
 
 /-- SM8.D.3: the observation as a single natural number, with `0` reserved for
 "no admission in this execution". -/
@@ -827,12 +838,28 @@ long the wait was.
 as a queued writer: SM2.C-defer D-3.10 generalises the liveness chain — keystone
 included — to an arbitrary access mode, and `queueWaitDepth_bounded` caps the
 depth without ever mentioning the waiter's mode.  `blockedReaderContention_delay_bounded`
-and `writerContention_delay_bounded` are the two instances. -/
+and `writerContention_delay_bounded` are the two instances.
+
+**The waiter does not withdraw** (`hNoCancel`).  `RwLockOp.cancel` lets a queued
+core take its request back, and a core that withdraws is never admitted — so the
+conclusion "there *is* an observation, and it is bounded" is false of a window
+containing `c`'s own cancellation, at any fairness budget.  The hypothesis is the
+one `rwLock_queued_admissionStepAfter_bounded` carries, stated here over the
+*outer* window `[kEnq, kEnq + lockContentionDelayBound maxDelay + 1)` so a caller
+supplies it once against the figure the bound is denominated in, rather than
+against an inner window computed from `queueWaitDepth`; `noCancelIn.mono`
+narrows it.
+
+This is a premise about the *observation*, not a weakening of the channel bound:
+a withdrawn acquisition produces no contention observation to bound, and
+`lockContentionRun` carries the same condition per step so an accepted run
+supplies it for free. -/
 theorem lockContention_delay_bounded (e : SeLe4n.Kernel.Concurrency.RwLockExecution)
     (maxDelay : Nat) (hFair : SeLe4n.Kernel.Concurrency.FairTrace e maxDelay)
     (hInit : e.initial = RwLockState.unheld) (c : CoreId) (m : AccessMode) (kEnq : Nat)
     (hQueued : (c, m) ∈ (e.stateAt kEnq).waiters)
-    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length) :
+    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length)
+    (hNoCancel : e.noCancelIn c kEnq (kEnq + lockContentionDelayBound maxDelay + 1)) :
     ∃ delay, lockContentionObservation e c kEnq = some delay ∧
       delay ≤ lockContentionDelayBound maxDelay := by
   have hDepth : SeLe4n.Kernel.Concurrency.queueWaitDepth (e.stateAt kEnq) c m ≤ numCores - 1 :=
@@ -846,7 +873,7 @@ theorem lockContention_delay_bounded (e : SeLe4n.Kernel.Concurrency.RwLockExecut
     Nat.lt_of_le_of_lt (Nat.add_le_add_left hMul kEnq) hWithin
   obtain ⟨admitStep, hStep, _, hLe⟩ :=
     SeLe4n.Kernel.Concurrency.rwLock_queued_admissionStepAfter_bounded e maxDelay hFair hInit c m
-      kEnq hQueued hInner
+      kEnq hQueued hInner (hNoCancel.mono (Nat.le_refl _) (by omega))
   have hBound : admitStep ≤ kEnq + lockContentionDelayBound maxDelay :=
     Nat.le_trans hLe (Nat.add_le_add_left hMul kEnq)
   refine ⟨admitStep - kEnq, ?_, by omega⟩
@@ -870,30 +897,83 @@ theorem lockContention_wallClock_bounded (e : SeLe4n.Kernel.Concurrency.RwLockEx
     (hInit : e.initial = RwLockState.unheld) (c : CoreId) (m : AccessMode) (kEnq : Nat)
     (hQueued : (c, m) ∈ (e.stateAt kEnq).waiters)
     (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length)
+    (hNoCancel : e.noCancelIn c kEnq (kEnq + lockContentionDelayBound maxDelay + 1))
     (cost : Nat → Nat) (tCs : Nat) (hCost : ∀ k, cost k ≤ tCs) :
     ∃ delay admitStep, lockContentionObservation e c kEnq = some delay ∧
       e.admissionStepAfter c kEnq = some admitStep ∧
       delay ≤ lockContentionDelayBound maxDelay ∧
-      elapsedBetween cost kEnq admitStep ≤ lockContentionDelayBound maxDelay * tCs := by
+      SeLe4n.Kernel.Concurrency.elapsedBetween cost kEnq admitStep ≤ lockContentionDelayBound maxDelay * tCs := by
   obtain ⟨delay, hObs, hLe⟩ :=
-    lockContention_delay_bounded e maxDelay hFair hInit c m kEnq hQueued hWithin
+    lockContention_delay_bounded e maxDelay hFair hInit c m kEnq hQueued hWithin hNoCancel
   obtain ⟨admitStep, hStep, _, hDelay, _⟩ :=
     lockContentionObservation_is_own_acquisition e c kEnq delay hObs
   refine ⟨delay, admitStep, hObs, hStep, hLe, ?_⟩
-  calc elapsedBetween cost kEnq admitStep
-      ≤ (admitStep - kEnq) * tCs := elapsedBetween_le cost tCs hCost kEnq admitStep
+  calc SeLe4n.Kernel.Concurrency.elapsedBetween cost kEnq admitStep
+      ≤ (admitStep - kEnq) * tCs := SeLe4n.Kernel.Concurrency.elapsedBetween_le cost tCs hCost kEnq admitStep
     _ ≤ lockContentionDelayBound maxDelay * tCs := by
         exact Nat.mul_le_mul_right tCs (hDelay ▸ hLe)
+
+/-- **WS-LC LC5.6** (**the same bound, in the execution's own cycles**).
+
+`lockContention_wallClock_bounded` above takes a cost function as an argument,
+because when it was written `RwLockExecution` had none.  It does now, so this
+is the form a caller who *has* an execution should reach for: the cost model is
+the execution's, not one the caller re-supplies and might supply differently
+from the one the rest of its reasoning assumes.
+
+The generic form is kept deliberately.  It is the general statement — a bound
+under *any* cost model, including one attributed to an execution externally —
+and it is what a caller reasoning about a family of cost models needs.  This
+one is the instance at the execution's own. -/
+theorem lockContention_elapsed_bounded (e : SeLe4n.Kernel.Concurrency.RwLockExecution)
+    (maxDelay : Nat) (hFair : SeLe4n.Kernel.Concurrency.FairTrace e maxDelay)
+    (hInit : e.initial = RwLockState.unheld) (c : CoreId) (m : AccessMode) (kEnq : Nat)
+    (hQueued : (c, m) ∈ (e.stateAt kEnq).waiters)
+    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length)
+    (hNoCancel : e.noCancelIn c kEnq (kEnq + lockContentionDelayBound maxDelay + 1))
+    (tCs : Nat) (hCost : e.BoundedCriticalSection tCs) :
+    ∃ delay admitStep, lockContentionObservation e c kEnq = some delay ∧
+      e.admissionStepAfter c kEnq = some admitStep ∧
+      delay ≤ lockContentionDelayBound maxDelay ∧
+      e.elapsed kEnq admitStep ≤ lockContentionDelayBound maxDelay * tCs :=
+  lockContention_wallClock_bounded e maxDelay hFair hInit c m kEnq hQueued hWithin
+    hNoCancel e.stepCost tCs hCost
+
+/-- **WS-LC LC5.6**: and at unit cost it is the step bound.
+
+The instantiation check for the CC-5 chain, matching the one the lock model
+carries for the admission bound: a denomination that had quietly weakened the
+claim would look exactly like one that had not, so the collapse back to steps
+is stated rather than assumed. -/
+theorem lockContention_elapsed_at_unit_cost
+    (e : SeLe4n.Kernel.Concurrency.RwLockExecution)
+    (maxDelay : Nat) (hFair : SeLe4n.Kernel.Concurrency.FairTrace e maxDelay)
+    (hInit : e.initial = RwLockState.unheld) (c : CoreId) (m : AccessMode) (kEnq : Nat)
+    (hQueued : (c, m) ∈ (e.stateAt kEnq).waiters)
+    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length)
+    (hNoCancel : e.noCancelIn c kEnq (kEnq + lockContentionDelayBound maxDelay + 1))
+    (hUnit : e.stepCost = fun _ => 1) :
+    ∃ delay admitStep, lockContentionObservation e c kEnq = some delay ∧
+      e.admissionStepAfter c kEnq = some admitStep ∧
+      admitStep - kEnq ≤ lockContentionDelayBound maxDelay := by
+  obtain ⟨delay, admitStep, hObs, hStep, hLe, hElapsed⟩ :=
+    lockContention_elapsed_bounded e maxDelay hFair hInit c m kEnq hQueued hWithin
+      hNoCancel 1 (fun k => by rw [hUnit]; exact Nat.le_refl 1)
+  refine ⟨delay, admitStep, hObs, hStep, ?_⟩
+  rw [e.elapsed_unit_cost hUnit] at hElapsed
+  omega
 
 /-- SM8.D.3: the writer instance of the delay bound. -/
 theorem writerContention_delay_bounded (e : SeLe4n.Kernel.Concurrency.RwLockExecution)
     (maxDelay : Nat) (hFair : SeLe4n.Kernel.Concurrency.FairTrace e maxDelay)
     (hInit : e.initial = RwLockState.unheld) (c : CoreId) (kEnq : Nat)
     (hQueued : (c, AccessMode.write) ∈ (e.stateAt kEnq).waiters)
-    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length) :
+    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length)
+    (hNoCancel : e.noCancelIn c kEnq (kEnq + lockContentionDelayBound maxDelay + 1)) :
     ∃ delay, lockContentionObservation e c kEnq = some delay ∧
       delay ≤ lockContentionDelayBound maxDelay :=
   lockContention_delay_bounded e maxDelay hFair hInit c AccessMode.write kEnq hQueued hWithin
+    hNoCancel
 
 /-- SM8.D.3 (**the blocked reader's temporal bound**): a *reader* waiting behind
 a writer measures a delay bounded by the same figure.
@@ -908,10 +988,12 @@ theorem blockedReaderContention_delay_bounded (e : SeLe4n.Kernel.Concurrency.RwL
     (maxDelay : Nat) (hFair : SeLe4n.Kernel.Concurrency.FairTrace e maxDelay)
     (hInit : e.initial = RwLockState.unheld) (c : CoreId) (kEnq : Nat)
     (hQueued : (c, AccessMode.read) ∈ (e.stateAt kEnq).waiters)
-    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length) :
+    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length)
+    (hNoCancel : e.noCancelIn c kEnq (kEnq + lockContentionDelayBound maxDelay + 1)) :
     ∃ delay, lockContentionObservation e c kEnq = some delay ∧
       delay ≤ lockContentionDelayBound maxDelay :=
   lockContention_delay_bounded e maxDelay hFair hInit c AccessMode.read kEnq hQueued hWithin
+    hNoCancel
 
 /-- SM8.D.3 (**the reader's structural bound**): at most `numCores - 1` cores
 can be ahead of a blocked reader.
@@ -937,10 +1019,11 @@ theorem lockContentionChannel_alphabet_bounded (e : SeLe4n.Kernel.Concurrency.Rw
     (maxDelay : Nat) (hFair : SeLe4n.Kernel.Concurrency.FairTrace e maxDelay)
     (hInit : e.initial = RwLockState.unheld) (c : CoreId) (m : AccessMode) (kEnq : Nat)
     (hQueued : (c, m) ∈ (e.stateAt kEnq).waiters)
-    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length) :
+    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length)
+    (hNoCancel : e.noCancelIn c kEnq (kEnq + lockContentionDelayBound maxDelay + 1)) :
     lockContentionCode e c kEnq < lockContentionAlphabet maxDelay := by
   obtain ⟨delay, hObs, hLe⟩ :=
-    lockContention_delay_bounded e maxDelay hFair hInit c m kEnq hQueued hWithin
+    lockContention_delay_bounded e maxDelay hFair hInit c m kEnq hQueued hWithin hNoCancel
   unfold lockContentionCode lockContentionAlphabet
   rw [hObs]
   show delay + 1 < lockContentionDelayBound maxDelay + 2
@@ -1002,7 +1085,13 @@ releases it, and core 1 queues behind it forever. -/
 def starvingExecution : SeLe4n.Kernel.Concurrency.RwLockExecution :=
   { initial := RwLockState.unheld
     ops := [.tryAcquireWrite bootCoreId, .tryAcquireWrite ⟨1, by decide⟩]
-    initial_reachable := .base }
+    initial_reachable := .base
+    -- WS-LC LC5.1: unit cost.  These witnesses exist to exhibit a *step*
+    -- count, and at unit cost the cycle figure is that step count
+    -- (`RwLockExecution.elapsed_unit_cost`) — so the observation they
+    -- carry means the same thing in either denomination, which is exactly
+    -- what a witness for a step bound should say.
+    stepCost := fun _ => 1 }
 
 /-- SM8.D.3: core 1 really is queued in it. -/
 theorem starvingExecution_queued :
@@ -1088,7 +1177,13 @@ def singleWaiterExecution : SeLe4n.Kernel.Concurrency.RwLockExecution :=
            , .releaseRead padCore, .releaseRead padCore, .releaseRead padCore
            , .releaseRead padCore, .releaseRead padCore, .releaseRead padCore
            , .releaseRead padCore, .releaseRead padCore ]
-    initial_reachable := .base }
+    initial_reachable := .base
+    -- WS-LC LC5.1: unit cost.  These witnesses exist to exhibit a *step*
+    -- count, and at unit cost the cycle figure is that step count
+    -- (`RwLockExecution.elapsed_unit_cost`) — so the observation they
+    -- carry means the same thing in either denomination, which is exactly
+    -- what a witness for a step bound should say.
+    stepCost := fun _ => 1 }
 
 /-- SM8.D.3: and the same waiter with `aheadCore` queued **ahead** of it, so its
 admission waits for two releases — a delay of two steps.
@@ -1106,7 +1201,13 @@ def twoWaiterExecution : SeLe4n.Kernel.Concurrency.RwLockExecution :=
            , .releaseRead padCore, .releaseRead padCore, .releaseRead padCore
            , .releaseRead padCore, .releaseRead padCore, .releaseRead padCore
            , .releaseRead padCore ]
-    initial_reachable := .base }
+    initial_reachable := .base
+    -- WS-LC LC5.1: unit cost.  These witnesses exist to exhibit a *step*
+    -- count, and at unit cost the cycle figure is that step count
+    -- (`RwLockExecution.elapsed_unit_cost`) — so the observation they
+    -- carry means the same thing in either denomination, which is exactly
+    -- what a witness for a step bound should say.
+    stepCost := fun _ => 1 }
 
 /-- SM8.D.3: both traces are fair at the same budget, so the two observations are
 comparable and neither is obtained by relaxing the premises. -/
@@ -1195,7 +1296,14 @@ The mode is existential **per step**: one core's successive contended
 acquisitions need not all be writes, and after SM2.C-defer D-3.10 the delay bound
 does not care which they are.  It is bound inside the edge condition rather than
 outside it so the "not queued before" half is about the *same* mode — a core
-switching modes between acquisitions is still two edges, not one. -/
+switching modes between acquisitions is still two edges, not one.
+
+Each listed step also carries the delay bound's own two premises, so a run
+supplies them and a consumer need not re-impose them: the recording is long
+enough to contain the admission, and the core does not **withdraw** inside the
+window (`RwLockOp.cancel` — a withdrawn acquisition never becomes an admission,
+so it yields no observation to code).  A run is therefore exactly the set of
+acquisitions the channel can actually be read off. -/
 def lockContentionRun (maxDelay : Nat) (e : SeLe4n.Kernel.Concurrency.RwLockExecution)
     (c : CoreId) (enqueueSteps : List Nat) : Prop :=
   SeLe4n.Kernel.Concurrency.FairTrace e maxDelay ∧
@@ -1204,7 +1312,8 @@ def lockContentionRun (maxDelay : Nat) (e : SeLe4n.Kernel.Concurrency.RwLockExec
   ∀ k ∈ enqueueSteps,
     (1 ≤ k ∧ ∃ m : AccessMode,
       (c, m) ∈ (e.stateAt k).waiters ∧ (c, m) ∉ (e.stateAt (k - 1)).waiters) ∧
-    k + lockContentionDelayBound maxDelay < e.ops.length
+    k + lockContentionDelayBound maxDelay < e.ops.length ∧
+    e.noCancelIn c k (k + lockContentionDelayBound maxDelay + 1)
 
 /-- SM8.D.3: the sequence of codes a contending core reads off a run. -/
 def lockContentionTrace (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (c : CoreId)
@@ -1214,19 +1323,20 @@ def lockContentionTrace (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (c : Cor
 /-- SM8.D.3 (**the CC-5 pacing bound, in lock operations**): a core cannot make
 more observations than the execution has steps.
 
-**This is a bound per lock operation, not per unit time**, and on its own it is
-close to a tautology: distinct acquisitions have distinct enqueue steps, and an
-execution of `n` operations has `n + 1` steps.  It does *not* by itself make
-CC-5's capacity comparable with CC-1's, whose pacing
+**This is a bound per lock operation**, and on its own it is close to a
+tautology: distinct acquisitions have distinct enqueue steps, and an execution
+of `n` operations has `n + 1` steps.  It does *not* by itself make CC-5's
+capacity comparable with CC-1's, whose pacing
 (`schedulingObservation_changes_on_domain_tick`) is per **timer tick** — real
-time — because `RwLockExecution` carries no ticks and many lock operations may
-fall between two ticks.
+time — because many lock operations may fall between two ticks.
 
-`lockContentionChannel_rate_per_elapsed_time` is the statement that does bound
-observations per unit time, and like the delay bound it needs a cost model: a
-*floor* on how long an inter-operation interval takes.  The two are duals —
-`elapsedBetween_le` needs a ceiling to bound one wait, this needs a floor to
-bound how many waits fit in a window.
+The per-unit-time form exists (WS-LC LC5.7):
+`lockContentionChannel_rate_per_elapsed_time` bounds observations against
+elapsed time, and `lockContentionChannel_rate_per_execution_time` states it at
+the execution's own cost model.  Like the delay bound it needs one: a *floor*
+on how long an inter-operation interval takes.  The two are duals —
+`SeLe4n.Kernel.Concurrency.elapsedBetween_le` needs a ceiling to bound one
+wait, this needs a floor to bound how many waits fit in a window.
 
 CC-1's capacity figure needs two factors — how much one observation carries and
 how often one can be made — and `schedulingObservation_changes_on_domain_tick`
@@ -1258,17 +1368,21 @@ execution's own window** — states `0 … ops.length`, which is `ops.length`
 intervals, not one more.  Read as a rate, at most one observation per `tMin`.
 
 The floor is a hypothesis, exactly as the ceiling is in
-`lockContention_wallClock_bounded`, and for the same reason: the SM2.C execution
-model has no notion of duration.  Both halves of CC-5's bandwidth figure —
-how much one observation carries, and how often one can be made — are therefore
-conditional on a cost model, and the alphabet result is the only unconditional
-half. -/
+`lockContention_wallClock_bounded`, and for the same reason — but the reason is
+no longer that the model has no notion of duration.  It has one since WS-LC
+LC5.1 (`RwLockExecution.stepCost`); what it does not have, and cannot, is a
+*derivation* of what a deployment's critical sections cost.  Both halves of
+CC-5's bandwidth figure — how much one observation carries, and how often one
+can be made — are therefore conditional on a declared cost model, and the
+alphabet result is the only unconditional half.
+`lockContentionChannel_rate_per_execution_time` is this statement at the
+execution's own model. -/
 theorem lockContentionChannel_rate_per_elapsed_time
     (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (cost : Nat → Nat) (tMin : Nat)
     (hCost : ∀ k, tMin ≤ cost k) (steps : List Nat)
     (hNodup : steps.Nodup) (hRange : ∀ k ∈ steps, k ≤ e.ops.length)
     (hPos : ∀ k ∈ steps, 1 ≤ k) :
-    steps.length * tMin ≤ elapsedBetween cost 0 e.ops.length := by
+    steps.length * tMin ≤ SeLe4n.Kernel.Concurrency.elapsedBetween cost 0 e.ops.length := by
   -- An execution of `n` operations spans states `0 … n`, so it has exactly `n`
   -- intervals — measuring through `n + 1` would sum a `cost n` that no step of
   -- the execution occupies, and let an observation be paid for with time after
@@ -1289,8 +1403,24 @@ theorem lockContentionChannel_rate_per_elapsed_time
     simp only [List.length_cons] at this
     omega
   calc steps.length * tMin ≤ e.ops.length * tMin := Nat.mul_le_mul_right tMin hLen
-    _ ≤ elapsedBetween cost 0 e.ops.length := by
-        simpa using elapsedBetween_ge cost tMin hCost 0 e.ops.length
+    _ ≤ SeLe4n.Kernel.Concurrency.elapsedBetween cost 0 e.ops.length := by
+        simpa using SeLe4n.Kernel.Concurrency.elapsedBetween_ge cost tMin hCost 0 e.ops.length
+
+/-- **WS-LC LC5.7** (**the rate, at the execution's own cost model**).
+
+`lockContentionChannel_rate_per_elapsed_time` takes a cost function as an
+argument, because when it was written an execution carried none.  This is that
+statement read through the execution's own — the pacing dual of
+`lockContention_elapsed_bounded`, and the reason no docstring in this section
+still says the figure is available only per lock operation. -/
+theorem lockContentionChannel_rate_per_execution_time
+    (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (tMin : Nat)
+    (hCost : e.CostedCriticalSection tMin) (steps : List Nat)
+    (hNodup : steps.Nodup) (hRange : ∀ k ∈ steps, k ≤ e.ops.length)
+    (hPos : ∀ k ∈ steps, 1 ≤ k) :
+    steps.length * tMin ≤ e.elapsed 0 e.ops.length :=
+  lockContentionChannel_rate_per_elapsed_time e e.stepCost tMin hCost steps hNodup
+    hRange hPos
 
 /-- SM8.D.3 (**the CC-5 capacity bound**): over a run of `n` contended
 acquisitions the core's whole trace is one element of
@@ -1315,8 +1445,9 @@ theorem lockContentionChannel_trace_capacity (maxDelay : Nat)
   intro x hx
   simp only [lockContentionTrace, List.mem_map] at hx
   obtain ⟨k, hk, rfl⟩ := hx
-  obtain ⟨⟨_, m, hQueued, _⟩, hWithin⟩ := hSteps k hk
+  obtain ⟨⟨_, m, hQueued, _⟩, hWithin, hNoCancel⟩ := hSteps k hk
   exact lockContentionChannel_alphabet_bounded e maxDelay hFair hInit c m k hQueued hWithin
+    hNoCancel
 
 /-- SM8.D.3 (**the composed per-execution bound**): from a run alone — no extra
 hypotheses — the core's trace is one of `alphabet ^ n` **and** `n` is at most the
@@ -1340,7 +1471,7 @@ theorem lockContentionChannel_run_capacity (maxDelay : Nat)
   obtain ⟨_, _, hNodup, hSteps⟩ := hRun
   refine lockContentionChannel_observation_rate_bounded e c enqueueSteps hNodup ?_
   intro k hk
-  exact Nat.le_of_lt (Nat.lt_of_le_of_lt (Nat.le_add_right k _) (hSteps k hk).2)
+  exact Nat.le_of_lt (Nat.lt_of_le_of_lt (Nat.le_add_right k _) (hSteps k hk).2.1)
 
 /-- SM8.D.3 (**the load-bearing negative**): a list that repeats a queued step is
 **not** an accepted run, however well-behaved the execution is.
@@ -1419,12 +1550,14 @@ theorem acceptedCovertChannel_lockContention_bounded (maxDelay : Nat)
     (hFair : SeLe4n.Kernel.Concurrency.FairTrace e maxDelay)
     (hInit : e.initial = RwLockState.unheld) (c : CoreId) (m : AccessMode) (kEnq : Nat)
     (hQueued : (c, m) ∈ (e.stateAt kEnq).waiters)
-    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length) :
+    (hWithin : kEnq + lockContentionDelayBound maxDelay < e.ops.length)
+    (hNoCancel : e.noCancelIn c kEnq (kEnq + lockContentionDelayBound maxDelay + 1)) :
     acceptedCovertChannel_lockContention.modelVisible = false ∧
       acceptedCovertChannel_lockContention.severity = .medium ∧
       lockContentionCode e c kEnq < lockContentionAlphabet maxDelay :=
   ⟨rfl, rfl,
-   lockContentionChannel_alphabet_bounded e maxDelay hFair hInit c m kEnq hQueued hWithin⟩
+   lockContentionChannel_alphabet_bounded e maxDelay hFair hInit c m kEnq hQueued hWithin
+     hNoCancel⟩
 
 /-- SM8.D.3 (**what the severity is a judgement about**): CC-5's `.medium` is
 not derived from the bound — a severity is an engineering judgement, and
@@ -1479,16 +1612,18 @@ theorem acceptedCovertChannel_lockContention_severity_basis (maxDelay : Nat) :
       -- this conjunct the elapsed-time result could be deleted while the
       -- severity justification — which reads as a bandwidth argument — kept
       -- elaborating on the operation-count bound alone.
-      (∀ (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (cost : Nat → Nat) (tMin : Nat),
-        (∀ k, tMin ≤ cost k) → ∀ steps : List Nat, steps.Nodup →
+      -- WS-LC LC5.8: at the execution's own cost model, for the reason the
+      -- registration arm gives.
+      (∀ (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (tMin : Nat),
+        e.CostedCriticalSection tMin → ∀ steps : List Nat, steps.Nodup →
         (∀ k ∈ steps, k ≤ e.ops.length) → (∀ k ∈ steps, 1 ≤ k) →
-        steps.length * tMin ≤ elapsedBetween cost 0 e.ops.length) :=
+        steps.length * tMin ≤ e.elapsed 0 e.ops.length) :=
   ⟨rfl, rfl, lockContentionAlphabet_at_least_two maxDelay, rfl,
    contentionWitnesses_fair.1, contentionWitnesses_fair.2,
    contentionWitnesses_in_premises.1, contentionWitnesses_in_premises.2,
    lockContentionChannel_two_codes_reachable.2.2,
-   fun e cost tMin hCost steps hNodup hRange hPos =>
-     lockContentionChannel_rate_per_elapsed_time e cost tMin hCost steps hNodup hRange hPos⟩
+   fun e tMin hCost steps hNodup hRange hPos =>
+     lockContentionChannel_rate_per_execution_time e tMin hCost steps hNodup hRange hPos⟩
 
 -- ============================================================================
 -- §4  SM8.D.4 — Biba integrity under per-core locks
@@ -1681,13 +1816,13 @@ theorem withLockSet_noUnpermittedWrite {α : Type} (permitted : SeLe4n.ObjId →
     (hAction : ∀ s', s'.objects.invExt → noUnpermittedWrite permitted s' (action s').1) :
     noUnpermittedWrite permitted s (SeLe4n.Kernel.Concurrency.withLockSet S core action s).1 := by
   rw [SeLe4n.Kernel.Concurrency.withLockSet_fst]
-  have hAcqInv := acquireAll_preserves_objects_invExt core S.lockAcquireSequence s hInv
+  have hAcqInv := SeLe4n.Kernel.Concurrency.acquireAll_preserves_invExt core S.lockAcquireSequence s hInv
   refine noUnpermittedWrite_trans
     (lockWritesOnly_noUnpermittedWrite permitted
       (acquireAll_lockWritesOnly core S.lockAcquireSequence s hInv))
     (noUnpermittedWrite_trans (hAction _ hAcqInv)
       (lockWritesOnly_noUnpermittedWrite permitted
-        (releaseAll_lockWritesOnly core _ _ (hActionInv _ hAcqInv))))
+        (unwindAll_lockWritesOnly core _ _ (hActionInv _ hAcqInv))))
 
 /-- SM8.D.4 (**the headline, standard BIBA**): under per-object locks, a
 subject at integrity `subject.integrity` running on **any** core writes no
@@ -2022,7 +2157,7 @@ theorem syscallEntryUnderLockSet_fst (ctx : LabelingContext) (S : LockSet) (lock
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
     (s : SystemState) :
     (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1
-      = SeLe4n.Kernel.Concurrency.releaseAll lockCore S.lockAcquireSequence.reverse
+      = SeLe4n.Kernel.Concurrency.unwindAll lockCore S.lockAcquireSequence.reverse
           (commitKernelAction (syscallEntryChecked ctx layout executingCore regCount)
             (lockSetAcquiredState S lockCore s)).1 :=
   SeLe4n.Kernel.Concurrency.withLockSet_fst _ _ _ _
@@ -2058,7 +2193,7 @@ theorem syscallEntryUnderLockSet_preserves_projectionOnCore_atCore (ctx : Labeli
     lowEquivalent_smp ctx observer
       (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1 s := by
   have hAcqInv : (lockSetAcquiredState S lockCore s).objects.invExt :=
-    acquireAll_preserves_objects_invExt lockCore S.lockAcquireSequence s hInv
+    SeLe4n.Kernel.Concurrency.acquireAll_preserves_invExt lockCore S.lockAcquireSequence s hInv
   have hCommit : (commitKernelAction (syscallEntryChecked ctx layout executingCore regCount)
       (lockSetAcquiredState S lockCore s)) = (st', .ok ()) :=
     commitKernelAction_ok _ _ _ _ hOk
@@ -2069,10 +2204,10 @@ theorem syscallEntryUnderLockSet_preserves_projectionOnCore_atCore (ctx : Labeli
     -- invisible on *every* core by §1 — which is why generalising the core costs
     -- nothing here that the boot form was not already paying.
     calc projectStateOnCore ctx observer
-          (SeLe4n.Kernel.Concurrency.releaseAll lockCore S.lockAcquireSequence.reverse st') c'
+          (SeLe4n.Kernel.Concurrency.unwindAll lockCore S.lockAcquireSequence.reverse st') c'
         = projectStateOnCore ctx observer st' c' :=
           lockWritesOnly_preserves_projectionOnCore ctx observer c'
-            (releaseAll_lockWritesOnly lockCore S.lockAcquireSequence.reverse st' hOutInv)
+            (unwindAll_lockWritesOnly lockCore S.lockAcquireSequence.reverse st' hOutInv)
       _ = projectStateOnCore ctx observer (lockSetAcquiredState S lockCore s) c' := hProjOn
       _ = projectStateOnCore ctx observer s c' :=
           lockWritesOnly_preserves_projectionOnCore ctx observer c'
@@ -2080,7 +2215,7 @@ theorem syscallEntryUnderLockSet_preserves_projectionOnCore_atCore (ctx : Labeli
   · exact observableSlotsConfinedToCore_trans
       (acquireAll_confinedToCore lockCore S.lockAcquireSequence s c')
       (observableSlotsConfinedToCore_trans hConfined
-        (releaseAll_confinedToCore lockCore _ st' c'))
+        (unwindAll_confinedToCore lockCore _ st' c'))
 
 /-- SM8.D.5 (**the headline**): a 2PL-bracketed live syscall entry is
 non-interfering on **every core** exactly when the operation it dispatches is.
@@ -2134,14 +2269,14 @@ theorem syscallEntryUnderLockSet_failClosed (ctx : LabelingContext) (S : LockSet
       ∧ (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).2
           = .error e := by
   have hAcqInv : (lockSetAcquiredState S lockCore s).objects.invExt :=
-    acquireAll_preserves_objects_invExt lockCore S.lockAcquireSequence s hInv
+    SeLe4n.Kernel.Concurrency.acquireAll_preserves_invExt lockCore S.lockAcquireSequence s hInv
   have hCommit : (commitKernelAction (syscallEntryChecked ctx layout executingCore regCount)
       (lockSetAcquiredState S lockCore s)) = (lockSetAcquiredState S lockCore s, .error e) :=
     commitKernelAction_error _ _ _ hDenied
   constructor
   · rw [syscallEntryUnderLockSet_fst, hCommit]
     exact lockWritesOnly_trans (acquireAll_lockWritesOnly lockCore S.lockAcquireSequence s hInv)
-      (releaseAll_lockWritesOnly lockCore _ _ hAcqInv)
+      (unwindAll_lockWritesOnly lockCore _ _ hAcqInv)
   · show (SeLe4n.Kernel.Concurrency.withLockSet S lockCore _ s).2 = _
     rw [SeLe4n.Kernel.Concurrency.withLockSet_snd]
     show (commitKernelAction (syscallEntryChecked ctx layout executingCore regCount)
@@ -2221,13 +2356,13 @@ theorem secureInformationFlow_underFineLocks_atCore (ctx : LabelingContext) (L :
         (acquireAll_lockWritesOnly lockCore S.lockAcquireSequence s hInv))
       (noUnpermittedWrite_trans hBiba
         (lockWritesOnly_noUnpermittedWrite _
-          (releaseAll_lockWritesOnly lockCore _ st' hOutInv)))
+          (unwindAll_lockWritesOnly lockCore _ st' hOutInv)))
   · exact noUnpermittedWrite_trans
       (lockWritesOnly_noUnpermittedWrite _
         (acquireAll_lockWritesOnly lockCore S.lockAcquireSequence s hInv))
       (noUnpermittedWrite_trans hAuthority
         (lockWritesOnly_noUnpermittedWrite _
-          (releaseAll_lockWritesOnly lockCore _ st' hOutInv)))
+          (unwindAll_lockWritesOnly lockCore _ st' hOutInv)))
 
 /-- SM8.D.5: the boot-core instance of the combined witness.
 
@@ -2297,16 +2432,16 @@ theorem syscallEntryUnderLockSet_preserves_projectionOnCore_of_entry (ctx : Labe
   rw [syscallEntryUnderLockSet_fst, hCommit]
   refine lowEquivalent_smp_of_projection_and_confinement ctx observer ?_ ?_
   · calc projectState ctx observer
-          (SeLe4n.Kernel.Concurrency.releaseAll lockCore S.lockAcquireSequence.reverse st')
+          (SeLe4n.Kernel.Concurrency.unwindAll lockCore S.lockAcquireSequence.reverse st')
         = projectState ctx observer st' :=
-          releaseAll_preserves_projection ctx observer lockCore _ st' hOutInv
+          unwindAll_preserves_projection ctx observer lockCore _ st' hOutInv
       _ = projectState ctx observer (lockSetAcquiredState S lockCore s) := hProj
       _ = projectState ctx observer s :=
           acquireAll_preserves_projection ctx observer lockCore S.lockAcquireSequence s hInv
   · exact observableSlotsConfinedToCore_trans
       (acquireAll_confinedToCore lockCore S.lockAcquireSequence s bootCoreId)
       (observableSlotsConfinedToCore_trans hConfined
-        (releaseAll_confinedToCore lockCore _ st' bootCoreId))
+        (unwindAll_confinedToCore lockCore _ st' bootCoreId))
 
 -- ----------------------------------------------------------------------------
 -- SM8.D.5 — at the one footprint SM3.C.9 has declared
@@ -3170,11 +3305,11 @@ def syscallEntryUnderDeclaredLockSet (ctx : LabelingContext) (lockCore : CoreId)
 /-- SM8.D.5: the bracket's **action and shrinking phases**, run from a state in
 which the growing phase has already happened.
 
-`withLockSet` is acquire → action → release from a pre-acquire state.  A
+`withLockSet` is acquire → action → unwind from a pre-acquire state.  A
 revalidating bracket has already acquired, and then *looked* at the state it
 ended up in; re-running the whole bracket from the original `s` would throw that
 state away and act on a snapshot the revalidation did not check.  This is the
-continuation: it runs the action on the acquired state it is handed and releases,
+continuation: it runs the action on the acquired state it is handed and unwinds,
 without re-acquiring.
 
 `withLockSet_eq_continueFromAcquired` is the decomposition that ties it back — a
@@ -3183,7 +3318,7 @@ two forms cannot drift. -/
 def continueFromAcquired {α : Type} (S : LockSet) (lockCore : CoreId)
     (action : SystemState → SystemState × α) (acquired : SystemState) : SystemState × α :=
   let (postAction, result) := action acquired
-  (SeLe4n.Kernel.Concurrency.releaseAll lockCore S.lockAcquireSequence.reverse postAction, result)
+  (SeLe4n.Kernel.Concurrency.unwindAll lockCore S.lockAcquireSequence.reverse postAction, result)
 
 /-- SM8.D.5: the decomposition — the bracket is its growing phase followed by the
 continuation.  Definitional, so it is a naming of `withLockSet`'s own structure
@@ -3210,16 +3345,23 @@ theorem syscallEntryUnderLockSet_eq_fromAcquired (ctx : LabelingContext) (S : Lo
       = syscallEntryFromAcquired ctx S lockCore layout executingCore regCount
           (lockSetAcquiredState S lockCore s) := rfl
 
-/-- SM8.D.5 (**why a refusal's unwind is release-only**): a release by a core
-that is not a holder is the identity, so it cannot remove that core's *queued*
-request.
+/-- SM8.D.5 (**why the shrinking phase needs a withdrawal**): a release by a
+core that is not a holder is the identity, so it cannot remove that core's
+*queued* request.
 
 Both release arms of `applyOp` guard on holdership — `releaseRead` on membership
 in `readers`, `releaseWrite` on `writerHeld = some core` — and return the state
-unchanged otherwise.  A queued acquisition is therefore untouched by the whole
-shrinking phase, which is what makes the refusal path's unwind partial under
-contention.  `RwLockOp` has no cancel constructor to fix that with; see the
-`syscallEntryUnderRevalidatedLockSet` docstring for the SM2.C registration. -/
+unchanged otherwise.  A queued acquisition is therefore untouched by a
+release-only shrinking phase, which is what made the refusal path's unwind
+partial under contention.
+
+The theorem is unchanged; what changed is what it implies about this tree.
+`RwLockOp.cancel` exists (WS-LC LC1), the shrinking phase is `unwindAll` and
+withdraws before it releases (LC4.1), and
+`unwindAll_leaves_no_queued_request` closes the gap this result identifies.
+It is kept, and kept in this form, because it is the *reason* the withdrawal
+has to exist: delete the withdrawal and this theorem is exactly the defect
+that comes back. -/
 theorem rwLock_release_by_nonholder_preserves_waiters (l : RwLockState) (c : CoreId)
     (hNotReader : c ∉ l.readers) (hNotWriter : l.writerHeld ≠ some c) :
     (l.applyOp (.releaseRead c)).waiters = l.waiters ∧
@@ -3270,18 +3412,26 @@ blocked every later user of those objects.  Lock unwinding is now part of the
 result: `.refused` carries the **released** state, so there is no way to observe
 a refusal without also receiving the state the shrinking phase produced.
 
-**What "released" does and does not mean.**  `releaseAll` applies
-`releaseRead` / `releaseWrite`, and both are the *identity* for a core that is
-not a holder (`rwLock_release_by_nonholder_preserves_waiters`).  So when the
-growing phase found a member contended, `lockCore` is **queued** on it rather
-than holding it, and the unwind cannot remove that request — `RwLockOp` has no
-cancel operation.  The refusal therefore releases what was granted and leaves
-what was merely requested, which can still be promoted later and strand the
-lock.  Adding a cancel is registered as **SM2.C debt**: a new `RwLockOp`
-constructor changes `applyOp`, all five INV-R invariants and every `cases op` in
-the SM2.C liveness surface, so it is that phase's datatype to extend.  Stated
-here rather than left implicit, because a reader who takes "released" to mean
-"the footprint is fully unwound" would be wrong under contention. -/
+**What "released" means (WS-LC LC4.4).**  It means the footprint is unwound,
+including the members the growing phase only managed to *queue* on.
+
+That was not always so, and the difference is worth stating because it is the
+whole reason `RwLockOp` gained a fifth constructor.  `releaseRead` /
+`releaseWrite` are the *identity* for a core that is not a holder
+(`rwLock_release_by_nonholder_preserves_waiters`), so where the growing phase
+found a member contended, `lockCore` is **queued** on it rather than holding
+it, and a release-only unwind could not remove that request — it stayed to be
+promoted later and strand the lock.  The shrinking phase is now
+`unwindAll`, which withdraws before it releases, and
+`unwindAll_leaves_no_queued_request` is the theorem: after a refusal
+`lockCore` has no queued request at any member of the footprint, with no
+hypothesis beyond the object store's own structural invariant.
+
+What it still does not mean is that `lockCore` holds *nothing* at those
+members.  A core holding a write lock, unwound at a member declared `.read`,
+keeps `writerHeld`; ruling that out needs the growing phase's mode agreement
+threaded through, which is a different claim from the one this docstring used
+to have to disclaim. -/
 inductive RevalidatedEntryOutcome where
   /-- No footprint is declared for the operation the entry runs, so nothing was
   acquired and nothing needs releasing — the caller keeps its coarser
@@ -3289,8 +3439,9 @@ inductive RevalidatedEntryOutcome where
   | undeclared
   /-- A footprint was declared and acquired, and then the resolution moved (or
   the observed state does not hold it).  Carries the state with the footprint
-  **released**, so a refusal cannot be observed without the unwinding. -/
-  | refused (released : SystemState)
+  **unwound** — released where it was granted, withdrawn where it was only
+  queued — so a refusal cannot be observed without the unwinding. -/
+  | refused (unwound : SystemState)
   /-- The guard passed: the transition ran from the observed state and the
   footprint was released after it. -/
   | committed (result : SystemState × Except KernelError Unit)
@@ -3316,8 +3467,11 @@ def syscallEntryUnderRevalidatedLockSet (ctx : LabelingContext) (lockCore : Core
       .committed (syscallEntryFromAcquired ctx S lockCore layout executingCore regCount observed)
     else
       -- Refusing still has to unwind: the footprint was acquired before the
-      -- guard ran, so returning without releasing strands it on `lockCore`.
-      .refused (SeLe4n.Kernel.Concurrency.releaseAll lockCore
+      -- guard ran, so returning without unwinding strands it on `lockCore`.
+      -- `unwindAll`, not `releaseAll` (WS-LC LC4.4): a release is the identity
+      -- for a non-holder, so a release-only unwind left every *contended*
+      -- member queued.
+      .refused (SeLe4n.Kernel.Concurrency.unwindAll lockCore
         S.lockAcquireSequence.reverse observed)
 
 /-- SM8.D.5: the instance this pure model can run — the growing phase ends at
@@ -3373,7 +3527,7 @@ theorem syscallEntryUnderRevalidatedLockSet_refuses_on_change (ctx : LabelingCon
     (hRes : declaredLockSetForEntry ctx layout executingCore regCount s = some S)
     (hMoved : declaredLockSetForEntry ctx layout executingCore regCount observed ≠ some S) :
     syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
-      observed = .refused (SeLe4n.Kernel.Concurrency.releaseAll lockCore
+      observed = .refused (SeLe4n.Kernel.Concurrency.unwindAll lockCore
         S.lockAcquireSequence.reverse observed) := by
   unfold syscallEntryUnderRevalidatedLockSet
   rw [hRes]
@@ -3388,13 +3542,13 @@ This is the property whose absence stranded the footprint: with an `Option`
 result there was no payload to carry the release, so the shrinking phase simply
 did not run on the refusal path and a caller taking the documented fallback kept
 holding every lock it had acquired. -/
-theorem syscallEntryUnderRevalidatedLockSet_refused_releases (ctx : LabelingContext)
+theorem syscallEntryUnderRevalidatedLockSet_refused_unwinds (ctx : LabelingContext)
     (lockCore : CoreId) (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId)
-    (regCount : Nat) (s observed released : SystemState)
+    (regCount : Nat) (s observed unwound : SystemState)
     (h : syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
-      observed = .refused released) :
+      observed = .refused unwound) :
     ∃ S, declaredLockSetForEntry ctx layout executingCore regCount s = some S ∧
-      released = SeLe4n.Kernel.Concurrency.releaseAll lockCore
+      unwound = SeLe4n.Kernel.Concurrency.unwindAll lockCore
         S.lockAcquireSequence.reverse observed := by
   unfold syscallEntryUnderRevalidatedLockSet at h
   cases hRes : declaredLockSetForEntry ctx layout executingCore regCount s with
@@ -3405,6 +3559,40 @@ theorem syscallEntryUnderRevalidatedLockSet_refused_releases (ctx : LabelingCont
     split at h
     · exact absurd h (by simp)
     · exact ⟨S, rfl, by simpa using h.symm⟩
+
+/-- **WS-LC LC4.4 (the refusal's payoff)**: a refused entry leaves `lockCore`
+with **no queued request at any member of the declared footprint**.
+
+This is the theorem the "what 'released' does and does not mean" caveat was
+written to disclaim, and it is why that caveat is gone.  A release is the
+identity for a non-holder, so before the shrinking phase gained a withdrawal
+this statement was false of exactly the members the growing phase found
+contended — the ones a refusal most needs to give back.
+
+The only hypothesis is `observed.objects.invExt`, the object store's own
+structural invariant.  Nothing is assumed about the footprint: not that its
+members resolve, not that they are distinct, not that `lockCore` holds any of
+them.  What it does not claim is that `lockCore` holds nothing at those
+members — see `unwindAll_leaves_no_queued_request` for why that is a
+different, mode-sensitive statement. -/
+theorem syscallEntryUnderRevalidatedLockSet_refused_leaves_no_queued_request
+    (ctx : LabelingContext) (lockCore : CoreId)
+    (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId)
+    (regCount : Nat) (s observed unwound : SystemState)
+    (hExt : observed.objects.invExt)
+    (h : syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
+      observed = .refused unwound) :
+    ∃ S, declaredLockSetForEntry ctx layout executingCore regCount s = some S ∧
+      ∀ p ∈ S.lockAcquireSequence,
+        ¬ SeLe4n.Kernel.Concurrency.lockQueued lockCore p.fst unwound := by
+  obtain ⟨S, hRes, hEq⟩ :=
+    syscallEntryUnderRevalidatedLockSet_refused_unwinds ctx lockCore layout executingCore
+      regCount s observed unwound h
+  refine ⟨S, hRes, ?_⟩
+  intro p hp
+  rw [hEq]
+  exact SeLe4n.Kernel.Concurrency.unwindAll_leaves_no_queued_request lockCore
+    S.lockAcquireSequence.reverse observed hExt p (List.mem_reverse.mpr hp)
 
 /-- SM8.D.5 (**the refusal is reachable**): a state on which the guard fires.
 
@@ -3454,7 +3642,7 @@ theorem syscallEntryUnderRevalidatedLockSet_refuses_on_change_while_held
     (hDiffers : declaredLockSetForEntry ctx layout executingCore regCount observed ≠ some S) :
     syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
         observed
-      = .refused (SeLe4n.Kernel.Concurrency.releaseAll lockCore
+      = .refused (SeLe4n.Kernel.Concurrency.unwindAll lockCore
           S.lockAcquireSequence.reverse observed) :=
   -- The held hypothesis is deliberately unused in the *proof*: the guard is a
   -- conjunction, so the resolution change alone already forces the refusal.
@@ -3744,7 +3932,7 @@ def fineLockClaimTheorem : FineLockClaimId → String
   | .failClosedUnderFineLocks => niName! syscallEntryUnderLockSet_failClosed_invisible
   | .contentionChannelRegistered => niName! acceptedCovertChannel_lockContention_bounded
   | .revalidatedCommitTracked => niName! syscallEntryUnderRevalidatedLockSet_footprint_stable
-  | .revalidatedRefusalUnwinds => niName! syscallEntryUnderRevalidatedLockSet_refused_releases
+  | .revalidatedRefusalUnwinds => niName! syscallEntryUnderRevalidatedLockSet_refused_unwinds
 
 theorem fineLockClaimTheorem_nodup :
     (FineLockClaimId.all.map fineLockClaimTheorem).Nodup := by decide
@@ -3783,6 +3971,12 @@ def FineLockClaimId.evidenceProp : FineLockClaimId → Prop
         ∀ (c : CoreId) (m : AccessMode) (kEnq : Nat),
           (c, m) ∈ (e.stateAt kEnq).waiters →
           kEnq + lockContentionDelayBound maxDelay < e.ops.length →
+          -- The waiter does not withdraw inside the window the bound covers:
+          -- a cancelled request is never admitted, so there is no observation
+          -- to bound.  Carried in the evidence obligation rather than left to
+          -- the theorem alone, so a future weakening of the premise is a type
+          -- error here too.
+          e.noCancelIn c kEnq (kEnq + lockContentionDelayBound maxDelay + 1) →
           ∃ delay, lockContentionObservation e c kEnq = some delay ∧
             delay ≤ lockContentionDelayBound maxDelay
   | .integrityUnderLocks =>
@@ -3835,15 +4029,23 @@ def FineLockClaimId.evidenceProp : FineLockClaimId → Prop
         ∀ (c : CoreId) (m : AccessMode) (kEnq : Nat),
           (c, m) ∈ (e.stateAt kEnq).waiters →
           kEnq + lockContentionDelayBound maxDelay < e.ops.length →
+          e.noCancelIn c kEnq (kEnq + lockContentionDelayBound maxDelay + 1) →
           acceptedCovertChannel_lockContention.modelVisible = false ∧
             acceptedCovertChannel_lockContention.severity = CovertChannelSeverity.medium ∧
             lockContentionCode e c kEnq < lockContentionAlphabet maxDelay ∧
               -- The rate half, in elapsed time.  CC-5's registration is a
               -- bandwidth claim, so the inventory must consume both halves.
+              --
+              -- WS-LC LC5.8: stated at **the execution's own** cost model, which
+              -- is the stronger pin.  The generic form is what proves it, so
+              -- consuming this one forces both to exist; consuming the generic
+              -- one would have let the execution-level statement — and with it
+              -- the `stepCost` field the denomination rests on — be deleted
+              -- while this arm kept elaborating.
               (∀ (steps : List Nat), steps.Nodup → (∀ k ∈ steps, k ≤ e.ops.length) →
                 (∀ k ∈ steps, 1 ≤ k) →
-                ∀ (cost : Nat → Nat) (tMin : Nat), (∀ k, tMin ≤ cost k) →
-                  steps.length * tMin ≤ elapsedBetween cost 0 e.ops.length)
+                ∀ tMin : Nat, e.CostedCriticalSection tMin →
+                  steps.length * tMin ≤ e.elapsed 0 e.ops.length)
   | .revalidatedCommitTracked =>
       -- Over an ARBITRARY `observed`, so a concurrent kernel's foreign commits
       -- are in scope: a committed outcome ran from the state the guard checked
@@ -3860,11 +4062,11 @@ def FineLockClaimId.evidenceProp : FineLockClaimId → Prop
   | .revalidatedRefusalUnwinds =>
       ∀ (ctx : LabelingContext) (lockCore : CoreId)
         (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
-        (s observed released : SystemState),
+        (s observed unwound : SystemState),
         syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
-            observed = .refused released →
+            observed = .refused unwound →
         ∃ S, declaredLockSetForEntry ctx layout executingCore regCount s = some S ∧
-          released = SeLe4n.Kernel.Concurrency.releaseAll lockCore
+          unwound = SeLe4n.Kernel.Concurrency.unwindAll lockCore
             S.lockAcquireSequence.reverse observed
 
 /-- SM8.D: **the evidence** — every claim discharged by citation.  This
@@ -3879,8 +4081,8 @@ def fineLockClaimEvidence : (id : FineLockClaimId) → id.evidenceProp
       fun ctx c L s oid holder mode hInv =>
         blockedAcquirer_observes_nothing ctx c L s oid holder mode hInv
   | .contentionDelayBounded =>
-      fun e maxDelay hFair hInit c m kEnq hQueued hWithin =>
-        lockContention_delay_bounded e maxDelay hFair hInit c m kEnq hQueued hWithin
+      fun e maxDelay hFair hInit c m kEnq hQueued hWithin hNoCancel =>
+        lockContention_delay_bounded e maxDelay hFair hInit c m kEnq hQueued hWithin hNoCancel
   | .integrityUnderLocks =>
       fun _α ctx subject S core action s hInv hActionInv hAction =>
         bibaIntegrity_underLockSet ctx subject S core action s hInv hActionInv hAction
@@ -3897,24 +4099,24 @@ def fineLockClaimEvidence : (id : FineLockClaimId) → id.evidenceProp
         syscallEntryUnderLockSet_failClosed_invisible ctx S lockCore layout executingCore
           regCount s e L hInv hDenied
   | .contentionChannelRegistered =>
-      fun maxDelay e hFair hInit c m kEnq hQueued hWithin =>
+      fun maxDelay e hFair hInit c m kEnq hQueued hWithin hNoCancel =>
         ⟨(acceptedCovertChannel_lockContention_bounded maxDelay e hFair hInit c m kEnq hQueued
-            hWithin).1,
+            hWithin hNoCancel).1,
          (acceptedCovertChannel_lockContention_bounded maxDelay e hFair hInit c m kEnq hQueued
-            hWithin).2.1,
+            hWithin hNoCancel).2.1,
          (acceptedCovertChannel_lockContention_bounded maxDelay e hFair hInit c m kEnq hQueued
-            hWithin).2.2,
-         fun steps hNodup hRange hPos cost tMin hCost =>
-           lockContentionChannel_rate_per_elapsed_time e cost tMin hCost steps hNodup hRange
+            hWithin hNoCancel).2.2,
+         fun steps hNodup hRange hPos tMin hCost =>
+           lockContentionChannel_rate_per_execution_time e tMin hCost steps hNodup hRange
              hPos⟩
   | .revalidatedCommitTracked =>
       fun ctx lockCore layout executingCore regCount s observed r h =>
         syscallEntryUnderRevalidatedLockSet_footprint_stable ctx lockCore layout executingCore
           regCount s observed r h
   | .revalidatedRefusalUnwinds =>
-      fun ctx lockCore layout executingCore regCount s observed released h =>
-        syscallEntryUnderRevalidatedLockSet_refused_releases ctx lockCore layout executingCore
-          regCount s observed released h
+      fun ctx lockCore layout executingCore regCount s observed unwound h =>
+        syscallEntryUnderRevalidatedLockSet_refused_unwinds ctx lockCore layout executingCore
+          regCount s observed unwound h
 
 /-- SM8.D: the evidence is non-empty at every claim — the sanity check that the
 table is inhabited rather than a family of vacuous `True`s. -/

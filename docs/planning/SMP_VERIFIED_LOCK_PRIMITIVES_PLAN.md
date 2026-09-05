@@ -1,7 +1,7 @@
 # SM2 — Verified Lock Primitives (WS-SM Phase 2)
 
 > **Phase**: SM2 of WS-SM
-> **Status**: LANDED (v0.31.9) — memory model, TicketLock, RwLock, FFI bridge, refinement (SM2.C deferred items closed via SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md; SM2.E panic-hang remediation landed)
+> **Status**: LANDED (v0.31.9) — memory model, TicketLock, RwLock, FFI bridge, refinement (SM2.E panic-hang remediation landed).  **SM2.C's deferred items closed at v0.34.50** by WS-RR phase RR6 ([`SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md`](SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md), now COMPLETE): the deployed lock is `QueuedRwLock` and refines the FIFO spec (`queuedRwLock_refines_rwLockSpec`), the CAS-retry lock's D-4 bridge is stated without its `ListBlockBisim` premise, and the ticket lock's counter arithmetic became a trace correspondence.  Two SM2.C **datatype** extensions remain, registered individually in [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) table C as **SM2.C-T** and **SM2.C-C**, and owned by WS-LC ([`SMP_LOCK_DATATYPE_COMPLETION_PLAN.md`](SMP_LOCK_DATATYPE_COMPLETION_PLAN.md)) — whose LC1 landed the abstract withdrawal at v0.34.51, taking `RwLockOp` to five constructors
 > **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Audited cut**: `v0.31.2`
 > **Target releases (original estimate)**: v0.33.0 .. v0.45.x (parallel with SM1)
@@ -384,8 +384,22 @@ This is encoded as:
 #### 3.2.6 wf is preserved
 
 **Theorem 3.2.6.1** (`ticketLock_wf_invariant`). For any
-`TicketLockState s` satisfying `s.wf` and any `TicketLockOp op`,
-`(s.applyOp op).wf` (and similarly for `promotePending`).
+`TicketLockState s` satisfying `s.wf`, `wf` is preserved by every
+**kernel-facing** transition: `applyOp .tryAcquire`,
+`applyOp .observeServing`, and `releaseAndPromote`.
+
+> **WS-RR RR6.25 correction.**  This theorem read "for any
+> `TicketLockOp op`, `(s.applyOp op).wf`", and that statement is
+> **false**: the raw `applyOp .release` can leave INV-T2 transiently
+> violated, because advancing `serving` past a pending entry's ticket
+> makes that entry stale until `promotePending` consumes it.  The
+> kernel-facing release is `releaseAndPromote`, which does both
+> atomically, and that is what the landed theorem covers.  The exact
+> subset the raw release does preserve is
+> `ticketLock_release_preserves_partial_wf`, beside it in
+> `Locks/TicketLock.lean`.  The proof sketch below was written against
+> the false form; read its `release` case as covering
+> `releaseAndPromote`.
 
 *Proof.* By case analysis on `op`:
 
@@ -1134,7 +1148,16 @@ SM2 is complete when:
 
 - [ ] Memory model: 12 SM2.A sub-tasks landed; `happens_before_partial_order` proven.
 - [ ] TicketLock: 16 SM2.B sub-tasks landed; 6 theorems proven; Rust impl matches spec.
-- [ ] RwLock: 22 SM2.C sub-tasks landed; 10 theorems proven; Rust impl matches spec (with documented FIFO divergence).
+- [x] RwLock: 22 SM2.C sub-tasks landed; **11** theorems registered in the
+      aggregator; Rust impl matches spec.  The "documented FIFO divergence"
+      caveat this row carried was closed by WS-RR RR6 at **v0.34.50**: the
+      deployed lock is the ticket-FIFO `QueuedRwLock`, refined to the spec
+      by `queuedRwLock_refines_rwLockSpec` before the pool was repointed.
+      The divergence is still real for the *retained* CAS-retry
+      `rw_lock.rs`, which the kernel instantiates nowhere; `rwLockSim`
+      states it.  The eleventh RwLock entry is RR6.24's split of the R-10
+      aggregator row, which had advertised a single-step safety alias as
+      writer liveness.
 - [ ] FFI: 8 SM2.D sub-tasks landed; Lean wrappers + RAII combinators ready.
 - [ ] Documentation: 7 SM2.E sub-tasks landed; spec §10 + GitBook chapter 17 published.
 - [ ] Tier 0..5 tests green at HEAD.

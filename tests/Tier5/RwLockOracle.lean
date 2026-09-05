@@ -20,7 +20,8 @@ correspondence harness.  See:
 
 The binary reads an op-sequence on stdin (textual wire format), folds
 `RwLockState.applyOp` over the parsed ops starting from `unheld`, and
-prints the canonical serialised post-state on stdout.
+prints the serialised state on stdout — one line per state: the initial
+state, then the state after every op (PR #890 review round 5).
 
 ## Wire format
 
@@ -28,23 +29,38 @@ prints the canonical serialised post-state on stdout.
 * `r<core>` — `releaseRead core`
 * `W<core>` — `tryAcquireWrite core`
 * `w<core>` — `releaseWrite core`
+* `c<core>` — `cancel core` (WS-LC LC3.6)
 
 Each op is terminated by a comma `,`.  Whitespace between ops is
 ignored.  Example: `"R0,R1,r0,W2,w2,"` is the 5-op sequence
 `tryAcquireRead 0; tryAcquireRead 1; releaseRead 0; tryAcquireWrite 2; releaseWrite 2`.
 
+**`c` is the withdrawal**, and it means something on the Rust side only
+because that side now drives *queued* waiters: the oracle's driver takes a
+real ticket for every acquisition, admitted or not, so a withdrawal has a
+request to withdraw.  The CAS-retry lock takes no part — it has no queue —
+which is the same asymmetry `opCorresponds.cancel_no_queue` states.
+
 ## Output format
 
-`W=<flag>;R=<count>;Q=<n>`
+One line per state, each `W=<core|->;R=<sorted reader cores>;Q=<core:r|w,...>`:
 
-where:
-* `<flag>` is `1` if writerHeld.isSome else `0`
-* `<count>` is `readers.length`
-* `<n>` is `waiters.length`
+* `W=` is the writer's core id, or `-` when `writerHeld` is `none`;
+* `R=` is `readers` as a **sorted** list of core ids, since the order of
+  `readers` is not semantic (`promoteWaitersOnWriterRelease` prepends a
+  promoted batch, the Rust driver admits one core at a time);
+* `Q=` is `waiters` **in order**, each core with its mode, `r` or `w`.
 
-This canonical short form decouples the abstract spec's richer state
-(which tracks WHICH cores are readers) from the Rust impl's bit-packed
-state (which only tracks counts).  Both sides agree on the count form.
+Until PR #890 review round 5 both oracles printed a "canonical short form"
+`W=<flag>;R=<count>;Q=<length>` — the writer flag, the reader count and
+the queue length — chosen so that the Rust side could report what its
+bit-packed word held.  That form collapsed identity: a spec regression
+promoting the wrong waiter, reordering the queue or changing a queued
+mode agreed with the implementation on every count while disagreeing on
+every core.  The Rust oracle now reads the identities back out of the
+deployed ticket lock's per-core words, so both sides print the same
+identity line, and both print it after every step, so a divergence that
+later converges is caught as well.
 -/
 
 namespace SeLe4n.Tier5.RwLockOracle
@@ -72,6 +88,7 @@ def parseOp (token : String) : Option RwLockOp :=
       | 'r' => some (.releaseRead     c)
       | 'W' => some (.tryAcquireWrite c)
       | 'w' => some (.releaseWrite    c)
+      | 'c' => some (.cancel          c)
       | _   => none
 
 /-- Parse a comma-separated sequence of ops.  Returns `none` on any
@@ -86,24 +103,48 @@ def parseTrace (input : String) : Option (List RwLockOp) :=
         (parseOp tok).map fun op => op :: ops)
     (some [])
 
-/-- Serialise a final state to the canonical textual form. -/
-def renderState (s : RwLockState) : String :=
-  let flag := if s.writerHeld.isSome then "1" else "0"
-  let count := toString s.readers.length
-  let waiters := toString s.waiters.length
-  s!"W={flag};R={count};Q={waiters}"
+/-- Insert `n` into an ascending list, keeping it ascending. -/
+def insertAscending (n : Nat) : List Nat → List Nat
+  | [] => [n]
+  | x :: xs => if n ≤ x then n :: x :: xs else x :: insertAscending n xs
 
-/-- Main: read stdin, parse, fold, print. -/
+/-- Sort a list of naturals ascending (insertion sort — the lists here
+have at most `numCores` elements). -/
+def sortAscending (xs : List Nat) : List Nat :=
+  xs.foldr insertAscending []
+
+/-- Serialise a state to the identity form: the writer's core, the
+sorted reader cores, the queue in order with each request's mode. -/
+def renderState (s : RwLockState) : String :=
+  let writer := match s.writerHeld with
+    | some c => toString c.val
+    | none => "-"
+  let readers := String.intercalate ","
+    ((sortAscending (s.readers.map (·.val))).map toString)
+  let queue := String.intercalate ","
+    (s.waiters.map fun (c, m) =>
+      s!"{c.val}:{match m with | .read => "r" | .write => "w"}")
+  s!"W={writer};R={readers};Q={queue}"
+
+/-- Exit status on a trace that does not parse — the Rust oracle's too,
+so the harness reads one number for one condition on both sides. -/
+def parseErrorStatus : UInt8 := 2
+
+/-- Main: read stdin, parse, fold, printing the state before the first op
+and after each one. -/
 def main : IO Unit := do
   let stdin ← IO.getStdin
   let input ← stdin.readToEnd
   match parseTrace input with
   | none =>
       IO.eprintln "rw_lock_oracle: parse error"
-      IO.Process.exit 1
+      IO.Process.exit parseErrorStatus
   | some ops =>
-      let finalState := ops.foldl RwLockState.applyOp RwLockState.unheld
-      IO.println (renderState finalState)
+      IO.println (renderState RwLockState.unheld)
+      let _ ← ops.foldlM (init := RwLockState.unheld) fun s op => do
+        let s' := s.applyOp op
+        IO.println (renderState s')
+        pure s'
 
 end SeLe4n.Tier5.RwLockOracle
 

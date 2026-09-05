@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.34.49` (`lakefile.toml`) |
+| **Package version** | `0.34.56` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 321,991 across 309 Lean files |
-| **Test LoC** | 68,397 across 70 Lean test suites |
-| **Proved declarations** | 10,707 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 330,569 across 311 Lean files |
+| **Test LoC** | 68,907 across 70 Lean test suites |
+| **Proved declarations** | 11,000 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
-| **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR5 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
+| **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Workstream history** | [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -584,9 +584,13 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    `AccessMode` inductive (`.read` / `.write`).  `RwLockState`
    3-field structure (`writerHeld : Option CoreId`, `readers :
    List CoreId`, `waiters : List (CoreId × AccessMode)`).
-   `unheld` canonical seed.  `RwLockOp` 4-constructor inductive
+   `unheld` canonical seed.  `RwLockOp` 5-constructor inductive
    (`tryAcquireRead`, `releaseRead`, `tryAcquireWrite`,
-   `releaseWrite`).  Operational semantics: `applyOp` with a
+   `releaseWrite`, `cancel`).  `cancel` (v0.34.51) is the
+   withdrawal a two-phase-locking growing phase needs: it
+   removes the core's entry from `waiters` and writes nothing
+   else, so it is neither a release nor an admission.
+   Operational semantics: `applyOp` with a
    uniform `coreInvolved` top-level no-op gate (audit-fixed —
    the plan's pseudocode had three separate "is core already
    involved" checks that missed sub-cases, allowing INV-R4
@@ -646,8 +650,11 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
      lifts to happens-before.
    * `rwLock_wf_invariant` — wf preserved by every kernel-facing
      transition (`tryAcquireRead`, `releaseRead`,
-     `tryAcquireWrite`, `releaseWrite`).  Aggregates four
-     per-op preservation theorems.  The release-side
+     `tryAcquireWrite`, `releaseWrite`, `cancel`).  Aggregates
+     five per-op preservation theorems; the withdrawal's
+     (`rwLock_cancel_preserves_wf`) is unconditional, since a
+     cancel only shrinks `waiters` and INV-R5 can only be
+     helped.  The release-side
      preservation uses a partial-wf intermediate
      (`wfPartial` = 4 invariants without INV-R5) because
      `releaseRead` / `releaseWrite` transiently violate INV-R5
@@ -698,10 +705,95 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    (`rwLockSim_unheld`, `rwLockSim_writer_only`,
    `rwLockSim_readers_only`, `rwLockSim_writer_bit_iff`,
    `rwLockSim_reader_count_iff`).  Documents the **FIFO
-   divergence**: the Rust CAS-retry impl satisfies the mutex +
-   exclusion invariants but not the spec's FIFO admission (no
-   explicit waiters queue in the Rust state).  SM3 review
-   verifies which kernel paths require strict FIFO.
+   divergence**: the CAS-retry `rw_lock.rs` satisfies the mutex +
+   exclusion invariants but not the spec's FIFO admission — it has
+   no waiters queue, so `rwLockSim` relates the writer bit and the
+   reader count only, and says so.  **WS-RR RR6 (v0.34.50) closed
+   the bridge in both directions.**
+
+   *The bridge no longer assumes its own conclusion.*
+   `rust_rwLock_refines_lean` used to take `ListBlockBisim` as a
+   hypothesis, which is that theorem's own conclusion one block at
+   a time.  `honestBlock` is the load-then-CAS trace-shape
+   predicate that **derives** it — each CAS's `expected` is the
+   value the block's own preceding load observed, and its `new` is
+   what `rw_lock.rs` computes from that value — and
+   `listHonestBlocks_listBlockBisim` composes the now-total
+   `honestBlock_blockBisim` family over a chain.  The crux was the
+   promoting release (`releaseWrite` batch-promotes the abstract
+   queue head while `fetch_and(READER_MASK)` leaves the concrete
+   word at `0`), closed by extending the block contract so a
+   release block carries the promoted waiters' re-acquisition
+   (`casPromoteOps`).  `rust_rwLock_refines_lean_honest` and
+   `rust_rwLock_refines_lean_via_rustImplementsRwLock_honest`
+   therefore carry **no** `ListBlockBisim` premise.
+
+   *The deployed lock has its own bridge, and it is a FIFO one.*
+   `STATIC_RW_LOCK_POOL` is `[QueuedRwLock; 4]` as of v0.34.50, so
+   the lock the kernel runs is the ticket-FIFO implementation.
+   `SeLe4n.Kernel.Concurrency.Locks.QueuedRwLockRefinement` relates
+   it to the spec with `queuedSim`, which adds what the FIFO spec
+   is *about*: the abstract `waiters : List (CoreId × AccessMode)`
+   against the half-open ticket interval
+   `[now_serving, next_ticket)`, in order, under a ghost ledger
+   pinned to the machine words by `QueuedTicketWf`.  The capstones
+   are `queuedRwLock_refines_rwLockSpec` and
+   `queuedRwLock_admits_in_spec_order`; they were proved **before**
+   the pool was repointed, so no released version carried an
+   unrefined core lock.
+
+   *The relation represents the holders, and the no-ops are derived.*
+   `QueuedRwLock` keeps one held word per core (PR #890 review
+   round 2), set at admission and cleared at release, and every
+   entry point reads the caller's word before it touches anything
+   else: a holder re-acquiring, a non-holder releasing and a holder
+   withdrawing all return (the last since review round 3 — a writer
+   still holds its ticket, so a withdrawal that reached the publish
+   passed the turn under the set bit), and a guard that acquired
+   nothing releases nothing.  `queuedSim`'s fifth conjunct
+   `queuedHeldSim` relates the
+   words to `readers` / `writerHeld`, so the holder no-op shapes of
+   `queuedBlock` are the one held-word load and follow from the
+   relation rather than being asserted of a stutter no code path
+   performed — which is the identity the two-phase-locking unwind
+   (`unwindAll`, WS-LC LC4 below) relies on at every footprint
+   member the core did not hold.
+
+   *The class behind rounds 2 and 3, closed at the cause.*  Both
+   rounds, and the closure audit's stall, were the lock not knowing
+   the executing core's own situation, so `QueuedRwLock` now carries
+   a third word per core, `request` — the core's one live ticket,
+   set at the issue and cleared at a reader's entry, the writer's
+   release, a withdrawal's publish and a refused single attempt's
+   pass — and every entry point decides the core's case (idle,
+   queued, withdrawn, holding) on `held`, `request` and `cancelled`
+   before it writes anything shared.  One outstanding ticket per
+   core is a fact the lock establishes rather than a contract:
+   `enqueue` by a queued core returns the ticket it holds, the fused
+   acquisitions and the guards return on `involved`, and a
+   terminator is verified against the lock's record (`own_request`),
+   refusing a core with no request.  `queuedSim`'s sixth conjunct
+   `queuedRequestsSim` relates the word to the live ledger — and its
+   seventh, `queuedRequestModesSim` (PR #890 review round 5), pins
+   a live request's mode word to the mode the spec queued it in —
+   and every per-core branch hypothesis of `queuedBlock` is stated on
+   the words the implementation reads (`c ∈ conc.heldRead`,
+   `(c, t) ∈ conc.requests`), with the spec's branch derived from
+   the relations in `queuedBlock_preserves_queuedSim` — so the
+   derivation the round-2 text above describes is what the proof
+   does, where before the step cases consumed the abstract
+   hypothesis and consulted the relation nowhere.  The queued
+   core's re-acquisition is the `acquireRead_queued` /
+   `acquireWrite_queued` block; `cancel` has three shapes decided
+   by the words.  `per_core_state_matrix` pins every per-core entry
+   point in every state, and `build.rs` holds that matrix's list to
+   the lock's `pub fn`s taking `core_id` and pins, for all twelve,
+   that the words are loaded before the first shared write within
+   the entry point's own brace-matched body.  The CAS-retry `rw_lock.rs` keeps
+   no such word: its `honestBlock` has no `_noop` constructor, and
+   its trace-level theorems cover exactly the traces that respect
+   its caller contract (acquire only while uninvolved, release only
+   what you hold).
 
    **Rust impl** (`rust/sele4n-hal/src/rw_lock.rs`): bit-packed
    `RwLock` `#[repr(C, align(64))]` with one `AtomicU64` `state`
@@ -766,9 +858,16 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    **Rust FFI bridge** (`rust/sele4n-hal/src/lock_bridge.rs`
    ~1170 LoC + 16 exports in `ffi.rs`):
    - Two static lock pools (`STATIC_TICKET_LOCK_POOL: [TicketLock;
-     4]`, `STATIC_RW_LOCK_POOL: [RwLock; 4]`) sized to match
+     4]`, `STATIC_RW_LOCK_POOL: [QueuedRwLock; 4]`) sized to match
      `PlatformBinding.coreCount = 4` so cross-core tests can
-     exercise one lock per core.
+     exercise one lock per core.  The reader-writer pool is the
+     **ticket-FIFO** `QueuedRwLock` as of v0.34.50 (WS-RR RR6.10),
+     so the deployed lock is the one the Lean FIFO spec describes;
+     `build.rs` pins the element type, so a revert to the
+     CAS-retry `RwLock` fails the build.  The four `rw_lock_*`
+     helpers pass the executing PE's id
+     (`per_cpu::current_core_id_from_tpidr()`), which the ticket
+     protocol needs and the CAS-retry lock did not.
    - Always-on Relaxed atomic trace counters (6 arrays × 4
      entries) recording acquire/release call counts per slot;
      wait-free, off the correctness path.
@@ -796,15 +895,259 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    `rust_ticketLock_refines_lean` packages all four witnesses.
    Mirrors the `Locks/RwLockRefinement.lean` structure.
 
-   **SM2.D.7 lockPrimitives aggregator** (NEW MODULE
-   `SeLe4n/Kernel/Concurrency/LockPrimitives.lean` ~250 LoC):
-   typed `LockPrimitiveTheorem` list aggregating all 22 SM2
-   theorems (4 memory-model + 6 TicketLock + 10 RwLock + 2
+   **WS-RR RR6.12–RR6.14 (v0.34.50)** raised F-01 to the RwLock
+   standard.  What landed originally related two counters by
+   hand-written record updates on both sides, and its fourth
+   conjunct was `∀ abs conc, ticketLockSim abs conc →
+   ticketLockSim abs conc` — true independent of φ.  The module
+   now carries an operational concrete step
+   (`ConcreteTicketLockOp`, `TicketLockConcrete.applyOp`), a
+   state-indexed block relation `ticketBlock` with a stutter
+   prefix for the unbounded `now_serving` spin, and trace
+   composition `ticketTrace_preserves_ticketLockSim` stated so it
+   does **not** take its own per-block conclusion as a hypothesis.
+   The step conjuncts read `TicketLockState.applyOp` rather than
+   hand-written updates, the tautology is replaced by
+   `TicketLockState.observeServing_noop` (a pure load leaves both
+   states unchanged, over the concrete step), and
+   `ticketLockSim_not_universal` exhibits a pair the relation does
+   **not** relate — so φ is falsifiable rather than vacuous.
+
+   **PR #890 review round 4**: the bridge covers exactly the calls
+   the implementation defines.  `ticketBlock`'s `tryAcquire_noop`
+   and `release_noop` mapped the spec's no-ops — a re-acquisition
+   by a queued or holding core, a release by a non-holder — to
+   observation-only blocks, but `ticket_lock.rs` has no per-core
+   word and performs an atomic access on both (a re-acquiring
+   holder parks forever; a non-holder's release admits the next
+   waiter under the holder).  Both constructors are gone;
+   `TicketLockState.callerContract` states the operations the
+   bridge covers, `ticketBlock_respects_contract` proves every
+   shape is inside it, and `ListTicketBlocks_contractTrace` every
+   admitted trace.  The deployed `QueuedRwLock` alone implements
+   the spec's no-ops as branches, because the two-phase-locking
+   unwind relies on them there.
+
+   **WS-LC LC2 — the ticket lock's withdrawal** (MODULE
+   `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean`,
+   v0.34.52): `QueuedRwLockConcrete` gains a fifth machine word,
+   `cancelled` — the implementation's per-core withdrawal slot
+   array, abstracted to the published-and-unclaimed ticket set —
+   and three ops (`cancelledLoad`, `cancelPublish`, the
+   compare-exchange `cancelClaim`).  `now_serving` owes one
+   advance per ticket ever issued, so a withdrawal *tombstones*
+   its ticket rather than removing it: `ledgerTickets` still
+   pins the ticket column to `[now_serving, next_ticket)`, and
+   `liveLedger` — the ledger minus the withdrawn — is what
+   `queuedSim`'s queue conjunct relates to the spec's waiters.
+   `queuedSim` gains a fourth conjunct, `queuedHeadLive` (the
+   served ticket is never a tombstone), which holds at block
+   boundaries and is restored inside a block by the skip loop
+   `skipDeadOps`; a turn may be passed only for a ticket nobody
+   has withdrawn, so a skip claims the slot first and the
+   compare-exchange arbitrates.  Promotion is read off the
+   ledger (`promoteFrom` / `readerAdmitFrom`) rather than
+   computed from the served ticket, because the old form gave
+   promoted readers consecutive tickets and a mid-queue
+   withdrawal falsifies that.  `queuedRwLock_admits_in_spec_order`
+   is restated over live entries: the `i`-th waiter is the `i`-th
+   live entry, which is what FIFO is about.
+
+   **WS-LC LC3 — the deployed withdrawal** (MODULE
+   `rust/sele4n-hal/src/queued_rw_lock.rs`, v0.34.53): the
+   ticket-FIFO lock the kernel actually instantiates carries the
+   withdrawal the refinement above describes.  `acquire_read` and
+   `acquire_write` remain the *fused* spellings — one call takes a
+   ticket and spins to completion, so there is no instant at which
+   a caller holds an abandonable ticket.  A caller that may have to
+   unwind calls `enqueue` with the request's mode, spins on
+   `is_served`, and terminates the ticket with exactly one of
+   `complete_read`, `complete_write` or `cancel`; because
+   `next_ticket` is an unconditional `fetch_add` and `now_serving`
+   owes one advance per ticket ever issued, a ticket that is never
+   terminated stalls the lock.  A request ends in one of three ways
+   (PR #890 review round 5): a completion followed by a release, a
+   withdrawal that reports `Withdrawn`, or a withdrawal that reports
+   `Holding` — the spec had already admitted the request (a served
+   reader, a served writer with no reader, a reader with no live
+   write request ahead of it), so the withdrawal *realises* the
+   admission, decided on the lock's own words, and the core owes a
+   release.  Before that round a withdrawal in the served-but-
+   uncompleted interval retired the served ticket, and the spec's
+   own `cancel` was the neutral filter while the lock's passed the
+   turn on; the spec now promotes the reader run a withdrawn head
+   uncovers (`RwLockState.cancelPromotes`), which is what makes the
+   verdict decidable.  `cancel`
+   publishes `ticket + 1` into the withdrawing core's own slot and
+   only then asks whether it is being served; `pass_turn` skips
+   withdrawn tickets, one iteration per withdrawal published while
+   it runs.  Both directions
+   carry a `SeqCst` fence: the shape is a store to one location
+   followed by a load of another (Dekker's), which sequentially
+   consistent *accesses* alone do not order — loom exhibited the
+   interleaving in which neither side retired the ticket, and the
+   fences are what removed it.  A compare-exchange on the slot is
+   the arbiter, so exactly one of the withdrawing core and the
+   previous holder's skip loop advances past a given ticket.
+   Evidence: the withdrawal's loom models under `--cfg loom` (a
+   mid-queue withdrawal skipped by the core ahead, a withdrawal
+   racing a turn-pass from both sides, a served reader's withdrawal
+   entering on a calm lock, writer exclusivity across a withdrawal,
+   the two below, and the five round-5 models that race a served or
+   promoted request's withdrawal against the release that admitted
+   it, tallying that both outcomes occur), whose decisiveness is
+   established by *relation-breaking* mutations rather than by
+   deletion; miri
+   under strict provenance; and a fifth Tier-5 alphabet letter
+   driving both the Lean and the Rust oracle, with the
+   ticket-interval check re-derived from the tombstoned invariant
+   rather than patched.  The split acquisition crosses the FFI as
+   six new symbols (`ffi_rw_lock_enqueue`, `_is_served`,
+   `_complete_read`, `_complete_write`, `_cancel`,
+   `_cancel_count`), taking the SM2.D bridge surface from 16 to 22.
+
+   **The closure audit's finding** (v0.34.56): the slot is one word
+   per core, and the first cut let a core take a second ticket while
+   its first withdrawal was still unclaimed — so a second `cancel`
+   overwrote the publication, the release ahead stopped
+   `now_serving` on a ticket nobody held, and the lock stalled on
+   the contract-respecting sequence enqueue, withdraw, enqueue,
+   withdraw.  The four loom models above withdrew once per core and
+   could not see it.  `enqueue` now parks until the core's slot is
+   empty (`await_withdrawal_retired`), a wait that ends before any
+   later ticket could be served; the non-blocking attempts are
+   refused in that state; `cancel` refuses a ticket the lock has
+   already passed, since a stale publication would park the next
+   `enqueue` for good; and the skip loop's per-core iteration cap,
+   which fired on a correct execution, is replaced by the invariant
+   `now_serving ≤ next_ticket`.  On the Lean side the issue is
+   enabled only for a core holding no ticket, `QueuedTicketWf`
+   carries `ledgerCoresNodup`, `publish_slot_empty` is the theorem
+   that the store never overwrites, and the `acquire*_enqueue`
+   blocks require `¬ withdrawalPending`, so the model no longer
+   admits the trace the lock refuses.  Two loom models
+   (`double_withdrawal_by_one_core_does_not_strand_the_lock`,
+   `pending_withdrawal_refuses_the_non_blocking_attempt`) and a
+   fourth mutation pin it; the Tier-5 oracle gained the two checks
+   that see a stalled lock — the served ticket is never a recorded
+   withdrawal, and each core's slot holds exactly the spec's pending
+   withdrawal — and excludes, counted and under a ceiling, a trace
+   that asks a core to acquire while its own withdrawal is
+   unclaimed, which no single-threaded replay can execute.  Since PR
+   #890 review round 5 the oracle also holds each withdrawal's
+   verdict to the spec's, mirrors the promoting withdrawal, holds the
+   mode words, and both oracles print one identity line per state —
+   `W=<core|->;R=<sorted reader cores>;Q=<core:r|w,...>` — read back
+   out of the ticket lock's per-core words on the Rust side, where a
+   flag, a count and a length had let a wrong-waiter promotion pass.
+
+   **WS-LC LC4 — the two-phase-locking consumers** (MODULES
+   `SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean`,
+   `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean`, v0.34.54):
+   the withdrawal reaches the discipline that needs it.
+   `withLockSet`'s shrinking phase and the revalidated entry's
+   refusal path are one definition, `unwindAll`, which
+   **withdraws before it releases**.  The order is load-bearing:
+   two identities meet at each member — a release by a non-holder
+   is the identity, and a withdrawal by a holder is the identity,
+   since INV-R4 keeps holders out of the wait queue; on the deployed
+   lock a withdrawal by a core the spec has admitted realises the
+   admission and the release that follows releases it (PR #890
+   review round 5) — so both
+   orders are correct on a well-formed state, but the release
+   arms promote *from* the wait queue, so under release-first a
+   core still queued when its own release runs can be promoted
+   into a holder slot the withdrawal has already passed.  The
+   first identity is the deployed lock's and not only the spec's
+   since PR #890 review round 2: `QueuedRwLock`'s held word makes a
+   non-holder's `release_*` return before it touches the state
+   word, and since the class closure behind rounds 2 and 3 its
+   request word makes a queued core's second acquisition, and a
+   withdrawal by a core with no request, return the same way (see
+   the refinement bridge above).
+   `unwindAll_leaves_no_queued_request` is the payoff: the
+   unwinding core has no queued request at any member of the
+   footprint, with no distinctness and no resolvability condition
+   on it, because the withdrawal fold establishes the property
+   everywhere and no release arm enqueues.  It deliberately does
+   not claim the core holds nothing there — a core holding a
+   write lock, unwound at a member declared read, keeps the
+   writer bit, and ruling that out needs the growing phase's mode
+   agreement threaded through.  The insensitivity predicate is
+   named for the phase rather than one of its halves
+   (`UnwindInsensitive`, two clauses), so no capstone can demand
+   one operation's invisibility and silently ignore the other's;
+   and the bracket stays projection-invisible, so the golden
+   trace is byte-identical and the SM8 information-flow results
+   carry across unchanged.  The strict-2PL and serializability
+   results are untouched: both are statements about acquire and
+   commit *times* and about conflict graphs over the declared
+   pairs, and neither unfolds the shrinking fold.
+
+   **WS-LC LC5 — the timed execution** (MODULES
+   `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean`,
+   `Locks/ReleaseBudgetTiming.lean`,
+   `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean`, v0.34.55):
+   `RwLockExecution` carries `stepCost : Nat → Nat`, the cycles
+   between one step and the next, **with no default** — so each of
+   the nine construction sites declares a cost model where a
+   reviewer can see it, rather than inheriting one silently.  The
+   field is plain data and the timing obligation is a Prop about
+   it (`BoundedCriticalSection`), so no execution is refused for
+   its cost model, every theorem quantifying over executions is
+   unchanged, and the decidable fairness fixtures still reduce
+   because nothing in `stateAt`, `FairTrace` or the admission
+   machinery reads it.
+
+   The point is that a delay figure now names its denominator.  A
+   bound in **lock operations** is unconditional given fairness; a
+   bound in **cycles** needs a per-critical-section ceiling, which
+   is a fact about a deployment's code and is therefore a stated
+   hypothesis (`rwLock_writer_admitted_within_cycle_budget` and
+   its mode-generic twin; `lockContention_elapsed_bounded` for the
+   CC-5 chain); a bound in **hardware ticks** needs a counter
+   frequency, which is a fact about a board and therefore lives in
+   a staged module beside the timer model, reusing that model's
+   own counter-to-tick conversion rather than restating the
+   division.  Each cycle-denominated result states its own
+   collapse back to the step bound at unit cost, because a
+   denomination that had quietly weakened a claim would look
+   exactly like one that had not.  `MAX_RELEASE_DELAY`'s 1024 is
+   accordingly 1024 *operations*: on the Raspberry Pi 5's 54 MHz
+   counter with 1 ms ticks the same budget spans from under one
+   tick to 1024 ticks depending on the ceiling assumed, which is
+   why the step figure alone was never a time.
+
+   **SM2.D.7 lockPrimitives aggregator** (MODULE
+   `SeLe4n/Kernel/Concurrency/LockPrimitives.lean`):
+   typed `LockPrimitiveTheorem` list aggregating **30** SM2
+   theorems (4 memory-model + 6 TicketLock + 16 RwLock + 4
    refinement) with size + per-category count + NoDup witnesses.
-   Cross-language symmetry: the Rust-side
-   `LOCK_THEOREM_COUNT = 22` constant in `lock_bridge.rs` is
-   enforced equal via `scripts/check_lock_ffi_symmetry.sh`
-   (wired into Tier 0 hygiene).
+   The four refinement entries are one per lock kind — TicketLock,
+   the CAS-retry RwLock, the deployed `QueuedRwLock` — plus the
+   deployed lock's FIFO-admission payoff.  WS-RR RR6.24 also
+   repointed the R-10 aggregator entry at the theorem that proves
+   writer *liveness* (`rwLock_writer_liveness`: admission under
+   `FairTrace`, which WS-LC LC1 gave its explicit no-withdrawal
+   premise); the single-step *safety* theorem it used to stand in
+   for keeps its own entry under its accurate name, which is why
+   the RwLock category went from 10 to 11.  RR6.23's release-count
+   bound (`rwLock_writer_admitted_within_release_budget`) is the
+   "leaves the queue" form and is not the entry.  WS-LC LC1 took
+   the category to 14 with the withdrawal's three payoff entries
+   (`rwLock_cancel_preserves_wf`,
+   `rwLock_cancel_admits_only_the_head_reader_run` — the entry was
+   `rwLock_cancel_admits_no_one` until PR #890 review round 5 made
+   the withdrawal promote the reader run a withdrawn head uncovers —
+   `rwLock_cancel_does_not_increase_wait_depth`), and WS-LC LC5 to
+   16 with the two cycle-denominated admission bounds
+   (`rwLock_writer_admitted_within_cycle_budget`,
+   `rwLock_writer_cycle_budget_at_unit_cost`).
+   Cross-language symmetry: the
+   Rust-side `LOCK_THEOREM_COUNT = 30` constant in
+   `lock_bridge.rs` is enforced equal via
+   `scripts/check_lock_ffi_symmetry.sh` (wired into Tier 0
+   hygiene).
 
    **SM2.D.5 cross-language symmetry**:
    `scripts/check_lock_ffi_symmetry.sh` verifies:
@@ -1838,6 +2181,12 @@ bridges abstract timer ticks to the ARM Generic Timer:
   comparator). At 1000 Hz tick rate: 54,000 counter increments per tick
 - **Monotonicity**: `hardwareTimerToModelTick_monotone` proves the hardware-to-
   model conversion is monotonically non-decreasing
+- **Durations convert by the ceiling** (PR #890 review round 4):
+  `hardwareDurationToModelTicks` is the number of ticks an interval of
+  counter cycles can span, and `hardwareTimerToModelTick_sub_le_duration`
+  bounds the ticks elapsed from any start counter across an interval by it —
+  the absolute conversion floors and under-counts an interval that begins
+  mid-tick by one; `releaseBudgetTicks` (WS-LC LC5) is its consumer
 - **`TimerInterruptBinding`**: Structure capturing the bidirectional relationship
   between hardware timer events and model timer ticks
 

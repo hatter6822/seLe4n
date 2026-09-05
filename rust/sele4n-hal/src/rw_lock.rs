@@ -27,12 +27,64 @@
 //! `readers : List CoreId`, `waiters : List (CoreId × AccessMode)`); the bit-
 //! packing is a refinement detail.
 //!
-//! The Lean spec's `waiters` queue is not represented in the Rust impl —
+//! The Lean spec's `waiters` queue is not represented in this impl —
 //! waiters block via CAS-retry instead of an explicit queue.  This means
-//! the Rust impl does NOT satisfy the Lean spec's FIFO admission property
+//! this lock does NOT satisfy the Lean spec's FIFO admission property
 //! (`rwLock_fifo_admission`); it only guarantees the mutex and exclusion
 //! invariants.  This divergence is documented in the SM2.C.20 refinement
 //! bridge (`Locks/RwLockRefinement.lean`).
+//!
+//! ## Deployment status, and why this lock is retained (WS-RR RR6.10, RR6.11)
+//!
+//! **This is not the lock the kernel deploys.**  `lock_bridge.rs`'s
+//! `STATIC_RW_LOCK_POOL` holds [`crate::queued_rw_lock::QueuedRwLock`], the
+//! ticket FIFO lock, because the specification above was tightened to strict
+//! FIFO admission and this implementation does not satisfy it — the paragraph
+//! immediately above says so, and shipping a deployed lock that its own spec
+//! does not describe is the gap WS-RR RR6 exists to close.
+//!
+//! It is nonetheless **retained**, for three reasons that are about evidence
+//! rather than compatibility:
+//!
+//! 1. It is the second implementation the Tier-5 cross-language oracle drives
+//!    (`src/bin/rw_lock_oracle.rs`).  That harness replays every generated
+//!    trace against *both* deployed-quality locks and fails on any
+//!    disagreement between them or with the Lean spec.  Two independent
+//!    algorithms refining one specification and agreeing word for word is
+//!    worth more than one algorithm agreeing with itself, which is what the
+//!    harness checked before RR6.2.
+//! 2. Its refinement is **completed**, not deleted: the D-4 bisimulation in
+//!    `Locks/RwLockRefinement.lean` is closed by WS-RR RR6.15..RR6.19 rather
+//!    than retired with the code.  Deleting a lock to avoid finishing its
+//!    proof is the weaker outcome.
+//! 3. It owns the bit-packed layout both locks share (`WRITER_BIT`,
+//!    `READER_MASK` below); `queued_rw_lock.rs` imports them rather than
+//!    redeclaring, so there is one definition of the encoding the Lean
+//!    `encodeRwLock` refines.
+//!
+//! A future cut that wants this lock gone must retire the harness's
+//! cross-implementation check with it, and say so.
+//!
+//! ## Caller contract: not re-entrant, and release only what you hold
+//!
+//! This lock keeps **no holder bookkeeping**, so none of the spec's
+//! no-ops is one here: `acquire_read` by a core already reading takes a
+//! second count, `acquire_read` by the core holding the writer bit parks
+//! that core on its own bit, `release_read` by a non-holder is an
+//! unconditional `fetch_sub` that poisons the word (fail-locked, see
+//! `release_read`), and `release_write` by a non-writer clears a bit
+//! another core may own.  The refinement bridge
+//! (`SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean`, `honestBlock`)
+//! therefore has **no block** for any of those calls: its trace-level
+//! theorems cover exactly the traces in which every acquire is by an
+//! uninvolved core and every release by the holder, which is this lock's
+//! contract and what its `debug_assert`s police (PR #890 review round 2 —
+//! the bridge used to carry four `_noop` blocks describing a stutter this
+//! code never performs).  The Tier-5 oracle issues neither call to this
+//! lock.  The deployed [`crate::queued_rw_lock::QueuedRwLock`] is
+//! different: its per-core held word implements the spec's no-ops, which
+//! is what the two-phase-locking unwind relies on, and one more reason it
+//! is the deployed one.
 //!
 //! ## ARM ARM citations
 //!
@@ -221,6 +273,99 @@ impl RwLock {
             }
             // CAS failed; another thread modified state.  Retry.
         }
+    }
+
+    /// **WS-RR RR6.1**: attempt a read acquire once, without blocking.
+    ///
+    /// Returns `true` iff the read lock was acquired.  This is exactly
+    /// one iteration of [`acquire_read`]'s CAS-retry loop with the retry
+    /// removed: one `load(Acquire)`, the writer-bit and overflow gates,
+    /// then one `compare_exchange`.  It performs no `wfe` park and never
+    /// spins, so a single-threaded caller cannot wedge on it.
+    ///
+    /// # Why this exists
+    ///
+    /// The Tier-5 cross-language oracle
+    /// (`rust/sele4n-hal/src/bin/rw_lock_oracle.rs`) drives a *real*
+    /// `RwLock` rather than a software mirror of it.  A single-threaded
+    /// driver cannot call [`acquire_read`] on a contended lock — the
+    /// `wfe` park would never be woken, because the only core that could
+    /// send the `sev` is the one parked.  A non-blocking single attempt
+    /// removes that obstacle without weakening the lock: the blocking
+    /// entry point is precisely `while !self.try_acquire_read() { park }`
+    /// modulo the park, witnessed by
+    /// `try_acquire_read_matches_acquire_read_on_uncontended` below.
+    ///
+    /// # Refinement
+    ///
+    /// Corresponds to the Lean concrete block
+    /// `[.load c, .casAcquireRead c s (s+1)]` (`ConcreteRwLockOp` in
+    /// `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` §D-4.1) — the
+    /// `tryRead_success` shape on `true`, and the `load` + failed-CAS
+    /// prefix of `tryRead_cas_retry` / `tryRead_park_retry` on `false`.
+    ///
+    /// # API contract
+    ///
+    /// A `true` return MUST be paired with exactly one
+    /// [`release_read`].  A `false` return acquires nothing and must not
+    /// be released.
+    #[inline]
+    #[must_use]
+    pub fn try_acquire_read(&self) -> bool {
+        let s = self.state.load(Ordering::Acquire);
+        if s & WRITER_BIT != 0 {
+            // Writer holds; a read acquire cannot succeed now.
+            return false;
+        }
+        // Same fail-closed overflow gate as `acquire_read`: at
+        // `s == READER_MASK`, `s + 1` would be `WRITER_BIT` and a
+        // successful CAS would corrupt the state into "writer held".
+        if s == READER_MASK {
+            debug_assert!(
+                false,
+                "RwLock reader count exhausted (impossible under numCores <= 4); \
+                 state was 0x{s:x}"
+            );
+            return false;
+        }
+        let new_state = s + 1;
+        debug_assert!(
+            new_state & WRITER_BIT == 0,
+            "RwLock reader count overflow (impossible under numCores <= 4)"
+        );
+        self.state
+            .compare_exchange(s, new_state, Ordering::Acquire, Ordering::Relaxed)
+            .is_ok()
+    }
+
+    /// **WS-RR RR6.1**: attempt a write acquire once, without blocking.
+    ///
+    /// Returns `true` iff the write lock was acquired.  Exactly one
+    /// iteration of [`acquire_write`]'s loop with the retry removed:
+    /// one `compare_exchange(0, WRITER_BIT)`.
+    ///
+    /// The separate `load` that [`acquire_write`] performs before the
+    /// CAS is a contention heuristic, not a correctness step — the CAS
+    /// itself is what establishes "state was exactly 0 at the instant
+    /// the writer bit was set".  Omitting it here makes the single
+    /// attempt strictly one atomic operation.
+    ///
+    /// # Refinement
+    ///
+    /// Corresponds to the Lean concrete op `.casAcquireWrite c`
+    /// (`concreteApplyOp` maps it to `writerBit` exactly when the
+    /// pre-state is `0`).
+    ///
+    /// # API contract
+    ///
+    /// A `true` return MUST be paired with exactly one
+    /// [`release_write`].
+    #[inline]
+    #[must_use]
+    pub fn try_acquire_write(&self) -> bool {
+        self.state
+            .compare_exchange(0, WRITER_BIT, Ordering::Acquire, Ordering::Relaxed)
+            .is_ok()
     }
 
     /// **WS-SM SM2.C.19**: release a read lock.
@@ -1240,5 +1385,121 @@ mod tests {
         let encoded = WRITER_BIT | 5;
         assert_eq!(encoded & WRITER_BIT, WRITER_BIT);
         assert_eq!(encoded & READER_MASK, 5);
+    }
+
+    // ------------------------------------------------------------------
+    // WS-RR RR6.1 — non-blocking single-attempt entry points
+    // ------------------------------------------------------------------
+
+    /// **RR6.1**: on an unheld lock a read attempt succeeds and moves the
+    /// state exactly as `acquire_read` would.
+    #[test]
+    fn try_acquire_read_matches_acquire_read_on_uncontended() {
+        let attempted = RwLock::new();
+        let blocking = RwLock::new();
+        for _ in 0..4 {
+            assert!(attempted.try_acquire_read(), "uncontended attempt succeeds");
+            blocking.acquire_read();
+            assert_eq!(
+                attempted.snapshot(),
+                blocking.snapshot(),
+                "the attempt and the blocking entry leave the same state"
+            );
+        }
+        for _ in 0..4 {
+            attempted.release_read();
+            blocking.release_read();
+            assert_eq!(attempted.snapshot(), blocking.snapshot());
+        }
+        assert_eq!(attempted.snapshot(), (false, 0));
+    }
+
+    /// **RR6.1**: on an unheld lock a write attempt succeeds and moves the
+    /// state exactly as `acquire_write` would.
+    #[test]
+    fn try_acquire_write_matches_acquire_write_on_uncontended() {
+        let attempted = RwLock::new();
+        let blocking = RwLock::new();
+        assert!(
+            attempted.try_acquire_write(),
+            "uncontended attempt succeeds"
+        );
+        blocking.acquire_write();
+        assert_eq!(attempted.snapshot(), blocking.snapshot());
+        assert_eq!(attempted.snapshot(), (true, 0));
+        attempted.release_write();
+        blocking.release_write();
+        assert_eq!(attempted.snapshot(), blocking.snapshot());
+        assert_eq!(attempted.snapshot(), (false, 0));
+    }
+
+    /// **RR6.1**: a write attempt fails, and changes nothing, while a
+    /// reader holds.  This is the case that makes the blocking entry
+    /// point unusable from a single-threaded driver.
+    #[test]
+    fn try_acquire_write_fails_under_reader_and_is_inert() {
+        let lock = RwLock::new();
+        assert!(lock.try_acquire_read());
+        let before = lock.snapshot();
+        assert!(
+            !lock.try_acquire_write(),
+            "writer must not admit under a reader"
+        );
+        assert_eq!(lock.snapshot(), before, "a failed attempt writes nothing");
+        lock.release_read();
+        assert!(lock.try_acquire_write(), "admits once the reader has gone");
+        lock.release_write();
+    }
+
+    /// **RR6.1**: a read attempt fails, and changes nothing, while the
+    /// writer bit is set.
+    #[test]
+    fn try_acquire_read_fails_under_writer_and_is_inert() {
+        let lock = RwLock::new();
+        assert!(lock.try_acquire_write());
+        let before = lock.snapshot();
+        assert!(
+            !lock.try_acquire_read(),
+            "reader must not admit under a writer"
+        );
+        assert_eq!(lock.snapshot(), before, "a failed attempt writes nothing");
+        lock.release_write();
+        assert!(lock.try_acquire_read(), "admits once the writer has gone");
+        lock.release_read();
+    }
+
+    /// **RR6.1**: a second writer attempt fails while the first holds —
+    /// the mutual-exclusion property at the single-attempt level.
+    #[test]
+    fn try_acquire_write_is_exclusive() {
+        let lock = RwLock::new();
+        assert!(lock.try_acquire_write());
+        assert!(!lock.try_acquire_write());
+        assert_eq!(lock.snapshot(), (true, 0));
+        lock.release_write();
+    }
+
+    /// **RR6.1**: readers compose — several successful attempts raise the
+    /// count one at a time, matching `encodeRwLock false n`.
+    #[test]
+    fn try_acquire_read_counts_up_one_at_a_time() {
+        let lock = RwLock::new();
+        for expected in 1..=8u64 {
+            assert!(lock.try_acquire_read());
+            assert_eq!(lock.snapshot(), (false, expected));
+        }
+        for remaining in (0..8u64).rev() {
+            lock.release_read();
+            assert_eq!(lock.snapshot(), (false, remaining));
+        }
+    }
+
+    /// **RR6.1**: signature pin — both attempts are `&self -> bool` and
+    /// `#[must_use]`, so a caller cannot silently discard the verdict and
+    /// proceed as though it held the lock.
+    #[test]
+    fn try_acquire_signature_pin() {
+        let _r: fn(&RwLock) -> bool = RwLock::try_acquire_read;
+        let _w: fn(&RwLock) -> bool = RwLock::try_acquire_write;
     }
 }

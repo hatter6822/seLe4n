@@ -1111,6 +1111,60 @@ pub extern "C" fn ffi_rw_lock_release_read(handle: u64) {
     crate::lock_bridge::rw_lock_release_read(handle);
 }
 
+/// **WS-LC LC3.7**: begin a cancellable acquisition on `handle`, in
+/// `mode` (`0` read, `1` write; PR #890 review round 5).
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiRwLockEnqueue`.
+#[no_mangle]
+pub extern "C" fn ffi_rw_lock_enqueue(handle: u64, mode: u64) -> u64 {
+    crate::lock_bridge::rw_lock_enqueue(handle, mode)
+}
+
+/// **WS-LC LC3.7**: whether `ticket` is the one `handle` is serving.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiRwLockIsServed`.
+#[no_mangle]
+pub extern "C" fn ffi_rw_lock_is_served(handle: u64, ticket: u64) -> u64 {
+    u64::from(crate::lock_bridge::rw_lock_is_served(handle, ticket))
+}
+
+/// **WS-LC LC3.7**: complete a read acquisition begun with
+/// `ffi_rw_lock_enqueue`.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiRwLockCompleteRead`.
+#[no_mangle]
+pub extern "C" fn ffi_rw_lock_complete_read(handle: u64, ticket: u64) {
+    crate::lock_bridge::rw_lock_complete_read(handle, ticket);
+}
+
+/// **WS-LC LC3.7**: complete a write acquisition begun with
+/// `ffi_rw_lock_enqueue`.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiRwLockCompleteWrite`.
+#[no_mangle]
+pub extern "C" fn ffi_rw_lock_complete_write(handle: u64, ticket: u64) {
+    crate::lock_bridge::rw_lock_complete_write(handle, ticket);
+}
+
+/// **WS-LC LC3.7**: withdraw a request begun with `ffi_rw_lock_enqueue`,
+/// or realise the admission the spec already made of it (PR #890 review
+/// round 5): returns `0` when withdrawn, `1` when the core holds and owes
+/// a release.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiRwLockCancel`.
+#[no_mangle]
+pub extern "C" fn ffi_rw_lock_cancel(handle: u64, ticket: u64) -> u64 {
+    crate::lock_bridge::rw_lock_cancel(handle, ticket)
+}
+
+/// **WS-LC LC3.7**: how many withdrawals `handle` has seen.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiRwLockCancelCount`.
+#[no_mangle]
+pub extern "C" fn ffi_rw_lock_cancel_count(handle: u64) -> u64 {
+    crate::lock_bridge::rw_lock_cancel_count(handle)
+}
+
 /// **WS-SM SM2.D.2**: acquire a write lock on the `RwLock` identified by `handle`.
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiRwLockAcquireWrite`.

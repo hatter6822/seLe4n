@@ -233,8 +233,29 @@ def runLockBridgeChecks : IO Unit := do
     (decide (SeLe4n.Kernel.Concurrency.peekTicketLockServing packed_max = max32))
 
   IO.println "--- §4 Aggregator size verification ---"
-  assertBool "lockPrimitives.length = 22"
-    (decide (SeLe4n.Kernel.Concurrency.lockPrimitives.length = 22))
+  assertBool "the lock inventory has its full entry count"
+    (decide (SeLe4n.Kernel.Concurrency.lockPrimitives.length = 30))
+  -- The partition, so a miscategorised entry cannot hide behind the total.
+  assertBool "memory-model count = 4"
+    (decide
+      ((SeLe4n.Kernel.Concurrency.lockPrimitives.filter
+        (·.category =
+          SeLe4n.Kernel.Concurrency.LockPrimitiveCategory.memoryModel)).length = 4))
+  assertBool "TicketLock count = 6"
+    (decide
+      ((SeLe4n.Kernel.Concurrency.lockPrimitives.filter
+        (·.category =
+          SeLe4n.Kernel.Concurrency.LockPrimitiveCategory.ticketLock)).length = 6))
+  assertBool "the RwLock category has its full count"
+    (decide
+      ((SeLe4n.Kernel.Concurrency.lockPrimitives.filter
+        (·.category =
+          SeLe4n.Kernel.Concurrency.LockPrimitiveCategory.rwLock)).length = 16))
+  assertBool "refinement count = 4"
+    (decide
+      ((SeLe4n.Kernel.Concurrency.lockPrimitives.filter
+        (·.category =
+          SeLe4n.Kernel.Concurrency.LockPrimitiveCategory.refinement)).length = 4))
 
   IO.println "================================================"
   IO.println "All SM2.D.3 LockBridge RAII checks PASS."

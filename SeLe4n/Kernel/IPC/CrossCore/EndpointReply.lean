@@ -1100,7 +1100,7 @@ theorem endpointReplyOnCore_atomic_under_lockSet
     (donatedOwner? : Option SeLe4n.ThreadId) (s : SystemState) :
     withLockSet (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner?)
         executingCore (endpointReplyOnCore replier target msg executingCore) s
-      = (releaseAll executingCore
+      = (unwindAll executingCore
           (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner?).lockAcquireSequence.reverse
           (endpointReplyOnCore replier target msg executingCore
             (acquireAll executingCore
@@ -1120,7 +1120,7 @@ theorem endpointReplyRecvOnCore_atomic_under_lockSet
     (s : SystemState) :
     withLockSet (lockSet_replyRecv receiver cnRoot target endpointId newSender? donatedSc? donatedOwner? replyId)
         executingCore (endpointReplyRecvOnCore endpointId receiver target msg replyId executingCore) s
-      = (releaseAll executingCore
+      = (unwindAll executingCore
           (lockSet_replyRecv receiver cnRoot target endpointId newSender? donatedSc? donatedOwner? replyId).lockAcquireSequence.reverse
           (endpointReplyRecvOnCore endpointId receiver target msg replyId executingCore
             (acquireAll executingCore

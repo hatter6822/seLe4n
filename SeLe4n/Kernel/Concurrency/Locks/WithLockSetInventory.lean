@@ -180,6 +180,24 @@ def withLockSetTheorems : List WithLockSetTheorem :=
       acquireAll_cons .combinator,
     wlst! "releaseAll_cons: releaseAll on cons unfolds to head-then-tail"
       releaseAll_cons .combinator,
+    wlst! "cancelLockOnObject: WS-LC per-object withdrawal, kind-checked"
+      cancelLockOnObject .combinator,
+    wlst! "cancelLockOnObject_reply: .reply LockId routes through updateObjectLockAt"
+      cancelLockOnObject_reply .combinator,
+    wlst! "cancelLockOnObject_page: .page LockId is no-op"
+      cancelLockOnObject_page .combinator,
+    wlst! "cancelAll: fold cancelLockOnObject over a sorted list"
+      cancelAll .combinator,
+    wlst! "cancelAll_nil: cancelAll on empty list is identity"
+      cancelAll_nil .combinator,
+    wlst! "cancelAll_cons: cancelAll on cons unfolds to head-then-tail"
+      cancelAll_cons .combinator,
+    wlst! "unwindAll: the shrinking phase — withdraw, then release"
+      unwindAll .combinator,
+    wlst! "unwindAll_nil: the shrinking phase on empty list is identity"
+      unwindAll_nil .combinator,
+    wlst! "unwindAll_eq_releaseAll_cancelAll: the shrinking phase's two halves"
+      unwindAll_eq_releaseAll_cancelAll .combinator,
     wlst! "updateObjectAt: in-place kernel-object update helper"
       updateObjectAt .combinator,
     wlst! "updateObjectLockAt: kind-checked lock update (audit-pass-1 Comment 5)"
@@ -190,6 +208,8 @@ def withLockSetTheorems : List WithLockSetTheorem :=
       AccessMode.toAcquireOp .combinator,
     wlst! "AccessMode.toReleaseOp: mode → release RwLockOp"
       AccessMode.toReleaseOp .combinator,
+    wlst! "AccessMode.toCancelOp: mode → withdrawal RwLockOp (mode-independent)"
+      AccessMode.toCancelOp .combinator,
     wlst! "KernelObject.updateLock: apply RwLockOp to per-object lock"
       SeLe4n.Model.KernelObject.updateLock .combinator,
     wlst! "KernelObject.updateLock_preserves_lockKind"
@@ -271,8 +291,12 @@ def withLockSetTheorems : List WithLockSetTheorem :=
       acquireAll_lockInsensitive .atomicity,
     wlst! "releaseAll_lockInsensitive: SM3.C.7 release fold invisible to lock-insensitive observer"
       releaseAll_lockInsensitive .atomicity,
-    wlst! "withLockSet_release_invisible: SM3.C.7 observational form (release contributes nothing)"
-      withLockSet_release_invisible .atomicity,
+    wlst! "cancelAll_lockInsensitive: WS-LC withdrawal fold invisible to the same observer"
+      cancelAll_lockInsensitive .atomicity,
+    wlst! "unwindAll_lockInsensitive: WS-LC the whole shrinking phase is invisible"
+      unwindAll_lockInsensitive .atomicity,
+    wlst! "withLockSet_unwind_invisible: SM3.C.7 observational form (the shrinking phase contributes nothing)"
+      withLockSet_unwind_invisible .atomicity,
     wlst! "lockSet_observer_atomic: SM3.C.7 Thm 2.1.10 observer-atomicity capstone"
       lockSet_observer_atomic .atomicity,
     -- §5 dynamicChain (8 entries: SM3.C.11.a-e)
@@ -332,7 +356,7 @@ expanded 71→86 (+5 held: the SM3.C.8 establishment lemmas
 `acquireAll_establishes_lockHeld_of_distinct_present_unheld` /
 `acquireAll_establishes_lockSetHeld`; +4 atomicity: the SM3.C.7
 observational-atomicity theorems `acquireAll_lockInsensitive` /
-`releaseAll_lockInsensitive` / `withLockSet_release_invisible` /
+`releaseAll_lockInsensitive` / `withLockSet_unwind_invisible` /
 `lockSet_observer_atomic`; +6 dynamicChain: SM3.C.11.c conjunct-1
 establishment + `blockingServer` frame/transport + the full
 `dynamicChainHeld` capstone + the SM3.C.11.d two-core deadlock-freedom
@@ -340,12 +364,15 @@ theorems).
 A regression that adds a new SM3.C theorem without updating the
 inventory fails this count witness at the Tier-3 surface check. -/
 theorem withLockSetTheorems_count :
-    withLockSetTheorems.length = 86 := by decide
+    withLockSetTheorems.length = 98 := by decide
 
-/-- WS-SM SM3.C: 31 entries in the `combinator` category
-(audit-pass-1: +`updateObjectLockAt` + `updateObjectLockAt_preserves_objStoreLock`). -/
+/-- WS-SM SM3.C: 41 entries in the `combinator` category
+(audit-pass-1: +`updateObjectLockAt` + `updateObjectLockAt_preserves_objStoreLock`;
+WS-LC LC4.7: +10 for the withdrawal surface — the per-object primitive and its
+two kind arms, the fold and its two unfoldings, the mode conversion, and the
+shrinking phase with its nil case and its two-halves decomposition). -/
 theorem withLockSetTheorems_combinator_count :
-    (withLockSetTheorems.filter (fun t => t.category == .combinator)).length = 31 := by
+    (withLockSetTheorems.filter (fun t => t.category == .combinator)).length = 41 := by
   decide
 
 /-- WS-SM SM3.C: 16 entries in the `held` category
@@ -365,7 +392,7 @@ theorem withLockSetTheorems_ordering_count :
 +`acquireLockOnObject_objStore_release_roundtrip`; Group-B: +4 SM3.C.7
 observational-atomicity theorems). -/
 theorem withLockSetTheorems_atomicity_count :
-    (withLockSetTheorems.filter (fun t => t.category == .atomicity)).length = 13 := by
+    (withLockSetTheorems.filter (fun t => t.category == .atomicity)).length = 15 := by
   decide
 
 /-- WS-SM SM3.C: 23 entries in the `dynamicChain` category

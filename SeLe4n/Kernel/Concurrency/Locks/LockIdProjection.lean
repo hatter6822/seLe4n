@@ -635,6 +635,107 @@ theorem lookup_lockState_eq (s : SystemState) (l : LockId)
           obtain ⟨hSt, hO⟩ := hLookup
           rw [← hSt, ← hO]; rfl
 
+/-- **WS-SM SM3.B.2** (added at **WS-LC LC4.3**): if `lookup` returns
+`some (st, o)`, the object component is the one the store actually holds at
+`l.objId`.
+
+The third sibling of `lookup_kindMatch` and `lookup_lockState_eq`, which
+recover the *kind* and the *lock state* of a successful lookup and leave the
+object's provenance implicit.  Without it, a caller that knows what the store
+holds at `l.objId` cannot conclude anything about what a lookup at `l`
+returned, which is precisely the step the shrinking phase's frame argument
+needs: an update at one lock has to be shown not to enqueue at any other, and
+the two are related only through the store. -/
+theorem lookup_object_eq (s : SystemState) (l : LockId)
+    (st : RwLockState) (o : KernelObject)
+    (hLookup : LockId.lookup s l = some (st, o)) :
+    s.objects[l.objId]? = some o := by
+  have hObjIdTcb : (⟨l.objId.val⟩ : SeLe4n.ThreadId).toObjId = l.objId := by
+    show SeLe4n.ObjId.ofNat l.objId.val = l.objId
+    exact SeLe4n.ObjId.ofNat_toNat l.objId
+  have hObjIdSc : (⟨l.objId.val⟩ : SeLe4n.SchedContextId).toObjId = l.objId := by
+    show SeLe4n.ObjId.ofNat l.objId.val = l.objId
+    exact SeLe4n.ObjId.ofNat_toNat l.objId
+  have hObjIdRp : (⟨l.objId.val⟩ : SeLe4n.ReplyId).toObjId = l.objId := by
+    show SeLe4n.ObjId.ofNat l.objId.val = l.objId
+    exact SeLe4n.ObjId.ofNat_toNat l.objId
+  unfold LockId.lookup at hLookup
+  cases hK : l.kind with
+  | objStore => rw [hK] at hLookup; cases hLookup
+  | page => rw [hK] at hLookup; cases hLookup
+  | tcb =>
+      rw [hK] at hLookup
+      cases hG : s.getTcb? ⟨l.objId.val⟩ with
+      | none => rw [hG] at hLookup; cases hLookup
+      | some t =>
+          rw [hG] at hLookup; simp at hLookup
+          obtain ⟨_, hO⟩ := hLookup
+          rw [← hO, ← hObjIdTcb]
+          exact (SystemState.getTcb?_eq_some_iff s ⟨l.objId.val⟩ t).mp hG
+  | endpoint =>
+      rw [hK] at hLookup
+      cases hG : s.getEndpoint? l.objId with
+      | none => rw [hG] at hLookup; cases hLookup
+      | some e =>
+          rw [hG] at hLookup; simp at hLookup
+          obtain ⟨_, hO⟩ := hLookup
+          rw [← hO]
+          exact (SystemState.getEndpoint?_eq_some_iff s l.objId e).mp hG
+  | notification =>
+      rw [hK] at hLookup
+      cases hG : s.getNotification? l.objId with
+      | none => rw [hG] at hLookup; cases hLookup
+      | some n =>
+          rw [hG] at hLookup; simp at hLookup
+          obtain ⟨_, hO⟩ := hLookup
+          rw [← hO]
+          exact (SystemState.getNotification?_eq_some_iff s l.objId n).mp hG
+  | cnode =>
+      rw [hK] at hLookup
+      cases hG : s.getCNode? l.objId with
+      | none => rw [hG] at hLookup; cases hLookup
+      | some c =>
+          rw [hG] at hLookup; simp at hLookup
+          obtain ⟨_, hO⟩ := hLookup
+          rw [← hO]
+          exact (SystemState.getCNode?_eq_some_iff s l.objId c).mp hG
+  | vspaceRoot =>
+      rw [hK] at hLookup
+      cases hG : s.getVSpaceRoot? l.objId with
+      | none => rw [hG] at hLookup; cases hLookup
+      | some v =>
+          rw [hG] at hLookup; simp at hLookup
+          obtain ⟨_, hO⟩ := hLookup
+          rw [← hO]
+          exact (SystemState.getVSpaceRoot?_eq_some_iff s l.objId v).mp hG
+  | untyped =>
+      rw [hK] at hLookup
+      cases hG : s.getUntyped? l.objId with
+      | none => rw [hG] at hLookup; cases hLookup
+      | some u =>
+          rw [hG] at hLookup; simp at hLookup
+          obtain ⟨_, hO⟩ := hLookup
+          rw [← hO]
+          exact (SystemState.getUntyped?_eq_some_iff s l.objId u).mp hG
+  | schedContext =>
+      rw [hK] at hLookup
+      cases hG : s.getSchedContext? ⟨l.objId.val⟩ with
+      | none => rw [hG] at hLookup; cases hLookup
+      | some sc =>
+          rw [hG] at hLookup; simp at hLookup
+          obtain ⟨_, hO⟩ := hLookup
+          rw [← hO, ← hObjIdSc]
+          exact (SystemState.getSchedContext?_eq_some_iff s ⟨l.objId.val⟩ sc).mp hG
+  | reply =>
+      rw [hK] at hLookup
+      cases hG : s.getReply? ⟨l.objId.val⟩ with
+      | none => rw [hG] at hLookup; cases hLookup
+      | some r =>
+          rw [hG] at hLookup; simp at hLookup
+          obtain ⟨_, hO⟩ := hLookup
+          rw [← hO, ← hObjIdRp]
+          exact (SystemState.getReply?_eq_some_iff s ⟨l.objId.val⟩ r).mp hG
+
 end LockId
 
 end SeLe4n.Model

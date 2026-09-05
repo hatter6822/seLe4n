@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.34.49"
+version = "0.34.56"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -197,11 +197,13 @@ root = "tests.RwLockSuite"
 
 # WS-SM SM2.C-defer D-6: Lean-side oracle binary for the Tier-5
 # cross-language correspondence harness.  Reads an op-sequence on stdin
-# (textual wire format), folds `RwLockState.applyOp` over `unheld`,
-# prints the canonical serialised post-state.  Pure Lean; no FFI; the
-# Rust oracle (`cargo run --bin rw_lock_oracle`) is a separate binary
-# that holds a real `RwLock` in process memory and produces the same
-# post-state form.  See SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md §5.6.
+# (textual wire format), folds `RwLockState.applyOp` over `unheld`, and
+# prints one identity line per state — the writer's core, the sorted
+# reader cores, the queue in order with modes (PR #890 review round 5).
+# Pure Lean; no FFI; the Rust oracle (`cargo run --bin rw_lock_oracle`)
+# is a separate binary that drives both deployed locks in process memory
+# and prints the same lines, read back out of the ticket lock's words.
+# See SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md §5.6.
 [[lean_exe]]
 name = "rw_lock_oracle"
 root = "tests.Tier5.RwLockOracle"

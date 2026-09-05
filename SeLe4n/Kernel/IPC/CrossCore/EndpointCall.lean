@@ -474,7 +474,7 @@ theorem endpointCallOnCore_atomic_under_lockSet
     (s : SystemState) :
     withLockSet (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc? replyId?)
         executingCore (endpointCallOnCore endpointId caller msg executingCore) s
-      = (releaseAll executingCore
+      = (unwindAll executingCore
           (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc? replyId?).lockAcquireSequence.reverse
           (endpointCallOnCore endpointId caller msg executingCore
             (acquireAll executingCore

@@ -186,6 +186,21 @@ impl TicketLock {
     /// logging use); the `release` method does not require it.
     /// Discarding the return value (`let _ = lock.acquire();`) is
     /// legal Rust but loses the diagnostic information.
+    ///
+    /// # API contract
+    ///
+    /// The caller must be neither queued on nor holding this lock.  The
+    /// lock keeps no per-core word, so it cannot tell who is calling: a
+    /// holder that calls `acquire` again takes a second ticket and parks
+    /// on it forever, since nothing will serve it while the caller holds
+    /// the first; a queued core can reach here only from a nested entry,
+    /// which is the same wedge.  The Lean spec's `applyOp .tryAcquire`
+    /// returns the state unchanged for such a caller; the implementation
+    /// does not, and — PR #890 review round 4 — the refinement bridge no
+    /// longer pretends it does: `TicketLockState.callerContract` states
+    /// exactly the calls the bridge covers, and the kernel-entry consumers
+    /// treat a re-entry as a fault to halt on
+    /// (`assert_not_holding_round_lock`) rather than a no-op to absorb.
     #[inline]
     pub fn acquire(&self) -> u64 {
         // Step 1: capture ticket via atomic fetch-add with Acquire ordering.
@@ -257,7 +272,10 @@ impl TicketLock {
     ///   mutex property at the implementation level (the Lean spec's
     ///   `applyOp .release` returns the state UNCHANGED when called
     ///   by a non-holder, but the Rust impl cannot detect this
-    ///   without additional state).
+    ///   without additional state — and the refinement bridge covers
+    ///   only calls inside this contract, `TicketLockState.callerContract`,
+    ///   rather than mapping the spec's no-op to a stutter this code
+    ///   does not perform; PR #890 review round 4).
     /// * **Double-release on one acquire**: same effect — `serving`
     ///   advances twice for one acquire, allowing two concurrent
     ///   "holders" of subsequent tickets.

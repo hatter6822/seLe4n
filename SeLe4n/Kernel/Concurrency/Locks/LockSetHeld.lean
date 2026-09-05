@@ -477,6 +477,29 @@ theorem updateObjectLockAt_objects_getElem?_of_ne (s : SystemState)
           exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne s.objects l.objId oid
             (obj.updateLock op) (by simp [Ne.symm hNe]) hExt
 
+/-- **WS-LC LC4.3**: the fail-closed branch of `updateObjectLockAt` is the
+identity — an absent object, or one whose variant does not match `l.kind`,
+leaves the state untouched. -/
+theorem updateObjectLockAt_eq_self_of_lookup_none (s : SystemState)
+    (l : LockId) (op : RwLockOp) (h : LockId.lookup s l = none) :
+    updateObjectLockAt s l op = s := by
+  unfold updateObjectLockAt; rw [h]
+
+/-- **WS-LC LC4.3**: at the *target* key, a kind-matched `updateObjectLockAt`
+maps the stored object through `updateLock`.  The `_of_ne` sibling above
+covers every other key; together they characterise the update at any key,
+which is what the shrinking phase's frame argument needs. -/
+theorem updateObjectLockAt_objects_getElem?_self (s : SystemState)
+    (l : LockId) (op : RwLockOp) (r : RwLockState × KernelObject)
+    (hExt : s.objects.invExt) (hL : LockId.lookup s l = some r) :
+    (updateObjectLockAt s l op).objects[l.objId]?
+      = (s.objects[l.objId]?).map (fun o => o.updateLock op) := by
+  unfold updateObjectLockAt
+  rw [hL]
+  show (updateObjectAt s l.objId (fun obj => obj.updateLock op)).objects.get? l.objId = _
+  rw [updateObjectAt_get? s l.objId l.objId _ hExt, if_pos rfl]
+  rfl
+
 /-- WS-SM SM3.C.8 foundation: `acquireLockOnObject` at lock `l` leaves the
 object stored at any other ObjId unchanged.  The `.objStore` / `.reply` /
 `.page` arms never touch `objects`; the modeled arms route through
@@ -492,38 +515,6 @@ theorem acquireLockOnObject_objects_getElem?_of_ne (s : SystemState)
   | tcb | endpoint | notification | cnode
   | vspaceRoot | untyped | schedContext | reply =>
       all_goals exact updateObjectLockAt_objects_getElem?_of_ne s l _ oid hExt hNe
-
-/-- WS-SM SM3.C.8 foundation: `updateObjectLockAt` preserves the RHTable
-extension invariant (`insert` preserves `invExt`; the fail-closed branches
-leave the table untouched). -/
-theorem updateObjectLockAt_preserves_invExt (s : SystemState)
-    (l : LockId) (op : RwLockOp) (hExt : s.objects.invExt) :
-    (updateObjectLockAt s l op).objects.invExt := by
-  unfold updateObjectLockAt
-  cases LockId.lookup s l with
-  | none => exact hExt
-  | some _ =>
-      unfold updateObjectAt
-      cases hG : s.objects.get? l.objId with
-      | none => exact hExt
-      | some obj =>
-          show (s.objects.insert l.objId (obj.updateLock op)).invExt
-          exact SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt
-            s.objects l.objId (obj.updateLock op) hExt
-
-/-- WS-SM SM3.C.8 foundation: `acquireLockOnObject` preserves the RHTable
-extension invariant.  Needed to thread `invExt` through the `acquireAll`
-fold's induction. -/
-theorem acquireLockOnObject_preserves_invExt (s : SystemState)
-    (core : CoreId) (l : LockId) (m : AccessMode) (hExt : s.objects.invExt) :
-    (acquireLockOnObject s core l m).objects.invExt := by
-  unfold acquireLockOnObject
-  cases l.kind with
-  | objStore => exact hExt
-  | page => exact hExt
-  | tcb | endpoint | notification | cnode
-  | vspaceRoot | untyped | schedContext | reply =>
-      all_goals exact updateObjectLockAt_preserves_invExt s l _ hExt
 
 /-- WS-SM SM3.C.8 foundation: after `updateObjectLockAt s l op` on a present,
 kind-matching object `o`, looking up `l` recovers the lock-advanced object.
@@ -760,5 +751,313 @@ theorem acquireAll_establishes_lockHeld_of_distinct_present_unheld
       | inr hpTail =>
           exact ih (acquireLockOnObject s core head.fst head.snd) hExt1 hEachTail1
             hTailDistinct p hpTail
+
+-- ============================================================================
+-- §N — WS-LC LC4.3: the shrinking phase leaves no queued request
+-- ============================================================================
+
+/-! The property a release-only unwind could not establish.
+
+`lockHeld` above says a core **holds** a lock.  `lockQueued` says the
+weaker thing a contended growing phase actually leaves behind: the core is
+in the lock's wait queue, granted nothing.  Both release arms of `applyOp`
+guard on holdership, so a release by a queued core is the identity — which
+is why, before `RwLockOp.cancel` existed, a refused two-phase-locking
+bracket released what was granted and left what was merely requested.
+
+Everything here lifts the two abstract facts proved beside `unwindAll`
+(`rwLock_cancel_not_queued`, `rwLock_release_preserves_not_queued`) through
+`updateObjectLockAt`.  The lift carries `objects.invExt` — the object
+store's own structural invariant, which every kernel state satisfies and
+every frame result in this file already assumes; the abstract facts
+themselves carry nothing. -/
+
+/-- **WS-LC LC4.3**: `c` has a **queued** request at lock `l` — mirrors
+`lockHeld`'s kind dispatch exactly, reading `waiters` where that reads
+`coreHolds`. -/
+def lockQueued (c : CoreId) (l : LockId) (s : SystemState) : Prop :=
+  match l.kind with
+  | .objStore => c ∈ s.objStoreLock.waiters.map Prod.fst
+  | .page => False   -- SM3.A.8 N/A (pages inline in VSpaceRoot.mappings)
+  | .tcb | .endpoint | .notification | .cnode
+  | .vspaceRoot | .untyped | .schedContext | .reply =>
+      match LockId.lookup s l with
+      | some (lockState, _) => c ∈ lockState.waiters.map Prod.fst
+      | none => False
+
+/-- **WS-LC LC4.3**: `lockQueued` is decidable, like its `lockHeld` sibling. -/
+instance lockQueued_decidable (c : CoreId) (l : LockId) (s : SystemState) :
+    Decidable (lockQueued c l s) := by
+  unfold lockQueued
+  cases l.kind <;> first | exact inferInstance |
+    (cases LockId.lookup s l <;> exact inferInstance)
+
+/-- **WS-LC LC4.3**: nothing is ever queued on a `.page` lock. -/
+@[simp] theorem lockQueued_page (c : CoreId) (oid : SeLe4n.ObjId) (s : SystemState) :
+    ¬ lockQueued c ⟨.page, oid⟩ s := by
+  unfold lockQueued
+  exact id
+
+/-- **WS-LC LC4.3**: an update at *any* lock cannot enqueue a core the
+operation itself never enqueues.
+
+The single frame lemma the whole fold argument runs on, and it needs no
+case split on whether `l` and `l'` name the same lock: a successful lookup
+at `l` in the post-state names the object the store actually holds there
+(`LockId.lookup_object_eq`), `updateObjectAt` changes the store at one key
+only (`updateObjectAt_get?`), and `KernelObject.updateLock` preserves an
+object's `lockKind`.  So the post-state lock state at `l` is either the
+pre-state's or the pre-state's with `op` applied, and `hOp` covers the
+second. -/
+theorem lockQueued_updateObjectLockAt_of_never_enqueues
+    (c : CoreId) (l l' : LockId) (op : RwLockOp) (s : SystemState)
+    (hExt : s.objects.invExt)
+    (hOp : ∀ r : RwLockState, c ∉ r.waiters.map Prod.fst →
+      c ∉ (r.applyOp op).waiters.map Prod.fst)
+    (h : ¬ lockQueued c l s) :
+    ¬ lockQueued c l (updateObjectLockAt s l' op) := by
+  -- The `.objStore` word is untouched by a per-object update, and `.page`
+  -- is never queued; the modeled kinds go through the store.
+  intro hPost
+  revert h hPost
+  unfold lockQueued
+  cases hK : l.kind with
+  | objStore =>
+      rw [updateObjectLockAt_preserves_objStoreLock s l' op]
+      exact fun h hPost => h hPost
+  | page => exact fun _ hPost => hPost
+  | tcb | endpoint | notification | cnode
+  | vspaceRoot | untyped | schedContext | reply =>
+    all_goals (
+      intro h hPost
+      revert hPost
+      -- Fail-closed first: an update whose own lookup misses is the identity,
+      -- so the post-state is the pre-state and `h` closes it outright.
+      cases hLookL' : LockId.lookup s l' with
+      | none =>
+          rw [updateObjectLockAt_eq_self_of_lookup_none s l' op hLookL']
+          exact fun hPost => h hPost
+      | some r' =>
+        cases hLookPost : LockId.lookup (updateObjectLockAt s l' op) l with
+        | none => exact id
+        | some pr =>
+          obtain ⟨stPost, oPost⟩ := pr
+          intro hMemPost
+          -- The returned object is the one the post-state store holds at `l.objId`.
+          have hObjPost : (updateObjectLockAt s l' op).objects[l.objId]? = some oPost :=
+            LockId.lookup_object_eq _ l stPost oPost hLookPost
+          have hKindPost : oPost.lockKind = l.kind :=
+            LockId.lookup_kindMatch _ l stPost oPost hLookPost
+          have hStPost : stPost = KernelObject.objectLockOf oPost :=
+            LockId.lookup_lockState_eq _ l stPost oPost hLookPost
+          by_cases hSame : l.objId = l'.objId
+          · -- Same object: the pre-state object is `oPost` with `op` undone.
+            rw [hSame, updateObjectLockAt_objects_getElem?_self s l' op r' hExt hLookL']
+              at hObjPost
+            cases hPre : s.objects[l'.objId]? with
+            | none => rw [hPre] at hObjPost; simp at hObjPost
+            | some o =>
+                rw [hPre] at hObjPost
+                have hoEq : o.updateLock op = oPost := Option.some.inj hObjPost
+                have hKindPre : o.lockKind = l.kind := by
+                  rw [← hKindPost, ← hoEq, KernelObject.updateLock_preserves_lockKind]
+                have hLookPre : LockId.lookup s l = some (KernelObject.objectLockOf o, o) :=
+                  LockId.lookup_some_of_kindMatch s l o (by rw [hSame]; exact hPre) hKindPre
+                have hPreNot : c ∉ (KernelObject.objectLockOf o).waiters.map Prod.fst := by
+                  intro hc; exact h (by rw [hLookPre]; exact hc)
+                refine hOp _ hPreNot ?_
+                have hApply : KernelObject.objectLockOf oPost
+                    = (KernelObject.objectLockOf o).applyOp op := by
+                  rw [← hoEq, KernelObject.objectLockOf_updateLock]
+                rw [← hApply, ← hStPost]
+                exact hMemPost
+          · -- Different object: the store read is unchanged, so is the lookup.
+            rw [updateObjectLockAt_objects_getElem?_of_ne s l' op l.objId hExt hSame]
+              at hObjPost
+            have hLookPre : LockId.lookup s l = some (KernelObject.objectLockOf oPost, oPost) :=
+              LockId.lookup_some_of_kindMatch s l oPost hObjPost hKindPost
+            exact h (by rw [hLookPre, ← hStPost]; exact hMemPost))
+
+/-- **WS-LC LC4.3**: a withdrawal at a lock leaves the withdrawing core with
+no queued request **at that lock** — the establishment half.
+
+The fail-closed branch needs no argument: where the lookup misses, the
+update is the identity *and* `lockQueued` is `False` there for the same
+reason.  Where it hits, the post-state lock is the pre-state's with the
+withdrawal applied, and `rwLock_cancel_not_queued` finishes it. -/
+theorem cancelLockOnObject_withdraws (s : SystemState) (core : CoreId)
+    (l : LockId) (m : AccessMode) (hExt : s.objects.invExt) :
+    ¬ lockQueued core l (cancelLockOnObject s core l m) := by
+  unfold cancelLockOnObject lockQueued
+  cases hK : l.kind with
+  | objStore =>
+      exact rwLock_cancel_not_queued s.objStoreLock core
+  | page => exact id
+  | tcb | endpoint | notification | cnode
+  | vspaceRoot | untyped | schedContext | reply =>
+    all_goals (
+      cases hLook : LockId.lookup s l with
+      | none =>
+          rw [updateObjectLockAt_eq_self_of_lookup_none s l _ hLook, hLook]
+          exact id
+      | some pr =>
+        obtain ⟨st, o⟩ := pr
+        have hObj : s.objects[l.objId]? = some o :=
+          LockId.lookup_object_eq s l st o hLook
+        have hKind : o.lockKind = l.kind :=
+          LockId.lookup_kindMatch s l st o hLook
+        have hSt : st = KernelObject.objectLockOf o :=
+          LockId.lookup_lockState_eq s l st o hLook
+        rw [updateObjectLockAt_lookup_self s l _ o hExt hObj hKind,
+            KernelObject.objectLockOf_updateLock]
+        exact rwLock_cancel_not_queued (KernelObject.objectLockOf o) core)
+
+/-- **WS-LC LC4.3**: the state-level counterpart of the frame lemma — an
+update to `SystemState.objStoreLock` cannot enqueue a core the operation
+itself never enqueues.
+
+The `.objStore` arms of the three per-object primitives write that word
+directly rather than going through `updateObjectLockAt`, so the modeled
+frame lemma does not reach them; the object store is untouched, so a
+modeled lock's lookup is unchanged. -/
+theorem lockQueued_objStoreLock_applyOp_of_never_enqueues
+    (c : CoreId) (l : LockId) (op : RwLockOp) (s : SystemState)
+    (hOp : ∀ r : RwLockState, c ∉ r.waiters.map Prod.fst →
+      c ∉ (r.applyOp op).waiters.map Prod.fst)
+    (h : ¬ lockQueued c l s) :
+    ¬ lockQueued c l { s with objStoreLock := s.objStoreLock.applyOp op } := by
+  revert h
+  unfold lockQueued
+  cases l.kind with
+  | objStore => exact fun h => hOp _ h
+  | page => exact fun _ hPost => hPost
+  | tcb | endpoint | notification | cnode
+  | vspaceRoot | untyped | schedContext | reply =>
+      all_goals (
+        rw [LockId.lookup_eq_of_objects_getElem?_eq s
+          { s with objStoreLock := s.objStoreLock.applyOp op } l rfl]
+        exact fun h hPost => h hPost)
+
+/-- **WS-LC LC4.3**: a withdrawal never enqueues anybody, at any lock. -/
+theorem cancelLockOnObject_preserves_not_queued (c core : CoreId) (l l' : LockId)
+    (m : AccessMode) (s : SystemState) (hExt : s.objects.invExt)
+    (h : ¬ lockQueued c l s) :
+    ¬ lockQueued c l (cancelLockOnObject s core l' m) := by
+  unfold cancelLockOnObject
+  cases l'.kind with
+  | objStore =>
+      exact lockQueued_objStoreLock_applyOp_of_never_enqueues c l _ s
+        (fun r hr => rwLock_cancel_preserves_not_queued r c core hr) h
+  | page => exact h
+  | tcb | endpoint | notification | cnode
+  | vspaceRoot | untyped | schedContext | reply =>
+      all_goals (
+        show ¬ lockQueued c l (updateObjectLockAt s l' (m.toCancelOp core))
+        exact lockQueued_updateObjectLockAt_of_never_enqueues c l l' _ s hExt
+          (fun r hr => rwLock_cancel_preserves_not_queued r c core hr) h)
+
+/-- **WS-LC LC4.3**: no release ever enqueues, at any lock — the half that
+lets the shrinking phase's payoff dispense with any distinctness hypothesis
+on the footprint. -/
+theorem releaseLockOnObject_preserves_not_queued (c core : CoreId) (l l' : LockId)
+    (m : AccessMode) (s : SystemState) (hExt : s.objects.invExt)
+    (h : ¬ lockQueued c l s) :
+    ¬ lockQueued c l (releaseLockOnObject s core l' m) := by
+  unfold releaseLockOnObject
+  cases l'.kind with
+  | objStore =>
+      exact lockQueued_objStoreLock_applyOp_of_never_enqueues c l _ s
+        (fun r hr => rwLock_release_preserves_not_queued r c core m hr) h
+  | page => exact h
+  | tcb | endpoint | notification | cnode
+  | vspaceRoot | untyped | schedContext | reply =>
+      all_goals (
+        show ¬ lockQueued c l (updateObjectLockAt s l' (m.toReleaseOp core))
+        exact lockQueued_updateObjectLockAt_of_never_enqueues c l l' _ s hExt
+          (fun r hr => rwLock_release_preserves_not_queued r c core m hr) h)
+
+/-- **WS-LC LC4.3**: the withdrawal *fold* never enqueues. -/
+theorem cancelAll_preserves_not_queued (c core : CoreId) (l : LockId)
+    (pairs : List (LockId × AccessMode)) :
+    ∀ s : SystemState, s.objects.invExt → ¬ lockQueued c l s →
+      ¬ lockQueued c l (cancelAll core pairs s) := by
+  induction pairs with
+  | nil => intro s _ h; exact h
+  | cons head tail ih =>
+      intro s hExt h
+      obtain ⟨hl, hm⟩ := head
+      rw [cancelAll_cons]
+      exact ih _ (cancelLockOnObject_preserves_invExt s core hl hm hExt)
+        (cancelLockOnObject_preserves_not_queued c core l hl hm s hExt h)
+
+/-- **WS-LC LC4.3**: the release *fold* never enqueues. -/
+theorem releaseAll_preserves_not_queued (c core : CoreId) (l : LockId)
+    (pairs : List (LockId × AccessMode)) :
+    ∀ s : SystemState, s.objects.invExt → ¬ lockQueued c l s →
+      ¬ lockQueued c l (releaseAll core pairs s) := by
+  induction pairs with
+  | nil => intro s _ h; exact h
+  | cons head tail ih =>
+      intro s hExt h
+      obtain ⟨hl, hm⟩ := head
+      rw [releaseAll_cons]
+      exact ih _ (releaseLockOnObject_preserves_invExt s core hl hm hExt)
+        (releaseLockOnObject_preserves_not_queued c core l hl hm s hExt h)
+
+/-- **WS-LC LC4.3**: the withdrawal fold *establishes* the property at every
+member it visits.
+
+The head is withdrawn outright; the tail preserves that, because a
+withdrawal never enqueues anywhere.  No distinctness hypothesis on the
+footprint: two members naming the same lock are harmless, since withdrawing
+twice is still a withdrawal. -/
+theorem cancelAll_leaves_no_queued_request (core : CoreId)
+    (pairs : List (LockId × AccessMode)) :
+    ∀ s : SystemState, s.objects.invExt →
+      ∀ p ∈ pairs, ¬ lockQueued core p.fst (cancelAll core pairs s) := by
+  induction pairs with
+  | nil => intro s _ p hp; cases hp
+  | cons head tail ih =>
+      intro s hExt p hp
+      obtain ⟨hl, hm⟩ := head
+      rw [cancelAll_cons]
+      have hExt' : (cancelLockOnObject s core hl hm).objects.invExt :=
+        cancelLockOnObject_preserves_invExt s core hl hm hExt
+      rw [List.mem_cons] at hp
+      cases hp with
+      | inl hHead =>
+          subst hHead
+          exact cancelAll_preserves_not_queued core core _ tail _ hExt'
+            (cancelLockOnObject_withdraws s core hl hm hExt)
+      | inr hTail => exact ih _ hExt' p hTail
+
+/-- **WS-LC LC4.3 (the payoff)**: the shrinking phase leaves the unwinding
+core with **no queued request at any member of the footprint**.
+
+This is the theorem that replaces the "what 'released' does and does not
+mean" caveat: that caveat's claim was that the unwind *cannot* remove a
+request the growing phase queued, and this is its exact negation.
+
+Note what it does not say — `¬ lockHeld`, which is false here: a core
+holding a *write* lock, unwound at a member declared `.read`, keeps
+`writerHeld`, and ruling that out needs a mode-agreement hypothesis
+threaded from the growing phase, for a conclusion the caveat never made.
+
+The only hypothesis is `objects.invExt`, the object store's own structural
+invariant that every kernel state satisfies; the abstract facts underneath
+(`rwLock_cancel_not_queued`, `rwLock_release_preserves_not_queued`) carry
+none at all.  In particular there is **no** distinctness or resolvability
+condition on the footprint, because the withdrawal fold establishes the
+property everywhere before the release fold runs, and no release arm
+enqueues. -/
+theorem unwindAll_leaves_no_queued_request (core : CoreId)
+    (pairs : List (LockId × AccessMode)) (s : SystemState)
+    (hExt : s.objects.invExt) :
+    ∀ p ∈ pairs, ¬ lockQueued core p.fst (unwindAll core pairs s) := by
+  intro p hp
+  rw [unwindAll_eq_releaseAll_cancelAll]
+  exact releaseAll_preserves_not_queued core core p.fst pairs _
+    (cancelAll_preserves_invExt core pairs s hExt)
+    (cancelAll_leaves_no_queued_request core pairs s hExt p hp)
 
 end SeLe4n.Kernel.Concurrency

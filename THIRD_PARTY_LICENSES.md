@@ -10,9 +10,12 @@ external crates are fetched from [crates.io](https://crates.io/) by Cargo and
 used to assemble the ARM64 boot-time assembly (`boot.S`, `vectors.S`,
 `trap.S`). These crates' source code is **not linked into the final kernel
 binary** — they only run during `cargo build` on the host that produces the
-kernel image — but they are still dependencies of the build graph. This file
-provides the attribution those crates require under their MIT and Apache-2.0
-license terms, per:
+kernel image — but they are still dependencies of the build graph. One
+further crate, `loom`, sits outside that graph entirely: it is keyed on
+`cfg(loom)`, which only the concurrency-model gate sets, and it is recorded
+below so attribution does not depend on a reader knowing which `cfg` a
+dependency table carries. This file provides the attribution these crates
+require under their MIT and Apache-2.0 license terms, per:
 
 - **MIT**: "The above copyright notice and this permission notice shall be
   included in all copies or substantial portions of the Software."
@@ -178,6 +181,76 @@ third-party MMIO crate, to minimize the runtime attack surface.
 
 ---
 
+## Model-checking dependencies (opt-in; in no shipped build graph)
+
+`loom` is declared under `[target.'cfg(loom)'.dependencies]` in
+`rust/sele4n-hal/Cargo.toml`, so Cargo resolves it **only** when the crate is
+compiled with `RUSTFLAGS='--cfg loom'`.  That configuration is set by
+`scripts/test_loom_queued_rw_lock.sh` and by nothing else: a plain
+`cargo build`, `cargo test`, `cargo clippy`, the `aarch64-unknown-none` cross
+build and every kernel image resolve no `loom` at all.  It is therefore
+neither a runtime dependency nor a build-script dependency — it is a
+verification tool that replaces `core::sync::atomic` with its own instrumented
+atomics so the deployed lock's interleavings can be explored exhaustively.
+
+It is recorded here anyway, because attribution should not depend on a reader
+knowing which `cfg` a table is keyed on.
+
+### `loom`
+
+- **Version used:** 0.7.2
+- **SPDX license:** `MIT`
+- **Upstream repository:** <https://github.com/tokio-rs/loom>
+- **Homepage:** <https://github.com/tokio-rs/loom>
+- **Role in seLe4n:** exhaustive bounded-interleaving model checking of
+  `rust/sele4n-hal/src/queued_rw_lock.rs`, the deployed reader-writer lock.
+
+**MIT license text (verbatim from the upstream `LICENSE`):**
+
+```
+Copyright (c) 2019 Carl Lerche
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+```
+
+**Transitive tree.**  Under `--cfg loom`, `loom` pulls in `cfg-if`,
+`generator` (with `libc` and `log`), `scoped-tls`, `tracing` (with
+`pin-project-lite`, `tracing-core`, `once_cell`) and `tracing-subscriber`
+(with `matchers`, `regex-automata`, `regex-syntax`, `nu-ansi-term`,
+`sharded-slab`, `lazy_static`, `smallvec`, `thread_local`, `tracing-log`).
+Each is MIT or `MIT OR Apache-2.0`, all GPL-3.0-compatible per the FSF.  None
+of them is fetched, compiled, or distributed by any build this project ships,
+and none appears in the runtime graph recorded above; their notices live in
+their own crate sources, which Cargo fetches into the developer's local
+registry when the gate is run.  Should `loom` ever move into the default
+dependency table — which would put it in the shipped build graph — the
+verbatim notice for every crate in that tree must be reproduced here in the
+same PR, per the rule in `CLAUDE.md`.
+
+---
+
 ## Apache-2.0 NOTICE-file propagation
 
 Apache-2.0 § 4(d) requires propagation of any upstream `NOTICE` file. As of
@@ -200,6 +273,15 @@ cargo fetch
 ls ~/.cargo/registry/src/*/cc-1.2.59/LICENSE-MIT
 ls ~/.cargo/registry/src/*/find-msvc-tools-0.1.9/LICENSE-MIT
 ls ~/.cargo/registry/src/*/shlex-1.3.0/LICENSE-MIT
+```
+
+The model-checking dependency is fetched only under its own `cfg`:
+
+```bash
+cd rust
+RUSTFLAGS='--cfg loom' cargo fetch --target x86_64-unknown-linux-gnu
+ls ~/.cargo/registry/src/*/loom-0.7.2/LICENSE
+RUSTFLAGS='--cfg loom' cargo tree -p sele4n-hal -e normal   # the tree quoted above
 ```
 
 The `LICENSE-APACHE` files are present in the same directories and are the

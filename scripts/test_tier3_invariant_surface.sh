@@ -1948,18 +1948,27 @@ run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_objectIndex_eq' 
 run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_services_eq' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_irqHandlers_eq' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem updateObjectLockAt_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_preserves_objects_invExt' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem updateObjectLockAt_preserves_objects_invExt' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_preserves_invExt' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
+run_check "INVARIANT" rg -n '^theorem updateObjectLockAt_preserves_invExt' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
 run_check "INVARIANT" rg -n '^theorem acquireLockOnObject_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem releaseLockOnObject_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem acquireLockOnObject_preserves_objects_invExt' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem releaseLockOnObject_preserves_objects_invExt' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cancelLockOnObject_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cancelAll_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem unwindAll_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem acquireLockOnObject_preserves_invExt' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
+run_check "INVARIANT" rg -n '^theorem releaseLockOnObject_preserves_invExt' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
+run_check "INVARIANT" rg -n '^theorem cancelLockOnObject_preserves_invExt' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
+run_check "INVARIANT" rg -n '^theorem cancelAll_preserves_invExt' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
+run_check "INVARIANT" rg -n '^theorem unwindAll_preserves_invExt' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
 run_check "INVARIANT" rg -n '^theorem updateObjectLockAt_scheduler_eq' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem updateObjectLockAt_machine_eq' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem acquireLockOnObject_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem releaseLockOnObject_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem acquireAll_preserves_objects_invExt' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem releaseAll_preserves_objects_invExt' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cancelLockOnObject_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cancelAll_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem unwindAll_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem acquireAll_preserves_invExt' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
+run_check "INVARIANT" rg -n '^theorem releaseAll_preserves_invExt' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
 run_check "INVARIANT" rg -n '^theorem acquireAll_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem releaseAll_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem acquireAll_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
@@ -2879,19 +2888,34 @@ run_check "INVARIANT" rg -n 'rootCn.depth . rootCn.guardWidth . rootCn.radixWidt
 # state to HOLD the footprint, and releases it on refusal.
 run_check "INVARIANT" rg -n '^inductive RevalidatedEntryOutcome' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n 'lockSetHeld lockCore S observed' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem syscallEntryUnderRevalidatedLockSet_refused_releases' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryUnderRevalidatedLockSet_refused_unwinds' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # NEGATIVE: the refusal branch must not go back to returning `none`, which is
 # what stranded the acquired footprint on the caller.
 run_negative_check "INVARIANT" rg -n 'observed = none := by' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # CC-5's bound is denominated in LOCK OPERATIONS; reading it as time needs an
 # explicit per-critical-section ceiling.
-run_check "INVARIANT" rg -n '^def elapsedBetween' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem elapsedBetween_le' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^def elapsedBetween' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem elapsedBetween_le' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
 run_check "INVARIANT" rg -n '^theorem lockContention_wallClock_bounded' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # PR #864 review round 9.  The rate bound must be in elapsed time, not lock
 # operations; the domain inventory must quantify over constructors; and the
 # Biba predicate's lock erasure is a stated scope, not an unnoticed gap.
-run_check "INVARIANT" rg -n '^theorem elapsedBetween_ge' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem elapsedBetween_ge' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^  stepCost           : Nat . Nat' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^def RwLockExecution.elapsed' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^def RwLockExecution.BoundedCriticalSection' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^def RwLockExecution.CostedCriticalSection' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem RwLockExecution.elapsed_le' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem RwLockExecution.elapsed_ge' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem RwLockExecution.elapsed_unit_cost' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^def releaseBudgetCycles' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem releaseBudgetCycles_bounds_elapsed' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem rwLock_writer_admitted_within_cycle_budget' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem rwLock_queued_admitted_within_cycle_budget' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem rwLock_writer_cycle_budget_at_unit_cost' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem lockContention_elapsed_bounded' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockContention_elapsed_at_unit_cost' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockContentionChannel_rate_per_execution_time' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem lockContentionChannel_rate_per_elapsed_time' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # PR #864 review round 10 (both P1).  The rate must be measured over the
 # execution's OWN window — `ops.length` intervals, not one more — and the
@@ -6411,6 +6435,93 @@ import SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement
 #check @SeLe4n.Kernel.Concurrency.blockBisim_releaseRead_no_promote_with_sev
 #check @SeLe4n.Kernel.Concurrency.blockBisim_releaseWrite_no_sev_empty_queue
 #check @SeLe4n.Kernel.Concurrency.blockBisim_releaseWrite_with_sev_empty_queue
+-- The trace-shape predicate of the CAS-retry bridge, which DERIVES
+-- ListBlockBisim, so the main theorem no longer takes its own conclusion.
+#check @SeLe4n.Kernel.Concurrency.honestBlock
+#check @SeLe4n.Kernel.Concurrency.honestBlock_opCorresponds
+#check @SeLe4n.Kernel.Concurrency.honestBlock_blockBisim
+#check @SeLe4n.Kernel.Concurrency.ListHonestBlocks
+#check @SeLe4n.Kernel.Concurrency.listHonestBlocks_listBlockBisim
+#check @SeLe4n.Kernel.Concurrency.listHonestBlocks_listCorresponds
+#check @SeLe4n.Kernel.Concurrency.concreteFoldBlock_append
+-- The promoting release: a release block carries the promoted
+-- waiters re-acquisition, so the promoting discharges close.
+#check @SeLe4n.Kernel.Concurrency.casPromoteReaderOps
+#check @SeLe4n.Kernel.Concurrency.casPromoteOps
+#check @SeLe4n.Kernel.Concurrency.casPromotePost
+#check @SeLe4n.Kernel.Concurrency.casPromotePost_toNat
+#check @SeLe4n.Kernel.Concurrency.casPromoteOps_preserves_rwLockSim
+-- PR #890 review round 5: the CAS-retry bridge carries the reader run a
+-- withdrawn head uncovers as a promoting release does, with readers holding.
+#check @SeLe4n.Kernel.Concurrency.casPromoteReaderRun_preserves_rwLockSim
+#check @SeLe4n.Kernel.Concurrency.honestBlock.cancel_promoting
+#check @SeLe4n.Kernel.Concurrency.opCorresponds.cancel_promoting
+#check @SeLe4n.Kernel.Concurrency.casPromoteOps_admissionSequence
+-- The premise-free restatements (no ListBlockBisim hypothesis).
+#check @SeLe4n.Kernel.Concurrency.rust_rwLock_refines_lean_honest
+#check @SeLe4n.Kernel.Concurrency.rust_rwLock_refines_lean_via_rustImplementsRwLock_honest
+#check @SeLe4n.Kernel.Concurrency.rust_rwLock_refines_lean_from_unheld
+-- The writer bounded-wait statement over DISTINCT
+-- admission steps, and the release-budget form a deployment can act on.
+#check @SeLe4n.Kernel.Concurrency.AdmissionSequence
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.countEffectiveReleases_self
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.countEffectiveReleases_succ
+#check @SeLe4n.Kernel.Concurrency.writerWaitDepth_release_count_bound_offset
+#check @SeLe4n.Kernel.Concurrency.rwLock_bounded_wait_write_distinct
+#check @SeLe4n.Kernel.Concurrency.rwLock_writer_admitted_within_release_budget
+-- Shared helpers (used by both the honest and the queued bridge).
+#check @SeLe4n.Kernel.Concurrency.RwLockState.applyOp_preserves_wf
+-- The withdrawal operation: the fifth RwLockOp constructor, its frame
+-- facts, its invariant preservation, and the window predicate the
+-- becomes-the-holder liveness family is conditional on.
+#check @SeLe4n.Kernel.Concurrency.RwLockOp.cancel
+#check @SeLe4n.Kernel.Concurrency.RwLockOp.isCancel
+#check @SeLe4n.Kernel.Concurrency.RwLockOp.isCancel_cancel
+#check @SeLe4n.Kernel.Concurrency.RwLockKernelStep.cancel
+#check @SeLe4n.Kernel.Concurrency.RwLockState.withdraw
+#check @SeLe4n.Kernel.Concurrency.RwLockState.headIsReader
+#check @SeLe4n.Kernel.Concurrency.RwLockState.cancelPromotes
+#check @SeLe4n.Kernel.Concurrency.RwLockState.cancelPromotes_iff
+#check @SeLe4n.Kernel.Concurrency.RwLockState.cancelRun
+#check @SeLe4n.Kernel.Concurrency.RwLockState.cancelRun_ne_nil_of_promotes
+#check @SeLe4n.Kernel.Concurrency.RwLockState.mem_cancelRun
+#check @SeLe4n.Kernel.Concurrency.RwLockState.applyOp_cancel_of_promotes
+#check @SeLe4n.Kernel.Concurrency.RwLockState.applyOp_cancel_of_not_promotes
+#check @SeLe4n.Kernel.Concurrency.RwLockState.applyOp_cancel_readers
+#check @SeLe4n.Kernel.Concurrency.RwLockState.applyOp_cancel_writerHeld
+#check @SeLe4n.Kernel.Concurrency.RwLockState.applyOp_cancel_waiters
+#check @SeLe4n.Kernel.Concurrency.RwLockState.applyOp_cancel_waiters_sublist_filter
+#check @SeLe4n.Kernel.Concurrency.RwLockState.applyOp_cancel_waiters_sublist
+#check @SeLe4n.Kernel.Concurrency.RwLockState.mem_applyOp_cancel_waiters
+#check @SeLe4n.Kernel.Concurrency.RwLockState.not_mem_applyOp_cancel_waiters
+#check @SeLe4n.Kernel.Concurrency.RwLockState.mem_readers_applyOp_cancel_of_mem
+#check @SeLe4n.Kernel.Concurrency.rwLock_withdraw_preserves_wf
+#check @SeLe4n.Kernel.Concurrency.rwLock_promoteReaderRun_preserves_wf
+#check @SeLe4n.Kernel.Concurrency.rwLock_cancel_preserves_wf
+-- The window predicate, and the two lemmas that say what an admission at a
+-- withdrawal is: no hold ends there, and the admitted core was a queued reader
+-- other than the withdrawer (PR #890 review round 5).
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.noCancelIn
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.noCancelIn.not_cancel_at
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.noCancelIn.mono
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.noCancelIn_self
+-- The decidable whole-trace form a fixture discharges: noCancelIn quantifies
+-- over an unbounded step index and cannot be decided by evaluation, so the two
+-- coexist.
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.cancelFree
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.cancelFree.noCancelIn
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.holderAt_succ_of_cancel
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.admitted_by_cancel
+-- What a withdrawal buys, in the form a two-phase-locking unwind cites.
+#check @SeLe4n.Kernel.Concurrency.rwLock_cancel_removes_request
+#check @SeLe4n.Kernel.Concurrency.rwLock_cancel_leaves_other_requests
+#check @SeLe4n.Kernel.Concurrency.rwLock_cancel_preserves_waiter_order
+#check @SeLe4n.Kernel.Concurrency.rwLock_cancel_admits_only_the_head_reader_run
+#check @SeLe4n.Kernel.Concurrency.rwLock_cancel_nonhead_admits_no_one
+#check @SeLe4n.Kernel.Concurrency.rwLock_cancel_does_not_increase_wait_depth
+#check @SeLe4n.Kernel.Concurrency.rwLock_cancel_not_effective_release
+#check @SeLe4n.Kernel.Concurrency.promoteWaitersIfReadersEmpty_noop
+#check @SeLe4n.Kernel.Concurrency.promoteIfReadersEmpty_eq_onWriterRelease
 EOF'
 
 # WS-SM SM2.D — LockBridge typed FFI wrapper + RAII combinator surface
@@ -6581,6 +6692,292 @@ import SeLe4n.Kernel.Concurrency.Locks.TicketLockRefinement
 #check @SeLe4n.Kernel.Concurrency.ticketLockSim_preserved_by_release
 #check @SeLe4n.Kernel.Concurrency.ticketLockSim_preserved_by_observeServing
 #check @SeLe4n.Kernel.Concurrency.rust_ticketLock_refines_lean
+-- The ticket lock bridge raised to the RwLock standard: an operational
+-- concrete step function, a state-indexed block relation with a stutter
+-- prefix for the unbounded now_serving spin, trace composition that does not
+-- assume its own per-block conclusion, and a falsifiability witness in place
+-- of the tautological fourth conjunct.
+#check @SeLe4n.Kernel.Concurrency.ConcreteTicketLockOp
+#check @SeLe4n.Kernel.Concurrency.TicketLockConcrete.applyOp
+#check @SeLe4n.Kernel.Concurrency.ticketFoldBlock
+#check @SeLe4n.Kernel.Concurrency.TicketStutter
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.tryAcquire_counters
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.tryAcquire_noop_of_pending
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.tryAcquire_noop_of_held
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.release_counters
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.release_noop
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.observeServing_noop
+#check @SeLe4n.Kernel.Concurrency.ticketBlock
+#check @SeLe4n.Kernel.Concurrency.ticketBlock_preserves_ticketLockSim
+#check @SeLe4n.Kernel.Concurrency.ListTicketBlocks
+#check @SeLe4n.Kernel.Concurrency.ticketTrace_preserves_ticketLockSim
+-- PR #890 review round 4: the ticket bridge covers exactly the calls the
+-- implementation defines.  A re-acquisition by a queued or holding core and
+-- a release by a non-holder are spec no-ops with NO block shape; the contract
+-- is a predicate every shape satisfies, and every admitted trace respects it.
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.callerContract
+#check @SeLe4n.Kernel.Concurrency.ticketBlock_respects_contract
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.contractTrace
+#check @SeLe4n.Kernel.Concurrency.ListTicketBlocks_contractTrace
+example (abs : SeLe4n.Kernel.Concurrency.TicketLockState) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (blk : List SeLe4n.Kernel.Concurrency.ConcreteTicketLockOp)
+    (h : SeLe4n.Kernel.Concurrency.ticketBlock abs (.release c) blk) :
+    abs.held.map Prod.fst = some c :=
+  SeLe4n.Kernel.Concurrency.ticketBlock_respects_contract h
+example (abs : SeLe4n.Kernel.Concurrency.TicketLockState) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (blk : List SeLe4n.Kernel.Concurrency.ConcreteTicketLockOp)
+    (h : SeLe4n.Kernel.Concurrency.ticketBlock abs (.tryAcquire c) blk) :
+    c ∉ abs.pending.map Prod.fst :=
+  (SeLe4n.Kernel.Concurrency.ticketBlock_respects_contract h).1
+#check @SeLe4n.Kernel.Concurrency.ticketBlock_release_moves_serving
+#check @SeLe4n.Kernel.Concurrency.ticketLockSim_not_universal
+EOF'
+
+# The refinement bridge of the DEPLOYED queued lock.
+# `STATIC_RW_LOCK_POOL` is `[QueuedRwLock; 4]`, so this covers the lock the
+# kernel actually runs.  `rwLockSim` relates only the writer bit and the
+# reader count; `queuedSim` adds what the FIFO spec is about — the abstract
+# `waiters` list against the half-open ticket interval, in order.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Concurrency.Locks.QueuedRwLockRefinement'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.Concurrency.Locks.QueuedRwLockRefinement
+
+-- The concrete state and its ticket-carrying operation alphabet.
+#check @SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete
+#check @SeLe4n.Kernel.Concurrency.QueuedRwLockOp
+#check @SeLe4n.Kernel.Concurrency.QueuedRwLockOp.isObservation
+#check @SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete.applyOp
+#check @SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete.opEnabled
+#check @SeLe4n.Kernel.Concurrency.queuedFoldBlock
+#check @SeLe4n.Kernel.Concurrency.QueuedStutter
+-- The ticket protocol well-formedness, over the concrete model
+-- alone: the mutual-exclusion argument, and what makes both spins terminate.
+#check @SeLe4n.Kernel.Concurrency.ticketRange
+#check @SeLe4n.Kernel.Concurrency.QueuedTicketWf
+#check @SeLe4n.Kernel.Concurrency.QueuedTicketWf.preserved
+#check @SeLe4n.Kernel.Concurrency.queued_entry_is_exclusive
+#check @SeLe4n.Kernel.Concurrency.queued_no_reader_entry_while_served
+#check @SeLe4n.Kernel.Concurrency.queued_release_read_strictly_decreases
+#check @SeLe4n.Kernel.Concurrency.queued_await_turn_terminates
+-- The simulation relation and its characterizations.
+#check @SeLe4n.Kernel.Concurrency.queuedWriterOffset
+#check @SeLe4n.Kernel.Concurrency.queuedLedgerCores
+#check @SeLe4n.Kernel.Concurrency.queuedSim
+#check @SeLe4n.Kernel.Concurrency.queuedSim_unheld
+#check @SeLe4n.Kernel.Concurrency.queuedSim_outstanding
+#check @SeLe4n.Kernel.Concurrency.queuedSim_writer_held
+#check @SeLe4n.Kernel.Concurrency.queuedSim_head_waiter
+#check @SeLe4n.Kernel.Concurrency.queuedSim_waiter_ticket
+-- The per-entry-point block step relation.
+#check @SeLe4n.Kernel.Concurrency.takeTicketOps
+#check @SeLe4n.Kernel.Concurrency.readerEnterOps
+#check @SeLe4n.Kernel.Concurrency.writerEnterOps
+#check @SeLe4n.Kernel.Concurrency.releaseWriteOps
+#check @SeLe4n.Kernel.Concurrency.readerAdmitFrom
+#check @SeLe4n.Kernel.Concurrency.promoteFrom
+#check @SeLe4n.Kernel.Concurrency.promoteFrom_preserves_queuedSim
+#check @SeLe4n.Kernel.Concurrency.queuedBlock
+#check @SeLe4n.Kernel.Concurrency.queuedBlock_preserves_queuedSim
+-- Trace composition, stated so it does NOT take its own per-block
+-- conclusion as a hypothesis (the defect the D-4 rows exist to remove).
+#check @SeLe4n.Kernel.Concurrency.ListQueuedBlocks
+#check @SeLe4n.Kernel.Concurrency.queuedTrace_preserves_queuedSim
+-- The payoff: the deployed lock refines the Lean FIFO spec end to
+-- end, and admits in the spec order.
+-- The queued bridge carries the withdrawal: the tombstoned ledger, the live
+-- projection, the skip loop, and the withdrawal blocks.
+#check @SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete.liveLedger
+#check @SeLe4n.Kernel.Concurrency.queuedHeadLive
+#check @SeLe4n.Kernel.Concurrency.skipDeadOps
+#check @SeLe4n.Kernel.Concurrency.skipDeadOps_spec
+#check @SeLe4n.Kernel.Concurrency.readerAdmitFrom
+#check @SeLe4n.Kernel.Concurrency.readerAdmitFrom_spec
+#check @SeLe4n.Kernel.Concurrency.promoteFrom
+#check @SeLe4n.Kernel.Concurrency.promoteFrom_preserves_queuedSim
+#check @SeLe4n.Kernel.Concurrency.queuedBlock_step_cancel_noop
+#check @SeLe4n.Kernel.Concurrency.queuedBlock_step_cancel_queued
+-- The withdrawal slot as a precondition of the issue (WS-LC closure audit):
+-- one outstanding ticket per core, so at most one withdrawal to publish per
+-- core, so the unconditional store in cancel never overwrites, and the
+-- enqueue blocks require the slot empty, as enqueue waits for it.
+#check @SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete.holdsTicket
+#check @SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete.withdrawalPending
+#check @SeLe4n.Kernel.Concurrency.QueuedTicketWf.holder_ticket_unique
+#check @SeLe4n.Kernel.Concurrency.QueuedTicketWf.publish_slot_empty
+#check @SeLe4n.Kernel.Concurrency.queuedSim_not_holdsTicket
+-- Relation anchors, not presence: the precondition of the issue HAS the
+-- no-outstanding-ticket conjunct, the invariant HAS the one-ticket-per-core
+-- conjunct, and the enqueue blocks REQUIRE the slot empty.  Deleting any of
+-- the three keeps every name above and fails here.
+example (s : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (h : s.opEnabled (.nextTicketFetchAdd c)) : ¬ s.holdsTicket c := h.2
+example (s : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete)
+    (h : SeLe4n.Kernel.Concurrency.QueuedTicketWf s) : (s.ledger.map Prod.snd).Nodup :=
+  h.ledgerCoresNodup
+example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
+    (conc : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (spin : List SeLe4n.Kernel.Concurrency.QueuedRwLockOp)
+    (h₁ : c ∉ conc.heldRead) (h₂ : c ∉ conc.heldWrite) (h₃ : ∀ t, (c, t) ∉ conc.requests)
+    (h₄ : abs.writerHeld.isSome ∨ abs.waiters ≠ [])
+    (h₅ : SeLe4n.Kernel.Concurrency.QueuedStutter spin)
+    (h₆ : conc.nextTicket.toNat + 1 < UInt64.size) (h₇ : ¬ conc.withdrawalPending c) :
+    SeLe4n.Kernel.Concurrency.queuedBlock abs conc (.tryAcquireRead c)
+      (.heldLoad c :: .requestLoad c
+        :: (SeLe4n.Kernel.Concurrency.takeTicketOps c conc.nextTicket.toNat .read ++ spin)) :=
+  .acquireRead_enqueue abs conc c spin h₁ h₂ h₃ h₄ h₅ h₆ h₇
+-- PR #890 review round 2: the held words.  The relation has a fifth conjunct
+-- that represents the holders, every acquire and release block opens with the
+-- held-word load, and the no-op blocks are that load, derived from the
+-- relation rather than assumed of a stutter no code path performed.
+#check @SeLe4n.Kernel.Concurrency.queuedHeldSim
+#check @SeLe4n.Kernel.Concurrency.queuedHeldSim.copy
+#check @SeLe4n.Kernel.Concurrency.QueuedRwLockOp.heldLoad
+#check @SeLe4n.Kernel.Concurrency.QueuedRwLockOp.heldStore
+#check @SeLe4n.Kernel.Concurrency.releaseReadOps
+#check @SeLe4n.Kernel.Concurrency.heldLoad_stutter
+#check @SeLe4n.Kernel.Concurrency.queuedFoldBlock_heldLoad_cons
+-- The class closure behind rounds 2 and 3: the request words.  The relation
+-- has a sixth conjunct that represents the one live request of each core; the
+-- issue records it; the entry of a reader, the release of the writer and the
+-- withdrawal clear it; and the queued no-op blocks are the two loads.
+#check @SeLe4n.Kernel.Concurrency.queuedRequestsSim
+#check @SeLe4n.Kernel.Concurrency.queuedRequestsSim.copy
+#check @SeLe4n.Kernel.Concurrency.QueuedRwLockOp.requestLoad
+#check @SeLe4n.Kernel.Concurrency.QueuedRwLockOp.requestStore
+#check @SeLe4n.Kernel.Concurrency.queuedSim_involved_of_request
+#check @SeLe4n.Kernel.Concurrency.queuedSim_involved_of_held
+#check @SeLe4n.Kernel.Concurrency.queuedSim_not_involved
+#check @SeLe4n.Kernel.Concurrency.queuedRequestsSim_issue
+#check @SeLe4n.Kernel.Concurrency.heldRequestLoads_stutter
+-- Relation anchors: the fifth conjunct IS the held relation and the sixth IS
+-- the request relation; every no-op block is decided by the words the
+-- implementation reads, never by an abstract fact; the effective release
+-- clears the word BEFORE the count moves; the issue records the request; and
+-- the writer release clears it between the held clear and the bit clear.
+-- Each keeps every name above and fails if its relation is broken.
+example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
+    (conc : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete)
+    (h : SeLe4n.Kernel.Concurrency.queuedSim abs conc) :
+    SeLe4n.Kernel.Concurrency.queuedHeldSim abs conc := h.2.2.2.2.1
+example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
+    (conc : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete)
+    (h : SeLe4n.Kernel.Concurrency.queuedSim abs conc) :
+    SeLe4n.Kernel.Concurrency.queuedRequestsSim conc := h.2.2.2.2.2.1
+example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
+    (conc : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (h : c ∉ conc.heldRead) :
+    SeLe4n.Kernel.Concurrency.queuedBlock abs conc (.releaseRead c) [.heldLoad c] :=
+  .releaseRead_noop abs conc c h
+example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
+    (conc : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (h : c ∈ conc.heldRead ∨ c ∈ conc.heldWrite) :
+    SeLe4n.Kernel.Concurrency.queuedBlock abs conc (.tryAcquireRead c) [.heldLoad c] :=
+  .acquireRead_holder abs conc c h
+example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
+    (conc : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (t : Nat) (h₁ : c ∉ conc.heldRead) (h₂ : c ∉ conc.heldWrite) (h₃ : (c, t) ∈ conc.requests) :
+    SeLe4n.Kernel.Concurrency.queuedBlock abs conc (.tryAcquireRead c)
+      [.heldLoad c, .requestLoad c] :=
+  .acquireRead_queued abs conc c t h₁ h₂ h₃
+example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
+    (conc : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (t : Nat) (h₁ : c ∉ conc.heldRead) (h₂ : c ∉ conc.heldWrite) (h₃ : (c, t) ∈ conc.requests) :
+    SeLe4n.Kernel.Concurrency.queuedBlock abs conc (.tryAcquireWrite c)
+      [.heldLoad c, .requestLoad c] :=
+  .acquireWrite_queued abs conc c t h₁ h₂ h₃
+example (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    SeLe4n.Kernel.Concurrency.releaseReadOps c
+      = [.heldLoad c, .heldStore c none, .stateFetchSubReader c, .sev c] := rfl
+example (c : SeLe4n.Kernel.Concurrency.CoreId) (t : Nat) :
+    SeLe4n.Kernel.Concurrency.releaseWriteOps c t
+      = [.heldLoad c, .heldStore c none, .requestStore c none,
+         .stateFetchAndReaderMask c, .nowServingFetchAdd c t, .sev c] := rfl
+example (c : SeLe4n.Kernel.Concurrency.CoreId) (t : Nat)
+    (m : SeLe4n.Kernel.Concurrency.AccessMode) :
+    SeLe4n.Kernel.Concurrency.takeTicketOps c t m
+      = [.nextTicketFetchAdd c, .requestModeStore c m, .requestStore c (some t),
+         .lastEnqueuedStore c] := rfl
+example (c : SeLe4n.Kernel.Concurrency.CoreId) (t : Nat) :
+    SeLe4n.Kernel.Concurrency.readerEnterOps c t
+      = [.nowServingLoad c, .stateLoad c, .stateFetchAddReader c t, .heldStore c (some .read),
+         .requestStore c none, .nowServingFetchAdd c t, .sev c] := rfl
+-- PR #890 review round 3: the publish of a withdrawal REQUIRES a core holding
+-- nothing (a holder withdraws nothing, decided by the same word), and the
+-- withdrawal block OPENS with that load, then the request load, and clears
+-- the request BEFORE it publishes; a holder and a core with no request each
+-- take a no-op shape decided by its own word.
+example (s : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (t : Nat) (h : s.opEnabled (.cancelPublish c t)) :
+    c ∉ s.heldRead ∧ c ∉ s.heldWrite := ⟨h.2.2.1, h.2.2.2⟩
+example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
+    (conc : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (t : Nat) (spin : List SeLe4n.Kernel.Concurrency.QueuedRwLockOp)
+    (h₁ : c ∉ conc.heldRead) (h₂ : c ∉ conc.heldWrite) (h₃ : (c, t) ∈ conc.requests)
+    (h₄ : SeLe4n.Kernel.Concurrency.QueuedStutter spin) :
+    SeLe4n.Kernel.Concurrency.queuedBlock abs conc (.cancel c)
+      (SeLe4n.Kernel.Concurrency.withdrawOps c t spin conc
+        ++ SeLe4n.Kernel.Concurrency.cancelPromoteFrom
+            (SeLe4n.Kernel.Concurrency.queuedFoldBlock conc
+              (SeLe4n.Kernel.Concurrency.withdrawOps c t spin conc)) abs c) :=
+  .cancel_queued abs conc c t spin h₁ h₂ h₃ h₄
+-- PR #890 review round 5: the withdrawal ops are the three loads, the request
+-- clear, the publish, the stutter and the skip loop, in that order; the
+-- promotion the withdrawal hands on is the reader-run admission exactly when
+-- the spec promotes, and nothing otherwise; the queued bridge folds it and the
+-- CAS-retry bridge carries the run as a promoting release does.
+example (c : SeLe4n.Kernel.Concurrency.CoreId) (t : Nat)
+    (spin : List SeLe4n.Kernel.Concurrency.QueuedRwLockOp)
+    (conc : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete) :
+    SeLe4n.Kernel.Concurrency.withdrawOps c t spin conc
+      = .heldLoad c :: .requestLoad c :: .nowServingLoad c :: .requestStore c none
+        :: .cancelPublish c t
+        :: spin ++ SeLe4n.Kernel.Concurrency.skipDeadOps (conc.cancelled ++ [t]) conc.ledger := rfl
+example (conc : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete)
+    (abs : SeLe4n.Kernel.Concurrency.RwLockState) (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    SeLe4n.Kernel.Concurrency.cancelPromoteFrom conc abs c
+      = (if abs.cancelPromotes c then
+          SeLe4n.Kernel.Concurrency.readerAdmitFrom conc
+            ((abs.withdraw c).waiters.takeWhile
+              (fun w => w.2 = SeLe4n.Kernel.Concurrency.AccessMode.read)).length
+         else []) := rfl
+#check @SeLe4n.Kernel.Concurrency.withdrawOps
+#check @SeLe4n.Kernel.Concurrency.cancelPromoteFrom
+#check @SeLe4n.Kernel.Concurrency.queuedBlock_step_withdraw
+#check @SeLe4n.Kernel.Concurrency.readerRun_preserves_queuedSim
+#check @SeLe4n.Kernel.Concurrency.queuedBlock_step_cancel_queued
+-- PR #890 review round 5: the mode words.  The relation has a seventh conjunct
+-- that pins each live request to the mode the spec queued it in (write for the
+-- held writer), the issue stores the mode BEFORE the request word, and the
+-- promotion lemma takes the relation and the distinctness of the queued cores
+-- that make the promoted writer a write request.
+#check @SeLe4n.Kernel.Concurrency.queuedRequestModesSim
+#check @SeLe4n.Kernel.Concurrency.specModeOf
+#check @SeLe4n.Kernel.Concurrency.queuedRequestModesSim.transfer
+#check @SeLe4n.Kernel.Concurrency.queuedRequestModesSim.issue
+#check @SeLe4n.Kernel.Concurrency.QueuedRwLockOp.requestModeStore
+#check @SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete.requestModes_only_moves_by_mode_store
+#check @SeLe4n.Kernel.Concurrency.queuedFoldBlock_requestModes_of_no_mode_store
+#check @SeLe4n.Kernel.Concurrency.readerAdmitFrom_no_mode_store
+example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
+    (conc : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete)
+    (h : SeLe4n.Kernel.Concurrency.queuedSim abs conc) :
+    SeLe4n.Kernel.Concurrency.queuedRequestModesSim abs conc := h.2.2.2.2.2.2
+example (abs : SeLe4n.Kernel.Concurrency.RwLockState) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (m : SeLe4n.Kernel.Concurrency.AccessMode) :
+    SeLe4n.Kernel.Concurrency.specModeOf abs c m
+      = ((m = .write ∧ abs.writerHeld = some c) ∨ (c, m) ∈ abs.waiters) := rfl
+example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
+    (conc : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (h : c ∈ conc.heldRead ∨ c ∈ conc.heldWrite) :
+    SeLe4n.Kernel.Concurrency.queuedBlock abs conc (.cancel c) [.heldLoad c] :=
+  .cancel_holder abs conc c h
+example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
+    (conc : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (h₁ : c ∉ conc.heldRead) (h₂ : c ∉ conc.heldWrite) (h₃ : ∀ t, (c, t) ∉ conc.requests) :
+    SeLe4n.Kernel.Concurrency.queuedBlock abs conc (.cancel c) [.heldLoad c, .requestLoad c] :=
+  .cancel_noRequest abs conc c h₁ h₂ h₃
+#check @SeLe4n.Kernel.Concurrency.queuedRwLock_refines_rwLockSpec
+#check @SeLe4n.Kernel.Concurrency.queuedRwLock_admits_in_spec_order
 EOF'
 
 # WS-SM SM2.D — Lean-side FFI declarations.  Covers every SM2.D
@@ -6607,6 +7004,12 @@ import SeLe4n.Platform.FFI
 #check @SeLe4n.Platform.FFI.ffiRwLockReleaseReadCount
 #check @SeLe4n.Platform.FFI.ffiRwLockAcquireWriteCount
 #check @SeLe4n.Platform.FFI.ffiRwLockReleaseWriteCount
+#check @SeLe4n.Platform.FFI.ffiRwLockEnqueue
+#check @SeLe4n.Platform.FFI.ffiRwLockIsServed
+#check @SeLe4n.Platform.FFI.ffiRwLockCompleteRead
+#check @SeLe4n.Platform.FFI.ffiRwLockCompleteWrite
+#check @SeLe4n.Platform.FFI.ffiRwLockCancel
+#check @SeLe4n.Platform.FFI.ffiRwLockCancelCount
 EOF'
 
 # WS-SM SM3.A — Per-object lock field surface anchors.  Every per-object
@@ -6963,11 +7366,29 @@ import SeLe4n.Kernel.Concurrency.Locks.WithLockSetInventory
 #check @SeLe4n.Kernel.Concurrency.lockAcquireSequence_distinct_objId_of_resolves
 -- SM3.C.7 (Group-B): observational atomicity (lock-insensitive observer).
 #check @SeLe4n.Kernel.Concurrency.AcquireInsensitive
-#check @SeLe4n.Kernel.Concurrency.ReleaseInsensitive
+#check @SeLe4n.Kernel.Concurrency.UnwindInsensitive
 #check @SeLe4n.Kernel.Concurrency.acquireAll_lockInsensitive
 #check @SeLe4n.Kernel.Concurrency.releaseAll_lockInsensitive
-#check @SeLe4n.Kernel.Concurrency.withLockSet_release_invisible
+#check @SeLe4n.Kernel.Concurrency.cancelAll_lockInsensitive
+#check @SeLe4n.Kernel.Concurrency.unwindAll_lockInsensitive
+#check @SeLe4n.Kernel.Concurrency.withLockSet_unwind_invisible
 #check @SeLe4n.Kernel.Concurrency.lockSet_observer_atomic
+-- The shrinking phase withdraws before it releases, and the payoff that
+-- makes the old "released is not fully unwound" caveat false.
+#check @SeLe4n.Kernel.Concurrency.AccessMode.toCancelOp
+#check @SeLe4n.Kernel.Concurrency.cancelLockOnObject
+#check @SeLe4n.Kernel.Concurrency.cancelAll
+#check @SeLe4n.Kernel.Concurrency.unwindAll
+#check @SeLe4n.Kernel.Concurrency.unwindAll_eq_releaseAll_cancelAll
+#check @SeLe4n.Kernel.Concurrency.rwLock_cancel_not_queued
+#check @SeLe4n.Kernel.Concurrency.rwLock_release_preserves_not_queued
+#check @SeLe4n.Kernel.Concurrency.rwLock_unwind_not_queued
+#check @SeLe4n.Kernel.Concurrency.rwLock_release_then_cancel_not_queued
+#check @SeLe4n.Kernel.Concurrency.lockQueued
+#check @SeLe4n.Kernel.Concurrency.cancelLockOnObject_withdraws
+#check @SeLe4n.Kernel.Concurrency.cancelAll_leaves_no_queued_request
+#check @SeLe4n.Kernel.Concurrency.unwindAll_leaves_no_queued_request
+#check @SeLe4n.Model.LockId.lookup_object_eq
 -- SM3.C.11 dynamic chain walker + deadlock-freedom witness.
 #check @SeLe4n.Kernel.Concurrency.MAX_PIP_RETRIES
 #check @SeLe4n.Kernel.Concurrency.MAX_PIP_RETRIES_pos
@@ -7231,7 +7652,7 @@ import SeLe4n.Kernel.Concurrency.Locks.SerializabilityInventory
 #check @SeLe4n.Kernel.Concurrency.acquireLockOnObject_preserves_scheduler
 #check @SeLe4n.Kernel.Concurrency.releaseLockOnObject_preserves_scheduler
 #check @SeLe4n.Kernel.Concurrency.schedulerObserver_acquireInsensitive
-#check @SeLe4n.Kernel.Concurrency.schedulerObserver_releaseInsensitive
+#check @SeLe4n.Kernel.Concurrency.schedulerObserver_unwindInsensitive
 #check @SeLe4n.Kernel.Concurrency.withLockSet_observation_scheduler_witness
 #check @SeLe4n.Kernel.Concurrency.ActionObsCongr
 #check @SeLe4n.Kernel.Concurrency.ActionPreservesInvExt
