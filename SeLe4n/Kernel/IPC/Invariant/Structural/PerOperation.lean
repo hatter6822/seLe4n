@@ -471,7 +471,8 @@ theorem endpointSendDualWithCaps_preserves_dualQueueSystemInvariant
         · simp [hObj, hHead, hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
         · -- Cap transfer path
           simp [hObj, hHead, hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep -- AK1-I: fail-closed, vacuous
           | some recvRoot =>
             simp only [hLookup] at hStep
@@ -603,7 +604,8 @@ theorem endpointCallWithCaps_preserves_dualQueueSystemInvariant
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
@@ -665,7 +667,8 @@ theorem endpointSendDualWithCaps_preserves_badgeWellFormed
         by_cases hEmpty : msg.caps.isEmpty = true
         · simp [hObj, hHead, hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
         · simp [hObj, hHead, hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp only [hLookup] at hStep
@@ -709,7 +712,8 @@ theorem endpointCallWithCaps_preserves_badgeWellFormed
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep

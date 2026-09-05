@@ -15,10 +15,13 @@
 > this from the plan, which carried no status header at all (RR0, v0.34.26).
 
 > **Phase**: SM3.C.9 (deferred `withLockSet` migration at the live kernel
-> entry) + the `capTransferReceiverCnode` footprint closure + commit
-> partitioning (the fine-lock end-state).
+> entry) + the capability-transfer footprint closure (**landed** as WS-RR
+> RR7.7 + RR7.8 at `v0.34.60`/`v0.34.61`: the send and call footprints declare
+> the transfer's destination CSpace root and the state-level lock its CDT write
+> needs, and `UncoveredLockDomain.capTransferReceiverCnode` is deleted because
+> the domain is covered) + commit partitioning (the fine-lock end-state).
 > **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
-> **Origin**: [`SMP_PER_OBJECT_LOCKS_PLAN.md`](SMP_PER_OBJECT_LOCKS_PLAN.md) §5.2 (SM3.C.9 deferral) + the v0.33.54 audit that registered `UncoveredLockDomain.capTransferReceiverCnode`.
+> **Origin**: [`SMP_PER_OBJECT_LOCKS_PLAN.md`](SMP_PER_OBJECT_LOCKS_PLAN.md) §5.2 (SM3.C.9 deferral) + the v0.33.54 audit that registered `UncoveredLockDomain.capTransferReceiverCnode` (closed at `v0.34.61`).
 > **Refs**: [`SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](SMP_DECLASSIFICATION_COMPLETION_PLAN.md) §SM9.D (audit-pass-7 closure); [`SMP_TLB_SHOOTDOWN_PLAN.md`](SMP_TLB_SHOOTDOWN_PLAN.md) §"Kernel-entry serialisation" (SM5.I).
 > **Target releases**: v0.33.55+ across 12 PRs in four tracks.
 > **Calendar estimate**: ~10–16 weeks (Track A security first; Track D is the largest — a runtime commit-model change).

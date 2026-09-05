@@ -2218,11 +2218,19 @@ no observer projects, the write is confined to no core at all. -/
 #check @applySyscallTaint_preserves_onCore
 #check @applySyscallTaint_preserves_proofLayerInvariantBundle
 
--- SM9.D audit: the pre-existing SM3.B footprint gap the cap-transfer sink
--- surfaced, registered as data with its violation witness — closing it deletes
--- the theorem, so the debt cannot quietly become a stale comment.
-#check @UncoveredLockDomain.capTransferReceiverCnode
-#check @capTransfer_receiverCnode_write_undeclared
+-- WS-RR RR7.8: the cap-transfer destination domain is **covered and deleted**.
+-- What stands in its place is the closure — every object either caps-carrying
+-- arm's transfer changes is declared write-mode in the footprint its bracket
+-- acquires — plus the two members that make it true.
+#check @SeLe4n.Kernel.endpointSendDualWithCaps_object_writes_declared
+#check @SeLe4n.Kernel.endpointCallWithCaps_object_writes_declared
+#check @SeLe4n.Kernel.lockSet_endpointSendOnCore_covers_capsDestination
+#check @SeLe4n.Kernel.lockSet_endpointCallOnCore_covers_capsDestination
+#check @SeLe4n.Kernel.lockSet_endpointSendOnCore_covers_cdt
+#check @SeLe4n.Kernel.lockSet_endpointCallOnCore_covers_cdt
+#check @SeLe4n.Kernel.rendezvousCapsDestination?
+#check @SeLe4n.Kernel.endpointSendDualWithCaps_reduces_to_unwrap
+#check @SeLe4n.Kernel.endpointCallWithCaps_reduces_to_unwrap
 
 -- SM9.D audit: the taint table's per-key realisation, owed by the representation
 -- cut.  The footprints declare the objects' own locks for taint keys while the
@@ -7947,17 +7955,19 @@ private def runDeclaredFootprintChecks : IO Unit := do
      have _o := @lockSet_tcbSetPriority_omits_endpointLock
      true)
   -- The bracket covers the OBJECT domain only; the scheduler domain, the
-  -- dynamic PIP chain, the queue-ownership protocol, (SM9.D audit) the
-  -- capability-transfer destination CNode, (SM9.D audit) the taint table's
+  -- dynamic PIP chain, the queue-ownership protocol, (SM9.D audit) the taint
+  -- table's
   -- per-key realisation and (PR #873 round 13) the CDT node allocator's global
   -- counter and (PR #887 review round 3) the interior CNodes of a multi-level
   -- CSpace walk are named as data with owners rather than left implicit.
-  assertBool "the seven uncovered lock domains are registered, each with an owner"
-    (decide (declaredFootprintUncoveredDomains.length = 7) &&
+  -- WS-RR RR7.8: **six**, not seven — the capability-transfer destination CNode
+  -- is covered and its entry deleted.  The count falls because the domain
+  -- closed, which is the only reason it may.
+  assertBool "the six uncovered lock domains are registered, each with an owner"
+    (decide (declaredFootprintUncoveredDomains.length = 6) &&
      decide (declaredFootprintUncoveredDomains.map Prod.fst
        = [UncoveredLockDomain.schedulerDomain, UncoveredLockDomain.dynamicPipChain,
           UncoveredLockDomain.queueOwnershipProtocol,
-          UncoveredLockDomain.capTransferReceiverCnode,
           UncoveredLockDomain.taintTablePerKeyStore,
           UncoveredLockDomain.cdtNodeAllocation,
           UncoveredLockDomain.cspaceWalkInteriorCnodes]) &&
@@ -7967,7 +7977,7 @@ private def runDeclaredFootprintChecks : IO Unit := do
   assertBool "NEGATIVE: every uncovered-domain constructor is registered"
     (UncoveredLockDomain.all.all
        (fun d => declaredFootprintUncoveredDomains.map Prod.fst |>.contains d) &&
-     decide (UncoveredLockDomain.all.length = 7))
+     decide (UncoveredLockDomain.all.length = 6))
   -- PR #873 round 6: the inventory is no longer data alone.  Relying on declared
   -- footprints as a complete serialization discipline is gated on it being
   -- EMPTY, so the per-key taint store — the entry the review pressed twice — is
@@ -10980,14 +10990,18 @@ private def runTaintFootprintChecks : IO Unit := do
   -- The write-lock coverage claim, computed on the REAL edge list a rendezvous
   -- send declares — not on a hand-built plan, which is how the audit's first
   -- form of this check missed the capability-transfer sink.  The woken
-  -- receiver's TCB (W) is a declared member; the receiver's CSpace root — the
-  -- object `ipcUnwrapCaps` writes — is NOT, a pre-existing SM3.B footprint gap
-  -- registered as `UncoveredLockDomain.capTransferReceiverCnode`
-  -- (`capTransfer_receiverCnode_write_undeclared`).
+  -- receiver's TCB (W) is a declared member.
   --
-  -- The ENDPOINT is no longer among the sinks at all: the content-derived model
-  -- does not tag it, because it holds no content of its own.  That makes the
-  -- registered CNode gap the *only* uncovered key here, rather than one of two.
+  -- The receiver's CSpace root — the object `ipcUnwrapCaps` writes — used to be
+  -- the exception: a pre-existing SM3.B footprint gap registered as
+  -- `UncoveredLockDomain.capTransferReceiverCnode`.  **WS-RR RR7.7 + RR7.8
+  -- closed it**, and this footprint is built at the *capless* argument, so the
+  -- set below is still the capless one; what changed is that the caps-carrying
+  -- footprint now names that root in write mode
+  -- (`lockSet_endpointSendOnCore_covers_capsDestination`).
+  --
+  -- The ENDPOINT is not among the sinks at all: the content-derived model does
+  -- not tag it, because it holds no content of its own.
   let sendSet := SeLe4n.Kernel.Concurrency.lockSet_endpointSend highCurrent probeCNode
                    highEndpoint (some lowCurrent)
   let sendWriteObjects : List SeLe4n.ObjId :=
@@ -11023,22 +11037,39 @@ private def runTaintFootprintChecks : IO Unit := do
     ((sendRendezvousCaplessEdges.map (·.sink)).all (fun o => sendWriteObjects.contains o))
   assertBool "EVERY taint write key is write-locked by the send footprint"
     ((sendRendezvousEdges.map (·.sink)).all (fun o => sendWriteObjects.contains o))
-  -- The registered footprint gap is unchanged and is now purely an *object*
-  -- write: `ipcUnwrapCaps` still writes the receiver's CSpace root CNode with no
-  -- declared lock (`UncoveredLockDomain.capTransferReceiverCnode`).  Pinned
-  -- positively so closing it breaks this line.  What changed is that it is no
-  -- longer also a taint write key, so the taint-coverage claim above no longer
-  -- has to carve it out.
-  assertBool "GAP (registered lock-inventory debt): the receiver's CSpace root is NOT write-locked"
+  -- **WS-RR RR7.8: the gap this line used to pin is closed.**  It read "GAP
+  -- (registered lock-inventory debt): the receiver's CSpace root is NOT
+  -- write-locked", pinned positively so closing it would break the line — and
+  -- this is that break.  `sendSet` is built at the **capless** argument, so the
+  -- root is still absent from it, and that is now a *property* rather than a
+  -- gap: the member belongs to the transfer, so a send that carries no
+  -- capabilities must not pay for it.
+  assertBool "a capless send declares no CSpace-root write, because it writes none"
     (!sendWriteObjects.contains recvRoot &&
      decide ((SeLe4n.Kernel.Concurrency.cnodeLock recvRoot,
         SeLe4n.Kernel.Concurrency.AccessMode.write) ∉ sendSet.pairs))
+  -- …and the caps-carrying footprint DOES declare it, which is the half that
+  -- makes the line above a property instead of an excuse.  Same arguments, the
+  -- destination supplied.
+  assertBool "a caps-carrying send declares the receiver's CSpace root in write mode"
+    (decide ((SeLe4n.Kernel.Concurrency.cnodeLock recvRoot,
+        SeLe4n.Kernel.Concurrency.AccessMode.write)
+      ∈ (SeLe4n.Kernel.Concurrency.lockSet_endpointSend highCurrent probeCNode
+           highEndpoint (some lowCurrent) (some recvRoot)).pairs))
   -- The design decision, pinned: the hot IPC path does NOT carry the coarse
   -- `.objStore` singleton.  A keyed table decomposes, so its writes ride the
   -- key's own lock exactly as `storeObject`'s writes ride the object's; putting
   -- the level-0 lock on `.send` would serialise every IPC in the system against
   -- every other, and would blow the SM5.J tick budget the IPC-suite fixtures pin.
-  assertBool "the content-moving footprints do NOT declare the coarse table lock"
+  --
+  -- **WS-RR RR7.7 narrowed this claim rather than breaking it.**  A
+  -- *caps-carrying* rendezvous does declare the state-level write, because it
+  -- writes the CDT maps — global structure that does not decompose by key, so
+  -- two such transfers into different CSpaces genuinely conflict and must
+  -- serialise.  What the claim protects is the **capless** hot path, which is
+  -- what `sendSet` is, and the next assertion pins the other side so the
+  -- narrowing cannot widen back by accident.
+  assertBool "the capless content-moving footprints do NOT declare the coarse table lock"
     (decide ((SeLe4n.Kernel.Concurrency.stateLevelLock, SeLe4n.Kernel.Concurrency.AccessMode.write)
         ∉ sendSet.pairs) &&
      decide ((SeLe4n.Kernel.Concurrency.stateLevelLock, SeLe4n.Kernel.Concurrency.AccessMode.write)
@@ -11047,6 +11078,11 @@ private def runTaintFootprintChecks : IO Unit := do
      decide ((SeLe4n.Kernel.Concurrency.stateLevelLock, SeLe4n.Kernel.Concurrency.AccessMode.write)
         ∉ (SeLe4n.Kernel.Concurrency.lockSet_lifecycleRetype highCurrent probeCNode declassTargetA
              declassTargetB).pairs))
+  -- WS-RR RR7.7: and the caps-carrying send does declare it, for the CDT maps.
+  assertBool "a caps-carrying send DOES declare the coarse table lock, for the CDT maps"
+    (decide ((SeLe4n.Kernel.Concurrency.stateLevelLock, SeLe4n.Kernel.Concurrency.AccessMode.write)
+      ∈ (SeLe4n.Kernel.Concurrency.lockSet_endpointSend highCurrent probeCNode
+           highEndpoint (some lowCurrent) (some recvRoot)).pairs))
   -- ...and the two syscalls that append to the *trail* — a `List`, which does
   -- not decompose by key — still do.  That is what covers their origination
   -- keys, including the actor's TCB, which their footprints hold only in read

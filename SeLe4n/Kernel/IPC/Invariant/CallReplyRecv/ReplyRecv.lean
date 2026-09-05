@@ -672,7 +672,9 @@ theorem endpointCallWithCaps_preserves_ipcInvariant
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the **pre**-state (see
+          -- `endpointCallWithCaps`), so the case split names `st`.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep -- WS-RC R1 (DEEP-IPC-03): fail-closed, vacuous
           | some recvRoot =>
             simp [hLookup] at hStep

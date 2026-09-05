@@ -2944,32 +2944,26 @@ theorem suspendFootprint_respects_queueOwnership (st : SystemState)
   fun _ => (suspendFootprint_splice_neighbors_under_endpoint_lock st callerTid targetTid
     S victim ep hFp hVictim hBlocked hLinks).1
 
-/-- WS-SM SM9.D.17 (audit, **the violation as data**): the send and call
-footprints declare no CNode **write** — in particular not the receiver's CSpace
-root, which `ipcUnwrapCaps` writes on a caps-carrying rendezvous.  Concrete
-witnesses because the honest general statement needs a mode-aware inversion the
-kind-based `omits` pattern cannot supply (the caller's root IS a cnode-kind
-member, in read mode), and a `decide` over closed footprints pins the same
-fact: the fold that builds each set inserts exactly one CNode key, read-mode,
-the caller's.  Closing the gap deletes this theorem — the SM8.D round-11
-discipline, so the debt cannot quietly become a stale comment. -/
-theorem capTransfer_receiverCnode_write_undeclared :
-    ∃ (callerTid receiverTid : SeLe4n.ThreadId) (cnRoot epId recvRoot : SeLe4n.ObjId),
-      cnRoot ≠ recvRoot ∧
-      (SeLe4n.Kernel.Concurrency.cnodeLock recvRoot, AccessMode.write) ∉
-        (SeLe4n.Kernel.Concurrency.lockSet_endpointSend callerTid cnRoot epId
-          (some receiverTid)).pairs ∧
-      (SeLe4n.Kernel.Concurrency.cnodeLock recvRoot, AccessMode.write) ∉
-        (SeLe4n.Kernel.Concurrency.lockSet_endpointCall callerTid cnRoot epId
-          (some receiverTid) none none).pairs ∧
-      -- …and the gap is not an artifact of naming a FOREIGN root: even the
-      -- caller's own root — the one CNode the footprints do name — is held in
-      -- read mode only, so no CNode write is declared anywhere in either set.
-      (SeLe4n.Kernel.Concurrency.cnodeLock cnRoot, AccessMode.write) ∉
-        (SeLe4n.Kernel.Concurrency.lockSet_endpointSend callerTid cnRoot epId
-          (some receiverTid)).pairs := by
-  refine ⟨⟨1⟩, ⟨2⟩, SeLe4n.ObjId.ofNat 3, SeLe4n.ObjId.ofNat 4, SeLe4n.ObjId.ofNat 5,
-    by decide, ?_, ?_, ?_⟩ <;> decide
+/-! ## The capability-transfer destination — **covered at WS-RR RR7.8**
+
+`capTransfer_receiverCnode_write_undeclared` stood here: concrete witnesses that
+`lockSet_endpointSend` / `lockSet_endpointCall` declared no CNode **write**, so
+the receiver's CSpace root — which `ipcUnwrapCaps` writes on a caps-carrying
+rendezvous — had no covering lock.
+
+It is deleted because the domain is covered, not to make a count fall.  RR7.7
+gave both footprints a capability-transfer destination optional whose `some`
+declares `(cnodeLock r, .write)` and `(stateLevelLock, .write)`; RR7.8 resolves
+that optional from `rendezvousCapsDestination?`, the expression the WithCaps
+arms themselves evaluate, and proves the closure:
+`endpointSendDualWithCaps_object_writes_declared` and
+`endpointCallWithCaps_object_writes_declared`
+(`SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean`) say that **every object either
+arm's transfer changes is declared write-mode in the footprint its bracket
+acquires**.
+
+A Tier-3 negative pins that the theorem and the constructor cannot return.
+-/
 
 /-- SM8.D.5: `lockSet_tcbSetPriority` never holds an endpoint lock.
 
@@ -3090,22 +3084,6 @@ inductive UncoveredLockDomain where
   `lockSet_tcbSuspend` is at it exactly) so the suspend can name the neighbours,
   which moves the WCRT headline. -/
   | queueOwnershipProtocol
-  /-- WS-SM SM9.D.17 (audit): the **capability-transfer destination CNode**.  On
-  a caps-carrying rendezvous the live `.send` / `.call` run `ipcUnwrapCaps`,
-  which installs the transferred capabilities into the *receiver's* CSpace root
-  — a CNode write — while `lockSet_endpointSend` / `lockSet_endpointCall`
-  declare no CNode **write** at all (their one CNode member is the *caller's*
-  root, in read mode; `capTransfer_receiverCnode_write_undeclared`).  Surfaced
-  by SM9.D's cap-transfer taint sink, which names exactly this object: the taint
-  write at that key has no covering lock because the underlying transition's own
-  footprint predates the WithCaps path.  Not a live race (SM5.I's global entry
-  lock serialises every commit; `withLockSet` is deferred at the export bodies,
-  SM3.C.9), and closing it is an SM3.B inventory decision with a real cost — a
-  conditional receiver-CNode write member moves both signatures, the size
-  bounds, and the resolved-footprint WCRT arithmetic the IPC suites pin (a
-  caps-carrying call's footprint would exceed the 1 ms tick fit that holds for
-  the capless shape). -/
-  | capTransferReceiverCnode
   /-- WS-SM SM9.D.17 (audit): the **taint table's per-key realisation**.
 
   Every content-moving syscall writes `SystemState.declassificationTaint` at the
@@ -3145,11 +3123,15 @@ inductive UncoveredLockDomain where
 
   The counter is not key-decomposable, so covering it means `stateLevelLock` in
   **write** mode on the two hottest IPC arms, which moves the resolved-footprint
-  WCRT arithmetic the IPC suites pin — the same cost that keeps
-  `capTransferReceiverCnode` registered, and the same owner.  The remedy is
-  planned as Track B of `SMP_FINE_LOCK_MIGRATION_PLAN`, which declares
-  `(stateLevelLock, .write)` on send/call together with the four `cspace*`
-  operations that write the identical fields. -/
+  WCRT arithmetic the IPC suites pin — the cost that kept its sibling
+  `capTransferReceiverCnode` registered until WS-RR RR7.7 paid it.  That cut
+  declares `(stateLevelLock, .write)` on the send and call footprints exactly
+  when a capability transfer is carried — which is exactly when this counter is
+  written — so the IPC half of this domain is covered.  What keeps the entry is
+  the other half: the four `cspace*` operations write the identical fields and
+  declare no state-level lock, so two of *those* still have provably disjoint
+  footprints while allocating from one counter.  WS-RR RR7.9 declares it on
+  them and deletes this entry. -/
   | cdtNodeAllocation
   /-- PR #887 review round 3: the **interior CNodes of a multi-level CSpace
   walk**.  `resolveCapAddress` descends through child CNodes while address
@@ -3192,7 +3174,6 @@ def declaredFootprintUncoveredDomains : List (UncoveredLockDomain × String) :=
   [(.schedulerDomain, "WS-RR RR7.39 (fine-lock Track C closure)"),
    (.dynamicPipChain, "WS-RR RR7.40 (fine-lock Track C closure)"),
    (.queueOwnershipProtocol, "WS-RR RR7.38"),
-   (.capTransferReceiverCnode, "WS-RR RR7.8 (fine-lock Track B)"),
    (.taintTablePerKeyStore, "SM10.1 (fine-lock Track D)"),
    (.cdtNodeAllocation, "WS-RR RR7.9 (fine-lock Track B)"),
    (.cspaceWalkInteriorCnodes, "WS-RR RR7.41 (fine-lock Track C closure)")]
@@ -3202,8 +3183,7 @@ inventory uses — so completeness can be quantified over the *constructors*
 rather than compared against a literal. -/
 def UncoveredLockDomain.all : List UncoveredLockDomain :=
   [.schedulerDomain, .dynamicPipChain, .queueOwnershipProtocol,
-   .capTransferReceiverCnode, .taintTablePerKeyStore, .cdtNodeAllocation,
-   .cspaceWalkInteriorCnodes]
+   .taintTablePerKeyStore, .cdtNodeAllocation, .cspaceWalkInteriorCnodes]
 
 /-- SM8.D.5: every constructor is listed.  This is the clause a literal
 comparison cannot supply: adding a new domain makes `cases d` non-exhaustive
@@ -3263,9 +3243,14 @@ def fineLockDisciplineComplete : Bool :=
 
 /-- SM8.D.5 (PR #873 round 6): **it is false today**, and this is the pin that
 makes flipping it a deliberate act.  Deleting it is the same edit as claiming
-every registered domain is covered — six of them today, and the count is read
-off `declaredFootprintUncoveredDomains` rather than restated here, because a
-number written twice is a number that can disagree with itself. -/
+every registered domain is covered.
+
+**How many that is, is deliberately not written here.**  It was — "six of them
+today", which had already drifted to seven by the time WS-RR RR7.8 deleted
+`capTransferReceiverCnode` and made it six again by coincidence.  A number
+restated beside the list it counts is the shape the sentence itself warns
+against; the count is `declaredFootprintUncoveredDomains.length` and nothing
+else. -/
 theorem fineLockDisciplineComplete_is_false : fineLockDisciplineComplete = false := by
   decide
 

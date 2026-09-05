@@ -143,10 +143,48 @@ on a server-first rendezvous).  This is the footprint the runtime `withLockSet` 
 (the SM5.I FFI seam) acquires before invoking
 `endpointCallOnCore endpointId caller … executingCore st`. -/
 def lockSet_endpointCallOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (caller : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId) : LockSet :=
+    (caller : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
+    -- **WS-RR RR7.8**: the message, because whether this call installs
+    -- capabilities is a property of what it carries.  Defaulted to the empty
+    -- message (no registers, and `caps` empty by the field's own default) so
+    -- every capless call site is unchanged and reduces definitionally to the
+    -- pre-RR7.8 footprint.
+    (msg : IpcMessage := { registers := #[] }) : LockSet :=
   lockSet_endpointCall caller cnodeRootObjId endpointId
     (endpointCallReceiver? st endpointId) (endpointCallDonatedSc? st caller)
     (endpointCallServerFirstReply? st endpointId)
+    -- **WS-RR RR7.8**: the capability-transfer destination, resolved from the
+    -- same pre-state expression `endpointCallWithCaps` reads
+    -- (`rendezvousCapsDestination?`), so the declared footprint and the
+    -- transition cannot disagree about which CSpace root is written — the
+    -- discipline `receiveInstallsCaps` established for the receive side.
+    (rendezvousCapsDestination? st endpointId msg)
+
+/-- **WS-RR RR7.8**: the capless resolved call footprint is definitionally the
+pre-RR7.8 one, so every statement and fixture taken over the four-argument form
+survives unchanged. -/
+theorem lockSet_endpointCallOnCore_capless (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) :
+    lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId
+      = lockSet_endpointCall caller cnodeRootObjId endpointId
+          (endpointCallReceiver? st endpointId) (endpointCallDonatedSc? st caller)
+          (endpointCallServerFirstReply? st endpointId) := rfl
+
+/-- **WS-RR RR7.8**: the concrete lock-set a cross-core caps-carrying `.send`
+acquires.  The send side had no resolved footprint at all — its capless shape
+needed none, since every member was an argument — and the capability-transfer
+destination is the first member that has to be read from the state.
+
+The receiver is the endpoint's receive-queue head, as it is for the call; the
+destination is `rendezvousCapsDestination?`, the expression
+`endpointSendDualWithCaps` itself evaluates. -/
+def lockSet_endpointSendOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
+    (msg : IpcMessage := { registers := #[] }) : LockSet :=
+  lockSet_endpointSend sender cnodeRootObjId endpointId
+    (endpointCallReceiver? st endpointId)
+    (rendezvousCapsDestination? st endpointId msg)
 
 -- ============================================================================
 -- §3  WithCaps lock-set (plan §3.1)
@@ -421,12 +459,164 @@ kind permitted for `.call`.  This is the form the runtime acquisition consumes,
 so its correctness is a corollary of the parametric `lockSet_consistent_call`. -/
 theorem lockSet_endpointCallOnCore_correct
     (st : SystemState) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (cnodeRootObjId : SeLe4n.ObjId) :
-    ∀ p ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId).pairs,
+    (cnodeRootObjId : SeLe4n.ObjId) (msg : IpcMessage := { registers := #[] }) :
+    ∀ p ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId msg).pairs,
       p.fst.kind ∈ permittedKinds .call :=
   lockSet_consistent_call caller cnodeRootObjId endpointId
     (endpointCallReceiver? st endpointId) (endpointCallDonatedSc? st caller)
     (endpointCallServerFirstReply? st endpointId)
+    (rendezvousCapsDestination? st endpointId msg)
+
+/-- **WS-RR RR7.8**: the send footprint's kinds are permitted too, over every
+message — the send side's first resolved-footprint correctness statement. -/
+theorem lockSet_endpointSendOnCore_correct
+    (st : SystemState) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (msg : IpcMessage := { registers := #[] }) :
+    ∀ p ∈ (lockSet_endpointSendOnCore st endpointId sender cnodeRootObjId msg).pairs,
+      p.fst.kind ∈ permittedKinds .send :=
+  lockSet_consistent_send sender cnodeRootObjId endpointId
+    (endpointCallReceiver? st endpointId)
+    (rendezvousCapsDestination? st endpointId msg)
+
+-- ============================================================================
+-- §7b  WS-RR RR7.8 — the capability transfer's write set is declared
+-- ============================================================================
+
+/-! ## What `ipcUnwrapCaps` writes, and where it is declared
+
+`ipcTransferSingleCap` — the one place an `.ipcTransfer` edge is made — writes
+exactly two things on its installing path: the **CNode at
+`receiverCspaceRoot`** (through `cspaceInsertSlot`), and the **`SystemState`-level
+CDT structure** (`ensureCdtNodeForSlot`'s counter and both keyed maps, plus the
+edge itself).  Nothing else in the transfer mutates state.
+
+Both are declared, and each theorem below names one.  The destination is the
+resolver's own output, so there is no gap between "the lock the bracket takes"
+and "the object the transfer writes": `rendezvousCapsDestination?` is the
+expression `endpointSendDualWithCaps` and `endpointCallWithCaps` evaluate
+(`endpointSendDualWithCaps_reduces_to_unwrap`,
+`endpointCallWithCaps_reduces_to_unwrap`), read from the same pre-state.
+-/
+
+/-- **WS-RR RR7.8**: a caps-carrying `.call` holds the destination CSpace root
+in **write** mode. -/
+theorem lockSet_endpointCallOnCore_covers_capsDestination
+    (st : SystemState) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (msg : IpcMessage) (recvRoot : SeLe4n.ObjId)
+    (hDest : rendezvousCapsDestination? st endpointId msg = some recvRoot) :
+    (cnodeLock recvRoot, AccessMode.write)
+      ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId msg).pairs := by
+  unfold lockSet_endpointCallOnCore lockSet_endpointCall
+  rw [hDest]
+  exact mem_write_lockSetExtendOpt _ _ _ (LockSet.mem_insertOrMerge_write_self _ _)
+
+/-- **WS-RR RR7.8**: …and the state-level lock, for the CDT structure the
+install writes.  Without this member two transfers into *different* CSpaces have
+provably disjoint footprints while read-modify-writing one derivation map. -/
+theorem lockSet_endpointCallOnCore_covers_cdt
+    (st : SystemState) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (msg : IpcMessage) (recvRoot : SeLe4n.ObjId)
+    (hDest : rendezvousCapsDestination? st endpointId msg = some recvRoot) :
+    (stateLevelLock, AccessMode.write)
+      ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId msg).pairs := by
+  unfold lockSet_endpointCallOnCore lockSet_endpointCall
+  rw [hDest]
+  exact LockSet.mem_insertOrMerge_write_self _ _
+
+/-- **WS-RR RR7.8**: the same two members on the send arm — the same transfer,
+so the same write set, so the same declaration. -/
+theorem lockSet_endpointSendOnCore_covers_capsDestination
+    (st : SystemState) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (msg : IpcMessage) (recvRoot : SeLe4n.ObjId)
+    (hDest : rendezvousCapsDestination? st endpointId msg = some recvRoot) :
+    (cnodeLock recvRoot, AccessMode.write)
+      ∈ (lockSet_endpointSendOnCore st endpointId sender cnodeRootObjId msg).pairs := by
+  unfold lockSet_endpointSendOnCore lockSet_endpointSend
+  rw [hDest]
+  exact mem_write_lockSetExtendOpt _ _ _ (LockSet.mem_insertOrMerge_write_self _ _)
+
+/-- **WS-RR RR7.8**: and the send arm's state-level member. -/
+theorem lockSet_endpointSendOnCore_covers_cdt
+    (st : SystemState) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (msg : IpcMessage) (recvRoot : SeLe4n.ObjId)
+    (hDest : rendezvousCapsDestination? st endpointId msg = some recvRoot) :
+    (stateLevelLock, AccessMode.write)
+      ∈ (lockSet_endpointSendOnCore st endpointId sender cnodeRootObjId msg).pairs := by
+  unfold lockSet_endpointSendOnCore lockSet_endpointSend
+  rw [hDest]
+  exact LockSet.mem_insertOrMerge_write_self _ _
+
+/-- **WS-RR RR7.8, the capstone: every object a caps-carrying send changes is
+declared write-mode in the footprint its bracket acquires.**
+
+This is what "the transfer's write set is contained in the declared footprint"
+means as a theorem, and what the registered `capTransferReceiverCnode` domain
+was registered for.  It composes three facts that were each true and separately
+stated: the transfer changes no object but the receiver root
+(`ipcUnwrapCaps_preserves_objects_ne`), the root it is handed is the resolver's
+own output (`endpointSendDualWithCaps_reduces_to_unwrap`, since RR7.8 both read
+the same pre-state), and the resolver's output is declared
+(`lockSet_endpointSendOnCore_covers_capsDestination`).
+
+Stated contrapositively — *changed implies declared* — because that is the
+shape a 2PL consumer needs: it asks of an object it is about to write whether
+it holds the lock, not of a lock whether something used it. -/
+theorem endpointSendDualWithCaps_object_writes_declared
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (senderCspaceRoot cnodeRootObjId : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st st' st'' : SystemState) (recvRoot : SeLe4n.ObjId)
+    (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
+    (hSend : endpointSendDual endpointId sender
+        { msg with capsGranted := endpointRights.mem .grant } st = .ok ((), st'))
+    (hDest : rendezvousCapsDestination? st endpointId msg = some recvRoot)
+    (hObjInv : st'.objects.invExt)
+    (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
+        senderCspaceRoot receiverSlotBase st = .ok (summary, st''))
+    (hChanged : st''.objects[oid]? ≠ st'.objects[oid]?) :
+    (cnodeLock oid, AccessMode.write)
+      ∈ (lockSet_endpointSendOnCore st endpointId sender cnodeRootObjId msg).pairs := by
+  have hUnwrap : ipcUnwrapCaps { msg with capsGranted := endpointRights.mem .grant }
+      senderCspaceRoot recvRoot receiverSlotBase (endpointRights.mem .grant) st'
+      = .ok (summary, st'') := by
+    rw [← endpointSendDualWithCaps_reduces_to_unwrap endpointId sender msg endpointRights
+      senderCspaceRoot receiverSlotBase st st' recvRoot hSend hDest]
+    exact hStep
+  by_cases hEq : oid = recvRoot
+  · subst hEq
+    exact lockSet_endpointSendOnCore_covers_capsDestination st endpointId sender cnodeRootObjId msg oid hDest
+  · exact absurd
+      (ipcUnwrapCaps_preserves_objects_ne _ _ _ _ _ _ _ _ _ hEq hObjInv hUnwrap) hChanged
+
+/-- **WS-RR RR7.8**: and the same capstone on the `.call` arm — the same
+transfer, reached through the same resolver, declared in the same two
+members. -/
+theorem endpointCallWithCaps_object_writes_declared
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
+    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (callerCspaceRoot cnodeRootObjId : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st st' st'' : SystemState) (recvRoot : SeLe4n.ObjId)
+    (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
+    (hCall : endpointCall endpointId caller
+        { msg with capsGranted := endpointRights.mem .grant } st = .ok ((), st'))
+    (hDest : rendezvousCapsDestination? st endpointId msg = some recvRoot)
+    (hObjInv : st'.objects.invExt)
+    (hStep : endpointCallWithCaps endpointId caller msg endpointRights
+        callerCspaceRoot receiverSlotBase st = .ok (summary, st''))
+    (hChanged : st''.objects[oid]? ≠ st'.objects[oid]?) :
+    (cnodeLock oid, AccessMode.write)
+      ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId msg).pairs := by
+  have hUnwrap : ipcUnwrapCaps { msg with capsGranted := endpointRights.mem .grant }
+      callerCspaceRoot recvRoot receiverSlotBase (endpointRights.mem .grant) st'
+      = .ok (summary, st'') := by
+    rw [← endpointCallWithCaps_reduces_to_unwrap endpointId caller msg endpointRights
+      callerCspaceRoot receiverSlotBase st st' recvRoot hCall hDest]
+    exact hStep
+  by_cases hEq : oid = recvRoot
+  · subst hEq
+    exact lockSet_endpointCallOnCore_covers_capsDestination st endpointId caller cnodeRootObjId msg oid hDest
+  · exact absurd
+      (ipcUnwrapCaps_preserves_objects_ne _ _ _ _ _ _ _ _ _ hEq hObjInv hUnwrap) hChanged
 
 -- ============================================================================
 -- §8  SM6.A.5 — Donation-chain lock-set extension

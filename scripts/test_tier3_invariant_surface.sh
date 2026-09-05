@@ -4753,13 +4753,40 @@ run_check "INVARIANT" rg -n '^theorem chainVerdict_all_ok_causal' SeLe4n/Kernel/
 # the delivery reached.  Reading the raw pre-table there loses the successor —
 # a MISSED chain, the direction a detector must never err in.
 run_check "INVARIANT" rg -n 'applyOrigination \(planOriginationTags plan pre post\)' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-# SM9.D.17 (audit): the pre-existing cap-transfer footprint gap — the receiver's
-# CSpace root, which `ipcUnwrapCaps` writes with no declared CNode write lock —
-# as a registered domain (owner recorded in the inventory itself) with its
-# violation witness and the honest §12.8 partition.
-run_check "INVARIANT" rg -n 'capTransferReceiverCnode' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem capTransfer_receiverCnode_write_undeclared' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n 'GAP .registered lock-inventory debt.: the receiver.s CSpace root is NOT write-locked' tests/SmpInformationFlowSuite.lean
+# WS-RR RR7.8: the cap-transfer footprint gap is CLOSED, and these are the pins
+# that keep it closed.  It was registered as
+# `UncoveredLockDomain.capTransferReceiverCnode` with a violation witness and a
+# positive Tier-3 anchor; the deletion of all three is what "the domain is
+# covered" looks like, so the anchors become negatives — the constructor, the
+# witness and the fixture line naming it as a gap may not come back.
+run_negative_check "INVARIANT" rg -n 'capTransferReceiverCnode' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_negative_check "INVARIANT" rg -n 'capTransfer_receiverCnode_write_undeclared' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_negative_check "INVARIANT" rg -n 'GAP .registered lock-inventory debt.: the receiver.s CSpace root is NOT write-locked' tests/SmpInformationFlowSuite.lean
+# …and the closure itself: the resolver both WithCaps arms evaluate, the two
+# path reductions that make the declared root the written one, the four
+# membership theorems, and the two capstones — every object a caps-carrying
+# transfer changes is declared write-mode in the footprint its bracket acquires.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
+open SeLe4n.Kernel
+#check @rendezvousCapsDestination?
+#check @endpointSendDualWithCaps_reduces_to_unwrap
+#check @endpointCallWithCaps_reduces_to_unwrap
+#check @lockSet_endpointSendOnCore
+#check @lockSet_endpointSendOnCore_correct
+#check @lockSet_endpointSendOnCore_covers_capsDestination
+#check @lockSet_endpointSendOnCore_covers_cdt
+#check @lockSet_endpointCallOnCore_covers_capsDestination
+#check @lockSet_endpointCallOnCore_covers_cdt
+#check @lockSet_endpointCallOnCore_capless
+#check @endpointSendDualWithCaps_object_writes_declared
+#check @endpointCallWithCaps_object_writes_declared
+EOF'
+# The resolver and the transitions read the SAME state.  Reading the destination
+# from the post-state was sound only because nothing between them writes
+# `TCB.cspaceRoot` -- a fact about the tree a later transition could falsify
+# silently, where "both read the pre-state" is a fact about the code.
+run_negative_check "INVARIANT" rg -n "lookupCspaceRoot st' receiverId" SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
 # The carve-out is gone: with the cap-transfer sink deleted, the receiver's
 # CSpace root is no longer a taint write key at all, so the send's coverage claim
 # is unconditional.  The registered domain above still records the underlying
@@ -4848,7 +4875,13 @@ run_check "INVARIANT" rg -n 'NEGATIVE: a domain-only detector fires on a causall
 run_check "INVARIANT" rg -n 'NEGATIVE: an object-adjacency detector MISSES the real chain' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'an ORDINARY delivery — no declassification edge — carried it to the next subject' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: a framed retype would keep them, and the stale tag is NOT a saturation' tests/SmpInformationFlowSuite.lean
-run_check "INVARIANT" rg -n 'the content-moving footprints do NOT declare the coarse table lock' tests/SmpInformationFlowSuite.lean
+# WS-RR RR7.8: the claim is now scoped to the CAPLESS hot path, and its
+# counterpart pins the caps-carrying arm.  Both lines are anchored, so the
+# narrowing cannot silently widen back in either direction.
+run_check "INVARIANT" rg -n 'the capless content-moving footprints do NOT declare the coarse table lock' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'a caps-carrying send DOES declare the coarse table lock, for the CDT maps' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'a caps-carrying send declares the receiver.s CSpace root in write mode' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'a capless send declares no CSpace-root write, because it writes none' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: a disjoint plan leaves this plan.s keys literally unchanged' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'SCOPE: the residual over-approximation is saturation, and only that' tests/SmpInformationFlowSuite.lean
 run_check "TRACE" rg -n 'taint classification: moving=' tests/fixtures/smp_information_flow.expected

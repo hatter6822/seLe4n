@@ -58,6 +58,29 @@ def lookupCspaceRoot (st : SystemState) (tid : SeLe4n.ThreadId)
     : Option SeLe4n.ObjId :=
   st.getTcb? tid |>.map (·.cspaceRoot)
 
+/-- **WS-RR RR7.8: the CSpace root a caps-carrying rendezvous writes**, resolved
+from the **pre**-state.
+
+The send and call WithCaps arms both install the transferred capabilities into
+the receiver's CSpace root, and `ipcTransferSingleCap` writes the CNode there.
+A declared lock footprint has to name that object, and it has to name it from
+the state whose locks the bracket took — so this reads `st`, and since RR7.8
+both arms read the receiver's root from `st` as well.  (They read it from the
+*post*-state before; the two agree, because nothing between them writes
+`TCB.cspaceRoot` — thread creation is its only writer — but "the states agree"
+is a fact about the tree that a later transition could falsify silently, while
+"both read the same state" is a fact about the code.)
+
+`none` covers the three shapes that install nothing: a message carrying no
+capabilities, an endpoint with no waiting receiver, and a receiver whose TCB
+does not resolve.  The last is the fail-closed arm the transitions take as
+`.error .invalidCapability`; it declares no destination because it writes
+none. -/
+def rendezvousCapsDestination? (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (msg : IpcMessage) : Option SeLe4n.ObjId :=
+  if msg.caps.isEmpty then none
+  else ((st.getEndpoint? endpointId).bind (·.receiveQ.head)).bind (lookupCspaceRoot st)
+
 /-- M-D01: Extended send with capability transfer. Composes `endpointSendDual`
 with `ipcUnwrapCaps` as a post-step when immediate rendezvous occurs.
 
@@ -114,7 +137,7 @@ def endpointSendDualWithCaps
           | some ep =>
             match ep.receiveQ.head with
             | some receiverId =>
-              match lookupCspaceRoot st' receiverId with
+              match lookupCspaceRoot st receiverId with
               | some recvRoot =>
                 ipcUnwrapCaps { msg with capsGranted := endpointRights.mem .grant } senderCspaceRoot recvRoot
                   receiverSlotBase (endpointRights.mem .grant) st'
@@ -261,7 +284,7 @@ def endpointCallWithCaps
           | some ep =>
             match ep.receiveQ.head with
             | some receiverId =>
-              match lookupCspaceRoot st' receiverId with
+              match lookupCspaceRoot st receiverId with
               | some recvRoot =>
                 ipcUnwrapCaps { msg with capsGranted := endpointRights.mem .grant } callerCspaceRoot recvRoot
                   receiverSlotBase (endpointRights.mem .grant) st'
@@ -285,5 +308,72 @@ def endpointCallWithCaps
                 .error .invalidCapability
             | none => .ok ({ results := #[] }, st')
           | none => .ok ({ results := #[] }, st')
+
+/-- **WS-RR RR7.8**: when the pre-state names a destination, the send arm's whole
+effect is the base transition followed by `ipcUnwrapCaps` **at that root**.
+
+The anti-drift device.  `rendezvousCapsDestination?` exists so a declared lock
+footprint can name the object the transfer writes; this is what makes the two
+one fact rather than two that agree today.  A refactor that changes which root
+the arm installs into — or which state it reads it from — fails here. -/
+theorem endpointSendDualWithCaps_reduces_to_unwrap
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (recvRoot : SeLe4n.ObjId)
+    (hSend : endpointSendDual endpointId sender
+        { msg with capsGranted := endpointRights.mem .grant } st = .ok ((), st'))
+    (hDest : rendezvousCapsDestination? st endpointId msg = some recvRoot) :
+    endpointSendDualWithCaps endpointId sender msg endpointRights senderCspaceRoot
+        receiverSlotBase st
+      = ipcUnwrapCaps { msg with capsGranted := endpointRights.mem .grant }
+          senderCspaceRoot recvRoot receiverSlotBase (endpointRights.mem .grant) st' := by
+  unfold endpointSendDualWithCaps
+  unfold rendezvousCapsDestination? at hDest
+  by_cases hEmpty : msg.caps.isEmpty = true
+  · simp [hEmpty] at hDest
+  · simp only [hEmpty] at hDest
+    cases hEp : st.getEndpoint? endpointId with
+    | none => simp [hEp] at hDest
+    | some ep =>
+      cases hHead : ep.receiveQ.head with
+      | none => simp [hEp, hHead] at hDest
+      | some receiverId =>
+        simp only [hEp, hHead, Option.bind_some] at hDest
+        simp only [hSend, hHead, Option.isSome_some, hEmpty,
+          Bool.not_true, Bool.false_or]
+        simp only [Bool.false_eq_true, if_false] at hDest ⊢
+        rw [hDest]
+
+/-- **WS-RR RR7.8**: the call arm's reduction, identically shaped — the same
+condition, the same resolver, the same root. -/
+theorem endpointCallWithCaps_reduces_to_unwrap
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
+    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (recvRoot : SeLe4n.ObjId)
+    (hCall : endpointCall endpointId caller
+        { msg with capsGranted := endpointRights.mem .grant } st = .ok ((), st'))
+    (hDest : rendezvousCapsDestination? st endpointId msg = some recvRoot) :
+    endpointCallWithCaps endpointId caller msg endpointRights callerCspaceRoot
+        receiverSlotBase st
+      = ipcUnwrapCaps { msg with capsGranted := endpointRights.mem .grant }
+          callerCspaceRoot recvRoot receiverSlotBase (endpointRights.mem .grant) st' := by
+  unfold endpointCallWithCaps
+  unfold rendezvousCapsDestination? at hDest
+  by_cases hEmpty : msg.caps.isEmpty = true
+  · simp [hEmpty] at hDest
+  · simp only [hEmpty] at hDest
+    cases hEp : st.getEndpoint? endpointId with
+    | none => simp [hEp] at hDest
+    | some ep =>
+      cases hHead : ep.receiveQ.head with
+      | none => simp [hEp, hHead] at hDest
+      | some receiverId =>
+        simp only [hEp, hHead, Option.bind_some] at hDest
+        simp only [hCall, hHead, Option.isSome_some, hEmpty,
+          Bool.not_true, Bool.false_or]
+        simp only [Bool.false_eq_true, if_false] at hDest ⊢
+        rw [hDest]
 
 end SeLe4n.Kernel

@@ -1,3 +1,94 @@
+## v0.34.61 — the transfer's destination is the lock the bracket took
+
+**WS-RR RR7.8** — fine locks, Track B: `ipcUnwrapCaps` coverage, and the debt
+deletion that only a covered domain earns.
+
+RR7.7 gave the send and call footprints a capability-transfer destination —
+the receiver's CSpace root and the state-level lock the CDT write needs.  This
+cut *resolves* that argument from the state, proves the closure, and deletes
+the registered domain.  In that order, which is the row's own rule: an
+`UncoveredLockDomain` entry is deleted when the domain is covered, never to
+make a count fall.
+
+### The destination is read from the pre-state — by construction
+
+`rendezvousCapsDestination? st endpointId msg` is the object a caps-carrying
+rendezvous writes: `none` when the message carries no capabilities, when no
+receiver waits, or when the receiver's TCB does not resolve; otherwise the
+receive-queue head's CSpace root.
+
+Both `endpointSendDualWithCaps` and `endpointCallWithCaps` computed that root
+from the **post**-state of the base transition.  A declared footprint has to
+name it from the state whose locks the bracket took, and the two agreed only
+because nothing between them writes `TCB.cspaceRoot` — thread creation is its
+only writer in the tree.  That is a fact about the tree a later transition
+could falsify silently; "both read the same state" is a fact about the code.
+So both arms now read `st`, and the agreement is `rfl` rather than a frame
+lemma nobody would notice going stale.  The change cost 38 mechanical proof
+repairs across four invariant files and no semantic ones.
+
+`endpointSendDualWithCaps_reduces_to_unwrap` and
+`endpointCallWithCaps_reduces_to_unwrap` pin it: when the resolver names a
+destination, the arm's whole effect is the base transition followed by
+`ipcUnwrapCaps` **at that root**.
+
+### The resolved footprints, and the send side's first
+
+`lockSet_endpointCallOnCore` takes the message — whether a call installs
+capabilities is a property of what it carries — and resolves the optional
+through it.  `lockSet_endpointSendOnCore` is new: the send side had no resolved
+footprint at all, because every member of its capless shape was already an
+argument, and the transfer destination is the first that has to come from the
+state.  Both default to the empty message, so every existing call site and
+fixture reduces definitionally to what it was
+(`lockSet_endpointCallOnCore_capless`).
+
+### The closure
+
+`endpointSendDualWithCaps_object_writes_declared` and
+`endpointCallWithCaps_object_writes_declared`: **every object either arm's
+transfer changes is declared write-mode in the footprint its bracket
+acquires.**  Stated contrapositively — changed implies declared — because that
+is the shape a two-phase-locking consumer needs: it asks of an object it is
+about to write whether it holds the lock, not of a lock whether anything used
+it.
+
+It composes three facts, two of which already existed:
+`ipcUnwrapCaps_preserves_objects_ne` (the transfer changes no object but the
+receiver root), the path reductions above (the root it is handed is the
+resolver's output), and four membership theorems
+(`lockSet_endpoint{Send,Call}OnCore_covers_{capsDestination,cdt}`).
+
+### Only then, the deletion
+
+`UncoveredLockDomain.capTransferReceiverCnode`, its constructor docstring, the
+violation witness `capTransfer_receiverCnode_write_undeclared`, the inventory
+arithmetic, the fixture line that pinned the gap positively, and the two Tier-3
+`run_check`s — all gone, the anchors replaced by `run_negative_check`s so none
+of them can come back.  The registry is six domains, and it fell because a
+domain closed.
+
+Two corrections the cut owed:
+
+* The inventory's own prose said the count was "six of them today" while
+  warning that "a number written twice is a number that can disagree with
+  itself".  It had drifted to seven; it is now not a number at all.
+* A fixture asserted that the content-moving footprints declare no coarse table
+  lock.  RR7.7 **narrowed** that rather than breaking it: the capless hot path
+  still carries none — putting the level-0 lock there would serialise every IPC
+  in the system — and a caps-carrying rendezvous carries it for the CDT maps,
+  which are global structure that does not decompose by key, so two such
+  transfers genuinely conflict.  Both sides are now pinned, so the narrowing
+  cannot widen back by accident.
+
+`UncoveredLockDomain.cdtNodeAllocation` stays, and its docstring says why more
+precisely than before: RR7.7 covered its IPC half, and the four `cspace*`
+operations that write the identical fields still declare no state-level lock.
+That is RR7.9.
+
+**Sub-tasks**: WS-RR RR7.8.
+**Refs**: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR7 (RR7.8)
+
 ## v0.34.60 — the capability transfer declares what it writes
 
 **WS-RR RR7.7** — fine locks, Track B: the endpoint-caps footprint declaration

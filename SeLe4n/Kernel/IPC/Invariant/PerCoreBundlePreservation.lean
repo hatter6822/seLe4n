@@ -1560,7 +1560,8 @@ theorem endpointSendDualWithCaps_passiveServerIdleFrameOnCore
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
@@ -1657,7 +1658,8 @@ theorem endpointCallWithCaps_passiveServerIdleFrameOnCore
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep

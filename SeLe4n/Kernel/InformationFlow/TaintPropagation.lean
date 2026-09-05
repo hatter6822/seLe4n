@@ -2340,10 +2340,15 @@ That sentence used to carry an exception: the capability-transfer sink, the
 receiver's CSpace root, whose write the send/call footprints have never
 declared.  The exception is gone because the sink is — a CNode holds no tracked
 content, so it is not a taint carrier at all (see the out-of-scope note in §3a).
-The *object* write `ipcUnwrapCaps` performs at that key remains undeclared, and
-remains registered as `UncoveredLockDomain.capTransferReceiverCnode` /
-`capTransfer_receiverCnode_write_undeclared`; it was always an SM3.B footprint
-gap rather than a property of this layer, and now it is only that.
+The *object* write `ipcUnwrapCaps` performs at that key was always an SM3.B
+footprint gap rather than a property of this layer, and **WS-RR RR7.7 + RR7.8
+closed it**: the send and call footprints declare the transfer's destination
+CSpace root and the state-level lock its CDT write needs, resolved from the same
+pre-state expression the transitions evaluate
+(`endpointSendDualWithCaps_object_writes_declared`,
+`endpointCallWithCaps_object_writes_declared`).  The
+`UncoveredLockDomain.capTransferReceiverCnode` entry that recorded it is
+deleted.
 
 The two syscalls that *do* append (`.declassify`, `.declassifySignal`) hold
 their origination keys under those keys' own object locks —

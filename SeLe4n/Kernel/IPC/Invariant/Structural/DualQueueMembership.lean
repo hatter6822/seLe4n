@@ -6253,7 +6253,8 @@ theorem endpointCallWithCaps_establishes_blockedOnReplyHasReplyObject
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hPMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
@@ -6343,7 +6344,8 @@ theorem endpointSendDualWithCaps_preserves_blockedOnReplyHasReplyObject
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hPMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
@@ -10755,7 +10757,8 @@ theorem endpointSendDualWithCaps_sameSchedContextBindings
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hSMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
@@ -10793,7 +10796,8 @@ theorem endpointCallWithCaps_sameSchedContextBindings
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hSMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
@@ -10834,7 +10838,8 @@ theorem endpointSendDualWithCaps_donationOwnerFrame
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
@@ -10897,7 +10902,8 @@ theorem endpointCallWithCaps_donationOwnerFrame
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
@@ -10959,7 +10965,8 @@ theorem endpointSendDualWithCaps_passiveServerIdleFrame
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
@@ -11015,7 +11022,8 @@ theorem endpointSendDualWithCaps_timeoutBudgetFrame
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
@@ -11070,7 +11078,8 @@ theorem endpointCallWithCaps_passiveServerIdleFrame
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
@@ -11125,7 +11134,8 @@ theorem endpointCallWithCaps_timeoutBudgetFrame
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
@@ -12858,7 +12868,8 @@ theorem endpointCallWithCaps_establishes_blockedOnReplyHasTarget
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hPMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
@@ -12944,7 +12955,8 @@ theorem endpointSendDualWithCaps_preserves_blockedOnReplyHasTarget
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hPMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
@@ -15450,7 +15462,8 @@ theorem endpointSendDualWithCaps_preserves_pendingReceiveReplyWellFormed
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hPMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
@@ -15492,7 +15505,8 @@ theorem endpointCallWithCaps_preserves_pendingReceiveReplyWellFormed
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hPMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
@@ -16499,7 +16513,8 @@ theorem endpointSendDualWithCaps_preserves_queueNextBlockingConsistent
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hQNBCMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
@@ -16553,7 +16568,8 @@ theorem endpointCallWithCaps_preserves_queueNextBlockingConsistent
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hQNBCMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
@@ -16670,7 +16686,8 @@ theorem endpointSendDualWithCaps_preserves_endpointQueueTailBlockedConsistent
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hTailMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
@@ -16716,7 +16733,8 @@ theorem endpointCallWithCaps_preserves_endpointQueueTailBlockedConsistent
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hTailMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
@@ -18095,7 +18113,8 @@ theorem endpointSendDualWithCaps_preserves_queueHeadBlockedConsistent
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hQHBCMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
@@ -18149,7 +18168,8 @@ theorem endpointSendDualWithCaps_preserves_queueNextTargetBlocked
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hQNTBMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
@@ -19418,7 +19438,8 @@ theorem endpointCallWithCaps_preserves_queueHeadBlockedConsistent
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hQHBCMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
@@ -19476,7 +19497,8 @@ theorem endpointCallWithCaps_preserves_queueNextTargetBlocked
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hQNTBMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
@@ -21533,7 +21555,8 @@ theorem endpointSendDualWithCaps_preserves_allPendingMessagesBounded
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
@@ -21577,7 +21600,8 @@ theorem endpointSendDualWithCaps_preserves_replyCallerLinkageReciprocal
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
@@ -21619,7 +21643,8 @@ theorem endpointCallWithCaps_preserves_replyCallerLinkageReciprocal
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
@@ -21711,7 +21736,8 @@ theorem endpointSendDualWithCaps_preserves_blockedThreadsPendingMessageConsisten
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
@@ -21750,7 +21776,8 @@ theorem endpointCallWithCaps_preserves_blockedThreadsPendingMessageConsistent
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
@@ -21851,7 +21878,8 @@ theorem endpointSendDualWithCaps_preserves_endpointQueueNoDup
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
@@ -21902,7 +21930,8 @@ theorem endpointSendDualWithCaps_preserves_ipcStateQueueMembershipConsistent
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
@@ -22119,7 +22148,8 @@ theorem endpointCallWithCaps_preserves_allPendingMessagesBounded
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
@@ -22171,7 +22201,8 @@ theorem endpointCallWithCaps_preserves_endpointQueueNoDup
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
@@ -22222,7 +22253,8 @@ theorem endpointCallWithCaps_preserves_ipcStateQueueMembershipConsistent
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep

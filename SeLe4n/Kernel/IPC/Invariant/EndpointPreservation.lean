@@ -2240,7 +2240,10 @@ theorem endpointSendDualWithCaps_preserves_ipcInvariant
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the **pre**-state, which
+          -- is the state whose locks the bracket took; the case split follows
+          -- the transition.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep -- AK1-I: fail-closed, vacuous
           | some recvRoot =>
             simp [hLookup] at hStep
