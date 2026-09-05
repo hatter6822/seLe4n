@@ -1,3 +1,175 @@
+## v0.34.57 — the four §4 remediation rows
+
+**WS-RR RR7.1–RR7.4** — the medium-severity sweep opens with the four §4 rows
+that are remediation rather than security fixes: the boot identity map (RR7.1),
+the cache-maintenance operand window it lets the kernel enforce (RR7.2), the
+capability guarantee on the dispatch path the hardware actually takes (RR7.3),
+and the operation-specific half of the 2PL atomicity family (RR7.4).  All four
+close in the implement-the-improvement direction — the code was extended to
+support each claim, never the claim narrowed to describe the code.  A fifth
+defect, which no finding named, was found while reading RR7.1's and is fixed in
+the same cut because it is the same code.
+
+### The finding neither audit had: a level-1 table installed at level 0
+
+`TCR_EL1.T0SZ = 16` makes the TTBR0 input address 48 bits, and with the 4 KiB
+granule that puts the **initial lookup level at 0** (ARM DDI 0487 D8.3).  A
+level-0 descriptor with that granule may only be a *Table* descriptor —
+level-0 blocks need FEAT_LPA2 with `TCR.DS = 1`, which the ARMv8.2-A Cortex-A76
+does not implement.  `build_identity_tables` wrote `addr | BLOCK_NORMAL`, whose
+`bits[1:0]` are `0b01`: a 1 GiB **block**, i.e. a level-1 entry.  Every walk
+would therefore have decoded a reserved level-0 descriptor and taken a
+translation fault the instant `SCTLR_EL1.M` was set.  A boot denial of service,
+latent only because no bootable image exists yet (§5 finding 41) — the file's
+own comment carried the confusion, calling the array "L1 entries (512 for a
+4KiB L0 table)".  Reported before it was fixed, per the vulnerability rule.
+
+The boot tables are now a real structure: an L0 table whose entry 0 is a Table
+descriptor to an L1 table, whose first four entries are Table descriptors to
+four L2 tables describing the low 4 GiB at 2 MiB granularity, with 1 GiB L1
+blocks above that.  `TTBR1_EL1` is written `0` and `TCR_EL1.EPD1` set: no
+TTBR1 table exists, so the top half of the virtual address space now faults
+instead of identity-aliasing low physical memory through the TTBR0 table it
+used to be handed.
+
+### RR7.1 — 960 MiB of RAM was Device, and nothing above 4 GiB was mapped
+
+`link.ld` declares RAM to `0xFC00_0000`; the boot table typed
+`0xC000_0000`–`0xFFFF_FFFF` as one Device block.  960 MiB of linker-declared
+RAM therefore had no cacheability, no unaligned access and no speculation, and
+an 8 GiB or 16 GiB board's RAM above the 4 GiB boundary was not mapped at all —
+which the kernel heap SM10.1 must place would have been the first consumer of.
+
+Every descriptor is now derived from one declaration, `mmu::boot_mapping_for`,
+which mirrors `rpi5MemoryMapForConfig` in `SeLe4n/Platform/RPi5/Board.lean`:
+RAM Normal to `LOW_RAM_TOP`, the VideoCore firmware carve-out unmapped, the
+BCM2712 peripheral window Device, the reserved tail above the GIC unmapped, and
+RAM above `HIGH_RAM_BASE` Normal to the board's own top.  Deriving the tables
+and the cacheable-window predicate from one function is the "one question, one
+answer" discipline: before this cut the table builder was the only statement of
+the map, so nothing else could ask it a question.
+
+The board's RAM top comes from the device tree.  `cmdline.rs` grew a `/memory`
+query beside its `/chosen/bootargs` one — the same header validation, the same
+fuel- and depth-bounded walk, the same blob helper (`dtb_blob_from_ptr`, split
+out so the raw-pointer soundness argument is made once for both questions).  It
+reads the root's `#address-cells` / `#size-cells`, requires a `device_type` of
+`memory` when the node declares one, folds every `reg` pair, and fails the whole
+query closed on a truncated `reg`, an unsupported cell width or an overflowing
+`base + size`.  `init_mmu` turns `None` into `LOW_RAM_TOP`, which is what
+`link.ld` declares and therefore what the image was built against.
+
+Two clamps in the map are load-bearing rather than cosmetic.  RAM is Normal
+only up to the reported top — Normal memory is speculatively accessible, so
+mapping DRAM a board does not have is not a harmless over-approximation — and
+`clamp_ram_top` rounds the reported top **down** to the block granularity that
+describes it, so no descriptor and the predicate can disagree about a single
+address.
+
+### RR7.2 — the identity-map claim, enforced
+
+`Platform.FFI.icMaintenanceBroadcast`'s docstring argued that `IC IVAU` may take
+the frame's physical address "because the boot tables identity-map RAM".  With
+RR7.1 that is true; RR7.2 makes it *enforced*.
+`cache::apply_icache_invalidation` refuses an operand outside the identity
+map — at the extent it maintains, so a `cleanRangeIallu` that starts in RAM and
+runs off the end of it is refused too — and halts the PE rather than issuing an
+instruction whose address is not the address the kernel means.  The sibling
+`cache_clean_pagetable_range` seam, whose docstring asserted the same bound as
+a caller obligation, now enforces it as well.  A well-formed caller cannot
+reach either refusal.
+
+### RR7.3 — the capability guarantee, on the path the hardware takes
+
+`syscallEntry_implies_capability_held` and `dispatchSyscall_requires_right` are
+the theorems the GitBook advertises as the syscall-entry soundness guarantee.
+Both are stated over the **legacy** `syscallEntry`, which is `bootCoreId`-pinned
+and whose only non-test callers are the trace harness and the exception model.
+What the hardware runs is `@[export lean_syscall_dispatch_cross_core]` →
+`syscallDispatchCrossCoreEntry` → `Platform.FFI.syscallDispatchFromAbi` →
+`syscallEntryChecked` → `dispatchSyscallChecked`, and nothing covered it.
+
+`dispatchSyscallChecked_requires_right` and
+`syscallEntryChecked_implies_capability_held` now do, over the **executing**
+core rather than the boot core.  Both of the checked dispatcher's gate shapes
+are covered, which is the part a statement read off the gate alone would get
+wrong: the 31 ordinary arms take the rights-checking `syscallInvoke`, while the
+two `syscallChecksTargetFirst` (audit) arms take the resolve-only
+`syscallInvokeResolved` and check the right **in the arm**, after the target —
+so their rights witness is `dispatchWithCapChecked_audit_success_requires_right`,
+the direction the entry-point guarantee needs and one the existing
+target-first/right-second pair did not supply.
+
+Two further hops.  `…_of_pre_state` restates the guarantee on the state the
+caller trapped in rather than on the state the decode's TLB fill produced: the
+fill touches only the per-core TLB view (`tlbFillIpcBufferOnCore_frame`) and the
+CSpace walk reads only the object store, the latter now a theorem
+(`resolveCapAddress_congr_objects`, by the walk's own strong induction) rather
+than an unstated assumption.  And
+`Platform.FFI.syscallDispatchFromAbi_implies_capability_held` carries it to the
+exported seam, over the register-spilled state the seam itself builds; together
+with `syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok` it says a success
+outcome exists there **only** for a caller whose capability carried the right.
+
+`CLAIM_EVIDENCE_INDEX.md` and GitBook 3 now name the live-path theorems.
+
+### RR7.4 — the atomicity family's operation-specific half
+
+Every `…_atomic_under_lockSet` theorem in the tree is
+`lockSet_atomic_under_2pl _ executingCore _ s`, a `rfl` instance of a lemma
+stated for an **arbitrary** action — so on its own it records the three-phase
+shape of `withLockSet` and carries no operation-specific content.  The
+substantive form is `lockSet_observer_atomic_on`, and it had been instantiated
+at exactly two sites, both cancellation.  The five remaining SM6 transitions now
+have it: `endpointCallOnCore_observer_atomic`,
+`endpointReplyOnCore_observer_atomic`,
+`endpointReplyRecvOnCore_observer_atomic`,
+`notificationSignalOnCore_observer_atomic` and
+`notificationWaitOnCore_observer_atomic`, plus the wait's participant-side twin.
+
+Each is stated for **every** thread or notification rather than for a chosen
+decisive one.  That is stronger than the finding asked for and removes a
+judgement call — a composite like `replyRecv` has no single decisive
+participant, and "the receiver's `ipcState`" would have left the caller's
+uncovered.
+
+The five landed as one line each because the machinery is now declared once.
+`threadIpcStateObserver` and `notificationDeliveryObserver` are the two
+observers of the whole IPC surface; `lockPrimitives_insensitiveOn_of_objectStoreObserver`
+derives all three insensitivity facts from "reads only the object store" plus "a
+lock-field-only write is invisible"; and
+`lockSet_observer_atomic_of_objectStoreObserver` packages the capstone so an
+instantiation supplies only the transition's own `invExt` preservation.  The
+four hand-rolled copies the cancellation carried are gone, and its observer is
+now a definitional alias.  `updateObjectLockAt_getTcb?_ipcState` and its
+`schedContextBinding` twin moved to `Locks/WithLockSet.lean`, beside the write
+they are about — the same re-homing WS-LC LC4.7 did for the `invExt` family, and
+for the same reason: no two of the five transitions' modules are in each other's
+import closure.
+
+`endpointReplyRecvOnCore_preserves_objects_invExt` is new, and is what the
+composite's capstone needed.
+
+### Gates and witnesses
+
+`scripts/check_physical_address_width.sh` gained the boot map's window, as the
+finding's own remediation asked: the four constants must be declared in
+`mmu.rs`'s **code view**, `Board.lean`'s map must place the same three
+boundaries, and `link.ld`'s `ORIGIN + LENGTH` must land exactly on
+`LOW_RAM_TOP`.  Four relation-preserving mutations were run against it — a
+changed window value, the value kept only in a comment, a linker RAM region
+extended past the mapped window, and a moved Lean boundary — and each fails the
+gate.  (Its first draft piped the code view into `grep -q`, which under
+`pipefail` returns 141 exactly when the pattern *is* found; the view goes to a
+file now.)
+
+The Rust witnesses walk descriptors rather than reading them: `walk` follows
+descriptor **types** from level 0, so the pre-RR7.1 table shape resolves to
+nothing — and the deliberate mutation that keeps the level-0 entry valid but
+spells it as a block is one of the cases.  Thirty-eight new tests across
+`mmu.rs`, `cache.rs`, `cmdline.rs` and `ffi.rs`; every out-of-window case keeps
+the operand well-formed and moves only its relation to the map.
+
 ## v0.34.56 — the closure audit finds a stall in the deployed lock
 
 **Numbering note.**  The seven entries from `v0.34.50` (RR6) to this one were

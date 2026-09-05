@@ -520,6 +520,99 @@ theorem updateObjectLockAt_preserves_invExt (s : SystemState)
   | none => exact hInv
   | some _ => exact updateObjectAt_updateLock_preserves_invExt s l.objId op hInv
 
+
+-- ---------------------------------------------------------------------------
+-- WS-RR RR7.4: business-field stability under a lock-only write
+--
+-- `updateObjectLockAt` rewrites one stored object's `lock` field and nothing
+-- else, so an observer reading a *business* field of any object is blind to it.
+-- These are the per-field statements of that, and they live here — beside the
+-- write they are about — rather than in the module of whichever transition
+-- happens to need one.  Cancellation's two moved here at RR7.4 for exactly the
+-- reason WS-LC LC4.7 re-homed the `invExt` preservation family: the five
+-- remaining SM6 transitions each need the TCB-`ipcState` lemma, and no two of
+-- their modules are in each other's import closure.
+-- ---------------------------------------------------------------------------
+
+/-- WS-SM SM6.E: a lock-only object write is invisible to the victim's
+`ipcState` observer — `updateObjectLockAt` rewrites only the stored object's
+`lock` field, preserving every business field and every other key. -/
+theorem updateObjectLockAt_getTcb?_ipcState (s : SystemState) (l : LockId)
+    (op : RwLockOp) (tid : SeLe4n.ThreadId)
+    (hExt : s.objects.invExt) :
+    ((updateObjectLockAt s l op).getTcb? tid).map TCB.ipcState
+      = (s.getTcb? tid).map TCB.ipcState := by
+  unfold updateObjectLockAt
+  split
+  · unfold updateObjectAt
+    cases hg : s.objects.get? l.objId with
+    | none => rfl
+    | some obj =>
+      simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+      by_cases hk : (l.objId == tid.toObjId) = true
+      · have hk' : l.objId = tid.toObjId := eq_of_beq hk
+        rw [← hk',
+            SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self
+              s.objects l.objId _ hExt,
+            hg]
+        cases obj <;> rfl
+      · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne
+              s.objects l.objId tid.toObjId _ hk hExt]
+  · rfl
+
+/-- Audit closure (F3ii): lock-field-only writes also leave every TCB's
+`schedContextBinding` untouched — the donation-side stability twin. -/
+theorem updateObjectLockAt_getTcb?_schedContextBinding (s : SystemState) (l : LockId)
+    (op : RwLockOp) (tid : SeLe4n.ThreadId)
+    (hExt : s.objects.invExt) :
+    ((updateObjectLockAt s l op).getTcb? tid).map TCB.schedContextBinding
+      = (s.getTcb? tid).map TCB.schedContextBinding := by
+  unfold updateObjectLockAt
+  split
+  · unfold updateObjectAt
+    cases hg : s.objects.get? l.objId with
+    | none => rfl
+    | some obj =>
+      simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+      by_cases hk : (l.objId == tid.toObjId) = true
+      · have hk' : l.objId = tid.toObjId := eq_of_beq hk
+        rw [← hk',
+            SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self
+              s.objects l.objId _ hExt,
+            hg]
+        cases obj <;> rfl
+      · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne
+              s.objects l.objId tid.toObjId _ hk hExt]
+  · rfl
+
+/-- **WS-RR RR7.4**: a lock-only object write is invisible to a notification's
+*delivery* observable — its `state` (which carries the pending badge) and its
+waiter list.  The signal/wait pair of decisive observables, in one projection so
+a caller cannot accidentally watch half of the rendezvous. -/
+theorem updateObjectLockAt_getNotification?_delivery (s : SystemState) (l : LockId)
+    (op : RwLockOp) (nid : SeLe4n.ObjId)
+    (hExt : s.objects.invExt) :
+    ((updateObjectLockAt s l op).getNotification? nid).map
+        (fun n => (n.state, n.waitingThreads))
+      = (s.getNotification? nid).map (fun n => (n.state, n.waitingThreads)) := by
+  unfold updateObjectLockAt
+  split
+  · unfold updateObjectAt
+    cases hg : s.objects.get? l.objId with
+    | none => rfl
+    | some obj =>
+      simp only [SystemState.getNotification?, RHTable_getElem?_eq_get?]
+      by_cases hk : (l.objId == nid) = true
+      · have hk' : l.objId = nid := eq_of_beq hk
+        rw [← hk',
+            SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self
+              s.objects l.objId _ hExt,
+            hg]
+        cases obj <;> rfl
+      · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne
+              s.objects l.objId nid _ hk hExt]
+  · rfl
+
 /-- And each of the three per-object primitives. -/
 theorem acquireLockOnObject_preserves_invExt (s : SystemState)
     (core : CoreId) (l : LockId) (m : AccessMode) (hInv : s.objects.invExt) :

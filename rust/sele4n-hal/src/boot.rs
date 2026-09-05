@@ -16,7 +16,7 @@
 //! Phase 6: Handoff to Lean kernel (AG7 — FFI bridge)
 
 /// Kernel version string — matches Lean lakefile.toml version.
-const KERNEL_VERSION: &str = "0.34.56";
+const KERNEL_VERSION: &str = "0.34.57";
 
 /// **PR #889 review round 21**: how many PEs the linked Lean kernel declares.
 ///
@@ -139,8 +139,16 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
     // Phase 2: MMU initialization
     // -----------------------------------------------------------------------
     crate::kprintln!("[boot] Configuring MMU...");
-    crate::mmu::init_mmu();
-    crate::kprintln!("[boot] MMU enabled (identity map, L1 block descriptors)");
+    // **WS-RR RR7.1**: the device tree pointer sizes the identity map.  RAM
+    // above the 4 GiB boundary is mapped only on a board whose `/memory` node
+    // claims it, and absent DRAM below `mmu::LOW_RAM_TOP` is not mapped at
+    // all — Normal memory is speculatively accessible, so mapping DRAM that
+    // is not installed is not a harmless over-approximation.
+    crate::mmu::init_mmu(dtb_ptr);
+    crate::kprintln!(
+        "[boot] MMU enabled (identity map, RAM top {:#x})",
+        crate::mmu::boot_ram_top()
+    );
 
     // Set VBAR_EL1 to exception vector table.  WS-SM SM1.C.2 extracted
     // the previously-private helper into `install_exception_vectors`
@@ -628,7 +636,7 @@ mod tests {
         // update this test in lockstep with `lakefile.toml`.
         // `scripts/check_version_sync.sh` (Tier 0) provides the
         // canonical drift check; this test is the local pin.
-        assert_eq!(KERNEL_VERSION, "0.34.56");
+        assert_eq!(KERNEL_VERSION, "0.34.57");
     }
 
     /// PR #889 review round 21: the declared PE count this handoff enforces is

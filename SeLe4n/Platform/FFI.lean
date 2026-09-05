@@ -2446,6 +2446,23 @@ opaque ffiIcMaintenance : UInt32 → UInt64 → UInt64 → BaseIO Unit
     address**: the `IC IVAU` instruction takes a *virtual* address and the PE
     translates it, and the boot tables identity-map RAM, so a RAM frame's kernel
     VA equals its PA and `ICacheInvalidation.toPaddr` is the correct operand.
+
+    **WS-RR RR7.1 / RR7.2 — the identity map, and what enforces it.**  That
+    argument is a claim about the boot page tables, and until RR7.1 the tables
+    did not support it: they mapped `0xC000_0000`–`0xFFFF_FFFF` as one Device
+    block, so 960 MiB of the RAM `link.ld` declares was Device-typed, and
+    nothing above 4 GiB was mapped at all.  RR7.1 builds the tables from
+    `mmu::boot_mapping_for`, which mirrors `rpi5MemoryMapForConfig` below and
+    is sized to the board's own `/memory` node, so every RAM frame a BCM2712
+    board reports is identity-mapped Normal.  RR7.2 makes the claim *enforced*
+    rather than merely true: `cache::apply_icache_invalidation` refuses an
+    operand outside that window — at the extent it maintains, so a range that
+    starts in RAM and runs off the end of it is refused too — and halts the PE
+    rather than issuing an instruction whose address is not the address the
+    kernel means.  A well-formed caller cannot reach the refusal; a caller that
+    could would otherwise have left a stale instruction line behind a re-typed
+    frame with nothing to detect it.
+
     Note the granularity expansion — `IC IVAU` invalidates one 64-byte cache
     line, so the HAL issues `icacheLinesPerPage` of them for one page operand
     (`cache::ic_invalidate_page_inner_shareable`), exactly as seL4's
@@ -2622,6 +2639,92 @@ theorem syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok
       = Except.ok (syscallReturnOutcome syscallId st' tid, st') := by
   unfold syscallDispatchFromAbi
   simp [hMsg, hCur, hSyscall]
+
+
+/-- **WS-RR RR7.3**: the FFI argument spill leaves the scheduler untouched.
+
+`writeFfiRegistersToTcb` rewrites one TCB's register mirror in the object store
+and nothing else, so the thread the entry finds on the executing core is the one
+the seam resolved before spilling. -/
+theorem writeFfiRegistersToTcb_scheduler
+    (st : SystemState) (tid : SeLe4n.ThreadId) (syscallId : UInt32)
+    (x0 x1 x2 x3 x4 x5 : UInt64) :
+    (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).scheduler = st.scheduler := by
+  unfold writeFfiRegistersToTcb
+  split <;> rfl
+
+/-- **WS-RR RR7.3**: the capability guarantee at the **exported seam**.
+
+Register §4 finding 5: the flagship "syscall entry implies capability held"
+theorem was stated over the legacy `syscallEntry`, whose only non-test callers
+are the trace harness and the exception model, while the path the hardware takes
+is `@[export lean_syscall_dispatch_cross_core]` →
+`syscallDispatchCrossCoreEntry` → this function → `syscallEntryChecked` →
+`dispatchSyscallChecked`.  `syscallEntryChecked_implies_capability_held` covers
+the entry; this carries it the last hop, to the state the seam itself builds.
+
+The hypothesis is the same one every other `syscallDispatchFromAbi_*` theorem
+takes — the entry's success on the register-spilled state — and
+`syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok` is its converse: together
+they say that a success outcome exists at this seam **only** for a caller whose
+capability carried the required right.  The rejection arms cannot manufacture
+one: `syscallDispatchFromAbi_error_of_syscallEntryChecked_error` sends an entry
+rejection to a computed error frame, `syscallDispatchFromAbi_capFault_faulted`
+sends a capability-lookup failure to `.faulted`, and the two pre-dispatch
+rejections return the pre-state.
+
+The resolution is stated against `writeFfiRegistersToTcb st tid …` — the
+argument spill the seam performs before the entry — because that is the state
+the entry is handed.  The spill writes the caller's own register mirror and
+nothing else, so this is the same CSpace the trapping thread had. -/
+theorem syscallDispatchFromAbi_implies_capability_held
+    (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : UInt32) (msgInfo : UInt64)
+    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (st' : SystemState)
+    (hMsg : msgInfo = x1)
+    (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
+    (hSyscall :
+      syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
+          (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+        = Except.ok ((), st')) :
+    syscallDispatchFromAbi ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+        ipcBufferAddr elr spsr spEl0 x30 st
+      = Except.ok (syscallReturnOutcome syscallId st' tid, st') ∧
+    isInsecureDefaultContext ctx = false ∧
+    ∃ regs decoded,
+      SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+        (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+        tid SeLe4n.arm64DefaultLayout regs 32 = Except.ok decoded ∧
+      ∃ tcb, (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).getTcb? tid
+          = some tcb ∧
+        ∃ rootCn,
+          (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).getCNode? tcb.cspaceRoot
+            = some rootCn ∧
+          ∃ cap ref,
+            resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth
+                (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) = Except.ok ref ∧
+            SystemState.lookupSlotCap
+                (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) ref = some cap ∧
+            cap.hasRight (syscallRequiredRight decoded.syscallId) = true := by
+  refine ⟨syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok ctx executingCore syscallId
+            msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid st'
+            hMsg hCur hSyscall, ?_⟩
+  obtain ⟨hCtx, tid', regs, decoded, hCurrent', hLookup, hDecode,
+          tcb, hTcb, rootCn, hRoot, cap, ref, hResolve, hSlot, hRight⟩ :=
+    syscallEntryChecked_implies_capability_held_of_pre_state
+      ctx SeLe4n.arm64DefaultLayout executingCore 32 _ st' hSyscall
+  -- The spill leaves the scheduler untouched, so the thread the entry found on
+  -- the executing core is the one this seam resolved.
+  have hTidEq : tid' = tid := by
+    have hSched : (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).scheduler
+        = st.scheduler := writeFfiRegistersToTcb_scheduler st tid syscallId x0 x1 x2 x3 x4 x5
+    rw [hSched, hCur] at hCurrent'
+    exact (Option.some.inj hCurrent').symm
+  subst hTidEq
+  exact ⟨hCtx, regs, decoded, hDecode, tcb, hTcb, rootCn, hRoot, cap, ref,
+         hResolve, hSlot, hRight⟩
 
 /-- WS-RC R2.B.5 (restated at the WS-RA type, and again at SM9.B.9): when
     `syscallEntryChecked` rejects on the register-spilled state,

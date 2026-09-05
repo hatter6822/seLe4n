@@ -329,6 +329,7 @@ RR3 slice, since it is the same obligation stated one level up.
 
 #### 3. Platform/FFI.lean asserts an unqualified boot identity-map that the boot page tables do not provide above 3 GiB
 
+- **Status**: **CLOSED at v0.34.57** (WS-RR RR7.2, with RR7.1).  The tables were extended, not the claim qualified: `mmu::boot_mapping_for` maps every RAM frame the board reports and `cache::apply_icache_invalidation` (plus the sibling `cache_clean_pagetable_range` seam) refuses an operand outside that window at the extent it maintains.
 - **Severity**: medium · **Kind**: `soundness` · **Blocks SM10 start**: no
 - **Source plan**: `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md`
 - **Plan cite**: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §"SM7.D deferred items" row 1 ("live the moment the image boots on a 4 GB or 8 GB Pi 5"; "Must cover the whole operand family, not just.unifyPage")
@@ -342,6 +343,7 @@ RR3 slice, since it is the same obligation stated one level up.
 
 #### 4. The boot MMU maps 960 MiB that link.ld declares as RAM as Device memory, and maps nothing above 4 GiB
 
+- **Status**: **CLOSED at v0.34.57** (WS-RR RR7.1).  `build_identity_tables` now derives every descriptor from `mmu::boot_mapping_for`, so `0xC000_0000`–`0xFBFF_FFFF` is Normal RAM, the firmware carve-out and the reserved tail are unmapped, and RAM above 4 GiB is mapped from the device tree's `/memory` node.  `scripts/check_physical_address_width.sh` holds the window equal across `mmu.rs`, `Board.lean` and `link.ld`.  **The same cut fixed a defect this finding did not name**: the table `TTBR0_EL1` pointed at held level-1 block descriptors while `TCR_EL1.T0SZ = 16` makes level 0 the initial lookup level, so every walk would have taken a translation fault at MMU enable — the boot map is now a real L0 → L1 → L2 structure.
 - **Severity**: medium · **Kind**: `soundness` · **Blocks SM10 start**: no
 - **Source plan**: `bootpath`
 - **Plan cite**: docs/planning/SMP_RELEASE_CLOSURE_PLAN.md §3 SM10.1 (the phase that will place a kernel heap)
@@ -355,6 +357,7 @@ RR3 slice, since it is the same obligation stated one level up.
 
 #### 5. The flagship 'syscall entry implies capability held' theorem covers only the legacy dispatch path, not the live checked path the hardware invokes
 
+- **Status**: **CLOSED at v0.34.57** (WS-RR RR7.3).  `dispatchSyscallChecked_requires_right` and `syscallEntryChecked_implies_capability_held` state the guarantee on the live path over the *executing* core, through both gate shapes; `…_of_pre_state` restates it on the trapped-in state (via `resolveCapAddress_congr_objects`), and `Platform.FFI.syscallDispatchFromAbi_implies_capability_held` carries it to the exported seam.  The GitBook and `CLAIM_EVIDENCE_INDEX.md` citations name the live-path theorems.
 - **Severity**: medium · **Kind**: `false-completeness-claim` · **Blocks SM10 start**: no
 - **Source plan**: `security`
 - **Plan cite**: docs/CLAIM_EVIDENCE_INDEX.md (WS-J1-C row: 'soundness theorems prove decode success and capability authorization are prerequisites for successful entry'); docs/gitbook/03-architecture-and-module-map.md and docs/gitbook/05-specification-and-roadmap.md, which cite `syscallEntry_implie…
@@ -381,6 +384,7 @@ RR3 slice, since it is the same obligation stated one level up.
 
 #### 7. The _atomic_under_lockSet family is a rfl instance of a body-agnostic lemma, so the atomicity half of two acceptance-gate items carries no operation-specific content
 
+- **Status**: **CLOSED at v0.34.57** (WS-RR RR7.4).  The five missing `lockSet_observer_atomic_on` instantiations landed — call, reply, replyRecv, signal, wait — each stated for *every* thread or notification rather than a chosen decisive one.  The observers and their insensitivity facts are declared once (`threadIpcStateObserver`, `notificationDeliveryObserver`, `lockPrimitives_insensitiveOn_of_objectStoreObserver`, `lockSet_observer_atomic_of_objectStoreObserver`), which also removed the four hand-rolled copies the cancellation carried.
 - **Severity**: low · **Kind**: `soundness` · **Blocks SM10 start**: no
 - **Source plan**: `docs/planning/SMP_CROSS_CORE_IPC_PLAN.md`
 - **Plan cite**: docs/planning/SMP_CROSS_CORE_IPC_PLAN.md section 8 acceptance-gate items 1 and 4; section 3.4 (whose sketch concluded `True`)

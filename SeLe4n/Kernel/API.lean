@@ -6191,6 +6191,216 @@ theorem dispatchSyscallChecked_audit_right_checked_second
       simp [SeLe4n.Kernel.capTargetsReservedIdleObject, hTarget]
     simp [hRes, hArm]
 
+
+-- ============================================================================
+-- WS-RR RR7.3: the capability-held guarantee on the LIVE checked dispatch path
+--
+-- Register §4 finding 5: `syscallEntry_implies_capability_held` and
+-- `dispatchSyscall_requires_right` are stated over the *legacy* entry, which is
+-- `bootCoreId`-pinned and whose only non-test callers are the trace harness and
+-- the exception model.  The path the hardware takes is
+-- `@[export lean_syscall_dispatch_cross_core]` → `syscallDispatchCrossCoreEntry`
+-- → `Platform.FFI.syscallDispatchFromAbi` → `syscallEntryChecked` →
+-- `dispatchSyscallChecked`, and nothing covered it.  These are the analogues,
+-- parameterized over the executing core rather than the boot core.
+--
+-- The checked dispatcher has two gate shapes and the guarantee holds through
+-- both: the 31 ordinary arms take the rights-checking `syscallInvoke`, and the
+-- two `syscallChecksTargetFirst` arms take the resolve-only
+-- `syscallInvokeResolved` and check the right in the arm, after the target.
+-- The second half is what the first attempt at this theorem would have missed —
+-- a rights conclusion read off the gate alone is false for the audit pair.
+-- ============================================================================
+
+/-- **WS-RR RR7.3**: a successful audit arm of the flow-checked dispatch implies
+the capability carried the required right.
+
+The arm's own gate, stated in the direction the entry-point guarantee needs.
+`dispatchWithCapChecked_audit_insufficient_right_denied` is the contrapositive
+for a capability that already targets the audit trail; this form takes no
+`hTarget` hypothesis, because `extractAuditAuthority` is total and a
+non-audit-trail target refuses before the rights test is reached. -/
+theorem dispatchWithCapChecked_audit_success_requires_right
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability) (st : SystemState) (st' : SystemState)
+    (hSyscall : decoded.syscallId = .auditRead ∨ decoded.syscallId = .auditDrain)
+    (hOk : dispatchWithCapChecked ctx decoded tid gate cap st = .ok ((), st')) :
+    cap.hasRight gate.requiredRight = true := by
+  by_cases hRight : cap.hasRight gate.requiredRight
+  · exact hRight
+  · exfalso
+    simp only [Bool.not_eq_true] at hRight
+    simp only [dispatchWithCapChecked, dispatchCapabilityOnly] at hOk
+    rcases hSyscall with h | h <;> rw [h] at hOk <;>
+      · simp only [extractAuditAuthority] at hOk
+        cases hTgt : cap.target <;> rw [hTgt] at hOk <;>
+          simp only [hRight, if_false, Bool.false_eq_true] at hOk <;>
+          exact absurd hOk (by simp)
+
+/-- **WS-RR RR7.3**: if the **flow-checked** dispatch succeeds, the caller held a
+capability with the required access right for the invoked syscall.
+
+The live-path analogue of `dispatchSyscall_requires_right`.  Both gate shapes
+are covered: the ordinary arms through `syscallInvoke_requires_right`, and the
+target-first (audit) pair through `syscallResolveCap`'s resolution plus
+`dispatchWithCapChecked_audit_success_requires_right` — the arm's own rights
+test, which is where the audit pair's second gate lives since PR #870 round 5. -/
+theorem dispatchSyscallChecked_requires_right
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (st : SystemState) (st' : SystemState)
+    (hOk : dispatchSyscallChecked ctx decoded tid st = .ok ((), st')) :
+    ∃ tcb, st.getTcb? tid = some tcb ∧
+      ∃ rootCn, st.getCNode? tcb.cspaceRoot = some rootCn ∧
+        ∃ cap ref,
+          resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref ∧
+          SystemState.lookupSlotCap st ref = some cap ∧
+          cap.hasRight (syscallRequiredRight decoded.syscallId) = true := by
+  simp only [dispatchSyscallChecked] at hOk
+  split at hOk
+  next tcb hTcb =>
+    refine ⟨tcb, (SystemState.getTcb?_eq_some_iff st tid tcb).mpr hTcb, ?_⟩
+    split at hOk
+    next rootCn hRoot =>
+      refine ⟨rootCn, (SystemState.getCNode?_eq_some_iff st tcb.cspaceRoot rootCn).mpr hRoot, ?_⟩
+      split at hOk
+      · simp at hOk
+      next stPost hInvokeOk =>
+        -- The gate the dispatcher chose is the `if` inside the invoke's own
+        -- `match`; split it so each shape supplies its own rights witness.
+        split at hInvokeOk
+        next hTargetFirst =>
+          -- The audit pair: resolve-only lookup, rights checked in the arm.
+          simp only [syscallInvokeResolved] at hInvokeOk
+          split at hInvokeOk
+          · simp at hInvokeOk
+          next cap stRes hResolveOk =>
+            obtain ⟨ref, hResolve, hSlot, hStEq⟩ :=
+              syscallResolveCap_implies_capability_at_slot _ _ cap stRes hResolveOk
+            subst hStEq
+            refine ⟨cap, ref, hResolve, hSlot, ?_⟩
+            exact dispatchWithCapChecked_audit_success_requires_right ctx decoded tid _ cap
+              _ stPost ((syscallChecksTargetFirst_iff decoded.syscallId).mp hTargetFirst)
+              hInvokeOk
+        next =>
+          -- Every other arm: the classic rights-gated lookup.
+          obtain ⟨cap, ref, hResolve, hSlot, hRight⟩ :=
+            syscallInvoke_requires_right _ (dispatchWithCapChecked ctx decoded tid _)
+              _ () stPost hInvokeOk
+          exact ⟨cap, ref, hResolve, hSlot, hRight⟩
+    · simp at hOk
+    · simp at hOk
+  · simp at hOk
+  · simp at hOk
+
+/-- **WS-RR RR7.3**: if the **flow-checked** syscall entry succeeds, the caller
+held the required access right — the live-path analogue of
+`syscallEntry_implies_capability_held`.
+
+Three differences from the legacy statement, all of them the point:
+
+* the caller is identified on the **executing** core (`currentOnCore
+  executingCore`), not on `bootCoreId`, so the guarantee covers a syscall issued
+  from a secondary PE;
+* the capability is resolved against the state the decode's TLB fill produced
+  (`tlbFillIpcBufferOnCore`), which is the state the dispatcher is handed — a
+  statement about `st` would be about a state no arm ever sees;
+* the entry's own `isInsecureDefaultContext` refusal is part of the chain, so a
+  success also witnesses that a deployment labeling context was installed.
+
+`resolveCapAddress` and `lookupSlotCap` read only the object store, which the
+TLB fill leaves alone (`tlbFillIpcBufferOnCore_frame`), so the resolution is
+equally a resolution against `st`; that corollary is
+`syscallEntryChecked_implies_capability_held_of_pre_state` below. -/
+theorem syscallEntryChecked_implies_capability_held
+    (ctx : LabelingContext) (layout : SeLe4n.SyscallRegisterLayout)
+    (executingCore : Concurrency.CoreId) (regCount : Nat)
+    (st : SystemState) (st' : SystemState)
+    (hOk : syscallEntryChecked ctx layout executingCore regCount st = .ok ((), st')) :
+    isInsecureDefaultContext ctx = false ∧
+    ∃ tid regs decoded,
+      (st.scheduler.currentOnCore executingCore) = some tid ∧
+      lookupThreadRegisterContext tid st = .ok (regs, st) ∧
+      SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+        st tid layout regs regCount = .ok decoded ∧
+      ∃ stFilled,
+        SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
+          st executingCore tid decoded.overflowCount = stFilled ∧
+        ∃ tcb, stFilled.getTcb? tid = some tcb ∧
+          ∃ rootCn, stFilled.getCNode? tcb.cspaceRoot = some rootCn ∧
+            ∃ cap ref,
+              resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth stFilled =
+                .ok ref ∧
+              SystemState.lookupSlotCap stFilled ref = some cap ∧
+              cap.hasRight (syscallRequiredRight decoded.syscallId) = true := by
+  unfold syscallEntryChecked at hOk
+  split at hOk
+  · simp at hOk
+  next hCtx =>
+    simp only [Bool.not_eq_true] at hCtx
+    refine ⟨hCtx, ?_⟩
+    split at hOk
+    · simp at hOk
+    next tid hCurrent =>
+      split at hOk
+      · simp at hOk
+      next regs _stRegs hLookup =>
+        split at hOk
+        · simp at hOk
+        next decoded hDecode =>
+          have hStEq : _stRegs = st := by
+            unfold lookupThreadRegisterContext at hLookup
+            split at hLookup <;> simp at hLookup
+            exact hLookup.2.symm
+          subst hStEq
+          obtain ⟨tcb, hTcb, rootCn, hRoot, cap, ref, hResolve, hSlot, hRight⟩ :=
+            dispatchSyscallChecked_requires_right ctx decoded tid _ st' hOk
+          exact ⟨tid, regs, decoded, hCurrent, hLookup, hDecode, _, rfl,
+                 tcb, hTcb, rootCn, hRoot, cap, ref, hResolve, hSlot, hRight⟩
+
+
+/-- **WS-RR RR7.3**: the live-path capability guarantee, stated on the state the
+caller trapped in.
+
+`syscallEntryChecked_implies_capability_held` resolves against the state the
+decode's TLB fill produced, because that is the state the dispatcher is handed.
+The fill touches only the per-core TLB view (`tlbFillIpcBufferOnCore_frame`) and
+the CSpace walk reads only the object store
+(`resolveCapAddress_congr_objects`), so the same capability is at the same slot
+of the pre-state — which is the form a reader of "every syscall is capability
+gated" wants, since the pre-state is the one user space could have arranged. -/
+theorem syscallEntryChecked_implies_capability_held_of_pre_state
+    (ctx : LabelingContext) (layout : SeLe4n.SyscallRegisterLayout)
+    (executingCore : Concurrency.CoreId) (regCount : Nat)
+    (st : SystemState) (st' : SystemState)
+    (hOk : syscallEntryChecked ctx layout executingCore regCount st = .ok ((), st')) :
+    isInsecureDefaultContext ctx = false ∧
+    ∃ tid regs decoded,
+      (st.scheduler.currentOnCore executingCore) = some tid ∧
+      lookupThreadRegisterContext tid st = .ok (regs, st) ∧
+      SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+        st tid layout regs regCount = .ok decoded ∧
+      ∃ tcb, st.getTcb? tid = some tcb ∧
+        ∃ rootCn, st.getCNode? tcb.cspaceRoot = some rootCn ∧
+          ∃ cap ref,
+            resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref ∧
+            SystemState.lookupSlotCap st ref = some cap ∧
+            cap.hasRight (syscallRequiredRight decoded.syscallId) = true := by
+  obtain ⟨hCtx, tid, regs, decoded, hCurrent, hLookup, hDecode, stFilled, hFill,
+          tcb, hTcb, rootCn, hRoot, cap, ref, hResolve, hSlot, hRight⟩ :=
+    syscallEntryChecked_implies_capability_held ctx layout executingCore regCount st st' hOk
+  subst hFill
+  have hObjects :
+      (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
+        st executingCore tid decoded.overflowCount).objects = st.objects :=
+    (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_frame
+      st executingCore tid decoded.overflowCount).1
+  refine ⟨hCtx, tid, regs, decoded, hCurrent, hLookup, hDecode, tcb, ?_, rootCn, ?_,
+          cap, ref, ?_, ?_, hRight⟩
+  · simpa only [SystemState.getTcb?, hObjects] using hTcb
+  · simpa only [SystemState.getCNode?, hObjects] using hRoot
+  · rw [← resolveCapAddress_congr_objects _ st hObjects]; exact hResolve
+  · rw [← lookupSlotCap_congr_objects _ st ref hObjects]; exact hSlot
+
 /-- **WS-SM SM9.A.10: there is no unchecked audit read.**
 
 The unchecked dispatch fails closed on both audit syscalls.  Stated as a theorem

@@ -248,6 +248,46 @@ def resolvedCnodeStillValid (st : SystemState) (resolvedRef : SlotRef) : Prop :=
 -- WS-H13/H-01: resolveCapAddress theorems
 -- ============================================================================
 
+/-- **WS-RR RR7.3**: `resolveCapAddress` reads the object store and nothing
+else, so two states with the same store resolve identically.
+
+The CSpace walk consults `st.getCNode?` at every hop and no other component of
+`SystemState`.  Stated as a congruence rather than left implicit because the
+live syscall entry resolves against a state its own decode has *pre-processed*
+(`tlbFillIpcBufferOnCore`, which touches only the per-core TLB view), and the
+guarantee a reader wants is about the state the caller trapped in.  Without
+this the entry-point theorem could only speak of the filled state.
+
+Proved by the walk's own functional induction, so the recursion's descent is
+the induction's and no separate termination argument is needed. -/
+theorem resolveCapAddress_congr_objects
+    (st₁ st₂ : SystemState) (hObjects : st₁.objects = st₂.objects)
+    (addr : SeLe4n.CPtr) :
+    ∀ (bitsRemaining : Nat) (rootId : SeLe4n.ObjId),
+      resolveCapAddress rootId addr bitsRemaining st₁
+        = resolveCapAddress rootId addr bitsRemaining st₂ := by
+  intro bitsRemaining
+  induction bitsRemaining using Nat.strongRecOn with
+  | _ bits ih =>
+    intro rootId
+    have hCNode : st₁.getCNode? rootId = st₂.getCNode? rootId := by
+      simp only [SystemState.getCNode?, hObjects]
+    rw [resolveCapAddress, resolveCapAddress, hCNode]
+    -- Both sides are now the same expression apart from the state the
+    -- recursive call carries, so every branch closes by `rfl` and the one
+    -- descending branch by the induction hypothesis.
+    repeat' (first | split | (simp only []; split))
+    all_goals first
+      | rfl
+      | (exact ih _ (by omega) _)
+
+/-- **WS-RR RR7.3**: `lookupSlotCap` reads the object store and nothing else. -/
+theorem lookupSlotCap_congr_objects
+    (st₁ st₂ : SystemState) (ref : SlotRef)
+    (hObjects : st₁.objects = st₂.objects) :
+    SystemState.lookupSlotCap st₁ ref = SystemState.lookupSlotCap st₂ ref := by
+  simp only [SystemState.lookupSlotCap, SystemState.lookupCNode, hObjects]
+
 /-- WS-H13/H-01 (deliverable 9): `resolveCapAddress` returns `.error .illegalState`
 when called with zero bits remaining. -/
 theorem resolveCapAddress_zero_bits

@@ -2306,101 +2306,45 @@ end Lifecycle.Suspend
 -- are in each other's import closure.  They now live once, beside
 -- `updateObjectLockAt` in `WithLockSet`, which all three import.
 
-/-- WS-SM SM6.E: a lock-only object write is invisible to the victim's
-`ipcState` observer — `updateObjectLockAt` rewrites only the stored object's
-`lock` field, preserving every business field and every other key. -/
-theorem updateObjectLockAt_getTcb?_ipcState (s : SystemState) (l : LockId)
-    (op : Concurrency.RwLockOp) (tid : SeLe4n.ThreadId)
-    (hExt : s.objects.invExt) :
-    ((updateObjectLockAt s l op).getTcb? tid).map TCB.ipcState
-      = (s.getTcb? tid).map TCB.ipcState := by
-  unfold updateObjectLockAt
-  split
-  · unfold updateObjectAt
-    cases hg : s.objects.get? l.objId with
-    | none => rfl
-    | some obj =>
-      simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
-      by_cases hk : (l.objId == tid.toObjId) = true
-      · have hk' : l.objId = tid.toObjId := eq_of_beq hk
-        rw [← hk',
-            SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self
-              s.objects l.objId _ hExt,
-            hg]
-        cases obj <;> rfl
-      · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne
-              s.objects l.objId tid.toObjId _ hk hExt]
-  · rfl
-
-/-- Audit closure (F3ii): lock-field-only writes also leave every TCB's
-`schedContextBinding` untouched — the donation-side stability twin. -/
-theorem updateObjectLockAt_getTcb?_schedContextBinding (s : SystemState) (l : LockId)
-    (op : Concurrency.RwLockOp) (tid : SeLe4n.ThreadId)
-    (hExt : s.objects.invExt) :
-    ((updateObjectLockAt s l op).getTcb? tid).map TCB.schedContextBinding
-      = (s.getTcb? tid).map TCB.schedContextBinding := by
-  unfold updateObjectLockAt
-  split
-  · unfold updateObjectAt
-    cases hg : s.objects.get? l.objId with
-    | none => rfl
-    | some obj =>
-      simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
-      by_cases hk : (l.objId == tid.toObjId) = true
-      · have hk' : l.objId = tid.toObjId := eq_of_beq hk
-        rw [← hk',
-            SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self
-              s.objects l.objId _ hExt,
-            hg]
-        cases obj <;> rfl
-      · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne
-              s.objects l.objId tid.toObjId _ hk hExt]
-  · rfl
+-- **WS-RR RR7.4**: the two lock-write stability lemmas that stood here —
+-- `updateObjectLockAt_getTcb?_ipcState` and its `schedContextBinding` twin —
+-- moved to `Locks/WithLockSet.lean`, beside `updateObjectLockAt` itself.  RR7.4
+-- gives the same observer treatment to the five remaining SM6 transitions and
+-- each of them needs the TCB-`ipcState` lemma; a copy per file is exactly the
+-- duplication WS-LC LC4.7 removed for the `invExt` preservation family.
 
 /-- WS-SM SM6.E: the cancellation's decisive business observable — the
 victim's `ipcState` (the field the teardown transitions and the wake/suspend
 race would corrupt). -/
 def cancellationVictimIpcStateObserver (victim : SeLe4n.ThreadId) :=
-  fun s : SystemState => (s.getTcb? victim).map TCB.ipcState
+  threadIpcStateObserver victim
+
+/-- **WS-RR RR7.4**: the victim-`ipcState` observer reads only the object
+store, and a lock-field-only write leaves it alone — the two facts the shared
+`lockPrimitives_insensitiveOn_of_objectStoreObserver` needs. -/
+theorem cancellationObserver_insensitiveOn (core : CoreId)
+    (victim : SeLe4n.ThreadId) :
+    AcquireInsensitiveOn (fun s => s.objects.invExt) core
+      (cancellationVictimIpcStateObserver victim) ∧
+    UnwindInsensitiveOn (fun s => s.objects.invExt) core
+      (cancellationVictimIpcStateObserver victim) :=
+  threadIpcStateObserver_insensitiveOn core victim
 
 /-- WS-SM SM6.E: the victim-`ipcState` observer is `invExt`-guardedly
 acquire-insensitive — every lock acquire is a lock-field-only write. -/
 theorem cancellationObserver_acquireInsensitiveOn (core : CoreId)
     (victim : SeLe4n.ThreadId) :
     AcquireInsensitiveOn (fun s => s.objects.invExt) core
-      (cancellationVictimIpcStateObserver victim) := by
-  intro s l m hExt
-  show ((acquireLockOnObject s core l m).getTcb? victim).map TCB.ipcState
-    = (s.getTcb? victim).map TCB.ipcState
-  unfold acquireLockOnObject
-  split
-  all_goals first
-    | rfl
-    | exact updateObjectLockAt_getTcb?_ipcState s l _ victim hExt
+      (cancellationVictimIpcStateObserver victim) :=
+  (cancellationObserver_insensitiveOn core victim).1
 
 /-- WS-SM SM6.E: the victim-`ipcState` observer is `invExt`-guardedly
 release-insensitive. -/
 theorem cancellationObserver_unwindInsensitiveOn (core : CoreId)
     (victim : SeLe4n.ThreadId) :
     UnwindInsensitiveOn (fun s => s.objects.invExt) core
-      (cancellationVictimIpcStateObserver victim) := by
-  constructor
-  · intro s l m hExt
-    show ((releaseLockOnObject s core l m).getTcb? victim).map TCB.ipcState
-      = (s.getTcb? victim).map TCB.ipcState
-    unfold releaseLockOnObject
-    split
-    all_goals first
-      | rfl
-      | exact updateObjectLockAt_getTcb?_ipcState s l _ victim hExt
-  · intro s l m hExt
-    show ((cancelLockOnObject s core l m).getTcb? victim).map TCB.ipcState
-      = (s.getTcb? victim).map TCB.ipcState
-    unfold cancelLockOnObject
-    split
-    all_goals first
-      | rfl
-      | exact updateObjectLockAt_getTcb?_ipcState s l _ victim hExt
+      (cancellationVictimIpcStateObserver victim) :=
+  (cancellationObserver_insensitiveOn core victim).2
 
 /-- WS-SM SM6.E (observational atomicity, plan §5.3 for the cancellation):
 under the cancellation's declared 2PL lock-set the victim-`ipcState`
@@ -2452,42 +2396,32 @@ observable — the victim's `schedContextBinding`. -/
 def cancellationVictimBindingObserver (victim : SeLe4n.ThreadId) :=
   fun s : SystemState => (s.getTcb? victim).map TCB.schedContextBinding
 
+/-- **WS-RR RR7.4**: the binding observer's two facts, as above. -/
+theorem cancellationBindingObserver_insensitiveOn (core : CoreId)
+    (victim : SeLe4n.ThreadId) :
+    AcquireInsensitiveOn (fun s => s.objects.invExt) core
+      (cancellationVictimBindingObserver victim) ∧
+    UnwindInsensitiveOn (fun s => s.objects.invExt) core
+      (cancellationVictimBindingObserver victim) :=
+  lockPrimitives_insensitiveOn_of_objectStoreObserver core _
+    (fun _ _ h => by simp only [cancellationVictimBindingObserver,
+      SystemState.getTcb?, h])
+    (fun s l op hExt =>
+      updateObjectLockAt_getTcb?_schedContextBinding s l op victim hExt)
+
 /-- The binding observer is `invExt`-guardedly acquire-insensitive. -/
 theorem cancellationBindingObserver_acquireInsensitiveOn (core : CoreId)
     (victim : SeLe4n.ThreadId) :
     AcquireInsensitiveOn (fun s => s.objects.invExt) core
-      (cancellationVictimBindingObserver victim) := by
-  intro s l m hExt
-  show ((acquireLockOnObject s core l m).getTcb? victim).map TCB.schedContextBinding
-    = (s.getTcb? victim).map TCB.schedContextBinding
-  unfold acquireLockOnObject
-  split
-  all_goals first
-    | rfl
-    | exact updateObjectLockAt_getTcb?_schedContextBinding s l _ victim hExt
+      (cancellationVictimBindingObserver victim) :=
+  (cancellationBindingObserver_insensitiveOn core victim).1
 
 /-- The binding observer is `invExt`-guardedly release-insensitive. -/
 theorem cancellationBindingObserver_unwindInsensitiveOn (core : CoreId)
     (victim : SeLe4n.ThreadId) :
     UnwindInsensitiveOn (fun s => s.objects.invExt) core
-      (cancellationVictimBindingObserver victim) := by
-  constructor
-  · intro s l m hExt
-    show ((releaseLockOnObject s core l m).getTcb? victim).map TCB.schedContextBinding
-      = (s.getTcb? victim).map TCB.schedContextBinding
-    unfold releaseLockOnObject
-    split
-    all_goals first
-      | rfl
-      | exact updateObjectLockAt_getTcb?_schedContextBinding s l _ victim hExt
-  · intro s l m hExt
-    show ((cancelLockOnObject s core l m).getTcb? victim).map TCB.schedContextBinding
-      = (s.getTcb? victim).map TCB.schedContextBinding
-    unfold cancelLockOnObject
-    split
-    all_goals first
-      | rfl
-      | exact updateObjectLockAt_getTcb?_schedContextBinding s l _ victim hExt
+      (cancellationVictimBindingObserver victim) :=
+  (cancellationBindingObserver_insensitiveOn core victim).2
 
 /-- Audit closure (F3ii): the **donation-side observer capstone** — the 2PL
 machinery around `cancelDonationOnCore` is invisible to the cancellation's

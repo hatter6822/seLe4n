@@ -64,5 +64,69 @@ else
   fi
 fi
 
+# ---------------------------------------------------------------------------
+# WS-RR RR7.1: the boot identity map's window
+#
+# The remediation for register §4 finding 4 asks for the resulting bound to be
+# in this script's remit "so it cannot drift again".  Three declarations state
+# the same physical memory map and must agree:
+#
+#   1. `rpi5MemoryMapForConfig` in `SeLe4n/Platform/RPi5/Board.lean` — the
+#      project's canonical BCM2712 map.
+#   2. `mmu::boot_mapping_for`'s constants in `rust/sele4n-hal/src/mmu.rs` —
+#      what the boot translation tables actually install.
+#   3. `link.ld`'s `RAM` region — what the linker may hand out.
+#
+# Read over the Rust *code view* (comments blanked) so a boundary that survives
+# only in a doc comment cannot satisfy the check.
+# ---------------------------------------------------------------------------
+
+MMU_SRC="rust/sele4n-hal/src/mmu.rs"
+MMU_VIEW_FILE="$(mktemp)"
+# The view goes to a file rather than a shell variable piped into `grep`: under
+# `pipefail`, `grep -q` closes the pipe on its first match and the writer takes
+# SIGPIPE, so the pipeline's status is 141 exactly when the pattern *is* found.
+# That reads as "absent" and made this gate fail on a tree that satisfies it.
+trap 'rm -f "${MMU_VIEW_FILE}"' EXIT
+python3 scripts/rust_code_view.py --no-strings "${MMU_SRC}" > "${MMU_VIEW_FILE}"
+
+expect_mmu_const() {
+  local name="$1" value="$2"
+  if ! grep -qE "^pub const ${name}: u64 = ${value};$" "${MMU_VIEW_FILE}"; then
+    fail "${MMU_SRC} must declare \`pub const ${name}: u64 = ${value};\` (WS-RR RR7.1 boot map)."
+  fi
+}
+
+expect_mmu_const LOW_RAM_TOP '0xFC00_0000'
+expect_mmu_const DEVICE_WINDOW_BASE '0xFE00_0000'
+expect_mmu_const DEVICE_WINDOW_TOP '0xFFA0_0000'
+expect_mmu_const HIGH_RAM_BASE '0x1_0000_0000'
+
+# The Lean map's own boundaries.  `peripheralBoundary` caps the low RAM region;
+# the device region starts at 0xFE000000; the second RAM region starts at the
+# 4 GiB boundary.
+if ! grep -q 'let peripheralBoundary := 0xFC000000' SeLe4n/Platform/RPi5/Board.lean; then
+  fail "Board.lean's rpi5MemoryMapForConfig must cap low RAM at 0xFC000000 (matches mmu.rs LOW_RAM_TOP)."
+fi
+if ! grep -q 'base := (SeLe4n.PAddr.ofNat 0xFE000000)' SeLe4n/Platform/RPi5/Board.lean; then
+  fail "Board.lean's rpi5MemoryMapForConfig must place the device window at 0xFE000000 (matches mmu.rs DEVICE_WINDOW_BASE)."
+fi
+if ! grep -q 'base := (SeLe4n.PAddr.ofNat 0x100000000)' SeLe4n/Platform/RPi5/Board.lean; then
+  fail "Board.lean's rpi5MemoryMapForConfig must place high RAM at 0x100000000 (matches mmu.rs HIGH_RAM_BASE)."
+fi
+
+# link.ld's RAM region must end exactly at LOW_RAM_TOP: ORIGIN + LENGTH.
+LINK_LD="rust/sele4n-hal/link.ld"
+LD_ORIGIN="$(grep -oE 'ORIGIN[[:space:]]*=[[:space:]]*0x[0-9A-Fa-f]+' "${LINK_LD}" | head -1 | grep -oE '0x[0-9A-Fa-f]+')"
+LD_LENGTH="$(grep -oE 'LENGTH[[:space:]]*=[[:space:]]*0x[0-9A-Fa-f]+' "${LINK_LD}" | head -1 | grep -oE '0x[0-9A-Fa-f]+')"
+if [ -z "${LD_ORIGIN}" ] || [ -z "${LD_LENGTH}" ]; then
+  fail "${LINK_LD} must declare a RAM region with hexadecimal ORIGIN and LENGTH."
+fi
+LD_END="$(printf '0x%X' "$(( LD_ORIGIN + LD_LENGTH ))")"
+if [ "${LD_END}" != "0xFC000000" ]; then
+  fail "${LINK_LD}'s RAM region ends at ${LD_END}, not at mmu.rs's LOW_RAM_TOP (0xFC000000): the linker would hand out addresses the boot tables do not map as RAM."
+fi
+
 echo "AN7-B: physicalAddressWidth audit clean (RPi5=44, Sim=52, default=52; no ':= 48' anywhere)."
+echo "WS-RR RR7.1: boot identity-map window agrees across mmu.rs, Board.lean and link.ld."
 exit 0

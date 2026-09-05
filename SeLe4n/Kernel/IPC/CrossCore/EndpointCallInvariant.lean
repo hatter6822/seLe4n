@@ -2991,4 +2991,48 @@ theorem endpointCallOnCore_preserves_ipcInvariantFull_perCore
         hObjInv hCallerNotUnbound)
       (hInv c).passiveServerIdle)
 
+-- ============================================================================
+-- WS-RR RR7.4: observer atomicity for the call
+--
+-- The last of the five instantiations register §4 finding 7 names as missing.
+-- `endpointCallOnCore_atomic_under_lockSet` is a `rfl` instance of the
+-- body-agnostic `lockSet_atomic_under_2pl`, true of any action; this is the
+-- substantive form, at the observable the rendezvous actually writes.
+-- ============================================================================
+
+/-- **WS-RR RR7.4**: under its declared footprint the cross-core endpoint call is
+observationally atomic — the acquire fold shows every thread's IPC state exactly
+as the pre-state had it, and the bracketed run shows exactly the transition's own
+effect.  No partially-locked intermediate — a caller already blocked while the
+receiver has not yet been woken, say — is ever observable.
+
+Stated for **every** thread, so it covers the receiver (the decisive observer
+the finding names), the caller, and any bystander, without a judgement call
+about which participant the rendezvous's decisive observable is. -/
+theorem endpointCallOnCore_observer_atomic
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (executingCore : CoreId) (cnRoot : SeLe4n.ObjId)
+    (receiver? : Option SeLe4n.ThreadId) (donatedSc? : Option SeLe4n.SchedContextId)
+    (replyId? : Option SeLe4n.ReplyId) (observed : SeLe4n.ThreadId)
+    (s : SystemState) (hInv : s.objects.invExt) :
+    threadIpcStateObserver observed
+        (acquireAll executingCore
+          (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc?
+            replyId?).lockAcquireSequence s)
+      = threadIpcStateObserver observed s
+    ∧ threadIpcStateObserver observed
+        (withLockSet (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc?
+            replyId?)
+          executingCore (endpointCallOnCore endpointId caller msg executingCore) s).1
+      = threadIpcStateObserver observed
+          (endpointCallOnCore endpointId caller msg executingCore
+            (acquireAll executingCore
+              (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc?
+                replyId?).lockAcquireSequence s)).1 :=
+  lockSet_observer_atomic_of_objectStoreObserver _ executingCore _ s _
+    (threadIpcStateObserver_insensitiveOn executingCore observed) hInv
+    (fun s' h => endpointCallOnCore_preserves_objects_invExt endpointId caller msg
+      executingCore s' h)
+
+
 end SeLe4n.Kernel
