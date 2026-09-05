@@ -45,10 +45,17 @@
 //! `per_cpu::current_core_id_from_tpidr()`, whose documented range invariant
 //! is `core_id < PlatformBinding.coreCount` — which is the same
 //! executing-PE discipline the readiness gate requires of `lean_ready`'s
-//! argument.  The id is bookkeeping in the protocol (`last_enqueued`, which
-//! `peek_tail` reports, and the range assert); no admission decision reads
-//! it, so a stale value could not break mutual exclusion — but naming the
-//! executing PE is still the only answer that is *true*.
+//! argument.  The id **decides**: the lock's withdrawal slot (WS-LC LC3)
+//! and its held word (PR #890 review round 2) are indexed by it, so a
+//! wrong id would let one PE release another's hold, or turn a real
+//! acquisition into the no-op the lock reserves for a holder re-acquiring
+//! — which is why it is read from the hardware at the call and never taken
+//! from a caller.  On the host every std thread reads the boot core's slot
+//! unless a test adopts another PE's identity for it
+//! (`per_cpu::HostCoreIdentity`); the cross-thread tests below do, because
+//! several threads under one id are one PE issuing overlapping
+//! acquisitions, and the first host lane after the held word landed hung
+//! in exactly that shape.
 //!
 //! ## Architecture
 //!
@@ -1399,9 +1406,13 @@ mod runtime_tests {
         let counter_observed_max = Arc::new(std::sync::Mutex::new(0u64));
 
         let mut handles: std::vec::Vec<std::thread::JoinHandle<()>> = std::vec::Vec::new();
-        for _ in 0..NUM_READERS {
+        for pe in 0..NUM_READERS {
             let max_arc = Arc::clone(&counter_observed_max);
             handles.push(std::thread::spawn(move || {
+                // One thread per PE (PR #890 review round 2): the bridge
+                // reads the executing core's id, and on the host that is
+                // the identity this thread adopts.
+                let _pe = crate::per_cpu::HostCoreIdentity::adopt(pe);
                 for _ in 0..OPS_PER_READER {
                     rw_lock_acquire_read(h);
                     let snap = rw_lock_snapshot(h);
@@ -1474,10 +1485,11 @@ mod runtime_tests {
 
         let mut handles: std::vec::Vec<std::thread::JoinHandle<()>> = std::vec::Vec::new();
 
-        // 1 writer.
+        // 1 writer, on PE 0 (PR #890 review round 2: one thread per PE).
         {
             let ib = Arc::clone(&invariant_broken);
             handles.push(std::thread::spawn(move || {
+                let _pe = crate::per_cpu::HostCoreIdentity::adopt(0);
                 for _ in 0..WRITE_OPS {
                     rw_lock_acquire_write(h);
                     // Verify: writer held and zero readers.
@@ -1492,10 +1504,11 @@ mod runtime_tests {
             }));
         }
 
-        // N readers.
-        for _ in 0..NUM_READERS {
+        // N readers, on PEs 1..=N.
+        for pe in 1..=NUM_READERS {
             let ib = Arc::clone(&invariant_broken);
             handles.push(std::thread::spawn(move || {
+                let _pe = crate::per_cpu::HostCoreIdentity::adopt(pe);
                 for _ in 0..READ_OPS {
                     rw_lock_acquire_read(h);
                     // Verify: no writer.

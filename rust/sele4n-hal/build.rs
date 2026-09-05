@@ -5949,6 +5949,17 @@ fn scan_ffi_rs_exposes_timer_shadow_advance_export() {
 ///    Carried over unchanged: `fetch_or` sets the writer bit even when
 ///    reader bits are set, producing the `WRITER_BIT | reader_bits` state
 ///    that directly violates writer-readers exclusion.
+///
+/// 3. **A release consults the holder word before it writes the state
+///    word** (PR #890 review round 2).  `release_read` reads `self.held[..]`
+///    before `self.state.fetch_sub(1`, and `release_write` before
+///    `self.state.fetch_and(READER_MASK`.  That order is what makes a
+///    release by a non-holder the spec's no-op: with the read after the
+///    write, the count has already been decremented under the real holder
+///    (or the turn passed) by the time the branch returns.  Checked as
+///    ORDER within each function's body, not as presence in the file — a
+///    holder read moved below the state write keeps every token and breaks
+///    the relation.
 fn scan_queued_rw_lock_protocol_intact() {
     let path = "src/queued_rw_lock.rs";
     println!("cargo:rerun-if-changed={path}");
@@ -5992,6 +6003,42 @@ fn scan_queued_rw_lock_protocol_intact() {
                  and re-run the contention harness (400 attempts, 4 cores) \
                  plus the full suite 100x."
             );
+        }
+    }
+
+    // Check (3): each release reads the holder word before it writes the
+    // state word.  Located within the function's own body so a read in
+    // another function, or a docstring, cannot satisfy it.
+    for (signature, state_write) in [
+        (
+            "pub fn release_read(&self, core_id: u8) {",
+            "self.state.fetch_sub(1",
+        ),
+        (
+            "pub fn release_write(&self, core_id: u8) {",
+            "self.state.fetch_and(READER_MASK",
+        ),
+    ] {
+        let body = enclosing_fn_body(&stripped, signature).unwrap_or_else(|| {
+            panic!(
+                "PR #890 review round 2 protocol regression: `{path}` no longer \
+                 defines `{signature}`; the release entry points are part of \
+                 the deployed lock's contract and their bodies are scanned here."
+            )
+        });
+        let holder_read = body.find("self.held[core_id as usize]");
+        let write = body.find(state_write);
+        match (holder_read, write) {
+            (Some(read_at), Some(write_at)) if read_at < write_at => {}
+            _ => panic!(
+                "PR #890 review round 2 protocol regression: in `{path}`, \
+                 `{signature}` must read `self.held[core_id as usize]` BEFORE \
+                 `{state_write}` (found holder read at {holder_read:?}, state \
+                 write at {write:?}).  A release by a core that does not hold \
+                 the lock must be the spec's no-op — `unwindAll` releases every \
+                 member of a footprint, holding or not — and only a holder \
+                 check that precedes the state write makes it one."
+            ),
         }
     }
 

@@ -1156,16 +1156,25 @@ retry) is required to actually fail.  Which of the two a block is comes
 from the abstract branch, which is why the predicate is indexed on the
 abstract state as well.
 
-The blocks also cover the abstract outcomes `opCorresponds`'s original
-ten could not express — the no-ops and the enqueues (WS-RR RR6.16) —
-and the release blocks carry the promotion (RR6.16), without which the
-composition provably cannot close. -/
+The blocks also cover the enqueues `opCorresponds`'s original ten could
+not express (WS-RR RR6.16), and the release blocks carry the promotion
+(RR6.16), without which the composition provably cannot close.
+
+**There is no `_noop` block** (PR #890 review round 2).  The spec no-ops
+on a re-acquire by an involved core and on a release by a non-holder;
+`rw_lock.rs` does not — it has no holder bookkeeping, so a holder's
+`acquire_read` takes a second count, a non-holder's `release_read` is an
+unconditional `fetch_sub`, and a non-writer's `release_write` clears a
+bit another core may own.  Four constructors used to describe each of
+those as a stutter, `[]`, that no code path performs.  They are gone:
+the trace-level theorems below cover exactly the traces in which every
+acquire is by an uninvolved core and every release by the holder, which
+is that lock's caller contract (its module docs state it, and its
+`debug_assert`s police it).  The deployed `QueuedRwLock` implements the
+no-ops with a per-core held word, and its bridge derives them
+(`queuedHeldSim`, `Locks/QueuedRwLockRefinement.lean`). -/
 inductive honestBlock :
     RwLockState → UInt64 → RwLockOp → List ConcreteRwLockOp → Prop where
-  /-- A core already involved re-acquiring: the spec no-ops and the
-  implementation performs no atomic access. -/
-  | acquireRead_noop (abs : RwLockState) (conc : UInt64) (c : CoreId) :
-      abs.coreInvolved c → honestBlock abs conc (.tryAcquireRead c) []
   /-- Direct acquire: load, then CAS `conc → conc + 1`.  The operands
   are the state the block starts in, which is what makes the CAS
   succeed — the pinning RR6.15 exists for. -/
@@ -1192,9 +1201,6 @@ inductive honestBlock :
       (tail : List ConcreteRwLockOp) :
       honestBlock abs conc (.tryAcquireRead c) tail →
       honestBlock abs conc (.tryAcquireRead c) ([.load c, .wfeWait c] ++ tail)
-  /-- Spec no-op for a core already involved. -/
-  | acquireWrite_noop (abs : RwLockState) (conc : UInt64) (c : CoreId) :
-      abs.coreInvolved c → honestBlock abs conc (.tryAcquireWrite c) []
   /-- Direct acquire: load, then CAS from exactly `0`. -/
   | acquireWrite_success (abs : RwLockState) (conc : UInt64) (c : CoreId) :
       ¬ abs.coreInvolved c → abs.writerHeld = none → abs.readers = [] →
@@ -1218,9 +1224,6 @@ inductive honestBlock :
       (tail : List ConcreteRwLockOp) :
       honestBlock abs conc (.tryAcquireWrite c) tail →
       honestBlock abs conc (.tryAcquireWrite c) ([.load c, .wfeWait c] ++ tail)
-  /-- Releasing a read lock one does not hold: spec no-op. -/
-  | releaseRead_noop (abs : RwLockState) (conc : UInt64) (c : CoreId) :
-      c ∉ abs.readers → honestBlock abs conc (.releaseRead c) []
   /-- `release_read` leaving holders behind: the count drops and nobody
   is promoted. -/
   | releaseRead_noPromote (abs : RwLockState) (conc : UInt64) (c : CoreId) :
@@ -1233,9 +1236,6 @@ inductive honestBlock :
       c ∈ abs.readers → abs.readers.filter (· ≠ c) = [] → abs.writerHeld = none →
       honestBlock abs conc (.releaseRead c)
         ([.fetchSubRead c, .sev c] ++ casPromoteOps (conc - 1) abs.waiters)
-  /-- Releasing a write lock one does not hold: spec no-op. -/
-  | releaseWrite_noop (abs : RwLockState) (conc : UInt64) (c : CoreId) :
-      abs.writerHeld ≠ some c → honestBlock abs conc (.releaseWrite c) []
   /-- **WS-RR RR6.16**: `release_write`, with the promotion carried. -/
   | releaseWrite_effective (abs : RwLockState) (conc : UInt64) (c : CoreId) :
       abs.writerHeld = some c →
@@ -1273,21 +1273,17 @@ theorem honestBlock_opCorresponds
     {blk : List ConcreteRwLockOp} (h : honestBlock abs conc op blk) :
     opCorresponds op blk := by
   induction h with
-  | acquireRead_noop c _ => exact .noop _
   | acquireRead_success c _ _ _ => exact .tryRead_success c _ _
   | acquireRead_enqueue c _ _ => exact .tryRead_enqueue c
   | acquireRead_cas_retry c e n tail _ _ ih => exact .tryRead_cas_retry c e n tail ih
   | acquireRead_park_retry c tail _ ih => exact .tryRead_park_retry c tail ih
-  | acquireWrite_noop c _ => exact .noop _
   | acquireWrite_success c _ _ _ _ => exact .tryWrite_success c
   | acquireWrite_enqueue c _ _ => exact .tryWrite_enqueue c
   | acquireWrite_cas_retry c tail _ _ ih => exact .tryWrite_cas_retry c tail ih
   | acquireWrite_park_retry c tail _ ih => exact .tryWrite_park_retry c tail ih
-  | releaseRead_noop c _ => exact .noop _
   | releaseRead_noPromote c _ _ => exact .releaseRead_with_sev c
   | releaseRead_promote c _ _ _ =>
       exact .releaseRead_promoting c _ (casPromoteOps_admissionSequence _ _)
-  | releaseWrite_noop c _ => exact .noop _
   | releaseWrite_effective c _ =>
       exact .releaseWrite_promoting c _ (casPromoteOps_admissionSequence _ _)
   | cancel_no_queue c => exact .cancel_no_queue _
@@ -1343,10 +1339,6 @@ theorem honestBlock_blockBisim
   have hWaitersBound : abs.waiters.length ≤ numCores := by
     have := rwLock_bounded_wait_read abs hWfAbs; omega
   induction hHonest with
-  | acquireRead_noop c hInv =>
-    unfold blockBisim
-    rw [RwLockState.applyOp_noop_acquireRead hInv]
-    simpa [concreteFoldBlock] using hSim
   | acquireRead_success c hNotInv hW hQ =>
     have hShape := tryAcquireRead_direct_acquire_shape abs c hNotInv hW hQ
     have hStateNat : conc.toNat = abs.readers.length := by
@@ -1381,10 +1373,6 @@ theorem honestBlock_blockBisim
     unfold blockBisim at ih ⊢
     rw [concreteFoldBlock_park conc c tail]
     exact ih
-  | acquireWrite_noop c hInv =>
-    unfold blockBisim
-    rw [RwLockState.applyOp_noop_acquireWrite hInv]
-    simpa [concreteFoldBlock] using hSim
   | acquireWrite_success c hNotInv hW hR hQ =>
     have hZero : conc = 0 := by
       apply UInt64.toNat_inj.mp
@@ -1419,10 +1407,6 @@ theorem honestBlock_blockBisim
     unfold blockBisim at ih ⊢
     rw [concreteFoldBlock_park conc c tail]
     exact ih
-  | releaseRead_noop c hNotHolder =>
-    unfold blockBisim
-    rw [RwLockState.applyOp_noop_releaseRead hNotHolder]
-    simpa [concreteFoldBlock] using hSim
   | releaseRead_noPromote c hHolder hNoPromote =>
     have hLenStep := filter_ne_length_of_nodup abs.readers hWfAbs.2.1 c hHolder
     have hFilterLen : (abs.readers.filter (· ≠ c)).length = abs.readers.length - 1 := by
@@ -1476,10 +1460,6 @@ theorem honestBlock_blockBisim
     unfold rwLockSim
     rw [uInt64_sub_one_toNat _ (by omega), hStateOne, hW]
     simp [encodeRwLock]
-  | releaseWrite_noop c hNotWriter =>
-    unfold blockBisim
-    rw [RwLockState.applyOp_noop_releaseWrite hNotWriter]
-    simpa [concreteFoldBlock] using hSim
   | releaseWrite_effective c hW =>
     have hNoReaders : abs.readers = [] := RwLockState.wf_writerReadersExclusion hWfAbs c hW
     have hSimUnfold : conc.toNat = writerBit := by

@@ -6783,8 +6783,40 @@ example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
     (h₃ : SeLe4n.Kernel.Concurrency.QueuedStutter spin)
     (h₄ : conc.nextTicket.toNat + 1 < UInt64.size) (h₅ : ¬ conc.withdrawalPending c) :
     SeLe4n.Kernel.Concurrency.queuedBlock abs conc (.tryAcquireRead c)
-      (SeLe4n.Kernel.Concurrency.takeTicketOps c ++ spin) :=
+      (.heldLoad c :: (SeLe4n.Kernel.Concurrency.takeTicketOps c ++ spin)) :=
   .acquireRead_enqueue abs conc c spin h₁ h₂ h₃ h₄ h₅
+-- PR #890 review round 2: the held words.  The relation has a fifth conjunct
+-- that represents the holders, every acquire and release block opens with the
+-- held-word load, and the four no-op blocks are that one load, derived from
+-- the relation rather than assumed of a stutter no code path performed.
+#check @SeLe4n.Kernel.Concurrency.queuedHeldSim
+#check @SeLe4n.Kernel.Concurrency.queuedHeldSim.copy
+#check @SeLe4n.Kernel.Concurrency.QueuedRwLockOp.heldLoad
+#check @SeLe4n.Kernel.Concurrency.QueuedRwLockOp.heldStore
+#check @SeLe4n.Kernel.Concurrency.releaseReadOps
+#check @SeLe4n.Kernel.Concurrency.heldLoad_stutter
+#check @SeLe4n.Kernel.Concurrency.queuedFoldBlock_heldLoad_cons
+-- Relation anchors: the fifth conjunct IS the held relation; a release by a
+-- non-holder IS the one load; a re-acquire no-op REQUIRES holding, not mere
+-- involvement; and the effective release clears the word BEFORE the count
+-- moves.  Each keeps every name above and fails if its relation is broken.
+example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
+    (conc : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete)
+    (h : SeLe4n.Kernel.Concurrency.queuedSim abs conc) :
+    SeLe4n.Kernel.Concurrency.queuedHeldSim abs conc := h.2.2.2.2
+example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
+    (conc : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (h : c ∉ abs.readers) :
+    SeLe4n.Kernel.Concurrency.queuedBlock abs conc (.releaseRead c) [.heldLoad c] :=
+  .releaseRead_noop abs conc c h
+example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
+    (conc : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (h : c ∈ abs.readers ∨ abs.writerHeld = some c) :
+    SeLe4n.Kernel.Concurrency.queuedBlock abs conc (.tryAcquireRead c) [.heldLoad c] :=
+  .acquireRead_noop abs conc c h
+example (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    SeLe4n.Kernel.Concurrency.releaseReadOps c
+      = [.heldLoad c, .heldStore c none, .stateFetchSubReader c, .sev c] := rfl
 #check @SeLe4n.Kernel.Concurrency.queuedRwLock_refines_rwLockSpec
 #check @SeLe4n.Kernel.Concurrency.queuedRwLock_admits_in_spec_order
 EOF'

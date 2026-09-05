@@ -65,6 +65,27 @@
 //! A future cut that wants this lock gone must retire the harness's
 //! cross-implementation check with it, and say so.
 //!
+//! ## Caller contract: not re-entrant, and release only what you hold
+//!
+//! This lock keeps **no holder bookkeeping**, so none of the spec's
+//! no-ops is one here: `acquire_read` by a core already reading takes a
+//! second count, `acquire_read` by the core holding the writer bit parks
+//! that core on its own bit, `release_read` by a non-holder is an
+//! unconditional `fetch_sub` that poisons the word (fail-locked, see
+//! `release_read`), and `release_write` by a non-writer clears a bit
+//! another core may own.  The refinement bridge
+//! (`SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean`, `honestBlock`)
+//! therefore has **no block** for any of those calls: its trace-level
+//! theorems cover exactly the traces in which every acquire is by an
+//! uninvolved core and every release by the holder, which is this lock's
+//! contract and what its `debug_assert`s police (PR #890 review round 2 —
+//! the bridge used to carry four `_noop` blocks describing a stutter this
+//! code never performs).  The Tier-5 oracle issues neither call to this
+//! lock.  The deployed [`crate::queued_rw_lock::QueuedRwLock`] is
+//! different: its per-core held word implements the spec's no-ops, which
+//! is what the two-phase-locking unwind relies on, and one more reason it
+//! is the deployed one.
+//!
 //! ## ARM ARM citations
 //!
 //! * `state.load(Acquire)` — `LDAR` (ARM ARM C6.2.142): acquire-load with

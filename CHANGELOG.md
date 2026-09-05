@@ -133,6 +133,65 @@ which records NOT RUN; the "executed" lines are gone, since the gate's own
 record is the evidence.  The third is the same shape in three scripts, and
 the sweep rule says fix the siblings when the finding names one.
 
+### Review round 2 (Codex, on `7a7f9bfc`)
+
+Two findings.  **(1) A release by a non-holder was the spec's no-op and not
+the deployed lock's.**  `QueuedRwLock::release_read` was an unconditional
+`fetch_sub` and `release_write` an unconditional clear-and-pass-turn, so a
+non-holder's release in a release build underflowed the reader count or handed
+the turn on while the real writer still held; the refinement's four `_noop`
+blocks described a stutter no code path performed; and the two-phase-locking
+unwind (LC4) releases every member of a footprint, holding or not, relying on
+exactly the identity the lock did not implement.  The lock now carries one
+`held` word per core (`HELD_NONE` / `HELD_READ` / `HELD_WRITE`), set at
+admission and cleared at release, and every entry point reads the caller's
+word before it touches anything else: a holder re-acquiring returns, a
+non-holder releasing returns.  `build.rs` pins the order — the word is read
+before the state word moves in both releases
+(`scan_queued_rw_lock_protocol_intact`, third check).  On the Lean side
+`QueuedRwLockConcrete` carries the words as `heldRead` / `heldWrite`, the
+alphabet gains `heldLoad` / `heldStore`, `queuedSim` gains its fifth conjunct
+`queuedHeldSim` (a core's word reads `HELD_READ` iff the spec has it as a
+reader, `HELD_WRITE` iff the spec's writer is that core), every acquire and
+release block opens with the held load, the four `_noop` blocks *are* that
+load and are derived in `queuedBlock_preserves_queuedSim`, `skipDeadOps_spec`
+and `readerAdmitFrom_spec` say what the words do, and
+`promoteFrom_preserves_queuedSim` takes the post-clear quiescence it needs.  A
+queued waiter re-acquiring has no block: the lock has no branch for it, and
+the one-outstanding-ticket contract is what rules the call out.  The CAS-retry
+`rw_lock.rs` keeps no holder bookkeeping, so the same claim was false there in
+four places and one more: `honestBlock`'s four `_noop` constructors and
+`opCorresponds.noop` are gone, and that lock's module docs state the caller
+contract its trace-level theorems now cover exactly.  The Tier-5 oracle issues
+a non-holder's release and a holder's re-acquisition to the real ticket lock —
+it used to gate both itself, so the lock was never asked — and holds every
+core's word to the spec's holders after each op (`check_holders`); the
+CAS-retry lock is still sent neither.  **(2) The loom gate did not enumerate
+what the plan's acceptance criterion named.**  "`cfg(loom)` runs pass on
+op-sequences of length ≤ 4" was satisfied by eleven handwritten scenarios.
+`every_pair_of_units_is_safe` is the enumeration: every unordered pair of the
+lock's seven operation units — the fused and split acquisitions in both modes,
+both non-blocking attempts, and a withdrawal followed by the unwind — one unit
+per thread, at most four lock operations, unbounded; and
+`unwind_by_a_non_holder_never_touches_the_holder` is finding (1)'s scenario.
+Thirteen models, about a minute.  The plan's D-5 rows are restated as that
+enumeration.  Decisiveness, in the project's own discipline: keeping a
+release's held-word load *and* comparison and dropping only its early return
+leaves every token in place and fails both new models at the release's own
+`debug_assert`; the other tempting mutation, the load moved below the state
+write, is refused by `build.rs` before loom could see it.  Both were run.  The
+host lane found the word's one corollary: the per-CPU stub answers core 0 to
+every std thread, so `lock_bridge`'s cross-thread tests were four threads
+acting as one PE, and with the word that is one PE re-acquiring — a reader
+count stranded, a writer spinning on it, three readers parked behind the
+writer's ticket.  A std thread is a PE now: `per_cpu::HostCoreIdentity`
+(test-only) gives each spawned thread its own id, and the bridge's module
+docs say the id *decides* rather than that no admission decision reads it.
+The Tier 3 anchors pin the relation, not the names: the fifth conjunct is the held
+relation, a non-holder's release block is the one load, a re-acquire no-op
+requires *holding* rather than involvement, and `releaseReadOps` clears the
+word before the count moves.
+
 Refs: docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md §5 (closure audit)
 
 ## v0.34.54 — the lock execution learns what a step costs

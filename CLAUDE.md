@@ -203,10 +203,10 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~52951 lines)
+- `CHANGELOG.md` (~53342 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22582 lines)
-- `tests/SmpInformationFlowSuite.lean` (~11788 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~8882 lines)
+- `tests/SmpInformationFlowSuite.lean` (~11797 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9161 lines)
 - `SeLe4n/Kernel/API.lean` (~6926 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5742 lines)
 - `SeLe4n/Platform/Boot.lean` (~5724 lines)
@@ -215,11 +215,11 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5001 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4750 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
-- `docs/spec/SELE4N_SPEC.md` (~4564 lines)
+- `docs/spec/SELE4N_SPEC.md` (~4687 lines)
 - `SeLe4n/Model/State.lean` (~4503 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
+- `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~4126 lines)
 - `tests/NegativeStateSuite.lean` (~4115 lines)
-- `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~4076 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3919 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRead.lean` (~3788 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (~3456 lines)
@@ -227,6 +227,7 @@ To find files that need pagination today, run:
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
 - `tests/SmpTlbShootdownSuite.lean` (~3354 lines)
 - `tests/OperationChainSuite.lean` (~3290 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (~3270 lines)
 - `SeLe4n/Testing/MainTraceHarness.lean` (~3216 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~3210 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean` (~3159 lines)
@@ -239,7 +240,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Platform/FFI.lean` (~2930 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~2844 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2784 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (~2776 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~2755 lines)
 - `SeLe4n/Kernel/Capability/Operations.lean` (~2674 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2639 lines)
@@ -297,7 +297,7 @@ To find files that need pagination today, run:
 - `tests/FaultHandlingSuite.lean` (~1660 lines)
 - `tests/SmpIpcSuite.lean` (~1660 lines)
 - `tests/SyscallDispatchSuite.lean` (~1645 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` (~1640 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` (~1620 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1508 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~1491 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~1488 lines)
@@ -305,6 +305,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
+- `tests/SmpSurfaceAnchors.lean` (~1443 lines)
 - `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1425 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~1423 lines)
 - `docs/dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` (~1414 lines)
@@ -316,7 +317,6 @@ To find files that need pagination today, run:
 - `tests/LockSetSuite.lean` (~1377 lines)
 - `docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` (~1370 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
-- `tests/SmpSurfaceAnchors.lean` (~1352 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
 - `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1326 lines)
 - `tests/FrozenOpsSuite.lean` (~1324 lines)
@@ -2112,8 +2112,9 @@ code may assume:
   three reasons recorded in its own module docs: it is the Tier-5 oracle's
   second implementation (the oracle drives *both* real locks and checks them
   against each other, against the ticket interval, the served ticket's
-  liveness and the per-core withdrawal slots, and against `encodeRwLock`
-  after every operation — and it *excludes*, counted and under a ceiling
+  liveness, the per-core withdrawal slots and the per-core held words, and
+  against `encodeRwLock` after every operation — and it *excludes*, counted
+  and under a ceiling
   rather than silently, a trace that asks a core to acquire while its own
   withdrawal is unclaimed, which parks on hardware and no single-threaded
   replay can execute), it owns the `WRITER_BIT` / `READER_MASK` layout
@@ -2245,6 +2246,57 @@ code may assume:
   `ffiRwLockCompleteRead`, `ffiRwLockCompleteWrite`, `ffiRwLockCancel` and
   `ffiRwLockCancelCount` join the sixteen SM2.D symbols, reconciled across the
   three surfaces by `scripts/check_lock_ffi_symmetry.sh`.
+- **A release by a non-holder, and a re-acquisition by a holder, are the
+  deployed lock's no-ops — decided by its held word, not by the caller**
+  (PR #890 review round 2).  `QueuedRwLock` carries one `held` word per core
+  (`HELD_NONE` / `HELD_READ` / `HELD_WRITE`), set at the core's admission and
+  cleared at its release, and `acquire_read` / `acquire_write` /
+  `release_read` / `release_write` each read the caller's word before they
+  touch anything else: a holder re-acquiring returns, a non-holder releasing
+  returns.  Before the word existed `release_read` was an unconditional
+  `fetch_sub` and `release_write` an unconditional clear-and-pass-turn, so a
+  non-holder's release in a release build underflowed the reader count or
+  handed the turn on while the real writer still held — and the
+  two-phase-locking unwind (`unwindAll`, next bullet) releases **every**
+  member of a footprint, holding or not, relying on exactly the identity the
+  lock did not implement, while the refinement claimed it as a stutter no
+  code path performed.  Four things new code must respect.  (1) **The
+  relation now represents the holders**: `queuedSim`'s fifth conjunct is
+  `queuedHeldSim` — a core's word reads `HELD_READ` iff the spec has it as a
+  reader and `HELD_WRITE` iff the spec's writer is that core — so the four
+  `_noop` blocks of `queuedBlock` are the one held-word load and are
+  *derived* in `queuedBlock_preserves_queuedSim`; every acquire and release
+  block opens with that load (`heldLoad`), and the effective releases clear
+  the word (`heldStore c none`) **before** the state word moves, an order
+  `build.rs` pins (`scan_queued_rw_lock_protocol_intact`, its third check).
+  (2) **A queued waiter re-acquiring has no block**: the spec no-ops on it
+  and the lock has no branch for it — the core is inside its own
+  acquisition, or holds a split-API ticket it must terminate first — so the
+  one-outstanding-ticket contract (`ledgerCoresNodup`) is what rules the
+  call out, and `queuedBlock` says so by having no shape rather than a
+  fictional stutter.  (3) **The CAS-retry `rw_lock.rs` has no such no-ops
+  and its bridge no longer claims them**: it keeps no holder bookkeeping, so
+  its four `honestBlock` `_noop` constructors and `opCorresponds.noop` —
+  each a `[]` block for a call on which that code performs an atomic access
+  — are gone, and its trace-level theorems cover exactly the traces that
+  respect its caller contract (acquire only while uninvolved, release only
+  what you hold), stated in its module docs.  (4) **The gates ask the lock
+  the question.**  The Tier-5 oracle issues a non-holder's release and a
+  holder's re-acquisition to the real ticket lock and holds every core's
+  word to the spec's holders after each op (`check_holders`); a queued
+  waiter's re-acquisition is issued to neither lock, and the CAS-retry lock
+  is sent neither call.  On the host a std thread stands in for a PE and the
+  per-CPU stub answers core 0 to every thread, so the bridge's cross-thread
+  tests give each thread its own PE identity (`per_cpu::HostCoreIdentity`,
+  test-only): several threads under one id are one PE issuing overlapping
+  acquisitions, which the held word turns into no-ops and stranded counts —
+  the first host lane after the word landed hung in exactly that shape.
+  The loom gate gained
+  `unwind_by_a_non_holder_never_touches_the_holder` and
+  `every_pair_of_units_is_safe` — every unordered pair of the lock's seven
+  operation units on two threads, unbounded, which is the SM2.C-defer plan's
+  "op-sequences of length ≤ 4" acceptance criterion stated as the
+  enumeration it always should have been — so the model count is thirteen.
 - **The two-phase-locking shrinking phase withdraws before it releases**
   (WS-LC LC4, v0.34.53).  `withLockSet`'s third phase and the revalidated
   entry's refusal path are both `unwindAll` — one definition, so the two

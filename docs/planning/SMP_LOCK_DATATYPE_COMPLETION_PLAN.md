@@ -210,6 +210,20 @@ ceiling) a trace that asks a core to acquire while its own withdrawal is
 unclaimed.  Not a new sub-task: LC3's rows stand as written, this is the
 correction the closure audit owed them.
 
+**PR #890 review round 2** (same version) found that the identity LC4 relies
+on — a release by a non-holder changes nothing — was the spec's and not the
+deployed lock's: `release_read` was an unconditional `fetch_sub`, and the
+refinement's `_noop` blocks described a stutter no code path performed.
+`QueuedRwLock` now carries one held word per core, read by every entry point
+before anything else; `queuedSim` gains the conjunct `queuedHeldSim` and the
+no-op blocks are derived from it; the CAS-retry bridge drops its four `_noop`
+constructors and states that lock's caller contract instead; the Tier-5
+oracle issues both no-ops to the ticket lock and checks every core's word
+(`check_holders`); and the loom gate enumerates every pair of the lock's
+operation units (`every_pair_of_units_is_safe`), which is what the D-5
+"op-sequences of length ≤ 4" criterion now says.  Again not a new sub-task:
+LC3's and LC4's rows stand.
+
 ## 6. LC4 — the two-phase-locking consumers
 
 **Acceptance**: a refused revalidated entry withdraws every request its growing

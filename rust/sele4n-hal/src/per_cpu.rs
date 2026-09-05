@@ -303,9 +303,15 @@ pub fn per_cpu_slot_addr(context_id: usize) -> usize {
 ///
 /// # Host (non-aarch64) behaviour
 ///
-/// On hosts the function returns `&PER_CPU_DATA[0]` (the boot core's
-/// slot), which is the only slot any host test ever touches.  This
-/// matches `cpu::current_core_id()`'s host stub (returns 0).
+/// On hosts a std thread stands in for a PE.  The function returns
+/// `&PER_CPU_DATA[0]` (the boot core's slot) — matching
+/// `cpu::current_core_id()`'s host stub (returns 0) — unless a test has
+/// given the calling thread another PE's identity through
+/// [`HostCoreIdentity`] (PR #890 review round 2).  The host lane's
+/// multi-threaded lock tests must do so: the deployed lock's per-core
+/// state (its held word, and since WS-LC LC3 its withdrawal slot) makes
+/// the id load-bearing, and two threads sharing one id are one PE
+/// re-acquiring, which the spec and the lock both treat as a no-op.
 #[inline(always)]
 pub fn current_per_cpu() -> &'static PerCpuData {
     #[cfg(target_arch = "aarch64")]
@@ -337,9 +343,80 @@ pub fn current_per_cpu() -> &'static PerCpuData {
     }
     #[cfg(not(target_arch = "aarch64"))]
     {
-        // Host stub: every test runs on the simulated boot core.
-        // This matches `cpu::current_core_id()`'s host return of 0.
-        &PER_CPU_DATA[0]
+        // Host stub: the calling std thread's simulated PE — the boot
+        // core unless a test adopted another identity for the thread.
+        &PER_CPU_DATA[host_core_slot()]
+    }
+}
+
+/// **PR #890 review round 2**: the `PER_CPU_DATA` slot the calling host
+/// thread reads as its own.
+///
+/// Outside `cfg(test)` there is no override at all — the oracle and the
+/// other `host_tools` binaries are single-threaded and are the boot core,
+/// as before.  Under `cfg(test)` the slot is the thread's adopted
+/// identity, boot core by default.
+#[cfg(not(target_arch = "aarch64"))]
+#[inline(always)]
+fn host_core_slot() -> usize {
+    #[cfg(test)]
+    {
+        HOST_CORE_IDENTITY.with(|slot| slot.get())
+    }
+    #[cfg(not(test))]
+    {
+        0
+    }
+}
+
+#[cfg(all(not(target_arch = "aarch64"), test))]
+extern crate std;
+
+#[cfg(all(not(target_arch = "aarch64"), test))]
+std::thread_local! {
+    /// The PE this std thread stands in for; read by [`current_per_cpu`]
+    /// and set only through [`HostCoreIdentity::adopt`].
+    static HOST_CORE_IDENTITY: core::cell::Cell<usize> = const { core::cell::Cell::new(0) };
+}
+
+/// **PR #890 review round 2 (test-only)**: give the calling std thread
+/// the identity of PE `core` until the guard drops.
+///
+/// One thread per PE is the hardware's shape: `TPIDR_EL1` names the PE a
+/// kernel path executes on, and no two concurrent kernel paths share
+/// one.  A host test that spawns several threads and lets them all read
+/// slot 0 describes no machine — it is one PE issuing overlapping
+/// acquisitions, on which the deployed lock's per-core held word makes
+/// every re-acquisition the spec's no-op and every release clear the
+/// *thread's neighbour's* hold.  The first host lane after the held
+/// word landed hung in exactly that shape (`lock_bridge`'s cross-thread
+/// tests), so the tests now adopt distinct identities, and this guard is
+/// how.  Nested adoption restores the previous identity on drop.
+#[cfg(all(not(target_arch = "aarch64"), test))]
+pub struct HostCoreIdentity {
+    previous: usize,
+}
+
+#[cfg(all(not(target_arch = "aarch64"), test))]
+impl HostCoreIdentity {
+    /// Adopt PE `core`'s identity on the calling thread.  Panics on an
+    /// id outside `PER_CPU_DATA`, which no PE has.
+    #[must_use = "the identity lasts only as long as the guard"]
+    pub fn adopt(core: usize) -> Self {
+        assert!(
+            core < PER_CPU_DATA.len(),
+            "host core identity {core} out of range (coreCount = {})",
+            PER_CPU_DATA.len()
+        );
+        let previous = HOST_CORE_IDENTITY.with(|slot| slot.replace(core));
+        Self { previous }
+    }
+}
+
+#[cfg(all(not(target_arch = "aarch64"), test))]
+impl Drop for HostCoreIdentity {
+    fn drop(&mut self) {
+        HOST_CORE_IDENTITY.with(|slot| slot.set(self.previous));
     }
 }
 
@@ -681,6 +758,38 @@ mod tests {
         // host stub (returns 0).
         let pcd = current_per_cpu();
         assert_eq!(pcd.core_id, 0);
+    }
+
+    /// PR #890 review round 2: an adopted identity is the thread's own
+    /// — another thread still reads the boot core — and it ends with
+    /// the guard, restoring what the thread had before.
+    #[test]
+    fn host_core_identity_is_per_thread_and_scoped() {
+        let outer = HostCoreIdentity::adopt(1);
+        assert_eq!(current_core_id_from_tpidr(), 1);
+        {
+            let _inner = HostCoreIdentity::adopt(3);
+            assert_eq!(current_core_id_from_tpidr(), 3);
+            assert_eq!(current_per_cpu().core_id, 3);
+        }
+        assert_eq!(current_core_id_from_tpidr(), 1, "nested guard restores");
+        let seen_elsewhere = std::thread::spawn(current_core_id_from_tpidr)
+            .join()
+            .expect("thread panicked");
+        assert_eq!(seen_elsewhere, 0, "identity does not leak across threads");
+        drop(outer);
+        assert_eq!(
+            current_core_id_from_tpidr(),
+            0,
+            "guard restores the boot core"
+        );
+    }
+
+    /// No PE has an id outside `PER_CPU_DATA`, so none can be adopted.
+    #[test]
+    #[should_panic(expected = "out of range")]
+    fn host_core_identity_rejects_an_id_no_pe_has() {
+        let _guard = HostCoreIdentity::adopt(PER_CPU_DATA.len());
     }
 
     #[test]

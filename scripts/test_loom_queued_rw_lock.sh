@@ -29,7 +29,7 @@
 # WS-LC LC3.3/LC3.4 — the withdrawal models, and what makes them decisive
 # ---------------------------------------------------------------------
 #
-# Six of the eleven models cover `QueuedRwLock::cancel`.  They are not
+# Six of the thirteen models cover `QueuedRwLock::cancel`.  They are not
 # decorative: the *first* version of that function failed two of them,
 # and the reported state was the one they are written to catch —
 # `now_serving` one short of `next_ticket`, the withdrawal slot still
@@ -77,6 +77,32 @@
 #      `take_ticket` is NOT a relation break — the wait still precedes
 #      the second `cancel`, which is the write that overwrote — and the
 #      model correctly passes it.)
+#
+# PR #890 review round 2 — the no-ops, and the enumeration
+# ----------------------------------------------------------
+#
+# Two models.  `unwind_by_a_non_holder_never_touches_the_holder` runs the
+# two-phase-locking unwind — withdraw, then both releases — on a core that
+# holds nothing, against a core that holds the writer bit: the lock's
+# per-core held word must make both releases return, and before the word
+# existed `release_read` was an unconditional `fetch_sub` that the refinement
+# had described as a stutter.  `every_pair_of_units_is_safe` is the
+# enumeration the acceptance criterion cited in the header always asked for:
+# every unordered pair of the lock's seven operation units — the fused and
+# split acquisitions in both modes, both non-blocking attempts, and a
+# withdrawal followed by the unwind — one unit per thread, at most four lock
+# operations, unbounded.  The handwritten models are scenarios; this is the
+# closure, and a unit added to the lock's list is paired with every other
+# automatically.
+#
+# Their decisiveness mutation keeps the held-word load *and* the comparison
+# in `release_read` (and, separately, in `release_write`) and drops only the
+# early return, so every token a presence check would look for survives and
+# the branch decides nothing.  Both models fail under either mutation, at the
+# release's own `debug_assert` on the underflowed count or the cleared writer
+# bit.  The other tempting mutation — the load moved below the state write —
+# is refused by `build.rs` before loom could see it, so it is not the one to
+# quote for this gate.
 
 set -euo pipefail
 
@@ -96,7 +122,7 @@ fi
 # interleaving when it is unset; the first cut pinned it at 3, which omits
 # every schedule needing four or more preemptions — and the operations under
 # test have many atomic and yield points, so a two-operation model does not
-# imply a three-preemption bound.  Unbounded, the eleven models take ~35 s;
+# imply a three-preemption bound.  Unbounded, the thirteen models take about a minute;
 # bounded at 3 they took under a second.  The gate is the unbounded run.  A
 # caller may still set `LOOM_MAX_PREEMPTIONS=n` in the environment for a
 # quick local pass, and that pass is not the gate — say so when quoting it.

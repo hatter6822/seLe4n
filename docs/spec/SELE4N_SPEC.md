@@ -51,9 +51,9 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.34.55` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 328,592 across 311 Lean files |
-| **Test LoC** | 68,685 across 70 Lean test suites |
-| **Proved declarations** | 10,936 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 328,905 across 311 Lean files |
+| **Test LoC** | 68,717 across 70 Lean test suites |
+| **Proved declarations** | 10,944 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -742,6 +742,23 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    the pool was repointed, so no released version carried an
    unrefined core lock.
 
+   *The relation represents the holders, and the no-ops are derived.*
+   `QueuedRwLock` keeps one held word per core (PR #890 review
+   round 2), set at admission and cleared at release, and every
+   entry point reads the caller's word before it touches anything
+   else: a holder re-acquiring and a non-holder releasing both
+   return.  `queuedSim`'s fifth conjunct `queuedHeldSim` relates the
+   words to `readers` / `writerHeld`, so the four `_noop` shapes of
+   `queuedBlock` are the one held-word load and follow from the
+   relation rather than being asserted of a stutter no code path
+   performed — which is the identity the two-phase-locking unwind
+   (`unwindAll`, WS-LC LC4 below) relies on at every footprint
+   member the core did not hold.  The CAS-retry `rw_lock.rs` keeps
+   no such word: its `honestBlock` has no `_noop` constructor, and
+   its trace-level theorems cover exactly the traces that respect
+   its caller contract (acquire only while uninvolved, release only
+   what you hold).
+
    **Rust impl** (`rust/sele4n-hal/src/rw_lock.rs`): bit-packed
    `RwLock` `#[repr(C, align(64))]` with one `AtomicU64` `state`
    field.  Public API: `acquire_read` / `release_read` /
@@ -964,7 +981,11 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    orders are correct on a well-formed state, but the release
    arms promote *from* the wait queue, so under release-first a
    core still queued when its own release runs can be promoted
-   into a holder slot the withdrawal has already passed.
+   into a holder slot the withdrawal has already passed.  The
+   first identity is the deployed lock's and not only the spec's
+   since PR #890 review round 2: `QueuedRwLock`'s held word makes a
+   non-holder's `release_*` return before it touches the state
+   word (see the refinement bridge above).
    `unwindAll_leaves_no_queued_request` is the payoff: the
    unwinding core has no queued request at any member of the
    footprint, with no distinctness and no resolvability condition

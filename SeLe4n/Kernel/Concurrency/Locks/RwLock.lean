@@ -5111,7 +5111,17 @@ sequences (closes audits M-5 / M-6):
 The constructors below enumerate the base "success" shapes; the
 inductive `tryRead_cas_retry` / `tryRead_park_retry` /
 `tryWrite_cas_retry` / `tryWrite_park_retry` constructors close the
-family under contention-retry. -/
+family under contention-retry.
+
+**No shape corresponds to the spec's no-ops** — a re-acquire by an
+involved core, or a release by a non-holder (PR #890 review round 2).
+`rw_lock.rs` keeps no holder bookkeeping, so on those calls it performs
+an atomic access the spec does not (a second count, an underflowing
+`fetch_sub`, a cleared writer bit); the empty block a `noop` constructor
+used to claim for them was a stutter no code path performs.  Those calls
+are outside that lock's caller contract, stated in its module docs, and
+the trace-level theorems in `Locks/RwLockRefinement.lean` cover exactly
+the traces that respect it. -/
 inductive opCorresponds : RwLockOp → List ConcreteRwLockOp → Prop where
   /-- tryAcquireRead success: load + CAS-success. -/
   | tryRead_success (c : CoreId) (e n : UInt64) :
@@ -5167,14 +5177,6 @@ inductive opCorresponds : RwLockOp → List ConcreteRwLockOp → Prop where
   /-- **WS-RR RR6.16**: `tryAcquireWrite` enqueues.  Symmetric. -/
   | tryWrite_enqueue (c : CoreId) :
       opCorresponds (.tryAcquireWrite c) [.load c, .wfeWait c]
-  /-- **WS-RR RR6.16**: the abstract **no-op** outcomes.
-  `applyOp` no-ops when the acquiring core is already involved, when a
-  releasing core holds nothing, or when a releasing core is not the
-  writer.  The implementation performs no atomic access on any of those
-  paths (the RAII guards make the release cases unreachable and the
-  `debug_assert`s reject them), so the corresponding block is empty. -/
-  | noop (op : RwLockOp) :
-      opCorresponds op []
   /-- A **withdrawal**, on a lock with no queue.
 
   `rw_lock.rs` is the CAS-retry implementation: a core that fails to

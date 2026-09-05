@@ -253,6 +253,15 @@ releases — the order is what lets `unwindAll_leaves_no_queued_request` hold wi
 no distinctness or resolvability condition on the footprint. The bracket stays
 invisible to every observer, so the golden trace is byte-identical.
 
+The identity that unwind relies on — a release by a non-holder changes nothing
+— is the deployed lock's own since PR #890 review round 2, not only the spec's:
+`QueuedRwLock` keeps a held word per core, every entry point reads the caller's
+word first, and `queuedSim`'s fifth conjunct (`queuedHeldSim`) relates the
+words to `readers` / `writerHeld`, so the bridge's four no-op blocks are the one
+held-word load, derived from the relation rather than asserted of a stutter the
+code never performed. The CAS-retry bridge makes the opposite honest choice for
+the undeployed lock: no no-op block at all, and a stated caller contract.
+
 And a delay bound now names its denominator. `RwLockExecution` carries a per-step
 cost (v0.34.54), so the admission and contention bounds have cycle-denominated
 forms alongside the step forms — each conditional on a per-critical-section
