@@ -388,7 +388,7 @@ To find files that need pagination today, run:
 - `tests/WithLockSetSuite.lean` (~809 lines)
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
-- `docs/planning/HIERARCHICAL_CBS_PLAN.md` (~2291 lines)
+- `docs/planning/HIERARCHICAL_CBS_PLAN.md` (~2381 lines)
 - `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` (~800 lines)
 This bullet block is a **curated snapshot**, not a static enumeration.
 `scripts/find_large_lean_files.sh --check` (called from
@@ -1295,7 +1295,7 @@ caller-supplied deadline to the bound thread under the SchedContext write right
 alone, with no caller-MCP check (CB0.3, CB1.6); and the live tick's exhaustion
 arm schedules a refill of at most one tick, so a bound thread receives about one
 tick per period after its first window (CB1.6, which moves the engine to
-per-window refills).  Eight review rounds on the planning PR reshaped the design
+per-window refills).  Nine review rounds on the planning PR reshaped the design
 before any code exists — a transitive tie-break, a key-worsening reschedule
 seam, reconfiguration that never mints budget, every reservation move
 re-admitted per core, label uniformity over bindings, inheritance for bound

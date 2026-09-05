@@ -44,7 +44,7 @@ tick-quantised with no new upcall and no ABI version change; and every
 generalising sub-task after CB1 carries the theorem that the model is
 unchanged on states without servers.
 
-Eight automated review rounds on the planning PR (sixty-five findings)
+Nine automated review rounds on the planning PR (seventy findings)
 reshaped the design before any code exists, and the plan's §14 records each
 finding against its fix — and, after the fifth, the classes the findings fell
 into and the rule that closes each class rather than its instances (§14): a transitive tie-break (`scId` in the EDF class, the
@@ -118,8 +118,16 @@ return, so a donated leaf admits no other departure until then; the bind
 scheduling point landing in the engine cut whose rule can leave a current
 thread ineligible, and the liveness restatement in the order switch it
 describes; the observer projection erasing per object rather than per field,
-so a visible tree is visible whole; and the status flip confined to the last
-closure row.
+so a visible tree is visible whole; the donation owner read by one accessor
+wherever a rule needs it, so the charged cores of a donated leaf are the
+donee's and the owner's rather than the donee's twice; a ledger in the
+schedule of every specification symbol's defining row, since three rounds
+found a definition assigned to the row where it first mattered and the plan
+gate cannot see a symbol; the reschedule seam given a footprint every caller
+composes, where the hierarchy footprints had listed object locks while their
+transitions ended with a scheduling point; the flag-to-SGI theorem stated over
+remote cores, with the executing core's own flag consumed by its next
+scheduling point; and the status flip confined to the last closure row.
 
 Three things the survey behind the plan found in the flat tree, all recorded
 in the plan (§1.1, §3.3) and in the debt register:
