@@ -149,20 +149,25 @@ documentation and test work can take alongside the port.  The phase figure
 is therefore **14–24 weeks**, and the width is honest: items 5 and 13
 dominate it, and neither has a precedent in this tree to calibrate against.
 
-**Why the runtime port is sized here but not yet numbered.**  Numbering
-rows 2–13 as sub-tasks of SM10.1 would move the image build off
-`SM10.1.1`, and `SM10.1.1` is bound to "the image build" by three
-`CHANGELOG.md` entries — the citations this plan's own re-sequencing note
-says must never be silently repurposed, and which CLAUDE.md treats as
-frozen once they appear.  The two rules collide: *numbering is execution
-order* wants the port first, *IDs in CHANGELOG entries are frozen* wants
-`SM10.1.1` unchanged.  The register's own remediation for finding 42
-resolves it — "split SM10.1 out of the release-closure plan into its own
-phase with a proper PR sequence" — which is a restructuring of SM10, with
-its own prefix and no repurposed ID.  **That split is SM10's opening act**,
-and doing it inside a remediation phase's early row would renumber a phase
-that has not opened on the authority of a sub-task sized S.  The sizing is
-what RR1.11 owed the estimate; the numbering has an owner and a place.
+**Where the runtime port is numbered — `WS-BP`.**  Numbering rows 2–13 as
+sub-tasks of SM10.1 would move the image build off `SM10.1.1`, and
+`SM10.1.1` is bound to "the image build" by three `CHANGELOG.md` entries —
+citations CLAUDE.md treats as frozen once they appear.  The two rules
+collide: *numbering is execution order* wants the port first, *IDs in
+CHANGELOG entries are frozen* wants `SM10.1.1` unchanged.  The register's
+remediation for finding 42 resolves it — "split SM10.1 out of the
+release-closure plan into its own phase with a proper PR sequence" — and
+the resolution this note named is the one taken: **its own prefix and no
+repurposed ID**.
+
+WS-RR RR7.5 + RR7.15 landed that split at `v0.34.59`:
+[`SMP_BOOT_PATH_PLAN.md`](SMP_BOOT_PATH_PLAN.md) sequences the port as
+**34 sub-tasks across 8 phases `BP1..BP8`**, in execution order, with
+findings 19, 32 and 40–44 each scheduled to a named row.  Nothing here is
+renumbered: `SM10.1.1` still means the image packaging, and `BP5.3` is the
+sub-task that produces what it packages.  The rows above stay as this
+plan's *sizing* — the estimate they support is unchanged — and the schedule
+lives in the plan that owns the work.
 
 ## 2. Dependencies
 
@@ -295,6 +300,14 @@ context-restore seam.  **Everything downstream consumes this**, which is why
 it is first: `SM10.3.7`'s 4-core boot fixture cannot be generated without an
 image, `SM10.3.10`'s Tier-4 gate reports NOT RUN until one exists, and
 `SM10.5` boots the artefact this phase produces.
+
+**The port itself is planned in
+[`SMP_BOOT_PATH_PLAN.md`](SMP_BOOT_PATH_PLAN.md)** (WS-BP, 34 sub-tasks
+across `BP1..BP8`), which is where its schedule, its acceptance gate and its
+risk inventory live.  `SM10.1.1` below is unchanged and remains the release
+cut's row for the image *packaging*; `BP5.3` is the sub-task that produces
+it, and the two ids name one deliverable from the two plans that care about
+it.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|

@@ -1,3 +1,94 @@
+## v0.34.59 — the boot path becomes a plan
+
+**WS-RR RR7.5 + RR7.15** — the medium sweep's boot-path rows (register §6
+findings 19, 32, 40–44).  Every one of them is the same complaint in a
+different place: SM10.1 owes work that no plan schedules.  The remedy the
+register names is to schedule it, and this cut does — as a plan, not as a
+paragraph.
+
+### SM10.1 is a port, not a phase of a release cut
+
+`SMP_RELEASE_CLOSURE_PLAN.md` §1 scoped SM10 as "all substantive SMP work is
+complete; SM10 synchronizes documentation, completes the test suites, bumps
+the version".  That sentence was false of the phase's own first row: SM10.1
+is a **bare-metal Lean runtime port**, and the tree has no `[[bin]]`, no
+aarch64 Lean object code, no `libsele4n.a`, no runtime hosting, no
+`lean_kernel_main`, no RPi5 `PlatformConfig`, no TTBR0 rebind and no core
+marked ready.
+
+[`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md)
+is that port, sequenced: **WS-BP, 34 sub-tasks across 8 phases `BP1..BP8`**,
+numbered in execution order, each phase consuming only lower-numbered ones,
+with the dependency stated in the row that binds it.
+
+* `BP1` — aarch64 Lean object code: the Lake target, the cross-compile,
+  `libsele4n.a`, and the export gate pointed at the archive the image links.
+* `BP2` — bare-metal runtime hosting: a heap arena the linker script places,
+  the libc surface **derived from the cross archive's measured unresolved
+  symbols** rather than from a guessed list, the initialization handshake,
+  a fail-closed halt when it cannot complete, and host witnesses for the
+  shims.  The plan names this as its largest unknown and says what bounds it.
+* `BP3` — the RPi5 deployment: `rpi5PlatformConfig`, the root task as initial
+  objects in the shape `bootSafeObjectCheck` requires, `wellFormed`'s six
+  conjuncts by evaluation, and the two separation witnesses actually installed
+  so `declaredWitnessesInstalled` holds.  Placed *before* the boot seam,
+  because a seam with nothing to boot cannot be reviewed.
+* `BP4` — the boot seam: `@[export lean_kernel_main]` as the exact program
+  `BootEntryContract.lean` decides by `Meta.isDefEq`; the install-ordering
+  resolution (install before any secondary is released, so the lost-commit
+  race is closed by construction rather than by a lock); the DTB pointer read
+  that gives RR7.27's board check a hardware caller.
+* `BP5` — the image: the `[[bin]]`, the link (where `BP2`'s shim list stops
+  being a guess), `kernel8.img`, CI.
+* `BP6` — per-core readiness: the five dormant seams go live, and a PE that
+  does not publish readiness fails the boot rather than hanging.
+* `BP7` — the context restore: the three prerequisites
+  `contextRestoreSeamLive`'s docstring names, in the order they must land,
+  plus the cancellation/timeout delivery and the flip they gate.
+* `BP8` — first boot: QEMU, then the board, then the Tier-4 gates that have
+  never executed.
+
+### Nothing is renumbered
+
+The reason the port was sized at RR1.11 and left unnumbered was a real
+collision, stated in that plan's §1.1: *numbering is execution order* wants
+the port before the image, and *IDs in CHANGELOG entries are frozen* wants
+`SM10.1.1` to keep meaning the image build.  Renumbering would have
+repurposed an ID three CHANGELOG entries cite.
+
+WS-BP resolves it the way that note itself named — **its own prefix and no
+repurposed ID**.  `SM10.1.1` is unchanged and still means the packaging the
+release cut consumes; `BP5.3` is the sub-task that produces what it packages,
+and the plan's §8 states that invariant so a later cut cannot drift it.  Both
+rules are satisfied rather than traded off.
+
+### The acceptance gate is ticked by runs, not by artefacts
+
+Every box names an executed result: a Lean `IO` action that allocates
+completing on the target, `lean_kernel_main` **defined by the archive** rather
+than reconciled as expected-unresolved, four banners under QEMU and four on
+the board, a Tier-4 run that reports a result rather than a SKIP.  This is the
+distinction v0.34.58 had to enforce against SM1.H, where two boxes claimed a
+four-core boot no script had ever performed; stating it in the gate is cheaper
+than discovering it in an audit.
+
+### What the three prerequisites became
+
+Register finding 19's three — a `VSpaceRoot → TTBR0` binding, a full outgoing
+frame, per-core staging — are `BP7.1`/`BP7.2`, `BP7.3` and `BP7.4`, each with
+its own acceptance box, and `BP7.6` is the flip gated on all of them together
+with `BP7.5`.  `BP7.3` widens the trap frame and the spill in one sub-task
+deliberately: `writeFfiRegistersToTcb` spills `x0`–`x5` and `x7` today, and a
+restore of a half-saved context is worse than no restore.  `BP7.5` consumes
+WS-RR RR7.14's staging, and the dependency is named in both directions.
+
+Also updated: the SM10.1 rows in `docs/REGISTERED_DEBT.md` each name the BP
+sub-task that closes them; the register's §2.2 records that its "largest
+single risk" is now planned, and that planning it does not make `BP2` smaller.
+
+**Sub-tasks**: WS-RR RR7.5, RR7.15.
+**Refs**: docs/planning/SMP_BOOT_PATH_PLAN.md
+
 ## v0.34.58 — three implement-the-improvement rows, and one claim withdrawn
 
 **WS-RR RR7.16 + RR7.26 + RR7.27** — the medium sweep's three

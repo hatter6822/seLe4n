@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.58.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.59.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1360,11 +1360,37 @@ SGI INTID 0..4 reserved for kernel SMP coordination (SM0.H).
 | SM9 | CLOSED | v0.33.100 | Declassification completion — reader, refusal auditing, data-carrying signal, causal provenance, acceptance fixtures |
 | SM5 runtime seams | LANDED | v0.34.1 | The three seams SM5's docstrings promised between the verified per-core scheduler and the hardware IRQ path — IRQ vector redirect, `.reschedule` SGI receiver, secondary bring-up entry — all dormant behind the per-core `lean_ready` gate until SM10.1 |
 | WS-RR | IN FLIGHT | RR0 v0.34.26; RR1 v0.34.41; RR2 v0.34.42; RR3 v0.34.43; RR4 v0.34.44; RR5 v0.34.48; RR6 v0.34.50 | Pre-SM10 remediation: the audit's 3 blockers, 11 security findings, fault IPC, de-threading closure, lock completion (187 subs across RR0..RR8) |
-| SM10 | BLOCKED on WS-RR | — | Release closure (→ v1.0.0) |
+| SM10 | BLOCKED on WS-RR | — | Release closure (→ v1.0.0); SM10.1's content is **WS-BP** (see above) |
 
 **Plans**: master overview at
 [`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md);
 per-phase plans at `docs/planning/SMP_*.md`.
+
+### WS-BP The bare-metal boot path — PLANNED (registered v0.34.59)
+
+SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
+port**, and holding the two in one plan produced a phase goal ("all substantive
+SMP work is complete") that was false of the phase's own first row.  WS-RR
+RR7.5 + RR7.15 split it out: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md)
+sequences **34 sub-tasks across 8 phases `BP1..BP8`** in execution order — the
+aarch64 Lean object code, bare-metal runtime hosting, the RPi5 deployment, the
+boot seam and its install ordering, the image, per-core readiness, the context
+restore, and first boot — with an acceptance gate whose every box is ticked by
+an *executed run* rather than by an artefact existing.  No sub-task has started;
+WS-BP must not open until RR8 closes.
+
+Two things new code must respect.  **WS-BP takes its own prefix and renumbers
+nothing**: `SM10.1.1` still means the image *packaging* the release cut
+consumes, and `BP5.3` is the sub-task that produces what it packages — the
+collision between "numbering is execution order" and "IDs in CHANGELOG entries
+are frozen" resolved the way `SMP_RELEASE_CLOSURE_PLAN.md` §1.1 named it.  And
+the three `contextRestoreSeamLive` prerequisites are now scheduled rather than
+only described: `BP7.1`/`BP7.2` (the `VSpaceRoot → TTBR0` binding and its
+install), `BP7.3` (the full outgoing-frame save — `writeFfiRegistersToTcb`
+spills only x0–x5 and x7 today), `BP7.4` (per-core staging), with `BP7.6` the
+flip they gate.
+
+Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 
 ### WS-LC Lock datatype completion — COMPLETE (v0.34.51 → v0.34.55; closure audit v0.34.56)
 
