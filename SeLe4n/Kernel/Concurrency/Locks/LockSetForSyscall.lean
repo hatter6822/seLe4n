@@ -117,6 +117,54 @@ def suspendFootprintOf (st : SystemState) (callerTid targetTid : ThreadId) :
               donatedOwner consumedReply)
   | _, _ => none
 
+/-- **WS-RR RR7.10**: the operands a declared footprint is resolved from.
+
+The pre-RR7.10 resolver took `(callerTid, targetTid, st)`, and `targetTid` is a
+`ThreadId`.  That is expressible only for the thread-directed syscalls: an
+IPC arm's footprint names an **endpoint** or a **notification**, and a
+capability arm's names a **CNode**, none of which is a thread.  The one
+declared arm happened to be thread-directed, so the signature looked general
+while being unable to say what every remaining arm needs — and the caller that
+resolved the target for it (`declaredLockSetForEntry`'s `entryCapTarget`)
+reinterpreted the capability's `ObjId` *as* a thread id, which for an endpoint
+capability is a different object with the same number.
+
+The two are separate fields rather than one, because a syscall is directed at
+one or the other and never at both: `.tcbSuspend` names a victim thread,
+`.send` names an endpoint.  `message` is here because whether an IPC arm's
+footprint includes a capability-transfer destination is a property of what the
+message carries (WS-RR RR7.7), and the arms that consume it are RR7.11's.
+
+Every field is optional and defaults to absent, so a caller supplies exactly
+what its syscall is directed at and an arm that needs something absent answers
+`none` — the same fail-closed direction the module docstring describes. -/
+structure SyscallLockOperands where
+  /-- The invoking thread — its TCB, and through it the CSpace root every
+  footprint reads for capability resolution. -/
+  caller : ThreadId
+  /-- The **thread** a thread-directed syscall targets: `.tcbSuspend`'s victim,
+  `.tcbResume`'s target, `.schedContextBind`'s bound thread. -/
+  targetThread : Option ThreadId := none
+  /-- The **object** an object-directed syscall targets: the endpoint of a
+  send / call / receive / reply, the notification of a signal / wait, the CNode
+  of a capability operation, the SchedContext of a `.schedContext*` arm. -/
+  targetObject : Option ObjId := none
+  /-- The message an IPC arm carries, for the footprints whose members depend
+  on it — a caps-carrying rendezvous declares the receiver's CSpace root and
+  the state-level lock its CDT write needs, and a capless one must not. -/
+  message : Option IpcMessage := none
+
+/-- **WS-RR RR7.10**: the operands of a thread-directed syscall. -/
+def SyscallLockOperands.ofThreadTarget (caller target : ThreadId) :
+    SyscallLockOperands :=
+  { caller := caller, targetThread := some target }
+
+/-- **WS-RR RR7.10**: the operands of an object-directed syscall, with the
+message it carries. -/
+def SyscallLockOperands.ofObjectTarget (caller : ThreadId) (target : ObjId)
+    (message : Option IpcMessage := none) : SyscallLockOperands :=
+  { caller := caller, targetObject := some target, message := message }
+
 /-- **WS-SM SM3.C.9**: the declared lock-set footprint of a syscall, or
 `none` where one has not been established yet.
 
@@ -124,10 +172,14 @@ Total over `SyscallId` by construction — a new syscall variant makes
 this fail to compile rather than silently inherit a neighbour's
 footprint.  See the module docstring for why undeclared arms return
 `none` instead of an approximation. -/
-def lockSetForSyscall (sid : SyscallId) (callerTid targetTid : ThreadId)
+def lockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
     (st : SystemState) : Option LockSet :=
   match sid with
-  | .tcbSuspend => suspendFootprintOf st callerTid targetTid
+  -- WS-RR RR7.10: the victim is the operands' thread target.  With none
+  -- supplied there is no suspend to bound, so the arm answers `none` — the
+  -- same fail-closed direction as an unresolvable victim.
+  | .tcbSuspend =>
+      ops.targetThread.bind (fun victim => suspendFootprintOf st ops.caller victim)
   -- Undeclared: the caller keeps its existing serialisation.  Each of
   -- these becomes a `some` in a later cut, paired with the coverage
   -- proof that its footprint contains every write the op performs.
@@ -165,9 +217,25 @@ drops the resolver fails here rather than silently returning `none` and
 sending the caller back to coarse serialisation without anyone noticing
 the footprint stopped being declared. -/
 @[simp] theorem lockSetForSyscall_tcbSuspend
+    (ops : SyscallLockOperands) (st : SystemState) :
+    lockSetForSyscall .tcbSuspend ops st
+      = ops.targetThread.bind (fun victim => suspendFootprintOf st ops.caller victim) := rfl
+
+/-- **WS-RR RR7.10**: at a supplied thread target the arm is exactly the
+pre-RR7.10 answer, so the generalisation is a signature change and not a
+behaviour change. -/
+@[simp] theorem lockSetForSyscall_tcbSuspend_ofThreadTarget
     (callerTid targetTid : ThreadId) (st : SystemState) :
-    lockSetForSyscall .tcbSuspend callerTid targetTid st
+    lockSetForSyscall .tcbSuspend (.ofThreadTarget callerTid targetTid) st
       = suspendFootprintOf st callerTid targetTid := rfl
+
+/-- **WS-RR RR7.10**: and with no thread target it declares nothing. -/
+@[simp] theorem lockSetForSyscall_tcbSuspend_no_target
+    (ops : SyscallLockOperands) (st : SystemState)
+    (h : ops.targetThread = none) :
+    lockSetForSyscall .tcbSuspend ops st = none := by
+  unfold lockSetForSyscall
+  rw [h]; rfl
 
 /-- **WS-SM SM3.C.9**: every arm other than `tcbSuspend` is undeclared.
 
@@ -178,9 +246,9 @@ runtime never established. This is the negative that keeps the migration
 honest: exactly one arm is declared today, and adding the next one must
 change this theorem. -/
 theorem lockSetForSyscall_undeclared_none
-    (sid : SyscallId) (callerTid targetTid : ThreadId) (st : SystemState)
+    (sid : SyscallId) (ops : SyscallLockOperands) (st : SystemState)
     (h : sid ≠ .tcbSuspend) :
-    lockSetForSyscall sid callerTid targetTid st = none := by
+    lockSetForSyscall sid ops st = none := by
   cases sid <;> first | rfl | exact absurd rfl h
 
 /-- **WS-SM SM3.C.9**: the suspend footprint resolves exactly when the

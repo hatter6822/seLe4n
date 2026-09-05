@@ -1,3 +1,50 @@
+## v0.34.63 — a footprint resolver that can name an endpoint
+
+**WS-RR RR7.10** — fine locks, Track C: generalise the production
+`lockSetForSyscall` resolver to decoded-driven resolution.
+
+The resolver took `(sid, callerTid, targetTid, st)`, and `targetTid` is a
+`ThreadId`.  That is expressible only for the thread-directed syscalls: an IPC
+arm's footprint names an **endpoint** or a **notification**, a capability arm's
+names a **CNode**, a `.schedContext*` arm's names a **SchedContext** — none of
+which is a thread.  The one declared arm happened to be `.tcbSuspend`, so the
+signature looked general while being unable to say what all thirty-two
+remaining arms need.
+
+Worse, the caller that resolved a target for it did the coercion anyway:
+`entryCapTarget` reinterpreted the invoked capability's `.object objId` **as** a
+thread id, which for an endpoint capability is a different object carrying the
+same number.  That coercion is now confined to the thread-directed constructor
+rather than sitting on the resolver's only path.
+
+### The operands
+
+`SyscallLockOperands` carries the caller, an optional **thread** target, an
+optional **object** target, and the message an IPC arm carries.  The two
+targets are separate fields rather than one because a syscall is directed at
+one or the other and never at both; the message is there because whether a
+rendezvous footprint includes a capability-transfer destination is a property
+of what it carries (WS-RR RR7.7), and the arms that read it are RR7.11's.
+Every field is optional and defaults to absent, so an arm that needs something
+absent answers `none` — the same fail-closed direction the module has always
+taken for undeclared arms.
+
+### Signature only, and it says so
+
+`.tcbSuspend` keeps its answer and there is a theorem for it:
+`lockSetForSyscall_tcbSuspend_ofThreadTarget` is `rfl` against the answer the
+pre-generalisation resolver gave, and `lockSetForSyscall_tcbSuspend_no_target`
+pins the fail-closed arm when no thread target is supplied.  The other
+thirty-two arms still answer `none`, and
+`lockSetForSyscall_undeclared_none` is restated over the new shape — the
+negative that keeps the migration honest, since a caller reading `some S`
+treats `S` as complete.
+
+A Tier-3 negative pins that the two-`ThreadId` signature cannot come back.
+
+**Sub-tasks**: WS-RR RR7.10.
+**Refs**: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR7 (RR7.10)
+
 ## v0.34.62 — the derivation tree gets a lock
 
 **WS-RR RR7.9** — fine locks, Track B: CDT coverage on `cspaceMint`,

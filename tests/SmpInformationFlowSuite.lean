@@ -7687,9 +7687,11 @@ lockOnly={lockWritesOnlyCheck niState bracketedEntryResult.1}"
 lowInvisible={allCores.all (fun c => lowEquivalentSliceOnCoreCheckWithRegs
   fineLockEntryLabeling c lowLabel successEntryResult.1 successEntryState)}"
   , s!"[smp-fine-lock] declared footprints: \
-tcbSuspend={(SeLe4n.Kernel.Concurrency.lockSetForSyscall .tcbSuspend lowCurrent highCurrent
+tcbSuspend={(SeLe4n.Kernel.Concurrency.lockSetForSyscall .tcbSuspend
+      (.ofThreadTarget lowCurrent highCurrent)
   niState).isSome} \
-send={(SeLe4n.Kernel.Concurrency.lockSetForSyscall .send lowCurrent highCurrent niState).isSome}"
+send={(SeLe4n.Kernel.Concurrency.lockSetForSyscall .send
+      (.ofThreadTarget lowCurrent highCurrent) niState).isSome}"
   , s!"[smp-fine-lock] claims: {FineLockClaimId.all.length} over \
 {traceClaimSubTaskCount} distinct proof-carrying sub-tasks" ]
 
@@ -7793,7 +7795,8 @@ decode rather than against arguments the test supplies. -/
 private def runDeclaredFootprintChecks : IO Unit := do
   IO.println "--- §7.9 the bracket over SM3.C.9's declared footprint (SM8.D.5) ---"
   assertBool "`.tcbSuspend` is the one declared arm, and it resolves for a real TCB"
-    (decide ((SeLe4n.Kernel.Concurrency.lockSetForSyscall .tcbSuspend lowCurrent highCurrent
+    (decide ((SeLe4n.Kernel.Concurrency.lockSetForSyscall .tcbSuspend
+      (.ofThreadTarget lowCurrent highCurrent)
       niState).isSome))
   -- The resolver reads the entry's own decode: caller from the executing core's
   -- current thread, syscall id from that thread's registers.
@@ -7808,7 +7811,8 @@ private def runDeclaredFootprintChecks : IO Unit := do
   -- old free-parameter form a caller could pass `.tcbSuspend` alongside these
   -- very registers and bracket an unrelated operation in the suspend footprint.
   assertBool "NEGATIVE: a resolvable suspend footprint does not bracket a `.receive` decode"
-    (decide ((SeLe4n.Kernel.Concurrency.lockSetForSyscall .tcbSuspend lowCurrent highCurrent
+    (decide ((SeLe4n.Kernel.Concurrency.lockSetForSyscall .tcbSuspend
+      (.ofThreadTarget lowCurrent highCurrent)
         niState).isSome) &&
      decide ((declaredLockSetForEntry fineLockEntryLabeling SeLe4n.arm64DefaultLayout c1 32
         successEntryState) = none) &&

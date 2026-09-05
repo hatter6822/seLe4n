@@ -4425,6 +4425,26 @@ run_check "INVARIANT" rg -n 'endpointGrantDecidesBothOrderings' tests/OperationC
 # capability operations, so the anchors become negatives and the closure is
 # pinned instead.
 run_negative_check "INVARIANT" rg -n 'cdtNodeAllocation' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# WS-RR RR7.10: the declared-footprint resolver takes OPERANDS, not two thread
+# ids.  The old signature could name only thread-directed targets, so no IPC
+# arm's footprint -- which names an endpoint or a notification -- was
+# expressible at all, and the one caller that resolved a target for it
+# reinterpreted a capability's ObjId as a thread id.  The negative pins that the
+# two-ThreadId shape cannot come back; the positives pin the record and the
+# behaviour-preservation marker.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.Concurrency.Locks.LockSetForSyscall
+open SeLe4n.Kernel.Concurrency
+#check @SyscallLockOperands
+#check @SyscallLockOperands.ofThreadTarget
+#check @SyscallLockOperands.ofObjectTarget
+#check @lockSetForSyscall
+#check @lockSetForSyscall_tcbSuspend
+#check @lockSetForSyscall_tcbSuspend_ofThreadTarget
+#check @lockSetForSyscall_tcbSuspend_no_target
+#check @lockSetForSyscall_undeclared_none
+EOF'
+run_negative_check "INVARIANT" rg -n 'def lockSetForSyscall \(sid : SyscallId\) \(callerTid targetTid : ThreadId\)' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
 import SeLe4n.Kernel.Concurrency.Locks.LockSetTransitions
 open SeLe4n.Kernel.Concurrency

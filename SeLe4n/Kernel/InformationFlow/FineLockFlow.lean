@@ -2779,7 +2779,13 @@ def declaredLockSetForEntry (ctx : LabelingContext) (layout : SeLe4n.SyscallRegi
     match entryCapTarget decoded tid s with
     | none => none
     | some targetTid =>
-      SeLe4n.Kernel.Concurrency.lockSetForSyscall decoded.syscallId tid targetTid s
+      -- WS-RR RR7.10: the operands the entry resolved, in the shape the
+      -- resolver now takes.  `entryCapTarget` yields a thread, so this is a
+      -- thread-directed target; when RR7.11 declares the IPC arms their
+      -- operands will carry `targetObject` instead, which the pre-RR7.10
+      -- signature could not express at all.
+      SeLe4n.Kernel.Concurrency.lockSetForSyscall decoded.syscallId
+        (.ofThreadTarget tid targetTid) s
 
 /-- SM8.D.5 (**the binding, as a theorem**): a resolved footprint is
 `lockSetForSyscall`'s output at the **decoded** syscall id, the **executing
@@ -2796,7 +2802,8 @@ theorem declaredLockSetForEntry_binds_decode (ctx : LabelingContext)
     ∃ tid decoded targetTid,
       entryDecode ctx layout executingCore regCount s = some (tid, decoded) ∧
       entryCapTarget decoded tid s = some targetTid ∧
-      SeLe4n.Kernel.Concurrency.lockSetForSyscall decoded.syscallId tid targetTid s = some S := by
+      SeLe4n.Kernel.Concurrency.lockSetForSyscall decoded.syscallId
+        (.ofThreadTarget tid targetTid) s = some S := by
   unfold declaredLockSetForEntry at h
   cases hDec : entryDecode ctx layout executingCore regCount s with
   | none => rw [hDec] at h; exact absurd h (by simp)
@@ -3055,8 +3062,8 @@ theorem declaredLockSetForEntry_undeclared (ctx : LabelingContext)
   cases hTgt : entryCapTarget decoded tid s with
   | none => rfl
   | some targetTid =>
-    exact SeLe4n.Kernel.Concurrency.lockSetForSyscall_undeclared_none decoded.syscallId tid
-      targetTid s hSid
+    exact SeLe4n.Kernel.Concurrency.lockSetForSyscall_undeclared_none decoded.syscallId
+      (.ofThreadTarget tid targetTid) s hSid
 
 /-- SM8.D.5: the lock domains a live `.tcbSuspend` needs that the object-domain
 `LockSet` cannot express.
@@ -3782,8 +3789,8 @@ theorem declaredLockSetForEntry_is_suspend_footprint (ctx : LabelingContext)
     rw [hSid, SeLe4n.Kernel.Concurrency.lockSetForSyscall_tcbSuspend] at hLock
     exact hLock
   · exact absurd hLock (by
-      rw [SeLe4n.Kernel.Concurrency.lockSetForSyscall_undeclared_none decoded.syscallId tid
-        targetTid s hSid]
+      rw [SeLe4n.Kernel.Concurrency.lockSetForSyscall_undeclared_none decoded.syscallId
+        (.ofThreadTarget tid targetTid) s hSid]
       simp)
 
 -- ============================================================================

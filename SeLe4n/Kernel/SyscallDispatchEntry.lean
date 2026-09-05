@@ -811,7 +811,11 @@ def suspendThreadCrossCoreStep (tid : UInt64) (execCore : CoreId) (st : SystemSt
               (s, (Platform.FFI.KernelError.toUInt32 e,
                    ([] : List (CoreId × SgiKind))))
         let callerTid := (st.scheduler.currentOnCore execCore).getD vtid
-        match Concurrency.lockSetForSyscall .tcbSuspend callerTid vtid st with
+        -- WS-RR RR7.10: the resolver takes operands rather than two thread
+        -- ids, because an IPC arm's footprint names an endpoint and not a
+        -- thread.  A suspend is thread-directed, so it supplies exactly that.
+        match Concurrency.lockSetForSyscall .tcbSuspend
+            (.ofThreadTarget callerTid vtid) st with
         | some lockSet =>
             let (st', r) := Concurrency.withLockSet lockSet execCore action st
             (r, st')
