@@ -44,9 +44,9 @@ tick-quantised with no new upcall and no ABI version change; and every
 generalising sub-task after CB1 carries the theorem that the model is
 unchanged on states without servers.
 
-Two automated review rounds on the planning PR (twenty-four findings) reshaped
-the design before any code exists, and the plan's §14 records each finding
-against its fix: a transitive tie-break (`scId` in the EDF class, the
+Three automated review rounds on the planning PR (thirty-one findings)
+reshaped the design before any code exists, and the plan's §14 records each
+finding against its fix: a transitive tie-break (`scId` in the EDF class, the
 incumbent in the legacy class — the first cut's mixed rule admitted a cycle);
 a key-worsening reschedule seam that every key-moving transition calls;
 the policy-gated bind arms kept out of the shared dispatch helper, which would
@@ -62,8 +62,15 @@ continuous activity, no active inheritance, single domain — named, and its
 demand bound restated over windows contained in the interval; the depth bound
 counting the leaf; the activation paths' lock footprints, which move
 `maxLockSetSize` to ten against the measured eight-entry suspend footprint;
-the two refill representations held equal by an invariant; and the status
-flip confined to the last closure row.
+the two refill representations held equal by an invariant; a scheduling
+request recorded as per-core state (`reschedulePendingOnCore`), so the
+current-is-maximal conjunct is a state invariant while a remote reschedule SGI
+is in flight rather than a claim the hardware has not yet enacted; activation
+and a scheduling point at `schedContextBind` for a thread that is already
+runnable; a populated server never shrunk under its members' sum; the Rust id
+tables landing with the Lean ids rather than two rows after the arms, since
+the HAL's prefilter refuses an id its table lacks before Lean runs; and the
+status flip confined to the last closure row.
 
 Three things the survey behind the plan found in the flat tree, all recorded
 in the plan (§1.1, §3.3) and in the debt register:

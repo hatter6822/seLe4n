@@ -27,7 +27,7 @@
 > hypotheses in the Robin Hood preservation proofs.
 > **Document layout**: §1–§3 say what and why; **§4 is the implementation
 > specification** every sub-task row points into; §7 is the schedule; §14
-> records what the refinement pass and the two review rounds changed.
+> records what the refinement pass and the review rounds changed.
 
 ## 1. Phase goal
 
@@ -453,6 +453,15 @@ structure TCB where
       the order only when the thread is bound (D20). -/
   inheritedDeadline : Option Deadline := none
   -- `deadline` removed (CB1.4): unbound threads are deadline-less.
+
+-- SeLe4n/Model/State.lean (CB1.3): the per-core scheduler state
+structure SchedulerState where
+  ...
+  /-- `true` from the moment a transition surfaces a `.reschedule` SGI for this
+      core — or, on the executing core, decides a preemption the gated
+      context-restore seam cannot yet take — until `handleRescheduleSgiOnCore`
+      runs there (§4.4).  The model's record of a scheduling point owed. -/
+  reschedulePendingOnCore : Vector Bool numCores := default
 ```
 
 Every added field is threaded through the manual `BEq` instances, the `ext`
@@ -503,7 +512,7 @@ time.
 | (b) exhaustion | the charge of §4.5 takes `budgetRemaining` to `0` at time `t` | `refillAt := max (periodStart + period) (t + 1)`; `replenishments := [{amount := budget, eligibleAt := refillAt}]`; `replenishOnCore home scId refillAt`; the deadline is **untouched** — the entity is ineligible until (d) |
 | (c) surrender | `handleYieldWithBudget` at time `t` with `budgetRemaining > 0` | `budgetRemaining := 0`, then (b) |
 | (d) landing | the drain pops `(scId, refillAt)` at `now ≥ refillAt` | if `sc.replenishments` names this `refillAt` **and** `refillAt ≥ periodStart + period`: `budgetRemaining := budget`, `periodStart := refillAt`, `deadline := refillAt + period`, `replenishments := []`; otherwise the queue entry is **stale** and is dropped with no other change.  Under `pendingRefillMirroredOnCore` the stale arm is unreachable (`cbsLandRefill_stale_unreachable_of_mirrored`); it stays total |
-| (e) activation | a leaf whose bound thread becomes active from inactive, or a server whose `activeDescendants` goes `0 → 1`, at time `t` | (e1) `if deadline ≤ t ∨ budgetRemaining · period ≥ (deadline − t) · budget then budgetRemaining := budget, periodStart := t, deadline := t + period, replenishments := [], purge` — the classical CBS rule; (e2) `else if budgetRemaining = 0 ∧ replenishments = [] then` rule (b) at `t` — an exhausted entity re-armed after rule (g) cleared its refill; (e3) otherwise unchanged |
+| (e) activation | a leaf whose bound thread becomes active from inactive; a leaf bound by `schedContextBind` to a thread that is **already** runnable or running (no enqueue happens there, so bind applies the rule itself); or a server whose `activeDescendants` goes `0 → 1` — at time `t` | (e1) `if deadline ≤ t ∨ budgetRemaining · period ≥ (deadline − t) · budget then budgetRemaining := budget, periodStart := t, deadline := t + period, replenishments := [], purge` — the classical CBS rule; (e2) `else if budgetRemaining = 0 ∧ replenishments = [] then` rule (b) at `t` — an exhausted entity re-armed after rule (g) cleared its refill; (e3) otherwise unchanged |
 | (f) reconfigure | `schedContextConfigure` on a **live** context (bound, or a server with members) at time `t`, after re-admission (§4.6) | `budget := Q'`, `period := P'`, `budgetRemaining := min budgetRemaining Q'`, `deadline := periodStart + P'`; a pending refill becomes `{amount := Q', eligibleAt := max (periodStart + P') (t + 1)}` and is re-keyed; then, if the entity is active, rule (e) at `t` — never rule (a) (D17) |
 | (g) detach | the context loses its replenish home: `schedContextUnbind` of a parentless leaf, `schedContextUnbindServer` of a leaf with no bound thread, retype cleanup | `replenishments := []`, purge — a context with no home has no refill in flight; its window fields are kept, so a later activation lands in rule (e) with the window it left |
 
@@ -638,27 +647,54 @@ keys; `edfCurrentEarliestOnCore` (§4.10) states the consequence.
 **The key-worsening reschedule.**  Under fixed priority the only transition
 that could leave a running thread outranked by a queued one was a priority
 change, and SM8.B's `priorityRescheduleOnCore` (the "priority decreased"
-seam behind `setPriorityOp`) handles it: it decides on the thread's running
-core whether a queued candidate now outranks the current and either preempts
-locally or surfaces the `.reschedule` SGI for a remote core.  Under EDF-first
-a running thread's key also worsens when its window is reset later
-(reconfiguration, rule (f)), when it gains an ancestor (`bindServer` of its
-leaf or of an ancestor), or when an inherited deadline is recomputed away;
-and a queued thread's key improves when it loses an ancestor
-(`unbindServer`) or inherits an earlier deadline.  CB1.3 generalises the
-seam to `keyRescheduleOnCore st c executingCore`, which re-evaluates
+seam behind `setPriorityOp`) handles it: on the executing core it runs
+`handleRescheduleSgiOnCore` inline; for a thread running on a **remote** core
+it returns the state **unchanged** and surfaces that core's `.reschedule` SGI,
+and the remote core acts when the SGI lands.  Under EDF-first a running
+thread's key also worsens when its window is reset later (reconfiguration,
+rule (f)), when it gains an ancestor (`bindServer` of its leaf or of an
+ancestor), or when an inherited deadline is recomputed away; and a queued
+thread's key improves when it loses an ancestor (`unbindServer`), inherits an
+earlier deadline, or is **bound** to a SchedContext while queued (it leaves
+the legacy class for the EDF class and now outranks every legacy thread,
+possibly the current one).  CB1.3 generalises the seam to
+`keyRescheduleOnCore st c executingCore`, which re-evaluates
 `candidateOutranksCurrentOnCore` on core `c` and applies the same decision,
 and every transition that can move a key **calls it on every core whose
-current thread's path it touched** before it returns: `setPriorityOp`,
-`schedContextConfigure` (f), `schedContextBindServer`,
-`schedContextUnbindServer`, `updatePipBoost` / `revertPriorityInheritance`
-(through `pipBoostWithWake`, whose materiality guard compares the whole key
-— effective priority **and** effective deadline — rather than the priority
-alone, since a remote holder can acquire an earlier inherited deadline at an
-unchanged priority and would otherwise keep running unpoked).  The theorem
-that licenses each caller is `keyRescheduleOnCore_establishes_edfCurrentEarliest`
-(T19): after the call, `edfCurrentEarliestOnCore` holds on `c` whatever the
-transition did to the keys.
+current thread's path or queue it touched** before it returns:
+`setPriorityOp`, `schedContextConfigure` (f), `schedContextBind` (on the
+thread's queue core), `schedContextBindServer`, `schedContextUnbindServer`,
+`updatePipBoost` / `revertPriorityInheritance` (through `pipBoostWithWake`,
+whose materiality guard compares the whole key — effective priority **and**
+effective deadline — rather than the priority alone, since a remote holder can
+acquire an earlier inherited deadline at an unchanged priority and would
+otherwise keep running unpoked).
+
+What the seam can and cannot establish.  A remote decision is not applied by
+the transition: until the SGI lands, the remote core's model state still shows
+the outranked thread current, so no theorem can say the current is maximal on
+that core at that instant.  The model therefore records the request:
+`reschedulePendingOnCore c` (§4.1) is set by **every** site that surfaces a
+`.reschedule` SGI for `c` — the seam's remote arm, `pipBoostWithWake`, the
+cross-core wake paths — and cleared by `handleRescheduleSgiOnCore` on entry,
+and the per-core conjunct is stated **modulo the flag**:
+`edfCurrentEarliestOnCore st c` requires maximality only when no scheduling
+request is pending on `c` (§4.10).  The seam comes as the same wrapper pair
+SM8.B has: `keyRescheduleOnCore` is the model-level seam, and
+`keyRescheduleOnCoreLive` gates its **local** arm behind
+`contextRestoreSeamLive` exactly as `priorityRescheduleOnCoreLive` does — with
+one addition: while the gate is closed, the unapplied local preemption sets
+the executing core's own flag, so the state says a scheduling point is owed
+there rather than claiming a maximality the hardware has not enacted.  The
+theorem that licenses each caller is `keyRescheduleOnCore_establishes_or_posts`
+(T19): on the executing core with the seam live, `edfCurrentEarliestOnCore`
+holds on the returned state; otherwise the affected core's flag is set and its
+SGI surfaced, and `handleRescheduleSgiOnCore_establishes_edfCurrentEarliest`
+closes the loop when that core takes its scheduling point.  The SGI list a
+seam surfaces is tied to the flags it sets
+(`sgi_surfaced_of_reschedulePending_set`: a core whose flag goes `false → true`
+in a step is in the step's SGI list), so a site that sets the flag without
+posting, or posts without setting it, fails a proof.
 
 ### 4.5 Charging, activation and the counter
 
@@ -705,8 +741,10 @@ Two call sites hold the leaf's count:
 
 * `noteActivated st tid` — called where a thread becomes active from
   inactive: `enqueueRunnableOnCore` (its `runnableOnSomeCore` guard already
-  detects the transition).  It sets the leaf's count to `1`, applies
-  `cbsActivate` to the leaf (rule (e)) and propagates the crossing.
+  detects the transition), and `schedContextBind` when the thread it binds is
+  already runnable or running (the leaf's count goes `0 → 1` with no enqueue).
+  It sets the leaf's count to `1`, applies `cbsActivate` to the leaf (rule
+  (e)) and propagates the crossing.
 * `noteDeactivated st tid` — called where a thread becomes inactive:
   `removeRunnable` (every IPC block path), `suspendThreadOnCore`, the
   cancellation and fault suspends, `cleanupTcbReferences` on retype, and the
@@ -754,7 +792,10 @@ def checkMemberAdmission (st) (server) (candidate) (exclude) : Bool :=
 Checked by every transition that creates, changes or **moves** a reservation
 (D18): configure (root leaf with a bound thread → root check on the thread's
 core; member leaf → member check against the parent; server → root check on
-`serverCore` if parentless, member check if a member); bind of a thread to a
+`serverCore` if parentless, member check if a member — **and**, for a
+populated server, its existing member sum against the candidate,
+`memberUtilisation st server none ≤ U candidate`, so a server is never shrunk
+under its members); bind of a thread to a
 root leaf (root check on the thread's core — a new `.resourceExhausted`
 refusal); bindServer (member check); unbindServer (root check on the child's
 core whenever the detached child will count there — a server with a
@@ -823,7 +864,14 @@ deadline `d` has effective deadline `≤ d`.  Its dispatch consequence — the
 blocker is selected no later than the waiter would have been — holds when the
 blocker and the waiter have the **same parent** (both roots, or siblings
 under one server), because their paths then agree above the leaf and the leaf
-keys decide (`inherited_deadline_dispatch_effective_of_same_parent`, T18).
+keys decide, and when the waiter's key beats the third thread's **strictly**
+on deadline or, at equal deadlines, on priority
+(`inherited_deadline_dispatch_effective_of_same_parent`, T18).  The `scId`
+tie-break is the entity's own and is not inherited, so at an exact tie on
+deadline and priority the blocker can still sort behind a sibling the waiter
+would have beaten; T18 excludes that case rather than inherit a tie-break,
+because a key whose `scId` is borrowed is no longer unique to its entity and
+T1's totality would need a graph argument to recover.
 For a blocker under a different parent the inherited leaf key is never
 compared until its server's own key wins, so the client's deadline can pass
 while the blocker's server waits behind another root — that is bandwidth
@@ -886,8 +934,8 @@ resolved in the caller's CSpace with `.write` first — `.invalidCapability` /
 
 | Operation | New rule | Error |
 |-----------|----------|-------|
-| `schedContextConfigure` | `deadline` argument must be `0` (CB1.6); caller-MCP gate on `priority` (CB0.3); a `domain` change refused on a bound context (CB0.3, `.illegalAuthority`) and on any context with a parent or members (CB5.6, `.illegalState`); admission per §4.6; rule (a) on a context that is not live, rule (f) on one that is; a priority change on any context is a tie-break change and re-buckets nothing beyond the AK2-B mirror; reschedule | `.invalidArgument`, `.illegalAuthority`, `.illegalState`, `.resourceExhausted` |
-| `schedContextBind` | target must be a leaf; the thread's domain equals the leaf's (today's rule); a member leaf's thread must be homed on the ancestor's `serverCore`; root leaf → root admission on the thread's core; (checked tier, member leaf only) `threadLabelOf tid ≡ objectLabelOf (rootOf leaf)`; the thread's activity enters the ancestors' counts through `propagateActivation` | `.illegalState`, `.invalidArgument`, `.threadOnDifferentCore`, `.resourceExhausted`, `.flowDenied` |
+| `schedContextConfigure` | `deadline` argument must be `0` (CB1.6); caller-MCP gate on `priority` (CB0.3); a `domain` change refused on a bound context (CB0.3, `.illegalAuthority`) and on any context with a parent or members (CB5.6, `.illegalState`); admission per §4.6, including a populated server's existing member sum against its new reservation; rule (a) on a context that is not live, rule (f) on one that is; a priority change on any context is a tie-break change and re-buckets nothing beyond the AK2-B mirror; reschedule | `.invalidArgument`, `.illegalAuthority`, `.illegalState`, `.resourceExhausted` |
+| `schedContextBind` | target must be a leaf; the thread's domain equals the leaf's (today's rule); a member leaf's thread must be homed on the ancestor's `serverCore`; root leaf → root admission on the thread's core; (checked tier, member leaf only) `threadLabelOf tid ≡ objectLabelOf (rootOf leaf)`; a thread that is already runnable or running takes rule (e) at bind, since nothing enqueues it; the thread's activity enters the ancestors' counts through `propagateActivation`; a queued thread has joined the EDF class, so bind ends with `keyRescheduleOnCore` on its queue core | `.illegalState`, `.invalidArgument`, `.threadOnDifferentCore`, `.resourceExhausted`, `.flowDenied` |
 | `schedContextUnbind` | as today, plus the thread's activity leaves the ancestors' counts, and a parentless leaf takes rule (g) | — |
 | `.tcbSetAffinity` (`setThreadCpuAffinityWithMigration`) | refused when the thread's leaf has a parent; when the thread is bound to a root leaf, root admission on the destination core (the leaf's own share excluded) before the migration, then the existing replenish migration | `.illegalState`, `.resourceExhausted` |
 | `.tcbSetPriority` (`setPriorityOp`) | permitted on members (tie-break only, caller-MCP gated as today) | as today |
@@ -926,16 +974,23 @@ Lean (`SeLe4n/Kernel/Architecture/SyscallArgDecode.lean`):
 `SchedContextUnbindServerArgs` (unit); `encode*`, `decode*_roundtrip`,
 `decode*_error_iff` in the existing pattern.
 
-Rust: `rust/sele4n-types/src/syscall.rs` gains the three variants,
-`COUNT = 38`, `from_u64`, `required_right → Write`, and the discriminant
-tests; `rust/sele4n-hal/src/svc_dispatch.rs`'s hand mirror gains the same
-plus `min_inline_args` (1, 1, 0) and its two mirror tests keep the copies
-equal; `rust/sele4n-abi/src/args/sched_context.rs` gains
+Rust, **kernel side, in the id cut** (CB6.1): `rust/sele4n-types/src/syscall.rs`
+gains the three variants, `COUNT = 38`, `from_u64`, `required_right → Write`,
+and the discriminant tests; `rust/sele4n-hal/src/svc_dispatch.rs`'s hand
+mirror gains the same plus `min_inline_args` (1, 1, 0) and its two mirror
+tests keep the copies equal.  They land with the Lean ids, not after the arms,
+because `dispatch_svc`'s prefilter refuses any id `SyscallId::from_u64` does
+not know (`InvalidSyscallId`) **before** Lean is called: an id the Lean table
+has and the Rust table lacks is unreachable on hardware, and the two tables
+must never disagree in a shipped cut.  Rust, **argument side, with the
+decoders** (CB6.3): `rust/sele4n-abi/src/args/sched_context.rs` gains
 `SchedContextConfigureServerArgs { core: u64 }` (`encode → [u64; 1]`,
 `decode` requiring one register), `SchedContextBindServerArgs { child: CPtr }`,
 `SchedContextUnbindServerArgs` (zero registers), and documents
-`SchedContextConfigureArgs.deadline` as `0`-only;
-`rust/sele4n-sys/src/sched_context.rs` gains
+`SchedContextConfigureArgs.deadline` as `0`-only.  Rust, **userspace
+convenience, after the activation** (CB6.8) — the ABI is invocable through
+`invoke_syscall` with the ids and encoders above from the moment CB6.6 lands,
+so the wrappers add no reachability: `rust/sele4n-sys/src/sched_context.rs` gains
 `sched_context_configure_server(sc_cap: CPtr, core: u64)`,
 `sched_context_bind_server(server_cap: CPtr, child: CPtr)`,
 `sched_context_unbind_server(child_cap: CPtr)`, each an `invoke_syscall` with
@@ -1035,13 +1090,17 @@ Per-core (`Scheduler/Invariant/PerCore.lean`):
 
 | Predicate | Statement |
 |-----------|-----------|
-| `edfCurrentEarliestOnCore st c` (defined CB1.3, in the bundle from CB1.7, replaces `edfCurrentHasEarliestDeadlineOnCore`) | if `currentOnCore c = some cur` then for every `tid ∈ runQueueOnCore c` with `pathBudgetEligible` and the current's domain: `¬ isBetterPath (path cur) (path tid)` — the current is maximal in the selector's own order |
+| `edfCurrentEarliestOnCore st c` (defined CB1.3, in the bundle from CB1.7, replaces `edfCurrentHasEarliestDeadlineOnCore`) | if `reschedulePendingOnCore c = false` and `currentOnCore c = some cur` then for every `tid ∈ runQueueOnCore c` with `pathBudgetEligible` and the current's domain: `¬ isBetterPath (path cur) (path tid)` — the current is maximal in the selector's own order; a core with a scheduling request in flight is exempt until `handleRescheduleSgiOnCore` clears the flag there (§4.4) |
 
 The pre-CB1 conjunct compared deadlines within a priority band; the new one is
 the selector's order itself, so its preservation proofs are the selector's
 optimality theorems applied at every dispatch and reschedule point, and
-`keyRescheduleOnCore_establishes_edfCurrentEarliest` (T19) at every transition
-that moves a key.
+`keyRescheduleOnCore_establishes_or_posts` (T19) at every transition that
+moves a key — establishing maximality where the decision is applied, and
+setting the flag that exempts the core where it is only posted.  The flag is
+what makes the conjunct a *state* invariant rather than a scheduling-point
+postcondition: a remote `.reschedule` in flight is model state, not a gap the
+invariant has to look away from.
 
 Labeling (`InformationFlow/Invariant/Helpers.lean`, CB7.1):
 `serverMembersUniformlyLabeled ctx st` — for every server `s` and member `m`:
@@ -1074,12 +1133,12 @@ implied by `window_consumption_le_budget` with a tighter constant).
 | T11 | `server_subtree_consumption_bounded` | for a server `s` with `wellFormed`, the ticks charged to threads in `s`'s subtree while `s.periodStart` is unchanged sum to at most `s.budget` (every such tick charges `s`, T4) | CB4.10 |
 | T12 | `member_isolation` | a member's own consumption per window is bounded by its own `budget` whatever its siblings consume | CB4.10 |
 | T13 | `rootAdmission_sound_per_core` | `hierarchicalAdmissionHolds st → ∀ c, Σ U over roots counting on c ≤ 1000` (and the member sum for every server); preserved by configure, bind, bindServer, unbindServer, configureServer, the affinity migration and the cross-core donation and its return | CB5.2 |
-| T14 | `root_receives_budget_within_window` | **Hypotheses**: (H1) `hierarchicalAdmissionHolds st`; (H2) `schedContextStoreConsistent st`; (H3) `schedHierarchyInvariant st`; (H4) `domainSchedule = []` (single-domain mode; the domain-rotating form is a follow-up); (H5) `continuouslyActive e c t d` — at every state of the run on `[t, d)` some thread in `e`'s subtree is runnable or running on `c` (an entity that blocks forfeits the rest of its window); (H6) the run is a trace of the per-core step relation on `c` (`perCoreRunLoopStep`: tick, dispatch, wake, block, reschedule — one tick per tick step); (H7) `noInheritedDeadlineOnCore c` over `[t, d)` (an active inheritance is a blocking term the admission sum does not carry, §4.7); (H8) only if CB7.7 cannot close the composition: `edfBusyIntervalLemma` (below).  **Conclusion**: a **root** entity `e` on `c` with `budgetRemaining = b > 0` and deadline `d` at `t` is charged `b` ticks in `[t, d)` | CB7.7 |
+| T14 | `root_receives_budget_within_window` | **Hypotheses**: (H1) `hierarchicalAdmissionHolds st`; (H2) `schedContextStoreConsistent st`; (H3) `schedHierarchyInvariant st`; (H4) `domainSchedule = []` (single-domain mode; the domain-rotating form is a follow-up); (H5) `continuouslyEligible e c t d` — at every state of the run on `[t, d)` some thread in `e`'s subtree is runnable or running on `c` **and** every context strictly below `e` on that thread's path has positive budget (an entity that blocks, or whose only leaf is exhausted, forfeits the rest of its window: the root's own budget is what the theorem accounts for, its descendants' is a hypothesis); (H6) the run is a trace of the per-core step relation on `c` (`perCoreRunLoopStep`: tick, dispatch, wake, block, reschedule — one tick per tick step); (H7) `noInheritedDeadlineOnCore c` over `[t, d)` (an active inheritance is a blocking term the admission sum does not carry, §4.7); (H8) only if CB7.7 cannot close the composition: `edfBusyIntervalLemma` (below).  **Conclusion**: a **root** entity `e` on `c` with `budgetRemaining = b > 0` and deadline `d` at `t` is charged `b` ticks in `[t, d)` | CB7.7 |
 | T15 | `cbs_demand_bound` | on a core satisfying `hierarchicalAdmissionHolds`, for every `t₁ ≤ t₂`, the budgets of the root windows **released at or after `t₁` with deadline at or before `t₂`** — an abandoned window (rule (e1) or (f)) counted by what it consumed — sum to at most `t₂ − t₁`.  Not every window that *ends* in the interval: a `(5, 10)` window ending at `10` puts `5` into `[9, 11)` and is excluded by the release condition | CB7.7 |
 | T16 | `edf_selects_earliest_eligible` | whenever `chooseThreadEffectiveOnCore` returns `some tid`, no eligible in-domain candidate has an `isBetterPath`-better key path | CB3.5, CB7.7 |
 | T17 | `cbsReconfigure_never_mints` | `(cbsReconfigure sc Q' P' t).budgetRemaining ≤ sc.budgetRemaining` unless rule (e1) fired, and the consumption of any context over any interval is at most `U · length + budget` whatever reconfigurations and activations it undergoes | CB1.2 |
-| T18 | `inherited_deadline_dispatch_effective_of_same_parent` | if `b` blocks `w`, both bound, with the same `parentServer`, then whenever `w` would have been selected over a third thread `x`, `b` is selected over `x` | CB3.5 |
-| T19 | `keyRescheduleOnCore_establishes_edfCurrentEarliest` | for any `st` and core `c`, `edfCurrentEarliestOnCore (keyRescheduleOnCore st c e).1 c` | CB1.3 |
+| T18 | `inherited_deadline_dispatch_effective_of_same_parent` | if `b` blocks `w`, both bound, with the same `parentServer`, then whenever `w`'s key beats a third thread `x`'s **strictly** on deadline or, at equal deadlines, on priority, `b` is selected over `x`; an exact tie on both, where only the non-inherited `scId` decides, is excluded (§4.7) | CB3.5 |
+| T19 | `keyRescheduleOnCore_establishes_or_posts` | for any `st`, core `c` and executing core `e`: if `c = e` and the context-restore seam is live, `edfCurrentEarliestOnCore (keyRescheduleOnCore st c e).1 c`; otherwise the returned state has `reschedulePendingOnCore c = true` and, for `c ≠ e`, the `.reschedule` SGI for `c` is surfaced — and `handleRescheduleSgiOnCore_establishes_edfCurrentEarliest` says the handler on `c` clears the flag and establishes the conjunct | CB1.3 |
 
 T14 is the classical EDF+CBS theorem, for roots.  The proof plan: T15 from
 the admission sum, T4 and T17 (each window demands at most its budget, an
@@ -1217,6 +1276,9 @@ Concrete scenarios (ticks; `(Q, P)` = budget, period; `dl` = deadline):
 | S9 | `(3, 10)` at `t = 0` runs 2 ticks; `schedContextConfigure` with the same `(3, 10)` at `t = 2`, then again at `t = 8` with no run in between | at `t = 2`: `1·10 < 8·3` → budget stays `1`, window `[0, 10)`; at `t = 8`: `1·10 ≥ 2·3` → window `[8, 18)`, budget `3` (rate so far `2/8 ≤ 3/10`); the pre-D17 witness (rule (a)) would have minted `3` at `t = 2` | CB1.6 |
 | S10 | core 1 admitted to `1000 ‰`; a root leaf `(1, 10)` bound to a thread on core 0: `.tcbSetAffinity` to core 1 → `.resourceExhausted`, state unchanged; a Call from that thread to a passive server on core 1 → `.resourceExhausted`; the same with core 1 at `900 ‰` → both succeed and core 1 reads `1000 ‰` while donated, `900 ‰` after the reply | CB5.2 |
 | S11 | a member leaf under a server of label `L₁`; `schedContextBind` of a thread of label `L₂` → `.flowDenied`; a Call from an `L₁` member thread to a passive `L₂` server → `.flowDenied`; the same with `L₁` threads → ok | CB7.9 |
+| S12 | `(3, 10)` configured at `t = 0` and left unbound; a **queued** unbound thread is bound to it at `t = 15` while a legacy thread runs | engine half: rule (e) fires at bind (`dl 10 ≤ 15` → window `[15, 25)`, budget `3`) with no enqueue; order half: the bind ends with the reschedule decision and the newly EDF-class thread preempts the legacy current | CB1.6, CB1.7 |
+| S13 | a root server `(5, 10)` with members summing to `500 ‰`; `schedContextConfigure` to `(2, 10)` → `.resourceExhausted`; to `(5, 10)` again → ok, no fresh window (rule (f)) | the member-sum check at reconfiguration | CB5.6 |
+| S14 | a thread current on core 1 has its window reset later by a configure issued from core 0 while a queued thread on core 1 holds an earlier deadline | core 1's `reschedulePendingOnCore` is set and its `.reschedule` SGI surfaced; `edfCurrentEarliestOnCore` holds on core 1 modulo the flag; after `handleRescheduleSgiOnCore` on core 1 the queued thread is current and the flag is clear | CB1.7 |
 
 Fixture discipline: every new `.expected` ships with its `.expected.sha256`
 and a row in `tests/fixtures/README.md`, following its *Regeneration
@@ -1297,11 +1359,11 @@ generalise.
 |-----|-------------|-------|-----|
 | CB1.1 | **Inert.** The order (§4.3): `SchedKey`, `isBetterKey` with `isBetterKey_irrefl`, `_asymm`, `_trans` (T1) and `isBetterKey_legacy_class_eq_fp` (two deadline-less keys compare as `isBetterCandidate` does today).  The live `isBetterCandidate` is untouched | `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` | M |
 | CB1.2 | **Inert.** The CBS engine rules as pure functions (§4.2): `cbsWindowStart`, `cbsScheduleRefill`, `cbsLandRefill`, `cbsActivate`, `cbsReconfigure`, `cbsDetach` beside the live `cbsUpdateDeadline`; the flat `replenishHomeOf?`; the predicates `deadlineWindowConsistent`, `atMostOnePendingRefill`, `pendingRefillOnlyWhenExhausted`, `pendingRefillMirroredOnCore`, `unhomedNoPendingRefill` as standalone definitions; T3 for every rule, T4, T5, T6, T17, `cbsLandRefill_drops_stale`, `cbsLandRefill_stale_unreachable_of_mirrored` | `SeLe4n/Kernel/SchedContext/Budget.lean`, `SeLe4n/Kernel/SchedContext/Invariant/Defs.lean` | L |
-| CB1.3 | **Inert.** The selector, the seam and the conjunct (§4.4, §4.10): `chooseBestRunnableHierarchical` in singleton form beside the live bucket-first path, with `_always_ok` and `_optimal`; T2 stated between the two selector definitions; `keyRescheduleOnCore` generalising `priorityRescheduleOnCore` with T19; `edfCurrentEarliestOnCore` defined with `edfCurrentEarliestOnCore_of_no_deadlines` (it follows from the current bundle on deadline-less states) | `SeLe4n/Kernel/Scheduler/Operations/Selection.lean`, `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean`, `SeLe4n/Kernel/SchedContext/PriorityManagementPerCore.lean`, `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` | L |
+| CB1.3 | **Inert.** The selector, the seam and the conjunct (§4.4, §4.10): `chooseBestRunnableHierarchical` in singleton form beside the live bucket-first path, with `_always_ok` and `_optimal`; T2 stated between the two selector definitions; `SchedulerState.reschedulePendingOnCore` (default `false`, written by nothing yet); `keyRescheduleOnCore` / `keyRescheduleOnCoreLive` generalising the SM8.B pair, with T19 and `handleRescheduleSgiOnCore_establishes_edfCurrentEarliest`; `edfCurrentEarliestOnCore` defined modulo the flag, with `edfCurrentEarliestOnCore_of_no_deadlines` (it follows from the current bundle on deadline-less states) | `SeLe4n/Kernel/Scheduler/Operations/Selection.lean`, `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean`, `SeLe4n/Kernel/SchedContext/PriorityManagementPerCore.lean`, `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean`, `SeLe4n/Model/State.lean` | L |
 | CB1.4 | Retire `TCB.deadline` (§4.1): `resolveEffectivePrioDeadline` yields no deadline for `.unbound`; the field removed with its `BEq`, `ext`, boot and projection sweeps; `resolveEffectivePrioDeadline_eq_of_zero_deadline` (unchanged wherever the field was `0`, which is every production state); the three suites that set it re-cut; the per-core suite re-elaborated (consumes CB1.3) | `SeLe4n/Model/Object/Types.lean`, `SeLe4n/Kernel/Scheduler/Operations/Selection.lean`, `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean`, `tests/SmpCancellationSuite.lean`, `tests/NegativeStateSuite.lean`, `tests/PriorityInheritanceSuite.lean` | M |
 | CB1.5 | **Inert.** `TCB.inheritedDeadline` (§4.1, §4.7) with its `BEq`, `ext`, boot and projection sweeps (classified with `pipBoost`); `computeMinWaiterDeadline`, `effectiveDeadline` (bound blockers only, D20); `effectiveDeadline_eq_own_of_none`.  Nothing writes the field yet (consumes CB1.4) | `SeLe4n/Model/Object/Types.lean`, `SeLe4n/Kernel/Scheduler/PriorityInheritance/Compute.lean`, `SeLe4n/Kernel/InformationFlow/Projection.lean`, `SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean` | M |
-| CB1.6 | **Switch cut 1 — the engine** (§4.2 rules (a)–(g); D13, D14, D16, D17): `schedContextConfigure` refuses a nonzero `deadline` (`.invalidArgument`) and applies rule (a) or (f) through `cbsReconfigure`; both tick exhaustion arms and `handleYieldWithBudget` through `cbsScheduleRefill`; the drain through `cbsLandRefill`; `enqueueRunnableOnCore` applies `cbsActivate` when a bound thread becomes active; `schedContextUnbind` applies rule (g); `cbsUpdateDeadline` retired; the three per-object conjuncts join `SchedContext.wellFormed`, `bootSafeSchedContextCheck`, `SchedContext.empty`/`mkChecked`; `pendingRefillMirroredOnCore` joins `perCoreCbsInvariant` and `unhomedNoPendingRefill` joins `schedContextStoreConsistent`; **in the same row as**: the tick's CBS preservation family (`timerTickOnCore_preserves_perCoreCbsInvariant` and siblings) over the new arms, `replenishment_within_period` / `_dead_time_exact` restated as T5, the per-core suite's tick and wake cases against the unchanged fixed-priority bundle, the frozen twins `frozenTimerTickBudget` / `frozenSchedContextConfigure` with the agreement interlock, SM8.B's per-core lift over the tick, the pre-fix half of CB0.4's refill witness inverted, S2, S3 and S9, the **engine fixture refresh** (every `.expected` whose scenario configures, exhausts or refills a SchedContext) with rationale, the scenario registry, spec §8.12.2–§8.12.3 rewritten for windows and refills, evidence-index rows, Tier-3 anchors (consumes CB1.2, CB1.5) | `SeLe4n/Kernel/SchedContext/Budget.lean`, `SeLe4n/Kernel/SchedContext/Operations.lean`, `SeLe4n/Kernel/SchedContext/Types.lean`, `SeLe4n/Kernel/SchedContext/Invariant/Defs.lean`, `SeLe4n/Kernel/Scheduler/Operations/Core.lean`, `SeLe4n/Kernel/Scheduler/Operations/Selection.lean`, `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean`, `SeLe4n/Kernel/Scheduler/Operations/PerCoreTickCbsPreservation.lean`, `SeLe4n/Kernel/Scheduler/Liveness/Replenishment.lean`, `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean`, `SeLe4n/Kernel/FrozenOps/Operations.lean`, `SeLe4n/Kernel/FrozenOps/Agreement.lean`, `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean`, `SeLe4n/Platform/Boot.lean`, `tests/SmpCbsSuite.lean`, `tests/fixtures/`, `docs/spec/SELE4N_SPEC.md`, `docs/CLAIM_EVIDENCE_INDEX.md`, `scripts/test_tier3_invariant_surface.sh` | XL |
-| CB1.7 | **Switch cut 2 — the order** (§4.3, §4.4; D3): `isBetterCandidate := isBetterKey` on singleton keys; `chooseThreadEffectiveOnCore` switches to the scan and the bucket-first path is retired; `candidateOutranksCurrentOnCore` and `handleRescheduleSgiOnCore` decide in the new order; `setPriorityOp`'s trigger becomes `keyRescheduleOnCore`; `schedContextConfigure` on a live context ends with `keyRescheduleOnCore` on the thread's core; `edfCurrentEarliestOnCore` replaces `edfCurrentHasEarliestDeadlineOnCore` in the per-core bundle; **in the same row as**: T2 about the live selector, T8 (the `schedulerInvariantStrong_smp` family for `scheduleEffectiveOnCore`, `handleRescheduleSgiOnCore`, `switchToThreadOnCore`, the tick's preempt path, the domain switch, the wake and every `keyRescheduleOnCore` caller; the idle keystone unchanged, since the idle thread is deadline-less and last), SM8.B's per-core lift over dispatch (the observable order changes only through same-label deadlines), CB0.4's order witness inverted, S0 and S1, the **order fixture refresh** (every `.expected` whose scenario has a deadline-bearing runnable thread) with rationale, spec §8.12.1 rewritten for EDF-first, the `CLAUDE.md`/`AGENTS.md` standing constraint, evidence-index rows, Tier-3 anchors (consumes CB1.3, CB1.6) | `SeLe4n/Kernel/Scheduler/Operations/Selection.lean`, `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean`, `SeLe4n/Kernel/SchedContext/PriorityManagement.lean`, `SeLe4n/Kernel/SchedContext/PriorityManagementPerCore.lean`, `SeLe4n/Kernel/SchedContext/Operations.lean`, `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean`, `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean`, `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean`, `SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean`, `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean`, `tests/SmpCbsSuite.lean`, `tests/fixtures/`, `docs/spec/SELE4N_SPEC.md`, `docs/CLAIM_EVIDENCE_INDEX.md`, `CLAUDE.md`, `AGENTS.md`, `scripts/test_tier3_invariant_surface.sh` | XL |
+| CB1.6 | **Switch cut 1 — the engine** (§4.2 rules (a)–(g); D13, D14, D16, D17): `schedContextConfigure` refuses a nonzero `deadline` (`.invalidArgument`) and applies rule (a) or (f) through `cbsReconfigure`; both tick exhaustion arms and `handleYieldWithBudget` through `cbsScheduleRefill`; the drain through `cbsLandRefill`; `enqueueRunnableOnCore` applies `cbsActivate` when a bound thread becomes active, and `schedContextBind` applies it when the thread it binds is already runnable or running (no enqueue happens there); `schedContextUnbind` applies rule (g); `cbsUpdateDeadline` retired; the three per-object conjuncts join `SchedContext.wellFormed`, `bootSafeSchedContextCheck`, `SchedContext.empty`/`mkChecked`; `pendingRefillMirroredOnCore` joins `perCoreCbsInvariant` and `unhomedNoPendingRefill` joins `schedContextStoreConsistent`; **in the same row as**: the tick's CBS preservation family (`timerTickOnCore_preserves_perCoreCbsInvariant` and siblings) over the new arms, `replenishment_within_period` / `_dead_time_exact` restated as T5, the per-core suite's tick and wake cases against the unchanged fixed-priority bundle, the frozen twins `frozenTimerTickBudget` / `frozenSchedContextConfigure` with the agreement interlock, SM8.B's per-core lift over the tick, the pre-fix half of CB0.4's refill witness inverted, S2, S3, S9 and the engine half of S12, the **engine fixture refresh** (every `.expected` whose scenario configures, exhausts or refills a SchedContext) with rationale, the scenario registry, spec §8.12.2–§8.12.3 rewritten for windows and refills, evidence-index rows, Tier-3 anchors (consumes CB1.2, CB1.5) | `SeLe4n/Kernel/SchedContext/Budget.lean`, `SeLe4n/Kernel/SchedContext/Operations.lean`, `SeLe4n/Kernel/SchedContext/Types.lean`, `SeLe4n/Kernel/SchedContext/Invariant/Defs.lean`, `SeLe4n/Kernel/Scheduler/Operations/Core.lean`, `SeLe4n/Kernel/Scheduler/Operations/Selection.lean`, `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean`, `SeLe4n/Kernel/Scheduler/Operations/PerCoreTickCbsPreservation.lean`, `SeLe4n/Kernel/Scheduler/Liveness/Replenishment.lean`, `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean`, `SeLe4n/Kernel/FrozenOps/Operations.lean`, `SeLe4n/Kernel/FrozenOps/Agreement.lean`, `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean`, `SeLe4n/Platform/Boot.lean`, `tests/SmpCbsSuite.lean`, `tests/fixtures/`, `docs/spec/SELE4N_SPEC.md`, `docs/CLAIM_EVIDENCE_INDEX.md`, `scripts/test_tier3_invariant_surface.sh` | XL |
+| CB1.7 | **Switch cut 2 — the order** (§4.3, §4.4; D3): `isBetterCandidate := isBetterKey` on singleton keys; `chooseThreadEffectiveOnCore` switches to the scan and the bucket-first path is retired; `candidateOutranksCurrentOnCore` and `handleRescheduleSgiOnCore` decide in the new order; `setPriorityOp`'s trigger becomes `keyRescheduleOnCore`; `schedContextConfigure` on a live context and `schedContextBind` of a queued thread end with `keyRescheduleOnCore` on the thread's core; every site that surfaces a `.reschedule` SGI — the seam's remote arm, `pipBoostWithWake`, the cross-core wake paths — sets `reschedulePendingOnCore` and `handleRescheduleSgiOnCore` clears it, with `sgi_surfaced_of_reschedulePending_set`; `edfCurrentEarliestOnCore` replaces `edfCurrentHasEarliestDeadlineOnCore` in the per-core bundle; **in the same row as**: T2 about the live selector, T8 (the `schedulerInvariantStrong_smp` family for `scheduleEffectiveOnCore`, `handleRescheduleSgiOnCore`, `switchToThreadOnCore`, the tick's preempt path, the domain switch, the wake and every `keyRescheduleOnCore` caller; the idle keystone unchanged, since the idle thread is deadline-less and last), SM8.B's per-core lift over dispatch (the observable order changes only through same-label deadlines), CB0.4's order witness inverted, S0, S1, S14 and the order half of S12, the **order fixture refresh** (every `.expected` whose scenario has a deadline-bearing runnable thread) with rationale, spec §8.12.1 rewritten for EDF-first, the `CLAUDE.md`/`AGENTS.md` standing constraint, evidence-index rows, Tier-3 anchors (consumes CB1.3, CB1.6) | `SeLe4n/Kernel/Scheduler/Operations/Selection.lean`, `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean`, `SeLe4n/Kernel/SchedContext/PriorityManagement.lean`, `SeLe4n/Kernel/SchedContext/PriorityManagementPerCore.lean`, `SeLe4n/Kernel/SchedContext/Operations.lean`, `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean`, `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean`, `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean`, `SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean`, `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean`, `tests/SmpCbsSuite.lean`, `tests/fixtures/`, `docs/spec/SELE4N_SPEC.md`, `docs/CLAIM_EVIDENCE_INDEX.md`, `CLAUDE.md`, `AGENTS.md`, `scripts/test_tier3_invariant_surface.sh` | XL |
 | CB1.8 | **Switch cut 3 — deadline inheritance** (§4.7; D15, D20): `updatePipBoost` / `updatePipBoostOnCore` / `propagatePipChainCrossCore` write `inheritedDeadline := computeMinWaiterDeadline` beside `pipBoost`; `revertPriorityInheritance` keeps recomputing both; `pipBoostWithWake`'s materiality guard compares the whole key and the boosted holder's core takes `keyRescheduleOnCore`; **in the same row as**: T7 over bound blockers, T8 for the inheritance writers, the donation-preservation family re-proved over the new field, S4 and S4b (the remote deadline-only SGI witness), the **inheritance fixture refresh** (the PIP and cross-core PIP goldens) with rationale, spec §8.13 rewritten for deadline inheritance and its scope, evidence-index rows, Tier-3 anchors (consumes CB1.5, CB1.7) | `SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean`, `SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean`, `SeLe4n/Kernel/Scheduler/PriorityInheritance/BoundedInversion.lean`, `SeLe4n/Kernel/Scheduler/PriorityInheritance/Preservation.lean`, `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean`, `tests/PriorityInheritanceSuite.lean`, `tests/fixtures/`, `docs/spec/SELE4N_SPEC.md`, `docs/CLAIM_EVIDENCE_INDEX.md`, `scripts/test_tier3_invariant_surface.sh` | L |
 | CB1.9 | Liveness surface restated for EDF: the band-based `WCRTHypotheses` and `bandExhaustionBound` kept for the legacy class; the EDF class's response bound stated as `edfResponseBound := domainRotationBound + period` with its hypotheses, proved as far as CB7 commits to; the lock-wait terms of `PerCoreWcrt` unchanged (consumes CB1.7) | `SeLe4n/Kernel/Scheduler/Liveness/WCRT.lean`, `SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean` | L |
 
@@ -1393,7 +1455,7 @@ CB5.13 because the cross-subsystem bridge for affinity is false without it.
 | CB5.3 | `schedContextBindServer vServer vChild` per its §4.8 table: the check list in order, the `pathLength?` depth rule, the bidirectional link, `propagateActivation` on the child, the reschedule (consumes CB5.2) | `SeLe4n/Kernel/SchedContext/HierarchyOperations.lean` | L |
 | CB5.4 | `schedContextUnbindServer vChild` per its §4.8 table — the root check whenever the detached child will count on its core, active or not; `propagateActivation` on the former parent; rule (g) for a detached unbound leaf; the reschedule (consumes CB5.2) | `SeLe4n/Kernel/SchedContext/HierarchyOperations.lean` | M |
 | CB5.5 | Hierarchy-aware `schedContextBind` (§4.8): refuses a server target; checks the thread's home core against the ancestor's `serverCore`; the bound thread's activity enters the ancestors' counts through `propagateActivation`; `scThreadIndex` unchanged (consumes CB4.6) | `SeLe4n/Kernel/SchedContext/Operations.lean` | M |
-| CB5.6 | Hierarchy-aware `schedContextConfigure` (§4.8; D17): member admission against the parent, root admission per core; rule (f) through `cbsReconfigure` on a populated server; a `domain` change refused on any context with a parent or members (`.illegalState`, the CB0.3 refusal's two missing shapes); priority changes re-bucket nothing beyond the AK2-B mirror; `schedContextConfigure_domain_fixed_of_linked` (consumes CB5.2) | `SeLe4n/Kernel/SchedContext/Operations.lean` | M |
+| CB5.6 | Hierarchy-aware `schedContextConfigure` (§4.8; D17): member admission against the parent, root admission per core, and a populated server's existing member sum against its new reservation (`.resourceExhausted`, S13); rule (f) through `cbsReconfigure` on a populated server; a `domain` change refused on any context with a parent or members (`.illegalState`, the CB0.3 refusal's two missing shapes); priority changes re-bucket nothing beyond the AK2-B mirror; `schedContextConfigure_domain_fixed_of_linked` (consumes CB5.2) | `SeLe4n/Kernel/SchedContext/Operations.lean` | M |
 | CB5.7 | `schedContextUnbind` on a member leaf: today's effect plus the ancestors' counts through `propagateActivation` if the thread was active; a member leaf keeps its refill (it is still homed); `schedContextUnbindOnCore` follows | `SeLe4n/Kernel/SchedContext/Operations.lean`, `SeLe4n/Kernel/SchedContext/OperationsPerCore.lean` | S |
 | CB5.8 | `setThreadCpuAffinityWithMigration` refuses a member thread with `.illegalState` before any write; `setThreadCpuAffinityWithMigration_rejects_member` | `SeLe4n/Kernel/Scheduler/Operations/Core.lean` | S |
 | CB5.9 | `setPriorityOp` on a member thread changes its tie-break under the caller's MCP and nothing else: `setPriorityOp_member_preserves_schedHierarchyInvariant`; `setMCPriorityOp` unchanged | `SeLe4n/Kernel/SchedContext/PriorityManagement.lean` | S |
@@ -1420,14 +1482,14 @@ flow rule or its canonical description.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| CB6.1 | `SyscallId` variants `.schedContextConfigureServer` (35), `.schedContextBindServer` (36), `.schedContextUnbindServer` (37) per §4.9: `toNat`, `ofNat?`, `count := 38`, `ToString`; the `DecodingSuite` boundary moves to 37/38 | `SeLe4n/Model/Object/Types.lean`, `tests/DecodingSuite.lean` | S |
+| CB6.1 | The ids on **both** sides per §4.9: Lean variants `.schedContextConfigureServer` (35), `.schedContextBindServer` (36), `.schedContextUnbindServer` (37) with `toNat`, `ofNat?`, `count := 38`, `ToString`; the `DecodingSuite` boundary moves to 37/38; the Rust `sele4n-types` variants, `COUNT = 38`, `from_u64`, `required_right` and discriminant tests; the HAL hand mirror with `min_inline_args` (1, 1, 0) and its two mirror tests — the HAL's prefilter refuses unknown ids before Lean runs, so the tables may never disagree in a shipped cut; `test_aarch64_cross_build.sh` green | `SeLe4n/Model/Object/Types.lean`, `tests/DecodingSuite.lean`, `rust/sele4n-types/src/syscall.rs`, `rust/sele4n-hal/src/svc_dispatch.rs` | M |
 | CB6.2 | The total-table sweep of §4.9, every table with the value the table there names (consumes CB5.15, CB6.1) | `SeLe4n/Kernel/API.lean`, `SeLe4n/Kernel/Architecture/SyscallReturn.lean`, `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean`, `SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean`, `SeLe4n/Kernel/InformationFlow/TaintPropagation.lean`, `SeLe4n/Kernel/InformationFlow/RefusalRecord.lean`, `SeLe4n/Kernel/FrozenOps/Operations.lean`, `SeLe4n/Kernel/FrozenOps/Agreement.lean`, `SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean`, `SeLe4n/Platform/FFI.lean` | M |
-| CB6.3 | Arg structures and decoders per §4.9 with encoders, `_roundtrip` and `_error_iff` theorems | `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` | M |
+| CB6.3 | Arg structures and decoders per §4.9 with encoders, `_roundtrip` and `_error_iff` theorems; the `sele4n-abi` argument structs (`encode` / `decode` with their register counts, the `0`-only `deadline` documented) so the register layout is fixed on both sides before any arm exists | `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean`, `rust/sele4n-abi/src/args/sched_context.rs` | M |
 | CB6.4 | The bare arms per §4.8/§4.9: `.schedContextConfigureServer` (cap target = the SchedContext) and `.schedContextUnbindServer` (cap = the child) in `dispatchCapabilityOnly`; `.schedContextBindServer` (cap = the server; the child CPtr resolved through the caller's CSpace with `.write` by `syscallLookupCap`, the `tcbBindNotification` pattern) as a **fall-through** arm of `dispatchWithCap`, never in the shared helper; `.schedContextBind`'s bare arm moved to the fall-through position beside it — each through an `…OnCore` form so the Tier-1 per-core routing gate passes; the wildcard-unreachable proofs restated (consumes CB6.2, CB6.3) | `SeLe4n/Kernel/API.lean` | M |
 | CB6.5 | Idle-reservation chokepoint: the child CPtr resolves through `syscallResolveCap`, which refuses a reserved idle object; the core operand is not an object id; `dispatchWithCap_bindServer_idle_refused` | `SeLe4n/Kernel/API.lean` | S |
 | CB6.6 | **Activation cut** — the checked tier (§4.13; D8): `schedContextBindServerChecked` and `schedContextBindChecked` as fall-through arms of `dispatchWithCapChecked`, `donationAdmissible?`'s label half inside the donation composites, the `enforcementBoundary` rows (`.schedContextBindServer` policy-gated, `.schedContextBind` **moved** to policy-gated) with `enforcementBoundary_is_complete` and the per-core name table re-proved; `checkedDispatch_bindServer_eq_unchecked_when_allowed`, `checkedDispatch_schedContextBind_eq_unchecked_when_allowed` and the two `checkedDispatch_*_eq_unchecked` equivalences for the capability-only arms; **in the same row as** the specification of the live ABI — spec §8.12.8's syscall, refusal and admission subsections, the spec's syscall table, `docs/CLAIM_EVIDENCE_INDEX.md` rows for the three arms and the moved row — since this is the cut that makes them reachable (consumes CB6.4, CB6.5) | `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean`, `SeLe4n/Kernel/API.lean`, `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean`, `docs/spec/SELE4N_SPEC.md`, `docs/CLAIM_EVIDENCE_INDEX.md` | L |
 | CB6.7 | Dispatch payoff: per-arm `…_preserves_ipcInvariantFull` for the three arms (frames on every conjunct — no IPC state moves), extending `dispatchCapabilityOnly_preserves_ipcInvariantFull` (production) for the two capability-only arms and the staged `dispatchWithCap_preserves_ipcInvariantFull` / `dispatchWithCapChecked_preserves_ipcInvariantFull` for the bind arms; the donation guard's refusal arm composed into the `.call` payoff; `capabilityDispatchQuiescence` needs no new field, stated as a theorem (consumes CB6.6) | `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean`, `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean`, `SeLe4n/Kernel/API.lean` | L |
-| CB6.8 | Rust mirrors per §4.9: `sele4n-types`, the HAL hand mirror with `min_inline_args` (1, 1, 0), `sele4n-abi` argument structs (and the `0`-only `deadline`), `sele4n-sys` wrappers with their docs, conformance cases; `test_aarch64_cross_build.sh` green (consumes CB6.1, CB6.3) | `rust/sele4n-types/src/syscall.rs`, `rust/sele4n-hal/src/svc_dispatch.rs`, `rust/sele4n-abi/src/args/sched_context.rs`, `rust/sele4n-sys/src/sched_context.rs`, `rust/sele4n-abi/tests/conformance.rs` | M |
+| CB6.8 | Userspace convenience per §4.9: the `sele4n-sys` wrappers with their docs and the conformance `verify_regs` cases — the ABI is already invocable through `invoke_syscall` with CB6.1's ids and CB6.3's encoders, so this row adds no reachability; `test_rust.sh` and `test_aarch64_cross_build.sh` green (consumes CB6.1, CB6.3) | `rust/sele4n-sys/src/sched_context.rs`, `rust/sele4n-abi/tests/conformance.rs` | S |
 | CB6.9 | ABI version decision recorded on all three sides (§3.2): `SYSCALL_ABI_VERSION` stays `3`, with a conformance pin that every prior discriminant encodes as before | `rust/sele4n-abi/tests/conformance.rs`, `SeLe4n/Kernel/Architecture/SyscallReturn.lean` | S |
 | CB6.10 | Return-shape and dispatch pins: `SyscallReturnAbiSuite` cases for the three `.unit` frames; `SyscallDispatchSuite` discriminant pins for the new refusal arms and for the moved `.schedContextBind` arm; `AbiRoundtripSuite` cases for the two decoders and the `0`-only deadline | `tests/SyscallReturnAbiSuite.lean`, `tests/SyscallDispatchSuite.lean`, `tests/AbiRoundtripSuite.lean` | M |
 | CB6.11 | Staging promotion (§4.14): the staged theorem modules enter the `SeLe4n.lean` closure through their production consumers; allowlist entries removed and `STATUS: staged` markers replaced in the same cut; the partition gate passes in both directions (consumes CB6.7) | `SeLe4n.lean`, `SeLe4n/Platform/Staged.lean`, `scripts/staged_module_allowlist.txt` | S |
@@ -1522,9 +1584,9 @@ re-checks), plus the new fixtures CB4.11, CB6.12 and CB7.9 add.
 
 ### 8.4 What each phase validates
 
-Tier 2: `smp_cbs_suite` (S0–S3, S4b, S5, S6, S8–S11), `PriorityInheritanceSuite`
+Tier 2: `smp_cbs_suite` (S0–S3, S4b, S5, S6, S8–S12, S14), `PriorityInheritanceSuite`
 (S4), the new `hierarchical_server_suite` (S7), `NegativeStateSuite` (CB0.3,
-CB1.4, CB5.2, CB5.16, CB6.12), `SmpInformationFlowSuite` (S8, S11), the
+CB1.4, CB5.2, CB5.6 with S13, CB5.16, CB6.12), `SmpInformationFlowSuite` (S8, S11), the
 decode and ABI suites (CB6.1, CB6.10), and every refreshed golden (CB1.6,
 CB1.7, CB1.8, CB5.2).  Tier 3: anchors per phase.  Tier 4: CB8.3's script, a
 skip until SM10.1 produces an image.
@@ -1708,9 +1770,9 @@ which rows moved and why:
    decision, the label rule, the constants, the syscall surface and the ABI
    decision all survived re-derivation; the plan gate, the naming gate and the
    docs-sync lane hold the document's structure.
-9. **Two review rounds, twenty-four findings, one plan.**  The automated
-   review of the second and third cuts found defects in the *design*, not
-   only in the schedule, and each is folded in where it binds rather than
+9. **Three review rounds, thirty-one findings, one plan.**  The automated
+   review of the second, third and fourth cuts found defects in the *design*,
+   not only in the schedule, and each is folded in where it binds rather than
    answered in a thread:
 
    | Finding | Change |
@@ -1739,6 +1801,13 @@ which rows moved and why:
    | A deadline-only inheritance change sent no remote SGI | `pipBoostWithWake`'s guard compares the whole key; S4b (§4.4, §4.7) |
    | Activation-path writes had no lock footprint | every activation caller gains the ancestors' locks; `maxLockSetSize` to ten, measured against `lockSet_tcbSuspend` (D21, §4.12, CB4.8) |
    | The exhausted-then-unbound leaf could stall with no refill in flight (found while fixing the two refill representations) | rule (g) clears both on detach, rule (e2) re-arms on activation, and `pendingRefillMirroredOnCore` / `unhomedNoPendingRefill` hold the representations equal (§4.2) |
+   | Shrinking a populated server passed admission while its members no longer fit | configure checks the existing member sum against the new reservation (§4.6, CB5.6, S13) |
+   | H5 admitted a root whose only leaf was exhausted | `continuouslyEligible`: a runnable descendant with positive budget on every context below the root (§4.11) |
+   | T19 claimed maximality on a core whose reschedule SGI had not landed | `reschedulePendingOnCore` records the request; the conjunct is stated modulo the flag; T19 establishes or posts; the handler clears (§4.1, §4.4, §4.10, S14) |
+   | T18 failed at an exact deadline-and-priority tie, where the non-inherited `scId` decides | T18 requires strict dominance on deadline or priority; the tie case is excluded, not papered over (§4.7) |
+   | Binding a queued unbound thread moved it into the EDF class with no scheduling point | `schedContextBind` ends with `keyRescheduleOnCore` on the queue core (§4.4, §4.8, CB1.7) |
+   | Binding an already-active thread skipped the activation rule, since nothing enqueued it | rule (e) fires at bind for a runnable or running thread; `noteActivated` is called there too (§4.2, §4.5, CB1.6) |
+   | The Rust id tables trailed the live Lean arms by two rows, so the ABI was unreachable on hardware in between | the `sele4n-types` variants and the HAL mirror land with the ids (CB6.1), the argument structs with the decoders (CB6.3); CB6.8 keeps only the userspace wrappers (§4.9) |
 
    The sub-task count moved from 93 to 89: CB1 lost five rows to the
    inert-then-switch shape, CB4 gained the footprint row, and the
