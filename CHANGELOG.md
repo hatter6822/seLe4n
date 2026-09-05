@@ -44,7 +44,7 @@ tick-quantised with no new upcall and no ABI version change; and every
 generalising sub-task after CB1 carries the theorem that the model is
 unchanged on states without servers.
 
-Twelve automated review rounds on the planning PR (eighty-eight findings)
+Thirteen automated review rounds on the planning PR (ninety-two findings)
 reshaped the design before any code exists, and the plan's §14 records each
 finding against its fix — and, after the fifth, the classes the findings fell
 into and the rule that closes each class rather than its instances (§14): a transitive tie-break (`scId` in the EDF class, the
@@ -150,7 +150,12 @@ bound needs; the donation guard wired into the dispatchers and the live
 transitions' preservation carried by the admission cut itself; a zero-share
 root server destroyable at once; the donation scenario reading the residual
 after the return; the total table given its final and its placeholder values;
-the two new staged modules registered in the rows that create them; and the status flip
+the two new staged modules registered in the rows that create them; a per-core
+admission slot held from the read of the utilisation sum to the commit, since
+a decision's read is a footprint as much as its write; the seam slot composed
+for a server child as for a bound leaf; a donee held to the context's domain
+as a bound thread is; the Rust side of the configure contract landing with the
+engine switch that changes it; and the status flip
 confined to the last closure row.
 
 Three things the survey behind the plan found in the flat tree, all recorded
