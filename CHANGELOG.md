@@ -351,6 +351,162 @@ the floor could not.
 
 Refs: docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md §5 (closure audit)
 
+### Review round 5 (Codex, on `525d365f`)
+
+Three findings, each a gap between what a gate or the refinement *claimed*
+and what it checked, and the third of them a spec defect the other two had
+been standing on.  **(3) A served ticket could be withdrawn** (P2, taken
+first because it is the cause).  After a writer's `release_write` returns,
+the head waiter is *served* but not yet *completed*; the spec's release
+promoted that waiter atomically, so its `cancel` there is the holder no-op,
+while the deployed `cancel` retired the served ticket and left the lock with
+one holder fewer than the spec.  No linearization respecting the completed
+release relates the two.  The bridge attributes every waiter's entry to the
+release block that promotes it, so the served-but-uncompleted interval does
+not exist in the model, and that fold is sound only if nothing a served core
+can do differs from the entered state — which `cancel` broke.  And the spec
+was wrong too, in the same place: LC1's `cancel` was the neutral
+`waiters.filter` (`rwLock_cancel_admits_no_one`), while the deployed
+withdrawal of a served head *passes the turn* and the readers behind it enter
+while readers hold — so whether a queued reader was a spec holder depended on
+the path that had queued it, and no history-free decision in the lock could
+implement the spec.  The improvement direction is the spec's: **a withdrawal
+at the head hands its turn on** exactly as the lock does.  `applyOp .cancel`
+now promotes the contiguous reader run at the head when no writer holds and
+the new head is a reader (`RwLockState.withdraw`, `cancelPromotes`,
+`cancelRun`); a writer head keeps waiting for the readers, a non-head
+withdrawal promotes nobody.  The frame facts split by that guard
+(`applyOp_cancel_of_promotes` / `_of_not_promotes`, `applyOp_cancel_readers`
+= `cancelRun ++ readers`), `rwLock_cancel_preserves_wf` composes
+`rwLock_withdraw_preserves_wf` with `rwLock_promoteReaderRun_preserves_wf`
+(INV-R5 from the run being non-empty), `promote_prefix_inclusion` drops its
+"not a cancel" gate for "not the withdrawer" (a core ahead of a leaver leaves
+too), the two retired lemmas become `holderAt_succ_of_cancel` /
+`admitted_by_cancel`, every cancel arm of the liveness family is re-proved
+under the promotion (a withdrawal by another core only *accelerates*
+admission, so `noCancelIn` and CC-5 are unchanged in statement), and the
+payoff family is `rwLock_cancel_admits_only_the_head_reader_run` +
+`rwLock_cancel_nonhead_admits_no_one` (inventory count unchanged at 30).
+Both bridges fold the promotion: the queued one's `cancel_queued` block is
+`withdrawOps ++ cancelPromoteFrom`, with `readerRun_preserves_queuedSim`
+carrying the reader-run admission *with readers holding* (the case
+`promoteFrom_preserves_queuedSim` excludes), and the CAS-retry one's
+`honestBlock.cancel_promoting` carries the run's `fetch_add`s as a promoting
+release does (`casPromoteReaderRun_preserves_rwLockSim`).
+
+With that, "served reader ⟹ holder", "served writer ⟹ holder iff
+`state == 0`" and "queued reader ⟹ holder iff no live write request is ahead
+of it" are decidable from the lock's own words, and `QueuedRwLock` decides
+them.  `enqueue(core, mode)` records the request's **mode** in a fourth
+per-core word, `request_mode`, stored before the request word so a request
+read live is read with its mode; `complete_*` in the other mode is refused on
+that record in every build; and `cancel` returns a **`CancelOutcome`** —
+`Withdrawn`, nothing owed, or `Holding`, the core holds and owes a release —
+decided before anything is published: a write request enters when served
+with no reader (a CAS from `0` that cannot fail, since only the served core
+can add a reader), a read request enters when `write_request_ahead` — the
+other cores' request and mode words over `[now_serving, ticket)` — finds no
+live writer, waiting for its turn to do so, and anything else is the LC3
+withdrawal verbatim.  The verdict is stable because a writer ahead can only
+leave.  The two-phase-locking unwind needs no branch: the release that
+follows every withdrawal releases what a `Holding` entered.  The Lean model
+carries the word (`requestModes`, `requestModeStore` in `takeTicketOps`),
+and `queuedSim` gains a **seventh conjunct**, `queuedRequestModesSim` — a
+live request's recorded mode is `specModeOf`: the queued mode, or `write`
+for the held writer — carried through the promotion with INV-R3, so the word
+the withdrawal scan reads is pinned to the spec's queued mode.  A `Holding`
+withdrawal has no block of its own: it is the deferred half of the entry the
+promoting block already folded, which is what makes the served interval
+sound to fold again.  The FFI carries both changes (`ffi_rw_lock_enqueue`
+takes the mode, `ffi_rw_lock_cancel` returns the outcome), and
+`scripts/check_lock_ffi_symmetry.sh` now holds every symbol's parameter and
+return types across the three surfaces — a name check had passed the two
+sides calling one symbol at two arities.
+
+The gates ask the lock.  The oracle holds each withdrawal's verdict to the
+spec's (`expect_outcome`: a queued waiter's must be `Withdrawn`, a holder's
+and an uninvolved core's the no-op) and mirrors the promoting withdrawal
+(`promote_reader_run`, the reader arm both promotions share).  The matrix
+has nine start states — `(CoreState, Env)`: queued and served in both modes,
+a served writer behind a reader, withdrawn, holding, idle — under one
+classification (`cell`), which predicts the state after every step and is
+read back from the words (`expect_words`), and the loom models race the
+decision against the release or withdrawal that changes its answer
+(`served_reader_withdrawal_is_an_admission`,
+`served_writer_on_a_calm_lock_enters`,
+`served_writer_behind_readers_withdraws_or_enters`,
+`withdrawn_head_hands_the_turn_to_the_readers_behind_it`,
+`unserved_reader_in_a_promoted_run_withdraws_into_a_hold`), tallying that
+both outcomes occur across the schedules — a model that only *handled* both
+would pass if one never did.  Decisiveness: make the read arm withdraw
+regardless of the scan (the two reader models never enter); invert the served
+writer's state test (the calm-lock writer withdraws, and the one behind a
+reader enters over it); drop the scan's mode read (the reader models never
+enter).  One thing the models must not do is spin against each other: loom's
+branch budget is exhausted by two threads spinning at once, so each model
+has one waiting thread and the driving thread completes served requests after
+the race; and a third acquisition in a two-thread model multiplies the
+schedules past what an unbounded run finishes, so the ordering in which one
+core withdraws twice behind two successive writers is pinned sequentially
+(`a_second_withdrawal_behind_a_new_writer_is_retired_by_its_release`) rather
+than modelled.
+
+**(2) The Tier-5 output collapsed identity** (P2).  Both oracles printed
+`W=<flag>;R=<count>;Q=<length>`, so a spec regression that promoted the
+wrong waiter, reordered the queue or changed a queued mode agreed with the
+implementation on every count while disagreeing on every core.  Both now
+print **one identity line per state** — the initial state, then one after
+each op — `W=<core|->;R=<sorted reader cores>;Q=<core:r|w,...>`: the
+writer's identity, the reader *set* (sorted, since `readers`' order is not
+semantic: the Lean fold prepends a promoted batch, the driver admits one
+core at a time), and the queue in order with each request's mode.  On the
+Rust side the line is read back out of the ticket lock's per-core words —
+the writer and readers from the held words, the queue from the request
+words in ticket order with the mode words — so nothing rendered comes from
+the driver's mirror, which `check_all` holds to those words first.  The
+harness compares whole outputs and captures the Lean side's exit status too
+(its output had been `tail -1`'d, which turned a Lean crash into an empty
+line); a mid-trace divergence that converges by the end is a mismatch now.
+The 41 literal expectations in the oracle's tests are translated, and the
+promoting withdrawal shows in them as the run entering at the withdrawal.
+
+**(1) The loom gate's description named something it did not run** (P2).
+"Op-sequences of length ≤ 4" described the enumeration in three places
+while it ran one precomposed unit per thread, and the model count had been
+stated as "55 pairs" of eleven units when `UNITS[i..]` includes the
+diagonal.  The claim is now what runs: every unordered pair of the lock's
+single-lifecycle units, one per thread, unbounded — fourteen units, 105
+models with the diagonal, `WithdrawWriteAndUnwind` beside the read form —
+and, in `every_chained_unit_meets_every_unit`, three chained units
+(`ReadThenWrite`, `WriteThenRead`, `WithdrawThenRead`, so a second
+acquisition begins on the per-core words the first left behind) against
+every unit, 48 models, under a **stated** preemption bound of 3
+(`CHAINED_PREEMPTION_BOUND`): a thread running two lifecycles has twice the
+atomic and yield points, and an unbounded exploration of two of them did not
+finish in eleven minutes, so the bound is written where it applies rather
+than implied by a run that never ended.  `build.rs` holds `run_unit` to
+every per-core entry point
+except the accessors (check 5, `run_unit_covers_entry_points`, self-tested
+against a call moved into a sibling function), which is how the two RAII
+guard spellings were found to be in no unit and became `ReadGuard` /
+`WriteGuard`.  And the sentence is made true where it is decidable: the
+single-threaded census `per_core_census_to_depth_four` replays every
+sequence of up to four non-accessor entry points from each of the nine
+start states — 158,015 sequences, under half a second — predicting each
+step from the same `cell` the matrix uses and stopping at a refusal, a
+report or an operation that would park; the matrix is its depth-one case.
+The whole gate run takes about seven minutes after the loom compile — the
+scenario models and the single-lifecycle enumeration unbounded, the chained
+enumeration at its stated bound — re-measured rather than reprinted across
+seven, nine and eleven units.  A quick pass with `LOOM_MAX_PREEMPTIONS` set
+keeps its tighter bound for the chained pairs too (`pair_model` takes the
+minimum of the environment's bound and the stated one): the first cut of
+this round overwrote the field, so the script's "bounded at 2 throughout"
+was false for those pairs while the helper's docstring claimed the
+environment still bounded them — found by running the quick pass rather
+than quoting it, and the bounded figure (about half a minute) is
+re-measured on the fixed form.
+
 ## v0.34.54 — the lock execution learns what a step costs
 
 **WS-LC LC5 (all eleven sub-tasks), and the workstream closes.**  Both SM2.C

@@ -133,7 +133,7 @@ extern crate std;
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use crate::queued_rw_lock::QueuedRwLock;
+use crate::queued_rw_lock::{CancelOutcome, HeldMode, QueuedRwLock};
 use crate::ticket_lock::TicketLock;
 
 // ============================================================================
@@ -641,20 +641,43 @@ pub fn rw_lock_release_write(handle: u64) {
 // read acquisition, because they are: the blocking form *is* enqueue plus
 // complete.  A withdrawal is a different event and gets its own counter.
 
+/// The wire encoding of a request's mode across the foreign-function
+/// surface (PR #890 review round 5): `0` is a read request, `1` a write
+/// request, and anything else is malformed.
+const RW_LOCK_MODE_READ: u64 = 0;
+const RW_LOCK_MODE_WRITE: u64 = 1;
+
+/// The wire encoding of a withdrawal's outcome: `0` when the request was
+/// withdrawn, `1` when the core holds and owes a release
+/// (`CancelOutcome`).
+const RW_LOCK_CANCEL_WITHDRAWN: u64 = 0;
+const RW_LOCK_CANCEL_HOLDING: u64 = 1;
+
 /// **WS-LC LC3.7**: begin a cancellable acquisition on `handle`, taking a
-/// ticket without waiting for it.
+/// ticket without waiting for it, in `mode` (PR #890 review round 5: the
+/// lock records the mode at the issue, because whether the spec has
+/// admitted a request — which `rw_lock_cancel` decides — depends on it).
 ///
 /// The caller must follow with exactly one of `rw_lock_complete_read`,
-/// `rw_lock_complete_write` or `rw_lock_cancel` for the ticket returned.
+/// `rw_lock_complete_write` or `rw_lock_cancel` for the ticket returned;
+/// a completion in the other mode is refused.
 #[must_use]
-pub fn rw_lock_enqueue(handle: u64) -> u64 {
+pub fn rw_lock_enqueue(handle: u64, mode: u64) -> u64 {
     let idx = decode_rw_lock_handle(handle).unwrap_or_else(|| {
         panic!(
             "WS-LC LC3.7: rw_lock_enqueue: malformed handle {} (must be < {})",
             handle, STATIC_RW_LOCK_POOL_SIZE
         )
     });
-    STATIC_RW_LOCK_POOL[idx].enqueue(executing_core_id())
+    let mode = match mode {
+        RW_LOCK_MODE_READ => HeldMode::Read,
+        RW_LOCK_MODE_WRITE => HeldMode::Write,
+        other => panic!(
+            "PR #890 review round 5: rw_lock_enqueue: malformed mode {other} (must be \
+             {RW_LOCK_MODE_READ} for a read request or {RW_LOCK_MODE_WRITE} for a write request)"
+        ),
+    };
+    STATIC_RW_LOCK_POOL[idx].enqueue(executing_core_id(), mode)
 }
 
 /// **WS-LC LC3.7**: whether `ticket` is the one `handle` is serving, so a
@@ -696,12 +719,19 @@ pub fn rw_lock_complete_write(handle: u64, ticket: u64) {
     STATIC_RW_LOCK_POOL[idx].complete_write(executing_core_id(), ticket);
 }
 
-/// **WS-LC LC3.7**: withdraw a request begun with [`rw_lock_enqueue`].
+/// **WS-LC LC3.7**: withdraw a request begun with [`rw_lock_enqueue`] —
+/// or, when the spec has already admitted it, realise that admission
+/// (PR #890 review round 5).
 ///
-/// Releases nothing, admits nobody, and costs the waiters behind it
-/// nothing — the contract `rwLock_cancel_not_effective_release` and
-/// `rwLock_cancel_admits_no_one` state on the Lean side.
-pub fn rw_lock_cancel(handle: u64, ticket: u64) {
+/// A withdrawal releases nothing and never installs a writer; it admits
+/// only the reader run behind a withdrawn head, as the spec's `cancel`
+/// does (`rwLock_cancel_not_effective_release`,
+/// `rwLock_cancel_admits_only_the_head_reader_run` on the Lean side).
+/// Returns `0` when the request was withdrawn and `1` when the core holds
+/// and owes a release (`CancelOutcome::Holding`).  The withdrawal counter
+/// counts *calls*, either outcome included.
+#[must_use]
+pub fn rw_lock_cancel(handle: u64, ticket: u64) -> u64 {
     let idx = decode_rw_lock_handle(handle).unwrap_or_else(|| {
         panic!(
             "WS-LC LC3.7: rw_lock_cancel: malformed handle {} (must be < {})",
@@ -709,7 +739,10 @@ pub fn rw_lock_cancel(handle: u64, ticket: u64) {
         )
     });
     let _ = RW_LOCK_CANCEL_COUNT[idx].fetch_add(1, Ordering::Relaxed);
-    STATIC_RW_LOCK_POOL[idx].cancel(executing_core_id(), ticket);
+    match STATIC_RW_LOCK_POOL[idx].cancel(executing_core_id(), ticket) {
+        CancelOutcome::Withdrawn => RW_LOCK_CANCEL_WITHDRAWN,
+        CancelOutcome::Holding => RW_LOCK_CANCEL_HOLDING,
+    }
 }
 
 /// **WS-LC LC3.7**: how many withdrawals `handle` has seen.

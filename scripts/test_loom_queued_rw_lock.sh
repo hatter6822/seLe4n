@@ -4,12 +4,29 @@
 # WS-RR RR6.20: exhaustive-interleaving gate for the deployed
 # reader-writer lock.
 #
-# `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` §8 lists
-# "`cfg(loom)` exhaustive-interleaving runs pass on op-sequences of
-# length <= 4" as a D-5 acceptance gate.  Before WS-RR RR6.20 nothing
-# ran: `queued_rw_lock.rs` imported `core::sync::atomic` directly, and
-# loom only instruments its own atomic types, so a `loom::model` block
-# around it would explore exactly one interleaving and report success.
+# `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` §8 lists an
+# exhaustive-interleaving gate under `cfg(loom)` as a D-5 acceptance gate.
+# Before WS-RR RR6.20 nothing ran: `queued_rw_lock.rs` imported
+# `core::sync::atomic` directly, and loom only instruments its own atomic
+# types, so a `loom::model` block around it would explore exactly one
+# interleaving and report success.
+#
+# What this gate enumerates (PR #890 review round 5, which found the claim
+# over-stated in three places): the targeted scenario models; every
+# unordered pair of the lock's single-lifecycle units, one unit per thread,
+# with no preemption bound — fourteen units, 105 models with the diagonal
+# (`every_pair_of_units_is_safe`); and every chained unit — two lifecycles
+# on one core — against every unit, under a STATED preemption bound of 3
+# (`every_chained_unit_meets_every_unit`, 48 models,
+# `CHAINED_PREEMPTION_BOUND` in the lock's loom module): a thread running
+# two lifecycles has twice the atomic and yield points, and an unbounded
+# exploration of two such threads did not finish in a per-PR lane.  That
+# bound is the one bounded exploration this gate performs, and it is
+# written where it applies.  The plan's original "op-sequences of length
+# <= 4" sentence is NOT this gate: it is the single-threaded census
+# `per_core_census_to_depth_four` in the ordinary host lane, which replays
+# every per-core sequence of up to four entry points from every start
+# state against one classification.
 #
 # What makes this real:
 #
@@ -19,8 +36,11 @@
 #   * `loom` is a `[target.'cfg(loom)'.dependencies]` entry, so no
 #     ordinary build — host, test, clippy, or the bare-metal cross
 #     build — resolves it at all.
-#   * The models are two threads with one or two operations each, which
-#     is where loom's exploration is exhaustive rather than bounded.
+#   * The models are two or three threads with at most one thread waiting
+#     at a time, which is where loom's exploration is exhaustive rather
+#     than bounded: two threads spinning against each other exhaust loom's
+#     branch budget, so a scenario's driving thread completes served
+#     requests after the race rather than on a third spinner.
 #
 # The filter is deliberate: under `--cfg loom` the crate's *other*
 # thread tests would drive loom atomics from real `std` threads, which
@@ -88,15 +108,38 @@
 # existed `release_read` was an unconditional `fetch_sub` that the refinement
 # had described as a stutter.  `every_pair_of_units_is_safe` is the
 # enumeration the acceptance criterion cited in the header always asked for:
-# every unordered pair of the lock's eleven operation units — the fused and
-# split acquisitions in both modes, both non-blocking attempts, a
-# withdrawal followed by the unwind, (review round 3) the unwind at a
-# member the core holds, as a reader and as the writer, and (the class
-# closure behind rounds 2 and 3) enqueue twice, the fused acquisition, then
-# the split completion, in both modes — one unit per thread, at most five
-# lock operations, unbounded.  The handwritten models
-# are scenarios; this is the closure, and a unit added to the lock's list is
-# paired with every other automatically.
+# every unordered pair of the lock's fourteen single-lifecycle units — the
+# fused and split acquisitions in both modes, both non-blocking attempts, a
+# withdrawal followed by the unwind in both modes, (review round 3) the
+# unwind at a member the core holds, as a reader and as the writer, (the
+# class closure behind rounds 2 and 3) enqueue twice, the fused acquisition,
+# then the split completion, in both modes, and (review round 5) the two
+# RAII guards — one unit per thread, unbounded; and, under the stated
+# preemption bound, the three chained units of review round 5 — read then
+# write, write then read, withdraw then read — against every unit.  The
+# handwritten models are scenarios; this is the closure, and a unit added to
+# the lock's lists is paired with every other automatically — and `build.rs`
+# holds `run_unit` to every per-core entry point of the lock, which is how
+# the two guard spellings were found to be in no unit.
+#
+# PR #890 review round 5 — a withdrawal of an admitted request enters
+# ---------------------------------------------------------------------
+#
+# Five models race a served or promoted request's withdrawal against the
+# release that admitted it and tally, across the schedules, that BOTH
+# verdicts occur (`Outcomes::assert_both`): a model that only handled both
+# would pass if one never did.  Decisiveness, relation-breaking as above:
+#
+#   1. Keep the mode record and the scan, and make `cancel`'s read arm
+#      withdraw regardless of the scan's answer (`if false && …`):
+#      `served_reader_withdrawal_is_an_admission` and
+#      `unserved_reader_in_a_promoted_run_withdraws_into_a_hold` never enter.
+#   2. Keep the served writer's state test and invert it (`!= 0`):
+#      `served_writer_on_a_calm_lock_enters` withdraws, and
+#      `served_writer_behind_readers_withdraws_or_enters` enters over the
+#      reader — exclusion.
+#   3. Keep the scan and drop its mode read, so every live request ahead
+#      counts as a writer: the two reader models never enter.
 #
 # Their decisiveness mutation keeps the held-word load *and* the comparison
 # in `release_read` (and, separately, in `release_write`) and drops only the
@@ -147,8 +190,12 @@ fi
 # interleaving when it is unset; the first cut pinned it at 3, which omits
 # every schedule needing four or more preemptions — and the operations under
 # test have many atomic and yield points, so a two-operation model does not
-# imply a three-preemption bound.  Unbounded, the thirteen models take about a minute;
-# bounded at 3 they took under a second.  The gate is the unbounded run.  A
+# imply a three-preemption bound.  The nineteen models take
+# about seven minutes (re-measured at PR #890 review round 5, after being
+# reprinted across seven, nine and eleven units) — the scenario models and
+# the single-lifecycle enumeration unbounded, the chained enumeration under
+# its stated bound; bounded at 2 throughout they take about half a minute.
+# The gate is the run as written here.  A
 # caller may still set `LOOM_MAX_PREEMPTIONS=n` in the environment for a
 # quick local pass, and that pass is not the gate — say so when quoting it.
 if [ -n "${LOOM_MAX_PREEMPTIONS:-}" ]; then

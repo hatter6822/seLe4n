@@ -1111,12 +1111,13 @@ pub extern "C" fn ffi_rw_lock_release_read(handle: u64) {
     crate::lock_bridge::rw_lock_release_read(handle);
 }
 
-/// **WS-LC LC3.7**: begin a cancellable acquisition on `handle`.
+/// **WS-LC LC3.7**: begin a cancellable acquisition on `handle`, in
+/// `mode` (`0` read, `1` write; PR #890 review round 5).
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiRwLockEnqueue`.
 #[no_mangle]
-pub extern "C" fn ffi_rw_lock_enqueue(handle: u64) -> u64 {
-    crate::lock_bridge::rw_lock_enqueue(handle)
+pub extern "C" fn ffi_rw_lock_enqueue(handle: u64, mode: u64) -> u64 {
+    crate::lock_bridge::rw_lock_enqueue(handle, mode)
 }
 
 /// **WS-LC LC3.7**: whether `ticket` is the one `handle` is serving.
@@ -1145,12 +1146,15 @@ pub extern "C" fn ffi_rw_lock_complete_write(handle: u64, ticket: u64) {
     crate::lock_bridge::rw_lock_complete_write(handle, ticket);
 }
 
-/// **WS-LC LC3.7**: withdraw a request begun with `ffi_rw_lock_enqueue`.
+/// **WS-LC LC3.7**: withdraw a request begun with `ffi_rw_lock_enqueue`,
+/// or realise the admission the spec already made of it (PR #890 review
+/// round 5): returns `0` when withdrawn, `1` when the core holds and owes
+/// a release.
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiRwLockCancel`.
 #[no_mangle]
-pub extern "C" fn ffi_rw_lock_cancel(handle: u64, ticket: u64) {
-    crate::lock_bridge::rw_lock_cancel(handle, ticket);
+pub extern "C" fn ffi_rw_lock_cancel(handle: u64, ticket: u64) -> u64 {
+    crate::lock_bridge::rw_lock_cancel(handle, ticket)
 }
 
 /// **WS-LC LC3.7**: how many withdrawals `handle` has seen.

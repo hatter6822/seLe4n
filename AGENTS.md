@@ -203,26 +203,26 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~53453 lines)
+- `CHANGELOG.md` (~53653 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22582 lines)
 - `tests/SmpInformationFlowSuite.lean` (~11797 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9161 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
 - `SeLe4n/Kernel/API.lean` (~6926 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5742 lines)
 - `SeLe4n/Platform/Boot.lean` (~5724 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~5186 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5130 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5001 lines)
+- `docs/spec/SELE4N_SPEC.md` (~4775 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4750 lines)
-- `docs/spec/SELE4N_SPEC.md` (~4724 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `SeLe4n/Model/State.lean` (~4503 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (~4263 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
 - `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~4126 lines)
 - `tests/NegativeStateSuite.lean` (~4115 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3919 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRead.lean` (~3788 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (~3743 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (~3456 lines)
 - `SeLe4n/Kernel/CrossSubsystem.lean` (~3407 lines)
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
@@ -236,8 +236,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Model/Object/Structures.lean` (~3116 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean` (~3105 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean` (~2994 lines)
+- `SeLe4n/Platform/FFI.lean` (~2940 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~2939 lines)
-- `SeLe4n/Platform/FFI.lean` (~2930 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~2844 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2784 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~2755 lines)
@@ -293,12 +293,12 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1709 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` (~1702 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
 - `tests/FaultHandlingSuite.lean` (~1660 lines)
 - `tests/SmpIpcSuite.lean` (~1660 lines)
 - `tests/SyscallDispatchSuite.lean` (~1645 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` (~1620 lines)
-- `tests/SmpSurfaceAnchors.lean` (~1515 lines)
+- `tests/SmpSurfaceAnchors.lean` (~1600 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1508 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~1491 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~1488 lines)
@@ -335,8 +335,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1188 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean` (~1171 lines)
 - `tests/SmpCacheMaintenanceSuite.lean` (~1170 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean` (~1169 lines)
 - `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1169 lines)
 - `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~1168 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` (~1165 lines)
@@ -391,6 +391,7 @@ To find files that need pagination today, run:
 - `tests/WithLockSetSuite.lean` (~811 lines)
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
+- `docs/DEVELOPMENT.md` (~803 lines)
 - `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` (~800 lines)
 This bullet block is a **curated snapshot**, not a static enumeration.
 `scripts/find_large_lean_files.sh --check` (called from
@@ -2137,12 +2138,22 @@ code may assume:
   below), and both are closed: **SM2.C-C** at v0.34.53 (spec, both refinements,
   the deployed lock and both consumers) and **SM2.C-T** at v0.34.54 (the timed
   execution) — see the two bullets below.
-- **A queued core may withdraw its request.**
-  `RwLockOp.cancel` (v0.34.50) removes `c`'s entry from `waiters` and writes
-  nothing else — three frame facts by `rfl` — preserves all five INV-R
-  conjuncts, and is neither a release nor an admission
-  (`rwLock_cancel_not_effective_release`, `rwLock_cancel_admits_no_one`), so it
-  costs the waiters behind it nothing.  Four things new code must respect.
+- **A queued core may withdraw its request, and a withdrawn head hands its
+  turn on.**  `RwLockOp.cancel` (v0.34.50) removes `c`'s entry from `waiters`
+  and — since PR #890 review round 5 — promotes the contiguous reader run at
+  the head when no writer holds and the new head is a reader
+  (`RwLockState.cancelPromotes`, `cancelRun`), exactly as the deployed lock's
+  withdrawal of a served head passes the turn to the readers behind it; a
+  writer head keeps waiting for the readers (INV-R1), and a withdrawal from
+  anywhere but the head promotes nobody (`rwLock_cancel_nonhead_admits_no_one`).
+  It preserves all five INV-R conjuncts (`rwLock_withdraw_preserves_wf` +
+  `rwLock_promoteReaderRun_preserves_wf`), is never an effective release and
+  never installs a writer (`rwLock_cancel_not_effective_release`,
+  `rwLock_cancel_admits_only_the_head_reader_run`), so it costs the waiters
+  behind it nothing — it can only admit them sooner.  The old `cancel` was the
+  neutral `waiters.filter` (`rwLock_cancel_admits_no_one`), which contradicted
+  the lock and made a served reader's holder status path-dependent; see the
+  round-5 bullet below.  Four things new code must respect.
   (1) **Which liveness conclusion you may cite changed.**  A theorem concluding
   "`c` *leaves the queue*" is satisfied by a withdrawal and is unchanged
   (`rwLock_writer_admitted_within_release_budget`); a theorem concluding "`c`
@@ -2193,14 +2204,17 @@ code may assume:
   (WS-LC LC3, v0.34.52).  `QueuedRwLock::acquire_read` / `acquire_write` are
   the *fused* spellings — they take a ticket and spin to completion inside one
   call, so there is no instant at which a caller holds a ticket and could
-  abandon it.  A caller that may have to unwind takes `enqueue(core)`, spins on
-  `is_served(ticket)`, and then calls **exactly one** of `complete_read`,
-  `complete_write` or `cancel` for that ticket.  Five things new code must
-  respect.  (1) **Exactly one terminator per ticket, always.**  `next_ticket`
-  is an unconditional `fetch_add` and `now_serving` owes one advance per ticket
-  ever issued, so a ticket that is neither completed nor withdrawn stalls the
-  lock permanently — the failure is a hang, not a data race, and no assertion
-  catches it.  (2) **The withdrawal is published before the head is checked,
+  abandon it.  A caller that may have to unwind takes `enqueue(core, mode)`,
+  spins on `is_served(ticket)`, and then calls **exactly one** of
+  `complete_read`, `complete_write` or `cancel` for that ticket; a request ends
+  in one of three ways — a completion followed by a release, a withdrawal that
+  returns `CancelOutcome::Withdrawn`, or a withdrawal that returns `Holding`
+  followed by a release (PR #890 review round 5, next bullet but two).  Five
+  things new code must respect.  (1) **Exactly one terminator per ticket,
+  always.**  `next_ticket` is an unconditional `fetch_add` and `now_serving`
+  owes one advance per ticket ever issued, so a ticket that is neither
+  completed nor withdrawn stalls the lock permanently — the failure is a hang,
+  not a data race, and no assertion catches it.  (2) **The withdrawal is published before the head is checked,
   and both directions carry a `SeqCst` fence.**  `cancel` stores `ticket + 1`
   into its own slot, fences, and only then asks whether it is being served;
   `claim_withdrawal_of` fences before reading the slots.  This is the
@@ -2323,13 +2337,23 @@ code may assume:
   the first host lane after the word landed hung in exactly that shape.
   The loom gate gained
   `unwind_by_a_non_holder_never_touches_the_holder` and
-  `every_pair_of_units_is_safe` — every unordered pair of the lock's eleven
-  operation units on two threads, unbounded, which is the SM2.C-defer plan's
-  "op-sequences of length ≤ 4" acceptance criterion stated as the
-  enumeration it always should have been; two of the eleven are the unwind
-  at a member the core holds, as a reader and as the writer (round 3), and
-  two the enqueue-twice-then-acquire shapes (the class closure) — so the
-  model count is thirteen.
+  `every_pair_of_units_is_safe` — every unordered pair of the lock's
+  single-lifecycle units, one unit per thread, unbounded (fourteen units
+  since round 5, so 105 models with the diagonal); two of them are the
+  unwind at a member the core holds, as a reader and as the writer (round
+  3), and two the enqueue-twice-then-acquire shapes (the class closure).
+  The three **chained** units (round 5: read then write, write then read,
+  withdraw then read — a second acquisition beginning on the words the
+  first lifecycle left) meet every unit in
+  `every_chained_unit_meets_every_unit`, 48 models under a **stated
+  preemption bound** (`CHAINED_PREEMPTION_BOUND = 3`), because a thread
+  running two lifecycles has twice the atomic and yield points and an
+  unbounded exploration of two of them did not finish in a per-PR lane; the
+  bound is in the code, the script and the docs, never implied.  What that
+  enumeration is **not** is the SM2.C-defer plan's "op-sequences of length
+  ≤ 4" (round 5): that sentence is the single-threaded census
+  `per_core_census_to_depth_four`, derived from the matrix's classification,
+  and the loom claim is stated as the pairs it runs.
 - **A queued core's second acquisition is the deployed lock's no-op too —
   decided by its request word — and every per-core entry point decides on
   the core's own words before it writes** (the class behind PR #890 review
@@ -2373,7 +2397,9 @@ code may assume:
   the build until it is classified.  (3) **The Lean
   blocks are conditioned on the words, and the abstract facts are derived**:
   `queuedSim`'s sixth conjunct is `queuedRequestsSim` (a core's word
-  records `t` iff `(t, c)` is a live ledger entry), every per-core branch
+  records `t` iff `(t, c)` is a live ledger entry; the seventh,
+  `queuedRequestModesSim`, pins a live request's mode word to the spec's
+  queued mode — round 5, below), every per-core branch
   hypothesis of `queuedBlock` reads `c ∈ conc.heldRead` / `(c, t) ∈
   conc.requests` rather than `c ∈ abs.readers`, and
   `queuedBlock_preserves_queuedSim` derives the spec's branch from the
@@ -2388,13 +2414,79 @@ code may assume:
   the lock**: the Tier-5 oracle issues a queued waiter's re-acquisition and
   an uninvolved core's withdrawal to the ticket lock and holds every core's
   request word to the spec's queue and held writer (`check_requests`); the
-  loom enumeration has eleven units (55 pairs) including
-  enqueue-twice-then-acquire in both modes, and its mutation inverts the
-  `involved` load in `acquire_read`.  (5) **`request` lives on the second
-  cache line by design** (128 bytes): the shared words fill the first, the
-  owner-only array the second, and
+  loom enumeration includes enqueue-twice-then-acquire in both modes, and
+  its mutation inverts the `involved` load in `acquire_read`.  (5)
+  **`request` lives on the second cache line by design** (128 bytes): the
+  shared words fill the first, the owner-only arrays — `request` and, since
+  round 5, `request_mode` — the second, and
   `shared_words_fill_the_first_line_and_requests_the_second` pins the
   layout.
+- **A withdrawal of a request the spec has already admitted realises the
+  admission; the deployed lock decides which on its own words, and the Tier-5
+  comparison is of identities, per step** (PR #890 review round 5).  After a
+  writer's `release_write` returns, the head waiter is *served* but not yet
+  *completed*: the spec's release promoted it atomically, so its `cancel`
+  there is the holder no-op, while the lock retired the served ticket and had
+  one holder fewer than the spec.  The bridge folds every waiter's entry into
+  the release block that promotes it, so that interval does not exist in the
+  model, and the fold was sound only if nothing a served core can do differs
+  from the entered state — which `cancel` broke.  And the spec's own `cancel`
+  was the neutral filter while the lock's withdrawal of a served head passed
+  the turn to the readers behind it, so whether a queued reader was a spec
+  holder was **path-dependent**, and no history-free decision in the lock
+  could be right.  Six things new code must respect.  (1) **The spec moved,
+  not the lock's memory** (the improvement direction): `cancel` promotes the
+  head reader run (the bullet above), and with that "served reader ⟹
+  holder", "served writer ⟹ holder iff `state == 0`" and "queued reader ⟹
+  holder iff no live write request is ahead of it" are decidable from the
+  lock's words.  (2) **The mode is the lock's record.**  `enqueue(core, mode)`
+  stores `request_mode` before the request word (`take_ticket`), `complete_*`
+  in the other mode is refused on it in every build, and `cancel` decides on
+  it: a write request enters when served with no reader (a CAS from `0` that
+  cannot fail — only the served core can add a reader), a read request enters
+  when `write_request_ahead` — the other cores' request and mode words, read
+  in that order, over `[now_serving, ticket)` — finds no live writer, and
+  waits for its turn to do so; anything else is the LC3 withdrawal verbatim.
+  The verdict is stable: a writer ahead can only leave.  (3) **`cancel`
+  returns `CancelOutcome`** — `Withdrawn`, nothing owed; `Holding`, the core
+  holds and owes a release — and the two-phase-locking unwind needs no branch,
+  since the release that follows every withdrawal releases what a `Holding`
+  entered.  (4) **The Lean relation carries the mode**: `requestModes` beside
+  `requests`, `requestModeStore` in `takeTicketOps` ahead of the request
+  store, `queuedRequestModesSim` (a live request's recorded mode is
+  `specModeOf` — the queued mode, or `write` for the held writer) as
+  `queuedSim`'s seventh conjunct, carried through the promotion with INV-R3;
+  the withdrawal block is `withdrawOps ++ cancelPromoteFrom`, the CAS-retry
+  bridge's `cancel_promoting` carries the run as a promoting release does,
+  and a `Holding` withdrawal has no block of its own — it is the deferred
+  half of the entry the promoting block already folded, which is what makes
+  the served interval sound to fold again.  (5) **The gates ask the lock.**
+  The oracle holds each withdrawal's verdict to the spec's (`expect_outcome`:
+  a queued waiter's must be `Withdrawn`, a holder's and an uninvolved core's
+  the no-op), mirrors the promoting withdrawal (`promote_reader_run`), holds
+  the mode words (`check_requests`), and both oracles print **one identity
+  line per state** — `W=<core|->;R=<sorted reader cores>;Q=<core:r|w,...>`,
+  the initial state included — read back out of the ticket lock's per-core
+  words on the Rust side, where `W=<flag>;R=<count>;Q=<length>` had let a
+  wrong-waiter promotion, a reordered queue or a changed mode agree on every
+  count; the harness compares whole outputs and captures both exit statuses.
+  The matrix has nine start states (`(CoreState, Env)` — queued and served
+  in both modes, a served writer behind a reader, withdrawn, holding, idle)
+  under one classification `cell`, and the census replays every sequence of
+  up to four entry points from each; `build.rs` holds `run_unit` to every
+  per-core entry point, which is how the two guard spellings were found to
+  be in no loom unit.  `scripts/check_lock_ffi_symmetry.sh` holds every
+  symbol's parameter and return types across the three surfaces, since
+  `ffi_rw_lock_enqueue` gained an argument and `ffi_rw_lock_cancel` a
+  result.  (6) **The unbounded loom models do not spin against each other**:
+  loom's branch budget is exhausted by two threads spinning at once, so a
+  model has one waiting thread and the driving thread completes served
+  requests after the race; and a third acquisition in a two-thread model
+  multiplies the schedules past what an unbounded run finishes, so the
+  ordering in which one core withdraws twice behind two successive writers
+  is pinned sequentially
+  (`a_second_withdrawal_behind_a_new_writer_is_retired_by_its_release`)
+  rather than modelled.
 - **The two-phase-locking shrinking phase withdraws before it releases**
   (WS-LC LC4, v0.34.53).  `withLockSet`'s third phase and the revalidated
   entry's refusal path are both `unwindAll` — one definition, so the two
@@ -2402,8 +2494,10 @@ code may assume:
   things new code must respect.  (1) **The order is load-bearing.**  Two
   identities meet at each member: a release by a non-holder is the identity,
   and a withdrawal by a holder is the identity (INV-R4 keeps holders out of
-  `waiters`), so both orders are correct on a well-formed state and neither
-  needs a branch.  Withdrawing first is what makes the payoff
+  `waiters`) — on the deployed lock, a withdrawal by a core the spec has
+  admitted *realises* the admission (`CancelOutcome::Holding`, PR #890 review
+  round 5) and the release that follows releases it — so both orders are
+  correct on a well-formed state and neither needs a branch.  Withdrawing first is what makes the payoff
   *unconditional* — the release arms promote **from** `waiters`, so a core
   still queued when its own release runs can be promoted into a holder slot
   the withdrawal already passed.  `rwLock_release_then_cancel_not_queued`

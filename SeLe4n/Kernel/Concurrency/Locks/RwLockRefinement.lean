@@ -1121,6 +1121,61 @@ theorem casPromoteOps_preserves_rwLockSim
       rw [hZeroNat, hW, hR]
       simp
 
+/-- **PR #890 review round 5 (the promoting withdrawal, discharged)**: the
+reader-run promotion carries the simulation **with readers holding** — the
+case `casPromoteOps_preserves_rwLockSim` excludes with `abs.readers = []`,
+because a release reaches its promotion quiescent and a withdrawal does not.
+
+Under a reader head the abstract promotion only ever adds readers, and the
+concrete run of `[load, CAS]` pairs adds one to the count per admitted core
+from whatever count it starts at (`casPromotePost`), so the argument is the
+release's with the reader count carried through. -/
+theorem casPromoteReaderRun_preserves_rwLockSim
+    {abs : RwLockState} {conc : UInt64}
+    (hSim : rwLockSim abs conc.toNat)
+    (hBound : abs.readers.length + abs.waiters.length ≤ numCores)
+    (hW : abs.writerHeld = none) (hHead : abs.headIsReader = true) :
+    rwLockSim abs.promoteWaitersOnWriterRelease
+      (concreteFoldBlock conc (casPromoteOps conc abs.waiters)).toNat := by
+  have hStateNat : conc.toNat = abs.readers.length := by
+    unfold rwLockSim at hSim
+    rw [hSim, hW]
+    simp [encodeRwLock]
+  cases hQ : abs.waiters with
+  | nil => simp [RwLockState.headIsReader, hQ] at hHead
+  | cons hd tl =>
+    obtain ⟨c, m⟩ := hd
+    cases m with
+    | write => simp [RwLockState.headIsReader, hQ] at hHead
+    | read =>
+      rw [← hQ]
+      have hPromote := RwLockState.promoteWaitersOnWriterRelease_of_headIsReader abs hHead
+      have hOps : casPromoteOps conc abs.waiters
+          = casPromoteReaderOps conc
+              ((abs.waiters.takeWhile (fun w => w.2 = .read)).map Prod.fst) := by
+        rw [hQ]; rfl
+      rw [hPromote, hOps, concreteFoldBlock_casPromoteReaderOps]
+      have hSplit : (abs.waiters.takeWhile (fun w => w.2 = .read))
+          ++ (abs.waiters.dropWhile (fun w => w.2 = .read)) = abs.waiters :=
+        List.takeWhile_append_dropWhile
+      have hKle : (abs.waiters.takeWhile (fun w => w.2 = .read)).length
+          ≤ abs.waiters.length := by
+        have := congrArg List.length hSplit
+        simp only [List.length_append] at this
+        omega
+      have hSizeBound : (numCores : Nat) < UInt64.size := by decide
+      have hNoWrap : conc.toNat
+          + ((abs.waiters.takeWhile (fun w => w.2 = .read)).map Prod.fst).length
+          < UInt64.size := by
+        rw [List.length_map, hStateNat]
+        omega
+      rw [casPromotePost_toNat _ _ hNoWrap]
+      unfold rwLockSim encodeRwLock
+      rw [hStateNat, hW]
+      simp only [Option.isSome_none, Bool.false_eq_true, if_false, List.length_append,
+        Nat.zero_add]
+      exact Nat.add_comm _ _
+
 /-- **WS-RR RR6.16**: a promotion block is an admission sequence, so it
 is the tail `opCorresponds`'s promoting release constructors accept. -/
 theorem casPromoteReaderOps_admissionSequence (conc : UInt64) (cores : List CoreId) :
@@ -1242,7 +1297,9 @@ inductive honestBlock :
       honestBlock abs conc (.releaseWrite c)
         ([.fetchAndWrite c, .sev c]
           ++ casPromoteOps (conc &&& readerMask.toUInt64) abs.waiters)
-  /-- A **withdrawal**: the spec drops `c`'s queued request, and the
+  /-- A **withdrawal that hands no turn on**: the spec drops `c`'s queued
+  request and admits nobody (`cancelPromotes` is false — the withdrawer was
+  not queued, a writer holds, or the new head is a writer), and the
   CAS-retry implementation performs no atomic access, because it has no
   queue in which the request was ever recorded.
 
@@ -1252,12 +1309,21 @@ inductive honestBlock :
   elaborate.  That is the vacuity WS-RR RR6 removed everywhere else, so
   it is not reintroduced here.
 
-  Soundness is immediate rather than argued: a cancel writes neither
-  `readers` nor `writerHeld` (`RwLockState.applyOp_cancel_readers`,
-  `_writerHeld`, both `rfl`), and those two fields are the whole of what
-  `rwLockSim` relates. -/
+  Soundness is immediate rather than argued: such a cancel writes neither
+  `readers` nor `writerHeld` (`rwLock_cancel_nonhead_admits_no_one`), and
+  those two fields are the whole of what `rwLockSim` relates. -/
   | cancel_no_queue (abs : RwLockState) (conc : UInt64) (c : CoreId) :
+      abs.cancelPromotes c = false →
       honestBlock abs conc (.cancel c) []
+  /-- **PR #890 review round 5**: a **withdrawal that hands the head's turn
+  on**: the spec drops `c`'s request and admits the reader run now at the
+  head (`cancelPromotes`), and on the CAS-retry lock those readers
+  re-acquire in their own retry loops — the admission tail a promoting
+  release carries (`casPromoteOps`), folded into the withdrawal block for
+  the same reason it is folded into a release block. -/
+  | cancel_promoting (abs : RwLockState) (conc : UInt64) (c : CoreId) :
+      abs.cancelPromotes c = true →
+      honestBlock abs conc (.cancel c) (casPromoteOps conc (abs.withdraw c).waiters)
 
 /-- **WS-RR RR6.17 (coverage)**: every honest block is an admissible
 `opCorresponds` block.
@@ -1286,7 +1352,8 @@ theorem honestBlock_opCorresponds
       exact .releaseRead_promoting c _ (casPromoteOps_admissionSequence _ _)
   | releaseWrite_effective c _ =>
       exact .releaseWrite_promoting c _ (casPromoteOps_admissionSequence _ _)
-  | cancel_no_queue c => exact .cancel_no_queue _
+  | cancel_no_queue c _ => exact .cancel_no_queue _
+  | cancel_promoting c _ => exact .cancel_promoting c _ (casPromoteOps_admissionSequence _ _)
 
 -- ----------------------------------------------------------------------------
 -- RR6.16 / RR6.17 — the discharge family, now total over the honest shapes
@@ -1487,12 +1554,27 @@ theorem honestBlock_blockBisim
     have hMask : writerBit.toUInt64 &&& readerMask.toUInt64 = 0 := by decide
     rw [hMask]
     simp [encodeRwLock]
-  | cancel_no_queue c =>
-    -- The spec drops `c`'s request; `rwLockSim` reads only the writer bit
-    -- and the reader count, and a cancel writes neither (both `rfl`).
+  | cancel_no_queue c hNoPromote =>
+    -- The spec drops `c`'s request and admits nobody; `rwLockSim` reads only
+    -- the writer bit and the reader count, and such a cancel writes neither.
     unfold blockBisim
-    simpa [concreteFoldBlock, rwLockSim, RwLockState.applyOp_cancel_readers,
-      RwLockState.applyOp_cancel_writerHeld] using hSim
+    rw [RwLockState.applyOp_cancel_of_not_promotes abs c hNoPromote]
+    simpa [concreteFoldBlock, rwLockSim] using hSim
+  | cancel_promoting c hPromote =>
+    -- The spec drops `c`'s request and admits the reader run at the head;
+    -- the block is that run's re-acquisitions, from the count already held.
+    unfold blockBisim
+    rw [RwLockState.applyOp_cancel_of_promotes abs c hPromote]
+    obtain ⟨_, hW, hHead⟩ := (RwLockState.cancelPromotes_iff abs c).mp hPromote
+    have hSimW : rwLockSim (abs.withdraw c) conc.toNat := hSim
+    have hBoundW : (abs.withdraw c).readers.length + (abs.withdraw c).waiters.length
+        ≤ numCores := by
+      have hSub : ((abs.withdraw c).waiters).length ≤ abs.waiters.length :=
+        List.length_filter_le _ _
+      have := rwLock_bounded_wait_read abs hWfAbs
+      simp only [RwLockState.withdraw_readers]
+      omega
+    exact casPromoteReaderRun_preserves_rwLockSim hSimW hBoundW hW hHead
 
 -- ----------------------------------------------------------------------------
 -- RR6.18 — the composition, and RR6.19 — the hypothesis retired

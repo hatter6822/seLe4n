@@ -892,15 +892,17 @@ theorem unwindAll_eq_releaseAll_cancelAll (core : CoreId)
 /-- **WS-LC LC4.3**: a withdrawal leaves the withdrawing core with no queued
 request — unconditionally, and by computation.
 
-`applyOp`'s cancel arm is `waiters.filter (·.1 ≠ core)`, so this is the
-filter's own specification.  No `wf` hypothesis: the arm has no enabling
-guard, which is exactly why it was written without one. -/
+`applyOp`'s cancel arm removes the withdrawer (`RwLockState.withdraw`, a
+`filter (·.1 ≠ core)`) before it hands the head's turn on (PR #890 review
+round 5), and the promotion only ever drops more from the head
+(`applyOp_cancel_waiters_sublist_filter`), so this is the filter's own
+specification.  No `wf` hypothesis: the arm has no enabling guard. -/
 theorem rwLock_cancel_not_queued (l : RwLockState) (c : CoreId) :
     c ∉ (l.applyOp (.cancel c)).waiters.map Prod.fst := by
-  rw [RwLockState.applyOp_cancel_waiters]
   intro hMem
   obtain ⟨w, hw, hEq⟩ := List.mem_map.mp hMem
-  exact (of_decide_eq_true (List.mem_filter.mp hw).2) hEq
+  have hw' := (RwLockState.applyOp_cancel_waiters_sublist_filter l c).subset hw
+  exact (of_decide_eq_true (List.mem_filter.mp hw').2) hEq
 
 /-- **WS-LC LC4.3**: no withdrawal ever enqueues — including for a core
 other than the one withdrawing.

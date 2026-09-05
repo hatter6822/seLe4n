@@ -51,9 +51,9 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.34.55` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 329,535 across 311 Lean files |
-| **Test LoC** | 68,807 across 70 Lean test suites |
-| **Proved declarations** | 10,963 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 330,569 across 311 Lean files |
+| **Test LoC** | 68,907 across 70 Lean test suites |
+| **Proved declarations** | 11,000 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -773,8 +773,10 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    acquisitions and the guards return on `involved`, and a
    terminator is verified against the lock's record (`own_request`),
    refusing a core with no request.  `queuedSim`'s sixth conjunct
-   `queuedRequestsSim` relates the word to the live ledger, and
-   every per-core branch hypothesis of `queuedBlock` is stated on
+   `queuedRequestsSim` relates the word to the live ledger — and its
+   seventh, `queuedRequestModesSim` (PR #890 review round 5), pins
+   a live request's mode word to the mode the spec queued it in —
+   and every per-core branch hypothesis of `queuedBlock` is stated on
    the words the implementation reads (`c ∈ conc.heldRead`,
    `(c, t) ∈ conc.requests`), with the spec's branch derived from
    the relations in `queuedBlock_preserves_queuedSim` — so the
@@ -958,11 +960,24 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    `acquire_write` remain the *fused* spellings — one call takes a
    ticket and spins to completion, so there is no instant at which
    a caller holds an abandonable ticket.  A caller that may have to
-   unwind calls `enqueue`, spins on `is_served`, and terminates the
-   ticket with exactly one of `complete_read`, `complete_write` or
-   `cancel`; because `next_ticket` is an unconditional `fetch_add`
-   and `now_serving` owes one advance per ticket ever issued, a
-   ticket that is never terminated stalls the lock.  `cancel`
+   unwind calls `enqueue` with the request's mode, spins on
+   `is_served`, and terminates the ticket with exactly one of
+   `complete_read`, `complete_write` or `cancel`; because
+   `next_ticket` is an unconditional `fetch_add` and `now_serving`
+   owes one advance per ticket ever issued, a ticket that is never
+   terminated stalls the lock.  A request ends in one of three ways
+   (PR #890 review round 5): a completion followed by a release, a
+   withdrawal that reports `Withdrawn`, or a withdrawal that reports
+   `Holding` — the spec had already admitted the request (a served
+   reader, a served writer with no reader, a reader with no live
+   write request ahead of it), so the withdrawal *realises* the
+   admission, decided on the lock's own words, and the core owes a
+   release.  Before that round a withdrawal in the served-but-
+   uncompleted interval retired the served ticket, and the spec's
+   own `cancel` was the neutral filter while the lock's passed the
+   turn on; the spec now promotes the reader run a withdrawn head
+   uncovers (`RwLockState.cancelPromotes`), which is what makes the
+   verdict decidable.  `cancel`
    publishes `ticket + 1` into the withdrawing core's own slot and
    only then asks whether it is being served; `pass_turn` skips
    withdrawn tickets, one iteration per withdrawal published while
@@ -974,12 +989,15 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    fences are what removed it.  A compare-exchange on the slot is
    the arbiter, so exactly one of the withdrawing core and the
    previous holder's skip loop advances past a given ticket.
-   Evidence: six loom models under `--cfg loom` (a mid-queue
-   withdrawal skipped by the core ahead, a withdrawal racing a
-   turn-pass from both sides, a withdrawal of an already-served
-   ticket, writer exclusivity across a withdrawal, and the two
-   below), whose decisiveness is established by four
-   *relation-breaking* mutations rather than by deletion; miri
+   Evidence: the withdrawal's loom models under `--cfg loom` (a
+   mid-queue withdrawal skipped by the core ahead, a withdrawal
+   racing a turn-pass from both sides, a served reader's withdrawal
+   entering on a calm lock, writer exclusivity across a withdrawal,
+   the two below, and the five round-5 models that race a served or
+   promoted request's withdrawal against the release that admitted
+   it, tallying that both outcomes occur), whose decisiveness is
+   established by *relation-breaking* mutations rather than by
+   deletion; miri
    under strict provenance; and a fifth Tier-5 alphabet letter
    driving both the Lean and the Rust oracle, with the
    ticket-interval check re-derived from the tombstoned invariant
@@ -1015,7 +1033,13 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    withdrawal, and each core's slot holds exactly the spec's pending
    withdrawal — and excludes, counted and under a ceiling, a trace
    that asks a core to acquire while its own withdrawal is
-   unclaimed, which no single-threaded replay can execute.
+   unclaimed, which no single-threaded replay can execute.  Since PR
+   #890 review round 5 the oracle also holds each withdrawal's
+   verdict to the spec's, mirrors the promoting withdrawal, holds the
+   mode words, and both oracles print one identity line per state —
+   `W=<core|->;R=<sorted reader cores>;Q=<core:r|w,...>` — read back
+   out of the ticket lock's per-core words on the Rust side, where a
+   flag, a count and a length had let a wrong-waiter promotion pass.
 
    **WS-LC LC4 — the two-phase-locking consumers** (MODULES
    `SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean`,
@@ -1026,7 +1050,10 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    **withdraws before it releases**.  The order is load-bearing:
    two identities meet at each member — a release by a non-holder
    is the identity, and a withdrawal by a holder is the identity,
-   since INV-R4 keeps holders out of the wait queue — so both
+   since INV-R4 keeps holders out of the wait queue; on the deployed
+   lock a withdrawal by a core the spec has admitted realises the
+   admission and the release that follows releases it (PR #890
+   review round 5) — so both
    orders are correct on a well-formed state, but the release
    arms promote *from* the wait queue, so under release-first a
    core still queued when its own release runs can be promoted
@@ -1108,7 +1135,10 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    bound (`rwLock_writer_admitted_within_release_budget`) is the
    "leaves the queue" form and is not the entry.  WS-LC LC1 took
    the category to 14 with the withdrawal's three payoff entries
-   (`rwLock_cancel_preserves_wf`, `rwLock_cancel_admits_no_one`,
+   (`rwLock_cancel_preserves_wf`,
+   `rwLock_cancel_admits_only_the_head_reader_run` — the entry was
+   `rwLock_cancel_admits_no_one` until PR #890 review round 5 made
+   the withdrawal promote the reader run a withdrawn head uncovers —
    `rwLock_cancel_does_not_increase_wait_depth`), and WS-LC LC5 to
    16 with the two cycle-denominated admission bounds
    (`rwLock_writer_admitted_within_cycle_budget`,

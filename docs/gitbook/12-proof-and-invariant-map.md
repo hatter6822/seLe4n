@@ -279,6 +279,25 @@ word to the wrong fact would fail the proof. The CAS-retry bridge makes the
 opposite honest choice for the undeployed lock: no no-op block at all, and a
 stated caller contract.
 
+Round 5 of the same review found the interval the bridge folds away: after a
+writer's release the head waiter is *served* but not yet *completed*, the spec
+had promoted it, and the deployed `cancel` there retired the served ticket —
+one holder fewer than the spec. The spec was wrong in the same place: its
+`cancel` was the neutral filter while the lock's withdrawal of a served head
+passes the turn to the readers behind it, so whether a queued reader was a
+spec holder depended on how it had been queued. The spec moved: a withdrawal
+at the head now promotes the reader run it uncovers
+(`RwLockState.cancelPromotes`, `rwLock_cancel_admits_only_the_head_reader_run`),
+both bridges fold that promotion, and with it the deployed lock can decide on
+its own words which withdrawals the spec has already admitted — a served
+writer with no reader, a reader with no live write request ahead of it, found
+through a fourth per-core word that records each request's **mode** — and
+realises the admission instead (`CancelOutcome::Holding`; the release that
+follows every withdrawal releases it). `queuedSim`'s seventh conjunct
+(`queuedRequestModesSim`) pins that mode word to the spec's queued mode, the
+Tier-5 oracle holds every withdrawal's verdict to the spec's and prints
+identities per step, and the loom models tally that both verdicts occur.
+
 And a delay bound now names its denominator. `RwLockExecution` carries a per-step
 cost (v0.34.54), so the admission and contention bounds have cycle-denominated
 forms alongside the step forms — each conditional on a per-critical-section

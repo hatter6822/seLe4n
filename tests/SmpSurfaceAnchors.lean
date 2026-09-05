@@ -319,7 +319,7 @@ example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
     (h₆ : conc.nextTicket.toNat + 1 < UInt64.size) (h₇ : ¬ conc.withdrawalPending c) :
     SeLe4n.Kernel.Concurrency.queuedBlock abs conc (.tryAcquireRead c)
       (.heldLoad c :: .requestLoad c
-        :: (SeLe4n.Kernel.Concurrency.takeTicketOps c conc.nextTicket.toNat ++ spin)) :=
+        :: (SeLe4n.Kernel.Concurrency.takeTicketOps c conc.nextTicket.toNat .read ++ spin)) :=
   .acquireRead_enqueue abs conc c spin h₁ h₂ h₃ h₄ h₅ h₆ h₇
 -- PR #890 review round 2: the held words.  The relation has a fifth conjunct
 -- that represents the holders, every acquire and release block opens with the
@@ -358,7 +358,7 @@ example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
 example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
     (conc : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete)
     (h : SeLe4n.Kernel.Concurrency.queuedSim abs conc) :
-    SeLe4n.Kernel.Concurrency.queuedRequestsSim conc := h.2.2.2.2.2
+    SeLe4n.Kernel.Concurrency.queuedRequestsSim conc := h.2.2.2.2.2.1
 example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
     (conc : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete) (c : SeLe4n.Kernel.Concurrency.CoreId)
     (h : c ∉ conc.heldRead) :
@@ -388,9 +388,11 @@ example (c : SeLe4n.Kernel.Concurrency.CoreId) (t : Nat) :
     SeLe4n.Kernel.Concurrency.releaseWriteOps c t
       = [.heldLoad c, .heldStore c none, .requestStore c none,
          .stateFetchAndReaderMask c, .nowServingFetchAdd c t, .sev c] := rfl
-example (c : SeLe4n.Kernel.Concurrency.CoreId) (t : Nat) :
-    SeLe4n.Kernel.Concurrency.takeTicketOps c t
-      = [.nextTicketFetchAdd c, .requestStore c (some t), .lastEnqueuedStore c] := rfl
+example (c : SeLe4n.Kernel.Concurrency.CoreId) (t : Nat)
+    (m : SeLe4n.Kernel.Concurrency.AccessMode) :
+    SeLe4n.Kernel.Concurrency.takeTicketOps c t m
+      = [.nextTicketFetchAdd c, .requestModeStore c m, .requestStore c (some t),
+         .lastEnqueuedStore c] := rfl
 example (c : SeLe4n.Kernel.Concurrency.CoreId) (t : Nat) :
     SeLe4n.Kernel.Concurrency.readerEnterOps c t
       = [.nowServingLoad c, .stateLoad c, .stateFetchAddReader c t, .heldStore c (some .read),
@@ -409,10 +411,60 @@ example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
     (h₁ : c ∉ conc.heldRead) (h₂ : c ∉ conc.heldWrite) (h₃ : (c, t) ∈ conc.requests)
     (h₄ : SeLe4n.Kernel.Concurrency.QueuedStutter spin) :
     SeLe4n.Kernel.Concurrency.queuedBlock abs conc (.cancel c)
-      (.heldLoad c :: .requestLoad c :: .nowServingLoad c :: .requestStore c none
-        :: .cancelPublish c t
-        :: spin ++ SeLe4n.Kernel.Concurrency.skipDeadOps (conc.cancelled ++ [t]) conc.ledger) :=
+      (SeLe4n.Kernel.Concurrency.withdrawOps c t spin conc
+        ++ SeLe4n.Kernel.Concurrency.cancelPromoteFrom
+            (SeLe4n.Kernel.Concurrency.queuedFoldBlock conc
+              (SeLe4n.Kernel.Concurrency.withdrawOps c t spin conc)) abs c) :=
   .cancel_queued abs conc c t spin h₁ h₂ h₃ h₄
+-- PR #890 review round 5: the withdrawal ops are the three loads, the request
+-- clear, the publish, the stutter and the skip loop, in that order; the
+-- promotion the withdrawal hands on is the reader-run admission exactly when
+-- the spec promotes, and nothing otherwise; the queued bridge folds it and the
+-- CAS-retry bridge carries the run as a promoting release does.
+example (c : SeLe4n.Kernel.Concurrency.CoreId) (t : Nat)
+    (spin : List SeLe4n.Kernel.Concurrency.QueuedRwLockOp)
+    (conc : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete) :
+    SeLe4n.Kernel.Concurrency.withdrawOps c t spin conc
+      = .heldLoad c :: .requestLoad c :: .nowServingLoad c :: .requestStore c none
+        :: .cancelPublish c t
+        :: spin ++ SeLe4n.Kernel.Concurrency.skipDeadOps (conc.cancelled ++ [t]) conc.ledger := rfl
+example (conc : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete)
+    (abs : SeLe4n.Kernel.Concurrency.RwLockState) (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    SeLe4n.Kernel.Concurrency.cancelPromoteFrom conc abs c
+      = (if abs.cancelPromotes c then
+          SeLe4n.Kernel.Concurrency.readerAdmitFrom conc
+            ((abs.withdraw c).waiters.takeWhile
+              (fun w => w.2 = SeLe4n.Kernel.Concurrency.AccessMode.read)).length
+         else []) := rfl
+#check @SeLe4n.Kernel.Concurrency.withdrawOps
+#check @SeLe4n.Kernel.Concurrency.cancelPromoteFrom
+#check @SeLe4n.Kernel.Concurrency.queuedBlock_step_withdraw
+#check @SeLe4n.Kernel.Concurrency.readerRun_preserves_queuedSim
+#check @SeLe4n.Kernel.Concurrency.queuedBlock_step_cancel_queued
+#check @SeLe4n.Kernel.Concurrency.casPromoteReaderRun_preserves_rwLockSim
+#check @SeLe4n.Kernel.Concurrency.honestBlock.cancel_promoting
+#check @SeLe4n.Kernel.Concurrency.opCorresponds.cancel_promoting
+-- PR #890 review round 5: the mode words.  The relation has a seventh conjunct
+-- that pins each live request to the mode the spec queued it in (write for the
+-- held writer), the issue stores the mode BEFORE the request word, and the
+-- promotion lemma takes the relation and the distinctness of the queued cores
+-- that make the promoted writer a write request.
+#check @SeLe4n.Kernel.Concurrency.queuedRequestModesSim
+#check @SeLe4n.Kernel.Concurrency.specModeOf
+#check @SeLe4n.Kernel.Concurrency.queuedRequestModesSim.transfer
+#check @SeLe4n.Kernel.Concurrency.queuedRequestModesSim.issue
+#check @SeLe4n.Kernel.Concurrency.QueuedRwLockOp.requestModeStore
+#check @SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete.requestModes_only_moves_by_mode_store
+#check @SeLe4n.Kernel.Concurrency.queuedFoldBlock_requestModes_of_no_mode_store
+#check @SeLe4n.Kernel.Concurrency.readerAdmitFrom_no_mode_store
+example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
+    (conc : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete)
+    (h : SeLe4n.Kernel.Concurrency.queuedSim abs conc) :
+    SeLe4n.Kernel.Concurrency.queuedRequestModesSim abs conc := h.2.2.2.2.2.2
+example (abs : SeLe4n.Kernel.Concurrency.RwLockState) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (m : SeLe4n.Kernel.Concurrency.AccessMode) :
+    SeLe4n.Kernel.Concurrency.specModeOf abs c m
+      = ((m = .write ∧ abs.writerHeld = some c) ∨ (c, m) ∈ abs.waiters) := rfl
 example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
     (conc : SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete) (c : SeLe4n.Kernel.Concurrency.CoreId)
     (h : c ∈ conc.heldRead ∨ c ∈ conc.heldWrite) :
@@ -473,15 +525,29 @@ example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
 #check @SeLe4n.Kernel.Concurrency.RwLockOp.isCancel
 #check @SeLe4n.Kernel.Concurrency.RwLockOp.isCancel_cancel
 #check @SeLe4n.Kernel.Concurrency.RwLockKernelStep.cancel
+#check @SeLe4n.Kernel.Concurrency.RwLockState.withdraw
+#check @SeLe4n.Kernel.Concurrency.RwLockState.headIsReader
+#check @SeLe4n.Kernel.Concurrency.RwLockState.cancelPromotes
+#check @SeLe4n.Kernel.Concurrency.RwLockState.cancelPromotes_iff
+#check @SeLe4n.Kernel.Concurrency.RwLockState.cancelRun
+#check @SeLe4n.Kernel.Concurrency.RwLockState.cancelRun_ne_nil_of_promotes
+#check @SeLe4n.Kernel.Concurrency.RwLockState.mem_cancelRun
+#check @SeLe4n.Kernel.Concurrency.RwLockState.applyOp_cancel_of_promotes
+#check @SeLe4n.Kernel.Concurrency.RwLockState.applyOp_cancel_of_not_promotes
 #check @SeLe4n.Kernel.Concurrency.RwLockState.applyOp_cancel_readers
 #check @SeLe4n.Kernel.Concurrency.RwLockState.applyOp_cancel_writerHeld
 #check @SeLe4n.Kernel.Concurrency.RwLockState.applyOp_cancel_waiters
+#check @SeLe4n.Kernel.Concurrency.RwLockState.applyOp_cancel_waiters_sublist_filter
 #check @SeLe4n.Kernel.Concurrency.RwLockState.applyOp_cancel_waiters_sublist
 #check @SeLe4n.Kernel.Concurrency.RwLockState.mem_applyOp_cancel_waiters
 #check @SeLe4n.Kernel.Concurrency.RwLockState.not_mem_applyOp_cancel_waiters
+#check @SeLe4n.Kernel.Concurrency.RwLockState.mem_readers_applyOp_cancel_of_mem
+#check @SeLe4n.Kernel.Concurrency.rwLock_withdraw_preserves_wf
+#check @SeLe4n.Kernel.Concurrency.rwLock_promoteReaderRun_preserves_wf
 #check @SeLe4n.Kernel.Concurrency.rwLock_cancel_preserves_wf
--- The window predicate, and the two lemmas that let a caller DERIVE
--- "this step is not a withdrawal" from an admission rather than assume it.
+-- The window predicate, and the two lemmas that say what an admission at a
+-- withdrawal is: no hold ends there, and the admitted core was a queued reader
+-- other than the withdrawer (PR #890 review round 5).
 #check @SeLe4n.Kernel.Concurrency.RwLockExecution.noCancelIn
 #check @SeLe4n.Kernel.Concurrency.RwLockExecution.noCancelIn.not_cancel_at
 #check @SeLe4n.Kernel.Concurrency.RwLockExecution.noCancelIn.mono
@@ -490,13 +556,14 @@ example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
 -- over an unbounded step index and cannot be `decide`d, so the two coexist.
 #check @SeLe4n.Kernel.Concurrency.RwLockExecution.cancelFree
 #check @SeLe4n.Kernel.Concurrency.RwLockExecution.cancelFree.noCancelIn
-#check @SeLe4n.Kernel.Concurrency.RwLockExecution.holderAt_succ_iff_of_cancel
-#check @SeLe4n.Kernel.Concurrency.RwLockExecution.not_cancel_of_becomes_holder
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.holderAt_succ_of_cancel
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.admitted_by_cancel
 -- What a withdrawal buys, in the form a two-phase-locking unwind cites.
 #check @SeLe4n.Kernel.Concurrency.rwLock_cancel_removes_request
 #check @SeLe4n.Kernel.Concurrency.rwLock_cancel_leaves_other_requests
 #check @SeLe4n.Kernel.Concurrency.rwLock_cancel_preserves_waiter_order
-#check @SeLe4n.Kernel.Concurrency.rwLock_cancel_admits_no_one
+#check @SeLe4n.Kernel.Concurrency.rwLock_cancel_admits_only_the_head_reader_run
+#check @SeLe4n.Kernel.Concurrency.rwLock_cancel_nonhead_admits_no_one
 #check @SeLe4n.Kernel.Concurrency.rwLock_cancel_does_not_increase_wait_depth
 #check @SeLe4n.Kernel.Concurrency.rwLock_cancel_not_effective_release
 

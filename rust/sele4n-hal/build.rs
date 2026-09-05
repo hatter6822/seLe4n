@@ -5979,7 +5979,7 @@ const CORE_ENTRY_POINTS: &[CoreEntryPoint] = &[
         shared_write: Some("self.state.fetch_and(READER_MASK"),
     },
     CoreEntryPoint {
-        signature: "pub fn cancel(&self, core_id: u8, ticket: u64) {",
+        signature: "pub fn cancel(&self, core_id: u8, ticket: u64) -> CancelOutcome {",
         guards: &[
             CoreGuard::Refuses("self.held[core_id as usize].load(Ordering::Acquire) != HELD_NONE"),
             CoreGuard::Binds("own", REQUEST_LOAD_EXPR),
@@ -5991,36 +5991,36 @@ const CORE_ENTRY_POINTS: &[CoreEntryPoint] = &[
         signature: "pub fn complete_read(&self, core_id: u8, ticket: u64) {",
         guards: &[
             CoreGuard::Refuses("self.held[core_id as usize].load(Ordering::Acquire) != HELD_NONE"),
-            CoreGuard::CallsPrefix("let ticket = self.own_request(core_id, ticket,"),
+            CoreGuard::CallsPrefix("let (ticket, mode) = self.own_request(core_id, ticket,"),
         ],
-        shared_write: Some("self.state.fetch_add(1"),
+        shared_write: Some("self.enter_as_reader(core_id)"),
     },
     CoreEntryPoint {
         signature: "pub fn complete_write(&self, core_id: u8, ticket: u64) {",
         guards: &[
             CoreGuard::Refuses("self.held[core_id as usize].load(Ordering::Acquire) != HELD_NONE"),
-            CoreGuard::CallsPrefix("let ticket = self.own_request(core_id, ticket,"),
+            CoreGuard::CallsPrefix("let (ticket, mode) = self.own_request(core_id, ticket,"),
         ],
         shared_write: Some("compare_exchange(0, WRITER_BIT"),
     },
     CoreEntryPoint {
-        signature: "pub fn enqueue(&self, core_id: u8) -> u64 {",
+        signature: "pub fn enqueue(&self, core_id: u8, mode: HeldMode) -> u64 {",
         guards: &[
             CoreGuard::Binds("own", REQUEST_LOAD_EXPR),
             CoreGuard::Refuses("own != NO_REQUEST"),
             CoreGuard::Refuses("self.held[core_id as usize].load(Ordering::Acquire) != HELD_NONE"),
         ],
-        shared_write: Some("self.take_ticket(core_id)"),
+        shared_write: Some("self.take_ticket(core_id, mode)"),
     },
     CoreEntryPoint {
         signature: "pub fn acquire_read(&self, core_id: u8) {",
         guards: &[CoreGuard::Refuses("self.involved(core_id)")],
-        shared_write: Some("self.enqueue(core_id)"),
+        shared_write: Some("self.enqueue(core_id, HeldMode::Read)"),
     },
     CoreEntryPoint {
         signature: "pub fn acquire_write(&self, core_id: u8) {",
         guards: &[CoreGuard::Refuses("self.involved(core_id)")],
-        shared_write: Some("self.enqueue(core_id)"),
+        shared_write: Some("self.enqueue(core_id, HeldMode::Write)"),
     },
     CoreEntryPoint {
         signature: "pub fn try_acquire_read(&self, core_id: u8) -> bool {",
@@ -6064,7 +6064,8 @@ const CORE_HELPERS: &[CoreEntryPoint] = &[
         shared_write: None,
     },
     CoreEntryPoint {
-        signature: "fn own_request(&self, core_id: u8, ticket: u64, entry: &str) -> u64 {",
+        signature:
+            "fn own_request(&self, core_id: u8, ticket: u64, entry: &str) -> (u64, HeldMode) {",
         guards: &[
             CoreGuard::Binds("own", REQUEST_LOAD_EXPR),
             CoreGuard::CallsPrefix("assert!(own != NO_REQUEST,"),
@@ -6248,6 +6249,84 @@ fn core_entry_point_status(body: &str, entry: &CoreEntryPoint) -> Result<(), Str
 /// mutation keeps the tokens a presence check would look for and breaks
 /// the relation; each must be refused, the good body accepted, and no
 /// mutation may leave its fixture unchanged.
+/// **PR #890 review round 5**: every name in `entry_points` is called on
+/// the lock — `lock.<name>(` — inside the brace-matched body of
+/// `run_unit`, the one function whose arms are the loom enumeration's
+/// units.  The body is resolved with `enclosing_fn_span`, so a call
+/// anywhere else in the file — a sibling model, a sequential test, a
+/// docstring on the kept view — does not satisfy it.
+fn run_unit_covers_entry_points(stripped: &str, entry_points: &[String]) -> Result<(), String> {
+    let signature = "fn run_unit(";
+    let Some(at) = stripped.find(signature) else {
+        return Err("`run_unit` is not defined.".to_string());
+    };
+    let Some(open) = stripped[at..].find('{').map(|i| at + i) else {
+        return Err("`run_unit` has no body.".to_string());
+    };
+    let Some((name, start, end)) = enclosing_fn_span(stripped, open + 1) else {
+        return Err("`run_unit`'s body cannot be brace-matched.".to_string());
+    };
+    if name != "run_unit" {
+        return Err(format!("the body at `run_unit` resolves to `{name}`."));
+    }
+    let body = &stripped[start..=end];
+    let missing: Vec<&String> = entry_points
+        .iter()
+        .filter(|name| !body.contains(&format!("lock.{name}(")))
+        .collect();
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("No unit calls `lock.{}(`.", missing[0]))
+    }
+}
+
+/// Holds `run_unit_covers_entry_points` to a relation-breaking mutation:
+/// the fixture keeps every `lock.<name>(` token and moves one call out of
+/// `run_unit` into a sibling function, which a whole-file search accepts
+/// and the brace-matched body must refuse.
+fn verify_run_unit_scanner() {
+    const GOOD: &str = "
+    fn run_unit(lock: &QueuedRwLock, core: u8, unit: Unit) {
+        let in_read = || {
+            assert_eq!(lock.peek_held(core), Some(HeldMode::Read));
+        };
+        match unit {
+            Unit::A => {
+                lock.acquire_read(core);
+                in_read();
+                lock.release_read(core);
+            }
+            Unit::B => {
+                let t = lock.enqueue(core, HeldMode::Write);
+                lock.cancel(core, t);
+            }
+        }
+    }
+
+    fn sibling(lock: &QueuedRwLock) {
+        lock.complete_write(0, 0);
+    }
+";
+    let all = ["acquire_read", "release_read", "enqueue", "cancel"].map(str::to_string);
+    if let Err(why) = run_unit_covers_entry_points(GOOD, &all) {
+        panic!("run_unit_covers_entry_points self-check: the good fixture is refused: {why}");
+    }
+    // Preserving mutation: the token stays in the file, outside the body.
+    let with_sibling = ["acquire_read", "complete_write"].map(str::to_string);
+    if run_unit_covers_entry_points(GOOD, &with_sibling).is_ok() {
+        panic!(
+            "run_unit_covers_entry_points self-check: a call in a sibling function \
+             satisfied the unit coverage; the body is not being brace-matched."
+        );
+    }
+    // Deleting mutation, for completeness: the name is nowhere.
+    let absent = ["try_acquire_read".to_string()];
+    if run_unit_covers_entry_points(GOOD, &absent).is_ok() {
+        panic!("run_unit_covers_entry_points self-check: an uncalled entry point passed.");
+    }
+}
+
 fn verify_core_entry_point_scanner() {
     const RELEASE: &str = "
         assert!((core_id as usize) < MAX_WAITERS, \"\");
@@ -6260,11 +6339,11 @@ fn verify_core_entry_point_scanner() {
 ";
     const CANCEL: &str = "
         if self.held[core_id as usize].load(Ordering::Acquire) != HELD_NONE {
-            return;
+            return CancelOutcome::Holding;
         }
         let own = self.request[core_id as usize].load(Ordering::Acquire);
         if own == NO_REQUEST {
-            return;
+            return CancelOutcome::Withdrawn;
         }
         let ticket = own - 1;
         self.request[core_id as usize].store(NO_REQUEST, Ordering::Release);
@@ -6339,8 +6418,8 @@ fn verify_core_entry_point_scanner() {
         (
             CANCEL,
             cancel,
-            "        if own == NO_REQUEST {\n            return;\n        }\n        let ticket = own - 1;\n        self.request[core_id as usize].store(NO_REQUEST, Ordering::Release);\n        self.cancelled[core_id as usize].store(own, Ordering::SeqCst);\n",
-            "        let ticket = own - 1;\n        self.request[core_id as usize].store(NO_REQUEST, Ordering::Release);\n        self.cancelled[core_id as usize].store(own, Ordering::SeqCst);\n        if own == NO_REQUEST {\n            return;\n        }\n",
+            "        if own == NO_REQUEST {\n            return CancelOutcome::Withdrawn;\n        }\n        let ticket = own - 1;\n        self.request[core_id as usize].store(NO_REQUEST, Ordering::Release);\n        self.cancelled[core_id as usize].store(own, Ordering::SeqCst);\n",
+            "        let ticket = own - 1;\n        self.request[core_id as usize].store(NO_REQUEST, Ordering::Release);\n        self.cancelled[core_id as usize].store(own, Ordering::SeqCst);\n        if own == NO_REQUEST {\n            return CancelOutcome::Withdrawn;\n        }\n",
             "the request branch, moved below the publish",
         ),
         (
@@ -6441,6 +6520,15 @@ fn verify_core_entry_point_scanner() {
 ///    and must equal the list the lock's `per_core_state_matrix` test
 ///    iterates, so an entry point added without a classification in
 ///    every per-core state fails the build rather than going untested.
+///
+/// 5. **The loom enumeration's units cover every entry point** (PR #890
+///    review round 5).  `every_pair_of_units_is_safe` pairs the units
+///    `run_unit` defines, and nothing held that function to the lock: a
+///    new spelling of an acquisition need not have become a unit.  The
+///    same derived set as check (4), less the observation-only `peek_*`
+///    accessors, must each be called on the lock inside `run_unit`'s
+///    brace-matched body (`run_unit_covers_entry_points`); a call in a
+///    sibling test does not count, which `verify_run_unit_scanner` pins.
 fn scan_queued_rw_lock_protocol_intact() {
     let path = "src/queued_rw_lock.rs";
     println!("cargo:rerun-if-changed={path}");
@@ -6626,6 +6714,26 @@ fn scan_queued_rw_lock_protocol_intact() {
              per-core state by `per_core_state_matrix`; add the entry point to the \
              list and classify it, or remove the classification of one that no \
              longer exists."
+        );
+    }
+
+    // Check (5): every per-core entry point but the accessors is exercised
+    // by some loom unit.  `derived` is the set check (4) computed from the
+    // code view; `run_unit` is read on the string-free view, brace-matched,
+    // so a call quoted in a docstring or placed in a sibling test is not a
+    // unit.
+    verify_run_unit_scanner();
+    let acting: Vec<String> = derived
+        .iter()
+        .filter(|name| !name.starts_with("peek_"))
+        .cloned()
+        .collect();
+    if let Err(why) = run_unit_covers_entry_points(&stripped, &acting) {
+        panic!(
+            "PR #890 protocol regression: `{path}`'s loom enumeration does not cover \
+             every entry point.  {why}  Add a unit to `run_unit` that calls it (it is \
+             then paired with every other unit automatically), or move the call into \
+             `run_unit` if a sibling model has it."
         );
     }
 

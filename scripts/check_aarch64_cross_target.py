@@ -43,7 +43,7 @@ this gate keeps it, because every way of losing it again is silent:
    ``std`` binary that cannot build for the bare-metal target, and gating it
    has a cost on the other side: a ``required-features`` target that is not
    selected is not merely skipped from the build, its ``#[cfg(test)]``
-   module does not run either.  Dropping the flag silently removes 14 tests
+   module does not run either.  Dropping the flag silently removes the oracle's test module
    and the step still reports a clean pass over one fewer binary -- which is
    how this gate found the defect on the very cut that introduced it.
 
@@ -608,7 +608,7 @@ def selects_oracle(argv: list[str]) -> bool:
     # oracle binary, runs zero of its tests and exits 0 -- the `--doc` and
     # `--no-run` findings a third time, now in the argument that is not a
     # flag at all (PR #883 review round 8).  This gate cannot prove a
-    # filter matches the oracle's 14 tests, so any filter is rejected.
+    # filter matches the oracle's test module, so any filter is rejected.
     if positional_arguments(argv[2:]):
         return False
     if "--bins" in argv or "--all-targets" in argv:

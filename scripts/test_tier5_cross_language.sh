@@ -7,12 +7,19 @@
 #
 # For each generated op-sequence, feeds the same input to:
 #   1. `lake exe rw_lock_oracle` (Lean oracle — folds applyOp over the
-#      abstract spec, prints canonical post-state)
-#   2. `cargo run --bin rw_lock_oracle` (Rust oracle — folds the bit-
-#      packed state evolution, prints the same canonical post-state)
+#      abstract spec, prints one identity line per state)
+#   2. `cargo run --bin rw_lock_oracle` (Rust oracle — drives both
+#      deployed locks and prints the same identity lines, read back out
+#      of the ticket lock's per-core words)
 #
-# Diffs the outputs; any mismatch is a test failure (and a regression
-# signal that the abstract spec and the impl have diverged).
+# Each line is `W=<core|->;R=<sorted reader cores>;Q=<core:r|w,...>` —
+# the writer's identity, the reader set and the ordered queue with modes
+# (PR #890 review round 5; before, both printed a flag, a count and a
+# length, which a wrong-waiter promotion satisfies) — and there is one
+# line per state, the initial one included, so a divergence that later
+# converges is caught.  Diffs the whole outputs; any mismatch is a test
+# failure (and a regression signal that the abstract spec and the impl
+# have diverged).
 #
 # No FFI link-discipline change (closes audit H-3): both binaries are
 # independent processes communicating via stdin/stdout text only.
@@ -195,28 +202,38 @@ MISMATCH_LOG="$(mktemp -t tier5-mismatches.XXXXXX)"
 EXCLUDED_LOG="$(mktemp -t tier5-excluded.XXXXXX)"
 trap 'rm -f "$MISMATCH_LOG" "$EXCLUDED_LOG"' EXIT
 
+# Both oracles print one line per state — the initial state, then one
+# after every op (PR #890 review round 5) — and the whole of both outputs
+# is compared, so a divergence in the middle of a trace that converges by
+# its end is a mismatch too.  The Lean side's exit status is captured
+# like the Rust side's: before, its output was `tail -1`'d, which turned a
+# Lean parse error or crash into an empty line compared against nothing.
 generate_sequences | while IFS= read -r seq; do
-    lean_out=$(echo "$seq" | "$LEAN_ORACLE" 2>/dev/null | tail -1)
+    lean_rc=0
+    lean_out=$(echo "$seq" | "$LEAN_ORACLE" 2>/dev/null) || lean_rc=$?
     rust_rc=0
     rust_out=$(echo "$seq" | "$RUST_ORACLE" 2>/dev/null) || rust_rc=$?
     if [ "$rust_rc" -eq "$NOT_SEQUENTIAL_STATUS" ]; then
         echo "$seq" >> "$EXCLUDED_LOG"
         continue
     fi
-    if [ "$rust_rc" -ne 0 ] || [ "$lean_out" != "$rust_out" ]; then
+    if [ "$lean_rc" -ne 0 ] || [ "$rust_rc" -ne 0 ] || [ "$lean_out" != "$rust_out" ]; then
         {
             echo "MISMATCH on sequence: $seq"
-            echo "  lean: $lean_out"
-            echo "  rust: $rust_out (exit $rust_rc)"
+            echo "  lean (exit $lean_rc):"
+            printf '    %s\n' "$lean_out"
+            echo "  rust (exit $rust_rc):"
+            printf '    %s\n' "$rust_out"
+            echo "END"
         } >> "$MISMATCH_LOG"
     fi
 done
 
-mismatches=$(wc -l < "$MISMATCH_LOG" 2>/dev/null || echo 0)
+mismatches=$(grep -c '^END$' "$MISMATCH_LOG" 2>/dev/null || echo 0)
 if [ "$mismatches" -gt 0 ]; then
     echo "tier5: FAIL — mismatches found:"
-    head -30 "$MISMATCH_LOG"
-    echo "tier5: total mismatch lines: $mismatches (across $NUM_SEQUENCES sequences)"
+    head -60 "$MISMATCH_LOG"
+    echo "tier5: total mismatched sequences: $mismatches (of $NUM_SEQUENCES)"
     exit 1
 fi
 

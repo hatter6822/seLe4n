@@ -139,11 +139,19 @@ every generated operation and checks three relations after each one: that the
 two implementations agree, that the queued lock's `[now_serving, next_ticket)`
 interval matches the abstract waiter queue, and that the state word is
 `encodeRwLock` of the abstract state.  It does not model them; the state it
-renders is read back from the lock's own word.  Since v0.34.52 the driver
+renders is read back from the lock's own words.  Since v0.34.52 the driver
 holds a **real ticket** for every queued waiter and the alphabet carries a
 fifth letter, the withdrawal — so the interval check is derived from the
 tombstoned invariant (outstanding tickets are the live waiters *plus* the
-not-yet-passed tombstones) rather than from the writer bit alone.
+not-yet-passed tombstones) rather than from the writer bit alone.  Since PR
+#890 review round 5 both oracles print one **identity** line per state — the
+initial state, then one after each op — `W=<core|->;R=<sorted reader
+cores>;Q=<core:r|w,...>`, read back out of the ticket lock's per-core held,
+request and mode words on the Rust side; the flag, count and length they used
+to print let a wrong-waiter promotion, a reordered queue or a changed mode
+agree on every number.  The harness compares the whole of both outputs and
+captures both exit statuses, so a divergence in the middle of a trace is a
+mismatch too.
 
 ### Rust, and the cross target
 
@@ -171,7 +179,7 @@ The deployed reader-writer lock is exercised by two tools the host test lane
 cannot substitute for:
 
 ```bash
-./scripts/test_loom_queued_rw_lock.sh   # exhaustive-interleaving model checking (~1 min)
+./scripts/test_loom_queued_rw_lock.sh   # exhaustive-interleaving model checking (about seven minutes)
 ./scripts/test_miri_queued_rw_lock.sh   # UB / strict-provenance checking
 ```
 
@@ -198,11 +206,27 @@ than by deleting a token: removing `await_turn` from `acquire_read` — which
 leaves every symbol the gate might grep for in place — fails two of the five
 loom models.  The two models PR #890 review round 2 added — a non-holder's
 unwind against a holder, and `every_pair_of_units_is_safe`, every unordered
-pair of the lock's eleven operation units on two threads — are pinned the same
-way: keeping a release's held-word load and comparison and dropping only its
-early return fails both, and keeping the `involved` load in `acquire_read` and
-inverting its comparison fails the enqueue-twice-then-acquire units the class
-closure behind rounds 2 and 3 added.
+pair of the lock's single-lifecycle units on two threads (fourteen since
+review round 5, 105 models with the diagonal; `build.rs` holds the unit list
+to the lock's entry points), with the three chained units — read then write,
+write then read, withdraw then read, so a second acquisition starts on the
+per-core words the first left — meeting every unit in
+`every_chained_unit_meets_every_unit` under a stated preemption bound of 3
+(48 models; two lifecycles per thread double the atomic and yield points, and
+an unbounded exploration of two such threads did not finish in a per-PR
+lane) — are pinned the same way: keeping a release's held-word load and comparison and dropping only
+its early return fails both, and keeping the `involved` load in `acquire_read`
+and inverting its comparison fails the enqueue-twice-then-acquire units the
+class closure behind rounds 2 and 3 added.  What the loom gate does **not**
+enumerate is arbitrary sequences of entry points: that is the single-threaded
+census `per_core_census_to_depth_four`, which replays every sequence of up to
+four entry points from each of the lock's nine start states and holds every
+step to the matrix's classification (`cell`) — 158,015 sequences in under a
+second, in the ordinary host lane.  Round 5's five withdrawal models race a
+served or promoted request's withdrawal against the release that admitted it
+and tally that both verdicts occur; their mutations — the read arm withdrawing
+regardless of its scan, the served writer's state test inverted, the scan's
+mode read dropped — each fail the named model.
 
 ### Running one suite
 

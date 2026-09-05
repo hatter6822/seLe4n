@@ -11,7 +11,8 @@
 //! against **both deployed lock implementations** —
 //! `sele4n_hal::rw_lock::RwLock` (CAS-retry) and
 //! `sele4n_hal::queued_rw_lock::QueuedRwLock` (ticket FIFO) — and
-//! prints the canonical serialised post-state on stdout.
+//! prints the serialised state on stdout, one line per step: the initial
+//! state, then the state after every operation.
 //!
 //! ## What changed at RR6.2, and why
 //!
@@ -38,34 +39,42 @@
 //!
 //! | Abstract field | CAS-retry lock | Ticket lock | Source here |
 //! |----------------|----------------|-------------|-------------|
-//! | `writerHeld.isSome` | bit 63 of `state` | bit 63 of `state` | **read from both locks** |
-//! | `readers.length` | bits 0..62 of `state` | bits 0..62 of `state` | **read from both locks** |
-//! | `waiters` | not represented | ticket interval, mode is core-local | driver bookkeeping |
+//! | `writerHeld` | bit 63 of `state` (the flag only) | the `held` words | **read from the ticket lock's words** |
+//! | `readers` | bits 0..62 of `state` (the count only) | the `held` words | **read from the ticket lock's words** |
+//! | `waiters` | not represented | the `request` words, ordered by ticket, with the `request_mode` words | **read from the ticket lock's words** |
 //!
-//! So `W=` and `R=` are read back out of the real atomic words after
-//! every operation and cross-checked between the two implementations;
-//! a disagreement fails the run.  `Q=` is the driver's own queue.
+//! So the whole rendered line — *which* core holds the writer, *which*
+//! cores hold as readers, and the queue *in order with each request's
+//! mode* — is read back out of the ticket lock's per-core words after
+//! every operation (PR #890 review round 5); the CAS-retry lock's packed
+//! flag and count are cross-checked against it (`check_implementations_agree`)
+//! and against the spec's counts (`check_encoding`).  Before this round
+//! both oracles printed `W=<flag>;R=<count>;Q=<length>`, so a spec
+//! regression that promoted the wrong waiter, reordered the queue or
+//! changed a queued mode was invisible to the comparison: the counts
+//! agreed while the identities did not.
 //!
-//! The queue has to be the driver's, in both cases and for different
-//! reasons.  The CAS-retry lock has no queue at all — that is the
-//! documented non-representation in `rwLockSim`.  The ticket lock does
-//! have one, and since WS-LC LC3.6 every queued waiter holds a *real*
-//! ticket of it; but a waiter occupies the queue by *spinning in
-//! `await_turn`*, which a single-threaded driver cannot do, and the
-//! access **mode** of a queued waiter is core-local in the real
-//! protocol and appears in no shared word.  So the driver keeps the
-//! queue and checks, after every operation, everything the ticket lock
-//! does expose: the ticket interval is exactly the held writer plus the
-//! queued waiters plus the withdrawals nobody has skipped yet
+//! The driver still keeps a mirror of the spec's state — the branch of
+//! `applyOp` to take, and which cores to admit when the spec promotes,
+//! are decisions the driver makes from it — but nothing rendered comes
+//! from the mirror.  The mirror is instead *held to the words* after
+//! every operation: the ticket interval is exactly the held writer plus
+//! the queued waiters plus the withdrawals nobody has skipped yet
 //! (`check_ticket_interval`); the ticket being served is never one of
 //! those withdrawals (`check_head_live` — `queuedSim`'s
-//! `queuedHeadLive`, and the check that sees a stalled lock); and each
+//! `queuedHeadLive`, and the check that sees a stalled lock); each
 //! core's withdrawal slot holds exactly the withdrawal the spec says is
-//! pending for it (`check_withdrawal_slots`).  Those are the state-level
-//! half of the `queuedSim` relation proved in
+//! pending for it (`check_withdrawal_slots`); each core's held word
+//! reads what the spec says it holds (`check_holders`); and each core's
+//! request word and mode word read the live request the spec has for
+//! it (`check_requests`).  Those are the state-level half of the
+//! `queuedSim` relation proved in
 //! `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean`; the
 //! waiters-to-interval half is the part the proof carries and the
-//! single-threaded harness cannot.
+//! single-threaded harness cannot.  A waiter occupies the real queue by
+//! *spinning in `await_turn`*, which a single-threaded driver cannot do,
+//! so a queued waiter here holds a real ticket and is completed by the
+//! driver exactly when the spec admits it.
 //!
 //! ## Traces a single thread cannot execute
 //!
@@ -83,10 +92,21 @@
 //! have.
 //!
 //! Admission order **is** exercised: when the abstract promotes a batch
-//! of readers or a single writer, the driver replays exactly those
-//! cores against the real ticket lock, in exactly that order, and every
-//! one of those attempts must succeed.  A ticket lock that admitted a
-//! different core, or refused one the spec admits, fails the run.
+//! of readers or a single writer — at a release, and (PR #890 review
+//! round 5) at a withdrawal that uncovers a reader run at the head — the
+//! driver replays exactly those cores against the real ticket lock, in
+//! exactly that order, and every one of those attempts must succeed.  A
+//! ticket lock that admitted a different core, or refused one the spec
+//! admits, fails the run.
+//!
+//! **What a withdrawal decides is asserted** (PR #890 review round 5).
+//! The deployed `cancel` reports whether it withdrew or realised an
+//! admission the spec had already made (`CancelOutcome`), and the driver
+//! holds that verdict to the spec's: a queued waiter's withdrawal must
+//! report `Withdrawn`, a holder's — issued with the ticket the core held
+//! — and an uninvolved core's must report the no-op.  A lock that
+//! withdrew a request the spec had promoted, or entered on one the spec
+//! still queues, fails the run before the words are compared.
 //!
 //! **So are the spec's no-ops** (PR #890 review round 2, completed by
 //! the class closure behind rounds 2 and 3).  A release by a non-holder,
@@ -117,17 +137,27 @@
 //!
 //! ## Output format
 //!
-//! `W=<flag>;R=<count>;Q=<n>` — matches the Lean oracle
-//! (`tests/Tier5/RwLockOracle.lean`).
+//! One line per state — the initial state, then one after each op —
+//! each `W=<core|->;R=<sorted reader cores>;Q=<core:r|w,...>`: the
+//! writer's identity, the reader **set** (sorted, because the spec's
+//! `readers` order is not semantic — the Lean fold prepends a promoted
+//! batch and the driver here admits one core at a time), and the queue
+//! in order with each request's mode.  Matches the Lean oracle
+//! (`tests/Tier5/RwLockOracle.lean`) line for line, so a mid-trace
+//! divergence that later converges is caught too.
 
 use std::io::Read;
 
-use sele4n_hal::queued_rw_lock::{HeldMode, QueuedRwLock};
-use sele4n_hal::rw_lock::{RwLock, READER_MASK, WRITER_BIT};
+use sele4n_hal::queued_rw_lock::{CancelOutcome, HeldMode, QueuedRwLock};
+use sele4n_hal::rw_lock::{RwLock, WRITER_BIT};
 
 /// Cores the wire format may name.  Matches the Lean oracle's
 /// `numCores` gate and `QueuedRwLock::MAX_WAITERS`.
 const NUM_CORES: u8 = 4;
+
+/// Exit status on a trace that does not parse — the Lean oracle's too,
+/// so the harness reads one number for one condition on both sides.
+const PARSE_ERROR_STATUS: i32 = 2;
 
 /// The Rust mirror of the abstract `RwLockOp`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -366,8 +396,9 @@ impl Driver {
                 self.refuse_parked_issue(c)?;
                 // Every acquisition takes a real ticket, whether it is
                 // admitted at once or queued — that is what makes a
-                // queued waiter concrete (WS-LC LC3.6).
-                let ticket = self.queued.enqueue(c);
+                // queued waiter concrete (WS-LC LC3.6) — and records the
+                // mode the lock decides a later withdrawal on.
+                let ticket = self.queued.enqueue(c, HeldMode::Read);
                 // Strict FIFO (SM2.C-defer §5.3): a new reader enqueues
                 // iff any holder OR any queued waiter exists.  This is
                 // `applyOp`'s branch verbatim; the pre-RR6.2 model here
@@ -403,7 +434,7 @@ impl Driver {
                     return self.reacquire_as_involved(c, true);
                 }
                 self.refuse_parked_issue(c)?;
-                let ticket = self.queued.enqueue(c);
+                let ticket = self.queued.enqueue(c, HeldMode::Write);
                 if self.writer_held.is_some()
                     || !self.readers.is_empty()
                     || !self.waiters.is_empty()
@@ -426,34 +457,58 @@ impl Driver {
                 self.promote_head()
             }
             Op::Cancel(c) => {
-                // `applyOp .cancel`: drop `c`'s queued request, and
-                // nothing else.  A core that is holding, or that has no
-                // request, is untouched on both sides — and both are
-                // issued to the real ticket lock: a *holder's* withdrawal
-                // (PR #890 review round 3) with the ticket the core
-                // actually held — the writer still holds its own, a
+                // `applyOp .cancel`: drop `c`'s queued request, then —
+                // PR #890 review round 5 — promote the reader run that a
+                // withdrawn head uncovers.  A core that is holding, or
+                // that has no request, is untouched on both sides — and
+                // both are issued to the real ticket lock: a *holder's*
+                // withdrawal (PR #890 review round 3) with the ticket the
+                // core actually held — the writer still holds its own, a
                 // reader's was passed at entry — and (the class closure)
                 // an uninvolved core's with the ticket being served, a
                 // belief the lock must refuse on its own record of the
                 // core's request rather than on the ticket named.  The
                 // lock's words must make each publish nothing, which
-                // `check_all` then verifies.
+                // `check_all` then verifies; and what each reports is
+                // held to the spec's verdict (`expect_outcome`).
                 if self.writer_held == Some(c) {
                     let (_, serving) = self.queued.peek_tickets();
-                    self.queued.cancel(c, serving);
-                    return Ok(());
+                    let outcome = self.queued.cancel(c, serving);
+                    return Self::expect_outcome(
+                        c,
+                        "the held writer",
+                        outcome,
+                        CancelOutcome::Holding,
+                    );
                 }
                 if let Some(ticket) = self.reader_ticket(c) {
-                    self.queued.cancel(c, ticket);
-                    return Ok(());
+                    let outcome = self.queued.cancel(c, ticket);
+                    return Self::expect_outcome(
+                        c,
+                        "a holding reader",
+                        outcome,
+                        CancelOutcome::Holding,
+                    );
                 }
                 let Some(i) = self.waiters.iter().position(|w| w.0 == c) else {
                     let (_, serving) = self.queued.peek_tickets();
-                    self.queued.cancel(c, serving);
-                    return Ok(());
+                    let outcome = self.queued.cancel(c, serving);
+                    return Self::expect_outcome(
+                        c,
+                        "an uninvolved core",
+                        outcome,
+                        CancelOutcome::Withdrawn,
+                    );
                 };
                 let (_, _, ticket) = self.waiters.remove(i);
-                self.queued.cancel(c, ticket);
+                // A queued waiter is a request the spec has not admitted,
+                // so the lock — deciding on its own words: a served write
+                // request with a reader holding, or a read request with
+                // a live write request ahead of it — must withdraw it.
+                // `Holding` here is the served-ticket defect this round
+                // closed: the lock entering on a request the spec queues.
+                let outcome = self.queued.cancel(c, ticket);
+                Self::expect_outcome(c, "a queued waiter", outcome, CancelOutcome::Withdrawn)?;
                 // The withdrawal is retired at once when the core was the
                 // head, and left as a tombstone otherwise.  Recording it
                 // driver-side is what lets `check_ticket_interval` derive
@@ -464,9 +519,55 @@ impl Driver {
                     self.tombstones.push((c, ticket));
                 }
                 self.retire_passed_tombstones();
+                // `cancelPromotes`: no writer holds and the new head is a
+                // reader — in a reachable state, exactly when the
+                // withdrawer was the head, whose retirement passed the
+                // turn to the run behind it.  The spec admits that run;
+                // the driver admits the same cores in the same order.
+                if self.writer_held.is_none() && matches!(self.waiters.first(), Some((_, false, _)))
+                {
+                    self.promote_reader_run()?;
+                }
                 Ok(())
             }
         }
+    }
+
+    /// **PR #890 review round 5**: the deployed withdrawal's verdict must
+    /// be the spec's.  `who` names the case the spec is in for `c`.
+    fn expect_outcome(
+        c: u8,
+        who: &str,
+        outcome: CancelOutcome,
+        expected: CancelOutcome,
+    ) -> Result<(), Halt> {
+        if outcome != expected {
+            return Err(Halt::Divergence(format!(
+                "cancel by core {c} — {who} per the spec — reported {outcome:?}, but the \
+                 spec's withdrawal is {expected:?}"
+            )));
+        }
+        Ok(())
+    }
+
+    /// Admit the contiguous run of readers at the head of the queue, in
+    /// queue order — the reader arm of both promotions, since the spec's
+    /// `promoteWaitersOnWriterRelease` and its `cancel` share it.
+    fn promote_reader_run(&mut self) -> Result<(), Halt> {
+        let mut batch = Vec::new();
+        while let Some((c, false, ticket)) = self.waiters.first().copied() {
+            batch.push((c, ticket));
+            self.waiters.remove(0);
+        }
+        // Admit in queue order: the spec's batch order is the ticket
+        // lock's ticket order.
+        for (c, ticket) in batch {
+            self.admit_reader(c, ticket)?;
+            // Each admission passes its own ticket on, which can uncover
+            // a tombstone the skip loop then retires.
+            self.retire_passed_tombstones();
+        }
+        Ok(())
     }
 
     /// **WS-LC LC3.6**: forget tombstones the lock has already skipped.
@@ -514,22 +615,7 @@ impl Driver {
                 self.waiters.remove(0);
                 self.admit_writer(c, ticket)
             }
-            Some((_, false, _)) => {
-                let mut batch = Vec::new();
-                while let Some((c, false, ticket)) = self.waiters.first().copied() {
-                    batch.push((c, ticket));
-                    self.waiters.remove(0);
-                }
-                // Admit in queue order: the spec's batch order is the
-                // ticket lock's ticket order.
-                for (c, ticket) in batch {
-                    self.admit_reader(c, ticket)?;
-                    // Each admission passes its own ticket on, which can
-                    // uncover a tombstone the skip loop then retires.
-                    self.retire_passed_tombstones();
-                }
-                Ok(())
-            }
+            Some((_, false, _)) => self.promote_reader_run(),
         }
     }
 
@@ -732,11 +818,19 @@ impl Driver {
         let (_, serving) = self.queued.peek_tickets();
         for core in 0..NUM_CORES {
             let expected = if self.writer_held == Some(core) {
-                Some(serving)
+                Some((serving, HeldMode::Write))
             } else {
-                self.waiters.iter().find(|w| w.0 == core).map(|w| w.2)
+                self.waiters
+                    .iter()
+                    .find(|w| w.0 == core)
+                    .map(|w| (w.2, if w.1 { HeldMode::Write } else { HeldMode::Read }))
             };
-            let actual = self.queued.peek_request(core);
+            let actual = self
+                .queued
+                .peek_request(core)
+                .map(|ticket| (ticket, self.queued.peek_request_mode(core)));
+            let actual = actual
+                .map(|(ticket, mode)| (ticket, mode.expect("a live request has a mode word")));
             if actual != expected {
                 return Err(Halt::Divergence(format!(
                     "request word of core {core} reads {actual:?} but the spec has \
@@ -759,25 +853,67 @@ impl Driver {
         self.check_encoding()
     }
 
-    /// Render the post-state.  `W=` and `R=` are read out of the real
-    /// locks; `Q=` is the driver's queue.
+    /// Render the state, **from the ticket lock's words** (PR #890
+    /// review round 5): the writer is the core whose held word reads
+    /// `Write`, the readers are the cores whose held words read `Read`
+    /// (sorted), and the queue is every core with a live request and no
+    /// hold — a holding writer keeps its request — in ticket order, each
+    /// with the mode its mode word records.  Nothing here is the
+    /// driver's mirror; the mirror was held to these words by
+    /// `check_all` before this is called.
     fn render(&self) -> String {
-        let packed = self.packed_cas();
-        let flag = u8::from((packed & WRITER_BIT) != 0);
-        let count = packed & READER_MASK;
-        format!("W={};R={};Q={}", flag, count, self.waiters.len())
+        let mut writer: Option<u8> = None;
+        let mut readers: Vec<u8> = Vec::new();
+        let mut queue: Vec<(u64, u8, HeldMode)> = Vec::new();
+        for core in 0..NUM_CORES {
+            match self.queued.peek_held(core) {
+                Some(HeldMode::Write) => {
+                    assert!(writer.is_none(), "two held words read Write");
+                    writer = Some(core);
+                }
+                Some(HeldMode::Read) => readers.push(core),
+                None => {
+                    if let Some(ticket) = self.queued.peek_request(core) {
+                        let mode = self
+                            .queued
+                            .peek_request_mode(core)
+                            .expect("a live request has a mode word");
+                        queue.push((ticket, core, mode));
+                    }
+                }
+            }
+        }
+        queue.sort_unstable_by_key(|&(ticket, core, _)| (ticket, core));
+        let w = writer.map_or_else(|| "-".to_string(), |c| c.to_string());
+        let r = readers
+            .iter()
+            .map(u8::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+        let q = queue
+            .iter()
+            .map(|&(_, c, mode)| {
+                let m = if mode == HeldMode::Write { 'w' } else { 'r' };
+                format!("{c}:{m}")
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        format!("W={w};R={r};Q={q}")
     }
 }
 
-/// Replay a whole trace, checking after every operation.
-fn run_trace(ops: &[Op]) -> Result<String, Halt> {
+/// Replay a whole trace, checking after every operation.  Returns one
+/// rendered line per state: the initial one, then one after each op.
+fn run_trace(ops: &[Op]) -> Result<Vec<String>, Halt> {
     let mut driver = Driver::new();
     driver.check_all()?;
+    let mut lines = vec![driver.render()];
     for op in ops {
         driver.apply(*op)?;
         driver.check_all()?;
+        lines.push(driver.render());
     }
-    Ok(driver.render())
+    Ok(lines)
 }
 
 fn main() {
@@ -787,10 +923,10 @@ fn main() {
         .expect("failed to read stdin");
     let Some(ops) = parse_trace(&input) else {
         eprintln!("rw_lock_oracle: parse error");
-        std::process::exit(2);
+        std::process::exit(PARSE_ERROR_STATUS);
     };
     match run_trace(&ops) {
-        Ok(rendered) => println!("{rendered}"),
+        Ok(lines) => println!("{}", lines.join("\n")),
         Err(halt) => {
             let (label, status) = match halt {
                 Halt::Divergence(_) => ("DIVERGENCE", 1),
@@ -806,9 +942,17 @@ fn main() {
 mod tests {
     use super::*;
 
-    fn render(trace: &str) -> String {
+    /// Every rendered line of a trace: the initial state and one per op.
+    fn lines(trace: &str) -> Vec<String> {
         let ops = parse_trace(trace).expect("parse");
         run_trace(&ops).expect("no divergence")
+    }
+
+    /// The final state of a trace.
+    fn render(trace: &str) -> String {
+        lines(trace)
+            .pop()
+            .expect("the initial state is always rendered")
     }
 
     #[test]
@@ -859,22 +1003,22 @@ mod tests {
 
     #[test]
     fn empty_trace_yields_unheld() {
-        assert_eq!(render(""), "W=0;R=0;Q=0");
+        assert_eq!(render(""), "W=-;R=;Q=");
     }
 
     #[test]
     fn single_reader_acquire() {
-        assert_eq!(render("R0,"), "W=0;R=1;Q=0");
+        assert_eq!(render("R0,"), "W=-;R=0;Q=");
     }
 
     #[test]
     fn single_writer_acquire() {
-        assert_eq!(render("W0,"), "W=1;R=0;Q=0");
+        assert_eq!(render("W0,"), "W=0;R=;Q=");
     }
 
     #[test]
     fn reader_blocked_by_writer_enqueues() {
-        assert_eq!(render("W0,R1,"), "W=1;R=0;Q=1");
+        assert_eq!(render("W0,R1,"), "W=0;R=;Q=1:r");
     }
 
     /// A writer release promotes the queued reader — and the promotion
@@ -882,19 +1026,19 @@ mod tests {
     /// came out of two live atomic words.
     #[test]
     fn release_promotes_waiter() {
-        assert_eq!(render("W0,R1,w0,"), "W=0;R=1;Q=0");
+        assert_eq!(render("W0,R1,w0,"), "W=-;R=1;Q=");
     }
 
     /// A contiguous run of queued readers is admitted together.
     #[test]
     fn writer_release_batch_promotes_readers() {
-        assert_eq!(render("W0,R1,R2,R3,w0,"), "W=0;R=3;Q=0");
+        assert_eq!(render("W0,R1,R2,R3,w0,"), "W=-;R=1,2,3;Q=");
     }
 
     /// A queued writer is promoted alone, and holds its ticket.
     #[test]
     fn reader_release_promotes_queued_writer() {
-        assert_eq!(render("R0,W1,r0,"), "W=1;R=0;Q=0");
+        assert_eq!(render("R0,W1,r0,"), "W=1;R=;Q=");
     }
 
     /// Strict FIFO: a reader arriving behind a queued writer waits, even
@@ -903,28 +1047,28 @@ mod tests {
     /// refinement check rather than an implementation echo.
     #[test]
     fn reader_behind_queued_writer_enqueues() {
-        assert_eq!(render("R0,W1,R2,"), "W=0;R=1;Q=2");
+        assert_eq!(render("R0,W1,R2,"), "W=-;R=0;Q=1:w,2:r");
     }
 
     #[test]
     fn render_state_matches_lean_format() {
         // R0,R1,r0,W2,w2, — W2 enqueues behind reader 1; w2 is then a
         // no-op because 2 is a waiter, not the writer.
-        assert_eq!(render("R0,R1,r0,W2,w2,"), "W=0;R=1;Q=1");
+        assert_eq!(render("R0,R1,r0,W2,w2,"), "W=-;R=1;Q=2:w");
     }
 
     #[test]
     fn all_readers_acquire_and_release() {
-        assert_eq!(render("R0,R1,R2,R3,"), "W=0;R=4;Q=0");
-        assert_eq!(render("R0,R1,R2,R3,r0,r1,r2,r3,"), "W=0;R=0;Q=0");
+        assert_eq!(render("R0,R1,R2,R3,"), "W=-;R=0,1,2,3;Q=");
+        assert_eq!(render("R0,R1,R2,R3,r0,r1,r2,r3,"), "W=-;R=;Q=");
     }
 
     /// A queue of writers drains one at a time.
     #[test]
     fn writer_queue_drains_in_order() {
-        assert_eq!(render("W0,W1,W2,W3,"), "W=1;R=0;Q=3");
-        assert_eq!(render("W0,W1,W2,W3,w0,"), "W=1;R=0;Q=2");
-        assert_eq!(render("W0,W1,W2,W3,w0,w1,w2,w3,"), "W=0;R=0;Q=0");
+        assert_eq!(render("W0,W1,W2,W3,"), "W=0;R=;Q=1:w,2:w,3:w");
+        assert_eq!(render("W0,W1,W2,W3,w0,"), "W=1;R=;Q=2:w,3:w");
+        assert_eq!(render("W0,W1,W2,W3,w0,w1,w2,w3,"), "W=-;R=;Q=");
     }
 
     /// Double acquire by the same core is a no-op on both sides.  The
@@ -933,16 +1077,16 @@ mod tests {
     /// counts read back afterwards must not have moved.
     #[test]
     fn double_acquire_is_a_noop() {
-        assert_eq!(render("R0,R0,R0,"), "W=0;R=1;Q=0");
-        assert_eq!(render("W0,W0,"), "W=1;R=0;Q=0");
+        assert_eq!(render("R0,R0,R0,"), "W=-;R=0;Q=");
+        assert_eq!(render("W0,W0,"), "W=0;R=;Q=");
         // Crossing modes: a reader asking for the write lock, and the
         // writer asking for the read lock, are holders and stand still.
-        assert_eq!(render("R0,W0,"), "W=0;R=1;Q=0");
-        assert_eq!(render("W0,R0,"), "W=1;R=0;Q=0");
+        assert_eq!(render("R0,W0,"), "W=-;R=0;Q=");
+        assert_eq!(render("W0,R0,"), "W=0;R=;Q=");
         // A queued waiter re-acquiring is the spec's no-op too, and is
         // issued to the ticket lock, which returns on the core's request
         // word (`a_waiter_reacquiring_is_issued_and_changes_nothing`).
-        assert_eq!(render("W0,R1,R1,"), "W=1;R=0;Q=1");
+        assert_eq!(render("W0,R1,R1,"), "W=0;R=;Q=1:r");
     }
 
     /// A queued waiter re-acquiring is the spec's no-op and **reaches the
@@ -955,9 +1099,9 @@ mod tests {
     /// neither lock.
     #[test]
     fn a_waiter_reacquiring_is_issued_and_changes_nothing() {
-        assert_eq!(render("W0,R1,R1,W1,"), "W=1;R=0;Q=1");
-        assert_eq!(render("W0,R1,R1,w0,"), "W=0;R=1;Q=0");
-        assert_eq!(render("R0,W1,W1,R1,r0,"), "W=1;R=0;Q=0");
+        assert_eq!(render("W0,R1,R1,W1,"), "W=0;R=;Q=1:r");
+        assert_eq!(render("W0,R1,R1,w0,"), "W=-;R=1;Q=");
+        assert_eq!(render("R0,W1,W1,R1,r0,"), "W=1;R=;Q=");
     }
 
     /// A withdrawal by a core with no request is the spec's no-op and
@@ -966,9 +1110,9 @@ mod tests {
     /// the one being served.
     #[test]
     fn cancel_by_an_uninvolved_core_is_a_noop_on_the_ticket_lock() {
-        assert_eq!(render("c0,"), "W=0;R=0;Q=0");
-        assert_eq!(render("W0,c1,"), "W=1;R=0;Q=0");
-        assert_eq!(render("W0,R1,c1,c1,w0,"), "W=0;R=0;Q=0");
+        assert_eq!(render("c0,"), "W=-;R=;Q=");
+        assert_eq!(render("W0,c1,"), "W=0;R=;Q=");
+        assert_eq!(render("W0,R1,c1,c1,w0,"), "W=-;R=;Q=");
     }
 
     /// Releasing without holding is a no-op.  It **reaches the real
@@ -979,17 +1123,17 @@ mod tests {
     /// would underflow.
     #[test]
     fn release_without_hold_is_a_noop() {
-        assert_eq!(render("r0,"), "W=0;R=0;Q=0");
-        assert_eq!(render("w0,"), "W=0;R=0;Q=0");
-        assert_eq!(render("R0,r1,"), "W=0;R=1;Q=0");
+        assert_eq!(render("r0,"), "W=-;R=;Q=");
+        assert_eq!(render("w0,"), "W=-;R=;Q=");
+        assert_eq!(render("R0,r1,"), "W=-;R=0;Q=");
         // The writer releasing as a reader, and a reader releasing as
         // the writer: neither holds what it releases.
-        assert_eq!(render("W0,r0,"), "W=1;R=0;Q=0");
-        assert_eq!(render("R0,w0,"), "W=0;R=1;Q=0");
+        assert_eq!(render("W0,r0,"), "W=0;R=;Q=");
+        assert_eq!(render("R0,w0,"), "W=-;R=0;Q=");
         // A queued waiter releasing: its word reads clear, and the
         // holder ahead of it keeps the lock.
-        assert_eq!(render("W0,R1,r1,"), "W=1;R=0;Q=1");
-        assert_eq!(render("R0,W1,w1,"), "W=0;R=1;Q=1");
+        assert_eq!(render("W0,R1,r1,"), "W=0;R=;Q=1:r");
+        assert_eq!(render("R0,W1,w1,"), "W=-;R=0;Q=1:w");
     }
 
     /// A holder's withdrawal is the spec's no-op and now **reaches the
@@ -1001,14 +1145,14 @@ mod tests {
     /// bit and the release passed it again.
     #[test]
     fn cancel_by_a_holder_is_a_noop_on_the_ticket_lock() {
-        assert_eq!(render("W0,c0,"), "W=1;R=0;Q=0");
-        assert_eq!(render("R0,c0,"), "W=0;R=1;Q=0");
-        assert_eq!(render("R0,R1,c1,c0,"), "W=0;R=2;Q=0");
+        assert_eq!(render("W0,c0,"), "W=0;R=;Q=");
+        assert_eq!(render("R0,c0,"), "W=-;R=0;Q=");
+        assert_eq!(render("R0,R1,c1,c0,"), "W=-;R=0,1;Q=");
         // The waiter behind a withdrawing writer is admitted by the
         // release, and the turn is passed once.
-        assert_eq!(render("W0,R1,c0,w0,"), "W=0;R=1;Q=0");
-        assert_eq!(render("W0,W1,c0,w0,"), "W=1;R=0;Q=0");
-        assert_eq!(render("R0,W1,c0,r0,"), "W=1;R=0;Q=0");
+        assert_eq!(render("W0,R1,c0,w0,"), "W=-;R=1;Q=");
+        assert_eq!(render("W0,W1,c0,w0,"), "W=1;R=;Q=");
+        assert_eq!(render("R0,W1,c0,r0,"), "W=1;R=;Q=");
     }
 
     /// `check_holders` reports a held word the spec does not account
@@ -1072,7 +1216,7 @@ mod tests {
     #[test]
     fn check_requests_reports_a_planted_divergence() {
         let driver = Driver::new();
-        let _ = driver.queued.enqueue(2);
+        let _ = driver.queued.enqueue(2, HeldMode::Read);
         let err = driver
             .check_requests()
             .expect_err("must report the extra request");
@@ -1092,6 +1236,23 @@ mod tests {
             "unexpected report: {}",
             err.message()
         );
+
+        // PR #890 review round 5: a request whose mode word disagrees
+        // with the spec's queued mode is reported too — the word the
+        // lock decides a reader's withdrawal on.
+        let mut driver = Driver::new();
+        driver.queued.acquire_write(0);
+        driver.writer_held = Some(0);
+        let ticket = driver.queued.enqueue(3, HeldMode::Write);
+        driver.waiters.push((3, false, ticket));
+        let err = driver
+            .check_requests()
+            .expect_err("must report the mode mismatch");
+        assert!(
+            err.message().contains("request word of core 3"),
+            "unexpected report: {}",
+            err.message()
+        );
     }
 
     /// The ticket interval closes on every trace the harness generates:
@@ -1101,7 +1262,7 @@ mod tests {
         // `run_trace` checks after every op; reaching the end is the
         // assertion.  Reader-batch promotion, writer promotion, no-op
         // gates and re-acquisition all appear here.
-        assert_eq!(render("R0,R1,W2,r0,r1,w2,R3,W0,r3,w0,"), "W=0;R=0;Q=0");
+        assert_eq!(render("R0,R1,W2,r0,r1,w2,R3,W0,r3,w0,"), "W=-;R=;Q=");
     }
 
     /// The two deployed implementations track each other word for word
@@ -1152,11 +1313,11 @@ mod tests {
         assert!(matches!(run_trace(&ops), Err(Halt::NotSequential(_))));
         // Retired by the release, core 1 acquires the free lock directly and
         // its second withdrawal is a holder's no-op.
-        assert_eq!(render("W0,W1,c1,w0,W1,c1,"), "W=1;R=0;Q=0");
+        assert_eq!(render("W0,W1,c1,w0,W1,c1,"), "W=1;R=;Q=");
         // Retired by the release, queued again behind a new holder, and
         // withdrawn again — the second withdrawal is retired by that
         // holder's release.
-        assert_eq!(render("W0,W1,c1,w0,W2,W1,c1,w2,"), "W=0;R=0;Q=0");
+        assert_eq!(render("W0,W1,c1,w0,W2,W1,c1,w2,"), "W=-;R=;Q=");
     }
 
     /// **WS-LC closure audit**: a withdrawn ticket left at the head —
@@ -1165,7 +1326,7 @@ mod tests {
     #[test]
     fn check_head_live_reports_a_planted_stall() {
         let mut driver = Driver::new();
-        let ticket = driver.queued.enqueue(1);
+        let ticket = driver.queued.enqueue(1, HeldMode::Write);
         driver.tombstones.push((1, ticket));
         let err = driver.check_head_live().expect_err("must report");
         assert!(
@@ -1182,13 +1343,13 @@ mod tests {
     fn check_withdrawal_slots_reports_lost_and_stale_publications() {
         let mut driver = Driver::new();
         driver.queued.acquire_write(0);
-        let ticket = driver.queued.enqueue(1);
+        let ticket = driver.queued.enqueue(1, HeldMode::Read);
         driver.tombstones.push((1, ticket));
         let err = driver.check_withdrawal_slots().expect_err("lost");
         assert!(err.message().contains("holds None"), "{}", err.message());
 
         driver.tombstones.clear();
-        driver.queued.cancel(1, ticket);
+        assert_eq!(driver.queued.cancel(1, ticket), CancelOutcome::Withdrawn);
         let err = driver.check_withdrawal_slots().expect_err("stale");
         assert!(err.message().contains("holds Some"), "{}", err.message());
     }
@@ -1237,5 +1398,127 @@ mod tests {
             err.message()
         );
         driver.cas.release_read();
+    }
+
+    // ------------------------------------------------------------------
+    // PR #890 review round 5 — the identity line, and the promoting
+    // withdrawal
+    // ------------------------------------------------------------------
+
+    /// Every step is rendered, from the initial state on, and each line
+    /// names the cores: a promotion that admitted the wrong waiter, or
+    /// the right one in the wrong order, would differ here where the
+    /// old count form agreed.
+    #[test]
+    fn every_step_is_rendered_with_identities() {
+        assert_eq!(
+            lines("W0,R1,R2,w0,"),
+            [
+                "W=-;R=;Q=",
+                "W=0;R=;Q=",
+                "W=0;R=;Q=1:r",
+                "W=0;R=;Q=1:r,2:r",
+                "W=-;R=1,2;Q=",
+            ]
+        );
+        // The reader set is sorted whatever order the cores entered in.
+        assert_eq!(render("R3,R1,R2,"), "W=-;R=1,2,3;Q=");
+        // The queue is in ticket order with each request's mode.
+        assert_eq!(render("R0,W3,R1,W2,"), "W=-;R=0;Q=3:w,1:r,2:w");
+    }
+
+    /// A mid-trace divergence that later converges is caught: the line
+    /// after the divergent step differs even though the final lines
+    /// agree.  Constructed by comparing the rendered vector against the
+    /// one the spec produces, which is what the harness does line by
+    /// line.
+    #[test]
+    fn a_transient_divergence_is_visible_in_the_lines() {
+        let rendered = lines("W0,R1,w0,r1,");
+        let spec = [
+            "W=-;R=;Q=",
+            "W=0;R=;Q=",
+            "W=0;R=;Q=1:r",
+            "W=-;R=1;Q=",
+            "W=-;R=;Q=",
+        ];
+        assert_eq!(rendered, spec);
+        // The same trace with the reader as core 2 shares the first two
+        // lines and the last, and differs in between — a comparison of
+        // final states alone would have passed it.
+        let other = lines("W0,R2,w0,r2,");
+        assert_eq!(other.first(), rendered.first());
+        assert_eq!(other.last(), rendered.last());
+        assert_ne!(other, rendered);
+    }
+
+    /// The spec's withdrawal promotes the reader run a withdrawn head
+    /// uncovers (`applyOp_cancel_of_promotes`): the served writer behind
+    /// a reader withdraws, and the readers queued behind it enter while
+    /// the reader holds.  On the ticket lock the withdrawal passes the
+    /// turn and the driver admits the run in ticket order; the rendered
+    /// lines show the run entering at the withdrawal, not at a release.
+    #[test]
+    fn cancel_of_the_head_promotes_the_reader_run_behind_it() {
+        assert_eq!(
+            lines("R0,W1,R2,R3,c1,"),
+            [
+                "W=-;R=;Q=",
+                "W=-;R=0;Q=",
+                "W=-;R=0;Q=1:w",
+                "W=-;R=0;Q=1:w,2:r",
+                "W=-;R=0;Q=1:w,2:r,3:r",
+                "W=-;R=0,2,3;Q=",
+            ]
+        );
+        // The run stops at the next writer, which keeps waiting for the
+        // readers to drain.
+        assert_eq!(render("R0,W1,R2,W3,R0,c1,"), "W=-;R=0,2;Q=3:w");
+        assert_eq!(render("R0,W1,R2,W3,c1,r0,r2,"), "W=3;R=;Q=");
+    }
+
+    /// A withdrawal that is not the head's promotes nobody — the head
+    /// was promotable already or is not — and one behind a holding
+    /// writer promotes nobody either (`rwLock_cancel_nonhead_admits_no_one`).
+    #[test]
+    fn cancel_off_the_head_promotes_nobody() {
+        // Behind a holding writer: the reader now at the head waits for
+        // the release.
+        assert_eq!(render("W0,W1,R2,c1,"), "W=0;R=;Q=2:r");
+        assert_eq!(render("W0,W1,R2,c1,w0,"), "W=-;R=2;Q=");
+        // Behind a queued writer head under readers: the writer stays
+        // the head, and the readers behind it stay queued.
+        assert_eq!(render("R0,W1,W2,R3,c2,"), "W=-;R=0;Q=1:w,3:r");
+        // A withdrawn reader from the middle of a run behind a writer.
+        assert_eq!(render("W0,R1,R2,R3,c2,"), "W=0;R=;Q=1:r,3:r");
+        assert_eq!(render("W0,R1,R2,R3,c2,w0,"), "W=-;R=1,3;Q=");
+    }
+
+    /// The withdrawal's verdict is held to the spec's: a mirror that
+    /// records a waiter the lock has already admitted — here, a reader
+    /// the spec would have promoted — is reported as a divergence on the
+    /// outcome, before the words are compared.
+    #[test]
+    fn cancel_outcome_reports_a_planted_divergence() {
+        let mut driver = Driver::new();
+        // The lock: core 1's read request is served on a calm lock, so
+        // the spec's promotion has admitted it; the mirror is made to
+        // believe it is still queued.
+        let ticket = driver.queued.enqueue(1, HeldMode::Read);
+        driver.waiters.push((1, false, ticket));
+        match driver.apply(Op::Cancel(1)) {
+            Err(Halt::Divergence(why)) => {
+                assert!(why.contains("reported Holding"), "{why}");
+                assert!(why.contains("a queued waiter"), "{why}");
+            }
+            other => panic!("expected a divergence on the outcome, got {other:?}"),
+        }
+    }
+
+    /// The parse-error exit status is the Lean oracle's too (`2`), so the
+    /// harness can tell a parse failure from a divergence on either side.
+    #[test]
+    fn parse_error_status_is_pinned() {
+        assert_eq!(PARSE_ERROR_STATUS, 2);
     }
 }

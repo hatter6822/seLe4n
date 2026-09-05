@@ -277,9 +277,13 @@ jobs:
     # here reads as "an interleaving breaks the lock", which is not a
     # host test failure.
     #
-    # Fast enough for a per-PR lane: the models are two threads with one
-    # or two operations each, and the whole run is a few seconds after
-    # the loom compile.
+    # Affordable for a per-PR lane: the scenario models are two or three
+    # threads with one waiting thread each; the enumeration is every
+    # unordered pair of the lock's single-lifecycle units (fourteen units,
+    # 105 models, no preemption bound) plus every chained unit against every
+    # unit (48 models, under a stated preemption bound of 3); the whole run
+    # is about seven minutes after the loom compile (re-measured at
+    # PR #890 review round 5).
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

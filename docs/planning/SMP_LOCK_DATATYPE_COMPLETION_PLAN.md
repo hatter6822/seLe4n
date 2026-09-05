@@ -228,6 +228,25 @@ withdrawal that reached the publish passed the turn under the set bit and
 the release passed it again — and the RAII guards release only what they
 acquired.  Again not a new sub-task: LC3's and LC4's rows stand.
 
+**Round 5** (same version) found the served-ticket withdrawal the class
+closure had left decidable by nobody: after a writer's release the head is
+served but not completed, the spec had promoted it, and `cancel` there retired
+the ticket the spec had made a hold — while the spec's own `cancel` (LC1.8's
+neutral filter) contradicted the deployed withdrawal of a served head, which
+passes the turn on.  The spec moved: `RwLockOp.cancel` promotes the reader run
+a withdrawn head uncovers (`RwLockState.cancelPromotes`), so LC1.14's
+`rwLock_cancel_admits_no_one` is now `rwLock_cancel_admits_only_the_head_reader_run`
+(the row above keeps the name it landed under); both bridges fold the
+promotion; the deployed lock records each request's mode and its `cancel`
+reports `CancelOutcome` (`Holding` when the spec had admitted the request,
+decided on the lock's words); `queuedSim` gains the mode relation
+`queuedRequestModesSim`; and the Tier-5 oracles print identities per step.
+The loom claim is stated as the pairs it runs — fourteen single-lifecycle
+units, 105 models unbounded, and the three chained units against every unit
+under a stated preemption bound of 3 — and the "op-sequences of length ≤ 4"
+sentence is the single-threaded census `per_core_census_to_depth_four`.
+LC3's and LC4's rows stand.
+
 **The class behind rounds 2 and 3** (same version) was closed at its cause
 rather than one entry point at a time: the lock did not know the executing
 core's own situation.  `QueuedRwLock` carries a third per-core word,
