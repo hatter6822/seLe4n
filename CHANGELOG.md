@@ -6,7 +6,7 @@ Bandwidth Servers: a `SchedContext` that holds members instead of a thread, is
 charged whenever a thread in its subtree runs, and admits its members against
 its own budget, so a component's threads share one reservation and nothing
 outside the component is delayed by more than that reservation.  The plan is
-89 sub-tasks across nine phases (CB0..CB8), numbered in execution order and
+78 sub-tasks across nine phases (CB0..CB8), numbered in execution order and
 held by the plan gate; its binding decisions are in §3 and its implementation
 specification — types, the CBS engine rules, the order, selection, charging
 and activation, admission, deadline inheritance, every transition's refusal
@@ -44,7 +44,7 @@ tick-quantised with no new upcall and no ABI version change; and every
 generalising sub-task after CB1 carries the theorem that the model is
 unchanged on states without servers.
 
-Three automated review rounds on the planning PR (thirty-one findings)
+Four automated review rounds on the planning PR (thirty-nine findings)
 reshaped the design before any code exists, and the plan's §14 records each
 finding against its fix: a transitive tie-break (`scId` in the EDF class, the
 incumbent in the legacy class — the first cut's mixed rule admitted a cycle);
@@ -69,8 +69,16 @@ is in flight rather than a claim the hardware has not yet enacted; activation
 and a scheduling point at `schedContextBind` for a thread that is already
 runnable; a populated server never shrunk under its members' sum; the Rust id
 tables landing with the Lean ids rather than two rows after the arms, since
-the HAL's prefilter refuses an id its table lacks before Lean runs; and the
-status flip confined to the last closure row.
+the HAL's prefilter refuses an id its table lacks before Lean runs; every
+phase that changes a live path in the shape CB1 took — inert definitions,
+then one switch cut carrying the suite, the footprints and the observer lift
+(CB3.6, CB4.3, CB4.5, CB6.7), so no theorem about a transition is first stated
+in the cut that makes it reachable; the deactivation hook on the per-core
+removal primitive the cross-core IPC paths actually call; the guarantee's
+eligibility hypothesis running from the window's release; `schedContextYieldTo`
+retired, since it wrote budget on two contexts outside every rule; a leaf
+mid-donation refused as a server member and a donation owner's affinity held
+until the return; and the status flip confined to the last closure row.
 
 Three things the survey behind the plan found in the flat tree, all recorded
 in the plan (§1.1, §3.3) and in the debt register:
