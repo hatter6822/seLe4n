@@ -44,7 +44,7 @@ tick-quantised with no new upcall and no ABI version change; and every
 generalising sub-task after CB1 carries the theorem that the model is
 unchanged on states without servers.
 
-Nine automated review rounds on the planning PR (seventy findings)
+Ten automated review rounds on the planning PR (seventy-five findings)
 reshaped the design before any code exists, and the plan's §14 records each
 finding against its fix — and, after the fifth, the classes the findings fell
 into and the rule that closes each class rather than its instances (§14): a transitive tie-break (`scId` in the EDF class, the
@@ -127,7 +127,16 @@ gate cannot see a symbol; the reschedule seam given a footprint every caller
 composes, where the hierarchy footprints had listed object locks while their
 transitions ended with a scheduling point; the flag-to-SGI theorem stated over
 remote cores, with the executing core's own flag consumed by its next
-scheduling point; and the status flip confined to the last closure row.
+scheduling point; the departures that leave a residual read off the charged
+cores and the utilisation rather than listed, so a root server's link records
+one and a root context that counts on a core is destroyed only after its
+window ends, the object being its own residual; the deadline-inheritance
+dispatch theorem requiring a dispatchable blocker — runnable, in the active
+domain, budget-eligible along its path — and the CBS guarantee requiring the
+root's domain to be the core's active domain; the information-flow write set
+and the seam's lock footprint derived from one seam core, so a populated
+server's reconfiguration is confined to its `serverCore`; and the status flip
+confined to the last closure row.
 
 Three things the survey behind the plan found in the flat tree, all recorded
 in the plan (§1.1, §3.3) and in the debt register:
