@@ -6,7 +6,7 @@ Bandwidth Servers: a `SchedContext` that holds members instead of a thread, is
 charged whenever a thread in its subtree runs, and admits its members against
 its own budget, so a component's threads share one reservation and nothing
 outside the component is delayed by more than that reservation.  The plan is
-78 sub-tasks across nine phases (CB0..CB8), numbered in execution order and
+75 sub-tasks across nine phases (CB0..CB8), numbered in execution order and
 held by the plan gate; its binding decisions are in §3 and its implementation
 specification — types, the CBS engine rules, the order, selection, charging
 and activation, admission, deadline inheritance, every transition's refusal
@@ -44,9 +44,10 @@ tick-quantised with no new upcall and no ABI version change; and every
 generalising sub-task after CB1 carries the theorem that the model is
 unchanged on states without servers.
 
-Four automated review rounds on the planning PR (thirty-nine findings)
+Five automated review rounds on the planning PR (forty-five findings)
 reshaped the design before any code exists, and the plan's §14 records each
-finding against its fix: a transitive tie-break (`scId` in the EDF class, the
+finding against its fix — and, after the fifth, the classes the findings fell
+into and the rule that closes each class rather than its instances (§14): a transitive tie-break (`scId` in the EDF class, the
 incumbent in the legacy class — the first cut's mixed rule admitted a cycle);
 a key-worsening reschedule seam that every key-moving transition calls;
 the policy-gated bind arms kept out of the shared dispatch helper, which would
@@ -78,7 +79,12 @@ removal primitive the cross-core IPC paths actually call; the guarantee's
 eligibility hypothesis running from the window's release; `schedContextYieldTo`
 retired, since it wrote budget on two contexts outside every rule; a leaf
 mid-donation refused as a server member and a donation owner's affinity held
-until the return; and the status flip confined to the last closure row.
+until the return; the compiler sweeps and the server refills joined the cuts
+that cannot build or hold without them; the stored `deadline` field derived
+rather than mirrored, so its consistency is a `rfl` and not an invariant; the
+replenish queue declared as a lock slot by every rule that purges it; the
+guarantee's window held stable against reconfiguration inside it; and the
+status flip confined to the last closure row.
 
 Three things the survey behind the plan found in the flat tree, all recorded
 in the plan (§1.1, §3.3) and in the debt register:
