@@ -306,6 +306,114 @@ theorem perCoreCurrentThreadHw_returns_baseio_uint64_marker (c : CoreId) :
       Platform.FFI.ffiPerCoreCurrentThread (UInt64.ofNat c.val) := by
   rfl
 
+
+-- ============================================================================
+-- WS-RR RR7.26 — recording the verified per-core thread choice on the HAL
+--
+-- Register §6 finding 45: `switchToThreadHw` had zero production callers while
+-- both sides documented it as the seam the per-core scheduler's thread choice
+-- reaches the hardware through.  The three state-committing per-core entries
+-- now record their post-state's current thread through it, so the HAL's
+-- per-core mirror follows the verified scheduler rather than lagging it.
+--
+-- One verb, not two call shapes: a transition that *vacates* a core has to
+-- clear the mirror, and `switchToThreadHw` deliberately cannot write the
+-- HAL's `NO_CURRENT_THREAD` sentinel (a `ThreadId` at that value is rejected
+-- by `switchToThreadHwTidBound`, so no thread can be recorded as "none").
+-- `recordCurrentThreadHw` takes the post-state's `Option ThreadId` and routes
+-- each case to the verb that can express it.
+-- ============================================================================
+
+/-- **WS-RR RR7.26**: the HAL's "no thread recorded for this core" sentinel,
+`ffi::NO_CURRENT_THREAD` = `u64::MAX`.
+
+Equal to `switchToThreadHwTidBound` by construction, which is exactly why
+`switchToThreadHw` refuses a `ThreadId` at or above it: the two meanings must
+not alias, so the sentinel is writable only through `clearCurrentThreadHw`. -/
+def noCurrentThreadHw : UInt64 := UInt64.ofNat switchToThreadHwTidBound
+
+/-- **WS-RR RR7.26**: clear core `c`'s HAL current-thread mirror.
+
+Writes the `NO_CURRENT_THREAD` sentinel through the same FFI verb
+`switchToThreadHw` uses, which is the only way to express it: the typed
+`ThreadId` path refuses that value precisely so a real thread can never be
+recorded as "none".  Returns the HAL's `0 = recorded` status. -/
+def clearCurrentThreadHw (c : CoreId) : BaseIO UInt64 :=
+  Platform.FFI.ffiSwitchToThread noCurrentThreadHw (UInt64.ofNat c.val)
+
+/-- **WS-RR RR7.26**: record what the verified per-core scheduler left running
+on core `c`.
+
+`some tid` records the thread; `none` — a transition that vacated the core —
+clears the mirror rather than leaving it naming a thread that is no longer
+current.  Leaving a stale name is not a harmless omission: `ffi_switch_to_thread`
+is what a dispatch path reads to decide whose context to restore, so a mirror
+that outlives its thread is a restore into a descheduled frame. -/
+def recordCurrentThreadHw (cur? : Option SeLe4n.ThreadId) (c : CoreId) :
+    BaseIO UInt64 :=
+  match cur? with
+  | some tid => switchToThreadHw tid c
+  | none     => clearCurrentThreadHw c
+
+/-- **WS-RR RR7.26**: the running case is the typed switch. -/
+theorem recordCurrentThreadHw_some (tid : SeLe4n.ThreadId) (c : CoreId) :
+    recordCurrentThreadHw (some tid) c = switchToThreadHw tid c := rfl
+
+/-- **WS-RR RR7.26**: the vacated case clears the mirror — it is **not** a
+no-op, which is the property the wiring depends on. -/
+theorem recordCurrentThreadHw_none (c : CoreId) :
+    recordCurrentThreadHw none c = clearCurrentThreadHw c := rfl
+
+/-- **WS-RR RR7.26**: the sentinel a cleared mirror carries is exactly the value
+`switchToThreadHw` refuses, so "no current thread" and "thread `u64::MAX`" can
+never be confused at the seam. -/
+theorem noCurrentThreadHw_not_writable_as_thread (tid : SeLe4n.ThreadId)
+    (h : UInt64.ofNat tid.toNat = noCurrentThreadHw)
+    (hFits : tid.toNat < UInt64.size) :
+    ¬ tid.toNat < switchToThreadHwTidBound := by
+  unfold noCurrentThreadHw switchToThreadHwTidBound at *
+  have : tid.toNat = UInt64.size - 1 := by
+    have := congrArg UInt64.toNat h
+    simpa [UInt64.toNat_ofNat, Nat.mod_eq_of_lt hFits,
+      Nat.mod_eq_of_lt (by omega : UInt64.size - 1 < UInt64.size)] using this
+  omega
+
+/-- **WS-RR RR7.26**: decode the raw core id a per-core kernel entry is invoked
+with into a typed `CoreId`, or `none` when it names no core the model has.
+
+The same guard the verified steps make (`perCoreRescheduleStep`,
+`perCoreTimerTickStep`), lifted so the entry's *effects* can be gated by it too:
+an entry called with an out-of-range id commits nothing, and must therefore
+record nothing on the HAL either. -/
+def coreIdOfUInt64? (coreId : UInt64) : Option CoreId :=
+  if h : coreId.toNat < numCores then some ⟨coreId.toNat, h⟩ else none
+
+/-- **WS-RR RR7.26**: `coreIdOfUInt64?` accepts exactly the ids the model has a
+core for, and the core it yields is the one the verified step used. -/
+@[simp] theorem coreIdOfUInt64?_eq_some (coreId : UInt64) (h : coreId.toNat < numCores) :
+    coreIdOfUInt64? coreId = some ⟨coreId.toNat, h⟩ := by
+  unfold coreIdOfUInt64?; rw [dif_pos h]
+
+/-- **WS-RR RR7.26**: and refuses the rest. -/
+@[simp] theorem coreIdOfUInt64?_eq_none (coreId : UInt64) (h : ¬ coreId.toNat < numCores) :
+    coreIdOfUInt64? coreId = none := by
+  unfold coreIdOfUInt64?; rw [dif_neg h]
+
+/-- **WS-RR RR7.26**: the shared tail of the three state-committing per-core
+entries — record on the HAL what the committed post-state left running.
+
+Takes the pair the entry's atomic step returns: the core the raw id decoded to
+and the thread that core's `current` slot holds afterwards.  `none` — a raw id
+the model has no core for — records nothing, matching the step, which commits
+nothing for such an id. -/
+def recordCommittedCurrentThreadHw
+    (r : Option (CoreId × Option SeLe4n.ThreadId)) : BaseIO Unit :=
+  match r with
+  | none => pure ()
+  | some (c, cur?) => do
+      let _ ← recordCurrentThreadHw cur? c
+      pure ()
+
 -- ============================================================================
 -- WS-SM SM5.C.4 — Cross-core wake SGI-emission typed wrappers
 -- ============================================================================

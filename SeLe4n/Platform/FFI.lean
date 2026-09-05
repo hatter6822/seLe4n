@@ -1365,6 +1365,173 @@ def bootAndInitialiseRPi5OrHalt (config : PlatformConfig) : BaseIO Unit := do
   | .ok _ => pure ()
   | .error _ => ffiFatalHaltAll
 
+-- ============================================================================
+-- WS-RR RR7.27 — the DTB-driven hardware boot
+--
+-- Register §6 finding 46's consumer: the path from a bootloader's flattened
+-- device tree to the checked RPi5 boot.  `DeviceTree.fromDtbFull` had no
+-- caller at all; this is its production one.
+--
+-- Everything here is a function of *data*.  The blob arrives as a `ByteArray`
+-- rather than as the raw `dtb_ptr` `rust_boot_main` holds, because turning a
+-- pointer into a `ByteArray` is a Lean-runtime allocation the bare-metal
+-- runtime port owns (register §6 finding 40, SM10.1's largest deliverable).
+-- Keeping that one read outside means the whole decision — parse, check the
+-- board against the binding, boot or halt — is decidable here and testable
+-- without a runtime.
+-- ============================================================================
+
+/-- **WS-RR RR7.27**: why a DTB-driven boot refused.
+
+Distinct from the boot's own `String` errors because the two are refused at
+different places for different reasons: these say the *board* is not the one
+this image was built for, before any kernel state is considered. -/
+inductive DeviceTreeBootRefusal where
+  /-- The blob is not a well-formed flattened device tree, or carries no
+      `/memory` node the parser accepts. -/
+  | unparseableBlob (reason : SeLe4n.Platform.DeviceTreeParseError)
+  /-- The blob parsed, but the board it describes does not have the RAM and
+      MMIO the platform binding declares. -/
+  | boardDoesNotMatchBinding
+  deriving Repr
+
+/-- **WS-RR RR7.27**: the pure half of the DTB-driven RPi5 boot — parse the
+blob, check the board against the binding, and produce the configuration the
+checked boot runs on.
+
+The device tree does **not** get to describe the hardware the kernel programs:
+`bindPlatformConfig` replaces the machine configuration with the binding's, and
+`bootAndInitialisePlatform_eq_checked_boot` is what says so.  Its role is the
+check — an image built for the BCM2712 that finds itself on a board whose
+device tree does not cover the binding's RAM and MMIO refuses here, rather than
+programming peripherals that are not there.  Both halves are checked: the RAM
+against `rpi5MachineConfig`'s `.ram` regions, the MMIO against
+`RPi5.mmioRegions` — the PL011, the GIC distributor and the GIC CPU interface,
+which is the granularity a device tree discovers peripherals at. -/
+def rpi5PlatformConfigFromDtb (blob : ByteArray)
+    (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
+    (initialObjects : List SeLe4n.Platform.Boot.ObjectEntry)
+    (bootVSpaceRoot : Option SeLe4n.Platform.Boot.BootVSpaceRootEntry) :
+    Except DeviceTreeBootRefusal SeLe4n.Platform.Boot.PlatformConfig :=
+  match SeLe4n.Platform.DeviceTree.fromDtbFull blob
+      SeLe4n.Platform.RPi5.rpi5MachineConfig.physicalAddressWidth with
+  | .error e => .error (.unparseableBlob e)
+  | .ok dt =>
+      if SeLe4n.Platform.Boot.deviceTreeCoversMachineConfig dt
+            SeLe4n.Platform.RPi5.rpi5MachineConfig
+          && SeLe4n.Platform.Boot.deviceTreeCoversMmioRegions dt
+            SeLe4n.Platform.RPi5.mmioRegions then
+        .ok (SeLe4n.Platform.Boot.PlatformConfig.fromDeviceTree dt irqTable initialObjects
+          bootVSpaceRoot)
+      else
+        .error .boardDoesNotMatchBinding
+
+/-- **WS-RR RR7.27**: the DTB-driven hardware boot, with its failure handled.
+
+Composed so that every accepting path goes through
+`bootAndInitialiseRPi5OrHalt` — the checked platform boot at the RPi5 binding
+with its own failure handled — and every refusing path parks the PE.  That is
+the same disposition a refused boot already had, extended to the two ways a
+device tree can refuse one: an unparseable blob and a board that is not this
+image's.
+
+This is the wrapper `SeLe4n/Testing/BootEntryContract.lean` anticipates by
+name when it says the kernel supplies one rather than letting the boot entry
+carry an effectful prologue.  What SM10.1 still owes is the one read this
+signature keeps out: turning `rust_boot_main`'s `dtb_ptr` into this
+`ByteArray`, which needs the bare-metal Lean runtime (`docs/REGISTERED_DEBT.md`,
+owned by SM10.1). -/
+def bootAndInitialiseRPi5FromDtbOrHalt (blob : ByteArray)
+    (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
+    (initialObjects : List SeLe4n.Platform.Boot.ObjectEntry)
+    (bootVSpaceRoot : Option SeLe4n.Platform.Boot.BootVSpaceRootEntry) : BaseIO Unit :=
+  match rpi5PlatformConfigFromDtb blob irqTable initialObjects bootVSpaceRoot with
+  | .error _ => ffiFatalHaltAll
+  | .ok config => bootAndInitialiseRPi5OrHalt config
+
+/-- **WS-RR RR7.27**: an unparseable blob boots nothing — it parks the PE
+rather than falling through to a boot on a default configuration. -/
+theorem bootAndInitialiseRPi5FromDtbOrHalt_unparseable (blob : ByteArray)
+    (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
+    (initialObjects : List SeLe4n.Platform.Boot.ObjectEntry)
+    (bootVSpaceRoot : Option SeLe4n.Platform.Boot.BootVSpaceRootEntry)
+    (e : DeviceTreeBootRefusal)
+    (h : rpi5PlatformConfigFromDtb blob irqTable initialObjects bootVSpaceRoot = .error e) :
+    bootAndInitialiseRPi5FromDtbOrHalt blob irqTable initialObjects bootVSpaceRoot
+      = ffiFatalHaltAll := by
+  unfold bootAndInitialiseRPi5FromDtbOrHalt
+  rw [h]
+
+/-- **WS-RR RR7.27**: an accepted board boots through the checked entry and
+nothing else — the property that makes this wrapper safe to name from the boot
+entry contract. -/
+theorem bootAndInitialiseRPi5FromDtbOrHalt_accepted (blob : ByteArray)
+    (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
+    (initialObjects : List SeLe4n.Platform.Boot.ObjectEntry)
+    (bootVSpaceRoot : Option SeLe4n.Platform.Boot.BootVSpaceRootEntry)
+    (config : SeLe4n.Platform.Boot.PlatformConfig)
+    (h : rpi5PlatformConfigFromDtb blob irqTable initialObjects bootVSpaceRoot = .ok config) :
+    bootAndInitialiseRPi5FromDtbOrHalt blob irqTable initialObjects bootVSpaceRoot
+      = bootAndInitialiseRPi5OrHalt config := by
+  unfold bootAndInitialiseRPi5FromDtbOrHalt
+  rw [h]
+
+/-- **WS-RR RR7.27**: a board the device tree does not describe as covering the
+binding's declared RAM and MMIO is refused, whatever else the blob says. -/
+theorem rpi5PlatformConfigFromDtb_refuses_foreign_board (blob : ByteArray)
+    (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
+    (initialObjects : List SeLe4n.Platform.Boot.ObjectEntry)
+    (bootVSpaceRoot : Option SeLe4n.Platform.Boot.BootVSpaceRootEntry)
+    (dt : SeLe4n.Platform.DeviceTree)
+    (hParse : SeLe4n.Platform.DeviceTree.fromDtbFull blob
+      SeLe4n.Platform.RPi5.rpi5MachineConfig.physicalAddressWidth = .ok dt)
+    (hCover : SeLe4n.Platform.Boot.deviceTreeCoversMachineConfig dt
+      SeLe4n.Platform.RPi5.rpi5MachineConfig = false) :
+    rpi5PlatformConfigFromDtb blob irqTable initialObjects bootVSpaceRoot
+      = .error .boardDoesNotMatchBinding := by
+  unfold rpi5PlatformConfigFromDtb
+  rw [hParse]
+  simp [hCover]
+
+/-- **WS-RR RR7.27**: and a board whose device tree discovered none of the MMIO
+the binding programs is refused too — the half a RAM-only check would miss. -/
+theorem rpi5PlatformConfigFromDtb_refuses_missing_mmio (blob : ByteArray)
+    (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
+    (initialObjects : List SeLe4n.Platform.Boot.ObjectEntry)
+    (bootVSpaceRoot : Option SeLe4n.Platform.Boot.BootVSpaceRootEntry)
+    (dt : SeLe4n.Platform.DeviceTree)
+    (hParse : SeLe4n.Platform.DeviceTree.fromDtbFull blob
+      SeLe4n.Platform.RPi5.rpi5MachineConfig.physicalAddressWidth = .ok dt)
+    (hMmio : SeLe4n.Platform.Boot.deviceTreeCoversMmioRegions dt
+      SeLe4n.Platform.RPi5.mmioRegions = false) :
+    rpi5PlatformConfigFromDtb blob irqTable initialObjects bootVSpaceRoot
+      = .error .boardDoesNotMatchBinding := by
+  unfold rpi5PlatformConfigFromDtb
+  rw [hParse]
+  simp [hMmio]
+
+/-- **WS-RR RR7.27**: and an accepted one carries the device tree's own machine
+configuration into the config — which `bindPlatformConfig` then replaces with
+the binding's, so the board's account is a *check* and never the hardware
+description the kernel programs. -/
+theorem rpi5PlatformConfigFromDtb_ok_machineConfig (blob : ByteArray)
+    (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
+    (initialObjects : List SeLe4n.Platform.Boot.ObjectEntry)
+    (bootVSpaceRoot : Option SeLe4n.Platform.Boot.BootVSpaceRootEntry)
+    (dt : SeLe4n.Platform.DeviceTree)
+    (hParse : SeLe4n.Platform.DeviceTree.fromDtbFull blob
+      SeLe4n.Platform.RPi5.rpi5MachineConfig.physicalAddressWidth = .ok dt)
+    (hCover : SeLe4n.Platform.Boot.deviceTreeCoversMachineConfig dt
+      SeLe4n.Platform.RPi5.rpi5MachineConfig = true)
+    (hMmio : SeLe4n.Platform.Boot.deviceTreeCoversMmioRegions dt
+      SeLe4n.Platform.RPi5.mmioRegions = true) :
+    rpi5PlatformConfigFromDtb blob irqTable initialObjects bootVSpaceRoot
+      = .ok (SeLe4n.Platform.Boot.PlatformConfig.fromDeviceTree dt irqTable initialObjects
+          bootVSpaceRoot) := by
+  unfold rpi5PlatformConfigFromDtb
+  rw [hParse]
+  simp [hCover, hMmio]
+
 /-- WS-RR RR5.2: under a binding's labeling the boot entry **cannot** be refused
     on the labeling — it is the checked idle boot followed by the two installs,
     and nothing else.  The proof is the binding-level admission theorem

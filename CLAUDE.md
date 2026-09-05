@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.57.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.58.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,13 +203,13 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~54036 lines)
+- `CHANGELOG.md` (~54113 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22582 lines)
 - `tests/SmpInformationFlowSuite.lean` (~11797 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
 - `SeLe4n/Kernel/API.lean` (~7136 lines)
+- `SeLe4n/Platform/Boot.lean` (~5855 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5742 lines)
-- `SeLe4n/Platform/Boot.lean` (~5724 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~5186 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5130 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5001 lines)
@@ -230,12 +230,12 @@ To find files that need pagination today, run:
 - `tests/OperationChainSuite.lean` (~3290 lines)
 - `SeLe4n/Testing/MainTraceHarness.lean` (~3216 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~3210 lines)
+- `SeLe4n/Platform/FFI.lean` (~3210 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean` (~3159 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~3140 lines)
 - `docs/dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` (~3134 lines)
 - `SeLe4n/Model/Object/Structures.lean` (~3116 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean` (~3105 lines)
-- `SeLe4n/Platform/FFI.lean` (~3043 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean` (~3038 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~2873 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~2844 lines)
@@ -324,7 +324,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1317 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~1296 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1294 lines)
-- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1292 lines)
+- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1293 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean` (~1264 lines)
 - `SeLe4n/Kernel/InformationFlow/Taint.lean` (~1261 lines)
 - `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1261 lines)
@@ -376,16 +376,18 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet2PL.lean` (~897 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
+- `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~889 lines)
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~877 lines)
-- `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~875 lines)
 - `SeLe4n/Kernel/IPC/Operations/Fault.lean` (~868 lines)
+- `tests/Ak9PlatformSuite.lean` (~867 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
 - `docs/planning/SMP_RUST_HAL_PLAN.md` (~848 lines)
 - `tests/SmpTimerSuite.lean` (~840 lines)
 - `tests/DecodingSuite.lean` (~833 lines)
 - `tests/SmpCrossCoreCallSuite.lean` (~833 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean` (~824 lines)
+- `SeLe4n/Kernel/Concurrency/Runtime.lean` (~823 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` (~823 lines)
 - `docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
 - `SeLe4n/Kernel/SchedContext/BindingAffinity.lean` (~816 lines)

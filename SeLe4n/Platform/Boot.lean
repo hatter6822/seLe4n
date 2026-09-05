@@ -21,6 +21,7 @@ import SeLe4n.Kernel.Scheduler.IdleThread
 -- structure so platform bindings (RPi5, sim) can expose the optional
 -- canonical boot VSpaceRoot from the typeclass.
 import SeLe4n.Platform.Contract
+import SeLe4n.Platform.DeviceTree
 import SeLe4n.Platform.RPi5.VSpaceBoot
 
 /-!
@@ -5720,5 +5721,135 @@ theorem bootFromPlatformCheckedWithIdleThreads_threadInactiveFlagConsistent
     threadInactiveFlagConsistent ist'.state :=
   threadStateConsistent_implies_threadInactiveFlagConsistent _
     (bootFromPlatformCheckedWithIdleThreads_threadStateConsistent config ist' h)
+
+-- ============================================================================
+-- WS-RR RR7.27 — the DeviceTree → PlatformConfig bridge
+--
+-- Register §6 finding 46: `DeviceTree.fromDtbFull` is documented as production
+-- DTB parsing, carries a correctness theorem, and had **zero consumers** —
+-- there was no path from a bootloader's blob to anything the kernel boots
+-- with.  This is that path's pure half.
+--
+-- What the device tree is *for* here is worth stating, because it is not what
+-- a first reading suggests.  It does **not** supply the machine configuration
+-- the kernel runs on: `bindPlatformConfig` overrides that with the binding's
+-- own (PR #889 review round 7 — a caller must not be able to describe other
+-- hardware).  It supplies the *board's own account of itself*, which the boot
+-- checks the binding against: an image built for the BCM2712 that finds itself
+-- on a board whose device tree does not describe the RAM and the MMIO the
+-- binding declares is on the wrong hardware, and must refuse rather than
+-- program peripherals that are not there.
+-- ============================================================================
+
+/-- **WS-RR RR7.27**: does `regions` contain a region covering all of `r`?
+
+Containment rather than equality: a device tree may split one aperture the
+binding declares as a single region across several entries, or report a larger
+one, and either is a board that *has* what the binding needs.  What it may not
+do is omit it. -/
+def memoryRegionCovered (regions : List SeLe4n.MemoryRegion)
+    (r : SeLe4n.MemoryRegion) : Bool :=
+  regions.any fun q =>
+    q.kind == r.kind &&
+    q.base.toNat ≤ r.base.toNat &&
+    r.endAddr ≤ q.endAddr
+
+/-- **WS-RR RR7.27**: does the device tree describe a board with all the RAM
+`mc` declares, at least as wide a physical address space?
+
+Only the `.ram` regions are compared here, and that is not a narrowing — it is
+what the two maps are *about*.  A device tree's `machineConfig.memoryMap` is
+built by `DeviceTree.fromDtbFull` from the `/memory` nodes, which describe
+DRAM; its peripherals are a separate surface (`DeviceTree.peripherals`,
+discovered per node) and are checked by `deviceTreeCoversMmioRegions` below.
+`.reserved` regions are the binding's statement about memory it will *not*
+touch, and a board that does not carve out the same holes is not thereby
+unusable.
+
+Fail-closed by construction: anything the device tree does not mention is not
+covered, so a blob that parses to an empty or partial map is refused. -/
+def deviceTreeCoversMachineConfig (dt : DeviceTree) (mc : SeLe4n.MachineConfig) : Bool :=
+  mc.physicalAddressWidth ≤ dt.machineConfig.physicalAddressWidth &&
+  (mc.memoryMap.filter (fun r => r.kind == SeLe4n.MemoryKind.ram)).all
+    (memoryRegionCovered dt.machineConfig.memoryMap)
+
+/-- **WS-RR RR7.27**: is every MMIO window in `regions` inside a peripheral the
+device tree discovered?
+
+The other half of the board check, at the granularity the two sides actually
+share: a binding names its MMIO windows one register block at a time
+(`RPi5.mmioRegions` — the PL011, the GIC distributor, the GIC CPU interface),
+and a device tree discovers peripherals the same way.  An image that would
+program a GIC the board's own device tree does not have must refuse. -/
+def deviceTreeCoversMmioRegions (dt : DeviceTree)
+    (regions : List SeLe4n.MemoryRegion) : Bool :=
+  regions.all fun r =>
+    dt.peripherals.any fun d =>
+      d.base.toNat ≤ r.base.toNat && r.endAddr ≤ d.base.toNat + d.size
+
+/-- **WS-RR RR7.27**: the bridge the finding names — a `PlatformConfig` whose
+machine configuration is the device tree's and whose deployment half (the IRQ
+table, the initial objects, the boot VSpace root) is the caller's.
+
+The split is the honest one: a device tree describes the *board*, and the
+objects a deployment starts with are not on it. -/
+def PlatformConfig.fromDeviceTree (dt : DeviceTree)
+    (irqTable : List IrqEntry) (initialObjects : List ObjectEntry)
+    (bootVSpaceRoot : Option BootVSpaceRootEntry) : PlatformConfig :=
+  { irqTable := irqTable
+    initialObjects := initialObjects
+    machineConfig := dt.machineConfig
+    bootVSpaceRoot := bootVSpaceRoot }
+
+/-- **WS-RR RR7.27**: the bridge carries the device tree's machine map through
+unchanged — the property that makes the coverage check above a check *of the
+board*. -/
+@[simp] theorem PlatformConfig.fromDeviceTree_machineConfig (dt : DeviceTree)
+    (irqTable : List IrqEntry) (initialObjects : List ObjectEntry)
+    (bootVSpaceRoot : Option BootVSpaceRootEntry) :
+    (PlatformConfig.fromDeviceTree dt irqTable initialObjects bootVSpaceRoot).machineConfig
+      = dt.machineConfig := rfl
+
+/-- **WS-RR RR7.27**: and the deployment half through unchanged. -/
+@[simp] theorem PlatformConfig.fromDeviceTree_deployment (dt : DeviceTree)
+    (irqTable : List IrqEntry) (initialObjects : List ObjectEntry)
+    (bootVSpaceRoot : Option BootVSpaceRootEntry) :
+    (PlatformConfig.fromDeviceTree dt irqTable initialObjects bootVSpaceRoot).irqTable
+      = irqTable ∧
+    (PlatformConfig.fromDeviceTree dt irqTable initialObjects bootVSpaceRoot).bootVSpaceRoot
+      = bootVSpaceRoot := ⟨rfl, rfl⟩
+
+/-- **WS-RR RR7.27**: a region is covered by a map that contains it verbatim —
+the reflexivity the coverage check needs to be satisfiable at all. -/
+theorem memoryRegionCovered_of_mem (regions : List SeLe4n.MemoryRegion)
+    (r : SeLe4n.MemoryRegion) (h : r ∈ regions) :
+    memoryRegionCovered regions r = true := by
+  unfold memoryRegionCovered
+  refine List.any_eq_true.mpr ⟨r, h, ?_⟩
+  simp
+
+/-- **WS-RR RR7.27**: hence a device tree whose map is the binding's own covers
+it.  The witness that `deviceTreeCoversMachineConfig` is not vacuously false —
+the shape a board matching its own binding produces. -/
+theorem deviceTreeCoversMachineConfig_self (dt : DeviceTree) :
+    deviceTreeCoversMachineConfig dt dt.machineConfig = true := by
+  unfold deviceTreeCoversMachineConfig
+  simp only [Bool.and_eq_true, decide_eq_true_eq, Nat.le_refl, true_and]
+  refine List.all_eq_true.mpr ?_
+  intro r hr
+  exact memoryRegionCovered_of_mem _ r (List.mem_filter.mp hr).1
+
+/-- **WS-RR RR7.27**: the MMIO half is vacuous on an empty demand and
+fail-closed on a non-empty one against a device tree that discovered nothing —
+the direction that matters, since "no peripherals" is what a truncated or
+foreign blob produces. -/
+theorem deviceTreeCoversMmioRegions_no_peripherals (dt : DeviceTree)
+    (regions : List SeLe4n.MemoryRegion) (hEmpty : dt.peripherals = [])
+    (hNonEmpty : regions ≠ []) :
+    deviceTreeCoversMmioRegions dt regions = false := by
+  unfold deviceTreeCoversMmioRegions
+  cases regions with
+  | nil => exact absurd rfl hNonEmpty
+  | cons r rest => simp [hEmpty]
 
 end SeLe4n.Platform.Boot

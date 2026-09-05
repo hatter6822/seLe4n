@@ -128,6 +128,20 @@ LOCAL_WRAPPER_RE = re.compile(r"\b(" + "|".join(LOCAL_WRAPPERS) + r")\b")
 # so an identifier such as `tlbi_vae1` inside a template cannot match.
 TLBI_MNEMONIC_RE = re.compile(r'(?:^|[\s;"])tlbi\s+[a-z]', re.IGNORECASE)
 
+# **WS-RR RR7.16**: the broadcast dispatcher and the enum carrying its
+# routing decision.  Neither the variant set nor the primitive each variant
+# selects is enumerated here -- see `check_sharing_dispatcher_routing`.
+SHARING_DISPATCHER = "tlbi_for_sharing"
+VARIANT_ENUM = "TlbiVariant"
+VARIANT_DECISION = "tlbi_variant_for"
+
+# A C-like enum variant: an identifier at the enum body's top level, ending
+# at a `,` or the closing brace.  A variant carrying a payload (`V(u64)` or
+# `V { .. }`) is NOT matched, and the check refuses the enum rather than
+# reading past it -- a payload variant's arm has a different shape, so a
+# scanner that skipped it would silently stop checking that arm.
+_ENUM_VARIANT_RE = re.compile(r"\A([A-Za-z_][A-Za-z0-9_]*)\Z")
+
 # `re.MULTILINE` is load-bearing: without it `^` anchors only at offset 0, so
 # every declaration after the first line is invisible and every reference
 # reports `<file scope>`.  The first version of this gate had exactly that
@@ -553,6 +567,336 @@ TLBI_OPERATION_RE = re.compile(
 )
 
 
+def tlbi_emitters_in_module(root: str) -> tuple[dict[str, set[str]], list[str]]:
+    """Every function in `tlb.rs` that emits a `tlbi`, with its mnemonics.
+
+    The one walk of the module's assembly templates.  Three checks ask a
+    question of it -- which functions emit a non-broadcast invalidation
+    (`check_local_wrapper_inventory`), whether each emitter is named after
+    what it emits (`check_emitter_naming`), and which primitive a dispatch
+    arm must call (`check_sharing_dispatcher_routing`) -- and a second walk
+    for any of them would be one question with two answers, which is how
+    the divergences this file's history is made of begin (CLAUDE.md, "one
+    question answered in two places will diverge").
+
+    Read from the STRING-KEEPING view, since the mnemonic is `asm!`
+    template content, and through `resolve_template_macros`, so a template
+    assembled by `concat!` is resolved rather than read as fragments.
+
+    An emission this walk cannot attribute to a function is REPORTED, not
+    skipped: a mnemonic at module scope belongs to no wrapper, so neither
+    the naming rule nor the allowlist can say anything about it.
+    """
+    text = read(root, TLB_MODULE)
+    code, template_problems = resolve_template_macros(rust_code_view.code(text))
+    bodies = rust_code_view.fn_bodies(text)
+    emitters: dict[str, set[str]] = {}
+    problems: list[str] = [f"{TLB_MODULE}:{note}" for note in template_problems]
+    for match in TLBI_OPERATION_RE.finditer(code):
+        operation = match.group(1).lower()
+        owner = rust_code_view.enclosing_fn(text, match.start(), bodies=bodies)
+        if owner == rust_code_view.FILE_SCOPE:
+            lineno = code.count("\n", 0, match.start()) + 1
+            problems.append(
+                f"{TLB_MODULE}:{lineno}: emits `tlbi {operation}` outside "
+                f"any function, so this gate cannot attribute it to a "
+                f"wrapper. Move the emission into a named wrapper."
+            )
+            continue
+        emitters.setdefault(owner, set()).add(operation)
+    return emitters, problems
+
+
+def check_emitter_naming(root: str) -> list[str]:
+    """A `tlb.rs` emitter is named `tlbi_<the mnemonic it emits>`.
+
+    Every other rule in this gate reads a wrapper's NAME and concludes
+    something about the instruction it issues: `LOCAL_WRAPPERS` decides
+    which references need an allowlist entry from the name's suffix, and
+    the dispatcher's arms are held to the primitive each variant NAMES.
+    Both are the "a name is not a definition" substitution unless something
+    holds the name to the body -- `tlbi_vae1is` whose template says `vale1is`
+    keeps every token those checks look for, is a different instruction, and
+    would invalidate a leaf entry where the caller asked for the whole
+    intermediate walk.
+
+    So the relation is checked where it can be: an emitter must issue
+    exactly ONE distinct mnemonic, and its name must be `tlbi_` followed by
+    that mnemonic.  An emitter issuing two mnemonics is refused rather than
+    approximated -- no single name spells two instructions, so splitting it
+    is the fix.  Dispatchers (`tlbi_local`, `tlbi_for_sharing`) emit nothing
+    themselves and so are not emitters at all; they are covered by the
+    allowlist and routing rules instead.
+    """
+    emitters, problems = tlbi_emitters_in_module(root)
+    for owner in sorted(emitters):
+        operations = sorted(emitters[owner])
+        if len(operations) != 1:
+            problems.append(
+                f"{TLB_MODULE}: `{owner}` emits {len(operations)} distinct "
+                f"`tlbi` mnemonics ({', '.join(operations)}), so no name can "
+                f"spell what it issues and this gate cannot hold its callers "
+                f"to an instruction. Split it into one wrapper per mnemonic."
+            )
+            continue
+        expected = f"tlbi_{operations[0]}"
+        if owner != expected:
+            problems.append(
+                f"{TLB_MODULE}: `{owner}` emits `tlbi {operations[0]}`, so it "
+                f"must be named `{expected}`.\n"
+                f"      Every other rule here reads the name and concludes "
+                f"what the wrapper issues -- which mnemonics are broadcast, "
+                f"which references need an entry in {ALLOWLIST}, which "
+                f"primitive a `{VARIANT_ENUM}` arm must call. A name that "
+                f"does not spell its own instruction makes all three wrong "
+                f"while keeping every token they match."
+            )
+    return problems
+
+
+def _brace_matched_body(view: str, opened: int) -> int | None:
+    """Index of the `}` closing the `{` at `opened`, over a string-free view."""
+    depth = 0
+    for index in range(opened, len(view)):
+        if view[index] == "{":
+            depth += 1
+        elif view[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return index
+    return None
+
+
+def _top_level_split(view: str, start: int, end: int, sep: str) -> list[tuple[int, int]]:
+    """`[start, end)` split on `sep` occurring at bracket depth zero."""
+    pieces: list[tuple[int, int]] = []
+    depth = 0
+    piece_start = start
+    for index in range(start, end):
+        char = view[index]
+        if char in "{([":
+            depth += 1
+        elif char in "})]":
+            depth -= 1
+        elif char == sep and depth == 0:
+            pieces.append((piece_start, index))
+            piece_start = index + 1
+    if view[piece_start:end].strip():
+        pieces.append((piece_start, end))
+    return pieces
+
+
+_ARM_CALL_RE = re.compile(r"\A([A-Za-z_][A-Za-z0-9_]*)\s*\(([^()]*)\)\Z")
+
+
+def broadcast_variants(root: str) -> tuple[list[str], list[str]]:
+    """The `TlbiVariant` variants, in declaration order, derived from `tlb.rs`.
+
+    Derived rather than listed: a hand-written variant list cannot see the
+    one that does not exist yet, so the routing check would go silent
+    exactly when a new broadcast scope is added (CLAUDE.md, "an enumeration
+    standing in for a derivation").
+
+    Refuses -- rather than skips -- an enum shape it cannot read: a variant
+    with a payload, a discriminant, or an attribute.  A skipped variant is a
+    dispatch arm nobody checks, and this scanner produces REQUIREMENTS, so
+    dropping one is the fail-OPEN direction.
+    """
+    text = read(root, TLB_MODULE)
+    view = rust_code_view.code_no_strings(text)
+    declaration = re.search(r"\benum\s+" + VARIANT_ENUM + r"\s*\{", view)
+    if declaration is None:
+        return [], [
+            f"{TLB_MODULE}: no `enum {VARIANT_ENUM}` declaration, so the "
+            f"`{SHARING_DISPATCHER}` routing rule has no variant set to "
+            f"check against."
+        ]
+    opened = declaration.end() - 1
+    closed = _brace_matched_body(view, opened)
+    if closed is None:
+        return [], [f"{TLB_MODULE}: `enum {VARIANT_ENUM}` has no closing brace."]
+    variants: list[str] = []
+    problems: list[str] = []
+    for lo, hi in _top_level_split(view, opened + 1, closed, ","):
+        piece = view[lo:hi].strip()
+        if not piece:
+            continue
+        match = _ENUM_VARIANT_RE.match(piece)
+        if match is None:
+            problems.append(
+                f"{TLB_MODULE}: `{VARIANT_ENUM}` variant `{piece}` is not a "
+                f"bare identifier. This gate holds each variant's dispatch "
+                f"arm to the primitive the variant NAMES, which it can only "
+                f"do for a C-like variant; a payload, discriminant or "
+                f"attribute changes the arm's shape, so it is refused rather "
+                f"than read past."
+            )
+            continue
+        variants.append(match.group(1))
+    if not variants and not problems:
+        problems.append(f"{TLB_MODULE}: `enum {VARIANT_ENUM}` declares no variants.")
+    return variants, problems
+
+
+def check_sharing_dispatcher_routing(root: str) -> list[str]:
+    """Each `{VARIANT_ENUM}` arm of the dispatcher calls the primitive it names.
+
+    `tlbi_variant_for` decides which broadcast primitive a `(domain,
+    operation)` pair selects, and eight host witnesses in `tlb.rs` check
+    that decision at every pair.  What no host test can reach is the
+    emission itself: the primitives are `asm!` on `aarch64` and no-ops on
+    the host, so a test can observe neither which arm ran nor what it
+    issued.  The dispatcher's one-line-per-variant map is therefore the
+    single unchecked link between a decided variant and an executed
+    instruction, and it is checked here.
+
+    The map is a SPELLING rule, derived from the variant name:
+    `{VARIANT_ENUM}::Vae1Is` must call `tlbi_vae1is`.  With
+    `check_emitter_naming` holding that primitive to `tlbi vae1is`, the
+    chain from a `(domain, operation)` pair to an executed instruction is
+    covered end to end.
+
+    The structural half is deliberately strict, because the subject is code
+    this project writes: the dispatcher's LAST top-level statement must be
+    the `match` over `{VARIANT_DECISION}`'s result (a decoy `match` above it
+    is not the one that runs), nothing but `let` bindings may precede it (a
+    `return` or an emission above the dispatch leaves every arm this check
+    reads in place and changes what executes), its arms must be exactly the
+    enum's variants
+    with no wildcard, no `|`-joined pattern and no guard (each of which
+    would route a variant the gate believes is covered), and every arm body
+    must be a single unqualified call.  A shape outside that is refused
+    rather than approximated (CLAUDE.md, "where the subject is code this
+    project writes ... require a canonical spelling and refuse the rest").
+
+    Not made structural instead: the primitives differ in arity and each
+    `*OS` one carries its own FEAT_TLBIOS probe, so generating them from one
+    variant-to-mnemonic table would put the emissions inside an item macro
+    -- which `check_containment` and `tlbi_emitters_in_module` would then
+    have to refuse rather than read (CLAUDE.md, PR #889 review round 21).
+    Trading two scanned relations for one is not a trade worth making.
+    """
+    variants, problems = broadcast_variants(root)
+    text = read(root, TLB_MODULE)
+    view = rust_code_view.code_no_strings(text)
+    bodies = [b for b in rust_code_view.fn_bodies(text) if b[0] == SHARING_DISPATCHER]
+    if len(bodies) != 1:
+        problems.append(
+            f"{TLB_MODULE}: expected exactly one `fn {SHARING_DISPATCHER}` "
+            f"body, found {len(bodies)}."
+        )
+        return problems
+    _, body_start, body_end = bodies[0]
+    statements = rust_code_view.top_level_statements(view, body_start, body_end)
+    if not statements:
+        problems.append(f"{TLB_MODULE}: `{SHARING_DISPATCHER}` has an empty body.")
+        return problems
+    lo, hi = statements[-1]
+    # Anchor on the raw offset of the stripped text, not on `lo`: the arm
+    # spans are byte offsets into `view`, so folding the leading whitespace
+    # into the match offset would slide every span left by that many bytes
+    # and split the arms at the wrong places.
+    lo += len(view[lo:hi]) - len(view[lo:hi].lstrip())
+    terminal = view[lo:hi].strip()
+    head = re.match(
+        r"\Amatch\s+" + VARIANT_DECISION + r"\s*\([^()]*\)\s*\{", terminal
+    )
+    if head is None:
+        problems.append(
+            f"{TLB_MODULE}: `{SHARING_DISPATCHER}`'s last top-level statement "
+            f"is not `match {VARIANT_DECISION}(..) {{ .. }}`, so this gate "
+            f"cannot tell which map from a decided variant to an emitted "
+            f"instruction actually runs. Make the dispatch the function's "
+            f"terminal statement."
+        )
+        return problems
+    for other_lo, other_hi in statements[:-1]:
+        earlier = view[other_lo:other_hi].strip()
+        if not earlier.startswith("let "):
+            problems.append(
+                f"{TLB_MODULE}: `{SHARING_DISPATCHER}` performs `{earlier}` before its "
+                f"dispatch, and this gate only reads the dispatch.\n"
+                f"      Reaching the terminal `match` is not the same as it being the "
+                f"function's last statement: a `return`, a halt or a second emission above "
+                f"it keeps every arm this check reads while changing, or skipping, what "
+                f"actually executes. Only `let` bindings may precede the dispatch; anything "
+                f"else is refused rather than read past."
+            )
+            return problems
+    opened = lo + head.end() - 1
+    closed = _brace_matched_body(view, opened)
+    if closed is None:
+        problems.append(f"{TLB_MODULE}: `{SHARING_DISPATCHER}`'s match has no closing brace.")
+        return problems
+    routed: dict[str, str] = {}
+    for arm_lo, arm_hi in _top_level_split(view, opened + 1, closed, ","):
+        arm = view[arm_lo:arm_hi].strip()
+        if not arm:
+            continue
+        pattern, _, body = arm.partition("=>")
+        if not body or "=>" in body:
+            problems.append(
+                f"{TLB_MODULE}: `{SHARING_DISPATCHER}` arm `{arm}` is not a "
+                f"single `pattern => body`."
+            )
+            continue
+        pattern = pattern.strip()
+        body = body.strip()
+        expected_prefix = VARIANT_ENUM + "::"
+        if not pattern.startswith(expected_prefix) or "|" in pattern or " if " in pattern:
+            problems.append(
+                f"{TLB_MODULE}: `{SHARING_DISPATCHER}` arm pattern `{pattern}` "
+                f"is not a single bare `{expected_prefix}<Variant>`. A "
+                f"wildcard, an alternation or a guard routes a variant this "
+                f"gate would otherwise report as covered, so each is refused."
+            )
+            continue
+        variant = pattern[len(expected_prefix):].strip()
+        if variant in routed:
+            problems.append(
+                f"{TLB_MODULE}: `{SHARING_DISPATCHER}` matches "
+                f"`{expected_prefix}{variant}` twice."
+            )
+            continue
+        call = _ARM_CALL_RE.match(body)
+        if call is None:
+            problems.append(
+                f"{TLB_MODULE}: `{SHARING_DISPATCHER}` arm "
+                f"`{expected_prefix}{variant}` has body `{body}`, which is "
+                f"not a single unqualified call `name(args)`. An alias, a "
+                f"path or a block would make the primitive this arm executes "
+                f"unresolvable from the arm."
+            )
+            continue
+        routed[variant] = call.group(1)
+    for variant in variants:
+        expected = "tlbi_" + variant.lower()
+        actual = routed.pop(variant, None)
+        if actual is None:
+            problems.append(
+                f"{TLB_MODULE}: `{SHARING_DISPATCHER}` has no arm for "
+                f"`{VARIANT_ENUM}::{variant}`, so which instruction that "
+                f"variant emits is decided somewhere this gate cannot see."
+            )
+        elif actual != expected:
+            problems.append(
+                f"{TLB_MODULE}: `{VARIANT_ENUM}::{variant}` routes to "
+                f"`{actual}`, but its name spells `{expected}`.\n"
+                f"      `{VARIANT_DECISION}`'s witnesses check which variant "
+                f"a `(domain, operation)` pair selects; nothing on the host "
+                f"can observe which instruction the selected arm issues, so "
+                f"the variant's name is the only statement of it and this "
+                f"map must keep it true."
+            )
+    for variant in sorted(routed):
+        problems.append(
+            f"{TLB_MODULE}: `{SHARING_DISPATCHER}` matches "
+            f"`{VARIANT_ENUM}::{variant}`, which `enum {VARIANT_ENUM}` does "
+            f"not declare."
+        )
+    return problems
+
+
 def local_emitters_in_tlb_module(root: str) -> tuple[set[str], list[str]]:
     """Functions in `tlb.rs` that emit a NON-broadcast `tlbi`, derived.
 
@@ -570,38 +914,17 @@ def local_emitters_in_tlb_module(root: str) -> tuple[set[str], list[str]]:
     rule between them assumed the module's local surface was closed, and
     nothing checked that.
 
-    So the set is derived from what the module actually emits, and the
-    caller pins it against `LOCAL_WRAPPERS`.  Read from the STRING-KEEPING
-    view, since the mnemonic is `asm!` template content.
+    So the set is derived from what the module actually emits -- by
+    `tlbi_emitters_in_module`, the one walk the naming and routing rules
+    also read -- and the caller pins it against `LOCAL_WRAPPERS`.
     """
-    text = read(root, TLB_MODULE)
-    # The SAME resolver the containment check uses.  Applying it there and
-    # not here left `flush_entry` -- a new local emitter written as
-    # `asm!(concat!("tlbi ", "vae1"))` -- underivable: containment skips
-    # `tlb.rs`, and this inventory read the unresolved fragments, so the
-    # emitter was never registered and its callers were never checked (PR
-    # #883 review round 10).  Sixth instance of a resolver wired into one
-    # of its call sites.
-    code, template_problems = resolve_template_macros(rust_code_view.code(text))
-    bodies = rust_code_view.fn_bodies(text)
-    emitters: set[str] = set()
-    problems: list[str] = [f"{TLB_MODULE}:{note}" for note in template_problems]
-    for match in TLBI_OPERATION_RE.finditer(code):
-        operation = match.group(1).lower()
-        if operation.endswith(("is", "os")):
-            continue
-        owner = rust_code_view.enclosing_fn(text, match.start(), bodies=bodies)
-        if owner == rust_code_view.FILE_SCOPE:
-            lineno = code.count("\n", 0, match.start()) + 1
-            problems.append(
-                f"{TLB_MODULE}:{lineno}: emits a non-broadcast `tlbi "
-                f"{operation}` outside any function, so this gate cannot "
-                f"attribute it to a wrapper. Move the emission into a "
-                f"named wrapper."
-            )
-            continue
-        emitters.add(owner)
-    return emitters, problems
+    emitters, problems = tlbi_emitters_in_module(root)
+    local = {
+        owner
+        for owner, operations in emitters.items()
+        if any(not operation.endswith(("is", "os")) for operation in operations)
+    }
+    return local, problems
 
 
 def check_local_wrapper_inventory(root: str) -> list[str]:
@@ -848,6 +1171,8 @@ def run_checks(root: str) -> list[str]:
     allowed, problems = load_allowlist(root)
     problems += check_containment(root)
     problems += check_local_wrapper_inventory(root)
+    problems += check_emitter_naming(root)
+    problems += check_sharing_dispatcher_routing(root)
     problems += check_lean_binding_inventory(root)
     rust_problems, rust_used = check_rust_allowlist(root, allowed)
     problems += rust_problems
@@ -871,8 +1196,33 @@ pub fn tlbi_vae1(asid: u16, vaddr: u64) {
 pub fn tlbi_vmalle1is() {
     unsafe { core::arch::asm!("tlbi vmalle1is", options(nostack)); }
 }
+pub fn tlbi_vmalle1os() {
+    unsafe { core::arch::asm!("tlbi vmalle1os", options(nostack)); }
+}
+pub fn tlbi_vae1is(asid: u16, vaddr: u64) {
+    unsafe { core::arch::asm!("tlbi vae1is, {0}", in(reg) 0u64); }
+}
+pub enum TlbiVariant {
+    Vmalle1Is,
+    Vmalle1Os,
+    Vae1Is,
+}
+pub const fn tlbi_variant_for(d: u32, op: u32) -> TlbiVariant {
+    match (d, op) {
+        (0, 0) => TlbiVariant::Vmalle1Is,
+        (1, 0) => TlbiVariant::Vmalle1Os,
+        _ => TlbiVariant::Vae1Is,
+    }
+}
 pub fn tlbi_local(op: u32) { tlbi_vmalle1(); }
-pub fn tlbi_for_sharing(d: u32, op: u32) { tlbi_vmalle1is(); }
+pub fn tlbi_for_sharing(d: u32, op: u32) {
+    let (asid, vaddr) = (0u16, 0u64);
+    match tlbi_variant_for(d, op) {
+        TlbiVariant::Vmalle1Is => tlbi_vmalle1is(),
+        TlbiVariant::Vmalle1Os => tlbi_vmalle1os(),
+        TlbiVariant::Vae1Is => tlbi_vae1is(asid, vaddr),
+    }
+}
 """
 
 BASE_MMU_RS = """
@@ -964,6 +1314,8 @@ def write_tree(root: str, files: dict[str, str]) -> None:
 CHECKS = (
     "containment",
     "local_wrapper_inventory",
+    "emitter_naming",
+    "sharing_dispatcher_routing",
     "lean_binding_inventory",
     "rust_allowlist",
     "lean_allowlist",
@@ -1226,11 +1578,15 @@ def self_test() -> int:
 
     # A broadcast emitter added the same way must NOT be reported: the
     # inventory check exists to find LOCAL emitters, and a check that only
-    # ever tightens ends up rejecting correct code.
+    # ever tightens ends up rejecting correct code.  It is named for the
+    # mnemonic it issues, because `check_emitter_naming` is what makes the
+    # locality decision (a name's `is`/`os` suffix) sound in the first
+    # place -- a broadcast emitter free to be called anything is the same
+    # hole one layer along.
     new_broadcast = fixture()
     new_broadcast[TLB_MODULE] = BASE_TLB_RS + (
-        "\npub fn flush_entry_broadcast(vaddr: u64) {\n"
-        '    unsafe { core::arch::asm!("tlbi vae1is, {0}", in(reg) vaddr); }\n}\n'
+        "\npub fn tlbi_vale1is(asid: u16, vaddr: u64) {\n"
+        '    unsafe { core::arch::asm!("tlbi vale1is, {0}", in(reg) vaddr); }\n}\n'
     )
     cases.append(
         Case(
@@ -1239,6 +1595,197 @@ def self_test() -> int:
             False,
             check="local_wrapper_inventory",
             mutation="none",
+        )
+    )
+
+    # ---- WS-RR RR7.16: the emitter-naming and dispatcher-routing rules ----
+
+    # PRESERVING.  `tlbi_vae1is` is still a function in `tlb.rs`, still
+    # emits a broadcast `tlbi`, is still the callee of the arm its variant
+    # names, and is still absent from LOCAL_WRAPPERS -- every token every
+    # other check reads is exactly where it was.  Only the relation between
+    # the name and the instruction is broken, and `vale1is` invalidates one
+    # leaf entry where `vae1is` invalidates the whole walk to it.
+    misnamed_emitter = fixture()
+    misnamed_emitter[TLB_MODULE] = BASE_TLB_RS.replace(
+        '"tlbi vae1is, {0}"', '"tlbi vale1is, {0}"'
+    )
+    cases.append(
+        Case(
+            "an emitter whose template is not the instruction its name spells",
+            misnamed_emitter,
+            True,
+            check="emitter_naming",
+            mutation="preserving",
+        )
+    )
+
+    # An emitter issuing two mnemonics is refused rather than approximated:
+    # no name spells two instructions, so every rule keyed on the name would
+    # be right about at most one of them.
+    two_mnemonic_emitter = fixture()
+    two_mnemonic_emitter[TLB_MODULE] = BASE_TLB_RS.replace(
+        'unsafe { core::arch::asm!("tlbi vmalle1os", options(nostack)); }',
+        'unsafe { core::arch::asm!("tlbi vmalle1os", options(nostack)); }\n'
+        '    unsafe { core::arch::asm!("tlbi vale1os, {0}", in(reg) 0u64); }',
+    )
+    cases.append(
+        Case(
+            "an emitter issuing two mnemonics is refused",
+            two_mnemonic_emitter,
+            True,
+            check="emitter_naming",
+            mutation="preserving",
+        )
+    )
+
+    # PRESERVING.  All three arms are present, every callee exists, is
+    # correctly named for what it emits, and is a broadcast primitive --
+    # only the map is transposed, which is the one thing no host test can
+    # observe and the entire reason this check exists.
+    transposed_routing = fixture()
+    transposed_routing[TLB_MODULE] = BASE_TLB_RS.replace(
+        "TlbiVariant::Vmalle1Is => tlbi_vmalle1is(),\n"
+        "        TlbiVariant::Vmalle1Os => tlbi_vmalle1os(),",
+        "TlbiVariant::Vmalle1Is => tlbi_vmalle1os(),\n"
+        "        TlbiVariant::Vmalle1Os => tlbi_vmalle1is(),",
+    )
+    cases.append(
+        Case(
+            "a dispatch arm calling the other domain's primitive",
+            transposed_routing,
+            True,
+            check="sharing_dispatcher_routing",
+            mutation="preserving",
+        )
+    )
+
+    # PRESERVING, and the region-scoped variant of the same substitution: a
+    # correct map is present in the body, and the map that RUNS is
+    # transposed.  A check that searched the function for the right arms
+    # would pass (CLAUDE.md, "a region-scoped presence check is still a
+    # presence check").
+    decoy_routing = fixture()
+    decoy_routing[TLB_MODULE] = BASE_TLB_RS.replace(
+        "    match tlbi_variant_for(d, op) {\n"
+        "        TlbiVariant::Vmalle1Is => tlbi_vmalle1is(),",
+        "    if d == 9 {\n"
+        "        match tlbi_variant_for(d, op) {\n"
+        "            TlbiVariant::Vmalle1Is => tlbi_vmalle1is(),\n"
+        "            TlbiVariant::Vmalle1Os => tlbi_vmalle1os(),\n"
+        "            TlbiVariant::Vae1Is => tlbi_vae1is(asid, vaddr),\n"
+        "        }\n"
+        "    }\n"
+        "    match tlbi_variant_for(d, op) {\n"
+        "        TlbiVariant::Vmalle1Is => tlbi_vmalle1os(),",
+    )
+    cases.append(
+        Case(
+            "a correct decoy match does not stand in for the terminal one",
+            decoy_routing,
+            True,
+            check="sharing_dispatcher_routing",
+            mutation="preserving",
+        )
+    )
+
+    # PRESERVING.  The arm, its callee and the call are all still there;
+    # only the pattern stopped naming a variant, so a variant added later
+    # routes to `tlbi_vae1is` while this gate reports the map complete.
+    wildcard_routing = fixture()
+    wildcard_routing[TLB_MODULE] = BASE_TLB_RS.replace(
+        "TlbiVariant::Vae1Is => tlbi_vae1is(asid, vaddr),",
+        "_ => tlbi_vae1is(asid, vaddr),",
+    )
+    cases.append(
+        Case(
+            "a wildcard arm is not a variant's arm",
+            wildcard_routing,
+            True,
+            check="sharing_dispatcher_routing",
+            mutation="preserving",
+        )
+    )
+
+    # The derivation, not an enumeration: a variant added to the enum with
+    # no arm is reported, which a hand-written variant list could not do.
+    unrouted_variant = fixture()
+    unrouted_variant[TLB_MODULE] = BASE_TLB_RS.replace(
+        "    Vae1Is,\n}", "    Vae1Is,\n    Vale1Is,\n}"
+    )
+    cases.append(
+        Case(
+            "a new variant with no dispatch arm is reported",
+            unrouted_variant,
+            True,
+            check="sharing_dispatcher_routing",
+        )
+    )
+
+    # PRESERVING, and fail-closed on a shape the scanner cannot read: the
+    # variant keeps its name and its arm, and gains a payload, which makes
+    # its pattern something other than a bare path. Refused, not skipped --
+    # this scanner produces requirements, so a dropped one is a check
+    # nobody runs.
+    payload_variant = fixture()
+    payload_variant[TLB_MODULE] = BASE_TLB_RS.replace(
+        "    Vae1Is,\n}", "    Vae1Is(u16),\n}"
+    )
+    cases.append(
+        Case(
+            "an enum variant this gate cannot read is refused",
+            payload_variant,
+            True,
+            check="sharing_dispatcher_routing",
+            mutation="preserving",
+        )
+    )
+
+    # PRESERVING, and the "occurrence is not execution" form: the dispatch IS
+    # the terminal statement and every arm is correct — and an early `return`
+    # above it means none of them runs.  A check that resolved the terminal
+    # match and read its arms would report the map complete.
+    early_return_routing = fixture()
+    early_return_routing[TLB_MODULE] = BASE_TLB_RS.replace(
+        "pub fn tlbi_for_sharing(d: u32, op: u32) {\n"
+        "    let (asid, vaddr) = (0u16, 0u64);\n",
+        "pub fn tlbi_for_sharing(d: u32, op: u32) {\n"
+        "    let (asid, vaddr) = (0u16, 0u64);\n"
+        "    return;\n",
+    )
+    cases.append(
+        Case(
+            "an early return above the dispatch is refused",
+            early_return_routing,
+            True,
+            check="sharing_dispatcher_routing",
+            mutation="preserving",
+        )
+    )
+
+    # The dispatch must be the function's terminal statement, so a body
+    # whose routing sits somewhere this gate cannot resolve is refused
+    # rather than read as absent.
+    non_terminal_routing = fixture()
+    non_terminal_routing[TLB_MODULE] = BASE_TLB_RS.replace(
+        "pub fn tlbi_for_sharing(d: u32, op: u32) {\n"
+        "    let (asid, vaddr) = (0u16, 0u64);\n",
+        "pub fn tlbi_for_sharing(d: u32, op: u32) {\n"
+        "    let (asid, vaddr) = (0u16, 0u64);\n"
+        "    tlbi_vmalle1is();\n"
+        "    return;\n",
+    ).replace(
+        "        TlbiVariant::Vae1Is => tlbi_vae1is(asid, vaddr),\n    }\n}",
+        "        TlbiVariant::Vae1Is => tlbi_vae1is(asid, vaddr),\n    }\n    "
+        "let _unused = 0u8;\n}",
+    )
+    cases.append(
+        Case(
+            "routing that is not the dispatcher's terminal statement is refused",
+            non_terminal_routing,
+            True,
+            check="sharing_dispatcher_routing",
+            mutation="preserving",
         )
     )
 

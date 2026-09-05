@@ -8267,6 +8267,10 @@ EOF'
 # markers).  A rename / removal of any SM5.B
 # symbol fails here at elaboration time, before SM5.C's cross-core wake / SGI
 # dispatch loop consumes them.
+#
+# WS-RR RR7.26 (register §6 finding 45): the anchors below also pin that the
+# HAL context-switch seam has production callers -- `switchToThreadHw` had
+# none before that cut, so the mirror never followed the scheduler.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreSwitchToThread'
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreSwitchToThread
@@ -8338,7 +8342,71 @@ open SeLe4n.Kernel.Concurrency
 #check @switchToThreadHwTidBound
 #check @switchToThreadHwRejected
 #check @switchToThreadHw_rejects_unencodable
+-- The HAL context-switch seam has production callers: the three
+-- state-committing per-core entries and the two fault entries record their
+-- committed `currentOnCore` through these verbs.  (Workstream cite in the
+-- shell comment above -- this text is a heredoc body, which the
+-- identifier-naming gate reads as script content rather than as prose.)
+#check @noCurrentThreadHw
+#check @clearCurrentThreadHw
+#check @recordCurrentThreadHw
+#check @recordCurrentThreadHw_some
+#check @recordCurrentThreadHw_none
+#check @noCurrentThreadHw_not_writable_as_thread
+#check @coreIdOfUInt64?
+#check @coreIdOfUInt64?_eq_some
+#check @coreIdOfUInt64?_eq_none
+#check @recordCommittedCurrentThreadHw
 EOF'
+
+# WS-RR RR7.26: the entry bodies actually call the recording verb.  The `_def`
+# markers are `rfl` over the whole body, so a refactor that drops the record
+# fails at elaboration; these anchors say which bodies are covered, and the
+# negative below says the pre-RR7.26 shape (a bare `updateKernelState` with no
+# record) cannot come back to the reschedule entry.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.PerCoreRescheduleEntry
+import SeLe4n.Kernel.PerCoreTimerEntry
+import SeLe4n.Kernel.SecondaryEntry
+import SeLe4n.Kernel.SyscallDispatchEntry
+import SeLe4n.Kernel.FaultEntry
+open SeLe4n.Kernel
+#check @perCoreRescheduleEntry_def
+#check @perCoreTimerTickEntry_def
+#check @secondaryKernelMain_def
+#check @syscallDispatchCrossCoreEntry_def
+#check @faultEntry_def
+EOF'
+run_check "INVARIANT" bash -lc 'rg -n "recordCommittedCurrentThreadHw" SeLe4n/Kernel/PerCoreRescheduleEntry.lean SeLe4n/Kernel/PerCoreTimerEntry.lean SeLe4n/Kernel/SyscallDispatchEntry.lean SeLe4n/Kernel/FaultEntry.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -n "def perCoreRescheduleEntry \(coreId : UInt64\) : BaseIO Unit :=\s*$" SeLe4n/Kernel/PerCoreRescheduleEntry.lean'
+
+# WS-RR RR7.27: the DeviceTree → PlatformConfig bridge and its board check.
+# Register §6 finding 46 was "fromDtbFull has zero consumers"; these anchor the
+# consumer chain, so a later cut cannot delete the bridge and leave the parser
+# unwired again.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Platform.FFI
+open SeLe4n.Platform.Boot
+open SeLe4n.Platform.FFI
+#check @memoryRegionCovered
+#check @memoryRegionCovered_of_mem
+#check @deviceTreeCoversMachineConfig
+#check @deviceTreeCoversMachineConfig_self
+#check @deviceTreeCoversMmioRegions
+#check @deviceTreeCoversMmioRegions_no_peripherals
+#check @PlatformConfig.fromDeviceTree
+#check @PlatformConfig.fromDeviceTree_machineConfig
+#check @PlatformConfig.fromDeviceTree_deployment
+#check @DeviceTreeBootRefusal
+#check @rpi5PlatformConfigFromDtb
+#check @rpi5PlatformConfigFromDtb_refuses_foreign_board
+#check @rpi5PlatformConfigFromDtb_refuses_missing_mmio
+#check @rpi5PlatformConfigFromDtb_ok_machineConfig
+#check @bootAndInitialiseRPi5FromDtbOrHalt
+#check @bootAndInitialiseRPi5FromDtbOrHalt_unparseable
+#check @bootAndInitialiseRPi5FromDtbOrHalt_accepted
+EOF'
+run_check "INVARIANT" bash -lc 'rg -n "DeviceTree.fromDtbFull" SeLe4n/Platform/FFI.lean'
 
 # WS-SM SM5.C — cross-core wake via SGI surface anchors.  Covers the SM5.C
 # production transitions (`enqueueRunnableOnCore` / `determineTargetCore` /

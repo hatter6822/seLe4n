@@ -574,7 +574,8 @@ def syscallDispatchCrossCoreEntry
           Architecture.shootdownChangedTargets st st'',
           Architecture.shootdownPostedOps st st'',
           Architecture.shootdownRoundWindow st st'',
-          st''.pendingIcacheMaintenance),
+          st''.pendingIcacheMaintenance,
+          st''.scheduler.currentOnCore execCore),
          Architecture.clearIcacheMaintenance st'')
     | Except.error e =>
         ((Architecture.SyscallOutcome.returns (Architecture.errorFrame e),
@@ -582,7 +583,8 @@ def syscallDispatchCrossCoreEntry
           ([] : List CoreId),
           ([] : List Architecture.TlbInvalidation),
           ((0, 0) : Nat × Nat),
-          ([] : List Architecture.ICacheInvalidation)), st))
+          ([] : List Architecture.ICacheInvalidation),
+          st.scheduler.currentOnCore execCore), st))
   -- WS-RA (plan §3.3): publish the return frame into this core's mailbox
   -- immediately after the commit — `dispatch_svc` reads it back inside the
   -- same `with_kernel_entry` critical section.  A `blocks` outcome publishes
@@ -600,7 +602,14 @@ def syscallDispatchCrossCoreEntry
   -- are dropped.  The operand is the model's own — the ledger was read and
   -- cleared in the atomic step above, so it is emitted exactly once and never
   -- stranded into the next syscall.  Inert when nothing was owed.
-  completeIcacheMaintenance result.2.2.2.2.2
+  completeIcacheMaintenance result.2.2.2.2.2.1
+  -- **WS-RR RR7.26**: record on the HAL what this commit left running on the
+  -- executing core, so `ffi::PER_CPU_CURRENT_THREAD` follows the verified
+  -- scheduler rather than lagging it.  The value was read inside the atomic
+  -- step above (after `scheduleLocalSuccessorLive`, so it is the successor
+  -- when the syscall vacated the core), and a syscall that left the core
+  -- vacated clears the mirror rather than leaving it naming a blocked caller.
+  Concurrency.recordCommittedCurrentThreadHw (some (execCore, result.2.2.2.2.2.2))
   -- WS-RA: the export's scalar return is the outcome tag (0 = the mailbox
   -- frame is the caller's return; 1 = the caller blocked, no frame; 2 = the
   -- caller faulted at the seam, no frame, and the trap layer halts pending
@@ -608,12 +617,14 @@ def syscallDispatchCrossCoreEntry
   pure result.1.tagWord
 
 /-- **WS-SM SM6.A** structural marker: `syscallDispatchCrossCoreEntry` unfolds to
-the read-context / read-core / commit-dispatch / fire-SGIs / return-encoded
-driver.  Pins the body shape (atomic `modifyGetKernelState` over
-`syscallDispatchFromAbi`, then `fireCrossCoreSgis` of the diff-recovered SGIs) so
-a refactor that drops the SGI firing or the state commit breaks this marker at
-elaboration; combined with `@[export]` (which the Rust extern resolves against)
-the seam cannot regress silently. -/
+the read-context / read-core / commit-dispatch / fire-SGIs / record-current /
+return-encoded driver.  Pins the body shape (atomic `modifyGetKernelState` over
+`syscallDispatchFromAbi`, then `fireCrossCoreSgis` of the diff-recovered SGIs,
+then — **WS-RR RR7.26** — the HAL current-thread record of the value the same
+atomic step read off the committed post-state) so a refactor that drops the SGI
+firing, the state commit or the record breaks this marker at elaboration;
+combined with `@[export]` (which the Rust extern resolves against) the seam
+cannot regress silently. -/
 theorem syscallDispatchCrossCoreEntry_def
     (syscallId : UInt32) (msgInfo : UInt64) (x0 x1 x2 x3 x4 x5 : UInt64)
     (ipcBufferAddr : UInt64) (elr spsr spEl0 x30 : UInt64) :
@@ -631,7 +642,8 @@ theorem syscallDispatchCrossCoreEntry_def
                 Architecture.shootdownChangedTargets st st'',
                 Architecture.shootdownPostedOps st st'',
                 Architecture.shootdownRoundWindow st st'',
-                st''.pendingIcacheMaintenance),
+                st''.pendingIcacheMaintenance,
+                st''.scheduler.currentOnCore execCore),
                Architecture.clearIcacheMaintenance st'')
           | Except.error e =>
               ((Architecture.SyscallOutcome.returns (Architecture.errorFrame e),
@@ -639,12 +651,14 @@ theorem syscallDispatchCrossCoreEntry_def
                 ([] : List CoreId),
                 ([] : List Architecture.TlbInvalidation),
                 ((0, 0) : Nat × Nat),
-                ([] : List Architecture.ICacheInvalidation)), st))
+                ([] : List Architecture.ICacheInvalidation),
+                st.scheduler.currentOnCore execCore), st))
         let frame := result.1.mailboxFrame
         Platform.FFI.ffiSyscallReturnFrame frame.x0 frame.x1 frame.x2 frame.x3 frame.x4 frame.x5
         Concurrency.fireCrossCoreSgis result.2.1
         completeShootdownRounds result.2.2.1 result.2.2.2.1 result.2.2.2.2.1 execCore
-        completeIcacheMaintenance result.2.2.2.2.2
+        completeIcacheMaintenance result.2.2.2.2.2.1
+        Concurrency.recordCommittedCurrentThreadHw (some (execCore, result.2.2.2.2.2.2))
         pure result.1.tagWord) := rfl
 
 /-- **WS-SM SM8.B** (PR #861 review rounds 39/41): the gating argument's

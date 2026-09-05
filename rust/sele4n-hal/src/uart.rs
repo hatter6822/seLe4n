@@ -255,23 +255,33 @@ impl fmt::Write for Uart {
 // `kprintln!`-initiated lock acquisition by core B is correctly
 // ordered through the lock.
 //
-// **Fairness**: the CAS loop is NOT FIFO-fair.  Under heavy contention
-// (e.g., every core spinning to print boot diagnostics), some cores
-// may starve indefinitely.  The current production usage (boot-time
-// diagnostics + occasional IRQ-handler panics) does not exhibit this
-// pattern, so the simple CAS lock is sufficient at v1.0.0.
+// **Fairness (WS-RR RR7.16, register §6 finding 25)**: the CAS loop was NOT
+// FIFO-fair — under heavy contention (every core spinning to print boot
+// diagnostics) some cores could starve indefinitely — and SM1.G.1 recorded
+// that "once SM2.B lands, this lock will be replaced with `TicketLock` to
+// eliminate the fairness gap".  SM2 landed at v0.31.9 and the replacement did
+// not; the finding is that the deferral outlived its condition and was in no
+// durable register.
 //
-// **Future work**: WS-SM SM2 introduces a verified `TicketLock`
-// primitive (FIFO fairness, formal mutex theorem).  Once SM2.B lands,
-// this lock will be replaced with `TicketLock` to eliminate the
-// fairness gap.  At that point the `UartLock` struct itself can be
-// removed; the `with_boot_uart` interface is the stable public API
-// and will not change.  Until then, the AtomicBool-based design here
-// is the documented v1.0.0 contract.
+// It is the verified `TicketLock` now.  `UartLock` keeps the two things the
+// ticket lock does not have and this seam needs — the DAIF snapshot taken
+// before the acquire and restored after the release, and the RAII guard — and
+// delegates the mutual exclusion.  What that buys is not hypothetical: the
+// ticket lock's admission order is FIFO by construction (`ticketLock_fairness`
+// / `ticket_lock_fifo_admission` on the Lean side, refined by
+// `rust_ticketLock_refines_lean_honest`), so a core that takes a ticket is
+// served after exactly the cores ahead of it.
+//
+// **Re-entrancy is still the caller's contract.**  `TicketLock` has no
+// per-core held word (PR #890 review round 4), so a holder that acquires again
+// parks forever.  Interrupts are masked for the whole critical section, so the
+// one re-entry this seam could suffer — an IRQ handler printing while the main
+// path holds the lock — cannot happen; that was true of the CAS lock too, and
+// the mask is why.
 // ============================================================================
 
 use core::cell::UnsafeCell;
-use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicU64, Ordering};
 
 /// AJ5-B/M-21: Wrapper providing `Sync` for `UnsafeCell<Uart>`.
 ///
@@ -288,31 +298,36 @@ unsafe impl Sync for UartInner {}
 /// Module-private mutable UART instance. Accessed only through `UART_LOCK`.
 static BOOT_UART_INNER: UartInner = UartInner(UnsafeCell::new(Uart::new(UART0_BASE)));
 
-/// Minimal IRQ-safe spinlock guard for boot UART access.
+/// IRQ-safe FIFO lock guarding boot UART access.
 ///
-/// On a single-core ARM64 system (RPi5 boots on core 0 only), the only
-/// contention source is an IRQ handler calling `kprintln!` while the main
-/// kernel path holds the lock. Without interrupt masking, this would
-/// deadlock: the IRQ preempts the lock holder, spins forever, and the
-/// holder never resumes to release. The lock therefore disables interrupts
-/// for the duration of the critical section, matching the plan's
-/// "IRQ-safe lock" requirement.
+/// Contention has two sources. An IRQ handler calling `kprintln!` while the
+/// main kernel path holds the lock would deadlock without interrupt masking:
+/// the IRQ preempts the holder, spins forever, and the holder never resumes
+/// to release. The lock therefore disables interrupts for the duration of
+/// the critical section, matching the plan's "IRQ-safe lock" requirement.
+/// Since SM1's secondaries came up, the other source is a second PE, which
+/// masking does nothing about — the mutual exclusion itself has to be
+/// sound, and it is [`crate::ticket_lock::TicketLock`]'s (**WS-RR RR7.16**;
+/// SM1.G.1 wrote the `AtomicBool` CAS loop when only core 0 ran and deferred
+/// the swap to SM2, which landed the verified lock at v0.31.9).
 ///
-/// On non-aarch64 (test hosts), interrupt disable/restore are no-ops,
-/// so the lock degrades to a plain atomic spinlock — correct for
-/// single-threaded test execution.
+/// On non-aarch64 (test hosts), interrupt disable/restore are no-ops, so the
+/// lock is the ticket lock alone — correct for single-threaded and
+/// multi-threaded test execution alike.
 struct UartLock {
-    locked: AtomicBool,
+    /// **WS-RR RR7.16**: the verified FIFO lock, replacing the AtomicBool CAS
+    /// loop SM1.G.1 deferred to SM2.
+    inner: crate::ticket_lock::TicketLock,
     /// AN8-A.1: DAIF snapshot stashed at `acquire()` time so `release()` can
     /// restore it. Written only by the lock holder (Relaxed is sufficient:
-    /// the `locked` AtomicBool's Acquire/Release pair publishes the write).
+    /// the ticket lock's Acquire/Release pair publishes the write).
     saved_daif: AtomicU64,
 }
 
 impl UartLock {
     const fn new() -> Self {
         Self {
-            locked: AtomicBool::new(false),
+            inner: crate::ticket_lock::TicketLock::new(),
             saved_daif: AtomicU64::new(0),
         }
     }
@@ -327,13 +342,10 @@ impl UartLock {
         // Disable interrupts BEFORE acquiring the lock to prevent an IRQ
         // handler from preempting us mid-acquisition and deadlocking.
         let saved_daif = crate::interrupts::disable_interrupts();
-        while self
-            .locked
-            .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
-            .is_err()
-        {
-            core::hint::spin_loop();
-        }
+        // **WS-RR RR7.16**: the verified FIFO acquire.  The returned ticket is
+        // not kept — `release` advances `serving`, which needs no ticket, and
+        // storing one would invite a caller to release somebody else's.
+        let _ticket = self.inner.acquire();
         // Stash the DAIF snapshot AFTER the lock is held so only the owner
         // can read/write this field. Relaxed ordering suffices because the
         // lock's Acquire/Release pair already publishes the write.
@@ -349,7 +361,7 @@ impl UartLock {
     #[inline(always)]
     fn release(&self) {
         let saved_daif = self.saved_daif.load(Ordering::Relaxed);
-        self.locked.store(false, Ordering::Release);
+        self.inner.release();
         crate::interrupts::restore_interrupts(saved_daif);
     }
 
@@ -384,10 +396,15 @@ impl UartLock {
     }
 
     /// Check whether the lock is currently held. Primarily for tests.
+    ///
+    /// **WS-RR RR7.16**: a ticket lock is held exactly when a ticket has been
+    /// issued that `serving` has not yet reached — the ticket-interval
+    /// invariant `INV-T1` the Lean spec pins, read here rather than a
+    /// held flag, because the ticket lock has none.
     #[inline(always)]
     #[cfg(test)]
     fn is_held(&self) -> bool {
-        self.locked.load(Ordering::Acquire)
+        self.inner.peek_serving() != self.inner.peek_next_ticket()
     }
 }
 

@@ -14,6 +14,7 @@
 -- `scripts/check_kernel_entry_exports.py` verifies the symbol against the built
 -- archive on every Tier-1 run.
 import SeLe4n.Kernel.Concurrency.Types
+import SeLe4n.Kernel.Concurrency.Runtime
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreRunLoop
 import SeLe4n.Platform.FFI
 
@@ -77,16 +78,49 @@ side resolves `extern "C" { fn lean_per_core_reschedule(core_id: u64); }`
 (gated on the HAL's `hw_target` feature).  The attribute is required so the
 symbol is linkable.
 
-## Build reachability and FFI-link isolation
+## Recording the choice on the HAL (WS-RR RR7.26)
 
-Staged via `SeLe4n/Platform/Staged.lean` (added to the staged-module
-allowlist per the WS-RC R12.B partition gate).  Unlike the timer-tick entry,
-this entry references no `@[extern]` symbol (its commit is a pure
-`IO.Ref.modify` and it fires no SGIs), so linking it demands nothing from the
-Rust HAL; the FFI-link-isolation note on `PerCoreTimerEntry` does not apply
-here.  The test suites that exercise the reschedule semantics import the
-FFI-free `PerCoreRunLoop` (the verified `perCoreRescheduleStep`), not this
-entry.
+The verified step decides which thread this core runs; the HAL keeps a
+per-core mirror of that decision (`ffi::PER_CPU_CURRENT_THREAD`) which a
+dispatch path reads to know whose context to resume.  Until RR7.26 the two
+were never connected — `Concurrency.switchToThreadHw` had *zero* production
+callers while both sides' docstrings described it as the seam.  The entry now
+reads the committed post-state's `currentOnCore` inside the same atomic step
+and records it through `Concurrency.recordCommittedCurrentThreadHw`.
+
+A transition that *vacates* the core clears the mirror rather than leaving it
+naming a descheduled thread; a raw core id the model has no core for records
+nothing, matching the verified step, which commits nothing for such an id.
+
+## Build reachability and FFI linkage
+
+Production since WS-RR RR5.15 (see the header note).  RR7.26 gave this entry
+its first `@[extern]` reference — `ffiSwitchToThread`, through the typed
+`Concurrency` wrappers — so the FFI-link-isolation note that stood here is no
+longer true of it: linking this module now demands the same HAL symbols
+`PerCoreTimerEntry` does.
+
+That has a consequence for the host, and RR7.16 is where it surfaced.  The
+suites that exercise the reschedule *semantics* import the FFI-free
+`PerCoreRunLoop` (the verified `perCoreRescheduleStep`), not this entry — but
+`tests/SmpFoundationsSuite.lean` §2.17 used to **execute** this entry, and a
+Lean test executable links no Rust.  It linked before RR7.26 only because
+`--gc-sections` dropped the unreachable `@[extern]` calls; with the record
+wired, `ffi_switch_to_thread` became reachable from that suite's `main` and
+the link failed.
+
+**A Lean host executable cannot run a kernel entry that reaches the HAL**, and
+the link says so, fail-closed, with no gate to write.  Stubbing the seam from
+Lean is not the way out: an `@[export]` of a HAL symbol name is a second
+definition of it in whatever archive carries that module — a duplicate at the
+SM10.1 image link at best, and at worst one the linker silently prefers over
+the HAL, discarding every scheduling decision the kernel makes.  That hazard
+is refused by `scripts/check_kernel_entry_exports.py`, which fails when the
+static archive defines any symbol the Lean tree declares `@[extern]`.  §2.17
+therefore asserts the two *pure* halves this body composes — the empty-queue
+step dispatches nobody, and an out-of-range id names no core — which are
+stronger claims than the invocation's "it did not fault", and this entry's
+`_def` marker pins the composition itself.
 -/
 
 namespace SeLe4n.Kernel
@@ -99,22 +133,36 @@ and the definitional body of the secondary-core bring-up entry
 (`secondaryKernelMain`).
 
 Atomically runs the verified `perCoreRescheduleStep` against the live kernel
-state (committing `handleRescheduleSgiOnCore`'s result).  See the module
+state (committing `handleRescheduleSgiOnCore`'s result), then records the
+thread that step left running on this core in the HAL's per-core mirror
+(**WS-RR RR7.26**).  Both reads of the post-state happen inside the one atomic
+step, so the value recorded is the value committed.  See the module
 docstring. -/
 @[export lean_per_core_reschedule]
-def perCoreRescheduleEntry (coreId : UInt64) : BaseIO Unit :=
-  Platform.FFI.updateKernelState (fun st => perCoreRescheduleStep st coreId)
+def perCoreRescheduleEntry (coreId : UInt64) : BaseIO Unit := do
+  let record ← Platform.FFI.modifyGetKernelState (fun st =>
+    let st' := perCoreRescheduleStep st coreId
+    ((Concurrency.coreIdOfUInt64? coreId).map
+      (fun c => (c, st'.scheduler.currentOnCore c)), st'))
+  Concurrency.recordCommittedCurrentThreadHw record
 
 /-- **WS-SM SM5.C.5** structural marker: `perCoreRescheduleEntry` unfolds to
-the atomic commit of the verified reschedule step.  Pins the entry's body
-shape (an `updateKernelState` over `perCoreRescheduleStep`) so a refactor
-that drops the state commit — or inserts side effects the verified step does
-not describe — breaks this marker at elaboration; combined with the
+the atomic commit of the verified reschedule step followed by the HAL
+current-thread record.  Pins the entry's body shape (a `modifyGetKernelState`
+over `perCoreRescheduleStep` returning the decoded core with its committed
+`currentOnCore`, then `recordCommittedCurrentThreadHw`) so a refactor that
+drops the state commit, drops the record, or inserts side effects the verified
+step does not describe breaks this marker at elaboration; combined with the
 `@[export]` attribute (which the Rust `lean_per_core_reschedule` extern
 resolves against) and the `build.rs` trap-path scanner, the seam cannot
 regress silently. -/
 theorem perCoreRescheduleEntry_def (coreId : UInt64) :
     perCoreRescheduleEntry coreId =
-      Platform.FFI.updateKernelState (fun st => perCoreRescheduleStep st coreId) := rfl
+      (do
+        let record ← Platform.FFI.modifyGetKernelState (fun st =>
+          let st' := perCoreRescheduleStep st coreId
+          ((Concurrency.coreIdOfUInt64? coreId).map
+            (fun c => (c, st'.scheduler.currentOnCore c)), st'))
+        Concurrency.recordCommittedCurrentThreadHw record) := rfl
 
 end SeLe4n.Kernel

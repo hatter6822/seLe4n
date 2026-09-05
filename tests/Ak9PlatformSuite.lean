@@ -18,6 +18,7 @@ import SeLe4n.Platform.RPi5.RuntimeContract
 import SeLe4n.Platform.RPi5.VSpaceBoot
 import SeLe4n.Platform.Sim.BootContract
 import SeLe4n.Platform.DeviceTree
+import SeLe4n.Platform.FFI
 import SeLe4n.Testing.Helpers
 
 /-! # AK9 Platform Regression Suite — Phase AK9 audit remediation
@@ -45,6 +46,7 @@ open SeLe4n.Model
 open SeLe4n.Platform
 open SeLe4n.Platform.RPi5
 open SeLe4n.Platform.Boot
+open SeLe4n.Platform.FFI
 open SeLe4n.Testing
 
 namespace SeLe4n.Testing.Ak9PlatformSuite
@@ -649,6 +651,159 @@ def an7d5_04_extractPeripherals_excludes_reserved_names : IO Unit := do
 -- Entry point
 -- ============================================================================
 
+-- ============================================================================
+-- WS-RR RR7.27: the DeviceTree → PlatformConfig bridge, end to end
+--
+-- Register §6 finding 46: `DeviceTree.fromDtbFull` was documented as production
+-- DTB parsing, carried a correctness theorem, and had zero consumers.  These
+-- drive the whole chain a bootloader's blob now takes — parse, check the board
+-- against the RPi5 binding, produce the boot configuration — including both
+-- refusal arms, because a check that cannot refuse is not a check.
+-- ============================================================================
+
+/-- Big-endian 32-bit encoding, the width every FDT token and header field
+takes. -/
+private def be32 (n : Nat) : Array UInt8 :=
+  #[ ((n >>> 24) &&& 0xFF).toUInt8
+   , ((n >>> 16) &&& 0xFF).toUInt8
+   , ((n >>> 8)  &&& 0xFF).toUInt8
+   , ( n         &&& 0xFF).toUInt8 ]
+
+/-- Big-endian 64-bit encoding — a two-cell `reg` address or size. -/
+private def be64 (n : Nat) : Array UInt8 := be32 (n >>> 32) ++ be32 (n &&& 0xFFFFFFFF)
+
+/-- A node name (or property string) as its null-terminated, 4-byte-padded
+FDT encoding. -/
+private def fdtString (s : String) : Array UInt8 :=
+  let bytes := (s.toUTF8.toList.toArray).push 0
+  let pad := (4 - bytes.size % 4) % 4
+  bytes ++ Array.replicate pad (0 : UInt8)
+
+/-- One `FDT_PROP` token: the tag, the value length, the strings-block offset
+of the name, then the padded value. -/
+private def fdtProp (nameOff : Nat) (value : Array UInt8) : Array UInt8 :=
+  let pad := (4 - value.size % 4) % 4
+  be32 0x00000003 ++ be32 value.size ++ be32 nameOff ++ value
+    ++ Array.replicate pad (0 : UInt8)
+
+private def fdtBeginNode (name : String) : Array UInt8 :=
+  be32 0x00000001 ++ fdtString name
+
+private def fdtEndNodeTok : Array UInt8 := be32 0x00000002
+private def fdtEndTok : Array UInt8 := be32 0x00000009
+
+/-- The strings block this fixture uses, and each name's offset in it. -/
+private def stringsBlock : Array UInt8 :=
+  fdtString "reg" ++ fdtString "device_type" ++ fdtString "compatible"
+
+private def regNameOff : Nat := 0
+private def deviceTypeNameOff : Nat := (fdtString "reg").size
+private def compatibleNameOff : Nat :=
+  (fdtString "reg").size + (fdtString "device_type").size
+
+/-- A peripheral node: `reg = <base size>` plus a `compatible` string, the two
+properties `classifyPeripheralNode` requires. -/
+private def peripheralNode (name : String) (base size : Nat) : Array UInt8 :=
+  fdtBeginNode name
+    ++ fdtProp regNameOff (be64 base ++ be64 size)
+    ++ fdtProp compatibleNameOff (fdtString "arm,fixture")
+    ++ fdtEndNodeTok
+
+/-- Assemble a complete DTB blob: header, structure block, strings block. -/
+private def assembleDtb (structBlock : Array UInt8) : ByteArray :=
+  let offDtStruct := 40
+  let offDtStrings := offDtStruct + structBlock.size
+  let totalsize := offDtStrings + stringsBlock.size
+  let header : Array UInt8 :=
+    be32 0xD00DFEED ++ be32 totalsize ++ be32 offDtStruct ++ be32 offDtStrings
+      ++ be32 40 ++ be32 17 ++ be32 16 ++ be32 0
+      ++ be32 stringsBlock.size ++ be32 structBlock.size
+  ByteArray.mk (header ++ structBlock ++ stringsBlock)
+
+/-- A device tree for a board with `ramSize` bytes of RAM starting at 0 and the
+three MMIO windows the RPi5 binding programs. -/
+private def boardDtb (ramSize : Nat) (withMmio : Bool := true) : ByteArray :=
+  let memoryNode :=
+    fdtBeginNode "memory@0"
+      ++ fdtProp deviceTypeNameOff (fdtString "memory")
+      ++ fdtProp regNameOff (be64 0 ++ be64 ramSize)
+      ++ fdtEndNodeTok
+  let peripherals :=
+    if withMmio then
+      peripheralNode "serial@fe201000" 0xFE201000 0x1000
+        ++ peripheralNode "interrupt-controller@ff841000" 0xFF841000 0x1000
+        ++ peripheralNode "interrupt-controller@ff842000" 0xFF842000 0x2000
+    else #[]
+  assembleDtb (fdtBeginNode "" ++ memoryNode ++ peripherals ++ fdtEndNodeTok ++ fdtEndTok)
+
+/-- WS-RR RR7.27: the fixture blob parses — the precondition every case below
+rests on, asserted separately so a broken fixture is distinguishable from a
+broken check. -/
+def deviceTreeBridge_01_fixture_blob_parses : IO Unit := do
+  match DeviceTree.fromDtbFull (boardDtb 0xFC000000) rpi5MachineConfig.physicalAddressWidth with
+  | .error _ => expect "RR7.27-01 fixture blob parses" false
+  | .ok dt =>
+      expect "RR7.27-01 fixture blob parses" true
+      expect "RR7.27-01 one RAM region discovered"
+        (decide (dt.machineConfig.memoryMap.length = 1))
+      expect "RR7.27-01 three peripherals discovered"
+        (decide (dt.peripherals.length = 3))
+
+/-- WS-RR RR7.27: a board with the binding's RAM and MMIO is accepted, and the
+configuration carries the device tree's machine map plus the caller's
+deployment half. -/
+def deviceTreeBridge_02_matching_board_accepted : IO Unit := do
+  match rpi5PlatformConfigFromDtb (boardDtb 0xFC000000) [] [] none with
+  | .error _ => expect "RR7.27-02 matching board accepted" false
+  | .ok config =>
+      expect "RR7.27-02 matching board accepted" true
+      expect "RR7.27-02 config carries the device tree's map"
+        (decide (config.machineConfig.memoryMap.length = 1))
+      expect "RR7.27-02 config carries the caller's deployment half"
+        (config.irqTable.isEmpty && config.initialObjects.isEmpty
+          && config.bootVSpaceRoot.isNone)
+
+/-- WS-RR RR7.27: a board with less RAM than the binding declares is refused.
+The mutation that finds a vacuous check: the blob is well formed, the
+peripherals are all there, and only the RAM extent differs. -/
+def deviceTreeBridge_03_short_ram_refused : IO Unit := do
+  match rpi5PlatformConfigFromDtb (boardDtb 0x40000000) [] [] none with
+  | .error .boardDoesNotMatchBinding =>
+      expect "RR7.27-03 short-RAM board refused" true
+  | _ => expect "RR7.27-03 short-RAM board refused" false
+
+/-- WS-RR RR7.27: a board whose device tree discovered none of the MMIO the
+binding programs is refused — the half a RAM-only check would miss.  Same RAM,
+same header; only the peripheral nodes are gone. -/
+def deviceTreeBridge_04_missing_mmio_refused : IO Unit := do
+  match rpi5PlatformConfigFromDtb (boardDtb 0xFC000000 (withMmio := false)) [] [] none with
+  | .error .boardDoesNotMatchBinding =>
+      expect "RR7.27-04 board without the binding's MMIO refused" true
+  | _ => expect "RR7.27-04 board without the binding's MMIO refused" false
+
+/-- WS-RR RR7.27: an unparseable blob is refused as such, not as a mismatched
+board — the two refusals mean different things to an operator. -/
+def deviceTreeBridge_05_unparseable_blob_refused : IO Unit := do
+  match rpi5PlatformConfigFromDtb (ByteArray.mk #[0x00, 0x01, 0x02, 0x03]) [] [] none with
+  | .error (.unparseableBlob _) =>
+      expect "RR7.27-05 unparseable blob refused as unparseable" true
+  | _ => expect "RR7.27-05 unparseable blob refused as unparseable" false
+
+/-- WS-RR RR7.27: the coverage predicate is not vacuously true — an empty
+peripheral list fails a non-empty MMIO demand, which is what a truncated blob
+produces. -/
+def deviceTreeBridge_06_coverage_is_refusable : IO Unit := do
+  match DeviceTree.fromDtbFull (boardDtb 0xFC000000 (withMmio := false))
+      rpi5MachineConfig.physicalAddressWidth with
+  | .error _ => expect "RR7.27-06 no-peripheral blob parses" false
+  | .ok dt =>
+      expect "RR7.27-06 RAM half still holds"
+        (deviceTreeCoversMachineConfig dt rpi5MachineConfig)
+      expect "RR7.27-06 MMIO half refuses"
+        (!deviceTreeCoversMmioRegions dt mmioRegions)
+      expect "RR7.27-06 MMIO demand is non-empty"
+        (!mmioRegions.isEmpty)
+
 end SeLe4n.Testing.Ak9PlatformSuite
 
 open SeLe4n.Testing.Ak9PlatformSuite in
@@ -701,5 +856,12 @@ def main : IO Unit := do
   an7d5_02_extractPeripherals_zero_fuel_collapses
   an7d5_03_extractPeripherals_skips_incomplete_nodes
   an7d5_04_extractPeripherals_excludes_reserved_names
+  -- WS-RR RR7.27 DeviceTree → PlatformConfig bridge, end to end
+  deviceTreeBridge_01_fixture_blob_parses
+  deviceTreeBridge_02_matching_board_accepted
+  deviceTreeBridge_03_short_ram_refused
+  deviceTreeBridge_04_missing_mmio_refused
+  deviceTreeBridge_05_unparseable_blob_refused
+  deviceTreeBridge_06_coverage_is_refusable
   IO.println ""
   IO.println "=== All AK9 platform tests passed ==="

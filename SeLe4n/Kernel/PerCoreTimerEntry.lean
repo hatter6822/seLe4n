@@ -120,9 +120,13 @@ the invocation-coupled residual), then fires the recovered cross-core
 @[export lean_per_core_timer_tick]
 def perCoreTimerTickEntry (coreId : UInt64) : BaseIO Unit := do
   let r ← Platform.FFI.modifyGetKernelState (fun st =>
-    perCoreTimerTickStepWithClockAdvance st coreId)
-  if r.2 then Platform.FFI.ffiTimerAdvanceTickCount
-  Concurrency.fireCrossCoreSgis r.1
+    let (sgisAndFlag, st') := perCoreTimerTickStepWithClockAdvance st coreId
+    ((sgisAndFlag,
+      (Concurrency.coreIdOfUInt64? coreId).map
+        (fun c => (c, st'.scheduler.currentOnCore c))), st'))
+  if r.1.2 then Platform.FFI.ffiTimerAdvanceTickCount
+  Concurrency.fireCrossCoreSgis r.1.1
+  Concurrency.recordCommittedCurrentThreadHw r.2
 
 /-- **WS-SM SM5.I** structural marker: `perCoreTimerTickEntry` unfolds to the
 verified-step-then-shadow-advance-then-fire-SGIs driver.  Pins the entry's body
@@ -136,8 +140,12 @@ theorem perCoreTimerTickEntry_def (coreId : UInt64) :
     perCoreTimerTickEntry coreId =
       (do
         let r ← Platform.FFI.modifyGetKernelState (fun st =>
-          perCoreTimerTickStepWithClockAdvance st coreId)
-        if r.2 then Platform.FFI.ffiTimerAdvanceTickCount
-        Concurrency.fireCrossCoreSgis r.1) := rfl
+          let (sgisAndFlag, st') := perCoreTimerTickStepWithClockAdvance st coreId
+          ((sgisAndFlag,
+            (Concurrency.coreIdOfUInt64? coreId).map
+              (fun c => (c, st'.scheduler.currentOnCore c))), st'))
+        if r.1.2 then Platform.FFI.ffiTimerAdvanceTickCount
+        Concurrency.fireCrossCoreSgis r.1.1
+        Concurrency.recordCommittedCurrentThreadHw r.2) := rfl
 
 end SeLe4n.Kernel

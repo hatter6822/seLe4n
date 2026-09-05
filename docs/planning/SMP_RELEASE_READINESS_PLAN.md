@@ -6,7 +6,8 @@
 > **RR3 LANDED at v0.34.43** (all twenty-six); **RR4 LANDED at v0.34.44** (all
 > twenty-seven); **RR5 LANDED at v0.34.48** (all eighteen);
 > **RR6 LANDED at v0.34.50** (all twenty-seven).  **RR7 IN FLIGHT**:
-> RR7.1–RR7.4 landed at v0.34.57 (and RR7.6 at v0.34.47); RR8 not started.
+> RR7.1–RR7.4 landed at v0.34.57, RR7.26–RR7.27 at v0.34.58 (and RR7.6 at
+> v0.34.47); RR8 not started.
 > **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Source register**: [`UNFINISHED_SMP_WORK.md`](UNFINISHED_SMP_WORK.md) (171 confirmed findings)
 > **Successor**: [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) (SM10) — opens when this phase closes
@@ -1118,7 +1119,7 @@ count rather than a label.
 | RR7.13 | Fine locks, Track C: the export-body gate that keeps it true — a Tier-1 elaborated-environment probe over the `@[export]` state-committing bodies, failing any that commits without a `withLockSet` bracket or a recorded fail-closed `none`, with a `--self-test` that plants a bare-commit body and asserts detection. Derived from the export set rather than a list of the three bodies that exist today, so the next seam is covered by construction — the enumeration-for-derivation shape the key conventions warn about | — | M |
 | RR7.14 | Cancellation/timeout error-frame staging, unimplemented at HEAD and owed before the context-restore seam flips | 1 | M |
 | RR7.15 | Boot-path sweep mediums | 5 | M |
-| RR7.16 | Rust HAL mediums | 4 | M |
+| RR7.16 | Rust HAL mediums.  **LANDED v0.34.58**: the two implementable findings are implemented — `UartLock` delegates to the verified `TicketLock` (the post-SM2 swap SM1.G.1's comment promised while only core 0 ran), and `tlbi_for_sharing`'s routing became testable by splitting the decision out as `tlbi_variant_for : (SharingDomain, TlbInvalidation) → TlbiVariant`, checked at all eight pairs by six host witnesses.  The two links a host test cannot reach — arm → primitive, primitive → mnemonic — are held by `check_tlbi_broadcast_discipline.py`, derived from the enum and the `asm!` templates rather than enumerated.  The secondary-entry staging finding closed at RR5.15.  The QEMU bring-up finding is closed **by unchecking** the two SM1.H acceptance boxes: the script SKIPs on every run for want of a `[[bin]]` target, so the boxes claimed a hardware behaviour nothing has observed, and restating them as "script authored" would trade a behaviour criterion for an artifact-existence one.  Registered against SM10.1.1 | 4 | M |
 | RR7.17 | Syscall return ABI mediums | 4 | M |
 | RR7.18 | Per-object lock mediums | 4 | M |
 | RR7.19 | Fine-lock migration mediums | 3 | M |
@@ -1128,8 +1129,8 @@ count rather than a label.
 | RR7.23 | Declassification mediums | 2 | S |
 | RR7.24 | Panic-hang remediation mediums | 2 | S |
 | RR7.25 | RwLock-deferred mediums | 2 | S |
-| RR7.26 | Implement-the-improvement sweep: route the per-core scheduler entries through the HAL context-switch seam | 1 | S |
-| RR7.27 | Implement-the-improvement sweep: the DeviceTree-to-`PlatformConfig` boot bridge — a platform/boot surface unrelated to the row above, so its own task | 1 | S |
+| RR7.26 | Implement-the-improvement sweep: route the per-core scheduler entries through the HAL context-switch seam.  **LANDED v0.34.58**: all five state-committing per-core entries record the `currentOnCore` their own atomic step committed, through `recordCommittedCurrentThreadHw`; a vacated core clears the mirror rather than leaving it naming a descheduled thread, and `switchToThreadHw` finally has production callers | 1 | S |
+| RR7.27 | Implement-the-improvement sweep: the DeviceTree-to-`PlatformConfig` boot bridge — a platform/boot surface unrelated to the row above, so its own task.  **LANDED v0.34.58**: `PlatformConfig.fromDeviceTree` plus the board-versus-binding check (RAM against `rpi5MachineConfig`, MMIO against `RPi5.mmioRegions`) and the production consumer `bootAndInitialiseRPi5FromDtbOrHalt`, which boots through the checked entry or parks the PE.  `DeviceTree.fromDtbFull` has a caller.  The pointer→`ByteArray` read stays SM10.1's, as the finding assigns it | 1 | S |
 | RR7.28 | IPC de-threading medium | 1 | S |
 | RR7.29 | Reply objects medium | 1 | S |
 | RR7.30 | SMP foundations medium | 1 | S |

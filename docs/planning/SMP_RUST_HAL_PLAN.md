@@ -809,10 +809,22 @@ side-branch joining at SM1.H.5).
       Appendix A.
 - [x] `gic::send_sgi`, `send_sgi_to_self`, `send_sgi_to_all_but_self`.
 - [x] SGI handler table + dispatch.
-- [x] UART lock audited; replaceable with TicketLock post-SM2.
+- [x] UART lock audited; **replaced** with the verified `TicketLock`
+      (WS-RR RR7.16, v0.34.58 — the post-SM2 swap this box promised,
+      which SM2 landing at v0.31.9 made due and nothing performed).
 - [x] `kprintln_core!` macro.
-- [x] `test_qemu_smp_bringup.sh` boots 4 cores; verifies 4 banners.
-- [x] Wired into tier-4 nightly.
+- [ ] `test_qemu_smp_bringup.sh` boots 4 cores; verifies 4 banners.
+      **Unchecked at WS-RR RR7.16** (register §6 finding 24): the
+      script is authored and wired in, and it has never executed a
+      line of SMP HAL code — the workspace has no `[[bin]]` kernel
+      target, so every CI run takes the `SELE4N_KERNEL_IMAGE not set`
+      SKIP.  This box states a *hardware behaviour*; restating it as
+      "script authored" would convert it into an artifact-existence
+      claim, which is the forbidden direction.  Closure target
+      **SM10.1.1** (the bootable image), tracked in
+      `docs/REGISTERED_DEBT.md`.
+- [x] Wired into tier-4 nightly (the script; see the box above for
+      what it has actually executed).
 - [x] SGI round-trip test (SKIP-only until SM5 wires kernel handlers).
 - [x] ~50+ new cargo tests pass (583 total at v0.31.8, up from
       ~140 at SM1 start).
@@ -820,6 +832,14 @@ side-branch joining at SM1.H.5).
       v0.31.8.
 
 **Items deferred past v1.0.0 with correctness impact**: NONE.
+
+**Items deferred to SM10.1** (WS-RR RR7.16, register §6 finding 24):
+the QEMU bring-up gate above, which cannot execute until a `[[bin]]`
+kernel target exists.  This is an *unverified hardware claim*, not a
+correctness deferral in the model: every SMP HAL behaviour it would
+observe is covered by host unit tests and by the aarch64 cross build,
+and none of them executes the assembled image.  Tracked in
+`docs/REGISTERED_DEBT.md` under SM10.1.1.
 
 **Items deferred to SM5+ (per-core scheduler state)** with no
 correctness impact at SM1 — both since landed:

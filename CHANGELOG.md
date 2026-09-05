@@ -1,3 +1,233 @@
+## v0.34.58 — three implement-the-improvement rows, and one claim withdrawn
+
+**WS-RR RR7.16 + RR7.26 + RR7.27** — the medium sweep's three
+implement-the-improvement rows, and the one finding among them whose honest
+remedy is to withdraw a claim rather than to write code.
+
+RR7.26 and RR7.27 are the same shape: a piece of the tree is built, proven and
+documented as the seam something reaches the hardware through, and nothing
+calls it.  The remedy in each case is the wiring the docstrings already
+promise, not a docstring that admits the gap.  RR7.16 sweeps the Rust HAL's
+four §6 mediums, two of which are that shape once more — a swap a source
+comment promised and nobody performed, and a routing map no host test could
+reach.
+
+### RR7.26 — the verified thread choice reaches the HAL
+
+`Concurrency.switchToThreadHw` is the seam the per-core scheduler's decision
+was to reach the hardware through: the HAL keeps a per-core mirror
+(`ffi::PER_CPU_CURRENT_THREAD`) which a dispatch path reads to know whose
+context to resume.  Both sides documented the seam.  It had **zero production
+callers**, so the mirror never followed the scheduler.
+
+All five state-committing per-core entries now record what their own atomic
+step committed: the `.reschedule` receiver (hence secondary bring-up, which is
+definitionally that entry), the timer tick, the syscall dispatch, and — by the
+sweep rule, since they commit scheduler state the same way — the fault and
+unknown-syscall entries.  The value is read *inside* the commit, after
+`scheduleLocalSuccessorLive`, so what is recorded is what was committed.
+
+Two details are load-bearing rather than incidental.  A transition that
+**vacates** the core clears the mirror (`clearCurrentThreadHw`) instead of
+leaving it naming a descheduled thread — a stale name there is a restore into
+a blocked frame, which is worse than none.  `switchToThreadHw` deliberately
+cannot write that sentinel (a `ThreadId` at `NO_CURRENT_THREAD` is refused so
+the two meanings cannot alias), so the clear is a second verb, and
+`recordCurrentThreadHw` routes each case to the one that can express it.  And
+a raw core id the model has no core for records nothing
+(`coreIdOfUInt64?`), matching the verified steps, which commit nothing for it.
+
+Each entry's `_def` marker is `rfl` over its whole body, so a refactor that
+drops the record fails at elaboration; a Tier-3 negative pins that the
+pre-RR7.26 shape cannot come back.
+
+### RR7.27 — the device tree reaches the boot
+
+`DeviceTree.fromDtbFull` is documented as production DTB parsing and carries a
+correctness theorem.  Nothing called it: there was no path from a bootloader's
+blob to anything the kernel boots with.
+
+`PlatformConfig.fromDeviceTree` is the bridge the finding names.  What the
+device tree is *for* here is worth stating, because it is not the first
+reading: it does **not** supply the machine configuration the kernel programs —
+`bindPlatformConfig` replaces that with the binding's, deliberately, so a
+caller cannot describe other hardware.  It supplies the board's own account of
+itself, which the boot checks the binding against.  An image built for the
+BCM2712 that finds itself on a board whose device tree does not describe the
+RAM and the MMIO the binding declares is on the wrong hardware, and must refuse
+rather than program peripherals that are not there.
+
+The check has two halves at the granularity the two sides actually share:
+`deviceTreeCoversMachineConfig` compares `.ram` regions against
+`rpi5MachineConfig`'s, and `deviceTreeCoversMmioRegions` compares
+`RPi5.mmioRegions` — the PL011, the GIC distributor, the GIC CPU interface —
+against the peripherals the device tree discovered.  Both are fail-closed:
+anything a blob does not mention is not covered, so a truncated or foreign blob
+is refused.
+
+`rpi5PlatformConfigFromDtb` and `bootAndInitialiseRPi5FromDtbOrHalt` are the
+production consumers, composed so every accepting path goes through
+`bootAndInitialiseRPi5OrHalt` — the checked boot with its failure handled — and
+every refusing path parks the PE.  Six cases in `tests/Ak9PlatformSuite.lean`
+drive the whole chain from a synthesised blob, including both refusal arms: a
+board with less RAM than the binding declares, and one whose device tree
+discovered none of the MMIO the binding programs (the half a RAM-only check
+would miss).
+
+The signature takes the blob as a `ByteArray` rather than the raw `dtb_ptr`,
+because turning a pointer into one is a Lean-runtime allocation the bare-metal
+port owns — register §6 finding 40, SM10.1's largest deliverable.  That one
+read is now the only piece of this path still owed, registered with that owner;
+moving `BootEntryContract.lean`'s `approvedBootCall` to the DTB wrapper is the
+one-line change that file already anticipates by name.
+
+### RR7.26, completed — a host executable cannot run a hardware seam
+
+Correcting RR7.26 in the same sweep.  `tests/SmpFoundationsSuite.lean` §2.17
+did not merely *cite* the secondary-bring-up entry — it **executed** it, and a
+Lean test executable links no Rust.  That was invisible while every `@[extern]`
+HAL binding in `Kernel/Concurrency/Runtime.lean` was unreachable from any
+suite's `main`: the linker's `--gc-sections` dropped the calls and the
+undefined symbols with them, so the suites linked *by dead-code elimination*
+rather than by any discipline.  RR7.26 wired the entry to the per-core
+current-thread record, `ffi_switch_to_thread` became reachable, and the suite
+stopped linking.
+
+The link is the right verdict and needs no gate written for it: a Lean host
+executable that reaches a HAL symbol fails to link, closed, at the moment it
+does.  What is *not* the way out is stubbing the seam from Lean.  An
+`@[export]` of a HAL symbol name is a second definition of that symbol in
+whatever archive carries the module — a duplicate at the SM10.1 image link at
+best, and at worst one the linker silently prefers over the HAL, discarding
+every scheduling decision the kernel makes.  (Two independent scanners say so:
+`build.rs`'s Lean-upcall derivation reads such an export as an upcall and finds
+the HAL "referencing it without calling it", and the archive check below reads
+it for what it is.)
+
+So §2.17 stops running the entry and asserts the two **pure** halves its body
+composes, which is more than the invocation ever did — it asserted only that
+nothing faulted, which a step that wrongly dispatched a thread also satisfies:
+
+* the verified step dispatches nobody on any core of an empty-queue state
+  (`chooseThreadEffectiveOnCore` finds nothing, so the handler is the
+  identity), and
+* an out-of-range `context_id` names no core, so the record commits nothing —
+  matching the step, which commits nothing for it.
+
+The composition itself is pinned where it always was, definitionally:
+`secondaryKernelMain_def` is `rfl` over the whole body, so a dropped commit or
+a dropped record fails at elaboration rather than at runtime.
+
+Two things fell out of writing those assertions.  The third "extreme
+`context_id`" the old fixture passed was `UInt64.size.toUInt64`, which **wraps
+to `0`** — the boot core, not an out-of-range id; it read as coverage for as
+long as the assertion was "did not fault", and the fixture now states what it
+is.  And the shadowing hazard above is now checked rather than reasoned about:
+`scripts/check_kernel_entry_exports.py` reads the built archive's symbol table
+and fails if it defines **any** symbol the Lean tree declares `@[extern]`, a
+relation derived from `Platform/FFI.lean`'s own attribute list rather than from
+a list of stub names.  The scan reads the string-keeping view and so
+over-approximates, which is the fail-closed direction here: the set forbids
+archive definitions, so a spurious member forbids one symbol too many rather
+than one too few.  Verified by mutation against the real tree, not only the
+fixture.
+
+The entry's own docstring claimed "nothing in the suite surface changed", which
+was false the moment RR7.26 landed; it now says what actually happens.  Also
+corrected: a stale marker in `tests/SmpFoundationsSuite.lean` still stated
+`secondaryKernelMain_def` at its pre-RR7.26 body.
+
+### RR7.16 — the Rust HAL mediums
+
+Register §6 findings 23–26.  Two of the four were implementable and are
+implemented; one closed at RR5.15; the fourth is closed by *withdrawing a claim*, which is what the finding asks for
+and the only shape of documentation change the implement-the-improvement rule
+permits.
+
+#### The UART lock is the verified lock (finding 25)
+
+`UartLock` delegated mutual exclusion to an `AtomicBool` CAS loop written when
+only core 0 ran, above a comment promising the `TicketLock` swap "post-SM2".
+SM2 landed the verified FIFO lock at v0.31.9 and nothing performed the swap; no
+debt register carried it.  `UartLock` now wraps
+`crate::ticket_lock::TicketLock`, keeping the DAIF snapshot (interrupts are
+masked *before* the acquire, so an IRQ handler's `kprintln!` cannot preempt the
+holder and spin forever), the RAII guard and the `with_boot_uart` surface.  The
+lock's docstring said contention had one source — an IRQ on a single-core
+system — which stopped being true when SM1 brought secondaries up; it now names
+both sources and says which one masking does nothing about.
+
+#### The TLBI routing decision is data, and both of its links are pinned (finding 26)
+
+Nothing tested `tlbi_for_sharing`'s Inner/Outer routing, and it could not have:
+the arms call primitives that emit `asm!` on `aarch64` and nothing on the host,
+so a host test could observe neither which arm ran nor what it issued.  The
+routing was structurally untestable, which is why it had no test.
+
+The *decision* is now `tlbi_variant_for(domain, op) -> TlbiVariant`, a pure
+`const fn` of two enums, and six host witnesses check it at all eight pairs —
+including that the `Inner`/`Outer` axis selects the `*IS`/`*OS` half
+independently of the operation, and that distinct operations reach distinct
+primitives within a domain.
+
+What no host test can still reach is the chain from a decided variant to an
+executed instruction, and `scripts/check_tlbi_broadcast_discipline.py` holds
+both of its links:
+
+* `check_sharing_dispatcher_routing` — each dispatch arm calls the primitive
+  its variant **names**.  The variant set is read off the `enum TlbiVariant`
+  declaration, so a ninth variant is covered the day it is declared rather than
+  when someone remembers to extend a list.  The structural half is strict
+  because the subject is code this project writes: the dispatch must be the
+  function's *terminal* top-level statement (a decoy `match` above it is not
+  the one that runs), the arms must be exactly the enum's variants with no
+  wildcard, alternation or guard, and each body must be a single unqualified
+  call.
+* `check_emitter_naming` — each primitive emits the mnemonic **its** name
+  spells, read off the `asm!` templates.  This is what makes the rest of the
+  gate sound: `LOCAL_WRAPPERS` decides which references need an allowlist entry
+  from a name's `is`/`os` suffix, and the routing rule reads a variant's name —
+  both are the "a name is not a definition" substitution unless something holds
+  a wrapper's name to its instruction.  A `tlbi_vae1is` whose template says
+  `vale1is` keeps every token both checks match and invalidates a leaf entry
+  where the caller asked for the whole intermediate walk.
+
+The three checks that read `tlb.rs`'s assembly now share one walk
+(`tlbi_emitters_in_module`) rather than each running the same regex over the
+same view — one question, one answer.  Both new checks carry token-preserving
+self-test cases (a transposed arm, a correct decoy above a transposed terminal
+one, a wildcard arm, an emitter whose template is the other instruction), and
+the harness's requirement that every check have one now covers 8 checks in 48
+cases.  Both were mutation-tested against the real `tlb.rs`, not only the
+fixture.
+
+#### The secondary entry is production (finding 23)
+
+Closed at v0.34.48 by RR5.15: `SeLe4n.Kernel.SecondaryEntry` and its four
+sibling entry-seam modules are in the production import closure, so each
+`@[export]` emits its symbol into the library a kernel image links, and
+`check_kernel_entry_exports.py` verifies every HAL `extern "C"` requirement
+against the built archive.
+
+#### The QEMU bring-up claim is withdrawn, not restated (finding 24)
+
+`test_qemu_smp_bringup.sh` SKIPs on every CI run: the workspace has no `[[bin]]`
+kernel target, so there is no image to hand QEMU, and no SMP HAL code has ever
+executed under it.  Two SM1.H acceptance boxes claimed the four-core boot and
+the four banners anyway.
+
+Both are now **unchecked**.  Restating them as "script authored; execution
+blocked" was the tempting move and is the forbidden one: it converts a
+hardware-behaviour criterion into an artifact-existence one, which is
+documentation weakened to match code.  The boxes state what they always stated;
+they are simply not ticked, with the reason and the **SM10.1.1** closure target
+in the box, in the plan's deferral summary, and as its own row in
+`docs/REGISTERED_DEBT.md`.  The script and its tier-4 wiring are untouched — it
+will pass the day it is given an image.
+
+**Sub-tasks**: WS-RR RR7.16, RR7.26, RR7.27.
+**Refs**: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR7 (RR7.16, RR7.26, RR7.27)
+
 ## v0.34.57 — the four §4 remediation rows
 
 **WS-RR RR7.1–RR7.4** — the medium-severity sweep opens with the four §4 rows

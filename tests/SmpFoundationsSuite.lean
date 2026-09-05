@@ -342,8 +342,10 @@ example : SeLe4n.Kernel.Concurrency.bootCoreId.val
 -- definitionally the per-core reschedule entry — bring-up is the core's
 -- first reschedule — witnessed by
 -- `secondaryKernelMain_eq_perCoreRescheduleEntry`, and the full body
--- shape (atomic commit of the verified `perCoreRescheduleStep`) by
--- `secondaryKernelMain_def`.
+-- shape by `secondaryKernelMain_def`: the atomic commit of the verified
+-- `perCoreRescheduleStep`, reading the committed post-state's
+-- `currentOnCore` inside the same step, followed by the HAL per-core
+-- current-thread record (WS-RR RR7.26).
 --
 -- Note: `BaseIO Unit` is not Decidable-equality (function types
 -- generally aren't), so these examples produce structural Prop
@@ -355,8 +357,12 @@ example (coreId : UInt64) :
   SeLe4n.Kernel.secondaryKernelMain_eq_perCoreRescheduleEntry coreId
 example (coreId : UInt64) :
     SeLe4n.Kernel.secondaryKernelMain coreId
-      = SeLe4n.Platform.FFI.updateKernelState
-          (fun st => SeLe4n.Kernel.perCoreRescheduleStep st coreId) :=
+      = (do
+          let record ← SeLe4n.Platform.FFI.modifyGetKernelState (fun st =>
+            let st' := SeLe4n.Kernel.perCoreRescheduleStep st coreId
+            ((SeLe4n.Kernel.Concurrency.coreIdOfUInt64? coreId).map
+              (fun c => (c, st'.scheduler.currentOnCore c)), st'))
+          SeLe4n.Kernel.Concurrency.recordCommittedCurrentThreadHw record) :=
   SeLe4n.Kernel.secondaryKernelMain_def coreId
 -- Concrete-instance checks at each secondary context id (1, 2, 3) and
 -- the boot-core context id (0): the seam identity holds at every core.
@@ -788,28 +794,59 @@ private def runSecondaryKernelMainChecks : IO Unit := do
   let _proof_body := SeLe4n.Kernel.secondaryKernelMain_def 0
   assertBool "secondaryKernelMain seam-identity marker reachable on every context_id 0..3"
     true
-  -- Actually execute the BaseIO action at runtime to confirm it
-  -- doesn't fault.  On the host the commit runs the verified
-  -- `perCoreRescheduleStep` against the default-initialised
-  -- kernel-state ref: every run queue is empty, so
-  -- `chooseThreadEffectiveOnCore` returns `none` and the handler is
-  -- the identity (`handleRescheduleSgiOnCore_idle_when_none`) — the
-  -- commit installs the state unchanged.  A regression that
-  -- introduced a panic, a non-terminating loop, or a spurious
-  -- dispatch on the empty-queue path would surface here.
-  let _ ← SeLe4n.Kernel.secondaryKernelMain 0
-  let _ ← SeLe4n.Kernel.secondaryKernelMain 1
-  let _ ← SeLe4n.Kernel.secondaryKernelMain 2
-  let _ ← SeLe4n.Kernel.secondaryKernelMain 3
-  assertBool "secondaryKernelMain runtime invocation on context_ids 0..3" true
-  -- Boundary inputs: confirm the function tolerates extreme context_id
-  -- values without aborting.  The verified step decodes the id
-  -- fail-closed (`perCoreRescheduleStep_invalid_core`): an
-  -- out-of-range id commits the state unchanged rather than panicking.
-  let _ ← SeLe4n.Kernel.secondaryKernelMain (UInt64.ofNat (Nat.pow 2 32))
-  let _ ← SeLe4n.Kernel.secondaryKernelMain (UInt64.ofNat (Nat.pow 2 63))
-  let _ ← SeLe4n.Kernel.secondaryKernelMain UInt64.size.toUInt64
-  assertBool "secondaryKernelMain tolerates boundary UInt64 inputs" true
+  -- **WS-RR RR7.16**: these were `let _ ← secondaryKernelMain 0`… — the entry
+  -- run for effect on the host, asserting only that it did not fault.  It
+  -- cannot be run here any more, and the reason is not a limitation to work
+  -- around: since RR7.26 the entry records its committed choice through
+  -- `ffi_switch_to_thread`, and a Lean test executable links no Rust.  (It
+  -- linked before RR7.26 only because `--gc-sections` dropped the unreachable
+  -- `@[extern]` calls; the link is the gate, and it fails closed.)  Nor may
+  -- the seam be stubbed from Lean: an `@[export]` of a HAL symbol name is the
+  -- shadowing hazard `scripts/check_kernel_entry_exports.py` exists to refuse
+  -- — a second definition of `ffi_switch_to_thread` at the SM10.1 image link,
+  -- silently preferred over the real one.
+  --
+  -- What that invocation covered is covered here, and asserted rather than
+  -- merely survived.  The entry's body is pinned definitionally by
+  -- `secondaryKernelMain_def` above (a `rfl` over the whole composition, so a
+  -- dropped commit or a dropped record fails at elaboration); what remains is
+  -- the behaviour of the two halves that body composes, and both are pure.
+  --
+  -- Half one — the verified step on the empty-queue path.  Every run queue of
+  -- the default state is empty, so `chooseThreadEffectiveOnCore` returns
+  -- `none`, the handler is the identity
+  -- (`handleRescheduleSgiOnCore_idle_when_none`), and no core is left
+  -- dispatched.  The old test would have passed on a step that dispatched a
+  -- thread; this one would not.
+  let emptyQueueLeavesNoCoreDispatched : Bool :=
+    [0, 1, 2, 3].all fun raw =>
+      match SeLe4n.Kernel.Concurrency.coreIdOfUInt64? (UInt64.ofNat raw) with
+      | some c =>
+          ((SeLe4n.Kernel.perCoreRescheduleStep
+              (default : SeLe4n.Model.SystemState) (UInt64.ofNat raw)).scheduler.currentOnCore
+            c).isNone
+      | none => false
+  assertBool
+    "perCoreRescheduleStep dispatches no thread on any core of an empty-queue state"
+    emptyQueueLeavesNoCoreDispatched
+  -- Half two — the fail-closed decode the record consults.  An out-of-range
+  -- `context_id` names no core, so `recordCommittedCurrentThreadHw` records
+  -- nothing, matching the verified step, which commits nothing for it
+  -- (`perCoreRescheduleStep_invalid_core`).
+  let outOfRangeIdsNameNoCore : Bool :=
+    [UInt64.ofNat (Nat.pow 2 32), UInt64.ofNat (Nat.pow 2 63)].all fun raw =>
+      (SeLe4n.Kernel.Concurrency.coreIdOfUInt64? raw).isNone
+  assertBool "out-of-range UInt64 context_ids decode to no core, so nothing is recorded"
+    outOfRangeIdsNameNoCore
+  -- `UInt64.size` is `2 ^ 64`, so `UInt64.size.toUInt64` **wraps to `0`** and
+  -- names the boot core.  It sat in the list above as a third "extreme value"
+  -- for as long as the assertion was "the entry did not fault", which every
+  -- value satisfies; stating what it actually is costs nothing and stops the
+  -- fixture from claiming coverage it never had.  As core 0 it is already
+  -- covered by the empty-queue check.
+  assertBool "UInt64.size.toUInt64 wraps to 0, which is the boot core, not an out-of-range id"
+    (UInt64.size.toUInt64 == 0
+      && (SeLe4n.Kernel.Concurrency.coreIdOfUInt64? UInt64.size.toUInt64).isSome)
 
 private def runTlbiForSharingChecks : IO Unit := do
   -- WS-SM SM1.E.4: typed TLBI dispatcher tag-encoding witnesses.
