@@ -1,3 +1,197 @@
+## v0.34.49 — WS-CB: the hierarchical constant-bandwidth server plan
+
+**WS-CB registered (CB0.1).**  A planning cut — no kernel code changes.
+`docs/planning/HIERARCHICAL_CBS_PLAN.md` schedules Hierarchical Constant
+Bandwidth Servers: a `SchedContext` that holds members instead of a thread, is
+charged whenever a thread in its subtree runs, and admits its members against
+its own budget, so a component's threads share one reservation and nothing
+outside the component is delayed by more than that reservation.  The plan is
+72 sub-tasks across nine phases (CB0..CB8), numbered in execution order and
+held by the plan gate; its binding decisions are in §3 and its implementation
+specification — types, the CBS engine rules, the order, selection, charging
+and activation, admission, deadline inheritance, every transition's refusal
+table, the ABI values, the invariants, the key theorem statements with their
+hypotheses, lock footprints, staging and the test scenarios — is §4, which
+every sub-task row points into.
+
+**The root becomes EDF-first** (the maintainer's decision at planning time,
+plan §3.1).  Today's root order is fixed priority with the CBS deadline as a
+tie-break inside a band, which is why the CBS *guarantee* — an admitted server
+receives its budget every window — is not a statement the model can make.
+Under an EDF-first root that guarantee is the classical theorem, and per-core
+admission (`Σ U ≤ 1`) is its hypothesis.  The change reaches the flat model, so
+the plan's first implementation phase (CB1) lands it before any server exists:
+deadlines become **kernel-owned** window ends (the configure syscall's
+caller-supplied `deadline` would otherwise be an unbounded escalation channel
+— it becomes `0`-only), refills become **per window** (one refill of the full
+budget at the window's end), the classical CBS wake-up rule handles an entity
+that idled with a stale deadline, and priority inheritance becomes **deadline
+inheritance** for deadline-bearing threads, since a priority boost under EDF
+changes nothing but ties.  Unbound legacy threads keep their fixed-priority
+order below every deadline-bearing thread, so the idle thread stays last and
+the selector is proved unchanged on states without deadlines.  CB1 lands as
+five inert preparation rows and three switch cuts — the engine (CB1.6), the
+order (CB1.7), inheritance (CB1.8) — each carrying the proofs that cover it
+and its own fixture refresh with the rationale recorded, so no release runs a
+policy its invariant suite does not describe.
+
+The rest of the design: a server is a `SchedContext` with hierarchy fields;
+the root run queue stays a queue of threads, selection is a scan in the
+EDF-first order over lexicographic key paths (a deadline-ordered index is a
+registered follow-up); servers are core-homed; admission is hierarchical and
+per core; members share the server's security label; enforcement stays
+tick-quantised with no new upcall and no ABI version change; and every
+generalising sub-task after CB1 carries the theorem that the model is
+unchanged on states without servers.
+
+Thirteen automated review rounds on the planning PR (ninety-two findings)
+reshaped the design before any code exists, and the plan's §14 records each
+finding against its fix — and, after the fifth, the classes the findings fell
+into and the rule that closes each class rather than its instances (§14): a transitive tie-break (`scId` in the EDF class, the
+incumbent in the legacy class — the first cut's mixed rule admitted a cycle);
+a key-worsening reschedule seam that every key-moving transition calls;
+the policy-gated bind arms kept out of the shared dispatch helper, which would
+have bypassed their checked forms, so `.schedContextBind` becomes policy-gated
+too; reconfiguration that never mints budget (the density rule, not a fresh
+window); every reservation move — an affinity change, a cross-core donation —
+re-admitted on its destination core, the donation charged on both cores until
+the return; label uniformity stated over members *and* the threads bound or
+donated to them, with three chokepoints in the checked tier; deadline
+inheritance reaching bound blockers only, since an unbound blocker has no
+admitted budget; the CBS guarantee scoped to roots, its hypotheses —
+continuous activity, no active inheritance, single domain — named, and its
+demand bound restated over windows contained in the interval; the depth bound
+counting the leaf; the activation paths' lock footprints, which move
+`maxLockSetSize` to ten against the measured eight-entry suspend footprint;
+the two refill representations held equal by an invariant; a scheduling
+request recorded as per-core state (`reschedulePendingOnCore`), so the
+current-is-maximal conjunct is a state invariant while a remote reschedule SGI
+is in flight rather than a claim the hardware has not yet enacted; activation
+and a scheduling point at `schedContextBind` for a thread that is already
+runnable; a populated server never shrunk under its members' sum; the Rust id
+tables landing with the Lean ids rather than two rows after the arms, since
+the HAL's prefilter refuses an id its table lacks before Lean runs; every
+phase that changes a live path in the shape CB1 took — inert definitions,
+then one switch cut carrying the suite, the footprints and the observer lift
+(the selection switch that closes CB3, CB4's tick and activation cuts, CB6's
+activation cut — named rather than numbered here, since the plan gate resolves
+row ids in the plan and its companion documents but not in this file), so no
+theorem about a transition is first stated in the cut that makes it
+reachable; the deactivation hook on the per-core
+removal primitive the cross-core IPC paths actually call; the guarantee's
+eligibility hypothesis running from the window's release; `schedContextYieldTo`
+retired, since it wrote budget on two contexts outside every rule; a leaf
+mid-donation refused as a server member and a donation owner's affinity held
+until the return; the compiler sweeps and the server refills joined the cuts
+that cannot build or hold without them; the stored `deadline` field derived
+rather than mirrored, so its consistency is a `rfl` and not an invariant; the
+replenish queue declared as a lock slot by every rule that purges it; the
+guarantee's window held stable against reconfiguration inside it; the
+key-moving and activity-changing transition sets derived from the key's
+inputs and the count's dependencies rather than listed, which is what brought
+unbind, donation and the current-slot removal into them; bandwidth released at
+the window's end rather than at departure, so a share that leaves a core keeps
+counting there until its deadline and admission survives churn; the
+activity counter tracking **eligibility** — budget and work below, one
+predicate at every node, since a nested server is throttled by its own budget
+exactly as a leaf is — so a descendant's refill landing is the crossing that
+re-activates an ancestor whose window has passed, with the budget crossings
+of every node on the charged path among the derived triggers and the walk
+never re-arming the node it starts from; the link and unlink of a member
+climbing from the child's existing eligibility rather than moving its own
+count; one residual per context made exact, coalescing on the same core and
+deadline and refusing a second departure otherwise; the pure admission
+arithmetic landing with the hierarchy queries, two phases before the cut that
+routes transitions through it; the dispatch, return-shape and end-to-end pins
+folded into the activation cut that makes their arms reachable; the wake and
+bind footprints taking the replenish-queue slot in the engine cut whose rule
+writes it; eligibility read from a node's own maintained fields under the
+locks the transition holds, each primitive noting the activity it knows from
+its own core rather than recomputing it over every core's queue and current
+slot; a refill landing that never revives an expired window, with the rule
+that every eligibility gain leaves a current window held by each engine rule
+rather than by the incidental composition the previous round had removed; an
+unconfigured context taking the fresh-configuration rule whether or not it is
+bound, since a retyped context carries budget zero and a derived deadline of
+ten thousand; a cross-core donation reserving the residual slot for its
+return, so a donated leaf admits no other departure until then; the bind
+scheduling point landing in the engine cut whose rule can leave a current
+thread ineligible, and the liveness restatement in the order switch it
+describes; the observer projection erasing per object rather than per field,
+so a visible tree is visible whole; the donation owner read by one accessor
+wherever a rule needs it, so the charged cores of a donated leaf are the
+donee's and the owner's rather than the donee's twice; a ledger in the
+schedule of every specification symbol's defining row, since three rounds
+found a definition assigned to the row where it first mattered and the plan
+gate cannot see a symbol; the reschedule seam given a footprint every caller
+composes, where the hierarchy footprints had listed object locks while their
+transitions ended with a scheduling point; the flag-to-SGI theorem stated over
+remote cores, with the executing core's own flag consumed by its next
+scheduling point; the departures that leave a residual read off the charged
+cores and the utilisation rather than listed, so a root server's link records
+one and a root context that counts on a core is destroyed only after its
+window ends, the object being its own residual; the deadline-inheritance
+dispatch theorem requiring a dispatchable blocker — runnable, in the active
+domain, budget-eligible along its path — and the CBS guarantee requiring the
+root's domain to be the core's active domain; the information-flow write set
+and the seam's lock footprint derived from one seam core, so a populated
+server's reconfiguration is confined to its `serverCore`; a fresh window
+granted to an unconfigured context alone, since a configured context that is
+unbound, emptied or converted is still configured and its reconfiguration
+clamps; the donation guard evaluated by the dispatcher on the pre-state before
+the rendezvous, and the activity note fired once per donation so a transfer of
+work between threads is no crossing; the frozen twin of the configure
+operation taking the authority gate in the same cut; every per-core conjunct
+that reads a budget switching to the path form at the selection switch; the
+window-consumption theorem stated per window over its opening budget and the
+demand bound summing opening budgets, since one utilisation cannot bound an
+interval a reconfiguration crosses; the window-start invariant the dead-time
+bound needs; the donation guard wired into the dispatchers and the live
+transitions' preservation carried by the admission cut itself; a zero-share
+root server destroyable at once; the donation scenario reading the residual
+after the return; the total table given its final and its placeholder values;
+the two new staged modules registered in the rows that create them; a per-core
+admission slot held from the read of the utilisation sum to the commit, since
+a decision's read is a footprint as much as its write; the seam slot composed
+for a server child as for a bound leaf; a donee held to the context's domain
+as a bound thread is; the Rust side of the configure contract landing with the
+engine switch that changes it; and the status flip
+confined to the last closure row.
+
+Three things the survey behind the plan found in the flat tree, all recorded
+in the plan (§1.1, §3.3) and in the debt register:
+
+* `schedContextConfigure` applies `priority`, `domain` and a caller-supplied
+  absolute `deadline` under the SchedContext write right alone — no
+  `validatePriorityAuthority` against the caller's `maxControlledPriority`,
+  where `setPriorityOp` has one, and no authority over the domain.  A thread
+  holding a write capability to its own SchedContext escalates past its MCP.
+  CB0.3 closes the priority and domain half, and the plan recommends that cut
+  regardless of when the rest of the workstream opens; CB1.6 retires the
+  deadline argument.
+* **The live CBS engine refills at most one tick per exhaustion.**  Both tick
+  arms (`timerTickBudget`, `timerTickBudgetOnCore`) run their exhaustion
+  branch when `budgetRemaining ≤ 1` and schedule `consumedAmount :=
+  budgetRemaining` — one tick — one period later, while the docstring beside
+  them says the full consumed budget is recorded; the only full-budget refill
+  is the entry `schedContextConfigure` installs for one period after
+  configuration, and budget consumed without exhaustion is never returned.  A
+  bound thread therefore receives about one tick per period after its first
+  window.  No theorem caught it: `cbs_bandwidth_bounded` is an upper bound and
+  the WCRT theorems take per-band budgets as hypotheses.  CB1.6 replaces the
+  scheme with per-window refills (plan §4.2), which is also the shape the EDF
+  guarantee's proof assumes.
+* Admission folds every SchedContext in the object store against one 1000 ‰
+  ceiling, so a four-core machine admits 100 % in total rather than per core.
+  CB5.2 makes root-level admission per core — which is also what the EDF
+  guarantee needs — together with every transition that can carry a
+  reservation onto another core.
+
+The workstream prefix is `CB` rather than `HC` because the identifier-naming
+gate derives its family grammar from the workstream registry: `hc<digit>`
+already names two hypotheses in the Robin Hood preservation proofs, and
+`cb<digit>` names nothing in the tree.
+
 ## v0.34.48 — the boot path fails closed
 
 **WS-RR RR5 (all eighteen sub-tasks).**  Six latents that were unreachable only

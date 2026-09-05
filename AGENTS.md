@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.48.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.49.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -388,6 +388,7 @@ To find files that need pagination today, run:
 - `tests/WithLockSetSuite.lean` (~809 lines)
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
+- `docs/planning/HIERARCHICAL_CBS_PLAN.md` (~2581 lines)
 - `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` (~800 lines)
 This bullet block is a **curated snapshot**, not a static enumeration.
 `scripts/find_large_lean_files.sh --check` (called from
@@ -1273,6 +1274,36 @@ a success.  A caller that took a fault at the seam is outcome tag 2
 (PR #887 review round 5).
 
 Plan: [`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](docs/planning/SYSCALL_RETURN_ABI_PLAN.md).
+
+### WS-CB Hierarchical constant-bandwidth servers — PLANNED (registered v0.34.49)
+
+A `SchedContext` will be able to contain other scheduling contexts: a *server*
+holds members instead of a thread, is charged whenever a thread in its subtree
+runs, and admits its members against its own budget, so a component's threads
+share one reservation and nothing outside the component is delayed by more than
+that reservation.  The root scheduler becomes **EDF-first** (maintainer's
+decision at planning time): deadlines are kernel-owned CBS deadlines, priority
+is the tie-break for deadline-bearing threads and the order of the legacy
+unbound class, and priority inheritance becomes deadline inheritance for the
+EDF class — a change to the flat model that CB1 lands as three switch cuts,
+each with its proofs and its fixture refresh, before any server exists.  Servers are core-homed, members
+share the server's security label, and every generalising cut after CB1
+carries the theorem that the model is unchanged on states without servers.
+No sub-task has started.  The plan also records three pre-existing findings it
+closes first: `schedContextConfigure` applies priority, domain and a
+caller-supplied deadline to the bound thread under the SchedContext write right
+alone, with no caller-MCP check (CB0.3, CB1.6); and the live tick's exhaustion
+arm schedules a refill of at most one tick, so a bound thread receives about one
+tick per period after its first window (CB1.6, which moves the engine to
+per-window refills).  Thirteen review rounds on the planning PR reshaped the design
+before any code exists — a transitive tie-break, a key-worsening reschedule
+seam, reconfiguration that never mints budget, every reservation move
+re-admitted per core, label uniformity over bindings, inheritance for bound
+blockers only, the guarantee scoped to roots — and the plan's §14 records each
+finding against its fix, and its §14 names the five classes the findings
+fell into with the rule that closes each.
+
+Plan: [`docs/planning/HIERARCHICAL_CBS_PLAN.md`](docs/planning/HIERARCHICAL_CBS_PLAN.md).
 
 ### WS-SM SMP multi-core completion — IN FLIGHT (v0.31.2 → v1.0.0)
 
