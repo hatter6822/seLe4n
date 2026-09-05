@@ -44,7 +44,7 @@ tick-quantised with no new upcall and no ABI version change; and every
 generalising sub-task after CB1 carries the theorem that the model is
 unchanged on states without servers.
 
-Eleven automated review rounds on the planning PR (eighty findings)
+Twelve automated review rounds on the planning PR (eighty-eight findings)
 reshaped the design before any code exists, and the plan's §14 records each
 finding against its fix — and, after the fifth, the classes the findings fell
 into and the rule that closes each class rather than its instances (§14): a transitive tie-break (`scId` in the EDF class, the
@@ -142,7 +142,15 @@ clamps; the donation guard evaluated by the dispatcher on the pre-state before
 the rendezvous, and the activity note fired once per donation so a transfer of
 work between threads is no crossing; the frozen twin of the configure
 operation taking the authority gate in the same cut; every per-core conjunct
-that reads a budget switching to the path form at the selection switch; and the status flip
+that reads a budget switching to the path form at the selection switch; the
+window-consumption theorem stated per window over its opening budget and the
+demand bound summing opening budgets, since one utilisation cannot bound an
+interval a reconfiguration crosses; the window-start invariant the dead-time
+bound needs; the donation guard wired into the dispatchers and the live
+transitions' preservation carried by the admission cut itself; a zero-share
+root server destroyable at once; the donation scenario reading the residual
+after the return; the total table given its final and its placeholder values;
+the two new staged modules registered in the rows that create them; and the status flip
 confined to the last closure row.
 
 Three things the survey behind the plan found in the flat tree, all recorded
