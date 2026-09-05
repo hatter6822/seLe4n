@@ -565,11 +565,13 @@ theorem conflictWaitGraph_acyclic_under_2pl (e : KernelExecution)
 -- §6 — SM3.D.6 — Bounded-wait corollary
 -- ============================================================================
 
-/-- WS-SM SM3.D.6 (plan §5.4): the static worst-case lock-set size.  Per
-plan §5.4, most transitions touch ≤ 4 locks; the worst-case IPC paths
-(call/reply with donation) stay ≤ 8.  Every SM3.B `lockSet_<τ>`
-declaration respects this bound (exercised in `DeadlockFreedomSuite`). -/
-def maxLockSetSize : Nat := 8
+-- WS-RR RR7.11: `maxLockSetSize` moved to `Locks/LockSet.lean`, beside the
+-- datatype whose cardinality it bounds.  It sat here because SM3.D.6 introduced
+-- it for the bounded-wait corollary, but the scheduler's own
+-- `_size_le_maxLockSetSize` theorems could not name it from there and stated
+-- `≤ 8` literally instead — a name promising a relation to a constant it could
+-- not reach.  `Locks/LockSet.lean` imports only `Kind` and `RwLock`, which every
+-- footprint-declaring module already has.
 
 /-- WS-SM SM3.D.6: per-lock worst-case wait.  Under FIFO RwLock fairness
 (SM2.C) each lock is contended by at most `numCores − 1` other cores,
@@ -618,7 +620,7 @@ theorem totalWaitCost_le_bound (S : LockSet) (tCs : Nat)
 -- The `maxLockSetSize` premise of `boundedWait_under_2pl` / the
 -- `KernelOperation` invariant is not an assumption: every one of the 25
 -- SM3.B per-transition `lockSet_<τ>` declarations is proved here to have
--- size ≤ `maxLockSetSize` (= 8).  The bounds factor through three generic
+-- size ≤ `maxLockSetSize`.  The bounds factor through three generic
 -- size lemmas about the SM3.B `LockSet` builders plus four "shape" helpers
 -- (`size_le_1..4`) for the nested-`extendOpt` forms.
 
@@ -724,11 +726,15 @@ theorem lockSet_endpointSend_size_le (a : ThreadId) (b c : ObjId) (d : Option Th
 -- SM9.C `notificationSignal` defect), and the caps flag in particular merges
 -- into a key already present, so the bound is the same one — but it has to be
 -- *stated* at that argument to say so.
+-- WS-RR RR7.11: and over the state-level member the capability install needs.
+-- Three optionals over a three-member base is `3 + 3 = 6 ≤ 8`, so the constant
+-- is unchanged; what changes is that the bound holds for the footprint the
+-- caps-carrying receive really declares.
 theorem lockSet_endpointReceive_size_le (a : ThreadId) (b c : ObjId) (d : Option ThreadId)
     (e : Option ReplyId) (f : Bool) :
     (lockSet_endpointReceive a b c d e f).size ≤ maxLockSetSize := by
   unfold lockSet_endpointReceive maxLockSetSize
-  exact Nat.le_trans (size_le_2 _ _ _) (by size_bound)
+  exact Nat.le_trans (size_le_3 _ _ _ _) (by size_bound)
 
 -- WS-RR RR7.7: and over the capability-transfer destination, which is where
 -- `lockSet_endpointCallWithCaps` now lives.  Five optionals over a three-member
@@ -758,12 +764,16 @@ theorem lockSet_endpointReply_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
   unfold lockSet_endpointReply maxLockSetSize
   exact Nat.le_trans (size_le_2 _ _ _) (by size_bound)
 
+-- WS-RR RR7.11: and over the state-level member the capability install needs.
+-- Five optionals over a four-member base is `4 + 5 = 9`, which is
+-- `maxLockSetSize` exactly — this is the footprint that constant is measured
+-- against, and the reason it moved from 8 (see its docstring).
 theorem lockSet_replyRecv_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
     (d : ObjId) (e : Option ThreadId) (f : Option SchedContextId) (g : Option ThreadId)
     (h : Option ReplyId) (i : Bool) :
     (lockSet_replyRecv a b c d e f g h i).size ≤ maxLockSetSize := by
   unfold lockSet_replyRecv maxLockSetSize
-  exact Nat.le_trans (size_le_4 _ _ _ _ _) (by size_bound)
+  exact Nat.le_trans (size_le_5 _ _ _ _ _ _) (by size_bound)
 
 -- WS-SM SM9.C.8: stated over **all six** arguments, including the SM6.B
 -- bound-delivery optionals.  Before this cut the theorem fixed those two at

@@ -762,15 +762,16 @@ def resolveReplyRecvReply (gate : SyscallGate) (decoded : SyscallDecodeResult)
           match extractReplyId rcap with
           | .error e => .error e
           | .ok rid =>
-              match st.getReply? rid with
-              | some reply =>
-                  match reply.caller with
-                  -- PR #822 review: carry the *reply cap's* badge (the reply
-                  -- authority), not the endpoint receive cap's, so the previous
-                  -- caller receives the badge associated with the reply cap (as in
-                  -- the `.reply` arm) when the two differ.
-                  | some prevCaller => .ok (rid, prevCaller, rcap.badge)
-                  | none => .error .replyCapInvalid
+              -- WS-RR RR7.11: one resolution of "which thread does this reply
+              -- capability answer", shared with the `.reply` arm and with the
+              -- declared-footprint resolver.  Both former `none` arms produced
+              -- `.replyCapInvalid`, so this is behaviour-identical.
+              match replyAnsweredCaller? st rid with
+              -- PR #822 review: carry the *reply cap's* badge (the reply
+              -- authority), not the endpoint receive cap's, so the previous
+              -- caller receives the badge associated with the reply cap (as in
+              -- the `.reply` arm) when the two differ.
+              | some prevCaller => .ok (rid, prevCaller, rcap.badge)
               | none => .error .replyCapInvalid
 
 /-- WS-SM SM6.C (PR #822 review): the `ReplyRecv` post-receive donation
@@ -3074,12 +3075,14 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
         -- (PR #827 review #3) — atomic with the delivery, no separate dispatch
         -- step.  Fails closed (`.replyCapInvalid`) on a dangling reply or an
         -- unlinked caller.
-        match st.getReply? rid with
+        -- WS-RR RR7.11: the answered thread is `replyAnsweredCaller?`, the
+        -- expression the declared footprint resolver reads.  The two-level
+        -- match this replaces collapsed a dangling reply and an unlinked one
+        -- onto the same error, so this is that arm verbatim with the
+        -- resolution named once.
+        match replyAnsweredCaller? st rid with
         | none => .error .replyCapInvalid
-        | some reply =>
-          match reply.caller with
-          | none => .error .replyCapInvalid
-          | some callerTid =>
+        | some callerTid =>
             let executingCore := determineExecutingCore st tid
             -- WS-RR RR4.14/RR4.15: seL4's `doReplyTransfer` branches on the
             -- answered thread's `tcbFault` before it transfers anything.  On an
@@ -3527,12 +3530,11 @@ def dispatchWithCapChecked (ctx : LabelingContext)
         -- review #3) — atomic with the delivery, no separate dispatch step.
         -- Fails closed (`.replyCapInvalid`) on a dangling reply or an unlinked
         -- caller.
-        match st.getReply? rid with
+        -- WS-RR RR7.11: the answered thread is `replyAnsweredCaller?`, the same
+        -- resolution the unchecked arm and the declared-footprint resolver read.
+        match replyAnsweredCaller? st rid with
         | none => .error .replyCapInvalid
-        | some reply =>
-          match reply.caller with
-          | none => .error .replyCapInvalid
-          | some callerTid =>
+        | some callerTid =>
             -- WS-SM SM6.D (PR #822 review, IF-ordering): a denied replier→caller flow
             -- must be **indistinguishable** from an unlinked/consumed reply.  Probing
             -- `reply.caller` (above) is unavoidable — the flow gate needs the caller
@@ -4242,7 +4244,8 @@ theorem checkedDispatch_reply_eq_unchecked_when_allowed
   -- (which folds the consume), then collapse checked → unchecked under the flow
   -- guard.
   simp only [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly,
-    hSyscall, hCap, hReply, hCaller, hFlow, if_true]
+    hSyscall, hCap, replyAnsweredCaller?, hReply, hCaller, Option.bind,
+    hFlow, if_true]
   -- WS-RR RR4.14: the seam collapses on *both* branches under the same flow
   -- guard, so the fault branch costs this proof nothing.
   rw [replyTransferOnCoreChecked_eq_unchecked_of_flow_allowed ctx tid callerTid
@@ -4302,7 +4305,8 @@ theorem checkedDispatch_reply_flow_denied_collapses
     (hCaller : reply.caller = some callerTid)
     (hDenied : securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf callerTid) = false) :
     dispatchWithCapChecked ctx decoded tid gate cap st = .error .replyCapInvalid := by
-  simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hCap, hReply, hCaller, hDenied]
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hCap,
+    replyAnsweredCaller?, hReply, hCaller, Option.bind, hDenied]
 
 /-- WS-SM SM6.D (PR #822 review, IF-ordering): a checked `.receive` whose
 endpoint→receiver flow is **denied** returns `.flowDenied` *for every state and decode*
@@ -4995,12 +4999,14 @@ theorem dispatchWithCap_reply_populates_msg
     dispatchWithCap decoded tid gate cap =
       fun st =>
         let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
-        match st.getReply? rid with
+        -- WS-RR RR7.11: the answered thread is `replyAnsweredCaller?`, the
+        -- expression the declared footprint resolver reads.  The two-level
+        -- match this replaces collapsed a dangling reply and an unlinked one
+        -- onto the same error, so this is that arm verbatim with the
+        -- resolution named once.
+        match replyAnsweredCaller? st rid with
         | none => .error .replyCapInvalid
-        | some reply =>
-          match reply.caller with
-          | none => .error .replyCapInvalid
-          | some callerTid =>
+        | some callerTid =>
             let executingCore := determineExecutingCore st tid
             -- WS-RR RR4.14/RR4.15: seL4's `doReplyTransfer` branch on the
             -- answered thread's `tcbFault`.  On an unfaulted caller this is the
@@ -5253,8 +5259,8 @@ theorem dispatchArm_call_frame_delivered_by_reply
       Architecture.readReturnFrame stPost callerTid
         = Architecture.returnFrameOfMessage msg 0 := by
   refine ⟨rfl, Architecture.stageDeliveredMessage st1 callerTid 0, ?_, ?_⟩
-  · simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hReply,
-      hCaller, replyTransferOnCore, hNoFault, hDispatch]
+  · simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget,
+      replyAnsweredCaller?, hReply, hCaller, replyTransferOnCore, hNoFault, hDispatch]
   · exact Architecture.blockedReturn_staged_in_waiter_frame st1 callerTid tcb msg 0
       hTcb hReady hMsg hObjInv
 

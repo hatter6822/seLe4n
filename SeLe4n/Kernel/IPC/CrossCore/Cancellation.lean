@@ -102,7 +102,8 @@ bracket around the live path (the SM3.C.9/SM5.I deferral); this module
 proves the SM6.E theorems that bracket consumes.
 
 **Neighbour-lock convention bridge (audit note).**  The syscall-level
-`lockSet_tcbSuspend` (size 8 = `maxLockSetSize`, cannot grow) covers the
+`lockSet_tcbSuspend` (size 8, one below `maxLockSetSize` since WS-RR RR7.11 —
+but fixed: it declares no member the pre-state does not name, so it cannot grow) covers the
 splice's neighbour queue-link writes under the *endpoint* write lock (the
 queue-owning-object discipline above); the sub-operation-level
 `lockSet_cancelIpcBlockingOnCore` declares the same writes explicitly as

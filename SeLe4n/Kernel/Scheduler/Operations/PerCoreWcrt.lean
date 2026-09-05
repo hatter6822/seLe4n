@@ -49,7 +49,7 @@ lock-contention dimension (plan §3.9):
 
 On the RPi5 target (`coreCount = 4`, pinned by `numCores_eq_rpi5_coreCount`) the
 core-count factor is `coreCount − 1 = 3`, so any op whose `SchedLockId` footprint
-respects the SM3.D static `maxLockSetSize` (= 8) bound has lock-WCRT
+respects the SM3.D static `maxLockSetSize` bound has lock-WCRT
 `≤ maxLockSetSize × 3 × WCRT_per_lock` — within the 1 ms timer-tick budget.
 
 ## Contents (plan §5 SM5.J sub-tasks)
@@ -179,7 +179,7 @@ under fine locks for the RPi5 canonical deployment.
 
 For the canonical RPi5 config (`coreCount = 4 ⟹ coreCount − 1 = 3`), any per-core
 scheduler operation whose `SchedLockId` lock-set footprint respects the SM3.D
-static `maxLockSetSize` (= 8) bound has worst-case lock-contention response time
+static `maxLockSetSize` bound has worst-case lock-contention response time
 `≤ maxLockSetSize · 3 · tCs`.  With `tCs ≈ 60 µs` (a bounded critical section) the
 typical `|lockSet| ≤ 4` syscall fits the plan's `4 · 3 · 60 µs ≈ 1 ms` (the §3
 per-operation bounds give the tighter per-op value).

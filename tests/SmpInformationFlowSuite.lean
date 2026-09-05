@@ -7786,6 +7786,187 @@ private def distinctRootState : SystemState :=
   { niState with
       objects := niState.objects.insert highCurrent.toObjId (.tcb distinctRootVictim) }
 
+-- ---------------------------------------------------------------------------
+-- §7.10 fixture: the WS-RR RR7.11 IPC hot-path footprints.
+--
+-- Until this group existed the only declared arm was `.tcbSuspend`, so every
+-- runtime observation of `lockSetForSyscall` was of a thread-directed
+-- footprint.  The seven IPC arms are object- and reply-directed and their
+-- state-dependent members — the rendezvous partner, the capability-transfer
+-- destination, the CDT write that install performs — are resolved from the
+-- pre-state, so a fixture is the only way to run them.
+--
+-- The state parks a receiver on `lowEndpoint`'s receive queue (giving the
+-- caps destination a CSpace root to resolve to), a sender on its send queue
+-- carrying a caps-bearing message (which is what makes `receiveInstallsCaps`
+-- true), and a Reply object linked to `lowQueued` (which is what makes the two
+-- reply-shaped arms resolvable).
+-- ---------------------------------------------------------------------------
+
+private def ipcReplyId : SeLe4n.ReplyId := ⟨1041⟩
+private def ipcReceiverRoot : SeLe4n.ObjId := ⟨1042⟩
+private def ipcReceiver : SeLe4n.ThreadId := ⟨1043⟩
+private def ipcSender : SeLe4n.ThreadId := ⟨1044⟩
+
+/-- One transferred capability, so a message counts as caps-carrying. -/
+private def ipcCapsMessage : IpcMessage :=
+  { registers := #[],
+    caps := #[{ cap := { target := .object lowEndpoint,
+                         rights := AccessRightSet.ofList [.read] },
+                srcNode := ⟨0⟩ }],
+    capsGranted := true }
+
+/-- The capless shape, for the negatives. -/
+private def ipcCaplessMessage : IpcMessage := { registers := #[] }
+
+private def ipcReceiverTcb : TCB :=
+  { mkTcb 1043 40 (some c1) with cspaceRoot := ipcReceiverRoot }
+
+/-- A sender parked with a caps-bearing message — `receiveInstallsCaps`'s
+condition, read from exactly this field. -/
+private def ipcSenderTcb : TCB :=
+  { mkTcb 1044 40 (some c0) with pendingMessage := some ipcCapsMessage }
+
+private def ipcFootprintState : SystemState :=
+  { niState with
+      objects :=
+        ((((niState.objects.insert ipcReplyId.toObjId
+              (.reply { replyId := ipcReplyId, caller := some lowQueued })).insert
+            ipcReceiver.toObjId (.tcb ipcReceiverTcb)).insert
+            ipcSender.toObjId (.tcb ipcSenderTcb)).insert
+          lowEndpoint
+          (.endpoint { sendQ := { head := some ipcSender, tail := some ipcSender },
+                       receiveQ := { head := some ipcReceiver, tail := some ipcReceiver } })) }
+
+/-- The operands a live `.send` supplies: the endpoint its capability names and
+the message it built. -/
+private def ipcSendOperands (msg : IpcMessage) : Concurrency.SyscallLockOperands :=
+  .ofObjectTarget lowCurrent lowEndpoint (some msg)
+
+private def ipcDeclaredMember
+    (declared : Option Concurrency.LockSet)
+    (l : Concurrency.LockId) (m : Concurrency.AccessMode) : Bool :=
+  match declared with
+  | some S => decide ((l, m) ∈ S.pairs)
+  | none => false
+
+/-- §7.10  WS-RR RR7.11 — the seven IPC hot-path footprints, resolved from
+operands and covering their transitions' writes.
+
+Positive and negative in the same group, because the whole value of a declared
+footprint is that it is `some` exactly when its operands resolve and covers
+exactly what the arm writes. -/
+private def runIpcDeclaredFootprintChecks : IO Unit := do
+  IO.println "--- §7.10 WS-RR RR7.11 — the seven IPC hot-path footprints ---"
+  -- Each arm declares at the operands its live dispatcher supplies.
+  assertBool "`.send` declares at (endpoint, message)"
+    (decide ((Concurrency.lockSetForSyscall .send
+      (ipcSendOperands ipcCaplessMessage) ipcFootprintState).isSome))
+  assertBool "`.call` declares at (endpoint, message)"
+    (decide ((Concurrency.lockSetForSyscall .call
+      (ipcSendOperands ipcCaplessMessage) ipcFootprintState).isSome))
+  assertBool "`.receive` declares at an endpoint, with no message"
+    (decide ((Concurrency.lockSetForSyscall .receive
+      (.ofObjectTarget lowCurrent lowEndpoint) ipcFootprintState).isSome))
+  assertBool "`.notificationSignal` declares at a notification"
+    (decide ((Concurrency.lockSetForSyscall .notificationSignal
+      (.ofObjectTarget lowCurrent lowEndpoint) ipcFootprintState).isSome))
+  assertBool "`.notificationWait` declares at a notification"
+    (decide ((Concurrency.lockSetForSyscall .notificationWait
+      (.ofObjectTarget lowCurrent lowEndpoint) ipcFootprintState).isSome))
+  assertBool "`.reply` declares at a linked reply capability"
+    (decide ((Concurrency.lockSetForSyscall .reply
+      (.ofReplyTarget lowCurrent ipcReplyId) ipcFootprintState).isSome))
+  assertBool "`.replyRecv` declares at a reply capability AND an endpoint"
+    (decide ((Concurrency.lockSetForSyscall .replyRecv
+      (.ofReplyTarget lowCurrent ipcReplyId (some lowEndpoint))
+      ipcFootprintState).isSome))
+  -- NEGATIVE: a send whose message is unknown declares nothing.  Defaulting to
+  -- the capless footprint would omit the receiver's CSpace root and the
+  -- state-level lock on precisely the path that writes them.
+  assertBool "NEGATIVE: `.send` with no message declares nothing"
+    (decide ((Concurrency.lockSetForSyscall .send
+      (.ofObjectTarget lowCurrent lowEndpoint) ipcFootprintState) = none))
+  -- NEGATIVE: a reply capability naming no live Reply object declares nothing —
+  -- the live arm answers `.replyCapInvalid` for it.
+  assertBool "NEGATIVE: `.reply` at a dangling reply capability declares nothing"
+    (decide ((Concurrency.lockSetForSyscall .reply
+      (.ofReplyTarget lowCurrent ⟨999999⟩) ipcFootprintState) = none))
+  -- NEGATIVE: and `.replyRecv` needs both its operands.
+  assertBool "NEGATIVE: `.replyRecv` without an endpoint declares nothing"
+    (decide ((Concurrency.lockSetForSyscall .replyRecv
+      (.ofReplyTarget lowCurrent ipcReplyId) ipcFootprintState) = none))
+  -- NEGATIVE: the twenty-seven arms this cut did not declare still answer
+  -- `none`, whatever operands are handed to them.
+  assertBool "NEGATIVE: `.cspaceMint` is undeclared even at full operands"
+    (decide ((Concurrency.lockSetForSyscall .cspaceMint
+      (ipcSendOperands ipcCapsMessage) ipcFootprintState) = none))
+  -- **RR7.11's finding, at runtime.**  A caps-carrying rendezvous writes the
+  -- CDT maps through `ipcTransferSingleCap`, and the state-level lock is the
+  -- declared subject for `SystemState`-level structure.  The sending arms
+  -- declared it since RR7.7; the receiving arms declared it on neither side.
+  assertBool "a caps-carrying `.send` declares the state-level write"
+    (ipcDeclaredMember (Concurrency.lockSetForSyscall .send
+      (ipcSendOperands ipcCapsMessage) ipcFootprintState)
+      Concurrency.stateLevelLock .write)
+  assertBool "a caps-carrying `.send` declares the receiver's CSpace root"
+    (ipcDeclaredMember (Concurrency.lockSetForSyscall .send
+      (ipcSendOperands ipcCapsMessage) ipcFootprintState)
+      (Concurrency.cnodeLock ipcReceiverRoot) .write)
+  assertBool "a caps-installing `.receive` declares the state-level write (RR7.11)"
+    (ipcDeclaredMember (Concurrency.lockSetForSyscall .receive
+      (.ofObjectTarget lowCurrent lowEndpoint) ipcFootprintState)
+      Concurrency.stateLevelLock .write)
+  assertBool "a caps-installing `.replyRecv` declares the state-level write (RR7.11)"
+    (ipcDeclaredMember (Concurrency.lockSetForSyscall .replyRecv
+      (.ofReplyTarget lowCurrent ipcReplyId (some lowEndpoint)) ipcFootprintState)
+      Concurrency.stateLevelLock .write)
+  -- NEGATIVE: and a **capless** send does not, so the member tracks the write
+  -- rather than being unconditionally present.
+  assertBool "NEGATIVE: a capless `.send` does not declare the state-level write"
+    (decide (¬ ipcDeclaredMember (Concurrency.lockSetForSyscall .send
+      (ipcSendOperands ipcCaplessMessage) ipcFootprintState)
+      Concurrency.stateLevelLock .write))
+  -- Coverage: the endpoint queue is the rendezvous' primary write, and every
+  -- endpoint-shaped arm declares it.
+  assertBool "every endpoint-shaped arm declares the endpoint write"
+    (ipcDeclaredMember (Concurrency.lockSetForSyscall .send
+        (ipcSendOperands ipcCaplessMessage) ipcFootprintState)
+        (Concurrency.endpointLock lowEndpoint) .write &&
+     ipcDeclaredMember (Concurrency.lockSetForSyscall .call
+        (ipcSendOperands ipcCaplessMessage) ipcFootprintState)
+        (Concurrency.endpointLock lowEndpoint) .write &&
+     ipcDeclaredMember (Concurrency.lockSetForSyscall .receive
+        (.ofObjectTarget lowCurrent lowEndpoint) ipcFootprintState)
+        (Concurrency.endpointLock lowEndpoint) .write &&
+     ipcDeclaredMember (Concurrency.lockSetForSyscall .replyRecv
+        (.ofReplyTarget lowCurrent ipcReplyId (some lowEndpoint)) ipcFootprintState)
+        (Concurrency.endpointLock lowEndpoint) .write)
+  -- Coverage: `.reply` locks the thread it answers — read from the Reply object
+  -- the capability names, exactly as the live arm reads it.
+  assertBool "`.reply` locks the thread its capability answers"
+    (ipcDeclaredMember (Concurrency.lockSetForSyscall .reply
+      (.ofReplyTarget lowCurrent ipcReplyId) ipcFootprintState)
+      (Concurrency.tcbLock lowQueued) .write)
+  -- Every declared footprint is within the static size bound, which is what
+  -- makes it usable by the bounded-wait argument.
+  assertBool "every declared IPC footprint is within maxLockSetSize"
+    ([Concurrency.lockSetForSyscall .send (ipcSendOperands ipcCapsMessage) ipcFootprintState,
+      Concurrency.lockSetForSyscall .call (ipcSendOperands ipcCapsMessage) ipcFootprintState,
+      Concurrency.lockSetForSyscall .receive (.ofObjectTarget lowCurrent lowEndpoint)
+        ipcFootprintState,
+      Concurrency.lockSetForSyscall .reply (.ofReplyTarget lowCurrent ipcReplyId)
+        ipcFootprintState,
+      Concurrency.lockSetForSyscall .replyRecv
+        (.ofReplyTarget lowCurrent ipcReplyId (some lowEndpoint)) ipcFootprintState,
+      Concurrency.lockSetForSyscall .notificationSignal
+        (.ofObjectTarget lowCurrent lowEndpoint) ipcFootprintState,
+      Concurrency.lockSetForSyscall .notificationWait
+        (.ofObjectTarget lowCurrent lowEndpoint) ipcFootprintState].all
+      (fun d => match d with
+                | some S => decide (S.size ≤ Concurrency.maxLockSetSize)
+                | none => false))
+
 /-- §7.9  SM8.D.5 — the declared footprint, bound to the decode, and the
 fail-closed default.
 
@@ -11782,6 +11963,7 @@ declassification, causal provenance and the acceptance scenarios"
   runFineLockEntryChecks
   runFineLockSuccessPathChecks
   runDeclaredFootprintChecks
+  runIpcDeclaredFootprintChecks
   runFineLockClaimInventoryChecks
   runFineLockTraceFixtureCheck
   runPhaseSurfaceChecks

@@ -233,7 +233,10 @@ example : ¬ mutualBlocked execNoDeadlock c0 c1 := by decide
 
 /-! ## SM3.D.6 — Bounded-wait arithmetic -/
 
-example : maxLockSetSize = 8 := by decide
+-- WS-RR RR7.11: 8 → 9.  The widest declared footprint is a `.replyRecv` that
+-- both returns a donation and installs capabilities, and the state-level lock
+-- its CDT write needs is its ninth member.  See `maxLockSetSize`'s docstring.
+example : maxLockSetSize = 9 := by decide
 example : perLockWaitCost 10 = 30 := by decide
 -- The `totalWaitCost ≤ …` bound is established via the theorem in §3
 -- (`boundedWait_under_2pl`).  Elaboration-time `decide` cannot reduce
@@ -412,13 +415,13 @@ private def runWaitGraphChecks : IO Unit := do
 
 private def runBoundedWaitChecks : IO Unit := do
   IO.println "--- §5 SM3.D.6 — bounded wait ---"
-  assertBool "maxLockSetSize = 8" (decide (maxLockSetSize = 8))
+  assertBool "maxLockSetSize = 9" (decide (maxLockSetSize = 9))
   assertBool "perLockWaitCost 10 = (numCores-1)*10 = 30" (decide (perLockWaitCost 10 = 30))
   -- A singleton lock set: total wait = 1 * (3 * 10) = 30.
   assertBool "totalWaitCost (singleton) 10 = 30"
     (decide (totalWaitCost (LockSet.singleton tcb5 .write) 10 = 30))
-  -- Bounded by maxLockSetSize * (numCores-1) * T_cs = 8 * 3 * 10 = 240.
-  assertBool "totalWaitCost (singleton) 10 ≤ 8*(3*10)"
+  -- Bounded by maxLockSetSize * (numCores-1) * T_cs = 9 * 3 * 10 = 270.
+  assertBool "totalWaitCost (singleton) 10 ≤ maxLockSetSize*(3*10)"
     (decide (totalWaitCost (LockSet.singleton tcb5 .write) 10
               ≤ maxLockSetSize * ((numCores - 1) * 10)))
   -- A real 2-element lock set: total wait = 2 * 30 = 60, still ≤ 240.
@@ -468,12 +471,34 @@ private def runSizeBoundChecks : IO Unit := do
     (some ⟨6⟩) (some (ThreadId.ofNat 7)) (some ⟨8⟩)
   assertBool "lockSet_tcbSuspend (all options) size ≤ maxLockSetSize"
     (decide (suspendSet.size ≤ maxLockSetSize))
-  -- replyRecv (3 extensions, base 4) — the other deepest footprint.
+  -- replyRecv at **every** optional — base 4 plus five extensions, the widest
+  -- footprint the kernel declares and the one `maxLockSetSize` is measured
+  -- against (WS-RR RR7.11).  Taken at four distinct threads and with the
+  -- capability install on, so this is the nine-member shape, not a merged one.
   let replySet := lockSet_replyRecv (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
     (ThreadId.ofNat 3) (SeLe4n.ObjId.ofNat 4) (some (ThreadId.ofNat 5))
-    (some ⟨6⟩) (some (ThreadId.ofNat 7))
+    (some ⟨6⟩) (some (ThreadId.ofNat 7)) (some ⟨8⟩) true
   assertBool "lockSet_replyRecv (all options) size ≤ maxLockSetSize"
     (decide (replySet.size ≤ maxLockSetSize))
+  assertBool "lockSet_replyRecv (all options) size = 9 (the bound, exactly)"
+    (decide (replySet.size = 9))
+  -- And the capless shape is one member smaller, so the RR7.11 addition is the
+  -- ninth member and not a re-count of an existing one.
+  let replySetCapless := lockSet_replyRecv (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
+    (ThreadId.ofNat 3) (SeLe4n.ObjId.ofNat 4) (some (ThreadId.ofNat 5))
+    (some ⟨6⟩) (some (ThreadId.ofNat 7)) (some ⟨8⟩) false
+  assertBool "lockSet_replyRecv capless size = 8"
+    (decide (replySetCapless.size = 8))
+  -- The receive arm's caps shape gains the same member: 3 base + sender + reply
+  -- + state-level = 6.
+  let recvSet := lockSet_endpointReceive (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
+    (SeLe4n.ObjId.ofNat 3) (some (ThreadId.ofNat 4)) (some ⟨5⟩) true
+  assertBool "lockSet_endpointReceive (caps) size = 6"
+    (decide (recvSet.size = 6))
+  let recvSetCapless := lockSet_endpointReceive (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
+    (SeLe4n.ObjId.ofNat 3) (some (ThreadId.ofNat 4)) (some ⟨5⟩) false
+  assertBool "lockSet_endpointReceive capless size = 5"
+    (decide (recvSetCapless.size = 5))
   -- A KernelOperation carries its size proof; its lockSet fits by construction.
   let op := KernelOperation.ofTcbSuspend (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
     (ThreadId.ofNat 3) (some (SeLe4n.ObjId.ofNat 4)) (some (SeLe4n.ObjId.ofNat 5))

@@ -295,7 +295,9 @@ PR body per the vulnerability rule.
   mapping one `receiverCnodeObjId : Option ObjId := none` — `some r` adds
   `(cnodeLock r, .write)` **and** `(stateLevelLock, .write)`; `none` = identity,
   so every capless pin survives by `rfl`. Maxima: **send 6, call 8**
-  (= `maxLockSetSize`).
+  (`maxLockSetSize` was 8 when this was written; WS-RR RR7.11 raised it to 9,
+  measured against the caps-installing `.replyRecv`, so the call footprint is
+  now one member below the cap rather than at it).
 - *Step 2:* fold `lockSet_endpointCallWithCaps`
   (`IPC/CrossCore/EndpointCall.lean`) → `lockSet_endpointCall … (some
   destCnode)` (tie by `rfl`, kills the parallel-function drift); add the

@@ -2632,7 +2632,7 @@ path; the footprint declares a read lock on the **root** only
 (`lockSet_tcbSuspend`'s `cnodeRootObjId`), so a deeper path would have the
 target selected by CNodes no declared lock covers — a concurrent writer could
 redirect the resolution without conflicting with the footprint.  Locking the
-whole path is not expressible: a `LockSet` is bounded by `maxLockSetSize` (8)
+whole path is not expressible: a `LockSet` is bounded by `maxLockSetSize`
 while a CSpace path is bounded only by the address width, so the set cannot
 name the path in general.  Rejecting is therefore the fail-closed option, and
 it is the one the reviewer's own second alternative names.  A rejected entry
@@ -2781,9 +2781,22 @@ def declaredLockSetForEntry (ctx : LabelingContext) (layout : SeLe4n.SyscallRegi
     | some targetTid =>
       -- WS-RR RR7.10: the operands the entry resolved, in the shape the
       -- resolver now takes.  `entryCapTarget` yields a thread, so this is a
-      -- thread-directed target; when RR7.11 declares the IPC arms their
-      -- operands will carry `targetObject` instead, which the pre-RR7.10
-      -- signature could not express at all.
+      -- thread-directed target.
+      --
+      -- WS-RR RR7.11 declared the seven IPC arms, and they read operands this
+      -- shape leaves absent — an endpoint or notification `ObjId`, a `ReplyId`,
+      -- and (for the two sending arms) the message, whose capabilities decide
+      -- whether the receiver's CSpace root and the state-level lock are members.
+      -- So this entry still declares exactly `.tcbSuspend`, and
+      -- `lockSetForSyscall_ofThreadTarget_undeclared` is the theorem that says
+      -- so from the operands rather than from the set of declared arms.
+      --
+      -- Supplying the rest belongs to **RR7.12**, at the production entry: the
+      -- message is built by `resolveExtraCaps`, which mints CDT nodes, so the
+      -- bracket has to decide which state it resolves the footprint at — and
+      -- that decision is inseparable from the acquire/re-resolve/refuse
+      -- discipline RR7.12 lands.  Doing it here would be that row's work in a
+      -- module the kernel does not link.
       SeLe4n.Kernel.Concurrency.lockSetForSyscall decoded.syscallId
         (.ofThreadTarget tid targetTid) s
 
@@ -2861,9 +2874,11 @@ footprint reads, so it is a theorem about the splice rather than about the
 endpoint lock in isolation.
 
 **Why the footprint is not simply widened instead**: `lockSet_tcbSuspend` is
-already `maxLockSetSize` (8) at full resolution, and that constant is the WCRT
-headline (`maxLockSetSize · (numCores − 1) · tCs`, the figure the 1 ms tick fit
-rests on).  Adding two neighbour locks would break a bound.
+eight members at full resolution, and `maxLockSetSize` is nine (WS-RR RR7.11
+raised it from eight, measured against a caps-installing `.replyRecv`).  So one
+neighbour lock would now fit and two would not — and the constant is the WCRT
+headline (`maxLockSetSize · (numCores − 1) · tCs`), so widening it again to make
+room is not free.  Adding two neighbour locks still breaks the bound.
 
 **What this theorem does *not* establish — and an earlier version of this
 docstring wrongly claimed it did.**  This is an *authorization* statement: the
@@ -3062,8 +3077,12 @@ theorem declaredLockSetForEntry_undeclared (ctx : LabelingContext)
   cases hTgt : entryCapTarget decoded tid s with
   | none => rfl
   | some targetTid =>
-    exact SeLe4n.Kernel.Concurrency.lockSetForSyscall_undeclared_none decoded.syscallId
-      (.ofThreadTarget tid targetTid) s hSid
+    -- WS-RR RR7.11: through the thread-directed form.  The seven IPC arms are
+    -- declared now, but they read operands `ofThreadTarget` leaves absent, so
+    -- this entry resolver still declares exactly `.tcbSuspend` — and that is now
+    -- a theorem about the operands rather than about the set of declared arms.
+    exact SeLe4n.Kernel.Concurrency.lockSetForSyscall_ofThreadTarget_undeclared
+      decoded.syscallId tid targetTid s hSid
 
 /-- SM8.D.5: the lock domains a live `.tcbSuspend` needs that the object-domain
 `LockSet` cannot express.
@@ -3087,9 +3106,10 @@ inductive UncoveredLockDomain where
   (`queueOwnership_violated_by_tcbSetPriority`).  Closing it is an SM3.B
   inventory decision between two options, both costed in that theorem's
   neighbourhood — widen the ~10 TCB-writing footprints that can target a queued
-  thread with a conditional endpoint lock, or raise `maxLockSetSize` (8, and
-  `lockSet_tcbSuspend` is at it exactly) so the suspend can name the neighbours,
-  which moves the WCRT headline. -/
+  thread with a conditional endpoint lock, or raise `maxLockSetSize` (nine since
+  WS-RR RR7.11, with `lockSet_tcbSuspend` at eight, so one neighbour fits today
+  and the second does not) so the suspend can name both neighbours, which moves
+  the WCRT headline again. -/
   | queueOwnershipProtocol
   /-- WS-SM SM9.D.17 (audit): the **taint table's per-key realisation**.
 
@@ -3789,8 +3809,8 @@ theorem declaredLockSetForEntry_is_suspend_footprint (ctx : LabelingContext)
     rw [hSid, SeLe4n.Kernel.Concurrency.lockSetForSyscall_tcbSuspend] at hLock
     exact hLock
   · exact absurd hLock (by
-      rw [SeLe4n.Kernel.Concurrency.lockSetForSyscall_undeclared_none decoded.syscallId
-        (.ofThreadTarget tid targetTid) s hSid]
+      rw [SeLe4n.Kernel.Concurrency.lockSetForSyscall_ofThreadTarget_undeclared
+        decoded.syscallId tid targetTid s hSid]
       simp)
 
 -- ============================================================================

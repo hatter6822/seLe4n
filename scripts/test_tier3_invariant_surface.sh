@@ -4461,6 +4461,108 @@ run_check "INVARIANT" rg -n 'every capability operation declares the state-level
 # DISJOINTNESS arguments, so an omission makes two contending operations look
 # independent.
 run_check "INVARIANT" rg -n 'cdtSlotNode, .cdtNodeSlot, .cdtNextNode\]' SeLe4n/Kernel/CrossSubsystem.lean
+# WS-RR RR7.11: the seven IPC hot-path footprints are DECLARED, with their
+# coverage.  Three things get pinned, and the second is this cut's finding.
+#
+# (1) The arms exist and are wired to the SM6 state-resolved footprints, and the
+# receive side gained the resolved footprint it never had.
+# (2) `ipcTransferSingleCap` is one function, so a RECEIVE that dequeues a
+# caps-bearing sender writes the same CDT structure a send does.  RR7.7 declared
+# the state-level write on the two sending arms; the two receiving arms declared
+# it on neither, so two receives into different CSpaces were provably disjoint
+# while read-modify-writing one derivation map.  The membership theorems and the
+# cross-arm serialisation capstone are the pins.
+# (3) The negative that keeps the rest honest is now stated over
+# `declaredFootprintSyscall` rather than over one inequality, and the
+# thread-directed form still declares exactly `.tcbSuspend` -- which is why the
+# staged SM8.D entry resolver is unchanged and says so as a theorem.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.Concurrency.Locks.LockSetForSyscall
+open SeLe4n.Kernel.Concurrency
+open SeLe4n.Kernel
+#check @SyscallLockOperands.ofReplyTarget
+#check @declaredFootprintSyscall
+#check @declaredFootprintSyscall_declared_set
+#check @lockSetForSyscall_ofThreadTarget_undeclared
+#check @lockSetForSyscall_send
+#check @lockSetForSyscall_call
+#check @lockSetForSyscall_receive
+#check @lockSetForSyscall_reply
+#check @lockSetForSyscall_replyRecv
+#check @lockSetForSyscall_notificationSignal
+#check @lockSetForSyscall_notificationWait
+#check @lockSetForSyscall_send_isSome_iff
+#check @lockSetForSyscall_call_isSome_iff
+#check @lockSetForSyscall_receive_isSome_iff
+#check @lockSetForSyscall_reply_isSome_iff
+#check @lockSetForSyscall_replyRecv_isSome_iff
+#check @lockSetForSyscall_notificationSignal_isSome_iff
+#check @lockSetForSyscall_notificationWait_isSome_iff
+#check @lockSetForSyscall_isSome_implies_caller_resolves
+#check @lockSetForSyscall_send_covers_writes
+#check @lockSetForSyscall_send_covers_capsWrites
+#check @lockSetForSyscall_call_covers_writes
+#check @lockSetForSyscall_call_covers_capsWrites
+#check @lockSetForSyscall_receive_covers_writes
+#check @lockSetForSyscall_receive_covers_capsWrites
+#check @lockSetForSyscall_reply_covers_writes
+#check @lockSetForSyscall_replyRecv_covers_writes
+#check @lockSetForSyscall_replyRecv_covers_capsWrites
+#check @lockSetForSyscall_notificationSignal_covers_writes
+#check @lockSetForSyscall_notificationSignal_covers_boundDelivery
+#check @lockSetForSyscall_notificationWait_covers_writes
+#check @lockSetForSyscall_send_object_writes_declared
+#check @lockSetForSyscall_call_object_writes_declared
+#check @lockSet_endpointReceiveOnCore
+#check @lockSet_endpointReceiveOnCore_covers_cdt
+#check @lockSet_endpointReceiveOnCore_covers_capsDestination
+#check @lockSet_endpointReplyRecvOnCore_covers_cdt
+#check @replyAnsweredCaller?
+#check @lockSet_endpointReceive_stateLevel_write_mem
+#check @lockSet_replyRecv_stateLevel_write_mem
+#check @capsCarryingIpcArms_footprints_share_serialization
+#check @lockSet_endpointSend_endpoint_write_mem
+#check @lockSet_endpointCall_endpoint_write_mem
+#check @lockSet_endpointReceive_endpoint_write_mem
+#check @lockSet_replyRecv_endpoint_write_mem
+#check @lockSet_notificationWait_notification_write_mem
+EOF'
+# The receive-side footprints carry the state-level member on the SAME flag the
+# transition branches on, so the declaration tracks the write rather than being
+# unconditionally present.
+# Both receiving footprints carry it, and the anchor says so of each DEFINITION
+# rather than of the file: a member present once satisfies a file-wide search
+# while the other arm has lost it, which is the presence-for-relation shape the
+# key conventions warn about.  The load-bearing pin is the pair of membership
+# theorems above -- they are proved from the outermost extension, so deleting it
+# fails the build -- and these are the structural seconds.
+run_check "INVARIANT" rg -nU 'def lockSet_endpointReceive \(callerTid[\s\S]*?if installsCaps then some \(stateLevelLock, AccessMode.write\) else none' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -nU 'def lockSet_replyRecv \(callerTid[\s\S]*?if installsCaps then some \(stateLevelLock, AccessMode.write\) else none' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '\[\.tcb, \.cnode, \.endpoint, \.reply, \.objStore\]' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '\[\.tcb, \.cnode, \.endpoint, \.schedContext, \.reply, \.objStore\]' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+# NEGATIVE: the pre-RR7.11 constant cannot come back.  `maxLockSetSize` is 9
+# because the widest declared footprint -- a `.replyRecv` that both returns a
+# donation and installs capabilities -- is nine members, and the ninth is that
+# state-level write.  Reverting the constant without reverting the member makes
+# a footprint the bounded-wait argument does not cover.
+run_negative_check "INVARIANT" rg -n 'def maxLockSetSize : Nat := 8' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
+run_check "INVARIANT" rg -n 'def maxLockSetSize : Nat := 9' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
+# NEGATIVE: and a `_size_le_maxLockSetSize` theorem must state the CONSTANT, not
+# the numeral it happens to hold.  Five in the scheduler pinned `≤ 8` literally,
+# so each was a claim about a number while its name promised a relation -- the
+# `wcrt_op_bounded_of_size` consumers type-checked by coincidence.
+run_negative_check "INVARIANT" rg -n 'length ≤ 8 := by' SeLe4n/Kernel/Scheduler/
+# One resolution of "which thread does this reply capability answer", shared by
+# both live arms and the footprint resolver.  The negative pins that the
+# two-level match cannot come back in the dispatchers.
+run_check "INVARIANT" rg -n 'match replyAnsweredCaller\? st rid with' SeLe4n/Kernel/API.lean
+run_negative_check "INVARIANT" rg -n 'match reply.caller with' SeLe4n/Kernel/API.lean
+# The runtime witnesses: the seven arms resolved against a real fixture state,
+# with the caps-carrying receive's state-level member asserted positively and the
+# capless send's asserted absent.
+run_check "INVARIANT" rg -n 'runIpcDeclaredFootprintChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'a caps-installing .\.receive. declares the state-level write' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'lockSet_replyRecv \(all options\) size = 9' tests/DeadlockFreedomSuite.lean
 # PR #873 round 14: **the frozen/live correspondence, as something that runs.**
 # Each frozen operation re-implements a live transition, and which one it
 # re-implements was recorded in a markdown table and a `mirrors X` sentence.

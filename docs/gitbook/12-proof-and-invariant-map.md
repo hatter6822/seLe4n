@@ -311,6 +311,17 @@ platform rather than with the lock.
 > proves. And **SM3.C.9 is deferred**: the `@[export]` bodies are, with one
 > exception, not yet wrapped in `withLockSet`, so per-object fine locks remain a
 > model-level discipline. Both are registered debt with closure targets.
+>
+> Declaring a footprint is not bracketing one. `lockSetForSyscall` answers
+> `some` for eight of the thirty-five syscalls since WS-RR RR7.11 — the suspend
+> arm plus the seven IPC hot-path arms — each with its coverage proof, while the
+> remaining twenty-seven answer `none` and their callers keep the coarser
+> serialisation. Only the suspend arm's action runs inside the bracket today.
+> The same cut moved `maxLockSetSize` from 8 to 9: a `.replyRecv` that both
+> returns a donation and installs capabilities is nine locks, the ninth being
+> the state-level lock the install's derivation-tree write needs. See
+> [`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §SM3.C.9 for the
+> canonical statement.
 
 ## 4. Per-core (SMP) lifts
 

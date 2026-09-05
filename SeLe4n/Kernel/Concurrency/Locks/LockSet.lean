@@ -789,4 +789,47 @@ where
 
 end LockSet
 
+
+-- ============================================================================
+-- WS-SM SM3.D.6 / WS-RR RR7.11 — the static lock-set cardinality bound
+-- ============================================================================
+
+/-- WS-SM SM3.D.6 (plan §5.4): the static worst-case lock-set size.  Per
+plan §5.4, most transitions touch ≤ 4 locks; the worst-case IPC paths
+(call/reply with donation) stay ≤ 8.  Every SM3.B `lockSet_<τ>`
+declaration respects this bound (exercised in `DeadlockFreedomSuite`).
+
+**WS-RR RR7.11: 8 → 9.**  The widest footprint is
+`lockSet_replyRecv` on the path that both returns a donation and installs
+capabilities, and it is nine keys: the four-member base (replier TCB, the
+replier's CSpace root, the answered caller's TCB, the endpoint) plus the
+rendezvous sender's TCB, the returned SchedContext, the donation's original
+owner, the Reply object, and — RR7.11's addition — the state-level lock the
+capability install's CDT write needs.
+
+Three considerations, since raising this constant widens the WCRT headline
+`maxLockSetSize · (numCores − 1) · tCs` by an eighth.
+
+*The ninth member is real.*  `ipcTransferSingleCap` mints a derivation node and
+adds an edge whichever arm reaches it, and RR7.7 declared that on the two
+sending arms.  A receiving arm that installs through the same call and does not
+declare it is a false footprint — the failure mode this whole family exists to
+exclude — so the choice was never "nine members or eight", it was "nine members
+or a footprint that does not cover its own writes".
+
+*Taking the lock outside the set is not the cheaper option.*  A lock acquired
+outside the declared set is invisible to the deadlock-freedom and
+serializability theorems, which is the same reasoning the hierarchical-CBS
+plan's D21 records for its own move of this constant.
+
+*The ninth member is only reachable on an invariant-violating state* — the
+donation discipline makes the original owner the answered caller, where
+`insertOrMerge`'s key merge collapses the two into one — but a declared
+footprint bounds the union over **all** argument values, not over the reachable
+ones, so the honest constant is the one the definition can produce.
+
+`lockSet_tcbSuspend` and `lockSet_endpointCall` remain eight at their widest;
+this constant is not tight for them. -/
+def maxLockSetSize : Nat := 9
+
 end SeLe4n.Kernel.Concurrency

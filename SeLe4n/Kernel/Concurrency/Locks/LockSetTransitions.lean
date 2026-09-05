@@ -379,14 +379,50 @@ def lockSet_endpointReceive (callerTid : ThreadId)
   -- have merged to the same set while making the crude size bound count a
   -- member that cannot exist, which is a worse statement of the same fact.
   -- `false` reduces definitionally, so every pin taken before this survives.
+  --
+  -- **WS-RR RR7.11 — and the CDT maps, on the receive side too.**  The install
+  -- is `ipcTransferSingleCap`, the same function the send and call sides run,
+  -- and it does not only write the slot: it mints a derivation node for the
+  -- destination (`ensureCdtNodeForSlot`, which advances the global
+  -- `cdtNextNode` counter and both keyed maps) and adds an `.ipcTransfer` edge
+  -- to `cdt`.  None of that decomposes by object.  RR7.7 declared it on the
+  -- two sending arms; the receiving arms install through the same call and had
+  -- it on neither, so two receives on different endpoints, each dequeuing a
+  -- caps-bearing sender into a different CSpace, had provably disjoint
+  -- footprints while read-modify-writing one derivation map — the lost-update
+  -- shape that declaration exists to exclude.
+  --
+  -- `stateLevelLock` is SM3.A.10's `objStore` singleton, the declared subject
+  -- for `SystemState`-level auxiliary structures, and it is conditioned on the
+  -- same `installsCaps` flag as the root's write upgrade because it is the same
+  -- write: no install, no CDT edge.  At `false` the extension is `none` and
+  -- reduces definitionally, so every pin taken before this survives.
   lockSetExtendOpt
     (lockSetExtendOpt
-      (lockSetOfList
-        [(tcbLock callerTid, .write),
-         (cnodeLock cnodeRootObjId, if installsCaps then .write else .read),
-         (endpointLock endpointObjId, .write)])
-      (senderTid.map (fun st => (tcbLock st, .write))))
-    (replyId.map (fun rid => (replyLock rid, .write)))
+      (lockSetExtendOpt
+        (lockSetOfList
+          [(tcbLock callerTid, .write),
+           (cnodeLock cnodeRootObjId, if installsCaps then .write else .read),
+           (endpointLock endpointObjId, .write)])
+        (senderTid.map (fun st => (tcbLock st, .write))))
+      (replyId.map (fun rid => (replyLock rid, .write))))
+    (if installsCaps then some (stateLevelLock, AccessMode.write) else none)
+
+/-- **WS-RR RR7.11**: a receive that installs nothing is definitionally the
+pre-RR7.11 footprint, so every statement and fixture taken over the capless
+shape survives unchanged. -/
+@[simp] theorem lockSet_endpointReceive_no_caps (callerTid : ThreadId)
+    (cnodeRootObjId endpointObjId : ObjId) (senderTid : Option ThreadId)
+    (replyId : Option ReplyId) :
+    lockSet_endpointReceive callerTid cnodeRootObjId endpointObjId senderTid replyId false
+      = lockSetExtendOpt
+          (lockSetExtendOpt
+            (lockSetOfList
+              [(tcbLock callerTid, .write),
+               (cnodeLock cnodeRootObjId, AccessMode.read),
+               (endpointLock endpointObjId, .write)])
+            (senderTid.map (fun st => (tcbLock st, .write))))
+          (replyId.map (fun rid => (replyLock rid, .write))) := rfl
 
 /-- WS-SM SM3.B.3: `lockSet` for `endpointCall` (syscall `.call`).
 
@@ -555,10 +591,40 @@ def lockSet_replyRecv (callerTid : ThreadId)
   let withOwner := lockSetExtendOpt withSc
     (donatedOriginalOwnerTid.map (fun ot => (tcbLock ot, .write)))
   -- WS-SM SM6.D: replyRecv consumes the prior Reply object and re-links it to the
-  -- next caller (one-object reuse) under the per-object reply write-lock
-  -- (outermost optional; `none` ⇒ definitionally unchanged).
-  lockSetExtendOpt withOwner
+  -- next caller (one-object reuse) under the per-object reply write-lock.
+  let withReply := lockSetExtendOpt withOwner
     (replyId.map (fun rid => (replyLock rid, .write)))
+  -- **WS-RR RR7.11**: and the CDT maps, for the reason spelled out at
+  -- `lockSet_endpointReceive` — this arm's receive leg runs the same WithCaps
+  -- receive, so it installs through the same `ipcTransferSingleCap` and writes
+  -- the same `SystemState`-level derivation structure.  Conditioned on the same
+  -- `installsCaps` flag as the root's write upgrade, because it is the same
+  -- write; at `false` it is `none` and reduces definitionally.
+  lockSetExtendOpt withReply
+    (if installsCaps then some (stateLevelLock, AccessMode.write) else none)
+
+/-- **WS-RR RR7.11**: a `.replyRecv` whose receive leg installs nothing is
+definitionally the pre-RR7.11 footprint. -/
+@[simp] theorem lockSet_replyRecv_no_caps (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) (replyTargetTid : ThreadId)
+    (endpointObjId : ObjId) (newSenderTid : Option ThreadId)
+    (donatedScId : Option SchedContextId)
+    (donatedOriginalOwnerTid : Option ThreadId) (replyId : Option ReplyId) :
+    lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId newSenderTid
+        donatedScId donatedOriginalOwnerTid replyId false
+      = lockSetExtendOpt
+          (lockSetExtendOpt
+            (lockSetExtendOpt
+              (lockSetExtendOpt
+                (lockSetOfList
+                  [(tcbLock callerTid, .write),
+                   (cnodeLock cnodeRootObjId, AccessMode.read),
+                   (tcbLock replyTargetTid, .write),
+                   (endpointLock endpointObjId, .write)])
+                (newSenderTid.map (fun st => (tcbLock st, .write))))
+              (donatedScId.map (fun sc => (schedContextLock sc, .write))))
+            (donatedOriginalOwnerTid.map (fun ot => (tcbLock ot, .write))))
+          (replyId.map (fun rid => (replyLock rid, .write))) := rfl
 
 /-! ## Notification syscalls (2 transitions) -/
 
@@ -1151,6 +1217,300 @@ theorem capabilityOps_footprints_share_serialization
     lockSet_cspaceCopy_stateLevel_write_mem callerB srcB dstB⟩,
    ⟨lockSet_cspaceMove_stateLevel_write_mem callerA srcA dstA,
     lockSet_cspaceDelete_stateLevel_write_mem callerB srcB dstB⟩⟩
+
+/-! ### WS-RR RR7.11 — the IPC rendezvous write members
+
+The primary write of every IPC arm is the **endpoint or notification queue**,
+and the second is the **caller's own TCB** (it blocks, unblocks, or takes a
+delivered message).  Neither had a membership theorem on any of the four
+endpoint arms: the families that existed covered the *optional* members added by
+later cuts — the reply object, the donated SchedContext, the bound-delivery
+pair, the capability-transfer destination — because each of those arrived with a
+finding attached, while the members present since SM3.B were never stated.
+
+That is the enumeration-versus-derivation shape one level down: a footprint's
+declared-write set is only as checked as the members someone thought to pin, and
+the unpinned ones are exactly the ones a refactor can silently drop.  These
+close it for the arms RR7.11 declares.
+
+All of them are unconditional.  `LockSet.mem_insertOrMerge_write_of_mem_write`
+carries a write member through *any* later insertion — a coinciding key merges
+under `AccessMode.lub`, whose top is `.write` — so no key-distinctness side
+condition is needed, and one that appears in such a statement is a hypothesis
+the caller has to discharge for nothing. -/
+
+/-- **WS-RR RR7.11**: the sender's own TCB is a declared write of `.send` — it
+blocks when no receiver is waiting and is descheduled from its core. -/
+theorem lockSet_endpointSend_caller_tcb_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId endpointObjId : ObjId) (receiverTid : Option ThreadId)
+    (destCnodeObjId : Option ObjId) :
+    (tcbLock callerTid, AccessMode.write)
+      ∈ (lockSet_endpointSend callerTid cnodeRootObjId endpointObjId receiverTid
+          destCnodeObjId).pairs := by
+  unfold lockSet_endpointSend lockSetOfList
+  simp only [List.foldl]
+  exact mem_write_lockSetExtendOpt _ _ _
+    (mem_write_lockSetExtendOpt _ _ _
+      (mem_write_lockSetExtendOpt _ _ _
+        (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+          (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+            (LockSet.mem_insertOrMerge_write_self _ _)))))
+
+/-- **WS-RR RR7.11**: and the endpoint itself — the queue mutation that *is* the
+rendezvous. -/
+theorem lockSet_endpointSend_endpoint_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId endpointObjId : ObjId) (receiverTid : Option ThreadId)
+    (destCnodeObjId : Option ObjId) :
+    (endpointLock endpointObjId, AccessMode.write)
+      ∈ (lockSet_endpointSend callerTid cnodeRootObjId endpointObjId receiverTid
+          destCnodeObjId).pairs := by
+  unfold lockSet_endpointSend lockSetOfList
+  simp only [List.foldl]
+  exact mem_write_lockSetExtendOpt _ _ _
+    (mem_write_lockSetExtendOpt _ _ _
+      (mem_write_lockSetExtendOpt _ _ _
+        (LockSet.mem_insertOrMerge_write_self _ _)))
+
+/-- **WS-RR RR7.11**: the caller's TCB is a declared write of `.call`.
+
+The generalisation of `lockSet_endpointCall_caller_tcb_write_mem`, which took a
+receiver-distinctness hypothesis it never needed — a receiver that *is* the
+caller merges write with write and the member survives, so the hypothesis
+excluded a case the conclusion already covers.  That statement is kept, and
+proved from this one, because it is cited. -/
+theorem lockSet_endpointCall_caller_tcb_write_mem_unconditional (callerTid : ThreadId)
+    (cnodeRootObjId endpointObjId : ObjId) (receiverTid : Option ThreadId)
+    (donatedScId : Option SchedContextId) (replyId : Option ReplyId)
+    (destCnodeObjId : Option ObjId) :
+    (tcbLock callerTid, AccessMode.write)
+      ∈ (lockSet_endpointCall callerTid cnodeRootObjId endpointObjId receiverTid
+          donatedScId replyId destCnodeObjId).pairs := by
+  unfold lockSet_endpointCall lockSetOfList
+  simp only [List.foldl]
+  exact mem_write_lockSetExtendOpt _ _ _
+    (mem_write_lockSetExtendOpt _ _ _
+      (mem_write_lockSetExtendOpt _ _ _
+        (mem_write_lockSetExtendOpt _ _ _
+          (mem_write_lockSetExtendOpt _ _ _
+            (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+              (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+                (LockSet.mem_insertOrMerge_write_self _ _)))))))
+
+/-- **WS-RR RR7.11**: and `.call`'s endpoint. -/
+theorem lockSet_endpointCall_endpoint_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId endpointObjId : ObjId) (receiverTid : Option ThreadId)
+    (donatedScId : Option SchedContextId) (replyId : Option ReplyId)
+    (destCnodeObjId : Option ObjId) :
+    (endpointLock endpointObjId, AccessMode.write)
+      ∈ (lockSet_endpointCall callerTid cnodeRootObjId endpointObjId receiverTid
+          donatedScId replyId destCnodeObjId).pairs := by
+  unfold lockSet_endpointCall lockSetOfList
+  simp only [List.foldl]
+  exact mem_write_lockSetExtendOpt _ _ _
+    (mem_write_lockSetExtendOpt _ _ _
+      (mem_write_lockSetExtendOpt _ _ _
+        (mem_write_lockSetExtendOpt _ _ _
+          (mem_write_lockSetExtendOpt _ _ _
+            (LockSet.mem_insertOrMerge_write_self _ _)))))
+
+/-- **WS-RR RR7.11**: the receiver's own TCB is a declared write of `.receive` —
+it blocks when no sender is waiting, and takes the delivered message when one
+is. -/
+theorem lockSet_endpointReceive_caller_tcb_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId endpointObjId : ObjId) (senderTid : Option ThreadId)
+    (replyId : Option ReplyId) (installsCaps : Bool) :
+    (tcbLock callerTid, AccessMode.write)
+      ∈ (lockSet_endpointReceive callerTid cnodeRootObjId endpointObjId senderTid
+          replyId installsCaps).pairs := by
+  unfold lockSet_endpointReceive lockSetOfList
+  simp only [List.foldl]
+  exact mem_write_lockSetExtendOpt _ _ _
+    (mem_write_lockSetExtendOpt _ _ _
+      (mem_write_lockSetExtendOpt _ _ _
+        (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+          (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+            (LockSet.mem_insertOrMerge_write_self _ _)))))
+
+/-- **WS-RR RR7.11**: and `.receive`'s endpoint. -/
+theorem lockSet_endpointReceive_endpoint_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId endpointObjId : ObjId) (senderTid : Option ThreadId)
+    (replyId : Option ReplyId) (installsCaps : Bool) :
+    (endpointLock endpointObjId, AccessMode.write)
+      ∈ (lockSet_endpointReceive callerTid cnodeRootObjId endpointObjId senderTid
+          replyId installsCaps).pairs := by
+  unfold lockSet_endpointReceive lockSetOfList
+  simp only [List.foldl]
+  exact mem_write_lockSetExtendOpt _ _ _
+    (mem_write_lockSetExtendOpt _ _ _
+      (mem_write_lockSetExtendOpt _ _ _
+        (LockSet.mem_insertOrMerge_write_self _ _)))
+
+/-- **WS-RR RR7.11**: the replier's own TCB is a declared write of `.reply` — it
+is descheduled on its executing core when the answered caller is woken. -/
+theorem lockSet_endpointReply_caller_tcb_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) (replyTargetTid : ThreadId)
+    (donatedScId : Option SchedContextId) (donatedOriginalOwnerTid : Option ThreadId)
+    (replyId : Option ReplyId) :
+    (tcbLock callerTid, AccessMode.write)
+      ∈ (lockSet_endpointReply callerTid cnodeRootObjId replyTargetTid donatedScId
+          donatedOriginalOwnerTid replyId).pairs := by
+  unfold lockSet_endpointReply lockSetOfList
+  simp only [List.foldl]
+  exact mem_write_lockSetExtendOpt _ _ _
+    (mem_write_lockSetExtendOpt _ _ _
+      (mem_write_lockSetExtendOpt _ _ _
+        (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+          (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+            (LockSet.mem_insertOrMerge_write_self _ _)))))
+
+/-- **WS-RR RR7.11**: `.replyRecv`'s own TCB — it replies, then receives, and
+either blocks or takes the next message. -/
+theorem lockSet_replyRecv_caller_tcb_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) (replyTargetTid : ThreadId) (endpointObjId : ObjId)
+    (newSenderTid : Option ThreadId) (donatedScId : Option SchedContextId)
+    (donatedOriginalOwnerTid : Option ThreadId) (replyId : Option ReplyId)
+    (installsCaps : Bool) :
+    (tcbLock callerTid, AccessMode.write)
+      ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
+          newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps).pairs := by
+  unfold lockSet_replyRecv lockSetOfList
+  simp only [List.foldl]
+  exact mem_write_lockSetExtendOpt _ _ _
+    (mem_write_lockSetExtendOpt _ _ _
+      (mem_write_lockSetExtendOpt _ _ _
+        (mem_write_lockSetExtendOpt _ _ _
+          (mem_write_lockSetExtendOpt _ _ _
+            (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+              (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+                (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+                  (LockSet.mem_insertOrMerge_write_self _ _))))))))
+
+/-- **WS-RR RR7.11**: the answered caller's TCB, which the reply leg wakes. -/
+theorem lockSet_replyRecv_target_tcb_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) (replyTargetTid : ThreadId) (endpointObjId : ObjId)
+    (newSenderTid : Option ThreadId) (donatedScId : Option SchedContextId)
+    (donatedOriginalOwnerTid : Option ThreadId) (replyId : Option ReplyId)
+    (installsCaps : Bool) :
+    (tcbLock replyTargetTid, AccessMode.write)
+      ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
+          newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps).pairs := by
+  unfold lockSet_replyRecv lockSetOfList
+  simp only [List.foldl]
+  exact mem_write_lockSetExtendOpt _ _ _
+    (mem_write_lockSetExtendOpt _ _ _
+      (mem_write_lockSetExtendOpt _ _ _
+        (mem_write_lockSetExtendOpt _ _ _
+          (mem_write_lockSetExtendOpt _ _ _
+            (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+              (LockSet.mem_insertOrMerge_write_self _ _))))))
+
+/-- **WS-RR RR7.11**: and `.replyRecv`'s endpoint, for the receive leg. -/
+theorem lockSet_replyRecv_endpoint_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) (replyTargetTid : ThreadId) (endpointObjId : ObjId)
+    (newSenderTid : Option ThreadId) (donatedScId : Option SchedContextId)
+    (donatedOriginalOwnerTid : Option ThreadId) (replyId : Option ReplyId)
+    (installsCaps : Bool) :
+    (endpointLock endpointObjId, AccessMode.write)
+      ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
+          newSenderTid donatedScId donatedOriginalOwnerTid replyId installsCaps).pairs := by
+  unfold lockSet_replyRecv lockSetOfList
+  simp only [List.foldl]
+  exact mem_write_lockSetExtendOpt _ _ _
+    (mem_write_lockSetExtendOpt _ _ _
+      (mem_write_lockSetExtendOpt _ _ _
+        (mem_write_lockSetExtendOpt _ _ _
+          (mem_write_lockSetExtendOpt _ _ _
+            (LockSet.mem_insertOrMerge_write_self _ _)))))
+
+/-- **WS-RR RR7.11**: `.notificationWait`'s caller TCB — it blocks, or consumes
+a pending badge into its own message field. -/
+theorem lockSet_notificationWait_caller_tcb_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId notificationObjId : ObjId) :
+    (tcbLock callerTid, AccessMode.write)
+      ∈ (lockSet_notificationWait callerTid cnodeRootObjId notificationObjId).pairs := by
+  unfold lockSet_notificationWait lockSetOfList
+  simp only [List.foldl]
+  exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+    (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+      (LockSet.mem_insertOrMerge_write_self _ _))
+
+/-- **WS-RR RR7.11**: and the notification it waits on, whose waiter list or
+badge the wait mutates. -/
+theorem lockSet_notificationWait_notification_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId notificationObjId : ObjId) :
+    (notificationLock notificationObjId, AccessMode.write)
+      ∈ (lockSet_notificationWait callerTid cnodeRootObjId notificationObjId).pairs := by
+  unfold lockSet_notificationWait lockSetOfList
+  simp only [List.foldl]
+  exact LockSet.mem_insertOrMerge_write_self _ _
+
+/-- **WS-RR RR7.11**: the receive leg's capability install declares the
+state-level **write** its CDT mutation needs.
+
+The receive-side half of RR7.7's closure.  `ipcTransferSingleCap` is one
+function: whichever arm reaches it, it mints a derivation node for the
+destination slot (`ensureCdtNodeForSlot`, advancing the global `cdtNextNode`
+counter and both keyed maps) and adds an `.ipcTransfer` edge.  RR7.7 declared
+that on `.send` and `.call`; the two receiving arms install through the very
+same call and declared it on neither, so a receive dequeuing a caps-bearing
+sender was provably disjoint from a concurrent send installing into a different
+CSpace while both read-modify-wrote one derivation map.
+
+Conditioned on `installsCaps` because that is the flag the transition itself
+branches on (`receiveInstallsCaps`, read from the same pre-state), so the
+declared footprint carries the member exactly when the write happens. -/
+theorem lockSet_endpointReceive_stateLevel_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId endpointObjId : ObjId) (senderTid : Option ThreadId)
+    (replyId : Option ReplyId) :
+    (stateLevelLock, AccessMode.write)
+      ∈ (lockSet_endpointReceive callerTid cnodeRootObjId endpointObjId senderTid
+          replyId true).pairs := by
+  unfold lockSet_endpointReceive
+  exact LockSet.mem_insertOrMerge_write_self _ _
+
+/-- **WS-RR RR7.11**: and `.replyRecv`'s, whose receive leg is the same
+WithCaps receive. -/
+theorem lockSet_replyRecv_stateLevel_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) (replyTargetTid : ThreadId) (endpointObjId : ObjId)
+    (newSenderTid : Option ThreadId) (donatedScId : Option SchedContextId)
+    (donatedOriginalOwnerTid : Option ThreadId) (replyId : Option ReplyId) :
+    (stateLevelLock, AccessMode.write)
+      ∈ (lockSet_replyRecv callerTid cnodeRootObjId replyTargetTid endpointObjId
+          newSenderTid donatedScId donatedOriginalOwnerTid replyId true).pairs := by
+  unfold lockSet_replyRecv
+  exact LockSet.mem_insertOrMerge_write_self _ _
+
+/-- **WS-RR RR7.11, the capstone: no two capability-installing IPC arms are
+ever disjoint.**
+
+`capabilityOps_footprints_share_serialization` one subsystem over, and the
+statement the receive side was missing.  The four arms that can reach
+`ipcTransferSingleCap` — a send, a call, a receive and a `replyRecv` — all
+declare the same state-level write, so a 2PL consumer can never hold two of
+their footprints at once.  Before this the sending pair did and the receiving
+pair did not, which is worse than neither: the two halves of one rendezvous
+disagreed about whether the derivation map they both write is shared state. -/
+theorem capsCarryingIpcArms_footprints_share_serialization
+    (sender receiver : ThreadId) (cnRootA cnRootB epA epB destRoot : ObjId)
+    (receiverTid : Option ThreadId) (senderTid : Option ThreadId)
+    (replyIdA replyIdB : Option ReplyId) :
+    ((stateLevelLock, AccessMode.write)
+        ∈ (lockSet_endpointSend sender cnRootA epA receiverTid (some destRoot)).pairs ∧
+      (stateLevelLock, AccessMode.write)
+        ∈ (lockSet_endpointReceive receiver cnRootB epB senderTid replyIdA true).pairs) ∧
+    ((stateLevelLock, AccessMode.write)
+        ∈ (lockSet_endpointCall sender cnRootA epA receiverTid none replyIdB
+             (some destRoot)).pairs ∧
+      (stateLevelLock, AccessMode.write)
+        ∈ (lockSet_replyRecv receiver cnRootB receiver epB senderTid none none
+             replyIdA true).pairs) :=
+  ⟨⟨by unfold lockSet_endpointSend
+       exact LockSet.mem_insertOrMerge_write_self _ _,
+    lockSet_endpointReceive_stateLevel_write_mem receiver cnRootB epB senderTid replyIdA⟩,
+   ⟨by unfold lockSet_endpointCall
+       exact LockSet.mem_insertOrMerge_write_self _ _,
+    lockSet_replyRecv_stateLevel_write_mem receiver cnRootB receiver epB senderTid
+      none none replyIdA⟩⟩
 
 /-- WS-SM SM8.C.9 (PR #870 round 7): the declassification's trail append is a
 declared **write** on the state-level lock. -/
@@ -1849,16 +2209,21 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- rendezvousing `Call` caller (`linkCallerReply` writes `reply.caller`), and
   -- `.call` / `.reply` / `.replyRecv` link or consume a Reply — all under the
   -- per-object reply write-lock, so `.reply` enters their permitted kinds.
+  -- WS-RR RR7.11: `.objStore` for the reason it joins `.send` and `.call` — the
+  -- receive leg installs through the same `ipcTransferSingleCap` and writes the
+  -- same CDT maps, whose declared subject is `stateLevelLock`.
   | .receive =>
-      [.tcb, .cnode, .endpoint, .reply]
+      [.tcb, .cnode, .endpoint, .reply, .objStore]
   -- WS-RR RR7.7: `.objStore` for the same reason it joins `.send` — a Call
   -- that carries capabilities writes the CDT maps.
   | .call =>
       [.tcb, .cnode, .endpoint, .schedContext, .reply, .objStore]
   | .reply =>
       [.tcb, .cnode, .schedContext, .reply]
+  -- WS-RR RR7.11: `.objStore` for the same reason — this arm's receive leg is
+  -- the WithCaps receive.
   | .replyRecv =>
-      [.tcb, .cnode, .endpoint, .schedContext, .reply]
+      [.tcb, .cnode, .endpoint, .schedContext, .reply, .objStore]
   -- Notification syscalls.  `.notificationSignal` may take the seL4 bound-delivery
   -- path (WS-SM SM6.B): a signal to a notification whose bound TCB is
   -- `BlockedOnReceive` dequeues that TCB from its endpoint and writes it, so the
@@ -2300,7 +2665,7 @@ theorem lockSet_consistent_receive (callerTid : ThreadId)
     (replyId : Option ReplyId := none) (installsCaps : Bool := false) :
     ∀ p ∈ (lockSet_endpointReceive callerTid cnRoot epId sTid replyId installsCaps).pairs,
       p.fst.kind ∈ permittedKinds .receive :=
-  lockSet_consistent_base_plus_two_opts _ _ _ _
+  lockSet_consistent_base_plus_three_opts _ _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -2317,6 +2682,10 @@ theorem lockSet_consistent_receive (callerTid : ThreadId)
         cases replyId with
         | none => simp at hpp
         | some rid => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        cases installsCaps with
+        | false => simp at hpp
+        | true => simp at hpp; rw [← hpp]; simp [stateLevelLock]; decide)
 
 /-- WS-SM SM3.B.4 for `.call` (audit-pass-3: donation extension).
 
@@ -2404,7 +2773,7 @@ theorem lockSet_consistent_replyRecv (callerTid : ThreadId)
     ∀ p ∈ (lockSet_replyRecv callerTid cnRoot rTid epId newSenderTid
               donatedScId donatedOriginalOwnerTid replyId installsCaps).pairs,
       p.fst.kind ∈ permittedKinds .replyRecv :=
-  lockSet_consistent_base_plus_four_opts _ _ _ _ _ _
+  lockSet_consistent_base_plus_five_opts _ _ _ _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -2431,6 +2800,10 @@ theorem lockSet_consistent_replyRecv (callerTid : ThreadId)
         cases replyId with
         | none => simp at hpp
         | some rid => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        cases installsCaps with
+        | false => simp at hpp
+        | true => simp at hpp; rw [← hpp]; simp [stateLevelLock]; decide)
 
 /-- WS-SM SM3.B.4 for `.notificationSignal`. -/
 theorem lockSet_consistent_notificationSignal (callerTid : ThreadId)

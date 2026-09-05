@@ -511,13 +511,16 @@ example : permittedKinds .send = [.tcb, .cnode, .endpoint, .objStore] := by deci
 -- WS-SM SM6.D: `.receive` gains `.reply` — a `Call` rendezvous on the receive
 -- path links a server-supplied Reply object (`linkCallerReply` writes `reply.caller`
 -- under the per-object reply write-lock).
-example : permittedKinds .receive = [.tcb, .cnode, .endpoint, .reply] := by decide
+-- WS-RR RR7.11: `.objStore` — the receive leg installs through the same
+-- `ipcTransferSingleCap` the send does, and writes the same CDT maps.
+example : permittedKinds .receive = [.tcb, .cnode, .endpoint, .reply, .objStore] := by decide
 -- Audit-pass-3: `.call`/`.reply`/`.replyRecv` include `.schedContext` for the
 -- donation extension.  WS-SM SM6.D: they also gain `.reply` — each links or
 -- consumes a first-class Reply object under the per-object reply write-lock.
 example : permittedKinds .call = [.tcb, .cnode, .endpoint, .schedContext, .reply, .objStore] := by decide
 example : permittedKinds .reply = [.tcb, .cnode, .schedContext, .reply] := by decide
-example : permittedKinds .replyRecv = [.tcb, .cnode, .endpoint, .schedContext, .reply] := by decide
+example : permittedKinds .replyRecv =
+    [.tcb, .cnode, .endpoint, .schedContext, .reply, .objStore] := by decide
 -- WS-SM SM6.B: `.notificationSignal` gains `.endpoint` for the bound-delivery
 -- dequeue (a signal to a notification whose bound TCB is BlockedOnReceive removes
 -- it from its endpoint); `.notificationWait` is unchanged.
@@ -883,7 +886,7 @@ private def runPermittedKindsChecks : IO Unit := do
     (decide (permittedKinds .reply = [.tcb, .cnode, .schedContext, .reply]))
   assertBool "permittedKinds .replyRecv (donation-return + reply-object kind)"
     (decide (permittedKinds .replyRecv =
-      [.tcb, .cnode, .endpoint, .schedContext, .reply]))
+      [.tcb, .cnode, .endpoint, .schedContext, .reply, .objStore]))
   -- Audit-pass-6: .tcbSetPriority / .tcbSetMCPriority include .schedContext.
   -- updatePrioritySource writes the bound SC if binding is .bound/.donated.
   assertBool "permittedKinds .tcbSetPriority (audit-pass-6: includes .schedContext)"

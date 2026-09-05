@@ -258,10 +258,11 @@ private def runWcrtScenarios : IO Unit := do
     (decide (WCRT_lockSet (timerTickOnCoreLockSet c3) 60 = 540))
   assertBool "core 2 wake lock-WCRT = 360 (= 2·3·60)"
     (decide (WCRT_lockSet (wakeThreadLockSet c2) 60 = 360))
-  -- Every per-core op is within the RPi5 maxLockSetSize·3·tCs = 1440 bound.
-  assertBool "core 1 switch lock-WCRT ≤ RPi5 bound (1440)"
+  -- Every per-core op is within the RPi5 maxLockSetSize·3·tCs = 1620 bound
+  -- (WS-RR RR7.11 moved the constant from 8 to 9).
+  assertBool "core 1 switch lock-WCRT ≤ RPi5 bound (1620)"
     (decide (WCRT_lockSet (switchToThreadOnCoreLockSet c1) 60 ≤ maxLockSetSize * (3 * 60)))
-  assertBool "core 3 timerTick lock-WCRT ≤ RPi5 bound (1440)"
+  assertBool "core 3 timerTick lock-WCRT ≤ RPi5 bound (1620)"
     (decide (WCRT_lockSet (timerTickOnCoreLockSet c3) 60 ≤ maxLockSetSize * (3 * 60)))
   -- A typical syscall (≤ 4 locks) fits the 1 ms (1000 µs) timer-tick budget.
   assertBool "typical 4-lock syscall WCRT (720 µs) < 1 ms tick budget (1000 µs)"

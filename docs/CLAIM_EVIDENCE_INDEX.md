@@ -122,7 +122,7 @@ an owner, not an oversight.
 | Not claimed | Why | Owner |
 |-------------|-----|-------|
 | That the kernel boots on hardware | No bootable image exists: no `[[bin]]`, no aarch64 Lean object code, no bare-metal runtime hosting. Every runtime seam behind the readiness gate is wired and dormant | SM10.1 |
-| That per-object fine locks are deployed | SM3.C.9 is deferred: the `@[export]` bodies are, with one exception, not yet wrapped in `withLockSet`, so fine locks are a model-level discipline | WS-RR RR7 |
+| That per-object fine locks are deployed | SM3.C.9 is deferred: the `@[export]` bodies are, with one exception, not yet wrapped in `withLockSet`, so fine locks are a model-level discipline.  **Declaring is not bracketing**: WS-RR RR7.11 (`v0.34.64`) makes `lockSetForSyscall` answer `some` for eight of the thirty-five arms — the suspend plus the seven IPC hot-path arms — each with its coverage, but only the suspend arm's action runs inside the bracket.  RR7.12 is the row that wires the rest | WS-RR RR7 |
 | Unconditional SMP starvation-freedom | The WCRT capstones take `hBandProgress` as an externalized deployment hypothesis, and the liveness trace model is still boot-core pinned | WS-SL |
 | That live WCRT matches the fine-lock bound | Kernel entry is serialised by one global ticket lock, so the live bound is weaker than `PerCoreWcrt.lean`'s | SM10.1 |
 | That Tier 4 acceptance gates have passed | They need the bootable image, so they have never executed. They report NOT RUN rather than PASS | SM10.1 |

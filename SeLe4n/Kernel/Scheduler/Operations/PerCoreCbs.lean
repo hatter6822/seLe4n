@@ -990,9 +990,10 @@ theorem replenishOnCoreLockSet_contains_replenishQueue_write (c : CoreId) :
     (SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write) ∈ replenishOnCoreLockSet c := by
   simp [replenishOnCoreLockSet]
 
-/-- SM5.H.2: the footprint is within the SM3.D `maxLockSetSize` (= 8) cap. -/
+/-- SM5.H.2: the footprint is within the SM3.D `maxLockSetSize` cap. -/
 theorem replenishOnCoreLockSet_size_le_maxLockSetSize (c : CoreId) :
-    (replenishOnCoreLockSet c).length ≤ 8 := by rw [replenishOnCoreLockSet_length]; decide
+    (replenishOnCoreLockSet c).length ≤ Concurrency.maxLockSetSize := by
+  rw [replenishOnCoreLockSet_length]; decide
 
 -- WS-RR RR2.4: `migrateSchedContextReplenishmentLockSet` and its five lemmas
 -- moved to the production `Scheduler/Operations/PerCoreChooseThread.lean`,
@@ -1111,9 +1112,10 @@ theorem setThreadCpuAffinityWithMigrationLockSet_pairwise_le_of_core_le (oldCore
   setThreadCpuAffinityWithMigrationLockSet_pairwise_le oldCore newCore
 
 /-- SM5.H.4 (WCRT): the composite footprint (5 locks) is within the SM3.D
-`maxLockSetSize` (= 8) cap — so its worst-case lock-wait is bounded. -/
+`maxLockSetSize` cap — so its worst-case lock-wait is bounded. -/
 theorem setThreadCpuAffinityWithMigrationLockSet_size_le_maxLockSetSize (oldCore newCore : CoreId) :
-    (setThreadCpuAffinityWithMigrationLockSet oldCore newCore).length ≤ 8 := by
+    (setThreadCpuAffinityWithMigrationLockSet oldCore newCore).length
+      ≤ Concurrency.maxLockSetSize := by
   rw [setThreadCpuAffinityWithMigrationLockSet_length]; decide
 
 -- ============================================================================

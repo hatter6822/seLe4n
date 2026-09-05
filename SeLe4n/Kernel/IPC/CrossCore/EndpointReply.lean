@@ -422,6 +422,52 @@ def endpointReplyDonation? (st : SystemState) (replier : SeLe4n.ThreadId) :
       | _                           => none
   | none => none
 
+/-- **WS-RR RR7.11: the thread a reply capability answers.**
+
+Authority on the reply path flows from *holding* the capability, so the thread a
+`.reply` or `.replyRecv` answers is the one recorded in the Reply object the
+capability names — `reply.caller`, the forward half of the single-use linkage
+`linkCallerReply` writes.
+
+Named once because three places ask it: the live `.reply` arm, the live
+`.replyRecv` arm's `resolveReplyRecvReply`, and (RR7.11) the declared-footprint
+resolver, which has to name the *same* answered thread the transition will write
+or the footprint is about a different operation.  All three previously spelled
+out the two-level match, and both live spellings collapse a dangling reply and an
+unlinked one onto `.replyCapInvalid`, so nothing is lost by returning `Option`
+here and nothing can drift by having one place to change. -/
+def replyAnsweredCaller? (st : SystemState) (rid : SeLe4n.ReplyId) :
+    Option SeLe4n.ThreadId :=
+  (st.getReply? rid).bind (·.caller)
+
+/-- **WS-RR RR7.11**: at a resolved Reply object the answer is its `caller`
+field — the rewrite every proof about the reply arms needs. -/
+theorem replyAnsweredCaller?_of_getReply (st : SystemState)
+    (rid : SeLe4n.ReplyId) (reply : SeLe4n.Kernel.Reply)
+    (h : st.getReply? rid = some reply) :
+    replyAnsweredCaller? st rid = reply.caller := by
+  unfold replyAnsweredCaller?
+  rw [h]
+  rfl
+
+/-- **WS-RR RR7.11**: and at a dangling one there is no answered thread. -/
+theorem replyAnsweredCaller?_of_none (st : SystemState)
+    (rid : SeLe4n.ReplyId) (h : st.getReply? rid = none) :
+    replyAnsweredCaller? st rid = none := by
+  unfold replyAnsweredCaller?
+  rw [h]
+  rfl
+
+/-- **WS-RR RR7.11**: the resolver is the two-level match it replaced, so the
+live arms' behaviour is pinned rather than described. -/
+theorem replyAnsweredCaller?_eq_match (st : SystemState) (rid : SeLe4n.ReplyId) :
+    replyAnsweredCaller? st rid
+      = (match st.getReply? rid with
+         | some reply => reply.caller
+         | none => none) := by
+  unfold replyAnsweredCaller?
+  cases st.getReply? rid <;> rfl
+
 /-- WS-SM SM6.D (PR #822 review): the **recorded server** of a `blockedOnReply`
 caller — the thread that received the original `Call` (recorded as `some expected`
 in `caller.ipcState = .blockedOnReply ep (some expected)`) and therefore holds any
@@ -513,6 +559,39 @@ def lockSet_endpointReplyRecvOnCore (st : SystemState) (replier : SeLe4n.ThreadI
     ((endpointReplyDonation? st replier).map (·.2))
     ((st.getTcb? target).bind (·.replyObject))
     (receiveInstallsCaps st endpointObjId)
+
+/-- **WS-RR RR7.11: the concrete lock-set a cross-core `.receive` acquires.**
+
+The one receive-shaped arm that had no resolved footprint.  `.call`, `.send`,
+`.reply`, `.replyRecv`, `.notificationSignal` and `.notificationWait` all had
+one; `.receive` was declared only in the argument-taking
+`lockSet_endpointReceive`, so nothing named the values a live receive resolves
+them to and the declaration could not be handed to a bracket.
+
+Every state-dependent member is read from the pre-state through the expression
+the transition itself branches on, which is the discipline RR7.8 established for
+the caps destination:
+
+* `senderTid` — `receiveRendezvousSender?`, the endpoint's send-queue head, the
+  thread `endpointReceiveDualOnCore` dequeues and writes;
+* `installsCaps` — `receiveInstallsCaps`, which is *literally* the condition
+  `endpointReceiveDualWithCapsOnCore` tests before it unwraps, so the receiver's
+  own CSpace root is declared `.write` exactly when `ipcTransferSingleCap` writes
+  it, and (RR7.11) the state-level lock is declared exactly when that install
+  writes the CDT.
+
+`replyId` stays an argument: it is the *server-supplied* Reply object, addressed
+by `RecvArgs.replyCPtr` in the caller's own message registers and resolved
+against the caller's CSpace by `resolveRecvReplyId`.  It is a decoded operand,
+not a fact about the endpoint, so reading it from `st` here would be inventing a
+second resolution beside the dispatcher's. -/
+def lockSet_endpointReceiveOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
+    (replyId : Option SeLe4n.ReplyId := none) : LockSet :=
+  lockSet_endpointReceive receiver cnodeRootObjId endpointId
+    (receiveRendezvousSender? st endpointId)
+    replyId
+    (receiveInstallsCaps st endpointId)
 
 -- ============================================================================
 -- §3  Path reduction lemmas (full characterisation of each control path)
@@ -899,19 +978,20 @@ caller itself, the `AccessMode.lub` merge keeps the write).  Together with
 lock-set" concrete: the lifecycle write lands on a held write lock. -/
 theorem lockSet_endpointReply_target_tcb_write_mem
     (replier : SeLe4n.ThreadId) (cnRoot : SeLe4n.ObjId) (target : SeLe4n.ThreadId)
-    (donatedSc? : Option SeLe4n.SchedContextId) (donatedOwner? : Option SeLe4n.ThreadId) :
+    (donatedSc? : Option SeLe4n.SchedContextId) (donatedOwner? : Option SeLe4n.ThreadId)
+    -- **WS-RR RR7.11**: stated over the SM6.D reply optional too.  Left at its
+    -- default this covered only a reply-less footprint, while
+    -- `lockSet_endpointReplyOnCore` resolves that optional from the state — so
+    -- the one shape a live `.reply` actually declares was outside the theorem.
+    (replyId : Option SeLe4n.ReplyId) :
     (tcbLock target, AccessMode.write)
-      ∈ (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner?).pairs := by
-  have hBase : (tcbLock target, AccessMode.write)
-      ∈ (lockSetOfList [(tcbLock replier, .write), (cnodeLock cnRoot, .read),
-            (tcbLock target, .write)]).pairs := by
-    show (tcbLock target, AccessMode.write)
-      ∈ (((LockSet.empty.insertOrMerge (tcbLock replier) .write).insertOrMerge
-          (cnodeLock cnRoot) .read).insertOrMerge (tcbLock target) AccessMode.write).pairs
-    exact self_write_mem_insertOrMerge _ (tcbLock target)
-  unfold lockSet_endpointReply
-  exact write_mem_lockSetExtendOpt_map _ _ donatedOwner? (fun ot => tcbLock ot)
-    (write_mem_lockSetExtendOpt_map _ _ donatedSc? (fun sc => schedContextLock sc) hBase)
+      ∈ (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner? replyId).pairs := by
+  unfold lockSet_endpointReply lockSetOfList
+  simp only [List.foldl]
+  exact mem_write_lockSetExtendOpt _ _ _
+    (mem_write_lockSetExtendOpt _ _ _
+      (mem_write_lockSetExtendOpt _ _ _
+        (LockSet.mem_insertOrMerge_write_self _ _)))
 
 /-- WS-SM SM6.D (reply-object lifecycle under lock-set): the **per-object reply
 write lock** — under which the reply consumes the first-class Reply object
@@ -968,10 +1048,13 @@ theorem lockSet_endpointReceive_capsInstall_write_mem
           (installsCaps := true)).pairs := by
   unfold lockSet_endpointReceive lockSetOfList
   simp only [List.foldl, if_true]
+  -- WS-RR RR7.11: one extension deeper — the state-level lock the CDT write
+  -- needs sits outermost on this same `installsCaps` path.
   exact mem_write_lockSetExtendOpt _ _ _
     (mem_write_lockSetExtendOpt _ _ _
-      (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
-        (LockSet.mem_insertOrMerge_write_self _ _)))
+      (mem_write_lockSetExtendOpt _ _ _
+        (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+          (LockSet.mem_insertOrMerge_write_self _ _))))
 
 /-- **WS-SM SM3.B (PR #873 round 8): and so does `.replyRecv`'s receive leg** —
 the same transition, so the same write, so the same declared mode. -/
@@ -985,13 +1068,55 @@ theorem lockSet_replyRecv_capsInstall_write_mem
           donatedScId donatedOwnerTid replyId (installsCaps := true)).pairs := by
   unfold lockSet_replyRecv lockSetOfList
   simp only [List.foldl, if_true]
+  -- WS-RR RR7.11: one extension deeper, for the same reason.
   exact mem_write_lockSetExtendOpt _ _ _
     (mem_write_lockSetExtendOpt _ _ _
       (mem_write_lockSetExtendOpt _ _ _
         (mem_write_lockSetExtendOpt _ _ _
-          (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+          (mem_write_lockSetExtendOpt _ _ _
             (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
-              (LockSet.mem_insertOrMerge_write_self _ _))))))
+              (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+                (LockSet.mem_insertOrMerge_write_self _ _)))))))
+
+/-- **WS-RR RR7.11**: the resolved receive footprint declares the state-level
+write its capability install needs, on exactly the states where it installs. -/
+theorem lockSet_endpointReceiveOnCore_covers_cdt
+    (st : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (replyId : Option SeLe4n.ReplyId)
+    (hCaps : receiveInstallsCaps st endpointId = true) :
+    (stateLevelLock, AccessMode.write)
+      ∈ (lockSet_endpointReceiveOnCore st endpointId receiver cnodeRootObjId replyId).pairs := by
+  unfold lockSet_endpointReceiveOnCore
+  rw [hCaps]
+  exact lockSet_endpointReceive_stateLevel_write_mem receiver cnodeRootObjId endpointId
+    (receiveRendezvousSender? st endpointId) replyId
+
+/-- **WS-RR RR7.11**: and the receiver's own CSpace root in **write** mode, the
+member `ipcTransferSingleCap`'s `cspaceInsertSlot` needs. -/
+theorem lockSet_endpointReceiveOnCore_covers_capsDestination
+    (st : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (replyId : Option SeLe4n.ReplyId)
+    (hCaps : receiveInstallsCaps st endpointId = true) :
+    (cnodeLock cnodeRootObjId, AccessMode.write)
+      ∈ (lockSet_endpointReceiveOnCore st endpointId receiver cnodeRootObjId replyId).pairs := by
+  unfold lockSet_endpointReceiveOnCore
+  rw [hCaps]
+  exact lockSet_endpointReceive_capsInstall_write_mem receiver cnodeRootObjId endpointId
+    (receiveRendezvousSender? st endpointId) replyId
+
+/-- **WS-RR RR7.11**: and `.replyRecv`'s resolved footprint declares the same
+state-level write, since its receive leg is the same transition. -/
+theorem lockSet_endpointReplyRecvOnCore_covers_cdt
+    (st : SystemState) (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
+    (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId)
+    (hCaps : receiveInstallsCaps st endpointObjId = true) :
+    (stateLevelLock, AccessMode.write)
+      ∈ (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target
+          endpointObjId).pairs := by
+  unfold lockSet_endpointReplyRecvOnCore
+  rw [hCaps]
+  exact lockSet_replyRecv_stateLevel_write_mem replier cnodeRootObjId target endpointObjId
+    _ _ _ _
 
 /-- WS-SM SM6.D (PR #822 review 6J-NL9): the per-object reply **write** lock is a
 declared member of the `.call` lock-set footprint once the linked reply object is
@@ -1307,11 +1432,16 @@ theorem applyReplyDonationOnCoreSchedLockSet_pairwise_le
       sortedSchedCorePair_pairwise_le _ _ _ (fun c d h => h)⟩
 
 /-- RR2.10: the donation-return footprint is within the SM3.D `maxLockSetSize`
-(= 8) cap — four locks at most. -/
+cap — four locks at most.
+
+**WS-RR RR7.11**: stated against the constant its name claims rather than the
+numeral the constant happened to hold.  See `maxLockSetSize`'s docstring for why
+that distinction is load-bearing and why the constant moved. -/
 theorem applyReplyDonationOnCoreSchedLockSet_size_le_maxLockSetSize
     (descheduleCore replierHome ownerHome : CoreId) :
-    (applyReplyDonationOnCoreSchedLockSet descheduleCore replierHome ownerHome).length ≤ 8 := by
-  unfold applyReplyDonationOnCoreSchedLockSet sortedSchedCorePair
+    (applyReplyDonationOnCoreSchedLockSet descheduleCore replierHome ownerHome).length
+      ≤ Concurrency.maxLockSetSize := by
+  unfold applyReplyDonationOnCoreSchedLockSet sortedSchedCorePair Concurrency.maxLockSetSize
   by_cases hEq : replierHome = ownerHome
   · simp [hEq]
   · by_cases hLe : replierHome ≤ ownerHome <;> simp [hEq, hLe]

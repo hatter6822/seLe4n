@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.34.63` (`lakefile.toml`) |
+| **Package version** | `0.34.64` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 332,481 across 311 Lean files |
-| **Test LoC** | 69,222 across 70 Lean test suites |
-| **Proved declarations** | 11,058 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 333,825 across 311 Lean files |
+| **Test LoC** | 69,445 across 70 Lean test suites |
+| **Proved declarations** | 11,119 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -1743,6 +1743,27 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    integration, which is when the wrappers become semantically
    active.
 
+   *Progress.*  The piece that connects the SM3 footprints to a
+   running syscall is `lockSetForSyscall : SyscallId →
+   SyscallLockOperands → SystemState → Option LockSet`, and it
+   **declares eight of the thirty-five arms** as of WS-RR RR7.11
+   (v0.34.64): `.tcbSuspend` plus the seven IPC hot-path arms
+   `.send`, `.receive`, `.call`, `.reply`, `.replyRecv`,
+   `.notificationSignal` and `.notificationWait`, each resolved
+   through the SM6 state-resolved footprint its cross-core transition
+   is already stated against, and each with its coverage — the
+   membership statements a 2PL consumer needs, plus the *changed ⇒
+   declared* capstones for the two capability-transferring arms.  The
+   remaining twenty-seven answer `none`
+   (`declaredFootprintSyscall`, `lockSetForSyscall_undeclared_none`),
+   which is the fail-closed direction: a declared footprint that does
+   not cover a write is not a smaller optimisation but a false
+   footprint, and a caller reading `none` keeps whatever coarser
+   serialisation it already has.  **Declaring is not bracketing**:
+   only the `.tcbSuspend` arm's action runs inside `withLockSet`
+   today, and wiring the rest at the production entry is WS-RR
+   RR7.12.
+
    **SM3.C.11 — dynamic PIP chain-walk locking**: the 3 PIP-invoking
    transitions (`.call`/`.reply`/`.replyRecv`) walk a blocking chain
    whose length is state-discovered, so no static lockSet can contain
@@ -2752,8 +2773,20 @@ alongside the latent inventory (closing SMP-H3).
    actually holding it (`≤ numCores − 1`).  `KernelOperation` carries a
    `LockSet` footprint plus a `sizeWithinBound` proof, and
    `lockSetTransitions_within_bound` discharges that proof for all 25
-   SM3.B `lockSet_<τ>` declarations (size `≤ 8`) — so the bound is
-   never vacuous.
+   SM3.B `lockSet_<τ>` declarations (size `≤ maxLockSetSize`) — so the
+   bound is never vacuous.  **WS-RR RR7.11 (v0.34.64) moved
+   `maxLockSetSize` from 8 to 9**, and moved the constant itself to
+   `Locks/LockSet.lean` beside the datatype whose cardinality it
+   bounds.  The widest declared footprint is a `.replyRecv` that both
+   returns a donation and installs capabilities, and its ninth member
+   is the state-level lock the capability install's CDT write needs —
+   a member RR7.7 had declared on the two *sending* arms and neither
+   receiving one, though all four reach the same
+   `ipcTransferSingleCap`.  The WCRT headline is parametric in the
+   constant and widens by an eighth; the alternative was a declared
+   footprint that does not cover its own writes, or a lock acquired
+   outside the declared set, which is invisible to the
+   deadlock-freedom and serializability theorems.
 
    **SM3.D.5b — mode-aware deadlock-freedom**: the plan-signature
    `noDeadlock` / `waitGraph_acyclic_under_2pl` use bare `LockId`,

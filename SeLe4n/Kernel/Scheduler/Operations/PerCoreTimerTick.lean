@@ -8,6 +8,9 @@
 -/
 
 import SeLe4n.Kernel.Scheduler.Operations.Core
+-- WS-RR RR7.11: `maxLockSetSize`, so the `_size_le_maxLockSetSize` theorems
+-- below can state the bound their names claim rather than the numeral it holds.
+import SeLe4n.Kernel.Concurrency.Locks.LockSet
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreWake
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.Preservation
 
@@ -177,18 +180,26 @@ theorem timerTickOnCoreLockSet_pairwise_le (c : CoreId) :
   · intro a ha; simp at ha
 
 -- SM5.D.7 (WCRT-bounded tick): the static lock-set has a fixed size of 3 (well
--- under the SM3.D `maxLockSetSize` = 8 cap), so the per-tick worst-case lock-wait
+-- under the SM3.D `maxLockSetSize` cap), so the per-tick worst-case lock-wait
 -- is bounded by `3 · (numCores − 1) · T_per_lock` (plan §3.9) — the tick fits the
 -- WCRT budget.  The size pin (`_length` above) plus this bound are the SM5.D.7
 -- surface; the full WCRT integration with SM3.D's `boundedWait_under_2pl` is
 -- SM5.J.
 
 /-- WS-SM SM5.D.7 (WCRT bound): the timer-tick lock-set size is within the SM3.D
-`maxLockSetSize` (= 8) cap — so a tick's worst-case response time is bounded by
-`maxLockSetSize · (numCores − 1) · T_per_lock` (plan §3.9), fitting the 1 ms tick
-budget.  A surface witness pinning the tick to the bounded-WCRT class. -/
+`maxLockSetSize` cap, so a tick's worst-case response time is bounded by
+`maxLockSetSize · (numCores − 1) · T_per_lock` (plan §3.9).  A surface witness
+pinning the tick to the bounded-WCRT class.
+
+**WS-RR RR7.11**: what fits the 1 ms tick budget is the tick's **own** footprint
+— three locks, `3 · 3 · 60 µs = 540 µs` on the RPi5 figures — not the uniform
+`maxLockSetSize` envelope, which is `1620 µs` at the RR7.11 constant and was
+already `1440 µs` before it.  The sentence here used to attribute the fit to the
+envelope, which the arithmetic never supported at any value of the constant; the
+envelope is a coarse upper bound over every declared footprint, and the tick's is
+one of the smallest.  `SmpWcrtSuite` §3.2 pins both figures. -/
 theorem timerTickOnCoreLockSet_size_le_maxLockSetSize (c : CoreId) :
-    (timerTickOnCoreLockSet c).length ≤ 8 := by
+    (timerTickOnCoreLockSet c).length ≤ Concurrency.maxLockSetSize := by
   rw [timerTickOnCoreLockSet_length]; decide
 
 -- ── SM5.D.3 (honest-footprint completion): the dynamic IPC-timeout extension + the
@@ -353,15 +364,18 @@ theorem timerTickOnCoreCompleteLockSet_pairwise_le (c : CoreId) :
     · intro a ha; simp at ha
 
 /-- WS-SM SM5.D.7 (WCRT bound, complete footprint): even the complete
-over-approximated footprint (≤ 4 locks) is within the SM3.D `maxLockSetSize` (= 8)
+over-approximated footprint (≤ 4 locks) is within the SM3.D `maxLockSetSize`
 cap, so the tick's worst-case response time is bounded by `maxLockSetSize ·
 (numCores − 1) · T_per_lock` (plan §3.9). -/
 theorem timerTickOnCoreCompleteLockSet_size_le_maxLockSetSize (c : CoreId) :
-    (timerTickOnCoreCompleteLockSet c).length ≤ 8 := by
+    (timerTickOnCoreCompleteLockSet c).length
+      ≤ Concurrency.maxLockSetSize := by
   unfold timerTickOnCoreCompleteLockSet
   by_cases h : c = bootCoreId
   · rw [if_pos h, timerTickOnCoreLockSet_length]; decide
-  · rw [if_neg h]; simp only [List.length_cons, List.length_nil]; omega
+  · rw [if_neg h]
+    simp only [List.length_cons, List.length_nil, Concurrency.maxLockSetSize]
+    omega
 
 -- ============================================================================
 -- §2  SM5.D.6 — Per-core non-boundary domain decrement (`decrementDomainTimeOnCore`)

@@ -1,3 +1,139 @@
+## v0.34.64 — the IPC hot path declares what it locks
+
+**WS-RR RR7.11** — fine locks, Track C: the seven IPC hot-path footprint
+declarations, their coverage, and the receive-side CDT write neither receiving
+arm had declared.
+
+### The declarations
+
+`lockSetForSyscall` now answers `some` for **eight of the thirty-five** arms —
+SM3.C.9's `.tcbSuspend` plus `.send`, `.receive`, `.call`, `.reply`,
+`.replyRecv`, `.notificationSignal` and `.notificationWait`.  Each is wired to
+the SM6 state-resolved footprint its cross-core transition is already stated
+against (`lockSet_endpointSendOnCore`, `lockSet_endpointCallOnCore`,
+`lockSet_endpointReplyOnCore`, `lockSet_endpointReplyRecvOnCore`,
+`lockSet_notificationSignalOnCore`, `lockSet_notificationWaitOnCore`), so the
+declaration and the transition read one expression rather than two that have to
+be kept in step.  The one that did not exist is the receive side's:
+`lockSet_endpointReceiveOnCore` resolves the rendezvous sender from
+`receiveRendezvousSender?` and the capability install from `receiveInstallsCaps`
+— literally the condition `endpointReceiveDualWithCapsOnCore` tests.
+
+`SyscallLockOperands` gained `targetReply`, because `.reply` and `.replyRecv`
+name a `ReplyId` and `.replyRecv` names an endpoint *as well*: a syscall
+directed at two objects cannot express itself with one slot, and reinterpreting
+one typed identifier as another is the coercion RR7.10 removed.  The thread a
+reply capability answers is `replyAnsweredCaller?`, named once and read by all
+three places that asked it — the live `.reply` arm, `resolveReplyRecvReply`, and
+the footprint resolver — since a footprint about a different answered thread is
+a footprint about a different operation.
+
+Fail-closed where an operand is missing.  `.send` and `.call` answer `none`
+without a **message**: whether the receiver's CSpace root and the state-level
+lock are members is a property of what the message carries, so defaulting to the
+capless shape would declare a footprint that omits the two members the caps path
+writes — the false footprint this family exists to refuse.  A dangling or
+unlinked reply capability declares nothing, matching the `.replyCapInvalid` the
+live arms return.
+
+### Coverage
+
+Two theorems per arm: a dispatch pin (`lockSetForSyscall_send`, …) saying which
+resolver the arm is wired to, and a resolution characterisation
+(`…_isSome_iff`) saying exactly when it declares.  Then, per arm, the
+membership statements a 2PL consumer needs — the caller's own TCB, the endpoint
+or notification queue, the answered caller, the reply object, the bound-delivery
+pair, the capability-transfer destination and the CDT write — plus the two RR7.8
+capstones restated at the resolver's own output
+(`lockSetForSyscall_{send,call}_object_writes_declared`, *changed ⇒ declared*,
+quantified over every object rather than over a list of members).
+
+The negative is restated over `declaredFootprintSyscall` rather than over one
+inequality: with eight declared arms the inequality form would take eight
+hypotheses, and a caller supplying seven of them would prove something weaker
+while looking the same.  `lockSetForSyscall_ofThreadTarget_undeclared` is why the
+staged SM8.D entry resolver is unchanged — it supplies a thread target, so the
+seven object- and reply-directed arms answer `none` there.  Supplying the rest
+at the **production** entry is RR7.12's: the message is built by
+`resolveExtraCaps`, which mints CDT nodes, so which state the footprint is
+resolved at is inseparable from the acquire/re-resolve/refuse discipline that row
+lands.
+
+### The finding: the receive side writes the CDT too
+
+`ipcTransferSingleCap` is one function.  Whichever arm reaches it, it mints a
+derivation node for the destination slot — advancing the global `cdtNextNode`
+counter and both keyed maps — and adds an `.ipcTransfer` edge.  RR7.7 declared
+that on the two **sending** arms; `lockSet_endpointReceive` and
+`lockSet_replyRecv` install through the same call and declared it on **neither**,
+so two receives dequeuing caps-bearing senders into different CSpaces had
+provably disjoint footprints while read-modify-writing one derivation map — the
+lost-update shape RR7.7 closed on the sending half, still open on the receiving
+one.  Both arms now carry `(stateLevelLock, .write)`, conditioned on the same
+`installsCaps` flag the transition branches on, so the member tracks the write
+rather than being unconditionally present; `permittedKinds` gains `.objStore` for
+both; and `capsCarryingIpcArms_footprints_share_serialization` is the statement
+that no two of the four caps-reaching arms are ever disjoint.
+
+Not exploitable at HEAD — SM3.C.9 still defers `withLockSet` at the `@[export]`
+bodies and the SM5.I kernel-entry ticket lock serialises everything — but RR7.12
+is the row that makes these footprints operative, so the gap is closed before the
+row that would make it live, which is the plan's own ordering rule.
+
+### `maxLockSetSize` moves 8 → 9
+
+The widest declared footprint is a `.replyRecv` that both returns a donation and
+installs capabilities: a four-member base plus the rendezvous sender, the
+returned SchedContext, the donation's original owner, the Reply object and now
+the state-level lock.  Nine keys.  The alternatives were a footprint that does
+not cover its own writes, or a lock taken outside the declared set — invisible to
+the deadlock-freedom and serializability theorems, which is the same trade the
+hierarchical-CBS plan's D21 records for its own move of this constant.  The WCRT
+headline `maxLockSetSize · (numCores − 1) · tCs` is parametric in it and widens
+by an eighth.  The ninth member is only reachable on an invariant-violating state
+— the donation discipline makes the original owner the answered caller, where the
+key merge collapses the two — but a declared footprint bounds the union over
+*all* argument values, so the honest constant is the one the definition can
+produce.
+
+The constant moved to `Locks/LockSet.lean`, beside the datatype whose
+cardinality it bounds.  It sat in `Deadlock.lean` because SM3.D.6 introduced it
+for the bounded-wait corollary, and from there the scheduler's own
+`_size_le_maxLockSetSize` theorems could not name it: **five stated `≤ 8`
+literally**, so each was a claim about a numeral while its name promised a
+relation, and the `wcrt_op_bounded_of_size` consumers type-checked by
+coincidence.  Raising the constant is what surfaced them.
+
+### Generalised in passing
+
+Three membership theorems were stated at their optionals' defaults, so the shape
+a live arm actually declares was outside them:
+`lockSet_endpointReply_target_tcb_write_mem` covered only a reply-less footprint
+while `lockSet_endpointReplyOnCore` resolves that optional from the state, and
+the two `notificationSignal` ones covered only the non-bound path — the one the
+SM6.B finding was *not* about.  All three now range over every argument.
+`lockSet_endpointCall_caller_tcb_write_mem`'s receiver-distinctness hypothesis is
+gone: a coinciding key merges under `AccessMode.lub`, whose top is `.write`, so
+it excluded a case the conclusion already covered and made every caller discharge
+it for nothing.  And the members present since SM3.B — the caller's TCB, the
+endpoint queue, the notification — had no membership theorems on any endpoint
+arm at all, because the families that existed covered the *optional* members
+later cuts added, each with a finding attached.  Ten new ones close that.
+
+### Tests and gates
+
+`SmpInformationFlowSuite` §7.10 is the runtime witness family: a fixture parking
+a caps-bearing sender and a receiver on one endpoint plus a linked Reply object,
+against which all seven arms are resolved, the caps-carrying receive's
+state-level member asserted **positively**, and the capless send's asserted
+absent.  `DeadlockFreedomSuite` pins the nine-member `.replyRecv` at the bound
+and the capless shape one below it, so the RR7.11 addition is the ninth member
+rather than a re-count.  Tier 3 pins the whole surface, that a
+`_size_le_maxLockSetSize` theorem never states a numeral, and that the two-level
+reply-object match cannot come back in the dispatchers.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md RR7.11
+
 ## v0.34.63 — a footprint resolver that can name an endpoint
 
 **WS-RR RR7.10** — fine locks, Track C: generalise the production
