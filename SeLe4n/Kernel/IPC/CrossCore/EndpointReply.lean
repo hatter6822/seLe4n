@@ -998,36 +998,45 @@ declared member of the `.call` lock-set footprint once the linked reply object i
 resolved (`replyId := some rid`).  A server-first `Call` rendezvous links the caller
 to the waiting server's stashed Reply object (the folded `linkServerStashedReply` →
 `linkCallerReply` writes `reply.caller`); that write is now serialised under the
-per-object reply lock. -/
+per-object reply lock.
+
+**WS-RR RR7.7**: stated over every `destCnode`, so the same lemma serves the
+capless call and the capability-carrying one.  The reply member is no longer
+outermost — the transfer destination and the state-level lock extend past it —
+and a write-mode member survives any optional extension
+(`mem_write_lockSetExtendOpt`), so the two extra layers cost two applications
+of that and nothing else. -/
 theorem lockSet_endpointCall_reply_write_mem
     (callerTid : SeLe4n.ThreadId) (cnRoot endpointObjId : SeLe4n.ObjId)
     (receiverTid : Option SeLe4n.ThreadId) (donatedScId : Option SeLe4n.SchedContextId)
-    (rid : SeLe4n.ReplyId) :
+    (rid : SeLe4n.ReplyId) (destCnode : Option SeLe4n.ObjId := none) :
     (replyLock rid, AccessMode.write)
-      ∈ (lockSet_endpointCall callerTid cnRoot endpointObjId receiverTid donatedScId (some rid)).pairs := by
+      ∈ (lockSet_endpointCall callerTid cnRoot endpointObjId receiverTid donatedScId
+           (some rid) destCnode).pairs := by
   unfold lockSet_endpointCall
-  exact self_write_mem_insertOrMerge _ (replyLock rid)
+  exact mem_write_lockSetExtendOpt _ _ _
+    (mem_write_lockSetExtendOpt _ _ _
+      (self_write_mem_insertOrMerge _ (replyLock rid)))
 
 /-- WS-SM SM6.D (PR #827 review): the per-object reply **write** lock is likewise a
 declared member of the **WithCaps** `.call` footprint once the linked reply object
-is resolved (`replyId := some rid`).  `lockSet_endpointCallWithCaps` extends the base
-call lock-set with the destination CNode write lock; the reply lock — a distinct key
-(`.reply` vs `.cnode`) — survives that extension (`mem_insertOrMerge_of_mem_of_ne`),
-so a server-first `Call` carrying transferred caps still serialises its
-`linkServerStashedReply` reply-object write under `replyLock rid`. -/
+is resolved (`replyId := some rid`).
+
+**WS-RR RR7.7**: since the caps footprint *is* the base footprint at `some
+destCnode`, this is the lemma above at that argument.  It used to re-derive the
+membership out here through a key-distinctness argument about the destination
+CNode, which had to be extended by hand for every member the transfer added —
+and the state-level lock the CDT write needs would have been the second such
+extension nobody made. -/
 theorem lockSet_endpointCallWithCaps_reply_write_mem
     (callerTid : SeLe4n.ThreadId) (cnRoot destCnode endpointObjId : SeLe4n.ObjId)
     (receiverTid : Option SeLe4n.ThreadId) (donatedScId : Option SeLe4n.SchedContextId)
     (rid : SeLe4n.ReplyId) :
     (replyLock rid, AccessMode.write)
       ∈ (lockSet_endpointCallWithCaps callerTid cnRoot destCnode endpointObjId
-            receiverTid donatedScId (some rid)).pairs := by
-  unfold lockSet_endpointCallWithCaps
-  exact LockSet.mem_insertOrMerge_of_mem_of_ne
-    (lockSet_endpointCall callerTid cnRoot endpointObjId receiverTid donatedScId (some rid))
-    (cnodeLock destCnode) AccessMode.write (replyLock rid, AccessMode.write)
-    (lockSet_endpointCall_reply_write_mem callerTid cnRoot endpointObjId receiverTid donatedScId rid)
-    (by simp [replyLock, cnodeLock])
+            receiverTid donatedScId (some rid)).pairs :=
+  lockSet_endpointCall_reply_write_mem callerTid cnRoot endpointObjId receiverTid
+    donatedScId rid (some destCnode)
 
 -- ============================================================================
 -- §7  SM6.C.7 — Reply-replay protection

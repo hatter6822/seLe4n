@@ -505,7 +505,9 @@ example :
 -- §6 — Permitted kinds for every syscall
 -- ============================================================================
 
-example : permittedKinds .send = [.tcb, .cnode, .endpoint] := by decide
+-- WS-RR RR7.7: `.objStore` — a capability-carrying rendezvous writes the CDT
+-- maps, whose declared subject is `stateLevelLock` (kind `.objStore`).
+example : permittedKinds .send = [.tcb, .cnode, .endpoint, .objStore] := by decide
 -- WS-SM SM6.D: `.receive` gains `.reply` — a `Call` rendezvous on the receive
 -- path links a server-supplied Reply object (`linkCallerReply` writes `reply.caller`
 -- under the per-object reply write-lock).
@@ -513,7 +515,7 @@ example : permittedKinds .receive = [.tcb, .cnode, .endpoint, .reply] := by deci
 -- Audit-pass-3: `.call`/`.reply`/`.replyRecv` include `.schedContext` for the
 -- donation extension.  WS-SM SM6.D: they also gain `.reply` — each links or
 -- consumes a first-class Reply object under the per-object reply write-lock.
-example : permittedKinds .call = [.tcb, .cnode, .endpoint, .schedContext, .reply] := by decide
+example : permittedKinds .call = [.tcb, .cnode, .endpoint, .schedContext, .reply, .objStore] := by decide
 example : permittedKinds .reply = [.tcb, .cnode, .schedContext, .reply] := by decide
 example : permittedKinds .replyRecv = [.tcb, .cnode, .endpoint, .schedContext, .reply] := by decide
 -- WS-SM SM6.B: `.notificationSignal` gains `.endpoint` for the bound-delivery
@@ -628,6 +630,23 @@ example :
       p.fst.kind ∈ permittedKinds .call :=
   lockSet_consistent_call ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
     (some ⟨8⟩) (some ⟨100⟩)
+
+-- WS-RR RR7.7: and with a capability-transfer destination, on both arms.  The
+-- consistency theorems are stated over every `destCnode`, so these instantiate
+-- the argument the pre-RR7.7 statements defaulted away.
+example :
+    ∀ p ∈ (lockSet_endpointSend ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+              (some ⟨8⟩) (some (ObjId.ofNat 42))).pairs,
+      p.fst.kind ∈ permittedKinds .send :=
+  lockSet_consistent_send ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20) (some ⟨8⟩)
+    (some (ObjId.ofNat 42))
+
+example :
+    ∀ p ∈ (lockSet_endpointCall ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+              (some ⟨8⟩) (some ⟨100⟩) (some ⟨7⟩) (some (ObjId.ofNat 42))).pairs,
+      p.fst.kind ∈ permittedKinds .call :=
+  lockSet_consistent_call ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+    (some ⟨8⟩) (some ⟨100⟩) (some ⟨7⟩) (some (ObjId.ofNat 42))
 
 example :
     ∀ p ∈ (lockSet_tcbSuspend ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩
@@ -823,8 +842,10 @@ private def runAccessModeAlgebraChecks : IO Unit := do
 
 private def runPermittedKindsChecks : IO Unit := do
   IO.println "--- §4 PermittedKinds ---"
+  -- WS-RR RR7.7: `.objStore` joins, for the CDT maps a capability-carrying
+  -- rendezvous writes; `stateLevelLock` is that write's declared subject.
   assertBool "permittedKinds .send"
-    (decide (permittedKinds .send = [.tcb, .cnode, .endpoint]))
+    (decide (permittedKinds .send = [.tcb, .cnode, .endpoint, .objStore]))
   assertBool "permittedKinds .vspaceMap"
     (decide (permittedKinds .vspaceMap = [.tcb, .cnode, .vspaceRoot]))
   -- PR #873 round 7: every kind, because the retype's taint clear keys on
@@ -851,8 +872,10 @@ private def runPermittedKindsChecks : IO Unit := do
     (decide (permittedKinds .schedContextBind = [.tcb, .cnode, .schedContext]))
   -- Audit-pass-3: .call, .reply, .replyRecv include .schedContext (donation).
   -- WS-SM SM6.D: they also include .reply (per-object reply write-lock).
-  assertBool "permittedKinds .call (donation + reply-object kind)"
-    (decide (permittedKinds .call = [.tcb, .cnode, .endpoint, .schedContext, .reply]))
+  -- WS-RR RR7.7: and `.objStore`, for the same CDT write `.send` declares.
+  assertBool "permittedKinds .call (donation + reply-object + CDT kinds)"
+    (decide (permittedKinds .call
+      = [.tcb, .cnode, .endpoint, .schedContext, .reply, .objStore]))
   assertBool "permittedKinds .reply (donation-return + reply-object kind)"
     (decide (permittedKinds .reply = [.tcb, .cnode, .schedContext, .reply]))
   assertBool "permittedKinds .replyRecv (donation-return + reply-object kind)"
@@ -1058,6 +1081,35 @@ private def runConsistencyRuntimeChecks : IO Unit := do
     decide (p.fst.kind ∈ permittedKinds .tcbSuspend))
   assertBool "lockSet_tcbSuspend (full 4 Options some): all kinds in permittedKinds .tcbSuspend"
     allOk_susp
+  -- **WS-RR RR7.7**: the capability-transfer destination is *declared*, not
+  -- merely admissible.  A consistency check asks whether every declared kind is
+  -- permitted, which a footprint that declares nothing also passes; these ask
+  -- whether the two members the transfer needs are in the set at all.
+  let sendCaps := lockSet_endpointSend ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+                    (some ⟨8⟩) (some (ObjId.ofNat 42))
+  assertBool "send with caps declares the receiver CSpace root in write mode"
+    (sendCaps.pairs.contains (cnodeLock (ObjId.ofNat 42), AccessMode.write))
+  assertBool "send with caps declares the state-level lock for the CDT write"
+    (sendCaps.pairs.contains (stateLevelLock, AccessMode.write))
+  let callCaps := lockSet_endpointCall ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+                    (some ⟨8⟩) (some ⟨100⟩) (some ⟨7⟩) (some (ObjId.ofNat 42))
+  assertBool "call with caps declares the receiver CSpace root in write mode"
+    (callCaps.pairs.contains (cnodeLock (ObjId.ofNat 42), AccessMode.write))
+  assertBool "call with caps declares the state-level lock for the CDT write"
+    (callCaps.pairs.contains (stateLevelLock, AccessMode.write))
+  -- …and the capless shape declares neither, so the members are the transfer's
+  -- rather than an unconditional widening of every IPC footprint.
+  let sendCapless := lockSet_endpointSend ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+                       (some ⟨8⟩)
+  assertBool "a capless send declares no state-level lock"
+    (!sendCapless.pairs.contains (stateLevelLock, AccessMode.write))
+  -- The destination coinciding with the caller's own root upgrades the existing
+  -- read rather than adding a member: same size, stronger mode.
+  let sendSameRoot := lockSet_endpointSend ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+                        (some ⟨8⟩) (some (ObjId.ofNat 10))
+  assertBool "a transfer into the caller's own CSpace upgrades the read, not the size"
+    (decide (sendSameRoot.size = sendCapless.size + 1)
+      && sendSameRoot.pairs.contains (cnodeLock (ObjId.ofNat 10), AccessMode.write))
   -- Edge case: no Option args.
   let mint := lockSet_cspaceMint ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
   let allOk_mint := mint.pairs.all (fun p =>

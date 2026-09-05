@@ -740,6 +740,24 @@ run_check "INVARIANT" rg -n '^theorem endpointReplyRecv_preserves_ipcInvariantFu
 run_check "INVARIANT" rg -n '^theorem notificationSignal_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
 run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
 run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean
+
+# WS-RR RR7.7: the capability-carrying `.call` footprint IS the base footprint
+# at `some destCnode`, not a second definition beside it.  Two relations:
+#
+#   1. the fold itself, pinned by an `rfl` marker that fails at elaboration if
+#      a refactor reintroduces a separate `lockSetExtendOpt` out here;
+#   2. the negative below, which says the pre-RR7.7 shape -- extending the base
+#      from outside `lockSet_endpointCall` -- cannot come back.  The `rfl`
+#      marker alone would still hold of a definition that extended the base by
+#      the same members in the same order, and the point of the fold is that
+#      there is ONE place where the transfer's obligations are declared.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
+open SeLe4n.Kernel.Concurrency
+#check @SeLe4n.Kernel.lockSet_endpointCallWithCaps_eq_call_some
+#check @SeLe4n.Kernel.endpointCallWithCaps_lockSet_correct
+EOF'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "lockSet_endpointCallWithCaps[^=]*:=\s*lockSetExtendOpt" SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean'
 # WS-SM SM6.D completion — lookup-congruence transfer layer, boot-frame
 # exactness, the cross-core (OnCore) whole-bundle closures + per-core
 # flagships for notification/reply/receive/replyRecv (production), and the
@@ -7131,6 +7149,9 @@ EOF'
 #     (SM3.B.4, 25 transitions)
 #   * 72-theorem inventory aggregator + per-category count witnesses
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Concurrency.LockSet'
+# WS-RR RR7.7 (register: fine locks, Track B): the anchors in this block also
+# pin the capability-transfer destination on the send and call footprints and
+# the `rfl` markers that the capless shape is definitionally what it was.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
 import SeLe4n.Kernel.Concurrency.LockSet
 
@@ -7221,6 +7242,12 @@ import SeLe4n.Kernel.Concurrency.LockSet
 #check @SeLe4n.Kernel.Concurrency.lockSet_tcbSetPriority
 #check @SeLe4n.Kernel.Concurrency.lockSet_tcbSetMCPriority
 #check @SeLe4n.Kernel.Concurrency.lockSet_tcbSetIPCBuffer
+-- The capability-transfer destination is a declared member of the send and call
+-- footprints, and the capless shape is definitionally what it was.  (Workstream
+-- cite in the shell comment introducing this block -- a heredoc body is script
+-- content to the identifier-naming gate, not prose.)
+#check @SeLe4n.Kernel.Concurrency.lockSet_endpointSend_capless
+#check @SeLe4n.Kernel.Concurrency.lockSet_endpointCall_capless
 -- SM3.B.4: permittedKinds + per-transition lockSet_consistent_*.
 #check @SeLe4n.Kernel.Concurrency.permittedKinds
 #check @SeLe4n.Kernel.Concurrency.lockSet_consistent_send

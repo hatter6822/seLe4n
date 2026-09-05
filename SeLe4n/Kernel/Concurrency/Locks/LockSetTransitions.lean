@@ -297,16 +297,62 @@ Locks acquired:
   and registers are loaded.
 
 Per plan §4.1, the receiver TCB lock is part of the lock-set's
-*union over all paths*. -/
+*union over all paths*.
+
+**WS-RR RR7.7 — the capability-transfer destination.**  A rendezvous that
+carries capabilities installs them into the **receiver's** CSpace root
+(`ipcTransferSingleCap` → `cspaceInsertSlot`), which the pre-RR7.7 footprint
+did not name at all: the only CNode member was the *caller's*, in read mode,
+and on a cross-CSpace transfer those are different objects.  Two such sends
+into one receiver had provably disjoint footprints while both writing that
+receiver's CSpace, which is precisely what a 2PL consumer is entitled to run
+concurrently.
+
+`destCnodeObjId` is that root, threaded as the outermost pair of optionals,
+and `some` adds **two** members rather than one:
+
+* `(cnodeLock r, .write)` — the slot insert itself.  If `r` coincides with
+  the caller's root, `insertOrMerge`'s `AccessMode.lub` upgrades the existing
+  read rather than adding a member, so the size bound is unchanged on that
+  path.
+* `(stateLevelLock, .write)` — the **CDT maps**.  A capability install
+  writes `SystemState`-level derivation structure, not only the slot, and
+  `stateLevelLock` is SM3.A.10's `objStore` singleton, the declared subject
+  for `SystemState`-level auxiliary structures.  Without it two transfers
+  into *different* CSpaces would be provably disjoint while read-modify-
+  writing one derivation map — the same lost-update shape PR #870 round 7
+  closed for the audit trail.
+
+`none` is the capless shape and is definitionally the identity
+(`lockSetExtendOpt _ none = _`), so every pin taken before this member
+existed survives by `rfl`. -/
 def lockSet_endpointSend (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (endpointObjId : ObjId)
-    (receiverTid : Option ThreadId) : LockSet :=
+    (receiverTid : Option ThreadId)
+    (destCnodeObjId : Option ObjId := none) : LockSet :=
   lockSetExtendOpt
-    (lockSetOfList
-      [(tcbLock callerTid, .write),
-       (cnodeLock cnodeRootObjId, .read),
-       (endpointLock endpointObjId, .write)])
-    (receiverTid.map (fun rt => (tcbLock rt, .write)))
+    (lockSetExtendOpt
+      (lockSetExtendOpt
+        (lockSetOfList
+          [(tcbLock callerTid, .write),
+           (cnodeLock cnodeRootObjId, .read),
+           (endpointLock endpointObjId, .write)])
+        (receiverTid.map (fun rt => (tcbLock rt, .write))))
+      (destCnodeObjId.map (fun r => (cnodeLock r, AccessMode.write))))
+    (destCnodeObjId.map (fun _ => (stateLevelLock, AccessMode.write)))
+
+/-- **WS-RR RR7.7**: the capless send is definitionally the pre-RR7.7
+footprint, so every statement taken over the four-argument form survives
+unchanged. -/
+@[simp] theorem lockSet_endpointSend_capless (callerTid : ThreadId)
+    (cnodeRootObjId endpointObjId : ObjId) (receiverTid : Option ThreadId) :
+    lockSet_endpointSend callerTid cnodeRootObjId endpointObjId receiverTid none
+      = lockSetExtendOpt
+          (lockSetOfList
+            [(tcbLock callerTid, .write),
+             (cnodeLock cnodeRootObjId, .read),
+             (endpointLock endpointObjId, .write)])
+          (receiverTid.map (fun rt => (tcbLock rt, .write))) := rfl
 
 /-- WS-SM SM3.B.3: `lockSet` for `endpointReceive` (syscall `.receive`).
 
@@ -367,7 +413,15 @@ def lockSet_endpointCall (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (endpointObjId : ObjId)
     (receiverTid : Option ThreadId)
     (donatedScId : Option SchedContextId)
-    (replyId : Option ReplyId := none) : LockSet :=
+    (replyId : Option ReplyId := none)
+    -- **WS-RR RR7.7**: the capability-transfer destination, exactly as
+    -- `lockSet_endpointSend` declares it and for the same reason — the
+    -- receiver's CSpace root the transfer installs into, plus the
+    -- state-level lock for the CDT maps the install writes.  Folding it in
+    -- here is what lets `lockSet_endpointCallWithCaps` *be* this footprint
+    -- at `some` rather than a second definition that has to be kept in
+    -- step with it.
+    (destCnodeObjId : Option ObjId := none) : LockSet :=
   let withReceiver := lockSetExtendOpt
     (lockSetOfList
       [(tcbLock callerTid, .write),
@@ -377,10 +431,33 @@ def lockSet_endpointCall (callerTid : ThreadId)
   let withSc := lockSetExtendOpt withReceiver
     (donatedScId.map (fun sc => (schedContextLock sc, .write)))
   -- WS-SM SM6.D: a Call that rendezvouses with a waiting server links its Reply
-  -- object under the per-object reply write-lock (outermost optional; `none` ⇒
-  -- definitionally unchanged).
-  lockSetExtendOpt withSc
+  -- object under the per-object reply write-lock (`none` ⇒ definitionally
+  -- unchanged).
+  let withReply := lockSetExtendOpt withSc
     (replyId.map (fun rid => (replyLock rid, .write)))
+  lockSetExtendOpt
+    (lockSetExtendOpt withReply
+      (destCnodeObjId.map (fun r => (cnodeLock r, AccessMode.write))))
+    (destCnodeObjId.map (fun _ => (stateLevelLock, AccessMode.write)))
+
+/-- **WS-RR RR7.7**: the capless call is definitionally the pre-RR7.7
+footprint, so every statement taken over the six-argument form survives
+unchanged. -/
+@[simp] theorem lockSet_endpointCall_capless (callerTid : ThreadId)
+    (cnodeRootObjId endpointObjId : ObjId) (receiverTid : Option ThreadId)
+    (donatedScId : Option SchedContextId) (replyId : Option ReplyId) :
+    lockSet_endpointCall callerTid cnodeRootObjId endpointObjId receiverTid
+        donatedScId replyId none
+      = lockSetExtendOpt
+          (lockSetExtendOpt
+            (lockSetExtendOpt
+              (lockSetOfList
+                [(tcbLock callerTid, .write),
+                 (cnodeLock cnodeRootObjId, .read),
+                 (endpointLock endpointObjId, .write)])
+              (receiverTid.map (fun rt => (tcbLock rt, .write))))
+            (donatedScId.map (fun sc => (schedContextLock sc, .write))))
+          (replyId.map (fun rid => (replyLock rid, .write))) := rfl
 
 /-- WS-SM SM3.B.3: `lockSet` for `endpointReply` (syscall `.reply`).
 
@@ -1653,16 +1730,24 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   match sid with
   -- IPC syscalls.  `.call`, `.reply`, `.replyRecv` may traverse a
   -- SchedContext-donation path (per audit-pass-3 extension).
+  -- **WS-RR RR7.7**: `.objStore` — a capability-carrying rendezvous installs
+  -- into the receiver's CSpace and writes the CDT maps with it, and the CDT
+  -- maps are `SystemState`-level structure whose declared subject is
+  -- `stateLevelLock` (kind `.objStore`, hierarchy level 0, so it is acquired
+  -- first and the by-kind ladder stays acyclic).  `.cnode` was already here
+  -- for the caller's root; the receiver's is the same kind in write mode.
   | .send =>
-      [.tcb, .cnode, .endpoint]
+      [.tcb, .cnode, .endpoint, .objStore]
   -- WS-SM SM6.D: `.receive` may link a server-supplied Reply object to a
   -- rendezvousing `Call` caller (`linkCallerReply` writes `reply.caller`), and
   -- `.call` / `.reply` / `.replyRecv` link or consume a Reply — all under the
   -- per-object reply write-lock, so `.reply` enters their permitted kinds.
   | .receive =>
       [.tcb, .cnode, .endpoint, .reply]
+  -- WS-RR RR7.7: `.objStore` for the same reason it joins `.send` — a Call
+  -- that carries capabilities writes the CDT maps.
   | .call =>
-      [.tcb, .cnode, .endpoint, .schedContext, .reply]
+      [.tcb, .cnode, .endpoint, .schedContext, .reply, .objStore]
   | .reply =>
       [.tcb, .cnode, .schedContext, .reply]
   | .replyRecv =>
@@ -2059,12 +2144,19 @@ theorem lockSet_consistent_base_plus_five_opts
 -- with the `@[simp]`-tagged helpers is sufficient and warning-free.
 
 /-- WS-SM SM3.B.4 (plan §5.2.SM3.B.4) for `.send`: every declared lock
-has kind in `permittedKinds .send`. -/
+has kind in `permittedKinds .send`.
+
+**WS-RR RR7.7**: stated over **every** `destCnode`, not only the capless
+default.  Leaving it partially applied is the same defect the round-6
+`.declassify` and round-8 `.receive` fixes closed — a consistency claim
+checked against one argument value while a fine-lock consumer acquires the
+footprint carrying the other. -/
 theorem lockSet_consistent_send (callerTid : ThreadId)
-    (cnRoot epId : ObjId) (rTid : Option ThreadId) :
-    ∀ p ∈ (lockSet_endpointSend callerTid cnRoot epId rTid).pairs,
+    (cnRoot epId : ObjId) (rTid : Option ThreadId)
+    (destCnode : Option ObjId := none) :
+    ∀ p ∈ (lockSet_endpointSend callerTid cnRoot epId rTid destCnode).pairs,
       p.fst.kind ∈ permittedKinds .send :=
-  lockSet_consistent_base_plus_opt _ _ _
+  lockSet_consistent_base_plus_three_opts _ _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -2077,6 +2169,14 @@ theorem lockSet_consistent_send (callerTid : ThreadId)
         cases rTid with
         | none => simp at hpp
         | some rt => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        cases destCnode with
+        | none => simp at hpp
+        | some r => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        cases destCnode with
+        | none => simp at hpp
+        | some _ => simp at hpp; rw [← hpp]; simp [stateLevelLock]; decide)
 
 /-- WS-SM SM3.B.4 for `.receive`.
 
@@ -2107,14 +2207,19 @@ theorem lockSet_consistent_receive (callerTid : ThreadId)
         | none => simp at hpp
         | some rid => simp at hpp; rw [← hpp]; simp; decide)
 
-/-- WS-SM SM3.B.4 for `.call` (audit-pass-3: donation extension). -/
+/-- WS-SM SM3.B.4 for `.call` (audit-pass-3: donation extension).
+
+**WS-RR RR7.7**: stated over **every** `destCnode`, for the reason
+`lockSet_consistent_send` states. -/
 theorem lockSet_consistent_call (callerTid : ThreadId)
     (cnRoot epId : ObjId) (rTid : Option ThreadId)
     (donatedScId : Option SchedContextId)
-    (replyId : Option ReplyId := none) :
-    ∀ p ∈ (lockSet_endpointCall callerTid cnRoot epId rTid donatedScId replyId).pairs,
+    (replyId : Option ReplyId := none)
+    (destCnode : Option ObjId := none) :
+    ∀ p ∈ (lockSet_endpointCall callerTid cnRoot epId rTid donatedScId replyId
+             destCnode).pairs,
       p.fst.kind ∈ permittedKinds .call :=
-  lockSet_consistent_base_plus_three_opts _ _ _ _ _
+  lockSet_consistent_base_plus_five_opts _ _ _ _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -2135,6 +2240,14 @@ theorem lockSet_consistent_call (callerTid : ThreadId)
         cases replyId with
         | none => simp at hpp
         | some rid => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        cases destCnode with
+        | none => simp at hpp
+        | some r => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        cases destCnode with
+        | none => simp at hpp
+        | some _ => simp at hpp; rw [← hpp]; simp [stateLevelLock]; decide)
 
 /-- WS-SM SM3.B.4 for `.reply` (audit-pass-3 + audit-pass-4: donation-
 return extension with separate `donatedOriginalOwnerTid` arg). -/

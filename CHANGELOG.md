@@ -1,3 +1,75 @@
+## v0.34.60 — the capability transfer declares what it writes
+
+**WS-RR RR7.7** — fine locks, Track B: the endpoint-caps footprint declaration
+and its algebra.
+
+A rendezvous that carries capabilities installs them into the **receiver's**
+CSpace root, and the pre-RR7.7 `lockSet_endpointSend` did not name that object
+at all: its only CNode member was the *caller's*, in read mode, and on a
+cross-CSpace transfer those are different objects.  Two sends into one receiver
+had provably disjoint footprints while both writing that receiver's CSpace —
+which is exactly what a two-phase-locking consumer is entitled to run
+concurrently.
+
+### One argument, two members, and one place they are declared
+
+`destCnodeObjId` is threaded onto `lockSet_endpointSend` and
+`lockSet_endpointCall` as the outermost pair of optionals.  `some r` declares
+**two** members, and the second is the one this cut exists for:
+
+* `(cnodeLock r, .write)` — the slot insert.  When `r` is the caller's own root
+  the `AccessMode.lub` upgrades the existing read instead of adding a member,
+  so the size is unchanged on that path; a witness in `tests/LockSetSuite.lean`
+  pins that rather than asserting it.
+* `(stateLevelLock, .write)` — the **CDT maps**.  A capability install writes
+  `SystemState`-level derivation structure, not only the slot.  Without it, two
+  transfers into *different* CSpaces are provably disjoint while
+  read-modify-writing one derivation map — the lost-update shape PR #870
+  round 7 closed for the audit trail, in a second place.
+
+`none` is the capless shape and is definitionally the identity, so every pin
+taken before these members existed survives by `rfl`
+(`lockSet_endpointSend_capless`, `lockSet_endpointCall_capless`).
+
+**`lockSet_endpointCallWithCaps` is now that footprint at `some`**
+(`lockSet_endpointCallWithCaps_eq_call_some`, by `rfl`), not a second
+definition beside it.  It used to extend the base from outside, in another
+file, and the two could drift: a member added to the *base* was inherited, but
+a member the *transfer* needs had to be remembered twice — which is precisely
+how the state-level lock came to be declared in neither.  Its consistency
+theorem is now `lockSet_consistent_call` at that argument, one line, where it
+used to re-derive the destination's admissibility through a key-distinctness
+argument that would have needed extending by hand for every member added.
+
+### The kinds, the consistency, and a live unbounding closed
+
+`permittedKinds` gains `.objStore` on `.send` and `.call`.  It is hierarchy
+level 0 — acquired first — so the by-kind ladder stays acyclic, and the
+`.cnode` the receiver's root needs was already permitted.
+
+`lockSet_consistent_send` and `lockSet_consistent_call` are restated over
+**every** `destCnode` rather than the capless default: the same discipline the
+round-6 `.declassify` and round-8 `.receive` fixes established, since a
+consistency claim checked at one argument value says nothing about the
+footprint a fine-lock consumer actually acquires.
+
+Widening `lockSetTransitions_within_bound`'s send and call conjuncts closed a
+**live** instance of that hazard rather than only preventing a new one: the
+call conjunct read `∀ a b c d e`, so it bounded the *reply-less* footprint
+while `lockSet_endpointCall_size_le` was general — the bundle a consumer cites
+said less than the lemma it cites.  The cause was a defaulted trailing argument
+silently filled in at a bare reference, so the size lemmas lost their defaults;
+under-applying them is now a type error.
+
+Six runtime witnesses check what the consistency theorems cannot: that the two
+members are **declared**, that a capless send declares neither, and that a
+transfer into the caller's own CSpace costs one member rather than two.  A
+consistency check asks whether every declared kind is permitted, which a
+footprint declaring nothing also passes.
+
+**Sub-tasks**: WS-RR RR7.7.
+**Refs**: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR7 (RR7.7)
+
 ## v0.34.59 — the boot path becomes a plan
 
 **WS-RR RR7.5 + RR7.15** — the medium sweep's boot-path rows (register §6

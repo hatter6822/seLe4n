@@ -152,12 +152,21 @@ def lockSet_endpointCallOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
 -- §3  WithCaps lock-set (plan §3.1)
 -- ============================================================================
 
-/-- WS-SM SM6.A.8 (plan §3.1): the lock-set for `endpointCallWithCaps`.  Extends
-`lockSet_endpointCall` with the **destination CNode write lock** (the receiver's
-CSpace root, into which `ipcUnwrapCaps` installs the transferred capabilities).
-The sender CNode (read) is already part of `lockSet_endpointCall`; if the dest
-CNode coincides with the sender CNode, `insertOrMerge`'s `AccessMode.lub`
-upgrades it to write (conservative, union-over-all-paths). -/
+/-- WS-SM SM6.A.8 (plan §3.1): the lock-set for `endpointCallWithCaps`.
+
+**WS-RR RR7.7: this is `lockSet_endpointCall` at `some destCnodeObjId`**, not a
+second definition beside it.  It used to extend the base footprint from out
+here, and the two could drift: a member added to the base was inherited, but a
+member the *capability transfer* needs had to be remembered twice — which is
+how the `stateLevelLock` the CDT write requires came to be on neither.  Folding
+the destination into the base as an optional makes "the caps footprint" a value
+of the base's own argument, so there is one place where the transfer's
+obligations are declared and `lockSet_endpointSend` states the same ones.
+
+What that argument adds is documented at `lockSet_endpointCall`: the
+destination CSpace root in write mode (merged with the sender's root by
+`AccessMode.lub` when they coincide, so the size bound is unchanged on that
+path) and the state-level lock for the CDT maps the install writes. -/
 def lockSet_endpointCallWithCaps (callerTid : SeLe4n.ThreadId)
     (cnodeRootObjId : SeLe4n.ObjId) (destCnodeObjId : SeLe4n.ObjId)
     (endpointObjId : SeLe4n.ObjId)
@@ -169,9 +178,21 @@ def lockSet_endpointCallWithCaps (callerTid : SeLe4n.ThreadId)
     -- write is covered by `replyLock rid` inside the WithCaps footprint, keeping
     -- copied reply caps on another core inside the 2PL serialization.
     (replyId : Option SeLe4n.ReplyId := none) : LockSet :=
-  lockSetExtendOpt
-    (lockSet_endpointCall callerTid cnodeRootObjId endpointObjId receiverTid donatedScId replyId)
-    (some (cnodeLock destCnodeObjId, .write))
+  lockSet_endpointCall callerTid cnodeRootObjId endpointObjId receiverTid donatedScId
+    replyId (some destCnodeObjId)
+
+/-- **WS-RR RR7.7**: the caps footprint *is* the base footprint at `some`, by
+`rfl`.  A refactor that reintroduces a second definition breaks this marker at
+elaboration rather than at the next audit. -/
+theorem lockSet_endpointCallWithCaps_eq_call_some (callerTid : SeLe4n.ThreadId)
+    (cnodeRootObjId destCnodeObjId endpointObjId : SeLe4n.ObjId)
+    (receiverTid : Option SeLe4n.ThreadId)
+    (donatedScId : Option SeLe4n.SchedContextId)
+    (replyId : Option SeLe4n.ReplyId) :
+    lockSet_endpointCallWithCaps callerTid cnodeRootObjId destCnodeObjId endpointObjId
+        receiverTid donatedScId replyId
+      = lockSet_endpointCall callerTid cnodeRootObjId endpointObjId receiverTid
+          donatedScId replyId (some destCnodeObjId) := rfl
 
 -- ============================================================================
 -- §4  The cross-core endpoint-call transition (plan §3.2)
@@ -432,25 +453,25 @@ theorem lockSet_endpointCall_donation_extension
 -- ============================================================================
 
 /-- WS-SM SM6.A.8 (`endpointCallWithCaps_lockSet_correct`): the
-`endpointCallWithCaps` lock-set — `endpointCall`'s footprint extended with the
-**destination CNode write lock** — is hierarchically correct: every declared
-lock still has a kind in `permittedKinds .call` (the destination CNode is a
-`.cnode`, already a permitted kind, so the capability-transfer extension does
-not breach the call's lock ladder). -/
+`endpointCallWithCaps` lock-set is hierarchically correct — every declared lock
+has a kind in `permittedKinds .call`.
+
+**WS-RR RR7.7**: it is now `lockSet_consistent_call` at `some destCnode`, and
+that is the whole proof.  Before the fold, this theorem re-derived the
+destination CNode's admissibility out here while the base's consistency was
+proved in `LockSetTransitions.lean`; the two obligations for one footprint sat
+in two files, which is what let the state-level member the CDT write needs be
+declared in neither.  `permittedKinds .call` gained `.objStore` in the same cut,
+so the ladder is still respected — level 0, acquired first. -/
 theorem endpointCallWithCaps_lockSet_correct
     (caller : SeLe4n.ThreadId) (cnRoot destCnode endpointId : SeLe4n.ObjId)
     (receiver? : Option SeLe4n.ThreadId) (donatedSc? : Option SeLe4n.SchedContextId)
     (replyId? : Option SeLe4n.ReplyId := none) :
     ∀ p ∈ (lockSet_endpointCallWithCaps caller cnRoot destCnode endpointId
               receiver? donatedSc? replyId?).pairs,
-      p.fst.kind ∈ permittedKinds .call := by
-  unfold lockSet_endpointCallWithCaps
-  refine lockSet_consistent_extendOpt _ _ _
-    (lockSet_consistent_call caller cnRoot endpointId receiver? donatedSc? replyId?) ?_
-  intro pp hpp
-  cases hpp
-  show LockKind.cnode ∈ permittedKinds .call
-  decide
+      p.fst.kind ∈ permittedKinds .call :=
+  lockSet_consistent_call caller cnRoot endpointId receiver? donatedSc? replyId?
+    (some destCnode)
 
 -- ============================================================================
 -- §10  SM6.A.9 — `endpointCall` atomicity under its lock-set (2PL)

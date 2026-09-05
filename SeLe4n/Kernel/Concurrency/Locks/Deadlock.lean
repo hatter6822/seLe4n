@@ -707,10 +707,17 @@ local macro "size_bound" : tactic =>
   `(tactic| (simp only [List.length_cons, List.length_nil]; omega))
 
 -- The 25 per-transition size bounds (one per SyscallId variant).
-theorem lockSet_endpointSend_size_le (a : ThreadId) (b c : ObjId) (d : Option ThreadId) :
-    (lockSet_endpointSend a b c d).size ≤ maxLockSetSize := by
+-- WS-RR RR7.7: stated over the capability-transfer destination too.  The
+-- footprint gained two outermost optionals (the receiver's CSpace root and the
+-- state-level lock the CDT write needs), so the bound is the three-extension
+-- form; leaving the statement at four arguments would have bounded only the
+-- capless send, which is the same silent unbounding the SM9.C
+-- `notificationSignal` fix closed and the round-8 `.receive` fix closed again.
+theorem lockSet_endpointSend_size_le (a : ThreadId) (b c : ObjId) (d : Option ThreadId)
+    (e : Option ObjId) :
+    (lockSet_endpointSend a b c d e).size ≤ maxLockSetSize := by
   unfold lockSet_endpointSend maxLockSetSize
-  exact Nat.le_trans (size_le_1 _ _) (by size_bound)
+  exact Nat.le_trans (size_le_3 _ _ _ _) (by size_bound)
 
 -- PR #873 round 8: stated over the reply optional and the caps flag too.  A
 -- partial application here is how an added member gets silently unbounded (the
@@ -723,14 +730,27 @@ theorem lockSet_endpointReceive_size_le (a : ThreadId) (b c : ObjId) (d : Option
   unfold lockSet_endpointReceive maxLockSetSize
   exact Nat.le_trans (size_le_2 _ _ _) (by size_bound)
 
+-- WS-RR RR7.7: and over the capability-transfer destination, which is where
+-- `lockSet_endpointCallWithCaps` now lives.  Five optionals over a three-member
+-- base is exactly `maxLockSetSize`, and that is not slack being spent
+-- carelessly: on the path that actually carries capabilities the destination
+-- root is very often the caller's own, where `insertOrMerge`'s `AccessMode.lub`
+-- upgrades the existing read instead of adding a member.  The bound is the
+-- union over all paths, as a declared footprint must be.
+-- No default arguments here, deliberately.  `lockSetTransitions_within_bound`
+-- cites this lemma by bare name, and a defaulted trailing argument is silently
+-- filled in at that reference -- which is how the bundle came to bound only the
+-- reply-less call while the lemma itself was general.  Requiring every argument
+-- makes the under-application a type error.
 theorem lockSet_endpointCall_size_le (a : ThreadId) (b c : ObjId)
     (d : Option ThreadId) (e : Option SchedContextId)
-    (f : Option ReplyId := none) :
-    (lockSet_endpointCall a b c d e f).size ≤ maxLockSetSize := by
+    (f : Option ReplyId) (g : Option ObjId) :
+    (lockSet_endpointCall a b c d e f g).size ≤ maxLockSetSize := by
   unfold lockSet_endpointCall maxLockSetSize
-  -- PR #822 review: the server-first stashed reply is folded in as the outermost
-  -- (third) optional, so the bound is the three-extension form (as `replyRecv`).
-  exact Nat.le_trans (size_le_3 _ _ _ _) (by size_bound)
+  -- PR #822 review: the server-first stashed reply is folded in as an optional;
+  -- WS-RR RR7.7 adds the destination CNode and the state-level lock outside it,
+  -- so the bound is the five-extension form.
+  exact Nat.le_trans (size_le_5 _ _ _ _ _ _) (by size_bound)
 
 theorem lockSet_endpointReply_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
     (d : Option SchedContextId) (e : Option ThreadId) :
@@ -935,9 +955,9 @@ had been fixed at their `none` defaults and so left the five-member
 bound-delivery footprint unbounded.  PR #887's review round added the
 thirty-first, `tcbSetFaultHandler`.) -/
 theorem lockSetTransitions_within_bound :
-    (∀ a b c d, (lockSet_endpointSend a b c d).size ≤ maxLockSetSize) ∧
+    (∀ a b c d e, (lockSet_endpointSend a b c d e).size ≤ maxLockSetSize) ∧
     (∀ a b c d e f, (lockSet_endpointReceive a b c d e f).size ≤ maxLockSetSize) ∧
-    (∀ a b c d e, (lockSet_endpointCall a b c d e).size ≤ maxLockSetSize) ∧
+    (∀ a b c d e f g, (lockSet_endpointCall a b c d e f g).size ≤ maxLockSetSize) ∧
     (∀ a b c d e, (lockSet_endpointReply a b c d e).size ≤ maxLockSetSize) ∧
     (∀ a b c d e f g h i, (lockSet_replyRecv a b c d e f g h i).size ≤ maxLockSetSize) ∧
     (∀ a b c d e f, (lockSet_notificationSignal a b c d e f).size ≤ maxLockSetSize) ∧
@@ -967,7 +987,8 @@ theorem lockSetTransitions_within_bound :
     (∀ a b c d, (lockSet_tcbSetIPCBuffer a b c d).size ≤ maxLockSetSize) ∧
     (∀ a b c d e, (lockSet_tcbSetFaultHandler a b c d e).size ≤ maxLockSetSize) :=
   ⟨lockSet_endpointSend_size_le, lockSet_endpointReceive_size_le,
-   lockSet_endpointCall_size_le, lockSet_endpointReply_size_le,
+   (fun a b c d e f g => lockSet_endpointCall_size_le a b c d e f g),
+   lockSet_endpointReply_size_le,
    lockSet_replyRecv_size_le, lockSet_notificationSignal_size_le,
    lockSet_notificationWait_size_le, lockSet_cspaceMint_size_le,
    lockSet_cspaceCopy_size_le, lockSet_cspaceMove_size_le,
@@ -1007,8 +1028,13 @@ structure KernelOperation where
 per-object reply write-lock on a server-first `Call`. -/
 def KernelOperation.ofEndpointCall (a : ThreadId) (b c : ObjId)
     (d : Option ThreadId) (e : Option SchedContextId)
-    (f : Option ReplyId := none) : KernelOperation :=
-  ⟨lockSet_endpointCall a b c d e f, lockSet_endpointCall_size_le a b c d e f⟩
+    (f : Option ReplyId := none)
+    -- WS-RR RR7.7: the capability-transfer destination, so a Call that carries
+    -- capabilities builds an operation whose footprint is the one its bracket
+    -- acquires.  `none` is the capless shape and reduces definitionally, so
+    -- every operation built before this argument existed is unchanged.
+    (g : Option ObjId := none) : KernelOperation :=
+  ⟨lockSet_endpointCall a b c d e f g, lockSet_endpointCall_size_le a b c d e f g⟩
 
 /-- WS-SM SM3.D.6: build the `KernelOperation` for a `replyRecv` (a 7-arg,
 3-extension transition — the deepest static footprint). -/
