@@ -6,7 +6,7 @@ Bandwidth Servers: a `SchedContext` that holds members instead of a thread, is
 charged whenever a thread in its subtree runs, and admits its members against
 its own budget, so a component's threads share one reservation and nothing
 outside the component is delayed by more than that reservation.  The plan is
-75 sub-tasks across nine phases (CB0..CB8), numbered in execution order and
+73 sub-tasks across nine phases (CB0..CB8), numbered in execution order and
 held by the plan gate; its binding decisions are in §3 and its implementation
 specification — types, the CBS engine rules, the order, selection, charging
 and activation, admission, deadline inheritance, every transition's refusal
@@ -44,7 +44,7 @@ tick-quantised with no new upcall and no ABI version change; and every
 generalising sub-task after CB1 carries the theorem that the model is
 unchanged on states without servers.
 
-Six automated review rounds on the planning PR (fifty-one findings)
+Seven automated review rounds on the planning PR (fifty-eight findings)
 reshaped the design before any code exists, and the plan's §14 records each
 finding against its fix — and, after the fifth, the classes the findings fell
 into and the rule that closes each class rather than its instances (§14): a transitive tie-break (`scId` in the EDF class, the
@@ -73,8 +73,11 @@ tables landing with the Lean ids rather than two rows after the arms, since
 the HAL's prefilter refuses an id its table lacks before Lean runs; every
 phase that changes a live path in the shape CB1 took — inert definitions,
 then one switch cut carrying the suite, the footprints and the observer lift
-(CB3.6, CB4.3, CB4.5, CB6.7), so no theorem about a transition is first stated
-in the cut that makes it reachable; the deactivation hook on the per-core
+(the selection switch that closes CB3, CB4's tick and activation cuts, CB6's
+activation cut — named rather than numbered here, since the plan gate resolves
+row ids in the plan and its companion documents but not in this file), so no
+theorem about a transition is first stated in the cut that makes it
+reachable; the deactivation hook on the per-core
 removal primitive the cross-core IPC paths actually call; the guarantee's
 eligibility hypothesis running from the window's release; `schedContextYieldTo`
 retired, since it wrote budget on two contexts outside every rule; a leaf
@@ -88,8 +91,21 @@ key-moving and activity-changing transition sets derived from the key's
 inputs and the count's dependencies rather than listed, which is what brought
 unbind, donation and the current-slot removal into them; bandwidth released at
 the window's end rather than at departure, so a share that leaves a core keeps
-counting there until its deadline and admission survives churn; and the
-status flip confined to the last closure row.
+counting there until its deadline and admission survives churn; the
+activity counter tracking **eligibility** — budget and work below, one
+predicate at every node, since a nested server is throttled by its own budget
+exactly as a leaf is — so a descendant's refill landing is the crossing that
+re-activates an ancestor whose window has passed, with the budget crossings
+of every node on the charged path among the derived triggers and the walk
+never re-arming the node it starts from; the link and unlink of a member
+climbing from the child's existing eligibility rather than moving its own
+count; one residual per context made exact, coalescing on the same core and
+deadline and refusing a second departure otherwise; the pure admission
+arithmetic landing with the hierarchy queries, two phases before the cut that
+routes transitions through it; the dispatch, return-shape and end-to-end pins
+folded into the activation cut that makes their arms reachable; the wake and
+bind footprints taking the replenish-queue slot in the engine cut whose rule
+writes it; and the status flip confined to the last closure row.
 
 Three things the survey behind the plan found in the flat tree, all recorded
 in the plan (§1.1, §3.3) and in the debt register:
