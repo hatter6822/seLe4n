@@ -6,7 +6,7 @@ Bandwidth Servers: a `SchedContext` that holds members instead of a thread, is
 charged whenever a thread in its subtree runs, and admits its members against
 its own budget, so a component's threads share one reservation and nothing
 outside the component is delayed by more than that reservation.  The plan is
-73 sub-tasks across nine phases (CB0..CB8), numbered in execution order and
+72 sub-tasks across nine phases (CB0..CB8), numbered in execution order and
 held by the plan gate; its binding decisions are in §3 and its implementation
 specification — types, the CBS engine rules, the order, selection, charging
 and activation, admission, deadline inheritance, every transition's refusal
@@ -44,7 +44,7 @@ tick-quantised with no new upcall and no ABI version change; and every
 generalising sub-task after CB1 carries the theorem that the model is
 unchanged on states without servers.
 
-Seven automated review rounds on the planning PR (fifty-eight findings)
+Eight automated review rounds on the planning PR (sixty-five findings)
 reshaped the design before any code exists, and the plan's §14 records each
 finding against its fix — and, after the fifth, the classes the findings fell
 into and the rule that closes each class rather than its instances (§14): a transitive tie-break (`scId` in the EDF class, the
@@ -105,7 +105,21 @@ arithmetic landing with the hierarchy queries, two phases before the cut that
 routes transitions through it; the dispatch, return-shape and end-to-end pins
 folded into the activation cut that makes their arms reachable; the wake and
 bind footprints taking the replenish-queue slot in the engine cut whose rule
-writes it; and the status flip confined to the last closure row.
+writes it; eligibility read from a node's own maintained fields under the
+locks the transition holds, each primitive noting the activity it knows from
+its own core rather than recomputing it over every core's queue and current
+slot; a refill landing that never revives an expired window, with the rule
+that every eligibility gain leaves a current window held by each engine rule
+rather than by the incidental composition the previous round had removed; an
+unconfigured context taking the fresh-configuration rule whether or not it is
+bound, since a retyped context carries budget zero and a derived deadline of
+ten thousand; a cross-core donation reserving the residual slot for its
+return, so a donated leaf admits no other departure until then; the bind
+scheduling point landing in the engine cut whose rule can leave a current
+thread ineligible, and the liveness restatement in the order switch it
+describes; the observer projection erasing per object rather than per field,
+so a visible tree is visible whole; and the status flip confined to the last
+closure row.
 
 Three things the survey behind the plan found in the flat tree, all recorded
 in the plan (§1.1, §3.3) and in the debt register:
