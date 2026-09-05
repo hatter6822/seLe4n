@@ -44,7 +44,7 @@ tick-quantised with no new upcall and no ABI version change; and every
 generalising sub-task after CB1 carries the theorem that the model is
 unchanged on states without servers.
 
-Five automated review rounds on the planning PR (forty-five findings)
+Six automated review rounds on the planning PR (fifty-one findings)
 reshaped the design before any code exists, and the plan's §14 records each
 finding against its fix — and, after the fifth, the classes the findings fell
 into and the rule that closes each class rather than its instances (§14): a transitive tie-break (`scId` in the EDF class, the
@@ -83,7 +83,12 @@ until the return; the compiler sweeps and the server refills joined the cuts
 that cannot build or hold without them; the stored `deadline` field derived
 rather than mirrored, so its consistency is a `rfl` and not an invariant; the
 replenish queue declared as a lock slot by every rule that purges it; the
-guarantee's window held stable against reconfiguration inside it; and the
+guarantee's window held stable against reconfiguration inside it; the
+key-moving and activity-changing transition sets derived from the key's
+inputs and the count's dependencies rather than listed, which is what brought
+unbind, donation and the current-slot removal into them; bandwidth released at
+the window's end rather than at departure, so a share that leaves a core keeps
+counting there until its deadline and admission survives churn; and the
 status flip confined to the last closure row.
 
 Three things the survey behind the plan found in the flat tree, all recorded
