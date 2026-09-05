@@ -1,4 +1,12 @@
-## v0.34.55 — the closure audit finds a stall in the deployed lock
+## v0.34.56 — the closure audit finds a stall in the deployed lock
+
+**Numbering note.**  The seven entries from `v0.34.50` (RR6) to this one were
+numbered `v0.34.49`–`v0.34.55` while the PR that carries them was in review;
+PR #891 (the WS-CB plan) shipped `v0.34.49` to `main` first, and a version
+names one merged PR, so the seven were renumbered one step up when `main` was
+merged into the branch — every citation of them in the tree moved with them,
+and nothing at or below `v0.34.49` was touched.  Commit messages and review
+replies written before the merge still quote the review-time numbers.
 
 **WS-LC closure audit.**  A deep audit of the whole workstream against its
 code — the twenty-seven RR6 rows, the five LC phases, every changed file —
@@ -109,7 +117,7 @@ The same file had a second instance of the same shape from LC1: three
 anchor comments with backticks inside the single-quoted payload, which
 CI's shellcheck reports as SC2016 and which the local environment, lacking
 shellcheck, never ran — so the branch's `Tiered Tests / Fast` and `ARM64
-Fast Gate` checks had been red since v0.34.50 and nobody had read them.
+Fast Gate` checks had been red since v0.34.51 and nobody had read them.
 Reworded, reproduced and verified with shellcheck installed.
 
 ### Review round 1 (Codex, on `3a6bd5c1`)
@@ -507,11 +515,11 @@ environment still bounded them — found by running the quick pass rather
 than quoting it, and the bounded figure (about half a minute) is
 re-measured on the fixed form.
 
-## v0.34.54 — the lock execution learns what a step costs
+## v0.34.55 — the lock execution learns what a step costs
 
 **WS-LC LC5 (all eleven sub-tasks), and the workstream closes.**  Both SM2.C
 debt rows are retired from `docs/REGISTERED_DEBT.md` table C: SM2.C-C at
-v0.34.53, SM2.C-T here.
+v0.34.54, SM2.C-T here.
 
 A delay bound on this surface counted **lock operations**, which is the only
 unit an execution that records nothing but operations can speak in.  A holder
@@ -601,18 +609,18 @@ lockstep, and the phase manifest with it (1133 entries, 919 theorems).
 
 Refs: docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md §7 (LC5)
 
-## v0.34.53 — the two-phase-locking bracket learns to unwind
+## v0.34.54 — the two-phase-locking bracket learns to unwind
 
 **WS-LC LC4 (all seven sub-tasks).**  The withdrawal existed at every level —
-spec (v0.34.50), both refinements (v0.34.51), the deployed lock and its FFI
-(v0.34.52) — and nothing consumed it.  Both two-phase-locking unwinds still
+spec (v0.34.51), both refinements (v0.34.52), the deployed lock and its FFI
+(v0.34.53) — and nothing consumed it.  Both two-phase-locking unwinds still
 called release-only folds, and a release is the identity for a non-holder, so
 where the growing phase found a member contended the core was left *queued*
 on it, to be promoted later and strand the lock.  This closes that.
 
 `FineLockFlow.lean` stated the gap exactly, in a caveat headed **"What
 'released' does and does not mean"**, whose reason — "`RwLockOp` has no cancel
-operation" — stopped being true at v0.34.50.  The caveat is deleted, and the
+operation" — stopped being true at v0.34.51.  The caveat is deleted, and the
 theorem that makes it false stands where it stood.
 
 ### Withdraw, then release — and the order is the design (LC4.1)
@@ -709,10 +717,10 @@ What remains of SM2.C-C is nothing; LC5.10 retires its debt row.
 
 Refs: docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md §6 (LC4)
 
-## v0.34.52 — the deployed lock learns to withdraw
+## v0.34.53 — the deployed lock learns to withdraw
 
 **WS-LC LC3 (all seven sub-tasks).**  The withdrawal existed at the spec
-level (v0.34.50) and in the ticket-FIFO refinement (v0.34.51); the lock the
+level (v0.34.51) and in the ticket-FIFO refinement (v0.34.52); the lock the
 kernel actually instantiates could not perform one.  This cut closes that
 half.  `STATIC_RW_LOCK_POOL` is `[QueuedRwLock; 4]`, so this is the lock a
 booted image runs.
@@ -814,7 +822,7 @@ granted and leave what was merely requested.  That is WS-LC LC4.
 
 Refs: docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md §5 (LC3)
 
-## v0.34.51 — the ticket lock's ledger learns to tombstone
+## v0.34.52 — the ticket lock's ledger learns to tombstone
 
 **WS-LC LC2 (all eight sub-tasks).**  LC1 gave the abstract lock a
 withdrawal and left the deployed lock's refinement covering only cancel-free
@@ -908,7 +916,7 @@ surface is denominated in time (LC5).
 
 Refs: docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md §4 (LC2)
 
-## v0.34.50 — a queued core may take its request back
+## v0.34.51 — a queued core may take its request back
 
 **WS-LC LC1 (all eighteen sub-tasks), opening the workstream that closes the
 two SM2.C datatype residuals.**  WS-RR RR6 finished SM2.C-defer's *refinement*
@@ -1034,7 +1042,7 @@ denominated in time (LC4).
 
 Refs: docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md §3 (LC1)
 
-## v0.34.49 — the lock the kernel runs is the lock the spec describes
+## v0.34.50 — the lock the kernel runs is the lock the spec describes
 
 **WS-RR RR6 (all twenty-seven sub-tasks), closing SM2.C-defer.**  One theme,
 stated by the phase plan and confirmed by the pre-SM10 audit: *the refinement

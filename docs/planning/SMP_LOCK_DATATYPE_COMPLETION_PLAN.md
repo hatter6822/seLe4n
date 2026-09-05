@@ -1,13 +1,13 @@
 # WS-LC — Lock datatype completion (the two SM2.C residuals)
 
-> **Status**: **COMPLETE** — LC1 at v0.34.50 (eighteen sub-tasks), LC2 at
-> v0.34.51 (eight), LC3 at v0.34.52 (seven), LC4 at v0.34.53 (seven), LC5 at
-> v0.34.54 (eleven).  Both SM2.C debt rows are retired from
+> **Status**: **COMPLETE** — LC1 at v0.34.51 (eighteen sub-tasks), LC2 at
+> v0.34.52 (eight), LC3 at v0.34.53 (seven), LC4 at v0.34.54 (seven), LC5 at
+> v0.34.55 (eleven).  Both SM2.C debt rows are retired from
 > `docs/REGISTERED_DEBT.md` table C.
 > **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
-> **Predecessor**: [`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md) RR6 (v0.34.49), which closed SM2.C-defer's refinement work and deliberately did not absorb these two
+> **Predecessor**: [`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md) RR6 (v0.34.50), which closed SM2.C-defer's refinement work and deliberately did not absorb these two
 > **Debt rows closed**: `docs/REGISTERED_DEBT.md` table C — **SM2.C-T** and **SM2.C-C**
-> **Target releases**: v0.34.50 → v0.34.54
+> **Target releases**: v0.34.51 → v0.34.55
 > **Sub-task count**: 51 across 5 phases (LC1..LC5), each phase numbered in
 > the order it is to be implemented
 
@@ -54,11 +54,11 @@ covered is being un-covered; a documented model limitation is being closed.
 
 | Phase | Scope | Sub-tasks | Size | Version |
 |-------|-------|-----------|------|---------|
-| LC1 | The abstract cancel, its invariant preservation, the liveness restatement, and the CAS-retry bridge | 18 | L | v0.34.50 |
-| LC2 | The ticket-FIFO refinement of the withdrawal: the withdrawal word, skip-aware promotion, and the capstones over live entries | 8 | L | v0.34.51 |
-| LC3 | The deployed withdrawal: `QueuedRwLock::cancel`, loom, miri, Tier-5, and the foreign-function surface | 7 | L | v0.34.52 |
-| LC4 | The two-phase-locking consumers: `cancelAll`, the revalidated refusal unwind, the `withLockSet` unwind | 7 | M | v0.34.53 |
-| LC5 | SM2.C-T: the timed execution and the cycle-denominated bounds | 11 | M | v0.34.54 |
+| LC1 | The abstract cancel, its invariant preservation, the liveness restatement, and the CAS-retry bridge | 18 | L | v0.34.51 |
+| LC2 | The ticket-FIFO refinement of the withdrawal: the withdrawal word, skip-aware promotion, and the capstones over live entries | 8 | L | v0.34.52 |
+| LC3 | The deployed withdrawal: `QueuedRwLock::cancel`, loom, miri, Tier-5, and the foreign-function surface | 7 | L | v0.34.53 |
+| LC4 | The two-phase-locking consumers: `cancelAll`, the revalidated refusal unwind, the `withLockSet` unwind | 7 | M | v0.34.54 |
+| LC5 | SM2.C-T: the timed execution and the cycle-denominated bounds | 11 | M | v0.34.55 |
 
 ### 2.2 Why this order
 
@@ -188,7 +188,7 @@ Tier-5 oracle exercises the new letter in both languages.
 | LC3.6 | Tier-5: widen both oracles' alphabet in the same commit, and **re-derive** the ticket-interval check rather than patching its constant — with tombstones the outstanding count is no longer a function of the writer bit | LC3.5 | `scripts/test_tier5_cross_language.sh` |
 | LC3.7 | The foreign-function surface (the unwind's caller is on the Lean side, so a Rust-only operation would be unreachable from the runtime), anchors, inventory, documentation sync, and the version cut | LC3.6 | `check_lock_ffi_symmetry.sh`; cross build green |
 
-**Closure audit (v0.34.55).**  The slot is one word per core, and LC3.1 let a
+**Closure audit (v0.34.56).**  The slot is one word per core, and LC3.1 let a
 core take a second ticket while its first withdrawal was still unclaimed: a
 second `cancel` overwrote the publication, the release ahead stopped
 `now_serving` on a ticket nobody held, and the lock stalled — on the

@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.34.55-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.34.56-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -86,7 +86,7 @@ architectural improvements enabled by the Lean 4 proof framework:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.34.55` |
+| **Version** | `0.34.56` |
 | **Lean toolchain** | `v4.28.0` |
 | **Production Lean LoC** | 330,569 across 311 files |
 | **Test Lean LoC** | 68,907 across 70 test suites |
@@ -257,12 +257,12 @@ image needs made production-reachable, at v0.34.48; and the verified lock
 primitives — the deployed reader-writer lock is now the ticket-FIFO
 `QueuedRwLock` the Lean spec describes, refined to it before the switch, with
 each refinement bridge deriving its trace correspondence instead of assuming
-it, at v0.34.49). RR7–RR8 remain, then **SM10** (release closure → v1.0.0).
+it, at v0.34.50). RR7–RR8 remain, then **SM10** (release closure → v1.0.0).
 
 Running ahead of RR7 is **WS-LC** (lock datatype completion,
 [`SMP_LOCK_DATATYPE_COMPLETION_PLAN.md`](docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md)):
 51 sub-tasks closing the two lock **datatype** residuals RR6 re-registered
-rather than absorbed. LC1 landed at v0.34.50 — a queued core may now withdraw
+rather than absorbed. LC1 landed at v0.34.51 — a queued core may now withdraw
 its request in the abstract lock, with all five reader-writer invariants
 preserved and the liveness results that conclude "becomes the holder" restated
 under an explicit no-withdrawal window. The deployed lock cannot withdraw yet

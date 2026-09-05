@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.34.55` (`lakefile.toml`) |
+| **Package version** | `0.34.56` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 330,569 across 311 Lean files |
 | **Test LoC** | 68,907 across 70 Lean test suites |
@@ -586,7 +586,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    List CoreId`, `waiters : List (CoreId × AccessMode)`).
    `unheld` canonical seed.  `RwLockOp` 5-constructor inductive
    (`tryAcquireRead`, `releaseRead`, `tryAcquireWrite`,
-   `releaseWrite`, `cancel`).  `cancel` (v0.34.50) is the
+   `releaseWrite`, `cancel`).  `cancel` (v0.34.51) is the
    withdrawal a two-phase-locking growing phase needs: it
    removes the core's entry from `waiters` and writes nothing
    else, so it is neither a release nor an admission.
@@ -708,7 +708,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    divergence**: the CAS-retry `rw_lock.rs` satisfies the mutex +
    exclusion invariants but not the spec's FIFO admission — it has
    no waiters queue, so `rwLockSim` relates the writer bit and the
-   reader count only, and says so.  **WS-RR RR6 (v0.34.49) closed
+   reader count only, and says so.  **WS-RR RR6 (v0.34.50) closed
    the bridge in both directions.**
 
    *The bridge no longer assumes its own conclusion.*
@@ -729,7 +729,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    therefore carry **no** `ListBlockBisim` premise.
 
    *The deployed lock has its own bridge, and it is a FIFO one.*
-   `STATIC_RW_LOCK_POOL` is `[QueuedRwLock; 4]` as of v0.34.49, so
+   `STATIC_RW_LOCK_POOL` is `[QueuedRwLock; 4]` as of v0.34.50, so
    the lock the kernel runs is the ticket-FIFO implementation.
    `SeLe4n.Kernel.Concurrency.Locks.QueuedRwLockRefinement` relates
    it to the spec with `queuedSim`, which adds what the FIFO spec
@@ -861,7 +861,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
      4]`, `STATIC_RW_LOCK_POOL: [QueuedRwLock; 4]`) sized to match
      `PlatformBinding.coreCount = 4` so cross-core tests can
      exercise one lock per core.  The reader-writer pool is the
-     **ticket-FIFO** `QueuedRwLock` as of v0.34.49 (WS-RR RR6.10),
+     **ticket-FIFO** `QueuedRwLock` as of v0.34.50 (WS-RR RR6.10),
      so the deployed lock is the one the Lean FIFO spec describes;
      `build.rs` pins the element type, so a revert to the
      CAS-retry `RwLock` fails the build.  The four `rw_lock_*`
@@ -895,7 +895,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    `rust_ticketLock_refines_lean` packages all four witnesses.
    Mirrors the `Locks/RwLockRefinement.lean` structure.
 
-   **WS-RR RR6.12–RR6.14 (v0.34.49)** raised F-01 to the RwLock
+   **WS-RR RR6.12–RR6.14 (v0.34.50)** raised F-01 to the RwLock
    standard.  What landed originally related two counters by
    hand-written record updates on both sides, and its fourth
    conjunct was `∀ abs conc, ticketLockSim abs conc →
@@ -930,7 +930,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
 
    **WS-LC LC2 — the ticket lock's withdrawal** (MODULE
    `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean`,
-   v0.34.51): `QueuedRwLockConcrete` gains a fifth machine word,
+   v0.34.52): `QueuedRwLockConcrete` gains a fifth machine word,
    `cancelled` — the implementation's per-core withdrawal slot
    array, abstracted to the published-and-unclaimed ticket set —
    and three ops (`cancelledLoad`, `cancelPublish`, the
@@ -954,7 +954,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    live entry, which is what FIFO is about.
 
    **WS-LC LC3 — the deployed withdrawal** (MODULE
-   `rust/sele4n-hal/src/queued_rw_lock.rs`, v0.34.52): the
+   `rust/sele4n-hal/src/queued_rw_lock.rs`, v0.34.53): the
    ticket-FIFO lock the kernel actually instantiates carries the
    withdrawal the refinement above describes.  `acquire_read` and
    `acquire_write` remain the *fused* spellings — one call takes a
@@ -1006,7 +1006,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    `_complete_read`, `_complete_write`, `_cancel`,
    `_cancel_count`), taking the SM2.D bridge surface from 16 to 22.
 
-   **The closure audit's finding** (v0.34.55): the slot is one word
+   **The closure audit's finding** (v0.34.56): the slot is one word
    per core, and the first cut let a core take a second ticket while
    its first withdrawal was still unclaimed — so a second `cancel`
    overwrote the publication, the release ahead stopped
@@ -1043,7 +1043,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
 
    **WS-LC LC4 — the two-phase-locking consumers** (MODULES
    `SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean`,
-   `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean`, v0.34.53):
+   `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean`, v0.34.54):
    the withdrawal reaches the discipline that needs it.
    `withLockSet`'s shrinking phase and the revalidated entry's
    refusal path are one definition, `unwindAll`, which
@@ -1087,7 +1087,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    **WS-LC LC5 — the timed execution** (MODULES
    `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean`,
    `Locks/ReleaseBudgetTiming.lean`,
-   `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean`, v0.34.54):
+   `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean`, v0.34.55):
    `RwLockExecution` carries `stepCost : Nat → Nat`, the cycles
    between one step and the next, **with no default** — so each of
    the nine construction sites declares a cost model where a

@@ -99,7 +99,7 @@ pin one.
 
 ## What the bridge covers, and what it deliberately does not (PR #890 review round 4)
 
-Through v0.34.55 `ticketBlock` had two shapes for calls the implementation
+Through v0.34.56 `ticketBlock` had two shapes for calls the implementation
 does not define: a core already queued or holding re-acquiring, and a
 non-holder releasing, each mapped to an observation-only block because the
 spec no-ops on them.  `ticket_lock.rs` does not: it has no per-core word,

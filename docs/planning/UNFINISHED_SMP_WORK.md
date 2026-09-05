@@ -405,7 +405,7 @@ RR3 slice, since it is the same obligation stated one level up.
 
 **Remediation.** Close the gap in the direction the plan states, not by re-wording it: prove `opCorresponds`-chain + an explicit load-then-CAS trace-shape predicate ⇒ `ListBlockBisim`, so the 12 discharge lemmas compose into the main theorem without the caller supplying the conclusion. Until then, correct §5.4 there to agree with §1's PARTIAL (the §1 wording is the honest one) and state in §8's D-4 gate that the gate is unmet, with the `opCorresponds ⇒ ListBlockBisim` derivation named as the remaining obligation.
 
-**CLOSED at `v0.34.49` (WS-RR RR6.15–RR6.19), in the direction the plan
+**CLOSED at `v0.34.50` (WS-RR RR6.15–RR6.19), in the direction the plan
 states.**  The derivation exists: `honestBlock` is the load-then-CAS trace-shape
 predicate as a *state-indexed* inductive — each constructor's CAS `expected` is
 the value the block's own preceding load observed and its `new` is what
@@ -677,7 +677,7 @@ cannot outlive its call site.  The four local wrappers are now
 
 **Remediation.** Implement the improvement the plan already specifies: drive the real lock. The blocking-under-contention objection in the oracle's docstring is solvable without abandoning the real impl — either expose non-blocking `try_acquire_*` probes on `rw_lock::RwLock` and have the oracle model *admission* while the real lock supplies *state*, or adopt the plan's own "driving multiple OS threads for concurrent op blocks" design with a join barrier per block. Do not retitle D-6 or weaken §5.6; until the oracle links `sele4n_hal::rw_lock`, D-6 should be re-marked PARTIAL in the §1 table with the real-lock driver as its closure target.
 
-**CLOSED at `v0.34.49` (WS-RR RR6.1–RR6.3), by the first of the two designs
+**CLOSED at `v0.34.50` (WS-RR RR6.1–RR6.3), by the first of the two designs
 this remediation names.**  `rw_lock::RwLock` gained non-blocking
 `try_acquire_read` / `try_acquire_write` — each a single CAS attempt mirroring
 exactly one iteration of the blocking loop, so the probe cannot admit where the
@@ -706,7 +706,7 @@ therefore met against the real locks; §5.6 stands unweakened.
 
 **Remediation.** Implement the improvement: raise F-01 to the same standard as F-02. Add a `TicketLockConcrete` operational step function and a `blockBisim`/`ListBlockBisim`-style trace correspondence (mirroring RwLockRefinement.lean's D-4.9 structure), state the step conjuncts over `TicketLockState.applyOp` rather than hand-written record updates, and delete the tautological `observeServing` conjunct in favour of a real "pure-load leaves both states unchanged" statement over the concrete step relation. Do not weaken the plan's F-01 row to match the current theorem. If the full closure genuinely cannot land before v1.0.0, lift it out of the source docstring into a registered debt row (docs/planning/ + CLAUDE.md standing constraints) with an explicit closure target, per the CLAUDE.md rule forbidding deferred items that live only in source comments.
 
-**CLOSED at `v0.34.49` (WS-RR RR6.12–RR6.14).**  F-01 is now built to F-02's
+**CLOSED at `v0.34.50` (WS-RR RR6.12–RR6.14).**  F-01 is now built to F-02's
 standard: `ConcreteTicketLockOp` and `TicketLockConcrete.applyOp` are the
 operational step function, `ticketBlock` is the state-indexed block relation
 (one abstract op to one concrete block, with a stutter prefix for the unbounded

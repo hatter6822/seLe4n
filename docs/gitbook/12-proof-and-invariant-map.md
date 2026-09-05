@@ -208,7 +208,7 @@ fairness theorems, per-object lock sets, two-phase locking, deadlock-freedom
 and serializability.
 
 **Each lock is refined to the Rust the kernel runs, and each bridge derives
-its trace correspondence rather than assuming it** (WS-RR RR6, v0.34.49).
+its trace correspondence rather than assuming it** (WS-RR RR6, v0.34.50).
 Three bridges, one per lock kind:
 
 | Lock | Bridge | Relation | Capstone |
@@ -235,14 +235,14 @@ sibling), while the deployed `QueuedRwLock` alone turns those spec no-ops into
 branches, because the unwind relies on them there.
 
 A queued core may **withdraw** its request. The operation exists at every
-level: `RwLockOp.cancel` in the spec (v0.34.50), a tombstoned ledger and
-skip-aware promotion in the ticket-FIFO refinement (v0.34.51), and
-`QueuedRwLock::cancel` in the deployed lock (v0.34.52). The deployed form
+level: `RwLockOp.cancel` in the spec (v0.34.51), a tombstoned ledger and
+skip-aware promotion in the ticket-FIFO refinement (v0.34.52), and
+`QueuedRwLock::cancel` in the deployed lock (v0.34.53). The deployed form
 splits the acquisition — `enqueue`, spin on `is_served`, then exactly one of
 `complete_read`, `complete_write` or `cancel` — because the fused
 `acquire_read` / `acquire_write` never expose an abandonable ticket. The
 withdrawal slot is one word per core, so `enqueue` parks until the core's
-previous withdrawal has been retired (v0.34.55, the workstream's closure
+previous withdrawal has been retired (v0.34.56, the workstream's closure
 audit): the first cut let a second ticket be taken over an unclaimed
 withdrawal, and a second `cancel` then overwrote it and stalled the lock on a
 ticket nobody held — a sequence every documented contract permitted, which the
@@ -253,7 +253,7 @@ withdrawal changes for a reader of these theorems: a conclusion of the form
 "`c` *leaves the queue*" is satisfied by a withdrawal and is unchanged, while
 one of the form "`c` *becomes the holder*" now carries an explicit
 no-withdrawal-in-window premise. Both two-phase-locking consumers emit a
-withdrawal since v0.34.53: `withLockSet`'s shrinking phase and the revalidated
+withdrawal since v0.34.54: `withLockSet`'s shrinking phase and the revalidated
 entry's refusal path are one definition, `unwindAll`, which withdraws before it
 releases — the order is what lets `unwindAll_leaves_no_queued_request` hold with
 no distinctness or resolvability condition on the footprint. The bracket stays
@@ -299,7 +299,7 @@ Tier-5 oracle holds every withdrawal's verdict to the spec's and prints
 identities per step, and the loom models tally that both verdicts occur.
 
 And a delay bound now names its denominator. `RwLockExecution` carries a per-step
-cost (v0.34.54), so the admission and contention bounds have cycle-denominated
+cost (v0.34.55), so the admission and contention bounds have cycle-denominated
 forms alongside the step forms — each conditional on a per-critical-section
 ceiling, which is an assumption about a deployment's code rather than something
 the kernel derives, and each collapsing back to the step bound at unit cost. The

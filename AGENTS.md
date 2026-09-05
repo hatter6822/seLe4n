@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.55.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.56.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1294,7 +1294,7 @@ SGI INTID 0..4 reserved for kernel SMP coordination (SM0.H).
 |-------|--------|---------|----------------------------------------------------|
 | SM0 | CLOSED | v0.31.3 | Foundational types, honesty patches, lock hierarchy |
 | SM1 | CLOSED | v0.31.8 | Rust HAL: PSCI, per-CPU, secondary init, TLBI, SGI, QEMU |
-| SM2 | LANDED | v0.31.9; SM2.C-defer closed v0.34.49 | Memory model, TicketLock, RwLock, FFI bridge, refinement (WS-RR RR6 closed the deferred completion: the deployed lock is `QueuedRwLock` and refines the FIFO spec) |
+| SM2 | LANDED | v0.31.9; SM2.C-defer closed v0.34.50 | Memory model, TicketLock, RwLock, FFI bridge, refinement (WS-RR RR6 closed the deferred completion: the deployed lock is `QueuedRwLock` and refines the FIFO spec) |
 | SM3 | CLOSED | v0.31.9 | Per-object locks, lock sets, 2PL, deadlock-freedom, serializability |
 | SM4 | LANDED | v0.31.37 | Per-core Vector state, SchedulerState, register banks, invariant migration, idle bootstrap |
 | SM5.A–H | LANDED | v0.31.38–62 | Per-core scheduler: selection, switch, wake, timer, idle, PIP, domain, CBS |
@@ -1325,14 +1325,14 @@ SGI INTID 0..4 reserved for kernel SMP coordination (SM0.H).
 | SM9.E | LANDED | v0.33.100 | Tests + closure: acceptance scenarios run live and pinned as golden fixtures; seam boundary coverage of both declassifying syscalls; the epoch exercised with survivors |
 | SM9 | CLOSED | v0.33.100 | Declassification completion — reader, refusal auditing, data-carrying signal, causal provenance, acceptance fixtures |
 | SM5 runtime seams | LANDED | v0.34.1 | The three seams SM5's docstrings promised between the verified per-core scheduler and the hardware IRQ path — IRQ vector redirect, `.reschedule` SGI receiver, secondary bring-up entry — all dormant behind the per-core `lean_ready` gate until SM10.1 |
-| WS-RR | IN FLIGHT | RR0 v0.34.26; RR1 v0.34.41; RR2 v0.34.42; RR3 v0.34.43; RR4 v0.34.44; RR5 v0.34.48; RR6 v0.34.49 | Pre-SM10 remediation: the audit's 3 blockers, 11 security findings, fault IPC, de-threading closure, lock completion (187 subs across RR0..RR8) |
+| WS-RR | IN FLIGHT | RR0 v0.34.26; RR1 v0.34.41; RR2 v0.34.42; RR3 v0.34.43; RR4 v0.34.44; RR5 v0.34.48; RR6 v0.34.50 | Pre-SM10 remediation: the audit's 3 blockers, 11 security findings, fault IPC, de-threading closure, lock completion (187 subs across RR0..RR8) |
 | SM10 | BLOCKED on WS-RR | — | Release closure (→ v1.0.0) |
 
 **Plans**: master overview at
 [`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md);
 per-phase plans at `docs/planning/SMP_*.md`.
 
-### WS-LC Lock datatype completion — COMPLETE (v0.34.50 → v0.34.54; closure audit v0.34.55)
+### WS-LC Lock datatype completion — COMPLETE (v0.34.51 → v0.34.55; closure audit v0.34.56)
 
 The two SM2.C **datatype** residuals RR6 re-registered rather than absorbed —
 `RwLockOp` had no withdrawal and `RwLockExecution` no notion of time.  Scoped
@@ -1342,11 +1342,11 @@ footprints unwindable.
 
 | Phase | Status | Version | Scope (one line — detail in the canonical sources) |
 |-------|--------|---------|----------------------------------------------------|
-| LC1 | LANDED | v0.34.50 | The abstract withdrawal: `RwLockOp.cancel`, INV-R preservation, the liveness restatement, the CAS-retry bridge |
-| LC2 | LANDED | v0.34.51 | The ticket-FIFO refinement of the withdrawal: the withdrawal word, skip-aware promotion, the capstones over live entries |
-| LC3 | LANDED | v0.34.52 | The deployed withdrawal: `QueuedRwLock::cancel`, loom, miri, Tier-5, and the foreign-function surface |
-| LC4 | LANDED | v0.34.53 | The two-phase-locking consumers: `cancelAll`, the revalidated refusal unwind, the `withLockSet` unwind |
-| LC5 | LANDED | v0.34.54 | SM2.C-T: the timed execution and the cycle-denominated bounds; LC5.10 retired both debt rows |
+| LC1 | LANDED | v0.34.51 | The abstract withdrawal: `RwLockOp.cancel`, INV-R preservation, the liveness restatement, the CAS-retry bridge |
+| LC2 | LANDED | v0.34.52 | The ticket-FIFO refinement of the withdrawal: the withdrawal word, skip-aware promotion, the capstones over live entries |
+| LC3 | LANDED | v0.34.53 | The deployed withdrawal: `QueuedRwLock::cancel`, loom, miri, Tier-5, and the foreign-function surface |
+| LC4 | LANDED | v0.34.54 | The two-phase-locking consumers: `cancelAll`, the revalidated refusal unwind, the `withLockSet` unwind |
+| LC5 | LANDED | v0.34.55 | SM2.C-T: the timed execution and the cycle-denominated bounds; LC5.10 retired both debt rows |
 
 **Plan**: [`docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md`](docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md)
 (51 sub-tasks across LC1..LC5).
@@ -2083,7 +2083,7 @@ code may assume:
   frame) and the `KERNEL_ABORT` arm (a current-EL abort syndrome) are
   fail-closed by design, not SM10.1 placeholders.
 - **The deployed reader-writer lock is the ticket-FIFO one, and each lock has
-  its own refinement bridge** (WS-RR RR6, v0.34.49).  `STATIC_RW_LOCK_POOL` is
+  its own refinement bridge** (WS-RR RR6, v0.34.50).  `STATIC_RW_LOCK_POOL` is
   `[QueuedRwLock; 4]` — `build.rs` pins the element type, so a revert to the
   CAS-retry `RwLock` fails the build — and the four `rw_lock_*` helpers pass
   the executing PE's id, which the ticket protocol needs.  Four things new code
@@ -2135,11 +2135,11 @@ code may assume:
   form and is not the entry (the closure audit found both this file and the
   spec naming it as such).
   The two SM2.C **datatype** extensions RR6 did not absorb are WS-LC's (see
-  below), and both are closed: **SM2.C-C** at v0.34.53 (spec, both refinements,
-  the deployed lock and both consumers) and **SM2.C-T** at v0.34.54 (the timed
+  below), and both are closed: **SM2.C-C** at v0.34.54 (spec, both refinements,
+  the deployed lock and both consumers) and **SM2.C-T** at v0.34.55 (the timed
   execution) — see the two bullets below.
 - **A queued core may withdraw its request, and a withdrawn head hands its
-  turn on.**  `RwLockOp.cancel` (v0.34.50) removes `c`'s entry from `waiters`
+  turn on.**  `RwLockOp.cancel` (v0.34.51) removes `c`'s entry from `waiters`
   and — since PR #890 review round 5 — promotes the contiguous reader run at
   the head when no writer holds and the new head is a reader
   (`RwLockState.cancelPromotes`, `cancelRun`), exactly as the deployed lock's
@@ -2169,12 +2169,12 @@ code may assume:
   leave the queue.  (3) **Both refinement bridges relate it.**  The CAS-retry
   one honestly performs no atomic access (`opCorresponds.cancel_no_queue`,
   `honestBlock.cancel_no_queue`) — a queueless lock has no queue for a
-  withdrawal to disturb.  The ticket-FIFO one (v0.34.51) carries it properly;
-  see the next bullet, and the deployed lock carries it at v0.34.52 — the one
-  after that.  (4) **Both 2PL unwinds emit one** since v0.34.53 — see the
+  withdrawal to disturb.  The ticket-FIFO one (v0.34.52) carries it properly;
+  see the next bullet, and the deployed lock carries it at v0.34.53 — the one
+  after that.  (4) **Both 2PL unwinds emit one** since v0.34.54 — see the
   shrinking-phase bullet below.
 - **The ticket lock's ledger tombstones; the queue it represents is the
-  *live* one** (WS-LC LC2, v0.34.51).  `now_serving` owes one advance per
+  *live* one** (WS-LC LC2, v0.34.52).  `now_serving` owes one advance per
   ticket ever issued, so a withdrawal cannot remove a ticket from the middle
   of the interval — `QueuedRwLockConcrete.cancelled` (the implementation's
   per-core slot array) marks it instead, and `liveLedger` is the ledger minus
@@ -2201,7 +2201,7 @@ code may assume:
   than the `now_serving + offset + i` it replaces, since that formula is
   simply false once anything has withdrawn.
 - **The deployed lock's acquisition splits when it may have to be withdrawn**
-  (WS-LC LC3, v0.34.52).  `QueuedRwLock::acquire_read` / `acquire_write` are
+  (WS-LC LC3, v0.34.53).  `QueuedRwLock::acquire_read` / `acquire_write` are
   the *fused* spellings — they take a ticket and spin to completion inside one
   call, so there is no instant at which a caller holds a ticket and could
   abandon it.  A caller that may have to unwind takes `enqueue(core, mode)`,
@@ -2234,7 +2234,7 @@ code may assume:
   first withdrawal is unclaimed: the second `cancel` would overwrite the
   publication and the first ticket would never be retired — `now_serving`
   stops on it and the lock stalls — on the contract-respecting sequence
-  enqueue, withdraw, enqueue, withdraw (WS-LC closure audit, v0.34.55: the
+  enqueue, withdraw, enqueue, withdraw (WS-LC closure audit, v0.34.56: the
   first cut shipped it, and all four LC3 loom models withdrew once per core).
   `enqueue` therefore parks until the slot is empty
   (`await_withdrawal_retired`), a wait that ends before any later ticket
@@ -2488,7 +2488,7 @@ code may assume:
   (`a_second_withdrawal_behind_a_new_writer_is_retired_by_its_release`)
   rather than modelled.
 - **The two-phase-locking shrinking phase withdraws before it releases**
-  (WS-LC LC4, v0.34.53).  `withLockSet`'s third phase and the revalidated
+  (WS-LC LC4, v0.34.54).  `withLockSet`'s third phase and the revalidated
   entry's refusal path are both `unwindAll` — one definition, so the two
   cannot answer "what does a bracket do on the way out" differently.  Five
   things new code must respect.  (1) **The order is load-bearing.**  Two
@@ -2536,7 +2536,7 @@ code may assume:
   caller that knows what the store holds at a key could conclude nothing
   about what a lookup there returned.
 - **A lock-delay bound is denominated, and by an assumption the kernel does not
-  make** (WS-LC LC5, v0.34.54).  `RwLockExecution` carries `stepCost : Nat →
+  make** (WS-LC LC5, v0.34.55).  `RwLockExecution` carries `stepCost : Nat →
   Nat` — the cycles between step `k` and `k+1` — **with no default**, so all
   nine construction sites declare a cost model where a reviewer can see it.
   Five things new code must respect.  (1) **Three denominations, three

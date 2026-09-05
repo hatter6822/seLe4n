@@ -66,7 +66,7 @@ bound; that Tier 4 acceptance gates have passed; that a fault message past
 `MR3` reaches a handler on hardware.
 
 *(That the deployed RwLock is the one the Lean FIFO spec describes left this
-list at v0.34.49: `STATIC_RW_LOCK_POOL` is `[QueuedRwLock; 4]` and
+list at v0.34.50: `STATIC_RW_LOCK_POOL` is `[QueuedRwLock; 4]` and
 `queuedRwLock_refines_rwLockSpec` covers it. It is now a claim, in §4 of the
 canonical index, with evidence.)*
 

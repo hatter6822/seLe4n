@@ -1,6 +1,6 @@
 # SM2.C Deferred Completion Plan — Verified RwLock (pre-v1.0.0)
 
-> **Status**: **COMPLETE at v0.34.49** — closed by WS-RR phase **RR6**
+> **Status**: **COMPLETE at v0.34.50** — closed by WS-RR phase **RR6**
 > ([`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md), all
 > twenty-seven sub-tasks).  The residue this plan carried was one theme — the
 > refinement bridges connected the Lean specs to transliterations and to their
@@ -22,7 +22,7 @@
 > quantifies over and neither can ride along with a lock-implementation cut.
 > **Both are now owned by WS-LC**
 > ([`SMP_LOCK_DATATYPE_COMPLETION_PLAN.md`](SMP_LOCK_DATATYPE_COMPLETION_PLAN.md)),
-> scoped ahead of WS-RR RR7; its LC1 (v0.34.50) landed the abstract withdrawal
+> scoped ahead of WS-RR RR7; its LC1 (v0.34.51) landed the abstract withdrawal
 > and its LC4 retires both rows.
 
 > **Phase**: SM2.C-defer (closure of WS-SM SM2.C) — **re-scoped pre-v1.0.0**
@@ -37,7 +37,7 @@
 > **Target releases**: originally v1.x.x post-v1.0.0; substantively
 > delivered early in the pre-v0.31.10 SM2.C-defer cut (see the landing
 > annotations in the §1 table), with the D-4 residue closed by RR6 at
-> **v0.34.49**
+> **v0.34.50**
 > **Calendar estimate**: 12–20 weeks across 6 items (as planned)
 > **Sub-task count**: ~30 across 6 deferred items (D-1..D-6)
 
@@ -1246,7 +1246,7 @@ per audit finding M-10):
 | D-2 | `rwLock_bounded_wait_write_distinct` proven (no longer alias) with the **tight** `numCores - 1` bound; Tier 3 anchor added; ≥3 `decide`-checked test fixtures |
 | D-3 | `rwLock_writer_liveness` proven under the strengthened §4.5 `FairTrace`; Tier 3 anchor added; `FairTrace` `Decidable` instance for finite traces |
 | D-4 | `rust_rwLock_refines_lean` proven over the full `opCorresponds`-closed correspondence (CAS-retry + park-retry + conditional-SEV all covered); Tier 3 anchor added; the `concreteApplyOp_fetch_sub_no_underflow` helper landed |
-| D-5 | `QueuedRwLock` impl (MCS-style per-core slots, NOT lock-free linked-list); refinement bridge updated; **≥10 cross-thread tests** covering FIFO + mutex + mixed-stress + panic-safety + slot-ownership; **`cargo +nightly miri test -p sele4n-hal --lib queued_rw_lock` passes with `-Zmiri-strict-provenance`**; **`cfg(loom)` exhaustive-interleaving runs pass on every unordered pair of the lock's single-lifecycle units, one unit per thread — a complete acquisition and release in one of the lock's spellings, a withdrawal and the unwind, or the unwind at a held member — enumerated from the lock's own unit list (`every_pair_of_units_is_safe`, held to the lock's entry points by `build.rs`), plus the targeted scenario models, with no preemption bound; the three chained units — two lifecycles on one core — meet every unit under a stated preemption bound of 3 (`every_chained_unit_meets_every_unit`); and every per-core sequence of up to four entry points, from every state a single thread can drive a core into, matches one classification in the host lane (`per_core_census_to_depth_four`)** (restated at v0.34.55, PR #890 review rounds 2 and 5: "op-sequences of length ≤ 4" named a bound the handwritten scenarios did not enumerate, and the pair enumeration is not that sentence either — the census is); FIFO test iteration count ≥ 10⁴ per run |
+| D-5 | `QueuedRwLock` impl (MCS-style per-core slots, NOT lock-free linked-list); refinement bridge updated; **≥10 cross-thread tests** covering FIFO + mutex + mixed-stress + panic-safety + slot-ownership; **`cargo +nightly miri test -p sele4n-hal --lib queued_rw_lock` passes with `-Zmiri-strict-provenance`**; **`cfg(loom)` exhaustive-interleaving runs pass on every unordered pair of the lock's single-lifecycle units, one unit per thread — a complete acquisition and release in one of the lock's spellings, a withdrawal and the unwind, or the unwind at a held member — enumerated from the lock's own unit list (`every_pair_of_units_is_safe`, held to the lock's entry points by `build.rs`), plus the targeted scenario models, with no preemption bound; the three chained units — two lifecycles on one core — meet every unit under a stated preemption bound of 3 (`every_chained_unit_meets_every_unit`); and every per-core sequence of up to four entry points, from every state a single thread can drive a core into, matches one classification in the host lane (`per_core_census_to_depth_four`)** (restated at v0.34.56, PR #890 review rounds 2 and 5: "op-sequences of length ≤ 4" named a bound the handwritten scenarios did not enumerate, and the pair enumeration is not that sentence either — the census is); FIFO test iteration count ≥ 10⁴ per run |
 | D-6 | `scripts/test_tier5_cross_language.sh` integrated into `test_nightly.sh` under `NIGHTLY_ENABLE_EXPERIMENTAL=1`; two-oracle harness in place (no Lean-to-HAL linking); **≥1000 op-sequences per gate run** (mixed deterministic-edge + property-based-random under a fixed seed); zero mismatches, compared as one identity line per state — the writer's core, the sorted reader cores, the ordered queue with modes — rather than a flag, a count and a length (PR #890 review round 5) |
 
 **Phase closure** (SM2.C-defer fully complete): all 6 gates pass; the

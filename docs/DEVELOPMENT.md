@@ -139,7 +139,7 @@ every generated operation and checks three relations after each one: that the
 two implementations agree, that the queued lock's `[now_serving, next_ticket)`
 interval matches the abstract waiter queue, and that the state word is
 `encodeRwLock` of the abstract state.  It does not model them; the state it
-renders is read back from the lock's own words.  Since v0.34.52 the driver
+renders is read back from the lock's own words.  Since v0.34.53 the driver
 holds a **real ticket** for every queued waiter and the alphabet carries a
 fifth letter, the withdrawal — so the interval check is derived from the
 tombstoned invariant (outstanding tickets are the live waiters *plus* the

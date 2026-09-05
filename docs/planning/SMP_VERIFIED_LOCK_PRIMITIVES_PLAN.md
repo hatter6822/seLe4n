@@ -1,7 +1,7 @@
 # SM2 — Verified Lock Primitives (WS-SM Phase 2)
 
 > **Phase**: SM2 of WS-SM
-> **Status**: LANDED (v0.31.9) — memory model, TicketLock, RwLock, FFI bridge, refinement (SM2.E panic-hang remediation landed).  **SM2.C's deferred items closed at v0.34.49** by WS-RR phase RR6 ([`SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md`](SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md), now COMPLETE): the deployed lock is `QueuedRwLock` and refines the FIFO spec (`queuedRwLock_refines_rwLockSpec`), the CAS-retry lock's D-4 bridge is stated without its `ListBlockBisim` premise, and the ticket lock's counter arithmetic became a trace correspondence.  Two SM2.C **datatype** extensions remain, registered individually in [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) table C as **SM2.C-T** and **SM2.C-C**, and owned by WS-LC ([`SMP_LOCK_DATATYPE_COMPLETION_PLAN.md`](SMP_LOCK_DATATYPE_COMPLETION_PLAN.md)) — whose LC1 landed the abstract withdrawal at v0.34.50, taking `RwLockOp` to five constructors
+> **Status**: LANDED (v0.31.9) — memory model, TicketLock, RwLock, FFI bridge, refinement (SM2.E panic-hang remediation landed).  **SM2.C's deferred items closed at v0.34.50** by WS-RR phase RR6 ([`SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md`](SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md), now COMPLETE): the deployed lock is `QueuedRwLock` and refines the FIFO spec (`queuedRwLock_refines_rwLockSpec`), the CAS-retry lock's D-4 bridge is stated without its `ListBlockBisim` premise, and the ticket lock's counter arithmetic became a trace correspondence.  Two SM2.C **datatype** extensions remain, registered individually in [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) table C as **SM2.C-T** and **SM2.C-C**, and owned by WS-LC ([`SMP_LOCK_DATATYPE_COMPLETION_PLAN.md`](SMP_LOCK_DATATYPE_COMPLETION_PLAN.md)) — whose LC1 landed the abstract withdrawal at v0.34.51, taking `RwLockOp` to five constructors
 > **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Audited cut**: `v0.31.2`
 > **Target releases (original estimate)**: v0.33.0 .. v0.45.x (parallel with SM1)
@@ -1150,7 +1150,7 @@ SM2 is complete when:
 - [ ] TicketLock: 16 SM2.B sub-tasks landed; 6 theorems proven; Rust impl matches spec.
 - [x] RwLock: 22 SM2.C sub-tasks landed; **11** theorems registered in the
       aggregator; Rust impl matches spec.  The "documented FIFO divergence"
-      caveat this row carried was closed by WS-RR RR6 at **v0.34.49**: the
+      caveat this row carried was closed by WS-RR RR6 at **v0.34.50**: the
       deployed lock is the ticket-FIFO `QueuedRwLock`, refined to the spec
       by `queuedRwLock_refines_rwLockSpec` before the pool was repointed.
       The divergence is still real for the *retained* CAS-retry
