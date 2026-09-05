@@ -6,7 +6,7 @@ Bandwidth Servers: a `SchedContext` that holds members instead of a thread, is
 charged whenever a thread in its subtree runs, and admits its members against
 its own budget, so a component's threads share one reservation and nothing
 outside the component is delayed by more than that reservation.  The plan is
-93 sub-tasks across nine phases (CB0..CB8), numbered in execution order and
+89 sub-tasks across nine phases (CB0..CB8), numbered in execution order and
 held by the plan gate; its binding decisions are in §3 and its implementation
 specification — types, the CBS engine rules, the order, selection, charging
 and activation, admission, deadline inheritance, every transition's refusal
@@ -29,9 +29,11 @@ that idled with a stale deadline, and priority inheritance becomes **deadline
 inheritance** for deadline-bearing threads, since a priority boost under EDF
 changes nothing but ties.  Unbound legacy threads keep their fixed-priority
 order below every deadline-bearing thread, so the idle thread stays last and
-the selector is proved unchanged on states without deadlines.  The fixtures
-built from bound threads are refreshed once, in CB1.14, with the rationale
-recorded.
+the selector is proved unchanged on states without deadlines.  CB1 lands as
+five inert preparation rows and three switch cuts — the engine (CB1.6), the
+order (CB1.7), inheritance (CB1.8) — each carrying the proofs that cover it
+and its own fixture refresh with the rationale recorded, so no release runs a
+policy its invariant suite does not describe.
 
 The rest of the design: a server is a `SchedContext` with hierarchy fields;
 the root run queue stays a queue of threads, selection is a scan in the
@@ -42,6 +44,27 @@ tick-quantised with no new upcall and no ABI version change; and every
 generalising sub-task after CB1 carries the theorem that the model is
 unchanged on states without servers.
 
+Two automated review rounds on the planning PR (twenty-four findings) reshaped
+the design before any code exists, and the plan's §14 records each finding
+against its fix: a transitive tie-break (`scId` in the EDF class, the
+incumbent in the legacy class — the first cut's mixed rule admitted a cycle);
+a key-worsening reschedule seam that every key-moving transition calls;
+the policy-gated bind arms kept out of the shared dispatch helper, which would
+have bypassed their checked forms, so `.schedContextBind` becomes policy-gated
+too; reconfiguration that never mints budget (the density rule, not a fresh
+window); every reservation move — an affinity change, a cross-core donation —
+re-admitted on its destination core, the donation charged on both cores until
+the return; label uniformity stated over members *and* the threads bound or
+donated to them, with three chokepoints in the checked tier; deadline
+inheritance reaching bound blockers only, since an unbound blocker has no
+admitted budget; the CBS guarantee scoped to roots, its hypotheses —
+continuous activity, no active inheritance, single domain — named, and its
+demand bound restated over windows contained in the interval; the depth bound
+counting the leaf; the activation paths' lock footprints, which move
+`maxLockSetSize` to ten against the measured eight-entry suspend footprint;
+the two refill representations held equal by an invariant; and the status
+flip confined to the last closure row.
+
 Three things the survey behind the plan found in the flat tree, all recorded
 in the plan (§1.1, §3.3) and in the debt register:
 
@@ -51,7 +74,7 @@ in the plan (§1.1, §3.3) and in the debt register:
   where `setPriorityOp` has one, and no authority over the domain.  A thread
   holding a write capability to its own SchedContext escalates past its MCP.
   CB0.3 closes the priority and domain half, and the plan recommends that cut
-  regardless of when the rest of the workstream opens; CB1.3 retires the
+  regardless of when the rest of the workstream opens; CB1.6 retires the
   deadline argument.
 * **The live CBS engine refills at most one tick per exhaustion.**  Both tick
   arms (`timerTickBudget`, `timerTickBudgetOnCore`) run their exhaustion
@@ -62,13 +85,14 @@ in the plan (§1.1, §3.3) and in the debt register:
   configuration, and budget consumed without exhaustion is never returned.  A
   bound thread therefore receives about one tick per period after its first
   window.  No theorem caught it: `cbs_bandwidth_bounded` is an upper bound and
-  the WCRT theorems take per-band budgets as hypotheses.  CB1.4 replaces the
+  the WCRT theorems take per-band budgets as hypotheses.  CB1.6 replaces the
   scheme with per-window refills (plan §4.2), which is also the shape the EDF
   guarantee's proof assumes.
 * Admission folds every SchedContext in the object store against one 1000 ‰
   ceiling, so a four-core machine admits 100 % in total rather than per core.
   CB5.2 makes root-level admission per core — which is also what the EDF
-  guarantee needs.
+  guarantee needs — together with every transition that can carry a
+  reservation onto another core.
 
 The workstream prefix is `CB` rather than `HC` because the identifier-naming
 gate derives its family grammar from the workstream registry: `hc<digit>`
