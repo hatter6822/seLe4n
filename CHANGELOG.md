@@ -1,3 +1,105 @@
+## v0.34.72 — a theorem name is a destination, not a schedule
+
+**WS-RR RR7.21** — the debt-register mediums.  Three rows.  Two of them closed
+in earlier cuts and are recorded here rather than re-done; the third is the
+substantive one and is about what a *tracked* deferral has to say.
+
+### Finding 36 — SM7's ASID gap named SM8, which closed without it
+
+Closed at `v0.34.71` (RR7.20) as **WS-AP**, post-v1.0.0, in the
+implement-the-improvement direction the row asks for: build the
+ASIDControl/ASIDPool object family, do not write a caveat.
+`asidAllocateWithShootdown` is complete, proven, and unreachable because its
+consumer does not exist — so the remedy is the consumer.
+
+### Finding 37 — three `@[export]` runtime-seam modules staged-only
+
+Closed at `v0.34.48` (RR5.15).  All three state-committing entries are inside
+`SeLe4n.lean`'s import closure and out of the staged allowlist, and
+`check_kernel_entry_exports.py` verifies each declared symbol against the
+**built static archive** rather than against a text anchor — an `@[export]`
+emits a symbol only when its module is in the closure, so the text was never
+evidence.
+
+### Finding 38 — SM6's three tracked-debt items carried no owner
+
+This is the one that needed work, and the defect it names is precise: all
+three items stated a *closure target* as a **theorem name** and none stated
+**who** would prove it or **when**.  A theorem name is a destination, not a
+schedule, and a debt with a destination and no schedule is how a recorded item
+stops being tracked — which is exactly what the register found.
+
+Each item now names an owner:
+
+* **Item 1** (bound-notification delivery — whole-bundle preservation of the
+  bound-TCB path) is owned by **WS-RR RR7.22**, the cross-core IPC mediums
+  row, which carries the same gap from the audit side as the register's
+  findings 3 and 4.
+* **Item 2** (`withLockSet` bundle preservation) is owned by the fine-lock
+  migration's **Track D**, closure **post-v1.0.0**.  The lock-write
+  congruences are worth building only once the bracket is what the live kernel
+  runs everywhere, and at `v0.34.66` seven `@[export]` seams commit while two
+  bracket (`ExportCommitDisciplineCensus`).  This is not a soundness gap: the
+  bundle holds at every 2PL commit point via the transitions' purity and the
+  `…_atomic_under_lockSet` theorems, exactly as at `v0.32.58`.
+* **Item 3** (per-conjunct `_smp_iff` completeness sugar) is **deliberately
+  unowned**, and that is now the record rather than an ambiguity.  It is
+  non-load-bearing by its own description; nothing waits on it.
+
+Nothing was re-scoped and no claim was weakened.  The register's rows 36, 37
+and 38 are closed with the version each closed at.
+
+---
+
+**WS-RR RR7.22 (part 1 of 2)** — the cross-core IPC mediums, register finding
+3: *bound-notification delivery, a live `.notificationSignal` path, has no
+non-interference theorem*.
+
+`notificationSignalBoundOnCore` is the arm SM6.B added — a notification with no
+waiters whose bound TCB is `BlockedOnReceive` delivers the badge straight to
+that thread — and it was the one live signal arm the SM8 non-interference
+surface never reached: §3 of `NotificationSignalNI.lean` covers the *waiter*
+path and §2's fall-through the *unbound* one.
+
+The missing engine was the endpoint **splice**.  Every other write on the bound
+path already had its projection lemma (the receive-complete store, the
+cross-core wake); `endpointQueueRemoveDual` — which dequeues the bound TCB from
+its endpoint — had none.  New in `SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean` §5:
+
+* `endpointSpliceHigh` — the label hypothesis a splice needs, naming all four
+  objects it writes (the endpoint, the removed thread, and the two queue
+  neighbours whose links are patched) and naming the neighbours **through the
+  pre-state lookup** rather than as extra arguments, so a caller supplies one
+  hypothesis instead of remembering which two threads the splice will touch.
+  That shape is what makes an under-stated hypothesis impossible here.
+* `endpointQueueRemoveDual_preserves_projection_and_invExt` and its projection
+  half `endpointQueueRemoveDual_preserves_projection`.  The two halves are
+  proved **together** because the chain needs them together: each projection
+  step's hypothesis is the *previous* state's `objects.invExt`, so carrying the
+  projection alone would leave every step but the first unprovable.  The case
+  analysis mirrors `endpointQueueRemoveDual_frame`'s skeleton deliberately —
+  the two stay comparable — but cannot reuse it, since that combinator's store
+  hypotheses are unconditional in the key while a projection is preserved only
+  at a **high** key.
+* `endpointQueueRemoveDual_preserves_projectionOnCore` and
+  `storeTcbReceiveComplete_preserves_projectionOnCore` — the per-core forms,
+  via the splice's scheduler and machine frames and `projectStateOnCore_congr`.
+* `notificationSignalBoundOnCore_bound_path_NI` (boot-core) and
+  `notificationSignalBoundOnCore_bound_path_NI_smp` (`lowEquivalent_smp`, every
+  core).  The ∀-core form is the one the SMP claim needs: the bound TCB is
+  woken on its *home* core, which may be remote, so a boot-core-only result
+  says nothing about the core the wake actually lands on.
+
+The notification object itself is **not** written on this path — the badge goes
+to the thread, not to the notification — so it needs no label hypothesis, which
+is the one place this statement is weaker than the waiter path's and correctly
+so.
+
+Register **finding 3 is closed**.  Finding 4 (whole-bundle `ipcInvariantFull`
+preservation for the same two live operations) remains open and is RR7.22's
+second half; it is tracked in the register and owned by this row.
+
+
 ## v0.34.71 — three deferrals whose owner had evaporated
 
 **WS-RR RR7.20** — the TLB shootdown mediums.  All three register rows are

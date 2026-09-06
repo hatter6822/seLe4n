@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/rr7-medium-severity-sweep-tn327q",
-      "commit_sha": "61dc15d36f3f56563c8fb51e2279f54172bc1e30",
-      "tree_sha": "11bbe7d2b5a8cc0f372f61d15b4850af945fd351",
-      "committed_at_utc": "2026-09-06T04:08:23+00:00"
+      "commit_sha": "442e629b92c7710be3951aefa3f3a6818ee02e98",
+      "tree_sha": "d4a0ff65f9ec992044e2490da2e22d79425af57f",
+      "committed_at_utc": "2026-09-06T04:29:35+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "29e3427e52bd4546d82adc4fc27d2487cc5222db93970fe3d96ca8d77ae17d3b"
+    "source_digest": "e2f240b5da870154cfe400d8c501267d4d4596862a890fcd46696be32078fff5"
   },
   "summary": {
     "module_count": 385,
-    "declaration_count": 19367
+    "declaration_count": 19381
   },
   "readme_sync": {
-    "version": "0.34.71",
+    "version": "0.34.72",
     "lean_toolchain": "v4.28.0",
     "production_files": 315,
-    "production_loc": 336298,
+    "production_loc": 336639,
     "test_files": 70,
-    "test_loc": 69972,
-    "proved_theorem_lemma_decls": 11200,
+    "test_loc": 70102,
+    "proved_theorem_lemma_decls": 11206,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -74694,18 +74694,18 @@
     {
       "module": "SeLe4n.Kernel.IPC.CrossCore.NotificationSignalNI",
       "path": "SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean",
-      "declaration_count": 8,
+      "declaration_count": 15,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 39,
+          "line": 40,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "storeObject_preserves_projectionOnCore",
-          "line": 54,
+          "line": 55,
           "called": [
             "CoreId",
             "IfObserver",
@@ -74727,7 +74727,7 @@
         {
           "kind": "theorem",
           "name": "notificationSignalOnCore_signal_path_NI",
-          "line": 77,
+          "line": 78,
           "called": [
             "Badge",
             "CoreId",
@@ -74765,7 +74765,7 @@
         {
           "kind": "theorem",
           "name": "notificationSignalOnCore_signal_path_NI_smp",
-          "line": 124,
+          "line": 125,
           "called": [
             "Badge",
             "CoreId",
@@ -74804,7 +74804,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_machine_eq",
-          "line": 168,
+          "line": 169,
           "called": [
             "SystemState",
             "ThreadId",
@@ -74821,7 +74821,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_projectionOnCore",
-          "line": 186,
+          "line": 187,
           "called": [
             "CoreId",
             "IfObserver",
@@ -74844,7 +74844,7 @@
         {
           "kind": "theorem",
           "name": "notificationWaitOnCore_block_path_NI",
-          "line": 204,
+          "line": 205,
           "called": [
             "CoreId",
             "IfObserver",
@@ -74882,11 +74882,10 @@
         {
           "kind": "theorem",
           "name": "notificationWaitOnCore_block_path_NI_smp",
-          "line": 241,
+          "line": 242,
           "called": [
             "CoreId",
             "IfObserver",
-            "Kernel",
             "LabelingContext",
             "NoDupList",
             "Notification",
@@ -74917,6 +74916,192 @@
             "storeTcbIpcStateAndMessage_preserves_projectionOnCore",
             "threadObservable",
             "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "endpointSpliceHigh",
+          "line": 305,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "endpointId",
+            "lookupTcb",
+            "objectObservable",
+            "st",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_preserves_projection_and_invExt",
+          "line": 329,
+          "called": [
+            "IfObserver",
+            "KernelObject",
+            "LabelingContext",
+            "ObjId",
+            "QueuePPrev",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointSpliceHigh",
+            "invExt",
+            "lookupTcb",
+            "nextTid",
+            "none",
+            "objectObservable",
+            "prevTid",
+            "projectState",
+            "st",
+            "storeObject",
+            "storeObject_preserves_objects_invExt",
+            "storeObject_preserves_projection",
+            "storeTcbQueueLinks",
+            "storeTcbQueueLinks_preserves_objects_invExt",
+            "storeTcbQueueLinks_preserves_projection",
+            "toObjId",
+            "trans"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_preserves_projection",
+          "line": 485,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_preserves_projection_and_invExt",
+            "endpointSpliceHigh",
+            "invExt",
+            "projectState",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignalBoundOnCore_bound_path_NI",
+          "line": 513,
+          "called": [
+            "Badge",
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "badge",
+            "boundDeliveryTarget",
+            "empty",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_preserves_projection_and_invExt",
+            "endpointSpliceHigh",
+            "epId",
+            "invExt",
+            "notificationId",
+            "notificationSignalBoundOnCore",
+            "objectObservable",
+            "projectState",
+            "st",
+            "storeTcbReceiveComplete",
+            "storeTcbReceiveComplete_preserves_objects_invExt",
+            "storeTcbReceiveComplete_preserves_projection",
+            "threadObservable",
+            "toObjId",
+            "trans",
+            "wakeThread_preserves_projection"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_preserves_projectionOnCore",
+          "line": 548,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_machine_eq",
+            "endpointQueueRemoveDual_preserves_projection",
+            "endpointQueueRemoveDual_scheduler_eq",
+            "endpointSpliceHigh",
+            "invExt",
+            "projectStateOnCore",
+            "projectStateOnCore_congr",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbReceiveComplete_preserves_projectionOnCore",
+          "line": 566,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "IpcMessage",
+            "LabelingContext",
+            "SystemState",
+            "ThreadId",
+            "invExt",
+            "objectObservable",
+            "projectStateOnCore",
+            "projectStateOnCore_congr",
+            "st",
+            "storeTcbReceiveComplete",
+            "storeTcbReceiveComplete_machine_eq",
+            "storeTcbReceiveComplete_preserves_projection",
+            "storeTcbReceiveComplete_scheduler_eq",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignalBoundOnCore_bound_path_NI_smp",
+          "line": 588,
+          "called": [
+            "Badge",
+            "CoreId",
+            "IfObserver",
+            "Kernel",
+            "LabelingContext",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "badge",
+            "boundDeliveryTarget",
+            "empty",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_preserves_projectionOnCore",
+            "endpointQueueRemoveDual_preserves_projection_and_invExt",
+            "endpointSpliceHigh",
+            "epId",
+            "invExt",
+            "lowEquivalent_smp",
+            "notificationId",
+            "notificationSignalBoundOnCore",
+            "objectObservable",
+            "projectStateOnCore",
+            "st",
+            "storeTcbReceiveComplete",
+            "storeTcbReceiveComplete_preserves_objects_invExt",
+            "storeTcbReceiveComplete_preserves_projectionOnCore",
+            "threadObservable",
+            "toObjId",
+            "wakeThread_preserves_projectionOnCore"
           ]
         }
       ]
@@ -262182,7 +262367,7 @@
     {
       "module": "tests.SmpCrossCoreNotificationSuite",
       "path": "tests/SmpCrossCoreNotificationSuite.lean",
-      "declaration_count": 32,
+      "declaration_count": 39,
       "declarations": [
         {
           "kind": "namespace",
@@ -262194,6 +262379,10 @@
             "boundDeliveryTarget",
             "determineTargetCore_congr",
             "endpointQueueRemoveDual_preserves_objects_invExt",
+            "endpointQueueRemoveDual_preserves_projection",
+            "endpointQueueRemoveDual_preserves_projectionOnCore",
+            "endpointQueueRemoveDual_preserves_projection_and_invExt",
+            "endpointSpliceHigh",
             "lockSet_notificationSignalOnCore",
             "lockSet_notificationSignalOnCore_bound_endpoint_write_mem",
             "lockSet_notificationSignalOnCore_bound_tcb_write_mem",
@@ -262211,6 +262400,8 @@
             "notificationSignalBoundCrossCoreDispatchChecked_flow_denied",
             "notificationSignalBoundCrossCoreDispatchChecked_flow_denied_to_receiver",
             "notificationSignalBoundOnCore",
+            "notificationSignalBoundOnCore_bound_path_NI",
+            "notificationSignalBoundOnCore_bound_path_NI_smp",
             "notificationSignalBoundOnCore_delivery_eq",
             "notificationSignalBoundOnCore_delivery_remote_wake",
             "notificationSignalBoundOnCore_fallthrough_eq",
@@ -262249,14 +262440,15 @@
             "storeObject_preserves_projectionOnCore",
             "storeTcbIpcStateAndMessage_determineTargetCore_eq",
             "storeTcbIpcState_preserves_projectionOnCore",
+            "storeTcbReceiveComplete_preserves_projectionOnCore",
             "unbindNotification",
             "unbindNotification_preserves_ipcInvariant"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:156>",
-          "line": 156,
+          "name": "<anonymous:example:166>",
+          "line": 166,
           "called": [
             "Badge",
             "CoreId",
@@ -262283,8 +262475,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:175>",
-          "line": 175,
+          "name": "<anonymous:example:185>",
+          "line": 185,
           "called": [
             "Badge",
             "CoreId",
@@ -262304,8 +262496,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:186>",
-          "line": 186,
+          "name": "<anonymous:example:196>",
+          "line": 196,
           "called": [
             "Badge",
             "CoreId",
@@ -262335,9 +262527,61 @@
           ]
         },
         {
+          "kind": "example",
+          "name": "<anonymous:example:222>",
+          "line": 222,
+          "called": [
+            "Badge",
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "badge",
+            "boundDeliveryTarget",
+            "empty",
+            "endpointQueueRemoveDual",
+            "endpointSpliceHigh",
+            "epId",
+            "invExt",
+            "lowEquivalent_smp",
+            "notificationId",
+            "notificationSignalBoundOnCore",
+            "notificationSignalBoundOnCore_bound_path_NI_smp",
+            "objectObservable",
+            "st",
+            "storeTcbReceiveComplete",
+            "threadObservable",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:243>",
+          "line": 243,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_preserves_projection",
+            "endpointQueueRemoveDual_preserves_projectionOnCore",
+            "endpointSpliceHigh",
+            "invExt",
+            "projectState",
+            "projectStateOnCore",
+            "st"
+          ]
+        },
+        {
           "kind": "def",
           "name": "assertBool",
-          "line": 211,
+          "line": 260,
           "called": [
             "throw"
           ]
@@ -262345,7 +262589,7 @@
         {
           "kind": "def",
           "name": "core1",
-          "line": 217,
+          "line": 266,
           "called": [
             "CoreId"
           ]
@@ -262353,7 +262597,7 @@
         {
           "kind": "def",
           "name": "nId",
-          "line": 219,
+          "line": 268,
           "called": [
             "ObjId"
           ]
@@ -262361,7 +262605,7 @@
         {
           "kind": "def",
           "name": "cnRoot",
-          "line": 220,
+          "line": 269,
           "called": [
             "ObjId"
           ]
@@ -262369,7 +262613,7 @@
         {
           "kind": "def",
           "name": "signallerTid",
-          "line": 221,
+          "line": 270,
           "called": [
             "ThreadId"
           ]
@@ -262377,7 +262621,7 @@
         {
           "kind": "def",
           "name": "waiterLocalTid",
-          "line": 222,
+          "line": 271,
           "called": [
             "ThreadId"
           ]
@@ -262385,7 +262629,7 @@
         {
           "kind": "def",
           "name": "waiterRemoteTid",
-          "line": 223,
+          "line": 272,
           "called": [
             "ThreadId"
           ]
@@ -262393,7 +262637,7 @@
         {
           "kind": "def",
           "name": "badge",
-          "line": 224,
+          "line": 273,
           "called": [
             "Badge",
             "ofNatMasked"
@@ -262402,7 +262646,7 @@
         {
           "kind": "def",
           "name": "mkTcb",
-          "line": 226,
+          "line": 275,
           "called": [
             "CoreId",
             "TCB",
@@ -262413,7 +262657,7 @@
         {
           "kind": "def",
           "name": "stBase",
-          "line": 233,
+          "line": 282,
           "called": [
             "SystemState",
             "build",
@@ -262433,7 +262677,7 @@
         {
           "kind": "def",
           "name": "stWithWaiter",
-          "line": 243,
+          "line": 292,
           "called": [
             "SystemState",
             "ThreadId",
@@ -262448,7 +262692,7 @@
         {
           "kind": "def",
           "name": "stTwoWaiters",
-          "line": 250,
+          "line": 299,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -262463,7 +262707,7 @@
         {
           "kind": "def",
           "name": "signalSgi",
-          "line": 259,
+          "line": 308,
           "called": [
             "CoreId",
             "SgiKind",
@@ -262478,7 +262722,7 @@
         {
           "kind": "def",
           "name": "waiterList",
-          "line": 265,
+          "line": 314,
           "called": [
             "SystemState",
             "ThreadId",
@@ -262489,7 +262733,7 @@
         {
           "kind": "def",
           "name": "epId",
-          "line": 271,
+          "line": 320,
           "called": [
             "ObjId"
           ]
@@ -262497,7 +262741,7 @@
         {
           "kind": "def",
           "name": "boundTid",
-          "line": 272,
+          "line": 321,
           "called": [
             "ThreadId"
           ]
@@ -262505,7 +262749,7 @@
         {
           "kind": "def",
           "name": "stBoundBase",
-          "line": 276,
+          "line": 325,
           "called": [
             "SystemState",
             "boundTid",
@@ -262524,7 +262768,7 @@
         {
           "kind": "def",
           "name": "runLockSetChecks",
-          "line": 285,
+          "line": 334,
           "called": [
             "assertBool",
             "cnRoot",
@@ -262548,7 +262792,7 @@
         {
           "kind": "def",
           "name": "runNoWaiterChecks",
-          "line": 314,
+          "line": 363,
           "called": [
             "assertBool",
             "badge",
@@ -262562,7 +262806,7 @@
         {
           "kind": "def",
           "name": "runSignalWakeChecks",
-          "line": 326,
+          "line": 375,
           "called": [
             "assertBool",
             "badge",
@@ -262584,7 +262828,7 @@
         {
           "kind": "def",
           "name": "runMultiWaiterChecks",
-          "line": 351,
+          "line": 400,
           "called": [
             "assertBool",
             "badge",
@@ -262606,7 +262850,7 @@
         {
           "kind": "def",
           "name": "runWaitChecks",
-          "line": 376,
+          "line": 425,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -262624,7 +262868,7 @@
         {
           "kind": "def",
           "name": "runBadgeWaitChecks",
-          "line": 395,
+          "line": 444,
           "called": [
             "assertBool",
             "badge",
@@ -262642,7 +262886,7 @@
         {
           "kind": "def",
           "name": "runErrorChecks",
-          "line": 410,
+          "line": 459,
           "called": [
             "assertBool",
             "badge",
@@ -262657,7 +262901,7 @@
         {
           "kind": "def",
           "name": "runBoundChecks",
-          "line": 426,
+          "line": 475,
           "called": [
             "assertBool",
             "badge",
@@ -262681,8 +262925,73 @@
         },
         {
           "kind": "def",
+          "name": "lowLabel",
+          "line": 545,
+          "called": [
+            "SecurityLabel"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "highLabel",
+          "line": 548,
+          "called": [
+            "SecurityLabel"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "boundDeliveryLabeling",
+          "line": 551,
+          "called": [
+            "LabelingContext",
+            "boundTid",
+            "epId",
+            "highLabel",
+            "lowLabel",
+            "nId",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "lowObserver",
+          "line": 560,
+          "called": [
+            "IfObserver",
+            "lowLabel"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runBoundDeliveryNonInterferenceChecks",
+          "line": 573,
+          "called": [
+            "assertBool",
+            "badge",
+            "bind",
+            "bindNotification",
+            "bootCoreId",
+            "boundDeliveryLabeling",
+            "boundTid",
+            "endpointReceiveDual",
+            "epId",
+            "getTcb",
+            "head",
+            "lowObserver",
+            "nId",
+            "none",
+            "notificationSignalBoundOnCore",
+            "projectState",
+            "runnable",
+            "stBoundBase",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runReviewFixChecks",
-          "line": 491,
+          "line": 620,
           "called": [
             "any",
             "assertBool",
@@ -262709,10 +263018,11 @@
         {
           "kind": "def",
           "name": "runSmpCrossCoreNotificationChecks",
-          "line": 533,
+          "line": 662,
           "called": [
             "runBadgeWaitChecks",
             "runBoundChecks",
+            "runBoundDeliveryNonInterferenceChecks",
             "runErrorChecks",
             "runLockSetChecks",
             "runMultiWaiterChecks",
@@ -262725,7 +263035,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 550,
+          "line": 680,
           "called": [
             "runSmpCrossCoreNotificationChecks"
           ]

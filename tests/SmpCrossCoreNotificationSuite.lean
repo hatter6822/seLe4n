@@ -147,6 +147,16 @@ open SeLe4n.Testing
 #check @bindNotification_preserves_ipcInvariant
 #check @unbindNotification_preserves_ipcInvariant
 #check @endpointQueueRemoveDual_preserves_objects_invExt
+-- WS-RR RR7.22 (register finding 3): the bound-delivery path's non-interference —
+-- the endpoint-splice engine that did not exist, its per-core forms, and the
+-- boot-core and ∀-core theorems it makes possible:
+#check @endpointSpliceHigh
+#check @endpointQueueRemoveDual_preserves_projection_and_invExt
+#check @endpointQueueRemoveDual_preserves_projection
+#check @endpointQueueRemoveDual_preserves_projectionOnCore
+#check @storeTcbReceiveComplete_preserves_projectionOnCore
+#check @notificationSignalBoundOnCore_bound_path_NI
+#check @notificationSignalBoundOnCore_bound_path_NI_smp
 
 -- ============================================================================
 -- §2  Elaboration-time examples (Tier-3): theorems apply to typed inputs
@@ -203,6 +213,45 @@ example (ctx : LabelingContext) (observer : IfObserver)
       (notificationSignalOnCore notificationId badge executingCore st).1 st :=
   notificationSignalOnCore_signal_path_NI_smp ctx observer notificationId badge executingCore st
     ntfn waiter rest st' st'' hObj hWaiters hStore hMsg hObjInv hNtfnHigh hWaiterHigh hWaiterObjHigh
+
+/-- WS-RR RR7.22 (register finding 3): the **bound**-delivery arm is invisible on
+every core.  The typed evidence that the `lowEquivalent_smp` conclusion is the
+one a caller gets, and that `endpointSpliceHigh` is the only label hypothesis
+the splice needs — the notification object carries none, because the badge goes
+to the thread and the notification is not written on this path. -/
+example (ctx : LabelingContext) (observer : IfObserver)
+    (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (executingCore : CoreId)
+    (st st1 st2 : SystemState) (t : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
+    (hTarget : boundDeliveryTarget? st notificationId = some (t, epId))
+    (hRemove : endpointQueueRemoveDual epId true t st = .ok ((), st1))
+    (hRecv : storeTcbReceiveComplete st1 t
+        (some { IpcMessage.empty with badge := some badge }) = .ok st2)
+    (hSplice : endpointSpliceHigh ctx observer st epId t)
+    (hObjInv : st.objects.invExt)
+    (hBoundHigh : threadObservable ctx observer t = false)
+    (hBoundObjHigh : objectObservable ctx observer t.toObjId = false) :
+    lowEquivalent_smp ctx observer
+      (notificationSignalBoundOnCore notificationId badge executingCore st).1 st :=
+  notificationSignalBoundOnCore_bound_path_NI_smp ctx observer notificationId badge
+    executingCore st st1 st2 t epId hTarget hRemove hRecv hSplice hObjInv
+    hBoundHigh hBoundObjHigh
+
+/-- WS-RR RR7.22: the splice's own projection lemma, applied at typed inputs —
+the engine the bound path had been missing.  Its `endpointSpliceHigh` argument
+names the two queue neighbours **through the pre-state lookup**, so this call
+site supplies one hypothesis rather than naming threads it cannot know. -/
+example (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (tid : SeLe4n.ThreadId) (c : CoreId)
+    (hHigh : endpointSpliceHigh ctx observer st endpointId tid)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
+    projectState ctx observer st' = projectState ctx observer st
+      ∧ projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
+  ⟨endpointQueueRemoveDual_preserves_projection ctx observer st st' endpointId
+      isReceiveQ tid hHigh hObjInv hStep,
+   endpointQueueRemoveDual_preserves_projectionOnCore ctx observer st st' endpointId
+      isReceiveQ tid c hHigh hObjInv hStep⟩
 
 -- ============================================================================
 -- §3  Runtime assertions (Tier-2): the SM6.B cross-core notification scenarios
@@ -486,6 +535,86 @@ private def runBoundChecks : IO Unit := do
       | .error _ => assertBool "bind setup for precondition check succeeded" false
   | .error _ => assertBool "receive setup for precondition check succeeded" false
 
+/-- WS-RR RR7.22 (register finding 3): a labelling under which the whole
+bound-delivery footprint is **high** — the endpoint, the bound TCB and the
+notification are all above the observer, and nothing else the fixture touches
+is.  `endpointSpliceHigh` names the two queue neighbours through the pre-state
+lookup, and this fixture's bound TCB is the receive queue's only member, so
+both neighbour clauses are vacuous here and the endpoint/bound-TCB clauses are
+what the labelling has to supply. -/
+private def lowLabel : SeLe4n.Kernel.SecurityLabel :=
+  { confidentiality := .low, integrity := .untrusted }
+
+private def highLabel : SeLe4n.Kernel.SecurityLabel :=
+  { confidentiality := .high, integrity := .trusted }
+
+private def boundDeliveryLabeling : SeLe4n.Kernel.LabelingContext :=
+  { objectLabelOf := fun oid =>
+      if oid = epId ∨ oid = boundTid.toObjId ∨ oid = nId then highLabel else lowLabel
+    threadLabelOf := fun tid => if tid = boundTid then highLabel else lowLabel
+    endpointLabelOf := fun oid => if oid = epId then highLabel else lowLabel
+    serviceLabelOf := fun _ => lowLabel }
+
+/-- The low observer for `boundDeliveryLabeling`: it is cleared for the public
+domain and therefore for none of the three objects the bound delivery writes. -/
+private def lowObserver : SeLe4n.Kernel.IfObserver :=
+  { clearance := lowLabel }
+
+/-- §3.10: WS-RR RR7.22 (register finding 3) — the bound-delivery arm is
+invisible to a low observer, executed rather than only proved.
+
+The theorem is `notificationSignalBoundOnCore_bound_path_NI{,_smp}`; this is
+the runtime witness that its hypotheses are inhabited by a real state and that
+its conclusion is what that state exhibits.  Three guards keep it from passing
+vacuously: the delivery must actually have happened (the badge lands, the queue
+empties), the two states must genuinely **differ** at the high keys, and the
+signaller — a low object the operation does not write — must be visible in the
+projection, so "the projections agree" is not "the projection is empty". -/
+private def runBoundDeliveryNonInterferenceChecks : IO Unit := do
+  IO.println "--- §3.10 WS-RR RR7.22 bound-delivery non-interference ---"
+  match endpointReceiveDual epId boundTid none stBoundBase with
+  | .error _ => assertBool "receive setup (bound-delivery NI) succeeded" false
+  | .ok (_, stRecv) =>
+    match bindNotification nId boundTid stRecv with
+    | .error _ => assertBool "bind setup (bound-delivery NI) succeeded" false
+    | .ok ((), stBound) =>
+      let stSig := (notificationSignalBoundOnCore nId badge bootCoreId stBound).1
+      -- Guard 1: the delivery really ran (otherwise every equality below is trivial).
+      assertBool "bound-delivery NI fixture: the badge was delivered"
+        (match stSig.getTcb? boundTid with
+         | some t => decide (t.pendingMessage.bind (·.badge) = some badge)
+         | none => false)
+      assertBool "bound-delivery NI fixture: the endpoint receive queue emptied"
+        (match stSig.objects[epId]? with
+         | some (.endpoint ep) => decide (ep.receiveQ.head = none)
+         | _ => false)
+      -- Guard 2: the two states genuinely differ at the high keys.
+      assertBool "bound-delivery NI fixture: the raw states differ at the bound TCB"
+        (!(stSig.objects[boundTid.toObjId]? == stBound.objects[boundTid.toObjId]?))
+      assertBool "bound-delivery NI fixture: the raw states differ at the endpoint"
+        (!(stSig.objects[epId]? == stBound.objects[epId]?))
+      let pPost := SeLe4n.Kernel.projectState boundDeliveryLabeling lowObserver stSig
+      let pPre := SeLe4n.Kernel.projectState boundDeliveryLabeling lowObserver stBound
+      -- Guard 3: the projection is not empty — a low object the delivery does
+      -- not write is visible in both.
+      assertBool "bound-delivery NI fixture: the low signaller is visible in both projections"
+        (match pPre.objects signallerTid.toObjId, pPost.objects signallerTid.toObjId with
+         | some a, some b => a == b
+         | _, _ => false)
+      -- The finding-3 claim: every high key the delivery writes projects identically.
+      assertBool "bound delivery is invisible at the bound TCB"
+        (pPost.objects boundTid.toObjId == pPre.objects boundTid.toObjId)
+      assertBool "bound delivery is invisible at the endpoint"
+        (pPost.objects epId == pPre.objects epId)
+      assertBool "bound delivery is invisible at the notification"
+        (pPost.objects nId == pPre.objects nId)
+      assertBool "bound delivery leaves the projected run queue unchanged"
+        (pPost.runnable == pPre.runnable)
+      assertBool "bound delivery leaves the projected current thread unchanged"
+        (pPost.current == pPre.current)
+      assertBool "bound delivery leaves the projected object index unchanged"
+        (pPost.objectIndex == pPre.objectIndex)
+
 /-- §3.9: WS-SM SM6.B audit closure (codex review #2 binding preservation + #5
 bound-delivery lock-set footprint). -/
 private def runReviewFixChecks : IO Unit := do
@@ -542,6 +671,7 @@ def runSmpCrossCoreNotificationChecks : IO Unit := do
   runErrorChecks
   runBoundChecks
   runReviewFixChecks
+  runBoundDeliveryNonInterferenceChecks
   IO.println "===================================="
   IO.println "All SM6.B cross-core notification checks PASS."
 

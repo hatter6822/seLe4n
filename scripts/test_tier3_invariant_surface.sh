@@ -770,6 +770,24 @@ run_check "INVARIANT" rg -n '^theorem passiveServerIdleFrameOnCore_boot_iff' SeL
 run_check "INVARIANT" rg -n '^theorem notificationSignalOnCore_post_agrees' SeLe4n/Kernel/IPC/CrossCore/NotificationInvariant.lean
 run_check "INVARIANT" rg -n '^theorem notificationSignalOnCore_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/CrossCore/NotificationInvariant.lean
 run_check "INVARIANT" rg -n '^theorem notificationWaitOnCore_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/CrossCore/NotificationInvariant.lean
+# The bound-notification delivery path's non-interference: the endpoint-splice
+# projection engine (proved together with the object-store external invariant,
+# because each projection step's hypothesis is the previous state's invExt),
+# its per-core form, and the boot-core + every-core theorems it makes possible.
+# The label hypothesis resolves the two queue neighbours through the pre-state
+# lookup, so a caller cannot under-state it by naming the wrong threads.
+run_check "INVARIANT" rg -n '^def endpointSpliceHigh' SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_preserves_projection_and_invExt' SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_preserves_projection\b' SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_preserves_projectionOnCore' SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbReceiveComplete_preserves_projectionOnCore' SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_bound_path_NI\b' SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_bound_path_NI_smp' SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean
+# The neighbour clauses are the half an under-stated hypothesis would drop, so
+# the label predicate must quantify over the removed thread's own queue links
+# rather than over the endpoint and the thread alone.
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointSpliceHigh(.|\n)*queuePPrev = some \(\.tcbNext p\)" SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointSpliceHigh(.|\n)*tcb\.queueNext = some n" SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean'
 run_check "INVARIANT" rg -n '^theorem endpointReplyOnCore_post_agrees' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyOnCore_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean
 run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_post_agrees' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean

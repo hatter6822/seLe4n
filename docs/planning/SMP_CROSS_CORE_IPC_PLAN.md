@@ -558,7 +558,15 @@ point.
 > + `ipcUnwrapCaps_passiveServerIdleFrameOnCore`,
 > `PerCoreBundlePreservation.lean` §6).
 >
-> **Remaining tracked debt (recorded, not silent):**
+> **Remaining tracked debt (recorded, not silent).**
+>
+> **WS-RR RR7.21 (`v0.34.72`) — each item now names an owner and a version,
+> not only a theorem.**  All three stated a *closure target* as a symbol to
+> prove and none stated **who** would prove it or **when**, which is how a
+> recorded debt stops being tracked: the register's finding was that SM6's
+> debt "carries no explicit closure target", and a theorem name is a
+> destination, not a schedule.  The owners are below, per item.
+
 > 1. **Bound-notification delivery** (`notificationSignalBoundOnCore`):
 >    whole-bundle preservation of the bound-TCB delivery path needs the
 >    `endpointQueueRemoveDual` per-conjunct suite (~14 of the twenty
@@ -567,6 +575,14 @@ point.
 >    `endpointQueueRemoveDual_preserves_<conjunct>` (membership / NoDup
 >    / next-blocking / head- and tail-blocked / next-target first) →
 >    `notificationSignalBoundOnCore_preserves_ipcInvariantFull{,_perCore}`.
+>    **Owner: WS-RR RR7.22** (the cross-core IPC mediums row), which carries
+>    the register's findings 3 and 4 — the same gap seen from the audit side.
+>    **The non-interference half landed at `v0.34.72`**: the same splice was
+>    also the missing engine for the *information-flow* surface, so
+>    `endpointQueueRemoveDual_preserves_projection{,_and_invExt,OnCore}` and
+>    `notificationSignalBoundOnCore_bound_path_NI{,_smp}` exist
+>    (`NotificationSignalNI.lean` §5).  The invariant half — the per-conjunct
+>    suite named below — is what remains.
 >    Already covered today: at the **bound-op level**, `objects.invExt`
 >    and `ipcInvariant` (`NotificationBind.lean`, + the dispatch-level
 >    mirrors) plus the SM6.B lock-set/2PL theorems; at the
@@ -585,6 +601,11 @@ point.
 >    `objects.invExt`).  Until then the bundle holds at every 2PL commit
 >    point via the transitions' purity + the `…_atomic_under_lockSet`
 >    theorems, exactly as at v0.32.58.
+>    **Owner: the fine-lock migration's Track D, closure post-v1.0.0.**  The
+>    lock-write congruences are only worth building once the bracket is what
+>    the live kernel runs everywhere, and at `v0.34.66` seven `@[export]`
+>    seams commit while two bracket (`ExportCommitDisciplineCensus`).  Not a
+>    soundness gap: the 2PL commit points are covered as stated.
 > 3. **Completeness sugar** (non-load-bearing): per-conjunct `_smp_iff`
 >    exactness for the fourteen unnamed conjuncts (the aggregate
 >    exactness `ipcInvariantFull_smp_iff_full_and_passive_smp` already
@@ -595,6 +616,10 @@ point.
 >    (`ipcInvariantFull st`), and `ipcInvariantFull_perCore_of_full` is
 >    the one-application sharp lift for any consumer holding a per-core
 >    passive slice.
+>    **Deliberately unowned, and that is the record**: this item is
+>    non-load-bearing by its own description, so it has no closure target
+>    rather than an unassigned one.  A future cut may absorb it; nothing
+>    waits on it.
 
 | Sub | Description | Landed symbol | Status |
 |-----|-------------|---------------|--------|
