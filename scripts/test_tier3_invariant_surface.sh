@@ -3508,6 +3508,15 @@ run_check "INVARIANT" rg -n '^theorem auditState_footprints_share_serialization'
 # (it folds over the whole map), and the retype, whose pre-retype cleanup sweeps
 # the registry when the object it re-purposes is an endpoint.
 run_check "INVARIANT" rg -n '^theorem serviceRegistry_footprints_share_serialization' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+# The lock-refinement methodology hub: the block fold every bridge is built on,
+# defined once — and each bridge's own fold pinned to it, so the hub is the
+# shared engine rather than a fourth statement of the same method.
+run_check "INVARIANT" rg -n '^def foldBlock' SeLe4n/Kernel/Concurrency/Locks/Refinement.lean
+run_check "INVARIANT" rg -n '^theorem foldBlock_stutter' SeLe4n/Kernel/Concurrency/Locks/Refinement.lean
+run_check "INVARIANT" rg -n '^theorem foldBlock_changes_state_needs_a_write' SeLe4n/Kernel/Concurrency/Locks/Refinement.lean
+run_check "INVARIANT" rg -n '^theorem ticketFoldBlock_eq_foldBlock' SeLe4n/Kernel/Concurrency/Locks/Refinement.lean
+run_check "INVARIANT" rg -n '^theorem concreteFoldBlock_eq_foldBlock' SeLe4n/Kernel/Concurrency/Locks/Refinement.lean
+run_check "INVARIANT" rg -n '^theorem queuedFoldBlock_eq_foldBlock' SeLe4n/Kernel/Concurrency/Locks/Refinement.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_serviceRegister(.|\n)*stateLevelLock, .write" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_serviceRevoke(.|\n)*stateLevelLock, .write" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_serviceQuery(.|\n)*stateLevelLock, .read" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'

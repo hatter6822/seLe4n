@@ -44,18 +44,34 @@
 // `cfg(panic = "abort")` is true only when the *currently-compiling* profile
 // has `panic = "abort"` — which the workspace `Cargo.toml` sets for dev and
 // release but CANNOT set for `cargo test` (Rust's stable test harness forces
-// unwind so `#[should_panic]` works). We therefore pair the check with
-// `not(debug_assertions)` so the guard fires ONLY in release builds that
-// attempt to opt back into unwinding, while allowing `cargo test` (which
-// compiles every crate with `debug_assertions = true`) to proceed.
+// unwind so `#[should_panic]` works).
+//
+// **WS-RR RR7.24 (register finding 12): the condition is the target, not the
+// profile.**  This used to read `not(debug_assertions)` as a stand-in for "a
+// release build of the image", and `cargo test --release` is a release build
+// that is not the image: cargo inherits `debug_assertions = false` from the
+// release profile and forces `panic = unwind` for the test harness, so both
+// conjuncts held and the crate refused to compile.  The panic-hang plan's
+// definition of done asks for `cargo test --workspace --release` five times
+// over and for `ITER_OVERRIDE=1000 cargo test --release …`; neither could ever
+// have run.
+//
+// The fact the guard is about is the **bare-metal image**: a `no_std` kernel
+// has no unwinder, so `panic = "abort"` is not a preference there but a
+// requirement, and the value of the guard is its actionable message rather
+// than the link error that would follow.  `target_os = "none"` names exactly
+// that build (`aarch64-unknown-none`) and nothing else — no host profile, test
+// or otherwise, can satisfy it, and no test profile can suppress it on the
+// target.
 //
 // In practice: if anyone ever edits Cargo.toml to remove `panic = "abort"`
-// from `[profile.release]`, this fires with the actionable message below.
-#[cfg(all(not(panic = "abort"), not(debug_assertions)))]
+// from `[profile.release]`, the cross build fires with the message below;
+// `scripts/test_aarch64_cross_build.sh` is the lane that would see it.
+#[cfg(all(target_os = "none", not(panic = "abort")))]
 compile_error!(
-    "seLe4n HAL requires panic = \"abort\" for release profiles. \
-     See rust/Cargo.toml [profile.release] and AK5-A in the \
-     WS-AN AN9 portfolio (closed at v0.30.11; see docs/REGISTERED_DEBT.md)."
+    "seLe4n HAL requires panic = \"abort\" for the bare-metal target: a no_std \
+     kernel has no unwinder. See rust/Cargo.toml [profile.release] and AK5-A in \
+     the WS-AN AN9 portfolio (closed at v0.30.11; see docs/REGISTERED_DEBT.md)."
 );
 
 // ============================================================================

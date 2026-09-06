@@ -1,3 +1,68 @@
+## v0.34.75 — three gates nobody could invoke, and the hub that never landed
+
+**WS-RR RR7.24** — the panic-hang remediation mediums.  Two register rows, both
+closed by implementing the mechanism rather than by adjusting the claim.
+
+### Finding 12 — three definition-of-done gates, unrunnable as written
+
+A gate nobody can invoke reports nothing, which is worse than a gate that
+fails: it looks discharged.  Three of the plan's six were in that state, and all
+three shared one defect — **a proxy standing in for the fact**.
+
+* **`cargo test --workspace --release` could not compile.**  `ffi.rs`'s
+  `panic = "abort"` guard fired on
+  `all(not(panic = "abort"), not(debug_assertions))`, reading
+  `not(debug_assertions)` as a stand-in for "a release build of the image".  A
+  release *test* build satisfies it exactly: cargo inherits
+  `debug_assertions = false` from the release profile and forces
+  `panic = unwind` for the harness, so both conjuncts held and the crate refused
+  to build.  The fact the guard is about is the **bare-metal image** — a
+  `no_std` kernel has no unwinder — so its condition is now
+  `target_os = "none"`, which no host profile can satisfy and no test profile
+  can suppress on the target.  The plan asked for that invocation five times
+  over, and for `ITER_OVERRIDE=1000 cargo test --release …`; neither could ever
+  have run.
+* **`ITER_OVERRIDE` was read by nothing.**  `STRESS_ITER` was a `const`, so
+  `ITER_OVERRIDE=1000 cargo test …` ran the compiled-in count and reported
+  success for a run it had not performed.  It is read once per test now
+  (`stress_iter()`, `fifo_acquisitions()`), and `0` and unparseable values are
+  refused rather than silently making every stress test a no-op that still
+  reports `ok`.  The parsing half is split out as `parse_iteration_override` and
+  unit-tested on the value, because setting a process-global from a test races
+  every other test in the binary.
+* **The test count had drifted.**  "All 13 tests in
+  `queued_rw_lock::cross_thread_tests`" — there are fourteen.  The gate is
+  restated over the *module* rather than over a number, since the number is what
+  drifted; the count is recorded with its version as an informational note.
+
+### Finding 13 — the methodology hub that never landed
+
+Stream A's Commit A.2 named `SeLe4n/Kernel/Concurrency/Locks/Refinement.lean`
+and two Tier-3 anchors on it.  Neither existed, so the plan carried an internal
+reference to a file that does not, and each bridge kept its own copy of the same
+prose in isolation.
+
+It is implemented — and as the **shared engine**, not a fourth statement of the
+method.  The block fold all three bridges are built on (`ticketFoldBlock`,
+`concreteFoldBlock`, `queuedFoldBlock`) is defined once as `foldBlock`, with
+`foldBlock_append` and `foldBlock_stutter` proved generically over any step
+function, and each bridge's own fold is pinned to it by `rfl`
+(`ticketFoldBlock_eq_foldBlock` and its two siblings).  A hub that only
+described the method would have been a fourth copy; one that *is* the method has
+something to fail when a bridge drifts.
+
+It also carries the two rules a bridge must not break — a bridge may not assume
+its own conclusion (why `rust_rwLock_refines_lean` is kept only as the general
+form and the `_honest` results are the ones that assert something), and a block
+shape may not exist for a call the code does not make (why the six `_noop`
+constructors were deleted at PR #890 rounds 2 and 4 rather than kept as
+harmless).  `foldBlock_changes_state_needs_a_write` is the machine-checked form
+of the second: a block that changes the concrete state cannot consist only of
+observations.
+
+Six Tier-3 anchors, three of them the `rfl` pins.  Registered in the staged
+partition beside the bridges it reconciles (65 → 66 staged-only).
+
 ## v0.34.74 — the registry's serialization, declared rather than assumed
 
 **WS-RR RR7.23** — the declassification mediums.  Two register rows, both closed

@@ -113,6 +113,7 @@ import SeLe4n.Kernel.Concurrency.Locks.QueuedRwLockRefinement
 -- `rust_ticketLock_refines_lean` for the SM2.D.7 lockPrimitives
 -- aggregator.
 import SeLe4n.Kernel.Concurrency.Locks.TicketLockRefinement
+import SeLe4n.Kernel.Concurrency.Locks.Refinement
 -- WS-SM SM2.D: typed lock FFI wrappers + RAII combinators.  Wraps the
 -- raw `Platform.FFI.ffi*` lock declarations into typed Lean APIs
 -- (`TicketLockHandle`, `RwLockHandle`, `withTicketLock`, `withReadLock`,

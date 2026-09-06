@@ -4471,12 +4471,12 @@ mod cross_thread_tests {
     /// in the loom module is the exhaustive form.
     #[test]
     fn cross_thread_double_withdrawal_does_not_strand_the_lock() {
-        const ITER: usize = if STRESS_ITER >= 100 {
-            STRESS_ITER / 100
+        let iter: usize = if stress_iter() >= 100 {
+            stress_iter() / 100
         } else {
             1
         };
-        for _ in 0..ITER {
+        for _ in 0..iter {
             let lock = Arc::new(QueuedRwLock::new());
             let reached_second_enqueue = Arc::new(AtomicBool::new(false));
             lock.acquire_write(0);
@@ -4548,6 +4548,66 @@ mod cross_thread_tests {
     #[cfg(miri)]
     const STRESS_ITER: usize = 4;
 
+    /// **WS-RR RR7.24 (register finding 12)**: the iteration count, overridable
+    /// at run time.
+    ///
+    /// The panic-hang plan's §2 definition of done and its §8.2 headline stress
+    /// both invoke the suite as `ITER_OVERRIDE=1000 cargo test …`.  Until this
+    /// cut `STRESS_ITER` was a `const`, so that invocation ran the compiled-in
+    /// count and reported success for a run it had not performed — the gate was
+    /// unrunnable *as written*, which is worse than a gate that fails, because
+    /// it passes.
+    ///
+    /// Read once per test, not once per iteration; an unparseable or zero value
+    /// falls back to the compiled-in default rather than silently running no
+    /// iterations at all.
+    fn stress_iter() -> usize {
+        iteration_override().unwrap_or(STRESS_ITER)
+    }
+
+    /// The FIFO test's acquisition count, under the same override.
+    fn fifo_acquisitions() -> usize {
+        iteration_override().unwrap_or(FIFO_ACQUISITIONS)
+    }
+
+    /// `ITER_OVERRIDE`, parsed.  `None` when unset, unparseable, or zero — the
+    /// last because an override of `0` would turn every stress test into a
+    /// no-op that still reports `ok`.
+    fn iteration_override() -> Option<usize> {
+        parse_iteration_override(std::env::var("ITER_OVERRIDE").ok().as_deref())
+    }
+
+    /// The parsing half, split out so it is testable without an environment.
+    ///
+    /// Setting a process-global variable from a test races every other test in
+    /// the binary, so the mechanism is verified here on the value and the
+    /// reader above is the one-line adapter.
+    fn parse_iteration_override(raw: Option<&str>) -> Option<usize> {
+        raw.and_then(|v| v.trim().parse::<usize>().ok())
+            .filter(|n| *n > 0)
+    }
+
+    /// **WS-RR RR7.24**: the override is read, and a value that would make the
+    /// stress tests vacuous is refused.
+    #[test]
+    fn iteration_override_parses_and_refuses_the_vacuous_value() {
+        assert_eq!(parse_iteration_override(Some("1000")), Some(1000));
+        assert_eq!(parse_iteration_override(Some("  7 ")), Some(7));
+        // Unset: the compiled-in default stands.
+        assert_eq!(parse_iteration_override(None), None);
+        // Unparseable: the default stands rather than the test silently
+        // running a count nobody chose.
+        assert_eq!(parse_iteration_override(Some("many")), None);
+        assert_eq!(parse_iteration_override(Some("-1")), None);
+        // Zero would turn every stress test into a no-op that still reports
+        // `ok` — the precise failure mode this row exists to remove.
+        assert_eq!(parse_iteration_override(Some("0")), None);
+        // And the defaults the override falls back to are the stress counts,
+        // not the smoke counts they used to be.
+        assert!(stress_iter() >= 4);
+        assert!(fifo_acquisitions() >= 8);
+    }
+
     /// **WS-RR RR6.22**: writer acquisitions in the FIFO-order test.
     ///
     /// The plan's "FIFO test iteration count >= 10^4" figure.  Admission
@@ -4583,13 +4643,13 @@ mod cross_thread_tests {
     /// been a ticket lock since v0.32.148.) -/
     #[test]
     fn cross_thread_reader_stress() {
-        const ITER: usize = STRESS_ITER;
+        let iter: usize = stress_iter();
         let lock = Arc::new(QueuedRwLock::new());
         let mut handles = Vec::new();
         for tid in 0u8..(MAX_WAITERS as u8) {
             let lock_c = Arc::clone(&lock);
             handles.push(thread::spawn(move || {
-                for _ in 0..ITER {
+                for _ in 0..iter {
                     lock_c.acquire_read(tid);
                     lock_c.release_read(tid);
                 }
@@ -4612,7 +4672,7 @@ mod cross_thread_tests {
     /// Iteration count: `STRESS_ITER` (see `cross_thread_reader_stress`).
     #[test]
     fn cross_thread_writer_mutex() {
-        const ITER: usize = STRESS_ITER;
+        let iter: usize = stress_iter();
         let lock = Arc::new(QueuedRwLock::new());
         let counter = Arc::new(AtomicU64::new(0));
         let mut handles = Vec::new();
@@ -4620,7 +4680,7 @@ mod cross_thread_tests {
             let lock_c = Arc::clone(&lock);
             let counter_c = Arc::clone(&counter);
             handles.push(thread::spawn(move || {
-                for _ in 0..ITER {
+                for _ in 0..iter {
                     lock_c.acquire_write(tid);
                     // Critical section: increment the shared counter.
                     // We expect the writer lock to provide mutex.
@@ -4635,9 +4695,9 @@ mod cross_thread_tests {
         }
         assert_eq!(
             counter.load(StdOrdering::Relaxed),
-            (MAX_WAITERS * ITER) as u64,
+            (MAX_WAITERS * iter) as u64,
             "writer mutex should serialize: expected {} got {}",
-            MAX_WAITERS * ITER,
+            MAX_WAITERS * iter,
             counter.load(StdOrdering::Relaxed)
         );
         assert_eq!(lock.peek_state(), 0);
@@ -4647,14 +4707,14 @@ mod cross_thread_tests {
     /// roles.  Final state should clear.
     #[test]
     fn cross_thread_mixed_stress() {
-        const ITER: usize = STRESS_ITER;
+        let iter: usize = stress_iter();
         let lock = Arc::new(QueuedRwLock::new());
         let mut handles = Vec::new();
         // 2 readers (tids 0, 1)
         for tid in 0u8..2 {
             let lock_c = Arc::clone(&lock);
             handles.push(thread::spawn(move || {
-                for _ in 0..ITER {
+                for _ in 0..iter {
                     lock_c.acquire_read(tid);
                     lock_c.release_read(tid);
                 }
@@ -4664,7 +4724,7 @@ mod cross_thread_tests {
         for tid in 2u8..4 {
             let lock_c = Arc::clone(&lock);
             handles.push(thread::spawn(move || {
-                for _ in 0..ITER {
+                for _ in 0..iter {
                     lock_c.acquire_write(tid);
                     lock_c.release_write(tid);
                 }
@@ -4910,13 +4970,13 @@ mod cross_thread_tests {
     /// writers, with NO state corruption across the W→R→W→R pattern.
     #[test]
     fn cross_thread_alternating_rw_pattern() {
-        const ITER: usize = STRESS_ITER;
+        let iter: usize = stress_iter();
         let lock = Arc::new(QueuedRwLock::new());
         let mut handles = Vec::new();
         for tid in 0u8..(MAX_WAITERS as u8) {
             let lock_c = Arc::clone(&lock);
             handles.push(thread::spawn(move || {
-                for i in 0..ITER {
+                for i in 0..iter {
                     if i % 2 == 0 {
                         lock_c.acquire_read(tid);
                         lock_c.release_read(tid);
@@ -5035,7 +5095,7 @@ mod cross_thread_tests {
     /// separate observer thread.
     #[test]
     fn cross_thread_state_invariant_no_writer_with_readers() {
-        const ITER: usize = STRESS_ITER;
+        let iter: usize = stress_iter();
         let lock = Arc::new(QueuedRwLock::new());
         let stop_observer = Arc::new(AtomicBool::new(false));
         let invariant_violated = Arc::new(AtomicBool::new(false));
@@ -5062,7 +5122,7 @@ mod cross_thread_tests {
         for tid in 0u8..(MAX_WAITERS as u8) {
             let lock_c = Arc::clone(&lock);
             handles.push(thread::spawn(move || {
-                for i in 0..ITER {
+                for i in 0..iter {
                     if i % 3 == 0 {
                         lock_c.acquire_write(tid);
                         lock_c.release_write(tid);
@@ -5092,7 +5152,7 @@ mod cross_thread_tests {
     /// sharing-induced corruption between slots).
     #[test]
     fn cross_thread_slot_ownership_independence() {
-        const ITER: usize = STRESS_ITER;
+        let iter: usize = stress_iter();
         let lock = Arc::new(QueuedRwLock::new());
         // Per-slot counter to detect any aliasing.
         let counters = Arc::new([
@@ -5107,13 +5167,13 @@ mod cross_thread_tests {
             let lock_c = Arc::clone(&lock);
             let counters_c = Arc::clone(&counters);
             handles.push(thread::spawn(move || {
-                for _ in 0..ITER {
+                for _ in 0..iter {
                     lock_c.acquire_read(tid);
                     // Each thread increments ITS OWN counter while holding the lock.
                     let prev = counters_c[tid as usize].fetch_add(1, StdOrdering::SeqCst);
                     // The counter must not be touched by other slots.
                     assert!(
-                        prev < ITER as u64,
+                        prev < iter as u64,
                         "slot {} counter overflowed: {} (alias detected?)",
                         tid,
                         prev
@@ -5125,13 +5185,13 @@ mod cross_thread_tests {
         for h in handles {
             h.join().unwrap();
         }
-        // Each counter must equal exactly ITER.
+        // Each counter must equal exactly iter.
         for tid in 0..MAX_WAITERS {
             let c = counters[tid].load(StdOrdering::SeqCst);
             assert_eq!(
-                c, ITER as u64,
+                c, iter as u64,
                 "slot {} counter mismatch: expected {}, got {}",
-                tid, ITER, c
+                tid, iter, c
             );
         }
         assert_eq!(lock.peek_state(), 0);
@@ -5219,14 +5279,14 @@ mod cross_thread_tests {
     /// WS-RR RR6.22.)
     #[test]
     fn cross_thread_rapid_handover_cycling() {
-        const ITER: usize = STRESS_ITER;
+        let iter: usize = stress_iter();
         let lock = Arc::new(QueuedRwLock::new());
         let mut handles = Vec::new();
         // 4 threads each rapidly cycling between acquire/release of write lock.
         for tid in 0u8..(MAX_WAITERS as u8) {
             let lock_c = Arc::clone(&lock);
             handles.push(thread::spawn(move || {
-                for _ in 0..ITER {
+                for _ in 0..iter {
                     lock_c.acquire_write(tid);
                     // Empty CS.
                     lock_c.release_write(tid);
@@ -5271,7 +5331,7 @@ mod cross_thread_tests {
     #[test]
     fn cross_thread_writer_fifo_order_over_many_acquisitions() {
         const THREADS: usize = MAX_WAITERS;
-        let rounds = FIFO_ACQUISITIONS / THREADS;
+        let rounds = fifo_acquisitions() / THREADS;
         let total = rounds * THREADS;
 
         let lock = Arc::new(QueuedRwLock::new());

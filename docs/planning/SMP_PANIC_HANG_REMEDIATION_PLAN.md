@@ -64,13 +64,31 @@ existing SM2.C wf-preservation theorems.
 
 `v1.0.0-rc` is reached when **all** of these hold:
 
+**WS-RR RR7.24 (register finding 12) made the first three runnable.**  They
+were not merely unmet — they were unmet *as written*, which is worse, because a
+gate nobody can invoke reports nothing.  `cargo test --release` refused to
+compile (`ffi.rs`'s `panic = "abort"` guard read `not(debug_assertions)` as a
+stand-in for "the image", and a release *test* build satisfies it);
+`ITER_OVERRIDE` was read by nothing, so the 1000-iteration invocation ran the
+compiled-in count and reported success for a run it had not performed; and the
+test count had drifted.  The guard is now scoped to `target_os = "none"` — the
+bare-metal build, which is the fact it is about — the iteration counts read
+`ITER_OVERRIDE` once per test, and the count below is derived rather than
+asserted.
+
 * `cargo test --workspace --release` passes 5 consecutive runs.
 * `cross_thread_state_invariant_no_writer_with_readers` passes
-  1000/1000 iterations (instead of the default 100). Zero panics,
-  zero hangs.
-* All 13 tests in `queued_rw_lock::cross_thread_tests` pass
+  1000/1000 iterations under `ITER_OVERRIDE=1000` (the compiled-in
+  default is `STRESS_ITER`, 10 000 since WS-RR RR6.22 — the override
+  is for *raising* a miri or CI-constrained run, and a value of `0`
+  is refused rather than silently making the test vacuous). Zero
+  panics, zero hangs.
+* **Every** test in `queued_rw_lock::cross_thread_tests` passes
   100/100 consecutive cargo invocations under
-  `cargo test --workspace -- --test-threads=$(nproc)`.
+  `cargo test --workspace -- --test-threads=$(nproc)`.  (Fourteen at
+  `v0.34.75`; the gate is stated over the module rather than over a
+  number, because the number is what drifted — it read 13 for two
+  cuts after the fourteenth test landed.)
 * `RUSTFLAGS="-Z sanitizer=thread" cargo test --workspace
   --target x86_64-unknown-linux-gnu` passes with zero TSAN warnings
   (or warnings explicitly justified in test docstrings).
@@ -616,8 +634,14 @@ delivers it:
 
 * `SeLe4n/Kernel/Concurrency/MemoryModel.lean` — ARM ARM citation
   map expansion (Stream A).
-* `SeLe4n/Kernel/Concurrency/Locks/Refinement.lean` (new, 294 LoC)
-  — methodology hub (Stream A).
+* `SeLe4n/Kernel/Concurrency/Locks/Refinement.lean` — methodology hub
+  (Stream A).  **Landed at `v0.34.75` (WS-RR RR7.24, register finding
+  13)**, and not as the documentation file this line planned: the
+  block fold every bridge is built on is *defined* there and each
+  bridge's own fold is pinned to it by `rfl`, so the hub is the shared
+  engine rather than a fourth statement of the method.  The LoC figure
+  this line carried was an estimate for a file that did not exist and
+  is dropped rather than re-estimated.
 * `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` —
   Stream B's two new proof obligations (§6.7).
 * `SeLe4n/Kernel/Concurrency/LockPrimitives.lean` —

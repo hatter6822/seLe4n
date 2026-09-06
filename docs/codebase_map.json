@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/rr7-medium-severity-sweep-tn327q",
-      "commit_sha": "c76a020df23aa8c2fedbf936ebab92d455858548",
-      "tree_sha": "e205836a79b5b4e14b9900b6812a72e5ab1e1dfe",
-      "committed_at_utc": "2026-09-06T06:11:15+00:00"
+      "commit_sha": "e29fdd395d16a6d0334b920eb97bea2417a57522",
+      "tree_sha": "fe3b59b79b287b11d8d18fbb2edb6978d1998427",
+      "committed_at_utc": "2026-09-06T06:36:05+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "09c8c3d78536ba19eac3b1ea276206b51901f629949fc39047e972c49c5b7ba0"
+    "source_digest": "3edb8e4712fdadbd7de4425be6493b19c2c4c9d20bf0fba136148bdbfe61e29d"
   },
   "summary": {
-    "module_count": 386,
-    "declaration_count": 19460
+    "module_count": 387,
+    "declaration_count": 19471
   },
   "readme_sync": {
-    "version": "0.34.74",
+    "version": "0.34.75",
     "lean_toolchain": "v4.28.0",
-    "production_files": 316,
-    "production_loc": 338946,
+    "production_files": 317,
+    "production_loc": 339118,
     "test_files": 70,
     "test_loc": 70292,
-    "proved_theorem_lemma_decls": 11265,
+    "proved_theorem_lemma_decls": 11273,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -44640,6 +44640,111 @@
             "queuedSim_waiter_ticket",
             "queuedWriterOffset",
             "toNat"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Concurrency.Locks.Refinement",
+      "path": "SeLe4n/Kernel/Concurrency/Locks/Refinement.lean",
+      "declaration_count": 11,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.Concurrency.Refinement",
+          "line": 72,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "foldBlock",
+          "line": 81,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "foldBlock_nil",
+          "line": 84,
+          "called": [
+            "foldBlock"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "foldBlock_cons",
+          "line": 87,
+          "called": [
+            "foldBlock"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "foldBlock_append",
+          "line": 93,
+          "called": [
+            "foldBlock"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "StepPreserves",
+          "line": 103,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "foldBlock_stutter",
+          "line": 112,
+          "called": [
+            "StepPreserves",
+            "cons",
+            "foldBlock",
+            "foldBlock_cons"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "foldBlock_changes_state_needs_a_write",
+          "line": 140,
+          "called": [
+            "StepPreserves",
+            "foldBlock",
+            "foldBlock_stutter"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ticketFoldBlock_eq_foldBlock",
+          "line": 152,
+          "called": [
+            "ConcreteTicketLockOp",
+            "TicketLockConcrete",
+            "TicketLockConcrete.applyOp",
+            "foldBlock",
+            "ticketFoldBlock"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "concreteFoldBlock_eq_foldBlock",
+          "line": 158,
+          "called": [
+            "ConcreteRwLockOp",
+            "concreteApplyOp",
+            "concreteFoldBlock",
+            "foldBlock"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "queuedFoldBlock_eq_foldBlock",
+          "line": 166,
+          "called": [
+            "QueuedRwLockConcrete",
+            "QueuedRwLockOp",
+            "applyOp",
+            "foldBlock",
+            "queuedFoldBlock"
           ]
         }
       ]
@@ -228598,13 +228703,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Platform.Staged",
-          "line": 651,
+          "line": 652,
           "called": []
         },
         {
           "kind": "def",
           "name": "stagedBuildAnchor",
-          "line": 657,
+          "line": 658,
           "called": []
         }
       ]
