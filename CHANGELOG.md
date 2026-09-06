@@ -1,3 +1,89 @@
+## v0.34.92 — WS-RR RR7.22 residual: the bound-delivery arm carries the whole bundle
+
+RR7.22's splice engine carried all twenty `ipcInvariantFull` conjuncts across
+`endpointQueueRemoveDual` — nineteen unconditional, the membership conjunct
+relaxed at the removed thread — and then had no consumer: both live operations
+that use the splice stayed at the weaker `ipcInvariant`.  This cut closes the
+first of the two, end to end, from the splice's own post-state to the
+flow-checked dispatch the live SM9 arm runs.
+
+### The pair closes
+
+* **`storeTcbReceiveComplete_closes_exceptMembership`** — the receive-completing
+  store turns the relaxed bundle back into the full one.  `.ready` at the spliced
+  thread *is* the discharge of the conjunct the splice relaxed there, and the
+  other nineteen carry.  It asks for three pre-state facts (the thread heads no
+  queue, tails no queue, is nothing's `queueNext`) because the three conjuncts a
+  `.ready` rewrite can break read the queues three different ways.  A thread
+  holding no reply object is **derived** inside it, from `hNotReply` and the
+  bundle's own `replyCallerLinkageReciprocal`, rather than demanded of callers.
+
+### The splice establishes exactly those three
+
+* **`endpointQueueRemoveDual_removed_links_cleared`** — every branch ends with
+  the same `storeTcbQueueLinks _ tid none none none`, read off once.
+* **`endpointQueueRemoveDual_removed_no_incoming`** — one line of the
+  doubly-linked discipline: forward integrity turns a live `a.queueNext = some
+  tid` into `tid.queuePrev = some a`, and that field is cleared.  The cleared
+  back-link *is* the absence of every incoming link, which is why the operation
+  clears all three fields and not only the forward one.
+* **`endpointQueueRemoveDual_removed_not_boundary`** — the spliced queue's own
+  head and tail, by the four-shape analysis: acyclicity for the two *promoted*
+  neighbours (`headMore`'s successor, `midLast`'s predecessor) and the tail
+  boundary for the two *retained* tails.  Neither invariant substitutes for the
+  other.
+* **`endpointQueueRemoveDual_removed_detached`** packages all three.  Only the
+  spliced endpoint is looked at structurally; every other endpoint falls to
+  `queueHeadBlockedConsistent` / `endpointQueueTailBlockedConsistent`, which the
+  splice preserves and which the delivered thread's unchanged
+  `.blockedOnReceive` state then contradicts.
+* **`spliceFinalEndpoint`** factors the "the last endpoint store is what the
+  post-state carries" step that `endpointQueueRemoveDual_headFacts` had inline,
+  so the two readings cannot diverge.
+
+### The live arm's payoff
+
+* **`notificationSignalBoundOnCore_preserves_ipcInvariantFull`** — splice,
+  receive-complete, wake: the relaxed bundle, the keystone, then the
+  object-lookup-invisible wake.  `hPred` is the splice's own
+  `splicePredecessorBlocked` obligation, stated rather than assumed away.
+* **`notificationSignalBoundOnCore_passiveServerIdleFrameOnCore`** and the
+  flagship **`…_preserves_ipcInvariantFull_perCore`** — every core's view, no
+  idle-core assumption, matching the unbound signal's pair.
+* **`notificationSignalBoundCrossCoreDispatch_preserves_ipcInvariantFull`** and
+  its **`…Checked`** twin — the bundle at the two dispatch forms, the checked one
+  settled arm by arm from the existing flow reductions.
+
+Supporting: `boundDeliveryTarget?_some` reads the resolution's two consequences
+off the definition once (`Operations/NotificationBind.lean`), and
+`endpointQueueRemoveDual_passiveServerIdleFrameOnCore` is the general-core lift
+of the splice's boot-core frame, stated beside the rest of the per-core
+micro-frame family.
+
+### AK7 baseline re-anchored
+
+`RAW_LOOKUP_TID` rises by ten.  Every one of the new statements is *about* an
+`ipcInvariantFull` conjunct, and those conjuncts are defined on
+`st.objects[tid.toObjId]?` — `queueNextTargetBlocked`, `queueHeadBlockedConsistent`
+and `endpointQueueTailBlockedConsistent` all read the object store directly — so a
+theorem stating one of them cannot be phrased through the typed reader without a
+conversion at every use.  Six of the ten are literally the hypothesis shapes the
+existing per-conjunct lemmas already take.  Re-anchored, as the engine cut that
+introduced this family did, rather than contorting the statements around a
+ratchet built for reader hygiene at operation boundaries.
+
+### Still owed on this row
+
+`cancelIpcBlockingOnCore`'s whole-bundle theorem.  Its blocked-on-endpoint arm
+does **not** use the splice: it runs `removeFromAllEndpointQueues`, a
+`RobinHood.fold` over the entire object store preceded by
+`spliceOutMidQueueNode`, for which the tree has frames and `ipcInvariant` but no
+queue-shape conjunct at all.  Carrying twenty conjuncts across that is
+phase-sized rather than residual-sized, and it is re-registered with that
+scope stated instead of implied.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md (WS-RR RR7.22)
+
 ## v0.34.91 — WS-RR RR7.41 residual: the root-only CSpace footprint is complete
 
 RR7.41 shipped the mechanism that can name a multi-level CSpace walk's interior

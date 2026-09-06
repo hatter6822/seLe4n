@@ -810,6 +810,33 @@ run_check "INVARIANT" bash -lc 'rg -U -n "theorem endpointQueueRemoveDual_establ
 # The tail conjunct is the one the bundle does not entail, so its theorem must
 # take the predecessor hypothesis rather than assume it away.
 run_check "INVARIANT" bash -lc 'rg -U -n "theorem endpointQueueRemoveDual_preserves_endpointQueueTailBlockedConsistent(.|\n)*splicePredecessorBlocked isReceiveQ endpointId st tid" SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean'
+# **WS-RR RR7.22 (residual)**: the pair closes.  The splice relaxes exactly one
+# conjunct and the receive-completing store restores it, so the two compose back
+# to the full bundle — and the three detachment facts the store asks for are the
+# ones the splice has just established.
+run_check "INVARIANT" rg -n '^theorem storeTcbReceiveComplete_closes_exceptMembership' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem spliceFinalEndpoint' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_removed_links_cleared' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_removed_no_incoming' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_removed_not_boundary' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_removed_detached' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+# Relation, not presence: the keystone must conclude the **full** bundle from the
+# **relaxed** one, and must take the store as its own step.  A keystone stated
+# from the full bundle would be vacuous on the state the splice produces.
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem storeTcbReceiveComplete_closes_exceptMembership(.|\n)*ipcInvariantFullExceptMembership st tid(.|\n)*storeTcbReceiveComplete st tid msg = .ok st.(.|\n)*ipcInvariantFull st." SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean'
+# NEGATIVE: `tid` holding no reply object is derived from `hNotReply` and the
+# bundle's own reciprocity — re-adding it as a hypothesis pushes the two-step
+# argument back onto every caller.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem storeTcbReceiveComplete_closes_exceptMembership(.|\n)*\(hUnlinked :" SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean'
+# The live bound-delivery arm's payoff: the whole bundle, per core, and at the
+# flow-checked dispatch the SM9 arm actually runs.
+run_check "INVARIANT" rg -n '^theorem boundDeliveryTarget\?_some' SeLe4n/Kernel/IPC/Operations/NotificationBind.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_passiveServerIdleFrameOnCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_preserves_ipcInvariantFull\b' SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_passiveServerIdleFrameOnCore' SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalBoundCrossCoreDispatch_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/CrossCore/NotificationBindDispatch.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalBoundCrossCoreDispatchChecked_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/CrossCore/NotificationBindDispatch.lean
 # The neighbour clauses are the half an under-stated hypothesis would drop, so
 # the label predicate must quantify over the removed thread's own queue links
 # rather than over the endpoint and the thread alone.

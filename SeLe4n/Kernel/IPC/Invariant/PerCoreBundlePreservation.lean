@@ -1490,6 +1490,35 @@ theorem removeRunnableOnCore_passiveServerIdleFrameOnCore
         rw [removeRunnableOnCore_currentOnCore_self, hCur, if_neg (fun h => hEq (Option.some.inj h))]
       · rw [removeRunnableOnCore_currentOnCore_ne st removed oc c hoc]; exact hCur
 
+open SeLe4n.Model.SystemState in
+/-- **WS-RR RR7.22 (residual)** micro-frame: the endpoint queue splice frames
+every core's slice.
+
+The splice writes one endpoint and up to three TCBs' queue links, so it touches
+neither `ipcState`, nor `schedContextBinding`, nor the scheduler — which is
+exactly the three-part backward condition.  The boot-core form
+(`endpointQueueRemoveDual_passiveServerIdleFrame`) is this at `bootCoreId`
+(`passiveServerIdleFrameOnCore_boot_iff`); it lives beside the splice because
+that module sits below this one, and this is the general-core lift the
+bound-delivery per-core flagship needs. -/
+theorem endpointQueueRemoveDual_passiveServerIdleFrameOnCore
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (tid : SeLe4n.ThreadId) {c : CoreId}
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
+    passiveServerIdleFrameOnCore st st' c :=
+  passiveServerIdleFrameOnCore_of_backward
+    (fun t tcb' hTcb' => by
+      have hRaw := (getTcb?_eq_some_iff st' t tcb').mp hTcb'
+      obtain ⟨tcb1, hTcb1, hIpc⟩ := endpointQueueRemoveDual_ipcStateFrame st st' endpointId
+        isReceiveQ tid hObjInv hStep t tcb' hRaw
+      obtain ⟨tcb2, hTcb2, hBind⟩ := endpointQueueRemoveDual_sameSchedContextBindings st st'
+        endpointId isReceiveQ tid hObjInv hStep t tcb' hRaw
+      rw [hTcb1] at hTcb2
+      obtain rfl : tcb2 = tcb1 := (KernelObject.tcb.inj (Option.some.inj hTcb2)).symm
+      exact ⟨tcb2, (getTcb?_eq_some_iff st t tcb2).mpr hTcb1, hIpc, hBind⟩)
+    (endpointQueueRemoveDual_scheduler_eq st st' endpointId isReceiveQ tid hStep)
+
 -- ============================================================================
 -- §6 SM6.D.2: the WithCaps trio — per-core frames + per-core bundle
 -- ============================================================================

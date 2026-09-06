@@ -178,6 +178,25 @@ open SeLe4n.Testing
 #check @endpointQueueNoDup_of_dualQueue_of_headBlocked
 #check @ipcInvariantFullExceptMembership
 #check @endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership
+-- WS-RR RR7.22 (residual): the pair closes.  The store that unblocks the spliced
+-- thread restores the one relaxed conjunct and carries the other nineteen; the
+-- splice establishes the three detachment facts it asks for; and the live
+-- bound-delivery arm therefore carries the whole bundle, per core and at the
+-- flow-checked dispatch the SM9 arm runs.
+#check @storeTcbReceiveComplete_closes_exceptMembership
+#check @spliceFinalEndpoint
+#check @endpointQueueRemoveDual_removed_links_cleared
+#check @endpointQueueRemoveDual_removed_no_incoming
+#check @endpointQueueRemoveDual_removed_not_boundary
+#check @endpointQueueRemoveDual_removed_detached
+#check @spliceQueue_wellFormed_of_dual
+#check @boundDeliveryTarget?_some
+#check @endpointQueueRemoveDual_passiveServerIdleFrameOnCore
+#check @notificationSignalBoundOnCore_preserves_ipcInvariantFull
+#check @notificationSignalBoundOnCore_passiveServerIdleFrameOnCore
+#check @notificationSignalBoundOnCore_preserves_ipcInvariantFull_perCore
+#check @notificationSignalBoundCrossCoreDispatch_preserves_ipcInvariantFull
+#check @notificationSignalBoundCrossCoreDispatchChecked_preserves_ipcInvariantFull
 
 -- ============================================================================
 -- §2  Elaboration-time examples (Tier-3): theorems apply to typed inputs

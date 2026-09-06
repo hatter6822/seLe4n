@@ -253,6 +253,22 @@ def boundDeliveryTarget? (st : SystemState) (notificationId : SeLe4n.ObjId) :
       else none
   | none => none
 
+/-- WS-SM SM6.B: what a resolved bound-delivery target says about the state —
+the bound TCB exists and is blocked on exactly the endpoint the resolution
+names.
+
+Read off the definition once.  Every proof of the delivery path needs both
+halves (the splice needs the endpoint, the receive-completing store needs the
+blocking state), and re-running the four-deep match at each of them is the
+enumeration-instead-of-derivation shape. -/
+theorem boundDeliveryTarget?_some (st : SystemState) (notificationId : SeLe4n.ObjId)
+    (t : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
+    (h : boundDeliveryTarget? st notificationId = some (t, epId)) :
+    ∃ tcb, st.getTcb? t = some tcb ∧ tcb.ipcState = .blockedOnReceive epId := by
+  unfold boundDeliveryTarget? at h
+  repeat' split at h
+  all_goals simp_all
+
 -- ============================================================================
 -- §3  Bound-aware notification signal (single-core canonical)
 -- ============================================================================

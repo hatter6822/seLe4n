@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/rr7-medium-severity-sweep-tn327q",
-      "commit_sha": "a0e61fc3f01f30ed80ea86e4462ceeed30addf56",
-      "tree_sha": "9d48c474664a2e3a8d0731d12c1b1f24da81819e",
-      "committed_at_utc": "2026-09-06T21:32:21+00:00"
+      "commit_sha": "e0906a9354f545f9dff3fcaa9bf464c9db6fa34e",
+      "tree_sha": "6b534722f21e767360029d061c0be8d6a2f619fc",
+      "committed_at_utc": "2026-09-06T22:19:03+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "184aa288fa073e4bcb76c74729ca464e097661ea2a0e14a87d605686399df145"
+    "source_digest": "4d0afd73abce52f31e1d51979c85b1c81465eb3a7fcffcf3648d9eb445ca545c"
   },
   "summary": {
     "module_count": 393,
-    "declaration_count": 19720
+    "declaration_count": 19734
   },
   "readme_sync": {
-    "version": "0.34.91",
+    "version": "0.34.92",
     "lean_toolchain": "v4.28.0",
     "production_files": 323,
-    "production_loc": 342838,
+    "production_loc": 343521,
     "test_files": 70,
-    "test_loc": 71065,
-    "proved_theorem_lemma_decls": 11429,
+    "test_loc": 71084,
+    "proved_theorem_lemma_decls": 11444,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -73979,7 +73979,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.CrossCore.NotificationBind",
       "path": "SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean",
-      "declaration_count": 15,
+      "declaration_count": 18,
       "declarations": [
         {
           "kind": "namespace",
@@ -74165,8 +74165,126 @@
         },
         {
           "kind": "theorem",
+          "name": "notificationSignalBoundOnCore_preserves_ipcInvariantFull",
+          "line": 225,
+          "called": [
+            "Badge",
+            "CoreId",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "allTimeoutBudgetsNone",
+            "allTimeoutBudgetsNone_of_frame",
+            "badge",
+            "boundDeliveryTarget",
+            "bounded",
+            "dualQueueSystemInvariant",
+            "empty",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership",
+            "endpointQueueRemoveDual_ipcStateFrame",
+            "endpointQueueRemoveDual_preserves_objects_invExt",
+            "endpointQueueRemoveDual_removed_detached",
+            "endpointQueueRemoveDual_removed_links_cleared",
+            "endpointQueueRemoveDual_timeoutBudgetFrame",
+            "epId",
+            "getTcb",
+            "invExt",
+            "ipcInvariantFull",
+            "ipcInvariantFull_of_getElem_eq",
+            "maxExtraCaps",
+            "maxMessageRegisters",
+            "none",
+            "notificationId",
+            "notificationSignalBoundOnCore",
+            "notificationSignalOnCore_preserves_ipcInvariantFull",
+            "notificationWaiterConsistent",
+            "passiveServerIdle",
+            "passiveServerIdleFrameOnCore_boot_iff",
+            "passiveServerIdle_of_frame",
+            "size",
+            "splicePredecessorBlocked",
+            "st",
+            "storeTcbReceiveComplete",
+            "storeTcbReceiveComplete_closes_exceptMembership",
+            "storeTcbReceiveComplete_getTcb",
+            "storeTcbReceiveComplete_preserves_objects_invExt",
+            "symm",
+            "tcb0",
+            "toObjId",
+            "wakeThread",
+            "wakeThread_objects_getElem_eq_of_ready",
+            "wakeThread_passiveServerIdleFrameOnCore_of_ready"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignalBoundOnCore_passiveServerIdleFrameOnCore",
+          "line": 319,
+          "called": [
+            "Badge",
+            "CoreId",
+            "ObjId",
+            "SystemState",
+            "badge",
+            "boundDeliveryTarget",
+            "empty",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_passiveServerIdleFrameOnCore",
+            "endpointQueueRemoveDual_preserves_objects_invExt",
+            "epId",
+            "invExt",
+            "none",
+            "notificationId",
+            "notificationSignalBoundOnCore",
+            "notificationSignalOnCore_passiveServerIdleFrameOnCore",
+            "passiveServerIdleFrameOnCore",
+            "refl",
+            "st",
+            "storeTcbReceiveComplete",
+            "storeTcbReceiveComplete_getTcb",
+            "storeTcbReceiveComplete_passiveServerIdleFrameOnCore",
+            "storeTcbReceiveComplete_preserves_objects_invExt",
+            "trans",
+            "wakeThread",
+            "wakeThread_passiveServerIdleFrameOnCore_of_ready"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignalBoundOnCore_preserves_ipcInvariantFull_perCore",
+          "line": 361,
+          "called": [
+            "Badge",
+            "CoreId",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "allTimeoutBudgetsNone",
+            "badge",
+            "boundDeliveryTarget",
+            "epId",
+            "invExt",
+            "ipcInvariantFull_of_smp",
+            "ipcInvariantFull_perCore",
+            "ipcInvariantFull_perCore_of_full",
+            "ipcInvariantFull_smp",
+            "notificationId",
+            "notificationSignalBoundOnCore",
+            "notificationSignalBoundOnCore_passiveServerIdleFrameOnCore",
+            "notificationSignalBoundOnCore_preserves_ipcInvariantFull",
+            "notificationWaiterConsistent",
+            "passiveServerIdle",
+            "passiveServerIdle_perCore_of_frameOnCore",
+            "splicePredecessorBlocked",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "storeObject_tcb_preserves_ipcInvariant",
-          "line": 205,
+          "line": 389,
           "called": [
             "SystemState",
             "TCB",
@@ -74183,7 +74301,7 @@
         {
           "kind": "theorem",
           "name": "bindNotification_preserves_objects_invExt",
-          "line": 218,
+          "line": 402,
           "called": [
             "ObjId",
             "SystemState",
@@ -74203,7 +74321,7 @@
         {
           "kind": "theorem",
           "name": "bindNotification_preserves_ipcInvariant",
-          "line": 249,
+          "line": 433,
           "called": [
             "ObjId",
             "SystemState",
@@ -74226,7 +74344,7 @@
         {
           "kind": "theorem",
           "name": "unbindNotification_preserves_objects_invExt",
-          "line": 283,
+          "line": 467,
           "called": [
             "SystemState",
             "ThreadId",
@@ -74245,7 +74363,7 @@
         {
           "kind": "theorem",
           "name": "unbindNotification_preserves_ipcInvariant",
-          "line": 316,
+          "line": 500,
           "called": [
             "SystemState",
             "ThreadId",
@@ -74267,7 +74385,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_notificationSignalOnCore_bound_tcb_write_mem",
-          "line": 369,
+          "line": 553,
           "called": [
             "ObjId",
             "SystemState",
@@ -74285,7 +74403,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_notificationSignalOnCore_bound_endpoint_write_mem",
-          "line": 383,
+          "line": 567,
           "called": [
             "Kernel",
             "ObjId",
@@ -74306,7 +74424,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.CrossCore.NotificationBindDispatch",
       "path": "SeLe4n/Kernel/IPC/CrossCore/NotificationBindDispatch.lean",
-      "declaration_count": 16,
+      "declaration_count": 18,
       "declarations": [
         {
           "kind": "namespace",
@@ -74468,9 +74586,58 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "notificationSignalBoundCrossCoreDispatch_preserves_ipcInvariantFull",
+          "line": 137,
+          "called": [
+            "Badge",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "allTimeoutBudgetsNone",
+            "badge",
+            "boundDeliveryTarget",
+            "determineExecutingCore",
+            "epId",
+            "invExt",
+            "ipcInvariantFull",
+            "notificationId",
+            "notificationSignalBoundCrossCoreDispatch",
+            "notificationSignalBoundOnCore_preserves_ipcInvariantFull",
+            "notificationWaiterConsistent",
+            "splicePredecessorBlocked",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignalBoundCrossCoreDispatchChecked_preserves_ipcInvariantFull",
+          "line": 159,
+          "called": [
+            "Badge",
+            "LabelingContext",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "allTimeoutBudgetsNone",
+            "badge",
+            "boundDeliveryTarget",
+            "determineExecutingCore",
+            "epId",
+            "invExt",
+            "ipcInvariantFull",
+            "notificationId",
+            "notificationSignalBoundCrossCoreDispatchChecked",
+            "notificationSignalBoundOnCore_preserves_ipcInvariantFull",
+            "notificationWaiterConsistent",
+            "splicePredecessorBlocked",
+            "st"
+          ]
+        },
+        {
           "kind": "def",
           "name": "notificationWaitCrossCoreDispatch",
-          "line": 143,
+          "line": 193,
           "called": [
             "Badge",
             "KernelError",
@@ -74486,7 +74653,7 @@
         {
           "kind": "def",
           "name": "notificationWaitCrossCoreDispatchChecked",
-          "line": 151,
+          "line": 201,
           "called": [
             "Badge",
             "KernelError",
@@ -74504,7 +74671,7 @@
         {
           "kind": "theorem",
           "name": "notificationWaitCrossCoreDispatchChecked_flow_denied",
-          "line": 160,
+          "line": 210,
           "called": [
             "LabelingContext",
             "ObjId",
@@ -74519,7 +74686,7 @@
         {
           "kind": "theorem",
           "name": "notificationWaitCrossCoreDispatchChecked_flow_allowed",
-          "line": 170,
+          "line": 220,
           "called": [
             "LabelingContext",
             "ObjId",
@@ -74535,7 +74702,7 @@
         {
           "kind": "theorem",
           "name": "notificationWaitCrossCoreDispatch_preserves_objects_invExt",
-          "line": 179,
+          "line": 229,
           "called": [
             "ObjId",
             "SystemState",
@@ -74551,7 +74718,7 @@
         {
           "kind": "theorem",
           "name": "notificationWaitCrossCoreDispatch_preserves_ipcInvariant",
-          "line": 187,
+          "line": 237,
           "called": [
             "ObjId",
             "SystemState",
@@ -74568,7 +74735,7 @@
         {
           "kind": "theorem",
           "name": "notificationWaitCrossCoreDispatch_preserves_ipcInvariantFull",
-          "line": 201,
+          "line": 251,
           "called": [
             "Kernel",
             "ObjId",
@@ -94369,7 +94536,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.PerCoreBundlePreservation",
       "path": "SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean",
-      "declaration_count": 52,
+      "declaration_count": 53,
       "declarations": [
         {
           "kind": "namespace",
@@ -95397,8 +95564,30 @@
         },
         {
           "kind": "theorem",
+          "name": "endpointQueueRemoveDual_passiveServerIdleFrameOnCore",
+          "line": 1504,
+          "called": [
+            "CoreId",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_ipcStateFrame",
+            "endpointQueueRemoveDual_sameSchedContextBindings",
+            "endpointQueueRemoveDual_scheduler_eq",
+            "getTcb",
+            "invExt",
+            "passiveServerIdleFrameOnCore",
+            "passiveServerIdleFrameOnCore_of_backward",
+            "st",
+            "symm"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "ipcUnwrapCaps_passiveServerIdleFrameOnCore",
-          "line": 1511,
+          "line": 1540,
           "called": [
             "CapTransferSummary",
             "CoreId",
@@ -95420,7 +95609,7 @@
         {
           "kind": "theorem",
           "name": "endpointSendDualWithCaps_passiveServerIdleFrameOnCore",
-          "line": 1531,
+          "line": 1560,
           "called": [
             "AccessRightSet",
             "CapTransferSummary",
@@ -95452,7 +95641,7 @@
         {
           "kind": "theorem",
           "name": "endpointReceiveDualWithCaps_passiveServerIdleFrameOnCore",
-          "line": 1574,
+          "line": 1603,
           "called": [
             "CapTransferSummary",
             "CoreId",
@@ -95482,7 +95671,7 @@
         {
           "kind": "theorem",
           "name": "endpointCallWithCaps_passiveServerIdleFrameOnCore",
-          "line": 1625,
+          "line": 1654,
           "called": [
             "AccessRightSet",
             "CapTransferSummary",
@@ -95514,7 +95703,7 @@
         {
           "kind": "theorem",
           "name": "endpointSendDualWithCaps_preserves_ipcInvariantFull_perCore",
-          "line": 1669,
+          "line": 1698,
           "called": [
             "AccessRightSet",
             "CapTransferSummary",
@@ -95549,7 +95738,7 @@
         {
           "kind": "theorem",
           "name": "endpointReceiveDualWithCaps_preserves_ipcInvariantFull_perCore",
-          "line": 1721,
+          "line": 1750,
           "called": [
             "CapTransferSummary",
             "CoreId",
@@ -95585,7 +95774,7 @@
         {
           "kind": "theorem",
           "name": "endpointCallWithCaps_preserves_ipcInvariantFull_perCore",
-          "line": 1769,
+          "line": 1798,
           "called": [
             "AccessRightSet",
             "CapTransferSummary",
@@ -98024,7 +98213,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.QueueSplicePreservation",
       "path": "SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean",
-      "declaration_count": 68,
+      "declaration_count": 75,
       "declarations": [
         {
           "kind": "namespace",
@@ -99320,7 +99509,6 @@
           "name": "endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership",
           "line": 2168,
           "called": [
-            "Kernel",
             "ObjId",
             "SystemState",
             "ThreadId",
@@ -99369,6 +99557,203 @@
             "replyCallerLinkage",
             "splicePredecessorBlocked",
             "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbReceiveComplete_closes_exceptMembership",
+          "line": 2275,
+          "called": [
+            "Endpoint",
+            "IpcMessage",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "allTimeoutBudgetsNone",
+            "blockedThreadTimeoutConsistent_of_frame",
+            "bounded",
+            "donationBudgetTransfer_of_sameSchedContextBindings",
+            "donationOwnerUnique_of_sameSchedContextBindings",
+            "donationOwnerValid",
+            "donationOwnerValid_implies_donationChainAcyclic",
+            "donationOwnerValid_of_frames",
+            "epId",
+            "head",
+            "invExt",
+            "ipcInvariantFull",
+            "ipcInvariantFullExceptMembership",
+            "none",
+            "passiveServerIdle_of_frame",
+            "replyCallerLinkageReciprocal_of_frame",
+            "st",
+            "storeTcbReceiveComplete",
+            "storeTcbReceiveComplete_donationOwnerFrame",
+            "storeTcbReceiveComplete_nonBlocked_preserves_blockedOnReplyHasReplyObject",
+            "storeTcbReceiveComplete_partial_preserves_ipcStateQueueMembershipConsistent",
+            "storeTcbReceiveComplete_passiveServerIdleFrame",
+            "storeTcbReceiveComplete_preserves_allPendingMessagesBounded",
+            "storeTcbReceiveComplete_preserves_badgeWellFormed",
+            "storeTcbReceiveComplete_preserves_blockedOnReplyHasTarget",
+            "storeTcbReceiveComplete_preserves_blockedThreadsPendingMessageConsistent",
+            "storeTcbReceiveComplete_preserves_dualQueueSystemInvariant",
+            "storeTcbReceiveComplete_preserves_endpointQueueNoDup",
+            "storeTcbReceiveComplete_preserves_endpointQueueTailBlockedConsistent",
+            "storeTcbReceiveComplete_preserves_ipcInvariant",
+            "storeTcbReceiveComplete_preserves_pendingReceiveReplyWellFormed",
+            "storeTcbReceiveComplete_preserves_queueHeadBlockedConsistent",
+            "storeTcbReceiveComplete_preserves_queueNextBlockingConsistent",
+            "storeTcbReceiveComplete_preserves_queueNextTargetBlocked",
+            "storeTcbReceiveComplete_replyLinkageFrame_of_unlinked",
+            "storeTcbReceiveComplete_sameSchedContextBindings",
+            "storeTcbReceiveComplete_timeoutBudgetFrame",
+            "symm",
+            "tail",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "spliceFinalEndpoint",
+          "line": 2368,
+          "called": [
+            "Endpoint",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "invExt",
+            "lookupTcb_some_objects",
+            "none",
+            "storeObject",
+            "storeObject_objects_eq",
+            "storeObject_preserves_objects_invExt",
+            "storeTcbQueueLinks",
+            "storeTcbQueueLinks_preserves_objects_ne",
+            "storeTcbQueueLinks_result_tcb",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_removed_links_cleared",
+          "line": 2390,
+          "called": [
+            "ObjId",
+            "SpliceCtx",
+            "SystemState",
+            "ThreadId",
+            "c0",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_shape",
+            "invExt",
+            "links",
+            "nextTid",
+            "none",
+            "prevTid",
+            "st",
+            "store",
+            "storeTcbQueueLinks",
+            "storeTcbQueueLinks_result_tcb",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_removed_no_incoming",
+          "line": 2430,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_removed_links_cleared",
+            "invExt",
+            "st",
+            "symm",
+            "tcbQueueLinkIntegrity",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "spliceQueue_wellFormed_of_dual",
+          "line": 2449,
+          "called": [
+            "Endpoint",
+            "ObjId",
+            "SystemState",
+            "dualQueueEndpointWellFormed",
+            "dualQueueSystemInvariant",
+            "endpointId",
+            "intrusiveQueueWellFormed",
+            "spliceQueue",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_removed_not_boundary",
+          "line": 2479,
+          "called": [
+            "Endpoint",
+            "ObjId",
+            "SpliceCtx",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "c0",
+            "dualQueueSystemInvariant",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_shape",
+            "head",
+            "invExt",
+            "links",
+            "lookupTcb_some_objects",
+            "nextTid",
+            "none",
+            "prevTid",
+            "spliceEndpoint",
+            "spliceFinalEndpoint",
+            "spliceQueue",
+            "spliceQueue_spliceEndpoint",
+            "spliceQueue_wellFormed_of_dual",
+            "st",
+            "store",
+            "symm",
+            "tail",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_removed_detached",
+          "line": 2578,
+          "called": [
+            "Endpoint",
+            "Kernel",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "dualQueueSystemInvariant",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_removed_no_incoming",
+            "endpointQueueRemoveDual_removed_not_boundary",
+            "endpointQueueTailBlockedConsistent",
+            "head",
+            "invExt",
+            "queueHeadBlockedConsistent",
+            "spliceQueue",
+            "st",
+            "tail",
+            "tcbQueueLinkIntegrity",
+            "toObjId"
           ]
         }
       ]
@@ -118672,7 +119057,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Operations.NotificationBind",
       "path": "SeLe4n/Kernel/IPC/Operations/NotificationBind.lean",
-      "declaration_count": 6,
+      "declaration_count": 7,
       "declarations": [
         {
           "kind": "namespace",
@@ -118753,9 +119138,23 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "boundDeliveryTarget",
+          "line": 264,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "epId",
+            "getTcb",
+            "notificationId",
+            "st"
+          ]
+        },
+        {
           "kind": "def",
           "name": "notificationSignalBound",
-          "line": 266,
+          "line": 282,
           "called": [
             "Badge",
             "IpcMessage",
@@ -267592,6 +267991,7 @@
             "endpointQueueNoDup_of_dualQueue_of_headBlocked",
             "endpointQueueRemoveDual_carry",
             "endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership",
+            "endpointQueueRemoveDual_passiveServerIdleFrameOnCore",
             "endpointQueueRemoveDual_preserves_blockedThreadTimeoutConsistent",
             "endpointQueueRemoveDual_preserves_donationOwnerValid",
             "endpointQueueRemoveDual_preserves_endpointQueueNoDup",
@@ -267605,6 +268005,10 @@
             "endpointQueueRemoveDual_preserves_queueHeadBlockedConsistent",
             "endpointQueueRemoveDual_preserves_queueNextBlockingConsistent",
             "endpointQueueRemoveDual_preserves_queueNextTargetBlocked",
+            "endpointQueueRemoveDual_removed_detached",
+            "endpointQueueRemoveDual_removed_links_cleared",
+            "endpointQueueRemoveDual_removed_no_incoming",
+            "endpointQueueRemoveDual_removed_not_boundary",
             "endpointQueueRemoveDual_shape",
             "endpointSpliceHigh",
             "ipcInvariantFullExceptMembership",
@@ -267624,13 +268028,18 @@
             "notificationSignalBoundCrossCoreDispatchChecked_flow_allowed_to_receiver",
             "notificationSignalBoundCrossCoreDispatchChecked_flow_denied",
             "notificationSignalBoundCrossCoreDispatchChecked_flow_denied_to_receiver",
+            "notificationSignalBoundCrossCoreDispatchChecked_preserves_ipcInvariantFull",
+            "notificationSignalBoundCrossCoreDispatch_preserves_ipcInvariantFull",
             "notificationSignalBoundOnCore",
             "notificationSignalBoundOnCore_bound_path_NI",
             "notificationSignalBoundOnCore_bound_path_NI_smp",
             "notificationSignalBoundOnCore_delivery_eq",
             "notificationSignalBoundOnCore_delivery_remote_wake",
             "notificationSignalBoundOnCore_fallthrough_eq",
+            "notificationSignalBoundOnCore_passiveServerIdleFrameOnCore",
             "notificationSignalBoundOnCore_preserves_ipcInvariant",
+            "notificationSignalBoundOnCore_preserves_ipcInvariantFull",
+            "notificationSignalBoundOnCore_preserves_ipcInvariantFull_perCore",
             "notificationSignalBoundOnCore_preserves_objects_invExt",
             "notificationSignalOnCore",
             "notificationSignalOnCore_atomic_under_lockSet",
@@ -267662,13 +268071,16 @@
             "notificationWaitOnCore_preserves_ipcInvariant",
             "notificationWaitOnCore_preserves_objects_invExt",
             "self_write_mem_insertOrMerge",
+            "spliceFinalEndpoint",
             "splicePredecessorBlocked",
             "splicePredecessorBlocked_of_head",
             "splicePredecessorBlocked_of_path",
+            "spliceQueue_wellFormed_of_dual",
             "spliceSideBlocked_along_path",
             "storeObject_preserves_projectionOnCore",
             "storeTcbIpcStateAndMessage_determineTargetCore_eq",
             "storeTcbIpcState_preserves_projectionOnCore",
+            "storeTcbReceiveComplete_closes_exceptMembership",
             "storeTcbReceiveComplete_preserves_projectionOnCore",
             "unbindNotification",
             "unbindNotification_preserves_ipcInvariant"
@@ -267676,8 +268088,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:187>",
-          "line": 187,
+          "name": "<anonymous:example:206>",
+          "line": 206,
           "called": [
             "Badge",
             "CoreId",
@@ -267705,8 +268117,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:206>",
-          "line": 206,
+          "name": "<anonymous:example:225>",
+          "line": 225,
           "called": [
             "Badge",
             "CoreId",
@@ -267726,8 +268138,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:217>",
-          "line": 217,
+          "name": "<anonymous:example:236>",
+          "line": 236,
           "called": [
             "Badge",
             "CoreId",
@@ -267759,8 +268171,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:243>",
-          "line": 243,
+          "name": "<anonymous:example:262>",
+          "line": 262,
           "called": [
             "Badge",
             "CoreId",
@@ -267789,8 +268201,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:264>",
-          "line": 264,
+          "name": "<anonymous:example:283>",
+          "line": 283,
           "called": [
             "CoreId",
             "IfObserver",
@@ -267811,8 +268223,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:282>",
-          "line": 282,
+          "name": "<anonymous:example:301>",
+          "line": 301,
           "called": [
             "ObjId",
             "SystemState",
@@ -267829,8 +268241,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:295>",
-          "line": 295,
+          "name": "<anonymous:example:314>",
+          "line": 314,
           "called": [
             "ObjId",
             "SystemState",
@@ -267847,7 +268259,7 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 306,
+          "line": 325,
           "called": [
             "throw"
           ]
@@ -267855,7 +268267,7 @@
         {
           "kind": "def",
           "name": "core1",
-          "line": 312,
+          "line": 331,
           "called": [
             "CoreId"
           ]
@@ -267863,7 +268275,7 @@
         {
           "kind": "def",
           "name": "nId",
-          "line": 314,
+          "line": 333,
           "called": [
             "ObjId"
           ]
@@ -267871,7 +268283,7 @@
         {
           "kind": "def",
           "name": "cnRoot",
-          "line": 315,
+          "line": 334,
           "called": [
             "ObjId"
           ]
@@ -267879,7 +268291,7 @@
         {
           "kind": "def",
           "name": "signallerTid",
-          "line": 316,
+          "line": 335,
           "called": [
             "ThreadId"
           ]
@@ -267887,7 +268299,7 @@
         {
           "kind": "def",
           "name": "waiterLocalTid",
-          "line": 317,
+          "line": 336,
           "called": [
             "ThreadId"
           ]
@@ -267895,7 +268307,7 @@
         {
           "kind": "def",
           "name": "waiterRemoteTid",
-          "line": 318,
+          "line": 337,
           "called": [
             "ThreadId"
           ]
@@ -267903,7 +268315,7 @@
         {
           "kind": "def",
           "name": "badge",
-          "line": 319,
+          "line": 338,
           "called": [
             "Badge",
             "ofNatMasked"
@@ -267912,7 +268324,7 @@
         {
           "kind": "def",
           "name": "mkTcb",
-          "line": 321,
+          "line": 340,
           "called": [
             "CoreId",
             "TCB",
@@ -267923,7 +268335,7 @@
         {
           "kind": "def",
           "name": "stBase",
-          "line": 328,
+          "line": 347,
           "called": [
             "SystemState",
             "build",
@@ -267944,7 +268356,7 @@
         {
           "kind": "def",
           "name": "stWithWaiter",
-          "line": 338,
+          "line": 357,
           "called": [
             "SystemState",
             "ThreadId",
@@ -267959,7 +268371,7 @@
         {
           "kind": "def",
           "name": "stTwoWaiters",
-          "line": 345,
+          "line": 364,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -267974,7 +268386,7 @@
         {
           "kind": "def",
           "name": "signalSgi",
-          "line": 354,
+          "line": 373,
           "called": [
             "CoreId",
             "SgiKind",
@@ -267989,7 +268401,7 @@
         {
           "kind": "def",
           "name": "waiterList",
-          "line": 360,
+          "line": 379,
           "called": [
             "SystemState",
             "ThreadId",
@@ -268000,7 +268412,7 @@
         {
           "kind": "def",
           "name": "epId",
-          "line": 366,
+          "line": 385,
           "called": [
             "ObjId"
           ]
@@ -268008,7 +268420,7 @@
         {
           "kind": "def",
           "name": "boundTid",
-          "line": 367,
+          "line": 386,
           "called": [
             "ThreadId"
           ]
@@ -268016,7 +268428,7 @@
         {
           "kind": "def",
           "name": "stBoundBase",
-          "line": 371,
+          "line": 390,
           "called": [
             "SystemState",
             "boundTid",
@@ -268036,7 +268448,7 @@
         {
           "kind": "def",
           "name": "runLockSetChecks",
-          "line": 380,
+          "line": 399,
           "called": [
             "assertBool",
             "cnRoot",
@@ -268060,7 +268472,7 @@
         {
           "kind": "def",
           "name": "runNoWaiterChecks",
-          "line": 409,
+          "line": 428,
           "called": [
             "assertBool",
             "badge",
@@ -268075,7 +268487,7 @@
         {
           "kind": "def",
           "name": "runSignalWakeChecks",
-          "line": 421,
+          "line": 440,
           "called": [
             "assertBool",
             "badge",
@@ -268097,7 +268509,7 @@
         {
           "kind": "def",
           "name": "runMultiWaiterChecks",
-          "line": 446,
+          "line": 465,
           "called": [
             "assertBool",
             "badge",
@@ -268119,7 +268531,7 @@
         {
           "kind": "def",
           "name": "runWaitChecks",
-          "line": 471,
+          "line": 490,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -268137,7 +268549,7 @@
         {
           "kind": "def",
           "name": "runBadgeWaitChecks",
-          "line": 490,
+          "line": 509,
           "called": [
             "assertBool",
             "badge",
@@ -268156,7 +268568,7 @@
         {
           "kind": "def",
           "name": "runErrorChecks",
-          "line": 505,
+          "line": 524,
           "called": [
             "assertBool",
             "badge",
@@ -268171,7 +268583,7 @@
         {
           "kind": "def",
           "name": "runBoundChecks",
-          "line": 521,
+          "line": 540,
           "called": [
             "assertBool",
             "badge",
@@ -268196,7 +268608,7 @@
         {
           "kind": "def",
           "name": "queueA",
-          "line": 587,
+          "line": 606,
           "called": [
             "ThreadId"
           ]
@@ -268204,7 +268616,7 @@
         {
           "kind": "def",
           "name": "queueB",
-          "line": 588,
+          "line": 607,
           "called": [
             "ThreadId"
           ]
@@ -268212,7 +268624,7 @@
         {
           "kind": "def",
           "name": "queueC",
-          "line": 589,
+          "line": 608,
           "called": [
             "ThreadId"
           ]
@@ -268220,7 +268632,7 @@
         {
           "kind": "def",
           "name": "stQueueBase",
-          "line": 591,
+          "line": 610,
           "called": [
             "SystemState",
             "build",
@@ -268239,7 +268651,7 @@
         {
           "kind": "def",
           "name": "enqueueReceivers",
-          "line": 601,
+          "line": 620,
           "called": [
             "KernelError",
             "SystemState",
@@ -268253,7 +268665,7 @@
         {
           "kind": "def",
           "name": "receiveQueueOf",
-          "line": 609,
+          "line": 628,
           "called": [
             "IntrusiveQueue",
             "SystemState",
@@ -268265,7 +268677,7 @@
         {
           "kind": "def",
           "name": "linksOf",
-          "line": 614,
+          "line": 633,
           "called": [
             "SystemState",
             "ThreadId",
@@ -268277,7 +268689,7 @@
         {
           "kind": "def",
           "name": "runQueueSpliceChecks",
-          "line": 627,
+          "line": 646,
           "called": [
             "assertBool",
             "endpointQueueRemoveDual",
@@ -268297,7 +268709,7 @@
         {
           "kind": "def",
           "name": "lowLabel",
-          "line": 695,
+          "line": 714,
           "called": [
             "SecurityLabel"
           ]
@@ -268305,7 +268717,7 @@
         {
           "kind": "def",
           "name": "highLabel",
-          "line": 698,
+          "line": 717,
           "called": [
             "SecurityLabel"
           ]
@@ -268313,7 +268725,7 @@
         {
           "kind": "def",
           "name": "boundDeliveryLabeling",
-          "line": 701,
+          "line": 720,
           "called": [
             "LabelingContext",
             "boundTid",
@@ -268327,7 +268739,7 @@
         {
           "kind": "def",
           "name": "lowObserver",
-          "line": 710,
+          "line": 729,
           "called": [
             "IfObserver",
             "lowLabel"
@@ -268336,7 +268748,7 @@
         {
           "kind": "def",
           "name": "runBoundDeliveryNonInterferenceChecks",
-          "line": 723,
+          "line": 742,
           "called": [
             "assertBool",
             "badge",
@@ -268362,7 +268774,7 @@
         {
           "kind": "def",
           "name": "runReviewFixChecks",
-          "line": 770,
+          "line": 789,
           "called": [
             "any",
             "assertBool",
@@ -268389,7 +268801,7 @@
         {
           "kind": "def",
           "name": "runSmpCrossCoreNotificationChecks",
-          "line": 812,
+          "line": 831,
           "called": [
             "runBadgeWaitChecks",
             "runBoundChecks",
@@ -268407,7 +268819,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 831,
+          "line": 850,
           "called": [
             "runSmpCrossCoreNotificationChecks"
           ]
