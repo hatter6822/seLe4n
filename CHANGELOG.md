@@ -1,3 +1,112 @@
+## v0.34.73 — the queue splice, decomposed once
+
+**WS-RR RR7.22 (part 2 of 3)** — register finding 4's engine: *whole-bundle
+`ipcInvariantFull` preservation is open for two live operations*.
+
+`endpointQueueRemoveDual` is the mid-queue removal behind two live cross-core
+operations — bound-notification delivery and IPC cancellation — and it had
+preservation lemmas for exactly **two** of `ipcInvariantFull`'s twenty
+conjuncts.  The obstacle was never the individual conjuncts: the primitive
+layer (`storeObject_endpoint_preserves_*`, `storeTcbQueueLinks_preserves_*`) is
+complete.  It was that every conjunct had to re-derive the same four-branch case
+analysis over the operation, at ~130 lines each.
+
+`SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean` derives that analysis
+**once**.
+
+### `SpliceShape` — the four programs the splice can be
+
+Selected by whether the removed thread is the queue head (`queuePPrev`) and
+whether it has a successor (`queueNext`): the queue empties, the successor is
+promoted to head, the predecessor is promoted to tail, or both neighbours
+relink and the ends stay put.  Each constructor carries its intermediate
+states, its step equations with the operation's own literal arguments, and the
+pre-state facts the operation's consistency guards establish.
+`endpointQueueRemoveDual_shape` is the derivation; a consumer never unfolds the
+operation again.
+
+### All twenty conjuncts, not the fourteen the finding counted
+
+* **Twelve** through one generic carrier, `endpointQueueRemoveDual_carry`: a
+  predicate preserved by an endpoint write and by any queue-link write is
+  preserved by the whole splice.  It deliberately quantifies the endpoint write
+  over an *arbitrary* new endpoint, which is exactly why it does not serve the
+  queue-shape conjuncts — for those, *which* queue is installed is the content.
+  The same carrier, instantiated at `fun s => R st s`, composes the five
+  relations (`sameSchedContextBindings`, `donationOwnerFrame`,
+  `passiveServerIdleFrame`, `timeoutBudgetFrame`, `replyLinkageFrame`) the
+  donation quartet and the reply linkage need.
+* **`blockedThreadTimeoutConsistent` outright**, not under
+  `allTimeoutBudgetsNone`: the splice frames every thread's budget and blocking
+  state and carries every SchedContext forward, which is all the conjunct
+  reads.  The rendezvous-level lemmas assume the budget-free deployment because
+  their transitions genuinely rewrite `ipcState`; this one does not.
+* **`endpointQueueNoDup` as a consequence**, not a separate obligation:
+  `endpointQueueNoDup_of_dualQueue_of_headBlocked` derives it from the
+  dual-queue invariant and the head conjunct, since a thread heading both
+  queues of one endpoint would have to be `.blockedOnReceive` and
+  `.blockedOnSend`/`.blockedOnCall` on it at once.
+* **The four queue-shape conjuncts** bespoke.  `queueNextTargetBlocked`
+  composes the strict propagation across the removed thread;
+  `queueNextBlockingConsistent` needs that strict form as well as its own,
+  because the permissive relation's catch-all admits an unblocked middle and so
+  does not compose; `queueHeadBlockedConsistent` gets the promoted successor's
+  blockedness from the link the removed thread held.
+* **`ipcStateQueueMembershipConsistent` relaxed at the removed thread**, which
+  is the honest statement: the splice takes that thread out of its queue and
+  deliberately does *not* touch its `ipcState`, so the full conjunct is false of
+  the post-state by construction.
+  `storeTcbReceiveComplete_partial_preserves_ipcStateQueueMembershipConsistent`
+  already consumes exactly this shape.
+
+### The one fact the bundle does not entail
+
+When the removed thread has a predecessor and no successor, the splice makes
+that predecessor the new tail, and the tail conjunct then demands it be blocked
+on that endpoint.  Nothing in `ipcInvariantFull` gives it: the strict
+propagation runs *forwards* along a link, the head conjunct constrains only the
+head, and link integrity says nothing about `ipcState`.  So it is **stated**,
+as `splicePredecessorBlocked` — vacuous whenever the removed thread is the head
+(`splicePredecessorBlocked_of_head`, the shape the bound delivery takes) and
+discharged from a reachability witness by `splicePredecessorBlocked_of_path`,
+which rests on `spliceSideBlocked_along_path`: *every thread reachable from a
+queue head is blocked on that endpoint*, the fact `Defs.lean`'s own
+`queueNextTargetBlocked` docstring has promised since it was written and which
+nothing stated.
+
+### The capstone
+
+`endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership` takes
+`ipcInvariantFull` to `ipcInvariantFullExceptMembership st' tid` — nineteen
+conjuncts unconditional, the twentieth relaxed at the removed thread.  It stands
+to the splice as `ipcInvariantFullExceptDonationOwner` stands to the bare reply:
+new code must not state a splice bundle that threads the *full* membership
+conjunct on the post-state, because that would be vacuous rather than
+conditional.
+
+Coverage: 19 `#check`s and 2 typed-evidence examples, 17 Tier-3 anchors (three
+of them relations rather than presence — the relaxed bundle must relax the
+membership conjunct, the capstone must conclude it at the *removed* thread, and
+the tail conjunct must take the predecessor hypothesis), and a Tier-2 section
+that executes **one removal of each of the four shapes** against a real
+three-thread receive queue and pins what each leaves behind.  Replacing the
+promoted-tail obligation with the unchanged-tail one — a token-preserving
+mutation — fails elaboration.
+
+The AK7 cascade's `raw_lookup_tid` floor is re-anchored 1468 → 1494, for the
+reason RR3 re-anchored it three times and recorded in the baseline's own header:
+a preservation theorem for a conjunct stated as
+`st.objects[tid.toObjId]? = some (.tcb tcb) → …` must be stated the same way or
+it cannot be applied to that conjunct at all.  All 26 occurrences are inside
+`Prop`s; four were removed within the cut by having the splice's membership
+theorem conclude the named predicate rather than re-inline its match.  No kernel
+operation gained a raw lookup, and every typed-helper adoption floor rose.
+
+What remains of finding 4 is its two consumers,
+`notificationSignalBoundOnCore_preserves_ipcInvariantFull` and
+`cancelIpcBlockingOnCore_preserves_ipcInvariantFull`; they are registered
+against this row with a version target.
+
 ## v0.34.72 — a theorem name is a destination, not a schedule
 
 **WS-RR RR7.21** — the debt-register mediums.  Three rows.  Two of them closed

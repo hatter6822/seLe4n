@@ -157,6 +157,27 @@ open SeLe4n.Testing
 #check @storeTcbReceiveComplete_preserves_projectionOnCore
 #check @notificationSignalBoundOnCore_bound_path_NI
 #check @notificationSignalBoundOnCore_bound_path_NI_smp
+-- WS-RR RR7.22 (register finding 4): the queue splice decomposed once, and every
+-- `ipcInvariantFull` conjunct carried across it:
+#check @SpliceShape
+#check @endpointQueueRemoveDual_shape
+#check @endpointQueueRemoveDual_carry
+#check @endpointQueueRemoveDual_preserves_queueNextTargetBlocked
+#check @endpointQueueRemoveDual_preserves_queueNextBlockingConsistent
+#check @endpointQueueRemoveDual_preserves_queueHeadBlockedConsistent
+#check @endpointQueueRemoveDual_preserves_endpointQueueTailBlockedConsistent
+#check @endpointQueueRemoveDual_preserves_endpointQueueNoDup
+#check @endpointQueueRemoveDual_preserves_ipcStateQueueMembershipConsistent_except
+#check @endpointQueueRemoveDual_preserves_donationOwnerValid
+#check @endpointQueueRemoveDual_preserves_passiveServerIdle
+#check @endpointQueueRemoveDual_preserves_blockedThreadTimeoutConsistent
+#check @splicePredecessorBlocked
+#check @splicePredecessorBlocked_of_head
+#check @splicePredecessorBlocked_of_path
+#check @spliceSideBlocked_along_path
+#check @endpointQueueNoDup_of_dualQueue_of_headBlocked
+#check @ipcInvariantFullExceptMembership
+#check @endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership
 
 -- ============================================================================
 -- §2  Elaboration-time examples (Tier-3): theorems apply to typed inputs
@@ -252,6 +273,31 @@ example (ctx : LabelingContext) (observer : IfObserver)
       isReceiveQ tid hHigh hObjInv hStep,
    endpointQueueRemoveDual_preserves_projectionOnCore ctx observer st st' endpointId
       isReceiveQ tid c hHigh hObjInv hStep⟩
+
+/-- WS-RR RR7.22 (register finding 4): the capstone at typed inputs.  A bare
+endpoint splice takes the whole IPC bundle to the bundle with the membership
+conjunct relaxed **at the removed thread** — nineteen conjuncts unconditional,
+the twentieth relaxed rather than assumed, under the one hypothesis the bundle
+genuinely does not entail. -/
+example (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st'))
+    (hInv : ipcInvariantFull st)
+    (hPred : splicePredecessorBlocked isReceiveQ endpointId st tid) :
+    ipcInvariantFullExceptMembership st' tid :=
+  endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership st st' endpointId
+    isReceiveQ tid hObjInv hStep hInv hPred
+
+/-- WS-RR RR7.22: the stated hypothesis is **vacuous** when the removed thread
+is the queue head — which is the shape the bound-notification delivery takes,
+and the reason that path needs nothing extra. -/
+example (isReceiveQ : Bool) (endpointId : SeLe4n.ObjId) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb0 : TCB)
+    (hTcb : lookupTcb st tid = some tcb0)
+    (hPPrev : tcb0.queuePPrev = some .endpointHead) :
+    splicePredecessorBlocked isReceiveQ endpointId st tid :=
+  splicePredecessorBlocked_of_head isReceiveQ endpointId st tid tcb0 hTcb hPPrev
 
 -- ============================================================================
 -- §3  Runtime assertions (Tier-2): the SM6.B cross-core notification scenarios
@@ -535,6 +581,110 @@ private def runBoundChecks : IO Unit := do
       | .error _ => assertBool "bind setup for precondition check succeeded" false
   | .error _ => assertBool "receive setup for precondition check succeeded" false
 
+-- WS-RR RR7.22 (register finding 4) — a three-thread endpoint receive queue, so
+-- every branch of `SpliceShape` is exercised by an executed removal and not only
+-- by a proof.
+private def queueA : SeLe4n.ThreadId := ⟨505⟩
+private def queueB : SeLe4n.ThreadId := ⟨506⟩
+private def queueC : SeLe4n.ThreadId := ⟨507⟩
+
+private def stQueueBase : SystemState :=
+  (BootstrapBuilder.empty
+    |>.withObject epId (.endpoint {})
+    |>.withObject queueA.toObjId (.tcb (mkTcb 505 30 none))
+    |>.withObject queueB.toObjId (.tcb (mkTcb 506 30 none))
+    |>.withObject queueC.toObjId (.tcb (mkTcb 507 30 none))
+    |>.withRunnable [queueA, queueB, queueC]
+    |>.build)
+
+/-- Block `ts` on `epId`'s receive queue, in order. -/
+private def enqueueReceivers (st : SystemState) : List SeLe4n.ThreadId →
+    Except KernelError SystemState
+  | [] => .ok st
+  | t :: rest =>
+      match endpointReceiveDual epId t none st with
+      | .ok (_, st') => enqueueReceivers st' rest
+      | .error e => .error e
+
+private def receiveQueueOf (st : SystemState) : Option IntrusiveQueue :=
+  match st.objects[epId]? with
+  | some (.endpoint ep) => some ep.receiveQ
+  | _ => none
+
+private def linksOf (st : SystemState) (t : SeLe4n.ThreadId) :
+    Option (Option SeLe4n.ThreadId × Option SeLe4n.ThreadId) :=
+  match st.getTcb? t with
+  | some tcb => some (tcb.queuePrev, tcb.queueNext)
+  | none => none
+
+/-- §3.11: WS-RR RR7.22 (register finding 4) — the four splice branches, executed.
+
+`SpliceShape` says `endpointQueueRemoveDual` is one of four programs, selected by
+whether the removed thread is the queue head and whether it has a successor.
+This runs one removal of each shape against a real queue and pins what each
+leaves behind, so the decomposition the whole conjunct suite rests on is
+exercised and not merely asserted. -/
+private def runQueueSpliceChecks : IO Unit := do
+  IO.println "--- §3.11 WS-RR RR7.22 endpoint queue splice (four shapes) ---"
+  match enqueueReceivers stQueueBase [queueA, queueB, queueC] with
+  | .error _ => assertBool "three-thread receive queue built" false
+  | .ok st3 =>
+    assertBool "splice fixture: the queue is A -> B -> C"
+      (match receiveQueueOf st3, linksOf st3 queueA, linksOf st3 queueB, linksOf st3 queueC with
+       | some q, some (pa, na), some (pb, nb), some (pc, nc) =>
+           decide (q.head = some queueA ∧ q.tail = some queueC ∧
+             pa = none ∧ na = some queueB ∧
+             pb = some queueA ∧ nb = some queueC ∧
+             pc = some queueB ∧ nc = none)
+       | _, _, _, _ => false)
+    -- Shape 3 (mid-queue, has a successor): both neighbours relink, both ends stay.
+    match endpointQueueRemoveDual epId true queueB st3 with
+    | .error _ => assertBool "mid-queue removal with a successor succeeds" false
+    | .ok (_, stB) =>
+      assertBool "mid removal keeps both ends and relinks the neighbours"
+        (match receiveQueueOf stB, linksOf stB queueA, linksOf stB queueC with
+         | some q, some (_, na), some (pc, _) =>
+             decide (q.head = some queueA ∧ q.tail = some queueC ∧
+               na = some queueC ∧ pc = some queueA)
+         | _, _, _ => false)
+      assertBool "mid removal clears the removed thread's own links"
+        (match linksOf stB queueB with
+         | some (p, n) => decide (p = none ∧ n = none)
+         | none => false)
+    -- Shape 4 (mid-queue, no successor): the predecessor becomes the tail.
+    match endpointQueueRemoveDual epId true queueC st3 with
+    | .error _ => assertBool "tail removal succeeds" false
+    | .ok (_, stC) =>
+      assertBool "tail removal promotes the predecessor to tail"
+        (match receiveQueueOf stC, linksOf stC queueB with
+         | some q, some (_, nb) =>
+             decide (q.head = some queueA ∧ q.tail = some queueB ∧ nb = none)
+         | _, _ => false)
+    -- Shape 2 (head, has a successor): the successor becomes the head.
+    match endpointQueueRemoveDual epId true queueA st3 with
+    | .error _ => assertBool "head removal with a successor succeeds" false
+    | .ok (_, stA) =>
+      assertBool "head removal promotes the successor to head"
+        (match receiveQueueOf stA, linksOf stA queueB with
+         | some q, some (pb, _) =>
+             decide (q.head = some queueB ∧ q.tail = some queueC ∧ pb = none)
+         | _, _ => false)
+  -- Shape 1 (head, no successor): the queue empties.
+  match enqueueReceivers stQueueBase [queueA] with
+  | .error _ => assertBool "single-thread receive queue built" false
+  | .ok st1 =>
+    match endpointQueueRemoveDual epId true queueA st1 with
+    | .error _ => assertBool "sole-member removal succeeds" false
+    | .ok (_, st0) =>
+      assertBool "removing the only queued thread empties both ends"
+        (match receiveQueueOf st0 with
+         | some q => decide (q.head = none ∧ q.tail = none)
+         | none => false)
+      assertBool "removing the only queued thread clears its links"
+        (match linksOf st0 queueA with
+         | some (p, n) => decide (p = none ∧ n = none)
+         | none => false)
+
 /-- WS-RR RR7.22 (register finding 3): a labelling under which the whole
 bound-delivery footprint is **high** — the endpoint, the bound TCB and the
 notification are all above the observer, and nothing else the fixture touches
@@ -672,6 +822,7 @@ def runSmpCrossCoreNotificationChecks : IO Unit := do
   runBoundChecks
   runReviewFixChecks
   runBoundDeliveryNonInterferenceChecks
+  runQueueSpliceChecks
   IO.println "===================================="
   IO.println "All SM6.B cross-core notification checks PASS."
 

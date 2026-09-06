@@ -15,6 +15,7 @@ import SeLe4n.Kernel.IPC.Invariant.QueueNoDup
 import SeLe4n.Kernel.IPC.Invariant.QueueMembership
 import SeLe4n.Kernel.IPC.Invariant.QueueNextBlocking
 import SeLe4n.Kernel.IPC.Invariant.Structural
+import SeLe4n.Kernel.IPC.Invariant.QueueSplicePreservation
 
 /-! # IPC Invariant Preservation — Re-export Hub
 
@@ -31,4 +32,8 @@ Decomposed into:
 - **Structural**: WS-H5 intrusive dual-queue structural invariants,
   contextMatchesCurrent preservation, allPendingMessagesBounded preservation,
   and ipcInvariantFull composition theorems.
+- **QueueSplicePreservation**: the mid-queue endpoint splice
+  (`endpointQueueRemoveDual`) decomposed once as `SpliceShape`, and every
+  `ipcInvariantFull` conjunct carried across it — nineteen unconditionally,
+  the membership conjunct relaxed at the removed thread.
 -/

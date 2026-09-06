@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.72.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.73.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,7 +203,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~55308 lines)
+- `CHANGELOG.md` (~55581 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22614 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12018 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
@@ -261,6 +261,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2287 lines)
 - `SeLe4n/Model/Object/Types.lean` (~2266 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2254 lines)
+- `SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean` (~2244 lines)
 - `SeLe4n/Prelude.lean` (~2137 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2112 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2079 lines)
@@ -372,8 +373,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreTickCbsPreservation.lean` (~941 lines)
 - `SeLe4n/Kernel/Concurrency/MemoryModel.lean` (~935 lines)
 - `SeLe4n/Kernel/InformationFlow/Declassification.lean` (~935 lines)
+- `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` (~933 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md` (~930 lines)
-- `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` (~924 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_COMPREHENSIVE.md` (~921 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
@@ -389,6 +390,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean` (~835 lines)
 - `tests/DecodingSuite.lean` (~833 lines)
+- `tests/SmpCrossCoreNotificationSuite.lean` (~832 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean` (~824 lines)
 - `SeLe4n/Kernel/Concurrency/Runtime.lean` (~823 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` (~823 lines)
@@ -1666,6 +1668,36 @@ code may assume:
   return, and must not add a bundle theorem that threads `donationOwnerValid` on
   such a state: it would be vacuous rather than conditional, which is how the
   nine pre-RR3.12 reply bundles asserted nothing on the ordinary seL4-MCS path.
+- **A bare endpoint splice's post-state does not satisfy
+  `ipcStateQueueMembershipConsistent`.**  `endpointQueueRemoveDual` takes a
+  thread out of its endpoint queue and deliberately does **not** touch that
+  thread's `ipcState`; the composites that use it write it in their very next
+  step (the bound delivery makes it `.ready`).  So the honest statement about
+  that state is `ipcInvariantFullExceptMembership st' tid` — the bundle with the
+  membership conjunct relaxed exactly at the removed thread — which
+  `endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership`
+  (`IPC/Invariant/QueueSplicePreservation.lean`) establishes from
+  `ipcInvariantFull`.  It stands to the splice as
+  `ipcInvariantFullExceptDonationOwner` stands to the bare reply, and new code
+  must not state a splice bundle threading the **full** membership conjunct on
+  the post-state: that would be vacuous rather than conditional.  Three further
+  things the module fixes in place.  (1) **The four-branch case analysis is
+  derived once**, as `SpliceShape`: which program `endpointQueueRemoveDual` is
+  depends on whether the removed thread is the queue head and whether it has a
+  successor, and that is a property of the *operation*, not of the conjunct — a
+  new conjunct proof consumes the four branches rather than re-running `unfold`.
+  (2) **One conjunct genuinely does not follow from the bundle**:
+  `splicePredecessorBlocked`, the fact that a predecessor promoted to tail is
+  blocked on that endpoint.  `queueNextTargetBlocked` propagates blockedness
+  *forwards*, the head conjunct constrains only the head, and link integrity
+  says nothing about `ipcState` — so it is stated, vacuous when the removed
+  thread is the head, and discharged from a reachability witness through
+  `spliceSideBlocked_along_path` (*every thread reachable from a queue head is
+  blocked on that endpoint* — the fact `queueNextTargetBlocked`'s own docstring
+  promised and nothing stated).  (3) **`endpointQueueNoDup` is a consequence,
+  not an obligation**: `endpointQueueNoDup_of_dualQueue_of_headBlocked` derives
+  it from the dual-queue invariant and the head conjunct, so a transition need
+  not re-establish it separately.
 - **The `.call` chain's IPC bundle is staged; every other live-arm bundle is
   production.**  RR2 (v0.34.42) gave the transitions behind `Kernel/API.lean`'s
   SMP dispatch `_preserves_ipcInvariantFull` theorems, and the RR2 closure audit

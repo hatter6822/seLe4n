@@ -783,6 +783,33 @@ run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_preserves_projecti
 run_check "INVARIANT" rg -n '^theorem storeTcbReceiveComplete_preserves_projectionOnCore' SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean
 run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_bound_path_NI\b' SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean
 run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_bound_path_NI_smp' SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean
+# The mid-queue endpoint splice, decomposed once and carried across every
+# conjunct of the IPC bundle.  The decomposition is the point: eighteen conjunct
+# proofs were each re-deriving the same four-branch case analysis, which is a
+# property of the operation and not of the conjunct.
+run_check "INVARIANT" rg -n '^inductive SpliceShape' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_shape' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_carry' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_preserves_queueNextTargetBlocked' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_preserves_queueHeadBlockedConsistent' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_preserves_endpointQueueTailBlockedConsistent' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_preserves_ipcStateQueueMembershipConsistent_except' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueNoDup_of_dualQueue_of_headBlocked' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem spliceSideBlocked_along_path' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^def splicePredecessorBlocked' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem splicePredecessorBlocked_of_head' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem splicePredecessorBlocked_of_path' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^def ipcInvariantFullExceptMembership' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+# Relation, not presence: the relaxed bundle must relax the *membership* conjunct
+# and the capstone must conclude the relaxed bundle at the *removed* thread — a
+# capstone concluding the full bundle would be false of the state the operation
+# produces, and one concluding it at another thread would say nothing.
+run_check "INVARIANT" bash -lc 'rg -U -n "def ipcInvariantFullExceptMembership(.|\n)*ipcStateQueueMembershipConsistentExcept st ex" SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership(.|\n)*ipcInvariantFullExceptMembership st. tid" SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean'
+# The tail conjunct is the one the bundle does not entail, so its theorem must
+# take the predecessor hypothesis rather than assume it away.
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem endpointQueueRemoveDual_preserves_endpointQueueTailBlockedConsistent(.|\n)*splicePredecessorBlocked isReceiveQ endpointId st tid" SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean'
 # The neighbour clauses are the half an under-stated hypothesis would drop, so
 # the label predicate must quantify over the removed thread's own queue links
 # rather than over the endpoint and the thread alone.

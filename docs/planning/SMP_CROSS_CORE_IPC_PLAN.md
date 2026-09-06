@@ -577,6 +577,12 @@ point.
 >    `notificationSignalBoundOnCore_preserves_ipcInvariantFull{,_perCore}`.
 >    **Owner: WS-RR RR7.22** (the cross-core IPC mediums row), which carries
 >    the register's findings 3 and 4 — the same gap seen from the audit side.
+>    **The per-conjunct suite landed at `v0.34.73`** — all twenty conjuncts,
+>    not the fourteen this item counted, in
+>    `IPC/Invariant/QueueSplicePreservation.lean`, with the splice decomposed
+>    once as `SpliceShape` and the capstone
+>    `endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership`.
+>    What remains of this item is the two composites named below.
 >    **The non-interference half landed at `v0.34.72`**: the same splice was
 >    also the missing engine for the *information-flow* surface, so
 >    `endpointQueueRemoveDual_preserves_projection{,_and_invExt,OnCore}` and

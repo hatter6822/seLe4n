@@ -112,6 +112,15 @@ PRE_STATE_PREDICATES = (
     "ipcInvariantFull_smp",
     "ipcInvariantFull_perCore",
     "ipcInvariantFullExceptDonationOwner",
+    # The queue splice's relaxed view: the bundle with the *membership*
+    # conjunct relaxed at the removed thread, which is the honest post-state
+    # of a bare `endpointQueueRemoveDual` for the same reason
+    # `…ExceptDonationOwner` is the honest post-state of a bare reply -- the
+    # operation deliberately leaves one thread's `ipcState` untouched.  Listed
+    # before the bare `ipcInvariantFull` spelling it extends: the matcher takes
+    # the first form that fits, and a shorter prefix placed first would claim
+    # the longer name's occurrences.
+    "ipcInvariantFullExceptMembership",
     "ipcInvariantFull",
     "ipcInvariantCore",
 )

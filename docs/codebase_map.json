@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/rr7-medium-severity-sweep-tn327q",
-      "commit_sha": "442e629b92c7710be3951aefa3f3a6818ee02e98",
-      "tree_sha": "d4a0ff65f9ec992044e2490da2e22d79425af57f",
-      "committed_at_utc": "2026-09-06T04:29:35+00:00"
+      "commit_sha": "3345c57a87daca5765efce6eb394e6c23ee19de3",
+      "tree_sha": "131737895c8b5267c65ad90aba2b1cc94a25690d",
+      "committed_at_utc": "2026-09-06T05:01:56+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "e2f240b5da870154cfe400d8c501267d4d4596862a890fcd46696be32078fff5"
+    "source_digest": "9a7567fa48f5ad02c30f349c2f49027aad1adc990ca07022e5e8091e078c8ace"
   },
   "summary": {
-    "module_count": 385,
-    "declaration_count": 19381
+    "module_count": 386,
+    "declaration_count": 19459
   },
   "readme_sync": {
-    "version": "0.34.72",
+    "version": "0.34.73",
     "lean_toolchain": "v4.28.0",
-    "production_files": 315,
-    "production_loc": 336639,
+    "production_files": 316,
+    "production_loc": 338888,
     "test_files": 70,
-    "test_loc": 70102,
-    "proved_theorem_lemma_decls": 11206,
+    "test_loc": 70253,
+    "proved_theorem_lemma_decls": 11264,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -96968,6 +96968,1357 @@
             "getTcb",
             "not_mem_waitingThreads_of_ipcState_ne",
             "notificationWaiterConsistent",
+            "st"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.IPC.Invariant.QueueSplicePreservation",
+      "path": "SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean",
+      "declaration_count": 68,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 40,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "spliceQueue",
+          "line": 51,
+          "called": [
+            "Endpoint",
+            "IntrusiveQueue"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "spliceEndpoint",
+          "line": 56,
+          "called": [
+            "Endpoint",
+            "IntrusiveQueue"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "spliceQueue_spliceEndpoint",
+          "line": 60,
+          "called": [
+            "Endpoint",
+            "IntrusiveQueue",
+            "spliceEndpoint",
+            "spliceQueue"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "spliceEndpoint_other_heads",
+          "line": 66,
+          "called": [
+            "Endpoint",
+            "IntrusiveQueue",
+            "spliceEndpoint"
+          ]
+        },
+        {
+          "kind": "inductive",
+          "name": "SpliceShape",
+          "line": 90,
+          "called": [
+            "Endpoint",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "endpointId",
+            "head",
+            "lookupTcb",
+            "nextTid",
+            "none",
+            "prevTid",
+            "spliceEndpoint",
+            "spliceQueue",
+            "st",
+            "storeObject",
+            "storeTcbQueueLinks",
+            "tail"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_shape",
+          "line": 186,
+          "called": [
+            "ObjId",
+            "SpliceShape",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "head",
+            "lookupTcb",
+            "nextTid",
+            "none",
+            "prevTid",
+            "spliceQueue",
+            "st",
+            "storeObject",
+            "storeTcbQueueLinks",
+            "tail"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "SpliceCtx",
+          "line": 360,
+          "called": [
+            "Endpoint",
+            "ObjId",
+            "SystemState",
+            "endpointId",
+            "invExt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "SpliceCtx.store",
+          "line": 363,
+          "called": [
+            "Endpoint",
+            "ObjId",
+            "SpliceCtx",
+            "SystemState",
+            "endpointId",
+            "storeObject",
+            "storeObject_objects_eq'",
+            "storeObject_preserves_objects_invExt'"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "SpliceCtx.links",
+          "line": 370,
+          "called": [
+            "ObjId",
+            "QueuePPrev",
+            "SpliceCtx",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "storeTcbQueueLinks",
+            "storeTcbQueueLinks_endpoint_forward",
+            "storeTcbQueueLinks_preserves_objects_invExt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "SpliceShape.carry",
+          "line": 389,
+          "called": [
+            "Endpoint",
+            "ObjId",
+            "QueuePPrev",
+            "SpliceCtx",
+            "SpliceShape",
+            "SystemState",
+            "ThreadId",
+            "c1",
+            "c2",
+            "c3",
+            "endpointId",
+            "invExt",
+            "links",
+            "nextTid",
+            "prevTid",
+            "st",
+            "store",
+            "storeObject",
+            "storeTcbQueueLinks"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_carry",
+          "line": 440,
+          "called": [
+            "Endpoint",
+            "ObjId",
+            "QueuePPrev",
+            "SpliceShape.carry",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_shape",
+            "invExt",
+            "st",
+            "storeObject",
+            "storeTcbQueueLinks"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbQueueLinks_passiveServerIdleFrame",
+          "line": 466,
+          "called": [
+            "QueuePPrev",
+            "SystemState",
+            "ThreadId",
+            "invExt",
+            "passiveServerIdleFrame",
+            "st",
+            "storeTcbQueueLinks",
+            "storeTcbQueueLinks_sameSchedContextBindings",
+            "storeTcbQueueLinks_scheduler_eq",
+            "storeTcbQueueLinks_tcb_ipcState_backward"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_sameSchedContextBindings",
+          "line": 495,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_carry",
+            "invExt",
+            "refl",
+            "sameSchedContextBindings",
+            "st",
+            "storeObject_endpoint_sameSchedContextBindings'",
+            "storeTcbQueueLinks_sameSchedContextBindings",
+            "trans"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_donationOwnerFrame",
+          "line": 511,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "donationOwnerFrame",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_carry",
+            "invExt",
+            "refl",
+            "st",
+            "storeObject_endpoint_donationOwnerFrame'",
+            "storeTcbQueueLinks_donationOwnerFrame",
+            "trans"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_passiveServerIdleFrame",
+          "line": 527,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_carry",
+            "invExt",
+            "passiveServerIdleFrame",
+            "refl",
+            "st",
+            "storeObject_oldNonTcb_passiveServerIdleFrame",
+            "storeTcbQueueLinks_passiveServerIdleFrame",
+            "trans"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_timeoutBudgetFrame",
+          "line": 543,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_carry",
+            "invExt",
+            "refl",
+            "st",
+            "storeObject_endpoint_timeoutBudgetFrame'",
+            "storeTcbQueueLinks_timeoutBudgetFrame",
+            "timeoutBudgetFrame",
+            "trans"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_replyLinkageFrame",
+          "line": 560,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_carry",
+            "invExt",
+            "refl",
+            "replyLinkageFrame",
+            "st",
+            "storeObject_endpoint_replyLinkageFrame'",
+            "storeTcbQueueLinks_replyLinkageFrame",
+            "trans"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_preserves_allPendingMessagesBounded",
+          "line": 585,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "allPendingMessagesBounded",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_carry",
+            "invExt",
+            "st",
+            "storeObject_endpoint_preserves_allPendingMessagesBounded",
+            "storeTcbQueueLinks_preserves_allPendingMessagesBounded"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_preserves_badgeWellFormed",
+          "line": 601,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "badgeWellFormed",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_carry",
+            "invExt",
+            "st",
+            "storeObject_endpoint_preserves_badgeWellFormed",
+            "storeTcbQueueLinks_preserves_badgeWellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_preserves_blockedThreadsPendingMessageConsistent",
+          "line": 616,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "blockedThreadsPendingMessageConsistent",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_carry",
+            "invExt",
+            "st",
+            "storeObject_nonTcb_preserves_blockedThreadsPendingMessageConsistent",
+            "storeTcbQueueLinks_preserves_blockedThreadsPendingMessageConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_preserves_blockedOnReplyHasTarget",
+          "line": 634,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "blockedOnReplyHasTarget",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_carry",
+            "invExt",
+            "st",
+            "storeObject_endpoint_preserves_blockedOnReplyHasTarget'",
+            "storeTcbQueueLinks_preserves_blockedOnReplyHasTarget"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_preserves_pendingReceiveReplyWellFormed",
+          "line": 650,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_carry",
+            "invExt",
+            "pendingReceiveReplyWellFormed",
+            "st",
+            "storeObject_endpoint_preserves_pendingReceiveReplyWellFormed'",
+            "storeTcbQueueLinks_preserves_pendingReceiveReplyWellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_preserves_blockedOnReplyHasReplyObject",
+          "line": 667,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "blockedOnReplyHasReplyObject",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_carry",
+            "invExt",
+            "st",
+            "storeObject_endpoint_preserves_blockedOnReplyHasReplyObject",
+            "storeTcbQueueLinks_preserves_blockedOnReplyHasReplyObject"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_preserves_replyCallerLinkage",
+          "line": 685,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_preserves_blockedOnReplyHasReplyObject",
+            "endpointQueueRemoveDual_replyLinkageFrame",
+            "invExt",
+            "replyCallerLinkage",
+            "replyCallerLinkageReciprocal_of_frame",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ipcStateFrame",
+          "line": 704,
+          "called": [
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "st",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcStateFrame.refl",
+          "line": 709,
+          "called": [
+            "SystemState",
+            "ipcStateFrame",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcStateFrame.trans",
+          "line": 712,
+          "called": [
+            "SystemState",
+            "ipcStateFrame",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_endpoint_ipcStateFrame",
+          "line": 721,
+          "called": [
+            "Endpoint",
+            "ObjId",
+            "SystemState",
+            "invExt",
+            "ipcStateFrame",
+            "st",
+            "storeObject",
+            "storeObject_objects_eq",
+            "storeObject_objects_ne",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_ipcStateFrame",
+          "line": 734,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_carry",
+            "invExt",
+            "ipcStateFrame",
+            "ipcStateFrame.refl",
+            "st",
+            "storeObject_endpoint_ipcStateFrame",
+            "storeTcbQueueLinks_tcb_ipcState_backward",
+            "trans"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_preserves_blockedThreadTimeoutConsistent",
+          "line": 756,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "blockedThreadTimeoutConsistent",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_donationOwnerFrame",
+            "endpointQueueRemoveDual_ipcStateFrame",
+            "endpointQueueRemoveDual_timeoutBudgetFrame",
+            "invExt",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_preserves_passiveServerIdle",
+          "line": 778,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_passiveServerIdleFrame",
+            "invExt",
+            "passiveServerIdle",
+            "passiveServerIdle_of_frame",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_preserves_donationOwnerValid",
+          "line": 791,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "donationOwnerValid",
+            "donationOwnerValid_of_frames",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_donationOwnerFrame",
+            "endpointQueueRemoveDual_sameSchedContextBindings",
+            "invExt",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_preserves_donationBudgetTransfer",
+          "line": 804,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "donationBudgetTransfer",
+            "donationBudgetTransfer_of_sameSchedContextBindings",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_sameSchedContextBindings",
+            "invExt",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_preserves_donationOwnerUnique",
+          "line": 816,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "donationOwnerUnique",
+            "donationOwnerUnique_of_sameSchedContextBindings",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_sameSchedContextBindings",
+            "invExt",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_preserves_donationChainAcyclic",
+          "line": 829,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "donationChainAcyclic",
+            "donationOwnerValid",
+            "donationOwnerValid_implies_donationChainAcyclic",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_preserves_donationOwnerValid",
+            "invExt",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "queueNextBlockingMatch_of_targetBlocked",
+          "line": 851,
+          "called": [
+            "ThreadIpcState",
+            "queueNextBlockingMatch"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_preserves_queueNextTargetBlocked",
+          "line": 875,
+          "called": [
+            "Endpoint",
+            "ObjId",
+            "QueuePPrev",
+            "SpliceCtx",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "c0",
+            "c1",
+            "c2",
+            "c3",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_shape",
+            "invExt",
+            "links",
+            "lookupTcb",
+            "lookupTcb_some_objects",
+            "nextTid",
+            "none",
+            "prevTid",
+            "queueNextTargetBlocked",
+            "st",
+            "store",
+            "storeObject",
+            "storeObject_endpoint_preserves_queueNextTargetBlocked",
+            "storeTcbQueueLinks",
+            "storeTcbQueueLinks_preserves_queueNextTargetBlocked",
+            "symm"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_preserves_queueNextBlockingConsistent",
+          "line": 962,
+          "called": [
+            "Endpoint",
+            "ObjId",
+            "QueuePPrev",
+            "SpliceCtx",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "c0",
+            "c1",
+            "c2",
+            "c3",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_shape",
+            "invExt",
+            "links",
+            "lookupTcb",
+            "lookupTcb_some_objects",
+            "nextTid",
+            "none",
+            "prevTid",
+            "queueNextBlockingConsistent",
+            "queueNextBlockingMatch_of_targetBlocked",
+            "queueNextTargetBlocked",
+            "st",
+            "store",
+            "storeObject",
+            "storeObject_endpoint_preserves_queueNextBlockingConsistent",
+            "storeTcbQueueLinks",
+            "storeTcbQueueLinks_preserves_queueNextBlockingConsistent",
+            "symm"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "spliceEndpoint_receiveQ_head",
+          "line": 1046,
+          "called": [
+            "Endpoint",
+            "IntrusiveQueue",
+            "head",
+            "spliceEndpoint"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "spliceEndpoint_sendQ_head",
+          "line": 1052,
+          "called": [
+            "Endpoint",
+            "IntrusiveQueue",
+            "head",
+            "spliceEndpoint"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "spliceEndpoint_receiveQ_tail",
+          "line": 1058,
+          "called": [
+            "Endpoint",
+            "IntrusiveQueue",
+            "spliceEndpoint",
+            "tail"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "spliceEndpoint_sendQ_tail",
+          "line": 1064,
+          "called": [
+            "Endpoint",
+            "IntrusiveQueue",
+            "spliceEndpoint",
+            "tail"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "spliceSideBlocked",
+          "line": 1072,
+          "called": [
+            "ObjId",
+            "ThreadIpcState",
+            "endpointId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "spliceSideBlocked_of_head",
+          "line": 1079,
+          "called": [
+            "Endpoint",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "endpointId",
+            "head",
+            "queueHeadBlockedConsistent",
+            "spliceQueue",
+            "spliceSideBlocked",
+            "st",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "spliceSideBlocked_next",
+          "line": 1093,
+          "called": [
+            "ObjId",
+            "ThreadIpcState",
+            "endpointId",
+            "spliceSideBlocked"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbQueueLinks_ipcStateFrame",
+          "line": 1104,
+          "called": [
+            "QueuePPrev",
+            "SystemState",
+            "ThreadId",
+            "invExt",
+            "ipcStateFrame",
+            "st",
+            "storeTcbQueueLinks",
+            "storeTcbQueueLinks_tcb_ipcState_backward"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_preserves_queueHeadBlockedConsistent",
+          "line": 1120,
+          "called": [
+            "IntrusiveQueue",
+            "ObjId",
+            "QueuePPrev",
+            "SpliceCtx",
+            "SystemState",
+            "ThreadId",
+            "c0",
+            "c1",
+            "c2",
+            "c3",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_shape",
+            "head",
+            "invExt",
+            "ipcStateFrame",
+            "ipcStateFrame.refl",
+            "links",
+            "lookupTcb_some_objects",
+            "nextTid",
+            "none",
+            "prevTid",
+            "queueHeadBlockedConsistent",
+            "queueNextTargetBlocked",
+            "spliceEndpoint",
+            "spliceEndpoint_receiveQ_head",
+            "spliceEndpoint_sendQ_head",
+            "spliceQueue",
+            "spliceSideBlocked",
+            "spliceSideBlocked_next",
+            "spliceSideBlocked_of_head",
+            "st",
+            "store",
+            "storeObject",
+            "storeObject_endpoint_ipcStateFrame",
+            "storeObject_endpoint_preserves_queueHeadBlockedConsistent",
+            "storeTcbQueueLinks",
+            "storeTcbQueueLinks_ipcStateFrame",
+            "storeTcbQueueLinks_preserves_queueHeadBlockedConsistent",
+            "symm",
+            "tail",
+            "trans"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "spliceSideBlocked_along_path",
+          "line": 1296,
+          "called": [
+            "ObjId",
+            "QueueNextPath",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "cons",
+            "endpointId",
+            "queueNextTargetBlocked",
+            "spliceSideBlocked",
+            "spliceSideBlocked_next",
+            "st",
+            "symm",
+            "tcbQueueLinkIntegrity",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "splicePredecessorBlocked",
+          "line": 1339,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "endpointId",
+            "lookupTcb",
+            "none",
+            "spliceSideBlocked",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "splicePredecessorBlocked_of_head",
+          "line": 1348,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "endpointId",
+            "lookupTcb",
+            "splicePredecessorBlocked",
+            "st",
+            "symm",
+            "tcb0"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "splicePredecessorBlocked_of_path",
+          "line": 1361,
+          "called": [
+            "Endpoint",
+            "ObjId",
+            "QueueNextPath",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "cons",
+            "endpointId",
+            "head",
+            "lookupTcb",
+            "lookupTcb_some_objects",
+            "queueHeadBlockedConsistent",
+            "queueNextTargetBlocked",
+            "splicePredecessorBlocked",
+            "spliceQueue",
+            "spliceSideBlocked_along_path",
+            "spliceSideBlocked_of_head",
+            "st",
+            "tcbQueueLinkIntegrity",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_preserves_endpointQueueTailBlockedConsistent",
+          "line": 1389,
+          "called": [
+            "Endpoint",
+            "IntrusiveQueue",
+            "ObjId",
+            "QueuePPrev",
+            "SpliceCtx",
+            "SystemState",
+            "ThreadId",
+            "c0",
+            "c1",
+            "c2",
+            "c3",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_shape",
+            "endpointQueueTailBlockedConsistent",
+            "head",
+            "invExt",
+            "ipcStateFrame",
+            "ipcStateFrame.refl",
+            "links",
+            "lookupTcb_some_objects",
+            "nextTid",
+            "none",
+            "prevTid",
+            "spliceEndpoint",
+            "spliceEndpoint_receiveQ_tail",
+            "spliceEndpoint_sendQ_tail",
+            "splicePredecessorBlocked",
+            "spliceQueue",
+            "spliceSideBlocked",
+            "st",
+            "store",
+            "storeObject",
+            "storeObject_endpoint_ipcStateFrame",
+            "storeObject_endpoint_preserves_endpointQueueTailBlockedConsistent",
+            "storeTcbQueueLinks",
+            "storeTcbQueueLinks_ipcStateFrame",
+            "storeTcbQueueLinks_preserves_endpointQueueTailBlockedConsistent",
+            "symm",
+            "tail",
+            "toObjId",
+            "trans"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueNoDup_of_dualQueue_of_headBlocked",
+          "line": 1526,
+          "called": [
+            "SystemState",
+            "dualQueueEndpointWellFormed",
+            "dualQueueSystemInvariant",
+            "endpointQueueNoDup",
+            "head",
+            "none",
+            "queueHeadBlockedConsistent",
+            "st",
+            "tcbQueueChainAcyclic_no_self_loop"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_preserves_endpointQueueNoDup",
+          "line": 1549,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "dualQueueSystemInvariant",
+            "endpointId",
+            "endpointQueueNoDup",
+            "endpointQueueNoDup_of_dualQueue_of_headBlocked",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_preserves_dualQueueSystemInvariant",
+            "endpointQueueRemoveDual_preserves_queueHeadBlockedConsistent",
+            "invExt",
+            "queueHeadBlockedConsistent",
+            "queueNextTargetBlocked",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_queueNext_witness",
+          "line": 1577,
+          "called": [
+            "Endpoint",
+            "ObjId",
+            "QueuePPrev",
+            "SpliceCtx",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "ThreadId.toObjId_injective",
+            "c0",
+            "c1",
+            "c2",
+            "c3",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_shape",
+            "invExt",
+            "links",
+            "lookupTcb_some_objects",
+            "nextTid",
+            "none",
+            "prevTid",
+            "st",
+            "store",
+            "storeObject",
+            "storeObject_objects_ne",
+            "storeTcbQueueLinks",
+            "storeTcbQueueLinks_preserves_objects_ne",
+            "storeTcbQueueLinks_result_tcb",
+            "symm",
+            "tcbWithQueueLinks",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_endpoint_forward",
+          "line": 1691,
+          "called": [
+            "Endpoint",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_carry",
+            "invExt",
+            "lookupTcb_some_objects",
+            "st",
+            "storeObject_objects_eq",
+            "storeObject_objects_ne",
+            "storeTcbQueueLinks_preserves_objects_ne",
+            "storeTcbQueueLinks_result_tcb",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_endpoint_forward_ne",
+          "line": 1719,
+          "called": [
+            "Endpoint",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_endpoint_backward_ne",
+            "endpointQueueRemoveDual_endpoint_forward",
+            "invExt",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_headFacts",
+          "line": 1747,
+          "called": [
+            "Endpoint",
+            "ObjId",
+            "SpliceCtx",
+            "SystemState",
+            "ThreadId",
+            "c0",
+            "c1",
+            "c2",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_shape",
+            "head",
+            "invExt",
+            "links",
+            "lookupTcb",
+            "lookupTcb_some_objects",
+            "nextTid",
+            "none",
+            "prevTid",
+            "spliceEndpoint",
+            "spliceQueue",
+            "spliceQueue_spliceEndpoint",
+            "st",
+            "store",
+            "storeObject",
+            "storeObject_objects_eq",
+            "storeObject_preserves_objects_invExt",
+            "storeTcbQueueLinks",
+            "storeTcbQueueLinks_preserves_objects_ne",
+            "storeTcbQueueLinks_result_tcb",
+            "symm",
+            "tcb0",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_successor_rehomed",
+          "line": 1839,
+          "called": [
+            "ObjId",
+            "SpliceCtx",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "ThreadId.toObjId_injective",
+            "c0",
+            "c1",
+            "c2",
+            "c3",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_shape",
+            "head",
+            "invExt",
+            "links",
+            "lookupTcb",
+            "lookupTcb_some_objects",
+            "nextTid",
+            "none",
+            "prevTid",
+            "spliceQueue",
+            "st",
+            "store",
+            "storeObject_objects_ne",
+            "storeTcbQueueLinks_preserves_objects_ne",
+            "storeTcbQueueLinks_result_tcb",
+            "symm",
+            "tcb0",
+            "tcbQueueChainAcyclic",
+            "tcbQueueChainAcyclic_no_self_loop",
+            "tcbQueueChainAcyclic_no_two_cycle",
+            "tcbWithQueueLinks",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "spliceQueue_head",
+          "line": 1906,
+          "called": [
+            "Endpoint",
+            "head",
+            "spliceQueue"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_pre_endpoint",
+          "line": 1911,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_shape",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_pre_tcb",
+          "line": 1923,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_shape",
+            "lookupTcb",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_preserves_ipcStateQueueMembershipConsistent_except",
+          "line": 1949,
+          "called": [
+            "Endpoint",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_endpoint_forward_ne",
+            "endpointQueueRemoveDual_headFacts",
+            "endpointQueueRemoveDual_ipcStateFrame",
+            "endpointQueueRemoveDual_pre_endpoint",
+            "endpointQueueRemoveDual_pre_tcb",
+            "endpointQueueRemoveDual_queueNext_witness",
+            "endpointQueueRemoveDual_successor_rehomed",
+            "epId",
+            "head",
+            "invExt",
+            "ipcStateQueueMembershipConsistent",
+            "lookupTcb",
+            "lookupTcb_some_objects",
+            "queueHeadBlockedConsistent",
+            "queueNextTargetBlocked",
+            "spliceQueue",
+            "spliceQueue_head",
+            "spliceSideBlocked",
+            "spliceSideBlocked_next",
+            "spliceSideBlocked_of_head",
+            "st",
+            "symm",
+            "tcbQueueChainAcyclic",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ipcStateQueueMembershipConsistentExcept",
+          "line": 2124,
+          "called": [
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "epId",
+            "head",
+            "st",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcStateQueueMembershipConsistentExcept_of_full",
+          "line": 2150,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "ipcStateQueueMembershipConsistent",
+            "ipcStateQueueMembershipConsistentExcept",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ipcInvariantFullExceptMembership",
+          "line": 2167,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "allPendingMessagesBounded",
+            "badgeWellFormed",
+            "blockedOnReplyHasTarget",
+            "blockedThreadTimeoutConsistent",
+            "blockedThreadsPendingMessageConsistent",
+            "donationBudgetTransfer",
+            "donationChainAcyclic",
+            "donationOwnerUnique",
+            "donationOwnerValid",
+            "dualQueueSystemInvariant",
+            "endpointQueueNoDup",
+            "endpointQueueTailBlockedConsistent",
+            "ipcInvariant",
+            "ipcStateQueueMembershipConsistentExcept",
+            "passiveServerIdle",
+            "pendingReceiveReplyWellFormed",
+            "queueHeadBlockedConsistent",
+            "queueNextBlockingConsistent",
+            "queueNextTargetBlocked",
+            "replyCallerLinkage",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership",
+          "line": 2190,
+          "called": [
+            "Kernel",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "allPendingMessagesBounded",
+            "badgeWellFormed",
+            "blockedOnReplyHasTarget",
+            "blockedThreadTimeoutConsistent",
+            "blockedThreadsPendingMessageConsistent",
+            "donationBudgetTransfer",
+            "donationOwnerUnique",
+            "donationOwnerValid",
+            "dualQueueSystemInvariant",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_preserves_allPendingMessagesBounded",
+            "endpointQueueRemoveDual_preserves_badgeWellFormed",
+            "endpointQueueRemoveDual_preserves_blockedOnReplyHasTarget",
+            "endpointQueueRemoveDual_preserves_blockedThreadTimeoutConsistent",
+            "endpointQueueRemoveDual_preserves_blockedThreadsPendingMessageConsistent",
+            "endpointQueueRemoveDual_preserves_donationBudgetTransfer",
+            "endpointQueueRemoveDual_preserves_donationChainAcyclic",
+            "endpointQueueRemoveDual_preserves_donationOwnerUnique",
+            "endpointQueueRemoveDual_preserves_donationOwnerValid",
+            "endpointQueueRemoveDual_preserves_dualQueueSystemInvariant",
+            "endpointQueueRemoveDual_preserves_endpointQueueNoDup",
+            "endpointQueueRemoveDual_preserves_endpointQueueTailBlockedConsistent",
+            "endpointQueueRemoveDual_preserves_ipcInvariant",
+            "endpointQueueRemoveDual_preserves_ipcStateQueueMembershipConsistent_except",
+            "endpointQueueRemoveDual_preserves_passiveServerIdle",
+            "endpointQueueRemoveDual_preserves_pendingReceiveReplyWellFormed",
+            "endpointQueueRemoveDual_preserves_queueHeadBlockedConsistent",
+            "endpointQueueRemoveDual_preserves_queueNextBlockingConsistent",
+            "endpointQueueRemoveDual_preserves_queueNextTargetBlocked",
+            "endpointQueueRemoveDual_preserves_replyCallerLinkage",
+            "endpointQueueTailBlockedConsistent",
+            "invExt",
+            "ipcInvariant",
+            "ipcInvariantFull",
+            "ipcInvariantFullExceptMembership",
+            "ipcStateQueueMembershipConsistent",
+            "passiveServerIdle",
+            "pendingReceiveReplyWellFormed",
+            "queueHeadBlockedConsistent",
+            "queueNextBlockingConsistent",
+            "queueNextTargetBlocked",
+            "replyCallerLinkage",
+            "splicePredecessorBlocked",
             "st"
           ]
         }
@@ -232513,6 +233864,7 @@
             "serviceRegisterDependency",
             "setBootRqCur",
             "singleton",
+            "store",
             "storeServiceEntry",
             "storeServiceState",
             "svcApi",
@@ -262367,22 +263719,37 @@
     {
       "module": "tests.SmpCrossCoreNotificationSuite",
       "path": "tests/SmpCrossCoreNotificationSuite.lean",
-      "declaration_count": 39,
+      "declaration_count": 49,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.SmpCrossCoreNotification",
           "line": 36,
           "called": [
+            "SpliceShape",
             "bindNotification",
             "bindNotification_preserves_ipcInvariant",
             "boundDeliveryTarget",
             "determineTargetCore_congr",
+            "endpointQueueNoDup_of_dualQueue_of_headBlocked",
+            "endpointQueueRemoveDual_carry",
+            "endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership",
+            "endpointQueueRemoveDual_preserves_blockedThreadTimeoutConsistent",
+            "endpointQueueRemoveDual_preserves_donationOwnerValid",
+            "endpointQueueRemoveDual_preserves_endpointQueueNoDup",
+            "endpointQueueRemoveDual_preserves_endpointQueueTailBlockedConsistent",
+            "endpointQueueRemoveDual_preserves_ipcStateQueueMembershipConsistent_except",
             "endpointQueueRemoveDual_preserves_objects_invExt",
+            "endpointQueueRemoveDual_preserves_passiveServerIdle",
             "endpointQueueRemoveDual_preserves_projection",
             "endpointQueueRemoveDual_preserves_projectionOnCore",
             "endpointQueueRemoveDual_preserves_projection_and_invExt",
+            "endpointQueueRemoveDual_preserves_queueHeadBlockedConsistent",
+            "endpointQueueRemoveDual_preserves_queueNextBlockingConsistent",
+            "endpointQueueRemoveDual_preserves_queueNextTargetBlocked",
+            "endpointQueueRemoveDual_shape",
             "endpointSpliceHigh",
+            "ipcInvariantFullExceptMembership",
             "lockSet_notificationSignalOnCore",
             "lockSet_notificationSignalOnCore_bound_endpoint_write_mem",
             "lockSet_notificationSignalOnCore_bound_tcb_write_mem",
@@ -262437,6 +263804,10 @@
             "notificationWaitOnCore_preserves_ipcInvariant",
             "notificationWaitOnCore_preserves_objects_invExt",
             "self_write_mem_insertOrMerge",
+            "splicePredecessorBlocked",
+            "splicePredecessorBlocked_of_head",
+            "splicePredecessorBlocked_of_path",
+            "spliceSideBlocked_along_path",
             "storeObject_preserves_projectionOnCore",
             "storeTcbIpcStateAndMessage_determineTargetCore_eq",
             "storeTcbIpcState_preserves_projectionOnCore",
@@ -262447,8 +263818,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:166>",
-          "line": 166,
+          "name": "<anonymous:example:187>",
+          "line": 187,
           "called": [
             "Badge",
             "CoreId",
@@ -262475,8 +263846,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:185>",
-          "line": 185,
+          "name": "<anonymous:example:206>",
+          "line": 206,
           "called": [
             "Badge",
             "CoreId",
@@ -262496,8 +263867,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:196>",
-          "line": 196,
+          "name": "<anonymous:example:217>",
+          "line": 217,
           "called": [
             "Badge",
             "CoreId",
@@ -262528,8 +263899,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:222>",
-          "line": 222,
+          "name": "<anonymous:example:243>",
+          "line": 243,
           "called": [
             "Badge",
             "CoreId",
@@ -262558,8 +263929,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:243>",
-          "line": 243,
+          "name": "<anonymous:example:264>",
+          "line": 264,
           "called": [
             "CoreId",
             "IfObserver",
@@ -262579,9 +263950,44 @@
           ]
         },
         {
+          "kind": "example",
+          "name": "<anonymous:example:282>",
+          "line": 282,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "endpointQueueRemoveDual",
+            "endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership",
+            "invExt",
+            "ipcInvariantFull",
+            "ipcInvariantFullExceptMembership",
+            "splicePredecessorBlocked",
+            "st"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:295>",
+          "line": 295,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "endpointId",
+            "lookupTcb",
+            "splicePredecessorBlocked",
+            "splicePredecessorBlocked_of_head",
+            "st",
+            "tcb0"
+          ]
+        },
+        {
           "kind": "def",
           "name": "assertBool",
-          "line": 260,
+          "line": 306,
           "called": [
             "throw"
           ]
@@ -262589,7 +263995,7 @@
         {
           "kind": "def",
           "name": "core1",
-          "line": 266,
+          "line": 312,
           "called": [
             "CoreId"
           ]
@@ -262597,7 +264003,7 @@
         {
           "kind": "def",
           "name": "nId",
-          "line": 268,
+          "line": 314,
           "called": [
             "ObjId"
           ]
@@ -262605,7 +264011,7 @@
         {
           "kind": "def",
           "name": "cnRoot",
-          "line": 269,
+          "line": 315,
           "called": [
             "ObjId"
           ]
@@ -262613,7 +264019,7 @@
         {
           "kind": "def",
           "name": "signallerTid",
-          "line": 270,
+          "line": 316,
           "called": [
             "ThreadId"
           ]
@@ -262621,7 +264027,7 @@
         {
           "kind": "def",
           "name": "waiterLocalTid",
-          "line": 271,
+          "line": 317,
           "called": [
             "ThreadId"
           ]
@@ -262629,7 +264035,7 @@
         {
           "kind": "def",
           "name": "waiterRemoteTid",
-          "line": 272,
+          "line": 318,
           "called": [
             "ThreadId"
           ]
@@ -262637,7 +264043,7 @@
         {
           "kind": "def",
           "name": "badge",
-          "line": 273,
+          "line": 319,
           "called": [
             "Badge",
             "ofNatMasked"
@@ -262646,7 +264052,7 @@
         {
           "kind": "def",
           "name": "mkTcb",
-          "line": 275,
+          "line": 321,
           "called": [
             "CoreId",
             "TCB",
@@ -262657,7 +264063,7 @@
         {
           "kind": "def",
           "name": "stBase",
-          "line": 282,
+          "line": 328,
           "called": [
             "SystemState",
             "build",
@@ -262677,7 +264083,7 @@
         {
           "kind": "def",
           "name": "stWithWaiter",
-          "line": 292,
+          "line": 338,
           "called": [
             "SystemState",
             "ThreadId",
@@ -262692,7 +264098,7 @@
         {
           "kind": "def",
           "name": "stTwoWaiters",
-          "line": 299,
+          "line": 345,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -262707,7 +264113,7 @@
         {
           "kind": "def",
           "name": "signalSgi",
-          "line": 308,
+          "line": 354,
           "called": [
             "CoreId",
             "SgiKind",
@@ -262722,7 +264128,7 @@
         {
           "kind": "def",
           "name": "waiterList",
-          "line": 314,
+          "line": 360,
           "called": [
             "SystemState",
             "ThreadId",
@@ -262733,7 +264139,7 @@
         {
           "kind": "def",
           "name": "epId",
-          "line": 320,
+          "line": 366,
           "called": [
             "ObjId"
           ]
@@ -262741,7 +264147,7 @@
         {
           "kind": "def",
           "name": "boundTid",
-          "line": 321,
+          "line": 367,
           "called": [
             "ThreadId"
           ]
@@ -262749,7 +264155,7 @@
         {
           "kind": "def",
           "name": "stBoundBase",
-          "line": 325,
+          "line": 371,
           "called": [
             "SystemState",
             "boundTid",
@@ -262768,7 +264174,7 @@
         {
           "kind": "def",
           "name": "runLockSetChecks",
-          "line": 334,
+          "line": 380,
           "called": [
             "assertBool",
             "cnRoot",
@@ -262792,7 +264198,7 @@
         {
           "kind": "def",
           "name": "runNoWaiterChecks",
-          "line": 363,
+          "line": 409,
           "called": [
             "assertBool",
             "badge",
@@ -262806,7 +264212,7 @@
         {
           "kind": "def",
           "name": "runSignalWakeChecks",
-          "line": 375,
+          "line": 421,
           "called": [
             "assertBool",
             "badge",
@@ -262828,7 +264234,7 @@
         {
           "kind": "def",
           "name": "runMultiWaiterChecks",
-          "line": 400,
+          "line": 446,
           "called": [
             "assertBool",
             "badge",
@@ -262850,7 +264256,7 @@
         {
           "kind": "def",
           "name": "runWaitChecks",
-          "line": 425,
+          "line": 471,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -262868,7 +264274,7 @@
         {
           "kind": "def",
           "name": "runBadgeWaitChecks",
-          "line": 444,
+          "line": 490,
           "called": [
             "assertBool",
             "badge",
@@ -262886,7 +264292,7 @@
         {
           "kind": "def",
           "name": "runErrorChecks",
-          "line": 459,
+          "line": 505,
           "called": [
             "assertBool",
             "badge",
@@ -262901,7 +264307,7 @@
         {
           "kind": "def",
           "name": "runBoundChecks",
-          "line": 475,
+          "line": 521,
           "called": [
             "assertBool",
             "badge",
@@ -262925,8 +264331,109 @@
         },
         {
           "kind": "def",
+          "name": "queueA",
+          "line": 587,
+          "called": [
+            "ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "queueB",
+          "line": 588,
+          "called": [
+            "ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "queueC",
+          "line": 589,
+          "called": [
+            "ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "stQueueBase",
+          "line": 591,
+          "called": [
+            "SystemState",
+            "build",
+            "empty",
+            "epId",
+            "mkTcb",
+            "none",
+            "queueA",
+            "queueB",
+            "queueC",
+            "toObjId",
+            "withObject",
+            "withRunnable"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "enqueueReceivers",
+          "line": 601,
+          "called": [
+            "KernelError",
+            "SystemState",
+            "ThreadId",
+            "endpointReceiveDual",
+            "epId",
+            "none",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "receiveQueueOf",
+          "line": 609,
+          "called": [
+            "IntrusiveQueue",
+            "SystemState",
+            "epId",
+            "none",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "linksOf",
+          "line": 614,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "getTcb",
+            "none",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runQueueSpliceChecks",
+          "line": 627,
+          "called": [
+            "assertBool",
+            "endpointQueueRemoveDual",
+            "enqueueReceivers",
+            "epId",
+            "head",
+            "linksOf",
+            "none",
+            "queueA",
+            "queueB",
+            "queueC",
+            "receiveQueueOf",
+            "stQueueBase",
+            "tail"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "lowLabel",
-          "line": 545,
+          "line": 695,
           "called": [
             "SecurityLabel"
           ]
@@ -262934,7 +264441,7 @@
         {
           "kind": "def",
           "name": "highLabel",
-          "line": 548,
+          "line": 698,
           "called": [
             "SecurityLabel"
           ]
@@ -262942,7 +264449,7 @@
         {
           "kind": "def",
           "name": "boundDeliveryLabeling",
-          "line": 551,
+          "line": 701,
           "called": [
             "LabelingContext",
             "boundTid",
@@ -262956,7 +264463,7 @@
         {
           "kind": "def",
           "name": "lowObserver",
-          "line": 560,
+          "line": 710,
           "called": [
             "IfObserver",
             "lowLabel"
@@ -262965,7 +264472,7 @@
         {
           "kind": "def",
           "name": "runBoundDeliveryNonInterferenceChecks",
-          "line": 573,
+          "line": 723,
           "called": [
             "assertBool",
             "badge",
@@ -262991,7 +264498,7 @@
         {
           "kind": "def",
           "name": "runReviewFixChecks",
-          "line": 620,
+          "line": 770,
           "called": [
             "any",
             "assertBool",
@@ -263018,7 +264525,7 @@
         {
           "kind": "def",
           "name": "runSmpCrossCoreNotificationChecks",
-          "line": 662,
+          "line": 812,
           "called": [
             "runBadgeWaitChecks",
             "runBoundChecks",
@@ -263027,6 +264534,7 @@
             "runLockSetChecks",
             "runMultiWaiterChecks",
             "runNoWaiterChecks",
+            "runQueueSpliceChecks",
             "runReviewFixChecks",
             "runSignalWakeChecks",
             "runWaitChecks"
@@ -263035,7 +264543,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 680,
+          "line": 831,
           "called": [
             "runSmpCrossCoreNotificationChecks"
           ]
@@ -271927,6 +273435,7 @@
             "niState",
             "render",
             "st",
+            "store",
             "toNat",
             "unconfiguredDeclassLabeling",
             "view"
@@ -287392,6 +288901,7 @@
           "line": 162,
           "called": [
             "KernelError",
+            "carry",
             "decode",
             "errorFrame",
             "errorLabel",
