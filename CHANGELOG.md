@@ -1,3 +1,81 @@
+## v0.34.70 — the write-set that was never read, and the field it forgot
+
+**WS-RR RR7.19** — the fine-lock migration mediums.  Three register rows, one of
+which is code and two of which are the record catching up with it.
+
+### Finding 9: `*_modifiedFields` had no consumer
+
+Six lists in `Kernel/CrossSubsystem.lean` name the `SystemState` fields each
+operation writes.  They were declared, maintained by hand, and **read by
+nothing** — so an operation could write a field its own list omits and no proof
+would notice.  RR7.9 found exactly that in `capabilityOp_modifiedFields`, which
+stopped at `[.objects, .lifecycle]` while all four capability operations also
+write the four CDT fields.
+
+Correcting a list closes an instance.  This closes the class:
+
+* `SystemState.fieldEq` reads one named field off two states, **total over
+  `StateField`** — a field added to that inductive is a missing case at
+  elaboration, not a silently unchecked component;
+* `preservesFieldsOutside fs st st'` says every field *not* in `fs` is equal.
+  That is what a write-set claims, quantified over the whole field type rather
+  than over whatever the author enumerated;
+* each operation carries a `_preservesFieldsOutside` theorem **at its own
+  list**, so shrinking the list breaks the proof beside it;
+* `predicateFramedByDisjointWrites` is the payoff both families exist for: a
+  predicate's read-set disjoint from an operation's write-set *entails* that
+  the operation preserves the predicate.  Both lists are premises, which is
+  what turns an under-declared write-set from stale documentation into a
+  licence for a conclusion the operation does not earn.
+
+Two real consumers land with it — `storeObject` preserves
+`registryDependencyConsistent`, `revokeService` preserves
+`noStaleEndpointQueueReferences` — plus the load-bearing negative that
+`storeObject` is **not** framed away from the queue-reference invariant, since
+both touch `.objects` and a store really can strand a queue reference.
+
+### The second omission, found by the mechanism rather than by reading
+
+`storeObject_modifiedFields` did not list **`.asidTable`**, which
+`storeObject`'s own record update writes: it erases the outgoing object's ASID
+entry when that object was a `.vspaceRoot` and inserts the incoming one when
+the new object is.  Inert before this cut — the list had no consumer — and a
+soundness hazard the instant one exists, because `asidTable` is the ASID →
+VSpaceRoot map and a false frame there could mask an operation invalidating an
+address-space binding.
+
+Corrected, and the correction is machine-checked:
+`storeObject_preservesFieldsOutside` is *false* at the old list, so reverting it
+fails the build.  `lifecycleRetypeObject_modifiedFields` and
+`ipcEndpointOp_modifiedFields` are now **defined as** `storeObject`'s set rather
+than copies of it, so a future correction cannot reach one and miss the other —
+and the IPC list is widened rather than left resting on two unproved
+conditional facts (`objectIndexSet.insert` being a no-op on a present key; IPC
+never storing a `.vspaceRoot`).  Over-declaring costs disjointness, never
+soundness (`preservesFieldsOutside_mono`); under-declaring never costs the
+former and always risks the latter.
+
+### Findings 7 and 8: the record catching up
+
+The fine-lock plan's status header read **"2 of 12 PRs landed"** and "Tracks B,
+C and D are entirely unstarted" for ten cuts after Track B started landing.  It
+now reads **9 of 12**, with the per-track landing versions and the honest scope
+of the v1.0.0 claim: "per-object reader-writer fine locks" is true of the
+**syscall seam** and not yet of the **per-core scheduler entries**, and
+`ExportCommitDisciplineCensus` measures which is which (seven seams commit, two
+bracket) rather than the sentence asserting it.
+
+`SMP_RELEASE_CLOSURE_PLAN.md` §2 named the fine-lock plan nowhere; it now names
+Tracks B and C as landed dependencies, the SMP-C3 closure line says what is
+dischargeable (the syscall path) and what is not until Track D retires the
+SM5.I entry lock, and the WS-RA cancellation/timeout obligation in the same
+section is marked closed by RR7.14.
+
+Eight runtime checks in `CrossSubsystemPerCoreSuite` §8.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md RR7.19
+Refs: docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md
+
 ## v0.34.69 — the bound a hand-written conjunction could not notice it was missing
 
 **WS-RR RR7.18** — the per-object-lock mediums.  Four register rows, two of

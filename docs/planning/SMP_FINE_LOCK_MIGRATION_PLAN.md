@@ -1,18 +1,32 @@
 # SMP Fine-Lock Migration & Commit-Partitioning Plan
 
-> **Status**: **PARTIAL — 2 of 12 PRs landed.**  Track A (security) is
-> closed; its High revocation-precision finding closed at v0.33.88 (§3.1).
-> **Tracks B, C and D are entirely unstarted**, including the phase's
-> headline SM3.C.9 deliverable, so the per-object fine locks remain a
-> model-level discipline and the v1.0.0 "per-object reader-writer fine
-> locks" capability claim is not yet true.
-> **Closure targets**: Tracks B and C → WS-RR **RR7.7–RR7.13** (one row per
-> PR: B = RR7.7–RR7.9, C = RR7.10–RR7.13; the three lock domains Track C
-> leaves uncovered — the scheduler domain, the dynamic PIP chain, the
-> CSpace-walk interior — close in RR7.39–RR7.41); Track D
-> (commit partitioning) is seam-gated to **SM10.1** and registered as a
-> named dependency by RR6.27.  A reader could not previously tell any of
-> this from the plan, which carried no status header at all (RR0, v0.34.26).
+> **Status**: **PARTIAL — 9 of 12 PRs landed** (WS-RR RR7.19, `v0.34.70`;
+> the header read "2 of 12" and "Tracks B, C and D are entirely unstarted"
+> until this row, which was true when RR0 wrote it at `v0.34.26` and false
+> from `v0.34.60` on).
+> **Track A** (security, 2 PRs) is closed; its High revocation-precision
+> finding closed at v0.33.88 (§3.1).
+> **Track B** (3 PRs) is closed: the capability-transfer footprint and its
+> coverage at `v0.34.60`/`v0.34.61` (RR7.7, RR7.8) and the four capability
+> operations' CDT members at `v0.34.62` (RR7.9), which deleted
+> `UncoveredLockDomain.capTransferReceiverCnode` and `.cdtNodeAllocation`.
+> **Track C** (4 PRs) is closed: the decoded-driven resolver at `v0.34.63`
+> (RR7.10), the eight declared IPC footprints at `v0.34.64` (RR7.11), the
+> **syscall seam's bracket** at `v0.34.65` (RR7.12) and the export-commit
+> census at `v0.34.66` (RR7.13).
+> **Track D** (commit partitioning, 3 PRs) is **unstarted**, seam-gated to
+> **SM10.1** and registered as a named dependency by RR6.27.
+>
+> **What that means for the v1.0.0 claim.**  "Per-object reader-writer fine
+> locks" is true of the **syscall seam** — eight of the thirty-five arms
+> declare a footprint and the seam acquires it — and not yet true of the
+> **per-core scheduler entries**, which commit run-queue and replenish-queue
+> state under the SM5.I global entry lock only.  `ExportCommitDisciplineCensus`
+> measures it rather than asserting it: **seven seams commit, two bracket**.
+> Live WCRT is therefore still the global lock's, and the fine-lock bound
+> `PerCoreWcrt.lean` proves remains a statement about the intended discipline.
+> The three lock domains Track C leaves uncovered — the scheduler domain, the
+> dynamic PIP chain, the CSpace-walk interior — close in **RR7.39–RR7.41**.
 
 > **Phase**: SM3.C.9 (deferred `withLockSet` migration at the live kernel
 > entry) + the capability-transfer footprint closure (**landed** as WS-RR

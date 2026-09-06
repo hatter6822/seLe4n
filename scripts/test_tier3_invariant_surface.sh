@@ -4789,6 +4789,39 @@ run_check "INVARIANT" rg -n 'ResolvedFootprintBounds' scripts/staged_module_allo
 run_check "INVARIANT" rg -n 'import SeLe4n.Kernel.Concurrency.Locks.ResolvedFootprintBounds' SeLe4n/Platform/Staged.lean
 run_check "INVARIANT" rg -n 'runNewlyBoundedFootprintChecks' tests/DeadlockFreedomSuite.lean
 
+# WS-RR RR7.19: the operation write-sets stop being decoration.  The six
+# `*_modifiedFields` lists were declared, hand-maintained and read by NOTHING,
+# so an operation could write a field its own list omits and no proof would
+# notice — which RR7.9 found by reading, and which this row found again the
+# moment the lists carried an obligation (`storeObject` writes `asidTable`).
+run_check "INVARIANT" rg -n '^def SystemState.fieldEq' SeLe4n/Kernel/CrossSubsystem.lean
+run_check "INVARIANT" rg -n '^def preservesFieldsOutside' SeLe4n/Kernel/CrossSubsystem.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_preservesFieldsOutside' SeLe4n/Kernel/CrossSubsystem.lean
+run_check "INVARIANT" rg -n '^theorem revokeService_preservesFieldsOutside' SeLe4n/Kernel/CrossSubsystem.lean
+# The correction itself: `.asidTable` is in the list, and the honesty theorem
+# above is FALSE without it — so this is a pin on a fact, not on a spelling.
+run_check "INVARIANT" rg -n '\.objectIndexSet, \.lifecycle, \.asidTable\]' SeLe4n/Kernel/CrossSubsystem.lean
+# The two composed lists are DEFINED as storeObject's, so a future correction
+# cannot reach one and miss the other — the enumeration-versus-derivation shape.
+run_check "INVARIANT" rg -n '^def lifecycleRetypeObject_modifiedFields : List StateField :=' -A1 SeLe4n/Kernel/CrossSubsystem.lean
+run_check "INVARIANT" rg -n '^def ipcEndpointOp_modifiedFields : List StateField :=' -A1 SeLe4n/Kernel/CrossSubsystem.lean
+# The payoff: read-set disjoint from write-set means the operation cannot
+# disturb the predicate.  It consumes BOTH families, which is what makes an
+# under-declared write-set a soundness problem rather than stale documentation.
+run_check "INVARIANT" rg -n '^theorem predicateFramedByDisjointWrites' SeLe4n/Kernel/CrossSubsystem.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_preserves_registryDependencyConsistent' SeLe4n/Kernel/CrossSubsystem.lean
+run_check "INVARIANT" rg -n '^theorem revokeService_preserves_noStaleEndpointQueueReferences' SeLe4n/Kernel/CrossSubsystem.lean
+# The load-bearing negative: the disjointness premise is not decoration.
+# `storeObject` writes `.objects` and the queue-reference invariant reads it, so
+# the frame must NOT apply to that pair.
+run_check "INVARIANT" rg -n '^theorem storeObject_not_framed_from_noStaleEndpointQueueReferences' SeLe4n/Kernel/CrossSubsystem.lean
+run_check "INVARIANT" rg -n 'runModifiedFieldsChecks' tests/CrossSubsystemPerCoreSuite.lean
+# The fine-lock plan's status header says what actually landed.  It read
+# "2 of 12 PRs" and "Tracks B, C and D are entirely unstarted" for ten cuts
+# after Track B started landing.
+run_prose_check "INVARIANT" rg -n '9 of 12 PRs landed' docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md
+run_prose_check "INVARIANT" rg -n 'Fine-lock migration Tracks B and C' docs/planning/SMP_RELEASE_CLOSURE_PLAN.md
+
 # PR #873 round 14: **the frozen/live correspondence, as something that runs.**
 # Each frozen operation re-implements a live transition, and which one it
 # re-implements was recorded in a markdown table and a `mirrors X` sentence.

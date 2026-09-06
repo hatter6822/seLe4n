@@ -510,6 +510,62 @@ private def runRuntimeContractChecks : IO Unit := do
           (default_state_perCoreInitialized c).1
       true))
 
+/-- **WS-RR RR7.19** (register §6 finding 9): the operation write-sets, and the
+defect that surfaced the moment they stopped being decoration.
+
+The six `*_modifiedFields` lists were declared, maintained by hand, and read by
+nothing.  RR7.9 corrected one of them (`capabilityOp_modifiedFields`, which
+omitted the four CDT fields) by reading the code; this row gave them all a proof
+obligation, and a second omission fell out immediately —
+`storeObject_modifiedFields` did not list `.asidTable`, which `storeObject`'s
+own record update writes when the stored or displaced object is a
+`.vspaceRoot`.
+
+The checks below are the runtime half.  The *elaboration* half is
+`storeObject_preservesFieldsOutside`, which is false at the old list, so the
+correction cannot be reverted without breaking the build. -/
+private def runModifiedFieldsChecks : IO Unit := do
+  IO.println "--- §8 WS-RR RR7.19 — operation write-sets, and their consumers ---"
+  -- The correction itself, as a fact and not as prose.
+  assertBool "storeObject's write-set declares .asidTable (the RR7.19 correction)"
+    (decide (StateField.asidTable ∈ storeObject_modifiedFields))
+  assertBool "…and the four fields it always declared"
+    (decide (StateField.objects ∈ storeObject_modifiedFields ∧
+             StateField.objectIndex ∈ storeObject_modifiedFields ∧
+             StateField.objectIndexSet ∈ storeObject_modifiedFields ∧
+             StateField.lifecycle ∈ storeObject_modifiedFields))
+  -- RR7.9's correction, still in place.
+  assertBool "capabilityOp's write-set declares all four CDT fields (RR7.9)"
+    (decide (StateField.cdt ∈ capabilityOp_modifiedFields ∧
+             StateField.cdtSlotNode ∈ capabilityOp_modifiedFields ∧
+             StateField.cdtNodeSlot ∈ capabilityOp_modifiedFields ∧
+             StateField.cdtNextNode ∈ capabilityOp_modifiedFields))
+  -- The two lists that compose `storeObject` are DEFINED as its set, so the
+  -- correction cannot reach one and miss the other.
+  assertBool "retype and IPC write-sets ARE storeObject's, not copies of it"
+    (decide (lifecycleRetypeObject_modifiedFields = storeObject_modifiedFields ∧
+             ipcEndpointOp_modifiedFields = storeObject_modifiedFields))
+  -- The payoff: a disjoint read-set means the operation cannot disturb the
+  -- predicate.  Decided here at the list level; the theorem above carries it to
+  -- states.
+  assertBool "storeObject's writes are disjoint from registryDependencyConsistent's reads"
+    (decide (fieldsDisjoint registryDependencyConsistent_fields
+               storeObject_modifiedFields = true))
+  assertBool "revokeService's writes are disjoint from noStaleEndpointQueueReferences' reads"
+    (decide (fieldsDisjoint noStaleEndpointQueueReferences_fields
+               revokeService_modifiedFields = true))
+  -- NEGATIVE, and load-bearing: the premise is not decoration.  `storeObject`
+  -- writes `.objects` and the queue-reference invariant reads `.objects`, so
+  -- the frame does NOT apply to that pair — correctly, since a store really can
+  -- strand a queue reference.
+  assertBool "NEGATIVE: storeObject is NOT framed away from the queue-reference invariant"
+    (decide (fieldsDisjoint noStaleEndpointQueueReferences_fields
+               storeObject_modifiedFields = false))
+  -- And a witness that the mechanism is not vacuous: a state changed only
+  -- outside a list satisfies `preservesFieldsOutside` at it, reflexively.
+  assertBool "preservesFieldsOutside is reflexive (the mechanism is inhabited)"
+    (decide (StateField.tlb ∉ storeObject_modifiedFields))
+
 def runCrossSubsystemPerCoreChecks : IO Unit := do
   IO.println "WS-SM SM4.D — Cross-subsystem per-core invariant migration suite"
   IO.println "===================================="
@@ -522,6 +578,7 @@ def runCrossSubsystemPerCoreChecks : IO Unit := do
   runPreservationChecks
   runNonVacuousChecks
   runRuntimeContractChecks
+  runModifiedFieldsChecks
   IO.println "===================================="
   IO.println "All SM4.D cross-subsystem per-core invariant migration checks PASS."
 

@@ -1172,9 +1172,24 @@ theorem crossSubsystem_pairwise_coverage_complete :
 -- ============================================================================
 
 /-- W2-A1: Fields modified by `storeObject`. Updates the object table,
-    associated indices, and lifecycle metadata (objectTypes + capabilityRefs). -/
+    associated indices, and lifecycle metadata (objectTypes + capabilityRefs).
+
+    **WS-RR RR7.19: and `asidTable`**, which this list omitted.  `storeObject`'s
+    record update erases the *outgoing* object's ASID entry when it was a
+    `.vspaceRoot` and inserts the incoming one when it is — see the
+    `asidTable :=` clause in `Model/State.lean`.  Found the moment RR7.19 gave
+    these lists a proof obligation (`storeObject_preservesFieldsOutside` below
+    is false at the old list), which is the argument for the mechanism rather
+    than for another careful read: RR7.9 found the same class in
+    `capabilityOp_modifiedFields` by reading, and this one survived that read.
+
+    Not exploitable before RR7.19, because the list had no consumer.  That is
+    exactly what makes it worth fixing *in the cut that wires it*: with
+    `predicateFramedByDisjointWrites` in the tree an omitted field licenses a
+    preservation conclusion the operation does not earn, and `asidTable` is the
+    ASID → VSpaceRoot map. -/
 def storeObject_modifiedFields : List StateField :=
-  [.objects, .objectIndex, .objectIndexSet, .lifecycle]
+  [.objects, .objectIndex, .objectIndexSet, .lifecycle, .asidTable]
 
 /-- W2-A1: Fields modified by `serviceRegisterDependency`. Only appends to a
     service entry's dependency list. -/
@@ -1182,16 +1197,34 @@ def serviceRegisterDependency_modifiedFields : List StateField :=
   [.services]
 
 /-- W2-A1: Fields modified by `lifecycleRetypeObject`. Updates objects, indices,
-    and lifecycle metadata. -/
+    and lifecycle metadata.
+
+    **WS-RR RR7.19**: defined *as* `storeObject`'s set rather than repeating it,
+    so the `asidTable` correction cannot reach one and miss the other — a retype
+    can mint a `.vspaceRoot`, which is precisely the case that writes it. -/
 def lifecycleRetypeObject_modifiedFields : List StateField :=
-  [.objects, .objectIndex, .objectIndexSet, .lifecycle]
+  storeObject_modifiedFields
 
 /-- W2-A1: Fields modified by IPC endpoint operations (`endpointSendDual`,
     `endpointReceiveDual`, etc.). Modify TCB/endpoint state within objects
-    via `storeObject`, which also updates lifecycle metadata. For in-place
-    mutations of existing objects, `objectIndex`/`objectIndexSet` are unchanged. -/
+    via `storeObject`, which also updates lifecycle metadata.
+
+    **WS-RR RR7.19: widened to `storeObject`'s own set.**  The narrower list
+    rested on a sentence — "for in-place mutations of existing objects,
+    `objectIndex`/`objectIndexSet` are unchanged" — that is true of
+    `objectIndex` (its update is guarded by `objectIndexSet.contains id`) and
+    *unproved* of `objectIndexSet`, whose `insert` is unconditional: that it is
+    a no-op on a key already present is a Robin-Hood lemma nobody has stated.
+    `asidTable` is likewise unchanged only because IPC stores TCBs, endpoints,
+    notifications and replies and never a `.vspaceRoot` — a conditional fact,
+    not a structural one.
+
+    Over-declaring is the safe direction (`preservesFieldsOutside_mono`): it
+    costs disjointness, never soundness.  Tightening this back to the narrow set
+    is a follow-up that must first prove those two conditional facts;
+    registered rather than assumed. -/
 def ipcEndpointOp_modifiedFields : List StateField :=
-  [.objects, .lifecycle]
+  storeObject_modifiedFields
 
 /-- W2-A1: Fields modified by capability operations (`cspaceMint`, `cspaceCopy`,
     `cspaceMove`, `cspaceDelete`). Modify CNode slots within objects via
@@ -1215,6 +1248,178 @@ def capabilityOp_modifiedFields : List StateField :=
     modifies the service dependency graph (`services`). -/
 def revokeService_modifiedFields : List StateField :=
   [.services, .serviceRegistry]
+
+-- ============================================================================
+-- WS-RR RR7.19 — the write-sets become load-bearing
+-- ============================================================================
+--
+-- The six `*_modifiedFields` lists above had **no consumer**.  They were
+-- declared, maintained by hand, and read by nothing — so an operation could
+-- write a field its own list omits and no proof would notice.  RR7.9 found
+-- exactly that: `capabilityOp_modifiedFields` read `[.objects, .lifecycle]`
+-- while all four capability operations also write the four CDT fields, and the
+-- direction matters — these lists support *disjointness* arguments, so an
+-- omission makes two contending operations look independent.
+--
+-- Correcting the list closed the instance.  This section closes the class, by
+-- making the lists carry a proof obligation:
+--
+--   * `SystemState.fieldEq f st st'` reads one named field on both states.
+--     Total over `StateField`, so a field added to that type is a missing case
+--     at elaboration rather than a silently unchecked component.
+--   * `preservesFieldsOutside fs st st'` says every field NOT in `fs` is equal.
+--     An operation's write-set is *honest* exactly when the operation satisfies
+--     this at its own list: omitting a written field makes the statement false.
+--   * `predicateFramedByDisjointWrites` is the payoff the two families exist
+--     for — a read-set disjoint from a write-set means the operation cannot
+--     disturb the predicate.  It consumes BOTH lists, so an under-declared
+--     write-set is not merely unused documentation: it would license a
+--     preservation conclusion the operation does not earn.
+
+/-- **WS-RR RR7.19**: read one named `StateField` off a `SystemState`, as a
+proposition equating it across two states.
+
+Total over `StateField` with no wildcard: a field added to that inductive is a
+missing case here, which is the property the whole family rests on — a
+`_modifiedFields` list can only be honest about fields something can compare. -/
+def SystemState.fieldEq : StateField → SystemState → SystemState → Prop
+  | .machine,           st, st' => st'.machine = st.machine
+  | .objects,           st, st' => st'.objects = st.objects
+  | .objectIndex,       st, st' => st'.objectIndex = st.objectIndex
+  | .objectIndexSet,    st, st' => st'.objectIndexSet = st.objectIndexSet
+  | .services,          st, st' => st'.services = st.services
+  | .scheduler,         st, st' => st'.scheduler = st.scheduler
+  | .irqHandlers,       st, st' => st'.irqHandlers = st.irqHandlers
+  | .lifecycle,         st, st' => st'.lifecycle = st.lifecycle
+  | .asidTable,         st, st' => st'.asidTable = st.asidTable
+  | .interfaceRegistry, st, st' => st'.interfaceRegistry = st.interfaceRegistry
+  | .serviceRegistry,   st, st' => st'.serviceRegistry = st.serviceRegistry
+  | .cdt,               st, st' => st'.cdt = st.cdt
+  | .cdtSlotNode,       st, st' => st'.cdtSlotNode = st.cdtSlotNode
+  | .cdtNodeSlot,       st, st' => st'.cdtNodeSlot = st.cdtNodeSlot
+  | .cdtNextNode,       st, st' => st'.cdtNextNode = st.cdtNextNode
+  | .tlb,               st, st' => st'.tlb = st.tlb
+
+/-- **WS-RR RR7.19**: `st'` differs from `st` in no field outside `fs`.
+
+This is what an operation's `_modifiedFields` list *claims*.  Quantified over
+every `StateField`, not over the list's complement as a list, so the claim is
+about the whole state rather than about whatever the author remembered to
+enumerate. -/
+def preservesFieldsOutside (fs : List StateField) (st st' : SystemState) : Prop :=
+  ∀ f : StateField, f ∉ fs → SystemState.fieldEq f st st'
+
+/-- **WS-RR RR7.19**: field equality is reflexive, so an operation that changes
+nothing preserves every complement. -/
+theorem preservesFieldsOutside_refl (fs : List StateField) (st : SystemState) :
+    preservesFieldsOutside fs st st := by
+  intro f _
+  cases f <;> rfl
+
+/-- **WS-RR RR7.19**: a wider declared write-set is a weaker claim, so a
+transition that satisfies its list also satisfies any list containing it.
+
+The monotonicity direction is the honest one to have: a caller may always
+*over*-declare (and pay for it in lost disjointness), and never under-declare. -/
+theorem preservesFieldsOutside_mono {fs gs : List StateField} (h : ∀ f ∈ fs, f ∈ gs)
+    {st st' : SystemState} (hp : preservesFieldsOutside fs st st') :
+    preservesFieldsOutside gs st st' := by
+  intro f hf
+  exact hp f (fun hmem => hf (h f hmem))
+
+/-- **WS-RR RR7.19**: the composition — two steps each honest about their own
+write-set are jointly honest about the union. -/
+theorem preservesFieldsOutside_trans {fs : List StateField} {st st' st'' : SystemState}
+    (h₁ : preservesFieldsOutside fs st st') (h₂ : preservesFieldsOutside fs st' st'') :
+    preservesFieldsOutside fs st st'' := by
+  intro f hf
+  have e₁ := h₁ f hf
+  have e₂ := h₂ f hf
+  cases f <;> exact e₂.trans e₁
+
+/-- **WS-RR RR7.19 — the payoff, and the reason an under-declared write-set is
+a soundness problem rather than stale documentation.**
+
+If a predicate reads only fields in `readFields`, and an operation writes only
+fields in `writeFields`, and the two are disjoint, then the operation preserves
+the predicate.  Both lists are premises: shrink the write-set to exclude a
+field the operation really writes and this theorem hands you a preservation
+conclusion the operation does not earn.
+
+`readsOnly` is supplied by the caller as the predicate's own frame lemma — the
+`*_frame` family below is exactly that shape — so the disjointness argument the
+`fieldsDisjoint` witnesses above make about *lists* becomes an argument about
+*states*. -/
+theorem predicateFramedByDisjointWrites
+    {P : SystemState → Prop} {readFields writeFields : List StateField}
+    (readsOnly : ∀ st st' : SystemState,
+      (∀ f ∈ readFields, SystemState.fieldEq f st st') → P st → P st')
+    (hDisjoint : fieldsDisjoint readFields writeFields = true)
+    {st st' : SystemState}
+    (hWrites : preservesFieldsOutside writeFields st st')
+    (hP : P st) : P st' := by
+  refine readsOnly st st' (fun f hf => hWrites f ?_) hP
+  -- `fieldsDisjoint` is `all/all` over `!=`, so membership on both sides is a
+  -- contradiction with the decided witness.
+  intro hIn
+  unfold fieldsDisjoint at hDisjoint
+  have h := List.all_eq_true.mp hDisjoint f hf
+  have h2 := List.all_eq_true.mp h f hIn
+  rw [bne_self_eq_false] at h2
+  exact Bool.noConfusion h2
+
+-- ============================================================================
+-- WS-RR RR7.19 — the write-sets, proved honest
+-- ============================================================================
+--
+-- A `_modifiedFields` list is a *claim*, and until this section nothing tested
+-- it.  These theorems are the test: each says the operation changes nothing
+-- outside its own declared list, so removing a field from a list makes the
+-- theorem beside it fail to elaborate.
+--
+-- That is how the `asidTable` omission surfaced.  `storeObject`'s list read
+-- `[.objects, .objectIndex, .objectIndexSet, .lifecycle]` while its record
+-- update also writes `asidTable`; the list had no consumer, so the omission was
+-- inert — and would have stopped being inert the moment
+-- `predicateFramedByDisjointWrites` above gave it one.
+
+/-- **WS-RR RR7.19**: `storeObject` writes nothing outside its declared set.
+
+The proof is `cases f <;> rfl` on the eleven untouched fields and a
+`contradiction` on the five declared ones — which is exactly the shape that
+makes the statement load-bearing: drop a field from
+`storeObject_modifiedFields` and the `contradiction` arm becomes an unprovable
+`rfl` against a record update that really moved it. -/
+theorem storeObject_preservesFieldsOutside
+    (id : SeLe4n.ObjId) (obj : KernelObject) (st st' : SystemState)
+    (hStep : storeObject id obj st = .ok ((), st')) :
+    preservesFieldsOutside storeObject_modifiedFields st st' := by
+  unfold storeObject at hStep
+  simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+  obtain ⟨-, hEq⟩ := hStep
+  subst hEq
+  intro f hf
+  cases f <;> first
+    | rfl
+    | exact (hf (by decide)).elim
+
+/-- **WS-RR RR7.19**: `revokeService` writes nothing outside its declared set —
+the registry erase and the dependency-graph edit, and no more. -/
+theorem revokeService_preservesFieldsOutside
+    (sid : ServiceId) (st st' : SystemState)
+    (hStep : revokeService sid st = .ok ((), st')) :
+    preservesFieldsOutside revokeService_modifiedFields st st' := by
+  unfold revokeService at hStep
+  split at hStep
+  · exact absurd hStep (by simp)
+  · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+    obtain ⟨-, hEq⟩ := hStep
+    subst hEq
+    intro f hf
+    unfold removeDependenciesOf
+    cases f <;> first
+      | rfl
+      | exact (hf (by decide)).elim
 
 -- ============================================================================
 -- W2-A2/A3: Per-predicate frame lemmas connecting field disjointness
@@ -1377,6 +1582,89 @@ theorem registryDependencyConsistent_frame
   rw [hServices] at hLookup
   have hPresent := hInv sid entry hLookup dep hDep
   rwa [hServices]
+
+/-! ### WS-RR RR7.19 — the two list families, joined
+
+`registryDependencyConsistent_frame` above is the `readsOnly` shape
+`predicateFramedByDisjointWrites` wants, expressed one field at a time.  Below
+it is restated over the predicate's own **read-set**, and then composed with an
+operation's **write-set** — which is the whole point of maintaining the two
+families and the thing nothing in the tree did before this row.
+
+Read the composition as the answer to a question the release plan actually
+asks: *may this operation and that invariant be reasoned about independently?*
+The `fieldsDisjoint` witnesses further up decide it for lists; these decide it
+for states. -/
+
+/-- **WS-RR RR7.19**: `registryDependencyConsistent` reads exactly its declared
+read-set.  The one-field frame lemma above, restated at the list — so the list
+is what a caller supplies, not a hand-picked hypothesis. -/
+theorem registryDependencyConsistent_readsOnly (st st' : SystemState)
+    (hFields : ∀ f ∈ registryDependencyConsistent_fields, SystemState.fieldEq f st st')
+    (hInv : registryDependencyConsistent st) :
+    registryDependencyConsistent st' :=
+  registryDependencyConsistent_frame st st'
+    (hFields .services (by decide)) hInv
+
+/-- **WS-RR RR7.19**: `noStaleEndpointQueueReferences` reads exactly its
+declared read-set. -/
+theorem noStaleEndpointQueueReferences_readsOnly (st st' : SystemState)
+    (hFields : ∀ f ∈ noStaleEndpointQueueReferences_fields, SystemState.fieldEq f st st')
+    (hInv : noStaleEndpointQueueReferences st) :
+    noStaleEndpointQueueReferences st' :=
+  noStaleEndpointQueueReferences_frame st st' (hFields .objects (by decide)) hInv
+
+/-- **WS-RR RR7.19 — the first consumer either family has ever had.**
+
+`storeObject` writes only `storeObject_modifiedFields`;
+`registryDependencyConsistent` reads only `registryDependencyConsistent_fields`;
+the two are disjoint, decided.  Therefore `storeObject` preserves the invariant
+— with no hand-written argument about *which* fields, and no opportunity to
+forget one.
+
+The under-declaration this cut fixed is what the theorem is guarding against:
+had `storeObject_modifiedFields` still omitted `.asidTable`, this shape would
+have licensed the same conclusion for a predicate that reads it. -/
+theorem storeObject_preserves_registryDependencyConsistent
+    (id : SeLe4n.ObjId) (obj : KernelObject) (st st' : SystemState)
+    (hStep : storeObject id obj st = .ok ((), st'))
+    (hInv : registryDependencyConsistent st) :
+    registryDependencyConsistent st' :=
+  predicateFramedByDisjointWrites
+    (readFields := registryDependencyConsistent_fields)
+    (writeFields := storeObject_modifiedFields)
+    registryDependencyConsistent_readsOnly (by decide)
+    (storeObject_preservesFieldsOutside id obj st st' hStep) hInv
+
+/-- **WS-RR RR7.19**: the dual direction — `revokeService` writes only the
+service registry and graph, `noStaleEndpointQueueReferences` reads only the
+object store, so the revoke cannot strand an endpoint queue reference.
+
+Stated because a *second* instance is what shows the shape is general rather
+than a bespoke argument dressed up as one. -/
+theorem revokeService_preserves_noStaleEndpointQueueReferences
+    (sid : ServiceId) (st st' : SystemState)
+    (hStep : revokeService sid st = .ok ((), st'))
+    (hInv : noStaleEndpointQueueReferences st) :
+    noStaleEndpointQueueReferences st' :=
+  predicateFramedByDisjointWrites
+    (readFields := noStaleEndpointQueueReferences_fields)
+    (writeFields := revokeService_modifiedFields)
+    noStaleEndpointQueueReferences_readsOnly (by decide)
+    (revokeService_preservesFieldsOutside sid st st' hStep) hInv
+
+/-- **WS-RR RR7.19 (the load-bearing negative)**: the disjointness premise is
+not decoration.  `storeObject` writes `.objects`, and
+`noStaleEndpointQueueReferences` reads `.objects`, so the two lists are **not**
+disjoint and the composition above does not apply to that pair — which is
+correct, since a `storeObject` really can strand a queue reference.
+
+Kept as a decided witness so a future widening of a read-set or a write-set
+that silently made this pair "disjoint" would fail here rather than quietly
+license an unsound frame. -/
+theorem storeObject_not_framed_from_noStaleEndpointQueueReferences :
+    fieldsDisjoint noStaleEndpointQueueReferences_fields storeObject_modifiedFields
+      = false := by decide
 
 /-- V6-A5: Frame lemma — if an operation preserves the `services` and
     `objectIndex` fields, `serviceGraphInvariant` is preserved.
