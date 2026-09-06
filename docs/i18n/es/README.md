@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.34.84-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.34.85-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -86,13 +86,21 @@ demostración de Lean 4:
      Regenerar con: ./scripts/generate_codebase_map.py --pretty
      Fuente de verdad: docs/codebase_map.json (readme_sync) -->
 
+<!-- MAINTAINERS/TRANSLATORS: the three metric rows below (production LoC,
+     test LoC, proved declarations) are WRITTEN by
+     scripts/sync_translated_metrics.py from docs/codebase_map.json.  A hand
+     edit is overwritten on the next sync.  To reword a label, a preposition
+     or an inflected noun, edit that script's TARGETS table in the same
+     commit: it matches the surrounding literals verbatim and fails loudly
+     when they change, so it can never quietly stop syncing this file. -->
+
 | Atributo | Valor |
 |----------|-------|
-| **Versión** | `0.34.84` |
+| **Versión** | `0.34.85` |
 | **Toolchain de Lean** | `v4.28.0` |
-| **LoC de producción en Lean** | 286.841 en 286 archivos |
-| **LoC de pruebas en Lean** | 64.078 en 69 suites de pruebas |
-| **Declaraciones demostradas** | 9.601 declaraciones theorem/lemma (cero sorry/axiom) |
+| **LoC de producción en Lean** | 339.431 en 317 archivos |
+| **LoC de pruebas en Lean** | 70.566 en 70 suites de pruebas |
+| **Declaraciones demostradas** | 11.287 declaraciones theorem/lemma (cero sorry/axiom) |
 | **Hardware objetivo** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Auditoría canónica** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — auditoría integral previa a 1.0 (202 hallazgos; remediados por WS-AK AK1–AK10; archivada) |
 | **Última auditoría** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../../../docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) — auditoría de preparación previa a 1.0 realizada tras el cierre de WS-AN (sucede a la ahora archivada [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md), remediada por WS-AN AN0–AN12). WS-RC R0..R5 completados en v0.31.2; WS-RC R6..R14 absorbidos en WS-SM según el mapeo de absorción SM0.Q.1 (véase [`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](../../../docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)). Plan de flujo de trabajo activo: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md). |

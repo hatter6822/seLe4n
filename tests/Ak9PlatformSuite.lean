@@ -24,7 +24,8 @@ import SeLe4n.Testing.Helpers
 /-! # AK9 Platform Regression Suite — Phase AK9 audit remediation
 
 Runtime regression checks for the AK9 Platform / Boot / DTB / MMIO
-audit findings (`docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` §12):
+audit findings of WS-AN (see the *Workstream registry* of
+`docs/REGISTERED_DEBT.md`, closed at `v0.30.11`):
 
 - **AK9-A (P-H01)** — `mmioRead32` / `mmioRead64` enforce 4/8-byte
   alignment AND region-local bounds.

@@ -127,8 +127,7 @@ private theorem allTablesInvExtK_scThreadIndex {st : SystemState}
 -- sites that destructure tuples, (2) named structures in Lean 4 have different
 -- `cases`/`rcases` behavior, (3) current approach is functionally correct.
 -- Recorded as a post-1.0 hardening candidate; registered in `docs/REGISTERED_DEBT.md`
--- (Registered debt index, C.1); see DEF-F-L9 in
--- docs/dev_history/audits/AUDIT_v0.29.0_DEFERRED.md.
+-- (Registered debt index, C.1) as DEF-F-L9, closed under WS-AN.
 
 -- ============================================================================
 -- Q3-B.1: registerIrq — insert into irqHandlers

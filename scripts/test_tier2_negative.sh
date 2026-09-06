@@ -27,6 +27,38 @@ suite_exes=()
 while read -r exe; do suite_exes+=("${exe}"); done < <(
   grep -oE '^run_check_with_timeout "TRACE" lake exe [[:alnum:]_]+' \
     "${BASH_SOURCE[0]}" | awk '{print $5}')
+
+# **WS-RR RR7.35 (register finding 78)**: the suites this tier runs through the
+# *interpreter* are compiled too.  Their `lean_exe` targets were declared in
+# `lakefile.toml` and built by no gate at all -- including
+# `negative_state_suite`, the one CLAUDE.md names as build-fragile: a
+# `do`-block deep enough to blow clang's `-fbracket-depth` fails
+# `lake build <suite>` while `lake env lean --run` sails past it, so the exact
+# hazard the interpreter runs were introduced to route around was the one
+# nothing checked.  Compiling costs ~10 s cold for the largest of the three, so
+# the "pathological C compilation times" the comment below records is a
+# statement about the pre-thin-dispatcher suites and no longer about these.
+#
+# Derived, not listed: the interpreter lines name a *module path*, so the
+# executable is resolved through `lakefile.toml`'s own `root =` field.  A suite
+# added in interpreted form is therefore compiled without a second list, and a
+# module with no `lean_exe` is reported rather than silently skipped -- an
+# unbuilt target is exactly what this closes.
+while read -r module; do
+  root="$(printf '%s' "${module}" | sed 's|^tests/||; s|\.lean$||')"
+  exe="$(awk -v r="tests.${root}" '
+    /^name = /   { n = $3; gsub(/"/, "", n) }
+    /^root = /   { t = $3; gsub(/"/, "", t); if (t == r) { print n; exit } }
+  ' lakefile.toml)"
+  if [[ -z "${exe}" ]]; then
+    echo "test_tier2_negative: ${module} is run but declares no lean_exe in lakefile.toml" >&2
+    exit 1
+  fi
+  suite_exes+=("${exe}")
+done < <(
+  grep -oE '^run_check_with_timeout "TRACE" lake env lean --run tests/[[:alnum:]_]+\.lean' \
+    "${BASH_SOURCE[0]}" | awk '{print $7}')
+
 run_check "BUILD" lake build "${suite_exes[@]}"
 
 # Run suites through the Lean interpreter to avoid pathological C compilation

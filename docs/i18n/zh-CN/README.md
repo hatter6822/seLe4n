@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.34.84-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.34.85-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -81,13 +81,21 @@ seLe4n 是一个完全使用 Lean 4 从零构建的微内核。每一个内核�
      Regenerate with: ./scripts/generate_codebase_map.py --pretty
      Source of truth: docs/codebase_map.json (readme_sync) -->
 
+<!-- MAINTAINERS/TRANSLATORS: the three metric rows below (production LoC,
+     test LoC, proved declarations) are WRITTEN by
+     scripts/sync_translated_metrics.py from docs/codebase_map.json.  A hand
+     edit is overwritten on the next sync.  To reword a label, a preposition
+     or an inflected noun, edit that script's TARGETS table in the same
+     commit: it matches the surrounding literals verbatim and fails loudly
+     when they change, so it can never quietly stop syncing this file. -->
+
 | 属性 | 值 |
 |------|------|
-| **版本** | `0.34.84` |
+| **版本** | `0.34.85` |
 | **Lean 工具链** | `v4.28.0` |
-| **生产代码行数** | 286,841 行，分布于 286 个文件 |
-| **测试代码行数** | 64,078 行，分布于 69 个测试套件 |
-| **已证明的声明** | 9,601 个定理/引理声明（零 sorry/axiom） |
+| **生产代码行数** | 339,431 行，分布于 317 个文件 |
+| **测试代码行数** | 70,566 行，分布于 70 个测试套件 |
+| **已证明的声明** | 11,287 个定理/引理声明（零 sorry/axiom） |
 | **目标硬件** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **规范审计** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) —— 1.0 前综合审计（202 项发现；已由 WS-AK AK1–AK10 修复；已归档） |
 | **最新审计** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../../../docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) —— WS-AN 收尾后进行的 1.0 前就绪审计（接替现已归档、由 WS-AN AN0–AN12 修复的 [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md)）。WS-RC R0..R5 已于 v0.31.2 落地；WS-RC R6..R14 已按 SM0.Q.1 吸收映射并入 WS-SM（见 [`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](../../../docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)）。当前活跃的工作流计划：[`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md)。 |

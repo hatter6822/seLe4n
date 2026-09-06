@@ -1,3 +1,96 @@
+## v0.34.85 — the gates the claims assumed
+
+**WS-RR RR7.35** — four §7 findings, all one shape: a document states a
+property of the tree, nothing checks it, and it is false.  Each is closed by
+building the mechanism, not by narrowing the claim.
+
+**Finding 78 — three declared executables no gate compiled.**
+`lakefile.toml` declares `negative_state_suite`, `information_flow_suite` and
+`robin_hood_suite`; Tier 2 runs all three through `lake env lean --run`, which
+is the *interpreter*, and nothing anywhere ran `lake build` on them.  That is
+the worst possible omission for exactly those three: CLAUDE.md names
+`NegativeStateSuite` as the build-fragile case, where a `do`-block deep enough
+to exceed clang's `-fbracket-depth` fails compilation while the interpreter
+sails past it — so the hazard the interpreter runs exist to route around was
+the one no gate could see.  Tier 2's prebuild list now *derives* the missing
+targets from its own `lake env lean --run` lines, resolving each module path
+through `lakefile.toml`'s `root =` field: an interpreted suite added later is
+compiled without a second list to maintain, and a module declaring no
+`lean_exe` is reported rather than silently skipped.
+
+**Findings 22 and 28 — one claim, three surfaces, no owner.**
+`SMP_FOUNDATIONS_PLAN` says "every `dev_history` cross-reference removed from
+production sources"; nine remained.  `SMP_MULTICORE_COMPLETION_PLAN` §3.9 says
+SMP-M1 closed in SM0 while its own §11 verification command reads
+`rust/sele4n-hal/src/` and `SeLe4n/Kernel/` — a *third* surface, on which the
+claim was true.  That is why it drifted: a reader checking any one spelling
+found it holding, and nothing owned the difference between them.
+
+All nine references are redirected to the live canonical source
+(`docs/REGISTERED_DEBT.md`'s workstream registry, where WS-AN's closure
+actually lives), two more found under `tests/` with them, and Tier 0 scans the
+**union** — `SeLe4n`, `Main.lean`, `tests`, `rust` — which is strictly wider
+than all three spellings, so one gate makes every one of them true at once.
+`docs/` and `scripts/` are out of scope by decision, not omission: `docs/`
+cites its own history legitimately and `scripts/` reads the AK7 baseline there
+by design, and a rule the project does not hold is worse than no rule.
+
+It is a `run_prose_negative_check`, and that is the load-bearing detail: every
+one of the eleven references was in a docstring or a comment.  Routed through
+the comment-free code view — the default for anchors here — the check would
+have scanned a tree with no comments in it, matched nothing, and reported the
+references as absent.  The subject genuinely *is* the text.
+
+**Finding 87 — the translations the sync matrix said were mirrored.**
+`sync_readme_from_codebase_map.sh` drives `README.md` and `SELE4N_SPEC.md`;
+the sync matrix claims the eleven translated READMEs mirror the root README.
+Nothing propagated, so all eleven published a `v0.33.101` snapshot — 286,841
+production LoC against a tree at 339,431 — and four GitBook surfaces sat at two
+*further*, mutually inconsistent, stale generations.
+
+`scripts/sync_translated_metrics.py` closes it across fifteen surfaces, and
+the reason it is a new mechanism rather than four more patterns in the existing
+one is that **three of the target languages inflect the counted noun**.  A
+digit-only rewrite would have published ungrammatical Russian, Ukrainian and
+Arabic — `11 287 деклараци*я*`, `11 287 деклараці*я*`, `11,287 إعلان` — silently,
+in files nobody reading this repository's primary language would check.  So:
+
+- every morphology-bearing word is a declared slot carrying a form per CLDR
+  plural category, selected by the category of the number that governs it;
+- a category that is *needed* and not declared **fails the run**, naming the
+  locale, the row and the category, so a translator is asked rather than
+  guessed at — the fail-closed direction for a rewriter;
+- the slot's pattern is the alternation of exactly its declared forms, so a
+  form in the file the table does not know is a non-match and therefore an
+  error: the table cannot drift away from the translation it models;
+- a row matching zero times, or more than once, is likewise an error and never
+  a skip, because a rewrite silently declined is a figure that stays stale
+  while the run reports success;
+- numeral slots are built from each target's own thousands separator, so a
+  slot stops at its group boundary instead of swallowing the next literal;
+- everything else is matched verbatim, so a translator may reword labels,
+  prepositions and parentheticals freely and the script says which row needs
+  its literals updated.
+
+Its own witness suite caught a defect in it during development, which is the
+argument for having one: CLDR Arabic puts `n % 100 ∈ {0,1,2}` for `n > 2` in
+`other`, not `one`, so 9,601 declarations is `other` — the singular — and a
+table declaring the singular only under `one` would have been refused.
+Twenty-four plural cases plus eleven token-preserving rewrite witnesses (an
+undeclared form, an undeclared category, a reworded literal, a duplicated row,
+a numeral that must not swallow its neighbour, both `one → many` crossings, a
+version stamp, idempotence, and the end-to-end drift/write/settle cycle).
+
+The three GitBook `as of vX.Y.Z` measurement stamps are rewritten too — an
+unmaintained stamp beside a maintained figure is worse than no stamp — and the
+`07-testing-and-ci` fixture-line count is now read from the fixture rather than
+hand-copied.  `docs/gitbook/README.md` is generated from the navigation
+manifest, so the manifest is the target and the chapter follows.  Wired into
+`sync_documentation_metrics.sh` as a hard step and into `test_docs_sync.sh`
+beside its self-test.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §7 (RR7.35)
+
 ## v0.34.84 — the artefacts the plans named
 
 **WS-RR RR7.34** — five §7 findings, all of the same class: a document names an

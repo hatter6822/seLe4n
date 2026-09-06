@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.34.84-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.34.85-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -84,13 +84,21 @@ seLe4n은 Lean 4로 처음부터 설계된 마이크로커널입니다. 모든 �
      재생성: ./scripts/generate_codebase_map.py --pretty
      진실의 원천: docs/codebase_map.json (readme_sync) -->
 
+<!-- MAINTAINERS/TRANSLATORS: the three metric rows below (production LoC,
+     test LoC, proved declarations) are WRITTEN by
+     scripts/sync_translated_metrics.py from docs/codebase_map.json.  A hand
+     edit is overwritten on the next sync.  To reword a label, a preposition
+     or an inflected noun, edit that script's TARGETS table in the same
+     commit: it matches the surrounding literals verbatim and fails loudly
+     when they change, so it can never quietly stop syncing this file. -->
+
 | 속성 | 값 |
 |------|-----|
-| **버전** | `0.34.84` |
+| **버전** | `0.34.85` |
 | **Lean 툴체인** | `v4.28.0` |
-| **프로덕션 Lean LoC** | 286개 파일, 286,841줄 |
-| **테스트 Lean LoC** | 69개 테스트 스위트, 64,078줄 |
-| **증명된 선언** | 9,601개 theorem/lemma 선언 (sorry/axiom 제로) |
+| **프로덕션 Lean LoC** | 317개 파일, 339,431줄 |
+| **테스트 Lean LoC** | 70개 테스트 스위트, 70,566줄 |
+| **증명된 선언** | 11,287개 theorem/lemma 선언 (sorry/axiom 제로) |
 | **대상 하드웨어** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **정식 감사** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — 1.0 이전 종합 감사 (202건 발견; WS-AK AK1–AK10 으로 해결됨; 보관됨) |
 | **최신 감사** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../../../docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) — WS-AN 마감 후 수행된 1.0 이전 준비 상태 감사 (WS-AN AN0–AN12 로 해결되어 현재 보관된 [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md) 를 계승). WS-RC R0..R5 는 v0.31.2 에서 완료됨; WS-RC R6..R14 는 SM0.Q.1 흡수 매핑에 따라 WS-SM 으로 흡수됨 ([`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](../../../docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md) 참조). 활성 작업 스트림 계획: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md). |

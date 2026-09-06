@@ -282,6 +282,20 @@ summarize.
 scope items. All closed in SM0 honesty patches per
 [`SMP_FOUNDATIONS_PLAN.md`](SMP_FOUNDATIONS_PLAN.md).
 
+**`SMP-M1` is held by a gate rather than by that claim** (WS-RR RR7.35,
+`v0.34.85`).  "Closed in SM0" was made on three different surfaces — this
+plan's §11 verification command reads `rust/sele4n-hal/src/` and
+`SeLe4n/Kernel/`, the foundations plan says "production sources", and a reader
+checking either one would find it true — so nothing owned the difference, and
+eleven `docs/dev_history` cross-references survived outside the intersection:
+nine under `SeLe4n/` and two under `tests/`.  All eleven are redirected to the
+live canonical source (`docs/REGISTERED_DEBT.md`'s *Workstream registry*), and
+Tier 0 now scans `SeLe4n`, `Main.lean`, `tests` and `rust` — strictly wider
+than any of the three spellings, so every spelling of the claim is true at
+once.  `docs/` and `scripts/` stay out of scope by decision, not by omission:
+`docs/` cites its own history legitimately, and `scripts/` reads the AK7
+baseline there by design.
+
 ## 4. Architectural design choices
 
 The 13 binding maintainer decisions:
@@ -670,8 +684,11 @@ grep -A 10 "inductive ArchAssumption" SeLe4n/Kernel/Architecture/Assumptions.lea
 # SMP-H3: Inventory Lean.Name disclaimer
 grep -A 3 "Lean does not enforce" SeLe4n/Kernel/Concurrency/Assumptions.lean
 
-# SMP-M1: dev_history cross-references
-grep -rn "dev_history" rust/sele4n-hal/src/ SeLe4n/Kernel/
+# SMP-M1: dev_history cross-references.  The surface is the whole source tree,
+# not this command's original `rust/sele4n-hal/src/` + `SeLe4n/Kernel/` pair —
+# see §3.9.  Held by Tier 0 (`scripts/test_tier0_hygiene.sh`), so this is a
+# reader's spot-check rather than the enforcement.
+rg -n "docs/dev_history" SeLe4n Main.lean tests rust
 
 # SMP-M2: stale WS-V claim
 grep -n "deferred to WS-V" docs/spec/SELE4N_SPEC.md

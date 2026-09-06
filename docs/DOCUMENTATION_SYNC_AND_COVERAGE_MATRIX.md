@@ -28,7 +28,7 @@ Use this file during planning and PR review to keep documentation status aligned
 | Security advisories + deployment guidance | `docs/SECURITY_ADVISORY.md`, `docs/DEPLOYMENT_GUIDE.md` | `28-threat-model-and-security-hardening.md` | Root docs own advisory statuses and deployment obligations; chapter summarizes. |
 | Hardware testing + validation reports | `docs/HARDWARE_TESTING.md`, `docs/hardware_validation/` | `10-path-to-real-hardware-mobile-first.md` | Root docs own procedures and report data. |
 | Rust ABI audit notes | `docs/AUDIT_NOTES.md` | `15-rust-syscall-wrappers.md` | Root file owns per-finding notes. |
-| Translations | `docs/i18n/` (11 locales + `LANGUAGES.md`) | — | Mirror the root README/CONTRIBUTING/QUICKSTART; badges + Version rows are version-sites. |
+| Translations | `docs/i18n/` (11 locales + `LANGUAGES.md`) | — | Mirror the root README/CONTRIBUTING/QUICKSTART; badges + Version rows are version-sites. The three metric rows are written by `scripts/sync_translated_metrics.py` — edit its `TARGETS` table, not the row, when a translation's wording or inflected noun changes. |
 | Development workflow | `docs/DEVELOPMENT.md` | — (archived to dev_history) | Canonical workflow in root doc. |
 | Test tiers and CI contract | `docs/TESTING_FRAMEWORK_PLAN.md`, `docs/CI_POLICY.md` | `07-testing-and-ci.md` | Script/workflow changes require synchronized updates. |
 | Hardware-boundary contract policy | `docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md` | `10-path-to-real-hardware-mobile-first.md` | Normative constraints in policy doc; chapter links policy implications. |
@@ -75,8 +75,14 @@ For documentation/planning PRs:
 - **Metrics**: live values in `docs/codebase_map.json` → `readme_sync`
   (run `python3 scripts/report_current_state.py` for the live figures; a
   snapshot pinned here is drift by construction).
-  **This figure is hand-copied**: `scripts/sync_documentation_metrics.sh`
-  drives `README.md` and `docs/spec/SELE4N_SPEC.md` only, so this file — and
-  the eleven i18n READMEs and four GitBook chapters — drift silently between
-  hand updates.  Registered as WS-RR **RR7.35**; until it lands, treat any
-  metric here as of the version stamped beside it.
+  **The translated and GitBook figures are synced** (WS-RR RR7.35,
+  `v0.34.85`): `scripts/sync_translated_metrics.py` drives the eleven i18n
+  READMEs and the four GitBook surfaces that quote them, and
+  `scripts/test_docs_sync.sh` fails on drift, so "the translations mirror the
+  root README" is enforced rather than asserted.  It had not been: the locales
+  published a `v0.33.101` snapshot and the GitBook surfaces two *different*
+  stale generations.  Three of those languages inflect the counted noun, so the
+  sync selects the form by CLDR plural category and **refuses to run** rather
+  than guess an inflection it has not been given.
+  **This file still pins no figure of its own**, and should not start: run
+  `python3 scripts/report_current_state.py` for the live numbers.

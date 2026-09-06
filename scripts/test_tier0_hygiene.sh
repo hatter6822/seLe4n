@@ -159,6 +159,41 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_workstream_plan.py"
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_claim_evidence_citations.py" --self-test
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_claim_evidence_citations.py"
 
+# WS-RR RR7.35 (register findings 22 and 28): source must not send a reader
+# into `docs/dev_history/`.
+#
+# `SMP_FOUNDATIONS_PLAN` claimed "every dev_history cross-reference removed from
+# production sources" and nine remained, because the claim was made once and
+# checked never.  The rule it states is CLAUDE.md's own -- *do not read or
+# reference files in `docs/dev_history/` unless explicitly instructed* -- so a
+# docstring that cites one is directing a reader at what the project tells them
+# not to open, and the reference is stale by construction: those documents are
+# retired precisely because a live one superseded them.
+#
+# **The surface is the union of every surface the claim has been made on,** which
+# is finding 28: `SMP_MULTICORE_COMPLETION_PLAN` §3.9 says SMP-M1 "closed in SM0"
+# while its own §11 verification command reads `rust/sele4n-hal/src/` and
+# `SeLe4n/Kernel/`, and the foundations plan says "production sources" -- three
+# different sets, so the claim was true of whichever one a reader happened to
+# check and nothing owned the difference.  Scanning `SeLe4n`, `Main.lean`,
+# `tests` and `rust` is strictly wider than all three, so one gate makes every
+# spelling of the claim true at once rather than reconciling them.
+#
+# `docs/` and `scripts/` are deliberately out of scope, and this is a decision
+# rather than a default: `docs/` legitimately cites its own history (CHANGELOG
+# entries, the debt register's provenance, an audit trail), and `scripts/` reads
+# one file there by design -- the AK7 baseline the cascade gate regenerates.  A
+# rule the project does not hold is worse than no rule, because the exemption
+# list becomes the artefact.
+#
+# `run_prose_negative_check`, not `run_negative_check`: every one of the eleven
+# references was in a docstring or a comment, which is exactly the text the
+# code view blanks.  Routed through the view this check would scan a tree with
+# no comments in it, never fire, and report the references as absent -- the
+# silently-vacuous shape `test_lib.sh` introduced the prose helpers to avoid.
+# CLAUDE.md's rule decides it: the subject genuinely IS the text.
+run_prose_negative_check "HYGIENE" rg -n "docs/dev_history" SeLe4n Main.lean tests rust
+
 # WS-RR RR0.6: the SMP completion-phase theorem manifest.  The release-closure
 # plan carried its theorem total as a hand-summed literal that ran SM8 -> SM10
 # with no SM9 term, so the marker theorem and the "verify all 210 SM theorems

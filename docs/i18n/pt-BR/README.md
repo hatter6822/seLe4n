@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Segurança" /></a>
-  <img src="https://img.shields.io/badge/version-0.34.84-blue" alt="Versão" />
+  <img src="https://img.shields.io/badge/version-0.34.85-blue" alt="Versão" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Licença" /></a>
 </p>
@@ -85,13 +85,21 @@ provas do Lean 4:
      Regenere com: ./scripts/generate_codebase_map.py --pretty
      Fonte da verdade: docs/codebase_map.json (readme_sync) -->
 
+<!-- MAINTAINERS/TRANSLATORS: the three metric rows below (production LoC,
+     test LoC, proved declarations) are WRITTEN by
+     scripts/sync_translated_metrics.py from docs/codebase_map.json.  A hand
+     edit is overwritten on the next sync.  To reword a label, a preposition
+     or an inflected noun, edit that script's TARGETS table in the same
+     commit: it matches the surrounding literals verbatim and fails loudly
+     when they change, so it can never quietly stop syncing this file. -->
+
 | Atributo | Valor |
 |----------|-------|
-| **Versão** | `0.34.84` |
+| **Versão** | `0.34.85` |
 | **Toolchain Lean** | `v4.28.0` |
-| **LoC Lean de produção** | 286.841 em 286 arquivos |
-| **LoC Lean de testes** | 64.078 em 69 suítes de testes |
-| **Declarações provadas** | 9.601 declarações de teorema/lema (zero sorry/axiom) |
+| **LoC Lean de produção** | 339.431 em 317 arquivos |
+| **LoC Lean de testes** | 70.566 em 70 suítes de testes |
+| **Declarações provadas** | 11.287 declarações de teorema/lema (zero sorry/axiom) |
 | **Hardware alvo** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Auditoria canônica** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — auditoria abrangente pré-1.0 (202 achados; remediados por WS-AK AK1–AK10; arquivada) |
 | **Auditoria mais recente** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../../../docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) — auditoria de prontidão pré-1.0 realizada após o encerramento do WS-AN (sucede a agora arquivada [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md), remediada por WS-AN AN0–AN12). WS-RC R0..R5 LANDED em v0.31.2; WS-RC R6..R14 absorvidos no WS-SM conforme o mapeamento de absorção SM0.Q.1 (ver [`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](../../../docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)). Plano de workstream ativo: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md). |
