@@ -1,3 +1,54 @@
+## v0.34.79 — the width of the model, the width of the board
+
+**WS-RR RR7.30** — the SMP-foundations medium (register finding 10): "`numCores`
+is a literal `4`, not `PlatformBinding.coreCount` — so the `coreCount := 1` Sim
+binding can never shape kernel state."
+
+**The premise is false at HEAD, and the root cause was the constant's own
+docstring.**  Three PR #889 review rounds gave the binding's number real force:
+`PlatformBinding.coreCountLe : coreCount ≤ numCores` became a class obligation
+(round 5); `declaredCores` — the prefix `allCores.take coreCount` — became the
+bound on the production boot's idle install, leaving an undeclared core's reserved
+slot **absent** rather than free (round 3); and `MachineConfig.declaredCoreCount`
+began carrying the same number into `SystemState.machine`, which
+`setThreadCpuAffinityWithMigration` reads to refuse an out-of-range affinity and
+`bootAffinitiesDeclared` reads to refuse a configured one (round 20).
+`SimSingleCorePlatform` declares one PE and boots exactly one idle thread, and
+both halves are executed rather than asserted (`sd055_single_core_*`,
+`runDeclaredCoreScenarios`).
+
+What the finding *did* catch is real, and it is what this cut fixes: the docstring
+on `numCores` still described the world before any of that — one theorem pinning
+one binding at equality, plus a hand convention to "update the literal here in the
+same PR".  A reader of the constant arrives exactly where this finding arrived.
+Rewritten to state the actual relation at the site where the number is defined:
+the model's width is a build-time constant because `CoreId = Fin numCores` fixes
+every per-core `Vector`; a binding declares how many of those PEs its board has;
+and the two are related by **inequality**, with the three enforcement points named.
+
+**The one link that genuinely was unstated is now a theorem.**  The two refusals
+cover every *pinned* thread.  `determineTargetCore_lt_declaredCoreCount`
+(`Scheduler/Operations/Selection.lean`) closes the unpinned half: a thread with
+`cpuAffinity = none`, and a `tid` resolving to no TCB at all, both route to
+`bootCoreId` — core `0`, inside any declared set since every binding declares at
+least one PE (`coreCountPos`).  With the refusals, **no** thread of any kind is
+enqueued on a core `chooseThreadOnCore` would find empty.  Four runtime checks
+execute it on a one-PE and a four-PE machine, so the bound is exhibited as a bound
+rather than a blanket rule.
+
+**The proposed remedy is declined with its argument, not deferred.**  Making
+`numCores` be `PlatformBinding.coreCount` would take the bound of `Fin` from a
+typeclass, so every theorem about the kernel would become relative to a binding —
+bought for the ability to host two different-width bindings in one image, which a
+microkernel image does not need.  seL4 makes the same choice
+(`CONFIG_MAX_NUM_NODES` is build-time).  A board wanting **more** than the model's
+width raises the literal, and until it does, `coreCountLe` fails that binding's
+elaboration rather than shipping a silently wrong image — which is a stronger
+guarantee than the convention the old docstring described, and is now what the
+docstring says.
+
+Tier 0-3 green; `test_rust.sh` and the aarch64 cross gate green.
+
 ## v0.34.78 — an end-to-end test that reaches the entry point
 
 **WS-RR RR7.29** — the reply-objects medium (register finding 2).  The reply-objects

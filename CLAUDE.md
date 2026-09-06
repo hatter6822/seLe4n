@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.78.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.79.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -2110,7 +2110,14 @@ code may assume:
   on every existing state and fixture; a new binding that declares fewer PEs
   must give its machine config the matching count, or its instance will not
   elaborate.  New code must not read `numCores` as the set of cores a thread may
-  be pinned to.
+  be pinned to.  **The unpinned half closed at v0.34.79** (WS-RR RR7.30):
+  `determineTargetCore_lt_declaredCoreCount` says an unpinned thread — and a
+  `tid` resolving to no TCB — routes to `bootCoreId`, which is core `0` and so
+  inside any declared set (`coreCountPos`), so with the two refusals above **no**
+  thread of any kind is enqueued on a PE the machine does not have.  `numCores`'s
+  own docstring now states this whole relation at the constant, since describing
+  only the RPi5 equality there is what made a reader conclude a narrower binding
+  could not shape kernel state at all.
 
 - **Thread-state classification is per-core** (WS-RR RR5.10).
   `inferThreadState` read `currentOnCore bootCoreId` / `runQueueOnCore

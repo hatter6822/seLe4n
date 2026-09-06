@@ -59,6 +59,8 @@ open SeLe4n.Testing
 -- ============================================================================
 
 -- SM5.H.1 / .5 the affinity-consistency invariant:
+-- WS-RR RR7.30: the unpinned half of the declared-core bound.
+#check @determineTargetCore_lt_declaredCoreCount
 #check @replenishQueueAffinityConsistentOnCore
 #check @replenishQueueAffinityConsistent_smp
 #check @replenishQueueAffinityConsistent_smp_at
@@ -549,6 +551,28 @@ private def runDeclaredCoreScenarios : IO Unit := do
   -- platform's declared width, not a new blanket rule.
   assertBool "four-PE machine: the same core-1 request is accepted"
     (setThreadCpuAffinityWithMigration stCbs tid0 (some core1) bootCoreId).isOk
+  -- **WS-RR RR7.30**: the unpinned half of the same bound, executed.  The two
+  -- refusals above cover every *pinned* thread; a thread with no affinity, and a
+  -- `tid` that resolves to no TCB at all, both route to `bootCoreId` — core `0`,
+  -- which every binding declares (`coreCountPos`).  So no thread of any kind is
+  -- enqueued on a PE the machine does not have, which is what
+  -- `determineTargetCore_lt_declaredCoreCount` states.
+  let stUnpinned : SystemState :=
+    match setThreadCpuAffinityWithMigration stSingleCore tid0 none bootCoreId with
+    | .ok (st, _) => st
+    | .error _ => stSingleCore
+  assertBool "one-PE machine: an unpinned thread routes to core 0"
+    (determineTargetCore stUnpinned tid0 == bootCoreId)
+  assertBool "one-PE machine: an unpinned thread's home is a declared PE"
+    (decide ((determineTargetCore stUnpinned tid0).val <
+      stUnpinned.machine.declaredCoreCount))
+  assertBool "one-PE machine: a tid with no TCB routes to core 0 as well"
+    (determineTargetCore stSingleCore (ThreadId.ofNat 4242) == bootCoreId)
+  -- The bound is the machine's, so the same routing on the four-PE machine is
+  -- still inside its (wider) declared set — the theorem is a bound, not a pin.
+  assertBool "four-PE machine: the unpinned home is still a declared PE"
+    (decide ((determineTargetCore stCbs (ThreadId.ofNat 4242)).val <
+      stCbs.machine.declaredCoreCount))
 
 /-- §3.6: SM5.H.4 full-thread-migration — the run-queue entry moves cores. -/
 private def runRunQueueMigrationScenarios : IO Unit := do

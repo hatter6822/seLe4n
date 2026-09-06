@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/rr7-medium-severity-sweep-tn327q",
-      "commit_sha": "7b856803ba949c6296cf4c4b2df63f5566c5fab6",
-      "tree_sha": "78304d0fb07fe1e8a01b5422ac5d8f1bebeaaedb",
-      "committed_at_utc": "2026-09-06T07:42:50+00:00"
+      "commit_sha": "922b20f53a776df63936003f2d12abcf582cd82e",
+      "tree_sha": "5ffec4d9e93586cf88ad298480c08796d6408762",
+      "committed_at_utc": "2026-09-06T08:00:33+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "698dcdfe93f88cfb1d483b013746d63cc61687f70d9bd7ea930d76ee01955d63"
+    "source_digest": "af1abcce6d28e09d5a184563a101eeb06f01813364592f23d3c0117eb5484582"
   },
   "summary": {
     "module_count": 387,
-    "declaration_count": 19472
+    "declaration_count": 19473
   },
   "readme_sync": {
-    "version": "0.34.78",
+    "version": "0.34.79",
     "lean_toolchain": "v4.28.0",
     "production_files": 317,
-    "production_loc": 339118,
+    "production_loc": 339181,
     "test_files": 70,
-    "test_loc": 70469,
-    "proved_theorem_lemma_decls": 11273,
+    "test_loc": 70493,
+    "proved_theorem_lemma_decls": 11274,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -56893,13 +56893,13 @@
         {
           "kind": "def",
           "name": "numCores",
-          "line": 68,
+          "line": 102,
           "called": []
         },
         {
           "kind": "abbrev",
           "name": "CoreId",
-          "line": 77,
+          "line": 111,
           "called": [
             "numCores"
           ]
@@ -56907,7 +56907,7 @@
         {
           "kind": "theorem",
           "name": "numCores_pos",
-          "line": 82,
+          "line": 116,
           "called": [
             "numCores"
           ]
@@ -56915,7 +56915,7 @@
         {
           "kind": "def",
           "name": "bootCoreId",
-          "line": 89,
+          "line": 123,
           "called": [
             "CoreId",
             "numCores_pos"
@@ -56923,8 +56923,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:97>",
-          "line": 97,
+          "name": "<anonymous:instance:131>",
+          "line": 131,
           "called": [
             "CoreId",
             "bootCoreId"
@@ -56933,7 +56933,7 @@
         {
           "kind": "def",
           "name": "allCores",
-          "line": 105,
+          "line": 139,
           "called": [
             "CoreId",
             "numCores"
@@ -56942,7 +56942,7 @@
         {
           "kind": "theorem",
           "name": "allCores_length",
-          "line": 109,
+          "line": 143,
           "called": [
             "allCores",
             "length",
@@ -56952,7 +56952,7 @@
         {
           "kind": "theorem",
           "name": "mem_allCores",
-          "line": 116,
+          "line": 150,
           "called": [
             "CoreId",
             "allCores"
@@ -56961,7 +56961,7 @@
         {
           "kind": "theorem",
           "name": "allCores_nodup",
-          "line": 129,
+          "line": 163,
           "called": [
             "nodup_of_finRange",
             "numCores"
@@ -56970,7 +56970,7 @@
         {
           "kind": "theorem",
           "name": "bootCoreId_valid",
-          "line": 134,
+          "line": 168,
           "called": [
             "numCores"
           ]
@@ -56978,13 +56978,13 @@
         {
           "kind": "theorem",
           "name": "bootCoreId_val_zero",
-          "line": 142,
+          "line": 176,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "allCores_nonempty",
-          "line": 147,
+          "line": 181,
           "called": [
             "allCores",
             "allCores_length",
@@ -56996,13 +56996,13 @@
         {
           "kind": "inductive",
           "name": "SharingDomain",
-          "line": 170,
+          "line": 204,
           "called": []
         },
         {
           "kind": "def",
           "name": "dsbForSharing",
-          "line": 178,
+          "line": 212,
           "called": [
             "BarrierKind",
             "SharingDomain"
@@ -57011,7 +57011,7 @@
         {
           "kind": "def",
           "name": "dsbStForSharing",
-          "line": 186,
+          "line": 220,
           "called": [
             "BarrierKind",
             "SharingDomain"
@@ -57020,7 +57020,7 @@
         {
           "kind": "theorem",
           "name": "dsbForSharing_inner",
-          "line": 193,
+          "line": 227,
           "called": [
             "dsbForSharing"
           ]
@@ -57028,7 +57028,7 @@
         {
           "kind": "theorem",
           "name": "dsbForSharing_outer",
-          "line": 197,
+          "line": 231,
           "called": [
             "dsbForSharing"
           ]
@@ -57036,7 +57036,7 @@
         {
           "kind": "theorem",
           "name": "dsbStForSharing_inner",
-          "line": 200,
+          "line": 234,
           "called": [
             "dsbStForSharing"
           ]
@@ -57044,7 +57044,7 @@
         {
           "kind": "theorem",
           "name": "dsbStForSharing_outer",
-          "line": 203,
+          "line": 237,
           "called": [
             "dsbStForSharing"
           ]
@@ -57052,7 +57052,7 @@
         {
           "kind": "theorem",
           "name": "dsbForSharing_injective",
-          "line": 207,
+          "line": 241,
           "called": [
             "SharingDomain",
             "dsbForSharing"
@@ -57061,7 +57061,7 @@
         {
           "kind": "theorem",
           "name": "dsbStForSharing_injective",
-          "line": 213,
+          "line": 247,
           "called": [
             "SharingDomain",
             "dsbStForSharing"
@@ -195535,7 +195535,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Operations.Selection",
       "path": "SeLe4n/Kernel/Scheduler/Operations/Selection.lean",
-      "declaration_count": 71,
+      "declaration_count": 72,
       "declarations": [
         {
           "kind": "namespace",
@@ -196448,8 +196448,22 @@
         },
         {
           "kind": "theorem",
+          "name": "determineTargetCore_lt_declaredCoreCount",
+          "line": 1252,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "bootCoreId",
+            "determineTargetCore",
+            "getTcb",
+            "none",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "determineTargetCore_congr",
-          "line": 1247,
+          "line": 1276,
           "called": [
             "SystemState",
             "ThreadId",
@@ -196462,7 +196476,7 @@
         {
           "kind": "def",
           "name": "wakeThread",
-          "line": 1282,
+          "line": 1311,
           "called": [
             "CoreId",
             "SgiKind",
@@ -196478,7 +196492,7 @@
         {
           "kind": "def",
           "name": "candidateOutranksCurrentOnCore",
-          "line": 1348,
+          "line": 1377,
           "called": [
             "CoreId",
             "SystemState",
@@ -196494,7 +196508,7 @@
         {
           "kind": "theorem",
           "name": "candidateOutranksCurrentOnCore_eq_isBetterCandidate",
-          "line": 1367,
+          "line": 1396,
           "called": [
             "CoreId",
             "SystemState",
@@ -196511,7 +196525,7 @@
         {
           "kind": "theorem",
           "name": "candidateOutranksCurrentOnCore_of_edf_earlier",
-          "line": 1389,
+          "line": 1418,
           "called": [
             "CoreId",
             "SystemState",
@@ -196531,7 +196545,7 @@
         {
           "kind": "def",
           "name": "handleRescheduleSgiOnCore",
-          "line": 1457,
+          "line": 1486,
           "called": [
             "CoreId",
             "KernelError",
@@ -196546,7 +196560,7 @@
         {
           "kind": "def",
           "name": "setThreadCpuAffinity",
-          "line": 1500,
+          "line": 1529,
           "called": [
             "CoreId",
             "KernelError",
@@ -261788,6 +261802,7 @@
             "default_replenishQueueAffinityConsistentOnCore",
             "default_replenishQueueAffinityConsistent_smp",
             "determineTargetCore_congr_getTcb",
+            "determineTargetCore_lt_declaredCoreCount",
             "migrateRunQueueOnAffinityChange",
             "migrateRunQueueOnAffinityChangeLockSet",
             "migrateRunQueueOnAffinityChange_preserves_runQueueOnCoreWellFormed",
@@ -261861,8 +261876,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:164>",
-          "line": 164,
+          "name": "<anonymous:example:166>",
+          "line": 166,
           "called": [
             "CoreId",
             "affinityMigrationOrdering_happensBefore",
@@ -261898,8 +261913,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:216>",
-          "line": 216,
+          "name": "<anonymous:example:218>",
+          "line": 218,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -261913,8 +261928,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:222>",
-          "line": 222,
+          "name": "<anonymous:example:224>",
+          "line": 224,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -261928,8 +261943,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:228>",
-          "line": 228,
+          "name": "<anonymous:example:230>",
+          "line": 230,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -261945,8 +261960,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:236>",
-          "line": 236,
+          "name": "<anonymous:example:238>",
+          "line": 238,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -261961,8 +261976,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:242>",
-          "line": 242,
+          "name": "<anonymous:example:244>",
+          "line": 244,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -261977,8 +261992,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:249>",
-          "line": 249,
+          "name": "<anonymous:example:251>",
+          "line": 251,
           "called": [
             "CoreId",
             "SchedContext",
@@ -262000,8 +262015,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:266>",
-          "line": 266,
+          "name": "<anonymous:example:268>",
+          "line": 268,
           "called": [
             "CoreId",
             "SchedContext",
@@ -262024,8 +262039,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:281>",
-          "line": 281,
+          "name": "<anonymous:example:283>",
+          "line": 283,
           "called": [
             "CoreId",
             "SchedContext",
@@ -262047,8 +262062,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:296>",
-          "line": 296,
+          "name": "<anonymous:example:298>",
+          "line": 298,
           "called": [
             "CoreId",
             "SystemState",
@@ -262062,8 +262077,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:302>",
-          "line": 302,
+          "name": "<anonymous:example:304>",
+          "line": 304,
           "called": [
             "CoreId",
             "SystemState",
@@ -262077,8 +262092,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:310>",
-          "line": 310,
+          "name": "<anonymous:example:312>",
+          "line": 312,
           "called": [
             "CoreId",
             "SgiKind",
@@ -262093,8 +262108,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:318>",
-          "line": 318,
+          "name": "<anonymous:example:320>",
+          "line": 320,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -262110,8 +262125,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:326>",
-          "line": 326,
+          "name": "<anonymous:example:328>",
+          "line": 328,
           "called": [
             "SchedContext",
             "applyRefill",
@@ -262121,7 +262136,7 @@
         {
           "kind": "def",
           "name": "core1",
-          "line": 334,
+          "line": 336,
           "called": [
             "CoreId"
           ]
@@ -262129,7 +262144,7 @@
         {
           "kind": "def",
           "name": "scId0",
-          "line": 335,
+          "line": 337,
           "called": [
             "SchedContextId",
             "ofNat"
@@ -262138,7 +262153,7 @@
         {
           "kind": "def",
           "name": "tid0",
-          "line": 336,
+          "line": 338,
           "called": [
             "ThreadId",
             "ofNat"
@@ -262147,7 +262162,7 @@
         {
           "kind": "def",
           "name": "sc0",
-          "line": 339,
+          "line": 341,
           "called": [
             "SchedContext",
             "scId",
@@ -262158,7 +262173,7 @@
         {
           "kind": "def",
           "name": "tcb0",
-          "line": 345,
+          "line": 347,
           "called": [
             "TCB",
             "core1",
@@ -262170,7 +262185,7 @@
         {
           "kind": "def",
           "name": "stCbs",
-          "line": 353,
+          "line": 355,
           "called": [
             "SystemState",
             "build",
@@ -262187,7 +262202,7 @@
         {
           "kind": "def",
           "name": "sizeConsistentB",
-          "line": 360,
+          "line": 362,
           "called": [
             "ReplenishQueue",
             "length",
@@ -262197,7 +262212,7 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 362,
+          "line": 364,
           "called": [
             "throw"
           ]
@@ -262205,7 +262220,7 @@
         {
           "kind": "def",
           "name": "runReplenishScenarios",
-          "line": 370,
+          "line": 372,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -262223,7 +262238,7 @@
         {
           "kind": "def",
           "name": "runMigrationScenarios",
-          "line": 387,
+          "line": 389,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -262241,7 +262256,7 @@
         {
           "kind": "def",
           "name": "runCompositeScenarios",
-          "line": 412,
+          "line": 414,
           "called": [
             "SystemState",
             "affinityUnbindMarker",
@@ -262272,7 +262287,7 @@
         {
           "kind": "def",
           "name": "runBudgetScenarios",
-          "line": 474,
+          "line": 476,
           "called": [
             "applyRefill",
             "assertBool",
@@ -262286,7 +262301,7 @@
         {
           "kind": "def",
           "name": "runAffinityScenarios",
-          "line": 492,
+          "line": 494,
           "called": [
             "SystemState",
             "all",
@@ -262305,7 +262320,7 @@
         {
           "kind": "def",
           "name": "stSingleCore",
-          "line": 515,
+          "line": 517,
           "called": [
             "SystemState",
             "stCbs"
@@ -262314,16 +262329,20 @@
         {
           "kind": "def",
           "name": "runDeclaredCoreScenarios",
-          "line": 518,
+          "line": 520,
           "called": [
             "RPi5Platform",
             "SimSingleCorePlatform",
+            "SystemState",
             "assertBool",
             "bootCoreId",
             "core1",
+            "determineTargetCore",
             "getTcb",
             "none",
+            "ofNat",
             "setThreadCpuAffinityWithMigration",
+            "st",
             "stCbs",
             "stSingleCore",
             "tid0"
@@ -262332,7 +262351,7 @@
         {
           "kind": "def",
           "name": "runRunQueueMigrationScenarios",
-          "line": 554,
+          "line": 578,
           "called": [
             "SystemState",
             "assertBool",
@@ -262357,7 +262376,7 @@
         {
           "kind": "def",
           "name": "runLiveTickScenarios",
-          "line": 604,
+          "line": 628,
           "called": [
             "SchedContext",
             "SystemState",
@@ -262380,7 +262399,7 @@
         {
           "kind": "def",
           "name": "runInventoryChecks",
-          "line": 635,
+          "line": 659,
           "called": [
             "assertBool",
             "filter",
@@ -262390,7 +262409,7 @@
         {
           "kind": "def",
           "name": "runSm5hCompletionScenarios",
-          "line": 665,
+          "line": 689,
           "called": [
             "SystemState",
             "assertBool",
@@ -262411,7 +262430,7 @@
         {
           "kind": "section",
           "name": "Sm5iAffinityAnchors",
-          "line": 696,
+          "line": 720,
           "called": [
             "affinityConsistent_transfer",
             "determineTargetCore_insert_tcb",
@@ -262426,8 +262445,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:709>",
-          "line": 709,
+          "name": "<anonymous:example:733>",
+          "line": 733,
           "called": [
             "CoreId",
             "SystemState",
@@ -262439,7 +262458,7 @@
         {
           "kind": "def",
           "name": "runSm5iTickCbsChecks",
-          "line": 719,
+          "line": 743,
           "called": [
             "all",
             "assertBool",
@@ -262476,8 +262495,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:767>",
-          "line": 767,
+          "name": "<anonymous:example:791>",
+          "line": 791,
           "called": [
             "SystemState",
             "ValidObjId",
@@ -262492,8 +262511,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:776>",
-          "line": 776,
+          "name": "<anonymous:example:800>",
+          "line": 800,
           "called": [
             "SystemState",
             "ValidObjId",
@@ -262507,8 +262526,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:784>",
-          "line": 784,
+          "name": "<anonymous:example:808>",
+          "line": 808,
           "called": [
             "SystemState",
             "ValidObjId",
@@ -262521,8 +262540,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:791>",
-          "line": 791,
+          "name": "<anonymous:example:815>",
+          "line": 815,
           "called": [
             "SystemState",
             "ValidObjId",
@@ -262536,8 +262555,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:800>",
-          "line": 800,
+          "name": "<anonymous:example:824>",
+          "line": 824,
           "called": [
             "CoreId",
             "SgiKind",
@@ -262552,8 +262571,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:809>",
-          "line": 809,
+          "name": "<anonymous:example:833>",
+          "line": 833,
           "called": [
             "CoreId",
             "SgiKind",
@@ -262569,8 +262588,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:821>",
-          "line": 821,
+          "name": "<anonymous:example:845>",
+          "line": 845,
           "called": [
             "SystemState",
             "default",
@@ -262581,7 +262600,7 @@
         {
           "kind": "def",
           "name": "scIdLifecycle",
-          "line": 829,
+          "line": 853,
           "called": [
             "SchedContextId",
             "ofNat"
@@ -262590,7 +262609,7 @@
         {
           "kind": "def",
           "name": "tidLifecycle",
-          "line": 830,
+          "line": 854,
           "called": [
             "ThreadId",
             "ofNat"
@@ -262599,7 +262618,7 @@
         {
           "kind": "def",
           "name": "scLifecycle",
-          "line": 834,
+          "line": 858,
           "called": [
             "SchedContext",
             "none",
@@ -262610,7 +262629,7 @@
         {
           "kind": "def",
           "name": "tcbLifecycle",
-          "line": 840,
+          "line": 864,
           "called": [
             "TCB",
             "core1",
@@ -262621,7 +262640,7 @@
         {
           "kind": "def",
           "name": "stLifecycle",
-          "line": 847,
+          "line": 871,
           "called": [
             "SystemState",
             "build",
@@ -262640,7 +262659,7 @@
         {
           "kind": "def",
           "name": "scIdLifecycleValid",
-          "line": 855,
+          "line": 879,
           "called": [
             "ValidObjId",
             "toObjId"
@@ -262649,7 +262668,7 @@
         {
           "kind": "def",
           "name": "tidLifecycleValid",
-          "line": 856,
+          "line": 880,
           "called": [
             "ValidThreadId",
             "tidLifecycle"
@@ -262658,7 +262677,7 @@
         {
           "kind": "def",
           "name": "scId0Valid",
-          "line": 857,
+          "line": 881,
           "called": [
             "ValidObjId",
             "toObjId"
@@ -262667,7 +262686,7 @@
         {
           "kind": "def",
           "name": "core2",
-          "line": 859,
+          "line": 883,
           "called": [
             "CoreId"
           ]
@@ -262675,7 +262694,7 @@
         {
           "kind": "def",
           "name": "tidDangling",
-          "line": 868,
+          "line": 892,
           "called": [
             "ThreadId",
             "ofNat"
@@ -262684,7 +262703,7 @@
         {
           "kind": "def",
           "name": "scIdDangling",
-          "line": 869,
+          "line": 893,
           "called": [
             "SchedContextId",
             "ofNat"
@@ -262693,7 +262712,7 @@
         {
           "kind": "def",
           "name": "scDangling",
-          "line": 870,
+          "line": 894,
           "called": [
             "SchedContext",
             "scId",
@@ -262704,7 +262723,7 @@
         {
           "kind": "def",
           "name": "stDangling",
-          "line": 874,
+          "line": 898,
           "called": [
             "SystemState",
             "build",
@@ -262721,7 +262740,7 @@
         {
           "kind": "def",
           "name": "scIdDanglingValid",
-          "line": 881,
+          "line": 905,
           "called": [
             "ValidObjId",
             "toObjId"
@@ -262730,7 +262749,7 @@
         {
           "kind": "def",
           "name": "runBindingLifecycleScenarios",
-          "line": 889,
+          "line": 913,
           "called": [
             "ThreadId",
             "all",
@@ -262764,7 +262783,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 959,
+          "line": 983,
           "called": [
             "runAffinityScenarios",
             "runBindingLifecycleScenarios",
@@ -262783,7 +262802,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 977,
+          "line": 1001,
           "called": []
         }
       ]
