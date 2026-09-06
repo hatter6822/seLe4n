@@ -17,6 +17,14 @@
 #     actually reach the real text, or the escape hatch is broken too);
 #   * a symbol that exists in code must satisfy `run_check` (the stripper
 #     must not be eating code, which would fail every anchor closed).
+#
+# WS-RR RR7.17 adds the **Rust** half, on the same three directions.  The
+# classifier in `test_lib.sh` routes every `rg`/`grep` anchor through the
+# overlay, not only the Lean ones, but the overlay linked `.rs` files whole —
+# so 215 Tier-3 anchors over Rust read raw text, and the first negative written
+# against a Rust construct was satisfied by the comment explaining what it
+# forbids.  One fixture per language, because a Lean-only witness is exactly
+# what let the Rust hole stay open while this script reported PASS.
 
 set -uo pipefail
 
@@ -37,8 +45,13 @@ unset LEAN_CODE_VIEW_DIR
 
 FIXTURE_DIR="SeLe4n/Kernel"
 FIXTURE="${FIXTURE_DIR}/CodeViewWiringWitness.lean"
+RUST_FIXTURE="rust/sele4n-types/src/code_view_wiring_witness.rs"
 # shellcheck disable=SC2317,SC2329  # invoked by the EXIT trap below, not by name
-cleanup() { rm -f "${REPO_ROOT}/${FIXTURE}" "${REPO_ROOT}/.lake/build/leancodeview/${FIXTURE}"; }
+cleanup() {
+  rm -f "${REPO_ROOT}/${FIXTURE}" "${REPO_ROOT}/.lake/build/leancodeview/${FIXTURE}"
+  rm -f "${REPO_ROOT}/${RUST_FIXTURE}" \
+        "${REPO_ROOT}/.lake/build/leancodeview/${RUST_FIXTURE}"
+}
 trap cleanup EXIT
 
 cat > "${REPO_ROOT}/${FIXTURE}" <<'LEANEOF'
@@ -47,6 +60,21 @@ cat > "${REPO_ROOT}/${FIXTURE}" <<'LEANEOF'
 /-- Doc mentioning codeViewWitnessProseOnly so a raw grep would find it. -/
 def codeViewWitnessInCode : Nat := 0
 LEANEOF
+
+# The Rust fixture is NOT added to any `mod` tree: it is written, scanned and
+# deleted, and never compiled.  Both comment forms are present because the
+# stripper handles them differently and a witness that exercised only `//`
+# would pass against a stripper that had stopped seeing `/* */`.
+cat > "${REPO_ROOT}/${RUST_FIXTURE}" <<'RUSTEOF'
+// A fixture, written and deleted by scripts/test_code_view_wiring.sh.
+// `code_view_witness_prose_only` appears here in a comment and nowhere in code.
+/* And code_view_witness_block_comment_only in a block comment, for the same
+   reason: the stripper handles the two forms separately. */
+/// Doc mentioning code_view_witness_prose_only so a raw grep would find it.
+pub fn code_view_witness_in_code() -> u32 {
+    0
+}
+RUSTEOF
 
 # Drive the real helpers, with the accounting under this script's control.
 # `run_check` calls `finalize_report` (which exits) on failure unless continue
@@ -95,9 +123,28 @@ expect_recorded "run_prose_negative_check still fires on prose" 1 \
 expect_recorded "run_negative_check ignores a comment-only mention" 0 \
   run_negative_check "WIRING" rg -n 'codeViewWitnessProseOnly' "${FIXTURE}"
 
+# ---------------------------------------------------------------------------
+# WS-RR RR7.17 — the same three directions, over Rust.
+# ---------------------------------------------------------------------------
+
+expect_recorded "a Rust line comment cannot satisfy a code anchor" 1 \
+  run_check "WIRING" rg -n 'code_view_witness_prose_only' "${RUST_FIXTURE}"
+
+expect_recorded "a Rust BLOCK comment cannot satisfy a code anchor either" 1 \
+  run_check "WIRING" rg -n 'code_view_witness_block_comment_only' "${RUST_FIXTURE}"
+
+expect_recorded "run_prose_check still reads the real Rust text" 0 \
+  run_prose_check "WIRING" rg -n 'code_view_witness_prose_only' "${RUST_FIXTURE}"
+
+expect_recorded "Rust code anchors still match code" 0 \
+  run_check "WIRING" rg -n '^pub fn code_view_witness_in_code' "${RUST_FIXTURE}"
+
+expect_recorded "run_negative_check ignores a Rust comment-only mention" 0 \
+  run_negative_check "WIRING" rg -n 'code_view_witness_prose_only' "${RUST_FIXTURE}"
+
 if [[ "${failures}" -ne 0 ]]; then
   note "SELF-TEST FAILED (${failures})"
   exit 1
 fi
-note "SELF-TEST PASS (5 checks)"
+note "SELF-TEST PASS (10 checks)"
 exit 0

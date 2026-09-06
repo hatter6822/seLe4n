@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/rr7-medium-severity-sweep-tn327q",
-      "commit_sha": "1b967476b316e7ce648c4061c3c6a5befc821696",
-      "tree_sha": "7df63327fd8ec82061fe667ec1ed0e62ef82fad1",
-      "committed_at_utc": "2026-09-06T00:56:52+00:00"
+      "commit_sha": "92318d2c8babfd568c2d039765ce6031c9510d3a",
+      "tree_sha": "bad86b5e9d6cb6b22e3d263e265cc3c4618e1653",
+      "committed_at_utc": "2026-09-06T02:01:32+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "5790477d7c502dfb703112b46df9e9af944a57f027d3810aa480bb2342dfca5c"
+    "source_digest": "63e3dc0c5f2fff7c557a5ad8a6ddc2e6c799a506f3d162b29c34fe12d576a424"
   },
   "summary": {
     "module_count": 383,
-    "declaration_count": 19311
+    "declaration_count": 19329
   },
   "readme_sync": {
-    "version": "0.34.67",
+    "version": "0.34.68",
     "lean_toolchain": "v4.28.0",
     "production_files": 313,
-    "production_loc": 335343,
+    "production_loc": 335599,
     "test_files": 70,
-    "test_loc": 69796,
-    "proved_theorem_lemma_decls": 11160,
+    "test_loc": 69858,
+    "proved_theorem_lemma_decls": 11172,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -16299,7 +16299,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.SyscallReturn",
       "path": "SeLe4n/Kernel/Architecture/SyscallReturn.lean",
-      "declaration_count": 133,
+      "declaration_count": 135,
       "declarations": [
         {
           "kind": "namespace",
@@ -16338,20 +16338,38 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "kernelErrorCount",
+          "line": 190,
+          "called": []
+        },
+        {
           "kind": "theorem",
           "name": "toDiscriminant_lt",
-          "line": 180,
+          "line": 193,
           "called": [
             "KernelError",
+            "kernelErrorCount",
             "toDiscriminant"
           ]
         },
         {
           "kind": "theorem",
+          "name": "kernelErrorCount_tight",
+          "line": 200,
+          "called": [
+            "kernelErrorCount",
+            "none",
+            "ofDiscriminant"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "toDiscriminant_ofDiscriminant",
-          "line": 186,
+          "line": 211,
           "called": [
             "KernelError",
+            "kernelErrorCount",
             "none",
             "ofDiscriminant",
             "toDiscriminant"
@@ -16360,13 +16378,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel.Architecture",
-          "line": 195,
+          "line": 220,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "ReturnShape",
-          "line": 209,
+          "line": 234,
           "called": [
             "badge"
           ]
@@ -16374,7 +16392,7 @@
         {
           "kind": "def",
           "name": "syscallReturnShape",
-          "line": 236,
+          "line": 261,
           "called": [
             "ReturnShape",
             "SyscallId",
@@ -16393,7 +16411,7 @@
         {
           "kind": "theorem",
           "name": "syscallReturnShape_total",
-          "line": 285,
+          "line": 310,
           "called": [
             "SyscallId",
             "syscallReturnShape"
@@ -16402,7 +16420,7 @@
         {
           "kind": "theorem",
           "name": "syscallReturnShape_value_returning",
-          "line": 292,
+          "line": 317,
           "called": [
             "filter",
             "notificationWait",
@@ -16412,7 +16430,7 @@
         {
           "kind": "theorem",
           "name": "returnShape_list_gate_insufficient",
-          "line": 303,
+          "line": 328,
           "called": [
             "SyscallId",
             "syscallReturnShape"
@@ -16421,19 +16439,19 @@
         {
           "kind": "structure",
           "name": "SyscallReturnFrame",
-          "line": 317,
+          "line": 342,
           "called": []
         },
         {
           "kind": "namespace",
           "name": "SyscallReturnFrame",
-          "line": 326,
+          "line": 351,
           "called": []
         },
         {
           "kind": "def",
           "name": "zero",
-          "line": 329,
+          "line": 354,
           "called": [
             "SyscallReturnFrame"
           ]
@@ -16441,7 +16459,7 @@
         {
           "kind": "def",
           "name": "toRegs",
-          "line": 333,
+          "line": 358,
           "called": [
             "SyscallReturnFrame"
           ]
@@ -16449,7 +16467,7 @@
         {
           "kind": "def",
           "name": "ofRegs",
-          "line": 338,
+          "line": 363,
           "called": [
             "SyscallReturnFrame"
           ]
@@ -16457,7 +16475,7 @@
         {
           "kind": "theorem",
           "name": "decodeReturnFrame_encodeReturnFrame",
-          "line": 346,
+          "line": 371,
           "called": [
             "SyscallReturnFrame",
             "ofRegs",
@@ -16467,7 +16485,7 @@
         {
           "kind": "theorem",
           "name": "returnFrame_unit_is_zero",
-          "line": 350,
+          "line": 375,
           "called": [
             "SyscallReturnFrame",
             "toRegs"
@@ -16476,13 +16494,13 @@
         {
           "kind": "def",
           "name": "errorLabelRangeSize",
-          "line": 382,
+          "line": 407,
           "called": []
         },
         {
           "kind": "def",
           "name": "errorLabelBase",
-          "line": 386,
+          "line": 411,
           "called": [
             "errorLabelRangeSize",
             "maxLabel"
@@ -16491,7 +16509,7 @@
         {
           "kind": "theorem",
           "name": "errorLabelBase_eq",
-          "line": 391,
+          "line": 416,
           "called": [
             "errorLabelBase"
           ]
@@ -16499,7 +16517,7 @@
         {
           "kind": "def",
           "name": "returnMessageInfo",
-          "line": 413,
+          "line": 438,
           "called": [
             "IpcMessage",
             "MessageInfo",
@@ -16512,7 +16530,7 @@
         {
           "kind": "theorem",
           "name": "returnFrame_message_window",
-          "line": 420,
+          "line": 445,
           "called": [
             "IpcMessage",
             "length",
@@ -16522,7 +16540,7 @@
         {
           "kind": "theorem",
           "name": "returnMessageInfo_wellFormed",
-          "line": 426,
+          "line": 451,
           "called": [
             "IpcMessage",
             "errorLabelBase_eq",
@@ -16534,7 +16552,7 @@
         {
           "kind": "theorem",
           "name": "returnMessageInfo_label_lt_errorLabelBase",
-          "line": 435,
+          "line": 460,
           "called": [
             "IpcMessage",
             "errorLabelBase",
@@ -16545,7 +16563,7 @@
         {
           "kind": "theorem",
           "name": "returnMessageInfo_label_of_lt",
-          "line": 447,
+          "line": 472,
           "called": [
             "IpcMessage",
             "errorLabelBase",
@@ -16555,7 +16573,7 @@
         {
           "kind": "theorem",
           "name": "returnMessageInfo_label_zero",
-          "line": 455,
+          "line": 480,
           "called": [
             "IpcMessage",
             "returnMessageInfo"
@@ -16564,7 +16582,7 @@
         {
           "kind": "theorem",
           "name": "returnMessageInfo_extraCaps_le_installed",
-          "line": 463,
+          "line": 488,
           "called": [
             "IpcMessage",
             "returnMessageInfo"
@@ -16573,7 +16591,7 @@
         {
           "kind": "theorem",
           "name": "returnMessageInfo_extraCaps_zero",
-          "line": 468,
+          "line": 493,
           "called": [
             "IpcMessage",
             "returnMessageInfo"
@@ -16582,7 +16600,7 @@
         {
           "kind": "def",
           "name": "returnFrameOfMessage",
-          "line": 477,
+          "line": 502,
           "called": [
             "IpcMessage",
             "SyscallReturnFrame",
@@ -16592,7 +16610,7 @@
         {
           "kind": "def",
           "name": "returnFrameOfBadge",
-          "line": 488,
+          "line": 513,
           "called": [
             "Badge",
             "SyscallReturnFrame"
@@ -16601,7 +16619,7 @@
         {
           "kind": "def",
           "name": "_root_.SeLe4n.RegisterFile.stageReturnFrame",
-          "line": 498,
+          "line": 523,
           "called": [
             "RegisterFile",
             "SyscallReturnFrame",
@@ -16612,7 +16630,7 @@
         {
           "kind": "theorem",
           "name": "_root_.SeLe4n.RegisterFile.stageReturnFrame_pc",
-          "line": 508,
+          "line": 533,
           "called": [
             "RegisterFile",
             "SyscallReturnFrame",
@@ -16622,7 +16640,7 @@
         {
           "kind": "theorem",
           "name": "_root_.SeLe4n.RegisterFile.stageReturnFrame_sp",
-          "line": 512,
+          "line": 537,
           "called": [
             "RegisterFile",
             "SyscallReturnFrame",
@@ -16632,7 +16650,7 @@
         {
           "kind": "theorem",
           "name": "_root_.SeLe4n.RegisterFile.stageReturnFrame_gpr_high",
-          "line": 518,
+          "line": 543,
           "called": [
             "RegName",
             "RegisterFile",
@@ -16645,7 +16663,7 @@
         {
           "kind": "theorem",
           "name": "_root_.SeLe4n.RegisterFile.stageReturnFrame_reads_back",
-          "line": 533,
+          "line": 558,
           "called": [
             "RegisterFile",
             "SeLe4n.RegisterFile.stageReturnFrame",
@@ -16658,7 +16676,7 @@
         {
           "kind": "def",
           "name": "_root_.SeLe4n.Model.TCB.withReturnFrame",
-          "line": 547,
+          "line": 572,
           "called": [
             "SyscallReturnFrame",
             "TCB",
@@ -16668,7 +16686,7 @@
         {
           "kind": "theorem",
           "name": "_root_.SeLe4n.Model.TCB.withReturnFrame_ipcState",
-          "line": 553,
+          "line": 578,
           "called": [
             "SyscallReturnFrame",
             "TCB",
@@ -16678,7 +16696,7 @@
         {
           "kind": "theorem",
           "name": "_root_.SeLe4n.Model.TCB.withReturnFrame_tid",
-          "line": 557,
+          "line": 582,
           "called": [
             "SyscallReturnFrame",
             "TCB",
@@ -16688,7 +16706,7 @@
         {
           "kind": "theorem",
           "name": "_root_.SeLe4n.Model.TCB.withReturnFrame_pendingMessage",
-          "line": 561,
+          "line": 586,
           "called": [
             "SyscallReturnFrame",
             "TCB",
@@ -16698,7 +16716,7 @@
         {
           "kind": "theorem",
           "name": "_root_.SeLe4n.Model.TCB.withReturnFrame_registerContext",
-          "line": 565,
+          "line": 590,
           "called": [
             "SyscallReturnFrame",
             "TCB",
@@ -16709,7 +16727,7 @@
         {
           "kind": "def",
           "name": "writeReturnFrameToTcb",
-          "line": 589,
+          "line": 614,
           "called": [
             "SyscallReturnFrame",
             "SystemState",
@@ -16725,7 +16743,7 @@
         {
           "kind": "def",
           "name": "readReturnFrame",
-          "line": 600,
+          "line": 625,
           "called": [
             "SyscallReturnFrame",
             "SystemState",
@@ -16739,7 +16757,7 @@
         {
           "kind": "theorem",
           "name": "readReturnFrame_writeReturnFrame",
-          "line": 615,
+          "line": 640,
           "called": [
             "RHTable.getElem",
             "RHTable_getElem",
@@ -16762,7 +16780,7 @@
         {
           "kind": "theorem",
           "name": "writeReturnFrameToTcb_objects_ne",
-          "line": 635,
+          "line": 660,
           "called": [
             "ObjId",
             "RHTable.getElem",
@@ -16781,7 +16799,7 @@
         {
           "kind": "theorem",
           "name": "writeReturnFrameToTcb_scheduler_eq",
-          "line": 652,
+          "line": 677,
           "called": [
             "SyscallReturnFrame",
             "SystemState",
@@ -16795,7 +16813,7 @@
         {
           "kind": "theorem",
           "name": "writeReturnFrameToTcb_machine_eq",
-          "line": 663,
+          "line": 688,
           "called": [
             "SyscallReturnFrame",
             "SystemState",
@@ -16809,7 +16827,7 @@
         {
           "kind": "theorem",
           "name": "writeReturnFrameToTcb_declassificationAuditLog_eq",
-          "line": 680,
+          "line": 705,
           "called": [
             "SyscallReturnFrame",
             "SystemState",
@@ -16823,7 +16841,7 @@
         {
           "kind": "theorem",
           "name": "writeReturnFrameToTcb_id_when_not_tcb",
-          "line": 693,
+          "line": 718,
           "called": [
             "SyscallReturnFrame",
             "SystemState",
@@ -16837,7 +16855,7 @@
         {
           "kind": "def",
           "name": "stageDeliveredMessage",
-          "line": 720,
+          "line": 745,
           "called": [
             "SystemState",
             "ThreadId",
@@ -16851,7 +16869,7 @@
         {
           "kind": "theorem",
           "name": "stageDeliveredMessage_scheduler_eq",
-          "line": 735,
+          "line": 760,
           "called": [
             "SystemState",
             "ThreadId",
@@ -16865,7 +16883,7 @@
         {
           "kind": "theorem",
           "name": "stageDeliveredMessage_machine_eq",
-          "line": 751,
+          "line": 776,
           "called": [
             "SystemState",
             "ThreadId",
@@ -16879,7 +16897,7 @@
         {
           "kind": "theorem",
           "name": "stageDeliveredMessage_declassificationAuditLog_eq",
-          "line": 768,
+          "line": 793,
           "called": [
             "SystemState",
             "ThreadId",
@@ -16893,7 +16911,7 @@
         {
           "kind": "theorem",
           "name": "stageDeliveredMessage_id_when_blocked",
-          "line": 785,
+          "line": 810,
           "called": [
             "SystemState",
             "TCB",
@@ -16906,7 +16924,7 @@
         {
           "kind": "def",
           "name": "returnFrameOfWord",
-          "line": 796,
+          "line": 821,
           "called": [
             "SyscallReturnFrame"
           ]
@@ -16914,7 +16932,7 @@
         {
           "kind": "def",
           "name": "stageWokenDelivery",
-          "line": 831,
+          "line": 856,
           "called": [
             "SystemState",
             "ThreadId",
@@ -16926,7 +16944,7 @@
         {
           "kind": "theorem",
           "name": "stageWokenDelivery_none",
-          "line": 837,
+          "line": 862,
           "called": [
             "SystemState",
             "none",
@@ -16937,7 +16955,7 @@
         {
           "kind": "theorem",
           "name": "stageWokenDelivery_some",
-          "line": 841,
+          "line": 866,
           "called": [
             "SystemState",
             "ThreadId",
@@ -16949,7 +16967,7 @@
         {
           "kind": "def",
           "name": "stageWokenSendCompletion",
-          "line": 853,
+          "line": 878,
           "called": [
             "SystemState",
             "ThreadId",
@@ -16963,7 +16981,7 @@
         {
           "kind": "theorem",
           "name": "stageWokenSendCompletion_none",
-          "line": 865,
+          "line": 890,
           "called": [
             "SystemState",
             "none",
@@ -16974,7 +16992,7 @@
         {
           "kind": "theorem",
           "name": "stageWokenSendCompletion_id_when_not_ready",
-          "line": 871,
+          "line": 896,
           "called": [
             "SystemState",
             "TCB",
@@ -16987,7 +17005,7 @@
         {
           "kind": "theorem",
           "name": "stageWokenSendCompletion_id_when_pending",
-          "line": 883,
+          "line": 908,
           "called": [
             "IpcMessage",
             "SystemState",
@@ -17001,7 +17019,7 @@
         {
           "kind": "theorem",
           "name": "stageWokenSendCompletion_stages_zero",
-          "line": 894,
+          "line": 919,
           "called": [
             "SystemState",
             "TCB",
@@ -17017,7 +17035,7 @@
         {
           "kind": "theorem",
           "name": "stageWokenDelivery_scheduler_eq",
-          "line": 906,
+          "line": 931,
           "called": [
             "SystemState",
             "ThreadId",
@@ -17030,7 +17048,7 @@
         {
           "kind": "theorem",
           "name": "stageWokenDelivery_machine_eq",
-          "line": 914,
+          "line": 939,
           "called": [
             "SystemState",
             "ThreadId",
@@ -17043,7 +17061,7 @@
         {
           "kind": "theorem",
           "name": "stageWokenDelivery_declassificationAuditLog_eq",
-          "line": 923,
+          "line": 948,
           "called": [
             "SystemState",
             "ThreadId",
@@ -17056,7 +17074,7 @@
         {
           "kind": "theorem",
           "name": "stageWokenSendCompletion_scheduler_eq",
-          "line": 933,
+          "line": 958,
           "called": [
             "SystemState",
             "ThreadId",
@@ -17070,7 +17088,7 @@
         {
           "kind": "theorem",
           "name": "stageWokenSendCompletion_machine_eq",
-          "line": 950,
+          "line": 975,
           "called": [
             "SystemState",
             "ThreadId",
@@ -17084,7 +17102,7 @@
         {
           "kind": "theorem",
           "name": "blockedReturn_staged_in_waiter_frame",
-          "line": 973,
+          "line": 998,
           "called": [
             "IpcMessage",
             "SystemState",
@@ -17103,7 +17121,7 @@
         {
           "kind": "theorem",
           "name": "blockedUnitReturn_staged_in_sender_frame",
-          "line": 992,
+          "line": 1017,
           "called": [
             "SystemState",
             "TCB",
@@ -17122,7 +17140,7 @@
         {
           "kind": "def",
           "name": "errorLabel",
-          "line": 1010,
+          "line": 1035,
           "called": [
             "KernelError",
             "errorLabelBase",
@@ -17132,7 +17150,7 @@
         {
           "kind": "def",
           "name": "ofErrorLabel",
-          "line": 1016,
+          "line": 1041,
           "called": [
             "KernelError",
             "errorLabelBase",
@@ -17143,7 +17161,7 @@
         {
           "kind": "theorem",
           "name": "errorLabel_never_zero",
-          "line": 1021,
+          "line": 1046,
           "called": [
             "KernelError",
             "errorLabel",
@@ -17153,7 +17171,7 @@
         {
           "kind": "theorem",
           "name": "errorLabelBase_le_errorLabel",
-          "line": 1025,
+          "line": 1050,
           "called": [
             "KernelError",
             "errorLabel",
@@ -17163,7 +17181,7 @@
         {
           "kind": "theorem",
           "name": "ofErrorLabel",
-          "line": 1029,
+          "line": 1054,
           "called": [
             "errorLabelBase_eq",
             "none"
@@ -17172,7 +17190,7 @@
         {
           "kind": "theorem",
           "name": "ofErrorLabel",
-          "line": 1036,
+          "line": 1061,
           "called": [
             "errorLabelBase",
             "none"
@@ -17181,7 +17199,7 @@
         {
           "kind": "theorem",
           "name": "errorLabel_roundtrip",
-          "line": 1042,
+          "line": 1067,
           "called": [
             "KernelError",
             "errorLabel",
@@ -17192,11 +17210,12 @@
         {
           "kind": "theorem",
           "name": "errorLabel_zero_iff_success",
-          "line": 1053,
+          "line": 1079,
           "called": [
             "errorLabel",
             "errorLabelBase",
             "errorLabelBase_eq",
+            "kernelErrorCount",
             "none",
             "ofDiscriminant",
             "ofErrorLabel",
@@ -17206,11 +17225,12 @@
         {
           "kind": "theorem",
           "name": "kernelErrorFitsLabel",
-          "line": 1079,
+          "line": 1105,
           "called": [
             "KernelError",
             "errorLabel",
             "errorLabelBase_eq",
+            "kernelErrorCount",
             "maxLabel",
             "toDiscriminant_lt"
           ]
@@ -17218,7 +17238,7 @@
         {
           "kind": "theorem",
           "name": "errorLabelBase_add_range_eq_maxLabel",
-          "line": 1088,
+          "line": 1115,
           "called": [
             "errorLabelBase",
             "errorLabelBase_eq",
@@ -17229,7 +17249,7 @@
         {
           "kind": "theorem",
           "name": "overWideLabel_rejected",
-          "line": 1096,
+          "line": 1123,
           "called": [
             "decode",
             "maxLabel",
@@ -17239,7 +17259,7 @@
         {
           "kind": "def",
           "name": "errorFrame",
-          "line": 1104,
+          "line": 1131,
           "called": [
             "KernelError",
             "SyscallReturnFrame",
@@ -17251,7 +17271,7 @@
         {
           "kind": "theorem",
           "name": "errorFrame_x1_decodes",
-          "line": 1112,
+          "line": 1139,
           "called": [
             "KernelError",
             "decode",
@@ -17264,7 +17284,7 @@
         {
           "kind": "def",
           "name": "timeoutFrame",
-          "line": 1149,
+          "line": 1176,
           "called": [
             "SyscallReturnFrame",
             "errorFrame"
@@ -17273,7 +17293,7 @@
         {
           "kind": "def",
           "name": "cancelledIpcFrame",
-          "line": 1152,
+          "line": 1179,
           "called": [
             "SyscallReturnFrame",
             "errorFrame"
@@ -17282,7 +17302,7 @@
         {
           "kind": "def",
           "name": "stageTimeoutFrame",
-          "line": 1159,
+          "line": 1186,
           "called": [
             "SystemState",
             "ThreadId",
@@ -17294,7 +17314,7 @@
         {
           "kind": "def",
           "name": "stageCancelledIpcFrame",
-          "line": 1163,
+          "line": 1190,
           "called": [
             "SystemState",
             "ThreadId",
@@ -17306,7 +17326,7 @@
         {
           "kind": "theorem",
           "name": "stageTimeoutFrame_eq_withReturnFrame",
-          "line": 1169,
+          "line": 1196,
           "called": [
             "SystemState",
             "TCB",
@@ -17324,7 +17344,7 @@
         {
           "kind": "theorem",
           "name": "stageCancelledIpcFrame_eq_withReturnFrame",
-          "line": 1179,
+          "line": 1206,
           "called": [
             "SystemState",
             "TCB",
@@ -17342,7 +17362,7 @@
         {
           "kind": "theorem",
           "name": "readReturnFrame_stageTimeoutFrame",
-          "line": 1190,
+          "line": 1217,
           "called": [
             "SystemState",
             "TCB",
@@ -17359,7 +17379,7 @@
         {
           "kind": "theorem",
           "name": "readReturnFrame_stageCancelledIpcFrame",
-          "line": 1196,
+          "line": 1223,
           "called": [
             "SystemState",
             "TCB",
@@ -17376,7 +17396,7 @@
         {
           "kind": "theorem",
           "name": "timeout_and_cancelled_frames_differ",
-          "line": 1207,
+          "line": 1234,
           "called": [
             "cancelledIpcFrame",
             "timeoutFrame"
@@ -17385,7 +17405,7 @@
         {
           "kind": "theorem",
           "name": "unblockFrames_ne_success",
-          "line": 1213,
+          "line": 1240,
           "called": [
             "SyscallReturnFrame",
             "cancelledIpcFrame",
@@ -17395,7 +17415,7 @@
         {
           "kind": "theorem",
           "name": "unblockFrames_decode",
-          "line": 1221,
+          "line": 1248,
           "called": [
             "cancelledIpcFrame",
             "decode",
@@ -17410,7 +17430,7 @@
         {
           "kind": "theorem",
           "name": "stageTimeoutFrame_objects_ne",
-          "line": 1235,
+          "line": 1262,
           "called": [
             "ObjId",
             "SystemState",
@@ -17425,7 +17445,7 @@
         {
           "kind": "theorem",
           "name": "stageCancelledIpcFrame_objects_ne",
-          "line": 1241,
+          "line": 1268,
           "called": [
             "ObjId",
             "SystemState",
@@ -17440,7 +17460,7 @@
         {
           "kind": "inductive",
           "name": "SyscallOutcome",
-          "line": 1257,
+          "line": 1284,
           "called": [
             "SyscallReturnFrame"
           ]
@@ -17448,13 +17468,13 @@
         {
           "kind": "namespace",
           "name": "SyscallOutcome",
-          "line": 1272,
+          "line": 1299,
           "called": []
         },
         {
           "kind": "def",
           "name": "tagWord",
-          "line": 1279,
+          "line": 1306,
           "called": [
             "SyscallOutcome"
           ]
@@ -17462,7 +17482,7 @@
         {
           "kind": "theorem",
           "name": "tagWord_blocks_ne_returns",
-          "line": 1286,
+          "line": 1313,
           "called": [
             "SyscallReturnFrame",
             "tagWord"
@@ -17471,7 +17491,7 @@
         {
           "kind": "theorem",
           "name": "tagWord_faulted_ne_returns",
-          "line": 1291,
+          "line": 1318,
           "called": [
             "SyscallReturnFrame",
             "tagWord"
@@ -17480,7 +17500,7 @@
         {
           "kind": "theorem",
           "name": "tagWord_faulted_ne_blocks",
-          "line": 1298,
+          "line": 1325,
           "called": [
             "tagWord"
           ]
@@ -17488,7 +17508,7 @@
         {
           "kind": "def",
           "name": "mailboxFrame",
-          "line": 1308,
+          "line": 1335,
           "called": [
             "SyscallOutcome",
             "SyscallReturnFrame",
@@ -17498,7 +17518,7 @@
         {
           "kind": "def",
           "name": "ipcStateBlocksReturn",
-          "line": 1331,
+          "line": 1358,
           "called": [
             "ThreadIpcState"
           ]
@@ -17506,7 +17526,7 @@
         {
           "kind": "theorem",
           "name": "ipcStateBlocksReturn_ready",
-          "line": 1339,
+          "line": 1366,
           "called": [
             "ipcStateBlocksReturn"
           ]
@@ -17514,7 +17534,7 @@
         {
           "kind": "def",
           "name": "frameForShape",
-          "line": 1347,
+          "line": 1374,
           "called": [
             "ReturnShape",
             "SyscallReturnFrame",
@@ -17524,7 +17544,7 @@
         {
           "kind": "theorem",
           "name": "frameForShape_unit",
-          "line": 1356,
+          "line": 1383,
           "called": [
             "SyscallReturnFrame",
             "frameForShape",
@@ -17534,7 +17554,7 @@
         {
           "kind": "theorem",
           "name": "frameForShape_value",
-          "line": 1360,
+          "line": 1387,
           "called": [
             "ReturnShape",
             "SyscallReturnFrame",
@@ -17544,19 +17564,19 @@
         {
           "kind": "structure",
           "name": "FaultRestartFrame",
-          "line": 1385,
+          "line": 1412,
           "called": []
         },
         {
           "kind": "namespace",
           "name": "FaultRestartFrame",
-          "line": 1403,
+          "line": 1430,
           "called": []
         },
         {
           "kind": "def",
           "name": "returnWindow",
-          "line": 1407,
+          "line": 1434,
           "called": [
             "FaultRestartFrame",
             "SyscallReturnFrame"
@@ -17565,7 +17585,7 @@
         {
           "kind": "def",
           "name": "_root_.SeLe4n.RegisterFile.stageRestartFrame",
-          "line": 1419,
+          "line": 1446,
           "called": [
             "FaultRestartFrame",
             "RegisterFile",
@@ -17578,7 +17598,7 @@
         {
           "kind": "theorem",
           "name": "_root_.SeLe4n.RegisterFile.stageRestartFrame_pc",
-          "line": 1430,
+          "line": 1457,
           "called": [
             "FaultRestartFrame",
             "RegisterFile",
@@ -17589,7 +17609,7 @@
         {
           "kind": "theorem",
           "name": "_root_.SeLe4n.RegisterFile.stageRestartFrame_sp",
-          "line": 1434,
+          "line": 1461,
           "called": [
             "FaultRestartFrame",
             "RegisterFile",
@@ -17600,7 +17620,7 @@
         {
           "kind": "theorem",
           "name": "_root_.SeLe4n.RegisterFile.stageRestartFrame_reads_back",
-          "line": 1441,
+          "line": 1468,
           "called": [
             "FaultRestartFrame",
             "RegisterFile",
@@ -17615,7 +17635,7 @@
         {
           "kind": "theorem",
           "name": "_root_.SeLe4n.RegisterFile.stageRestartFrame_gpr_untouched",
-          "line": 1459,
+          "line": 1486,
           "called": [
             "FaultRestartFrame",
             "RegName",
@@ -17630,7 +17650,7 @@
         {
           "kind": "def",
           "name": "_root_.SeLe4n.Model.TCB.withRestartFrame",
-          "line": 1480,
+          "line": 1507,
           "called": [
             "FaultRestartFrame",
             "TCB",
@@ -17640,7 +17660,7 @@
         {
           "kind": "theorem",
           "name": "_root_.SeLe4n.Model.TCB.withRestartFrame_ipcState",
-          "line": 1483,
+          "line": 1510,
           "called": [
             "FaultRestartFrame",
             "TCB",
@@ -17650,7 +17670,7 @@
         {
           "kind": "theorem",
           "name": "_root_.SeLe4n.Model.TCB.withRestartFrame_threadState",
-          "line": 1487,
+          "line": 1514,
           "called": [
             "FaultRestartFrame",
             "TCB",
@@ -17660,7 +17680,7 @@
         {
           "kind": "theorem",
           "name": "_root_.SeLe4n.Model.TCB.withRestartFrame_tid",
-          "line": 1491,
+          "line": 1518,
           "called": [
             "FaultRestartFrame",
             "TCB",
@@ -17670,7 +17690,7 @@
         {
           "kind": "theorem",
           "name": "_root_.SeLe4n.Model.TCB.withRestartFrame_pendingMessage",
-          "line": 1495,
+          "line": 1522,
           "called": [
             "FaultRestartFrame",
             "TCB",
@@ -17680,7 +17700,7 @@
         {
           "kind": "theorem",
           "name": "_root_.SeLe4n.Model.TCB.withRestartFrame_pendingFault",
-          "line": 1499,
+          "line": 1526,
           "called": [
             "FaultRestartFrame",
             "TCB",
@@ -17690,7 +17710,7 @@
         {
           "kind": "theorem",
           "name": "_root_.SeLe4n.Model.TCB.withRestartFrame_registerContext",
-          "line": 1503,
+          "line": 1530,
           "called": [
             "FaultRestartFrame",
             "TCB",
@@ -17701,7 +17721,7 @@
         {
           "kind": "def",
           "name": "writeRestartFrameToTcb",
-          "line": 1511,
+          "line": 1538,
           "called": [
             "FaultRestartFrame",
             "SystemState",
@@ -17717,7 +17737,7 @@
         {
           "kind": "theorem",
           "name": "writeRestartFrameToTcb_scheduler_eq",
-          "line": 1521,
+          "line": 1548,
           "called": [
             "FaultRestartFrame",
             "SystemState",
@@ -17730,7 +17750,7 @@
         {
           "kind": "theorem",
           "name": "writeRestartFrameToTcb_machine_eq",
-          "line": 1529,
+          "line": 1556,
           "called": [
             "FaultRestartFrame",
             "SystemState",
@@ -17743,7 +17763,7 @@
         {
           "kind": "theorem",
           "name": "writeRestartFrameToTcb_declassificationAuditLog_eq",
-          "line": 1535,
+          "line": 1562,
           "called": [
             "FaultRestartFrame",
             "SystemState",
@@ -17756,7 +17776,7 @@
         {
           "kind": "theorem",
           "name": "writeRestartFrameToTcb_objects_ne",
-          "line": 1543,
+          "line": 1570,
           "called": [
             "FaultRestartFrame",
             "ObjId",
@@ -17775,7 +17795,7 @@
         {
           "kind": "theorem",
           "name": "writeRestartFrameToTcb_pc",
-          "line": 1562,
+          "line": 1589,
           "called": [
             "FaultRestartFrame",
             "RHTable.getElem",
@@ -17795,19 +17815,19 @@
         {
           "kind": "theorem",
           "name": "bit63Encoding_not_injective_on_badges",
-          "line": 1589,
+          "line": 1616,
           "called": []
         },
         {
           "kind": "def",
           "name": "syscallAbiVersion",
-          "line": 1612,
+          "line": 1639,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "syscallAbiVersion_pinned",
-          "line": 1616,
+          "line": 1643,
           "called": [
             "syscallAbiVersion"
           ]
@@ -117596,6 +117616,7 @@
           "line": 1317,
           "called": [
             "KernelError",
+            "kernelErrorCount",
             "refusalTagSlots",
             "toDiscriminant",
             "toDiscriminant_lt"
@@ -117604,7 +117625,7 @@
         {
           "kind": "def",
           "name": "refusalTagsWord",
-          "line": 1324,
+          "line": 1325,
           "called": [
             "DeclassificationRefusal",
             "refusalTagSlots",
@@ -117615,7 +117636,7 @@
         {
           "kind": "theorem",
           "name": "refusalTagsWord_roundtrip",
-          "line": 1329,
+          "line": 1330,
           "called": [
             "DeclassificationRefusal",
             "refusalTagSlots",
@@ -117630,7 +117651,7 @@
         {
           "kind": "theorem",
           "name": "refusalTagsWord_reason_is_abi_discriminant",
-          "line": 1345,
+          "line": 1346,
           "called": [
             "DeclassificationRefusal",
             "ofDiscriminant",
@@ -117642,7 +117663,7 @@
         {
           "kind": "theorem",
           "name": "refusalTagsWord_fits",
-          "line": 1353,
+          "line": 1354,
           "called": [
             "DeclassificationRefusal",
             "refusalTagSlots",
@@ -117656,7 +117677,7 @@
         {
           "kind": "def",
           "name": "refusalStatusWord",
-          "line": 1363,
+          "line": 1364,
           "called": [
             "refusalRingSize"
           ]
@@ -117664,7 +117685,7 @@
         {
           "kind": "def",
           "name": "refusalStatusSlot",
-          "line": 1367,
+          "line": 1368,
           "called": [
             "refusalRingSize"
           ]
@@ -117672,7 +117693,7 @@
         {
           "kind": "def",
           "name": "refusalStatusVersion",
-          "line": 1370,
+          "line": 1371,
           "called": [
             "refusalRingSize"
           ]
@@ -117680,7 +117701,7 @@
         {
           "kind": "theorem",
           "name": "refusalStatusWord_roundtrip",
-          "line": 1374,
+          "line": 1375,
           "called": [
             "refusalRingSize",
             "refusalStatusSlot",
@@ -117691,7 +117712,7 @@
         {
           "kind": "theorem",
           "name": "refusalStatusWord_fits",
-          "line": 1391,
+          "line": 1392,
           "called": [
             "refusalRingSize",
             "refusalStatusWord"
@@ -117700,7 +117721,7 @@
         {
           "kind": "def",
           "name": "refusalCountersWord",
-          "line": 1401,
+          "line": 1402,
           "called": [
             "maxRefusalCount"
           ]
@@ -117708,7 +117729,7 @@
         {
           "kind": "def",
           "name": "refusalCountersAttempts",
-          "line": 1405,
+          "line": 1406,
           "called": [
             "maxRefusalCount"
           ]
@@ -117716,7 +117737,7 @@
         {
           "kind": "def",
           "name": "refusalCountersDropped",
-          "line": 1408,
+          "line": 1409,
           "called": [
             "maxRefusalCount"
           ]
@@ -117724,7 +117745,7 @@
         {
           "kind": "theorem",
           "name": "refusalCountersWord_roundtrip",
-          "line": 1411,
+          "line": 1412,
           "called": [
             "maxRefusalCount",
             "refusalCountersAttempts",
@@ -117735,7 +117756,7 @@
         {
           "kind": "theorem",
           "name": "refusalCountersWord_fits",
-          "line": 1423,
+          "line": 1424,
           "called": [
             "maxRefusalCount",
             "refusalCountersWord"
@@ -117744,7 +117765,7 @@
         {
           "kind": "def",
           "name": "refusalExportedFieldValue",
-          "line": 1431,
+          "line": 1432,
           "called": [
             "DeclassificationRefusal",
             "RefusalReadField"
@@ -117753,7 +117774,7 @@
         {
           "kind": "def",
           "name": "auditReadWord",
-          "line": 1448,
+          "line": 1449,
           "called": [
             "AuditReadOp",
             "GenericLabelingContext",
@@ -117788,7 +117809,7 @@
         {
           "kind": "theorem",
           "name": "chainVerdict_ok",
-          "line": 1628,
+          "line": 1629,
           "called": [
             "DeclassificationEvent",
             "GenericLabelingContext",
@@ -117803,7 +117824,7 @@
         {
           "kind": "theorem",
           "name": "chainVerdict_index_zero_refused",
-          "line": 1644,
+          "line": 1645,
           "called": [
             "GenericLabelingContext",
             "SecurityDomain",
@@ -117816,7 +117837,7 @@
         {
           "kind": "theorem",
           "name": "chainVerdict_view_local",
-          "line": 1660,
+          "line": 1661,
           "called": [
             "GenericLabelingContext",
             "SecurityDomain",
@@ -117828,7 +117849,7 @@
         {
           "kind": "theorem",
           "name": "chainEntryVerdict_ok",
-          "line": 1676,
+          "line": 1677,
           "called": [
             "DeclassificationEvent",
             "GenericLabelingContext",
@@ -117843,7 +117864,7 @@
         {
           "kind": "theorem",
           "name": "chainEntryVerdict_refused",
-          "line": 1692,
+          "line": 1693,
           "called": [
             "GenericLabelingContext",
             "SecurityDomain",
@@ -117858,7 +117879,7 @@
         {
           "kind": "theorem",
           "name": "chainEntryVerdict_view_local",
-          "line": 1710,
+          "line": 1711,
           "called": [
             "GenericLabelingContext",
             "SecurityDomain",
@@ -117870,7 +117891,7 @@
         {
           "kind": "theorem",
           "name": "chainArchivedVerdict_names_iff",
-          "line": 1727,
+          "line": 1728,
           "called": [
             "DeclassificationEvent",
             "GenericLabelingContext",
@@ -117886,7 +117907,7 @@
         {
           "kind": "theorem",
           "name": "chainArchivedVerdict_denied_for_non_monitor",
-          "line": 1743,
+          "line": 1744,
           "called": [
             "GenericLabelingContext",
             "SecurityDomain",
@@ -117899,7 +117920,7 @@
         {
           "kind": "theorem",
           "name": "chainArchivedVerdict_refuses_live_timestamp",
-          "line": 1766,
+          "line": 1767,
           "called": [
             "GenericLabelingContext",
             "SecurityDomain",
@@ -117912,7 +117933,7 @@
         {
           "kind": "theorem",
           "name": "auditRead_determined_by_view",
-          "line": 1789,
+          "line": 1790,
           "called": [
             "AuditReadOp",
             "GenericLabelingContext",
@@ -117927,7 +117948,7 @@
         {
           "kind": "theorem",
           "name": "auditRead_hides_global_position",
-          "line": 1816,
+          "line": 1817,
           "called": [
             "AuditReadOp",
             "GenericLabelingContext",
@@ -117943,7 +117964,7 @@
         {
           "kind": "theorem",
           "name": "auditReadStatus_atomic",
-          "line": 1834,
+          "line": 1835,
           "called": [
             "GenericLabelingContext",
             "SecurityDomain",
@@ -117965,7 +117986,7 @@
         {
           "kind": "theorem",
           "name": "auditReadStatus_partial_hides_generation",
-          "line": 1865,
+          "line": 1866,
           "called": [
             "GenericLabelingContext",
             "SecurityDomain",
@@ -117979,7 +118000,7 @@
         {
           "kind": "theorem",
           "name": "auditReadStatus_global_generation_leaks",
-          "line": 1883,
+          "line": 1884,
           "called": [
             "auditStatusLengthSlots",
             "auditStatusWord"
@@ -117988,7 +118009,7 @@
         {
           "kind": "theorem",
           "name": "observerScopedGeneration_not_mountable",
-          "line": 1900,
+          "line": 1901,
           "called": [
             "SecurityDomain",
             "cons",
@@ -117999,7 +118020,7 @@
         {
           "kind": "def",
           "name": "auditDrainViewComplete",
-          "line": 1967,
+          "line": 1968,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -118013,7 +118034,7 @@
         {
           "kind": "def",
           "name": "auditDrainVisiblePrefix",
-          "line": 1992,
+          "line": 1993,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -118029,7 +118050,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_denied_for_unauthorized",
-          "line": 2006,
+          "line": 2007,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -118044,7 +118065,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_unconfigured_denied",
-          "line": 2015,
+          "line": 2016,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -118061,7 +118082,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_frame",
-          "line": 2026,
+          "line": 2027,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -118079,7 +118100,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_denied_for_incomplete_view",
-          "line": 2054,
+          "line": 2055,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -118094,7 +118115,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_returned_length_is_visible",
-          "line": 2071,
+          "line": 2072,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -118115,7 +118136,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_requires_full_dominance",
-          "line": 2110,
+          "line": 2111,
           "called": [
             "DeclassificationAuditLog",
             "GenericLabelingContext",
@@ -118132,7 +118153,7 @@
         {
           "kind": "def",
           "name": "labelingAssignedDomain",
-          "line": 2135,
+          "line": 2136,
           "called": [
             "GenericLabelingContext",
             "ObjId",
@@ -118143,7 +118164,7 @@
         {
           "kind": "theorem",
           "name": "labelingAssignedDomain_thread",
-          "line": 2140,
+          "line": 2141,
           "called": [
             "GenericLabelingContext",
             "ThreadId",
@@ -118153,7 +118174,7 @@
         {
           "kind": "theorem",
           "name": "labelingAssignedDomain_object",
-          "line": 2145,
+          "line": 2146,
           "called": [
             "GenericLabelingContext",
             "ObjId",
@@ -118163,7 +118184,7 @@
         {
           "kind": "def",
           "name": "auditTrailSourcesFromLabeling",
-          "line": 2161,
+          "line": 2162,
           "called": [
             "DeclassificationAuditLog",
             "GenericLabelingContext",
@@ -118173,7 +118194,7 @@
         {
           "kind": "theorem",
           "name": "auditTrailSourcesFromLabeling_drop",
-          "line": 2167,
+          "line": 2168,
           "called": [
             "DeclassificationAuditLog",
             "GenericLabelingContext",
@@ -118183,7 +118204,7 @@
         {
           "kind": "theorem",
           "name": "auditTrailSourcesFromLabeling_nil",
-          "line": 2174,
+          "line": 2175,
           "called": [
             "GenericLabelingContext",
             "auditTrailSourcesFromLabeling"
@@ -118192,7 +118213,7 @@
         {
           "kind": "theorem",
           "name": "declassifyObjectFromCore_preserves_trailSources",
-          "line": 2186,
+          "line": 2187,
           "called": [
             "CoreId",
             "DeclassificationPolicy",
@@ -118211,7 +118232,7 @@
         {
           "kind": "def",
           "name": "auditTrailDestinationsFromLabeling",
-          "line": 2228,
+          "line": 2229,
           "called": [
             "DeclassificationAuditLog",
             "GenericLabelingContext",
@@ -118221,7 +118242,7 @@
         {
           "kind": "theorem",
           "name": "auditTrailDestinationsFromLabeling_drop",
-          "line": 2233,
+          "line": 2234,
           "called": [
             "DeclassificationAuditLog",
             "GenericLabelingContext",
@@ -118231,7 +118252,7 @@
         {
           "kind": "theorem",
           "name": "auditTrailDestinationsFromLabeling_nil",
-          "line": 2240,
+          "line": 2241,
           "called": [
             "GenericLabelingContext",
             "auditTrailDestinationsFromLabeling"
@@ -118240,7 +118261,7 @@
         {
           "kind": "def",
           "name": "auditTrailActorsFromLabeling",
-          "line": 2252,
+          "line": 2253,
           "called": [
             "DeclassificationAuditLog",
             "GenericLabelingContext"
@@ -118249,7 +118270,7 @@
         {
           "kind": "theorem",
           "name": "auditTrailActorsFromLabeling_drop",
-          "line": 2257,
+          "line": 2258,
           "called": [
             "DeclassificationAuditLog",
             "GenericLabelingContext",
@@ -118259,7 +118280,7 @@
         {
           "kind": "theorem",
           "name": "auditTrailActorsFromLabeling_nil",
-          "line": 2264,
+          "line": 2265,
           "called": [
             "GenericLabelingContext",
             "auditTrailActorsFromLabeling"
@@ -118268,7 +118289,7 @@
         {
           "kind": "theorem",
           "name": "declassifyObjectFromCore_preserves_trailDestinations",
-          "line": 2271,
+          "line": 2272,
           "called": [
             "CoreId",
             "DeclassificationPolicy",
@@ -118287,7 +118308,7 @@
         {
           "kind": "theorem",
           "name": "declassifyObjectFromCore_preserves_trailActors",
-          "line": 2292,
+          "line": 2293,
           "called": [
             "CoreId",
             "DeclassificationPolicy",
@@ -118305,7 +118326,7 @@
         {
           "kind": "theorem",
           "name": "auditVisibleEntry_target_domain_flows",
-          "line": 2325,
+          "line": 2326,
           "called": [
             "DeclassificationAuditLog",
             "DeclassificationEvent",
@@ -118318,7 +118339,7 @@
         {
           "kind": "def",
           "name": "auditMonitorDominatesSubjects",
-          "line": 2344,
+          "line": 2345,
           "called": [
             "GenericLabelingContext",
             "SecurityDomain",
@@ -118328,7 +118349,7 @@
         {
           "kind": "theorem",
           "name": "auditMonitorAuthorized_dominates_subjects",
-          "line": 2351,
+          "line": 2352,
           "called": [
             "GenericLabelingContext",
             "SecurityDomain",
@@ -118341,7 +118362,7 @@
         {
           "kind": "def",
           "name": "auditMonitorDominatesObjects",
-          "line": 2375,
+          "line": 2376,
           "called": [
             "GenericLabelingContext",
             "ObjId",
@@ -118351,7 +118372,7 @@
         {
           "kind": "theorem",
           "name": "auditMonitorAuthorized_dominates_objects",
-          "line": 2382,
+          "line": 2383,
           "called": [
             "GenericLabelingContext",
             "ObjId",
@@ -118364,7 +118385,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_requires_full_dominance_of_labeling",
-          "line": 2404,
+          "line": 2405,
           "called": [
             "DeclassificationAuditLog",
             "GenericLabelingContext",
@@ -118388,7 +118409,7 @@
         {
           "kind": "def",
           "name": "legacySubjectLabels",
-          "line": 2471,
+          "line": 2472,
           "called": [
             "SecurityLabel"
           ]
@@ -118396,7 +118417,7 @@
         {
           "kind": "theorem",
           "name": "mem_legacySubjectLabels",
-          "line": 2479,
+          "line": 2480,
           "called": [
             "SecurityLabel",
             "legacySubjectLabels"
@@ -118405,7 +118426,7 @@
         {
           "kind": "theorem",
           "name": "liftLegacyContext_threadDomain_embedded",
-          "line": 2486,
+          "line": 2487,
           "called": [
             "LabelingContext",
             "ThreadId",
@@ -118418,7 +118439,7 @@
         {
           "kind": "theorem",
           "name": "liftLegacyContext_objectDomain_embedded",
-          "line": 2497,
+          "line": 2498,
           "called": [
             "LabelingContext",
             "ObjId",
@@ -118431,7 +118452,7 @@
         {
           "kind": "def",
           "name": "validatedAuditMonitorClearance",
-          "line": 2512,
+          "line": 2513,
           "called": [
             "LabelingContext",
             "SecurityDomain",
@@ -118443,7 +118464,7 @@
         {
           "kind": "theorem",
           "name": "validatedAuditMonitorClearance_none",
-          "line": 2523,
+          "line": 2524,
           "called": [
             "LabelingContext",
             "none",
@@ -118453,7 +118474,7 @@
         {
           "kind": "theorem",
           "name": "validatedAuditMonitorClearance_dominates_subjects",
-          "line": 2534,
+          "line": 2535,
           "called": [
             "LabelingContext",
             "SecurityDomain",
@@ -118466,7 +118487,7 @@
         {
           "kind": "theorem",
           "name": "validatedAuditMonitorClearance_dominates_objects",
-          "line": 2555,
+          "line": 2556,
           "called": [
             "LabelingContext",
             "SecurityDomain",
@@ -118479,7 +118500,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_validated_view_complete",
-          "line": 2577,
+          "line": 2578,
           "called": [
             "DeclassificationAuditLog",
             "LabelingContext",
@@ -118499,7 +118520,7 @@
         {
           "kind": "theorem",
           "name": "validatedAuditMonitorClearance_misconfigured_low",
-          "line": 2597,
+          "line": 2598,
           "called": [
             "LabelingContext",
             "embedLegacyLabel",
@@ -118511,7 +118532,7 @@
         {
           "kind": "theorem",
           "name": "misconfiguredDeployment_cannot_drain",
-          "line": 2607,
+          "line": 2608,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -118528,7 +118549,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_preserves_auditLogBounded",
-          "line": 2617,
+          "line": 2618,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -118544,7 +118565,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_preserves_wellFormed_at_epoch",
-          "line": 2636,
+          "line": 2637,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -118561,7 +118582,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_monotone_epoch",
-          "line": 2649,
+          "line": 2650,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -118577,7 +118598,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_next_timestamp_fresh",
-          "line": 2667,
+          "line": 2668,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -118595,7 +118616,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_fully_clears_for_dominating_reader",
-          "line": 2687,
+          "line": 2688,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -118611,7 +118632,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_returned_length_le",
-          "line": 2711,
+          "line": 2712,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -118627,7 +118648,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_returned_length_fits",
-          "line": 2728,
+          "line": 2729,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -118644,7 +118665,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_returned_length_toUInt64_lossless",
-          "line": 2740,
+          "line": 2741,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -118661,7 +118682,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_partial_reader_drains_nothing",
-          "line": 2756,
+          "line": 2757,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -118679,7 +118700,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_preserves_proofLayerInvariantBundle",
-          "line": 2776,
+          "line": 2777,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -118698,7 +118719,7 @@
         {
           "kind": "theorem",
           "name": "auditOccupancy_alphabet_bounded",
-          "line": 2821,
+          "line": 2822,
           "called": [
             "SystemState",
             "auditLogBounded",
@@ -118710,7 +118731,7 @@
         {
           "kind": "theorem",
           "name": "declassify_capacity_refusal_of_full",
-          "line": 2832,
+          "line": 2833,
           "called": [
             "CoreId",
             "DeclassificationPolicy",
@@ -118737,7 +118758,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_flips_declassify_outcome",
-          "line": 2866,
+          "line": 2867,
           "called": [
             "CoreId",
             "DeclassificationPolicy",
@@ -118766,7 +118787,7 @@
         {
           "kind": "theorem",
           "name": "auditVisibleEntry",
-          "line": 2927,
+          "line": 2928,
           "called": [
             "DeclassificationAuditLog",
             "GenericLabelingContext",
@@ -118780,7 +118801,7 @@
         {
           "kind": "theorem",
           "name": "auditRead_stable_under_append",
-          "line": 2945,
+          "line": 2946,
           "called": [
             "AuditReadOp",
             "DeclassificationAuditLog",
@@ -118798,7 +118819,7 @@
         {
           "kind": "theorem",
           "name": "auditRead_bracketed_detects_drain",
-          "line": 3019,
+          "line": 3020,
           "called": [
             "GenericLabelingContext",
             "SecurityDomain",
@@ -118816,13 +118837,13 @@
         {
           "kind": "theorem",
           "name": "auditStatusSplitRead_tears",
-          "line": 3053,
+          "line": 3054,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "auditReadWord_state_preserving",
-          "line": 3074,
+          "line": 3075,
           "called": [
             "AuditReadOp",
             "GenericLabelingContext",
@@ -118836,7 +118857,7 @@
         {
           "kind": "theorem",
           "name": "refusalLedger_requires_full_dominance",
-          "line": 3117,
+          "line": 3118,
           "called": [
             "AuditReadOp",
             "AuditReadOp.readsStructure",
@@ -118852,7 +118873,7 @@
         {
           "kind": "theorem",
           "name": "refusalLedger_partial_reader_learns_nothing",
-          "line": 3133,
+          "line": 3134,
           "called": [
             "AuditReadOp",
             "GenericLabelingContext",
@@ -118869,7 +118890,7 @@
         {
           "kind": "theorem",
           "name": "refusalLedger_gate_is_configuration_derived",
-          "line": 3152,
+          "line": 3153,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -118883,7 +118904,7 @@
         {
           "kind": "def",
           "name": "refusalWitnessRecord",
-          "line": 3161,
+          "line": 3162,
           "called": [
             "DeclassificationRefusal",
             "SecurityDomain",
@@ -118896,7 +118917,7 @@
         {
           "kind": "def",
           "name": "refusalEvictionWitness",
-          "line": 3173,
+          "line": 3174,
           "called": [
             "RefusalLedger",
             "refusalRingSize",
@@ -118907,7 +118928,7 @@
         {
           "kind": "theorem",
           "name": "refusalLedger_records_gate_unsound",
-          "line": 3197,
+          "line": 3198,
           "called": [
             "DeclassificationRefusal",
             "GenericLabelingContext",
@@ -118928,7 +118949,7 @@
         {
           "kind": "theorem",
           "name": "auditStatus_does_not_detect_refusal_write",
-          "line": 3225,
+          "line": 3226,
           "called": [
             "GenericLabelingContext",
             "RefusalLedger",
@@ -118941,7 +118962,7 @@
         {
           "kind": "theorem",
           "name": "refusalStatus_detects_refusal_write",
-          "line": 3238,
+          "line": 3239,
           "called": [
             "DeclassificationRefusal",
             "GenericLabelingContext",
@@ -118961,7 +118982,7 @@
         {
           "kind": "theorem",
           "name": "refusalSlotField_reconstructs",
-          "line": 3264,
+          "line": 3265,
           "called": [
             "DeclassificationRefusal",
             "RefusalReadField",
@@ -118975,7 +118996,7 @@
         {
           "kind": "def",
           "name": "decodeAuditReadOp",
-          "line": 3288,
+          "line": 3289,
           "called": [
             "AuditReadOp",
             "none"
@@ -118984,13 +119005,13 @@
         {
           "kind": "def",
           "name": "auditReadOpcodeCount",
-          "line": 3340,
+          "line": 3341,
           "called": []
         },
         {
           "kind": "def",
           "name": "encodeAuditReadOp",
-          "line": 3343,
+          "line": 3344,
           "called": [
             "AuditReadOp"
           ]
@@ -118998,7 +119019,7 @@
         {
           "kind": "theorem",
           "name": "decodeAuditReadOp_encode",
-          "line": 3377,
+          "line": 3378,
           "called": [
             "AuditReadOp",
             "decodeAuditReadOp",
@@ -119008,7 +119029,7 @@
         {
           "kind": "theorem",
           "name": "decodeAuditReadOp_out_of_range",
-          "line": 3399,
+          "line": 3400,
           "called": [
             "auditReadOpcodeCount",
             "decodeAuditReadOp",
@@ -119018,7 +119039,7 @@
         {
           "kind": "theorem",
           "name": "decodeAuditReadOp_isSome_lt",
-          "line": 3412,
+          "line": 3413,
           "called": [
             "auditReadOpcodeCount",
             "decodeAuditReadOp",
@@ -119028,7 +119049,7 @@
         {
           "kind": "def",
           "name": "auditReadFromCore",
-          "line": 3487,
+          "line": 3488,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -119045,7 +119066,7 @@
         {
           "kind": "theorem",
           "name": "auditRead_unconfigured_denied",
-          "line": 3510,
+          "line": 3511,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -119059,7 +119080,7 @@
         {
           "kind": "theorem",
           "name": "misconfiguredDeployment_cannot_read",
-          "line": 3520,
+          "line": 3521,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -119076,7 +119097,7 @@
         {
           "kind": "theorem",
           "name": "auditReadFromCore_no_subject",
-          "line": 3533,
+          "line": 3534,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -119093,7 +119114,7 @@
         {
           "kind": "theorem",
           "name": "auditReadFromCore_frame",
-          "line": 3541,
+          "line": 3542,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -119108,7 +119129,7 @@
         {
           "kind": "theorem",
           "name": "auditReadFromCore_word_fits",
-          "line": 3565,
+          "line": 3566,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -119122,7 +119143,7 @@
         {
           "kind": "theorem",
           "name": "auditReadFromCore_toUInt64_lossless",
-          "line": 3588,
+          "line": 3589,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -119138,7 +119159,7 @@
         {
           "kind": "theorem",
           "name": "auditReadFromCore_value",
-          "line": 3602,
+          "line": 3603,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -119156,7 +119177,7 @@
         {
           "kind": "theorem",
           "name": "auditReadFromCore_partial_reader_denied",
-          "line": 3635,
+          "line": 3636,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -119172,7 +119193,7 @@
         {
           "kind": "theorem",
           "name": "auditReadFromCore_ok_is_monitor",
-          "line": 3646,
+          "line": 3647,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -119190,7 +119211,7 @@
         {
           "kind": "theorem",
           "name": "auditDrain_moves_partial_readers_status",
-          "line": 3676,
+          "line": 3677,
           "called": [
             "DeclassificationAuditLog",
             "GenericLabelingContext",
@@ -119207,7 +119228,7 @@
         {
           "kind": "theorem",
           "name": "auditReadFromCore_observer_dominates_subjects",
-          "line": 3710,
+          "line": 3711,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -119230,7 +119251,7 @@
         {
           "kind": "theorem",
           "name": "auditReadFromCore_bracketed_detects_drain_u64",
-          "line": 3745,
+          "line": 3746,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -119251,7 +119272,7 @@
         {
           "kind": "theorem",
           "name": "refusalRead_requires_monitor_at_entry",
-          "line": 3779,
+          "line": 3780,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -221826,7 +221847,7 @@
     {
       "module": "SeLe4n.Platform.FFI",
       "path": "SeLe4n/Platform/FFI.lean",
-      "declaration_count": 164,
+      "declaration_count": 176,
       "declarations": [
         {
           "kind": "namespace",
@@ -222763,8 +222784,169 @@
         },
         {
           "kind": "def",
+          "name": "syscallReturnOutcomeFrame",
+          "line": 1728,
+          "called": [
+            "SyscallReturnFrame",
+            "SystemState",
+            "ThreadId",
+            "frameForShape",
+            "ofNat",
+            "readReturnFrame",
+            "st",
+            "syscallReturnShape",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "syscallReturnOutcome_of_getTcb",
+          "line": 1736,
+          "called": [
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "getTcb",
+            "ipcStateBlocksReturn",
+            "st",
+            "syscallReturnOutcome",
+            "syscallReturnOutcomeFrame"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "syscallReturnOutcome_of_getTcb",
+          "line": 1747,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "getTcb",
+            "none",
+            "st",
+            "syscallReturnOutcome",
+            "syscallReturnOutcomeFrame"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "syscallReturnOutcome_blocks_of_ipcBlocked",
+          "line": 1759,
+          "called": [
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "getTcb",
+            "ipcStateBlocksReturn",
+            "st",
+            "syscallReturnOutcome",
+            "syscallReturnOutcome_of_getTcb"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "syscallReturnOutcome_returns_of_not_ipcBlocked",
+          "line": 1770,
+          "called": [
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "getTcb",
+            "ipcStateBlocksReturn",
+            "none",
+            "st",
+            "syscallReturnOutcome",
+            "syscallReturnOutcomeFrame",
+            "syscallReturnOutcome_of_getTcb"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "syscallReturnOutcome_blocks_iff",
+          "line": 1786,
+          "called": [
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "getTcb",
+            "ipcStateBlocksReturn",
+            "none",
+            "st",
+            "syscallReturnOutcome",
+            "syscallReturnOutcome_blocks_of_ipcBlocked",
+            "syscallReturnOutcome_of_getTcb"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "blockingArm_returns_no_frame",
+          "line": 1812,
+          "called": [
+            "SyscallReturnFrame",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "getTcb",
+            "ipcStateBlocksReturn",
+            "st",
+            "syscallReturnOutcome",
+            "syscallReturnOutcome_blocks_of_ipcBlocked"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "syscallReturnOutcome_blocked_independent_of_id",
+          "line": 1827,
+          "called": [
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "getTcb",
+            "ipcStateBlocksReturn",
+            "st",
+            "syscallReturnOutcome",
+            "syscallReturnOutcome_blocks_of_ipcBlocked"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "syscallReturnOutcome_blocked_ignores_staged_registers",
+          "line": 1841,
+          "called": [
+            "RHTable.getElem",
+            "RHTable_getElem",
+            "SyscallReturnFrame",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "getTcb",
+            "invExt",
+            "ipcStateBlocksReturn",
+            "st",
+            "syscallReturnOutcome",
+            "syscallReturnOutcome_blocks_of_ipcBlocked",
+            "toObjId",
+            "withReturnFrame",
+            "writeReturnFrameToTcb"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "syscallReturnOutcome_ne_faulted",
+          "line": 1862,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "getTcb",
+            "none",
+            "st",
+            "syscallReturnOutcome",
+            "syscallReturnOutcome_of_getTcb"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "refusedSignalReceiver",
-          "line": 1748,
+          "line": 1920,
           "called": [
             "CPtr",
             "SystemState",
@@ -222778,7 +222960,7 @@
         {
           "kind": "theorem",
           "name": "refusedSignalReceiver",
-          "line": 1766,
+          "line": 1938,
           "called": [
             "CNode",
             "CPtr",
@@ -222800,7 +222982,7 @@
         {
           "kind": "def",
           "name": "refusalReceiverFor",
-          "line": 1786,
+          "line": 1958,
           "called": [
             "KernelError",
             "SyscallId",
@@ -222816,7 +222998,7 @@
         {
           "kind": "theorem",
           "name": "refusalReceiverFor_receiver_hop",
-          "line": 1793,
+          "line": 1965,
           "called": [
             "SystemState",
             "ThreadId",
@@ -222830,7 +223012,7 @@
         {
           "kind": "theorem",
           "name": "refusalReceiverFor_other",
-          "line": 1800,
+          "line": 1972,
           "called": [
             "KernelError",
             "SyscallId",
@@ -222844,7 +223026,7 @@
         {
           "kind": "def",
           "name": "recordSyscallRefusal",
-          "line": 1821,
+          "line": 1993,
           "called": [
             "CoreId",
             "KernelError",
@@ -222865,7 +223047,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_exempt",
-          "line": 1845,
+          "line": 2017,
           "called": [
             "CoreId",
             "KernelError",
@@ -222883,7 +223065,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_undecodable",
-          "line": 1857,
+          "line": 2029,
           "called": [
             "CoreId",
             "KernelError",
@@ -222900,7 +223082,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_records",
-          "line": 1868,
+          "line": 2040,
           "called": [
             "CoreId",
             "KernelError",
@@ -222922,7 +223104,7 @@
         {
           "kind": "theorem",
           "name": "refusalRecord_names_failed_hop",
-          "line": 1905,
+          "line": 2077,
           "called": [
             "CNode",
             "Capability",
@@ -222958,7 +223140,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_frame",
-          "line": 1951,
+          "line": 2123,
           "called": [
             "CoreId",
             "KernelError",
@@ -222973,7 +223155,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_preserves_proofLayerInvariantBundle",
-          "line": 1979,
+          "line": 2151,
           "called": [
             "CoreId",
             "KernelError",
@@ -222990,7 +223172,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_objects_eq",
-          "line": 1993,
+          "line": 2165,
           "called": [
             "CoreId",
             "KernelError",
@@ -223004,7 +223186,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_scheduler_eq",
-          "line": 2004,
+          "line": 2176,
           "called": [
             "CoreId",
             "KernelError",
@@ -223018,7 +223200,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_machine_eq",
-          "line": 2015,
+          "line": 2187,
           "called": [
             "CoreId",
             "KernelError",
@@ -223032,7 +223214,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_readReturnFrame_eq",
-          "line": 2031,
+          "line": 2203,
           "called": [
             "CoreId",
             "KernelError",
@@ -223049,7 +223231,7 @@
         {
           "kind": "theorem",
           "name": "refusalRecord_domain_is_seam_resolved_at_seam",
-          "line": 2050,
+          "line": 2222,
           "called": [
             "CoreId",
             "DeclassificationRefusal",
@@ -223073,7 +223255,7 @@
         {
           "kind": "theorem",
           "name": "recordSyscallRefusal_ledger_congr",
-          "line": 2089,
+          "line": 2261,
           "called": [
             "CoreId",
             "KernelError",
@@ -223093,7 +223275,7 @@
         {
           "kind": "theorem",
           "name": "refusalWrite_declassificationAuditLog_eq",
-          "line": 2126,
+          "line": 2298,
           "called": [
             "CoreId",
             "KernelError",
@@ -223107,7 +223289,7 @@
         {
           "kind": "theorem",
           "name": "refusalWrite_cannot_exhaust_trail",
-          "line": 2147,
+          "line": 2319,
           "called": [
             "CoreId",
             "DeclassificationEvent",
@@ -223124,7 +223306,7 @@
         {
           "kind": "def",
           "name": "syscallWindow",
-          "line": 2164,
+          "line": 2336,
           "called": [
             "FaultRegisterWindow"
           ]
@@ -223132,13 +223314,13 @@
         {
           "kind": "def",
           "name": "svcFaultIP",
-          "line": 2172,
+          "line": 2344,
           "called": []
         },
         {
           "kind": "def",
           "name": "capFaultReceivePhase",
-          "line": 2198,
+          "line": 2370,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -223156,7 +223338,7 @@
         {
           "kind": "theorem",
           "name": "capFaultReceivePhase",
-          "line": 2239,
+          "line": 2411,
           "called": [
             "SyscallId",
             "refusalSeamClass"
@@ -223165,7 +223347,7 @@
         {
           "kind": "def",
           "name": "syscallCapFaultOf",
-          "line": 2275,
+          "line": 2447,
           "called": [
             "Fault",
             "KernelError",
@@ -223188,7 +223370,7 @@
         {
           "kind": "def",
           "name": "deliverSyscallCapFault",
-          "line": 2308,
+          "line": 2480,
           "called": [
             "CoreId",
             "Fault",
@@ -223206,7 +223388,7 @@
         {
           "kind": "theorem",
           "name": "syscallCapFaultOf_none_of_no_fault_phase",
-          "line": 2319,
+          "line": 2491,
           "called": [
             "KernelError",
             "SyscallDecodeResult",
@@ -223225,7 +223407,7 @@
         {
           "kind": "theorem",
           "name": "syscallCapFaultOf_none_of_resolve_ok",
-          "line": 2332,
+          "line": 2504,
           "called": [
             "CNode",
             "Capability",
@@ -223248,7 +223430,7 @@
         {
           "kind": "def",
           "name": "syscallDispatchFromAbi",
-          "line": 2395,
+          "line": 2567,
           "called": [
             "CoreId",
             "Kernel",
@@ -223271,13 +223453,13 @@
         {
           "kind": "opaque",
           "name": "ffiSuspendThread",
-          "line": 2468,
+          "line": 2640,
           "called": []
         },
         {
           "kind": "def",
           "name": "suspendThreadInner",
-          "line": 2532,
+          "line": 2704,
           "called": [
             "KernelError.toUInt32",
             "getKernelState",
@@ -223294,19 +223476,19 @@
         {
           "kind": "opaque",
           "name": "ffiIcIalluIs",
-          "line": 2567,
+          "line": 2739,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiIcMaintenance",
-          "line": 2603,
+          "line": 2775,
           "called": []
         },
         {
           "kind": "def",
           "name": "icMaintenanceBroadcast",
-          "line": 2655,
+          "line": 2827,
           "called": [
             "ICacheInvalidation",
             "ffiIcMaintenance",
@@ -223318,7 +223500,7 @@
         {
           "kind": "theorem",
           "name": "icMaintenanceBroadcast_iallu_encoding",
-          "line": 2660,
+          "line": 2832,
           "called": [
             "toOpTag",
             "toPaddr"
@@ -223327,7 +223509,7 @@
         {
           "kind": "theorem",
           "name": "icMaintenanceBroadcast_ivauPage_encoding",
-          "line": 2667,
+          "line": 2839,
           "called": [
             "PAddr",
             "ofNat",
@@ -223339,7 +223521,7 @@
         {
           "kind": "theorem",
           "name": "icMaintenanceBroadcast_cleanRangeIallu_encoding",
-          "line": 2676,
+          "line": 2848,
           "called": [
             "PAddr",
             "ofNat",
@@ -223352,19 +223534,19 @@
         {
           "kind": "opaque",
           "name": "ffiCacheCleanPagetableRange",
-          "line": 2711,
+          "line": 2883,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiIcIallu",
-          "line": 2724,
+          "line": 2896,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_total",
-          "line": 2740,
+          "line": 2912,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -223388,7 +223570,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok",
-          "line": 2793,
+          "line": 2965,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -223405,8 +223587,52 @@
         },
         {
           "kind": "theorem",
+          "name": "syscallDispatchFromAbi_blocks_of_ipcBlocked",
+          "line": 2992,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "arm64DefaultLayout",
+            "currentOnCore",
+            "getTcb",
+            "ipcStateBlocksReturn",
+            "st",
+            "syscallDispatchFromAbi",
+            "syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok",
+            "syscallEntryChecked",
+            "syscallReturnOutcome_blocks_of_ipcBlocked",
+            "writeFfiRegistersToTcb"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "syscallDispatchFromAbi_blocked_returns_no_frame",
+          "line": 3015,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "SyscallReturnFrame",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "arm64DefaultLayout",
+            "currentOnCore",
+            "getTcb",
+            "ipcStateBlocksReturn",
+            "st",
+            "syscallDispatchFromAbi",
+            "syscallDispatchFromAbi_blocks_of_ipcBlocked",
+            "syscallEntryChecked",
+            "writeFfiRegistersToTcb"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "writeFfiRegistersToTcb_scheduler",
-          "line": 2816,
+          "line": 3044,
           "called": [
             "SystemState",
             "ThreadId",
@@ -223417,7 +223643,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_implies_capability_held",
-          "line": 2847,
+          "line": 3075,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -223448,7 +223674,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_error_of_syscallEntryChecked_error",
-          "line": 2910,
+          "line": 3138,
           "called": [
             "CoreId",
             "KernelError",
@@ -223470,7 +223696,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_capFault_faulted",
-          "line": 2939,
+          "line": 3167,
           "called": [
             "CoreId",
             "Fault",
@@ -223492,7 +223718,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_error_stages_no_frame",
-          "line": 2975,
+          "line": 3203,
           "called": [
             "CoreId",
             "KernelError",
@@ -223516,7 +223742,7 @@
         {
           "kind": "theorem",
           "name": "refusalLedger_write_is_caller_invisible",
-          "line": 3016,
+          "line": 3244,
           "called": [
             "CoreId",
             "KernelError",
@@ -223538,7 +223764,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_records_refusal",
-          "line": 3044,
+          "line": 3272,
           "called": [
             "CoreId",
             "KernelError",
@@ -223570,7 +223796,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_exempt_refusal_frames_ledger",
-          "line": 3091,
+          "line": 3319,
           "called": [
             "CoreId",
             "KernelError",
@@ -223596,7 +223822,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_illegalState_when_no_current",
-          "line": 3121,
+          "line": 3349,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -223611,7 +223837,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_abiMismatch_rejected",
-          "line": 3144,
+          "line": 3372,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -223624,7 +223850,7 @@
         {
           "kind": "theorem",
           "name": "writeFfiRegistersToTcb_id_when_not_tcb",
-          "line": 3166,
+          "line": 3394,
           "called": [
             "SystemState",
             "TCB",
@@ -223638,7 +223864,7 @@
         {
           "kind": "theorem",
           "name": "readReturnValue_zero_when_not_tcb",
-          "line": 3191,
+          "line": 3419,
           "called": [
             "SystemState",
             "TCB",
@@ -286321,6 +286547,7 @@
             "errorLabel",
             "errorLabelBase",
             "expect",
+            "kernelErrorCount",
             "maxLabel",
             "none",
             "ofDiscriminant",
@@ -286335,6 +286562,7 @@
           "called": [
             "errorLabel",
             "expect",
+            "kernelErrorCount",
             "none",
             "ofDiscriminant",
             "ofErrorLabel",
@@ -287196,7 +287424,7 @@
     {
       "module": "tests.SyscallReturnAbiSuite",
       "path": "tests/SyscallReturnAbiSuite.lean",
-      "declaration_count": 71,
+      "declaration_count": 75,
       "declarations": [
         {
           "kind": "namespace",
@@ -287999,6 +288227,7 @@
             "epCapNoGrantPtr",
             "errorLabel",
             "frameCells",
+            "kernelErrorCount",
             "none",
             "ofDiscriminant",
             "ofErrorLabel",
@@ -288022,13 +288251,13 @@
         {
           "kind": "def",
           "name": "fixturePath",
-          "line": 799,
+          "line": 806,
           "called": []
         },
         {
           "kind": "def",
           "name": "runTraceFixtureCheck",
-          "line": 806,
+          "line": 813,
           "called": [
             "fixturePath",
             "returnAbiTraceLines",
@@ -288038,7 +288267,7 @@
         {
           "kind": "def",
           "name": "runBlockedWaiterStagingWitnesses",
-          "line": 830,
+          "line": 837,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -288066,7 +288295,7 @@
         {
           "kind": "def",
           "name": "runAuditReadEndToEnd",
-          "line": 948,
+          "line": 955,
           "called": [
             "assertBool",
             "auditCapPtr",
@@ -288090,14 +288319,52 @@
         },
         {
           "kind": "def",
+          "name": "shapeName",
+          "line": 1069,
+          "called": [
+            "ReturnShape",
+            "badge"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "returnShapeTableLines",
+          "line": 1075,
+          "called": [
+            "count",
+            "shapeName",
+            "syscallReturnShape",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "returnShapeFixturePath",
+          "line": 1081,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "runReturnShapeFixtureCheck",
+          "line": 1084,
+          "called": [
+            "returnShapeFixturePath",
+            "returnShapeTableLines",
+            "syscallReturnShape",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runSyscallReturnAbiChecks",
-          "line": 1047,
+          "line": 1108,
           "called": [
             "runAuditReadEndToEnd",
             "runBadgeDeliveryWitness",
             "runBlockedOutcomeWitness",
             "runBlockedWaiterStagingWitnesses",
             "runFullWidthBadgeWitness",
+            "runReturnShapeFixtureCheck",
             "runTraceFixtureCheck",
             "runUnitReturnWitness"
           ]
@@ -288105,7 +288372,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1067,
+          "line": 1129,
           "called": [
             "runSyscallReturnAbiChecks"
           ]

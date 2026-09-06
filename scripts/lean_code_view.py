@@ -48,6 +48,8 @@ import os
 import shutil
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 _IDENT_TAIL = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_'?!")
 
 
@@ -620,6 +622,18 @@ def _lean_files(roots: list[str]) -> list[str]:
     return sorted(found)
 
 
+def _rust_code(text: str) -> str:
+    """The Rust half of the view, delegated to `rust_code_view`.
+
+    Imported here rather than at module scope so `lean_code_view` keeps working
+    as a standalone Lean stripper (the `--self-test` path and the `strip`
+    callers never touch Rust), and so a missing sibling fails the overlay build
+    loudly rather than at import time in every consumer.
+    """
+    import rust_code_view  # noqa: PLC0415 — see the docstring
+    return rust_code_view.code(text)
+
+
 def overlay(outdir: str, repo: str | None = None) -> str:
     """Build a whole-repo overlay whose `.lean` files are comment-free.
 
@@ -673,6 +687,16 @@ def overlay(outdir: str, repo: str | None = None) -> str:
 
     prune(outdir)
 
+    # The per-extension code view.  A suffix absent from this table is linked
+    # whole and therefore read raw — which is correct for prose (`.md`) and for
+    # data, and is a *decision* rather than a default: adding a language whose
+    # files gates scan means adding its stripper here, and until it is added the
+    # gates over it read comments.
+    _STRIPPERS = {
+        ".lean": strip,
+        ".rs": _rust_code,
+    }
+
     def link(src: str, dest: str) -> None:
         if os.path.islink(dest):
             if os.readlink(dest) == src:
@@ -700,7 +724,15 @@ def overlay(outdir: str, repo: str | None = None) -> str:
         for f in files:
             src = os.path.join(dirpath, f)
             dest = os.path.join(outdir, rel, f)
-            if not f.endswith(".lean"):
+            # WS-RR RR7.17: `.rs` joins `.lean`.  `test_lib.sh`'s classifier
+            # routes EVERY `rg`/`grep` anchor through this overlay, not only the
+            # Lean ones, so a Rust file linked whole was read as raw text — and
+            # 215 Tier-3 anchors scan Rust.  The stripper is
+            # `rust_code_view.code`, the same one `check_aarch64_cross_target.py`
+            # and its siblings read, so the tree has one Rust view rather than
+            # two that can disagree.
+            stripper = _STRIPPERS.get(os.path.splitext(f)[1])
+            if stripper is None:
                 link(src, dest)
                 continue
             if (os.path.exists(dest) and not os.path.islink(dest)
@@ -709,7 +741,7 @@ def overlay(outdir: str, repo: str | None = None) -> str:
             if os.path.islink(dest):
                 os.unlink(dest)
             with open(dest, "w", encoding="utf-8") as fh:
-                fh.write(strip(open(src, encoding="utf-8").read()))
+                fh.write(stripper(open(src, encoding="utf-8").read()))
     return outdir
 
 

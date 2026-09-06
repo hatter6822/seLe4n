@@ -171,21 +171,46 @@ def ofDiscriminant? : Nat → Option KernelError
 
 /-- The discriminant map is a section of its inverse: every `KernelError`
 survives the numeric round trip.  With `toDiscriminant_lt` this pins the
-map as a bijection onto `0..57`. -/
+map as a bijection onto `0..kernelErrorCount - 1`. -/
 theorem ofDiscriminant?_toDiscriminant (e : KernelError) :
     ofDiscriminant? (toDiscriminant e) = some e := by
   cases e <;> rfl
 
-/-- Every discriminant is inside the 58-entry table. -/
-theorem toDiscriminant_lt (e : KernelError) : toDiscriminant e < 58 := by
+/-- **The size of the `KernelError` enumeration**, named once so no caller has
+to write the literal.
+
+Lean gives an `inductive` no constructor list to measure, so the figure is a
+literal — but it is a literal with a *machine-checked meaning*: `_lt` below
+bounds every discriminant by it (`decide` over every constructor, so a new
+variant fails there), and `_tight` bounds it from the other side, so this is
+the **least** strict upper bound and cannot drift up either.  Before it existed
+the number was written out at nine sites across Lean, the suites and three Rust
+crates, and WS-RR RR7.14 found one of them stated as prose in a trace line that
+kept saying `57` while the check beside it had moved to `58`. -/
+def kernelErrorCount : Nat := 58
+
+/-- Every discriminant is inside the table. -/
+theorem toDiscriminant_lt (e : KernelError) : toDiscriminant e < kernelErrorCount := by
   cases e <;> decide
 
+/-- …and the bound is **tight**: the last in-range value is inhabited, so
+`kernelErrorCount` is the least strict upper bound rather than merely one.
+Without this half the constant could be raised silently and every consumer
+would still pass while covering a range with a hole at the top. -/
+theorem kernelErrorCount_tight :
+    (ofDiscriminant? (kernelErrorCount - 1)).isSome
+      ∧ ofDiscriminant? kernelErrorCount = none := by
+  constructor
+  · rfl
+  · rfl
+
 /-- The other direction of the round trip, over the whole in-range domain:
-below 58 the inverse hits and maps back to the same discriminant; 58 itself
-(the first out-of-range value) is rejected. -/
+below `kernelErrorCount` the inverse hits and maps back to the same
+discriminant; `kernelErrorCount` itself (the first out-of-range value) is
+rejected. -/
 theorem toDiscriminant_ofDiscriminant? :
-    (∀ n, n < 58 → ((ofDiscriminant? n).map toDiscriminant) = some n) ∧
-      ofDiscriminant? 58 = none := by
+    (∀ n, n < kernelErrorCount → ((ofDiscriminant? n).map toDiscriminant) = some n) ∧
+      ofDiscriminant? kernelErrorCount = none := by
   constructor
   · decide
   · rfl
@@ -1045,16 +1070,17 @@ theorem errorLabel_roundtrip (e : KernelError) :
   rw [if_pos (Nat.le_add_right _ _), Nat.add_sub_cancel_left]
   exact KernelError.ofDiscriminant?_toDiscriminant e
 
-/-- The decode side over the whole status range: the base plus `0..57` hits
-the errors and re-encodes to itself, the base plus `58` (the first
+/-- The decode side over the whole status range: the base plus
+`0..kernelErrorCount - 1` hits the errors and re-encodes to itself, the base
+plus `kernelErrorCount` (the first
 discriminant no error has) is rejected, and the label just *below* the base
 is not an error at all — so the range boundary is pinned from both sides on
 the inhabited label space. -/
 theorem errorLabel_zero_iff_success :
     ofErrorLabel? 0 = none ∧
-      (∀ n, n < 58 →
+      (∀ n, n < KernelError.kernelErrorCount →
         ((ofErrorLabel? (errorLabelBase + n)).map errorLabel) = some (errorLabelBase + n)) ∧
-      ofErrorLabel? (errorLabelBase + 58) = none ∧
+      ofErrorLabel? (errorLabelBase + KernelError.kernelErrorCount) = none ∧
       ofErrorLabel? (errorLabelBase - 1) = none := by
   refine ⟨ofErrorLabel?_zero, ?_, ?_, ?_⟩
   · intro n hn
@@ -1075,10 +1101,11 @@ theorem errorLabel_zero_iff_success :
 
 /-- RA.A.6 — every status label fits the 20-bit `MessageInfo` label field:
 the range is sized so `errorLabelBase + 255 = maxLabel`, and every
-discriminant is below `58`. -/
+discriminant is below `KernelError.kernelErrorCount`. -/
 theorem kernelErrorFitsLabel (e : KernelError) :
     errorLabel e ≤ MessageInfo.maxLabel := by
   have h := KernelError.toDiscriminant_lt e
+  rw [show KernelError.kernelErrorCount = 58 from rfl] at h
   unfold errorLabel
   rw [errorLabelBase_eq, show MessageInfo.maxLabel = 0xFFFFF by decide]
   omega
@@ -1108,7 +1135,7 @@ def errorFrame (e : KernelError) : SyscallReturnFrame :=
 /-- An error frame's `x1` decodes back to the `MessageInfo` that names the
 error — the encode side is inside the decoder's fail-closed bounds.  Every
 `errorLabel` is a concrete literal per variant, so the whole statement is
-decided by evaluation, 58 cases at a time. -/
+decided by evaluation, `KernelError.kernelErrorCount` cases at a time. -/
 theorem errorFrame_x1_decodes (e : KernelError) :
     MessageInfo.decode (errorFrame e).x1.toNat =
       some { length := 0, extraCaps := 0, label := errorLabel e } := by

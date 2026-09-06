@@ -4693,6 +4693,59 @@ run_check "INVARIANT" rg -n 'runUnblockFrameStagingChecks' tests/SmpCancellation
 run_check "INVARIANT" rg -n 'staleRequestRegs' tests/SmpCancellationSuite.lean
 run_check "INVARIANT" rg -n 'runTimeoutFrameStagingChecks' tests/SmpTimerSuite.lean
 
+# WS-RR RR7.17: the syscall-return-ABI mediums.  Three anchors families, one
+# per finding, and each pins the RELATION rather than the token.
+#
+# (a) `blockingArm_returns_no_frame` was a §10 catalogue line with no artefact.
+# A check that only asked whether the name exists would pass on a one-line
+# restatement of the `if`; these pin the family that makes it a property —
+# both directions, id-independence, and the composition onto the exported seam,
+# which is where the trap layer reads it.
+run_check "INVARIANT" rg -n '^theorem blockingArm_returns_no_frame' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem syscallReturnOutcome_blocks_iff' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem syscallReturnOutcome_blocked_independent_of_id' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem syscallReturnOutcome_blocked_ignores_staged_registers' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem syscallReturnOutcome_ne_faulted' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_blocked_returns_no_frame' SeLe4n/Platform/FFI.lean
+# (b) the Rust `ReturnShape` mirror.  NEGATIVE first: the wildcard arm is what
+# made the mirror silently total, so a new syscall would have read `Unit` on the
+# Rust side while Lean refused to build until it was classified.
+run_negative_check "INVARIANT" rg -n '_ => ReturnShape::Unit' rust/sele4n-abi/tests/conformance.rs
+# Exhaustiveness alone is not agreement: two independently maintained total
+# functions can still classify a syscall differently.  Both sides render the
+# same table and compare against the same bytes.
+run_check "INVARIANT" rg -n 'return_shape_mirror_matches_the_lean_table' rust/sele4n-abi/tests/conformance.rs
+run_check "INVARIANT" rg -n 'syscall_return_shape.expected' rust/sele4n-abi/tests/conformance.rs
+run_check "INVARIANT" rg -n 'runReturnShapeFixtureCheck' tests/SyscallReturnAbiSuite.lean
+run_check "INVARIANT" rg -n 'return_shape_mirror_is_total_and_partitions_the_surface' rust/sele4n-abi/tests/conformance.rs
+# The `KernelError` count is named once and bounded from BOTH sides, so it is
+# the least strict upper bound: bounded only from above it could be raised
+# silently and every consumer would still pass over a range with a hole at the
+# top.  The literal that used to sit at nine sites said `57` in a trace line for
+# a whole cut after RR7.14 widened the range.
+run_check "INVARIANT" rg -n '^def kernelErrorCount' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem kernelErrorCount_tight' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n 'toDiscriminant e < kernelErrorCount' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+# (b2) …and the mechanism that makes the negative above mean anything.  The
+# overlay linked `.rs` files whole while `test_lib.sh`'s classifier routed
+# EVERY `rg`/`grep` anchor through it, so 215 Tier-3 anchors over Rust read raw
+# text — "gates read code, prose reads prose" held for Lean only.  The stripper
+# is `rust_code_view.code`, the one the Python gates already read, so the tree
+# has one Rust view rather than two that can disagree.
+run_check "INVARIANT" rg -n '^def _rust_code' scripts/lean_code_view.py
+run_check "INVARIANT" rg -n '_STRIPPERS = \{' scripts/lean_code_view.py
+run_check "INVARIANT" rg -n 'stripper = _STRIPPERS.get' scripts/lean_code_view.py
+# The wiring witness covers BOTH languages: a Lean-only witness is exactly what
+# let the Rust hole stay open while the script reported PASS.  Both Rust comment
+# forms are exercised, since the stripper handles them separately.
+run_check "INVARIANT" rg -n 'code_view_witness_prose_only' scripts/test_code_view_wiring.sh
+run_check "INVARIANT" rg -n 'code_view_witness_block_comment_only' scripts/test_code_view_wiring.sh
+run_check "INVARIANT" rg -n 'SELF-TEST PASS \(10 checks\)' scripts/test_code_view_wiring.sh
+# (c) the application IPC label: the debt is out of the review narrative and
+# has a stated constraint, two candidate designs and a named owner.
+run_prose_check "INVARIANT" rg -n 'owner WS-CB — the application IPC label' docs/planning/SYSCALL_RETURN_ABI_PLAN.md
+run_prose_check "INVARIANT" rg -n 'the application IPC label' docs/planning/HIERARCHICAL_CBS_PLAN.md
+
 # PR #873 round 14: **the frozen/live correspondence, as something that runs.**
 # Each frozen operation re-implements a live transition, and which one it
 # re-implements was recorded in a markdown table and a `mirrors X` sentence.

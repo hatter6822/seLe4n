@@ -332,6 +332,17 @@ platform rather than with the lock.
 > [`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §SM3.C.9 for the
 > canonical statement.
 
+> **A blocking arm returns no frame** (WS-RR RR7.17, `v0.34.68`). Which
+> syscalls return a value is decided from the caller's **post-state**, never
+> from its number — a `.send` that finds a waiting receiver returns, one that
+> parks does not. `blockingArm_returns_no_frame` and its family state that both
+> ways, state that the staged registers are not consulted on the blocking arm
+> (so a blocked caller's own argument spill cannot reach the boundary as a
+> return value), and compose onto the exported seam, where the trap layer reads
+> the outcome tag. The Rust `ReturnShape` mirror lost its wildcard and gained a
+> cross-check: both sides render the same `id → shape` table against one
+> fixture, so two total functions cannot disagree silently.
+
 > **The answer a forcibly unblocked thread gets** (WS-RR RR7.14, `v0.34.67`).
 > A thread taken out of a blocking IPC has no value to receive, and until this
 > cut both unblocking paths staged nothing — so the SM10.1 context restore

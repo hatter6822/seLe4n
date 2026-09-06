@@ -160,7 +160,7 @@ the boundary is pinned both ways below (WS-RR RR7.14 added
 `.ipcCancelled` at 57, so the last discriminant is 57 and 58 is the
 first rejected one). -/
 private def sd002_errorLabelCarriage : IO Unit := do
-  for disc in [0:58] do
+  for disc in [0:SeLe4n.Model.KernelError.kernelErrorCount] do
     match SeLe4n.Model.KernelError.ofDiscriminant? disc with
     | none =>
         expect s!"sd002a_discriminant_{disc}_resolves" false
@@ -206,7 +206,7 @@ label `0`.  The retired SD-003 pinned `encodeOk`'s bit-63 masking, whose
 badge-aliasing hazard now lives as
 `Architecture.bit63Encoding_not_injective_on_badges`. -/
 private def sd003_errorLabelRoundtrip : IO Unit := do
-  for disc in [0:58] do
+  for disc in [0:SeLe4n.Model.KernelError.kernelErrorCount] do
     match SeLe4n.Model.KernelError.ofDiscriminant? disc with
     | none => expect s!"sd003a_resolve_{disc}" false "must resolve"
     | some e => do

@@ -738,17 +738,24 @@ private def returnAbiTraceLines : List String :=
     match signalled with
     | .ok (_, st) => dispatchFromAbi SyscallId.notificationWait.toNat 0 0 st
     | e => e
-  -- 58 = the full `KernelError` enumeration (discriminants 0..57, the newest
-  -- being WS-RR RR7.14's `.ipcCancelled` at 57).  The boundary
-  -- conjunct pins the count from above: when a 59th variant lands,
-  -- `ofDiscriminant? 58` stops being `none`, the fixture line diverges, and
-  -- this range has to move with it rather than silently under-covering.
+  -- `KernelError.kernelErrorCount` = the full `KernelError` enumeration
+  -- (discriminants `0..count - 1`, the newest being WS-RR RR7.14's
+  -- `.ipcCancelled` at 57).  The boundary conjunct pins the count from above:
+  -- when the next variant lands, `ofDiscriminant? count` stops being `none`, the
+  -- fixture line diverges, and this range has to move with it rather than
+  -- silently under-covering.  **WS-RR RR7.17**: the figure is interpolated into
+  -- the trace line rather than written there as a literal — the literal said
+  -- `57` for a whole cut after RR7.14 widened the range, so the line described
+  -- a check it was not performing while the fixture agreed with the prose.
   let labelRoundtrips :=
-    (List.range 58).all fun d =>
+    (List.range SeLe4n.Model.KernelError.kernelErrorCount).all fun d =>
       match SeLe4n.Model.KernelError.ofDiscriminant? d with
       | some e => Kernel.Architecture.ofErrorLabel? (Kernel.Architecture.errorLabel e) == some e
       | none => false
-  let labelBoundary := (SeLe4n.Model.KernelError.ofDiscriminant? 58).isNone
+  let labelBoundary :=
+    (SeLe4n.Model.KernelError.ofDiscriminant?
+      SeLe4n.Model.KernelError.kernelErrorCount).isNone
+  let errorCount := SeLe4n.Model.KernelError.kernelErrorCount
   [ s!"[ret-abi] abi-version: {Kernel.Architecture.syscallAbiVersion}"
   , outcomeLine "unit signal (cap ptr 5)" signalled
   , outcomeLine "badge wait after signal 42" waitAfterSignal
@@ -759,7 +766,7 @@ private def returnAbiTraceLines : List String :=
         SeLe4n.Kernel.Concurrency.bootCoreId
         SyscallId.notificationSignal.toNat.toUInt32 0xAAAA
         capPtrValue.toUInt64 0xBBBB 0 0 0 0 0 0 0 0 0 witnessState)
-  , s!"[ret-abi] error labels: all 57 discriminants round-trip = {labelRoundtrips}; 57 unassigned = {labelBoundary}"
+  , s!"[ret-abi] error labels: all {errorCount} discriminants round-trip = {labelRoundtrips}; {errorCount} unassigned = {labelBoundary}"
   , s!"[ret-abi] full-width badge frame: " ++
       frameCells (Kernel.Architecture.returnFrameOfBadge
         (Badge.ofNatMasked 0x8000000000000042))
@@ -1040,6 +1047,60 @@ private def runAuditReadEndToEnd : IO Unit := do
          st.declassificationAuditLog.length == 2
      | _ => false)
 
+/-- **WS-RR RR7.17: the Lean⇄Rust return-shape cross-check.**
+
+`Architecture.syscallReturnShape` is total by construction — an exhaustive
+match with no wildcard, so a new `SyscallId` is a missing case at elaboration.
+The Rust mirror in `rust/sele4n-abi/tests/conformance.rs` had no such property:
+it was a hand-written match ending in `_ => ReturnShape::Unit`, so a new
+value-returning syscall would have been silently `Unit` on the Rust side while
+Lean refused to build until it was classified.  Two totalities that cannot
+disagree is what §3.4 asks for; two totalities *derived independently* is what
+was there.
+
+RR7.17 removes the wildcard, which makes the Rust side total.  This fixture is
+what makes the two **agree**: both sides render the same `id → shape` table and
+compare against the same bytes, so a reclassification on either side fails on
+that side and the mismatch names the id.  Keyed by the numeric id rather than
+by the constructor name because the two languages spell the names differently
+(`notificationWait` / `NotificationWait`) and the id is what actually crosses
+the ABI; the name correspondence is already pinned by the `xval_*` conformance
+tests and by `syscall_id_variant_count`. -/
+private def shapeName : Kernel.Architecture.ReturnShape → String
+  | .unit    => "unit"
+  | .badge   => "badge"
+  | .word    => "word"
+  | .message => "message"
+
+private def returnShapeTableLines : List String :=
+  ("# syscall return shapes: <id> <shape> (Lean/Rust cross-check)")
+    :: s!"count {SyscallId.count}"
+    :: SyscallId.all.map (fun sid =>
+        s!"{sid.toNat} {shapeName (Kernel.Architecture.syscallReturnShape sid)}")
+
+private def returnShapeFixturePath : String :=
+  "tests/fixtures/syscall_return_shape.expected"
+
+private def runReturnShapeFixtureCheck : IO Unit := do
+  IO.println "--- WS-RR RR7.17 return-shape table (Lean/Rust shared fixture) ---"
+  let expectedContent := String.intercalate "\n" returnShapeTableLines ++ "\n"
+  let fixtureExists ← System.FilePath.pathExists returnShapeFixturePath
+  if !fixtureExists then
+    IO.println s!"  FAIL: shared fixture {returnShapeFixturePath} not found"
+    throw (IO.userError s!"missing fixture {returnShapeFixturePath}")
+  let actual ← IO.FS.readFile returnShapeFixturePath
+  if actual == expectedContent then
+    IO.println s!"  PASS: syscallReturnShape matches {returnShapeFixturePath}"
+    IO.println "        (rust/sele4n-abi/tests/conformance.rs asserts the same bytes)"
+  else
+    IO.println s!"  FAIL: syscallReturnShape differs from {returnShapeFixturePath}"
+    IO.println "        the live table is:"
+    for l in returnShapeTableLines do
+      IO.println s!"          {l}"
+    IO.println s!"        regenerate BOTH sides deliberately — the Rust mirror in"
+    IO.println "        rust/sele4n-abi/tests/conformance.rs reads the same file."
+    throw (IO.userError "return-shape fixture mismatch")
+
 -- ============================================================================
 -- Runner
 -- ============================================================================
@@ -1059,6 +1120,7 @@ def runSyscallReturnAbiChecks : IO Unit := do
   runBlockedWaiterStagingWitnesses
   runAuditReadEndToEnd
   runTraceFixtureCheck
+  runReturnShapeFixtureCheck
   IO.println "===================================================="
   IO.println "All syscall-return-ABI checks PASS (post-flip convention holds)."
 

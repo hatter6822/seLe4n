@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.67.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.68.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -575,6 +575,26 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   than a design choice. Three strippers is two too many; consolidating
   them onto `lean_code_view.strip` is a follow-up, deliberately not
   done in the same cut as the mechanism they would depend on.
+  **The view is per-language, and a language absent from it is read
+  raw** (WS-RR RR7.17). `test_lib.sh`'s classifier routes *every*
+  `rg`/`grep` anchor through the overlay, not only the Lean ones, but
+  the overlay linked `.rs` files whole — so 215 Tier-3 anchors over
+  Rust matched comments, and "gates read code, prose reads prose" held
+  for Lean only. It surfaced the way this class always does: the first
+  negative written against a Rust construct was satisfied by the
+  comment explaining what it forbids, and the project's own rule
+  forbids the obvious escape (*never contort prose to satisfy a
+  scanner*). The overlay's `_STRIPPERS` table now maps `.lean` to
+  `lean_code_view.strip` and `.rs` to `rust_code_view.code` — the same
+  view the Python gates read, so the tree has one Rust view rather than
+  two that can disagree — and a suffix absent from the table is linked
+  whole, which is a *decision* rather than a default: adding a language
+  whose files gates scan means adding its stripper. The witness suite
+  `test_code_view_wiring.sh` covers both languages on all three
+  directions (a comment cannot satisfy a code anchor; a prose check
+  still reads the real text; code anchors still match code), in both
+  Rust comment forms, because a Lean-only witness is exactly what let
+  the Rust hole stay open while the script reported PASS.
 - **A presence check is not a relation check.**  Nearly every gate here
   is a text scanner, and the recurring way one fails is that it asserts a
   *token is present* when the property it means is a *relation*: that the
@@ -2120,7 +2140,9 @@ code may assume:
   a user send leaves it at `0` — because carrying a user's label would let a
   thread holding a send capability to a fault endpoint mint a message bearing a
   `seL4_Fault_tag`.  Restoring seL4's sender-side label pass-through needs its
-  own authority story and is registered debt.  (5) The handler capability is
+  own authority story and is registered debt — **owner WS-CB since v0.34.68**
+  (WS-RR RR7.17), with the constraint and two candidate designs stated in the
+  WS-RA plan's §9 rather than inside a review narrative.  (5) The handler capability is
   gated by seL4's `sendFaultIPC` predicate — send, and grant **or**
   grant-reply (`faultHandlerCapAuthorized`) — not send-and-grant: the reply
   link is structural in this model, so the disjunct is a policy gate, and the

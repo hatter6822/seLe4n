@@ -1317,6 +1317,7 @@ second one. -/
 theorem refusalTagSlots_bounds_reason (e : KernelError) :
     e.toDiscriminant < refusalTagSlots := by
   have h := KernelError.toDiscriminant_lt e
+  rw [show KernelError.kernelErrorCount = 58 from rfl] at h
   unfold refusalTagSlots
   omega
 

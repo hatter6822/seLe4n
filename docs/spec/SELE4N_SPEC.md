@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.34.67` (`lakefile.toml`) |
+| **Package version** | `0.34.68` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 335,343 across 313 Lean files |
-| **Test LoC** | 69,796 across 70 Lean test suites |
-| **Proved declarations** | 11,160 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 335,599 across 313 Lean files |
+| **Test LoC** | 69,858 across 70 Lean test suites |
+| **Proved declarations** | 11,172 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -1974,6 +1974,23 @@ below), and results now cross the boundary as a full seL4 ARM64
 return frame — `x0` = badge/primary result, `x1` = `MessageInfo`
 whose label carries the error, `x2`–`x5` = message registers —
 through a per-core return-frame mailbox.
+
+**WS-RR RR7.17 (v0.34.68) — a blocking arm returns no frame, and the Rust
+shape mirror agrees with Lean's.**  Which syscalls return a value is decided
+from the caller's **post-state**, never from its number: a `.send` that finds a
+waiting receiver returns, and one that parks does not.  The family in
+`Platform/FFI.lean` states that both ways
+(`syscallReturnOutcome_blocks_iff`), states the id-independence it rests on,
+states that the staged registers are *not consulted* on the blocking arm — so a
+blocked caller's own argument spill cannot reach the boundary as a return value
+— and composes onto the exported seam
+(`syscallDispatchFromAbi_blocked_returns_no_frame`), which is where the trap
+layer reads it.  The Rust `ReturnShape` mirror is exhaustive (no wildcard, so
+rustc plays the role Lean's totality plays) **and** cross-checked: both sides
+render the same `id → shape` table against `tests/fixtures/syscall_return_shape.expected`,
+so two independently maintained total functions cannot disagree silently.  The
+`KernelError` count is `SeLe4n.Model.KernelError.kernelErrorCount`, bounded from
+both sides so it is the least strict upper bound.
 
 **WS-RR RR7.14 (v0.34.67) — the frame a forcibly unblocked thread is owed.**
 A thread taken out of a blocking IPC has no value to receive, and both

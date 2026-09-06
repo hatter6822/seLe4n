@@ -1,3 +1,105 @@
+## v0.34.68 — the catalogue line that was never a theorem, and a gate that read comments
+
+**WS-RR RR7.17** — the syscall-return-ABI mediums: the register's four rows for
+`SYSCALL_RETURN_ABI_PLAN`, of which one (SM10.1's two inherited obligations)
+closed at RR7.5/RR7.15.
+
+### `blockingArm_returns_no_frame` (finding 33)
+
+A §10 headline theorem with no artefact.  Authored in `Platform/FFI.lean`
+beside `syscallReturnOutcome` — and authored as a *family*, because the
+function's body is one `if` and a single-line restatement of it would satisfy a
+name check while asserting nothing.  What the family asserts is the three
+properties the rest of the system reads off that `if`:
+
+* the decision is **state-dependent, not id-dependent** (§3.5).  A `.send` that
+  finds a waiting receiver returns; one that parks does not.  Stated
+  `∀ syscallId` (`syscallReturnOutcome_blocked_independent_of_id`), which is
+  what pins that no id can resurrect a frame for a parked caller;
+* a blocked caller's outcome carries **no frame at all** — not a zero frame, not
+  a stale one.  That is what makes the interim `blocked_resume_sentinel_regs()`
+  poisoning the only thing a blocked caller's registers can hold before SM10.1;
+* the staged registers are **not read** on that arm
+  (`syscallReturnOutcome_blocked_ignores_staged_registers`), proved by *varying*
+  the register context and fixing everything else — the token-preserving
+  mutation, since a definition that read them keeps every identifier.
+
+Plus the characterisation both ways (`syscallReturnOutcome_blocks_iff`), the
+fact that `.faulted` is outside the function's range, and the composition onto
+the **exported seam** (`syscallDispatchFromAbi_blocked_returns_no_frame`), which
+is where the property is load-bearing: `dispatch_svc` reads the outcome tag, and
+tag 1 is what sends it down the poison-and-park path.
+
+### The Rust `ReturnShape` mirror (finding 34)
+
+It ended in `_ => ReturnShape::Unit` — exactly the shape §3.4 refuses on the
+Lean side, and for the same reason: a new value-returning syscall would have
+read `Unit` there while Lean refused to build until it was classified, and the
+two would disagree with nothing failing.  Every variant is now listed, so
+rustc's exhaustiveness plays the role Lean's totality plays.
+
+**Exhaustiveness is not agreement.**  Two independently maintained total
+functions can still classify a syscall differently, which is the actual
+finding.  So both sides render the same `id → shape` table and compare against
+the same bytes: `tests/fixtures/syscall_return_shape.expected`, written from
+`Architecture.syscallReturnShape` by `SyscallReturnAbiSuite` and read by the
+conformance test through `include_str!`.  Keyed by the numeric id, since the two
+languages spell the names differently and the id is what crosses the ABI.
+Verified by two mutations — a deleting one that fails compilation, and a
+preserving one that moves a variant between shape groups.
+
+### The application IPC label (finding 35)
+
+Registered only inside a review narrative, with no closure target.  Lifted into
+the plan's §9 with the three things a registration needs: the gap
+(`IpcMessage.label` is kernel-origin only, so a user send leaves it `0` and an
+application spends a message register on its method number); **the constraint
+that rules out the naive fix** (carrying the sender's label verbatim would let a
+thread holding a send capability to a fault endpoint mint a message whose label
+*is* a `seL4_Fault_tag`, indistinguishable from a kernel-delivered fault — the
+handler would decode a forged `vmFault` and reply, restarting a thread that
+never faulted); and two candidate designs, reserve-and-clamp or out-of-band
+provenance, neither chosen because both need an authority story WS-RA does not
+own.  **Owner: WS-CB**, whose admission protocol already reopens the message
+path — deliberately not WS-BP, since first boot must not wait on a
+userspace-protocol decision.  Cross-registered in the CBS plan's §12 and the
+debt register.
+
+### Two findings closed in passing
+
+**The `KernelError` count was a literal at nine sites**, and one of them was
+prose: a trace line said "all 57 discriminants round-trip" for a whole cut after
+v0.34.67 widened the check beside it to 58.  It is now
+`SeLe4n.Model.KernelError.kernelErrorCount`, bounded from above by
+`toDiscriminant_lt` (decided over every constructor, so a new variant fails
+elaboration) **and from below** by `kernelErrorCount_tight` — so it is the
+*least* strict upper bound and cannot drift up either, which a one-sided bound
+would have allowed while every consumer kept passing over a range with a hole
+at the top.
+
+**A gate defect, found by falling into it.**  `test_lib.sh`'s classifier routes
+*every* `rg`/`grep` anchor through the code view, not only the Lean ones — but
+`lean_code_view.overlay` linked `.rs` files whole, so **215 Tier-3 anchors over
+Rust read raw text** and "gates read code, prose reads prose" held for Lean
+only.  It surfaced the way this class always does: the first negative written
+against a Rust construct (`_ => ReturnShape::Unit` must not come back) was
+satisfied by the comment explaining what it forbids, and this project's own rule
+forbids the obvious escape — *never contort prose to satisfy a scanner; if a
+comment cannot say something plainly, the scanner is reading the wrong text*.
+
+The overlay's `_STRIPPERS` table now maps `.lean` to `lean_code_view.strip` and
+`.rs` to `rust_code_view.code` — the same view the Python gates already read, so
+the tree has one Rust view rather than two that can disagree.  A suffix absent
+from the table is linked whole, which is a decision rather than a default.
+`test_code_view_wiring.sh` gained the Rust half of all three directions in both
+comment forms (a Lean-only witness is exactly what let the hole stay open while
+the script reported PASS), and re-running Tier 3 over the corrected view broke
+**zero** existing anchors — every Rust anchor in the tree was already reading
+code.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md RR7.17;
+docs/planning/SYSCALL_RETURN_ABI_PLAN.md §9, §10
+
 ## v0.34.67 — the answer a forcibly unblocked thread is owed
 
 **WS-RR RR7.14** — cancellation/timeout error-frame staging, the WS-RA
