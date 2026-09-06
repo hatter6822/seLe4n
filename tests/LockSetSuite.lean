@@ -544,9 +544,12 @@ example : permittedKinds .lifecycleRetype =
      .objStore, .endpoint, .notification, .reply, .schedContext, .vspaceRoot, .page] := by decide
 example : permittedKinds .vspaceMap = [.tcb, .cnode, .vspaceRoot] := by decide
 example : permittedKinds .vspaceUnmap = [.tcb, .cnode, .vspaceRoot] := by decide
-example : permittedKinds .serviceRegister = [.tcb, .cnode, .endpoint] := by decide
-example : permittedKinds .serviceRevoke = [.tcb, .cnode] := by decide
-example : permittedKinds .serviceQuery = [.tcb, .cnode] := by decide
+-- WS-RR RR7.23: `.objStore` on all three — `serviceRegistry` is a
+-- `SystemState`-level map and `stateLevelLock` is the only member that can name
+-- it; before this the trio carried the coverage as a convention.
+example : permittedKinds .serviceRegister = [.tcb, .cnode, .endpoint, .objStore] := by decide
+example : permittedKinds .serviceRevoke = [.tcb, .cnode, .objStore] := by decide
+example : permittedKinds .serviceQuery = [.tcb, .cnode, .objStore] := by decide
 example : permittedKinds .schedContextConfigure = [.tcb, .cnode, .schedContext] := by decide
 example : permittedKinds .schedContextBind = [.tcb, .cnode, .schedContext] := by decide
 example : permittedKinds .schedContextUnbind = [.tcb, .cnode, .schedContext] := by decide
@@ -861,10 +864,35 @@ private def runPermittedKindsChecks : IO Unit := do
     (decide (permittedKinds .lifecycleRetype =
       [.tcb, .cnode, .untyped,
        .objStore, .endpoint, .notification, .reply, .schedContext, .vspaceRoot, .page]))
+  -- WS-RR RR7.23: five members, four kinds — the state-level lock joined the
+  -- fixed part because `lifecyclePreRetypeCleanup` sweeps the service registry
+  -- (an endpoint being re-purposed) and detaches CDT slot mappings (a CNode),
+  -- and neither map is nameable by a per-object kind.
   assertBool "NEGATIVE: the retype's fixed footprint is still exactly four kinds"
     ((lockSet_lifecycleRetype ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
         (ObjId.ofNat 30) none).pairs.all (fun p =>
-      decide (p.fst.kind ∈ [LockKind.tcb, LockKind.cnode, LockKind.untyped])))
+      decide (p.fst.kind ∈
+        [LockKind.tcb, LockKind.cnode, LockKind.untyped, LockKind.objStore])))
+  -- WS-RR RR7.23 (register finding 5): every registry writer declares the
+  -- state-level lock — the trio in write/write/read, and the retype.
+  assertBool "serviceRegister declares the registry's state-level write"
+    ((lockSet_serviceRegister ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).pairs.any (fun p =>
+      decide (p.fst = stateLevelLock ∧ p.snd = AccessMode.write)))
+  assertBool "serviceRevoke declares the registry's state-level write"
+    ((lockSet_serviceRevoke ⟨5⟩ (ObjId.ofNat 10)).pairs.any (fun p =>
+      decide (p.fst = stateLevelLock ∧ p.snd = AccessMode.write)))
+  assertBool "serviceQuery declares the registry's state-level read"
+    ((lockSet_serviceQuery ⟨5⟩ (ObjId.ofNat 10)).pairs.any (fun p =>
+      decide (p.fst = stateLevelLock ∧ p.snd = AccessMode.read)))
+  assertBool "the retype declares the registry's state-level write (the sweep no footprint named)"
+    ((lockSet_lifecycleRetype ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+        (ObjId.ofNat 30) none).pairs.any (fun p =>
+      decide (p.fst = stateLevelLock ∧ p.snd = AccessMode.write)))
+  -- The pin is that no two registry writers can hold disjoint sets.
+  assertBool "no two registry writers have disjoint footprints"
+    (decide (((lockSet_serviceRegister ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).pairs.map (·.fst)).any
+        (fun l => ((lockSet_lifecycleRetype ⟨6⟩ (ObjId.ofNat 11) (ObjId.ofNat 21)
+          (ObjId.ofNat 31) none).pairs.map (·.fst)).contains l)))
   assertBool "the resolved retype footprint carries the target's own write lock"
     ((lockSet_lifecycleRetype ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20) (ObjId.ofNat 30)
         (some (notificationLock (ObjId.ofNat 40)))).pairs.any (fun p =>
@@ -899,12 +927,12 @@ private def runPermittedKindsChecks : IO Unit := do
     (decide (permittedKinds .tcbSetIPCBuffer = [.tcb, .cnode, .vspaceRoot]))
   -- Audit-pass-6: .serviceRegister includes .endpoint.
   -- registerService reads st.objects[epId]? to verify endpoint kind.
-  assertBool "permittedKinds .serviceRegister (audit-pass-6: includes .endpoint)"
-    (decide (permittedKinds .serviceRegister = [.tcb, .cnode, .endpoint]))
-  assertBool "permittedKinds .serviceRevoke (unchanged: only registry mutation)"
-    (decide (permittedKinds .serviceRevoke = [.tcb, .cnode]))
-  assertBool "permittedKinds .serviceQuery (unchanged: only registry lookup)"
-    (decide (permittedKinds .serviceQuery = [.tcb, .cnode]))
+  assertBool "permittedKinds .serviceRegister (audit-pass-6 .endpoint + the registry's state-level lock)"
+    (decide (permittedKinds .serviceRegister = [.tcb, .cnode, .endpoint, .objStore]))
+  assertBool "permittedKinds .serviceRevoke (registry mutation, under the state-level lock)"
+    (decide (permittedKinds .serviceRevoke = [.tcb, .cnode, .objStore]))
+  assertBool "permittedKinds .serviceQuery (registry lookup, under the state-level lock)"
+    (decide (permittedKinds .serviceQuery = [.tcb, .cnode, .objStore]))
 
 private def runLockKindHelpersChecks : IO Unit := do
   IO.println "--- §5 LockKind helpers ---"
@@ -972,10 +1000,12 @@ private def runPerTransitionShapeChecks : IO Unit := do
   -- VSpace: 3 locks each.
   assertBool "vspaceMap size = 3"
     (decide ((lockSet_vspaceMap ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).size = 3))
-  -- Lifecycle: 4 locks (caller TCB read + CNode root read + untyped write + dst CNode write).
-  assertBool "lifecycleRetype size = 4"
+  -- Lifecycle: 5 locks (caller TCB read + CNode root read + untyped write + dst
+  -- CNode write + the state-level write WS-RR RR7.23 added for the registry
+  -- sweep and the CDT detach the pre-retype cleanup performs).
+  assertBool "lifecycleRetype size = 5"
     (decide ((lockSet_lifecycleRetype ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
-              (ObjId.ofNat 30)).size = 4))
+              (ObjId.ofNat 30)).size = 5))
   -- TCB suspend with both Option-blocked (no donation): 5 locks.
   assertBool "tcbSuspend size (block-options some, no donation) = 5"
     (decide ((lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩
@@ -1018,9 +1048,14 @@ private def runPerTransitionShapeChecks : IO Unit := do
   assertBool "tcbSetIPCBuffer size (VSpaceRoot included) = 4"
     (decide ((lockSet_tcbSetIPCBuffer ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩
               (some (ObjId.ofNat 99))).size = 4))
-  -- Audit-pass-6 P2: serviceRegister now takes a mandatory endpoint read lock.
-  assertBool "serviceRegister size (with endpoint) = 3"
-    (decide ((lockSet_serviceRegister ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).size = 3))
+  -- Audit-pass-6 P2: serviceRegister takes a mandatory endpoint read lock;
+  -- WS-RR RR7.23 added the registry's own state-level write.
+  assertBool "serviceRegister size (endpoint + the registry's state-level write) = 4"
+    (decide ((lockSet_serviceRegister ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).size = 4))
+  assertBool "serviceRevoke size (caller, root, registry) = 3"
+    (decide ((lockSet_serviceRevoke ⟨1⟩ (ObjId.ofNat 10)).size = 3))
+  assertBool "serviceQuery size (caller, root, registry) = 3"
+    (decide ((lockSet_serviceQuery ⟨1⟩ (ObjId.ofNat 10)).size = 3))
 
 private def runLubMergeChecks : IO Unit := do
   IO.println "--- §9 Lub-merging on duplicate keys ---"
@@ -1214,8 +1249,8 @@ private def runAuditPass6FootprintChecks : IO Unit := do
   assertBool "P2: serviceRegister contains endpointLock 20 as read"
     (svcReg.pairs.any (fun p =>
       decide (p = (⟨.endpoint, ObjId.ofNat 20⟩, .read))))
-  assertBool "P2: serviceRegister has exactly 3 locks (tcb + cnode + endpoint)"
-    (decide (svcReg.size = 3))
+  assertBool "serviceRegister has exactly 4 locks (tcb + cnode + endpoint + registry)"
+    (decide (svcReg.size = 4))
   -- Canonical-sort cross-check: the new SC entries in tcbSetPriority
   -- sort AFTER the target TCB at the same hierarchy band but distinct
   -- ObjIds.  At hierarchy level: cnode=2, tcb=3, schedContext=7.  So the

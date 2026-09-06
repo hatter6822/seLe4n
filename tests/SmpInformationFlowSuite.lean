@@ -1587,6 +1587,10 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @Concurrency.lockSet_auditRead_stateLevel_read_mem
 #check @Concurrency.lockSet_auditDrain_stateLevel_write_mem
 #check @Concurrency.auditState_footprints_share_serialization
+-- WS-RR RR7.23 (register finding 5): the same pin for the service registry —
+-- four writers, all declaring `stateLevelLock`, the retype's registry sweep
+-- among them.
+#check @Concurrency.serviceRegistry_footprints_share_serialization
 #check @Concurrency.stateLevelLock_objId_irrelevant
 -- (P1) the occupancy channel: CC-8's inventory entry and witness live in
 -- `CovertChannelPerCore` (§4.8 runs the literals and the record-layer flip);

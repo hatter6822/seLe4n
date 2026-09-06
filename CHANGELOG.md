@@ -1,3 +1,72 @@
+## v0.34.74 — the registry's serialization, declared rather than assumed
+
+**WS-RR RR7.23** — the declassification mediums.  Two register rows, both closed
+in the implement-the-improvement direction.
+
+### Finding 5 — the service registry's serialization gap
+
+The row asked for an `UncoveredLockDomain` entry: register the gap in Lean
+rather than leave it in prose.  The gap was **closable**, so it is closed
+instead — a registered domain records a hole, a declared member removes it.
+
+`SystemState.serviceRegistry` is a state-level map, exactly like the audit
+trail, and no per-object lock kind can name it.  The service section's header
+had claimed since PR #870 round 7 that the registry was covered by the
+table-level object-store lock *"implicitly"* — a convention, not a declared
+footprint member, so under SM3.C.9's fine locks nothing acquires it and two
+concurrent `serviceRegister`s hold provably disjoint sets while
+read-modify-writing the same map.
+
+All four writers now declare `stateLevelLock` by name:
+
+* `lockSet_serviceRegister` and `lockSet_serviceRevoke` in **write** mode;
+* `lockSet_serviceQuery` in **read** — `lookupServiceByCap` folds over the whole
+  map, so it is the reader, exactly as `lockSet_auditRead` is for the trail.
+  Read/read does not conflict, so two queries still run concurrently; what the
+  member buys is that a query cannot observe a half-applied register or revoke;
+* `lockSet_lifecycleRetype` — **the writer the prose kept naming and no
+  footprint declared**.  `lifecyclePreRetypeCleanup` sweeps the registry when
+  the object it re-purposes is an endpoint
+  (`cleanupEndpointServiceRegistrations`) and detaches the CDT slot mapping when
+  it is a CNode; both are state-level maps.  Before this member a retype and a
+  concurrent `serviceRegister` had provably disjoint footprints while writing
+  the same map.
+
+`permittedKinds` gains `.objStore` on the trio; the retype already admitted
+every kind, and `lockSet_lifecycleRetype_nonTarget_kinds` widens from three
+fixed kinds to four rather than quietly passing — the pin on the fixed part is
+what makes the widening visible.  `serviceRegistry_footprints_share_serialization`
+is the closure: a new registry writer must extend it before it can claim a
+footprint.
+
+Not a live race at any point — SM5.I's global kernel-entry lock serialises every
+commit and `withLockSet` is installed at the syscall seam only — which is why
+the register graded it a medium.  It is a latent model-level defect that the
+fine-lock migration would have inherited.
+
+### Finding 6 — the declassified badge nobody could observe
+
+SM9.C's data-carrying declassification is the one flow the kernel *deliberately*
+makes visible, and in the **wait-before-signal** ordering its badge reaches the
+waiter only through the return frame — the waiter blocked first, so there is no
+in-line result, and until the context restore is live its frame is poisoned with
+`blocked_resume_sentinel_regs()`.  The transition and its audit record are
+proved; that the badge *arrives* is not, and cannot be until the seam flips.
+
+Kept as boot-path work, as the row asks, and made an **executed** acceptance
+criterion rather than a prose note: `SMP_BOOT_PATH_PLAN.md` gains **`BP7.7`** —
+a thread waits on a notification, a cleared sender declassifies a signal to it,
+and the waiter resumes reading *that badge* in `x0` with the matching trail
+record.  A sentinel value in `x0` is a failure of that row, not of SM9.  It
+carries its own box in the phase's acceptance line and in the WS-BP gate
+(BP7: 6 → 7 sub-tasks; the plan's total 35 → 36).
+
+Coverage: 1 `#check`, 5 Tier-3 anchors (four of them relations — each footprint
+must contain the member in the right *mode*), and 8 runtime checks in the
+lock-set suite, including the negative that no two registry writers can hold
+disjoint footprints.  The five kind- and size-pins the change invalidates were
+updated to the new values rather than relaxed.
+
 ## v0.34.73 — the queue splice, decomposed once
 
 **WS-RR RR7.22 (part 2 of 3)** — register finding 4's engine: *whole-bundle

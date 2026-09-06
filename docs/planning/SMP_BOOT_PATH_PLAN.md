@@ -20,7 +20,7 @@
 > [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) §1.1 derives
 > from a sized breakdown; this plan sequences that breakdown without
 > re-pricing it
-> **Sub-task count**: 35 across 8 phases (BP1..BP8), each phase numbered in
+> **Sub-task count**: 36 across 8 phases (BP1..BP8), each phase numbered in
 > execution order
 
 ## 1. Why this plan exists
@@ -103,7 +103,7 @@ code for the target.
 | BP4 | The boot seam — `lean_kernel_main` and its install ordering | 5 | L |
 | BP5 | The bootable image — `[[bin]]`, the link, `kernel8.img` | 4 | M |
 | BP6 | Per-core readiness — the five dormant seams go live | 3 | M |
-| BP7 | The context restore — TTBR0, the full frame, delivery | 6 | XL |
+| BP7 | The context restore — TTBR0, the full frame, delivery | 7 | XL |
 | BP8 | First boot and bring-up — QEMU, then the board | 4 | XL |
 
 ## 5. Phases
@@ -204,7 +204,7 @@ preempted again.  Flipping the mask is what makes the kernel run.
 **Acceptance**: all four PEs publish readiness under QEMU, and a PE that
 does not makes the boot fail rather than hang.
 
-### BP7 — The context restore (6 sub-tasks)
+### BP7 — The context restore (7 sub-tasks)
 
 `contextRestoreSeamLive` is `false`, and the three prerequisites its
 docstring names (register finding 19) are here, in the order they must
@@ -220,10 +220,12 @@ core; both are interim artefacts this phase removes.
 | BP7.4 | Per-core return-frame staging: the kernel-entry lock closes in `dispatch_svc` before the trap handler would install the frame, so the staged frame has nowhere to live.  Give the frame a per-core mailbox the handler reads after the lock releases.  Consumes BP7.3 | `rust/sele4n-hal/src/kernel_entry.rs`, `rust/sele4n-hal/src/svc_dispatch.rs` | M |
 | BP7.5 | Deliver the cancellation/timeout error frames WS-RR RR7.14 stages, so a cancelled waiter resumes reading an error rather than its own stale arguments.  Consumes RR7.14 and BP7.4 | `rust/sele4n-hal/src/svc_dispatch.rs`, `SeLe4n/Kernel/IPC/Operations/Timeout.lean` | M |
 | BP7.6 | Flip `contextRestoreSeamLive` to `true` — one constant, three guards — and retire the sentinel poison and the two SM10.1 halts with it.  Consumes BP7.2, BP7.4, BP7.5 | `SeLe4n/Kernel/Concurrency/ContextRestoreSeam.lean`, `rust/sele4n-hal/src/svc_dispatch.rs`, `rust/sele4n-hal/src/trap.rs` | M |
+| BP7.7 | **The declassified badge, delivered** (WS-RR RR7.23, register finding 6).  SM9.C's data-carrying declassification is the one flow the kernel *deliberately* makes visible, and in the **wait-before-signal** ordering its badge reaches the waiter only through the return frame: the waiter blocked first, so there is no in-line result to read, and until the restore is live its frame is poisoned with `blocked_resume_sentinel_regs()`.  The transition and its audit record are proved; what is unproven is that the badge arrives.  Exercise it end to end on the live restore — a thread waits on a notification, a cleared sender declassifies a signal to it, and the waiter resumes reading *that badge* in `x0` with the trail carrying the matching record.  A sentinel value in `x0` is a failure of this row, not of SM9.  Consumes BP7.6 | `rust/sele4n-hal/src/svc_dispatch.rs`, `scripts/`, `docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` | M |
 
 **Acceptance**: a thread blocked in `seL4_Recv` is resumed by its partner
-with the frame the kernel staged, on hardware, and no path in the image
-still installs a sentinel.
+with the frame the kernel staged, on hardware, no path in the image still
+installs a sentinel, and a wait-before-signal declassified badge reaches the
+waiter's `x0` with its audit record.
 
 ### BP8 — First boot and bring-up (4 sub-tasks)
 
@@ -266,6 +268,8 @@ that no script had ever performed.
       frame or halts pending SM10.1 (BP7.6).
 - [ ] A blocked caller is resumed with the frame the kernel staged, on
       hardware (BP7.6).
+- [ ] A wait-before-signal declassified badge reaches the waiter's `x0`
+      through the live restore, with the matching audit record (BP7.7).
 - [ ] `scripts/test_qemu_smp_bringup.sh` boots four cores and verifies four
       banners — **executed**, and the two SM1.H boxes re-ticked on its
       evidence (BP8.2).

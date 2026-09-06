@@ -3503,6 +3503,15 @@ run_check "INVARIANT" rg -n '^theorem lockSet_declassify_stateLevel_write_mem' S
 run_check "INVARIANT" rg -n '^theorem lockSet_auditRead_stateLevel_read_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_auditDrain_stateLevel_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^theorem auditState_footprints_share_serialization' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+# The service registry is a state-level map, so its writers must declare the
+# state-level lock: the register/revoke pair in write mode, the query in read
+# (it folds over the whole map), and the retype, whose pre-retype cleanup sweeps
+# the registry when the object it re-purposes is an endpoint.
+run_check "INVARIANT" rg -n '^theorem serviceRegistry_footprints_share_serialization' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_serviceRegister(.|\n)*stateLevelLock, .write" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_serviceRevoke(.|\n)*stateLevelLock, .write" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_serviceQuery(.|\n)*stateLevelLock, .read" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_lifecycleRetype(.|\n)*stateLevelLock, .write" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
 run_check "INVARIANT" rg -n '^theorem stateLevelLock_objId_irrelevant' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
 run_prose_negative_check "INVARIANT" rg -n 'serialise implicitly via the table-level' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 

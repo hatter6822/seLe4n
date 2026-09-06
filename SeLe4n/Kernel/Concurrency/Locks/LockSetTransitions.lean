@@ -779,7 +779,8 @@ def lockSet_lifecycleRetype (callerTid : ThreadId)
       [(tcbLock callerTid, .read),
        (cnodeLock cnodeRootObjId, .read),
        (untypedLock untypedObjId, .write),
-       (cnodeLock dstCnodeObjId, .write)])
+       (cnodeLock dstCnodeObjId, .write),
+       (stateLevelLock, .write)])
     (targetLock.map (fun l => (l, AccessMode.write)))
 
 /-! ## VSpace syscalls (2 transitions) -/
@@ -1651,19 +1652,20 @@ relevant CNode are the universal locks; `serviceRegister` additionally
 takes a read lock on the endpoint capability target (audit-pass-6
 closure).
 
-**Registered debt (PR #870 round 7)**: this header used to claim the registry
+**Closed at `v0.34.74` (WS-RR RR7.23)**: this header used to claim the registry
 reads/writes were covered by the table-level `objStoreLock` "implicitly" — a
 convention, not a declared footprint member, so under SM3.C.9's fine locks
 nothing would have acquired it and two concurrent `serviceRegister`s had
-provably disjoint sets while writing the same `serviceRegistry` map.  The
-same defect class the round-7 finding closed for the audit trail (whose
-three accessors now declare `stateLevelLock`); the registry trio — plus the
-retype cleanup path, which also sweeps the registry
-(`cleanupEndpointServiceRegistrations`) — is tracked in
-`docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` §4 (the round-7
-cut), closure being the same declared member once the registry's writer
-inventory is audited.  Under the SM5.I kernel-entry lock there is no live
-race today. -/
+provably disjoint sets while writing the same `serviceRegistry` map.  The same
+defect class the round-7 finding closed for the audit trail, and closed the same
+way: all four registry writers now carry `stateLevelLock` by name — the trio in
+write / write / **read** mode (the query folds over the whole map, so it is the
+reader, exactly as `lockSet_auditRead` is for the trail) and the **retype**,
+whose `cleanupEndpointServiceRegistrations` sweep is the writer the prose kept
+listing and no footprint declared.  `serviceRegistry_footprints_share_serialization`
+is the pin, and a new registry writer must extend it before it can claim a
+footprint.  Under the SM5.I kernel-entry lock there was no live race, which is
+why the register graded it a medium rather than a blocker. -/
 
 /-- WS-SM SM3.B.3: `lockSet` for `serviceRegister`.
 
@@ -1682,7 +1684,8 @@ def lockSet_serviceRegister (callerTid : ThreadId)
   lockSetOfList
     [(tcbLock callerTid, .read),
      (cnodeLock cnodeRootObjId, .read),
-     (endpointLock endpointObjId, .read)]
+     (endpointLock endpointObjId, .read),
+     (stateLevelLock, .write)]
 
 /-- WS-SM SM3.B.3: `lockSet` for `serviceRevoke`.
 
@@ -1694,7 +1697,8 @@ def lockSet_serviceRevoke (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) : LockSet :=
   lockSetOfList
     [(tcbLock callerTid, .read),
-     (cnodeLock cnodeRootObjId, .read)]
+     (cnodeLock cnodeRootObjId, .read),
+     (stateLevelLock, .write)]
 
 /-- WS-SM SM3.B.3: `lockSet` for `serviceQuery`.
 
@@ -1712,7 +1716,8 @@ def lockSet_serviceQuery (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) : LockSet :=
   lockSetOfList
     [(tcbLock callerTid, .write),
-     (cnodeLock cnodeRootObjId, .read)]
+     (cnodeLock cnodeRootObjId, .read),
+     (stateLevelLock, .read)]
 
 /-- WS-SM SM3.B.3 (PR #870 round 6): `.serviceQuery`'s staging write is in its
 declared footprint — the sibling of `lockSet_auditRead_staging_write_mem`. -/
@@ -1723,7 +1728,60 @@ theorem lockSet_serviceQuery_staging_write_mem (callerTid : ThreadId)
   unfold lockSet_serviceQuery lockSetOfList
   simp only [List.foldl]
   exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
-    (by simp [LockSet.insertOrMerge])
+    (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+      (by simp [LockSet.insertOrMerge]))
+
+/-- **WS-RR RR7.23 (register finding 5): every writer of the service registry
+declares the state-level lock.**
+
+`SystemState.serviceRegistry` is a state-level map, exactly like the audit
+trail, and no per-object lock kind can name it.  Until this cut the three
+service footprints and the retype's carried a *convention* — the header above
+this file's service section said the registry was covered by the table-level
+object-store lock "implicitly" — which under SM3.C.9's fine locks is nothing at
+all: two concurrent `serviceRegister`s had provably disjoint sets while
+read-modify-writing the same map, and so did a `serviceRevoke` racing a retype
+that swept the registry through `cleanupEndpointServiceRegistrations`.
+
+Four writers, and the fourth is the one prose kept forgetting: the **retype**
+sweeps the registry when the object it re-purposes is an endpoint, and detaches
+the CDT slot mapping when it is a CNode.  Both are state-level maps; neither is
+reachable from a per-object footprint.
+
+The query is the reader — `lookupServiceByCap` folds over the whole map — so it
+takes the member in **read** mode, exactly as `lockSet_auditRead` does for the
+trail.  Read/read does not conflict, so two queries still run concurrently;
+what the member buys is that a query cannot observe a half-applied register or
+revoke.
+
+A new registry writer must extend this theorem before it can claim a
+footprint. -/
+theorem serviceRegistry_footprints_share_serialization :
+    ∀ (callerA : ThreadId) (rootA epA : ObjId)
+      (callerB : ThreadId) (rootB : ObjId)
+      (callerC : ThreadId) (rootC : ObjId)
+      (callerD : ThreadId) (rootD untypedD dstD : ObjId) (targetD : Option LockId),
+      (stateLevelLock, AccessMode.write)
+        ∈ (lockSet_serviceRegister callerA rootA epA).pairs ∧
+      (stateLevelLock, AccessMode.write)
+        ∈ (lockSet_serviceRevoke callerB rootB).pairs ∧
+      (stateLevelLock, AccessMode.read)
+        ∈ (lockSet_serviceQuery callerC rootC).pairs ∧
+      (stateLevelLock, AccessMode.write)
+        ∈ (lockSet_lifecycleRetype callerD rootD untypedD dstD targetD).pairs := by
+  intro callerA rootA epA callerB rootB callerC rootC callerD rootD untypedD dstD targetD
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · unfold lockSet_serviceRegister lockSetOfList; simp only [List.foldl]
+    exact LockSet.mem_insertOrMerge_write_self _ _
+  · unfold lockSet_serviceRevoke lockSetOfList; simp only [List.foldl]
+    exact LockSet.mem_insertOrMerge_write_self _ _
+  · unfold lockSet_serviceQuery lockSetOfList; simp only [List.foldl]
+    exact List.mem_cons_self ..
+  · refine mem_write_lockSetExtendOpt _ _ _ ?_
+    show (stateLevelLock, AccessMode.write) ∈ (lockSetOfList _).pairs
+    unfold lockSetOfList
+    simp only [List.foldl]
+    exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-! ## SchedContext syscalls (3 transitions) -/
 
@@ -2308,10 +2366,14 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
       [.tcb, .cnode, .objStore]
   -- Service syscalls.  `.serviceRegister` reads `st.objects[epId]?`
   -- (audit-pass-6 extension); the other two only touch `serviceRegistry`.
+  -- WS-RR RR7.23: `.objStore` on all three — `serviceRegistry` is a
+  -- `SystemState`-level map, exactly like the audit trail, and the member that
+  -- serialises it is `stateLevelLock` (kind `.objStore`, hierarchy level 0, so
+  -- it is acquired first and the by-kind ladder stays acyclic).
   | .serviceRegister =>
-      [.tcb, .cnode, .endpoint]
+      [.tcb, .cnode, .endpoint, .objStore]
   | .serviceRevoke | .serviceQuery =>
-      [.tcb, .cnode]
+      [.tcb, .cnode, .objStore]
   -- SchedContext syscalls
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind =>
       [.tcb, .cnode, .schedContext]
@@ -3004,21 +3066,31 @@ theorem lockSet_consistent_lifecycleRetype (callerTid : ThreadId)
         · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
     (by intro pp _
         exact permittedKinds_lifecycleRetype_admits_every_kind pp.fst.kind)
 
 /-- WS-SM SM3.B.4 (PR #873 round 7): **and the members the retype itself takes
-are still exactly four.**
+are still exactly five.**
 
 The tightness that admitting every target kind would otherwise give up, stated at
 `none` — the shape with no resolved target — so drift in the *fixed* part (caller
-TCB, caller CSpace root, untyped source, destination CNode) is still a failure
-even though the theorem above would keep holding of it. -/
+TCB, caller CSpace root, untyped source, destination CNode, and the state-level
+lock) is still a failure even though the theorem above would keep holding of it.
+
+**WS-RR RR7.23 widened the fixed part by one kind, not by convenience.**
+`lifecyclePreRetypeCleanup` writes two `SystemState`-level maps — the service
+registry when the retyped object is an endpoint
+(`cleanupEndpointServiceRegistrations`), and the CDT slot mapping when it is a
+CNode — and neither is a per-object field any kind but `.objStore` can name.
+Before this member the retype's footprint was provably disjoint from a
+concurrent `serviceRegister`'s while both read-modify-wrote `serviceRegistry`. -/
 theorem lockSet_lifecycleRetype_nonTarget_kinds (callerTid : ThreadId)
     (cnRoot untypedId dstCn : ObjId) :
     ∀ p ∈ (lockSet_lifecycleRetype callerTid cnRoot untypedId dstCn none).pairs,
-      p.fst.kind ∈ [LockKind.tcb, LockKind.cnode, LockKind.untyped] :=
+      p.fst.kind ∈ [LockKind.tcb, LockKind.cnode, LockKind.untyped, LockKind.objStore] :=
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
@@ -3029,6 +3101,8 @@ theorem lockSet_lifecycleRetype_nonTarget_kinds (callerTid : ThreadId)
         · rw [h]; simp [untypedLock]
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp [cnodeLock]
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [stateLevelLock]
         exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM3.B.4 for `.vspaceMap`. -/
@@ -3092,6 +3166,8 @@ theorem lockSet_consistent_serviceRegister (callerTid : ThreadId)
         · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM3.B.4 for `.serviceRevoke`. -/
@@ -3105,6 +3181,8 @@ theorem lockSet_consistent_serviceRevoke (callerTid : ThreadId)
         · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM3.B.4 for `.serviceQuery`. -/
@@ -3114,6 +3192,8 @@ theorem lockSet_consistent_serviceQuery (callerTid : ThreadId)
       p.fst.kind ∈ permittedKinds .serviceQuery :=
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
