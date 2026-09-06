@@ -1,3 +1,92 @@
+## v0.34.84 — the artefacts the plans named
+
+**WS-RR RR7.34** — five §7 findings, all of the same class: a document names an
+artefact that does not exist.  The row's own rule is that each is *authored*, not
+struck from the catalogue, and none was struck.
+
+**Two theorems authored.**
+
+- `donation_perCore_consistent` (`SeLe4n/Kernel/API.lean`) — named by
+  `SMP_CROSS_CORE_IPC_PLAN` §4.3 and §10 and by `SMP_PER_CORE_SCHEDULER_PLAN`'s
+  PIP catalogue, and existing nowhere.  The *content* existed three times over,
+  one migration theorem per donation path; what was missing is the statement over
+  all of them.  `PerCoreDonationStep` is the relation — a constructor per live
+  hand-off, each carrying that path's own home-core resolutions — and the theorem
+  says every SchedContext hand-off from a state whose replenish queues sit on
+  their bound threads' home cores lands in one where they still do.  Derived, not
+  restated: the proof is the three per-path theorems and nothing else, and a
+  fourth donation path cannot be added without extending the relation and
+  answering the theorem for it.
+- `declassifyStoreOnCore_state_log_independent`
+  (`SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean`) — the audit trail
+  is an *input* to the audited step: it decides whether there is room, and it
+  supplies the event's timestamp.  So "does the trail steer the downgrade itself?"
+  is a question the definition's shape raises and nothing answered.  It does not,
+  and the theorem says so over two runs differing in exactly the trail.  Both are
+  required to succeed, because the trail genuinely decides *whether* the step is
+  admitted — the SM9.A fail-closed cliff, which this deliberately does not deny.
+  Its companion `declassifyStoreOnCore_state_core_independent` says the same of
+  the core dimension; together, neither which core ran the downgrade nor what the
+  trail already held changes the state it leaves.
+
+**One gate built.**  `SMP_FOUNDATIONS_PLAN` §6.3 said Tier 0 "verifies SM0 doesn't
+introduce `sorry`, `axiom`, or `native_decide`".  The forbidden-marker scan
+covered `axiom|sorry|TODO`; **`native_decide` was checked nowhere in the tree**.
+It belongs in that scan and nowhere else: `native_decide` discharges a goal by
+compiling and running it, which admits `Lean.ofReduceBool` and takes the Lean
+compiler and its runtime into a trusted computing base whose entire claim is that
+it contains neither `sorry` nor `axiom` — an axiom under another name.
+`check_module_axioms` would catch the consequence in the axiom set; this catches
+the cause, by name, in the file that introduced it.  Inert today — the tree's four
+occurrences are docstrings explaining why `decide` is used *instead*, and the scan
+reads the comment-free code view — and pinned by a token-preserving mutation: a
+planted `by native_decide` fires it.
+
+**Citations corrected where the artefact exists under an accurate name.**  A wrong
+name is not a missing artefact, and renaming working code to match a wrong
+citation would be the tail wagging the dog:
+
+- `WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN` cited `SeLe4n.notification_waiters_nodup`
+  one namespace short.  Verified by *running* all five of that plan's reachability
+  checks through `lake env lean`: four elaborated, this one did not, and all five
+  now do.
+- Five more dangling names in **live SM8 docstrings**, each an artefact that
+  exists under an accurate name — `notificationSignalOnCore_NI_smp` and
+  `notificationSignalOnCore_call_path_NI_smp` for `…_signal_path_NI_smp` (a signal
+  path, not a call path), `endpointReplyOnCore_NI_smp` for `…_reply_path_NI_smp`,
+  `kernelOperationPerCoreNiTheorem_injective` for
+  `niStepCoverage_perCore_injective`, and `nonInterference_perCore_catchAll_count`
+  for `perCoreConfinementDerived_count`.
+- Four of `docs/CLAIM_EVIDENCE_INDEX.md`'s 117 distinct citations resolved to
+  nothing: `boot_entry_binding_failures` named a Python function the boot-entry
+  check replaced with an elaborator contract at PR #889 round 17;
+  `next_state` named the lock census's per-op advance, which is `check_step`; and
+  `capabilityInvariantBundle_of_slotUnique` illustrated "structural invariant
+  requiring a witness" with a theorem that never existed and a property WS-G5 made
+  trivial, so two live examples replace it.  The fourth,
+  `readiness_gate_before_mark`, was a false alarm — an integration-test *binary*,
+  named by its file, which a resolver has to know about.
+
+**And made self-checking.**  `scripts/check_claim_evidence_citations.py` (Tier 0,
+nine witnesses) holds the index to its own claims.  Both sides are derived: the
+citation set is every backticked identifier-shaped token in the index, and the
+declaration set is every name the tree declares in Lean, Rust, assembly, Python
+and shell, plus artefacts that *are* files.  So a row added tomorrow is checked
+the day it lands, and a rename on either side fails here rather than in a reader's
+grep.  It fails closed on an unreadable or citation-free index — either would
+otherwise read exactly like a clean one — and its exemptions carry a reason each,
+for the names the index discusses without owning (an seL4 ABI field, a Lean
+tactic, a Cargo feature).
+
+Scoped to that one document deliberately.  A tree-wide version would resolve 492
+distinct citations, and the overwhelming majority are Rust identifiers, ARM
+register names and seL4 constants that Lean docstrings cite correctly — the
+allowlist would be the artefact, which is the enumeration-for-a-derivation shape
+this project treats as debt.  The index is the document whose *purpose* is naming
+evidence, which is what makes the question decidable there.
+
+Tier 0-3 green; `test_rust.sh` and the aarch64 cross gate green.
+
 ## v0.34.83 — counters that mean something
 
 **WS-RR RR7.33 (finding 98)** — "per-core statistics accessors are declared,

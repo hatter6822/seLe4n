@@ -990,6 +990,74 @@ theorem replyRecvReturnDonation_preserves_replenishQueueAffinityConsistent_smp
                 | _ =>
                     rw [hIpc] at h; simp only [] at h; cases h
                     exact hPip _ (hDeschedInv _ hInv1) (hDesched _ hCons1)
+/-- **WS-RR RR7.34**: the three live SchedContext hand-offs, as one relation.
+
+`SMP_CROSS_CORE_IPC_PLAN` §4.3 and §10 and `SMP_PER_CORE_SCHEDULER_PLAN` §PIP
+all name an SM5 theorem `donation_perCore_consistent` — "if the receiver
+inherits the SC and is on a different core, the SC's CBS replenish queue
+migrates per SM5.H.4" — that existed nowhere.  The *content* did, three times
+over, once per donation path; what was missing is the statement the catalogue
+names, over all of them at once.
+
+Derived rather than listed: a constructor per live hand-off, each carrying that
+path's own home-core resolutions, so a fourth donation path added without a
+migration proof cannot be introduced here without extending this relation and
+answering `donation_perCore_consistent` for it.  The pre-state affinity
+resolutions are hypotheses because each live call site discharges them by `rfl`
+from its own pre-state — which is the shape the three underlying theorems were
+stated in, and the reason they compose. -/
+inductive PerCoreDonationStep (st st' : SystemState) : Prop
+  /-- The call rendezvous donates the caller's SchedContext to the receiver. -/
+  | call (callerVtid receiverVtid : SeLe4n.ValidThreadId)
+      (donorHome doneeHome : Concurrency.CoreId)
+      (hDonorHome : determineTargetCore st callerVtid.val = donorHome)
+      (hDoneeHome : determineTargetCore st receiverVtid.val = doneeHome)
+      (hStep : applyCallDonationOnCore st callerVtid receiverVtid donorHome doneeHome = .ok st')
+  /-- The reply returns a donated SchedContext to its original owner. -/
+  | reply (replierVtid : SeLe4n.ValidThreadId)
+      (executingCore replierHome ownerHome : Concurrency.CoreId)
+      (hReplierHome : determineTargetCore st replierVtid.val = replierHome)
+      (hOwnerHome : ∀ scId owner, replyDonationReturn? st replierVtid.val = some (scId, owner) →
+          determineTargetCore st owner = ownerHome)
+      (hStep : applyReplyDonationOnCore st replierVtid executingCore replierHome ownerHome
+          = .ok st')
+  /-- `.replyRecv` fuses the return with the next request's donation. -/
+  | replyRecv (tid recordedServer nextThread : SeLe4n.ThreadId)
+      (serverCore : Concurrency.CoreId) (u : Unit)
+      (hStep : replyRecvReturnDonation tid recordedServer nextThread serverCore st = .ok (u, st'))
+
+/-- **WS-RR RR7.34** (`SMP_CROSS_CORE_IPC_PLAN` §10's SM5 catalogue entry,
+authored): **every SchedContext hand-off leaves the replenish queues where the
+bound threads are.**
+
+`replenishQueueAffinityConsistent_smp` says a SchedContext's CBS replenishments
+sit on its bound thread's home core.  A donation rebinds `boundThread`, so a
+cross-core hand-off falsifies it from the instant it commits unless the
+replenishment migrates with the binding — which is why every live path calls
+`migrateSchedContextReplenishment`, and why a same-core hand-off costs nothing
+(`migrateSchedContextReplenishment_noop`).
+
+This is the catalogued statement over all three paths.  Its proof is the three
+per-path theorems and nothing else: the aggregation is the content, since a
+reader looking for "the donation theorem" found three names and no claim about
+the family. -/
+theorem donation_perCore_consistent (st st' : SystemState)
+    (hObjInv : st.objects.invExt)
+    (hCons : replenishQueueAffinityConsistent_smp st)
+    (hStep : PerCoreDonationStep st st') :
+    replenishQueueAffinityConsistent_smp st' := by
+  cases hStep with
+  | call callerVtid receiverVtid donorHome doneeHome hDonorHome hDoneeHome h =>
+      exact applyCallDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
+        st st' callerVtid receiverVtid donorHome doneeHome hObjInv hCons hDonorHome hDoneeHome h
+  | reply replierVtid executingCore replierHome ownerHome hReplierHome hOwnerHome h =>
+      exact applyReplyDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
+        st st' replierVtid executingCore replierHome ownerHome hObjInv hCons hReplierHome
+        hOwnerHome h
+  | replyRecv tid recordedServer nextThread serverCore u h =>
+      exact replyRecvReturnDonation_preserves_replenishQueueAffinityConsistent_smp
+        tid recordedServer nextThread serverCore st st' u hObjInv hCons h
+
 /-- **WS-RR RR2 (closure audit): the `.replyRecv` donation resolution preserves
 the whole IPC invariant bundle.**
 

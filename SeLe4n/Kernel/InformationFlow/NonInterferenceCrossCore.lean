@@ -35,7 +35,8 @@ SM8.B.3.
 
 The SM6 phases already prove per-core non-interference for their own cross-core
 transitions — `endpointCallOnCore_call_path_NI_smp`,
-`notificationSignalOnCore_NI_smp`, `endpointReplyOnCore_NI_smp` and siblings.
+`notificationSignalOnCore_signal_path_NI_smp`,
+`endpointReplyOnCore_reply_path_NI_smp` and siblings.
 Every one of those is **label-conditional on the per-core half**: they route
 through `wakeThread_preserves_projectionOnCore`, whose `hHighThread` hypothesis
 says the woken thread is *not observable*. Under that hypothesis the run-queue

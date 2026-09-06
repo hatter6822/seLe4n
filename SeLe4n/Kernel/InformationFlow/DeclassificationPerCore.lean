@@ -1628,6 +1628,67 @@ theorem declassifyStoreOnCore_state_core_independent
   -- the trail erased the committed states are literally equal
   subst hSt₁; subst hSt₂; rw [hGateEq]
 
+/-- **WS-RR RR7.34** (`SMP_INFORMATION_FLOW_PLAN` §11's SM8.C catalogue entry,
+authored): **the audit trail does not steer the state a declassification
+commits.**
+
+`declassifyStoreOnCore` is a gate followed by a store, wrapped in a trail append.
+The trail is an *input* to the wrapper — it decides whether there is room, and it
+is read to compute the event's timestamp — so "does the trail influence the
+downgrade itself?" is a question the shape of the definition raises and nothing
+answered.  It does not: `declassifyStore` is the policy decision (a function of
+the two domains and the two policies) followed by `storeObject`, and neither
+reads `declassificationAuditLog`.
+
+Stated on two runs from states differing in **exactly** the trail, because that
+is the comparison an observer can actually make: a subject that can influence the
+trail's contents — by declassifying earlier — must not thereby influence what a
+later declassification writes to the object store.  Both runs are required to
+succeed, since the trail genuinely decides *whether* the step is admitted at all
+(`declassifyStoreOnCore_audit_log_full`): that dependence is the fail-closed
+cliff SM9.A exists for, and it is the one this theorem does not deny.
+
+The companion `declassifyStoreOnCore_state_core_independent` says the same of the
+*core* dimension.  Together: neither which core ran the downgrade nor what the
+trail already held changes the state it leaves. -/
+theorem declassifyStoreOnCore_state_log_independent
+    (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
+    (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
+    (targetId : SeLe4n.ObjId) (obj : KernelObject)
+    (st st₁ st₂ : SystemState) (log : DeclassificationAuditLog)
+    (h₁ : declassifyStoreOnCore ctx declPolicy c actor srcDomain dstDomain targetId obj st =
+      .ok ((), st₁))
+    (h₂ : declassifyStoreOnCore ctx declPolicy c actor srcDomain dstDomain targetId obj
+      { st with declassificationAuditLog := log } = .ok ((), st₂)) :
+    { st₁ with declassificationAuditLog := [] } =
+      { st₂ with declassificationAuditLog := [] } := by
+  obtain ⟨_, stGate₁, hGate₁, hSt₁⟩ := declassifyStoreOnCore_ok_inv ctx declPolicy c actor
+    srcDomain dstDomain targetId obj st st₁ h₁
+  obtain ⟨_, stGate₂, hGate₂, hSt₂⟩ := declassifyStoreOnCore_ok_inv ctx declPolicy c actor
+    srcDomain dstDomain targetId obj { st with declassificationAuditLog := log } st₂ h₂
+  -- The gate is the decision (a function of the policies and domains alone)
+  -- followed by `storeObject`, whose record update reads every field except the
+  -- trail — so re-running it on the same state with another trail gives the same
+  -- state with that trail.
+  have hFrame : declassifyStore ctx declPolicy srcDomain dstDomain targetId obj
+      { st with declassificationAuditLog := log }
+      = .ok ((), { stGate₁ with declassificationAuditLog := log }) := by
+    unfold declassifyStore at hGate₁ ⊢
+    cases hFlow : ctx.policy.canFlow srcDomain dstDomain with
+    | true => rw [hFlow] at hGate₁; simp at hGate₁
+    | false =>
+      cases hDecl : declPolicy.canDeclassify srcDomain dstDomain with
+      | false => rw [hFlow, hDecl] at hGate₁; simp at hGate₁
+      | true =>
+        rw [hFlow, hDecl] at hGate₁
+        simp only [Bool.false_eq_true, if_false, if_true, storeObject,
+          Except.ok.injEq, Prod.mk.injEq, true_and] at hGate₁ ⊢
+        rw [← hGate₁]
+  rw [hFrame] at hGate₂
+  have hGateEq : stGate₂ = { stGate₁ with declassificationAuditLog := log } :=
+    congrArg Prod.snd (Except.ok.inj hGate₂.symm)
+  subst hSt₁; subst hSt₂; rw [hGateEq]
+
 -- ============================================================================
 -- §7  SM8.C.5 — `authorizationBasis_perCore` (V6-H extended)
 -- ============================================================================

@@ -13,14 +13,30 @@ source "${SCRIPT_DIR}/test_lib.sh"
 parse_common_args "$@"
 cd "${REPO_ROOT}"
 
-# Scan for forbidden markers (axiom, sorry, TODO) in production proof surface.
-# Lines annotated with a TPI-D* reference are explicitly tracked proof obligations
-# and are excluded from this check (see AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md).
+# Scan for forbidden markers (axiom, sorry, TODO, native_decide) in the
+# production proof surface.  Lines annotated with a TPI-D* reference are
+# explicitly tracked proof obligations and are excluded from this check (see
+# AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md).
+#
+# **WS-RR RR7.34 (register finding 77) added `native_decide`.**  The SM0 plan's
+# §6.3 said Tier 0 "verifies SM0 doesn't introduce `sorry`, `axiom`, or
+# `native_decide`"; the first two were scanned and the third never was.  It
+# belongs here rather than anywhere else: `native_decide` discharges a goal by
+# *compiling and running* it, which admits `Lean.ofReduceBool` and takes the
+# Lean compiler and its runtime into a trusted computing base whose whole claim
+# is that it contains neither `sorry` nor `axiom` — so it is an axiom under
+# another name, and this is the scan that forbids those.  `check_module_axioms`
+# would catch the *consequence* in the axiom set; this catches the *cause*, by
+# name, in the file that introduced it.
+#
+# The scan reads the comment-free code view, so the four docstrings that
+# explain why `decide` is used *instead of* `native_decide` are invisible to it
+# — the reason those docstrings can say so plainly.
 if command -v rg >/dev/null 2>&1; then
-  run_check "HYGIENE" bash -lc 'if rg -n -w "axiom|sorry|TODO" SeLe4n Main.lean | grep -v "TPI-D[0-9]"; then echo "Forbidden markers found in tracked proof surface." >&2; exit 1; fi'
+  run_check "HYGIENE" bash -lc 'if rg -n -w "axiom|sorry|TODO|native_decide" SeLe4n Main.lean | grep -v "TPI-D[0-9]"; then echo "Forbidden markers found in tracked proof surface." >&2; exit 1; fi'
 else
   log_section "HYGIENE" "ripgrep (rg) not found; using grep fallback for marker scan."
-  run_check "HYGIENE" bash -lc 'if (find SeLe4n -name "*.lean" -print0; printf "Main.lean\0") | xargs -0 grep -nwE "axiom|sorry|TODO" | grep -v "TPI-D[0-9]"; then echo "Forbidden markers found in tracked proof surface." >&2; exit 1; fi'
+  run_check "HYGIENE" bash -lc 'if (find SeLe4n -name "*.lean" -print0; printf "Main.lean\0") | xargs -0 grep -nwE "axiom|sorry|TODO|native_decide" | grep -v "TPI-D[0-9]"; then echo "Forbidden markers found in tracked proof surface." >&2; exit 1; fi'
 fi
 
 
@@ -136,6 +152,12 @@ run_check "HYGIENE" "${SCRIPT_DIR}/check_version_sync.sh"
 # same treatment.  Self-test first: a scanner that under-reaches fails silently.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_workstream_plan.py" --self-test
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_workstream_plan.py"
+
+# WS-RR RR7.34 (register finding 93): every artefact the claim/evidence index
+# names must exist.  A row that names a missing artefact asserts evidence that
+# does not, which is worse than a missing row.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_claim_evidence_citations.py" --self-test
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_claim_evidence_citations.py"
 
 # WS-RR RR0.6: the SMP completion-phase theorem manifest.  The release-closure
 # plan carried its theorem total as a hand-summed literal that ran SM8 -> SM10
