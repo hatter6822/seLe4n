@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.34.68` (`lakefile.toml`) |
+| **Package version** | `0.34.69` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 335,599 across 313 Lean files |
-| **Test LoC** | 69,858 across 70 Lean test suites |
-| **Proved declarations** | 11,172 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 336,010 across 315 Lean files |
+| **Test LoC** | 69,915 across 70 Lean test suites |
+| **Proved declarations** | 11,189 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -1409,7 +1409,8 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
      `simp only [<lockBuilder>_kind] + decide` discharge of the
      finite kinds-list membership.
 
-   **SM3.B inventory (90 entries after audit-pass-5)**:
+   **SM3.B inventory (90 entries at audit-pass-5; `lockSetTheorems_count`
+   pins the live figure, 111)**:
    `Concurrency/Locks/LockSetInventory.lean` mirrors SM3.A's
    `PerObjectLockInventory.lean` pattern with a typed
    `LockSetTheorem` struct, a `lkst!` macro that compile-time
@@ -1583,13 +1584,21 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
      `withDynamicChainExtension` combinator (optimistic walk +
      verify, `ObjId.val` ascending discipline, bounded
      retries), `dynamicChainHeld` predicate,
-     `dynamic_chain_deadlock_free` theorem,
-     `walkAndAcquire_terminates` theorem, per-transition
-     wrappers, and 6 sub-sub-tasks (SM3.C.11.a..f).  SM3.C
+     `dynamic_chain_deadlock_free` theorem, the termination
+     result — **three theorems**, not the one `walkAndAcquire_terminates`
+     this paragraph used to name, which was never authored under that
+     spelling: `walkAndAcquireAux_terminated_length_le` (the fuel
+     bound), `walkAndAcquire_terminated_length_bounded` (the top-level
+     boundedness witness) and `walkAndAcquire_total` (totality) —
+     per-transition wrappers, and 6 sub-sub-tasks (SM3.C.11.a..f).  SM3.C
      lifts from 4 PRs / 10 sub-tasks to 5 PRs / 11 sub-tasks.
    * **Inventory expansion**: 87 → 90 entries (+3 in the NEW
      `chainStart` category).  `lockSetTheorems_chainStart_count
-     = 3` new witness; partition-sum updated to 6-way.
+     = 3` new witness; partition-sum updated to 6-way.  *(The 90
+     is that cut's figure and is kept as the record of it; the
+     inventory has since grown to `lockSetTheorems.length = 111`,
+     which `lockSetTheorems_count` pins by `decide`.  Quote the
+     theorem, not this line.)*
    * **Test-coverage expansion**: 96 → 106 runtime assertions
      (+10 = +9 §16 `runPipChainStartChecks` + 1 inventory
      chainStart check).  3 new surface anchors + 6 new
@@ -1736,12 +1745,18 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    acquire-fold + action + release-fold preservation into the full
    closure that SM4..SM6 phase migrations consume.
 
-   **SM3.C.9 — `@[export]` body migration**: DEFERRED to SM5+.  At
-   SM3.C the kernel is modelled single-core, so wrapping each
-   `@[export]` body in `withLockSet` would be a no-op on the current
-   abstract model.  The migration lands with SM5's per-core scheduler
-   integration, which is when the wrappers become semantically
-   active.
+   **SM3.C.9 — `@[export]` body migration**: DEFERRED at SM3.C.  At
+   that point the kernel was modelled single-core, so wrapping each
+   `@[export]` body in `withLockSet` would have been a no-op on the
+   abstract model.  *(This paragraph used to say the migration "lands
+   with SM5's per-core scheduler integration".  It did not: SM5 made
+   the wrappers semantically meaningful without wrapping anything.
+   The **syscall seam** brackets since WS-RR RR7.12 (`v0.34.65`), the
+   raw `suspend_thread_cross_core` since SM3.C.9's own exception, and
+   the three per-core scheduler entries still do not — they are
+   `UncoveredLockDomain.schedulerDomain` and WS-RR RR7.39's row.
+   `ExportCommitDisciplineCensus` measures which is which: seven seams
+   commit, two bracket.)*
 
    *Progress.*  The piece that connects the SM3 footprints to a
    running syscall is `lockSetForSyscall : SyscallId →

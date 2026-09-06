@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.68.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.69.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -2770,7 +2770,31 @@ code may assume:
 - **Registered uncovered lock domains** are enumerated in Lean, not in prose:
   `UncoveredLockDomain` (`InformationFlow/FineLockFlow.lean`) names each gap and
   its owner, and its completeness theorem forces a new domain to be registered.
-- **Staged modules**: 64 staged-only, listed in
+- **Every declared `LockSet` footprint carries a size bound, stated at its own
+  arity** (WS-RR RR7.18, v0.34.69).  `boundedWait_under_2pl`, the
+  `KernelOperation` invariant and the WCRT surface all take
+  `S.size ≤ maxLockSetSize` as a premise, so a footprint without one is a
+  transition that reasoning is **silent** about — worse than one it bounds
+  loosely.  `lockSetTransitions_within_bound` is a hand-written conjunction and
+  had 31 of the tree's **47** footprints; the missing thirteen included every
+  state-resolved `*OnCore` form, which is what RR7.12's bracket actually
+  acquires.  New code must respect two things.  (1) **The bound is stated over
+  every argument, never at a default.**  A footprint that gains a trailing
+  `Option … := none` leaves its existing bound elaborating — the default fills
+  the new argument in silently — so the shape the live transition declares is
+  unbounded while the theorem's name still promises a bound.  That has now
+  happened five times (`notificationSignal` at SM9.C.8, `endpointReceive` at
+  PR #873 round 8, `endpointSend` and `endpointCall` at RR7.7, and
+  `endpointReply`, found by the census: its bound was stated at five of six
+  arguments while the live `.reply` dispatch resolves the sixth to `some`).
+  (2) **The set is derived, not listed**:
+  `SeLe4n/Testing/LockFootprintBoundCensus.lean` collects every `def` whose type
+  ends in `LockSet` and named `lockSet_…`, builds the statement its bound *must*
+  have from the definition's own telescope, and decides by one `isDefEq` — so a
+  new footprint without a bound, or with one at the wrong arity, fails Tier 1
+  the day it is written.  A legitimate exemption goes in `boundExemptions` with
+  a reason; the list is empty and meant to stay so.
+- **Staged modules**: 65 staged-only, listed in
   `scripts/staged_module_allowlist.txt` and gated by
   `scripts/check_production_staging_partition.sh`.  Production must not import
   staged.  WS-RR RR5.15 promoted five (the three state-committing kernel

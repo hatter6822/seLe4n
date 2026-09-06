@@ -157,6 +157,12 @@ import SeLe4n.Kernel.Concurrency.PhaseTheoremManifest
 -- `withLockSet (lockSet_τ args)`, threading the SM3.B canonical sort
 -- through `acquireAll` and the reverse through `releaseAll`.
 import SeLe4n.Kernel.Concurrency.LockSet
+-- WS-RR RR7.18: size bounds for the STATE-RESOLVED lock footprints — the sets
+-- RR7.12's bracket actually acquires, as opposed to the argument-taking bases
+-- `lockSetTransitions_within_bound` covers.  Staged rather than stated beside
+-- each footprint because the bounds cite `Locks/Deadlock.lean`, whose WCRT and
+-- deadlock models no kernel image links.
+import SeLe4n.Kernel.Concurrency.Locks.ResolvedFootprintBounds
 -- WS-SM SM4.C: per-core scheduler invariant migration.  Lifts every
 -- per-core scheduler invariant predicate to an explicit `(c : CoreId)`
 -- parameter (plan §5.3/§5.6), exports the aggregate

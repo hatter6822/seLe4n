@@ -506,6 +506,62 @@ private def runSizeBoundChecks : IO Unit := do
   assertBool "KernelOperation.ofTcbSuspend lockSet within bound"
     (decide (op.lockSet.size ≤ maxLockSetSize))
 
+/-- **WS-RR RR7.18** (register §6 finding 15): the four footprints
+`lockSetTransitions_within_bound` had never reached, and the fifth defect the
+census found beneath them.
+
+These are not proofs about a hard case — each is a one-line helper application.
+The point is that they *exist*: `boundedWait_under_2pl` and the `KernelOperation`
+invariant take the size bound as a premise, so an unbounded footprint is a
+transition the WCRT reasoning is **silent** about, which is worse than one it
+bounds loosely.
+
+The `endpointReply` check below is the one worth reading.  Its bound was stated
+at five arguments while the footprint takes six — the sixth, `replyId`,
+defaulted to `none` — so the shape the **live** `.reply` dispatch resolves
+(`lockSet_endpointReplyOnCore` reads `target.replyObject`, and a reply always
+has one) had no bound at all.  The check therefore takes it at `some`, which is
+the case the old statement could not see. -/
+private def runNewlyBoundedFootprintChecks : IO Unit := do
+  IO.println "--- §9b WS-RR RR7.18 — the footprints the bundle had missed ---"
+  -- `mintReplyCap` is `cspaceCopy`'s footprint: caller read + two CNode writes
+  -- + the state-level CDT write.
+  let mintSet := lockSet_mintReplyCap (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
+    (SeLe4n.ObjId.ofNat 3)
+  assertBool "lockSet_mintReplyCap size ≤ maxLockSetSize"
+    (decide (mintSet.size ≤ maxLockSetSize))
+  assertBool "…and it IS cspaceCopy's footprint, not a second declaration"
+    (decide (mintSet = lockSet_cspaceCopy (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
+      (SeLe4n.ObjId.ofNat 3)))
+  -- Bind / unbind: four distinct objects, no optionals.
+  let bindSet := lockSet_tcbBindNotification (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
+    (SeLe4n.ObjId.ofNat 3) (ThreadId.ofNat 4)
+  let unbindSet := lockSet_tcbUnbindNotification (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
+    (SeLe4n.ObjId.ofNat 3) (ThreadId.ofNat 4)
+  assertBool "lockSet_tcbBindNotification size = 4, within the bound"
+    (decide (bindSet.size = 4 ∧ bindSet.size ≤ maxLockSetSize))
+  assertBool "lockSet_tcbUnbindNotification is the same four members"
+    (decide (unbindSet = bindSet))
+  -- Affinity: three members plus the bound SchedContext, whose replenishments
+  -- migrate with the thread.  Taken at `some`, which is the shape a bound
+  -- thread's migration declares.
+  let affSet := lockSet_tcbSetAffinity (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
+    (ThreadId.ofNat 3) (some ⟨4⟩)
+  assertBool "lockSet_tcbSetAffinity (bound SC) size = 4, within the bound"
+    (decide (affSet.size = 4 ∧ affSet.size ≤ maxLockSetSize))
+  assertBool "…and the unbound shape is one member smaller"
+    (decide ((lockSet_tcbSetAffinity (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
+      (ThreadId.ofNat 3) none).size = 3))
+  -- THE ONE THE CENSUS FOUND: the reply footprint at its sixth argument.
+  let replyWithObj := lockSet_endpointReply (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
+    (ThreadId.ofNat 3) (some ⟨4⟩) (some (ThreadId.ofNat 5)) (some ⟨6⟩)
+  assertBool "lockSet_endpointReply WITH a reply object is bounded (the shape the live arm declares)"
+    (decide (replyWithObj.size ≤ maxLockSetSize))
+  assertBool "…and it is genuinely wider than the shape the old bound covered"
+    (decide (replyWithObj.size = 6 ∧
+      (lockSet_endpointReply (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
+        (ThreadId.ofNat 3) (some ⟨4⟩) (some (ThreadId.ofNat 5)) none).size = 5))
+
 private def runWCRTChecks : IO Unit := do
   IO.println "--- §10 SM3.D.6 — contention-sensitive WCRT ---"
   -- contendersAhead ≤ numCores - 1 = 3 on any execution.
@@ -596,6 +652,7 @@ def runDeadlockFreedomChecks : IO Unit := do
   runGroundingChecks
   runModeAwareChecks
   runSizeBoundChecks
+  runNewlyBoundedFootprintChecks
   runWCRTChecks
   runBridgeChecks
   runInventoryChecks

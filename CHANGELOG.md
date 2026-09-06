@@ -1,3 +1,83 @@
+## v0.34.69 — the bound a hand-written conjunction could not notice it was missing
+
+**WS-RR RR7.18** — the per-object-lock mediums.  Four register rows, two of
+which the fine-lock rows already closed (finding 14 at RR7.12; finding 16's two
+SM3.B-owned domains at RR7.8/RR7.9, its third being RR7.38's).
+
+### Finding 15: footprints with no size bound
+
+`boundedWait_under_2pl`, the `KernelOperation` invariant and the whole WCRT
+surface take `S.size ≤ maxLockSetSize` as a premise.  A footprint without one is
+not loosely bounded — the reasoning is **silent** about it, which is worse.
+
+`lockSetTransitions_within_bound` is a hand-written conjunction, and this is
+precisely what a hand-written conjunction cannot do: notice that it is missing
+members.  It bounded 31 footprints; the tree declares **47**.
+
+The four the finding named are added (`mintReplyCap`, `tcbBindNotification`,
+`tcbUnbindNotification`, `tcbSetAffinity`).  So are the thirteen it did not:
+every **state-resolved** `*OnCore` footprint — which is what RR7.12's bracket
+actually acquires, so the bound bounded-wait needs was on the argument-taking
+bases and not on the sets the live seam holds — and the four cancellation
+footprints, `lockSet_cancelIpcBlockingOnCore` among them, which is what the
+`.tcbSuspend` bracket resolves.  They live in a new **staged**
+`Locks/ResolvedFootprintBounds.lean`, because the bounds cite `Deadlock.lean`
+and stating them in the production IPC modules would have pulled the WCRT and
+deadlock models into the kernel image — a partition violation the gate caught.
+
+### The mechanism, and the fifth defect it found
+
+`SeLe4n/Testing/LockFootprintBoundCensus.lean` derives the footprint set from the
+elaborated environment (a `def` whose type ends in `LockSet`, named
+`lockSet_…`) and asks two questions of each.  *Does a bound exist?* And — the
+one that keeps biting — *is it stated at the footprint's own arity?*
+
+A footprint gains a trailing `Option … := none`, the existing bound keeps
+elaborating because the default fills the new argument in silently, and the
+shape the live transition declares is left unbounded under a name that still
+promises a bound.  That has happened to `notificationSignal` (SM9.C.8),
+`endpointReceive` (PR #873 round 8), `endpointSend` and `endpointCall` (RR7.7)
+— and the census found a fifth: **`lockSet_endpointReply_size_le` was stated at
+five of its six arguments**, so the shape the live `.reply` dispatch resolves
+(`lockSet_endpointReplyOnCore` reads `target.replyObject`, and a reply always
+has one) had no bound at all.
+
+The census builds the statement each bound *must* have from the definition's own
+telescope and decides by one `Meta.isDefEq`, so a bound at fewer binders is a
+different type rather than a near miss.  `lockSet_endpointCall_size_le` carries
+a comment telling the next author not to default arguments there; a comment is a
+convention, this is a mechanism.  Verified by a token-preserving mutation that
+drops one binder and keeps the name — the census names the footprint and says
+why.  Wired into Tier 1: building the module is the check.
+
+### Finding 17: stale artefact names and counts
+
+Fixed at the source rather than by deleting the cites, per the
+implement-the-improvement rule:
+
+* `Sm3EInventory.lean` → `SerializabilityInventory.lean` (the old spelling was
+  also a workstream-ID name the internal-first naming rule forbids);
+* "all 25 lockSets" → 35, with the census as the checker, so the number is
+  derived rather than counted;
+* `walkAndAcquire_terminates`, which was never authored under that name → the
+  three theorems that realise SM3.C.11.e
+  (`walkAndAcquireAux_terminated_length_le`,
+  `walkAndAcquire_terminated_length_bounded`, `walkAndAcquire_total`);
+* the 90-entry inventory figure boxed as that cut's record, with
+  `lockSetTheorems_count` (111) named as the live one;
+* and the spec's "the migration lands with SM5's per-core scheduler
+  integration" corrected — it did not.  The syscall seam brackets since RR7.12,
+  the raw `suspend_thread_cross_core` since SM3.C.9's own exception, and the
+  three per-core scheduler entries still do not; `ExportCommitDisciplineCensus`
+  measures which is which.
+
+Eight runtime checks in `DeadlockFreedomSuite` §9b drive the newly-bounded
+footprints, including the reply footprint **at** its sixth argument — the case
+the old statement could not see.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md RR7.18
+Refs: docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md §5.4, §5.5
+
 ## v0.34.68 — the catalogue line that was never a theorem, and a gate that read comments
 
 **WS-RR RR7.17** — the syscall-return-ABI mediums: the register's four rows for

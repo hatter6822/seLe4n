@@ -4746,6 +4746,49 @@ run_check "INVARIANT" rg -n 'SELF-TEST PASS \(10 checks\)' scripts/test_code_vie
 run_prose_check "INVARIANT" rg -n 'owner WS-CB — the application IPC label' docs/planning/SYSCALL_RETURN_ABI_PLAN.md
 run_prose_check "INVARIANT" rg -n 'the application IPC label' docs/planning/HIERARCHICAL_CBS_PLAN.md
 
+# WS-RR RR7.18: every declared `LockSet` footprint has a size bound, at its own
+# arity.  The bound is `boundedWait_under_2pl`'s premise, so an unbounded
+# footprint is a transition the WCRT reasoning is SILENT about — and a bound
+# stated at fewer arguments than the footprint takes is the same thing wearing
+# the right name, because a defaulted trailing `Option` is filled in silently at
+# the citation.  The set is DERIVED from the elaborated environment; building
+# the module is the check, and Tier 1 builds it.
+run_check "INVARIANT" rg -n 'lake build SeLe4n.Testing.LockFootprintBoundCensus' scripts/test_tier1_build.sh
+run_check "INVARIANT" rg -n '^def isFootprintDecl' SeLe4n/Testing/LockFootprintBoundCensus.lean
+run_check "INVARIANT" rg -n '^def requiredBoundType' SeLe4n/Testing/LockFootprintBoundCensus.lean
+run_check "INVARIANT" rg -n '^def boundViolation' SeLe4n/Testing/LockFootprintBoundCensus.lean
+# The arity check is the load-bearing half: `requiredBoundType` builds the
+# statement from the DEFINITION's own telescope and compares by `isDefEq`, so a
+# bound stated at fewer binders is a different type rather than a near miss.
+run_check "INVARIANT" rg -n 'forallTelescopeReducing declType' SeLe4n/Testing/LockFootprintBoundCensus.lean
+run_check "INVARIANT" rg -n 'isDefEq boundInfo.type required' SeLe4n/Testing/LockFootprintBoundCensus.lean
+# NEGATIVE: a census that found no footprints would pass vacuously, so it
+# refuses an empty subject.
+run_check "INVARIANT" rg -n 'found NO footprints' SeLe4n/Testing/LockFootprintBoundCensus.lean
+# The four the hand-written conjunction had missed…
+run_check "INVARIANT" rg -n '^theorem lockSet_mintReplyCap_size_le' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_tcbBindNotification_size_le' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_tcbUnbindNotification_size_le' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_tcbSetAffinity_size_le' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+# …and the fifth defect beneath them: the reply footprint's bound was stated at
+# five of its six arguments, so the shape the LIVE `.reply` dispatch resolves
+# had no bound.  The `Option ReplyId` binder is what says it does now.
+run_check "INVARIANT" rg -n 'lockSet_endpointReply a b c d e f' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+# The state-resolved footprints — the ones RR7.12's bracket actually acquires —
+# are bounded too; before this row the `_size_le` family reached only the
+# argument-taking bases.  They live in a STAGED module rather than beside each
+# footprint: the bounds cite `Locks/Deadlock.lean`, whose WCRT and deadlock
+# models no kernel image links, so stating them in the production IPC modules
+# would have pulled that closure into the image
+# (`check_production_staging_partition.sh` catches exactly that).
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointSendOnCore_size_le' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointCallOnCore_size_le' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_size_le' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_size_le' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+run_check "INVARIANT" rg -n 'ResolvedFootprintBounds' scripts/staged_module_allowlist.txt
+run_check "INVARIANT" rg -n 'import SeLe4n.Kernel.Concurrency.Locks.ResolvedFootprintBounds' SeLe4n/Platform/Staged.lean
+run_check "INVARIANT" rg -n 'runNewlyBoundedFootprintChecks' tests/DeadlockFreedomSuite.lean
+
 # PR #873 round 14: **the frozen/live correspondence, as something that runs.**
 # Each frozen operation re-implements a live transition, and which one it
 # re-implements was recorded in a markdown table and a `mirrors X` sentence.

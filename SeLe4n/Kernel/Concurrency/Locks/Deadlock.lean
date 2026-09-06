@@ -758,11 +758,20 @@ theorem lockSet_endpointCall_size_le (a : ThreadId) (b c : ObjId)
   -- so the bound is the five-extension form.
   exact Nat.le_trans (size_le_5 _ _ _ _ _ _) (by size_bound)
 
+-- WS-RR RR7.18: stated over the **reply optional** too.  It was defaulted here
+-- while `lockSet_endpointReply` takes six arguments, so the bound covered only
+-- the reply-object-less shape -- and the live `.reply` dispatch resolves that
+-- optional to `some` (`lockSet_endpointReplyOnCore` reads
+-- `target.replyObject`), which is exactly the shape that had no bound.  The
+-- same defect `lockSet_endpointCall_size_le`'s comment warns about, in the
+-- footprint beside it; found by `LockFootprintBoundCensus`, which compares the
+-- bound's type against the definition's own telescope rather than trusting the
+-- name.
 theorem lockSet_endpointReply_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
-    (d : Option SchedContextId) (e : Option ThreadId) :
-    (lockSet_endpointReply a b c d e).size ≤ maxLockSetSize := by
+    (d : Option SchedContextId) (e : Option ThreadId) (f : Option ReplyId) :
+    (lockSet_endpointReply a b c d e f).size ≤ maxLockSetSize := by
   unfold lockSet_endpointReply maxLockSetSize
-  exact Nat.le_trans (size_le_2 _ _ _) (by size_bound)
+  exact Nat.le_trans (size_le_3 _ _ _ _) (by size_bound)
 
 -- WS-RR RR7.11: and over the state-level member the capability install needs.
 -- Five optionals over a four-member base is `4 + 5 = 9`, which is
@@ -952,6 +961,50 @@ theorem lockSet_tcbSetFaultHandler_size_le (a : ThreadId) (b : ObjId) (c : Threa
   unfold lockSet_tcbSetFaultHandler maxLockSetSize
   exact Nat.le_trans (size_le_2 _ _ _) (by size_bound)
 
+-- WS-RR RR7.18 (register §6 finding 15): the four footprints the bundle did not
+-- reach.  Their absence was not a gap in the *proofs* — each follows from the
+-- same one-line helper application as its neighbours — but a gap in the
+-- **bundle**, and the bundle is what bounded-wait and WCRT cite.  A transition
+-- with no size bound has no premise there at all, which is worse than a loose
+-- one: the reasoning is silent about it rather than conservative.
+--
+-- `lockSet_derivedFootprintsBounded` below is the mechanism that keeps this
+-- closed: the four were found by *deriving* the declaration set and diffing it
+-- against the bounded set, which is the check a hand-maintained conjunction of
+-- 31 members cannot perform on itself.
+
+/-- WS-RR RR7.18: `mintReplyCap` is definitionally `cspaceCopy`'s footprint, so
+its bound is that one.  Stated in its own name anyway — the bundle cites bare
+names, and a caller reasoning about the mint arm should not have to know the
+definitional identity to find its bound. -/
+theorem lockSet_mintReplyCap_size_le (a : ThreadId) (b c : ObjId) :
+    (lockSet_mintReplyCap a b c).size ≤ maxLockSetSize :=
+  lockSet_cspaceCopy_size_le a b c
+
+/-- WS-RR RR7.18: binding a notification locks four objects — the caller, its
+CSpace root, the notification and the target TCB — with no optionals. -/
+theorem lockSet_tcbBindNotification_size_le (a : ThreadId) (b c : ObjId) (d : ThreadId) :
+    (lockSet_tcbBindNotification a b c d).size ≤ maxLockSetSize := by
+  unfold lockSet_tcbBindNotification maxLockSetSize
+  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+
+/-- WS-RR RR7.18: the unbind is the same four members (both ends of the binding
+cleared under write locks). -/
+theorem lockSet_tcbUnbindNotification_size_le (a : ThreadId) (b c : ObjId) (d : ThreadId) :
+    (lockSet_tcbUnbindNotification a b c d).size ≤ maxLockSetSize := by
+  unfold lockSet_tcbUnbindNotification maxLockSetSize
+  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+
+/-- WS-RR RR7.18: setting affinity is three members plus the bound
+SchedContext, whose replenishments migrate with the thread.  Stated over the
+optional, not at its `none` default — the defaulted form is how a member gets
+silently unbounded (the SM9.C `notificationSignal` defect). -/
+theorem lockSet_tcbSetAffinity_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
+    (d : Option SchedContextId) :
+    (lockSet_tcbSetAffinity a b c d).size ≤ maxLockSetSize := by
+  unfold lockSet_tcbSetAffinity maxLockSetSize
+  exact Nat.le_trans (size_le_1 _ _) (by size_bound)
+
 /-- WS-SM SM3.D.6b (aggregate): **every** one of the 31 per-transition
 `lockSet_<τ>` declarations enumerated here has size `≤ maxLockSetSize`, for
 all arguments.  This discharges, once and for all, the size premise of
@@ -963,12 +1016,16 @@ it had read "26" across two syscall additions.  WS-SM SM9.C.8's
 `notificationSignal` conjunct over its SM6.B bound-delivery optionals, which
 had been fixed at their `none` defaults and so left the five-member
 bound-delivery footprint unbounded.  PR #887's review round added the
-thirty-first, `tcbSetFaultHandler`.) -/
+thirty-first, `tcbSetFaultHandler`.  **WS-RR RR7.18** added the four the
+enumeration had missed — `mintReplyCap`, `tcbBindNotification`,
+`tcbUnbindNotification`, `tcbSetAffinity` — bringing it to thirty-five, and
+`lockSet_derivedFootprintsBounded` below is why the number is now checked
+rather than counted by hand.) -/
 theorem lockSetTransitions_within_bound :
     (∀ a b c d e, (lockSet_endpointSend a b c d e).size ≤ maxLockSetSize) ∧
     (∀ a b c d e f, (lockSet_endpointReceive a b c d e f).size ≤ maxLockSetSize) ∧
     (∀ a b c d e f g, (lockSet_endpointCall a b c d e f g).size ≤ maxLockSetSize) ∧
-    (∀ a b c d e, (lockSet_endpointReply a b c d e).size ≤ maxLockSetSize) ∧
+    (∀ a b c d e f, (lockSet_endpointReply a b c d e f).size ≤ maxLockSetSize) ∧
     (∀ a b c d e f g h i, (lockSet_replyRecv a b c d e f g h i).size ≤ maxLockSetSize) ∧
     (∀ a b c d e f, (lockSet_notificationSignal a b c d e f).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_notificationWait a b c).size ≤ maxLockSetSize) ∧
@@ -995,10 +1052,15 @@ theorem lockSetTransitions_within_bound :
     (∀ a b c d, (lockSet_tcbSetPriority a b c d).size ≤ maxLockSetSize) ∧
     (∀ a b c d, (lockSet_tcbSetMCPriority a b c d).size ≤ maxLockSetSize) ∧
     (∀ a b c d, (lockSet_tcbSetIPCBuffer a b c d).size ≤ maxLockSetSize) ∧
-    (∀ a b c d e, (lockSet_tcbSetFaultHandler a b c d e).size ≤ maxLockSetSize) :=
+    (∀ a b c d e, (lockSet_tcbSetFaultHandler a b c d e).size ≤ maxLockSetSize) ∧
+    -- WS-RR RR7.18: the four the enumeration had missed.
+    (∀ a b c, (lockSet_mintReplyCap a b c).size ≤ maxLockSetSize) ∧
+    (∀ a b c d, (lockSet_tcbBindNotification a b c d).size ≤ maxLockSetSize) ∧
+    (∀ a b c d, (lockSet_tcbUnbindNotification a b c d).size ≤ maxLockSetSize) ∧
+    (∀ a b c d, (lockSet_tcbSetAffinity a b c d).size ≤ maxLockSetSize) :=
   ⟨lockSet_endpointSend_size_le, lockSet_endpointReceive_size_le,
    (fun a b c d e f g => lockSet_endpointCall_size_le a b c d e f g),
-   lockSet_endpointReply_size_le,
+   (fun a b c d e f => lockSet_endpointReply_size_le a b c d e f),
    lockSet_replyRecv_size_le, lockSet_notificationSignal_size_le,
    lockSet_notificationWait_size_le, lockSet_cspaceMint_size_le,
    lockSet_cspaceCopy_size_le, lockSet_cspaceMove_size_le,
@@ -1013,7 +1075,9 @@ theorem lockSetTransitions_within_bound :
    fun a b c d e f g h => lockSet_tcbSuspend_size_le a b c d e f g h,
    lockSet_tcbResume_size_le,
    lockSet_tcbSetPriority_size_le, lockSet_tcbSetMCPriority_size_le,
-   lockSet_tcbSetIPCBuffer_size_le, lockSet_tcbSetFaultHandler_size_le⟩
+   lockSet_tcbSetIPCBuffer_size_le, lockSet_tcbSetFaultHandler_size_le,
+   lockSet_mintReplyCap_size_le, lockSet_tcbBindNotification_size_le,
+   lockSet_tcbUnbindNotification_size_le, lockSet_tcbSetAffinity_size_le⟩
 
 -- ============================================================================
 -- §6c — `KernelOperation` (a transition's lock footprint, size-bounded)

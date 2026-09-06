@@ -518,7 +518,7 @@ per-sub-task description.
 | SM3.D.3 | `lockOrder_strict` (+ `LockId.lt_irrefl` / `lt_trans` / `lt_asymm` in `Kind.lean`) | `Locks/Kind.lean`, `Locks/Deadlock.lean` | LANDED |
 | SM3.D.4 | `deadlockFreedom_under_2pl_and_ordering` (Theorem 2.1.9) | `Locks/Deadlock.lean` | LANDED |
 | SM3.D.5 | `waitGraph_acyclic_under_2pl` (N-core DAG) + `noDeadlock_of_waitGraph_acyclic` coherence corollary | `Locks/Deadlock.lean` | LANDED |
-| SM3.D.6 | `boundedWait_under_2pl` (full: `KernelExecution`/`KernelOperation`/contention-sensitive `WCRT`) + `lockSetTransitions_within_bound` (all 25 lockSets ≤ `maxLockSetSize`) + mode-aware `conflictWaitGraph_acyclic_under_2pl` | `Locks/Deadlock.lean` | LANDED |
+| SM3.D.6 | `boundedWait_under_2pl` (full: `KernelExecution`/`KernelOperation`/contention-sensitive `WCRT`) + `lockSetTransitions_within_bound` (**35** syscall footprints ≤ `maxLockSetSize` — it read "25" here, and WS-RR RR7.18 found it was bounding 31 of them while the tree declared 47 `LockSet` footprints in total; `SeLe4n/Testing/LockFootprintBoundCensus.lean` now derives the set and requires each bound at the footprint's **own** arity, so this number is checked rather than counted) + mode-aware `conflictWaitGraph_acyclic_under_2pl` | `Locks/Deadlock.lean` | LANDED |
 | SM3.D.7 | Tests `tests/DeadlockFreedomSuite.lean` (+ non-vacuity witness) | `tests/DeadlockFreedomSuite.lean` | LANDED |
 
 *Landed. What each cut changed, and what its review rounds found, is in
@@ -535,7 +535,9 @@ deadlock-freedom (SM3.D, Theorem 2.1.9) and serializability (SM3.E,
 Theorem 2.1.10) — that let the existing single-core proofs migrate
 cheaply in SM4..SM6 (Corollary 2.1.11).  New files
 `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1857 LoC) +
-`Sm3EInventory.lean` (111-theorem inventory), both staged via
+`SerializabilityInventory.lean` (111-theorem inventory — the file was
+named `Sm3EInventory.lean` here, which is both the wrong name and a
+workstream-ID name the internal-first naming rule forbids), both staged via
 `Concurrency.LockSet` + `staged_module_allowlist.txt`.
 
 | Sub | Description | Files | Status |

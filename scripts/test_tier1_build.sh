@@ -78,6 +78,16 @@ run_check "BUILD" lake build SeLe4n.Testing.BootEntryContract
 # catch.  Today: seven committing seams, two of them bracketed.
 run_check "BUILD" lake build SeLe4n.Testing.ExportCommitDisciplineCensus
 
+# WS-RR RR7.18: every declared `LockSet` footprint has a size bound, stated at
+# the footprint's OWN arity.  The bound is what `boundedWait_under_2pl` and the
+# WCRT surface take as a premise, so a footprint without one is a transition
+# that reasoning is silent about — and a bound stated at fewer arguments than
+# the footprint takes is the same thing wearing the right name, because a
+# defaulted trailing `Option` is filled in silently at the citation.  The
+# footprint set is derived from the environment; building the module IS the
+# check.
+run_check "BUILD" lake build SeLe4n.Testing.LockFootprintBoundCensus
+
 # WS-SM SM8.B: no live syscall arm may reach a boot-pinned scheduler primitive.
 # PR #861 review rounds 10 and 12 found this defect three times, one syscall per
 # round — `.tcbResume`, `.send`, `.tcbSetPriority`/`.tcbSetMCPriority` — each
