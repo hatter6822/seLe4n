@@ -20,7 +20,7 @@
 > [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) §1.1 derives
 > from a sized breakdown; this plan sequences that breakdown without
 > re-pricing it
-> **Sub-task count**: 36 across 8 phases (BP1..BP8), each phase numbered in
+> **Sub-task count**: 37 across 8 phases (BP1..BP8), each phase numbered in
 > execution order
 
 ## 1. Why this plan exists
@@ -104,7 +104,7 @@ code for the target.
 | BP5 | The bootable image — `[[bin]]`, the link, `kernel8.img` | 4 | M |
 | BP6 | Per-core readiness — the five dormant seams go live | 3 | M |
 | BP7 | The context restore — TTBR0, the full frame, delivery | 7 | XL |
-| BP8 | First boot and bring-up — QEMU, then the board | 4 | XL |
+| BP8 | First boot and bring-up — QEMU, then the board | 5 | XL |
 
 ## 5. Phases
 
@@ -238,6 +238,7 @@ them executes a line of kernel code.
 | BP8.1 | Single-core boot under QEMU to the first idle dispatch — the first execution of `BP4.5`'s boot clean-to-PoU, whose emission is a boot-seam instruction sequence and whose *observation* is here | `scripts/` | L |
 | BP8.2 | Four-core bring-up under QEMU — `scripts/test_qemu_smp_bringup.sh` runs for the first time, and the two SM1.H acceptance boxes WS-RR RR7.16 unchecked are decided by it rather than asserted.  Consumes BP8.1 | `scripts/test_qemu_smp_bringup.sh`, `docs/planning/SMP_RUST_HAL_PLAN.md` | L |
 | BP8.3 | Boot on the board.  QEMU's `virt` machine is not a BCM2712: the PSCI implementation, the memory map and the GIC differ, and BP3's device-tree check is what refuses the wrong one | `docs/HARDWARE_TESTING.md` | XL |
+| BP8.5 | Read the per-core counters on the booted machine and check the containment `Concurrency.perCoreStatsPlausible` states — WS-RR RR7.33's registered half of register finding 98.  `Concurrency.perCoreStats` reads all four accessors and the predicate is proved and runtime-checked, but its *invocation* needs a machine: on hardware every core that has serviced a tick must report `0 < irqs`, and the timer-PPI and SGI counts must fit inside the IRQ total on every core.  A core reporting ticks it never took, or an accessor resolving to the wrong slot, fails here — which is what the counters were declared for and what nothing has ever executed.  Consumes BP8.2 | `SeLe4n/Kernel/Concurrency/Runtime.lean`, `rust/sele4n-hal/src/per_cpu_stats.rs` | S |
 | BP8.4 | Run the Tier-4 acceptance gates, which have never executed, and record what they actually report — **including the two QEMU shootdown exercisers** (`test_qemu_smp_shootdown.sh`, `test_qemu_smp_shootdown_stress.sh`), which SKIP for want of an image and hold [`SMP_TLB_SHOOTDOWN_PLAN.md`](SMP_TLB_SHOOTDOWN_PLAN.md) §8's one unchecked acceptance box open (WS-RR RR7.20).  Check that box in the same cut as the run; a shootdown-round-serialisation break or a missing acknowledgment is a failure of SM7, not of the harness.  Consumes BP8.2 | `scripts/test_tier4_smp_bootcheck.sh`, `scripts/test_qemu_smp_shootdown.sh`, `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` | M |
 
 **Acceptance**: four banners under QEMU, four banners on the board, and a
@@ -275,6 +276,8 @@ that no script had ever performed.
       evidence (BP8.2).
 - [ ] The board boots and reaches the first idle dispatch (BP8.3).
 - [ ] Tier-4 reports a result rather than a SKIP (BP8.4).
+- [ ] Every booted core's counter snapshot satisfies `perCoreStatsPlausible`, and every
+      core that serviced a tick reports a nonzero IRQ total (BP8.5).
 
 ## 7. Risk inventory
 

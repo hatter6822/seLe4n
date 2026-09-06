@@ -1,3 +1,57 @@
+## v0.34.83 — counters that mean something
+
+**WS-RR RR7.33 (finding 98)** — "per-core statistics accessors are declared,
+wrapped and proven but read by nothing".  RR7.33's other half, and the row closes
+with it.
+
+**The accessors have a reader.**  `Concurrency.perCoreStats` reads all four
+together, because the interesting facts about these counters are *relations*
+between them: a timer tick and an SGI are both IRQs and separately counted, so a
+snapshot of one says nothing a snapshot of all four does not say better.
+`perCoreStats_reads_every_accessor` pins the shape, so a refactor that drops one
+load — the failure that would silently return a `default` field — fails the build.
+
+**And the reader has a meaning.**  `per_cpu_stats.rs` names a sanity invariant in
+prose — "every core that ran for ≥ 1 tick saw ≥ 1 IRQ" — that nothing in Lean
+stated.  `perCoreStatsPlausible` is that invariant, generalised to the
+containment the counters are *defined by*: `timer_tick_count` counts INTID 30 and
+`sgi_count` counts INTIDs 0..15, both are `irq_count` increments and the two
+ranges are disjoint, so their sum is bounded by the total.  The syscall count is
+bounded by nothing, because an `SVC` is a synchronous exception and not an
+interrupt — a check that constrained it would be reading the ABI wrong.  The
+docstring's own sentence is `perCoreStatsPlausible_tick_implies_irq`, with the
+cross-core half `..._sgi_implies_irq` beside it.
+
+**Read in one direction, and the docstring says so.**  `false` means the snapshot
+cannot have come from a coherent counter slot — an FFI wiring defect, a core id
+resolving to the wrong slot, a counter that stopped being incremented where it is
+documented to be.  `true` means only that nothing is provably wrong: the four
+loads are `Relaxed` and independent, so a snapshot torn across a burst of
+interrupts is plausible and still not a consistent instant.  That looseness is
+deliberate — a seq-cst snapshot would put barriers on the IRQ hot path to buy an
+exactness the Rust module explicitly states no consumer needs — and it is why the
+predicate is a bound with slack rather than an equality.
+
+Seven runtime checks in `SmpFoundationsSuite` run it, three of them negatives in
+the shape a mis-wired accessor actually makes (two counters read from different
+cores' slots), including the one that only the *sum* catches: ticks and SGIs that
+each fit inside the total but not together.
+
+**What is registered rather than built.**  The *invocation* needs a booted
+machine, so it is **BP8.5** in the boot-path plan, with its own box in the WS-BP
+acceptance gate: every booted core's snapshot satisfies the predicate, and every
+core that serviced a tick reports a nonzero IRQ total.  Building an unwired caller
+now would repeat, one level out, exactly the defect this row closes — which is the
+same judgement the `v0.34.82` cut applied to the propagated `senderCspaceRoot`.
+
+**Also in this cut**: `endpointReceiveDualWithCapsOnCore` — the per-core sibling
+of the receive arm `v0.34.82` fixed — loses its sender-CSpace-root lookup too.
+Leaving it while the single-core arm dropped it would be exactly the asymmetry
+AK1-I exists to prevent, one path apart; it also cleared the tree's last build
+warning.
+
+Tier 0-3 green; `test_rust.sh` and the aarch64 cross gate green.
+
 ## v0.34.82 — a parameter nothing reads, and the error it was buying
 
 **WS-RR RR7.33 (finding 15)** — `ipcUnwrapCaps` carries a `senderCspaceRoot`

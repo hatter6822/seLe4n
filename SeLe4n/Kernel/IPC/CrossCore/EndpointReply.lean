@@ -316,13 +316,18 @@ def endpointReceiveDualWithCapsOnCore
         | some msg =>
           if msg.caps.isEmpty then (st', .ok (senderId, { results := #[] }, sgi))
           else
-            match lookupCspaceRoot st' senderId with
-            | none => (st', .error .invalidCapability)
-            | some senderRoot =>
-              match ipcUnwrapCaps msg receiverCspaceRoot receiverSlotBase
-                  msg.capsGranted st' with
-              | .error e => (st', .error e)
-              | .ok (summary, st'') => (st'', .ok (senderId, summary, sgi))
+            -- **WS-RR RR7.33**: the per-core sibling of the single-core receive
+            -- arm, and it loses the same lookup for the same reason.  It read
+            -- the *sender's* CSpace root only to feed `ipcUnwrapCaps`, which
+            -- has not consumed it since the derivation parent moved onto
+            -- `TransferCap.srcNode`; its `.invalidCapability` failed the
+            -- *receiver's* syscall on a fact about the *sender's* TCB.  Leaving
+            -- it here while the single-core arm dropped it would be exactly the
+            -- asymmetry AK1-I exists to prevent, one path apart.
+            match ipcUnwrapCaps msg receiverCspaceRoot receiverSlotBase
+                msg.capsGranted st' with
+            | .error e => (st', .error e)
+            | .ok (summary, st'') => (st'', .ok (senderId, summary, sgi))
 
 /-- WS-SM SM6 (PR #873 round 6): with nothing to install, the WithCaps per-core
 receive is exactly the bare per-core receive — so every capless pin taken against

@@ -1588,19 +1588,15 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull
             simp only
             split
             · exact hBare
-            · cases hRoot : lookupCspaceRoot stRecv senderId with
-              | none => exact hBare
-              | some senderRoot =>
+            · cases hUnwrap : ipcUnwrapCaps msg receiverCspaceRoot
+                  receiverSlotBase msg.capsGranted stRecv with
+              | error e => exact hBare
+              | ok pair =>
+                obtain ⟨summary, stFinal⟩ := pair
                 simp only
-                cases hUnwrap : ipcUnwrapCaps msg receiverCspaceRoot
-                    receiverSlotBase msg.capsGranted stRecv with
-                | error e => exact hBare
-                | ok pair =>
-                  obtain ⟨summary, stFinal⟩ := pair
-                  simp only
-                  exact ipcUnwrapCaps_preserves_ipcInvariantFull msg
-                    receiverCspaceRoot receiverSlotBase msg.capsGranted stRecv stFinal summary
-                    hBare hBareInv (hCapBadges receiverTcb hT msg hM) hUnwrap
+                exact ipcUnwrapCaps_preserves_ipcInvariantFull msg
+                  receiverCspaceRoot receiverSlotBase msg.capsGranted stRecv stFinal summary
+                  hBare hBareInv (hCapBadges receiverTcb hT msg hM) hUnwrap
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR2 (closure audit): the capability-carrying cross-core receive frames
@@ -1643,19 +1639,15 @@ theorem endpointReceiveDualWithCapsOnCore_passiveServerIdleFrameOnCore
             simp only
             split
             · exact hBare
-            · cases hRoot : lookupCspaceRoot stRecv senderId with
-              | none => exact hBare
-              | some senderRoot =>
+            · cases hUnwrap : ipcUnwrapCaps msg receiverCspaceRoot
+                  receiverSlotBase msg.capsGranted stRecv with
+              | error e => exact hBare
+              | ok pair =>
+                obtain ⟨summary, stFinal⟩ := pair
                 simp only
-                cases hUnwrap : ipcUnwrapCaps msg receiverCspaceRoot
-                    receiverSlotBase msg.capsGranted stRecv with
-                | error e => exact hBare
-                | ok pair =>
-                  obtain ⟨summary, stFinal⟩ := pair
-                  simp only
-                  exact hBare.trans (ipcUnwrapCaps_passiveServerIdleFrameOnCore msg
-                    receiverCspaceRoot receiverSlotBase msg.capsGranted stRecv stFinal summary
-                    hBareInv hUnwrap)
+                exact hBare.trans (ipcUnwrapCaps_passiveServerIdleFrameOnCore msg
+                  receiverCspaceRoot receiverSlotBase msg.capsGranted stRecv stFinal summary
+                  hBareInv hUnwrap)
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR2 (closure audit): the per-core bundle form for the live `.receive`

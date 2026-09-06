@@ -171,6 +171,111 @@ def perCoreSgiCount (core : CoreId) : BaseIO UInt64 :=
 def perCoreSyscallCount (core : CoreId) : BaseIO UInt64 :=
   Platform.FFI.ffiPerCoreSyscallCount (UInt64.ofNat core.val)
 
+-- ============================================================================
+-- WS-RR RR7.33 — the snapshot the four accessors feed, and what it must say
+-- ============================================================================
+
+/-- **WS-RR RR7.33**: one core's counters, read together.
+
+Register finding 98 was that the four accessors above are "declared, wrapped and
+proven but read by nothing".  They are read by `perCoreStats` now, and the point
+of reading them *together* is that the interesting facts are relations between
+them: a tick and an SGI are both IRQs, and separately counted, so a snapshot of
+one counter says nothing a snapshot of all four does not say better.
+
+`syscalls` is not an interrupt count and is included because the same Rust
+`PerCpuStats` slot carries it — a post-mortem that has the IRQ picture and not
+the syscall picture is missing the half that says whether the core was running
+user code at all. -/
+structure PerCoreStatsSnapshot where
+  /-- Total IRQs this core's handler dispatched — timer PPI, SGIs, and routed SPIs. -/
+  irqs : UInt64
+  /-- Timer PPI (INTID 30) only; a subset of `irqs`. -/
+  timerTicks : UInt64
+  /-- SGIs (INTID 0..15) only; a subset of `irqs`, disjoint from the timer PPI. -/
+  sgis : UInt64
+  /-- Synchronous `SVC` dispatches — not an interrupt, counted separately. -/
+  syscalls : UInt64
+  deriving Repr, DecidableEq, Inhabited
+
+/-- **WS-RR RR7.33**: read one core's whole counter slot.
+
+The consumer the four accessors did not have.  Four `Relaxed` loads, so the
+snapshot is *not* atomic as a whole — `irqs` may already have moved on by the
+time `sgis` is read.  That is the right trade for counters the Rust module
+states are "not required for correctness": a seq-cst snapshot would put barriers
+on the IRQ hot path to buy an exactness no consumer needs.  It is also why
+`perCoreStatsPlausible` below is a *plausibility* check with slack rather than
+an equality. -/
+def perCoreStats (core : CoreId) : BaseIO PerCoreStatsSnapshot := do
+  let irqs ← perCoreIrqCount core
+  let timerTicks ← perCoreTimerTickCount core
+  let sgis ← perCoreSgiCount core
+  let syscalls ← perCoreSyscallCount core
+  pure { irqs, timerTicks, sgis, syscalls }
+
+/-- **WS-RR RR7.33**: the sanity invariant `per_cpu_stats.rs` names and nothing
+stated — "every core that ran for ≥ 1 tick saw ≥ 1 IRQ", generalised to the
+containment the counters are defined by.
+
+`timer_tick_count` counts INTID 30 and `sgi_count` counts INTIDs 0..15; both are
+`irq_count` increments and the two INTID ranges are disjoint, so their sum is
+bounded by the total.  Nothing constrains `syscalls`: an `SVC` is a synchronous
+exception, not an interrupt.
+
+**Read in a single direction.**  `false` means the snapshot cannot have come from
+a coherent counter slot — a wiring defect in the FFI bridge, a core id resolving
+to the wrong slot, or a counter that stopped being incremented where it is
+documented to be.  `true` means only that nothing is provably wrong: the four
+loads are independent, so a snapshot torn across a burst of interrupts is
+plausible and still not a consistent instant. -/
+def perCoreStatsPlausible (s : PerCoreStatsSnapshot) : Bool :=
+  s.timerTicks.toNat + s.sgis.toNat ≤ s.irqs.toNat
+
+/-- The docstring's own sentence, as a decidable consequence: a core that
+recorded a timer tick recorded at least one IRQ. -/
+theorem perCoreStatsPlausible_tick_implies_irq (s : PerCoreStatsSnapshot)
+    (hPlausible : perCoreStatsPlausible s = true) (hTick : 0 < s.timerTicks.toNat) :
+    0 < s.irqs.toNat := by
+  unfold perCoreStatsPlausible at hPlausible
+  have h := of_decide_eq_true hPlausible
+  omega
+
+/-- …and the same for an SGI, which is the cross-core half of the sentence. -/
+theorem perCoreStatsPlausible_sgi_implies_irq (s : PerCoreStatsSnapshot)
+    (hPlausible : perCoreStatsPlausible s = true) (hSgi : 0 < s.sgis.toNat) :
+    0 < s.irqs.toNat := by
+  unfold perCoreStatsPlausible at hPlausible
+  have h := of_decide_eq_true hPlausible
+  omega
+
+/-- A core that has taken no interrupt at all is plausible — the boot state of
+every secondary before its first tick, so the check must not fire there. -/
+theorem perCoreStatsPlausible_zero :
+    perCoreStatsPlausible { irqs := 0, timerTicks := 0, sgis := 0, syscalls := 0 } = true := by
+  decide
+
+/-- The load-bearing negative: a tick count that exceeds the IRQ total is
+refused.  This is the shape a mis-wired accessor produces — two counters read
+from different cores' slots — and the reason the predicate is worth stating
+rather than assuming. -/
+theorem perCoreStatsPlausible_refuses_ticks_over_irqs :
+    perCoreStatsPlausible { irqs := 1, timerTicks := 2, sgis := 0, syscalls := 0 } = false := by
+  decide
+
+/-- **WS-RR RR7.33**: `perCoreStats` reads every accessor, in slot order.
+
+The structural pin behind the finding: a refactor that drops one of the four
+loads — the failure that would silently return a `default` field — fails here. -/
+theorem perCoreStats_reads_every_accessor (core : CoreId) :
+    perCoreStats core = (do
+      let irqs ← perCoreIrqCount core
+      let timerTicks ← perCoreTimerTickCount core
+      let sgis ← perCoreSgiCount core
+      let syscalls ← perCoreSyscallCount core
+      pure { irqs, timerTicks, sgis, syscalls }) := by
+  rfl
+
 /-- **WS-SM SM1.I.4** structural marker: per-core stats accessors
 return `BaseIO UInt64`.
 

@@ -215,6 +215,14 @@ open SeLe4n.Platform.RPi5
 #check @SeLe4n.Kernel.Concurrency.perCoreTimerTickCount
 #check @SeLe4n.Kernel.Concurrency.perCoreSgiCount
 #check @SeLe4n.Kernel.Concurrency.perCoreSyscallCount
+-- WS-RR RR7.33: the reader the four accessors feed, and its invariant.
+#check @SeLe4n.Kernel.Concurrency.perCoreStats
+#check @SeLe4n.Kernel.Concurrency.perCoreStatsPlausible
+#check @SeLe4n.Kernel.Concurrency.perCoreStats_reads_every_accessor
+#check @SeLe4n.Kernel.Concurrency.perCoreStatsPlausible_tick_implies_irq
+#check @SeLe4n.Kernel.Concurrency.perCoreStatsPlausible_sgi_implies_irq
+#check @SeLe4n.Kernel.Concurrency.perCoreStatsPlausible_zero
+#check @SeLe4n.Kernel.Concurrency.perCoreStatsPlausible_refuses_ticks_over_irqs
 #check @SeLe4n.Kernel.Concurrency.perCoreIrqCount_returns_baseio_uint64_marker
 #check @SeLe4n.Kernel.Concurrency.perCoreTimerTickCount_returns_baseio_uint64_marker
 #check @SeLe4n.Kernel.Concurrency.perCoreSgiCount_returns_baseio_uint64_marker
@@ -964,6 +972,42 @@ private def runPerCoreStatsChecks : IO Unit := do
     true
   let _proof_idle_bounded_default := SeLe4n.Kernel.Concurrency.idleWaitBounded_returns_baseio_uint64_marker 540_000
   assertBool "idleWaitBounded_returns_baseio_uint64_marker reachable on default tick budget"
+    true
+  -- **WS-RR RR7.33 (register finding 98)**: the four accessors above were
+  -- "declared, wrapped and proven but read by nothing".  `perCoreStats` reads
+  -- all four together, and `perCoreStatsPlausible` is the containment
+  -- `per_cpu_stats.rs` names in prose and nothing stated — timer PPI and SGI
+  -- counts are disjoint subsets of the IRQ total, so their sum is bounded by
+  -- it.  The predicate is pure, so unlike the accessors it can be *run* here.
+  let statsZero : SeLe4n.Kernel.Concurrency.PerCoreStatsSnapshot :=
+    { irqs := 0, timerTicks := 0, sgis := 0, syscalls := 0 }
+  assertBool "a core that has taken no interrupt is plausible (every secondary pre-tick)"
+    (SeLe4n.Kernel.Concurrency.perCoreStatsPlausible statsZero)
+  let statsLive : SeLe4n.Kernel.Concurrency.PerCoreStatsSnapshot :=
+    { irqs := 100, timerTicks := 70, sgis := 25, syscalls := 4000 }
+  assertBool "a live core whose ticks and SGIs fit inside its IRQ total is plausible"
+    (SeLe4n.Kernel.Concurrency.perCoreStatsPlausible statsLive)
+  -- The load-bearing negatives: each is the shape a mis-wired accessor makes —
+  -- two counters read from different cores' slots.
+  assertBool "NEGATIVE: ticks exceeding the IRQ total are refused"
+    (!SeLe4n.Kernel.Concurrency.perCoreStatsPlausible
+      { statsLive with timerTicks := 101 })
+  assertBool "NEGATIVE: SGIs exceeding the IRQ total are refused"
+    (!SeLe4n.Kernel.Concurrency.perCoreStatsPlausible
+      { statsLive with sgis := 101 })
+  assertBool "NEGATIVE: ticks and SGIs that fit singly but not together are refused"
+    (!SeLe4n.Kernel.Concurrency.perCoreStatsPlausible
+      { irqs := 100, timerTicks := 70, sgis := 40, syscalls := 0 })
+  -- The syscall count is not an interrupt, so it constrains nothing — a core
+  -- with no IRQs and many syscalls is plausible, and a check that refused it
+  -- would be reading `SVC` as an interrupt.
+  assertBool "the syscall count is not bounded by the IRQ total"
+    (SeLe4n.Kernel.Concurrency.perCoreStatsPlausible
+      { irqs := 0, timerTicks := 0, sgis := 0, syscalls := 9999 })
+  -- The two consequences the module docstring states in words.
+  let _tickImpliesIrq := SeLe4n.Kernel.Concurrency.perCoreStatsPlausible_tick_implies_irq
+  let _sgiImpliesIrq := SeLe4n.Kernel.Concurrency.perCoreStatsPlausible_sgi_implies_irq
+  assertBool "the tick-implies-IRQ and SGI-implies-IRQ consequences are proved"
     true
 
 private def runSgiFfiBindingChecks : IO Unit := do
