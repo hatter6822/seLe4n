@@ -110,6 +110,26 @@ elaborates the subset relevant to it.
 
 ### 2.1 Concurrency model: per-object RW fine-lock serialization
 
+> **WS-RR RR7.31 — what ships, and what this section describes.** The
+> present tense below is the **intended** discipline, not the deployed
+> one. Kernel entry is serialised by a single global ticket lock
+> (`rust/sele4n-hal/src/kernel_entry.rs`, SM5.I, v0.32.142), which
+> brackets all five state-committing entries. Inside it, WS-RR RR7.12
+> (v0.34.65) brackets the **syscall seam** through `withLockSet` for the
+> eight arms that declare a footprint; the other twenty-seven answer
+> `none`, and the per-core scheduler entries — the timer tick, the
+> `.reschedule` SGI receiver, the secondary bring-up entry — bracket
+> nothing at all (`UncoveredLockDomain.schedulerDomain`). So the
+> per-object locks are a model-level discipline on most of the surface,
+> and the shipping worst case is the global lock's, not §7.2's.
+>
+> Removing the entry lock is scheduled, not assumed: **RR7.39** (the
+> scheduler domain), **RR7.40** (the dynamic PIP chain) and **RR7.41**
+> (CSpace-walk interior CNodes) in `SMP_RELEASE_READINESS_PLAN.md`, plus
+> Track D's partitioned commit in `SMP_FINE_LOCK_MIGRATION_PLAN.md`.
+> `CLAUDE.md`'s standing constraints carry the same statement, and
+> `Scheduler/Operations/PerCoreWcrt.lean`'s header says it at the proofs.
+
 The kernel runs under **per-object reader-writer fine locking**
 with **hierarchical-by-kind acquire order** and **two-phase
 locking (2PL)**. Each kernel-object struct (`TCB`, `Endpoint`,
@@ -478,12 +498,46 @@ Worst-case syscall response time under per-object fine locks:
 
     WCRT(syscall) ≤ max-lock-set-size × (coreCount - 1) × WCRT_per_lock
 
-For RPi5 (coreCount = 4, typical lock-set size ≤ 4):
+**This section previously instantiated that formula as `4 × 3 × ~60 µs ≈ 720 µs`
+and concluded it "comfortably fits within the 1-ms timer tick budget". Both the
+instantiation and the conclusion were wrong, and WS-RR RR7.31 corrects them.**
 
-    WCRT(syscall) ≤ 4 × 3 × ~60 µs ≈ 720 µs
+*The first factor was a typical footprint size, not the ceiling.* The ceiling is
+`maxLockSetSize`, which is **9** (`Locks/LockSet.lean`; WS-RR RR7.11 raised it
+from 8 for the caps-installing `.replyRecv` footprint). At 60 µs the tick admits
+a footprint of **five** locks and refuses six
+(`rpi5Tick_sixty_micro_section_footprint_boundary`), so the product held for a
+four-lock op and never for the declared bound — not at 9, and not at the 8 that
+was already in force when this paragraph was written
+(`rpi5Tick_refused_sixty_micro_sections_at_the_previous_ceiling`).
 
-Comfortably fits within the 1-ms timer tick budget. Better than
-BKL's 4 × 250 µs = 1 ms because fine locks distribute the wait.
+*The third factor is ungrounded.* Nothing in this tree measures a per-object
+critical section on a Cortex-A76. `WCRT_per_lock` (`tCs`) is a free parameter
+throughout `Scheduler/Operations/PerCoreWcrt.lean`, and 60 µs was an estimate
+carried in prose only.
+
+So the plan states the **budget condition solved for the factor a deployment can
+measure**, rather than a product:
+
+    WCRT(syscall) ≤ budget   whenever   WCRT_per_lock ≤ budget ÷ (max-lock-set-size × (coreCount - 1))
+
+For RPi5 against the 1 ms tick, `9 × 3 = 27`, so the admissible per-lock
+critical section is **≤ 37 µs** (`admissibleCriticalSection_rpi5Tick`), and the
+60 µs previously assumed gives `9 × 3 × 60 = 1620 µs` — outside the tick
+(`rpi5Tick_refuses_sixty_micro_sections`). Both figures are `decide`-checked
+theorems, so a future cut that moves `maxLockSetSize` again has to confront them
+rather than a paragraph.
+
+*And none of this is the shipping bound.* §2.1's discipline is the **intended**
+one; the live seam is the SM5.I global kernel-entry ticket lock (see §2.1's own
+note), so the deployed worst case is that lock's — the BKL figure this section
+used to compare against favourably. Measuring `tCs` on the target, and making the
+fine-lock bound the shipping one, are the acceptance criteria of the rows that
+remove the entry lock: **RR7.39** (the scheduler domain), **RR7.40** (the dynamic
+PIP chain), **RR7.41** (CSpace-walk interior CNodes) in
+`SMP_RELEASE_READINESS_PLAN.md`, and Track D's partitioned commit in
+`SMP_FINE_LOCK_MIGRATION_PLAN.md`. Until they land, this plan claims no numeric
+syscall WCRT.
 
 ## 8. Risk inventory
 

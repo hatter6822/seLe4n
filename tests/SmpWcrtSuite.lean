@@ -50,6 +50,14 @@ open SeLe4n.Testing
 -- SM5.J.1 WCRT_lockSet cost function + forms + RPi5 grounding:
 #check @WCRT_lockSet
 #check @WCRT_lockSet_eq_product
+-- WS-RR RR7.31: the budget condition, solved for the measurable factor.
+#check @admissibleCriticalSection
+#check @WCRT_lockSet_le_budget_of_admissible
+#check @WCRT_lockSet_le_budget_of_cost
+#check @admissibleCriticalSection_rpi5Tick
+#check @rpi5Tick_refuses_sixty_micro_sections
+#check @rpi5Tick_sixty_micro_section_footprint_boundary
+#check @rpi5Tick_refused_sixty_micro_sections_at_the_previous_ceiling
 #check @WCRT_lockSet_nil
 #check @WCRT_lockSet_mono_length
 #check @WCRT_lockSet_mono_cost
@@ -269,10 +277,30 @@ private def runRpi5BoundChecks : IO Unit := do
     (decide (numCores - 1 = 3))
   -- The plan §3.9 worked example: a typical syscall touches ≤ 4 locks, so its WCRT
   -- is ≤ 4 · 3 · 60 µs = 720 µs < 1 ms = 1000 µs — within the timer-tick budget.
+  -- **This is a typical-case figure and never was the bound** (WS-RR RR7.31): the
+  -- bound's first factor is `maxLockSetSize`, and the negative two blocks above is
+  -- the half that says so.  The plan's §7.2 quoted this product as the bound for
+  -- three cuts; it is pinned here beside its own boundary so the two cannot be
+  -- read as one claim.
   assertBool "typical syscall (4 locks) WCRT = 720 µs < 1000 µs (1 ms tick budget)"
     (decide (4 * (3 * tCs60) < 1000))
   assertBool "a 4-lock footprint's WCRT_lockSet is ≤ the maxLockSetSize bound"
     (decide (4 * (3 * tCs60) ≤ maxLockSetSize * (3 * tCs60)))
+  -- WS-RR RR7.31: the boundary at 60 µs is five locks, not four — so "typical ≤ 4"
+  -- had a whole lock of headroom and still said nothing about the ceiling.
+  assertBool "at 60 µs the 1 ms tick admits five locks and refuses six"
+    (decide (5 * (3 * tCs60) ≤ 1000) && decide (¬ (6 * (3 * tCs60) ≤ 1000)))
+  -- WS-RR RR7.31: the useful statement — the budget solved for the per-lock cost.
+  -- `maxLockSetSize · (numCores − 1) = 27`, so a 1 ms budget admits ≤ 37 µs, and
+  -- every declared footprint then fits by `WCRT_lockSet_le_budget_of_admissible`.
+  assertBool "the 1 ms tick admits a 37 µs per-lock critical section"
+    (decide (admissibleCriticalSection rpi5TickBudgetMicros = 37))
+  assertBool "…and at that cost the declared ceiling fits the budget"
+    (decide (maxLockSetSize * (3 * admissibleCriticalSection rpi5TickBudgetMicros)
+      ≤ rpi5TickBudgetMicros))
+  assertBool "NEGATIVE: one microsecond more per lock does not fit"
+    (decide (¬ (maxLockSetSize * (3 * (admissibleCriticalSection rpi5TickBudgetMicros + 1))
+      ≤ rpi5TickBudgetMicros)))
 
 /-- §3.3: SM5.J.2 — the combined `WCRT_smp` decomposition + monotonicity.  With an R5
 domain bound of, say, 50 ticks (in a common time base) and the timer-tick lock

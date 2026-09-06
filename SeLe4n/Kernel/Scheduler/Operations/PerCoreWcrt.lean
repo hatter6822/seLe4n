@@ -50,7 +50,23 @@ lock-contention dimension (plan §3.9):
 On the RPi5 target (`coreCount = 4`, pinned by `numCores_eq_rpi5_coreCount`) the
 core-count factor is `coreCount − 1 = 3`, so any op whose `SchedLockId` footprint
 respects the SM3.D static `maxLockSetSize` bound has lock-WCRT
-`≤ maxLockSetSize × 3 × WCRT_per_lock` — within the 1 ms timer-tick budget.
+`≤ maxLockSetSize × 3 × WCRT_per_lock`.
+
+**WS-RR RR7.31: that bound is not automatically inside the 1 ms timer tick, and
+this header used to say it was.**  It is a product of three factors and only one
+of them is fixed: `maxLockSetSize` is **9** (RR7.11 raised it from 8), the
+core-count factor is 3, and `WCRT_per_lock` — `tCs` throughout this module — is
+**ungrounded**: nothing in this tree measures a per-object critical section on a
+Cortex-A76, which is why the whole surface below is parametric in it.  So the
+honest statement is the budget condition solved for the measurable factor:
+`admissibleCriticalSection` gives the largest per-lock cost a budget admits
+(`WCRT_lockSet_le_budget_of_admissible`), which for the RPi5 tick is **37 µs**
+(`admissibleCriticalSection_rpi5Tick`).  The 60 µs the master plan §7.2 assumed
+does **not** fit — `9 · 3 · 60 = 1620 µs`
+(`rpi5Tick_refuses_sixty_micro_sections`), nor did it at the previous ceiling of
+eight — and the boundary at that cost is a footprint of five locks
+(`rpi5Tick_sixty_micro_section_footprint_boundary`), which is what the plan's
+"typical lock-set size ≤ 4" was really about.
 
 ## Contents (plan §5 SM5.J sub-tasks)
 
@@ -176,7 +192,9 @@ theorem WCRT_lockSet_le_maxLockSetSize (lockSet : List (SchedLockId × AccessMod
 /-- WS-SM SM5.J (plan §3.9): on the RPi5 target there are `numCores = 4` cores
 (pinned to `PlatformBinding.coreCount RPi5Platform` by `numCores_eq_rpi5_coreCount`
 in `Platform.RPi5.Contract`), so a syscall waits behind at most `coreCount − 1 = 3`
-other cores per lock — the `× 3` factor in the plan §3.9 RPi5 bound `4 × 3 × 60 µs`. -/
+other cores per lock — the `× 3` factor in the plan §3.9 RPi5 bound.  (That plan's
+`4 × 3 × 60 µs` product is the figure WS-RR RR7.31 corrected: its first factor was
+a typical footprint size, not `maxLockSetSize`, and its third is ungrounded.) -/
 theorem rpi5OtherCoreCount : numCores - 1 = 3 := by decide
 
 /-- SM5.J.1: the RPi5 per-lock wait cost is `3 · tCs` (`(numCores − 1) · tCs` with
@@ -188,6 +206,101 @@ theorem perLockWaitCost_rpi5 (tCs : Nat) : perLockWaitCost tCs = 3 * tCs := by
 theorem WCRT_lockSet_rpi5 (lockSet : List (SchedLockId × AccessMode)) (tCs : Nat) :
     WCRT_lockSet lockSet tCs = lockSet.length * (3 * tCs) := by
   rw [WCRT_lockSet_eq_product, rpi5OtherCoreCount]
+
+-- ============================================================================
+-- §1b  The response budget, solved for the per-lock cost (WS-RR RR7.31)
+-- ============================================================================
+
+/-- **WS-RR RR7.31**: the largest per-lock critical-section cost a given
+worst-case response budget admits, at the model's own declared ceiling.
+
+The plan's §7.2 headline was a *product* — `4 × 3 × 60 µs ≈ 720 µs`, "comfortably
+within the 1 ms timer-tick budget" — and a product is the wrong shape for this
+claim twice over.  Its first factor was a **typical** footprint size presented as
+a ceiling: the ceiling is `maxLockSetSize`, which WS-RR RR7.11 raised from 8 to 9
+for the caps-installing `.replyRecv` footprint, so the arithmetic silently stopped
+holding on a cut that was reasoning about lock coverage rather than about timing.
+Its third factor, `tCs`, is **ungrounded** — nothing in this tree measures a
+per-object critical section on a Cortex-A76, and the whole Lean surface here is
+deliberately parametric in it.
+
+So the useful statement is the budget condition solved for the one factor a
+deployment can actually measure: given a response budget, this is the per-lock
+cost at or below which the fine-lock bound holds for *every* declared footprint.
+It answers "what must the hardware do", where the product answered "what do we
+hope it does".
+
+Floor division is the right rounding: it under-approximates, so a `tCs` this
+function admits provably fits (`WCRT_lockSet_le_budget_of_admissible`). -/
+def admissibleCriticalSection (budget : Nat) : Nat :=
+  budget / (maxLockSetSize * (numCores - 1))
+
+/-- WS-RR RR7.31: the admissible cost is admissible — any footprint respecting
+the declared ceiling fits inside the budget at that per-lock cost. -/
+theorem WCRT_lockSet_le_budget_of_admissible
+    (lockSet : List (SchedLockId × AccessMode)) (budget : Nat)
+    (hSize : lockSet.length ≤ maxLockSetSize) :
+    WCRT_lockSet lockSet (admissibleCriticalSection budget) ≤ budget := by
+  have hStep : WCRT_lockSet lockSet (admissibleCriticalSection budget)
+      ≤ maxLockSetSize * ((numCores - 1) * (budget / (maxLockSetSize * (numCores - 1)))) := by
+    rw [WCRT_lockSet_eq_product]
+    exact Nat.mul_le_mul_right _ hSize
+  refine Nat.le_trans hStep ?_
+  rw [← Nat.mul_assoc]
+  exact Nat.mul_div_le budget (maxLockSetSize * (numCores - 1))
+
+/-- WS-RR RR7.31: the general form — a budget condition stated on the cost, so a
+caller may supply a *measured* `tCs` rather than the largest admissible one. -/
+theorem WCRT_lockSet_le_budget_of_cost
+    (lockSet : List (SchedLockId × AccessMode)) (tCs budget : Nat)
+    (hSize : lockSet.length ≤ maxLockSetSize)
+    (hCost : maxLockSetSize * ((numCores - 1) * tCs) ≤ budget) :
+    WCRT_lockSet lockSet tCs ≤ budget := by
+  refine Nat.le_trans ?_ hCost
+  rw [WCRT_lockSet_eq_product]
+  exact Nat.mul_le_mul_right _ hSize
+
+/-- WS-RR RR7.31: the RPi5 timer tick, in microseconds.  The budget the plan's
+§7.2 measured itself against; named here so the arithmetic below cites a constant
+rather than repeating a literal. -/
+def rpi5TickBudgetMicros : Nat := 1000
+
+/-- WS-RR RR7.31: **the corrected §7.2 figure.**  At the model's declared ceiling
+the RPi5 tick admits a per-lock critical section of at most **37 µs**, not the
+60 µs the plan assumed — `maxLockSetSize · (numCores − 1) = 27`, and `1000 / 27`
+is 37. -/
+theorem admissibleCriticalSection_rpi5Tick :
+    admissibleCriticalSection rpi5TickBudgetMicros = 37 := by decide
+
+/-- WS-RR RR7.31: **and the plan's own assumption fails it.**  A 60 µs per-lock
+section gives `9 · 3 · 60 = 1620 µs`, which is outside the 1 ms tick — so the
+§7.2 conclusion "comfortably fits within the 1-ms timer tick budget" is false at
+`maxLockSetSize = 9`.  Stated as a negative so the arithmetic is pinned in the
+direction that matters: a future cut that raises `maxLockSetSize` again, or that
+grounds `tCs` at 60 µs, has to confront this theorem rather than a paragraph.
+
+This is a statement about the *intended* fine-lock discipline, not about the
+shipping kernel: the live seam is the SM5.I global kernel-entry ticket lock, so
+the deployed worst case is that lock's, and this module's own header says so. -/
+theorem rpi5Tick_refuses_sixty_micro_sections :
+    ¬ (maxLockSetSize * ((numCores - 1) * 60) ≤ rpi5TickBudgetMicros) := by decide
+
+/-- WS-RR RR7.31: **the plan's `4` was never `maxLockSetSize`.**  At 60 µs the
+tick admits a footprint of five locks and refuses six — and `maxLockSetSize` was
+already **8** when §7.2 was written, giving `8 · 3 · 60 = 1440 µs`.  So the
+product never was the bound the section presented it as; RR7.11's 8 → 9 widened
+an inequality that had not held since the ceiling passed five.  Pinned as an
+if-and-only-if boundary so the two readings — a typical footprint and the
+declared ceiling — cannot be conflated again. -/
+theorem rpi5Tick_sixty_micro_section_footprint_boundary :
+    (5 * ((numCores - 1) * 60) ≤ rpi5TickBudgetMicros)
+      ∧ ¬ (6 * ((numCores - 1) * 60) ≤ rpi5TickBudgetMicros) := by decide
+
+/-- WS-RR RR7.31: and the pre-RR7.11 ceiling failed it too — `8 · 3 · 60 = 1440`.
+The finding is a *drift in what the first factor means*, not a regression RR7.11
+introduced. -/
+theorem rpi5Tick_refused_sixty_micro_sections_at_the_previous_ceiling :
+    ¬ (8 * ((numCores - 1) * 60) ≤ rpi5TickBudgetMicros) := by decide
 
 -- ============================================================================
 -- §2  SM5.J.2 — `wcrt_bound_rpi5_smp` (plan §3.9 Theorem 3.9.1) + `WCRT_smp`

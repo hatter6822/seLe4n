@@ -1,3 +1,59 @@
+## v0.34.80 — a bound is not a product
+
+**WS-RR RR7.31** — the master-plan medium (register finding 11): "§2.1 and §7.2
+assert live fine-lock concurrency and a 720 µs WCRT that the shipping kernel does
+not have."  Both halves are corrected, and the second was worse than the finding
+states: the figure was **arithmetically wrong**, not merely unshipped.
+
+**§2.1 — what ships.**  The section describes per-object fine locking in the
+present tense.  It now opens with the deployed reality: kernel entry is serialised
+by one global ticket lock (SM5.I) bracketing all five state-committing entries;
+inside it WS-RR RR7.12 brackets the *syscall* seam for the eight arms that declare
+a footprint, while twenty-seven answer `none` and the per-core scheduler entries
+bracket nothing at all (`UncoveredLockDomain.schedulerDomain`).  Removing the entry
+lock is scheduled rather than assumed — **RR7.39**, **RR7.40**, **RR7.41** and
+fine-lock **Track D** are named in the note, so a reader reaches the rows instead
+of the impression.
+
+**§7.2 — the number.**  `WCRT ≤ max-lock-set-size × (coreCount − 1) ×
+WCRT_per_lock` was instantiated as `4 × 3 × ~60 µs ≈ 720 µs`, "comfortably fits
+within the 1-ms timer tick budget".  Two of the three factors were wrong:
+
+- **The first was a typical footprint size presented as the ceiling.**  The ceiling
+  is `maxLockSetSize`, which is **9** (RR7.11 raised it from 8 for the
+  caps-installing `.replyRecv` footprint).  That gives `9 × 3 × 60 = 1620 µs` —
+  outside the tick.  So did the previous ceiling: `8 × 3 × 60 = 1440 µs`.  At
+  60 µs the tick admits **five** locks and refuses six, so the product held for a
+  four-lock op and never for the declared bound.  RR7.11 widened an inequality
+  that had not held since the ceiling passed five; `maxLockSetSize`'s own docstring
+  flagged that raising it "widens the WCRT headline by an eighth", and no cut
+  followed the headline to where it was quoted.
+- **The third is ungrounded.**  Nothing in this tree measures a per-object critical
+  section on a Cortex-A76.  `tCs` is a free parameter throughout
+  `PerCoreWcrt.lean`; 60 µs lived in prose.
+
+Replaced by the statement that is actually useful — **the budget condition solved
+for the factor a deployment can measure**:
+
+    WCRT ≤ budget   whenever   WCRT_per_lock ≤ budget ÷ (max-lock-set-size × (coreCount − 1))
+
+`admissibleCriticalSection budget` is that quotient; for the RPi5 tick it is
+**37 µs** (`admissibleCriticalSection_rpi5Tick`), since `9 × 3 = 27`.
+`WCRT_lockSet_le_budget_of_admissible` is the payoff — every footprint respecting
+the declared ceiling fits at that cost — and `WCRT_lockSet_le_budget_of_cost` takes
+a measured `tCs` instead.  Three `decide`-checked negatives pin the corrected
+arithmetic: the 60 µs refusal, the five-versus-six boundary, and the same refusal
+at the previous ceiling of eight.  Six runtime checks in `SmpWcrtSuite` execute
+them.  So a future cut that moves `maxLockSetSize` again confronts a theorem rather
+than a paragraph — which is the mechanism this defect existed for want of.
+
+The plan now claims **no numeric syscall WCRT**, and measuring `tCs` on the target
+is an acceptance criterion of the rows that make the fine-lock bound the shipping
+one.  `PerCoreWcrt.lean`'s header and `CLAUDE.md`'s standing constraints carry the
+same statement, so the three places a reader might look agree.
+
+Tier 0-3 green; `test_rust.sh` and the aarch64 cross gate green.
+
 ## v0.34.79 — the width of the model, the width of the board
 
 **WS-RR RR7.30** — the SMP-foundations medium (register finding 10): "`numCores`

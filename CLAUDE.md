@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.79.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.80.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1511,7 +1511,20 @@ code may assume:
   panicking macro refuses the tripwire.
   Live WCRT is therefore weaker
   than `PerCoreWcrt.lean`'s fine-lock bound, which remains a statement about the
-  intended discipline.
+  intended discipline.  **And that bound carries no number** (WS-RR RR7.31): it is
+  `maxLockSetSize · (numCores − 1) · tCs`, and `tCs` — a per-object critical
+  section on a Cortex-A76 — is measured nowhere in this tree, so the whole surface
+  is parametric in it.  The master plan's §7.2 used to instantiate it as
+  `4 × 3 × 60 µs ≈ 720 µs`, "comfortably within the 1 ms timer tick"; the first
+  factor was a *typical* footprint size rather than `maxLockSetSize` (9 since
+  RR7.11, and 8 before that), and at 60 µs the tick admits **five** locks and
+  refuses six.  What the tree states instead is the budget condition solved for the
+  measurable factor: `admissibleCriticalSection budget` is the largest per-lock cost
+  a budget admits at the declared ceiling — **37 µs** for the 1 ms tick — with
+  `WCRT_lockSet_le_budget_of_admissible` the payoff and
+  `rpi5Tick_refuses_sixty_micro_sections` the `decide`-checked negative.  New code
+  must not quote a numeric syscall WCRT for this kernel; measuring `tCs` on the
+  target is an acceptance criterion of RR7.39–RR7.41 and fine-lock Track D.
 - **The syscall seam brackets; the scheduler entries do not** (WS-RR RR7.12,
   v0.34.65).  `syscallDispatchCrossCoreEntry` runs its atomic step inside the
   footprint `lockSetForSyscall` declares for the operation its own registers
