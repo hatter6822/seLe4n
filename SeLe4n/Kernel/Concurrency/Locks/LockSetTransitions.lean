@@ -201,6 +201,68 @@ root or a cap-lookup target). -/
 @[inline] def notificationLock (oid : ObjId) : LockId :=
   ⟨.notification, oid⟩
 
+/-- **WS-RR RR7.38**: the object whose wait queue a thread is linked into.
+
+A thread blocked on an endpoint or a notification sits in that object's queue,
+threaded by its own `queuePrev` / `queueNext`.  Splicing it out — which
+`tcbSuspend` and the cancellation paths do — writes its *neighbours'* link
+fields, TCBs the splice holds no `tcbLock` for.  Those writes are authorized by
+the queue owner's write lock
+(`suspendFootprint_splice_neighbors_under_endpoint_lock`); making them
+*excluded* against other writers of the same TCBs requires every footprint that
+can target a queued thread to declare the same lock, which is what this
+resolver supplies.
+
+A `.ready` thread owns no entry here.  It may still sit in a per-core *run*
+queue, whose locks are `SchedLockId` rather than `LockId` and whose coverage is
+the separately registered scheduler domain — said here because the two are easy
+to conflate and only one of them is closed. -/
+inductive QueueOwner where
+  /-- The thread is in an endpoint's send / receive / call / reply queue. -/
+  | endpoint (oid : ObjId)
+  /-- The thread is in a notification's wait queue. -/
+  | notification (oid : ObjId)
+  deriving DecidableEq, Repr
+
+/-- The lock a `QueueOwner` denotes. -/
+@[inline] def QueueOwner.lock : QueueOwner → LockId
+  | .endpoint oid => ⟨.endpoint, oid⟩
+  | .notification oid => ⟨.notification, oid⟩
+
+/-- **WS-RR RR7.38**: a queue owner's kind is one of exactly two.
+
+This is why `QueueOwner` exists rather than a bare `Option LockId`: a `LockId`
+carries an arbitrary kind, so a footprint parameterised by one could only be
+admitted by a `permittedKinds` arm listing *every* kind — the `.declassify`
+shape, honest there because the target really can be any object, and dishonest
+here because a wait queue is owned by an endpoint or a notification and nothing
+else.  With the kind fixed by construction the eleven arms below admit exactly
+those two, and the fixed part of each footprint stays pinned. -/
+theorem QueueOwner.lock_kind (q : QueueOwner) :
+    q.lock.kind = LockKind.endpoint ∨ q.lock.kind = LockKind.notification := by
+  cases q <;> simp [QueueOwner.lock]
+
+/-- **WS-RR RR7.38**: the queue owner of a TCB, read off its `ipcState`. -/
+@[inline] def queueOwnerOf? (tcb : TCB) : Option QueueOwner :=
+  match tcb.ipcState with
+  | .blockedOnSend ep => some (.endpoint ep)
+  | .blockedOnReceive ep => some (.endpoint ep)
+  | .blockedOnCall ep => some (.endpoint ep)
+  | .blockedOnReply ep _ => some (.endpoint ep)
+  | .blockedOnNotification n => some (.notification n)
+  | .ready => none
+
+/-- **WS-RR RR7.38**: `queueOwnerOf?` resolved through the object store.  A
+thread that resolves to no TCB owns no queue membership, so `none`. -/
+@[inline] def queueOwnerAt (st : SystemState) (tid : ThreadId) : Option QueueOwner :=
+  (st.getTcb? tid).bind queueOwnerOf?
+
+/-- **WS-RR RR7.38**: the optional footprint member a queue owner contributes —
+its lock, in **write** mode, because the splice it protects writes the neighbour
+TCBs rather than reading them. -/
+@[inline] def queueOwnerMember (q : Option QueueOwner) : Option (LockId × AccessMode) :=
+  q.map (fun o => (o.lock, AccessMode.write))
+
 /-- WS-SM SM3.B: build the LockId for a SchedContext at the given
 SchedContextId. -/
 @[inline] def schedContextLock (scid : SchedContextId) : LockId :=
@@ -1792,54 +1854,69 @@ its bound TCB (if any) may need its `domain` field rewritten to
 match the new SC domain (per the R5.G domain-propagation block). -/
 def lockSet_schedContextConfigure (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (scid : SchedContextId)
-    (boundTcbTid : Option ThreadId) : LockSet :=
+    (boundTcbTid : Option ThreadId)
+    (queueOwner : Option QueueOwner) : LockSet :=
   lockSetExtendOpt
-    (lockSetOfList
-      [(tcbLock callerTid, .read),
-       (cnodeLock cnodeRootObjId, .read),
-       (schedContextLock scid, .write)])
-    (boundTcbTid.map (fun bt => (tcbLock bt, .write)))
+    (lockSetExtendOpt
+      (lockSetOfList
+        [(tcbLock callerTid, .read),
+         (cnodeLock cnodeRootObjId, .read),
+         (schedContextLock scid, .write)])
+      (boundTcbTid.map (fun bt => (tcbLock bt, .write))))
+    (queueOwnerMember queueOwner)
 
 /-- WS-SM SM3.B.3: `lockSet` for `schedContextBind`. -/
 def lockSet_schedContextBind (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (scid : SchedContextId)
-    (targetTcbTid : ThreadId) : LockSet :=
-  lockSetOfList
-    [(tcbLock callerTid, .read),
-     (cnodeLock cnodeRootObjId, .read),
-     (schedContextLock scid, .write),
-     (tcbLock targetTcbTid, .write)]
+    (targetTcbTid : ThreadId)
+    (queueOwner : Option QueueOwner) : LockSet :=
+  lockSetExtendOpt
+    (lockSetOfList
+      [(tcbLock callerTid, .read),
+       (cnodeLock cnodeRootObjId, .read),
+       (schedContextLock scid, .write),
+       (tcbLock targetTcbTid, .write)])
+    (queueOwnerMember queueOwner)
 
 /-- WS-SM SM3.B.3: `lockSet` for `schedContextUnbind`. -/
 def lockSet_schedContextUnbind (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (scid : SchedContextId)
-    (targetTcbTid : ThreadId) : LockSet :=
-  lockSetOfList
-    [(tcbLock callerTid, .read),
-     (cnodeLock cnodeRootObjId, .read),
-     (schedContextLock scid, .write),
-     (tcbLock targetTcbTid, .write)]
+    (targetTcbTid : ThreadId)
+    (queueOwner : Option QueueOwner) : LockSet :=
+  lockSetExtendOpt
+    (lockSetOfList
+      [(tcbLock callerTid, .read),
+       (cnodeLock cnodeRootObjId, .read),
+       (schedContextLock scid, .write),
+       (tcbLock targetTcbTid, .write)])
+    (queueOwnerMember queueOwner)
 
 /-- WS-SM SM6.B: `lockSet` for `tcbBindNotification`.  The bound TCB (write —
 `boundNotification`) and the notification (write — `boundTCB`) both mutate; the
 caller TCB is read (identity) and the CSpace root read (cap resolution). -/
 def lockSet_tcbBindNotification (callerTid : ThreadId) (cnodeRootObjId : ObjId)
-    (notificationObjId : ObjId) (targetTcbTid : ThreadId) : LockSet :=
-  lockSetOfList
-    [(tcbLock callerTid, .read),
-     (cnodeLock cnodeRootObjId, .read),
-     (notificationLock notificationObjId, .write),
-     (tcbLock targetTcbTid, .write)]
+    (notificationObjId : ObjId) (targetTcbTid : ThreadId)
+    (queueOwner : Option QueueOwner) : LockSet :=
+  lockSetExtendOpt
+    (lockSetOfList
+      [(tcbLock callerTid, .read),
+       (cnodeLock cnodeRootObjId, .read),
+       (notificationLock notificationObjId, .write),
+       (tcbLock targetTcbTid, .write)])
+    (queueOwnerMember queueOwner)
 
 /-- WS-SM SM6.B: `lockSet` for `tcbUnbindNotification` — same footprint as bind
 (both ends of the binding cleared under write locks). -/
 def lockSet_tcbUnbindNotification (callerTid : ThreadId) (cnodeRootObjId : ObjId)
-    (notificationObjId : ObjId) (targetTcbTid : ThreadId) : LockSet :=
-  lockSetOfList
-    [(tcbLock callerTid, .read),
-     (cnodeLock cnodeRootObjId, .read),
-     (notificationLock notificationObjId, .write),
-     (tcbLock targetTcbTid, .write)]
+    (notificationObjId : ObjId) (targetTcbTid : ThreadId)
+    (queueOwner : Option QueueOwner) : LockSet :=
+  lockSetExtendOpt
+    (lockSetOfList
+      [(tcbLock callerTid, .read),
+       (cnodeLock cnodeRootObjId, .read),
+       (notificationLock notificationObjId, .write),
+       (tcbLock targetTcbTid, .write)])
+    (queueOwnerMember queueOwner)
 
 /-! ## TCB lifecycle and config syscalls (5 transitions) -/
 
@@ -1928,11 +2005,14 @@ Target TCB (write — state transition to `.Ready`).  The scheduler
 state (run queue) mutates implicitly through the TCB's `objects`
 write at SM3.B; SM4 will lift the scheduler to per-core state. -/
 def lockSet_tcbResume (callerTid : ThreadId)
-    (cnodeRootObjId : ObjId) (targetTcbTid : ThreadId) : LockSet :=
-  lockSetOfList
-    [(tcbLock callerTid, .read),
-     (cnodeLock cnodeRootObjId, .read),
-     (tcbLock targetTcbTid, .write)]
+    (cnodeRootObjId : ObjId) (targetTcbTid : ThreadId)
+    (queueOwner : Option QueueOwner) : LockSet :=
+  lockSetExtendOpt
+    (lockSetOfList
+      [(tcbLock callerTid, .read),
+       (cnodeLock cnodeRootObjId, .read),
+       (tcbLock targetTcbTid, .write)])
+    (queueOwnerMember queueOwner)
 
 /-- WS-SM SM3.B.3: `lockSet` for `tcbSetPriority`.
 
@@ -1960,13 +2040,16 @@ let scId := s.getTcb? targetTcbTid >>= fun t =>
 -/
 def lockSet_tcbSetPriority (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (targetTcbTid : ThreadId)
-    (boundSchedContextId : Option SchedContextId) : LockSet :=
+    (boundSchedContextId : Option SchedContextId)
+    (queueOwner : Option QueueOwner) : LockSet :=
   lockSetExtendOpt
-    (lockSetOfList
-      [(tcbLock callerTid, .read),
-       (cnodeLock cnodeRootObjId, .read),
-       (tcbLock targetTcbTid, .write)])
-    (boundSchedContextId.map (fun sc => (schedContextLock sc, .write)))
+    (lockSetExtendOpt
+      (lockSetOfList
+        [(tcbLock callerTid, .read),
+         (cnodeLock cnodeRootObjId, .read),
+         (tcbLock targetTcbTid, .write)])
+      (boundSchedContextId.map (fun sc => (schedContextLock sc, .write))))
+    (queueOwnerMember queueOwner)
 
 /-- WS-SM SM3.B.3: `lockSet` for `tcbSetMCPriority`.
 
@@ -1983,13 +2066,16 @@ The caller pre-resolves `targetTcb.schedContextBinding` identically
 to `lockSet_tcbSetPriority`. -/
 def lockSet_tcbSetMCPriority (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (targetTcbTid : ThreadId)
-    (boundSchedContextId : Option SchedContextId) : LockSet :=
+    (boundSchedContextId : Option SchedContextId)
+    (queueOwner : Option QueueOwner) : LockSet :=
   lockSetExtendOpt
-    (lockSetOfList
-      [(tcbLock callerTid, .read),
-       (cnodeLock cnodeRootObjId, .read),
-       (tcbLock targetTcbTid, .write)])
-    (boundSchedContextId.map (fun sc => (schedContextLock sc, .write)))
+    (lockSetExtendOpt
+      (lockSetOfList
+        [(tcbLock callerTid, .read),
+         (cnodeLock cnodeRootObjId, .read),
+         (tcbLock targetTcbTid, .write)])
+      (boundSchedContextId.map (fun sc => (schedContextLock sc, .write))))
+    (queueOwnerMember queueOwner)
 
 /-- WS-SM SM3.B.3: `lockSet` for `tcbSetIPCBuffer`.
 
@@ -2019,13 +2105,16 @@ exist; in that case the syscall fails before reaching
 `setIPCBufferOp` and no VSpace read happens. -/
 def lockSet_tcbSetIPCBuffer (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (targetTcbTid : ThreadId)
-    (targetVSpaceRootObjId : Option ObjId) : LockSet :=
+    (targetVSpaceRootObjId : Option ObjId)
+    (queueOwner : Option QueueOwner) : LockSet :=
   lockSetExtendOpt
-    (lockSetOfList
-      [(tcbLock callerTid, .read),
-       (cnodeLock cnodeRootObjId, .read),
-       (tcbLock targetTcbTid, .write)])
-    (targetVSpaceRootObjId.map (fun vsr => (vspaceRootLock vsr, .read)))
+    (lockSetExtendOpt
+      (lockSetOfList
+        [(tcbLock callerTid, .read),
+         (cnodeLock cnodeRootObjId, .read),
+         (tcbLock targetTcbTid, .write)])
+      (targetVSpaceRootObjId.map (fun vsr => (vspaceRootLock vsr, .read))))
+    (queueOwnerMember queueOwner)
 
 /-- WS-SM SM5.H.4: `lockSet` for `tcbSetAffinity`.
 
@@ -2042,13 +2131,16 @@ The caller pre-resolves `targetTcb.schedContextBinding.scId?` identically to
 (no replenishments to migrate). -/
 def lockSet_tcbSetAffinity (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (targetTcbTid : ThreadId)
-    (boundSchedContextId : Option SchedContextId) : LockSet :=
+    (boundSchedContextId : Option SchedContextId)
+    (queueOwner : Option QueueOwner) : LockSet :=
   lockSetExtendOpt
-    (lockSetOfList
-      [(tcbLock callerTid, .read),
-       (cnodeLock cnodeRootObjId, .read),
-       (tcbLock targetTcbTid, .write)])
-    (boundSchedContextId.map (fun sc => (schedContextLock sc, .write)))
+    (lockSetExtendOpt
+      (lockSetOfList
+        [(tcbLock callerTid, .read),
+         (cnodeLock cnodeRootObjId, .read),
+         (tcbLock targetTcbTid, .write)])
+      (boundSchedContextId.map (fun sc => (schedContextLock sc, .write))))
+    (queueOwnerMember queueOwner)
 
 /-- PR #887 review: `lockSet` for `tcbSetFaultHandler`.
 
@@ -2077,15 +2169,18 @@ of a multi-level CSpace walk, registered as
 resolves a CPtr. -/
 def lockSet_tcbSetFaultHandler (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (targetTcbTid : ThreadId)
-    (targetCnodeRootObjId : Option ObjId) (handlerEndpointObjId : Option ObjId) : LockSet :=
+    (targetCnodeRootObjId : Option ObjId) (handlerEndpointObjId : Option ObjId)
+    (queueOwner : Option QueueOwner) : LockSet :=
   lockSetExtendOpt
     (lockSetExtendOpt
-      (lockSetOfList
-        [(tcbLock callerTid, .read),
-         (cnodeLock cnodeRootObjId, .read),
-         (tcbLock targetTcbTid, .write)])
-      (targetCnodeRootObjId.map (fun cn => (cnodeLock cn, .read))))
-    (handlerEndpointObjId.map (fun ep => (endpointLock ep, .read)))
+      (lockSetExtendOpt
+        (lockSetOfList
+          [(tcbLock callerTid, .read),
+           (cnodeLock cnodeRootObjId, .read),
+           (tcbLock targetTcbTid, .write)])
+        (targetCnodeRootObjId.map (fun cn => (cnodeLock cn, .read))))
+      (handlerEndpointObjId.map (fun ep => (endpointLock ep, .read))))
+    (queueOwnerMember queueOwner)
 
 -- ============================================================================
 -- SM3.B.3 (audit-pass-5) — PIP-chain-walk start markers
@@ -2374,9 +2469,22 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
       [.tcb, .cnode, .endpoint, .objStore]
   | .serviceRevoke | .serviceQuery =>
       [.tcb, .cnode, .objStore]
+  -- **WS-RR RR7.38 — `.endpoint` and `.notification` on every arm that can
+  -- write a *queued* TCB.**  Splicing a blocked thread out of its wait queue
+  -- writes its neighbours' link fields, TCBs the splice holds no `tcbLock` for.
+  -- Those writes are authorized by the queue owner's write lock
+  -- (`suspendFootprint_splice_neighbors_under_endpoint_lock`); making them
+  -- *excluded* against other writers of the same TCBs needs every footprint
+  -- that can target a queued thread to declare the same lock, which is the
+  -- `queueOwner` member those footprints now carry.  Its kind is whatever owns
+  -- the queue, and `QueueOwner.lock_kind` says that is exactly one of these
+  -- two — so this is a two-kind widening rather than the `.declassify`
+  -- admit-everything shape.  The by-kind ladder is unaffected for the reason
+  -- given there: acquisition order is `LockKind.level`, a total order over all
+  -- ten kinds, so a wider admission cannot introduce a cycle.
   -- SchedContext syscalls
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind =>
-      [.tcb, .cnode, .schedContext]
+      [.tcb, .cnode, .schedContext, .endpoint, .notification]
   -- TCB lifecycle/config.  `.tcbSuspend` may traverse a donation
   -- cancellation path (per audit-pass-3 extension).
   -- `.tcbSetPriority` and `.tcbSetMCPriority` write a bound or donated
@@ -2393,27 +2501,27 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   | .tcbSuspend =>
       [.tcb, .cnode, .endpoint, .notification, .schedContext, .reply]
   | .tcbResume =>
-      [.tcb, .cnode]
+      [.tcb, .cnode, .endpoint, .notification]
   | .tcbSetPriority | .tcbSetMCPriority =>
-      [.tcb, .cnode, .schedContext]
+      [.tcb, .cnode, .schedContext, .endpoint, .notification]
   | .tcbSetIPCBuffer =>
-      [.tcb, .cnode, .vspaceRoot]
+      [.tcb, .cnode, .vspaceRoot, .endpoint, .notification]
   -- WS-SM SM5.H.4: `setThreadCpuAffinityOp` writes the target TCB's `cpuAffinity`
   -- and, for a SchedContext-bound target, migrates that SC's pending replenishments
   -- (so the bound SchedContext object is in the conservative kernel-object footprint;
   -- the run-queue / replenish-queue slots are SM5.A's separate `SchedLockId` domain).
   | .tcbSetAffinity =>
-      [.tcb, .cnode, .schedContext]
+      [.tcb, .cnode, .schedContext, .endpoint, .notification]
   -- PR #887 review: `setThreadFaultHandlerOp` writes the target TCB's
   -- `faultHandler` and reads the target's root CNode to validate the CPtr —
   -- and (review round 3) the endpoint the CPtr names, for the kind check.
   | .tcbSetFaultHandler =>
-      [.tcb, .cnode, .endpoint]
+      [.tcb, .cnode, .endpoint, .notification]
   -- WS-SM SM6.B: bind/unbind a notification to a TCB.  Both the notification
   -- (write — `boundTCB`) and the bound TCB (write — `boundNotification`) are in
   -- the footprint, plus the CNode (read) covering the capability resolution.
   | .tcbBindNotification | .tcbUnbindNotification =>
-      [.tcb, .cnode, .notification]
+      [.tcb, .cnode, .notification, .endpoint]
 
 /-- WS-SM SM3.B.4 (PR #873 round 6): **the kind inventory admits any target.**
 
@@ -3274,92 +3382,125 @@ theorem lockSet_consistent_auditDrain (callerTid : ThreadId)
         · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
 
+/-- **WS-RR RR7.38**: the queue-owner member's kind obligation, discharged once
+for all eleven footprints that carry it.  `QueueOwner.lock_kind` is what makes
+this a two-case decision rather than an appeal to a permitted list admitting
+everything. -/
+theorem queueOwnerMember_kind (q : Option QueueOwner) (permitted : List LockKind)
+    (hEp : LockKind.endpoint ∈ permitted)
+    (hNtfn : LockKind.notification ∈ permitted) :
+    ∀ pp, queueOwnerMember q = some pp → pp.fst.kind ∈ permitted := by
+  intro pp hEq
+  cases q with
+  | none => simp [queueOwnerMember] at hEq
+  | some o =>
+      simp only [queueOwnerMember, Option.map_some] at hEq
+      cases hEq
+      rcases o.lock_kind with h | h
+      · simpa [h] using hEp
+      · simpa [h] using hNtfn
+
 /-- WS-SM SM3.B.4 for `.schedContextConfigure`. -/
 theorem lockSet_consistent_schedContextConfigure (callerTid : ThreadId)
-    (cnRoot : ObjId) (scid : SchedContextId) (boundTcb : Option ThreadId) :
-    ∀ p ∈ (lockSet_schedContextConfigure callerTid cnRoot scid boundTcb).pairs,
+    (cnRoot : ObjId) (scid : SchedContextId) (boundTcb : Option ThreadId)
+    (queueOwner : Option QueueOwner) :
+    ∀ p ∈ (lockSet_schedContextConfigure callerTid cnRoot scid boundTcb queueOwner).pairs,
       p.fst.kind ∈ permittedKinds .schedContextConfigure :=
-  lockSet_consistent_base_plus_opt _ _ _
-    (by intro p hMem
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        exact absurd hMem (by intro h; cases h))
-    (by intro pp hpp
-        cases boundTcb with
-        | none => simp at hpp
-        | some bt => simp at hpp; rw [← hpp]; simp; decide)
+  lockSet_consistent_extendOpt _ _ _
+    (lockSet_consistent_base_plus_opt _ _ _
+      (by intro p hMem
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          exact absurd hMem (by intro h; cases h))
+      (by intro pp hpp
+          cases boundTcb with
+          | none => simp at hpp
+          | some bt => simp at hpp; rw [← hpp]; simp; decide))
+    (queueOwnerMember_kind queueOwner _ (by decide) (by decide))
 
 /-- WS-SM SM3.B.4 for `.schedContextBind`. -/
 theorem lockSet_consistent_schedContextBind (callerTid : ThreadId)
-    (cnRoot : ObjId) (scid : SchedContextId) (targetTcb : ThreadId) :
-    ∀ p ∈ (lockSet_schedContextBind callerTid cnRoot scid targetTcb).pairs,
+    (cnRoot : ObjId) (scid : SchedContextId) (targetTcb : ThreadId)
+    (queueOwner : Option QueueOwner) :
+    ∀ p ∈ (lockSet_schedContextBind callerTid cnRoot scid targetTcb queueOwner).pairs,
       p.fst.kind ∈ permittedKinds .schedContextBind :=
-  lockSet_consistent_of_extended_base _ _
-    (by intro p hMem
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        exact absurd hMem (by intro h; cases h))
+  lockSet_consistent_extendOpt _ _ _
+    (lockSet_consistent_of_extended_base _ _
+      (by intro p hMem
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          exact absurd hMem (by intro h; cases h)))
+    (queueOwnerMember_kind queueOwner _ (by decide) (by decide))
 
 /-- WS-SM SM3.B.4 for `.schedContextUnbind`. -/
 theorem lockSet_consistent_schedContextUnbind (callerTid : ThreadId)
-    (cnRoot : ObjId) (scid : SchedContextId) (targetTcb : ThreadId) :
-    ∀ p ∈ (lockSet_schedContextUnbind callerTid cnRoot scid targetTcb).pairs,
+    (cnRoot : ObjId) (scid : SchedContextId) (targetTcb : ThreadId)
+    (queueOwner : Option QueueOwner) :
+    ∀ p ∈ (lockSet_schedContextUnbind callerTid cnRoot scid targetTcb queueOwner).pairs,
       p.fst.kind ∈ permittedKinds .schedContextUnbind :=
-  lockSet_consistent_of_extended_base _ _
-    (by intro p hMem
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        exact absurd hMem (by intro h; cases h))
+  lockSet_consistent_extendOpt _ _ _
+    (lockSet_consistent_of_extended_base _ _
+      (by intro p hMem
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          exact absurd hMem (by intro h; cases h)))
+    (queueOwnerMember_kind queueOwner _ (by decide) (by decide))
 
 /-- WS-SM SM6.B.4 for `.tcbBindNotification`. -/
 theorem lockSet_consistent_tcbBindNotification (callerTid : ThreadId)
-    (cnRoot : ObjId) (nId : ObjId) (targetTcb : ThreadId) :
-    ∀ p ∈ (lockSet_tcbBindNotification callerTid cnRoot nId targetTcb).pairs,
+    (cnRoot : ObjId) (nId : ObjId) (targetTcb : ThreadId)
+    (queueOwner : Option QueueOwner) :
+    ∀ p ∈ (lockSet_tcbBindNotification callerTid cnRoot nId targetTcb queueOwner).pairs,
       p.fst.kind ∈ permittedKinds .tcbBindNotification :=
-  lockSet_consistent_of_extended_base _ _
-    (by intro p hMem
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        exact absurd hMem (by intro h; cases h))
+  lockSet_consistent_extendOpt _ _ _
+    (lockSet_consistent_of_extended_base _ _
+      (by intro p hMem
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          exact absurd hMem (by intro h; cases h)))
+    (queueOwnerMember_kind queueOwner _ (by decide) (by decide))
 
 /-- WS-SM SM6.B.4 for `.tcbUnbindNotification`. -/
 theorem lockSet_consistent_tcbUnbindNotification (callerTid : ThreadId)
-    (cnRoot : ObjId) (nId : ObjId) (targetTcb : ThreadId) :
-    ∀ p ∈ (lockSet_tcbUnbindNotification callerTid cnRoot nId targetTcb).pairs,
+    (cnRoot : ObjId) (nId : ObjId) (targetTcb : ThreadId)
+    (queueOwner : Option QueueOwner) :
+    ∀ p ∈ (lockSet_tcbUnbindNotification callerTid cnRoot nId targetTcb queueOwner).pairs,
       p.fst.kind ∈ permittedKinds .tcbUnbindNotification :=
-  lockSet_consistent_of_extended_base _ _
-    (by intro p hMem
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        exact absurd hMem (by intro h; cases h))
+  lockSet_consistent_extendOpt _ _ _
+    (lockSet_consistent_of_extended_base _ _
+      (by intro p hMem
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          exact absurd hMem (by intro h; cases h)))
+    (queueOwnerMember_kind queueOwner _ (by decide) (by decide))
 
 /-- WS-SM SM3.B.4 for `.tcbSuspend` (audit-pass-3: donation-cancel
 extension — 4 optional args; WS-SM SM6.E: + the `consumedReplyId`
@@ -3405,115 +3546,31 @@ theorem lockSet_consistent_tcbSuspend (callerTid : ThreadId)
 
 /-- WS-SM SM3.B.4 for `.tcbResume`. -/
 theorem lockSet_consistent_tcbResume (callerTid : ThreadId)
-    (cnRoot : ObjId) (targetTcb : ThreadId) :
-    ∀ p ∈ (lockSet_tcbResume callerTid cnRoot targetTcb).pairs,
+    (cnRoot : ObjId) (targetTcb : ThreadId)
+    (queueOwner : Option QueueOwner) :
+    ∀ p ∈ (lockSet_tcbResume callerTid cnRoot targetTcb queueOwner).pairs,
       p.fst.kind ∈ permittedKinds .tcbResume :=
-  lockSet_consistent_of_extended_base _ _
-    (by intro p hMem
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        exact absurd hMem (by intro h; cases h))
+  lockSet_consistent_extendOpt _ _ _
+    (lockSet_consistent_of_extended_base _ _
+      (by intro p hMem
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          exact absurd hMem (by intro h; cases h)))
+    (queueOwnerMember_kind queueOwner _ (by decide) (by decide))
 
 /-- WS-SM SM3.B.4 for `.tcbSetPriority`.
 
 Audit-pass-6: the bound-SC write lock is now an `lockSetExtendOpt`
 extension on top of the base list.  Uses `base_plus_opt`. -/
 theorem lockSet_consistent_tcbSetPriority (callerTid : ThreadId)
-    (cnRoot : ObjId) (targetTcb : ThreadId) (boundSc : Option SchedContextId) :
-    ∀ p ∈ (lockSet_tcbSetPriority callerTid cnRoot targetTcb boundSc).pairs,
+    (cnRoot : ObjId) (targetTcb : ThreadId) (boundSc : Option SchedContextId)
+    (queueOwner : Option QueueOwner) :
+    ∀ p ∈ (lockSet_tcbSetPriority callerTid cnRoot targetTcb boundSc queueOwner).pairs,
       p.fst.kind ∈ permittedKinds .tcbSetPriority :=
-  lockSet_consistent_base_plus_opt _ _ _
-    (by intro p hMem
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        exact absurd hMem (by intro h; cases h))
-    (by intro pp hpp
-        cases boundSc with
-        | none => simp at hpp
-        | some sc => simp at hpp; rw [← hpp]; simp; decide)
-
-/-- WS-SM SM3.B.4 for `.tcbSetMCPriority`.
-
-Audit-pass-6: same shape as `.tcbSetPriority`. -/
-theorem lockSet_consistent_tcbSetMCPriority (callerTid : ThreadId)
-    (cnRoot : ObjId) (targetTcb : ThreadId) (boundSc : Option SchedContextId) :
-    ∀ p ∈ (lockSet_tcbSetMCPriority callerTid cnRoot targetTcb boundSc).pairs,
-      p.fst.kind ∈ permittedKinds .tcbSetMCPriority :=
-  lockSet_consistent_base_plus_opt _ _ _
-    (by intro p hMem
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        exact absurd hMem (by intro h; cases h))
-    (by intro pp hpp
-        cases boundSc with
-        | none => simp at hpp
-        | some sc => simp at hpp; rw [← hpp]; simp; decide)
-
-/-- WS-SM SM3.B.4 for `.tcbSetIPCBuffer`.
-
-Audit-pass-6: the target-VSpaceRoot read lock is now an
-`lockSetExtendOpt` extension on top of the base list.  Uses
-`base_plus_opt`. -/
-theorem lockSet_consistent_tcbSetIPCBuffer (callerTid : ThreadId)
-    (cnRoot : ObjId) (targetTcb : ThreadId) (targetVSpaceRoot : Option ObjId) :
-    ∀ p ∈ (lockSet_tcbSetIPCBuffer callerTid cnRoot targetTcb targetVSpaceRoot).pairs,
-      p.fst.kind ∈ permittedKinds .tcbSetIPCBuffer :=
-  lockSet_consistent_base_plus_opt _ _ _
-    (by intro p hMem
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        exact absurd hMem (by intro h; cases h))
-    (by intro pp hpp
-        cases targetVSpaceRoot with
-        | none => simp at hpp
-        | some vsr => simp at hpp; rw [← hpp]; simp; decide)
-
-/-- WS-SM SM5.H.4 for `.tcbSetAffinity`.
-
-Same shape as `.tcbSetPriority`: the base three locks (caller TCB read, CNode read,
-target TCB write) plus the optional bound-SchedContext write. -/
-theorem lockSet_consistent_tcbSetAffinity (callerTid : ThreadId)
-    (cnRoot : ObjId) (targetTcb : ThreadId) (boundSc : Option SchedContextId) :
-    ∀ p ∈ (lockSet_tcbSetAffinity callerTid cnRoot targetTcb boundSc).pairs,
-      p.fst.kind ∈ permittedKinds .tcbSetAffinity :=
-  lockSet_consistent_base_plus_opt _ _ _
-    (by intro p hMem
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        exact absurd hMem (by intro h; cases h))
-    (by intro pp hpp
-        cases boundSc with
-        | none => simp at hpp
-        | some sc => simp at hpp; rw [← hpp]; simp; decide)
-
-/-- PR #887 review, for `.tcbSetFaultHandler`: the base three locks plus the
-optional target-CNode read and (review round 3) the optional read of the
-endpoint the CPtr names. -/
-theorem lockSet_consistent_tcbSetFaultHandler (callerTid : ThreadId)
-    (cnRoot : ObjId) (targetTcb : ThreadId) (targetCnRoot : Option ObjId)
-    (handlerEp : Option ObjId) :
-    ∀ p ∈ (lockSet_tcbSetFaultHandler callerTid cnRoot targetTcb targetCnRoot handlerEp).pairs,
-      p.fst.kind ∈ permittedKinds .tcbSetFaultHandler :=
   lockSet_consistent_extendOpt _ _ _
     (lockSet_consistent_base_plus_opt _ _ _
       (by intro p hMem
@@ -3525,12 +3582,114 @@ theorem lockSet_consistent_tcbSetFaultHandler (callerTid : ThreadId)
           · rw [h]; simp; decide
           exact absurd hMem (by intro h; cases h))
       (by intro pp hpp
-          cases targetCnRoot with
+          cases boundSc with
           | none => simp at hpp
-          | some cn => simp at hpp; rw [← hpp]; simp; decide))
-    (by intro pp hpp
-        cases handlerEp with
-        | none => simp at hpp
-        | some ep => simp at hpp; rw [← hpp]; simp; decide)
+          | some sc => simp at hpp; rw [← hpp]; simp; decide))
+    (queueOwnerMember_kind queueOwner _ (by decide) (by decide))
+
+/-- WS-SM SM3.B.4 for `.tcbSetMCPriority`.
+
+Audit-pass-6: same shape as `.tcbSetPriority`. -/
+theorem lockSet_consistent_tcbSetMCPriority (callerTid : ThreadId)
+    (cnRoot : ObjId) (targetTcb : ThreadId) (boundSc : Option SchedContextId)
+    (queueOwner : Option QueueOwner) :
+    ∀ p ∈ (lockSet_tcbSetMCPriority callerTid cnRoot targetTcb boundSc queueOwner).pairs,
+      p.fst.kind ∈ permittedKinds .tcbSetMCPriority :=
+  lockSet_consistent_extendOpt _ _ _
+    (lockSet_consistent_base_plus_opt _ _ _
+      (by intro p hMem
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          exact absurd hMem (by intro h; cases h))
+      (by intro pp hpp
+          cases boundSc with
+          | none => simp at hpp
+          | some sc => simp at hpp; rw [← hpp]; simp; decide))
+    (queueOwnerMember_kind queueOwner _ (by decide) (by decide))
+
+/-- WS-SM SM3.B.4 for `.tcbSetIPCBuffer`.
+
+Audit-pass-6: the target-VSpaceRoot read lock is now an
+`lockSetExtendOpt` extension on top of the base list.  Uses
+`base_plus_opt`. -/
+theorem lockSet_consistent_tcbSetIPCBuffer (callerTid : ThreadId)
+    (cnRoot : ObjId) (targetTcb : ThreadId) (targetVSpaceRoot : Option ObjId)
+    (queueOwner : Option QueueOwner) :
+    ∀ p ∈ (lockSet_tcbSetIPCBuffer callerTid cnRoot targetTcb targetVSpaceRoot queueOwner).pairs,
+      p.fst.kind ∈ permittedKinds .tcbSetIPCBuffer :=
+  lockSet_consistent_extendOpt _ _ _
+    (lockSet_consistent_base_plus_opt _ _ _
+      (by intro p hMem
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          exact absurd hMem (by intro h; cases h))
+      (by intro pp hpp
+          cases targetVSpaceRoot with
+          | none => simp at hpp
+          | some vsr => simp at hpp; rw [← hpp]; simp; decide))
+    (queueOwnerMember_kind queueOwner _ (by decide) (by decide))
+
+/-- WS-SM SM5.H.4 for `.tcbSetAffinity`.
+
+Same shape as `.tcbSetPriority`: the base three locks (caller TCB read, CNode read,
+target TCB write) plus the optional bound-SchedContext write. -/
+theorem lockSet_consistent_tcbSetAffinity (callerTid : ThreadId)
+    (cnRoot : ObjId) (targetTcb : ThreadId) (boundSc : Option SchedContextId)
+    (queueOwner : Option QueueOwner) :
+    ∀ p ∈ (lockSet_tcbSetAffinity callerTid cnRoot targetTcb boundSc queueOwner).pairs,
+      p.fst.kind ∈ permittedKinds .tcbSetAffinity :=
+  lockSet_consistent_extendOpt _ _ _
+    (lockSet_consistent_base_plus_opt _ _ _
+      (by intro p hMem
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          exact absurd hMem (by intro h; cases h))
+      (by intro pp hpp
+          cases boundSc with
+          | none => simp at hpp
+          | some sc => simp at hpp; rw [← hpp]; simp; decide))
+    (queueOwnerMember_kind queueOwner _ (by decide) (by decide))
+
+/-- PR #887 review, for `.tcbSetFaultHandler`: the base three locks plus the
+optional target-CNode read and (review round 3) the optional read of the
+endpoint the CPtr names. -/
+theorem lockSet_consistent_tcbSetFaultHandler (callerTid : ThreadId)
+    (cnRoot : ObjId) (targetTcb : ThreadId) (targetCnRoot : Option ObjId)
+    (handlerEp : Option ObjId)
+    (queueOwner : Option QueueOwner) :
+    ∀ p ∈ (lockSet_tcbSetFaultHandler callerTid cnRoot targetTcb targetCnRoot handlerEp queueOwner).pairs,
+      p.fst.kind ∈ permittedKinds .tcbSetFaultHandler :=
+  lockSet_consistent_extendOpt _ _ _
+    (lockSet_consistent_extendOpt _ _ _
+      (lockSet_consistent_base_plus_opt _ _ _
+        (by intro p hMem
+            rcases List.mem_cons.mp hMem with h | hMem
+            · rw [h]; simp; decide
+            rcases List.mem_cons.mp hMem with h | hMem
+            · rw [h]; simp; decide
+            rcases List.mem_cons.mp hMem with h | hMem
+            · rw [h]; simp; decide
+            exact absurd hMem (by intro h; cases h))
+        (by intro pp hpp
+            cases targetCnRoot with
+            | none => simp at hpp
+            | some cn => simp at hpp; rw [← hpp]; simp; decide))
+      (by intro pp hpp
+          cases handlerEp with
+          | none => simp at hpp
+          | some ep => simp at hpp; rw [← hpp]; simp; decide))
+    (queueOwnerMember_kind queueOwner _ (by decide) (by decide))
 
 end SeLe4n.Kernel.Concurrency

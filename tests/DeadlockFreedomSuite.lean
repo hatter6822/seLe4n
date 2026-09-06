@@ -535,9 +535,9 @@ private def runNewlyBoundedFootprintChecks : IO Unit := do
       (SeLe4n.ObjId.ofNat 3)))
   -- Bind / unbind: four distinct objects, no optionals.
   let bindSet := lockSet_tcbBindNotification (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
-    (SeLe4n.ObjId.ofNat 3) (ThreadId.ofNat 4)
+    (SeLe4n.ObjId.ofNat 3) (ThreadId.ofNat 4) none
   let unbindSet := lockSet_tcbUnbindNotification (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
-    (SeLe4n.ObjId.ofNat 3) (ThreadId.ofNat 4)
+    (SeLe4n.ObjId.ofNat 3) (ThreadId.ofNat 4) none
   assertBool "lockSet_tcbBindNotification size = 4, within the bound"
     (decide (bindSet.size = 4 ∧ bindSet.size ≤ maxLockSetSize))
   assertBool "lockSet_tcbUnbindNotification is the same four members"
@@ -546,12 +546,12 @@ private def runNewlyBoundedFootprintChecks : IO Unit := do
   -- migrate with the thread.  Taken at `some`, which is the shape a bound
   -- thread's migration declares.
   let affSet := lockSet_tcbSetAffinity (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
-    (ThreadId.ofNat 3) (some ⟨4⟩)
+    (ThreadId.ofNat 3) (some ⟨4⟩) none
   assertBool "lockSet_tcbSetAffinity (bound SC) size = 4, within the bound"
     (decide (affSet.size = 4 ∧ affSet.size ≤ maxLockSetSize))
   assertBool "…and the unbound shape is one member smaller"
     (decide ((lockSet_tcbSetAffinity (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
-      (ThreadId.ofNat 3) none).size = 3))
+      (ThreadId.ofNat 3) none none).size = 3))
   -- THE ONE THE CENSUS FOUND: the reply footprint at its sixth argument.
   let replyWithObj := lockSet_endpointReply (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
     (ThreadId.ofNat 3) (some ⟨4⟩) (some (ThreadId.ofNat 5)) (some ⟨6⟩)

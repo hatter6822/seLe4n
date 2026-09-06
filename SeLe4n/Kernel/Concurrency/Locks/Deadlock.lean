@@ -908,22 +908,23 @@ theorem lockSet_serviceQuery_size_le (a : ThreadId) (b : ObjId) :
   exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
 
 theorem lockSet_schedContextConfigure_size_le (a : ThreadId) (b : ObjId)
-    (c : SchedContextId) (d : Option ThreadId) :
-    (lockSet_schedContextConfigure a b c d).size ≤ maxLockSetSize := by
+    (c : SchedContextId) (d : Option ThreadId)
+    (q : Option QueueOwner) :
+    (lockSet_schedContextConfigure a b c d q).size ≤ maxLockSetSize := by
   unfold lockSet_schedContextConfigure maxLockSetSize
-  exact Nat.le_trans (size_le_1 _ _) (by size_bound)
+  exact Nat.le_trans (size_le_2 _ _ _) (by size_bound)
 
 theorem lockSet_schedContextBind_size_le (a : ThreadId) (b : ObjId)
-    (c : SchedContextId) (d : ThreadId) :
-    (lockSet_schedContextBind a b c d).size ≤ maxLockSetSize := by
+    (c : SchedContextId) (d : ThreadId) (q : Option QueueOwner) :
+    (lockSet_schedContextBind a b c d q).size ≤ maxLockSetSize := by
   unfold lockSet_schedContextBind maxLockSetSize
-  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+  exact Nat.le_trans (size_le_1 _ _) (by size_bound)
 
 theorem lockSet_schedContextUnbind_size_le (a : ThreadId) (b : ObjId)
-    (c : SchedContextId) (d : ThreadId) :
-    (lockSet_schedContextUnbind a b c d).size ≤ maxLockSetSize := by
+    (c : SchedContextId) (d : ThreadId) (q : Option QueueOwner) :
+    (lockSet_schedContextUnbind a b c d q).size ≤ maxLockSetSize := by
   unfold lockSet_schedContextUnbind maxLockSetSize
-  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+  exact Nat.le_trans (size_le_1 _ _) (by size_bound)
 
 theorem lockSet_tcbSuspend_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
     (d e : Option ObjId) (f : Option SchedContextId) (g : Option ThreadId)
@@ -932,34 +933,34 @@ theorem lockSet_tcbSuspend_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
   unfold lockSet_tcbSuspend maxLockSetSize
   exact Nat.le_trans (size_le_5 _ _ _ _ _ _) (by size_bound)
 
-theorem lockSet_tcbResume_size_le (a : ThreadId) (b : ObjId) (c : ThreadId) :
-    (lockSet_tcbResume a b c).size ≤ maxLockSetSize := by
+theorem lockSet_tcbResume_size_le (a : ThreadId) (b : ObjId) (c : ThreadId) (q : Option QueueOwner) :
+    (lockSet_tcbResume a b c q).size ≤ maxLockSetSize := by
   unfold lockSet_tcbResume maxLockSetSize
-  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+  exact Nat.le_trans (size_le_1 _ _) (by size_bound)
 
 theorem lockSet_tcbSetPriority_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
-    (d : Option SchedContextId) :
-    (lockSet_tcbSetPriority a b c d).size ≤ maxLockSetSize := by
+    (d : Option SchedContextId) (q : Option QueueOwner) :
+    (lockSet_tcbSetPriority a b c d q).size ≤ maxLockSetSize := by
   unfold lockSet_tcbSetPriority maxLockSetSize
-  exact Nat.le_trans (size_le_1 _ _) (by size_bound)
+  exact Nat.le_trans (size_le_2 _ _ _) (by size_bound)
 
 theorem lockSet_tcbSetMCPriority_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
-    (d : Option SchedContextId) :
-    (lockSet_tcbSetMCPriority a b c d).size ≤ maxLockSetSize := by
+    (d : Option SchedContextId) (q : Option QueueOwner) :
+    (lockSet_tcbSetMCPriority a b c d q).size ≤ maxLockSetSize := by
   unfold lockSet_tcbSetMCPriority maxLockSetSize
-  exact Nat.le_trans (size_le_1 _ _) (by size_bound)
+  exact Nat.le_trans (size_le_2 _ _ _) (by size_bound)
 
 theorem lockSet_tcbSetIPCBuffer_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
-    (d : Option ObjId) :
-    (lockSet_tcbSetIPCBuffer a b c d).size ≤ maxLockSetSize := by
+    (d : Option ObjId) (q : Option QueueOwner) :
+    (lockSet_tcbSetIPCBuffer a b c d q).size ≤ maxLockSetSize := by
   unfold lockSet_tcbSetIPCBuffer maxLockSetSize
-  exact Nat.le_trans (size_le_1 _ _) (by size_bound)
+  exact Nat.le_trans (size_le_2 _ _ _) (by size_bound)
 
 theorem lockSet_tcbSetFaultHandler_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
-    (d e : Option ObjId) :
-    (lockSet_tcbSetFaultHandler a b c d e).size ≤ maxLockSetSize := by
+    (d e : Option ObjId) (q : Option QueueOwner) :
+    (lockSet_tcbSetFaultHandler a b c d e q).size ≤ maxLockSetSize := by
   unfold lockSet_tcbSetFaultHandler maxLockSetSize
-  exact Nat.le_trans (size_le_2 _ _ _) (by size_bound)
+  exact Nat.le_trans (size_le_3 _ _ _ _) (by size_bound)
 
 -- WS-RR RR7.18 (register §6 finding 15): the four footprints the bundle did not
 -- reach.  Their absence was not a gap in the *proofs* — each follows from the
@@ -983,27 +984,27 @@ theorem lockSet_mintReplyCap_size_le (a : ThreadId) (b c : ObjId) :
 
 /-- WS-RR RR7.18: binding a notification locks four objects — the caller, its
 CSpace root, the notification and the target TCB — with no optionals. -/
-theorem lockSet_tcbBindNotification_size_le (a : ThreadId) (b c : ObjId) (d : ThreadId) :
-    (lockSet_tcbBindNotification a b c d).size ≤ maxLockSetSize := by
+theorem lockSet_tcbBindNotification_size_le (a : ThreadId) (b c : ObjId) (d : ThreadId) (q : Option QueueOwner) :
+    (lockSet_tcbBindNotification a b c d q).size ≤ maxLockSetSize := by
   unfold lockSet_tcbBindNotification maxLockSetSize
-  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+  exact Nat.le_trans (size_le_1 _ _) (by size_bound)
 
 /-- WS-RR RR7.18: the unbind is the same four members (both ends of the binding
 cleared under write locks). -/
-theorem lockSet_tcbUnbindNotification_size_le (a : ThreadId) (b c : ObjId) (d : ThreadId) :
-    (lockSet_tcbUnbindNotification a b c d).size ≤ maxLockSetSize := by
+theorem lockSet_tcbUnbindNotification_size_le (a : ThreadId) (b c : ObjId) (d : ThreadId) (q : Option QueueOwner) :
+    (lockSet_tcbUnbindNotification a b c d q).size ≤ maxLockSetSize := by
   unfold lockSet_tcbUnbindNotification maxLockSetSize
-  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+  exact Nat.le_trans (size_le_1 _ _) (by size_bound)
 
 /-- WS-RR RR7.18: setting affinity is three members plus the bound
 SchedContext, whose replenishments migrate with the thread.  Stated over the
 optional, not at its `none` default — the defaulted form is how a member gets
 silently unbounded (the SM9.C `notificationSignal` defect). -/
 theorem lockSet_tcbSetAffinity_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
-    (d : Option SchedContextId) :
-    (lockSet_tcbSetAffinity a b c d).size ≤ maxLockSetSize := by
+    (d : Option SchedContextId) (q : Option QueueOwner) :
+    (lockSet_tcbSetAffinity a b c d q).size ≤ maxLockSetSize := by
   unfold lockSet_tcbSetAffinity maxLockSetSize
-  exact Nat.le_trans (size_le_1 _ _) (by size_bound)
+  exact Nat.le_trans (size_le_2 _ _ _) (by size_bound)
 
 /-- WS-SM SM3.D.6b (aggregate): **every** one of the 31 per-transition
 `lockSet_<τ>` declarations enumerated here has size `≤ maxLockSetSize`, for
@@ -1044,20 +1045,20 @@ theorem lockSetTransitions_within_bound :
     (∀ a b c, (lockSet_serviceRegister a b c).size ≤ maxLockSetSize) ∧
     (∀ a b, (lockSet_serviceRevoke a b).size ≤ maxLockSetSize) ∧
     (∀ a b, (lockSet_serviceQuery a b).size ≤ maxLockSetSize) ∧
-    (∀ a b c d, (lockSet_schedContextConfigure a b c d).size ≤ maxLockSetSize) ∧
-    (∀ a b c d, (lockSet_schedContextBind a b c d).size ≤ maxLockSetSize) ∧
-    (∀ a b c d, (lockSet_schedContextUnbind a b c d).size ≤ maxLockSetSize) ∧
+    (∀ a b c d q, (lockSet_schedContextConfigure a b c d q).size ≤ maxLockSetSize) ∧
+    (∀ a b c d q, (lockSet_schedContextBind a b c d q).size ≤ maxLockSetSize) ∧
+    (∀ a b c d q, (lockSet_schedContextUnbind a b c d q).size ≤ maxLockSetSize) ∧
     (∀ a b c d e f g h, (lockSet_tcbSuspend a b c d e f g h).size ≤ maxLockSetSize) ∧
-    (∀ a b c, (lockSet_tcbResume a b c).size ≤ maxLockSetSize) ∧
-    (∀ a b c d, (lockSet_tcbSetPriority a b c d).size ≤ maxLockSetSize) ∧
-    (∀ a b c d, (lockSet_tcbSetMCPriority a b c d).size ≤ maxLockSetSize) ∧
-    (∀ a b c d, (lockSet_tcbSetIPCBuffer a b c d).size ≤ maxLockSetSize) ∧
-    (∀ a b c d e, (lockSet_tcbSetFaultHandler a b c d e).size ≤ maxLockSetSize) ∧
+    (∀ a b c q, (lockSet_tcbResume a b c q).size ≤ maxLockSetSize) ∧
+    (∀ a b c d q, (lockSet_tcbSetPriority a b c d q).size ≤ maxLockSetSize) ∧
+    (∀ a b c d q, (lockSet_tcbSetMCPriority a b c d q).size ≤ maxLockSetSize) ∧
+    (∀ a b c d q, (lockSet_tcbSetIPCBuffer a b c d q).size ≤ maxLockSetSize) ∧
+    (∀ a b c d e q, (lockSet_tcbSetFaultHandler a b c d e q).size ≤ maxLockSetSize) ∧
     -- WS-RR RR7.18: the four the enumeration had missed.
     (∀ a b c, (lockSet_mintReplyCap a b c).size ≤ maxLockSetSize) ∧
-    (∀ a b c d, (lockSet_tcbBindNotification a b c d).size ≤ maxLockSetSize) ∧
-    (∀ a b c d, (lockSet_tcbUnbindNotification a b c d).size ≤ maxLockSetSize) ∧
-    (∀ a b c d, (lockSet_tcbSetAffinity a b c d).size ≤ maxLockSetSize) :=
+    (∀ a b c d q, (lockSet_tcbBindNotification a b c d q).size ≤ maxLockSetSize) ∧
+    (∀ a b c d q, (lockSet_tcbUnbindNotification a b c d q).size ≤ maxLockSetSize) ∧
+    (∀ a b c d q, (lockSet_tcbSetAffinity a b c d q).size ≤ maxLockSetSize) :=
   ⟨lockSet_endpointSend_size_le, lockSet_endpointReceive_size_le,
    (fun a b c d e f g => lockSet_endpointCall_size_le a b c d e f g),
    (fun a b c d e f => lockSet_endpointReply_size_le a b c d e f),

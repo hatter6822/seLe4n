@@ -10,6 +10,11 @@
 > coverage at `v0.34.60`/`v0.34.61` (RR7.7, RR7.8) and the four capability
 > operations' CDT members at `v0.34.62` (RR7.9), which deleted
 > `UncoveredLockDomain.capTransferReceiverCnode` and `.cdtNodeAllocation`.
+> The third SM3.B-owned domain, `.queueOwnershipProtocol`, closed at
+> `v0.34.88` (RR7.38) — outside Track B, whose rows never touched splice
+> neighbours — by giving the eleven footprints that can write a *queued* TCB
+> the queue owner's write lock.  Three of the register's seven domains are
+> therefore covered and four remain.
 > **Track C** (4 PRs) is closed: the decoded-driven resolver at `v0.34.63`
 > (RR7.10), the eight declared IPC footprints at `v0.34.64` (RR7.11), the
 > **syscall seam's bracket** at `v0.34.65` (RR7.12) and the export-commit

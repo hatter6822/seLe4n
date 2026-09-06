@@ -1,3 +1,75 @@
+## v0.34.88 — authorization is not exclusion
+
+**WS-RR RR7.38** — `UncoveredLockDomain.queueOwnershipProtocol`, the third of
+the three SM3.B-owned lock domains the register's §6 finding 16 names, and the
+one no row owned: RR0.9 pointed it at fine-lock Track B, whose rows close
+`capTransferReceiverCnode` (RR7.8) and `cdtNodeAllocation` (RR7.9) and never
+touch splice neighbours.
+
+**The gap.**  Suspending a thread that sits *inside* an endpoint queue runs
+`spliceOutMidQueueNode`, which patches the predecessor's `queueNext` and the
+successor's `queuePrev` — writes to TCBs the suspend holds no `tcbLock` for.
+`suspendFootprint_splice_neighbors_under_endpoint_lock` says those writes fall
+under a lock the suspend does hold, and that is an *authorization* statement.
+Exclusion is a different claim: it needs **every** writer of a queued TCB to
+hold the same lock, and eleven footprints did not.  `lockSet_tcbSetPriority`
+wrote a queued neighbour holding neither the endpoint lock nor any lock the
+suspend takes, so the two shared nothing on the object they both write.
+`queueOwnership_violated_by_tcbSetPriority` stated that as a `¬` precisely so
+that closing it would delete the theorem rather than leave prose that had
+quietly become false.
+
+**Option A, and the reason.**  The domain's own entry costed two closures.
+Option B — let the suspend name both neighbours' `tcbLock`s — raises
+`maxLockSetSize`, and `maxLockSetSize` is the first factor of the WCRT headline
+`maxLockSetSize · (numCores − 1) · tCs`, so it moves `admissibleCriticalSection`
+(37 µs at the 1 ms tick) for *every* syscall, a ceiling RR7.31 had just turned
+from prose into a theorem.  Option A costs nothing there, and it is also the
+semantically right statement — a writer of a *queued* TCB holds the lock of the
+object whose queue it is in, which is what "queue-owning-object protocol" means.
+
+So the eleven footprints that can write a queued TCB — `tcbSetPriority`,
+`tcbSetMCPriority`, `tcbSetIPCBuffer`, `tcbSetAffinity`, `tcbSetFaultHandler`,
+`tcbResume`, `tcbBindNotification`, `tcbUnbindNotification`,
+`schedContextConfigure`, `schedContextBind`, `schedContextUnbind` — each gain a
+`queueOwner` member, and `queueOwnerAt` resolves it from the pre-state's
+`ipcState`.
+
+**The parameter's type is the load-bearing choice.**  It is a `QueueOwner`
+(`endpoint`/`notification` of an `ObjId`), not an `Option LockId`.  A `LockId`
+carries an arbitrary kind, so a footprint parameterised by one could only be
+admitted by a `permittedKinds` arm listing *every* kind — the `.declassify`
+shape, which is honest there because a downgrade target really can be any
+object, and dishonest here because a wait queue is owned by an endpoint or a
+notification and nothing else.  `QueueOwner.lock_kind` fixes the kind by
+construction, so the eleven arms admit exactly those two and the fixed part of
+each footprint stays pinned by its own consistency theorem.
+
+Two mechanical points, both rules this file already carries.  **No parameter
+takes a default**: a footprint that gains a trailing `Option … := none` leaves
+its existing bound elaborating at the old arity, which has shipped five times,
+so every `_size_le` is restated at the new arity and RR7.18's census checks it.
+And `queueOwnerMember_kind` discharges the kind obligation once for all eleven
+rather than eleven times, because it is one question.
+
+**Deletion last** (RR7.8's order, and the reason an `UncoveredLockDomain` entry
+is deleted when the domain is *covered* rather than to make a count fall): the
+`¬` and its `lockSet_tcbSetPriority_omits_endpointLock` witness are gone,
+replaced by eleven `queueOwnership_respected_by_*` positives; the constructor
+and its registry entry are gone, so `declaredFootprintUncoveredDomains` falls
+from five to four and the completeness theorem — quantified over the
+*constructors*, so it stops elaborating if one is added — is re-proved; and
+three Tier-3 `run_negative_check`s pin that the violation theorem, its witness
+and the constructor may none of them come back.
+
+**What this does not claim.**  Nothing here becomes live: SM3.C.9 still defers
+`withLockSet` at the `@[export]` bodies outside the syscall seam, and SM5.I
+serialises kernel entry behind one global ticket lock, so no runtime lock is
+taken from any of these footprints today.  It is a defect in the *declared*
+discipline, which is precisely what a declared footprint exists to get right.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §7 (RR7.38)
+
 ## v0.34.87 — the tests that were not testing
 
 **WS-RR RR7.37** — three §7 test-surface findings.  Two are what they say on the

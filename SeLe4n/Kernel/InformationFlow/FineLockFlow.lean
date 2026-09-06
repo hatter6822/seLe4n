@@ -2884,11 +2884,16 @@ room is not free.  Adding two neighbour locks still breaks the bound.
 docstring wrongly claimed it did.**  This is an *authorization* statement: the
 splice's neighbour writes fall under a lock the suspend holds.  Authorization is
 not exclusion.  Exclusion additionally requires that **every** writer of a queued
-TCB hold that endpoint's lock, and that is false today —
-`queueOwnership_violated_by_tcbSetPriority` below exhibits the counterexample as
-a theorem.  The sentence this replaces read "there is no hole to close"; there
-is one, it is in the *inventory* rather than in this theorem, and it is
-registered as `UncoveredLockDomain.queueOwnershipProtocol`. -/
+TCB hold that endpoint's lock.
+
+That was false until **WS-RR RR7.38**, which is why an earlier version of this
+docstring wrongly read "there is no hole to close": there was one, in the
+*inventory* rather than in this theorem, registered as
+`UncoveredLockDomain.queueOwnershipProtocol` and exhibited as a `¬` by
+`queueOwnership_violated_by_tcbSetPriority`.  It is closed: the eleven
+footprints that can write a queued TCB now carry the queue owner's write lock as
+a declared member, the `¬` is replaced by the eleven
+`queueOwnership_respected_by_*` positives, and the domain constructor is gone. -/
 theorem suspendFootprint_splice_neighbors_under_endpoint_lock (st : SystemState)
     (callerTid targetTid : SeLe4n.ThreadId) (S : LockSet) (victim : TCB)
     (ep : SeLe4n.ObjId)
@@ -2944,10 +2949,20 @@ also holds `ep`'s write lock.  The discipline
 footprint whose target is queued on `ep` — which is what would make the endpoint
 lock an exclusion mechanism for queue-link writes rather than merely an
 authorization for them. -/
+def queueOwnershipRespectedBy (S : LockSet) (t : SeLe4n.ThreadId)
+    (o : SeLe4n.Kernel.Concurrency.QueueOwner) : Prop :=
+  (SeLe4n.Kernel.Concurrency.tcbLock t, AccessMode.write) ∈ S.pairs →
+    (o.lock, AccessMode.write) ∈ S.pairs
+
+/-- SM8.D.5: the endpoint instance, which is the shape the splice argument uses.
+
+**WS-RR RR7.38** generalised the predicate to any queue owner, because a thread
+blocked on a *notification* sits in that object's queue on exactly the same
+terms.  This abbreviation keeps the endpoint reading — the one the suspend
+argument is stated in — spelled as it was. -/
 def queueOwnershipRespected (S : LockSet) (t : SeLe4n.ThreadId)
     (ep : SeLe4n.ObjId) : Prop :=
-  (SeLe4n.Kernel.Concurrency.tcbLock t, AccessMode.write) ∈ S.pairs →
-    (SeLe4n.Kernel.Concurrency.endpointLock ep, AccessMode.write) ∈ S.pairs
+  queueOwnershipRespectedBy S t (.endpoint ep)
 
 /-- SM8.D.5: the suspend footprint **does** respect the protocol for its victim.
 
@@ -2987,77 +3002,129 @@ acquires**.
 A Tier-3 negative pins that the theorem and the constructor cannot return.
 -/
 
-/-- SM8.D.5: `lockSet_tcbSetPriority` never holds an endpoint lock.
+/-- **WS-RR RR7.38**: a footprint whose last layer is the queue-owner member
+holds that owner's write lock.
 
-Its four possible members are a caller TCB read, a CNode read, a target TCB write
-and an optional SchedContext write — four `LockKind`s, none of them
-`.endpoint`. -/
-theorem lockSet_tcbSetPriority_omits_endpointLock (callerTid : SeLe4n.ThreadId)
-    (cnodeRootObjId : SeLe4n.ObjId) (targetTcbTid : SeLe4n.ThreadId)
-    (boundSchedContextId : Option SeLe4n.SchedContextId) (ep : SeLe4n.ObjId) :
-    (SeLe4n.Kernel.Concurrency.endpointLock ep, AccessMode.write) ∉
-      (SeLe4n.Kernel.Concurrency.lockSet_tcbSetPriority callerTid cnodeRootObjId
-        targetTcbTid boundSchedContextId).pairs := by
-  -- Every member's key carries a `LockKind` other than `.endpoint`, so the
-  -- three-way `insertOrMerge_mem` inversion closes on the kind at each layer.
-  have step : ∀ (S : LockSet) (l : SeLe4n.Kernel.Concurrency.LockId) (m : AccessMode),
-      l.kind ≠ SeLe4n.Kernel.Concurrency.LockKind.endpoint →
-      (SeLe4n.Kernel.Concurrency.endpointLock ep, AccessMode.write) ∉ S.pairs →
-      (SeLe4n.Kernel.Concurrency.endpointLock ep, AccessMode.write) ∉
-        (S.insertOrMerge l m).pairs := by
-    intro S l m hKind hS hMem
-    rcases LockSet.insertOrMerge_mem S l m _ hMem with h | h | h
-    · have hl : l = SeLe4n.Kernel.Concurrency.endpointLock ep := (congrArg Prod.fst h).symm
-      exact hKind (by rw [hl]; rfl)
-    · exact hKind (by rw [← h]; rfl)
-    · exact hS h
-  cases boundSchedContextId <;>
-    simp only [SeLe4n.Kernel.Concurrency.lockSet_tcbSetPriority,
-      SeLe4n.Kernel.Concurrency.lockSetExtendOpt,
-      SeLe4n.Kernel.Concurrency.lockSetOfList,
-      Option.map_some, Option.map_none] <;>
-    repeat' apply step
-  all_goals
-    simp [SeLe4n.Kernel.Concurrency.tcbLock, SeLe4n.Kernel.Concurrency.cnodeLock,
-      SeLe4n.Kernel.Concurrency.schedContextLock, LockSet.empty]
+The one fact the eleven results below need, so it is proved once over the shape
+rather than eleven times over the footprints. -/
+theorem queueOwner_mem_write_of_extendOpt (S : LockSet)
+    (o : SeLe4n.Kernel.Concurrency.QueueOwner) :
+    (o.lock, AccessMode.write) ∈
+      (SeLe4n.Kernel.Concurrency.lockSetExtendOpt S
+        (SeLe4n.Kernel.Concurrency.queueOwnerMember (some o))).pairs := by
+  simp only [SeLe4n.Kernel.Concurrency.lockSetExtendOpt,
+    SeLe4n.Kernel.Concurrency.queueOwnerMember, Option.map_some]
+  exact SeLe4n.Kernel.self_write_mem_insertOrMerge _ o.lock
 
-/-- SM8.D.5 (**the protocol is violated — the gap, as a theorem**).
+/-- **WS-RR RR7.38 (the domain, closed)**: every footprint that can write a
+*queued* TCB respects the queue-ownership protocol.
 
-`tcbSetPriority` writes its target TCB whole (the model's `storeObject` replaces
-the object), and its footprint carries no endpoint lock.  So when the target is a
-queued neighbour of a suspend victim, the two footprints hold **no lock in
-common on that TCB**: the suspend holds `endpointLock ep .write` and the victim's
-`tcbLock`, the reprioritisation holds the neighbour's `tcbLock`.  Neither
-excludes the other, and both write the neighbour object.
+This replaces `queueOwnership_violated_by_tcbSetPriority`, which stated the gap
+as a `¬` precisely so that closing it would delete the theorem rather than leave
+prose that had become false.  What closed it: each of these eleven footprints
+now carries the queue owner's write lock as a declared member, resolved from the
+pre-state by `queueOwnerAt`.  A suspend splicing a victim out of `ep`'s queue
+holds `endpointLock ep .write`; any of these targeting one of that victim's
+queued neighbours now holds the same lock, so the two are mutually excluded on
+the TCBs the splice writes rather than merely authorized.
 
-This is what distinguishes authorization from exclusion, and it is why
-`suspendFootprint_splice_neighbors_under_endpoint_lock` — which is true — does
-not by itself make the splice safe under fine locks.
-
-**Not live**: SM3.C.9 still defers `withLockSet` at the `@[export]` bodies and
-SM5.I serialises kernel entry behind one global ticket lock, so no runtime lock
-is taken from either footprint today.  It is a defect in the *declared*
-discipline, which is precisely what a declared footprint exists to get right.
-
-Stated as a `¬` rather than described, so a cut that closes it deletes this
-theorem instead of leaving prose that has quietly become false — the failure
-mode this PR hit twice already. -/
-theorem queueOwnership_violated_by_tcbSetPriority (callerTid : SeLe4n.ThreadId)
+The cost is `permittedKinds` admitting `.endpoint` and `.notification` on those
+eleven arms — two kinds, fixed by `QueueOwner.lock_kind`, rather than the
+`.declassify` admit-everything shape — and it is the cheaper of the two options
+the domain's own entry costed: the alternative was to let the suspend name both
+neighbours' `tcbLock`s, which raises `maxLockSetSize` and so moves the WCRT
+ceiling (`admissibleCriticalSection`) for every syscall. -/
+theorem queueOwnership_respected_by_tcbSetPriority (callerTid : SeLe4n.ThreadId)
     (cnodeRootObjId : SeLe4n.ObjId) (neighbourTid : SeLe4n.ThreadId)
-    (boundSchedContextId : Option SeLe4n.SchedContextId) (ep : SeLe4n.ObjId) :
-    ¬ queueOwnershipRespected
-        (SeLe4n.Kernel.Concurrency.lockSet_tcbSetPriority callerTid cnodeRootObjId
-          neighbourTid boundSchedContextId) neighbourTid ep := by
-  intro hResp
-  refine lockSet_tcbSetPriority_omits_endpointLock callerTid cnodeRootObjId
-    neighbourTid boundSchedContextId ep (hResp ?_)
-  -- The target TCB write lock *is* declared — which is what makes the omission a
-  -- gap rather than an operation that simply does not touch the neighbour.
-  unfold SeLe4n.Kernel.Concurrency.lockSet_tcbSetPriority
-  refine SeLe4n.Kernel.Concurrency.mem_write_lockSetExtendOpt _ _ _ ?_
-  simp only [SeLe4n.Kernel.Concurrency.lockSetOfList]
-  exact SeLe4n.Kernel.self_write_mem_insertOrMerge _
-    (SeLe4n.Kernel.Concurrency.tcbLock neighbourTid)
+    (boundSchedContextId : Option SeLe4n.SchedContextId)
+    (o : SeLe4n.Kernel.Concurrency.QueueOwner) :
+    queueOwnershipRespectedBy
+      (SeLe4n.Kernel.Concurrency.lockSet_tcbSetPriority callerTid cnodeRootObjId
+        neighbourTid boundSchedContextId (some o)) neighbourTid o :=
+  fun _ => queueOwner_mem_write_of_extendOpt _ o
+
+
+/-- **WS-RR RR7.38**: the other ten arms that can write a queued TCB, each by the
+same one-line argument.  They are eleven separate theorems because they are
+eleven separate functions — the enumeration is of the *footprints*, not of a
+property, and `permittedKinds`' own arms are what say which syscalls are in
+scope. -/
+theorem queueOwnership_respected_by_schedContextConfigure (callerTid : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (scid : SeLe4n.SchedContextId)
+    (neighbourTid : SeLe4n.ThreadId)
+    (o : SeLe4n.Kernel.Concurrency.QueueOwner) :
+    queueOwnershipRespectedBy
+      (SeLe4n.Kernel.Concurrency.lockSet_schedContextConfigure callerTid cnodeRootObjId scid (some neighbourTid) (some o)) neighbourTid o :=
+  fun _ => queueOwner_mem_write_of_extendOpt _ o
+
+theorem queueOwnership_respected_by_schedContextBind (callerTid : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (scid : SeLe4n.SchedContextId)
+    (neighbourTid : SeLe4n.ThreadId)
+    (o : SeLe4n.Kernel.Concurrency.QueueOwner) :
+    queueOwnershipRespectedBy
+      (SeLe4n.Kernel.Concurrency.lockSet_schedContextBind callerTid cnodeRootObjId scid neighbourTid (some o)) neighbourTid o :=
+  fun _ => queueOwner_mem_write_of_extendOpt _ o
+
+theorem queueOwnership_respected_by_schedContextUnbind (callerTid : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (scid : SeLe4n.SchedContextId)
+    (neighbourTid : SeLe4n.ThreadId)
+    (o : SeLe4n.Kernel.Concurrency.QueueOwner) :
+    queueOwnershipRespectedBy
+      (SeLe4n.Kernel.Concurrency.lockSet_schedContextUnbind callerTid cnodeRootObjId scid neighbourTid (some o)) neighbourTid o :=
+  fun _ => queueOwner_mem_write_of_extendOpt _ o
+
+theorem queueOwnership_respected_by_tcbBindNotification (callerTid : SeLe4n.ThreadId)
+    (cnodeRootObjId ntfnObjId : SeLe4n.ObjId) (neighbourTid : SeLe4n.ThreadId)
+    (o : SeLe4n.Kernel.Concurrency.QueueOwner) :
+    queueOwnershipRespectedBy
+      (SeLe4n.Kernel.Concurrency.lockSet_tcbBindNotification callerTid cnodeRootObjId ntfnObjId neighbourTid (some o)) neighbourTid o :=
+  fun _ => queueOwner_mem_write_of_extendOpt _ o
+
+theorem queueOwnership_respected_by_tcbUnbindNotification (callerTid : SeLe4n.ThreadId)
+    (cnodeRootObjId ntfnObjId : SeLe4n.ObjId) (neighbourTid : SeLe4n.ThreadId)
+    (o : SeLe4n.Kernel.Concurrency.QueueOwner) :
+    queueOwnershipRespectedBy
+      (SeLe4n.Kernel.Concurrency.lockSet_tcbUnbindNotification callerTid cnodeRootObjId ntfnObjId neighbourTid (some o)) neighbourTid o :=
+  fun _ => queueOwner_mem_write_of_extendOpt _ o
+
+theorem queueOwnership_respected_by_tcbResume (callerTid : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (neighbourTid : SeLe4n.ThreadId)
+    (o : SeLe4n.Kernel.Concurrency.QueueOwner) :
+    queueOwnershipRespectedBy
+      (SeLe4n.Kernel.Concurrency.lockSet_tcbResume callerTid cnodeRootObjId neighbourTid (some o)) neighbourTid o :=
+  fun _ => queueOwner_mem_write_of_extendOpt _ o
+
+theorem queueOwnership_respected_by_tcbSetMCPriority (callerTid : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (neighbourTid : SeLe4n.ThreadId)
+    (boundSchedContextId : Option SeLe4n.SchedContextId)
+    (o : SeLe4n.Kernel.Concurrency.QueueOwner) :
+    queueOwnershipRespectedBy
+      (SeLe4n.Kernel.Concurrency.lockSet_tcbSetMCPriority callerTid cnodeRootObjId neighbourTid boundSchedContextId (some o)) neighbourTid o :=
+  fun _ => queueOwner_mem_write_of_extendOpt _ o
+
+theorem queueOwnership_respected_by_tcbSetIPCBuffer (callerTid : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (neighbourTid : SeLe4n.ThreadId)
+    (targetVSpaceRootObjId : Option SeLe4n.ObjId)
+    (o : SeLe4n.Kernel.Concurrency.QueueOwner) :
+    queueOwnershipRespectedBy
+      (SeLe4n.Kernel.Concurrency.lockSet_tcbSetIPCBuffer callerTid cnodeRootObjId neighbourTid targetVSpaceRootObjId (some o)) neighbourTid o :=
+  fun _ => queueOwner_mem_write_of_extendOpt _ o
+
+theorem queueOwnership_respected_by_tcbSetAffinity (callerTid : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (neighbourTid : SeLe4n.ThreadId)
+    (boundSchedContextId : Option SeLe4n.SchedContextId)
+    (o : SeLe4n.Kernel.Concurrency.QueueOwner) :
+    queueOwnershipRespectedBy
+      (SeLe4n.Kernel.Concurrency.lockSet_tcbSetAffinity callerTid cnodeRootObjId neighbourTid boundSchedContextId (some o)) neighbourTid o :=
+  fun _ => queueOwner_mem_write_of_extendOpt _ o
+
+theorem queueOwnership_respected_by_tcbSetFaultHandler (callerTid : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (neighbourTid : SeLe4n.ThreadId)
+    (targetCnodeRootObjId handlerEndpointObjId : Option SeLe4n.ObjId)
+    (o : SeLe4n.Kernel.Concurrency.QueueOwner) :
+    queueOwnershipRespectedBy
+      (SeLe4n.Kernel.Concurrency.lockSet_tcbSetFaultHandler callerTid cnodeRootObjId neighbourTid targetCnodeRootObjId handlerEndpointObjId (some o)) neighbourTid o :=
+  fun _ => queueOwner_mem_write_of_extendOpt _ o
 
 /-- SM8.D.5 (**fail-closed**): a footprint is declared only where the **decoded**
 syscall is `.tcbSuspend`.
@@ -3098,19 +3165,6 @@ inductive UncoveredLockDomain where
   discovered as the walk proceeds (SM3.C.11) and so not resolvable from the
   pre-state at all. -/
   | dynamicPipChain
-  /-- The queue-owning-object protocol for splice neighbours.  A suspend's
-  neighbour link writes are *authorized* by the endpoint write lock
-  (`suspendFootprint_splice_neighbors_under_endpoint_lock`) but not *excluded*
-  against other writers of the same TCB: `lockSet_tcbSetPriority` writes a queued
-  neighbour holding neither the endpoint lock nor a lock the suspend takes
-  (`queueOwnership_violated_by_tcbSetPriority`).  Closing it is an SM3.B
-  inventory decision between two options, both costed in that theorem's
-  neighbourhood — widen the ~10 TCB-writing footprints that can target a queued
-  thread with a conditional endpoint lock, or raise `maxLockSetSize` (nine since
-  WS-RR RR7.11, with `lockSet_tcbSuspend` at eight, so one neighbour fits today
-  and the second does not) so the suspend can name both neighbours, which moves
-  the WCRT headline again. -/
-  | queueOwnershipProtocol
   /-- WS-SM SM9.D.17 (audit): the **taint table's per-key realisation**.
 
   Every content-moving syscall writes `SystemState.declassificationTaint` at the
@@ -3172,7 +3226,6 @@ RR7.41 (the CSpace-walk interior). -/
 def declaredFootprintUncoveredDomains : List (UncoveredLockDomain × String) :=
   [(.schedulerDomain, "WS-RR RR7.39 (fine-lock Track C closure)"),
    (.dynamicPipChain, "WS-RR RR7.40 (fine-lock Track C closure)"),
-   (.queueOwnershipProtocol, "WS-RR RR7.38"),
    (.taintTablePerKeyStore, "SM10.1 (fine-lock Track D)"),
    (.cspaceWalkInteriorCnodes, "WS-RR RR7.41 (fine-lock Track C closure)")]
 
@@ -3180,7 +3233,7 @@ def declaredFootprintUncoveredDomains : List (UncoveredLockDomain × String) :=
 inventory uses — so completeness can be quantified over the *constructors*
 rather than compared against a literal. -/
 def UncoveredLockDomain.all : List UncoveredLockDomain :=
-  [.schedulerDomain, .dynamicPipChain, .queueOwnershipProtocol,
+  [.schedulerDomain, .dynamicPipChain,
    .taintTablePerKeyStore, .cspaceWalkInteriorCnodes]
 
 /-- SM8.D.5: every constructor is listed.  This is the clause a literal

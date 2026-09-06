@@ -1011,7 +1011,11 @@ run_check "INVARIANT" rg -n '^theorem faultHandlerRights_eq' SeLe4n/Kernel/IPC/O
 run_check "INVARIANT" rg -n '^theorem faultHandlerCapAuthorized_depends_only_on_faultHandlerRights' SeLe4n/Kernel/IPC/Operations/Fault.lean
 run_negative_check "INVARIANT" rg -n 'r ∈ faultHandlerRights → r ∈ faultHandlerRights' SeLe4n/Kernel/IPC/Operations/Fault.lean
 run_check "INVARIANT" rg -n 'handlerEndpointObjId\.map \(fun ep => \(endpointLock ep, \.read\)\)' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n -U '\| \.tcbSetFaultHandler =>\n\s+\[\.tcb, \.cnode, \.endpoint\]' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+# WS-RR RR7.38: `.notification` joins the arm, because the target of a
+# fault-handler set may be queued on a notification just as on an endpoint.  The
+# anchor names the whole list rather than a prefix, so a further kind is still a
+# failure here.
+run_check "INVARIANT" rg -n -U '\| \.tcbSetFaultHandler =>\n\s+\[\.tcb, \.cnode, \.endpoint, \.notification\]' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^  \| cspaceWalkInteriorCnodes' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '\(\.cspaceWalkInteriorCnodes, "[^"]+"\)' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # PR #887 review round 4: a region-scoped presence check is still a presence
@@ -2995,19 +2999,31 @@ run_check "INVARIANT" rg -n '^theorem lockAcquisition_modifies_trusted_object_an
 # list against a literal, which a third constructor would leave elaborating.
 run_negative_check "INVARIANT" rg -n 'Prod.fst\) = \[.schedulerDomain, .dynamicPipChain\]' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: an observed state that does not hold the footprint is refused' tests/SmpInformationFlowSuite.lean
-# The queue-owning-object umbrella is an AUTHORIZATION statement, not an
-# exclusion one.  The protocol it would need is violated today by a footprint
-# that writes a queued neighbour without the endpoint lock, and that gap is a
-# theorem plus a registered domain rather than prose.
+# The queue-owning-object umbrella is an AUTHORIZATION statement; exclusion
+# additionally needs every writer of a queued TCB to hold the queue owner's
+# lock.  **WS-RR RR7.38** closed that: the eleven footprints that can write a
+# queued TCB carry the owner's write lock as a declared member, resolved from
+# the pre-state by `queueOwnerAt`, and the kind is one of exactly two by
+# construction rather than by a permitted list admitting everything.
+run_check "INVARIANT" rg -n '^def queueOwnershipRespectedBy' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^def queueOwnershipRespected' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem suspendFootprint_respects_queueOwnership' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_tcbSetPriority_omits_endpointLock' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem queueOwnership_violated_by_tcbSetPriority' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '\.queueOwnershipProtocol, "' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n 'NEGATIVE: tcbSetPriority writes a queued neighbour with no endpoint lock' tests/SmpInformationFlowSuite.lean
-# NEGATIVE: the splice docstring must not go back to claiming the umbrella
-# closes the gap — exclusion needs every writer of a queued TCB to hold the
-# endpoint lock, which `queueOwnership_violated_by_tcbSetPriority` refutes.
+run_check "INVARIANT" rg -n '^theorem QueueOwner.lock_kind' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def queueOwnerAt' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem queueOwnerMember_kind' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem queueOwnership_respected_by_tcbSetPriority' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -c '^theorem queueOwnership_respected_by_' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n 'the eleven queued-TCB writers respect the queue-ownership protocol' tests/SmpInformationFlowSuite.lean
+# NEGATIVE, deletion-last (RR7.8's order): the gap's `¬` and its witness are
+# deleted because the domain is covered, so neither may come back — a
+# reintroduced violation theorem would mean a footprint stopped declaring the
+# owner's lock while the inventory still read four.
+run_negative_check "INVARIANT" rg -n 'theorem queueOwnership_violated_by_tcbSetPriority' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_negative_check "INVARIANT" rg -n 'theorem lockSet_tcbSetPriority_omits_endpointLock' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_negative_check "INVARIANT" rg -n 'queueOwnershipProtocol' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# NEGATIVE: the splice docstring must not claim the umbrella *alone* closes the
+# gap.  It does not — what closes it is the eleven declarations, and the
+# distinction between authorization and exclusion is the point of the theorem.
 run_negative_check "INVARIANT" rg -n 'there is no hole to close' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The severity basis carries the fairness and enqueue-edge premises themselves,
 # not merely the code inequality they make meaningful.

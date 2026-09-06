@@ -1264,8 +1264,26 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @suspendFootprint_splice_neighbors_under_endpoint_lock
 #check @queueOwnershipRespected
 #check @suspendFootprint_respects_queueOwnership
-#check @lockSet_tcbSetPriority_omits_endpointLock
-#check @queueOwnership_violated_by_tcbSetPriority
+-- WS-RR RR7.38: the domain is closed, so the `¬` that stated the gap
+-- (`queueOwnership_violated_by_tcbSetPriority`, with its
+-- `lockSet_tcbSetPriority_omits_endpointLock` witness) is deleted and these
+-- eleven positives stand in its place.
+#check @queueOwnershipRespectedBy
+#check @SeLe4n.Kernel.Concurrency.QueueOwner.lock_kind
+#check @SeLe4n.Kernel.Concurrency.queueOwnerOf?
+#check @SeLe4n.Kernel.Concurrency.queueOwnerAt
+#check @queueOwner_mem_write_of_extendOpt
+#check @queueOwnership_respected_by_tcbSetPriority
+#check @queueOwnership_respected_by_tcbSetMCPriority
+#check @queueOwnership_respected_by_tcbSetIPCBuffer
+#check @queueOwnership_respected_by_tcbSetAffinity
+#check @queueOwnership_respected_by_tcbSetFaultHandler
+#check @queueOwnership_respected_by_tcbResume
+#check @queueOwnership_respected_by_tcbBindNotification
+#check @queueOwnership_respected_by_tcbUnbindNotification
+#check @queueOwnership_respected_by_schedContextConfigure
+#check @queueOwnership_respected_by_schedContextBind
+#check @queueOwnership_respected_by_schedContextUnbind
 #check @lockContentionChannel_run_capacity
 #check @lockContentionRun_rejects_repeated_step
 #check @lockContentionRun_rejects_still_queued_step
@@ -8136,27 +8154,46 @@ private def runDeclaredFootprintChecks : IO Unit := do
   assertBool "the suspend footprint respects the queue-ownership protocol (theorem)"
     (have _r := @suspendFootprint_respects_queueOwnership
      true)
-  -- LOAD-BEARING NEGATIVE: `tcbSetPriority` writes a queued neighbour's TCB and
-  -- declares no endpoint lock, so the protocol the umbrella rests on is
-  -- violated — the reason the gap is registered rather than claimed closed.
-  assertBool "NEGATIVE: tcbSetPriority writes a queued neighbour with no endpoint lock"
-    (have _v := @queueOwnership_violated_by_tcbSetPriority
-     have _o := @lockSet_tcbSetPriority_omits_endpointLock
+  -- WS-RR RR7.38: the negative this replaces asserted that `tcbSetPriority`
+  -- writes a queued neighbour with no endpoint lock — the gap.  It is closed by
+  -- the eleven footprints declaring the queue owner's write lock, so the `¬` is
+  -- deleted and the positives take its place.  A Tier-3 *negative* pins that the
+  -- violation theorem cannot come back.
+  assertBool "the eleven queued-TCB writers respect the queue-ownership protocol"
+    (have _p := @queueOwnership_respected_by_tcbSetPriority
+     have _m := @queueOwnership_respected_by_tcbSetMCPriority
+     have _i := @queueOwnership_respected_by_tcbSetIPCBuffer
+     have _a := @queueOwnership_respected_by_tcbSetAffinity
+     have _f := @queueOwnership_respected_by_tcbSetFaultHandler
+     have _r := @queueOwnership_respected_by_tcbResume
+     have _b := @queueOwnership_respected_by_tcbBindNotification
+     have _u := @queueOwnership_respected_by_tcbUnbindNotification
+     have _c := @queueOwnership_respected_by_schedContextConfigure
+     have _sb := @queueOwnership_respected_by_schedContextBind
+     have _su := @queueOwnership_respected_by_schedContextUnbind
      true)
+  -- ... and the queue owner's kind is one of exactly two, which is what keeps
+  -- the `permittedKinds` widening a two-kind admission rather than the
+  -- `.declassify` admit-everything shape.
+  assertBool "a queue owner's lock kind is endpoint or notification"
+    (decide ((SeLe4n.Kernel.Concurrency.QueueOwner.endpoint ⟨7⟩).lock.kind
+        = SeLe4n.Kernel.Concurrency.LockKind.endpoint) &&
+     decide ((SeLe4n.Kernel.Concurrency.QueueOwner.notification ⟨9⟩).lock.kind
+        = SeLe4n.Kernel.Concurrency.LockKind.notification))
   -- The bracket covers the OBJECT domain only; the scheduler domain, the
   -- dynamic PIP chain, the queue-ownership protocol, (SM9.D audit) the taint
   -- table's per-key realisation and (PR #887 review round 3) the interior
   -- CNodes of a multi-level CSpace walk are named as data with owners rather
   -- than left implicit.
-  -- WS-RR RR7.8 then RR7.9: **five**, from seven.  The capability-transfer
-  -- destination CNode and the CDT node allocator are both covered and their
-  -- entries deleted.  The count falls because domains closed, which is the only
-  -- reason it may.
-  assertBool "the five uncovered lock domains are registered, each with an owner"
-    (decide (declaredFootprintUncoveredDomains.length = 5) &&
+  -- WS-RR RR7.8, then RR7.9, then RR7.38: **four**, from seven.  The
+  -- capability-transfer destination CNode, the CDT node allocator and the
+  -- splice-neighbour queue-ownership protocol are all covered and their entries
+  -- deleted.  The count falls because domains closed, which is the only reason
+  -- it may.
+  assertBool "the four uncovered lock domains are registered, each with an owner"
+    (decide (declaredFootprintUncoveredDomains.length = 4) &&
      decide (declaredFootprintUncoveredDomains.map Prod.fst
        = [UncoveredLockDomain.schedulerDomain, UncoveredLockDomain.dynamicPipChain,
-          UncoveredLockDomain.queueOwnershipProtocol,
           UncoveredLockDomain.taintTablePerKeyStore,
           UncoveredLockDomain.cspaceWalkInteriorCnodes]) &&
      declaredFootprintUncoveredDomains.all (fun d => !d.2.isEmpty))
@@ -8165,7 +8202,7 @@ private def runDeclaredFootprintChecks : IO Unit := do
   assertBool "NEGATIVE: every uncovered-domain constructor is registered"
     (UncoveredLockDomain.all.all
        (fun d => declaredFootprintUncoveredDomains.map Prod.fst |>.contains d) &&
-     decide (UncoveredLockDomain.all.length = 5))
+     decide (UncoveredLockDomain.all.length = 4))
   -- PR #873 round 6: the inventory is no longer data alone.  Relying on declared
   -- footprints as a complete serialization discipline is gated on it being
   -- EMPTY, so the per-key taint store — the entry the review pressed twice — is

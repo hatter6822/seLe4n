@@ -550,18 +550,28 @@ example : permittedKinds .vspaceUnmap = [.tcb, .cnode, .vspaceRoot] := by decide
 example : permittedKinds .serviceRegister = [.tcb, .cnode, .endpoint, .objStore] := by decide
 example : permittedKinds .serviceRevoke = [.tcb, .cnode, .objStore] := by decide
 example : permittedKinds .serviceQuery = [.tcb, .cnode, .objStore] := by decide
-example : permittedKinds .schedContextConfigure = [.tcb, .cnode, .schedContext] := by decide
-example : permittedKinds .schedContextBind = [.tcb, .cnode, .schedContext] := by decide
-example : permittedKinds .schedContextUnbind = [.tcb, .cnode, .schedContext] := by decide
+-- WS-RR RR7.38: `.endpoint` and `.notification` join every arm that can write a
+-- *queued* TCB — the queue owner's lock, whose kind `QueueOwner.lock_kind` fixes
+-- to exactly these two.  The lists are pinned whole, so a third kind is still a
+-- failure here.
+example : permittedKinds .schedContextConfigure =
+    [.tcb, .cnode, .schedContext, .endpoint, .notification] := by decide
+example : permittedKinds .schedContextBind =
+    [.tcb, .cnode, .schedContext, .endpoint, .notification] := by decide
+example : permittedKinds .schedContextUnbind =
+    [.tcb, .cnode, .schedContext, .endpoint, .notification] := by decide
 -- Audit-pass-3: `.tcbSuspend` now includes `.schedContext` to cover
 -- the donation-cancel extension.  WS-SM SM6.E: + `.reply` to cover the
 -- `.blockedOnReply` reply-link teardown (`consumeReplyLink`).
 example : permittedKinds .tcbSuspend =
     [.tcb, .cnode, .endpoint, .notification, .schedContext, .reply] := by decide
-example : permittedKinds .tcbResume = [.tcb, .cnode] := by decide
-example : permittedKinds .tcbSetPriority = [.tcb, .cnode, .schedContext] := by decide
-example : permittedKinds .tcbSetMCPriority = [.tcb, .cnode, .schedContext] := by decide
-example : permittedKinds .tcbSetIPCBuffer = [.tcb, .cnode, .vspaceRoot] := by decide
+example : permittedKinds .tcbResume = [.tcb, .cnode, .endpoint, .notification] := by decide
+example : permittedKinds .tcbSetPriority =
+    [.tcb, .cnode, .schedContext, .endpoint, .notification] := by decide
+example : permittedKinds .tcbSetMCPriority =
+    [.tcb, .cnode, .schedContext, .endpoint, .notification] := by decide
+example : permittedKinds .tcbSetIPCBuffer =
+    [.tcb, .cnode, .vspaceRoot, .endpoint, .notification] := by decide
 -- PR #873 round 6: `.declassify` admits EVERY kind, and that is a statement
 -- about the arm rather than a relaxation.  The live arm hands
 -- `cap.target = .object targetId` to a transition that commits a `storeObject`
@@ -676,9 +686,9 @@ example :
     (some ⟨50⟩) (some ⟨7⟩)
 
 example :
-    ∀ p ∈ (lockSet_schedContextBind ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ ⟨3⟩).pairs,
+    ∀ p ∈ (lockSet_schedContextBind ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ ⟨3⟩ none).pairs,
       p.fst.kind ∈ permittedKinds .schedContextBind :=
-  lockSet_consistent_schedContextBind ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ ⟨3⟩
+  lockSet_consistent_schedContextBind ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ ⟨3⟩ none
 
 example :
     ∀ p ∈ (lockSet_lifecycleRetype ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
@@ -902,8 +912,11 @@ private def runPermittedKindsChecks : IO Unit := do
   assertBool "permittedKinds .tcbSuspend"
     (decide (permittedKinds .tcbSuspend =
       [.tcb, .cnode, .endpoint, .notification, .schedContext, .reply]))
+  -- WS-RR RR7.38: `.endpoint` and `.notification` — the queue owner's lock, on
+  -- every arm that can write a queued TCB.
   assertBool "permittedKinds .schedContextBind"
-    (decide (permittedKinds .schedContextBind = [.tcb, .cnode, .schedContext]))
+    (decide (permittedKinds .schedContextBind =
+      [.tcb, .cnode, .schedContext, .endpoint, .notification]))
   -- Audit-pass-3: .call, .reply, .replyRecv include .schedContext (donation).
   -- WS-SM SM6.D: they also include .reply (per-object reply write-lock).
   -- WS-RR RR7.7: and `.objStore`, for the same CDT write `.send` declares.
@@ -918,13 +931,16 @@ private def runPermittedKindsChecks : IO Unit := do
   -- Audit-pass-6: .tcbSetPriority / .tcbSetMCPriority include .schedContext.
   -- updatePrioritySource writes the bound SC if binding is .bound/.donated.
   assertBool "permittedKinds .tcbSetPriority (audit-pass-6: includes .schedContext)"
-    (decide (permittedKinds .tcbSetPriority = [.tcb, .cnode, .schedContext]))
+    (decide (permittedKinds .tcbSetPriority =
+      [.tcb, .cnode, .schedContext, .endpoint, .notification]))
   assertBool "permittedKinds .tcbSetMCPriority (audit-pass-6: includes .schedContext)"
-    (decide (permittedKinds .tcbSetMCPriority = [.tcb, .cnode, .schedContext]))
+    (decide (permittedKinds .tcbSetMCPriority =
+      [.tcb, .cnode, .schedContext, .endpoint, .notification]))
   -- Audit-pass-6: .tcbSetIPCBuffer includes .vspaceRoot.
   -- validateIpcBufferAddress reads the target's VSpaceRoot.
   assertBool "permittedKinds .tcbSetIPCBuffer (audit-pass-6: includes .vspaceRoot)"
-    (decide (permittedKinds .tcbSetIPCBuffer = [.tcb, .cnode, .vspaceRoot]))
+    (decide (permittedKinds .tcbSetIPCBuffer =
+      [.tcb, .cnode, .vspaceRoot, .endpoint, .notification]))
   -- Audit-pass-6: .serviceRegister includes .endpoint.
   -- registerService reads st.objects[epId]? to verify endpoint kind.
   assertBool "permittedKinds .serviceRegister (audit-pass-6 .endpoint + the registry's state-level lock)"
@@ -1031,23 +1047,23 @@ private def runPerTransitionShapeChecks : IO Unit := do
   -- Audit-pass-6 P1: tcbSetPriority with unbound target = 3 locks
   -- (caller TCB read, CNode read, target TCB write — no SC).
   assertBool "tcbSetPriority size (unbound target, no SC) = 3"
-    (decide ((lockSet_tcbSetPriority ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none).size = 3))
+    (decide ((lockSet_tcbSetPriority ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none).size = 3))
   -- Audit-pass-6 P1: tcbSetPriority with bound SC = 4 locks.
   assertBool "tcbSetPriority size (.bound binding, SC included) = 4"
-    (decide ((lockSet_tcbSetPriority ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩)).size = 4))
+    (decide ((lockSet_tcbSetPriority ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none).size = 4))
   -- Audit-pass-6 P1: tcbSetMCPriority with unbound target = 3 locks.
   assertBool "tcbSetMCPriority size (unbound target, no SC) = 3"
-    (decide ((lockSet_tcbSetMCPriority ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none).size = 3))
+    (decide ((lockSet_tcbSetMCPriority ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none).size = 3))
   -- Audit-pass-6 P1: tcbSetMCPriority with bound SC = 4 locks.
   assertBool "tcbSetMCPriority size (.bound binding, SC included) = 4"
-    (decide ((lockSet_tcbSetMCPriority ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩)).size = 4))
+    (decide ((lockSet_tcbSetMCPriority ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none).size = 4))
   -- Audit-pass-6 P1: tcbSetIPCBuffer with no target VSpaceRoot (target absent) = 3 locks.
   assertBool "tcbSetIPCBuffer size (no VSpaceRoot) = 3"
-    (decide ((lockSet_tcbSetIPCBuffer ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none).size = 3))
+    (decide ((lockSet_tcbSetIPCBuffer ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none).size = 3))
   -- Audit-pass-6 P1: tcbSetIPCBuffer with target VSpaceRoot = 4 locks.
   assertBool "tcbSetIPCBuffer size (VSpaceRoot included) = 4"
     (decide ((lockSet_tcbSetIPCBuffer ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩
-              (some (ObjId.ofNat 99))).size = 4))
+              (some (ObjId.ofNat 99)) none).size = 4))
   -- Audit-pass-6 P2: serviceRegister takes a mandatory endpoint read lock;
   -- WS-RR RR7.23 added the registry's own state-level write.
   assertBool "serviceRegister size (endpoint + the registry's state-level write) = 4"
@@ -1192,20 +1208,20 @@ private def runConsistencyRuntimeChecks : IO Unit := do
   assertBool "lockSet_endpointReply (with donation + owner): all kinds in permittedKinds .reply"
     allOk_replyDon
   -- Audit-pass-6 P1: .tcbSetPriority with bound SC — every kind permitted.
-  let setPriBound := lockSet_tcbSetPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩)
+  let setPriBound := lockSet_tcbSetPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none
   let allOk_setPriBound := setPriBound.pairs.all (fun p =>
     decide (p.fst.kind ∈ permittedKinds .tcbSetPriority))
   assertBool "lockSet_tcbSetPriority (.bound binding, SC included): all kinds permitted"
     allOk_setPriBound
   -- Audit-pass-6 P1: .tcbSetMCPriority with bound SC.
-  let setMcpBound := lockSet_tcbSetMCPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩)
+  let setMcpBound := lockSet_tcbSetMCPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none
   let allOk_setMcpBound := setMcpBound.pairs.all (fun p =>
     decide (p.fst.kind ∈ permittedKinds .tcbSetMCPriority))
   assertBool "lockSet_tcbSetMCPriority (.bound binding, SC included): all kinds permitted"
     allOk_setMcpBound
   -- Audit-pass-6 P1: .tcbSetIPCBuffer with VSpaceRoot.
   let setIpcVsr := lockSet_tcbSetIPCBuffer ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩
-                     (some (ObjId.ofNat 99))
+                     (some (ObjId.ofNat 99)) none
   let allOk_setIpcVsr := setIpcVsr.pairs.all (fun p =>
     decide (p.fst.kind ∈ permittedKinds .tcbSetIPCBuffer))
   assertBool "lockSet_tcbSetIPCBuffer (VSpaceRoot included): all kinds permitted"
@@ -1217,32 +1233,73 @@ private def runConsistencyRuntimeChecks : IO Unit := do
   assertBool "lockSet_serviceRegister (with endpoint): all kinds permitted"
     allOk_svcReg
 
+/-- **WS-RR RR7.38**: the queue-owner member — the declaration that closed
+`UncoveredLockDomain.queueOwnershipProtocol`.
+
+The fixtures above pass `none` and so still say exactly what they said, because
+`lockSetExtendOpt _ none` is the identity.  These say what the parameter is
+*for*: at `some`, the owner's write lock is a member, the footprint is one wider,
+and its kind is admitted.  Without them the widening would be a parameter every
+call site passes `none` to — a member no test ever sees. -/
+private def runQueueOwnerFootprintChecks : IO Unit := do
+  IO.println "--- §18 WS-RR RR7.38 queue-owner footprint member ---"
+  let ep : QueueOwner := .endpoint (ObjId.ofNat 20)
+  let ntfn : QueueOwner := .notification (ObjId.ofNat 21)
+  let bare := lockSet_tcbSetPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none
+  let queuedEp := lockSet_tcbSetPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) (some ep)
+  let queuedNtfn := lockSet_tcbSetPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) (some ntfn)
+  assertBool "a queued target adds exactly one member"
+    (decide (queuedEp.size = bare.size + 1))
+  assertBool "…and that member is the endpoint's WRITE lock, not a read"
+    (queuedEp.pairs.any (fun p =>
+      decide (p = (⟨.endpoint, ObjId.ofNat 20⟩, AccessMode.write))))
+  assertBool "NEGATIVE: at `none` the footprint carries no endpoint lock at all"
+    (decide (bare.pairs.all (fun p => p.fst.kind ≠ .endpoint)))
+  assertBool "a notification-queued target contributes the notification lock instead"
+    (queuedNtfn.pairs.any (fun p =>
+      decide (p = (⟨.notification, ObjId.ofNat 21⟩, AccessMode.write))))
+  -- The kinds the widened arm admits are exactly the two a queue owner can be.
+  assertBool "the queue-owner member's kind is permitted on the widened arm"
+    (queuedEp.pairs.all (fun p => decide (p.fst.kind ∈ permittedKinds .tcbSetPriority))
+     && queuedNtfn.pairs.all (fun p => decide (p.fst.kind ∈ permittedKinds .tcbSetPriority)))
+  -- The resolver: a blocked thread has an owner, a ready one does not.
+  let baseTcb : TCB :=
+    { tid := ThreadId.ofNat 3, priority := ⟨10⟩, domain := ⟨0⟩,
+      cspaceRoot := ObjId.ofNat 0, vspaceRoot := ObjId.ofNat 0,
+      ipcBuffer := SeLe4n.VAddr.ofNat 0 }
+  let blockedTcb : TCB := { baseTcb with ipcState := .blockedOnSend (ObjId.ofNat 20) }
+  let readyTcb : TCB := { baseTcb with ipcState := .ready }
+  assertBool "queueOwnerOf? reads the owner off a blocked thread's ipcState"
+    (decide (queueOwnerOf? blockedTcb = some (.endpoint (ObjId.ofNat 20))))
+  assertBool "NEGATIVE: a ready thread is in no object-owned queue"
+    (decide (queueOwnerOf? readyTcb = none))
+
 /-- Audit-pass-6 P1/P2 runtime checks: per-syscall lock-set
 correctness against the actual kernel transitions traced. -/
 private def runAuditPass6FootprintChecks : IO Unit := do
   IO.println "--- §17 Audit-pass-6 footprint completeness (P1+P2 closure) ---"
   -- P1 (tcbSetPriority): with unbound target, no SC lock — but the
   -- bound case adds (schedContextLock scId, .write).
-  let unboundPri := lockSet_tcbSetPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ none
-  let boundPri := lockSet_tcbSetPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩)
+  let unboundPri := lockSet_tcbSetPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ none none
+  let boundPri := lockSet_tcbSetPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none
   assertBool "P1: tcbSetPriority(.bound) has one more lock than .unbound"
     (decide (boundPri.size = unboundPri.size + 1))
   assertBool "P1: tcbSetPriority(.bound 50) contains schedContextLock ⟨50⟩ as write"
     (boundPri.pairs.any (fun p =>
       decide (p = (⟨.schedContext, ObjId.ofNat 50⟩, .write))))
   -- P1 (tcbSetMCPriority): same shape.
-  let boundMcp := lockSet_tcbSetMCPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩)
+  let boundMcp := lockSet_tcbSetMCPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none
   assertBool "P1: tcbSetMCPriority(.bound) contains schedContextLock ⟨50⟩ as write"
     (boundMcp.pairs.any (fun p =>
       decide (p = (⟨.schedContext, ObjId.ofNat 50⟩, .write))))
   -- P1 (tcbSetIPCBuffer): with target VSpaceRoot, contains read lock.
   let withVsr := lockSet_tcbSetIPCBuffer ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩
-                    (some (ObjId.ofNat 99))
+                    (some (ObjId.ofNat 99)) none
   assertBool "P1: tcbSetIPCBuffer(some 99) contains vspaceRootLock 99 as read"
     (withVsr.pairs.any (fun p =>
       decide (p = (⟨.vspaceRoot, ObjId.ofNat 99⟩, .read))))
   assertBool "P1: tcbSetIPCBuffer(none) does NOT contain any vspaceRoot lock"
-    (let noVsr := lockSet_tcbSetIPCBuffer ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ none
+    (let noVsr := lockSet_tcbSetIPCBuffer ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ none none
      decide (noVsr.pairs.all (fun p => p.fst.kind ≠ .vspaceRoot)))
   -- P2 (serviceRegister): contains the endpoint read lock.
   let svcReg := lockSet_serviceRegister ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
@@ -1474,6 +1531,7 @@ def runLockSetChecks : IO Unit := do
   runFstInjChecks
   runPipChainStartChecks
   runAuditPass6FootprintChecks
+  runQueueOwnerFootprintChecks
   IO.println "======================================"
   IO.println "All SM3.B LockSet checks PASS."
 
