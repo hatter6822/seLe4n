@@ -84,8 +84,29 @@ respects the SM3.D static `maxLockSetSize` bound has lock-WCRT
   progress inside the combined `WCRT_smp`.
 
 `WCRT_lockSet` / `WCRT_smp` are pure cost functions on the (production-reached)
-per-core op footprints; the live per-core run loop (SM5.I) is the runtime exerciser
-that acquires those footprints under `withLockSet`.
+per-core op footprints.
+
+**What acquires them, precisely (WS-RR RR7.12).**  This sentence used to say the
+live per-core run loop (SM5.I) is the runtime exerciser that acquires those
+footprints under `withLockSet`, and it did not: SM3.C.9 deferred wrapping the
+`@[export]` bodies, so at that point exactly one live seam acquired a declared
+footprint (the raw `suspend_thread_cross_core`) and the per-core scheduler
+entries acquired none.
+
+What is true now: **the syscall seam brackets**.
+`syscallDispatchCrossCoreEntry` runs its atomic step inside the footprint
+`lockSetForSyscall` declares for the operation the registers decode to
+(`syscallDispatchCrossCoreBracketedStep`), for the eight arms that have one —
+and runs unbracketed, exactly as before, for the twenty-seven that do not.  The
+**per-core scheduler entries** — the timer tick, the `.reschedule` SGI receiver
+and the secondary bring-up entry — still acquire nothing: they commit run-queue
+and replenish-queue state under the SM5.I global kernel-entry ticket lock only.
+That is `UncoveredLockDomain.schedulerDomain`, and WS-RR RR7.39 is the row that
+closes it, at which point these bounds describe those entries too.
+
+So the figures below are the cost of the footprints the *syscall* path now
+acquires and the intended cost of the scheduler path's, and the live WCRT of a
+kernel entry remains the global lock's until RR7.39.
 -/
 
 namespace SeLe4n.Kernel

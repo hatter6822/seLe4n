@@ -18,6 +18,10 @@
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
 import SeLe4n.Kernel.Concurrency.Runtime
 import SeLe4n.Kernel.Concurrency.Locks.LockSetForSyscall
+-- WS-RR RR7.12: the declared-footprint bracket this seam runs — the entry's own
+-- decode named once, the operands read off the capability that decode addresses,
+-- and the revalidated acquire / act / unwind.
+import SeLe4n.Kernel.SyscallLockBracket
 -- WS-SM SM6.E: the per-core suspend behind `suspendThreadCrossCoreEntry`.
 import SeLe4n.Kernel.IPC.CrossCore.Cancellation
 -- WS-SM SM7.B: the shootdown round's pure transitions + diff recovery
@@ -508,6 +512,157 @@ theorem completeShootdownRounds_nil
     (execCore : Concurrency.CoreId) :
     completeShootdownRounds [] ops window execCore = pure () := rfl
 
+/-- **WS-RR RR7.12**: the atomic step the live syscall seam commits, as a named
+function.
+
+Extracted from `syscallDispatchCrossCoreEntry`'s `modifyGetKernelState` closure
+verbatim — the dispatch, the inline local reschedule, and the five diffs the
+runtime half consumes — so that the declared-footprint bracket has something to
+wrap.  Nothing about it changed in the extraction; every property the entry's
+docstring records about placement (the reschedule *inside* the atomic step, the
+diffs against the **final** state `st''` rather than the pre-reschedule `st'`)
+is a property of this function now.
+
+The diffs are taken against **this function's own input**, which under the
+bracket is the state the growing phase ended in.  That is what keeps the runtime
+half honest: the growing phase's writes are lock words, and pokes derived
+against a base that already carries them describe the state the action saw. -/
+def syscallDispatchCrossCoreStep (ctx : LabelingContext) (execCore : CoreId)
+    (syscallId : UInt32) (msgInfo : UInt64) (x0 x1 x2 x3 x4 x5 : UInt64)
+    (ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState) :
+    (Architecture.SyscallOutcome × List (CoreId × SgiKind) × List CoreId ×
+      List Architecture.TlbInvalidation × (Nat × Nat) ×
+      List Architecture.ICacheInvalidation × Option SeLe4n.ThreadId) × SystemState :=
+  match Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+      ipcBufferAddr elr spsr spEl0 x30 st with
+  | Except.ok (outcome, st') =>
+      let st'' := PriorityInheritance.scheduleLocalSuccessorLive st st' execCore
+      ((outcome, PriorityInheritance.computeCrossCoreSgis st st'' execCore,
+        Architecture.shootdownChangedTargets st st'',
+        Architecture.shootdownPostedOps st st'',
+        Architecture.shootdownRoundWindow st st'',
+        st''.pendingIcacheMaintenance,
+        st''.scheduler.currentOnCore execCore),
+       Architecture.clearIcacheMaintenance st'')
+  | Except.error e =>
+      ((Architecture.SyscallOutcome.returns (Architecture.errorFrame e),
+        ([] : List (CoreId × SgiKind)),
+        ([] : List CoreId),
+        ([] : List Architecture.TlbInvalidation),
+        ((0, 0) : Nat × Nat),
+        ([] : List Architecture.ICacheInvalidation),
+        st.scheduler.currentOnCore execCore), st)
+
+/-- **WS-RR RR7.12**: what a revalidation refusal returns to the caller.
+
+`.illegalState`, and deliberately so.  The refusal means the kernel state the
+syscall resolved its target against changed between the resolution and the
+acquisition of the locks protecting it — which is exactly "the state was not what
+this operation required", the reading `.illegalState` already carries for a
+syscall issued on a core running no thread.  A dedicated `.lockContention` would
+let a caller distinguish "retry me" from the other illegal states, and is worth
+its ABI cost (the error enum, `toUInt32`, the Rust mirror in `sele4n-types`, the
+conformance and error-matrix suites) exactly when the refusal becomes reachable
+— which needs the commit partitioned, since `Platform.FFI.modifyGetKernelState`
+is today one global read-modify-write over one `SystemState` and the growing
+phase writes nothing the resolver reads.
+
+No diffs are surfaced and the I-cache ledger is **not** cleared: nothing ran, so
+there is nothing to poke about and nothing owed was consumed. -/
+def syscallBracketRefusalResult (execCore : CoreId) (unwound : SystemState) :
+    (Architecture.SyscallOutcome × List (CoreId × SgiKind) × List CoreId ×
+      List Architecture.TlbInvalidation × (Nat × Nat) ×
+      List Architecture.ICacheInvalidation × Option SeLe4n.ThreadId) × SystemState :=
+  ((Architecture.SyscallOutcome.returns (Architecture.errorFrame .illegalState),
+    ([] : List (CoreId × SgiKind)),
+    ([] : List CoreId),
+    ([] : List Architecture.TlbInvalidation),
+    ((0, 0) : Nat × Nat),
+    ([] : List Architecture.ICacheInvalidation),
+    unwound.scheduler.currentOnCore execCore), unwound)
+
+/-- **WS-RR RR7.12: the step, inside its declared per-object footprint.**
+
+This is the row that makes "per-object reader-writer fine locks" a statement
+about the path the kernel runs rather than about an intended discipline.  Before
+it, exactly one live export acquired a declared footprint — the raw
+`suspend_thread_cross_core` seam — so the claim described one arm of thirty-five.
+
+Three arms, and which one is taken is decided by `declaredLockSetForAbiEntry` at
+the entry's own pre-state:
+
+* **undeclared** — `lockSetForSyscall` has no footprint for this operation, or
+  its operands do not resolve (an unresolvable caller, a multi-level CSpace
+  resolution, a capability that does not resolve at the rights the syscall
+  requires).  The step runs unbracketed, exactly as it did before this row, and
+  the SM5.I kernel-entry lock is the serialisation as it was.  Falling back is
+  always sound; claiming a footprint that does not cover a write would not be;
+* **committed** — the footprint was acquired, re-resolved unchanged, and found
+  held, so the step ran inside it and the locks were released after;
+* **refused** — the footprint was acquired and the guard then declined.  Nothing
+  is committed but the unwinding, and the caller gets `.illegalState`.
+
+`execCore` is the lock-holding core, which is the core the syscall executes on: a
+footprint acquired in another core's name would exclude nobody. -/
+def syscallDispatchCrossCoreBracketedStep (ctx : LabelingContext) (execCore : CoreId)
+    (syscallId : UInt32) (msgInfo : UInt64) (x0 x1 x2 x3 x4 x5 : UInt64)
+    (ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState) :
+    (Architecture.SyscallOutcome × List (CoreId × SgiKind) × List CoreId ×
+      List Architecture.TlbInvalidation × (Nat × Nat) ×
+      List Architecture.ICacheInvalidation × Option SeLe4n.ThreadId) × SystemState :=
+  match runUnderDeclaredLockSet
+      (declaredLockSetForAbiEntry ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5)
+      execCore
+      (syscallDispatchCrossCoreStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+        ipcBufferAddr elr spsr spEl0 x30) st with
+  | .undeclared r => r
+  | .committed r => r
+  | .refused unwound => syscallBracketRefusalResult execCore unwound
+
+/-- **WS-RR RR7.12 (the fallback is exactly the pre-RR7.12 seam)**: a syscall
+whose footprint is undeclared commits the same state and returns the same value
+it did before the bracket existed.
+
+This is what makes landing the bracket ahead of the remaining twenty-seven
+declarations safe: the arms that are not declared yet are bit-identical, on the
+pre-state, with no lock written.  Definitional, so a refactor that starts
+acquiring something on the undeclared path stops this elaborating. -/
+theorem syscallDispatchCrossCoreBracketedStep_undeclared (ctx : LabelingContext)
+    (execCore : CoreId) (syscallId : UInt32) (msgInfo : UInt64)
+    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState)
+    (h : declaredLockSetForAbiEntry ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st = none) :
+    syscallDispatchCrossCoreBracketedStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+        ipcBufferAddr elr spsr spEl0 x30 st
+      = syscallDispatchCrossCoreStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+          ipcBufferAddr elr spsr spEl0 x30 st := by
+  unfold syscallDispatchCrossCoreBracketedStep
+  rw [runUnderDeclaredLockSet_undeclared _ _ _ _ h]
+
+/-- **WS-RR RR7.12 (a refusal commits no transition)**: on the refusal arm the
+committed state is the pre-state with the footprint acquired and then unwound —
+lock writes only — and the outcome is the fail-closed error frame.
+
+The load-bearing negative.  A guard that refused *after* running the dispatch
+would be worse than no guard: the syscall would have committed against a
+resolution the guard judged stale. -/
+theorem syscallDispatchCrossCoreBracketedStep_refused (ctx : LabelingContext)
+    (execCore : CoreId) (syscallId : UInt32) (msgInfo : UInt64)
+    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState)
+    (S : Concurrency.LockSet)
+    (hDecl : declaredLockSetForAbiEntry ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st
+          = some S)
+    (hGuard : ¬ (declaredLockSetForAbiEntry ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+          (Concurrency.acquireAll execCore S.lockAcquireSequence st) = some S ∧
+        Concurrency.lockSetHeld execCore S
+          (Concurrency.acquireAll execCore S.lockAcquireSequence st))) :
+    syscallDispatchCrossCoreBracketedStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+        ipcBufferAddr elr spsr spEl0 x30 st
+      = syscallBracketRefusalResult execCore
+          (Concurrency.unwindAll execCore S.lockAcquireSequence.reverse
+            (Concurrency.acquireAll execCore S.lockAcquireSequence st)) := by
+  unfold syscallDispatchCrossCoreBracketedStep
+  rw [runUnderDeclaredLockSet_refused _ _ _ _ S hDecl hGuard]
+
 /-- **WS-SM SM6.A**: the cross-core-aware syscall dispatch entry — the live
 SGI-dispatch seam.  Reads the deployment labeling context and the executing core
 from the hardware (`currentCoreId`), runs the verified
@@ -565,26 +720,14 @@ def syscallDispatchCrossCoreEntry
     (ipcBufferAddr : UInt64) (elr spsr spEl0 x30 : UInt64) : BaseIO UInt64 := do
   let ctx ← Platform.FFI.getKernelLabelingContext
   let execCore ← Concurrency.currentCoreId
-  let result ← Platform.FFI.modifyGetKernelState (fun st =>
-    match Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
-        ipcBufferAddr elr spsr spEl0 x30 st with
-    | Except.ok (outcome, st') =>
-        let st'' := PriorityInheritance.scheduleLocalSuccessorLive st st' execCore
-        ((outcome, PriorityInheritance.computeCrossCoreSgis st st'' execCore,
-          Architecture.shootdownChangedTargets st st'',
-          Architecture.shootdownPostedOps st st'',
-          Architecture.shootdownRoundWindow st st'',
-          st''.pendingIcacheMaintenance,
-          st''.scheduler.currentOnCore execCore),
-         Architecture.clearIcacheMaintenance st'')
-    | Except.error e =>
-        ((Architecture.SyscallOutcome.returns (Architecture.errorFrame e),
-          ([] : List (CoreId × SgiKind)),
-          ([] : List CoreId),
-          ([] : List Architecture.TlbInvalidation),
-          ((0, 0) : Nat × Nat),
-          ([] : List Architecture.ICacheInvalidation),
-          st.scheduler.currentOnCore execCore), st))
+  -- **WS-RR RR7.12**: the atomic step now runs inside its declared per-object
+  -- footprint.  `syscallDispatchCrossCoreBracketedStep` resolves the footprint
+  -- from this entry's own decode, acquires it, re-resolves at the state the
+  -- growing phase ended in and refuses on any change; a syscall with no declared
+  -- footprint runs exactly as it did before the bracket existed.
+  let result ← Platform.FFI.modifyGetKernelState
+    (syscallDispatchCrossCoreBracketedStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+      ipcBufferAddr elr spsr spEl0 x30)
   -- WS-RA (plan §3.3): publish the return frame into this core's mailbox
   -- immediately after the commit — `dispatch_svc` reads it back inside the
   -- same `with_kernel_entry` critical section.  A `blocks` outcome publishes
@@ -633,26 +776,9 @@ theorem syscallDispatchCrossCoreEntry_def
       (do
         let ctx ← Platform.FFI.getKernelLabelingContext
         let execCore ← Concurrency.currentCoreId
-        let result ← Platform.FFI.modifyGetKernelState (fun st =>
-          match Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
-              ipcBufferAddr elr spsr spEl0 x30 st with
-          | Except.ok (outcome, st') =>
-              let st'' := PriorityInheritance.scheduleLocalSuccessorLive st st' execCore
-              ((outcome, PriorityInheritance.computeCrossCoreSgis st st'' execCore,
-                Architecture.shootdownChangedTargets st st'',
-                Architecture.shootdownPostedOps st st'',
-                Architecture.shootdownRoundWindow st st'',
-                st''.pendingIcacheMaintenance,
-                st''.scheduler.currentOnCore execCore),
-               Architecture.clearIcacheMaintenance st'')
-          | Except.error e =>
-              ((Architecture.SyscallOutcome.returns (Architecture.errorFrame e),
-                ([] : List (CoreId × SgiKind)),
-                ([] : List CoreId),
-                ([] : List Architecture.TlbInvalidation),
-                ((0, 0) : Nat × Nat),
-                ([] : List Architecture.ICacheInvalidation),
-                st.scheduler.currentOnCore execCore), st))
+        let result ← Platform.FFI.modifyGetKernelState
+          (syscallDispatchCrossCoreBracketedStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+            ipcBufferAddr elr spsr spEl0 x30)
         let frame := result.1.mailboxFrame
         Platform.FFI.ffiSyscallReturnFrame frame.x0 frame.x1 frame.x2 frame.x3 frame.x4 frame.x5
         Concurrency.fireCrossCoreSgis result.2.1

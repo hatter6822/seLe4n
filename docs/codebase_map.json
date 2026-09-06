@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/rr7-medium-severity-sweep-tn327q",
-      "commit_sha": "10b08d9ec4fd1faf726a366eda5421b8f852c57d",
-      "tree_sha": "48cb74241d4fbec10d9bf7946ad313ae7552d935",
-      "committed_at_utc": "2026-09-05T22:38:48+00:00"
+      "commit_sha": "b423a3ed82400720670d8ba396252c02637adb89",
+      "tree_sha": "4a0e8e61de1072ec43e2d0f22db6b211a35775ba",
+      "committed_at_utc": "2026-09-05T23:57:15+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "5313166b3845ab3b38e22e9adb12a9f49b6a8b7e0b63c0e41c64b77c7d5ad265"
+    "source_digest": "15f426ec616784bf96737d2f42ec80184c3bbb90eae7ff9c351159f3cce42867"
   },
   "summary": {
-    "module_count": 381,
-    "declaration_count": 19214
+    "module_count": 382,
+    "declaration_count": 19251
   },
   "readme_sync": {
-    "version": "0.34.64",
+    "version": "0.34.65",
     "lean_toolchain": "v4.28.0",
-    "production_files": 311,
-    "production_loc": 333825,
+    "production_files": 312,
+    "production_loc": 334551,
     "test_files": 70,
-    "test_loc": 69445,
-    "proved_theorem_lemma_decls": 11119,
+    "test_loc": 69613,
+    "proved_theorem_lemma_decls": 11129,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -189824,7 +189824,7 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 91,
+          "line": 112,
           "called": [
             "allCores",
             "bootCoreId"
@@ -189833,7 +189833,7 @@
         {
           "kind": "def",
           "name": "WCRT_lockSet",
-          "line": 119,
+          "line": 140,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -189844,7 +189844,7 @@
         {
           "kind": "theorem",
           "name": "WCRT_lockSet_eq_product",
-          "line": 124,
+          "line": 145,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -189856,7 +189856,7 @@
         {
           "kind": "theorem",
           "name": "WCRT_lockSet_nil",
-          "line": 128,
+          "line": 149,
           "called": [
             "WCRT_lockSet"
           ]
@@ -189864,7 +189864,7 @@
         {
           "kind": "theorem",
           "name": "WCRT_lockSet_mono_length",
-          "line": 133,
+          "line": 154,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -189875,7 +189875,7 @@
         {
           "kind": "theorem",
           "name": "WCRT_lockSet_mono_cost",
-          "line": 139,
+          "line": 160,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -189887,7 +189887,7 @@
         {
           "kind": "theorem",
           "name": "WCRT_lockSet_le_maxLockSetSize",
-          "line": 149,
+          "line": 170,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -189900,7 +189900,7 @@
         {
           "kind": "theorem",
           "name": "rpi5OtherCoreCount",
-          "line": 159,
+          "line": 180,
           "called": [
             "numCores"
           ]
@@ -189908,7 +189908,7 @@
         {
           "kind": "theorem",
           "name": "perLockWaitCost_rpi5",
-          "line": 163,
+          "line": 184,
           "called": [
             "perLockWaitCost",
             "rpi5OtherCoreCount"
@@ -189917,7 +189917,7 @@
         {
           "kind": "theorem",
           "name": "WCRT_lockSet_rpi5",
-          "line": 167,
+          "line": 188,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -189930,7 +189930,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_bound_rpi5_smp",
-          "line": 197,
+          "line": 218,
           "called": [
             "AccessMode",
             "DeploymentSchedulingConfig",
@@ -189948,7 +189948,7 @@
         {
           "kind": "def",
           "name": "WCRT_smp",
-          "line": 216,
+          "line": 237,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -189959,7 +189959,7 @@
         {
           "kind": "theorem",
           "name": "WCRT_smp_decomposition",
-          "line": 221,
+          "line": 242,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -189971,7 +189971,7 @@
         {
           "kind": "theorem",
           "name": "WCRT_smp_r5_component_le",
-          "line": 228,
+          "line": 249,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -189982,7 +189982,7 @@
         {
           "kind": "theorem",
           "name": "WCRT_smp_lockSet_component_le",
-          "line": 235,
+          "line": 256,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -189993,7 +189993,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_smp_bound_rpi5",
-          "line": 243,
+          "line": 264,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -190008,7 +190008,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_op_bounded_of_size",
-          "line": 261,
+          "line": 282,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -190021,7 +190021,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_chooseThreadOnCore_eq",
-          "line": 269,
+          "line": 290,
           "called": [
             "CoreId",
             "WCRT_lockSet",
@@ -190033,7 +190033,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_chooseThreadOnCore_bounded",
-          "line": 274,
+          "line": 295,
           "called": [
             "CoreId",
             "WCRT_lockSet",
@@ -190046,7 +190046,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_switchToThreadOnCore_eq",
-          "line": 280,
+          "line": 301,
           "called": [
             "CoreId",
             "WCRT_lockSet",
@@ -190058,7 +190058,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_switchToThreadOnCore_bounded",
-          "line": 285,
+          "line": 306,
           "called": [
             "CoreId",
             "WCRT_lockSet",
@@ -190071,7 +190071,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_wakeThread_eq",
-          "line": 291,
+          "line": 312,
           "called": [
             "CoreId",
             "WCRT_lockSet",
@@ -190083,7 +190083,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_wakeThread_bounded",
-          "line": 296,
+          "line": 317,
           "called": [
             "CoreId",
             "WCRT_lockSet",
@@ -190096,7 +190096,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_timerTickOnCore_eq",
-          "line": 302,
+          "line": 323,
           "called": [
             "CoreId",
             "WCRT_lockSet",
@@ -190108,7 +190108,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_timerTickOnCore_bounded",
-          "line": 307,
+          "line": 328,
           "called": [
             "CoreId",
             "WCRT_lockSet",
@@ -190121,7 +190121,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_replenishOnCore_eq",
-          "line": 313,
+          "line": 334,
           "called": [
             "CoreId",
             "WCRT_lockSet",
@@ -190133,7 +190133,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_replenishOnCore_bounded",
-          "line": 318,
+          "line": 339,
           "called": [
             "CoreId",
             "WCRT_lockSet",
@@ -190146,7 +190146,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_advanceDomainOnCore_bounded",
-          "line": 324,
+          "line": 345,
           "called": [
             "CoreId",
             "WCRT_lockSet",
@@ -190159,7 +190159,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_handleRescheduleSgiOnCore_bounded",
-          "line": 332,
+          "line": 353,
           "called": [
             "CoreId",
             "WCRT_lockSet",
@@ -190173,7 +190173,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_timerTickOnCoreComplete_bounded",
-          "line": 342,
+          "line": 363,
           "called": [
             "CoreId",
             "WCRT_lockSet",
@@ -190186,7 +190186,7 @@
         {
           "kind": "theorem",
           "name": "WCRT_lockSet_mode_independent",
-          "line": 359,
+          "line": 380,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -190196,7 +190196,7 @@
         {
           "kind": "theorem",
           "name": "WCRT_lockSet_eq_totalWaitCost_of_length_eq",
-          "line": 370,
+          "line": 391,
           "called": [
             "AccessMode",
             "LockSet",
@@ -190212,7 +190212,7 @@
         {
           "kind": "theorem",
           "name": "kernelWait_le_WCRT_lockSet_of_length_eq",
-          "line": 383,
+          "line": 404,
           "called": [
             "AccessMode",
             "CoreId",
@@ -190230,7 +190230,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_bound_smp",
-          "line": 397,
+          "line": 418,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -190243,7 +190243,7 @@
         {
           "kind": "def",
           "name": "WCRT_smp_cycles",
-          "line": 409,
+          "line": 430,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -190254,7 +190254,7 @@
         {
           "kind": "theorem",
           "name": "WCRT_smp_cycles_one",
-          "line": 414,
+          "line": 435,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -190265,7 +190265,7 @@
         {
           "kind": "theorem",
           "name": "WCRT_smp_cycles_decomposition",
-          "line": 421,
+          "line": 442,
           "called": [
             "AccessMode",
             "SchedLockId",
@@ -190277,7 +190277,7 @@
         {
           "kind": "theorem",
           "name": "schedulerNoStallOnCore",
-          "line": 437,
+          "line": 458,
           "called": [
             "CoreId",
             "SystemState",
@@ -190293,7 +190293,7 @@
         {
           "kind": "theorem",
           "name": "schedulerNoStall_smp",
-          "line": 450,
+          "line": 471,
           "called": [
             "CoreId",
             "SystemState",
@@ -190309,7 +190309,7 @@
         {
           "kind": "theorem",
           "name": "boundedKernelWait_smp",
-          "line": 465,
+          "line": 486,
           "called": [
             "CoreId",
             "KernelExecution",
@@ -190326,7 +190326,7 @@
         {
           "kind": "theorem",
           "name": "schedulerNoStall_smp_of_idleAvailableB",
-          "line": 482,
+          "line": 503,
           "called": [
             "CoreId",
             "SystemState",
@@ -190342,7 +190342,7 @@
         {
           "kind": "theorem",
           "name": "thread_eventually_scheduled_onCore",
-          "line": 503,
+          "line": 524,
           "called": [
             "CoreId",
             "SchedulerTrace",
@@ -190368,7 +190368,7 @@
         {
           "kind": "theorem",
           "name": "thread_eventually_scheduled_within_smp_bound",
-          "line": 533,
+          "line": 554,
           "called": [
             "AccessMode",
             "CoreId",
@@ -190398,7 +190398,7 @@
         {
           "kind": "theorem",
           "name": "no_starvation_under_smp",
-          "line": 574,
+          "line": 595,
           "called": [
             "CoreId",
             "KernelExecution",
@@ -190437,7 +190437,7 @@
         {
           "kind": "theorem",
           "name": "r5_latency_within_smp_bound",
-          "line": 614,
+          "line": 635,
           "called": [
             "AccessMode",
             "Kernel",
@@ -201360,18 +201360,18 @@
     {
       "module": "SeLe4n.Kernel.SyscallDispatchEntry",
       "path": "SeLe4n/Kernel/SyscallDispatchEntry.lean",
-      "declaration_count": 23,
+      "declaration_count": 28,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 78,
+          "line": 82,
           "called": []
         },
         {
           "kind": "def",
           "name": "shootdownSharingDomain",
-          "line": 91,
+          "line": 95,
           "called": [
             "RPi5Platform",
             "SharingDomain"
@@ -201380,7 +201380,7 @@
         {
           "kind": "theorem",
           "name": "shootdownSharingDomain_rpi5",
-          "line": 97,
+          "line": 101,
           "called": [
             "shootdownSharingDomain"
           ]
@@ -201388,7 +201388,7 @@
         {
           "kind": "def",
           "name": "haltFailClosed",
-          "line": 128,
+          "line": 132,
           "called": [
             "fatalHaltAll"
           ]
@@ -201396,13 +201396,13 @@
         {
           "kind": "def",
           "name": "shootdownRoundLockAcquireFuel",
-          "line": 137,
+          "line": 141,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "shootdownRoundLockAcquireFuel_value",
-          "line": 140,
+          "line": 144,
           "called": [
             "shootdownRoundLockAcquireFuel"
           ]
@@ -201410,7 +201410,7 @@
         {
           "kind": "def",
           "name": "acquireShootdownRoundLockServicingSelf",
-          "line": 163,
+          "line": 167,
           "called": [
             "CoreId",
             "haltFailClosed",
@@ -201423,7 +201423,7 @@
         {
           "kind": "def",
           "name": "publishShootdownOps",
-          "line": 198,
+          "line": 202,
           "called": [
             "TlbInvalidation",
             "length",
@@ -201438,7 +201438,7 @@
         {
           "kind": "def",
           "name": "completeShootdownRounds",
-          "line": 291,
+          "line": 295,
           "called": [
             "CoreId",
             "TlbInvalidation",
@@ -201466,7 +201466,7 @@
         {
           "kind": "def",
           "name": "completeIcacheMaintenance",
-          "line": 473,
+          "line": 477,
           "called": [
             "ICacheInvalidation",
             "icMaintenanceBroadcast"
@@ -201475,7 +201475,7 @@
         {
           "kind": "theorem",
           "name": "completeIcacheMaintenance_nil",
-          "line": 481,
+          "line": 485,
           "called": [
             "completeIcacheMaintenance",
             "pure"
@@ -201484,7 +201484,7 @@
         {
           "kind": "theorem",
           "name": "completeIcacheMaintenance_singleton",
-          "line": 487,
+          "line": 491,
           "called": [
             "ICacheInvalidation",
             "completeIcacheMaintenance",
@@ -201494,7 +201494,7 @@
         {
           "kind": "theorem",
           "name": "completeIcacheMaintenance_cons",
-          "line": 495,
+          "line": 499,
           "called": [
             "ICacheInvalidation",
             "completeIcacheMaintenance",
@@ -201504,7 +201504,7 @@
         {
           "kind": "theorem",
           "name": "completeShootdownRounds_nil",
-          "line": 506,
+          "line": 510,
           "called": [
             "CoreId",
             "TlbInvalidation",
@@ -201514,20 +201514,109 @@
         },
         {
           "kind": "def",
-          "name": "syscallDispatchCrossCoreEntry",
-          "line": 562,
+          "name": "syscallDispatchCrossCoreStep",
+          "line": 530,
+          "called": [
+            "CoreId",
+            "ICacheInvalidation",
+            "LabelingContext",
+            "SgiKind",
+            "SyscallOutcome",
+            "SystemState",
+            "ThreadId",
+            "TlbInvalidation",
+            "clearIcacheMaintenance",
+            "computeCrossCoreSgis",
+            "currentOnCore",
+            "errorFrame",
+            "scheduleLocalSuccessorLive",
+            "shootdownChangedTargets",
+            "shootdownPostedOps",
+            "shootdownRoundWindow",
+            "st",
+            "syscallDispatchFromAbi"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "syscallBracketRefusalResult",
+          "line": 572,
           "called": [
             "CoreId",
             "ICacheInvalidation",
             "SgiKind",
+            "SyscallOutcome",
+            "SystemState",
+            "ThreadId",
             "TlbInvalidation",
-            "clearIcacheMaintenance",
+            "currentOnCore",
+            "errorFrame"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "syscallDispatchCrossCoreBracketedStep",
+          "line": 607,
+          "called": [
+            "CoreId",
+            "ICacheInvalidation",
+            "LabelingContext",
+            "SgiKind",
+            "SyscallOutcome",
+            "SystemState",
+            "ThreadId",
+            "TlbInvalidation",
+            "declaredLockSetForAbiEntry",
+            "runUnderDeclaredLockSet",
+            "st",
+            "syscallBracketRefusalResult",
+            "syscallDispatchCrossCoreStep"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "syscallDispatchCrossCoreBracketedStep_undeclared",
+          "line": 630,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "SystemState",
+            "declaredLockSetForAbiEntry",
+            "none",
+            "runUnderDeclaredLockSet_undeclared",
+            "st",
+            "syscallDispatchCrossCoreBracketedStep",
+            "syscallDispatchCrossCoreStep"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "syscallDispatchCrossCoreBracketedStep_refused",
+          "line": 648,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "LockSet",
+            "SystemState",
+            "acquireAll",
+            "declaredLockSetForAbiEntry",
+            "lockAcquireSequence",
+            "lockSetHeld",
+            "runUnderDeclaredLockSet_refused",
+            "st",
+            "syscallBracketRefusalResult",
+            "syscallDispatchCrossCoreBracketedStep",
+            "unwindAll"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "syscallDispatchCrossCoreEntry",
+          "line": 717,
+          "called": [
             "completeIcacheMaintenance",
             "completeShootdownRounds",
-            "computeCrossCoreSgis",
             "currentCoreId",
-            "currentOnCore",
-            "errorFrame",
             "ffiSyscallReturnFrame",
             "fireCrossCoreSgis",
             "getKernelLabelingContext",
@@ -201535,31 +201624,18 @@
             "modifyGetKernelState",
             "pure",
             "recordCommittedCurrentThreadHw",
-            "scheduleLocalSuccessorLive",
-            "shootdownChangedTargets",
-            "shootdownPostedOps",
-            "shootdownRoundWindow",
-            "st",
-            "syscallDispatchFromAbi",
+            "syscallDispatchCrossCoreBracketedStep",
             "tagWord"
           ]
         },
         {
           "kind": "theorem",
           "name": "syscallDispatchCrossCoreEntry_def",
-          "line": 628,
+          "line": 771,
           "called": [
-            "CoreId",
-            "ICacheInvalidation",
-            "SgiKind",
-            "TlbInvalidation",
-            "clearIcacheMaintenance",
             "completeIcacheMaintenance",
             "completeShootdownRounds",
-            "computeCrossCoreSgis",
             "currentCoreId",
-            "currentOnCore",
-            "errorFrame",
             "ffiSyscallReturnFrame",
             "fireCrossCoreSgis",
             "getKernelLabelingContext",
@@ -201567,20 +201643,15 @@
             "modifyGetKernelState",
             "pure",
             "recordCommittedCurrentThreadHw",
-            "scheduleLocalSuccessorLive",
-            "shootdownChangedTargets",
-            "shootdownPostedOps",
-            "shootdownRoundWindow",
-            "st",
+            "syscallDispatchCrossCoreBracketedStep",
             "syscallDispatchCrossCoreEntry",
-            "syscallDispatchFromAbi",
             "tagWord"
           ]
         },
         {
           "kind": "theorem",
           "name": "vacatedCore_next_syscall_rejected",
-          "line": 682,
+          "line": 808,
           "called": [
             "CoreId",
             "LabelingContext",
@@ -201596,7 +201667,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchCrossCoreEntry_sgis_nil_single_core",
-          "line": 706,
+          "line": 832,
           "called": [
             "CoreId",
             "SystemState",
@@ -201612,7 +201683,7 @@
         {
           "kind": "def",
           "name": "suspendThreadCrossCoreStep",
-          "line": 761,
+          "line": 887,
           "called": [
             "CoreId",
             "KernelError.toUInt32",
@@ -201637,7 +201708,7 @@
         {
           "kind": "theorem",
           "name": "suspendThreadCrossCoreStep_idle_refused",
-          "line": 832,
+          "line": 958,
           "called": [
             "CoreId",
             "KernelError.toUInt32",
@@ -201654,7 +201725,7 @@
         {
           "kind": "theorem",
           "name": "suspendThreadCrossCoreStep_sentinel_refused",
-          "line": 847,
+          "line": 973,
           "called": [
             "CoreId",
             "KernelError.toUInt32",
@@ -201667,7 +201738,7 @@
         {
           "kind": "def",
           "name": "suspendThreadCrossCoreEntry",
-          "line": 854,
+          "line": 980,
           "called": [
             "currentCoreId",
             "fireCrossCoreSgis",
@@ -201679,7 +201750,7 @@
         {
           "kind": "theorem",
           "name": "computeCrossCoreSgis_recordSyscallRefusal_eq",
-          "line": 880,
+          "line": 1006,
           "called": [
             "CoreId",
             "Kernel",
@@ -201690,6 +201761,299 @@
             "computeCrossCoreSgis",
             "recordSyscallRefusal",
             "recordSyscallRefusal_frame"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.SyscallLockBracket",
+      "path": "SeLe4n/Kernel/SyscallLockBracket.lean",
+      "declaration_count": 16,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 91,
+          "called": [
+            "acquireAll",
+            "lockSetHeld",
+            "unwindAll",
+            "withLockSet"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "abiEntryPlan",
+          "line": 113,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "SyscallDecodeResult",
+            "SystemState",
+            "ThreadId",
+            "arm64DefaultLayout",
+            "currentOnCore",
+            "decodeSyscallArgsFromState",
+            "isInsecureDefaultContext",
+            "lookupThreadRegisterContext",
+            "none",
+            "regs",
+            "st",
+            "tlbFillIpcBufferOnCore",
+            "writeFfiRegistersToTcb"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "abiEntryPlan_dispatches",
+          "line": 142,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "SyscallDecodeResult",
+            "SystemState",
+            "ThreadId",
+            "abiEntryPlan",
+            "arm64DefaultLayout",
+            "currentOnCore",
+            "decodeSyscallArgsFromState",
+            "deliverSyscallCapFault",
+            "dispatchSyscallChecked",
+            "errorFrame",
+            "isInsecureDefaultContext",
+            "lookupThreadRegisterContext",
+            "none",
+            "recordSyscallRefusal",
+            "regs",
+            "st",
+            "syscallCapFaultOf",
+            "syscallDispatchFromAbi",
+            "syscallEntryChecked",
+            "syscallReturnOutcome",
+            "syscallWindow",
+            "writeFfiRegistersToTcb",
+            "writeFfiRegistersToTcb_scheduler"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "abiEntryGate",
+          "line": 232,
+          "called": [
+            "SyscallDecodeResult",
+            "SyscallGate",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "getCNode",
+            "getTcb",
+            "none",
+            "resolveCapAddress",
+            "syscallRequiredRight"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "abiEntryMessage",
+          "line": 265,
+          "called": [
+            "Capability",
+            "IpcMessage",
+            "SyscallDecodeResult",
+            "SyscallGate",
+            "SystemState",
+            "badge",
+            "decodeExtraCapAddrs",
+            "extractMessageRegisters",
+            "mem",
+            "resolveExtraCaps"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "abiEntryLockOperands",
+          "line": 301,
+          "called": [
+            "SyscallDecodeResult",
+            "SyscallLockOperands",
+            "SystemState",
+            "ThreadId",
+            "abiEntryGate",
+            "abiEntryMessage",
+            "epId",
+            "nId",
+            "none",
+            "notificationSignal",
+            "notificationWait",
+            "ofNat",
+            "ofObjectTarget",
+            "ofReplyTarget",
+            "ofThreadTarget",
+            "replyId",
+            "resolveRecvReplyId",
+            "resolveReplyRecvReply",
+            "syscallLookupCap",
+            "toNat",
+            "toValid",
+            "valid"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "declaredLockSetForAbiEntry",
+          "line": 336,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "LockSet",
+            "SystemState",
+            "abiEntryLockOperands",
+            "abiEntryPlan",
+            "bind",
+            "lockSetForSyscall",
+            "none",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "declaredLockSetForAbiEntry_binds_decode",
+          "line": 352,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "LockSet",
+            "SystemState",
+            "abiEntryLockOperands",
+            "abiEntryPlan",
+            "declaredLockSetForAbiEntry",
+            "lockSetForSyscall",
+            "none",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "abiEntryLockOperands_tcbSuspend_target_valid",
+          "line": 378,
+          "called": [
+            "SyscallDecodeResult",
+            "SyscallLockOperands",
+            "SyscallLockOperands.ofThreadTarget",
+            "SystemState",
+            "ThreadId",
+            "abiEntryGate",
+            "abiEntryLockOperands",
+            "none",
+            "ofNat",
+            "sentinel",
+            "symm",
+            "syscallLookupCap",
+            "toNat",
+            "toValid",
+            "valid"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "abiEntryLockOperands_caller",
+          "line": 425,
+          "called": [
+            "SyscallDecodeResult",
+            "SyscallLockOperands",
+            "SystemState",
+            "ThreadId",
+            "abiEntryGate",
+            "abiEntryLockOperands",
+            "none",
+            "syscallLookupCap"
+          ]
+        },
+        {
+          "kind": "inductive",
+          "name": "LockBracketOutcome",
+          "line": 462,
+          "called": [
+            "SystemState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runUnderDeclaredLockSet",
+          "line": 492,
+          "called": [
+            "CoreId",
+            "LockBracketOutcome",
+            "LockSet",
+            "SystemState",
+            "acquireAll",
+            "lockAcquireSequence",
+            "lockSetHeld",
+            "none",
+            "st",
+            "unwindAll"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "runUnderDeclaredLockSet_undeclared",
+          "line": 513,
+          "called": [
+            "CoreId",
+            "LockSet",
+            "SystemState",
+            "none",
+            "runUnderDeclaredLockSet",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "runUnderDeclaredLockSet_committed",
+          "line": 523,
+          "called": [
+            "CoreId",
+            "LockSet",
+            "SystemState",
+            "acquireAll",
+            "lockAcquireSequence",
+            "lockSetHeld",
+            "runUnderDeclaredLockSet",
+            "st",
+            "unwindAll"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "runUnderDeclaredLockSet_refused",
+          "line": 544,
+          "called": [
+            "CoreId",
+            "LockSet",
+            "SystemState",
+            "acquireAll",
+            "lockAcquireSequence",
+            "lockSetHeld",
+            "runUnderDeclaredLockSet",
+            "st",
+            "unwindAll"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "runUnderDeclaredLockSet_committed_eq_withLockSet",
+          "line": 566,
+          "called": [
+            "CoreId",
+            "Kernel",
+            "LockSet",
+            "SystemState",
+            "acquireAll",
+            "lockAcquireSequence",
+            "lockSetHeld",
+            "runUnderDeclaredLockSet",
+            "st",
+            "withLockSet"
           ]
         }
       ]
@@ -259145,7 +259509,7 @@
     {
       "module": "tests.SmpCrossCoreCallSuite",
       "path": "tests/SmpCrossCoreCallSuite.lean",
-      "declaration_count": 41,
+      "declaration_count": 57,
       "declarations": [
         {
           "kind": "namespace",
@@ -259979,10 +260343,217 @@
         },
         {
           "kind": "def",
+          "name": "bracketCNode",
+          "line": 834,
+          "called": [
+            "ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bracketVictim",
+          "line": 835,
+          "called": [
+            "ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bracketSlot",
+          "line": 836,
+          "called": [
+            "Slot",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bracketSlotCap",
+          "line": 839,
+          "called": [
+            "Capability",
+            "ofList",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bracketCNodeValue",
+          "line": 845,
+          "called": [
+            "CNode",
+            "bracketSlot",
+            "bracketSlotCap",
+            "ofListWF"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bracketCaller",
+          "line": 851,
+          "called": [
+            "TCB",
+            "bracketCNode",
+            "mkTcb",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bracketState",
+          "line": 858,
+          "called": [
+            "SystemState",
+            "bracketCNode",
+            "bracketCNodeValue",
+            "bracketCaller",
+            "build",
+            "callerTid",
+            "empty",
+            "mkTcb",
+            "none",
+            "toObjId",
+            "withCurrent",
+            "withObject",
+            "withRunnable"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bracketDecl",
+          "line": 871,
+          "called": [
+            "LockSet",
+            "SystemState",
+            "bootCoreId",
+            "declaredLockSetForAbiEntry",
+            "harnessLabelingContext",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bracketPlan",
+          "line": 875,
+          "called": [
+            "SyscallDecodeResult",
+            "SystemState",
+            "ThreadId",
+            "abiEntryPlan",
+            "bootCoreId",
+            "harnessLabelingContext",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bracketStepFn",
+          "line": 881,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "harnessLabelingContext",
+            "st",
+            "syscallDispatchCrossCoreStep"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bracketOutcome",
+          "line": 888,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "bracketDecl",
+            "bracketStepFn",
+            "runUnderDeclaredLockSet",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bracketRun",
+          "line": 891,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "harnessLabelingContext",
+            "st",
+            "syscallDispatchCrossCoreBracketedStep"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "undeclaredRun",
+          "line": 897,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "harnessLabelingContext",
+            "st",
+            "syscallDispatchCrossCoreBracketedStep"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "undeclaredBare",
+          "line": 902,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "harnessLabelingContext",
+            "st",
+            "syscallDispatchCrossCoreStep"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "undeclaredDecl",
+          "line": 907,
+          "called": [
+            "LockSet",
+            "SystemState",
+            "bootCoreId",
+            "declaredLockSetForAbiEntry",
+            "harnessLabelingContext",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runDeclaredFootprintBracketChecks",
+          "line": 912,
+          "called": [
+            "abiEntryLockOperands",
+            "acquireAll",
+            "all",
+            "assertBool",
+            "bootCoreId",
+            "bracketDecl",
+            "bracketOutcome",
+            "bracketPlan",
+            "bracketRun",
+            "bracketState",
+            "bracketStepFn",
+            "lockAcquireSequence",
+            "lockHeld",
+            "lockSetForSyscall",
+            "lockSetHeld",
+            "none",
+            "syscallDispatchCrossCoreBracketedStep_undeclared",
+            "tagWord",
+            "undeclaredBare",
+            "undeclaredDecl",
+            "undeclaredRun"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runSmpCrossCoreCallChecks",
-          "line": 819,
+          "line": 986,
           "called": [
             "runBlockingChecks",
+            "runDeclaredFootprintBracketChecks",
             "runLockSetChecks",
             "runNoReceiverChecks",
             "runPerCoreBundleChecks",
@@ -259992,7 +260563,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 832,
+          "line": 1000,
           "called": [
             "runSmpCrossCoreCallChecks"
           ]

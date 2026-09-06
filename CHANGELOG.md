@@ -1,3 +1,114 @@
+## v0.34.65 — the syscall seam acquires what it declares
+
+**WS-RR RR7.12** — fine locks, Track C: bracket the dispatch body.  **This is
+the row that makes the v1.0.0 fine-lock claim true.**  Until it, exactly one
+live export acquired a declared footprint — the raw `suspend_thread_cross_core`
+seam — so "per-object reader-writer fine locks" described one arm of
+thirty-five.
+
+### The mechanism
+
+`SeLe4n/Kernel/SyscallLockBracket.lean` (production) holds it, in the order the
+seam runs it.
+
+**The entry's own decode, named once.**  `abiEntryPlan` is the prefix
+`syscallDispatchFromAbi` performs before it dispatches — the ABI consistency
+check, the labeling-context guard, the caller read off the executing core, the
+register spill into that caller's TCB, the register-context read, the
+state-aware argument decode and the IPC-buffer TLB fill — returning the caller,
+the decode, and **the state the dispatch runs on**.  `abiEntryPlan_dispatches`
+is the anti-drift tie: whenever the plan resolves, the live dispatch *is*
+`dispatchSyscallChecked` at that same caller, decode and state.  A footprint
+resolved from a decode the dispatch does not use is a footprint for a different
+operation.
+
+**The operands, from the capability the decode addresses.**
+`abiEntryLockOperands` resolves the capability exactly as
+`dispatchSyscallChecked` builds its `SyscallGate` — same root, same depth, same
+required right — and turns its target into `SyscallLockOperands`: a thread for
+`.tcbSuspend`, an endpoint plus the message for `.send` / `.call`, an endpoint
+(and the server-supplied reply object) for `.receive`, a reply object for
+`.reply`, both for `.replyRecv`, a notification for the two notification arms.
+Fail-closed four times over: an unresolvable caller, a **multi-level** CSpace
+resolution, a capability that does not resolve at the required rights, and a
+sentinel thread target each yield no operands, hence no footprint, hence the
+fallback.
+
+The multi-level refusal is the substantive one.  The footprint's only CNode
+member is the caller's *root*; a deeper walk selects the target through interior
+CNodes no declared lock covers, so a concurrent writer could redirect the
+resolution without conflicting with the declared set.  A `LockSet` is capped at
+`maxLockSetSize` and a CSpace path is bounded only by the address width, so
+locking the path is not expressible and refusing is the honest answer.
+
+**The revalidated bracket.**  `runUnderDeclaredLockSet` resolves, acquires,
+re-resolves at the state the growing phase ended in, and refuses on any change;
+on a match it runs the step from that state and unwinds.  Two guard conditions,
+both necessary: the resolution unchanged, *and* the acquired state actually
+**holding** the footprint — `withLockSet` runs its action whether or not the
+acquisition was granted, so a step that ran on a contended footprint would have
+no exclusion at all.  The unwind is `unwindAll`, never `releaseAll`: a release
+is the identity for a non-holder, so a release-only unwind leaves every
+contended member queued (WS-LC LC4).
+
+Why re-resolve: the footprint's own CNode read lock is a member of the set it
+returns, so it is acquired strictly after the read it protects.  Under the SM5.I
+global kernel-entry lock no other core can commit in between — which is why this
+is not a live defect today — but the guard is installed *with* the bracket
+rather than after it, so removing that lock does not silently open the window.
+
+### At the seam
+
+`syscallDispatchCrossCoreEntry`'s atomic step is extracted verbatim as
+`syscallDispatchCrossCoreStep` — the dispatch, the inline local reschedule, and
+the five diffs the runtime half consumes — and the entry now hands
+`syscallDispatchCrossCoreBracketedStep` to `modifyGetKernelState`.  The diffs are
+taken against the step's own input, which under the bracket is the acquired
+state, so what the hardware is told to do describes what the action saw.
+
+**The fallback is exactly the pre-RR7.12 seam**
+(`syscallDispatchCrossCoreBracketedStep_undeclared`, definitional).  That is what
+makes landing the bracket safe while twenty-seven arms are undeclared: they run
+bit-identically, on the pre-state, with no lock written.  Falling back is always
+sound; claiming a footprint that does not cover a write never is.
+
+**A refusal commits nothing but the unwinding**
+(`syscallDispatchCrossCoreBracketedStep_refused`) and returns `.illegalState` —
+"the state was not what this operation required", the reading that error already
+carries for a syscall issued on a core running no thread.  A dedicated
+`.lockContention` would let a caller distinguish "retry me", and is worth its ABI
+cost (the error enum, `toUInt32`, the Rust mirror, the conformance and
+error-matrix suites) exactly when the refusal becomes reachable — which needs the
+commit partitioned, since `modifyGetKernelState` is today one global
+read-modify-write and the growing phase writes nothing the resolver reads.
+
+### What still does not bracket
+
+The **per-core scheduler entries** — the timer tick, the `.reschedule` SGI
+receiver and the secondary bring-up entry — commit run-queue and replenish-queue
+state under the SM5.I global entry lock only.  That is
+`UncoveredLockDomain.schedulerDomain`, and `fineLockDisciplineComplete` stays
+false.  `PerCoreWcrt.lean`'s module docstring said the live per-core run loop
+"acquires those footprints under `withLockSet`", which was false of every one of
+them; it now says which half acquires and which does not, and that live WCRT
+remains the global lock's.
+
+### The witness
+
+Without one this row would ship a mechanism nobody had seen engage: the smoke
+and trace tiers pass either way, because the golden fixture drives no syscall
+whose footprint is declared through this seam.  `SmpCrossCoreCallSuite` builds a
+caller whose registers decode to `.tcbSuspend` through a single-level CNode and
+pins that the seam declares a footprint, that it is `lockSetForSyscall`'s own
+answer at the entry's operands, that the guard **passes** on an uncontended state
+so the **committed** arm is taken (stated by matching the constructor, since a
+syscall that legitimately errors returns the same frame a refusal does), that the
+bracketed step returns the unbracketed step's frame — the footprint is exclusion,
+not semantics — that every declared member is released afterwards, and that an
+undeclared syscall takes the fallback.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md RR7.12
+
 ## v0.34.64 — the IPC hot path declares what it locks
 
 **WS-RR RR7.11** — fine locks, Track C: the seven IPC hot-path footprint

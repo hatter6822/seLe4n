@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.34.64` (`lakefile.toml`) |
+| **Package version** | `0.34.65` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 333,825 across 311 Lean files |
-| **Test LoC** | 69,445 across 70 Lean test suites |
-| **Proved declarations** | 11,119 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 334,551 across 312 Lean files |
+| **Test LoC** | 69,613 across 70 Lean test suites |
+| **Proved declarations** | 11,129 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -1759,10 +1759,24 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    which is the fail-closed direction: a declared footprint that does
    not cover a write is not a smaller optimisation but a false
    footprint, and a caller reading `none` keeps whatever coarser
-   serialisation it already has.  **Declaring is not bracketing**:
-   only the `.tcbSuspend` arm's action runs inside `withLockSet`
-   today, and wiring the rest at the production entry is WS-RR
-   RR7.12.
+   serialisation it already has.
+
+   *And the live syscall seam acquires them* (WS-RR RR7.12,
+   `v0.34.65`).  `syscallDispatchCrossCoreEntry` runs its atomic step
+   inside the declared footprint — resolve, acquire, re-resolve at the
+   state the growing phase ended in, refuse on change, unwind — with
+   the operands read off the capability the entry's own decode
+   addresses (`abiEntryPlan_dispatches` ties the two) and a
+   single-level CSpace guard, since a deeper walk selects the target
+   through CNodes no declared footprint holds a lock on.  A syscall
+   with no declared footprint runs bit-identically to the pre-RR7.12
+   seam (`syscallDispatchCrossCoreBracketedStep_undeclared`), which is
+   what makes bracketing safe while most arms are undeclared.  What
+   still brackets nothing is the **per-core scheduler path** — the
+   timer tick, the `.reschedule` SGI receiver and the secondary
+   bring-up entry commit under the SM5.I global kernel-entry lock only
+   (`UncoveredLockDomain.schedulerDomain`, WS-RR RR7.39) — so live WCRT
+   remains that lock's.
 
    **SM3.C.11 — dynamic PIP chain-walk locking**: the 3 PIP-invoking
    transitions (`.call`/`.reply`/`.replyRecv`) walk a blocking chain

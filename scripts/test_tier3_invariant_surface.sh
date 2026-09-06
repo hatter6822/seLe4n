@@ -4563,6 +4563,63 @@ run_negative_check "INVARIANT" rg -n 'match reply.caller with' SeLe4n/Kernel/API
 run_check "INVARIANT" rg -n 'runIpcDeclaredFootprintChecks' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'a caps-installing .\.receive. declares the state-level write' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'lockSet_replyRecv \(all options\) size = 9' tests/DeadlockFreedomSuite.lean
+# WS-RR RR7.12: the declared footprint is ACQUIRED at the live syscall seam.
+# Before this row exactly one live export bracketed (the raw
+# `suspend_thread_cross_core`), so "per-object reader-writer fine locks"
+# described one arm of thirty-five.  Three things get pinned: the entry's own
+# decode is named once and tied to what the dispatch runs; the operands are read
+# off the capability that decode addresses, under the single-level CSpace guard;
+# and the bracket revalidates after acquiring and refuses on change, with the
+# fail-closed fallback leaving undeclared syscalls bit-identical.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.SyscallDispatchEntry
+open SeLe4n.Kernel
+#check @abiEntryPlan
+#check @abiEntryPlan_dispatches
+#check @abiEntryGate
+#check @abiEntryMessage
+#check @abiEntryLockOperands
+#check @abiEntryLockOperands_caller
+#check @abiEntryLockOperands_tcbSuspend_target_valid
+#check @declaredLockSetForAbiEntry
+#check @declaredLockSetForAbiEntry_binds_decode
+#check @LockBracketOutcome
+#check @runUnderDeclaredLockSet
+#check @runUnderDeclaredLockSet_undeclared
+#check @runUnderDeclaredLockSet_committed
+#check @runUnderDeclaredLockSet_refused
+#check @runUnderDeclaredLockSet_committed_eq_withLockSet
+#check @syscallDispatchCrossCoreStep
+#check @syscallBracketRefusalResult
+#check @syscallDispatchCrossCoreBracketedStep
+#check @syscallDispatchCrossCoreBracketedStep_undeclared
+#check @syscallDispatchCrossCoreBracketedStep_refused
+EOF'
+# The seam runs the BRACKETED step, not the bare one.  A relation, not a
+# presence: the bare step still exists (it is what the bracket wraps and what
+# the undeclared fallback runs), so a file-wide search for its name proves
+# nothing -- what matters is which one `modifyGetKernelState` is handed.
+run_check "INVARIANT" rg -nU 'def syscallDispatchCrossCoreEntry[\s\S]*?modifyGetKernelState\n    \(syscallDispatchCrossCoreBracketedStep' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_negative_check "INVARIANT" rg -nU 'def syscallDispatchCrossCoreEntry[\s\S]*?modifyGetKernelState \(fun st =>' SeLe4n/Kernel/SyscallDispatchEntry.lean
+# The single-level CSpace guard: a multi-level resolution selects the target
+# through interior CNodes no declared footprint holds a lock on, and a `LockSet`
+# capped at `maxLockSetSize` cannot name a path bounded only by the address
+# width -- so the resolver refuses rather than declaring a footprint that does
+# not cover the read selecting its own target.
+run_check "INVARIANT" rg -n 'rootCn.depth ≠ rootCn.guardWidth \+ rootCn.radixWidth' SeLe4n/Kernel/SyscallLockBracket.lean
+run_check "INVARIANT" rg -n 'ref.cnode ≠ tcb.cspaceRoot' SeLe4n/Kernel/SyscallLockBracket.lean
+# The guard has BOTH conditions.  Re-resolving alone would run the step on a
+# footprint the growing phase never obtained, since `withLockSet` runs its action
+# whether or not the acquisition was granted.
+run_check "INVARIANT" rg -n 'declared acquired = some S ∧ lockSetHeld lockCore S acquired' SeLe4n/Kernel/SyscallLockBracket.lean
+# And the shrinking phase is `unwindAll`, never `releaseAll`: a release is the
+# identity for a non-holder, so a release-only unwind strands every contended
+# member queued on the acquiring core (WS-LC LC4).
+run_negative_check "INVARIANT" rg -n 'releaseAll lockCore' SeLe4n/Kernel/SyscallLockBracket.lean
+# The runtime witness: the bracket engages, takes the committed arm, returns the
+# unbracketed frame, and releases every member.
+run_check "INVARIANT" rg -n 'runDeclaredFootprintBracketChecks' tests/SmpCrossCoreCallSuite.lean
+run_check "INVARIANT" rg -n 'the bracket takes the COMMITTED arm' tests/SmpCrossCoreCallSuite.lean
 # PR #873 round 14: **the frozen/live correspondence, as something that runs.**
 # Each frozen operation re-implements a live transition, and which one it
 # re-implements was recorded in a markdown table and a `mirrors X` sentence.

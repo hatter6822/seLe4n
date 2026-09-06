@@ -308,15 +308,19 @@ platform rather than with the lock.
 
 > Two standing caveats. **Kernel entry is serialised by one global ticket
 > lock**, so live WCRT is weaker than the fine-lock bound `PerCoreWcrt.lean`
-> proves. And **SM3.C.9 is deferred**: the `@[export]` bodies are, with one
-> exception, not yet wrapped in `withLockSet`, so per-object fine locks remain a
-> model-level discipline. Both are registered debt with closure targets.
+> proves. And **SM3.C.9's `@[export]` body migration is not finished**: outside
+> the syscall seam the bodies are not wrapped in `withLockSet`, so per-object
+> fine locks remain a model-level discipline there. Both are registered debt
+> with closure targets.
 >
-> Declaring a footprint is not bracketing one. `lockSetForSyscall` answers
-> `some` for eight of the thirty-five syscalls since WS-RR RR7.11 — the suspend
-> arm plus the seven IPC hot-path arms — each with its coverage proof, while the
-> remaining twenty-seven answer `none` and their callers keep the coarser
-> serialisation. Only the suspend arm's action runs inside the bracket today.
+> `lockSetForSyscall` answers `some` for eight of the thirty-five syscalls since
+> WS-RR RR7.11 — the suspend arm plus the seven IPC hot-path arms — each with its
+> coverage proof, while the remaining twenty-seven answer `none` and their
+> callers keep the coarser serialisation. WS-RR RR7.12 makes the **syscall seam
+> acquire** those eight: the entry resolves the footprint from its own decode,
+> acquires, re-resolves at the state the growing phase ended in, refuses on
+> change, and unwinds — with the undeclared arms running bit-identically to
+> before. The **per-core scheduler entries** still bracket nothing.
 > The same cut moved `maxLockSetSize` from 8 to 9: a `.replyRecv` that both
 > returns a donation and installs capabilities is nine locks, the ninth being
 > the state-level lock the install's derivation-tree write needs. See

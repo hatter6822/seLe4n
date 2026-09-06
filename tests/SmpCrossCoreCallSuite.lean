@@ -816,6 +816,173 @@ private def runPerCoreBundleChecks : IO Unit := do
   assertBool "determineTargetCore routes the remote receiver's wake to core 1"
     (decide (determineTargetCore stBase recvRemoteTid = core1))
 
+-- ---------------------------------------------------------------------------
+-- WS-RR RR7.12 — the declared footprint, ACQUIRED at the live syscall seam.
+--
+-- Everything above exercises transitions; this group exercises the *bracket*.
+-- Without it the row would ship a mechanism nobody had seen engage: the smoke
+-- and trace tiers pass either way, because the golden fixture drives no syscall
+-- whose footprint is declared through this seam.
+--
+-- `.tcbSuspend` is the arm used, for the same reason SM8.D.5's fixture uses it:
+-- it is the one whose whole resolution chain — the single-level CSpace guard,
+-- the rights-gated lookup, the sentinel check, the state-resolved optionals —
+-- was already exercised, so a failure here is the bracket's and not the
+-- resolver's.
+-- ---------------------------------------------------------------------------
+
+private def bracketCNode : SeLe4n.ObjId := ⟨430⟩
+private def bracketVictim : SeLe4n.ThreadId := ⟨431⟩
+private def bracketSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 1
+
+/-- `.tcbSuspend` requires `.write` on the victim's capability. -/
+private def bracketSlotCap : Capability :=
+  { target := .object bracketVictim.toObjId,
+    rights := AccessRightSet.ofList [.read, .write] }
+
+/-- Depth 4 = `radixWidth`, so the resolution consumes every bit in one hop and
+the leaf **is** this root — the single-level shape `abiEntryGate` requires. -/
+private def bracketCNodeValue : CNode :=
+  { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+    slots := SeLe4n.UniqueSlotMap.ofListWF [(bracketSlot, bracketSlotCap)] }
+
+/-- A caller whose registers really decode to `.tcbSuspend` (`x7 = 20`) on the
+capability at slot 1 (`x0 = 1`). -/
+private def bracketCaller : TCB :=
+  { mkTcb 401 40 none with
+      cspaceRoot := bracketCNode
+      registerContext :=
+        { pc := ⟨0x1000⟩, sp := ⟨0x8000⟩,
+          gpr := fun r => if r.val == 0 then ⟨1⟩ else if r.val == 7 then ⟨20⟩ else ⟨0⟩ } }
+
+private def bracketState : SystemState :=
+  let base :=
+    (BootstrapBuilder.empty
+      |>.withObject bracketCNode (.cnode bracketCNodeValue)
+      |>.withObject callerTid.toObjId (.tcb bracketCaller)
+      |>.withObject bracketVictim.toObjId (.tcb (mkTcb 431 30 none))
+      |>.withRunnable [callerTid]
+      |>.withCurrent (some callerTid)
+      |>.build)
+  base
+
+/-- The ABI words of a `.tcbSuspend` on the capability at slot 1:
+`syscallId = 20`, `msgInfo = 0`, `x0 = 1` (the CPtr), `x1..x5 = 0`. -/
+private def bracketDecl (st : SystemState) : Option Concurrency.LockSet :=
+  declaredLockSetForAbiEntry harnessLabelingContext bootCoreId
+    (syscallId := 20) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+
+private def bracketPlan (st : SystemState) :
+    Option (SeLe4n.ThreadId × SyscallDecodeResult × SystemState) :=
+  abiEntryPlan harnessLabelingContext bootCoreId
+    (syscallId := 20) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+
+/-- The step the bracket wraps, at those same words. -/
+private def bracketStepFn (st : SystemState) :=
+  syscallDispatchCrossCoreStep harnessLabelingContext bootCoreId
+    (syscallId := 20) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0)
+    (ipcBufferAddr := 0) (elr := 0) (spsr := 0) (spEl0 := 0) (x30 := 0) st
+
+/-- Which arm of the bracket this entry takes, as the bracket itself computes
+it — `syscallDispatchCrossCoreBracketedStep` is this `match`ed and flattened. -/
+private def bracketOutcome (st : SystemState) :=
+  runUnderDeclaredLockSet bracketDecl bootCoreId bracketStepFn st
+
+private def bracketRun (st : SystemState) :=
+  syscallDispatchCrossCoreBracketedStep harnessLabelingContext bootCoreId
+    (syscallId := 20) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0)
+    (ipcBufferAddr := 0) (elr := 0) (spsr := 0) (spEl0 := 0) (x30 := 0) st
+
+/-- `.cspaceMint` (id 4) — an arm this cut leaves undeclared, for the fallback. -/
+private def undeclaredRun (st : SystemState) :=
+  syscallDispatchCrossCoreBracketedStep harnessLabelingContext bootCoreId
+    (syscallId := 4) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0)
+    (ipcBufferAddr := 0) (elr := 0) (spsr := 0) (spEl0 := 0) (x30 := 0) st
+
+private def undeclaredBare (st : SystemState) :=
+  syscallDispatchCrossCoreStep harnessLabelingContext bootCoreId
+    (syscallId := 4) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0)
+    (ipcBufferAddr := 0) (elr := 0) (spsr := 0) (spEl0 := 0) (x30 := 0) st
+
+private def undeclaredDecl (st : SystemState) : Option Concurrency.LockSet :=
+  declaredLockSetForAbiEntry harnessLabelingContext bootCoreId
+    (syscallId := 4) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+
+/-- WS-RR RR7.12: the bracket, exercised. -/
+private def runDeclaredFootprintBracketChecks : IO Unit := do
+  IO.println "--- WS-RR RR7.12 the declared footprint at the live syscall seam ---"
+  -- The seam declares a footprint for this entry at all — the precondition for
+  -- everything else in this group.
+  assertBool "the ABI seam declares a footprint for a `.tcbSuspend` decode"
+    (decide (bracketDecl bracketState).isSome)
+  -- …and it is the resolver's own answer at the operands the entry resolved,
+  -- not a set the test supplied.
+  assertBool "the declared footprint is `lockSetForSyscall`'s answer at the entry's decode"
+    (match bracketPlan bracketState with
+     | some (tid, decoded, stFilled) =>
+       decide (decoded.syscallId = .tcbSuspend) &&
+       (match abiEntryLockOperands decoded tid stFilled with
+        | some ops =>
+          decide (Concurrency.lockSetForSyscall decoded.syscallId ops stFilled
+                    = bracketDecl bracketState) &&
+          decide (ops.caller = tid)
+        | none => false)
+     | none => false)
+  -- **The committed arm is taken.**  The guard passes on an uncontended state,
+  -- so the syscall runs bracketed rather than being refused — the check that
+  -- would have caught a bracket that engages and then always declines.
+  assertBool "the guard PASSES on an uncontended state (the committed arm is taken)"
+    (match bracketDecl bracketState with
+     | some fp =>
+       let acquired := Concurrency.acquireAll bootCoreId fp.lockAcquireSequence bracketState
+       decide (bracketDecl acquired = some fp) &&
+       decide (Concurrency.lockSetHeld bootCoreId fp acquired)
+     | none => false)
+  -- **Which arm**, stated directly rather than inferred from the outcome: the
+  -- committed one.  Comparing outcome frames would not settle it — a syscall
+  -- that legitimately errors returns the same `.illegalState` frame a refusal
+  -- does, so a bracket that always declined would look identical.
+  assertBool "the bracket takes the COMMITTED arm (not `undeclared`, not `refused`)"
+    (match bracketOutcome bracketState with
+     | .committed _ => true
+     | _ => false)
+  -- NEGATIVE: and neither of the other two.
+  assertBool "NEGATIVE: the bracket neither falls back nor refuses here"
+    (match bracketOutcome bracketState with
+     | .undeclared _ => false
+     | .refused _ => false
+     | .committed _ => true)
+  -- **Bracketing does not change what the syscall returns.**  The declared
+  -- footprint is exclusion, not semantics: the growing and shrinking phases
+  -- write lock words and nothing else, so the caller's frame is the frame the
+  -- unbracketed step produced.
+  assertBool "the bracketed step returns the unbracketed step's frame"
+    (let br := bracketRun bracketState
+     let ba := bracketStepFn bracketState
+     decide (br.1.1.tagWord = ba.1.1.tagWord) &&
+     decide (br.1.1.mailboxFrame.x0 = ba.1.1.mailboxFrame.x0) &&
+     decide (br.1.1.mailboxFrame.x1 = ba.1.1.mailboxFrame.x1))
+  -- The bracket leaves nothing held: the shrinking phase runs on the committed
+  -- path too, so the next syscall on these objects is not blocked by this one.
+  assertBool "every declared member is released after the bracketed step"
+    (match bracketDecl bracketState with
+     | some fp =>
+       fp.pairs.all (fun p =>
+         decide (¬ Concurrency.lockHeld bootCoreId p.1 p.2 (bracketRun bracketState).2))
+     | none => false)
+  -- The fallback: an UNDECLARED syscall runs bit-identically to the unbracketed
+  -- step, which is what makes landing the bracket safe ahead of the remaining
+  -- declarations.
+  assertBool "an undeclared syscall's bracketed step IS the unbracketed step"
+    -- The equality itself is `syscallDispatchCrossCoreBracketedStep_undeclared`,
+    -- which is definitional; what a runtime check can add is that the fallback
+    -- path is the one this state actually takes, and that the two agree on the
+    -- word the ABI returns.
+    (have _h := @syscallDispatchCrossCoreBracketedStep_undeclared
+     decide (undeclaredDecl bracketState = none) &&
+     decide ((undeclaredRun bracketState).1.1.tagWord
+               = (undeclaredBare bracketState).1.1.tagWord))
+
 def runSmpCrossCoreCallChecks : IO Unit := do
   IO.println "WS-SM SM6.A — Cross-core endpoint call suite"
   IO.println "===================================="
@@ -824,6 +991,7 @@ def runSmpCrossCoreCallChecks : IO Unit := do
   runNoReceiverChecks
   runRendezvousChecks
   runPerCoreBundleChecks
+  runDeclaredFootprintBracketChecks
   IO.println "===================================="
   IO.println "All SM6.A cross-core call checks PASS."
 
