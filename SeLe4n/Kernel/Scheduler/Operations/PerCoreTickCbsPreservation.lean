@@ -818,6 +818,33 @@ theorem switchDomainOnCore_machine (st : SystemState) (c : CoreId)
     · simp only [Except.ok.injEq] at h; subst h
       exact saveOutgoingContextOnCore_machine st c
 
+/-- **WS-RR RR7.39 (frame)**: the domain tick never touches any core's replenish
+queue.
+
+Three arms, none of which reaches a replenishment: single-domain mode is the
+identity, the boundary composes the queue-framing `switchDomainOnCore` with the
+queue-framing `scheduleEffectiveOnCore`, and the non-boundary arm writes one
+domain-time slot.
+
+Consumed by `perCoreTimerTickStep_replenishQueueOnCore_ne` (RR7.39), which is the
+last link in "the tick writes only its own core's replenish queue" — the fact the
+tick's declared footprint asserts when it names `replenishQueue ⟨c⟩` alone. -/
+theorem scheduleDomainOnCore_replenishQueueOnCore (st : SystemState) (c : CoreId)
+    (st' : SystemState) (c' : CoreId) (hStep : scheduleDomainOnCore st c = .ok st') :
+    st'.scheduler.replenishQueueOnCore c' = st.scheduler.replenishQueueOnCore c' := by
+  unfold scheduleDomainOnCore at hStep
+  split at hStep
+  · simp only [Except.ok.injEq] at hStep; subst hStep; rfl
+  · split at hStep
+    · split at hStep
+      · simp at hStep
+      · rename_i stMid hsw
+        rw [scheduleEffectiveOnCore_replenishQueueOnCore stMid c st' c' hStep,
+          switchDomainOnCore_replenishQueueOnCore st c stMid c' hsw]
+    · simp only [Except.ok.injEq] at hStep; subst hStep
+      simp [decrementDomainTimeOnCore,
+        SchedulerState.setDomainTimeRemainingOnCore_replenishQueueOnCore]
+
 /-- WS-SM (PR #880 round 4): the domain tick preserves pipeline order on every
 core — the inert arm is the identity, the decrement writes one domain slot,
 and the boundary composes the queue/timer-framing switch with the preserving

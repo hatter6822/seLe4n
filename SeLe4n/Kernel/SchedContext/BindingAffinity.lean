@@ -311,6 +311,15 @@ theorem purgeReplenishmentFromAllCores_preserves_replenishQueueEntriesBound_smp
   rw [purgeReplenishmentFromAllCores_replenishQueueOnCore st scId c] at hMem
   exact hCons c scId₀ t (mem_remove_entries hMem).1
 
+-- **WS-RR RR7.39**: `SystemState` gained the `schedulerLocks` field (the state
+-- representation of `SchedLockId.runQueue` / `.replenishQueue`), so every
+-- structural `isDefEq` over a `SystemState` record update compares one more
+-- field.  This characterisation rewrites through a `match` on `getTcb?` whose
+-- motive abstracts two such updates, and it was already the tree's most
+-- expensive scheduler-context proof; the extra field pushes it past the default
+-- budget.  Raised here rather than restructured because the cost is structural
+-- (field count), not a proof-search pathology.
+set_option maxHeartbeats 800000 in
 /-- **The `schedContextUnbind` characterisation**: a successful unbind read a
 SchedContext bound to `tid` and produced exactly one of two shapes — the main
 arm (the bound TCB exists: both binding sides cleared, the home-core purge) or

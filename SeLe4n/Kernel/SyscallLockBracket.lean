@@ -11,6 +11,7 @@
 -- seam runs.  `SeLe4n/Kernel/SyscallDispatchEntry.lean` is the consumer.
 
 import SeLe4n.Kernel.Concurrency.Locks.LockSetForSyscall
+import SeLe4n.Kernel.Concurrency.Locks.LockBracket
 import SeLe4n.Platform.FFI
 
 /-!
@@ -93,7 +94,8 @@ namespace SeLe4n.Kernel
 open SeLe4n
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (CoreId LockSet lockSetForSyscall SyscallLockOperands
-  withLockSet acquireAll unwindAll lockSetHeld)
+  withLockSet acquireAll unwindAll lockSetHeld LockBracketOutcome runBracketed
+  objectLockBracketDomain)
 
 -- ============================================================================
 -- §1  The entry's own decode, named once
@@ -450,57 +452,34 @@ theorem abiEntryLockOperands_caller (decoded : SyscallDecodeResult)
 -- §3  The revalidated bracket
 -- ============================================================================
 
-/-- **WS-RR RR7.12**: what a bracketed step can do.
+/-- **WS-RR RR7.12**: run the ABI seam's step inside its declared footprint,
+revalidating — the object domain's instance of RR7.39's shared bracket.
 
-Three outcomes, because they oblige the caller differently and collapsing any
-two of them loses something.  `undeclared` did not acquire and has nothing to
-release — the caller keeps its coarser serialisation, which is always sound.
-`refused` **did** acquire, so it carries the state with the footprint unwound;
-returning a refusal without the unwinding would strand the footprint on
-`lockCore` and block every later user of those objects.  `committed` ran the
-step from the state the growing phase ended in and released after it. -/
-inductive LockBracketOutcome (α : Type) where
-  /-- No footprint is declared for this operation; the step ran unbracketed. -/
-  | undeclared (result : α × SystemState)
-  /-- A footprint was acquired and the guard then refused; the state carries the
-  footprint **unwound** — released where it was granted, withdrawn where it was
-  only queued. -/
-  | refused (unwound : SystemState)
-  /-- The guard passed; the step ran under the footprint, which was then
-  released. -/
-  | committed (result : α × SystemState)
+`runBracketed` at `objectLockBracketDomain` and nothing else, so the acquire /
+re-resolve / refuse / commit / unwind discipline this seam runs is the *same
+definition* the per-core scheduler entries run
+(`SeLe4n/Kernel/SchedLockBracket.lean`).  RR7.39 made it shared: a second
+revalidating bracket, spelled out beside this one over a different domain, would
+be one question with two answers, and the two would drift at the first fix
+applied to only one of them.
 
-/-- **WS-RR RR7.12**: run a step inside its declared footprint, revalidating.
-
-Resolve, acquire, **re-resolve at the state the growing phase ended in**, and
-refuse on any change; on a match run the step from that state and unwind.
-
-Two conditions, both necessary.  The resolution must not have moved — the
-footprint's own CNode read lock is a member of the set it returns, so it is
-acquired strictly after the read it protects, and another core could replace the
-caller's capability in between.  And the acquired state must actually **hold**
-the footprint: `withLockSet`'s growing phase runs the action whether or not it
-was granted (`lockSetAcquiredState_does_not_grant_when_contended`), so a step
-that ran on a contended footprint would have no exclusion at all.
-
-The step runs from `acquired`, not from `st` — re-running it from `st` would
-discard exactly the growing phase whose grant the guard just checked.
-
-`unwindAll` rather than `releaseAll` on the refusal path (WS-LC LC4): a release
-is the identity for a non-holder, so a release-only unwind leaves every
-*contended* member of the footprint still queued on `lockCore`. -/
+What the domain record supplies — `LockSet.lockAcquireSequence`, `acquireAll`,
+`unwindAll`, `lockSetHeld` — is exactly what this definition used to name
+inline; the reasoning about *why* those five steps are the right ones lives with
+the shared bracket. -/
 def runUnderDeclaredLockSet {α : Type} (declared : SystemState → Option LockSet)
     (lockCore : CoreId) (step : SystemState → α × SystemState) (st : SystemState) :
     LockBracketOutcome α :=
-  match declared st with
-  | none => .undeclared (step st)
-  | some S =>
-    let acquired := acquireAll lockCore S.lockAcquireSequence st
-    if declared acquired = some S ∧ lockSetHeld lockCore S acquired then
-      let (v, post) := step acquired
-      .committed (v, unwindAll lockCore S.lockAcquireSequence.reverse post)
-    else
-      .refused (unwindAll lockCore S.lockAcquireSequence.reverse acquired)
+  runBracketed objectLockBracketDomain declared lockCore step st
+
+/-- **WS-RR RR7.39**: the ABI seam's bracket **is** the shared bracket at the
+object domain.  Definitional, and stated so a future cut cannot quietly give
+this seam a private copy again. -/
+theorem runUnderDeclaredLockSet_eq_runBracketed {α : Type}
+    (declared : SystemState → Option LockSet) (lockCore : CoreId)
+    (step : SystemState → α × SystemState) (st : SystemState) :
+    runUnderDeclaredLockSet declared lockCore step st
+      = runBracketed objectLockBracketDomain declared lockCore step st := rfl
 
 /-- **WS-RR RR7.12 (the fallback is exactly today's behaviour)**: with no
 footprint declared, the bracket is the bare step.
@@ -514,9 +493,9 @@ path stops this elaborating. -/
     (declared : SystemState → Option LockSet) (lockCore : CoreId)
     (step : SystemState → α × SystemState) (st : SystemState)
     (h : declared st = none) :
-    runUnderDeclaredLockSet declared lockCore step st = .undeclared (step st) := by
-  unfold runUnderDeclaredLockSet
-  rw [h]
+    runUnderDeclaredLockSet declared lockCore step st = .undeclared (step st) :=
+  SeLe4n.Kernel.Concurrency.runBracketed_undeclared objectLockBracketDomain
+    declared lockCore step st h
 
 /-- **WS-RR RR7.12**: on the committed arm the step ran from the **acquired**
 state and the returned state is that step's post-state, unwound. -/
@@ -529,10 +508,9 @@ theorem runUnderDeclaredLockSet_committed {α : Type}
     runUnderDeclaredLockSet declared lockCore step st
       = .committed ((step (acquireAll lockCore S.lockAcquireSequence st)).1,
           unwindAll lockCore S.lockAcquireSequence.reverse
-            (step (acquireAll lockCore S.lockAcquireSequence st)).2) := by
-  unfold runUnderDeclaredLockSet
-  rw [hDecl]
-  simp only [if_pos hGuard]
+            (step (acquireAll lockCore S.lockAcquireSequence st)).2) :=
+  SeLe4n.Kernel.Concurrency.runBracketed_committed objectLockBracketDomain
+    declared lockCore step st S hDecl hGuard
 
 /-- **WS-RR RR7.12 (a refusal commits nothing but the unwinding)**: the state a
 refusal carries is the pre-state with the footprint acquired and then unwound —
@@ -549,10 +527,9 @@ theorem runUnderDeclaredLockSet_refused {α : Type}
       lockSetHeld lockCore S (acquireAll lockCore S.lockAcquireSequence st))) :
     runUnderDeclaredLockSet declared lockCore step st
       = .refused (unwindAll lockCore S.lockAcquireSequence.reverse
-          (acquireAll lockCore S.lockAcquireSequence st)) := by
-  unfold runUnderDeclaredLockSet
-  rw [hDecl]
-  simp only [if_neg hGuard]
+          (acquireAll lockCore S.lockAcquireSequence st)) :=
+  SeLe4n.Kernel.Concurrency.runBracketed_refused objectLockBracketDomain
+    declared lockCore step st S hDecl hGuard
 
 /-- **WS-RR RR7.12**: the bracket's committed arm **is** `withLockSet` at the
 acquired state.
@@ -572,8 +549,9 @@ theorem runUnderDeclaredLockSet_committed_eq_withLockSet {α : Type}
     runUnderDeclaredLockSet declared lockCore
         (fun s => ((step s).2, (step s).1)) st
       = .committed ((withLockSet S lockCore step st).2, (withLockSet S lockCore step st).1) := by
-  unfold runUnderDeclaredLockSet withLockSet
-  rw [hDecl]
-  simp only [if_pos hGuard]
+  rw [runUnderDeclaredLockSet_eq_runBracketed,
+    SeLe4n.Kernel.Concurrency.runBracketed_committed objectLockBracketDomain
+      declared lockCore (fun s => ((step s).2, (step s).1)) st S hDecl hGuard]
+  rfl
 
 end SeLe4n.Kernel

@@ -78,11 +78,19 @@ def commitPrimitives : List Name :=
 
 /-- The bracket forms a committing body may run its transition inside.
 
-`runUnderDeclaredLockSet` is RR7.12's revalidated bracket at the ABI seam;
-`Concurrency.withLockSet` is SM3's plain one, which the raw
-`suspend_thread_cross_core` seam has used since SM3.C.9. -/
+`runUnderDeclaredLockSet` is RR7.12's revalidated bracket at the ABI seam and
+`Concurrency.runBracketed` is the shared definition underneath it (WS-RR RR7.39),
+which the scheduler entries reach through `timerTickUnderDeclaredLockSet` /
+`rescheduleUnderDeclaredLockSet`; `Concurrency.withLockSet` is SM3's plain one,
+which the raw `suspend_thread_cross_core` seam has used since SM3.C.9.
+
+`runBracketed` alone would suffice for both revalidating seams — RR7.12's is
+definitionally an instance of it — but naming the seam-level form too keeps this
+list readable as *what a reviewer will find in a body*, and a body reaching
+either is bracketed by the same argument. -/
 def bracketForms : List Name :=
   [ `SeLe4n.Kernel.runUnderDeclaredLockSet
+  , `SeLe4n.Kernel.Concurrency.runBracketed
   , `SeLe4n.Kernel.Concurrency.withLockSet ]
 
 /-- How an exported seam commits. -/
@@ -172,10 +180,11 @@ addition to the unbracketed majority. -/
 
 /-- Every state-committing `@[export]` of this kernel, with how it commits.
 
-Two of seven bracket today.  The five that do not each name the row that closes
-them, so this list is the project's honest statement of how much of the kernel
-the fine-lock discipline actually covers — the figure a release claim has to
-quote. -/
+**Five of seven bracket** since WS-RR RR7.39 (two before it): the two syscall
+seams and the three per-core scheduler entries.  The two that do not are the
+fault-delivery seams, and each names why, so this list is the project's honest
+statement of how much of the kernel the fine-lock discipline actually covers —
+the figure a release claim has to quote. -/
 def commitDisciplineRegistry : List (Name × CommitDiscipline) :=
   [ -- SM3.C.9's first bracketed seam: resolves `lockSetForSyscall .tcbSuspend`
     -- and runs `suspendThreadOnCore` inside it.
@@ -183,22 +192,18 @@ def commitDisciplineRegistry : List (Name × CommitDiscipline) :=
     -- WS-RR RR7.12: the ABI seam, revalidated.  Bracketed for the eight
     -- declared arms and falling back — bit-identically — for the rest.
   , (`SeLe4n.Kernel.syscallDispatchCrossCoreEntry, .bracketed)
-    -- The three per-core scheduler entries.  They commit run-queue and
-    -- replenish-queue state, which lives in the `SchedLockId` domain rather
-    -- than the object-lock domain a `LockSet` names, so bracketing them needs
-    -- the scheduler-domain footprints composed first — the registered
-    -- `UncoveredLockDomain.schedulerDomain`, closed by WS-RR's Track C closure
-    -- rows.
-  , (`SeLe4n.Kernel.perCoreTimerTickEntry,
-      .unbracketed "scheduler domain: commits per-core run-queue and replenish-queue \
-        state, whose locks are `SchedLockId`s and not members of any `LockSet`; \
-        registered as `UncoveredLockDomain.schedulerDomain`")
-  , (`SeLe4n.Kernel.perCoreRescheduleEntry,
-      .unbracketed "scheduler domain: same as the timer tick — the `.reschedule` SGI \
-        receiver dispatches a successor on the receiving core")
-  , (`SeLe4n.Kernel.secondaryKernelMain,
-      .unbracketed "scheduler domain: the secondary bring-up entry installs a core's \
-        first current thread before any footprint could name it")
+    -- WS-RR RR7.39: the three per-core scheduler entries.  They commit run-queue
+    -- and replenish-queue state, which lives in the `SchedLockId` domain rather
+    -- than the object-lock domain a `LockSet` names — so RR7.39 gave that domain
+    -- a runtime (`SystemState.schedulerLocks`, the `SchedLockId` primitives, the
+    -- `SchedLockSet` footprint type) and an instance of the shared bracket, and
+    -- these three now acquire the footprints SM5.B–G declared for them.
+  , (`SeLe4n.Kernel.perCoreTimerTickEntry, .bracketed)
+  , (`SeLe4n.Kernel.perCoreRescheduleEntry, .bracketed)
+    -- Bring-up *is* the reschedule entry (`secondaryKernelMain_eq_perCoreRescheduleEntry`,
+    -- by `rfl`), so it acquires the same footprint by construction rather than by
+    -- a second declaration.
+  , (`SeLe4n.Kernel.secondaryKernelMain, .bracketed)
     -- The two fault-delivery entries.  A fault is not a syscall, so
     -- `lockSetForSyscall` has no arm for it; its footprint is the `.call`
     -- chain's plus the faulting thread's TCB, and declaring that is WS-RR RR4's

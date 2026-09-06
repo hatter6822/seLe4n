@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.88.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.89.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1550,19 +1550,38 @@ code may assume:
   (`syscallDispatchCrossCoreBracketedStep_refused`); it is unreachable today,
   since `modifyGetKernelState` is one global read-modify-write and the growing
   phase writes nothing the resolver reads, and a dedicated `.lockContention`
-  becomes worth its ABI cost when the commit is partitioned.  What still does
-  **not** bracket is the per-core scheduler path — the timer tick, the
-  `.reschedule` SGI receiver and the secondary bring-up entry commit run-queue
-  and replenish-queue state under the SM5.I global entry lock only, which is
-  `UncoveredLockDomain.schedulerDomain` and RR7.39's row.  So live WCRT is still
-  the global lock's, and `PerCoreWcrt.lean` says which half acquires.
+  becomes worth its ABI cost when the commit is partitioned.  The per-core scheduler path
+  brackets too since **WS-RR RR7.39** (v0.34.89), which gave `SchedLockId` the
+  state words it never had (`SystemState.schedulerLocks`) and made the
+  revalidating bracket shared — `Concurrency.runBracketed`, of which RR7.12's
+  `runUnderDeclaredLockSet` is now definitionally the object-domain instance.  So
+  the timer tick, the `.reschedule` SGI receiver and the secondary bring-up entry
+  run inside the footprints SM5.B–G declared for them, with the write set proved
+  inside the footprint on both steps (`perCoreRescheduleStep_coversWrites`,
+  `perCoreTimerTickStep_coversWrites`).  Two things new code must respect.  (1)
+  **The tick's footprint names every core's run-queue write lock**, not the boot
+  core's and its own: the replenish drain and the bound-exhausted timeout both
+  wake via `determineTargetCore`, so the two-lock segment was a *false* footprint
+  from SM5.F onward, and RR7.39 fixed it — the widening is free, because every
+  tick footprint already holds the object-store *table* lock
+  (`timerTickOnCoreCompleteLockSet_serialises_pairwise`), and `maxLockSetSize`
+  does not move.  (2) **The scheduler domain is not fully covered**: what remains
+  is the *syscall* seam's scheduler writes — an `endpointSend`'s receiver wake —
+  because `lockSetForSyscall` returns a `LockSet` whose `LockId` cannot name a
+  run-queue lock at all.  That is `UncoveredLockDomain.syscallSeamSchedulerDomain`,
+  owner RR8, and it needs per-arm resolved wake targets rather than the free
+  over-approximation, since those footprints hold `stateLevelLock` and per-object
+  locks rather than the table lock.  Live WCRT is still the global lock's, and
+  `PerCoreWcrt.lean` says which half acquires.
   **How much of the kernel that is, is measured rather than asserted** (RR7.13,
   v0.34.66): `SeLe4n/Testing/ExportCommitDisciplineCensus.lean` derives the
   state-committing `@[export]` set from the elaborated environment — transitive
   `getUsedConstants` reachability to a `kernelStateRef` write — and reconciles it
   against a registry in **both** directions, so an unclassified committing seam
-  and a stale entry are each a build failure.  **Seven seams commit; two
-  bracket.**  A body recorded `bracketed` must reach `runUnderDeclaredLockSet` or
+  and a stale entry are each a build failure.  **Seven seams commit; five
+  bracket** (WS-RR RR7.39 — the two syscall seams and, since it gave the
+  scheduler domain a runtime, the three per-core scheduler entries; two before
+  it).  A body recorded `bracketed` must reach `runUnderDeclaredLockSet` or
   `Concurrency.withLockSet`; one recorded `unbracketed` must carry a reason.  New
   code adding an `@[export]` that commits kernel state must classify it there —
   that is where the project's coverage figure is read off, and the two

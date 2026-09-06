@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.34.88` (`lakefile.toml`) |
+| **Package version** | `0.34.89` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 340,168 across 317 Lean files |
-| **Test LoC** | 70,817 across 70 Lean test suites |
-| **Proved declarations** | 11,316 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 341,796 across 321 Lean files |
+| **Test LoC** | 70,927 across 70 Lean test suites |
+| **Proved declarations** | 11,393 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -1753,10 +1753,13 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    the wrappers semantically meaningful without wrapping anything.
    The **syscall seam** brackets since WS-RR RR7.12 (`v0.34.65`), the
    raw `suspend_thread_cross_core` since SM3.C.9's own exception, and
-   the three per-core scheduler entries still do not — they are
-   `UncoveredLockDomain.schedulerDomain` and WS-RR RR7.39's row.
-   `ExportCommitDisciplineCensus` measures which is which: seven seams
-   commit, two bracket.)*
+   the three per-core scheduler entries do too since WS-RR RR7.39, which
+   gave the `SchedLockId` domain a runtime.  What remains uncovered is
+   the *syscall* seam's scheduler writes —
+   `UncoveredLockDomain.syscallSeamSchedulerDomain`, since
+   `lockSetForSyscall` returns a `LockSet` whose `LockId` cannot name a
+   run-queue lock.  `ExportCommitDisciplineCensus` measures which is
+   which: seven seams commit, five bracket.)*
 
    *Progress.*  The piece that connects the SM3 footprints to a
    running syscall is `lockSetForSyscall : SyscallId →
@@ -1786,12 +1789,15 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    through CNodes no declared footprint holds a lock on.  A syscall
    with no declared footprint runs bit-identically to the pre-RR7.12
    seam (`syscallDispatchCrossCoreBracketedStep_undeclared`), which is
-   what makes bracketing safe while most arms are undeclared.  What
-   still brackets nothing is the **per-core scheduler path** — the
-   timer tick, the `.reschedule` SGI receiver and the secondary
-   bring-up entry commit under the SM5.I global kernel-entry lock only
-   (`UncoveredLockDomain.schedulerDomain`, WS-RR RR7.39) — so live WCRT
-   remains that lock's.
+   what makes bracketing safe while most arms are undeclared.  The
+   **per-core scheduler path** brackets too since WS-RR RR7.39
+   (`v0.34.89`), which gave `SchedLockId` the state words it never had
+   and made the revalidating bracket shared between the two domains;
+   what remains uncovered is the *syscall* seam's scheduler writes
+   (`UncoveredLockDomain.syscallSeamSchedulerDomain`, owner RR8),
+   because `lockSetForSyscall` returns a `LockSet` whose `LockId`
+   cannot name a run-queue lock.  Live WCRT remains the global entry
+   lock's until Track D retires it.
 
    *And how much of the kernel that is, is measured* (WS-RR RR7.13,
    `v0.34.66`).  `SeLe4n/Testing/ExportCommitDisciplineCensus.lean`
@@ -1800,7 +1806,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    each export to a `kernelStateRef` write — and reconciles it against
    a registry in both directions, so an unclassified committing seam
    and a stale entry are each a build failure.  **Seven seams commit;
-   two bracket.**  A record of `bracketed` must be substantiated by
+   five bracket** (WS-RR RR7.39; two before it).  A record of `bracketed` must be substantiated by
    reachability to a bracket form; one of `unbracketed` must carry a
    reason.  Building the module is the check, and its witnesses — a
    planted bare-commit body, a commit reached only through a helper, a

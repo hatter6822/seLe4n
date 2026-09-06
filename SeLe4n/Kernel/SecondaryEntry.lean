@@ -130,10 +130,14 @@ theorem secondaryKernelMain_eq_perCoreRescheduleEntry (coreId : UInt64) :
     secondaryKernelMain coreId = perCoreRescheduleEntry coreId := rfl
 
 /-- **WS-SM SM5.C.5**: the bring-up entry unfolds to the atomic commit of the
-verified reschedule step followed by the HAL current-thread record (the
+bracketed reschedule step followed by the HAL current-thread record (the
 composition of `secondaryKernelMain_eq_perCoreRescheduleEntry` with
 `perCoreRescheduleEntry_def`, stated directly so tier-3 surface scans can
 pin the full body shape at one name).
+
+**WS-RR RR7.39**: bring-up runs inside the same declared footprint the
+`.reschedule` receiver does, because it *is* that entry — one definition, so the
+two seams cannot acquire different footprints for the same step.
 
 **WS-RR RR7.26**: the record is what makes bring-up hand the HAL a thread at
 all.  A freshly-onlined core has `currentOnCore c = none`, so its first
@@ -143,7 +147,7 @@ theorem secondaryKernelMain_def (coreId : UInt64) :
     secondaryKernelMain coreId =
       (do
         let record ← Platform.FFI.modifyGetKernelState (fun st =>
-          let st' := perCoreRescheduleStep st coreId
+          let st' := (rescheduleUnderDeclaredLockSet coreId st).state
           ((Concurrency.coreIdOfUInt64? coreId).map
             (fun c => (c, st'.scheduler.currentOnCore c)), st'))
         Concurrency.recordCommittedCurrentThreadHw record) := rfl

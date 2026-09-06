@@ -406,6 +406,7 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbsInventory
 -- `timerTickOnCore_preserves_perCoreCbsInvariant` (affinity-consistency supplied as the
 -- placement-gated input).  The SM5.I per-core run loop is the runtime exerciser.
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsPreservation
+import SeLe4n.Kernel.Scheduler.Operations.SchedLockTimerContainment
 -- WS-SM SM5.I (affinity discharge): the live per-core timer tick preserves
 -- replenish-queue affinity-consistency.  Strengthens the perCoreCbsInvariant
 -- aggregate (timerTickOnCore_preserves_perCoreCbsInvariant_discharged) — the carried

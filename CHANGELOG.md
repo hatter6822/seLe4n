@@ -1,3 +1,133 @@
+## v0.34.89 — WS-RR RR7.39: the scheduler lock domain gets a runtime, and the three per-core scheduler entries bracket
+
+**WS-RR RR7.39 (fine locks, Track C closure — the scheduler domain).**  SM5.A.2
+gave the per-core scheduler its cross-domain lock identifier (`SchedLockId`,
+ordered `object < runQueue < replenishQueue`) and SM5.B–G declared a footprint for
+every per-core transition.  What none of that had was a **runtime**: `LockSet`'s
+primitives route `.objStore` to `SystemState.objStoreLock` and a modeled kind to
+the object's own `lock` field, and neither is a per-core scheduler word, because
+no such word existed.  A bracket over `chooseThreadOnCoreLockSet` could sort the
+list, walk it, and change nothing — the footprints were declarations without a
+runtime, which is why the plan row's "bracket the export bodies through
+`withLockSet`" was not implementable as written.
+
+### The domain
+
+* **State.**  `SystemState.schedulerLocks : SchedulerLockState` — one
+  `RwLockState` per core for run queues and one for replenishment queues.  It
+  sits beside `objStoreLock` and **not** inside `SchedulerState`, for the reason
+  the object store's lock sits beside `objects` rather than inside the table: a
+  lock write must *frame* the data it guards, and every `st.scheduler` frame lemma
+  in the tree would be false of an acquisition that lived in the scheduler record.
+  Grouped as one nested record because `SystemState` is compared field-by-field by
+  `isDefEq` in several thousand `rfl`-shaped proofs.
+* **Primitives.**  `schedAcquireLock` / `schedReleaseLock` / `schedCancelLock` /
+  `schedLockHeld`, whose `.object` arm **calls SM3.C's own** rather than
+  re-deriving what acquiring an object lock does — one answer to that question,
+  including its fail-closed kind check and its `.page` no-op.
+* **Footprint type.**  `SchedLockSet`, mirroring `LockSet` field for field, with a
+  fail-closed `ofList?` that refuses a list whose keys repeat: a footprint naming
+  one lock twice would have a read-acquire counted twice and a reader the
+  shrinking phase never removes.  A refused list declares nothing, which routes to
+  the bracket's always-sound undeclared arm.
+
+### One bracket, two domains
+
+`SeLe4n/Kernel/Concurrency/Locks/LockBracket.lean` is new and holds
+`runBracketed` — resolve, acquire, **re-resolve at the state the growing phase
+ended in**, refuse on change, otherwise run from that state and unwind — over a
+`LockBracketDomain` record supplying five primitives.  RR7.12's
+`runUnderDeclaredLockSet` is now *definitionally* its object-domain instance
+(`runUnderDeclaredLockSet_eq_runBracketed`), and the scheduler entries run
+`schedulerLockBracketDomain`.  Writing a second revalidating bracket beside the
+first is the one-question-two-answers shape the key conventions name; this is the
+derivation.
+
+### A finding, fixed here because it blocked the row
+
+`timerTickOnCoreCompleteLockSet` — the set documented as the tick's *complete*
+footprint — named at most two run-queue write locks, `runQueue ⟨bootCoreId⟩` and
+`runQueue ⟨c⟩`, on the stated grounds that `timeoutThread`'s re-enqueue and
+`updatePipBoost` were "`bootCoreId`-pinned pre-SM5.F".  SM5.F landed, and PR #880
+rounds 7 and 8 made **both** of the tick's wake paths target-aware: the replenish
+drain's `processOneReplenishmentOnCore` calls `wakeThread`, which enqueues on
+`determineTargetCore` — the woken thread's affinity, hence an arbitrary core — and
+the bound-exhausted arm's `timeoutThread` does the same, its own comment saying
+"not the boot queue".  The declaration was never updated with the code, so a tick
+on core `c` could write `runQueue ⟨d⟩` for a `d` the footprint did not name.
+
+That is a **false footprint**: a declared lock set that does not cover a write
+leaves the 2PL argument resting on exclusion the runtime never established.  It
+was not a live defect — nothing acquired these footprints until this cut, and the
+SM5.I global entry lock serialises every commit — but this *is* the cut that
+starts acquiring them.  The run-queue segment is now **every** core's
+(`allCoreRunQueueLockSegment`), and the trade-off is machine-checked rather than
+argued: `timerTickOnCoreCompleteLockSet_serialises_pairwise` says any two ticks
+already share the object-store *table* write lock, so widening the segment from
+two locks to `numCores` costs no achievable concurrency at all.  Six locks against
+a `maxLockSetSize` of nine; the constant does not move, so no other operation's
+admissible critical section changes.  The replenish segment stays core `c`'s alone
+— exact, not over-approximated, and now proved.
+
+### The entries
+
+`perCoreTimerTickEntry`, `perCoreRescheduleEntry` and `secondaryKernelMain` (which
+*is* the reschedule entry, by `rfl`) run their verified steps inside footprints
+resolved from their own `coreIdOfUInt64?` decode — so a footprint is declared
+exactly when there is a step to bracket, and an out-of-range id declares nothing
+and acquires nothing.  A refused timer bracket produces no value, so the entry
+advances neither the HAL's shadow clock nor any cross-core SGI: a tick that did
+not run pokes nobody.
+
+**Write-set containment is proved, not asserted.**
+`schedFootprintCoversWrites` states the obligation as data — for every lock the
+footprint does *not* name, the state it guards is unchanged — quantified over
+every core, so an under-declared footprint makes it false rather than vacuous.
+`perCoreRescheduleStep_coversWrites` is production;
+`perCoreTimerTickStep_coversWrites` is staged, because its frame chain runs
+through `PerCoreCbs` and `PerCoreTickCbsPreservation`, both staged.  Three new
+frame lemmas were needed and each sits beside the transition it is about:
+`scheduleDomainOnCore_replenishQueueOnCore`,
+`timerTickBudgetOnCore_replenishQueueOnCore_ne` and
+`timerTickOnCore_replenishQueueOnCore_ne`.
+
+### The register
+
+`UncoveredLockDomain.schedulerDomain` is **narrowed, not deleted**.  It names
+`suspendThreadOnCoreSchedLockSet` — a *syscall* footprint — so what it records is
+the syscall seam's half of the domain, and RR7.39 closed the entries' half, which
+nothing had recorded.  Deleting it would have claimed the syscall half;
+`syscallSeamSchedulerDomain` records exactly what remains, owner **RR8**.  Why
+that is its own cut: the object-domain syscall footprints hold `stateLevelLock`
+and per-object locks rather than the object-store table lock, so the free
+over-approximation above is not available there and each declared arm must name
+its *resolved* wake targets — RR7.11's shape, over a domain this cut has built.
+
+`ExportCommitDisciplineCensus` now records **five of seven** committing seams as
+bracketed (two before), and `bracketForms` gained `Concurrency.runBracketed`.
+
+### Tests and documentation
+
+* `tests/SmpFoundationsSuite.lean` §2.19 — 21 new checks over the domain (words
+  unheld at boot, an acquire visible in exactly the word it names and framing the
+  data it guards, the unwind giving it back), the fail-closed footprint
+  constructor (a duplicated list refused), the corrected tick footprint (every
+  core's run queue; only its own replenish queue; within `maxLockSetSize`), both
+  entries' declaration and its fail-closed refusal, and the bracket's undeclared,
+  committed and lock-restoring behaviour.  Four are load-bearing negatives.
+* `CLAUDE.md` / `AGENTS.md`, `docs/spec/SELE4N_SPEC.md`,
+  `docs/gitbook/12-proof-and-invariant-map.md`,
+  `docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md`, `docs/REGISTERED_DEBT.md` and
+  the RR7.39 plan row all carry the five-of-seven figure and the narrowed
+  constructor.
+* `SeLe4n/Kernel/SchedContext/BindingAffinity.lean` raises `maxHeartbeats` on one
+  characterisation: the extra `SystemState` field costs one more structural
+  `isDefEq` per record comparison, and that proof was already the tree's most
+  expensive scheduler-context one.  The cost is structural, not a proof-search
+  pathology, so the budget is raised rather than the proof restructured.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR7 (row RR7.39)
+
 ## v0.34.88 — authorization is not exclusion
 
 **WS-RR RR7.38** — `UncoveredLockDomain.queueOwnershipProtocol`, the third of

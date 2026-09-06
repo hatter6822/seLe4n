@@ -117,11 +117,14 @@ elaborates the subset relevant to it.
 > brackets all five state-committing entries. Inside it, WS-RR RR7.12
 > (v0.34.65) brackets the **syscall seam** through `withLockSet` for the
 > eight arms that declare a footprint; the other twenty-seven answer
-> `none`, and the per-core scheduler entries — the timer tick, the
-> `.reschedule` SGI receiver, the secondary bring-up entry — bracket
-> nothing at all (`UncoveredLockDomain.schedulerDomain`). So the
-> per-object locks are a model-level discipline on most of the surface,
-> and the shipping worst case is the global lock's, not §7.2's.
+> `none`. The per-core scheduler entries — the timer tick, the
+> `.reschedule` SGI receiver, the secondary bring-up entry — bracket too
+> since **RR7.39** (v0.34.89), which gave `SchedLockId` its state words
+> and made the revalidating bracket shared; what remains uncovered there
+> is the *syscall* seam's scheduler writes
+> (`UncoveredLockDomain.syscallSeamSchedulerDomain`, owner RR8). So the
+> per-object locks are still a model-level discipline on much of the
+> surface, and the shipping worst case is the global lock's, not §7.2's.
 >
 > Removing the entry lock is scheduled, not assumed: **RR7.39** (the
 > scheduler domain), **RR7.40** (the dynamic PIP chain) and **RR7.41**

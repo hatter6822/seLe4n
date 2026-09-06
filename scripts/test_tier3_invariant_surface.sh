@@ -2997,7 +2997,43 @@ run_check "INVARIANT" rg -n '^theorem UncoveredLockDomain.mem_all' SeLe4n/Kernel
 run_check "INVARIANT" rg -n '^theorem lockAcquisition_modifies_trusted_object_and_is_not_counted' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # NEGATIVE: the completeness theorem must not go back to comparing the domain
 # list against a literal, which a third constructor would leave elaborating.
-run_negative_check "INVARIANT" rg -n 'Prod.fst\) = \[.schedulerDomain, .dynamicPipChain\]' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_negative_check "INVARIANT" rg -n 'Prod.fst\) = \[.syscallSeamSchedulerDomain, .dynamicPipChain\]' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# **WS-RR RR7.39** — the scheduler lock domain, with a runtime.
+#
+# The domain's two per-core constructors named locks `SystemState` had no word
+# for, so a bracket over a scheduler footprint could sort the list and acquire
+# nothing.  These anchors pin the runtime that closed it: the state words, the
+# primitives whose object arm calls SM3.C's own, the fail-closed footprint
+# constructor, the shared bracket, and the write-set containment for both live
+# steps.
+run_check "INVARIANT" rg -n '^  schedulerLocks : SchedulerLockState' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^def schedAcquireLock' SeLe4n/Kernel/Scheduler/Operations/SchedLockSet.lean
+run_check "INVARIANT" rg -n '^structure SchedLockSet' SeLe4n/Kernel/Scheduler/Operations/SchedLockSet.lean
+run_check "INVARIANT" rg -n '^def schedulerLockBracketDomain' SeLe4n/Kernel/Scheduler/Operations/SchedLockSet.lean
+run_check "INVARIANT" rg -n '^def runBracketed' SeLe4n/Kernel/Concurrency/Locks/LockBracket.lean
+run_check "INVARIANT" rg -n '^theorem perCoreRescheduleStep_coversWrites' SeLe4n/Kernel/SchedLockBracket.lean
+run_check "INVARIANT" rg -n '^theorem perCoreTimerTickStep_coversWrites' SeLe4n/Kernel/Scheduler/Operations/SchedLockTimerContainment.lean
+# The object arm of every scheduler primitive **is** SM3.C's own primitive:
+# one answer to "what does acquiring an object lock do".
+run_check "INVARIANT" rg -n 'schedAcquireLock s core \(.object lid\) mode = acquireLockOnObject' SeLe4n/Kernel/Scheduler/Operations/SchedLockSet.lean
+# RR7.12's bracket is now definitionally the object-domain instance of the
+# shared one — the derivation that stops the two from drifting.
+run_check "INVARIANT" rg -n '^theorem runUnderDeclaredLockSet_eq_runBracketed' SeLe4n/Kernel/SyscallLockBracket.lean
+# NEGATIVE: the scheduler bracket must not be a second, privately spelled
+# revalidating bracket.  Both seams route through `runBracketed`, so neither
+# `timerTickUnderDeclaredLockSet` nor `rescheduleUnderDeclaredLockSet` may
+# re-derive the acquire / re-resolve / refuse shape with its own `if`.
+run_negative_check "INVARIANT" rg -n 'let acquired := schedAcquireAll' SeLe4n/Kernel/SchedLockBracket.lean
+# **The RR7.39 finding.**  The tick's replenish-drain and timeout wakes both
+# place via `determineTargetCore`, so a run-queue segment naming only the boot
+# core and the executing core was a false footprint.  The segment is now every
+# core's, derived from `allCores` rather than enumerated.
+run_check "INVARIANT" rg -n '^def allCoreRunQueueLockSegment' SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean
+run_check "INVARIANT" rg -n 'timerTickOnCoreTimeoutDynamicLockSet :=\s*$' SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean
+run_check "INVARIANT" rg -n '^theorem timerTickOnCoreCompleteLockSet_serialises_pairwise' SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean
+# NEGATIVE: the dynamic extension must not go back to the single boot-core
+# run-queue lock, which the target-aware wakes made false.
+run_negative_check "INVARIANT" rg -n 'timerTickOnCoreTimeoutDynamicLockSet =\s*\[\(SchedLockId.runQueue ⟨bootCoreId⟩, .write\)\]' SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: an observed state that does not hold the footprint is refused' tests/SmpInformationFlowSuite.lean
 # The queue-owning-object umbrella is an AUTHORIZATION statement; exclusion
 # additionally needs every writer of a queued TCB to hold the queue owner's
@@ -4650,6 +4686,9 @@ run_check "INVARIANT" rg -n 'lockSet_replyRecv \(all options\) size = 9' tests/D
 # off the capability that decode addresses, under the single-level CSpace guard;
 # and the bracket revalidates after acquiring and refuses on change, with the
 # fail-closed fallback leaving undeclared syscalls bit-identical.
+# The outcome type and the revalidating bracket itself moved to `Concurrency`
+# at v0.34.89 — one bracket for both lock domains — and
+# `runUnderDeclaredLockSet` is now definitionally its object-domain instance.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
 import SeLe4n.Kernel.SyscallDispatchEntry
 open SeLe4n.Kernel
@@ -4662,7 +4701,10 @@ open SeLe4n.Kernel
 #check @abiEntryLockOperands_tcbSuspend_target_valid
 #check @declaredLockSetForAbiEntry
 #check @declaredLockSetForAbiEntry_binds_decode
-#check @LockBracketOutcome
+#check @SeLe4n.Kernel.Concurrency.LockBracketOutcome
+#check @SeLe4n.Kernel.Concurrency.runBracketed
+#check @SeLe4n.Kernel.Concurrency.objectLockBracketDomain
+#check @runUnderDeclaredLockSet_eq_runBracketed
 #check @runUnderDeclaredLockSet
 #check @runUnderDeclaredLockSet_undeclared
 #check @runUnderDeclaredLockSet_committed
@@ -4688,9 +4730,18 @@ run_negative_check "INVARIANT" rg -nU 'def syscallDispatchCrossCoreEntry[\s\S]*?
 run_check "INVARIANT" rg -n 'rootCn.depth ≠ rootCn.guardWidth \+ rootCn.radixWidth' SeLe4n/Kernel/SyscallLockBracket.lean
 run_check "INVARIANT" rg -n 'ref.cnode ≠ tcb.cspaceRoot' SeLe4n/Kernel/SyscallLockBracket.lean
 # The guard has BOTH conditions.  Re-resolving alone would run the step on a
-# footprint the growing phase never obtained, since `withLockSet` runs its action
-# whether or not the acquisition was granted.
-run_check "INVARIANT" rg -n 'declared acquired = some S ∧ lockSetHeld lockCore S acquired' SeLe4n/Kernel/SyscallLockBracket.lean
+# footprint the growing phase never obtained, since the growing phase runs its
+# action whether or not the acquisition was granted.
+#
+# The guard moved to the shared bracket at v0.34.89 — one revalidating bracket
+# for the object and scheduler domains — so this anchor now pins it for both
+# seams at once rather than for the syscall seam alone.
+run_check "INVARIANT" rg -n 'declared acquired = some S ∧ D.held lockCore S acquired' SeLe4n/Kernel/Concurrency/Locks/LockBracket.lean
+# NEGATIVE: neither seam may re-derive the guard privately.  A second spelling
+# of "resolve, acquire, re-resolve, refuse" is the one-question-two-answers
+# shape, and the two would drift at the first fix applied to only one of them.
+run_negative_check "INVARIANT" rg -n 'declared acquired = some S' SeLe4n/Kernel/SyscallLockBracket.lean
+run_negative_check "INVARIANT" rg -n 'declared acquired = some S' SeLe4n/Kernel/SchedLockBracket.lean
 # And the shrinking phase is `unwindAll`, never `releaseAll`: a release is the
 # identity for a non-holder, so a release-only unwind strands every contended
 # member queued on the acquiring core (WS-LC LC4).
@@ -9323,6 +9374,43 @@ open SeLe4n.Kernel
 #check @timerTickOnCore_preserves_queueCurrentConsistentOnCore
 EOF
 lake env lean /tmp/sm5d_surface.lean'
+
+# **WS-RR RR7.39** — the scheduler lock domain surface, elaborated.
+#
+# The anchors above are text scans; this one asks the elaborator, which is what
+# says the names resolve at the types the brackets need.  A rename or a
+# signature change on any of them fails here rather than leaving a `run_check`
+# matching a stale spelling.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.Scheduler.Operations.SchedLockTimerContainment
+open SeLe4n.Kernel
+#check @SeLe4n.Model.SchedulerLockState
+#check @SeLe4n.Model.SystemState.runQueueLockOnCore
+#check @SeLe4n.Model.SystemState.replenishQueueLockOnCore
+#check @schedAcquireLock
+#check @schedReleaseLock
+#check @schedCancelLock
+#check @schedLockHeld
+#check @schedAcquireAll
+#check @schedUnwindAll
+#check @SchedLockSet
+#check @SchedLockSet.ofList?
+#check @SchedLockSet.ofList?_none_of_dup
+#check @schedLockSetHeld
+#check @schedulerLockBracketDomain
+#check @declaredSchedLockSetForTimerTick
+#check @declaredSchedLockSetForReschedule
+#check @declaredSchedLockSetForTimerTick_invalid_core
+#check @declaredSchedLockSetForTimerTick_state_independent
+#check @timerTickUnderDeclaredLockSet
+#check @rescheduleUnderDeclaredLockSet
+#check @timerTickUnderDeclaredLockSet_invalid_core
+#check @schedFootprintCoversWrites
+#check @perCoreRescheduleStep_coversWrites
+#check @perCoreTimerTickStep_coversWrites
+#check @allCoreRunQueueLockSegment
+#check @timerTickOnCoreCompleteLockSet_serialises_pairwise
+EOF'
 # WS-SM SM5.D audit-pass-1: build the 99-entry SM5.D theorem inventory so a
 # renamed / removed SM5.D theorem fails at the inventory's elaboration.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerInventory'

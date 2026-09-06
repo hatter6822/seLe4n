@@ -27,7 +27,8 @@
 > declare a footprint and the seam acquires it — and not yet true of the
 > **per-core scheduler entries**, which commit run-queue and replenish-queue
 > state under the SM5.I global entry lock only.  `ExportCommitDisciplineCensus`
-> measures it rather than asserting it: **seven seams commit, two bracket**.
+> measures it rather than asserting it: **seven seams commit, five bracket**
+> (WS-RR RR7.39; two before it).
 > Live WCRT is therefore still the global lock's, and the fine-lock bound
 > `PerCoreWcrt.lean` proves remains a statement about the intended discipline.
 > The three lock domains Track C leaves uncovered — the scheduler domain, the

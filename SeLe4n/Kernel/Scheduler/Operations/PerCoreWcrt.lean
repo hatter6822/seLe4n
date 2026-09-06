@@ -115,14 +115,23 @@ What is true now: **the syscall seam brackets**.
 (`syscallDispatchCrossCoreBracketedStep`), for the eight arms that have one —
 and runs unbracketed, exactly as before, for the twenty-seven that do not.  The
 **per-core scheduler entries** — the timer tick, the `.reschedule` SGI receiver
-and the secondary bring-up entry — still acquire nothing: they commit run-queue
-and replenish-queue state under the SM5.I global kernel-entry ticket lock only.
-That is `UncoveredLockDomain.schedulerDomain`, and WS-RR RR7.39 is the row that
-closes it, at which point these bounds describe those entries too.
+and the secondary bring-up entry — bracket too since **WS-RR RR7.39**, which gave
+`SchedLockId` a runtime (`SystemState.schedulerLocks`) and an instance of the
+shared bracket, so these bounds describe those entries as well.  What remains
+outside a declared footprint is the *syscall* seam's scheduler writes:
+`lockSetForSyscall` returns a `LockSet`, whose `LockId` cannot name a run-queue
+lock at all, so an `endpointSend`'s receiver wake is still uncovered.  That is
+`UncoveredLockDomain.syscallSeamSchedulerDomain`, owner RR8.
 
-So the figures below are the cost of the footprints the *syscall* path now
-acquires and the intended cost of the scheduler path's, and the live WCRT of a
-kernel entry remains the global lock's until RR7.39.
+RR7.39 also widened the tick's own footprint: its run-queue segment named the
+boot core, while the tick's replenish-drain and timeout wakes place via
+`determineTargetCore`, so it now names every core's — six locks against the cap of
+nine.  `maxLockSetSize` does not move, so no other operation's admissible critical
+section changes.
+
+So the figures below are the cost of the footprints the syscall path and the
+scheduler entries now acquire, and the live WCRT of a kernel entry remains the
+global lock's until Track D retires it.
 -/
 
 namespace SeLe4n.Kernel

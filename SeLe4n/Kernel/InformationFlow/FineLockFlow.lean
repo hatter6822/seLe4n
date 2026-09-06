@@ -3158,9 +3158,33 @@ Data rather than prose, so the scope of `syscallEntryUnderDeclaredLockSet` is
 checkable and a future cut that composes a domain has to delete an entry here
 rather than quietly leave a stale comment. -/
 inductive UncoveredLockDomain where
-  /-- Per-core run-queue and replenish-queue locks — `SchedLockId`, taken by
-  `suspendThreadOnCoreSchedLockSet`. -/
-  | schedulerDomain
+  /-- **WS-RR RR7.39**: the per-core run-queue and replenish-queue locks a
+  **syscall** takes — `SchedLockId`, as `suspendThreadOnCoreSchedLockSet`
+  declares them for a live `.tcbSuspend`.
+
+  RR7.39 gave the scheduler domain a runtime — `SystemState.schedulerLocks`,
+  the `SchedLockId` primitives, the `SchedLockSet` footprint type and the
+  `schedulerLockBracketDomain` instance of the shared bracket — and put the three
+  per-core scheduler *entries* (the timer tick, the `.reschedule` SGI receiver and
+  the secondary bring-up entry) inside their declared footprints, with the
+  write-set containment proved for both steps.  What it did **not** do is move the
+  RR7.12 **syscall** seam onto that domain, and this constructor is the syscall
+  half: `lockSetForSyscall` returns a `LockSet`, whose `LockId` cannot name a
+  run-queue lock at all, so the scheduler writes an `endpointSend`'s receiver wake
+  or a `.tcbSuspend`'s cancellation performs are still outside the footprint the
+  seam acquires.
+
+  Narrowed rather than deleted, deliberately.  The blanket entry read as "the
+  scheduler domain is uncovered", which after RR7.39 is false of the entries and
+  true of the syscalls; deleting it would have been false of the syscalls.  Why
+  the syscall half is its own cut: the object-domain syscall footprints hold
+  `stateLevelLock` and per-object locks, **not** the object-store table lock, so
+  the over-approximation that made the scheduler entries' widening free (see
+  `timerTickOnCoreCompleteLockSet_serialises_pairwise`) would here serialise
+  unrelated IPC on unrelated endpoints across every core's run queue.  The
+  footprints must therefore name the *resolved* wake targets, per arm — RR7.11's
+  shape, over a domain RR7.39 has now built. -/
+  | syscallSeamSchedulerDomain
   /-- The PIP chain walk's per-member TCB and home-core run-queue write locks,
   discovered as the walk proceeds (SM3.C.11) and so not resolvable from the
   pre-state at all. -/
@@ -3222,9 +3246,17 @@ extends a lock set along a PIP chain, or couples locks down a CSpace walk, so
 naming that range left three domains with an owner that could not close them.
 Each now names the closure row written for it: RR7.39 (the scheduler domain —
 the fine-lock plan's SM3.C.9.b follow-on), RR7.40 (the dynamic PIP chain),
-RR7.41 (the CSpace-walk interior). -/
+RR7.41 (the CSpace-walk interior).
+
+**The scheduler domain's owner moves again at v0.34.89 (WS-RR RR7.39).**  RR7.39
+closed the *entries*' half — the three per-core scheduler seams now acquire their
+declared footprints, and the domain has a runtime for them to acquire — and the
+constructor was narrowed to `syscallSeamSchedulerDomain`, the half that remains:
+moving the RR7.12 syscall seam onto the same domain, with each declared arm's
+resolved wake targets named.  That is RR8's, not RR7.39's, because it is a
+per-arm footprint cut of RR7.11's shape rather than a domain-construction one. -/
 def declaredFootprintUncoveredDomains : List (UncoveredLockDomain × String) :=
-  [(.schedulerDomain, "WS-RR RR7.39 (fine-lock Track C closure)"),
+  [(.syscallSeamSchedulerDomain, "WS-RR RR8 (fine-lock Track C closure)"),
    (.dynamicPipChain, "WS-RR RR7.40 (fine-lock Track C closure)"),
    (.taintTablePerKeyStore, "SM10.1 (fine-lock Track D)"),
    (.cspaceWalkInteriorCnodes, "WS-RR RR7.41 (fine-lock Track C closure)")]
@@ -3233,7 +3265,7 @@ def declaredFootprintUncoveredDomains : List (UncoveredLockDomain × String) :=
 inventory uses — so completeness can be quantified over the *constructors*
 rather than compared against a literal. -/
 def UncoveredLockDomain.all : List UncoveredLockDomain :=
-  [.schedulerDomain, .dynamicPipChain,
+  [.syscallSeamSchedulerDomain, .dynamicPipChain,
    .taintTablePerKeyStore, .cspaceWalkInteriorCnodes]
 
 /-- SM8.D.5: every constructor is listed.  This is the clause a literal

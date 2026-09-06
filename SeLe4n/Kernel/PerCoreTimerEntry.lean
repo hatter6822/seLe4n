@@ -10,6 +10,7 @@ import SeLe4n.Kernel.Concurrency.Types
 import SeLe4n.Kernel.Concurrency.Runtime
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreRunLoop
 import SeLe4n.Platform.FFI
+import SeLe4n.Kernel.SchedLockBracket
 
 /-!
 # WS-SM SM5.D.1 / SM5.I — Per-core timer-tick kernel entry
@@ -26,7 +27,9 @@ driver**.  On each per-core timer interrupt the entry now:
 
 1. reads the live kernel `SystemState` and, **atomically** (one
    `modifyGetKernelState`), runs the verified
-   `Kernel.perCoreTimerTickStepWithClockAdvance` — the run-loop step
+   `Kernel.perCoreTimerTickStepWithClockAdvance` **inside the footprint this
+   core declares** (WS-RR RR7.39 — `timerTickUnderDeclaredLockSet`) — the
+   run-loop step
    (`perCoreTimerTickStep`: fail-closed `coreId` decode composing the
    boot-core-only shared-clock advance `tickClockedState` — the
    single-authority `machine.timer` tick the CBS/timeout due-checks read —
@@ -36,7 +39,7 @@ driver**.  On each per-core timer interrupt the entry now:
    committed state's `machine.timer` delta — commits the new state, and
    recovers the cross-core SGIs paired with the flag;
 2. **advances the HAL's `TICK_COUNT` shadow** (`ffiTimerAdvanceTickCount`)
-   iff the flag is set — the commit-coupled shadow clock (PR #880
+   iff the bracket committed *and* the flag is set — the commit-coupled shadow clock (PR #880
    follow-up): the shadow moves exactly when the model clock moved, so
    pre-readiness ticks, non-boot cores and fail-closed entries advance
    neither, and a failed entry can no longer leave the shadow one ahead;
@@ -68,11 +71,25 @@ outside `SHOOTDOWN_ROUND_LOCK`, and its spin self-services this core's pending
 shootdown obligation so a holder blocked on our acknowledgment cannot deadlock
 against us.  Until v0.32.142 this paragraph said the lock was owed, and SMP was
 off by default for that reason; with the lock live the default returns to
-decision #7's `smp_enabled: true`.  The finer-grained
-`timerTickOnCoreLockSet` cross-domain footprint (SM5.D.3) certifies the 2PL
-acquisition order a future per-object-locked migration consumes; the
-`SchedLockId`-level `withLockSet` bracket itself is the SM3.C combinator's
-cross-domain extension (tracked SM5.I closure target).
+decision #7's `smp_enabled: true`.
+
+## WS-RR RR7.39 — the declared footprint, acquired
+
+The `SchedLockId`-level bracket this paragraph used to owe as "the SM3.C
+combinator's cross-domain extension (tracked SM5.I closure target)" is
+`SeLe4n/Kernel/SchedLockBracket.lean`, and this entry runs it.  The step executes
+inside `timerTickOnCoreCompleteLockSet` at the core the argument decodes to —
+resolved from that same decode, so a footprint is declared exactly when there is
+a step to bracket — and the bracket is `runBracketed`, the *same* definition the
+ABI seam runs.
+
+Two consequences for this body.  A **refused** bracket yields no value, so the
+entry advances neither the shadow clock nor any SGI: a tick that did not run pokes
+nobody.  And the footprint is not a *false* one —
+`perCoreTimerTickStep_coversWrites` proves the step's writes lie inside it, which
+is what makes acquiring it mean anything.  (RR7.39 also corrected the footprint
+itself: its run-queue segment named the boot core where the tick's target-aware
+wakes can enqueue on any core.  See `timerTickOnCoreTimeoutDynamicLockSet`.)
 
 ## Lean → Rust ABI contract
 
@@ -110,42 +127,55 @@ C-callable seam (`@[export lean_per_core_timer_tick]`) the Rust per-core CNTP IS
 (`timer::per_core_timer_tick_isr`) invokes on each per-core timer interrupt.
 
 Atomically runs the verified `perCoreTimerTickStepWithClockAdvance` against the
-live kernel state (committing `timerTickOnCore`'s result), advances the HAL's
-`TICK_COUNT` shadow **iff the committed step advanced the model clock** (the
-flag is definitionally the `machine.timer` delta —
-`perCoreTimerTickStepWithClockAdvance_flag_def` — so the shadow cannot drift
-from the model on any arm, failed entries included; PR #880 follow-up closing
-the invocation-coupled residual), then fires the recovered cross-core
-`.reschedule` SGIs.  See the module docstring. -/
+live kernel state **inside the footprint this core declares** (WS-RR RR7.39),
+advances the HAL's `TICK_COUNT` shadow **iff the bracket committed and the step
+advanced the model clock** (the flag is definitionally the `machine.timer`
+delta — `perCoreTimerTickStepWithClockAdvance_flag_def` — so the shadow cannot
+drift from the model on any arm, failed entries included; PR #880 follow-up
+closing the invocation-coupled residual), then fires the recovered cross-core
+`.reschedule` SGIs.
+
+A refused bracket produces no value (`LockBracketOutcome.value? = none`), so it
+advances no clock and fires no SGI — fail-closed, because a tick that did not run
+must not poke a remote core.  See the module docstring. -/
 @[export lean_per_core_timer_tick]
 def perCoreTimerTickEntry (coreId : UInt64) : BaseIO Unit := do
   let r ← Platform.FFI.modifyGetKernelState (fun st =>
-    let (sgisAndFlag, st') := perCoreTimerTickStepWithClockAdvance st coreId
-    ((sgisAndFlag,
+    let outcome := timerTickUnderDeclaredLockSet coreId st
+    let st' := outcome.state
+    ((outcome.value?,
       (Concurrency.coreIdOfUInt64? coreId).map
         (fun c => (c, st'.scheduler.currentOnCore c))), st'))
-  if r.1.2 then Platform.FFI.ffiTimerAdvanceTickCount
-  Concurrency.fireCrossCoreSgis r.1.1
+  match r.1 with
+  | some sgisAndFlag =>
+      if sgisAndFlag.2 then Platform.FFI.ffiTimerAdvanceTickCount
+      Concurrency.fireCrossCoreSgis sgisAndFlag.1
+  | none => pure ()
   Concurrency.recordCommittedCurrentThreadHw r.2
 
 /-- **WS-SM SM5.I** structural marker: `perCoreTimerTickEntry` unfolds to the
-verified-step-then-shadow-advance-then-fire-SGIs driver.  Pins the entry's body
-shape (atomic `modifyGetKernelState` over `perCoreTimerTickStepWithClockAdvance`,
-the commit-coupled `ffiTimerAdvanceTickCount` on the clock-advance flag, then
-`fireCrossCoreSgis`) so a refactor that drops the SGI firing, the state commit,
-or the shadow advance breaks this marker at elaboration; combined with the
+bracketed-step-then-shadow-advance-then-fire-SGIs driver.  Pins the entry's body
+shape (atomic `modifyGetKernelState` over `timerTickUnderDeclaredLockSet`, the
+commit-coupled `ffiTimerAdvanceTickCount` on the clock-advance flag of a
+*committed* outcome, then `fireCrossCoreSgis`) so a refactor that drops the SGI
+firing, the state commit, the shadow advance — or, since WS-RR RR7.39, the
+declared-footprint bracket — breaks this marker at elaboration; combined with the
 `@[export]` attribute (which the Rust `lean_per_core_timer_tick` extern resolves
 against) and the `build.rs` Check-5 scanner, the seam cannot regress silently. -/
 theorem perCoreTimerTickEntry_def (coreId : UInt64) :
     perCoreTimerTickEntry coreId =
       (do
         let r ← Platform.FFI.modifyGetKernelState (fun st =>
-          let (sgisAndFlag, st') := perCoreTimerTickStepWithClockAdvance st coreId
-          ((sgisAndFlag,
+          let outcome := timerTickUnderDeclaredLockSet coreId st
+          let st' := outcome.state
+          ((outcome.value?,
             (Concurrency.coreIdOfUInt64? coreId).map
               (fun c => (c, st'.scheduler.currentOnCore c))), st'))
-        if r.1.2 then Platform.FFI.ffiTimerAdvanceTickCount
-        Concurrency.fireCrossCoreSgis r.1.1
+        match r.1 with
+        | some sgisAndFlag =>
+            if sgisAndFlag.2 then Platform.FFI.ffiTimerAdvanceTickCount
+            Concurrency.fireCrossCoreSgis sgisAndFlag.1
+        | none => pure ()
         Concurrency.recordCommittedCurrentThreadHw r.2) := rfl
 
 end SeLe4n.Kernel

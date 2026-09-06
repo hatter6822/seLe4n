@@ -8190,10 +8190,17 @@ private def runDeclaredFootprintChecks : IO Unit := do
   -- splice-neighbour queue-ownership protocol are all covered and their entries
   -- deleted.  The count falls because domains closed, which is the only reason
   -- it may.
+  --
+  -- WS-RR RR7.39 **narrowed** rather than deleted: the blanket `schedulerDomain`
+  -- became `syscallSeamSchedulerDomain`.  RR7.39 closed the per-core scheduler
+  -- *entries*' half — they now acquire their declared footprints — and the
+  -- syscall seam's half remains, because `lockSetForSyscall` returns a `LockSet`
+  -- whose `LockId` cannot name a run-queue lock.  A narrowing keeps the count at
+  -- four and is the honest record: deleting would have claimed the syscall half.
   assertBool "the four uncovered lock domains are registered, each with an owner"
     (decide (declaredFootprintUncoveredDomains.length = 4) &&
      decide (declaredFootprintUncoveredDomains.map Prod.fst
-       = [UncoveredLockDomain.schedulerDomain, UncoveredLockDomain.dynamicPipChain,
+       = [UncoveredLockDomain.syscallSeamSchedulerDomain, UncoveredLockDomain.dynamicPipChain,
           UncoveredLockDomain.taintTablePerKeyStore,
           UncoveredLockDomain.cspaceWalkInteriorCnodes]) &&
      declaredFootprintUncoveredDomains.all (fun d => !d.2.isEmpty))

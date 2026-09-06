@@ -325,7 +325,8 @@ platform rather than with the lock.
 > How much of the kernel that is, is measured rather than asserted: WS-RR RR7.13
 > derives the state-committing `@[export]` set from the elaborated environment
 > and reconciles it against a registry in both directions, so a new seam that
-> commits without a bracket fails the build. **Seven seams commit; two bracket.**
+> commits without a bracket fails the build. **Seven seams commit; five bracket**
+> (WS-RR RR7.39; two before it).
 > The same cut moved `maxLockSetSize` from 8 to 9: a `.replyRecv` that both
 > returns a donation and installs capabilities is nine locks, the ninth being
 > the state-level lock the install's derivation-tree write needs. See
