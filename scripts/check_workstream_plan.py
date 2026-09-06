@@ -103,6 +103,57 @@ def phase_map_rows(text: str, prefix: str, depth: int) -> dict[str, int]:
     return out, dupes
 
 
+# The canonical indices: the documents a reader is told to start from.
+#
+# A plan named in none of them is an invisible workstream, and that is not
+# hypothetical -- `IPC_INVARIANT_DETHREADING_PLAN.md` was an open IPC
+# verification workstream registered in no canonical source (register finding
+# 39, closed by WS-RR RR7.32, which added this check so the class cannot
+# recur).  Derived on both sides: the plan set is whatever `docs/planning/`
+# holds and the reference set is whatever those documents say, so a plan added
+# tomorrow is checked the day it lands rather than the day someone remembers.
+#
+# `UNFINISHED_SMP_WORK.md` is deliberately NOT canonical here: it is the audit
+# *finding* register, not the workstream index, and a plan visible only to an
+# auditor is precisely the state finding 39 describes.
+# `docs/dev_history/planning/` is out of scope for the opposite reason --
+# CLAUDE.md tells readers not to reference it, so a retired plan being
+# unreachable is the intended state.
+CANONICAL_INDICES = [
+    "CLAUDE.md",
+    "AGENTS.md",
+    "docs/REGISTERED_DEBT.md",
+    "docs/spec/SELE4N_SPEC.md",
+]
+
+
+def plan_visibility_errors(plans: list[str], indices: dict[str, str]) -> list[str]:
+    """Plans under `docs/planning/` that no canonical index names.
+
+    Matched on the plain text rather than the prose view: a link in a table, a
+    sentence or a fenced block all make a plan findable, and this check is
+    about reachability, not about a claim a scanner has to trust.
+    """
+    errors: list[str] = []
+    if not indices:
+        # Fail closed: with no index readable every plan would pass vacuously,
+        # which reads exactly like a tree in which every plan is indexed.
+        return ["plan visibility: no canonical index could be read, so the "
+                "check would pass vacuously"]
+    for rel in plans:
+        if not rel.startswith("docs/planning/"):
+            continue
+        name = os.path.basename(rel)
+        if any(name in body for body in indices.values()):
+            continue
+        errors.append(
+            f"{rel}: named in no canonical index "
+            f"({', '.join(sorted(indices))}) -- a plan a reader cannot reach "
+            f"from CLAUDE.md, the debt register or the spec is an invisible "
+            f"workstream; name it where its workstream is tracked")
+    return errors
+
+
 def read_indexed(rel: str) -> str | None:
     """Read from the git index, not the working tree: the gate must check what
     is being committed.  Validating the tree while the gate reads the index is
@@ -450,6 +501,17 @@ def main(argv: list[str]) -> int:
     # exact-count plan while a companion still cites it left `plans` empty, so
     # returning here skipped the very check that deletion is supposed to trip.
     orphan_errors = companion_citation_errors(companions)
+    # WS-RR RR7.32: a plan no canonical index names is an invisible workstream.
+    # Runs over every tracked plan, not only the ones declaring a sub-task
+    # count, and before the "nothing to validate" exit below for the same
+    # reason the citation check does: the population it measures is the
+    # filesystem's, not the subset this gate happens to parse.
+    index_bodies = {}
+    for rel in CANONICAL_INDICES:
+        body = read_indexed(rel)
+        if body is not None:
+            index_bodies[rel] = body
+    orphan_errors += plan_visibility_errors(list_tracked(":"), index_bodies)
     if not plans:
         if orphan_errors:
             print(f"FAIL: {len(orphan_errors)} workstream-plan structure error(s):")
@@ -549,7 +611,11 @@ def _cli_cases():
         (root / "scripts").mkdir()
         shutil.copy(src, root / "scripts" / src.name)
         (root / "docs" / "planning" / "XX_PLAN.md").write_text(CLEAN, encoding="utf-8")
-        (root / "CLAUDE.md").write_text("cites XX0.1\n", encoding="utf-8")
+        # Names the plan as well as citing a sub-task: WS-RR RR7.32 requires a
+        # canonical index to name every plan, and a fixture repository whose
+        # index does not is testing a tree the gate is right to reject.
+        (root / "CLAUDE.md").write_text(
+            "cites XX0.1, see docs/planning/XX_PLAN.md\n", encoding="utf-8")
         git = lambda *a: subprocess.run(["git", *a], cwd=root, capture_output=True, check=True)
         git("init", "-q", "-b", "main")
         git("config", "user.email", "gate@example.invalid")
@@ -607,6 +673,10 @@ def _cli_cases():
         schedule."""
         (root / "docs" / "planning" / "YY_PLAN.md").write_text(
             SUBPHASE, encoding="utf-8")
+        # The index names it, as WS-RR RR7.32 requires of every live plan.
+        (root / "CLAUDE.md").write_text(
+            "cites XX0.1, see docs/planning/XX_PLAN.md and "
+            "docs/planning/YY_PLAN.md\n", encoding="utf-8")
         git("add", "-A")
 
     def sub_phase_numbered_defect(root, git):
@@ -618,6 +688,9 @@ def _cli_cases():
                     .replace("| YY0.2.1 | consumes YY0.1.2 | b | M |",
                              "| YY0.2.2 | consumes YY0.1.2 | b | M |"),
             encoding="utf-8")
+        (root / "CLAUDE.md").write_text(
+            "cites XX0.1, see docs/planning/XX_PLAN.md and "
+            "docs/planning/YY_PLAN.md\n", encoding="utf-8")
         git("add", "-A")
 
     def stray_letter_row(root, git):
@@ -866,6 +939,43 @@ def self_test() -> int:
     derrs = check_plan("plan.md", dup, {})
     cases.append(("a duplicated phase-map row is rejected",
                   any("appears twice in the phase map" in e for e in derrs), derrs))
+
+    # --- WS-RR RR7.32: plan visibility -----------------------------------
+    # The finding-39 class: an open workstream whose plan no canonical index
+    # names.  Every case keeps the plan and moves what the indices say, which
+    # is the relation the check is about.
+    plans = ["docs/planning/A_PLAN.md", "docs/planning/B_PLAN.md"]
+    both = {"CLAUDE.md": "see A_PLAN.md", "docs/REGISTERED_DEBT.md": "and B_PLAN.md"}
+    verrs = plan_visibility_errors(plans, both)
+    cases.append(("a plan named in a canonical index is visible", verrs == [], verrs))
+
+    # The instance: one plan drops out of every index while still existing.
+    one = {"CLAUDE.md": "see A_PLAN.md", "docs/REGISTERED_DEBT.md": "nothing here"}
+    verrs = plan_visibility_errors(plans, one)
+    cases.append(("a plan named in no canonical index is reported",
+                  any("B_PLAN.md: named in no canonical index" in e for e in verrs)
+                  and len(verrs) == 1, verrs))
+
+    # A *sibling plan* naming it is not an index.  This is the exact shape the
+    # orphan had: reachable only by walking from another plan's prerequisites.
+    sibling = dict(one)
+    sibling["docs/planning/A_PLAN.md"] = "prerequisites: B_PLAN.md"
+    verrs = plan_visibility_errors(plans, {k: v for k, v in sibling.items()
+                                           if k in CANONICAL_INDICES})
+    cases.append(("a sibling plan's reference does not make a plan visible",
+                  any("B_PLAN.md" in e for e in verrs), verrs))
+
+    # Retired plans are out of scope by location, and that is a decision: a
+    # `docs/dev_history/planning/` file is deliberately unreachable.
+    verrs = plan_visibility_errors(
+        ["docs/dev_history/planning/OLD_PLAN.md"], one)
+    cases.append(("a retired plan is not required to be indexed", verrs == [], verrs))
+
+    # Fail closed: with no index readable the check must report rather than
+    # pass, since a vacuous pass is indistinguishable from a fully indexed tree.
+    verrs = plan_visibility_errors(plans, {})
+    cases.append(("no readable index reports rather than passing vacuously",
+                  any("pass vacuously" in e for e in verrs), verrs))
 
     failed = 0
     for name, ok, detail in cases:

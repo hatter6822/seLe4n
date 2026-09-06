@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.80.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.81.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1425,7 +1425,10 @@ SGI INTID 0..4 reserved for kernel SMP coordination (SM0.H).
 
 **Plans**: master overview at
 [`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md);
-per-phase plans at `docs/planning/SMP_*.md`.
+per-phase plans at `docs/planning/SMP_*.md`, beginning with
+[`SMP_FOUNDATIONS_PLAN.md`](docs/planning/SMP_FOUNDATIONS_PLAN.md) (SM0), which
+the glob covers but no canonical index named until WS-RR RR7.32 made that
+checkable.
 
 ### WS-BP The bare-metal boot path — PLANNED (registered v0.34.59)
 

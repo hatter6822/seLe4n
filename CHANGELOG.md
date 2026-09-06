@@ -1,3 +1,57 @@
+## v0.34.81 — a plan nobody indexes is an invisible workstream
+
+**WS-RR RR7.32** — the doc-sync medium (register finding 39): "an open IPC
+verification workstream (`IPC_INVARIANT_DETHREADING_PLAN`) is registered in no
+canonical source, and its payoff theorem does not exist."
+
+**Both halves are closed, and both were verified by running rather than by
+reading.**  WS-DT is registered in `docs/REGISTERED_DEBT.md` twice over — a row
+in section A and an entry in the workstream registry, closed at `v0.34.43` — and
+cited from CLAUDE.md's standing constraints.  The payoff theorem the row says
+does not exist does: `dispatchWithCap_preserves_ipcInvariantFull` and its three
+siblings are in `IPC/Invariant/DispatchPayoff.lean`, and
+`check_ipc_invariant_dethreading.py --report` lists all four as `present`.
+
+**The sweep is the mechanism the class lacked.**  Nothing checked that a plan is
+reachable, so the *next* invisible workstream would have been just as invisible —
+which is the difference between a finding that was fixed and a class that was
+closed.  `scripts/check_workstream_plan.py` now holds every plan under
+`docs/planning/` to being **named in a canonical index** (CLAUDE.md, AGENTS.md,
+`docs/REGISTERED_DEBT.md`, or `docs/spec/SELE4N_SPEC.md`), derived on both sides:
+the plan set is whatever the filesystem holds and the reference set is whatever
+those documents say, so a plan added tomorrow is checked the day it lands rather
+than the day someone remembers to register it.
+
+Two scoping decisions, both stated rather than implied.  `UNFINISHED_SMP_WORK.md`
+is **not** canonical here — it is the audit *finding* register, not the workstream
+index, and a plan visible only to an auditor is precisely the state finding 39
+describes.  `docs/dev_history/planning/` is out of scope for the opposite reason:
+CLAUDE.md tells readers not to reference it, so a retired plan being unreachable is
+the intended state.
+
+**It found a live orphan on its first run.**  `SMP_FOUNDATIONS_PLAN.md` — SM0's
+plan, the first phase of the workstream that closes at v1.0.0 — was named in no
+canonical index; it was reachable only by walking another plan's prerequisites
+list.  Now linked from the WS-SM status index's **Plans** line.
+
+Five witnesses, including the exact shape the orphan had (a *sibling plan's*
+reference is not an index) and the fail-closed direction (with no index readable
+the check reports rather than passing vacuously, since a vacuous pass is
+indistinguishable from a fully indexed tree).
+
+**And it caught a defect in the cut before it.**  `v0.34.80`'s RR7.31 plan row
+named RR7.39–RR7.41 as the rows that remove the entry lock, which this gate's
+forward-dependency rule reads as a row consuming a higher-numbered one — correctly,
+since it cannot distinguish a pointer from a consumption and over-approximates by
+design.  It passed `test_full.sh` there only because `check_workstream_plan.py`
+reads the **git index** and the tiers were run before staging.  The row now points
+at "the three fine-lock Track C closure rows below" and the IDs live in the master
+plan and the register, where they resolve without reading as dependencies.  The
+process note is the one CLAUDE.md already states for the identifier gate and which
+applies to every index-reading gate: **stage first, then run the tiers.**
+
+Tier 0-3 green; `test_rust.sh` and the aarch64 cross gate green.
+
 ## v0.34.80 — a bound is not a product
 
 **WS-RR RR7.31** — the master-plan medium (register finding 11): "§2.1 and §7.2
