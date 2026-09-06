@@ -1,3 +1,33 @@
+## v0.34.91 — WS-RR RR7.41 residual: the root-only CSpace footprint is complete
+
+RR7.41 shipped the mechanism that can name a multi-level CSpace walk's interior
+and closed its registry entry, but its own docstring — and
+`lockSetTransitions`'s — recorded the live seam's root-only footprints as an
+approximation awaiting per-arm adoption.  That reading was wrong, and this cut
+proves it rather than restating it.
+
+* **`Capability.cspaceWalkPath_single_level`** — a resolution whose root
+  consumes every address bit (`cn.depth = cn.guardWidth + cn.radixWidth`) reads
+  **exactly** `[rootId]`: `resolveCapAddress` reaches its leaf arm on the first
+  hop and never descends.
+* **`Capability.cspaceWalkLockSet_single_level`** — the footprint of such a walk
+  is therefore exactly `[(cnodeLock rootId, .read)]`.
+
+RR7.12's `abiEntryGate` admits a resolution only under that depth condition, so
+every walk the live seam declares a footprint for is single-level and the
+declared root lock is its **complete** CNode footprint.  A multi-level walk — for
+which a root-only footprint genuinely would be false — is refused at the gate,
+so no footprint is declared for one at all; it falls back to the coarser
+serialisation, which is always sound.  A future consumer that wants to admit one
+takes `cspaceWalkLockSet` and the conflict result
+`cspaceWalk_conflicts_with_delete`, both of which already exist.
+
+The two docstrings that framed this as owed work are corrected accordingly, and
+Tier 3 gains the two theorem anchors plus a negative refusing the return of the
+"adopting it here is per-arm work" framing.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md (WS-RR RR7.41)
+
 ## v0.34.90 — WS-RR RR7.40 + RR7.41: the two dynamically-discovered lock sets, named
 
 Both remaining fine-lock Track C closure rows.  Each is a set of locks a walk

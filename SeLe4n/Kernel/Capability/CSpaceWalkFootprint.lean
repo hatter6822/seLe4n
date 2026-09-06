@@ -53,16 +53,22 @@ Read locks, not write: a resolution reads the interior and writes nothing.  Two
 concurrent resolutions through the same CNode therefore do not exclude each
 other, which is what makes the wider footprint affordable.
 
-## What this does *not* claim
+## Why nothing is owed at the live seam
 
-That every CPtr-resolving footprint in the tree has been widened.  It has not:
-`lockSetForSyscall`'s arms still name the root alone, and RR7.12's
-`abiEntryGate` still **refuses** a multi-level resolution outright rather than
-walking one.  This module is the mechanism that makes widening them possible and
-the proof that the exclusion it buys is the right one; wiring it into each arm is
-per-arm work with the same shape as RR7.11's.  The registry entry goes because
-the *domain* is covered — a walk's interior is nameable and its conflict is
-proved — not because every consumer has adopted it.
+`lockSetForSyscall`'s arms name the root alone, and that is **complete** rather
+than approximate — §3b proves it.  RR7.12's `abiEntryGate` admits a resolution
+only when `rootCn.depth = rootCn.guardWidth + rootCn.radixWidth`, so the root
+consumes every address bit and `resolveCapAddress` reaches its leaf arm on the
+first hop; `cspaceWalkPath_single_level` says the walk is then exactly
+`[rootId]`, and `cspaceWalkLockSet_single_level` that the footprint is exactly
+the root's read lock.  A multi-level walk, for which a root-only footprint
+genuinely would be false, is one the seam declares no footprint for at all — it
+falls back to the coarser serialisation, which is always sound.
+
+So the registry entry goes because the domain is *covered*, not deferred: at the
+live seam by the single-level theorem, and anywhere a future consumer wants to
+admit a multi-level walk by `cspaceWalkLockSet` and the conflict result in §3.
+Both halves are proved here; neither is owed.
 -/
 
 namespace SeLe4n.Kernel
@@ -223,6 +229,60 @@ theorem cspaceWalk_conflicts_with_delete (rootId : SeLe4n.ObjId) (addr : SeLe4n.
   refine ⟨cnodeLock targetCnode, m, AccessMode.write, hm, ?_, ?_⟩
   · exact Concurrency.lockSet_cspaceDelete_target_write_mem callerTid deleteRoot targetCnode
   · cases m <;> rfl
+
+-- ============================================================================
+-- §3b  A single-level resolution reads only its root
+-- ============================================================================
+
+/-- **WS-RR RR7.41**: a resolution whose root consumes every address bit reads
+**exactly** that root.
+
+This is the fact the existing root-only footprints rest on, and until now it was
+argued rather than proved.  RR7.12's `abiEntryGate` refuses a resolution unless
+`rootCn.depth = rootCn.guardWidth + rootCn.radixWidth` — the root consumes all
+the bits, so `resolveCapAddress` reaches its leaf arm on the first hop and never
+descends.  Under that condition `cspaceWalkPath` is `[rootId]`, so
+`cnodeLock cnodeRootObjId` **is** the complete CNode footprint of every
+resolution the live seam declares one for.
+
+That closes the interior question at the live seam rather than deferring it: a
+declared footprint covers the whole walk because the walk is one hop, and a
+multi-level walk — which `abiEntryGate` refuses, so no footprint is declared for
+it — has `cspaceWalkLockSet` if a future consumer wants to admit one.  The
+mechanism and the reason it is not yet needed are both stated, which is what
+"the domain is covered" has to mean. -/
+theorem cspaceWalkPath_single_level (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr)
+    (st : SystemState) (cn : CNode)
+    (hRoot : st.getCNode? rootId = some cn)
+    (hDepth : cn.depth = cn.guardWidth + cn.radixWidth)
+    (hPos : cn.depth ≠ 0) :
+    cspaceWalkPath rootId addr cn.depth st = [rootId] := by
+  unfold cspaceWalkPath
+  rw [dif_neg hPos, hRoot]
+  simp only
+  by_cases hCons : cn.guardWidth + cn.radixWidth = 0
+  · rw [dif_pos hCons]
+  · rw [dif_neg hCons]
+    -- the root consumes every bit, so neither the short-bit arm nor the descent
+    -- arm can fire
+    rw [if_neg (by rw [hDepth]; exact Nat.lt_irrefl _)]
+    split
+    · rfl
+    · rw [if_pos (by rw [hDepth]; exact Nat.sub_self _)]
+
+/-- **WS-RR RR7.41**: the single-level footprint is exactly the root's read lock
+— so a root-only declaration is *complete*, not an approximation, for every
+resolution the live ABI seam admits. -/
+theorem cspaceWalkLockSet_single_level (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr)
+    (st : SystemState) (cn : CNode)
+    (hRoot : st.getCNode? rootId = some cn)
+    (hDepth : cn.depth = cn.guardWidth + cn.radixWidth)
+    (hPos : cn.depth ≠ 0) :
+    (cspaceWalkLockSet rootId addr cn.depth st).pairs
+      = [(cnodeLock rootId, AccessMode.read)] := by
+  unfold cspaceWalkLockSet
+  rw [cspaceWalkPath_single_level rootId addr st cn hRoot hDepth hPos]
+  rfl
 
 -- ============================================================================
 -- §4  The bracket

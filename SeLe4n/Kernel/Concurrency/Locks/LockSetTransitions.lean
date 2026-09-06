@@ -2178,12 +2178,14 @@ coherently validated.  The caller pre-resolves the capability's target the way
 target's root, its capability's `.object` target — and passes that `ObjId`;
 `none` when the walk fails or the target is not an object, since the operation
 then refuses before reading any endpoint.  Read mode, as the operation never
-writes the endpoint.  What this footprint still does not name is the interior
-of a multi-level CSpace walk — as no CPtr-resolving footprint here does.
-WS-RR RR7.41 built the mechanism that can: `Capability.cspaceWalkLockSet`
-read-locks every CNode `resolveCapAddress` passes through, and
-`cspaceWalk_conflicts_with_delete` is the exclusion it buys.  Adopting it here is
-per-arm work of RR7.11's shape. -/
+writes the endpoint.  This footprint names the walk's **root** and nothing
+below it, which WS-RR RR7.41 proved is the *complete* CNode footprint of every
+resolution the live seam admits: `abiEntryGate` accepts only a single-level
+resolution, and `Capability.cspaceWalkPath_single_level` says such a walk reads
+exactly its root.  A multi-level walk — for which a root-only footprint would be
+false — is refused there, so no footprint is declared for one; a future consumer
+that wants to admit one takes `Capability.cspaceWalkLockSet`, whose conflict
+against an interior `cspaceDelete` is `cspaceWalk_conflicts_with_delete`. -/
 def lockSet_tcbSetFaultHandler (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (targetTcbTid : ThreadId)
     (targetCnodeRootObjId : Option ObjId) (handlerEndpointObjId : Option ObjId)

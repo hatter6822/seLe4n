@@ -1029,6 +1029,14 @@ run_check "INVARIANT" rg -n '^theorem lockSet_cspaceDelete_target_write_mem' SeL
 # The walk's footprint is acquired through RR7.12's bracket, not a private
 # coupling walk: coupling would abandon the SM0.I total order.
 run_check "INVARIANT" rg -n 'runUnderDeclaredLockSet \(declaredLockSetForCSpaceWalk' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+# The live seam's root-only footprints are **complete**, not approximate:
+# `abiEntryGate` admits only a resolution whose root consumes every address bit,
+# and such a walk reads exactly its root.  Without these two the root-only
+# declaration would rest on an argument in prose.
+run_check "INVARIANT" rg -n '^theorem cspaceWalkPath_single_level' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+run_check "INVARIANT" rg -n '^theorem cspaceWalkLockSet_single_level' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+# NEGATIVE: the completeness claim must not be restated as owed per-arm work.
+run_negative_check "INVARIANT" rg -n 'Adopting it here is' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # **WS-RR RR7.40**: the PIP chain's footprint names the home-core run queue the
 # object domain could not, and the walk's writes are proved inside it.
 run_check "INVARIANT" rg -n '^def pipChainSchedFootprint' SeLe4n/Kernel/Scheduler/PriorityInheritance/ChainFootprint.lean
