@@ -1,3 +1,56 @@
+## v0.34.77 — the census figure, measured rather than remembered
+
+**WS-RR RR7.28** — the IPC de-threading medium (register finding 1).  RR3 owns
+it and closed it at `v0.34.43`; §2.3 makes this row the verification, and like
+RR7.25 it verifies by *measuring* rather than by reading.
+
+**The finding is closed.**  The remedy it asks for — "build
+`<T>_preserves_replyCallerLinkageReciprocal` for the remaining transitions" — is
+built for every transition in the family: the two dual-queue primitives, the
+call, the reply, the `replyRecv` composite, both notification arms, the three
+caps-carrying wrappers, the cross-core `endpointCallOnCore`, and `ipcUnwrapCaps`.
+Each is *consumed* at its bundle's construction site rather than hypothesised.
+`scripts/check_ipc_invariant_dethreading.py --report` measures **0 threaded
+statements out of 158** and **0 post-state bindings**, over a conjunct set, a
+bundle family and a per-bundle pre-state all derived from the sources, with all
+four payoff theorems present.
+
+**The sweep RR3 did not owe, and the reason a verification row earns its place.**
+That census figure is quoted in the project's canonical prose as the evidence for
+the de-threading claim, and all three sites — `CLAUDE.md`, `AGENTS.md`,
+`docs/spec/SELE4N_SPEC.md` — said **146**: the count before WS-RR RR7.22 added
+twelve statements, two cuts earlier.  A hand-maintained number beside a
+derivation is the enumeration-standing-in-for-a-derivation shape this project's
+conventions name, and it had gone stale inside the documented evidence for the
+claim itself, silently, with the gate passing throughout.
+
+Corrected to 158, and made self-checking rather than left to be re-remembered.
+The gate that already measures the family now also holds the prose to it:
+
+- **The number is derived**, never a constant — it is the census's own
+  `len(bundles)`, computed on the same pass.
+- **The sites are derived**, never a list — every tracked Markdown file, so a
+  prose site added tomorrow is covered the day it is written rather than the day
+  someone remembers to register it.
+- **History is exempt, by name and with a reason.**  `CHANGELOG.md` and
+  `docs/dev_history/` record what was true at the version they describe;
+  rewriting them to today's count would be the falsification, not the fix — the
+  same rule that keeps CHANGELOG headers off the version-bump list.
+- **The default branch is a decision.**  A claim spelled in a form the reader
+  cannot parse fails the gate rather than being skipped: this scanner builds a
+  set of *requirements*, so it fails closed by refusing input it cannot read.  A
+  file carrying no claim at all is the one input on this path for which silence
+  is the right answer, and it is enumerated as such.
+
+Four token-preserving witnesses pin it, one of them the shape that actually
+shipped — prose correct when written, a bundle added underneath it — plus a wrong
+digit, an unparseable spelling, and two acceptances (a matching figure, and a
+stale figure inside historical prose).  The check has a `documented_family_size`
+entry in `CHECKS`, so the harness's own rule that every check carry a
+token-preserving case applies to it.
+
+Tier 0-3 green; `test_rust.sh` and the aarch64 cross gate green.
+
 ## v0.34.76 — the two gates, run rather than catalogued (and a pin corrected)
 
 **WS-RR RR7.25** — the RwLock-deferred mediums.  Both register rows (27, 28)

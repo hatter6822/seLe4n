@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.34.76` (`lakefile.toml`) |
+| **Package version** | `0.34.77` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 339,118 across 317 Lean files |
 | **Test LoC** | 70,307 across 70 Lean test suites |
@@ -3896,11 +3896,15 @@ carry an explicit `h : ... = .ok st'` success hypothesis.
 `*_preserves_ipcInvariantFull` theorem now *establishes* each conjunct from its
 pre-state and the step rather than assuming it of its own post-state: the Tier-0
 gate `scripts/check_ipc_invariant_dethreading.py` reports **zero** conjuncts
-bound on a post-state across all **146** statements in the family (the
+bound on a post-state across all **158** statements in the family (the
 `*_establishes_ipcInvariantFull*` composites included), with the conjunct
 set, the bundle family and each bundle's pre-state all derived from the sources
 rather than listed, and prints `[PASS] ipcInvariantFull is de-threaded end to
-end`.  The pre-state conditions that replaced them are collected
+end`.  Since WS-RR RR7.28 the **figure itself** is gated: the same check holds
+every tracked Markdown file outside `CHANGELOG.md` and `docs/dev_history/` — the
+two places the number is history rather than a claim about HEAD — to its own
+measurement, so a cut that adds a bundle fails until the prose it made stale is
+corrected.  The pre-state conditions that replaced them are collected
 and, where possible, *derived* in
 `SeLe4n/Kernel/IPC/Invariant/Reachability.lean` (`ipcReachable`, proved
 inhabited by the boot state).  The top-level dispatch payoff **exists**:

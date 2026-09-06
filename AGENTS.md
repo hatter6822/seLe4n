@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.76.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.77.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1598,13 +1598,22 @@ code may assume:
 - **`ipcInvariantFull` has its dispatch payoff — three theorems, under
   stated packs and confinements.**  The whole bundle family is de-threaded:
   the RR3.1 gate (`scripts/check_ipc_invariant_dethreading.py`, Tier 0)
-  reports **zero** conjuncts bound on a post-state across all **146**
+  reports **zero** conjuncts bound on a post-state across all **158**
   `*_preserves_ipcInvariantFull*` / `*_establishes_ipcInvariantFull*`
   statements, measured over the comment-free code view with the conjunct set,
   the bundle family and each bundle's own pre-state all *derived* rather than
   listed, and prints `[PASS] ipcInvariantFull is de-threaded end to end`;
   `docs/planning/ipc_dethreading_pending.txt` carries zero registrations and
-  the gate holds that register in both directions.  The payoff tier (WS-RR
+  the gate holds that register in both directions.  **The figure above is
+  enforced, not asserted** (WS-RR RR7.28): the gate holds every tracked
+  Markdown file outside `CHANGELOG.md` and `docs/dev_history/` — where the
+  number is history, and rewriting it would be the falsification — to its own
+  `len(bundles)`, so a cut that adds a bundle fails until the prose it made
+  stale is corrected, and a claim spelled in a form the reader cannot parse
+  fails rather than being skipped.  A hand-maintained count beside a derivation
+  is the enumeration-standing-in-for-a-derivation shape this file warns about,
+  and it drifted exactly that way: RR7.22 added twelve statements and the three
+  canonical sites still said 146 two cuts later.  The payoff tier (WS-RR
   RR3.15–RR3.26, v0.34.43): `dispatchCapabilityOnly_preserves_ipcInvariantFull`
   (`SeLe4n/Kernel/API.lean`, **production**) covers every capability-gated arm
   under the pre-state pack `capabilityDispatchQuiescence`, composing the
