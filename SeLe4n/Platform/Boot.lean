@@ -5549,7 +5549,7 @@ theorem bootFromPlatformCheckedWithIdleThreads_idle_threadState (config : Platfo
   apply inferThreadState_ready_of_runQueueOnCore ist'.state c
   · exact (SeLe4n.Kernel.RunQueue.mem_toList_iff_mem _ _).mp
       (bootFromPlatformCheckedWithIdleThreads_idle_available config ist' h c).1
-  · unfold threadRunningOnSomeCore
+  · unfold threadRunningOnSomeCore runningOnSomeCore
     rw [List.any_eq_false]
     intro c' _
     rw [bootFromPlatformCheckedWithIdleThreads_currentAllNone config ist' h c']
@@ -5601,19 +5601,19 @@ theorem bootFromPlatformChecked_ok_not_running_not_queued (config : PlatformConf
       threadQueuedOnSomeCore ist.state tid = false := by
   have hSched := bootFromPlatformChecked_ok_scheduler_eq config ist h
   constructor
-  · unfold threadRunningOnSomeCore
+  · unfold threadRunningOnSomeCore runningOnSomeCore
     rw [List.any_eq_false]
     intro c _
     rw [hSched]
     show ¬(((default : SchedulerState).currentOnCore c) == some tid) = true
     rw [(default_state_perCoreInitialized c).1]
     simp
-  · unfold threadQueuedOnSomeCore
+  · unfold threadQueuedOnSomeCore runnableOnSomeCore
     rw [List.any_eq_false]
     intro c _
     rw [hSched]
-    show ¬(decide (tid ∈ (default : SchedulerState).runQueueOnCore c)) = true
-    rw [(default_state_perCoreInitialized c).2.1, decide_eq_true_eq]
+    show tid ∉ (default : SchedulerState).runQueueOnCore c
+    rw [(default_state_perCoreInitialized c).2.1]
     exact SeLe4n.Kernel.RunQueue.not_mem_empty tid
 
 /-- **PR #889 review**: the plain checked boot is `threadStateConsistent` —
@@ -5691,7 +5691,7 @@ theorem bootFromPlatformCheckedWithIdleThreads_threadStateConsistent (config : P
         have hRun₂ : threadRunningOnSomeCore
             (SeLe4n.Kernel.Concurrency.allCores.foldl enqueueIdleThread ist).state ⟨oid.toNat⟩
               = false := by
-          unfold threadRunningOnSomeCore
+          unfold threadRunningOnSomeCore runningOnSomeCore
           rw [List.any_eq_false]
           intro c' _
           rw [bootFromPlatformCheckedWithIdleThreads_currentAllNone config _ hIdleBoot c']
@@ -5699,10 +5699,13 @@ theorem bootFromPlatformCheckedWithIdleThreads_threadStateConsistent (config : P
         have hQ₂ : threadQueuedOnSomeCore
             (SeLe4n.Kernel.Concurrency.allCores.foldl enqueueIdleThread ist).state ⟨oid.toNat⟩
               = false := by
-          unfold threadQueuedOnSomeCore
+          unfold threadQueuedOnSomeCore runnableOnSomeCore
           rw [List.any_eq_false]
           intro c' _
-          rw [decide_eq_true_eq, ← SeLe4n.Kernel.RunQueue.mem_toList_iff_mem,
+          show (⟨oid.toNat⟩ : SeLe4n.ThreadId) ∉
+            (SeLe4n.Kernel.Concurrency.allCores.foldl enqueueIdleThread
+              ist).state.scheduler.runQueueOnCore c'
+          rw [← SeLe4n.Kernel.RunQueue.mem_toList_iff_mem,
             bootFromPlatformCheckedWithIdleThreads_mem_runQueueOnCore_iff config _ hIdleBoot c']
           intro hEq
           apply hIdle

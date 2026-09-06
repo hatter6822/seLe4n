@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.85.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.86.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,13 +203,13 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~56118 lines)
+- `CHANGELOG.md` (~56430 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22545 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12037 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
-- `SeLe4n/Kernel/API.lean` (~7142 lines)
-- `SeLe4n/Platform/Boot.lean` (~5855 lines)
-- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5742 lines)
+- `SeLe4n/Kernel/API.lean` (~7210 lines)
+- `SeLe4n/Platform/Boot.lean` (~5858 lines)
+- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5743 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~5186 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5129 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5001 lines)
@@ -225,7 +225,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/AuditRead.lean` (~3789 lines)
 - `SeLe4n/Kernel/CrossSubsystem.lean` (~3705 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~3536 lines)
-- `SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (~3456 lines)
+- `SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (~3517 lines)
 - `SeLe4n/Platform/FFI.lean` (~3438 lines)
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
 - `tests/SmpTlbShootdownSuite.lean` (~3354 lines)
@@ -246,6 +246,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean` (~2637 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean` (~2602 lines)
 - `docs/planning/HIERARCHICAL_CBS_PLAN.md` (~2593 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2564 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdown.lean` (~2562 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~2535 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~2505 lines)
@@ -263,7 +264,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2254 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean` (~2222 lines)
 - `SeLe4n/Prelude.lean` (~2137 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2112 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2079 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~2074 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2059 lines)
@@ -303,16 +303,16 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1645 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1600 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~1564 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1559 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~1538 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1537 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~1488 lines)
 - `tests/LockSetSuite.lean` (~1483 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
 - `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1425 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~1423 lines)
 - `docs/dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` (~1414 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~1411 lines)
 - `docs/dev_history/AUDIT_v0.23.21_WORKSTREAM_PLAN.md` (~1411 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~1396 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean` (~1393 lines)
@@ -352,6 +352,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Machine.lean` (~1128 lines)
 - `tests/PerObjectLockSuite.lean` (~1104 lines)
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1085 lines)
+- `tests/SmpIdleSuite.lean` (~1079 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
 - `tests/SmpFoundationsSuite.lean` (~1071 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetHeld.lean` (~1063 lines)
@@ -363,7 +364,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Model/FrozenState.lean` (~1007 lines)
 - `tests/SmpCbsSuite.lean` (~1001 lines)
 - `tests/SmpCrossCoreCallSuite.lean` (~1001 lines)
-- `tests/SmpIdleSuite.lean` (~999 lines)
 - `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~998 lines)
 - `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean` (~993 lines)
 - `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md` (~984 lines)
@@ -387,7 +387,7 @@ To find files that need pagination today, run:
 - `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` (~880 lines)
 - `SeLe4n/Kernel/IPC/Operations/Fault.lean` (~868 lines)
 - `docs/planning/SMP_RUST_HAL_PLAN.md` (~868 lines)
-- `tests/Ak9PlatformSuite.lean` (~867 lines)
+- `tests/Ak9PlatformSuite.lean` (~868 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean` (~835 lines)
 - `tests/DecodingSuite.lean` (~833 lines)
@@ -1988,10 +1988,32 @@ code may assume:
   dispatch, and the harness re-establishes it with `syncThreadStates` before
   it checks.  What the live decisions read is the inactive flag — `tcbSuspend`
   / `tcbResume` / the cancellation and fault suspends test the field against
-  `.Inactive` only — stated as `threadInactiveFlagConsistent`, proved of the
-  boot state (`…_threadInactiveFlagConsistent`), and owed across the scheduler
-  and IPC surfaces as registered debt (RR7.36).  New code must not cite
-  `threadStateConsistent` of a post-dispatch state.
+  `.Inactive` only — stated as `threadInactiveFlagConsistent` and proved of the
+  boot state (`…_threadInactiveFlagConsistent`).  **The per-core context switch
+  preserves it** (WS-RR RR7.36,
+  `switchToThreadOnCore_preserves_threadInactiveFlagConsistent`, with
+  `preemptCurrentOnCore_preserves_…` for the primitive it composes), under two
+  side conditions that are the two ways it genuinely breaks: a displaced thread
+  stranded off every queue, and a dispatch of a thread the state classifies
+  `.Inactive`.  The reusable machinery is
+  `threadInactiveFlagConsistent_of_frame` / `…_of_frame_placing` over
+  `threadPlacedOnSomeCore`, with `inferThreadState_eq_inactive_iff` the
+  characterisation — a thread is `.Inactive` exactly when it is unplaced and
+  not blocked — so a further surface is a per-transition application rather
+  than a fresh argument.  The wake and idle-enqueue paths (which change the
+  stored flag *and* the placement), the lifecycle pair and the IPC writers
+  remain registered debt.  New code must not cite `threadStateConsistent` of a
+  post-dispatch state.
+
+  **And the classification's placement tests are the cross-core wake's
+  single-placement tests** (RR7.36): `threadRunningOnSomeCore` /
+  `threadQueuedOnSomeCore` are *defined as* `runningOnSomeCore` /
+  `runnableOnSomeCore`, not stated to equal them.  RR5.10 wrote a second fold
+  over `allCores` in a module that does not import the one where SM5.C.1 and
+  SM5.D.4 had already asked the question, and this pair diverging is not
+  cosmetic: the wake's guard exists to keep one TCB off two cores, so a
+  disagreement would let a thread be enqueued a second time while still
+  classifying as running.
   **A successful boot respects the object-capacity invariant** (PR #889
   review round 18): `wellFormed`'s fifth conjunct `objectBudgetRespected`
   requires `initialObjects.length + 1 + numCores ≤ maxObjects` — room for the

@@ -1654,17 +1654,45 @@ at every core to find out which — asking the boot core alone answers "no" for 
 thread running on a secondary, which is a different claim.
 
 Decidable by construction: `allCores` is `List.finRange numCores`, so the
-existential is a fold over a finite list rather than a quantifier. -/
+existential is a fold over a finite list rather than a quantifier.
+
+**WS-RR RR7.36 — this is `Selection.runningOnSomeCore`, not a second answer to
+its question.**  SM5.D.4 had already asked "is `tid` current on some core?" for
+the cross-core replenish wake, whose whole job is to keep one TCB from being
+dispatchable on two cores; RR5.10 asked it again here, in a module that does not
+import that one, and wrote a second fold over `allCores`.  Two implementations of
+one question diverge (`CLAUDE.md`, *one question answered in two places*), and
+this pair diverging is not a cosmetic defect: the wake's single-placement guard
+and the thread-state classification would disagree about whether a thread is
+placed, so a thread could be enqueued a second time while still classifying as
+running.  So the classification is *defined as* the guard's predicate rather than
+stated to equal it — the divergence is impossible instead of merely checked. -/
 def threadRunningOnSomeCore (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
-  SeLe4n.Kernel.Concurrency.allCores.any fun c =>
-    (st.scheduler.currentOnCore c) == some tid
+  runningOnSomeCore st tid
 
 /-- **WS-SM SM4.C.11 / WS-RR RR5.10**: is `tid` in **some** core's run queue?
 The per-core lift of the `runQueueOnCore bootCoreId` test (see
-`threadRunningOnSomeCore`). -/
+`threadRunningOnSomeCore`).
+
+**WS-RR RR7.36**: likewise `Selection.runnableOnSomeCore` — SM5.C.1's
+single-placement test — rather than a second fold spelling run-queue membership
+`decide (tid ∈ ·)` where that one spells it `RunQueue.contains`.  The two
+spellings agree (`Membership` on `RunQueue` *is* `contains … = true`), which is
+exactly what makes a divergence between them silent. -/
 def threadQueuedOnSomeCore (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
-  SeLe4n.Kernel.Concurrency.allCores.any fun c =>
-    decide (tid ∈ st.scheduler.runQueueOnCore c)
+  runnableOnSomeCore st tid
+
+/-- **WS-RR RR7.36**: the classification's running test and the cross-core wake's
+single-placement test are the same function.  Definitional, and stated so a
+reader of either module finds the other. -/
+theorem threadRunningOnSomeCore_eq_runningOnSomeCore
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    threadRunningOnSomeCore st tid = runningOnSomeCore st tid := rfl
+
+/-- **WS-RR RR7.36**: the run-queue half of the same identification. -/
+theorem threadQueuedOnSomeCore_eq_runnableOnSomeCore
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    threadQueuedOnSomeCore st tid = runnableOnSomeCore st tid := rfl
 
 /-- V8-G3: Infer the `ThreadState` for a thread based on observable system state.
 This is the canonical definition of what each `ThreadState` value means:
@@ -1773,7 +1801,7 @@ theorem inferThreadState_running_of_currentOnCore (st : SystemState)
     (h : st.scheduler.currentOnCore c = some tid) :
     inferThreadState st tid tcb = .Running := by
   have hRun : threadRunningOnSomeCore st tid = true := by
-    simp only [threadRunningOnSomeCore, List.any_eq_true]
+    simp only [threadRunningOnSomeCore, runningOnSomeCore, List.any_eq_true]
     exact ⟨c, SeLe4n.Kernel.Concurrency.mem_allCores c, by simp [h]⟩
   simp only [inferThreadState, hRun, if_true]
 
@@ -1785,8 +1813,8 @@ theorem inferThreadState_ready_of_runQueueOnCore (st : SystemState)
     (hNotCurrent : threadRunningOnSomeCore st tid = false) :
     inferThreadState st tid tcb = .Ready := by
   have hQ : threadQueuedOnSomeCore st tid = true := by
-    simp only [threadQueuedOnSomeCore, List.any_eq_true]
-    exact ⟨c, SeLe4n.Kernel.Concurrency.mem_allCores c, by simp [hQueued]⟩
+    simp only [threadQueuedOnSomeCore, runnableOnSomeCore, List.any_eq_true]
+    exact ⟨c, SeLe4n.Kernel.Concurrency.mem_allCores c, hQueued⟩
   simp only [inferThreadState, hNotCurrent, hQ, Bool.false_eq_true, if_false, if_true]
 
 /-- **WS-RR RR5.10** (conservativity): on a state whose secondary cores are
@@ -1804,7 +1832,7 @@ theorem threadRunningOnSomeCore_eq_bootCore_of_secondaries_quiescent
       st.scheduler.currentOnCore c = none) :
     threadRunningOnSomeCore st tid =
       ((st.scheduler.currentOnCore bootCoreId) == some tid) := by
-  simp only [threadRunningOnSomeCore]
+  simp only [threadRunningOnSomeCore, runningOnSomeCore]
   cases hBoot : (st.scheduler.currentOnCore bootCoreId) == some tid with
   | true =>
       simp only [List.any_eq_true]
@@ -1823,11 +1851,12 @@ theorem threadQueuedOnSomeCore_eq_bootCore_of_secondaries_quiescent
       tid ∉ st.scheduler.runQueueOnCore c) :
     threadQueuedOnSomeCore st tid =
       decide (tid ∈ st.scheduler.runQueueOnCore bootCoreId) := by
-  simp only [threadQueuedOnSomeCore]
+  simp only [threadQueuedOnSomeCore, runnableOnSomeCore]
   cases hBoot : decide (tid ∈ st.scheduler.runQueueOnCore bootCoreId) with
   | true =>
       simp only [List.any_eq_true]
-      exact ⟨bootCoreId, SeLe4n.Kernel.Concurrency.mem_allCores bootCoreId, hBoot⟩
+      exact ⟨bootCoreId, SeLe4n.Kernel.Concurrency.mem_allCores bootCoreId,
+        by simpa using hBoot⟩
   | false =>
       have hNotBoot : tid ∉ st.scheduler.runQueueOnCore bootCoreId := by
         simpa using hBoot
@@ -1860,6 +1889,430 @@ theorem inferThreadState_eq_bootCore_of_secondaries_quiescent
     threadRunningOnSomeCore_eq_bootCore_of_secondaries_quiescent st tid hCurrent,
     threadQueuedOnSomeCore_eq_bootCore_of_secondaries_quiescent st tid hQueue,
     decide_eq_true_eq]
+
+
+-- ============================================================================
+-- WS-RR RR7.36 — preservation of the inactive-flag relation
+--
+-- `threadStateConsistent` is a boot-state theorem and false after any core's
+-- first dispatch; `threadInactiveFlagConsistent` is the relation the *live*
+-- decisions read (`tcbSuspend` / `tcbResume` / the cross-core cancellation /
+-- the fault suspend all test the field against `.Inactive` only), and its
+-- preservation is what `docs/REGISTERED_DEBT.md` records as owed.  This section
+-- discharges it for the per-core context switch and the primitives it composes,
+-- and states the frame the remaining surfaces will use.
+--
+-- The two side conditions on the dispatch are the two ways the relation
+-- genuinely breaks, not proof bookkeeping: placing a thread the state
+-- classifies `.Inactive`, and stranding a displaced thread off every queue.
+-- ============================================================================
+
+def threadPlacedOnSomeCore (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
+  threadRunningOnSomeCore st tid || threadQueuedOnSomeCore st tid
+
+theorem inferThreadState_eq_inactive_iff (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) :
+    inferThreadState st tid tcb = .Inactive ↔
+      (threadPlacedOnSomeCore st tid = false ∧ tcb.ipcState = .ready) := by
+  unfold inferThreadState threadPlacedOnSomeCore
+  cases hRun : threadRunningOnSomeCore st tid <;>
+    cases hQ : threadQueuedOnSomeCore st tid <;>
+      cases hIpc : tcb.ipcState <;> simp
+
+
+theorem threadInactiveFlagConsistent_of_frame (st st' : SystemState)
+    (hTcb : ∀ (oid : SeLe4n.ObjId) (tcb' : TCB), st'.objects[oid]? = some (.tcb tcb') →
+      ∃ tcb, st.objects[oid]? = some (.tcb tcb) ∧
+        tcb'.threadState = tcb.threadState ∧ tcb'.ipcState = tcb.ipcState)
+    (hPlaced : ∀ tid, threadPlacedOnSomeCore st' tid = threadPlacedOnSomeCore st tid)
+    (h : threadInactiveFlagConsistent st) :
+    threadInactiveFlagConsistent st' := by
+  intro oid tcb' hObj
+  obtain ⟨tcb, hPre, hState, hIpc⟩ := hTcb oid tcb' hObj
+  have hOld := h oid tcb hPre
+  rw [hState, inferThreadState_eq_inactive_iff, hIpc, hPlaced,
+    ← inferThreadState_eq_inactive_iff]
+  exact hOld
+
+theorem threadInactiveFlagConsistent_of_frame_placing (st st' : SystemState)
+    (moved : SeLe4n.ThreadId)
+    (hTcb : ∀ (oid : SeLe4n.ObjId) (tcb' : TCB), st'.objects[oid]? = some (.tcb tcb') →
+      ∃ tcb, st.objects[oid]? = some (.tcb tcb) ∧
+        tcb'.threadState = tcb.threadState ∧ tcb'.ipcState = tcb.ipcState)
+    (hOthers : ∀ tid, tid ≠ moved →
+      threadPlacedOnSomeCore st' tid = threadPlacedOnSomeCore st tid)
+    (hMovedNow : threadPlacedOnSomeCore st' moved = true)
+    (hMovedActive : ∀ tcb, st.getTcb? moved = some tcb →
+      inferThreadState st moved tcb ≠ .Inactive)
+    (h : threadInactiveFlagConsistent st) :
+    threadInactiveFlagConsistent st' := by
+  intro oid tcb' hObj
+  obtain ⟨tcb, hPre, hState, hIpc⟩ := hTcb oid tcb' hObj
+  by_cases hEq : (⟨oid.toNat⟩ : SeLe4n.ThreadId) = moved
+  · subst hEq
+    have hNot := hMovedActive tcb ((SystemState.getTcb?_eq_some_iff st _ tcb).mpr hPre)
+    constructor
+    · intro hFlag
+      exact absurd (by
+        rw [hState] at hFlag
+        exact ((h oid tcb hPre).mp hFlag)) hNot
+    · intro hInf
+      rw [inferThreadState_eq_inactive_iff, hMovedNow] at hInf
+      exact absurd hInf.1 (by simp)
+  · rw [hState, inferThreadState_eq_inactive_iff, hIpc, hOthers _ hEq,
+      ← inferThreadState_eq_inactive_iff]
+    exact h oid tcb hPre
+
+
+/-- Placement is read off the two per-core slot families, so pointwise equality
+of both families gives it. -/
+theorem threadPlacedOnSomeCore_congr (st st' : SystemState) (u : SeLe4n.ThreadId)
+    (hCur : ∀ c : CoreId, st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c)
+    (hQ : ∀ c : CoreId,
+      (u ∈ st'.scheduler.runQueueOnCore c) ↔ (u ∈ st.scheduler.runQueueOnCore c)) :
+    threadPlacedOnSomeCore st' u = threadPlacedOnSomeCore st u := by
+  have hRunFn : (fun c : CoreId => (st'.scheduler.currentOnCore c) == some u)
+      = (fun c : CoreId => (st.scheduler.currentOnCore c) == some u) := by
+    funext c; rw [hCur c]
+  have hQFn : (fun c : CoreId => (st'.scheduler.runQueueOnCore c).contains u)
+      = (fun c : CoreId => (st.scheduler.runQueueOnCore c).contains u) := by
+    funext c; exact Bool.eq_iff_iff.mpr (hQ c)
+  unfold threadPlacedOnSomeCore threadRunningOnSomeCore threadQueuedOnSomeCore
+    runningOnSomeCore runnableOnSomeCore
+  rw [hRunFn, hQFn]
+
+
+theorem threadRunningOnSomeCore_of_currentOnCore (st : SystemState) (c : CoreId)
+    (u : SeLe4n.ThreadId) (h : st.scheduler.currentOnCore c = some u) :
+    threadRunningOnSomeCore st u = true := by
+  simp only [threadRunningOnSomeCore, runningOnSomeCore, List.any_eq_true]
+  exact ⟨c, SeLe4n.Kernel.Concurrency.mem_allCores c, by simp [h]⟩
+
+/-- **WS-RR RR7.36**: overwriting one TCB with a record that agrees on the two
+fields this relation reads frames every stored TCB's reading of them. -/
+theorem objects_insert_tcb_frame (st : SystemState) (k : SeLe4n.ObjId)
+    (saved prev : TCB) (hObjInv : st.objects.invExt)
+    (hPrev : st.objects[k]? = some (.tcb prev))
+    (hState : saved.threadState = prev.threadState)
+    (hIpc : saved.ipcState = prev.ipcState)
+    (oid : SeLe4n.ObjId) (tcb' : TCB)
+    (hObj : (st.objects.insert k (.tcb saved))[oid]? = some (.tcb tcb')) :
+    ∃ tcb, st.objects[oid]? = some (.tcb tcb) ∧
+      tcb'.threadState = tcb.threadState ∧ tcb'.ipcState = tcb.ipcState := by
+  have hObj' : (st.objects.insert k (.tcb saved)).get? oid = some (.tcb tcb') := hObj
+  by_cases hOid : oid = k
+  · subst hOid
+    rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self _ _ _ hObjInv] at hObj'
+    cases hObj'
+    exact ⟨prev, hPrev, hState, hIpc⟩
+  · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _
+      (fun hEq => hOid (eq_of_beq hEq).symm) hObjInv] at hObj'
+    exact ⟨tcb', hObj', rfl, rfl⟩
+
+/-- **WS-RR RR7.36**: saving the outgoing thread's registers and re-enqueueing it
+on the core it was running on leaves every thread's *placement* unchanged.  The
+outgoing thread swaps running for queued — both are placed — and no other
+thread's slot moves. -/
+theorem threadPlacedOnSomeCore_save_and_reenqueue
+    (st : SystemState) (c : CoreId) (prevTid u : SeLe4n.ThreadId)
+    (saved : KernelObject) (prio : SeLe4n.Priority)
+    (hCur : st.scheduler.currentOnCore c = some prevTid) :
+    threadPlacedOnSomeCore
+      { st with objects := st.objects.insert prevTid.toObjId saved,
+                scheduler := st.scheduler.setRunQueueOnCore c
+                  ((st.scheduler.runQueueOnCore c).insert prevTid prio) } u
+      = threadPlacedOnSomeCore st u := by
+  by_cases hu : u = prevTid
+  · subst hu
+    have hRun : threadRunningOnSomeCore st u = true :=
+      threadRunningOnSomeCore_of_currentOnCore st c u hCur
+    have hRun' : threadRunningOnSomeCore
+        ({ st with objects := st.objects.insert u.toObjId saved,
+                   scheduler := st.scheduler.setRunQueueOnCore c
+                     ((st.scheduler.runQueueOnCore c).insert u prio) } : SystemState) u
+        = true :=
+      threadRunningOnSomeCore_of_currentOnCore _ c u (by
+        show (st.scheduler.setRunQueueOnCore c _).currentOnCore c = some u
+        rw [SchedulerState.setRunQueueOnCore_currentOnCore]; exact hCur)
+    simp [threadPlacedOnSomeCore, hRun, hRun']
+  · refine threadPlacedOnSomeCore_congr st _ u ?_ ?_
+    · intro c'
+      exact SchedulerState.setRunQueueOnCore_currentOnCore _ _ _ _
+    · intro c'
+      by_cases hc : c' = c
+      · subst hc
+        show (u ∈ (st.scheduler.setRunQueueOnCore c' _).runQueueOnCore c') ↔ _
+        rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self, RunQueue.mem_insert]
+        exact ⟨fun hOr => hOr.elim id (fun hEq => absurd hEq hu), Or.inl⟩
+      · show (u ∈ (st.scheduler.setRunQueueOnCore c _).runQueueOnCore c') ↔ _
+        rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _
+          (fun hEq => hc hEq.symm)]
+
+/-- The shape a context-switch preempt leaves: the outgoing thread's TCB is
+rewritten with a new register context only, and it is re-enqueued on the core it
+was running on.  Stated over the shape rather than over `preemptCurrentOnCore`
+so the two consumers below share one argument. -/
+theorem threadInactiveFlagConsistent_save_and_reenqueue
+    (st : SystemState) (c : CoreId) (prevTid : SeLe4n.ThreadId)
+    (prevTcb saved : TCB) (prio : SeLe4n.Priority)
+    (hObjInv : st.objects.invExt)
+    (hPrevObj : st.getTcb? prevTid = some prevTcb)
+    (hCur : st.scheduler.currentOnCore c = some prevTid)
+    (hState : saved.threadState = prevTcb.threadState)
+    (hIpc : saved.ipcState = prevTcb.ipcState)
+    (h : threadInactiveFlagConsistent st) :
+    threadInactiveFlagConsistent
+      { st with objects := st.objects.insert prevTid.toObjId (.tcb saved),
+                scheduler := st.scheduler.setRunQueueOnCore c
+                  ((st.scheduler.runQueueOnCore c).insert prevTid prio) } := by
+  refine threadInactiveFlagConsistent_of_frame st _ ?_ ?_ h
+  · intro oid tcb' hObj
+    exact objects_insert_tcb_frame st prevTid.toObjId saved prevTcb hObjInv
+      ((SystemState.getTcb?_eq_some_iff st prevTid prevTcb).mp hPrevObj)
+      hState hIpc oid tcb' hObj
+  · intro u
+    exact threadPlacedOnSomeCore_save_and_reenqueue st c prevTid u _ prio hCur
+
+theorem preemptCurrentOnCore_preserves_threadInactiveFlagConsistent
+    (st : SystemState) (c : CoreId) (incoming : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (h : threadInactiveFlagConsistent st) :
+    threadInactiveFlagConsistent (preemptCurrentOnCore st c incoming) := by
+  unfold preemptCurrentOnCore
+  split
+  · exact h
+  · rename_i prevTid hCur
+    split
+    · exact h
+    · split
+      · rename_i prevTcb hPrev
+        exact threadInactiveFlagConsistent_save_and_reenqueue st c prevTid prevTcb _ _
+          hObjInv hPrev hCur rfl rfl h
+      · exact h
+
+
+theorem threadPlacedOnSomeCore_eq_true_iff (st : SystemState) (u : SeLe4n.ThreadId) :
+    threadPlacedOnSomeCore st u = true ↔
+      ((∃ c : CoreId, st.scheduler.currentOnCore c = some u) ∨
+       (∃ c : CoreId, u ∈ st.scheduler.runQueueOnCore c)) := by
+  unfold threadPlacedOnSomeCore threadRunningOnSomeCore threadQueuedOnSomeCore
+    runningOnSomeCore runnableOnSomeCore
+  simp only [Bool.or_eq_true, List.any_eq_true, beq_iff_eq]
+  constructor
+  · rintro (⟨c, _, hc⟩ | ⟨c, _, hc⟩)
+    · exact Or.inl ⟨c, hc⟩
+    · exact Or.inr ⟨c, hc⟩
+  · rintro (⟨c, hc⟩ | ⟨c, hc⟩)
+    · exact Or.inl ⟨c, SeLe4n.Kernel.Concurrency.mem_allCores c, hc⟩
+    · exact Or.inr ⟨c, SeLe4n.Kernel.Concurrency.mem_allCores c, hc⟩
+
+theorem threadQueuedOnSomeCore_eq_true_iff (st : SystemState) (u : SeLe4n.ThreadId) :
+    threadQueuedOnSomeCore st u = true ↔ ∃ c : CoreId, u ∈ st.scheduler.runQueueOnCore c := by
+  unfold threadQueuedOnSomeCore runnableOnSomeCore
+  simp only [List.any_eq_true]
+  exact ⟨fun ⟨c, _, hc⟩ => ⟨c, hc⟩,
+    fun ⟨c, hc⟩ => ⟨c, SeLe4n.Kernel.Concurrency.mem_allCores c, hc⟩⟩
+
+
+/-- The dispatch step: dequeue `tid` from core `c` and make it current there.
+
+The substantive side conditions are both real properties of the caller, not
+bookkeeping.  `hOutgoing` says the thread this dispatch displaces is queued
+somewhere — which is exactly what `preemptCurrentOnCore` establishes by
+re-enqueueing it, and whose absence would strand a runnable thread as
+`.Inactive`-observable while its stored flag says otherwise.  `hActive` says the
+incoming thread is not one the state classifies inactive: dispatching an
+inactive thread is the other way this relation breaks, and the run-queue
+selection is what rules it out. -/
+theorem threadInactiveFlagConsistent_dispatch (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId)
+    (hOutgoing : ∀ u, u ≠ tid → st.scheduler.currentOnCore c = some u →
+      threadQueuedOnSomeCore st u = true)
+    (hActive : ∀ tcb, st.getTcb? tid = some tcb →
+      inferThreadState st tid tcb ≠ .Inactive)
+    (h : threadInactiveFlagConsistent st) :
+    threadInactiveFlagConsistent
+      { st with scheduler :=
+          (st.scheduler.setRunQueueOnCore c
+            ((st.scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore c (some tid) } := by
+  have hCur' : ∀ c' : CoreId,
+      ((st.scheduler.setRunQueueOnCore c
+        ((st.scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore c
+          (some tid)).currentOnCore c' =
+      if c' = c then some tid else st.scheduler.currentOnCore c' := by
+    intro c'
+    by_cases hc : c' = c
+    · subst hc
+      rw [if_pos rfl, SchedulerState.setCurrentOnCore_currentOnCore_self]
+    · rw [if_neg hc,
+        SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ (fun hEq => hc hEq.symm),
+        SchedulerState.setRunQueueOnCore_currentOnCore]
+  have hQ' : ∀ (c' : CoreId) (u : SeLe4n.ThreadId),
+      (u ∈ ((st.scheduler.setRunQueueOnCore c
+        ((st.scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore c
+          (some tid)).runQueueOnCore c') ↔
+        (u ∈ st.scheduler.runQueueOnCore c' ∧ (c' = c → u ≠ tid)) := by
+    intro c' u
+    by_cases hc : c' = c
+    · subst hc
+      rw [SchedulerState.setCurrentOnCore_runQueueOnCore,
+        SchedulerState.setRunQueueOnCore_runQueueOnCore_self, RunQueue.mem_remove]
+      exact ⟨fun hx => ⟨hx.1, fun _ => hx.2⟩, fun hx => ⟨hx.1, hx.2 rfl⟩⟩
+    · rw [SchedulerState.setCurrentOnCore_runQueueOnCore,
+        SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ (fun hEq => hc hEq.symm)]
+      exact ⟨fun hx => ⟨hx, fun hEq => absurd hEq hc⟩, fun hx => hx.1⟩
+  refine threadInactiveFlagConsistent_of_frame_placing st _ tid
+    (fun oid tcb' hObj => ⟨tcb', hObj, rfl, rfl⟩) ?_ ?_ hActive h
+  · intro u hu
+    apply Bool.eq_iff_iff.mpr
+    rw [threadPlacedOnSomeCore_eq_true_iff, threadPlacedOnSomeCore_eq_true_iff]
+    constructor
+    · rintro (⟨c', hc'⟩ | ⟨c', hc'⟩)
+      · rw [hCur' c'] at hc'
+        by_cases hc : c' = c
+        · subst hc; rw [if_pos rfl] at hc'; exact absurd (Option.some.inj hc').symm hu
+        · rw [if_neg hc] at hc'; exact Or.inl ⟨c', hc'⟩
+      · exact Or.inr ⟨c', ((hQ' c' u).mp hc').1⟩
+    · rintro (⟨c', hc'⟩ | ⟨c', hc'⟩)
+      · by_cases hc : c' = c
+        · subst hc
+          have := hOutgoing u hu hc'
+          rw [threadQueuedOnSomeCore_eq_true_iff] at this
+          obtain ⟨c'', hc''⟩ := this
+          exact Or.inr ⟨c'', (hQ' c'' u).mpr ⟨hc'', fun _ => hu⟩⟩
+        · exact Or.inl ⟨c', by rw [hCur' c', if_neg hc]; exact hc'⟩
+      · exact Or.inr ⟨c', (hQ' c' u).mpr ⟨hc', fun _ => hu⟩⟩
+  · rw [threadPlacedOnSomeCore_eq_true_iff]
+    exact Or.inl ⟨c, by rw [hCur' c, if_pos rfl]⟩
+
+
+/-- The relation reads only the object store and the scheduler slots, so a
+transition touching neither carries it across. -/
+theorem threadInactiveFlagConsistent_congr (st₁ st₂ : SystemState)
+    (hObjs : st₂.objects = st₁.objects) (hSched : st₂.scheduler = st₁.scheduler)
+    (h : threadInactiveFlagConsistent st₁) : threadInactiveFlagConsistent st₂ := by
+  refine threadInactiveFlagConsistent_of_frame st₁ st₂ ?_ ?_ h
+  · intro oid tcb' hObj
+    exact ⟨tcb', by rw [hObjs] at hObj; exact hObj, rfl, rfl⟩
+  · intro u
+    exact threadPlacedOnSomeCore_congr st₁ st₂ u (fun c => by rw [hSched])
+      (fun c => by rw [hSched])
+
+/-- The preempt's placement frame, extracted so the dispatch composition can
+use it without re-running the case analysis. -/
+theorem preemptCurrentOnCore_threadPlacedOnSomeCore (st : SystemState) (c : CoreId)
+    (incoming u : SeLe4n.ThreadId) :
+    threadPlacedOnSomeCore (preemptCurrentOnCore st c incoming) u
+      = threadPlacedOnSomeCore st u := by
+  unfold preemptCurrentOnCore
+  split
+  · rfl
+  · rename_i prevTid hCur
+    split
+    · rfl
+    · split
+      · exact threadPlacedOnSomeCore_save_and_reenqueue st c prevTid u _ _ hCur
+      · rfl
+
+/-- The preempt's store frame. -/
+theorem preemptCurrentOnCore_objects_frame (st : SystemState) (c : CoreId)
+    (incoming : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
+    (oid : SeLe4n.ObjId) (tcb' : TCB)
+    (hObj : (preemptCurrentOnCore st c incoming).objects[oid]? = some (.tcb tcb')) :
+    ∃ tcb, st.objects[oid]? = some (.tcb tcb) ∧
+      tcb'.threadState = tcb.threadState ∧ tcb'.ipcState = tcb.ipcState := by
+  revert hObj
+  unfold preemptCurrentOnCore
+  split
+  · intro hObj; exact ⟨tcb', hObj, rfl, rfl⟩
+  · rename_i prevTid _
+    split
+    · intro hObj; exact ⟨tcb', hObj, rfl, rfl⟩
+    · split
+      · rename_i prevTcb hPrev
+        intro hObj
+        have hObj' : (st.objects.insert prevTid.toObjId
+            (.tcb { prevTcb with registerContext := st.machine.regsOnCore c }))[oid]?
+            = some (.tcb tcb') := hObj
+        exact objects_insert_tcb_frame st prevTid.toObjId
+          { prevTcb with registerContext := st.machine.regsOnCore c } prevTcb hObjInv
+          ((SystemState.getTcb?_eq_some_iff st prevTid prevTcb).mp hPrev) rfl rfl oid tcb' hObj'
+      · intro hObj; exact ⟨tcb', hObj, rfl, rfl⟩
+
+
+/-- **WS-RR RR7.36**: the per-core context switch preserves the inactive-flag
+relation.
+
+Two side conditions, both real properties of the dispatch rather than proof
+bookkeeping.  `hCurrentValid` says core `c`'s current slot resolves to a TCB —
+the scheduler's own `currentThreadValid` — and it is what makes the preempt's
+re-enqueue happen at all: without it the displaced thread is stranded off every
+queue.  `hActive` says the state does not classify the incoming thread
+`.Inactive`, which the run-queue selection establishes and which a dispatch of a
+suspended thread would violate.  Neither can be dropped: they are the two ways
+this relation breaks. -/
+theorem switchToThreadOnCore_preserves_threadInactiveFlagConsistent
+    (st st' : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hCurrentValid : ∀ u, st.scheduler.currentOnCore c = some u → (st.getTcb? u).isSome)
+    (hActive : ∀ tcb, st.getTcb? tid = some tcb →
+      inferThreadState st tid tcb ≠ .Inactive)
+    (hStep : switchToThreadOnCore st c tid = .ok st')
+    (h : threadInactiveFlagConsistent st) :
+    threadInactiveFlagConsistent st' := by
+  unfold switchToThreadOnCore at hStep
+  split at hStep
+  · split at hStep
+    · -- The success arm.  Name the four intermediate states.
+      have hEq : st' = { (restoreIncomingContextOnCoreUnlessCurrent
+            { preemptCurrentOnCore st c tid with
+                scheduler := (preemptCurrentOnCore st c tid).scheduler.setRunQueueOnCore c
+                  (((preemptCurrentOnCore st c tid).scheduler.runQueueOnCore c).remove tid) }
+            c tid) with
+          scheduler := (restoreIncomingContextOnCoreUnlessCurrent
+            { preemptCurrentOnCore st c tid with
+                scheduler := (preemptCurrentOnCore st c tid).scheduler.setRunQueueOnCore c
+                  (((preemptCurrentOnCore st c tid).scheduler.runQueueOnCore c).remove tid) }
+            c tid).scheduler.setCurrentOnCore c (some tid) } := by
+        exact (Except.ok.inj hStep).symm
+      subst hEq
+      -- The preempt carries the relation, and the dispatch step is applied to it.
+      have hP : threadInactiveFlagConsistent (preemptCurrentOnCore st c tid) :=
+        preemptCurrentOnCore_preserves_threadInactiveFlagConsistent st c tid hObjInv h
+      have hOutgoing : ∀ u, u ≠ tid →
+          (preemptCurrentOnCore st c tid).scheduler.currentOnCore c = some u →
+          threadQueuedOnSomeCore (preemptCurrentOnCore st c tid) u = true := by
+        intro u hu hCurP
+        rw [preemptCurrentOnCore_currentOnCore] at hCurP
+        obtain ⟨prevTcb, hPrev⟩ := Option.isSome_iff_exists.mp (hCurrentValid u hCurP)
+        rw [threadQueuedOnSomeCore_eq_true_iff]
+        refine ⟨c, ?_⟩
+        show u ∈ (preemptCurrentOnCore st c tid).scheduler.runQueueOnCore c
+        unfold preemptCurrentOnCore
+        rw [hCurP]
+        dsimp only
+        rw [if_neg (by simpa using hu), hPrev]
+        dsimp only
+        show u ∈ (st.scheduler.setRunQueueOnCore c _).runQueueOnCore c
+        rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self, RunQueue.mem_insert]
+        exact Or.inr rfl
+      have hActiveP : ∀ tcb, (preemptCurrentOnCore st c tid).getTcb? tid = some tcb →
+          inferThreadState (preemptCurrentOnCore st c tid) tid tcb ≠ .Inactive := by
+        intro tcb hGet hInactive
+        have hObj := (SystemState.getTcb?_eq_some_iff _ tid tcb).mp hGet
+        obtain ⟨tcb₀, hPre, _, hIpc⟩ :=
+          preemptCurrentOnCore_objects_frame st c tid hObjInv _ tcb hObj
+        rw [inferThreadState_eq_inactive_iff, preemptCurrentOnCore_threadPlacedOnSomeCore,
+          hIpc] at hInactive
+        exact hActive tcb₀ ((SystemState.getTcb?_eq_some_iff st tid tcb₀).mpr hPre)
+          ((inferThreadState_eq_inactive_iff st tid tcb₀).mpr hInactive)
+      have hDispatch := threadInactiveFlagConsistent_dispatch
+        (preemptCurrentOnCore st c tid) c tid hOutgoing hActiveP hP
+      refine threadInactiveFlagConsistent_congr _ _ ?_ ?_ hDispatch
+      · exact restoreIncomingContextOnCoreUnlessCurrent_objects _ _ _
+      · rw [restoreIncomingContextOnCoreUnlessCurrent_scheduler]
+    · exact absurd hStep (by simp)
+  · exact absurd hStep (by simp)
 
 -- ============================================================================
 -- WS-SM SM5.H — Per-core CBS (production operations)

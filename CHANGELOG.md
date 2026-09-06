@@ -1,3 +1,84 @@
+## v0.34.86 — the relation the live kernel keeps
+
+**WS-RR RR7.36** — register §7 finding 42, the boot-core-pinned thread-state
+classification.  The lift itself closed at RR5.10; this row is the verification
+sweep, and the sweep was not empty.  Three consumers RR5.10 did not have to
+touch, each a defect this file has a name for.
+
+**One question answered in two places.**  RR5.10 needed "is this thread current
+on some core?" and "is it in some core's run queue?" and wrote both as fresh
+folds over `allCores` in `Operations/Core.lean` — a module that does not import
+`Operations/Selection.lean`, where SM5.C.1's `runnableOnSomeCore` and SM5.D.4's
+`runningOnSomeCore` had been asking exactly those questions since the cross-core
+wake was built.  Two implementations of one question diverge, and this pair
+diverging is not cosmetic: the wake's guard exists to stop one TCB from being
+dispatchable on two cores, so a disagreement between it and the classification
+would let a thread be enqueued a second time while still classifying as running.
+`threadRunningOnSomeCore` and `threadQueuedOnSomeCore` are now *defined as* the
+wake's predicates — the divergence is impossible rather than checked — and
+`preemptCurrentOnCore_currentOnCore` moved from the staged
+`PerCoreSwitchToThread` to production `Selection.lean` beside the transition it
+frames, so this cut did not have to write a third copy of that either.
+
+**The registered debt.**  `threadStateConsistent` is a boot-state theorem and
+false after any core's first dispatch; the relation the *live* decisions read is
+`threadInactiveFlagConsistent` (`tcbSuspend`, `tcbResume`, the cross-core
+cancellation and the fault suspend all test the stored field against `.Inactive`
+only), and its preservation was owed with no machinery to prove it in.  It now
+has both:
+
+- `threadPlacedOnSomeCore` — current on some core, or queued on some core —
+  with `inferThreadState_eq_inactive_iff`: a thread classifies `.Inactive`
+  exactly when it is unplaced and not blocked.  Naming the disjunction is what
+  makes the side conditions legible, because a dispatch moves a thread *within*
+  it.
+- `threadInactiveFlagConsistent_of_frame` and `…_of_frame_placing` — the second
+  admitting exactly one thread whose placement goes from anything to `true`,
+  which is what a dispatch does.
+- `preemptCurrentOnCore_preserves_threadInactiveFlagConsistent` and
+  `switchToThreadOnCore_preserves_threadInactiveFlagConsistent`.
+
+The switch's two side conditions are the two ways the relation genuinely breaks,
+not proof bookkeeping.  `hCurrentValid` says core `c`'s current slot resolves to
+a TCB — the scheduler's own `currentThreadValid` — and it is what makes the
+preempt re-enqueue at all; without it the displaced thread is stranded off every
+queue while its flag still says it is not inactive.  `hActive` says the state
+does not classify the incoming thread `.Inactive`, which the run-queue selection
+establishes and which a dispatch of a suspended thread would violate.  The wake
+and idle-enqueue paths (which change the stored flag *as well as* the placement,
+so they need a third frame), the lifecycle suspend/resume pair, and the IPC
+block / wake / cancellation / fault-suspend writers remain owed — as
+applications of this machinery rather than fresh arguments, which is what the
+register row now says.
+
+**The detector nobody called.**  `assertStateInvariantsWithoutSync` was written
+to catch operational drift between the stored field and the runtime queues, and
+had **zero callers** — an unwired proven structure of exactly the kind RR7.33
+closed elsewhere.  It could not have had a useful one: it runs the full
+classification, which is false after any dispatch, so there was no live check to
+call.  `threadInactiveFlagConsistentChecks` and
+`assertLiveThreadStateInvariants` are that check, and `SmpIdleSuite` §3.12 runs
+five witnesses either side of a real `switchToThreadOnCore` — the relation holds
+before, holds after, the *full* classification does **not** survive (the reason
+the narrow relation had to be stated separately rather than strengthened), and a
+run-queue entry whose stored flag reads `.Inactive` violates it, which is
+`hActive`'s premise exhibited.  Both previously-uncalled entry points are now
+invoked.
+
+That first run failed, on the suite's own fixture: `mkUserTcb` took
+`TCB.threadState`'s `.Inactive` default and every fixture below it immediately
+enqueued the result, so the states those checks are built on were states the
+kernel's own dispatch premise refuses.  Fixed at the fixture — the production
+boot makes the same choice for the thread it queues (`queuedIdleThread` is
+`.Ready`) — with the `.Inactive` spelling kept as the deliberate negative.
+
+**Fixture update, with its reason.**  `main_trace_smoke.expected`'s `[PIP-005]`
+line moves from 26 to 27 checks: `stateInvariantChecksFor` gained one check per
+stored TCB and the trace state holds one.  The count is the only change; every
+other line of the golden trace is byte-identical.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §7 (RR7.36)
+
 ## v0.34.85 — the gates the claims assumed
 
 **WS-RR RR7.35** — four §7 findings, all one shape: a document states a

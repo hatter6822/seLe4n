@@ -174,22 +174,10 @@ theorem switchToThreadOnCoreLockSet_keys_nodup (c : CoreId) :
 -- §2  `preemptCurrentOnCore` frame lemmas (per-core write footprint)
 -- ============================================================================
 
-/-- WS-SM SM5.B.3 (frame): `preemptCurrentOnCore` never writes any core's
-`current` slot — it only saves the outgoing thread's context (objects) and
-re-enqueues it into core `c`'s run queue (scheduler).  So *every* core's
-current thread is preserved. -/
-theorem preemptCurrentOnCore_currentOnCore (st : SystemState) (c : CoreId)
-    (incoming : SeLe4n.ThreadId) (c' : CoreId) :
-    (preemptCurrentOnCore st c incoming).scheduler.currentOnCore c'
-      = st.scheduler.currentOnCore c' := by
-  unfold preemptCurrentOnCore
-  split
-  · rfl
-  · split
-    · rfl
-    · split
-      · simp
-      · rfl
+-- **WS-RR RR7.36**: `preemptCurrentOnCore_currentOnCore` moved to production
+-- `Operations/Selection.lean`, beside the transition it frames, so the
+-- thread-state preservation surface in `Operations/Core.lean` can cite it
+-- without a second copy (a staged module is not importable from there).
 
 /-- WS-SM SM5.B.3 (frame): `preemptCurrentOnCore` writes only core `c`'s
 run-queue slot, so any *other* core's run queue (`c' ≠ c`) is preserved.  This

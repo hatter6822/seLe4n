@@ -1059,6 +1059,28 @@ def preemptCurrentOnCore (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreI
             scheduler := st.scheduler.setRunQueueOnCore c reenqueuedRq }
       | none => st
 
+/-- WS-SM SM5.B.3 (frame): `preemptCurrentOnCore` never writes *any* core's
+`current` slot — it only saves the outgoing thread's context (objects) and
+re-enqueues it into core `c`'s run queue (scheduler).  So *every* core's
+current thread is preserved.
+
+**WS-RR RR7.36** moved this from the staged `PerCoreSwitchToThread` to sit
+beside the transition it frames: `Operations/Core.lean`'s thread-state
+preservation needs it and cannot import a staged module, and a second copy
+there would be one question with two answers. -/
+theorem preemptCurrentOnCore_currentOnCore (st : SystemState) (c : CoreId)
+    (incoming : SeLe4n.ThreadId) (c' : CoreId) :
+    (preemptCurrentOnCore st c incoming).scheduler.currentOnCore c'
+      = st.scheduler.currentOnCore c' := by
+  unfold preemptCurrentOnCore
+  split
+  · rfl
+  · split
+    · rfl
+    · split
+      · simp
+      · rfl
+
 /-- WS-SM SM5.B.1 (plan §3.2): per-core context switch to `tid` on core `c`.
 
 Performs, in order:

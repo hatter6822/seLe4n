@@ -11,6 +11,7 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreIdle
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreIdleInventory
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreDispatch
 import SeLe4n.Testing.StateBuilder
+import SeLe4n.Testing.InvariantChecks
 
 /-!
 # WS-SM SM5.E — Per-core idle thread test suite
@@ -115,6 +116,23 @@ open SeLe4n.Platform.Boot (createIdleThread queuedIdleThread)
 #check @SeLe4n.Kernel.capTargetsReservedIdleObject
 #check @SeLe4n.Kernel.threadInactiveFlagConsistent
 #check @SeLe4n.Kernel.threadStateConsistent_implies_threadInactiveFlagConsistent
+-- WS-RR RR7.36: the preservation surface for the relation the live decisions
+-- read, and the two predicates it is stated over.
+#check @SeLe4n.Kernel.threadPlacedOnSomeCore
+#check @SeLe4n.Kernel.inferThreadState_eq_inactive_iff
+#check @SeLe4n.Kernel.threadPlacedOnSomeCore_eq_true_iff
+#check @SeLe4n.Kernel.threadInactiveFlagConsistent_of_frame
+#check @SeLe4n.Kernel.threadInactiveFlagConsistent_of_frame_placing
+#check @SeLe4n.Kernel.threadInactiveFlagConsistent_congr
+#check @SeLe4n.Kernel.threadInactiveFlagConsistent_dispatch
+#check @SeLe4n.Kernel.preemptCurrentOnCore_preserves_threadInactiveFlagConsistent
+#check @SeLe4n.Kernel.switchToThreadOnCore_preserves_threadInactiveFlagConsistent
+-- ... and the identification RR7.36 made definitional: the classification's
+-- placement tests ARE the cross-core wake's single-placement tests.
+#check @SeLe4n.Kernel.threadRunningOnSomeCore_eq_runningOnSomeCore
+#check @SeLe4n.Kernel.threadQueuedOnSomeCore_eq_runnableOnSomeCore
+example : @SeLe4n.Kernel.threadRunningOnSomeCore = @SeLe4n.Kernel.runningOnSomeCore := rfl
+example : @SeLe4n.Kernel.threadQueuedOnSomeCore = @SeLe4n.Kernel.runnableOnSomeCore := rfl
 #check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_threadInactiveFlagConsistent
 #check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor
 #check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor_allCores
@@ -310,11 +328,20 @@ example (st : SystemState) (c : CoreId)
 -- §3  Runtime assertions (Tier-2): concrete `enqueueIdleThreadOnCore` + selection
 -- ============================================================================
 
-/-- Minimal user TCB at `tid`, priority `prio`, scheduling domain `dom`. -/
+/-- Minimal user TCB at `tid`, priority `prio`, scheduling domain `dom`.
+
+`threadState := .Ready` rather than the field's `.Inactive` default (WS-RR
+RR7.36): every fixture below immediately enqueues this TCB, and a queued thread
+whose stored flag reads `.Inactive` violates `threadInactiveFlagConsistent` —
+the relation every live suspend/resume/cancel decision consults — so the default
+would have built a state the kernel's own dispatch premise refuses.  The
+production boot makes the same choice for the thread it queues
+(`queuedIdleThread` is `.Ready`, PR #889 review).  The `.Inactive` spelling is
+kept as the deliberate negative in §3.12. -/
 private def mkUserTcb (tid : Nat) (prio : Nat) (dom : Nat) : TCB :=
   { tid := ThreadId.ofNat tid, priority := ⟨prio⟩, domain := ⟨dom⟩,
     cspaceRoot := ObjId.ofNat 0, vspaceRoot := ObjId.ofNat 0,
-    ipcBuffer := SeLe4n.VAddr.ofNat 0 }
+    ipcBuffer := SeLe4n.VAddr.ofNat 0, threadState := .Ready }
 
 /-- Core 1 — a non-boot core, used for the cross-core locality scenarios. -/
 private def core1 : CoreId := ⟨1, by decide⟩
@@ -975,6 +1002,58 @@ private def runObjectBudgetChecks : IO Unit := do
   assertBool "an ordinary small config respects the budget"
     (SeLe4n.Platform.Boot.objectBudgetRespected small == true)
 
+
+/-- §3.12 (WS-RR RR7.36): the *live* thread-state relation and its preservation
+across a per-core context switch.
+
+Register §7 finding 42 — `inferThreadState` / `syncThreadStates` /
+`threadStateConsistent` boot-core-pinned — closed with RR5.10's lift, which
+`inferThreadState_running_of_currentOnCore` and the boot-state theorems above
+already pin.  What RR5.10 left is the *consumer* side: the runtime surface syncs
+before it checks, so it could not report drift, and nothing in the tree checked
+the narrower relation the live decisions read.  These checks run it on unsynced
+states, either side of a real dispatch, and pin the two premises the preservation
+theorem takes by exhibiting a state that violates each. -/
+private def runInactiveFlagChecks : IO Unit := do
+  IO.println "--- §3.12 WS-RR RR7.36 live thread-state (inactive flag) relation ---"
+  -- A queued, `.Ready`-flagged user thread: the flag says "not inactive" and the
+  -- observable state agrees (it is placed).
+  assertBool "the queued-user state satisfies the live relation"
+    (SeLe4n.Testing.threadInactiveFlagConsistentBool stUserIdle)
+  -- ... and it survives the dispatch that makes the full classification false.
+  let switched := SeLe4n.Kernel.switchToThreadOnCore stUserIdle bootCoreId tidUser
+  assertBool "the per-core context switch succeeds on that state"
+    (match switched with | .ok _ => true | .error _ => false)
+  assertBool "the live relation survives the context switch (RR7.36)"
+    (match switched with
+     | .ok st => SeLe4n.Testing.threadInactiveFlagConsistentBool st
+     | .error _ => false)
+  -- The full classification is exactly what does NOT survive it, which is why
+  -- the narrow relation had to be stated separately rather than strengthened.
+  assertBool "the full classification does NOT survive it (the reason for the split)"
+    (match switched with
+     | .ok st =>
+         !((SeLe4n.Testing.stateInvariantChecksFor st.objectIndex st).all
+             (fun p => p.2))
+     | .error _ => false)
+  -- The dispatch premise, exhibited: a run-queue entry whose stored flag says
+  -- `.Inactive` already violates the relation before any switch, which is what
+  -- `hActive` refuses.
+  let inactiveTcb : TCB := { (mkUserTcb 100 5 0) with threadState := .Inactive }
+  let inactiveObjects := stUserIdle.objects.insert tidUser.toObjId (.tcb inactiveTcb)
+  let stInactiveQueued : SystemState := { stUserIdle with objects := inactiveObjects }
+  assertBool "a queued thread flagged .Inactive violates the live relation"
+    (!SeLe4n.Testing.threadInactiveFlagConsistentBool stInactiveQueued)
+  -- The runtime entry points exist and are called: the quiescent boot-shaped
+  -- state goes through the no-sync surface, the post-dispatch state through the
+  -- live one.  Both had zero callers before this row.
+  SeLe4n.Testing.assertStateInvariantsWithoutSync
+    "RR7.36 quiescent state, no sync" stUserIdle.objectIndex
+    (SeLe4n.Kernel.syncThreadStates stUserIdle)
+  match switched with
+  | .ok st => SeLe4n.Testing.assertLiveThreadStateInvariants "RR7.36 post-dispatch" st
+  | .error _ => throw <| IO.userError "RR7.36: the context switch did not succeed"
+
 def runSmpIdleChecks : IO Unit := do
   IO.println "WS-SM SM5.E — Per-core idle thread suite"
   IO.println "===================================="
@@ -989,6 +1068,7 @@ def runSmpIdleChecks : IO Unit := do
   runBootValidationParityChecks
   runObjectBudgetChecks
   runDeclaredCoreCountChecks
+  runInactiveFlagChecks
   IO.println "===================================="
   IO.println "All SM5.E per-core idle thread checks PASS."
 
