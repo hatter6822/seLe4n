@@ -202,6 +202,17 @@ open SeLe4n.Testing
 #check @descheduleThread_preserves_currentThreadUniqueAcrossCores
 #check @cancelDonationOnCore_observer_atomic
 #check @PriorityInheritance.crossCoreSgiBody_remote_deschedule
+-- WS-RR RR7.22 (residual): the object-store sweep, characterised per key.  The
+-- fact the cancellation bundle needs — "afterwards no endpoint still names the
+-- swept thread at a boundary" — is false of the accumulator mid-fold, so it is
+-- not a fold invariant; `RHTable.fold_pointwise` is the lemma that establishes
+-- a pointwise one, and the sweep body is named so a proof can quantify over it.
+#check @SeLe4n.Kernel.RobinHood.RHTable.fold_pointwise
+#check @endpointSweepBody
+#check @removeFromAllEndpointQueues_eq_fold
+#check @threadOffQueueBoundaries
+#check @removeThreadFromQueue_off_boundary
+#check @removeFromAllEndpointQueues_off_boundary
 
 -- ============================================================================
 -- §2  Elaboration-time examples: headline theorems applied

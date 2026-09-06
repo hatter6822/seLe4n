@@ -1,3 +1,58 @@
+## v0.34.93 — WS-RR RR7.22 residual: the object-store sweep, characterised per key
+
+The second of RR7.22 finding 4's two consumers is `cancelIpcBlockingOnCore`,
+and v0.34.92 registered why it is phase-sized rather than residual-sized: its
+blocked-on-endpoint arm does not use the splice engine at all — it runs
+`removeFromAllEndpointQueues`, a `RobinHood.fold` over the entire object store,
+for which the tree had frames and `ipcInvariant` and no queue-shape conjunct.
+This cut lands the structural piece that was missing, and it is missing for a
+reason worth stating.
+
+### A sweep's payoff is not a fold invariant
+
+The fact the cancellation bundle needs is *afterwards, no endpoint still names
+the swept thread at a queue boundary*.  That is **false** of the accumulator at
+every key the fold has not reached, so `fold_preserves` and
+`fold_preserves_of_lookup` cannot carry it: they carry properties of the whole
+accumulator at every step.  What it is instead is a **pointwise** fact — true
+at each key once the body has run there and undisturbed afterwards.
+
+* **`RHTable.fold_pointwise`** establishes exactly that.  `RHTable.fold`
+  iterates the slot array and `get_some_slot_entry` puts every key `get?` finds
+  in a slot, so every such key is visited — and `noDupKeys` makes it visited
+  *once*.  It carries two properties rather than one: a `Pre` ("the fold has not
+  reached this key yet") that the visiting step receives, and the settled `Q`.
+  The `Pre` is load-bearing, not decoration: a body with a guard that **declines
+  to rewrite** proves nothing about the key without it, and the endpoint sweep's
+  guard is exactly that shape.
+
+### The sweep, described
+
+* **`endpointSweepBody`** names the fold's body, so a proof can quantify over
+  it, with **`removeFromAllEndpointQueues_eq_fold`** as the pin — `rfl`, so a
+  change to the operation that this copy does not mirror fails the build.
+  (AN4-G.5's earlier `epFold` intermediate broke because a proof matched the
+  body *syntactically*; a definitional equation cannot drift silently.)
+* **`removeThreadFromQueue_off_boundary`** — the head advances to the removed
+  thread's `queueNext` and the tail retreats to its `queuePrev`, so the only way
+  the result could still name it is a self-link, which acyclicity forbids.  The
+  `lookupTcb`-absent branch clears both boundaries outright and needs no
+  hypothesis.
+* **`removeFromAllEndpointQueues_off_boundary`** — the payoff, plus
+  `objects.invExt`.  The two arms of the pointwise lemma are the two arms of the
+  guard: the guard fired, so the key holds the purged endpoint; or it declined,
+  and the guard's own negation **is** the conclusion, read off the `Pre`.
+* **`threadOffQueueBoundaries`** collects the shape
+  `queueHeadBlockedConsistent` and `endpointQueueTailBlockedConsistent` read, so
+  the sweep's payoff and its consumers name one thing.
+
+The bundle itself remains registered debt with its stated closure target; this
+is the piece the plan-ordering rule says lands with, not after, the reasoning it
+supports.  `removeFromAllNotificationWaitLists` is the same shape and takes the
+same lemma when its turn comes.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md (WS-RR RR7.22)
+
 ## v0.34.92 — WS-RR RR7.22 residual: the bound-delivery arm carries the whole bundle
 
 RR7.22's splice engine carried all twenty `ipcInvariantFull` conjuncts across

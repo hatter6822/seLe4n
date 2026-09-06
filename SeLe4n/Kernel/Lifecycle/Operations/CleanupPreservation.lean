@@ -1485,4 +1485,202 @@ def lifecycleRevokeDeleteRetype
               | .error e => .error e
 
 
+-- ============================================================================
+-- WS-RR RR7.22 (residual)  The endpoint sweep, characterised per key
+-- ============================================================================
+--
+-- `removeFromAllEndpointQueues` is a fold over the *whole* object store, and
+-- the fact its consumers need — "afterwards no endpoint still names the swept
+-- thread at a queue boundary" — is not a fold invariant: it is false of the
+-- accumulator at every key the fold has not reached.  It is a **pointwise**
+-- fact, and `RHTable.fold_pointwise` is the lemma that establishes one.
+--
+-- Naming the fold body is what lets a proof quantify over it.  The equation
+-- below is `rfl`, so the copy cannot drift: a change to the operation's body
+-- that this one does not mirror fails to elaborate rather than silently
+-- leaving the characterisation about a program the kernel no longer runs.
+
+section EndpointSweep
+
+open SeLe4n.Kernel.RobinHood
+
+/-- **WS-RR RR7.22 (residual)**: `removeFromAllEndpointQueues`'s fold body,
+named.
+
+Rewrites an endpoint only when one of its four queue boundaries names the swept
+thread — the PR #831 write-set-honesty guard — and installs the two
+`removeThreadFromQueue` results when it does.  Both queue rewrites read the
+**spliced** pre-state, not the accumulator, so the value installed at a key does
+not depend on the fold's iteration order. -/
+def endpointSweepBody (stSpliced : SystemState) (tid : SeLe4n.ThreadId)
+    (acc : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject) : SystemState :=
+  match obj with
+  | .endpoint ep =>
+      if ep.sendQ.head == some tid || ep.sendQ.tail == some tid
+          || ep.receiveQ.head == some tid || ep.receiveQ.tail == some tid then
+        let ep' : Endpoint := {
+          sendQ := removeThreadFromQueue stSpliced ep.sendQ tid,
+          receiveQ := removeThreadFromQueue stSpliced ep.receiveQ tid }
+        { acc with objects := acc.objects.insert oid (.endpoint ep') }
+      else acc
+  | _ => acc
+
+/-- **WS-RR RR7.22 (residual)**: the sweep *is* the fold of that body.
+
+`rfl`, deliberately: this is the pin that keeps the named body and the
+operation's own from diverging.  AN4-G.5's earlier `epFold` intermediate broke
+because a proof matched the body **syntactically**; a definitional equation
+fails the build instead. -/
+theorem removeFromAllEndpointQueues_eq_fold (st : SystemState) (tid : SeLe4n.ThreadId) :
+    removeFromAllEndpointQueues st tid =
+      (spliceOutMidQueueNode st tid).objects.fold (spliceOutMidQueueNode st tid)
+        (endpointSweepBody (spliceOutMidQueueNode st tid) tid) := rfl
+
+/-- **WS-RR RR7.22 (residual)**: a thread sits at neither boundary of either of
+an endpoint's queues.
+
+The shape `queueHeadBlockedConsistent` and `endpointQueueTailBlockedConsistent`
+read, collected once so the sweep's payoff and its consumers name the same
+thing. -/
+def threadOffQueueBoundaries (tid : SeLe4n.ThreadId) (ep : Endpoint) : Prop :=
+  ep.sendQ.head ≠ some tid ∧ ep.sendQ.tail ≠ some tid ∧
+  ep.receiveQ.head ≠ some tid ∧ ep.receiveQ.tail ≠ some tid
+
+/-- **WS-RR RR7.22 (residual)**: `removeThreadFromQueue` never leaves the removed
+thread at a boundary.
+
+The head advances to the thread's `queueNext` and the tail retreats to its
+`queuePrev`, so the only way the result could still name it is a self-link —
+which `tcbQueueChainAcyclic` forbids and which the two hypotheses state
+directly.  The `lookupTcb`-absent branch clears both boundaries outright
+(AN4-G.1's defensive clamp), so it needs no hypothesis at all. -/
+theorem removeThreadFromQueue_off_boundary (s : SystemState) (q : IntrusiveQueue)
+    (tid : SeLe4n.ThreadId)
+    (hNext : ∀ tcb, lookupTcb s tid = some tcb → tcb.queueNext ≠ some tid)
+    (hPrev : ∀ tcb, lookupTcb s tid = some tcb → tcb.queuePrev ≠ some tid) :
+    (removeThreadFromQueue s q tid).head ≠ some tid ∧
+      (removeThreadFromQueue s q tid).tail ≠ some tid := by
+  unfold removeThreadFromQueue
+  cases hT : lookupTcb s tid with
+  | none => simp only; constructor <;> (split <;> simp_all)
+  | some tcb =>
+    simp only
+    constructor
+    · split
+      · exact hNext tcb hT
+      · assumption
+    · split
+      · exact hPrev tcb hT
+      · assumption
+
+/-- **WS-RR RR7.22 (residual)**: the sweep's payoff — **no endpoint still names
+the swept thread at a queue boundary**, and the object store stays well-formed.
+
+The two cases the pointwise fold lemma splits on are exactly the guard's two
+arms, and each is settled without knowing anything about the accumulator beyond
+what the lemma supplies:
+
+* the guard fired, so the key now holds the *purged* endpoint, whose boundaries
+  `removeThreadFromQueue_off_boundary` settles;
+* the guard declined, so the key still holds the table's own value — and the
+  guard's negation **is** the conclusion there.
+
+That second arm is why the lemma carries a `Pre`: without "the fold has not
+reached this key yet", a body that leaves a key alone proves nothing about it.
+
+The hypotheses are about the *spliced* pre-state because that is the table the
+fold runs over; `spliceOutMidQueueNode` writes only the swept thread's two
+neighbours, so a caller discharges them from its own pre-state through that
+operation's frames. -/
+theorem removeFromAllEndpointQueues_off_boundary
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hExt : (spliceOutMidQueueNode st tid).objects.invExt)
+    (hNext : ∀ tcb, lookupTcb (spliceOutMidQueueNode st tid) tid = some tcb →
+      tcb.queueNext ≠ some tid)
+    (hPrev : ∀ tcb, lookupTcb (spliceOutMidQueueNode st tid) tid = some tcb →
+      tcb.queuePrev ≠ some tid)
+    (oid : SeLe4n.ObjId) (ep0 : Endpoint)
+    (hEp0 : (spliceOutMidQueueNode st tid).objects[oid]? = some (.endpoint ep0)) :
+    ((removeFromAllEndpointQueues st tid).objects.invExt) ∧
+      ∀ ep, (removeFromAllEndpointQueues st tid).objects[oid]? = some (.endpoint ep) →
+        threadOffQueueBoundaries tid ep := by
+  rw [removeFromAllEndpointQueues_eq_fold]
+  refine RHTable.fold_pointwise (spliceOutMidQueueNode st tid).objects
+    (spliceOutMidQueueNode st tid) (endpointSweepBody (spliceOutMidQueueNode st tid) tid)
+    (Pre := fun o acc => acc.objects.invExt ∧
+      acc.objects[o]? = (spliceOutMidQueueNode st tid).objects[o]?)
+    (Q := fun o acc => acc.objects.invExt ∧
+      ∀ e, acc.objects[o]? = some (.endpoint e) → threadOffQueueBoundaries tid e)
+    hExt ?_ ?_ ?_ ?_ oid (.endpoint ep0) hEp0
+  · exact fun _ => ⟨hExt, rfl⟩
+  · rintro acc k k' v' hne ⟨hE, hA⟩
+    unfold endpointSweepBody
+    cases v' with
+    | endpoint ep =>
+      simp only
+      split
+      · exact ⟨RHTable.insert_preserves_invExt _ _ _ hE, by
+          show (acc.objects.insert k' _).get? k = _
+          rw [RHTable.get_after_insert_ne acc.objects k' k _
+            (by simpa using fun h => hne h.symm) hE]
+          exact hA⟩
+      · exact ⟨hE, hA⟩
+    | _ => exact ⟨hE, hA⟩
+  · rintro acc k v hGet ⟨hE, hA⟩
+    unfold endpointSweepBody
+    cases v with
+    | endpoint ep =>
+      simp only
+      split
+      · refine ⟨RHTable.insert_preserves_invExt _ _ _ hE, ?_⟩
+        intro e he
+        have he' : (acc.objects.insert k (KernelObject.endpoint
+            { sendQ := removeThreadFromQueue (spliceOutMidQueueNode st tid) ep.sendQ tid,
+              receiveQ := removeThreadFromQueue (spliceOutMidQueueNode st tid) ep.receiveQ tid })).get? k
+            = some (KernelObject.endpoint e) := he
+        rw [RHTable.get_after_insert_eq acc.objects k _ hE] at he'
+        obtain rfl := KernelObject.endpoint.inj (Option.some.inj he')
+        obtain ⟨h1, h2⟩ := removeThreadFromQueue_off_boundary (spliceOutMidQueueNode st tid)
+          ep.sendQ tid hNext hPrev
+        obtain ⟨h3, h4⟩ := removeThreadFromQueue_off_boundary (spliceOutMidQueueNode st tid)
+          ep.receiveQ tid hNext hPrev
+        exact ⟨h1, h2, h3, h4⟩
+      · refine ⟨hE, ?_⟩
+        intro e he
+        rw [hA] at he
+        have he2 : (spliceOutMidQueueNode st tid).objects.get? k
+            = some (KernelObject.endpoint e) := he
+        rw [hGet] at he2
+        obtain rfl := KernelObject.endpoint.inj (Option.some.inj he2)
+        rename_i hGuard
+        simp only [Bool.or_eq_true, beq_iff_eq, not_or] at hGuard
+        exact ⟨hGuard.1.1.1, hGuard.1.1.2, hGuard.1.2, hGuard.2⟩
+    | _ =>
+      refine ⟨hE, ?_⟩
+      intro e he
+      rw [hA] at he
+      have he2 : (spliceOutMidQueueNode st tid).objects.get? k
+          = some (KernelObject.endpoint e) := he
+      rw [hGet] at he2
+      cases he2
+  · rintro acc k k' v' hne ⟨hE, hQ⟩
+    unfold endpointSweepBody
+    cases v' with
+    | endpoint ep =>
+      simp only
+      split
+      · refine ⟨RHTable.insert_preserves_invExt _ _ _ hE, ?_⟩
+        intro e he
+        have he' : (acc.objects.insert k' (KernelObject.endpoint
+            { sendQ := removeThreadFromQueue (spliceOutMidQueueNode st tid) ep.sendQ tid,
+              receiveQ := removeThreadFromQueue (spliceOutMidQueueNode st tid) ep.receiveQ tid })).get? k
+            = some (KernelObject.endpoint e) := he
+        rw [RHTable.get_after_insert_ne acc.objects k' k _
+          (by simpa using fun h => hne h.symm) hE] at he'
+        exact hQ e he'
+      · exact ⟨hE, hQ⟩
+    | _ => exact ⟨hE, hQ⟩
+
+end EndpointSweep
+
 end SeLe4n.Kernel

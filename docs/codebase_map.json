@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/rr7-medium-severity-sweep-tn327q",
-      "commit_sha": "e0906a9354f545f9dff3fcaa9bf464c9db6fa34e",
-      "tree_sha": "6b534722f21e767360029d061c0be8d6a2f619fc",
-      "committed_at_utc": "2026-09-06T22:19:03+00:00"
+      "commit_sha": "6a8e5ab1404e41049458633691bd77e6d9b24ca1",
+      "tree_sha": "b5ac87b186bf650c6c5d9cf18ef9abbe47605af3",
+      "committed_at_utc": "2026-09-06T23:11:54+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "4d0afd73abce52f31e1d51979c85b1c81465eb3a7fcffcf3648d9eb445ca545c"
+    "source_digest": "d4a996d2a198d0cec74414d299baf2bb16732a8a235c6ad10286ad68b6ceb334"
   },
   "summary": {
     "module_count": 393,
-    "declaration_count": 19734
+    "declaration_count": 19741
   },
   "readme_sync": {
-    "version": "0.34.92",
+    "version": "0.34.93",
     "lean_toolchain": "v4.28.0",
     "production_files": 323,
-    "production_loc": 343521,
+    "production_loc": 343801,
     "test_files": 70,
-    "test_loc": 71084,
-    "proved_theorem_lemma_decls": 11444,
+    "test_loc": 71095,
+    "proved_theorem_lemma_decls": 11449,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -156092,7 +156092,7 @@
     {
       "module": "SeLe4n.Kernel.Lifecycle.Operations.CleanupPreservation",
       "path": "SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean",
-      "declaration_count": 65,
+      "declaration_count": 71,
       "declarations": [
         {
           "kind": "namespace",
@@ -157049,6 +157049,97 @@
             "cspaceRevoke",
             "lifecycleRetypeObject",
             "st"
+          ]
+        },
+        {
+          "kind": "section",
+          "name": "EndpointSweep",
+          "line": 1503,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "endpointSweepBody",
+          "line": 1515,
+          "called": [
+            "Endpoint",
+            "KernelObject",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "head",
+            "insert",
+            "removeThreadFromQueue",
+            "tail"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "removeFromAllEndpointQueues_eq_fold",
+          "line": 1534,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "endpointSweepBody",
+            "fold",
+            "removeFromAllEndpointQueues",
+            "spliceOutMidQueueNode",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "threadOffQueueBoundaries",
+          "line": 1545,
+          "called": [
+            "Endpoint",
+            "ThreadId",
+            "head",
+            "tail"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "removeThreadFromQueue_off_boundary",
+          "line": 1557,
+          "called": [
+            "IntrusiveQueue",
+            "SystemState",
+            "ThreadId",
+            "head",
+            "lookupTcb",
+            "none",
+            "removeThreadFromQueue",
+            "tail"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "removeFromAllEndpointQueues_off_boundary",
+          "line": 1595,
+          "called": [
+            "Endpoint",
+            "Kernel",
+            "ObjId",
+            "RHTable.fold_pointwise",
+            "RHTable.get_after_insert_eq",
+            "RHTable.get_after_insert_ne",
+            "RHTable.insert_preserves_invExt",
+            "SystemState",
+            "ThreadId",
+            "endpointSweepBody",
+            "get",
+            "insert",
+            "invExt",
+            "lookupTcb",
+            "removeFromAllEndpointQueues",
+            "removeFromAllEndpointQueues_eq_fold",
+            "removeThreadFromQueue",
+            "removeThreadFromQueue_off_boundary",
+            "spliceOutMidQueueNode",
+            "st",
+            "symm",
+            "threadOffQueueBoundaries"
           ]
         }
       ]
@@ -161232,7 +161323,7 @@
     {
       "module": "SeLe4n.Kernel.RobinHood.Bridge",
       "path": "SeLe4n/Kernel/RobinHood/Bridge.lean",
-      "declaration_count": 54,
+      "declaration_count": 55,
       "declarations": [
         {
           "kind": "namespace",
@@ -161706,8 +161797,29 @@
         },
         {
           "kind": "theorem",
+          "name": "RHTable.fold_pointwise",
+          "line": 868,
+          "called": [
+            "RHEntry",
+            "RHTable",
+            "RHTable.fold",
+            "RHTable.get_some_slot_entry",
+            "capacity",
+            "fold",
+            "get",
+            "invExt",
+            "le_antisymm",
+            "ne_of_lt",
+            "none",
+            "size",
+            "symm",
+            "value"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "filter_fold_absent_by_pred",
-          "line": 846,
+          "line": 928,
           "called": [
             "RHEntry",
             "RHTable",
@@ -161734,7 +161846,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.filter_get_subset",
-          "line": 889,
+          "line": 971,
           "called": [
             "RHEntry",
             "RHTable",
@@ -161755,7 +161867,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.filter_get_pred",
-          "line": 931,
+          "line": 1013,
           "called": [
             "RHEntry",
             "RHTable",
@@ -161773,7 +161885,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.filter_getElem",
-          "line": 972,
+          "line": 1054,
           "called": [
             "RHTable",
             "RHTable.get_some_slot_entry",
@@ -161787,7 +161899,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.filter_getElem",
-          "line": 984,
+          "line": 1066,
           "called": [
             "RHTable",
             "RHTable.filter_get_pred",
@@ -161800,7 +161912,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.filter_filter_getElem",
-          "line": 992,
+          "line": 1074,
           "called": [
             "RHTable",
             "RHTable.filter_get_pred",
@@ -161818,8 +161930,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1020>",
-          "line": 1020,
+          "name": "<anonymous:instance:1102>",
+          "line": 1102,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -161829,7 +161941,7 @@
         {
           "kind": "def",
           "name": "RHTable.invExtK",
-          "line": 1034,
+          "line": 1116,
           "called": [
             "RHTable",
             "capacity",
@@ -161840,7 +161952,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.invExtK_invExt",
-          "line": 1038,
+          "line": 1120,
           "called": [
             "RHTable",
             "invExt",
@@ -161850,7 +161962,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.invExtK_size_lt_capacity",
-          "line": 1041,
+          "line": 1123,
           "called": [
             "RHTable",
             "capacity",
@@ -161861,7 +161973,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.invExtK_capacity_ge4",
-          "line": 1044,
+          "line": 1126,
           "called": [
             "RHTable",
             "capacity",
@@ -161871,7 +161983,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.mk_invExtK",
-          "line": 1048,
+          "line": 1130,
           "called": [
             "RHTable",
             "capacity",
@@ -161883,7 +161995,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.empty_invExtK",
-          "line": 1057,
+          "line": 1139,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -161894,7 +162006,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.erase_capacity_eq",
-          "line": 1069,
+          "line": 1151,
           "called": [
             "RHTable",
             "RHTable.erase",
@@ -161905,7 +162017,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.erase_preserves_invExtK",
-          "line": 1076,
+          "line": 1158,
           "called": [
             "RHTable",
             "erase",
@@ -161918,7 +162030,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.insert_capacity_ge4",
-          "line": 1088,
+          "line": 1170,
           "called": [
             "RHTable",
             "RHTable.insert",
@@ -161931,7 +162043,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.insert_preserves_invExtK",
-          "line": 1097,
+          "line": 1179,
           "called": [
             "RHTable",
             "insert",
@@ -161944,7 +162056,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.getElem",
-          "line": 1110,
+          "line": 1192,
           "called": [
             "RHTable",
             "erase",
@@ -161955,7 +162067,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.filter_capacity_eq",
-          "line": 1121,
+          "line": 1203,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -161970,7 +162082,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.filter_preserves_invExtK",
-          "line": 1141,
+          "line": 1223,
           "called": [
             "RHTable",
             "filter",
@@ -161983,7 +162095,7 @@
         {
           "kind": "theorem",
           "name": "cnode_capacity_always_ge4",
-          "line": 1165,
+          "line": 1247,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -264582,6 +264694,7 @@
           "name": "SeLe4n.Testing.SmpCancellation",
           "line": 39,
           "called": [
+            "RHTable.fold_pointwise",
             "RHTable.fold_preserves_of_lookup",
             "acquireLockOnObject_preserves_invExt",
             "cancelBindingSc",
@@ -264657,6 +264770,7 @@
             "descheduleThread_preserves_currentThreadUniqueAcrossCores",
             "descheduleThread_preserves_ipcInvariant",
             "descheduleThread_state_eq",
+            "endpointSweepBody",
             "lockSet_cancelDonation",
             "lockSet_cancelDonationOnCore",
             "lockSet_cancelDonationOnCore_correct",
@@ -264682,11 +264796,14 @@
             "mem_write_lockSetExtendOpt",
             "notificationQueueWellFormed_filter_correct",
             "releaseLockOnObject_preserves_invExt",
+            "removeFromAllEndpointQueues_eq_fold",
+            "removeFromAllEndpointQueues_off_boundary",
             "removeFromAllEndpointQueues_preserves_objects_invExt",
             "removeFromAllEndpointQueues_tcb_lookup",
             "removeFromAllNotificationWaitLists_preserves_objects_invExt",
             "removeFromAllNotificationWaitLists_tcb_lookup",
             "removeRunnableOnCore_preserves_currentThreadUniqueAcrossCores",
+            "removeThreadFromQueue_off_boundary",
             "runningCoreOf",
             "sortedSchedCoreTriple",
             "sortedSchedCoreTriple_pairwise_le",
@@ -264700,19 +264817,20 @@
             "suspendThreadOnCore_rejects_absent",
             "suspendThreadOnCore_rejects_inactive",
             "suspendThreadOnCore_sgi_remote_reschedule",
+            "threadOffQueueBoundaries",
             "updateObjectLockAt_getTcb"
           ]
         },
         {
           "kind": "section",
           "name": "ElaborationExamples",
-          "line": 210,
+          "line": 221,
           "called": []
         },
         {
           "kind": "variable",
           "name": "victim",
-          "line": 212,
+          "line": 223,
           "called": [
             "CoreId",
             "TCB",
@@ -264723,7 +264841,7 @@
         {
           "kind": "variable",
           "name": "st",
-          "line": 213,
+          "line": 224,
           "called": [
             "SystemState"
           ]
@@ -264731,7 +264849,7 @@
         {
           "kind": "variable",
           "name": "blEp",
-          "line": 214,
+          "line": 225,
           "called": [
             "ObjId",
             "ReplyId"
@@ -264740,7 +264858,7 @@
         {
           "kind": "variable",
           "name": "sc",
-          "line": 215,
+          "line": 226,
           "called": [
             "SchedContextId",
             "ThreadId"
@@ -264748,8 +264866,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:218>",
-          "line": 218,
+          "name": "<anonymous:example:229>",
+          "line": 229,
           "called": [
             "cancelIpcBlockingOnCore",
             "cancellation_cross_core_correct",
@@ -264762,8 +264880,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:226>",
-          "line": 226,
+          "name": "<anonymous:example:237>",
+          "line": 237,
           "called": [
             "cancelIpcBlockingOnCore",
             "cancellation_cross_core_correct",
@@ -264777,8 +264895,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:234>",
-          "line": 234,
+          "name": "<anonymous:example:245>",
+          "line": 245,
           "called": [
             "cancelIpcBlocking",
             "cancelIpcBlockingOnCore",
@@ -264792,8 +264910,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:242>",
-          "line": 242,
+          "name": "<anonymous:example:253>",
+          "line": 253,
           "called": [
             "acquireAll",
             "cancelIpcBlocking",
@@ -264807,8 +264925,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:254>",
-          "line": 254,
+          "name": "<anonymous:example:265>",
+          "line": 265,
           "called": [
             "acquireAll",
             "cancelDonationOnCore",
@@ -264821,8 +264939,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:266>",
-          "line": 266,
+          "name": "<anonymous:example:277>",
+          "line": 277,
           "called": [
             "cancelIpcBlockingOnCore",
             "cancelIpcBlockingOnCore_preserves_objects_invExt",
@@ -264833,7 +264951,7 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 276,
+          "line": 287,
           "called": [
             "throw"
           ]
@@ -264841,7 +264959,7 @@
         {
           "kind": "def",
           "name": "core1",
-          "line": 282,
+          "line": 293,
           "called": [
             "CoreId"
           ]
@@ -264849,7 +264967,7 @@
         {
           "kind": "def",
           "name": "epId",
-          "line": 284,
+          "line": 295,
           "called": [
             "ObjId"
           ]
@@ -264857,7 +264975,7 @@
         {
           "kind": "def",
           "name": "nId",
-          "line": 285,
+          "line": 296,
           "called": [
             "ObjId"
           ]
@@ -264865,7 +264983,7 @@
         {
           "kind": "def",
           "name": "rId",
-          "line": 286,
+          "line": 297,
           "called": [
             "ReplyId"
           ]
@@ -264873,7 +264991,7 @@
         {
           "kind": "def",
           "name": "scId",
-          "line": 287,
+          "line": 298,
           "called": [
             "SchedContextId",
             "ofNat"
@@ -264882,7 +265000,7 @@
         {
           "kind": "def",
           "name": "cnRoot",
-          "line": 288,
+          "line": 299,
           "called": [
             "ObjId"
           ]
@@ -264890,7 +265008,7 @@
         {
           "kind": "def",
           "name": "victimTid",
-          "line": 289,
+          "line": 300,
           "called": [
             "ThreadId"
           ]
@@ -264898,7 +265016,7 @@
         {
           "kind": "def",
           "name": "ownerTid",
-          "line": 290,
+          "line": 301,
           "called": [
             "ThreadId"
           ]
@@ -264906,7 +265024,7 @@
         {
           "kind": "def",
           "name": "bystanderTid",
-          "line": 291,
+          "line": 302,
           "called": [
             "ThreadId"
           ]
@@ -264914,7 +265032,7 @@
         {
           "kind": "def",
           "name": "prevTid",
-          "line": 292,
+          "line": 303,
           "called": [
             "ThreadId"
           ]
@@ -264922,7 +265040,7 @@
         {
           "kind": "def",
           "name": "nextTid",
-          "line": 293,
+          "line": 304,
           "called": [
             "ThreadId"
           ]
@@ -264930,7 +265048,7 @@
         {
           "kind": "def",
           "name": "runnerTid",
-          "line": 294,
+          "line": 305,
           "called": [
             "ThreadId"
           ]
@@ -264938,7 +265056,7 @@
         {
           "kind": "def",
           "name": "mkTcb",
-          "line": 296,
+          "line": 307,
           "called": [
             "CoreId",
             "TCB",
@@ -264949,7 +265067,7 @@
         {
           "kind": "def",
           "name": "victimTcb",
-          "line": 303,
+          "line": 314,
           "called": [
             "SystemState",
             "TCB",
@@ -264963,7 +265081,7 @@
         {
           "kind": "def",
           "name": "stCallBase",
-          "line": 313,
+          "line": 324,
           "called": [
             "SystemState",
             "build",
@@ -264982,7 +265100,7 @@
         {
           "kind": "def",
           "name": "stCallBlocked",
-          "line": 323,
+          "line": 334,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -264998,7 +265116,7 @@
         {
           "kind": "def",
           "name": "runEndpointCancelChecks",
-          "line": 328,
+          "line": 339,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -265030,7 +265148,7 @@
         {
           "kind": "def",
           "name": "stNtfnBase",
-          "line": 382,
+          "line": 393,
           "called": [
             "SystemState",
             "build",
@@ -265048,7 +265166,7 @@
         {
           "kind": "def",
           "name": "stNtfnBlocked",
-          "line": 389,
+          "line": 400,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -265063,7 +265181,7 @@
         {
           "kind": "def",
           "name": "runNotificationCancelChecks",
-          "line": 394,
+          "line": 405,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -265083,7 +265201,7 @@
         {
           "kind": "def",
           "name": "stReplyBlocked",
-          "line": 424,
+          "line": 435,
           "called": [
             "SystemState",
             "build",
@@ -265102,7 +265220,7 @@
         {
           "kind": "def",
           "name": "runReplyCancelChecks",
-          "line": 433,
+          "line": 444,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -265126,7 +265244,7 @@
         {
           "kind": "def",
           "name": "stRunningRemote",
-          "line": 466,
+          "line": 477,
           "called": [
             "SystemState",
             "build",
@@ -265145,7 +265263,7 @@
         {
           "kind": "def",
           "name": "runRemoteRunningCancelChecks",
-          "line": 476,
+          "line": 487,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -265164,7 +265282,7 @@
         {
           "kind": "def",
           "name": "runLocalRunningCancelChecks",
-          "line": 502,
+          "line": 513,
           "called": [
             "assertBool",
             "cancelIpcBlockingOnCore",
@@ -265179,7 +265297,7 @@
         {
           "kind": "def",
           "name": "mkSc",
-          "line": 516,
+          "line": 527,
           "called": [
             "SchedContext",
             "ThreadId",
@@ -265189,7 +265307,7 @@
         {
           "kind": "def",
           "name": "stBoundDonation",
-          "line": 522,
+          "line": 533,
           "called": [
             "SystemState",
             "build",
@@ -265209,7 +265327,7 @@
         {
           "kind": "def",
           "name": "runBoundDonationCancelChecks",
-          "line": 534,
+          "line": 545,
           "called": [
             "any",
             "assertBool",
@@ -265236,7 +265354,7 @@
         {
           "kind": "def",
           "name": "stDonated",
-          "line": 579,
+          "line": 590,
           "called": [
             "SystemState",
             "build",
@@ -265258,7 +265376,7 @@
         {
           "kind": "def",
           "name": "runDonatedDonationCancelChecks",
-          "line": 593,
+          "line": 604,
           "called": [
             "any",
             "assertBool",
@@ -265283,7 +265401,7 @@
         {
           "kind": "def",
           "name": "runDispatcherEdgeChecks",
-          "line": 630,
+          "line": 641,
           "called": [
             "ThreadId",
             "assertBool",
@@ -265308,7 +265426,7 @@
         {
           "kind": "def",
           "name": "stNtfnTwoWaiters",
-          "line": 673,
+          "line": 684,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -265330,7 +265448,7 @@
         {
           "kind": "def",
           "name": "runNotificationStateCorrectionChecks",
-          "line": 688,
+          "line": 699,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -265349,7 +265467,7 @@
         {
           "kind": "def",
           "name": "stThreeDeep",
-          "line": 721,
+          "line": 732,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -265371,7 +265489,7 @@
         {
           "kind": "def",
           "name": "runMidQueueSpliceChecks",
-          "line": 740,
+          "line": 751,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -265394,7 +265512,7 @@
         {
           "kind": "def",
           "name": "stRunningBoot",
-          "line": 788,
+          "line": 799,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -265411,7 +265529,7 @@
         {
           "kind": "def",
           "name": "runMirrorSgiChecks",
-          "line": 796,
+          "line": 807,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -265426,7 +265544,7 @@
         {
           "kind": "def",
           "name": "stSuspendLocal",
-          "line": 809,
+          "line": 820,
           "called": [
             "SystemState",
             "build",
@@ -265444,7 +265562,7 @@
         {
           "kind": "def",
           "name": "runPerCoreSuspendChecks",
-          "line": 820,
+          "line": 831,
           "called": [
             "any",
             "assertBool",
@@ -265472,7 +265590,7 @@
         {
           "kind": "def",
           "name": "runSendReceiveCancelChecks",
-          "line": 875,
+          "line": 886,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -265495,7 +265613,7 @@
         {
           "kind": "def",
           "name": "serverTid",
-          "line": 918,
+          "line": 929,
           "called": [
             "ThreadId"
           ]
@@ -265503,7 +265621,7 @@
         {
           "kind": "def",
           "name": "core2",
-          "line": 919,
+          "line": 930,
           "called": [
             "CoreId"
           ]
@@ -265511,7 +265629,7 @@
         {
           "kind": "def",
           "name": "stPipDonation",
-          "line": 927,
+          "line": 938,
           "called": [
             "SystemState",
             "build",
@@ -265533,7 +265651,7 @@
         {
           "kind": "def",
           "name": "runPipDonationDropChecks",
-          "line": 943,
+          "line": 954,
           "called": [
             "any",
             "assertBool",
@@ -265564,7 +265682,7 @@
         {
           "kind": "def",
           "name": "stLocalDeboost",
-          "line": 1019,
+          "line": 1030,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -265588,7 +265706,7 @@
         {
           "kind": "def",
           "name": "stRemoteDeboost",
-          "line": 1039,
+          "line": 1050,
           "called": [
             "SystemState",
             "build",
@@ -265609,7 +265727,7 @@
         {
           "kind": "def",
           "name": "runDisinheritanceSchedulingChecks",
-          "line": 1054,
+          "line": 1065,
           "called": [
             "any",
             "assertBool",
@@ -265633,7 +265751,7 @@
         {
           "kind": "def",
           "name": "stUnboundRunningRemote",
-          "line": 1109,
+          "line": 1120,
           "called": [
             "SystemState",
             "build",
@@ -265650,7 +265768,7 @@
         {
           "kind": "def",
           "name": "runUnboundRunningSuspendChecks",
-          "line": 1117,
+          "line": 1128,
           "called": [
             "any",
             "assertBool",
@@ -265672,7 +265790,7 @@
         {
           "kind": "def",
           "name": "stEdfPre",
-          "line": 1153,
+          "line": 1164,
           "called": [
             "SystemState",
             "build",
@@ -265688,7 +265806,7 @@
         {
           "kind": "def",
           "name": "stEdfWith",
-          "line": 1162,
+          "line": 1173,
           "called": [
             "SystemState",
             "TCB",
@@ -265703,7 +265821,7 @@
         {
           "kind": "def",
           "name": "stEdfCurPre",
-          "line": 1169,
+          "line": 1180,
           "called": [
             "SystemState",
             "build",
@@ -265719,7 +265837,7 @@
         {
           "kind": "def",
           "name": "stEdfCurWith",
-          "line": 1177,
+          "line": 1188,
           "called": [
             "SystemState",
             "TCB",
@@ -265734,7 +265852,7 @@
         {
           "kind": "def",
           "name": "runDiffSeamEdfChecks",
-          "line": 1183,
+          "line": 1194,
           "called": [
             "any",
             "assertBool",
@@ -265757,7 +265875,7 @@
         {
           "kind": "def",
           "name": "staleRequestRegs",
-          "line": 1239,
+          "line": 1250,
           "called": [
             "RegisterFile"
           ]
@@ -265765,7 +265883,7 @@
         {
           "kind": "def",
           "name": "mkTcbWithStaleRegs",
-          "line": 1243,
+          "line": 1254,
           "called": [
             "CoreId",
             "TCB",
@@ -265776,7 +265894,7 @@
         {
           "kind": "def",
           "name": "stCallBlockedStale",
-          "line": 1247,
+          "line": 1258,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -265799,7 +265917,7 @@
         {
           "kind": "def",
           "name": "stNtfnBlockedStale",
-          "line": 1260,
+          "line": 1271,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -265821,7 +265939,7 @@
         {
           "kind": "def",
           "name": "runUnblockFrameStagingChecks",
-          "line": 1271,
+          "line": 1282,
           "called": [
             "SystemState",
             "assertBool",
@@ -265857,7 +265975,7 @@
         {
           "kind": "def",
           "name": "runSmpCancellationChecks",
-          "line": 1353,
+          "line": 1364,
           "called": [
             "runBoundDonationCancelChecks",
             "runDiffSeamEdfChecks",
@@ -265882,7 +266000,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1377,
+          "line": 1388,
           "called": [
             "runSmpCancellationChecks"
           ]

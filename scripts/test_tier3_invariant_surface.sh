@@ -837,6 +837,20 @@ run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_passiveServe
 run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean
 run_check "INVARIANT" rg -n '^theorem notificationSignalBoundCrossCoreDispatch_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/CrossCore/NotificationBindDispatch.lean
 run_check "INVARIANT" rg -n '^theorem notificationSignalBoundCrossCoreDispatchChecked_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/CrossCore/NotificationBindDispatch.lean
+# **WS-RR RR7.22 (residual, second consumer)**: the cancellation arm's sweep is a
+# fold over the whole object store, so its payoff is a *pointwise* fact — false
+# of the accumulator at every key not yet visited, hence not a fold invariant.
+run_check "INVARIANT" rg -n '^theorem RHTable.fold_pointwise' SeLe4n/Kernel/RobinHood/Bridge.lean
+run_check "INVARIANT" rg -n '^def endpointSweepBody' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem removeFromAllEndpointQueues_eq_fold' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem removeThreadFromQueue_off_boundary' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem removeFromAllEndpointQueues_off_boundary' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+# Relation, not presence: the named body must be pinned to the operation by a
+# definitional equation, and the pointwise lemma must carry the `Pre` that lets a
+# declining guard prove something.  Without `Pre` the lemma is `fold_preserves`
+# with extra steps and the guard-false arm is unprovable.
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem removeFromAllEndpointQueues_eq_fold(.|\n)*endpointSweepBody \(spliceOutMidQueueNode st tid\) tid\) := rfl" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem RHTable.fold_pointwise(.|\n)*hEstablish : ∀ acc k v, t.get\? k = some v → Pre k acc → Q k \(f acc k v\)" SeLe4n/Kernel/RobinHood/Bridge.lean'
 # The neighbour clauses are the half an under-stated hypothesis would drop, so
 # the label predicate must quantify over the removed thread's own queue links
 # rather than over the endpoint and the thread alone.
