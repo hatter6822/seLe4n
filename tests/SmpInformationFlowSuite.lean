@@ -11257,15 +11257,30 @@ private def runTaintFootprintChecks : IO Unit := do
   -- serialise.  What the claim protects is the **capless** hot path, which is
   -- what `sendSet` is, and the next assertion pins the other side so the
   -- narrowing cannot widen back by accident.
+  --
+  -- **WS-RR RR7.23 moved the retype off this line, and this comment's own
+  -- criterion is why.**  The line held three footprints: two because they are
+  -- the capless hot path, and `lockSet_lifecycleRetype` because it happened to
+  -- be free of the singleton — not because a retype is a hot path.  It is not.
+  -- `lifecyclePreRetypeCleanup` sweeps `serviceRegistry` and detaches the
+  -- target's CDT slot mappings, both global structure that does not decompose
+  -- by the retype's own object keys — exactly the property under which the
+  -- caps-carrying rendezvous above is admitted.  So the retype declares the
+  -- state-level write, and the assertion after this one is the positive form.
+  -- Keeping it here would have pinned the under-declaration in place: a retype
+  -- and a concurrent `serviceRegister` had provably disjoint footprints while
+  -- read-modify-writing one map.
   assertBool "the capless content-moving footprints do NOT declare the coarse table lock"
     (decide ((SeLe4n.Kernel.Concurrency.stateLevelLock, SeLe4n.Kernel.Concurrency.AccessMode.write)
         ∉ sendSet.pairs) &&
      decide ((SeLe4n.Kernel.Concurrency.stateLevelLock, SeLe4n.Kernel.Concurrency.AccessMode.write)
         ∉ (SeLe4n.Kernel.Concurrency.lockSet_notificationWait highCurrent probeCNode
-             highNotification).pairs) &&
-     decide ((SeLe4n.Kernel.Concurrency.stateLevelLock, SeLe4n.Kernel.Concurrency.AccessMode.write)
-        ∉ (SeLe4n.Kernel.Concurrency.lockSet_lifecycleRetype highCurrent probeCNode declassTargetA
-             declassTargetB).pairs))
+             highNotification).pairs))
+  -- WS-RR RR7.23: the retype declares it, for `serviceRegistry` and the CDT.
+  assertBool "the retype DOES declare the coarse table lock, for the registry and the CDT"
+    (decide ((SeLe4n.Kernel.Concurrency.stateLevelLock, SeLe4n.Kernel.Concurrency.AccessMode.write)
+      ∈ (SeLe4n.Kernel.Concurrency.lockSet_lifecycleRetype highCurrent probeCNode declassTargetA
+           declassTargetB).pairs))
   -- WS-RR RR7.7: and the caps-carrying send does declare it, for the CDT maps.
   assertBool "a caps-carrying send DOES declare the coarse table lock, for the CDT maps"
     (decide ((SeLe4n.Kernel.Concurrency.stateLevelLock, SeLe4n.Kernel.Concurrency.AccessMode.write)

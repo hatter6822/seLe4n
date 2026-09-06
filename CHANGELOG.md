@@ -1,3 +1,77 @@
+## v0.34.76 — the two gates, run rather than catalogued (and a pin corrected)
+
+**WS-RR RR7.25** — the RwLock-deferred mediums.  Both register rows (27, 28)
+were closed by RR6 at `v0.34.50`; §2.3 makes this row the *verification* of
+that closure and the sweep of the consumers RR6 did not have to touch.  A
+verification row earns nothing by observing that a script exists — the failure
+mode a gate exists to catch is precisely a gate that reports success for a run
+it did not perform, which is the defect RR7.24 had just removed from three
+others.  So both gates were **executed**.
+
+**Finding 27** — D-5's mandatory miri and loom acceptance gates.
+
+- `scripts/test_miri_queued_rw_lock.sh`: **71 passed, 0 failed** under
+  `-Zmiri-strict-provenance`; no undefined behaviour, data race or provenance
+  violation.  It is wired into the nightly lane (`scripts/test_nightly.sh`).
+- `scripts/test_loom_queued_rw_lock.sh`: **19 models, 19 passed, 0 failed**, 406 s
+  of exhaustive interleaving — mutual exclusion, writer/reader exclusion,
+  reader concurrency and the ticket-interval invariant hold on every explored
+  schedule.  It is wired into the per-push lane
+  (`.github/workflows/lean_action_ci.yml`).
+- `loom` is a `cfg(loom)`-conditional dependency rather than a plain
+  `[dev-dependencies]` entry, so the `aarch64-unknown-none` cross build resolves
+  none of it and the kernel's trusted computing base does not grow to buy the
+  gate.
+- The D-5 iteration figure (≥ 10⁴) is met by the **default**: `STRESS_ITER` and
+  `FIFO_ACQUISITIONS` have been `10_000` since RR6.22, and since RR7.24
+  `ITER_OVERRIDE` is read, so the figure is raisable per run rather than
+  compiled in.
+
+**Finding 28** — the pool instantiating the non-FIFO lock.  `STATIC_RW_LOCK_POOL`
+is `[QueuedRwLock; STATIC_RW_LOCK_POOL_SIZE]` and every `ffi_rw_lock_*` entry
+resolves through it, so the lock the kernel deploys is the one the strict-FIFO
+spec is refined against (`queuedSim`, `queuedRwLock_admits_in_spec_order`) rather
+than the CAS-retry lock whose relation represents no queue at all.  The kernel
+instantiates `rw_lock::RwLock` nowhere — its only `RwLock::new()` sites are inside
+its own test module — and `build.rs` pins the pool's element type, so a revert
+fails the build instead of silently un-refining the FIFO claim.
+
+**The sweep RR6 did not owe.**  `cross_thread_reader_stress`'s docstring still
+opened "Iteration count: 100 (vs plan's 10⁴ acceptance gate)" three cuts after
+RR6.22 raised the count to 10 000, and deferred the gate to "the standard
+env-override path" — a path that did not exist until RR7.24 made `ITER_OVERRIDE`
+be read.  A docstring describing a smoke test the code no longer runs is the same
+defect class as an unrunnable gate: a reader checking D-5 against the source
+would have concluded the figure was unmet.  Rewritten to describe what the test
+does, keeping the interleaving-coverage paragraph that is still true.  Two stray
+Lean block-comment terminators (`-/`) left in Rust `///` doc comments in the same
+module are removed.
+
+No production code changed in this cut; the change is to two register rows, one
+plan row, one Rust docstring and two comment typos.
+
+**Also in this cut: a Tier-2 pin `v0.34.74` broke.**  `SmpInformationFlowSuite`'s
+"the capless content-moving footprints do NOT declare the coarse table lock" held
+three footprints, and RR7.23 added `stateLevelLock` to one of them — so the assertion
+was false from that cut and the suite exited 1.  It was not caught there because a
+container restart cut that cut's `test_full.sh` short and the tiers were re-run
+individually, which is how a Tier-2 executable suite was skipped; the fix is the
+correction, and the process note is that a partial tier run is not a tier run.
+
+The pin was **corrected, not relaxed**, by the comment's own criterion.  The line
+held `lockSet_lifecycleRetype` because it happened to be free of the singleton, not
+because a retype is a hot IPC path — it is not one.  `lifecyclePreRetypeCleanup`
+sweeps `serviceRegistry` and detaches the target's CDT slot mappings, both global
+structure that does not decompose by the retype's own object keys, which is exactly
+the property under which the same assertion block already admits the caps-carrying
+rendezvous.  So the retype moves to the positive side with its own assertion — "the
+retype DOES declare the coarse table lock, for the registry and the CDT" — and the
+negative keeps the two footprints the hot-path claim is actually about, the capless
+send and `notificationWait`.  Keeping the retype on the negative side would have
+pinned in place the under-declaration RR7.23 exists to remove: a retype and a
+concurrent `serviceRegister` holding provably disjoint footprints while
+read-modify-writing one map.
+
 ## v0.34.75 — three gates nobody could invoke, and the hub that never landed
 
 **WS-RR RR7.24** — the panic-hang remediation mediums.  Two register rows, both

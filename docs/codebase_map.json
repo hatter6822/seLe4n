@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/rr7-medium-severity-sweep-tn327q",
-      "commit_sha": "e29fdd395d16a6d0334b920eb97bea2417a57522",
-      "tree_sha": "fe3b59b79b287b11d8d18fbb2edb6978d1998427",
-      "committed_at_utc": "2026-09-06T06:36:05+00:00"
+      "commit_sha": "5d24a6f6db60f0e7721a598bcf63820230907f3d",
+      "tree_sha": "e6d5fd369f6d810549ac5c6111cb7b49ab4831f3",
+      "committed_at_utc": "2026-09-06T06:51:04+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "3edb8e4712fdadbd7de4425be6493b19c2c4c9d20bf0fba136148bdbfe61e29d"
+    "source_digest": "94c10ff5a2899297d1c8627b86dee1080854400a57a6f443b7b661d9504bbc8d"
   },
   "summary": {
     "module_count": 387,
     "declaration_count": 19471
   },
   "readme_sync": {
-    "version": "0.34.75",
+    "version": "0.34.76",
     "lean_toolchain": "v4.28.0",
     "production_files": 317,
     "production_loc": 339118,
     "test_files": 70,
-    "test_loc": 70292,
+    "test_loc": 70307,
     "proved_theorem_lemma_decls": 11273,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -276701,7 +276701,7 @@
         {
           "kind": "def",
           "name": "taintTraceLines",
-          "line": 11323,
+          "line": 11338,
           "called": [
             "auditReadOpcodeCount",
             "auditReadWord",
@@ -276738,7 +276738,7 @@
         {
           "kind": "def",
           "name": "declassifiedSignalTraceLines",
-          "line": 11378,
+          "line": 11393,
           "called": [
             "cores",
             "declassSignalState",
@@ -276758,7 +276758,7 @@
         {
           "kind": "def",
           "name": "informationFlowTraceLines",
-          "line": 11414,
+          "line": 11429,
           "called": [
             "auditReaderTraceLines",
             "declassifiedSignalTraceLines",
@@ -276771,7 +276771,7 @@
         {
           "kind": "def",
           "name": "runInformationFlowTraceFixtureCheck",
-          "line": 11423,
+          "line": 11438,
           "called": [
             "informationFlowTraceFixturePath",
             "informationFlowTraceLines",
@@ -276781,7 +276781,7 @@
         {
           "kind": "def",
           "name": "survivorDrainOutcome",
-          "line": 11460,
+          "line": 11475,
           "called": [
             "SystemState",
             "auditDrainVisiblePrefix",
@@ -276795,7 +276795,7 @@
         {
           "kind": "def",
           "name": "survivorRecordedOutcome",
-          "line": 11469,
+          "line": 11484,
           "called": [
             "SystemState",
             "auditGenericCtx",
@@ -276810,7 +276810,7 @@
         {
           "kind": "def",
           "name": "cliffFilledOutcome",
-          "line": 11482,
+          "line": 11497,
           "called": [
             "DeclassificationRequest",
             "SystemState",
@@ -276828,7 +276828,7 @@
         {
           "kind": "def",
           "name": "cliffDrainedOutcome",
-          "line": 11491,
+          "line": 11506,
           "called": [
             "SystemState",
             "auditDrainVisiblePrefix",
@@ -276844,7 +276844,7 @@
         {
           "kind": "def",
           "name": "cliffRecoveredOutcome",
-          "line": 11501,
+          "line": 11516,
           "called": [
             "SystemState",
             "auditMonitorLabeling",
@@ -276860,7 +276860,7 @@
         {
           "kind": "def",
           "name": "runPostDrainRecordingFreshnessChecks",
-          "line": 11518,
+          "line": 11533,
           "called": [
             "all",
             "any",
@@ -276876,7 +276876,7 @@
         {
           "kind": "def",
           "name": "signalReceiverDeniedLabeling",
-          "line": 11555,
+          "line": 11570,
           "called": [
             "LabelingContext",
             "crossCoreWaiter",
@@ -276891,7 +276891,7 @@
         {
           "kind": "def",
           "name": "declassifyDenyAllLabeling",
-          "line": 11580,
+          "line": 11595,
           "called": [
             "LabelingContext",
             "signalReceiverDeniedLabeling"
@@ -276900,7 +276900,7 @@
         {
           "kind": "def",
           "name": "seamLowTargetSlot",
-          "line": 11587,
+          "line": 11602,
           "called": [
             "Slot",
             "ofNat"
@@ -276909,7 +276909,7 @@
         {
           "kind": "def",
           "name": "seamBoundaryState",
-          "line": 11589,
+          "line": 11604,
           "called": [
             "SystemState",
             "declassCapCNode",
@@ -276923,7 +276923,7 @@
         {
           "kind": "def",
           "name": "deniedSignalDispatchOutcome",
-          "line": 11603,
+          "line": 11618,
           "called": [
             "KernelError",
             "SyscallOutcome",
@@ -276938,7 +276938,7 @@
         {
           "kind": "def",
           "name": "deniedDeclassifyDispatchOutcome",
-          "line": 11613,
+          "line": 11628,
           "called": [
             "KernelError",
             "SyscallOutcome",
@@ -276953,7 +276953,7 @@
         {
           "kind": "def",
           "name": "runDeclassifyingSeamBoundaryChecks",
-          "line": 11627,
+          "line": 11642,
           "called": [
             "assertBool",
             "crossCoreWaiter",
@@ -276973,7 +276973,7 @@
         {
           "kind": "def",
           "name": "declassificationReaderTraceLines",
-          "line": 11674,
+          "line": 11689,
           "called": [
             "DeclassificationEvent",
             "any",
@@ -277008,13 +277008,13 @@
         {
           "kind": "def",
           "name": "declassificationReaderFixturePath",
-          "line": 11760,
+          "line": 11775,
           "called": []
         },
         {
           "kind": "def",
           "name": "runDeclassificationReaderFixtureCheck",
-          "line": 11768,
+          "line": 11783,
           "called": [
             "declassificationReaderFixturePath",
             "declassificationReaderTraceLines",
@@ -277024,7 +277024,7 @@
         {
           "kind": "def",
           "name": "declassificationTaintTraceLines",
-          "line": 11794,
+          "line": 11809,
           "called": [
             "auditReadOpcodeCount",
             "auditReadWord",
@@ -277064,13 +277064,13 @@
         {
           "kind": "def",
           "name": "declassificationTaintFixturePath",
-          "line": 11868,
+          "line": 11883,
           "called": []
         },
         {
           "kind": "def",
           "name": "runDeclassificationTaintFixtureCheck",
-          "line": 11876,
+          "line": 11891,
           "called": [
             "declassificationTaintFixturePath",
             "declassificationTaintTraceLines",
@@ -277080,7 +277080,7 @@
         {
           "kind": "def",
           "name": "runSmpInformationFlowChecks",
-          "line": 11898,
+          "line": 11913,
           "called": [
             "refusal",
             "runAuditCapacityCliffChecks",
@@ -277196,7 +277196,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 12021,
+          "line": 12036,
           "called": [
             "runSmpInformationFlowChecks"
           ]

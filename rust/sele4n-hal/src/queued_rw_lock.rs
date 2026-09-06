@@ -4622,25 +4622,23 @@ mod cross_thread_tests {
     /// Multi-thread acquire/release roundtrip: each of 4 threads
     /// repeatedly acquires + releases the read lock; final state is 0.
     ///
-    /// Iteration count: 100 (vs plan's 10⁴ acceptance gate).  The plan's
-    /// 10⁴ assumes hardware-level WFE; on host the `wfe_bounded` stub is
-    /// a busy-spin, multiplying CPU-time linearly with iterations.  We
-    /// run 100 per-thread iterations × 4 threads × 4 tests = 1.6k
-    /// operations total — surfacing scheduler races without exceeding
-    /// CI time budget.  Hardware/CI gates running on aarch64 with real
-    /// WFE can scale to 10⁴ via the standard env-override path.
+    /// Iteration count: `stress_iter()` — `STRESS_ITER` (10 000 since
+    /// WS-RR RR6.22, 4 under miri) unless `ITER_OVERRIDE` raises or
+    /// lowers it.  **WS-RR RR7.25**: this paragraph read "100 (vs plan's
+    /// 10⁴ acceptance gate)" for three cuts after RR6.22 raised the
+    /// count, describing a smoke test the code no longer runs; the D-5
+    /// gate's ≥ 10⁴ figure is met by the default rather than deferred to
+    /// "hardware/CI gates … via the standard env-override path", which
+    /// was itself a path that did not exist until WS-RR RR7.24 made
+    /// `ITER_OVERRIDE` be read.
     ///
-    /// **Iteration tuning rationale**: prior runs with `ITER = 1_000`
-    /// occasionally surfaced "test running over 60s" warnings on slow
-    /// CI runners (cargo's diagnostic).  100 iterations stays well
-    /// inside the 60s budget while preserving race-detection sensitivity:
-    /// the cross-thread interleaving exercises every ticket-protocol
-    /// transition: issue at an empty and at a non-empty queue, pass-turn
-    /// from a reader's entry and from a writer's exit, and a writer's
-    /// CAS loop draining readers admitted ahead of it.  (This comment
-    /// described the retired MCS queue's `signal_next_waiter` /
-    /// `cascade_admit_readers` walk until WS-RR RR6.22; the protocol has
-    /// been a ticket lock since v0.32.148.) -/
+    /// The interleaving is what the count buys: it exercises every
+    /// ticket-protocol transition — issue at an empty and at a non-empty
+    /// queue, pass-turn from a reader's entry and from a writer's exit,
+    /// and a writer's CAS loop draining readers admitted ahead of it.
+    /// (This comment described the retired MCS queue's
+    /// `signal_next_waiter` / `cascade_admit_readers` walk until WS-RR
+    /// RR6.22; the protocol has been a ticket lock since v0.32.148.)
     #[test]
     fn cross_thread_reader_stress() {
         let iter: usize = stress_iter();
@@ -5248,7 +5246,7 @@ mod cross_thread_tests {
 
     /// **D-5 acceptance gate (≥10 cross-thread tests)**: panic-safety
     /// for reader RAII.  Same as writer panic-safety but for the
-    /// reader path. -/
+    /// reader path.
     #[test]
     fn cross_thread_panic_safety_reader_releases_on_unwind() {
         use std::panic;
