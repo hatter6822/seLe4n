@@ -12,6 +12,7 @@ import SeLe4n.Kernel.Scheduler.Operations
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.Propagate
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.Compute
 import SeLe4n.Kernel.Concurrency.ContextRestoreSeam
+import SeLe4n.Kernel.Architecture.SyscallReturn
 
 /-! # D1: Thread Suspension & Resumption
 
@@ -72,11 +73,12 @@ Pre-R5 this logic lived as the private helper `clearTcbIpcFields`, used
 only by `cancelIpcBlocking`. `resumeThread` redundantly performed the
 `ipcState := .ready` half inline. R5.D promotes the helper to a shared
 top-level name and consolidates the resume path through it. -/
-def restoreToReady (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+def restoreToReadyStaging (st : SystemState) (tid : SeLe4n.ThreadId)
+    (frame : Option Architecture.SyscallReturnFrame) : SystemState :=
   -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
   match st.getTcb? tid with
   | some tcb' =>
-    { st with objects := st.objects.insert tid.toObjId (.tcb { tcb' with
+    let cleared : TCB := { tcb' with
         ipcState := .ready
         queuePrev := none
         queueNext := none
@@ -85,8 +87,76 @@ def restoreToReady (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
         -- relinquishes its stashed reply object, else `replyIsStashed` keeps the
         -- Reply permanently in-use and later lifecycle cleanup of it returns
         -- `revocationRequired` even though no receive is still pending.
-        pendingReceiveReply := none }) }
+        pendingReceiveReply := none }
+    let staged : TCB := match frame with
+      | some f => cleared.withReturnFrame f
+      | none => cleared
+    { st with objects := st.objects.insert tid.toObjId (.tcb staged) }
   | none => st
+
+/-- The restore that stages **nothing** — `resumeThread`'s spelling.  A resumed
+thread keeps its own register window: `.tcbResume` restarts it where it was
+(WS-RR RR4.11's `retirePendingFaultForResume` is the fault half of the same
+posture), so overwriting `x0`-`x5` here would destroy the state the restart is
+supposed to preserve.  The cancellation arms of `cancelIpcBlocking` pass
+`some Architecture.cancelledIpcFrame` instead — see there for why the two call
+sites of one helper answer differently. -/
+def restoreToReady (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  restoreToReadyStaging st tid none
+
+/-- **WS-RR RR7.14**: the restore that stages the **cancellation error frame** —
+`cancelIpcBlocking`'s spelling on all four of its blocked arms.
+
+A thread whose blocking IPC is destroyed under it has no value to receive, and
+until this row it was handed no answer at all: its boundary crossing ended in
+`.blocks`, so `x0`-`x5` still held its own argument spill (or the trap layer's
+fail-closed sentinel), and the SM10.1 context restore would have delivered that
+back as a return value.  The frame is `.ipcCancelled`, deliberately not
+`.ipcTimeout` (which the timeout path stages): a timed-out caller may reissue,
+a cancelled one may be looking at an endpoint that no longer exists, and a
+userspace library cannot write a correct retry against a conflated code.
+
+Staged **inside** the field clear rather than as a second write, so the arms
+still commit exactly one TCB object.  On the `.blockedOnReply` arm the later
+`consumeReplyLink` re-reads the TCB and record-updates `replyObject` alone, so
+the staged `registerContext` survives it. -/
+def restoreToReadyCancelled (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  restoreToReadyStaging st tid (some Architecture.cancelledIpcFrame)
+
+/-- **WS-RR RR7.14**: the cancellation restore is the plain restore's
+frame-staged twin — the *same* cleared TCB, with the frame staged on top.
+Proved rather than asserted, so a field added to the clear in one and not the
+other fails to elaborate.  Stated on the TCB the two write rather than on the
+whole state: `restoreToReadyCancelled` commits **one** object write where the
+`stage ∘ restore` composition would commit two, which is the point of folding
+the staging inward and not a difference the invariants may see. -/
+theorem restoreToReadyCancelled_tcb (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) :
+    (restoreToReadyCancelled st tid).getTcb? tid
+      = ((restoreToReady st tid).getTcb? tid).map
+          (·.withReturnFrame Architecture.cancelledIpcFrame) := by
+  unfold restoreToReadyCancelled restoreToReady restoreToReadyStaging
+  cases hTcb : st.getTcb? tid with
+  | none => simp only [hTcb, Option.map_none]
+  | some tcb =>
+      simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+      rw [RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv,
+          RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv]
+      simp only [Option.map_some]
+
+/-- **WS-RR RR7.14 (the payoff)**: a cancelled thread reads the cancellation
+frame back out of its own register context — so the SM10.1 context restore
+delivers `.ipcCancelled`, not the thread's own stale argument spill. -/
+theorem restoreToReadyCancelled_readReturnFrame (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
+    (hInv : st.objects.invExt) :
+    Architecture.readReturnFrame (restoreToReadyCancelled st tid) tid
+      = Architecture.cancelledIpcFrame := by
+  unfold restoreToReadyCancelled restoreToReadyStaging Architecture.readReturnFrame
+  simp only [hTcb]
+  simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+  rw [RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv]
+  rfl
 
 /-- R5.D / backward-compatibility shim. Pre-R5 the IPC-clearing helper was
 named `clearTcbIpcFields` and was `private`. The renamed helper is now
@@ -97,10 +167,33 @@ unchanged. Definitionally equal to `restoreToReady`. -/
     : SystemState :=
   restoreToReady st tid
 
+/-- **WS-RR RR7.14**: the framing holds for **every** staged frame — stated once
+on `restoreToReadyStaging` so the plain and cancellation spellings cannot
+answer "what else does this write" differently.  A staged frame moves the
+target TCB's `registerContext` and nothing outside `objects`. -/
+theorem restoreToReadyStaging_scheduler_eq (st : SystemState) (tid : SeLe4n.ThreadId)
+    (frame : Option Architecture.SyscallReturnFrame) :
+    (restoreToReadyStaging st tid frame).scheduler = st.scheduler := by
+  unfold restoreToReadyStaging; split <;> rfl
+
 /-- Helper: restoreToReady preserves the scheduler. -/
 theorem restoreToReady_scheduler_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (restoreToReady st tid).scheduler = st.scheduler := by
-  unfold restoreToReady; split <;> rfl
+    (restoreToReady st tid).scheduler = st.scheduler :=
+  restoreToReadyStaging_scheduler_eq st tid none
+
+/-- **WS-RR RR7.14**: and the cancellation spelling. -/
+theorem restoreToReadyCancelled_scheduler_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (restoreToReadyCancelled st tid).scheduler = st.scheduler :=
+  restoreToReadyStaging_scheduler_eq st tid _
+
+/-- **WS-RR RR7.14**: the framing holds for **every** staged frame — stated once
+on `restoreToReadyStaging` so the plain and cancellation spellings cannot
+answer "what else does this write" differently.  A staged frame moves the
+target TCB's `registerContext` and nothing outside `objects`. -/
+theorem restoreToReadyStaging_machine_eq (st : SystemState) (tid : SeLe4n.ThreadId)
+    (frame : Option Architecture.SyscallReturnFrame) :
+    (restoreToReadyStaging st tid frame).machine = st.machine := by
+  unfold restoreToReadyStaging; split <;> rfl
 
 /-- WS-SM SM8.B: `restoreToReady` only writes `objects` — the machine, and hence
 every core's register bank, is framed.  The information-flow counterpart of
@@ -108,18 +201,51 @@ every core's register bank, is framed.  The information-flow counterpart of
 well as the scheduler slots, so a scheduler frame alone does not bound a step's
 observable writes. -/
 theorem restoreToReady_machine_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (restoreToReady st tid).machine = st.machine := by
-  unfold restoreToReady; split <;> rfl
+    (restoreToReady st tid).machine = st.machine :=
+  restoreToReadyStaging_machine_eq st tid none
+
+/-- **WS-RR RR7.14**: and the cancellation spelling. -/
+theorem restoreToReadyCancelled_machine_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (restoreToReadyCancelled st tid).machine = st.machine :=
+  restoreToReadyStaging_machine_eq st tid _
+
+/-- **WS-RR RR7.14**: the framing holds for **every** staged frame — stated once
+on `restoreToReadyStaging` so the plain and cancellation spellings cannot
+answer "what else does this write" differently.  A staged frame moves the
+target TCB's `registerContext` and nothing outside `objects`. -/
+theorem restoreToReadyStaging_serviceRegistry_eq (st : SystemState) (tid : SeLe4n.ThreadId)
+    (frame : Option Architecture.SyscallReturnFrame) :
+    (restoreToReadyStaging st tid frame).serviceRegistry = st.serviceRegistry := by
+  unfold restoreToReadyStaging; split <;> rfl
 
 /-- Helper: restoreToReady preserves the serviceRegistry. -/
 theorem restoreToReady_serviceRegistry_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (restoreToReady st tid).serviceRegistry = st.serviceRegistry := by
-  unfold restoreToReady; split <;> rfl
+    (restoreToReady st tid).serviceRegistry = st.serviceRegistry :=
+  restoreToReadyStaging_serviceRegistry_eq st tid none
+
+/-- **WS-RR RR7.14**: and the cancellation spelling. -/
+theorem restoreToReadyCancelled_serviceRegistry_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (restoreToReadyCancelled st tid).serviceRegistry = st.serviceRegistry :=
+  restoreToReadyStaging_serviceRegistry_eq st tid _
+
+/-- **WS-RR RR7.14**: the framing holds for **every** staged frame — stated once
+on `restoreToReadyStaging` so the plain and cancellation spellings cannot
+answer "what else does this write" differently.  A staged frame moves the
+target TCB's `registerContext` and nothing outside `objects`. -/
+theorem restoreToReadyStaging_lifecycle_eq (st : SystemState) (tid : SeLe4n.ThreadId)
+    (frame : Option Architecture.SyscallReturnFrame) :
+    (restoreToReadyStaging st tid frame).lifecycle = st.lifecycle := by
+  unfold restoreToReadyStaging; split <;> rfl
 
 /-- Helper: restoreToReady preserves lifecycle. -/
 theorem restoreToReady_lifecycle_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (restoreToReady st tid).lifecycle = st.lifecycle := by
-  unfold restoreToReady; split <;> rfl
+    (restoreToReady st tid).lifecycle = st.lifecycle :=
+  restoreToReadyStaging_lifecycle_eq st tid none
+
+/-- **WS-RR RR7.14**: and the cancellation spelling. -/
+theorem restoreToReadyCancelled_lifecycle_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (restoreToReadyCancelled st tid).lifecycle = st.lifecycle :=
+  restoreToReadyStaging_lifecycle_eq st tid _
 
 /-- R5.D back-compat: `clearTcbIpcFields = restoreToReady`. -/
 @[simp] theorem clearTcbIpcFields_eq_restoreToReady (st : SystemState)
@@ -496,14 +622,18 @@ def cancelIpcBlocking (st : SystemState) (tid : SeLe4n.ThreadId)
   match tcb.ipcState with
   | .ready => st
   | .blockedOnSend _ | .blockedOnReceive _ | .blockedOnCall _ =>
-    clearTcbIpcFields (removeFromAllEndpointQueues st tid) tid
+    -- WS-RR RR7.14: `restoreToReadyCancelled`, not `clearTcbIpcFields` — the
+    -- unblocked thread is owed the `.ipcCancelled` frame, see there.  The
+    -- `.ready` arm above stages nothing: it is the no-op for a thread that was
+    -- not blocked, and it commits no write at all.
+    restoreToReadyCancelled (removeFromAllEndpointQueues st tid) tid
   | .blockedOnReply _ _ =>
     -- WS-SM SM6.D (PR #822 review): a cancelled/suspended caller awaiting a
     -- reply must also relinquish its single-use reply link, else the Reply
     -- object is stranded in-use (see `consumeReplyLink`).
-    consumeReplyLink (clearTcbIpcFields st tid) tid tcb
+    consumeReplyLink (restoreToReadyCancelled st tid) tid tcb
   | .blockedOnNotification _ =>
-    clearTcbIpcFields (removeFromAllNotificationWaitLists st tid) tid
+    restoreToReadyCancelled (removeFromAllNotificationWaitLists st tid) tid
 
 -- ============================================================================
 -- D1-D: cancelDonation (split into two named arms — R5.A / DEEP-SUSP-02)

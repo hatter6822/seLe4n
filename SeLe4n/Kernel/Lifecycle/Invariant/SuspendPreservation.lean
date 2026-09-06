@@ -56,13 +56,13 @@ theorem cancelIpcBlocking_scheduler_eq
   cases tcb.ipcState with
   | ready => rfl
   | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
-    -- clearTcbIpcFields preserves scheduler, removeFromAllEndpointQueues preserves scheduler
-    rw [clearTcbIpcFields_scheduler_eq, removeFromAllEndpointQueues_scheduler_eq]
+    -- restoreToReadyCancelled preserves scheduler, removeFromAllEndpointQueues preserves scheduler
+    rw [restoreToReadyCancelled_scheduler_eq, removeFromAllEndpointQueues_scheduler_eq]
   | blockedOnReply _ _ =>
     -- WS-SM SM6.D (PR #822 review): the reply-link consume only writes `objects`.
-    rw [consumeReplyLink_scheduler_eq, clearTcbIpcFields_scheduler_eq]
+    rw [consumeReplyLink_scheduler_eq, restoreToReadyCancelled_scheduler_eq]
   | blockedOnNotification _ =>
-    rw [clearTcbIpcFields_scheduler_eq, removeFromAllNotificationWaitLists_scheduler_eq]
+    rw [restoreToReadyCancelled_scheduler_eq, removeFromAllNotificationWaitLists_scheduler_eq]
 
 /-- WS-SM SM8.B: **the IPC-blocking teardown never touches the machine** — and
 hence never touches any core's register bank.
@@ -82,11 +82,11 @@ theorem cancelIpcBlocking_machine_eq
   cases tcb.ipcState with
   | ready => rfl
   | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
-    rw [clearTcbIpcFields_machine_eq, removeFromAllEndpointQueues_machine_eq]
+    rw [restoreToReadyCancelled_machine_eq, removeFromAllEndpointQueues_machine_eq]
   | blockedOnReply _ _ =>
-    rw [consumeReplyLink_machine_eq, clearTcbIpcFields_machine_eq]
+    rw [consumeReplyLink_machine_eq, restoreToReadyCancelled_machine_eq]
   | blockedOnNotification _ =>
-    rw [clearTcbIpcFields_machine_eq, removeFromAllNotificationWaitLists_machine_eq]
+    rw [restoreToReadyCancelled_machine_eq, removeFromAllNotificationWaitLists_machine_eq]
 
 /-- D1-I/AE3-C/R5.A: `cancelBoundDonation` preserves `runQueue` and
 `current`. The bound arm rewrites the SchedContext, drops it from the
@@ -157,11 +157,11 @@ theorem cancelIpcBlocking_serviceRegistry_eq
   cases tcb.ipcState with
   | ready => rfl
   | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
-    rw [clearTcbIpcFields_serviceRegistry_eq, removeFromAllEndpointQueues_serviceRegistry_eq]
+    rw [restoreToReadyCancelled_serviceRegistry_eq, removeFromAllEndpointQueues_serviceRegistry_eq]
   | blockedOnReply _ _ =>
-    rw [consumeReplyLink_serviceRegistry_eq, clearTcbIpcFields_serviceRegistry_eq]
+    rw [consumeReplyLink_serviceRegistry_eq, restoreToReadyCancelled_serviceRegistry_eq]
   | blockedOnNotification _ =>
-    rw [clearTcbIpcFields_serviceRegistry_eq, removeFromAllNotificationWaitLists_serviceRegistry_eq]
+    rw [restoreToReadyCancelled_serviceRegistry_eq, removeFromAllNotificationWaitLists_serviceRegistry_eq]
 
 /-- D1-I: clearPendingState preserves serviceRegistry. -/
 theorem clearPendingState_serviceRegistry_eq
@@ -292,11 +292,11 @@ theorem cancelIpcBlocking_lifecycle_eq
   cases tcb.ipcState with
   | ready => rfl
   | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
-    rw [clearTcbIpcFields_lifecycle_eq, removeFromAllEndpointQueues_lifecycle_eq]
+    rw [restoreToReadyCancelled_lifecycle_eq, removeFromAllEndpointQueues_lifecycle_eq]
   | blockedOnReply _ _ =>
-    rw [consumeReplyLink_lifecycle_eq, clearTcbIpcFields_lifecycle_eq]
+    rw [consumeReplyLink_lifecycle_eq, restoreToReadyCancelled_lifecycle_eq]
   | blockedOnNotification _ =>
-    rw [clearTcbIpcFields_lifecycle_eq, removeFromAllNotificationWaitLists_lifecycle_eq]
+    rw [restoreToReadyCancelled_lifecycle_eq, removeFromAllNotificationWaitLists_lifecycle_eq]
 
 -- ============================================================================
 -- R5.B (DEEP-SUSP-01): resumeThread PIP-readiness — structural witnesses
@@ -332,7 +332,7 @@ theorem cancelIpcBlocking_lifecycle_eq
 theorem restoreToReady_objectIndex_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (restoreToReady st tid).objectIndex = st.objectIndex := by
-  unfold restoreToReady; split <;> rfl
+  unfold restoreToReady restoreToReadyStaging; split <;> rfl
 
 /-- R5.B: When `restoreToReady` rewrites the TCB at `tid`, the resulting
 TCB has `ipcState = .ready` and the three queue link fields cleared. The
@@ -353,7 +353,7 @@ theorem restoreToReady_objects_eq_at_tid
                 queueNext := none
                 queuePPrev := none
                 pendingReceiveReply := none }) := by
-  unfold restoreToReady
+  unfold restoreToReady restoreToReadyStaging
   rw [hLook]
 
 /-- R5.B: The resumed thread's TCB has `pipBoost` equal to the post-
@@ -423,14 +423,29 @@ theorem resumeThread_pipBoost_consistent_post_restore
 
 /-- WS-RC R5.B.2 / Phase Q1: `restoreToReady` preserves `invExt` (the
     RHTable external invariant) on the `objects` field. -/
-theorem restoreToReady_invExt
+theorem restoreToReadyStaging_invExt
     (st : SystemState) (tid : SeLe4n.ThreadId)
+    (frame : Option Architecture.SyscallReturnFrame)
     (hObjInv : st.objects.invExt) :
-    (restoreToReady st tid).objects.invExt := by
-  unfold restoreToReady
+    (restoreToReadyStaging st tid frame).objects.invExt := by
+  unfold restoreToReadyStaging
   cases st.getTcb? tid with
   | none => exact hObjInv
   | some _ => exact RobinHood.RHTable.insert_preserves_invExt _ _ _ hObjInv
+
+theorem restoreToReady_invExt
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt) :
+    (restoreToReady st tid).objects.invExt :=
+  restoreToReadyStaging_invExt st tid none hObjInv
+
+/-- **WS-RR RR7.14**: and the cancellation spelling — the staged frame is one
+more field of the same single TCB insert. -/
+theorem restoreToReadyCancelled_invExt
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt) :
+    (restoreToReadyCancelled st tid).objects.invExt :=
+  restoreToReadyStaging_invExt st tid _ hObjInv
 
 /-- WS-RC R5.B.2 / Phase Q1: `restoreToReady`'s blocking-graph subgraph
     witness.
@@ -459,7 +474,7 @@ theorem restoreToReady_blockingServer_subgraph
       right
       unfold PriorityInheritance.blockingServer
       have hRR : restoreToReady st tid = st := by
-        unfold restoreToReady; rw [hPre]
+        unfold restoreToReady restoreToReadyStaging; rw [hPre]
       rw [hRR]
     | some origTcb =>
       -- Post-state TCB at tid has ipcState = .ready.
@@ -470,7 +485,7 @@ theorem restoreToReady_blockingServer_subgraph
             = some (.tcb { origTcb with ipcState := .ready, queuePrev := none,
                                         queueNext := none, queuePPrev := none,
                                         pendingReceiveReply := none }) := by
-        unfold restoreToReady
+        unfold restoreToReady restoreToReadyStaging
         rw [hPre]
         show (st.objects.insert tid.toObjId _).get? t.toObjId = _
         rw [hEq]
@@ -482,7 +497,7 @@ theorem restoreToReady_blockingServer_subgraph
     have hRRObj :
         (restoreToReady st tid).objects[t.toObjId]?
           = st.objects[t.toObjId]? := by
-      unfold restoreToReady
+      unfold restoreToReady restoreToReadyStaging
       cases hPre : st.getTcb? tid with
       | none => rfl
       | some _ =>
@@ -1071,13 +1086,13 @@ theorem cancelIpcBlocking_preserves_objects_invExt
   cases tcb.ipcState with
   | ready => exact hInv
   | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
-    exact restoreToReady_invExt _ _
+    exact restoreToReadyCancelled_invExt _ _
       (removeFromAllEndpointQueues_preserves_objects_invExt st tid hInv)
   | blockedOnReply _ _ =>
     exact consumeReplyLink_preserves_objects_invExt _ _ _
-      (restoreToReady_invExt _ _ hInv)
+      (restoreToReadyCancelled_invExt _ _ hInv)
   | blockedOnNotification _ =>
-    exact restoreToReady_invExt _ _
+    exact restoreToReadyCancelled_invExt _ _
       (removeFromAllNotificationWaitLists_preserves_objects_invExt st tid hInv)
 
 -- ============================================================================
@@ -1092,18 +1107,43 @@ theorem cancelIpcBlocking_preserves_objects_invExt
 
 /-- WS-SM SM6.E: `restoreToReady` preserves TCB-kind and `cpuAffinity` at
 every key — the conditional rewrite clears IPC and queue-link fields only. -/
+theorem restoreToReadyStaging_tcb_lookup
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (frame : Option Architecture.SyscallReturnFrame)
+    (k : SeLe4n.ObjId) (t0 : TCB)
+    (hInv : st.objects.invExt)
+    (hPre : st.objects[k]? = some (.tcb t0)) :
+    ∃ t' : TCB, (restoreToReadyStaging st tid frame).objects[k]? = some (.tcb t')
+      ∧ t'.cpuAffinity = t0.cpuAffinity := by
+  unfold restoreToReadyStaging
+  cases hT : st.getTcb? tid with
+  | none => exact ⟨t0, hPre, rfl⟩
+  | some t =>
+    cases frame with
+    | none =>
+        exact insert_tcb_rewrite_lookup st.objects tid.toObjId k t _ t0 hInv
+          ((SystemState.getTcb?_eq_some_iff st tid t).mp hT) rfl hPre
+    | some f =>
+        exact insert_tcb_rewrite_lookup st.objects tid.toObjId k t _ t0 hInv
+          ((SystemState.getTcb?_eq_some_iff st tid t).mp hT) rfl hPre
+
 theorem restoreToReady_tcb_lookup
     (st : SystemState) (tid : SeLe4n.ThreadId) (k : SeLe4n.ObjId) (t0 : TCB)
     (hInv : st.objects.invExt)
     (hPre : st.objects[k]? = some (.tcb t0)) :
     ∃ t' : TCB, (restoreToReady st tid).objects[k]? = some (.tcb t')
-      ∧ t'.cpuAffinity = t0.cpuAffinity := by
-  unfold restoreToReady
-  cases hT : st.getTcb? tid with
-  | none => exact ⟨t0, hPre, rfl⟩
-  | some t =>
-    exact insert_tcb_rewrite_lookup st.objects tid.toObjId k t _ t0 hInv
-      ((SystemState.getTcb?_eq_some_iff st tid t).mp hT) rfl hPre
+      ∧ t'.cpuAffinity = t0.cpuAffinity :=
+  restoreToReadyStaging_tcb_lookup st tid none k t0 hInv hPre
+
+/-- **WS-RR RR7.14**: and the cancellation spelling.  The staged frame writes
+`registerContext`, which is neither the object's kind nor its `cpuAffinity`. -/
+theorem restoreToReadyCancelled_tcb_lookup
+    (st : SystemState) (tid : SeLe4n.ThreadId) (k : SeLe4n.ObjId) (t0 : TCB)
+    (hInv : st.objects.invExt)
+    (hPre : st.objects[k]? = some (.tcb t0)) :
+    ∃ t' : TCB, (restoreToReadyCancelled st tid).objects[k]? = some (.tcb t')
+      ∧ t'.cpuAffinity = t0.cpuAffinity :=
+  restoreToReadyStaging_tcb_lookup st tid _ k t0 hInv hPre
 
 /-- WS-SM SM6.E: `clearTcbReplyObject` preserves TCB-kind and `cpuAffinity`
 at every key — the conditional rewrite clears `replyObject` only. -/
@@ -1179,31 +1219,46 @@ theorem cancelIpcBlocking_tcb_lookup
     obtain ⟨hInvE, t₁, hL1, hAff1⟩ :=
       removeFromAllEndpointQueues_tcb_lookup st tid k t0 hInv hPre
     obtain ⟨t₂, hL2, hAff2⟩ :=
-      restoreToReady_tcb_lookup (removeFromAllEndpointQueues st tid) tid k t₁
+      restoreToReadyCancelled_tcb_lookup (removeFromAllEndpointQueues st tid) tid k t₁
         hInvE hL1
     exact ⟨t₂, hL2, hAff2.trans hAff1⟩
   | blockedOnReply _ _ =>
-    obtain ⟨t₁, hL1, hAff1⟩ := restoreToReady_tcb_lookup st tid k t0 hInv hPre
+    obtain ⟨t₁, hL1, hAff1⟩ := restoreToReadyCancelled_tcb_lookup st tid k t0 hInv hPre
     obtain ⟨t₂, hL2, hAff2⟩ :=
-      consumeReplyLink_tcb_lookup (restoreToReady st tid) tid tcb k t₁
-        (restoreToReady_invExt st tid hInv) hL1
+      consumeReplyLink_tcb_lookup (restoreToReadyCancelled st tid) tid tcb k t₁
+        (restoreToReadyCancelled_invExt st tid hInv) hL1
     exact ⟨t₂, hL2, hAff2.trans hAff1⟩
   | blockedOnNotification _ =>
     obtain ⟨hInvN, t₁, hL1, hAff1⟩ :=
       removeFromAllNotificationWaitLists_tcb_lookup st tid k t0 hInv hPre
     obtain ⟨t₂, hL2, hAff2⟩ :=
-      restoreToReady_tcb_lookup (removeFromAllNotificationWaitLists st tid) tid k t₁
+      restoreToReadyCancelled_tcb_lookup (removeFromAllNotificationWaitLists st tid) tid k t₁
         hInvN hL1
     exact ⟨t₂, hL2, hAff2.trans hAff1⟩
 
 /-- WS-SM SM6.E: `restoreToReady` is the identity when the thread resolves
 to no TCB — the rewrite is guarded on the TCB read. -/
+theorem restoreToReadyStaging_eq_self_of_getTcb?_none
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (frame : Option Architecture.SyscallReturnFrame)
+    (h : st.getTcb? tid = none) :
+    restoreToReadyStaging st tid frame = st := by
+  unfold restoreToReadyStaging
+  rw [h]
+
 theorem restoreToReady_eq_self_of_getTcb?_none
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (h : st.getTcb? tid = none) :
-    restoreToReady st tid = st := by
-  unfold restoreToReady
-  rw [h]
+    restoreToReady st tid = st :=
+  restoreToReadyStaging_eq_self_of_getTcb?_none st tid none h
+
+/-- **WS-RR RR7.14**: and the cancellation spelling — the frame is staged into
+a TCB, so no TCB means nothing to stage into and nothing written. -/
+theorem restoreToReadyCancelled_eq_self_of_getTcb?_none
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (h : st.getTcb? tid = none) :
+    restoreToReadyCancelled st tid = st :=
+  restoreToReadyStaging_eq_self_of_getTcb?_none st tid _ h
 
 /-- WS-SM SM6.E: `clearTcbReplyObject` is the identity when the thread
 resolves to no TCB. -/
@@ -1260,13 +1315,13 @@ theorem cancelIpcBlocking_getTcb?_none
       | none => rfl
       | some t =>
         exact absurd ((SystemState.getTcb?_eq_some_iff _ tid t).mp hX) (hNoE t)
-    show (restoreToReady (removeFromAllEndpointQueues st tid) tid).getTcb? tid
+    show (restoreToReadyCancelled (removeFromAllEndpointQueues st tid) tid).getTcb? tid
       = none
-    rw [restoreToReady_eq_self_of_getTcb?_none _ tid hTE]
+    rw [restoreToReadyCancelled_eq_self_of_getTcb?_none _ tid hTE]
     exact hTE
   | blockedOnReply _ _ =>
-    show (consumeReplyLink (restoreToReady st tid) tid tcb).getTcb? tid = none
-    rw [restoreToReady_eq_self_of_getTcb?_none st tid hT]
+    show (consumeReplyLink (restoreToReadyCancelled st tid) tid tcb).getTcb? tid = none
+    rw [restoreToReadyCancelled_eq_self_of_getTcb?_none st tid hT]
     unfold consumeReplyLink
     cases tcb.replyObject with
     | none => exact hT
@@ -1285,9 +1340,9 @@ theorem cancelIpcBlocking_getTcb?_none
       | none => rfl
       | some t =>
         exact absurd ((SystemState.getTcb?_eq_some_iff _ tid t).mp hX) (hNoN t)
-    show (restoreToReady (removeFromAllNotificationWaitLists st tid) tid).getTcb? tid
+    show (restoreToReadyCancelled (removeFromAllNotificationWaitLists st tid) tid).getTcb? tid
       = none
-    rw [restoreToReady_eq_self_of_getTcb?_none _ tid hTN]
+    rw [restoreToReadyCancelled_eq_self_of_getTcb?_none _ tid hTN]
     exact hTN
 
 /-- WS-SM SM6.E: `cancelBoundDonation` preserves `objects.invExt` — the bound
@@ -1349,14 +1404,32 @@ theorem cancelDonation_preserves_objects_invExt
 
 /-- WS-SM SM6.E: `restoreToReady` preserves `ipcInvariant` — its only write
 is a `.tcb` rewrite. -/
+theorem restoreToReadyStaging_preserves_ipcInvariant
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (frame : Option Architecture.SyscallReturnFrame)
+    (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
+    ipcInvariant (restoreToReadyStaging st tid frame) := by
+  unfold restoreToReadyStaging
+  cases st.getTcb? tid with
+  | none => exact hIpc
+  | some t =>
+    cases frame with
+    | none => exact ipcInvariant_insert_tcb st tid.toObjId _ hInv hIpc
+    | some f => exact ipcInvariant_insert_tcb st tid.toObjId _ hInv hIpc
+
 theorem restoreToReady_preserves_ipcInvariant
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
-    ipcInvariant (restoreToReady st tid) := by
-  unfold restoreToReady
-  cases st.getTcb? tid with
-  | none => exact hIpc
-  | some t => exact ipcInvariant_insert_tcb st tid.toObjId _ hInv hIpc
+    ipcInvariant (restoreToReady st tid) :=
+  restoreToReadyStaging_preserves_ipcInvariant st tid none hInv hIpc
+
+/-- **WS-RR RR7.14**: and the cancellation spelling — still a single `.tcb`
+rewrite, so still notification-safe. -/
+theorem restoreToReadyCancelled_preserves_ipcInvariant
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
+    ipcInvariant (restoreToReadyCancelled st tid) :=
+  restoreToReadyStaging_preserves_ipcInvariant st tid _ hInv hIpc
 
 /-- WS-SM SM6.E: `clearTcbReplyObject` preserves `ipcInvariant` — its only
 write is a `.tcb` rewrite. -/
@@ -1408,15 +1481,15 @@ theorem cancelIpcBlocking_preserves_ipcInvariant
   cases tcb.ipcState with
   | ready => exact hIpc
   | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
-    exact restoreToReady_preserves_ipcInvariant _ tid
+    exact restoreToReadyCancelled_preserves_ipcInvariant _ tid
       (removeFromAllEndpointQueues_preserves_objects_invExt st tid hInv)
       (removeFromAllEndpointQueues_preserves_ipcInvariant st tid hInv hIpc)
   | blockedOnReply _ _ =>
     exact consumeReplyLink_preserves_ipcInvariant _ tid tcb
-      (restoreToReady_invExt st tid hInv)
-      (restoreToReady_preserves_ipcInvariant st tid hInv hIpc)
+      (restoreToReadyCancelled_invExt st tid hInv)
+      (restoreToReadyCancelled_preserves_ipcInvariant st tid hInv hIpc)
   | blockedOnNotification _ =>
-    exact restoreToReady_preserves_ipcInvariant _ tid
+    exact restoreToReadyCancelled_preserves_ipcInvariant _ tid
       (removeFromAllNotificationWaitLists_preserves_objects_invExt st tid hInv)
       (removeFromAllNotificationWaitLists_preserves_ipcInvariant st tid hInv hIpc)
 

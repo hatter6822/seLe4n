@@ -4641,6 +4641,58 @@ run_check "INVARIANT" rg -n 'a stale registry entry was accepted' SeLe4n/Testing
 # is which constants a body reaches, and eleven review rounds against
 # `check_kernel_entry_exports.py` are the evidence that a scanner gets it wrong.
 run_negative_check "INVARIANT" rg -n 'IO.FS.readFile|System.FilePath' SeLe4n/Testing/ExportCommitDisciplineCensus.lean
+# WS-RR RR7.14: the frame a forcibly unblocked thread is owed.  Both unblocking
+# paths staged NOTHING, so a thread taken out of a blocking IPC resumed at the
+# SM10.1 context restore reading its own argument spill back as a return value.
+# The two paths stage DIFFERENT errors because they are different facts, and the
+# anchors pin the relation, not the presence of a token: a check that only asked
+# "does `errorFrame` appear in Timeout.lean" would pass with both paths staging
+# the same code, which is the defect this row exists to avoid.
+run_check "INVARIANT" rg -n '^def timeoutFrame' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^def cancelledIpcFrame' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem timeout_and_cancelled_frames_differ' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem unblockFrames_ne_success' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem unblockFrames_decode' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+# `.ipcCancelled` is a discriminant of its own, not a reuse of `.ipcTimeout`:
+# a userspace library retrying on timeout would also retry a cancellation,
+# against an endpoint that may no longer exist.
+run_check "INVARIANT" rg -n '\| ipcCancelled' SeLe4n/Model/KernelError.lean
+run_check "INVARIANT" rg -n 'IpcCancelled = 57' rust/sele4n-types/src/error.rs
+# The TIMEOUT path stages the timeout frame, folded into the TCB record it was
+# already writing (one object write, not two).
+run_check "INVARIANT" rg -n 'Architecture.timeoutFrame' SeLe4n/Kernel/IPC/Operations/Timeout.lean
+# The CANCELLATION path stages the cancellation frame on all four blocked arms,
+# through one spelling of the field clear.
+run_check "INVARIANT" rg -n '^def restoreToReadyCancelled' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n 'Architecture.cancelledIpcFrame' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^theorem restoreToReadyCancelled_readReturnFrame' SeLe4n/Kernel/Lifecycle/Suspend.lean
+# ...and it is the SAME field clear as the resume spelling, frame aside, so a
+# field added to one and not the other fails to elaborate.
+run_check "INVARIANT" rg -n '^theorem restoreToReadyCancelled_tcb' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^def restoreToReadyStaging' SeLe4n/Kernel/Lifecycle/Suspend.lean
+# NEGATIVE: the RESUME spelling must not stage.  `.tcbResume` restarts a thread
+# where it was (RR4.11's `retirePendingFaultForResume` is the fault half of the
+# same posture), so overwriting `x0`-`x5` there would destroy the very window
+# the restart is supposed to preserve.  `restoreToReady` is defined as the
+# `none`-staging instance and nothing else.
+run_check "INVARIANT" rg -n 'restoreToReadyStaging st tid none' SeLe4n/Kernel/Lifecycle/Suspend.lean
+# The invariant premise the staging needed: `contextMatchesCurrentOnCore` reads
+# only the CURRENT thread's saved context, so a write that moves
+# `registerContext` at a thread nobody is running is safe.  Stating the premise
+# for every thread (as it was) is strictly stronger than the conclusion needs
+# and refuses exactly this write.
+run_check "INVARIANT" rg -n 'st.scheduler.currentOnCore c = some x . st.getTcb\? x = some txcb' SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean
+# The information-flow half: the frame is written into the victim's OWN TCB,
+# the one object the high-thread premise already covers.  Had it gone to the
+# machine register banks this would be false.
+run_check "INVARIANT" rg -n '^theorem restoreToReadyStaging_preserves_projection_high' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
+# Both halves are exercised live, against a victim carrying a RECOGNISABLE
+# stale window, so "the frame is right" and "the stale window is gone" are two
+# assertions rather than one.
+run_check "INVARIANT" rg -n 'runUnblockFrameStagingChecks' tests/SmpCancellationSuite.lean
+run_check "INVARIANT" rg -n 'staleRequestRegs' tests/SmpCancellationSuite.lean
+run_check "INVARIANT" rg -n 'runTimeoutFrameStagingChecks' tests/SmpTimerSuite.lean
+
 # PR #873 round 14: **the frozen/live correspondence, as something that runs.**
 # Each frozen operation re-implements a live transition, and which one it
 # re-implements was recorded in a markdown table and a `mirrors X` sentence.

@@ -332,6 +332,21 @@ platform rather than with the lock.
 > [`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §SM3.C.9 for the
 > canonical statement.
 
+> **The answer a forcibly unblocked thread gets** (WS-RR RR7.14, `v0.34.67`).
+> A thread taken out of a blocking IPC has no value to receive, and until this
+> cut both unblocking paths staged nothing — so the SM10.1 context restore
+> would have delivered the thread's own argument spill back as a return value.
+> `timeoutThread` now stages `Architecture.timeoutFrame` (`.ipcTimeout`) and
+> `cancelIpcBlocking`'s four blocked arms stage
+> `Architecture.cancelledIpcFrame` (`.ipcCancelled`, a new `KernelError` at
+> discriminant 57): a caller may reissue a timed-out request, but a cancelled
+> one may name an endpoint that is gone, so conflating them would make a
+> correct userspace retry impossible. Two paths stage nothing on purpose and
+> are pinned as negatives — the `.ready` arm, and `restoreToReady`, the
+> *resume* spelling of the same field clear, since `.tcbResume` restarts a
+> thread where it was. **Delivery is still owed to WS-BP BP7**: a staged frame
+> reaches no hardware register while `contextRestoreSeamLive` is `false`.
+
 ## 4. Per-core (SMP) lifts
 
 Every bundle above has a per-core form that quantifies over `CoreId` and reads

@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.IPC.CrossCore.Cancellation
+import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
 import SeLe4n.Testing.StateBuilder
 
@@ -1220,6 +1221,135 @@ private def runDiffSeamEdfChecks : IO Unit := do
 -- Aggregate runner
 -- ============================================================================
 
+-- ----------------------------------------------------------------------------
+-- Scenario R: WS-RR RR7.14 — the return frame a forcibly unblocked thread reads
+-- ----------------------------------------------------------------------------
+--
+-- A thread whose blocking IPC is destroyed under it has no value to receive.
+-- Until RR7.14 the teardown staged nothing, so the SM10.1 context restore would
+-- have delivered whatever the argument spill left in `x0`-`x5` — the thread's
+-- own request registers, decoded as a return value.  The checks below are
+-- written so they cannot pass vacuously: the victim carries a **recognisable**
+-- pre-state register file (`x0 = 0xBAD0`, `x1 = 0xBAD1`, ...), so "the frame is
+-- `.ipcCancelled`" and "the frame is not what was there before" are two
+-- different assertions and both are made.
+
+/-- A register file whose `x0`-`x5` are all recognisable non-frame values —
+what a blocked caller's argument spill leaves behind. -/
+private def staleRequestRegs : SeLe4n.RegisterFile :=
+  { pc := ⟨0x4000⟩, sp := ⟨0x9000⟩,
+    gpr := fun r => ⟨0xBAD0 + r.val⟩ }
+
+private def mkTcbWithStaleRegs (tid : Nat) (prio : Nat) (aff : Option CoreId) : TCB :=
+  { mkTcb tid prio aff with registerContext := staleRequestRegs }
+
+/-- The endpoint-blocked scenario, with the victim carrying the stale window. -/
+private def stCallBlockedStale? : Option SystemState :=
+  let base :=
+    (BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject victimTid.toObjId (.tcb (mkTcbWithStaleRegs 710 30 (some core1)))
+      |>.withObject bystanderTid.toObjId (.tcb (mkTcb 712 20 none))
+      |>.withRunnable [victimTid, bystanderTid]
+      |>.build)
+  match endpointCallOnCore epId victimTid IpcMessage.empty bootCoreId base with
+  | (st, .ok none) => some st
+  | _ => none
+
+/-- The notification-blocked scenario, likewise. -/
+private def stNtfnBlockedStale? : Option SystemState :=
+  let base :=
+    (BootstrapBuilder.empty
+      |>.withObject nId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty })
+      |>.withObject victimTid.toObjId (.tcb (mkTcbWithStaleRegs 710 30 (some core1)))
+      |>.withRunnable [victimTid]
+      |>.build)
+  match notificationWaitOnCore nId victimTid bootCoreId base with
+  | (st, .ok none) => some st
+  | _ => none
+
+private def runUnblockFrameStagingChecks : IO Unit := do
+  IO.println "--- §3.19 WS-RR RR7.14 the cancellation return frame ---"
+  -- The two frames are distinguishable, and neither is the success frame.
+  assertBool "the timeout and cancellation frames differ"
+    (decide (Architecture.timeoutFrame ≠ Architecture.cancelledIpcFrame))
+  assertBool "neither unblock frame is the success frame (x1 = 0)"
+    (decide (Architecture.timeoutFrame.x1 ≠ 0 ∧ Architecture.cancelledIpcFrame.x1 ≠ 0))
+  assertBool "each unblock frame's label decodes back to its own error"
+    (decide (Architecture.ofErrorLabel? (Architecture.errorLabel KernelError.ipcTimeout)
+               = some KernelError.ipcTimeout
+             ∧ Architecture.ofErrorLabel? (Architecture.errorLabel KernelError.ipcCancelled)
+               = some KernelError.ipcCancelled))
+  assertBool "the cancellation error is its own discriminant, not folded into the timeout"
+    (decide (KernelError.toDiscriminant .ipcCancelled = 57
+             ∧ KernelError.toDiscriminant .ipcTimeout = 42
+             ∧ KernelError.ofDiscriminant? 57 = some KernelError.ipcCancelled))
+  -- The endpoint-blocked victim.
+  match stCallBlockedStale? with
+  | some st =>
+      let tcb := victimTcb st
+      assertBool "setup: the blocked victim still holds its stale request window"
+        (decide (Architecture.readReturnFrame st victimTid
+                   ≠ Architecture.cancelledIpcFrame)
+         && decide ((Architecture.readReturnFrame st victimTid).x0 = 0xBAD0))
+      let (st', _) := cancelIpcBlockingOnCore victimTid tcb bootCoreId st
+      assertBool "an endpoint-blocked victim reads back .ipcCancelled after cancellation"
+        (decide (Architecture.readReturnFrame st' victimTid
+                   = Architecture.cancelledIpcFrame))
+      assertBool "…and the stale window is GONE (x0 no longer the spilled argument)"
+        (decide ((Architecture.readReturnFrame st' victimTid).x0 ≠ 0xBAD0))
+      assertBool "…while x7 and pc/sp are untouched (staging writes x0-x5 only)"
+        (match st'.getTcb? victimTid with
+         | some t => decide (t.registerContext.gpr ⟨7⟩ = staleRequestRegs.gpr ⟨7⟩
+                             ∧ t.registerContext.pc = staleRequestRegs.pc
+                             ∧ t.registerContext.sp = staleRequestRegs.sp)
+         | none => false)
+      -- The bystander is untouched: staging is confined to the victim.
+      assertBool "the bystander's register context is untouched by the victim's staging"
+        (decide (Architecture.readReturnFrame st' bystanderTid
+                   = Architecture.readReturnFrame st bystanderTid))
+  | none => assertBool "setup: endpointCallOnCore block path succeeded (stale-reg fixture)" false
+  -- The notification-blocked victim: the fourth arm, and the one whose return
+  -- would otherwise have been a badge.
+  match stNtfnBlockedStale? with
+  | some st =>
+      let tcb := victimTcb st
+      let (st', _) := cancelIpcBlockingOnCore victimTid tcb bootCoreId st
+      assertBool "a notification-blocked victim reads back .ipcCancelled (never a stale badge)"
+        (decide (Architecture.readReturnFrame st' victimTid
+                   = Architecture.cancelledIpcFrame))
+  | none => assertBool "setup: notificationWaitOnCore block path succeeded (stale-reg fixture)" false
+  -- NEGATIVE: the `.ready` arm is a no-op and stages NOTHING.  A thread that
+  -- was not blocked has a live register window of its own; overwriting it would
+  -- destroy a return value the kernel had already staged.
+  let stReady : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject victimTid.toObjId (.tcb (mkTcbWithStaleRegs 710 30 (some core1)))
+      |>.withRunnable [victimTid]
+      |>.build)
+  let readyTcb := victimTcb stReady
+  assertBool "setup: the .ready victim is not blocked"
+    (decide (readyTcb.ipcState = ThreadIpcState.ready))
+  assertBool "NEGATIVE: cancelling a .ready thread stages no frame — its window survives"
+    (decide (Architecture.readReturnFrame (cancelIpcBlocking stReady victimTid readyTcb) victimTid
+               = Architecture.readReturnFrame stReady victimTid)
+     && decide (Architecture.readReturnFrame (cancelIpcBlocking stReady victimTid readyTcb)
+                  victimTid ≠ Architecture.cancelledIpcFrame))
+  -- NEGATIVE: `restoreToReady` (the RESUME spelling) stages nothing either — a
+  -- resumed thread restarts where it was, so its window must survive.
+  assertBool "NEGATIVE: restoreToReady (the resume spelling) stages no frame"
+    (decide (Architecture.readReturnFrame (restoreToReady stReady victimTid) victimTid
+               = Architecture.readReturnFrame stReady victimTid))
+  assertBool "…and it is the SAME field clear as the cancellation spelling, frame aside"
+    (match (restoreToReady stReady victimTid).getTcb? victimTid,
+           (restoreToReadyCancelled stReady victimTid).getTcb? victimTid with
+     | some a, some b =>
+         decide (a.ipcState = b.ipcState ∧ a.queuePrev = b.queuePrev
+                 ∧ a.queueNext = b.queueNext ∧ a.queuePPrev = b.queuePPrev
+                 ∧ a.pendingReceiveReply = b.pendingReceiveReply
+                 ∧ b.registerContext.gpr ⟨1⟩ ≠ a.registerContext.gpr ⟨1⟩)
+     | _, _ => false)
+
 def runSmpCancellationChecks : IO Unit := do
   IO.println "=== SmpCancellationSuite (WS-SM SM6.E cancellation across cores) ==="
   runEndpointCancelChecks
@@ -1239,6 +1369,7 @@ def runSmpCancellationChecks : IO Unit := do
   runDisinheritanceSchedulingChecks
   runUnboundRunningSuspendChecks
   runDiffSeamEdfChecks
+  runUnblockFrameStagingChecks
   IO.println "SmpCancellationSuite: all checks passed."
 
 end SeLe4n.Testing.SmpCancellation

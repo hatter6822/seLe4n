@@ -2448,13 +2448,23 @@ theorem revertPriorityInheritance_preserves_schedulerInvariantStructuralRegNodup
 scheduler and register banks fixed, keeps every `getTcb?` resolvable, and
 preserves the current thread's saved `registerContext`, preserves the base safety
 invariant.  Subsumes the TCB-insert atom; reused for `storeObject` and
-`endpointQueueRemove`. -/
+`endpointQueueRemove`.
+
+**WS-RR RR7.14**: `hReg` is scoped to the **current** thread of a core.
+`contextMatchesCurrentOnCore` compares a core's register bank against its own
+current thread's saved context and reads no other TCB's, so a write that moves
+`registerContext` at a thread nobody is running preserves the invariant.  The
+premise was previously stated for every thread, which is strictly stronger than
+what the conclusion needs and refused exactly the write the timeout path now
+performs (staging the `.ipcTimeout` return frame into the thread it just took
+off an endpoint queue). -/
 theorem objects_change_preserves_schedulerInvariantStructuralRegNodup_smp
     (st st' : SystemState)
     (hsch : st'.scheduler = st.scheduler)
     (hmac : st'.machine = st.machine)
     (hSome : ∀ x : SeLe4n.ThreadId, (st.getTcb? x).isSome → (st'.getTcb? x).isSome)
-    (hReg : ∀ (x : SeLe4n.ThreadId) (txcb : TCB), st.getTcb? x = some txcb →
+    (hReg : ∀ (c : CoreId) (x : SeLe4n.ThreadId) (txcb : TCB),
+       st.scheduler.currentOnCore c = some x → st.getTcb? x = some txcb →
        ∃ tcb', st'.getTcb? x = some tcb' ∧ txcb.registerContext = tcb'.registerContext)
     (hPre : schedulerInvariantStructuralRegNodup_smp st) :
     schedulerInvariantStructuralRegNodup_smp st' := by
@@ -2466,18 +2476,29 @@ theorem objects_change_preserves_schedulerInvariantStructuralRegNodup_smp
   · refine contextMatchesCurrentOnCore_frame_at ?_ ?_ ?_ ((hPre c).1.1.2.1) ((hPre c).1.2)
     · rw [hsch]
     · rw [hmac]
-    · intro x txcb _hcur htcb
-      obtain ⟨tcb', htcb', hr⟩ := hReg x txcb htcb
+    · intro x txcb hcur htcb
+      obtain ⟨tcb', htcb', hr⟩ := hReg c x txcb hcur htcb
       exact ⟨tcb', htcb', by rw [hr]; exact RegisterFile.beq_self _⟩
   · exact (runQueueUniqueOnCore_frame (by rw [hsch])).mpr (hPre c).2
 
-/-- WS-SM SM5.I.8 (timeout atom): `storeObject` of a TCB with the same
-`registerContext` preserves the base safety invariant (objects insert + index /
-lifecycle changes the invariant never reads; scheduler + machine fixed). -/
+/-- WS-SM SM5.I.8 (timeout atom): `storeObject` of a TCB preserves the base
+safety invariant (objects insert + index / lifecycle changes the invariant never
+reads; scheduler + machine fixed), **provided** the written thread's saved
+register context still matches its core's bank where it is current.
+
+**WS-RR RR7.14**: `hReg` is a *disjunction* rather than an equality, because the
+two live writers satisfy different halves.  A write that keeps
+`registerContext` (the left disjunct) is safe outright; a write that moves it —
+the timeout's staged `.ipcTimeout` return frame — is safe because the written
+thread is current on no core (the right disjunct), which is the same `hNotCur`
+its caller already carries for the wake.  Demanding the equality alone would
+have refused the staging; dropping the premise entirely would let a running
+thread's context diverge from its bank. -/
 theorem storeObject_tcb_preserves_schedulerInvariantStructuralRegNodup_smp
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb tcb' : TCB) (st2 : SystemState)
     (hInv : st.objects.invExt) (hOld : st.getTcb? tid = some tcb)
-    (hReg : tcb'.registerContext = tcb.registerContext)
+    (hReg : tcb'.registerContext = tcb.registerContext
+      ∨ ∀ c : CoreId, st.scheduler.currentOnCore c ≠ some tid)
     (hStore : storeObject tid.toObjId (.tcb tcb') st = .ok ((), st2))
     (hPre : schedulerInvariantStructuralRegNodup_smp st) :
     schedulerInvariantStructuralRegNodup_smp st2 := by
@@ -2498,12 +2519,17 @@ theorem storeObject_tcb_preserves_schedulerInvariantStructuralRegNodup_smp
       simp only [SystemState.getTcb?, hobj, RHTable_getElem?_eq_get?]
       rw [RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId x.toObjId _ hNe hInv]
       simpa only [SystemState.getTcb?, RHTable_getElem?_eq_get?] using hx
-  · intro x txcb htcb
+  · intro c x txcb hcur htcb
     by_cases hEq : x = tid
     · subst hEq
+      -- The right disjunct rules this branch out: `x` IS current on `c`.
+      have hEqReg : tcb'.registerContext = tcb.registerContext := by
+        cases hReg with
+        | inl h => exact h
+        | inr h => exact absurd hcur (h c)
       rw [hOld] at htcb
       have hxt : txcb = tcb := (Option.some.injEq _ _).mp htcb.symm
-      refine ⟨tcb', ?_, by rw [hReg, hxt]⟩
+      refine ⟨tcb', ?_, by rw [hEqReg, hxt]⟩
       simp only [SystemState.getTcb?, hobj, RHTable_getElem?_eq_get?]
       rw [RobinHood.RHTable.getElem?_insert_self st.objects x.toObjId _ hInv]
     · have hNe : ¬ (tid.toObjId == x.toObjId) = true := fun h =>
@@ -2594,7 +2620,7 @@ theorem endpointQueueRemove_preserves_schedulerInvariantStructuralRegNodup_smp
       obtain ⟨t', ht', _⟩ :=
         endpointQueueRemove_getTcb?_upToReg endpointId isReceiveQ tid st st' hInv hStep x t hgt
       simp [ht']
-  · intro x txcb htcb
+  · intro _c x txcb _hcur htcb
     exact endpointQueueRemove_getTcb?_upToReg endpointId isReceiveQ tid st st' hInv hStep x txcb htcb
 
 /-- `ensureRunnable` leaves the object store untouched (it writes only the boot
@@ -2644,7 +2670,12 @@ theorem timeoutThread_preserves_schedulerInvariantStructuralRegNodup_smp
         have hPre2 := by
           refine storeObject_tcb_preserves_schedulerInvariantStructuralRegNodup_smp
             st1 tid tcb _ st2 hInv1 hOld1 ?_ heq hPre1
-          rfl
+          -- WS-RR RR7.14: the staged `.ipcTimeout` frame MOVES `registerContext`,
+          -- so the equality disjunct is false here.  The right disjunct holds:
+          -- the timed-out thread runs on no core (`hNotCur`, transported across
+          -- the endpoint-queue removal's scheduler frame).
+          refine Or.inr (fun c hc => hNotCur c ?_)
+          rw [← hSch1]; exact hc
         have hInv2 := storeObject_preserves_objects_invExt st1 st2 tid.toObjId _ hInv1 heq
         have hSch2 := storeObject_scheduler_eq st1 st2 tid.toObjId _ heq
         -- round 8: the target-aware wake needs the guard on the wake TARGET core

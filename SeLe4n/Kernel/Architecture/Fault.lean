@@ -505,7 +505,7 @@ theorem decodeFault_encodeFault (f : Fault) (ctx : FaultContext) :
       simp [encodeFault, decodeFault, faultMessageLength, faultLabel, wordAt,
         FaultLabel.vmFault]
   | capFault capAddress inReceivePhase lookupFailure =>
-      have hLt : KernelError.toDiscriminant lookupFailure < 57 :=
+      have hLt : KernelError.toDiscriminant lookupFailure < 58 :=
         KernelError.toDiscriminant_lt lookupFailure
       have hMod : KernelError.toDiscriminant lookupFailure % 18446744073709551616
           = KernelError.toDiscriminant lookupFailure := Nat.mod_eq_of_lt (by omega)

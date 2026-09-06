@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.66.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.67.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,7 +203,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~54950 lines)
+- `CHANGELOG.md` (~55048 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22614 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12018 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
@@ -213,8 +213,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~5186 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5130 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5001 lines)
-- `docs/spec/SELE4N_SPEC.md` (~4835 lines)
-- `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4750 lines)
+- `docs/spec/SELE4N_SPEC.md` (~4855 lines)
+- `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4781 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `SeLe4n/Model/State.lean` (~4503 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (~4263 lines)
@@ -266,7 +266,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2079 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~2074 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2059 lines)
-- `SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean` (~2042 lines)
+- `SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean` (~2043 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2034 lines)
 - `SeLe4n/Kernel/Architecture/Invariant.lean` (~2033 lines)
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~2028 lines)
@@ -299,12 +299,12 @@ To find files that need pagination today, run:
 - `tests/FaultHandlingSuite.lean` (~1660 lines)
 - `tests/SmpIpcSuite.lean` (~1660 lines)
 - `tests/SyscallDispatchSuite.lean` (~1645 lines)
+- `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1618 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1600 lines)
+- `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~1564 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~1533 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1508 lines)
-- `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~1491 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~1488 lines)
-- `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1485 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
@@ -316,6 +316,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean` (~1393 lines)
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~1392 lines)
 - `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md` (~1382 lines)
+- `tests/SmpCancellationSuite.lean` (~1378 lines)
 - `docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` (~1370 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
@@ -329,11 +330,11 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/Taint.lean` (~1261 lines)
 - `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1261 lines)
 - `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
-- `tests/SmpCancellationSuite.lean` (~1247 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean` (~1241 lines)
 - `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean` (~1235 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1233 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1216 lines)
+- `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1206 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1188 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
@@ -349,7 +350,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Machine.lean` (~1128 lines)
 - `tests/PerObjectLockSuite.lean` (~1104 lines)
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1085 lines)
-- `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1076 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
 - `tests/SyscallReturnAbiSuite.lean` (~1068 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetHeld.lean` (~1063 lines)
@@ -378,6 +378,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet2PL.lean` (~897 lines)
+- `tests/SmpTimerSuite.lean` (~892 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~880 lines)
@@ -385,7 +386,6 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_RUST_HAL_PLAN.md` (~868 lines)
 - `tests/Ak9PlatformSuite.lean` (~867 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
-- `tests/SmpTimerSuite.lean` (~840 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean` (~835 lines)
 - `tests/DecodingSuite.lean` (~833 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean` (~824 lines)
@@ -394,11 +394,11 @@ To find files that need pagination today, run:
 - `tests/WithLockSetSuite.lean` (~820 lines)
 - `docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
 - `SeLe4n/Kernel/SchedContext/BindingAffinity.lean` (~816 lines)
+- `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` (~813 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRecord.lean` (~811 lines)
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
 - `docs/DEVELOPMENT.md` (~803 lines)
-- `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` (~800 lines)
 This bullet block is a **curated snapshot**, not a static enumeration.
 `scripts/find_large_lean_files.sh --check` (called from
 `scripts/sync_documentation_metrics.sh`) compares it against the live
@@ -1274,13 +1274,49 @@ message's tag decoded in userspace as a kernel error, so no fault handler could
 be written against `sele4n-abi`.  New code must not treat a nonzero `x1`
 label as an error; `ofErrorLabel?` / `decode_response` decide by range.
 
-What remains is owed to SM10.1: return-frame *delivery* at the context restore,
-and the cancellation/timeout error-frame staging.  Until that seam flips, a
-blocked caller's frame is poisoned with the fail-closed
+What remains is owed to SM10.1: return-frame *delivery* at the context restore.
+Until that seam flips, a blocked caller's frame is poisoned with the fail-closed
 `blocked_resume_sentinel_regs()` so a stale request register can never decode as
 a success.  A caller that took a fault at the seam is outcome tag 2
 (`.faulted`) and is never poisoned-and-resumed: the core halts pending SM10.1
 (PR #887 review round 5).
+
+**A forcibly unblocked thread is staged an error frame** (WS-RR RR7.14,
+v0.34.67) — the other half of §9's registered obligation, and closed.  A thread
+taken out of a blocking IPC has no value to receive, and both unblocking paths
+staged nothing, so the context restore would have delivered its own argument
+spill back as a return value.  They now stage, and they stage **different**
+errors because they are different facts: `timeoutThread` stages
+`Architecture.timeoutFrame` (`.ipcTimeout` — the budget expired under a
+well-formed operation, which the caller may reissue), and `cancelIpcBlocking`'s
+four blocked arms stage `Architecture.cancelledIpcFrame` (`.ipcCancelled`, a
+new `KernelError` at discriminant **57** — the operation was destroyed, so
+reissuing may be meaningless and a userspace library cannot write a correct
+retry against a conflated code; `timeout_and_cancelled_frames_differ` is the
+pin).  seL4 answers this by setting the thread `Restart`; this kernel has no
+restart state, so the crossing ends in a distinguishable error.  Three things
+new code must respect.  (1) **Two paths stage nothing, deliberately**:
+`cancelIpcBlocking`'s `.ready` arm commits no write at all, and `restoreToReady`
+— the *resume* spelling of the same field clear — stages nothing because
+`.tcbResume` restarts a thread where it was (RR4.11's
+`retirePendingFaultForResume` is the fault half of the same posture), so
+overwriting `x0`-`x5` would destroy the window the restart preserves.  Both are
+pinned as negatives.  (2) **One field clear, two spellings**:
+`restoreToReadyStaging` takes the frame as an argument and `restoreToReady` /
+`restoreToReadyCancelled` are its `none` / `some` instances, so every framing,
+`invExt`, `ipcInvariant`, `tcb_lookup`, identity and projection result is stated
+once and instantiated twice, and a field added to one clear and not the other
+fails to elaborate (`restoreToReadyCancelled_tcb`).  (3) **The staging is
+confined to the TCB**: `contextMatchesCurrentOnCore` compares a core's register
+bank against its **own current thread's** saved context and reads no other
+TCB's, so `objects_change_preserves_schedulerInvariantStructuralRegNodup_smp`'s
+`hReg` is scoped to the current thread and
+`storeObject_tcb_preserves_schedulerInvariantStructuralRegNodup_smp` takes a
+disjunction (the context is unchanged **or** the thread is current on no core);
+demanding the equality at every thread — as it did — is strictly stronger than
+the conclusion needs and refuses this write.  The information-flow half needs no
+new argument because the frame goes into the victim's *own* TCB, which holds
+only because `writeReturnFrameToTcb` deliberately does not touch `machine`.
 
 Plan: [`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](docs/planning/SYSCALL_RETURN_ABI_PLAN.md).
 

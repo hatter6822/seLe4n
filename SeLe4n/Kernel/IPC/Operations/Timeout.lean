@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.IPC.DualQueue.Core
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.Propagate
 import SeLe4n.Kernel.Scheduler.Operations.Selection
+import SeLe4n.Kernel.Architecture.SyscallReturn
 
 namespace SeLe4n.Kernel
 
@@ -124,13 +125,24 @@ def timeoutThread
       -- well-formed while the server is `.blockedOnReceive`, so leaving it set on the
       -- now-`.ready` thread would violate `pendingReceiveReplyWellFormed`.  (No-op for
       -- non-`blockedOnReceive` timed-out threads, which carry no stash.)
-      let tcb' : TCB := { tcb with
+      -- WS-RR RR7.14: and stage the **timeout error frame** into the saved
+      -- register context.  Without it the thread resumes at the SM10.1 context
+      -- restore reading whatever its own argument spill left in `x0`-`x5` — its
+      -- own request registers, decoded as a return value.  Folded into this
+      -- record update rather than applied as a second state write, so the
+      -- transition still commits exactly one object
+      -- (`Architecture.stageTimeoutFrame_eq_withReturnFrame` ties the two
+      -- spellings).  `timedOut := true` stays: it is the *kernel-side* fact the
+      -- scheduler and the invariants read; the frame is the *userspace-side*
+      -- answer, and neither substitutes for the other.
+      let tcb' : TCB := ({ tcb with
         ipcState := .ready,
         pendingMessage := none,
         timeoutBudget := none,
         threadState := .Ready,
         timedOut := true,
-        pendingReceiveReply := none }
+        pendingReceiveReply := none } : TCB).withReturnFrame
+          Architecture.timeoutFrame
       match storeObject tid.toObjId (.tcb tcb') st1 with
       | .error e => .error e
       | .ok ((), st2) =>

@@ -204,16 +204,26 @@ mod tests {
 
     #[test]
     fn decode_unknown_error_label() {
-        // WS-SM SM9.C.1: 56 is DeclassificationDeniedAtReceiver.  The first
-        // unrecognized discriminant is 57 (label BASE + 57) →
-        // UnknownKernelError, still an Err — fail-closed.
-        let regs = [0, error_x1(57), 0, 0, 0, 0, 0];
+        // WS-RR RR7.14: 57 is IpcCancelled.  The first unrecognized
+        // discriminant is 58 (label BASE + 58) → UnknownKernelError, still an
+        // Err — fail-closed.
+        let regs = [0, error_x1(58), 0, 0, 0, 0, 0];
         assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
         // The top of the range — the blocked-resume sentinel's label,
         // discriminant 255 — is the same fail-closed answer.
         let regs = [0, error_x1(255), 0, 0, 0, 0, 0];
         assert_eq!(error_x1(255) >> 9, (1 << 20) - 1);
         assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
+    }
+
+    #[test]
+    fn decode_ipc_cancelled_error() {
+        // WS-RR RR7.14: discriminant 57 survives the label round trip.  A
+        // cancelled waiter must be distinguishable from a timed-out one: the
+        // timed-out caller may retry the same call, the cancelled one has had
+        // its endpoint queue entry destroyed.
+        let regs = [0, error_x1(57), 0, 0, 0, 0, 0];
+        assert_eq!(decode_response(regs), Err(KernelError::IpcCancelled));
     }
 
     #[test]

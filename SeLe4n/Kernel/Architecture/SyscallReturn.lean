@@ -100,6 +100,8 @@ def toDiscriminant : KernelError → Nat
   | .auditLogCapacityExceeded      => 54
   | .auditFieldTooLarge            => 55
   | .declassificationDeniedAtReceiver => 56
+  -- WS-RR RR7.14: a blocking IPC forcibly cancelled.
+  | .ipcCancelled                  => 57
 
 /-- The inverse the tree never had: `Platform.FFI.KernelError.toUInt32` is
 one-directional, and the Rust side decodes with its own
@@ -164,25 +166,26 @@ def ofDiscriminant? : Nat → Option KernelError
   | 54 => some .auditLogCapacityExceeded
   | 55 => some .auditFieldTooLarge
   | 56 => some .declassificationDeniedAtReceiver
+  | 57 => some .ipcCancelled
   | _  => none
 
 /-- The discriminant map is a section of its inverse: every `KernelError`
 survives the numeric round trip.  With `toDiscriminant_lt` this pins the
-map as a bijection onto `0..56`. -/
+map as a bijection onto `0..57`. -/
 theorem ofDiscriminant?_toDiscriminant (e : KernelError) :
     ofDiscriminant? (toDiscriminant e) = some e := by
   cases e <;> rfl
 
-/-- Every discriminant is inside the 57-entry table. -/
-theorem toDiscriminant_lt (e : KernelError) : toDiscriminant e < 57 := by
+/-- Every discriminant is inside the 58-entry table. -/
+theorem toDiscriminant_lt (e : KernelError) : toDiscriminant e < 58 := by
   cases e <;> decide
 
 /-- The other direction of the round trip, over the whole in-range domain:
-below 57 the inverse hits and maps back to the same discriminant; 57 itself
+below 58 the inverse hits and maps back to the same discriminant; 58 itself
 (the first out-of-range value) is rejected. -/
 theorem toDiscriminant_ofDiscriminant? :
-    (∀ n, n < 57 → ((ofDiscriminant? n).map toDiscriminant) = some n) ∧
-      ofDiscriminant? 57 = none := by
+    (∀ n, n < 58 → ((ofDiscriminant? n).map toDiscriminant) = some n) ∧
+      ofDiscriminant? 58 = none := by
   constructor
   · decide
   · rfl
@@ -1042,16 +1045,16 @@ theorem errorLabel_roundtrip (e : KernelError) :
   rw [if_pos (Nat.le_add_right _ _), Nat.add_sub_cancel_left]
   exact KernelError.ofDiscriminant?_toDiscriminant e
 
-/-- The decode side over the whole status range: the base plus `0..56` hits
-the errors and re-encodes to itself, the base plus `57` (the first
+/-- The decode side over the whole status range: the base plus `0..57` hits
+the errors and re-encodes to itself, the base plus `58` (the first
 discriminant no error has) is rejected, and the label just *below* the base
 is not an error at all — so the range boundary is pinned from both sides on
 the inhabited label space. -/
 theorem errorLabel_zero_iff_success :
     ofErrorLabel? 0 = none ∧
-      (∀ n, n < 57 →
+      (∀ n, n < 58 →
         ((ofErrorLabel? (errorLabelBase + n)).map errorLabel) = some (errorLabelBase + n)) ∧
-      ofErrorLabel? (errorLabelBase + 57) = none ∧
+      ofErrorLabel? (errorLabelBase + 58) = none ∧
       ofErrorLabel? (errorLabelBase - 1) = none := by
   refine ⟨ofErrorLabel?_zero, ?_, ?_, ?_⟩
   · intro n hn
@@ -1072,7 +1075,7 @@ theorem errorLabel_zero_iff_success :
 
 /-- RA.A.6 — every status label fits the 20-bit `MessageInfo` label field:
 the range is sized so `errorLabelBase + 255 = maxLabel`, and every
-discriminant is below `57`. -/
+discriminant is below `58`. -/
 theorem kernelErrorFitsLabel (e : KernelError) :
     errorLabel e ≤ MessageInfo.maxLabel := by
   have h := KernelError.toDiscriminant_lt e
@@ -1105,11 +1108,141 @@ def errorFrame (e : KernelError) : SyscallReturnFrame :=
 /-- An error frame's `x1` decodes back to the `MessageInfo` that names the
 error — the encode side is inside the decoder's fail-closed bounds.  Every
 `errorLabel` is a concrete literal per variant, so the whole statement is
-decided by evaluation, 55 cases at a time. -/
+decided by evaluation, 58 cases at a time. -/
 theorem errorFrame_x1_decodes (e : KernelError) :
     MessageInfo.decode (errorFrame e).x1.toNat =
       some { length := 0, extraCaps := 0, label := errorLabel e } := by
   cases e <;> decide
+
+-- ============================================================================
+-- §5b  Staging an error frame for a forcibly unblocked thread (WS-RR RR7.14)
+-- ============================================================================
+
+/-- **WS-RR RR7.14: the frame a forcibly unblocked thread is owed.**
+
+The unblocking paths — `timeoutThread` and `cancelIpcBlocking` — take a thread
+out of a blocking IPC with **no value to deliver**, and until this row they
+staged nothing at all.  That is not a neutral omission.  A blocked thread's
+boundary crossing ended in `.blocks`, so its `x0`-`x5` still hold whatever the
+argument spill left there (or the trap layer's fail-closed sentinel); the SM10.1
+context restore delivers whatever `registerContext` holds, so the thread would
+resume reading its own stale request registers as a return value.
+
+The honest frame is an **error** frame, and which error is the design question
+the WS-RA plan §3.5 deferred to this row.  The two paths get different answers
+because they are different facts:
+
+* a **timeout** is the SchedContext budget expiring under a live operation.  The
+  endpoint queue entry was removed but the operation was well-formed, and the
+  caller may reasonably reissue it — `.ipcTimeout`, which the enum has carried
+  since WS-Z/Z6 for exactly this;
+* a **cancellation** is the operation being destroyed out from under the thread
+  — by `.tcbSuspend` on a blocked victim, by lifecycle cleanup, or by a retype
+  of an object it was blocked on.  Reissuing may be meaningless (the endpoint
+  may be gone), so it is `.ipcCancelled` (WS-RR RR7.14), added rather than
+  folded into `.ipcTimeout` because a userspace library cannot write a correct
+  retry against a conflated code.
+
+seL4 answers this differently: it sets the thread `Restart` so the syscall
+re-executes.  This kernel has no restart state, so the crossing has to end in an
+error the caller can distinguish, which is what these stage. -/
+def timeoutFrame : SyscallReturnFrame := errorFrame .ipcTimeout
+
+/-- **WS-RR RR7.14**: the cancellation twin — see `timeoutFrame`. -/
+def cancelledIpcFrame : SyscallReturnFrame := errorFrame .ipcCancelled
+
+/-- **WS-RR RR7.14**: stage the timeout frame into a thread's saved register
+context.  The state-level spelling, for a call site that holds a `SystemState`;
+a site already building the TCB record uses `TCB.withReturnFrame timeoutFrame`,
+and `stageTimeoutFrame_eq_withReturnFrame` below holds the two together so the
+two spellings cannot answer "what frame does a timeout owe" differently. -/
+def stageTimeoutFrame (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  writeReturnFrameToTcb st tid timeoutFrame
+
+/-- **WS-RR RR7.14**: the cancellation twin — see `stageTimeoutFrame`. -/
+def stageCancelledIpcFrame (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  writeReturnFrameToTcb st tid cancelledIpcFrame
+
+/-- **WS-RR RR7.14**: the state-level stager IS the TCB-level record update at
+the target, so a transition that folds the staging into a TCB record it is
+already writing commits exactly what the state-level stager would have. -/
+theorem stageTimeoutFrame_eq_withReturnFrame (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb) :
+    stageTimeoutFrame st tid
+      = { st with
+          objects := st.objects.insert tid.toObjId
+              (.tcb (tcb.withReturnFrame timeoutFrame)) } := by
+  unfold stageTimeoutFrame writeReturnFrameToTcb
+  rw [hTcb]
+
+/-- **WS-RR RR7.14**: and the cancellation twin. -/
+theorem stageCancelledIpcFrame_eq_withReturnFrame (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb) :
+    stageCancelledIpcFrame st tid
+      = { st with
+          objects := st.objects.insert tid.toObjId
+              (.tcb (tcb.withReturnFrame cancelledIpcFrame)) } := by
+  unfold stageCancelledIpcFrame writeReturnFrameToTcb
+  rw [hTcb]
+
+/-- **WS-RR RR7.14**: what a timed-out thread reads back is the timeout error,
+not its own stale request registers. -/
+theorem readReturnFrame_stageTimeoutFrame (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (hTcb : st.getTcb? tid = some tcb) (hObjInv : st.objects.invExt) :
+    readReturnFrame (stageTimeoutFrame st tid) tid = timeoutFrame :=
+  readReturnFrame_writeReturnFrame st tid _ tcb hTcb hObjInv
+
+/-- **WS-RR RR7.14**: and a cancelled one reads the cancellation error. -/
+theorem readReturnFrame_stageCancelledIpcFrame (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (hTcb : st.getTcb? tid = some tcb) (hObjInv : st.objects.invExt) :
+    readReturnFrame (stageCancelledIpcFrame st tid) tid = cancelledIpcFrame :=
+  readReturnFrame_writeReturnFrame st tid _ tcb hTcb hObjInv
+
+/-- **WS-RR RR7.14 (the load-bearing distinction)**: the two frames differ, so a
+caller can tell a budget expiry from a destroyed operation.
+
+Folding cancellation into `.ipcTimeout` would have been the cheap answer, and
+this is why it is the wrong one: a userspace library retrying on timeout would
+also retry a cancellation, against an endpoint that may no longer exist. -/
+theorem timeout_and_cancelled_frames_differ : timeoutFrame ≠ cancelledIpcFrame := by
+  decide
+
+/-- **WS-RR RR7.14**: and neither is the success frame — a forcibly unblocked
+thread never reads back a `0` status label, which is what `x1 = 0` means on
+every other return path. -/
+theorem unblockFrames_ne_success :
+    timeoutFrame ≠ ({} : SyscallReturnFrame) ∧
+      cancelledIpcFrame ≠ ({} : SyscallReturnFrame) := by
+  refine ⟨?_, ?_⟩ <;> decide
+
+/-- **WS-RR RR7.14**: both frames decode back to the error that names them, so
+a userspace caller reading `x1` through `ofErrorLabel?` gets the disposition,
+not an opaque word. -/
+theorem unblockFrames_decode :
+    ofErrorLabel? (MessageInfo.decode timeoutFrame.x1.toNat).get!.label
+        = some KernelError.ipcTimeout ∧
+      ofErrorLabel? (MessageInfo.decode cancelledIpcFrame.x1.toNat).get!.label
+        = some KernelError.ipcCancelled := by
+  constructor
+  · unfold timeoutFrame
+    rw [errorFrame_x1_decodes]
+    exact errorLabel_roundtrip _
+  · unfold cancelledIpcFrame
+    rw [errorFrame_x1_decodes]
+    exact errorLabel_roundtrip _
+
+/-- **WS-RR RR7.14**: neither stager touches any object but the thread's own. -/
+theorem stageTimeoutFrame_objects_ne (st : SystemState) (tid : SeLe4n.ThreadId)
+    (oid : SeLe4n.ObjId) (hNe : oid ≠ tid.toObjId) (hObjInv : st.objects.invExt) :
+    (stageTimeoutFrame st tid).objects[oid]? = st.objects[oid]? :=
+  writeReturnFrameToTcb_objects_ne st tid _ oid hNe hObjInv
+
+/-- **WS-RR RR7.14**: and the cancellation twin. -/
+theorem stageCancelledIpcFrame_objects_ne (st : SystemState) (tid : SeLe4n.ThreadId)
+    (oid : SeLe4n.ObjId) (hNe : oid ≠ tid.toObjId) (hObjInv : st.objects.invExt) :
+    (stageCancelledIpcFrame st tid).objects[oid]? = st.objects[oid]? :=
+  writeReturnFrameToTcb_objects_ne st tid _ oid hNe hObjInv
+
 
 -- ============================================================================
 -- §6  SyscallOutcome — returns or blocks (RA.A.4, plan §3.5)

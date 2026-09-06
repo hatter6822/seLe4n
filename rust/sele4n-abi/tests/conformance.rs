@@ -552,12 +552,13 @@ fn syscall_id_exhaustive_roundtrip() {
 /// range of 0..=55 (which extended SM8.C.9's range of 0..=54).
 #[test]
 fn kernel_error_exhaustive_roundtrip() {
-    for i in 0..=56u32 {
+    // WS-RR RR7.14: 58 variants (0–57), IpcCancelled at 57.
+    for i in 0..=57u32 {
         let err =
             KernelError::from_u32(i).unwrap_or_else(|| panic!("valid error for discriminant {i}"));
         assert_eq!(err as u32, i);
     }
-    assert!(KernelError::from_u32(57).is_none());
+    assert!(KernelError::from_u32(58).is_none());
 }
 
 /// Verify TypeTag roundtrip for all 8 variants (0–7, including SchedContext + Reply).
@@ -857,14 +858,14 @@ fn access_rights_ops_preserve_validity() {
 /// and that unknown discriminants return None (forward-compatible).
 #[test]
 fn kernel_error_non_exhaustive() {
-    // WS-SM SM9.C.1: 57 variants (0–56) roundtrip
+    // WS-RR RR7.14: 58 variants (0–57) roundtrip
     // (SM9.A.2 previously stood at 55 with AuditFieldTooLarge).
     for i in 0..=56u32 {
         let e = KernelError::from_u32(i).unwrap();
         assert_eq!(e as u32, i);
     }
     // Future discriminants return None
-    assert!(KernelError::from_u32(57).is_none());
+    assert!(KernelError::from_u32(58).is_none());
     assert!(KernelError::from_u32(100).is_none());
     assert!(KernelError::from_u32(u32::MAX).is_none());
 }
@@ -932,10 +933,9 @@ fn unknown_kernel_error_fallback() {
 
     // WS-RA / WS-RR RR4 (ABI v3): errors ride the x1 label in the top of
     // the 20-bit range — label ERROR_LABEL_BASE + d names discriminant d.
-    // Discriminant 57 — first unrecognized after
-    // DeclassificationDeniedAtReceiver (56).
+    // Discriminant 58 — first unrecognized after IpcCancelled (57).
     let base = sele4n_types::ERROR_LABEL_BASE;
-    let regs = [0, (base + 57) << 9, 0, 0, 0, 0, 0];
+    let regs = [0, (base + 58) << 9, 0, 0, 0, 0, 0];
     assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
 
     // Discriminant 100 — arbitrary unrecognized code
@@ -1121,7 +1121,7 @@ fn identifier_validation() {
 /// automatically.
 #[test]
 fn kernel_error_variant_count() {
-    const KERNEL_ERROR_COUNT: u32 = 57;
+    const KERNEL_ERROR_COUNT: u32 = 58;
     // All expected variants exist
     for i in 0..KERNEL_ERROR_COUNT {
         assert!(
@@ -1506,7 +1506,8 @@ fn error_boundary_after_invalid_irq() {
     assert!(KernelError::from_u32(54).is_some()); // AuditLogCapacityExceeded (SM8.C.9)
     assert!(KernelError::from_u32(55).is_some()); // AuditFieldTooLarge (SM9.A.2)
     assert!(KernelError::from_u32(56).is_some()); // DeclassificationDeniedAtReceiver (SM9.C.1)
-    assert!(KernelError::from_u32(57).is_none());
+    assert!(KernelError::from_u32(57).is_some()); // IpcCancelled (WS-RR RR7.14)
+    assert!(KernelError::from_u32(58).is_none());
 }
 
 // --- D6: TCB operation conformance ---

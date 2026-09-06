@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.34.66` (`lakefile.toml`) |
+| **Package version** | `0.34.67` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 334,904 across 313 Lean files |
-| **Test LoC** | 69,613 across 70 Lean test suites |
-| **Proved declarations** | 11,129 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 335,343 across 313 Lean files |
+| **Test LoC** | 69,796 across 70 Lean test suites |
+| **Proved declarations** | 11,160 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -1974,6 +1974,26 @@ below), and results now cross the boundary as a full seL4 ARM64
 return frame — `x0` = badge/primary result, `x1` = `MessageInfo`
 whose label carries the error, `x2`–`x5` = message registers —
 through a per-core return-frame mailbox.
+
+**WS-RR RR7.14 (v0.34.67) — the frame a forcibly unblocked thread is owed.**
+A thread taken out of a blocking IPC has no value to receive, and both
+unblocking paths staged nothing at all, so the SM10.1 context restore would
+have delivered its own argument spill back as a return value.  Both now stage,
+and they stage **different** errors because they are different facts:
+`timeoutThread` stages `Architecture.timeoutFrame` (`.ipcTimeout` — a
+SchedContext budget expiring under a well-formed operation the caller may
+reissue) and `cancelIpcBlocking`'s four blocked arms stage
+`Architecture.cancelledIpcFrame` (`.ipcCancelled`, a new `KernelError` at
+discriminant **57** — the operation was destroyed, so reissuing may be
+meaningless and a userspace library cannot write a correct retry against a
+conflated code).  seL4 answers this by setting the thread `Restart`; this
+kernel has no restart state, so the crossing has to end in a distinguishable
+error.  Two paths deliberately stage nothing: the `.ready` arm (the thread was
+not blocked) and `restoreToReady` itself, the *resume* spelling of the same
+field clear, because `.tcbResume` restarts a thread where it was and
+overwriting `x0`-`x5` would destroy the window the restart preserves.  The
+`KernelError` range is therefore `0..57` in Lean and in the three Rust crates
+that mirror it.
 
 **WS-RR RR4 (v0.34.44) — a fault is delivered, never returned.**  Before RR4
 the abort and alignment arms of the Rust trap handler wrote an *error frame*

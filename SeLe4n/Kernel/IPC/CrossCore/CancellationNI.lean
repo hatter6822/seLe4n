@@ -326,28 +326,74 @@ theorem cancelDonatedDonationOnCore_cancellation_NI_smp
 --     so it does not even need the Reply object to be high.
 
 /-- WS-RR RR2.18: `restoreToReady` writes one TCB, so it preserves the
-object-store invariant. -/
-theorem restoreToReady_preserves_objects_invExt (st : SystemState) (tid : SeLe4n.ThreadId)
+object-store invariant.
+
+**WS-RR RR7.14**: stated over `restoreToReadyStaging`, so the plain and the
+frame-staging spellings share one proof — a staged frame is one more field of
+the same single insert. -/
+theorem restoreToReadyStaging_preserves_objects_invExt (st : SystemState)
+    (tid : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame)
     (hInv : st.objects.invExt) :
-    (Lifecycle.Suspend.restoreToReady st tid).objects.invExt := by
-  unfold Lifecycle.Suspend.restoreToReady
+    (Lifecycle.Suspend.restoreToReadyStaging st tid frame).objects.invExt := by
+  unfold Lifecycle.Suspend.restoreToReadyStaging
   split
   · exact RHTable_insert_preserves_invExt st.objects tid.toObjId _ hInv
   · exact hInv
 
-/-- WS-RR RR2.18: `restoreToReady` at a high thread is invisible. -/
+theorem restoreToReady_preserves_objects_invExt (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) :
+    (Lifecycle.Suspend.restoreToReady st tid).objects.invExt :=
+  restoreToReadyStaging_preserves_objects_invExt st tid none hInv
+
+/-- **WS-RR RR7.14**: the cancellation spelling. -/
+theorem restoreToReadyCancelled_preserves_objects_invExt (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    (Lifecycle.Suspend.restoreToReadyCancelled st tid).objects.invExt :=
+  restoreToReadyStaging_preserves_objects_invExt st tid _ hInv
+
+/-- WS-RR RR2.18: `restoreToReady` at a high thread is invisible.
+
+**WS-RR RR7.14 (load-bearing)**: stated over `restoreToReadyStaging`, so the
+staged return frame is covered by the same argument — it is written *into the
+victim's own TCB*, the one object the premise already has as high, so an
+observer that cannot see the thread cannot see the frame it was handed either.
+Had the staging gone anywhere else (the machine register banks, say) this
+would not hold, and that is precisely why `writeReturnFrameToTcb` does not
+touch `machine`. -/
+theorem restoreToReadyStaging_preserves_projection_high
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame)
+    (hTidObjHigh : objectObservable ctx observer tid.toObjId = false)
+    (hObjInv : st.objects.invExt) :
+    projectState ctx observer (Lifecycle.Suspend.restoreToReadyStaging st tid frame)
+      = projectState ctx observer st := by
+  unfold Lifecycle.Suspend.restoreToReadyStaging
+  split
+  · exact objects_insert_preserves_projection_high ctx observer st tid.toObjId _
+      hTidObjHigh hObjInv
+  · rfl
+
 theorem restoreToReady_preserves_projection_high
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
     (tid : SeLe4n.ThreadId)
     (hTidObjHigh : objectObservable ctx observer tid.toObjId = false)
     (hObjInv : st.objects.invExt) :
     projectState ctx observer (Lifecycle.Suspend.restoreToReady st tid)
-      = projectState ctx observer st := by
-  unfold Lifecycle.Suspend.restoreToReady
-  split
-  · exact objects_insert_preserves_projection_high ctx observer st tid.toObjId _
-      hTidObjHigh hObjInv
-  · rfl
+      = projectState ctx observer st :=
+  restoreToReadyStaging_preserves_projection_high ctx observer st tid none
+    hTidObjHigh hObjInv
+
+/-- **WS-RR RR7.14**: the cancellation spelling — the `.ipcCancelled` frame is
+invisible to an observer who cannot see the cancelled thread. -/
+theorem restoreToReadyCancelled_preserves_projection_high
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (tid : SeLe4n.ThreadId)
+    (hTidObjHigh : objectObservable ctx observer tid.toObjId = false)
+    (hObjInv : st.objects.invExt) :
+    projectState ctx observer (Lifecycle.Suspend.restoreToReadyCancelled st tid)
+      = projectState ctx observer st :=
+  restoreToReadyStaging_preserves_projection_high ctx observer st tid _
+    hTidObjHigh hObjInv
 
 /-- WS-RR RR2.18: clearing a high thread's `replyObject` is invisible. -/
 theorem clearTcbReplyObject_preserves_projection_high
@@ -419,11 +465,13 @@ theorem cancelIpcBlocking_blockedOnReply_preserves_projection
   rw [hBlocked]
   simp only []
   have h1 : projectState ctx observer
-      (Lifecycle.Suspend.consumeReplyLink (Lifecycle.Suspend.restoreToReady st victim) victim tcb)
-      = projectState ctx observer (Lifecycle.Suspend.restoreToReady st victim) :=
+      (Lifecycle.Suspend.consumeReplyLink
+        (Lifecycle.Suspend.restoreToReadyCancelled st victim) victim tcb)
+      = projectState ctx observer (Lifecycle.Suspend.restoreToReadyCancelled st victim) :=
     consumeReplyLink_preserves_projection_high ctx observer _ victim tcb hObjHigh
-      (restoreToReady_preserves_objects_invExt st victim hObjInv)
-  exact h1.trans (restoreToReady_preserves_projection_high ctx observer st victim hObjHigh hObjInv)
+      (restoreToReadyCancelled_preserves_objects_invExt st victim hObjInv)
+  exact h1.trans
+    (restoreToReadyCancelled_preserves_projection_high ctx observer st victim hObjHigh hObjInv)
 
 
 /-- **WS-RR RR2.18 (boot-core form, fully substantive)**: cancelling a

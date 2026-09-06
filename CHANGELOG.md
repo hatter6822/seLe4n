@@ -1,3 +1,101 @@
+## v0.34.67 — the answer a forcibly unblocked thread is owed
+
+**WS-RR RR7.14** — cancellation/timeout error-frame staging, the WS-RA
+obligation §9 registered against SM10.1 and the last one owed before the
+context-restore seam flips.
+
+A thread taken out of a blocking IPC — by a budget expiry, or by having its
+operation destroyed under it — was handed **nothing**.  Its boundary crossing
+had ended in `.blocks`, so `x0`-`x5` still held whatever the argument spill left
+there, and the SM10.1 context restore delivers whatever `registerContext` holds.
+The thread would have resumed reading its own request registers back as a return
+value: `x0` a capability pointer decoded as a badge, `x1` a `MessageInfo` the
+kernel never wrote.  Not a corner case — every timeout and every `.tcbSuspend`
+of a blocked victim.
+
+### Two paths, two errors
+
+They are different facts and they get different answers, because a userspace
+library cannot write a correct retry against a conflated code:
+
+* a **timeout** is the SchedContext budget expiring under a well-formed
+  operation.  The queue entry is gone but the request was valid and the caller
+  may reasonably reissue it — `Architecture.timeoutFrame`, carrying
+  `.ipcTimeout`, which the enum has held since WS-Z/Z6 for exactly this;
+* a **cancellation** is the operation being destroyed — `.tcbSuspend` on a
+  blocked victim, lifecycle cleanup, a retype of an object it was blocked on.
+  Reissuing may be meaningless (the endpoint may be gone), so it is
+  `Architecture.cancelledIpcFrame`, carrying the **new** `KernelError`
+  `.ipcCancelled` at discriminant 57.
+
+`timeout_and_cancelled_frames_differ` and `unblockFrames_decode` are the pins.
+seL4 answers this differently — it sets the thread `Restart` so the syscall
+re-executes — but this kernel has no restart state, so the crossing has to end
+in an error the caller can distinguish.
+
+### Where each is staged, and where neither is
+
+`timeoutThread` folds `Architecture.timeoutFrame` into the TCB record it was
+already writing, so the transition still commits exactly one object.
+`timedOut := true` stays beside it: the flag is the *kernel-side* fact the
+scheduler and the invariants read, the frame is the *userspace-side* answer, and
+neither substitutes for the other.
+
+`cancelIpcBlocking` stages `Architecture.cancelledIpcFrame` on all four blocked
+arms, through one spelling — `restoreToReadyCancelled`, which is
+`restoreToReadyStaging … (some cancelledIpcFrame)`.  The plain `restoreToReady`
+is the `none` instance of the same helper, so a field added to the clear in one
+and not the other fails to elaborate
+(`restoreToReadyCancelled_tcb`); the framing, `invExt`, `ipcInvariant`,
+`tcb_lookup`, identity and projection results are all stated once on
+`restoreToReadyStaging` and instantiated twice.
+
+Two places deliberately stage **nothing**.  `cancelIpcBlocking`'s `.ready` arm
+is the no-op for a thread that was not blocked, and commits no write at all.
+And `restoreToReady` itself — the **resume** spelling of the same field clear —
+stages nothing, because `.tcbResume` restarts a thread where it was (WS-RR
+RR4.11's `retirePendingFaultForResume` is the fault half of the same posture);
+overwriting `x0`-`x5` there would destroy the window the restart preserves.
+Both are pinned as negatives in the suites.
+
+### The premise the staging needed
+
+`contextMatchesCurrentOnCore` compares a core's register bank against its **own
+current thread's** saved context and reads no other TCB's.  The objects-change
+atom nevertheless demanded register-context stability at *every* thread, which
+is strictly stronger than the conclusion needs and refused exactly this write.
+`objects_change_preserves_schedulerInvariantStructuralRegNodup_smp`'s `hReg` is
+now scoped to the current thread, and
+`storeObject_tcb_preserves_schedulerInvariantStructuralRegNodup_smp` takes a
+*disjunction* — the register context is unchanged, **or** the written thread is
+current on no core — because the two live writers satisfy different halves.
+`timeoutThread` discharges the second from the `hNotCur` its caller already
+carries for the wake.
+
+The information-flow half needs no new argument and gets none: the frame is
+written into the victim's **own** TCB, the one object the high-thread premise
+already covers (`restoreToReadyStaging_preserves_projection_high`).  That holds
+because `writeReturnFrameToTcb` deliberately does not touch `machine` — had the
+staging gone to the register banks it would be false.
+
+### Coverage
+
+`tests/SmpCancellationSuite.lean` §3.19 (13 checks) and
+`tests/SmpTimerSuite.lean` §3.15 (6 checks) drive the real transitions against a
+victim carrying a **recognisable** stale window (`x0 = 0xBAD0`, …), so "the
+frame is right" and "the stale window is gone" are two assertions and both are
+made; `x7`, `pc` and `sp` are pinned unchanged, the bystander's context is
+pinned untouched, and both no-op paths are pinned as negatives.
+
+The `KernelError` range moves 0..56 → 0..57 across Lean and the three Rust
+crates: the discriminant table, `ofDiscriminant?`/`toDiscriminant_lt`, the
+error-label range proofs, `sele4n-types`' `from_u32` and `Display`,
+`sele4n-abi`'s decoder and conformance suite, and the HAL's blocked-resume
+sentinel shape (the sentinel gap is now `58..255`).
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md RR7.14;
+docs/planning/SYSCALL_RETURN_ABI_PLAN.md §9
+
 ## v0.34.66 — how much of the kernel brackets, measured
 
 **WS-RR RR7.13** — fine locks, Track C: the export-body gate that keeps RR7.12

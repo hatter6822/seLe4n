@@ -3804,7 +3804,7 @@ private theorem restoreToReady_getElem_eq_of_quiescent
     ∀ oid : SeLe4n.ObjId,
       (Lifecycle.Suspend.restoreToReady st tid).objects[oid]? = st.objects[oid]? := by
   intro oid
-  unfold Lifecycle.Suspend.restoreToReady
+  unfold Lifecycle.Suspend.restoreToReady Lifecycle.Suspend.restoreToReadyStaging
   cases hLk : st.getTcb? tid with
   | none => rfl
   | some tcb =>
@@ -3833,7 +3833,7 @@ private theorem restoreToReady_getElem_eq_of_quiescent
 private theorem restoreToReady_objects_invExt (st : SystemState) (tid : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt) :
     (Lifecycle.Suspend.restoreToReady st tid).objects.invExt := by
-  unfold Lifecycle.Suspend.restoreToReady
+  unfold Lifecycle.Suspend.restoreToReady Lifecycle.Suspend.restoreToReadyStaging
   split
   · exact RHTable_insert_preserves_invExt st.objects tid.toObjId _ hObjInv
   · exact hObjInv

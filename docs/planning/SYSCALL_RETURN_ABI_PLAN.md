@@ -16,7 +16,8 @@
 > half returned at the boundary, the blocked half staged by the unblocking
 > arm), and the per-arm shape-coherence family is proven.  What remains is
 > owed to SM10.1, not to this workstream: frame *delivery* at the context
-> restore, and the cancellation/timeout error-frame staging (§9).  §1 below
+> restore (§9).  The cancellation/timeout error-frame staging that §9 also
+> registered is **CLOSED at v0.34.67** by WS-RR RR7.14 — see §9.  §1 below
 > records the **pre-flip** state the workstream removed.
 
 ## Landing record — core landed at v0.33.37; completed at v0.33.38
@@ -106,11 +107,12 @@ recovers it.  With `syscallReturnShape_value_returning` pinning the value
 surface at exactly those five syscalls, the family covers it.
 
 **Still owed elsewhere (registered in §9, owner SM10.1)**: frame *delivery*
-(the context restore — `contextRestoreSeamLive = false` until SM10.1) and
-the cancellation/timeout **error-frame** staging (`cancelIpcBlocking` /
-`timeoutThread` stage nothing; before the restore seam flips they must
-stage an error frame).  Neither is WS-RA scope: the workstream's staging
-obligations are complete.
+(the context restore — `contextRestoreSeamLive = false` until SM10.1).  The
+cancellation/timeout **error-frame** staging §9 registered beside it is
+**closed** — WS-RR RR7.14 (v0.34.67) made `timeoutThread` stage
+`Architecture.timeoutFrame` and `cancelIpcBlocking`'s four blocked arms stage
+`Architecture.cancelledIpcFrame`.  Neither was WS-RA scope: the workstream's
+staging obligations were complete.
 
 ## 1. Phase goal
 
@@ -729,11 +731,22 @@ diff caught.
   `false` until SM10.1).  §3.5 splits the blocking orderings out for this
   reason — WS-RA stages the waiter's frame and SM10.1 delivers it.  Recorded
   here so SM10 inherits a named obligation rather than discovering one.
-- **Registered debt, owner SM10.1 — cancellation frames** (§3.5): the
-  cancellation and timeout unblock paths (`cancelIpcBlocking`,
-  `timeoutThread`) stage no frame; before `contextRestoreSeamLive` flips they
-  must stage an error frame, or a cancelled waiter resumes reading its stale
-  staged arguments as a return value.
+- **Registered debt, owner SM10.1 — cancellation frames** (§3.5) —
+  **DISCHARGED at v0.34.67 by WS-RR RR7.14**: the cancellation and timeout
+  unblock paths staged no frame, so a forcibly unblocked waiter would have
+  resumed reading its stale staged arguments as a return value.  Both now
+  stage, and they stage **different** errors, because they are different
+  facts: `timeoutThread` stages `Architecture.timeoutFrame` (`.ipcTimeout` —
+  a budget expiry under a well-formed operation the caller may reissue), and
+  `cancelIpcBlocking`'s four blocked arms stage
+  `Architecture.cancelledIpcFrame` (`.ipcCancelled`, a **new** discriminant at
+  57 — the operation was destroyed, so reissuing may be meaningless and a
+  userspace library cannot write a correct retry against a conflated code).
+  The `.ready` arm stages nothing, and `restoreToReady` — the *resume*
+  spelling of the same field clear — stages nothing either, because
+  `.tcbResume` restarts a thread where it was.  Payoff theorems:
+  `restoreToReadyCancelled_readReturnFrame`,
+  `timeout_and_cancelled_frames_differ`.
 - **Registered debt, no current consumer — the 4-register return window**
   (§3.7): a delivered `IpcMessage` with more than 4 registers returns only the
   inline window in `x2`-`x5`; the receiver-IPC-buffer write path for return

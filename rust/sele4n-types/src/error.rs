@@ -2,8 +2,10 @@
 //! Kernel error enumeration — mirrors `SeLe4n.Model.KernelError`.
 //!
 //! Lean source: `SeLe4n/Model/KernelError.lean`.
-//! Discriminants 0–56 are a 1:1 mapping from the Lean inductive (57 variants
-//! after WS-SM SM9.C.1's `DeclassificationDeniedAtReceiver` at 56,
+//! Discriminants 0–57 are a 1:1 mapping from the Lean inductive (58 variants
+//! after WS-RR RR7.14's `IpcCancelled` at 57 — the error a forcibly-cancelled
+//! blocking IPC returns, distinct from `IpcTimeout`'s budget expiry —
+//! WS-SM SM9.C.1's `DeclassificationDeniedAtReceiver` at 56,
 //! WS-SM SM9.A.2's `AuditFieldTooLarge` at 55, WS-SM SM8.C.9's
 //! `AuditLogCapacityExceeded` at 54 and WS-SM SM5.B's
 //! `ThreadOnDifferentCore` at 53, extending R5.E's
@@ -144,8 +146,15 @@ pub enum KernelError {
     /// caller from an authorized caller aimed at an unauthorized sink; the two
     /// call for opposite responses.
     DeclassificationDeniedAtReceiver = 56,
+    /// WS-RR RR7.14: a thread's blocking IPC was forcibly cancelled — by
+    /// `.tcbSuspend` on a blocked victim, by lifecycle cleanup, or by a retype
+    /// of an object it was blocked on.  Distinct from `IpcTimeout`, which is the
+    /// SchedContext budget expiring under a live operation: a timed-out caller
+    /// may retry the same call, a cancelled one has had its queue entry
+    /// destroyed.
+    IpcCancelled = 57,
     /// AF6-A: Kernel returned an error code not recognized by this ABI version.
-    /// Discriminant 255 is a reserved sentinel outside the kernel range 0–56.
+    /// Discriminant 255 is a reserved sentinel outside the kernel range 0–57.
     UnknownKernelError = 255,
 }
 
@@ -210,6 +219,7 @@ impl KernelError {
             54 => Some(Self::AuditLogCapacityExceeded),
             55 => Some(Self::AuditFieldTooLarge),
             56 => Some(Self::DeclassificationDeniedAtReceiver),
+            57 => Some(Self::IpcCancelled),
             255 => Some(Self::UnknownKernelError),
             _ => None,
         }
@@ -263,6 +273,10 @@ impl std::fmt::Display for KernelError {
             Self::MmioUnaligned => write!(f, "MMIO access at unaligned address"),
             Self::InvalidSyscallArgument => write!(f, "invalid syscall argument"),
             Self::IpcTimeout => write!(f, "IPC timeout"),
+            Self::IpcCancelled => write!(
+                f,
+                "blocking IPC cancelled (the operation was destroyed, not timed out — reissuing may be meaningless)"
+            ),
             Self::AlignmentError => write!(f, "alignment error"),
             Self::VmFault => write!(f, "virtual memory fault"),
             Self::UserException => write!(f, "user exception"),
@@ -297,7 +311,8 @@ mod tests {
         // WS-SM SM8.C.9: AuditLogCapacityExceeded added at discriminant 54.
         // WS-SM SM9.A.2: AuditFieldTooLarge added at discriminant 55.
         // WS-SM SM9.C.1: DeclassificationDeniedAtReceiver added at discriminant 56.
-        for i in 0..=56u32 {
+        // WS-RR RR7.14: IpcCancelled added at discriminant 57.
+        for i in 0..=57u32 {
             let e = KernelError::from_u32(i).unwrap();
             assert_eq!(e as u32, i);
         }
@@ -306,7 +321,7 @@ mod tests {
     #[test]
     fn from_u32_out_of_range() {
         // T1-G: Discriminants in gaps and beyond range must return None
-        assert!(KernelError::from_u32(57).is_none());
+        assert!(KernelError::from_u32(58).is_none());
         assert!(KernelError::from_u32(254).is_none());
         // 255 is now UnknownKernelError (AF6-A sentinel)
         assert_eq!(
@@ -356,19 +371,19 @@ mod tests {
     ///   | allocationMisaligned    (37)
     #[test]
     fn lean_rust_correspondence() {
-        // WS-SM SM9.C.1: 57 variants (0-56) — verify total variant count
-        // matches Lean (extends SM9.A.2's range of 0..=55).
-        let max_valid = 56u32;
+        // WS-RR RR7.14: 58 variants (0-57) — verify total variant count
+        // matches Lean (extends SM9.C.1's range of 0..=56).
+        let max_valid = 57u32;
         assert!(KernelError::from_u32(max_valid).is_some());
         assert!(KernelError::from_u32(max_valid + 1).is_none());
 
-        // Verify from_u32: unknown discriminants in the gap (57–254) return None
+        // Verify from_u32: unknown discriminants in the gap (58–254) return None
         assert!(KernelError::from_u32(100).is_none());
     }
 
-    /// T1-H: Discriminant ordering — kernel variants 0–56 are sequential.
-    /// WS-SM SM9.C.1 extended the range with DeclassificationDeniedAtReceiver
-    /// at 56; WS-SM SM9.A.2 previously extended it with AuditFieldTooLarge at 55.
+    /// T1-H: Discriminant ordering — kernel variants 0–57 are sequential.
+    /// WS-RR RR7.14 extended the range with IpcCancelled at 57; WS-SM SM9.C.1
+    /// previously extended it with DeclassificationDeniedAtReceiver at 56.
     #[test]
     fn discriminant_ordering() {
         let mut prev = None;
@@ -391,8 +406,8 @@ mod tests {
             KernelError::from_u32(255),
             Some(KernelError::UnknownKernelError)
         );
-        // Gap between 56 and 255 is all None
-        for i in 57..255u32 {
+        // Gap between 57 and 255 is all None
+        for i in 58..255u32 {
             assert!(
                 KernelError::from_u32(i).is_none(),
                 "unexpected variant at {i}"

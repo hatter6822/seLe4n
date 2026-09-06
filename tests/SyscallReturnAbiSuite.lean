@@ -738,17 +738,17 @@ private def returnAbiTraceLines : List String :=
     match signalled with
     | .ok (_, st) => dispatchFromAbi SyscallId.notificationWait.toNat 0 0 st
     | e => e
-  -- 57 = the full `KernelError` enumeration (discriminants 0..56, the newest
-  -- being SM9.C's `.declassificationDeniedAtReceiver` at 56).  The boundary
-  -- conjunct pins the count from above: when a 58th variant lands,
-  -- `ofDiscriminant? 57` stops being `none`, the fixture line diverges, and
+  -- 58 = the full `KernelError` enumeration (discriminants 0..57, the newest
+  -- being WS-RR RR7.14's `.ipcCancelled` at 57).  The boundary
+  -- conjunct pins the count from above: when a 59th variant lands,
+  -- `ofDiscriminant? 58` stops being `none`, the fixture line diverges, and
   -- this range has to move with it rather than silently under-covering.
   let labelRoundtrips :=
-    (List.range 57).all fun d =>
+    (List.range 58).all fun d =>
       match SeLe4n.Model.KernelError.ofDiscriminant? d with
       | some e => Kernel.Architecture.ofErrorLabel? (Kernel.Architecture.errorLabel e) == some e
       | none => false
-  let labelBoundary := (SeLe4n.Model.KernelError.ofDiscriminant? 57).isNone
+  let labelBoundary := (SeLe4n.Model.KernelError.ofDiscriminant? 58).isNone
   [ s!"[ret-abi] abi-version: {Kernel.Architecture.syscallAbiVersion}"
   , outcomeLine "unit signal (cap ptr 5)" signalled
   , outcomeLine "badge wait after signal 42" waitAfterSignal
