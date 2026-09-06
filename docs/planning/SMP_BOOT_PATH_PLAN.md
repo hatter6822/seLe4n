@@ -20,7 +20,7 @@
 > [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) §1.1 derives
 > from a sized breakdown; this plan sequences that breakdown without
 > re-pricing it
-> **Sub-task count**: 34 across 8 phases (BP1..BP8), each phase numbered in
+> **Sub-task count**: 35 across 8 phases (BP1..BP8), each phase numbered in
 > execution order
 
 ## 1. Why this plan exists
@@ -100,7 +100,7 @@ code for the target.
 | BP1 | aarch64 Lean object code — the cross-compile lane and `libsele4n.a` | 4 | L |
 | BP2 | Bare-metal Lean runtime hosting — heap, shims, initialization | 5 | XL |
 | BP3 | The RPi5 deployment — `PlatformConfig`, root task, labeling | 4 | L |
-| BP4 | The boot seam — `lean_kernel_main` and its install ordering | 4 | L |
+| BP4 | The boot seam — `lean_kernel_main` and its install ordering | 5 | L |
 | BP5 | The bootable image — `[[bin]]`, the link, `kernel8.img` | 4 | M |
 | BP6 | Per-core readiness — the five dormant seams go live | 3 | M |
 | BP7 | The context restore — TTBR0, the full frame, delivery | 6 | XL |
@@ -168,6 +168,7 @@ configuration.
 | BP4.2 | The install ordering: perform the kernel-state install **before** `apply_cmdline_and_start_smp` releases any secondary, so no bracketed committer exists during the unbracketed install (option 1 of the two `SMP_RELEASE_CLOSURE_PLAN.md` §3 records).  The lost-commit shape `kernel_entry.rs` documents is closed by construction rather than by a lock | `rust/sele4n-hal/src/boot.rs`, `rust/sele4n-hal/src/smp.rs` | M |
 | BP4.3 | Turn `rust_boot_main`'s `dtb_ptr` into the `ByteArray` `bootAndInitialiseRPi5FromDtbOrHalt` takes — a Lean-runtime allocation, hence the dependency on BP2.  This is what gives WS-RR RR7.27's board-versus-binding check a hardware caller | `rust/sele4n-hal/src/boot.rs`, `SeLe4n/Platform/FFI.lean` | M |
 | BP4.4 | Move the boot entry to the DTB wrapper and `BootEntryContract.lean`'s `approvedBootCall` with it — the one-line change that file anticipates by name.  Consumes BP4.3 | `SeLe4n/Testing/BootEntryContract.lean` | S |
+| BP4.5 | **The boot image's clean-to-PoU** (WS-RR RR7.20, SM7.D deferred item 4).  `kernelCodeWriteEmitted .bootImageLoad = false` records that the one remaining kernel-code-write site emits no `DC CVAU` → `DSB ISH` → `IC IALLUIS` sequence, and `kernelCodeWriteSites_emission_pending` pins that it is the only one.  The initial task's code is in the image before the first instruction fetch, so the clean must run in the boot seam before any user code can be fetched — the site could not name its extent while there was no image and no physical backing, which is why SM7.D deferred it here rather than closing it.  Flipping the `kernelCodeWriteEmitted` arm breaks a `decide`, so the closure cannot land silently.  Consumes BP4.2 (the install ordering).  The emission needs no image — it is a boot-seam instruction sequence — so this row does not wait on one; observing it on hardware is BP8's | `SeLe4n/Kernel/Architecture/`, `rust/sele4n-hal/src/boot.rs` | M |
 
 **Acceptance**: `check_kernel_entry_exports.py` reports `lean_kernel_main`
 defined by the archive rather than reconciled as expected-unresolved, and
@@ -232,10 +233,10 @@ them executes a line of kernel code.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| BP8.1 | Single-core boot under QEMU to the first idle dispatch | `scripts/` | L |
+| BP8.1 | Single-core boot under QEMU to the first idle dispatch — the first execution of `BP4.5`'s boot clean-to-PoU, whose emission is a boot-seam instruction sequence and whose *observation* is here | `scripts/` | L |
 | BP8.2 | Four-core bring-up under QEMU — `scripts/test_qemu_smp_bringup.sh` runs for the first time, and the two SM1.H acceptance boxes WS-RR RR7.16 unchecked are decided by it rather than asserted.  Consumes BP8.1 | `scripts/test_qemu_smp_bringup.sh`, `docs/planning/SMP_RUST_HAL_PLAN.md` | L |
 | BP8.3 | Boot on the board.  QEMU's `virt` machine is not a BCM2712: the PSCI implementation, the memory map and the GIC differ, and BP3's device-tree check is what refuses the wrong one | `docs/HARDWARE_TESTING.md` | XL |
-| BP8.4 | Run the Tier-4 acceptance gates, which have never executed, and record what they actually report.  Consumes BP8.2 | `scripts/test_tier4_smp_bootcheck.sh` | M |
+| BP8.4 | Run the Tier-4 acceptance gates, which have never executed, and record what they actually report — **including the two QEMU shootdown exercisers** (`test_qemu_smp_shootdown.sh`, `test_qemu_smp_shootdown_stress.sh`), which SKIP for want of an image and hold [`SMP_TLB_SHOOTDOWN_PLAN.md`](SMP_TLB_SHOOTDOWN_PLAN.md) §8's one unchecked acceptance box open (WS-RR RR7.20).  Check that box in the same cut as the run; a shootdown-round-serialisation break or a missing acknowledgment is a failure of SM7, not of the harness.  Consumes BP8.2 | `scripts/test_tier4_smp_bootcheck.sh`, `scripts/test_qemu_smp_shootdown.sh`, `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` | M |
 
 **Acceptance**: four banners under QEMU, four banners on the board, and a
 Tier-4 run whose output is a result rather than a SKIP.

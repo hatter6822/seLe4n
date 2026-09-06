@@ -4822,6 +4822,28 @@ run_check "INVARIANT" rg -n 'runModifiedFieldsChecks' tests/CrossSubsystemPerCor
 run_prose_check "INVARIANT" rg -n '9 of 12 PRs landed' docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md
 run_prose_check "INVARIANT" rg -n 'Fine-lock migration Tracks B and C' docs/planning/SMP_RELEASE_CLOSURE_PLAN.md
 
+# WS-RR RR7.20: the SM7 deferrals get owners.  These are PROSE checks, and
+# deliberately so — the subject is a schedule, not a construct, and the
+# implement-the-improvement rule says a deferral must carry an owner and a
+# closure target rather than a phase name that no longer exists.
+# Anchored on the WORDING, not on the phase codes: the identifier-naming gate
+# holds this script to zero workstream/phase codes, and a code in a pattern
+# would be one.  The wording is distinctive enough to locate the row, and it is
+# what a reader checks anyway.
+run_prose_check "INVARIANT" rg -n "The boot image's clean-to-PoU" docs/planning/SMP_BOOT_PATH_PLAN.md
+run_prose_check "INVARIANT" rg -n 'the emission runs in the boot seam before any user code can be fetched' docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md
+run_prose_check "INVARIANT" rg -n 'the ASID capability surface' docs/REGISTERED_DEBT.md
+run_prose_check "INVARIANT" rg -n 'post-v1.0.0 ASID-capability workstream' docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md
+# Each surviving deferral names a LIVE owner, not a phase whose content moved.
+run_prose_check "INVARIANT" rg -n 'is not boot-path work' docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md
+run_prose_check "INVARIANT" rg -n 'untyped/retype surface' docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md
+# The one unchecked acceptance box stays unchecked, with the run that decides
+# it named.  Restating it as "the script exists" would trade a behaviour
+# criterion for an artefact-existence one — what RR7.16 refused for SM1.H.
+run_prose_check "INVARIANT" rg -n 'a SKIP is not a pass' docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md
+run_prose_check "INVARIANT" rg -n 'test_qemu_smp_shootdown.sh' docs/planning/SMP_BOOT_PATH_PLAN.md
+run_prose_check "INVARIANT" rg -n 'not of the harness' docs/planning/SMP_BOOT_PATH_PLAN.md
+
 # PR #873 round 14: **the frozen/live correspondence, as something that runs.**
 # Each frozen operation re-implements a live transition, and which one it
 # re-implements was recorded in a markdown table and a `mirrors X` sentence.

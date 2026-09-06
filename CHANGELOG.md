@@ -1,3 +1,74 @@
+## v0.34.71 — three deferrals whose owner had evaporated
+
+**WS-RR RR7.20** — the TLB shootdown mediums.  All three register rows are
+deferrals, and all three named an owner that no longer exists: `SM10.1`, whose
+content became WS-BP at RR7.15, and `SM8`, which closed without absorbing what
+was pointed at it.  A deferral without an owner is not a deferral; it is a
+finding that stopped being tracked.
+
+### Finding 29 — SM7.D's cache items
+
+Two of the four had closed already (item 1 at `v0.34.57`, item 3 at
+`v0.33.37`).  The remaining three each get a named owner:
+
+* **Item 4** — the `.bootImageLoad` clean-to-PoU, which
+  `kernelCodeWriteSites_emission_pending` pins as the *only* remaining
+  unemitted kernel-code-write site — is scheduled as **`BP4.5`**.  The initial
+  task's code is in the image before the first instruction fetch, so the clean
+  must run in the boot seam before any user code can be fetched.  The site
+  could not name its extent while there was no image and no physical backing,
+  which is why SM7.D deferred it rather than closing it; flipping the
+  `kernelCodeWriteEmitted` arm breaks a `decide`, so the closure cannot land
+  silently.
+* **Item 2** — the post-state is published before the maintenance is emitted —
+  is **not boot-path work**, and putting it in a boot row would have been the
+  same mistake in a new phase's name.  "Emit before publishing" is unavailable
+  to a pure-transition kernel (the operand is only known *after* the transition
+  computes it, which is why the ledger exists), leaving "hold serialization
+  across the barrier sequence" — which changes the syscall bracket's locking
+  discipline.  Its **design** therefore belongs to the fine-lock plan's Track D,
+  the row that changes the commit model, and its **validation** to `BP8`.  Its
+  own debt row now says so.  Not a live hole: the model applies the
+  invalidation to `perCoreICache` atomically inside the transition.
+* **Item 5** — `scrubExtent` is the model's abstract convention, not the
+  allocator's — is AN4-G.3 / LIF-M03, a **data-disclosure** gap once bootable
+  (a scrub that misses real memory hands the previous owner's bytes to the new
+  one).  It needs a reverse child→untyped resolver, a fallback for objects with
+  no parent record, and a change to `scrubObjectMemory` whose projection lemmas
+  quantify over the abstract range.  Owner: the untyped/retype surface;
+  closure target: post-v1.0.0.  v1.0.0 must state the scrub's extent honestly
+  rather than claim the allocator's.
+
+### Finding 30 — the two SM8-orphaned debts are one root
+
+`asidAllocateWithShootdown` is complete, proven, and **unreachable**: the
+ASIDControl / ASIDPool object family does not exist, so nothing in userspace can
+invoke it.  SM7.F.4 (b)(iv) — the initiator-atomic seam for that allocate — was
+gated on the same thing.  Building the seam for an unreachable primitive would
+violate the wire-it-into-the-consumer rule; the consumer is what is missing.
+
+Both re-target to **WS-AP**, a new post-v1.0.0 workstream registered with three
+ordered items — the object kinds and their capabilities, the syscall arms that
+invoke them, then SM7.F.4 (b)(iv), which has no caller until then — and the
+honest consequence stated: **v1.0.0 ships no userspace-reachable ASID surface**
+and the release note must not imply one.  None of the three is a live defect;
+the catch-up seam drains the initiator for every posted round, so there is no
+permanent hole even when AP3 lands late.
+
+### Finding 31 — the box stays unchecked
+
+SM7 is honest here and needed no plan change.  What it lacked was a named run.
+`BP8.4` is now that run, and the §8 box carries the instruction to check it in
+the same cut and to treat a shootdown-round-serialisation break or a missing
+acknowledgment as a failure of SM7 rather than of the harness.
+
+**A SKIP is not a pass.**  Restating the box as "the script exists" would trade
+a behaviour criterion for an artefact-existence one, which is exactly what
+RR7.16 refused for the two SM1.H boxes — so the box stays open and says why.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md RR7.20
+Refs: docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md §SM7.D, §8
+
 ## v0.34.70 — the write-set that was never read, and the field it forgot
 
 **WS-RR RR7.19** — the fine-lock migration mediums.  Three register rows, one of
