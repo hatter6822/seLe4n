@@ -1225,6 +1225,159 @@ private def sd057_rawSuspendSeamRefusesIdleIds : IO Unit := do
       expect "sd057_sentinel_refused" (sentinelStatus == invalidArgument)
         "the sentinel is refused with the same discriminant"
 
+/-- SD-058 (WS-RR RR7.29, register finding 2): **`.mintReplyCap` driven through
+the syscall gate.**
+
+The reply-objects plan's #2.d acceptance chain (`reply_cap_end_to_end_retype_mint_link`,
+`tests/ModelIntegritySuite.lean`) provisions a reply capability by calling
+`lifecycleRetypeDirect`, `mintReplyCap` and `linkCallerReply` *directly*.  It
+therefore exercises the operations and never the gate in front of them: the
+rights requirement (`syscallRequiredRight .mintReplyCap = .grant`), the CSpace
+resolution of the primary capability, the `.object`-target check on it, and the
+two-register ABI the arm decodes are all invisible to that test, so a regression
+in any of them leaves it green.  That is the finding: an "end-to-end" claim over
+a path that stops short of the entry point.
+
+This case is the missing half, and every check below goes through
+`dispatchSyscall`.  One CNode, self-referential at slot 0 so the dispatcher can
+resolve the capability that names it (seL4's own root-CNode arrangement); slot 1
+holds the `.object` cap to a Reply object — the mint's source; slot 2 is the
+destination; slot 3 holds an `.object` cap to a notification, which is what the
+source must *not* be.
+
+The five properties, none of them reachable without crossing the gate:
+
+1. **Grant is required and grant suffices.**  With `.grant` on the primary
+   capability the mint commits; with `.read`/`.write` alone it is
+   `.illegalAuthority` — the reply-cap authority regression the finding names.
+2. **The minted capability is the reply ABI's, at exactly `.write`.**  Every
+   reply gate (`syscallRequiredRight .reply`, `resolveRecvReplyId`,
+   `resolveReplyRecvReply`) builds its gate at `.write`, so a mint that widened
+   or narrowed those rights would hand back a handle no reply path accepts.
+   Checked as a *resolution*, not as a field read: the minted slot is put through
+   `syscallResolveCap` at the reply gate's own required right.
+3. **A source that is not a Reply is refused**, `.invalidCapability`, with
+   nothing written at the destination.
+4. **A primary capability that is not an `.object` is refused** the same way, so
+   the arm's fail-closed `| _ => fun _ => .error .invalidCapability` is exercised
+   rather than asserted.
+5. **The mint is CDT-tracked and therefore revocable.**  `mintReplyCapWithCdt`
+   records `src → dst`; the arm's docstring promises revocability through
+   `cspaceRevokeCdt`, so the edge is checked *and* the revocation is run. -/
+private def sd058_mintReplyCapThroughTheSyscallGate : IO Unit := do
+  let caller   : SeLe4n.ThreadId := ⟨1⟩
+  let cnId     : SeLe4n.ObjId := ⟨50⟩
+  let replyObj : SeLe4n.ObjId := ⟨60⟩
+  let rid      : SeLe4n.ReplyId := SeLe4n.ReplyId.ofObjId replyObj
+  let ntfnObj  : SeLe4n.ObjId := ⟨61⟩
+  -- The primary capability names the CNode the arm reads and writes.  `.grant`
+  -- is what `syscallRequiredRight .mintReplyCap` demands.
+  let cnodeCapGrant : Capability :=
+    { target := .object cnId, rights := AccessRightSet.ofList [.read, .write, .grant] }
+  let cnodeCapNoGrant : Capability :=
+    { target := .object cnId, rights := AccessRightSet.ofList [.read, .write] }
+  -- A primary capability of the wrong TARGET KIND, with the right rights.
+  let wrongKindCap : Capability :=
+    { target := .replyCap rid, rights := AccessRightSet.ofList [.read, .write, .grant] }
+  let replyObjectCap : Capability :=
+    { target := .object replyObj, rights := AccessRightSet.ofList [.read, .write] }
+  let ntfnObjectCap : Capability :=
+    { target := .object ntfnObj, rights := AccessRightSet.ofList [.read, .write] }
+  let mkSt (primary : Capability) : SystemState :=
+    mkState [
+      (caller.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnId }),
+      (replyObj, .reply { replyId := rid }),
+      (ntfnObj, .notification
+        { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }),
+      (cnId, .cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.ofListWF
+            [ (SeLe4n.Slot.ofNat 0, primary)
+            , (SeLe4n.Slot.ofNat 1, replyObjectCap)
+            , (SeLe4n.Slot.ofNat 3, ntfnObjectCap) ] })
+    ]
+  -- src = slot 1, dst = slot 2 (empty).  Same two-register ABI as `.cspaceCopy`.
+  let decoded (srcSlot dstSlot : Nat) : SyscallDecodeResult :=
+    { capAddr := SeLe4n.CPtr.ofNat 0,
+      msgInfo := { length := 2, extraCaps := 0, label := 0 },
+      syscallId := .mintReplyCap,
+      msgRegs := #[SeLe4n.RegValue.ofNat srcSlot, SeLe4n.RegValue.ofNat dstSlot],
+      inlineCount := 2, overflowCount := 0 }
+  let dst : SeLe4n.Kernel.CSpaceAddr := { cnode := cnId, slot := SeLe4n.Slot.ofNat 2 }
+  let src : SeLe4n.Kernel.CSpaceAddr := { cnode := cnId, slot := SeLe4n.Slot.ofNat 1 }
+  -- The destination starts empty, so every "nothing was written" check below is
+  -- a statement about the refusal rather than about the fixture.
+  expect "sd058_destination_starts_empty"
+    (match SeLe4n.Kernel.cspaceLookupSlot dst (mkSt cnodeCapGrant) with
+     | .error _ => true | .ok _ => false)
+    "the mint destination must be empty before the dispatch"
+  -- The right the gate demands is `.grant`, stated rather than assumed.
+  expect "sd058_required_right_is_grant"
+    (decide (SeLe4n.Kernel.syscallRequiredRight .mintReplyCap = AccessRight.grant))
+    "the mint arm must require grant authority on the primary capability"
+  -- 1. Authorized: the mint commits and the destination holds the reply ABI's cap.
+  match dispatchSyscall (decoded 1 2) caller (mkSt cnodeCapGrant) with
+  | .error e =>
+      failLine "sd058_grant_mint_succeeds"
+        s!"a grant-bearing primary capability must mint through the gate; got: {repr e}"
+  | .ok ((), stMinted) =>
+      expect "sd058_minted_cap_targets_the_reply"
+        (match SeLe4n.Kernel.cspaceLookupSlot dst stMinted with
+         | .ok (cap, _) => decide (cap.target = .replyCap rid)
+         | .error _ => false)
+        "the destination must hold `.replyCap` for the source object's reply id"
+      -- 2. The minted handle resolves at the reply gate's own required right.
+      -- A rights regression in the mint shows up here and nowhere in a field read.
+      let replyGate : SyscallGate :=
+        { callerId := caller, cspaceRoot := cnId, capAddr := SeLe4n.CPtr.ofNat 2,
+          capDepth := 4, requiredRight := SeLe4n.Kernel.syscallRequiredRight .reply }
+      expect "sd058_minted_cap_passes_the_reply_gate"
+        (match SeLe4n.Kernel.syscallLookupCap replyGate stMinted with
+         | .ok (cap, _) => decide (cap.target = .replyCap rid)
+         | .error _ => false)
+        "the minted reply cap must satisfy the right every reply path gates on"
+      -- 5. CDT-tracked: the mint edge exists, and revocation removes the child.
+      let srcRef : SeLe4n.Model.SlotRef := { cnode := cnId, slot := SeLe4n.Slot.ofNat 1 }
+      let dstRef : SeLe4n.Model.SlotRef := { cnode := cnId, slot := SeLe4n.Slot.ofNat 2 }
+      expect "sd058_mint_records_a_derivation_edge"
+        (match SystemState.lookupCdtNodeOfSlot stMinted srcRef,
+               SystemState.lookupCdtNodeOfSlot stMinted dstRef with
+         | some parent, some child => (stMinted.cdt.childrenOf parent).contains child
+         | _, _ => false)
+        "the mint must record `src → dst` in the derivation tree"
+      match SeLe4n.Kernel.cspaceRevokeCdt src stMinted with
+      | .error e =>
+          failLine "sd058_revoke_of_the_mint_source"
+            s!"revoking the mint source must succeed; got: {repr e}"
+      | .ok ((), stRevoked) =>
+          expect "sd058_revoke_removes_the_minted_cap"
+            (match SeLe4n.Kernel.cspaceLookupSlot dst stRevoked with
+             | .error _ => true | .ok _ => false)
+            "revoking the source must remove the minted reply cap"
+  -- 3. Unauthorized: the same call without `.grant` is refused on authority.
+  expect "sd058_without_grant_refused_on_authority"
+    (match dispatchSyscall (decoded 1 2) caller (mkSt cnodeCapNoGrant) with
+     | .error .illegalAuthority => true
+     | _ => false)
+    "a primary capability lacking grant must be refused with illegalAuthority"
+  -- 4. A source that is not a Reply object: fail-closed, nothing written.
+  match dispatchSyscall (decoded 3 2) caller (mkSt cnodeCapGrant) with
+  | .error e =>
+      expect "sd058_non_reply_source_refused"
+        (decide (e = KernelError.invalidCapability))
+        "a source naming a non-Reply object must be refused with invalidCapability"
+  | .ok ((), stBad) =>
+      expect "sd058_non_reply_source_wrote_nothing"
+        (match SeLe4n.Kernel.cspaceLookupSlot dst stBad with
+         | .error _ => true | .ok _ => false)
+        "a source naming a non-Reply object must not mint anything"
+  -- 5. A primary capability of the wrong target kind: the arm's fail-closed arm.
+  expect "sd058_wrong_primary_kind_refused"
+    (match dispatchSyscall (decoded 1 2) caller (mkSt wrongKindCap) with
+     | .error .invalidCapability => true
+     | _ => false)
+    "a primary capability that is not an `.object` must be refused"
+
 /-- SD-051: faithful seL4-MCS receive linkage, folded into `endpointReceiveDual`
     itself (#7.2; formerly the separate `linkReceivedCaller` `.receive`-arm step).
     After `endpointReceiveDual` rendezvouses a `Call` (moving the caller to
@@ -1642,4 +1795,6 @@ def main : IO Unit := do
   IO.println "--- PR #889 review round 5: witnesses off the boot root, structural cores ---"
   sd056_witnesses_off_boot_root_and_structural_cores
   sd057_rawSuspendSeamRefusesIdleIds
+  IO.println "--- WS-RR RR7.29: .mintReplyCap through the syscall gate ---"
+  sd058_mintReplyCapThroughTheSyscallGate
   IO.println "=== All WS-RC R2.C SyscallDispatch tests passed ==="

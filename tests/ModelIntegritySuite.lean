@@ -1017,7 +1017,14 @@ established: a Reply object is provisioned by an in-place retype (the holder kee
 object id), and the resulting cap is a functional handle whose reply resolves (`getReply?`) and
 accepts a caller link.  (The receive-path auto-linking on `.recv`/`.replyRecv` is the gated re-wire;
 this test drives the linkage via the verified `linkCallerReply` op, the same one the dispatch
-composes.) -/
+composes.)
+
+**WS-RR RR7.29**: this chain calls the transitions directly and so exercises no part of the
+syscall gate in front of them — the `.grant` requirement, the CSpace resolution of the primary
+capability, the `.object`-target check and the two-register ABI are all invisible here.  That
+half lives in `sd058_mintReplyCapThroughTheSyscallGate` (`tests/SyscallDispatchSuite.lean`),
+which drives `.mintReplyCap` through `dispatchSyscall`; the two together are the end-to-end
+claim, and neither is it alone. -/
 def reply_cap_end_to_end_retype_mint_link : IO Unit := do
   let target : SeLe4n.ObjId := ⟨400⟩
   let rid : SeLe4n.ReplyId := SeLe4n.ReplyId.ofObjId target

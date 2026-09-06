@@ -1,3 +1,52 @@
+## v0.34.78 — an end-to-end test that reaches the entry point
+
+**WS-RR RR7.29** — the reply-objects medium (register finding 2).  The reply-objects
+plan's #2.d acceptance test, `reply_cap_end_to_end_retype_mint_link`, provisions a
+reply capability by calling `lifecycleRetypeDirect`, `mintReplyCap` and
+`linkCallerReply` **directly**.  It exercises the operations and nothing in front of
+them: the `.grant` requirement (`syscallRequiredRight .mintReplyCap`), the CSpace
+resolution of the primary capability, the `.object`-target check on it, and the
+two-register ABI the arm decodes are all invisible to it, so a regression in any of
+them leaves the test green.  An "end-to-end" claim over a path that stops short of
+the entry point is the finding.
+
+Closed by implementing the missing coverage, not by re-scoping the claim.
+`sd058_mintReplyCapThroughTheSyscallGate` (`tests/SyscallDispatchSuite.lean`) drives
+`.mintReplyCap` through `dispatchSyscall`, over a self-referential root CNode so the
+primary capability resolves the way seL4's own root arrangement does.  Nine checks,
+none of them reachable without crossing the gate:
+
+- **Grant is required, and grant suffices.**  With `.grant` on the primary capability
+  the mint commits; the same call with `.read`/`.write` alone is `.illegalAuthority`.
+  The required right is also stated directly, so a regression that keeps the
+  enforcement but changes the table, or keeps the table but drops the enforcement,
+  each fail a different check.
+- **The minted capability is the reply ABI's, validated as a resolution.**  The
+  destination slot is put through `syscallLookupCap` at
+  `syscallRequiredRight .reply`'s own right — not read as a field — because every
+  reply path (`resolveRecvReplyId`, `resolveReplyRecvReply`, the `.reply` arm) gates
+  at exactly that right, and a handle no reply path accepts is not a reply
+  capability however its target field reads.
+- **A source that is not a Reply object is refused** with `.invalidCapability` and
+  writes nothing; the destination is checked empty *before* the dispatch, so that is
+  a statement about the refusal rather than about the fixture.
+- **A primary capability of the wrong target kind is refused**, exercising the arm's
+  fail-closed `| _ => .error .invalidCapability` rather than asserting it.
+- **The mint is CDT-tracked and therefore revocable.**  The `src → dst` edge is
+  checked in the derivation tree and then `cspaceRevokeCdt` is run, which removes the
+  minted capability — the revocability the arm's docstring promises, executed.
+
+Pinned by a token-preserving mutation: weakening the arm's required right from
+`.grant` to `.write` — every token kept, only the relation changed — fails the suite,
+and left the #2.d chain green.  (Narrowing the *minted* rights is caught one level
+lower still, by `Capability.Invariant.Preservation.Insert`, which pins them in the
+proof; the suite's resolution check covers the case where that pin is what moves.)
+
+The #2.d chain keeps its place and now names its companion in its own docstring: the
+two together are the end-to-end claim, and neither is it alone.
+
+Tier 0-3 green; `test_rust.sh` and the aarch64 cross gate green.
+
 ## v0.34.77 — the census figure, measured rather than remembered
 
 **WS-RR RR7.28** — the IPC de-threading medium (register finding 1).  RR3 owns
