@@ -36,6 +36,14 @@ fn main() {
     // match to avoid pulling `regex` into the workspace build graph.
     scan_boot_s_for_legacy_mpidr_literal();
 
+    // WS-RR RR7.37 (register finding 84, swept): no library unit test may drive
+    // an `extern "C"` seam that halts a not-ready core — such a halt aborts the
+    // whole test binary rather than failing one test, and the library binary's
+    // readiness bit is owned by a single timer test, so those tests passed only
+    // on a favourable schedule.
+    verify_library_test_halt_scanner();
+    scan_library_tests_avoid_halting_seams();
+
     // WS-SM SM1.B: verify the symbol-based PER_CPU_DATA setup is intact
     // in boot.S::secondary_entry. Runs on every target so the regression
     // check fires even in host test builds (the asm file is read, not
@@ -5060,6 +5068,462 @@ fn verify_lean_export_collector() {
             panic!("build.rs self-check: the export collector read prose as code: {what}");
         }
     }
+}
+
+/// **WS-RR RR7.37 (register finding 84, swept)**: no unit test in the library
+/// binary may drive a seam that halts a not-ready core.
+///
+/// `fatal_halt` panics on the host lane.  Reached through a plain Rust helper
+/// that unwinds, a `#[should_panic]` test observes it and passes; reached
+/// through an `extern "C"` entry, Rust's abort-on-unwind guard turns it into a
+/// process abort that takes **every other test in the binary down with it**.
+///
+/// The readiness mask is process-global and monotone, and in the library binary
+/// its bit is *owned* by
+/// `timer::tests::per_core_timer_tick_isr_never_advances_global_tick_count`,
+/// which asserts the bit is unset when it starts and sets it partway through.
+/// So a library test that drives such a seam passes only when cargo happens to
+/// schedule that one first — three did, and each was one scheduling decision
+/// away from failing the whole `test_rust.sh` gate for reasons unrelated to the
+/// change under test.  They now live in `tests/readiness_gate_after_mark.rs`,
+/// which marks the core itself.
+///
+/// **Derived, not listed.**  The halting set is computed by fixpoint over the
+/// crate's own call graph: seed it with the functions that call a
+/// `halt_*_before_lean_ready` helper, close it under "calls a member", and keep
+/// the members that are `extern "C"` — those are the ones whose halt aborts
+/// rather than unwinds.  A new halting seam is covered the day it is written,
+/// and a test calling one is refused rather than left to a scheduler.
+///
+/// The scan **over-approximates on purpose**: a call is a whole-word mention of
+/// the callee's name in a function's brace-matched body over the
+/// comment-and-string-blanked view, so an aliased or indirect call is missed
+/// (stated here rather than assumed away) while a mention that is not a call is
+/// refused.  Erring towards refusal is right for a *requirement* scanner —
+/// dropping one is a check nobody runs.
+fn scan_library_tests_avoid_halting_seams() {
+    let mut paths: Vec<std::path::PathBuf> = Vec::new();
+    collect_rust_sources(std::path::Path::new("src"), &mut paths);
+    paths.sort();
+    let sources: Vec<(String, String)> = paths
+        .iter()
+        .map(|p| {
+            let text = std::fs::read_to_string(p)
+                .unwrap_or_else(|e| panic!("build.rs: cannot read {}: {e}", p.display()));
+            (p.display().to_string(), text)
+        })
+        .collect();
+    let offenders = library_test_halt_offenders(&sources, true);
+    if !offenders.is_empty() {
+        panic!(
+            "build.rs: library unit test(s) drive an `extern \"C\"` seam that \
+             halts a not-ready core:\n  {}\n\
+             A halt inside an `extern \"C\"` entry aborts the whole test binary \
+             instead of failing one test, and the library binary's readiness bit \
+             is owned by one timer test — so these pass only on a favourable \
+             schedule.  Move them to `tests/readiness_gate_after_mark.rs`, which \
+             marks the executing core itself (WS-RR RR7.37).",
+            offenders.join("\n  ")
+        );
+    }
+}
+
+/// Every `fn` definition in `code`: its name, the byte offset the line holding
+/// its signature starts at, and its brace-matched body span.
+///
+/// `enclosing_fn_span` answers the dual question — which body *contains* an
+/// offset — and cannot be used to enumerate definitions, because a top-level
+/// function's own `fn` keyword is not inside its own body.
+fn fn_definitions(code: &str) -> Vec<(String, usize, usize, usize)> {
+    let bytes = code.as_bytes();
+    let mut out = Vec::new();
+    let mut search = 0usize;
+    while let Some(hit) = code[search..].find("fn ") {
+        let at = search + hit;
+        search = at + 3;
+        if at > 0 && (bytes[at - 1].is_ascii_alphanumeric() || bytes[at - 1] == b'_') {
+            continue;
+        }
+        let after = code[at + 3..].trim_start();
+        let ident = after.strip_prefix("r#").unwrap_or(after);
+        let name: String = ident
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+            .collect();
+        if name.is_empty() {
+            continue;
+        }
+        let Some(open) = code[at..].find('{').map(|i| at + i) else {
+            continue;
+        };
+        // A `;` before the brace means a bodyless declaration (an `extern`
+        // block item, or a trait method signature).
+        if code[at..open].contains(';') {
+            continue;
+        }
+        let mut depth = 0usize;
+        let mut close = open;
+        for (index, ch) in code[open..].char_indices() {
+            if ch == '{' {
+                depth += 1;
+            } else if ch == '}' {
+                depth -= 1;
+                if depth == 0 {
+                    close = open + index;
+                    break;
+                }
+            }
+        }
+        if close <= open {
+            continue;
+        }
+        let header_start = code[..at].rfind('\n').map_or(0, |i| i + 1);
+        out.push((name, header_start, open, close));
+        search = at + 3;
+    }
+    out
+}
+
+/// Witnesses for `library_test_halt_offenders`.
+///
+/// Every mutation is token preserving: each fixture keeps the seam call, the
+/// syndrome constant and the test attribute, and moves the *relation* — out of
+/// the test module, onto a different exception class, into a mention that is
+/// not a call, behind the `hw_target` cfg that decides whether the halt is
+/// compiled at all.  Deleting the call would be caught by any presence check;
+/// these are the shapes that survive one.
+fn verify_library_test_halt_scanner() {
+    const HALT: &str = r#"
+pub(crate) fn halt_syscall_before_lean_ready(core: usize, w: u64) -> ! { loop {} }
+pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
+    if !lean_ready(0) { halt_syscall_before_lean_ready(0, frame.x7()); }
+}
+"#;
+    // The halt is compiled only on the hardware target, so the seam cannot
+    // abort the host test binary and no test driving it is an offender.
+    const HALT_HW_ONLY: &str = r#"
+pub(crate) fn halt_syscall_before_lean_ready(core: usize, w: u64) -> ! { loop {} }
+pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
+    #[cfg(feature = "hw_target")]
+    {
+        if !lean_ready(0) { halt_syscall_before_lean_ready(0, frame.x7()); }
+    }
+}
+"#;
+    let case = |name: &str, extra: &str, halt: &str, expect_offender: bool| {
+        let sources = vec![(
+            "src/fixture.rs".to_string(),
+            format!("{halt}\n#[cfg(test)]\nmod tests {{\n{extra}\n}}\n"),
+        )];
+        let offenders = library_test_halt_offenders(&sources, false);
+        let got = !offenders.is_empty();
+        if got != expect_offender {
+            panic!(
+                "build.rs self-check ({name}): expected offender={expect_offender}, \
+                 got {offenders:?}"
+            );
+        }
+    };
+
+    // The shape the gate exists to catch.
+    case(
+        "an SVC-driving library test is refused",
+        r#"
+    #[test]
+    fn drives_svc() {
+        let mut frame = zero_frame();
+        frame.esr_el1 = ec::SVC_AARCH64 << 26;
+        handle_synchronous_exception(&mut frame);
+    }
+"#,
+        HALT,
+        true,
+    );
+    // Preserving: same body, same call, same constant — but the halt is not
+    // compiled on the host, so nothing can abort.
+    case(
+        "the same test is fine when the halt is hw_target-only",
+        r#"
+    #[test]
+    fn drives_svc() {
+        let mut frame = zero_frame();
+        frame.esr_el1 = ec::SVC_AARCH64 << 26;
+        handle_synchronous_exception(&mut frame);
+    }
+"#,
+        HALT_HW_ONLY,
+        false,
+    );
+    // Preserving: keeps the call, changes the arm it selects.
+    case(
+        "an abort-driving library test is not an offender",
+        r#"
+    #[test]
+    fn drives_abort() {
+        let mut frame = zero_frame();
+        frame.esr_el1 = ec::DABT_LOWER << 26;
+        handle_synchronous_exception(&mut frame);
+    }
+"#,
+        HALT,
+        false,
+    );
+    // Preserving: keeps the constant, drops the call to a mention.
+    case(
+        "naming the syndrome without driving the seam is not an offender",
+        r#"
+    #[test]
+    fn reads_the_class() {
+        assert_eq!(esr_ec(0x15 << 26), ec::SVC_AARCH64);
+        let _ = handle_synchronous_exception;
+    }
+"#,
+        HALT,
+        false,
+    );
+    // Preserving: keeps everything, moves the function out of the test module.
+    let sources = vec![(
+        "src/fixture.rs".to_string(),
+        format!(
+            "{HALT}\npub fn production_driver(frame: &mut TrapFrame) {{\n    \
+             frame.esr_el1 = ec::SVC_AARCH64 << 26;\n    \
+             handle_synchronous_exception(frame);\n}}\n"
+        ),
+    )];
+    if !library_test_halt_offenders(&sources, false).is_empty() {
+        panic!(
+            "build.rs self-check: production code driving the seam is not a \
+             library *test* and must not be reported"
+        );
+    }
+}
+
+/// The offender list `scan_library_tests_avoid_halting_seams` reports, split
+/// out so `verify_library_test_halt_scanner` can drive it over fixtures.
+fn library_test_halt_offenders(
+    sources: &[(String, String)],
+    require_halt_helper: bool,
+) -> Vec<String> {
+    // name -> (body, is_extern_c) over every `fn` the crate defines.
+    let mut bodies: Vec<(String, String, bool)> = Vec::new();
+    // Function bodies that sit inside a `#[cfg(test)]` module, with the file
+    // they came from, and whether the test expects a panic.
+    let mut library_tests: Vec<(String, String, String, bool)> = Vec::new();
+
+    for (path, contents) in sources.iter() {
+        let (kept, raw) = rust_code_views(contents);
+        // The binary this gate protects is the **host** test binary, so read
+        // the host build's code: a call inside a `hw_target`-only block is not
+        // compiled there and cannot halt anything.  `deliver_fault`'s halt is
+        // exactly that shape, which is why the abort-driving tests below the
+        // handler are not offenders while the SVC-driving ones are.
+        let stripped = blank_hw_target_blocks(&kept, &raw);
+        let test_mods = cfg_test_module_spans(&stripped);
+        for (name, header_start, open, close) in fn_definitions(&stripped) {
+            let body = stripped[open..close].to_string();
+            let header = &stripped[header_start..open];
+            let is_extern_c = header.contains("extern \"C\"");
+            let in_test_mod = test_mods.iter().any(|(s, e)| open > *s && close <= *e);
+            if in_test_mod {
+                // `#[should_panic]` is the deliberate observation of a halt
+                // reached through an *unwinding* helper.  It does not exempt an
+                // `extern "C"` seam, which aborts whatever the test expects —
+                // recorded here so the distinction is visible rather than
+                // assumed.
+                let attrs_start = stripped[..header_start].rfind("\n\n").map_or(0, |i| i + 1);
+                let expects_panic = kept[attrs_start..header_start].contains("should_panic");
+                library_tests.push((path.clone(), name.clone(), body.clone(), expects_panic));
+            }
+            if !bodies.iter().any(|(existing, _, _)| existing == &name) {
+                bodies.push((name, body, is_extern_c));
+            }
+        }
+    }
+
+    // Seed: functions that call a `halt_*_before_lean_ready` helper.
+    let halt_helpers: Vec<String> = bodies
+        .iter()
+        .map(|(n, _, _)| n.clone())
+        .filter(|n| n.starts_with("halt_") && n.ends_with("_before_lean_ready"))
+        .collect();
+    if require_halt_helper && halt_helpers.is_empty() {
+        panic!(
+            "build.rs: no `halt_*_before_lean_ready` helper found in sele4n-hal.\n\
+             The readiness-halt discipline this gate enforces has either been \
+             renamed or removed; a scanner that finds nothing must say so \
+             rather than pass."
+        );
+    }
+    let mut halting: Vec<String> = halt_helpers.clone();
+    loop {
+        let before = halting.len();
+        for (name, body, _) in &bodies {
+            if halting.iter().any(|h| h == name) {
+                continue;
+            }
+            if halting.iter().any(|h| calls_function(body, h)) {
+                halting.push(name.clone());
+            }
+        }
+        if halting.len() == before {
+            break;
+        }
+    }
+    let aborting: Vec<&String> = bodies
+        .iter()
+        .filter(|(n, _, is_extern_c)| *is_extern_c && halting.iter().any(|h| h == n))
+        .map(|(n, _, _)| n)
+        .collect();
+
+    // The halting *arm* is the one an `SVC` syndrome selects; the abort arms'
+    // halt is `hw_target`-only and blanked above.  A scanner cannot decide which
+    // arm a call takes, so the relation checked is the canonical spelling this
+    // project writes to select it: the test puts an `SVC` EC in the frame.  A
+    // new halting arm for another exception class would need this conjunct
+    // widened — stated here rather than assumed away, and the direction is
+    // safe, since the seam set above is derived and only the arm selector is
+    // named.
+    let mut offenders: Vec<String> = Vec::new();
+    for (path, test_name, body, _expects_panic) in &library_tests {
+        if !mentions_word(body, "SVC_AARCH64") {
+            continue;
+        }
+        for seam in &aborting {
+            if calls_function(body, seam) {
+                offenders.push(format!("{path}: {test_name} calls {seam}"));
+            }
+        }
+    }
+    offenders
+}
+
+/// `code` with the interior of every `#[cfg(feature = "hw_target")]` block
+/// blanked, byte-for-byte, so offsets still line up with the input.
+///
+/// **The two views are both needed, and which one answers which question is
+/// the point** (the rule CLAUDE.md states as *the view you read depends on the
+/// question, and one walk can need both*).  The attribute's predicate is a
+/// string literal, so it survives only in the strings-*kept* view — searching
+/// the stripped one finds `#[cfg(feature = "         ")]` and matches nothing,
+/// which is how this silently blanked no block at all until its own witness
+/// said so.  The blanking is applied to the stripped view, which is what the
+/// call scan reads.  The two are byte-aligned by construction.
+///
+/// Only the exact single-predicate spelling is recognised.  A `cfg` this does
+/// not understand is left *visible*, which is the fail-closed direction for a
+/// scanner building a set of things to refuse: an unrecognised gate makes the
+/// call look compiled, so the gate reports rather than skips.
+fn blank_hw_target_blocks(kept: &str, code: &str) -> String {
+    let marker = "#[cfg(feature = \"hw_target\")]";
+    let mut out = code.as_bytes().to_vec();
+    let mut search = 0usize;
+    while let Some(hit) = kept[search..].find(marker) {
+        let at = search + hit;
+        search = at + marker.len();
+        let Some(open) = kept[search..].find('{').map(|i| search + i) else {
+            continue;
+        };
+        // Only an attribute directly on a block (or an item whose body follows)
+        // is handled; anything else between the attribute and the brace means
+        // the shape is not the one this understands, so leave it visible.
+        if kept[search..open].contains(';') {
+            continue;
+        }
+        let mut depth = 0usize;
+        let mut close = open;
+        for (index, ch) in kept[open..].char_indices() {
+            if ch == '{' {
+                depth += 1;
+            } else if ch == '}' {
+                depth -= 1;
+                if depth == 0 {
+                    close = open + index;
+                    break;
+                }
+            }
+        }
+        if close <= open {
+            continue;
+        }
+        for byte in out[open + 1..close].iter_mut() {
+            if *byte != b'\n' {
+                *byte = b' ';
+            }
+        }
+        search = close;
+    }
+    String::from_utf8(out).unwrap_or_else(|_| code.to_string())
+}
+
+/// Byte spans of every `#[cfg(test)]` module body in `code`.
+fn cfg_test_module_spans(code: &str) -> Vec<(usize, usize)> {
+    let mut spans = Vec::new();
+    let mut search = 0usize;
+    while let Some(hit) = code[search..].find("#[cfg(test)]") {
+        let at = search + hit;
+        search = at + 1;
+        let Some(mod_at) = code[at..].find("mod ").map(|i| at + i) else {
+            continue;
+        };
+        let Some(open) = code[mod_at..].find('{').map(|i| mod_at + i) else {
+            continue;
+        };
+        let mut depth = 0usize;
+        let mut end = open;
+        for (index, ch) in code[open..].char_indices() {
+            if ch == '{' {
+                depth += 1;
+            } else if ch == '}' {
+                depth -= 1;
+                if depth == 0 {
+                    end = open + index;
+                    break;
+                }
+            }
+        }
+        if end > open {
+            spans.push((open, end));
+        }
+    }
+    spans
+}
+
+/// Does `body` contain `word` as a whole identifier?  Used for the arm
+/// selector, which is a constant read rather than a call.
+fn mentions_word(body: &str, word: &str) -> bool {
+    let bytes = body.as_bytes();
+    let mut search = 0usize;
+    while let Some(hit) = body[search..].find(word) {
+        let at = search + hit;
+        search = at + word.len();
+        let before_ok =
+            at == 0 || !(bytes[at - 1].is_ascii_alphanumeric() || bytes[at - 1] == b'_');
+        let after = at + word.len();
+        let after_ok =
+            after >= bytes.len() || !(bytes[after].is_ascii_alphanumeric() || bytes[after] == b'_');
+        if before_ok && after_ok {
+            return true;
+        }
+    }
+    false
+}
+
+/// Does `body` call `name`?  A whole-word occurrence followed by `(`, so a
+/// substring of a longer identifier and a bare mention both fail to match.
+fn calls_function(body: &str, name: &str) -> bool {
+    let bytes = body.as_bytes();
+    let mut search = 0usize;
+    while let Some(hit) = body[search..].find(name) {
+        let at = search + hit;
+        search = at + name.len();
+        let before_ok =
+            at == 0 || !(bytes[at - 1].is_ascii_alphanumeric() || bytes[at - 1] == b'_');
+        let rest = body[at + name.len()..].trim_start();
+        if before_ok && rest.starts_with('(') {
+            return true;
+        }
+    }
+    false
 }
 
 /// Every `.rs` file under `dir`, recursively.

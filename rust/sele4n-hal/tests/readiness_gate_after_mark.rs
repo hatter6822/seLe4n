@@ -222,3 +222,83 @@ fn sele4n_suspend_thread_disables_interrupts_during_call() {
     let r2 = sele4n_hal::ffi::sele4n_suspend_thread(2);
     assert_eq!(r1, r2, "bracket must be deterministic");
 }
+
+/// **WS-RR RR7.37 (register finding 84)**: the SVC arm's published frame is
+/// never readable as a success.
+///
+/// This replaces `trap::tests::svc_stub_returns_not_implemented`, which
+/// asserted `error_code::NOT_IMPLEMENTED != 0` — a fact about a constant, true
+/// before the handler existed and still true if the handler were deleted.  Its
+/// prose ("the SVC handler is a pre-FFI stub") was retired twice over: AN9-F
+/// wired the real dispatch, and WS-RR RR5 put the readiness gate ahead of it.
+///
+/// The property the old test *meant* — userspace must not read an SVC outcome
+/// as success — is about the frame the seam publishes, so that is what this
+/// drives.  It is deliberately weaker than
+/// `unknown_syscall_id_on_ready_core_publishes_status_frame`, which pins the
+/// exact discriminant: this one holds of whatever the arm publishes, so it
+/// survives a change to which error is returned and still fails if the arm
+/// leaves `x1` at the success label — including by leaving the register
+/// untouched, which is the fail-open shape ABI v3 exists to remove.
+#[test]
+fn svc_arm_never_publishes_a_success_label() {
+    mark_this_core_ready();
+    let mut frame = zero_frame();
+    frame.esr_el1 = (EC_SVC_AARCH64 << 26) | 0x42; // lower bits ignored
+    handle_synchronous_exception(&mut frame);
+    let label = frame.x1() >> 9;
+    assert_ne!(
+        label, 0,
+        "an SVC outcome must not decode as success (label 0)"
+    );
+    assert!(
+        label >= ERROR_LABEL_BASE,
+        "an SVC error outcome must carry a status label at or above \
+         ERROR_LABEL_BASE, not a delivered message's own label; got {label:#x}"
+    );
+}
+
+/// **WS-RR RR7.37**, moved from `trap`'s unit tests: the handler reads the
+/// syndrome from the *frame*, not from a live `mrs esr_el1`, and the SVC arm's
+/// writeback is the full six-register restore.
+///
+/// It lives here rather than in the library binary because it drives an `SVC`
+/// through `handle_synchronous_exception`, which halts a not-ready core — and a
+/// halt inside an `extern "C"` handler aborts the whole test binary.  In the
+/// library binary the readiness bit is owned by one timer test that asserts it
+/// unset when it starts, so this passed only when cargo happened to schedule
+/// that test first.
+#[test]
+fn handle_sync_reads_esr_from_frame() {
+    mark_this_core_ready();
+    let mut frame = zero_frame();
+    frame.esr_el1 = (EC_SVC_AARCH64 << 26) | 0x42; // lower bits ignored
+    handle_synchronous_exception(&mut frame);
+    assert_eq!(frame.x0(), 0);
+    assert_eq!(frame.x1(), (ERROR_LABEL_BASE + 17) << 9);
+    assert_eq!([frame.x2(), frame.x3(), frame.x4(), frame.x5()], [0; 4]);
+}
+
+/// **WS-RR RR7.37**, moved from `trap`'s unit tests for the same reason: each
+/// exception class advances only its own per-core counter, so an `SVC` must not
+/// touch `vm_fault_count`.
+///
+/// The library binary needed a mutex here, because tests recording aborts ran
+/// beside it and could land a `record_vm_fault` between the snapshot pair.  No
+/// test in *this* binary records an abort, so the equality is exclusive by
+/// construction rather than by locking — and if one is ever added, this
+/// assertion is what will say so.
+#[test]
+fn svc_does_not_advance_the_vm_fault_counter() {
+    mark_this_core_ready();
+    let core = sele4n_hal::per_cpu::current_core_id_from_tpidr() as usize;
+    let before = sele4n_hal::per_cpu_stats::vm_fault_count_for(core);
+    let mut frame = zero_frame();
+    frame.esr_el1 = EC_SVC_AARCH64 << 26;
+    handle_synchronous_exception(&mut frame);
+    let after = sele4n_hal::per_cpu_stats::vm_fault_count_for(core);
+    assert_eq!(
+        after, before,
+        "SVC must not increment vm_fault_count (was {before}, now {after})"
+    );
+}

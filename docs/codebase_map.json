@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/rr7-medium-severity-sweep-tn327q",
-      "commit_sha": "7a332103ae9e7fb26524bf899506ed07d17f9bd3",
-      "tree_sha": "2571fa238896be03ec0e5a4e2fb82a1bc2a43224",
-      "committed_at_utc": "2026-09-06T15:47:32+00:00"
+      "commit_sha": "653b7b1f1052a8eebab5cdcd014928796f38353a",
+      "tree_sha": "9e244084c9b288a90f3933652ad5ad8862d661e0",
+      "committed_at_utc": "2026-09-06T16:55:38+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "a52d99156079b8bb4aa998c2291877007fbd19ceeaa1dfe5099e292ef0db8736"
+    "source_digest": "be16cff6c17c6a86a2476639c3d4f0eb55668914177c17877398ff4fed7aa906"
   },
   "summary": {
     "module_count": 387,
-    "declaration_count": 19518
+    "declaration_count": 19533
   },
   "readme_sync": {
-    "version": "0.34.86",
+    "version": "0.34.87",
     "lean_toolchain": "v4.28.0",
     "production_files": 317,
     "production_loc": 339955,
     "test_files": 70,
-    "test_loc": 70646,
+    "test_loc": 70722,
     "proved_theorem_lemma_decls": 11305,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -249268,7 +249268,7 @@
         },
         {
           "kind": "def",
-          "name": "r4a_uniqueSlotMap_empty_size_zero",
+          "name": "uniqueSlotMap_empty_size_zero",
           "line": 426,
           "called": [
             "Capability",
@@ -249283,7 +249283,7 @@
         },
         {
           "kind": "def",
-          "name": "r4a_uniqueSlotMap_insert_then_get",
+          "name": "uniqueSlotMap_insert_then_get",
           "line": 432,
           "called": [
             "Capability",
@@ -249299,7 +249299,7 @@
         },
         {
           "kind": "def",
-          "name": "r4a_uniqueSlotMap_erase_removes",
+          "name": "uniqueSlotMap_erase_removes",
           "line": 443,
           "called": [
             "Capability",
@@ -249315,7 +249315,7 @@
         },
         {
           "kind": "def",
-          "name": "r4a_uniqueSlotMap_ofListWF_roundtrip",
+          "name": "uniqueSlotMap_ofListWF_roundtrip",
           "line": 453,
           "called": [
             "Capability",
@@ -249331,7 +249331,7 @@
         },
         {
           "kind": "def",
-          "name": "r4a_uniqueSlotMap_keys_unique_witness",
+          "name": "uniqueSlotMap_keys_unique_witness",
           "line": 468,
           "called": [
             "Capability",
@@ -249348,7 +249348,7 @@
         },
         {
           "kind": "def",
-          "name": "r4a_cnode_slotsUnique_holds_witness",
+          "name": "cnode_slotsUnique_holds_witness",
           "line": 480,
           "called": [
             "CNode",
@@ -249365,7 +249365,7 @@
         },
         {
           "kind": "def",
-          "name": "r4c_noDupList_empty_isEmpty",
+          "name": "noDupList_empty_isEmpty",
           "line": 494,
           "called": [
             "NoDupList",
@@ -249377,7 +249377,7 @@
         },
         {
           "kind": "def",
-          "name": "r4c_noDupList_consWithGuard",
+          "name": "noDupList_consWithGuard",
           "line": 501,
           "called": [
             "NoDupList",
@@ -249391,7 +249391,7 @@
         },
         {
           "kind": "def",
-          "name": "r4c_noDupList_consWithGuard",
+          "name": "noDupList_consWithGuard",
           "line": 513,
           "called": [
             "NoDupList",
@@ -249405,7 +249405,7 @@
         },
         {
           "kind": "def",
-          "name": "r4c_noDupList_tail",
+          "name": "noDupList_tail",
           "line": 525,
           "called": [
             "NoDupList",
@@ -249419,7 +249419,7 @@
         },
         {
           "kind": "def",
-          "name": "r4c_noDupList_tail",
+          "name": "noDupList_tail",
           "line": 532,
           "called": [
             "NoDupList",
@@ -249435,7 +249435,7 @@
         },
         {
           "kind": "def",
-          "name": "r4c_noDupList_filter_preserves_membership",
+          "name": "noDupList_filter_preserves_membership",
           "line": 549,
           "called": [
             "NoDupList",
@@ -249450,7 +249450,7 @@
         },
         {
           "kind": "def",
-          "name": "r4c_noDupList_nodup_witness",
+          "name": "noDupList_nodup_witness",
           "line": 564,
           "called": [
             "NoDupList",
@@ -249462,12 +249462,11 @@
         },
         {
           "kind": "def",
-          "name": "r4c_consWithGuard",
+          "name": "consWithGuard",
           "line": 571,
           "called": [
             "NoDupList",
             "ThreadId",
-            "consWithGuard",
             "empty",
             "expect",
             "none",
@@ -249476,15 +249475,14 @@
         },
         {
           "kind": "def",
-          "name": "r4c_tail",
+          "name": "tail",
           "line": 583,
           "called": [
             "NoDupList",
             "ThreadId",
             "empty",
             "expect",
-            "none",
-            "tail"
+            "none"
           ]
         },
         {
@@ -250736,6 +250734,8 @@
             "cdtNodeId_sentinel_isReserved",
             "checkCrossSubsystemInvariant_covers_all_predicates",
             "checkCrossSubsystemInvariant_detects_lockstep_violation",
+            "cnode_slotsUnique_holds_witness",
+            "consWithGuard",
             "cptr_toValid_rejects_null",
             "crossSubsystemInvariant_default_has_lockstep",
             "cspaceCopy_from_null_rejected",
@@ -250776,28 +250776,20 @@
             "messageInfo_mkChecked_rejects_oversize_length",
             "messageInfo_wellFormed_sound",
             "mintReplyCap_derives_backed_reply_cap",
+            "noDupList_consWithGuard",
+            "noDupList_empty_isEmpty",
+            "noDupList_filter_preserves_membership",
+            "noDupList_nodup_witness",
+            "noDupList_tail",
             "nullCapability_distinct_from_invalidCapability",
             "objectKind_variants_pairwise_distinct",
             "pagePermissions_toNat_ofNat_roundtrip",
             "pendingReceiveReply_stash_injective",
             "r4_close_out_named_theorems_reachable",
-            "r4a_cnode_slotsUnique_holds_witness",
-            "r4a_uniqueSlotMap_empty_size_zero",
-            "r4a_uniqueSlotMap_erase_removes",
-            "r4a_uniqueSlotMap_insert_then_get",
-            "r4a_uniqueSlotMap_keys_unique_witness",
-            "r4a_uniqueSlotMap_ofListWF_roundtrip",
             "r4b_lifecyclePreRetypeCleanupWithToken_reachable",
             "r4b_mkRetypeTarget_reachable",
             "r4b_scrubToken_canonical_introduction_only",
             "r4b_scrubToken_to_retypeTarget_endToEnd",
-            "r4c_consWithGuard",
-            "r4c_noDupList_consWithGuard",
-            "r4c_noDupList_empty_isEmpty",
-            "r4c_noDupList_filter_preserves_membership",
-            "r4c_noDupList_nodup_witness",
-            "r4c_noDupList_tail",
-            "r4c_tail",
             "readMemChecked_out_of_range_none",
             "replyCallerLinkage_holds_at_call_rendezvous_boundary",
             "replyCapPointsToValidReply_distinguishes_backed_and_dangling",
@@ -250814,9 +250806,15 @@
             "storeObjectKindChecked_tcb_to_schedContext_rejected",
             "storeObject_preserves_lockstep_under_crossSubsystemInvariant",
             "storeObject_updates_objects_and_objectTypes_in_lockstep",
+            "tail",
             "tcb_ext_reflexive",
             "threadId_toValid_accepts_nonsentinel",
             "threadId_toValid_rejects_sentinel",
+            "uniqueSlotMap_empty_size_zero",
+            "uniqueSlotMap_erase_removes",
+            "uniqueSlotMap_insert_then_get",
+            "uniqueSlotMap_keys_unique_witness",
+            "uniqueSlotMap_ofListWF_roundtrip",
             "vspaceRoot_noPhysicalFrameCollision_empty",
             "writeMemChecked_out_of_range_none"
           ]
@@ -257333,7 +257331,7 @@
     {
       "module": "tests.RwLockDeferredSuite",
       "path": "tests/RwLockDeferredSuite.lean",
-      "declaration_count": 31,
+      "declaration_count": 46,
       "declarations": [
         {
           "kind": "namespace",
@@ -257481,51 +257479,14 @@
           ]
         },
         {
-          "kind": "example",
-          "name": "<anonymous:example:192>",
-          "line": 192,
+          "kind": "def",
+          "name": "d1Exec",
+          "line": 209,
           "called": [
-            "RwLockState",
-            "c0",
-            "c1",
-            "c2",
-            "c3",
-            "writerWaitDepth"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:198>",
-          "line": 198,
-          "called": [
-            "RwLockState",
-            "c0",
-            "c1",
-            "c2",
-            "c3",
-            "writerWaitDepth"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:204>",
-          "line": 204,
-          "called": [
-            "RwLockState",
-            "c0",
-            "c1",
-            "c2",
-            "c3",
-            "writerWaitDepth"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:211>",
-          "line": 211,
-          "called": [
-            "applyOp",
-            "c0"
+            "RwLockExecution",
+            "RwLockOp",
+            "RwLockState.unheld",
+            "initial"
           ]
         },
         {
@@ -257533,14 +257494,204 @@
           "name": "<anonymous:example:214>",
           "line": 214,
           "called": [
+            "admissionStep",
+            "c0",
+            "d1Exec"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:220>",
+          "line": 220,
+          "called": [
+            "c0",
+            "d1Exec",
+            "enqueueStep",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "d1ReaderBatch",
+          "line": 225,
+          "called": [
+            "RwLockExecution",
+            "c0",
+            "c1",
+            "c2",
+            "d1Exec"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:229>",
+          "line": 229,
+          "called": [
+            "c1",
+            "enqueueStep"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:230>",
+          "line": 230,
+          "called": [
+            "c2",
+            "enqueueStep"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:231>",
+          "line": 231,
+          "called": [
+            "admissionStep",
+            "c1",
+            "c2"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "d1WriterAfterReaders",
+          "line": 237,
+          "called": [
+            "RwLockExecution",
+            "c0",
+            "c1",
+            "c2",
+            "d1Exec"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:241>",
+          "line": 241,
+          "called": [
+            "admissionStep",
+            "c0"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:242>",
+          "line": 242,
+          "called": [
+            "c2",
+            "enqueueStep"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:243>",
+          "line": 243,
+          "called": [
+            "admissionStep",
+            "c2"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "d1FifoWriters",
+          "line": 250,
+          "called": [
+            "RwLockExecution",
+            "c0",
+            "c1",
+            "c2",
+            "d1Exec"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "d1FifoWriters_cancelFree",
+          "line": 254,
+          "called": [
+            "cancelFree"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "d1_earlier_writer_is_admitted_no_later",
+          "line": 256,
+          "called": [
+            "admissionStep",
+            "c1",
+            "c2",
+            "d1FifoWriters",
+            "noCancelIn",
+            "rwLock_fifo_admission_temporal"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:265>",
+          "line": 265,
+          "called": [
+            "admissionStep",
+            "c1"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:268>",
+          "line": 268,
+          "called": [
+            "RwLockState",
+            "c0",
+            "c1",
+            "c2",
+            "c3",
+            "writerWaitDepth"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:274>",
+          "line": 274,
+          "called": [
+            "RwLockState",
+            "c0",
+            "c1",
+            "c2",
+            "c3",
+            "writerWaitDepth"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:280>",
+          "line": 280,
+          "called": [
+            "RwLockState",
+            "c0",
+            "c1",
+            "c2",
+            "c3",
+            "writerWaitDepth"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:287>",
+          "line": 287,
+          "called": [
             "applyOp",
             "c0"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:218>",
-          "line": 218,
+          "name": "<anonymous:example:290>",
+          "line": 290,
+          "called": [
+            "applyOp",
+            "c0"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:294>",
+          "line": 294,
           "called": [
             "applyOp",
             "c0",
@@ -257549,8 +257700,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:223>",
-          "line": 223,
+          "name": "<anonymous:example:299>",
+          "line": 299,
           "called": [
             "RwLockState",
             "c0",
@@ -257559,8 +257710,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:230>",
-          "line": 230,
+          "name": "<anonymous:example:306>",
+          "line": 306,
           "called": [
             "RwLockState",
             "c0",
@@ -257572,8 +257723,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:238>",
-          "line": 238,
+          "name": "<anonymous:example:314>",
+          "line": 314,
           "called": [
             "c0",
             "concreteApplyOp"
@@ -257581,8 +257732,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:241>",
-          "line": 241,
+          "name": "<anonymous:example:317>",
+          "line": 317,
           "called": [
             "c0",
             "concreteApplyOp"
@@ -257590,8 +257741,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:244>",
-          "line": 244,
+          "name": "<anonymous:example:320>",
+          "line": 320,
           "called": [
             "c0",
             "concreteApplyOp"
@@ -257599,8 +257750,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:247>",
-          "line": 247,
+          "name": "<anonymous:example:323>",
+          "line": 323,
           "called": [
             "c0",
             "concreteApplyOp"
@@ -257608,8 +257759,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:251>",
-          "line": 251,
+          "name": "<anonymous:example:327>",
+          "line": 327,
           "called": [
             "c0",
             "concreteApplyOp"
@@ -257617,16 +257768,16 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:255>",
-          "line": 255,
+          "name": "<anonymous:example:331>",
+          "line": 331,
           "called": [
             "MAX_RELEASE_DELAY"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:261>",
-          "line": 261,
+          "name": "<anonymous:example:337>",
+          "line": 337,
           "called": [
             "FairTrace",
             "RwLockExecution",
@@ -257636,8 +257787,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:275>",
-          "line": 275,
+          "name": "<anonymous:example:351>",
+          "line": 351,
           "called": [
             "RwLockExecution",
             "RwLockState.unheld",
@@ -257647,8 +257798,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:288>",
-          "line": 288,
+          "name": "<anonymous:example:364>",
+          "line": 364,
           "called": [
             "RwLockExecution",
             "RwLockState.unheld",
@@ -257659,8 +257810,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:306>",
-          "line": 306,
+          "name": "<anonymous:example:382>",
+          "line": 382,
           "called": [
             "AccessMode",
             "CoreId"
@@ -257668,8 +257819,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:311>",
-          "line": 311,
+          "name": "<anonymous:example:387>",
+          "line": 387,
           "called": [
             "RwLockState",
             "c0",
@@ -257682,8 +257833,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:321>",
-          "line": 321,
+          "name": "<anonymous:example:397>",
+          "line": 397,
           "called": [
             "RwLockState",
             "c0",
@@ -257695,8 +257846,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:332>",
-          "line": 332,
+          "name": "<anonymous:example:408>",
+          "line": 408,
           "called": [
             "RwLockState",
             "c0",
@@ -257708,8 +257859,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:340>",
-          "line": 340,
+          "name": "<anonymous:example:416>",
+          "line": 416,
           "called": [
             "RwLockState",
             "c0",
@@ -257721,8 +257872,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:347>",
-          "line": 347,
+          "name": "<anonymous:example:423>",
+          "line": 423,
           "called": [
             "RwLockState",
             "c0",
@@ -257736,13 +257887,13 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 358,
+          "line": 434,
           "called": []
         },
         {
           "kind": "def",
           "name": "runDeferredChecks",
-          "line": 365,
+          "line": 441,
           "called": [
             "ConcreteRwLockOp",
             "MAX_RELEASE_DELAY",
@@ -257764,7 +257915,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 469,
+          "line": 545,
           "called": [
             "runDeferredChecks"
           ]

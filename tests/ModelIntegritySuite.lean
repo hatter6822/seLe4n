@@ -423,13 +423,13 @@ def nullCapability_distinct_from_invalidCapability : IO Unit := do
 -- ============================================================================
 
 /-- WS-RC R4.A: `UniqueSlotMap.empty` produces an empty map. -/
-def r4a_uniqueSlotMap_empty_size_zero : IO Unit := do
+def uniqueSlotMap_empty_size_zero : IO Unit := do
   let u : SeLe4n.UniqueSlotMap Capability := SeLe4n.UniqueSlotMap.empty
   expect "UniqueSlotMap.empty.size = 0" (u.size = 0)
   expect "UniqueSlotMap.empty.get? returns none" (u.get? (SeLe4n.Slot.ofNat 0) = none)
 
 /-- WS-RC R4.A: `UniqueSlotMap.insert` then `.get?` round-trips. -/
-def r4a_uniqueSlotMap_insert_then_get : IO Unit := do
+def uniqueSlotMap_insert_then_get : IO Unit := do
   let cap : Capability :=
     { target := .object ⟨1⟩, rights := AccessRightSet.empty, badge := none }
   let u : SeLe4n.UniqueSlotMap Capability :=
@@ -440,7 +440,7 @@ def r4a_uniqueSlotMap_insert_then_get : IO Unit := do
     (u.get? (SeLe4n.Slot.ofNat 6) = none)
 
 /-- WS-RC R4.A: `UniqueSlotMap.erase` removes the slot. -/
-def r4a_uniqueSlotMap_erase_removes : IO Unit := do
+def uniqueSlotMap_erase_removes : IO Unit := do
   let cap : Capability :=
     { target := .object ⟨1⟩, rights := AccessRightSet.empty, badge := none }
   let u := (SeLe4n.UniqueSlotMap.empty.insert (SeLe4n.Slot.ofNat 3) cap).erase
@@ -450,7 +450,7 @@ def r4a_uniqueSlotMap_erase_removes : IO Unit := do
 
 /-- WS-RC R4.A: `UniqueSlotMap.ofListWF` builds from a list of (slot, cap)
     pairs and exposes every entry via `get?`. -/
-def r4a_uniqueSlotMap_ofListWF_roundtrip : IO Unit := do
+def uniqueSlotMap_ofListWF_roundtrip : IO Unit := do
   let cap1 : Capability :=
     { target := .object ⟨10⟩, rights := AccessRightSet.empty, badge := none }
   let cap2 : Capability :=
@@ -465,7 +465,7 @@ def r4a_uniqueSlotMap_ofListWF_roundtrip : IO Unit := do
 /-- WS-RC R4.A: `UniqueSlotMap.keys_unique` is the structural discharge for
     `cspaceSlotUnique`; verifies that every `UniqueSlotMap` satisfies
     `invExtK` by construction. -/
-def r4a_uniqueSlotMap_keys_unique_witness : IO Unit := do
+def uniqueSlotMap_keys_unique_witness : IO Unit := do
   let cap : Capability :=
     { target := .object ⟨1⟩, rights := AccessRightSet.empty, badge := none }
   let u : SeLe4n.UniqueSlotMap Capability :=
@@ -477,7 +477,7 @@ def r4a_uniqueSlotMap_keys_unique_witness : IO Unit := do
 
 /-- WS-RC R4.A: `CNode.slotsUnique_holds` discharges the state-level
     `cspaceSlotUnique` invariant trivially via `.slots.hWF`. -/
-def r4a_cnode_slotsUnique_holds_witness : IO Unit := do
+def cnode_slotsUnique_holds_witness : IO Unit := do
   let cap : Capability :=
     { target := .object ⟨1⟩, rights := AccessRightSet.empty, badge := none }
   let cn : CNode :=
@@ -491,14 +491,14 @@ def r4a_cnode_slotsUnique_holds_witness : IO Unit := do
 -- ============================================================================
 
 /-- WS-RC R4.C: `NoDupList.empty` is empty. -/
-def r4c_noDupList_empty_isEmpty : IO Unit := do
+def noDupList_empty_isEmpty : IO Unit := do
   let l : SeLe4n.NoDupList ThreadId := SeLe4n.NoDupList.empty
   expect "NoDupList.empty.val = []" (l.val = [])
   expect "NoDupList.empty.isEmpty" l.isEmpty
 
 /-- WS-RC R4.C: `NoDupList.consWithGuard?` returns `some` for a fresh
     element. -/
-def r4c_noDupList_consWithGuard?_fresh_element : IO Unit := do
+def noDupList_consWithGuard?_fresh_element : IO Unit := do
   let l : SeLe4n.NoDupList ThreadId := SeLe4n.NoDupList.empty
   let tid : ThreadId := ⟨42⟩
   match l.consWithGuard? tid with
@@ -510,7 +510,7 @@ def r4c_noDupList_consWithGuard?_fresh_element : IO Unit := do
 
 /-- WS-RC R4.C: `NoDupList.consWithGuard?` returns `none` for a duplicate
     element. This is the operational duplicate-guard subsumption. -/
-def r4c_noDupList_consWithGuard?_duplicate_rejected : IO Unit := do
+def noDupList_consWithGuard?_duplicate_rejected : IO Unit := do
   let tid : ThreadId := ⟨42⟩
   -- Build a NoDupList containing `tid` via the smart constructor.
   match (SeLe4n.NoDupList.empty : SeLe4n.NoDupList ThreadId).consWithGuard? tid with
@@ -522,14 +522,14 @@ def r4c_noDupList_consWithGuard?_duplicate_rejected : IO Unit := do
     | some _ => throw <| IO.userError "consWithGuard? accepted duplicate"
 
 /-- WS-RC R4.C: `NoDupList.tail?` returns `none` for empty list. -/
-def r4c_noDupList_tail?_empty : IO Unit := do
+def noDupList_tail?_empty : IO Unit := do
   let l : SeLe4n.NoDupList ThreadId := SeLe4n.NoDupList.empty
   match l.tail? with
   | none => expect "tail? on empty returns none" true
   | some _ => throw <| IO.userError "tail? returned some on empty"
 
 /-- WS-RC R4.C: `NoDupList.tail?` pops the head correctly. -/
-def r4c_noDupList_tail?_pop_head : IO Unit := do
+def noDupList_tail?_pop_head : IO Unit := do
   let tid1 : ThreadId := ⟨1⟩
   let tid2 : ThreadId := ⟨2⟩
   match (SeLe4n.NoDupList.empty : SeLe4n.NoDupList ThreadId).consWithGuard? tid2 with
@@ -546,7 +546,7 @@ def r4c_noDupList_tail?_pop_head : IO Unit := do
         expect "tail? tail.val = [tid2]" (rest.val = [tid2])
 
 /-- WS-RC R4.C: `NoDupList.filter` preserves Nodup unconditionally. -/
-def r4c_noDupList_filter_preserves_membership : IO Unit := do
+def noDupList_filter_preserves_membership : IO Unit := do
   let tid1 : ThreadId := ⟨1⟩
   let tid2 : ThreadId := ⟨2⟩
   match (SeLe4n.NoDupList.empty : SeLe4n.NoDupList ThreadId).consWithGuard? tid2 with
@@ -561,14 +561,14 @@ def r4c_noDupList_filter_preserves_membership : IO Unit := do
 
 /-- WS-RC R4.C: `NoDupList.nodup_witness` is the structural discharge for
     `uniqueWaiters`. -/
-def r4c_noDupList_nodup_witness : IO Unit := do
+def noDupList_nodup_witness : IO Unit := do
   let l : SeLe4n.NoDupList ThreadId := SeLe4n.NoDupList.empty
   let _hNd : l.val.Nodup := SeLe4n.NoDupList.nodup_witness l
   expect "NoDupList.nodup_witness is reachable" true
 
 /-- WS-RC R4.C: `consWithGuard?_eq_some_iff` bridge — links runtime `some`
     return to underlying-list cons equation. -/
-def r4c_consWithGuard?_eq_some_iff_bridge : IO Unit := do
+def consWithGuard?_eq_some_iff_bridge : IO Unit := do
   let tid : ThreadId := ⟨7⟩
   match (SeLe4n.NoDupList.empty : SeLe4n.NoDupList ThreadId).consWithGuard? tid with
   | none => throw <| IO.userError "consWithGuard? rejected fresh"
@@ -580,7 +580,7 @@ def r4c_consWithGuard?_eq_some_iff_bridge : IO Unit := do
     expect "consWithGuard?_eq_some_iff bridge reachable" true
 
 /-- WS-RC R4.C: `tail?_eq_none_iff` bridge for empty list. -/
-def r4c_tail?_eq_none_iff_bridge_empty : IO Unit := do
+def tail?_eq_none_iff_bridge_empty : IO Unit := do
   let l : SeLe4n.NoDupList ThreadId := SeLe4n.NoDupList.empty
   let _hForward : l.tail? = none ↔ l.val = [] :=
     SeLe4n.NoDupList.tail?_eq_none_iff l
@@ -2371,22 +2371,22 @@ def main : IO Unit := do
   cspaceMutate_from_null_rejected
   nullCapability_distinct_from_invalidCapability
   -- WS-RC R4.A (DEEP-MODEL-01) — UniqueSlotMap structural API coverage
-  r4a_uniqueSlotMap_empty_size_zero
-  r4a_uniqueSlotMap_insert_then_get
-  r4a_uniqueSlotMap_erase_removes
-  r4a_uniqueSlotMap_ofListWF_roundtrip
-  r4a_uniqueSlotMap_keys_unique_witness
-  r4a_cnode_slotsUnique_holds_witness
+  uniqueSlotMap_empty_size_zero
+  uniqueSlotMap_insert_then_get
+  uniqueSlotMap_erase_removes
+  uniqueSlotMap_ofListWF_roundtrip
+  uniqueSlotMap_keys_unique_witness
+  cnode_slotsUnique_holds_witness
   -- WS-RC R4.C (DEEP-IPC-05; subsumes DEEP-IPC-01) — NoDupList structural API coverage
-  r4c_noDupList_empty_isEmpty
-  r4c_noDupList_consWithGuard?_fresh_element
-  r4c_noDupList_consWithGuard?_duplicate_rejected
-  r4c_noDupList_tail?_empty
-  r4c_noDupList_tail?_pop_head
-  r4c_noDupList_filter_preserves_membership
-  r4c_noDupList_nodup_witness
-  r4c_consWithGuard?_eq_some_iff_bridge
-  r4c_tail?_eq_none_iff_bridge_empty
+  noDupList_empty_isEmpty
+  noDupList_consWithGuard?_fresh_element
+  noDupList_consWithGuard?_duplicate_rejected
+  noDupList_tail?_empty
+  noDupList_tail?_pop_head
+  noDupList_filter_preserves_membership
+  noDupList_nodup_witness
+  consWithGuard?_eq_some_iff_bridge
+  tail?_eq_none_iff_bridge_empty
   -- WS-RC R4 close-out P1: plan-named theorem reachability gate
   r4_close_out_named_theorems_reachable
   -- WS-RC R4 close-out B1: ScrubToken structural-opacity security pin

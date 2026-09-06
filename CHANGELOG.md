@@ -1,3 +1,98 @@
+## v0.34.87 — the tests that were not testing
+
+**WS-RR RR7.37** — three §7 test-surface findings.  Two are what they say on the
+tin; the third opened a defect an order of magnitude larger than itself.
+
+**Finding 59 — the D-1 fixtures the acceptance gate asks for.**
+`SMP_RWLOCK_DEFERRED_COMPLETION_PLAN` §8's D-1 row requires "≥3 `decide`-checked
+test fixtures (success, reader-batching tie, writer-after-readers)".  The
+theorem and the Tier-3 anchor had been in place since D-1.9; every `decide` in
+`RwLockDeferredSuite` was over `applyOp`, `writerWaitDepth` or the concrete
+event model, so the *temporal* claim — the one the row is about — had no
+executable witness for the whole interval.
+
+All three now exist over `enqueueStep` / `admissionStep`, on executions seeded
+at `unheld` so the whole admission machinery reduces:
+
+- **success** — a lone writer is admitted at step 1, and `enqueueStep` answers
+  `none`, because it was never a *waiter*.  The pair is deliberate: an admission
+  with no enqueue is exactly the shape D-1.9's `h_enqueue` premises exclude, and
+  a fixture checking only the admission would not show why the premise is there.
+- **reader-batching tie** — two readers queue behind a writer at steps 2 and 3
+  and are admitted at the *same* step 4, because the release promotes the whole
+  leading reader run at once.
+- **writer-after-readers** — a writer queued behind two readers waits for the
+  last of them (step 5), not the first (step 1).
+
+And the theorem itself is **instantiated**: on a two-writer trace,
+`rwLock_fifo_admission_temporal` yields an admission step for the earlier writer
+that does not exceed the later one's, with every premise — the WS-LC LC1
+no-withdrawal window included — discharged by `decide` on that trace rather than
+assumed, and a further fixture pinning that the witness it produces is the step
+the trace actually admits at, so the conclusion is not merely satisfiable.
+
+**Finding 74 — identifiers that name a sub-task instead of a subject.**  The
+fifteen `r4a_` / `r4c_` test names in `ModelIntegritySuite` are renamed to what
+they test.  `check_identifier_naming.py` cannot catch them and correctly does
+not try: `r` is a *declined* single-letter family with its measurement recorded
+in the script (105 collisions — ARM registers `r0`/`r1`, `hR0` hypotheses), so
+enforcing it would flag register names.  This is the internal-first rule holding
+in the one place no scanner can hold it.
+
+**Finding 84 — a test asserting a fact about a constant.**
+`svc_stub_returns_not_implemented` asserted `error_code::NOT_IMPLEMENTED != 0`:
+true before the handler existed, and still true if the handler were deleted.
+Its prose ("the SVC handler is a pre-FFI stub") had been retired twice over —
+AN9-F wired the real dispatch, WS-RR RR5 put the readiness gate ahead of it.
+Replaced by the property the old test *meant*, driven through the seam: an SVC
+exception through `handle_synchronous_exception` publishes a status label that
+is never the success label 0 and never below `ERROR_LABEL_BASE`.  It is
+deliberately weaker than the fixture pinning the exact discriminant, so it
+survives a change to which error is returned and still fails if the arm ever
+leaves `x1` untouched — the fail-open shape ABI v3 exists to remove.
+
+**The sweep that finding opened is the larger half.**  Writing that test
+revealed it *aborts the entire library test binary*.  `fatal_halt` panics on the
+host lane; reached through a plain Rust helper it unwinds and a
+`#[should_panic]` test observes it, but reached through an `extern "C"` entry
+Rust's abort-on-unwind guard turns it into a process abort that takes every
+other test down with it.  And the library binary's readiness bit is **owned** by
+`timer::…per_core_timer_tick_isr_never_advances_global_tick_count`, which
+asserts the bit unset when it starts and sets it partway through — its own
+docstring says "the leading assert fails loudly if a future test claims the
+bit".  Two existing library tests drove an `SVC` through the handler and so
+passed only when cargo happened to schedule that timer test first.  One
+scheduling decision away from failing the whole `test_rust.sh` gate for reasons
+unrelated to the change under test.
+
+All three now live in `tests/readiness_gate_after_mark.rs`, whose header already
+explains why such tests belong there and which marks the executing core itself.
+`build.rs` keeps the class closed:
+
+- The halting seam set is **derived**, not listed: a fixpoint over the crate's
+  own call graph, seeded from the functions calling a `halt_*_before_lean_ready`
+  helper and kept to those that are `extern "C"` — the ones whose halt aborts
+  rather than unwinds.  A new halting seam is covered the day it is written, and
+  a scanner that finds no seed helper *stops the build* rather than passing.
+- It reads the **host** build's view, so a halt compiled only under
+  `hw_target` — `deliver_fault`'s — is not one, which is why the abort-driving
+  tests are not offenders while the SVC-driving ones are.
+- The arm a call takes is not decidable from a call graph, so the relation
+  checked is the canonical spelling this project writes to select it: the test
+  puts an `SVC` EC in the frame.  That limit is stated at the check rather than
+  assumed away.
+
+Five witnesses, every mutation token-preserving — the same call and constant
+moved out of the test module, onto another exception class, behind the
+`hw_target` cfg, or reduced to a mention that is not a call.  One of them caught
+a defect in the scanner itself: it searched the *strings-blanked* view for a
+marker whose predicate is a string literal, so `#[cfg(feature = "hw_target")]`
+read as `#[cfg(feature = "         ")]` and it had been blanking no block at
+all.  The structure comes from the string-free view; only the text a predicate
+is *about* comes from the aligned kept one.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §7 (RR7.37)
+
 ## v0.34.86 — the relation the live kernel keeps
 
 **WS-RR RR7.36** — register §7 finding 42, the boot-core-pinned thread-state
