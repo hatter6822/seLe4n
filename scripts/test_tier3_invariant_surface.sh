@@ -4620,6 +4620,27 @@ run_negative_check "INVARIANT" rg -n 'releaseAll lockCore' SeLe4n/Kernel/Syscall
 # unbracketed frame, and releases every member.
 run_check "INVARIANT" rg -n 'runDeclaredFootprintBracketChecks' tests/SmpCrossCoreCallSuite.lean
 run_check "INVARIANT" rg -n 'the bracket takes the COMMITTED arm' tests/SmpCrossCoreCallSuite.lean
+# WS-RR RR7.13: the gate that keeps RR7.12 true.  Every `@[export]` whose body
+# can reach a kernel-state commit is classified — bracketed, or unbracketed with
+# a recorded reason — and the SET is derived from the elaborated environment
+# rather than listed, so a new committing seam fails on the day it is written.
+# The check IS the module's elaboration (Tier 1 builds it); these anchors pin
+# that it is wired, that both reconciliation directions exist, and that the
+# planted bare-commit witness is there.
+run_check "INVARIANT" rg -n 'lake build SeLe4n.Testing.ExportCommitDisciplineCensus' scripts/test_tier1_build.sh
+run_check "INVARIANT" rg -n '^def commitDisciplineRegistry' SeLe4n/Testing/ExportCommitDisciplineCensus.lean
+run_check "INVARIANT" rg -n '^def reconciliationViolations' SeLe4n/Testing/ExportCommitDisciplineCensus.lean
+run_check "INVARIANT" rg -n 'censusWitnessBareCommit' SeLe4n/Testing/ExportCommitDisciplineCensus.lean
+run_check "INVARIANT" rg -n 'censusWitnessIndirectCommit' SeLe4n/Testing/ExportCommitDisciplineCensus.lean
+# The registry is reconciled BOTH ways: an unrecorded seam overstates nothing
+# and hides a gap, a stale entry overstates coverage.  A one-way check would
+# pass while the registry drifted in the direction that matters.
+run_check "INVARIANT" rg -n 'an UNRECORDED state-committing export was accepted' SeLe4n/Testing/ExportCommitDisciplineCensus.lean
+run_check "INVARIANT" rg -n 'a stale registry entry was accepted' SeLe4n/Testing/ExportCommitDisciplineCensus.lean
+# NEGATIVE: the census must not fall back to reading Lean source.  The question
+# is which constants a body reaches, and eleven review rounds against
+# `check_kernel_entry_exports.py` are the evidence that a scanner gets it wrong.
+run_negative_check "INVARIANT" rg -n 'IO.FS.readFile|System.FilePath' SeLe4n/Testing/ExportCommitDisciplineCensus.lean
 # PR #873 round 14: **the frozen/live correspondence, as something that runs.**
 # Each frozen operation re-implements a live transition, and which one it
 # re-implements was recorded in a markdown table and a `mirrors X` sentence.

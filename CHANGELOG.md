@@ -1,3 +1,82 @@
+## v0.34.66 — how much of the kernel brackets, measured
+
+**WS-RR RR7.13** — fine locks, Track C: the export-body gate that keeps RR7.12
+true.
+
+RR7.12 made the syscall seam acquire the footprint `lockSetForSyscall` declares.
+What keeps that true is not the code that does it — it is that the *next* seam
+cannot quietly skip it.
+
+`SeLe4n/Testing/ExportCommitDisciplineCensus.lean` is that gate, and it is
+decided by the elaborator: building the module *is* the check, as
+`BootEntryContract` is, and `scripts/test_tier1_build.sh` builds it on every
+push.
+
+### What it decides
+
+The subject is every `@[export]` declaration whose body can reach a
+kernel-state commit — a write to `Platform.FFI.kernelStateRef` through
+`modifyGetKernelState`, `updateKernelState` or `initialiseKernelState`.  The
+answers are two, and both are legitimate: **bracketed**, meaning the body
+reaches `runUnderDeclaredLockSet` or `Concurrency.withLockSet` so its transition
+runs inside a declared footprint; or **unbracketed**, which is sound — the SM5.I
+global kernel-entry ticket lock still serialises every commit — and is admitted
+only with a recorded reason.
+
+**Seven seams commit; two bracket.**  The syscall entry (RR7.12) and the raw
+`suspend_thread_cross_core` (SM3.C.9).  The five that do not each name why:
+`lean_per_core_timer_tick`, `lean_per_core_reschedule` and
+`lean_secondary_kernel_main` commit run-queue and replenish-queue state, whose
+locks are `SchedLockId`s and not members of any `LockSet` — the registered
+`UncoveredLockDomain.schedulerDomain`; `lean_handle_fault` and
+`lean_handle_unknown_syscall` deliver a fault, and a fault is not a syscall, so
+`lockSetForSyscall` declares no footprint for one.
+
+That figure is the project's coverage claim, and it is now read off a list the
+build reconciles rather than off prose.
+
+### Derived, not listed
+
+The set comes from the environment — transitive `Expr.getUsedConstants`
+reachability — and is reconciled against the registry in **both** directions.
+An unrecorded seam is the dangerous one: a new `@[export]` that commits and is
+nowhere in the registry has silently joined the unbracketed majority, which is
+exactly how a fine-lock claim stops being true without anyone editing it.  A
+stale entry is the other: it overstates coverage.
+
+Why the elaborator and not a scanner: this is a question about which constants a
+body reaches, and `getUsedConstants` returns constants, which have one
+definition each.  The eleven review rounds against
+`scripts/check_kernel_entry_exports.py` are the evidence for what a text scanner
+does with the same question.
+
+The walk **over-approximates** — a constant mentioned in a branch never taken
+counts as reached — and says so.  That is the fail-closed direction for a census
+deciding *must be classified*.  It does not try to decide whether the commit is
+*dominated* by the acquire; that is a question about what a program does, and
+PR #889 rounds 18–21 are four consecutive findings against a hand-written
+analysis that tried.  The walk is fuel-bounded and an exhausted walk answers
+"reaches", so a changed graph shape fails the census rather than passing it.
+
+### The self-test
+
+Witnesses, in the module, held against the same predicate the registry entries
+are — and none of them exported, so they emit no symbol.  A planted
+**bare-commit** body (the shape the row exists to catch) must be refused as
+bracketed and accepted only with a recorded reason; an empty reason must be
+refused; a bracketed body recorded as unbracketed must be refused too, since the
+registry understating coverage is as silent as overstating it; a commit reached
+only through a helper must be seen, so the walk is transitive rather than one
+level deep; a read-only body must not be seen to commit.  The derived-set
+reconciliation is a pure function over two lists and is self-tested on synthetic
+inputs — exercising it in place would mean planting a committing `@[export]`,
+which emits a real symbol into the kernel's archive.
+
+Verified by mutation as well: exporting the bare-commit witness fails the build
+with the unclassified-seam message.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md RR7.13
+
 ## v0.34.65 — the syscall seam acquires what it declares
 
 **WS-RR RR7.12** — fine locks, Track C: bracket the dispatch body.  **This is

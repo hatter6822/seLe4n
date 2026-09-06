@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.65.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.66.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,7 +203,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~54871 lines)
+- `CHANGELOG.md` (~54950 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22614 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12018 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
@@ -213,7 +213,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~5186 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5130 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5001 lines)
-- `docs/spec/SELE4N_SPEC.md` (~4822 lines)
+- `docs/spec/SELE4N_SPEC.md` (~4835 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4750 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `SeLe4n/Model/State.lean` (~4503 lines)
@@ -1481,6 +1481,19 @@ code may assume:
   and replenish-queue state under the SM5.I global entry lock only, which is
   `UncoveredLockDomain.schedulerDomain` and RR7.39's row.  So live WCRT is still
   the global lock's, and `PerCoreWcrt.lean` says which half acquires.
+  **How much of the kernel that is, is measured rather than asserted** (RR7.13,
+  v0.34.66): `SeLe4n/Testing/ExportCommitDisciplineCensus.lean` derives the
+  state-committing `@[export]` set from the elaborated environment — transitive
+  `getUsedConstants` reachability to a `kernelStateRef` write — and reconciles it
+  against a registry in **both** directions, so an unclassified committing seam
+  and a stale entry are each a build failure.  **Seven seams commit; two
+  bracket.**  A body recorded `bracketed` must reach `runUnderDeclaredLockSet` or
+  `Concurrency.withLockSet`; one recorded `unbracketed` must carry a reason.  New
+  code adding an `@[export]` that commits kernel state must classify it there —
+  that is where the project's coverage figure is read off, and the two
+  fault-delivery seams (`lean_handle_fault`, `lean_handle_unknown_syscall`) are
+  recorded unbracketed because a fault is not a syscall and `lockSetForSyscall`
+  declares no footprint for one.
 - **SM3.C.9's `@[export]` body migration is otherwise deferred**: outside the
   syscall seam and the raw `suspend_thread_cross_core` entry, the bodies are not
   wrapped in `withLockSet`, so the per-object fine locks remain a model-level

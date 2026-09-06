@@ -49,9 +49,9 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.34.65` (`lakefile.toml`) |
+| **Package version** | `0.34.66` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 334,551 across 312 Lean files |
+| **Production LoC** | 334,904 across 313 Lean files |
 | **Test LoC** | 69,613 across 70 Lean test suites |
 | **Proved declarations** | 11,129 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
@@ -1777,6 +1777,19 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    bring-up entry commit under the SM5.I global kernel-entry lock only
    (`UncoveredLockDomain.schedulerDomain`, WS-RR RR7.39) — so live WCRT
    remains that lock's.
+
+   *And how much of the kernel that is, is measured* (WS-RR RR7.13,
+   `v0.34.66`).  `SeLe4n/Testing/ExportCommitDisciplineCensus.lean`
+   derives the state-committing `@[export]` set from the elaborated
+   environment — transitive `Expr.getUsedConstants` reachability from
+   each export to a `kernelStateRef` write — and reconciles it against
+   a registry in both directions, so an unclassified committing seam
+   and a stale entry are each a build failure.  **Seven seams commit;
+   two bracket.**  A record of `bracketed` must be substantiated by
+   reachability to a bracket form; one of `unbracketed` must carry a
+   reason.  Building the module is the check, and its witnesses — a
+   planted bare-commit body, a commit reached only through a helper, a
+   read-only body — keep it from passing vacuously.
 
    **SM3.C.11 — dynamic PIP chain-walk locking**: the 3 PIP-invoking
    transitions (`.call`/`.reply`/`.replyRecv`) walk a blocking chain

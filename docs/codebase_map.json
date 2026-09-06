@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/rr7-medium-severity-sweep-tn327q",
-      "commit_sha": "b423a3ed82400720670d8ba396252c02637adb89",
-      "tree_sha": "4a0e8e61de1072ec43e2d0f22db6b211a35775ba",
-      "committed_at_utc": "2026-09-05T23:57:15+00:00"
+      "commit_sha": "4b920f385a274d3a0727536248fc826249ddcb86",
+      "tree_sha": "ced69dfe9135a44dd0eb74ce8f732831199b21a2",
+      "committed_at_utc": "2026-09-06T00:36:13+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "15f426ec616784bf96737d2f42ec80184c3bbb90eae7ff9c351159f3cce42867"
+    "source_digest": "71d546203b747fdcd439b7322db64de0a46db3e00023934eeec8953cbc90f224"
   },
   "summary": {
-    "module_count": 382,
-    "declaration_count": 19251
+    "module_count": 383,
+    "declaration_count": 19268
   },
   "readme_sync": {
-    "version": "0.34.65",
+    "version": "0.34.66",
     "lean_toolchain": "v4.28.0",
-    "production_files": 312,
-    "production_loc": 334551,
+    "production_files": 313,
+    "production_loc": 334904,
     "test_files": 70,
     "test_loc": 69613,
     "proved_theorem_lemma_decls": 11129,
@@ -229525,6 +229525,201 @@
           "line": 37,
           "called": [
             "bootFromPlatform"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Testing.ExportCommitDisciplineCensus",
+      "path": "SeLe4n/Testing/ExportCommitDisciplineCensus.lean",
+      "declaration_count": 17,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing.ExportCommitDisciplineCensus",
+          "line": 68,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "commitPrimitives",
+          "line": 74,
+          "called": [
+            "initialiseKernelState",
+            "modifyGetKernelState",
+            "updateKernelState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bracketForms",
+          "line": 84,
+          "called": [
+            "runUnderDeclaredLockSet",
+            "withLockSet"
+          ]
+        },
+        {
+          "kind": "inductive",
+          "name": "CommitDiscipline",
+          "line": 89,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "isProjectConstant",
+          "line": 106,
+          "called": [
+            "any"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "reachesAny",
+          "line": 117,
+          "called": [
+            "bind",
+            "contains",
+            "insert",
+            "isProjectConstant",
+            "none",
+            "toList"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "commitsState",
+          "line": 134,
+          "called": [
+            "commitPrimitives",
+            "reachesAny"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runsBracketed",
+          "line": 138,
+          "called": [
+            "bracketForms",
+            "reachesAny"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "disciplineViolations",
+          "line": 150,
+          "called": [
+            "CommitDiscipline",
+            "covers",
+            "empty",
+            "isEmpty",
+            "runUnderDeclaredLockSet",
+            "runsBracketed",
+            "withLockSet"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "commitDisciplineRegistry",
+          "line": 179,
+          "called": [
+            "CommitDiscipline",
+            "LockSet",
+            "SchedLockId",
+            "any",
+            "decode",
+            "delivery",
+            "faultEntry",
+            "perCoreRescheduleEntry",
+            "perCoreTimerTickEntry",
+            "secondaryKernelMain",
+            "suspendThreadCrossCoreEntry",
+            "syscallDispatchCrossCoreEntry",
+            "unknownSyscallEntry"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bracketedSeams",
+          "line": 215,
+          "called": [
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "reconciliationViolations",
+          "line": 233,
+          "called": [
+            "contains",
+            "filter",
+            "isEmpty",
+            "length"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "censusWitnessBracketed",
+          "line": 257,
+          "called": [
+            "bootCoreId",
+            "modifyGetKernelState",
+            "none",
+            "pure",
+            "runUnderDeclaredLockSet",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "censusWitnessBareCommit",
+          "line": 268,
+          "called": [
+            "modifyGetKernelState",
+            "pure",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "censusWitnessCommitHelper",
+          "line": 274,
+          "called": [
+            "SystemState",
+            "initialiseKernelState",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "censusWitnessIndirectCommit",
+          "line": 277,
+          "called": [
+            "censusWitnessCommitHelper",
+            "default"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "censusWitnessNoCommit",
+          "line": 281,
+          "called": [
+            "bracketForms",
+            "bracketedSeams",
+            "censusWitnessBareCommit",
+            "censusWitnessBracketed",
+            "censusWitnessIndirectCommit",
+            "commitDisciplineRegistry",
+            "commitPrimitives",
+            "commitsState",
+            "contains",
+            "disciplineViolations",
+            "getKernelState",
+            "isEmpty",
+            "isProjectConstant",
+            "length",
+            "pure",
+            "reconciliationViolations"
           ]
         }
       ]

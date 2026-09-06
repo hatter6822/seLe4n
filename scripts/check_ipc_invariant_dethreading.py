@@ -289,6 +289,11 @@ MACHINERY_PINS = {
     # clean family theorem, so the no-macro-scope-skip rule is exercised
     # at every elaboration.
     ("SeLe4n/Testing/IpcDethreadingEnvironmentCensus.lean", "macro"): 1,
+    # WS-RR RR7.13: the export-commit census, decided over the elaborated
+    # environment.  One `run_cmd` -- the witnesses, the derived/registry
+    # reconciliation and the per-entry discipline check; it mints no
+    # declaration.
+    ("SeLe4n/Testing/ExportCommitDisciplineCensus.lean", "run_cmd"): 1,
 }
 
 # The declaration modifiers and top-level commands this gate's grammars
