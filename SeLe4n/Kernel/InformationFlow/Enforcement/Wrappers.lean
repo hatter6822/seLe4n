@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-3.0-or-later
 /-
-  seLe4n  - A Lean Microkernel
-  Copyright (C) 2026  Adam Hall
+  seLe4n - A Lean Microkernel
+  Copyright (C) 2026 Adam Hall
   This program comes with ABSOLUTELY NO WARRANTY.
   This is free software, and you are welcome to redistribute it
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
@@ -34,7 +34,6 @@ def endpointSendDualChecked
     (sender : SeLe4n.ThreadId)
     (msg : IpcMessage)
     (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId)
     (receiverSlotBase : SeLe4n.Slot) : Kernel CapTransferSummary :=
   fun st =>
     -- WS-H12d/A-09: Enforce message payload bounds before flow check
@@ -44,10 +43,10 @@ def endpointSendDualChecked
     let senderLabel := ctx.threadLabelOf sender
     let endpointLabel := ctx.endpointLabelOf endpointId
     -- WS-SM SM8.C: the global lattice check AND this endpoint's configured
-    -- override.  A conjunction, so the override can only narrow.
+    -- override. A conjunction, so the override can only narrow.
     if endpointFlowGate ctx endpointId senderLabel endpointLabel then
       endpointSendDualWithCaps endpointId sender msg endpointRights
-        senderCspaceRoot receiverSlotBase st
+        receiverSlotBase st
     else
       .error .flowDenied
 
@@ -82,20 +81,19 @@ theorem endpointSendDualChecked_eq_endpointSendDualWithCaps_when_allowed
     (sender : SeLe4n.ThreadId)
     (msg : IpcMessage)
     (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId)
     (receiverSlotBase : SeLe4n.Slot)
     (st : SystemState)
     (hFlow : securityFlowsTo (ctx.threadLabelOf sender)
                (ctx.endpointLabelOf endpointId) = true)
-    -- WS-SM SM8.C: the endpoint's own override must admit the flow too.  Not a
+    -- WS-SM SM8.C: the endpoint's own override must admit the flow too. Not a
     -- free premise: it is exactly what a configured deployment can deny, and
     -- `endpointOverrideAllows_default` discharges it where none is configured.
     (hOverride : endpointOverrideAllows ctx endpointId (ctx.threadLabelOf sender)
                (ctx.endpointLabelOf endpointId) = true) :
     endpointSendDualChecked ctx endpointId sender msg endpointRights
-        senderCspaceRoot receiverSlotBase st =
+        receiverSlotBase st =
       endpointSendDualWithCaps endpointId sender msg endpointRights
-        senderCspaceRoot receiverSlotBase st := by
+        receiverSlotBase st := by
   have hGate := endpointFlowGate_of ctx endpointId _ _ hFlow hOverride
   unfold endpointSendDualChecked
   -- WS-H12d: Bounds checks are first; when both fail, we reach the flow gate
@@ -108,7 +106,7 @@ theorem endpointSendDualChecked_eq_endpointSendDualWithCaps_when_allowed
   · split
     · unfold endpointSendDualWithCaps endpointSendDual; simp [*]
     · -- The gate branch: `hGate` in context already reduced the `ite` above, so
-      -- what remains is a reflexivity.  Verified load-bearing: dropping `hGate`
+      -- what remains is a reflexivity. Verified load-bearing: dropping `hGate`
       -- leaves the `if endpointFlowGate … then … else .flowDenied` unreduced and
       -- `rfl` fails, so `hOverride` is a real premise rather than decoration.
       rfl
@@ -124,14 +122,13 @@ theorem endpointSendDualChecked_flowDenied
     (sender : SeLe4n.ThreadId)
     (msg : IpcMessage)
     (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId)
     (receiverSlotBase : SeLe4n.Slot)
     (st : SystemState)
     (hBounds : msg.checkBounds = true)
     (hDeny : securityFlowsTo (ctx.threadLabelOf sender)
                (ctx.endpointLabelOf endpointId) = false) :
     endpointSendDualChecked ctx endpointId sender msg endpointRights
-        senderCspaceRoot receiverSlotBase st =
+        receiverSlotBase st =
       .error .flowDenied := by
   unfold endpointSendDualChecked
   have ⟨hR, hC⟩ := (IpcMessage.checkBounds_iff_bounded msg).mp hBounds
@@ -213,7 +210,7 @@ The entry count is **not** restated here: it is pinned by
 `enforcementBoundaryExtended_count` (`Enforcement/Soundness.lean`), which is the
 authority, and a number repeated in prose goes stale the first time an entry
 lands without a docstring edit — as this one did, having read "33 entries"
-across six subsequent expansions.  Read the theorem.
+across six subsequent expansions. Read the theorem.
 
 Operations with both policy-gated and capability-only variants are classified
 under their policy-gated variant here (the checked dispatch path uses the
@@ -223,15 +220,15 @@ def enforcementBoundary : List EnforcementClass :=
   [ -- Policy-gated: cross-domain operations checked via securityFlowsTo
     .policyGated "endpointSendDualChecked"
   , .policyGated "endpointReceiveDualChecked"
-  , .policyGated "endpointCallChecked"       -- U5-B: previously inline check
-  , .policyGated "endpointReplyChecked"      -- U5-C: defense-in-depth
+  , .policyGated "endpointCallChecked" -- U5-B: previously inline check
+  , .policyGated "endpointReplyChecked" -- U5-C: defense-in-depth
   , .policyGated "cspaceMintChecked"
   , .policyGated "cspaceCopyChecked"
   , .policyGated "cspaceMoveChecked"
   , .policyGated "notificationSignalChecked"
   , .policyGated "registerServiceChecked"
-  , .policyGated "notificationWaitChecked"        -- V2-A: notification wait IF check
-  , .policyGated "endpointReplyRecvChecked"       -- V2-C: compound reply+recv IF check
+  , .policyGated "notificationWaitChecked" -- V2-A: notification wait IF check
+  , .policyGated "endpointReplyRecvChecked" -- V2-C: compound reply+recv IF check
   -- Capability-only: authority derived from capability possession
   , .capabilityOnly "cspaceLookupSlot"
   , .capabilityOnly "cspaceInsertSlot"
@@ -261,7 +258,7 @@ def enforcementBoundary : List EnforcementClass :=
   -- WS-SM SM5.H.4: CPU-affinity configuration capability-only operation
   , .capabilityOnly "setThreadCpuAffinity"
   -- PR #887 review round: fault-handler configuration (seL4 `TCB_SetSpace`'s
-  -- `fault_ep`).  Capability-only: the authority is the TCB capability's write
+  -- `fault_ep`). Capability-only: the authority is the TCB capability's write
   -- right, the candidate CPtr is validated through the *target's* CSpace at
   -- set time, and the write touches one TCB field — no data crosses a label
   -- boundary until the thread faults, and that delivery is policy-gated by
@@ -280,30 +277,30 @@ def enforcementBoundary : List EnforcementClass :=
   , .capabilityOnly "vspaceMapPageCheckedWithShootdownFromState"
   , .capabilityOnly "vspaceUnmapPageWithShootdown"
   -- WS-SM SM7.D: instruction/data unification of one mapped page (seL4
-  -- Page_Unify_Instruction).  Capability-only: it modifies no page table and
+  -- Page_Unify_Instruction). Capability-only: it modifies no page table and
   -- carries no message payload — it publishes the caller's *own* stores to the
-  -- Point of Unification and drops the corresponding instruction lines.  The
+  -- Point of Unification and drops the corresponding instruction lines. The
   -- authority is the `.write` right on the page's capability (you may publish
   -- code you were able to write); there is no information-flow policy to
   -- consult, because no data crosses a label boundary.
   , .capabilityOnly "vspaceUnifyInstructionPage"
   -- AC4-D: Service revocation (capability-only; operates on serviceRegistry)
   , .capabilityOnly "revokeService"
-  -- WS-SM SM8.C.9: the live declassification.  **Policy-gated**, and it is the
+  -- WS-SM SM8.C.9: the live declassification. **Policy-gated**, and it is the
   -- one entry whose gate is not `securityFlowsTo`: it runs the two-check
   -- `declassificationDecision` (base policy must *deny*, declassification policy
   -- must permit), which is the only way a flow the lattice forbids is ever
-  -- admitted.  Classifying it capability-only would say the capability alone
+  -- admitted. Classifying it capability-only would say the capability alone
   -- authorizes the downgrade, which is exactly what it does not.
   , .policyGated "declassifyObjectFromCore"
-  -- WS-SM SM9.C.8: the *data-carrying* declassification.  **Policy-gated**, and
+  -- WS-SM SM9.C.8: the *data-carrying* declassification. **Policy-gated**, and
   -- for the same reason as its sibling above — it runs
   -- `declassificationDecision` at each hop, so a flow the lattice forbids is
   -- admitted only where the declassification policy says so.
   --
   -- What makes this entry different from `declassifyObjectFromCore` is that it
   -- gates **two** hops: the signaller into the notification, and the
-  -- notification onward into the *resolved receiver*.  A classification naming
+  -- notification onward into the *resolved receiver*. A classification naming
   -- only the first would be the badge-leak class SM6.B closed at v0.31.73 —
   -- an authorized signaller aimed at a sink the policy never authorized — so
   -- the boundary entry names the transition that performs both checks, not the
@@ -315,10 +312,10 @@ def enforcementBoundary : List EnforcementClass :=
   , .policyGated "notificationSignalDeclassifiedCrossCoreDispatch"
   -- WS-SM SM9.A.11: the declassification audit trail's reader and drain.
   -- **Capability-only**, and the classification is the honest one rather than
-  -- the flattering one.  Neither consults an information-flow *policy* the way
+  -- the flattering one. Neither consults an information-flow *policy* the way
   -- `declassifyObjectFromCore` does: what they consult is the caller's own
   -- clearance, and they use it to *filter* what is returned rather than to
-  -- admit or deny a flow the lattice forbids.  A `.policyGated` classification
+  -- admit or deny a flow the lattice forbids. A `.policyGated` classification
   -- would claim a policy decision they do not make; `.readOnly` would claim the
   -- drain changes nothing, which is false of a transition that removes entries
   -- and advances the epoch.
@@ -331,22 +328,22 @@ def enforcementBoundary : List EnforcementClass :=
   -- PR #870 review (P2): the reader's entry is `auditReadFromCore` — the LIVE
   -- entry point the `.auditRead` arm calls, whose subject-resolution seam
   -- (the reader's clearance read off the running thread, never off an operand)
-  -- is precisely what the boundary exists to audit.  Its first cut named the
+  -- is precisely what the boundary exists to audit. Its first cut named the
   -- inner query `auditReadWord`, which takes a caller-supplied reader domain —
   -- so the coverage checks would have stayed green had the live seam drifted
   -- onto exactly the confused-clearance shape the entry point exists to
-  -- prevent.  The drain's label was the live entry from the start.
+  -- prevent. The drain's label was the live entry from the start.
   , .capabilityOnly "auditReadFromCore"
   , .capabilityOnly "auditDrainVisiblePrefix"
   -- WS-SM SM8.E.3: the SM3 two-phase-locking bracket, promoted here from the
-  -- separate per-core list SM8.B introduced.  **Capability-only**, and for the
+  -- separate per-core list SM8.B introduced. **Capability-only**, and for the
   -- same reason as `storeObject`'s and `lifecycleRetypeObject`'s: it is an
   -- internal building block invoked under an already-capability-guarded
   -- context, and it consults no information-flow policy — the bracket cannot
   -- admit a flow the guarded transition would not admit, because it carries no
   -- data across a label boundary at all (`withLockSet_preserves_projection`,
   -- which holds *unconditionally* once SM8.B.4 erased the per-object `lock`
-  -- from the projection).  What it does add is the lock-contention timing
+  -- from the projection). What it does add is the lock-contention timing
   -- channel the covert-channel inventory registers as CC-5, bounded rather
   -- than closed by SM8.D (`lockContention_delay_bounded`).
   --
@@ -354,7 +351,7 @@ def enforcementBoundary : List EnforcementClass :=
   -- (`enforcementBoundaryPerCore`, which was this list plus the bracket plus
   -- the cross-core wrappers) the identical list it already was, so the
   -- promotion moves one entry between two definitions and changes no third
-  -- thing.  `enforcementBoundary_classifies_withLockSet` is where that is
+  -- thing. `enforcementBoundary_classifies_withLockSet` is where that is
   -- checked rather than argued.
   , .capabilityOnly "withLockSet"
   ]
@@ -368,41 +365,41 @@ def enforcementBoundary : List EnforcementClass :=
     string-based `EnforcementClass` list, enabling compile-time completeness
     verification. -/
 def syscallIdToEnforcementName : SyscallId → String
-  | .send                  => "endpointSendDualChecked"
-  | .receive               => "endpointReceiveDualChecked"
-  | .call                  => "endpointCallChecked"
-  | .reply                 => "endpointReplyChecked"
-  | .cspaceMint            => "cspaceMintChecked"
-  | .cspaceCopy            => "cspaceCopyChecked"
-  | .cspaceMove            => "cspaceMoveChecked"
-  | .cspaceDelete          => "cspaceDeleteSlot"
-  | .lifecycleRetype       => "lifecycleRetypeObject"
-  | .vspaceMap             => "vspaceMapPageCheckedWithShootdownFromState"
-  | .vspaceUnmap           => "vspaceUnmapPageWithShootdown"
-  | .serviceRegister       => "registerServiceChecked"
-  | .serviceRevoke         => "revokeService"
-  | .serviceQuery          => "lookupService"
-  | .notificationSignal    => "notificationSignalChecked"
-  | .notificationWait      => "notificationWaitChecked"
-  | .replyRecv             => "endpointReplyRecvChecked"
+  | .send => "endpointSendDualChecked"
+  | .receive => "endpointReceiveDualChecked"
+  | .call => "endpointCallChecked"
+  | .reply => "endpointReplyChecked"
+  | .cspaceMint => "cspaceMintChecked"
+  | .cspaceCopy => "cspaceCopyChecked"
+  | .cspaceMove => "cspaceMoveChecked"
+  | .cspaceDelete => "cspaceDeleteSlot"
+  | .lifecycleRetype => "lifecycleRetypeObject"
+  | .vspaceMap => "vspaceMapPageCheckedWithShootdownFromState"
+  | .vspaceUnmap => "vspaceUnmapPageWithShootdown"
+  | .serviceRegister => "registerServiceChecked"
+  | .serviceRevoke => "revokeService"
+  | .serviceQuery => "lookupService"
+  | .notificationSignal => "notificationSignalChecked"
+  | .notificationWait => "notificationWaitChecked"
+  | .replyRecv => "endpointReplyRecvChecked"
   | .schedContextConfigure => "schedContextConfigure"
-  | .schedContextBind      => "schedContextBind"
-  | .schedContextUnbind    => "schedContextUnbind"
-  | .tcbSuspend            => "suspendThread"
-  | .tcbResume             => "resumeThread"
-  | .tcbSetPriority        => "setPriority"
-  | .tcbSetMCPriority      => "setMCPriority"
-  | .tcbSetIPCBuffer       => "setIPCBuffer"
-  | .tcbSetAffinity        => "setThreadCpuAffinity"
-  | .tcbSetFaultHandler    => "setThreadFaultHandlerOp"
-  | .tcbBindNotification   => "bindNotification"
+  | .schedContextBind => "schedContextBind"
+  | .schedContextUnbind => "schedContextUnbind"
+  | .tcbSuspend => "suspendThread"
+  | .tcbResume => "resumeThread"
+  | .tcbSetPriority => "setPriority"
+  | .tcbSetMCPriority => "setMCPriority"
+  | .tcbSetIPCBuffer => "setIPCBuffer"
+  | .tcbSetAffinity => "setThreadCpuAffinity"
+  | .tcbSetFaultHandler => "setThreadFaultHandlerOp"
+  | .tcbBindNotification => "bindNotification"
   | .tcbUnbindNotification => "unbindNotification"
-  | .mintReplyCap          => "mintReplyCapWithCdt"
+  | .mintReplyCap => "mintReplyCapWithCdt"
   | .vspaceUnifyInstruction => "vspaceUnifyInstructionPage"
-  | .declassify            => "declassifyObjectFromCore"
-  | .declassifySignal      => "notificationSignalDeclassifiedCrossCoreDispatch"
-  | .auditRead             => "auditReadFromCore"
-  | .auditDrain            => "auditDrainVisiblePrefix"
+  | .declassify => "declassifyObjectFromCore"
+  | .declassifySignal => "notificationSignalDeclassifiedCrossCoreDispatch"
+  | .auditRead => "auditReadFromCore"
+  | .auditDrain => "auditDrainVisiblePrefix"
 
 /-- AC4-D: Check whether every SyscallId maps to an operation name present in
     the enforcement boundary list. Returns `true` iff every syscall is covered. -/
@@ -439,14 +436,13 @@ theorem endpointSendDualChecked_denied_preserves_state
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId) (msg : IpcMessage)
     (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId)
     (receiverSlotBase : SeLe4n.Slot)
     (st : SystemState)
     (hDeny : securityFlowsTo (ctx.threadLabelOf sender)
                (ctx.endpointLabelOf endpointId) = false) :
     ¬∃ (r : CapTransferSummary) (st' : SystemState),
         endpointSendDualChecked ctx endpointId
-        sender msg endpointRights senderCspaceRoot receiverSlotBase st =
+        sender msg endpointRights receiverSlotBase st =
         .ok (r, st') := by
   intro ⟨r, st', h⟩
   unfold endpointSendDualChecked at h
@@ -480,30 +476,29 @@ theorem enforcement_sufficiency_endpointSendDual
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId) (msg : IpcMessage)
     (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId)
     (receiverSlotBase : SeLe4n.Slot)
     (st : SystemState) :
     (msg.registers.size > maxMessageRegisters ∧
        endpointSendDualChecked ctx endpointId sender msg endpointRights
-         senderCspaceRoot receiverSlotBase st = .error .ipcMessageTooLarge) ∨
+         receiverSlotBase st = .error .ipcMessageTooLarge) ∨
     (msg.caps.size > maxExtraCaps ∧
        endpointSendDualChecked ctx endpointId sender msg endpointRights
-         senderCspaceRoot receiverSlotBase st = .error .ipcMessageTooManyCaps) ∨
+         receiverSlotBase st = .error .ipcMessageTooManyCaps) ∨
     -- WS-SM SM8.C: the two flow disjuncts are stated against `endpointFlowGate`,
-    -- the predicate the wrapper actually branches on.  Leaving them on
+    -- the predicate the wrapper actually branches on. Leaving them on
     -- `securityFlowsTo` would make this theorem describe a check the code no
     -- longer runs, and its "flow allowed ⇒ delegates" arm would be false for a
     -- configured override.
     (endpointFlowGate ctx endpointId (ctx.threadLabelOf sender)
         (ctx.endpointLabelOf endpointId) = true ∧
        endpointSendDualChecked ctx endpointId sender msg endpointRights
-         senderCspaceRoot receiverSlotBase st =
+         receiverSlotBase st =
        endpointSendDualWithCaps endpointId sender msg endpointRights
-         senderCspaceRoot receiverSlotBase st) ∨
+         receiverSlotBase st) ∨
     (endpointFlowGate ctx endpointId (ctx.threadLabelOf sender)
         (ctx.endpointLabelOf endpointId) = false ∧
        endpointSendDualChecked ctx endpointId sender msg endpointRights
-         senderCspaceRoot receiverSlotBase st = .error .flowDenied) := by
+         receiverSlotBase st = .error .flowDenied) := by
   unfold endpointSendDualChecked endpointSendDualWithCaps
   by_cases hR : maxMessageRegisters < msg.registers.size
   · left; exact ⟨hR, by simp [hR]⟩
@@ -665,7 +660,6 @@ def endpointCallChecked
     (caller : SeLe4n.ThreadId)
     (msg : IpcMessage)
     (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId)
     (receiverSlotBase : SeLe4n.Slot) : Kernel CapTransferSummary :=
   fun st =>
     let callerLabel := ctx.threadLabelOf caller
@@ -673,7 +667,7 @@ def endpointCallChecked
     -- WS-SM SM8.C: global check ∧ this endpoint's override.
     if endpointFlowGate ctx endpointId callerLabel endpointLabel then
       endpointCallWithCaps endpointId caller msg endpointRights
-        callerCspaceRoot receiverSlotBase st
+        receiverSlotBase st
     else
       .error .flowDenied
 
@@ -734,7 +728,7 @@ carries `replier → prevCaller`, a thread-to-thread flow that crosses no
 endpoint).
 
 Left as prose in the SM8.C landing cut, which made the boundary a reading of the
-code rather than a checked fact.  These three theorems state it: each gate's
+code rather than a checked fact. These three theorems state it: each gate's
 verdict is independent of the context's `endpointPolicy` field, so an operator
 cannot configure one and expect it to reach these paths, and a future cut that
 routes one of them through `endpointFlowGate` breaks the corresponding theorem
@@ -812,7 +806,7 @@ def endpointReplyRecvChecked
     -- to the caller the endpoint already admitted on the way in, which the
     -- receive leg below gates.
     if securityFlowsTo receiverLabel targetLabel then
-      -- Receive leg: endpoint → receiver.  WS-SM SM8.C: global check ∧ override.
+      -- Receive leg: endpoint → receiver. WS-SM SM8.C: global check ∧ override.
       if endpointFlowGate ctx endpointId endpointLabel receiverLabel then
         endpointReplyRecv endpointId receiver replyTarget msg replyId st
       else

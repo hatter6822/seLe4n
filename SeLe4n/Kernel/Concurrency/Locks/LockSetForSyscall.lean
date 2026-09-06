@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-3.0-or-later
 import SeLe4n.Kernel.Concurrency.Locks.LockSetTransitions
--- **WS-RR RR7.11**: the state-resolved IPC footprints.  Every one of these
+-- **WS-RR RR7.11**: the state-resolved IPC footprints. Every one of these
 -- modules is production (`EndpointCall`, `EndpointReply` and
 -- `NotificationSignal` all carry landing notes, not staging markers), so the
 -- resolver stays a production module referencing production footprints — the
@@ -16,30 +16,30 @@ import SeLe4n.Kernel.IPC.CrossCore.NotificationBind
 SM3 built the per-object lock discipline: `LockId` (kind level 0..9 ×
 object), a proven total order on it, forty-one `lockSet_*` footprints,
 `permittedKinds : SyscallId → List LockKind`, and `withLockSet`'s 2PL /
-serializability / observer-atomicity theorems.  What it never built is
+serializability / observer-atomicity theorems. What it never built is
 the piece that connects them to a running syscall: a function from *the
 syscall the dispatcher is about to run* to *the lock set that syscall's
-footprint needs*.  Without it the SM3 theorems are statements about an
+footprint needs*. Without it the SM3 theorems are statements about an
 intended discipline rather than properties of the live path, which is
 what SM3.C.9 was deferred to close.
 
 ## `Option LockSet`, and why the `none` is the point
 
 Thirty syscalls have footprints; this module declares them one at a
-time.  The result is `Option LockSet`:
+time. The result is `Option LockSet`:
 
 * `some S` — this syscall's footprint **is** `S`, and every write it
   performs is covered by a member of `S` (the `lockSet_*_write_mem`
   families are the per-op proofs of exactly that);
-* `none` — not yet declared.  The caller must fall back to whatever
+* `none` — not yet declared. The caller must fall back to whatever
   coarser serialisation it already has.
 
 The alternative — returning a "best effort" set for undeclared syscalls
-— is the one shape this must not take.  A declared lock set that does
+— is the one shape this must not take. A declared lock set that does
 not cover a write is not a smaller optimisation, it is a **false
 footprint**: the 2PL argument would then rest on exclusion the runtime
 never established, and the failure appears as a corrupted object under
-contention rather than as a failed proof.  `none` cannot be wrong, and
+contention rather than as a failed proof. `none` cannot be wrong, and
 it makes the migration monotone — each future cut converts one `none`
 into a `some` together with its coverage proof, and nothing regresses.
 
@@ -50,10 +50,10 @@ Declaring a footprint does **not** make per-object locks operative.
 global `SystemState` — a whole-state read-then-write — so two cores
 holding disjoint per-object locks would still lose one commit whole.
 The lock granularity that matters for that is the granularity of the
-*commit*, not of the footprint.  Until the commit is partitioned, the
+*commit*, not of the footprint. Until the commit is partitioned, the
 SM5.I kernel-entry lock stays, and what this dispatcher buys is the
 model-level property: the SM3 theorems apply to the transition the
-kernel actually runs.  See `rust/sele4n-hal/src/kernel_entry.rs`.
+kernel actually runs. See `rust/sele4n-hal/src/kernel_entry.rs`.
 -/
 
 
@@ -82,11 +82,11 @@ The CNode member is the **caller's** CSpace root, not the victim's.
 actually reads to turn the caller's capability pointer into the target
 capability (`syscallLookupCap` builds its gate from the *caller's*
 `tcb.cspaceRoot`), which is why it is paired with the caller's TCB read
-in every `lockSet_*` that has one.  An earlier cut passed
+in every `lockSet_*` that has one. An earlier cut passed
 `victim.cspaceRoot`, so whenever caller and victim held different
 CSpace roots the declared set locked a CNode the syscall never touches
 and omitted the one it reads — a coverage hole in exactly the direction
-a declared footprint exists to prevent.  Not a live defect (SM3.C.9
+a declared footprint exists to prevent. Not a live defect (SM3.C.9
 still defers `withLockSet` at the `@[export]` bodies), but the whole
 value of the declaration is that it covers the operation's accesses.
 
@@ -130,9 +130,9 @@ def suspendFootprintOf (st : SystemState) (callerTid targetTid : ThreadId) :
 /-- **WS-RR RR7.10**: the operands a declared footprint is resolved from.
 
 The pre-RR7.10 resolver took `(callerTid, targetTid, st)`, and `targetTid` is a
-`ThreadId`.  That is expressible only for the thread-directed syscalls: an
+`ThreadId`. That is expressible only for the thread-directed syscalls: an
 IPC arm's footprint names an **endpoint** or a **notification**, and a
-capability arm's names a **CNode**, none of which is a thread.  The one
+capability arm's names a **CNode**, none of which is a thread. The one
 declared arm happened to be thread-directed, so the signature looked general
 while being unable to say what every remaining arm needs — and the caller that
 resolved the target for it (`declaredLockSetForEntry`'s `entryCapTarget`)
@@ -141,7 +141,7 @@ capability is a different object with the same number.
 
 The two are separate fields rather than one, because a syscall is directed at
 one or the other and never at both: `.tcbSuspend` names a victim thread,
-`.send` names an endpoint.  `message` is here because whether an IPC arm's
+`.send` names an endpoint. `message` is here because whether an IPC arm's
 footprint includes a capability-transfer destination is a property of what the
 message carries (WS-RR RR7.7), and the arms that consume it are RR7.11's.
 
@@ -198,20 +198,20 @@ def SyscallLockOperands.ofReplyTarget (caller : ThreadId) (reply : ReplyId)
 
 Total over `SyscallId` by construction — a new syscall variant makes
 this fail to compile rather than silently inherit a neighbour's
-footprint.  See the module docstring for why undeclared arms return
+footprint. See the module docstring for why undeclared arms return
 `none` instead of an approximation. -/
 def lockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
     (st : SystemState) : Option LockSet :=
   match sid with
-  -- WS-RR RR7.10: the victim is the operands' thread target.  With none
+  -- WS-RR RR7.10: the victim is the operands' thread target. With none
   -- supplied there is no suspend to bound, so the arm answers `none` — the
   -- same fail-closed direction as an unresolvable victim.
   | .tcbSuspend =>
       ops.targetThread.bind (fun victim => suspendFootprintOf st ops.caller victim)
-  -- **WS-RR RR7.11: the IPC hot path.**  Seven arms, each resolved through the
+  -- **WS-RR RR7.11: the IPC hot path.** Seven arms, each resolved through the
   -- SM6 state-resolved footprint the cross-core transition itself is declared
   -- against, so the declaration and the transition read one expression rather
-  -- than two that have to be kept in step.  Every arm opens on the caller's own
+  -- than two that have to be kept in step. Every arm opens on the caller's own
   -- TCB, because a footprint's CNode member is the *caller's* CSpace root — the
   -- root `syscallLookupCap` resolves the invoked capability through — and a
   -- caller that does not resolve to a TCB has no root to name.
@@ -219,7 +219,7 @@ def lockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   -- `.send` and `.call` additionally require the **message**: whether the
   -- rendezvous installs capabilities (and so whether the receiver's CSpace root
   -- and the state-level lock the CDT write needs are members) is a property of
-  -- what the message carries, RR7.7's optional.  With no message supplied the
+  -- what the message carries, RR7.7's optional. With no message supplied the
   -- arm cannot tell a capless send from an unknown one, so it declares nothing
   -- — the module docstring's direction, not a defaulted guess: defaulting to
   -- the empty message would declare the *capless* footprint for a send that may
@@ -249,7 +249,7 @@ def lockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   -- `.reply` and `.replyRecv` name their answered caller the way the live arms
   -- do: authority flows from *holding* the reply capability, so the thread
   -- being answered is `reply.caller`, read from the Reply object the capability
-  -- names.  A dangling reply (`getReply? = none`) or an unlinked one
+  -- names. A dangling reply (`getReply? = none`) or an unlinked one
   -- (`caller = none`) is what the live arms reject with `.replyCapInvalid`, and
   -- declaring a footprint for a syscall that cannot execute is exactly what the
   -- entry resolver's sentinel guard exists to prevent — so both answer `none`.
@@ -265,7 +265,7 @@ def lockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
             (replyAnsweredCaller? st rid).map fun prevCaller =>
               lockSet_endpointReplyRecvOnCore st ops.caller caller.cspaceRoot prevCaller
                 endpointId
-  -- The two notification arms.  The signal's footprint is bound-delivery aware
+  -- The two notification arms. The signal's footprint is bound-delivery aware
   -- (`boundDeliveryTarget?` folds the bound TCB's endpoint and TCB writes in);
   -- the wait's has no state-dependent member at all beyond the caller's root,
   -- which is why its resolver takes no state.
@@ -277,7 +277,7 @@ def lockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
       (st.getTcb? ops.caller).bind fun caller =>
         ops.targetObject.map fun notificationId =>
           lockSet_notificationWaitOnCore notificationId ops.caller caller.cspaceRoot
-  -- Undeclared: the caller keeps its existing serialisation.  Each of
+  -- Undeclared: the caller keeps its existing serialisation. Each of
   -- these becomes a `some` in a later cut, paired with the coverage
   -- proof that its footprint contains every write the op performs.
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete
@@ -292,13 +292,13 @@ def lockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   | .declassify
   -- WS-SM SM9.C.8: `.declassifySignal` is undeclared here for the same reason,
   -- and its per-object footprint (`lockSet_declassifySignal`) is the ordinary
-  -- signal's set plus the state-level write its trail append needs.  The
+  -- signal's set plus the state-level write its trail append needs. The
   -- caller TCB stays `.read` — the syscall is `.unit`-shaped, so unlike the
   -- audit pair the committed dispatch stages nothing into the caller's TCB.
   | .declassifySignal
   -- WS-SM SM9.A.12: the audit reader and the drain are undeclared here for the
   -- same reason as every other arm — the declared-footprint bracket is SM3.C.9
-  -- work, not SM9.A work.  Their per-object footprints (`lockSet_auditRead` /
+  -- work, not SM9.A work. Their per-object footprints (`lockSet_auditRead` /
   -- `lockSet_auditDrain`) carry the caller TCB in **write** mode (PR #870
   -- round 6): the transitions write no object, but the committed dispatch
   -- stages the returned word into the caller's TCB via WS-RA's
@@ -334,10 +334,10 @@ behaviour change. -/
 
 /-! ## WS-RR RR7.11 — the seven IPC arms
 
-Two theorems per arm.  The **dispatch pin** (`lockSetForSyscall_<arm>`) says
+Two theorems per arm. The **dispatch pin** (`lockSetForSyscall_<arm>`) says
 which resolver the arm is wired to, so a future edit that redirects an arm or
 drops a resolver fails here rather than silently returning `none` and sending
-the caller back to coarse serialisation.  The **resolution characterisation**
+the caller back to coarse serialisation. The **resolution characterisation**
 (`lockSetForSyscall_<arm>_isSome_iff`) says exactly when the arm declares — the
 question a bracket consumer asks before it decides whether it has a footprint
 to acquire — and it is what closes `declaredFootprintSyscall`'s otherwise-silent
@@ -447,7 +447,7 @@ theorem lockSetForSyscall_reply_isSome_iff
                   endpointId := rfl
 
 /-- **WS-RR RR7.11**: and it declares when *both* of its operands resolve — the
-endpoint it will receive on next and the reply object it answers first.  A
+endpoint it will receive on next and the reply object it answers first. A
 syscall that names two objects needs both, which is the reason
 `SyscallLockOperands` carries them in separate fields. -/
 theorem lockSetForSyscall_replyRecv_isSome_iff
@@ -509,7 +509,7 @@ The one condition all eight share, and the reason is structural rather than
 incidental: a footprint's CNode member is the **caller's** CSpace root — the
 root `syscallLookupCap` resolves the invoked capability through — so a caller
 that does not resolve to a TCB leaves the footprint unable to name the CNode the
-syscall reads.  Declaring the rest of the members anyway would be a footprint
+syscall reads. Declaring the rest of the members anyway would be a footprint
 with a hole in it exactly where capability resolution happens. -/
 theorem lockSetForSyscall_isSome_implies_caller_resolves
     (sid : SyscallId) (ops : SyscallLockOperands) (st : SystemState)
@@ -528,16 +528,16 @@ theorem lockSetForSyscall_isSome_implies_caller_resolves
 
 /-! ## WS-RR RR7.11 — coverage: the declared footprint contains the writes
 
-The dispatch pins above say *which* footprint each arm declares.  These say what
+The dispatch pins above say *which* footprint each arm declares. These say what
 that footprint is worth: for each arm, the objects the transition writes have
-their locks in the set a bracket would acquire.  That is the property a 2PL
+their locks in the set a bracket would acquire. That is the property a 2PL
 consumer needs, and without it a declaration is a set of locks with no stated
 relation to the operation — which is exactly the "false footprint" the module
 docstring refuses.
 
 Stated as "the resolved set contains this member", one member per write, because
 that is the form the consumer asks in: it holds a set and is about to write an
-object.  The two capability-transfer arms additionally get the contrapositive
+object. The two capability-transfer arms additionally get the contrapositive
 *changed ⇒ declared* form from RR7.8, which is stronger — it quantifies over
 every object rather than over the members someone listed.
 -/
@@ -850,7 +850,7 @@ every object rather than over the ones someone remembered to list. -/
 theorem lockSetForSyscall_send_object_writes_declared
     (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
     (endpointId : ObjId) (msg : IpcMessage) (S : LockSet)
-    (endpointRights : AccessRightSet) (senderCspaceRoot : ObjId)
+    (endpointRights : AccessRightSet)
     (receiverSlotBase : Slot) (st' st'' : SystemState) (recvRoot : ObjId)
     (summary : CapTransferSummary) (oid : ObjId)
     (hTcb : st.getTcb? ops.caller = some caller)
@@ -862,13 +862,13 @@ theorem lockSetForSyscall_send_object_writes_declared
     (hDest : rendezvousCapsDestination? st endpointId msg = some recvRoot)
     (hObjInv : st'.objects.invExt)
     (hStep : endpointSendDualWithCaps endpointId ops.caller msg endpointRights
-        senderCspaceRoot receiverSlotBase st = .ok (summary, st''))
+        receiverSlotBase st = .ok (summary, st''))
     (hChanged : st''.objects[oid]? ≠ st'.objects[oid]?) :
     (cnodeLock oid, AccessMode.write) ∈ S.pairs := by
   rw [lockSetForSyscall_send_eq ops st caller endpointId msg hTcb hEp hMsg] at hDecl
   cases hDecl
   exact endpointSendDualWithCaps_object_writes_declared endpointId ops.caller msg
-    endpointRights senderCspaceRoot caller.cspaceRoot receiverSlotBase st st' st''
+    endpointRights caller.cspaceRoot receiverSlotBase st st' st''
     recvRoot summary oid hSend hDest hObjInv hStep hChanged
 
 /-- **WS-RR RR7.11**: and the same capstone on `.call` — the same transfer,
@@ -876,7 +876,7 @@ reached through the same resolver, declared in the same members. -/
 theorem lockSetForSyscall_call_object_writes_declared
     (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
     (endpointId : ObjId) (msg : IpcMessage) (S : LockSet)
-    (endpointRights : AccessRightSet) (callerCspaceRoot : ObjId)
+    (endpointRights : AccessRightSet)
     (receiverSlotBase : Slot) (st' st'' : SystemState) (recvRoot : ObjId)
     (summary : CapTransferSummary) (oid : ObjId)
     (hTcb : st.getTcb? ops.caller = some caller)
@@ -888,13 +888,13 @@ theorem lockSetForSyscall_call_object_writes_declared
     (hDest : rendezvousCapsDestination? st endpointId msg = some recvRoot)
     (hObjInv : st'.objects.invExt)
     (hStep : endpointCallWithCaps endpointId ops.caller msg endpointRights
-        callerCspaceRoot receiverSlotBase st = .ok (summary, st''))
+        receiverSlotBase st = .ok (summary, st''))
     (hChanged : st''.objects[oid]? ≠ st'.objects[oid]?) :
     (cnodeLock oid, AccessMode.write) ∈ S.pairs := by
   rw [lockSetForSyscall_call_eq ops st caller endpointId msg hTcb hEp hMsg] at hDecl
   cases hDecl
   exact endpointCallWithCaps_object_writes_declared endpointId ops.caller msg
-    endpointRights callerCspaceRoot caller.cspaceRoot receiverSlotBase st st' st''
+    endpointRights caller.cspaceRoot receiverSlotBase st st' st''
     recvRoot summary oid hCall hDest hObjInv hStep hChanged
 
 /-! ## The declared arms, and the negative that keeps the rest honest -/
@@ -903,9 +903,9 @@ theorem lockSetForSyscall_call_object_writes_declared
 
 A second enumeration beside `lockSetForSyscall`'s own `match`, and it is here
 because the negative below has to name a set — so what matters is which way it
-can drift.  Converting an arm to `some` without listing it here breaks
+can drift. Converting an arm to `some` without listing it here breaks
 `lockSetForSyscall_undeclared_none` at elaboration, so that direction is
-mechanically closed.  The other direction — listing an arm that still answers
+mechanically closed. The other direction — listing an arm that still answers
 `none` — is closed by the per-arm characterisations that follow
 (`lockSetForSyscall_*_isSome_iff`): each states the exact condition on operands
 and pre-state under which its arm declares, so an arm that had quietly become
@@ -938,7 +938,7 @@ direction, reached without any of them having to be listed.
 This is what a caller that resolves only a thread target gets, and it is the
 shape SM8.D's `declaredLockSetForEntry` is in: that entry resolver turns a
 capability into a `ThreadId`, so the arms it can declare are exactly the
-thread-directed ones.  Supplying the endpoint, reply and message operands at the
+thread-directed ones. Supplying the endpoint, reply and message operands at the
 **production** entry is WS-RR RR7.12's row, which is where the `withLockSet`
 bracket that consumes them lands. -/
 theorem lockSetForSyscall_ofThreadTarget_undeclared

@@ -272,7 +272,7 @@ The `hCdtPost` hypothesis is externalized following the standard pattern for
 CDT-expanding operations (see `cspaceCopy_preserves_capabilityInvariantBundle`).
 The caller (API layer) is responsible for discharging CDT obligations. -/
 theorem ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle
-    (caps : Array TransferCap) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
     (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
     (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : capabilityInvariantBundle st)
@@ -290,7 +290,7 @@ theorem ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle
     (hCapBacked : ∀ (stI : SystemState) (cap : Capability),
         capabilityInvariantBundle stI →
         ∀ rid, cap.target = .replyCap rid → stI.getReply? rid ≠ none)
-    (hStep : ipcUnwrapCapsLoop caps senderRoot receiverRoot idx nextBase
+    (hStep : ipcUnwrapCapsLoop caps receiverRoot idx nextBase
              accResults fuel st = .ok (summary, st')) :
     capabilityInvariantBundle st' := by
   induction fuel generalizing idx nextBase accResults st with
@@ -337,7 +337,7 @@ when the endpoint has Grant right (grantRight = true). Delegates to
 the entry point. -/
 theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant
     (st st' : SystemState) (msg : IpcMessage)
-    (senderRoot receiverRoot : SeLe4n.ObjId)
+    (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot)
     (summary : CapTransferSummary)
     (hInv : capabilityInvariantBundle st)
@@ -355,12 +355,12 @@ theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant
     (hCapBacked : ∀ (stI : SystemState) (cap : Capability),
         capabilityInvariantBundle stI →
         ∀ rid, cap.target = .replyCap rid → stI.getReply? rid ≠ none)
-    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase true st
+    (hStep : ipcUnwrapCaps msg receiverRoot slotBase true st
              = .ok (summary, st')) :
     capabilityInvariantBundle st' := by
   simp [ipcUnwrapCaps] at hStep
   exact ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle
-    msg.caps senderRoot receiverRoot
+    msg.caps receiverRoot
     0 slotBase #[] msg.caps.size
     st st' summary hInv hSlotCap hCdtPost hCapBacked hStep
 
@@ -372,11 +372,11 @@ Grant=true case, and `ipcUnwrapCaps_preserves_capabilityInvariantBundle` for
 the unified theorem. -/
 theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant
     (st st' : SystemState) (msg : IpcMessage)
-    (senderRoot receiverRoot : SeLe4n.ObjId)
+    (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot)
     (summary : CapTransferSummary)
     (hInv : capabilityInvariantBundle st)
-    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase false st
+    (hStep : ipcUnwrapCaps msg receiverRoot slotBase false st
              = .ok (summary, st')) :
     capabilityInvariantBundle st' := by
   simp [ipcUnwrapCaps] at hStep
@@ -395,7 +395,7 @@ The `hSlotCap` and `hCdtPost` hypotheses are vacuous when Grant=false
 (no `ipcTransferSingleCap` calls occur). -/
 theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle
     (st st' : SystemState) (msg : IpcMessage)
-    (senderRoot receiverRoot : SeLe4n.ObjId)
+    (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot)
     (endpointGrantRight : Bool)
     (summary : CapTransferSummary)
@@ -414,16 +414,16 @@ theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle
     (hCapBacked : ∀ (stI : SystemState) (cap : Capability),
         capabilityInvariantBundle stI →
         ∀ rid, cap.target = .replyCap rid → stI.getReply? rid ≠ none)
-    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase
+    (hStep : ipcUnwrapCaps msg receiverRoot slotBase
              endpointGrantRight st = .ok (summary, st')) :
     capabilityInvariantBundle st' := by
   cases endpointGrantRight with
   | false =>
     exact ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant
-      st st' msg senderRoot receiverRoot slotBase summary hInv hStep
+      st st' msg receiverRoot slotBase summary hInv hStep
   | true =>
     exact ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant
-      st st' msg senderRoot receiverRoot slotBase summary
+      st st' msg receiverRoot slotBase summary
       hInv hSlotCap hCdtPost hCapBacked hStep
 
 -- ============================================================================

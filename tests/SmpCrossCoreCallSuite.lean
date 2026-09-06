@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-3.0-or-later
 /-
-  seLe4n  - A Lean Microkernel
-  Copyright (C) 2026  Adam Hall
+  seLe4n - A Lean Microkernel
+  Copyright (C) 2026 Adam Hall
   This program comes with ABSOLUTELY NO WARRANTY.
   This is free software, and you are welcome to redistribute it
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
@@ -47,7 +47,7 @@ open SeLe4n.Kernel.Concurrency
 open SeLe4n.Testing
 
 -- ============================================================================
--- §1  Surface anchors (Tier-3): every SM6.A public symbol resolves
+-- §1 Surface anchors (Tier-3): every SM6.A public symbol resolves
 -- ============================================================================
 
 -- SM6.A.1 production transitions:
@@ -139,7 +139,7 @@ open SeLe4n.Testing
 #check @syscallDispatchCrossCoreEntry_sgis_nil_single_core
 
 -- ============================================================================
--- §2  Elaboration-time examples (Tier-3): theorems apply to typed inputs
+-- §2 Elaboration-time examples (Tier-3): theorems apply to typed inputs
 -- ============================================================================
 
 /-- SM6.A.3: a rendezvous unblocking a remote receiver emits the reschedule SGI. -/
@@ -206,13 +206,13 @@ example (ctx : LabelingContext) (observer : IfObserver)
     hReceiverHigh hReceiverObjHigh hCallerHigh hCallerObjHigh hNextHigh
 
 -- ============================================================================
--- §3  Runtime assertions (Tier-2): the SM6.A cross-core call scenarios
+-- §3 Runtime assertions (Tier-2): the SM6.A cross-core call scenarios
 -- ============================================================================
 
 private def assertBool (name : String) (b : Bool) : IO Unit := do
-  if b then IO.println s!"  PASS: {name}"
+  if b then IO.println s!" PASS: {name}"
   else
-    IO.println s!"  FAIL: {name}"
+    IO.println s!" FAIL: {name}"
     throw (IO.userError s!"Assertion failed: {name}")
 
 private def core1 : CoreId := ⟨1, by decide⟩
@@ -298,7 +298,7 @@ private def runLockSetChecks : IO Unit := do
         (some recvRemoteTid) (some scId)).pairs, p.fst.kind ∈ permittedKinds .call))
   -- SM6.A.1/.2: the runtime acquires a *state-resolved* lock-set — the receiver
   -- and donated SC pre-resolved from `st` via `endpointCallReceiver?` /
-  -- `endpointCallDonatedSc?`.  On the empty base state both resolve to `none`.
+  -- `endpointCallDonatedSc?`. On the empty base state both resolve to `none`.
   assertBool "endpointCallReceiver? resolves none on an endpoint with no waiter"
     (decide (endpointCallReceiver? stBase epId = none))
   assertBool "endpointCallDonatedSc? resolves none for an unbound caller"
@@ -339,11 +339,11 @@ private def runNoReceiverChecks : IO Unit := do
   -- on the no-receiver path (no caps to transfer; no donation without a server).
   assertBool "no-receiver WithCaps cross-core call also surfaces no SGI"
     (match (endpointCallWithCapsOnCore epId callerTid IpcMessage.empty AccessRightSet.empty
-        cnRoot (SeLe4n.Slot.ofNat 0) bootCoreId stBase).2 with
+        (SeLe4n.Slot.ofNat 0) bootCoreId stBase).2 with
      | .ok (_, none) => true | _ => false)
   assertBool "no-receiver cross-core dispatch performs no donation (= WithCaps)"
     (match (endpointCallCrossCoreDispatch epId callerTid IpcMessage.empty AccessRightSet.empty
-        cnRoot (SeLe4n.Slot.ofNat 0) bootCoreId stBase).2 with
+        (SeLe4n.Slot.ofNat 0) bootCoreId stBase).2 with
      | .ok (_, none) => true | _ => false)
 
 private def runRendezvousChecks : IO Unit := do
@@ -395,14 +395,14 @@ private def runRendezvousChecks : IO Unit := do
   | none => assertBool "rendezvous setup (no-reply receiver) succeeded" false
 
 -- ============================================================================
--- §SM6.D  Per-core IPC invariant bundle (surface anchors + witnesses)
+-- §SM6.D Per-core IPC invariant bundle (surface anchors + witnesses)
 -- ============================================================================
 --
 -- WS-SM SM6.D coverage: the per-core bundle definitions (SM6.D.1, D.3–D.6),
 -- the exact-decomposition bridges, the six per-operation preservation
 -- theorems (SM6.D.2) plus the cross-core call flagship, and the home-core /
--- wake-target coherence.  Elaboration-time: every symbol resolves and every
--- headline theorem applies to typed inputs.  Runtime: `threadHomeCore`
+-- wake-target coherence. Elaboration-time: every symbol resolves and every
+-- headline theorem applies to typed inputs. Runtime: `threadHomeCore`
 -- agrees with the operational `determineTargetCore` on the suite fixtures.
 
 -- SM6.D.1 bundle + SMP aggregate + bridges:
@@ -635,7 +635,7 @@ example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (ec : CoreId)
 
 /-- WS-RR RR3.12: the cross-core reply's **unconditional** bundle statement — the
 one that holds on the donating path too, with `donationOwnerValid` relaxed at the
-answered caller.  No hypothesis about the result at all; the relaxation is exactly
+answered caller. No hypothesis about the result at all; the relaxation is exactly
 the transient the donation return closes. -/
 example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (ec : CoreId)
     (st : SystemState)
@@ -647,7 +647,7 @@ example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (ec : CoreId)
     hInv hObjInv hAllBudgetsNone
 
 /-- WS-RR RR3.14: the reachability bundle is **inhabited** — the boot state
-satisfies it.  Without this the pre-state conditions the de-threaded bundles now
+satisfies it. Without this the pre-state conditions the de-threaded bundles now
 carry could be an unsatisfiable conjunction, and every theorem taking them would
 be vacuous: the failure shape de-threading exists to remove, one level up. -/
 example : ipcReachable (default : SystemState) := ipcReachable_default
@@ -684,7 +684,7 @@ example (st : SystemState) (endpointId : SeLe4n.ObjId) (hInv : ipcInvariantFull 
 
 /-- WS-RR RR3.12 (payoff): the **live** cross-core `.reply` dispatch preserves the
 whole twenty-conjunct bundle on the *donating* path — the seL4-MCS path the previous
-statement was vacuous on.  Nothing about the result is assumed: `hDonationReturned`
+statement was vacuous on. Nothing about the result is assumed: `hDonationReturned`
 says only that whatever the answered caller donated is what the recorded reply server
 returns, a fact about the pre-state and the operation's arguments. -/
 example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (ec : CoreId)
@@ -767,7 +767,7 @@ transition behind the **live** `.send` dispatch — preserves every core's
 bundle view. -/
 example (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary) (c : CoreId)
     (hInv : ipcInvariantFull_smp st) (hObjInv : st.objects.invExt)
     -- WS-RR RR3.11: one condition on the syscall's own message argument, where the
@@ -794,10 +794,10 @@ example (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (hSenderNotUnbound : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
         tcb.schedContextBinding ≠ .unbound)
     (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
-             senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     ipcInvariantFull_perCore st' c :=
   endpointSendDualWithCaps_preserves_ipcInvariantFull_perCore endpointId sender msg
-    endpointRights senderCspaceRoot receiverSlotBase st st' summary hInv hObjInv
+    endpointRights receiverSlotBase st st' summary hInv hObjInv
     hMsgCaps hAllBudgetsNone hFreshSender hSendTailFresh
     hSenderNotRecv hSenderNotReply hSenderNotUnbound hStep c
 
@@ -928,7 +928,7 @@ private def runDeclaredFootprintBracketChecks : IO Unit := do
           decide (ops.caller = tid)
         | none => false)
      | none => false)
-  -- **The committed arm is taken.**  The guard passes on an uncontended state,
+  -- **The committed arm is taken.** The guard passes on an uncontended state,
   -- so the syscall runs bracketed rather than being refused — the check that
   -- would have caught a bracket that engages and then always declines.
   assertBool "the guard PASSES on an uncontended state (the committed arm is taken)"
@@ -939,7 +939,7 @@ private def runDeclaredFootprintBracketChecks : IO Unit := do
        decide (Concurrency.lockSetHeld bootCoreId fp acquired)
      | none => false)
   -- **Which arm**, stated directly rather than inferred from the outcome: the
-  -- committed one.  Comparing outcome frames would not settle it — a syscall
+  -- committed one. Comparing outcome frames would not settle it — a syscall
   -- that legitimately errors returns the same `.illegalState` frame a refusal
   -- does, so a bracket that always declined would look identical.
   assertBool "the bracket takes the COMMITTED arm (not `undeclared`, not `refused`)"
@@ -952,7 +952,7 @@ private def runDeclaredFootprintBracketChecks : IO Unit := do
      | .undeclared _ => false
      | .refused _ => false
      | .committed _ => true)
-  -- **Bracketing does not change what the syscall returns.**  The declared
+  -- **Bracketing does not change what the syscall returns.** The declared
   -- footprint is exclusion, not semantics: the growing and shrinking phases
   -- write lock words and nothing else, so the caller's frame is the frame the
   -- unbracketed step produced.

@@ -1,13 +1,13 @@
 -- SPDX-License-Identifier: GPL-3.0-or-later
 /-
-  seLe4n  - A Lean Microkernel
-  Copyright (C) 2026  Adam Hall
+  seLe4n - A Lean Microkernel
+  Copyright (C) 2026 Adam Hall
   This program comes with ABSOLUTELY NO WARRANTY.
   This is free software, and you are welcome to redistribute it
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
--- WS-SM SM6: PRODUCTION.  The cross-core `Send` transition.  Enters the
+-- WS-SM SM6: PRODUCTION. The cross-core `Send` transition. Enters the
 -- production import closure through the live `.send` dispatch arm
 -- (`API.dispatchWithCap{,Checked}` via `endpointSendDualWithCaps`).
 
@@ -16,7 +16,7 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch
 /-!
 # WS-SM SM6 — the cross-core `Send`
 
-`endpointSendDual` (`IPC/DualQueue/Transport.lean`) is the single-core send.  It
+`endpointSendDual` (`IPC/DualQueue/Transport.lean`) is the single-core send. It
 has two scheduling effects, and **both were boot-pinned**:
 
 * on a **rendezvous** it wakes the dequeued receiver with `ensureRunnable`,
@@ -24,7 +24,7 @@ has two scheduling effects, and **both were boot-pinned**:
 * on the **block** path it deschedules the sender with `removeRunnable`, which
   clears the boot core's slots regardless of where the sender is running.
 
-PR #861 review round 10 found the live `.send` arm still routed there.  The
+PR #861 review round 10 found the live `.send` arm still routed there. The
 consequences on a multi-core system are the two halves of the same bug: a
 receiver woken by a remote sender is placed on a run queue its own core never
 dispatches from, and a sender that blocks on a secondary core **remains current
@@ -35,7 +35,7 @@ candidate for dispatch.
 siblings (`endpointCallOnCore`, `endpointReceiveDualOnCore`): the receiver is
 woken on **its own home core** via the SM5.C `wakeThread`, which returns the
 `.reschedule` SGI that core must receive, and the sender is descheduled on the
-**executing** core via `removeRunnableOnCore`.  Every non-scheduling step is
+**executing** core via `removeRunnableOnCore`. Every non-scheduling step is
 shared with the single-core transition, so the message semantics — bounds
 checks, badge propagation, the `pendingReceiveReply` clear on a plain `Send`
 completing a server-first `Recv` — are unchanged.
@@ -71,7 +71,7 @@ def endpointSendDualOnCore (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId
       | some _ =>
           -- PR #873 round 17: the sender has to exist even though this arm
           -- never looks it up -- the message goes straight from the argument
-          -- into the receiver's TCB.  In lockstep with `endpointSendDual`,
+          -- into the receiver's TCB. In lockstep with `endpointSendDual`,
           -- which is what `endpointSendDualOnCore_eq_single_on_bootCore` ties
           -- the two to.
           match st.getTcb? sender with
@@ -86,7 +86,7 @@ def endpointSendDualOnCore (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId
                   -- Cross-core receiver wake (SM5.C): route to the receiver's
                   -- HOME core, not the boot core.
                   --
-                  -- Bound once.  Projecting `.1` and `.2` out of two separate
+                  -- Bound once. Projecting `.1` and `.2` out of two separate
                   -- calls made the compiled path run the whole wake twice --
                   -- object-store update and run-queue insertion included -- to
                   -- take the state from one and the SGI from the other, on the
@@ -116,10 +116,10 @@ returned untouched.
 
 This used to be called `…_bootCore_state` and to claim, in its docstring, that
 "the per-core send agrees with the single-core `endpointSendDual` on the
-resulting state".  It proved no such thing: `hNoEndpoint` and `hAbsent` together
+resulting state". It proved no such thing: `hNoEndpoint` and `hAbsent` together
 pin it to the `.objectNotFound` arm, where the transition trivially returns the
 pre-state, and the statement never mentioned `endpointSendDual` at all
-(PR #861 review round 15).  The real bridges are the two theorems below, one per
+(PR #861 review round 15). The real bridges are the two theorems below, one per
 success path; this one is renamed to say what it actually checks. -/
 theorem endpointSendDualOnCore_absent_endpoint (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
@@ -138,9 +138,9 @@ theorem endpointSendDualOnCore_absent_endpoint (endpointId : SeLe4n.ObjId)
 
 `Endpoint.lean` carries its own copy of the PIP-effective priority because
 importing `Scheduler.Invariant` from there would close an import cycle, and its
-docstring says the two agree.  Until now nothing checked that: two independent
+docstring says the two agree. Until now nothing checked that: two independent
 definitions agreeing by convention is exactly the case this project requires be
-enforced structurally.  This is the first module that sees both names, so this
+enforced structurally. This is the first module that sees both names, so this
 is the first place the claim can be *stated* — and with it stated, a change to
 either body that the other does not mirror stops the build rather than silently
 re-bucketing every wake.
@@ -155,9 +155,9 @@ theorem ipcEffectiveRunQueuePriority_eq_effectiveRunQueuePriority (tcb : TCB) :
 exactly what the single-core `ensureRunnable` commits.
 
 The two are *not* the same function, which is why this needs stating rather than
-asserting.  `enqueueRunnableOnCore` guards on `runnableOnSomeCore` (all cores)
+asserting. `enqueueRunnableOnCore` guards on `runnableOnSomeCore` (all cores)
 where `ensureRunnable` guards on boot-core membership, and it additionally writes
-the object store, marking the woken thread `.ready`.  Each difference is
+the object store, marking the woken thread `.ready`. Each difference is
 discharged by a hypothesis that is true on the wake paths:
 
 * `hHome` — the thread's home is the boot core, the only placement the
@@ -221,7 +221,7 @@ the per-core send on the boot core commits **exactly** the single-core
 Unconditional on this path, and the reason is one `rfl`: the two transitions run
 the same enqueue and the same TCB store, and differ only in the final
 deschedule — `removeRunnableOnCore … bootCoreId` *is* `removeRunnable`
-(`removeRunnableOnCore_bootCoreId`).  This is the refinement claim the old
+(`removeRunnableOnCore_bootCoreId`). This is the refinement claim the old
 `…_bootCore_state` docstring wanted and did not make. -/
 theorem endpointSendDualOnCore_bootCore_block_eq_single (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId) (msg : IpcMessage) (st st' : SystemState) (ep : Endpoint)
@@ -231,7 +231,7 @@ theorem endpointSendDualOnCore_bootCore_block_eq_single (endpointId : SeLe4n.Obj
     (endpointSendDualOnCore endpointId sender msg bootCoreId st).1 = st' := by
   -- The bounds guards are derived, not required: a successful single-core send
   -- already refutes them, so making the caller re-supply them would be
-  -- redundant.  Both sides then reduce past the same two `if`s.
+  -- redundant. Both sides then reduce past the same two `if`s.
   have hRegs : ¬ (msg.registers.size > maxMessageRegisters) := by
     intro h; rw [endpointSendDual] at hSingle; simp [h] at hSingle
   have hCaps : ¬ (msg.caps.size > maxExtraCaps) := by
@@ -251,10 +251,10 @@ theorem endpointSendDualOnCore_bootCore_block_eq_single (endpointId : SeLe4n.Obj
 waiting whose home is the boot core, the per-core send on the boot core commits
 **exactly** the single-core `endpointSendDual`'s state.
 
-This is the leg that needed real work.  The two transitions run the same pop and
+This is the leg that needed real work. The two transitions run the same pop and
 the same receive-complete store, and then diverge: the single-core one calls
 `ensureRunnable`, the per-core one calls `wakeThread`, and those are genuinely
-different functions.  `wakeThread_bootCore_eq_ensureRunnable` is what closes the
+different functions. `wakeThread_bootCore_eq_ensureRunnable` is what closes the
 gap, and its object-store half rests in turn on the Robin Hood insert-identity
 lemma — a hash table has no extensionality principle, so "re-inserting the value
 already present changes nothing" had to be proved by walking the probe sequence.
@@ -286,7 +286,7 @@ theorem endpointSendDualOnCore_bootCore_rendezvous_eq_single (endpointId : SeLe4
   unfold endpointSendDualOnCore
   unfold endpointSendDual at hSingle
   -- PR #873 round 17: both sides now resolve the sender first, so the split is
-  -- shared.  The declining arm cannot be this `.ok`, which is what discharges it
+  -- shared. The declining arm cannot be this `.ok`, which is what discharges it
   -- without adding a hypothesis to the statement.
   cases hSnd : st.getTcb? sender with
   | none =>
@@ -318,7 +318,7 @@ theorem endpointSendDualOnCore_tooManyCaps (endpointId : SeLe4n.ObjId)
   simp [endpointSendDualOnCore, hLarge, h]
 
 -- ============================================================================
--- §2  Cross-core `endpointSendDualWithCaps`
+-- §2 Cross-core `endpointSendDualWithCaps`
 -- ============================================================================
 
 /-- WS-SM SM6 (operation): endpoint send with capability transfer, across cores.
@@ -327,7 +327,7 @@ The exact shape of its SM6.A sibling `endpointCallWithCapsOnCore`: the cross-cor
 `endpointSendDualOnCore` rendezvous (which surfaces the receiver-wake SGI), then —
 on an immediate rendezvous carrying caps — `ipcUnwrapCaps` installs the
 transferred capabilities into the receiver's CSpace, gated on the endpoint's
-`grant` right.  Returns the post-state, the capability-transfer summary, and the
+`grant` right. Returns the post-state, the capability-transfer summary, and the
 optional cross-core SGI.
 
 Capability-transfer behaviour is unchanged from `endpointSendDualWithCaps`,
@@ -336,15 +336,15 @@ root (the NI-symmetry fix shared by all three transfer paths). -/
 def endpointSendDualWithCapsOnCore
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) :
     SystemState × Except KernelError (CapTransferSummary × Option (CoreId × SgiKind)) :=
   -- PR #873 round 13: stamp the endpoint's grant right into the message, so the
   -- queued ordering and the immediate rendezvous read the same authority from the
-  -- same place.  See `endpointSendDualWithCaps` for the ordering this removes.
+  -- same place. See `endpointSendDualWithCaps` for the ordering this removes.
   let hasReceiver := match st.getEndpoint? endpointId with
     | some ep => ep.receiveQ.head.isSome
-    | none    => false
+    | none => false
   match endpointSendDualOnCore endpointId sender { msg with capsGranted := endpointRights.mem .grant } executingCore st with
   | (st', .error e) => (st', .error e)
   | (st', .ok sgi) =>
@@ -356,7 +356,7 @@ def endpointSendDualWithCapsOnCore
           | some receiverId =>
             match lookupCspaceRoot st' receiverId with
             | some recvRoot =>
-              match ipcUnwrapCaps { msg with capsGranted := endpointRights.mem .grant } senderCspaceRoot recvRoot
+              match ipcUnwrapCaps { msg with capsGranted := endpointRights.mem .grant } recvRoot
                   receiverSlotBase (endpointRights.mem .grant) st' with
               | .error e => (st', .error e)
               | .ok (summary, st'') => (st'', .ok (summary, sgi))
@@ -369,16 +369,16 @@ exactly the bare cross-core send (empty transfer summary), so its surfaced SGI i
 the bare send's. -/
 theorem endpointSendDualWithCapsOnCore_no_caps
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (msg : IpcMessage)
-    (endpointRights : AccessRightSet) (senderCspaceRoot : SeLe4n.ObjId)
+    (endpointRights : AccessRightSet)
     (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
     (hCaps : msg.caps.isEmpty = true) :
-    endpointSendDualWithCapsOnCore endpointId sender msg endpointRights senderCspaceRoot
+    endpointSendDualWithCapsOnCore endpointId sender msg endpointRights
         receiverSlotBase executingCore st
       = ((endpointSendDualOnCore endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1,
          (endpointSendDualOnCore endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).2.map
            (fun sgi => ({ results := #[] }, sgi))) := by
   -- PR #873 round 13: against the **stamped** message, because that is what the
-  -- wrapper transmits.  With no capabilities the grant bit changes no behaviour,
+  -- wrapper transmits. With no capabilities the grant bit changes no behaviour,
   -- but it is part of the message the send parks.
   unfold endpointSendDualWithCapsOnCore
   cases h : endpointSendDualOnCore endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st with
@@ -387,20 +387,20 @@ theorem endpointSendDualWithCapsOnCore_no_caps
     | ok sgi => simp [hCaps, Except.map]
 
 -- ============================================================================
--- §3  Information-flow-checked cross-core send (the live checked `.send`)
+-- §3 Information-flow-checked cross-core send (the live checked `.send`)
 -- ============================================================================
 
 /-- WS-SM SM6 (live `.send` enforcement): the **information-flow-checked**
-cross-core send — the cross-core analogue of `endpointSendDualChecked`.  Mirrors
+cross-core send — the cross-core analogue of `endpointSendDualChecked`. Mirrors
 the single-core checked `.send` arm exactly: message bounds first (so a bounds
 fault is not masked by the flow gate, WS-H12d/A-09), then the SM-IF guard
 `securityFlowsTo senderLabel endpointLabel` rejecting with `.flowDenied`, then the
-cross-core WithCaps send.  This is the operation the live `dispatchWithCapChecked`
+cross-core WithCaps send. This is the operation the live `dispatchWithCapChecked`
 `.send` arm routes through, replacing the boot-pinned `endpointSendDualChecked`. -/
 def endpointSendCrossCoreDispatchChecked
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) :
     SystemState × Except KernelError (CapTransferSummary × Option (CoreId × SgiKind)) :=
   if msg.registers.size > maxMessageRegisters then (st, .error .ipcMessageTooLarge)
@@ -408,7 +408,7 @@ def endpointSendCrossCoreDispatchChecked
   -- WS-SM SM8.C: global lattice check AND this endpoint's configured override.
   else if endpointFlowGate ctx endpointId (ctx.threadLabelOf sender)
       (ctx.endpointLabelOf endpointId) then
-    endpointSendDualWithCapsOnCore endpointId sender msg endpointRights senderCspaceRoot
+    endpointSendDualWithCapsOnCore endpointId sender msg endpointRights
       receiverSlotBase executingCore st
   else
     (st, .error .flowDenied)
@@ -418,14 +418,14 @@ cross-core send is fail-closed (state unchanged, `.flowDenied`). -/
 theorem endpointSendCrossCoreDispatchChecked_flow_denied
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState)
     (hTooLarge : ¬ (msg.registers.size > maxMessageRegisters))
     (hTooMany : ¬ (msg.caps.size > maxExtraCaps))
     (hDeny : securityFlowsTo (ctx.threadLabelOf sender)
       (ctx.endpointLabelOf endpointId) = false) :
     endpointSendCrossCoreDispatchChecked ctx endpointId sender msg endpointRights
-        senderCspaceRoot receiverSlotBase executingCore st = (st, .error .flowDenied) := by
+        receiverSlotBase executingCore st = (st, .error .flowDenied) := by
   -- WS-SM SM8.C: a denied global flow denies the gate whatever the override says.
   simp [endpointSendCrossCoreDispatchChecked, hTooLarge, hTooMany,
     endpointFlowGate_false_of_securityFlowsTo_false ctx endpointId _ _ hDeny]
@@ -436,7 +436,7 @@ unchecked cross-core WithCaps send — the guard is a pure precondition. -/
 theorem endpointSendCrossCoreDispatchChecked_flow_allowed
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState)
     (hTooLarge : ¬ (msg.registers.size > maxMessageRegisters))
     (hTooMany : ¬ (msg.caps.size > maxExtraCaps))
@@ -446,9 +446,9 @@ theorem endpointSendCrossCoreDispatchChecked_flow_allowed
     (hOverride : endpointOverrideAllows ctx endpointId (ctx.threadLabelOf sender)
       (ctx.endpointLabelOf endpointId) = true) :
     endpointSendCrossCoreDispatchChecked ctx endpointId sender msg endpointRights
-        senderCspaceRoot receiverSlotBase executingCore st
+        receiverSlotBase executingCore st
       = endpointSendDualWithCapsOnCore endpointId sender msg endpointRights
-          senderCspaceRoot receiverSlotBase executingCore st := by
+          receiverSlotBase executingCore st := by
   simp [endpointSendCrossCoreDispatchChecked, hTooLarge, hTooMany,
     endpointFlowGate_of ctx endpointId _ _ hAllow hOverride]
 

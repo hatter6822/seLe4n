@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-3.0-or-later
 /-
-  seLe4n  - A Lean Microkernel
-  Copyright (C) 2026  Adam Hall
+  seLe4n - A Lean Microkernel
+  Copyright (C) 2026 Adam Hall
   This program comes with ABSOLUTELY NO WARRANTY.
   This is free software, and you are welcome to redistribute it
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
@@ -638,13 +638,12 @@ preservation). -/
 theorem endpointCallWithCaps_preserves_ipcInvariant
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId)
     (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : ipcInvariant st)
     (hObjInv : st.objects.invExt)
     (hStep : endpointCallWithCaps endpointId caller msg endpointRights
-             callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     ipcInvariant st' := by
   -- PR #873 round 13: the wrapper stamps the endpoint's grant right into the
   -- message before the call, so the transition under it is the stamped one.
@@ -678,7 +677,7 @@ theorem endpointCallWithCaps_preserves_ipcInvariant
           | none => simp [hLookup] at hStep -- WS-RC R1 (DEEP-IPC-03): fail-closed, vacuous
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_ipcInvariant { msg with capsGranted := endpointRights.mem AccessRight.grant } callerCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_ipcInvariant { msg with capsGranted := endpointRights.mem AccessRight.grant } recvRoot
               receiverSlotBase _ stMid st' summary hInvMid hObjInvMid hStep
 
 -- ============================================================================
@@ -689,7 +688,7 @@ theorem endpointCallWithCaps_preserves_ipcInvariant
 -- V3-G5 (M-PRF-5): `endpointCall`/`endpointReplyRecv` preserve
 -- `blockedThreadsPendingMessageConsistent`.
 -- Machine-checked proofs in Structural.lean:
---   `endpointCall_preserves_blockedThreadsPendingMessageConsistent`
---   `endpointReplyRecv_preserves_blockedThreadsPendingMessageConsistent`
+-- `endpointCall_preserves_blockedThreadsPendingMessageConsistent`
+-- `endpointReplyRecv_preserves_blockedThreadsPendingMessageConsistent`
 
 end SeLe4n.Kernel

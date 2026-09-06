@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-3.0-or-later
 /-
-  seLe4n  - A Lean Microkernel
-  Copyright (C) 2026  Adam Hall
+  seLe4n - A Lean Microkernel
+  Copyright (C) 2026 Adam Hall
   This program comes with ABSOLUTELY NO WARRANTY.
   This is free software, and you are welcome to redistribute it
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
@@ -33,17 +33,17 @@ weakening.
 
 The one scheduler-reading conjunct, `passiveServerIdle_perCore`, is the
 genuinely new SMP obligation: its slice at a non-boot core is *not*
-implied by the boot-pinned conjunct the global bundle carries.  §1–§3
+implied by the boot-pinned conjunct the global bundle carries. §1–§3
 build its preservation the same way the single-core D6 layer did — a
 reusable pullback frame (`passiveServerIdleFrameOnCore`, the
 core-parameterised counterpart of `passiveServerIdleFrame`), per-store
 micro-frames, and one composition per operation following the
-operation's branch structure.  Two facts make every micro-frame uniform
+operation's branch structure. Two facts make every micro-frame uniform
 in the core: the store-ops never touch the scheduler (their
 `…_scheduler_eq` lemmas rewrite *any* core's slot projection), and the
 scheduler-ops (`ensureRunnable` / `removeRunnable`) write only
 `bootCoreId`'s slots (the SM4.B independence algebra frames every other
-core).  **No idle-core assumption is used anywhere** — unlike the
+core). **No idle-core assumption is used anywhere** — unlike the
 SM4.D-era `…_smp_of_singleCore_and_idle` lifters, these theorems hold
 on a state where all four cores are actively scheduling.
 
@@ -57,7 +57,7 @@ open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (CoreId bootCoreId)
 
 -- ============================================================================
--- §0  Home-core / wake-target coherence
+-- §0 Home-core / wake-target coherence
 -- ============================================================================
 
 /-- WS-SM SM6.D: the per-core bundle's thread-domain restriction
@@ -74,7 +74,7 @@ theorem determineTargetCore_eq_threadHomeCore {st : SystemState}
   cases h : tcb.cpuAffinity <;> simp [h, Option.getD]
 
 -- ============================================================================
--- §1  The per-core passive-server pullback frame
+-- §1 The per-core passive-server pullback frame
 -- ============================================================================
 
 /-- WS-SM SM6.D.2: the core-parameterised counterpart of the D6
@@ -82,7 +82,7 @@ theorem determineTargetCore_eq_threadHomeCore {st : SystemState}
 `passiveServerIdle_perCore` slice whenever every thread that is unbound,
 descheduled *on core `c`*, and in a non-allowed state in the post-state
 pulls back to an unbound, core-`c`-descheduled thread with the same
-`ipcState` in the pre-state.  TCB lookups route through the typed
+`ipcState` in the pre-state. TCB lookups route through the typed
 `getTcb?` (AK7 discipline). -/
 structure passiveServerIdleFrameOnCore (st st' : SystemState) (c : CoreId) : Prop where
   pullback : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
@@ -149,7 +149,7 @@ open SeLe4n.Model.SystemState in
 (`passiveServerIdleFrame`, `Defs.lean`) is **exactly** the per-core frame
 instantiated at `bootCoreId` — the two families differ only in that the
 boot form reads TCB slots through raw `objects[·]?` lookups while the
-per-core form routes through the typed `getTcb?`.  This is the formal
+per-core form routes through the typed `getTcb?`. This is the formal
 single-source guarantee for the frame algebra: any boot frame can be
 consumed as a per-core frame at the boot core and vice versa, so the two
 proof layers can never drift apart semantically. -/
@@ -168,7 +168,7 @@ theorem passiveServerIdleFrameOnCore_boot_iff (st st' : SystemState) :
     exact ⟨tcb, (getTcb?_eq_some_iff st tid tcb).mpr hTcb, hUnbound, hNotInQ, hNotCurrent, hIpc⟩
 
 -- ============================================================================
--- §2  Per-store / per-scheduler-op micro-frames (all cores, no idle crutch)
+-- §2 Per-store / per-scheduler-op micro-frames (all cores, no idle crutch)
 -- ============================================================================
 
 /-- Object-store agreement lifts to `getTcb?` agreement (public so the
@@ -490,7 +490,7 @@ theorem consumeCallerReply_passiveServerIdleFrameOnCore
 
 open SeLe4n.Model.SystemState in
 /-- SM6.D.2 micro-frame: `cleanupPreReceiveDonation` frames every core's
-slice.  The donation return rebinds the owner `.unbound → .bound`
+slice. The donation return rebinds the owner `.unbound → .bound`
 (excluded from the pullback: it becomes bound) and the receiver
 `.donated → .unbound` (excluded: it is allowed via `hReceiverReady`);
 every other thread's binding is framed. -/
@@ -538,7 +538,7 @@ theorem cleanupPreReceiveDonation_passiveServerIdleFrameOnCore
               by rw [hSched] at hNotCurrent'; exact hNotCurrent', hIpcEq⟩
 
 -- ============================================================================
--- §3  Per-operation per-core passive-server frames
+-- §3 Per-operation per-core passive-server frames
 -- ============================================================================
 --
 -- Each composition mirrors the D6 boot-core proof one-for-one (same branch
@@ -547,7 +547,7 @@ theorem cleanupPreReceiveDonation_passiveServerIdleFrameOnCore
 -- with no idle-core assumption.
 
 open SeLe4n.Model.SystemState in
-/-- SM6.D.2: `notificationSignal` frames every core's slice.  It wakes the
+/-- SM6.D.2: `notificationSignal` frames every core's slice. It wakes the
 head waiter `.ready` and reschedules it (allowed state); the no-waiter
 branch only rewrites the notification object. -/
 theorem notificationSignal_passiveServerIdleFrameOnCore
@@ -587,7 +587,7 @@ theorem notificationSignal_passiveServerIdleFrameOnCore
   · contradiction
 
 open SeLe4n.Model.SystemState in
-/-- SM6.D.2: `notificationWait` frames every core's slice.  The deliver
+/-- SM6.D.2: `notificationWait` frames every core's slice. The deliver
 branch wakes the waiter `.ready`; the block branch sets it
 `.blockedOnNotification` and deschedules it — both allowed passive
 states. -/
@@ -654,8 +654,8 @@ theorem notificationWait_passiveServerIdleFrameOnCore
   · contradiction
 
 open SeLe4n.Model.SystemState in
-/-- SM6.D.2: `endpointSendDual` frames every core's slice.  Rendezvous:
-pop the receiver + complete it `.ready` + reschedule.  Block: enqueue the
+/-- SM6.D.2: `endpointSendDual` frames every core's slice. Rendezvous:
+pop the receiver + complete it `.ready` + reschedule. Block: enqueue the
 sender + set it `.blockedOnSend` (non-allowed, so the sender must hold a
 SchedContext — `hSenderNotUnbound`) + deschedule. -/
 theorem endpointSendDual_passiveServerIdleFrameOnCore
@@ -681,7 +681,7 @@ theorem endpointSendDual_passiveServerIdleFrameOnCore
       cases hHead : ep.receiveQ.head with
       | some _ =>
         -- PR #873 round 17: the rendezvous arm resolves the sender before
-        -- popping.  It never did, so a send naming a nonexistent thread
+        -- popping. It never did, so a send naming a nonexistent thread
         -- delivered anyway and the receiver held a message attributed to it.
         cases hSnd : st.getTcb? sender with
         | none => simp [hHead, hSnd] at hStep
@@ -723,9 +723,9 @@ theorem endpointSendDual_passiveServerIdleFrameOnCore
               exact hBindEq1 ▸ hBindEq0 ▸ hSenderNotUnbound tcb0 ((getTcb?_eq_some_iff st sender tcb0).mpr hTcb0)
 
 open SeLe4n.Model.SystemState in
-/-- SM6.D.2: `endpointReceiveDual` frames every core's slice.  Rendezvous:
+/-- SM6.D.2: `endpointReceiveDual` frames every core's slice. Rendezvous:
 pop the sender + set it `.blockedOnReply` (Call) or `.ready` (Send) +
-complete the receiver `.ready`.  Blocking: return the receiver's own
+complete the receiver `.ready`. Blocking: return the receiver's own
 donation (needs the running receiver `.ready` via `hReceiverReady`) +
 enqueue + block `.blockedOnReceive` (allowed) + optional stash +
 deschedule. -/
@@ -873,7 +873,7 @@ theorem endpointReceiveDual_passiveServerIdleFrameOnCore
                     exact Or.inr (Or.inl ⟨endpointId, Or.inl rfl⟩))))
 
 open SeLe4n.Model.SystemState in
-/-- SM6.D.2: `endpointCall` frames every core's slice.  Rendezvous: pop +
+/-- SM6.D.2: `endpointCall` frames every core's slice. Rendezvous: pop +
 complete the receiver `.ready` + reschedule + set the caller
 `.blockedOnReply` (allowed) + stash the reply + deschedule the caller.
 Block: enqueue the caller + set it `.blockedOnCall` (non-allowed, so the
@@ -960,7 +960,7 @@ theorem endpointCall_passiveServerIdleFrameOnCore
               exact hBindEq1 ▸ hBindEq0 ▸ hCallerNotUnbound tcb0 ((getTcb?_eq_some_iff st caller tcb0).mpr hTcb0)
 
 open SeLe4n.Model.SystemState in
-/-- SM6.D.2: `endpointReplyRecv` frames every core's slice.  The reply leg
+/-- SM6.D.2: `endpointReplyRecv` frames every core's slice. The reply leg
 unblocks the reply target `.ready` + reschedules it (allowed); the
 receive leg is `endpointReceiveDual`. -/
 theorem endpointReplyRecv_passiveServerIdleFrameOnCore
@@ -1111,15 +1111,15 @@ theorem endpointReply_passiveServerIdleFrameOnCore
         · simp at hStep
 
 -- ============================================================================
--- §4  SM6.D.2: per-operation preservation of the per-core IPC bundle
+-- §4 SM6.D.2: per-operation preservation of the per-core IPC bundle
 -- ============================================================================
 --
 -- Theorem 3.3.1 of the plan, one theorem per IPC operation: from the
 -- ∀-core pre-state bundle (`ipcInvariantFull_smp`), the operation's
--- post-state satisfies EVERY core's bundle view.  Nineteen conjuncts ride
+-- post-state satisfies EVERY core's bundle view. Nineteen conjuncts ride
 -- the existing single-core whole-bundle theorem through the SM6.D.1
 -- exact-decomposition bridges; the per-core `passiveServerIdle` slice
--- rides the §3 per-core frame.  Hypotheses mirror the single-core
+-- rides the §3 per-core frame. Hypotheses mirror the single-core
 -- theorems' (freshness, readiness, binding side conditions, and -- since
 -- WS-RR RR3 -- the *pre*-state conditions that replaced the threaded
 -- post-state facts `hWtpmn'`/`hRCLRecip'`/`hDOV'`/`hDualQueue'`/`hBadge'`),
@@ -1206,7 +1206,7 @@ theorem endpointSendDual_preserves_ipcInvariantFull_perCore
     ipcInvariantFull_perCore st' c :=
   ipcInvariantFull_perCore_of_full
     (endpointSendDual_preserves_ipcInvariantFull st st' endpointId sender msg
-      (ipcInvariantFull_of_smp hInv) hObjInv hAllBudgetsNone 
+      (ipcInvariantFull_of_smp hInv) hObjInv hAllBudgetsNone
       hFreshSender hSendTailFresh hSenderNotRecv
       (fun tcb hRaw => hSenderNotReply tcb ((getTcb?_eq_some_iff st sender tcb).mpr hRaw))
       (fun tcb hRaw => hSenderNotUnbound tcb ((getTcb?_eq_some_iff st sender tcb).mpr hRaw))
@@ -1249,7 +1249,7 @@ theorem endpointReceiveDual_preserves_ipcInvariantFull_perCore
     ipcInvariantFull_perCore st' c :=
   ipcInvariantFull_perCore_of_full
     (endpointReceiveDual_preserves_ipcInvariantFull endpointId receiver senderId replyId st st'
-      (ipcInvariantFull_of_smp hInv) hObjInv hAllBudgetsNone 
+      (ipcInvariantFull_of_smp hInv) hObjInv hAllBudgetsNone
       hFreshReceiver hRecvTailFresh hReplyIdValid hReceiverNotRecv
       (fun tcb hRaw => hReceiverReady tcb ((getTcb?_eq_some_iff st receiver tcb).mpr hRaw))
       hStep)
@@ -1293,7 +1293,7 @@ theorem endpointCall_preserves_ipcInvariantFull_perCore
     ipcInvariantFull_perCore st' c :=
   ipcInvariantFull_perCore_of_full
     (endpointCall_preserves_ipcInvariantFull st st' endpointId caller msg
-      (ipcInvariantFull_of_smp hInv) hObjInv hAllBudgetsNone 
+      (ipcInvariantFull_of_smp hInv) hObjInv hAllBudgetsNone
       hFreshCaller hSendTailFresh hCallerNotRecv
       (fun tcb hRaw => hCallerNotReply tcb ((getTcb?_eq_some_iff st caller tcb).mpr hRaw))
       (fun tcb hRaw => hCallerNotUnbound tcb ((getTcb?_eq_some_iff st caller tcb).mpr hRaw))
@@ -1314,7 +1314,7 @@ theorem endpointReply_preserves_ipcInvariantFull_perCore
     (hObjInv : st.objects.invExt)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     -- WS-RR RR3.12: replaces the threaded post-state `hDOV'`, which no state on the
-    -- donating path satisfies.  A pre-state condition, hence dischargeable.
+    -- donating path satisfies. A pre-state condition, hence dischargeable.
     (hNoDonationOwnedBy : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
       (scId : SeLe4n.SchedContextId),
       st.objects[tid.toObjId]? = some (.tcb tcb) →
@@ -1340,7 +1340,7 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull_perCore
     (hObjInv : st.objects.invExt)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     -- WS-RR RR3.12: replaces the threaded post-state `hDOV'`, which no state on the
-    -- donating path satisfies.  A pre-state condition, hence dischargeable.
+    -- donating path satisfies. A pre-state condition, hence dischargeable.
     (hNoDonationOwnedBy : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
       (scId : SeLe4n.SchedContextId),
       st.objects[tid.toObjId]? = some (.tcb tcb) →
@@ -1378,7 +1378,7 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull_perCore
       (hInv c).passiveServerIdle)
 
 -- ============================================================================
--- §5  Cross-core scheduler-primitive micro-frames (production home)
+-- §5 Cross-core scheduler-primitive micro-frames (production home)
 -- ============================================================================
 --
 -- The two cross-core scheduler primitives' per-core passive frames — used
@@ -1430,7 +1430,7 @@ theorem wakeThread_passiveServerIdleFrameOnCore_of_ready
 open SeLe4n.Model.SystemState in
 open SeLe4n.Model.SystemState in
 /-- D6 (per-core; moved here from the staged call-invariant module during the RR2 closure audit — the production `.reply`-chain bundle consumes it): `removeRunnableOnCore` on core `c` frames `passiveServerIdle` given the removed
-thread is **bound or already in an allowed state** (`hRemoved`).  The object map is untouched; the
+thread is **bound or already in an allowed state** (`hRemoved`). The object map is untouched; the
 only thread whose descheduled-status changes is the removed one (on core `c` — which may or may not
 be the boot core), and the pullback filter excludes it. -/
 theorem removeRunnableOnCore_passiveServerIdleFrame
@@ -1491,13 +1491,13 @@ theorem removeRunnableOnCore_passiveServerIdleFrameOnCore
       · rw [removeRunnableOnCore_currentOnCore_ne st removed oc c hoc]; exact hCur
 
 -- ============================================================================
--- §6  SM6.D.2: the WithCaps trio — per-core frames + per-core bundle
+-- §6 SM6.D.2: the WithCaps trio — per-core frames + per-core bundle
 -- ============================================================================
 --
 -- The live `.send` dispatch routes through `endpointSendDualWithCaps` (and
 -- the capability-carrying receive/call variants exist on the same footing),
 -- so the per-core bundle layer must cover the WithCaps compositions too:
--- base transition + `lookupCspaceRoot` + `ipcUnwrapCaps`.  The cap-transfer
+-- base transition + `lookupCspaceRoot` + `ipcUnwrapCaps`. The cap-transfer
 -- step writes only CNode caps (every TCB slot survives byte-identical and
 -- the scheduler is untouched), so its per-core frame is immediate from the
 -- backward transport; each WithCaps frame then composes the §3 base frame
@@ -1509,20 +1509,20 @@ open SeLe4n.Model.SystemState in
 writes only CNode caps (`ipcUnwrapCaps_tcb_backward`) and never touches the
 scheduler (`ipcUnwrapCaps_preserves_scheduler`). -/
 theorem ipcUnwrapCaps_passiveServerIdleFrameOnCore
-    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary) {c : CoreId}
     (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st
+    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st
       = .ok (summary, st')) :
     passiveServerIdleFrameOnCore st st' c :=
   passiveServerIdleFrameOnCore_of_backward
     (fun tid tcb' hTcb' =>
       ⟨tcb', (getTcb?_eq_some_iff st tid tcb').mpr
-        (ipcUnwrapCaps_tcb_backward msg senderRoot receiverRoot slotBase grantRight st st'
+        (ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight st st'
           summary tid.toObjId tcb' hObjInv hStep
           ((getTcb?_eq_some_iff st' tid tcb').mp hTcb')), rfl, rfl⟩)
-    (ipcUnwrapCaps_preserves_scheduler msg senderRoot receiverRoot slotBase grantRight
+    (ipcUnwrapCaps_preserves_scheduler msg receiverRoot slotBase grantRight
       st st' summary hStep)
 
 open SeLe4n.Model.SystemState in
@@ -1531,13 +1531,13 @@ open SeLe4n.Model.SystemState in
 theorem endpointSendDualWithCaps_passiveServerIdleFrameOnCore
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary) (c : CoreId)
     (hObjInv : st.objects.invExt)
     (hSenderNotUnbound : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
         tcb.schedContextBinding ≠ .unbound)
     (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
-             senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     passiveServerIdleFrameOnCore st st' c := by
   simp only [endpointSendDualWithCaps] at hStep
   cases hSend : endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
@@ -1565,7 +1565,7 @@ theorem endpointSendDualWithCaps_passiveServerIdleFrameOnCore
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact hFMid.trans (ipcUnwrapCaps_passiveServerIdleFrameOnCore { msg with capsGranted := endpointRights.mem AccessRight.grant } senderCspaceRoot
+            exact hFMid.trans (ipcUnwrapCaps_passiveServerIdleFrameOnCore { msg with capsGranted := endpointRights.mem AccessRight.grant }
               recvRoot receiverSlotBase _ stMid st' summary hObjInvMid hStep)
 
 open SeLe4n.Model.SystemState in
@@ -1609,19 +1609,15 @@ theorem endpointReceiveDualWithCaps_passiveServerIdleFrameOnCore
         simp [hMsg] at hStep
         split at hStep
         · obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hFMid
-        · cases hLookup : lookupCspaceRoot stMid sid with
-          | none => simp only [hLookup] at hStep; contradiction
-          | some senderRoot =>
-            simp only [hLookup] at hStep
-            cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase msg.capsGranted stMid with
-            | error e => simp [hUnwrap] at hStep
-            | ok pair =>
-              rcases pair with ⟨s, stFinal⟩
-              simp [hUnwrap] at hStep
-              obtain ⟨⟨_, _⟩, rfl⟩ := hStep
-              exact hFMid.trans (ipcUnwrapCaps_passiveServerIdleFrameOnCore msg senderRoot
-                receiverCspaceRoot receiverSlotBase _ stMid stFinal s hObjInvMid hUnwrap)
+        · cases hUnwrap : ipcUnwrapCaps msg receiverCspaceRoot
+              receiverSlotBase msg.capsGranted stMid with
+          | error e => simp [hUnwrap] at hStep
+          | ok pair =>
+            rcases pair with ⟨s, stFinal⟩
+            simp [hUnwrap] at hStep
+            obtain ⟨⟨_, _⟩, rfl⟩ := hStep
+            exact hFMid.trans (ipcUnwrapCaps_passiveServerIdleFrameOnCore msg
+              receiverCspaceRoot receiverSlotBase _ stMid stFinal s hObjInvMid hUnwrap)
 
 open SeLe4n.Model.SystemState in
 /-- SM6.D.2: `endpointCallWithCaps` frames every core's slice
@@ -1629,13 +1625,13 @@ open SeLe4n.Model.SystemState in
 theorem endpointCallWithCaps_passiveServerIdleFrameOnCore
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary) (c : CoreId)
     (hObjInv : st.objects.invExt)
     (hCallerNotUnbound : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
         tcb.schedContextBinding ≠ .unbound)
     (hStep : endpointCallWithCaps endpointId caller msg endpointRights
-             callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     passiveServerIdleFrameOnCore st st' c := by
   simp only [endpointCallWithCaps] at hStep
   cases hCall : endpointCall endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
@@ -1663,7 +1659,7 @@ theorem endpointCallWithCaps_passiveServerIdleFrameOnCore
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact hFMid.trans (ipcUnwrapCaps_passiveServerIdleFrameOnCore { msg with capsGranted := endpointRights.mem AccessRight.grant } callerCspaceRoot
+            exact hFMid.trans (ipcUnwrapCaps_passiveServerIdleFrameOnCore { msg with capsGranted := endpointRights.mem AccessRight.grant }
               recvRoot receiverSlotBase _ stMid st' summary hObjInvMid hStep)
 
 open SeLe4n.Model.SystemState in
@@ -1673,11 +1669,11 @@ view of the IPC invariant bundle. -/
 theorem endpointSendDualWithCaps_preserves_ipcInvariantFull_perCore
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
-    -- WS-RR RR3.11: replaces the threaded `hDualQueue'` / `hBadge'`.  The base
+    -- WS-RR RR3.11: replaces the threaded `hDualQueue'` / `hBadge'`. The base
     -- bundle now **establishes** both conjuncts; what it needs instead is this
     -- condition on the operation's *input*.
     (hMsgCaps : messageCapBadgesValid msg)
@@ -1702,12 +1698,12 @@ theorem endpointSendDualWithCaps_preserves_ipcInvariantFull_perCore
     (hSenderNotUnbound : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
         tcb.schedContextBinding ≠ .unbound)
     (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
-             senderCspaceRoot receiverSlotBase st = .ok (summary, st'))
+             receiverSlotBase st = .ok (summary, st'))
     (c : CoreId) :
     ipcInvariantFull_perCore st' c :=
   ipcInvariantFull_perCore_of_full
     (endpointSendDualWithCaps_preserves_ipcInvariantFull endpointId sender msg endpointRights
-      senderCspaceRoot receiverSlotBase st st' summary (ipcInvariantFull_of_smp hInv) hObjInv
+      receiverSlotBase st st' summary (ipcInvariantFull_of_smp hInv) hObjInv
       hMsgCaps hAllBudgetsNone hFreshSender hSendTailFresh
       hSenderNotRecv
       (fun tcb hRaw => hSenderNotReply tcb ((getTcb?_eq_some_iff st sender tcb).mpr hRaw))
@@ -1715,7 +1711,7 @@ theorem endpointSendDualWithCaps_preserves_ipcInvariantFull_perCore
       hStep)
     (passiveServerIdle_perCore_of_frameOnCore
       (endpointSendDualWithCaps_passiveServerIdleFrameOnCore endpointId sender msg
-        endpointRights senderCspaceRoot receiverSlotBase st st' summary c hObjInv
+        endpointRights receiverSlotBase st st' summary c hObjInv
         hSenderNotUnbound hStep)
       (hInv c).passiveServerIdle)
 
@@ -1729,7 +1725,7 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull_perCore
     (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
-    -- WS-RR RR3.11: replaces the threaded `hDualQueue'` / `hBadge'`.  The base bundle
+    -- WS-RR RR3.11: replaces the threaded `hDualQueue'` / `hBadge'`. The base bundle
     -- now **establishes** both conjuncts; the in-flight badge invariant it needs
     -- instead is a property of the *pre*-state.
     (hPendingCaps : pendingMessageCapBadgesWellFormed st)
@@ -1773,11 +1769,11 @@ every core's view of the IPC invariant bundle. -/
 theorem endpointCallWithCaps_preserves_ipcInvariantFull_perCore
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
-    -- WS-RR RR3.11: replaces the threaded `hDualQueue'` / `hBadge'`.  The base
+    -- WS-RR RR3.11: replaces the threaded `hDualQueue'` / `hBadge'`. The base
     -- bundle now **establishes** both conjuncts; what it needs instead is this
     -- condition on the operation's *input*.
     (hMsgCaps : messageCapBadgesValid msg)
@@ -1804,12 +1800,12 @@ theorem endpointCallWithCaps_preserves_ipcInvariantFull_perCore
     (hCallerReady : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
         tcb.ipcState = .ready)
     (hStep : endpointCallWithCaps endpointId caller msg endpointRights
-             callerCspaceRoot receiverSlotBase st = .ok (summary, st'))
+             receiverSlotBase st = .ok (summary, st'))
     (c : CoreId) :
     ipcInvariantFull_perCore st' c :=
   ipcInvariantFull_perCore_of_full
     (endpointCallWithCaps_preserves_ipcInvariantFull endpointId caller msg endpointRights
-      callerCspaceRoot receiverSlotBase st st' summary (ipcInvariantFull_of_smp hInv) hObjInv
+      receiverSlotBase st st' summary (ipcInvariantFull_of_smp hInv) hObjInv
       hMsgCaps hAllBudgetsNone hFreshCaller hSendTailFresh
       hCallerNotRecv
       (fun tcb hRaw => hCallerNotReply tcb ((getTcb?_eq_some_iff st caller tcb).mpr hRaw))
@@ -1818,7 +1814,7 @@ theorem endpointCallWithCaps_preserves_ipcInvariantFull_perCore
       hStep)
     (passiveServerIdle_perCore_of_frameOnCore
       (endpointCallWithCaps_passiveServerIdleFrameOnCore endpointId caller msg endpointRights
-        callerCspaceRoot receiverSlotBase st st' summary c hObjInv hCallerNotUnbound hStep)
+        receiverSlotBase st st' summary c hObjInv hCallerNotUnbound hStep)
       (hInv c).passiveServerIdle)
 
 end SeLe4n.Kernel

@@ -1,14 +1,14 @@
 -- SPDX-License-Identifier: GPL-3.0-or-later
 /-
-  seLe4n  - A Lean Microkernel
-  Copyright (C) 2026  Adam Hall
+  seLe4n - A Lean Microkernel
+  Copyright (C) 2026 Adam Hall
   This program comes with ABSOLUTELY NO WARRANTY.
   This is free software, and you are welcome to redistribute it
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
 -- STATUS: staged for WS-RR RR4.17/RR4.18 — the fault-IPC `ipcInvariantFull`
--- surface.  Staged because the delivery's bundle composes the staged
+-- surface. Staged because the delivery's bundle composes the staged
 -- `EndpointCallInvariant` (the `.call` chain's cross-core bundle, whose own
 -- staging note this inherits); the transitions it covers
 -- (`SeLe4n/Kernel/IPC/{Operations,CrossCore}/Fault.lean`) are production, and
@@ -24,13 +24,13 @@ import SeLe4n.Kernel.IPC.Invariant.DispatchArmPreservation
 # WS-RR RR4.17/RR4.18 — the fault path preserves the IPC bundle
 
 Fault delivery is an endpoint **Call** with a kernel-built message, and a
-fault reply is an endpoint **Reply** followed by a register writeback.  So
+fault reply is an endpoint **Reply** followed by a register writeback. So
 neither owes `ipcInvariantFull` a fresh proof: each is a composition of a
 transition that already has one with TCB writes that touch **no field any
 conjunct reads**.
 
 That is the whole design argument for RR4.11's "reuse the Call machinery
-rather than a parallel path", cashed out.  Concretely, the fault path's own
+rather than a parallel path", cashed out. Concretely, the fault path's own
 writes are:
 
 | write | fields touched | read by a conjunct? |
@@ -42,7 +42,7 @@ writes are:
 
 Every one of them therefore goes through the one-TCB-rewrite lever
 (`insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull`), whose nine
-field-agreement obligations all discharge by `rfl`.  The run-queue removal is
+field-agreement obligations all discharge by `rfl`. The run-queue removal is
 handled by the same lever's passive-server frame, which reads the scheduler
 only through `passiveServerIdleFrame`.
 -/
@@ -55,7 +55,7 @@ open SeLe4n.Kernel.Architecture
 open SeLe4n.Kernel.Concurrency
 
 -- ============================================================================
--- §1  The kernel's own fault-path writes
+-- §1 The kernel's own fault-path writes
 -- ============================================================================
 
 /-- WS-RR RR4.17: recording the fault a thread is blocked on rewrites one
@@ -96,7 +96,7 @@ under `hAllowed`.
 
 `hAllowed` is a pre-state fact and dischargeable: a **faulting thread is
 running**, hence `.ready`, hence in `passiveServerIdleAllowed`
-(`faultSuspendOnCore_preserves_ipcInvariantFull_of_ready`).  It is stated in
+(`faultSuspendOnCore_preserves_ipcInvariantFull_of_ready`). It is stated in
 this general form because the abandon path reaches it from a woken (also
 `.ready`) thread by the same argument. -/
 private theorem removeRunnableOnCore_preserves_bundle
@@ -220,7 +220,7 @@ theorem faultAbandonOnCore_preserves_objects_invExt
 
 The restart writes `registerContext` (the RR4.16 writeback) and clears
 `pendingFault`; neither is read by any conjunct, so the whole bundle
-transports.  This is the same lever `writeReturnFrameToTcb` goes through for
+transports. This is the same lever `writeReturnFrameToTcb` goes through for
 a syscall return — the two writebacks share a mechanism, so they share a
 preservation argument. -/
 theorem applyFaultRestart_preserves_ipcInvariantFull
@@ -247,25 +247,25 @@ theorem applyFaultRestart_preserves_objects_invExt
   | some tcb => exact RobinHood.RHTable.insert_preserves_invExt _ _ _ hObjInv
 
 -- ============================================================================
--- §2  The Call and Reply chains preserve the object-store invariant
+-- §2 The Call and Reply chains preserve the object-store invariant
 -- ============================================================================
 
 /-- The `.call` chain preserves `objects.invExt` — the rendezvous-plus-transfer
 leg, the donation, and the priority-inheritance walk each do, and the chain is
-their composition.  Needed because the fault delivery writes the fault record
+their composition. Needed because the fault delivery writes the fault record
 onto the chain's post-state, and that write is an `insert`. -/
 theorem endpointCallCrossCoreDispatch_preserves_objects_invExt
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (endpointRights : AccessRightSet) (callerCspaceRoot : SeLe4n.ObjId)
+    (endpointRights : AccessRightSet)
     (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt) :
-    (endpointCallCrossCoreDispatch endpointId caller msg endpointRights callerCspaceRoot
+    (endpointCallCrossCoreDispatch endpointId caller msg endpointRights
       receiverSlotBase executingCore st).1.objects.invExt := by
   have hWc := endpointCallWithCapsOnCore_preserves_objects_invExt endpointId caller msg
-    endpointRights callerCspaceRoot receiverSlotBase executingCore st hObjInv
+    endpointRights receiverSlotBase executingCore st hObjInv
   unfold endpointCallCrossCoreDispatch
   cases hWcEq : endpointCallWithCapsOnCore endpointId caller msg endpointRights
-      callerCspaceRoot receiverSlotBase executingCore st with
+      receiverSlotBase executingCore st with
   | mk stW resW =>
       rw [hWcEq] at hWc
       simp only at hWc ⊢
@@ -314,7 +314,7 @@ theorem endpointReplyCrossCoreDispatch_preserves_objects_invExt
           · exact hObjInv
 
 -- ============================================================================
--- §3  RR4.17 — fault delivery preserves the bundle
+-- §3 RR4.17 — fault delivery preserves the bundle
 -- ============================================================================
 
 /-- WS-RR RR4.17 (**the delivery payoff**): `faultDeliverOnCore` preserves
@@ -371,16 +371,16 @@ theorem faultDeliverOnCore_preserves_ipcInvariantFull
       (faultSuspendOnCore_preserves_ipcInvariantFull_of_ready st tid c hObjInv
         hCallerReady hInv)
   · have hCall := endpointCallCrossCoreDispatch_preserves_ipcInvariantFull tgt.endpoint tid
-      (faultMessage f ctx tgt.cap.badge) tgt.cap.rights tgt.cspaceRoot (SeLe4n.Slot.ofNat 0)
+      (faultMessage f ctx tgt.cap.badge) tgt.cap.rights (SeLe4n.Slot.ofNat 0)
       c st hInv hObjInv hAllBudgetsNone
       (by intro i cap hCap; simp [faultMessage] at hCap)
       hFreshCaller (hSendTailFresh tgt.endpoint) hNotRecv hCallerReady hNotReply
       hCallerNotUnbound (fun ep r hEp hHead => hNotSelf tgt.endpoint ep r hEp hHead)
     have hCallObj := endpointCallCrossCoreDispatch_preserves_objects_invExt tgt.endpoint tid
-      (faultMessage f ctx tgt.cap.badge) tgt.cap.rights tgt.cspaceRoot (SeLe4n.Slot.ofNat 0)
+      (faultMessage f ctx tgt.cap.badge) tgt.cap.rights (SeLe4n.Slot.ofNat 0)
       c st hObjInv
     rcases hStep : endpointCallCrossCoreDispatch tgt.endpoint tid
-        (faultMessage f ctx tgt.cap.badge) tgt.cap.rights tgt.cspaceRoot
+        (faultMessage f ctx tgt.cap.badge) tgt.cap.rights
         (SeLe4n.Slot.ofNat 0) c st with ⟨stC, res⟩
     rw [hStep] at hCall hCallObj
     simp only at hCall hCallObj
@@ -408,10 +408,10 @@ theorem faultDeliverOnCore_preserves_objects_invExt
     exact recordPendingFault_preserves_objects_invExt _ tid _
       (faultSuspendOnCore_preserves_objects_invExt st tid c hObjInv)
   · have hCallObj := endpointCallCrossCoreDispatch_preserves_objects_invExt tgt.endpoint tid
-      (faultMessage f ctx tgt.cap.badge) tgt.cap.rights tgt.cspaceRoot (SeLe4n.Slot.ofNat 0)
+      (faultMessage f ctx tgt.cap.badge) tgt.cap.rights (SeLe4n.Slot.ofNat 0)
       c st hObjInv
     rcases hStep : endpointCallCrossCoreDispatch tgt.endpoint tid
-        (faultMessage f ctx tgt.cap.badge) tgt.cap.rights tgt.cspaceRoot
+        (faultMessage f ctx tgt.cap.badge) tgt.cap.rights
         (SeLe4n.Slot.ofNat 0) c st with ⟨stC, res⟩
     rw [hStep] at hCallObj
     simp only at hCallObj
@@ -429,7 +429,7 @@ theorem faultDeliverOnCore_preserves_objects_invExt
 
 /-- WS-RR RR4.17/RR4.20: **the flow-checked delivery preserves the bundle.**
 
-The arm `Kernel/FaultEntry.lean` actually calls.  It needs no hypothesis the
+The arm `Kernel/FaultEntry.lean` actually calls. It needs no hypothesis the
 unchecked delivery does not: a permitted flow *is* the unchecked delivery
 (`faultDeliverOnCoreChecked_flow_allowed`), and a denied one is the RR4.9
 suspend, which the `_of_ready` corollary already covers from `hCallerReady`.
@@ -500,7 +500,7 @@ theorem faultDeliverOnCoreChecked_preserves_objects_invExt
         simpa only [hRes, hGate, Bool.false_eq_true, if_false] using hSusp
 
 -- ============================================================================
--- §4  RR4.18 — the fault reply preserves the bundle
+-- §4 RR4.18 — the fault reply preserves the bundle
 -- ============================================================================
 
 /-- WS-RR RR4.18 (**the reply payoff**): `faultReplyOnCore` preserves
@@ -515,7 +515,7 @@ then either the restart writeback or the abandon.
 `hTargetIdleAllowed` is a post-reply side condition of exactly the kind the
 `.reply` chain's own theorem already carries as `hServerIdleAllowed`, and it
 is dischargeable for the same reason: the reply wakes its target `.ready`, and
-`.ready` is a `passiveServerIdleAllowed` state.  It binds only on the abandon
+`.ready` is a `passiveServerIdleAllowed` state. It binds only on the abandon
 arm, where the thread is descheduled — the restart arm writes no scheduler
 slot at all. -/
 theorem faultReplyOnCore_preserves_ipcInvariantFull

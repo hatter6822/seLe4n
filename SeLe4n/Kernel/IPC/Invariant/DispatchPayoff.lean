@@ -278,7 +278,7 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
         caps := (resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded)
           gate.capDepth (cap.rights.mem .grant) st).1,
         badge := cap.badge, capsGranted := cap.rights.mem .grant } cap.rights
-      gate.cspaceRoot decoded.capRecvSlot
+      decoded.capRecvSlot
       (determineExecutingCore (resolveExtraCaps gate.cspaceRoot
         (decodeExtraCapAddrs decoded) gate.capDepth (cap.rights.mem .grant) st).2 tid)
       (resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded) gate.capDepth
@@ -290,7 +290,7 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
         caps := (resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded)
           gate.capDepth (cap.rights.mem .grant) st).1,
         badge := cap.badge, capsGranted := cap.rights.mem .grant } cap.rights
-      gate.cspaceRoot decoded.capRecvSlot
+      decoded.capRecvSlot
       (determineExecutingCore (resolveExtraCaps gate.cspaceRoot
         (decodeExtraCapAddrs decoded) gate.capDepth (cap.rights.mem .grant) st).2 tid)
       (resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded) gate.capDepth
@@ -459,7 +459,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                 hInvR.dualQueueSystemInvariant hInvR.endpointQueueTailBlockedConsistent
               have hSendInv := endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull
                 epId tid { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, caps := resolvedCaps, badge := cap.badge, capsGranted := cap.rights.mem .grant }
-                cap.rights gate.cspaceRoot decoded.capRecvSlot
+                cap.rights decoded.capRecvSlot
                 (determineExecutingCore stR tid) stR
                 hInvR hObjInvR hBudgetsR hRB hFreshR hTailR
                 (fun tcb hTcb => by
@@ -476,7 +476,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                   exact hBoundC)
               cases hSend : endpointSendDualWithCapsOnCore epId tid
                   { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, caps := resolvedCaps, badge := cap.badge, capsGranted := cap.rights.mem .grant }
-                  cap.rights gate.cspaceRoot decoded.capRecvSlot
+                  cap.rights decoded.capRecvSlot
                   (determineExecutingCore stR tid) stR with
               | mk st1 res1 =>
                   rw [hSend] at hStep hSendInv
@@ -597,7 +597,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                 exact hEp
               have hCallInv := endpointCallCrossCoreDispatch_preserves_ipcInvariantFull
                 epId tid { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, caps := resolvedCaps, badge := cap.badge, capsGranted := cap.rights.mem .grant }
-                cap.rights gate.cspaceRoot decoded.capRecvSlot
+                cap.rights decoded.capRecvSlot
                 (determineExecutingCore stR tid) stR
                 hInvR hObjInvR hBudgetsR hRB hFreshR hTailR
                 (fun tcb hTcb => by
@@ -619,7 +619,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                 hNeR
               cases hCall : endpointCallCrossCoreDispatch epId tid
                   { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, caps := resolvedCaps, badge := cap.badge, capsGranted := cap.rights.mem .grant }
-                  cap.rights gate.cspaceRoot decoded.capRecvSlot
+                  cap.rights decoded.capRecvSlot
                   (determineExecutingCore stR tid) stR with
               | mk st1 res1 =>
                   rw [hCall] at hStep hCallInv
@@ -987,7 +987,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
               cases hDisp : endpointSendCrossCoreDispatchChecked ctx epId tid
                   { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
                     caps := resolvedCaps, badge := cap.badge,
-                    capsGranted := cap.rights.mem .grant } cap.rights gate.cspaceRoot
+                    capsGranted := cap.rights.mem .grant } cap.rights
                   decoded.capRecvSlot (determineExecutingCore stR tid) stR with
               | mk st1 res1 =>
                   rw [hDisp] at hStep
@@ -1034,7 +1034,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
               cases hDisp : endpointCallCrossCoreDispatchChecked ctx epId tid
                   { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
                     caps := resolvedCaps, badge := cap.badge,
-                    capsGranted := cap.rights.mem .grant } cap.rights gate.cspaceRoot
+                    capsGranted := cap.rights.mem .grant } cap.rights
                   decoded.capRecvSlot (determineExecutingCore stR tid) stR with
               | mk st1 res1 =>
                   rw [hDisp] at hStep

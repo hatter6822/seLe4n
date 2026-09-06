@@ -2708,7 +2708,7 @@ def runL13CapTransferShortCircuitChecks : IO Unit := do
       TransferCap.fromNode cap 2]
 
   -- L13-01: 3 caps with receiver root = TCB → short-circuit, all .noSlot
-  let result := SeLe4n.Kernel.ipcUnwrapCapsLoop caps senderRoot receiverRoot
+  let result := SeLe4n.Kernel.ipcUnwrapCapsLoop caps receiverRoot
     0 (SeLe4n.Slot.ofNat 0) #[] caps.size st0
   match result with
   | .ok (summary, st') =>
@@ -2738,7 +2738,7 @@ def runL13CapTransferShortCircuitChecks : IO Unit := do
       |>.withObject targetObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
       |>.buildChecked)
 
-  let result1 := SeLe4n.Kernel.ipcUnwrapCapsLoop #[TransferCap.fromNode cap 0] senderRoot missingRoot
+  let result1 := SeLe4n.Kernel.ipcUnwrapCapsLoop #[TransferCap.fromNode cap 0] missingRoot
     0 (SeLe4n.Slot.ofNat 0) #[] 1 st1
   match result1 with
   | .ok (summary1, st1') =>
@@ -3956,7 +3956,7 @@ private def r1FaultyState (st : SystemState) : SystemState :=
 
 private def r1CheckHealthyState (stQueued : SystemState) : IO Unit := do
   let result := SeLe4n.Kernel.endpointCallWithCaps r1EpId r1CallerTid
-    r1MsgWithCaps r1EndpointRights r1CallerCNode (SeLe4n.Slot.ofNat 0) stQueued
+    r1MsgWithCaps r1EndpointRights (SeLe4n.Slot.ofNat 0) stQueued
   match result with
   | .ok _ =>
       IO.println "positive check passed [R1-NEG-01 endpointCallWithCaps healthy state succeeds]"
@@ -3966,7 +3966,7 @@ private def r1CheckHealthyState (stQueued : SystemState) : IO Unit := do
 
 private def r1CheckFaultyState (stFaulty : SystemState) : IO Unit := do
   let result := SeLe4n.Kernel.endpointCallWithCaps r1EpId r1CallerTid
-    r1MsgWithCaps r1EndpointRights r1CallerCNode (SeLe4n.Slot.ofNat 0) stFaulty
+    r1MsgWithCaps r1EndpointRights (SeLe4n.Slot.ofNat 0) stFaulty
   match result with
   | .ok _ =>
       throw <| IO.userError

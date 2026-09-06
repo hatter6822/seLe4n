@@ -2934,7 +2934,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
         -- *its* home core and removes the sender from *its own* core; on the boot
         -- core it is the single-core transition.
         let executingCore := determineExecutingCore st tid
-        match endpointSendDualWithCapsOnCore epId tid msg cap.rights gate.cspaceRoot
+        match endpointSendDualWithCapsOnCore epId tid msg cap.rights
             decoded.capRecvSlot executingCore st with
         | (_, .error e) => .error e
         | (st', .ok (summary, _)) =>
@@ -3049,7 +3049,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
         -- message in its `pendingMessage`; stage its return frame (the CALLER
         -- itself always blocks — §3.5 — and is owed its frame by the reply path).
         let wokenReceiver? := (st.getEndpoint? epId).bind (·.receiveQ.head)
-        match endpointCallCrossCoreDispatch epId tid msg cap.rights gate.cspaceRoot
+        match endpointCallCrossCoreDispatch epId tid msg cap.rights
             decoded.capRecvSlot executingCore st with
         -- PR #866 round-2: the woken receiver's `extraCaps` is the transfer
         -- summary's INSTALLED count (zero on grant-denied / slot-exhausted
@@ -3386,7 +3386,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
         -- sender→endpoint flow gate, then the per-core transition.
         let executingCore := determineExecutingCore st tid
         match endpointSendCrossCoreDispatchChecked ctx epId tid msg cap.rights
-            gate.cspaceRoot decoded.capRecvSlot executingCore st with
+            decoded.capRecvSlot executingCore st with
         | (_, .error e) => .error e
         | (st', .ok (summary, _)) =>
             match clearWokenReceiverStash wokenReceiver? st' with
@@ -3504,7 +3504,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
         -- call's own flow gate ran inside the checked dispatch, before the wake).
         let wokenReceiver? := (st.getEndpoint? epId).bind (·.receiveQ.head)
         match endpointCallCrossCoreDispatchChecked ctx epId tid msg cap.rights
-            gate.cspaceRoot decoded.capRecvSlot executingCore st with
+            decoded.capRecvSlot executingCore st with
         -- PR #866 round-2: `extraCaps` = the summary's INSTALLED count, like
         -- the unchecked arm.
         | (st', .ok (summary, _)) =>
@@ -4924,7 +4924,7 @@ theorem dispatchWithCap_send_uses_withCaps
                                   capsGranted := cap.rights.mem .grant }
         let wokenReceiver? := (st.getEndpoint? epId).bind (·.receiveQ.head)
         let executingCore := determineExecutingCore st tid
-        match endpointSendDualWithCapsOnCore epId tid msg cap.rights gate.cspaceRoot
+        match endpointSendDualWithCapsOnCore epId tid msg cap.rights
             decoded.capRecvSlot executingCore st with
         | (_, .error e) => .error e
         | (st', .ok (summary, _)) =>
@@ -4971,7 +4971,7 @@ theorem dispatchWithCap_call_uses_crossCoreDispatch
         -- separate post-dispatch link step.
         -- WS-RA RA.B.5b: the woken receiver's staged frame rides in the RHS.
         let wokenReceiver? := (st.getEndpoint? epId).bind (·.receiveQ.head)
-        match endpointCallCrossCoreDispatch epId tid msg cap.rights gate.cspaceRoot
+        match endpointCallCrossCoreDispatch epId tid msg cap.rights
             decoded.capRecvSlot executingCore st with
         | (st', .ok (summary, _)) =>
             .ok ((), Architecture.stageWokenDelivery st' wokenReceiver?
@@ -6665,7 +6665,7 @@ theorem dispatchWithCap_send_delegates
                 -- message, so a send that parks can still transfer when a
                 -- receiver arrives later.
                 capsGranted := cap.rights.mem .grant }
-              cap.rights gate.cspaceRoot decoded.capRecvSlot
+              cap.rights decoded.capRecvSlot
               (determineExecutingCore st tid) st with
        | (_, .error e) => .error e
        | (st', .ok (summary, _)) =>
@@ -6697,7 +6697,7 @@ theorem dispatchWithCapChecked_send_delegates
                 -- message, so a send that parks can still transfer when a
                 -- receiver arrives later.
                 capsGranted := cap.rights.mem .grant }
-              cap.rights gate.cspaceRoot decoded.capRecvSlot
+              cap.rights decoded.capRecvSlot
               (determineExecutingCore st tid) st with
        | (_, .error e) => .error e
        | (st', .ok (summary, _)) =>
@@ -6807,7 +6807,7 @@ def syscallDelegates : SyscallId → Prop
                     -- PR #873 round 6: the sender's grant authority travels with
                     -- the message, so a parked send can still transfer later.
                     capsGranted := cap.rights.mem .grant }
-                  cap.rights gate.cspaceRoot decoded.capRecvSlot
+                  cap.rights decoded.capRecvSlot
                   (determineExecutingCore st tid) st with
            | (_, .error e) => .error e
            | (st', .ok (summary, _)) =>

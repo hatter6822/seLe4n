@@ -794,7 +794,7 @@ theorem endpointReceiveDualOnCore_preserves_ipcInvariantFull_perCore
       (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1 c :=
   ipcInvariantFull_perCore_of_full
     (endpointReceiveDualOnCore_preserves_ipcInvariantFull endpointId receiver replyId
-      executingCore st (ipcInvariantFull_of_smp hInv) hObjInv 
+      executingCore st (ipcInvariantFull_of_smp hInv) hObjInv
       hAllBudgetsNone hFreshReceiver hRecvTailFresh hReplyIdValid hReceiverNotRecv
       hReceiverReady)
     (passiveServerIdle_perCore_of_frameOnCore
@@ -1325,7 +1325,7 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
             rw [hR2]
           have hFull2 := endpointReceiveDualOnCore_preserves_ipcInvariantFull endpointId
             receiver replyId executingCore st1 hInv1 hObjInv1
-            
+
             hBudgets1 hFresh1 hTailFresh1 hReplyIdValid1 hNotRecv1 hReady1
           rwa [hStEq2] at hFull2
 
@@ -1592,13 +1592,13 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull
               | none => exact hBare
               | some senderRoot =>
                 simp only
-                cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
+                cases hUnwrap : ipcUnwrapCaps msg receiverCspaceRoot
                     receiverSlotBase msg.capsGranted stRecv with
                 | error e => exact hBare
                 | ok pair =>
                   obtain ⟨summary, stFinal⟩ := pair
                   simp only
-                  exact ipcUnwrapCaps_preserves_ipcInvariantFull msg senderRoot
+                  exact ipcUnwrapCaps_preserves_ipcInvariantFull msg
                     receiverCspaceRoot receiverSlotBase msg.capsGranted stRecv stFinal summary
                     hBare hBareInv (hCapBadges receiverTcb hT msg hM) hUnwrap
 
@@ -1647,13 +1647,13 @@ theorem endpointReceiveDualWithCapsOnCore_passiveServerIdleFrameOnCore
               | none => exact hBare
               | some senderRoot =>
                 simp only
-                cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
+                cases hUnwrap : ipcUnwrapCaps msg receiverCspaceRoot
                     receiverSlotBase msg.capsGranted stRecv with
                 | error e => exact hBare
                 | ok pair =>
                   obtain ⟨summary, stFinal⟩ := pair
                   simp only
-                  exact hBare.trans (ipcUnwrapCaps_passiveServerIdleFrameOnCore msg senderRoot
+                  exact hBare.trans (ipcUnwrapCaps_passiveServerIdleFrameOnCore msg
                     receiverCspaceRoot receiverSlotBase msg.capsGranted stRecv stFinal summary
                     hBareInv hUnwrap)
 

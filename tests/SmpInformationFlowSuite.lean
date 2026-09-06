@@ -6265,7 +6265,7 @@ private def crossCoreSendUnder (ctx : LabelingContext) (epId : SeLe4n.ObjId) :
       Except KernelError (CapTransferSummary ×
         Option (CoreId × SeLe4n.Kernel.Concurrency.SgiKind)) :=
   endpointSendCrossCoreDispatchChecked ctx epId lowCurrent IpcMessage.empty
-    (AccessRightSet.ofList [.write]) cnRoot (SeLe4n.Slot.ofNat 0) c0 niState
+    (AccessRightSet.ofList [.write]) (SeLe4n.Slot.ofNat 0) c0 niState
 
 /-- §6.8  The live per-endpoint flow policy — SM8.B's registered debt (a). -/
 private def runEndpointPolicyGateChecks : IO Unit := do
@@ -11114,7 +11114,7 @@ private def sendRendezvousState : SystemState :=
                                      tail := some lowCurrent } }) }
   -- PR #873 round 5: the send gate requires **Grant** as well as a declared
   -- capability count, because an endpoint capability without it installs nothing
-  -- (`ipcUnwrapCaps` answers `.grantDenied` for every cap).  The shared probe
+  -- (`ipcUnwrapCaps` answers `.grantDenied` for every cap). The shared probe
   -- capability carries `.read` only, so this scenario — whose whole subject is
   -- the caps-carrying edge list — installs a Grant-bearing endpoint capability
   -- at a slot of its own rather than weakening the gate to suit the fixture.

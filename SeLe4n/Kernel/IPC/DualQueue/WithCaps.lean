@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-3.0-or-later
 /-
-  seLe4n  - A Lean Microkernel
-  Copyright (C) 2026  Adam Hall
+  seLe4n - A Lean Microkernel
+  Copyright (C) 2026 Adam Hall
   This program comes with ABSOLUTELY NO WARRANTY.
   This is free software, and you are welcome to redistribute it
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
@@ -65,7 +65,7 @@ The send and call WithCaps arms both install the transferred capabilities into
 the receiver's CSpace root, and `ipcTransferSingleCap` writes the CNode there.
 A declared lock footprint has to name that object, and it has to name it from
 the state whose locks the bracket took — so this reads `st`, and since RR7.8
-both arms read the receiver's root from `st` as well.  (They read it from the
+both arms read the receiver's root from `st` as well. (They read it from the
 *post*-state before; the two agree, because nothing between them writes
 `TCB.cspaceRoot` — thread creation is its only writer — but "the states agree"
 is a fact about the tree that a later transition could falsify silently, while
@@ -73,7 +73,7 @@ is a fact about the tree that a later transition could falsify silently, while
 
 `none` covers the three shapes that install nothing: a message carrying no
 capabilities, an endpoint with no waiting receiver, and a receiver whose TCB
-does not resolve.  The last is the fail-closed arm the transitions take as
+does not resolve. The last is the fail-closed arm the transitions take as
 `.error .invalidCapability`; it declares no destination because it writes
 none. -/
 def rendezvousCapsDestination? (st : SystemState) (endpointId : SeLe4n.ObjId)
@@ -101,17 +101,16 @@ the endpoint lacks Grant right). -/
 def endpointSendDualWithCaps
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId)
     (receiverSlotBase : SeLe4n.Slot) : Kernel CapTransferSummary :=
   fun st =>
     -- PR #873 round 13: **the endpoint's grant right is stamped into the
-    -- message**, because the message is where both orderings read it.  The
+    -- message**, because the message is where both orderings read it. The
     -- immediate rendezvous below consulted `endpointRights` while a queued send
     -- left `msg.capsGranted` untouched for the later unwrap to read, so a caller
     -- that passed granting rights with the field's `false` default transferred
     -- capabilities on rendezvous and none after parking -- capability delivery
     -- decided by which side reached the endpoint first, the order-dependence
-    -- round 6 removed from the receive side.  One authority, recorded once, read
+    -- round 6 removed from the receive side. One authority, recorded once, read
     -- once.
     -- Check if a receiver is waiting BEFORE the send.
     -- AJ1-C (M-02): `endpointQueuePopHead_returns_head` proves the pre-inspected
@@ -120,7 +119,7 @@ def endpointSendDualWithCaps
     -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
     let hasReceiver := match st.getEndpoint? endpointId with
       | some ep => ep.receiveQ.head.isSome
-      | none    => false
+      | none => false
     match endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem .grant } st with
     | .error e => .error e
     | .ok ((), st') =>
@@ -139,7 +138,7 @@ def endpointSendDualWithCaps
             | some receiverId =>
               match lookupCspaceRoot st receiverId with
               | some recvRoot =>
-                ipcUnwrapCaps { msg with capsGranted := endpointRights.mem .grant } senderCspaceRoot recvRoot
+                ipcUnwrapCaps { msg with capsGranted := endpointRights.mem .grant } recvRoot
                   receiverSlotBase (endpointRights.mem .grant) st'
               | none =>
                 -- AK1-I (I-M07 / MEDIUM, NI L-1): Symmetric with the
@@ -176,9 +175,9 @@ def endpointReceiveDualWithCaps
   fun st =>
     -- WS-SM SM6.D (#7.1 fold): forward the server-supplied reply object into the
     -- folded receive transition (atomic reply-linking on a Call rendezvous).
-    -- PR #873 round 8: **did this receive dequeue anything?**  Read before the
+    -- PR #873 round 8: **did this receive dequeue anything?** Read before the
     -- transition, exactly as `endpointSendDualWithCaps` reads `hasReceiver`
-    -- before the send.  Without it the blocking branch — which returns the
+    -- before the send. Without it the blocking branch — which returns the
     -- receiver's own id and leaves `pendingMessage` untouched — unwrapped a
     -- *previously delivered* message a second time, installing an extra copy of
     -- authority for a receive that consumed nothing.
@@ -196,35 +195,45 @@ def endpointReceiveDualWithCaps
                 if msg.caps.isEmpty then
                   .ok ((senderId, { results := #[] }), st')
                 else
-                  -- Sender was dequeued — get sender's cspaceRoot for CDT tracking.
-                  -- AK1-I (I-M07 / MEDIUM, NI L-1) + U-H13: Symmetric with
-                  -- the `endpointSendDualWithCaps` arm above and the
-                  -- `endpointCallWithCaps` arm below. Previous behavior
-                  -- fell back silently to `senderId.toObjId` on missing
-                  -- sender CSpace root — a silent success that could mask
-                  -- bugs and gave a per-domain covert channel via
-                  -- `KernelError`. Now all three IPC capability-transfer
-                  -- paths fail closed with `.invalidCapability` on this
-                  -- structural fault, preserving NI symmetry. The
-                  -- message payload itself was already delivered by
-                  -- `endpointReceiveDual` at line above; the `.error`
-                  -- indicates the capability-transfer side channel
-                  -- failed and allows the caller to surface a clean
-                  -- protocol-level error.
-                  match lookupCspaceRoot st' senderId with
-                  | none => .error .invalidCapability
-                  | some senderRoot =>
-                    -- PR #873 round 6: the grant right is the **sender's**, read
-                    -- off the message it sent.  It used to be the receiver's
-                    -- endpoint rights, which is a different principal's
-                    -- authority: seL4 gates capability transfer on the sender's
-                    -- endpoint capability, and consulting the receiver's here
-                    -- made the queued ordering disagree with the rendezvous one
-                    -- whenever a granting sender met a non-granting receiver.
-                    match ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                        receiverSlotBase msg.capsGranted st' with
-                    | .error e => .error e
-                    | .ok (summary, st'') => .ok ((senderId, summary), st'')
+                  -- **WS-RR RR7.33**: the sender's CSpace root is looked up
+                  -- nowhere here any more, and neither is its absence an error.
+                  --
+                  -- AK1-I made all three capability-transfer paths fail closed
+                  -- on a missing CSpace root, replacing a silent fallback to
+                  -- `senderId.toObjId`. That was right for the *receiver's*
+                  -- root, which is where capabilities are installed and without
+                  -- which the transfer genuinely cannot proceed — the send and
+                  -- call arms still check it. It was never right here: this arm
+                  -- looked up the **sender's** root solely to hand it to
+                  -- `ipcUnwrapCaps`, which has not read it since the
+                  -- revocation-precision fix moved the derivation parent onto
+                  -- the real source node the message carries
+                  -- (`TransferCap.srcNode`, minted at `resolveExtraCaps`
+                  -- against that very root). So the lookup fed a dead
+                  -- parameter, and its error made the *receiver's* syscall fail
+                  -- on a fact about the *sender's* TCB — a one-bit flow from
+                  -- sender-domain state into a receiver-visible `KernelError`,
+                  -- which is the shape AK1-I set out to remove rather than one
+                  -- it needed to add.
+                  --
+                  -- A source slot destroyed between resolution and unwrap is
+                  -- already handled, at the right granularity: the per-cap
+                  -- `CapTransferResult.sourceRevoked`, which declines that
+                  -- capability and installs the rest. Failing the whole
+                  -- transfer on the sender's root was coarser and answered a
+                  -- different question.
+                  --
+                  -- PR #873 round 6: the grant right is the **sender's**, read
+                  -- off the message it sent. It used to be the receiver's
+                  -- endpoint rights, which is a different principal's
+                  -- authority: seL4 gates capability transfer on the sender's
+                  -- endpoint capability, and consulting the receiver's here
+                  -- made the queued ordering disagree with the rendezvous one
+                  -- whenever a granting sender met a non-granting receiver.
+                  match ipcUnwrapCaps msg receiverCspaceRoot
+                      receiverSlotBase msg.capsGranted st' with
+                  | .error e => .error e
+                  | .ok (summary, st'') => .ok ((senderId, summary), st'')
             | none =>
                 -- Receiver was enqueued (no sender available)
                 .ok ((senderId, { results := #[] }), st')
@@ -238,7 +247,7 @@ security property.
 `endpointReceiveDual`'s blocking branch returns the receiver's own id and leaves
 `pendingMessage` untouched, so deciding by that field alone re-unwrapped a
 message the receiver had been holding since a previous receive — an extra copy of
-authority installed with no sender.  The gate is the endpoint's pre-state send
+authority installed with no sender. The gate is the endpoint's pre-state send
 queue, which is what the bare transition itself branches on. -/
 theorem endpointReceiveDualWithCaps_blocked_installs_nothing
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
@@ -257,22 +266,21 @@ with `ipcUnwrapCaps` for the immediate-rendezvous path. Same structure as
 def endpointCallWithCaps
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId)
     (receiverSlotBase : SeLe4n.Slot) : Kernel CapTransferSummary :=
   fun st =>
     -- PR #873 round 13: **the endpoint's grant right is stamped into the
-    -- message**, because the message is where both orderings read it.  The
+    -- message**, because the message is where both orderings read it. The
     -- immediate rendezvous below consulted `endpointRights` while a queued send
     -- left `msg.capsGranted` untouched for the later unwrap to read, so a caller
     -- that passed granting rights with the field's `false` default transferred
     -- capabilities on rendezvous and none after parking -- capability delivery
     -- decided by which side reached the endpoint first, the order-dependence
-    -- round 6 removed from the receive side.  One authority, recorded once, read
+    -- round 6 removed from the receive side. One authority, recorded once, read
     -- once.
     -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
     let hasReceiver := match st.getEndpoint? endpointId with
       | some ep => ep.receiveQ.head.isSome
-      | none    => false
+      | none => false
     match endpointCall endpointId caller { msg with capsGranted := endpointRights.mem .grant } st with
     | .error e => .error e
     | .ok ((), st') =>
@@ -286,7 +294,7 @@ def endpointCallWithCaps
             | some receiverId =>
               match lookupCspaceRoot st receiverId with
               | some recvRoot =>
-                ipcUnwrapCaps { msg with capsGranted := endpointRights.mem .grant } callerCspaceRoot recvRoot
+                ipcUnwrapCaps { msg with capsGranted := endpointRights.mem .grant } recvRoot
                   receiverSlotBase (endpointRights.mem .grant) st'
               | none =>
                 -- WS-RC R1 (DEEP-IPC-03 / MEDIUM, NI L-1): Symmetric with
@@ -312,22 +320,22 @@ def endpointCallWithCaps
 /-- **WS-RR RR7.8**: when the pre-state names a destination, the send arm's whole
 effect is the base transition followed by `ipcUnwrapCaps` **at that root**.
 
-The anti-drift device.  `rendezvousCapsDestination?` exists so a declared lock
+The anti-drift device. `rendezvousCapsDestination?` exists so a declared lock
 footprint can name the object the transfer writes; this is what makes the two
-one fact rather than two that agree today.  A refactor that changes which root
+one fact rather than two that agree today. A refactor that changes which root
 the arm installs into — or which state it reads it from — fails here. -/
 theorem endpointSendDualWithCaps_reduces_to_unwrap
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (recvRoot : SeLe4n.ObjId)
     (hSend : endpointSendDual endpointId sender
         { msg with capsGranted := endpointRights.mem .grant } st = .ok ((), st'))
     (hDest : rendezvousCapsDestination? st endpointId msg = some recvRoot) :
-    endpointSendDualWithCaps endpointId sender msg endpointRights senderCspaceRoot
+    endpointSendDualWithCaps endpointId sender msg endpointRights
         receiverSlotBase st
       = ipcUnwrapCaps { msg with capsGranted := endpointRights.mem .grant }
-          senderCspaceRoot recvRoot receiverSlotBase (endpointRights.mem .grant) st' := by
+          recvRoot receiverSlotBase (endpointRights.mem .grant) st' := by
   unfold endpointSendDualWithCaps
   unfold rendezvousCapsDestination? at hDest
   by_cases hEmpty : msg.caps.isEmpty = true
@@ -350,15 +358,15 @@ condition, the same resolver, the same root. -/
 theorem endpointCallWithCaps_reduces_to_unwrap
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (recvRoot : SeLe4n.ObjId)
     (hCall : endpointCall endpointId caller
         { msg with capsGranted := endpointRights.mem .grant } st = .ok ((), st'))
     (hDest : rendezvousCapsDestination? st endpointId msg = some recvRoot) :
-    endpointCallWithCaps endpointId caller msg endpointRights callerCspaceRoot
+    endpointCallWithCaps endpointId caller msg endpointRights
         receiverSlotBase st
       = ipcUnwrapCaps { msg with capsGranted := endpointRights.mem .grant }
-          callerCspaceRoot recvRoot receiverSlotBase (endpointRights.mem .grant) st' := by
+          recvRoot receiverSlotBase (endpointRights.mem .grant) st' := by
   unfold endpointCallWithCaps
   unfold rendezvousCapsDestination? at hDest
   by_cases hEmpty : msg.caps.isEmpty = true

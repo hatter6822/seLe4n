@@ -319,7 +319,7 @@ def endpointReceiveDualWithCapsOnCore
             match lookupCspaceRoot st' senderId with
             | none => (st', .error .invalidCapability)
             | some senderRoot =>
-              match ipcUnwrapCaps msg senderRoot receiverCspaceRoot receiverSlotBase
+              match ipcUnwrapCaps msg receiverCspaceRoot receiverSlotBase
                   msg.capsGranted st' with
               | .error e => (st', .error e)
               | .ok (summary, st'') => (st'', .ok (senderId, summary, sgi))

@@ -229,7 +229,7 @@ def faultDeliverOnCore (st : SystemState) (tid : SeLe4n.ThreadId) (f : Fault)
       -- neither the fault tag nor `MR0`-`MR3` — the frame the ABI promises.
       let wokenReceiver? := (st.getEndpoint? tgt.endpoint).bind (·.receiveQ.head)
       match endpointCallCrossCoreDispatch tgt.endpoint tid
-          (faultMessage f ctx tgt.cap.badge) tgt.cap.rights tgt.cspaceRoot
+          (faultMessage f ctx tgt.cap.badge) tgt.cap.rights
           (SeLe4n.Slot.ofNat 0) executingCore st with
       | (_, .error _) =>
           (recordPendingFault (faultSuspendOnCore st tid executingCore) tid tf,
@@ -290,7 +290,7 @@ theorem faultDeliverOnCore_delivered_eq (st : SystemState) (tid : SeLe4n.ThreadI
     (sgi? : Option (CoreId × SgiKind))
     (hRes : resolveFaultHandler st tid = .ok tgt)
     (hCall : endpointCallCrossCoreDispatch tgt.endpoint tid
-        (faultMessage f ctx tgt.cap.badge) tgt.cap.rights tgt.cspaceRoot
+        (faultMessage f ctx tgt.cap.badge) tgt.cap.rights
         (SeLe4n.Slot.ofNat 0) c st = (st', .ok (summary, sgi?))) :
     faultDeliverOnCore st tid f ctx c =
       (recordPendingFault

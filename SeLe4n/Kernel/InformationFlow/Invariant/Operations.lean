@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-3.0-or-later
 /-
-  seLe4n  - A Lean Microkernel
-  Copyright (C) 2026  Adam Hall
+  seLe4n - A Lean Microkernel
+  Copyright (C) 2026 Adam Hall
   This program comes with ABSOLUTELY NO WARRANTY.
   This is free software, and you are welcome to redistribute it
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
@@ -317,29 +317,28 @@ theorem endpointSendDualChecked_NI
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage)
     (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId)
     (receiverSlotBase : SeLe4n.Slot)
     (s₁ s₂ : SystemState) (r₁ : CapTransferSummary) (s₁' : SystemState)
     (r₂ : CapTransferSummary) (s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
     (hProjection : ∀ t r t', endpointSendDualWithCaps endpointId sender msg
-        endpointRights senderCspaceRoot receiverSlotBase t = .ok (r, t') →
+        endpointRights receiverSlotBase t = .ok (r, t') →
         projectState ctx observer t' = projectState ctx observer t)
     (hStep₁ : endpointSendDualChecked ctx endpointId sender msg endpointRights
-        senderCspaceRoot receiverSlotBase s₁ = .ok (r₁, s₁'))
+        receiverSlotBase s₁ = .ok (r₁, s₁'))
     (hStep₂ : endpointSendDualChecked ctx endpointId sender msg endpointRights
-        senderCspaceRoot receiverSlotBase s₂ = .ok (r₂, s₂')) :
+        receiverSlotBase s₂ = .ok (r₂, s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
   -- WS-SM SM8.C: the gate the wrapper branched on carries both conjuncts; the
   -- rewrite below needs the override half as well as the lattice half.
   have hGate := enforcementSoundness_endpointSendDualChecked_gate ctx endpointId sender msg
-    endpointRights senderCspaceRoot receiverSlotBase s₁ r₁ s₁' hStep₁
+    endpointRights receiverSlotBase s₁ r₁ s₁' hStep₁
   have hFlow := endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _ hGate
   have hOverride := endpointFlowGate_implies_override ctx endpointId _ _ hGate
   rw [endpointSendDualChecked_eq_endpointSendDualWithCaps_when_allowed ctx endpointId sender msg
-    endpointRights senderCspaceRoot receiverSlotBase s₁ hFlow hOverride] at hStep₁
+    endpointRights receiverSlotBase s₁ hFlow hOverride] at hStep₁
   rw [endpointSendDualChecked_eq_endpointSendDualWithCaps_when_allowed ctx endpointId sender msg
-    endpointRights senderCspaceRoot receiverSlotBase s₂ hFlow hOverride] at hStep₂
+    endpointRights receiverSlotBase s₂ hFlow hOverride] at hStep₂
   unfold lowEquivalent; rw [hProjection s₁ r₁ s₁' hStep₁, hProjection s₂ r₂ s₂' hStep₂]; exact hLow
 
 /-- WS-H8/H-07: If notificationSignalChecked succeeds, the resulting state
@@ -617,7 +616,7 @@ Staging a syscall return frame into a thread's saved register context is
 invisible to the information-flow projection: `writeReturnFrameToTcb`
 touches exactly one TCB's `registerContext`, and `projectKernelObject`
 strips that field from every projected TCB (WS-H12c — the same fact that
-makes `saveOutgoingContext_preserves_projection` above go through).  The
+makes `saveOutgoingContext_preserves_projection` above go through). The
 first draft of the WS-RA plan assumed this theorem was false ("an observer
 that can see the caller sees its register context"); the tree says
 otherwise, and this is the checked fact.
@@ -626,7 +625,7 @@ What the blanket does **not** claim, stated so it cannot be over-read: the
 caller itself still receives the value — through the hardware `TrapFrame`
 writeback at the FFI boundary, which is outside `ObservableState` (the
 same class as the registered covert channels, and by construction data the
-caller's own syscall produced).  The *authority* for each staged value is
+caller's own syscall produced). The *authority* for each staged value is
 the arm's own flow gate (`endpointFlowGate`, the notification→waiter
 gate), which runs before the arm stages. -/
 theorem writeReturnFrameToTcb_preserves_projection
@@ -774,7 +773,7 @@ private theorem saveOutgoingContext_with_sched_preserves_projection
           | tcb outTcb =>
               simp only [hOut]
               -- Goal: projectState ctx observer { { st with objects := st.objects.insert ... } with scheduler := sched }
-              --     = projectState ctx observer { st with scheduler := sched }
+              -- = projectState ctx observer { st with scheduler := sched }
               -- The LHS has objects changed, everything else (incl. scheduler override) same
               simp only [projectState]
               congr 1
@@ -1673,7 +1672,7 @@ theorem endpointSendDual_preserves_projection
         -- Path 1: Receiver waiting — PopHead + storeTcbIpcState + ensureRunnable
         simp only [hRecvHead] at hStep
         -- PR #873 round 17: the rendezvous arm resolves the sender before
-        -- popping.  It never did, so a send naming a nonexistent thread
+        -- popping. It never did, so a send naming a nonexistent thread
         -- delivered anyway and the receiver held a message attributed to it.
         cases hSnd : st.getTcb? sender with
         | none => simp [hSnd] at hStep
@@ -1865,12 +1864,12 @@ private theorem returnDonatedSchedContext_preserves_projection
 
 -- ============================================================================
 -- WS-SM SM6.D (#7.1 fold): objectIndexSet-completeness threading for the
--- folded Call-path `linkCallerReply`.  `linkCallerReply_preserves_projection`
+-- folded Call-path `linkCallerReply`. `linkCallerReply_preserves_projection`
 -- needs `objectIndexSetComplete` at the state where the link runs (post
--- PopHead + storeTcbIpcStateAndMessage).  Both intermediate ops only mutate
+-- PopHead + storeTcbIpcStateAndMessage). Both intermediate ops only mutate
 -- *existing* object keys (they `storeObject` at keys already present), so the
 -- set of present keys is unchanged and `objectIndexSet` only ever grows by a
--- membership no-op `insert` — hence completeness transfers.  The two helpers
+-- membership no-op `insert` — hence completeness transfers. The two helpers
 -- below carry it through `storeTcbQueueLinks` (a single `storeObject`) and
 -- through `endpointQueuePopHead` (≤3 `storeObject`s: the endpoint write plus
 -- up to two queue-link writes), mirroring
@@ -1928,9 +1927,9 @@ theorem storeTcbQueueLinks_preserves_objectIndexSet_invExt
         hObjSetInv hStore'
 
 /-- WS-SM SM6.D (#7.1 fold): `endpointQueuePopHead` preserves
-`objectIndexSetComplete` together with `objectIndexSet.table.invExt`.  Carried
+`objectIndexSetComplete` together with `objectIndexSet.table.invExt`. Carried
 as a conjunction so each interior `storeObject`/`storeTcbQueueLinks` has the
-`invExt` its completeness step needs.  Structure mirrors
+`invExt` its completeness step needs. Structure mirrors
 `endpointQueuePopHead_preserves_objects_invExt`. -/
 theorem endpointQueuePopHead_preserves_objectIndexSetComplete_and_invExt
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
@@ -2214,8 +2213,8 @@ theorem endpointReceiveDual_preserves_projection
               have hProjTail : projectState ctx observer st2 = projectState ctx observer st := by
                 rw [storeTcbIpcStateAndMessage_preserves_projection ctx observer st1 st2 receiver _ _
                     hReceiverObjHigh hObjInv1 hIpc, hProjEnq, hProjClean]
-              -- WS-SM SM6.D (#7.1 fold): server-first stash.  The `none` arm is the
-              -- pre-fold path (final state `removeRunnable st2 receiver`).  The
+              -- WS-SM SM6.D (#7.1 fold): server-first stash. The `none` arm is the
+              -- pre-fold path (final state `removeRunnable st2 receiver`). The
               -- `some rTcb` arm writes the high receiver TCB
               -- (`pendingReceiveReply := replyId`) — projection-invisible via
               -- `storeObject_preserves_projection` (hReceiverObjHigh).
@@ -2455,7 +2454,7 @@ theorem endpointCall_preserves_projection
                   (ensureRunnable st2 receiver) st3 caller _ _ hCallerObjHigh hObjInvEns hIpc
               have hIdxSt3 := storeTcbIpcStateAndMessage_preserves_objectIndexSetComplete
                   (ensureRunnable st2 receiver) st3 caller _ _ hObjInvEns hObjSetEns hIdxEns hIpc
-              -- WS-SM SM6.D (#7.3 fold): thread the server-first reply link.  Both writes are
+              -- WS-SM SM6.D (#7.3 fold): thread the server-first reply link. Both writes are
               -- projection-invisible: the caller is high (`hCallerObjHigh`) and the server is
               -- the dequeued receiver, also high (`hRecvObjHigh`).
               cases hLink : SystemState.linkServerStashedReply caller receiver st3 with
@@ -2499,7 +2498,7 @@ theorem endpointCall_preserves_projection
 /-- PR #827 #3 fold: `consumeCallerReply` preserves `objectIndexSetComplete`
 together with `objectIndexSet.table.invExt` — both legs are `storeObject`s at
 existing keys (the consumed Reply's slot, the answered caller's TCB slot), so
-`objectIndexSet.contains` is monotone across the consume.  Carries the
+`objectIndexSet.contains` is monotone across the consume. Carries the
 completeness/invExt pair through the reply leg's in-transition consume to the
 downstream receive leg (mirrors the `linkCallerReply`-era transport idiom in
 `endpointReceiveDual_preserves_projection`). -/
@@ -3348,7 +3347,7 @@ theorem applyCallDonation_preserves_projection
   -- st unchanged (no-op paths) or calls donateSchedContext (donation path).
   -- F-3: donateSchedContext does three storeObject calls at non-observable
   -- ObjIds (clientScId.toObjId, the donor callerVtid.toObjId, and the server
-  -- receiverVtid.toObjId).  Chain storeObject_preserves_projection for each.
+  -- receiverVtid.toObjId). Chain storeObject_preserves_projection for each.
   -- AN10-residual-1 deep-audit: signature now takes ValidThreadId; body
   -- calls donateSchedContextValid directly (no toValid? case-split).
   unfold applyCallDonation at hOk
@@ -3377,7 +3376,7 @@ theorem applyCallDonation_preserves_projection
           | ok stDon =>
             simp [hDon] at hOk; cases hOk
             -- F-3: donateSchedContext = storeObject(scId) → storeObject(donor)
-            -- → storeObject(serverId).  All three ObjIds are non-observable,
+            -- → storeObject(serverId). All three ObjIds are non-observable,
             -- chain storeObject_preserves_projection.
             unfold donateSchedContext at hDon
             revert hDon
@@ -3806,7 +3805,7 @@ theorem vspaceUnmapPageWithFlush_preserves_projection
 view is invisible to the information-flow projection — `perCoreTlb`, like
 the scalar `tlb` and `machine.timer`, is deliberately excluded from
 `ObservableState` (a TLB view is a covert timing-channel source), so no
-observable can depend on it.  This is the explicit NI witness for the SM7.C
+observable can depend on it. This is the explicit NI witness for the SM7.C
 mount: every `perCoreTlb`-evolving transition (the per-core shootdown
 handler, `tlbInvalidateOnAllCores`, the live catch-up commit) trivially
 preserves `projectState` and hence `lowEquivalent`. -/
@@ -3820,7 +3819,7 @@ theorem perCoreTlb_write_preserves_projection
 instruction-cache view is invisible to the information-flow projection —
 `perCoreICache`, like `perCoreTlb`, the scalar `tlb`, and `machine.timer`, is
 deliberately excluded from `ObservableState` (a cache view is a covert
-timing-channel source), so no observable can depend on it.  This is the
+timing-channel source), so no observable can depend on it. This is the
 explicit NI witness for the SM7.D mount: every `perCoreICache`-evolving
 transition (`icFetchOnCore`, `icInvalidateOnCore`, `icInvalidateBroadcast`, and
 the live `.vspaceUnmap` / `.lifecycleRetype` maintenance seams built on them)
@@ -3832,11 +3831,11 @@ theorem perCoreICache_write_preserves_projection
       projectState ctx observer st := rfl
 
 /-- WS-SM SM7.D.1 (non-interference): a write to the instruction-cache emission
-ledger is invisible to the information-flow projection.  The ledger names a
+ledger is invisible to the information-flow projection. The ledger names a
 cache maintenance operation — including, for a targeted operand, the physical
 address of a page — so projecting it would leak exactly the information the
 cache view itself would; like `perCoreICache`, it stays out of
-`ObservableState`.  This is the NI witness for the SM7.D.1 ledger mount: both
+`ObservableState`. This is the NI witness for the SM7.D.1 ledger mount: both
 live maintenance seams and the runtime drain trivially preserve `projectState`
 and hence `lowEquivalent`. -/
 theorem pendingIcacheMaintenance_write_preserves_projection
@@ -3849,9 +3848,9 @@ theorem pendingIcacheMaintenance_write_preserves_projection
 audit trail is invisible to the information-flow projection.
 
 The exclusion is a **security** decision, not a convenience one, and it points
-the opposite way to the others on this list.  `perCoreTlb`, `perCoreICache` and
+the opposite way to the others on this list. `perCoreTlb`, `perCoreICache` and
 the maintenance ledger stay out of `ObservableState` because projecting them
-would open a timing channel.  The audit trail stays out because projecting it
+would open a timing channel. The audit trail stays out because projecting it
 would open a *content* channel out of exactly the boundary it exists to police:
 each entry names `(srcDomain, dstDomain, targetObject)`, so a low observer that
 could read the trail would learn that a high→low downgrade occurred and which
@@ -3864,13 +3863,13 @@ every audited transition built on `declassifyStoreOnCore` preserve
 `projectState`, and hence `lowEquivalent`, on the trail component.
 
 **WS-SM SM9.A: a reader now exists, and this theorem is exactly as true and
-exactly as insufficient as it was.**  The `.auditRead` syscall returns entries
+exactly as insufficient as it was.** The `.auditRead` syscall returns entries
 filtered by the caller's own clearance, so the trail *is* observable to an
 audit-capability holder — but not through `projectState`, which is why
-`lowEquivalent` no longer describes everything such a caller can see.  SM9.A.4a
+`lowEquivalent` no longer describes everything such a caller can see. SM9.A.4a
 supplies the relation that does (`auditObservationalEquivalence`, conjoining
 this projection with agreement on the reader's visible view), and SM9.A.4b
-states the reader's flow argument over *that* relation.  The naive lemma — "two
+states the reader's flow argument over *that* relation. The naive lemma — "two
 low-equivalent states give identical visible views" — is **false**, and this
 theorem is the reason: the trail is not in the projection, so two states
 low-equivalent at `L` can still differ by an entry `L` is cleared to read
@@ -3885,9 +3884,9 @@ theorem declassificationAuditLog_write_preserves_projection
 audit **epoch** is invisible to the information-flow projection.
 
 The epoch's exclusion is sharper than the trail's, and worth separating rather
-than folding into it.  An entry is content a cleared reader may see; the epoch
+than folding into it. An entry is content a cleared reader may see; the epoch
 is a *count* of entries — including entries a partially-cleared reader may not
-see — so it is derived from hidden state by construction.  Projecting it would
+see — so it is derived from hidden state by construction. Projecting it would
 hand every observer the number of downgrades performed system-wide, which is
 precisely what the re-indexed visible view (`auditLogVisibleTo`) exists to
 hide, and it would do so without any capability being held at all.
@@ -3906,16 +3905,16 @@ theorem declassificationAuditEpoch_write_preserves_projection
 **refusal ledger** is invisible to the information-flow projection.
 
 The ledger is outside the projection for a reason one step sharper than the
-trail's.  The trail records downgrades the kernel *performed*; the ledger
+trail's. The trail records downgrades the kernel *performed*; the ledger
 records attempts it *refused*, attributed to the subject that made them — so a
 projected ledger would tell every observer that a particular thread tried to
-declassify, against what capability, and why it was refused.  That is a channel
+declassify, against what capability, and why it was refused. That is a channel
 out of the boundary the audit exists to police, and it would carry the
 information whether or not any capability was held.
 
 This theorem is what makes the seam's write safe to perform on the error path:
 a refused syscall commits a post-state (the WS-RA error frame's), and this says
-the ledger write in that post-state moves no observer's view.  The ledger's
+the ledger write in that post-state moves no observer's view. The ledger's
 own read gate is the other half — it is readable only by the deployment's
 configured audit monitor (`refusalLedger_requires_full_dominance`), which
 `auditObservationalEquivalence`'s ledger clause is stated over. -/
@@ -3929,19 +3928,19 @@ theorem declassificationRefusals_write_preserves_projection
 invisible to every observer.**
 
 The provenance analogue of the two theorems above, and the one whose exclusion
-points in a third direction.  The trail is excluded because it records
+points in a third direction. The trail is excluded because it records
 downgrades that happened; the ledger because it records attempts that were
-refused.  The taint table records *which subjects and objects hold content
+refused. The taint table records *which subjects and objects hold content
 released by which downgrades* — a per-object read of it would tell a low
 observer that a particular endpoint carried content from a particular high→low
 release, which is the boundary crossing itself rather than a fact about it.
 
 Unlike the trail and the ledger this field has **no reader at all**: no syscall
 exports it, so the §3.7 reader-visibility inventory records it as owing neither
-an observational-equivalence clause nor a hidden-write argument *yet*.  What a
+an observational-equivalence clause nor a hidden-write argument *yet*. What a
 monitor sees of it is the per-event snapshot
 (`DeclassificationEvent.predecessorTags`), gated on the configured monitor
-clearance exactly as the epoch is.  A future reader inherits both obligations. -/
+clearance exactly as the epoch is. A future reader inherits both obligations. -/
 theorem declassificationTaint_write_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
     (tbl : SeLe4n.Kernel.TaintTable) :
@@ -4025,7 +4024,7 @@ theorem runQueue_remove_insert_preserves_projection_at_high
 
 Two shapes, and the remote one is the reason the generalisation is free:
 `projectState` reads the **boot** core's run queue, so a re-bucket on any other
-core is invisible outright.  On the boot core it is the pre-SMP argument. -/
+core is invisible outright. On the boot core it is the pre-SMP argument. -/
 theorem migrateRunQueueBucketOnCore_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) (tid : SeLe4n.ThreadId) (newPriority : SeLe4n.Priority)
@@ -4068,11 +4067,11 @@ theorem migrateRunQueueBucket_preserves_projection
 
 -- ============================================================================
 -- WS-SM SM5.H.4 audit: information-flow non-interference for the `tcbSetAffinity`
--- syscall path.  The syscall-reachable op (`setThreadCpuAffinityOp`) is a
+-- syscall path. The syscall-reachable op (`setThreadCpuAffinityOp`) is a
 -- run-queue-migrating op whose boot-core run-queue write flows into the
 -- observable `projectRunnable`; like every sibling TCB-control op (setPriority,
 -- setMCPriority, setIPCBuffer, suspend, resume) it must carry a per-op NI
--- preservation theorem.  These three lemmas close that gap.
+-- preservation theorem. These three lemmas close that gap.
 -- ============================================================================
 
 /-- WS-SM SM5.H.4 (NI): the per-core SchedContext **replenishment** migration
@@ -4099,11 +4098,11 @@ theorem migrateSchedContextReplenishment_preserves_projection
     congr 1
 
 /-- WS-SM SM5.H.4 (NI): the full-thread-migration **run-queue** move preserves the
-projection when the migrated thread is **non-observable** (high).  The op rewrites
+projection when the migrated thread is **non-observable** (high). The op rewrites
 the source and destination cores' run queues, but `projectRunnable` reads ONLY the
 boot core's run queue, filtered by `threadObservable`; inserting / removing a high
 thread leaves that filtered list unchanged (`toList_filter_insert_neg'` /
-`toList_filter_remove_neg`).  In the write branch the outer `fromCore = toCore`
+`toList_filter_remove_neg`). In the write branch the outer `fromCore = toCore`
 guard already excludes both being the boot core, so at most one of the two writes
 touches the boot core. -/
 theorem migrateRunQueueOnAffinityChange_preserves_projection
@@ -4145,7 +4144,7 @@ theorem migrateRunQueueOnAffinityChange_preserves_projection
       · rfl
 
 /-- WS-SM SM5.H.4 (NI): the bare affinity **write** preserves the projection when the
-target object is non-observable (high).  `setThreadCpuAffinity` writes only the
+target object is non-observable (high). `setThreadCpuAffinity` writes only the
 target TCB's `cpuAffinity` field — which the projection erases — so for a high
 target the object insert is invisible (`objects_insert_preserves_projection_high`). -/
 theorem setThreadCpuAffinity_preserves_projection
@@ -4165,7 +4164,7 @@ theorem setThreadCpuAffinity_preserves_projection
 
 /-- WS-SM SM5.H.4 (NI, projection insensitivity to `cpuAffinity`): the projection
 of a TCB is unchanged by rewriting only its `cpuAffinity` — the `.tcb` arm strips
-`cpuAffinity := none` structurally, so the affinity value never survives.  This is
+`cpuAffinity := none` structurally, so the affinity value never survives. This is
 the structural fact behind the *unconditional* affinity-write NI below. -/
 theorem projectKernelObject_tcb_cpuAffinity_irrelevant
     (ctx : LabelingContext) (observer : IfObserver) (tcb : TCB)
@@ -4176,8 +4175,8 @@ theorem projectKernelObject_tcb_cpuAffinity_irrelevant
 
 /-- WS-SM SM5.H.4 (NI, general): inserting an object whose **projection equals the
 original's** preserves `projectState` — *unconditionally* (regardless of whether
-the slot is observable).  The redacted view at that slot is identical, and no other
-projection component reads the object store.  The proj-eq generalisation of
+the slot is observable). The redacted view at that slot is identical, and no other
+projection component reads the object store. The proj-eq generalisation of
 `objects_insert_preserves_projection_high` (which is the special case where both
 projections are erased because the slot is high). -/
 theorem objects_insert_preserves_projection_of_proj_eq
@@ -4210,10 +4209,10 @@ theorem objects_insert_preserves_projection_of_proj_eq
   rfl
 
 /-- WS-SM SM5.H.4 (NI, **unconditional**): the affinity write preserves the
-projection for **any** target — high *or* low.  Because the projection erases
+projection for **any** target — high *or* low. Because the projection erases
 `cpuAffinity` (`projectKernelObject_tcb_cpuAffinity_irrelevant`), the target's
 projected view is identical before and after, so the write is invisible to every
-observer regardless of whether the target is observable.  Strictly stronger than
+observer regardless of whether the target is observable. Strictly stronger than
 `setThreadCpuAffinity_preserves_projection` (which assumes a high target): per-thread
 CPU placement is a non-observable scheduling decision unconditionally, so a low
 observer cannot detect an affinity change even on a thread it *can* see. -/
@@ -4239,7 +4238,7 @@ theorem setThreadCpuAffinity_preserves_projection_unconditional
 /-- WS-SM SM5.H.4 (NI, the composite): the full affinity-change-with-migration
 composite preserves the projection when the target thread/object is non-observable
 (high) — the standard non-interference guarantee for a TCB-control op, the affinity
-analogue of `setPriorityOp_preserves_projection`.  Chains the affinity write
+analogue of `setPriorityOp_preserves_projection`. Chains the affinity write
 (`setThreadCpuAffinity_preserves_projection`), the optional replenishment migration
 (`migrateSchedContextReplenishment_preserves_projection`, unconditional), and the
 run-queue migration (`migrateRunQueueOnAffinityChange_preserves_projection`, high
@@ -4305,13 +4304,13 @@ theorem setThreadCpuAffinityOp_preserves_projection
 
 Round 37 rerouted `dispatchCapabilityOnly`'s `.tcbSetAffinity` arm to
 `setThreadCpuAffinityOnCore`, so the arm's discharge cited a theorem about the
-operation it no longer calls.  The boot-core theorem does transport — the
+operation it no longer calls. The boot-core theorem does transport — the
 committed state does not depend on the core argument
 (`setThreadCpuAffinityOp_eq_onCore_state`) — but making every caller perform
 that transport by hand is the wrong half of the fix, and a discharge table that
 names a retired wrapper is the kind of drift this surface keeps paying for.
 
-Stated directly instead, at arbitrary `executingCore`.  The proof is the
+Stated directly instead, at arbitrary `executingCore`. The proof is the
 boot-core one with the core generalised: the migration lemma already takes the
 core as an argument, so nothing about the argument's *value* was load-bearing —
 which is the same fact `setThreadCpuAffinityOnCore_state_core_independent`
@@ -4366,7 +4365,7 @@ theorem setPriorityOp_preserves_projection
   split at hStep
   · rename_i callerTcb hCaller
     split at hStep
-    · simp at hStep  -- validation error
+    · simp at hStep -- validation error
     · split at hStep
       · rename_i targetTcb hTarget
         -- AN10-B: post-migration `setPriorityOp` reads via `getTcb?`;
@@ -4411,8 +4410,8 @@ theorem setPriorityOp_preserves_projection
           simp only [Except.ok.injEq] at hStep
           subst hStep
           exact hProj2
-      · simp at hStep  -- target not TCB
-  · simp at hStep  -- caller not TCB
+      · simp at hStep -- target not TCB
+  · simp at hStep -- caller not TCB
 
 -- ============================================================================
 -- WS-SM SM8.B: the PER-CORE priority ops (the live `.tcbSetPriority` /
@@ -4423,7 +4422,7 @@ theorem setPriorityOp_preserves_projection
 given the caller's witness for the reschedule it may run.
 
 Two of its three arms change nothing at all; only the local arm calls
-`handleRescheduleSgiOnCore`, and only for that arm is `hReschedProj` used.  The
+`handleRescheduleSgiOnCore`, and only for that arm is `hReschedProj` used. The
 remote arm posts an SGI and returns the state it was given, which is why a
 cross-core preemption needs no witness here — the remote core's own handler is a
 separate transition with its own theorem. -/
@@ -4464,9 +4463,9 @@ theorem priorityRescheduleOnCore_preserves_projection
 projection, in *both* settings of the restore seam.
 
 The point of the wrapper form: this is proved by cases on the flag, so neither
-branch is dead.  The live branch defers to the base theorem below; the gated
+branch is dead. The live branch defers to the base theorem below; the gated
 branch changes no state at all (`priorityRescheduleEnqueueOnly_state`), so the
-projection is `hMid` unchanged.  The `hReschedProj` witness is still required —
+projection is `hMid` unchanged. The `hReschedProj` witness is still required —
 it is what the live branch consumes, and dropping it would make the theorem
 weaker the moment SM10.1 flips the constant. -/
 theorem priorityRescheduleOnCoreLive_preserves_projection
@@ -4575,7 +4574,7 @@ theorem setMCPriorityOp_preserves_projection
   split at hStep
   · rename_i callerTcb hCaller
     split at hStep
-    · simp at hStep  -- validation error
+    · simp at hStep -- validation error
     · split at hStep
       · rename_i targetTcb hTarget
         -- AN10-B: post-migration `setMCPriorityOp` reads via `getTcb?`;
@@ -4772,16 +4771,16 @@ theorem revokeService_preserves_projection
   -- Now reason about the structure of st'.
   unfold SeLe4n.Kernel.revokeService at hStep
   split at hStep
-  · simp at hStep  -- not found: contradicts .ok
+  · simp at hStep -- not found: contradicts .ok
   · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
     obtain ⟨_, hStEq⟩ := hStep
     subst hStEq
     -- st' = removeDependenciesOf { st with serviceRegistry := erase } sid
     -- All non-service projection components are preserved because:
-    --   - serviceRegistry.erase only touches the serviceRegistry FIELD
-    --     (not in any projection)
-    --   - removeDependenciesOf preserves objects/scheduler/lifecycle/machine
-    --     (proven: removeDependenciesOf_objects_eq etc.)
+    -- - serviceRegistry.erase only touches the serviceRegistry FIELD
+    -- (not in any projection)
+    -- - removeDependenciesOf preserves objects/scheduler/lifecycle/machine
+    -- (proven: removeDependenciesOf_objects_eq etc.)
     simp only [projectState]
     congr 1 <;>
       (first
@@ -4950,7 +4949,7 @@ theorem cancelDonation_preserves_projection
 
 /-- WS-RC R5.A: closure-form preservation helper for `cancelBoundDonation`.
     Mirrors `cancelDonation_preserves_projection` (AK6-F.17) for the
-    in-place-unbind arm of the split.  Substantive 1-arm discharge:
+    in-place-unbind arm of the split. Substantive 1-arm discharge:
     `.bound scId` case performs SC unbind via
     `objects_insert_preserves_projection_high` at high scId +
     `projectState_replenishQueue_eq` + `projectState_scThreadIndex_eq`;
@@ -4971,13 +4970,13 @@ theorem cancelBoundDonation_preserves_projection
 
 /-- WS-RC R5.A: closure-form preservation helper for `cancelDonatedDonation`.
     Mirrors `cancelDonation_preserves_projection` (AK6-F.17) for the
-    return-to-original-owner arm of the split.  Substantive 1-arm
+    return-to-original-owner arm of the split. Substantive 1-arm
     discharge: `.donated scId donor` case delegates to
     `cleanupDonatedSchedContext` (which calls `returnDonatedSchedContext`,
     performing SC insert + donor TCB insert); requires donor high,
     derivable from the SC invariant `donationOwnerValid` plus the
-    suspended TCB's high observability.  Wrong-variant inputs error out
-    so no projection obligation arises.  Typical discharge: ≈30 LOC. -/
+    suspended TCB's high observability. Wrong-variant inputs error out
+    so no projection obligation arises. Typical discharge: ≈30 LOC. -/
 theorem cancelDonatedDonation_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
@@ -5006,7 +5005,7 @@ theorem cancelDonatedDonation_preserves_projection
     - **G3 `cancelIpcBlocking`**: the victim-TCB writes are covered by the
       high-victim OBJECT gate (`projectKernelObject` does NOT strip
       `ipcState` — the audit-corrected sketch: a high victim's whole object
-      is elided, which is what covers its field rewrites).  The open
+      is elided, which is what covers its field rewrites). The open
       obligation is the **endpoint-queue splice**: `spliceOutMidQueueNode`
       rewrites the victim's queue-NEIGHBOUR TCBs' `queuePrev`/`queueNext`,
       and queue-link fields survive projection — so a high victim spliced
@@ -5044,7 +5043,7 @@ theorem suspendThread_preserves_projection
 
 -- ============================================================================
 -- AK6-F.19: resumeThread preservation (closure form, with substantive
---           frame lemmas pre-proven for caller use)
+-- frame lemmas pre-proven for caller use)
 -- ============================================================================
 
 /-- AK6-F.19 frame lemma (substantive): `objects.insert tid.toObjId newTcb`
@@ -5107,7 +5106,7 @@ theorem resumeThread_preserves_projection
 /-- The fault-handler configuration writes one field of one TCB, so for a
 non-observable target the projection is unchanged — the discharge for the
 `.tcbSetFaultHandler` capability-only arm, the same shape as every sibling
-TCB-configuration op.  (For an observable target the write *is* visible, as
+TCB-configuration op. (For an observable target the write *is* visible, as
 `faultHandler` is part of the thread's projected configuration.) -/
 theorem setThreadFaultHandlerOp_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)

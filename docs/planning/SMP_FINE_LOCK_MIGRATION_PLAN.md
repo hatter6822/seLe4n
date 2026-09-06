@@ -594,8 +594,33 @@ the argument removes that lookup, and with it an error a caller can currently
 observe, so the cut has to decide deliberately whether that fail-closed branch
 is still wanted on its own terms.
 
-**Closure target**: still open.  §9.1 closed at v0.33.80 without touching it:
-that cut threaded the *receiver* side through `replyRecvBody` and never had to
-decide the sender-side fail-closed question, which remains a deliberate call
-about an observable error rather than a mechanical deletion.  It stays owed
-before SM9 closes.
+**CLOSED at v0.34.82 (WS-RR RR7.33)**, with the decision this row was waiting
+for made explicitly: **the fail-closed branch is not wanted on its own terms**,
+and the parameter is gone from `ipcUnwrapCaps`, `ipcUnwrapCapsLoop`, and — since
+the deadness propagates — from `endpointSendDualWithCaps`,
+`endpointCallWithCaps`, their `OnCore` and cross-core-dispatch wrappers, the
+flow-checked wrappers, and the syscall dispatch arms that fed them
+`gate.cspaceRoot`.
+
+Three reasons, in the order they bind:
+
+1. *The transfer does not read it.*  The derivation parent has been
+   `TransferCap.srcNode` since the revocation-precision fix (`v0.33.59`), and
+   that node is minted at `resolveExtraCaps` **against the sender's own CSpace
+   root** — so the authority the parameter looked like it carried is already
+   established, at resolution, where the sender's root is the resolver's input.
+2. *The lookup's error was a cross-principal channel.*  AK1-I made all three
+   transfer paths fail closed on a missing CSpace root, and that is right for
+   the **receiver's** root — it is where capabilities install, and the send and
+   call arms still check it.  The receive arm looked up the **sender's** root
+   only to feed this parameter, so its `.invalidCapability` made the
+   *receiver's* syscall fail on a fact about the *sender's* TCB: a one-bit flow
+   from sender-domain state into a receiver-visible `KernelError`, which is the
+   shape AK1-I set out to remove rather than one it needed to add.
+3. *The case it appeared to cover is already covered, better.*  A source slot
+   destroyed between resolution and unwrap is declined per capability by
+   `CapTransferResult.sourceRevoked`, which installs the rest; failing the whole
+   transfer on the sender's root was coarser and answered a different question.
+
+The receive arm keeps `receiverCspaceRoot` and the send/call arms keep their
+receiver-root lookups, so every path still checks exactly the root it uses.

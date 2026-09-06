@@ -1,16 +1,16 @@
 -- SPDX-License-Identifier: GPL-3.0-or-later
 /-
-  seLe4n  - A Lean Microkernel
-  Copyright (C) 2026  Adam Hall
+  seLe4n - A Lean Microkernel
+  Copyright (C) 2026 Adam Hall
   This program comes with ABSOLUTELY NO WARRANTY.
   This is free software, and you are welcome to redistribute it
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
--- WS-SM SM6.A: PRODUCTION (LANDED).  `endpointCallOnCore` entered the production
+-- WS-SM SM6.A: PRODUCTION (LANDED). `endpointCallOnCore` entered the production
 -- import closure when the live `.call` dispatch (`API.dispatchWithCap{,Checked}`)
 -- was wired through the cross-core call (`endpointCallCrossCoreDispatch`, which
--- builds on this transition).  (Former "STATUS: staged" marker replaced with this
+-- builds on this transition). (Former "STATUS: staged" marker replaced with this
 -- landing note per the implement-the-improvement rule; see
 -- docs/planning/SMP_CROSS_CORE_IPC_PLAN.md.)
 
@@ -25,7 +25,7 @@ import SeLe4n.Kernel.Concurrency.Locks.LockSet2PL
 # WS-SM SM6.A — Endpoint call across cores
 
 This module is the SM6.A deliverable of the WS-SM Phase 6 cross-core IPC
-workstream (plan `docs/planning/SMP_CROSS_CORE_IPC_PLAN.md` §3.2, §5).  It
+workstream (plan `docs/planning/SMP_CROSS_CORE_IPC_PLAN.md` §3.2, §5). It
 lifts the single-core `endpointCall` rendezvous (the blocking RPC send) to a
 *cross-core* transition `endpointCallOnCore` that:
 
@@ -56,12 +56,12 @@ open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency
 
 -- ============================================================================
--- §1  Per-core caller blocking — `removeRunnableOnCore`
+-- §1 Per-core caller blocking — `removeRunnableOnCore`
 -- ============================================================================
 
 /-- WS-SM SM6.A.1 (plan §3.2 steps 5–6): the per-core generalisation of
-`removeRunnable`.  Removes `tid` from core `c`'s run queue and, if `tid` is
-core `c`'s current thread, clears `c`'s current slot.  Only core `c`'s
+`removeRunnable`. Removes `tid` from core `c`'s run queue and, if `tid` is
+core `c`'s current thread, clears `c`'s current slot. Only core `c`'s
 scheduler slots are touched; every other core is framed out.
 
 The single-core `removeRunnable` (bootCore-pinned) is exactly the `bootCoreId`
@@ -92,21 +92,21 @@ survive it. -/
   simp [removeRunnableOnCore]
 
 -- ============================================================================
--- §2  Lock-set pre-resolution helpers (plan §3.1 / §4.2)
+-- §2 Lock-set pre-resolution helpers (plan §3.1 / §4.2)
 -- ============================================================================
 
 /-- WS-SM SM6.A.1: the receiver a cross-core call would rendezvous with — the
-head of the endpoint's receive queue, if any.  Pre-resolved from the pre-state
+head of the endpoint's receive queue, if any. Pre-resolved from the pre-state
 so the caller can assemble the `lockSet_endpointCall` footprint (the receiver
 TCB write lock is present iff a receiver is waiting). -/
 def endpointCallReceiver? (st : SystemState) (endpointId : SeLe4n.ObjId) :
     Option SeLe4n.ThreadId :=
   match st.getEndpoint? endpointId with
   | some ep => ep.receiveQ.head
-  | none    => none
+  | none => none
 
 /-- WS-SM SM6.A.5: the SchedContext the caller would donate on this call — its
-own bound SC (a `.bound scId` binding), if any.  A caller that is `.unbound` or
+own bound SC (a `.bound scId` binding), if any. A caller that is `.unbound` or
 already holds a `.donated _ _` binding donates nothing on this call (matching
 `applyCallDonation`), so the SC write lock is in the footprint iff the caller
 has an active SC of its own to donate. -/
@@ -116,16 +116,16 @@ def endpointCallDonatedSc? (st : SystemState) (caller : SeLe4n.ThreadId) :
   | some tcb =>
       match tcb.schedContextBinding with
       | .bound scId => some scId
-      | _           => none
+      | _ => none
   | none => none
 
 /-- WS-SM SM6.D (PR #822 review): the server-first stashed Reply object this call
-links, if any.  On a **server-first** `Call` rendezvous the popped receiver is a
+links, if any. On a **server-first** `Call` rendezvous the popped receiver is a
 server already `.blockedOnReceive` having pre-supplied a reply object via
 `endpoint_receive_with_reply` (`TCB.pendingReceiveReply = some rid`); the rendezvous
 links the woken caller to it (the folded `linkServerStashedReply` writes
 `reply.caller := caller` and clears the server's stash), so the per-object **reply
-write-lock** must be in the Call footprint.  `none` for a receiver that did a plain receive (no stash) or when
+write-lock** must be in the Call footprint. `none` for a receiver that did a plain receive (no stash) or when
 there is no receiver (the caller blocks). -/
 def endpointCallServerFirstReply? (st : SystemState) (endpointId : SeLe4n.ObjId) :
     Option SeLe4n.ReplyId :=
@@ -139,13 +139,13 @@ SchedContext, and (SM6.D, PR #822 review) the server-first stashed reply object
 `endpointCallServerFirstReply?` (the receiver is the endpoint's receive-queue head;
 the donated SC is the caller's own bound SC; the reply object is the server's
 pre-supplied `pendingReceiveReply`, which the folded `linkServerStashedReply` writes
-on a server-first rendezvous).  This is the footprint the runtime `withLockSet` bracket
+on a server-first rendezvous). This is the footprint the runtime `withLockSet` bracket
 (the SM5.I FFI seam) acquires before invoking
 `endpointCallOnCore endpointId caller … executingCore st`. -/
 def lockSet_endpointCallOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     -- **WS-RR RR7.8**: the message, because whether this call installs
-    -- capabilities is a property of what it carries.  Defaulted to the empty
+    -- capabilities is a property of what it carries. Defaulted to the empty
     -- message (no registers, and `caps` empty by the field's own default) so
     -- every capless call site is unchanged and reduces definitionally to the
     -- pre-RR7.8 footprint.
@@ -172,7 +172,7 @@ theorem lockSet_endpointCallOnCore_capless (st : SystemState)
           (endpointCallServerFirstReply? st endpointId) := rfl
 
 /-- **WS-RR RR7.8**: the concrete lock-set a cross-core caps-carrying `.send`
-acquires.  The send side had no resolved footprint at all — its capless shape
+acquires. The send side had no resolved footprint at all — its capless shape
 needed none, since every member was an argument — and the capability-transfer
 destination is the first member that has to be read from the state.
 
@@ -187,16 +187,16 @@ def lockSet_endpointSendOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
     (rendezvousCapsDestination? st endpointId msg)
 
 -- ============================================================================
--- §3  WithCaps lock-set (plan §3.1)
+-- §3 WithCaps lock-set (plan §3.1)
 -- ============================================================================
 
 /-- WS-SM SM6.A.8 (plan §3.1): the lock-set for `endpointCallWithCaps`.
 
 **WS-RR RR7.7: this is `lockSet_endpointCall` at `some destCnodeObjId`**, not a
-second definition beside it.  It used to extend the base footprint from out
+second definition beside it. It used to extend the base footprint from out
 here, and the two could drift: a member added to the base was inherited, but a
 member the *capability transfer* needs had to be remembered twice — which is
-how the `stateLevelLock` the CDT write requires came to be on neither.  Folding
+how the `stateLevelLock` the CDT write requires came to be on neither. Folding
 the destination into the base as an optional makes "the caps footprint" a value
 of the base's own argument, so there is one place where the transfer's
 obligations are declared and `lockSet_endpointSend` states the same ones.
@@ -220,7 +220,7 @@ def lockSet_endpointCallWithCaps (callerTid : SeLe4n.ThreadId)
     replyId (some destCnodeObjId)
 
 /-- **WS-RR RR7.7**: the caps footprint *is* the base footprint at `some`, by
-`rfl`.  A refactor that reintroduces a second definition breaks this marker at
+`rfl`. A refactor that reintroduces a second definition breaks this marker at
 elaboration rather than at the next audit. -/
 theorem lockSet_endpointCallWithCaps_eq_call_some (callerTid : SeLe4n.ThreadId)
     (cnodeRootObjId destCnodeObjId endpointObjId : SeLe4n.ObjId)
@@ -233,7 +233,7 @@ theorem lockSet_endpointCallWithCaps_eq_call_some (callerTid : SeLe4n.ThreadId)
           donatedScId replyId (some destCnodeObjId) := rfl
 
 -- ============================================================================
--- §4  The cross-core endpoint-call transition (plan §3.2)
+-- §4 The cross-core endpoint-call transition (plan §3.2)
 -- ============================================================================
 
 /-- WS-SM SM6.A.1 (plan §3.2): endpoint call across cores.
@@ -277,7 +277,7 @@ def endpointCallOnCore (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
                       -- WS-SM SM6.D (#7.3b fold): link the caller to the Reply object the
                       -- woken server stashed on its server-first `Recv` and clear the
                       -- stash, atomically (formerly the separate `linkServerFirstCaller`
-                      -- dispatch step).  Fails closed when the server provided none.
+                      -- dispatch step). Fails closed when the server provided none.
                       match SystemState.linkServerStashedReply caller receiver st4 with
                       | .error e => (st, .error e)
                       | .ok ((), st5) =>
@@ -292,7 +292,7 @@ def endpointCallOnCore (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
               | .ok st'' => (removeRunnableOnCore st'' caller executingCore, .ok none)
   | none =>
       -- Typed-accessor dispatch (AK7 cascade discipline): `getEndpoint?` is
-      -- `none` for both an absent object and a wrong-kinded one.  Recover the
+      -- `none` for both an absent object and a wrong-kinded one. Recover the
       -- single-core `endpointCall` error distinction without a raw object-store
       -- variant match: a present-but-wrong-kind object fails with
       -- `.invalidCapability`, a genuinely absent one with `.objectNotFound`.
@@ -300,11 +300,11 @@ def endpointCallOnCore (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
       else (st, .error .objectNotFound)
 
 -- ============================================================================
--- §5  Path reduction lemmas (full characterisation of each control path)
+-- §5 Path reduction lemmas (full characterisation of each control path)
 -- ============================================================================
 
 /-- WS-SM SM6.A.1: full reduction of the **rendezvous** path (a receiver is
-waiting on the endpoint).  The post-state is the caller-blocked state with the
+waiting on the endpoint). The post-state is the caller-blocked state with the
 receiver woken (cross-core) and the caller removed from its own core; the
 surfaced SGI is exactly the receiver wake's. -/
 theorem endpointCallOnCore_rendezvous_eq
@@ -333,7 +333,7 @@ theorem endpointCallOnCore_rendezvous_eq
   simp only [hObjE, hHead, hPop, hStore, hCallerStore, hLink]
 
 /-- WS-SM SM6.A.1: full reduction of the **no-receiver** path (the caller
-enqueues on the endpoint's send queue as `blockedOnCall`).  No wake occurs, so
+enqueues on the endpoint's send queue as `blockedOnCall`). No wake occurs, so
 no SGI is surfaced; the caller is removed from its own core. -/
 theorem endpointCallOnCore_noReceiver_eq
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
@@ -354,14 +354,14 @@ theorem endpointCallOnCore_noReceiver_eq
   simp only [hObjE, hHead, hEnq, hStore]
 
 -- ============================================================================
--- §6  SM6.A.3 — Cross-core wake: SGI emission (plan Theorem 3.2.1)
+-- §6 SM6.A.3 — Cross-core wake: SGI emission (plan Theorem 3.2.1)
 -- ============================================================================
 
 /-- WS-SM SM6.A.3 (plan §3.2 Theorem 3.2.1,
-`endpointCall_emits_sgi_if_remote_receiver`).  When a cross-core `endpointCall`
+`endpointCall_emits_sgi_if_remote_receiver`). When a cross-core `endpointCall`
 rendezvous unblocks a receiver whose home core differs from the executing core,
 the operation surfaces a `.reschedule` SGI targeting the receiver's core — the
-cross-core poke the runtime fires after the state commit.  The target core is
+cross-core poke the runtime fires after the state commit. The target core is
 the receiver's home core `determineTargetCore … receiver` (its `cpuAffinity`),
 read at the wake site `st''`; the intervening pop + store mutate only the
 receiver's `ipcState` / `pendingMessage` and the endpoint queue links, never its
@@ -415,7 +415,7 @@ theorem endpointCallOnCore_no_sgi_if_local_receiver
 
 /-- WS-SM SM6.A.3: the **no-receiver** path (the caller enqueues on the
 endpoint's send queue as `blockedOnCall`) surfaces no SGI — no thread is woken,
-so there is no cross-core poke.  Completes the SGI characterisation: a call pokes
+so there is no cross-core poke. Completes the SGI characterisation: a call pokes
 a remote core *only* on a rendezvous with a remote receiver. -/
 theorem endpointCallOnCore_noReceiver_no_sgi
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
@@ -432,14 +432,14 @@ theorem endpointCallOnCore_noReceiver_no_sgi
         hSz1 hSz2 hObj hHead hEnq hStore]
 
 -- ============================================================================
--- §7  SM6.A.2 — `endpointCall` lock-set correctness
+-- §7 SM6.A.2 — `endpointCall` lock-set correctness
 -- ============================================================================
 
 /-- WS-SM SM6.A.2 (`endpointCall_lockSet_correct`): the `endpointCall`
 lock-set is **hierarchically correct** — every lock it declares has a kind in
 `permittedKinds .call` (so the acquisitions respect the SM0.I lock ladder), and
 its keys are duplicate-free (the SM3.B well-formedness `LockSet` carries by
-construction).  Together these are the structural soundness conditions the
+construction). Together these are the structural soundness conditions the
 deadlock-freedom theorem (2.1.9) and the 2PL serializability corollary
 (2.1.11) consume. -/
 theorem endpointCallOnCore_lockSet_correct
@@ -455,7 +455,7 @@ theorem endpointCallOnCore_lockSet_correct
 /-- WS-SM SM6.A.2: the **state-resolved** call lock-set
 (`lockSet_endpointCallOnCore`, with the receiver and donated SchedContext
 pre-resolved from `st`) is hierarchically correct — every lock it declares has a
-kind permitted for `.call`.  This is the form the runtime acquisition consumes,
+kind permitted for `.call`. This is the form the runtime acquisition consumes,
 so its correctness is a corollary of the parametric `lockSet_consistent_call`. -/
 theorem lockSet_endpointCallOnCore_correct
     (st : SystemState) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
@@ -479,7 +479,7 @@ theorem lockSet_endpointSendOnCore_correct
     (rendezvousCapsDestination? st endpointId msg)
 
 -- ============================================================================
--- §7b  WS-RR RR7.8 — the capability transfer's write set is declared
+-- §7b WS-RR RR7.8 — the capability transfer's write set is declared
 -- ============================================================================
 
 /-! ## What `ipcUnwrapCaps` writes, and where it is declared
@@ -488,9 +488,9 @@ theorem lockSet_endpointSendOnCore_correct
 exactly two things on its installing path: the **CNode at
 `receiverCspaceRoot`** (through `cspaceInsertSlot`), and the **`SystemState`-level
 CDT structure** (`ensureCdtNodeForSlot`'s counter and both keyed maps, plus the
-edge itself).  Nothing else in the transfer mutates state.
+edge itself). Nothing else in the transfer mutates state.
 
-Both are declared, and each theorem below names one.  The destination is the
+Both are declared, and each theorem below names one. The destination is the
 resolver's own output, so there is no gap between "the lock the bracket takes"
 and "the object the transfer writes": `rendezvousCapsDestination?` is the
 expression `endpointSendDualWithCaps` and `endpointCallWithCaps` evaluate
@@ -511,7 +511,7 @@ theorem lockSet_endpointCallOnCore_covers_capsDestination
   exact mem_write_lockSetExtendOpt _ _ _ (LockSet.mem_insertOrMerge_write_self _ _)
 
 /-- **WS-RR RR7.8**: …and the state-level lock, for the CDT structure the
-install writes.  Without this member two transfers into *different* CSpaces have
+install writes. Without this member two transfers into *different* CSpaces have
 provably disjoint footprints while read-modify-writing one derivation map. -/
 theorem lockSet_endpointCallOnCore_covers_cdt
     (st : SystemState) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
@@ -551,7 +551,7 @@ declared write-mode in the footprint its bracket acquires.**
 
 This is what "the transfer's write set is contained in the declared footprint"
 means as a theorem, and what the registered `capTransferReceiverCnode` domain
-was registered for.  It composes three facts that were each true and separately
+was registered for. It composes three facts that were each true and separately
 stated: the transfer changes no object but the receiver root
 (`ipcUnwrapCaps_preserves_objects_ne`), the root it is handed is the resolver's
 own output (`endpointSendDualWithCaps_reduces_to_unwrap`, since RR7.8 both read
@@ -564,7 +564,7 @@ it holds the lock, not of a lock whether something used it. -/
 theorem endpointSendDualWithCaps_object_writes_declared
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (senderCspaceRoot cnodeRootObjId : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (cnodeRootObjId : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (st st' st'' : SystemState) (recvRoot : SeLe4n.ObjId)
     (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
     (hSend : endpointSendDual endpointId sender
@@ -572,21 +572,21 @@ theorem endpointSendDualWithCaps_object_writes_declared
     (hDest : rendezvousCapsDestination? st endpointId msg = some recvRoot)
     (hObjInv : st'.objects.invExt)
     (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
-        senderCspaceRoot receiverSlotBase st = .ok (summary, st''))
+        receiverSlotBase st = .ok (summary, st''))
     (hChanged : st''.objects[oid]? ≠ st'.objects[oid]?) :
     (cnodeLock oid, AccessMode.write)
       ∈ (lockSet_endpointSendOnCore st endpointId sender cnodeRootObjId msg).pairs := by
   have hUnwrap : ipcUnwrapCaps { msg with capsGranted := endpointRights.mem .grant }
-      senderCspaceRoot recvRoot receiverSlotBase (endpointRights.mem .grant) st'
+      recvRoot receiverSlotBase (endpointRights.mem .grant) st'
       = .ok (summary, st'') := by
     rw [← endpointSendDualWithCaps_reduces_to_unwrap endpointId sender msg endpointRights
-      senderCspaceRoot receiverSlotBase st st' recvRoot hSend hDest]
+      receiverSlotBase st st' recvRoot hSend hDest]
     exact hStep
   by_cases hEq : oid = recvRoot
   · subst hEq
     exact lockSet_endpointSendOnCore_covers_capsDestination st endpointId sender cnodeRootObjId msg oid hDest
   · exact absurd
-      (ipcUnwrapCaps_preserves_objects_ne _ _ _ _ _ _ _ _ _ hEq hObjInv hUnwrap) hChanged
+      (ipcUnwrapCaps_preserves_objects_ne _ _ _ _ _ _ _ _ hEq hObjInv hUnwrap) hChanged
 
 /-- **WS-RR RR7.8**: and the same capstone on the `.call` arm — the same
 transfer, reached through the same resolver, declared in the same two
@@ -594,7 +594,7 @@ members. -/
 theorem endpointCallWithCaps_object_writes_declared
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot cnodeRootObjId : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (cnodeRootObjId : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (st st' st'' : SystemState) (recvRoot : SeLe4n.ObjId)
     (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
     (hCall : endpointCall endpointId caller
@@ -602,28 +602,28 @@ theorem endpointCallWithCaps_object_writes_declared
     (hDest : rendezvousCapsDestination? st endpointId msg = some recvRoot)
     (hObjInv : st'.objects.invExt)
     (hStep : endpointCallWithCaps endpointId caller msg endpointRights
-        callerCspaceRoot receiverSlotBase st = .ok (summary, st''))
+        receiverSlotBase st = .ok (summary, st''))
     (hChanged : st''.objects[oid]? ≠ st'.objects[oid]?) :
     (cnodeLock oid, AccessMode.write)
       ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId msg).pairs := by
   have hUnwrap : ipcUnwrapCaps { msg with capsGranted := endpointRights.mem .grant }
-      callerCspaceRoot recvRoot receiverSlotBase (endpointRights.mem .grant) st'
+      recvRoot receiverSlotBase (endpointRights.mem .grant) st'
       = .ok (summary, st'') := by
     rw [← endpointCallWithCaps_reduces_to_unwrap endpointId caller msg endpointRights
-      callerCspaceRoot receiverSlotBase st st' recvRoot hCall hDest]
+      receiverSlotBase st st' recvRoot hCall hDest]
     exact hStep
   by_cases hEq : oid = recvRoot
   · subst hEq
     exact lockSet_endpointCallOnCore_covers_capsDestination st endpointId caller cnodeRootObjId msg oid hDest
   · exact absurd
-      (ipcUnwrapCaps_preserves_objects_ne _ _ _ _ _ _ _ _ _ hEq hObjInv hUnwrap) hChanged
+      (ipcUnwrapCaps_preserves_objects_ne _ _ _ _ _ _ _ _ hEq hObjInv hUnwrap) hChanged
 
 -- ============================================================================
--- §8  SM6.A.5 — Donation-chain lock-set extension
+-- §8 SM6.A.5 — Donation-chain lock-set extension
 -- ============================================================================
 
 /-- WS-SM SM6.A.5 (plan §4.3): the cross-core donation-chain lock-set
-extension.  When the caller donates a SchedContext on the call, the
+extension. When the caller donates a SchedContext on the call, the
 `endpointCall` lock-set is *exactly* the non-donating lock-set extended with the
 donated SchedContext's **write** lock — so the SC migration (`applyCallDonation`
 rebinding `boundThread` across cores, SM5.H.4) runs under a held SC write lock,
@@ -639,7 +639,7 @@ theorem lockSet_endpointCall_donation_extension
   rfl
 
 -- ============================================================================
--- §9  SM6.A.8 — `endpointCallWithCaps` lock-set correctness
+-- §9 SM6.A.8 — `endpointCallWithCaps` lock-set correctness
 -- ============================================================================
 
 /-- WS-SM SM6.A.8 (`endpointCallWithCaps_lockSet_correct`): the
@@ -647,11 +647,11 @@ theorem lockSet_endpointCall_donation_extension
 has a kind in `permittedKinds .call`.
 
 **WS-RR RR7.7**: it is now `lockSet_consistent_call` at `some destCnode`, and
-that is the whole proof.  Before the fold, this theorem re-derived the
+that is the whole proof. Before the fold, this theorem re-derived the
 destination CNode's admissibility out here while the base's consistency was
 proved in `LockSetTransitions.lean`; the two obligations for one footprint sat
 in two files, which is what let the state-level member the CDT write needs be
-declared in neither.  `permittedKinds .call` gained `.objStore` in the same cut,
+declared in neither. `permittedKinds .call` gained `.objStore` in the same cut,
 so the ladder is still respected — level 0, acquired first. -/
 theorem endpointCallWithCaps_lockSet_correct
     (caller : SeLe4n.ThreadId) (cnRoot destCnode endpointId : SeLe4n.ObjId)
@@ -664,14 +664,14 @@ theorem endpointCallWithCaps_lockSet_correct
     (some destCnode)
 
 -- ============================================================================
--- §10  SM6.A.9 — `endpointCall` atomicity under its lock-set (2PL)
+-- §10 SM6.A.9 — `endpointCall` atomicity under its lock-set (2PL)
 -- ============================================================================
 
 /-- WS-SM SM6.A.9 (`endpointCall_atomic_under_lockSet`, plan §3.4 / Theorem
 2.1.10): under its `endpointCall` lock-set the cross-core transition is a
 single two-phase-locked atomic step — wrapping `endpointCallOnCore` in
 `withLockSet` decomposes deterministically into the acquire fold, the
-transition, and the release fold.  No partial intermediate is observable to a
+transition, and the release fold. No partial intermediate is observable to a
 lock-insensitive observer (`lockSet_observer_atomic`); this is the operational
 atomicity the `ipcInvariantFull_perCore` preservation (SM6.D) rests on. -/
 theorem endpointCallOnCore_atomic_under_lockSet
@@ -696,7 +696,7 @@ theorem endpointCallOnCore_atomic_under_lockSet
   lockSet_atomic_under_2pl _ executingCore _ s
 
 -- ============================================================================
--- §11  `removeRunnableOnCore` frame lemmas
+-- §11 `removeRunnableOnCore` frame lemmas
 -- ============================================================================
 
 /-- `removeRunnableOnCore` touches only the scheduler — every object is preserved. -/
@@ -759,12 +759,12 @@ theorem removeRunnableOnCore_currentOnCore_ne (st : SystemState)
     SchedulerState.setCurrentOnCore_currentOnCore_ne, h]
 
 -- ============================================================================
--- §12  SM6.A.4 — Per-core caller blocking (plan §3.2 steps 5–6)
+-- §12 SM6.A.4 — Per-core caller blocking (plan §3.2 steps 5–6)
 -- ============================================================================
 
 /-- WS-SM SM6.A.4 (`endpointCall_perCore_blocking`): on a rendezvous call, the
 caller is **blocked on its own core** — removed from `executingCore`'s run
-queue and cleared from `executingCore`'s current slot.  The receiver wake
+queue and cleared from `executingCore`'s current slot. The receiver wake
 targets the receiver's home core; the caller's descheduling is confined to the
 executing core, never disturbing another core's scheduler (the per-core
 locality `chooseThreadOnCore executingCore` then picks the next thread). -/
@@ -790,11 +790,11 @@ theorem endpointCallOnCore_perCore_blocking
          removeRunnableOnCore_currentOnCore_ne_self st5 caller executingCore⟩
 
 -- ============================================================================
--- §13  SM6.A.6 — Reply-state allocation under the caller-TCB write lock
+-- §13 SM6.A.6 — Reply-state allocation under the caller-TCB write lock
 -- ============================================================================
 
 /-- A `storeTcbIpcStateAndMessage` that succeeds resolves the target TCB and
-sets its `ipcState` to the stored value.  (`invExt`-dependent: RobinHood table
+sets its `ipcState` to the stored value. (`invExt`-dependent: RobinHood table
 lookups need the store well-formedness invariant.) -/
 theorem storeTcbIpcStateAndMessage_getTcb?_ipcState
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
@@ -814,7 +814,7 @@ theorem storeTcbIpcStateAndMessage_getTcb?_ipcState
          storeTcbIpcStateAndMessage_ipcState_eq st st' tid ipc msg hObjInv hStep tcb' hTcb'⟩
 
 /-- Finding F-1: a `storeTcbReceiveComplete` that succeeds resolves the target TCB
-and sets its `ipcState` to `.ready`.  Mirror of
+and sets its `ipcState` to `.ready`. Mirror of
 `storeTcbIpcStateAndMessage_getTcb?_ipcState`. -/
 theorem storeTcbReceiveComplete_getTcb?_ipcState
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
@@ -834,7 +834,7 @@ theorem storeTcbReceiveComplete_getTcb?_ipcState
 caller's **reply linkage** is established — its TCB transitions to
 `blockedOnReply endpointId (some receiver)`, recording the authorised replier
 (`receiver`) so that only that server can later reply (the confused-deputy
-gate of `endpointReply`).  This write lands on the caller's TCB, which
+gate of `endpointReply`). This write lands on the caller's TCB, which
 `lockSet_endpointCall` covers with a **write** lock (§3.1 footprint;
 `endpointCallOnCore_lockSet_correct` confirms it is a permitted, declared
 lock), so under the 2PL bracket (`endpointCallOnCore_atomic_under_lockSet`) the
@@ -882,7 +882,7 @@ theorem endpointCallOnCore_reply_linkage_under_lockSet
   rw [← hIpcEq, ← hbt]; exact hIpc
 
 -- ============================================================================
--- §14  SM6.A.6 — the caller-TCB write lock IS in the footprint (membership)
+-- §14 SM6.A.6 — the caller-TCB write lock IS in the footprint (membership)
 -- ============================================================================
 
 /-- Forward `insertOrMerge` membership: a pair already present under a key
@@ -906,18 +906,18 @@ theorem self_mem_insertOrMerge_of_not_containsKey (S : LockSet) (l : LockId)
 
 /-- WS-SM SM6.A.6 (the substantive "under lock-set"): the **caller-TCB write
 lock** — under which the call writes the caller's reply-blocked state — is a
-declared member of the `endpointCall` lock-set footprint.  Together with
+declared member of the `endpointCall` lock-set footprint. Together with
 `endpointCallOnCore_reply_linkage_under_lockSet` this makes "reply-state
 allocation under lock-set" concrete: the specific lock covering the write is in
 the held footprint.
 
-**WS-RR RR7.11**: the `hRecvNe` hypothesis is gone.  It said a present receiver
+**WS-RR RR7.11**: the `hRecvNe` hypothesis is gone. It said a present receiver
 is a thread distinct from the caller — true (you do not `Call` yourself) but
 irrelevant to the conclusion, because a coinciding key merges under
 `AccessMode.lub` and `.write` is that lattice's top, so the member survives
-either way.  A hypothesis that the conclusion does not need is one every caller
+either way. A hypothesis that the conclusion does not need is one every caller
 has to discharge for nothing, and it made this statement look narrower than the
-fact it records.  The general form is
+fact it records. The general form is
 `lockSet_endpointCall_caller_tcb_write_mem_unconditional`, stated over the
 capability-transfer arguments too; this is that theorem at the arguments SM6.A
 cites it with. -/
@@ -930,18 +930,18 @@ theorem lockSet_endpointCall_caller_tcb_write_mem
     receiver? donatedSc? none none
 
 -- ============================================================================
--- §9  WS-RR RR2.4 — the scheduler-domain footprint of the cross-core `.call`
+-- §9 WS-RR RR2.4 — the scheduler-domain footprint of the cross-core `.call`
 -- ============================================================================
 --
 -- `lockSet_endpointCall` is a `LockSet` over the SM0.I **object** domain
--- (`LockId` = kind × ObjId).  The RR2.2 replenishment migration writes two
+-- (`LockId` = kind × ObjId). The RR2.2 replenishment migration writes two
 -- **per-core replenish-queue** slots, which are not object locks at all — they
 -- live in the `SchedLockId` domain, whose whole reason for existing (SM5.A.2)
--- is that a per-core scheduler slot has no `ObjId` to key a `LockId` on.  So
+-- is that a per-core scheduler slot has no `ObjId` to key a `LockId` on. So
 -- "extend the call's footprint with `migrateSchedContextReplenishmentLockSet`"
 -- is a statement in the cross-domain `SchedLockId` order, exactly as SM6.E's
 -- `cancelDonatedDonationOnCoreSchedLockSet` is for the `.tcbSuspend` arm that
--- runs the same migration.  Both footprints below are `SchedLockId` lists in
+-- runs the same migration. Both footprints below are `SchedLockId` lists in
 -- plan §4.4 ascending order (`object < runQueue < replenishQueue`), each
 -- same-kind segment `CoreId`-ascending, so the list *is* the SM3.D acquisition
 -- sequence.
@@ -950,7 +950,7 @@ theorem lockSet_endpointCall_caller_tcb_write_mem
 **donation** (`applyCallDonationOnCore`) — the object-store table write lock
 plus the replenish-queue write locks of **both** migration endpoints (the
 donor's home core, purged, and the donee's home core, receiving), emitted in
-`CoreId`-ascending order.  On a shared home core the two endpoints coincide, the
+`CoreId`-ascending order. On a shared home core the two endpoints coincide, the
 migration is a definitional no-op, and the footprint collapses to the single
 slot.
 
@@ -1001,7 +1001,7 @@ theorem applyCallDonationOnCoreSchedLockSet_contains_doneeHome_write
   · by_cases hLe : donorHome ≤ doneeHome <;> simp [hEq, hLe]
 
 /-- **RR2.4's coverage obligation**: the footprint covers
-`migrateSchedContextReplenishmentLockSet` member for member.  This is the
+`migrateSchedContextReplenishmentLockSet` member for member. This is the
 statement that makes the SM3 serializability argument hold across the donation:
 the migration writes only the two replenish-queue slots, and the `.call`
 footprint declares both, so no write escapes the declared `withLockSet`
@@ -1054,13 +1054,13 @@ theorem applyCallDonationOnCoreSchedLockSet_size_le_maxLockSetSize
   core (the rendezvous' `wakeThread` enqueue) — one entry when they coincide;
 * the **replenish-queue** write locks of the two donation endpoints (RR2.2).
 
-**Dynamic chain extension (declared, not static).**  The dispatch also runs
+**Dynamic chain extension (declared, not static).** The dispatch also runs
 `propagatePipChainCrossCore`, which re-buckets each blocking-chain member's run
-queue on *that member's* home core.  The chain is state-discovered, so no static
+queue on *that member's* home core. The chain is state-discovered, so no static
 footprint can enumerate those cores — the SM3.C.11 obligation
 (`pipChainStart_tcbSuspend`, `LockSetTransitions.lean`) covers this walk too:
 per chain step the walker acquires the member's TCB write lock *and* its
-home-core run-queue write lock.  SM6.E's suspend footprint carries the identical
+home-core run-queue write lock. SM6.E's suspend footprint carries the identical
 caveat for the identical walk. -/
 def endpointCallCrossCoreDispatchSchedLockSet
     (executingCore receiverHome donorHome doneeHome : CoreId) :
@@ -1124,7 +1124,7 @@ theorem endpointCallCrossCoreDispatchSchedLockSet_write_only
 /-- **RR2.4 (dispatch-level coverage)**: the whole-dispatch footprint covers the
 donation footprint member for member, hence — by
 `applyCallDonationOnCoreSchedLockSet_covers_migration` — the migration's two
-replenish-queue write locks.  A `withLockSet` bracket over the dispatch
+replenish-queue write locks. A `withLockSet` bracket over the dispatch
 footprint therefore holds every lock the RR2.2 migration writes under, which is
 what keeps the SM3 serializability argument valid across the new write. -/
 theorem endpointCallCrossCoreDispatchSchedLockSet_covers_donation

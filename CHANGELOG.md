@@ -1,3 +1,60 @@
+## v0.34.82 — a parameter nothing reads, and the error it was buying
+
+**WS-RR RR7.33 (finding 15)** — `ipcUnwrapCaps` carries a `senderCspaceRoot`
+nothing reads, and the fine-lock plan's §9.2 registered that debt with a closure
+target it then passed without closing.  The reason it was not "simply deletable"
+is recorded there and is the whole of this cut: removing the argument removes a
+`lookupCspaceRoot` and, with it, an error a caller can observe — so the cut had
+to *decide* whether that fail-closed branch is wanted on its own terms.
+
+**It is not, and here is why.**
+
+1. **The transfer does not read it.**  The derivation parent has been
+   `TransferCap.srcNode` since the revocation-precision fix (`v0.33.59`), and
+   that node is minted at `resolveExtraCaps` **against the sender's own CSpace
+   root** — so the authority the parameter looked like it carried is already
+   established, at resolution, where the sender's root is the resolver's input.
+   seL4 agrees: `transferCaps` takes resolved CTE pointers, not a root.
+2. **The lookup's error was a cross-principal channel.**  AK1-I made all three
+   transfer paths fail closed on a missing CSpace root, and that is right for the
+   **receiver's** root — it is where capabilities install, and the send and call
+   arms still check it.  The receive arm looked up the **sender's** root only to
+   feed this parameter, so its `.invalidCapability` failed the *receiver's*
+   syscall on a fact about the *sender's* TCB: a one-bit flow from sender-domain
+   state into a receiver-visible `KernelError`, which is the shape AK1-I set out
+   to remove rather than one it needed to add.
+3. **The case it appeared to cover is already covered, better.**  A source slot
+   destroyed between resolution and unwrap is declined *per capability* by
+   `CapTransferResult.sourceRevoked`, which installs the rest.  Failing the whole
+   transfer on the sender's root was coarser and answered a different question.
+
+**The deadness propagates, so the removal does.**  `endpointSendDualWithCaps` and
+`endpointCallWithCaps` took the root for one purpose — handing it on — so they
+lose it too, and with them their `OnCore` forms,
+`endpointCallCrossCoreDispatch`, `endpointSendCrossCoreDispatchChecked`, the
+flow-checked `endpointSendDualChecked` / `endpointCallChecked`, and the syscall
+dispatch arms that fed them `gate.cspaceRoot`.  About **330 sites across 30
+files**, including three of the largest in the tree.  Every proof was repaired,
+none weakened: the 21 case-splits on the deleted match collapse to the
+straight-line body the code now takes, and the `enforcementSoundness` bundle,
+the lock-footprint capstones, the dispatch payoff and the fault-delivery
+composites all follow their own arities.
+
+**What did *not* change, deliberately.**  The receive arm keeps
+`receiverCspaceRoot`; the send and call arms keep their receiver-root lookups and
+their `.invalidCapability` on a missing one.  Every path still checks exactly the
+root it uses, which is what makes this a narrowing rather than a relaxation —
+and `NegativeStateSuite`'s missing-receiver negatives, which drive
+`endpointCallWithCaps` against a state with the receiver TCB erased, still fail
+closed and still pass.
+
+Finding 98 (the four per-core statistics accessors with zero consumers) is the
+other half of RR7.33 and does not land here: its consumer has to run on hardware,
+and building an unwired one would repeat at one level out exactly the defect this
+cut removes.
+
+Tier 0-3 green; `test_rust.sh` and the aarch64 cross gate green.
+
 ## v0.34.81 — a plan nobody indexes is an invisible workstream
 
 **WS-RR RR7.32** — the doc-sync medium (register finding 39): "an open IPC

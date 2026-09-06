@@ -179,15 +179,15 @@ rendezvous: `endpointCallWithCapsOnCore` short-circuits its transfer on
 rendezvous's descheduling directly. -/
 theorem endpointCallWithCapsOnCore_caller_not_runnable
     (epId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (rights : AccessRightSet) (cspaceRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
+    (rights : AccessRightSet) (slotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st st' : SystemState)
     (summary : CapTransferSummary) (sgi? : Option (CoreId × SgiKind))
     (hNoCaps : msg.caps.isEmpty = true)
-    (hStep : endpointCallWithCapsOnCore epId caller msg rights cspaceRoot slotBase
+    (hStep : endpointCallWithCapsOnCore epId caller msg rights slotBase
         executingCore st = (st', .ok (summary, sgi?))) :
     caller ∉ st'.scheduler.runQueueOnCore executingCore ∧
     st'.scheduler.currentOnCore executingCore ≠ some caller := by
-  rw [endpointCallWithCapsOnCore_no_caps epId caller msg rights cspaceRoot slotBase
+  rw [endpointCallWithCapsOnCore_no_caps epId caller msg rights slotBase
     executingCore st hNoCaps] at hStep
   cases hCall : endpointCallOnCore epId caller
       { msg with capsGranted := rights.mem AccessRight.grant } executingCore st with
@@ -212,17 +212,17 @@ touches no `current` slot (§1).  So the caller comes out of the chain exactly
 as the rendezvous left it. -/
 theorem endpointCallCrossCoreDispatch_caller_not_runnable
     (epId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (rights : AccessRightSet) (cspaceRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
+    (rights : AccessRightSet) (slotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st st' : SystemState)
     (summary : CapTransferSummary) (sgi? : Option (CoreId × SgiKind))
     (hNoCaps : msg.caps.isEmpty = true)
-    (hStep : endpointCallCrossCoreDispatch epId caller msg rights cspaceRoot slotBase
+    (hStep : endpointCallCrossCoreDispatch epId caller msg rights slotBase
         executingCore st = (st', .ok (summary, sgi?))) :
     caller ∉ st'.scheduler.runQueueOnCore executingCore ∧
     st'.scheduler.currentOnCore executingCore ≠ some caller := by
   unfold endpointCallCrossCoreDispatch at hStep
   simp only at hStep
-  cases hWc : endpointCallWithCapsOnCore epId caller msg rights cspaceRoot slotBase
+  cases hWc : endpointCallWithCapsOnCore epId caller msg rights slotBase
       executingCore st with
   | mk stW resW =>
       rw [hWc] at hStep
@@ -231,7 +231,7 @@ theorem endpointCallCrossCoreDispatch_caller_not_runnable
       | ok r =>
           obtain ⟨summaryW, sgiW⟩ := r
           have hW := endpointCallWithCapsOnCore_caller_not_runnable epId caller msg rights
-            cspaceRoot slotBase executingCore st stW summaryW sgiW hNoCaps hWc
+            slotBase executingCore st stW summaryW sgiW hNoCaps hWc
           simp only at hStep
           -- The donation / PIP tail either returns `stW` unchanged or extends it.
           split at hStep
@@ -288,7 +288,7 @@ theorem faultDeliverOnCore_not_dispatchable (st : SystemState)
     · simp only [faultDeliverOnCore, hRes, recordPendingFault_scheduler_eq]
       exact faultSuspendOnCore_not_runnable _ tid c
     · rcases hCall : endpointCallCrossCoreDispatch tgt.endpoint tid
-          (faultMessage f ctx tgt.cap.badge) tgt.cap.rights tgt.cspaceRoot
+          (faultMessage f ctx tgt.cap.badge) tgt.cap.rights
           (SeLe4n.Slot.ofNat 0) c st with ⟨stC, res⟩
       cases res with
       | error e =>
@@ -299,7 +299,7 @@ theorem faultDeliverOnCore_not_dispatchable (st : SystemState)
           simp only [faultDeliverOnCore, hRes, hCall, recordPendingFault_scheduler_eq,
             Architecture.stageWokenDelivery_scheduler_eq]
           exact endpointCallCrossCoreDispatch_caller_not_runnable tgt.endpoint tid _
-            tgt.cap.rights tgt.cspaceRoot (SeLe4n.Slot.ofNat 0) c st stC summary sgi?
+            tgt.cap.rights (SeLe4n.Slot.ofNat 0) c st stC summary sgi?
             (by rw [faultMessage_caps f ctx tgt.cap.badge]; rfl) hCall
   rintro (hQ | hC)
   · exact hNot.1 hQ
