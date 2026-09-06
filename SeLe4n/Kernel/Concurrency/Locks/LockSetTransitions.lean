@@ -1246,6 +1246,21 @@ theorem lockSet_cspaceDelete_stateLevel_write_mem (callerTid : ThreadId)
   simp only [List.foldl]
   exact LockSet.mem_insertOrMerge_write_self _ _
 
+/-- **WS-RR RR7.41**: `cspaceDelete` declares the **target CNode's write lock**.
+
+The member a resolution passing through that CNode must conflict with, and the
+half of `cspaceWalk_conflicts_with_delete` that comes from the delete's side.
+Stated here, beside the footprint, rather than at the consumer: "what does this
+footprint contain" is a question about `lockSet_cspaceDelete`. -/
+theorem lockSet_cspaceDelete_target_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId targetCnodeObjId : ObjId) :
+    (cnodeLock targetCnodeObjId, AccessMode.write)
+      ∈ (lockSet_cspaceDelete callerTid cnodeRootObjId targetCnodeObjId).pairs := by
+  unfold lockSet_cspaceDelete lockSetOfList
+  simp only [List.foldl]
+  exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+    (LockSet.mem_insertOrMerge_write_self _ _)
+
 /-- **WS-RR RR7.9**: `mintReplyCap` inherits the member, by definition rather
 than by repetition. -/
 theorem lockSet_mintReplyCap_stateLevel_write_mem (callerTid : ThreadId)
@@ -2164,9 +2179,11 @@ target's root, its capability's `.object` target — and passes that `ObjId`;
 `none` when the walk fails or the target is not an object, since the operation
 then refuses before reading any endpoint.  Read mode, as the operation never
 writes the endpoint.  What this footprint still does not name is the interior
-of a multi-level CSpace walk, registered as
-`UncoveredLockDomain.cspaceWalkInteriorCnodes` for every footprint that
-resolves a CPtr. -/
+of a multi-level CSpace walk — as no CPtr-resolving footprint here does.
+WS-RR RR7.41 built the mechanism that can: `Capability.cspaceWalkLockSet`
+read-locks every CNode `resolveCapAddress` passes through, and
+`cspaceWalk_conflicts_with_delete` is the exclusion it buys.  Adopting it here is
+per-arm work of RR7.11's shape. -/
 def lockSet_tcbSetFaultHandler (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (targetTcbTid : ThreadId)
     (targetCnodeRootObjId : Option ObjId) (handlerEndpointObjId : Option ObjId)
@@ -2553,6 +2570,45 @@ instance (k : LockKind) (sid : SyscallId) :
 
 -- `LockSet.insertOrMerge_mem` is defined in `LockSet.lean`; we re-use it
 -- here for the fold-based membership trace-back.
+
+/-- **WS-RR RR7.41**: every input key reaches the built set — the forward
+direction of `lockSetOfList_mem_inv`.
+
+The mode may have been merged upward by a later duplicate (`AccessMode.lub`), so
+the statement is existential in the mode: what a caller needs is that the *key*
+is declared, and the mode a merge produces is at least the one it put in.  Needed
+by the CSpace-walk footprint, which builds its set from a walked list and must
+know every visited CNode is named. -/
+theorem lockSetOfList_mem_of_mem (input : List (LockId × AccessMode))
+    (l : LockId) (m : AccessMode) (hMem : (l, m) ∈ input) :
+    ∃ m', (l, m') ∈ (lockSetOfList input).pairs := by
+  -- Strengthened over an arbitrary accumulator: once a key is in the
+  -- accumulator it stays, and the fold reaches every input element.
+  suffices h : ∀ (suffix : List (LockId × AccessMode)) (acc : LockSet),
+      ((l, m) ∈ suffix ∨ (∃ m', (l, m') ∈ acc.pairs)) →
+      ∃ m', (l, m') ∈ (suffix.foldl
+        (fun a p => a.insertOrMerge p.fst p.snd) acc).pairs by
+    exact h input LockSet.empty (Or.inl hMem)
+  intro suffix
+  induction suffix with
+  | nil =>
+      intro acc h
+      rcases h with hNil | hAcc
+      · exact absurd hNil (by simp)
+      · exact hAcc
+  | cons hd tl ih =>
+      intro acc h
+      refine ih (acc.insertOrMerge hd.fst hd.snd) ?_
+      rcases h with hMemCons | ⟨m', hAcc⟩
+      · rcases List.mem_cons.mp hMemCons with hEq | hTl
+        · subst hEq
+          exact Or.inr (LockSet.mem_insertOrMerge_self acc l m)
+        · exact Or.inl hTl
+      · by_cases hKey : l = hd.fst
+        · subst hKey
+          exact Or.inr (LockSet.mem_insertOrMerge_self acc hd.fst hd.snd)
+        · exact Or.inr ⟨m',
+            LockSet.mem_insertOrMerge_of_mem_of_ne acc hd.fst hd.snd (l, m') hAcc hKey⟩
 
 /-- WS-SM SM3.B.4 helper: an element of `lockSetOfList pairs`'s
 underlying list has fst equal to some pair in `pairs`'s fst.

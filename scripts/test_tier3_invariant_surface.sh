@@ -1016,8 +1016,28 @@ run_check "INVARIANT" rg -n 'handlerEndpointObjId\.map \(fun ep => \(endpointLoc
 # anchor names the whole list rather than a prefix, so a further kind is still a
 # failure here.
 run_check "INVARIANT" rg -n -U '\| \.tcbSetFaultHandler =>\n\s+\[\.tcb, \.cnode, \.endpoint, \.notification\]' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^  \| cspaceWalkInteriorCnodes' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '\(\.cspaceWalkInteriorCnodes, "[^"]+"\)' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# **WS-RR RR7.41**: the CSpace walk's interior is covered, so its registry entry
+# is deleted.  What replaces the two presence anchors is the mechanism that
+# closed it: the path derived from `resolveCapAddress`'s own recursion, the
+# read-lock footprint over it, and the conflict a `cspaceDelete` on the path now
+# has — plus a negative refusing the entry's return.
+run_negative_check "INVARIANT" rg -n '\| cspaceWalkInteriorCnodes' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^def cspaceWalkPath' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+run_check "INVARIANT" rg -n '^def cspaceWalkLockSet' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+run_check "INVARIANT" rg -n '^theorem cspaceWalk_conflicts_with_delete' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cspaceDelete_target_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+# The walk's footprint is acquired through RR7.12's bracket, not a private
+# coupling walk: coupling would abandon the SM0.I total order.
+run_check "INVARIANT" rg -n 'runUnderDeclaredLockSet \(declaredLockSetForCSpaceWalk' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+# **WS-RR RR7.40**: the PIP chain's footprint names the home-core run queue the
+# object domain could not, and the walk's writes are proved inside it.
+run_check "INVARIANT" rg -n '^def pipChainSchedFootprint' SeLe4n/Kernel/Scheduler/PriorityInheritance/ChainFootprint.lean
+run_check "INVARIANT" rg -n '^theorem mem_pipChainSchedFootprint_runQueue' SeLe4n/Kernel/Scheduler/PriorityInheritance/ChainFootprint.lean
+run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_coversWrites' SeLe4n/Kernel/Scheduler/PriorityInheritance/ChainFootprint.lean
+run_check "INVARIANT" rg -n '^def runChainExtension' SeLe4n/Kernel/Concurrency/Locks/LockBracket.lean
+# NEGATIVE: the object-domain chain walk must not re-spell acquire/act/unwind.
+run_negative_check "INVARIANT" rg -n 'let acquired := acquireAll caller chainLocks' SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean
+run_negative_check "INVARIANT" rg -n '\| dynamicPipChain' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # PR #887 review round 4: a region-scoped presence check is still a presence
 # check.  The scanners ask their questions of top-level STATEMENTS — the
 # negated guard's block ends in a divergence, the positive guard's condition
@@ -2997,7 +3017,7 @@ run_check "INVARIANT" rg -n '^theorem UncoveredLockDomain.mem_all' SeLe4n/Kernel
 run_check "INVARIANT" rg -n '^theorem lockAcquisition_modifies_trusted_object_and_is_not_counted' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # NEGATIVE: the completeness theorem must not go back to comparing the domain
 # list against a literal, which a third constructor would leave elaborating.
-run_negative_check "INVARIANT" rg -n 'Prod.fst\) = \[.syscallSeamSchedulerDomain, .dynamicPipChain\]' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_negative_check "INVARIANT" rg -n 'Prod.fst\) = \[.syscallSeamSchedulerDomain\]' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # **WS-RR RR7.39** — the scheduler lock domain, with a runtime.
 #
 # The domain's two per-core constructors named locks `SystemState` had no word

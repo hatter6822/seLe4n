@@ -258,11 +258,24 @@ same shape as `preservesFieldsOutside` (RR7.19), which is what turned six
 omissions.
 
 The three clauses partition the state the scheduler domain guards: the object
-store under the table lock, core `d`'s scheduling slots under its run-queue lock,
-and core `d`'s replenishment queue under its replenish-queue lock. -/
+store, core `d`'s scheduling slots under its run-queue lock, and core `d`'s
+replenishment queue under its replenish-queue lock.
+
+The object clause is stated at **two** granularities because footprints come at
+two.  A scheduler entry declares the object-store *table* write lock, which
+covers every key at once; the RR7.40 PIP chain declares each visited thread's own
+`.tcb` lock instead, and nothing table-wide.  So the clause is discharged by
+either — the table lock present makes it vacuous, and otherwise every key whose
+own lock is absent must be unchanged.  Writing it as `st'.objects = st.objects`
+under the table lock alone (its RR7.39 form) would have been *false* of a
+per-object footprint rather than merely silent about it, so the generalisation
+is what lets one predicate serve both and keeps "what does covering mean" a
+single question. -/
 def schedFootprintCoversWrites (S : SchedLockSet) (st st' : SystemState) : Prop :=
   ((SchedLockId.object schedObjStoreLockId, AccessMode.write) ∉ S.pairs →
-      st'.objects = st.objects) ∧
+      ∀ oid : SeLe4n.ObjId,
+        (SchedLockId.object ⟨Concurrency.LockKind.tcb, oid⟩, AccessMode.write) ∉ S.pairs →
+        st'.objects[oid]? = st.objects[oid]?) ∧
   (∀ d : CoreId, (SchedLockId.runQueue ⟨d⟩, AccessMode.write) ∉ S.pairs →
       st'.scheduler.runQueueOnCore d = st.scheduler.runQueueOnCore d ∧
       st'.scheduler.currentOnCore d = st.scheduler.currentOnCore d ∧
@@ -273,7 +286,7 @@ def schedFootprintCoversWrites (S : SchedLockSet) (st st' : SystemState) : Prop 
 /-- **WS-RR RR7.39**: a footprint covers a step that changes nothing. -/
 theorem schedFootprintCoversWrites_refl (S : SchedLockSet) (st : SystemState) :
     schedFootprintCoversWrites S st st :=
-  ⟨fun _ => rfl, fun _ _ => ⟨rfl, rfl, rfl⟩, fun _ _ => rfl⟩
+  ⟨fun _ _ _ => rfl, fun _ _ => ⟨rfl, rfl, rfl⟩, fun _ _ => rfl⟩
 
 -- ============================================================================
 -- §4  The reschedule step's writes are inside its footprint

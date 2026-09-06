@@ -16,6 +16,7 @@ import SeLe4n.Kernel.Concurrency.Locks.LockSetTransitions
 import SeLe4n.Kernel.Concurrency.Locks.WithLockSet
 import SeLe4n.Kernel.Concurrency.Locks.LockSetHeld
 import SeLe4n.Kernel.Concurrency.Locks.LockSet2PL
+import SeLe4n.Kernel.Concurrency.Locks.LockBracket
 
 /-!
 # WS-SM SM3.C.11 — Dynamic priority-inheritance chain-walk locking
@@ -389,6 +390,14 @@ def dynamicChainHeld (c : CoreId) (path : PipChainPath)
 -- §5 — SM3.C.11.b — `withDynamicChainExtension` combinator
 -- ============================================================================
 
+/-- WS-SM SM3.C.11.b: the chain's per-TCB write-lock acquisition sequence —
+the locks `withDynamicChainExtension` acquires over a terminated walk path.
+Defined to match the inline `chainLocks` in `withDynamicChainExtension` so the
+establishment theorem below applies to the combinator's actual acquire fold. -/
+def chainLockSeq (path : PipChainPath) : List (LockId × AccessMode) :=
+  path.path.map (fun t => (⟨.tcb, t.toObjId⟩, AccessMode.write))
+
+
 /-- WS-SM SM3.C.11.b (plan §5.3): the dynamic-chain extension
 combinator.
 
@@ -436,12 +445,11 @@ def withDynamicChainExtension {α : Type} (caller : CoreId)
     (fallback : α) (s : SystemState) : SystemState × α :=
   match walkAndAcquire s startTid with
   | .terminated path =>
-      let chainLocks : List (LockId × AccessMode) :=
-        path.path.map (fun tid => (⟨.tcb, tid.toObjId⟩, AccessMode.write))
-      let acquired := acquireAll caller chainLocks s
-      let (postAction, result) := action acquired
-      let unwound := unwindAll caller chainLocks.reverse postAction
-      (unwound, result)
+      -- **WS-RR RR7.40**: the acquire / act / unwind is `runChainExtension` at the
+      -- object domain, not a second spelling of it.  The scheduler-domain chain
+      -- footprint (`pipChainSchedFootprint`) is the same definition at the other
+      -- domain, so "what does acquiring a discovered chain do" has one answer.
+      runChainExtension objectLockBracketDomain caller (chainLockSeq path) action s
   | .extended _ =>
     -- Walker didn't reach a terminating chain step (still in middle of walk).
     -- At the abstract level, treat as exhausted.
@@ -457,14 +465,28 @@ theorem withDynamicChainExtension_unfold {α : Type} (caller : CoreId)
     withDynamicChainExtension caller startTid action fallback s =
       (match walkAndAcquire s startTid with
        | .terminated path =>
-           let chainLocks : List (LockId × AccessMode) :=
-             path.path.map (fun tid => (⟨.tcb, tid.toObjId⟩, AccessMode.write))
-           let acquired := acquireAll caller chainLocks s
-           let (postAction, result) := action acquired
-           let unwound := unwindAll caller chainLocks.reverse postAction
-           (unwound, result)
+           runChainExtension objectLockBracketDomain caller (chainLockSeq path) action s
        | .extended _ => (s, fallback)
        | .exhausted => (s, fallback)) := rfl
+
+/-- **WS-RR RR7.40**: expanded shape — the acquire / act / unwind the extension
+performs on a terminating chain, spelled out.
+
+`withDynamicChainExtension_unfold` above says *which combinator* runs; this says
+what that combinator does, so a reader chasing the seam does not have to unfold
+`runChainExtension` by hand and a refactor that changed the shape breaks a stated
+equation rather than a comment. -/
+theorem withDynamicChainExtension_terminated {α : Type} (caller : CoreId)
+    (startTid : ThreadId) (action : SystemState → SystemState × α)
+    (fallback : α) (s : SystemState) (path : PipChainPath)
+    (h : walkAndAcquire s startTid = .terminated path) :
+    withDynamicChainExtension caller startTid action fallback s =
+      (unwindAll caller (chainLockSeq path).reverse
+         (action (acquireAll caller (chainLockSeq path) s)).1,
+       (action (acquireAll caller (chainLockSeq path) s)).2) := by
+  unfold withDynamicChainExtension
+  rw [h]
+  rfl
 
 -- ============================================================================
 -- §6 — SM3.C.11.d — Deadlock-freedom for dynamic chain
@@ -935,12 +957,6 @@ theorem threadId_toObjId_ne_of_toNat_lt {a b : SeLe4n.ThreadId}
     simpa [SeLe4n.ThreadId.toObjId, SeLe4n.ObjId.ofNat, SeLe4n.ObjId.toNat] using hc
   omega
 
-/-- WS-SM SM3.C.11.b: the chain's per-TCB write-lock acquisition sequence —
-the locks `withDynamicChainExtension` acquires over a terminated walk path.
-Defined to match the inline `chainLocks` in `withDynamicChainExtension` so the
-establishment theorem below applies to the combinator's actual acquire fold. -/
-def chainLockSeq (path : PipChainPath) : List (LockId × AccessMode) :=
-  path.path.map (fun t => (⟨.tcb, t.toObjId⟩, AccessMode.write))
 
 /-- WS-SM SM3.C.11.c (substantive — closes the conjunct-1 gap): after acquiring
 the chain's write locks, the caller holds the write lock on **every** TCB in the

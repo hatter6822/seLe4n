@@ -8195,21 +8195,32 @@ private def runDeclaredFootprintChecks : IO Unit := do
   -- became `syscallSeamSchedulerDomain`.  RR7.39 closed the per-core scheduler
   -- *entries*' half — they now acquire their declared footprints — and the
   -- syscall seam's half remains, because `lockSetForSyscall` returns a `LockSet`
-  -- whose `LockId` cannot name a run-queue lock.  A narrowing keeps the count at
+  -- whose `LockId` cannot name a run-queue lock.  A narrowing kept the count at
   -- four and is the honest record: deleting would have claimed the syscall half.
-  assertBool "the four uncovered lock domains are registered, each with an owner"
-    (decide (declaredFootprintUncoveredDomains.length = 4) &&
+  --
+  -- WS-RR RR7.40: **three**, from four.  The dynamic PIP chain's entry is
+  -- deleted — `pipChainSchedFootprint` names every visited thread's TCB lock and
+  -- its home core's run-queue lock over the domain RR7.39 built, and
+  -- `propagatePipChainCrossCore_coversWrites` proves the walk writes nothing
+  -- outside it.
+  --
+  -- WS-RR RR7.41: **two**, from three.  The CSpace walk's interior is deleted —
+  -- `cspaceWalkPath` derives the CNodes a resolution reads from
+  -- `resolveCapAddress`'s own recursion, `cspaceWalkLockSet` read-locks each, and
+  -- `cspaceWalk_conflicts_with_delete` proves the conflict with a `cspaceDelete`
+  -- on the path that the root-only footprint could not state.
+  assertBool "the two uncovered lock domains are registered, each with an owner"
+    (decide (declaredFootprintUncoveredDomains.length = 2) &&
      decide (declaredFootprintUncoveredDomains.map Prod.fst
-       = [UncoveredLockDomain.syscallSeamSchedulerDomain, UncoveredLockDomain.dynamicPipChain,
-          UncoveredLockDomain.taintTablePerKeyStore,
-          UncoveredLockDomain.cspaceWalkInteriorCnodes]) &&
+       = [UncoveredLockDomain.syscallSeamSchedulerDomain,
+          UncoveredLockDomain.taintTablePerKeyStore]) &&
      declaredFootprintUncoveredDomains.all (fun d => !d.2.isEmpty))
   -- LOAD-BEARING NEGATIVE: completeness is quantified over the *constructors*,
   -- so a domain added without a registration cannot pass.
   assertBool "NEGATIVE: every uncovered-domain constructor is registered"
     (UncoveredLockDomain.all.all
        (fun d => declaredFootprintUncoveredDomains.map Prod.fst |>.contains d) &&
-     decide (UncoveredLockDomain.all.length = 4))
+     decide (UncoveredLockDomain.all.length = 2))
   -- PR #873 round 6: the inventory is no longer data alone.  Relying on declared
   -- footprints as a complete serialization discipline is gated on it being
   -- EMPTY, so the per-key taint store — the entry the review pressed twice — is

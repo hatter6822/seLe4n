@@ -16,6 +16,8 @@ import SeLe4n.Kernel.Concurrency.Assumptions
 import SeLe4n.Kernel.Concurrency.Runtime
 import SeLe4n.Kernel.SecondaryEntry
 import SeLe4n.Kernel.SchedLockBracket
+import SeLe4n.Kernel.Scheduler.PriorityInheritance.ChainFootprint
+import SeLe4n.Kernel.Capability.CSpaceWalkFootprint
 import SeLe4n.Kernel.Architecture.Assumptions
 import SeLe4n.Kernel.Architecture.TlbiForSharing
 import SeLe4n.Platform.FFI
@@ -769,6 +771,129 @@ private def runCurrentCoreIdChecks : IO Unit := do
     (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
       decide (c.val < SeLe4n.Kernel.Concurrency.numCores)))
 
+private def runPipChainFootprintChecks : IO Unit := do
+  -- **WS-RR RR7.40**: the dynamic PIP chain, over a domain that can name its
+  -- locks.  SM3.C.11's walker acquired each member's TCB write lock -- every lock
+  -- the object domain could name -- while `updatePipBoostOnCore` also migrates
+  -- the member's run-queue bucket on its own home core.  That missing member is
+  -- what `UncoveredLockDomain.dynamicPipChain` recorded.
+  IO.println "--- §2.23 WS-RR RR7.40 dynamic PIP chain footprint ---"
+  let st : SeLe4n.Model.SystemState := default
+  let t1 : SeLe4n.ThreadId := ⟨1⟩
+  let t2 : SeLe4n.ThreadId := ⟨2⟩
+  let c0 : SeLe4n.Kernel.Concurrency.CoreId := SeLe4n.Kernel.Concurrency.bootCoreId
+  let visited : List SeLe4n.ThreadId := [t1, t2]
+  let fp := SeLe4n.Kernel.PriorityInheritance.pipChainSchedFootprint st visited
+  -- 1. Both segments are present: a TCB lock per member, a run-queue lock per
+  --    home core.  The second is the one the object domain could not express.
+  assertBool "every visited thread's TCB write lock is in the chain footprint"
+    (visited.all (fun t =>
+      fp.contains (SeLe4n.Kernel.SchedLockId.object
+        ⟨SeLe4n.Kernel.Concurrency.LockKind.tcb, t.toObjId⟩, .write)))
+  assertBool "every visited thread's HOME-CORE run-queue write lock is in it"
+    (visited.all (fun t =>
+      fp.contains (SeLe4n.Kernel.SchedLockId.runQueue
+        ⟨SeLe4n.Kernel.determineTargetCore st t⟩, .write)))
+  assertBool "the chain footprint is write-only"
+    (fp.all (fun p => decide (p.2 = SeLe4n.Kernel.Concurrency.AccessMode.write)))
+  -- 2. The home-core segment deduplicates: both threads are unbound here, so both
+  --    resolve to the boot core, and the segment names it once.
+  assertBool "two members sharing a home core name that core's lock once"
+    (decide ((SeLe4n.Kernel.PriorityInheritance.pipChainHomeCores st visited).length = 1) &&
+     decide ((SeLe4n.Kernel.PriorityInheritance.pipChainHomeCores st visited) = [c0]))
+  -- 3. The segment is bounded by the core count, never by a chain length.
+  assertBool "the home-core segment is bounded by numCores"
+    (decide ((SeLe4n.Kernel.PriorityInheritance.pipChainHomeCores st visited).length
+      ≤ SeLe4n.Kernel.Concurrency.numCores))
+  -- 4. The two segments are ordered object-then-runQueue.  Per-member coupling
+  --    would walk the `SchedLockId` ladder backwards at the second member; this
+  --    is the shape the ladder admits.
+  assertBool "the footprint's keys are SchedLockId-ascending"
+    (decide ((fp.map (·.1)).Pairwise (· ≤ ·)))
+  assertBool "the object segment precedes the run-queue segment"
+    (match fp.head?, fp.getLast? with
+     | some (SeLe4n.Kernel.SchedLockId.object _, _),
+       some (SeLe4n.Kernel.SchedLockId.runQueue _, _) => true
+     | _, _ => false)
+  -- 5. The fail-closed constructor: a chain that revisits a thread names one lock
+  --    twice, so no footprint is declared and the caller keeps its coarser
+  --    serialisation.  This is the acyclicity `blockingAcyclic` maintains.
+  assertBool "an acyclic chain declares a footprint"
+    (SeLe4n.Kernel.SchedLockSet.ofList? fp |>.isSome)
+  assertBool "NEGATIVE: a chain revisiting a thread declares none"
+    (SeLe4n.Kernel.SchedLockSet.ofList?
+      (SeLe4n.Kernel.PriorityInheritance.pipChainSchedFootprint st [t1, t2, t1]) |>.isNone)
+  -- 6. The visited list comes from the same `blockingServer` recursion the
+  --    transition walks, and is bounded by its fuel.
+  assertBool "the visited list is bounded by the walk's fuel"
+    (List.range 5 |>.all (fun n =>
+      decide ((SeLe4n.Kernel.PriorityInheritance.pipChainVisited st t1 n).length ≤ n)))
+  assertBool "a zero-fuel walk visits nobody, so declares an empty footprint"
+    (decide (SeLe4n.Kernel.PriorityInheritance.pipChainVisited st t1 0 = []))
+  -- 7. The extension acquires and hands the locks back.
+  let outcome := SeLe4n.Kernel.PriorityInheritance.withPipChainSchedExtension
+    c0 t1 4 (fun s => (s, ())) () st
+  assertBool "the chain extension leaves every scheduler lock word unheld again"
+    (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
+      decide (outcome.1.runQueueLockOnCore c
+        = SeLe4n.Kernel.Concurrency.RwLockState.unheld)))
+
+private def runCSpaceWalkFootprintChecks : IO Unit := do
+  -- **WS-RR RR7.41**: the interior of a multi-level CSpace walk.
+  -- `resolveCapAddress` descends through child CNodes discovered from each
+  -- CNode's own guard and radix, and every per-object footprint named only the
+  -- root -- so a concurrent `cspaceDelete` of an interior slot had no conflicting
+  -- lock against a resolution passing through it.
+  IO.println "--- §2.24 WS-RR RR7.41 CSpace-walk interior footprint ---"
+  let st : SeLe4n.Model.SystemState := default
+  let root : SeLe4n.ObjId := SeLe4n.ObjId.ofNat 7
+  let addr : SeLe4n.CPtr := SeLe4n.CPtr.ofNat 0
+  -- 1. The fail-closed arms: a zero-bit walk and an unresolvable root read no
+  --    CNode, so they declare nothing.  A footprint is owed exactly where a read
+  --    happened.
+  assertBool "a zero-bit walk reads no CNode"
+    (decide (SeLe4n.Kernel.cspaceWalkPath root addr 0 st = []))
+  assertBool "an unresolvable root reads no CNode"
+    (decide (SeLe4n.Kernel.cspaceWalkPath root addr 32 st = []))
+  assertBool "…and therefore declares an empty footprint"
+    (decide ((SeLe4n.Kernel.cspaceWalkLockSet root addr 32 st).pairs = []))
+  -- 2. The declaration is total -- there is no resolution whose interior cannot
+  --    be named.  That was the previous state of affairs, not this one.
+  assertBool "every walk declares a footprint (there is no `none` arm)"
+    (SeLe4n.Kernel.declaredLockSetForCSpaceWalk root addr 32 st |>.isSome)
+  -- 3. The delete's side of the conflict: `cspaceDelete` takes the target
+  --    CNode's WRITE lock, which is what a read lock on the path conflicts with.
+  let target : SeLe4n.ObjId := SeLe4n.ObjId.ofNat 9
+  assertBool "cspaceDelete declares the target CNode's write lock"
+    (decide ((SeLe4n.Kernel.Concurrency.cnodeLock target,
+      SeLe4n.Kernel.Concurrency.AccessMode.write) ∈
+      (SeLe4n.Kernel.Concurrency.lockSet_cspaceDelete ⟨3⟩ root target).pairs))
+  -- 4. The conflict itself: a read and a write on the same key conflict, and two
+  --    reads do not -- which is what makes the wider read footprint affordable.
+  assertBool "a read and a write on the same CNode conflict"
+    (SeLe4n.Kernel.Concurrency.AccessMode.conflicts
+      SeLe4n.Kernel.Concurrency.AccessMode.read
+      SeLe4n.Kernel.Concurrency.AccessMode.write)
+  assertBool "NEGATIVE: two resolutions through the same CNode do not conflict"
+    (!SeLe4n.Kernel.Concurrency.AccessMode.conflicts
+      SeLe4n.Kernel.Concurrency.AccessMode.read
+      SeLe4n.Kernel.Concurrency.AccessMode.read)
+  -- 5. The footprint is read-only: a resolution reads the interior and writes
+  --    nothing, so declaring write locks would serialise unrelated lookups.
+  assertBool "the walk footprint declares read locks only"
+    ((SeLe4n.Kernel.cspaceWalkLockSet root addr 32 st).pairs.all
+      (fun p => decide (p.2 = SeLe4n.Kernel.Concurrency.AccessMode.read)))
+  -- 6. The bracket over it is RR7.12's, unchanged -- the acquisition order is the
+  --    SM0.I ladder, which a hand-over-hand coupling walk would have abandoned.
+  let outcome := SeLe4n.Kernel.resolveCapAddressUnderWalkLocks
+    SeLe4n.Kernel.Concurrency.bootCoreId root addr 32 st
+  assertBool "the bracketed resolution returns the resolution's own verdict"
+    (match outcome.value? with
+     | some r => decide (r.toOption = (SeLe4n.Kernel.resolveCapAddress root addr 32
+         (SeLe4n.Kernel.Concurrency.acquireAll SeLe4n.Kernel.Concurrency.bootCoreId
+           (SeLe4n.Kernel.cspaceWalkLockSet root addr 32 st).lockAcquireSequence st)).toOption)
+     | none => false)
+
 private def runSchedLockDomainChecks : IO Unit := do
   -- **WS-RR RR7.39**: the scheduler lock domain, and the bracket the three
   -- per-core scheduler entries run.
@@ -777,7 +902,7 @@ private def runSchedLockDomainChecks : IO Unit := do
   -- transition, but the run-queue and replenish-queue constructors named locks
   -- the state had no word for: a bracket could sort the list and change nothing.
   -- These checks exercise the runtime RR7.39 gave them.
-  IO.println "--- §2.19 WS-RR RR7.39 scheduler lock domain + entry brackets ---"
+  IO.println "--- §2.22 WS-RR RR7.39 scheduler lock domain + entry brackets ---"
   let st : SeLe4n.Model.SystemState := default
   let c0 : SeLe4n.Kernel.Concurrency.CoreId := SeLe4n.Kernel.Concurrency.bootCoreId
   let c1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
@@ -1161,6 +1286,8 @@ def runFoundationsChecks : IO Unit := do
   runCurrentCoreIdChecks
   runSecondaryKernelMainChecks
   runSchedLockDomainChecks
+  runPipChainFootprintChecks
+  runCSpaceWalkFootprintChecks
   runTlbiForSharingChecks
   runSgiFfiBindingChecks
   runIdleWaitChecks

@@ -398,6 +398,29 @@ theorem insertOrMerge_mem (S : LockSet) (l : LockId) (m : AccessMode)
     · left; exact hNew
     · right; right; exact hOld
 
+/-- **WS-RR RR7.41**: after `insertOrMerge l m` the **key** `l` is declared, at
+some mode.
+
+Existential in the mode because a merge raises it by `AccessMode.lub`: what a
+caller building a set from a list needs is that every key it supplied is named,
+and the mode it gets back is at least the one it put in.  The `write`-specific
+form is `mem_insertOrMerge_write_self`; this is the general one, and is what
+`lockSetOfList_mem_of_mem` folds. -/
+theorem mem_insertOrMerge_self (S : LockSet) (l : LockId) (m : AccessMode) :
+    ∃ m', (l, m') ∈ (S.insertOrMerge l m).pairs := by
+  unfold LockSet.insertOrMerge
+  split
+  case h_1 hContains =>
+    -- Merge branch: `l` is already a key, and the map keeps it as a key.
+    have hMem : ∃ q ∈ S.pairs, q.fst = l := by
+      simpa [LockSet.containsKey, List.any_eq_true, decide_eq_true_eq] using hContains
+    obtain ⟨q, hq, hqKey⟩ := hMem
+    refine ⟨q.snd.lub m, ?_⟩
+    refine List.mem_map.mpr ⟨q, hq, ?_⟩
+    simp [hqKey]
+  case h_2 _ =>
+    exact ⟨m, List.mem_cons_self⟩
+
 /-- WS-SM SM3.B: membership is **preserved** by `insertOrMerge` when the inserted
 key differs from the element's key.  The forward dual of `insertOrMerge_mem`: an
 existing member with a distinct `fst` survives both branches — the merge branch

@@ -1,3 +1,106 @@
+## v0.34.90 — WS-RR RR7.40 + RR7.41: the two dynamically-discovered lock sets, named
+
+Both remaining fine-lock Track C closure rows.  Each is a set of locks a walk
+*discovers* rather than a footprint an argument names, and each is registered in
+`UncoveredLockDomain` precisely because the object domain had no constructor for
+part of it.  Both entries are deleted; the registry falls from four to **two**.
+
+### WS-RR RR7.40 — the dynamic PIP chain
+
+SM3.C.11's `withDynamicChainExtension` acquired each chain member's **TCB write
+lock**, which was every lock `LockSet` could name.  What the walk writes is more:
+`updatePipBoostOnCore` rewrites the member's `pipBoost` *and* migrates its
+run-queue bucket on **its own home core**, so the footprint owed a per-member
+`SchedLockId.runQueue` write lock.  RR7.39 made that nameable.
+
+* **`PriorityInheritance.pipChainSchedFootprint`** declares both halves.
+* **Two segments, not hand-over-hand.**  The row asked for per-member coupling;
+  the `SchedLockId` order is `object < runQueue < replenishQueue`, so taking a
+  member's two locks together walks the ladder backwards at the second member.
+  The footprint is therefore all TCB locks in path order, then all home-core
+  run-queue locks in `CoreId`-ascending order — the only shape the ladder admits,
+  and strictly stronger: the whole chain is held before any bucket moves.
+* **The run-queue segment is `allCores.filter`**, so it is ascending,
+  duplicate-free and `numCores`-bounded by construction rather than by a `dedup`
+  whose ordering would need its own proof.
+* **`Concurrency.runChainExtension`** is the acquire / act / unwind, shared:
+  `withDynamicChainExtension` was repointed onto it in the same cut, so "acquire a
+  discovered chain, act, unwind" has one answer at both domains.  It deliberately
+  does **not** revalidate, and the docstring says why — a walked chain is
+  discovered by the walk's own reads, where a declared footprint is resolved before
+  its locks are held.
+* **`propagatePipChainCrossCore_coversWrites`** proves the walk writes nothing
+  outside the footprint, over a `pipChainVisited` derived from the transition's
+  own `blockingServer` recursion; `pipChainVisited_boost_eq` is why the pre-state
+  resolution stays right across a walk whose steps commit.
+* **`runBracketed_chainExtension_composes`** states the composition with the
+  declared bracket, and why the nesting order is fixed (a bracket *inside* a chain
+  extension would resolve a footprint while the chain's locks are held).
+* The footprint is bounded by the chain length and `numCores`, **not** by
+  `maxLockSetSize`, and says so: that constant bounds *declared static*
+  footprints and the WCRT surface is stated against it, while a walked chain is
+  bounded by `MAX_PIP_RETRIES`.
+
+### WS-RR RR7.41 — the interior of a CSpace walk
+
+`resolveCapAddress` descends through child CNodes discovered from each CNode's own
+guard and radix, and every per-object footprint named only the **root**, so a
+concurrent `cspaceDelete` of an interior slot had no conflicting lock against a
+resolution passing through it.
+
+* **`Capability.cspaceWalkPath`** derives the visited CNodes from
+  `resolveCapAddress`'s own recursion, including on every arm where the
+  resolution gives up — a refused resolution still read what it reached.
+* **`cspaceWalkLockSet`** declares a **read** lock on each.  Read, because a
+  resolution writes nothing: two resolutions through one CNode still do not
+  exclude each other, which is what makes the wider footprint affordable.
+* **`cspaceWalk_conflicts_with_delete`** is the payoff, stated against
+  `ktiSharesConflictingLock` so SM3.E's conflict order consumes it directly.  The
+  delete's half, `lockSet_cspaceDelete_target_write_mem`, is stated beside the
+  footprint it is about.
+* **Not lock-coupling, and the reason is the ladder.**  The row asked for
+  hand-over-hand read locks down the CSpace.  The CSpace's edges do not follow
+  `ObjId.val`, so a coupling walk acquires out of SM0.I order and needs its own
+  deadlock-freedom argument over the capability graph — one every future
+  capability operation would then have to maintain.  The discovered set is instead
+  **sorted** into ladder order and acquired through RR7.12's revalidating bracket
+  unchanged (`resolveCapAddressUnderWalkLocks`): the same exclusion, the one total
+  order the rest of the kernel uses.  The revalidation has real content here,
+  unlike at the per-core scheduler entries, because the interior is discovered by
+  reads its own locks do not yet protect.
+* **What is not claimed**: `lockSetForSyscall`'s arms still name the root alone
+  and `abiEntryGate` still refuses a multi-level resolution outright.  The entry
+  goes because the *domain* is covered — the interior is nameable and its conflict
+  is proved — not because every consumer has adopted it.  Adopting it per arm is
+  RR7.11-shaped work.
+
+### Supporting changes
+
+* `schedFootprintCoversWrites`'s object clause is generalised to hold at **two**
+  granularities: a table lock covers every key, and otherwise every key whose own
+  lock is absent must be unchanged.  Its RR7.39 form (`objects` unchanged under the
+  table lock alone) was *false* of a per-object footprint rather than silent about
+  it, so the generalisation is what lets one predicate serve both.  Both existing
+  containment proofs survive it unchanged.
+* `LockSet.mem_insertOrMerge_self` and `Concurrency.lockSetOfList_mem_of_mem` —
+  the forward membership direction, existential in the mode because a merge raises
+  it by `AccessMode.lub`.  Stated beside their definitions.
+
+### Tests and documentation
+
+* `tests/SmpFoundationsSuite.lean` §2.23 (12 checks) and §2.24 (9 checks), three
+  of them load-bearing negatives: a chain revisiting a thread declares no
+  footprint, two resolutions through one CNode do not conflict, and the
+  object-domain chain walk does not re-spell acquire/act/unwind.
+* Tier-3: the two `cspaceWalkInteriorCnodes` presence anchors become a negative
+  refusing its return, plus pins on the mechanisms that closed both domains and
+  two negatives against a privately re-spelled chain extension.
+* `docs/REGISTERED_DEBT.md`, the RR7.40/RR7.41 plan rows and
+  `LockSetTransitions.lean`'s CPtr-resolution note all record what closed and what
+  did not.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §RR7 (rows RR7.40, RR7.41)
+
 ## v0.34.89 — WS-RR RR7.39: the scheduler lock domain gets a runtime, and the three per-core scheduler entries bracket
 
 **WS-RR RR7.39 (fine locks, Track C closure — the scheduler domain).**  SM5.A.2

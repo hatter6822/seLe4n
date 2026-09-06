@@ -238,6 +238,57 @@ theorem runBracketed_undeclared_state {α : Type} (D : LockBracketDomain)
   rfl
 
 -- ============================================================================
+-- §1b  The dynamic-chain extension
+-- ============================================================================
+
+/-- **WS-RR RR7.40**: acquire a **dynamically discovered** lock list, act, unwind.
+
+The bracket above resolves its footprint from the pre-state, which is what a
+declared footprint *is*.  A chain walk cannot: SM3.C.11's PIP walker discovers
+the blocking chain link by link, and the CSpace resolution discovers interior
+CNodes guard by guard, so the set is known only once the walk has run.  What both
+still owe is the same 2PL shape — acquire in the domain's order, run the action on
+the acquired state, unwind in reverse (withdraw before release, WS-LC LC4).
+
+Stated once, over the same `LockBracketDomain` record the bracket takes, so
+"acquire a discovered list, act, unwind" has one answer at every lock domain.
+`Locks/DynamicChainExtension.lean`'s `withDynamicChainExtension` is its
+object-domain instance and RR7.40's scheduler-domain chain footprint its other.
+
+There is deliberately **no** revalidation here, and that is the difference from
+`runBracketed` rather than an omission.  A declared footprint is resolved *before*
+its own locks are held, so another core can move the resolution underneath it; a
+walked chain is discovered by reads the walk itself performs, and what makes those
+reads trustworthy is the walk's own retry discipline (`MAX_PIP_RETRIES`), not a
+re-resolution afterwards.  A caller that needs both composes the two: the declared
+bracket outside, the chain extension inside it. -/
+def runChainExtension {α : Type} (D : LockBracketDomain) (caller : CoreId)
+    (locks : List D.Key) (action : SystemState → SystemState × α) (s : SystemState) :
+    SystemState × α :=
+  let acquired := D.acquire caller locks s
+  let (postAction, result) := action acquired
+  (D.unwind caller locks.reverse postAction, result)
+
+/-- **WS-RR RR7.40**: the chain extension's shape, as an equation — acquire, act
+on the acquired state, unwind the reverse. -/
+theorem runChainExtension_unfold {α : Type} (D : LockBracketDomain) (caller : CoreId)
+    (locks : List D.Key) (action : SystemState → SystemState × α) (s : SystemState) :
+    runChainExtension D caller locks action s
+      = (D.unwind caller locks.reverse (action (D.acquire caller locks s)).1,
+         (action (D.acquire caller locks s)).2) := rfl
+
+/-- **WS-RR RR7.40**: an empty chain acquires nothing, so the extension is the
+bare action — the fail-closed arm a walk that discovered no chain takes. -/
+@[simp] theorem runChainExtension_nil {α : Type} (D : LockBracketDomain) (caller : CoreId)
+    (action : SystemState → SystemState × α) (s : SystemState)
+    (hAcq : ∀ t, D.acquire caller [] t = t) (hUnw : ∀ t, D.unwind caller [] t = t) :
+    runChainExtension D caller [] action s = action s := by
+  unfold runChainExtension
+  rw [hAcq]
+  simp only [List.reverse_nil]
+  rw [hUnw]
+
+-- ============================================================================
 -- §2  The object domain
 -- ============================================================================
 

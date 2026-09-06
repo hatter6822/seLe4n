@@ -3185,10 +3185,6 @@ inductive UncoveredLockDomain where
   footprints must therefore name the *resolved* wake targets, per arm — RR7.11's
   shape, over a domain RR7.39 has now built. -/
   | syscallSeamSchedulerDomain
-  /-- The PIP chain walk's per-member TCB and home-core run-queue write locks,
-  discovered as the walk proceeds (SM3.C.11) and so not resolvable from the
-  pre-state at all. -/
-  | dynamicPipChain
   /-- WS-SM SM9.D.17 (audit): the **taint table's per-key realisation**.
 
   Every content-moving syscall writes `SystemState.declassificationTaint` at the
@@ -3210,20 +3206,6 @@ inductive UncoveredLockDomain where
   the difference between an obligation a later cut must discharge and one it can
   forget: the completeness theorem below now fails until this entry is removed. -/
   | taintTablePerKeyStore
-  /-- PR #887 review round 3: the **interior CNodes of a multi-level CSpace
-  walk**.  `resolveCapAddress` descends through child CNodes while address
-  bits remain, and every per-object footprint names only the walk's *root*
-  (`cnodeLock cnodeRootObjId`), because the interior is discovered by the
-  walk — from the guard and radix of each CNode it reads — and so cannot be
-  resolved from the arguments before the locks are taken.  A concurrent
-  `cspaceDelete` of an interior slot therefore has no conflicting lock
-  against a resolution passing through it.  Found while adding the validated
-  endpoint to `lockSet_tcbSetFaultHandler`; it is a property of every
-  footprint that resolves a CPtr, so it is registered once here rather than
-  restated at each.  The remedy is a lock-coupling walk (hand-over-hand
-  read locks down the CSpace), which is the same dynamic-acquisition shape
-  as `dynamicPipChain` and has the same owner. -/
-  | cspaceWalkInteriorCnodes
   deriving DecidableEq, Repr
 
 /-- SM8.D.5: the domains this bracket does **not** cover, and the workstream that
@@ -3248,6 +3230,28 @@ Each now names the closure row written for it: RR7.39 (the scheduler domain —
 the fine-lock plan's SM3.C.9.b follow-on), RR7.40 (the dynamic PIP chain),
 RR7.41 (the CSpace-walk interior).
 
+**The CSpace-walk interior's entry is deleted at v0.34.90 (WS-RR RR7.41).**
+`Capability.cspaceWalkPath` derives the CNodes a resolution passes through from
+`resolveCapAddress`'s own recursion, `cspaceWalkLockSet` declares a **read** lock
+on each, and `cspaceWalk_conflicts_with_delete` proves what the root-only
+footprint could not: a `cspaceDelete` whose target lies on the path shares a
+conflicting lock with the resolution, so SM3.E's conflict order separates them.
+The acquisition is `runUnderDeclaredLockSet` over the sorted set rather than a
+hand-over-hand coupling walk — coupling would abandon the SM0.I total order the
+whole tree's deadlock freedom rests on, and the revalidating bracket buys the
+same exclusion while keeping it.
+
+**The dynamic PIP chain's entry is deleted at v0.34.90 (WS-RR RR7.40).**  Its
+locks are nameable now that RR7.39 gave the scheduler domain a runtime:
+`PriorityInheritance.pipChainSchedFootprint` declares every visited thread's TCB
+write lock **and** its home core's run-queue write lock — two segments, because
+the `SchedLockId` ladder puts every object lock below every run-queue lock and
+per-member coupling would walk it backwards.  `withPipChainSchedExtension`
+acquires it through the shared `runChainExtension`, and
+`propagatePipChainCrossCore_coversWrites` proves the walk writes nothing outside
+it.  The entry goes rather than narrows because the walk is now covered end to
+end; the inventory falls from four to three, which is the only reason it may.
+
 **The scheduler domain's owner moves again at v0.34.89 (WS-RR RR7.39).**  RR7.39
 closed the *entries*' half — the three per-core scheduler seams now acquire their
 declared footprints, and the domain has a runtime for them to acquire — and the
@@ -3257,16 +3261,14 @@ resolved wake targets named.  That is RR8's, not RR7.39's, because it is a
 per-arm footprint cut of RR7.11's shape rather than a domain-construction one. -/
 def declaredFootprintUncoveredDomains : List (UncoveredLockDomain × String) :=
   [(.syscallSeamSchedulerDomain, "WS-RR RR8 (fine-lock Track C closure)"),
-   (.dynamicPipChain, "WS-RR RR7.40 (fine-lock Track C closure)"),
    (.taintTablePerKeyStore, "SM10.1 (fine-lock Track D)"),
-   (.cspaceWalkInteriorCnodes, "WS-RR RR7.41 (fine-lock Track C closure)")]
+]
 
 /-- SM8.D.5: the exhaustive list of uncovered domains, in the shape the claim
 inventory uses — so completeness can be quantified over the *constructors*
 rather than compared against a literal. -/
 def UncoveredLockDomain.all : List UncoveredLockDomain :=
-  [.syscallSeamSchedulerDomain, .dynamicPipChain,
-   .taintTablePerKeyStore, .cspaceWalkInteriorCnodes]
+  [.syscallSeamSchedulerDomain, .taintTablePerKeyStore]
 
 /-- SM8.D.5: every constructor is listed.  This is the clause a literal
 comparison cannot supply: adding a new domain makes `cases d` non-exhaustive
