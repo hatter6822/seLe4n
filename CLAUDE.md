@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.97.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.98.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1374,6 +1374,42 @@ finding against its fix, and its §14 names the five classes the findings
 fell into with the rule that closes each.
 
 Plan: [`docs/planning/HIERARCHICAL_CBS_PLAN.md`](docs/planning/HIERARCHICAL_CBS_PLAN.md).
+
+### WS-OD SchedContext donation chains — PLANNED (registered v0.34.98)
+
+`applyCallDonation` donates only from a **`.bound`** caller, and
+`donateSchedContext` is the only operational construction site of a `.donated`
+binding — so a scheduling context stops at the first passive server and seL4's
+passive-server pattern does not work at call depth ≥ 2, where the callee stays
+`.unbound` and can never run.  seL4-MCS's `maybeDonateSchedContext` reads the
+sender's *effective* context, bound or donated, and passes it down the chain.
+Two register rows close here: that gap, and the `passiveServerIdle` break the
+`v0.34.97` reclaim introduced.  **39 sub-tasks across OD1..OD6**; no sub-task has
+started.
+
+Six things new code must respect once this lands, and each is a decision the plan
+records rather than a default it inherited.  (1) **The `passiveServerIdle` hole is
+OD1, not a consequence of the chain**: it is live on HEAD at depth 1 — a server
+that Calls an endpoint with no receiver blocks `.blockedOnCall` keeping its
+donation, and the reclaim then unbinds it in place — so fixing it last would mean
+every later phase doing bundle work over a known-false conjunct.  (2) **The pop
+lands before the push, and lands inert**: with the push first, a depth-2 chain is
+serviced by the flat return, which writes `.bound` at the intermediate thread and
+moves a context across a domain boundary in a state that *breaks no conjunct*.
+(3) **`SchedContext.scReply` is built**, because `Reply.wellFormed`'s docstring
+already requires "`donatedSc.scReply` agrees with this reply" of a field that does
+not exist — and because without it the push must read the owner's TCB and the
+outer reply, taking `lockSet_endpointCall` to ten against a ceiling of nine.
+(4) **The pop's new owner is an argument**, since the reply leg consumes the
+target's reply link before the donation return runs.  (5) **The pop validates the
+link it follows** — `Reply` has `prev` and no `next`, and Reply objects are
+re-linked to new callers, so a stale `prev` over a reused Reply would hand a
+thread's context to an unrelated thread in another domain.  (6) **The binding's
+`owner` stays the immediate donor**, which is what keeps all five donation
+conjuncts true at depth `n` unchanged and leaves the *binding* graph chain-free —
+the chain lives entirely in the reply stack.
+
+Plan: [`docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`](docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md).
 
 ### WS-SM SMP multi-core completion — IN FLIGHT (v0.31.2 → v1.0.0)
 

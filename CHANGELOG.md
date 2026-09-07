@@ -1,3 +1,80 @@
+## v0.34.98 — WS-OD registered: SchedContext donation chains, and the hole the last cut left
+
+Two Medium-severity model/specification gaps are registered with an owner, a
+plan and a closure target.  No kernel code changes in this cut.
+
+**The first gap: a passive server at call depth ≥ 2 can never run.**
+`applyCallDonation` donates only when the **caller's** binding is `.bound scId`;
+a caller already holding `.donated scId owner` falls through its `| _ => .ok st`
+arm, and `donateSchedContext` is the only operational construction site of a
+`.donated` binding, so nothing else can donate either.  seL4-MCS's `receiveIPC` →
+`maybeDonateSchedContext` reads `sender->tcbSchedContext`, which is set for bound
+**and** donated holders, so seL4 passes the context down the call chain and this
+kernel stops it at the first server.  `docs/spec/SELE4N_SPEC.md` §8.12.7 claims
+donation "enables **passive servers**"; at depth ≥ 2 that claim is false, which
+under the implement-the-improvement rule is a code defect rather than a
+documentation one.
+
+**The second gap, and it is the previous cut's**: `v0.34.97`'s reclaim can leave
+the holder `.unbound` while it is still `.blockedOnCall`, which `passiveServerIdle`
+forbids.  It needs no chain and is reachable at depth 1 — a server that Calls an
+endpoint with no receiver waiting blocks keeping its donation, and suspending its
+client then unbinds it in place.  No theorem is unsound (nothing claims
+`passiveServerIdle` across `cancelIpcBlocking`, exactly as nothing claimed
+`donationOwnerValid` before `v0.34.97`), but the conjunct is false of a state a
+live `.tcbSuspend` reaches.  Severity Medium for both: availability and false
+assurance, not memory safety or confidentiality, and not exploitable while
+nothing boots.
+
+**The plan** — `docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`, 39 sub-tasks
+across OD1..OD6 — records six decisions rather than inheriting them.
+
+* **The `passiveServerIdle` hole is OD1**, ahead of every reply-stack row,
+  because it is live now and scheduling it late would mean four phases of bundle
+  work over a surface carrying a known-false conjunct.  It is closed with
+  `timeoutThread`'s **object-only prefix**, not `timeoutThread` itself, which
+  writes the scheduler and would break the objects-only frame three cross-core
+  results consume.
+* **The pop lands before the push, and lands inert.**  With the push first, a
+  depth-2 chain is serviced by the flat return, which writes `.bound` at the
+  intermediate thread — permanently moving a scheduling context across a domain
+  boundary in a state that **breaks no conjunct**.  That is the
+  live-transition-ahead-of-its-proofs failure the numbering rule names, and it is
+  invisible to every bundle.
+* **`SchedContext.scReply` is built, not designed around.**  `Reply.wellFormed`'s
+  docstring already requires "`donatedSc.scReply` agrees with this reply" of a
+  field the structure does not have.  It also keeps the call footprint at eight
+  of nine: without it the push must read the owner's TCB and the outer reply, for
+  ten, and raising `maxLockSetSize` would widen the published covert-channel
+  bound.
+* **The pop takes its new owner as an argument**, because the reply leg consumes
+  the target's reply link before the donation return runs — the same discipline
+  as the two pre-state resolvers already beside it.
+* **The pop validates the link it follows.**  `Reply` has `prev` and no `next`,
+  so a cancelled middle caller cannot be spliced out by a backward scan, and
+  Reply objects are re-linked to new callers; a stale `prev` over a reused Reply
+  would hand a thread's SchedContext to an unrelated thread in another domain.
+  Requiring the previous reply's own `donatedSc` to name the same context closes
+  it, and gives that field an operational reader instead of leaving it
+  write-only.
+* **The binding's `owner` stays the immediate donor**, which keeps all five
+  donation conjuncts true at depth `n` with their current definitions and leaves
+  the *binding* graph chain-free — the chain lives entirely in the reply stack,
+  so `donationOwnerValid_implies_donationChainAcyclic` stays true.
+
+`donationChainWellFormed` joins `ipcReachable` and the two dispatch packs rather
+than `ipcInvariantFull`, whose twenty conjuncts and 166-theorem family are held
+to prose by a Tier-0 gate — but the cost is stated rather than waved away: twenty
+inhabitation witnesses re-open, and the plan builds the per-transition
+preservation family, because a pack field nothing preserves is a hypothesis
+wearing an invariant's name.
+
+WS-OD closes **before RR8**, which is the closure phase and cannot close over
+open work.  OD1 also unblocks the RR7.22 residual's reply arm, whose keystone
+would otherwise have to take the holder's state as a named hypothesis.
+
+Refs: docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md
+
 ## v0.34.97 — WS-RR RR7.22 (residual, remediation): the cancelled caller gets its SchedContext back
 
 The Medium-severity model gap reported at v0.34.95 is closed by implementing

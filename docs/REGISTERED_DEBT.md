@@ -39,16 +39,20 @@ lives in, and give it a closure target. To cite it from source, reference this
 file (and the row number, for the §C.1 enumeration) rather than declaring the
 item untracked.
 
-### A — owned by a live WS-RR phase
+### A — owned by a live phase or workstream
 
-Every row here has a numbered sub-task in
-[`docs/planning/SMP_RELEASE_READINESS_PLAN.md`](planning/SMP_RELEASE_READINESS_PLAN.md).
-The register exists so the item is visible from this file even when the plan
-is archived.
+Every row here has a numbered sub-task in a **live** plan that must close before
+WS-RR RR8 does — [`docs/planning/SMP_RELEASE_READINESS_PLAN.md`](planning/SMP_RELEASE_READINESS_PLAN.md)
+for the RR rows, and
+[`docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`](planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md)
+for WS-OD, which is not an RR phase but is owed on the same schedule (RR8 is the
+closure phase and cannot close over open work).  The register exists so the item
+is visible from this file even when the plan is archived.
 
 | Debt | Where it lives | Closure target |
 |------|----------------|----------------|
-| **A donated SchedContext is never returned when its owner's IPC is cancelled** — reported v0.34.95 while proving the RR7.22 residual, and a *model/specification gap* rather than a broken proof.  seL4-MCS's `cancelIPC` on a reply-blocked thread runs `reply_remove`, which hands the scheduling context the caller donated on its `Call` back to it.  This model's `.blockedOnReply` arm is `consumeReplyLink (restoreToReadyCancelled st tid) tid tcb` (`Lifecycle/Suspend.lean`), which clears `TCB.replyObject` and `Reply.caller` and touches **no** `schedContextBinding`; `suspendThread`'s G3 then dispatches on the *victim's own* binding, which for a donating caller is `.unbound`, so that arm is the identity.  The server therefore keeps `schedContextBinding = .donated scId victim` while the victim is moved to `.ready` and then `.Inactive`, and `donationOwnerValid`'s second clause — the owner is `.unbound` **and** `.blockedOnReply` — is false on a state a live `.tcbSuspend` reaches.  **No existing theorem is unsound**: nothing claims `donationOwnerValid` across suspend, which is exactly what makes this a false-assurance gap rather than a broken proof, and why the RR7.22 residual's reply arm cannot state the full bundle.  Severity **Medium**: not exploitable (nothing boots; the SVC seam halts before SM10.1) and it needs a TCB write right over the victim, but the effect crosses a domain boundary — suspending A transfers A's CBS reservation to server B permanently, and A is left `.unbound` with no SchedContext, so it can never be scheduled again after resume.  Availability, not memory safety or confidentiality.  **REMEDIATED at `v0.34.97`**, by implementing seL4's behaviour rather than weakening the invariant.  `cancelIpcBlocking`'s reply arm is now `consumeReplyLink (restoreToReadyCancelled (returnDonationToCancelledCaller st tid tcb) tid) tid tcb` — the return runs **first**, while the caller is still `.blockedOnReply`, so every intermediate state satisfies the invariant.  The holder is found through `cancelledCallerDonation?`, which reads the caller's own recorded reply target; `donationHolderIsReplyTarget` (`Lifecycle/Invariant/CancellationReplyShape.lean`) states the fact that makes that lookup complete — the holder of a caller's donation is that caller's reply target, and a real thread — since `ipcInvariantFull` admits `.blockedOnReply epId rt` for any `rt` and relates `rt` to no donation.  The *behaviour* needs no hypothesis; the hypothesis scopes the payoff `cancelIpcBlocking_reply_no_donation_to_victim`: after the arm, **no** thread holds a SchedContext donated by the cancelled caller, so `donationOwnerValid`'s second clause has no witness to fail on.  The SM5.H replenishment migration sits in `cancelIpcBlockingMigrated` at the cross-core layer, where this tree resolves home cores for every other donation-carrying path.  Three things the cut established beyond the fix: the return is invisible to **every** observer, not merely a high one (`projectKernelObject` strips `schedContextBinding` and `boundThread`, so the obvious worry — a low server seeing a high caller's cancellation — does not arise); the declared footprint gained the SchedContext and the holder's TCB, reaching eight members and still inside `maxLockSetSize`; and three copies of the return's field-frame case analysis collapsed onto one derivation (`returnDonatedSchedContext_ok_storeChain`).  **Still owed** (owner RR8): that the migration *establishes* `replenishQueueAffinityConsistent_smp` on the composite — the reply chain's identical shape is proved, and the only gap is a congruence over the two TCB writes the teardown performs between the return and the migration; and `Reply.donatedSc`, the field seL4 uses for this link (`reply->replyNext`), remains **declared and never written to `some`**, so wiring it (which would remove `donationHolderIsReplyTarget`) is the follow-on that matches seL4's structure.  **Closure target: before RR8 closes** | `SeLe4n/Kernel/Lifecycle/Suspend.lean`, `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean`, `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean` | RR8 |
+| **A donated SchedContext is never returned when its owner's IPC is cancelled** — reported v0.34.95 while proving the RR7.22 residual, and a *model/specification gap* rather than a broken proof.  seL4-MCS's `cancelIPC` on a reply-blocked thread runs `reply_remove`, which hands the scheduling context the caller donated on its `Call` back to it.  This model's `.blockedOnReply` arm is `consumeReplyLink (restoreToReadyCancelled st tid) tid tcb` (`Lifecycle/Suspend.lean`), which clears `TCB.replyObject` and `Reply.caller` and touches **no** `schedContextBinding`; `suspendThread`'s G3 then dispatches on the *victim's own* binding, which for a donating caller is `.unbound`, so that arm is the identity.  The server therefore keeps `schedContextBinding = .donated scId victim` while the victim is moved to `.ready` and then `.Inactive`, and `donationOwnerValid`'s second clause — the owner is `.unbound` **and** `.blockedOnReply` — is false on a state a live `.tcbSuspend` reaches.  **No existing theorem is unsound**: nothing claims `donationOwnerValid` across suspend, which is exactly what makes this a false-assurance gap rather than a broken proof, and why the RR7.22 residual's reply arm cannot state the full bundle.  Severity **Medium**: not exploitable (nothing boots; the SVC seam halts before SM10.1) and it needs a TCB write right over the victim, but the effect crosses a domain boundary — suspending A transfers A's CBS reservation to server B permanently, and A is left `.unbound` with no SchedContext, so it can never be scheduled again after resume.  Availability, not memory safety or confidentiality.  **REMEDIATED at `v0.34.97`**, by implementing seL4's behaviour rather than weakening the invariant.  `cancelIpcBlocking`'s reply arm is now `consumeReplyLink (restoreToReadyCancelled (returnDonationToCancelledCaller st tid tcb) tid) tid tcb` — the return runs **first**, while the caller is still `.blockedOnReply`, so every intermediate state satisfies the invariant.  The holder is found through `cancelledCallerDonation?`, which reads the caller's own recorded reply target; `donationHolderIsReplyTarget` (`Lifecycle/Invariant/CancellationReplyShape.lean`) states the fact that makes that lookup complete — the holder of a caller's donation is that caller's reply target, and a real thread — since `ipcInvariantFull` admits `.blockedOnReply epId rt` for any `rt` and relates `rt` to no donation.  The *behaviour* needs no hypothesis; the hypothesis scopes the payoff `cancelIpcBlocking_reply_no_donation_to_victim`: after the arm, **no** thread holds a SchedContext donated by the cancelled caller, so `donationOwnerValid`'s second clause has no witness to fail on.  The SM5.H replenishment migration sits in `cancelIpcBlockingMigrated` at the cross-core layer, where this tree resolves home cores for every other donation-carrying path.  Three things the cut established beyond the fix: the return is invisible to **every** observer, not merely a high one (`projectKernelObject` strips `schedContextBinding` and `boundThread`, so the obvious worry — a low server seeing a high caller's cancellation — does not arise); the declared footprint gained the SchedContext and the holder's TCB, reaching eight members and still inside `maxLockSetSize`; and three copies of the return's field-frame case analysis collapsed onto one derivation (`returnDonatedSchedContext_ok_storeChain`).  **And the remediation introduced one**, found at `v0.34.98` and owned by WS-OD OD1: the reclaim can leave the holder `.unbound` while it is still `.blockedOnCall`, which `passiveServerIdle` forbids.  Reachable at depth 1 with no chain — the server Calls an endpoint with no receiver waiting, so it blocks keeping the donation, and the reclaim then unbinds it in place.  No theorem is unsound (nothing claims `passiveServerIdle` across `cancelIpcBlocking`), but the conjunct is false of a state a live `.tcbSuspend` reaches.  **Still owed** (owner RR8): that the migration *establishes* `replenishQueueAffinityConsistent_smp` on the composite — the reply chain's identical shape is proved, and the only gap is a congruence over the two TCB writes the teardown performs between the return and the migration; and `Reply.donatedSc`, the field seL4 uses for this link (`reply->replyNext`), remains **declared and never written to `some`**, so wiring it (which would remove `donationHolderIsReplyTarget`) is the follow-on that matches seL4's structure.  **Closure target: before RR8 closes** | `SeLe4n/Kernel/Lifecycle/Suspend.lean`, `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean`, `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean` | RR8 |
+| **A SchedContext is never donated onward, so a passive server at call depth ≥ 2 can never run** — reported at `v0.34.98` while proving the reply arm of the RR7.22 residual, and a *model/specification gap* of the same class as the row above.  `applyCallDonation` (`SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean`) donates only when the **caller's** binding is `.bound scId`; a caller already holding `.donated scId owner` falls through its `| _ => .ok st` arm and donates nothing, and `donateSchedContext` is the only operational construction site of `.donated`, so nothing else can.  seL4-MCS's `receiveIPC` → `maybeDonateSchedContext` reads `sender->tcbSchedContext`, which is set for bound **and** donated holders, so seL4 passes the context down the call chain and this kernel stops it at the first server.  Two consequences.  **Functional**: at depth ≥ 2 the callee is `.unbound` and receives no budget, so it can never run — `docs/spec/SELE4N_SPEC.md` §8.12.7's claim that donation "enables **passive servers**" is false there, which the implement-the-improvement rule makes a code defect rather than a documentation one.  **Invariant**: a holder can reach `.donated sc A` ∧ `.blockedOnCall ep2` (it Calls an endpoint with no receiver waiting, so no rendezvous occurs and it keeps the context), and the `v0.34.97` reclaim above then leaves it `.unbound` ∧ `.blockedOnCall`, which `passiveServerIdle` forbids; onward donation does **not** close that half, because seL4 reaches the same state and permits it.  Severity **Medium**: not exploitable (nothing boots; the SVC seam halts before SM10.1), and the effect is availability plus a false-assurance gap rather than memory safety or confidentiality — but it needs no more authority than an ordinary two-level passive-server chain.  **Owned by WS-OD**, whose plan wires the two Reply fields the model already declares for this and never writes (`donatedSc`, `prev`) plus the `SchedContext.scReply` head that `Reply.wellFormed`'s docstring already names and the structure does not have, keeps the binding's `owner` at the immediate donor so all five donation conjuncts hold at depth `n` unchanged, lands the return before the donation so no depth-2 chain is ever serviced by the flat return, validates every chain link it follows so a re-linked Reply cannot redirect a context, and closes the `passiveServerIdle` half **first** with an objects-only abort rather than with `timeoutThread`, which writes the scheduler and would break the reclaim's objects-only frame.  **Closure target: before RR8 closes** | [`docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`](planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md), `SeLe4n/Kernel/IPC/Operations/Endpoint.lean`, `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean`, `SeLe4n/Model/Object/Reply.lean` | WS-OD |
 | WS-DT slices D1, D6, D8 — two `ipcInvariantFull` conjuncts still threaded as post-state hypotheses; no dispatch payoff theorem — **closed v0.34.43** (the measured baseline was 103 bindings over six conjuncts, all de-threaded; the three payoff theorems landed with the per-arm bundle layer, RR3.15–RR3.26) | `SeLe4n/Kernel/IPC/Invariant/`, `SeLe4n/Kernel/API.lean` | RR3.1–RR3.26 |
 | Cross-core SchedContext donation never migrates the CBS replenish queue, breaking the SM5.H affinity invariant on a live path — **closed v0.34.42** (all three live paths, RR2.20 included) | `SeLe4n/Kernel/IPC/Operations/Donation.lean`, `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean` | RR2.1–RR2.12, RR2.20 |
 | The live `.send` arm carries no `ipcInvariantFull` preservation while SM6.D claims coverage — **closed v0.34.42** (and the `.receive` arm's WithCaps form, which the audit had mismeasured as covered, in the same cut) | `SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean` | RR2.14, RR2.15 |
@@ -266,6 +270,59 @@ for every posted round, so there is no permanent hole even when AP3 lands late
 unwired here. The cost is that **v1.0.0 does not ship a userspace-reachable
 ASID surface**, and the release note must not imply one.
 
+## WS-OD — SchedContext donation chains
+
+Registered at `v0.34.98`; no sub-task has started. Plan:
+[`docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`](planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md)
+(39 sub-tasks across OD1..OD6). It closes two section-A rows: the onward-donation
+gap above, and the `passiveServerIdle` break the `v0.34.97` reclaim introduced.
+
+The point in one line: **`donateSchedContext` is the only operational
+construction site of a `.donated` binding, and `applyCallDonation` reaches it
+only from a `.bound` caller** — so a scheduling context stops at the first
+passive server, and seL4's passive-server pattern does not work at call depth
+≥ 2. Six decisions shape the fix, and each is a decision rather than a default:
+
+* **The `passiveServerIdle` hole is fixed first, not last.** It is live on HEAD
+  at depth 1 with no chain involved, so scheduling it late would mean every
+  intervening phase doing bundle work over a surface carrying a known-false
+  conjunct. It is OD1.
+* **The pop lands before the push, and lands inert.** If the push landed first, a
+  depth-2 chain would be reachable while the old return still writes `.bound` at
+  the intermediate thread — permanently moving a scheduling context across a
+  domain boundary in a state that **breaks no conjunct**, which is exactly the
+  live-transition-ahead-of-its-proofs failure the numbering rule names.
+* **`SchedContext.scReply` is built, not designed around.** `Reply.wellFormed`'s
+  docstring already says the strengthened form requires "`donatedSc.scReply`
+  agrees with this reply", and that field does not exist — the
+  implement-the-improvement case in its plainest form. It also keeps the call
+  footprint at eight of nine: without it the push must read the owner's TCB and
+  the outer reply, for ten, and raising the ceiling would widen the published
+  covert-channel bound.
+* **The pop takes its new owner as an argument.** The reply leg consumes the
+  target's reply link *before* the donation return runs, so the link is not there
+  to read; the new owner is resolved from the pre-state and passed in, on the same
+  discipline as the two resolvers already beside it.
+* **The pop validates the link it follows.** `Reply` has `prev` and no `next`, so
+  a cancelled middle caller cannot be spliced out by a backward scan, and Reply
+  objects are re-linked to new callers. A stale `prev` over a reused Reply would
+  hand a thread's SchedContext to an unrelated thread in another domain, so the
+  pop requires the previous reply's own `donatedSc` to name the same context, and
+  freshening clears both fields. That also gives `donatedSc` an operational
+  reader — otherwise it would be written and never read.
+* **The binding's `owner` stays the immediate donor**, which is what
+  `donateSchedContext` already writes. That is what keeps all five donation
+  conjuncts true at depth `n` with their current definitions, and it leaves the
+  *binding* graph without chains — the chain lives entirely in the reply stack, so
+  `donationOwnerValid_implies_donationChainAcyclic` stays true.
+
+**What it unblocks.** The open RR7.22 residual — the cancellation reply arm's
+`ipcInvariantFull` and the five-arm composite over `cancelIpcBlockingOnCore` — is
+blocked on the `passiveServerIdle` half alone: without it the keystone would have
+to take the holder's state as a named hypothesis, which is the false-assurance
+shape that residual exists to remove. **OD1 unblocks it**, so the residual lands
+immediately after OD1 rather than after the whole workstream.
+
 ## Workstream registry
 
 The workstream families this project has run, with the versions each spans.
@@ -283,6 +340,7 @@ Scope, findings and evidence for any of these are in
 | Workstream | Versions |
 |------------|----------|
 | **WS-AP** | v0.34.71– (closure post-v1.0.0 — the ASID capability surface; two SM7 debts re-targeted from the closed SM8) |
+| **WS-OD** | v0.34.98– (planned; opens beside WS-RR RR7 and closes before RR8 — SchedContext donation chains, [`SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`](planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md)) |
 | **WS-BP** | v0.34.59– (planned; opens after WS-RR RR8 closes — the bare-metal boot path, [`SMP_BOOT_PATH_PLAN.md`](planning/SMP_BOOT_PATH_PLAN.md)) |
 | **WS-LC** | v0.34.51–v0.34.56 |
 | **WS-CB** | v0.34.49– (planned; opens after WS-RR, or beside RR6–RR8 under the file partition in its plan's §2.3) |
