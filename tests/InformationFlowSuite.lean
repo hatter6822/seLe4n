@@ -1373,11 +1373,21 @@ def runInformationFlowChecks : IO Unit := do
   -- ========================================================================
 
   -- V6-A: Cross-subsystem field-disjointness
-  expect "StateField enum has 16 variants"
+  -- WS-RR RR7 audit round (v0.34.109): 27, not 16 — `StateField` is now total
+  -- over `SystemState` (pinned by `SystemState.eq_of_fieldEq_all`, an
+  -- elaboration-time fact this runtime count merely mirrors).
+  expect "StateField enum has 27 variants, one per SystemState field"
     ([ SeLe4n.Kernel.StateField.machine, .objects, .objectIndex, .objectIndexSet,
        .services, .scheduler, .irqHandlers, .lifecycle,
        .asidTable, .interfaceRegistry, .serviceRegistry,
-       .cdt, .cdtSlotNode, .cdtNodeSlot, .cdtNextNode, .tlb ].length = 16)
+       .cdt, .cdtSlotNode, .cdtNodeSlot, .cdtNextNode,
+       .scThreadIndex, .tlb,
+       .objStoreLock, .schedulerLocks, .tlbShootdown,
+       .perCoreTlb, .perCoreICache, .pendingIcacheMaintenance,
+       .declassificationAuditLog, .declassificationAuditEpoch,
+       .declassificationRefusals, .declassificationTaint ].length = 27)
+  expect "StateField is total over SystemState (eq_of_fieldEq_all elaborates)"
+    (have _ := @SeLe4n.Kernel.SystemState.eq_of_fieldEq_all; true)
   -- AM4 audit remediation: field-set catalog extended from 10 to 11
   -- entries with `lifecycleObjectTypeLockstep_fields` (AL6-C / AM4).
   expect "+ AM4: crossSubsystemFieldSets has 11 entries"

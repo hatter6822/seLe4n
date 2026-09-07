@@ -1016,6 +1016,19 @@ def command_substitution_view(text: str, at: int, end: int) -> str:
     return "$(" + strip_shell(text[at + 2:end - 1]) + ")"
 
 
+# A here-document operator: `<<` or `<<-`, then the terminator word, bare,
+# backslash-quoted or quoted either way, and then the end of the word.  The
+# lookahead is what keeps an arithmetic shift out: `1 << 20` fails the word,
+# and the tree writes shifts by variables nowhere outside quoted patterns.  A
+# here-string (`<<<`) is excluded at the call site.
+HEREDOC_OPEN = re.compile(
+    r"<<(-?)[ \t]*(?:'([A-Za-z_][A-Za-z0-9_]*)'"
+    r"|\"([A-Za-z_][A-Za-z0-9_]*)\""
+    r"|\\?([A-Za-z_][A-Za-z0-9_]*))"
+    r"(?=[ \t|>;&)]|\n|$)"
+)
+
+
 def strip_shell(text: str) -> str:
     """Shell: blank `#` comments and KEEP every quoted span.
 
@@ -1047,10 +1060,50 @@ def strip_shell(text: str) -> str:
 
     `#` opens a comment only at the start of a word, so `abc#def` and a
     `${#x}` length expansion keep their text.
+
+    * A **here-document** body is a document of its own (WS-RR RR7
+      audit round).  Lexing it as part of the enclosing script let an
+      apostrophe in a fixture line (`the tree's device size`) open a
+      single-quoted span that ran to the next quote in the FILE, after
+      which every double-quoted diagnostic below it was read as code and
+      its workstream citation counted.  The body -- the lines after the
+      operator's line, up to the terminator line -- is lexed by this
+      function recursively, so its `#` comments are prose and its quoted
+      spans are what they were, but nothing inside it can carry lexer
+      state past its terminator; the terminator line and the rest of the
+      operator's own line are ordinary shell.  Several heredocs on one
+      line are consumed in order.  A here-string is not a heredoc, and a
+      shift in arithmetic is not one either.
     """
     out, i, n = [], 0, len(text)
+    pending: list[tuple[str, bool]] = []   # (terminator, `<<-` strips tabs)
     while i < n:
-        if text.startswith("$(", i) and (end := command_substitution_end(text, i)) > 0:
+        if text[i] == "\n" and pending:
+            out.append("\n"); i += 1
+            for term, dash in pending:
+                body_start = i
+                while i < n:
+                    j = text.find("\n", i)
+                    j = n if j < 0 else j
+                    line = text[i:j]
+                    if (line.lstrip("\t") if dash else line) == term:
+                        out.append(strip_shell(text[body_start:i]))
+                        out.append(line)
+                        if j < n:
+                            out.append("\n")
+                        i = j + 1 if j < n else n
+                        break
+                    i = j + 1 if j < n else n
+                else:
+                    # Unterminated: the body runs to the end of the text.
+                    out.append(strip_shell(text[body_start:n]))
+            pending = []
+        elif (text.startswith("<<", i) and not text.startswith("<<<", i)
+              and (i == 0 or text[i - 1] != "<")
+              and (m := HEREDOC_OPEN.match(text, i))):
+            pending.append((m.group(2) or m.group(3) or m.group(4), bool(m.group(1))))
+            out.append(m.group(0)); i = m.end()
+        elif text.startswith("$(", i) and (end := command_substitution_end(text, i)) > 0:
             out.append(command_substitution_view(text, i, end)); i = end
         elif text[i] == "`" and (end := backtick_substitution_end(text, i)) > 0:
             out.append(backtick_substitution_view(text, i, end)); i = end

@@ -5336,10 +5336,61 @@ run_check "INVARIANT" rg -n '^theorem revokeService_preservesFieldsOutside' SeLe
 # The correction itself: `.asidTable` is in the list, and the honesty theorem
 # above is FALSE without it — so this is a pin on a fact, not on a spelling.
 run_check "INVARIANT" rg -n '\.objectIndexSet, \.lifecycle, \.asidTable\]' SeLe4n/Kernel/CrossSubsystem.lean
-# The two composed lists are DEFINED as storeObject's, so a future correction
-# cannot reach one and miss the other — the enumeration-versus-derivation shape.
-run_check "INVARIANT" rg -n '^def lifecycleRetypeObject_modifiedFields : List StateField :=' -A1 SeLe4n/Kernel/CrossSubsystem.lean
-run_check "INVARIANT" rg -n '^def ipcEndpointOp_modifiedFields : List StateField :=' -A1 SeLe4n/Kernel/CrossSubsystem.lean
+# The three composed lists are DEFINED over storeObject's, so a future correction
+# cannot reach one and miss another — the enumeration-versus-derivation shape.
+# Stated as two-line RELATIONS (the def line and its body): the `-A1` form these
+# replaced printed the body as context and matched on the def line alone, so a
+# list rewritten to anything at all still passed it.
+run_check "INVARIANT" bash -lc 'rg -U -n "def lifecycleRetypeObject_modifiedFields : List StateField :=\n  storeObject_modifiedFields\n" SeLe4n/Kernel/CrossSubsystem.lean'
+# WS-RR RR7 audit round (v0.34.109): the IPC list carries the two fields the
+# dual-queue operations write beyond the store — `scheduler` (the wake and the
+# deschedule) and `scThreadIndex` (the receive path's donation return) — and the
+# capability list carries storeObject's own index/ASID fields beneath the CDT
+# four.  Both were FALSE at the v0.34.70 lists; the theorems below say so.
+run_check "INVARIANT" bash -lc 'rg -U -n "def ipcEndpointOp_modifiedFields : List StateField :=\n  storeObject_modifiedFields \+\+ \[\.scheduler, \.scThreadIndex\]" SeLe4n/Kernel/CrossSubsystem.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def capabilityOp_modifiedFields : List StateField :=\n  storeObject_modifiedFields \+\+ \[\.cdt, \.cdtSlotNode, \.cdtNodeSlot, \.cdtNextNode\]" SeLe4n/Kernel/CrossSubsystem.lean'
+# `StateField` is total over `SystemState`, and the pin is a theorem: field-wise
+# agreement on every constructor IS state equality, proved through
+# `SystemState.mk.injEq`, so a structure field with no constructor leaves a
+# conjunct nobody supplies.  The eleven constructors the enumeration lacked are
+# pinned by their two closing lines.
+run_check "INVARIANT" rg -n '^theorem SystemState.eq_of_fieldEq_all' SeLe4n/Kernel/CrossSubsystem.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem SystemState.eq_of_fieldEq_all \(st st. : SystemState\)\n    \(h : ∀ f : StateField, SystemState.fieldEq f st st.\) : st. = st := by\n  cases st; cases st.\n  simp only \[SystemState.mk.injEq\]" SeLe4n/Kernel/CrossSubsystem.lean'
+run_check "INVARIANT" rg -n '^  \| scThreadIndex \| tlb$' SeLe4n/Kernel/CrossSubsystem.lean
+run_check "INVARIANT" rg -n '^  \| declassificationRefusals \| declassificationTaint$' SeLe4n/Kernel/CrossSubsystem.lean
+run_check "INVARIANT" rg -n '^  \| \.scThreadIndex, +st, st. => st.\.scThreadIndex = st\.scThreadIndex' SeLe4n/Kernel/CrossSubsystem.lean
+# Every declared list carries its honesty theorem AT ITS OWN LIST.  Each anchor
+# ties the operation named in the step hypothesis to the list in the conclusion
+# on the very next line — no wildcard, so a conclusion moved to another list, or
+# a theorem restated about another operation, fails it.
+run_check "INVARIANT" bash -lc 'rg -U -n "\(hStep : serviceRegisterDependency svcId depId st = \.ok \(\(\), st.\)\) :\n    preservesFieldsOutside serviceRegisterDependency_modifiedFields st st. := by" SeLe4n/Kernel/CrossSubsystem.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\(hStep : SeLe4n\.Kernel\.Internal\.lifecycleRetypeObject authority target newObj st = \.ok \(\(\), st.\)\) :\n    preservesFieldsOutside lifecycleRetypeObject_modifiedFields st st. := by" SeLe4n/Kernel/CrossSubsystem.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\(hStep : cspaceMintWithCdt src dst rights badge st = \.ok \(\(\), st.\)\) :\n    preservesFieldsOutside capabilityOp_modifiedFields st st. := by" SeLe4n/Kernel/CrossSubsystem.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\(hStep : cspaceCopy src dst st = \.ok \(\(\), st.\)\) :\n    preservesFieldsOutside capabilityOp_modifiedFields st st. := by" SeLe4n/Kernel/CrossSubsystem.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\(hStep : cspaceMove src dst st = \.ok \(\(\), st.\)\) :\n    preservesFieldsOutside capabilityOp_modifiedFields st st. := by" SeLe4n/Kernel/CrossSubsystem.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\(hStep : cspaceDeleteSlot addr st = \.ok \(\(\), st.\)\) :\n    preservesFieldsOutside capabilityOp_modifiedFields st st. := by" SeLe4n/Kernel/CrossSubsystem.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\(hStep : endpointSendDual endpointId sender msg st = \.ok \(\(\), st.\)\) :\n    preservesFieldsOutside ipcEndpointOp_modifiedFields st st. := by" SeLe4n/Kernel/CrossSubsystem.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\(hStep : endpointReceiveDual endpointId receiver replyId st = \.ok \(sender, st.\)\) :\n    preservesFieldsOutside ipcEndpointOp_modifiedFields st st. := by" SeLe4n/Kernel/CrossSubsystem.lean'
+# The composites are proved from the primitives, not by a second reading of the
+# operations: the receive theorem composes the donation return's lemma, which
+# is the one place `scThreadIndex` is written.
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_preservesFieldsOutside' SeLe4n/Kernel/CrossSubsystem.lean
+run_check "INVARIANT" rg -n 'cleanupPreReceiveDonationChecked_preservesFieldsOutside _ _ _ hClean' SeLe4n/Kernel/CrossSubsystem.lean
+run_check "INVARIANT" rg -n 'returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ hStep' SeLe4n/Kernel/CrossSubsystem.lean
+run_check "INVARIANT" rg -n 'writeSetSurfaceElaborates' tests/CrossSubsystemPerCoreSuite.lean
+run_check "INVARIANT" rg -n 'StateField enum has 27 variants' tests/InformationFlowSuite.lean
+# The medium-severity sweep's plan names these eight artefacts by name and the
+# surface pinned none of them: a plan-named theorem the anchors do not read is
+# a claim a rename or a deletion would leave standing.  Presence anchors, on
+# purpose — each is a theorem whose EXISTENCE the plan row asserts.
+run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_requires_right' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryChecked_implies_capability_held' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_implies_capability_held' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem declassifyStoreOnCore_state_log_independent' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem donation_perCore_consistent \(st st. : SystemState\)' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem runBracketed_chainExtension_composes' SeLe4n/Kernel/Scheduler/PriorityInheritance/ChainFootprint.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReply_size_le \(a : ThreadId\) \(b : ObjId\) \(c : ThreadId\)' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+run_check "INVARIANT" rg -n '^theorem toDiscriminant_lt \(e : KernelError\) : toDiscriminant e < kernelErrorCount' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 # The payoff: read-set disjoint from write-set means the operation cannot
 # disturb the predicate.  It consumes BOTH families, which is what makes an
 # under-declared write-set a soundness problem rather than stale documentation.

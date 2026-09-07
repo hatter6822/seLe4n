@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.108.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.109.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,13 +203,13 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~58020 lines)
+- `CHANGELOG.md` (~58169 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22578 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12092 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
 - `SeLe4n/Kernel/API.lean` (~7210 lines)
 - `SeLe4n/Platform/Boot.lean` (~5858 lines)
-- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5759 lines)
+- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5822 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~5450 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5129 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5001 lines)
@@ -217,6 +217,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4840 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `SeLe4n/Model/State.lean` (~4708 lines)
+- `SeLe4n/Kernel/CrossSubsystem.lean` (~4419 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (~4263 lines)
 - `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~4196 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
@@ -224,8 +225,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3919 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRead.lean` (~3789 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~3780 lines)
-- `SeLe4n/Kernel/CrossSubsystem.lean` (~3705 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~3673 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~3752 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean` (~3660 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (~3517 lines)
 - `SeLe4n/Platform/FFI.lean` (~3438 lines)
@@ -281,9 +281,9 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean` (~1909 lines)
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~1908 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean` (~1901 lines)
+- `tests/InformationFlowSuite.lean` (~1895 lines)
 - `docs/dev_history/planning/V3E_IPC_UNWRAP_CAPS_LOOP_COMPOSITION_PLAN.md` (~1891 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md` (~1889 lines)
-- `tests/InformationFlowSuite.lean` (~1885 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1878 lines)
 - `SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean` (~1849 lines)
 - `SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean` (~1833 lines)
@@ -299,8 +299,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean` (~1746 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
+- `tests/SmpCancellationSuite.lean` (~1706 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` (~1702 lines)
-- `tests/SmpCancellationSuite.lean` (~1701 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
 - `tests/FaultHandlingSuite.lean` (~1660 lines)
 - `tests/SmpIpcSuite.lean` (~1660 lines)
@@ -368,6 +368,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~998 lines)
 - `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean` (~993 lines)
 - `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md` (~984 lines)
+- `SeLe4n/Kernel/Concurrency/Runtime.lean` (~979 lines)
 - `docs/planning/SMP_PER_CORE_STATE_PLAN.md` (~968 lines)
 - `docs/dev_history/planning/WS_X_LEAN_ETHEREUM_FORMALIZATION_PLAN.md` (~958 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreTickCbsPreservation.lean` (~952 lines)
@@ -376,12 +377,10 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/Declassification.lean` (~935 lines)
 - `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` (~933 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md` (~930 lines)
-- `SeLe4n/Kernel/Concurrency/Runtime.lean` (~928 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean` (~928 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_COMPREHENSIVE.md` (~921 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` (~908 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet2PL.lean` (~897 lines)
 - `tests/SmpTimerSuite.lean` (~892 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
@@ -391,6 +390,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Operations/Fault.lean` (~868 lines)
 - `docs/planning/SMP_RUST_HAL_PLAN.md` (~868 lines)
 - `tests/Ak9PlatformSuite.lean` (~868 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` (~862 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean` (~858 lines)
 - `tests/SmpCrossCoreNotificationSuite.lean` (~851 lines)
@@ -651,7 +651,7 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   `build.rs` (`lean_code_view`) so the export inventory that drives the
   readiness gate is derived from code rather than from the docstrings that
   cite retired seams, and a recursive shell view in
-  `check_identifier_naming.py` so a `$( … )` body is lexed rather than copied.  The rule is unchanged and now has a mechanism:
+  `check_identifier_naming.py` so a `$( … )` body is lexed rather than copied — and, since the RR7 audit round, a here-document body is lexed as a document of its own, so an apostrophe in a fixture line cannot carry quote state past its terminator.  The rule is unchanged and now has a mechanism:
   **resolve the text into the structure it stands for before asserting** —
   expand the script's variables and check the command, take byte offsets
   and check the order, parse the array and check the element, lex the
@@ -800,7 +800,7 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   `reference_failure` in the same file required a *unique* candidate
   (both retired at round 17 with the rest of the Lean scan), and
   the recursive shell view lexed `$( … )` while the legacy backtick
-  spelling beside it was still copied verbatim.  None was a new class;
+  spelling beside it was still copied verbatim.  The RR7 audit round found the third sibling: a here-document body was lexed as the enclosing script's text, so one apostrophe in a Lean fixture inside `check_physical_address_width.sh` inverted the quote state for the rest of the file and every double-quoted diagnostic below it counted as code.  None was a new class;
   each was a rule already written down, applied at one site and not at
   its sibling.  **When a fix names a relation, grep for every other place
   that asks it** — the same file, the other language, the other
@@ -3084,28 +3084,50 @@ code may assume:
   `UncoveredLockDomain` (`InformationFlow/FineLockFlow.lean`) names each gap and
   its owner, and its completeness theorem forces a new domain to be registered.
 - **An operation's `_modifiedFields` list is a proof obligation, not a
-  comment** (WS-RR RR7.19, v0.34.70).  The six `*_modifiedFields` lists in
+  comment** (WS-RR RR7.19, v0.34.70; completed by the RR7 audit round,
+  v0.34.109).  The six `*_modifiedFields` lists in
   `Kernel/CrossSubsystem.lean` had no consumer at all: an operation could write
   a field its own list omits and nothing would notice.  RR7.9 found one such
   omission by reading (`capabilityOp_modifiedFields`, missing the four CDT
   fields); giving the lists an obligation found a second immediately
   (`storeObject_modifiedFields`, missing `.asidTable`, which `storeObject`'s
-  record update writes when the stored or displaced object is a `.vspaceRoot`).
-  Three things new code must respect.  (1) **Declaring a write-set obliges you
-  to prove it**: `preservesFieldsOutside fs st st'` says every `StateField`
+  record update writes when the stored or displaced object is a `.vspaceRoot`);
+  and writing the four theorems v0.34.70 had promised and not shipped found two
+  more, plus the gap that had made one of them impossible to state.  Four
+  things new code must respect.  (1) **Declaring a write-set obliges you to
+  prove it**: `preservesFieldsOutside fs st st'` says every `StateField`
   outside `fs` is unchanged, quantified over the whole field type rather than
-  over whatever the author enumerated, and each operation carries a
-  `_preservesFieldsOutside` theorem at its own list — which is false at an
-  under-declared one.  (2) **Over-declaring is the safe direction**
-  (`preservesFieldsOutside_mono`); it costs disjointness, never soundness, and
-  is why `ipcEndpointOp_modifiedFields` is `storeObject`'s set rather than the
-  narrower list that rested on two unproved conditional facts.  (3) **The lists
-  are consumed**: `predicateFramedByDisjointWrites` turns "this read-set and
-  that write-set are disjoint" into "this operation preserves that predicate",
-  so an omitted field licenses a preservation conclusion the operation does not
-  earn.  A list that composes another is *defined as* it
-  (`lifecycleRetypeObject_modifiedFields = storeObject_modifiedFields`), so a
-  correction cannot reach one and miss the other.
+  over whatever the author enumerated, and **every one of the six lists carries
+  a `_preservesFieldsOutside` theorem at its own list** — `storeObject`,
+  `revokeService`, `serviceRegisterDependency`, the retype, the four capability
+  operations (`cspaceMintWithCdt`, `cspaceCopy`, `cspaceMove`,
+  `cspaceDeleteSlot`) and both dual-queue operations — each false at an
+  under-declared list.  (2) **`StateField` is total over `SystemState`, and the
+  pin is a theorem, not a count**: `SystemState.eq_of_fieldEq_all` proves that
+  agreement on every constructor is state equality, through
+  `SystemState.mk.injEq`, so a field added to the structure without a
+  constructor fails to elaborate.  At v0.34.70 the enumeration named sixteen of
+  twenty-seven fields, so a write to `scThreadIndex` — which the receive path's
+  donation return performs — could not be *declared* at all, and every
+  write-set claim in the tree was silent about eleven fields.  (3)
+  **Over-declaring is the safe direction** (`preservesFieldsOutside_mono`); it
+  costs disjointness, never soundness.  `ipcEndpointOp_modifiedFields` is
+  `storeObject`'s set **plus `.scheduler` and `.scThreadIndex`** (the wake and
+  the deschedule; the donation return), and `capabilityOp_modifiedFields` is
+  `storeObject`'s set plus the four CDT fields.  The v0.34.70 lists were
+  `storeObject`'s set alone and `[.objects, .lifecycle, …CDT]`, both *false* of
+  their operations — the second under the very sentence RR7.19 had retracted
+  for the first.  Tightening the index/ASID fields back out is registered debt
+  (`docs/REGISTERED_DEBT.md` §C), not an assumption.  (4) **The lists are
+  consumed**: `predicateFramedByDisjointWrites` turns "this read-set and that
+  write-set are disjoint" into "this operation preserves that predicate", so an
+  omitted field licenses a preservation conclusion the operation does not
+  earn.  A list that composes another is *defined over* it
+  (`lifecycleRetypeObject_modifiedFields = storeObject_modifiedFields`; the IPC
+  and capability lists are `storeObject_modifiedFields ++ …`), so a correction
+  cannot reach one and miss another; and each composite theorem is proved from
+  one lemma per primitive the operation is built from, composed by
+  `preservesFieldsOutside_trans`, never by a second reading of the operation.
 - **Every declared `LockSet` footprint carries a size bound, stated at its own
   arity** (WS-RR RR7.18, v0.34.69).  `boundedWait_under_2pl`, the
   `KernelOperation` invariant and the WCRT surface all take

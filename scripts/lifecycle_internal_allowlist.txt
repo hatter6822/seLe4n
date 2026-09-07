@@ -38,6 +38,10 @@ SeLe4n/Kernel/Capability/Invariant/Preservation/BadgeIpcCapsAndCdtMaps.lean
 SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean
 SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+# WS-RR RR7 audit round: the write-set honesty theorem for the retype
+# (`lifecycleRetypeObject_preservesFieldsOutside`) states the internal def,
+# exactly as the preservation theorems above do.
+SeLe4n/Kernel/CrossSubsystem.lean
 
 # Test harness (negative branches + direct internal-step exercise).
 SeLe4n/Testing/MainTraceHarness.lean

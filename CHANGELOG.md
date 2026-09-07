@@ -1,3 +1,131 @@
+## v0.34.109 — the write-sets proved for two operations of six, and the field type that could not name what the other four write
+
+**WS-RR RR7 audit round.**  A deep re-read of every RR7 row and of the WS-OD
+OD1 cuts against the code, with the documentation deliberately not trusted.
+The 41 RR7 rows' artefacts and mechanisms held up — the boot map, the fault
+seam, the readiness gates, the bracket, the census, the footprint bounds, the
+`47` footprints the census reports, the 30-entry lock inventory, the 1133/919
+theorem count, the 0/169 de-threading figure all measure what the prose says
+they measure.  What did not was RR7.19, and the finding is the class this file
+keeps describing: a mechanism whose docstring described a better state than the
+code, found by writing the theorems the docstring said existed.
+
+### `StateField` named sixteen of `SystemState`'s twenty-seven fields
+
+`SystemState.fieldEq` is "total over `StateField`" — true, and beside the point,
+because `StateField` was an enumeration of the structure's fields written by
+hand at V6-A1 and never held to it.  Eleven fields had no constructor:
+`scThreadIndex`, the two lock words, the TLB-shootdown and per-core TLB/I-cache
+state, the pending I-cache maintenance, and the four declassification ledgers.
+So `preservesFieldsOutside fs st st'` was silent about all eleven, and an
+operation that wrote one of them satisfied every write-set claim in the tree —
+which `endpointReceiveDual` does, through `returnDonatedSchedContext`'s
+rewrite of the SchedContext → threads index.
+
+The enumeration is now the structure's, in declaration order, and the pin is a
+theorem rather than a count: `SystemState.eq_of_fieldEq_all` proves that
+agreement on every constructor is state equality, through
+`SystemState.mk.injEq`, so a field added to `SystemState` without a
+constructor leaves a conjunct nobody supplies and a constructor added without
+a field has no projection to read.  The `InformationFlowSuite` count that said
+"16 variants" now says 27 and cites the theorem it mirrors.
+
+### Two lists were false of their operations
+
+* `ipcEndpointOp_modifiedFields` was `storeObject`'s set.  Both dual-queue
+  operations also write **`scheduler`** — `ensureRunnable` on the rendezvous
+  wake, `removeRunnable` on the parking arm — and the receive path writes
+  **`scThreadIndex`**, the field the type could not name.  It is now
+  `storeObject_modifiedFields ++ [.scheduler, .scThreadIndex]`.
+* `capabilityOp_modifiedFields` read `[.objects, .lifecycle, .cdt, …]` under
+  the sentence "for in-place CNode mutations, `objectIndex`/`objectIndexSet`
+  are unchanged" — the very sentence RR7.19 had retracted for the IPC list two
+  definitions above, and the very omission RR7.19 found in `storeObject`: all
+  four operations store through `cspaceInsertSlot` / `cspaceDeleteSlotCore`,
+  which call `storeObject`, whose record update writes `objectIndex`,
+  `objectIndexSet` **and** `asidTable` unconditionally.  It is now
+  `storeObject_modifiedFields ++ [.cdt, .cdtSlotNode, .cdtNodeSlot, .cdtNextNode]`.
+  Its docstring also said `cspaceDelete` calls `cdt.removeNode`; it calls
+  `detachSlotFromCdt`, and the revoke sweep is what removes nodes.
+
+Inert before this cut for the same reason the `asidTable` omission was inert
+at v0.34.70 — nothing consumed either list — and a soundness hazard the day a
+frame lemma cites one, which is precisely what `predicateFramedByDisjointWrites`
+exists to let a caller do.
+
+### The four theorems v0.34.70 promised
+
+That entry said "each operation carries a `_preservesFieldsOutside` theorem at
+its own list" and shipped `storeObject`'s and `revokeService`'s.  The other
+four exist now, and each is false at the v0.34.70 list beside it:
+`serviceRegisterDependency_preservesFieldsOutside`,
+`lifecycleRetypeObject_preservesFieldsOutside`, the four capability operations
+(`cspaceMintWithCdt`, `cspaceCopy`, `cspaceMove`, `cspaceDeleteSlot`, with the
+base `cspaceMint`, `cspaceInsertSlot`, `cspaceDeleteSlotCore` beneath them and
+the three CDT slot helpers), and both dual-queue operations
+(`endpointSendDual`, `endpointReceiveDual`).  The composites are proved from
+one lemma per primitive they are built from — `ensureRunnable`,
+`removeRunnable`, the queue-link store, the two TCB stores, pop-head, enqueue,
+`linkReply` / `linkCallerReply`, the donation return and its pre-receive
+cleanup — composed by `preservesFieldsOutside_trans`, never by a second
+reading of the operation.  The retype theorem states the internal primitive by
+its full name, and `CrossSubsystem.lean` joins the AN4-A proof-chain allowlist
+for it, as every other preservation module that states it does.
+
+### A presence check in the Tier 3 surface
+
+The two anchors that pinned "the retype and IPC lists are *defined as*
+`storeObject`'s" were `rg … -A1`: the body line printed as context and the
+check matched on the definition line alone, so a list rewritten to anything
+passed it.  They are two-line relations now, as are the eleven new anchors —
+each ties the operation named in a theorem's step hypothesis to the list in
+its conclusion on the next line, with no wildcard, and each was mutation-tested
+by keeping the token and breaking the relation.
+
+### The boot device window, derived rather than copied
+
+`check_physical_address_width.sh` pinned `DEVICE_WINDOW_TOP` as a literal, and
+`mmu.rs`'s boot-map test related it to `LEAN_DEVICE_EXTENT_TOP` — a *second*
+literal, hand-copied from `Board.lean`.  Neither read the Lean map, so a change
+to the peripheral window in `rpi5MemoryMapForConfig` would have left the boot
+tables mapping the old window with every gate green.  The gate now computes the
+extent from the `.device` region of the Lean source (over the Lean code view,
+so a figure in a comment can neither satisfy nor confuse it) and decides the
+relation: the window covers the extent, is 2 MiB aligned and is the round-up
+and no more, and the Rust literal *is* the Lean extent.  It carries a self-test
+that runs first on every invocation: six verdict cases that break each clause
+with every token in place, and three parse cases on a fixture whose raw text
+misleads a raw read, selects a region by kind rather than by the size token,
+and refuses two device regions rather than resolving first-wins.
+
+### Elsewhere
+
+* The `CrossSubsystemPerCoreSuite` pins state the two widened lists as
+  relations over `storeObject`'s, the omitted fields as facts, the eleven new
+  constructors as outside `storeObject`'s set, and the completeness theorem plus
+  all ten honesty theorems as an elaboration pin.
+* The v0.34.70 docstring called tightening the index/ASID fields back out
+  "registered rather than assumed", and registered it nowhere; it is a §C row
+  of `docs/REGISTERED_DEBT.md` now, with the two conditional facts it waits on.
+* The identifier-naming gate's shell view lexed a here-document body as the
+  enclosing script's text, so one apostrophe in the new gate's Lean fixture
+  inverted the quote state for the rest of the file and every double-quoted
+  diagnostic below it counted as code — the third instance of the round-14
+  sibling rule after `$( … )` and the backtick.  A heredoc body is now lexed
+  recursively as a document of its own (its `#` comments prose, its
+  identifiers code, nothing carrying state past the terminator), with
+  thirteen witnesses in `test_identifier_naming_gate.py` — an apostrophe in
+  a body and in a body comment, the `<<-` and spaced-terminator spellings, a
+  prefix that is not the terminator, a here-string and an arithmetic shift.
+* Eight theorems the RR7 plan names by name had no Tier 3 anchor at all
+  (`dispatchSyscallChecked_requires_right`,
+  `syscallEntryChecked_implies_capability_held`,
+  `syscallDispatchFromAbi_implies_capability_held`,
+  `declassifyStoreOnCore_state_log_independent`,
+  `donation_perCore_consistent`, `runBracketed_chainExtension_composes`,
+  `lockSet_endpointReply_size_le`, `toDiscriminant_lt`); they are pinned now.
+* No transition changed; the golden trace is byte-identical.
+
 ## v0.34.108 — the reclaim places the holder it unblocks (a stranding DoS, closed)
 
 **Security finding, reported rather than folded in.** OD1.4–OD1.6 made the
