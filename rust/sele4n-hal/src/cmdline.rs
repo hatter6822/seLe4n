@@ -1001,21 +1001,25 @@ fn is_memory_node_name(name: &[u8]) -> bool {
     name == b"memory" || (name.starts_with(b"memory@") && name.len() > b"memory@".len())
 }
 
-/// **WS-RR RR7.1**: fold one `/memory` node's `reg` property into a running
-/// maximum of `base + size`.
+/// **WS-RR RR7.1**: collect the extents a `/memory` node's `reg` reports.
 ///
 /// `reg` is a list of (address, size) pairs, each `address_cells` then
 /// `size_cells` big-endian 32-bit cells wide.  A `reg` whose length is not a
 /// whole number of pairs is malformed and rejected outright rather than parsed
 /// as far as it goes — a truncated final pair would otherwise contribute a
 /// partial address.
+///
+/// **PR #892 review round 3**: this used to fold every pair to the *maximum*
+/// `base + size`, and a maximum cannot see a hole.  The pairs are collected
+/// into `extents` and the RAM top is decided afterwards by
+/// [`contiguous_ram_top`], over all of them at once.
 fn fold_memory_reg(
     blob: &[u8],
     value_start: usize,
     value_len: usize,
     address_cells: u32,
     size_cells: u32,
-    best: &mut Option<u64>,
+    extents: &mut MemoryExtents,
 ) -> Option<()> {
     let pair_cells = address_cells.checked_add(size_cells)?;
     let pair_bytes = (pair_cells as usize).checked_mul(4)?;
@@ -1029,20 +1033,123 @@ fn fold_memory_reg(
         let size_off = pair_off.checked_add((address_cells as usize).checked_mul(4)?)?;
         let size = read_fdt_cells(blob, size_off, size_cells)?;
         let top = base.checked_add(size)?;
-        *best = Some(match *best {
-            Some(current) if current >= top => current,
-            _ => top,
-        });
+        extents.push(base, top)?;
     }
     Some(())
 }
 
-/// **WS-RR RR7.1**: walk the FDT structure block for the highest physical
-/// address any `/memory` node claims.
+/// **PR #892 review round 3**: how many `/memory` extents a device tree may
+/// report before this parser refuses it.
+///
+/// The HAL allocates nothing, so the extents live in a fixed array.  A
+/// Raspberry Pi 5 reports at most two — the low aperture and the remainder the
+/// firmware relocates above 4 GiB — and a blob reporting more than this is
+/// refused outright (`None`, the linker's extent) rather than read in part: a
+/// partial read is the maximum fold this replaces, under another name.
+pub const MAX_MEMORY_EXTENTS: usize = 16;
+
+/// **PR #892 review round 3**: the `[base, end)` extents a device tree's
+/// `/memory` nodes report, collected before the RAM top is decided.
+struct MemoryExtents {
+    spans: [(u64, u64); MAX_MEMORY_EXTENTS],
+    len: usize,
+}
+
+impl MemoryExtents {
+    const fn new() -> Self {
+        Self {
+            spans: [(0, 0); MAX_MEMORY_EXTENTS],
+            len: 0,
+        }
+    }
+
+    /// Record one extent; `None` when the store is full.
+    fn push(&mut self, base: u64, end: u64) -> Option<()> {
+        if self.len >= MAX_MEMORY_EXTENTS {
+            return None;
+        }
+        self.spans[self.len] = (base, end);
+        self.len += 1;
+        Some(())
+    }
+
+    fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// The furthest end among the extents that contain `addr`, if any does.
+    fn furthest_end_containing(&self, addr: u64) -> Option<u64> {
+        let mut best: Option<u64> = None;
+        for &(base, end) in &self.spans[..self.len] {
+            if (base..end).contains(&addr) {
+                best = Some(match best {
+                    Some(current) if current >= end => current,
+                    _ => end,
+                });
+            }
+        }
+        best
+    }
+}
+
+/// **PR #892 review round 3**: the exclusive top of the RAM the boot tables may
+/// map — the end of the **contiguous** run of reported extents from address 0,
+/// with the peripheral window `[LOW_RAM_TOP, HIGH_RAM_BASE)` the one
+/// discontinuity the walk may cross.
+///
+/// The fold this replaces kept the maximum end.  A blob reporting
+/// `[4 GiB, 5 GiB)` and `[8 GiB, 9 GiB)` therefore handed `init_mmu` 9 GiB, and
+/// [`crate::mmu::boot_mapping_for`] mapped the unreported `[5 GiB, 8 GiB)`
+/// Normal-cacheable — a speculatively accessible hole — before any board
+/// validation could refuse the layout; a low aperture that stopped short of
+/// `LOW_RAM_TOP` beside a high extent did the same to `[top, LOW_RAM_TOP)`.
+/// The walk maps only what was reported.  RAM beyond a hole is a lost
+/// resource, never a false claim; a blob reporting no RAM at address 0 yields
+/// `0`, so the tables map no RAM at all — the fail-closed outcome for a board
+/// this image was not built for.
+///
+/// The peripheral-window jump is permitted only from a cursor that has reached
+/// `LOW_RAM_TOP`: a low aperture reported short is a hole in the aperture
+/// [`crate::mmu::boot_mapping_for`] would otherwise map whole once the top
+/// crosses `HIGH_RAM_BASE`, so the high extent is forfeited instead.
+///
+/// Termination: every productive step moves the cursor to an extent's end,
+/// strictly upward, so at most `len` steps are productive and the loop is
+/// bounded by `len + 1`.  This is the greedy walk the Lean bridge decides
+/// coverage by (`Platform.Boot.coverFrom`), asked for the largest extent
+/// rather than of a target.
+fn contiguous_ram_top(extents: &MemoryExtents) -> u64 {
+    let mut cursor: u64 = 0;
+    for _ in 0..=extents.len {
+        if let Some(end) = extents.furthest_end_containing(cursor) {
+            if end > cursor {
+                cursor = end;
+                continue;
+            }
+        }
+        // No extent contains the cursor.  The one gap a board may legitimately
+        // report is the peripheral window: a fully reported low aperture may
+        // continue at `HIGH_RAM_BASE`.
+        if (crate::mmu::LOW_RAM_TOP..crate::mmu::HIGH_RAM_BASE).contains(&cursor) {
+            if let Some(end) = extents.furthest_end_containing(crate::mmu::HIGH_RAM_BASE) {
+                cursor = end;
+                continue;
+            }
+        }
+        break;
+    }
+    cursor
+}
+
+/// **WS-RR RR7.1**: walk the FDT structure block for the exclusive top of the
+/// contiguous run of RAM the `/memory` nodes report from address 0
+/// ([`contiguous_ram_top`]; PR #892 review round 3 — it used to be the highest
+/// address any node claimed, which mapped every hole between two claims).
 ///
 /// Returns `None` when the blob is unparseable, when no `/memory` node carries
-/// a well-formed `reg`, or when the root declares a cell width this parser does
-/// not support — every one of which the caller turns into the linker's declared
+/// a well-formed `reg`, when the nodes report more than [`MAX_MEMORY_EXTENTS`]
+/// extents, or when the root declares a cell width this parser does not
+/// support — every one of which the caller turns into the linker's declared
 /// RAM extent rather than a guess.
 ///
 /// ## Walk discipline
@@ -1083,7 +1190,7 @@ fn find_ram_top_in_dtb(blob: &[u8]) -> Option<u64> {
     let mut memory_depth: usize = 0;
     let mut memory_reg: Option<(usize, usize)> = None;
     let mut device_type_ok = true;
-    let mut best: Option<u64> = None;
+    let mut extents = MemoryExtents::new();
     let mut fuel = FDT_WALK_FUEL;
     // PR #892 review: whether the walk reached a top-level `FDT_END`.  Every
     // other way out of this loop leaves the structure block unparsed, and this
@@ -1139,7 +1246,7 @@ fn find_ram_top_in_dtb(blob: &[u8]) -> Option<u64> {
                                 value_len,
                                 address_cells,
                                 size_cells,
-                                &mut best,
+                                &mut extents,
                             )?;
                         }
                     }
@@ -1208,18 +1315,23 @@ fn find_ram_top_in_dtb(blob: &[u8]) -> Option<u64> {
     if !terminated || depth != 0 {
         return None;
     }
-    best
+    if extents.is_empty() {
+        return None;
+    }
+    Some(contiguous_ram_top(&extents))
 }
 
-/// **WS-RR RR7.1**: test-friendly entry point — the highest physical address
-/// any `/memory` node of `blob` claims.
+/// **WS-RR RR7.1**: test-friendly entry point — the exclusive top of the
+/// contiguous run of RAM the `/memory` nodes of `blob` report from address 0
+/// ([`contiguous_ram_top`]).
 #[must_use]
 pub fn ram_top_from_blob(blob: &[u8]) -> Option<u64> {
     find_ram_top_in_dtb(blob)
 }
 
-/// **WS-RR RR7.1**: the highest physical address any `/memory` node of the DTB
-/// at `dtb_ptr` claims — the exclusive top of RAM the boot MMU maps.
+/// **WS-RR RR7.1**: the exclusive top of the contiguous run of RAM the
+/// `/memory` nodes of the DTB at `dtb_ptr` report from address 0 — the RAM the
+/// boot MMU maps ([`contiguous_ram_top`]).
 ///
 /// `None` for a null pointer, a blob whose header does not validate, a blob
 /// larger than [`MAX_DTB_SIZE`], or a device tree with no well-formed
@@ -2985,8 +3097,9 @@ mod memory_node_tests {
     #[test]
     fn an_eight_gibibyte_board_reports_the_high_aperture_top() {
         // Two `reg` pairs: the low aperture and the region above 4 GiB.  The
-        // query returns the maximum, which is what sizes the L1 blocks the
-        // pre-RR7.1 boot table never populated.
+        // walk crosses the peripheral window from a fully reported low
+        // aperture, which is what sizes the L1 blocks the pre-RR7.1 boot table
+        // never populated.
         let blob = build_dtb(
             2,
             2,
@@ -3005,7 +3118,12 @@ mod memory_node_tests {
     }
 
     #[test]
-    fn several_memory_nodes_fold_to_the_maximum() {
+    fn a_low_aperture_reported_short_forfeits_the_high_extent() {
+        // PR #892 review round 3: two nodes, `[0, 1 GiB)` and `[4 GiB, 6 GiB)`.
+        // The maximum fold answered 6 GiB, and `boot_mapping_for` then mapped
+        // the whole low aperture — `[1 GiB, 0xFC00_0000)` included, which the
+        // board never reported.  The walk stops where the report stops: the
+        // high extent is a lost resource, the hole is never a mapped one.
         let blob = build_dtb(
             2,
             2,
@@ -3022,7 +3140,158 @@ mod memory_node_tests {
                 ),
             ],
         );
-        assert_eq!(ram_top_from_blob(&blob), Some(0x1_8000_0000));
+        assert_eq!(ram_top_from_blob(&blob), Some(0x4000_0000));
+    }
+
+    #[test]
+    fn discontiguous_high_memory_stops_at_the_first_hole() {
+        // PR #892 review round 3 — the finding's own layout: the low aperture,
+        // `[4 GiB, 5 GiB)` and `[8 GiB, 9 GiB)`.  The maximum fold answered
+        // 9 GiB and mapped the unreported `[5 GiB, 8 GiB)` Normal-cacheable;
+        // the walk answers 5 GiB.
+        let blob = build_dtb(
+            2,
+            2,
+            &[memory_node(
+                b"memory@0",
+                cells(&[
+                    (0, 2),
+                    (0xFC00_0000, 2),
+                    (0x1_0000_0000, 2),
+                    (0x4000_0000, 2),
+                    (0x2_0000_0000, 2),
+                    (0x4000_0000, 2),
+                ]),
+                Some(b"memory"),
+            )],
+        );
+        assert_eq!(ram_top_from_blob(&blob), Some(0x1_4000_0000));
+        // The token-preserving mutation: the same extents with the hole
+        // filled report a contiguous run, and the walk reaches the end.
+        let filled = build_dtb(
+            2,
+            2,
+            &[memory_node(
+                b"memory@0",
+                cells(&[
+                    (0, 2),
+                    (0xFC00_0000, 2),
+                    (0x1_0000_0000, 2),
+                    (0x4000_0000, 2),
+                    (0x1_4000_0000, 2),
+                    (0x1_0000_0000, 2),
+                ]),
+                Some(b"memory"),
+            )],
+        );
+        assert_eq!(ram_top_from_blob(&filled), Some(0x2_4000_0000));
+    }
+
+    #[test]
+    fn a_split_low_aperture_is_walked_as_one_run() {
+        // The low aperture reported in two adjacent pairs, as the Lean bridge's
+        // union coverage accepts it (PR #892 review round 2): the walk crosses
+        // the seam because the second extent contains the first's end.
+        let blob = build_dtb(
+            2,
+            2,
+            &[memory_node(
+                b"memory@0",
+                cells(&[(0, 2), (0x8000_0000, 2), (0x8000_0000, 2), (0x7C00_0000, 2)]),
+                Some(b"memory"),
+            )],
+        );
+        assert_eq!(ram_top_from_blob(&blob), Some(0xFC00_0000));
+    }
+
+    #[test]
+    fn extents_in_any_order_walk_to_the_same_top() {
+        // The walk scans every extent at each step, so the report's order is
+        // immaterial — the high extent listed first still needs the low
+        // aperture to reach it.
+        let blob = build_dtb(
+            2,
+            2,
+            &[memory_node(
+                b"memory@0",
+                cells(&[
+                    (0x1_0000_0000, 2),
+                    (0x1_0000_0000, 2),
+                    (0, 2),
+                    (0xFC00_0000, 2),
+                ]),
+                Some(b"memory"),
+            )],
+        );
+        assert_eq!(ram_top_from_blob(&blob), Some(0x2_0000_0000));
+    }
+
+    #[test]
+    fn an_eight_gibibyte_board_as_firmware_reports_it() {
+        // The firmware relocates the 64 MiB the peripheral window displaces to
+        // just above 4 GiB, so the high extent is `[4 GiB, 8 GiB + 64 MiB)`.
+        let blob = build_dtb(
+            2,
+            2,
+            &[memory_node(
+                b"memory@0",
+                cells(&[
+                    (0, 2),
+                    (0xFC00_0000, 2),
+                    (0x1_0000_0000, 2),
+                    (0x1_0400_0000, 2),
+                ]),
+                Some(b"memory"),
+            )],
+        );
+        assert_eq!(ram_top_from_blob(&blob), Some(0x2_0400_0000));
+    }
+
+    #[test]
+    fn ram_reported_only_at_a_foreign_base_maps_nothing() {
+        // No extent contains address 0: the walk never starts, the top is 0
+        // and the boot tables map no RAM — a board this image was not built
+        // for, refused by mapping nothing rather than by mapping the linker's
+        // declaration over memory the board did not report.
+        let blob = build_dtb(
+            2,
+            2,
+            &[memory_node(
+                b"memory@40000000",
+                cells(&[(0x4000_0000, 2), (0x4000_0000, 2)]),
+                Some(b"memory"),
+            )],
+        );
+        assert_eq!(ram_top_from_blob(&blob), Some(0));
+    }
+
+    #[test]
+    fn more_extents_than_the_store_holds_are_refused() {
+        // Sixteen extents fit; a seventeenth is refused outright rather than
+        // read in part, since a partial read is the maximum fold under
+        // another name.
+        let mut pairs: Vec<(u64, u32)> = Vec::new();
+        for i in 0..MAX_MEMORY_EXTENTS as u64 {
+            pairs.push((i * 0x0100_0000, 2));
+            pairs.push((0x0100_0000, 2));
+        }
+        let fits = build_dtb(
+            2,
+            2,
+            &[memory_node(b"memory@0", cells(&pairs), Some(b"memory"))],
+        );
+        assert_eq!(
+            ram_top_from_blob(&fits),
+            Some(MAX_MEMORY_EXTENTS as u64 * 0x0100_0000)
+        );
+        pairs.push((MAX_MEMORY_EXTENTS as u64 * 0x0100_0000, 2));
+        pairs.push((0x0100_0000, 2));
+        let overflows = build_dtb(
+            2,
+            2,
+            &[memory_node(b"memory@0", cells(&pairs), Some(b"memory"))],
+        );
+        assert_eq!(ram_top_from_blob(&overflows), None);
     }
 
     #[test]

@@ -1186,7 +1186,19 @@ run_check "INVARIANT" bash -lc 'rg -U -n "def recordCommittedCurrentThreadHw(.|\
 # exit is fail-open here and fail-closed there — which is why only this one
 # needs the flag.  Without it a truncated blob handed `init_mmu` a RAM ceiling
 # read out of a prefix the walk never validated.
-run_check "INVARIANT" bash -lc 'rg -U -n "fn find_ram_top_in_dtb(.|\n)*let mut terminated = false;(.|\n)*if !terminated \|\| depth != 0 \{\n        return None;\n    \}\n    best" rust/sele4n-hal/src/cmdline.rs'
+run_check "INVARIANT" bash -lc 'rg -U -n "fn find_ram_top_in_dtb(.|\n)*let mut terminated = false;(.|\n)*if !terminated \|\| depth != 0 \{\n        return None;\n    \}\n    if extents.is_empty\(\) \{\n        return None;\n    \}\n    Some\(contiguous_ram_top\(&extents\)\)" rust/sele4n-hal/src/cmdline.rs'
+# PR #892 review round 3: the RAM top is the end of the CONTIGUOUS run of
+# reported extents from address 0, decided over all of them at once, and the
+# peripheral window is the one gap the walk may cross — only from a cursor that
+# has reached the low aperture's top.  A maximum fold (the pre-round shape)
+# mapped every hole between two claims Normal-cacheable.
+run_check "INVARIANT" rg -n -U 'fn contiguous_ram_top\(extents: &MemoryExtents\) -> u64 \{\n    let mut cursor: u64 = 0;' rust/sele4n-hal/src/cmdline.rs
+run_check "INVARIANT" rg -n -U 'if let Some\(end\) = extents\.furthest_end_containing\(cursor\) \{\n            if end > cursor \{\n                cursor = end;\n                continue;' rust/sele4n-hal/src/cmdline.rs
+run_check "INVARIANT" rg -n -U 'if \(crate::mmu::LOW_RAM_TOP\.\.crate::mmu::HIGH_RAM_BASE\)\.contains\(&cursor\) \{\n            if let Some\(end\) = extents\.furthest_end_containing\(crate::mmu::HIGH_RAM_BASE\) \{' rust/sele4n-hal/src/cmdline.rs
+run_check "INVARIANT" rg -n -U 'let top = base\.checked_add\(size\)\?;\n        extents\.push\(base, top\)\?;' rust/sele4n-hal/src/cmdline.rs
+# NEGATIVE: the maximum fold, in the `reg` walk or anywhere the top is decided.
+run_negative_check "INVARIANT" rg -n -U 'let top = base\.checked_add\(size\)\?;\n\s+\*best = Some\(' rust/sele4n-hal/src/cmdline.rs
+run_negative_check "INVARIANT" rg -n 'best: &mut Option<u64>,' rust/sele4n-hal/src/cmdline.rs
 # PR #892 review round 2: a RAM top the boot tables cannot map is CAPPED before
 # it is aligned.  The level-0 table has one valid entry, so the walk reaches
 # `BOOT_TABLE_COVERAGE` and no further; a `/memory` top above it, merely

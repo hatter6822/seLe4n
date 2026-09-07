@@ -276,11 +276,14 @@ ASID surface**, and the release note must not imply one.
 
 ## WS-OD — SchedContext donation chains
 
-Registered at `v0.34.98`. **OD1.1–OD1.5 have landed** (`v0.34.100`, `v0.34.101`,
-`v0.34.103`, `v0.34.104`, `v0.34.105`); OD1.6 onward are open. Plan:
+Registered at `v0.34.98`. **OD1 is closed** — OD1.1–OD1.7 landed at
+`v0.34.100`, `v0.34.101`, `v0.34.103`, `v0.34.104`, `v0.34.105`, `v0.34.106` and
+`v0.34.108` (OD1.7, the aborted holder placed rather than merely unblocked, found
+by review and reported as a security finding); OD2 onward are open. Plan:
 [`docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`](planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md)
-(40 sub-tasks across OD1..OD6). It closes two section-A rows: the onward-donation
-gap above, and the `passiveServerIdle` break the `v0.34.97` reclaim introduced.
+(41 sub-tasks across OD1..OD6). It closes two section-A rows: the onward-donation
+gap above, and the `passiveServerIdle` break the `v0.34.97` reclaim introduced —
+the second of which OD1 has now closed.
 
 The point in one line: **`donateSchedContext` is the only operational
 construction site of a `.donated` binding, and `applyCallDonation` reaches it
@@ -288,10 +291,13 @@ only from a `.bound` caller** — so a scheduling context stops at the first
 passive server, and seL4's passive-server pattern does not work at call depth
 ≥ 2. Six decisions shape the fix, and each is a decision rather than a default:
 
-* **The `passiveServerIdle` hole is fixed first, not last.** It is live on HEAD
-  at depth 1 with no chain involved, so scheduling it late would mean every
-  intervening phase doing bundle work over a surface carrying a known-false
-  conjunct. It is OD1.
+* **The `passiveServerIdle` hole was fixed first, not last.** It was live on
+  HEAD at registration, at depth 1 with no chain involved, so scheduling it
+  late would have meant every intervening phase doing bundle work over a
+  surface carrying a known-false conjunct. It was OD1, and it is closed: the
+  reclaim ends the holder's outstanding send or call first (`v0.34.104`), the
+  preservation theorem holds on every arm (`v0.34.105`), and the unblocked
+  holder is placed on its home run queue (`v0.34.108`).
 * **The pop lands before the push, and lands inert.** If the push landed first, a
   depth-2 chain would be reachable while the old return still writes `.bound` at
   the intermediate thread — permanently moving a scheduling context across a

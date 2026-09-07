@@ -41,8 +41,9 @@ before SM10.1.
 
 ### 2.2 The `v0.34.97` reclaim can leave an unbound thread blocked on a call
 
-This one is **live on HEAD today, at depth 1, with no chain involved**, and was
-introduced by the RR7.22 remediation itself:
+This one was **live on HEAD at registration, at depth 1, with no chain
+involved** — closed by OD1 (`v0.34.104`–`v0.34.108`; the plan header records
+the phase) — and was introduced by the RR7.22 remediation itself:
 
 1. `D0` (`.bound sc`) Calls `ep1` with server `S` waiting → `S := .donated sc D0`,
    `D0` `.unbound` ∧ `.blockedOnReply ep1 (some S)`.

@@ -1,3 +1,43 @@
+## v0.34.111 — the boot RAM top is the contiguous run the device tree reports, and the register says what OD1 closed
+
+**PR #892 review round 3 (Codex, on `2c62e4ac`).**  Two findings, both
+confirmed and fixed at the cause.
+
+**The device tree's RAM extents are walked, not folded to a maximum (P2).**
+`find_ram_top_in_dtb` reduced every `/memory` `reg` pair to the highest end
+address, and a maximum cannot see a hole: a valid blob reporting
+`[4 GiB, 5 GiB)` and `[8 GiB, 9 GiB)` handed `init_mmu` 9 GiB, and
+`boot_mapping_for` mapped the unreported `[5 GiB, 8 GiB)` Normal-cacheable —
+a speculatively accessible hole — before any Lean board validation could
+refuse the layout; a low aperture reported short beside a high extent did the
+same to `[top, LOW_RAM_TOP)`.  The pairs are now collected (`MemoryExtents`, a
+fixed store of `MAX_MEMORY_EXTENTS` = 16; a blob reporting more is refused
+outright rather than read in part) and the top is decided over all of them by
+`contiguous_ram_top`: the end of the contiguous run from address 0, with the
+peripheral window `[LOW_RAM_TOP, HIGH_RAM_BASE)` the one gap the walk may
+cross, and only from a cursor that has reached the low aperture's top.  RAM
+beyond a hole is a lost resource, never a false claim; a blob reporting no RAM
+at address 0 yields `0`, so the tables map no RAM at all — the fail-closed
+outcome for a board this image was not built for.  This is the greedy walk
+the Lean bridge decides coverage by (`Platform.Boot.coverFrom`), asked for
+the largest extent rather than of a target.  Seven host tests: the finding's
+own layout stops at the first hole and its hole-filled twin reaches the end,
+a short low aperture forfeits the high extent, a split low aperture is one
+run, extents in any order walk to one top, the 8 GiB board as its firmware
+reports it, RAM only at a foreign base maps nothing, and the seventeenth
+extent is refused.  Tier 3 pins the walk's step, its jump condition and the
+collector, with the maximum fold as the negative — each mutation-tested by
+keeping the tokens and breaking the relation.
+
+**The debt register's WS-OD status matched the plan again (P2).**
+`docs/REGISTERED_DEBT.md`'s WS-OD block still said OD1.1–OD1.5 landed, OD1.6
+onward open, 40 sub-tasks, and called the `passiveServerIdle` hole live on
+HEAD — after the round-1 fix had corrected `README.md`, `CLAUDE.md` and
+`AGENTS.md` and left the canonical register behind.  It now records OD1
+closed at `v0.34.108` with all seven landings, 41 sub-tasks, and the hole
+closed with the three cuts that closed it; the plan's own problem statement
+(§2.2) is in the past tense with the same pointer.
+
 ## v0.34.110 — the chain extension acts only once held, the binding installs the board's own RAM variant, and four smaller relations the review named
 
 **PR #892 review round 2 (Codex, on `6cba3f71`).**  Six findings, all confirmed
