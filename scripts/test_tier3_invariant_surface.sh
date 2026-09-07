@@ -940,6 +940,42 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "def timeoutThread(.|\n)*match
 run_check "INVARIANT" rg -n '^def timeoutBlockingServerOf\?' SeLe4n/Kernel/IPC/Operations/Timeout.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "let maybeBlockingServer := timeoutBlockingServerOf\? st tid" SeLe4n/Kernel/IPC/Operations/Timeout.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "let maybeBlockingServer := timeoutBlockingServerOf\? st2 tid" SeLe4n/Kernel/IPC/Operations/Timeout.lean'
+# WS-OD OD1.3: the two endpoint-queue removals **agree**, and that is a theorem
+# rather than the comment OD1.1 left.  The agreement is pointwise on the object
+# store, not literal store equality: the store is a Robin Hood table whose value
+# records probe displacement, and the head branches write the endpoint a
+# different number of times in a different order.
+run_check "INVARIANT" rg -n '^def objectStoreAgrees' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemove_agrees_with_dual' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemove_establishes_ipcInvariantFullExceptMembership' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_agrees_insert' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbQueueLinks_agrees_insert' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+# NEGATIVE: the agreement must not be stated as literal store equality.  That
+# form is unprovable here and would read as a stronger, checked claim; the
+# mutation that finds this keeps the theorem and strengthens its conclusion.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem endpointQueueRemove_agrees_with_dual(.|\n)*stS\.objects = stD\.objects" SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean'
+# The queue connectivity the bundle does not entail is **stated**, not assumed:
+# the carriage takes it as a hypothesis, in the same shape as
+# `splicePredecessorBlocked` and `sweptThreadQueueCoherent`.
+run_check "INVARIANT" rg -n '^def spliceRemovedIsTailWhenLast' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^def dualRemovalEnabled' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem endpointQueueRemove_establishes_ipcInvariantFullExceptMembership(.|\n)*hTailLast : spliceRemovedIsTailWhenLast" SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem endpointQueueRemove_establishes_ipcInvariantFullExceptMembership(.|\n)*hEnabled : dualRemovalEnabled" SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean'
+# The converse direction is derived, never assumed: a tail has no successor, so
+# a thread that has one is not the tail.
+run_check "INVARIANT" rg -n '^theorem spliceTail_ne_of_hasNext' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+# `passiveServerIdle` is the one bundle conjunct an object-store frame cannot
+# carry — it reads the boot core's run queue too — so the bundle frame names the
+# scheduler in its own name.  A frame that claimed the store alone would be
+# unsound for any scheduler-writing step.
+run_check "INVARIANT" rg -n '^theorem passiveServerIdle_of_storeAgrees' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem passiveServerIdle_of_storeAgrees(.|\n)*hSched : st.\.scheduler = st\.scheduler" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+run_check "INVARIANT" rg -n '^theorem ipcInvariantFull_of_storeAgrees_of_scheduler_eq' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem ipcInvariantFullExceptMembership_of_storeAgrees_of_scheduler_eq' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+# NEGATIVE: no store-only bundle frame.  Nineteen conjuncts read the store alone
+# and the twentieth does not; a name promising the weaker hypothesis would be
+# the presence-check shape this project keeps finding.
+run_negative_check "INVARIANT" rg -n '^theorem ipcInvariantFull_of_storeAgrees\b' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
 # WS-RR RR7.22 (residual, remediation): the cancelled caller's donated
 # SchedContext goes back — seL4-MCS's `reply_remove` — with the fact that makes
 # the return well defined stated rather than assumed.

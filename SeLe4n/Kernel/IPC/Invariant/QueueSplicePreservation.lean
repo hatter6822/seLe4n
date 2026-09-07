@@ -2623,4 +2623,799 @@ theorem endpointQueueRemoveDual_removed_detached
       | inl h => cases h
       | inr h => cases h
 
+-- ============================================================================
+-- §17  WS-OD OD1.3 — the bundle, framed by pointwise store agreement
+-- ============================================================================
+--
+-- `Defs.lean` carries the `_of_storeAgrees` frame for every conjunct it can
+-- prove; the four whose frames were already stated downstream (and already took
+-- the pointwise hypothesis, under the `_of_objects_eq` name) get their wrappers
+-- here, so a caller reaches for one family rather than two.  The two bundle
+-- frames below are what OD1.3 exists to build: they transfer a whole
+-- twenty-conjunct conclusion from one state to another that holds the same
+-- object at every key.
+--
+-- Why pointwise and not `st'.objects = st.objects`: the store is a Robin Hood
+-- hash table whose value records the probe displacement its insertion order
+-- produced.  This tree's two endpoint-queue removals write the same objects to
+-- the same keys, and in the two head branches they write the endpoint a
+-- different number of times in a different order, so their post-states agree
+-- pointwise and are not equal.  Literal equality is unavailable, and every
+-- conjunct reads the store through `getElem?`, so it is also unnecessary.
+
+theorem endpointQueueNoDup_of_storeAgrees {st st' : SystemState}
+    (hA : objectStoreAgrees st st') (h : endpointQueueNoDup st) :
+    endpointQueueNoDup st' :=
+  endpointQueueNoDup_of_objects_eq st st' hA h
+
+theorem ipcStateQueueMembershipConsistent_of_storeAgrees {st st' : SystemState}
+    (hA : objectStoreAgrees st st') (h : ipcStateQueueMembershipConsistent st) :
+    ipcStateQueueMembershipConsistent st' :=
+  ipcStateQueueMembershipConsistent_of_objects_eq st st' hA h
+
+theorem queueNextBlockingConsistent_of_storeAgrees {st st' : SystemState}
+    (hA : objectStoreAgrees st st') (h : queueNextBlockingConsistent st) :
+    queueNextBlockingConsistent st' :=
+  queueNextBlockingConsistent_of_objects_eq st st' hA h
+
+theorem queueNextTargetBlocked_of_storeAgrees {st st' : SystemState}
+    (hA : objectStoreAgrees st st') (h : queueNextTargetBlocked st) :
+    queueNextTargetBlocked st' :=
+  queueNextTargetBlocked_of_objects_eq st st' hA h
+
+/-- WS-OD OD1.3: the relaxed membership conjunct frames pointwise too — the
+exception is a thread id, which store agreement does not move. -/
+theorem ipcStateQueueMembershipConsistentExcept_of_storeAgrees {st st' : SystemState}
+    {ex : SeLe4n.ThreadId}
+    (hA : objectStoreAgrees st st') (h : ipcStateQueueMembershipConsistentExcept st ex) :
+    ipcStateQueueMembershipConsistentExcept st' ex := by
+  intro tid tcb hTcb hNe
+  rw [hA] at hTcb
+  have hPre := h tid tcb hTcb hNe
+  match hIpc : tcb.ipcState with
+  | .blockedOnSend epId =>
+    simp only [hIpc] at hPre; obtain ⟨ep, hEp, hReach⟩ := hPre
+    exact ⟨ep, by rw [hA]; exact hEp,
+      hReach.elim Or.inl (fun ⟨prev, prevTcb, hPrev, hNext⟩ =>
+        Or.inr ⟨prev, prevTcb, by rw [hA]; exact hPrev, hNext⟩)⟩
+  | .blockedOnReceive epId =>
+    simp only [hIpc] at hPre; obtain ⟨ep, hEp, hReach⟩ := hPre
+    exact ⟨ep, by rw [hA]; exact hEp,
+      hReach.elim Or.inl (fun ⟨prev, prevTcb, hPrev, hNext⟩ =>
+        Or.inr ⟨prev, prevTcb, by rw [hA]; exact hPrev, hNext⟩)⟩
+  | .blockedOnCall epId =>
+    simp only [hIpc] at hPre; obtain ⟨ep, hEp, hReach⟩ := hPre
+    exact ⟨ep, by rw [hA]; exact hEp,
+      hReach.elim Or.inl (fun ⟨prev, prevTcb, hPrev, hNext⟩ =>
+        Or.inr ⟨prev, prevTcb, by rw [hA]; exact hPrev, hNext⟩)⟩
+  | .ready => trivial
+  | .blockedOnNotification _ => trivial
+  | .blockedOnReply _ _ => trivial
+
+/-- WS-OD OD1.3: **the whole bundle transfers across pointwise store agreement**,
+given that the scheduler agrees too.
+
+Nineteen of the twenty conjuncts read the object store and nothing else.  The
+twentieth, `passiveServerIdle`, also reads the boot core's run queue and current
+slot, which is why this is not called `_of_storeAgrees` alone: a scheduler-writing
+step owes that conjunct its own proof, and the name says so. -/
+theorem ipcInvariantFull_of_storeAgrees_of_scheduler_eq {st st' : SystemState}
+    (hA : objectStoreAgrees st st') (hSched : st'.scheduler = st.scheduler)
+    (h : ipcInvariantFull st) : ipcInvariantFull st' :=
+  ⟨ipcInvariant_of_storeAgrees hA h.ipcInvariant,
+   dualQueueSystemInvariant_of_storeAgrees hA h.dualQueueSystemInvariant,
+   allPendingMessagesBounded_of_storeAgrees hA h.allPendingMessagesBounded,
+   badgeWellFormed_of_storeAgrees hA h.badgeWellFormed,
+   blockedThreadsPendingMessageConsistent_of_storeAgrees hA
+     h.blockedThreadsPendingMessageConsistent,
+   endpointQueueNoDup_of_storeAgrees hA h.endpointQueueNoDup,
+   ipcStateQueueMembershipConsistent_of_storeAgrees hA h.ipcStateQueueMembershipConsistent,
+   queueNextBlockingConsistent_of_storeAgrees hA h.queueNextBlockingConsistent,
+   queueHeadBlockedConsistent_of_storeAgrees hA h.queueHeadBlockedConsistent,
+   blockedThreadTimeoutConsistent_of_storeAgrees hA h.blockedThreadTimeoutConsistent,
+   donationChainAcyclic_of_storeAgrees hA h.donationChainAcyclic,
+   donationOwnerValid_of_storeAgrees hA h.donationOwnerValid,
+   passiveServerIdle_of_storeAgrees hA hSched h.passiveServerIdle,
+   donationBudgetTransfer_of_storeAgrees hA h.donationBudgetTransfer,
+   blockedOnReplyHasTarget_of_storeAgrees hA h.blockedOnReplyHasTarget,
+   replyCallerLinkage_of_storeAgrees hA h.replyCallerLinkage,
+   pendingReceiveReplyWellFormed_of_storeAgrees hA h.pendingReceiveReplyWellFormed,
+   donationOwnerUnique_of_storeAgrees hA h.donationOwnerUnique,
+   endpointQueueTailBlockedConsistent_of_storeAgrees hA
+     h.endpointQueueTailBlockedConsistent,
+   queueNextTargetBlocked_of_storeAgrees hA h.queueNextTargetBlocked⟩
+
+/-- WS-OD OD1.3: the splice's relaxed bundle transfers the same way. -/
+theorem ipcInvariantFullExceptMembership_of_storeAgrees_of_scheduler_eq
+    {st st' : SystemState} {ex : SeLe4n.ThreadId}
+    (hA : objectStoreAgrees st st') (hSched : st'.scheduler = st.scheduler)
+    (h : ipcInvariantFullExceptMembership st ex) :
+    ipcInvariantFullExceptMembership st' ex :=
+  ⟨ipcInvariant_of_storeAgrees hA h.1,
+   dualQueueSystemInvariant_of_storeAgrees hA h.2.1,
+   allPendingMessagesBounded_of_storeAgrees hA h.2.2.1,
+   badgeWellFormed_of_storeAgrees hA h.2.2.2.1,
+   blockedThreadsPendingMessageConsistent_of_storeAgrees hA h.2.2.2.2.1,
+   endpointQueueNoDup_of_storeAgrees hA h.2.2.2.2.2.1,
+   ipcStateQueueMembershipConsistentExcept_of_storeAgrees hA h.2.2.2.2.2.2.1,
+   queueNextBlockingConsistent_of_storeAgrees hA h.2.2.2.2.2.2.2.1,
+   queueHeadBlockedConsistent_of_storeAgrees hA h.2.2.2.2.2.2.2.2.1,
+   blockedThreadTimeoutConsistent_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.1,
+   donationChainAcyclic_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.1,
+   donationOwnerValid_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.1,
+   passiveServerIdle_of_storeAgrees hA hSched h.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   donationBudgetTransfer_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   blockedOnReplyHasTarget_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   replyCallerLinkage_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   pendingReceiveReplyWellFormed_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   donationOwnerUnique_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   endpointQueueTailBlockedConsistent_of_storeAgrees hA
+     h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   queueNextTargetBlocked_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
+
+-- ============================================================================
+-- §18  WS-OD OD1.3 — the two endpoint-queue removals agree
+-- ============================================================================
+--
+-- OD1.1 made `endpointQueueRemove` write the successor's `queuePPrev`, and its
+-- comment claims the two removals "now write the same fields to the same
+-- values".  A comment cannot be checked.  This section turns the claim into a
+-- theorem, and the theorem is what carries the dual's twenty-conjunct surface
+-- (§14) onto the single removal — and so onto `abortPendingIpcOnEndpoint`,
+-- which the cancellation reclaim will call.
+--
+-- The bridge is `storeObject_agrees_insert`: a `storeObject` and the raw
+-- `RHTable.insert` it performs agree pointwise.  With it, both removals become
+-- chains of raw inserts on the same starting table, and a chain's lookup is
+-- decided by the last writer at each key.
+
+/-- WS-OD OD1.3: `storeObject` and the raw table insert agree pointwise.
+
+`storeObject` also maintains `objectIndex`, `objectIndexSet`, `lifecycle` and
+`asidTable`; on the store itself it is exactly one `RHTable.insert`, so the two
+agree at every key definitionally.  Every conjunct of `ipcInvariantFull` reads
+the store and nothing else, so this is all the agreement they can observe. -/
+theorem storeObject_agrees_insert {st st' : SystemState} {k : SeLe4n.ObjId}
+    {obj : KernelObject}
+    (hStore : storeObject k obj st = .ok ((), st')) (x : SeLe4n.ObjId) :
+    st'.objects[x]? = (st.objects.insert k obj)[x]? := by
+  unfold storeObject at hStore
+  cases hStore
+  rfl
+
+/-- WS-OD OD1.3: the queue-link store agrees with the raw insert of the
+rewritten TCB. -/
+theorem storeTcbQueueLinks_agrees_insert {st st' : SystemState}
+    {tid : SeLe4n.ThreadId} {tcb : TCB}
+    {prev : Option SeLe4n.ThreadId} {pprev : Option QueuePPrev}
+    {next : Option SeLe4n.ThreadId}
+    (hTcb : lookupTcb st tid = some tcb)
+    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') (x : SeLe4n.ObjId) :
+    st'.objects[x]? =
+      (st.objects.insert tid.toObjId (.tcb (tcbWithQueueLinks tcb prev pprev next)))[x]? := by
+  unfold storeTcbQueueLinks storeObject at hStep
+  simp only [hTcb, Except.ok.injEq] at hStep
+  subst hStep
+  rfl
+
+open SeLe4n.Kernel.RobinHood in
+/-- WS-OD OD1.3: one insert's lookup, as a conditional — the shape a chain of
+inserts is normalised to when the two removals are compared key by key. -/
+theorem objects_insert_lookup {t : RHTable SeLe4n.ObjId KernelObject}
+    (hExt : t.invExt) (k x : SeLe4n.ObjId) (v : KernelObject) :
+    (t.insert k v)[x]? = if x = k then some v else t[x]? := by
+  by_cases hx : x = k
+  · subst hx
+    rw [if_pos rfl]
+    exact RHTable.getElem?_insert_self t x v hExt
+  · rw [if_neg hx]
+    exact RHTable.getElem?_insert_ne t k x v
+      (by intro h; exact hx (eq_of_beq h).symm) hExt
+
+open SeLe4n.Kernel.RobinHood in
+/-- WS-OD OD1.3: `invExt` survives an insert, so a chain of them can be read
+one step at a time. -/
+theorem objects_insert_invExt {t : RHTable SeLe4n.ObjId KernelObject}
+    (hExt : t.invExt) (k : SeLe4n.ObjId) (v : KernelObject) :
+    (t.insert k v).invExt :=
+  RHTable.insert_preserves_invExt t k v hExt
+
+open SeLe4n.Kernel.RobinHood in
+/-- WS-OD OD1.3: `st` with its object store replaced.
+
+The single removal writes exactly this field, and naming the update keeps the
+four branch equations readable — a nested record-update literal inside a
+theorem statement does not parse. -/
+def withObjects (st : SystemState) (objs : RHTable SeLe4n.ObjId KernelObject) :
+    SystemState :=
+  { st with objects := objs }
+
+@[simp] theorem withObjects_objects (st : SystemState)
+    (objs : RobinHood.RHTable SeLe4n.ObjId KernelObject) :
+    (withObjects st objs).objects = objs := rfl
+
+@[simp] theorem withObjects_scheduler (st : SystemState)
+    (objs : RobinHood.RHTable SeLe4n.ObjId KernelObject) :
+    (withObjects st objs).scheduler = st.scheduler := rfl
+
+/-- WS-OD OD1.3: `lookupTcb` reads one thread, so an agreement on that thread's
+typed slot carries it. -/
+theorem lookupTcb_of_getTcb?_eq {st st' : SystemState} {tid : SeLe4n.ThreadId} {tcb : TCB}
+    (hEq : st'.getTcb? tid = st.getTcb? tid)
+    (h : lookupTcb st tid = some tcb) : lookupTcb st' tid = some tcb :=
+  lookupTcb_of_objects_of_not_reserved st' tid tcb
+    ((SystemState.getTcb?_eq_some_iff st' tid tcb).mp
+      (hEq.trans ((SystemState.getTcb?_eq_some_iff st tid tcb).mpr
+        (lookupTcb_some_objects st tid tcb h))))
+    (lookupTcb_some_not_reserved st tid tcb h)
+
+/-- WS-OD OD1.3: the single removal on the **head, no successor** branch. -/
+theorem endpointQueueRemove_ok_headLast
+    {st : SystemState} {endpointId : SeLe4n.ObjId} {isReceiveQ : Bool}
+    {tid : SeLe4n.ThreadId} {ep : Endpoint} {tcb : TCB}
+    (hEp : st.objects[endpointId]? = some (.endpoint ep))
+    (hTcb : lookupTcb st tid = some tcb)
+    (hPrevNone : tcb.queuePrev = none)
+    (hNext : tcb.queueNext = none)
+    (hHead : (spliceQueue isReceiveQ ep).head = some tid)
+    (hTail : (spliceQueue isReceiveQ ep).tail = some tid) :
+    endpointQueueRemove endpointId isReceiveQ tid st = .ok
+      (withObjects st
+        ((st.objects.insert endpointId
+            (.endpoint (spliceEndpoint isReceiveQ ep (IntrusiveQueue.mk none none)))).insert
+          tid.toObjId (.tcb (tcbWithQueueLinks tcb none none none)))) := by
+  unfold spliceQueue at hHead hTail
+  unfold endpointQueueRemove spliceEndpoint tcbWithQueueLinks withObjects
+  simp only [hEp, hTcb, hPrevNone, hNext, hHead, hTail, if_pos]
+
+/-- WS-OD OD1.3: the single removal on the **head, with successor** branch. -/
+theorem endpointQueueRemove_ok_headMore
+    {st : SystemState} {endpointId : SeLe4n.ObjId} {isReceiveQ : Bool}
+    {tid nextTid : SeLe4n.ThreadId} {ep : Endpoint} {tcb nextTcb : TCB}
+    (hEp : st.objects[endpointId]? = some (.endpoint ep))
+    (hTcb : lookupTcb st tid = some tcb)
+    (hPrevNone : tcb.queuePrev = none)
+    (hNext : tcb.queueNext = some nextTid)
+    (hHead : (spliceQueue isReceiveQ ep).head = some tid)
+    (hTailNe : ¬ ((spliceQueue isReceiveQ ep).tail = some tid))
+    (hNextTcb : st.getTcb? nextTid = some nextTcb) :
+    endpointQueueRemove endpointId isReceiveQ tid st = .ok
+      (withObjects st
+        (((st.objects.insert nextTid.toObjId
+              (.tcb (tcbWithQueueLinks nextTcb none tcb.queuePPrev nextTcb.queueNext))).insert
+            endpointId
+            (.endpoint (spliceEndpoint isReceiveQ ep
+              (IntrusiveQueue.mk (some nextTid) (spliceQueue isReceiveQ ep).tail)))).insert
+          tid.toObjId (.tcb (tcbWithQueueLinks tcb none none none)))) := by
+  have hNextRaw := (SystemState.getTcb?_eq_some_iff st nextTid nextTcb).mp hNextTcb
+  unfold spliceQueue at hHead hTailNe ⊢
+  unfold endpointQueueRemove spliceEndpoint tcbWithQueueLinks withObjects
+  simp only [hEp, hTcb, hPrevNone, hNext, hHead, hNextRaw, if_pos, if_neg hTailNe]
+
+/-- WS-OD OD1.3: the single removal on the **mid-queue, no successor** branch. -/
+theorem endpointQueueRemove_ok_midLast
+    {st : SystemState} {endpointId : SeLe4n.ObjId} {isReceiveQ : Bool}
+    {tid prevTid : SeLe4n.ThreadId} {ep : Endpoint} {tcb prevTcb : TCB}
+    (hEp : st.objects[endpointId]? = some (.endpoint ep))
+    (hTcb : lookupTcb st tid = some tcb)
+    (hPrev : tcb.queuePrev = some prevTid)
+    (hNext : tcb.queueNext = none)
+    (hHeadNe : ¬ ((spliceQueue isReceiveQ ep).head = some tid))
+    (hTail : (spliceQueue isReceiveQ ep).tail = some tid)
+    (hPrevTcb : st.getTcb? prevTid = some prevTcb) :
+    endpointQueueRemove endpointId isReceiveQ tid st = .ok
+      (withObjects st
+        (((st.objects.insert prevTid.toObjId
+              (.tcb (tcbWithQueueLinks prevTcb prevTcb.queuePrev prevTcb.queuePPrev none))).insert
+            endpointId
+            (.endpoint (spliceEndpoint isReceiveQ ep
+              (IntrusiveQueue.mk (spliceQueue isReceiveQ ep).head (some prevTid))))).insert
+          tid.toObjId (.tcb (tcbWithQueueLinks tcb none none none)))) := by
+  have hPrevRaw := (SystemState.getTcb?_eq_some_iff st prevTid prevTcb).mp hPrevTcb
+  unfold spliceQueue at hHeadNe hTail ⊢
+  unfold endpointQueueRemove spliceEndpoint tcbWithQueueLinks withObjects
+  simp only [hEp, hTcb, hPrev, hNext, hTail, hPrevRaw, if_pos, if_neg hHeadNe]
+
+/-- WS-OD OD1.3: the single removal on the **mid-queue, with successor** branch. -/
+theorem endpointQueueRemove_ok_midMore
+    {st : SystemState} {endpointId : SeLe4n.ObjId} {isReceiveQ : Bool}
+    {tid prevTid nextTid : SeLe4n.ThreadId} {ep : Endpoint} {tcb prevTcb nextTcb : TCB}
+    (hObjInv : st.objects.invExt)
+    (hEp : st.objects[endpointId]? = some (.endpoint ep))
+    (hTcb : lookupTcb st tid = some tcb)
+    (hPrev : tcb.queuePrev = some prevTid)
+    (hNext : tcb.queueNext = some nextTid)
+    (hHeadNe : ¬ ((spliceQueue isReceiveQ ep).head = some tid))
+    (hTailNe : ¬ ((spliceQueue isReceiveQ ep).tail = some tid))
+    (hPrevTcb : st.getTcb? prevTid = some prevTcb)
+    (hNextTcb : st.getTcb? nextTid = some nextTcb)
+    (hPN : nextTid.toObjId ≠ prevTid.toObjId) :
+    endpointQueueRemove endpointId isReceiveQ tid st = .ok
+      (withObjects st
+        ((((st.objects.insert prevTid.toObjId
+                (.tcb (tcbWithQueueLinks prevTcb prevTcb.queuePrev prevTcb.queuePPrev
+                  (some nextTid)))).insert
+              nextTid.toObjId
+              (.tcb (tcbWithQueueLinks nextTcb (some prevTid) tcb.queuePPrev
+                nextTcb.queueNext))).insert
+            endpointId
+            (.endpoint (spliceEndpoint isReceiveQ ep
+              (IntrusiveQueue.mk (spliceQueue isReceiveQ ep).head
+                (spliceQueue isReceiveQ ep).tail)))).insert
+          tid.toObjId (.tcb (tcbWithQueueLinks tcb none none none)))) := by
+  have hPrevRaw := (SystemState.getTcb?_eq_some_iff st prevTid prevTcb).mp hPrevTcb
+  have hNextRaw := (SystemState.getTcb?_eq_some_iff st nextTid nextTcb).mp hNextTcb
+  have hLk := objects_insert_lookup hObjInv prevTid.toObjId nextTid.toObjId
+    (.tcb (tcbWithQueueLinks prevTcb prevTcb.queuePrev prevTcb.queuePPrev (some nextTid)))
+  rw [if_neg hPN, hNextRaw] at hLk
+  unfold tcbWithQueueLinks at hLk
+  unfold spliceQueue at hHeadNe hTailNe ⊢
+  unfold endpointQueueRemove spliceEndpoint tcbWithQueueLinks withObjects
+  simp only [hEp, hTcb, hPrev, hNext, hPrevRaw, hLk, if_neg hHeadNe, if_neg hTailNe]
+
+/-- WS-OD OD1.3: a TCB key and an endpoint key are distinct — the store holds
+one object per key and these two are of different kinds. -/
+theorem tcbKey_ne_endpointKey {st : SystemState} {endpointId : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {ep : Endpoint} {tcb : TCB}
+    (hEp : st.objects[endpointId]? = some (.endpoint ep))
+    (hTcb : st.getTcb? tid = some tcb) : tid.toObjId ≠ endpointId := by
+  have hRaw := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
+  intro h; rw [h, hEp] at hRaw; cases hRaw
+
+/-- WS-OD OD1.3: **the queue fact `ipcInvariantFull` does not carry.**
+
+The bundle constrains an endpoint queue only at its boundaries — the head has
+no predecessor, the tail no successor — and carries nothing that connects the
+two.  So it does not entail that a queued thread with no successor *is* the
+tail: a state whose head chain stops before a differently-linked tail satisfies
+every conjunct.
+
+The two removals disagree exactly there.  The dual computes the new tail from
+the removed thread's `queuePPrev` (`none` at the head, the predecessor
+otherwise); the single computes it from `q.tail = some tid`.  On a thread with
+a successor the bundle settles it — a tail has no successor, so it is not this
+thread — and on a thread without one it does not, so the agreement states this
+rather than assuming it, exactly as `splicePredecessorBlocked` is stated for
+the splice's tail conjunct and `sweptThreadQueueCoherent` for the cancellation
+arm. -/
+def spliceRemovedIsTailWhenLast (isReceiveQ : Bool) (endpointId : SeLe4n.ObjId)
+    (st : SystemState) (tid : SeLe4n.ThreadId) : Prop :=
+  ∀ (ep : Endpoint) (tcb : TCB),
+    st.objects[endpointId]? = some (.endpoint ep) →
+    lookupTcb st tid = some tcb →
+    tcb.queueNext = none →
+    (spliceQueue isReceiveQ ep).tail = some tid
+
+/-- WS-OD OD1.3: the converse direction *is* carried by the bundle — a tail has
+no successor, so a thread that has one is not the tail. -/
+theorem spliceTail_ne_of_hasNext {st : SystemState} {endpointId : SeLe4n.ObjId}
+    {isReceiveQ : Bool} {tid nextTid : SeLe4n.ThreadId} {ep : Endpoint} {tcb : TCB}
+    (hWf : dualQueueSystemInvariant st)
+    (hEp : st.objects[endpointId]? = some (.endpoint ep))
+    (hTcb : st.getTcb? tid = some tcb)
+    (hNext : tcb.queueNext = some nextTid) :
+    ¬ ((spliceQueue isReceiveQ ep).tail = some tid) := by
+  have hTcbRaw := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
+  intro hTail
+  have hEpWf := hWf.1 endpointId ep hEp
+  unfold dualQueueEndpointWellFormed at hEpWf
+  rw [hEp] at hEpWf
+  have hQ : intrusiveQueueWellFormed (spliceQueue isReceiveQ ep) st := by
+    unfold spliceQueue
+    cases isReceiveQ with
+    | true => exact hEpWf.2
+    | false => exact hEpWf.1
+  obtain ⟨tl, hTl, hTlNext⟩ := hQ.2.2 tid hTail
+  rw [hTcbRaw] at hTl
+  obtain rfl : tl = tcb := (KernelObject.tcb.inj (Option.some.inj hTl)).symm
+  rw [hNext] at hTlNext
+  cases hTlNext
+
+/-- WS-OD OD1.3: the two removals agree on the **head, no successor** branch. -/
+theorem endpointQueueRemove_agrees_headLast
+    {st stD s1 s2 : SystemState} {endpointId : SeLe4n.ObjId} {isReceiveQ : Bool}
+    {tid : SeLe4n.ThreadId} {ep : Endpoint} {tcb : TCB}
+    (hObjInv : st.objects.invExt)
+    (hEp : st.objects[endpointId]? = some (.endpoint ep))
+    (hTcb : lookupTcb st tid = some tcb)
+    (hPrevNone : tcb.queuePrev = none)
+    (hNext : tcb.queueNext = none)
+    (hHead : (spliceQueue isReceiveQ ep).head = some tid)
+    (hTail : (spliceQueue isReceiveQ ep).tail = some tid)
+    (hStore1 : storeObject endpointId
+      (.endpoint (spliceEndpoint isReceiveQ ep
+        { head := none, tail := (spliceQueue isReceiveQ ep).tail })) st = .ok ((), s1))
+    (hStore2 : storeObject endpointId
+      (.endpoint (spliceEndpoint isReceiveQ ep { head := none, tail := none })) s1
+        = .ok ((), s2))
+    (hClear : storeTcbQueueLinks s2 tid none none none = .ok stD) :
+    ∃ stS, endpointQueueRemove endpointId isReceiveQ tid st = .ok stS ∧
+      objectStoreAgrees stD stS := by
+  have hTcbObj : st.getTcb? tid = some tcb :=
+    (SystemState.getTcb?_eq_some_iff st tid tcb).mpr (lookupTcb_some_objects st tid tcb hTcb)
+  have hNe : tid.toObjId ≠ endpointId := tcbKey_ne_endpointKey hEp hTcbObj
+  have hA1 := storeObject_agrees_insert hStore1
+  have hI1 : s1.objects.invExt :=
+    storeObject_preserves_objects_invExt st s1 endpointId _ hObjInv hStore1
+  have hA2 := storeObject_agrees_insert hStore2
+  have hI2 : s2.objects.invExt :=
+    storeObject_preserves_objects_invExt s1 s2 endpointId _ hI1 hStore2
+  have hTcb1 : lookupTcb s1 tid = some tcb :=
+    lookupTcb_of_getTcb?_eq
+      (by unfold SystemState.getTcb?; rw [hA1 tid.toObjId, objects_insert_lookup hObjInv, if_neg hNe]) hTcb
+  have hTcb2 : lookupTcb s2 tid = some tcb :=
+    lookupTcb_of_getTcb?_eq
+      (by unfold SystemState.getTcb?; rw [hA2 tid.toObjId, objects_insert_lookup hI1, if_neg hNe]) hTcb1
+  have hA3 := storeTcbQueueLinks_agrees_insert hTcb2 hClear
+  refine ⟨_, endpointQueueRemove_ok_headLast hEp hTcb hPrevNone hNext hHead hTail, ?_⟩
+  intro x
+  rw [withObjects_objects, hA3 x, objects_insert_lookup hI2,
+    objects_insert_lookup (objects_insert_invExt hObjInv _ _)]
+  by_cases hx : x = tid.toObjId
+  · rw [if_pos hx, if_pos hx]
+  · rw [if_neg hx, if_neg hx, hA2 x, objects_insert_lookup hI1,
+      objects_insert_lookup hObjInv, hA1 x, objects_insert_lookup hObjInv]
+    by_cases hxe : x = endpointId
+    · rw [if_pos hxe, if_pos hxe]
+    · rw [if_neg hxe, if_neg hxe, if_neg hxe]
+
+/-- WS-OD OD1.3: the two removals agree on the **head, with successor** branch. -/
+theorem endpointQueueRemove_agrees_headMore
+    {st stD s1 s2 s3 : SystemState} {endpointId : SeLe4n.ObjId} {isReceiveQ : Bool}
+    {tid nextTid : SeLe4n.ThreadId} {ep : Endpoint} {tcb nextTcb : TCB}
+    (hObjInv : st.objects.invExt)
+    (hEp : st.objects[endpointId]? = some (.endpoint ep))
+    (hTcb : lookupTcb st tid = some tcb)
+    (hPPrev : tcb.queuePPrev = some .endpointHead)
+    (hPrevNone : tcb.queuePrev = none)
+    (hHead : (spliceQueue isReceiveQ ep).head = some tid)
+    (hNext : tcb.queueNext = some nextTid)
+    (hTailNe : ¬ ((spliceQueue isReceiveQ ep).tail = some tid))
+    (hTN : tid.toObjId ≠ nextTid.toObjId)
+    (hStore1 : storeObject endpointId
+      (.endpoint (spliceEndpoint isReceiveQ ep
+        { head := some nextTid, tail := (spliceQueue isReceiveQ ep).tail })) st = .ok ((), s1))
+    (hNextTcb : lookupTcb s1 nextTid = some nextTcb)
+    (hRelink : storeTcbQueueLinks s1 nextTid none (some .endpointHead) nextTcb.queueNext
+      = .ok s2)
+    (hStore2 : storeObject endpointId
+      (.endpoint (spliceEndpoint isReceiveQ ep
+        { head := some nextTid, tail := (spliceQueue isReceiveQ ep).tail })) s2 = .ok ((), s3))
+    (hClear : storeTcbQueueLinks s3 tid none none none = .ok stD) :
+    ∃ stS, endpointQueueRemove endpointId isReceiveQ tid st = .ok stS ∧
+      objectStoreAgrees stD stS := by
+  have hTcbObj : st.getTcb? tid = some tcb :=
+    (SystemState.getTcb?_eq_some_iff st tid tcb).mpr (lookupTcb_some_objects st tid tcb hTcb)
+  have hNe : tid.toObjId ≠ endpointId := tcbKey_ne_endpointKey hEp hTcbObj
+  have hA1 := storeObject_agrees_insert hStore1
+  have hI1 : s1.objects.invExt :=
+    storeObject_preserves_objects_invExt st s1 endpointId _ hObjInv hStore1
+  have hNextObj1 := lookupTcb_some_objects s1 nextTid nextTcb hNextTcb
+  have hEp1 : s1.objects[endpointId]? = some (.endpoint (spliceEndpoint isReceiveQ ep
+      { head := some nextTid, tail := (spliceQueue isReceiveQ ep).tail })) :=
+    storeObject_objects_eq st s1 endpointId _ hObjInv hStore1
+  have hNeN : nextTid.toObjId ≠ endpointId := by
+    intro h; rw [h, hEp1] at hNextObj1; cases hNextObj1
+  have hNextObj : st.getTcb? nextTid = some nextTcb :=
+    (SystemState.getTcb?_eq_some_iff st nextTid nextTcb).mpr
+      (by rw [← hNextObj1, hA1 nextTid.toObjId, objects_insert_lookup hObjInv, if_neg hNeN])
+  have hA2 := storeTcbQueueLinks_agrees_insert hNextTcb hRelink
+  have hI2 : s2.objects.invExt :=
+    storeTcbQueueLinks_preserves_objects_invExt s1 s2 nextTid _ _ _ hI1 hRelink
+  have hA3 := storeObject_agrees_insert hStore2
+  have hI3 : s3.objects.invExt :=
+    storeObject_preserves_objects_invExt s2 s3 endpointId _ hI2 hStore2
+  have hTcb1 : lookupTcb s1 tid = some tcb :=
+    lookupTcb_of_getTcb?_eq
+      (by unfold SystemState.getTcb?; rw [hA1 tid.toObjId, objects_insert_lookup hObjInv, if_neg hNe]) hTcb
+  have hTcb2 : lookupTcb s2 tid = some tcb :=
+    lookupTcb_of_getTcb?_eq
+      (by unfold SystemState.getTcb?; rw [hA2 tid.toObjId, objects_insert_lookup hI1, if_neg hTN]) hTcb1
+  have hTcb3 : lookupTcb s3 tid = some tcb :=
+    lookupTcb_of_getTcb?_eq
+      (by unfold SystemState.getTcb?; rw [hA3 tid.toObjId, objects_insert_lookup hI2, if_neg hNe]) hTcb2
+  have hA4 := storeTcbQueueLinks_agrees_insert hTcb3 hClear
+  refine ⟨_, endpointQueueRemove_ok_headMore hEp hTcb hPrevNone hNext hHead hTailNe hNextObj, ?_⟩
+  intro x
+  rw [withObjects_objects, hA4 x, objects_insert_lookup hI3,
+    objects_insert_lookup (objects_insert_invExt (objects_insert_invExt hObjInv _ _) _ _)]
+  by_cases hx : x = tid.toObjId
+  · rw [if_pos hx, if_pos hx]
+  · rw [if_neg hx, if_neg hx, hA3 x, objects_insert_lookup hI2,
+      objects_insert_lookup (objects_insert_invExt hObjInv _ _)]
+    by_cases hxe : x = endpointId
+    · rw [if_pos hxe, if_pos hxe]
+    · rw [if_neg hxe, if_neg hxe, hA2 x, objects_insert_lookup hI1,
+        objects_insert_lookup hObjInv]
+      by_cases hxn : x = nextTid.toObjId
+      · rw [if_pos hxn, if_pos hxn, hPPrev]
+      · rw [if_neg hxn, if_neg hxn, hA1 x, objects_insert_lookup hObjInv, if_neg hxe]
+
+/-- WS-OD OD1.3: the two removals agree on the **mid-queue, no successor**
+branch. -/
+theorem endpointQueueRemove_agrees_midLast
+    {st stD s1 s2 : SystemState} {endpointId : SeLe4n.ObjId} {isReceiveQ : Bool}
+    {tid prevTid : SeLe4n.ThreadId} {ep : Endpoint} {tcb prevTcb : TCB}
+    (hObjInv : st.objects.invExt)
+    (hEp : st.objects[endpointId]? = some (.endpoint ep))
+    (hTcb : lookupTcb st tid = some tcb)
+    (hPrev : tcb.queuePrev = some prevTid)
+    (hNext : tcb.queueNext = none)
+    (hHeadNe : ¬ ((spliceQueue isReceiveQ ep).head = some tid))
+    (hTail : (spliceQueue isReceiveQ ep).tail = some tid)
+    (hPrevTcb : lookupTcb st prevTid = some prevTcb)
+    (hTP : tid.toObjId ≠ prevTid.toObjId)
+    (hRelink : storeTcbQueueLinks st prevTid prevTcb.queuePrev prevTcb.queuePPrev none
+      = .ok s1)
+    (hStore : storeObject endpointId
+      (.endpoint (spliceEndpoint isReceiveQ ep
+        { head := (spliceQueue isReceiveQ ep).head, tail := some prevTid })) s1
+        = .ok ((), s2))
+    (hClear : storeTcbQueueLinks s2 tid none none none = .ok stD) :
+    ∃ stS, endpointQueueRemove endpointId isReceiveQ tid st = .ok stS ∧
+      objectStoreAgrees stD stS := by
+  have hTcbObj : st.getTcb? tid = some tcb :=
+    (SystemState.getTcb?_eq_some_iff st tid tcb).mpr (lookupTcb_some_objects st tid tcb hTcb)
+  have hPrevObj : st.getTcb? prevTid = some prevTcb :=
+    (SystemState.getTcb?_eq_some_iff st prevTid prevTcb).mpr
+      (lookupTcb_some_objects st prevTid prevTcb hPrevTcb)
+  have hNe : tid.toObjId ≠ endpointId := tcbKey_ne_endpointKey hEp hTcbObj
+  have hNeP : prevTid.toObjId ≠ endpointId := tcbKey_ne_endpointKey hEp hPrevObj
+  have hA1 := storeTcbQueueLinks_agrees_insert hPrevTcb hRelink
+  have hI1 : s1.objects.invExt :=
+    storeTcbQueueLinks_preserves_objects_invExt st s1 prevTid _ _ _ hObjInv hRelink
+  have hA2 := storeObject_agrees_insert hStore
+  have hI2 : s2.objects.invExt :=
+    storeObject_preserves_objects_invExt s1 s2 endpointId _ hI1 hStore
+  have hTcb1 : lookupTcb s1 tid = some tcb :=
+    lookupTcb_of_getTcb?_eq
+      (by unfold SystemState.getTcb?; rw [hA1 tid.toObjId, objects_insert_lookup hObjInv, if_neg hTP]) hTcb
+  have hTcb2 : lookupTcb s2 tid = some tcb :=
+    lookupTcb_of_getTcb?_eq
+      (by unfold SystemState.getTcb?; rw [hA2 tid.toObjId, objects_insert_lookup hI1, if_neg hNe]) hTcb1
+  have hA3 := storeTcbQueueLinks_agrees_insert hTcb2 hClear
+  refine ⟨_, endpointQueueRemove_ok_midLast hEp hTcb hPrev hNext hHeadNe hTail hPrevObj, ?_⟩
+  intro x
+  rw [withObjects_objects, hA3 x, objects_insert_lookup hI2,
+    objects_insert_lookup (objects_insert_invExt (objects_insert_invExt hObjInv _ _) _ _)]
+  by_cases hx : x = tid.toObjId
+  · rw [if_pos hx, if_pos hx]
+  · rw [if_neg hx, if_neg hx, hA2 x, objects_insert_lookup hI1,
+      objects_insert_lookup (objects_insert_invExt hObjInv _ _)]
+    by_cases hxe : x = endpointId
+    · rw [if_pos hxe, if_pos hxe]
+    · rw [if_neg hxe, if_neg hxe, hA1 x, objects_insert_lookup hObjInv]
+
+/-- WS-OD OD1.3: the two removals agree on the **mid-queue, with successor**
+branch. -/
+theorem endpointQueueRemove_agrees_midMore
+    {st stD s1 s2 s3 : SystemState} {endpointId : SeLe4n.ObjId} {isReceiveQ : Bool}
+    {tid prevTid nextTid : SeLe4n.ThreadId} {ep : Endpoint} {tcb prevTcb nextTcb : TCB}
+    (hObjInv : st.objects.invExt)
+    (hEp : st.objects[endpointId]? = some (.endpoint ep))
+    (hTcb : lookupTcb st tid = some tcb)
+    (hPPrev : tcb.queuePPrev = some (.tcbNext prevTid))
+    (hPrev : tcb.queuePrev = some prevTid)
+    (hNext : tcb.queueNext = some nextTid)
+    (hHeadNe : ¬ ((spliceQueue isReceiveQ ep).head = some tid))
+    (hTailNe : ¬ ((spliceQueue isReceiveQ ep).tail = some tid))
+    (hPrevTcb : lookupTcb st prevTid = some prevTcb)
+    (hTP : tid.toObjId ≠ prevTid.toObjId)
+    (hTN : tid.toObjId ≠ nextTid.toObjId)
+    (hPN : nextTid.toObjId ≠ prevTid.toObjId)
+    (hRelinkPrev : storeTcbQueueLinks st prevTid prevTcb.queuePrev prevTcb.queuePPrev
+      (some nextTid) = .ok s1)
+    (hNextTcb : lookupTcb s1 nextTid = some nextTcb)
+    (hRelinkNext : storeTcbQueueLinks s1 nextTid (some prevTid) (some (.tcbNext prevTid))
+      nextTcb.queueNext = .ok s2)
+    (hStore : storeObject endpointId
+      (.endpoint (spliceEndpoint isReceiveQ ep
+        { head := (spliceQueue isReceiveQ ep).head,
+          tail := (spliceQueue isReceiveQ ep).tail })) s2 = .ok ((), s3))
+    (hClear : storeTcbQueueLinks s3 tid none none none = .ok stD) :
+    ∃ stS, endpointQueueRemove endpointId isReceiveQ tid st = .ok stS ∧
+      objectStoreAgrees stD stS := by
+  have hTcbObj : st.getTcb? tid = some tcb :=
+    (SystemState.getTcb?_eq_some_iff st tid tcb).mpr (lookupTcb_some_objects st tid tcb hTcb)
+  have hPrevObj : st.getTcb? prevTid = some prevTcb :=
+    (SystemState.getTcb?_eq_some_iff st prevTid prevTcb).mpr
+      (lookupTcb_some_objects st prevTid prevTcb hPrevTcb)
+  have hNe : tid.toObjId ≠ endpointId := tcbKey_ne_endpointKey hEp hTcbObj
+  have hA1 := storeTcbQueueLinks_agrees_insert hPrevTcb hRelinkPrev
+  have hI1 : s1.objects.invExt :=
+    storeTcbQueueLinks_preserves_objects_invExt st s1 prevTid _ _ _ hObjInv hRelinkPrev
+  have hNextObj1 := lookupTcb_some_objects s1 nextTid nextTcb hNextTcb
+  have hNextObj : st.getTcb? nextTid = some nextTcb :=
+    (SystemState.getTcb?_eq_some_iff st nextTid nextTcb).mpr
+      (by rw [← hNextObj1, hA1 nextTid.toObjId, objects_insert_lookup hObjInv, if_neg hPN])
+  have hNeN : nextTid.toObjId ≠ endpointId := tcbKey_ne_endpointKey hEp hNextObj
+  have hA2 := storeTcbQueueLinks_agrees_insert hNextTcb hRelinkNext
+  have hI2 : s2.objects.invExt :=
+    storeTcbQueueLinks_preserves_objects_invExt s1 s2 nextTid _ _ _ hI1 hRelinkNext
+  have hA3 := storeObject_agrees_insert hStore
+  have hI3 : s3.objects.invExt :=
+    storeObject_preserves_objects_invExt s2 s3 endpointId _ hI2 hStore
+  have hTcb1 : lookupTcb s1 tid = some tcb :=
+    lookupTcb_of_getTcb?_eq
+      (by unfold SystemState.getTcb?; rw [hA1 tid.toObjId, objects_insert_lookup hObjInv, if_neg hTP]) hTcb
+  have hTcb2 : lookupTcb s2 tid = some tcb :=
+    lookupTcb_of_getTcb?_eq
+      (by unfold SystemState.getTcb?; rw [hA2 tid.toObjId, objects_insert_lookup hI1, if_neg hTN]) hTcb1
+  have hTcb3 : lookupTcb s3 tid = some tcb :=
+    lookupTcb_of_getTcb?_eq
+      (by unfold SystemState.getTcb?; rw [hA3 tid.toObjId, objects_insert_lookup hI2, if_neg hNe]) hTcb2
+  have hA4 := storeTcbQueueLinks_agrees_insert hTcb3 hClear
+  refine ⟨_, endpointQueueRemove_ok_midMore hObjInv hEp hTcb hPrev hNext hHeadNe hTailNe
+    hPrevObj hNextObj hPN, ?_⟩
+  intro x
+  rw [withObjects_objects, hA4 x, objects_insert_lookup hI3,
+    objects_insert_lookup (objects_insert_invExt (objects_insert_invExt
+      (objects_insert_invExt hObjInv _ _) _ _) _ _)]
+  by_cases hx : x = tid.toObjId
+  · rw [if_pos hx, if_pos hx]
+  · rw [if_neg hx, if_neg hx, hA3 x, objects_insert_lookup hI2,
+      objects_insert_lookup (objects_insert_invExt (objects_insert_invExt hObjInv _ _) _ _)]
+    by_cases hxe : x = endpointId
+    · rw [if_pos hxe, if_pos hxe]
+    · rw [if_neg hxe, if_neg hxe, hA2 x, objects_insert_lookup hI1,
+        objects_insert_lookup (objects_insert_invExt hObjInv _ _)]
+      by_cases hxn : x = nextTid.toObjId
+      · rw [if_pos hxn, if_pos hxn, hPPrev]
+      · rw [if_neg hxn, if_neg hxn, hA1 x, objects_insert_lookup hObjInv]
+
+/-- WS-OD OD1.3: a thread is not its own successor, so their store keys differ. -/
+theorem queueKey_ne_next {st : SystemState} {endpointId : SeLe4n.ObjId}
+    {tid nextTid : SeLe4n.ThreadId} {ep : Endpoint} {tcb : TCB}
+    (hNoDup : endpointQueueNoDup st)
+    (hEp : st.objects[endpointId]? = some (.endpoint ep))
+    (hTcbObj : st.getTcb? tid = some tcb)
+    (hNext : tcb.queueNext = some nextTid) : tid.toObjId ≠ nextTid.toObjId := by
+  have hRaw := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcbObj
+  intro h
+  obtain rfl : tid = nextTid := SeLe4n.ThreadId.toObjId_injective tid nextTid h
+  exact (hNoDup endpointId ep hEp).1 tid tcb hRaw hNext
+
+/-- WS-OD OD1.3: a thread is not its own predecessor either — the predecessor's
+forward link would then be a self-loop. -/
+theorem queueKey_ne_prev {st : SystemState} {endpointId : SeLe4n.ObjId}
+    {tid prevTid : SeLe4n.ThreadId} {ep : Endpoint} {prevTcb : TCB}
+    (hNoDup : endpointQueueNoDup st)
+    (hEp : st.objects[endpointId]? = some (.endpoint ep))
+    (hPrevObj : st.getTcb? prevTid = some prevTcb)
+    (hPrevNext : prevTcb.queueNext = some tid) : tid.toObjId ≠ prevTid.toObjId := by
+  have hRaw := (SystemState.getTcb?_eq_some_iff st prevTid prevTcb).mp hPrevObj
+  intro h
+  obtain rfl : tid = prevTid := SeLe4n.ThreadId.toObjId_injective tid prevTid h
+  exact (hNoDup endpointId ep hEp).1 tid prevTcb hRaw hPrevNext
+
+/-- WS-OD OD1.3: the removed thread's neighbours are distinct — otherwise the
+two links close a two-step cycle, which `tcbQueueChainAcyclic` forbids. -/
+theorem queueKey_next_ne_prev {st : SystemState}
+    {tid prevTid nextTid : SeLe4n.ThreadId} {tcb prevTcb : TCB}
+    (hAcyc : tcbQueueChainAcyclic st)
+    (hTcbObj : st.getTcb? tid = some tcb)
+    (hPrevObj : st.getTcb? prevTid = some prevTcb)
+    (hNext : tcb.queueNext = some nextTid)
+    (hPrevNext : prevTcb.queueNext = some tid) : nextTid.toObjId ≠ prevTid.toObjId := by
+  have hTcbRaw := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcbObj
+  have hPrevRaw := (SystemState.getTcb?_eq_some_iff st prevTid prevTcb).mp hPrevObj
+  intro h
+  obtain rfl : nextTid = prevTid := SeLe4n.ThreadId.toObjId_injective nextTid prevTid h
+  exact hAcyc tid (.cons tid nextTid tid tcb hTcbRaw hNext
+    (.single nextTid tid prevTcb hPrevRaw hPrevNext))
+
+/-- **WS-OD OD1.3 — the two endpoint-queue removals agree.**
+
+OD1.1 made `endpointQueueRemove` write the successor's `queuePPrev`, and its
+comment claimed the two removals "now write the same fields to the same
+values".  This is that claim as a theorem: wherever the dual removal succeeds,
+the single one succeeds too and the two post-states hold the same object at
+every key.
+
+They are not *equal* states — the dual also maintains `objectIndex`,
+`objectIndexSet`, `lifecycle` and `asidTable`, and in the two head branches it
+writes the endpoint twice, which a Robin Hood table records in its probe
+displacement.  Pointwise agreement is what every conjunct of `ipcInvariantFull`
+can observe, and it is what §17's bundle frames consume.
+
+Two pre-state facts beyond the dual's own success are needed, and both are
+stated rather than assumed: `hObjInv` (the store's extensional invariant, which
+every caller at this layer already carries) and
+`spliceRemovedIsTailWhenLast` (the queue connectivity the bundle does not
+entail — see its docstring). -/
+theorem endpointQueueRemove_agrees_with_dual
+    {st stD : SystemState} {endpointId : SeLe4n.ObjId}
+    {isReceiveQ : Bool} {tid : SeLe4n.ThreadId}
+    (hObjInv : st.objects.invExt)
+    (hInv : ipcInvariantFull st)
+    (hTailLast : spliceRemovedIsTailWhenLast isReceiveQ endpointId st tid)
+    (hDual : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), stD)) :
+    ∃ stS, endpointQueueRemove endpointId isReceiveQ tid st = .ok stS ∧
+      objectStoreAgrees stD stS := by
+  cases endpointQueueRemoveDual_shape st stD endpointId isReceiveQ tid hDual with
+  | headLast ep tcb s1 s2 hEp hTcb _hPPrev hPrevNone hHead _hTailSome hNext
+      hStore1 hStore2 hClear =>
+    exact endpointQueueRemove_agrees_headLast hObjInv hEp hTcb hPrevNone hNext hHead
+      (hTailLast ep tcb hEp hTcb hNext) hStore1 hStore2 hClear
+  | headMore ep tcb nextTcb nextTid s1 s2 s3 hEp hTcb hPPrev hPrevNone hHead _hTailSome
+      hNext hStore1 hNextTcb hRelink hStore2 hClear =>
+    have hTcbObj : st.getTcb? tid = some tcb :=
+      (SystemState.getTcb?_eq_some_iff st tid tcb).mpr (lookupTcb_some_objects st tid tcb hTcb)
+    exact endpointQueueRemove_agrees_headMore hObjInv hEp hTcb hPPrev hPrevNone hHead hNext
+      (spliceTail_ne_of_hasNext hInv.dualQueueSystemInvariant hEp hTcbObj hNext)
+      (queueKey_ne_next hInv.endpointQueueNoDup hEp hTcbObj hNext)
+      hStore1 hNextTcb hRelink hStore2 hClear
+  | midLast ep tcb prevTcb prevTid s1 s2 hEp hTcb _hPPrev hPrev hHeadNe _hHeadSome
+      _hTailSome hNext hPrevTcb hPrevNext hRelink hStore hClear =>
+    have hPrevObj : st.getTcb? prevTid = some prevTcb :=
+      (SystemState.getTcb?_eq_some_iff st prevTid prevTcb).mpr
+        (lookupTcb_some_objects st prevTid prevTcb hPrevTcb)
+    exact endpointQueueRemove_agrees_midLast hObjInv hEp hTcb hPrev hNext hHeadNe
+      (hTailLast ep tcb hEp hTcb hNext) hPrevTcb
+      (queueKey_ne_prev hInv.endpointQueueNoDup hEp hPrevObj hPrevNext)
+      hRelink hStore hClear
+  | midMore ep tcb prevTcb nextTcb prevTid nextTid s1 s2 s3 hEp hTcb hPPrev hPrev hHeadNe
+      _hHeadSome _hTailSome hNext hPrevTcb hPrevNext hRelinkPrev hNextTcb hRelinkNext
+      hStore hClear =>
+    have hTcbObj : st.getTcb? tid = some tcb :=
+      (SystemState.getTcb?_eq_some_iff st tid tcb).mpr (lookupTcb_some_objects st tid tcb hTcb)
+    have hPrevObj : st.getTcb? prevTid = some prevTcb :=
+      (SystemState.getTcb?_eq_some_iff st prevTid prevTcb).mpr
+        (lookupTcb_some_objects st prevTid prevTcb hPrevTcb)
+    exact endpointQueueRemove_agrees_midMore hObjInv hEp hTcb hPPrev hPrev hNext hHeadNe
+      (spliceTail_ne_of_hasNext hInv.dualQueueSystemInvariant hEp hTcbObj hNext)
+      hPrevTcb
+      (queueKey_ne_prev hInv.endpointQueueNoDup hEp hPrevObj hPrevNext)
+      (queueKey_ne_next hInv.endpointQueueNoDup hEp hTcbObj hNext)
+      (queueKey_next_ne_prev hInv.dualQueueSystemInvariant.2.2 hTcbObj hPrevObj hNext
+        hPrevNext)
+      hRelinkPrev hNextTcb hRelinkNext hStore hClear
+
+/-- WS-OD OD1.3: the dual removal's guards hold here.
+
+The single removal succeeds on states the dual refuses — it validates nothing —
+so its carriage is conditional on the dual being *enabled*.  Stating the
+condition as the dual's own success is the honest form: it is exactly the
+conjunction of guards the dual checks (a `queuePPrev` that agrees with
+`queuePrev`, a non-empty queue, a predecessor whose forward link names this
+thread, a resolvable successor), and it is what the caller establishes when it
+knows the thread is properly queued. -/
+def dualRemovalEnabled (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (st : SystemState) : Prop :=
+  ∃ stD, endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), stD)
+
+/-- **WS-OD OD1.3 — the single removal carries the twenty-conjunct bundle.**
+
+`endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership` (§14) is
+the dual's capstone; this is the same statement about the removal
+`timeoutThread` — and, from OD1.4, the cancellation reclaim — actually calls.
+It is a *transfer* rather than a second twenty-conjunct proof: the two removals
+agree pointwise on the object store, both leave the scheduler alone, and every
+conjunct reads exactly those two.
+
+The membership conjunct is relaxed at the removed thread for the same reason it
+is for the dual — the splice does not touch that thread's `ipcState`, and the
+abort's TCB rewrite is the step that restores it. -/
+theorem endpointQueueRemove_establishes_ipcInvariantFullExceptMembership
+    {st stS : SystemState} {endpointId : SeLe4n.ObjId} {isReceiveQ : Bool}
+    {tid : SeLe4n.ThreadId}
+    (hObjInv : st.objects.invExt)
+    (hInv : ipcInvariantFull st)
+    (hEnabled : dualRemovalEnabled endpointId isReceiveQ tid st)
+    (hTailLast : spliceRemovedIsTailWhenLast isReceiveQ endpointId st tid)
+    (hPred : splicePredecessorBlocked isReceiveQ endpointId st tid)
+    (hStep : endpointQueueRemove endpointId isReceiveQ tid st = .ok stS) :
+    ipcInvariantFullExceptMembership stS tid := by
+  obtain ⟨stD, hDual⟩ := hEnabled
+  obtain ⟨stS', hStep', hAgree⟩ :=
+    endpointQueueRemove_agrees_with_dual hObjInv hInv hTailLast hDual
+  have hEq : stS' = stS := by rw [hStep'] at hStep; exact Except.ok.inj hStep
+  rw [hEq] at hAgree
+  have hSched : stS.scheduler = stD.scheduler := by
+    rw [endpointQueueRemove_scheduler_eq endpointId isReceiveQ tid st stS hStep,
+      endpointQueueRemoveDual_scheduler_eq st stD endpointId isReceiveQ tid hDual]
+  exact ipcInvariantFullExceptMembership_of_storeAgrees_of_scheduler_eq hAgree hSched
+    (endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership st stD endpointId
+      isReceiveQ tid hObjInv hDual hInv hPred)
+
 end SeLe4n.Kernel

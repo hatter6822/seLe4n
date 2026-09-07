@@ -1,3 +1,72 @@
+## v0.34.102 — WS-OD OD1.3: the two endpoint-queue removals agree, checkably
+
+OD1.1 made `endpointQueueRemove` write the successor's `queuePPrev` and left a
+comment claiming the two removals "now write the same fields to the same
+values".  A comment decides nothing.  This cut makes it a theorem —
+`endpointQueueRemove_agrees_with_dual` — and that theorem is what carries
+`endpointQueueRemoveDual`'s twenty-conjunct surface onto the removal
+`timeoutThread`, and from OD1.4 the cancellation reclaim, actually calls.
+
+**Agreement is pointwise, and that is not a weakening.**  The object store is a
+Robin Hood hash table whose *value* records the probe displacement its insertion
+order produced, so two runs that write the same objects to the same keys in a
+different order are not equal tables — and in the two head branches the dual
+writes the endpoint twice while the single writes it once.  Literal store
+equality is therefore unavailable *and* unnecessary: every conjunct of
+`ipcInvariantFull` reads the store through `getElem?` and nothing else.  A Tier-3
+negative refuses the literal-equality spelling of the conclusion, because that
+form would read as a stronger checked claim than anything provable here.
+
+**Four things new code must respect.**
+
+**(1) The bundle frame names the scheduler, and its name says so.**
+Nineteen conjuncts read the store alone; `passiveServerIdle` also reads the boot
+core's run queue and current slot, so `ipcInvariantFull_of_storeAgrees_of_scheduler_eq`
+takes both relations.  A store-only bundle frame would be unsound for any
+scheduler-writing step, and a Tier-3 negative refuses the shorter name.
+
+**(2) The queue connectivity the bundle does not carry is stated.**
+`ipcInvariantFull` constrains an endpoint queue only at its boundaries and says
+nothing that connects the two, so it does not entail that a queued thread with
+no successor *is* the tail — and that is exactly where the two removals compute
+the new tail differently (the dual from `queuePPrev`, the single from
+`q.tail = some tid`).  `spliceRemovedIsTailWhenLast` states it, in the same
+shape as `splicePredecessorBlocked` and `sweptThreadQueueCoherent`.  The
+converse direction is *derived*, not assumed: a tail has no successor, so a
+thread that has one is not the tail (`spliceTail_ne_of_hasNext`).
+
+**(3) The single removal's carriage is conditional on the dual being enabled.**
+The single validates nothing and succeeds on states the dual refuses, so
+`dualRemovalEnabled` — the dual's own success — is the honest form of the guard
+conjunction, and `endpointQueueRemove_establishes_ipcInvariantFullExceptMembership`
+takes it.  The membership conjunct stays relaxed at the removed thread for the
+same reason it is for the dual: the splice does not touch that thread's
+`ipcState`.
+
+**(4) The `_of_storeAgrees` family is one family.**  `objectStoreAgrees` is the
+pointwise notion, with a frame for each of the twenty conjuncts.  Four of the
+pre-existing `_of_objects_eq` frames already took the pointwise hypothesis under
+the equality name and ten took the equality; a `_of_storeAgrees` wrapper now
+exists for all twenty, so a caller need not know which was which.
+
+**(5) The new surface reads threads through the typed accessor.**  Every
+hypothesis about a thread's slot is `st.getTcb? tid = some tcb` and the raw
+`st.objects[tid.toObjId]?` form appears only where the *store* is the subject —
+the insert-chain lookups.  That is what the AK7 cascade ratchet asks for, and it
+is why `RAW_LOOKUP_TID` is unchanged at 1581 across a cut this size while
+`GETTCB_ADOPTION` rises by 68.  The first draft had it the other way round and
+the ratchet caught it; re-anchoring the baseline would have been the wrong
+answer, since nothing here needs the raw form for its own sake.
+
+The bundle family grows to **167** statements (`endpointQueueRemove_establishes_…`
+is the new member), and the Tier-0 de-threading gate held the three prose sites
+to the new count rather than letting the old one stand — the enforcement RR7.28
+added, doing its job on the first cut that moved the number.
+
+No transition changed.  The trace fixture is byte-identical.
+
+Refs: docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md §5 (OD1.3)
+
 ## v0.34.101 — WS-OD OD1.2: the timeout's object-only prefix, factored out
 
 `timeoutThread` does two different kinds of thing in one body: it splices a
