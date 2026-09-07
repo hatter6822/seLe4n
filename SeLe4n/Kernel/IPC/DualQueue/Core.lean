@@ -678,13 +678,30 @@ def endpointQueueRemove
           | some (.tcb prevTcb) =>
             objs.insert prevTid.toObjId (.tcb { prevTcb with queueNext := tcb.queueNext })
           | _ => objs
-      -- Step 2: Patch successor's queuePrev to skip tid
+      -- Step 2: Patch successor's queuePrev **and queuePPrev** to skip tid.
+      -- WS-OD OD1.1: `queuePPrev` was omitted here, and that stranded the
+      -- successor.  `endpointQueueRemoveDual` -- the removal every other kernel
+      -- path uses -- gives the successor the removed thread's own `queuePPrev`
+      -- and *requires* the field to agree with `queuePrev` (`pprevConsistent`,
+      -- else `.illegalState`).  Leaving it naming `tid` meant that after a
+      -- timeout the thread behind the timed-out one failed every later
+      -- dual-queue removal -- a cancellation, a rendezvous pop, a
+      -- `.tcbSuspend` -- and could never leave the endpoint queue.  No
+      -- `ipcInvariantFull` conjunct reads `queuePPrev`, so nothing caught it.
+      --
+      -- `tcb.queuePPrev` is the right value in both cases by construction: a
+      -- removed head carries `.endpointHead`, which the successor inherits as
+      -- the new head, and a removed interior node carries `.tcbNext prev`,
+      -- which is exactly the back-pointer the successor's new `queuePrev`
+      -- names.  The two removals now write the same fields to the same values.
       let objs := match tcb.queueNext with
         | none => objs  -- tid is tail; no successor to patch
         | some nextTid =>
           match objs[nextTid.toObjId]? with
           | some (.tcb nextTcb) =>
-            objs.insert nextTid.toObjId (.tcb { nextTcb with queuePrev := tcb.queuePrev })
+            objs.insert nextTid.toObjId
+              (.tcb { nextTcb with queuePrev := tcb.queuePrev,
+                                   queuePPrev := tcb.queuePPrev })
           | _ => objs
       -- Step 3: Update endpoint head/tail pointers
       let q' : IntrusiveQueue := {

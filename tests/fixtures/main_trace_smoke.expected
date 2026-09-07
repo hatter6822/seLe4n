@@ -187,6 +187,7 @@
 [SCO-019] schedContextYieldTo no-bound-thread: rq_still_empty=true
 [SCO-019a] schedContextYieldTo self-guard (AK6-D): remaining=150 isActive=true
 [SCO-020] endpointQueueRemove head: newHead=tid2:true newTail=tid2:true
+[SCO-020a] successor pprev inherited=true dual_dequeue_ok=true
 [SCO-021] endpointQueueRemove not-found: SeLe4n.Model.KernelError.objectNotFound
 [SCO-022] endpointQueueRemove no-endpoint: SeLe4n.Model.KernelError.objectNotFound
 [SCO-023] timeoutThread blocked: ready=true threadReady=true budgetCleared=true errCode=true linksCleared=true

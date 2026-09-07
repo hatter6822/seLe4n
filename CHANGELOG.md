@@ -1,3 +1,54 @@
+## v0.34.100 — WS-OD OD1.1: a timed-out thread no longer strands its queue successor
+
+The tree has **two** endpoint-queue removals, and they disagreed about one field.
+
+`endpointQueueRemoveDual` — which every kernel path but one uses — gives the
+removed thread's successor that thread's own `queuePPrev`, and *requires* the
+field to agree with `queuePrev` (`pprevConsistent`, else `.illegalState`).
+`endpointQueueRemove`, whose only kernel-side caller is `timeoutThread`, patched
+the successor's `queuePrev` and left its `queuePPrev` naming the removed thread.
+
+So after the timer tick timed out a budget-exhausted thread blocked on an
+endpoint, the thread behind it carried a back-pointer that disagreed with its
+forward one, and **every later dual-queue removal on it failed** — a
+cancellation, a rendezvous pop, a `.tcbSuspend`.  It could never leave the queue.
+The head case failed too, by the guard's other conjunct.  Severity Medium:
+availability, not memory safety, and not exploitable while nothing boots.
+
+**Nothing caught it.**  `queuePPrev` is read by **zero** `ipcInvariantFull`
+conjuncts, and the Prop-level `intrusiveQueueWellFormed` constrains only head,
+tail, `queuePrev` and `queueNext` — the Boolean checker in
+`SeLe4n/Testing/InvariantChecks.lean` does check the field, and the invariant it
+mirrors does not.  That gap is why this shipped and why the fix is witnessed by
+an executed check rather than by a theorem.
+
+**The fix makes the two agree rather than collapsing them.**  The removal now
+gives the successor `tcb.queuePPrev`, which is the right value in both cases by
+construction: a removed head carries `.endpointHead`, which the successor
+inherits as the new head, and a removed interior node carries `.tcbNext prev`,
+which is exactly the back-pointer the successor's new `queuePrev` names.
+
+Collapsing to one removal was the first instinct and is deliberately **not** what
+landed.  Moving `timeoutThread` onto the dual removal would import its
+`pprevConsistent` precondition, which no invariant states, and would falsify the
+existing argument that the timeout's error branch is dead under valid state.
+That the tree still has two removals answering one question is registered, with
+its own closure target, rather than absorbed.
+
+**Evidence.**  `[SCO-020a]` in the trace harness reports `inherited=true
+dual_dequeue_ok=true`; on the pre-fix code — the successor patch still present,
+one field missing, which is the token-preserving mutation the gate rule asks for
+rather than a deletion — it reports `false`/`false`.  The golden trace changed by
+exactly that one added line, so the correction is observably confined to the
+field it names.  A Tier-3 positive pins both fields in one record update and a
+negative refuses the stranding form.
+
+One staged proof moved with it: `tsAgree_next_step` quotes the successor insert
+literally, so the statement had to gain the field.  Its proof did not — it turns
+on `timeSlice`, which a record update naming neither field preserves by `rfl`.
+
+Refs: docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md
+
 ## v0.34.99 — the version stamp three GitBook chapters carry is not a version site
 
 `v0.34.98` left `docs/gitbook/01-project-overview.md`,

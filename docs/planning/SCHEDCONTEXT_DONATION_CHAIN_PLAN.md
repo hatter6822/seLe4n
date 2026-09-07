@@ -6,7 +6,7 @@
 > **Predecessor findings**: the two Medium-severity model/specification gaps
 > recorded in [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) §A, reported while
 > proving the WS-RR RR7.22 residual at `v0.34.97` and `v0.34.98`.
-> **Sub-task count**: 39 across 6 phases (OD1..OD6), each phase numbered in the
+> **Sub-task count**: 40 across 6 phases (OD1..OD6), each phase numbered in the
 > order it is to be implemented
 
 ## 1. Phase goal
@@ -226,7 +226,7 @@ measurement.
 |-------|------------------|------|-----|
 | OD1 | The reclaim's `passiveServerIdle` hole — a live `v0.34.97` defect, independent of the reply stack | 6 | L |
 | OD2 | Inert structure: `SchedContext.scReply`, `Reply.wellFormed`, the chain predicate and its frames | 7 | M |
-| OD3 | The pop, generalised and behaviourally inert — signature, head validation, pre-state resolver | 7 | XL |
+| OD3 | The pop, generalised and behaviourally inert — signature, head validation, pre-state resolver, and the footprint split its growth needs | 8 | XL |
 | OD4 | The push — `applyCallDonation` accepts a `.donated` caller; the chain goes live | 7 | XL |
 | OD5 | Chain-aware teardown and reply reuse — cancellation, retype, `.replyRecv`, freshening | 6 | L |
 | OD6 | Payoff, footprint census, tests, documentation, closure | 6 | M |
@@ -245,12 +245,12 @@ precondition for every later lock-set change.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| OD1.1 | Split the cancellation footprint's summed `Option` arguments into **arm-selected** footprints, chosen by the victim's `ipcState`.  The arms are mutually exclusive, but the bound census measures at full arity, so the summed form is already eight of nine before a single member is added | `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean`, `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` | L |
-| OD1.2 | `abortPendingIpcOnEndpoint` — the timeout's object-only prefix: the endpoint-queue removal plus the timeout TCB rewrite, with **no** run-queue write, so the reclaim stays an objects-only, total step | `SeLe4n/Kernel/IPC/Operations/Timeout.lean` | M |
-| OD1.3 | Twenty-conjunct carriage for OD1.2, and the defect that settles how.  The tree has **two** endpoint-queue removals: `endpointQueueRemoveDual`, which every path but one uses, patches the successor's `queuePPrev` and *requires* it to agree with `queuePrev`; `endpointQueueRemove`, whose only kernel-side caller is `timeoutThread`, patches `queuePrev` and leaves `queuePPrev` naming the removed thread.  So a timeout strands its successor: every later dual-queue removal on that thread fails `pprevConsistent` with `.illegalState` and it can never leave the queue.  No conjunct reads `queuePPrev`, so nothing catches it.  `timeoutThread` therefore **moves onto the dual-queue removal** — the consolidation the one-question-one-answer rule asks for, which also gives OD1.2 its carriage for free — and the abort and the timeout end up removing with the same function | `SeLe4n/Kernel/IPC/Operations/Timeout.lean`, `SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean`, `SeLe4n/Kernel/IPC/DualQueue/Core.lean` | L |
-| OD1.4 | Wire OD1.2 into `returnDonationToCancelledCaller` when the holder is `.blockedOnSend` / `.blockedOnCall`, preserving totality and the objects-only frame the cross-core results consume.  **The abort runs before the return**, for the reason `v0.34.97` put the return before the restore: with the return first the intermediate state has the holder `.unbound` while still blocked on a call, which is the very violation being closed; with the abort first every intermediate state satisfies the conjunct, since a `.donated` holder is outside `passiveServerIdle`'s reach.  The donation is resolved once, before either step, and the resolution survives the abort because the abort writes no binding | `SeLe4n/Kernel/Lifecycle/Suspend.lean` | M |
-| OD1.5 | `cancelIpcBlocking_preserves_passiveServerIdle` — the theorem that does not exist — with footprint membership for the holder's endpoint and the size bound at full arity over OD1.1's arms | `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean`, `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` | L |
-| OD1.6 | The two exact-text Tier-3 anchors updated for the rewritten arm, a negative for the pre-OD1 shape, a cancellation-suite case, the family-size figure, version and CHANGELOG | `scripts/test_tier3_invariant_surface.sh`, `tests/SmpCancellationSuite.lean`, `CLAUDE.md`, `AGENTS.md`, `docs/spec/SELE4N_SPEC.md` | M |
+| OD1.1 | **The live stranding defect.**  The tree has two endpoint-queue removals.  `endpointQueueRemoveDual`, which every other path uses, gives the successor the removed thread's own `queuePPrev` and *requires* that field to agree with `queuePrev`; `endpointQueueRemove`, whose only kernel-side caller is `timeoutThread`, patches `queuePrev` and leaves `queuePPrev` naming the removed thread — so a timeout strands its successor, which no later dual-queue removal can dequeue, and no conjunct reads the field so nothing catches it.  The fix is to make the two **agree**: `endpointQueueRemove` gives the successor `tcb.queuePPrev`, which is the right value in both the head case (`.endpointHead` is inherited) and the mid-queue case.  Moving the timeout onto the dual removal instead would import its `pprevConsistent` precondition, which **no invariant states** — the Boolean checker in `Testing/InvariantChecks.lean` checks it and the Prop-level `intrusiveQueueWellFormed` does not — and would falsify the existing argument that the timeout's error branch is dead.  Collapsing to one removal therefore waits on that invariant and is registered as debt rather than absorbed here | `SeLe4n/Kernel/IPC/DualQueue/Core.lean`, `docs/REGISTERED_DEBT.md` | M |
+| OD1.2 | `abortPendingIpcOnEndpoint` — the timeout's object-only prefix: the same removal the timeout uses, now correct after OD1.1, plus the timeout TCB rewrite, with **no** run-queue write, total rather than `Except`-returning at the composite level | `SeLe4n/Kernel/IPC/Operations/Timeout.lean` | M |
+| OD1.3 | Twenty-conjunct carriage for OD1.2.  The splice engine is stated over the dual removal, so this row builds the single removal's carriage on the same shape — the four conditional inserts are the same writes in a different order, which is what OD1.1 made true | `SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean` | L |
+| OD1.4 | Wire OD1.2 into `returnDonationToCancelledCaller` when the holder is `.blockedOnSend` / `.blockedOnCall`, preserving totality and the objects-only frame four cross-core results consume.  **The abort runs before the return**, for the reason `v0.34.97` put the return before the restore: with the return first the intermediate state has the holder `.unbound` while still blocked on a call, which is the very violation being closed; with the abort first every intermediate state satisfies the conjunct, since a `.donated` holder is outside `passiveServerIdle`'s reach.  The donation is resolved once, before either step, and the resolution survives the abort because the abort writes no binding | `SeLe4n/Kernel/Lifecycle/Suspend.lean` | M |
+| OD1.5 | `cancelIpcBlocking_preserves_passiveServerIdle` — the theorem that does not exist — with footprint membership for the holder's endpoint and the size bound.  At full arity the cancellation footprint is eight of nine, so the ninth member fits; the headroom for OD3's further growth is bought there, not here | `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean`, `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` | L |
+| OD1.6 | The two exact-text Tier-3 anchors updated for the rewritten arm, a negative for the pre-OD1 shape and one for the single-queue removal, suite cases for the stranding defect and the abort, the family-size figure, version and CHANGELOG | `scripts/test_tier3_invariant_surface.sh`, `tests/SmpCancellationSuite.lean`, `tests/SmpIpcSuite.lean`, `CLAUDE.md`, `AGENTS.md`, `docs/spec/SELE4N_SPEC.md` | M |
 
 **Acceptance**: `passiveServerIdle` is preserved by `cancelIpcBlocking` on every
 arm, machine-checked, with no footprint exceeding `maxLockSetSize`.
@@ -282,8 +282,9 @@ because nothing writes `prev`.
 | OD3.3 | `returnDonatedSchedContext_eq_legacy_of_none` — at `newOwner? = none` the new definition **is** the old one.  This is the row that makes the phase inert and leaves OD4 as the only behaviour change | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` | S |
 | OD3.4 | `replyStackOuterCaller?` — the pre-state resolver and its correctness lemma, required because the reply leg consumes the target's link before the donation return runs (§3.3), on the same discipline as the two resolvers already beside it | `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean` | M |
 | OD3.5 | Thread `newOwner?` through all six call sites, each resolving from its own pre-state.  Consumes OD3.4 | `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean`, `SeLe4n/Kernel/IPC/Operations/Endpoint.lean`, `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean`, `SeLe4n/Kernel/Lifecycle/Suspend.lean`, `SeLe4n/Kernel/API.lean` | XL |
-| OD3.6 | Footprints: the reply, replyRecv and cancellation-reply-arm sets gain the previous reply's **read**; re-prove the bound at full arity on each.  If any exceeds the ceiling, stop and escalate — raising it widens the published covert-channel bound | `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean`, `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean`, `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` | L |
-| OD3.7 | Chain preservation for the pop; the projection result re-derived through the added store; the two Tier-3 name anchors; the family-size figure; version | `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean`, `scripts/test_tier3_invariant_surface.sh`, `CLAUDE.md`, `AGENTS.md`, `docs/spec/SELE4N_SPEC.md` | L |
+| OD3.6 | **The arm-selected cancellation footprint.**  Split the summed `Option` arguments into footprints chosen by the victim's `ipcState`: the arms are mutually exclusive, but the bound census measures at full arity, so the summed form reaches nine before the next row adds a member.  Every later footprint change consumes this one | `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean`, `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` | L |
+| OD3.7 | Footprints: the reply, replyRecv and cancellation-reply-arm sets gain the previous reply's **read**; re-prove the bound at full arity on each.  If any exceeds the ceiling, stop and escalate — raising it widens the published covert-channel bound | `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean`, `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean`, `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` | L |
+| OD3.8 | Chain preservation for the pop; the projection result re-derived through the added store; the two Tier-3 name anchors; the family-size figure; version | `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean`, `scripts/test_tier3_invariant_surface.sh`, `CLAUDE.md`, `AGENTS.md`, `docs/spec/SELE4N_SPEC.md` | L |
 
 **Acceptance**: every call site passes `none`, and OD3.3 witnesses that the tree's
 behaviour is bit-identical to pre-OD3.
@@ -321,11 +322,35 @@ invariant hold across it.
 | OD6.1 | The defect's own closure theorem: a passive server reached at call depth ≥ 2 holds a SchedContext whose bound thread is itself.  The statement the workstream exists to make true, not merely the preservation of what was already true | `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` | L |
 | OD6.2 | Re-run the footprint bound census over every touched set; record the worst case, and if the ceiling moved, the recomputed covert-channel headline | `SeLe4n/Testing/LockFootprintBoundCensus.lean`, `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` | M |
 | OD6.3 | Tests: depth-2 donation and depth-2 reply; middle-caller and outer-caller cancellation; reply-reuse-after-cancel as a **negative** that keeps the link and breaks the relation rather than deleting it; the new footprints | `tests/SmpIpcSuite.lean`, `tests/SmpCancellationSuite.lean`, `tests/LockSetSuite.lean`, `tests/SuspendResumeSuite.lean` | L |
-| OD6.4 | Trace harness: a depth-2 donation scenario and a cancel-at-depth-2 scenario, registered and re-baselined with rationale | `SeLe4n/Testing/MainTraceHarness.lean`, `tests/fixtures/scenario_registry.yaml`, `tests/fixtures/main_trace_smoke.expected` | M |
+| OD6.4 | Trace harness: a depth-2 donation scenario and a cancel-at-depth-2 scenario, registered and re-baselined with rationale.  **Regenerate the fixture's `.sha256` companion in the same step** — every `.expected` has one, the Tier-2 drift check compares against it, and no other tier does, so a fixture updated without its hash passes Tier 0, Tier 1 and Tier 3 and fails only the full suite | `SeLe4n/Testing/MainTraceHarness.lean`, `tests/fixtures/scenario_registry.yaml`, `tests/fixtures/main_trace_smoke.expected` | M |
 | OD6.5 | Documentation: the specification's donation section, the GitBook chapters carrying the conjunct count, the claim-evidence index, the two register rows closed with their versions, the codebase map regenerated | `docs/spec/SELE4N_SPEC.md`, `docs/gitbook/`, `docs/CLAIM_EVIDENCE_INDEX.md`, `docs/REGISTERED_DEBT.md`, `docs/codebase_map.json` | M |
 | OD6.6 | Full-gate run and closure audit: the tier scripts, the de-threading report, the workstream-plan gate, the registry row, version | `scripts/`, `CHANGELOG.md`, `lakefile.toml` | S |
 
-## 6. Acceptance gate
+## 6. What every cut in this workstream must run, in order
+
+Learned the expensive way on OD1.1, where three separate runs each caught a
+different derived artefact the previous one had not reached.  Assembling
+individual tiers is **not** a substitute for the whole suite: each of these is
+checked by exactly one gate, and a cut that skips the step passes every other
+tier.
+
+1. Build each touched module (`lake build <Module.Path>`), then the default
+   target **and** `SeLe4n.Platform.Staged` — a staged proof that quotes an
+   operation's store chain literally breaks without appearing in the default
+   build.
+2. If the trace output changed: regenerate `tests/fixtures/main_trace_smoke.expected`
+   **and its `.sha256` companion**.  Only the Tier-2 drift check compares the
+   hash; Tier 0, Tier 1 and Tier 3 all pass without it.
+3. If **any** `.lean` source changed: regenerate `docs/codebase_map.json`, then
+   `./scripts/sync_readme_from_codebase_map.sh`, then
+   `./scripts/sync_translated_metrics.py`.  The map feeds the README and spec
+   metrics, which feed the eleven translated READMEs and the GitBook chapters;
+   only `test_docs_sync.sh` compares them, and it runs after the tiers.
+4. `./scripts/bump_version.sh <x.y.z>` and the `CHANGELOG.md` entry.
+5. `./scripts/test_full.sh` **to completion**, and read the suite's own exit
+   line rather than a wrapper's.
+
+## 7. Acceptance gate
 
 The workstream closes when **all nine** hold and each is checkable:
 
@@ -362,7 +387,7 @@ The workstream closes when **all nine** hold and each is checkable:
    in the canonical index resolves; both register rows are closed with a version
    rather than a note.
 
-## 7. Registration
+## 8. Registration
 
 * This plan is named from `README.md`, `CLAUDE.md` and `AGENTS.md`, the canonical
   index every plan must appear in.  It is not website-linked, so
@@ -374,7 +399,7 @@ The workstream closes when **all nine** hold and each is checkable:
 * Every cut bumps the patch version through `./scripts/bump_version.sh` with a
   matching `CHANGELOG.md` entry.
 
-## 8. Two things this plan deliberately does not fix
+## 9. Two things this plan deliberately does not fix
 
 * **Priority authority through a donation.**  `getCurrentPriority` and
   `updatePrioritySource` treat `.bound` and `.donated` identically, so writing a

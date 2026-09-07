@@ -905,6 +905,17 @@ run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_notificationArm_preserve
 # neither a "not blocked on reply" nor an "off every endpoint boundary" premise.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull(.|\n)*hNotReply" SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean'
 run_check "INVARIANT" rg -n '^theorem purgedAndRestored_victim_off_endpoint_boundaries' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
+# WS-OD OD1.1: the two endpoint-queue removals agree on `queuePPrev`.  The dual
+# removal gives the successor the removed thread's own back-pointer and refuses
+# a queue where that field disagrees with `queuePrev`; the single removal used to
+# patch `queuePrev` alone, so a timeout stranded its successor — it failed every
+# later dual-queue removal and could never leave the queue.  A *relation*, not a
+# presence: both fields must be written, in the same record update.
+run_check "INVARIANT" bash -lc 'rg -U -n "nextTid\.toObjId\s*\n?\s*\(\.tcb \{ nextTcb with queuePrev := tcb\.queuePrev,\s*\n?\s*queuePPrev := tcb\.queuePPrev \}\)" SeLe4n/Kernel/IPC/DualQueue/Core.lean'
+# NEGATIVE: the stranding form — the successor patch naming `queuePrev` alone —
+# must not come back.  Mutating by *removing* the whole patch would be caught by
+# the positive above; this keeps the patch and breaks the relation.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "\.tcb \{ nextTcb with queuePrev := tcb\.queuePrev \}" SeLe4n/Kernel/IPC/DualQueue/Core.lean'
 # WS-RR RR7.22 (residual, remediation): the cancelled caller's donated
 # SchedContext goes back — seL4-MCS's `reply_remove` — with the fact that makes
 # the return well defined stated rather than assumed.

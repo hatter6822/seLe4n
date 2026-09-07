@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="सुरक्षा" /></a>
-  <img src="https://img.shields.io/badge/version-0.34.99-blue" alt="संस्करण" />
+  <img src="https://img.shields.io/badge/version-0.34.100-blue" alt="संस्करण" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="लाइसेंस" /></a>
 </p>
@@ -70,9 +70,9 @@ Lean प्रकार-परीक्षक द्वारा मशीन-�
 
 | विशेषता | मान |
 |----------|------|
-| **संस्करण** | `0.34.99` |
+| **संस्करण** | `0.34.100` |
 | **Lean टूलचेन** | `v4.28.0` |
-| **उत्पादन Lean LoC** | 326 फ़ाइलों में 348,102 |
+| **उत्पादन Lean LoC** | 326 फ़ाइलों में 348,145 |
 | **परीक्षण Lean LoC** | 70 परीक्षण सुइट्स में 71,289 |
 | **प्रमाणित घोषणाएँ** | 11,607 प्रमेय/लेम्मा घोषणाएँ (शून्य sorry/axiom) |
 | **लक्ष्य हार्डवेयर** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |

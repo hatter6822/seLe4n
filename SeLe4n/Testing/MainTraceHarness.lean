@@ -2557,6 +2557,25 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
       IO.println s!"[SCO-020] endpointQueueRemove head: newHead=tid2:{newHead} newTail=tid2:{newTail}"
     | _ => IO.println s!"[SCO-020] endpointQueueRemove head: endpoint not found"
 
+  -- SCO-020a (WS-OD OD1.1): the removal hands the successor the removed
+  -- thread's own `queuePPrev`, and the successor can still be dequeued by the
+  -- **dual** removal afterwards.  Before OD1.1 it could not: the single removal
+  -- patched `queuePrev` alone, so tid2 kept `queuePPrev = .tcbNext tid1` while
+  -- becoming the head, `pprevConsistent` failed, and every later dual-queue
+  -- removal on it returned `.illegalState` — the thread was stranded in the
+  -- queue for the life of the system.  No `ipcInvariantFull` conjunct reads
+  -- `queuePPrev`, so only an executed check sees this.
+  match SeLe4n.Kernel.endpointQueueRemove epId false tid1 stQ with
+  | .error _ => IO.println s!"[SCO-020a] successor pprev: removal failed"
+  | .ok stRm =>
+    let succPPrev := match stRm.objects[tid2.toObjId]? with
+      | some (.tcb t) => t.queuePPrev == some QueuePPrev.endpointHead
+      | _ => false
+    let succDequeues := match SeLe4n.Kernel.endpointQueueRemoveDual epId false tid2 stRm with
+      | .ok _ => true
+      | .error _ => false
+    IO.println s!"[SCO-020a] successor pprev inherited={succPPrev} dual_dequeue_ok={succDequeues}"
+
   -- SCO-021: endpointQueueRemove — thread not found error
   let badTid : SeLe4n.ThreadId := ⟨9999⟩
   match SeLe4n.Kernel.endpointQueueRemove epId false badTid stQ with

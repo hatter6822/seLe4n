@@ -3332,8 +3332,13 @@ private theorem tsAgree_peel_ep_tid {base T : RobinHood.RHTable SeLe4n.ObjId Ker
     (RobinHood.RHTable.insert_preserves_invExt _ _ _ hI) hbase hv
 
 /-- Thread `tsAgree` through `endpointQueueRemove`'s conditional successor-patch
-insert (`queueNext`): the inserted `{nextTcb with queuePrev := …}` preserves
-`timeSlice`, and the base agreement is supplied by `ha1` at `nextTid`. -/
+insert (`queueNext`): the inserted `{nextTcb with queuePrev := …, queuePPrev := …}`
+preserves `timeSlice`, and the base agreement is supplied by `ha1` at `nextTid`.
+
+WS-OD OD1.1: the insert gained `queuePPrev`, which the removal had been leaving
+stale on the successor.  This statement quotes the record update literally, so it
+had to move with it — the proof did not, because it turns on `timeSlice` alone
+and a record update that names neither field preserves it by `rfl`. -/
 private theorem tsAgree_next_step (st : SystemState) (tcb : TCB)
     (objs1 : RobinHood.RHTable SeLe4n.ObjId KernelObject)
     (ha1 : tsAgree st.objects objs1) (hi1 : objs1.invExt) :
@@ -3341,7 +3346,9 @@ private theorem tsAgree_next_step (st : SystemState) (tcb : TCB)
       | none => objs1
       | some nextTid => match objs1[nextTid.toObjId]? with
         | some (.tcb nextTcb) =>
-          objs1.insert nextTid.toObjId (.tcb { nextTcb with queuePrev := tcb.queuePrev })
+          objs1.insert nextTid.toObjId
+            (.tcb { nextTcb with queuePrev := tcb.queuePrev,
+                                 queuePPrev := tcb.queuePPrev })
         | _ => objs1) := by
   cases tcb.queueNext with
   | none => simpa only [] using ha1
