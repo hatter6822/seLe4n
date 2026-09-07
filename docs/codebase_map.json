@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/rr7-medium-severity-sweep-tn327q",
-      "commit_sha": "6a8e5ab1404e41049458633691bd77e6d9b24ca1",
-      "tree_sha": "b5ac87b186bf650c6c5d9cf18ef9abbe47605af3",
-      "committed_at_utc": "2026-09-06T23:11:54+00:00"
+      "commit_sha": "e63915d2911cc82349ff915ecd2a22d5b004882e",
+      "tree_sha": "08e362e3bd1e867fe329d1be72935d337427681b",
+      "committed_at_utc": "2026-09-06T23:49:51+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "d4a996d2a198d0cec74414d299baf2bb16732a8a235c6ad10286ad68b6ceb334"
+    "source_digest": "e9397ccf9305533529e5c745199249d98273964b333088312d7c78fd2dbaf21b"
   },
   "summary": {
-    "module_count": 393,
-    "declaration_count": 19741
+    "module_count": 394,
+    "declaration_count": 19789
   },
   "readme_sync": {
-    "version": "0.34.93",
+    "version": "0.34.94",
     "lean_toolchain": "v4.28.0",
-    "production_files": 323,
-    "production_loc": 343801,
+    "production_files": 324,
+    "production_loc": 344934,
     "test_files": 70,
-    "test_loc": 71095,
-    "proved_theorem_lemma_decls": 11449,
+    "test_loc": 71128,
+    "proved_theorem_lemma_decls": 11490,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -154189,6 +154189,459 @@
       ]
     },
     {
+      "module": "SeLe4n.Kernel.Lifecycle.Invariant.CancellationQueueShape",
+      "path": "SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean",
+      "declaration_count": 24,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 45,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "queueBoundaryCoherentAt",
+          "line": 60,
+          "called": [
+            "IntrusiveQueue",
+            "TCB",
+            "ThreadId",
+            "head",
+            "none",
+            "tail"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sweptThreadBoundaryCoherent",
+          "line": 66,
+          "called": [
+            "Endpoint",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "epId",
+            "lookupTcb",
+            "queueBoundaryCoherentAt",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "queueBoundaryCoherentAt_of_off_boundary",
+          "line": 74,
+          "called": [
+            "IntrusiveQueue",
+            "TCB",
+            "ThreadId",
+            "head",
+            "queueBoundaryCoherentAt",
+            "tail"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "sweptQueue_wellFormed",
+          "line": 104,
+          "called": [
+            "IntrusiveQueue",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "head",
+            "intrusiveQueueWellFormed",
+            "invExt",
+            "lookupTcb",
+            "lookupTcb_of_objects_of_not_reserved",
+            "lookupTcb_some_not_reserved",
+            "lookupTcb_some_objects",
+            "none",
+            "queueBoundaryCoherentAt",
+            "removeFromAllEndpointQueues",
+            "removeFromAllEndpointQueues_tcb_frame",
+            "removeThreadFromQueue",
+            "removeThreadFromQueue_tcb_present",
+            "spliceOutMidQueueNode",
+            "spliceOutMidQueueNode_next_queuePrev",
+            "spliceOutMidQueueNode_preserves_objects_invExt",
+            "spliceOutMidQueueNode_prev_queueNext",
+            "spliceOutMidQueueNode_queueNext_frame",
+            "spliceOutMidQueueNode_queuePrev_frame",
+            "spliceOutMidQueueNode_victim_tcb",
+            "st",
+            "symm",
+            "tail",
+            "tcbQueueChainAcyclic",
+            "tcbQueueLinkIntegrity",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "restoredTcb",
+          "line": 216,
+          "called": [
+            "SyscallReturnFrame",
+            "TCB",
+            "none",
+            "withReturnFrame"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "restoreToReadyStaging_eq",
+          "line": 228,
+          "called": [
+            "SyscallReturnFrame",
+            "SystemState",
+            "ThreadId",
+            "getTcb",
+            "insert",
+            "none",
+            "restoreToReadyStaging",
+            "restoredTcb",
+            "st",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "restoredTcb_eq",
+          "line": 241,
+          "called": [
+            "SyscallReturnFrame",
+            "TCB",
+            "none",
+            "restoredTcb"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "restoredTcb_ipcState",
+          "line": 252,
+          "called": [
+            "SyscallReturnFrame",
+            "TCB",
+            "restoredTcb"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "restoredTcb_queuePrev",
+          "line": 257,
+          "called": [
+            "SyscallReturnFrame",
+            "TCB",
+            "none",
+            "restoredTcb"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "restoredTcb_queueNext",
+          "line": 262,
+          "called": [
+            "SyscallReturnFrame",
+            "TCB",
+            "none",
+            "restoredTcb"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "restoredTcb_queuePPrev",
+          "line": 267,
+          "called": [
+            "SyscallReturnFrame",
+            "TCB",
+            "none",
+            "restoredTcb"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "restoredTcb_pendingReceiveReply",
+          "line": 272,
+          "called": [
+            "SyscallReturnFrame",
+            "TCB",
+            "none",
+            "restoredTcb"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "restoreToReadyStaging_objects_self",
+          "line": 277,
+          "called": [
+            "RHTable.getElem",
+            "SyscallReturnFrame",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "getTcb",
+            "invExt",
+            "restoreToReadyStaging",
+            "restoreToReadyStaging_eq",
+            "restoredTcb",
+            "st",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "restoreToReadyStaging_objects_ne",
+          "line": 285,
+          "called": [
+            "ObjId",
+            "RHTable.getElem",
+            "SyscallReturnFrame",
+            "SystemState",
+            "ThreadId",
+            "get",
+            "getTcb",
+            "insert",
+            "invExt",
+            "none",
+            "restoreToReadyStaging",
+            "restoreToReadyStaging_eq",
+            "restoredTcb",
+            "st",
+            "symm",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sweptAndRestored",
+          "line": 309,
+          "called": [
+            "SyscallReturnFrame",
+            "SystemState",
+            "ThreadId",
+            "removeFromAllEndpointQueues",
+            "restoreToReadyStaging",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "sweptAndRestored_tcb_iff",
+          "line": 315,
+          "called": [
+            "ObjId",
+            "SyscallReturnFrame",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "invExt",
+            "removeFromAllEndpointQueues",
+            "removeFromAllEndpointQueues_preserves_objects_invExt",
+            "removeFromAllEndpointQueues_tcb_frame",
+            "removeFromAllEndpointQueues_tcb_source",
+            "restoreToReadyStaging_objects_ne",
+            "spliceOutMidQueueNode",
+            "spliceOutMidQueueNode_preserves_objects_invExt",
+            "st",
+            "sweptAndRestored",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "sweptAndRestored_victim_tcb",
+          "line": 331,
+          "called": [
+            "SyscallReturnFrame",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "getTcb",
+            "invExt",
+            "lookupTcb",
+            "removeFromAllEndpointQueues",
+            "removeFromAllEndpointQueues_preserves_objects_invExt",
+            "removeFromAllEndpointQueues_tcb_frame",
+            "restoreToReadyStaging_objects_self",
+            "restoredTcb",
+            "spliceOutMidQueueNode",
+            "spliceOutMidQueueNode_preserves_objects_invExt",
+            "spliceOutMidQueueNode_victim_tcb",
+            "st",
+            "sweptAndRestored",
+            "tcbQueueChainAcyclic",
+            "tcbQueueLinkIntegrity",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "sweptAndRestored_tcbQueueLinkIntegrity",
+          "line": 364,
+          "called": [
+            "SyscallReturnFrame",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "ThreadId.toObjId_injective",
+            "invExt",
+            "lookupTcb",
+            "lookupTcb_some_objects",
+            "restoredTcb",
+            "restoredTcb_queueNext",
+            "restoredTcb_queuePrev",
+            "spliceOutMidQueueNode",
+            "spliceOutMidQueueNode_next_queuePrev",
+            "spliceOutMidQueueNode_prev_queueNext",
+            "spliceOutMidQueueNode_queueNext_frame",
+            "spliceOutMidQueueNode_queuePrev_frame",
+            "spliceOutMidQueueNode_tcb_backward",
+            "st",
+            "sweptAndRestored",
+            "sweptAndRestored_tcb_iff",
+            "sweptAndRestored_victim_tcb",
+            "symm",
+            "tA",
+            "tB",
+            "tcbQueueChainAcyclic",
+            "tcbQueueLinkIntegrity",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "sweptAndRestored_edge_source",
+          "line": 507,
+          "called": [
+            "SyscallReturnFrame",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "ThreadId.toObjId_injective",
+            "invExt",
+            "lookupTcb",
+            "lookupTcb_some_objects",
+            "restoredTcb",
+            "restoredTcb_queueNext",
+            "spliceOutMidQueueNode",
+            "spliceOutMidQueueNode_prev_queueNext",
+            "spliceOutMidQueueNode_queueNext_frame",
+            "spliceOutMidQueueNode_tcb_backward",
+            "st",
+            "sweptAndRestored",
+            "sweptAndRestored_tcb_iff",
+            "sweptAndRestored_victim_tcb",
+            "symm",
+            "tcbQueueChainAcyclic",
+            "tcbQueueLinkIntegrity",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "sweptAndRestored_path_transport",
+          "line": 552,
+          "called": [
+            "QueueNextPath",
+            "SyscallReturnFrame",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "cons",
+            "invExt",
+            "lookupTcb",
+            "lookupTcb_some_objects",
+            "st",
+            "sweptAndRestored",
+            "sweptAndRestored_edge_source",
+            "tA",
+            "tcbQueueChainAcyclic",
+            "tcbQueueLinkIntegrity",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "sweptAndRestored_tcbQueueChainAcyclic",
+          "line": 573,
+          "called": [
+            "SyscallReturnFrame",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "invExt",
+            "lookupTcb",
+            "st",
+            "sweptAndRestored",
+            "sweptAndRestored_path_transport",
+            "tcbQueueChainAcyclic",
+            "tcbQueueLinkIntegrity"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "intrusiveQueueWellFormed_transfer_off_boundary",
+          "line": 587,
+          "called": [
+            "IntrusiveQueue",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "ThreadId.toObjId_injective",
+            "head",
+            "intrusiveQueueWellFormed",
+            "tail",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "sweptAndRestored_dualQueueSystemInvariant",
+          "line": 616,
+          "called": [
+            "Kernel",
+            "ObjId",
+            "SyscallReturnFrame",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "dualQueueEndpointWellFormed",
+            "dualQueueSystemInvariant",
+            "epId",
+            "intrusiveQueueWellFormed_transfer_off_boundary",
+            "invExt",
+            "lookupTcb",
+            "lookupTcb_of_objects_of_not_reserved",
+            "lookupTcb_some_not_reserved",
+            "lookupTcb_some_objects",
+            "removeFromAllEndpointQueues",
+            "removeFromAllEndpointQueues_endpoint_source",
+            "removeFromAllEndpointQueues_endpoint_value",
+            "removeFromAllEndpointQueues_off_boundary",
+            "removeFromAllEndpointQueues_preserves_objects_invExt",
+            "restoreToReadyStaging_objects_ne",
+            "spliceOutMidQueueNode",
+            "spliceOutMidQueueNode_nonTcb",
+            "spliceOutMidQueueNode_preserves_objects_invExt",
+            "spliceOutMidQueueNode_victim_tcb",
+            "st",
+            "sweptAndRestored",
+            "sweptAndRestored_tcbQueueChainAcyclic",
+            "sweptAndRestored_tcbQueueLinkIntegrity",
+            "sweptAndRestored_victim_tcb",
+            "sweptQueue_wellFormed",
+            "sweptThreadBoundaryCoherent",
+            "symm",
+            "tA",
+            "toObjId"
+          ]
+        }
+      ]
+    },
+    {
       "module": "SeLe4n.Kernel.Lifecycle.Invariant.SuspendPreservation",
       "path": "SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean",
       "declaration_count": 72,
@@ -156092,7 +156545,7 @@
     {
       "module": "SeLe4n.Kernel.Lifecycle.Operations.CleanupPreservation",
       "path": "SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean",
-      "declaration_count": 71,
+      "declaration_count": 95,
       "declarations": [
         {
           "kind": "namespace",
@@ -157059,8 +157512,329 @@
         },
         {
           "kind": "def",
+          "name": "tcbQueueLinkRewrite",
+          "line": 1514,
+          "called": [
+            "TCB"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "tcbQueueLinkRewrite.refl",
+          "line": 1517,
+          "called": [
+            "TCB",
+            "tcbQueueLinkRewrite"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "tcbQueueLinkRewrite.trans",
+          "line": 1520,
+          "called": [
+            "TCB",
+            "tcbQueueLinkRewrite"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "queueNeighbourPatch",
+          "line": 1530,
+          "called": [
+            "KernelObject",
+            "ObjId",
+            "RHTable",
+            "TCB",
+            "ThreadId",
+            "insert",
+            "none",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "spliceOutMidQueueNode_eq_patches",
+          "line": 1544,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "lookupTcb",
+            "none",
+            "queueNeighbourPatch",
+            "spliceOutMidQueueNode",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "queueNeighbourPatch_invExt",
+          "line": 1554,
+          "called": [
+            "KernelObject",
+            "ObjId",
+            "RHTable",
+            "RHTable.insert_preserves_invExt",
+            "TCB",
+            "ThreadId",
+            "invExt",
+            "queueNeighbourPatch"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "queueNeighbourPatch_nonTcb",
+          "line": 1566,
+          "called": [
+            "KernelObject",
+            "ObjId",
+            "RHTable",
+            "RHTable.getElem",
+            "TCB",
+            "ThreadId",
+            "get",
+            "insert",
+            "invExt",
+            "queueNeighbourPatch",
+            "symm",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "queueNeighbourPatch_backward",
+          "line": 1602,
+          "called": [
+            "KernelObject",
+            "ObjId",
+            "RHTable",
+            "RHTable.getElem",
+            "TCB",
+            "ThreadId",
+            "get",
+            "insert",
+            "invExt",
+            "queueNeighbourPatch",
+            "tcbQueueLinkRewrite",
+            "tcbQueueLinkRewrite.refl",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "spliceOutMidQueueNode_tcb_backward",
+          "line": 1635,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "invExt",
+            "queueNeighbourPatch_backward",
+            "queueNeighbourPatch_invExt",
+            "spliceOutMidQueueNode",
+            "spliceOutMidQueueNode_eq_patches",
+            "st",
+            "tcbQueueLinkRewrite",
+            "tcbQueueLinkRewrite.refl",
+            "trans"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "spliceOutMidQueueNode_nonTcb",
+          "line": 1653,
+          "called": [
+            "KernelObject",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "invExt",
+            "queueNeighbourPatch_invExt",
+            "queueNeighbourPatch_nonTcb",
+            "spliceOutMidQueueNode",
+            "spliceOutMidQueueNode_eq_patches",
+            "st",
+            "trans"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "queueNeighbourPatch_at_self",
+          "line": 1670,
+          "called": [
+            "KernelObject",
+            "ObjId",
+            "RHTable",
+            "RHTable.getElem",
+            "TCB",
+            "ThreadId",
+            "invExt",
+            "queueNeighbourPatch",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "queueNeighbourPatch_at_other",
+          "line": 1679,
+          "called": [
+            "KernelObject",
+            "ObjId",
+            "RHTable",
+            "RHTable.getElem",
+            "TCB",
+            "ThreadId",
+            "get",
+            "insert",
+            "invExt",
+            "queueNeighbourPatch",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "spliceOutMidQueueNode_victim_tcb",
+          "line": 1697,
+          "called": [
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "ThreadId.toObjId_injective",
+            "invExt",
+            "lookupTcb",
+            "lookupTcb_some_objects",
+            "queueNeighbourPatch_at_other",
+            "queueNeighbourPatch_invExt",
+            "spliceOutMidQueueNode",
+            "spliceOutMidQueueNode_eq_patches",
+            "st",
+            "symm",
+            "tA",
+            "tcbQueueChainAcyclic",
+            "tcbQueueLinkIntegrity",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "queueNeighbourPatch_at_self'",
+          "line": 1724,
+          "called": [
+            "KernelObject",
+            "ObjId",
+            "RHTable",
+            "TCB",
+            "ThreadId",
+            "invExt",
+            "queueNeighbourPatch",
+            "queueNeighbourPatch_at_self",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "queueNeighbourPatch_tcb_forward",
+          "line": 1731,
+          "called": [
+            "KernelObject",
+            "ObjId",
+            "RHTable",
+            "TCB",
+            "ThreadId",
+            "invExt",
+            "none",
+            "queueNeighbourPatch",
+            "queueNeighbourPatch_at_other",
+            "queueNeighbourPatch_at_self",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "spliceOutMidQueueNode_next_queuePrev",
+          "line": 1752,
+          "called": [
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "invExt",
+            "lookupTcb",
+            "nextTid",
+            "queueNeighbourPatch_at_self'",
+            "queueNeighbourPatch_invExt",
+            "queueNeighbourPatch_tcb_forward",
+            "spliceOutMidQueueNode",
+            "spliceOutMidQueueNode_eq_patches",
+            "st",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "spliceOutMidQueueNode_prev_queueNext",
+          "line": 1769,
+          "called": [
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "invExt",
+            "lookupTcb",
+            "prevTid",
+            "queueNeighbourPatch",
+            "queueNeighbourPatch_at_self'",
+            "queueNeighbourPatch_invExt",
+            "queueNeighbourPatch_tcb_forward",
+            "spliceOutMidQueueNode",
+            "spliceOutMidQueueNode_eq_patches",
+            "st",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "spliceOutMidQueueNode_queuePrev_frame",
+          "line": 1791,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "invExt",
+            "lookupTcb",
+            "queueNeighbourPatch_at_other",
+            "queueNeighbourPatch_invExt",
+            "queueNeighbourPatch_tcb_forward",
+            "spliceOutMidQueueNode",
+            "spliceOutMidQueueNode_eq_patches",
+            "st",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "spliceOutMidQueueNode_queueNext_frame",
+          "line": 1809,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "invExt",
+            "lookupTcb",
+            "queueNeighbourPatch",
+            "queueNeighbourPatch_at_other",
+            "queueNeighbourPatch_invExt",
+            "queueNeighbourPatch_tcb_forward",
+            "spliceOutMidQueueNode",
+            "spliceOutMidQueueNode_eq_patches",
+            "st",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "endpointSweepBody",
-          "line": 1515,
+          "line": 1836,
           "called": [
             "Endpoint",
             "KernelObject",
@@ -157076,7 +157850,7 @@
         {
           "kind": "theorem",
           "name": "removeFromAllEndpointQueues_eq_fold",
-          "line": 1534,
+          "line": 1855,
           "called": [
             "SystemState",
             "ThreadId",
@@ -157090,7 +157864,7 @@
         {
           "kind": "def",
           "name": "threadOffQueueBoundaries",
-          "line": 1545,
+          "line": 1866,
           "called": [
             "Endpoint",
             "ThreadId",
@@ -157100,8 +157874,21 @@
         },
         {
           "kind": "theorem",
+          "name": "removeThreadFromQueue_id_of_off_boundary",
+          "line": 1873,
+          "called": [
+            "IntrusiveQueue",
+            "SystemState",
+            "ThreadId",
+            "head",
+            "removeThreadFromQueue",
+            "tail"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "removeThreadFromQueue_off_boundary",
-          "line": 1557,
+          "line": 1887,
           "called": [
             "IntrusiveQueue",
             "SystemState",
@@ -157115,15 +157902,13 @@
         },
         {
           "kind": "theorem",
-          "name": "removeFromAllEndpointQueues_off_boundary",
-          "line": 1595,
+          "name": "removeFromAllEndpointQueues_endpoint_value",
+          "line": 1913,
           "called": [
             "Endpoint",
-            "Kernel",
             "ObjId",
             "RHTable.fold_pointwise",
-            "RHTable.get_after_insert_eq",
-            "RHTable.get_after_insert_ne",
+            "RHTable.getElem",
             "RHTable.insert_preserves_invExt",
             "SystemState",
             "ThreadId",
@@ -157131,15 +157916,100 @@
             "get",
             "insert",
             "invExt",
-            "lookupTcb",
             "removeFromAllEndpointQueues",
             "removeFromAllEndpointQueues_eq_fold",
             "removeThreadFromQueue",
-            "removeThreadFromQueue_off_boundary",
+            "removeThreadFromQueue_id_of_off_boundary",
             "spliceOutMidQueueNode",
             "st",
             "symm",
+            "trans"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "removeFromAllEndpointQueues_off_boundary",
+          "line": 2006,
+          "called": [
+            "Endpoint",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "invExt",
+            "lookupTcb",
+            "removeFromAllEndpointQueues",
+            "removeFromAllEndpointQueues_endpoint_value",
+            "removeThreadFromQueue_off_boundary",
+            "spliceOutMidQueueNode",
+            "st",
             "threadOffQueueBoundaries"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "removeFromAllEndpointQueues_tcb_frame",
+          "line": 2030,
+          "called": [
+            "ObjId",
+            "RHTable.fold_preserves_of_lookup",
+            "RHTable.getElem",
+            "RHTable.insert_preserves_invExt",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "endpointSweepBody",
+            "get",
+            "insert",
+            "invExt",
+            "removeFromAllEndpointQueues",
+            "removeFromAllEndpointQueues_eq_fold",
+            "spliceOutMidQueueNode",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "removeFromAllEndpointQueues_tcb_source",
+          "line": 2065,
+          "called": [
+            "ObjId",
+            "RHTable.fold_preserves_of_lookup",
+            "RHTable.getElem",
+            "RHTable.insert_preserves_invExt",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "endpointSweepBody",
+            "get",
+            "insert",
+            "invExt",
+            "removeFromAllEndpointQueues",
+            "removeFromAllEndpointQueues_eq_fold",
+            "spliceOutMidQueueNode",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "removeFromAllEndpointQueues_endpoint_source",
+          "line": 2097,
+          "called": [
+            "Endpoint",
+            "Kernel",
+            "ObjId",
+            "RHTable.fold_preserves_of_lookup",
+            "RHTable.getElem",
+            "RHTable.insert_preserves_invExt",
+            "SystemState",
+            "ThreadId",
+            "endpointSweepBody",
+            "get",
+            "insert",
+            "invExt",
+            "removeFromAllEndpointQueues",
+            "removeFromAllEndpointQueues_eq_fold",
+            "spliceOutMidQueueNode",
+            "st"
           ]
         }
       ]
@@ -264692,7 +265562,7 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.SmpCancellation",
-          "line": 39,
+          "line": 40,
           "called": [
             "RHTable.fold_pointwise",
             "RHTable.fold_preserves_of_lookup",
@@ -264795,20 +265665,37 @@
             "mem_insertOrMerge_write_of_mem_write",
             "mem_write_lockSetExtendOpt",
             "notificationQueueWellFormed_filter_correct",
+            "queueBoundaryCoherentAt",
+            "queueBoundaryCoherentAt_of_off_boundary",
+            "queueNeighbourPatch",
             "releaseLockOnObject_preserves_invExt",
+            "removeFromAllEndpointQueues_endpoint_source",
+            "removeFromAllEndpointQueues_endpoint_value",
             "removeFromAllEndpointQueues_eq_fold",
             "removeFromAllEndpointQueues_off_boundary",
             "removeFromAllEndpointQueues_preserves_objects_invExt",
+            "removeFromAllEndpointQueues_tcb_frame",
             "removeFromAllEndpointQueues_tcb_lookup",
+            "removeFromAllEndpointQueues_tcb_source",
             "removeFromAllNotificationWaitLists_preserves_objects_invExt",
             "removeFromAllNotificationWaitLists_tcb_lookup",
             "removeRunnableOnCore_preserves_currentThreadUniqueAcrossCores",
             "removeThreadFromQueue_off_boundary",
+            "restoredTcb",
+            "restoredTcb_eq",
             "runningCoreOf",
             "sortedSchedCoreTriple",
             "sortedSchedCoreTriple_pairwise_le",
+            "spliceOutMidQueueNode_eq_patches",
+            "spliceOutMidQueueNode_next_queuePrev",
+            "spliceOutMidQueueNode_nonTcb",
             "spliceOutMidQueueNode_preserves_objects_invExt",
+            "spliceOutMidQueueNode_prev_queueNext",
+            "spliceOutMidQueueNode_queueNext_frame",
+            "spliceOutMidQueueNode_queuePrev_frame",
+            "spliceOutMidQueueNode_tcb_backward",
             "spliceOutMidQueueNode_tcb_lookup",
+            "spliceOutMidQueueNode_victim_tcb",
             "suspendRescheduleOnCore",
             "suspendRescheduleOnCore_local_no_sgi",
             "suspendRescheduleOnCore_sgi_shape",
@@ -264817,6 +265704,17 @@
             "suspendThreadOnCore_rejects_absent",
             "suspendThreadOnCore_rejects_inactive",
             "suspendThreadOnCore_sgi_remote_reschedule",
+            "sweptAndRestored",
+            "sweptAndRestored_dualQueueSystemInvariant",
+            "sweptAndRestored_edge_source",
+            "sweptAndRestored_path_transport",
+            "sweptAndRestored_tcbQueueChainAcyclic",
+            "sweptAndRestored_tcbQueueLinkIntegrity",
+            "sweptAndRestored_tcb_iff",
+            "sweptAndRestored_victim_tcb",
+            "sweptQueue_wellFormed",
+            "sweptThreadBoundaryCoherent",
+            "tcbQueueLinkRewrite",
             "threadOffQueueBoundaries",
             "updateObjectLockAt_getTcb"
           ]
@@ -264824,13 +265722,13 @@
         {
           "kind": "section",
           "name": "ElaborationExamples",
-          "line": 221,
+          "line": 254,
           "called": []
         },
         {
           "kind": "variable",
           "name": "victim",
-          "line": 223,
+          "line": 256,
           "called": [
             "CoreId",
             "TCB",
@@ -264841,7 +265739,7 @@
         {
           "kind": "variable",
           "name": "st",
-          "line": 224,
+          "line": 257,
           "called": [
             "SystemState"
           ]
@@ -264849,7 +265747,7 @@
         {
           "kind": "variable",
           "name": "blEp",
-          "line": 225,
+          "line": 258,
           "called": [
             "ObjId",
             "ReplyId"
@@ -264858,7 +265756,7 @@
         {
           "kind": "variable",
           "name": "sc",
-          "line": 226,
+          "line": 259,
           "called": [
             "SchedContextId",
             "ThreadId"
@@ -264866,8 +265764,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:229>",
-          "line": 229,
+          "name": "<anonymous:example:262>",
+          "line": 262,
           "called": [
             "cancelIpcBlockingOnCore",
             "cancellation_cross_core_correct",
@@ -264880,8 +265778,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:237>",
-          "line": 237,
+          "name": "<anonymous:example:270>",
+          "line": 270,
           "called": [
             "cancelIpcBlockingOnCore",
             "cancellation_cross_core_correct",
@@ -264895,8 +265793,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:245>",
-          "line": 245,
+          "name": "<anonymous:example:278>",
+          "line": 278,
           "called": [
             "cancelIpcBlocking",
             "cancelIpcBlockingOnCore",
@@ -264910,8 +265808,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:253>",
-          "line": 253,
+          "name": "<anonymous:example:286>",
+          "line": 286,
           "called": [
             "acquireAll",
             "cancelIpcBlocking",
@@ -264925,8 +265823,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:265>",
-          "line": 265,
+          "name": "<anonymous:example:298>",
+          "line": 298,
           "called": [
             "acquireAll",
             "cancelDonationOnCore",
@@ -264939,8 +265837,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:277>",
-          "line": 277,
+          "name": "<anonymous:example:310>",
+          "line": 310,
           "called": [
             "cancelIpcBlockingOnCore",
             "cancelIpcBlockingOnCore_preserves_objects_invExt",
@@ -264951,7 +265849,7 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 287,
+          "line": 320,
           "called": [
             "throw"
           ]
@@ -264959,7 +265857,7 @@
         {
           "kind": "def",
           "name": "core1",
-          "line": 293,
+          "line": 326,
           "called": [
             "CoreId"
           ]
@@ -264967,7 +265865,7 @@
         {
           "kind": "def",
           "name": "epId",
-          "line": 295,
+          "line": 328,
           "called": [
             "ObjId"
           ]
@@ -264975,7 +265873,7 @@
         {
           "kind": "def",
           "name": "nId",
-          "line": 296,
+          "line": 329,
           "called": [
             "ObjId"
           ]
@@ -264983,7 +265881,7 @@
         {
           "kind": "def",
           "name": "rId",
-          "line": 297,
+          "line": 330,
           "called": [
             "ReplyId"
           ]
@@ -264991,7 +265889,7 @@
         {
           "kind": "def",
           "name": "scId",
-          "line": 298,
+          "line": 331,
           "called": [
             "SchedContextId",
             "ofNat"
@@ -265000,7 +265898,7 @@
         {
           "kind": "def",
           "name": "cnRoot",
-          "line": 299,
+          "line": 332,
           "called": [
             "ObjId"
           ]
@@ -265008,7 +265906,7 @@
         {
           "kind": "def",
           "name": "victimTid",
-          "line": 300,
+          "line": 333,
           "called": [
             "ThreadId"
           ]
@@ -265016,7 +265914,7 @@
         {
           "kind": "def",
           "name": "ownerTid",
-          "line": 301,
+          "line": 334,
           "called": [
             "ThreadId"
           ]
@@ -265024,7 +265922,7 @@
         {
           "kind": "def",
           "name": "bystanderTid",
-          "line": 302,
+          "line": 335,
           "called": [
             "ThreadId"
           ]
@@ -265032,7 +265930,7 @@
         {
           "kind": "def",
           "name": "prevTid",
-          "line": 303,
+          "line": 336,
           "called": [
             "ThreadId"
           ]
@@ -265040,7 +265938,7 @@
         {
           "kind": "def",
           "name": "nextTid",
-          "line": 304,
+          "line": 337,
           "called": [
             "ThreadId"
           ]
@@ -265048,7 +265946,7 @@
         {
           "kind": "def",
           "name": "runnerTid",
-          "line": 305,
+          "line": 338,
           "called": [
             "ThreadId"
           ]
@@ -265056,7 +265954,7 @@
         {
           "kind": "def",
           "name": "mkTcb",
-          "line": 307,
+          "line": 340,
           "called": [
             "CoreId",
             "TCB",
@@ -265067,7 +265965,7 @@
         {
           "kind": "def",
           "name": "victimTcb",
-          "line": 314,
+          "line": 347,
           "called": [
             "SystemState",
             "TCB",
@@ -265081,7 +265979,7 @@
         {
           "kind": "def",
           "name": "stCallBase",
-          "line": 324,
+          "line": 357,
           "called": [
             "SystemState",
             "build",
@@ -265100,7 +265998,7 @@
         {
           "kind": "def",
           "name": "stCallBlocked",
-          "line": 334,
+          "line": 367,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -265116,7 +266014,7 @@
         {
           "kind": "def",
           "name": "runEndpointCancelChecks",
-          "line": 339,
+          "line": 372,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -265148,7 +266046,7 @@
         {
           "kind": "def",
           "name": "stNtfnBase",
-          "line": 393,
+          "line": 426,
           "called": [
             "SystemState",
             "build",
@@ -265166,7 +266064,7 @@
         {
           "kind": "def",
           "name": "stNtfnBlocked",
-          "line": 400,
+          "line": 433,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -265181,7 +266079,7 @@
         {
           "kind": "def",
           "name": "runNotificationCancelChecks",
-          "line": 405,
+          "line": 438,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -265201,7 +266099,7 @@
         {
           "kind": "def",
           "name": "stReplyBlocked",
-          "line": 435,
+          "line": 468,
           "called": [
             "SystemState",
             "build",
@@ -265220,7 +266118,7 @@
         {
           "kind": "def",
           "name": "runReplyCancelChecks",
-          "line": 444,
+          "line": 477,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -265244,7 +266142,7 @@
         {
           "kind": "def",
           "name": "stRunningRemote",
-          "line": 477,
+          "line": 510,
           "called": [
             "SystemState",
             "build",
@@ -265263,7 +266161,7 @@
         {
           "kind": "def",
           "name": "runRemoteRunningCancelChecks",
-          "line": 487,
+          "line": 520,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -265282,7 +266180,7 @@
         {
           "kind": "def",
           "name": "runLocalRunningCancelChecks",
-          "line": 513,
+          "line": 546,
           "called": [
             "assertBool",
             "cancelIpcBlockingOnCore",
@@ -265297,7 +266195,7 @@
         {
           "kind": "def",
           "name": "mkSc",
-          "line": 527,
+          "line": 560,
           "called": [
             "SchedContext",
             "ThreadId",
@@ -265307,7 +266205,7 @@
         {
           "kind": "def",
           "name": "stBoundDonation",
-          "line": 533,
+          "line": 566,
           "called": [
             "SystemState",
             "build",
@@ -265327,7 +266225,7 @@
         {
           "kind": "def",
           "name": "runBoundDonationCancelChecks",
-          "line": 545,
+          "line": 578,
           "called": [
             "any",
             "assertBool",
@@ -265354,7 +266252,7 @@
         {
           "kind": "def",
           "name": "stDonated",
-          "line": 590,
+          "line": 623,
           "called": [
             "SystemState",
             "build",
@@ -265376,7 +266274,7 @@
         {
           "kind": "def",
           "name": "runDonatedDonationCancelChecks",
-          "line": 604,
+          "line": 637,
           "called": [
             "any",
             "assertBool",
@@ -265401,7 +266299,7 @@
         {
           "kind": "def",
           "name": "runDispatcherEdgeChecks",
-          "line": 641,
+          "line": 674,
           "called": [
             "ThreadId",
             "assertBool",
@@ -265426,7 +266324,7 @@
         {
           "kind": "def",
           "name": "stNtfnTwoWaiters",
-          "line": 684,
+          "line": 717,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -265448,7 +266346,7 @@
         {
           "kind": "def",
           "name": "runNotificationStateCorrectionChecks",
-          "line": 699,
+          "line": 732,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -265467,7 +266365,7 @@
         {
           "kind": "def",
           "name": "stThreeDeep",
-          "line": 732,
+          "line": 765,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -265489,7 +266387,7 @@
         {
           "kind": "def",
           "name": "runMidQueueSpliceChecks",
-          "line": 751,
+          "line": 784,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -265512,7 +266410,7 @@
         {
           "kind": "def",
           "name": "stRunningBoot",
-          "line": 799,
+          "line": 832,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -265529,7 +266427,7 @@
         {
           "kind": "def",
           "name": "runMirrorSgiChecks",
-          "line": 807,
+          "line": 840,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -265544,7 +266442,7 @@
         {
           "kind": "def",
           "name": "stSuspendLocal",
-          "line": 820,
+          "line": 853,
           "called": [
             "SystemState",
             "build",
@@ -265562,7 +266460,7 @@
         {
           "kind": "def",
           "name": "runPerCoreSuspendChecks",
-          "line": 831,
+          "line": 864,
           "called": [
             "any",
             "assertBool",
@@ -265590,7 +266488,7 @@
         {
           "kind": "def",
           "name": "runSendReceiveCancelChecks",
-          "line": 886,
+          "line": 919,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -265613,7 +266511,7 @@
         {
           "kind": "def",
           "name": "serverTid",
-          "line": 929,
+          "line": 962,
           "called": [
             "ThreadId"
           ]
@@ -265621,7 +266519,7 @@
         {
           "kind": "def",
           "name": "core2",
-          "line": 930,
+          "line": 963,
           "called": [
             "CoreId"
           ]
@@ -265629,7 +266527,7 @@
         {
           "kind": "def",
           "name": "stPipDonation",
-          "line": 938,
+          "line": 971,
           "called": [
             "SystemState",
             "build",
@@ -265651,7 +266549,7 @@
         {
           "kind": "def",
           "name": "runPipDonationDropChecks",
-          "line": 954,
+          "line": 987,
           "called": [
             "any",
             "assertBool",
@@ -265682,7 +266580,7 @@
         {
           "kind": "def",
           "name": "stLocalDeboost",
-          "line": 1030,
+          "line": 1063,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -265706,7 +266604,7 @@
         {
           "kind": "def",
           "name": "stRemoteDeboost",
-          "line": 1050,
+          "line": 1083,
           "called": [
             "SystemState",
             "build",
@@ -265727,7 +266625,7 @@
         {
           "kind": "def",
           "name": "runDisinheritanceSchedulingChecks",
-          "line": 1065,
+          "line": 1098,
           "called": [
             "any",
             "assertBool",
@@ -265751,7 +266649,7 @@
         {
           "kind": "def",
           "name": "stUnboundRunningRemote",
-          "line": 1120,
+          "line": 1153,
           "called": [
             "SystemState",
             "build",
@@ -265768,7 +266666,7 @@
         {
           "kind": "def",
           "name": "runUnboundRunningSuspendChecks",
-          "line": 1128,
+          "line": 1161,
           "called": [
             "any",
             "assertBool",
@@ -265790,7 +266688,7 @@
         {
           "kind": "def",
           "name": "stEdfPre",
-          "line": 1164,
+          "line": 1197,
           "called": [
             "SystemState",
             "build",
@@ -265806,7 +266704,7 @@
         {
           "kind": "def",
           "name": "stEdfWith",
-          "line": 1173,
+          "line": 1206,
           "called": [
             "SystemState",
             "TCB",
@@ -265821,7 +266719,7 @@
         {
           "kind": "def",
           "name": "stEdfCurPre",
-          "line": 1180,
+          "line": 1213,
           "called": [
             "SystemState",
             "build",
@@ -265837,7 +266735,7 @@
         {
           "kind": "def",
           "name": "stEdfCurWith",
-          "line": 1188,
+          "line": 1221,
           "called": [
             "SystemState",
             "TCB",
@@ -265852,7 +266750,7 @@
         {
           "kind": "def",
           "name": "runDiffSeamEdfChecks",
-          "line": 1194,
+          "line": 1227,
           "called": [
             "any",
             "assertBool",
@@ -265875,7 +266773,7 @@
         {
           "kind": "def",
           "name": "staleRequestRegs",
-          "line": 1250,
+          "line": 1283,
           "called": [
             "RegisterFile"
           ]
@@ -265883,7 +266781,7 @@
         {
           "kind": "def",
           "name": "mkTcbWithStaleRegs",
-          "line": 1254,
+          "line": 1287,
           "called": [
             "CoreId",
             "TCB",
@@ -265894,7 +266792,7 @@
         {
           "kind": "def",
           "name": "stCallBlockedStale",
-          "line": 1258,
+          "line": 1291,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -265917,7 +266815,7 @@
         {
           "kind": "def",
           "name": "stNtfnBlockedStale",
-          "line": 1271,
+          "line": 1304,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -265939,7 +266837,7 @@
         {
           "kind": "def",
           "name": "runUnblockFrameStagingChecks",
-          "line": 1282,
+          "line": 1315,
           "called": [
             "SystemState",
             "assertBool",
@@ -265975,7 +266873,7 @@
         {
           "kind": "def",
           "name": "runSmpCancellationChecks",
-          "line": 1364,
+          "line": 1397,
           "called": [
             "runBoundDonationCancelChecks",
             "runDiffSeamEdfChecks",
@@ -266000,7 +266898,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1388,
+          "line": 1421,
           "called": [
             "runSmpCancellationChecks"
           ]

@@ -1,3 +1,89 @@
+## v0.34.94 — WS-RR RR7.22 residual: the cancellation sweep's queue shape, and the fact the bundle does not entail
+
+Building the `ipcInvariantFull` carriage for `cancelIpcBlockingOnCore` surfaced a
+**specification gap**, and this cut both reports it and closes it the way this
+project closes that shape of gap.
+
+### The gap
+
+`ipcInvariantFull` constrains an endpoint queue only at its **boundaries** —
+`intrusiveQueueWellFormed` says head and tail exist, agree on emptiness, and
+carry no predecessor / successor — plus doubly-linked integrity and acyclicity.
+It carries **no connectivity**: nothing says the `queueNext` chain from a head
+reaches the tail.  `removeFromAllEndpointQueues` advances a head to the removed
+thread's `queueNext` and retreats a tail to its `queuePrev` unconditionally, so
+on a bundle-satisfying state where the removed thread heads a queue with
+`queueNext = none` while the tail is a *different* thread, the sweep yields
+`head = none, tail = some x` — P1 violated.
+
+The witness satisfies all twenty conjuncts: a `.ready` thread whose `queueNext`
+names the tail supplies the tail's membership, and `queueNextBlockingMatch`'s
+catch-all admits a `.ready` source.  It is very likely unreachable — no
+transition creates it — but unreachability is proved nowhere, and the bundle is
+what a preservation proof may assume.  Severity **Low**: nothing boots, the
+global entry lock serialises every commit, and the consequence if reachable is a
+queue whose members are unreachable from an empty head (blocked threads never
+woken) rather than anything memory-unsafe.  Registered in
+`docs/REGISTERED_DEBT.md`.
+
+### The remedy: state it, do not assume it
+
+`sweptThreadBoundaryCoherent` — if the swept thread heads a queue with no
+successor it is also the tail, and dually — is exactly the shape RR7.22 gave
+`splicePredecessorBlocked`: the one fact the bundle does not entail, named, with
+a caller discharging it from a reachability witness.  `queueBoundaryCoherentAt`
+is its per-queue half, vacuous when the thread occupies no boundary.
+
+### What the two operations do to the object store
+
+* **`tcbQueueLinkRewrite`** — the splice rewrites only intrusive-queue links,
+  stated as an existential over the three link fields rather than a list of
+  fields that agree, so a field added to `TCB` is covered by construction.
+* **`queueNeighbourPatch`** names one neighbour patch, with
+  **`spliceOutMidQueueNode_eq_patches`** (`rfl`) the pin; the four precise
+  readings follow — `_victim_tcb` (the swept thread's own TCB is untouched,
+  because a thread that is its own neighbour closes a one-step cycle),
+  `_next_queuePrev` / `_prev_queueNext` (the skip), and the two frames for
+  everything else.
+* **`removeFromAllEndpointQueues_endpoint_value`** — after the sweep every
+  endpoint's queues are *uniformly* `removeThreadFromQueue` of the ones it had,
+  whether the guard fired or declined; `_off_boundary` becomes a corollary
+  rather than a second fold argument, and `_tcb_frame` / `_tcb_source` are the
+  two directions of the TCB frame.
+
+### The dual-queue invariant across sweep-then-restore
+
+* **`sweptQueue_wellFormed`** — P1 by the four boundary cases (coherence closing
+  the two the bundle cannot), P2 and P3 by the skip: the promoted successor's
+  `queuePrev` is the swept thread's own, which is `none` because it headed the
+  queue, and dually for the promoted predecessor.
+* **`sweptAndRestored_tcbQueueLinkIntegrity`** — stated over the **composite**,
+  and that is not incidental: at the swept state alone it is *false*, since the
+  splice takes the thread out of the chain while its own links still name its
+  old neighbours.  The field clear is what repairs it.
+* **`sweptAndRestored_edge_source`** / `_path_transport` /
+  `_tcbQueueChainAcyclic` — every edge the composite has is a pre-state edge or
+  the splice's skip, and a skip is a two-edge pre-state path, so the composite
+  adds no reachability.
+* **`sweptAndRestored_dualQueueSystemInvariant`** assembles the three.
+
+Seventeen conjuncts and the four-arm composite remain, registered with the
+closure target unchanged.
+
+The AK7 `RAW_LOOKUP_TID` baseline is re-anchored again, for the reason
+`v0.34.92` gave: `intrusiveQueueWellFormed`, `tcbQueueLinkIntegrity` and
+`tcbQueueChainAcyclic` are *defined* on `st.objects[tid.toObjId]?`, so a theorem
+about them cannot be phrased through the typed reader without a conversion at
+every use, and most of the new occurrences are literally those conjuncts'
+own hypothesis shapes.
+
+Also corrected: `CLAUDE.md` / `AGENTS.md` said **66** staged-only modules; the
+allowlist has held 67 since `v0.34.89` added `SchedLockTimerContainment` — a
+hand-maintained count beside a checkable list, drifting exactly as this file
+warns.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md (WS-RR RR7.22)
+
 ## v0.34.93 — WS-RR RR7.22 residual: the object-store sweep, characterised per key
 
 The second of RR7.22 finding 4's two consumers is `cancelIpcBlockingOnCore`,

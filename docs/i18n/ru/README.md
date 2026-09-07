@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Безопасность" /></a>
-  <img src="https://img.shields.io/badge/version-0.34.93-blue" alt="Версия" />
+  <img src="https://img.shields.io/badge/version-0.34.94-blue" alt="Версия" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Лицензия" /></a>
 </p>
@@ -96,11 +96,11 @@ security model) от seL4, вводя при этом архитектурные
 
 | Атрибут | Значение |
 |---------|----------|
-| **Версия** | `0.34.93` |
+| **Версия** | `0.34.94` |
 | **Тулчейн Lean** | `v4.28.0` |
-| **Продуктовый код (Lean LoC)** | 343 801 строка в 323 файлах |
-| **Тестовый код (Lean LoC)** | 71 095 строк в 70 тест-сьютах |
-| **Доказанные декларации** | 11 449 деклараций theorem/lemma (ноль sorry/axiom) |
+| **Продуктовый код (Lean LoC)** | 344 934 строки в 324 файлах |
+| **Тестовый код (Lean LoC)** | 71 128 строк в 70 тест-сьютах |
+| **Доказанные декларации** | 11 490 деклараций theorem/lemma (ноль sorry/axiom) |
 | **Целевое оборудование** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Канонический аудит** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — комплексный предрелизный аудит 1.0 (202 результата; устранены WS-AK AK1–AK10; в архиве) |
 | **Последний аудит** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../../../docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) — аудит готовности перед 1.0, выполненный после закрытия WS-AN (сменяет ныне архивированный [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md), замечания которого устранены WS-AN AN0–AN12). WS-RC R0..R5 LANDED в v0.31.2; WS-RC R6..R14 поглощены WS-SM согласно карте поглощения SM0.Q.1 (см. [`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](../../../docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)). Активный план рабочего потока: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md). |

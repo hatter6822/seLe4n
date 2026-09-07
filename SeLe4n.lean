@@ -97,6 +97,12 @@ import SeLe4n.Kernel.IPC.Invariant.LookupCongruence
 -- the SM6.E theorem surface is production-reachable ahead of the live
 -- `.tcbSuspend` cross-core dispatch wiring (the phase's tracked follow-on).
 import SeLe4n.Kernel.IPC.CrossCore.Cancellation
+-- WS-RR RR7.22 (residual): the cancellation sweep's queue shape — the
+-- `dualQueueSystemInvariant` carriage across `removeFromAllEndpointQueues`
+-- followed by the field clear, together with the one queue-shape fact
+-- `ipcInvariantFull` does not entail (`sweptThreadBoundaryCoherent`, stated
+-- rather than assumed, the way RR7.22 stated `splicePredecessorBlocked`).
+import SeLe4n.Kernel.Lifecycle.Invariant.CancellationQueueShape
 -- WS-SM SM7.B: the TLB shootdown protocol — `tlbShootdownLocal` /
 -- `tlbShootdownBroadcast` / `handleTlbShootdownReqOnCore`, the round
 -- composition with its quiescence capstone, Theorem 3.3.1

@@ -851,6 +851,25 @@ run_check "INVARIANT" rg -n '^theorem removeFromAllEndpointQueues_off_boundary' 
 # with extra steps and the guard-false arm is unprovable.
 run_check "INVARIANT" bash -lc 'rg -U -n "theorem removeFromAllEndpointQueues_eq_fold(.|\n)*endpointSweepBody \(spliceOutMidQueueNode st tid\) tid\) := rfl" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "theorem RHTable.fold_pointwise(.|\n)*hEstablish : ∀ acc k v, t.get\? k = some v → Pre k acc → Q k \(f acc k v\)" SeLe4n/Kernel/RobinHood/Bridge.lean'
+# The splice's per-key readings, and the queue shape across sweep-then-restore.
+run_check "INVARIANT" rg -n '^def queueNeighbourPatch' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem spliceOutMidQueueNode_eq_patches' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem spliceOutMidQueueNode_victim_tcb' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem removeFromAllEndpointQueues_endpoint_value' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^def sweptThreadBoundaryCoherent' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
+run_check "INVARIANT" rg -n '^theorem sweptQueue_wellFormed' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
+run_check "INVARIANT" rg -n '^theorem sweptAndRestored_tcbQueueLinkIntegrity' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
+run_check "INVARIANT" rg -n '^theorem sweptAndRestored_tcbQueueChainAcyclic' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
+run_check "INVARIANT" rg -n '^theorem sweptAndRestored_dualQueueSystemInvariant' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
+# Relation, not presence: the missing queue-shape fact must be a **hypothesis** of
+# the dual-queue theorem, not derived inside it — the bundle does not entail it, and
+# a version that quietly assumed it would be unsound rather than merely weak.
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem sweptAndRestored_dualQueueSystemInvariant(.|\n)*hCoh : sweptThreadBoundaryCoherent st v" SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean'
+# Link integrity holds over the **composite**, not over the sweep alone: the swept
+# thread's own links still name its old neighbours until the restore clears them.
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem sweptAndRestored_tcbQueueLinkIntegrity(.|\n)*tcbQueueLinkIntegrity \(sweptAndRestored st v frame\)" SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean'
+# NEGATIVE: no link-integrity claim about the bare sweep.
+run_negative_check "INVARIANT" rg -n 'tcbQueueLinkIntegrity \(removeFromAllEndpointQueues' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
 # The neighbour clauses are the half an under-stated hypothesis would drop, so
 # the label predicate must quantify over the removed thread's own queue links
 # rather than over the endpoint and the thread alone.

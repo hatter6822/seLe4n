@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.IPC.CrossCore.Cancellation
+import SeLe4n.Kernel.Lifecycle.Invariant.CancellationQueueShape
 import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
 import SeLe4n.Testing.StateBuilder
@@ -213,6 +214,38 @@ open SeLe4n.Testing
 #check @threadOffQueueBoundaries
 #check @removeThreadFromQueue_off_boundary
 #check @removeFromAllEndpointQueues_off_boundary
+#check @removeFromAllEndpointQueues_endpoint_value
+#check @removeFromAllEndpointQueues_tcb_frame
+#check @removeFromAllEndpointQueues_tcb_source
+#check @removeFromAllEndpointQueues_endpoint_source
+-- The mid-queue splice's own per-key readings: what it installs at the two
+-- neighbours, and what it leaves everywhere else.
+#check @tcbQueueLinkRewrite
+#check @queueNeighbourPatch
+#check @spliceOutMidQueueNode_eq_patches
+#check @spliceOutMidQueueNode_tcb_backward
+#check @spliceOutMidQueueNode_nonTcb
+#check @spliceOutMidQueueNode_victim_tcb
+#check @spliceOutMidQueueNode_next_queuePrev
+#check @spliceOutMidQueueNode_prev_queueNext
+#check @spliceOutMidQueueNode_queuePrev_frame
+#check @spliceOutMidQueueNode_queueNext_frame
+-- WS-RR RR7.22 (residual): the queue shape across sweep-then-restore, and the
+-- one fact `ipcInvariantFull` does not entail, stated rather than assumed.
+#check @queueBoundaryCoherentAt
+#check @sweptThreadBoundaryCoherent
+#check @queueBoundaryCoherentAt_of_off_boundary
+#check @sweptQueue_wellFormed
+#check @restoredTcb
+#check @restoredTcb_eq
+#check @sweptAndRestored
+#check @sweptAndRestored_tcb_iff
+#check @sweptAndRestored_victim_tcb
+#check @sweptAndRestored_tcbQueueLinkIntegrity
+#check @sweptAndRestored_edge_source
+#check @sweptAndRestored_path_transport
+#check @sweptAndRestored_tcbQueueChainAcyclic
+#check @sweptAndRestored_dualQueueSystemInvariant
 
 -- ============================================================================
 -- §2  Elaboration-time examples: headline theorems applied

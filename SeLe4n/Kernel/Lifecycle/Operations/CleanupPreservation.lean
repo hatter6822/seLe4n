@@ -1504,6 +1504,327 @@ section EndpointSweep
 
 open SeLe4n.Kernel.RobinHood
 
+/-- **WS-RR RR7.22 (residual)**: `a` is `b` with (only) its three intrusive-queue
+links rewritten.
+
+Stated as an existential over the three link fields rather than as a list of the
+fields that *agree*, which is the derive-don't-enumerate difference: a field added
+to `TCB` is covered by construction, where an agreement list would silently stop
+mentioning it. -/
+def tcbQueueLinkRewrite (a b : TCB) : Prop :=
+  ∃ qp qpp qn, a = { b with queuePrev := qp, queuePPrev := qpp, queueNext := qn }
+
+theorem tcbQueueLinkRewrite.refl (a : TCB) : tcbQueueLinkRewrite a a :=
+  ⟨a.queuePrev, a.queuePPrev, a.queueNext, rfl⟩
+
+theorem tcbQueueLinkRewrite.trans {a b c : TCB}
+    (h1 : tcbQueueLinkRewrite a b) (h2 : tcbQueueLinkRewrite b c) :
+    tcbQueueLinkRewrite a c := by
+  obtain ⟨p1, pp1, n1, rfl⟩ := h1
+  obtain ⟨p2, pp2, n2, rfl⟩ := h2
+  exact ⟨p1, pp1, n1, rfl⟩
+
+/-- **WS-RR RR7.22 (residual)**: one neighbour patch of the mid-queue splice,
+named — the guarded "rewrite this thread's links if it exists" step that
+`spliceOutMidQueueNode` performs twice. -/
+def queueNeighbourPatch (objs : RHTable SeLe4n.ObjId KernelObject)
+    (nid? : Option SeLe4n.ThreadId) (upd : TCB → TCB) : RHTable SeLe4n.ObjId KernelObject :=
+  match nid? with
+  | none => objs
+  | some nid =>
+    match objs[nid.toObjId]? with
+    | some (.tcb t) => objs.insert nid.toObjId (.tcb (upd t))
+    | _ => objs
+
+/-- **WS-RR RR7.22 (residual)**: the mid-queue splice *is* those two patches.
+
+`rfl`, the same pin `removeFromAllEndpointQueues_eq_fold` is: the decomposition
+cannot drift from the operation without failing the build.  Naming the two steps
+is what turns a four-deep nested match into two applications of one lemma. -/
+theorem spliceOutMidQueueNode_eq_patches (st : SystemState) (tid : SeLe4n.ThreadId) :
+    spliceOutMidQueueNode st tid =
+      (match lookupTcb st tid with
+       | none => st
+       | some tcb =>
+         { st with objects := (queueNeighbourPatch
+             (queueNeighbourPatch st.objects tcb.queuePrev
+               (fun p => { p with queueNext := tcb.queueNext }))
+             tcb.queueNext (fun n => { n with queuePrev := tcb.queuePrev })) }) := rfl
+
+theorem queueNeighbourPatch_invExt (objs : RHTable SeLe4n.ObjId KernelObject)
+    (nid? : Option SeLe4n.ThreadId) (upd : TCB → TCB) (hInv : objs.invExt) :
+    (queueNeighbourPatch objs nid? upd).invExt := by
+  unfold queueNeighbourPatch
+  split
+  · exact hInv
+  · split
+    · exact RHTable.insert_preserves_invExt _ _ _ hInv
+    · exact hInv
+
+/-- A neighbour patch installs only TCBs, so a non-TCB reading is the input's,
+in both directions. -/
+theorem queueNeighbourPatch_nonTcb (objs : RHTable SeLe4n.ObjId KernelObject)
+    (nid? : Option SeLe4n.ThreadId) (upd : TCB → TCB)
+    (hInv : objs.invExt) (k : SeLe4n.ObjId) (o : KernelObject)
+    (hNotTcb : ∀ t, o ≠ .tcb t) :
+    ((queueNeighbourPatch objs nid? upd)[k]? = some o) ↔ (objs[k]? = some o) := by
+  unfold queueNeighbourPatch
+  split
+  · exact Iff.rfl
+  · rename_i nid
+    split
+    · rename_i t hRead
+      by_cases hK : nid.toObjId = k
+      · subst hK
+        constructor
+        · intro h
+          have h' : (objs.insert nid.toObjId (KernelObject.tcb (upd t))).get? nid.toObjId
+              = some o := h
+          rw [RHTable.getElem?_insert_self objs nid.toObjId (.tcb (upd t)) hInv] at h'
+          exact absurd (Option.some.inj h').symm (hNotTcb (upd t))
+        · intro h
+          rw [hRead] at h
+          exact absurd (Option.some.inj h).symm (hNotTcb t)
+      · constructor
+        · intro h
+          have h' : (objs.insert nid.toObjId (KernelObject.tcb (upd t))).get? k = some o := h
+          rwa [RHTable.getElem?_insert_ne objs nid.toObjId k (.tcb (upd t))
+            (fun hbeq => hK (eq_of_beq hbeq)) hInv] at h'
+        · intro h
+          show (objs.insert nid.toObjId (KernelObject.tcb (upd t))).get? k = some o
+          rw [RHTable.getElem?_insert_ne objs nid.toObjId k (.tcb (upd t))
+            (fun hbeq => hK (eq_of_beq hbeq)) hInv]
+          exact h
+    · exact Iff.rfl
+
+/-- A neighbour patch read backwards: every TCB it leaves is a queue-link
+rewrite of one the input held at the same key. -/
+theorem queueNeighbourPatch_backward (objs : RHTable SeLe4n.ObjId KernelObject)
+    (nid? : Option SeLe4n.ThreadId) (upd : TCB → TCB)
+    (hUpd : ∀ t, tcbQueueLinkRewrite (upd t) t)
+    (hInv : objs.invExt) (k : SeLe4n.ObjId) (t' : TCB)
+    (hPost : (queueNeighbourPatch objs nid? upd)[k]? = some (.tcb t')) :
+    ∃ t0, objs[k]? = some (.tcb t0) ∧ tcbQueueLinkRewrite t' t0 := by
+  unfold queueNeighbourPatch at hPost
+  split at hPost
+  · exact ⟨t', hPost, tcbQueueLinkRewrite.refl t'⟩
+  · rename_i nid
+    split at hPost
+    · rename_i t hRead
+      by_cases hK : nid.toObjId = k
+      · subst hK
+        have hPost' : (objs.insert nid.toObjId (KernelObject.tcb (upd t))).get? nid.toObjId
+            = some (KernelObject.tcb t') := hPost
+        rw [RHTable.getElem?_insert_self objs nid.toObjId (.tcb (upd t)) hInv] at hPost'
+        obtain rfl : upd t = t' := KernelObject.tcb.inj (Option.some.inj hPost')
+        exact ⟨t, hRead, hUpd t⟩
+      · have hPost' : (objs.insert nid.toObjId (KernelObject.tcb (upd t))).get? k
+            = some (KernelObject.tcb t') := hPost
+        rw [RHTable.getElem?_insert_ne objs nid.toObjId k (.tcb (upd t))
+          (fun hbeq => hK (eq_of_beq hbeq)) hInv] at hPost'
+        exact ⟨t', hPost', tcbQueueLinkRewrite.refl t'⟩
+    · exact ⟨t', hPost, tcbQueueLinkRewrite.refl t'⟩
+
+/-- **WS-RR RR7.22 (residual)**: the mid-queue splice rewrites **only** intrusive
+queue links — every TCB it leaves is a link rewrite of the one it found, and
+every non-TCB object is untouched.
+
+This is the whole of what the splice does to the object store, and it is what
+lets the conjuncts that read `ipcState`, `schedContextBinding`, `replyObject`,
+`pendingMessage`, `timeoutBudget` or `pendingReceiveReply` cross it for free. -/
+theorem spliceOutMidQueueNode_tcb_backward
+    (st : SystemState) (tid : SeLe4n.ThreadId) (k : SeLe4n.ObjId) (t' : TCB)
+    (hInv : st.objects.invExt)
+    (hPost : (spliceOutMidQueueNode st tid).objects[k]? = some (.tcb t')) :
+    ∃ t0, st.objects[k]? = some (.tcb t0) ∧ tcbQueueLinkRewrite t' t0 := by
+  rw [spliceOutMidQueueNode_eq_patches] at hPost
+  split at hPost
+  · exact ⟨t', hPost, tcbQueueLinkRewrite.refl t'⟩
+  · rename_i tcb hT
+    obtain ⟨t1, h1, r1⟩ := queueNeighbourPatch_backward _ tcb.queueNext _
+      (fun n => ⟨tcb.queuePrev, n.queuePPrev, n.queueNext, rfl⟩)
+      (queueNeighbourPatch_invExt _ _ _ hInv) k t' hPost
+    obtain ⟨t0, h0, r0⟩ := queueNeighbourPatch_backward st.objects tcb.queuePrev _
+      (fun p => ⟨p.queuePrev, p.queuePPrev, tcb.queueNext, rfl⟩) hInv k t1 h1
+    exact ⟨t0, h0, r1.trans r0⟩
+
+/-- **WS-RR RR7.22 (residual)**: the mid-queue splice leaves every non-TCB object
+exactly as it found it. -/
+theorem spliceOutMidQueueNode_nonTcb (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (k : SeLe4n.ObjId) (o : KernelObject)
+    (hNotTcb : ∀ t, o ≠ .tcb t) :
+    ((spliceOutMidQueueNode st tid).objects[k]? = some o) ↔ (st.objects[k]? = some o) := by
+  rw [spliceOutMidQueueNode_eq_patches]
+  split
+  · exact Iff.rfl
+  · rename_i tcb hT
+    exact (queueNeighbourPatch_nonTcb _ tcb.queueNext _
+        (queueNeighbourPatch_invExt _ _ _ hInv) k o hNotTcb).trans
+      (queueNeighbourPatch_nonTcb st.objects tcb.queuePrev _ hInv k o hNotTcb)
+
+-- The precise per-key readings of the two neighbour patches: what the splice
+-- installs at each key it touches, and what it leaves at every key it does not.
+-- These are what the queue-shape conjuncts read; the `tcbQueueLinkRewrite`
+-- backward frame above is what every *other* conjunct reads.
+
+theorem queueNeighbourPatch_at_self (objs : RHTable SeLe4n.ObjId KernelObject)
+    (nid : SeLe4n.ThreadId) (upd : TCB → TCB) (hInv : objs.invExt) (t0 : TCB)
+    (hk : objs[nid.toObjId]? = some (.tcb t0)) :
+    (queueNeighbourPatch objs (some nid) upd)[nid.toObjId]? = some (.tcb (upd t0)) := by
+  unfold queueNeighbourPatch
+  simp only
+  rw [hk]
+  exact RHTable.getElem?_insert_self objs nid.toObjId (.tcb (upd t0)) hInv
+
+theorem queueNeighbourPatch_at_other (objs : RHTable SeLe4n.ObjId KernelObject)
+    (nid? : Option SeLe4n.ThreadId) (upd : TCB → TCB) (hInv : objs.invExt)
+    (k : SeLe4n.ObjId) (hNe : ∀ nid, nid? = some nid → nid.toObjId ≠ k) :
+    (queueNeighbourPatch objs nid? upd)[k]? = objs[k]? := by
+  unfold queueNeighbourPatch
+  split
+  · rfl
+  · rename_i nid
+    have hn : nid.toObjId ≠ k := hNe nid rfl
+    split
+    · rename_i t hRead
+      show (objs.insert nid.toObjId (KernelObject.tcb (upd t))).get? k = objs[k]?
+      exact RHTable.getElem?_insert_ne objs nid.toObjId k _ (by simpa using hn) hInv
+    · rfl
+
+/-- **WS-RR RR7.22 (residual)**: the splice does not touch the swept thread's own
+TCB.  It patches only that thread's two neighbours, and a thread that is its own
+neighbour would close a one-step `queueNext` cycle. -/
+theorem spliceOutMidQueueNode_victim_tcb (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hInv : st.objects.invExt)
+    (hLink : tcbQueueLinkIntegrity st) (hAcyc : tcbQueueChainAcyclic st)
+    (hLookup : lookupTcb st tid = some tcb) :
+    (spliceOutMidQueueNode st tid).objects[tid.toObjId]? = some (.tcb tcb) := by
+  have hTcb : st.objects[tid.toObjId]? = some (.tcb tcb) :=
+    lookupTcb_some_objects st tid tcb hLookup
+  have hPrevNe : ∀ p, tcb.queuePrev = some p → p.toObjId ≠ tid.toObjId := by
+    intro p hp hEq
+    obtain ⟨tA, hA, hAN⟩ := hLink.2 tid tcb hTcb p hp
+    rw [hEq, hTcb] at hA
+    have hEqT : tA = tcb := (KernelObject.tcb.inj (Option.some.inj hA)).symm
+    rw [hEqT] at hAN
+    exact hAcyc tid (.single tid tid tcb hTcb hAN)
+  have hNextNe : ∀ n, tcb.queueNext = some n → n.toObjId ≠ tid.toObjId := by
+    intro n hn hEq
+    have hn' : tcb.queueNext = some tid := by
+      rw [hn]; exact congrArg some (SeLe4n.ThreadId.toObjId_injective _ _ hEq)
+    exact hAcyc tid (.single tid tid tcb hTcb hn')
+  rw [spliceOutMidQueueNode_eq_patches, hLookup]
+  simp only
+  rw [queueNeighbourPatch_at_other _ tcb.queueNext _
+    (queueNeighbourPatch_invExt _ _ _ hInv) tid.toObjId hNextNe]
+  rw [queueNeighbourPatch_at_other st.objects tcb.queuePrev _ hInv tid.toObjId hPrevNe]
+  exact hTcb
+
+
+theorem queueNeighbourPatch_at_self' (objs : RHTable SeLe4n.ObjId KernelObject)
+    (nid? : Option SeLe4n.ThreadId) (nid : SeLe4n.ThreadId) (upd : TCB → TCB)
+    (hInv : objs.invExt) (t0 : TCB) (hn : nid? = some nid)
+    (hk : objs[nid.toObjId]? = some (.tcb t0)) :
+    (queueNeighbourPatch objs nid? upd)[nid.toObjId]? = some (.tcb (upd t0)) := by
+  subst hn; exact queueNeighbourPatch_at_self objs nid upd hInv t0 hk
+
+theorem queueNeighbourPatch_tcb_forward (objs : RHTable SeLe4n.ObjId KernelObject)
+    (nid? : Option SeLe4n.ThreadId) (upd : TCB → TCB) (hInv : objs.invExt)
+    (k : SeLe4n.ObjId) (t0 : TCB) (hk : objs[k]? = some (.tcb t0)) :
+    ∃ t', (queueNeighbourPatch objs nid? upd)[k]? = some (.tcb t') ∧
+      (t' = t0 ∨ t' = upd t0) := by
+  cases hn : nid? with
+  | none =>
+    exact ⟨t0, by
+      rw [queueNeighbourPatch_at_other objs none upd hInv k (by intro n h; cases h)]
+      exact hk, Or.inl rfl⟩
+  | some nid =>
+    by_cases hK : nid.toObjId = k
+    · subst hK
+      exact ⟨upd t0, queueNeighbourPatch_at_self objs nid upd hInv t0 hk, Or.inr rfl⟩
+    · exact ⟨t0, by
+        rw [queueNeighbourPatch_at_other objs (some nid) upd hInv k
+          (by intro n h; cases h; exact hK)]
+        exact hk, Or.inl rfl⟩
+
+/-- **WS-RR RR7.22 (residual)**: after the splice the swept thread's successor
+points back **past** it — the skip the splice installs. -/
+theorem spliceOutMidQueueNode_next_queuePrev (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (nextTid : SeLe4n.ThreadId) (nextTcb : TCB)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st tid = some tcb)
+    (hN : tcb.queueNext = some nextTid)
+    (hNext : st.objects[nextTid.toObjId]? = some (.tcb nextTcb)) :
+    ∃ t', (spliceOutMidQueueNode st tid).objects[nextTid.toObjId]? = some (.tcb t') ∧
+      t'.queuePrev = tcb.queuePrev := by
+  obtain ⟨t1, h1, _⟩ := queueNeighbourPatch_tcb_forward st.objects tcb.queuePrev
+    (fun p => { p with queueNext := tcb.queueNext }) hInv nextTid.toObjId nextTcb hNext
+  refine ⟨{ t1 with queuePrev := tcb.queuePrev }, ?_, rfl⟩
+  rw [spliceOutMidQueueNode_eq_patches, hLookup]
+  simp only
+  exact queueNeighbourPatch_at_self' _ tcb.queueNext nextTid _
+    (queueNeighbourPatch_invExt _ _ _ hInv) t1 hN h1
+
+/-- **WS-RR RR7.22 (residual)**: after the splice the swept thread's predecessor
+points **past** it. -/
+theorem spliceOutMidQueueNode_prev_queueNext (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (prevTid : SeLe4n.ThreadId) (prevTcb : TCB)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st tid = some tcb)
+    (hP : tcb.queuePrev = some prevTid)
+    (hPrev : st.objects[prevTid.toObjId]? = some (.tcb prevTcb)) :
+    ∃ t', (spliceOutMidQueueNode st tid).objects[prevTid.toObjId]? = some (.tcb t') ∧
+      t'.queueNext = tcb.queueNext := by
+  have hInner : (queueNeighbourPatch st.objects tcb.queuePrev
+      (fun p => { p with queueNext := tcb.queueNext }))[prevTid.toObjId]?
+      = some (.tcb { prevTcb with queueNext := tcb.queueNext }) :=
+    queueNeighbourPatch_at_self' st.objects tcb.queuePrev prevTid _ hInv prevTcb hP hPrev
+  obtain ⟨t1, h1, hcase⟩ := queueNeighbourPatch_tcb_forward _ tcb.queueNext
+    (fun m => { m with queuePrev := tcb.queuePrev })
+    (queueNeighbourPatch_invExt _ _ _ hInv) prevTid.toObjId
+    { prevTcb with queueNext := tcb.queueNext } hInner
+  refine ⟨t1, ?_, ?_⟩
+  · rw [spliceOutMidQueueNode_eq_patches, hLookup]
+    simp only
+    exact h1
+  · rcases hcase with rfl | rfl <;> rfl
+
+/-- Every thread that is not the swept thread's successor keeps its `queuePrev`. -/
+theorem spliceOutMidQueueNode_queuePrev_frame (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (k : SeLe4n.ObjId) (t0 : TCB)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st tid = some tcb)
+    (hk : st.objects[k]? = some (.tcb t0))
+    (hNe : ∀ n, tcb.queueNext = some n → n.toObjId ≠ k) :
+    ∃ t', (spliceOutMidQueueNode st tid).objects[k]? = some (.tcb t') ∧
+      t'.queuePrev = t0.queuePrev := by
+  obtain ⟨t1, h1, hcase⟩ := queueNeighbourPatch_tcb_forward st.objects tcb.queuePrev
+    (fun p => { p with queueNext := tcb.queueNext }) hInv k t0 hk
+  refine ⟨t1, ?_, ?_⟩
+  · rw [spliceOutMidQueueNode_eq_patches, hLookup]
+    simp only
+    rw [queueNeighbourPatch_at_other _ tcb.queueNext _
+      (queueNeighbourPatch_invExt _ _ _ hInv) k hNe]
+    exact h1
+  · rcases hcase with rfl | rfl <;> rfl
+
+/-- Every thread that is not the swept thread's predecessor keeps its `queueNext`. -/
+theorem spliceOutMidQueueNode_queueNext_frame (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (k : SeLe4n.ObjId) (t0 : TCB)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st tid = some tcb)
+    (hk : st.objects[k]? = some (.tcb t0))
+    (hNe : ∀ p, tcb.queuePrev = some p → p.toObjId ≠ k) :
+    ∃ t', (spliceOutMidQueueNode st tid).objects[k]? = some (.tcb t') ∧
+      t'.queueNext = t0.queueNext := by
+  have hInner : (queueNeighbourPatch st.objects tcb.queuePrev
+      (fun p => { p with queueNext := tcb.queueNext }))[k]? = some (.tcb t0) := by
+    rw [queueNeighbourPatch_at_other st.objects tcb.queuePrev _ hInv k hNe]; exact hk
+  obtain ⟨t1, h1, hcase⟩ := queueNeighbourPatch_tcb_forward _ tcb.queueNext
+    (fun n => { n with queuePrev := tcb.queuePrev })
+    (queueNeighbourPatch_invExt _ _ _ hInv) k t0 hInner
+  refine ⟨t1, ?_, ?_⟩
+  · rw [spliceOutMidQueueNode_eq_patches, hLookup]
+    simp only
+    exact h1
+  · rcases hcase with rfl | rfl <;> rfl
+
 /-- **WS-RR RR7.22 (residual)**: `removeFromAllEndpointQueues`'s fold body,
 named.
 
@@ -1546,6 +1867,15 @@ def threadOffQueueBoundaries (tid : SeLe4n.ThreadId) (ep : Endpoint) : Prop :=
   ep.sendQ.head ≠ some tid ∧ ep.sendQ.tail ≠ some tid ∧
   ep.receiveQ.head ≠ some tid ∧ ep.receiveQ.tail ≠ some tid
 
+/-- **WS-RR RR7.22 (residual)**: `removeThreadFromQueue` is the identity on a
+queue neither of whose boundaries names the thread — which is exactly the sweep
+guard's negation, and so the reason the guard's two arms agree. -/
+theorem removeThreadFromQueue_id_of_off_boundary (s : SystemState) (q : IntrusiveQueue)
+    (tid : SeLe4n.ThreadId) (hH : q.head ≠ some tid) (hT : q.tail ≠ some tid) :
+    removeThreadFromQueue s q tid = q := by
+  unfold removeThreadFromQueue
+  simp only [if_neg hH, if_neg hT]
+
 /-- **WS-RR RR7.22 (residual)**: `removeThreadFromQueue` never leaves the removed
 thread at a boundary.
 
@@ -1573,25 +1903,106 @@ theorem removeThreadFromQueue_off_boundary (s : SystemState) (q : IntrusiveQueue
       · exact hPrev tcb hT
       · assumption
 
-/-- **WS-RR RR7.22 (residual)**: the sweep's payoff — **no endpoint still names
-the swept thread at a queue boundary**, and the object store stays well-formed.
+/-- **WS-RR RR7.22 (residual)**: after the sweep, every endpoint's two queues are
+exactly `removeThreadFromQueue` of the ones it had — uniformly, whether the
+guard fired or declined.
 
-The two cases the pointwise fold lemma splits on are exactly the guard's two
-arms, and each is settled without knowing anything about the accumulator beyond
-what the lemma supplies:
+The declining arm is the interesting one: the guard's negation says no boundary
+names the swept thread, which is precisely when `removeThreadFromQueue` is the
+identity, so "rewritten" and "left alone" agree there. -/
+theorem removeFromAllEndpointQueues_endpoint_value (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hExt : (spliceOutMidQueueNode st tid).objects.invExt)
+    (k : SeLe4n.ObjId) (ep0 : Endpoint)
+    (hEp0 : (spliceOutMidQueueNode st tid).objects[k]? = some (.endpoint ep0)) :
+    ((removeFromAllEndpointQueues st tid).objects.invExt) ∧
+      ∀ ep, (removeFromAllEndpointQueues st tid).objects[k]? = some (.endpoint ep) →
+        ep.sendQ = removeThreadFromQueue (spliceOutMidQueueNode st tid) ep0.sendQ tid ∧
+        ep.receiveQ = removeThreadFromQueue (spliceOutMidQueueNode st tid) ep0.receiveQ tid := by
+  rw [removeFromAllEndpointQueues_eq_fold]
+  refine RHTable.fold_pointwise (spliceOutMidQueueNode st tid).objects
+    (spliceOutMidQueueNode st tid) (endpointSweepBody (spliceOutMidQueueNode st tid) tid)
+    (Pre := fun o acc => acc.objects.invExt ∧
+      acc.objects[o]? = (spliceOutMidQueueNode st tid).objects[o]?)
+    (Q := fun o acc => acc.objects.invExt ∧
+      ∀ e, acc.objects[o]? = some (.endpoint e) →
+        ∀ e0, (spliceOutMidQueueNode st tid).objects[o]? = some (.endpoint e0) →
+          e.sendQ = removeThreadFromQueue (spliceOutMidQueueNode st tid) e0.sendQ tid ∧
+          e.receiveQ = removeThreadFromQueue (spliceOutMidQueueNode st tid) e0.receiveQ tid)
+    hExt ?_ ?_ ?_ ?_ k (.endpoint ep0) hEp0 |>.imp id (fun h e he => h e he ep0 hEp0)
+  · exact fun _ => ⟨hExt, rfl⟩
+  · rintro acc o o' v' hne ⟨hE, hA⟩
+    unfold endpointSweepBody
+    cases v' with
+    | endpoint ep =>
+      simp only
+      split
+      · exact ⟨RHTable.insert_preserves_invExt _ _ _ hE, by
+          show (acc.objects.insert o' _).get? o = _
+          rw [RHTable.getElem?_insert_ne acc.objects o' o _
+            (by simpa using fun h => hne h.symm) hE]
+          exact hA⟩
+      · exact ⟨hE, hA⟩
+    | _ => exact ⟨hE, hA⟩
+  · rintro acc o v hGet ⟨hE, hA⟩
+    unfold endpointSweepBody
+    cases v with
+    | endpoint ep =>
+      simp only
+      split
+      · refine ⟨RHTable.insert_preserves_invExt _ _ _ hE, ?_⟩
+        intro e he e0 he0
+        have he' : (acc.objects.insert o (KernelObject.endpoint
+            { sendQ := removeThreadFromQueue (spliceOutMidQueueNode st tid) ep.sendQ tid,
+              receiveQ := removeThreadFromQueue (spliceOutMidQueueNode st tid) ep.receiveQ tid })).get? o
+            = some (KernelObject.endpoint e) := he
+        rw [RHTable.getElem?_insert_self acc.objects o _ hE] at he'
+        obtain rfl := KernelObject.endpoint.inj (Option.some.inj he')
+        have hGet' : (spliceOutMidQueueNode st tid).objects[o]?
+            = some (KernelObject.endpoint ep) := hGet
+        rw [he0] at hGet'
+        obtain rfl : e0 = ep := KernelObject.endpoint.inj (Option.some.inj hGet')
+        exact ⟨rfl, rfl⟩
+      · refine ⟨hE, ?_⟩
+        intro e he e0 he0
+        rw [hA, he0] at he
+        obtain rfl : e0 = e := KernelObject.endpoint.inj (Option.some.inj he)
+        have hGet' : (spliceOutMidQueueNode st tid).objects[o]?
+            = some (KernelObject.endpoint ep) := hGet
+        rw [he0] at hGet'
+        obtain rfl : e0 = ep := KernelObject.endpoint.inj (Option.some.inj hGet')
+        rename_i hGuard
+        simp only [Bool.or_eq_true, beq_iff_eq, not_or] at hGuard
+        exact ⟨(removeThreadFromQueue_id_of_off_boundary _ _ tid hGuard.1.1.1 hGuard.1.1.2).symm,
+          (removeThreadFromQueue_id_of_off_boundary _ _ tid hGuard.1.2 hGuard.2).symm⟩
+    | _ =>
+      refine ⟨hE, ?_⟩
+      intro e he e0 he0
+      rw [hA, he0] at he
+      exact absurd (hGet.symm.trans he0) (by simp)
+  · rintro acc o o' v' hne ⟨hE, hQ⟩
+    unfold endpointSweepBody
+    cases v' with
+    | endpoint ep =>
+      simp only
+      split
+      · refine ⟨RHTable.insert_preserves_invExt _ _ _ hE, ?_⟩
+        intro e he
+        have he' : (acc.objects.insert o' (KernelObject.endpoint
+            { sendQ := removeThreadFromQueue (spliceOutMidQueueNode st tid) ep.sendQ tid,
+              receiveQ := removeThreadFromQueue (spliceOutMidQueueNode st tid) ep.receiveQ tid })).get? o
+            = some (KernelObject.endpoint e) := he
+        rw [RHTable.getElem?_insert_ne acc.objects o' o _
+          (by simpa using fun h => hne h.symm) hE] at he'
+        exact hQ e he'
+      · exact ⟨hE, hQ⟩
+    | _ => exact ⟨hE, hQ⟩
 
-* the guard fired, so the key now holds the *purged* endpoint, whose boundaries
-  `removeThreadFromQueue_off_boundary` settles;
-* the guard declined, so the key still holds the table's own value — and the
-  guard's negation **is** the conclusion there.
+/-- **WS-RR RR7.22 (residual)**: the sweep's headline consequence — **no endpoint
+still names the swept thread at a queue boundary**.
 
-That second arm is why the lemma carries a `Pre`: without "the fold has not
-reached this key yet", a body that leaves a key alone proves nothing about it.
-
-The hypotheses are about the *spliced* pre-state because that is the table the
-fold runs over; `spliceOutMidQueueNode` writes only the swept thread's two
-neighbours, so a caller discharges them from its own pre-state through that
-operation's frames. -/
+A corollary of the value description rather than a second fold argument: the
+queues are `removeThreadFromQueue` outputs, and those never name the removed
+thread at a boundary. -/
 theorem removeFromAllEndpointQueues_off_boundary
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hExt : (spliceOutMidQueueNode st tid).objects.invExt)
@@ -1604,82 +2015,112 @@ theorem removeFromAllEndpointQueues_off_boundary
     ((removeFromAllEndpointQueues st tid).objects.invExt) ∧
       ∀ ep, (removeFromAllEndpointQueues st tid).objects[oid]? = some (.endpoint ep) →
         threadOffQueueBoundaries tid ep := by
+  obtain ⟨hInv2, hVal⟩ := removeFromAllEndpointQueues_endpoint_value st tid hExt oid ep0 hEp0
+  refine ⟨hInv2, fun ep hep => ?_⟩
+  obtain ⟨hS, hR⟩ := hVal ep hep
+  obtain ⟨h1, h2⟩ := removeThreadFromQueue_off_boundary (spliceOutMidQueueNode st tid)
+    ep0.sendQ tid hNext hPrev
+  obtain ⟨h3, h4⟩ := removeThreadFromQueue_off_boundary (spliceOutMidQueueNode st tid)
+    ep0.receiveQ tid hNext hPrev
+  exact ⟨by rw [hS]; exact h1, by rw [hS]; exact h2, by rw [hR]; exact h3, by rw [hR]; exact h4⟩
+
+
+/-- **WS-RR RR7.22 (residual)**: the endpoint sweep writes only endpoints, so
+every TCB survives it verbatim. -/
+theorem removeFromAllEndpointQueues_tcb_frame (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hExt : (spliceOutMidQueueNode st tid).objects.invExt)
+    (k : SeLe4n.ObjId) (t0 : TCB)
+    (h : (spliceOutMidQueueNode st tid).objects[k]? = some (.tcb t0)) :
+    (removeFromAllEndpointQueues st tid).objects[k]? = some (.tcb t0) := by
   rw [removeFromAllEndpointQueues_eq_fold]
-  refine RHTable.fold_pointwise (spliceOutMidQueueNode st tid).objects
+  exact (RHTable.fold_preserves_of_lookup (spliceOutMidQueueNode st tid).objects
     (spliceOutMidQueueNode st tid) (endpointSweepBody (spliceOutMidQueueNode st tid) tid)
-    (Pre := fun o acc => acc.objects.invExt ∧
-      acc.objects[o]? = (spliceOutMidQueueNode st tid).objects[o]?)
-    (Q := fun o acc => acc.objects.invExt ∧
-      ∀ e, acc.objects[o]? = some (.endpoint e) → threadOffQueueBoundaries tid e)
-    hExt ?_ ?_ ?_ ?_ oid (.endpoint ep0) hEp0
-  · exact fun _ => ⟨hExt, rfl⟩
-  · rintro acc k k' v' hne ⟨hE, hA⟩
-    unfold endpointSweepBody
-    cases v' with
-    | endpoint ep =>
-      simp only
-      split
-      · exact ⟨RHTable.insert_preserves_invExt _ _ _ hE, by
+    (fun acc => acc.objects.invExt ∧ acc.objects[k]? = some (.tcb t0)) hExt ⟨hExt, h⟩
+    (by
+      rintro acc k' v' hGet ⟨hE, hA⟩
+      unfold endpointSweepBody
+      cases v' with
+      | endpoint ep =>
+        simp only
+        split
+        · have hNe : k' ≠ k := by
+            intro hEq
+            have h2 : (spliceOutMidQueueNode st tid).objects.get? k'
+                = some (KernelObject.endpoint ep) := hGet
+            rw [hEq] at h2
+            have h3 : (spliceOutMidQueueNode st tid).objects.get? k
+                = some (KernelObject.tcb t0) := h
+            rw [h3] at h2
+            cases h2
+          refine ⟨RHTable.insert_preserves_invExt _ _ _ hE, ?_⟩
           show (acc.objects.insert k' _).get? k = _
-          rw [RHTable.get_after_insert_ne acc.objects k' k _
-            (by simpa using fun h => hne h.symm) hE]
-          exact hA⟩
-      · exact ⟨hE, hA⟩
-    | _ => exact ⟨hE, hA⟩
-  · rintro acc k v hGet ⟨hE, hA⟩
-    unfold endpointSweepBody
-    cases v with
-    | endpoint ep =>
-      simp only
-      split
-      · refine ⟨RHTable.insert_preserves_invExt _ _ _ hE, ?_⟩
-        intro e he
-        have he' : (acc.objects.insert k (KernelObject.endpoint
-            { sendQ := removeThreadFromQueue (spliceOutMidQueueNode st tid) ep.sendQ tid,
-              receiveQ := removeThreadFromQueue (spliceOutMidQueueNode st tid) ep.receiveQ tid })).get? k
-            = some (KernelObject.endpoint e) := he
-        rw [RHTable.get_after_insert_eq acc.objects k _ hE] at he'
-        obtain rfl := KernelObject.endpoint.inj (Option.some.inj he')
-        obtain ⟨h1, h2⟩ := removeThreadFromQueue_off_boundary (spliceOutMidQueueNode st tid)
-          ep.sendQ tid hNext hPrev
-        obtain ⟨h3, h4⟩ := removeThreadFromQueue_off_boundary (spliceOutMidQueueNode st tid)
-          ep.receiveQ tid hNext hPrev
-        exact ⟨h1, h2, h3, h4⟩
-      · refine ⟨hE, ?_⟩
-        intro e he
-        rw [hA] at he
-        have he2 : (spliceOutMidQueueNode st tid).objects.get? k
-            = some (KernelObject.endpoint e) := he
-        rw [hGet] at he2
-        obtain rfl := KernelObject.endpoint.inj (Option.some.inj he2)
-        rename_i hGuard
-        simp only [Bool.or_eq_true, beq_iff_eq, not_or] at hGuard
-        exact ⟨hGuard.1.1.1, hGuard.1.1.2, hGuard.1.2, hGuard.2⟩
-    | _ =>
-      refine ⟨hE, ?_⟩
+          rw [RHTable.getElem?_insert_ne acc.objects k' k _ (by simpa using hNe) hE]
+          exact hA
+        · exact ⟨hE, hA⟩
+      | _ => exact ⟨hE, hA⟩)).2
+
+/-- **WS-RR RR7.22 (residual)**: a TCB reading after the sweep is the one the
+sweep started from — the converse of the frame above, and what a conjunct stated
+over the post-state needs to reach back. -/
+theorem removeFromAllEndpointQueues_tcb_source (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hExt : (spliceOutMidQueueNode st tid).objects.invExt)
+    (k : SeLe4n.ObjId) (t' : TCB)
+    (h : (removeFromAllEndpointQueues st tid).objects[k]? = some (.tcb t')) :
+    (spliceOutMidQueueNode st tid).objects[k]? = some (.tcb t') := by
+  rw [removeFromAllEndpointQueues_eq_fold] at h
+  refine ((RHTable.fold_preserves_of_lookup (spliceOutMidQueueNode st tid).objects
+    (spliceOutMidQueueNode st tid) (endpointSweepBody (spliceOutMidQueueNode st tid) tid)
+    (fun acc => acc.objects.invExt ∧ ∀ t, acc.objects[k]? = some (.tcb t) →
+      (spliceOutMidQueueNode st tid).objects[k]? = some (.tcb t)) hExt
+    ⟨hExt, fun _ ht => ht⟩ ?_).2 t' h)
+  rintro acc k' v' hGet ⟨hE, hA⟩
+  unfold endpointSweepBody
+  cases v' with
+  | endpoint ep' =>
+    simp only
+    split
+    · refine ⟨RHTable.insert_preserves_invExt _ _ _ hE, ?_⟩
+      intro t ht
+      by_cases hK : k' = k
+      · subst hK
+        have ht' : (acc.objects.insert k' _).get? k' = some (KernelObject.tcb t) := ht
+        rw [RHTable.getElem?_insert_self acc.objects k' _ hE] at ht'
+        cases ht'
+      · have ht' : (acc.objects.insert k' _).get? k = some (KernelObject.tcb t) := ht
+        rw [RHTable.getElem?_insert_ne acc.objects k' k _ (by simpa using hK) hE] at ht'
+        exact hA t ht'
+    · exact ⟨hE, hA⟩
+  | _ => exact ⟨hE, hA⟩
+
+/-- **WS-RR RR7.22 (residual)**: an endpoint reading after the sweep had an
+endpoint at the same key before it — the sweep invents no endpoints. -/
+theorem removeFromAllEndpointQueues_endpoint_source (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hExt : (spliceOutMidQueueNode st tid).objects.invExt)
+    (k : SeLe4n.ObjId) (ep : Endpoint)
+    (h : (removeFromAllEndpointQueues st tid).objects[k]? = some (.endpoint ep)) :
+    ∃ ep0, (spliceOutMidQueueNode st tid).objects[k]? = some (.endpoint ep0) := by
+  rw [removeFromAllEndpointQueues_eq_fold] at h
+  refine ((RHTable.fold_preserves_of_lookup (spliceOutMidQueueNode st tid).objects
+    (spliceOutMidQueueNode st tid) (endpointSweepBody (spliceOutMidQueueNode st tid) tid)
+    (fun acc => acc.objects.invExt ∧ ∀ e, acc.objects[k]? = some (.endpoint e) →
+      ∃ e0, (spliceOutMidQueueNode st tid).objects[k]? = some (.endpoint e0)) hExt
+    ⟨hExt, fun e he => ⟨e, he⟩⟩ ?_).2 ep h)
+  rintro acc k' v' hGet ⟨hE, hA⟩
+  unfold endpointSweepBody
+  cases v' with
+  | endpoint ep' =>
+    simp only
+    split
+    · refine ⟨RHTable.insert_preserves_invExt _ _ _ hE, ?_⟩
       intro e he
-      rw [hA] at he
-      have he2 : (spliceOutMidQueueNode st tid).objects.get? k
-          = some (KernelObject.endpoint e) := he
-      rw [hGet] at he2
-      cases he2
-  · rintro acc k k' v' hne ⟨hE, hQ⟩
-    unfold endpointSweepBody
-    cases v' with
-    | endpoint ep =>
-      simp only
-      split
-      · refine ⟨RHTable.insert_preserves_invExt _ _ _ hE, ?_⟩
-        intro e he
-        have he' : (acc.objects.insert k' (KernelObject.endpoint
-            { sendQ := removeThreadFromQueue (spliceOutMidQueueNode st tid) ep.sendQ tid,
-              receiveQ := removeThreadFromQueue (spliceOutMidQueueNode st tid) ep.receiveQ tid })).get? k
-            = some (KernelObject.endpoint e) := he
-        rw [RHTable.get_after_insert_ne acc.objects k' k _
-          (by simpa using fun h => hne h.symm) hE] at he'
-        exact hQ e he'
-      · exact ⟨hE, hQ⟩
-    | _ => exact ⟨hE, hQ⟩
+      by_cases hK : k' = k
+      · subst hK
+        exact ⟨ep', hGet⟩
+      · have he' : (acc.objects.insert k' _).get? k = some (KernelObject.endpoint e) := he
+        rw [RHTable.getElem?_insert_ne acc.objects k' k _ (by simpa using hK) hE] at he'
+        exact hA e he'
+    · exact ⟨hE, hA⟩
+  | _ => exact ⟨hE, hA⟩
 
 end EndpointSweep
 
