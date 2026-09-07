@@ -1,3 +1,61 @@
+## v0.34.106 — WS-OD OD1.6: OD1 closes, with the reclaim exhibited by an executed run
+
+OD1's acceptance criterion is that `passiveServerIdle` is preserved by
+`cancelIpcBlocking` on every arm, machine-checked, with no footprint exceeding
+`maxLockSetSize`. Both halves landed at `v0.34.105`; this cut closes the phase by
+witnessing the behaviour the way this project prefers — **an executed run, not
+only a theorem** — and by correcting the one documentation site that still said
+the conjunct was merely stated.
+
+### Two trace checks, and why the second one is what makes the first mean something
+
+`[SCO-020b]` builds the state the defect lives in — a caller `.blockedOnReply` on
+a server that had itself Called an endpoint with no receiver waiting, so the
+server is `.blockedOnCall` while holding the caller's donated SchedContext —
+cancels the caller, and reports:
+
+```
+[SCO-020b] reclaim holder_ready=true holder_unbound=true caller_rebound=true holder_spliced=true
+```
+
+`[SCO-020c]` runs the same reclaim with the holder blocked on *receive* — a
+passive server waiting for its next client, which `passiveServerIdle` permits —
+and reports that the holder's `ipcState` and its endpoint queue are untouched
+while the donation still comes back:
+
+```
+[SCO-020c] reclaim allowed_holder untouched=true unbound=true queue_intact=true
+```
+
+That second check is the point. A reclaim that aborted *every* holder would make
+`[SCO-020b]` read `true` just as well, so on its own the first check does not
+discriminate between "ends exactly the two states the conjunct forbids" and
+"ends any holder's IPC". `[SCO-020c]` is the executed half of
+`abortHolderPendingIpc_eq_self_of_allowed`, and pins the bound on the abort's
+reach rather than merely its presence.
+
+Both are pinned in `tests/fixtures/main_trace_smoke.expected` (refreshed, with
+its `.sha256`) and anchored in Tier 3.
+
+### Documentation
+
+`docs/spec/SELE4N_SPEC.md`'s `passiveServerIdle` bullet now states that the
+conjunct is preserved by `cancelIpcBlocking`, that it was not before, and what
+changed — rather than describing the predicate and leaving the reader to assume
+the transitions respect it. The OD1 acceptance box in
+`docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md` is marked met, with the
+theorem and the executed checks named.
+
+The stranding-defect witness the OD1.6 row also asked for already exists:
+`[SCO-020a]`, landed with OD1.1 at `v0.34.100`, reports
+`inherited=true dual_dequeue_ok=true` and reads `false`/`false` on the pre-fix
+code. It is not duplicated here.
+
+**OD1 is closed.** OD2 opens the inert structural work — `SchedContext.scReply`,
+`Reply.wellFormed`, and the chain predicate — none of which changes behaviour.
+
+Refs: docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md OD1.6
+
 ## v0.34.105 — WS-OD OD1.5: `passiveServerIdle` is preserved by every cancellation arm
 
 `cancelIpcBlocking_preserves_passiveServerIdle` is the theorem OD1 exists to

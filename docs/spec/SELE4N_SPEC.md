@@ -49,9 +49,9 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.34.105` (`lakefile.toml`) |
+| **Package version** | `0.34.106` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 352,004 across 327 Lean files |
+| **Production LoC** | 352,080 across 327 Lean files |
 | **Test LoC** | 71,347 across 70 Lean test suites |
 | **Proved declarations** | 11,754 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
@@ -3956,7 +3956,16 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   vacuous rather than conditional.
 - `passiveServerIdle`: unbound non-runnable threads are
   ready/receiving/blocked-on-reply (a donor awaiting the reply that returns
-  its SchedContext)
+  its SchedContext).  **Preserved by `cancelIpcBlocking` on every arm** since
+  `v0.34.105` (WS-OD OD1.5).  It was not before: the reply arm's reclaim hands
+  a donated SchedContext back and thereby makes its holder `.unbound`, and a
+  holder that had Called an endpoint with no receiver waiting was left
+  `.blockedOnCall` — which this conjunct forbids, reachable at depth 1 with no
+  donation chain.  The reclaim now ends that holder's outstanding send or call
+  first (`abortHolderPendingIpc`, seL4-MCS's timeout semantics: the budget the
+  operation was issued on has been revoked), and the abort's reach is exactly
+  those two states — a holder in any state the conjunct permits is left
+  untouched.
 - `donationBudgetTransfer`: at most one thread per SchedContext — now satisfiable
   for donated states (the donor is `.unbound`; only the server's `.donated`
   references the SchedContext)

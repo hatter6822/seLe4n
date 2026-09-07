@@ -2,7 +2,7 @@
 
 > **Status**: IN FLIGHT — registered at `v0.34.98`; OD1.1 landed at `v0.34.100`,
 > OD1.2 at `v0.34.101`, OD1.3 at `v0.34.103`, OD1.4 at `v0.34.104`, OD1.5 at
-> `v0.34.105`.
+> `v0.34.105`, OD1.6 at `v0.34.106` — **OD1 is closed**.
 > **Opens**: beside WS-RR RR7, and must close **before RR8 closes** — RR8 is the
 > closure phase and cannot close over open work.
 > **Predecessor findings**: the two Medium-severity model/specification gaps
@@ -254,8 +254,15 @@ precondition for every later lock-set change.
 | OD1.5 | `cancelIpcBlocking_preserves_passiveServerIdle` — the theorem that does not exist — with footprint membership for the abort's writes and the size bound.  **The abort adds three members, not one**: it splices, so the holder's two queue neighbours join its endpoint — an arithmetic correction this row could not make before OD1.4 landed.  Summed, the footprint is eleven of nine; the bound holds by case analysis, because the donation-derived members and the victim's own blocked-object members both key on `tcb.ipcState` and are therefore mutually exclusive.  The reply arm is then **nine of nine**, with no headroom — see the footprint-budget risk below for where that is recovered | `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean`, `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` | L |
 | OD1.6 | The two exact-text Tier-3 anchors updated for the rewritten arm, a negative for the pre-OD1 shape and one for the single-queue removal, suite cases for the stranding defect and the abort, the family-size figure, version and CHANGELOG | `scripts/test_tier3_invariant_surface.sh`, `tests/SmpCancellationSuite.lean`, `tests/SmpIpcSuite.lean`, `CLAUDE.md`, `AGENTS.md`, `docs/spec/SELE4N_SPEC.md` | M |
 
-**Acceptance**: `passiveServerIdle` is preserved by `cancelIpcBlocking` on every
-arm, machine-checked, with no footprint exceeding `maxLockSetSize`.
+**Acceptance** — **MET at `v0.34.106`**: `passiveServerIdle` is preserved by
+`cancelIpcBlocking` on every arm, machine-checked
+(`cancelIpcBlocking_preserves_passiveServerIdle`), with no footprint exceeding
+`maxLockSetSize` (`lockSet_cancelIpcBlockingOnCore_size_le`, nine of nine on the
+reply arm — see §8a).  Exhibited by an executed run as well as by a theorem:
+`[SCO-020b]` reports `holder_ready=true holder_unbound=true caller_rebound=true
+holder_spliced=true`, and `[SCO-020c]` reports that a holder in a state the
+conjunct permits is left untouched — the executed half of the bound on the
+abort's reach.
 
 ### OD2 — inert structure and the chain predicate
 

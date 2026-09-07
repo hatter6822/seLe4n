@@ -2576,6 +2576,82 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
       | .error _ => false
     IO.println s!"[SCO-020a] successor pprev inherited={succPPrev} dual_dequeue_ok={succDequeues}"
 
+  -- SCO-020b (WS-OD OD1.4/OD1.5): **the cancellation reclaim ends the holder's
+  -- outstanding call before it takes the donation back.**  A server that Called
+  -- an endpoint with no receiver waiting blocks `.blockedOnCall` while still
+  -- holding the caller's donated SchedContext; cancelling the caller then
+  -- unbinds it.  Before OD1.4 that left the holder `.unbound` **and** still
+  -- `.blockedOnCall`, which `passiveServerIdle` forbids — reachable at depth 1
+  -- with no donation chain at all.  The abort prefix moves it to `.ready` and
+  -- splices it off its endpoint, so the state the reclaim leaves satisfies the
+  -- conjunct.  Executed rather than asserted: the theorem
+  -- (`cancelIpcBlocking_preserves_passiveServerIdle`) says it holds, this says
+  -- the live operation does it.
+  let epH : SeLe4n.ObjId := ⟨6010⟩
+  let scH : SeLe4n.SchedContextId := ⟨6011⟩
+  let vTid : SeLe4n.ThreadId := ⟨6012⟩
+  let hTid : SeLe4n.ThreadId := ⟨6013⟩
+  let victimTcb : TCB := {
+    tid := vTid, priority := ⟨50⟩, domain := ⟨0⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
+    ipcState := .blockedOnReply epH (some hTid),
+    schedContextBinding := .unbound }
+  let holderTcb : TCB := {
+    tid := hTid, priority := ⟨50⟩, domain := ⟨0⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192),
+    ipcState := .blockedOnCall epH,
+    schedContextBinding := .donated scH vTid,
+    queuePrev := none, queueNext := none, queuePPrev := some .endpointHead }
+  let holderSc : SeLe4n.Kernel.SchedContext := {
+    scId := scH, budget := ⟨1000⟩, period := ⟨1000⟩, priority := ⟨50⟩,
+    deadline := ⟨1000⟩, domain := ⟨0⟩, budgetRemaining := ⟨1000⟩,
+    boundThread := some hTid }
+  let epObj : Endpoint := { sendQ := { head := some hTid, tail := some hTid }, receiveQ := {} }
+  let stR := { st1 with
+    objects := (st1.objects.insert epH (.endpoint epObj))
+      |>.insert scH.toObjId (.schedContext holderSc)
+      |>.insert vTid.toObjId (.tcb victimTcb)
+      |>.insert hTid.toObjId (.tcb holderTcb) }
+  let stAfter := SeLe4n.Kernel.Lifecycle.Suspend.cancelIpcBlocking stR vTid victimTcb
+  let holderIdle := match stAfter.objects[hTid.toObjId]? with
+    | some (.tcb t) => t.ipcState == ThreadIpcState.ready
+    | _ => false
+  let holderUnbound := match stAfter.objects[hTid.toObjId]? with
+    | some (.tcb t) => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.unbound
+    | _ => false
+  let victimRebound := match stAfter.objects[vTid.toObjId]? with
+    | some (.tcb t) => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.bound scH
+    | _ => false
+  let holderOffQueue := match stAfter.objects[epH]? with
+    | some (.endpoint e) => e.sendQ.head == none && e.sendQ.tail == none
+    | _ => false
+  IO.println s!"[SCO-020b] reclaim holder_ready={holderIdle} holder_unbound={holderUnbound} caller_rebound={victimRebound} holder_spliced={holderOffQueue}"
+
+  -- SCO-020c (WS-OD OD1.5): **and the abort's reach is exactly the two states
+  -- `passiveServerIdle` forbids.**  The same reclaim, with the holder blocked on
+  -- *receive* instead — a passive server waiting for its next client, which the
+  -- conjunct permits — leaves the holder's `ipcState` and its endpoint queue bit
+  -- for bit as they were, while still handing the donation back.  This is the
+  -- executed half of `abortHolderPendingIpc_eq_self_of_allowed`, and it is what
+  -- makes SCO-020b above a discriminating check rather than one that would read
+  -- `true` however the reclaim were written.
+  let holderRecvTcb : TCB := { holderTcb with ipcState := .blockedOnReceive epH }
+  let epRecv : Endpoint := { sendQ := {}, receiveQ := { head := some hTid, tail := some hTid } }
+  let stRecv := { stR with
+    objects := (stR.objects.insert epH (.endpoint epRecv))
+      |>.insert hTid.toObjId (.tcb holderRecvTcb) }
+  let stRecvAfter := SeLe4n.Kernel.Lifecycle.Suspend.cancelIpcBlocking stRecv vTid victimTcb
+  let recvHolderUntouched := match stRecvAfter.objects[hTid.toObjId]? with
+    | some (.tcb t) => t.ipcState == ThreadIpcState.blockedOnReceive epH
+    | _ => false
+  let recvHolderUnbound := match stRecvAfter.objects[hTid.toObjId]? with
+    | some (.tcb t) => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.unbound
+    | _ => false
+  let recvQueueUntouched := match stRecvAfter.objects[epH]? with
+    | some (.endpoint e) => e.receiveQ.head == some hTid && e.receiveQ.tail == some hTid
+    | _ => false
+  IO.println s!"[SCO-020c] reclaim allowed_holder untouched={recvHolderUntouched} unbound={recvHolderUnbound} queue_intact={recvQueueUntouched}"
+
   -- SCO-021: endpointQueueRemove — thread not found error
   let badTid : SeLe4n.ThreadId := ⟨9999⟩
   match SeLe4n.Kernel.endpointQueueRemove epId false badTid stQ with

@@ -1117,6 +1117,12 @@ run_check "INVARIANT" bash -lc 'rg -U -n "def cancelHolderSpliceNeighbors\?(.|\n
 run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlocking_reply_size_le' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlocking_noDonation_size_le' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "theorem lockSet_cancelIpcBlockingOnCore_size_le(.|\n)*cancelledCallerDonation_some_blockedOnReply" SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean'
+# WS-OD OD1.6: the reclaim is witnessed by an **executed run**, not only by a
+# theorem — the fixture pins what the live operation does, and the second check
+# pins the *bound* on the abort's reach: a holder in a state the conjunct permits
+# is left untouched, which is what makes the first check discriminating.
+run_prose_check "TRACE" rg -n 'SCO-020b. reclaim holder_ready=true holder_unbound=true caller_rebound=true holder_spliced=true' tests/fixtures/main_trace_smoke.expected
+run_prose_check "TRACE" rg -n 'SCO-020c. reclaim allowed_holder untouched=true unbound=true queue_intact=true' tests/fixtures/main_trace_smoke.expected
 # The neighbour clauses are the half an under-stated hypothesis would drop, so
 # the label predicate must quantify over the removed thread's own queue links
 # rather than over the endpoint and the thread alone.

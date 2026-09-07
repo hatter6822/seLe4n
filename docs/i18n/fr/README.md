@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Sécurité" /></a>
-  <img src="https://img.shields.io/badge/version-0.34.105-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.34.106-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Licence" /></a>
 </p>
@@ -96,9 +96,9 @@ de preuve de Lean 4 :
 
 | Attribut | Valeur |
 |----------|--------|
-| **Version** | `0.34.105` |
+| **Version** | `0.34.106` |
 | **Chaîne d'outils Lean** | `v4.28.0` |
-| **LoC Lean de production** | 352 004 réparties sur 327 fichiers |
+| **LoC Lean de production** | 352 080 réparties sur 327 fichiers |
 | **LoC Lean de test** | 71 347 réparties sur 70 suites de tests |
 | **Déclarations prouvées** | 11 754 déclarations theorem/lemma (zéro sorry/axiom) |
 | **Matériel cible** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
