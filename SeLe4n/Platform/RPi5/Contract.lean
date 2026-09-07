@@ -195,6 +195,12 @@ instance rpi5PlatformBinding : SeLe4n.Platform.PlatformBinding RPi5Platform wher
   -- PR #889 review round 20: the machine the boot installs has exactly the
   -- PEs this binding declares (`rpi5MachineConfig.declaredCoreCount = 4`).
   declaredCoreCountAgrees := by decide
+  -- PR #892 review round 2: the board's account selects the RAM variant — the
+  -- largest of `rpi5Variants` it covers, the smallest when it covers none —
+  -- and every member is the canonical configuration with its own map, so the
+  -- PE count is this binding's on all of them by definition.
+  bindMachineConfig := rpi5BoundMachineConfig
+  bindMachineConfig_declaredCoreCount := fun _ => rfl
   bootCoreId := ⟨0, by decide⟩
   sharingDomain := .inner
   -- WS-RR RR5.1: the production labeling — two mutually isolated domains
@@ -208,6 +214,16 @@ instance rpi5PlatformBinding : SeLe4n.Platform.PlatformBinding RPi5Platform wher
   -- PR #889 review round 5: neither witness is the canonical boot root's id
   -- (`rpi5BootVSpaceRootObjId`, `ObjId.ofNat 1`) — decided by evaluation.
   witnessesOffBootVSpaceRoot := by decide
+
+/-- **PR #892 review round 2**: what the hardware boot installs for a board
+    account, pinned — the RPi5 binding's bound configuration *is* the variant
+    selection over `rpi5Variants`, so every theorem about
+    `rpi5BoundMachineConfig` (membership in the family, maximality, the
+    fallback, the canonical account binding the canonical configuration) is a
+    theorem about the hardware boot's machine configuration. -/
+theorem rpi5_bindMachineConfig :
+    SeLe4n.Platform.PlatformBinding.bindMachineConfig (platform := RPi5Platform) =
+      rpi5BoundMachineConfig := rfl
 
 /-- **WS-RR RR5.1**: what the hardware boot installs, pinned — the RPi5
     binding's labeling *is* the confined production context at the RPi5

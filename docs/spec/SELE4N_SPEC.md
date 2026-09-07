@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.34.109` (`lakefile.toml`) |
+| **Package version** | `0.34.110` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 353,568 across 327 Lean files |
-| **Test LoC** | 71,487 across 70 Lean test suites |
-| **Proved declarations** | 11,817 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 354,553 across 328 Lean files |
+| **Test LoC** | 71,633 across 70 Lean test suites |
+| **Proved declarations** | 11,868 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -2628,12 +2628,29 @@ is `bootAndInitialisePlatform RPi5Platform` by definition
 `lean_kernel_main` to execute it and no other kernel-state installer — the
 generic entry included, so the platform cannot be varied by the entry.  The
 platform entry boots `bindPlatformConfig platform config`: the caller's IRQ
-table and initial objects under the binding's `machineConfig` and
-`bootVSpaceRoot` (`bindPlatformConfig_machineConfig`,
+table and initial objects under the binding's `bootVSpaceRoot` and the machine
+configuration the binding binds for the caller's account
+(`PlatformBinding.bindMachineConfig`; `bindPlatformConfig_machineConfig`,
 `bindPlatformConfig_bootVSpaceRoot`, `bindPlatformConfig_initialObjects`,
 `bindPlatformConfig_irqTable`, all definitional; `bootAndInitialiseRPi5_bound_config`
 pins the RPi5 pair), so a caller can neither omit the canonical ASID root nor
-describe hardware the image does not run on.  And a boot TCB is stored under
+describe hardware the image does not run on.  **The account selects among the
+binding's declared configurations and never becomes one** (PR #892 review
+round 2): the Raspberry Pi 5 ships in 1, 2, 4, 8 and 16 GiB (`rpi5Variants`),
+the binding installs the largest variant the account covers and the smallest
+when it covers none (`rpi5VariantFor`, `rpi5BoundMachineConfig`;
+`rpi5VariantFor_maximal`, `rpi5VariantFor_of_uncovered`), and the bound
+configuration is a member of the family whatever the caller said
+(`bootAndInitialiseRPi5_bound_config_mem_family`) with the binding's PE count on
+every member (`bindMachineConfig_declaredCoreCount`, read off the live boot
+state by `bootAndInitialisePlatform_checked_declaredCoreCount`).  The DTB bridge
+validates the board against the same function the binding installs
+(`rpi5PlatformConfigFromDtb_ok_binds_detected_variant`), so a 1 GiB board boots
+its own map where the fixed 4 GiB check refused it, and a board covering no
+variant is refused (`rpi5PlatformConfigFromDtb_refuses_uncovered_family`).  The
+coverage predicate both decide by, `machineConfigCovers`, lives in
+`Platform/Boot/MemoryCoverage.lean` upstream of the bindings, with the union
+reading of "covered" (`memoryRegionCoveredByUnion`) and its soundness theorem.  And a boot TCB is stored under
 its own thread id: `PlatformConfig.wellFormed`'s fourth conjunct
 `tcbIdentitiesMatchSlots` requires every `.tcb` entry's `tid.toObjId` to be
 its `id` (`tcbIdentitiesMatchSlots_tid_eq`), the reference check reads the

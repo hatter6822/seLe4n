@@ -1152,6 +1152,18 @@ private def sd056_witnesses_off_boot_root_and_structural_cores : IO Unit := do
        SeLe4n.Platform.RPi5.rpi5MachineConfig.physicalAddressWidth &&
      bound.initialObjects.length == 2 && bound.irqTable.isEmpty)
     "bindPlatformConfig must keep the caller's objects and apply the binding's hardware fields"
+  -- PR #892 review round 2: the caller's account selects among the binding's
+  -- RAM variants and never becomes the machine configuration.  A bare account
+  -- (the model default, no memory at all) is bound the *smallest* variant —
+  -- the only member that claims no RAM a Raspberry Pi 5 lacks — and the PE
+  -- count is the binding's on every member.
+  expect "sd056_bare_account_binds_the_smallest_variant"
+    (decide (bound.machineConfig.memoryMap =
+      SeLe4n.Platform.RPi5.rpi5MemoryMapForConfig SeLe4n.Platform.RPi5.rpi5SmallestVariant))
+    "an account describing no memory must bind the smallest RPi5 variant, not the 4 GiB default"
+  expect "sd056_bound_config_declares_the_binding_core_count"
+    (bound.machineConfig.declaredCoreCount == 4)
+    "every member of the RPi5 family must declare the binding's four PEs"
 
 /-- SD-057 (PR #889 review round 8): **the raw suspend seam refuses a reserved
 idle thread id, and commits nothing.**  `suspend_thread_cross_core` takes a raw

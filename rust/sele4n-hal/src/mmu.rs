@@ -319,7 +319,8 @@ pub const fn boot_mapping_for(addr: u64, ram_top: u64) -> BootMapping {
 }
 
 /// **WS-RR RR7.1**: round a device-tree-reported RAM top down to the
-/// granularity the boot tables can describe there.
+/// granularity the boot tables can describe there, and **cap it at the range
+/// the tables reach at all**.
 ///
 /// The tables describe `[0, 4 GiB)` with 2 MiB L2 blocks and everything above
 /// with 1 GiB L1 blocks, so a RAM top that falls inside a block would make the
@@ -329,16 +330,34 @@ pub const fn boot_mapping_for(addr: u64, ram_top: u64) -> BootMapping {
 /// partial block of real RAM, which is a lost resource rather than a
 /// speculative access into an unbacked address.
 ///
+/// The cap is the same argument one level up (PR #892 review round 2).  The
+/// level-0 table has exactly one valid entry, so the walk reaches
+/// [`BOOT_TABLE_COVERAGE`] (512 GiB) and no further — every L0 entry after
+/// index 0 is invalid and an address above it faults.  A structurally valid
+/// blob whose `/memory` ends above that is not a board this image can map, and
+/// aligning its top without bounding it left [`boot_mapping_for`] — and with it
+/// [`is_boot_cacheable_range`] — calling addresses Normal RAM that no
+/// descriptor describes, so an accepted cache-maintenance operand there would
+/// have faulted instead of reaching the identity mapping the predicate claimed.
+/// Capping is the same lost-resource direction as rounding down; refusing the
+/// blob outright would boot nothing on a board that has *more* RAM than the
+/// tables can name, which is the wrong failure for the right reason.
+///
 /// Every constant boundary of the map (`LOW_RAM_TOP`, `DEVICE_WINDOW_BASE`,
-/// `DEVICE_WINDOW_TOP`, `HIGH_RAM_BASE`) is already 2 MiB aligned, so after
-/// this clamp every boundary is block aligned at the granularity that describes
-/// it.
+/// `DEVICE_WINDOW_TOP`, `HIGH_RAM_BASE`) is already 2 MiB aligned and the cap is
+/// 1 GiB aligned, so after this clamp every boundary is block aligned at the
+/// granularity that describes it.
 #[must_use]
 pub const fn clamp_ram_top(raw: u64) -> u64 {
-    if raw >= HIGH_RAM_BASE {
-        raw & !(L1_BLOCK_SIZE - 1)
+    let capped = if raw > BOOT_TABLE_COVERAGE {
+        BOOT_TABLE_COVERAGE
     } else {
-        raw & !(L2_BLOCK_SIZE - 1)
+        raw
+    };
+    if capped >= HIGH_RAM_BASE {
+        capped & !(L1_BLOCK_SIZE - 1)
+    } else {
+        capped & !(L2_BLOCK_SIZE - 1)
     }
 }
 
@@ -425,6 +444,14 @@ pub const fn boot_cacheable_range_in(base: u64, size: u64, ram_top: u64) -> bool
 
 /// Entries in one 4 KiB translation table (4096 / 8).
 const TABLE_ENTRIES: usize = 512;
+
+/// **PR #892 review round 2**: the highest physical address the boot tables
+/// can reach, exclusive — one L0 entry, so one L1 table of `TABLE_ENTRIES`
+/// gigabyte blocks.  [`clamp_ram_top`] caps every reported RAM top here, which
+/// is what keeps [`boot_mapping_for`] a description of the tables rather than
+/// of the device tree: nothing above this address has a descriptor, so nothing
+/// above it may be called Normal RAM.
+pub const BOOT_TABLE_COVERAGE: u64 = (TABLE_ENTRIES as u64) * L1_BLOCK_SIZE;
 
 /// Bytes one L1 block descriptor maps (1 GiB).
 const L1_BLOCK_SIZE: u64 = 1 << 30;
@@ -590,6 +617,12 @@ const _: () = assert!(LOW_RAM_TOP.is_multiple_of(L2_BLOCK_SIZE));
 const _: () = assert!(DEVICE_WINDOW_BASE.is_multiple_of(L2_BLOCK_SIZE));
 const _: () = assert!(DEVICE_WINDOW_TOP.is_multiple_of(L2_BLOCK_SIZE));
 const _: () = assert!(HIGH_RAM_BASE.is_multiple_of(L1_BLOCK_SIZE));
+// The cap is where the level-0 walk ends: one valid L0 entry reaches exactly
+// one L1 table of gigabyte blocks, and the high-RAM aperture must begin inside
+// it or `boot_mapping_for` would describe RAM no descriptor can.
+const _: () = assert!(BOOT_TABLE_COVERAGE == (TABLE_ENTRIES as u64) * L1_BLOCK_SIZE);
+const _: () = assert!(BOOT_TABLE_COVERAGE.is_multiple_of(L1_BLOCK_SIZE));
+const _: () = assert!(HIGH_RAM_BASE < BOOT_TABLE_COVERAGE);
 
 /// **WS-RR RR7.1**: physical address of the `g`-th L2 table, given the struct
 /// base.  `l2_low[g]` sits after the L0 and L1 tables.
@@ -1401,6 +1434,69 @@ mod boot_map_tests {
         // Rounding is down, never up: mapping a partial block of DRAM the
         // board does not have is the failure this clamp exists to prevent.
         assert!(clamp_ram_top(0x2_0020_0000) < 0x2_0020_0000);
+        // And the top is capped at the tables' reach: a blob claiming RAM to
+        // 1 TiB is clamped to the 512 GiB one L0 entry can describe.
+        assert_eq!(clamp_ram_top(BOOT_TABLE_COVERAGE), BOOT_TABLE_COVERAGE);
+        assert_eq!(clamp_ram_top(BOOT_TABLE_COVERAGE + 1), BOOT_TABLE_COVERAGE);
+        assert_eq!(clamp_ram_top(0x100_0000_0000), BOOT_TABLE_COVERAGE);
+        assert_eq!(clamp_ram_top(u64::MAX), BOOT_TABLE_COVERAGE);
+    }
+
+    /// **PR #892 review round 2**: a RAM top above the tables' coverage is
+    /// capped, not described.  Before the cap, a structurally valid DTB whose
+    /// `/memory` ended above 512 GiB left `boot_mapping_for` calling addresses
+    /// Normal RAM that no L0 entry reaches, so `is_boot_cacheable_range`
+    /// accepted cache-maintenance operands that would have faulted.  The
+    /// mutation that finds a missing cap keeps the tokens and moves the
+    /// number: a top one block above the coverage.
+    #[test]
+    fn a_ram_top_beyond_the_tables_coverage_is_capped_not_described() {
+        let raw_top = BOOT_TABLE_COVERAGE + L1_BLOCK_SIZE;
+        let ram_top = clamp_ram_top(raw_top);
+        assert_eq!(ram_top, BOOT_TABLE_COVERAGE);
+        // The last gigabyte the tables reach is RAM; the first they do not is
+        // not, whatever the blob said.
+        assert_eq!(
+            boot_mapping_for(BOOT_TABLE_COVERAGE - L1_BLOCK_SIZE, ram_top),
+            BootMapping::NormalRam
+        );
+        assert_eq!(
+            boot_mapping_for(BOOT_TABLE_COVERAGE, ram_top),
+            BootMapping::Unmapped
+        );
+        assert_eq!(
+            boot_mapping_for(BOOT_TABLE_COVERAGE + L1_BLOCK_SIZE, ram_top),
+            BootMapping::Unmapped
+        );
+        // A range that starts in the last described block and runs past the
+        // coverage is refused — the relation a per-address check would miss.
+        assert!(boot_cacheable_range_in(
+            BOOT_TABLE_COVERAGE - 0x1000,
+            0x1000,
+            ram_top
+        ));
+        assert!(!boot_cacheable_range_in(
+            BOOT_TABLE_COVERAGE - 0x1000,
+            0x2000,
+            ram_top
+        ));
+        assert!(!boot_cacheable_range_in(
+            BOOT_TABLE_COVERAGE,
+            0x1000,
+            ram_top
+        ));
+        // And the tables built from that blob reach exactly the coverage: one
+        // valid L0 entry, the last L1 block Normal, nothing beyond it.
+        let (tables, _base_pa) = build(raw_top);
+        assert_ne!(tables.l0[0] & DESC_TABLE, 0);
+        for entry in &tables.l0[1..] {
+            assert_eq!(*entry, 0, "only l0[0] may be valid");
+        }
+        assert_eq!(
+            tables.l1[TABLE_ENTRIES - 1] & !DESC_ADDR_MASK,
+            BLOCK_NORMAL & !DESC_ADDR_MASK,
+            "the last reachable gigabyte is Normal RAM"
+        );
     }
 
     #[test]
@@ -1413,6 +1509,9 @@ mod boot_map_tests {
             EIGHT_GIB_RAM_TOP,
             0x3C00_0000,
             0x4_0000_0000,
+            // A blob claiming more RAM than one L0 entry can reach: the clamp
+            // caps it, and every descriptor must still agree with the predicate.
+            0x100_0000_0000,
         ] {
             let ram_top = clamp_ram_top(raw_top);
             let (tables, base_pa) = build(raw_top);

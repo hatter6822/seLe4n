@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.109.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.110.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,23 +203,23 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~58169 lines)
+- `CHANGELOG.md` (~58313 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22578 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12092 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
 - `SeLe4n/Kernel/API.lean` (~7210 lines)
-- `SeLe4n/Platform/Boot.lean` (~5858 lines)
+- `SeLe4n/Platform/Boot.lean` (~5845 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5822 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~5450 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5129 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5001 lines)
-- `docs/spec/SELE4N_SPEC.md` (~4915 lines)
+- `docs/spec/SELE4N_SPEC.md` (~4932 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4840 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `SeLe4n/Model/State.lean` (~4708 lines)
 - `SeLe4n/Kernel/CrossSubsystem.lean` (~4419 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (~4263 lines)
-- `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~4196 lines)
+- `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~4198 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
 - `tests/NegativeStateSuite.lean` (~4115 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3919 lines)
@@ -227,8 +227,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~3780 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~3752 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean` (~3660 lines)
+- `SeLe4n/Platform/FFI.lean` (~3590 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (~3517 lines)
-- `SeLe4n/Platform/FFI.lean` (~3438 lines)
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
 - `tests/SmpTlbShootdownSuite.lean` (~3354 lines)
 - `SeLe4n/Testing/MainTraceHarness.lean` (~3330 lines)
@@ -289,10 +289,10 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean` (~1833 lines)
 - `SeLe4n/Model/FreezeProofs.lean` (~1827 lines)
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1822 lines)
+- `tests/SyscallDispatchSuite.lean` (~1812 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.6_WORKSTREAM_PLAN.md` (~1801 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1800 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md` (~1800 lines)
-- `tests/SyscallDispatchSuite.lean` (~1800 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` (~1794 lines)
 - `docs/planning/UNFINISHED_SMP_WORK.md` (~1793 lines)
 - `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` (~1776 lines)
@@ -328,6 +328,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1326 lines)
 - `tests/FrozenOpsSuite.lean` (~1324 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1317 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1302 lines)
 - `tests/SmpFoundationsSuite.lean` (~1301 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1294 lines)
 - `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1293 lines)
@@ -340,7 +341,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean` (~1241 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1216 lines)
 - `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean` (~1208 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1204 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
 - `tests/SmpCacheMaintenanceSuite.lean` (~1170 lines)
@@ -363,12 +363,13 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~1019 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean` (~1014 lines)
 - `SeLe4n/Model/FrozenState.lean` (~1007 lines)
+- `tests/Ak9PlatformSuite.lean` (~1002 lines)
 - `tests/SmpCbsSuite.lean` (~1001 lines)
 - `tests/SmpCrossCoreCallSuite.lean` (~1001 lines)
+- `SeLe4n/Kernel/Concurrency/Runtime.lean` (~1000 lines)
 - `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~998 lines)
 - `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean` (~993 lines)
 - `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md` (~984 lines)
-- `SeLe4n/Kernel/Concurrency/Runtime.lean` (~979 lines)
 - `docs/planning/SMP_PER_CORE_STATE_PLAN.md` (~968 lines)
 - `docs/dev_history/planning/WS_X_LEAN_ETHEREUM_FORMALIZATION_PLAN.md` (~958 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreTickCbsPreservation.lean` (~952 lines)
@@ -382,6 +383,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet2PL.lean` (~897 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean` (~893 lines)
 - `tests/SmpTimerSuite.lean` (~892 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
@@ -389,10 +391,8 @@ To find files that need pagination today, run:
 - `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` (~880 lines)
 - `SeLe4n/Kernel/IPC/Operations/Fault.lean` (~868 lines)
 - `docs/planning/SMP_RUST_HAL_PLAN.md` (~868 lines)
-- `tests/Ak9PlatformSuite.lean` (~868 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` (~862 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean` (~858 lines)
 - `tests/SmpCrossCoreNotificationSuite.lean` (~851 lines)
 - `tests/DecodingSuite.lean` (~833 lines)
 - `SeLe4n/Kernel/SchedContext/BindingAffinity.lean` (~825 lines)
@@ -935,10 +935,18 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   yet, require a canonical spelling and refuse the rest.**
   `SeLe4n/Testing/BootEntryContract.lean` no longer analyses the boot entry —
   it requires the entry to *be* `Platform.FFI.bootAndInitialiseRPi5OrHalt`
-  applied to a configuration, decided by one `Meta.isDefEq` against a
-  metavariable.  Every question the walk approximated is then answered exactly
+  applied to a configuration, decided by reducing the entry's body **towards
+  the approved call** (`Meta.whnfUntil`: beta, zeta, delta through aliases,
+  until that constant is the head) and one reducible `isDefEq` against a
+  metavariable on what remains (PR #892 review round 2 — round 21 used one
+  unbounded `Meta.isDefEq`, which opens *both* sides: on a deviating entry the
+  unifier unfolded the approved call through the whole checked boot and hit
+  the recursion limit once the configuration binding reached the RPi5
+  RAM-variant selection, and it would have accepted an inlined copy of the
+  wrapper's body, which is exactly what naming the wrapper exists to refuse).
+  Every question the walk approximated is then answered exactly
   or has no subject: the entry *is* the boot, so nothing precedes it, there is
-  no bind whose instance could be lawless, `isDefEq` zeta- and beta-reduces so
+  no bind whose instance could be lawless, the reduction zeta- and beta-reduces so
   a `let`-bound head is not a form to know about, and nothing else runs at all
   — which makes the contract **stronger** than the walk, not weaker, since that
   one admitted any extra action which happened not to write kernel state.  The
@@ -2155,8 +2163,23 @@ code may assume:
   witness check, then the two installs, with the labeling-refusal arm
   unreachable (`bootAndInitialisePlatform_eq_checked_boot`) — of the
   **bound** config (round 7): `bindPlatformConfig` puts the caller's IRQ
-  table and objects under the binding's `machineConfig` and `bootVSpaceRoot`,
-  so a caller cannot omit the canonical root or describe other hardware.
+  table and objects under the binding's `bootVSpaceRoot` and the machine
+  configuration the binding **binds for the caller's account**
+  (`PlatformBinding.bindMachineConfig`, PR #892 review round 2), so a caller
+  cannot omit the canonical root or describe other hardware.  The account
+  selects *among* the binding's declared configurations and never becomes
+  one: on the RPi5 it is the largest of the five shipped RAM variants
+  (`rpi5Variants`, 1–16 GiB) the account covers, and the **smallest** when it
+  covers none (`rpi5VariantFor`) — the only member that claims no RAM a
+  Raspberry Pi 5 lacks, where the old unconditional 4 GiB map declared RAM
+  the 1 and 2 GiB boards do not have.  The DTB bridge validates the board
+  against that same function (`rpi5PlatformConfigFromDtb_ok_binds_detected_variant`),
+  so the variant checked and the variant booted are one value, and every
+  member declares the binding's PE count
+  (`bindMachineConfig_declaredCoreCount`, consumed by
+  `bootAndInitialisePlatform_checked_declaredCoreCount`).  The coverage
+  predicate the two share sits upstream of the bindings in
+  `Platform/Boot/MemoryCoverage.lean`.
   The hardware entry is `bootAndInitialiseRPi5`, the generic entry fixed at
   `RPi5Platform`; SM10.1's `lean_kernel_main` calls it and nothing else.
   **The declared

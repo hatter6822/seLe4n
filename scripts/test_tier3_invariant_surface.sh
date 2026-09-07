@@ -1187,6 +1187,27 @@ run_check "INVARIANT" bash -lc 'rg -U -n "def recordCommittedCurrentThreadHw(.|\
 # needs the flag.  Without it a truncated blob handed `init_mmu` a RAM ceiling
 # read out of a prefix the walk never validated.
 run_check "INVARIANT" bash -lc 'rg -U -n "fn find_ram_top_in_dtb(.|\n)*let mut terminated = false;(.|\n)*if !terminated \|\| depth != 0 \{\n        return None;\n    \}\n    best" rust/sele4n-hal/src/cmdline.rs'
+# PR #892 review round 2: a RAM top the boot tables cannot map is CAPPED before
+# it is aligned.  The level-0 table has one valid entry, so the walk reaches
+# `BOOT_TABLE_COVERAGE` and no further; a `/memory` top above it, merely
+# aligned, left `boot_mapping_for` calling addresses Normal RAM that no
+# descriptor describes.  The relation: the cap is the first statement of the
+# clamp, the alignment is applied to the CAPPED value, and the coverage
+# constant is derived from the table geometry rather than written as a number.
+run_check "INVARIANT" rg -n -U 'pub const fn clamp_ram_top\(raw: u64\) -> u64 \{\n    let capped = if raw > BOOT_TABLE_COVERAGE \{\n        BOOT_TABLE_COVERAGE\n    \} else \{\n        raw\n    \};\n    if capped >= HIGH_RAM_BASE \{\n        capped & !\(L1_BLOCK_SIZE - 1\)' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n '^pub const BOOT_TABLE_COVERAGE: u64 = \(TABLE_ENTRIES as u64\) \* L1_BLOCK_SIZE;' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n 'const _: \(\) = assert!\(HIGH_RAM_BASE < BOOT_TABLE_COVERAGE\);' rust/sele4n-hal/src/mmu.rs
+# NEGATIVE: the pre-round clamp — alignment applied to the RAW value.
+run_negative_check "INVARIANT" rg -n -U 'pub const fn clamp_ram_top\(raw: u64\) -> u64 \{\n    if raw >= HIGH_RAM_BASE' rust/sele4n-hal/src/mmu.rs
+run_negative_check "INVARIANT" rg -n 'raw & !\(L1_BLOCK_SIZE - 1\)' rust/sele4n-hal/src/mmu.rs
+# PR #892 review round 2: the FIFO stress test's round count rounds UP, so an
+# acquisition override below the thread count cannot make every worker loop
+# run zero times and the test pass on the lock's initial state.
+run_check "INVARIANT" rg -n 'fn fifo_rounds\(acquisitions: usize, threads: usize\) -> usize \{' rust/sele4n-hal/src/queued_rw_lock.rs
+run_check "INVARIANT" rg -n 'acquisitions\.div_ceil\(threads\)' rust/sele4n-hal/src/queued_rw_lock.rs
+run_check "INVARIANT" rg -n 'let rounds = fifo_rounds\(fifo_acquisitions\(\), THREADS\);' rust/sele4n-hal/src/queued_rw_lock.rs
+# NEGATIVE: the truncating division the finding named.
+run_negative_check "INVARIANT" rg -n 'let rounds = fifo_acquisitions\(\) / THREADS;' rust/sele4n-hal/src/queued_rw_lock.rs
 # The neighbour clauses are the half an under-stated hypothesis would drop, so
 # the label predicate must quantify over the removed thread's own queue links
 # rather than over the endpoint and the thread alone.
@@ -1422,6 +1443,18 @@ run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_coversWrites' S
 run_check "INVARIANT" rg -n '^def runChainExtension' SeLe4n/Kernel/Concurrency/Locks/LockBracket.lean
 # NEGATIVE: the object-domain chain walk must not re-spell acquire/act/unwind.
 run_negative_check "INVARIANT" rg -n 'let acquired := acquireAll caller chainLocks' SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean
+# PR #892 review round 2: the chain extension acts only once the footprint is
+# HELD.  The relation, not the token: the holdership test is the statement
+# immediately after the acquire, and the action is applied inside its true
+# branch — a guard placed after the action, or a `D.held` consulted anywhere
+# else, keeps every token and protects nothing.
+run_check "INVARIANT" rg -n -U 'let acquired := D\.acquire caller \(D\.sequence S\) s\n  if D\.held caller S acquired then\n    let \(postAction, result\) := action acquired' SeLe4n/Kernel/Concurrency/Locks/LockBracket.lean
+# NEGATIVE: the pre-round shape — the action applied straight to the acquired
+# state with no holdership test between.
+run_negative_check "INVARIANT" rg -n -U 'let acquired := D\.acquire caller \(D\.sequence S\) s\n  let \(postAction, result\) := action acquired' SeLe4n/Kernel/Concurrency/Locks/LockBracket.lean
+# The object-domain walk hands the extension a FOOTPRINT built fail-closed, so
+# holdership is `lockSetHeld` over the chain rather than a re-spelled fold.
+run_check "INVARIANT" rg -n -U '^  \| \.terminated path =>\n(.*\n)*?      match LockSet\.ofList\? \(chainLockSeq path\) with\n      \| none => \(s, fallback\)\n      \| some S => runChainExtension objectLockBracketDomain caller S action fallback s' SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean
 run_negative_check "INVARIANT" rg -n '\| dynamicPipChain' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # PR #887 review round 4: a region-scoped presence check is still a presence
 # check.  The scanners ask their questions of top-level STATEMENTS — the
@@ -1732,6 +1765,27 @@ run_check "INVARIANT" rg -n '^theorem lifecycleRetypeWithCleanupShootdown_preser
 run_check "INVARIANT" rg -n '^theorem completeShootdownRounds_nil' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^def shootdownRoundLockAcquireFuel' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^theorem shootdownSharingDomain_rpi5' SeLe4n/Kernel/SyscallDispatchEntry.lean
+# PR #892 review round 2: the per-core stats snapshot reads the subtype
+# counters BEFORE the total the handler increments first, so a tick or an SGI
+# landing mid-snapshot can never make `timerTicks + sgis > irqs` on a coherent
+# slot.  The order is the relation; the four loads are the tokens.
+run_check "INVARIANT" rg -n -U 'def perCoreStats \(core : CoreId\) : BaseIO PerCoreStatsSnapshot := do\n  let timerTicks ← perCoreTimerTickCount core\n  let sgis ← perCoreSgiCount core\n  let irqs ← perCoreIrqCount core' SeLe4n/Kernel/Concurrency/Runtime.lean
+# NEGATIVE: the total read ahead of either subtype.
+run_negative_check "INVARIANT" rg -n -U 'let irqs ← perCoreIrqCount core\n  let (timerTicks|sgis) ←' SeLe4n/Kernel/Concurrency/Runtime.lean
+# The Rust half of the same relation: the subtype increments publish with
+# `Release` and the subtype loads take `Acquire`, so a snapshot read from
+# another PE sees the order the handler wrote.  The total stays `Relaxed`.
+# Per SITE, not per token: the same increment exists in the current-core and
+# the slice-addressed spelling, and one demoted to `Relaxed` must fail while
+# the other still carries `Release`.
+run_check "INVARIANT" rg -n -U 'pub fn record_timer_tick\(\) -> u64 \{\n    current_per_cpu_stats\(\)\n        \.timer_tick_count\n        \.fetch_add\(1, Ordering::Release\)' rust/sele4n-hal/src/per_cpu_stats.rs
+run_check "INVARIANT" rg -n -U 'pub fn record_sgi_dispatch\(\) -> u64 \{\n    current_per_cpu_stats\(\)\n        \.sgi_count\n        \.fetch_add\(1, Ordering::Release\)' rust/sele4n-hal/src/per_cpu_stats.rs
+run_check "INVARIANT" rg -n -U 'pub fn record_timer_tick_in_slice\(slots: &\[PerCpuStats\], core_id: usize\) -> u64 \{(.|\n)*?\.timer_tick_count\n        \.fetch_add\(1, Ordering::Release\)' rust/sele4n-hal/src/per_cpu_stats.rs
+run_check "INVARIANT" rg -n -U 'pub fn record_sgi_dispatch_in_slice\(slots: &\[PerCpuStats\], core_id: usize\) -> u64 \{(.|\n)*?\.sgi_count\n        \.fetch_add\(1, Ordering::Release\)' rust/sele4n-hal/src/per_cpu_stats.rs
+run_check "INVARIANT" rg -n -U 'pub fn timer_tick_count_for\(core_id: usize\) -> u64 \{(.|\n)*?\.timer_tick_count\n        \.load\(Ordering::Acquire\)' rust/sele4n-hal/src/per_cpu_stats.rs
+run_check "INVARIANT" rg -n -U 'pub fn sgi_count_for\(core_id: usize\) -> u64 \{(.|\n)*?\.sgi_count\.load\(Ordering::Acquire\)' rust/sele4n-hal/src/per_cpu_stats.rs
+# NEGATIVE: a subtype increment that publishes nothing.
+run_negative_check "INVARIANT" rg -n -U '\.(timer_tick_count|sgi_count)\n\s+\.fetch_add\(1, Ordering::Relaxed\)' rust/sele4n-hal/src/per_cpu_stats.rs
 run_check "INVARIANT" rg -n '^def tlbiLocalFullFlush' SeLe4n/Kernel/Concurrency/Runtime.lean
 run_check "INVARIANT" rg -n '^def coreOnlineInMask' SeLe4n/Kernel/Concurrency/Runtime.lean
 run_check "INVARIANT" rg -n '^pub fn tlb_shootdown_req_handler_in' rust/sele4n-hal/src/shootdown.rs
@@ -6385,7 +6439,14 @@ run_check "INVARIANT" rg -nF 'const GUILLEMET: &str' rust/sele4n-hal/build.rs
 # one `isDefEq`, which zeta- and beta-reduces, so the forms rounds 18-21 each
 # taught the walk are not questions any more.
 run_check "INVARIANT" rg -n '^def isApprovedBootApplication' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -nF 'Meta.isDefEq body (mkApp (mkConst approvedBootCall) config)' SeLe4n/Testing/BootEntryContract.lean
+# PR #892 review round 2: the shape is decided by a reduction DIRECTED at the
+# approved call (`whnfUntil`), then one reducible defeq on the result — never
+# by an unbounded `isDefEq` that opens the approved call itself, which hit the
+# recursion limit on every `bind`-headed witness once the boot's configuration
+# binding reached the RAM-variant selection, and which would have accepted an
+# inlined copy of the wrapper's body.
+run_check "INVARIANT" rg -n -U 'match ← Meta\.whnfUntil body approvedBootCall with\n\s+\| none => pure false\n\s+\| some reduced =>(.|\n)*?Meta\.withReducible <\| Meta\.isDefEq reduced \(mkApp \(mkConst approvedBootCall\) config\)' SeLe4n/Testing/BootEntryContract.lean
+run_negative_check "INVARIANT" rg -nF 'Meta.isDefEq body (mkApp (mkConst approvedBootCall) config)' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n 'private def bootEntryWitnessLetBoundConfig' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n 'private def bootEntryWitnessLetBoundHalt' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n 'private def bootEntryWitnessAliasedBoot' SeLe4n/Testing/BootEntryContract.lean
@@ -8348,6 +8409,7 @@ import SeLe4n.Kernel.Concurrency.Locks.LockSetHeld
 import SeLe4n.Kernel.Concurrency.Locks.LockSet2PL
 import SeLe4n.Kernel.Concurrency.Locks.DynamicChainExtension
 import SeLe4n.Kernel.Concurrency.Locks.WithLockSetInventory
+import SeLe4n.Kernel.Scheduler.PriorityInheritance.ChainFootprint
 
 -- SM3.C.1: withLockSet combinator + unfolding lemmas.
 #check @SeLe4n.Kernel.Concurrency.withLockSet
@@ -8467,6 +8529,20 @@ import SeLe4n.Kernel.Concurrency.Locks.WithLockSetInventory
 #check @SeLe4n.Kernel.Concurrency.walkAndAcquire
 #check @SeLe4n.Kernel.Concurrency.withDynamicChainExtension
 #check @SeLe4n.Kernel.Concurrency.withDynamicChainExtension_unfold
+-- PR #892 review round 2: the extension acts only once the chain is held.
+#check @SeLe4n.Kernel.Concurrency.runChainExtension_held
+#check @SeLe4n.Kernel.Concurrency.runChainExtension_refused
+#check @SeLe4n.Kernel.Concurrency.runChainExtension_empty
+#check @SeLe4n.Kernel.Concurrency.chainLockSeq_keys_nodup
+#check @SeLe4n.Kernel.Concurrency.chainLockSeq_sorted
+#check @SeLe4n.Kernel.Concurrency.chainLockSeq_lockAcquireSequence
+#check @SeLe4n.Kernel.Concurrency.withDynamicChainExtension_terminated
+#check @SeLe4n.Kernel.Concurrency.withDynamicChainExtension_terminated_refused
+#check @SeLe4n.Kernel.Concurrency.LockSet.ofList?
+#check @SeLe4n.Kernel.Concurrency.LockSet.ofList?_isSome_of_nodup
+#check @SeLe4n.Kernel.Concurrency.LockSet.ofList?_none_of_dup
+#check @SeLe4n.Kernel.PriorityInheritance.withPipChainSchedExtension_declared
+#check @SeLe4n.Kernel.PriorityInheritance.withPipChainSchedExtension_refused
 #check @SeLe4n.Kernel.Concurrency.dynamicChainHeld
 #check @SeLe4n.Kernel.Concurrency.chainFollowsBlockingServer
 #check @SeLe4n.Kernel.Concurrency.walkStep_extended_increases_objId
@@ -9475,8 +9551,82 @@ open SeLe4n.Platform.FFI
 #check @bootAndInitialiseRPi5FromDtbOrHalt
 #check @bootAndInitialiseRPi5FromDtbOrHalt_unparseable
 #check @bootAndInitialiseRPi5FromDtbOrHalt_accepted
+-- PR #892 review round 2: "covered" is the UNION of same-kind entries, sound.
+#check @coverStep
+#check @coverStep_attained
+#check @coverFrom
+#check @coverFrom_sound
+#check @memoryRegionCoveredByUnion
+#check @memoryRegionCoveredByUnion_sound
+#check @memoryRegionCovered_sound
+#check @memoryRegionCovered_split_low_aperture
+#check @memoryRegionCovered_gap_refused
+#check @machineConfigCovers
+#check @machineConfigCovers_self
+#check @machineConfigCovers_sound
+#check @deviceTreeCoversMachineConfig_eq
+-- PR #892 review round 2: the binding installs the RAM variant of the board it boots on.
+#check @SeLe4n.Platform.RPi5.rpi5Variants
+#check @SeLe4n.Platform.RPi5.rpi5SmallestVariant
+#check @SeLe4n.Platform.RPi5.rpi5Variants_ascending
+#check @SeLe4n.Platform.RPi5.rpi5Variants_wellFormed
+#check @SeLe4n.Platform.RPi5.rpi5MachineConfigForVariant
+#check @SeLe4n.Platform.RPi5.rpi5MachineConfigForVariant_default
+#check @SeLe4n.Platform.RPi5.rpi5MachineConfigForVariant_declaredCoreCount
+#check @SeLe4n.Platform.RPi5.rpi5VariantsCoveredBy
+#check @SeLe4n.Platform.RPi5.rpi5VariantFor
+#check @SeLe4n.Platform.RPi5.rpi5BoundMachineConfig
+#check @SeLe4n.Platform.RPi5.rpi5VariantFor_mem
+#check @SeLe4n.Platform.RPi5.rpi5BoundMachineConfig_mem_family
+#check @SeLe4n.Platform.RPi5.rpi5VariantFor_of_uncovered
+#check @SeLe4n.Platform.RPi5.rpi5BoundMachineConfig_covered_iff
+#check @SeLe4n.Platform.RPi5.rpi5VariantFor_maximal
+#check @SeLe4n.Platform.RPi5.rpi5VariantFor_rpi5MachineConfig
+#check @SeLe4n.Platform.RPi5.rpi5BoundMachineConfig_rpi5MachineConfig
+#check @SeLe4n.Platform.RPi5.rpi5VariantFor_defaultMachineConfig
+#check @SeLe4n.Platform.RPi5.rpi5VariantFor_one_gib
+#check @SeLe4n.Platform.RPi5.rpi5VariantFor_two_gib
+#check @SeLe4n.Platform.RPi5.rpi5VariantFor_eight_gib_as_reported
+#check @SeLe4n.Platform.RPi5.rpi5VariantFor_foreign_base
+#check @SeLe4n.Platform.RPi5.rpi5_bindMachineConfig
+#check @SeLe4n.Platform.PlatformBinding.bindMachineConfig
+#check @SeLe4n.Platform.PlatformBinding.bindMachineConfig_declaredCoreCount
+#check @SeLe4n.Platform.PlatformBinding.boundConfig
+#check @SeLe4n.Platform.PlatformBinding.boundConfig_declaredCoreCount
+#check @bindPlatformConfig_declaredCoreCount
+#check @bootAndInitialisePlatform_checked_declaredCoreCount
+#check @bootAndInitialiseRPi5_bound_config_mem_family
+#check @bootAndInitialiseRPi5_bound_config_canonical
+#check @bootAndInitialiseRPi5_bound_config_declaredCoreCount
+#check @rpi5PlatformConfigFromDtb_refuses_uncovered_family
+#check @rpi5PlatformConfigFromDtb_ok_binds_detected_variant
 EOF'
 run_check "INVARIANT" bash -lc 'rg -n "DeviceTree.fromDtbFull" SeLe4n/Platform/FFI.lean'
+# PR #892 review round 2: the bridge validates the board against the variant
+# the binding INSTALLS for it — the same function, named twice — never against
+# the fixed 4 GiB map, and the platform entry binds the machine configuration
+# FOR the caller's account rather than overriding it unconditionally.
+run_check "INVARIANT" rg -n -U 'if SeLe4n\.Platform\.Boot\.deviceTreeCoversMachineConfig dt\n\s+\(SeLe4n\.Platform\.RPi5\.rpi5BoundMachineConfig dt\.machineConfig\)\n\s+&& SeLe4n\.Platform\.Boot\.deviceTreeCoversMmioRegions dt' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n 'machineConfig := PlatformBinding\.bindMachineConfig \(platform := platform\) config\.machineConfig' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^  bindMachineConfig := rpi5BoundMachineConfig' SeLe4n/Platform/RPi5/Contract.lean
+run_check "INVARIANT" rg -n '^  bindMachineConfig_declaredCoreCount :' SeLe4n/Platform/Contract.lean
+# The selection is the LAST covered entry of the ASCENDING family, so
+# "largest covered" is what the code computes and not what a comment says.
+run_check "INVARIANT" rg -n -U 'match \(rpi5VariantsCoveredBy board\)\.getLast\? with\n  \| some v => v\n  \| none => rpi5SmallestVariant' SeLe4n/Platform/RPi5/Board.lean
+# NEGATIVE: the fixed-map check and the unconditional override, both retired.
+run_negative_check "INVARIANT" rg -n -U 'deviceTreeCoversMachineConfig dt\n\s+SeLe4n\.Platform\.RPi5\.rpi5MachineConfig\n' SeLe4n/Platform/FFI.lean
+run_negative_check "INVARIANT" rg -n 'machineConfig := PlatformBinding\.machineConfig \(platform := platform\)' SeLe4n/Platform/FFI.lean
+# The coverage predicate is upstream of the bindings, so the binding decides by
+# the bridge's own question rather than by a second predicate.
+run_check "INVARIANT" rg -n '^def machineConfigCovers' SeLe4n/Platform/Boot/MemoryCoverage.lean
+run_check "INVARIANT" rg -n '^def memoryRegionCoveredByUnion' SeLe4n/Platform/Boot/MemoryCoverage.lean
+# "Covered" DISJOINS the union reading with the single-entry one: a board
+# reporting one aperture in several `reg` pairs is accepted.  A conjunction
+# would keep every token and refuse exactly the boards the round named.
+run_check "INVARIANT" rg -n -U 'r\.endAddr ≤ q\.endAddr\) \|\|\n  memoryRegionCoveredByUnion regions r' SeLe4n/Platform/Boot/MemoryCoverage.lean
+run_negative_check "INVARIANT" rg -n -U 'r\.endAddr ≤ q\.endAddr\) &&\n  memoryRegionCoveredByUnion regions r' SeLe4n/Platform/Boot/MemoryCoverage.lean
+run_check "INVARIANT" rg -n '^import SeLe4n.Platform.Boot.MemoryCoverage' SeLe4n/Platform/RPi5/Board.lean
+run_check "INVARIANT" rg -n -U 'def rpi5VariantsCoveredBy \(board : SeLe4n\.MachineConfig\) : List BCM2712Config :=\n  rpi5Variants\.filter fun v =>\n    SeLe4n\.Platform\.Boot\.machineConfigCovers board \(rpi5MachineConfigForVariant v\)' SeLe4n/Platform/RPi5/Board.lean
 
 # WS-SM SM5.C — cross-core wake via SGI surface anchors.  Covers the SM5.C
 # production transitions (`enqueueRunnableOnCore` / `determineTargetCore` /

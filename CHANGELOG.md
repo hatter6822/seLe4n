@@ -1,3 +1,144 @@
+## v0.34.110 — the chain extension acts only once held, the binding installs the board's own RAM variant, and four smaller relations the review named
+
+**PR #892 review round 2 (Codex, on `6cba3f71`).**  Six findings, all confirmed
+against the code and all fixed at the cause; none is a caveat and none is a
+skip.  The shape they share is the one this file keeps describing: a mechanism
+whose description was better than its code — a "chain extension" that did not
+check the chain was held, a "bounded snapshot" read in the order that unbounds
+it, a "covered aperture" that only one entry could cover, a "supported 1 GiB
+variant" the boot refused — found by asking what the code does on the input the
+docstring's own claim implies.
+
+**F4 — the dynamic-chain extension refuses before acting (P2).**
+`Concurrency.runChainExtension` acquired the chain's locks and then ran the
+action on the acquired state unconditionally.  `D.acquire` only *queues* a
+core on a lock another core holds, so under contention both the object-domain
+walk (`withDynamicChainExtension`) and the RR7.40 scheduler-domain extension
+(`withPipChainSchedExtension`) ran their protected mutation with no exclusion,
+and the unwind that followed could not undo it.  The extension now takes a
+*footprint* rather than a raw sequence, so holdership is the domain's own
+`D.held` (`lockSetHeld` / `schedLockSetHeld`), and it acts only inside the
+guard's true branch: a footprint the growing phase did not grant is unwound and
+the fallback returned (`runChainExtension_held`, `runChainExtension_refused`;
+the deliberate absence of a *revalidation* is now stated in the docstring, with
+the reason it differs from `runBracketed`).  The object domain builds its
+footprint fail-closed through the new `LockSet.ofList?` (`ofList?_pairs`,
+`ofList?_isSome_of_nodup`, `ofList?_none_of_dup`); a walked chain always
+resolves (`chainLockSeq_keys_nodup`, from the walker's ascending discipline),
+and it is already in the domain's acquisition order
+(`chainLockSeq_sorted`, `chainLockSeq_lockAcquireSequence` — the chain is its
+own canonical `mergeSort`, by `lockAcquireSequence_canonical`), which is what
+lets the two shape theorems `withDynamicChainExtension_terminated` /
+`_terminated_refused` state the seam in the walker's vocabulary.  The
+scheduler side gained `withPipChainSchedExtension_refused` beside the restated
+`_declared`, and `runBracketed_chainExtension_composes` takes the footprint.
+Tier 3 pins the guard as a *relation* — the holdership test is the statement
+after the acquire and the action sits in its true branch — with the pre-round
+shape as the negative.
+
+**F2 — the per-core stats snapshot reads subtypes first, total last (P2).**
+`perCoreStats` read `irqs` first; the handler increments the total first and
+the subtype second, so a tick or an SGI landing between the total's load and
+its subtype's made `timerTicks + sgis > irqs` reachable on a coherent slot,
+and the planned hardware plausibility check would have rejected a healthy core
+mid-interrupt.  The loads are now `timerTicks`, `sgis`, `irqs`, `syscalls`
+(`perCoreStats_reads_subtypes_then_total` restates the equation with the order
+in its name), and the Rust side pairs the subtype increments' `Release`
+(`record_timer_tick`, `record_sgi_dispatch` and their slice forms, previously
+`Relaxed`) with the subtype loads' `Acquire`, so the order holds for a slot
+read from another PE; the module docs said `Relaxed` compiles to `ldaddl`,
+which is `Release`'s encoding, and now say so correctly.  Tier 3 pins the read
+order and, per site, the orderings.
+
+**F3 — coverage is the union of a board's entries (P2).**
+`memoryRegionCovered` required a single device-tree entry to span the whole
+aperture the binding declares, so a board whose firmware reports one aperture
+in two adjacent `reg` pairs — the RPi5's own low aperture is one — was refused
+by a check whose docstring said it should be accepted.  "Covered" now disjoins
+that reading with a greedy walk over the same-kind entries
+(`coverStep`, `coverFrom`, `memoryRegionCoveredByUnion`), sound by
+`memoryRegionCoveredByUnion_sound` / `memoryRegionCovered_sound` (a `true`
+means every address of the region is inside some same-kind entry), with the
+split aperture accepted and a gap refused by `decide`
+(`memoryRegionCovered_split_low_aperture`, `memoryRegionCovered_gap_refused`).
+The whole coverage vocabulary moved to the new
+`SeLe4n/Platform/Boot/MemoryCoverage.lean`, upstream of the bindings, for the
+reason F6 needed it there.
+
+**F6 — the binding installs the board's own RAM variant (P2).**
+`rpi5PlatformConfigFromDtb` validated every board against the fixed 4 GiB
+`rpi5MachineConfig`, so the 1 GiB and 2 GiB boards `BCM2712Config` has
+declared since V4-D were refused and the boot wrapper parked the PE on hardware
+the image was built for — and had the check passed, `bindPlatformConfig` would
+have installed the 4 GiB map on a 2 GiB board, declaring RAM the board does
+not have to `MachineState.addrInRange` and the frame mapping's memory-kind
+check.  `PlatformBinding` gained `bindMachineConfig : MachineConfig →
+MachineConfig` (default: bind `machineConfig` unconditionally) with the
+obligation `bindMachineConfig_declaredCoreCount`, and the platform entry binds
+`bindMachineConfig config.machineConfig`: the caller's account selects *among*
+the binding's declared configurations and never becomes one.  The RPi5
+binding declares its family (`rpi5Variants`: 1, 2, 4, 8, 16 GiB, ascending;
+`rpi5MachineConfigForVariant`, all well formed by `rpi5Variants_wellFormed`)
+and installs the **largest** variant the account covers
+(`rpi5VariantFor`, `rpi5BoundMachineConfig`; `rpi5VariantFor_maximal`), the
+**smallest** when it covers none (`rpi5VariantFor_of_uncovered` — the only
+member that claims no RAM a Raspberry Pi 5 lacks; the harness's
+`defaultMachineConfig` account takes this arm), and a member of the family
+whatever the account says (`rpi5BoundMachineConfig_mem_family`).  The bridge
+now checks the board against `rpi5BoundMachineConfig dt.machineConfig` — the
+same function the binding installs — so validation and installation are one
+value (`rpi5PlatformConfigFromDtb_ok_binds_detected_variant`), and by
+`rpi5BoundMachineConfig_covered_iff` the check passes exactly when the board
+covers some variant (`rpi5PlatformConfigFromDtb_refuses_uncovered_family`).
+Selection is by *coverage*, not by the account's RAM total: 4 GiB at a foreign
+base covers nothing and is refused (`rpi5VariantFor_foreign_base`), where a
+size derivation would have bound the 4 GiB map over memory that is not there.
+The canonical account still binds the canonical configuration
+(`rpi5BoundMachineConfig_rpi5MachineConfig`, decided), and the round-20 prose
+"the live count is the binding's on any state this entry produces" is now a
+theorem (`bootAndInitialisePlatform_checked_declaredCoreCount`, the first
+consumer of the count obligation).  The Ak9 suite drives the 1, 2, 4 (single
+and split), 8-as-reported and 3 GiB boards, the foreign base, a sub-1 GiB
+board and the direct-path fallback end to end through the bridge and the
+binding; SD-056 pins the fallback.
+
+**F1 — a RAM top the boot tables cannot map is capped (P2).**
+`clamp_ram_top` aligned a `/memory` top above the level-0 table's reach
+(`BOOT_TABLE_COVERAGE`, 512 GiB, now derived from the table geometry) without
+bounding it, so `boot_mapping_for` and `is_boot_cacheable_range` called
+addresses Normal RAM that no descriptor describes, and an accepted
+cache-maintenance operand there would have faulted.  The clamp caps before it
+aligns — the same lost-resource direction as rounding down — with const
+asserts on the geometry and a host test that a top beyond the tables is capped,
+not described.
+
+**F5 — the FIFO stress test cannot run zero rounds (P3).**
+An acquisition override below the thread count made `rounds` zero by integer
+division, so every worker loop ran no acquisitions and the FIFO test passed on
+the lock's initial state, past the override parser's own protection against
+vacuous runs.  `fifo_rounds` rounds up (`div_ceil`) and is itself tested never
+to yield zero on a positive override.
+
+**And the boot-entry contract's decision is directed, not symmetric.**
+`SeLe4n/Testing/BootEntryContract.lean` decided the entry's shape with one
+unbounded `Meta.isDefEq` against `bootAndInitialiseRPi5OrHalt ?config`, and
+definitional equality unfolds both sides: on every `bind`-headed deviating
+witness the unifier opened the approved call and kept unfolding through the
+checked boot, and once `bindPlatformConfig` reached the RAM-variant selection
+that search hit the elaborator's recursion limit — the module failed to build.
+It was also the wrong question, since an inlined copy of the wrapper's body is
+definitionally equal to the wrapper and would have been accepted.  The check
+now reduces the body **towards** the approved call (`Meta.whnfUntil`: beta,
+zeta, delta through aliases) and holds the result to one argument at
+reducible transparency; the approved call is never opened.  All fourteen
+witnesses decide in under a millisecond each, with the same verdicts.
+
+**Also in this cut.**  The `#check` surface, relation anchors and negatives
+for all six; the CLAUDE.md / AGENTS.md round-7 bullet, the spec's §6.7 bound-config
+paragraph and the plan's RR7.27 row describe the family, the fallback and the
+one-function relation; `Boot.lean` shrinks by the coverage vocabulary it no
+longer owns.
+
 ## v0.34.109 — the write-sets proved for two operations of six, and the field type that could not name what the other four write
 
 **WS-RR RR7 audit round.**  A deep re-read of every RR7 row and of the WS-OD

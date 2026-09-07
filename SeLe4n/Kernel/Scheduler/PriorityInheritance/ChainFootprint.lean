@@ -64,7 +64,7 @@ namespace SeLe4n.Kernel.PriorityInheritance
 open SeLe4n.Model
 open SeLe4n.Kernel
 open SeLe4n.Kernel.Concurrency (CoreId AccessMode allCores numCores LockKind LockId
-  runChainExtension)
+  runChainExtension runChainExtension_held runChainExtension_refused)
 
 -- ============================================================================
 -- §1  The footprint
@@ -445,7 +445,7 @@ def withPipChainSchedExtension {α : Type} (caller : CoreId)
   match SchedLockSet.ofList? (pipChainSchedFootprint s (pipChainVisited s startTid fuel)) with
   | none => (s, fallback)
   | some S =>
-      runChainExtension schedulerLockBracketDomain caller S.pairs action s
+      runChainExtension schedulerLockBracketDomain caller S action fallback s
 
 /-- **WS-RR RR7.40**: with no footprint declared — a chain whose keys repeat —
 the extension commits nothing and acquires nothing.
@@ -461,21 +461,38 @@ theorem withPipChainSchedExtension_undeclared {α : Type} (caller : CoreId)
   unfold withPipChainSchedExtension
   rw [h]
 
-/-- **WS-RR RR7.40**: on a declared footprint the extension is acquire / act /
-unwind over exactly the chain's locks. -/
+/-- **WS-RR RR7.40 / PR #892 review round 2**: on a declared footprint the
+growing phase **granted**, the extension is acquire / act / unwind over exactly
+the chain's locks. -/
 theorem withPipChainSchedExtension_declared {α : Type} (caller : CoreId)
     (startTid : SeLe4n.ThreadId) (fuel : Nat)
     (action : SystemState → SystemState × α) (fallback : α) (s : SystemState)
     (S : SchedLockSet)
     (h : SchedLockSet.ofList? (pipChainSchedFootprint s (pipChainVisited s startTid fuel))
-          = some S) :
+          = some S)
+    (hHeld : schedLockSetHeld caller S (schedAcquireAll caller S.pairs s)) :
     withPipChainSchedExtension caller startTid fuel action fallback s
       = (schedUnwindAll caller S.pairs.reverse
            (action (schedAcquireAll caller S.pairs s)).1,
          (action (schedAcquireAll caller S.pairs s)).2) := by
   unfold withPipChainSchedExtension
   rw [h]
-  rfl
+  exact runChainExtension_held schedulerLockBracketDomain caller S action fallback s hHeld
+
+/-- **PR #892 review round 2 (the load-bearing negative)**: a declared footprint
+the growing phase did **not** grant is unwound and the action never runs. -/
+theorem withPipChainSchedExtension_refused {α : Type} (caller : CoreId)
+    (startTid : SeLe4n.ThreadId) (fuel : Nat)
+    (action : SystemState → SystemState × α) (fallback : α) (s : SystemState)
+    (S : SchedLockSet)
+    (h : SchedLockSet.ofList? (pipChainSchedFootprint s (pipChainVisited s startTid fuel))
+          = some S)
+    (hNot : ¬ schedLockSetHeld caller S (schedAcquireAll caller S.pairs s)) :
+    withPipChainSchedExtension caller startTid fuel action fallback s
+      = (schedUnwindAll caller S.pairs.reverse (schedAcquireAll caller S.pairs s), fallback) := by
+  unfold withPipChainSchedExtension
+  rw [h]
+  exact runChainExtension_refused schedulerLockBracketDomain caller S action fallback s hNot
 
 /-- **WS-RR RR7.40 (the declaration resolves for an acyclic chain)**: a walk that
 visits each thread once declares a footprint.
@@ -511,18 +528,18 @@ held, which the ladder forbids). -/
 theorem runBracketed_chainExtension_composes {α : Type}
     (D : Concurrency.LockBracketDomain)
     (declared : SystemState → Option D.Footprint) (lockCore : CoreId)
-    (chain : List D.Key) (action : SystemState → SystemState × α)
+    (chain : D.Footprint) (action : SystemState → SystemState × α) (fallback : α)
     (st : SystemState) (S : D.Footprint)
     (hDecl : declared st = some S)
     (hGuard : declared (D.acquire lockCore (D.sequence S) st) = some S ∧
       D.held lockCore S (D.acquire lockCore (D.sequence S) st)) :
     Concurrency.runBracketed D declared lockCore
-        (fun s => let r := runChainExtension D lockCore chain action s; (r.2, r.1)) st
+        (fun s => let r := runChainExtension D lockCore chain action fallback s; (r.2, r.1)) st
       = .committed
-          ((runChainExtension D lockCore chain action
+          ((runChainExtension D lockCore chain action fallback
               (D.acquire lockCore (D.sequence S) st)).2,
            D.unwind lockCore (D.sequence S).reverse
-             (runChainExtension D lockCore chain action
+             (runChainExtension D lockCore chain action fallback
                (D.acquire lockCore (D.sequence S) st)).1) :=
   Concurrency.runBracketed_committed D declared lockCore _ st S hDecl hGuard
 

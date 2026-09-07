@@ -3247,7 +3247,9 @@ locks are nameable now that RR7.39 gave the scheduler domain a runtime:
 write lock **and** its home core's run-queue write lock — two segments, because
 the `SchedLockId` ladder puts every object lock below every run-queue lock and
 per-member coupling would walk it backwards.  `withPipChainSchedExtension`
-acquires it through the shared `runChainExtension`, and
+acquires it through the shared `runChainExtension` — which acts only once the
+footprint is held and otherwise unwinds and returns the fallback (PR #892 review
+round 2) — and
 `propagatePipChainCrossCore_coversWrites` proves the walk writes nothing outside
 it.  The entry goes rather than narrows because the walk is now covered end to
 end; the inventory falls from four to three, which is the only reason it may.

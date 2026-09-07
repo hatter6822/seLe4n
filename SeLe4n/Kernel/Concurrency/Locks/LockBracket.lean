@@ -241,7 +241,8 @@ theorem runBracketed_undeclared_state {α : Type} (D : LockBracketDomain)
 -- §1b  The dynamic-chain extension
 -- ============================================================================
 
-/-- **WS-RR RR7.40**: acquire a **dynamically discovered** lock list, act, unwind.
+/-- **WS-RR RR7.40**: acquire a **dynamically discovered** footprint, act only
+if it is held, unwind.
 
 The bracket above resolves its footprint from the pre-state, which is what a
 declared footprint *is*.  A chain walk cannot: SM3.C.11's PIP walker discovers
@@ -251,9 +252,20 @@ still owe is the same 2PL shape — acquire in the domain's order, run the actio
 the acquired state, unwind in reverse (withdraw before release, WS-LC LC4).
 
 Stated once, over the same `LockBracketDomain` record the bracket takes, so
-"acquire a discovered list, act, unwind" has one answer at every lock domain.
-`Locks/DynamicChainExtension.lean`'s `withDynamicChainExtension` is its
+"acquire a discovered footprint, act, unwind" has one answer at every lock
+domain.  `Locks/DynamicChainExtension.lean`'s `withDynamicChainExtension` is its
 object-domain instance and RR7.40's scheduler-domain chain footprint its other.
+
+**The action runs only once the footprint is held** (PR #892 review round 2).
+The growing phase runs whether or not the set was granted — a member another
+core holds *queues* this core rather than admitting it — and the first cut ran
+the action on the acquired state unconditionally, so under contention both
+instances executed their protected mutations with no exclusion at all, and the
+unwind that followed could not undo them.  The guard is the bracket's own
+holdership check (`D.held`), which is why this takes a *footprint* rather than a
+key list: holdership is a question about a footprint.  A refused extension
+unwinds what it queued and returns `fallback`, the value the walker's own
+no-chain arms already return.
 
 There is deliberately **no** revalidation here, and that is the difference from
 `runBracketed` rather than an omission.  A declared footprint is resolved *before*
@@ -263,29 +275,51 @@ reads trustworthy is the walk's own retry discipline (`MAX_PIP_RETRIES`), not a
 re-resolution afterwards.  A caller that needs both composes the two: the declared
 bracket outside, the chain extension inside it. -/
 def runChainExtension {α : Type} (D : LockBracketDomain) (caller : CoreId)
-    (locks : List D.Key) (action : SystemState → SystemState × α) (s : SystemState) :
-    SystemState × α :=
-  let acquired := D.acquire caller locks s
-  let (postAction, result) := action acquired
-  (D.unwind caller locks.reverse postAction, result)
+    (S : D.Footprint) (action : SystemState → SystemState × α) (fallback : α)
+    (s : SystemState) : SystemState × α :=
+  let acquired := D.acquire caller (D.sequence S) s
+  if D.held caller S acquired then
+    let (postAction, result) := action acquired
+    (D.unwind caller (D.sequence S).reverse postAction, result)
+  else
+    (D.unwind caller (D.sequence S).reverse acquired, fallback)
 
-/-- **WS-RR RR7.40**: the chain extension's shape, as an equation — acquire, act
-on the acquired state, unwind the reverse. -/
-theorem runChainExtension_unfold {α : Type} (D : LockBracketDomain) (caller : CoreId)
-    (locks : List D.Key) (action : SystemState → SystemState × α) (s : SystemState) :
-    runChainExtension D caller locks action s
-      = (D.unwind caller locks.reverse (action (D.acquire caller locks s)).1,
-         (action (D.acquire caller locks s)).2) := rfl
-
-/-- **WS-RR RR7.40**: an empty chain acquires nothing, so the extension is the
-bare action — the fail-closed arm a walk that discovered no chain takes. -/
-@[simp] theorem runChainExtension_nil {α : Type} (D : LockBracketDomain) (caller : CoreId)
-    (action : SystemState → SystemState × α) (s : SystemState)
-    (hAcq : ∀ t, D.acquire caller [] t = t) (hUnw : ∀ t, D.unwind caller [] t = t) :
-    runChainExtension D caller [] action s = action s := by
+/-- **WS-RR RR7.40 / PR #892 review round 2**: on a held footprint the chain
+extension's shape is acquire, act on the acquired state, unwind the reverse. -/
+theorem runChainExtension_held {α : Type} (D : LockBracketDomain) (caller : CoreId)
+    (S : D.Footprint) (action : SystemState → SystemState × α) (fallback : α)
+    (s : SystemState) (hHeld : D.held caller S (D.acquire caller (D.sequence S) s)) :
+    runChainExtension D caller S action fallback s
+      = (D.unwind caller (D.sequence S).reverse (action (D.acquire caller (D.sequence S) s)).1,
+         (action (D.acquire caller (D.sequence S) s)).2) := by
   unfold runChainExtension
-  rw [hAcq]
-  simp only [List.reverse_nil]
+  simp only [if_pos hHeld]
+
+/-- **PR #892 review round 2 (the load-bearing negative)**: a footprint the
+growing phase did not grant is unwound and the action **never runs** — the
+returned state is the pre-state with the footprint acquired and unwound, and
+the value is the fallback.  A guard that acted first and refused afterwards
+would be worse than no guard at all. -/
+theorem runChainExtension_refused {α : Type} (D : LockBracketDomain) (caller : CoreId)
+    (S : D.Footprint) (action : SystemState → SystemState × α) (fallback : α)
+    (s : SystemState) (hNot : ¬ D.held caller S (D.acquire caller (D.sequence S) s)) :
+    runChainExtension D caller S action fallback s
+      = (D.unwind caller (D.sequence S).reverse (D.acquire caller (D.sequence S) s), fallback) := by
+  unfold runChainExtension
+  simp only [if_neg hNot]
+
+/-- **WS-RR RR7.40**: an empty footprint acquires nothing and is trivially held,
+so the extension is the bare action — the arm a walk that discovered no chain
+takes. -/
+theorem runChainExtension_empty {α : Type} (D : LockBracketDomain) (caller : CoreId)
+    (S : D.Footprint) (action : SystemState → SystemState × α) (fallback : α)
+    (s : SystemState) (hSeq : D.sequence S = [])
+    (hAcq : ∀ t, D.acquire caller [] t = t) (hUnw : ∀ t, D.unwind caller [] t = t)
+    (hHeld : D.held caller S s) :
+    runChainExtension D caller S action fallback s = action s := by
+  unfold runChainExtension
+  rw [hSeq, hAcq]
+  simp only [List.reverse_nil, if_pos hHeld]
   rw [hUnw]
 
 -- ============================================================================

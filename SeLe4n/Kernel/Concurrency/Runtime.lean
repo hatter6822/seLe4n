@@ -200,17 +200,29 @@ structure PerCoreStatsSnapshot where
 
 /-- **WS-RR RR7.33**: read one core's whole counter slot.
 
-The consumer the four accessors did not have.  Four `Relaxed` loads, so the
-snapshot is *not* atomic as a whole — `irqs` may already have moved on by the
-time `sgis` is read.  That is the right trade for counters the Rust module
-states are "not required for correctness": a seq-cst snapshot would put barriers
-on the IRQ hot path to buy an exactness no consumer needs.  It is also why
-`perCoreStatsPlausible` below is a *plausibility* check with slack rather than
-an equality. -/
+The consumer the four accessors did not have.  Four independent loads, so the
+snapshot is *not* atomic as a whole — a counter may move between any two of
+them.  That is the right trade for counters the Rust module states are "not
+required for correctness": a seq-cst snapshot would put barriers on the IRQ hot
+path to buy an exactness no consumer needs.
+
+**The order of the loads is the relation, not a convenience** (PR #892 review
+round 2).  The handler increments the **total** first and the subtype it then
+dispatches second (`trap::handle_irq_per_core`, then the timer or SGI path), so
+a snapshot must read the subtypes **first** and the total **last**: every
+subtype increment it observes was preceded by a total increment, which the
+later total read then includes.  Reading the total first — as this did until
+that round — made `timerTicks + sgis > irqs` reachable on a perfectly coherent
+slot, whenever a tick or an SGI landed between the total's load and its
+subtype's, and the planned hardware plausibility check would have rejected a
+healthy core.  Across cores the Rust side pairs the subtype increments'
+`Release` with the subtype loads' `Acquire` (`per_cpu_stats.rs`), so the same
+order holds for a slot read from another PE.  `syscalls` is read last and is
+constrained by nothing. -/
 def perCoreStats (core : CoreId) : BaseIO PerCoreStatsSnapshot := do
-  let irqs ← perCoreIrqCount core
   let timerTicks ← perCoreTimerTickCount core
   let sgis ← perCoreSgiCount core
+  let irqs ← perCoreIrqCount core
   let syscalls ← perCoreSyscallCount core
   pure { irqs, timerTicks, sgis, syscalls }
 
@@ -226,9 +238,13 @@ exception, not an interrupt.
 **Read in a single direction.**  `false` means the snapshot cannot have come from
 a coherent counter slot — a wiring defect in the FFI bridge, a core id resolving
 to the wrong slot, or a counter that stopped being incremented where it is
-documented to be.  `true` means only that nothing is provably wrong: the four
-loads are independent, so a snapshot torn across a burst of interrupts is
-plausible and still not a consistent instant. -/
+documented to be.  That reading is exact only because of the load order
+`perCoreStats` fixes (subtypes first, total last) together with the
+release/acquire pairing on the Rust side: under them the containment holds of
+**every** snapshot, torn or not, so a `false` is never a burst of interrupts
+caught mid-count (PR #892 review round 2).  `true` means only that nothing is
+provably wrong: the four loads are still independent, so a snapshot torn across
+a burst is plausible and still not a consistent instant. -/
 def perCoreStatsPlausible (s : PerCoreStatsSnapshot) : Bool :=
   s.timerTicks.toNat + s.sgis.toNat ≤ s.irqs.toNat
 
@@ -263,15 +279,20 @@ theorem perCoreStatsPlausible_refuses_ticks_over_irqs :
     perCoreStatsPlausible { irqs := 1, timerTicks := 2, sgis := 0, syscalls := 0 } = false := by
   decide
 
-/-- **WS-RR RR7.33**: `perCoreStats` reads every accessor, in slot order.
+/-- **WS-RR RR7.33 / PR #892 review round 2**: `perCoreStats` reads every
+accessor, **subtypes first and the total last**.
 
-The structural pin behind the finding: a refactor that drops one of the four
-loads — the failure that would silently return a `default` field — fails here. -/
-theorem perCoreStats_reads_every_accessor (core : CoreId) :
+The structural pin behind both findings: a refactor that drops one of the four
+loads — the failure that would silently return a `default` field — fails here,
+and so does one that reads the total before its subtypes, which is the order
+that made `perCoreStatsPlausible` refuse a healthy core mid-interrupt.  The
+order is the relation, so it is stated as the definition's own equation rather
+than in a comment. -/
+theorem perCoreStats_reads_subtypes_then_total (core : CoreId) :
     perCoreStats core = (do
-      let irqs ← perCoreIrqCount core
       let timerTicks ← perCoreTimerTickCount core
       let sgis ← perCoreSgiCount core
+      let irqs ← perCoreIrqCount core
       let syscalls ← perCoreSyscallCount core
       pure { irqs, timerTicks, sgis, syscalls }) := by
   rfl

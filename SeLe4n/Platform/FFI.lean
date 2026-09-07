@@ -1251,24 +1251,60 @@ A `PlatformConfig` carries four fields.  Two of them describe what the boot
 image creates and only the caller can know (`irqTable`, `initialObjects`); the
 other two describe the hardware (`machineConfig`) and the platform-reserved
 boot VSpace root (`bootVSpaceRoot`), which the binding already states
-(`PlatformBinding.machineConfig`, `PlatformBinding.bootVSpaceRoot`).  The
+(`PlatformBinding.bindMachineConfig`, `PlatformBinding.bootVSpaceRoot`).  The
 platform entry used to take the caller's word for the latter two, so a caller
 could boot the RPi5 binding without its canonical root or under another
 machine's address widths.  Applying the binding's values is the fail-safe
 direction — a caller cannot make the hardware boot describe hardware it is not
 running on — and it is what makes the checked boot's canonical-root theorems
 theorems of the hardware boot rather than of a config a caller happened to
-pass.  The four projections below are definitional. -/
+pass.  The four projections below are definitional.
+
+**PR #892 review round 2**: the machine configuration is the binding's, *bound
+for the caller's account*: `bindMachineConfig config.machineConfig`.  The
+caller's `machineConfig` does not become the hardware description — it selects
+among the configurations the binding declares, which on the RPi5 are its RAM
+variants (`rpi5BoundMachineConfig`), so a device tree's account of a 2 GiB
+board boots the 2 GiB configuration and a caller that describes nothing boots
+the smallest.  Round 7's guarantee is kept in the form that survives a family:
+the bound configuration is a member of the binding's family whatever the caller
+said (`rpi5BoundMachineConfig_mem_family`), and it declares the binding's PE
+count (`bindPlatformConfig_declaredCoreCount`). -/
 def bindPlatformConfig (platform : Type) [PlatformBinding platform]
     (config : PlatformConfig) : PlatformConfig :=
   { config with
-    machineConfig := PlatformBinding.machineConfig (platform := platform)
+    machineConfig := PlatformBinding.bindMachineConfig (platform := platform) config.machineConfig
     bootVSpaceRoot := PlatformBinding.bootVSpaceRoot (platform := platform) }
 
 theorem bindPlatformConfig_machineConfig (platform : Type) [PlatformBinding platform]
     (config : PlatformConfig) :
     (bindPlatformConfig platform config).machineConfig =
-      PlatformBinding.machineConfig (platform := platform) := rfl
+      PlatformBinding.bindMachineConfig (platform := platform) config.machineConfig := rfl
+
+/-- **PR #892 review round 2**: the bound configuration declares the binding's
+PE count — the class obligation `bindMachineConfig_declaredCoreCount` at the
+configuration the boot actually installs. -/
+theorem bindPlatformConfig_declaredCoreCount (platform : Type) [PlatformBinding platform]
+    (config : PlatformConfig) :
+    (bindPlatformConfig platform config).machineConfig.declaredCoreCount =
+      PlatformBinding.coreCount (platform := platform) :=
+  PlatformBinding.bindMachineConfig_declaredCoreCount (platform := platform) config.machineConfig
+
+/-- **PR #892 review round 2**: the live PE count of a state the platform boot
+produces is the binding's `coreCount` — the theorem PR #889 review round 20
+described in prose ("with the obligation discharged by every binding, the two
+are the same number on any state this entry produces") and no statement
+carried.  Read off the checked boot's `declaredCoreCount` link and the bound
+configuration's obligation; `bootAndInitialisePlatform_eq_checked_boot` is what
+says the platform entry runs exactly this checked boot. -/
+theorem bootAndInitialisePlatform_checked_declaredCoreCount (platform : Type)
+    [PlatformBinding platform] (config : PlatformConfig) (ist : IntermediateState)
+    (h : bootFromPlatformCheckedWithIdleThreadsFor
+        (PlatformBinding.declaredCores (platform := platform))
+        (bindPlatformConfig platform config) = .ok ist) :
+    ist.state.machine.declaredCoreCount = PlatformBinding.coreCount (platform := platform) := by
+  rw [bootFromPlatformCheckedWithIdleThreadsFor_declaredCoreCount _ _ _ h]
+  exact bindPlatformConfig_declaredCoreCount platform config
 
 theorem bindPlatformConfig_bootVSpaceRoot (platform : Type) [PlatformBinding platform]
     (config : PlatformConfig) :
@@ -1315,9 +1351,11 @@ without the canonical ASID root, modelling a memory map and address widths the
 hardware adapters do not have.  Those two fields are the binding's decisions in
 exactly the sense the labeling and the cores are — made once, where the platform
 is described — so the entry boots `bindPlatformConfig platform config`: the
-caller's IRQ table and initial objects under the binding's machine configuration
-and boot VSpace root.  SM10.1's `lean_kernel_main` calls `bootAndInitialiseRPi5`,
-the instance of this entry fixed at `RPi5Platform`. -/
+caller's IRQ table and initial objects under the binding's boot VSpace root and
+the machine configuration the binding binds for the caller's account
+(`PlatformBinding.bindMachineConfig`, PR #892 review round 2 — on the RPi5, the
+RAM variant the account covers).  SM10.1's `lean_kernel_main` calls
+`bootAndInitialiseRPi5`, the instance of this entry fixed at `RPi5Platform`. -/
 def bootAndInitialisePlatform (platform : Type) [PlatformBinding platform]
     (config : PlatformConfig) : BaseIO (Except String SystemState) :=
   bootAndInitialiseFromPlatformOn (PlatformBinding.declaredCores (platform := platform))
@@ -1400,14 +1438,26 @@ blob, check the board against the binding, and produce the configuration the
 checked boot runs on.
 
 The device tree does **not** get to describe the hardware the kernel programs:
-`bindPlatformConfig` replaces the machine configuration with the binding's, and
+`bindPlatformConfig` binds the binding's own machine configuration, and
 `bootAndInitialisePlatform_eq_checked_boot` is what says so.  Its role is the
 check — an image built for the BCM2712 that finds itself on a board whose
 device tree does not cover the binding's RAM and MMIO refuses here, rather than
 programming peripherals that are not there.  Both halves are checked: the RAM
-against `rpi5MachineConfig`'s `.ram` regions, the MMIO against
-`RPi5.mmioRegions` — the PL011, the GIC distributor and the GIC CPU interface,
-which is the granularity a device tree discovers peripherals at. -/
+against the `.ram` regions of the configuration the binding will install, the
+MMIO against `RPi5.mmioRegions` — the PL011, the GIC distributor and the GIC
+CPU interface, which is the granularity a device tree discovers peripherals at.
+
+**PR #892 review round 2**: the RAM is validated against the **detected
+variant**, not the fixed 4 GiB map.  The RPi5 ships in 1, 2, 4, 8 and 16 GiB
+(`rpi5Variants`), and checking every board against `rpi5MachineConfig` refused
+the 1 and 2 GiB boards outright.  The configuration checked here is
+`rpi5BoundMachineConfig dt.machineConfig` — the very function the binding's
+`bindMachineConfig` installs for this account — so the variant validated and
+the variant booted are one value (`rpi5PlatformConfigFromDtb_ok_binds_detected_variant`),
+and by `rpi5BoundMachineConfig_covered_iff` the check passes exactly when the
+board covers *some* variant: a board below the smallest, or with its RAM at a
+foreign base, is refused (`rpi5PlatformConfigFromDtb_refuses_uncovered_family`),
+and an accepted board boots on the largest variant it covers. -/
 def rpi5PlatformConfigFromDtb (blob : ByteArray)
     (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
     (initialObjects : List SeLe4n.Platform.Boot.ObjectEntry)
@@ -1418,7 +1468,7 @@ def rpi5PlatformConfigFromDtb (blob : ByteArray)
   | .error e => .error (.unparseableBlob e)
   | .ok dt =>
       if SeLe4n.Platform.Boot.deviceTreeCoversMachineConfig dt
-            SeLe4n.Platform.RPi5.rpi5MachineConfig
+            (SeLe4n.Platform.RPi5.rpi5BoundMachineConfig dt.machineConfig)
           && SeLe4n.Platform.Boot.deviceTreeCoversMmioRegions dt
             SeLe4n.Platform.RPi5.mmioRegions then
         .ok (SeLe4n.Platform.Boot.PlatformConfig.fromDeviceTree dt irqTable initialObjects
@@ -1486,12 +1536,42 @@ theorem rpi5PlatformConfigFromDtb_refuses_foreign_board (blob : ByteArray)
     (hParse : SeLe4n.Platform.DeviceTree.fromDtbFull blob
       SeLe4n.Platform.RPi5.rpi5MachineConfig.physicalAddressWidth = .ok dt)
     (hCover : SeLe4n.Platform.Boot.deviceTreeCoversMachineConfig dt
-      SeLe4n.Platform.RPi5.rpi5MachineConfig = false) :
+      (SeLe4n.Platform.RPi5.rpi5BoundMachineConfig dt.machineConfig) = false) :
     rpi5PlatformConfigFromDtb blob irqTable initialObjects bootVSpaceRoot
       = .error .boardDoesNotMatchBinding := by
   unfold rpi5PlatformConfigFromDtb
   rw [hParse]
   simp [hCover]
+
+/-- **PR #892 review round 2**: a board whose account covers **no** variant of
+the family — below the smallest, or with its RAM somewhere the BCM2712 does not
+put it — is refused: the bound configuration is then a member the board does
+not cover (`rpi5BoundMachineConfig_covered_iff`), and the check is that
+member's.  This is the form the finding's negative takes now that a 1 GiB board
+is accepted: what a short board is short *of* is the smallest variant. -/
+theorem rpi5PlatformConfigFromDtb_refuses_uncovered_family (blob : ByteArray)
+    (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
+    (initialObjects : List SeLe4n.Platform.Boot.ObjectEntry)
+    (bootVSpaceRoot : Option SeLe4n.Platform.Boot.BootVSpaceRootEntry)
+    (dt : SeLe4n.Platform.DeviceTree)
+    (hParse : SeLe4n.Platform.DeviceTree.fromDtbFull blob
+      SeLe4n.Platform.RPi5.rpi5MachineConfig.physicalAddressWidth = .ok dt)
+    (hNone : ∀ v ∈ SeLe4n.Platform.RPi5.rpi5Variants,
+      SeLe4n.Platform.Boot.machineConfigCovers dt.machineConfig
+        (SeLe4n.Platform.RPi5.rpi5MachineConfigForVariant v) = false) :
+    rpi5PlatformConfigFromDtb blob irqTable initialObjects bootVSpaceRoot
+      = .error .boardDoesNotMatchBinding := by
+  apply rpi5PlatformConfigFromDtb_refuses_foreign_board blob irqTable initialObjects
+    bootVSpaceRoot dt hParse
+  rw [SeLe4n.Platform.Boot.deviceTreeCoversMachineConfig_eq]
+  cases hCov : SeLe4n.Platform.Boot.machineConfigCovers dt.machineConfig
+      (SeLe4n.Platform.RPi5.rpi5BoundMachineConfig dt.machineConfig) with
+  | false => rfl
+  | true =>
+      obtain ⟨v, hv, hc⟩ :=
+        (SeLe4n.Platform.RPi5.rpi5BoundMachineConfig_covered_iff dt.machineConfig).mp hCov
+      rw [hNone v hv] at hc
+      exact absurd hc Bool.false_ne_true
 
 /-- **WS-RR RR7.27**: and a board whose device tree discovered none of the MMIO
 the binding programs is refused too — the half a RAM-only check would miss. -/
@@ -1522,7 +1602,7 @@ theorem rpi5PlatformConfigFromDtb_ok_machineConfig (blob : ByteArray)
     (hParse : SeLe4n.Platform.DeviceTree.fromDtbFull blob
       SeLe4n.Platform.RPi5.rpi5MachineConfig.physicalAddressWidth = .ok dt)
     (hCover : SeLe4n.Platform.Boot.deviceTreeCoversMachineConfig dt
-      SeLe4n.Platform.RPi5.rpi5MachineConfig = true)
+      (SeLe4n.Platform.RPi5.rpi5BoundMachineConfig dt.machineConfig) = true)
     (hMmio : SeLe4n.Platform.Boot.deviceTreeCoversMmioRegions dt
       SeLe4n.Platform.RPi5.mmioRegions = true) :
     rpi5PlatformConfigFromDtb blob irqTable initialObjects bootVSpaceRoot
@@ -1531,6 +1611,48 @@ theorem rpi5PlatformConfigFromDtb_ok_machineConfig (blob : ByteArray)
   unfold rpi5PlatformConfigFromDtb
   rw [hParse]
   simp [hCover, hMmio]
+
+/-- **PR #892 review round 2 — the relation the round asks for**: on every
+configuration the bridge accepts, the machine configuration the hardware boot
+installs is the variant the board's account selected **and the board covers
+it**.  The first half is `bindPlatformConfig` at the RPi5 binding on the
+device tree's own account (`PlatformConfig.fromDeviceTree` carries it through
+unchanged); the second is the check the bridge just passed, stated on the same
+function.  Validation and installation cannot name different variants, because
+there is one function and it is named twice. -/
+theorem rpi5PlatformConfigFromDtb_ok_binds_detected_variant (blob : ByteArray)
+    (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
+    (initialObjects : List SeLe4n.Platform.Boot.ObjectEntry)
+    (bootVSpaceRoot : Option SeLe4n.Platform.Boot.BootVSpaceRootEntry)
+    (config : SeLe4n.Platform.Boot.PlatformConfig)
+    (h : rpi5PlatformConfigFromDtb blob irqTable initialObjects bootVSpaceRoot = .ok config) :
+    (bindPlatformConfig SeLe4n.Platform.RPi5.RPi5Platform config).machineConfig =
+        SeLe4n.Platform.RPi5.rpi5BoundMachineConfig config.machineConfig ∧
+    SeLe4n.Platform.Boot.machineConfigCovers config.machineConfig
+        (SeLe4n.Platform.RPi5.rpi5BoundMachineConfig config.machineConfig) = true := by
+  refine ⟨rfl, ?_⟩
+  unfold rpi5PlatformConfigFromDtb at h
+  cases hParse : SeLe4n.Platform.DeviceTree.fromDtbFull blob
+      SeLe4n.Platform.RPi5.rpi5MachineConfig.physicalAddressWidth with
+  | error e =>
+      rw [hParse] at h
+      dsimp only at h
+      cases h
+  | ok dt =>
+      rw [hParse] at h
+      dsimp only at h
+      by_cases hGuard :
+          (SeLe4n.Platform.Boot.deviceTreeCoversMachineConfig dt
+              (SeLe4n.Platform.RPi5.rpi5BoundMachineConfig dt.machineConfig)
+            && SeLe4n.Platform.Boot.deviceTreeCoversMmioRegions dt
+              SeLe4n.Platform.RPi5.mmioRegions) = true
+      · rw [if_pos hGuard] at h
+        injection h with hConfig
+        rw [← hConfig, SeLe4n.Platform.Boot.PlatformConfig.fromDeviceTree_machineConfig]
+        rw [Bool.and_eq_true, SeLe4n.Platform.Boot.deviceTreeCoversMachineConfig_eq] at hGuard
+        exact hGuard.1
+      · rw [if_neg hGuard] at h
+        cases h
 
 /-- WS-RR RR5.2: under a binding's labeling the boot entry **cannot** be refused
     on the labeling — it is the checked idle boot followed by the two installs,
@@ -1568,13 +1690,45 @@ theorem bootAndInitialisePlatform_rpi5_all_cores (config : PlatformConfig) :
   exact bootFromPlatformCheckedWithIdleThreadsFor_allCores config
 
 /-- PR #889 review round 7: the hardware boot carries the **canonical** RPi5
-boot VSpace root and machine configuration whatever the caller's config said —
-the bound config's two hardware fields are the binding's, by definition. -/
+boot VSpace root and the binding's machine configuration whatever the caller's
+config said — the bound config's two hardware fields are the binding's, by
+definition.  **PR #892 review round 2**: the machine configuration is the
+binding's *for the caller's account* — the member of `rpi5Variants` the
+account selects (`rpi5BoundMachineConfig`), which is what lets a 1 GiB or
+2 GiB board boot at all. -/
 theorem bootAndInitialiseRPi5_bound_config (config : PlatformConfig) :
     (bindPlatformConfig SeLe4n.Platform.RPi5.RPi5Platform config).bootVSpaceRoot =
         some SeLe4n.Platform.RPi5.rpi5BootVSpaceRootEntry ∧
     (bindPlatformConfig SeLe4n.Platform.RPi5.RPi5Platform config).machineConfig =
-        SeLe4n.Platform.RPi5.rpi5MachineConfig := ⟨rfl, rfl⟩
+        SeLe4n.Platform.RPi5.rpi5BoundMachineConfig config.machineConfig := ⟨rfl, rfl⟩
+
+/-- **PR #892 review round 2**: round 7's guarantee in the form that survives a
+family — whatever the caller's configuration describes, the hardware boot's
+machine configuration is a member of the RPi5's declared variants.  A caller
+selects among them; it cannot describe hardware outside them. -/
+theorem bootAndInitialiseRPi5_bound_config_mem_family (config : PlatformConfig) :
+    ∃ v ∈ SeLe4n.Platform.RPi5.rpi5Variants,
+      (bindPlatformConfig SeLe4n.Platform.RPi5.RPi5Platform config).machineConfig =
+        SeLe4n.Platform.RPi5.rpi5MachineConfigForVariant v :=
+  SeLe4n.Platform.RPi5.rpi5BoundMachineConfig_mem_family config.machineConfig
+
+/-- **PR #892 review round 2**: a caller describing the canonical 4 GiB board
+boots the canonical configuration — the pre-round behaviour on the account
+every existing caller passes, kept. -/
+theorem bootAndInitialiseRPi5_bound_config_canonical (config : PlatformConfig)
+    (h : config.machineConfig = SeLe4n.Platform.RPi5.rpi5MachineConfig) :
+    (bindPlatformConfig SeLe4n.Platform.RPi5.RPi5Platform config).machineConfig =
+        SeLe4n.Platform.RPi5.rpi5MachineConfig := by
+  rw [bindPlatformConfig_machineConfig, SeLe4n.Platform.RPi5.rpi5_bindMachineConfig, h]
+  exact SeLe4n.Platform.RPi5.rpi5BoundMachineConfig_rpi5MachineConfig
+
+/-- **PR #892 review round 2**: the bound configuration's PE count is the
+BCM2712's four on every account — `bindPlatformConfig_declaredCoreCount` at the
+hardware binding, which is what makes the round-20 affinity refusal read the
+right number on every RPi5 variant. -/
+theorem bootAndInitialiseRPi5_bound_config_declaredCoreCount (config : PlatformConfig) :
+    (bindPlatformConfig SeLe4n.Platform.RPi5.RPi5Platform config).machineConfig.declaredCoreCount
+      = 4 := rfl
 
 /-- WS-RC R2.B.1 helper: Write the FFI-passed register values into the
     given thread's TCB register file.

@@ -721,13 +721,17 @@ private def assembleDtb (structBlock : Array UInt8) : ByteArray :=
       ++ be32 stringsBlock.size ++ be32 structBlock.size
   ByteArray.mk (header ++ structBlock ++ stringsBlock)
 
-/-- A device tree for a board with `ramSize` bytes of RAM starting at 0 and the
-three MMIO windows the RPi5 binding programs. -/
-private def boardDtb (ramSize : Nat) (withMmio : Bool := true) : ByteArray :=
+/-- A device tree for a board whose `/memory` node carries one `reg` pair per
+entry of `regions` (base, size), plus the three MMIO windows the RPi5 binding
+programs.  Several pairs is how the firmware reports a board whose RAM is not
+one contiguous run — every RPi5 above 2 GiB. -/
+private def boardDtbRegions (regions : List (Nat × Nat)) (withMmio : Bool := true) :
+    ByteArray :=
+  let regPairs := regions.foldl (fun acc r => acc ++ be64 r.1 ++ be64 r.2) #[]
   let memoryNode :=
     fdtBeginNode "memory@0"
       ++ fdtProp deviceTypeNameOff (fdtString "memory")
-      ++ fdtProp regNameOff (be64 0 ++ be64 ramSize)
+      ++ fdtProp regNameOff regPairs
       ++ fdtEndNodeTok
   let peripherals :=
     if withMmio then
@@ -736,6 +740,19 @@ private def boardDtb (ramSize : Nat) (withMmio : Bool := true) : ByteArray :=
         ++ peripheralNode "interrupt-controller@ff842000" 0xFF842000 0x2000
     else #[]
   assembleDtb (fdtBeginNode "" ++ memoryNode ++ peripherals ++ fdtEndNodeTok ++ fdtEndTok)
+
+/-- A device tree for a board with `ramSize` bytes of RAM starting at 0. -/
+private def boardDtb (ramSize : Nat) (withMmio : Bool := true) : ByteArray :=
+  boardDtbRegions [(0, ramSize)] withMmio
+
+/-- The machine configuration the bridge binds for an accepted blob, read back
+through the binding exactly as the hardware boot binds it. -/
+private def boundMapOf (config : PlatformConfig) : List MemoryRegion :=
+  (bindPlatformConfig RPi5Platform config).machineConfig.memoryMap
+
+/-- The map of a variant, for comparison with `boundMapOf`. -/
+private def variantMap (gib : Nat) : List MemoryRegion :=
+  rpi5MemoryMapForConfig { ramSize := gib * 1024 * 1024 * 1024 }
 
 /-- WS-RR RR7.27: the fixture blob parses — the precondition every case below
 rests on, asserted separately so a broken fixture is distinguishable from a
@@ -764,11 +781,14 @@ def deviceTreeBridge_02_matching_board_accepted : IO Unit := do
         (config.irqTable.isEmpty && config.initialObjects.isEmpty
           && config.bootVSpaceRoot.isNone)
 
-/-- WS-RR RR7.27: a board with less RAM than the binding declares is refused.
-The mutation that finds a vacuous check: the blob is well formed, the
-peripherals are all there, and only the RAM extent differs. -/
+/-- WS-RR RR7.27: a board with less RAM than the **smallest** variant the
+binding declares is refused.  The mutation that finds a vacuous check: the blob
+is well formed, the peripherals are all there, and only the RAM extent differs.
+PR #892 review round 2 moved the bar from the fixed 4 GiB map to the family's
+smallest member — 512 MiB is short of every Raspberry Pi 5 ever shipped, where
+1 GiB (the old fixture) is a board this image is built for. -/
 def deviceTreeBridge_03_short_ram_refused : IO Unit := do
-  match rpi5PlatformConfigFromDtb (boardDtb 0x40000000) [] [] none with
+  match rpi5PlatformConfigFromDtb (boardDtb 0x20000000) [] [] none with
   | .error .boardDoesNotMatchBinding =>
       expect "RR7.27-03 short-RAM board refused" true
   | _ => expect "RR7.27-03 short-RAM board refused" false
@@ -804,6 +824,112 @@ def deviceTreeBridge_06_coverage_is_refusable : IO Unit := do
         (!deviceTreeCoversMmioRegions dt mmioRegions)
       expect "RR7.27-06 MMIO demand is non-empty"
         (!mmioRegions.isEmpty)
+
+/-- PR #892 review round 2 — the finding's own boards: a 1 GiB and a 2 GiB
+Raspberry Pi 5 are accepted, and the hardware boot binds each board's **own**
+variant, not the 4 GiB map the bridge used to demand of every board. -/
+def deviceTreeBridge_07_small_variants_bind_their_own_map : IO Unit := do
+  match rpi5PlatformConfigFromDtb (boardDtb 0x40000000) [] [] none with
+  | .error _ => expect "PR892-07 1 GiB board accepted" false
+  | .ok config =>
+      expect "PR892-07 1 GiB board accepted" true
+      expect "PR892-07 1 GiB board binds the 1 GiB variant"
+        (decide (boundMapOf config = variantMap 1))
+  match rpi5PlatformConfigFromDtb (boardDtb 0x80000000) [] [] none with
+  | .error _ => expect "PR892-07 2 GiB board accepted" false
+  | .ok config =>
+      expect "PR892-07 2 GiB board accepted" true
+      expect "PR892-07 2 GiB board binds the 2 GiB variant"
+        (decide (boundMapOf config = variantMap 2))
+      expect "PR892-07 NEGATIVE: the 2 GiB board is not bound the canonical 4 GiB map"
+        (decide (boundMapOf config ≠ rpi5MachineConfig.memoryMap))
+
+/-- PR #892 review round 2: the canonical 4 GiB board still binds the canonical
+configuration — the selection is the largest covered variant, and the 8 GiB
+member needs RAM above 4 GiB this board does not report. -/
+def deviceTreeBridge_08_canonical_board_binds_canonical_map : IO Unit := do
+  match rpi5PlatformConfigFromDtb (boardDtb 0xFC000000) [] [] none with
+  | .error _ => expect "PR892-08 4 GiB board accepted" false
+  | .ok config =>
+      expect "PR892-08 4 GiB board binds the canonical map"
+        (decide (boundMapOf config = rpi5MachineConfig.memoryMap))
+
+/-- PR #892 review round 2: an 8 GiB board as its firmware reports it — the low
+aperture and the remainder relocated above the 4 GiB boundary, 64 MiB more than
+the model's high region — binds the 8 GiB variant, whose map is contained in
+the report.  Two `reg` pairs, so the fixture is the shape a real blob has. -/
+def deviceTreeBridge_09_eight_gib_as_reported : IO Unit := do
+  let blob := boardDtbRegions [(0, 0xFC000000), (0x100000000, 0x104000000)]
+  match rpi5PlatformConfigFromDtb blob [] [] none with
+  | .error _ => expect "PR892-09 8 GiB board accepted" false
+  | .ok config =>
+      expect "PR892-09 config carries both reported regions"
+        (decide (config.machineConfig.memoryMap.length = 2))
+      expect "PR892-09 8 GiB board binds the 8 GiB variant"
+        (decide (boundMapOf config = variantMap 8))
+
+/-- PR #892 review round 2: a board between two variants binds the largest it
+covers — 3 GiB is accepted and runs on the 2 GiB map.  The lost-resource
+direction: the boot declares less RAM than the board has and never more. -/
+def deviceTreeBridge_10_between_variants_binds_largest_covered : IO Unit := do
+  match rpi5PlatformConfigFromDtb (boardDtb 0xC0000000) [] [] none with
+  | .error _ => expect "PR892-10 3 GiB board accepted" false
+  | .ok config =>
+      expect "PR892-10 3 GiB board binds the 2 GiB variant"
+        (decide (boundMapOf config = variantMap 2))
+
+/-- PR #892 review round 2 (the negative a size derivation would miss): 4 GiB
+of RAM at a foreign base covers no variant — the binding checks *where* the
+RAM is, not how much — so the board is refused, not bound the 4 GiB map over
+memory the BCM2712 does not put there. -/
+def deviceTreeBridge_11_foreign_base_refused : IO Unit := do
+  match rpi5PlatformConfigFromDtb (boardDtbRegions [(0x40000000, 0x100000000)]) [] [] none with
+  | .error .boardDoesNotMatchBinding =>
+      expect "PR892-11 RAM at a foreign base refused" true
+  | _ => expect "PR892-11 RAM at a foreign base refused" false
+
+/-- PR #892 review round 2: the union coverage reaches the bridge end to end —
+a 4 GiB board reported as two adjacent halves binds the canonical map, where
+the single-entry reading refused it. -/
+def deviceTreeBridge_12_split_aperture_binds_canonical_map : IO Unit := do
+  let blob := boardDtbRegions [(0, 0x80000000), (0x80000000, 0x7C000000)]
+  match rpi5PlatformConfigFromDtb blob [] [] none with
+  | .error _ => expect "PR892-12 split-aperture board accepted" false
+  | .ok config =>
+      expect "PR892-12 split-aperture board binds the canonical map"
+        (decide (boundMapOf config = rpi5MachineConfig.memoryMap))
+  -- The gap variant of the same board: the halves do not meet, so the 4 GiB
+  -- member is NOT covered and the board binds the largest member it does
+  -- cover — the 2 GiB one, whose aperture lies entirely in the first half.
+  -- The walk stops at the gap (`memoryRegionCovered_gap_refused`); what the
+  -- boot does with that is the lost-resource direction, never a false claim.
+  let gapped := boardDtbRegions [(0, 0x80000000), (0x80200000, 0x7BE00000)]
+  match rpi5PlatformConfigFromDtb gapped [] [] none with
+  | .error _ => expect "PR892-12 NEGATIVE: a gapped board still boots on what it covers" false
+  | .ok config =>
+      expect "PR892-12 NEGATIVE: a gap between the halves refuses the 4 GiB member"
+        (decide (boundMapOf config ≠ rpi5MachineConfig.memoryMap))
+      expect "PR892-12 NEGATIVE: a gapped 4 GiB board binds the 2 GiB variant"
+        (decide (boundMapOf config = variantMap 2))
+
+/-- PR #892 review round 2: the direct entry's fallback — a caller describing no
+memory at all (the model default) is bound the **smallest** variant, never the
+4 GiB default: a configuration that claims no RAM a Raspberry Pi 5 lacks. -/
+def deviceTreeBridge_13_direct_path_fallback_is_smallest : IO Unit := do
+  let bare : PlatformConfig :=
+    { irqTable := [], initialObjects := [],
+      machineConfig := defaultMachineConfig, bootVSpaceRoot := none }
+  expect "PR892-13 an empty account binds the smallest variant"
+    (decide (boundMapOf bare = rpi5MemoryMapForConfig rpi5SmallestVariant))
+  expect "PR892-13 NEGATIVE: an empty account is not bound the 4 GiB default"
+    (decide (boundMapOf bare ≠ rpi5MachineConfig.memoryMap))
+  let canonical : PlatformConfig := { bare with machineConfig := rpi5MachineConfig }
+  expect "PR892-13 the canonical account binds the canonical map"
+    (decide (boundMapOf canonical = rpi5MachineConfig.memoryMap))
+  expect "PR892-13 every variant is well formed"
+    (rpi5Variants.all (fun v => (rpi5MachineConfigForVariant v).wellFormed))
+  expect "PR892-13 the family is ascending"
+    (decide (rpi5Variants.Pairwise (fun a b => a.ramSize ≤ b.ramSize)))
 
 end SeLe4n.Testing.Ak9PlatformSuite
 
@@ -864,5 +990,13 @@ def main : IO Unit := do
   deviceTreeBridge_04_missing_mmio_refused
   deviceTreeBridge_05_unparseable_blob_refused
   deviceTreeBridge_06_coverage_is_refusable
+  -- PR #892 review round 2: the binding installs the board's own RAM variant
+  deviceTreeBridge_07_small_variants_bind_their_own_map
+  deviceTreeBridge_08_canonical_board_binds_canonical_map
+  deviceTreeBridge_09_eight_gib_as_reported
+  deviceTreeBridge_10_between_variants_binds_largest_covered
+  deviceTreeBridge_11_foreign_base_refused
+  deviceTreeBridge_12_split_aperture_binds_canonical_map
+  deviceTreeBridge_13_direct_path_fallback_is_smallest
   IO.println ""
   IO.println "=== All AK9 platform tests passed ==="

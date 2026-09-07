@@ -221,7 +221,7 @@ open SeLe4n.Platform.RPi5
 -- WS-RR RR7.33: the reader the four accessors feed, and its invariant.
 #check @SeLe4n.Kernel.Concurrency.perCoreStats
 #check @SeLe4n.Kernel.Concurrency.perCoreStatsPlausible
-#check @SeLe4n.Kernel.Concurrency.perCoreStats_reads_every_accessor
+#check @SeLe4n.Kernel.Concurrency.perCoreStats_reads_subtypes_then_total
 #check @SeLe4n.Kernel.Concurrency.perCoreStatsPlausible_tick_implies_irq
 #check @SeLe4n.Kernel.Concurrency.perCoreStatsPlausible_sgi_implies_irq
 #check @SeLe4n.Kernel.Concurrency.perCoreStatsPlausible_zero

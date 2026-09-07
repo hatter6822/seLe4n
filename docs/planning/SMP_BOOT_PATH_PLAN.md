@@ -164,7 +164,7 @@ configuration.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| BP4.1 | `@[export lean_kernel_main]` calling `Platform.FFI.bootAndInitialiseRPi5OrHalt` applied to BP3's configuration — the exact program `SeLe4n/Testing/BootEntryContract.lean` requires, decided by one `Meta.isDefEq`.  Consumes BP3.3 | `SeLe4n/Platform/FFI.lean` (or a new entry module in the production closure) | M |
+| BP4.1 | `@[export lean_kernel_main]` calling `Platform.FFI.bootAndInitialiseRPi5OrHalt` applied to BP3's configuration — the exact program `SeLe4n/Testing/BootEntryContract.lean` requires, decided by a head-directed reduction (`Meta.whnfUntil`) and one reducible `Meta.isDefEq`.  Consumes BP3.3 | `SeLe4n/Platform/FFI.lean` (or a new entry module in the production closure) | M |
 | BP4.2 | The install ordering: perform the kernel-state install **before** `apply_cmdline_and_start_smp` releases any secondary, so no bracketed committer exists during the unbracketed install (option 1 of the two `SMP_RELEASE_CLOSURE_PLAN.md` §3 records).  The lost-commit shape `kernel_entry.rs` documents is closed by construction rather than by a lock | `rust/sele4n-hal/src/boot.rs`, `rust/sele4n-hal/src/smp.rs` | M |
 | BP4.3 | Turn `rust_boot_main`'s `dtb_ptr` into the `ByteArray` `bootAndInitialiseRPi5FromDtbOrHalt` takes — a Lean-runtime allocation, hence the dependency on BP2.  This is what gives WS-RR RR7.27's board-versus-binding check a hardware caller | `rust/sele4n-hal/src/boot.rs`, `SeLe4n/Platform/FFI.lean` | M |
 | BP4.4 | Move the boot entry to the DTB wrapper and `BootEntryContract.lean`'s `approvedBootCall` with it — the one-line change that file anticipates by name.  Consumes BP4.3 | `SeLe4n/Testing/BootEntryContract.lean` | S |

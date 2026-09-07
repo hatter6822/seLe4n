@@ -218,6 +218,41 @@ def singleton (l : LockId) (m : AccessMode) : LockSet :=
 @[simp] theorem singleton_pairs (l : LockId) (m : AccessMode) :
     (singleton l m).pairs = [(l, m)] := rfl
 
+/-- **PR #892 review round 2 (the fail-closed constructor)**: build a `LockSet`
+from a declared list, refusing one whose keys repeat — the object-domain twin
+of `SchedLockSet.ofList?`.
+
+The dynamic chain extension needs a *footprint* rather than a raw key list,
+because holdership is a question about a footprint (`lockSetHeld`) and the
+extension now refuses to act on a chain it does not hold.  `none` is the honest
+answer for a list this domain cannot acquire correctly, and it is safe: the
+caller keeps whatever coarser serialisation it already has, exactly as the
+undeclared arm of the bracket does.  A walked chain never repeats a key
+(`chainLockSeq_keys_nodup`), so the arm is unreachable on a chain the walker
+produced and reachable only on a list nothing in the tree builds. -/
+def ofList? (pairs : List (LockId × AccessMode)) : Option LockSet :=
+  if h : (pairs.map (·.fst)).Nodup then some ⟨pairs, h⟩ else none
+
+/-- **PR #892 review round 2**: an accepted footprint carries exactly the list
+it was built from. -/
+theorem ofList?_pairs {pairs : List (LockId × AccessMode)} {S : LockSet}
+    (h : ofList? pairs = some S) : S.pairs = pairs := by
+  unfold ofList? at h
+  by_cases hN : (pairs.map (·.fst)).Nodup
+  · rw [dif_pos hN] at h
+    exact (Option.some.inj h) ▸ rfl
+  · rw [dif_neg hN] at h; exact absurd h (by simp)
+
+/-- **PR #892 review round 2**: a duplicate-free list always yields a footprint. -/
+theorem ofList?_isSome_of_nodup {pairs : List (LockId × AccessMode)}
+    (h : (pairs.map (·.fst)).Nodup) : ofList? pairs = some ⟨pairs, h⟩ := by
+  unfold ofList?; rw [dif_pos h]
+
+/-- **PR #892 review round 2**: a list with duplicate keys yields no footprint. -/
+theorem ofList?_none_of_dup {pairs : List (LockId × AccessMode)}
+    (h : ¬ (pairs.map (·.fst)).Nodup) : ofList? pairs = none := by
+  unfold ofList?; rw [dif_neg h]
+
 /-- WS-SM SM3.B: membership in a `LockSet` reduces to membership in
 the underlying `pairs` list.  Signature follows the Lean 4
 `Membership` convention: the collection comes first, the element

@@ -209,6 +209,9 @@ instance simPlatformBinding : SeLe4n.Platform.PlatformBinding SimPlatform where
   coreCountLe := by decide
   -- PR #889 review round 20: machine and binding agree on the PE count.
   declaredCoreCountAgrees := by decide
+  -- PR #892 review round 2: one hardware description, bound unconditionally
+  -- (the class default), so the family's PE count is the machine's.
+  bindMachineConfig_declaredCoreCount := fun _ => rfl
   bootCoreId := ⟨0, by decide⟩
   sharingDomain := .inner
   -- WS-RR RR5.1: the harness labeling's source — every fixture id in one
@@ -254,6 +257,9 @@ instance simRestrictivePlatformBinding :
   coreCountLe := by decide
   -- PR #889 review round 20: machine and binding agree on the PE count.
   declaredCoreCountAgrees := by decide
+  -- PR #892 review round 2: one hardware description, bound unconditionally
+  -- (the class default), so the family's PE count is the machine's.
+  bindMachineConfig_declaredCoreCount := fun _ => rfl
   bootCoreId := ⟨0, by decide⟩
   sharingDomain := .inner
   -- WS-RR RR5.1: same labeling as the permissive sim binding.
@@ -304,6 +310,9 @@ instance simSingleCorePlatformBinding :
   coreCountLe := by decide
   -- PR #889 review round 20: machine and binding agree on the PE count.
   declaredCoreCountAgrees := by decide
+  -- PR #892 review round 2: one hardware description, bound unconditionally
+  -- (the class default), so the family's PE count is the machine's.
+  bindMachineConfig_declaredCoreCount := fun _ => rfl
   bootCoreId := ⟨0, by decide⟩
   sharingDomain := .inner
   -- WS-RR RR5.1: same labeling as the permissive sim binding.

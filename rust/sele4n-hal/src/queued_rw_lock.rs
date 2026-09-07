@@ -4570,6 +4570,40 @@ mod cross_thread_tests {
         iteration_override().unwrap_or(FIFO_ACQUISITIONS)
     }
 
+    /// **PR #892 review round 2**: the FIFO test's rounds per thread —
+    /// the requested acquisitions divided among `threads`, **rounded up**.
+    ///
+    /// The old `acquisitions / threads` made an override of 1, 2 or 3 run
+    /// zero rounds on four threads: every worker loop executed no acquisition
+    /// and the test passed on the lock's initial state — exactly the vacuous
+    /// run the override parser refuses at `0`, reintroduced one division
+    /// later.  Rounding up keeps the requested semantics (at least the
+    /// requested number of acquisitions, never fewer) and can never yield
+    /// zero for the positive count the parser guarantees.
+    fn fifo_rounds(acquisitions: usize, threads: usize) -> usize {
+        acquisitions.div_ceil(threads)
+    }
+
+    /// **PR #892 review round 2**: an override below the thread count still
+    /// runs a round on every thread, and a count the threads do not divide
+    /// rounds up rather than down.  The mutation that finds the old division
+    /// keeps every token and changes `div_ceil` back to `/`.
+    #[test]
+    fn fifo_rounds_never_make_the_fifo_test_vacuous() {
+        for acquisitions in 1..=MAX_WAITERS {
+            assert_eq!(fifo_rounds(acquisitions, MAX_WAITERS), 1, "{acquisitions}");
+        }
+        assert_eq!(fifo_rounds(MAX_WAITERS + 1, MAX_WAITERS), 2);
+        assert_eq!(
+            fifo_rounds(FIFO_ACQUISITIONS, MAX_WAITERS),
+            FIFO_ACQUISITIONS.div_ceil(MAX_WAITERS)
+        );
+        // At least the requested acquisitions are performed, never fewer.
+        for acquisitions in 1..=(3 * MAX_WAITERS) {
+            assert!(fifo_rounds(acquisitions, MAX_WAITERS) * MAX_WAITERS >= acquisitions);
+        }
+    }
+
     /// `ITER_OVERRIDE`, parsed.  `None` when unset, unparseable, or zero — the
     /// last because an override of `0` would turn every stress test into a
     /// no-op that still reports `ok`.
@@ -5329,8 +5363,18 @@ mod cross_thread_tests {
     #[test]
     fn cross_thread_writer_fifo_order_over_many_acquisitions() {
         const THREADS: usize = MAX_WAITERS;
-        let rounds = fifo_acquisitions() / THREADS;
+        // Rounded up (PR #892 review round 2): `/` made an override below
+        // `THREADS` run zero rounds and pass on the initial state.
+        let rounds = fifo_rounds(fifo_acquisitions(), THREADS);
+        assert!(
+            rounds >= 1,
+            "the FIFO test must acquire at least once per thread"
+        );
         let total = rounds * THREADS;
+        assert!(
+            total >= fifo_acquisitions(),
+            "never fewer acquisitions than requested"
+        );
 
         let lock = Arc::new(QueuedRwLock::new());
         // `serving + 1`, so the initial `0` is below every real value.

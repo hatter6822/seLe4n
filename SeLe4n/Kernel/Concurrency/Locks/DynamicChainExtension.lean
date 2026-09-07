@@ -449,7 +449,13 @@ def withDynamicChainExtension {α : Type} (caller : CoreId)
       -- object domain, not a second spelling of it.  The scheduler-domain chain
       -- footprint (`pipChainSchedFootprint`) is the same definition at the other
       -- domain, so "what does acquiring a discovered chain do" has one answer.
-      runChainExtension objectLockBracketDomain caller (chainLockSeq path) action s
+      -- **PR #892 review round 2**: it takes a *footprint*, built fail-closed
+      -- (`LockSet.ofList?`; a walked chain never repeats a key,
+      -- `chainLockSeq_keys_nodup`), and acts only once the footprint is held —
+      -- a contended chain is unwound and the fallback returned.
+      match LockSet.ofList? (chainLockSeq path) with
+      | none => (s, fallback)
+      | some S => runChainExtension objectLockBracketDomain caller S action fallback s
   | .extended _ =>
     -- Walker didn't reach a terminating chain step (still in middle of walk).
     -- At the abstract level, treat as exhausted.
@@ -465,28 +471,120 @@ theorem withDynamicChainExtension_unfold {α : Type} (caller : CoreId)
     withDynamicChainExtension caller startTid action fallback s =
       (match walkAndAcquire s startTid with
        | .terminated path =>
-           runChainExtension objectLockBracketDomain caller (chainLockSeq path) action s
+           match LockSet.ofList? (chainLockSeq path) with
+           | none => (s, fallback)
+           | some S => runChainExtension objectLockBracketDomain caller S action fallback s
        | .extended _ => (s, fallback)
        | .exhausted => (s, fallback)) := rfl
 
-/-- **WS-RR RR7.40**: expanded shape — the acquire / act / unwind the extension
-performs on a terminating chain, spelled out.
+/-- **PR #892 review round 2**: the keys of a walked chain are distinct — one
+`.tcb` lock per thread, and the walker's ascending discipline keeps the threads
+distinct — so `LockSet.ofList?` accepts every chain the walker produces and the
+fail-closed arm above is reachable only on a list nothing in the tree builds. -/
+theorem chainLockSeq_keys_nodup (path : PipChainPath)
+    (hAsc : path.path.Pairwise (fun a b => a.toNat < b.toNat)) :
+    ((chainLockSeq path).map (·.fst)).Nodup := by
+  unfold chainLockSeq
+  rw [List.map_map]
+  show List.Pairwise _ _
+  rw [List.pairwise_map]
+  refine hAsc.imp ?_
+  intro a b hab heq
+  simp only [Function.comp, LockId.mk.injEq, true_and] at heq
+  have := SeLe4n.ThreadId.toObjId_injective a b heq
+  subst this
+  exact Nat.lt_irrefl _ hab
+
+/-- **PR #892 review round 2**: a walked chain is already in the object domain's
+acquisition order.  Every key is a `.tcb` lock, so the lexicographic `LockId ≤`
+(kind level first, then object id) reduces to the walker's ascending thread
+discipline, and the chain is `≤`-sorted as the walker produced it. -/
+theorem chainLockSeq_sorted (path : PipChainPath)
+    (hAsc : path.path.Pairwise (fun a b => a.toNat < b.toNat)) :
+    (chainLockSeq path).Pairwise (fun p₁ p₂ => p₁.fst ≤ p₂.fst) := by
+  unfold chainLockSeq
+  rw [List.pairwise_map]
+  refine hAsc.imp ?_
+  intro a b hab
+  exact Or.inr ⟨rfl, Nat.le_of_lt hab⟩
+
+/-- **PR #892 review round 2**: the object domain acquires a chain footprint in
+the order the walker produced it.  `runChainExtension` acquires
+`D.sequence S` — the canonical `mergeSort` of the footprint — and the chain is
+its own canonical sequence (`lockAcquireSequence_canonical`: a `≤`-sorted
+permutation of the pairs is *the* sequence), so the combinator's acquire fold
+is `acquireAll caller (chainLockSeq path)` and not a re-sorted spelling of it.
+This is what lets the two shape theorems below state the seam in the walker's
+own vocabulary. -/
+theorem chainLockSeq_lockAcquireSequence (path : PipChainPath)
+    (hAsc : path.path.Pairwise (fun a b => a.toNat < b.toNat))
+    (hNodup : ((chainLockSeq path).map (·.fst)).Nodup) :
+    LockSet.lockAcquireSequence ⟨chainLockSeq path, hNodup⟩ = chainLockSeq path :=
+  (LockSet.lockAcquireSequence_canonical ⟨chainLockSeq path, hNodup⟩ (chainLockSeq path)
+    (List.Perm.refl _) (chainLockSeq_sorted path hAsc)).symm
+
+/-- **WS-RR RR7.40 / PR #892 review round 2**: expanded shape on a terminating
+chain whose footprint the growing phase **granted** — acquire, act on the
+acquired state, unwind the reverse, spelled out.
 
 `withDynamicChainExtension_unfold` above says *which combinator* runs; this says
-what that combinator does, so a reader chasing the seam does not have to unfold
-`runChainExtension` by hand and a refactor that changed the shape breaks a stated
-equation rather than a comment. -/
+what that combinator does when the chain is held, so a reader chasing the seam
+does not have to unfold `runChainExtension` by hand and a refactor that changed
+the shape breaks a stated equation rather than a comment.  The ascending
+discipline `hAsc` is the walker's own (`walkAndAcquire_terminated_ascending`);
+it is what makes the chain a footprint (`chainLockSeq_keys_nodup`) and what
+puts it in acquisition order (`chainLockSeq_lockAcquireSequence`). -/
 theorem withDynamicChainExtension_terminated {α : Type} (caller : CoreId)
     (startTid : ThreadId) (action : SystemState → SystemState × α)
     (fallback : α) (s : SystemState) (path : PipChainPath)
-    (h : walkAndAcquire s startTid = .terminated path) :
+    (h : walkAndAcquire s startTid = .terminated path)
+    (hAsc : path.path.Pairwise (fun a b => a.toNat < b.toNat))
+    (hHeld : lockSetHeld caller ⟨chainLockSeq path, chainLockSeq_keys_nodup path hAsc⟩
+      (acquireAll caller (chainLockSeq path) s)) :
     withDynamicChainExtension caller startTid action fallback s =
       (unwindAll caller (chainLockSeq path).reverse
          (action (acquireAll caller (chainLockSeq path) s)).1,
        (action (acquireAll caller (chainLockSeq path) s)).2) := by
   unfold withDynamicChainExtension
   rw [h]
-  rfl
+  dsimp only
+  rw [LockSet.ofList?_isSome_of_nodup (chainLockSeq_keys_nodup path hAsc)]
+  dsimp only
+  have hSeq := chainLockSeq_lockAcquireSequence path hAsc (chainLockSeq_keys_nodup path hAsc)
+  rw [runChainExtension_held objectLockBracketDomain caller
+    ⟨chainLockSeq path, chainLockSeq_keys_nodup path hAsc⟩ action fallback s
+    (by simpa [objectLockBracketDomain_sequence, objectLockBracketDomain_acquire, hSeq]
+      using hHeld)]
+  simp only [objectLockBracketDomain_sequence, objectLockBracketDomain_acquire,
+    objectLockBracketDomain_unwind, hSeq]
+
+/-- **PR #892 review round 2 (the load-bearing negative)**: on a terminating
+chain the growing phase did **not** grant, the action never runs — the
+extension unwinds what it queued and returns the fallback.  Before this round
+the action ran regardless, so a contended chain was mutated with no exclusion
+and the unwind could not undo it. -/
+theorem withDynamicChainExtension_terminated_refused {α : Type} (caller : CoreId)
+    (startTid : ThreadId) (action : SystemState → SystemState × α)
+    (fallback : α) (s : SystemState) (path : PipChainPath)
+    (h : walkAndAcquire s startTid = .terminated path)
+    (hAsc : path.path.Pairwise (fun a b => a.toNat < b.toNat))
+    (hNot : ¬ lockSetHeld caller ⟨chainLockSeq path, chainLockSeq_keys_nodup path hAsc⟩
+      (acquireAll caller (chainLockSeq path) s)) :
+    withDynamicChainExtension caller startTid action fallback s =
+      (unwindAll caller (chainLockSeq path).reverse
+         (acquireAll caller (chainLockSeq path) s), fallback) := by
+  unfold withDynamicChainExtension
+  rw [h]
+  dsimp only
+  rw [LockSet.ofList?_isSome_of_nodup (chainLockSeq_keys_nodup path hAsc)]
+  dsimp only
+  have hSeq := chainLockSeq_lockAcquireSequence path hAsc (chainLockSeq_keys_nodup path hAsc)
+  rw [runChainExtension_refused objectLockBracketDomain caller
+    ⟨chainLockSeq path, chainLockSeq_keys_nodup path hAsc⟩ action fallback s
+    (by simpa [objectLockBracketDomain_sequence, objectLockBracketDomain_acquire, hSeq]
+      using hNot)]
+  simp only [objectLockBracketDomain_sequence, objectLockBracketDomain_acquire,
+    objectLockBracketDomain_unwind, hSeq]
 
 -- ============================================================================
 -- §6 — SM3.C.11.d — Deadlock-freedom for dynamic chain
