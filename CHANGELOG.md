@@ -1,3 +1,104 @@
+## v0.34.104 — WS-OD OD1.4: the reclaim ends the holder's IPC before handing the context back
+
+`returnDonationToCancelledCaller` is now
+`returnDonatedSchedContext (abortHolderPendingIpc st holder) holder scId tid`.
+Without the prefix the reclaim leaves the holder `.unbound` while it is still
+`.blockedOnCall`, which `passiveServerIdle` forbids — reachable at depth 1 with
+no chain, when the server Calls an endpoint with no receiver waiting, so it
+blocks keeping the donation and the reclaim then unbinds it in place.
+Semantically the prefix is what a timeout is in MCS: the budget the operation
+was issued on has been revoked, so the operation ends with `.ipcTimeout`.
+
+Five decisions, each a decision rather than a default:
+
+* **The abort runs before the hand-back**, for the reason `v0.34.97` put the
+  hand-back before the restore, one level down: with the return first the
+  intermediate state has the holder `.unbound` and still blocked on a call —
+  the very violation being closed. A Tier 3 negative refuses the swapped order.
+* **The prefix is `abortPendingIpcOnEndpoint`, not `timeoutThread`.** The
+  timeout also wakes the thread and reverts its priority inheritance, both
+  scheduler writes; `cancelIpcBlocking_scheduler_eq` has four cross-core
+  consumers and must stay true, so the reclaim calls the objects-only half.
+* **The reclaim is all-or-nothing.** `cancelledCallerDonation?` resolves through
+  the *holder*, so it can answer `some` for a caller with no TCB, and the return
+  then fails at its own caller lookup. Committing the abort there would end a
+  live server's IPC for a reclaim that did not happen and would falsify
+  `returnDonationToCancelledCaller_eq_self_of_getTcb?_none`; a Tier 3 negative
+  refuses the committing error arm.
+* **The donation is resolved once, on the pre-state, and the resolution survives
+  the abort.** The abort writes no `schedContextBinding` and no SchedContext, in
+  either direction — `abortHolderPendingIpc_binding_backward` / `_forward`,
+  `abortPendingIpcOnEndpoint_schedContext_forward` — so `donationOwnerValid`
+  carries across it (`abortHolderPendingIpc_preserves_donationOwnerValid`) given
+  that the holder holds a binding, which it does: owners are `.unbound` and the
+  holder is `.donated`.
+* **The abort is projection-visible, and the reply arm's information-flow result
+  says so** rather than inheriting an erasure argument that no longer applies.
+
+### The information-flow half, stated rather than assumed away
+
+Before this cut the donation return wrote only `TCB.schedContextBinding` and
+`SchedContext.boundThread`, both erased by `projectKernelObject`, so
+`returnDonationToCancelledCaller_preserves_projection` and the reply arm's
+`cancelIpcBlocking_blockedOnReply_preserves_projection` were unconditional in
+the labelling. The abort splices the **holder** out of the holder's endpoint
+queue: it writes that endpoint object, the holder's queue neighbours' links, and
+the holder's own `ipcState` / `threadState` / queue links — none of which the
+projection erases. A low observer that can see the holder's endpoint could
+therefore observe a high victim's cancellation through it.
+
+That is the endpoint/notification queue label-uniformity gap the three *queue*
+arms already carry (`hTeardownProj`, WS-RR RR3 debt), reaching the reply arm
+through the holder instead of the victim. It is named
+(`abortHolderProjectionStable`), quantified over the resolution rather than over
+a supplied thread — the holder comes from `cancelledCallerDonation?`, not from
+the caller — and **discharged outright wherever the abort is inert**
+(`abortHolderProjectionStable_of_allowed`, from
+`abortHolderPendingIpc_eq_self_of_allowed`: the abort is the identity unless the
+holder is blocked sending or calling, which is exactly the complement of
+`passiveServerIdleAllowed`). So no information-flow result that held before the
+remediation is weakened on the states it held for; the general discharge needs
+the queue label-uniformity invariant plus the fact that the holder is high when
+the victim is — the latter following from the flow check the donating `Call`
+passed (`label victim ⊑ label holder`, `securityFlowsTo_trans`) rather than from
+a new assumption. Registered in `docs/REGISTERED_DEBT.md` with owner WS-OD and a
+closure target of *before RR8 closes*.
+
+### The frames the wiring needed, and one gate defect it exposed
+
+Four preservation facts about the splice and the abort did not exist and are
+proved here, each because a *forward* statement and a *backward* one are two
+statements and neither implies the other:
+
+* `endpointQueueRemove_unwritten_kind_forward` (and its SchedContext instance) —
+  the companion of the backward form, for `donationOwnerValid`'s first clause,
+  which names a SchedContext in the **pre**-state.
+* `endpointQueueRemove_objects_present_backward` — the splice's four inserts are
+  each guarded by a lookup that succeeded, so it occupies no key the pre-state
+  did not. That plus `endpointQueueRemove_objectIndexSet_eq` is what carries
+  `objectIndexSetComplete` across an operation that writes `objects` through
+  `RHTable.insert` rather than through `storeObject`, which the reclaim's
+  information-flow argument needs because its store chain now runs on the
+  aborted state.
+* `abortPendingIpcOnEndpoint_preserves_objectIndexSet{_invExt,Complete}` and the
+  `abortHolderPendingIpc` instances of all of the above.
+
+The first draft of the Tier 3 anchor for the new obligation was the defect this
+project keeps re-finding: `theorem …_preserves_projection(.|\n)*hAbortProj :
+abortHolderProjectionStable` reported PASS with the hypothesis deleted, because
+three theorems in that file carry `hAbortProj` and the wildcard runs from one
+name into the next one's signature. A **region-scoped presence check is still a
+presence check**. The anchors pin the hypothesis *adjacent to the conclusion it
+guards* instead, and the mutation that finds the difference keeps the predicate
+and drops the hypothesis from one signature.
+
+Also in this cut: `returnDonationToCancelledCaller_eq_self_of_getTcb?_none` lost
+an argument that the caller-existence guard made unnecessary, and
+`returnDonationToCancelledCaller_tcb_rewrite` is `…_tcb_lookup` (it states the
+`cpuAffinity` carriage its consumer needs, not a rewrite).
+
+Refs: docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md OD1.4
+
 ## v0.34.103 — WS-OD OD1.3 closes: the abort prefix carries the whole bundle
 
 `abortPendingIpcOnEndpoint_preserves_ipcInvariantFull` is the theorem OD1.2's

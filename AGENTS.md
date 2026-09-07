@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.103.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.104.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,7 +203,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~57589 lines)
+- `CHANGELOG.md` (~57649 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22545 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12092 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
@@ -225,9 +225,9 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/AuditRead.lean` (~3789 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~3753 lines)
 - `SeLe4n/Kernel/CrossSubsystem.lean` (~3705 lines)
+- `SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean` (~3660 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (~3517 lines)
 - `SeLe4n/Platform/FFI.lean` (~3438 lines)
-- `SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean` (~3421 lines)
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
 - `tests/SmpTlbShootdownSuite.lean` (~3354 lines)
 - `tests/OperationChainSuite.lean` (~3290 lines)
@@ -272,6 +272,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2034 lines)
 - `SeLe4n/Kernel/Architecture/Invariant.lean` (~2033 lines)
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~2028 lines)
+- `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2012 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean` (~1994 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1967 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
@@ -299,13 +300,13 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` (~1702 lines)
-- `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~1678 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
 - `tests/FaultHandlingSuite.lean` (~1660 lines)
 - `tests/SmpIpcSuite.lean` (~1660 lines)
 - `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1645 lines)
+- `tests/SmpCancellationSuite.lean` (~1613 lines)
+- `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1604 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1600 lines)
-- `tests/SmpCancellationSuite.lean` (~1583 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1559 lines)
 - `tests/LockSetSuite.lean` (~1541 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~1538 lines)
@@ -323,13 +324,13 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` (~1370 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
+- `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1340 lines)
 - `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1326 lines)
 - `tests/FrozenOpsSuite.lean` (~1324 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1317 lines)
 - `tests/SmpFoundationsSuite.lean` (~1301 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1294 lines)
 - `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1293 lines)
-- `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1284 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean` (~1264 lines)
 - `SeLe4n/Kernel/InformationFlow/Taint.lean` (~1261 lines)
 - `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1261 lines)
@@ -354,7 +355,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Machine.lean` (~1128 lines)
 - `tests/PerObjectLockSuite.lean` (~1104 lines)
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1085 lines)
-- `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1084 lines)
 - `tests/SmpIdleSuite.lean` (~1079 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetHeld.lean` (~1063 lines)
@@ -367,10 +367,10 @@ To find files that need pagination today, run:
 - `tests/SmpCrossCoreCallSuite.lean` (~1001 lines)
 - `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~998 lines)
 - `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean` (~993 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreTickCbsPreservation.lean` (~989 lines)
 - `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md` (~984 lines)
 - `docs/planning/SMP_PER_CORE_STATE_PLAN.md` (~968 lines)
 - `docs/dev_history/planning/WS_X_LEAN_ETHEREUM_FORMALIZATION_PLAN.md` (~958 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreTickCbsPreservation.lean` (~952 lines)
 - `SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean` (~942 lines)
 - `SeLe4n/Kernel/Concurrency/MemoryModel.lean` (~935 lines)
 - `SeLe4n/Kernel/InformationFlow/Declassification.lean` (~935 lines)
@@ -1758,6 +1758,48 @@ code may assume:
   (`returnDonationToCancelledCaller_preserves_projection`).  `cancelIpcBlocking_lifecycle_eq`
   is now conditional on there being no donation, because `storeObject` maintains
   bookkeeping the arm's other writes bypass.
+- **...and the reclaim ends the holder's outstanding send or call first**
+  (WS-OD OD1.4, v0.34.104).  The hand-back is
+  `returnDonatedSchedContext (abortHolderPendingIpc st holder) holder scId tid`.
+  Without the prefix the reclaim leaves the holder `.unbound` while it is still
+  `.blockedOnCall` — reachable at depth 1 with no chain, when the server Calls an
+  endpoint with no receiver waiting — which `passiveServerIdle` forbids.
+  Semantically it is what a timeout is in MCS: the budget the operation was
+  issued on has been revoked, so the operation fails with `.ipcTimeout`.  Five
+  things new code must respect.  (1) **The abort runs before the hand-back**, for
+  the reason the hand-back runs before the restore, one level down: with the
+  return first the intermediate state *is* the violation being closed, and a
+  Tier 3 negative refuses the swapped order.  (2) **The prefix is
+  `abortPendingIpcOnEndpoint`, not `timeoutThread`** — the timeout's objects-only
+  half, without the wake and the priority-inheritance revert — because
+  `cancelIpcBlocking_scheduler_eq` has four cross-core consumers and must stay
+  true.  (3) **The reclaim is all-or-nothing**: a refused return discards the
+  abort, since `cancelledCallerDonation?` resolves through the *holder* and can
+  answer `some` for a caller with no TCB; committing the abort there would end a
+  live server's IPC for a reclaim that did not happen and would falsify
+  `returnDonationToCancelledCaller_eq_self_of_getTcb?_none`.  A Tier 3 negative
+  refuses the committing error arm.  (4) **Every fact the hand-back reads
+  survives the abort**, which is why the donation is resolved once, on the
+  pre-state: the abort writes no `schedContextBinding`
+  (`abortHolderPendingIpc_binding_backward` / `_forward`) and no SchedContext
+  (`abortPendingIpcOnEndpoint_schedContext_forward`), so
+  `donationOwnerValid` carries across it — given the holder holds a binding,
+  which it does, since owners are `.unbound` and the holder is `.donated`
+  (`abortHolderPendingIpc_preserves_donationOwnerValid`).  (5) **The abort is
+  projection-*visible* and the reply arm's NI result says so.**  It writes the
+  holder's endpoint, its queue neighbours and its own `ipcState` / queue links —
+  none of which `projectKernelObject` erases — so
+  `returnDonationToCancelledCaller_preserves_projection` and
+  `cancelIpcBlocking_blockedOnReply_preserves_projection` now carry
+  `abortHolderProjectionStable`.  That is the endpoint-queue label-uniformity gap
+  the three *queue* arms already carry, reaching the reply arm through the holder
+  rather than the victim; it is discharged outright wherever the abort is inert
+  (`abortHolderProjectionStable_of_allowed`, from
+  `abortHolderPendingIpc_eq_self_of_allowed` — the abort is the identity unless
+  the holder is blocked sending or calling), so no result that held before the
+  remediation is weakened on the states it held for, and the general discharge is
+  registered WS-OD debt.  New code must not read either projection theorem as
+  unconditional.
 - **A bare reply's post-state does not satisfy `donationOwnerValid`.**
   `endpointReply` wakes the answered caller `.ready` while the recorded server
   still holds `.donated _ caller`; the donated SchedContext comes back only at

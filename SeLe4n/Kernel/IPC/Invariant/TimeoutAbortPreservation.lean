@@ -207,4 +207,82 @@ theorem abortPendingIpcOnEndpoint_preserves_ipcInvariantFull
       storeObject_scheduler_eq st1 sRc tid.toObjId _ hStoreRc]
   exact ipcInvariantFull_of_storeAgrees_of_scheduler_eq hAgree2 hSched2 hFullStage
 
+/-- WS-OD OD1.4: the abort preserves the identity registry's well-formedness.
+
+Its splice half leaves the registry literally unchanged
+(`endpointQueueRemove_objectIndexSet_eq`) and its store half extends it through
+`storeObject`, which preserves it.  Needed by the cancellation reclaim's
+information-flow argument, whose store chain runs on the *aborted* state. -/
+theorem abortPendingIpcOnEndpoint_preserves_objectIndexSet_invExt
+    (epId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (hObjSetInv : st.objectIndexSet.table.invExt)
+    (h : abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st') :
+    st'.objectIndexSet.table.invExt := by
+  obtain ⟨st1, _, hRem, _, hStore⟩ := abortPendingIpcOnEndpoint_shape h
+  have hSet1 : st1.objectIndexSet.table.invExt := by
+    rw [endpointQueueRemove_objectIndexSet_eq epId isReceiveQ tid st st1 hRem]; exact hObjSetInv
+  exact SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt st1 st' _ _ hSet1 hStore
+
+/-- WS-OD OD1.4: the abort preserves the identity registry's completeness.
+
+The splice half creates no key and leaves the registry unchanged; the store half
+registers the one key it writes. -/
+theorem abortPendingIpcOnEndpoint_preserves_objectIndexSetComplete
+    (epId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (hInv : st.objects.invExt)
+    (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hComplete : SeLe4n.Model.objectIndexSetComplete st)
+    (h : abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st') :
+    SeLe4n.Model.objectIndexSetComplete st' := by
+  obtain ⟨st1, _, hRem, _, hStore⟩ := abortPendingIpcOnEndpoint_shape h
+  have hInv1 := endpointQueueRemove_preserves_objects_invExt _ _ _ _ _ hInv hRem
+  have hSet1 : st1.objectIndexSet.table.invExt := by
+    rw [endpointQueueRemove_objectIndexSet_eq epId isReceiveQ tid st st1 hRem]; exact hObjSetInv
+  have hC1 : SeLe4n.Model.objectIndexSetComplete st1 :=
+    endpointQueueRemove_preserves_objectIndexSetComplete epId isReceiveQ tid st st1 hInv
+      hComplete hRem
+  exact SeLe4n.Model.storeObject_preserves_objectIndexSetComplete st1 st' _ _ hInv1 hSet1
+    hC1 hStore
+
+/-- WS-OD OD1.4: **the abort carries `donationOwnerValid`**, given that the
+aborted thread is not itself the owner of any donation.
+
+The side condition is exactly what the abort can break and nothing else can: the
+conjunct requires a donation's owner to be `.blockedOnReply`, and the abort's one
+substantive write moves the aborted thread to `.ready`.  Every other thread's
+`ipcState` and every thread's `schedContextBinding` are untouched
+(`_tcb_forward_of_ne`, `_binding_backward`), and no SchedContext is written in
+either direction (`_schedContext_forward`).
+
+It is stated as "the aborted thread holds a binding" rather than as "the aborted
+thread owns no donation" because that is the form the cancellation reclaim
+supplies for free: the thread it aborts is the *holder* of the cancelled
+caller's donation, so its binding is `.donated`, and `donationOwnerValid`'s own
+second clause puts every owner at `.unbound`. -/
+theorem abortPendingIpcOnEndpoint_preserves_donationOwnerValid
+    (epId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (hInv : st.objects.invExt)
+    (h : abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st')
+    (hBound : ∀ t, st.getTcb? tid = some t → t.schedContextBinding ≠ .unbound)
+    (hOwner : donationOwnerValid st) :
+    donationOwnerValid st' := by
+  intro donee doneeTcb scId owner hDoneeAt hBind
+  obtain ⟨doneeTcb0, hDoneeAt0, hBind0⟩ :=
+    abortPendingIpcOnEndpoint_binding_backward epId isReceiveQ tid st st' hInv h
+      donee.toObjId doneeTcb hDoneeAt
+  obtain ⟨⟨sc, hScAt, hScBound⟩, ownerTcb, hOwnerAt, hOwnerUnbound, hOwnerBlocked⟩ :=
+    hOwner donee doneeTcb0 scId owner hDoneeAt0 (hBind0.trans hBind)
+  -- The owner is not the aborted thread: owners are `.unbound`, and the aborted
+  -- thread holds a binding by hypothesis.
+  have hOwnerNe : owner.toObjId ≠ tid.toObjId := by
+    intro hEq
+    exact hBound ownerTcb ((SystemState.getTcb?_eq_some_iff st tid ownerTcb).mpr
+      (hEq ▸ hOwnerAt)) hOwnerUnbound
+  obtain ⟨ownerTcb', hOwnerAt', hIpc', hBind'⟩ :=
+    abortPendingIpcOnEndpoint_tcb_forward_of_ne epId isReceiveQ tid st st' hInv h
+      owner.toObjId hOwnerNe ownerTcb hOwnerAt
+  exact ⟨⟨sc, abortPendingIpcOnEndpoint_schedContext_forward epId isReceiveQ tid st st'
+      hInv h scId.toObjId sc hScAt, hScBound⟩,
+    ownerTcb', hOwnerAt', hBind'.trans hOwnerUnbound, by rw [hIpc']; exact hOwnerBlocked⟩
+
 end SeLe4n.Kernel

@@ -268,50 +268,13 @@ theorem restoreIncomingContext_machine_timer (st : SystemState) (tid : SeLe4n.Th
     (restoreIncomingContext st tid).machine.timer = st.machine.timer := by
   unfold restoreIncomingContext; split <;> rfl
 
-/-- WS-SM SM5.I: `endpointQueueRemove` leaves the machine unchanged (it writes only
-the object store — queue links + `ipcState`).  Mirrors
-`endpointQueueRemove_scheduler_eq`. -/
-theorem endpointQueueRemove_machine
-    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
-    (tid : SeLe4n.ThreadId) (st st' : SystemState)
-    (hStep : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') :
-    st'.machine = st.machine := by
-  unfold endpointQueueRemove at hStep
-  cases hObj : st.objects[endpointId]? with
-  | none => simp [hObj] at hStep
-  | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
-      simp [hObj] at hStep
-    | endpoint ep =>
-      simp only [hObj] at hStep
-      cases hTcb : lookupTcb st tid with
-      | none => simp [hTcb] at hStep
-      | some tcb =>
-        simp only [hTcb] at hStep
-        simp only [Except.ok.injEq] at hStep
-        rw [← hStep]
-
-/-- WS-OD OD1.2: the abort leaves the machine unchanged — its two writes are the
-queue removal and one TCB store, neither of which touches `machine`.  Stated
-beside `endpointQueueRemove_machine`, which it composes. -/
-theorem abortPendingIpcOnEndpoint_machine (epId : SeLe4n.ObjId) (isReceiveQ : Bool)
-    (tid : SeLe4n.ThreadId) (st st' : SystemState)
-    (h : abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st') :
-    st'.machine = st.machine := by
-  unfold abortPendingIpcOnEndpoint at h
-  split at h
-  · simp at h
-  · rename_i st1 hER
-    have hMach1 : st1.machine = st.machine :=
-      endpointQueueRemove_machine epId isReceiveQ tid st st1 hER
-    split at h
-    · simp at h
-    · rename_i tcb hLk
-      simp only [storeObject] at h
-      split at h <;>
-        · simp only [Except.ok.injEq] at h
-          subst h
-          exact hMach1
+-- WS-OD OD1.4: `endpointQueueRemove_machine` moved to
+-- `SeLe4n/Kernel/IPC/DualQueue/Core.lean` and `abortPendingIpcOnEndpoint_machine`
+-- to `SeLe4n/Kernel/IPC/Operations/Timeout.lean`, each beside the operation it
+-- is about and beside that operation's `_scheduler_eq` / `_serviceRegistry_eq`
+-- siblings.  The cancellation reclaim needs the abort's machine frame and does
+-- not import this scheduler module; one home per question is the fix, not a
+-- second proof.
 
 /-- WS-SM SM5.I: `timeoutThread` leaves the machine unchanged — every step
 (`endpointQueueRemove`, `storeObject`, `ensureRunnable`, optional

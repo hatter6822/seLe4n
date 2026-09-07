@@ -1033,6 +1033,48 @@ run_check "INVARIANT" rg -n '^theorem storeObject_projectionStable_preserves_pro
 run_check "INVARIANT" rg -n '^theorem projectKernelObject_tcb_schedContextBinding_invariant' SeLe4n/Kernel/InformationFlow/Projection.lean
 run_check "INVARIANT" rg -n '^theorem projectKernelObject_schedContext_boundThread_invariant' SeLe4n/Kernel/InformationFlow/Projection.lean
 run_check "INVARIANT" rg -n '^theorem returnDonationToCancelledCaller_preserves_projection' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
+# WS-OD OD1.4: the reclaim ends the holder's outstanding send/call, which is
+# what makes `passiveServerIdle` true of the state the reclaim leaves — a
+# `.unbound` holder still blocked on a call is exactly what that conjunct
+# forbids.
+run_check "INVARIANT" rg -n '^def abortHolderPendingIpc' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_preserves_donationOwnerValid' SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean
+run_check "INVARIANT" rg -n '^theorem abortHolderPendingIpc_preserves_donationOwnerValid' SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean
+run_check "INVARIANT" rg -n '^theorem abortHolderPendingIpc_eq_self_of_allowed' SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean
+# Relation, not presence: the abort must run **before** the hand-back, on the
+# state the hand-back is applied to.  With the return first the intermediate
+# state has the holder `.unbound` while still blocked on a call — the very
+# violation being closed — so the order is the property, not the presence of
+# both calls.
+run_check "INVARIANT" bash -lc 'rg -U -n "returnDonatedSchedContext \(abortHolderPendingIpc st holder\) holder scId tid" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+# NEGATIVE: the abort must not be applied to the return's *result*.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "abortHolderPendingIpc \(returnDonatedSchedContext" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+# NEGATIVE: the reclaim is all-or-nothing.  A refused return must discard the
+# abort too, or a live server's IPC ends for a reclaim that did not happen and
+# `returnDonationToCancelledCaller_eq_self_of_getTcb?_none` becomes false.  The
+# mutation that finds this keeps both calls and commits the abort on the error
+# arm.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "\| \.error _ => abortHolderPendingIpc st holder" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+# The abort's write set is projection-*visible* — queue links and `ipcState`
+# survive `projectKernelObject` — so the donation return's information-flow
+# result states that obligation rather than inheriting the erasure argument,
+# and discharges it outright wherever the abort is inert.
+run_check "INVARIANT" rg -n '^def abortHolderProjectionStable' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
+run_check "INVARIANT" rg -n '^theorem abortHolderProjectionStable_of_allowed' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
+# The obligation is pinned **adjacent to the conclusion it guards**, not by a
+# `(.|\n)*` body scan from the theorem's name: three theorems in this file carry
+# `hAbortProj`, so a wildcard from one name runs into the next one's signature
+# and reports PASS with the hypothesis deleted — the presence-check shape this
+# project keeps re-finding.  The mutation that finds it keeps the predicate and
+# drops the hypothesis from *one* signature.
+run_check "INVARIANT" bash -lc 'rg -U -n "\(hAbortProj : abortHolderProjectionStable ctx observer st victim tcb\) :\n    projectState ctx observer \(Lifecycle\.Suspend\.returnDonationToCancelledCaller st victim tcb\)" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\(hAbortProj : abortHolderProjectionStable ctx observer st victim tcb\) :\n    projectState ctx observer \(Lifecycle\.Suspend\.cancelIpcBlocking st victim tcb\)" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\(hAbortProj : abortHolderProjectionStable ctx observer st victim tcb\) :\n    projectState ctx observer\n        \(cancelIpcBlockingOnCore victim tcb executingCore st\)\.1" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
+# The splice creates no key, which is what carries the identity registry across
+# an operation that writes `objects` directly rather than through `storeObject`.
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemove_objects_present_backward' SeLe4n/Kernel/IPC/DualQueue/Core.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemove_preserves_objectIndexSetComplete' SeLe4n/Kernel/IPC/DualQueue/Core.lean
+run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_preserves_objectIndexSetComplete' SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean
 # The neighbour clauses are the half an under-stated hypothesis would drop, so
 # the label predicate must quantify over the removed thread's own queue links
 # rather than over the endpoint and the thread alone.

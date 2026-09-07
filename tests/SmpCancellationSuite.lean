@@ -339,8 +339,38 @@ open SeLe4n.Testing
 #check @Lifecycle.Suspend.returnDonationToCancelledCaller_serviceRegistry_eq
 #check @Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
 #check @Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_ipcInvariant
-#check @Lifecycle.Suspend.returnDonationToCancelledCaller_tcb_rewrite
+#check @Lifecycle.Suspend.returnDonationToCancelledCaller_tcb_lookup
 #check @Lifecycle.Suspend.returnDonationToCancelledCaller_eq_self_of_getTcb?_none
+-- WS-OD OD1.4: the reclaim's holder abort — the `passiveServerIdle` half.  The
+-- operation, its frames, the two facts the hand-back reads across it
+-- (`donationOwnerValid`, the holder's own binding), the identity-registry
+-- carriage its information-flow argument needs, and the exact bound on its
+-- reach: it is the identity unless the holder is blocked sending or calling.
+#check @Lifecycle.Suspend.abortHolderPendingIpc
+#check @abortPendingIpcOnEndpoint_shape
+#check @abortPendingIpcOnEndpoint_preserves_ipcInvariantFull
+#check @abortPendingIpcOnEndpoint_preserves_donationOwnerValid
+#check @abortPendingIpcOnEndpoint_schedContext_forward
+#check @abortPendingIpcOnEndpoint_unwritten_kind_forward
+#check @abortPendingIpcOnEndpoint_preserves_objectIndexSetComplete
+#check @abortPendingIpcOnEndpoint_preserves_objectIndexSet_invExt
+#check @endpointQueueRemove_objects_present_backward
+#check @endpointQueueRemove_objectIndexSet_eq
+#check @endpointQueueRemove_preserves_objectIndexSetComplete
+#check @Lifecycle.Suspend.abortHolderPendingIpc_scheduler_eq
+#check @Lifecycle.Suspend.abortHolderPendingIpc_machine_eq
+#check @Lifecycle.Suspend.abortHolderPendingIpc_serviceRegistry_eq
+#check @Lifecycle.Suspend.abortHolderPendingIpc_preserves_objects_invExt
+#check @Lifecycle.Suspend.abortHolderPendingIpc_preserves_objectIndexSetComplete
+#check @Lifecycle.Suspend.abortHolderPendingIpc_preserves_objectIndexSet_invExt
+#check @Lifecycle.Suspend.abortHolderPendingIpc_preserves_donationOwnerValid
+#check @Lifecycle.Suspend.abortHolderPendingIpc_binding_forward
+#check @Lifecycle.Suspend.abortHolderPendingIpc_binding_backward
+#check @Lifecycle.Suspend.abortHolderPendingIpc_eq_self_of_allowed
+-- WS-OD OD1.4: the information-flow obligation the abort adds
+-- (`abortHolderProjectionStable`) and the states on which it is free live in
+-- the **staged** `IPC/CrossCore/CancellationNI.lean`, which no executable suite
+-- imports; they are pinned by Tier 3 anchors instead.
 #check @returnDonatedSchedContext_ok_storeChain
 #check @returnDonatedSchedContext_tcb_rewrite
 #check @tcbBindingRewrite

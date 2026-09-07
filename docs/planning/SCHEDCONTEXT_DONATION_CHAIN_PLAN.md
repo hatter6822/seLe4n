@@ -1,6 +1,7 @@
 # WS-OD — SchedContext donation chains (onward donation)
 
-> **Status**: PLANNED — registered at `v0.34.98`; no sub-task has started.
+> **Status**: IN FLIGHT — registered at `v0.34.98`; OD1.1 landed at `v0.34.100`,
+> OD1.2 at `v0.34.101`, OD1.3 at `v0.34.103`, OD1.4 at `v0.34.104`.
 > **Opens**: beside WS-RR RR7, and must close **before RR8 closes** — RR8 is the
 > closure phase and cannot close over open work.
 > **Predecessor findings**: the two Medium-severity model/specification gaps

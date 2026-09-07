@@ -638,6 +638,41 @@ def cancelledCallerDonation? (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : T
     | none => none
   | _ => none
 
+/-- **WS-OD OD1.4**: the holder's outstanding send or call, ended.
+
+The reclaim below takes the donated SchedContext back, which leaves the holder
+`.unbound`.  A thread that is `.unbound`, descheduled and `.blockedOnSend` /
+`.blockedOnCall` is exactly what `passiveServerIdle` forbids — and rightly:
+those two states are the ones whose *timeout* needs a SchedContext to charge.
+So the reclaim ends the operation the revoked budget was issued on, which is
+what a timeout means in MCS: the operation fails with `.ipcTimeout` and the
+thread becomes `.ready`.
+
+`.blockedOnReceive` is deliberately **not** ended.  An unbound thread waiting to
+receive is a passive server between requests — the state the conjunct permits
+and the whole donation mechanism exists to support.  Ending it would destroy the
+very pattern this workstream is here to make work.
+
+The prefix is `abortPendingIpcOnEndpoint` (WS-OD OD1.2), the splice-and-clear
+half of `timeoutThread` with the two scheduler writes left out:
+`cancelIpcBlocking_scheduler_eq` has four consumers and must stay true, so the
+wake and the priority-inheritance revert are not part of this.  The holder is on
+the endpoint's **send** queue in both arms, which is why `isReceiveQ` is
+`false`.
+
+A refused abort is the identity, and the caller then discards it entirely — see
+`returnDonationToCancelledCaller`, which is all-or-nothing. -/
+def abortHolderPendingIpc (st : SystemState) (holder : SeLe4n.ThreadId) : SystemState :=
+  match lookupTcb st holder with
+  | none => st
+  | some holderTcb =>
+    match holderTcb.ipcState with
+    | .blockedOnSend epId | .blockedOnCall epId =>
+      match abortPendingIpcOnEndpoint epId false holder st with
+      | .ok st' => st'
+      | .error _ => st
+    | _ => st
+
 /-- **WS-RR RR7.22 (residual, remediation)**: the SchedContext a cancelled caller
 donated on its `Call`, handed back to it.
 
@@ -679,12 +714,33 @@ this return, which is also what keeps `cancelIpcBlocking_scheduler_eq` true —
 this step writes `objects` and nothing else. -/
 def returnDonationToCancelledCaller (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) : SystemState :=
-  match cancelledCallerDonation? st tid tcb with
-  | some (scId, holder) =>
-    match returnDonatedSchedContext st holder scId tid with
+  match cancelledCallerDonation? st tid tcb, st.getTcb? tid with
+  -- WS-OD OD1.4: the caller's own TCB is now part of the guard rather than
+  -- discovered inside `returnDonatedSchedContext`.  The context is handed back
+  -- *to the caller*, so a caller with no TCB is nothing to hand back to — and
+  -- `cancelledCallerDonation?` resolves through the **holder**, so it can answer
+  -- `some` in that case.  Behaviourally this changes nothing (the return failed
+  -- at its own caller lookup and the arm declined); what it buys is that the
+  -- abort below never runs for a reclaim that cannot happen, which is what keeps
+  -- `returnDonationToCancelledCaller_eq_self_of_getTcb?_none` true.
+  | some (scId, holder), some _ =>
+    -- WS-OD OD1.4: end the holder's outstanding send/call **before** the
+    -- return, not after.  With the return first the intermediate state has the
+    -- holder `.unbound` while still blocked on a call — the very violation
+    -- being closed; with the abort first every intermediate state satisfies
+    -- `passiveServerIdle`, because a `.donated` holder is outside its reach.
+    -- The donation is resolved once, above, and the resolution survives the
+    -- abort because the abort writes no `schedContextBinding`.
+    match returnDonatedSchedContext (abortHolderPendingIpc st holder) holder scId tid with
     | .ok st' => st'
+    -- All-or-nothing: the abort is discarded too.  `cancelledCallerDonation?`
+    -- resolves through the *holder*, so it can answer `some` for a caller with
+    -- no TCB, and the return then fails at the caller lookup — committing the
+    -- abort there would end a live server's IPC for a reclaim that did not
+    -- happen, and would falsify
+    -- `returnDonationToCancelledCaller_eq_self_of_getTcb?_none`.
     | .error _ => st
-  | none => st
+  | _, _ => st
 
 def cancelIpcBlocking (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) : SystemState :=

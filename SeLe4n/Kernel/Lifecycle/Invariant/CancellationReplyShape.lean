@@ -86,7 +86,10 @@ theorem returnDonationToCancelledCaller_no_donation_to_victim
       = some (.tcb tcb)) :
     tcb.schedContextBinding ≠ .donated scId v := by
   intro hBind
+  have hGetV : st.getTcb? v = some tcbV := by
+    rw [SystemState.getTcb?_eq_some_iff]; exact lookupTcb_some_objects st v tcbV hLookup
   unfold Lifecycle.Suspend.returnDonationToCancelledCaller at hTcb
+  rw [hGetV] at hTcb
   cases hRes : Lifecycle.Suspend.cancelledCallerDonation? st v tcbV with
   | none =>
     rw [hRes] at hTcb
@@ -101,19 +104,50 @@ theorem returnDonationToCancelledCaller_no_donation_to_victim
     simp only at hTcb
     obtain ⟨⟨ep, hIpV⟩, holderTcb, hLkH, hBindH⟩ := cancelledCallerDonation?_some st v tcbV
       scId0 holder hRes
-    obtain ⟨st', hOk⟩ := returnDonatedSchedContext_ok_under_invariants st holder holderTcb scId0 v
-      hInv hOwner hLkH hBindH (lookupTcb_some_not_reserved st holder holderTcb hLkH)
+    -- The reclaim aborts the holder's outstanding IPC first; every fact the
+    -- hand-back reads survives that step, and the holder's own `.donated`
+    -- binding is what keeps `donationOwnerValid` true across it.
+    have hHolderAt := lookupTcb_some_objects st holder holderTcb hLkH
+    have hGetH : st.getTcb? holder = some holderTcb :=
+      (SystemState.getTcb?_eq_some_iff st holder holderTcb).mpr hHolderAt
+    have hBoundH : ∀ t, st.getTcb? holder = some t →
+        t.schedContextBinding ≠ .unbound := by
+      intro t hAt
+      have hEqT : t = holderTcb := Option.some.inj (hAt.symm.trans hGetH)
+      rw [hEqT, hBindH]
+      intro hc; cases hc
+    have hInvA : (Lifecycle.Suspend.abortHolderPendingIpc st holder).objects.invExt :=
+      Lifecycle.Suspend.abortHolderPendingIpc_preserves_objects_invExt st holder hInv
+    have hOwnerA : donationOwnerValid (Lifecycle.Suspend.abortHolderPendingIpc st holder) :=
+      Lifecycle.Suspend.abortHolderPendingIpc_preserves_donationOwnerValid st holder hInv
+        hBoundH hOwner
+    obtain ⟨holderTcbA, hHolderAtA, hBindEqA⟩ :=
+      Lifecycle.Suspend.abortHolderPendingIpc_binding_forward st holder hInv holder.toObjId
+        holderTcb hHolderAt
+    have hLkHA : lookupTcb (Lifecycle.Suspend.abortHolderPendingIpc st holder) holder
+        = some holderTcbA :=
+      lookupTcb_of_objects_of_not_reserved _ holder holderTcbA hHolderAtA
+        (lookupTcb_some_not_reserved st holder holderTcb hLkH)
+    obtain ⟨st', hOk⟩ := returnDonatedSchedContext_ok_under_invariants
+      (Lifecycle.Suspend.abortHolderPendingIpc st holder) holder holderTcbA
+      scId0 v hInvA hOwnerA hLkHA (hBindEqA.trans hBindH)
+      (lookupTcb_some_not_reserved st holder holderTcb hLkH)
       (lookupTcb_some_not_reserved st v tcbV hLookup)
     rw [hOk] at hTcb
     simp only at hTcb
     obtain ⟨hSrv, hOwn, hOther⟩ := returnDonatedSchedContext_tcb_schedContextBinding_backward
-      st st' holder scId0 v hInv hOk tid.toObjId tcb hTcb
+      (Lifecycle.Suspend.abortHolderPendingIpc st holder) st' holder scId0 v hInvA hOk
+      tid.toObjId tcb hTcb
     by_cases hH : tid.toObjId = holder.toObjId
     · rw [hSrv hH] at hBind; cases hBind
     · by_cases hV : tid.toObjId = v.toObjId
       · rw [hOwn hH hV] at hBind; cases hBind
-      · obtain ⟨t0, h0, hEqB⟩ := hOther hH hV
-        obtain ⟨⟨epId, hIp⟩, _⟩ := hHolder tcbV hLookup tid t0 scId h0 (by rw [hEqB]; exact hBind)
+      · obtain ⟨tA, hAtA, hEqA⟩ := hOther hH hV
+        obtain ⟨t0, h0, hEqB⟩ :=
+          Lifecycle.Suspend.abortHolderPendingIpc_binding_backward st holder hInv tid.toObjId
+            tA hAtA
+        obtain ⟨⟨epId, hIp⟩, _⟩ := hHolder tcbV hLookup tid t0 scId h0
+          (by rw [hEqB, hEqA]; exact hBind)
         rw [hIpV] at hIp
         exact hH (by rw [(Option.some.inj (ThreadIpcState.blockedOnReply.inj hIp).2)])
 

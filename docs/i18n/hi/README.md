@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="सुरक्षा" /></a>
-  <img src="https://img.shields.io/badge/version-0.34.103-blue" alt="संस्करण" />
+  <img src="https://img.shields.io/badge/version-0.34.104-blue" alt="संस्करण" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="लाइसेंस" /></a>
 </p>
@@ -70,11 +70,11 @@ Lean प्रकार-परीक्षक द्वारा मशीन-�
 
 | विशेषता | मान |
 |----------|------|
-| **संस्करण** | `0.34.103` |
+| **संस्करण** | `0.34.104` |
 | **Lean टूलचेन** | `v4.28.0` |
-| **उत्पादन Lean LoC** | 327 फ़ाइलों में 349,806 |
-| **परीक्षण Lean LoC** | 70 परीक्षण सुइट्स में 71,289 |
-| **प्रमाणित घोषणाएँ** | 11,680 प्रमेय/लेम्मा घोषणाएँ (शून्य sorry/axiom) |
+| **उत्पादन Lean LoC** | 327 फ़ाइलों में 351,182 |
+| **परीक्षण Lean LoC** | 70 परीक्षण सुइट्स में 71,319 |
+| **प्रमाणित घोषणाएँ** | 11,729 प्रमेय/लेम्मा घोषणाएँ (शून्य sorry/axiom) |
 | **लक्ष्य हार्डवेयर** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **विहित लेखापरीक्षा** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — पूर्व-1.0 व्यापक लेखापरीक्षा (202 निष्कर्ष; WS-AK AK1–AK10 द्वारा ठीक किए गए; संग्रहीत) |
 | **नवीनतम लेखापरीक्षा** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../../../docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) — WS-AN समापन के बाद की गई पूर्व-1.0 तत्परता लेखापरीक्षा (अब-संग्रहीत [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md) की उत्तराधिकारी, जिसे WS-AN AN0–AN12 द्वारा ठीक किया गया)। WS-RC R0..R5 v0.31.2 में सम्पन्न; WS-RC R6..R14 SM0.Q.1 अवशोषण मानचित्रण के अनुसार WS-SM में समाहित (देखें [`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](../../../docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md))। सक्रिय कार्यधारा योजना: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md)। |

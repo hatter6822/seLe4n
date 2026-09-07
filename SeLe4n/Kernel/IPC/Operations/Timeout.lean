@@ -164,6 +164,309 @@ theorem abortPendingIpcOnEndpoint_scheduler_eq
           subst h
           exact hSched1
 
+/-- WS-OD OD1.2: the abort leaves the machine unchanged — its two writes are the
+queue removal and one TCB store, neither of which touches `machine`.  Stated
+beside `endpointQueueRemove_machine`, which it composes. -/
+theorem abortPendingIpcOnEndpoint_machine (epId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (st st' : SystemState)
+    (h : abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st') :
+    st'.machine = st.machine := by
+  unfold abortPendingIpcOnEndpoint at h
+  split at h
+  · simp at h
+  · rename_i st1 hER
+    have hMach1 : st1.machine = st.machine :=
+      endpointQueueRemove_machine epId isReceiveQ tid st st1 hER
+    split at h
+    · simp at h
+    · rename_i tcb hLk
+      simp only [storeObject] at h
+      split at h <;>
+        · simp only [Except.ok.injEq] at h
+          subst h
+          exact hMach1
+/-- WS-OD OD1.4: the abort carries every pre-state TCB's `cpuAffinity`.
+
+Its two writes are the queue splice — which touches queue links only
+(`endpointQueueRemove_getTcb_upToAffinity`) — and the timeout rewrite, which
+writes `ipcState`, the timeout fields and the return frame.  Neither is
+`cpuAffinity`, which is what the cancellation reclaim's `_tcb_lookup` frame
+carries and what `cancelIpcBlocking_tcb_lookup` ultimately needs. -/
+theorem abortPendingIpcOnEndpoint_tcb_lookup
+    (epId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (hInv : st.objects.invExt)
+    (h : abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st')
+    (k : SeLe4n.ObjId) (t0 : TCB) (hk : st.objects[k]? = some (.tcb t0)) :
+    ∃ t', st'.objects[k]? = some (.tcb t') ∧ t'.cpuAffinity = t0.cpuAffinity := by
+  unfold abortPendingIpcOnEndpoint at h
+  split at h
+  · simp at h
+  · rename_i st1 hER
+    have hInv1 := endpointQueueRemove_preserves_objects_invExt _ _ _ _ _ hInv hER
+    obtain ⟨t1, hk1, hAff1⟩ :=
+      endpointQueueRemove_getTcb_upToAffinity epId isReceiveQ tid st st1 hInv hER k t0
+        (by rw [← RHTable_getElem?_eq_get?]; exact hk)
+    rw [← RHTable_getElem?_eq_get?] at hk1
+    split at h
+    · simp at h
+    · rename_i tcb hLk
+      simp only [storeObject] at h
+      simp only [Except.ok.injEq] at h
+      subst h
+      by_cases hEq : k = tid.toObjId
+      · subst hEq
+        have hTcbAt := lookupTcb_some_objects st1 tid tcb hLk
+        rw [hTcbAt] at hk1
+        obtain rfl : t1 = tcb := (KernelObject.tcb.inj (Option.some.inj hk1)).symm
+        refine ⟨(({ t1 with
+                    ipcState := .ready
+                    pendingMessage := none
+                    timeoutBudget := none
+                    threadState := .Ready
+                    timedOut := true
+                    pendingReceiveReply := none } : TCB).withReturnFrame
+                  Architecture.timeoutFrame), ?_, hAff1.symm⟩
+        rw [RHTable_getElem?_eq_get?, RHTable_getElem?_insert _ _ _ hInv1,
+          if_pos (beq_self_eq_true tid.toObjId)]
+      · refine ⟨t1, ?_, hAff1.symm⟩
+        rw [RHTable_getElem?_eq_get?, RHTable_getElem?_insert _ _ _ hInv1,
+          if_neg (by intro hc; exact hEq (eq_of_beq hc).symm), ← RHTable_getElem?_eq_get?]
+        exact hk1
+
+/-- WS-OD OD1.4: the abort writes only TCBs and one endpoint, so every object of
+any other kind carries across it backwards.
+
+Its two writes are the queue splice
+(`endpointQueueRemove_unwritten_kind_backward`) and one TCB store.  Stated over a
+kind predicate rather than per kind, because the argument is a property of the
+*operation*: `ipcInvariant` needs it for notifications and the donation
+invariants need it for SchedContexts. -/
+theorem abortPendingIpcOnEndpoint_unwritten_kind_backward
+    (P : KernelObject → Prop)
+    (hNotTcb : ∀ t, ¬ P (.tcb t)) (hNotEp : ∀ e, ¬ P (.endpoint e))
+    (epId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (hInv : st.objects.invExt)
+    (h : abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st')
+    (oid : SeLe4n.ObjId) (o : KernelObject) (hP : P o)
+    (hPost : st'.objects[oid]? = some o) :
+    st.objects[oid]? = some o := by
+  unfold abortPendingIpcOnEndpoint at h
+  split at h
+  · simp at h
+  · rename_i st1 hER
+    have hInv1 := endpointQueueRemove_preserves_objects_invExt _ _ _ _ _ hInv hER
+    refine endpointQueueRemove_unwritten_kind_backward P hNotTcb hNotEp epId isReceiveQ tid
+      st st1 hInv hER oid o hP ?_
+    split at h
+    · simp at h
+    · rename_i tcb hLk
+      simp only [storeObject] at h
+      simp only [Except.ok.injEq] at h
+      subst h
+      by_cases hEq : oid = tid.toObjId
+      · exfalso
+        subst hEq
+        rw [RHTable_getElem?_eq_get?, RHTable_getElem?_insert _ _ _ hInv1,
+          if_pos (beq_self_eq_true tid.toObjId)] at hPost
+        exact hNotTcb _ (Option.some.inj hPost ▸ hP)
+      · rw [RHTable_getElem?_eq_get?, RHTable_getElem?_insert _ _ _ hInv1,
+          if_neg (by intro hc; exact hEq (eq_of_beq hc).symm),
+          ← RHTable_getElem?_eq_get?] at hPost
+        exact hPost
+
+/-- WS-OD OD1.4: the abort never changes a thread's `schedContextBinding`.
+
+This is what makes the cancellation reclaim's ordering sound: the donation is
+resolved on the pre-state, the abort runs, and the resolution is still the truth
+about the state the hand-back is applied to.  The abort writes `ipcState`, the
+queue links, the timeout fields and the return frame — never a binding. -/
+theorem abortPendingIpcOnEndpoint_binding_backward
+    (epId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (hInv : st.objects.invExt)
+    (h : abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st')
+    (k : SeLe4n.ObjId) (t' : TCB) (hPost : st'.objects[k]? = some (.tcb t')) :
+    ∃ t, st.objects[k]? = some (.tcb t) ∧
+      t.schedContextBinding = t'.schedContextBinding := by
+  unfold abortPendingIpcOnEndpoint at h
+  split at h
+  · simp at h
+  · rename_i st1 hER
+    have hInv1 := endpointQueueRemove_preserves_objects_invExt _ _ _ _ _ hInv hER
+    split at h
+    · simp at h
+    · rename_i tcb hLk
+      simp only [storeObject] at h
+      simp only [Except.ok.injEq] at h
+      subst h
+      have hMid : ∃ t1, st1.objects[k]? = some (.tcb t1) ∧
+          t1.schedContextBinding = t'.schedContextBinding := by
+        by_cases hEq : k = tid.toObjId
+        · subst hEq
+          rw [RHTable_getElem?_eq_get?, RHTable_getElem?_insert _ _ _ hInv1,
+            if_pos (beq_self_eq_true tid.toObjId)] at hPost
+          obtain rfl : t' = _ := (KernelObject.tcb.inj (Option.some.inj hPost)).symm
+          exact ⟨tcb, lookupTcb_some_objects st1 tid tcb hLk, rfl⟩
+        · rw [RHTable_getElem?_eq_get?, RHTable_getElem?_insert _ _ _ hInv1,
+            if_neg (by intro hc; exact hEq (eq_of_beq hc).symm),
+            ← RHTable_getElem?_eq_get?] at hPost
+          exact ⟨t', hPost, rfl⟩
+      obtain ⟨t1, h1, hb1⟩ := hMid
+      obtain ⟨t0, h0, hb0⟩ := endpointQueueRemove_getTcb_backward_upToField
+        (fun t => t.schedContextBinding) (fun _ _ _ _ => rfl) epId isReceiveQ tid st st1 hInv hER
+        k t1 h1
+      exact ⟨t0, h0, hb0.trans hb1⟩
+
+/-- WS-OD OD1.4: away from the aborted thread's own key, the abort changes
+neither `ipcState` nor `schedContextBinding`.
+
+The splice writes queue links only, and the timeout rewrite lands at one key.
+So every *other* thread's donation-relevant state is exactly what it was — which
+is what lets `donationOwnerValid` carry across the abort: an owner is `.unbound`
+and the aborted thread is `.donated`, so they are never the same thread. -/
+theorem abortPendingIpcOnEndpoint_tcb_forward_of_ne
+    (epId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (hInv : st.objects.invExt)
+    (h : abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st')
+    (k : SeLe4n.ObjId) (hNe : k ≠ tid.toObjId) (t : TCB)
+    (hPre : st.objects[k]? = some (.tcb t)) :
+    ∃ t', st'.objects[k]? = some (.tcb t') ∧ t'.ipcState = t.ipcState ∧
+      t'.schedContextBinding = t.schedContextBinding := by
+  unfold abortPendingIpcOnEndpoint at h
+  split at h
+  · simp at h
+  · rename_i st1 hER
+    have hInv1 := endpointQueueRemove_preserves_objects_invExt _ _ _ _ _ hInv hER
+    obtain ⟨t1, h1, hI1⟩ := endpointQueueRemove_getTcb_upToField (fun x => x.ipcState)
+      (fun _ _ _ _ => rfl) epId isReceiveQ tid st st1 hInv hER k t
+      (by rw [← RHTable_getElem?_eq_get?]; exact hPre)
+    obtain ⟨t1', h1', hB1⟩ := endpointQueueRemove_getTcb_upToField (fun x => x.schedContextBinding)
+      (fun _ _ _ _ => rfl) epId isReceiveQ tid st st1 hInv hER k t
+      (by rw [← RHTable_getElem?_eq_get?]; exact hPre)
+    rw [h1] at h1'
+    have hEqT : t1' = t1 := (KernelObject.tcb.inj (Option.some.inj h1')).symm
+    rw [← RHTable_getElem?_eq_get?] at h1
+    split at h
+    · simp at h
+    · rename_i tcb hLk
+      simp only [storeObject] at h
+      simp only [Except.ok.injEq] at h
+      subst h
+      refine ⟨t1, ?_, hI1.symm, (hEqT ▸ hB1).symm⟩
+      rw [RHTable_getElem?_eq_get?, RHTable_getElem?_insert _ _ _ hInv1,
+        if_neg (by intro hc; exact hNe (eq_of_beq hc).symm), ← RHTable_getElem?_eq_get?]
+      exact h1
+
+/-- WS-OD OD1.4: the notification instance — `ipcInvariant` carries backwards. -/
+theorem abortPendingIpcOnEndpoint_notification_backward
+    (epId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (hInv : st.objects.invExt)
+    (h : abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st')
+    (oid : SeLe4n.ObjId) (ntfn : Notification)
+    (hPost : st'.objects[oid]? = some (.notification ntfn)) :
+    st.objects[oid]? = some (.notification ntfn) :=
+  abortPendingIpcOnEndpoint_unwritten_kind_backward (fun o => ∃ n, o = .notification n)
+    (fun _ hc => by obtain ⟨_, hc⟩ := hc; cases hc)
+    (fun _ hc => by obtain ⟨_, hc⟩ := hc; cases hc)
+    epId isReceiveQ tid st st' hInv h oid _ ⟨ntfn, rfl⟩ hPost
+
+/-- WS-OD OD1.4: the SchedContext instance — the donation invariants carry
+backwards, which is what makes the reclaim's ordering (abort, then hand back)
+sound: the abort leaves every fact the hand-back reads. -/
+theorem abortPendingIpcOnEndpoint_schedContext_backward
+    (epId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (hInv : st.objects.invExt)
+    (h : abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st')
+    (oid : SeLe4n.ObjId) (sc : SchedContext)
+    (hPost : st'.objects[oid]? = some (.schedContext sc)) :
+    st.objects[oid]? = some (.schedContext sc) :=
+  abortPendingIpcOnEndpoint_unwritten_kind_backward (fun o => ∃ c, o = .schedContext c)
+    (fun _ hc => by obtain ⟨_, hc⟩ := hc; cases hc)
+    (fun _ hc => by obtain ⟨_, hc⟩ := hc; cases hc)
+    epId isReceiveQ tid st st' hInv h oid _ ⟨sc, rfl⟩ hPost
+
+/-- WS-OD OD1.4: the abort writes only TCBs and one endpoint, so every object of
+any other kind carries across it **forwards** as well.
+
+The companion of `abortPendingIpcOnEndpoint_unwritten_kind_backward`, and needed
+for the other half of the same question: `donationOwnerValid`'s first clause
+names a SchedContext in the *pre*-state, so carrying the conjunct across the
+abort means producing that same SchedContext in the post-state.  The two
+directions are genuinely two statements — a write can remove a key it never
+adds — so both are proved rather than one being derived from the other. -/
+theorem abortPendingIpcOnEndpoint_unwritten_kind_forward
+    (P : KernelObject → Prop)
+    (hNotTcb : ∀ t, ¬ P (.tcb t)) (hNotEp : ∀ e, ¬ P (.endpoint e))
+    (epId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (hInv : st.objects.invExt)
+    (h : abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st')
+    (oid : SeLe4n.ObjId) (o : KernelObject) (hP : P o)
+    (hPre : st.objects[oid]? = some o) :
+    st'.objects[oid]? = some o := by
+  unfold abortPendingIpcOnEndpoint at h
+  split at h
+  · simp at h
+  · rename_i st1 hER
+    have hInv1 := endpointQueueRemove_preserves_objects_invExt _ _ _ _ _ hInv hER
+    have hMid : st1.objects[oid]? = some o :=
+      endpointQueueRemove_unwritten_kind_forward P hNotTcb hNotEp epId isReceiveQ tid
+        st st1 hInv hER oid o hP hPre
+    split at h
+    · simp at h
+    · rename_i tcb hLk
+      simp only [storeObject] at h
+      simp only [Except.ok.injEq] at h
+      subst h
+      have hNe : oid ≠ tid.toObjId := by
+        intro hEq
+        subst hEq
+        rw [lookupTcb_some_objects st1 tid tcb hLk] at hMid
+        exact hNotTcb tcb (Option.some.inj hMid ▸ hP)
+      rw [RHTable_getElem?_eq_get?, RHTable_getElem?_insert _ _ _ hInv1,
+        if_neg (by intro hc; exact hNe (eq_of_beq hc).symm), ← RHTable_getElem?_eq_get?]
+      exact hMid
+
+/-- WS-OD OD1.4: the SchedContext instance, forwards.
+
+This is what lets `donationOwnerValid` carry across the abort: the conjunct's
+first clause exhibits the donated context bound to the donee, and the abort
+never writes a SchedContext in either direction. -/
+theorem abortPendingIpcOnEndpoint_schedContext_forward
+    (epId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (hInv : st.objects.invExt)
+    (h : abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st')
+    (oid : SeLe4n.ObjId) (sc : SchedContext)
+    (hPre : st.objects[oid]? = some (.schedContext sc)) :
+    st'.objects[oid]? = some (.schedContext sc) :=
+  abortPendingIpcOnEndpoint_unwritten_kind_forward (fun o => ∃ c, o = .schedContext c)
+    (fun _ hc => by obtain ⟨_, hc⟩ := hc; cases hc)
+    (fun _ hc => by obtain ⟨_, hc⟩ := hc; cases hc)
+    epId isReceiveQ tid st st' hInv h oid _ ⟨sc, rfl⟩ hPre
+
+/-- WS-OD OD1.4: the abort leaves the service registry alone.
+
+The third of the three fields the cancellation reclaim's frame theorems pin
+(`_scheduler_eq`, `_machine`, `_serviceRegistry_eq`); stated beside its two
+siblings so `returnDonationToCancelledCaller` composes rather than re-runs the
+case analysis. -/
+theorem abortPendingIpcOnEndpoint_serviceRegistry_eq
+    (epId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState)
+    (h : abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st') :
+    st'.serviceRegistry = st.serviceRegistry := by
+  unfold abortPendingIpcOnEndpoint at h
+  split at h
+  · simp at h
+  · rename_i st1 hER
+    have hReg1 := endpointQueueRemove_serviceRegistry_eq epId isReceiveQ tid st st1 hER
+    split at h
+    · simp at h
+    · rename_i tcb hLk
+      simp only [storeObject] at h
+      split at h <;>
+        · simp only [Except.ok.injEq] at h
+          subst h
+          exact hReg1
+
 /-- Z6-C1/C2/C3: Unblock a thread whose IPC operation has timed out due to
 SchedContext budget expiry.
 
