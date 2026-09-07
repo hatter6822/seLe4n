@@ -3418,4 +3418,243 @@ theorem endpointQueueRemove_establishes_ipcInvariantFullExceptMembership
     (endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership st stD endpointId
       isReceiveQ tid hObjInv hDual hInv hPred)
 
+-- ============================================================================
+-- §19  WS-OD OD1.3 — the abort's staging closes the splice
+-- ============================================================================
+
+/-- WS-OD OD1.3: the four fields a *timeout* stages on top of a
+receive-completing rewrite.
+
+`abortPendingIpcOnEndpoint` clears the aborted thread's IPC state exactly as a
+completed receive does — `.ready`, no parked message, no stashed reply — and
+then says the four things a timeout means: the budget is gone, the thread is
+runnable, the timed-out flag is set, and the return frame carries
+`.ipcTimeout`.
+
+Naming that increment is what lets the abort **reuse**
+`storeTcbReceiveComplete_closes_exceptMembership` rather than re-prove twenty
+conjuncts across the eight modules that family is spread over: of the four
+fields, `timeoutBudget` is the only one any bundle conjunct reads, and this
+update sets it to `none`. -/
+def timeoutStagedTcb (tcb : TCB) : TCB :=
+  { tcb with
+    timeoutBudget := none
+    threadState := .Ready
+    timedOut := true
+    registerContext := tcb.registerContext.stageReturnFrame Architecture.timeoutFrame }
+
+@[simp] theorem timeoutStagedTcb_ipcState (tcb : TCB) :
+    (timeoutStagedTcb tcb).ipcState = tcb.ipcState := rfl
+@[simp] theorem timeoutStagedTcb_pendingMessage (tcb : TCB) :
+    (timeoutStagedTcb tcb).pendingMessage = tcb.pendingMessage := rfl
+@[simp] theorem timeoutStagedTcb_pendingReceiveReply (tcb : TCB) :
+    (timeoutStagedTcb tcb).pendingReceiveReply = tcb.pendingReceiveReply := rfl
+@[simp] theorem timeoutStagedTcb_queuePrev (tcb : TCB) :
+    (timeoutStagedTcb tcb).queuePrev = tcb.queuePrev := rfl
+@[simp] theorem timeoutStagedTcb_queuePPrev (tcb : TCB) :
+    (timeoutStagedTcb tcb).queuePPrev = tcb.queuePPrev := rfl
+@[simp] theorem timeoutStagedTcb_queueNext (tcb : TCB) :
+    (timeoutStagedTcb tcb).queueNext = tcb.queueNext := rfl
+@[simp] theorem timeoutStagedTcb_replyObject (tcb : TCB) :
+    (timeoutStagedTcb tcb).replyObject = tcb.replyObject := rfl
+@[simp] theorem timeoutStagedTcb_schedContextBinding (tcb : TCB) :
+    (timeoutStagedTcb tcb).schedContextBinding = tcb.schedContextBinding := rfl
+@[simp] theorem timeoutStagedTcb_timeoutBudget (tcb : TCB) :
+    (timeoutStagedTcb tcb).timeoutBudget = none := rfl
+
+/-- WS-OD OD1.3: the abort's TCB value **is** the receive-completing value with
+the timeout increment staged on top — definitionally, so the split is a way of
+reading one record update rather than a second one. -/
+theorem abortStagedTcb_eq (tcb : TCB) :
+    TCB.withReturnFrame
+        ({ tcb with
+           ipcState := .ready
+           pendingMessage := none
+           timeoutBudget := none
+           threadState := .Ready
+           timedOut := true
+           pendingReceiveReply := none })
+        Architecture.timeoutFrame
+      = timeoutStagedTcb
+          ({ tcb with
+             ipcState := .ready
+             pendingMessage := none
+             pendingReceiveReply := none }) := rfl
+
+/-- **WS-OD OD1.3 — the timeout increment preserves the whole bundle.**
+
+`abortPendingIpcOnEndpoint`'s TCB rewrite is the receive-completing rewrite with
+this increment staged on top (`abortStagedTcb_eq`), so this is the second half's
+carriage.  Nineteen conjuncts read none of the four fields it writes; the
+twentieth, `blockedThreadTimeoutConsistent`, reads `timeoutBudget` — the one the
+increment sets to `none` — and comes from `allTimeoutBudgetsNone`, the
+discipline every bundle theorem in this family already carries.
+
+The pre-state thread is `.ready` because the receive-completing store made it
+so.  That is what makes the reply-linkage and donation-owner side conditions
+*vacuous* rather than assumed: a `.ready` thread is not `.blockedOnReply`. -/
+theorem timeoutStaging_preserves_ipcInvariantFull
+    {st st' : SystemState} {tid : SeLe4n.ThreadId} {tcb : TCB}
+    (hObjInv : st.objects.invExt)
+    (hPre : st.getTcb? tid = some tcb)
+    (hReady : tcb.ipcState = .ready)
+    (hAllNone : allTimeoutBudgetsNone st)
+    (hStore : storeObject tid.toObjId (.tcb (timeoutStagedTcb tcb)) st = .ok ((), st'))
+    (h : ipcInvariantFull st) : ipcInvariantFull st' := by
+  have hRaw := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hPre
+  have hAt := storeObject_objects_eq st st' tid.toObjId
+    (.tcb (timeoutStagedTcb tcb)) hObjInv hStore
+  have hOff : ∀ k, k ≠ tid.toObjId → st'.objects[k]? = st.objects[k]? :=
+    fun k hk => storeObject_objects_ne st st' tid.toObjId k _ hk hObjInv hStore
+  have hBudget : tcb.timeoutBudget = none := hAllNone tid tcb hRaw
+  -- The staged thread is `.ready`, so it is not `.blockedOnReply`.
+  have hStagedReady : (timeoutStagedTcb tcb).ipcState = .ready := by
+    rw [timeoutStagedTcb_ipcState]; exact hReady
+  -- Backward TCB view: every post-state TCB has a pre-state counterpart whose
+  -- bundle-read fields agree.
+  have hBwd : ∀ (k : SeLe4n.ObjId) (t : TCB), st'.objects[k]? = some (.tcb t) →
+      ∃ t0, st.objects[k]? = some (.tcb t0) ∧ t.ipcState = t0.ipcState ∧
+        t.pendingMessage = t0.pendingMessage ∧ t.queuePrev = t0.queuePrev ∧
+        t.queueNext = t0.queueNext ∧ t.pendingReceiveReply = t0.pendingReceiveReply := by
+    intro k t hk
+    by_cases hEq : k = tid.toObjId
+    · subst hEq; rw [hAt] at hk
+      obtain rfl := KernelObject.tcb.inj (Option.some.inj hk)
+      exact ⟨tcb, hRaw, rfl, rfl, rfl, rfl, rfl⟩
+    · rw [hOff k hEq] at hk; exact ⟨t, hk, rfl, rfl, rfl, rfl, rfl⟩
+  have hFwd : ∀ (k : SeLe4n.ObjId) (t0 : TCB), st.objects[k]? = some (.tcb t0) →
+      ∃ t, st'.objects[k]? = some (.tcb t) ∧ t.ipcState = t0.ipcState ∧
+        t.pendingMessage = t0.pendingMessage ∧ t.queuePrev = t0.queuePrev ∧
+        t.queueNext = t0.queueNext ∧ t.pendingReceiveReply = t0.pendingReceiveReply := by
+    intro k t0 hk
+    by_cases hEq : k = tid.toObjId
+    · subst hEq; rw [hRaw] at hk
+      obtain rfl : t0 = tcb := (KernelObject.tcb.inj (Option.some.inj hk)).symm
+      exact ⟨timeoutStagedTcb t0, hAt, rfl, rfl, rfl, rfl, rfl⟩
+    · exact ⟨t0, by rw [hOff k hEq]; exact hk, rfl, rfl, rfl, rfl, rfl⟩
+  -- Every non-TCB kind is untouched: the store writes a TCB at a TCB key.
+  have hOtherKind : ∀ (k : SeLe4n.ObjId) (o : KernelObject), (∀ t, o ≠ .tcb t) →
+      (st'.objects[k]? = some o ↔ st.objects[k]? = some o) := by
+    intro k o hNotTcb
+    by_cases hEq : k = tid.toObjId
+    · subst hEq; rw [hAt, hRaw]
+      constructor <;> · intro hc; cases hc; exact absurd rfl (hNotTcb _)
+    · rw [hOff k hEq]
+  have hEpBwd : ∀ (k : SeLe4n.ObjId) (ep : Endpoint),
+      st'.objects[k]? = some (.endpoint ep) → st.objects[k]? = some (.endpoint ep) :=
+    fun k ep => (hOtherKind k (.endpoint ep) (fun _ => by simp)).mp
+  have hEpFwd : ∀ (k : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[k]? = some (.endpoint ep) → st'.objects[k]? = some (.endpoint ep) :=
+    fun k ep => (hOtherKind k (.endpoint ep) (fun _ => by simp)).mpr
+  -- The five reusable `storeObject_modifiedTcb_*` frames, all with `rfl`-shaped
+  -- side conditions once the pre-state thread is known `.ready`.
+  have hSame := storeObject_modifiedTcb_sameSchedContextBindings st st' tid.toObjId tcb
+    (timeoutStagedTcb tcb) hRaw rfl hObjInv hStore
+  have hOwnerFrame := storeObject_modifiedTcb_donationOwnerFrame st st' tid.toObjId tcb
+    (timeoutStagedTcb tcb) hRaw (fun ep rt hc => by rw [hReady] at hc; cases hc)
+    hObjInv hStore
+  have hOwnerValid' : donationOwnerValid st' :=
+    donationOwnerValid_of_frames hSame hOwnerFrame h.donationOwnerValid
+  have hPassiveFrame := storeObject_modifiedTcb_passiveServerIdleFrame st st' tid.toObjId tcb
+    (timeoutStagedTcb tcb) hRaw rfl (Or.inl (by rw [hStagedReady]; exact Or.inl rfl))
+    hObjInv hStore
+  have hLinkFrame := storeObject_modifiedTcb_replyLinkageFrame st st' tid.toObjId tcb
+    (timeoutStagedTcb tcb) hRaw rfl
+    (fun _ ep rt hc => by rw [hReady] at hc; cases hc) hObjInv hStore
+  have hAllNone' : allTimeoutBudgetsNone st' := by
+    intro t tcbT hT
+    by_cases hEq : t.toObjId = tid.toObjId
+    · rw [hEq, hAt] at hT
+      obtain rfl := KernelObject.tcb.inj (Option.some.inj hT)
+      exact timeoutStagedTcb_timeoutBudget tcb
+    · rw [hOff t.toObjId hEq] at hT; exact hAllNone t tcbT hT
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+    blockedThreadTimeoutConsistent_of_all_none st' hAllNone',
+    donationOwnerValid_implies_donationChainAcyclic st' hOwnerValid',
+    hOwnerValid',
+    passiveServerIdle_of_frame hPassiveFrame h.passiveServerIdle,
+    donationBudgetTransfer_of_sameSchedContextBindings hSame h.donationBudgetTransfer,
+    ?_, ?_, ?_,
+    donationOwnerUnique_of_sameSchedContextBindings hSame h.donationOwnerUnique,
+    ?_, ?_⟩
+  · exact storeObject_preserves_ipcInvariant_of_ne_notification st st' tid.toObjId _
+      (fun _ => by simp) h.ipcInvariant hObjInv hStore
+  · exact storeObject_tcb_preserves_dualQueueSystemInvariant_of_queueAgree st st' tid.toObjId
+      tcb (timeoutStagedTcb tcb) rfl rfl hRaw hObjInv hStore h.dualQueueSystemInvariant
+  · intro t tcbT msg hT hMsg
+    obtain ⟨t0, h0, _, hM, _, _, _⟩ := hBwd t.toObjId tcbT hT
+    exact h.allPendingMessagesBounded t t0 msg h0 (hM ▸ hMsg)
+  · exact ⟨fun oid ntfn badge hLk hP =>
+      h.badgeWellFormed.1 oid ntfn badge ((hOtherKind oid _ (fun _ => by simp)).mp hLk) hP,
+     fun oid cn slot cap badge hLk hS hB =>
+      h.badgeWellFormed.2 oid cn slot cap badge
+        ((hOtherKind oid _ (fun _ => by simp)).mp hLk) hS hB⟩
+  · intro t tcbT hT
+    obtain ⟨t0, h0, hI, hM, _, _, _⟩ := hBwd t.toObjId tcbT hT
+    have := h.blockedThreadsPendingMessageConsistent t t0 h0
+    rw [hI, hM]; exact this
+  · intro oid ep hEp
+    refine ⟨fun t tcbT hT => ?_, (h.endpointQueueNoDup oid ep (hEpBwd oid ep hEp)).2⟩
+    obtain ⟨t0, h0, _, _, _, hN, _⟩ := hBwd t.toObjId tcbT hT
+    rw [hN]; exact (h.endpointQueueNoDup oid ep (hEpBwd oid ep hEp)).1 t t0 h0
+  · intro t tcbT hT
+    obtain ⟨t0, h0, hI, _, _, _, _⟩ := hBwd t.toObjId tcbT hT
+    have hPre0 := h.ipcStateQueueMembershipConsistent t t0 h0
+    rw [hI]
+    match hIpc : t0.ipcState with
+    | .blockedOnSend epId =>
+      simp only [hIpc] at hPre0; obtain ⟨ep, hEp, hReach⟩ := hPre0
+      exact ⟨ep, hEpFwd _ ep hEp, hReach.elim Or.inl (fun ⟨p, pT, hP, hPN⟩ =>
+        (hFwd p.toObjId pT hP).elim fun pT' ⟨hP', _, _, _, hN', _⟩ =>
+          Or.inr ⟨p, pT', hP', hN'.trans hPN⟩)⟩
+    | .blockedOnReceive epId =>
+      simp only [hIpc] at hPre0; obtain ⟨ep, hEp, hReach⟩ := hPre0
+      exact ⟨ep, hEpFwd _ ep hEp, hReach.elim Or.inl (fun ⟨p, pT, hP, hPN⟩ =>
+        (hFwd p.toObjId pT hP).elim fun pT' ⟨hP', _, _, _, hN', _⟩ =>
+          Or.inr ⟨p, pT', hP', hN'.trans hPN⟩)⟩
+    | .blockedOnCall epId =>
+      simp only [hIpc] at hPre0; obtain ⟨ep, hEp, hReach⟩ := hPre0
+      exact ⟨ep, hEpFwd _ ep hEp, hReach.elim Or.inl (fun ⟨p, pT, hP, hPN⟩ =>
+        (hFwd p.toObjId pT hP).elim fun pT' ⟨hP', _, _, _, hN', _⟩ =>
+          Or.inr ⟨p, pT', hP', hN'.trans hPN⟩)⟩
+    | .ready => trivial
+    | .blockedOnNotification _ => trivial
+    | .blockedOnReply _ _ => trivial
+  · intro a b tA tB hA hB hN
+    obtain ⟨a0, hA0, hIA, _, _, hNA, _⟩ := hBwd a.toObjId tA hA
+    obtain ⟨b0, hB0, hIB, _, _, _, _⟩ := hBwd b.toObjId tB hB
+    rw [hIA, hIB]
+    exact h.queueNextBlockingConsistent a b a0 b0 hA0 hB0 (hNA ▸ hN)
+  · intro epId ep hd tcbH hEp hT
+    obtain ⟨t0, h0, hI, _, _, _, _⟩ := hBwd hd.toObjId tcbH hT
+    rw [hI]
+    exact h.queueHeadBlockedConsistent epId ep hd t0 (hEpBwd epId ep hEp) h0
+  · intro t tcbT ep rt hT hBlk
+    obtain ⟨t0, h0, hI, _, _, _, _⟩ := hBwd t.toObjId tcbT hT
+    exact h.blockedOnReplyHasTarget t t0 ep rt h0 (hI ▸ hBlk)
+  · exact ⟨replyCallerLinkageReciprocal_of_frame hLinkFrame h.replyCallerLinkage.1,
+      storeObject_preserves_blockedOnReplyHasReplyObject st st' tid.toObjId _ hObjInv
+        h.replyCallerLinkage.2
+        (fun t ep rt hEq hBlk => by
+          cases hEq; rw [hStagedReady] at hBlk; cases hBlk) hStore⟩
+  · exact storeObject_tcb_preserves_pendingReceiveReplyWellFormed st st' tid tcb
+      (timeoutStagedTcb tcb) hObjInv hPre h.pendingReceiveReplyWellFormed
+      (fun rid hRid => by
+        have := h.pendingReceiveReplyWellFormed.1 tid tcb rid hPre
+          (by rw [← timeoutStagedTcb_pendingReceiveReply tcb]; exact hRid)
+        exact this)
+      (fun rid hRid t' tcb' hNe hT' hC => by
+        exact hNe (h.pendingReceiveReplyWellFormed.2 t' tid tcb' tcb rid hT' hPre hC
+          (by rw [← timeoutStagedTcb_pendingReceiveReply tcb]; exact hRid)))
+      hStore
+  · intro epId ep tl tcbT hEp hT
+    obtain ⟨t0, h0, hI, _, _, _, _⟩ := hBwd tl.toObjId tcbT hT
+    rw [hI]
+    exact h.endpointQueueTailBlockedConsistent epId ep tl t0 (hEpBwd epId ep hEp) h0
+  · intro a b tA tB hA hB hN
+    obtain ⟨a0, hA0, hIA, _, _, hNA, _⟩ := hBwd a.toObjId tA hA
+    obtain ⟨b0, hB0, hIB, _, _, _, _⟩ := hBwd b.toObjId tB hB
+    rw [hIA, hIB]
+    exact h.queueNextTargetBlocked a b a0 b0 hA0 hB0 (hNA ▸ hN)
+
 end SeLe4n.Kernel

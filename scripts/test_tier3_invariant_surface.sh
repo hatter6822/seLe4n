@@ -976,6 +976,34 @@ run_check "INVARIANT" rg -n '^theorem ipcInvariantFullExceptMembership_of_storeA
 # and the twentieth does not; a name promising the weaker hypothesis would be
 # the presence-check shape this project keeps finding.
 run_negative_check "INVARIANT" rg -n '^theorem ipcInvariantFull_of_storeAgrees\b' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+# WS-OD OD1.3 (second half): the abort's bundle carriage is a **composition**,
+# not a second twenty-conjunct proof.  Its TCB rewrite is the receive-completing
+# store with a four-field timeout increment staged on top, and only
+# `blockedThreadTimeoutConsistent` reads any of the four.
+run_check "INVARIANT" rg -n '^def timeoutStagedTcb' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem abortStagedTcb_eq' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem timeoutStaging_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_shape' SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean
+run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean
+# The increment is a *reading* of one record update, not a second store: the
+# operation still commits exactly one object.  The positive pins that single
+# store; the negative refuses the shape a "helpful" refactor would produce —
+# the two-step composition moved out of the proof and into the operation, which
+# is what naming `storeTcbReceiveComplete` in `Timeout.lean` would mean.  A
+# body-scoped regex was the wrong tool here: `(.|\n)*` runs past the definition
+# into the theorems below it, which mention `storeObject` twice for their own
+# reasons, so the check fired on correct code.
+run_check "INVARIANT" bash -lc 'rg -U -n "match storeObject tid\.toObjId \(\.tcb tcb.\) st1 with" SeLe4n/Kernel/IPC/Operations/Timeout.lean'
+run_negative_check "INVARIANT" rg -n 'storeTcbReceiveComplete' SeLe4n/Kernel/IPC/Operations/Timeout.lean
+# The detachment obligation is stated, not assumed away: `ipcInvariantFull`
+# constrains a queue only at its boundaries and says nothing about the thread's
+# membership in *other* endpoints' queues.
+run_check "INVARIANT" rg -n '^def spliceLeavesThreadDetached' SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem abortPendingIpcOnEndpoint_preserves_ipcInvariantFull(.|\n)*hDetached : ∀ st1" SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean'
+# Relation, not presence: the composite must consume the *transferred* keystone
+# and the staging frame — the two halves — rather than re-deriving either.
+run_check "INVARIANT" bash -lc 'rg -U -n "abortPendingIpcOnEndpoint_preserves_ipcInvariantFull(.|\n)*endpointQueueRemove_establishes_ipcInvariantFullExceptMembership" SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "abortPendingIpcOnEndpoint_preserves_ipcInvariantFull(.|\n)*timeoutStaging_preserves_ipcInvariantFull" SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean'
 # WS-RR RR7.22 (residual, remediation): the cancelled caller's donated
 # SchedContext goes back — seL4-MCS's `reply_remove` — with the fact that makes
 # the return well defined stated rather than assumed.

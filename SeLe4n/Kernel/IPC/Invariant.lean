@@ -16,6 +16,7 @@ import SeLe4n.Kernel.IPC.Invariant.QueueMembership
 import SeLe4n.Kernel.IPC.Invariant.QueueNextBlocking
 import SeLe4n.Kernel.IPC.Invariant.Structural
 import SeLe4n.Kernel.IPC.Invariant.QueueSplicePreservation
+import SeLe4n.Kernel.IPC.Invariant.TimeoutAbortPreservation
 
 /-! # IPC Invariant Preservation — Re-export Hub
 
@@ -35,5 +36,12 @@ Decomposed into:
 - **QueueSplicePreservation**: the mid-queue endpoint splice
   (`endpointQueueRemoveDual`) decomposed once as `SpliceShape`, and every
   `ipcInvariantFull` conjunct carried across it — nineteen unconditionally,
-  the membership conjunct relaxed at the removed thread.
+  the membership conjunct relaxed at the removed thread.  Since WS-OD OD1.3 it
+  also carries the *other* removal: `endpointQueueRemove_agrees_with_dual` is
+  the theorem OD1.1's comment stood in for, and it transfers the whole surface
+  pointwise.
+- **TimeoutAbortPreservation**: `abortPendingIpcOnEndpoint`'s bundle carriage —
+  the splice's half composed with the receive-completing store's, plus the
+  timeout increment staged on top.  Apart from both because it is the first
+  place needing the invariant surface *and* the timeout operation.
 -/

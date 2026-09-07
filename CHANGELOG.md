@@ -1,3 +1,63 @@
+## v0.34.103 — WS-OD OD1.3 closes: the abort prefix carries the whole bundle
+
+`abortPendingIpcOnEndpoint_preserves_ipcInvariantFull` is the theorem OD1.2's
+prefix was factored out to earn, and it is a **composition** rather than a
+second twenty-conjunct proof:
+
+* the splice's half is `endpointQueueRemove_establishes_ipcInvariantFullExceptMembership`
+  (v0.34.102) — the dual removal's surface transferred through the two removals'
+  agreement;
+* the rewrite's half is `storeTcbReceiveComplete_closes_exceptMembership`
+  (WS-RR RR7.22) with a four-field **timeout increment** staged on top.
+
+**The increment is the whole trick.**  The abort's TCB value *is* the
+receive-completing value with `timeoutBudget := none`, `threadState := .Ready`,
+`timedOut := true` and the `.ipcTimeout` return frame written over it —
+`abortStagedTcb_eq`, by `rfl`.  Of those four fields, **only `timeoutBudget` is
+read by any bundle conjunct**, and the increment sets it to `none`, so
+`blockedThreadTimeoutConsistent` comes from `allTimeoutBudgetsNone` and the
+other nineteen come from field agreement.  Without that reading, the abort would
+have needed twenty `abortPendingIpcOnEndpoint_preserves_*` lemmas spread across
+the eight modules the `storeTcbReceiveComplete_preserves_*` family occupies.
+
+Four things new code must respect.
+
+**(1) The split is a reading, not a rewrite.**  The operation still commits
+exactly one object; the two-step composition exists only in the proof, and the
+two states agree pointwise because they write the same object to the same key.
+A Tier-3 positive pins the single store and a negative refuses
+`storeTcbReceiveComplete` appearing in `Timeout.lean` — the shape a "helpful"
+refactor moving the composition into the operation would produce.
+
+**(2) The detachment obligation is stated.**  `spliceLeavesThreadDetached` is
+the three readings of *the rewritten thread is out of every endpoint queue*
+that the receive-completing keystone consumes.  `QueueSplicePreservation` §8
+discharges them for a receive-side splice; the abort runs on send- and
+call-blocked threads too, where `ipcInvariantFull` does not entail it — the
+bundle constrains a queue only at its boundaries and says nothing about
+membership in *other* endpoints' queues.  So the composite takes it, exactly as
+`sweptThreadQueueCoherent` is taken for the cancellation arms.
+
+**(3) The carriage lives in its own module.**
+`SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean` is the first place
+in the tree needing the IPC invariant surface *and* the timeout operation.
+`Timeout.lean` sits below the invariant modules and must stay there.
+
+**(4) A region-scoped regex is still a presence check.**  The first draft of
+this cut's negative was
+`def abortPendingIpcOnEndpoint(.|\n)*storeObject(.|\n)*storeObject` — meant to
+refuse a second store *in the operation's body*, and it fired on correct code,
+because `(.|\n)*` runs past the definition into the theorems below it, which
+mention `storeObject` twice for their own reasons.  The rule this file already
+states — *ask the question of the level you mean* — applies to a Lean definition
+body as much as to a Rust block, and the fix was to ask a question a line-level
+scan can actually answer.
+
+The bundle family grows to **169** statements.  No transition changed; the trace
+fixture is byte-identical.
+
+Refs: docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md §5 (OD1.3)
+
 ## v0.34.102 — WS-OD OD1.3: the two endpoint-queue removals agree, checkably
 
 OD1.1 made `endpointQueueRemove` write the successor's `queuePPrev` and left a
