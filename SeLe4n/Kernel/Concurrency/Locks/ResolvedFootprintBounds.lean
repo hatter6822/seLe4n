@@ -147,12 +147,15 @@ theorem lockSet_cancelIpcBlocking_size_le (victimTid : SeLe4n.ThreadId)
     (blockedEndpointObjId blockedNotificationObjId : Option SeLe4n.ObjId)
     (consumedReplyId : Option SeLe4n.ReplyId)
     (returnedDonationSc : Option SeLe4n.SchedContextId)
-    (donationHolderTid : Option SeLe4n.ThreadId) :
+    (donationHolderTid : Option SeLe4n.ThreadId)
+    (holderEndpointObjId : Option SeLe4n.ObjId)
+    (holderSpliceNeighbors : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId) :
     (lockSet_cancelIpcBlocking victimTid blockedEndpointObjId
-        blockedNotificationObjId consumedReplyId returnedDonationSc donationHolderTid).size
+        blockedNotificationObjId consumedReplyId returnedDonationSc donationHolderTid
+        holderEndpointObjId holderSpliceNeighbors).size
       ≤ maxLockSetSize := by
   unfold lockSet_cancelIpcBlocking maxLockSetSize
-  refine Nat.le_trans (size_le_5 _ _ _ _ _ _) ?_
+  refine Nat.le_trans (size_le_8 _ _ _ _ _ _ _ _ _) ?_
   simp only [List.length_cons, List.length_nil]
   omega
 
@@ -168,24 +171,114 @@ theorem lockSet_cancelDonation_size_le (victimTid : SeLe4n.ThreadId)
   simp only [List.length_cons, List.length_nil]
   omega
 
-/-- **The one the `.tcbSuspend` bracket acquires.**  The state-resolved
-cancellation footprint adds the two splice-neighbour TCB writes on top of the
-parametric form, so it is the widest of this family — **eight** members since
-WS-RR RR7.22 (residual, remediation) on a victim that is mid-queue with a
-consumed reply *and* a donation to hand back — and the one whose bound
-bounded-wait needs.  Eight is still inside `maxLockSetSize` (nine, the widest
-`.replyRecv`), so the WCRT headline does not move. -/
+/-- WS-OD OD1.5: `none` extends nothing. -/
+private theorem extendOpt_none (S : LockSet) : lockSetExtendOpt S none = S := rfl
+
+/-- WS-OD OD1.5: **the reply-arm shape of the cancellation footprint is seven.**
+
+A `.blockedOnReply` victim is on no endpoint or notification queue, so those two
+members are `none` and six remain: the victim's TCB, its consumed reply, the
+returned SchedContext, the donation holder, and — since OD1.5 — the holder's
+endpoint and its two splice neighbours.  Stated parametrically so the resolved
+bound below composes it with the victim's own two neighbours rather than
+re-running the arithmetic. -/
+theorem lockSet_cancelIpcBlocking_reply_size_le (victimTid : SeLe4n.ThreadId)
+    (consumedReplyId : Option SeLe4n.ReplyId)
+    (returnedDonationSc : Option SeLe4n.SchedContextId)
+    (donationHolderTid : Option SeLe4n.ThreadId)
+    (holderEndpointObjId : Option SeLe4n.ObjId)
+    (holderSpliceNeighbors : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId) :
+    (lockSet_cancelIpcBlocking victimTid none none consumedReplyId returnedDonationSc
+        donationHolderTid holderEndpointObjId holderSpliceNeighbors).size ≤ 7 := by
+  unfold lockSet_cancelIpcBlocking
+  simp only [Option.map_none, extendOpt_none]
+  refine Nat.le_trans (size_le_6 _ _ _ _ _ _ _) ?_
+  simp only [List.length_cons, List.length_nil]
+  omega
+
+/-- WS-OD OD1.5: **the no-donation shape is four.**  Without a donation there is
+no holder, so no abort, so none of the three members OD1.5 added — and no
+consumed reply either, since that too is a `.blockedOnReply` fact. -/
+theorem lockSet_cancelIpcBlocking_noDonation_size_le (victimTid : SeLe4n.ThreadId)
+    (blockedEndpointObjId blockedNotificationObjId : Option SeLe4n.ObjId)
+    (consumedReplyId : Option SeLe4n.ReplyId) :
+    (lockSet_cancelIpcBlocking victimTid blockedEndpointObjId blockedNotificationObjId
+        consumedReplyId none none none (none, none)).size ≤ 4 := by
+  unfold lockSet_cancelIpcBlocking
+  simp only [Option.map_none, extendOpt_none]
+  refine Nat.le_trans (size_le_3 _ _ _ _) ?_
+  simp only [List.length_cons, List.length_nil]
+  omega
+
+/-- WS-OD OD1.5: a resolved cancellation donation witnesses a `.blockedOnReply`
+victim.
+
+Restated here rather than imported: `cancelledCallerDonation?_some`
+(`Lifecycle/Invariant/CancellationReplyShape.lean`) says more and sits above this
+module, and the bound needs only the `ipcState` shape — which is what makes the
+donation members and the victim's own blocked-object members mutually
+exclusive. -/
+private theorem cancelledCallerDonation_some_blockedOnReply
+    {st : SystemState} {tid : SeLe4n.ThreadId} {tcb : TCB}
+    {scId : SeLe4n.SchedContextId} {holder : SeLe4n.ThreadId}
+    (h : Lifecycle.Suspend.cancelledCallerDonation? st tid tcb = some (scId, holder)) :
+    ∃ ep rt, tcb.ipcState = .blockedOnReply ep rt := by
+  unfold Lifecycle.Suspend.cancelledCallerDonation? at h
+  repeat' split at h
+  all_goals simp_all
+
+/-- **The one the `.tcbSuspend` bracket acquires**, and the tightest bound in the
+tree.
+
+The state-resolved footprint carries **ten** optional members at full arity — the
+victim's blocked endpoint or notification, its consumed reply, the returned
+SchedContext, the donation holder, the victim's two splice neighbours, and (WS-OD
+OD1.5) the holder's endpoint and *its* two splice neighbours.  Summed, that is
+eleven, over the ceiling; the bound holds because the two groups are **mutually
+exclusive**, and exclusive for a checkable reason rather than by convention: both
+key on `tcb.ipcState`.  `cancelledCallerDonation?` answers `some` only for a
+`.blockedOnReply` victim, and `cancelBlockedEndpoint?` / `cancelBlockedNotification?`
+answer `some` only for the other blocking states.
+
+So the reply arm is `1 + 8 = 9`, exactly `maxLockSetSize`, and every other arm is
+`1 + 3 = 4` or less.  **Nine leaves no headroom**: the arm-selected split (WS-OD
+OD3.6) is what buys it back, and it is scheduled before OD3.7 adds the previous
+reply's read for exactly this reason. -/
 theorem lockSet_cancelIpcBlockingOnCore_size_le (st : SystemState)
     (victimTid : SeLe4n.ThreadId) :
     (lockSet_cancelIpcBlockingOnCore st victimTid).size ≤ maxLockSetSize := by
-  unfold lockSet_cancelIpcBlockingOnCore lockSet_cancelIpcBlocking maxLockSetSize
+  unfold lockSet_cancelIpcBlockingOnCore
   split
-  · refine Nat.le_trans (size_le_7 _ _ _ _ _ _ _ _) ?_
-    simp only [List.length_cons, List.length_nil]
-    omega
-  · refine Nat.le_trans (size_le_5 _ _ _ _ _ _) ?_
-    simp only [List.length_cons, List.length_nil]
-    omega
+  · rename_i tcb _
+    cases hRes : Lifecycle.Suspend.cancelledCallerDonation? st victimTid tcb with
+    | none =>
+      -- No donation: the five donation-derived members are `none`, so the chain
+      -- is the victim's own blocked object, its reply and its two neighbours.
+      simp only [Option.map_none, cancelHolderBlockedEndpoint?_none,
+        cancelHolderSpliceNeighbors?_none]
+      refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
+      refine Nat.le_trans (Nat.add_le_add_right (lockSetExtendOpt_size_le _ _) 1) ?_
+      have := lockSet_cancelIpcBlocking_noDonation_size_le victimTid (cancelBlockedEndpoint? tcb)
+        (cancelBlockedNotification? tcb) (cancelConsumedReply? tcb)
+      unfold maxLockSetSize
+      omega
+    | some pr =>
+      -- A donation: the victim is `.blockedOnReply`, so its own endpoint and
+      -- notification members are `none` and eight optional members remain.
+      obtain ⟨scId, holder⟩ := pr
+      obtain ⟨ep, rt, hIp⟩ := cancelledCallerDonation_some_blockedOnReply hRes
+      have hE : cancelBlockedEndpoint? tcb = none := by
+        unfold cancelBlockedEndpoint?; rw [hIp]
+      have hN : cancelBlockedNotification? tcb = none := by
+        unfold cancelBlockedNotification?; rw [hIp]
+      rw [hE, hN]
+      refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
+      refine Nat.le_trans (Nat.add_le_add_right (lockSetExtendOpt_size_le _ _) 1) ?_
+      refine Nat.le_trans (Nat.add_le_add_right (Nat.add_le_add_right
+        (lockSet_cancelIpcBlocking_reply_size_le _ _ _ _ _ _) 1) 1) ?_
+      unfold maxLockSetSize
+      omega
+  · exact lockSet_cancelIpcBlocking_size_le _ _ _ _ _ _ _ _
 
 /-- …and the state-resolved donation cancellation, which adds nothing beyond the
 parametric form's arguments. -/

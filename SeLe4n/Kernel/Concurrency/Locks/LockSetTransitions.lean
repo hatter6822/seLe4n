@@ -2804,6 +2804,33 @@ theorem lockSet_consistent_base_plus_five_opts
     (lockSet_consistent_base_plus_four_opts base opt₁ opt₂ opt₃ opt₄ permitted
       hBase hOpt₁ hOpt₂ hOpt₃ hOpt₄) hOpt₅
 
+/-- WS-OD OD1.5 builder: combine with eight optional extensions — the arity the
+state-resolved cancellation footprint reaches once the reclaim's abort prefix
+declares the holder's endpoint and its two queue neighbours. -/
+theorem lockSet_consistent_base_plus_eight_opts
+    (base : List (LockId × AccessMode))
+    (opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ : Option (LockId × AccessMode))
+    (permitted : List LockKind)
+    (hBase : ∀ p ∈ base, p.fst.kind ∈ permitted)
+    (hOpt₁ : ∀ pp, opt₁ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₂ : ∀ pp, opt₂ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₃ : ∀ pp, opt₃ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₄ : ∀ pp, opt₄ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₅ : ∀ pp, opt₅ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₆ : ∀ pp, opt₆ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₇ : ∀ pp, opt₇ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₈ : ∀ pp, opt₈ = some pp → pp.fst.kind ∈ permitted) :
+    ∀ p ∈ (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
+              (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
+              (lockSetExtendOpt (lockSetOfList base) opt₁) opt₂) opt₃) opt₄) opt₅)
+              opt₆) opt₇) opt₈).pairs,
+      p.fst.kind ∈ permitted :=
+  lockSet_consistent_extendOpt _ _ _
+    (lockSet_consistent_extendOpt _ _ _
+      (lockSet_consistent_extendOpt _ _ _
+        (lockSet_consistent_base_plus_five_opts base opt₁ opt₂ opt₃ opt₄ opt₅ permitted
+          hBase hOpt₁ hOpt₂ hOpt₃ hOpt₄ hOpt₅) hOpt₆) hOpt₇) hOpt₈
+
 -- ============================================================================
 -- SM3.B.4 — lockSet_consistent per-transition theorems
 -- ============================================================================

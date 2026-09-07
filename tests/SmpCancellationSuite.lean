@@ -380,6 +380,30 @@ open SeLe4n.Testing
 #check @lockSet_cancelIpcBlocking_returned_donation_sc_write_mem
 #check @lockSet_cancelIpcBlocking_donation_holder_tcb_write_mem
 #check @lockSet_cancelIpcBlockingOnCore_size_le
+-- WS-OD OD1.5: the reclaim's abort prefix is three more declared writes — the
+-- holder's endpoint and its two queue neighbours — resolved from `st` rather
+-- than from the victim's TCB, since the holder is resolved rather than supplied.
+#check @cancelHolderBlockedEndpoint?
+#check @cancelHolderSpliceNeighbors?
+#check @lockSet_cancelIpcBlocking_holder_endpoint_write_mem
+#check @lockSet_cancelIpcBlocking_holder_splice_prev_write_mem
+#check @lockSet_cancelIpcBlocking_holder_splice_next_write_mem
+#check @lockSet_cancelIpcBlocking_reply_size_le
+#check @lockSet_cancelIpcBlocking_noDonation_size_le
+-- WS-OD OD1.5: and the payoff — `passiveServerIdle` is preserved by
+-- `cancelIpcBlocking` on every arm, which is what OD1 exists to prove.
+#check @passiveServerIdleFrame_of_backward_of_not_allowed
+#check @abortPendingIpcOnEndpoint_ok
+#check @abortPendingIpcOnEndpoint_aborted_ipcState
+#check @abortPendingIpcOnEndpoint_passiveServerIdleFrame
+#check @Lifecycle.Suspend.abortHolderPendingIpc_passiveServerIdleFrame
+#check @Lifecycle.Suspend.abortHolderPendingIpc_holder_ipcState_allowed
+#check @consumeReplyLink_passiveServerIdleFrame
+#check @restoreToReadyStaging_passiveServerIdleFrame
+#check @returnDonatedSchedContext_passiveServerIdleFrame
+#check @returnDonationToCancelledCaller_passiveServerIdleFrame
+#check @cancelIpcBlocking_passiveServerIdleFrame
+#check @cancelIpcBlocking_preserves_passiveServerIdle
 
 -- ============================================================================
 -- §2  Elaboration-time examples: headline theorems applied
@@ -392,6 +416,10 @@ variable (st s : SystemState)
 variable (blEp blN : Option SeLe4n.ObjId) (r? : Option SeLe4n.ReplyId)
 variable (sc? : Option SeLe4n.SchedContextId) (ot? : Option SeLe4n.ThreadId)
 variable (rdSc? : Option SeLe4n.SchedContextId) (dh? : Option SeLe4n.ThreadId)
+-- WS-OD OD1.5: the reclaim's abort prefix declares three more members — the
+-- holder's endpoint and its two queue neighbours.
+variable (hEp? : Option SeLe4n.ObjId)
+variable (hNb? : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId)
 
 /-- SM6.E.5: the flagship's remote-poke conjunct applies. -/
 example (h1 : st.getTcb? victim = some tcb0)
@@ -419,16 +447,16 @@ example (h1 : st.getTcb? victim = some tcb0)
 
 /-- SM6.E.2: the single-core atomicity theorem applies (2PL bracket shape). -/
 example :
-    withLockSet (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh?) ec
+    withLockSet (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb?) ec
         (fun st => (cancelIpcBlocking st victim tcb, ())) s
       = (unwindAll ec
-          (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh?).lockAcquireSequence.reverse
+          (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb?).lockAcquireSequence.reverse
           (cancelIpcBlocking
             (acquireAll ec
-              (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh?).lockAcquireSequence s)
+              (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb?).lockAcquireSequence s)
             victim tcb),
          ()) :=
-  cancelIpcBlocking_atomic_under_lockSet victim tcb ec blEp blN r? rdSc? dh? s
+  cancelIpcBlocking_atomic_under_lockSet victim tcb ec blEp blN r? rdSc? dh? hEp? hNb? s
 
 /-- SM6.E.4: the donation atomicity companion applies (dispatcher form). -/
 example :

@@ -1075,6 +1075,48 @@ run_check "INVARIANT" bash -lc 'rg -U -n "\(hAbortProj : abortHolderProjectionSt
 run_check "INVARIANT" rg -n '^theorem endpointQueueRemove_objects_present_backward' SeLe4n/Kernel/IPC/DualQueue/Core.lean
 run_check "INVARIANT" rg -n '^theorem endpointQueueRemove_preserves_objectIndexSetComplete' SeLe4n/Kernel/IPC/DualQueue/Core.lean
 run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_preserves_objectIndexSetComplete' SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean
+# WS-OD OD1.5: the payoff — `passiveServerIdle` is preserved by
+# `cancelIpcBlocking` on **every** arm, which is what OD1 exists to prove and
+# what the reply arm made false before OD1.4's abort prefix.
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_preserves_passiveServerIdle' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_passiveServerIdleFrame' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem returnDonationToCancelledCaller_passiveServerIdleFrame' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_passiveServerIdleFrame' SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean
+run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_aborted_ipcState' SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean
+run_check "INVARIANT" rg -n '^theorem abortHolderPendingIpc_holder_ipcState_allowed' SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean
+# Relation, not presence: the reply-arm frame must *consume* the abort's frame
+# and the holder-allowed fact, not merely mention the operation.  The abort is
+# what moves a `.blockedOnCall` holder into the half `passiveServerIdle` permits,
+# so a composite that dropped either piece would be proving a different theorem.
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem returnDonationToCancelledCaller_passiveServerIdleFrame(.|\n)*abortHolderPendingIpc_passiveServerIdleFrame(.|\n)*abortHolderPendingIpc_holder_ipcState_allowed" SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean'
+# The abort's success is *derived* from the endpoint conjunct, not assumed: a
+# refused abort leaves the holder blocked, which is the state OD1 removes.
+run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_ok' SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem abortHolderPendingIpc_holder_ipcState_allowed(.|\n)*hMem : ipcStateQueueMembershipConsistent st" SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean'
+# NEGATIVE: the frame primitive must hand the backward obligation the structure's
+# own discriminating hypotheses.  Without them the reply arm cannot be proved at
+# all — the caller it re-binds needs the `.unbound` hypothesis and the holder it
+# unbinds needs the filter — so a primitive that dropped either would silently
+# force a weaker theorem elsewhere.
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem passiveServerIdleFrame_of_backward_of_not_allowed(.|\n)*tcb.\.schedContextBinding = \.unbound →\n      ¬ passiveServerIdleAllowed tcb.\.ipcState →" SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean'
+# WS-OD OD1.5: the footprint names the abort's three writes.  A declared set that
+# named the holder's TCB and not the endpoint it is queued on would be *false* on
+# the one arm where the abort runs.
+run_check "INVARIANT" rg -n '^def cancelHolderBlockedEndpoint\?' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^def cancelHolderSpliceNeighbors\?' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlocking_holder_endpoint_write_mem' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlocking_holder_splice_prev_write_mem' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlocking_holder_splice_next_write_mem' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+# The resolvers are gated on the abort's own guard, so a holder the abort leaves
+# alone contributes no member.  The mutation that finds a dropped gate keeps the
+# resolver and returns the links unconditionally.
+run_check "INVARIANT" bash -lc 'rg -U -n "def cancelHolderSpliceNeighbors\?(.|\n)*\| \.blockedOnSend _ \| \.blockedOnCall _ => \(t\.queuePrev, t\.queueNext\)(.|\n)*\| _ => \(none, none\)" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+# The bound is a *case analysis*, not a summed arity: eleven members summed is
+# over the ceiling, and it holds only because the donation-derived members and
+# the victim's own blocked-object members key on the same field.
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlocking_reply_size_le' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlocking_noDonation_size_le' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem lockSet_cancelIpcBlockingOnCore_size_le(.|\n)*cancelledCallerDonation_some_blockedOnReply" SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean'
 # The neighbour clauses are the half an under-stated hypothesis would drop, so
 # the label predicate must quantify over the removed thread's own queue links
 # rather than over the endpoint and the thread alone.

@@ -1,3 +1,72 @@
+## v0.34.105 — WS-OD OD1.5: `passiveServerIdle` is preserved by every cancellation arm
+
+`cancelIpcBlocking_preserves_passiveServerIdle` is the theorem OD1 exists to
+prove, and one that was **false** before `v0.34.104`: the reply arm's reclaim
+could leave a holder `.unbound` and still `.blockedOnCall` — reachable at depth 1
+with no chain. Nothing was unsound, because nothing claimed the conjunct across
+the cancellation; that is what made it a false-assurance gap, and it is why the
+theorem's *existence* is the payoff rather than its statement.
+
+### The proof, and the one idea it turns on
+
+Every thread a cancellation rewrites ends in a state `passiveServerIdle`
+**permits** — `.ready` for the victim on all four blocking arms, and `.ready` or
+already-permitted for the holder the reply arm unbinds. So the conjunct's own
+`¬ passiveServerIdleAllowed` filter discharges each of them, and the pullback
+only ever fires on threads the transition left alone. That is why
+`passiveServerIdleFrame_of_backward_of_not_allowed` hands the backward obligation
+**both** of the structure's discriminating hypotheses: the donation return needs
+the `.unbound` one for the caller it re-binds (which becomes `.bound scId`, so
+the hypothesis excludes it outright) and the filter for the holder it unbinds.
+
+Arm by arm, most of it was already carried by the shape module that owns it:
+`sweptAndRestored_passiveServerIdleFrame` for the three endpoint arms,
+`purgedAndRestored_passiveServerIdleFrame` for the notification arm,
+reflexivity for `.ready`. The reply arm is the new work, composing three frames
+over `consumeReplyLink ∘ restoreToReadyCancelled ∘ returnDonationToCancelledCaller`.
+
+`ipcStateQueueMembershipConsistent` is a hypothesis, and a substantive one: it is
+what makes the abort *succeed* (`abortPendingIpcOnEndpoint_ok` — a thread blocked
+sending or calling names an endpoint that exists, which is the only way the
+abort's two steps can fail). A refused abort would leave the holder exactly where
+the defect left it, so admitting one would have made the theorem vacuous on the
+case it exists for.
+
+### The footprint gained three members, not one
+
+The OD1.5 plan row said "eight of nine, so the ninth member fits". That counted
+the holder's endpoint and missed that the abort **splices**: it patches the
+holder's predecessor's `queueNext` and its successor's `queuePrev`, so both
+neighbour TCBs are writes too. The arithmetic only became visible once OD1.4
+landed; the plan row is corrected in this cut rather than the code being trimmed
+to match it.
+
+`cancelHolderBlockedEndpoint?` and `cancelHolderSpliceNeighbors?` resolve the
+three from **`st`**, not from a supplied `TCB` — every other resolver in the
+family takes the victim's TCB because the victim is the operation's argument,
+while the holder is *resolved* by `cancelledCallerDonation?`. Both are gated on
+the abort's own guard, so a holder the abort leaves alone contributes no member.
+
+### Nine of nine, and why that is expected rather than alarming
+
+Summed, the resolved footprint now carries **eleven** optional members, over
+`maxLockSetSize`. The bound holds because the two groups are mutually exclusive
+for a checkable reason rather than by convention: `cancelledCallerDonation?`
+answers `some` only for a `.blockedOnReply` victim, and `cancelBlockedEndpoint?` /
+`cancelBlockedNotification?` only for the other blocking states — both key on
+`tcb.ipcState`. So the reply arm is `1 + 8 = 9`, exactly the ceiling, and every
+other arm is four or less.
+
+Nine leaves **no headroom**, and that is the state WS-OD OD3.6's arm-selected
+split is scheduled to relieve — before OD3.7 adds the previous reply's read. The
+narrowing that would buy headroom now (a reply arm performs no victim splice, so
+its neighbour members are vacuous) is deliberately *not* done here: it is OD3.6's
+restructuring, it ripples into `InformationFlow/FineLockFlow.lean` and
+`Concurrency/Locks/LockSetTransitions.lean`, and doing it in this cut would put a
+footprint change ahead of the row that owns it.
+
+Refs: docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md OD1.5
+
 ## v0.34.104 — WS-OD OD1.4: the reclaim ends the holder's IPC before handing the context back
 
 `returnDonationToCancelledCaller` is now

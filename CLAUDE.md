@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.104.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.105.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1800,6 +1800,33 @@ code may assume:
   remediation is weakened on the states it held for, and the general discharge is
   registered WS-OD debt.  New code must not read either projection theorem as
   unconditional.
+- **...and `passiveServerIdle` is preserved by `cancelIpcBlocking` on every arm**
+  (WS-OD OD1.5, v0.34.105) — the theorem OD1 exists to prove, and one that was
+  *false* before the abort prefix: the reply arm's reclaim could leave a holder
+  `.unbound` and still `.blockedOnCall`.  Four things new code must respect.
+  (1) **The load-bearing fact is the filter, not a pullback**: every thread a
+  cancellation rewrites ends in a state `passiveServerIdle` permits, so
+  `passiveServerIdleFrame`'s own `¬ passiveServerIdleAllowed` hypothesis
+  discharges it and the pullback fires only on threads the transition left
+  alone.  That is why the frame primitive
+  (`passiveServerIdleFrame_of_backward_of_not_allowed`) hands the backward
+  obligation *both* discriminating hypotheses — the donation return needs the
+  `.unbound` one for the caller it re-binds and the filter for the holder it
+  unbinds.  (2) **`ipcStateQueueMembershipConsistent` is a hypothesis, and a
+  substantive one**: it is what makes the abort *succeed*
+  (`abortPendingIpcOnEndpoint_ok` — a thread blocked sending or calling names an
+  endpoint that exists), and a refused abort leaves the holder exactly where the
+  defect left it.  (3) **The footprint gained three members, not one**: the abort
+  *splices*, so `lockSet_cancelIpcBlocking` names the holder's endpoint **and its
+  two queue neighbours** (`cancelHolderBlockedEndpoint?`,
+  `cancelHolderSpliceNeighbors?`, both resolved from `st` because the holder is
+  resolved rather than supplied, and both gated on the abort's own guard).
+  (4) **The bound is a case analysis and the reply arm sits *at* the ceiling**:
+  summed, the resolved footprint carries eleven members, and it fits only because
+  the donation-derived members and the victim's own blocked-object members both
+  key on `tcb.ipcState`.  Nine of nine leaves no headroom — WS-OD OD3.6's
+  arm-selected split is what recovers it, and is scheduled before OD3.7 adds a
+  member for exactly that reason.
 - **A bare reply's post-state does not satisfy `donationOwnerValid`.**
   `endpointReply` wakes the answered caller `.ready` while the recorded server
   still holds `.donated _ caller`; the donated SchedContext comes back only at

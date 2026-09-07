@@ -63,6 +63,44 @@ theorem abortPendingIpcOnEndpoint_shape
       simp only [Except.ok.injEq] at hStep ⊢
       exact hStep.symm ▸ rfl
 
+/-- WS-OD OD1.5: **the abort succeeds whenever its endpoint is one.**
+
+Its two steps each have exactly one failure mode and both are ruled out by the
+hypotheses: `endpointQueueRemove` refuses a key that does not hold an endpoint or
+a thread that is not a TCB, and the timeout rewrite refuses a thread the splice
+lost — which it does not, since the splice writes queue links.
+
+Consumed by the cancellation reclaim, where the endpoint comes from
+`ipcStateQueueMembershipConsistent`: a thread blocked sending or calling names an
+endpoint that exists.  Without this the reclaim's `passiveServerIdle` result
+would have to admit a refused abort, which leaves the holder blocked — the very
+state being closed. -/
+theorem abortPendingIpcOnEndpoint_ok
+    {st : SystemState} {epId : SeLe4n.ObjId} {isReceiveQ : Bool} {tid : SeLe4n.ThreadId}
+    {ep : Endpoint} {tcb : TCB}
+    (hInv : st.objects.invExt)
+    (hEp : st.objects[epId]? = some (.endpoint ep))
+    (hLk : lookupTcb st tid = some tcb) :
+    ∃ st', abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st' := by
+  have hRem : ∃ st1, endpointQueueRemove epId isReceiveQ tid st = .ok st1 := by
+    unfold endpointQueueRemove
+    rw [hEp, hLk]
+    exact ⟨_, rfl⟩
+  obtain ⟨st1, hRem1⟩ := hRem
+  have hInv1 := endpointQueueRemove_preserves_objects_invExt epId isReceiveQ tid st st1 hInv hRem1
+  obtain ⟨t1, hT1, _⟩ :=
+    endpointQueueRemove_getTcb_upToField (fun t => t.ipcState) (fun _ _ _ _ => rfl)
+      epId isReceiveQ tid st st1 hInv hRem1 tid.toObjId tcb
+      (by rw [← RHTable_getElem?_eq_get?]; exact lookupTcb_some_objects st tid tcb hLk)
+  rw [← RHTable_getElem?_eq_get?] at hT1
+  have hLk1 : lookupTcb st1 tid = some t1 :=
+    lookupTcb_of_objects_of_not_reserved st1 tid t1 hT1 (lookupTcb_some_not_reserved st tid tcb hLk)
+  unfold abortPendingIpcOnEndpoint
+  rw [hRem1]
+  simp only []
+  rw [hLk1]
+  exact ⟨_, rfl⟩
+
 /-- WS-OD OD1.3: the abort's post-splice detachment obligation.
 
 `storeTcbReceiveComplete_closes_exceptMembership` consumes three readings of one
@@ -243,6 +281,70 @@ theorem abortPendingIpcOnEndpoint_preserves_objectIndexSetComplete
       hComplete hRem
   exact SeLe4n.Model.storeObject_preserves_objectIndexSetComplete st1 st' _ _ hInv1 hSet1
     hC1 hStore
+
+/-- WS-OD OD1.5: the aborted thread ends `.ready`.
+
+The operation's whole point, stated at the one key it rewrites: the thread is
+taken off its endpoint queue and its blocking state is cleared, so nothing about
+it is `.blockedOnSend` or `.blockedOnCall` any more.  The cancellation reclaim
+reads this to know the holder it unbinds is in a state `passiveServerIdle`
+permits. -/
+theorem abortPendingIpcOnEndpoint_aborted_ipcState
+    {st st' : SystemState} {epId : SeLe4n.ObjId} {isReceiveQ : Bool} {tid : SeLe4n.ThreadId}
+    (hInv : st.objects.invExt)
+    (hStep : abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st')
+    (t' : TCB) (h : st'.getTcb? tid = some t') :
+    t'.ipcState = .ready := by
+  obtain ⟨st1, tcb1, hRem, _, hStore⟩ := abortPendingIpcOnEndpoint_shape hStep
+  have hI1 : st1.objects.invExt :=
+    endpointQueueRemove_preserves_objects_invExt epId isReceiveQ tid st st1 hInv hRem
+  rw [SystemState.getTcb?_eq_some_iff,
+    storeObject_objects_eq st1 st' tid.toObjId _ hI1 hStore] at h
+  have hEqT : _ = t' := KernelObject.tcb.inj (Option.some.inj h)
+  rw [← hEqT]
+  simp [TCB.withReturnFrame]
+
+/-- WS-OD OD1.5: **the abort frames `passiveServerIdle`.**
+
+The aborted thread is the only one whose `ipcState` moves, and it moves to
+`.ready` — an allowed passive state, so the frame's own
+`¬ passiveServerIdleAllowed` filter excludes it before the pullback is asked for
+anything.  Every other thread keeps both fields: the splice writes queue links
+(`endpointQueueRemove_getTcb_backward_upToField` at the pair) and the timeout
+rewrite lands at one key.
+
+This is the whole point of ending the holder's IPC rather than only unbinding it:
+without the rewrite the holder would still be `.blockedOnCall` in the post-state,
+in the non-allowed half, and the pullback would have to produce an `.unbound`
+pre-state holder that does not exist. -/
+theorem abortPendingIpcOnEndpoint_passiveServerIdleFrame
+    {st st' : SystemState} {epId : SeLe4n.ObjId} {isReceiveQ : Bool} {tid : SeLe4n.ThreadId}
+    (hInv : st.objects.invExt)
+    (hStep : abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st') :
+    passiveServerIdleFrame st st' := by
+  obtain ⟨st1, tcb1, hRem, hT1, hStore⟩ := abortPendingIpcOnEndpoint_shape hStep
+  have hI1 : st1.objects.invExt :=
+    endpointQueueRemove_preserves_objects_invExt epId isReceiveQ tid st st1 hInv hRem
+  refine passiveServerIdleFrame_of_backward_of_not_allowed ?_
+    (abortPendingIpcOnEndpoint_scheduler_eq epId isReceiveQ tid st st' hStep)
+  intro a tcb' hPostT _ hNA
+  have hPost := (SystemState.getTcb?_eq_some_iff st' a tcb').mp hPostT
+  by_cases hEq : a.toObjId = tid.toObjId
+  · -- the aborted thread: the rewrite makes it `.ready`, which the filter admits
+    exfalso
+    apply hNA
+    rw [hEq, storeObject_objects_eq st1 st' tid.toObjId _ hI1 hStore] at hPost
+    have hEqT : _ = tcb' := KernelObject.tcb.inj (Option.some.inj hPost)
+    rw [← hEqT]
+    exact Or.inl (by simp [TCB.withReturnFrame])
+  · -- every other thread: both fields survive the splice and the single store
+    rw [storeObject_objects_ne st1 st' tid.toObjId a.toObjId _ hEq hI1 hStore] at hPost
+    obtain ⟨t0, h0, hf⟩ :=
+      endpointQueueRemove_getTcb_backward_upToField
+        (fun t => (t.ipcState, t.schedContextBinding)) (fun _ _ _ _ => rfl)
+        epId isReceiveQ tid st st1 hInv hRem a.toObjId tcb' hPost
+    exact ⟨t0, (SystemState.getTcb?_eq_some_iff st a t0).mpr h0,
+      congrArg Prod.fst hf, congrArg Prod.snd hf⟩
 
 /-- WS-OD OD1.4: **the abort carries `donationOwnerValid`**, given that the
 aborted thread is not itself the owner of any donation.

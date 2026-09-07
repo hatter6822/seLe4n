@@ -324,6 +324,100 @@ theorem abortHolderPendingIpc_binding_forward (st : SystemState)
   have hEqT : t = t0 := KernelObject.tcb.inj (Option.some.inj hAt0)
   exact ⟨t', hAt', by rw [hEqT]; exact hEq0.symm⟩
 
+/-- **WS-OD OD1.5**: the holder abort frames `passiveServerIdle`.
+
+Each of the four arms is either the identity or one successful
+`abortPendingIpcOnEndpoint`, and a refused abort is the identity too — so the
+frame composes rather than re-running the case analysis. -/
+theorem abortHolderPendingIpc_passiveServerIdleFrame (st : SystemState)
+    (holder : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    passiveServerIdleFrame st (abortHolderPendingIpc st holder) := by
+  unfold abortHolderPendingIpc
+  split
+  · exact passiveServerIdleFrame.refl st
+  · rename_i holderTcb _
+    split
+    · rename_i epId _
+      cases h : abortPendingIpcOnEndpoint epId false holder st with
+      | error _ => exact passiveServerIdleFrame.refl st
+      | ok stA =>
+        simp only []
+        exact abortPendingIpcOnEndpoint_passiveServerIdleFrame hInv h
+    · rename_i epId _
+      cases h : abortPendingIpcOnEndpoint epId false holder st with
+      | error _ => exact passiveServerIdleFrame.refl st
+      | ok stA =>
+        simp only []
+        exact abortPendingIpcOnEndpoint_passiveServerIdleFrame hInv h
+    · exact passiveServerIdleFrame.refl st
+
+/-- **WS-OD OD1.5**: the holder the reclaim unbinds ends in a state
+`passiveServerIdle` permits.
+
+Two cases, and the endpoint conjunct is what rules out the third.  A holder in an
+allowed state is left untouched, so it stays allowed.  A holder blocked sending
+or calling is aborted — and the abort *succeeds*, because
+`ipcStateQueueMembershipConsistent` says the endpoint such a thread names is one
+(`abortPendingIpcOnEndpoint_ok`), which is the only way its two steps can fail.
+Without that conjunct the reclaim would have to admit a refused abort, and a
+refused abort leaves the holder exactly where it was: `.unbound` after the
+hand-back and still `.blockedOnCall`, the state OD1 exists to remove. -/
+theorem abortHolderPendingIpc_holder_ipcState_allowed (st : SystemState)
+    (holder : SeLe4n.ThreadId) (holderTcb : TCB)
+    (hInv : st.objects.invExt)
+    (hMem : ipcStateQueueMembershipConsistent st)
+    (hLk : lookupTcb st holder = some holderTcb)
+    (t' : TCB)
+    (h : (abortHolderPendingIpc st holder).getTcb? holder = some t') :
+    passiveServerIdleAllowed t'.ipcState := by
+  rw [SystemState.getTcb?_eq_some_iff] at h
+  have hHolderAt := lookupTcb_some_objects st holder holderTcb hLk
+  have hMemH := hMem holder holderTcb hHolderAt
+  unfold abortHolderPendingIpc at h
+  rw [hLk] at h
+  simp only [] at h
+  -- The two blocked arms abort; every other arm is the identity and already allowed.
+  cases hIp : holderTcb.ipcState with
+  | ready =>
+    rw [hIp] at h; simp only [] at h
+    rw [hHolderAt] at h
+    exact Or.inl (by rw [← KernelObject.tcb.inj (Option.some.inj h), hIp])
+  | blockedOnReceive ep =>
+    rw [hIp] at h; simp only [] at h
+    rw [hHolderAt] at h
+    exact Or.inr (Or.inl ⟨ep, Or.inl (by
+      rw [← KernelObject.tcb.inj (Option.some.inj h), hIp])⟩)
+  | blockedOnNotification n =>
+    rw [hIp] at h; simp only [] at h
+    rw [hHolderAt] at h
+    exact Or.inr (Or.inl ⟨n, Or.inr (by
+      rw [← KernelObject.tcb.inj (Option.some.inj h), hIp])⟩)
+  | blockedOnReply ep rt =>
+    rw [hIp] at h; simp only [] at h
+    rw [hHolderAt] at h
+    exact Or.inr (Or.inr ⟨ep, rt, by
+      rw [← KernelObject.tcb.inj (Option.some.inj h), hIp]⟩)
+  | blockedOnSend epId =>
+    rw [hIp] at hMemH
+    obtain ⟨ep, hEp, _⟩ := hMemH
+    obtain ⟨stA, hOk⟩ := abortPendingIpcOnEndpoint_ok (isReceiveQ := false) hInv hEp hLk
+    rw [hIp] at h
+    simp only [] at h
+    rw [hOk] at h
+    simp only [] at h
+    exact Or.inl (abortPendingIpcOnEndpoint_aborted_ipcState hInv hOk t'
+      ((SystemState.getTcb?_eq_some_iff stA holder t').mpr h))
+  | blockedOnCall epId =>
+    rw [hIp] at hMemH
+    obtain ⟨ep, hEp, _⟩ := hMemH
+    obtain ⟨stA, hOk⟩ := abortPendingIpcOnEndpoint_ok (isReceiveQ := false) hInv hEp hLk
+    rw [hIp] at h
+    simp only [] at h
+    rw [hOk] at h
+    simp only [] at h
+    exact Or.inl (abortPendingIpcOnEndpoint_aborted_ipcState hInv hOk t'
+      ((SystemState.getTcb?_eq_some_iff stA holder t').mpr h))
+
 /-- **WS-OD OD1.4**: the holder abort carries `donationOwnerValid`.
 
 The reclaim resolves the donation on the pre-state and then hands it back on the

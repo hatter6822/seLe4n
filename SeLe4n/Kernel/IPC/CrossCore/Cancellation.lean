@@ -59,9 +59,12 @@ lock-set discipline:
 The cancellation rows of the plan's lock-set table:
 
 * `lockSet_cancelIpcBlocking` — victim TCB (W); blocked-on endpoint (W) or
-  notification (W), pre-resolved from the victim's `ipcState`; and (SM6.D
+  notification (W), pre-resolved from the victim's `ipcState`; (SM6.D
   reply-object fold) the consumed Reply object (W) when the victim is
-  `.blockedOnReply` with a live `replyObject` link.
+  `.blockedOnReply` with a live `replyObject` link; (WS-RR RR7.22 residual) the
+  returned SchedContext (W) and the donation holder's TCB (W); and (WS-OD OD1.5)
+  the **holder's** endpoint (W) and its two queue neighbours (W), which the
+  reclaim's abort prefix splices.
 * `lockSet_cancelDonation` — donor (victim) TCB (W); bound/donated
   SchedContext (W); donated-arm original-owner TCB (W) (the plan row's
   "receiver TCB").
@@ -856,6 +859,62 @@ cancellation patches the predecessor's `queueNext` and the successor's
 def cancelSpliceNeighbors? (tcb : TCB) : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId :=
   (tcb.queuePrev, tcb.queueNext)
 
+/-- **WS-OD OD1.5**: the endpoint the reclaim's abort prefix splices — the
+holder's, resolved from **`st`** rather than from a supplied TCB.
+
+Every other resolver in this family takes the victim's `TCB`, because the victim
+is the operation's argument.  The holder is not: it is *resolved* by
+`cancelledCallerDonation?` out of the victim's recorded reply target, so its
+footprint members have to be read out of the state too.  That asymmetry is real
+and is why this pair takes `Option ThreadId` — `none` on every arm but a reply
+arm whose caller had donated.
+
+`some ep` exactly when the abort runs, which is `abortHolderPendingIpc`'s own
+guard: a holder blocked sending or calling.  Every other holder is left untouched
+(`abortHolderPendingIpc_eq_self_of_allowed`), so naming its endpoint would be a
+lock acquired for a write that never happens. -/
+def cancelHolderBlockedEndpoint? (st : SystemState)
+    (holder? : Option SeLe4n.ThreadId) : Option SeLe4n.ObjId :=
+  match holder? with
+  | none => none
+  | some holder =>
+    match st.getTcb? holder with
+    | none => none
+    | some t =>
+      match t.ipcState with
+      | .blockedOnSend ep | .blockedOnCall ep => some ep
+      | _ => none
+
+/-- **WS-OD OD1.5**: the queue-neighbour TCBs the reclaim's abort prefix
+relinks — the *holder's* `queuePrev` / `queueNext`.
+
+The abort is `endpointQueueRemove`, so it patches the predecessor's `queueNext`
+and the successor's `queuePrev` exactly as the victim's own splice does; both
+neighbours are write-footprint members.  Gated on the same guard as
+`cancelHolderBlockedEndpoint?`, and for the same reason: a holder the abort
+leaves alone has no neighbours to relink. -/
+def cancelHolderSpliceNeighbors? (st : SystemState)
+    (holder? : Option SeLe4n.ThreadId) :
+    Option SeLe4n.ThreadId × Option SeLe4n.ThreadId :=
+  match holder? with
+  | none => (none, none)
+  | some holder =>
+    match st.getTcb? holder with
+    | none => (none, none)
+    | some t =>
+      match t.ipcState with
+      | .blockedOnSend _ | .blockedOnCall _ => (t.queuePrev, t.queueNext)
+      | _ => (none, none)
+
+/-- WS-OD OD1.5: with no donation resolved there is no holder, so no abort, so
+no endpoint. -/
+@[simp] theorem cancelHolderBlockedEndpoint?_none (st : SystemState) :
+    cancelHolderBlockedEndpoint? st none = none := rfl
+
+/-- WS-OD OD1.5: and no neighbours to relink. -/
+@[simp] theorem cancelHolderSpliceNeighbors?_none (st : SystemState) :
+    cancelHolderSpliceNeighbors? st none = (none, none) := rfl
+
 /-- WS-SM SM6.E.3: the SchedContext a donation cancellation would write —
 the victim's bound or donated SC. -/
 def cancelBindingSc? (tcb : TCB) : Option SeLe4n.SchedContextId :=
@@ -876,14 +935,29 @@ def cancelDonatedOwner? (tcb : TCB) : Option SeLe4n.ThreadId :=
 + neighbour link patches) or notification (write: waiter-list drop), and the
 consumed Reply object (write: `reply.caller := none`, the SM6.D reply-object
 fold).  At most one of the two queue optionals is `some` (they pre-resolve
-from mutually exclusive `ipcState` arms). -/
+from mutually exclusive `ipcState` arms).
+
+**WS-OD OD1.5** adds the reclaim's abort prefix: `abortHolderPendingIpc` splices
+the *holder* out of the *holder's* endpoint queue, so that endpoint and both of
+the holder's queue neighbours are writes too.  All three are `none` unless a
+donation is resolved and its holder is blocked sending or calling — which is the
+abort's own guard, so the footprint names exactly what runs.
+
+The **summed** arity is now eleven, over `maxLockSetSize`; the resolved bound
+holds because the donation-derived members and the victim's own blocked-object
+members are mutually exclusive, both keying on `tcb.ipcState`
+(`lockSet_cancelIpcBlockingOnCore_size_le`).  On the reply arm that is nine of
+nine — no headroom, which is what WS-OD OD3.6's arm-selected split recovers. -/
 def lockSet_cancelIpcBlocking (victimTid : SeLe4n.ThreadId)
     (blockedEndpointObjId : Option SeLe4n.ObjId)
     (blockedNotificationObjId : Option SeLe4n.ObjId)
     (consumedReplyId : Option SeLe4n.ReplyId)
     (returnedDonationSc : Option SeLe4n.SchedContextId)
-    (donationHolderTid : Option SeLe4n.ThreadId) : LockSet :=
-  lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
+    (donationHolderTid : Option SeLe4n.ThreadId)
+    (holderEndpointObjId : Option SeLe4n.ObjId)
+    (holderSpliceNeighbors : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId) : LockSet :=
+  lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
+    (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
       (lockSetOfList [(tcbLock victimTid, .write)])
       (blockedEndpointObjId.map (fun ep => (endpointLock ep, .write))))
       (blockedNotificationObjId.map (fun n => (notificationLock n, .write))))
@@ -894,7 +968,16 @@ def lockSet_cancelIpcBlocking (victimTid : SeLe4n.ThreadId)
       -- would be *false*, which is worse than a wide one.  Both are `none` on
       -- every arm but a reply arm whose caller had donated.
       (returnedDonationSc.map (fun sc => (schedContextLock sc, .write))))
-    (donationHolderTid.map (fun h => (tcbLock h, .write)))
+      (donationHolderTid.map (fun h => (tcbLock h, .write))))
+      -- WS-OD OD1.5: the reclaim's abort prefix splices the *holder* out of the
+      -- holder's endpoint queue, so the endpoint object and both queue
+      -- neighbours are writes too.  All three are `none` unless a donation is
+      -- resolved **and** its holder is blocked sending or calling, which is the
+      -- abort's own guard; a footprint that omitted them would be false on the
+      -- one arm where the abort runs.
+      (holderEndpointObjId.map (fun ep => (endpointLock ep, .write))))
+      (holderSpliceNeighbors.1.map (fun p => (tcbLock p, .write))))
+    (holderSpliceNeighbors.2.map (fun n => (tcbLock n, .write)))
 
 /-- WS-SM SM6.E.3 (plan §3.1): the `cancelDonation` lock-set — donor (victim)
 TCB (write: binding clear), the bound/donated SchedContext (write:
@@ -924,10 +1007,14 @@ def lockSet_cancelIpcBlockingOnCore (st : SystemState)
           (lockSet_cancelIpcBlocking victimTid (cancelBlockedEndpoint? tcb)
             (cancelBlockedNotification? tcb) (cancelConsumedReply? tcb)
             ((Lifecycle.Suspend.cancelledCallerDonation? st victimTid tcb).map Prod.fst)
-            ((Lifecycle.Suspend.cancelledCallerDonation? st victimTid tcb).map Prod.snd))
+            ((Lifecycle.Suspend.cancelledCallerDonation? st victimTid tcb).map Prod.snd)
+            (cancelHolderBlockedEndpoint? st
+              ((Lifecycle.Suspend.cancelledCallerDonation? st victimTid tcb).map Prod.snd))
+            (cancelHolderSpliceNeighbors? st
+              ((Lifecycle.Suspend.cancelledCallerDonation? st victimTid tcb).map Prod.snd)))
           ((cancelSpliceNeighbors? tcb).1.map (fun p => (tcbLock p, .write))))
         ((cancelSpliceNeighbors? tcb).2.map (fun n => (tcbLock n, .write)))
-  | none => lockSet_cancelIpcBlocking victimTid none none none none none
+  | none => lockSet_cancelIpcBlocking victimTid none none none none none none (none, none)
 
 /-- WS-SM SM6.E.3: the concrete lock-set a `cancelDonationOnCore` on state
 `st` acquires — the parametric footprint with the SC and donated owner
@@ -951,11 +1038,13 @@ ladder. -/
 theorem lockSet_consistent_cancelIpcBlocking (victimTid : SeLe4n.ThreadId)
     (blEp blN : Option SeLe4n.ObjId) (consumedReplyId : Option SeLe4n.ReplyId)
     (returnedDonationSc : Option SeLe4n.SchedContextId)
-    (donationHolderTid : Option SeLe4n.ThreadId) :
+    (donationHolderTid : Option SeLe4n.ThreadId)
+    (holderEndpointObjId : Option SeLe4n.ObjId)
+    (holderSpliceNeighbors : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId) :
     ∀ p ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId
-        returnedDonationSc donationHolderTid).pairs,
+        returnedDonationSc donationHolderTid holderEndpointObjId holderSpliceNeighbors).pairs,
       p.fst.kind ∈ permittedKinds .tcbSuspend :=
-  lockSet_consistent_base_plus_five_opts _ _ _ _ _ _ _
+  lockSet_consistent_base_plus_eight_opts _ _ _ _ _ _ _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -980,6 +1069,20 @@ theorem lockSet_consistent_cancelIpcBlocking (victimTid : SeLe4n.ThreadId)
         cases donationHolderTid with
         | none => simp at hpp
         | some h => simp at hpp; rw [← hpp]; simp; decide)
+    -- WS-OD OD1.5: the abort prefix's three members are an endpoint and two
+    -- TCBs, all three already permitted kinds for the enclosing `.tcbSuspend`.
+    (by intro pp hpp
+        cases holderEndpointObjId with
+        | none => simp at hpp
+        | some ep => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        cases hN1 : holderSpliceNeighbors.1 with
+        | none => rw [hN1] at hpp; simp at hpp
+        | some p => rw [hN1] at hpp; simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        cases hN2 : holderSpliceNeighbors.2 with
+        | none => rw [hN2] at hpp; simp at hpp
+        | some n => rw [hN2] at hpp; simp at hpp; rw [← hpp]; simp; decide)
 
 /-- WS-SM SM6.E.3: every lock the `cancelDonation` footprint declares has a
 kind permitted for the enclosing `.tcbSuspend` syscall. -/
@@ -1009,13 +1112,16 @@ Together these are the structural soundness conditions the deadlock-freedom
 theorem (2.1.9) and the 2PL serializability corollary (2.1.11) consume. -/
 theorem cancelIpcBlockingOnCore_lockSet_correct (victimTid : SeLe4n.ThreadId)
     (blEp blN : Option SeLe4n.ObjId) (consumedReplyId : Option SeLe4n.ReplyId)
-    (rdSc : Option SeLe4n.SchedContextId) (dhTid : Option SeLe4n.ThreadId) :
-    (∀ p ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid).pairs,
+    (rdSc : Option SeLe4n.SchedContextId) (dhTid : Option SeLe4n.ThreadId)
+    (holderEp : Option SeLe4n.ObjId)
+    (holderNb : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId) :
+    (∀ p ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid holderEp holderNb).pairs,
         p.fst.kind ∈ permittedKinds .tcbSuspend) ∧
-    ((lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid).pairs.map
+    ((lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid holderEp holderNb).pairs.map
         (·.fst)).Nodup :=
-  ⟨lockSet_consistent_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid,
-   (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid).hUniqueKeys⟩
+  ⟨lockSet_consistent_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid
+      holderEp holderNb,
+   (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid holderEp holderNb).hUniqueKeys⟩
 
 /-- WS-SM SM6.E.4: the `cancelDonation` lock-set is hierarchically correct. -/
 theorem cancelDonationOnCore_lockSet_correct (victimTid : SeLe4n.ThreadId)
@@ -1042,7 +1148,7 @@ theorem lockSet_cancelIpcBlockingOnCore_correct (st : SystemState)
       -- writes, already permitted for `.tcbSuspend`.
       refine lockSet_consistent_extendOpt _ _ _
         (lockSet_consistent_extendOpt _ _ _
-          (lockSet_consistent_cancelIpcBlocking victimTid _ _ _ _ _) ?_) ?_
+          (lockSet_consistent_cancelIpcBlocking victimTid _ _ _ _ _ _ _) ?_) ?_
       · intro pp hEq
         cases h1 : (cancelSpliceNeighbors? tcb).1 with
         | none => rw [h1] at hEq; cases hEq
@@ -1062,7 +1168,8 @@ theorem lockSet_cancelIpcBlockingOnCore_correct (st : SystemState)
           show (tcbLock n).kind ∈ permittedKinds .tcbSuspend
           rw [tcbLock_kind]; decide
   | none =>
-      exact lockSet_consistent_cancelIpcBlocking victimTid none none none none none
+      exact lockSet_consistent_cancelIpcBlocking victimTid none none none none none none
+        (none, none)
 
 /-- WS-SM SM6.E.3: the state-resolved donation-cancellation lock-set is
 hierarchically correct. -/
@@ -1091,10 +1198,16 @@ cancellation clears the victim's IPC fields — is a declared member of the
 theorem lockSet_cancelIpcBlocking_victim_tcb_write_mem
     (victimTid : SeLe4n.ThreadId) (blEp blN : Option SeLe4n.ObjId)
     (consumedReplyId : Option SeLe4n.ReplyId)
-    (rdSc : Option SeLe4n.SchedContextId) (dhTid : Option SeLe4n.ThreadId) :
+    (rdSc : Option SeLe4n.SchedContextId) (dhTid : Option SeLe4n.ThreadId)
+    (holderEp : Option SeLe4n.ObjId)
+    (holderNb : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId) :
     (tcbLock victimTid, AccessMode.write)
-      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid).pairs := by
+      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid holderEp holderNb).pairs := by
   unfold lockSet_cancelIpcBlocking
+  -- WS-OD OD1.5: three more optional extensions on the outside — the abort
+  -- prefix's endpoint and its two queue neighbours.
+  refine mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _
+    (mem_write_lockSetExtendOpt _ _ _ ?_))
   refine mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _
     (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _
       (mem_write_lockSetExtendOpt _ _ _ ?_))))
@@ -1108,10 +1221,16 @@ is a declared member whenever the endpoint is resolved. -/
 theorem lockSet_cancelIpcBlocking_blocked_endpoint_write_mem
     (victimTid : SeLe4n.ThreadId) (ep : SeLe4n.ObjId)
     (blN : Option SeLe4n.ObjId) (consumedReplyId : Option SeLe4n.ReplyId)
-    (rdSc : Option SeLe4n.SchedContextId) (dhTid : Option SeLe4n.ThreadId) :
+    (rdSc : Option SeLe4n.SchedContextId) (dhTid : Option SeLe4n.ThreadId)
+    (holderEp : Option SeLe4n.ObjId)
+    (holderNb : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId) :
     (endpointLock ep, AccessMode.write)
-      ∈ (lockSet_cancelIpcBlocking victimTid (some ep) blN consumedReplyId rdSc dhTid).pairs := by
+      ∈ (lockSet_cancelIpcBlocking victimTid (some ep) blN consumedReplyId rdSc dhTid holderEp holderNb).pairs := by
   unfold lockSet_cancelIpcBlocking
+  -- WS-OD OD1.5: three more optional extensions on the outside — the abort
+  -- prefix's endpoint and its two queue neighbours.
+  refine mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _
+    (mem_write_lockSetExtendOpt _ _ _ ?_))
   refine mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _
     (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ ?_)))
   simp only [lockSetExtendOpt, Option.map_some]
@@ -1123,10 +1242,16 @@ declared member whenever the notification is resolved. -/
 theorem lockSet_cancelIpcBlocking_blocked_notification_write_mem
     (victimTid : SeLe4n.ThreadId) (blEp : Option SeLe4n.ObjId)
     (n : SeLe4n.ObjId) (consumedReplyId : Option SeLe4n.ReplyId)
-    (rdSc : Option SeLe4n.SchedContextId) (dhTid : Option SeLe4n.ThreadId) :
+    (rdSc : Option SeLe4n.SchedContextId) (dhTid : Option SeLe4n.ThreadId)
+    (holderEp : Option SeLe4n.ObjId)
+    (holderNb : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId) :
     (notificationLock n, AccessMode.write)
-      ∈ (lockSet_cancelIpcBlocking victimTid blEp (some n) consumedReplyId rdSc dhTid).pairs := by
+      ∈ (lockSet_cancelIpcBlocking victimTid blEp (some n) consumedReplyId rdSc dhTid holderEp holderNb).pairs := by
   unfold lockSet_cancelIpcBlocking
+  -- WS-OD OD1.5: three more optional extensions on the outside — the abort
+  -- prefix's endpoint and its two queue neighbours.
+  refine mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _
+    (mem_write_lockSetExtendOpt _ _ _ ?_))
   refine mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _
     (mem_write_lockSetExtendOpt _ _ _ ?_))
   simp only [lockSetExtendOpt, Option.map_some]
@@ -1138,10 +1263,16 @@ declared member whenever the reply is resolved. -/
 theorem lockSet_cancelIpcBlocking_consumed_reply_write_mem
     (victimTid : SeLe4n.ThreadId) (blEp blN : Option SeLe4n.ObjId)
     (r : SeLe4n.ReplyId)
-    (rdSc : Option SeLe4n.SchedContextId) (dhTid : Option SeLe4n.ThreadId) :
+    (rdSc : Option SeLe4n.SchedContextId) (dhTid : Option SeLe4n.ThreadId)
+    (holderEp : Option SeLe4n.ObjId)
+    (holderNb : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId) :
     (replyLock r, AccessMode.write)
-      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN (some r) rdSc dhTid).pairs := by
+      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN (some r) rdSc dhTid holderEp holderNb).pairs := by
   unfold lockSet_cancelIpcBlocking
+  -- WS-OD OD1.5: three more optional extensions on the outside — the abort
+  -- prefix's endpoint and its two queue neighbours.
+  refine mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _
+    (mem_write_lockSetExtendOpt _ _ _ ?_))
   refine mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ ?_)
   simp only [lockSetExtendOpt, Option.map_some]
   exact self_write_mem_insertOrMerge _ (replyLock r)
@@ -1152,10 +1283,16 @@ caller — is a declared member whenever a donation is resolved. -/
 theorem lockSet_cancelIpcBlocking_returned_donation_sc_write_mem
     (victimTid : SeLe4n.ThreadId) (blEp blN : Option SeLe4n.ObjId)
     (consumedReplyId : Option SeLe4n.ReplyId) (sc : SeLe4n.SchedContextId)
-    (dhTid : Option SeLe4n.ThreadId) :
+    (dhTid : Option SeLe4n.ThreadId)
+    (holderEp : Option SeLe4n.ObjId)
+    (holderNb : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId) :
     (schedContextLock sc, AccessMode.write)
-      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId (some sc) dhTid).pairs := by
+      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId (some sc) dhTid holderEp holderNb).pairs := by
   unfold lockSet_cancelIpcBlocking
+  -- WS-OD OD1.5: three more optional extensions on the outside — the abort
+  -- prefix's endpoint and its two queue neighbours.
+  refine mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _
+    (mem_write_lockSetExtendOpt _ _ _ ?_))
   refine mem_write_lockSetExtendOpt _ _ _ ?_
   simp only [lockSetExtendOpt, Option.map_some]
   exact self_write_mem_insertOrMerge _ (schedContextLock sc)
@@ -1166,12 +1303,71 @@ declared member whenever a donation is resolved. -/
 theorem lockSet_cancelIpcBlocking_donation_holder_tcb_write_mem
     (victimTid : SeLe4n.ThreadId) (blEp blN : Option SeLe4n.ObjId)
     (consumedReplyId : Option SeLe4n.ReplyId)
-    (rdSc : Option SeLe4n.SchedContextId) (h : SeLe4n.ThreadId) :
+    (rdSc : Option SeLe4n.SchedContextId) (h : SeLe4n.ThreadId)
+    (holderEp : Option SeLe4n.ObjId)
+    (holderNb : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId) :
     (tcbLock h, AccessMode.write)
-      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc (some h)).pairs := by
+      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc (some h) holderEp holderNb).pairs := by
   unfold lockSet_cancelIpcBlocking
+  -- WS-OD OD1.5: three more optional extensions on the outside — the abort
+  -- prefix's endpoint and its two queue neighbours.
+  refine mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _
+    (mem_write_lockSetExtendOpt _ _ _ ?_))
   simp only [lockSetExtendOpt, Option.map_some]
   exact self_write_mem_insertOrMerge _ (tcbLock h)
+
+/-- **WS-OD OD1.5** (coverage): the **holder's endpoint write lock** — under
+which the reclaim's abort prefix splices the holder out of its send queue — is a
+declared member whenever the abort runs.
+
+The three theorems here are the abort's half of the footprint's coverage
+argument.  Before OD1.5 the declared set named the holder's *TCB* and not the
+endpoint it is queued on, so the footprint was **false** on the one arm where the
+abort runs — worse, by this project's rule, than a wide one. -/
+theorem lockSet_cancelIpcBlocking_holder_endpoint_write_mem
+    (victimTid : SeLe4n.ThreadId) (blEp blN : Option SeLe4n.ObjId)
+    (consumedReplyId : Option SeLe4n.ReplyId)
+    (rdSc : Option SeLe4n.SchedContextId) (dhTid : Option SeLe4n.ThreadId)
+    (ep : SeLe4n.ObjId)
+    (holderNb : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId) :
+    (endpointLock ep, AccessMode.write)
+      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid
+          (some ep) holderNb).pairs := by
+  unfold lockSet_cancelIpcBlocking
+  refine mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ ?_)
+  simp only [lockSetExtendOpt, Option.map_some]
+  exact self_write_mem_insertOrMerge _ (endpointLock ep)
+
+/-- **WS-OD OD1.5** (coverage): the aborted holder's **predecessor** TCB write
+lock, under which the splice patches its `queueNext`. -/
+theorem lockSet_cancelIpcBlocking_holder_splice_prev_write_mem
+    (victimTid : SeLe4n.ThreadId) (blEp blN : Option SeLe4n.ObjId)
+    (consumedReplyId : Option SeLe4n.ReplyId)
+    (rdSc : Option SeLe4n.SchedContextId) (dhTid : Option SeLe4n.ThreadId)
+    (holderEp : Option SeLe4n.ObjId)
+    (p : SeLe4n.ThreadId) (nb2 : Option SeLe4n.ThreadId) :
+    (tcbLock p, AccessMode.write)
+      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid
+          holderEp (some p, nb2)).pairs := by
+  unfold lockSet_cancelIpcBlocking
+  refine mem_write_lockSetExtendOpt _ _ _ ?_
+  simp only [lockSetExtendOpt, Option.map_some]
+  exact self_write_mem_insertOrMerge _ (tcbLock p)
+
+/-- **WS-OD OD1.5** (coverage): the aborted holder's **successor** TCB write
+lock, under which the splice patches its `queuePrev` and `queuePPrev`. -/
+theorem lockSet_cancelIpcBlocking_holder_splice_next_write_mem
+    (victimTid : SeLe4n.ThreadId) (blEp blN : Option SeLe4n.ObjId)
+    (consumedReplyId : Option SeLe4n.ReplyId)
+    (rdSc : Option SeLe4n.SchedContextId) (dhTid : Option SeLe4n.ThreadId)
+    (holderEp : Option SeLe4n.ObjId)
+    (nb1 : Option SeLe4n.ThreadId) (n : SeLe4n.ThreadId) :
+    (tcbLock n, AccessMode.write)
+      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid
+          holderEp (nb1, some n)).pairs := by
+  unfold lockSet_cancelIpcBlocking
+  simp only [lockSetExtendOpt, Option.map_some]
+  exact self_write_mem_insertOrMerge _ (tcbLock n)
 
 /-- WS-SM SM6.E.3 (coverage): the **victim (donor) TCB write lock** is a
 declared member of the `cancelDonation` footprint, unconditionally. -/
@@ -1335,14 +1531,16 @@ theorem cancelIpcBlocking_atomic_under_lockSet
     (victim : SeLe4n.ThreadId) (tcb : TCB) (executingCore : CoreId)
     (blEp blN : Option SeLe4n.ObjId) (consumedReplyId : Option SeLe4n.ReplyId)
     (rdSc : Option SeLe4n.SchedContextId) (dhTid : Option SeLe4n.ThreadId)
+    (holderEp : Option SeLe4n.ObjId)
+    (holderNb : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId)
     (s : SystemState) :
-    withLockSet (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid)
+    withLockSet (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb)
         executingCore (fun st => (cancelIpcBlocking st victim tcb, ())) s
       = (unwindAll executingCore
-          (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid).lockAcquireSequence.reverse
+          (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb).lockAcquireSequence.reverse
           (cancelIpcBlocking
             (acquireAll executingCore
-              (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid).lockAcquireSequence s)
+              (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb).lockAcquireSequence s)
             victim tcb),
          ()) :=
   lockSet_atomic_under_2pl _ executingCore _ s
@@ -1354,17 +1552,19 @@ theorem cancelIpcBlockingOnCore_atomic_under_lockSet
     (victim : SeLe4n.ThreadId) (tcb : TCB) (executingCore : CoreId)
     (blEp blN : Option SeLe4n.ObjId) (consumedReplyId : Option SeLe4n.ReplyId)
     (rdSc : Option SeLe4n.SchedContextId) (dhTid : Option SeLe4n.ThreadId)
+    (holderEp : Option SeLe4n.ObjId)
+    (holderNb : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId)
     (s : SystemState) :
-    withLockSet (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid)
+    withLockSet (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb)
         executingCore (cancelIpcBlockingOnCore victim tcb executingCore) s
       = (unwindAll executingCore
-          (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid).lockAcquireSequence.reverse
+          (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb).lockAcquireSequence.reverse
           (cancelIpcBlockingOnCore victim tcb executingCore
             (acquireAll executingCore
-              (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid).lockAcquireSequence s)).1,
+              (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb).lockAcquireSequence s)).1,
          (cancelIpcBlockingOnCore victim tcb executingCore
             (acquireAll executingCore
-              (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid).lockAcquireSequence s)).2) :=
+              (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb).lockAcquireSequence s)).2) :=
   lockSet_atomic_under_2pl _ executingCore _ s
 
 /-- WS-SM SM6.E.4 (plan §5 `cancelDonation_atomic_under_lockSet`, Theorem
@@ -2548,26 +2748,28 @@ theorem cancelIpcBlockingOnCore_observer_atomic
     (victim : SeLe4n.ThreadId) (tcb : TCB) (executingCore : CoreId)
     (blEp blN : Option SeLe4n.ObjId) (consumedReplyId : Option SeLe4n.ReplyId)
     (rdSc : Option SeLe4n.SchedContextId) (dhTid : Option SeLe4n.ThreadId)
+    (holderEp : Option SeLe4n.ObjId)
+    (holderNb : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId)
     (s : SystemState) (hInv : s.objects.invExt) :
     cancellationVictimIpcStateObserver victim
         (acquireAll executingCore
           (lockSet_cancelIpcBlocking victim blEp blN
-            consumedReplyId rdSc dhTid).lockAcquireSequence s)
+            consumedReplyId rdSc dhTid holderEp holderNb).lockAcquireSequence s)
       = cancellationVictimIpcStateObserver victim s
     ∧ cancellationVictimIpcStateObserver victim
-        (withLockSet (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid)
+        (withLockSet (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb)
           executingCore (cancelIpcBlockingOnCore victim tcb executingCore) s).1
       = cancellationVictimIpcStateObserver victim
           (cancelIpcBlockingOnCore victim tcb executingCore
             (acquireAll executingCore
               (lockSet_cancelIpcBlocking victim blEp blN
-                consumedReplyId rdSc dhTid).lockAcquireSequence s)).1 := by
+                consumedReplyId rdSc dhTid holderEp holderNb).lockAcquireSequence s)).1 := by
   have hAcqStable : ∀ (s' : SystemState) l m, s'.objects.invExt →
       (acquireLockOnObject s' executingCore l m).objects.invExt :=
     fun s' l m h => acquireLockOnObject_preserves_invExt s' executingCore l m h
   have hInvAcq : (acquireAll executingCore
       (lockSet_cancelIpcBlocking victim blEp blN
-        consumedReplyId rdSc dhTid).lockAcquireSequence s).objects.invExt :=
+        consumedReplyId rdSc dhTid holderEp holderNb).lockAcquireSequence s).objects.invExt :=
     (acquireAll_lockInsensitiveOn _ executingCore _
       (cancellationObserver_acquireInsensitiveOn executingCore victim) hAcqStable
       _ s hInv).2

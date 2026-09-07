@@ -223,6 +223,262 @@ theorem restoreToReadyStaging_sameSchedContextBindings (st : SystemState)
   · rw [restoreToReadyStaging_objects_ne st tid frame k.toObjId hInv hk] at hTcb'
     exact ⟨tcb', hTcb', rfl⟩
 
+
+-- ============================================================================
+-- §4  WS-OD OD1.5 — the reply arm frames `passiveServerIdle`
+-- ============================================================================
+
+/-- WS-OD OD1.5: clearing the caller's forward reply link frames
+`passiveServerIdle` — its one write rewrites `replyObject`, which is neither
+field the conjunct reads. -/
+theorem clearTcbReplyObject_passiveServerIdleFrame (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    passiveServerIdleFrame st (Lifecycle.Suspend.clearTcbReplyObject st tid) := by
+  refine passiveServerIdleFrame_of_backward ?_
+    (Lifecycle.Suspend.clearTcbReplyObject_scheduler_eq st tid)
+  intro a tcb' hPost
+  unfold Lifecycle.Suspend.clearTcbReplyObject at hPost
+  split at hPost
+  · rename_i t hT
+    by_cases hk : a = tid
+    · subst hk
+      have hx : (st.objects.insert a.toObjId (.tcb { t with replyObject := none })).get?
+          a.toObjId = some (.tcb tcb') := hPost
+      rw [RHTable.getElem?_insert_self st.objects a.toObjId _ hInv] at hx
+      have hEqT : { t with replyObject := (none : Option SeLe4n.ReplyId) } = tcb' :=
+        KernelObject.tcb.inj (Option.some.inj hx)
+      exact ⟨t, (SystemState.getTcb?_eq_some_iff st a t).mp hT, by rw [← hEqT], by rw [← hEqT]⟩
+    · have hx : (st.objects.insert tid.toObjId _).get? a.toObjId = some (.tcb tcb') := hPost
+      rw [RHTable.getElem?_insert_ne st.objects tid.toObjId a.toObjId _
+        (by simpa using fun h => hk (SeLe4n.ThreadId.toObjId_injective _ _ h).symm) hInv] at hx
+      exact ⟨tcb', hx, rfl, rfl⟩
+  · exact ⟨tcb', hPost, rfl, rfl⟩
+
+/-- WS-OD OD1.5: clearing the Reply's back-link frames `passiveServerIdle` — its
+one write lands on a `.reply` value, whose key can never hold a TCB. -/
+theorem clearReplyObjectCaller_passiveServerIdleFrame (st : SystemState)
+    (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt) :
+    passiveServerIdleFrame st (Lifecycle.Suspend.clearReplyObjectCaller st rid) := by
+  refine passiveServerIdleFrame_of_backward ?_
+    (Lifecycle.Suspend.clearReplyObjectCaller_scheduler_eq st rid)
+  intro a tcb' hPost
+  refine ⟨tcb', ?_, rfl, rfl⟩
+  unfold Lifecycle.Suspend.clearReplyObjectCaller at hPost
+  split at hPost
+  · rename_i r hR
+    by_cases hk : a.toObjId = rid.toObjId
+    · exfalso
+      have hx : (st.objects.insert rid.toObjId (.reply { r with caller := none })).get?
+          a.toObjId = some (.tcb tcb') := hPost
+      rw [hk, RHTable.getElem?_insert_self st.objects rid.toObjId _ hInv] at hx
+      cases hx
+    · have hx : (st.objects.insert rid.toObjId _).get? a.toObjId = some (.tcb tcb') := hPost
+      rw [RHTable.getElem?_insert_ne st.objects rid.toObjId a.toObjId _
+        (by simpa using fun h => hk h.symm) hInv] at hx
+      exact hx
+  · exact hPost
+
+/-- WS-OD OD1.5: the reply-link consume frames `passiveServerIdle`. -/
+theorem consumeReplyLink_passiveServerIdleFrame (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (hInv : st.objects.invExt) :
+    passiveServerIdleFrame st (Lifecycle.Suspend.consumeReplyLink st tid tcb) := by
+  unfold Lifecycle.Suspend.consumeReplyLink
+  cases tcb.replyObject with
+  | none => exact passiveServerIdleFrame.refl st
+  | some rid =>
+    exact (clearTcbReplyObject_passiveServerIdleFrame st tid hInv).trans
+      (clearReplyObjectCaller_passiveServerIdleFrame _ rid
+        (Lifecycle.Suspend.clearTcbReplyObject_preserves_objects_invExt st tid hInv))
+
+/-- WS-OD OD1.5: the unblock-and-stage rewrite frames `passiveServerIdle`.
+
+The restored thread is the only one it writes, and it writes `.ready` there —
+which the frame's own filter admits, so the pullback never reaches it.  This is
+the same argument `sweptAndRestored_passiveServerIdleFrame` makes for the queue
+arms, at the bare rewrite rather than at the composite. -/
+theorem restoreToReadyStaging_passiveServerIdleFrame (st : SystemState)
+    (tid : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame)
+    (hInv : st.objects.invExt) :
+    passiveServerIdleFrame st (Lifecycle.Suspend.restoreToReadyStaging st tid frame) := by
+  refine passiveServerIdleFrame_of_backward_of_not_allowed ?_
+    (Lifecycle.Suspend.restoreToReadyStaging_scheduler_eq st tid frame)
+  intro a tcb' hPostT _ hNA
+  have hPost := (SystemState.getTcb?_eq_some_iff _ a tcb').mp hPostT
+  by_cases hk : a.toObjId = tid.toObjId
+  · rw [hk] at hPost
+    cases hT : st.getTcb? tid with
+    | none =>
+      rw [restoreToReadyStaging_eq, hT] at hPost
+      simp only at hPost
+      exact ⟨tcb', (SystemState.getTcb?_eq_some_iff st a tcb').mpr (by rw [hk]; exact hPost),
+        rfl, rfl⟩
+    | some t =>
+      exfalso
+      rw [restoreToReadyStaging_objects_self st tid frame t hInv hT] at hPost
+      have hEqT : restoredTcb t frame = tcb' := KernelObject.tcb.inj (Option.some.inj hPost)
+      exact hNA (Or.inl (by rw [← hEqT, restoredTcb_ipcState]))
+  · rw [restoreToReadyStaging_objects_ne st tid frame a.toObjId hInv hk] at hPost
+    exact ⟨tcb', (SystemState.getTcb?_eq_some_iff st a tcb').mpr hPost, rfl, rfl⟩
+
+
+/-- WS-OD OD1.5: the hand-back frames `passiveServerIdle`, given that the holder
+it unbinds is already in a state the conjunct permits.
+
+Three classes of thread, and each is discharged by a *different* one of the two
+hypotheses the frame makes available — which is why both are handed to the
+backward obligation:
+
+* the **holder** keeps its `ipcState` (the return writes bindings and one
+  SchedContext, never a blocking state) and becomes `.unbound`, so only the
+  `¬ passiveServerIdleAllowed` filter can exclude it — hence `hHolderAllowed`,
+  which OD1.4's abort prefix is what makes true;
+* the **caller** becomes `.bound scId`, so the pullback's own `.unbound`
+  hypothesis excludes it outright;
+* **everyone else** keeps both fields.
+
+`hHolderAllowed` is stated on the state the return is applied to, not on the
+reclaim's pre-state, because the abort runs in between and is exactly what moves
+the holder into the permitted half. -/
+theorem returnDonatedSchedContext_passiveServerIdleFrame
+    {sA st' : SystemState} {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId}
+    {owner : SeLe4n.ThreadId}
+    (hInv : sA.objects.invExt)
+    (hOk : returnDonatedSchedContext sA holder scId owner = .ok st')
+    (hHolderAllowed : ∀ t, sA.getTcb? holder = some t →
+      passiveServerIdleAllowed t.ipcState) :
+    passiveServerIdleFrame sA st' := by
+  refine passiveServerIdleFrame_of_backward_of_not_allowed ?_
+    (returnDonatedSchedContext_scheduler_eq sA st' holder scId owner hOk)
+  intro a tcb' hPostT hUnbound hNA
+  have hPost := (SystemState.getTcb?_eq_some_iff st' a tcb').mp hPostT
+  obtain ⟨t0, h0, hIpc, _⟩ :=
+    returnDonatedSchedContext_tcb_ipcState_replyObject_backward sA st' holder scId owner hInv
+      hOk a.toObjId tcb' hPost
+  obtain ⟨hSrv, hOwn, hOther⟩ :=
+    returnDonatedSchedContext_tcb_schedContextBinding_backward sA st' holder scId owner hInv
+      hOk a.toObjId tcb' hPost
+  by_cases hH : a.toObjId = holder.toObjId
+  · exact absurd (hIpc ▸ hHolderAllowed t0
+      ((SystemState.getTcb?_eq_some_iff sA holder t0).mpr (hH ▸ h0))) hNA
+  · by_cases hV : a.toObjId = owner.toObjId
+    · exact absurd (hOwn hH hV) (by rw [hUnbound]; intro hc; cases hc)
+    · obtain ⟨t1, h1, hB1⟩ := hOther hH hV
+      rw [h0] at h1
+      have hEqT : t0 = t1 := KernelObject.tcb.inj (Option.some.inj h1)
+      exact ⟨t0, (SystemState.getTcb?_eq_some_iff sA a t0).mpr h0, hIpc,
+        by rw [hEqT]; exact hB1⟩
+
+/-- **WS-OD OD1.5**: the cancellation reclaim frames `passiveServerIdle`.
+
+The abort prefix and the hand-back compose: the prefix moves a holder blocked
+sending or calling into `.ready` (`abortHolderPendingIpc_passiveServerIdleFrame`),
+and the hand-back then unbinds a holder that is *already* in the permitted half
+(`abortHolderPendingIpc_holder_ipcState_allowed`).  Reversing them would leave an
+intermediate state with an `.unbound` holder still blocked on a call — which is
+the whole reason OD1.4 put the abort first, restated here as the frame that would
+otherwise not exist. -/
+theorem returnDonationToCancelledCaller_passiveServerIdleFrame
+    (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TCB)
+    (hInv : st.objects.invExt)
+    (hMem : ipcStateQueueMembershipConsistent st) :
+    passiveServerIdleFrame st (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) := by
+  unfold Lifecycle.Suspend.returnDonationToCancelledCaller
+  split
+  · rename_i scId holder _ hRes _
+    obtain ⟨_, holderTcb, hLkH, _⟩ := cancelledCallerDonation?_some st v tcbV scId holder hRes
+    split
+    · rename_i st' hOk
+      refine (Lifecycle.Suspend.abortHolderPendingIpc_passiveServerIdleFrame st holder hInv).trans
+        (returnDonatedSchedContext_passiveServerIdleFrame
+          (Lifecycle.Suspend.abortHolderPendingIpc_preserves_objects_invExt st holder hInv)
+          hOk ?_)
+      intro t hAt
+      exact Lifecycle.Suspend.abortHolderPendingIpc_holder_ipcState_allowed st holder holderTcb
+        hInv hMem hLkH t hAt
+    · exact passiveServerIdleFrame.refl st
+  · exact passiveServerIdleFrame.refl st
+
+
+/-- **WS-OD OD1.5 — the payoff frame.**  `cancelIpcBlocking` frames
+`passiveServerIdle` on **every** arm.
+
+One statement per arm, and each is already carried by the shape module that owns
+it: the two queue arms by `sweptAndRestored` / `purgedAndRestored`, the `.ready`
+arm by reflexivity, and the reply arm by the three-step composition this cut
+builds.  The reply arm is the one that did not hold before OD1.4: without the
+abort prefix its holder ends `.unbound` and still `.blockedOnCall`, in the half
+`passiveServerIdle` forbids, and no pullback can produce an `.unbound` pre-state
+holder because there is none — the holder was `.donated`. -/
+theorem cancelIpcBlocking_passiveServerIdleFrame
+    (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TCB)
+    (hInv : st.objects.invExt)
+    (hLink : tcbQueueLinkIntegrity st) (hAcyc : tcbQueueChainAcyclic st)
+    (hLookup : lookupTcb st v = some tcbV)
+    (hMem : ipcStateQueueMembershipConsistent st) :
+    passiveServerIdleFrame st (Lifecycle.Suspend.cancelIpcBlocking st v tcbV) := by
+  cases hIp : tcbV.ipcState with
+  | ready =>
+    rw [show Lifecycle.Suspend.cancelIpcBlocking st v tcbV = st by
+      unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hIp]]
+    exact passiveServerIdleFrame.refl st
+  | blockedOnSend ep =>
+    rw [cancelIpcBlocking_endpoint_arm_eq st v tcbV ep (Or.inl hIp)]
+    exact sweptAndRestored_passiveServerIdleFrame st v _ tcbV hInv hLink hAcyc hLookup
+  | blockedOnReceive ep =>
+    rw [cancelIpcBlocking_endpoint_arm_eq st v tcbV ep (Or.inr (Or.inl hIp))]
+    exact sweptAndRestored_passiveServerIdleFrame st v _ tcbV hInv hLink hAcyc hLookup
+  | blockedOnCall ep =>
+    rw [cancelIpcBlocking_endpoint_arm_eq st v tcbV ep (Or.inr (Or.inr hIp))]
+    exact sweptAndRestored_passiveServerIdleFrame st v _ tcbV hInv hLink hAcyc hLookup
+  | blockedOnNotification n =>
+    rw [cancelIpcBlocking_notification_arm_eq st v tcbV n hIp]
+    exact purgedAndRestored_passiveServerIdleFrame st v _ tcbV hInv hLookup
+  | blockedOnReply ep rt =>
+    rw [show Lifecycle.Suspend.cancelIpcBlocking st v tcbV =
+        Lifecycle.Suspend.consumeReplyLink
+          (Lifecycle.Suspend.restoreToReadyCancelled
+            (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) v) v tcbV by
+      unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hIp]]
+    have hF1 := returnDonationToCancelledCaller_passiveServerIdleFrame st v tcbV hInv hMem
+    have hI1 := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
+      st v tcbV hInv
+    have hF2 := restoreToReadyStaging_passiveServerIdleFrame
+      (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) v
+      (some Architecture.cancelledIpcFrame) hI1
+    have hI2 := Lifecycle.Suspend.restoreToReadyCancelled_invExt
+      (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) v hI1
+    have hF3 := consumeReplyLink_passiveServerIdleFrame
+      (Lifecycle.Suspend.restoreToReadyCancelled
+        (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) v) v tcbV hI2
+    exact (hF1.trans hF2).trans hF3
+
+/-- **WS-OD OD1.5 — the theorem OD1 exists to prove.**
+
+`cancelIpcBlocking` preserves `passiveServerIdle`.  Before OD1.4 this was
+*false*: the reply arm's reclaim unbound a holder that could still be
+`.blockedOnCall`, reachable at depth 1 with no donation chain — a server that
+Calls an endpoint with no receiver waiting keeps the donation, and the reclaim
+then unbinds it in place.  Nothing was unsound, because nothing claimed the
+conjunct across the cancellation; that is what made it a false-assurance gap, and
+it is why this theorem's *existence* is the payoff rather than its statement.
+
+Four hypotheses, and each is a fact about the pre-state rather than a proof
+convenience.  `tcbQueueLinkIntegrity` and `tcbQueueChainAcyclic` are what make
+the endpoint arm's splice a well-defined relink; `ipcStateQueueMembershipConsistent`
+is what makes the reply arm's abort *succeed* — a thread blocked sending or
+calling names an endpoint that exists — and without it a refused abort would
+leave the holder exactly where the defect left it. -/
+theorem cancelIpcBlocking_preserves_passiveServerIdle
+    (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TCB)
+    (hInv : st.objects.invExt)
+    (hLink : tcbQueueLinkIntegrity st) (hAcyc : tcbQueueChainAcyclic st)
+    (hLookup : lookupTcb st v = some tcbV)
+    (hMem : ipcStateQueueMembershipConsistent st)
+    (hPassive : passiveServerIdle st) :
+    passiveServerIdle (Lifecycle.Suspend.cancelIpcBlocking st v tcbV) :=
+  passiveServerIdle_of_frame
+    (cancelIpcBlocking_passiveServerIdleFrame st v tcbV hInv hLink hAcyc hLookup hMem) hPassive
+
 /-- **WS-RR RR7.22 (residual, remediation) — the payoff**: after the corrected
 reply arm, **no** thread holds a SchedContext donated by the cancelled caller.
 

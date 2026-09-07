@@ -725,6 +725,21 @@ theorem size_le_7 (L : List (LockId × AccessMode))
   refine Nat.le_trans (Nat.add_le_add_right (size_le_6 L o₁ o₂ o₃ o₄ o₅ o₆) 1) ?_
   omega
 
+/-- WS-OD OD1.5: eight optional extensions — the arity the state-resolved
+cancellation footprint reaches once the reclaim's abort prefix declares the
+holder's endpoint and its two queue neighbours.  On the reply arm, where the
+victim's own blocked-object members are `none`, that is nine of nine: the
+footprint sits **at** `maxLockSetSize`, which is the headroom the arm-selected
+split (WS-OD OD3.6) is scheduled to recover before anything else is added. -/
+theorem size_le_8 (L : List (LockId × AccessMode))
+    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ : Option (LockId × AccessMode)) :
+    (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
+      (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
+        (lockSetOfList L) o₁) o₂) o₃) o₄) o₅) o₆) o₇) o₈).size ≤ L.length + 8 := by
+  refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
+  refine Nat.le_trans (Nat.add_le_add_right (size_le_7 L o₁ o₂ o₃ o₄ o₅ o₆ o₇) 1) ?_
+  omega
+
 /-- Local tactic shorthand: reduce a concrete `[…].length (+k)` to a numeral
 and discharge the `≤ maxLockSetSize` goal. -/
 local macro "size_bound" : tactic =>

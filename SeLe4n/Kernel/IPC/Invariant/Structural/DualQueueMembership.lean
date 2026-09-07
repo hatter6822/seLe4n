@@ -7090,6 +7090,39 @@ theorem passiveServerIdleFrame_of_backward_monotone {st st' : SystemState}
     exact ⟨tcb, hTcb, hBindEq.trans hUnbound', fun hIn => hNotInQ' (hQueue tid hIn),
       by rw [hCurrent] at hNotCurrent'; exact hNotCurrent', hIpcEq⟩⟩
 
+/-- **WS-OD OD1.5**: the same frame, with the structure's own
+`¬ passiveServerIdleAllowed` filter available to the backward obligation.
+
+`passiveServerIdleFrame_of_backward` below demands the pullback at *every*
+post-state thread, which no cancellation satisfies: the arms rewrite the victim's
+`ipcState` and, on the reply arm, the victim's and the holder's
+`schedContextBinding` as well.  What is true of all of them is weaker and
+sufficient — **every thread a cancellation rewrites ends in a state
+`passiveServerIdle` permits**, so the conjunct's own filter discharges each one
+and the pullback only ever fires on threads the transition left alone.
+
+Handing `hBack` both of the structure's own discriminating hypotheses — the
+post-state thread is `.unbound`, and its state is *not* allowed — costs nothing
+(a caller that needs neither ignores the arguments) and is what makes them
+usable: `passiveServerIdleFrame` is a structure rather than a function, so they
+are otherwise unreachable from inside the pullback.  The donation return needs
+both: the caller it re-binds is discharged by the `.unbound` hypothesis and the
+holder it unbinds by the filter. -/
+theorem passiveServerIdleFrame_of_backward_of_not_allowed {st st' : SystemState}
+    (hBack : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB), st'.getTcb? tid = some tcb' →
+      tcb'.schedContextBinding = .unbound →
+      ¬ passiveServerIdleAllowed tcb'.ipcState →
+      ∃ tcb, st.getTcb? tid = some tcb ∧
+        tcb.ipcState = tcb'.ipcState ∧ tcb.schedContextBinding = tcb'.schedContextBinding)
+    (hSched : st'.scheduler = st.scheduler) :
+    passiveServerIdleFrame st st' :=
+  ⟨fun tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' hNA => by
+    obtain ⟨tcb, hTcb, hIpcEq, hBindEq⟩ :=
+      hBack tid tcb' ((SystemState.getTcb?_eq_some_iff st' tid tcb').mpr hTcb') hUnbound' hNA
+    rw [hSched] at hNotInQ' hNotCurrent'
+    exact ⟨tcb, (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb, hBindEq.trans hUnbound',
+      hNotInQ', hNotCurrent', hIpcEq⟩⟩
+
 /-- D6: a transition that preserves every TCB's `ipcState` and `schedContextBinding` **backward**
 and leaves the boot scheduler untouched frames `passiveServerIdle` — every post-state thread pulls
 back to a same-`ipcState`, same-binding pre-state thread (queue-link rewrites: `endpointQueue*`,

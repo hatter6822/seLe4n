@@ -1,7 +1,8 @@
 # WS-OD — SchedContext donation chains (onward donation)
 
 > **Status**: IN FLIGHT — registered at `v0.34.98`; OD1.1 landed at `v0.34.100`,
-> OD1.2 at `v0.34.101`, OD1.3 at `v0.34.103`, OD1.4 at `v0.34.104`.
+> OD1.2 at `v0.34.101`, OD1.3 at `v0.34.103`, OD1.4 at `v0.34.104`, OD1.5 at
+> `v0.34.105`.
 > **Opens**: beside WS-RR RR7, and must close **before RR8 closes** — RR8 is the
 > closure phase and cannot close over open work.
 > **Predecessor findings**: the two Medium-severity model/specification gaps
@@ -250,7 +251,7 @@ precondition for every later lock-set change.
 | OD1.2 | `abortPendingIpcOnEndpoint` — the timeout's object-only prefix: the same removal the timeout uses, now correct after OD1.1, plus the timeout TCB rewrite, with **no** run-queue write, total rather than `Except`-returning at the composite level | `SeLe4n/Kernel/IPC/Operations/Timeout.lean` | M |
 | OD1.3 | Twenty-conjunct carriage for OD1.2.  The splice engine is stated over the dual removal, so this row builds the single removal's carriage on the same shape — the four conditional inserts are the same writes in a different order, which is what OD1.1 made true | `SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean` | L |
 | OD1.4 | Wire OD1.2 into `returnDonationToCancelledCaller` when the holder is `.blockedOnSend` / `.blockedOnCall`, preserving totality and the objects-only frame four cross-core results consume.  **The abort runs before the return**, for the reason `v0.34.97` put the return before the restore: with the return first the intermediate state has the holder `.unbound` while still blocked on a call, which is the very violation being closed; with the abort first every intermediate state satisfies the conjunct, since a `.donated` holder is outside `passiveServerIdle`'s reach.  The donation is resolved once, before either step, and the resolution survives the abort because the abort writes no binding | `SeLe4n/Kernel/Lifecycle/Suspend.lean` | M |
-| OD1.5 | `cancelIpcBlocking_preserves_passiveServerIdle` — the theorem that does not exist — with footprint membership for the holder's endpoint and the size bound.  At full arity the cancellation footprint is eight of nine, so the ninth member fits; the headroom for OD3's further growth is bought there, not here | `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean`, `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` | L |
+| OD1.5 | `cancelIpcBlocking_preserves_passiveServerIdle` — the theorem that does not exist — with footprint membership for the abort's writes and the size bound.  **The abort adds three members, not one**: it splices, so the holder's two queue neighbours join its endpoint — an arithmetic correction this row could not make before OD1.4 landed.  Summed, the footprint is eleven of nine; the bound holds by case analysis, because the donation-derived members and the victim's own blocked-object members both key on `tcb.ipcState` and are therefore mutually exclusive.  The reply arm is then **nine of nine**, with no headroom — see the footprint-budget risk below for where that is recovered | `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean`, `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` | L |
 | OD1.6 | The two exact-text Tier-3 anchors updated for the rewritten arm, a negative for the pre-OD1 shape and one for the single-queue removal, suite cases for the stranding defect and the abort, the family-size figure, version and CHANGELOG | `scripts/test_tier3_invariant_surface.sh`, `tests/SmpCancellationSuite.lean`, `tests/SmpIpcSuite.lean`, `CLAUDE.md`, `AGENTS.md`, `docs/spec/SELE4N_SPEC.md` | M |
 
 **Acceptance**: `passiveServerIdle` is preserved by `cancelIpcBlocking` on every
@@ -399,6 +400,34 @@ The workstream closes when **all nine** hold and each is checkable:
   gate from the moment it is registered.
 * Every cut bumps the patch version through `./scripts/bump_version.sh` with a
   matching `CHANGELOG.md` entry.
+
+## 8a. The footprint budget, after OD1.5
+
+`lockSet_cancelIpcBlockingOnCore` reaches **nine of nine** on the reply arm at
+`v0.34.105`: the victim's TCB, its consumed reply, the returned SchedContext, the
+donation holder, the victim's two splice neighbours, and the holder's endpoint
+plus *its* two splice neighbours.  Summed over all arms the parametric form
+carries eleven optional members; the bound holds only because the
+donation-derived members and the victim's own blocked-object members are
+mutually exclusive, both keying on `tcb.ipcState`.
+
+So there is **no headroom left**, and two rows below depend on that being
+recovered before they run:
+
+* **OD3.6** is the arm-selected split — the footprints chosen by the victim's
+  `ipcState` rather than summed.  On the reply arm it drops the victim's two
+  neighbour members, which are vacuous there (that arm performs no victim
+  splice), taking the reply arm from nine to seven.
+* **OD3.7** adds the previous reply's *read* to the reply, replyRecv and
+  cancellation-reply-arm footprints, and is the row that would exceed the ceiling
+  without OD3.6.
+
+The narrowing was deliberately **not** pulled forward into OD1.5.  It ripples
+into `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` and
+`SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean`, and doing it in the row
+that *adds* members would put a footprint restructuring ahead of the row that
+owns it.  If OD3.7 nevertheless exceeds the ceiling, stop and escalate: raising
+`maxLockSetSize` widens the published covert-channel bound.
 
 ## 9. Two things this plan deliberately does not fix
 
