@@ -1,3 +1,85 @@
+## v0.34.95 — WS-RR RR7.22 residual: the cancellation sweep carries the whole bundle
+
+The endpoint arm of `cancelIpcBlocking` now preserves all twenty conjuncts of
+`ipcInvariantFull`.  v0.34.94 gave the sweep-then-restore composite its
+dual-queue third; this cut supplies the other nineteen, the keystone, and the
+live arm.
+
+**The lever.**  `sweptAndRestored_tcb_value` is a *closed record* description of
+the composite's TCB at every key away from the swept thread — a thread's
+`queueNext` is rewritten exactly when it is the swept thread's predecessor, its
+`queuePrev` exactly when it is the successor, everything else untouched.  The
+weak `tcbQueueLinkRewrite` v0.34.94 used says only that the *other* fields agree,
+which is all a framing conjunct needs and none of what a queue-shape conjunct
+needs.  Both are derivation-shaped: a field added to `TCB` is covered by
+construction rather than by a list that can go stale.
+
+**Two more instances of the same specification gap**, found while proving the
+queue-shape conjuncts and remediated the same way — stated, not assumed:
+
+* `endpointQueueTailBlockedConsistent` needs the swept thread's *predecessor* to
+  be blocked on the endpoint whose queue it is promoted to tail of, and nothing
+  in the bundle propagates blockedness backwards along `queueNext`
+  (`sweptPredecessorBlocked`).
+* `ipcStateQueueMembershipConsistent`'s witness clause accepts *any* thread whose
+  `queueNext` names the blocked thread — in the queue or not — so a `.ready`
+  thread can be a blocked successor's sole witness, and sweeping it leaves that
+  successor blocked, unqueued and unwitnessed (`sweptSuccessorAnchored`).
+
+Both are the same missing connectivity as the boundary gap v0.34.94 reported: the
+bundle constrains queues at their boundaries and says nothing about the chain
+between them.  The three facts are the named clauses of `sweptThreadQueueCoherent`,
+so a result that needs one takes that one and the keystone takes the bundle.
+
+**What the bundle *does* entail is derived rather than assumed.**
+`replyObject_none_of_not_blockedOnReply` (`IPC/Invariant/Defs.lean`, the
+contrapositive of the reciprocity `blockedOnReply_caller_is_answerable` reads
+forwards) turns "this thread is not `.blockedOnReply`" into "it holds no Reply
+object", which is what makes the reply-linkage and donation-owner frames
+available on a cancellation.  The live arm therefore takes no `hNotReply`
+hypothesis at all — a Tier 3 negative refuses one.
+
+**The live arm** is reached by `cancelIpcBlocking_endpoint_arm_eq`, an equation
+the compiler checks (`rfl` up to the branch), not a restatement that could drift:
+`cancelIpcBlocking st tid tcb = sweptAndRestored st tid (some cancelledIpcFrame)`
+on all three endpoint-blocking states.
+
+**Bundle family: 162 → 164.**  The keystone is named
+`sweptAndRestored_preserves_ipcInvariantFull` deliberately — that suffix is the
+name `check_ipc_invariant_dethreading.py` derives the family from, so any other
+spelling would have been invisible to the gate that holds every such statement
+de-threaded.  The census module now imports `CancellationQueueShape` directly:
+it is production, reachable from the library root but not from `Platform.Staged`,
+and its reachability check is what caught that.
+
+**Still owed** (registered, owner RR8): `cancelIpcBlocking`'s notification arm
+(`removeFromAllNotificationWaitLists`) and reply arm (`consumeReplyLink`), and
+the composite over all five arms lifted to `cancelIpcBlockingOnCore`.
+
+**A model gap found while scoping those arms, registered rather than absorbed**:
+seL4-MCS's `cancelIPC` on a reply-blocked thread returns the scheduling context
+the caller donated on its `Call`; this model's `.blockedOnReply` arm clears the
+reply *link* only, so the server keeps `.donated scId victim` while the victim
+becomes `.ready` and then `.Inactive`, and `donationOwnerValid` is false on a
+state a live `.tcbSuspend` reaches.  No existing theorem is unsound — nothing
+claims that conjunct across suspend — which is what makes it a false-assurance
+gap rather than a broken proof, and why the reply arm cannot state the full
+bundle.  Severity Medium (availability, cross-domain: the victim's CBS
+reservation is transferred to the server permanently).  Remediation is to
+implement seL4's behaviour, in its own cut: see `docs/REGISTERED_DEBT.md`.
+
+**AK7 `RAW_LOOKUP_TID` re-anchored** (1536 → 1565), same rationale as v0.34.94
+and verified rather than assumed: every new occurrence is `= some (.tcb …)` or
+`= some (.reply …)` — the literal hypothesis shape of the conjuncts being
+preserved, which are all stated on `st.objects[tid.toObjId]?` — and eleven of the
+twenty-nine are the `lookupTcb_some_objects` line that *converts* the typed
+accessor into that shape.  Spelling these with `getTcb?` would insert a
+conversion at every site and make the statements not match the conjuncts they are
+about.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md RR7.22
+Refs: docs/REGISTERED_DEBT.md WS-RR RR7.22 residual
+
 ## v0.34.94 — WS-RR RR7.22 residual: the cancellation sweep's queue shape, and the fact the bundle does not entail
 
 Building the `ipcInvariantFull` carriage for `cancelIpcBlockingOnCore` surfaced a

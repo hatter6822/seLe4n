@@ -231,9 +231,12 @@ open SeLe4n.Testing
 #check @spliceOutMidQueueNode_queuePrev_frame
 #check @spliceOutMidQueueNode_queueNext_frame
 -- WS-RR RR7.22 (residual): the queue shape across sweep-then-restore, and the
--- one fact `ipcInvariantFull` does not entail, stated rather than assumed.
+-- three facts `ipcInvariantFull` does not entail, stated rather than assumed.
 #check @queueBoundaryCoherentAt
 #check @sweptThreadBoundaryCoherent
+#check @sweptPredecessorBlocked
+#check @sweptSuccessorAnchored
+#check @sweptThreadQueueCoherent
 #check @queueBoundaryCoherentAt_of_off_boundary
 #check @sweptQueue_wellFormed
 #check @restoredTcb
@@ -246,6 +249,40 @@ open SeLe4n.Testing
 #check @sweptAndRestored_path_transport
 #check @sweptAndRestored_tcbQueueChainAcyclic
 #check @sweptAndRestored_dualQueueSystemInvariant
+-- WS-RR RR7.22 (residual): the sharp pointwise reading and the transports.
+#check @sweptAndRestored_tcb_pullback
+#check @sweptAndRestored_tcb_value
+#check @sweptAndRestored_tcb_forward
+#check @sweptAndRestored_no_next_to_victim
+#check @sweptAndRestored_endpoint_queues
+#check @sweptAndRestored_endpoint_forward
+#check @sweptAndRestored_membership_witness
+#check @sweptAndRestored_nonTcbNonEndpoint
+#check @sweptAndRestored_sameSchedContextBindings
+#check @sweptAndRestored_timeoutBudgetFrame
+#check @sweptAndRestored_passiveServerIdleFrame
+#check @sweptAndRestored_donationOwnerFrame
+#check @sweptAndRestored_replyLinkageFrame
+-- WS-RR RR7.22 (residual): every conjunct of `ipcInvariantFull`, then the bundle
+-- and the live cancellation arm it covers.
+#check @sweptAndRestored_ipcInvariant
+#check @sweptAndRestored_badgeWellFormed
+#check @sweptAndRestored_allPendingMessagesBounded
+#check @sweptAndRestored_blockedThreadsPendingMessageConsistent
+#check @sweptAndRestored_blockedOnReplyHasTarget
+#check @sweptAndRestored_donationChainAcyclic
+#check @sweptAndRestored_queueNextTargetBlocked
+#check @sweptAndRestored_queueNextBlockingConsistent
+#check @sweptAndRestored_endpointQueueNoDup
+#check @sweptAndRestored_ipcStateQueueMembershipConsistent
+#check @sweptAndRestored_queueHeadBlockedConsistent
+#check @sweptAndRestored_endpointQueueTailBlockedConsistent
+#check @sweptAndRestored_replyCallerLinkage
+#check @sweptAndRestored_pendingReceiveReplyWellFormed
+#check @sweptAndRestored_preserves_ipcInvariantFull
+#check @cancelIpcBlocking_endpoint_arm_eq
+#check @cancelIpcBlocking_endpointArm_preserves_ipcInvariantFull
+#check @replyObject_none_of_not_blockedOnReply
 
 -- ============================================================================
 -- §2  Elaboration-time examples: headline theorems applied
@@ -310,6 +347,35 @@ example :
 example (hInv : st.objects.invExt) :
     (cancelIpcBlockingOnCore victim tcb ec st).1.objects.invExt :=
   cancelIpcBlockingOnCore_preserves_objects_invExt victim tcb ec st hInv
+
+/-- WS-RR RR7.22 (residual): the whole bundle across the cancellation's endpoint
+arm, applied — the shape a caller sees. -/
+example (ep : SeLe4n.ObjId)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st victim = some tcb)
+    (hBlocked : tcb.ipcState = .blockedOnSend ep)
+    (hBundle : ipcInvariantFull st) (hBudgets : allTimeoutBudgetsNone st)
+    (hCoh : sweptThreadQueueCoherent st victim) :
+    ipcInvariantFull (Lifecycle.Suspend.cancelIpcBlocking st victim tcb) :=
+  cancelIpcBlocking_endpointArm_preserves_ipcInvariantFull st victim tcb ep hInv hLookup
+    (Or.inl hBlocked) hBundle hBudgets hCoh
+
+/-- WS-RR RR7.22 (residual): the boundary clause costs a caller nothing on an
+endpoint the swept thread does not bound — which is every endpoint but the one it
+is being cancelled out of. -/
+example (q : IntrusiveQueue)
+    (hH : q.head ≠ some victim) (hT : q.tail ≠ some victim) :
+    queueBoundaryCoherentAt q victim tcb :=
+  queueBoundaryCoherentAt_of_off_boundary q victim tcb hH hT
+
+/-- WS-RR RR7.22 (residual): the swept thread holds no Reply object, derived from
+the bundle's own reciprocity rather than assumed. -/
+example (ep : SeLe4n.ObjId)
+    (hLink : replyCallerLinkage st)
+    (hTcb : st.objects[victim.toObjId]? = some (.tcb tcb))
+    (hBlocked : tcb.ipcState = .blockedOnReceive ep) :
+    tcb.replyObject = none :=
+  replyObject_none_of_not_blockedOnReply st hLink victim tcb hTcb
+    (fun _ _ hEq => by rw [hBlocked] at hEq; cases hEq)
 
 end ElaborationExamples
 

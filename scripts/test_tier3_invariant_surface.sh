@@ -870,6 +870,24 @@ run_check "INVARIANT" bash -lc 'rg -U -n "theorem sweptAndRestored_dualQueueSyst
 run_check "INVARIANT" bash -lc 'rg -U -n "theorem sweptAndRestored_tcbQueueLinkIntegrity(.|\n)*tcbQueueLinkIntegrity \(sweptAndRestored st v frame\)" SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean'
 # NEGATIVE: no link-integrity claim about the bare sweep.
 run_negative_check "INVARIANT" rg -n 'tcbQueueLinkIntegrity \(removeFromAllEndpointQueues' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
+# WS-RR RR7.22 (residual, whole bundle): all three coherence clauses are stated
+# as one hypothesis, and the keystone takes it.
+run_check "INVARIANT" rg -n '^def sweptPredecessorBlocked' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
+run_check "INVARIANT" rg -n '^def sweptSuccessorAnchored' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
+run_check "INVARIANT" rg -n '^structure sweptThreadQueueCoherent' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
+run_check "INVARIANT" rg -n '^theorem sweptAndRestored_preserves_ipcInvariantFull' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
+# Relation, not presence: the keystone must take the coherence bundle as a
+# **hypothesis**, exactly as the dual-queue result takes its boundary clause.
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem sweptAndRestored_preserves_ipcInvariantFull(.|\n)*hCoh : sweptThreadQueueCoherent st v" SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean'
+# ...and it must state the whole bundle on the composite, not a weaker relaxation.
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem sweptAndRestored_preserves_ipcInvariantFull(.|\n)*ipcInvariantFull \(sweptAndRestored st v frame\)" SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean'
+# The live arm is reached by an equation the compiler checks, not by a restatement.
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_endpoint_arm_eq(.|\n)*sweptAndRestored st tid \(some Architecture.cancelledIpcFrame\) := by" SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean'
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_endpointArm_preserves_ipcInvariantFull' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
+# NEGATIVE: the swept thread's non-reply state is *derived* where the bundle is
+# available, never taken as a further hypothesis of the live arm.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_endpointArm_preserves_ipcInvariantFull(.|\n)*hNotReply" SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean'
+run_check "INVARIANT" rg -n '^theorem replyObject_none_of_not_blockedOnReply' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 # The neighbour clauses are the half an under-stated hypothesis would drop, so
 # the label predicate must quantify over the removed thread's own queue links
 # rather than over the endpoint and the thread alone.

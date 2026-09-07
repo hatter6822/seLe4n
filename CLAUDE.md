@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.94.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.95.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,14 +203,14 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~57085 lines)
+- `CHANGELOG.md` (~57153 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22545 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12092 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
 - `SeLe4n/Kernel/API.lean` (~7210 lines)
 - `SeLe4n/Platform/Boot.lean` (~5858 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5743 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~5186 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~5212 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5129 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5001 lines)
 - `docs/spec/SELE4N_SPEC.md` (~4897 lines)
@@ -275,6 +275,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean` (~1994 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1967 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
+- `SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean` (~1956 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md` (~1917 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean` (~1909 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean` (~1901 lines)
@@ -307,11 +308,11 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1559 lines)
 - `tests/LockSetSuite.lean` (~1541 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~1538 lines)
+- `tests/SmpCancellationSuite.lean` (~1488 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
 - `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1425 lines)
-- `tests/SmpCancellationSuite.lean` (~1422 lines)
 - `docs/dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` (~1414 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~1411 lines)
 - `docs/dev_history/AUDIT_v0.23.21_WORKSTREAM_PLAN.md` (~1411 lines)
@@ -1633,7 +1634,7 @@ code may assume:
 - **`ipcInvariantFull` has its dispatch payoff — three theorems, under
   stated packs and confinements.**  The whole bundle family is de-threaded:
   the RR3.1 gate (`scripts/check_ipc_invariant_dethreading.py`, Tier 0)
-  reports **zero** conjuncts bound on a post-state across all **162**
+  reports **zero** conjuncts bound on a post-state across all **164**
   `*_preserves_ipcInvariantFull*` / `*_establishes_ipcInvariantFull*`
   statements, measured over the comment-free code view with the conjunct set,
   the bundle family and each bundle's own pre-state all *derived* rather than
@@ -1760,9 +1761,21 @@ code may assume:
   `IPC/Invariant/DispatchPayoff.lean`, staged with the payoff tier) and the
   `Architecture.stage*` return-frame writes
   (`IPC/Invariant/DispatchArmPreservation.lean`, production).  What no
-  transition-level bundle covers yet: `cancelIpcBlockingOnCore`, whose
-  blocked-on-endpoint arm runs the whole-store sweep `removeFromAllEndpointQueues`
-  rather than the splice (registered debt, owner RR8) — the flow-`Checked` dispatch
+  transition-level bundle covers yet: `cancelIpcBlockingOnCore`'s *notification*
+  and *reply* arms (registered debt, owner RR8).  Its **blocked-on-endpoint** arm
+  is covered since v0.34.95 —
+  `cancelIpcBlocking_endpointArm_preserves_ipcInvariantFull`,
+  `SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean` (production) —
+  and that arm needed its own engine rather than RR7.22's, because it runs the
+  whole-store sweep `removeFromAllEndpointQueues` rather than the splice.  Three
+  hypotheses beyond the bundle come with it, and two are worth knowing: the
+  timeout-budget discipline `allTimeoutBudgetsNone` (unavoidable — the conjunct
+  says a budget-carrying thread is *blocked*, and this operation makes one
+  `.ready`), and `sweptThreadQueueCoherent`, three queue facts `ipcInvariantFull`
+  does not entail because it constrains queues only at their boundaries and
+  carries no connectivity.  New code must state that hypothesis rather than
+  assume it; `replyObject_none_of_not_blockedOnReply` shows the shape of the
+  third, which is *derived* from the bundle instead.  The flow-`Checked` dispatch
   wrappers gained their own payoff tier
   (`dispatchWithCapChecked_preserves_ipcInvariantFull` /
   `dispatchSyscallChecked_preserves_ipcInvariantFull`, staged) in the same

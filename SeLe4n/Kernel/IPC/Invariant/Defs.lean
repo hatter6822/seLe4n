@@ -864,6 +864,32 @@ theorem blockedOnReply_caller_is_answerable (st : SystemState)
   obtain ⟨r, hr, hrc⟩ := h.1.1 tid tcb rid hTcb hRep
   exact ⟨rid, r, hRep, hr, hrc⟩
 
+/-- WS-RR RR7.22 (residual), the **contrapositive** consumer of the same
+reciprocity: a thread that is *not* `.blockedOnReply` holds no Reply object.
+
+Clause 1 of the reciprocal turns a held `replyObject` into a Reply naming this
+thread back, and clause 2 turns that Reply into the thread being
+`.blockedOnReply` — so holding one and not being blocked on it is contradictory.
+This is what lets a transition that moves a thread out of a blocking state
+(cancellation, timeout) discharge the "holds no reply" side conditions of the
+reply-linkage and donation-owner frames from the bundle it already has, rather
+than carrying them as extra hypotheses. -/
+theorem replyObject_none_of_not_blockedOnReply (st : SystemState)
+    (h : replyCallerLinkage st) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hNot : ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt) :
+    tcb.replyObject = none := by
+  cases hRO : tcb.replyObject with
+  | none => rfl
+  | some rid =>
+    exfalso
+    obtain ⟨r, hr, hrc⟩ := h.1.1 tid tcb rid hTcb hRO
+    obtain ⟨tcb', hTcb', _, ep, rt, hBlk⟩ := h.1.2 rid r tid hr hrc
+    rw [hTcb] at hTcb'
+    have hx : tcb' = tcb := (KernelObject.tcb.inj (Option.some.inj hTcb')).symm
+    rw [hx] at hBlk
+    exact hNot ep rt hBlk
+
 /-- WS-SM SM6.D (PR #822 review 6J9Kjg/6J9Kp6): a server-first receive **stash**
 (`TCB.pendingReceiveReply`) is well-formed — it occurs only on a TCB that is still
 `.blockedOnReceive` (the only state in which the server is awaiting its next `Call`
