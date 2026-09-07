@@ -888,6 +888,23 @@ run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_endpointArm_preserves_ip
 # available, never taken as a further hypothesis of the live arm.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_endpointArm_preserves_ipcInvariantFull(.|\n)*hNotReply" SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean'
 run_check "INVARIANT" rg -n '^theorem replyObject_none_of_not_blockedOnReply' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# WS-RR RR7.22 (residual), the notification arm: its own purge description, its
+# own coherence hypothesis, its keystone and the live arm.
+run_check "INVARIANT" rg -n '^def notificationPurgeBody' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem removeFromAllNotificationWaitLists_eq_fold(.|\n)*st.objects.fold st \(notificationPurgeBody tid\) := rfl" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+run_check "INVARIANT" rg -n '^def sweptThreadOffQueueChains' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
+run_check "INVARIANT" rg -n '^theorem purgedAndRestored_dualQueueSystemInvariant' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
+run_check "INVARIANT" rg -n '^theorem purgedAndRestored_preserves_ipcInvariantFull' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
+# Relation, not presence: the keystone takes the coherence fact as a hypothesis
+# and states the whole bundle on the composite.
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem purgedAndRestored_preserves_ipcInvariantFull(.|\n)*hOff : sweptThreadOffQueueChains st v" SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem purgedAndRestored_preserves_ipcInvariantFull(.|\n)*ipcInvariantFull \(purgedAndRestored st v frame\)" SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_notification_arm_eq(.|\n)*purgedAndRestored st tid \(some Architecture.cancelledIpcFrame\) := by" SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean'
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
+# NEGATIVE: the two derivable facts stay derived — the notification arm takes
+# neither a "not blocked on reply" nor an "off every endpoint boundary" premise.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull(.|\n)*hNotReply" SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean'
+run_check "INVARIANT" rg -n '^theorem purgedAndRestored_victim_off_endpoint_boundaries' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
 # The neighbour clauses are the half an under-stated hypothesis would drop, so
 # the label predicate must quantify over the removed thread's own queue links
 # rather than over the endpoint and the thread alone.

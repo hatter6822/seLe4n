@@ -283,6 +283,45 @@ open SeLe4n.Testing
 #check @cancelIpcBlocking_endpoint_arm_eq
 #check @cancelIpcBlocking_endpointArm_preserves_ipcInvariantFull
 #check @replyObject_none_of_not_blockedOnReply
+-- WS-RR RR7.22 (residual): the notification arm — its purge description, its one
+-- coherence hypothesis, every conjunct, the keystone and the live arm.
+#check @notificationPurgeBody
+#check @removeFromAllNotificationWaitLists_eq_fold
+#check @removeFromAllNotificationWaitLists_nonNotification
+#check @removeFromAllNotificationWaitLists_notification_badge
+#check @purgedAndRestored
+#check @sweptThreadOffQueueChains
+#check @purgedAndRestored_tcb_iff
+#check @purgedAndRestored_victim_tcb
+#check @purgedAndRestored_tcb_pullback
+#check @purgedAndRestored_tcb_links
+#check @purgedAndRestored_tcb_links_forward
+#check @purgedAndRestored_path_transport
+#check @purgedAndRestored_dualQueueSystemInvariant
+#check @purgedAndRestored_sameSchedContextBindings
+#check @purgedAndRestored_timeoutBudgetFrame
+#check @purgedAndRestored_passiveServerIdleFrame
+#check @purgedAndRestored_donationOwnerFrame
+#check @purgedAndRestored_replyLinkageFrame
+#check @purgedAndRestored_ipcInvariant
+#check @purgedAndRestored_badgeWellFormed
+#check @purgedAndRestored_allPendingMessagesBounded
+#check @purgedAndRestored_blockedThreadsPendingMessageConsistent
+#check @purgedAndRestored_blockedOnReplyHasTarget
+#check @purgedAndRestored_donationChainAcyclic
+#check @purgedAndRestored_pendingReceiveReplyWellFormed
+#check @purgedAndRestored_replyCallerLinkage
+#check @purgedAndRestored_victim_off_endpoint_boundaries
+#check @purgedAndRestored_queueHeadBlockedConsistent
+#check @purgedAndRestored_endpointQueueTailBlockedConsistent
+#check @purgedAndRestored_edge_avoids_victim
+#check @purgedAndRestored_queueNextTargetBlocked
+#check @purgedAndRestored_queueNextBlockingConsistent
+#check @purgedAndRestored_endpointQueueNoDup
+#check @purgedAndRestored_ipcStateQueueMembershipConsistent
+#check @purgedAndRestored_preserves_ipcInvariantFull
+#check @cancelIpcBlocking_notification_arm_eq
+#check @cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull
 
 -- ============================================================================
 -- §2  Elaboration-time examples: headline theorems applied
@@ -366,6 +405,17 @@ example (q : IntrusiveQueue)
     (hH : q.head ≠ some victim) (hT : q.tail ≠ some victim) :
     queueBoundaryCoherentAt q victim tcb :=
   queueBoundaryCoherentAt_of_off_boundary q victim tcb hH hT
+
+/-- WS-RR RR7.22 (residual): the whole bundle across the cancellation's
+notification arm, applied. -/
+example (n : SeLe4n.ObjId)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st victim = some tcb)
+    (hBlocked : tcb.ipcState = .blockedOnNotification n)
+    (hBundle : ipcInvariantFull st) (hBudgets : allTimeoutBudgetsNone st)
+    (hOff : sweptThreadOffQueueChains st victim) :
+    ipcInvariantFull (Lifecycle.Suspend.cancelIpcBlocking st victim tcb) :=
+  cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull st victim tcb n hInv hLookup
+    hBlocked hBundle hBudgets hOff
 
 /-- WS-RR RR7.22 (residual): the swept thread holds no Reply object, derived from
 the bundle's own reciprocity rather than assumed. -/

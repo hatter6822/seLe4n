@@ -7,6 +7,7 @@ import SeLe4n.Platform.Staged
 -- statements are invisible to the elaborator layer while the lexical scan still
 -- counts them, which is the drift the reachability check exists to catch.
 import SeLe4n.Kernel.Lifecycle.Invariant.CancellationQueueShape
+import SeLe4n.Kernel.Lifecycle.Invariant.CancellationNotificationShape
 
 /-!
 # The elaborator-backed de-threading census

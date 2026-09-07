@@ -103,6 +103,7 @@ import SeLe4n.Kernel.IPC.CrossCore.Cancellation
 -- `ipcInvariantFull` does not entail (`sweptThreadBoundaryCoherent`, stated
 -- rather than assumed, the way RR7.22 stated `splicePredecessorBlocked`).
 import SeLe4n.Kernel.Lifecycle.Invariant.CancellationQueueShape
+import SeLe4n.Kernel.Lifecycle.Invariant.CancellationNotificationShape
 -- WS-SM SM7.B: the TLB shootdown protocol — `tlbShootdownLocal` /
 -- `tlbShootdownBroadcast` / `handleTlbShootdownReqOnCore`, the round
 -- composition with its quiescence capstone, Theorem 3.3.1

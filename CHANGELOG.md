@@ -1,3 +1,52 @@
+## v0.34.96 — WS-RR RR7.22 residual: the cancellation purge carries the whole bundle
+
+The notification arm of `cancelIpcBlocking` now preserves all twenty conjuncts of
+`ipcInvariantFull`, in a new module `CancellationNotificationShape.lean` beside
+the endpoint arm's.
+
+**Why it needs its own engine**, rather than reusing the endpoint arm's: the
+purge is a fold over the whole object store, not a splice, so no result about the
+other arm applies.  What that buys is a *simpler* pullback — the purge writes only
+notifications, so away from the swept thread every TCB survives verbatim, the
+composite's TCB reading is an equality rather than a record rewrite, and
+acyclicity transports path-for-path instead of by an argument about what the
+operation added.
+
+**A fourth instance of the specification gap**, stated rather than assumed:
+`sweptThreadOffQueueChains`.  This arm has no splice to repair the swept thread's
+*neighbours*, and the restore clears its `queuePrev` / `queueNext`, so a thread
+linked into an endpoint chain while blocked on a notification would leave a
+dangling link behind.  `ipcInvariantFull` does not forbid that —
+`ipcStateQueueMembershipConsistent`'s `.blockedOnNotification` arm is `True`,
+`queueNextBlockingMatch`'s catch-all admits a notification-blocked source, and
+`queueNextTargetBlocked` constrains a successor only when the source is
+endpoint-blocked.
+
+**Two facts that are *not* hypotheses**, because the bundle entails them:
+`purgedAndRestored_victim_off_endpoint_boundaries` derives that the swept thread
+bounds no endpoint queue (both boundary conjuncts demand a blocking state a
+notification-blocked thread does not have), and
+`replyObject_none_of_not_blockedOnReply` derives that it holds no Reply object.
+Tier 3 negatives refuse either as a premise.
+
+The purge gets the same description discipline as the sweep:
+`notificationPurgeBody` with a `rfl` pin
+(`removeFromAllNotificationWaitLists_eq_fold`), so the named copy cannot drift
+from the operation, and `cancelIpcBlocking_notification_arm_eq` reaches the live
+arm by a compiler-checked equation.
+
+**Still owed** (registered, owner RR8): the reply arm, which is blocked on the
+donation-return finding v0.34.95 reported, and the five-arm composite lifted to
+`cancelIpcBlockingOnCore`.
+
+AK7 `RAW_LOOKUP_TID` re-anchored (1565 -> 1578), checked the same way: all
+thirteen new occurrences are `= some (.tcb …)` or `= some (.reply …)` — the
+conjuncts' own hypothesis shapes — and four are the `lookupTcb_some_objects` line
+that converts the typed accessor into one.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md RR7.22
+Refs: docs/REGISTERED_DEBT.md WS-RR RR7.22 residual
+
 ## v0.34.95 — WS-RR RR7.22 residual: the cancellation sweep carries the whole bundle
 
 The endpoint arm of `cancelIpcBlocking` now preserves all twenty conjuncts of

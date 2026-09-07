@@ -1857,6 +1857,35 @@ theorem removeFromAllEndpointQueues_eq_fold (st : SystemState) (tid : SeLe4n.Thr
       (spliceOutMidQueueNode st tid).objects.fold (spliceOutMidQueueNode st tid)
         (endpointSweepBody (spliceOutMidQueueNode st tid) tid) := rfl
 
+/-- **WS-RR RR7.22 (residual)**: the notification purge's fold body, named.
+
+Its guard is what makes the write set honest: a notification the swept thread
+does not wait on is left alone rather than re-inserted, so the purge's footprint
+is the notifications it actually changes.  The `.waiting → .idle` correction is
+part of the body because emptying the wait list is what makes the old state
+ill-formed. -/
+def notificationPurgeBody (tid : SeLe4n.ThreadId)
+    (acc : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject) : SystemState :=
+  match obj with
+  | .notification notif =>
+    if notif.waitingThreads.val.contains tid then
+      let wt' := notif.waitingThreads.filter (· != tid)
+      let notif' : Notification := {
+        notif with
+          waitingThreads := wt'
+          state := if notif.state = .waiting ∧ wt'.val.isEmpty then .idle
+                   else notif.state }
+      { acc with objects := acc.objects.insert oid (.notification notif') }
+    else acc
+  | _ => acc
+
+/-- The purge *is* that fold.  `rfl`, the pin — same discipline as the endpoint
+sweep's above. -/
+theorem removeFromAllNotificationWaitLists_eq_fold (st : SystemState)
+    (tid : SeLe4n.ThreadId) :
+    removeFromAllNotificationWaitLists st tid =
+      st.objects.fold st (notificationPurgeBody tid) := rfl
+
 /-- **WS-RR RR7.22 (residual)**: a thread sits at neither boundary of either of
 an endpoint's queues.
 

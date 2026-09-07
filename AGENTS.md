@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.95.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.96.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,7 +203,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~57153 lines)
+- `CHANGELOG.md` (~57218 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22545 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12092 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
@@ -263,8 +263,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2287 lines)
 - `SeLe4n/Model/Object/Types.lean` (~2266 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2254 lines)
+- `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~2156 lines)
 - `SeLe4n/Prelude.lean` (~2137 lines)
-- `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~2127 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2079 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~2074 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2059 lines)
@@ -308,7 +308,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1559 lines)
 - `tests/LockSetSuite.lean` (~1541 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~1538 lines)
-- `tests/SmpCancellationSuite.lean` (~1488 lines)
+- `tests/SmpCancellationSuite.lean` (~1538 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
@@ -377,6 +377,7 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` (~933 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md` (~930 lines)
 - `SeLe4n/Kernel/Concurrency/Runtime.lean` (~928 lines)
+- `SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean` (~928 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_COMPREHENSIVE.md` (~921 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
@@ -1634,7 +1635,7 @@ code may assume:
 - **`ipcInvariantFull` has its dispatch payoff — three theorems, under
   stated packs and confinements.**  The whole bundle family is de-threaded:
   the RR3.1 gate (`scripts/check_ipc_invariant_dethreading.py`, Tier 0)
-  reports **zero** conjuncts bound on a post-state across all **164**
+  reports **zero** conjuncts bound on a post-state across all **166**
   `*_preserves_ipcInvariantFull*` / `*_establishes_ipcInvariantFull*`
   statements, measured over the comment-free code view with the conjunct set,
   the bundle family and each bundle's own pre-state all *derived* rather than
@@ -1766,16 +1767,24 @@ code may assume:
   is covered since v0.34.95 —
   `cancelIpcBlocking_endpointArm_preserves_ipcInvariantFull`,
   `SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean` (production) —
-  and that arm needed its own engine rather than RR7.22's, because it runs the
-  whole-store sweep `removeFromAllEndpointQueues` rather than the splice.  Three
-  hypotheses beyond the bundle come with it, and two are worth knowing: the
-  timeout-budget discipline `allTimeoutBudgetsNone` (unavoidable — the conjunct
-  says a budget-carrying thread is *blocked*, and this operation makes one
-  `.ready`), and `sweptThreadQueueCoherent`, three queue facts `ipcInvariantFull`
-  does not entail because it constrains queues only at their boundaries and
-  carries no connectivity.  New code must state that hypothesis rather than
-  assume it; `replyObject_none_of_not_blockedOnReply` shows the shape of the
-  third, which is *derived* from the bundle instead.  The flow-`Checked` dispatch
+  and its **notification** arm since v0.34.96
+  (`cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull`,
+  `…/CancellationNotificationShape.lean`).  Each needed its own engine, because
+  each runs a whole-store fold rather than RR7.22's splice.  Two hypotheses
+  beyond the bundle are common to both: the timeout-budget discipline
+  `allTimeoutBudgetsNone` (unavoidable — the conjunct says a budget-carrying
+  thread is *blocked*, and both operations make one `.ready`), and a
+  queue-coherence fact `ipcInvariantFull` does not entail, because it constrains
+  queues only at their boundaries and carries no connectivity:
+  `sweptThreadQueueCoherent`'s three clauses for the endpoint arm, and
+  `sweptThreadOffQueueChains` for the notification arm, which has no splice to
+  repair the swept thread's neighbours.  New code must state those rather than
+  assume them.  What is **not** a hypothesis is anything the bundle entails:
+  `replyObject_none_of_not_blockedOnReply` derives "holds no Reply object" from
+  the bundle's own reciprocity, and
+  `purgedAndRestored_victim_off_endpoint_boundaries` derives that a
+  notification-blocked thread bounds no endpoint queue.  Tier 3 negatives refuse
+  either as a premise.  The flow-`Checked` dispatch
   wrappers gained their own payoff tier
   (`dispatchWithCapChecked_preserves_ipcInvariantFull` /
   `dispatchSyscallChecked_preserves_ipcInvariantFull`, staged) in the same
