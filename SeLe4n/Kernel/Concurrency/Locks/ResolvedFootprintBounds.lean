@@ -136,17 +136,23 @@ theorem lockSet_notificationWaitOnCore_size_le (notificationId : SeLe4n.ObjId)
 -- §3  The cancellation teardown footprints
 -- ============================================================================
 
-/-- The parametric cancellation footprint: the victim's TCB plus three optionals
-(the endpoint or notification it was blocked on, and the reply object it
-consumed).  Stated over all three, not at their defaults. -/
+/-- The parametric cancellation footprint: the victim's TCB plus five optionals
+(the endpoint or notification it was blocked on, the reply object it consumed,
+and — WS-RR RR7.22 (residual, remediation) — the SchedContext the reply arm hands
+back with its holder's TCB).  Stated over all five, not at their defaults: a
+bound stated at fewer arguments would elaborate against the wider footprint with
+the missing ones defaulted, and say nothing about the shape the live arm
+declares. -/
 theorem lockSet_cancelIpcBlocking_size_le (victimTid : SeLe4n.ThreadId)
     (blockedEndpointObjId blockedNotificationObjId : Option SeLe4n.ObjId)
-    (consumedReplyId : Option SeLe4n.ReplyId) :
+    (consumedReplyId : Option SeLe4n.ReplyId)
+    (returnedDonationSc : Option SeLe4n.SchedContextId)
+    (donationHolderTid : Option SeLe4n.ThreadId) :
     (lockSet_cancelIpcBlocking victimTid blockedEndpointObjId
-        blockedNotificationObjId consumedReplyId).size
+        blockedNotificationObjId consumedReplyId returnedDonationSc donationHolderTid).size
       ≤ maxLockSetSize := by
   unfold lockSet_cancelIpcBlocking maxLockSetSize
-  refine Nat.le_trans (size_le_3 _ _ _ _) ?_
+  refine Nat.le_trans (size_le_5 _ _ _ _ _ _) ?_
   simp only [List.length_cons, List.length_nil]
   omega
 
@@ -164,18 +170,20 @@ theorem lockSet_cancelDonation_size_le (victimTid : SeLe4n.ThreadId)
 
 /-- **The one the `.tcbSuspend` bracket acquires.**  The state-resolved
 cancellation footprint adds the two splice-neighbour TCB writes on top of the
-parametric form, so it is the widest of this family — six members on a victim
-that is mid-queue with a consumed reply — and the one whose bound bounded-wait
-needs. -/
+parametric form, so it is the widest of this family — **eight** members since
+WS-RR RR7.22 (residual, remediation) on a victim that is mid-queue with a
+consumed reply *and* a donation to hand back — and the one whose bound
+bounded-wait needs.  Eight is still inside `maxLockSetSize` (nine, the widest
+`.replyRecv`), so the WCRT headline does not move. -/
 theorem lockSet_cancelIpcBlockingOnCore_size_le (st : SystemState)
     (victimTid : SeLe4n.ThreadId) :
     (lockSet_cancelIpcBlockingOnCore st victimTid).size ≤ maxLockSetSize := by
   unfold lockSet_cancelIpcBlockingOnCore lockSet_cancelIpcBlocking maxLockSetSize
   split
-  · refine Nat.le_trans (size_le_5 _ _ _ _ _ _) ?_
+  · refine Nat.le_trans (size_le_7 _ _ _ _ _ _ _ _) ?_
     simp only [List.length_cons, List.length_nil]
     omega
-  · refine Nat.le_trans (size_le_3 _ _ _ _) ?_
+  · refine Nat.le_trans (size_le_5 _ _ _ _ _ _) ?_
     simp only [List.length_cons, List.length_nil]
     omega
 

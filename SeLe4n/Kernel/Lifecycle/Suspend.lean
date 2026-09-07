@@ -617,6 +617,75 @@ theorem consumeReplyLink_lifecycle_eq (st : SystemState) (tid : SeLe4n.ThreadId)
   · rfl
   · rw [clearReplyObjectCaller_lifecycle_eq, clearTcbReplyObject_lifecycle_eq]
 
+/-- **WS-RR RR7.22 (residual, remediation)**: the donation a cancelled caller is
+owed back, resolved from the pre-state.
+
+`some (scId, holder)` exactly when the caller's recorded reply target holds a
+SchedContext donated *by this caller*.  Named and resolved separately from the
+step that returns it for the reason every cross-core footprint in this tree is
+resolved separately: the `withLockSet` bracket must declare the SchedContext and
+the holder's TCB — and, at the `OnCore` layer, the two replenish-queue locks the
+migration writes — **before** the transition runs. -/
+def cancelledCallerDonation? (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :
+    Option (SeLe4n.SchedContextId × SeLe4n.ThreadId) :=
+  match tcb.ipcState with
+  | .blockedOnReply _ (some holder) =>
+    match lookupTcb st holder with
+    | some holderTcb =>
+      match holderTcb.schedContextBinding with
+      | .donated scId owner => if owner == tid then some (scId, holder) else none
+      | _ => none
+    | none => none
+  | _ => none
+
+/-- **WS-RR RR7.22 (residual, remediation)**: the SchedContext a cancelled caller
+donated on its `Call`, handed back to it.
+
+seL4-MCS's `cancelIPC` on a reply-blocked thread runs `reply_remove`, which
+returns the scheduling context the caller donated.  Without this step the server
+keeps `schedContextBinding = .donated scId caller` while the caller leaves
+`.blockedOnReply`, so `donationOwnerValid` — the invariant that a donation's
+owner is a live, `.unbound`, reply-blocked thread — is **false** of the result;
+operationally the caller's CBS reservation is transferred to the server
+permanently, and the caller can never be scheduled again after a resume.
+
+**How the holder is found.**  Through the caller's own recorded reply target: the
+`.blockedOnReply` state carries the server that is authorised to answer it (WS-H1
+/ M-02), and every operational write of that state in this tree names the
+receiver the `Call` donated to.  `ipcInvariantFull` does not *say* so — it admits
+`.blockedOnReply epId rt` for any `rt`, and no conjunct relates `rt` to the
+holder of a donation — so `donationHolderIsReplyTarget`
+(`Lifecycle/Invariant/CancellationReplyShape.lean`) states it, and the proof that
+the arm establishes `donationOwnerValid` consumes it.  The *behaviour* needs no
+hypothesis: a donation found at the reply target is always returned, which is an
+improvement on every state and a regression on none.
+
+**Why it is a no-op unless there is something to return.**  Three of the four
+arms below decline: no recorded reply target, no server TCB, or a server whose
+binding is not a donation naming this caller.  Each is the correct answer when
+the caller donated nothing — the common case for a `Call` on a bound
+SchedContext.  The `.error` arm is unreachable under the bundle
+(`returnDonatedSchedContext` refuses only when the SchedContext is not bound to
+the server, which `donationOwnerValid`'s first clause rules out) and declines
+rather than diverging, since `cancelIpcBlocking` is total.
+
+**The replenishment migration is not here**, and that is the tree's existing
+division rather than an omission: `applyCallDonation` rebinds and
+`applyCallDonationOnCore` migrates, the reply chain's return migrates in
+`EndpointReplyDispatchInvariant`, and in both the home cores are resolved
+*outside* so the `withLockSet` bracket can declare the two replenish-queue write
+locks before the transition runs.  `cancelIpcBlockingOnCore` does the same for
+this return, which is also what keeps `cancelIpcBlocking_scheduler_eq` true —
+this step writes `objects` and nothing else. -/
+def returnDonationToCancelledCaller (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) : SystemState :=
+  match cancelledCallerDonation? st tid tcb with
+  | some (scId, holder) =>
+    match returnDonatedSchedContext st holder scId tid with
+    | .ok st' => st'
+    | .error _ => st
+  | none => st
+
 def cancelIpcBlocking (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) : SystemState :=
   match tcb.ipcState with
@@ -631,7 +700,16 @@ def cancelIpcBlocking (st : SystemState) (tid : SeLe4n.ThreadId)
     -- WS-SM SM6.D (PR #822 review): a cancelled/suspended caller awaiting a
     -- reply must also relinquish its single-use reply link, else the Reply
     -- object is stranded in-use (see `consumeReplyLink`).
-    consumeReplyLink (restoreToReadyCancelled st tid) tid tcb
+    --
+    -- WS-RR RR7.22 (residual, remediation): and it must get its donated
+    -- SchedContext back **first** — seL4-MCS's `reply_remove` does — else the
+    -- server holds `.donated scId tid` while `tid` is no longer reply-blocked,
+    -- which `donationOwnerValid` forbids.  The return runs before the restore so
+    -- that every intermediate state satisfies the invariant: at the return the
+    -- caller is still `.blockedOnReply`, and after it no donation names the
+    -- caller at all.
+    consumeReplyLink (restoreToReadyCancelled (returnDonationToCancelledCaller st tid tcb) tid)
+      tid tcb
   | .blockedOnNotification _ =>
     restoreToReadyCancelled (removeFromAllNotificationWaitLists st tid) tid
 

@@ -173,6 +173,32 @@ theorem descheduleThread_cancellation_NI_smp
 -- §3  The cancellation composite
 -- ============================================================================
 
+/-- **WS-RR RR7.22 (residual, remediation)**: the SM5.H replenishment migration
+the corrected reply arm obliges is invisible — the projection shows run queues,
+current slots and the domain schedule, not replenishments. -/
+theorem cancelIpcBlockingMigrated_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (victim : SeLe4n.ThreadId) (tcb : TCB) (st : SystemState) :
+    projectState ctx observer (cancelIpcBlockingMigrated victim tcb st)
+      = projectState ctx observer (cancelIpcBlocking st victim tcb) := by
+  unfold cancelIpcBlockingMigrated
+  split
+  · rename_i scId holder _
+    exact migrateSchedContextReplenishment_preserves_projection ctx observer _ scId _ _
+  · rfl
+
+/-- The per-core form of the same. -/
+theorem cancelIpcBlockingMigrated_preserves_projectionOnCore
+    (ctx : LabelingContext) (observer : IfObserver)
+    (victim : SeLe4n.ThreadId) (tcb : TCB) (st : SystemState) (c : CoreId) :
+    projectStateOnCore ctx observer (cancelIpcBlockingMigrated victim tcb st) c
+      = projectStateOnCore ctx observer (cancelIpcBlocking st victim tcb) c := by
+  unfold cancelIpcBlockingMigrated
+  split
+  · rename_i scId holder _
+    exact migrateSchedContextReplenishment_preserves_projectionOnCore ctx observer _ scId _ _ c
+  · rfl
+
 /-- WS-SM SM6.E (boot-core form): the cross-core cancellation of a high
 victim is invisible, given the single-core teardown's projection preservation
 (the obligation the production closure form
@@ -196,7 +222,8 @@ theorem cancelIpcBlockingOnCore_cancellation_NI
         (cancelIpcBlockingOnCore victim tcb executingCore st).1
       = projectState ctx observer st := by
   rw [cancelIpcBlockingOnCore_state_eq,
-      removeRunnableOnCore_preserves_projection ctx observer _ victim _ hVictimHigh]
+      removeRunnableOnCore_preserves_projection ctx observer _ victim _ hVictimHigh,
+      cancelIpcBlockingMigrated_preserves_projection]
   exact hTeardownProj
 
 /-- WS-SM SM6.E (∀-core form): the cross-core cancellation of a high victim
@@ -220,7 +247,8 @@ theorem cancelIpcBlockingOnCore_cancellation_NI_smp
     = projectStateOnCore ctx observer st c
   rw [cancelIpcBlockingOnCore_state_eq,
       removeRunnableOnCore_preserves_projectionOnCore ctx observer _ victim _ c
-        hVictimHigh]
+        hVictimHigh,
+      cancelIpcBlockingMigrated_preserves_projectionOnCore]
   exact hTeardownProj c
 
 /-- WS-SM SM6.E (boot-core form, fully substantive): cancelling a `.ready`
@@ -442,6 +470,72 @@ theorem consumeReplyLink_preserves_projection_high
         (clearTcbReplyObject_preserves_objects_invExt st tid hObjInv)]
       exact clearTcbReplyObject_preserves_projection_high ctx observer st tid hTidObjHigh hObjInv
 
+/-- **WS-RR RR7.22 (residual, remediation)**: the donation return is invisible to
+**every** observer, high or low.
+
+Not an accident and not a hypothesis: `projectKernelObject` erases exactly the two
+fields the return writes — `TCB.schedContextBinding` (AI4-A) and
+`SchedContext.boundThread` (AI4-A) — so all three of its stores are
+projection-stable, and `storeObject_projectionStable_preserves_projection` carries
+each one at a key of any label.
+
+Worth stating plainly, because the obvious worry about this remediation is the
+opposite: returning a high caller's SchedContext writes the *server's* TCB, and a
+low server would then see a high thread's cancellation.  It does not, because the
+donation binding is not part of what the projection shows.  The only hypotheses
+are structural — the identity registry is complete and well-formed, so
+`storeObject` extends neither. -/
+theorem returnDonationToCancelledCaller_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (victim : SeLe4n.ThreadId) (tcb : TCB)
+    (hObjInv : st.objects.invExt)
+    (hIdxComplete : SeLe4n.Model.objectIndexSetComplete st)
+    (hObjSetInv : st.objectIndexSet.table.invExt) :
+    projectState ctx observer (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb)
+      = projectState ctx observer st := by
+  unfold Lifecycle.Suspend.returnDonationToCancelledCaller
+  split
+  · rename_i scId holder _
+    split
+    · rename_i st' h
+      obtain ⟨sc, clientTcb, serverTcb, s1, s2, s3, hSc, hS1, hL1, hS2, hL2, hS3, hEq⟩ :=
+        returnDonatedSchedContext_ok_storeChain st st' holder scId victim h
+      have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+      have hInv2 := SeLe4n.Model.storeObject_preserves_objects_invExt s1 s2 _ _ hInv1 hS2
+      have hSet1 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt st s1 _ _ hObjSetInv hS1
+      have hSet2 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt s1 s2 _ _ hSet1 hS2
+      have hC1 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete st s1 _ _ hObjInv
+        hObjSetInv hIdxComplete hS1
+      have hC2 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete s1 s2 _ _ hInv1
+        hSet1 hC1 hS2
+      have hP1 := storeObject_projectionStable_preserves_projection ctx observer st s1
+        scId.toObjId _ (.schedContext sc) hSc
+        (projectKernelObject_schedContext_boundThread_invariant ctx observer sc _)
+        (hIdxComplete scId.toObjId (by rw [hSc]; intro hx; cases hx))
+        hObjInv hS1
+      have hP2 := storeObject_projectionStable_preserves_projection ctx observer s1 s2
+        victim.toObjId _ (.tcb clientTcb) (lookupTcb_some_objects s1 victim clientTcb hL1)
+        (projectKernelObject_tcb_schedContextBinding_invariant ctx observer clientTcb _)
+        (hC1 victim.toObjId (by
+          rw [lookupTcb_some_objects s1 victim clientTcb hL1]
+          intro hx
+          cases hx))
+        hInv1 hS2
+      have hP3 := storeObject_projectionStable_preserves_projection ctx observer s2 s3
+        holder.toObjId _ (.tcb serverTcb) (lookupTcb_some_objects s2 holder serverTcb hL2)
+        (projectKernelObject_tcb_schedContextBinding_invariant ctx observer serverTcb _)
+        (hC2 holder.toObjId (by
+          rw [lookupTcb_some_objects s2 holder serverTcb hL2]
+          intro hx
+          cases hx))
+        hInv2 hS3
+      have hFinal : projectState ctx observer st' = projectState ctx observer s3 := by
+        rw [hEq]
+        rfl
+      rw [hFinal, hP3, hP2, hP1]
+    · rfl
+  · rfl
+
 /-- **WS-RR RR2.18: the teardown projection, discharged on the reply arm.**
 
 For a victim blocked awaiting a reply, `cancelIpcBlocking`'s three writes are
@@ -456,7 +550,9 @@ theorem cancelIpcBlocking_blockedOnReply_preserves_projection
     (hBlocked : tcb.ipcState = .blockedOnReply ep rt)
     (hValid : LabelingContextValid ctx)
     (hVictimHigh : threadObservable ctx observer victim = false)
-    (hObjInv : st.objects.invExt) :
+    (hObjInv : st.objects.invExt)
+    (hIdxComplete : SeLe4n.Model.objectIndexSetComplete st)
+    (hObjSetInv : st.objectIndexSet.table.invExt) :
     projectState ctx observer (Lifecycle.Suspend.cancelIpcBlocking st victim tcb)
       = projectState ctx observer st := by
   have hObjHigh : objectObservable ctx observer victim.toObjId = false :=
@@ -464,14 +560,25 @@ theorem cancelIpcBlocking_blockedOnReply_preserves_projection
   unfold Lifecycle.Suspend.cancelIpcBlocking
   rw [hBlocked]
   simp only []
+  -- WS-RR RR7.22 (residual, remediation): the arm's fourth write is the donation
+  -- return, and it is invisible to *every* observer rather than only to a high
+  -- one — the projection erases the binding fields it touches.
+  have hInvR : (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb).objects.invExt :=
+    returnDonationToCancelledCaller_preserves_objects_invExt st victim tcb hObjInv
   have h1 : projectState ctx observer
       (Lifecycle.Suspend.consumeReplyLink
-        (Lifecycle.Suspend.restoreToReadyCancelled st victim) victim tcb)
-      = projectState ctx observer (Lifecycle.Suspend.restoreToReadyCancelled st victim) :=
+        (Lifecycle.Suspend.restoreToReadyCancelled
+          (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb) victim) victim tcb)
+      = projectState ctx observer
+        (Lifecycle.Suspend.restoreToReadyCancelled
+          (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb) victim) :=
     consumeReplyLink_preserves_projection_high ctx observer _ victim tcb hObjHigh
-      (restoreToReadyCancelled_preserves_objects_invExt st victim hObjInv)
+      (restoreToReadyCancelled_preserves_objects_invExt _ victim hInvR)
   exact h1.trans
-    (restoreToReadyCancelled_preserves_projection_high ctx observer st victim hObjHigh hObjInv)
+    ((restoreToReadyCancelled_preserves_projection_high ctx observer _ victim hObjHigh
+      hInvR).trans
+      (returnDonationToCancelledCaller_preserves_projection ctx observer st victim tcb hObjInv
+        hIdxComplete hObjSetInv))
 
 
 /-- **WS-RR RR2.18 (boot-core form, fully substantive)**: cancelling a
@@ -498,12 +605,14 @@ theorem cancelIpcBlockingOnCore_reply_cancellation_NI
     (hBlocked : tcb.ipcState = .blockedOnReply ep rt)
     (hValid : LabelingContextValid ctx)
     (hVictimHigh : threadObservable ctx observer victim = false)
-    (hObjInv : st.objects.invExt) :
+    (hObjInv : st.objects.invExt)
+    (hIdxComplete : SeLe4n.Model.objectIndexSetComplete st)
+    (hObjSetInv : st.objectIndexSet.table.invExt) :
     projectState ctx observer
         (cancelIpcBlockingOnCore victim tcb executingCore st).1
       = projectState ctx observer st :=
   cancelIpcBlockingOnCore_cancellation_NI ctx observer victim tcb executingCore st hVictimHigh
     (cancelIpcBlocking_blockedOnReply_preserves_projection ctx observer st victim tcb ep rt
-      hBlocked hValid hVictimHigh hObjInv)
+      hBlocked hValid hVictimHigh hObjInv hIdxComplete hObjSetInv)
 
 end SeLe4n.Kernel

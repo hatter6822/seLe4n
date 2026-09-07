@@ -539,16 +539,62 @@ theorem storeTcbReceiveComplete_preserves_projection
       simp only [hStore, Except.ok.injEq] at hStep; subst hStep
       exact storeObject_preserves_projection ctx observer st st'' tid.toObjId _ hTidObjHigh hObjInv hStore
 
+/-- **WS-RR RR7.22 (residual, remediation)**: storing an object whose
+**projection** equals the projection of the one already at that key preserves
+`projectState` — *unconditionally*, even at a low-visible key.
+
+This is the general form of the reply-`caller` lemma below, which had been the
+only instance: the argument never depended on the field being `Reply.caller`, only
+on `projectKernelObject` erasing whatever changed.  Stating it once means a new
+projection-stripped field (`schedContextBinding` and `SchedContext.boundThread`,
+for the donation hand-off) is a two-line corollary rather than a second copy of
+this case analysis.
+
+`hIdxContains` is what keeps `objectIndex` still: the key already exists, so
+`storeObject` does not extend the identity registry. -/
+theorem storeObject_projectionStable_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (oid : SeLe4n.ObjId) (obj old : KernelObject)
+    (hPrev : st.objects[oid]? = some old)
+    (hProj : projectKernelObject ctx observer obj = projectKernelObject ctx observer old)
+    (hIdxContains : st.objectIndexSet.contains oid = true)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject oid obj st = .ok ((), st')) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  simp only [projectState]; congr 1
+  · funext o
+    by_cases hObs : objectObservable ctx observer o
+    · simp [projectObjects, hObs]
+      by_cases hEq : o = oid
+      · subst hEq
+        rw [storeObject_objects_eq st st' o _ hObjInv hStore, hPrev]
+        simp only [Option.map_some]
+        exact congrArg some hProj
+      · exact congrArg (Option.map (projectKernelObject ctx observer))
+          (storeObject_objects_ne st st' oid o _ hEq hObjInv hStore)
+    · simp [projectObjects, hObs]
+  · simp [projectRunnable, storeObject_scheduler_eq st st' oid _ hStore]
+  · simp [projectCurrent, storeObject_scheduler_eq st st' oid _ hStore]
+  · unfold storeObject at hStore; cases hStore; funext sid; rfl
+  · simp [projectActiveDomain, storeObject_scheduler_eq st st' oid _ hStore]
+  · funext irq; simp only [projectIrqHandlers, storeObject_irqHandlers_eq st st' oid _ hStore]
+  · unfold storeObject at hStore; cases hStore
+    simp only [projectObjectIndex, hIdxContains, if_true]
+  · simp [projectDomainTimeRemaining, storeObject_scheduler_eq st st' oid _ hStore]
+  · simp [projectDomainSchedule, storeObject_scheduler_eq st st' oid _ hStore]
+  · simp [projectDomainScheduleIndex, storeObject_scheduler_eq st st' oid _ hStore]
+  · simp [projectMachineRegs, storeObject_scheduler_eq st st' oid _ hStore,
+          storeObject_machine_eq st st' oid _ hStore]
+  · exact storeObject_preserves_projectMemory ctx observer st st' oid _ hStore
+  · exact storeObject_preserves_projectServiceRegistry ctx observer st st' oid _ hStore
+
 /-- WS-SM SM6.D (#7.1 fold): writing only a Reply object's `caller` back-link (the
 fold's atomic `linkCallerReply` reply-write) preserves `projectState`
 **unconditionally** — even when the Reply object is low-visible — because
-`projectKernelObject` strips `caller` to `none` (see
-`projectKernelObject_reply_caller_invariant`).  No `objectObservable`-HIGH
-hypothesis on `rid` is required (unlike the general `storeObject_preserves_projection`):
-the projected Reply is invariant under `caller`, and `objectIndex` is unchanged
-because `rid` already exists in the index (`hIdxContains`), so the store is invisible
-to any observer.  This is the non-interference building block for the fold's
-in-transition reply-link. -/
+`projectKernelObject` strips `caller` to `none`.  No `objectObservable`-HIGH
+hypothesis on `rid` is required (unlike the general `storeObject_preserves_projection`).
+WS-RR RR7.22 (residual, remediation) made it the instance of
+`storeObject_projectionStable_preserves_projection` it always was. -/
 theorem storeObject_reply_caller_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState) (rid : SeLe4n.ObjId) (r : SeLe4n.Kernel.Reply)
@@ -557,34 +603,9 @@ theorem storeObject_reply_caller_preserves_projection
     (hIdxContains : st.objectIndexSet.contains rid = true)
     (hObjInv : st.objects.invExt)
     (hStore : storeObject rid (.reply { r with caller := c }) st = .ok ((), st')) :
-    projectState ctx observer st' = projectState ctx observer st := by
-  simp only [projectState]; congr 1
-  · funext o
-    by_cases hObs : objectObservable ctx observer o
-    · simp [projectObjects, hObs]
-      by_cases hEq : o = rid
-      · subst hEq
-        rw [storeObject_objects_eq st st' o _ hObjInv hStore, hPrev]
-        simp only [Option.map_some]
-        exact congrArg some (projectKernelObject_reply_caller_invariant ctx observer r c)
-      · exact congrArg (Option.map (projectKernelObject ctx observer))
-          (storeObject_objects_ne st st' rid o _ hEq hObjInv hStore)
-    · simp [projectObjects, hObs]
-  · simp [projectRunnable, storeObject_scheduler_eq st st' rid _ hStore]
-  · simp [projectCurrent, storeObject_scheduler_eq st st' rid _ hStore]
-  · unfold storeObject at hStore; cases hStore; funext sid; rfl
-  · simp [projectActiveDomain, storeObject_scheduler_eq st st' rid _ hStore]
-  · funext irq; simp only [projectIrqHandlers, storeObject_irqHandlers_eq st st' rid _ hStore]
-  · -- objectIndex: `rid` already exists, so the index list is unchanged.
-    unfold storeObject at hStore; cases hStore
-    simp only [projectObjectIndex, hIdxContains, if_true]
-  · simp [projectDomainTimeRemaining, storeObject_scheduler_eq st st' rid _ hStore]
-  · simp [projectDomainSchedule, storeObject_scheduler_eq st st' rid _ hStore]
-  · simp [projectDomainScheduleIndex, storeObject_scheduler_eq st st' rid _ hStore]
-  · simp [projectMachineRegs, storeObject_scheduler_eq st st' rid _ hStore,
-          storeObject_machine_eq st st' rid _ hStore]
-  · exact storeObject_preserves_projectMemory ctx observer st st' rid _ hStore
-  · exact storeObject_preserves_projectServiceRegistry ctx observer st st' rid _ hStore
+    projectState ctx observer st' = projectState ctx observer st :=
+  storeObject_projectionStable_preserves_projection ctx observer st st' rid _ _ hPrev
+    (projectKernelObject_reply_caller_invariant ctx observer r c) hIdxContains hObjInv hStore
 
 /-- WS-SM SM6.D (#7.1 fold): the fold's atomic `linkCallerReply` (the reply-link
 the receive transition now performs in-line) preserves `projectState` whenever the

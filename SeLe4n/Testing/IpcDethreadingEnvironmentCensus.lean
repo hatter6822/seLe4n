@@ -8,6 +8,7 @@ import SeLe4n.Platform.Staged
 -- counts them, which is the drift the reachability check exists to catch.
 import SeLe4n.Kernel.Lifecycle.Invariant.CancellationQueueShape
 import SeLe4n.Kernel.Lifecycle.Invariant.CancellationNotificationShape
+import SeLe4n.Kernel.Lifecycle.Invariant.CancellationReplyShape
 
 /-!
 # The elaborator-backed de-threading census

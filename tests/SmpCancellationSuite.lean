@@ -9,6 +9,9 @@
 
 import SeLe4n.Kernel.IPC.CrossCore.Cancellation
 import SeLe4n.Kernel.Lifecycle.Invariant.CancellationQueueShape
+import SeLe4n.Kernel.Lifecycle.Invariant.CancellationNotificationShape
+import SeLe4n.Kernel.Lifecycle.Invariant.CancellationReplyShape
+import SeLe4n.Kernel.Concurrency.Locks.ResolvedFootprintBounds
 import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
 import SeLe4n.Testing.StateBuilder
@@ -322,6 +325,31 @@ open SeLe4n.Testing
 #check @purgedAndRestored_preserves_ipcInvariantFull
 #check @cancelIpcBlocking_notification_arm_eq
 #check @cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull
+-- WS-RR RR7.22 (residual, remediation): the cancelled caller's donation goes
+-- back — seL4-MCS's `reply_remove` — and the fact that makes the return well
+-- defined, stated rather than assumed.
+#check @Lifecycle.Suspend.cancelledCallerDonation?
+#check @Lifecycle.Suspend.returnDonationToCancelledCaller
+#check @cancelledCallerDonation?_some
+#check @donationHolderIsReplyTarget
+#check @returnDonationToCancelledCaller_no_donation_to_victim
+#check @cancelIpcBlocking_reply_no_donation_to_victim
+#check @Lifecycle.Suspend.returnDonationToCancelledCaller_scheduler_eq
+#check @Lifecycle.Suspend.returnDonationToCancelledCaller_machine_eq
+#check @Lifecycle.Suspend.returnDonationToCancelledCaller_serviceRegistry_eq
+#check @Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
+#check @Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_ipcInvariant
+#check @Lifecycle.Suspend.returnDonationToCancelledCaller_tcb_rewrite
+#check @Lifecycle.Suspend.returnDonationToCancelledCaller_eq_self_of_getTcb?_none
+#check @returnDonatedSchedContext_ok_storeChain
+#check @returnDonatedSchedContext_tcb_rewrite
+#check @tcbBindingRewrite
+#check @cancelIpcBlockingMigrated
+#check @cancelIpcBlockingMigrated_of_no_donation
+#check @cancelIpcBlockingMigrated_objects
+#check @lockSet_cancelIpcBlocking_returned_donation_sc_write_mem
+#check @lockSet_cancelIpcBlocking_donation_holder_tcb_write_mem
+#check @lockSet_cancelIpcBlockingOnCore_size_le
 
 -- ============================================================================
 -- §2  Elaboration-time examples: headline theorems applied
@@ -333,6 +361,7 @@ variable (victim : SeLe4n.ThreadId) (tcb tcb0 : TCB) (ec : CoreId)
 variable (st s : SystemState)
 variable (blEp blN : Option SeLe4n.ObjId) (r? : Option SeLe4n.ReplyId)
 variable (sc? : Option SeLe4n.SchedContextId) (ot? : Option SeLe4n.ThreadId)
+variable (rdSc? : Option SeLe4n.SchedContextId) (dh? : Option SeLe4n.ThreadId)
 
 /-- SM6.E.5: the flagship's remote-poke conjunct applies. -/
 example (h1 : st.getTcb? victim = some tcb0)
@@ -360,15 +389,16 @@ example (h1 : st.getTcb? victim = some tcb0)
 
 /-- SM6.E.2: the single-core atomicity theorem applies (2PL bracket shape). -/
 example :
-    withLockSet (lockSet_cancelIpcBlocking victim blEp blN r?) ec
+    withLockSet (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh?) ec
         (fun st => (cancelIpcBlocking st victim tcb, ())) s
       = (unwindAll ec
-          (lockSet_cancelIpcBlocking victim blEp blN r?).lockAcquireSequence.reverse
+          (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh?).lockAcquireSequence.reverse
           (cancelIpcBlocking
-            (acquireAll ec (lockSet_cancelIpcBlocking victim blEp blN r?).lockAcquireSequence s)
+            (acquireAll ec
+              (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh?).lockAcquireSequence s)
             victim tcb),
          ()) :=
-  cancelIpcBlocking_atomic_under_lockSet victim tcb ec blEp blN r? s
+  cancelIpcBlocking_atomic_under_lockSet victim tcb ec blEp blN r? rdSc? dh? s
 
 /-- SM6.E.4: the donation atomicity companion applies (dispatcher form). -/
 example :
@@ -416,6 +446,21 @@ example (n : SeLe4n.ObjId)
     ipcInvariantFull (Lifecycle.Suspend.cancelIpcBlocking st victim tcb) :=
   cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull st victim tcb n hInv hLookup
     hBlocked hBundle hBudgets hOff
+
+/-- WS-RR RR7.22 (residual, remediation): after the corrected reply arm no thread
+holds a SchedContext donated by the cancelled caller — the invariant premise the
+old arm left dangling. -/
+example (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId)
+    (holder : SeLe4n.ThreadId) (holderTcb : TCB) (sc : SeLe4n.SchedContextId)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st victim = some tcb)
+    (hBlocked : tcb.ipcState = .blockedOnReply ep rt)
+    (hOwner : donationOwnerValid st)
+    (hHolder : donationHolderIsReplyTarget st victim)
+    (hTcb : (Lifecycle.Suspend.cancelIpcBlocking st victim tcb).objects[holder.toObjId]?
+      = some (.tcb holderTcb)) :
+    holderTcb.schedContextBinding ≠ .donated sc victim :=
+  cancelIpcBlocking_reply_no_donation_to_victim st victim tcb ep rt hInv hLookup hBlocked
+    hOwner hHolder holder holderTcb sc hTcb
 
 /-- WS-RR RR7.22 (residual): the swept thread holds no Reply object, derived from
 the bundle's own reciprocity rather than assumed. -/

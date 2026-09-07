@@ -500,6 +500,26 @@ theorem projectKernelObject_reply_caller_invariant
       = projectKernelObject ctx observer (.reply r) := by
   simp [projectKernelObject]
 
+/-- **WS-RR RR7.22 (residual, remediation)**: the projection is invariant under a
+TCB's SchedContext binding — `projectKernelObject` strips the field (AI4-A), so a
+donation hand-off is invisible to any observer, not merely to a high one. -/
+theorem projectKernelObject_tcb_schedContextBinding_invariant
+    (ctx : LabelingContext) (observer : IfObserver) (t : TCB)
+    (b : SchedContextBinding) :
+    projectKernelObject ctx observer (.tcb { t with schedContextBinding := b })
+      = projectKernelObject ctx observer (.tcb t) := by
+  simp [projectKernelObject]
+
+/-- **WS-RR RR7.22 (residual, remediation)**: the projection is invariant under a
+SchedContext's bound thread — the other half of the donation hand-off's write
+set, stripped for the same reason. -/
+theorem projectKernelObject_schedContext_boundThread_invariant
+    (ctx : LabelingContext) (observer : IfObserver) (sc : SchedContext)
+    (bt : Option SeLe4n.ThreadId) :
+    projectKernelObject ctx observer (.schedContext { sc with boundThread := bt })
+      = projectKernelObject ctx observer (.schedContext sc) := by
+  simp [projectKernelObject]
+
 /-- Project object store to observer-visible subset.
 
 WS-F3/F-22: Objects are now filtered through `projectKernelObject` to redact

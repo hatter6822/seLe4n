@@ -1,3 +1,84 @@
+## v0.34.97 — WS-RR RR7.22 (residual, remediation): the cancelled caller gets its SchedContext back
+
+The Medium-severity model gap reported at v0.34.95 is closed by implementing
+seL4's behaviour, not by weakening the invariant.
+
+**The defect.**  seL4-MCS's `cancelIPC` on a reply-blocked thread runs
+`reply_remove`, which returns the scheduling context the caller donated on its
+`Call`.  This model's `.blockedOnReply` arm cleared the reply *link* only, so the
+server kept `schedContextBinding = .donated scId caller` while the caller was
+moved to `.ready` and then `.Inactive` — a state `donationOwnerValid` forbids,
+and operationally a permanent transfer of the caller's CBS reservation to the
+server, after which the caller could never be scheduled again.  No theorem was
+unsound (nothing claimed that conjunct across suspend), which is what made it a
+false-assurance gap rather than a broken proof.
+
+**The fix.**  The arm is now
+`consumeReplyLink (restoreToReadyCancelled (returnDonationToCancelledCaller …) …) …`.
+The return runs **first**, while the caller is still `.blockedOnReply`, so every
+intermediate state satisfies the invariant — the reverse of the ordering
+`endpointReply` needs, and for the same reason: do the step whose premise the
+next one destroys.
+
+**The fact that makes the lookup complete, stated rather than assumed.**  The
+holder is found through the caller's own recorded reply target
+(`cancelledCallerDonation?`).  `ipcInvariantFull` admits `.blockedOnReply epId rt`
+for any `rt` and relates `rt` to no donation, so `donationHolderIsReplyTarget`
+states it — this workstream's sixth such fact.  The *behaviour* needs no
+hypothesis: a donation found at the reply target is always returned.  The
+hypothesis scopes the payoff, `cancelIpcBlocking_reply_no_donation_to_victim`:
+after the arm, no thread holds a SchedContext donated by the cancelled caller, so
+`donationOwnerValid`'s second clause has no witness left to fail on.
+
+**Three things the cut established beyond the fix.**
+
+* **There is no covert channel here, and the reason is structural.**  The obvious
+  worry is that returning a *high* caller's SchedContext writes a possibly-*low*
+  server's TCB, leaking the cancellation.  It does not:
+  `projectKernelObject` strips `TCB.schedContextBinding` and
+  `SchedContext.boundThread` (AI4-A), so all three of the return's stores are
+  projection-stable and `returnDonationToCancelledCaller_preserves_projection`
+  holds for **every** observer.  Proving it generalised the reply-`caller` store
+  helper into `storeObject_projectionStable_preserves_projection`, which was
+  always the general lemma.
+
+* **The declared footprint covers the new writes.**  `lockSet_cancelIpcBlocking`
+  gained the returned SchedContext and the holder's TCB; the state-resolved form
+  reaches eight members on a mid-queue victim with a consumed reply and a
+  donation, still inside `maxLockSetSize`, so the WCRT headline does not move.  A
+  footprint that did not name a write would be *false*, which is worse than a
+  wide one.
+
+* **One derivation replaced three copies.**  The donation return's field frames
+  (scheduler in `Endpoint.lean`, machine in `Donation/Primitives.lean`, service
+  registry private in `SuspendPreservation.lean`) each carried their own copy of
+  the operation's case analysis.  They are now three-line consequences of
+  `returnDonatedSchedContext_ok_storeChain`, a **complete** decomposition, with
+  `returnDonatedSchedContext_tcb_rewrite` giving every TCB field by `rfl`.
+
+**Where the migration lives.**  `cancelIpcBlockingMigrated`, at the cross-core
+layer, because that is where this tree resolves home cores for every other
+donation-carrying path — and it is what keeps `cancelIpcBlocking` an
+objects-only write.  `cancelIpcBlocking_lifecycle_eq` is now conditional on there
+being no donation to return, because `storeObject` maintains the lifecycle
+bookkeeping the arm's other three writes bypass; the docstring says so rather
+than the theorem quietly narrowing.
+
+**Still owed** (registered, owner RR8): that the migration *establishes*
+`replenishQueueAffinityConsistent_smp` on the composite — the reply chain's
+identical shape is proved, and the gap is a congruence over the teardown's two
+TCB writes; and `Reply.donatedSc`, the field seL4 uses for this link, is still
+declared and never written, so wiring it (which would retire
+`donationHolderIsReplyTarget`) is the follow-on that matches seL4's structure.
+
+AK7 `RAW_LOOKUP_TID` re-anchored (1578 -> 1581), checked as before: the five new
+occurrences are the conjuncts' and the operation's own hypothesis shapes —
+`donationHolderIsReplyTarget`'s holder premise, the store chain's SchedContext
+read, and the three statements about what the return leaves at a key.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md RR7.22
+Refs: docs/REGISTERED_DEBT.md WS-RR RR7.22 residual
+
 ## v0.34.96 — WS-RR RR7.22 residual: the cancellation purge carries the whole bundle
 
 The notification arm of `cancelIpcBlocking` now preserves all twenty conjuncts of

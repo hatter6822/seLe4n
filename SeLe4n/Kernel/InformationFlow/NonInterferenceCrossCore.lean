@@ -1186,24 +1186,6 @@ theorem cancelIpcBlocking_confinedToCores (st : SystemState) (tid : SeLe4n.Threa
   observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
     (cancelIpcBlocking_scheduler_eq st tid tcb) (cancelIpcBlocking_machine_eq st tid tcb)
 
-/-- SM8.B.2 (**SM6.E, the composed cancellation**): `cancelIpcBlockingOnCore`
-writes only the victim's **home** core — not the core running the cancellation,
-and not any core the victim's endpoint or notification neighbours are homed on.
-
-`[] ++ [home]`: the teardown contributes nothing per-core, the home-core removal
-contributes one core. Unlike the wake pipelines this needs no pushback through
-the §1a frame layer, because `cancelIpcBlockingOnCore` reads its home core from
-the pre-state itself. -/
-theorem cancelIpcBlockingOnCore_confinedToCores (victim : SeLe4n.ThreadId) (tcb : TCB)
-    (executingCore : CoreId) (st : SystemState) :
-    observableSlotsConfinedToCores st
-      (cancelIpcBlockingOnCore victim tcb executingCore st).1
-      [determineTargetCore st victim] :=
-  observableSlotsConfinedToCores_trans
-    (cancelIpcBlocking_confinedToCores st victim tcb)
-    (removeRunnableOnCore_confinedToCores (cancelIpcBlocking st victim tcb) victim
-      (determineTargetCore st victim))
-
 -- ============================================================================
 -- §5a SM5.F — the priority-inheritance chain walk
 -- ============================================================================
@@ -1292,6 +1274,40 @@ theorem migrateSchedContextReplenishment_confinedToCores (st : SystemState)
             toCore c).2, ?_, ?_, ?_, ?_⟩
   all_goals intro c _
   all_goals (unfold migrateSchedContextReplenishment; split <;> simp)
+
+
+/-- **WS-RR RR7.22 (residual, remediation)**: the migrated teardown writes no
+observable slot beyond the plain teardown's — a replenish queue is not one. -/
+theorem cancelIpcBlockingMigrated_confinedToCores (victim : SeLe4n.ThreadId) (tcb : TCB)
+    (st : SystemState) :
+    observableSlotsConfinedToCores (cancelIpcBlocking st victim tcb)
+      (cancelIpcBlockingMigrated victim tcb st) [] := by
+  unfold cancelIpcBlockingMigrated
+  split
+  · rename_i scId holder _
+    exact migrateSchedContextReplenishment_confinedToCores _ scId _ _
+  · exact observableSlotsConfinedToCores_refl _ _
+
+/-- SM8.B.2 (**SM6.E, the composed cancellation**): `cancelIpcBlockingOnCore`
+writes only the victim's **home** core — not the core running the cancellation,
+and not any core the victim's endpoint or notification neighbours are homed on.
+
+`[] ++ [] ++ [home]`: the teardown contributes nothing per-core, WS-RR RR7.22's
+replenishment migration contributes nothing either (it writes a replenish queue,
+which is not an observable slot), and the home-core removal contributes one core.
+Unlike the wake pipelines this needs no pushback through the §1a frame layer,
+because `cancelIpcBlockingOnCore` reads its home core from the pre-state itself. -/
+theorem cancelIpcBlockingOnCore_confinedToCores (victim : SeLe4n.ThreadId) (tcb : TCB)
+    (executingCore : CoreId) (st : SystemState) :
+    observableSlotsConfinedToCores st
+      (cancelIpcBlockingOnCore victim tcb executingCore st).1
+      [determineTargetCore st victim] :=
+  observableSlotsConfinedToCores_trans
+    (observableSlotsConfinedToCores_trans
+      (cancelIpcBlocking_confinedToCores st victim tcb)
+      (cancelIpcBlockingMigrated_confinedToCores victim tcb st))
+    (removeRunnableOnCore_confinedToCores (cancelIpcBlockingMigrated victim tcb st) victim
+      (determineTargetCore st victim))
 
 /-- SM8.B.2: SchedContext donation is per-core silent — it rewrites bindings in
 the object store and, at most, the replenishment queue, which SM8.A's

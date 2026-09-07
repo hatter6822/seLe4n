@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.96.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.97.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1698,6 +1698,30 @@ code may assume:
   [`docs/REGISTERED_DEBT.md`](docs/REGISTERED_DEBT.md) (plan retired to
   [`docs/dev_history/planning/IPC_INVARIANT_DETHREADING_PLAN.md`](docs/dev_history/planning/IPC_INVARIANT_DETHREADING_PLAN.md));
   RR8.3 retires this bullet.
+- **A cancelled caller gets its donated SchedContext back** (WS-RR RR7.22
+  residual remediation, v0.34.97).  `cancelIpcBlocking`'s `.blockedOnReply` arm
+  is `consumeReplyLink (restoreToReadyCancelled (returnDonationToCancelledCaller
+  st tid tcb) tid) tid tcb` — seL4-MCS's `reply_remove`.  Before it, the server
+  kept `.donated scId caller` while the caller left `.blockedOnReply`, which
+  `donationOwnerValid` forbids and which permanently transferred the caller's CBS
+  reservation.  Four things new code must respect.  (1) **The return runs before
+  the restore**, because it reads the `.blockedOnReply` state the restore clears;
+  a Tier 3 negative refuses the old order.  (2) **The holder is the caller's
+  recorded reply target** (`cancelledCallerDonation?`), and that
+  `ipcInvariantFull` does not entail — it admits `.blockedOnReply epId rt` for any
+  `rt` and relates `rt` to no donation — so `donationHolderIsReplyTarget` states
+  it; the *behaviour* needs no hypothesis, only the payoff
+  `cancelIpcBlocking_reply_no_donation_to_victim` does.  (3) **The SM5.H
+  replenishment migration is at the cross-core layer** (`cancelIpcBlockingMigrated`),
+  where this tree resolves home cores for every donation-carrying path, which is
+  what keeps `cancelIpcBlocking` an objects-only write; that it *establishes*
+  `replenishQueueAffinityConsistent_smp` is registered RR8 debt.  (4) **The return
+  is invisible to every observer, not merely a high one**: `projectKernelObject`
+  strips `schedContextBinding` and `boundThread`, so writing a possibly-low
+  server's TCB on a high caller's cancellation leaks nothing
+  (`returnDonationToCancelledCaller_preserves_projection`).  `cancelIpcBlocking_lifecycle_eq`
+  is now conditional on there being no donation, because `storeObject` maintains
+  bookkeeping the arm's other writes bypass.
 - **A bare reply's post-state does not satisfy `donationOwnerValid`.**
   `endpointReply` wakes the answered caller `.ready` while the recorded server
   still holds `.donated _ caller`; the donated SchedContext comes back only at

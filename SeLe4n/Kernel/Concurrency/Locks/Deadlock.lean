@@ -703,6 +703,28 @@ theorem size_le_5 (L : List (LockId × AccessMode))
   refine Nat.le_trans (Nat.add_le_add_right (size_le_4 L o₁ o₂ o₃ o₄) 1) ?_
   omega
 
+/-- WS-RR RR7.22 (residual, remediation): six optional extensions. -/
+theorem size_le_6 (L : List (LockId × AccessMode))
+    (o₁ o₂ o₃ o₄ o₅ o₆ : Option (LockId × AccessMode)) :
+    (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
+      (lockSetExtendOpt (lockSetExtendOpt (lockSetOfList L) o₁) o₂) o₃) o₄) o₅) o₆).size
+      ≤ L.length + 6 := by
+  refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
+  refine Nat.le_trans (Nat.add_le_add_right (size_le_5 L o₁ o₂ o₃ o₄ o₅) 1) ?_
+  omega
+
+/-- WS-RR RR7.22 (residual, remediation): seven optional extensions — the arity
+the state-resolved cancellation footprint reaches once the reply arm's donation
+return is a declared write. -/
+theorem size_le_7 (L : List (LockId × AccessMode))
+    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ : Option (LockId × AccessMode)) :
+    (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
+      (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
+        (lockSetOfList L) o₁) o₂) o₃) o₄) o₅) o₆) o₇).size ≤ L.length + 7 := by
+  refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
+  refine Nat.le_trans (Nat.add_le_add_right (size_le_6 L o₁ o₂ o₃ o₄ o₅ o₆) 1) ?_
+  omega
+
 /-- Local tactic shorthand: reduce a concrete `[…].length (+k)` to a numeral
 and discharge the `≤ maxLockSetSize` goal. -/
 local macro "size_bound" : tactic =>

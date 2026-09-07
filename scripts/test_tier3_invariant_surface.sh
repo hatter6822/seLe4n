@@ -905,6 +905,35 @@ run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_notificationArm_preserve
 # neither a "not blocked on reply" nor an "off every endpoint boundary" premise.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull(.|\n)*hNotReply" SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean'
 run_check "INVARIANT" rg -n '^theorem purgedAndRestored_victim_off_endpoint_boundaries' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
+# WS-RR RR7.22 (residual, remediation): the cancelled caller's donated
+# SchedContext goes back — seL4-MCS's `reply_remove` — with the fact that makes
+# the return well defined stated rather than assumed.
+run_check "INVARIANT" rg -n '^def cancelledCallerDonation\?' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^def returnDonationToCancelledCaller' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^def donationHolderIsReplyTarget' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_reply_no_donation_to_victim' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+# Relation, not presence: the reply arm must call the return, and call it
+# **before** the restore — the return reads the caller's `.blockedOnReply` state,
+# which the restore clears.
+run_check "INVARIANT" bash -lc 'rg -U -n "consumeReplyLink \(restoreToReadyCancelled \(returnDonationToCancelledCaller st tid tcb\) tid\)" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+# NEGATIVE: the pre-remediation arm, which cleared the reply link and left the
+# donation with the server, must not come back.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "consumeReplyLink \(restoreToReadyCancelled st tid\) tid tcb" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+# The declared footprint covers the return's two writes, and the migration is at
+# the cross-core layer where the home cores are resolved.
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlocking_returned_donation_sc_write_mem' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlocking_donation_holder_tcb_write_mem' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^def cancelIpcBlockingMigrated' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+# One derivation, not three copies: the donation return's field frames read the
+# store chain rather than re-running its case analysis.
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_ok_storeChain' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_tcb_rewrite' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_projectionStable_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean
+# The return is invisible to *every* observer, not only a high one — the two
+# fields it writes are projection-stripped.
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_tcb_schedContextBinding_invariant' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_schedContext_boundThread_invariant' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^theorem returnDonationToCancelledCaller_preserves_projection' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
 # The neighbour clauses are the half an under-stated hypothesis would drop, so
 # the label predicate must quantify over the removed thread's own queue links
 # rather than over the endpoint and the thread alone.
