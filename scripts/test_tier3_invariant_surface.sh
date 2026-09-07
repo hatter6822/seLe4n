@@ -916,6 +916,30 @@ run_check "INVARIANT" bash -lc 'rg -U -n "nextTid\.toObjId\s*\n?\s*\(\.tcb \{ ne
 # must not come back.  Mutating by *removing* the whole patch would be caught by
 # the positive above; this keeps the patch and breaks the relation.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "\.tcb \{ nextTcb with queuePrev := tcb\.queuePrev \}" SeLe4n/Kernel/IPC/DualQueue/Core.lean'
+# WS-OD OD1.2: the timeout's object-only prefix.  `abortPendingIpcOnEndpoint`
+# is the splice-and-clear half of `timeoutThread` with the two scheduler
+# writes (the wake and the priority-inheritance revert) left to the caller,
+# so the cancellation reclaim can reuse it without touching the run queues —
+# `cancelIpcBlocking_scheduler_eq` has four consumers and must stay true.
+run_check "INVARIANT" rg -n '^def abortPendingIpcOnEndpoint' SeLe4n/Kernel/IPC/Operations/Timeout.lean
+run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_preserves_objects_invExt' SeLe4n/Kernel/IPC/Operations/Timeout.lean
+run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_scheduler_eq' SeLe4n/Kernel/IPC/Operations/Timeout.lean
+# Relation, not presence: `timeoutThread` must be the prefix *composed with*
+# the two scheduler writes, not an independent copy of the splice — a second
+# copy is the one-question-two-answers shape, and the reclaim would then
+# inherit whichever of the two nobody corrected.
+run_check "INVARIANT" bash -lc 'rg -U -n "match abortPendingIpcOnEndpoint endpointId isReceiveQ tid st with" SeLe4n/Kernel/IPC/Operations/Timeout.lean'
+# NEGATIVE: the pre-OD1.2 body, which ran the removal inline.  Mutating by
+# deleting the prefix would be caught by the positive above; this keeps the
+# prefix and re-adds the inline removal beside it.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "def timeoutThread(.|\n)*match endpointQueueRemove" SeLe4n/Kernel/IPC/Operations/Timeout.lean'
+# The blocking server is read from the **pre**-state: the prefix clears
+# `ipcState` to `.ready`, so a post-state read answers `none` at every call
+# and the priority-inheritance revert would never run.  Provenance is a
+# relation — the token `timeoutBlockingServerOf?` is present either way.
+run_check "INVARIANT" rg -n '^def timeoutBlockingServerOf\?' SeLe4n/Kernel/IPC/Operations/Timeout.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "let maybeBlockingServer := timeoutBlockingServerOf\? st tid" SeLe4n/Kernel/IPC/Operations/Timeout.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "let maybeBlockingServer := timeoutBlockingServerOf\? st2 tid" SeLe4n/Kernel/IPC/Operations/Timeout.lean'
 # WS-RR RR7.22 (residual, remediation): the cancelled caller's donated
 # SchedContext goes back — seL4-MCS's `reply_remove` — with the fact that makes
 # the return well defined stated rather than assumed.

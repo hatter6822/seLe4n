@@ -760,7 +760,7 @@
   "scripts/test_tier3_invariant_surface.sh": 2
  },
  "storeObject_scheduler_eq_z7": {
-  "SeLe4n/Kernel/IPC/Operations/Endpoint.lean": 4
+  "SeLe4n/Kernel/IPC/Operations/Endpoint.lean": 1
  },
  "test_AK8_E_bound_missing_sc_is_objectNotFound": {
   "tests/Ak8CoverageSuite.lean": 2

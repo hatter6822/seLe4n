@@ -825,27 +825,24 @@ theorem timeoutThread_preserves_objects_invExt (epId : SeLe4n.ObjId) (isRecvQ : 
     (tid : SeLe4n.ThreadId) (execCore : CoreId) (st : SystemState)
     (r : SystemState × Option (CoreId × SgiKind)) (hInv : st.objects.invExt)
     (hStep : timeoutThread epId isRecvQ tid execCore st = .ok r) : r.1.objects.invExt := by
+  -- WS-OD OD1.2: the two object writes are the abort's, so this composes
+  -- `abortPendingIpcOnEndpoint_preserves_objects_invExt` rather than re-running
+  -- its case analysis; what is left here is the wake and the optional PIP
+  -- revert, both of which preserve `invExt` on the state component.
   unfold timeoutThread at hStep
   split at hStep
   · simp at hStep
-  · rename_i st1 hEQR
-    have hInv1 := endpointQueueRemove_preserves_objects_invExt _ _ _ _ _ hInv hEQR
-    split at hStep
-    · simp at hStep
-    · rename_i tcb hLook
-      simp only [storeObject] at hStep
-      -- the stored state's invExt: one TCB insert on the queue-removed state
-      split at hStep <;>
-        · simp only [Except.ok.injEq] at hStep
-          subst hStep
-          -- round 8: the wake is `wakeThread` (invExt-preserving) with an
-          -- optional PIP revert (invExt-preserving) on its state component
-          first
-            | (apply revertPriorityInheritance_preserves_objects_invExt
-               exact wakeThread_preserves_objects_invExt _ _ execCore
-                 (RHTable_insert_preserves_invExt st1.objects _ _ hInv1))
-            | (exact wakeThread_preserves_objects_invExt _ _ execCore
-                 (RHTable_insert_preserves_invExt st1.objects _ _ hInv1))
+  · rename_i st2 hAbort
+    have hInv2 := abortPendingIpcOnEndpoint_preserves_objects_invExt _ _ _ _ _ hInv hAbort
+    -- zeta-reduce the two `let`s so the blocking-server match is visible
+    simp only [] at hStep
+    split at hStep <;>
+      · simp only [Except.ok.injEq] at hStep
+        subst hStep
+        first
+          | (apply revertPriorityInheritance_preserves_objects_invExt
+             exact wakeThread_preserves_objects_invExt _ _ execCore hInv2)
+          | (exact wakeThread_preserves_objects_invExt _ _ execCore hInv2)
 
 /-- WS-SM SM5.D.5 (preservation): `timeoutBlockedThreads` preserves the
 object-store invariant — each fold step either keeps the state or applies

@@ -716,6 +716,27 @@ def endpointQueueRemove
   | some _ => .error .invalidCapability
   | none => .error .objectNotFound
 
+/-- Z6-K: endpointQueueRemove does not modify the scheduler. -/
+theorem endpointQueueRemove_scheduler_eq
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (st st' : SystemState)
+    (hStep : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') :
+    st'.scheduler = st.scheduler := by
+  unfold endpointQueueRemove at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+      simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hTcb : lookupTcb st tid with
+      | none => simp [hTcb] at hStep
+      | some tcb =>
+        simp only [hTcb] at hStep
+        simp only [Except.ok.injEq] at hStep
+        rw [← hStep]
+
 /-- Z6-D: `endpointQueueRemove` preserves `objects.invExt`.
 
 The operation performs up to 4 `RHTable.insert` calls (predecessor patch,

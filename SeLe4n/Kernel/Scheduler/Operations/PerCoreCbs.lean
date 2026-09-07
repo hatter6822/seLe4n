@@ -1467,24 +1467,24 @@ theorem timeoutThread_replenishQueueOnCore (epId : SeLe4n.ObjId) (isReceiveQ : B
     (st : SystemState) (r : SystemState × Option (CoreId × SgiKind)) (c : CoreId)
     (h : timeoutThread epId isReceiveQ tid execCore st = .ok r) :
     r.1.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  -- WS-OD OD1.2: the queue removal and the TCB store are the abort's, and the
+  -- abort writes no scheduler state at all, so this composes
+  -- `abortPendingIpcOnEndpoint_scheduler_eq` rather than re-deriving it.
   unfold timeoutThread at h
   split at h
   · simp at h
-  · rename_i st1 hER
-    have hSched1 := endpointQueueRemove_scheduler_eq epId isReceiveQ tid st st1 hER
-    split at h
-    · simp at h
-    · rename_i tcb hLk
-      simp only [storeObject] at h
-      split at h <;>
-        · simp only [Except.ok.injEq] at h
-          subst h
-          first
-            | rw [revertPriorityInheritance_replenishQueueOnCore]
-            | skip
-          rw [wakeThread_replenishQueueOnCore_local]
-          show st1.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c
-          rw [hSched1]
+  · rename_i st2 hAbort
+    have hSched2 := abortPendingIpcOnEndpoint_scheduler_eq epId isReceiveQ tid st st2 hAbort
+    simp only [] at h
+    split at h <;>
+      · simp only [Except.ok.injEq] at h
+        subst h
+        first
+          | rw [revertPriorityInheritance_replenishQueueOnCore]
+          | skip
+        rw [wakeThread_replenishQueueOnCore_local]
+        show st2.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c
+        rw [hSched2]
 
 /-- WS-SM SM5.H (frame): timing out **all** of a SchedContext's IPC-blocked threads
 never touches any replenish queue (each step is a `timeoutThread`). -/

@@ -1,3 +1,55 @@
+## v0.34.101 — WS-OD OD1.2: the timeout's object-only prefix, factored out
+
+`timeoutThread` does two different kinds of thing in one body: it splices a
+thread out of an endpoint queue and clears its IPC fields (**objects only**),
+and then it wakes the thread and reverts the blocked server's priority
+inheritance (**scheduler**).  OD5 needs the first half and must not have the
+second: the cancellation reclaim will time the donation holder's outstanding
+send/call out to keep `passiveServerIdle` true, and `cancelIpcBlocking` is
+covered by `cancelIpcBlocking_scheduler_eq` — a theorem with four consumers
+that says the cancellation writes no scheduler state at all.
+
+So the splice-and-clear half is now `abortPendingIpcOnEndpoint`, and
+`timeoutThread` is that prefix composed with its two scheduler writes.  This
+cut is a **refactor**: the trace fixture is byte-identical, and
+`timeoutThread`'s own equation is the same function it was.
+
+Three things new code must respect.
+
+**(1) The prefix writes objects only, and that is stated, not assumed.**
+`abortPendingIpcOnEndpoint_scheduler_eq` and
+`abortPendingIpcOnEndpoint_preserves_objects_invExt` are the two facts every
+OD5 consumer will cash, and `abortPendingIpcOnEndpoint_machine` is the third
+(`PerCoreTickCbsPreservation.lean`).  The four scheduler-invariant carriers
+over `timeoutThread` — `allThreadsTimeSlicePositive`, `runQueueSafetyOnCore`,
+`schedulerInvariantStructuralRegNodup_smp`, `replenishQueueOnCore` — are now
+*compositions* of a prefix-level theorem with the wake's, rather than four
+copies of the same splice analysis.  A future change to the splice therefore
+lands in one proof, not five.
+
+**(2) The blocking server is read from the pre-state.**  The prefix clears
+`ipcState` to `.ready`, so `timeoutBlockingServerOf? st2 tid` would answer
+`none` at every call site and the priority-inheritance revert would silently
+never run — the token would still be there, and the boost would leak.  The
+reading is `timeoutBlockingServerOf? st tid`, and it agrees with a
+post-removal reading because `endpointQueueRemove` writes queue links only.
+Provenance is a relation, so a Tier-3 negative refuses the `st2` spelling
+while the positive keeps matching: the mutation that finds this class keeps
+the call and changes its argument.
+
+**(3) `endpointQueueRemove_scheduler_eq` moved to the module that defines
+`endpointQueueRemove`.**  It had been in `DualQueue/Transport.lean`, which
+`Timeout.lean` does not import, and the alternative was a second proof of the
+same fact.  One question, one answer: `DualQueue/Core.lean` is where the
+operation lives, so it is where the theorem lives, and Transport.lean carries
+a pointer rather than a copy.
+
+The trace harness gains nothing this cut; `[SCO-020a]` (v0.34.100) already
+witnesses the successor's inherited back-pointer, and the refactor leaves its
+output unchanged.
+
+Refs: docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md §5 (OD1.2)
+
 ## v0.34.100 — WS-OD OD1.1: a timed-out thread no longer strands its queue successor
 
 The tree has **two** endpoint-queue removals, and they disagreed about one field.

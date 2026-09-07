@@ -36,6 +36,134 @@ open SeLe4n.Model
 -- implements it.
 -- ============================================================================
 
+/-- WS-OD OD1.2: the server whose priority-inheritance boost must be recomputed
+once `tid` leaves the blocking graph — `some` exactly when `tid` was waiting on a
+reply from it.  Named rather than inlined because the timeout reads it and the
+`passiveServerIdle` abort does not, and a second spelling is how the two drift.
+
+Reading it from the **pre**-state is sound: `endpointQueueRemove` writes queue
+links only, so the removed thread's `ipcState` is the same before and after. -/
+def timeoutBlockingServer? (tcb : TCB) : Option SeLe4n.ThreadId :=
+  match tcb.ipcState with
+  | .blockedOnReply _ (some serverId) => some serverId
+  | _ => none
+
+/-- WS-OD OD1.2: the same question asked of a state — `none` when the thread is
+absent, which is the conservative answer (no revert).  Named so `timeoutThread`'s
+body has **one** match rather than a nested pair, which is what keeps its
+preservation proofs a single `split`. -/
+def timeoutBlockingServerOf? (st : SystemState) (tid : SeLe4n.ThreadId) :
+    Option SeLe4n.ThreadId :=
+  match lookupTcb st tid with
+  | some tcb => timeoutBlockingServer? tcb
+  | none => none
+
+/-- WS-OD OD1.2: the timeout's **object-only prefix** — take the thread out of
+its endpoint queue and rewrite its TCB to the timed-out shape, and stop there.
+
+`timeoutThread` is this followed by the wake and the priority-inheritance
+revert; both of those write the **scheduler**, and that is exactly what the
+cancellation reclaim cannot do.  `returnDonationToCancelledCaller` states in its
+own docstring that it writes `objects` and nothing else, which is what makes
+`cancelIpcBlocking_scheduler_eq` true — and four cross-core results consume that
+theorem.  So the reclaim calls this prefix, not `timeoutThread`.
+
+The thread it leaves behind is `.ready`, off every queue and (on the reclaim's
+path) `.unbound`: a legitimate passive-server shape, and the correct one, since
+an unbound thread is unschedulable anyway.  Semantically this *is* a timeout in
+MCS terms — the budget the operation was issued on has been revoked — which is
+why it stages `Architecture.timeoutFrame` rather than minting a new error. -/
+def abortPendingIpcOnEndpoint
+    (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId)
+    (st : SystemState) : Except KernelError SystemState :=
+  -- Step 1: Remove thread from endpoint queue
+  match endpointQueueRemove endpointId isReceiveQ tid st with
+  | .error e => .error e
+  | .ok st1 =>
+    -- Step 2: Look up the thread (now with cleared queue links)
+    match lookupTcb st1 tid with
+    | none => .error .objectNotFound
+    | some tcb =>
+      -- Step 3: Reset IPC state, clear pending message and timeout budget,
+      -- set explicit timedOut flag, update thread state.
+      -- AG8-A: Uses timedOut := true instead of sentinel in register x0.
+      -- WS-SM SM6.D (PR #822 review): a server-first receive that timed out also
+      -- relinquishes its stashed reply (`pendingReceiveReply`) — the stash is only
+      -- well-formed while the server is `.blockedOnReceive`, so leaving it set on the
+      -- now-`.ready` thread would violate `pendingReceiveReplyWellFormed`.  (No-op for
+      -- non-`blockedOnReceive` timed-out threads, which carry no stash.)
+      -- WS-RR RR7.14: and stage the **timeout error frame** into the saved
+      -- register context.  Without it the thread resumes at the SM10.1 context
+      -- restore reading whatever its own argument spill left in `x0`-`x5` — its
+      -- own request registers, decoded as a return value.  Folded into this
+      -- record update rather than applied as a second state write, so the
+      -- transition still commits exactly one object
+      -- (`Architecture.stageTimeoutFrame_eq_withReturnFrame` ties the two
+      -- spellings).  `timedOut := true` stays: it is the *kernel-side* fact the
+      -- scheduler and the invariants read; the frame is the *userspace-side*
+      -- answer, and neither substitutes for the other.
+      let tcb' : TCB := ({ tcb with
+        ipcState := .ready,
+        pendingMessage := none,
+        timeoutBudget := none,
+        threadState := .Ready,
+        timedOut := true,
+        pendingReceiveReply := none } : TCB).withReturnFrame
+          Architecture.timeoutFrame
+      match storeObject tid.toObjId (.tcb tcb') st1 with
+      | .error e => .error e
+      | .ok ((), st2) => .ok st2
+
+/-- WS-OD OD1.2: the abort preserves the object-store invariant — its two writes
+are `endpointQueueRemove` (which preserves it) and one TCB `storeObject` insert.
+Stated here, beside the definition, so `timeoutThread`'s own preservation and the
+cancellation reclaim's both compose it rather than re-running the case analysis. -/
+theorem abortPendingIpcOnEndpoint_preserves_objects_invExt
+    (epId : SeLe4n.ObjId) (isRecvQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (hInv : st.objects.invExt)
+    (hStep : abortPendingIpcOnEndpoint epId isRecvQ tid st = .ok st') :
+    st'.objects.invExt := by
+  unfold abortPendingIpcOnEndpoint at hStep
+  split at hStep
+  · simp at hStep
+  · rename_i st1 hEQR
+    have hInv1 := endpointQueueRemove_preserves_objects_invExt _ _ _ _ _ hInv hEQR
+    split at hStep
+    · simp at hStep
+    · rename_i tcb hLook
+      simp only [storeObject] at hStep
+      split at hStep <;>
+        · simp only [Except.ok.injEq] at hStep
+          subst hStep
+          exact RHTable_insert_preserves_invExt st1.objects _ _ hInv1
+
+/-- WS-OD OD1.2: **the abort writes no scheduler state.**  This is the property
+the cancellation reclaim is built on — `returnDonationToCancelledCaller` writes
+`objects` and nothing else, which is what makes `cancelIpcBlocking_scheduler_eq`
+true, and four cross-core results consume that theorem.  `timeoutThread` is the
+abort *plus* a wake and a PIP revert, and both of those do write the scheduler;
+that is exactly why the reclaim calls this prefix rather than the timeout. -/
+theorem abortPendingIpcOnEndpoint_scheduler_eq
+    (epId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState)
+    (h : abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st') :
+    st'.scheduler = st.scheduler := by
+  unfold abortPendingIpcOnEndpoint at h
+  split at h
+  · simp at h
+  · rename_i st1 hER
+    have hSched1 := endpointQueueRemove_scheduler_eq epId isReceiveQ tid st st1 hER
+    split at h
+    · simp at h
+    · rename_i tcb hLk
+      simp only [storeObject] at h
+      split at h <;>
+        · simp only [Except.ok.injEq] at h
+          subst h
+          exact hSched1
+
 /-- Z6-C1/C2/C3: Unblock a thread whose IPC operation has timed out due to
 SchedContext budget expiry.
 
@@ -103,62 +231,33 @@ def timeoutThread
     (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId)
     (st : SystemState) : Except KernelError (SystemState × Option (Concurrency.CoreId × Concurrency.SgiKind)) :=
-  -- Step 1: Remove thread from endpoint queue
-  match endpointQueueRemove endpointId isReceiveQ tid st with
+  -- WS-OD OD1.2: the object-only prefix, then the two scheduler writes.  The
+  -- prefix is shared with the cancellation reclaim, which must not perform
+  -- those two — see `abortPendingIpcOnEndpoint`.
+  match abortPendingIpcOnEndpoint endpointId isReceiveQ tid st with
   | .error e => .error e
-  | .ok st1 =>
-    -- Step 2: Look up the thread (now with cleared queue links from endpointQueueRemove)
-    match lookupTcb st1 tid with
-    | none => .error .objectNotFound
-    | some tcb =>
-      -- D4-N: Capture blocking server before clearing ipcState — if the thread
-      -- was in blockedOnReply, the server's pipBoost must be recomputed after
-      -- this client is removed from the blocking graph.
-      let maybeBlockingServer := match tcb.ipcState with
-        | .blockedOnReply _ (some serverId) => some serverId
-        | _ => none
-      -- Step 3: Reset IPC state, clear pending message and timeout budget,
-      -- set explicit timedOut flag, update thread state.
-      -- AG8-A: Uses timedOut := true instead of sentinel in register x0.
-      -- WS-SM SM6.D (PR #822 review): a server-first receive that timed out also
-      -- relinquishes its stashed reply (`pendingReceiveReply`) — the stash is only
-      -- well-formed while the server is `.blockedOnReceive`, so leaving it set on the
-      -- now-`.ready` thread would violate `pendingReceiveReplyWellFormed`.  (No-op for
-      -- non-`blockedOnReceive` timed-out threads, which carry no stash.)
-      -- WS-RR RR7.14: and stage the **timeout error frame** into the saved
-      -- register context.  Without it the thread resumes at the SM10.1 context
-      -- restore reading whatever its own argument spill left in `x0`-`x5` — its
-      -- own request registers, decoded as a return value.  Folded into this
-      -- record update rather than applied as a second state write, so the
-      -- transition still commits exactly one object
-      -- (`Architecture.stageTimeoutFrame_eq_withReturnFrame` ties the two
-      -- spellings).  `timedOut := true` stays: it is the *kernel-side* fact the
-      -- scheduler and the invariants read; the frame is the *userspace-side*
-      -- answer, and neither substitutes for the other.
-      let tcb' : TCB := ({ tcb with
-        ipcState := .ready,
-        pendingMessage := none,
-        timeoutBudget := none,
-        threadState := .Ready,
-        timedOut := true,
-        pendingReceiveReply := none } : TCB).withReturnFrame
-          Architecture.timeoutFrame
-      match storeObject tid.toObjId (.tcb tcb') st1 with
-      | .error e => .error e
-      | .ok ((), st2) =>
-        -- Step 4: Re-enqueue in RunQueue at current priority
-        -- PR #880 round 8: wake on the thread's HOME core (affinity target),
-        -- not the boot queue — `wakeThread` places via `determineTargetCore`
-        -- and returns the `.reschedule` SGI when the home core is remote.
-        let woken := wakeThread st2 tid executingCore
-        -- D4-N: Revert PIP for the server if the timed-out thread was a waiter.
-        -- Now that the client's ipcState is cleared, waitersOf won't include it,
-        -- so revertPriorityInheritance correctly recomputes the server's pipBoost
-        -- from remaining waiters only.
-        match maybeBlockingServer with
-        | some serverId =>
-          .ok (PriorityInheritance.revertPriorityInheritance woken.1 serverId, woken.2)
-        | none => .ok woken
+  | .ok st2 =>
+    -- D4-N: Capture the blocking server before the prefix clears `ipcState` —
+    -- if the thread was `.blockedOnReply`, the server's pipBoost must be
+    -- recomputed once this client leaves the blocking graph.  Read from the
+    -- **pre**-state, which agrees with the post-removal reading because
+    -- `endpointQueueRemove` writes queue links only.  The `none` arm is
+    -- unreachable (the prefix succeeded, so the TCB was there) and is the
+    -- conservative answer: no revert.
+    let maybeBlockingServer := timeoutBlockingServerOf? st tid
+    -- Step 4: Re-enqueue in RunQueue at current priority
+    -- PR #880 round 8: wake on the thread's HOME core (affinity target),
+    -- not the boot queue — `wakeThread` places via `determineTargetCore`
+    -- and returns the `.reschedule` SGI when the home core is remote.
+    let woken := wakeThread st2 tid executingCore
+    -- D4-N: Revert PIP for the server if the timed-out thread was a waiter.
+    -- Now that the client's ipcState is cleared, waitersOf won't include it,
+    -- so revertPriorityInheritance correctly recomputes the server's pipBoost
+    -- from remaining waiters only.
+    match maybeBlockingServer with
+    | some serverId =>
+      .ok (PriorityInheritance.revertPriorityInheritance woken.1 serverId, woken.2)
+    | none => .ok woken
 
 /-- AK1-H (I-M06): Composition — `timeoutThread` succeeds whenever the
     caller has witnessed that (i) an endpoint exists at `endpointId`, and
@@ -192,7 +291,7 @@ theorem timeoutThread_succeeds_under_preconditions
   -- Destructure the first step via the AK1-H endpointQueueRemove composition.
   obtain ⟨st1, hRemove⟩ :=
     endpointQueueRemove_succeeds_under_forwardBackward endpointId isReceiveQ tid st ep tcb hEp hLk
-  unfold timeoutThread
+  unfold timeoutThread abortPendingIpcOnEndpoint
   rw [hRemove]
   -- Discharge lookupTcb st1 via the `hLk1` hypothesis supplied by the caller.
   -- Under `crossSubsystemInvariant`, the caller can produce this witness
@@ -206,16 +305,13 @@ theorem timeoutThread_succeeds_under_preconditions
   -- Destructure the storeObject step (unconditional .ok).
   cases hStore : storeObject tid.toObjId (.tcb _) st1 with
   | ok pair =>
-    cases hBS : tcb1.ipcState with
-    | blockedOnReply epId rt =>
-      cases rt with
-      | some serverId => exact ⟨_, rfl⟩
-      | none => exact ⟨_, rfl⟩
-    | ready => exact ⟨_, rfl⟩
-    | blockedOnSend _ => exact ⟨_, rfl⟩
-    | blockedOnReceive _ => exact ⟨_, rfl⟩
-    | blockedOnCall _ => exact ⟨_, rfl⟩
-    | blockedOnNotification _ => exact ⟨_, rfl⟩
+    -- WS-OD OD1.2: the blocking-server capture reads the **pre**-state now, so
+    -- the split is on `tcb`'s state rather than the post-removal `tcb1`'s.  The
+    -- two agree — `endpointQueueRemove` writes queue links only — but the proof
+    -- follows the definition rather than the fact.
+    cases hBS : timeoutBlockingServerOf? st tid with
+    | none => exact ⟨_, rfl⟩
+    | some serverId => exact ⟨_, rfl⟩
   | error e =>
     -- storeObject is unconditional .ok (Model/State.lean).
     exfalso; unfold storeObject at hStore; cases hStore

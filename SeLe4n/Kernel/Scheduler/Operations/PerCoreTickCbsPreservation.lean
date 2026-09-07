@@ -291,16 +291,14 @@ theorem endpointQueueRemove_machine
         simp only [Except.ok.injEq] at hStep
         rw [← hStep]
 
-/-- WS-SM SM5.I: `timeoutThread` leaves the machine unchanged — every step
-(`endpointQueueRemove`, `storeObject`, `ensureRunnable`, optional
-`revertPriorityInheritance`) writes only the object store / run queues.  Mirrors
-`timeoutThread_replenishQueueOnCore`. -/
-theorem timeoutThread_machine (epId : SeLe4n.ObjId) (isReceiveQ : Bool)
-    (tid : SeLe4n.ThreadId) (execCore : CoreId) (st : SystemState)
-    (r : SystemState × Option (CoreId × SgiKind))
-    (h : timeoutThread epId isReceiveQ tid execCore st = .ok r) :
-    r.1.machine = st.machine := by
-  unfold timeoutThread at h
+/-- WS-OD OD1.2: the abort leaves the machine unchanged — its two writes are the
+queue removal and one TCB store, neither of which touches `machine`.  Stated
+beside `endpointQueueRemove_machine`, which it composes. -/
+theorem abortPendingIpcOnEndpoint_machine (epId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (st st' : SystemState)
+    (h : abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st') :
+    st'.machine = st.machine := by
+  unfold abortPendingIpcOnEndpoint at h
   split at h
   · simp at h
   · rename_i st1 hER
@@ -313,12 +311,35 @@ theorem timeoutThread_machine (epId : SeLe4n.ObjId) (isReceiveQ : Bool)
       split at h <;>
         · simp only [Except.ok.injEq] at h
           subst h
-          first
-            | rw [PriorityInheritance.revert_preserves_machine]
-            | skip
-          rw [wakeThread_state_eq_enqueue, enqueueRunnableOnCore_machine_eq]
-          show st1.machine = st.machine
-          rw [hMach1]
+          exact hMach1
+
+/-- WS-SM SM5.I: `timeoutThread` leaves the machine unchanged — every step
+(`endpointQueueRemove`, `storeObject`, `ensureRunnable`, optional
+`revertPriorityInheritance`) writes only the object store / run queues.  Mirrors
+`timeoutThread_replenishQueueOnCore`. -/
+theorem timeoutThread_machine (epId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (execCore : CoreId) (st : SystemState)
+    (r : SystemState × Option (CoreId × SgiKind))
+    (h : timeoutThread epId isReceiveQ tid execCore st = .ok r) :
+    r.1.machine = st.machine := by
+  -- WS-OD OD1.2: the removal and the TCB store are the abort's; compose its
+  -- own machine frame rather than re-deriving the case analysis.
+  unfold timeoutThread at h
+  split at h
+  · simp at h
+  · rename_i st2 hAbort
+    have hMach2 : st2.machine = st.machine :=
+      abortPendingIpcOnEndpoint_machine epId isReceiveQ tid st st2 hAbort
+    simp only [] at h
+    split at h <;>
+      · simp only [Except.ok.injEq] at h
+        subst h
+        first
+          | rw [PriorityInheritance.revert_preserves_machine]
+          | skip
+        rw [wakeThread_state_eq_enqueue, enqueueRunnableOnCore_machine_eq]
+        show st2.machine = st.machine
+        rw [hMach2]
 
 /-- WS-SM SM5.I: timing out **all** of a SchedContext's IPC-blocked threads leaves the
 machine unchanged (each step is a `timeoutThread`).  Mirrors
