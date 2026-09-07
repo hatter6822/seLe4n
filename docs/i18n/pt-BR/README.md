@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Segurança" /></a>
-  <img src="https://img.shields.io/badge/version-0.34.106-blue" alt="Versão" />
+  <img src="https://img.shields.io/badge/version-0.34.107-blue" alt="Versão" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Licença" /></a>
 </p>
@@ -95,7 +95,7 @@ provas do Lean 4:
 
 | Atributo | Valor |
 |----------|-------|
-| **Versão** | `0.34.106` |
+| **Versão** | `0.34.107` |
 | **Toolchain Lean** | `v4.28.0` |
 | **LoC Lean de produção** | 352.080 em 327 arquivos |
 | **LoC Lean de testes** | 71.347 em 70 suítes de testes |

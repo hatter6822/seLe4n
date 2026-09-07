@@ -9296,9 +9296,12 @@ open SeLe4n.Kernel.Concurrency
 #check @switchToThreadHw_rejects_unencodable
 -- The HAL context-switch seam has production callers: the three
 -- state-committing per-core entries and the two fault entries record their
--- committed `currentOnCore` through these verbs.  (Workstream cite in the
+-- committed currentOnCore through these verbs.  (Workstream cite in the
 -- shell comment above -- this text is a heredoc body, which the
--- identifier-naming gate reads as script content rather than as prose.)
+-- identifier-naming gate reads as script content rather than as prose.
+-- It carries no backticks either: the body sits inside a single-quoted
+-- bash -lc argument, where shellcheck reads a backtick pair as a command
+-- substitution the author meant to expand and reports SC2016.)
 #check @noCurrentThreadHw
 #check @clearCurrentThreadHw
 #check @recordCurrentThreadHw

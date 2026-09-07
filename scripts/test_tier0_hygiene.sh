@@ -116,23 +116,54 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_codeql_workflow_policy.py"
 # it exists to catch would otherwise go silent rather than loud.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_codeql_workflow_policy.py" --self-test
 
-if command -v shellcheck >/dev/null 2>&1; then
-  # AN11-F (LOW): comprehensive shell lint — covers every `.sh` under the
-  # repo (currently only `scripts/`, but enforced at find-time so any
-  # future shell script outside `scripts/` is caught automatically).
-  # `--exclude=SC1090,SC1091` covers dynamic source paths that shellcheck
-  # cannot statically resolve (e.g. user-supplied env files).
+# AN11-F (LOW): comprehensive shell lint — covers every `.sh` under the repo
+# (currently only `scripts/`, but enforced at find-time so any future shell
+# script outside `scripts/` is caught automatically).  `--exclude=SC1090,SC1091`
+# covers dynamic source paths that shellcheck cannot statically resolve (e.g.
+# user-supplied env files).
+#
+# **WS-OD OD1.6: unconditional, for the reason the CodeQL gate above already
+# states** — a gate that skips itself when a tool is absent is a gate that fails
+# open.  This one proved it.  The guard that used to stand here turned the lint
+# into a silent no-op wherever shellcheck was missing, which is every
+# environment set up with `setup_lean_env.sh --skip-test-deps`; an SC2016
+# introduced at v0.34.58 then survived every local full-suite run of the
+# following forty-odd cuts and was caught only by the first CI push, because CI
+# installs shellcheck.  A tier that prints "All checks passed" over a lint that
+# never executed is the exact failure this file's other gates are written to
+# avoid.
+#
+# So an environment without shellcheck now **fails** here rather than passing
+# vacuously, and the message names the fix: run the full `setup_lean_env.sh`,
+# which installs shellcheck and ripgrep, rather than `--skip-test-deps`.  This
+# is deliberately not the `record_skip` treatment: NOT RUN would make the
+# omission visible, but it would still let a local run diverge from CI, and
+# divergence is what hid the defect.  Note the contrast with the `rg` guards
+# earlier in this file — those have a real `grep` fallback that performs the
+# same check, which is the other honest answer to a missing tool.
+if ! command -v shellcheck >/dev/null 2>&1; then
+  record_failure "HYGIENE" \
+    "shellcheck is not installed, so the shell lint over scripts/*.sh cannot run; install it with ./scripts/setup_lean_env.sh (the full setup) rather than --skip-test-deps"
+  if [[ "${CONTINUE_MODE}" -eq 0 ]]; then
+    finalize_report
+  fi
+else
   shell_files_args=()
   while IFS= read -r f; do
     shell_files_args+=("$f")
   done < <(find scripts -type f -name "*.sh" | sort)
   if [[ "${#shell_files_args[@]}" -eq 0 ]]; then
-    log_section "HYGIENE" "no .sh files found under scripts/ — skipping shellcheck"
+    # Also a failure rather than a skip: `scripts/` always holds shell scripts,
+    # so an empty list means the find pattern stopped matching, not that the
+    # tree is clean.
+    record_failure "HYGIENE" \
+      "no .sh files found under scripts/ — the shell lint has no subject, which means its find pattern is wrong rather than that the tree is clean"
+    if [[ "${CONTINUE_MODE}" -eq 0 ]]; then
+      finalize_report
+    fi
   else
     run_check "HYGIENE" shellcheck --exclude=SC1090,SC1091 "${shell_files_args[@]}"
   fi
-else
-  log_section "HYGIENE" "shellcheck unavailable; optional shell lint not executed in this environment."
 fi
 
 # Website link protection: verify that all paths referenced by sele4n.org

@@ -1,3 +1,61 @@
+## v0.34.107 — the shell lint stops being optional, and the SC2016 it was hiding
+
+PR #892's first CI run failed two jobs — `Tiered Tests / Fast (Tier 0 + Tier 1)`
+and `Platform Signal / ARM64 Fast Gate` — on one finding:
+
+```
+In scripts/test_tier3_invariant_surface.sh line 9227:
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+                               ^-- SC2016 (info): Expressions don't expand in single quotes
+```
+
+The offending text is 72 lines further down, inside that single-quoted argument:
+a Lean comment written as ``committed `currentOnCore` through these verbs``.
+Shellcheck reads the backtick pair as a command substitution the author meant to
+expand. The backticks are markdown emphasis in a heredoc body and carry no
+meaning to any gate, so they are gone.
+
+### The part worth more than the fix
+
+That finding entered the tree at `v0.34.58` and survived **every local
+full-suite run of the forty-odd cuts that followed**. It was caught by the first
+CI push, and the reason is not that CI runs more: it is that CI runs the *same*
+gate with the tool installed.
+
+`test_tier0_hygiene.sh` guarded the lint with `command -v shellcheck`, and its
+`else` branch logged a line and moved on. In any environment set up with
+`setup_lean_env.sh --skip-test-deps` — which is what this project's session
+bootstrap uses — the lint was a no-op and the tier still printed
+`All checks passed`.
+
+Four lines above that guard, the CodeQL gate carries the rule in as many words:
+
+> Unconditional (no `command -v` guard): a gate that skips itself when a tool is
+> absent is a gate that fails open.
+
+So the guard is gone. An environment without shellcheck now **fails** Tier 0,
+with a message naming the fix (`./scripts/setup_lean_env.sh`, the full setup,
+rather than `--skip-test-deps`). The empty-file-list branch became a failure for
+the same reason: `scripts/` always holds shell scripts, so an empty list means
+the find pattern stopped matching, not that the tree is clean.
+
+Two alternatives were tried and rejected, and the reasons are the point:
+
+- **`record_skip` (report NOT RUN rather than PASS).** Strictly better than the
+  silent log, and the mechanism already exists for exactly this. But NOT RUN
+  still lets a local run diverge from CI, and divergence is what hid the defect
+  for forty cuts. Making the omission *visible* is weaker than making it
+  *impossible*.
+- **Excluding SC2016 from the shellcheck invocation.** That suppresses a useful
+  check across every script in the tree to avoid fixing one comment.
+
+The honest contrast is with the `rg` guards earlier in the same file: those have
+a real `grep` fallback that performs the same check. A fallback that does the
+work is the other correct answer to a missing tool; a branch that does nothing
+is not.
+
+Refs: docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md OD1.6
+
 ## v0.34.106 — WS-OD OD1.6: OD1 closes, with the reclaim exhibited by an executed run
 
 OD1's acceptance criterion is that `passiveServerIdle` is preserved by
