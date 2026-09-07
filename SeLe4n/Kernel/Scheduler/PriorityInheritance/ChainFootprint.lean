@@ -294,7 +294,7 @@ theorem pipChainVisited_length_le (s : SystemState) (tid : SeLe4n.ThreadId) (n :
   | succ m ih =>
       rw [pipChainVisited_succ]
       cases hb : blockingServer s tid with
-      | none => simpa using Nat.succ_le_succ (Nat.zero_le m)
+      | none => simp
       | some next =>
           simp only [List.length_cons]
           exact Nat.succ_le_succ (ih next)

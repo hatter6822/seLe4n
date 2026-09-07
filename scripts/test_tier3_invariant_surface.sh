@@ -1069,7 +1069,7 @@ run_check "INVARIANT" rg -n '^theorem abortHolderProjectionStable_of_allowed' Se
 # drops the hypothesis from *one* signature.
 run_check "INVARIANT" bash -lc 'rg -U -n "\(hAbortProj : abortHolderProjectionStable ctx observer st victim tcb\) :\n    projectState ctx observer \(Lifecycle\.Suspend\.returnDonationToCancelledCaller st victim tcb\)" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "\(hAbortProj : abortHolderProjectionStable ctx observer st victim tcb\) :\n    projectState ctx observer \(Lifecycle\.Suspend\.cancelIpcBlocking st victim tcb\)" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "\(hAbortProj : abortHolderProjectionStable ctx observer st victim tcb\) :\n    projectState ctx observer\n        \(cancelIpcBlockingOnCore victim tcb executingCore st\)\.1" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\(hAbortProj : abortHolderProjectionStable ctx observer st victim tcb\)\n    \(hWakeHigh : abortHolderWakeHigh ctx observer st victim tcb\) :\n    projectState ctx observer\n        \(cancelIpcBlockingOnCore victim tcb executingCore st\)\.1" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
 # The splice creates no key, which is what carries the identity registry across
 # an operation that writes `objects` directly rather than through `storeObject`.
 run_check "INVARIANT" rg -n '^theorem endpointQueueRemove_objects_present_backward' SeLe4n/Kernel/IPC/DualQueue/Core.lean
@@ -1123,6 +1123,70 @@ run_check "INVARIANT" bash -lc 'rg -U -n "theorem lockSet_cancelIpcBlockingOnCor
 # is left untouched, which is what makes the first check discriminating.
 run_prose_check "TRACE" rg -n 'SCO-020b. reclaim holder_ready=true holder_unbound=true caller_rebound=true holder_spliced=true' tests/fixtures/main_trace_smoke.expected
 run_prose_check "TRACE" rg -n 'SCO-020c. reclaim allowed_holder untouched=true unbound=true queue_intact=true' tests/fixtures/main_trace_smoke.expected
+# WS-OD OD1.7: the reclaim **places** the holder it unblocked.  Without this the
+# abort left a `.ready` server on no run queue, with `.tcbResume` refusing it
+# (it demands `.Inactive`), `schedContextBind` re-bucketing only an
+# already-queued thread, and `chooseThreadOnCore` never scanning ready TCBs — a
+# permanent strand.  The fixture pins the *cross-core* case, where the holder's
+# home core is not the victim's.
+run_prose_check "TRACE" rg -n 'SCO-020d. reclaim holder_queued=true holder_runnable=true victim_descheduled=true' tests/fixtures/main_trace_smoke.expected
+run_check "INVARIANT" rg -n '^def cancelAbortedHolderWake\?' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^def cancelAbortedHolderWakeCore\?' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^def enqueueAbortedHolderOnCore' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^def wakeAbortedDonationHolder' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem wakeAbortedDonationHolder_holder_runnable' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+# Relation, not presence: the composite must *contain* the wake, between the
+# teardown and the victim's removal.  Keeping the wake defined while the
+# transition stops calling it is exactly the mutation a presence check misses,
+# and it restores the defect verbatim.  The removal wrapping the wake is also
+# what makes the degenerate `holder = victim` resolution fail safe.
+run_check "INVARIANT" bash -lc 'rg -U -n "def cancelIpcBlockingOnCore(.|\n)*removeRunnableOnCore\n    \(wakeAbortedDonationHolder st \(cancelIpcBlockingMigrated victim tcb st\) victim tcb\)\n    victim home" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+# ...and the wake must be gated on the holder being `.ready` in the POST state,
+# which is what distinguishes "the abort ran" from "the abort was inert" and
+# from "the whole reclaim was discarded".  A pre-state guard fires on the third.
+run_check "INVARIANT" bash -lc 'rg -U -n "def cancelAbortedHolderWake\?(.|\n)*match stPost\.getTcb\? holder with(.|\n)*if t\.ipcState = ThreadIpcState\.ready then some holder else none" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+# ...and on the abort's OWN pre-state guard as well.  `donationOwnerValid`
+# constrains the donation's *owner*, never its holder, so a `.donated` holder
+# that is `.ready` and **currently running** is admissible — the ordinary
+# passive-server-running state.  On it the abort is inert, the holder stays
+# `.ready`, and a post-state-only gate would enqueue a running thread.
+run_check "INVARIANT" bash -lc 'rg -U -n "def cancelAbortedHolderWake\?(.|\n)*if \(cancelHolderBlockedEndpoint\? stPre \(some holder\)\)\.isNone then none" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+# ...and the placement itself refuses a running thread, so it cannot break
+# `queueCurrentConsistent` however it is called.  `runnableOnSomeCore` is
+# run-queue membership only — dequeue-on-dispatch means it does not catch a
+# dispatched thread — which is why both predicates are asked.
+run_check "INVARIANT" bash -lc 'rg -U -n "def enqueueAbortedHolderOnCore(.|\n)*if runnableOnSomeCore st tid \|\| runningOnSomeCore st tid then st" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+# The declared scheduler footprint names the woken core's run-queue write lock.
+# A footprint naming only the victim's home would be FALSE of the transition,
+# which this project rates worse than a wide one.
+run_check "INVARIANT" bash -lc 'rg -U -n "def cancelIpcBlockingOnCoreSchedLockSet \(home : CoreId\) \(wakeCore : Option CoreId\)(.|\n)*descheduleThreadLockSet home \+\+ \[\(SchedLockId\.runQueue ⟨c⟩, \.write\)\]" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCoreSchedLockSet_contains_wake_runQueue_write' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+# The wake is a SCHEDULER write and nothing else — that is what keeps every
+# object-level and information-flow result about the composite true verbatim, so
+# a placement that also wrote the TCB would silently widen the transition.
+run_check "INVARIANT" rg -n '^@\[simp\] theorem wakeAbortedDonationHolder_objects' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem wakeAbortedDonationHolder_currentOnCore' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+# ...and its information-flow obligation is carried, not assumed away: a
+# run-queue insert is filtered by the inserted thread's own observability, and
+# the holder's label is not determined by the victim's.
+run_check "INVARIANT" rg -n '^def abortHolderWakeHigh' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
+run_check "INVARIANT" rg -n '^theorem abortHolderWakeHigh_of_no_donation' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlockingOnCore_reply_cancellation_NI(.|\n)*hWakeHigh : abortHolderWakeHigh ctx observer st victim tcb\) :\n    projectState" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
+# PR #892 review: a refused current-thread record CLEARS the mirror rather than
+# leaving it naming the previous thread.  `switchToThreadHw` refuses a tid at or
+# above the `u64::MAX` sentinel *without touching the HAL*, so discarding that
+# verdict left the mirror stale while the model had committed a new current —
+# the "restore into a descheduled frame" hazard the verb's own docstring names.
+# Relation, not presence: the mutation keeps `clearCurrentThreadHw` in the file
+# and drops the guard, so an anchor on the call alone would still pass.
+run_check "INVARIANT" bash -lc 'rg -U -n "def recordCommittedCurrentThreadHw(.|\n)*let status ← recordCurrentThreadHw cur\? c\n      if status == switchToThreadHwRejected then\n        let _ ← clearCurrentThreadHw c" SeLe4n/Kernel/Concurrency/Runtime.lean'
+# PR #892 review: the RAM-top walk accepts its accumulated total only from a
+# parse that reached a top-level FDT_END with every node closed.  It
+# *accumulates* where its `find_bootargs_in_dtb` twin *searches*, so an early
+# exit is fail-open here and fail-closed there — which is why only this one
+# needs the flag.  Without it a truncated blob handed `init_mmu` a RAM ceiling
+# read out of a prefix the walk never validated.
+run_check "INVARIANT" bash -lc 'rg -U -n "fn find_ram_top_in_dtb(.|\n)*let mut terminated = false;(.|\n)*if !terminated \|\| depth != 0 \{\n        return None;\n    \}\n    best" rust/sele4n-hal/src/cmdline.rs'
 # The neighbour clauses are the half an under-stated hypothesis would drop, so
 # the label predicate must quantify over the removed thread's own queue links
 # rather than over the endpoint and the thread alone.

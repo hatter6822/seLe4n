@@ -190,6 +190,7 @@
 [SCO-020a] successor pprev inherited=true dual_dequeue_ok=true
 [SCO-020b] reclaim holder_ready=true holder_unbound=true caller_rebound=true holder_spliced=true
 [SCO-020c] reclaim allowed_holder untouched=true unbound=true queue_intact=true
+[SCO-020d] reclaim holder_queued=true holder_runnable=true victim_descheduled=true
 [SCO-021] endpointQueueRemove not-found: SeLe4n.Model.KernelError.objectNotFound
 [SCO-022] endpointQueueRemove no-endpoint: SeLe4n.Model.KernelError.objectNotFound
 [SCO-023] timeoutThread blocked: ready=true threadReady=true budgetCleared=true errCode=true linksCleared=true

@@ -1085,12 +1085,24 @@ fn find_ram_top_in_dtb(blob: &[u8]) -> Option<u64> {
     let mut device_type_ok = true;
     let mut best: Option<u64> = None;
     let mut fuel = FDT_WALK_FUEL;
+    // PR #892 review: whether the walk reached a top-level `FDT_END`.  Every
+    // other way out of this loop leaves the structure block unparsed, and this
+    // function *accumulates* rather than searching — so without the flag a blob
+    // that carries a well-formed `/memory` node and then runs out of structure
+    // block, or of fuel, would hand `init_mmu` a RAM top derived from a prefix
+    // it never validated, and the MMU would map Normal-cacheable pages over
+    // physical addresses nothing backs.  (Its twin `find_bootargs_in_dtb` needs
+    // no such flag: it *searches*, and returns `Some` only where it matched, so
+    // every early exit already fails closed.)
+    let mut terminated = false;
 
     while fuel > 0 {
         fuel -= 1;
         let next_token_offset = offset.checked_add(4)?;
         if next_token_offset > struct_end_exclusive {
-            break;
+            // Ran off the end of the structure block with no terminator: the
+            // blob is malformed, so nothing it claimed is trustworthy.
+            return None;
         }
         let token = read_be_u32(blob, offset)?;
         match token {
@@ -1180,6 +1192,7 @@ fn find_ram_top_in_dtb(blob: &[u8]) -> Option<u64> {
                 offset = offset.checked_add(4)?;
             }
             FDT_END => {
+                terminated = true;
                 break;
             }
             _ => {
@@ -1187,6 +1200,13 @@ fn find_ram_top_in_dtb(blob: &[u8]) -> Option<u64> {
                 return None;
             }
         }
+    }
+    // PR #892 review: accept the accumulated top only from a walk that reached
+    // a top-level `FDT_END` with every node closed.  `!terminated` covers both
+    // fuel exhaustion and a `break`-free fall-through; `depth != 0` covers a
+    // terminator reached inside an unbalanced node.
+    if !terminated || depth != 0 {
+        return None;
     }
     best
 }
@@ -2862,6 +2882,88 @@ mod memory_node_tests {
             value: reg,
         });
         Node { name, props }
+    }
+
+    /// PR #892 review: the three token-preserving mutations that keep a
+    /// well-formed `/memory` node and break only the *walk*.  Each returns
+    /// `Some` before the terminator flag and `None` after it, which is what a
+    /// deletion-style fixture (drop the memory node) would never have caught.
+    fn four_gibibyte_blob() -> Vec<u8> {
+        build_dtb(
+            2,
+            2,
+            &[memory_node(
+                b"memory@0",
+                cells(&[(0, 2), (0xFC00_0000, 2)]),
+                Some(b"memory"),
+            )],
+        )
+    }
+
+    /// `size_dt_struct` lives at byte 36 of the header.
+    fn set_size_dt_struct(blob: &mut [u8], size: u32) {
+        blob[36..40].copy_from_slice(&size.to_be_bytes());
+    }
+
+    fn read_size_dt_struct(blob: &[u8]) -> u32 {
+        u32::from_be_bytes([blob[36], blob[37], blob[38], blob[39]])
+    }
+
+    #[test]
+    fn a_memory_node_in_a_truncated_structure_block_is_refused() {
+        // The `/memory` node is intact and folds exactly as in the accepted
+        // fixture; only the root's `FDT_END_NODE` and the `FDT_END` are cut off
+        // the end of the structure block.  Trusting the accumulated top here
+        // would hand `init_mmu` a RAM ceiling read out of a prefix the walk
+        // never validated.
+        let mut blob = four_gibibyte_blob();
+        assert_eq!(ram_top_from_blob(&blob), Some(0xFC00_0000));
+        let full = read_size_dt_struct(&blob);
+        set_size_dt_struct(&mut blob, full - 8);
+        assert_eq!(ram_top_from_blob(&blob), None);
+    }
+
+    #[test]
+    fn a_terminator_inside_an_unbalanced_node_is_refused() {
+        // Same blob, with the root's `FDT_END_NODE` overwritten by a `FDT_NOP`:
+        // the walk reaches a real `FDT_END`, but at depth 1.  A blob whose nodes
+        // do not close is malformed however well its `/memory` node parsed.
+        let mut blob = four_gibibyte_blob();
+        assert_eq!(ram_top_from_blob(&blob), Some(0xFC00_0000));
+        let struct_start = FDT_HEADER_SIZE;
+        let struct_len = read_size_dt_struct(&blob) as usize;
+        // The last two tokens are the root's END_NODE then END.
+        let root_end_node = struct_start + struct_len - 8;
+        blob[root_end_node..root_end_node + 4].copy_from_slice(&FDT_NOP.to_be_bytes());
+        assert_eq!(ram_top_from_blob(&blob), None);
+    }
+
+    #[test]
+    fn a_memory_node_buried_under_exhausted_fuel_is_refused() {
+        // `FDT_WALK_FUEL` NOPs ahead of the terminator: the `/memory` node has
+        // already folded when the walk runs out of fuel, so the pre-fix code
+        // returned the accumulated top from a scan that never finished.
+        let mut blob = four_gibibyte_blob();
+        let struct_start = FDT_HEADER_SIZE;
+        let struct_len = read_size_dt_struct(&blob) as usize;
+        let tail_at = struct_start + struct_len - 8;
+        let mut padded: Vec<u8> = blob[..tail_at].to_vec();
+        for _ in 0..FDT_WALK_FUEL {
+            padded.extend_from_slice(&FDT_NOP.to_be_bytes());
+        }
+        padded.extend_from_slice(&blob[tail_at..struct_start + struct_len]);
+        let strings = blob[struct_start + struct_len..].to_vec();
+        let new_struct_len = padded.len();
+        let mut rebuilt: Vec<u8> = blob[..struct_start].to_vec();
+        rebuilt.extend_from_slice(&padded);
+        rebuilt.extend_from_slice(&strings);
+        let off_dt_strings = (struct_start + new_struct_len) as u32;
+        rebuilt[12..16].copy_from_slice(&off_dt_strings.to_be_bytes());
+        let totalsize = rebuilt.len() as u32;
+        rebuilt[4..8].copy_from_slice(&totalsize.to_be_bytes());
+        set_size_dt_struct(&mut rebuilt, new_struct_len as u32);
+        blob = rebuilt;
+        assert_eq!(ram_top_from_blob(&blob), None);
     }
 
     #[test]

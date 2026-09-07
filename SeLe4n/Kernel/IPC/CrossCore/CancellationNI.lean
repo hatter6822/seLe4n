@@ -199,6 +199,144 @@ theorem cancelIpcBlockingMigrated_preserves_projectionOnCore
     exact migrateSchedContextReplenishment_preserves_projectionOnCore ctx observer _ scId _ _ c
   · rfl
 
+-- ============================================================================
+-- §4b  WS-OD OD1.7 — the reclaim's holder wake
+-- ============================================================================
+
+/-- WS-OD OD1.7: placing a **high** thread is invisible in every core's runnable
+projection — the insert is filtered out exactly as the enqueue primitive's is. -/
+theorem enqueueAbortedHolderOnCore_projectRunnableOnCore_high (ctx : LabelingContext)
+    (observer : IfObserver) (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
+    (c' : CoreId) (hHigh : threadObservable ctx observer tid = false) :
+    projectRunnableOnCore ctx observer (enqueueAbortedHolderOnCore st c tid) c'
+      = projectRunnableOnCore ctx observer st c' := by
+  unfold projectRunnableOnCore
+  by_cases hcc : c' = c
+  · subst hcc
+    cases hTcb : st.getTcb? tid with
+    | none => simp only [enqueueAbortedHolderOnCore, hTcb]
+    | some tcb =>
+      simp only [enqueueAbortedHolderOnCore, hTcb]
+      split
+      · rfl
+      · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+        exact RunQueue.toList_filter_insert_neg' _ tid _ _ hHigh
+  · rw [enqueueAbortedHolderOnCore_runQueueOnCore_ne st c tid c' (fun e => hcc e.symm)]
+
+/-- WS-OD OD1.7: placing a **high** thread preserves the whole-state projection.
+
+Strictly weaker premises than `enqueueRunnableOnCore_preserves_projection`'s:
+this step performs no object write at all, so it needs neither the target's
+object-observability nor the store invariant. -/
+theorem enqueueAbortedHolderOnCore_preserves_projection (ctx : LabelingContext)
+    (observer : IfObserver) (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
+    (hHighThread : threadObservable ctx observer tid = false) :
+    projectState ctx observer (enqueueAbortedHolderOnCore st c tid)
+      = projectState ctx observer st := by
+  cases hTcb : st.getTcb? tid with
+  | none => simp only [enqueueAbortedHolderOnCore, hTcb]
+  | some tcb =>
+    simp only [enqueueAbortedHolderOnCore, hTcb]
+    split
+    · rfl
+    · simp only [projectState]
+      congr 1
+      all_goals
+        first
+          | rfl
+          | (simp only [projectRunnable, SchedulerState.runnable]
+             by_cases hc : c = bootCoreId
+             · subst hc
+               rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+               exact RunQueue.toList_filter_insert_neg' _ tid _ _ hHighThread
+             · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc])
+          | simp only [projectCurrent, projectMachineRegs, projectActiveDomain,
+              projectDomainTimeRemaining, projectDomainSchedule, projectDomainScheduleIndex,
+              SchedulerState.setRunQueueOnCore_currentOnCore,
+              SchedulerState.setRunQueueOnCore_activeDomainOnCore,
+              SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
+              SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore,
+              SchedulerState.setRunQueueOnCore_domainSchedule]
+
+/-- WS-OD OD1.7: ...and the per-core projection on every core. -/
+theorem enqueueAbortedHolderOnCore_preserves_projectionOnCore (ctx : LabelingContext)
+    (observer : IfObserver) (st : SystemState) (cc : CoreId) (tid : SeLe4n.ThreadId)
+    (c : CoreId) (hHighThread : threadObservable ctx observer tid = false) :
+    projectStateOnCore ctx observer (enqueueAbortedHolderOnCore st cc tid) c
+      = projectStateOnCore ctx observer st c :=
+  projectStateOnCore_congr_runnable ctx observer
+    (enqueueAbortedHolderOnCore_preserves_projection ctx observer st cc tid hHighThread)
+    (enqueueAbortedHolderOnCore_projectRunnableOnCore_high ctx observer st cc tid c hHighThread)
+    (enqueueAbortedHolderOnCore_currentOnCore st cc tid c)
+    (enqueueAbortedHolderOnCore_activeDomainOnCore st cc tid c)
+    (enqueueAbortedHolderOnCore_domainTimeRemainingOnCore st cc tid c)
+    (enqueueAbortedHolderOnCore_domainScheduleIndexOnCore st cc tid c)
+    (by rw [enqueueAbortedHolderOnCore_machineEq])
+
+/-- **WS-OD OD1.7**: the information-flow obligation the holder *wake* adds.
+
+The wake is the scheduler twin of OD1.4's `abortHolderProjectionStable`, and it
+carries the same gap for the same reason: the reclaim's abort and its wake both
+act on the **holder**, whose label the victim's does not determine.  A run-queue
+insert is filtered by the inserted thread's own observability
+(`projectRunnable`), so the wake is invisible exactly when the holder is
+non-observable.
+
+Stated as the policy fact rather than as a projection equality, because that is
+what a deployment can actually establish: a server holding a high caller's
+donated SchedContext is reachable from that caller, so a labeling that admits
+the `Call` in the first place labels the server at least as high.  Closing it as
+a *theorem* needs the endpoint-queue label-uniformity invariant OD1.4's
+obligation also waits on — registered WS-OD debt, not assumed away here.
+
+Discharged outright wherever no donation is resolved
+(`abortHolderWakeHigh_of_no_donation`), which is every arm but a reply arm whose
+caller had donated. -/
+def abortHolderWakeHigh (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (victim : SeLe4n.ThreadId) (tcb : TCB) : Prop :=
+  ∀ holder : SeLe4n.ThreadId,
+    cancelAbortedHolderWake? st (cancelIpcBlockingMigrated victim tcb st) victim tcb = some holder →
+      threadObservable ctx observer holder = false
+
+/-- WS-OD OD1.7: with no donation resolved the wake never fires, so the
+obligation is vacuous — the remediation adds an obligation exactly where it adds
+a write, and nowhere else. -/
+theorem abortHolderWakeHigh_of_no_donation (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (victim : SeLe4n.ThreadId) (tcb : TCB)
+    (h : Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = none) :
+    abortHolderWakeHigh ctx observer st victim tcb := by
+  intro holder hW
+  rw [show cancelAbortedHolderWake? st (cancelIpcBlockingMigrated victim tcb st) victim tcb = none by
+    unfold cancelAbortedHolderWake?; rw [h]] at hW
+  exact absurd hW (by simp)
+
+/-- WS-OD OD1.7: under that obligation the wake preserves the projection. -/
+theorem wakeAbortedDonationHolder_preserves_projection (ctx : LabelingContext)
+    (observer : IfObserver) (st : SystemState) (victim : SeLe4n.ThreadId) (tcb : TCB)
+    (hHigh : abortHolderWakeHigh ctx observer st victim tcb) :
+    projectState ctx observer
+        (wakeAbortedDonationHolder st (cancelIpcBlockingMigrated victim tcb st) victim tcb)
+      = projectState ctx observer (cancelIpcBlockingMigrated victim tcb st) := by
+  unfold wakeAbortedDonationHolder
+  split
+  · rfl
+  · rename_i holder hW
+    exact enqueueAbortedHolderOnCore_preserves_projection ctx observer _ _ holder (hHigh holder hW)
+
+/-- WS-OD OD1.7: ...and the per-core projection on every core. -/
+theorem wakeAbortedDonationHolder_preserves_projectionOnCore (ctx : LabelingContext)
+    (observer : IfObserver) (st : SystemState) (victim : SeLe4n.ThreadId) (tcb : TCB)
+    (c : CoreId) (hHigh : abortHolderWakeHigh ctx observer st victim tcb) :
+    projectStateOnCore ctx observer
+        (wakeAbortedDonationHolder st (cancelIpcBlockingMigrated victim tcb st) victim tcb) c
+      = projectStateOnCore ctx observer (cancelIpcBlockingMigrated victim tcb st) c := by
+  unfold wakeAbortedDonationHolder
+  split
+  · rfl
+  · rename_i holder hW
+    exact enqueueAbortedHolderOnCore_preserves_projectionOnCore ctx observer _ _ holder c
+      (hHigh holder hW)
+
 /-- WS-SM SM6.E (boot-core form): the cross-core cancellation of a high
 victim is invisible, given the single-core teardown's projection preservation
 (the obligation the production closure form
@@ -217,12 +355,14 @@ theorem cancelIpcBlockingOnCore_cancellation_NI
     (st : SystemState)
     (hVictimHigh : threadObservable ctx observer victim = false)
     (hTeardownProj : projectState ctx observer (cancelIpcBlocking st victim tcb)
-        = projectState ctx observer st) :
+        = projectState ctx observer st)
+    (hWakeHigh : abortHolderWakeHigh ctx observer st victim tcb) :
     projectState ctx observer
         (cancelIpcBlockingOnCore victim tcb executingCore st).1
       = projectState ctx observer st := by
   rw [cancelIpcBlockingOnCore_state_eq,
       removeRunnableOnCore_preserves_projection ctx observer _ victim _ hVictimHigh,
+      wakeAbortedDonationHolder_preserves_projection ctx observer st victim tcb hWakeHigh,
       cancelIpcBlockingMigrated_preserves_projection]
   exact hTeardownProj
 
@@ -238,7 +378,8 @@ theorem cancelIpcBlockingOnCore_cancellation_NI_smp
     (hVictimHigh : threadObservable ctx observer victim = false)
     (hTeardownProj : ∀ c : CoreId,
         projectStateOnCore ctx observer (cancelIpcBlocking st victim tcb) c
-          = projectStateOnCore ctx observer st c) :
+          = projectStateOnCore ctx observer st c)
+    (hWakeHigh : abortHolderWakeHigh ctx observer st victim tcb) :
     lowEquivalent_smp ctx observer
       (cancelIpcBlockingOnCore victim tcb executingCore st).1 st := by
   intro c
@@ -248,6 +389,8 @@ theorem cancelIpcBlockingOnCore_cancellation_NI_smp
   rw [cancelIpcBlockingOnCore_state_eq,
       removeRunnableOnCore_preserves_projectionOnCore ctx observer _ victim _ c
         hVictimHigh,
+      wakeAbortedDonationHolder_preserves_projectionOnCore ctx observer st victim tcb c
+        hWakeHigh,
       cancelIpcBlockingMigrated_preserves_projectionOnCore]
   exact hTeardownProj c
 
@@ -685,7 +828,17 @@ states it held for.  (3) Closing it in general needs exactly the invariant the
 queue arms need, plus the fact that the holder is high when the victim is —
 which follows from the flow check the donating `Call` passed
 (`label victim ⊑ label holder`, `securityFlowsTo_trans`) rather than from a new
-assumption.  Registered as WS-OD debt beside the queue arms' gap. -/
+assumption.  Registered as WS-OD debt beside the queue arms' gap.
+
+**WS-OD OD1.7** adds `abortHolderWakeHigh`, the scheduler twin of the same gap:
+the reclaim not only aborts the holder's IPC, it now *places* the holder on its
+home core's run queue, and a run-queue insert is filtered by the inserted
+thread's own observability.  All three distinguishing points above apply to it
+unchanged — it quantifies over the same resolution, it is discharged outright
+where no donation is resolved (`abortHolderWakeHigh_of_no_donation`), and it
+closes in general from the same `Call`-time flow check.  Two obligations rather
+than one because they are two writes in two domains: OD1.4's is about the object
+store, this one about the scheduler. -/
 theorem cancelIpcBlockingOnCore_reply_cancellation_NI
     (ctx : LabelingContext) (observer : IfObserver)
     (victim : SeLe4n.ThreadId) (tcb : TCB) (executingCore : CoreId)
@@ -696,12 +849,14 @@ theorem cancelIpcBlockingOnCore_reply_cancellation_NI
     (hObjInv : st.objects.invExt)
     (hIdxComplete : SeLe4n.Model.objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
-    (hAbortProj : abortHolderProjectionStable ctx observer st victim tcb) :
+    (hAbortProj : abortHolderProjectionStable ctx observer st victim tcb)
+    (hWakeHigh : abortHolderWakeHigh ctx observer st victim tcb) :
     projectState ctx observer
         (cancelIpcBlockingOnCore victim tcb executingCore st).1
       = projectState ctx observer st :=
   cancelIpcBlockingOnCore_cancellation_NI ctx observer victim tcb executingCore st hVictimHigh
     (cancelIpcBlocking_blockedOnReply_preserves_projection ctx observer st victim tcb ep rt
       hBlocked hValid hVictimHigh hObjInv hIdxComplete hObjSetInv hAbortProj)
+    hWakeHigh
 
 end SeLe4n.Kernel

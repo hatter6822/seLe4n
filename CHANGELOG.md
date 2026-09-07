@@ -1,3 +1,126 @@
+## v0.34.108 — the reclaim places the holder it unblocks (a stranding DoS, closed)
+
+**Security finding, reported rather than folded in.** OD1.4–OD1.6 made the
+cancellation reclaim end a donation holder's outstanding send or call before
+taking its SchedContext back — and left it nowhere. `abortPendingIpcOnEndpoint`
+is the timeout's *objects-only* prefix: it splices the holder off its endpoint
+and rewrites the TCB to `.ready`, deliberately without `timeoutThread`'s
+`wakeThread`, because `cancelIpcBlocking_scheduler_eq` has four cross-core
+consumers. Nothing then put the holder on a run queue, and nothing could:
+
+| Recovery path | Why it was closed |
+|---|---|
+| `.tcbResume` | `resumeThreadOnCore` requires `threadState = .Inactive`; the abort leaves `.Ready` → `.illegalState` |
+| `schedContextBind` | re-buckets only `if tid ∈ runQueueOnCore bindHome`, else `st2` — never enqueues |
+| IPC wake | the holder is blocked on nothing, so no endpoint or notification path reaches it |
+| scheduler scan | `chooseThreadOnCore` selects exclusively from `runQueueOnCore` and never scans ready TCBs |
+
+So an ordinary `.tcbSuspend` on a reply-blocked caller **permanently stranded
+the server it had called**, denying service to every other client of that
+server. Rated **High** on the model surface; not exploitable in practice — the
+code was unmerged and nothing boots before SM10.1.
+
+### The premise the omission rested on was false
+
+`abortPendingIpcOnEndpoint`'s docstring justified the missing wake with "an
+unbound thread is unschedulable anyway". In *this* model it is not:
+`resolveEffectivePrioDeadline`'s `.unbound` arm returns the legacy TCB priority,
+and `schedContextUnbind`'s own H2 step already records having fixed the
+identical defect — *"a successful unbind therefore left a runnable thread ready
+and permanently unschedulable"*. One question, answered twice, the second time
+wrongly.
+
+### The fix
+
+`cancelIpcBlockingOnCore` is now
+`removeRunnableOnCore (wakeAbortedDonationHolder st (cancelIpcBlockingMigrated …) …) victim home`.
+Six decisions worth stating:
+
+1. **Wake, not suspend.** The abort stages `.ipcTimeout` into the holder's
+   register context (WS-RR RR7.14); a staged error frame the thread can never
+   observe is that defect one level over. Leaving it `.Inactive` would also
+   suspend a *bystander* because its client was suspended.
+2. **At the cross-core layer**, where the composite already writes the
+   scheduler — the same division that puts the SM5.H replenishment migration
+   there. `cancelIpcBlocking_scheduler_eq` and its four consumers are untouched.
+3. **A scheduler-only insert** (`enqueueAbortedHolderOnCore`): the abort already
+   wrote `.ready`, so writing it again would make the step touch `objects`, and
+   `cancelIpcBlockingOnCore_objects_eq` plus the whole `CancellationNI` surface
+   say it does not. `enqueueAbortedHolderOnCore_agrees_runQueueOnCore` ties it to
+   `enqueueRunnableOnCore` rather than leaving a second spelling to drift.
+4. **The gate is two conjuncts, and both are load-bearing.** The pre-state half
+   is `abortHolderPendingIpc`'s own guard (`cancelHolderBlockedEndpoint?`,
+   shared rather than respelt); the post-state half is the holder being `.ready`
+   after the teardown. Neither alone answers "did the abort run".
+   `donationOwnerValid` constrains the donation's *owner*, never its holder, so a
+   `.donated` holder that is `.ready` and **currently running** is admissible —
+   the ordinary passive-server-running state — and on it the abort is inert while
+   the holder stays `.ready`, so a post-state-only gate would enqueue a running
+   thread and break `queueCurrentConsistent`. Conversely a reclaim whose donation
+   return refused is discarded whole, leaving the holder blocked, so a
+   pre-state-only gate would fire on a transition that committed nothing.
+   `enqueueAbortedHolderOnCore` additionally refuses a running *or* queued thread:
+   `runnableOnSomeCore` is run-queue membership only, and dequeue-on-dispatch
+   means it does not catch a dispatched thread.
+5. **The declared footprint names the woken core.**
+   `cancelIpcBlockingOnCoreSchedLockSet` takes a `wakeCore : Option CoreId`: the
+   holder's home core is neither the victim's nor the executing core, and a
+   footprint naming only `home` would be *false* of the transition.
+6. **The locality clause gains a stated exclusion.**
+   `cancellation_cross_core_correct`'s run-queue half is now conditioned on
+   `cancelAbortedHolderWakeCore?` and its current-slot half is unconditional. The
+   previous unconditional run-queue clause was true only because the holder was
+   placed nowhere — which is the defect.
+
+`wakeAbortedDonationHolder_holder_runnable` is the payoff — "queued **or**
+executing", the complete statement of *not stranded* — and `[SCO-020d]` is
+the executed run: the fixture pins the *cross-core* case, with the holder homed
+on core 1 and the victim on the boot core.
+
+### Information flow
+
+`abortHolderWakeHigh` — the scheduler twin of OD1.4's
+`abortHolderProjectionStable`. A run-queue insert is filtered by the inserted
+thread's own observability, and the holder's label is not determined by the
+victim's. Discharged outright where no donation is resolved
+(`abortHolderWakeHigh_of_no_donation`), registered as WS-OD debt otherwise; it
+closes with the queue-arm gap, on the same `label victim ⊑ label holder` fact.
+
+### Two further review findings, fixed rather than registered
+
+**A refused current-thread record no longer leaves the mirror stale.**
+`switchToThreadHw` returns `switchToThreadHwRejected` *without touching the HAL*
+for a `ThreadId` at or above the `u64::MAX` sentinel, and
+`recordCommittedCurrentThreadHw` discarded that verdict — leaving
+`ffi_switch_to_thread`'s mirror naming the **previous** thread while the model
+had committed a new one, which is precisely the "restore into a descheduled
+frame" hazard `recordCurrentThreadHw`'s own docstring warns about. It now clears
+the mirror instead: "no current thread" is a restore path's cue to restore
+nothing, rather than to restore somebody else. The branch is unreachable on a
+well-formed state (`objectIndexBounded` bounds ids by `maxObjects` = 65536) — it
+is defence in depth, and defence in depth that throws its verdict away is not
+defence at all. Halting the core is the other fail-closed answer and belongs to
+SM10.1, where the mirror is read.
+
+**The RAM-top DTB walk requires a terminated parse.** `find_ram_top_in_dtb`
+*accumulates* where its `find_bootargs_in_dtb` twin *searches*, so an early exit
+is fail-open in one and fail-closed in the other — and only the accumulating one
+lacked the guard. A blob with a well-formed `/memory` node that then ran out of
+structure block, out of fuel, or reached `FDT_END` inside an unbalanced node
+returned the accumulated top, and `init_mmu` would map Normal-cacheable pages
+over physical addresses nothing backs. The walk now accepts its total only after
+a top-level `FDT_END` with `depth == 0`. Three regression tests cover the three
+exits, each asserting `Some(…)` **before** the mutation and `None` after — the
+fixtures keep the `/memory` node intact and break only the walk, which a
+deletion-style fixture would never have caught.
+
+### Documentation
+
+The stale WS-OD status is corrected in the same cut: `README.md`, `CLAUDE.md`
+and `AGENTS.md` said 39 sub-tasks with none started and called the fixed
+`passiveServerIdle` hole live. The count is 41, OD1 is closed, and the phase is
+IN FLIGHT.
+
 ## v0.34.107 — the shell lint stops being optional, and the SC2016 it was hiding
 
 PR #892's first CI run failed two jobs — `Tiered Tests / Fast (Tier 0 + Tier 1)`

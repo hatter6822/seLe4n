@@ -1288,26 +1288,76 @@ theorem cancelIpcBlockingMigrated_confinedToCores (victim : SeLe4n.ThreadId) (tc
     exact migrateSchedContextReplenishment_confinedToCores _ scId _ _
   · exact observableSlotsConfinedToCores_refl _ _
 
-/-- SM8.B.2 (**SM6.E, the composed cancellation**): `cancelIpcBlockingOnCore`
-writes only the victim's **home** core — not the core running the cancellation,
-and not any core the victim's endpoint or notification neighbours are homed on.
+/-- **WS-OD OD1.7**: the reclaim's holder wake writes exactly the woken holder's
+home core — and no core at all when it does not fire, which is every arm but a
+reply arm whose caller had donated. -/
+theorem wakeAbortedDonationHolder_confinedToCores (stPre stPost : SystemState)
+    (victim : SeLe4n.ThreadId) (tcb : TCB) :
+    observableSlotsConfinedToCores stPost
+      (wakeAbortedDonationHolder stPre stPost victim tcb)
+      (cancelAbortedHolderWakeCore? stPre stPost victim tcb).toList := by
+  unfold wakeAbortedDonationHolder cancelAbortedHolderWakeCore?
+  cases hW : cancelAbortedHolderWake? stPre stPost victim tcb with
+  | none => exact observableSlotsConfinedToCores_refl _ _
+  | some holder =>
+    exact ⟨fun c hc => enqueueAbortedHolderOnCore_runQueueOnCore_ne stPost _ holder c
+        (fun h => hc (by simp [h])),
+      fun c _ => enqueueAbortedHolderOnCore_currentOnCore stPost _ holder c,
+      fun c _ => enqueueAbortedHolderOnCore_activeDomainOnCore stPost _ holder c,
+      fun c _ => enqueueAbortedHolderOnCore_domainTimeRemainingOnCore stPost _ holder c,
+      fun c _ => enqueueAbortedHolderOnCore_domainScheduleIndexOnCore stPost _ holder c,
+      fun _ _ => by rw [enqueueAbortedHolderOnCore_machineEq]⟩
 
-`[] ++ [] ++ [home]`: the teardown contributes nothing per-core, WS-RR RR7.22's
-replenishment migration contributes nothing either (it writes a replenish queue,
-which is not an observable slot), and the home-core removal contributes one core.
-Unlike the wake pipelines this needs no pushback through the §1a frame layer,
-because `cancelIpcBlockingOnCore` reads its home core from the pre-state itself. -/
+/-- SM8.B.2 (**SM6.E, the composed cancellation**): `cancelIpcBlockingOnCore`
+writes the victim's **home** core, and — since WS-OD OD1.7 — the home core of the
+holder its reclaim unblocked, when there is one.  Not the core running the
+cancellation, and not any core the victim's endpoint or notification neighbours
+are homed on.
+
+`[] ++ [] ++ wake ++ [home]`: the teardown contributes nothing per-core, WS-RR
+RR7.22's replenishment migration contributes nothing either (it writes a
+replenish queue, which is not an observable slot), OD1.7's holder wake
+contributes the holder's home core exactly when it fires, and the home-core
+removal contributes one core.  Unlike the wake pipelines this needs no pushback
+through the §1a frame layer, because `cancelIpcBlockingOnCore` reads both cores
+from the pre-state itself.
+
+**The second core is the point of OD1.7, not a regression.**  The list read
+`[determineTargetCore st victim]` before, and that was true only because the
+reclaim's abort left the holder on no run queue at all — the stranding defect.
+Placing it necessarily writes its home core, which is neither the victim's nor
+the executing core, so the honest statement names it.  Where no donation is
+resolved the wake list is empty and this is the old statement verbatim
+(`cancelIpcBlockingOnCore_confinedToCores_of_no_donation`). -/
 theorem cancelIpcBlockingOnCore_confinedToCores (victim : SeLe4n.ThreadId) (tcb : TCB)
     (executingCore : CoreId) (st : SystemState) :
     observableSlotsConfinedToCores st
       (cancelIpcBlockingOnCore victim tcb executingCore st).1
-      [determineTargetCore st victim] :=
+      ((cancelAbortedHolderWakeCore? st (cancelIpcBlockingMigrated victim tcb st)
+          victim tcb).toList ++ [determineTargetCore st victim]) :=
   observableSlotsConfinedToCores_trans
     (observableSlotsConfinedToCores_trans
-      (cancelIpcBlocking_confinedToCores st victim tcb)
-      (cancelIpcBlockingMigrated_confinedToCores victim tcb st))
-    (removeRunnableOnCore_confinedToCores (cancelIpcBlockingMigrated victim tcb st) victim
-      (determineTargetCore st victim))
+      (observableSlotsConfinedToCores_trans
+        (cancelIpcBlocking_confinedToCores st victim tcb)
+        (cancelIpcBlockingMigrated_confinedToCores victim tcb st))
+      (wakeAbortedDonationHolder_confinedToCores st
+        (cancelIpcBlockingMigrated victim tcb st) victim tcb))
+    (removeRunnableOnCore_confinedToCores
+      (wakeAbortedDonationHolder st (cancelIpcBlockingMigrated victim tcb st) victim tcb)
+      victim (determineTargetCore st victim))
+
+/-- WS-OD OD1.7: with no donation resolved the reclaim wakes nobody, so the
+composite is confined to the victim's home core exactly as it was before OD1.7 —
+which is every arm but a reply arm whose caller had donated. -/
+theorem cancelIpcBlockingOnCore_confinedToCores_of_no_donation (victim : SeLe4n.ThreadId)
+    (tcb : TCB) (executingCore : CoreId) (st : SystemState)
+    (h : Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = none) :
+    observableSlotsConfinedToCores st
+      (cancelIpcBlockingOnCore victim tcb executingCore st).1
+      [determineTargetCore st victim] := by
+  have hW := cancelIpcBlockingOnCore_confinedToCores victim tcb executingCore st
+  rwa [cancelAbortedHolderWakeCore?_of_no_donation _ _ victim tcb h, Option.toList,
+    List.nil_append] at hW
 
 /-- SM8.B.2: SchedContext donation is per-core silent — it rewrites bindings in
 the object store and, at most, the replenishment queue, which SM8.A's
@@ -4732,12 +4782,25 @@ theorem cancelIpcBlockingOnCore_crossCoreNonInterference (ctx : LabelingContext)
     (observer : IfObserver) (victim : SeLe4n.ThreadId) (tcb : TCB)
     (executingCore : CoreId) (st : SystemState) (c : CoreId)
     (hne : c ≠ determineTargetCore st victim)
+    (hWake : cancelAbortedHolderWakeCore? st (cancelIpcBlockingMigrated victim tcb st)
+      victim tcb ≠ some c)
     (hShared : sharedViewUnchanged ctx observer st
       (cancelIpcBlockingOnCore victim tcb executingCore st).1) :
     projectStateOnCore ctx observer
         (cancelIpcBlockingOnCore victim tcb executingCore st).1 c
       = projectStateOnCore ctx observer st c :=
-  crossCoreNonInterference_ofCores ctx observer (by simpa using hne)
+  crossCoreNonInterference_ofCores ctx observer
+    (by
+      -- WS-OD OD1.7: `c` is neither the victim's home core nor the core the
+      -- reclaim's holder wake writes.
+      cases hW : cancelAbortedHolderWakeCore? st (cancelIpcBlockingMigrated victim tcb st)
+          victim tcb with
+      | none => simpa using hne
+      | some w =>
+        rw [hW] at hWake
+        simp only [Option.toList, List.cons_append, List.nil_append, List.mem_cons,
+          List.not_mem_nil, or_false]
+        exact fun h => h.elim (fun hw => hWake (by rw [hw])) (fun hh => hne hh))
     (cancelIpcBlockingOnCore_confinedToCores victim tcb executingCore st) hShared
 
 /-- SM8.B.2 (**the headline, and the thing SM6 cannot say**): waking a thread on

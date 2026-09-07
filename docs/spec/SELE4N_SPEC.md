@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.34.107` (`lakefile.toml`) |
+| **Package version** | `0.34.108` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 352,080 across 327 Lean files |
-| **Test LoC** | 71,347 across 70 Lean test suites |
-| **Proved declarations** | 11,754 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 352,854 across 327 Lean files |
+| **Test LoC** | 71,412 across 70 Lean test suites |
+| **Proved declarations** | 11,788 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -3965,7 +3965,16 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   first (`abortHolderPendingIpc`, seL4-MCS's timeout semantics: the budget the
   operation was issued on has been revoked), and the abort's reach is exactly
   those two states — a holder in any state the conjunct permits is left
-  untouched.
+  untouched.  **And the cross-core composite places the holder it unblocks**
+  since `v0.34.108` (WS-OD OD1.7): satisfying the conjunct is not the same as
+  being schedulable, and the abort alone left the holder `.ready` on no run
+  queue with every recovery path closed — `.tcbResume` demands `.Inactive`,
+  `schedContextBind` re-buckets only an already-queued thread, and
+  `chooseThreadOnCore` never scans ready TCBs — so the server was stranded
+  permanently.  `cancelIpcBlockingOnCore` now enqueues it on its **home** core,
+  which is neither necessarily the victim's nor the executing core; the declared
+  scheduler footprint names that core's run-queue write lock, and the composite's
+  per-core run-queue locality clause excludes it.
 - `donationBudgetTransfer`: at most one thread per SchedContext — now satisfiable
   for donated states (the donor is `.unbound`; only the server's `.donated`
   references the SchedContext)

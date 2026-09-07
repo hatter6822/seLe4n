@@ -443,7 +443,72 @@ example (h1 : st.getTcb? victim = some tcb0)
     (h3 : determineTargetCore st victim ≠ ec) :
     (cancelIpcBlockingOnCore victim tcb ec st).1.objects
       = (cancelIpcBlocking st victim tcb).objects :=
-  (cancellation_cross_core_correct victim tcb tcb0 ec st h1 h2 h3).2.2.2.2
+  -- WS-OD OD1.7: one projection deeper — the per-core locality conjunct split
+  -- into a run-queue half (conditioned on the holder wake's core) and an
+  -- unconditional current-slot half.
+  (cancellation_cross_core_correct victim tcb tcb0 ec st h1 h2 h3).2.2.2.2.2
+
+/-- WS-OD OD1.7: the flagship's **current-slot** locality conjunct applies, and
+is still unconditional — the reclaim's holder wake inserts into a run queue and
+moves nothing onto a core. -/
+example (h1 : st.getTcb? victim = some tcb0)
+    (h2 : st.scheduler.currentOnCore (determineTargetCore st victim) = some victim)
+    (h3 : determineTargetCore st victim ≠ ec) (c' : CoreId)
+    (hc' : c' ≠ determineTargetCore st victim) :
+    (cancelIpcBlockingOnCore victim tcb ec st).1.scheduler.currentOnCore c'
+      = st.scheduler.currentOnCore c' :=
+  (cancellation_cross_core_correct victim tcb tcb0 ec st h1 h2 h3).2.2.2.2.1 c' hc'
+
+/-- WS-OD OD1.7: the flagship's **run-queue** locality conjunct applies, on a
+core the holder wake does not target. -/
+example (h1 : st.getTcb? victim = some tcb0)
+    (h2 : st.scheduler.currentOnCore (determineTargetCore st victim) = some victim)
+    (h3 : determineTargetCore st victim ≠ ec) (c' : CoreId)
+    (hc' : c' ≠ determineTargetCore st victim)
+    (hWake : cancelAbortedHolderWakeCore? st (cancelIpcBlockingMigrated victim tcb st)
+        victim tcb ≠ some c') :
+    (cancelIpcBlockingOnCore victim tcb ec st).1.scheduler.runQueueOnCore c'
+      = st.scheduler.runQueueOnCore c' :=
+  (cancellation_cross_core_correct victim tcb tcb0 ec st h1 h2 h3).2.2.2.1 c' hc' hWake
+
+-- WS-OD OD1.7: the holder-wake surface — the resolver, its core, the
+-- scheduler-only placement, its frames, and the payoff that says a holder the
+-- reclaim's abort unblocked is on a run queue afterwards.
+#check @cancelAbortedHolderWake?
+#check @cancelAbortedHolderWakeCore?
+#check @cancelAbortedHolderWakeCore?_of_no_donation
+#check @enqueueAbortedHolderOnCore
+#check @enqueueAbortedHolderOnCore_objects
+#check @enqueueAbortedHolderOnCore_getTcb?
+#check @enqueueAbortedHolderOnCore_currentOnCore
+#check @enqueueAbortedHolderOnCore_runQueueOnCore_ne
+#check @enqueueAbortedHolderOnCore_agrees_runQueueOnCore
+#check @enqueueAbortedHolderOnCore_ipcState_ready
+#check @wakeAbortedDonationHolder
+#check @wakeAbortedDonationHolder_of_no_donation
+#check @wakeAbortedDonationHolder_objects
+#check @wakeAbortedDonationHolder_getTcb?
+#check @wakeAbortedDonationHolder_currentOnCore
+#check @wakeAbortedDonationHolder_runQueueOnCore_ne
+#check @wakeAbortedDonationHolder_holder_runnable
+#check @cancelIpcBlockingOnCoreSchedLockSet_none
+#check @cancelIpcBlockingOnCoreSchedLockSet_dedup
+#check @cancelIpcBlockingOnCoreSchedLockSet_write_only
+#check @cancelIpcBlockingOnCoreSchedLockSet_contains_wake_runQueue_write
+#check @cancelIpcBlockingOnCoreSchedLockSet_contains_home_runQueue_write
+
+/-- WS-OD OD1.7 payoff: a holder the reclaim's abort unblocked is queued or
+executing afterwards — the complete statement of "not stranded", and the one the
+defect made false.  The disjunction rather than plain `runnableOnSomeCore`
+because the placement declines a thread that is already *running*: dequeue-on-
+dispatch means a running thread is on no run queue, and enqueuing it would break
+`queueCurrentConsistent`. -/
+example (stPost : SystemState) (holder : SeLe4n.ThreadId) (t : TCB)
+    (hW : cancelAbortedHolderWake? st stPost victim tcb = some holder)
+    (hT : stPost.getTcb? holder = some t) :
+    (runnableOnSomeCore (wakeAbortedDonationHolder st stPost victim tcb) holder
+      || runningOnSomeCore (wakeAbortedDonationHolder st stPost victim tcb) holder) = true :=
+  wakeAbortedDonationHolder_holder_runnable st stPost victim tcb holder t hW hT
 
 /-- SM6.E.2: the single-core atomicity theorem applies (2PL bracket shape). -/
 example :

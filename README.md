@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.34.107-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.34.108-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -86,11 +86,11 @@ architectural improvements enabled by the Lean 4 proof framework:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.34.107` |
+| **Version** | `0.34.108` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 352,080 across 327 files |
-| **Test Lean LoC** | 71,347 across 70 test suites |
-| **Proved declarations** | 11,754 theorem/lemma declarations (zero sorry/axiom) |
+| **Production Lean LoC** | 352,854 across 327 files |
+| **Test Lean LoC** | 71,412 across 70 test suites |
+| **Proved declarations** | 11,788 theorem/lemma declarations (zero sorry/axiom) |
 | **Rust crates** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) across 48 source files |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Hardware binding** | **H3 COMPLETE** (WS-AG AG1–AG10): HAL, GIC-400, timer, ARMv8 page tables, FFI bridge, QEMU boot |
@@ -271,14 +271,17 @@ surface is denominated in time (LC4).
 
 Registered beside RR7 is **WS-OD** (SchedContext donation chains,
 [`SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`](docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md)):
-39 sub-tasks making donation transitive. Today a scheduling context is donated
+41 sub-tasks making donation transitive. Today a scheduling context is donated
 only from a thread that owns one outright, so it stops at the first passive
 server and seL4's passive-server pattern does not work at call depth 2 — the
 callee stays unbound and can never run. The plan wires the reply-stack fields
 the model already declares and never writes, lands the return before the
 donation so no chain is ever serviced by the flat return, and closes first the
-`passiveServerIdle` break the v0.34.97 cancellation reclaim introduced. No
-sub-task has started.
+`passiveServerIdle` break the v0.34.97 cancellation reclaim introduced.
+**OD1 is closed** (v0.34.100 → v0.34.108): the reclaim now ends the holder's
+outstanding IPC before handing the context back, `passiveServerIdle` is
+preserved by every cancellation arm, and the unblocked holder is placed on its
+home core's run queue rather than stranded. OD2–OD6 have not started.
 
 Master plan: [`SMP_MULTICORE_COMPLETION_PLAN.md`](docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md),
 with per-phase plans in `docs/planning/SMP_*.md`. The canonical per-phase

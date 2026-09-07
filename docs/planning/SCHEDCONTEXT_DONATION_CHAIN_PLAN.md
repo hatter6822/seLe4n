@@ -2,13 +2,13 @@
 
 > **Status**: IN FLIGHT — registered at `v0.34.98`; OD1.1 landed at `v0.34.100`,
 > OD1.2 at `v0.34.101`, OD1.3 at `v0.34.103`, OD1.4 at `v0.34.104`, OD1.5 at
-> `v0.34.105`, OD1.6 at `v0.34.106` — **OD1 is closed**.
+> `v0.34.105`, OD1.6 at `v0.34.106`, OD1.7 at `v0.34.108` — **OD1 is closed**.
 > **Opens**: beside WS-RR RR7, and must close **before RR8 closes** — RR8 is the
 > closure phase and cannot close over open work.
 > **Predecessor findings**: the two Medium-severity model/specification gaps
 > recorded in [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) §A, reported while
 > proving the WS-RR RR7.22 residual at `v0.34.97` and `v0.34.98`.
-> **Sub-task count**: 40 across 6 phases (OD1..OD6), each phase numbered in the
+> **Sub-task count**: 41 across 6 phases (OD1..OD6), each phase numbered in the
 > order it is to be implemented
 
 ## 1. Phase goal
@@ -226,7 +226,7 @@ measurement.
 
 | Phase | Scope (one line) | Subs | Est |
 |-------|------------------|------|-----|
-| OD1 | The reclaim's `passiveServerIdle` hole — a live `v0.34.97` defect, independent of the reply stack | 6 | L |
+| OD1 | The reclaim's `passiveServerIdle` hole — a live `v0.34.97` defect, independent of the reply stack | 7 | L |
 | OD2 | Inert structure: `SchedContext.scReply`, `Reply.wellFormed`, the chain predicate and its frames | 7 | M |
 | OD3 | The pop, generalised and behaviourally inert — signature, head validation, pre-state resolver, and the footprint split its growth needs | 8 | XL |
 | OD4 | The push — `applyCallDonation` accepts a `.donated` caller; the chain goes live | 7 | XL |
@@ -253,6 +253,7 @@ precondition for every later lock-set change.
 | OD1.4 | Wire OD1.2 into `returnDonationToCancelledCaller` when the holder is `.blockedOnSend` / `.blockedOnCall`, preserving totality and the objects-only frame four cross-core results consume.  **The abort runs before the return**, for the reason `v0.34.97` put the return before the restore: with the return first the intermediate state has the holder `.unbound` while still blocked on a call, which is the very violation being closed; with the abort first every intermediate state satisfies the conjunct, since a `.donated` holder is outside `passiveServerIdle`'s reach.  The donation is resolved once, before either step, and the resolution survives the abort because the abort writes no binding | `SeLe4n/Kernel/Lifecycle/Suspend.lean` | M |
 | OD1.5 | `cancelIpcBlocking_preserves_passiveServerIdle` — the theorem that does not exist — with footprint membership for the abort's writes and the size bound.  **The abort adds three members, not one**: it splices, so the holder's two queue neighbours join its endpoint — an arithmetic correction this row could not make before OD1.4 landed.  Summed, the footprint is eleven of nine; the bound holds by case analysis, because the donation-derived members and the victim's own blocked-object members both key on `tcb.ipcState` and are therefore mutually exclusive.  The reply arm is then **nine of nine**, with no headroom — see the footprint-budget risk below for where that is recovered | `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean`, `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` | L |
 | OD1.6 | The two exact-text Tier-3 anchors updated for the rewritten arm, a negative for the pre-OD1 shape and one for the single-queue removal, suite cases for the stranding defect and the abort, the family-size figure, version and CHANGELOG | `scripts/test_tier3_invariant_surface.sh`, `tests/SmpCancellationSuite.lean`, `tests/SmpIpcSuite.lean`, `CLAUDE.md`, `AGENTS.md`, `docs/spec/SELE4N_SPEC.md` | M |
+| OD1.7 | **The aborted holder is placed, not merely unblocked.**  OD1.2–OD1.6 end the holder's send or call and leave it `.ready`, spliced off its endpoint and on **no** run queue — and every recovery path is closed: `resumeThreadOnCore` demands `threadState = .Inactive` and the abort leaves `.Ready`; `schedContextBind` re-buckets only a thread already queued; `chooseThreadOnCore` never scans ready TCBs.  So the reclaim stranded the server permanently, a denial of service reachable from an ordinary `.tcbSuspend` on the caller.  The premise the omission rested on — OD1.2's "an unbound thread is unschedulable anyway" — is false in this model (`resolveEffectivePrioDeadline`'s `.unbound` arm returns the legacy TCB priority), and `schedContextUnbind`'s own H2 step records having fixed the identical defect.  The wake goes at the **cross-core** layer, where the composite already writes the scheduler, so `cancelIpcBlocking_scheduler_eq` and its four consumers stand; it is a *scheduler-only* insert, because the abort already wrote `.ready`, which keeps every object-level and information-flow result about the composite true verbatim.  The declared scheduler footprint gains the woken core's run-queue write lock — the holder's home core is neither the victim's nor the executing core — and the per-core locality clause names that core as its second stated exclusion.  Reported as a security finding, not folded in silently | `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean`, `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean`, `SeLe4n/Testing/MainTraceHarness.lean` | L |
 
 **Acceptance** — **MET at `v0.34.106`**: `passiveServerIdle` is preserved by
 `cancelIpcBlocking` on every arm, machine-checked

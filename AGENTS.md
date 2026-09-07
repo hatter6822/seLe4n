@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.107.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.108.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,8 +203,8 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~57649 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22545 lines)
+- `CHANGELOG.md` (~58020 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22578 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12092 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
 - `SeLe4n/Kernel/API.lean` (~7210 lines)
@@ -213,7 +213,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~5450 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5129 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5001 lines)
-- `docs/spec/SELE4N_SPEC.md` (~4897 lines)
+- `docs/spec/SELE4N_SPEC.md` (~4915 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4840 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `SeLe4n/Model/State.lean` (~4708 lines)
@@ -223,22 +223,22 @@ To find files that need pagination today, run:
 - `tests/NegativeStateSuite.lean` (~4115 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3919 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRead.lean` (~3789 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~3753 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~3780 lines)
 - `SeLe4n/Kernel/CrossSubsystem.lean` (~3705 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~3673 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean` (~3660 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (~3517 lines)
 - `SeLe4n/Platform/FFI.lean` (~3438 lines)
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
 - `tests/SmpTlbShootdownSuite.lean` (~3354 lines)
+- `SeLe4n/Testing/MainTraceHarness.lean` (~3330 lines)
 - `tests/OperationChainSuite.lean` (~3290 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean` (~3257 lines)
-- `SeLe4n/Testing/MainTraceHarness.lean` (~3235 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~3194 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~3140 lines)
 - `docs/dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` (~3134 lines)
 - `SeLe4n/Model/Object/Structures.lean` (~3116 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean` (~3105 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~3064 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean` (~3038 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2784 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~2768 lines)
@@ -265,6 +265,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2254 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~2156 lines)
 - `SeLe4n/Prelude.lean` (~2137 lines)
+- `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2105 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2079 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~2074 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2059 lines)
@@ -272,7 +273,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2034 lines)
 - `SeLe4n/Kernel/Architecture/Invariant.lean` (~2033 lines)
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~2028 lines)
-- `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2012 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean` (~1994 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1967 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
@@ -300,11 +300,11 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` (~1702 lines)
+- `tests/SmpCancellationSuite.lean` (~1701 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
 - `tests/FaultHandlingSuite.lean` (~1660 lines)
 - `tests/SmpIpcSuite.lean` (~1660 lines)
 - `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1645 lines)
-- `tests/SmpCancellationSuite.lean` (~1613 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1604 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1600 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1559 lines)
@@ -313,8 +313,8 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~1434 lines)
 - `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1425 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~1419 lines)
 - `docs/dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` (~1414 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~1411 lines)
 - `docs/dev_history/AUDIT_v0.23.21_WORKSTREAM_PLAN.md` (~1411 lines)
@@ -381,6 +381,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.28.0_COMPREHENSIVE.md` (~921 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` (~908 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet2PL.lean` (~897 lines)
 - `tests/SmpTimerSuite.lean` (~892 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
@@ -1375,7 +1376,7 @@ fell into with the rule that closes each.
 
 Plan: [`docs/planning/HIERARCHICAL_CBS_PLAN.md`](docs/planning/HIERARCHICAL_CBS_PLAN.md).
 
-### WS-OD SchedContext donation chains — PLANNED (registered v0.34.98)
+### WS-OD SchedContext donation chains — IN FLIGHT (registered v0.34.98; OD1 closed v0.34.108)
 
 `applyCallDonation` donates only from a **`.bound`** caller, and
 `donateSchedContext` is the only operational construction site of a `.donated`
@@ -1384,15 +1385,17 @@ passive-server pattern does not work at call depth ≥ 2, where the callee stays
 `.unbound` and can never run.  seL4-MCS's `maybeDonateSchedContext` reads the
 sender's *effective* context, bound or donated, and passes it down the chain.
 Two register rows close here: that gap, and the `passiveServerIdle` break the
-`v0.34.97` reclaim introduced.  **39 sub-tasks across OD1..OD6**; no sub-task has
-started.
+`v0.34.97` reclaim introduced.  **41 sub-tasks across OD1..OD6.**  **OD1 is
+closed** (`v0.34.100` → `v0.34.108`); OD2..OD6 have not started.
 
 Six things new code must respect once this lands, and each is a decision the plan
-records rather than a default it inherited.  (1) **The `passiveServerIdle` hole is
-OD1, not a consequence of the chain**: it is live on HEAD at depth 1 — a server
-that Calls an endpoint with no receiver blocks `.blockedOnCall` keeping its
-donation, and the reclaim then unbinds it in place — so fixing it last would mean
-every later phase doing bundle work over a known-false conjunct.  (2) **The pop
+records rather than a default it inherited.  (1) **The `passiveServerIdle` hole was
+OD1, not a consequence of the chain**, and is **closed**: it was live on HEAD at
+depth 1 — a server that Calls an endpoint with no receiver blocks
+`.blockedOnCall` keeping its donation, and the reclaim then unbound it in place —
+so fixing it last would have meant every later phase doing bundle work over a
+known-false conjunct.  See the two standing constraints above for what the
+reclaim now does.  (2) **The pop
 lands before the push, and lands inert**: with the push first, a depth-2 chain is
 serviced by the flat return, which writes `.bound` at the intermediate thread and
 moves a context across a domain boundary in a state that *breaks no conjunct*.
@@ -1800,6 +1803,58 @@ code may assume:
   remediation is weakened on the states it held for, and the general discharge is
   registered WS-OD debt.  New code must not read either projection theorem as
   unconditional.
+- **...and the unblocked holder is placed on a run queue, not merely unblocked**
+  (WS-OD OD1.7, v0.34.108).  `cancelIpcBlockingOnCore`'s state is
+  `removeRunnableOnCore (wakeAbortedDonationHolder st (cancelIpcBlockingMigrated
+  …) …) victim home`.  Without the wake the abort left the holder `.ready`,
+  spliced off its endpoint and on **no** run queue, and every recovery path was
+  closed — `resumeThreadOnCore` demands `threadState = .Inactive` and the abort
+  leaves `.Ready`; `schedContextBind` re-buckets only a thread already queued
+  (`if tid ∈ runQueueOnCore bindHome`); `chooseThreadOnCore` selects exclusively
+  from `runQueueOnCore` and never scans ready TCBs — so the reclaim stranded the
+  server permanently, reachable from an ordinary `.tcbSuspend` on its client.
+  The premise the omission rested on is *false in this model*: an unbound thread
+  is fully schedulable here (`resolveEffectivePrioDeadline`'s `.unbound` arm
+  returns the legacy TCB priority), which `schedContextUnbind`'s own H2 step had
+  already recorded, having fixed the identical defect — one question answered
+  twice, the second time wrongly.  Six things new code must respect.  (1) **Waking
+  is the answer, not suspending**: the abort stages `.ipcTimeout` into the
+  holder's register context (WS-RR RR7.14), and a staged error frame the thread
+  can never observe is that defect one level over; leaving it `.Inactive` would
+  also suspend a *bystander* because its client was suspended.  (2) **The wake is
+  at the cross-core layer**, where the composite already writes the scheduler, so
+  `cancelIpcBlocking_scheduler_eq` and its four consumers are untouched — the same
+  division that puts the SM5.H replenishment migration there.  (3) **It is a
+  scheduler-only insert** (`enqueueAbortedHolderOnCore`), because the abort already
+  wrote `.ready`; writing it again would make the step touch `objects`, and
+  `cancelIpcBlockingOnCore_objects_eq` and the whole `CancellationNI` surface say
+  it does not.  `enqueueAbortedHolderOnCore_agrees_runQueueOnCore` ties it to
+  `enqueueRunnableOnCore` rather than leaving a second spelling of "enqueue" to
+  drift.  (4) **The gate is the post-state**: `cancelAbortedHolderWake?` fires on
+  the holder being `.ready` *after* the teardown, which is what distinguishes "the
+  abort ran" from "the abort was inert" (`.blockedOnReceive`) and from "the whole
+  reclaim was discarded" (OD1.4's all-or-nothing error arm); a pre-state guard
+  fires on the third — and the pre-state half is not optional in the other
+  direction either: `donationOwnerValid` constrains the donation's *owner*, never
+  its holder, so a `.donated` holder that is `.ready` and **currently running** is
+  admissible (the ordinary passive-server-running state), and on it the abort is
+  inert while the holder stays `.ready`, so a post-state-only gate would enqueue a
+  running thread.  `enqueueAbortedHolderOnCore` also refuses a running *or* queued
+  thread, since `runnableOnSomeCore` is run-queue membership only and
+  dequeue-on-dispatch means it does not catch a dispatched thread.  (5) **The
+  declared scheduler footprint names the woken core**: `cancelIpcBlockingOnCoreSchedLockSet` takes a `wakeCore : Option CoreId`,
+  because the holder's home core is neither the victim's nor the executing core,
+  and a footprint naming only `home` would be *false* of the transition — which
+  this project rates worse than a wide one.  (6) **The per-core locality clause
+  has a second stated exclusion**: `cancellation_cross_core_correct`'s run-queue
+  half is conditioned on `cancelAbortedHolderWakeCore?` and its current-slot half
+  is unconditional; the previous unconditional run-queue clause was true only
+  because the holder was placed nowhere.  The information-flow obligation is
+  `abortHolderWakeHigh`, the scheduler twin of OD1.4's
+  `abortHolderProjectionStable` — a run-queue insert is filtered by the inserted
+  thread's own observability, and the holder's label is not determined by the
+  victim's — discharged outright where no donation is resolved and registered as
+  WS-OD debt otherwise.
 - **...and `passiveServerIdle` is preserved by `cancelIpcBlocking` on every arm**
   (WS-OD OD1.5, v0.34.105) — the theorem OD1 exists to prove, and one that was
   *false* before the abort prefix: the reply arm's reclaim could leave a holder

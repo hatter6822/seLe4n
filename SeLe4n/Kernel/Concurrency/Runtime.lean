@@ -510,14 +510,65 @@ entries — record on the HAL what the committed post-state left running.
 Takes the pair the entry's atomic step returns: the core the raw id decoded to
 and the thread that core's `current` slot holds afterwards.  `none` — a raw id
 the model has no core for — records nothing, matching the step, which commits
-nothing for such an id. -/
+nothing for such an id.
+
+**A refused record clears the mirror rather than leaving it stale** (PR #892
+review).  `switchToThreadHw` returns `switchToThreadHwRejected` *without
+touching the HAL* for a `ThreadId` at or above `switchToThreadHwTidBound` — the
+`u64::MAX` sentinel included — because that value is reserved for "no current
+thread".  Discarding that verdict, as this tail did, left the mirror naming the
+**previous** thread while the model had already committed a new one, which is
+exactly the "restore into a descheduled frame" hazard `recordCurrentThreadHw`'s
+own docstring warns about: `ffi_switch_to_thread`'s mirror is what a dispatch
+path reads to decide whose context to restore.  Clearing is the fail-closed
+answer available today — a cleared mirror means "no current thread", which a
+restore path must treat as nothing to restore, rather than as somebody else.
+
+The branch is **unreachable** on a well-formed state: `objectIndexBounded`
+bounds every object id by `maxObjects` (65536), so no installed thread has an
+id anywhere near `2 ^ 64 - 1`.  It is defence in depth against a corrupted
+committed state, and defence in depth that throws its verdict away is not
+defence at all.  Halting the core instead — the other fail-closed answer — is an
+SM10.1 decision, because that is where the mirror is *read*; it is registered
+rather than pre-empted here. -/
 def recordCommittedCurrentThreadHw
     (r : Option (CoreId × Option SeLe4n.ThreadId)) : BaseIO Unit :=
   match r with
   | none => pure ()
   | some (c, cur?) => do
-      let _ ← recordCurrentThreadHw cur? c
-      pure ()
+      let status ← recordCurrentThreadHw cur? c
+      if status == switchToThreadHwRejected then
+        let _ ← clearCurrentThreadHw c
+        pure ()
+      else
+        pure ()
+
+/-- **PR #892 review**: recording `none` never takes the fail-closed clear —
+`clearCurrentThreadHw` is the record in that case, so the guard cannot loop or
+double-write. -/
+theorem recordCommittedCurrentThreadHw_none_is_clear (c : CoreId) :
+    recordCommittedCurrentThreadHw (some (c, none)) =
+      (do
+        let status ← clearCurrentThreadHw c
+        if status == switchToThreadHwRejected then
+          let _ ← clearCurrentThreadHw c
+          pure ()
+        else
+          pure ()) := rfl
+
+/-- **PR #892 review**: an encodable thread takes the pass-through unchanged —
+the fail-closed clear is reached only on the refusal `switchToThreadHw` returns
+without touching the HAL. -/
+theorem recordCommittedCurrentThreadHw_some_is_switch
+    (c : CoreId) (tid : SeLe4n.ThreadId) :
+    recordCommittedCurrentThreadHw (some (c, some tid)) =
+      (do
+        let status ← switchToThreadHw tid c
+        if status == switchToThreadHwRejected then
+          let _ ← clearCurrentThreadHw c
+          pure ()
+        else
+          pure ()) := rfl
 
 -- ============================================================================
 -- WS-SM SM5.C.4 — Cross-core wake SGI-emission typed wrappers

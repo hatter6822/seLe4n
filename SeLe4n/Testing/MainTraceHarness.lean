@@ -2652,6 +2652,25 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     | _ => false
   IO.println s!"[SCO-020c] reclaim allowed_holder untouched={recvHolderUntouched} unbound={recvHolderUnbound} queue_intact={recvQueueUntouched}"
 
+  -- SCO-020d (WS-OD OD1.7): **and the reclaim puts the aborted holder back on a
+  -- run queue.**  SCO-020b shows the abort ends the holder's call; on its own
+  -- that left the holder `.ready`, spliced off its endpoint and on *no* run
+  -- queue, with every recovery path closed — `.tcbResume` demands `.Inactive`,
+  -- `schedContextBind` re-buckets only an already-queued thread, and
+  -- `chooseThreadOnCore` never scans ready TCBs.  The server was stranded
+  -- permanently.  The cross-core composite now places it, on the **holder's**
+  -- home core, which this fixture deliberately makes a *different* core from the
+  -- victim's: core 1 rather than the boot core.  So the run-queue write the
+  -- reclaim performs is one the victim's own deschedule does not cover, which is
+  -- why `cancelIpcBlockingOnCoreSchedLockSet` names it.
+  let holderPinned : TCB := { holderTcb with cpuAffinity := some ⟨1, by decide⟩ }
+  let stPin := { stR with objects := stR.objects.insert hTid.toObjId (.tcb holderPinned) }
+  let stWoken := (SeLe4n.Kernel.cancelIpcBlockingOnCore vTid victimTcb ⟨0, by decide⟩ stPin).1
+  let holderQueued := (stWoken.scheduler.runQueueOnCore ⟨1, by decide⟩).contains hTid
+  let holderRunnable := SeLe4n.Kernel.runnableOnSomeCore stWoken hTid
+  let victimDescheduled := !((stWoken.scheduler.runQueueOnCore ⟨0, by decide⟩).contains vTid)
+  IO.println s!"[SCO-020d] reclaim holder_queued={holderQueued} holder_runnable={holderRunnable} victim_descheduled={victimDescheduled}"
+
   -- SCO-021: endpointQueueRemove — thread not found error
   let badTid : SeLe4n.ThreadId := ⟨9999⟩
   match SeLe4n.Kernel.endpointQueueRemove epId false badTid stQ with
