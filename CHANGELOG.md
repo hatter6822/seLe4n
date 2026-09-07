@@ -1,3 +1,39 @@
+## v0.34.99 — the version stamp three GitBook chapters carry is not a version site
+
+`v0.34.98` left `docs/gitbook/01-project-overview.md`,
+`07-testing-and-ci.md` and `17-project-usage-value.md` reading "as of
+v0.34.97", and `scripts/test_docs_sync.sh` caught it.
+
+The three are **not** version sites in the `scripts/version_locations.sh` sense —
+`check_version_sync.sh` passed on all 36 of those — because their stamp is part
+of a *metrics* sentence (line counts, file counts, suite counts) that
+`scripts/sync_translated_metrics.py` owns and derives from
+`docs/codebase_map.json`. So `bump_version.sh` correctly did not touch them, and
+the metrics sync is the step that had not been run. Two tools, two disjoint sets
+of files, and the gate that notices when only one of them has run.
+
+Recorded here rather than folded in silently because the failure mode is not
+"someone forgot a file": it is that a version-bearing line can belong to either
+tool, and which one owns it is decided by what the sentence around it is about.
+
+**And a live defect registered in the same cut**, found while settling which
+endpoint-queue removal WS-OD's OD1 abort should use.  The tree has **two**
+removals.  `endpointQueueRemoveDual`, which every path but one uses, patches the
+successor's `queuePPrev` to the removed thread's own `pprev` and *requires* that
+field to agree with `queuePrev` (`pprevConsistent`, else `.illegalState`).
+`endpointQueueRemove`, whose only kernel-side caller is `timeoutThread`, patches
+the successor's `queuePrev` and leaves its `queuePPrev` naming the removed
+thread.  So a timeout strands its successor: every later dual-queue removal on
+that thread fails, and it can never leave the endpoint queue.  Severity Medium —
+availability, not memory safety.  No invariant catches it, because `queuePPrev`
+is read by **zero** `ipcInvariantFull` conjuncts.  The remediation is the
+consolidation the one-question-one-answer rule asks for — `timeoutThread` moves
+onto the dual-queue removal — and it is what gives WS-OD's OD1.2 abort its
+twenty-conjunct carriage for free.  Registered against WS-OD OD1.3.
+
+Refs: scripts/sync_translated_metrics.py
+Refs: docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md
+
 ## v0.34.98 — WS-OD registered: SchedContext donation chains, and the hole the last cut left
 
 Two Medium-severity model/specification gaps are registered with an owner, a
