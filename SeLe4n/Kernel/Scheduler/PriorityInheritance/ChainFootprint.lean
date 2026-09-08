@@ -433,11 +433,18 @@ walk the transition itself performs; `propagatePipChainCrossCore_coversWrites` i
 the proof that the resolution covers what the transition writes.
 
 `SchedLockSet.ofList?` is the fail-closed step: a chain that revisits a thread —
-which `blockingAcyclic` forbids and `walkStep`'s ascending guard refuses — names
-one lock twice, so no footprint is declared, and the caller keeps whatever
-coarser serialisation it already has.  Accepting the duplicated list and
-acquiring it anyway is the one shape this must not take: a read-acquire counted
-twice leaves a reader the symmetric unwind never removes. -/
+which `blockingAcyclic` forbids — names one lock twice, so no footprint is
+declared, and the caller keeps whatever coarser serialisation it already has.
+Accepting the duplicated list and acquiring it anyway is the one shape this must
+not take: a read-acquire counted twice leaves a reader the symmetric unwind
+never removes.
+
+What `ofList?` does **not** check is the order, and it does not need to (PR #892
+review round 5): the domain sorts (`SchedLockSet.lockAcquireSequence`), so a
+chain resolved in any order is acquired along the SM0.I ladder.  Before that it
+did need to, and nothing did — a chain descending in `ObjId`, which is any chain
+where a higher-numbered thread blocks on a lower-numbered one, was acquired
+backwards. -/
 def withPipChainSchedExtension {α : Type} (caller : CoreId)
     (startTid : SeLe4n.ThreadId) (fuel : Nat)
     (action : SystemState → SystemState × α) (fallback : α) (s : SystemState) :
@@ -463,18 +470,25 @@ theorem withPipChainSchedExtension_undeclared {α : Type} (caller : CoreId)
 
 /-- **WS-RR RR7.40 / PR #892 review round 2**: on a declared footprint the
 growing phase **granted**, the extension is acquire / act / unwind over exactly
-the chain's locks. -/
+the chain's locks.
+
+**PR #892 review round 5**: over the chain's locks *in ladder order*.  The
+sequence is `S.lockAcquireSequence` — the domain's canonical sort — not the
+resolved list, because a blocking chain descends in `ObjId` whenever a
+higher-numbered thread blocks on a lower-numbered one and acquiring it as
+resolved would walk the SM0.I ladder backwards.  `pipChainSchedExtension_acquires_in_ladder_order`
+is what that buys, with no hypothesis on the chain. -/
 theorem withPipChainSchedExtension_declared {α : Type} (caller : CoreId)
     (startTid : SeLe4n.ThreadId) (fuel : Nat)
     (action : SystemState → SystemState × α) (fallback : α) (s : SystemState)
     (S : SchedLockSet)
     (h : SchedLockSet.ofList? (pipChainSchedFootprint s (pipChainVisited s startTid fuel))
           = some S)
-    (hHeld : schedLockSetHeld caller S (schedAcquireAll caller S.pairs s)) :
+    (hHeld : schedLockSetHeld caller S (schedAcquireAll caller S.lockAcquireSequence s)) :
     withPipChainSchedExtension caller startTid fuel action fallback s
-      = (schedUnwindAll caller S.pairs.reverse
-           (action (schedAcquireAll caller S.pairs s)).1,
-         (action (schedAcquireAll caller S.pairs s)).2) := by
+      = (schedUnwindAll caller S.lockAcquireSequence.reverse
+           (action (schedAcquireAll caller S.lockAcquireSequence s)).1,
+         (action (schedAcquireAll caller S.lockAcquireSequence s)).2) := by
   unfold withPipChainSchedExtension
   rw [h]
   exact runChainExtension_held schedulerLockBracketDomain caller S action fallback s hHeld
@@ -487,20 +501,46 @@ theorem withPipChainSchedExtension_refused {α : Type} (caller : CoreId)
     (S : SchedLockSet)
     (h : SchedLockSet.ofList? (pipChainSchedFootprint s (pipChainVisited s startTid fuel))
           = some S)
-    (hNot : ¬ schedLockSetHeld caller S (schedAcquireAll caller S.pairs s)) :
+    (hNot : ¬ schedLockSetHeld caller S (schedAcquireAll caller S.lockAcquireSequence s)) :
     withPipChainSchedExtension caller startTid fuel action fallback s
-      = (schedUnwindAll caller S.pairs.reverse (schedAcquireAll caller S.pairs s), fallback) := by
+      = (schedUnwindAll caller S.lockAcquireSequence.reverse
+           (schedAcquireAll caller S.lockAcquireSequence s), fallback) := by
   unfold withPipChainSchedExtension
   rw [h]
   exact runChainExtension_refused schedulerLockBracketDomain caller S action fallback s hNot
 
+/-- **PR #892 review round 5 (the payoff)**: the chain extension acquires in
+`SchedLockId`-ascending order — the SM0.I ladder — for **every** chain, with no
+hypothesis about the order the walk discovered it in.
+
+This is what `pipChainSchedFootprint_pairwise_le` could not say.  That theorem
+takes the walk's path being `ObjId`-ascending as a hypothesis, and nothing at
+this call site discharged it: `pipChainVisited` follows `blockingServer`
+unconditionally, so a chain in which thread 10 blocks on thread 5 resolved to
+`[tcb 10, tcb 5]` and `ofList?` accepted it — its check is key-uniqueness, which
+that list satisfies.  The acquisition then took `tcb 10` before `tcb 5` while
+any other operation naming both takes them the other way round: a lock-order
+inversion, and a deadlock.  Sorting in the domain removes the hypothesis
+entirely rather than adding a guard that a future resolver has to remember. -/
+theorem pipChainSchedExtension_acquires_in_ladder_order (s : SystemState)
+    (startTid : SeLe4n.ThreadId) (fuel : Nat) :
+    ∀ S ∈ SchedLockSet.ofList? (pipChainSchedFootprint s (pipChainVisited s startTid fuel)),
+      (schedulerLockBracketDomain.sequence S).Pairwise (fun p₁ p₂ => p₁.fst ≤ p₂.fst) :=
+  fun S _ => schedulerLockBracketDomain_sequence_ordered S
+
 /-- **WS-RR RR7.40 (the declaration resolves for an acyclic chain)**: a walk that
 visits each thread once declares a footprint.
 
-The `Nodup` hypothesis is the chain's acyclicity — the property `blockingAcyclic`
-maintains and `walkStep`'s ascending guard enforces — so the fail-closed arm above
-is reachable only for a chain the kernel's own invariants already exclude, and
-the extension acquires on every well-formed one. -/
+The `Nodup` hypothesis is the chain's acyclicity, the property `blockingAcyclic`
+maintains — so the fail-closed arm above is reachable only for a chain the
+kernel's own invariants already exclude, and the extension acquires on every
+well-formed one.
+
+**PR #892 review round 5**: this used to credit `walkStep`'s ascending guard as
+well.  That guard belongs to `walkAndAcquire`, the object-domain hand-over-hand
+walker, and `pipChainVisited` — the walk this footprint is resolved from — has
+none: it follows `blockingServer` wherever the blocking graph goes.  Acyclicity
+is what makes the keys distinct; ordering is the domain's, by sorting. -/
 theorem withPipChainSchedExtension_resolves (s : SystemState)
     (startTid : SeLe4n.ThreadId) (fuel : Nat)
     (hNodup : (pipChainVisited s startTid fuel).Nodup) :

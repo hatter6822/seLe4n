@@ -1,3 +1,87 @@
+## v0.34.113 — the Lean device tree is read whole, withheld and untranslated nodes are not resources, and the scheduler bracket sorts
+
+**PR #892 review round 5 (Codex, on `0a393187`).**  Four findings, all confirmed
+against the code and all fixed at the cause; three of them in the Lean device-tree
+parser the round-4 cut left behind, and one a lock-order inversion.
+
+**The scheduler bracket acquires in ladder order, not in resolution order (P2).**
+`schedulerLockBracketDomain.sequence` was `SchedLockSet.pairs` — the declared
+list, verbatim — resting on "each model footprint carries its `_pairwise_le`".
+That is true of every footprint a *transition* declares and false of the one
+resolved from the **state**: `pipChainVisited` follows `blockingServer` down a
+blocking chain with no ascending guard, so a chain in which thread 10 blocks on
+thread 5 resolved to `[tcb 10, tcb 5]`, and `SchedLockSet.ofList?` accepted it
+because its check is key-uniqueness, which that list satisfies.  Acquiring it as
+listed takes `tcb 10` before `tcb 5` while any other operation naming both takes
+them the other way round — a lock-order inversion against the SM0.I ladder, and
+a deadlock.  `pipChainSchedFootprint_pairwise_le` states the ordering as a
+*hypothesis* about the walk's path, and nothing at the call site discharged it;
+the docstrings credited `walkStep`'s ascending guard, which belongs to
+`walkAndAcquire`, the object-domain hand-over-hand walker, not to this walk.
+The domain now sorts (`SchedLockSet.lockAcquireSequence`, a `mergeSort` on the
+key) — the same answer `objectLockBracketDomain` has given since SM3.B, so the
+two domains stop answering "in what order does a bracket acquire a footprint?"
+differently.  `lockAcquireSequence_ordered` is unconditional;
+`lockAcquireSequence_eq_pairs_of_pairwise_le` is what makes the change
+transparent for every declared footprint (an ascending list is its own sort), and
+the whole library and staged target build unchanged.  The suite exhibits the
+descending chain, pins that the resolved footprint is *not* ascending and that
+`ofList?` still accepts it, and that the sequence the bracket folds over is
+ascending anyway.
+
+**The Lean FDT walk must reach its terminator (P2).**  `parseFdtNodes` turned
+every malformed condition — a short read, an unreadable node name, a truncated
+property value, an unknown token, a nested walk out of fuel — into
+`some ([], offset)`, a partial tree indistinguishable from a complete one, and
+reported `.ok`.  A blob carrying a well-formed `/memory` node and then truncated
+therefore parsed, and `rpi5PlatformConfigFromDtb` decided RAM and MMIO coverage
+from a prefix nothing had validated.  This is the incomplete-walk trust the Rust
+`find_ram_top_in_dtb` had in round 1, in the parser that feeds the same boot
+path — the sibling this project's own rule says to sweep for.  The internal
+walkers now return `Except`, every partial exit is `.malformedBlob`, fuel
+exhaustion stays `.fuelExhausted`, and the top-level walk must end at a real
+`FDT_END` at depth zero.  Three Ak9 blob cases: the intact fixture parses, the
+same fixture without its terminators does not, and an unknown token where the
+terminator belongs does not.
+
+**A withheld or nested memory node is not the machine's RAM (P2).**  Round 4
+gave `cmdline::find_ram_top_in_dtb` a `status` filter and left the Lean selector
+status-blind, and the Lean selector had never had the Rust one's depth
+restriction either — so a `disabled` bank, or a `memory@…` under
+`/reserved-memory`, could be read as the board's RAM.  Rather than adding the
+filters to a second token walk, the walk is gone: `findMemoryRegPropertyChecked`
+is now a *selector over the parsed tree* (`memoryNodeReg?`), so "is this
+structure block readable" and "which node is the machine's RAM" have one answer
+each and the standalone API cannot disagree with the boot path
+(`findMemoryRegPropertyChecked_eq_memoryNodeReg?`).  `FdtNode.statusIsOperational`
+decides availability on the two operational spellings alone, exactly as the Rust
+verdict does; `FdtNode.isMemoryNode` carries the `device_type` test; and the
+search is top-level only.  `classifyPeripheralNode` gained the same status
+filter, so a disabled UART or GIC is not offered to the MMIO coverage check.
+
+**A child-bus address is not a physical address (P2).**  `extractPeripheralsWalk`
+recursed without parent address context and `classifyPeripheralNode` never read
+`ranges`, so a peripheral under a translating bus was recorded at its raw
+child-relative `reg` base — which refuses a board whose UART and GIC really are
+at the binding's windows, and, in the other direction, lets an untranslated
+number collide with a window the binding requires.  The walk now carries an
+`FdtAddressContext`: cell widths for the children's `reg`, and a translation
+composed through each bus's `ranges`.  All three §2.3.8 cases are honoured — no
+`ranges` means nothing maps, so the children have no physical address and are
+not reported; an empty `ranges` is the identity; a populated one translates and
+then composes outward — with the tree root as the base case, whose children's
+`reg` *are* CPU physical addresses.  A node whose address does not translate is
+refused rather than reported raw.  Five suite cases cover a two-level
+translating chain (asserting the composed addresses, with a negative refusing the
+untranslated ones), a `ranges`-less bus hiding its children, an empty `ranges`,
+an address outside every window, and the status filter across seven spellings.
+
+Sixteen anchor mutations for the four, each keeping the tokens and breaking one
+relation (the domain reverting to the verbatim list, the sort keyed on the mode,
+the terminator flag at the wrong exit, a `!= disabled` verdict, the status read
+beside the gate rather than in it, a `ranges`-less bus made transparent, the
+translation computed and discarded).
+
 ## v0.34.112 — a withheld memory bank is not RAM, the boot refuses a top it does not stand on, and the walk's footprint is refused above the ceiling
 
 **PR #892 review round 4 (Codex, on `33849c82`).**  Four findings, all

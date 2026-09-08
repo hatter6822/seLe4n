@@ -837,6 +837,50 @@ private def runPipChainFootprintChecks : IO Unit := do
     (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
       decide (outcome.1.runQueueLockOnCore c
         = SeLe4n.Kernel.Concurrency.RwLockState.unheld)))
+  -- 8. **PR #892 review round 5**: a chain that DESCENDS in `ObjId`.  A blocking
+  --    chain follows the blocking graph, which is not ordered by object id -- a
+  --    higher-numbered thread blocking on a lower-numbered one is an ordinary
+  --    state, and `pipChainVisited` has no ascending guard to refuse it.  The
+  --    resolved footprint is therefore NOT in ladder order, `ofList?` accepts it
+  --    (its check is key-uniqueness, which the list satisfies), and acquiring it
+  --    as listed would take `tcb 10` before `tcb 5` against any other operation
+  --    taking them the other way round -- a lock-order inversion, and a deadlock.
+  --    The domain sorts, so the sequence the bracket folds over is ascending.
+  let high : SeLe4n.ThreadId := ⟨10⟩
+  let low : SeLe4n.ThreadId := ⟨5⟩
+  let stChain : SeLe4n.Model.SystemState := { st with
+    objects := st.objects.insert high.toObjId
+      (.tcb { tid := high, priority := ⟨10⟩, domain := ⟨0⟩,
+              cspaceRoot := SeLe4n.ObjId.ofNat 0, vspaceRoot := SeLe4n.ObjId.ofNat 0,
+              ipcBuffer := SeLe4n.VAddr.ofNat 0,
+              ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 0) (some low) }) }
+  let descending := SeLe4n.Kernel.PriorityInheritance.pipChainVisited stChain high 4
+  assertBool "a higher-numbered thread blocking on a lower one walks downward"
+    (decide (descending = [high, low]))
+  let descendingFp :=
+    SeLe4n.Kernel.PriorityInheritance.pipChainSchedFootprint stChain descending
+  assertBool "NEGATIVE: the resolved footprint is NOT SchedLockId-ascending"
+    (!decide ((descendingFp.map (·.1)).Pairwise (· ≤ ·)))
+  assertBool "…and the fail-closed constructor still accepts it (its check is uniqueness)"
+    (SeLe4n.Kernel.SchedLockSet.ofList? descendingFp |>.isSome)
+  assertBool "the domain acquires it in ladder order regardless"
+    (match SeLe4n.Kernel.SchedLockSet.ofList? descendingFp with
+     | some S =>
+       decide (((SeLe4n.Kernel.SchedLockSet.lockAcquireSequence S).map (·.1)).Pairwise (· ≤ ·))
+     | none => false)
+  assertBool "…over exactly the declared locks, none added and none dropped"
+    (match SeLe4n.Kernel.SchedLockSet.ofList? descendingFp with
+     | some S =>
+       decide ((SeLe4n.Kernel.SchedLockSet.lockAcquireSequence S).length = S.pairs.length)
+         && S.pairs.all (fun p =>
+              (SeLe4n.Kernel.SchedLockSet.lockAcquireSequence S).contains p)
+     | none => false)
+  -- An ALREADY-ascending footprint is acquired exactly as it was declared, so
+  -- no SM5 footprint changes: the sort is identity on every declared shape.
+  assertBool "an ascending footprint is its own acquisition sequence"
+    (match SeLe4n.Kernel.SchedLockSet.ofList? fp with
+     | some S => decide (SeLe4n.Kernel.SchedLockSet.lockAcquireSequence S = S.pairs)
+     | none => false)
 
 private def runCSpaceWalkFootprintChecks : IO Unit := do
   -- **WS-RR RR7.41**: the interior of a multi-level CSpace walk.

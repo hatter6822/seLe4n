@@ -246,7 +246,16 @@ The `Nodup` witness is a `Prop`, so two `SchedLockSet`s with the same `pairs` ar
 equal, which is what lets the bracket's revalidation compare re-resolved
 footprints by their pairs alone. -/
 structure SchedLockSet where
-  /-- The declarations, in `SchedLockId`-ascending acquisition order. -/
+  /-- The declarations, in whatever order the footprint was resolved in.
+
+  **Not** an acquisition order (PR #892 review round 5).  This field's comment
+  used to say "in `SchedLockId`-ascending acquisition order", which nothing
+  enforced and which one resolver violated: `pipChainVisited` follows
+  `blockingServer` down a blocking chain, and a chain descends in `ObjId`
+  whenever a higher-numbered thread blocks on a lower-numbered one.  The
+  acquisition order is `lockAcquireSequence`, which sorts — the same answer
+  `objectLockBracketDomain` gives, rather than a second one that has to be
+  maintained by every construction site. -/
   pairs : List (SchedLockId × AccessMode)
   /-- Each `SchedLockId` key appears at most once. -/
   hUniqueKeys : (pairs.map (·.fst)).Nodup
@@ -314,6 +323,92 @@ def size (S : SchedLockSet) : Nat := S.pairs.length
 
 @[simp] theorem size_def (S : SchedLockSet) : S.size = S.pairs.length := rfl
 
+/-- **PR #892 review round 5**: the order the growing phase acquires this
+footprint in — the `SchedLockId`-ascending permutation of its declarations.
+
+The object domain has answered "in what order does a bracket acquire a
+footprint?" since SM3.B: `LockSet.lockAcquireSequence`, a `mergeSort` on the
+key, so a footprint resolved in any order is still acquired along the SM0.I
+ladder.  This domain answered it a second way — the declared list, verbatim —
+and rested on each footprint being declared ascending.  That held for the
+statically declared footprints, each of which carries its own `_pairwise_le`;
+it did not hold for the one footprint resolved from the **state**.
+`pipChainVisited` follows `blockingServer` with no ascending guard, so a
+chain in which thread 10 blocks on thread 5 declared `[tcb 10, tcb 5]`, and
+`SchedLockSet.ofList?` accepted it because it checks key-uniqueness and
+nothing else.  Acquiring that walks the ladder **backwards**, against another
+core acquiring 5 then 10 — a lock-order inversion, which is a deadlock.
+
+So the two domains give one answer.  For the declared footprints this changes
+nothing at all: an already-ascending list is its own `mergeSort`
+(`lockAcquireSequence_eq_pairs_of_pairwise_le`), so their acquisition is the
+list they always declared. -/
+def lockAcquireSequence (S : SchedLockSet) : List (SchedLockId × AccessMode) :=
+  S.pairs.mergeSort (fun p₁ p₂ => decide (p₁.fst ≤ p₂.fst))
+
+/-- The comparator is transitive, from `SchedLockId.le_trans`. -/
+private theorem leSchedLockId_bool_trans (a b c : SchedLockId × AccessMode) :
+    decide (a.fst ≤ b.fst) = true →
+    decide (b.fst ≤ c.fst) = true →
+    decide (a.fst ≤ c.fst) = true := by
+  intro hab hbc
+  exact decide_eq_true (SchedLockId.le_trans (of_decide_eq_true hab) (of_decide_eq_true hbc))
+
+/-- The comparator is total, from `SchedLockId.le_total`. -/
+private theorem leSchedLockId_bool_total (a b : SchedLockId × AccessMode) :
+    (decide (a.fst ≤ b.fst) || decide (b.fst ≤ a.fst)) = true := by
+  rcases SchedLockId.le_total a.fst b.fst with h | h
+  · simp [decide_eq_true h]
+  · simp [decide_eq_true h]
+
+/-- **PR #892 review round 5**: the acquisition sequence is `SchedLockId`-ascending
+— *unconditionally*, for every footprint, however it was resolved.
+
+This is the property the domain's docstring used to assert of the declared
+list.  It is now a theorem about the sequence the bracket actually folds over,
+so the ladder holds for a footprint resolved from the state as much as for one
+written down in a transition. -/
+theorem lockAcquireSequence_ordered (S : SchedLockSet) :
+    (lockAcquireSequence S).Pairwise (fun p₁ p₂ => p₁.fst ≤ p₂.fst) := by
+  have hPairBool : List.Pairwise
+      (fun p₁ p₂ => decide (p₁.fst ≤ p₂.fst) = true)
+      (lockAcquireSequence S) :=
+    List.pairwise_mergeSort
+      (le := fun p₁ p₂ => decide (p₁.fst ≤ p₂.fst))
+      leSchedLockId_bool_trans leSchedLockId_bool_total S.pairs
+  exact hPairBool.imp (fun h => of_decide_eq_true h)
+
+/-- **PR #892 review round 5**: the sort is a permutation of the declarations —
+so the bracket acquires exactly the declared locks, no more and no fewer. -/
+theorem lockAcquireSequence_perm (S : SchedLockSet) :
+    (lockAcquireSequence S).Perm S.pairs :=
+  List.mergeSort_perm S.pairs _
+
+/-- **PR #892 review round 5**: membership is unchanged by the sort. -/
+@[simp] theorem mem_lockAcquireSequence (S : SchedLockSet)
+    (p : SchedLockId × AccessMode) : p ∈ lockAcquireSequence S ↔ p ∈ S.pairs := by
+  simp only [lockAcquireSequence, List.mem_mergeSort]
+
+/-- **PR #892 review round 5**: the sort preserves length, so a footprint's
+size still counts what the growing phase acquires. -/
+@[simp] theorem lockAcquireSequence_length (S : SchedLockSet) :
+    (lockAcquireSequence S).length = S.size :=
+  (lockAcquireSequence_perm S).length_eq
+
+/-- **PR #892 review round 5**: a footprint already declared in ascending order
+is acquired in exactly the order it declared.
+
+This is what makes the change transparent for every statically declared
+footprint: each carries a `_pairwise_le` theorem, so its acquisition sequence
+is definitionally the list SM5 wrote down.  Only a footprint resolved out of
+ladder order — the PIP chain — acquires in a different order than it lists,
+which is the defect. -/
+theorem lockAcquireSequence_eq_pairs_of_pairwise_le (S : SchedLockSet)
+    (h : (S.pairs.map (·.fst)).Pairwise (· ≤ ·)) :
+    lockAcquireSequence S = S.pairs := by
+  refine List.mergeSort_of_pairwise ?_
+  exact (List.pairwise_map.mp h).imp (fun hle => decide_eq_true hle)
+
 end SchedLockSet
 
 /-- **WS-RR RR7.39**: core `c` holds every lock the footprint declares, at the
@@ -333,23 +428,47 @@ instance schedLockSetHeld_decidable (c : CoreId) (S : SchedLockSet) (s : SystemS
 /-- **WS-RR RR7.39**: the scheduler lock domain as a bracket domain.
 
 Five primitives, and every one of them the domain's own: the sequence is the
-footprint's declared list (already `SchedLockId`-ascending — each model
-footprint carries its `_pairwise_le`), the folds are §2's, and the held predicate
-is §3's.  Everything else about a revalidating bracket — resolve, acquire,
-re-resolve, refuse, commit, unwind — comes from `runBracketed`, the *same*
-definition the ABI seam runs. -/
+footprint's **canonical** acquisition order (`SchedLockSet.lockAcquireSequence`,
+a sort on the key — the same answer `objectLockBracketDomain` gives, for the
+same reason), the folds are §2's, and the held predicate is §3's.  Everything
+else about a revalidating bracket — resolve, acquire, re-resolve, refuse,
+commit, unwind — comes from `runBracketed`, the *same* definition the ABI seam
+runs.
+
+**PR #892 review round 5**: the sequence used to be the declared list verbatim,
+resting on "each model footprint carries its `_pairwise_le`".  That is true of
+the footprints a *transition* declares and false of the one resolved from the
+state: a PIP chain descends in `ObjId` whenever a higher-numbered thread blocks
+on a lower-numbered one, and acquiring it verbatim walks the SM0.I ladder
+backwards.  Sorting here fixes it for every footprint at once and costs the
+declared ones nothing — an ascending list is its own sort. -/
 def schedulerLockBracketDomain : LockBracketDomain where
   Footprint := SchedLockSet
   Key := SchedLockId × AccessMode
   decEqFootprint := inferInstance
-  sequence := SchedLockSet.pairs
+  sequence := SchedLockSet.lockAcquireSequence
   acquire := schedAcquireAll
   unwind := schedUnwindAll
   held := schedLockSetHeld
   heldDec := fun c S s => schedLockSetHeld_decidable c S s
 
 @[simp] theorem schedulerLockBracketDomain_sequence (S : SchedLockSet) :
-    schedulerLockBracketDomain.sequence S = S.pairs := rfl
+    schedulerLockBracketDomain.sequence S = S.lockAcquireSequence := rfl
+
+/-- **PR #892 review round 5**: the domain acquires in `SchedLockId`-ascending
+order, whatever order the footprint was resolved in — the SM0.I ladder, held by
+the domain rather than by a convention every resolver has to remember. -/
+theorem schedulerLockBracketDomain_sequence_ordered (S : SchedLockSet) :
+    (schedulerLockBracketDomain.sequence S).Pairwise (fun p₁ p₂ => p₁.fst ≤ p₂.fst) :=
+  SchedLockSet.lockAcquireSequence_ordered S
+
+/-- **PR #892 review round 5**: a footprint declared in ascending order — every
+one a transition declares — is acquired exactly as it lists, so no SM5 result
+about the declared sequence changes. -/
+theorem schedulerLockBracketDomain_sequence_eq_pairs (S : SchedLockSet)
+    (h : (S.pairs.map (·.fst)).Pairwise (· ≤ ·)) :
+    schedulerLockBracketDomain.sequence S = S.pairs :=
+  SchedLockSet.lockAcquireSequence_eq_pairs_of_pairwise_le S h
 
 @[simp] theorem schedulerLockBracketDomain_acquire (c : CoreId)
     (pairs : List (SchedLockId × AccessMode)) (s : SystemState) :

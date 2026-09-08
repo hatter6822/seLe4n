@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.112.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.113.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,7 +203,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~58313 lines)
+- `CHANGELOG.md` (~58558 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22578 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12092 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
@@ -219,15 +219,15 @@ To find files that need pagination today, run:
 - `SeLe4n/Model/State.lean` (~4708 lines)
 - `SeLe4n/Kernel/CrossSubsystem.lean` (~4419 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (~4263 lines)
-- `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~4198 lines)
+- `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~4204 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
 - `tests/NegativeStateSuite.lean` (~4115 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3919 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRead.lean` (~3789 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~3780 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~3783 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~3752 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean` (~3660 lines)
-- `SeLe4n/Platform/FFI.lean` (~3590 lines)
+- `SeLe4n/Platform/FFI.lean` (~3592 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (~3517 lines)
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
 - `tests/SmpTlbShootdownSuite.lean` (~3354 lines)
@@ -318,10 +318,12 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` (~1414 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~1411 lines)
 - `docs/dev_history/AUDIT_v0.23.21_WORKSTREAM_PLAN.md` (~1411 lines)
+- `tests/SmpFoundationsSuite.lean` (~1406 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean` (~1393 lines)
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~1392 lines)
 - `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md` (~1382 lines)
 - `docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` (~1370 lines)
+- `SeLe4n/Platform/DeviceTree.lean` (~1368 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
 - `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1340 lines)
@@ -329,9 +331,8 @@ To find files that need pagination today, run:
 - `tests/FrozenOpsSuite.lean` (~1324 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1317 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1302 lines)
-- `tests/SmpFoundationsSuite.lean` (~1301 lines)
+- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1295 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1294 lines)
-- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1293 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean` (~1264 lines)
 - `SeLe4n/Kernel/InformationFlow/Taint.lean` (~1261 lines)
 - `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1261 lines)
@@ -339,6 +340,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
 - `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1251 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean` (~1241 lines)
+- `tests/Ak9PlatformSuite.lean` (~1234 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1216 lines)
 - `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean` (~1208 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
@@ -346,7 +348,6 @@ To find files that need pagination today, run:
 - `tests/SmpCacheMaintenanceSuite.lean` (~1170 lines)
 - `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~1168 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` (~1165 lines)
-- `SeLe4n/Platform/DeviceTree.lean` (~1154 lines)
 - `SeLe4n/Platform/RPi5/MmioAdapter.lean` (~1154 lines)
 - `tests/KernelErrorMatrixSuite.lean` (~1154 lines)
 - `SeLe4n/Kernel/Architecture/VSpace.lean` (~1142 lines)
@@ -363,7 +364,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~1019 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean` (~1014 lines)
 - `SeLe4n/Model/FrozenState.lean` (~1007 lines)
-- `tests/Ak9PlatformSuite.lean` (~1002 lines)
 - `tests/SmpCbsSuite.lean` (~1001 lines)
 - `tests/SmpCrossCoreCallSuite.lean` (~1001 lines)
 - `SeLe4n/Kernel/Concurrency/Runtime.lean` (~1000 lines)
@@ -2417,6 +2417,44 @@ code may assume:
   (`inferThreadState_eq_bootCore_of_secondaries_quiescent`).  This had to land
   before the boot switch above: the boot state queues idle on all four cores.
 
+- **A device tree is read whole, and what it withholds is not a resource**
+  (PR #892 review round 5, v0.34.113).  Three facts new code must respect.  (1)
+  `parseFdtNodes` refuses a structure block that does not reach a top-level
+  `FDT_END` at depth zero — every partial exit is `.malformedBlob`, fuel
+  exhaustion stays `.fuelExhausted` — so a *fixture* blob must carry its
+  terminators or the bridge rejects it.  (2) The machine's RAM is selected by
+  `memoryNodeReg?` over that parsed tree, with the same three filters the Rust
+  walk applies: the node describes memory (`device_type`), it is operational
+  (`FdtNode.statusIsOperational` — `okay`/`ok` and nothing else, decided on the
+  operational side because that is the side the specification's list is closed
+  on), and it sits at the **top level**, so a `memory@…` under
+  `/reserved-memory` is a carve-out rather than an aperture.
+  `findMemoryRegPropertyChecked` is now a selector over the same tree, not a
+  second token walk, and `findMemoryRegPropertyChecked_eq_memoryNodeReg?` is
+  what keeps the standalone API and the boot path from disagreeing about a
+  blob.  (3) A peripheral's `reg` is a **child-bus** address until it is
+  translated: `extractPeripherals` carries an `FdtAddressContext` and composes
+  each bus's `ranges` outward, so a node under a bus with no `ranges` is not
+  reported at all (Devicetree Specification v0.4 §2.3.8 — nothing maps), an
+  empty `ranges` is the identity, and a node whose address falls outside every
+  window is refused rather than reported raw.  The tree root is the base case:
+  its children's `reg` *are* CPU physical addresses.
+- **The scheduler bracket acquires in ladder order because the domain sorts**
+  (PR #892 review round 5, v0.34.113).  `schedulerLockBracketDomain.sequence` is
+  `SchedLockSet.lockAcquireSequence`, a `mergeSort` on the key — the same answer
+  `objectLockBracketDomain` has given since SM3.B.  It was the declared list
+  verbatim, which rested on every footprint being declared ascending; that holds
+  for the footprints a *transition* declares and not for the one resolved from
+  the state, since `pipChainVisited` follows `blockingServer` and a blocking
+  chain descends in `ObjId` whenever a higher-numbered thread blocks on a
+  lower-numbered one.  Two things new code must respect.  (1) A `SchedLockSet`'s
+  `pairs` is **not** an acquisition order — it is whatever order the footprint
+  was resolved in; the order is `lockAcquireSequence`, and
+  `lockAcquireSequence_ordered` states it with no hypothesis.  (2) The change is
+  transparent to every declared footprint, because an ascending list is its own
+  sort (`lockAcquireSequence_eq_pairs_of_pairwise_le`), so an SM5 result stated
+  over the declared list still holds — but a *new* result about what the bracket
+  acquires names the sequence, not the pairs.
 - **The outer-shareable TLBI wrappers cannot execute on the first hardware
   target.**  `tlbi_vmalle1os` / `vae1os` / `aside1os` / `vale1os` are
   **FEAT_TLBIOS** (ARMv8.4-A); Cortex-A76 — the core in the RPi5's BCM2712 —

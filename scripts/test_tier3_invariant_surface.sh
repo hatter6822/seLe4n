@@ -1489,6 +1489,61 @@ run_check "INVARIANT" rg -n '^theorem cspaceWalkPath_dropLast_cnode' SeLe4n/Kern
 run_check "INVARIANT" rg -n '^theorem mem_cspaceWalkLockSet_missing' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
 # NEGATIVE: the first cut's arm, which declared nothing for the read.
 run_negative_check "INVARIANT" rg -n -U 'match st\.getCNode\? rootId with\n\s+\| none => \[\]' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+# PR #892 review round 5: the scheduler bracket domain acquires a footprint in
+# the CANONICAL order, as the object domain has since SM3.B — not the resolved
+# list.  A blocking chain descends in `ObjId` whenever a higher-numbered thread
+# blocks on a lower-numbered one, and `pipChainVisited` has no ascending guard,
+# so acquiring the list as resolved walked the SM0.I ladder backwards against
+# any other operation naming both locks.  The relation: the domain's `sequence`
+# is the sort, and the sort is a `mergeSort` on the KEY.
+run_check "INVARIANT" rg -n '^  sequence := SchedLockSet\.lockAcquireSequence$' SeLe4n/Kernel/Scheduler/Operations/SchedLockSet.lean
+run_check "INVARIANT" rg -n -U 'def lockAcquireSequence \(S : SchedLockSet\) : List \(SchedLockId × AccessMode\) :=\n  S\.pairs\.mergeSort \(fun p₁ p₂ => decide \(p₁\.fst ≤ p₂\.fst\)\)' SeLe4n/Kernel/Scheduler/Operations/SchedLockSet.lean
+run_check "INVARIANT" rg -n '^theorem lockAcquireSequence_ordered \(S : SchedLockSet\)' SeLe4n/Kernel/Scheduler/Operations/SchedLockSet.lean
+# NEGATIVE: the pre-round domain, acquiring the declared list verbatim.
+run_negative_check "INVARIANT" rg -n '^  sequence := SchedLockSet\.pairs$' SeLe4n/Kernel/Scheduler/Operations/SchedLockSet.lean
+# PR #892 review round 5: the Lean FDT walk must reach a top-level `FDT_END`,
+# and every partial exit is an error.  The relation is the verdict on the walk's
+# THIRD component: `true` accepts, `false` refuses, and a structurally invalid
+# input never reaches either.  Before this cut every malformed arm returned a
+# partial tree indistinguishable from a complete one and `parseFdtNodes`
+# reported `.ok` — the incomplete-walk trust the Rust RAM parser had in round 1,
+# in the parser that feeds the same boot path.
+run_check "INVARIANT" rg -n -U 'match go blob hdr\.offDtStruct\.toNat hdr\.offDtStrings\.toNat fuel with\n  \| \.ok \(nodes, _, true\) => \.ok nodes\n  \| \.ok \(_, _, false\) => \.error \.malformedBlob\n  \| \.error e => \.error e' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U 'else if token == fdtEnd then\n        \.ok \(\[\], offset \+ 4, true\)' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U 'else if token == fdtEndNode then\n        \.ok \(\[\], offset \+ 4, false\)' SeLe4n/Platform/DeviceTree.lean
+# NEGATIVE: a partial exit reported as a parsed tree.
+run_negative_check "INVARIANT" rg -n -U '\| some \(nodes, _\) => \.ok nodes' SeLe4n/Platform/DeviceTree.lean
+run_negative_check "INVARIANT" rg -n 'some \(\[\], offset\) -- Read failure' SeLe4n/Platform/DeviceTree.lean
+# PR #892 review round 5: the Lean parser applies the same availability verdict
+# the Rust one does — `okay`/`ok` and nothing else — and the memory selector
+# applies it beside the kind test, at the top level only.
+run_check "INVARIANT" rg -n 'value == "okay" \|\| value == "ok"' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U 'if n\.isMemoryNode && n\.statusIsOperational then n\.findProperty "reg" else none' SeLe4n/Platform/DeviceTree.lean
+# NEGATIVE: a `!= disabled` verdict, which passes `reserved` and `fail`.
+run_negative_check "INVARIANT" rg -n 'value != "disabled"' SeLe4n/Platform/DeviceTree.lean
+# PR #892 review round 5: a child-relative address is not a physical one.  The
+# classifier reports the TRANSLATED base and refuses a node whose address does
+# not translate; a bus with no `ranges` maps nothing, so its children have no
+# physical address at all (Devicetree Specification v0.4 §2.3.8).
+run_check "INVARIANT" rg -n -U 'match ctx\.translate childBase with\n          \| none => none\n          \| some base => some \{ name := node\.name, base := \(SeLe4n\.PAddr\.ofNat base\), size \}' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U '\| none => \{ addressCells := childAddressCells, sizeCells := childSizeCells,\n                translate := fun _ => none \}' SeLe4n/Platform/DeviceTree.lean
+# NEGATIVE: the pre-round classifier, reporting the raw `reg` base.
+run_negative_check "INVARIANT" rg -n -U 'let base := match readBE64 regBytes 0 with \| some v => v\.toNat \| none => 0' SeLe4n/Platform/DeviceTree.lean
+# The round's Lean surface resolves.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Platform.DeviceTree
+import SeLe4n.Kernel.Scheduler.PriorityInheritance.ChainFootprint
+#check @SeLe4n.Platform.FdtNode.statusIsOperational
+#check @SeLe4n.Platform.FdtNode.isMemoryNode
+#check @SeLe4n.Platform.memoryNodeReg?
+#check @SeLe4n.Platform.translateThroughFdtRanges
+#check @SeLe4n.Platform.FdtAddressContext.forChildren
+#check @SeLe4n.Platform.findMemoryRegPropertyChecked_eq_memoryNodeReg?
+#check @SeLe4n.Kernel.SchedLockSet.lockAcquireSequence_ordered
+#check @SeLe4n.Kernel.SchedLockSet.lockAcquireSequence_eq_pairs_of_pairwise_le
+#check @SeLe4n.Kernel.schedulerLockBracketDomain_sequence_ordered
+#check @SeLe4n.Kernel.PriorityInheritance.pipChainSchedExtension_acquires_in_ladder_order
+EOF'
 # The round's theorems resolve — the ceiling's two verdicts, the failed read's
 # membership, the interior-holds-a-CNode shape it rests on, and the conflict
 # restated over a key that may hold no CNode.

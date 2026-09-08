@@ -574,18 +574,54 @@ private def mkPeripheral (name : String) (base : UInt64)
       , { name := "compatible", value := ByteArray.mk #[0x61, 0x72, 0x6D, 0x00] } ]  -- "arm\0"
     children }
 
+/-- **PR #892 review round 5**: one `ranges` triple, in the 2/2/2 cell widths
+this suite's `reg` helper already writes — child base, parent base, length. -/
+private def mkRangesProperty (childBase parentBase length : UInt64) : ByteArray :=
+  (mkRegProperty childBase parentBase) ++ (mkRegProperty length 0).extract 0 8
+
+/-- **PR #892 review round 5**: a bus node — a peripheral that also translates
+its children's addresses through `ranges`. -/
+private def mkBus (name : String) (base : UInt64)
+    (ranges : ByteArray) (children : List FdtNode := []) : FdtNode :=
+  { name
+    properties :=
+      [ { name := "reg", value := mkRegProperty base 0x1000 }
+      , { name := "compatible", value := ByteArray.mk #[0x61, 0x72, 0x6D, 0x00] }  -- "arm\0"
+      , { name := "ranges", value := ranges } ]
+    children }
+
+/-- **PR #892 review round 5**: a node the firmware marked unavailable. -/
+private def withStatus (node : FdtNode) (status : String) : FdtNode :=
+  { node with
+    properties := node.properties ++
+      [ { name := "status"
+          value := ByteArray.mk ((status.toList.map (fun c => UInt8.ofNat c.toNat)).toArray.push 0) } ] }
+
 /-- AN7-D.5: `extractPeripherals` discovers peripherals at depth 3+ via
     the new recursive walk.  The previous 2-level walk (pre-AN7-D.5)
     would have missed the `level3-device` in this synthetic tree; the
-    new recursive form finds it. -/
+    new recursive form finds it.
+
+    **PR #892 review round 5**: the buses now carry `ranges`, and the addresses
+    asserted are the **translated** ones.  Devicetree Specification v0.4 §2.3.8:
+    a child's `reg` is in its parent bus's address space, and only `ranges` maps
+    that space into the parent's.  This fixture used to give the buses no
+    `ranges` at all and expect the children discovered at their raw addresses —
+    which is what the walk did, and which is what the finding is about: a
+    child-relative number reported as a physical one.  The nested devices are
+    still discovered, at the addresses the translation gives them; the
+    `ranges`-less case is its own test below. -/
 def an7d5_01_extractPeripherals_depth3_discovery : IO Unit := do
-  -- Build a depth-3 tree:
-  --   level1-bus (depth 1)
-  --     └─ level2-controller (depth 2)
-  --         └─ level3-device (depth 3)
+  -- Build a depth-3 tree in which each bus translates its children, and the
+  -- windows compose — level2's output has to land inside level1's window, which
+  -- is the whole point of composing rather than applying the nearest `ranges`:
+  --   level1-bus (depth 1)  reg 0x1000_0000; child [0, 0x2_0000_0000) → 0x1_0000_0000
+  --     └─ level2-controller (depth 2)  reg 0x2000_0000 → 0x1_2000_0000
+  --         child [0, 0x1_0000_0000) → 0x4000_0000 (in level1's child space)
+  --         └─ level3-device (depth 3)  reg 0x3000_0000 → 0x7000_0000 → 0x1_7000_0000
   let deepTree : List FdtNode := [
-    mkPeripheral "level1-bus" 0x10000000 [
-      mkPeripheral "level2-controller" 0x20000000 [
+    mkBus "level1-bus" 0x10000000 (mkRangesProperty 0 0x100000000 0x200000000) [
+      mkBus "level2-controller" 0x20000000 (mkRangesProperty 0 0x40000000 0x100000000) [
         mkPeripheral "level3-device" 0x30000000 []
       ]
     ]
@@ -600,6 +636,83 @@ def an7d5_01_extractPeripherals_depth3_discovery : IO Unit := do
     (devices.any (fun d => d.name == "level3-device"))
   expect "AN7-D.5-01 exactly 3 devices total"
     (decide (devices.length = 3))
+  -- The top-level bus is in the CPU's own space; the nested ones are translated
+  -- once and twice.  A walk that reported raw child addresses would put
+  -- level2-controller at 0x2000_0000 and level3-device at 0x3000_0000.
+  expect "AN7-D.5-01 level1-bus keeps its physical address"
+    (devices.any (fun d => d.name == "level1-bus" && d.base.toNat == 0x10000000))
+  expect "AN7-D.5-01 level2-controller is translated once"
+    (devices.any (fun d => d.name == "level2-controller" && d.base.toNat == 0x120000000))
+  expect "AN7-D.5-01 level3-device is translated twice"
+    (devices.any (fun d => d.name == "level3-device" && d.base.toNat == 0x170000000))
+  expect "NEGATIVE AN7-D.5-01 no device keeps an untranslated child address"
+    (!devices.any (fun d => d.base.toNat == 0x20000000 || d.base.toNat == 0x30000000))
+
+/-- **PR #892 review round 5**: a bus with **no** `ranges` maps nothing into its
+parent, so its children have no physical address and are not peripherals of this
+machine (Devicetree Specification v0.4 §2.3.8).  The bus itself is still
+discovered — it has an address in *its* parent's space. -/
+def review5_bus_without_ranges_hides_its_children : IO Unit := do
+  let tree : List FdtNode := [
+    mkPeripheral "opaque-bus" 0x10000000 [
+      mkPeripheral "unreachable-device" 0x20000000 []
+    ]
+  ]
+  let devices := extractPeripherals tree 1024
+  expect "review5 the bus itself is discovered"
+    (devices.any (fun d => d.name == "opaque-bus"))
+  expect "NEGATIVE review5 a child of a ranges-less bus is not discovered"
+    (!devices.any (fun d => d.name == "unreachable-device"))
+  expect "review5 exactly one device"
+    (decide (devices.length = 1))
+
+/-- **PR #892 review round 5**: an **empty** `ranges` is the identity mapping —
+the child address space *is* the parent's — so a child keeps its own address. -/
+def review5_empty_ranges_is_the_identity : IO Unit := do
+  let tree : List FdtNode := [
+    mkBus "transparent-bus" 0x10000000 (ByteArray.mk #[]) [
+      mkPeripheral "child" 0x20000000 []
+    ]
+  ]
+  let devices := extractPeripherals tree 1024
+  expect "review5 a child under an empty ranges keeps its address"
+    (devices.any (fun d => d.name == "child" && d.base.toNat == 0x20000000))
+
+/-- **PR #892 review round 5**: an address outside every `ranges` window has no
+translation, so the node is not reported at all rather than reported raw. -/
+def review5_untranslatable_address_is_refused : IO Unit := do
+  let tree : List FdtNode := [
+    mkBus "narrow-bus" 0x10000000 (mkRangesProperty 0 0x100000000 0x1000) [
+      mkPeripheral "outside-window" 0x20000000 []
+    ]
+  ]
+  let devices := extractPeripherals tree 1024
+  expect "NEGATIVE review5 an untranslatable child is not discovered"
+    (!devices.any (fun d => d.name == "outside-window"))
+
+/-- **PR #892 review round 5**: a node the firmware marked `disabled` is
+hardware that is not there, and the classifier drops it — the Lean twin of the
+round-4 `status` filter in `cmdline::find_ram_top_in_dtb`.  `okay` and `ok` are
+the two operational spellings; every other value withholds the node. -/
+def review5_disabled_peripheral_is_not_discovered : IO Unit := do
+  let disabled := extractPeripherals
+    [withStatus (mkPeripheral "uart" 0x10000000 []) "disabled"] 1024
+  expect "NEGATIVE review5 a disabled peripheral is not discovered"
+    (!disabled.any (fun d => d.name == "uart"))
+  for status in ["okay", "ok"] do
+    let operational := extractPeripherals
+      [withStatus (mkPeripheral "uart" 0x10000000 []) status] 1024
+    expect "review5 an explicitly operational peripheral is discovered"
+      (operational.any (fun d => d.name == "uart"))
+  for status in ["reserved", "fail", "fail-ecc", "okay-ish"] do
+    let withheld := extractPeripherals
+      [withStatus (mkPeripheral "uart" 0x10000000 []) status] 1024
+    expect "NEGATIVE review5 a non-operational status withholds the peripheral"
+      (!withheld.any (fun d => d.name == "uart"))
+  -- An absent `status` is `okay`, which is what every other fixture relies on.
+  expect "review5 an absent status is operational"
+    ((extractPeripherals [mkPeripheral "uart" 0x10000000 []] 1024).any
+      (fun d => d.name == "uart"))
 
 /-- AN7-D.5: The walk terminates at `fuel = 0` regardless of tree depth. -/
 def an7d5_02_extractPeripherals_zero_fuel_collapses : IO Unit := do
@@ -696,11 +809,16 @@ private def fdtEndTok : Array UInt8 := be32 0x00000009
 /-- The strings block this fixture uses, and each name's offset in it. -/
 private def stringsBlock : Array UInt8 :=
   fdtString "reg" ++ fdtString "device_type" ++ fdtString "compatible"
+    ++ fdtString "status"
 
 private def regNameOff : Nat := 0
 private def deviceTypeNameOff : Nat := (fdtString "reg").size
 private def compatibleNameOff : Nat :=
   (fdtString "reg").size + (fdtString "device_type").size
+/-- **PR #892 review round 5**: the `status` property's offset — appended, so
+every offset above is unchanged. -/
+private def statusNameOff : Nat :=
+  (fdtString "reg").size + (fdtString "device_type").size + (fdtString "compatible").size
 
 /-- A peripheral node: `reg = <base size>` plus a `compatible` string, the two
 properties `classifyPeripheralNode` requires. -/
@@ -744,6 +862,63 @@ private def boardDtbRegions (regions : List (Nat × Nat)) (withMmio : Bool := tr
 /-- A device tree for a board with `ramSize` bytes of RAM starting at 0. -/
 private def boardDtb (ramSize : Nat) (withMmio : Bool := true) : ByteArray :=
   boardDtbRegions [(0, ramSize)] withMmio
+
+/-- **PR #892 review round 5**: the canonical board's structure block, without
+its closing `FDT_END_NODE` / `FDT_END`.
+
+The header is consistent with it — `assembleDtb` computes every offset from the
+block it is given — so this is exactly the shape the finding names: a blob whose
+`/memory` node and peripherals parse and whose structure block then simply
+stops.  Before this cut the walk returned the nodes it had and `fromDtbFull`
+reported `.ok`. -/
+private def unterminatedBoardDtb : ByteArray :=
+  let memoryNode :=
+    fdtBeginNode "memory@0"
+      ++ fdtProp deviceTypeNameOff (fdtString "memory")
+      ++ fdtProp regNameOff (be64 0 ++ be64 0xFC000000)
+      ++ fdtEndNodeTok
+  let peripherals :=
+    peripheralNode "serial@fe201000" 0xFE201000 0x1000
+      ++ peripheralNode "interrupt-controller@ff841000" 0xFF841000 0x1000
+      ++ peripheralNode "interrupt-controller@ff842000" 0xFF842000 0x2000
+  assembleDtb (fdtBeginNode "" ++ memoryNode ++ peripherals)
+
+/-- **PR #892 review round 5**: the canonical board with an **unknown** token
+where the terminator belongs — the other partial exit the walk used to accept. -/
+private def unknownTokenBoardDtb : ByteArray :=
+  let memoryNode :=
+    fdtBeginNode "memory@0"
+      ++ fdtProp deviceTypeNameOff (fdtString "memory")
+      ++ fdtProp regNameOff (be64 0 ++ be64 0xFC000000)
+      ++ fdtEndNodeTok
+  assembleDtb (fdtBeginNode "" ++ memoryNode ++ be32 0x000000FF ++ fdtEndNodeTok ++ fdtEndTok)
+
+/-- **PR #892 review round 5**: a board whose `/memory` node carries the given
+`status`.  A withheld bank is DRAM the firmware says is not usable. -/
+private def boardDtbWithMemoryStatus (status : String) : ByteArray :=
+  let memoryNode :=
+    fdtBeginNode "memory@0"
+      ++ fdtProp deviceTypeNameOff (fdtString "memory")
+      ++ fdtProp regNameOff (be64 0 ++ be64 0xFC000000)
+      ++ fdtProp statusNameOff (fdtString status)
+      ++ fdtEndNodeTok
+  let peripherals :=
+    peripheralNode "serial@fe201000" 0xFE201000 0x1000
+      ++ peripheralNode "interrupt-controller@ff841000" 0xFF841000 0x1000
+      ++ peripheralNode "interrupt-controller@ff842000" 0xFF842000 0x2000
+  assembleDtb (fdtBeginNode "" ++ memoryNode ++ peripherals ++ fdtEndNodeTok ++ fdtEndTok)
+
+/-- **PR #892 review round 5**: a board whose only `memory@…` node is a child of
+`/reserved-memory` — a carve-out, at depth 2, not the machine's RAM. -/
+private def reservedMemoryOnlyDtb : ByteArray :=
+  let carveOut :=
+    fdtBeginNode "reserved-memory"
+      ++ fdtBeginNode "memory@0"
+        ++ fdtProp deviceTypeNameOff (fdtString "memory")
+        ++ fdtProp regNameOff (be64 0 ++ be64 0xFC000000)
+        ++ fdtEndNodeTok
+      ++ fdtEndNodeTok
+  assembleDtb (fdtBeginNode "" ++ carveOut ++ fdtEndNodeTok ++ fdtEndTok)
 
 /-- The machine configuration the bridge binds for an accepted blob, read back
 through the binding exactly as the hardware boot binds it. -/
@@ -931,6 +1106,55 @@ def deviceTreeBridge_13_direct_path_fallback_is_smallest : IO Unit := do
   expect "PR892-13 the family is ascending"
     (decide (rpi5Variants.Pairwise (fun a b => a.ramSize ≤ b.ramSize)))
 
+/-- **PR #892 review round 5**: a structure block that simply stops is refused.
+
+The intact fixture parses and the truncated one does not — the mutation keeps
+the `/memory` node and the peripherals intact and breaks only the *walk*, which
+is the relation.  Before this cut `parseFdtNodes` returned the nodes it had
+collected and `fromDtbFull` reported `.ok`, so the bridge decided RAM and MMIO
+coverage from a prefix nothing had validated. -/
+def deviceTreeBridge_14_unterminated_blob_refused : IO Unit := do
+  match DeviceTree.fromDtbFull (boardDtb 0xFC000000) rpi5MachineConfig.physicalAddressWidth with
+  | .ok _ => pure ()
+  | .error _ => expect "RR892-14 the intact fixture still parses" false
+  match DeviceTree.fromDtbFull unterminatedBoardDtb rpi5MachineConfig.physicalAddressWidth with
+  | .ok _ => expect "RR892-14 an unterminated structure block is refused" false
+  | .error _ => expect "RR892-14 an unterminated structure block is refused" true
+  match rpi5PlatformConfigFromDtb unterminatedBoardDtb [] [] none with
+  | .ok _ => expect "RR892-14 the bridge refuses it too" false
+  | .error _ => expect "RR892-14 the bridge refuses it too" true
+
+/-- **PR #892 review round 5**: an unknown token is refused rather than read as
+the end of the tree. -/
+def deviceTreeBridge_15_unknown_token_refused : IO Unit := do
+  match DeviceTree.fromDtbFull unknownTokenBoardDtb rpi5MachineConfig.physicalAddressWidth with
+  | .ok _ => expect "RR892-15 an unknown token is refused" false
+  | .error _ => expect "RR892-15 an unknown token is refused" true
+
+/-- **PR #892 review round 5**: a `/memory` node the firmware marked unavailable
+is not the machine's RAM, so a board whose only memory is withheld does not
+boot — the Lean twin of round 4's Rust `status` filter, on the parser the bridge
+actually reads. -/
+def deviceTreeBridge_16_disabled_memory_refused : IO Unit := do
+  for status in ["disabled", "reserved", "fail", "fail-ecc"] do
+    match DeviceTree.fromDtbFull (boardDtbWithMemoryStatus status)
+        rpi5MachineConfig.physicalAddressWidth with
+    | .ok _ => expect "RR892-16 a withheld memory node is refused" false
+    | .error _ => expect "RR892-16 a withheld memory node is refused" true
+  for status in ["okay", "ok"] do
+    match rpi5PlatformConfigFromDtb (boardDtbWithMemoryStatus status) [] [] none with
+    | .ok _ => expect "RR892-16 an operational memory node is accepted" true
+    | .error _ => expect "RR892-16 an operational memory node is accepted" false
+
+/-- **PR #892 review round 5**: a `memory@…` under `/reserved-memory` is a
+carve-out at depth 2, not an aperture, and is not read as the machine's RAM —
+the depth restriction `cmdline::find_ram_top_in_dtb` has always applied and the
+Lean selector did not. -/
+def deviceTreeBridge_17_reserved_memory_child_is_not_ram : IO Unit := do
+  match DeviceTree.fromDtbFull reservedMemoryOnlyDtb rpi5MachineConfig.physicalAddressWidth with
+  | .ok _ => expect "RR892-17 a reserved-memory child is not the machine's RAM" false
+  | .error _ => expect "RR892-17 a reserved-memory child is not the machine's RAM" true
+
 end SeLe4n.Testing.Ak9PlatformSuite
 
 open SeLe4n.Testing.Ak9PlatformSuite in
@@ -980,6 +1204,10 @@ def main : IO Unit := do
   an7d2_04_rpi5BootVSpaceRoot_paddrBounded
   -- AN7-D.5 extractPeripherals recursive walk
   an7d5_01_extractPeripherals_depth3_discovery
+  review5_bus_without_ranges_hides_its_children
+  review5_empty_ranges_is_the_identity
+  review5_untranslatable_address_is_refused
+  review5_disabled_peripheral_is_not_discovered
   an7d5_02_extractPeripherals_zero_fuel_collapses
   an7d5_03_extractPeripherals_skips_incomplete_nodes
   an7d5_04_extractPeripherals_excludes_reserved_names
@@ -998,5 +1226,9 @@ def main : IO Unit := do
   deviceTreeBridge_11_foreign_base_refused
   deviceTreeBridge_12_split_aperture_binds_canonical_map
   deviceTreeBridge_13_direct_path_fallback_is_smallest
+  deviceTreeBridge_14_unterminated_blob_refused
+  deviceTreeBridge_15_unknown_token_refused
+  deviceTreeBridge_16_disabled_memory_refused
+  deviceTreeBridge_17_reserved_memory_child_is_not_ram
   IO.println ""
   IO.println "=== All AK9 platform tests passed ==="
