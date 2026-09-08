@@ -407,7 +407,18 @@ by review and reported as a security finding). **OD2 is closed** at `v0.34.125` 
 and `donationChainWellFormed` with its frame family, and the conjunct in
 `ipcReachable` with all three inhabitation witnesses re-discharged; additive, so
 no transition changed, and the predicate is vacuously true of every reachable
-state. OD3 onward are open. Plan:
+state. **OD3.1–OD3.3 landed at `v0.34.126`** — the donation return became a
+four-write reply-stack pop with a fail-closed head validation, sixteen copies of
+its case analysis collapsed onto `returnDonatedSchedContext_ok_storeChain`
+(retiring the duplicate `returnDonatedSchedContext_walk`), three statements
+changed where three claims stopped being true (the Reply frame, the widened
+binding trichotomy, and two reusable frames dropped to the `caller` projection
+they are about), and `returnDonatedSchedContext_eq_legacy_of_none` witnesses that
+the tree's behaviour is unchanged.  The depth-≥ 2 conjunct obligations are stated
+now (`donationReturnOuterValid`) rather than deferred, so OD4.3 does not reopen
+them; the one composite that is still `newOwner? = none`-conditioned says so and
+names OD4.3 as the row that removes it, before OD4.1 makes the arm reachable.
+OD3.4 onward are open. Plan:
 [`docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`](planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md)
 (41 sub-tasks across OD1..OD6). It closes two section-A rows: the onward-donation
 gap above, and the `passiveServerIdle` break the `v0.34.97` reclaim introduced —
@@ -486,7 +497,7 @@ Scope, findings and evidence for any of these are in
 | Workstream | Versions |
 |------------|----------|
 | **WS-AP** | v0.34.71– (closure post-v1.0.0 — the ASID capability surface; two SM7 debts re-targeted from the closed SM8) |
-| **WS-OD** | v0.34.98– (in flight; OD1 closed at v0.34.108 and OD2 at v0.34.125; closes before WS-RR RR8 — SchedContext donation chains, [`SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`](planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md)) |
+| **WS-OD** | v0.34.98– (in flight; OD1 closed at v0.34.108, OD2 at v0.34.125, OD3.1–OD3.3 at v0.34.126; closes before WS-RR RR8 — SchedContext donation chains, [`SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`](planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md)) |
 | **WS-XV** | v0.34.114–v0.34.124 (registered, then **absorbed into WS-BP as its BP0 phase**; the finding is retained in this file, the work is [`SMP_BOOT_PATH_PLAN.md`](planning/SMP_BOOT_PATH_PLAN.md) §5 BP0) |
 | **WS-BP** | v0.34.59– (planned; opens after WS-RR RR8 closes — the bare-metal boot path **and the cross-implementation agreement it ends**, absorbing WS-XV as BP0 at `v0.34.124`, [`SMP_BOOT_PATH_PLAN.md`](planning/SMP_BOOT_PATH_PLAN.md)) |
 | **WS-LC** | v0.34.51–v0.34.56 |

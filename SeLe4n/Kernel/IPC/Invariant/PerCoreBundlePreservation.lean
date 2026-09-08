@@ -510,17 +510,17 @@ theorem cleanupPreReceiveDonation_passiveServerIdleFrameOnCore
     | bound scId => exact passiveServerIdleFrameOnCore.refl st
     | donated scId originalOwner =>
       simp only []
-      cases hRet : returnDonatedSchedContext st receiver scId originalOwner with
+      cases hRet : returnDonatedSchedContext st receiver scId originalOwner none with
       | error _ => exact passiveServerIdleFrameOnCore.refl st
       | ok st' =>
         simp only []
         refine ⟨fun tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' hNA => ?_⟩
         have hRaw' := (getTcb?_eq_some_iff st' tid tcb').mp hTcb'
         obtain ⟨tcbI, hTcbI, _, _, hIpcEq, _⟩ := returnDonatedSchedContext_tcb_queue_backward
-          st st' receiver scId originalOwner hObjInv hRet tid.toObjId tcb' hRaw'
-        have hSched := returnDonatedSchedContext_scheduler_eq st st' receiver scId originalOwner hRet
+          st st' receiver scId originalOwner hObjInv none hRet tid.toObjId tcb' hRaw'
+        have hSched := returnDonatedSchedContext_scheduler_eq st st' receiver scId originalOwner none hRet
         have h3 := returnDonatedSchedContext_tcb_schedContextBinding_backward st st' receiver scId
-          originalOwner hObjInv hRet tid.toObjId tcb' hRaw'
+          originalOwner hObjInv none hRet tid.toObjId tcb' hRaw'
         by_cases hRecv : tid.toObjId = receiver.toObjId
         · exfalso
           apply hNA

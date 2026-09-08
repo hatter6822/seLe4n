@@ -107,7 +107,9 @@ def applyReplyDonationOnCore (st : SystemState) (replierVtid : SeLe4n.ValidThrea
     | .donated scId originalOwner =>
       match SeLe4n.ThreadId.toValid? originalOwner with
       | some ownerVtid =>
-          match returnDonatedSchedContextValid st replierVtid scId ownerVtid with
+          -- WS-OD OD3.5 threads the reply-stack resolver here; OD3.1 passes the
+          -- bottom-of-stack answer, which is what that resolver computes today.
+          match returnDonatedSchedContextValid st replierVtid scId ownerVtid none with
           | .error e => .error e
           | .ok st' =>
               .ok (removeRunnableOnCore
@@ -141,7 +143,7 @@ theorem applyReplyDonationOnCore_characterisation
          | some (scId, owner) =>
              match SeLe4n.ThreadId.toValid? owner with
              | some ownerVtid =>
-                 (match returnDonatedSchedContextValid st replierVtid scId ownerVtid with
+                 (match returnDonatedSchedContextValid st replierVtid scId ownerVtid none with
                   | .error e => .error e
                   | .ok st' =>
                       .ok (removeRunnableOnCore
@@ -185,7 +187,7 @@ theorem applyReplyDonationOnCore_bootCoreId (st : SystemState)
       | none => rfl
       | some ownerVtid =>
         simp only []
-        cases returnDonatedSchedContextValid st replierVtid scId ownerVtid with
+        cases returnDonatedSchedContextValid st replierVtid scId ownerVtid none with
         | error e => rfl
         | ok st' =>
           simp only [migrateSchedContextReplenishment_noop, removeRunnableOnCore_bootCoreId]
@@ -200,7 +202,7 @@ theorem applyReplyDonationOnCore_ok_decompose
     (replyDonationReturn? st replierVtid.val = none ∧ st'' = st)
     ∨ ∃ (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId) (st' : SystemState),
         replyDonationReturn? st replierVtid.val = some (scId, owner) ∧
-        returnDonatedSchedContext st replierVtid.val scId owner = .ok st' ∧
+        returnDonatedSchedContext st replierVtid.val scId owner none = .ok st' ∧
         st'' = removeRunnableOnCore
           (migrateSchedContextReplenishment st' scId replierHome ownerHome)
           replierVtid.val executingCore := by
@@ -218,7 +220,7 @@ theorem applyReplyDonationOnCore_ok_decompose
       have hOEq : ownerVtid.val = owner :=
         SeLe4n.ThreadId.toValid?_some_val_eq owner ownerVtid hOV
       simp only [returnDonatedSchedContextValid, hOEq] at h
-      cases hR : returnDonatedSchedContext st replierVtid.val scId owner with
+      cases hR : returnDonatedSchedContext st replierVtid.val scId owner none with
       | error e => rw [hR] at h; cases h
       | ok st' =>
         rw [hR] at h
@@ -238,7 +240,7 @@ theorem applyReplyDonationOnCore_machine_eq
   · rw [hEq]
     show (removeRunnableOnCore _ _ _).machine = _
     simp only [removeRunnableOnCore, migrateSchedContextReplenishment_machine]
-    exact returnDonatedSchedContext_machine_eq st st' replierVtid.val scId owner hRet
+    exact returnDonatedSchedContext_machine_eq st st' replierVtid.val scId owner none hRet
 
 /-- WS-RR RR2.9 (frame): the cross-core donation return commits exactly the
 single-core return's object store — neither the migration nor the deschedule
@@ -249,7 +251,7 @@ theorem applyReplyDonationOnCore_objects_eq
     (h : applyReplyDonationOnCore st replierVtid executingCore replierHome ownerHome = .ok st'') :
     (replyDonationReturn? st replierVtid.val = none ∧ st''.objects = st.objects)
     ∨ ∃ (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId) (st' : SystemState),
-        returnDonatedSchedContext st replierVtid.val scId owner = .ok st' ∧
+        returnDonatedSchedContext st replierVtid.val scId owner none = .ok st' ∧
         st''.objects = st'.objects := by
   rcases applyReplyDonationOnCore_ok_decompose st st'' replierVtid executingCore replierHome
     ownerHome h with ⟨hNone, hEq⟩ | ⟨scId, owner, st', _, hRet, hEq⟩
@@ -285,23 +287,24 @@ theorem returnDonatedSchedContext_migrate_preserves_replenishQueueAffinityConsis
     (hCons : replenishQueueAffinityConsistent_smp st)
     (hReplierHome : determineTargetCore st replier = replierHome)
     (hOwner : determineTargetCore st owner = ownerHome)
-    (hRet : returnDonatedSchedContext st replier scId owner = .ok st') :
+    (newOwner? : Option SeLe4n.ThreadId)
+    (hRet : returnDonatedSchedContext st replier scId owner newOwner? = .ok st') :
     replenishQueueAffinityConsistent_smp
       (migrateSchedContextReplenishment st' scId replierHome ownerHome) := by
   -- The return's readings.
   have hSched : st'.scheduler = st.scheduler :=
-    returnDonatedSchedContext_scheduler_eq st st' replier scId owner hRet
+    returnDonatedSchedContext_scheduler_eq st st' replier scId owner newOwner? hRet
   have hHomeEq : ∀ tid, determineTargetCore st' tid = determineTargetCore st tid := fun tid =>
     determineTargetCore_congr st st' tid
       (returnDonatedSchedContext_getTcb?_cpuAffinity_eq st st' replier scId owner
-        hObjInv hRet tid)
+        hObjInv newOwner? hRet tid)
   have hScNe : ∀ scId', scId' ≠ scId → st'.getSchedContext? scId' = st.getSchedContext? scId' :=
     fun scId' hne => returnDonatedSchedContext_getSchedContext?_ne st st' replier
-      scId scId' owner hne hObjInv hRet
+      scId scId' owner hne hObjInv newOwner? hRet
   obtain ⟨scPost, hScPost, hScPostBound⟩ :=
-    returnDonatedSchedContext_post_boundThread st st' replier scId owner hObjInv hRet
+    returnDonatedSchedContext_post_boundThread st st' replier scId owner hObjInv newOwner? hRet
   obtain ⟨scPre, hScPre, hScPreBound⟩ :=
-    returnDonatedSchedContext_ok_implies_sc_bound st st' replier scId owner hRet
+    returnDonatedSchedContext_ok_implies_sc_bound st st' replier scId owner newOwner? hRet
   have hQueue : ∀ c, st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c :=
     fun c => by rw [hSched]
   -- A `scId` entry anywhere in the pre-state forces that core to be the
@@ -383,7 +386,7 @@ theorem applyReplyDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
         (removeRunnableOnCore_preserves_objects _ _ _)).mpr
       (returnDonatedSchedContext_migrate_preserves_replenishQueueAffinityConsistent_smp
         st st' replierVtid.val scId owner replierHome ownerHome hObjInv hCons hReplierHome
-        (hOwnerHome scId owner hRes) hRet c)
+        (hOwnerHome scId owner hRes) none hRet c)
 
 -- ============================================================================
 -- §2  SM6.C.3 — Donation-chain lock-set extension

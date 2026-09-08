@@ -1,3 +1,157 @@
+## v0.34.126 — WS-OD OD3.1–OD3.3: the pop, generalised and inert
+
+**The donation return becomes a reply-stack pop, and provably does nothing new.**
+OD2 built the structure; this cut is the transition that reads it.
+`returnDonatedSchedContext` gains a `newOwner? : Option ThreadId` parameter and a
+fourth object write, and `returnDonatedSchedContext_eq_legacy_of_none` proves
+that at `newOwner? = none` over a context heading no stack — which is every state
+this tree reaches — the new definition **is** the old one, character for
+character.  Every call site in the tree passes `none`.  OD4's push is still the
+only phase that changes behaviour.
+
+**The four stores, and why each one is where it is.**  The SchedContext write now
+carries both halves of the hand-off — `boundThread := some originalOwner` and
+`scReply := head?.bind (·.2.prev)`, the pop — because they are one write and a
+frame stated over one of them would be false of the operation.  The **head clear**
+(`storeDonationHeadClear`) resets the popped Reply's `donatedSc` and `prev`; it is
+its own step with its own twelve frames rather than an arm threaded through the
+whole proof, so a downstream frame extends by one rewrite.  The client's binding
+is `donationReturnBinding scId newOwner?` — `.bound scId` at the bottom of the
+stack, `.donated scId outer` one level up — and the server still goes `.unbound`.
+
+**The head is validated, not assumed** (`donationHeadOf?`).  A head that resolves
+to no Reply, or to one donating a different context, is a **refusal**, on the same
+reading as RR2.8's `boundThread` guard: treating it as an empty stack would leave
+a Reply naming a context that no longer names it, which is the stale-link shape
+the whole chain design exists to refuse.  What rules that arm out is named
+(`donationHeadResolves`) and has two discharges — the chain invariant itself
+(`donationHeadResolves_of_chainWellFormed`, which is what `headHoldsWholeChain`'s
+terminating chain is *for*) and any step writing no chain object
+(`donationHeadResolves_of_frame`).  The reclaim's own hand-back reaches it through
+the second, over `abortHolderPendingIpc_donationChainFrame`.
+
+**Sixty attached theorems re-based off one derivation, not re-proved.**
+`returnDonatedSchedContext_ok_storeChain` is the complete decomposition WS-RR
+RR7.22 built for exactly this moment, and the fourth store is what made every
+remaining hand-rolled copy of the operation's case analysis stop compiling —
+which is the mechanism working, not a cost.  Sixteen copies are gone, replaced by
+shared frames stated once: `_objects_backward_of_kind` / `_objects_forward_of_kind`
+(the notification, endpoint and CNode transports), `_tcb_rewrite_backward` (every
+`_tcb_<field>_backward`), `_tcb_binding_cases`, `_reply_rewrite`,
+`_post_schedContext` (of which `_post_boundThread` and the new `_post_scReply` are
+corollaries), `_preserves_objects_invExt'` and `_objects_ne_of_not_reply`.
+`returnDonatedSchedContext_walk` is **retired**: it and `_ok_storeChain` were one
+question with two answers, and the weaker of the two.
+
+**Three statements changed, because three claims stopped being true.**
+(1) *A Reply frame replaces exact Reply preservation.*  The pop writes a Reply, so
+`returnDonatedSchedContext_preserves_reply` is false; `_reply_frame` says every
+Reply survives with at most its stack links reset (`replyStackRewrite`), and the
+`caller` the reply-freshness and stash invariants read agrees exactly.
+(2) *The binding trichotomy widens at the target*: `_tcb_schedContextBinding_backward`'s
+middle clause reads `donationReturnBinding scId newOwner?`, the same statement at
+`none`.  (3) *Two reusable frames drop to the field they are about*:
+`replyLinkageFrame.replyAgree` and `donationReadAgreement.otherKind` asserted
+whole-object Reply identity while the conjuncts they serve
+(`replyCallerLinkageReciprocal`) read only `caller`, so both now state the
+caller-level correspondence, with `callerAgree_of_objectAgree` doing the weakening
+once for the fifteen transitions that still have full identity.
+
+**The depth-≥ 2 obligation is named now, in the row that widens the binding.**
+`donationReturnOuterValid` states what the pop owes `donationOwnerValid` when it
+hands the context to a thread that is itself a donor: the outer caller is a TCB
+that gave up its binding and waits on its reply, and is neither the rebound thread
+nor the server.  It is a pre-state fact with the two distinctness clauses that
+carry it across the pop's own writes, and it is vacuous at `none`
+(`donationReturnOuterValid_none`).  Three conjunct preservations are general under
+it — `returnDonatedSchedContext_donationOwnerValid_at_target`,
+`_preserves_donationOwnerUnique`, `_preserves_donationBudgetTransfer` — so OD4
+does not have to reopen them.  The **composite**
+`returnDonatedSchedContext_establishes_ipcInvariantFull_of_except` is the one
+place that is not, and says so: it takes `hBottom : newOwner? = none`, its
+docstring names WS-OD OD4.3 as the row that removes it, and the arm it excludes is
+unreachable until OD4.1 writes a reply stack — so no live transition is ahead of
+its proof.
+
+**One result got stronger.**  `returnDonatedSchedContext_preserves_projection`
+carried an `objectObservable ctx observer serverTid.toObjId = false` hypothesis it
+never needed.  Every field the return writes — a SchedContext's `boundThread` and
+`scReply`, a Reply's `donatedSc` and `prev`, a TCB's `schedContextBinding` — is
+stripped by `projectKernelObject`, so the step is invisible to *any* observer, and
+composing four `storeObject_projectionStable_preserves_projection` hops off the
+store chain says so directly.  The hypothesis is gone.
+
+**The AK7 cascade, again: one floor restored and one re-anchored.**
+`RAW_MATCH_TOTAL` stays at **130** — the pop's two new store reads
+(`donationHeadOf?`, `storeDonationHeadClear`) go through `SystemState.getReply?`
+rather than inlining a lookup into their own `match`, which is the migration the
+counter exists to drive and which the two typed-adoption counters register in the
+other direction (`GETTCB_ADOPTION` 3132 → 3137, `GETSCHEDCTX_ADOPTION` 420 → 423).
+The comment explaining that choice is deliberately worded around the literal the
+counter greps for: these counters read raw text, so a comment that contains the
+pattern moves a *code* metric, which is the project's own "gates read code, prose
+reads prose" rule applied to itself.  `RAW_LOOKUP_TID` is re-anchored 1601 → 1608,
+for the reason the three preceding invariant cuts re-anchored it: a frame proof
+has to name the object-store key it frames, and the shared frames this cut adds
+name four.
+
+**The test surface: a new section, and three suites the default target could not
+see.**  `tests/SmpIpcSuite.lean` gains §3.16, twelve checks that run the pop on
+*both* shapes it can meet — the bottom of the stack, where it must be the pre-OD3
+outcome, and one level up, where it pops exactly one frame, clears the consumed
+head's links, hands the context back `.donated` at the outer caller and leaves the
+frame below untouched.  The depth-≥ 2 case is exercised although no transition
+produces it yet: a generalisation nothing has evaluated is a generalisation that
+arrives untested on the day OD4 makes it reachable.  Three fail-closed negatives
+keep the head validation honest, and each keeps the token and breaks the relation
+— a head donating a *different* context (what a re-linked Reply looks like), a
+head naming no object, and the RR2.8 `boundThread` guard.
+
+Three further suites needed repair, and the reason is the one `CLAUDE.md` states:
+`lake build` builds only what `Main.lean` and the default target reach, so the
+signature change compiled clean while `tests/An10CascadeSuite.lean`,
+`tests/SmpCrossCoreCallSuite.lean` and `tests/SmpCancellationSuite.lean` did not.
+Two of the three came back **stronger** rather than merely fixed: the AN10-H6
+wrapper-reduction check now exercises both arms of the widened argument and adds a
+control that the arms genuinely differ (a wrapper that dropped the argument and
+passed `none` would otherwise agree vacuously), and the RR3.12 donation-return
+upgrade is restated at an arbitrary `newOwner?` with the depth-≥ 2 obligation,
+with the bottom-of-stack instance beside it.  The third records the premise the
+pop's fail-closed head validation genuinely adds: `donationChainWellFormed`.
+
+**A gate sweep, because the fix named a relation.**  The negative pinning the
+strengthened projection result fired on a *clean* tree: it was written
+`theorem X(.|\n)*hReceiverObjHigh`, and `(.|\n)*` runs to the end of the file, so
+it reached the hypothesis in an unrelated theorem two hundred lines below.  That
+is this project's oldest rule one level down — a presence check standing in for a
+relation, with the region unbounded rather than merely wrong — and the sweep rule
+says to grep for every other place that asks it.  Tier 3 carried **45 positives
+and 5 negatives** with that gap, and **8 of the positives were at that moment
+satisfied by text spanning a declaration boundary**: `lockSet_lifecycleRetype`'s
+state-level-write anchor was crossing 43 declarations, so the footprint could have
+lost the member the anchor exists to pin and the gate would still have reported
+PASS.  Two earlier rounds had hit this and abandoned the wildcard at the single
+site each was shown — the comments recording both are still in the file, which is
+the sweep rule failing exactly as it says it does.
+
+All fifty now use a gap that consumes the rest of the line and then any run of
+indented or blank lines, which cannot leave the declaration it started in because
+a Lean declaration header sits at column 0.  The direction matters: bounding a
+*positive* is always safe (strictly stricter, so it can only fail closed), while
+bounding a *negative* is not, so each of the five was mutation-tested in both
+directions — silent on the clean tree, firing on a mutation that keeps the token
+and moves it into the target declaration.  Every rewritten positive was re-checked
+to still match and to no longer cross a boundary.  The idiom and the reasoning are
+now in the gate's own header, so the next anchor written the obvious way is written
+the right way.
+
+`replyStackOuterCaller?`, the pre-state resolver that will compute `newOwner?`, is
+OD3.4; threading it through the six call sites is OD3.5.  Until then the
+bottom-of-stack answer is passed literally, which is what that resolver computes
+on every state this tree can reach.
+
+Refs: docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md §OD3 (OD3.1–OD3.3)
+
 ## v0.34.125 — WS-OD OD2: the reply stack exists before anything writes it
 
 **The structure the donation chain needs, with no behaviour changed.**  WS-OD

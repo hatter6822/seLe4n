@@ -65,12 +65,12 @@ theorem applyReplyDonationOnCore_preserves_ipcInvariantFull
   · rw [hEq]; exact hInv
   · have hFull' : ipcInvariantFull st' :=
       returnDonatedSchedContext_preserves_ipcInvariantFull st st' replierVtid scId owner
-        hObjInv hInv hRet hReplierIdleAllowed hR
+        hObjInv hInv hRet hReplierIdleAllowed none rfl hR
     obtain ⟨pTcb, hPPre, _, _, _, hNe⟩ :=
       replyDonationReturn?_some_char st replierVtid.val scId owner
         (donationOwnerValidExcept_of_donationOwnerValid owner hInv.donationOwnerValid) hRet
     obtain ⟨_, ⟨pTcb0, hPPre0, hPPost⟩, _⟩ :=
-      returnDonatedSchedContext_getTcb?_char st st' replierVtid.val scId owner hObjInv hNe hR
+      returnDonatedSchedContext_getTcb?_char st st' replierVtid.val scId owner hObjInv hNe none hR
     have hPEq : pTcb0 = pTcb := Option.some.inj (hPPre0.symm.trans hPPre)
     rw [hPEq] at hPPost
     -- The migration writes only per-core replenish queues.
@@ -129,12 +129,12 @@ theorem applyReplyDonationOnCore_establishes_ipcInvariantFull_of_except
         simpa using this
       have hFull' : ipcInvariantFull st' :=
         returnDonatedSchedContext_establishes_ipcInvariantFull_of_except st st' replierVtid sc0
-          woken hObjInv hInv hRet hReplierIdleAllowed hR
+          woken hObjInv hInv hRet hReplierIdleAllowed none rfl hR
       obtain ⟨pTcb, hPPre, _, _, _, hNe⟩ :=
         replyDonationReturn?_some_char st replierVtid.val sc0 woken
           hInv.donationOwnerValidExcept hRet
       obtain ⟨_, ⟨pTcb0, hPPre0, hPPost⟩, _⟩ :=
-        returnDonatedSchedContext_getTcb?_char st st' replierVtid.val sc0 woken hObjInv hNe hR
+        returnDonatedSchedContext_getTcb?_char st st' replierVtid.val sc0 woken hObjInv hNe none hR
       have hPEq : pTcb0 = pTcb := Option.some.inj (hPPre0.symm.trans hPPre)
       rw [hPEq] at hPPost
       let stM : SystemState := migrateSchedContextReplenishment st' sc0 replierHome ownerHome
@@ -177,7 +177,7 @@ theorem applyReplyDonationOnCore_preserves_objects_invExt
     ownerHome h with ⟨_, hEq⟩ | ⟨scId, owner, st', _, hR, hEq⟩
   · rw [hEq]; exact hObjInv
   · have hInv' := returnDonatedSchedContext_preserves_objects_invExt st st' replierVtid.val scId
-      owner hObjInv hR
+      owner hObjInv none hR
     rw [hEq, removeRunnableOnCore_preserves_objects, migrateSchedContextReplenishment_objects]
     exact hInv'
 

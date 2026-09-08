@@ -1480,7 +1480,7 @@ theorem endpointReceiveDualOnCore_preserves_objects_invExt
             | donated scId originalOwner =>
                 rw [hB] at hClean
                 exact returnDonatedSchedContext_preserves_objects_invExt st stClean receiver
-                  scId originalOwner hObjInv hClean
+                  scId originalOwner hObjInv none hClean
             | unbound => rw [hB] at hClean; cases hClean; exact hObjInv
             | bound scId => rw [hB] at hClean; cases hClean; exact hObjInv
         cases hEnq : endpointQueueEnqueue endpointId true receiver stClean with

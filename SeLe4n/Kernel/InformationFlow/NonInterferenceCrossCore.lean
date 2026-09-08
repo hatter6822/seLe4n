@@ -1749,8 +1749,8 @@ theorem applyReplyDonationOnCore_confinedToCores (st st' : SystemState)
       (by
         simpa using observableSlotsConfinedToCores_trans
           (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
-            (returnDonatedSchedContext_scheduler_eq st stRet _ _ _ hRet)
-            (returnDonatedSchedContext_machine_eq st stRet _ _ _ hRet))
+            (returnDonatedSchedContext_scheduler_eq st stRet _ _ _ none hRet)
+            (returnDonatedSchedContext_machine_eq st stRet _ _ _ none hRet))
           (migrateSchedContextReplenishment_confinedToCores stRet scId replierHome ownerHome))
       (removeRunnableOnCore_confinedToCores
         (migrateSchedContextReplenishment stRet scId replierHome ownerHome)
@@ -1910,7 +1910,9 @@ def replyRecvReturnDonationWriteSet (tid recordedServer nextThread : SeLe4n.Thre
     | .donated oldScId owner =>
       match recordedServer.toValid?, owner.toValid? with
       | some srvV, some ownerV =>
-        match returnDonatedSchedContextValid st srvV oldScId ownerV with
+        -- WS-OD OD3.1: the mirror passes the same bottom-of-stack answer the
+        -- transition it models passes; OD3.5 threads the resolver into both.
+        match returnDonatedSchedContextValid st srvV oldScId ownerV none with
         | .error _ => []
         | .ok st1' =>
           -- WS-RR RR2.20: mirrors the transition, whose return is followed by the
@@ -1971,8 +1973,8 @@ theorem replyRecvReturnDonation_confinedToCores (tid recordedServer nextThread :
           simp only [hRet] at hStep
           have hReturn : observableSlotsConfinedToCores st st1' [] :=
             observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
-              (returnDonatedSchedContext_scheduler_eq st st1' _ _ _ hRet)
-              (returnDonatedSchedContext_machine_eq st st1' _ _ _ hRet)
+              (returnDonatedSchedContext_scheduler_eq st st1' _ _ _ none hRet)
+              (returnDonatedSchedContext_machine_eq st st1' _ _ _ none hRet)
           -- WS-RR RR2.20: the migration is silent too, so the pair still is.
           have hSilent : observableSlotsConfinedToCores st
               (migrateSchedContextReplenishment st1' oldScId

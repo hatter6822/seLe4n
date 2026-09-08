@@ -80,6 +80,12 @@ theorem returnDonationToCancelledCaller_no_donation_to_victim
     (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
     (hOwner : donationOwnerValid st)
+    -- WS-OD OD3.2: the reclaim's hand-back runs `returnDonatedSchedContext`, whose
+    -- reply-stack head validation is ruled out by the chain invariant.  It is a
+    -- conjunct of `ipcReachable` rather than of `ipcInvariantFull`, so it is
+    -- stated rather than projected, and it carries across the holder abort by
+    -- `abortHolderPendingIpc_donationChainFrame`.
+    (hChain : donationChainWellFormed st)
     (hHolder : donationHolderIsReplyTarget st v)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId)
     (hTcb : (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV).objects[tid.toObjId]?
@@ -128,15 +134,20 @@ theorem returnDonationToCancelledCaller_no_donation_to_victim
         = some holderTcbA :=
       lookupTcb_of_objects_of_not_reserved _ holder holderTcbA hHolderAtA
         (lookupTcb_some_not_reserved st holder holderTcb hLkH)
+    have hHeadResA : donationHeadResolves (Lifecycle.Suspend.abortHolderPendingIpc st holder)
+        scId0 :=
+      donationHeadResolves_of_frame
+        (Lifecycle.Suspend.abortHolderPendingIpc_donationChainFrame st holder hInv) scId0
+        (donationHeadResolves_of_chainWellFormed st scId0 hChain)
     obtain ⟨st', hOk⟩ := returnDonatedSchedContext_ok_under_invariants
       (Lifecycle.Suspend.abortHolderPendingIpc st holder) holder holderTcbA
-      scId0 v hInvA hOwnerA hLkHA (hBindEqA.trans hBindH)
+      scId0 v hInvA hOwnerA hHeadResA hLkHA (hBindEqA.trans hBindH)
       (lookupTcb_some_not_reserved st holder holderTcb hLkH)
-      (lookupTcb_some_not_reserved st v tcbV hLookup)
+      (lookupTcb_some_not_reserved st v tcbV hLookup) none
     rw [hOk] at hTcb
     simp only at hTcb
     obtain ⟨hSrv, hOwn, hOther⟩ := returnDonatedSchedContext_tcb_schedContextBinding_backward
-      (Lifecycle.Suspend.abortHolderPendingIpc st holder) st' holder scId0 v hInvA hOk
+      (Lifecycle.Suspend.abortHolderPendingIpc st holder) st' holder scId0 v hInvA none hOk
       tid.toObjId tcb hTcb
     by_cases hH : tid.toObjId = holder.toObjId
     · rw [hSrv hH] at hBind; cases hBind
@@ -343,25 +354,30 @@ theorem returnDonatedSchedContext_passiveServerIdleFrame
     {sA st' : SystemState} {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId}
     {owner : SeLe4n.ThreadId}
     (hInv : sA.objects.invExt)
-    (hOk : returnDonatedSchedContext sA holder scId owner = .ok st')
+    (newOwner? : Option SeLe4n.ThreadId)
+    (hOk : returnDonatedSchedContext sA holder scId owner newOwner? = .ok st')
     (hHolderAllowed : ∀ t, sA.getTcb? holder = some t →
       passiveServerIdleAllowed t.ipcState) :
     passiveServerIdleFrame sA st' := by
   refine passiveServerIdleFrame_of_backward_of_not_allowed ?_
-    (returnDonatedSchedContext_scheduler_eq sA st' holder scId owner hOk)
+    (returnDonatedSchedContext_scheduler_eq sA st' holder scId owner newOwner? hOk)
   intro a tcb' hPostT hUnbound hNA
   have hPost := (SystemState.getTcb?_eq_some_iff st' a tcb').mp hPostT
   obtain ⟨t0, h0, hIpc, _⟩ :=
     returnDonatedSchedContext_tcb_ipcState_replyObject_backward sA st' holder scId owner hInv
-      hOk a.toObjId tcb' hPost
+      newOwner? hOk a.toObjId tcb' hPost
   obtain ⟨hSrv, hOwn, hOther⟩ :=
     returnDonatedSchedContext_tcb_schedContextBinding_backward sA st' holder scId owner hInv
-      hOk a.toObjId tcb' hPost
+      newOwner? hOk a.toObjId tcb' hPost
   by_cases hH : a.toObjId = holder.toObjId
   · exact absurd (hIpc ▸ hHolderAllowed t0
       ((SystemState.getTcb?_eq_some_iff sA holder t0).mpr (hH ▸ h0))) hNA
   · by_cases hV : a.toObjId = owner.toObjId
-    · exact absurd (hOwn hH hV) (by rw [hUnbound]; intro hc; cases hc)
+    · -- WS-OD OD3.2: the target's post-binding names `scId` on both arms of
+      -- `donationReturnBinding`, so it is never `.unbound`.
+      refine absurd (hOwn hH hV) ?_
+      rw [hUnbound]
+      cases newOwner? <;> intro hc <;> cases hc
     · obtain ⟨t1, h1, hB1⟩ := hOther hH hV
       rw [h0] at h1
       have hEqT : t0 = t1 := KernelObject.tcb.inj (Option.some.inj h1)
@@ -391,7 +407,7 @@ theorem returnDonationToCancelledCaller_passiveServerIdleFrame
       refine (Lifecycle.Suspend.abortHolderPendingIpc_passiveServerIdleFrame st holder hInv).trans
         (returnDonatedSchedContext_passiveServerIdleFrame
           (Lifecycle.Suspend.abortHolderPendingIpc_preserves_objects_invExt st holder hInv)
-          hOk ?_)
+          none hOk ?_)
       intro t hAt
       exact Lifecycle.Suspend.abortHolderPendingIpc_holder_ipcState_allowed st holder holderTcb
         hInv hMem hLkH t hAt
@@ -493,6 +509,7 @@ theorem cancelIpcBlocking_reply_no_donation_to_victim
     (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
     (hBlocked : tcbV.ipcState = .blockedOnReply ep rt)
     (hOwner : donationOwnerValid st)
+    (hChain : donationChainWellFormed st)
     (hHolder : donationHolderIsReplyTarget st v)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId)
     (hTcb : (Lifecycle.Suspend.cancelIpcBlocking st v tcbV).objects[tid.toObjId]?
@@ -517,6 +534,6 @@ theorem cancelIpcBlocking_reply_no_donation_to_victim
   obtain ⟨t0, h0, hEqB⟩ := hSame tid tcb hTcb
   intro hBind
   exact returnDonationToCancelledCaller_no_donation_to_victim st v tcbV hInv hLookup hOwner
-    hHolder tid t0 scId h0 (by rw [hEqB]; exact hBind)
+    hChain hHolder tid t0 scId h0 (by rw [hEqB]; exact hBind)
 
 end SeLe4n.Kernel

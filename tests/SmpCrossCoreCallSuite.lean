@@ -732,7 +732,13 @@ example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (ec : CoreId)
 
 /-- WS-RR RR3.12: the donation return **upgrades** the relaxed invariant back to the
 full one — the other half of the reply chain's honest statement, and the reason the
-relaxation is a transient rather than a weakening. -/
+relaxation is a transient rather than a weakening.
+
+WS-OD OD3.2: the upgrade holds at **both** arms of the widened binding, so the
+statement takes an arbitrary `newOwner?` and the depth-≥ 2 obligation
+(`donationReturnOuterValid`) rather than restricting itself to the bottom of the
+reply stack — a version quantified only over `none` would have said nothing about
+the arm OD4 makes reachable. -/
 example (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
     (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt) (stcb : TCB)
@@ -740,10 +746,28 @@ example (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
     (hServerBind : stcb.schedContextBinding = .donated scId originalOwner)
     (hUnique : donationOwnerUnique st)
     (hInv : donationOwnerValidExcept st originalOwner)
-    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st') :
+    (newOwner? : Option SeLe4n.ThreadId)
+    (hOuter : donationReturnOuterValid st serverTid originalOwner newOwner?)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
     donationOwnerValid st' :=
   returnDonatedSchedContext_establishes_donationOwnerValid_of_except st st' serverTid scId
-    originalOwner hObjInv stcb hServerObj hServerBind hUnique hInv h
+    originalOwner hObjInv stcb hServerObj hServerBind hUnique hInv newOwner? hOuter h
+
+/-- WS-OD OD3.2: ...and at the bottom of the reply stack the obligation is
+discharged outright, so the shape every call site in the tree produces today needs
+no new hypothesis at all. -/
+example (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt) (stcb : TCB)
+    (hServerObj : st.objects[serverTid.toObjId]? = some (.tcb stcb))
+    (hServerBind : stcb.schedContextBinding = .donated scId originalOwner)
+    (hUnique : donationOwnerUnique st)
+    (hInv : donationOwnerValidExcept st originalOwner)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner none = .ok st') :
+    donationOwnerValid st' :=
+  returnDonatedSchedContext_establishes_donationOwnerValid_of_except st st' serverTid scId
+    originalOwner hObjInv stcb hServerObj hServerBind hUnique hInv none
+    (donationReturnOuterValid_none st serverTid originalOwner) h
 
 /-- SM6.D completion (seL4-MCS one-object reuse): the composed cross-core
 `replyRecv` accepts a reply object that is *in use by the answered caller* —

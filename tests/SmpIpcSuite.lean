@@ -1747,6 +1747,131 @@ private def runDonationChainStructureChecks : IO Unit := do
     (!(KernelObject.schedContext { SchedContext.empty chainSc with scReply := some chainHeadReply }
         == KernelObject.schedContext (SchedContext.empty chainSc)))
 
+
+/-! §3.16 — the donation return as a reply-stack pop (WS-OD OD3, inert).
+
+The pop is the transition that *reads* the structure §3.15 exercises, and this
+section runs it on both shapes it can meet: the bottom of the stack, where it
+must be the pre-OD3 return character for character, and one level up, where it
+pops the head and hands the context back `.donated`.
+
+The depth-≥ 2 case is deliberately exercised even though no transition in the
+tree produces it yet.  A pop that is only ever run at depth 1 is a pop whose
+generalisation nothing has evaluated — and the arm OD4 makes reachable would
+then arrive untested. -/
+
+private def popServer : SeLe4n.ThreadId := ⟨81⟩
+private def popClient : SeLe4n.ThreadId := ⟨82⟩
+private def popOuter : SeLe4n.ThreadId := ⟨83⟩
+
+/-- A donation return's pre-state: the context is bound to the server, which
+holds it `.donated` from the client.  `head?` says whether the context heads a
+reply stack, and `prev?` what that head links down to. -/
+private def popStore (head? : Option SeLe4n.ReplyId)
+    (prev? : Option SeLe4n.ReplyId) : SystemState :=
+  (BootstrapBuilder.empty
+    |>.withObject chainSc.toObjId
+        (.schedContext { SchedContext.empty chainSc with
+                           boundThread := some popServer, scReply := head? })
+    |>.withObject chainHeadReply.toObjId
+        (.reply { replyId := chainHeadReply, caller := some popClient,
+                  donatedSc := some chainSc, prev := prev? })
+    |>.withObject chainOuterReply.toObjId
+        (.reply { replyId := chainOuterReply, caller := some popOuter,
+                  donatedSc := some chainSc })
+    |>.withObject popServer.toObjId
+        (.tcb { mkTcb 81 50 none with schedContextBinding := .donated chainSc popClient })
+    |>.withObject popClient.toObjId (.tcb (mkTcb 82 40 none))
+    |>.withObject popOuter.toObjId (.tcb (mkTcb 83 40 none))
+    |>.build)
+
+private def popBindingOf (st : SystemState) (tid : SeLe4n.ThreadId) :
+    Option SchedContextBinding :=
+  (st.getTcb? tid).map (·.schedContextBinding)
+
+private def popHeadOf (st : SystemState) : Option (Option SeLe4n.ReplyId) :=
+  (st.getSchedContext? chainSc).map (·.scReply)
+
+private def popReplyLinks (st : SystemState) :
+    Option (Option SeLe4n.SchedContextId × Option SeLe4n.ReplyId) :=
+  match st.objects[chainHeadReply.toObjId]? with
+  | some (.reply r) => some (r.donatedSc, r.prev)
+  | _ => none
+
+private def runDonationReturnPopChecks : IO Unit := do
+  IO.println "--- §3.16 the donation return as a reply-stack pop (WS-OD OD3, inert) ---"
+  -- The bottom of the stack: no head, `newOwner? = none`.  This is the shape
+  -- every call site in the tree produces today, and it must be the pre-OD3
+  -- return exactly — the context back to its owner, the server unbound.
+  match returnDonatedSchedContext (popStore none none) popServer chainSc popClient none with
+  | .error e => assertBool s!"depth-1 pop must succeed (got {reprStr e})" false
+  | .ok st' =>
+    assertBool "depth-1: the owner is rebound `.bound`, not `.donated`"
+      (popBindingOf st' popClient == some (.bound chainSc))
+    assertBool "depth-1: the server is unbound"
+      (popBindingOf st' popServer == some .unbound)
+    assertBool "depth-1: the context points back at the owner"
+      ((st'.getSchedContext? chainSc).map (·.boundThread) == some (some popClient))
+    assertBool "depth-1: the context still heads no stack"
+      (popHeadOf st' == some none)
+  -- One level up: the context heads a stack whose head links down to the outer
+  -- call's reply.  The pop must consume exactly one frame.
+  match returnDonatedSchedContext (popStore (some chainHeadReply) (some chainOuterReply))
+      popServer chainSc popClient (some popOuter) with
+  | .error e => assertBool s!"depth-2 pop must succeed (got {reprStr e})" false
+  | .ok st' =>
+    assertBool "depth-2: the head is popped to the reply below it"
+      (popHeadOf st' == some (some chainOuterReply))
+    assertBool "depth-2: the consumed head's stack links are cleared"
+      (popReplyLinks st' == some (none, none))
+    assertBool "depth-2: the owner comes back `.donated` at the outer caller"
+      (popBindingOf st' popClient == some (.donated chainSc popOuter))
+    assertBool "depth-2: the server is still unbound"
+      (popBindingOf st' popServer == some .unbound)
+  -- ...and the frame below the head is untouched: the pop consumes ONE frame,
+  -- which is the discriminating control for "popped to `prev`" above.
+  match returnDonatedSchedContext (popStore (some chainHeadReply) (some chainOuterReply))
+      popServer chainSc popClient (some popOuter) with
+  | .error _ => assertBool "depth-2 pop must succeed (control)" false
+  | .ok st' =>
+    assertBool "depth-2: the frame below the head keeps its own donation"
+      (match st'.objects[chainOuterReply.toObjId]? with
+       | some (.reply r) => r.donatedSc == some chainSc && r.caller == some popOuter
+       | _ => false)
+  -- NEGATIVE: the head validation is fail-closed, and the mutations keep the
+  -- head and break the relation.  A head naming a Reply that donates a
+  -- *different* context is what a re-linked (reused) Reply looks like; a head
+  -- naming no object at all is a dangling link.  Either must refuse rather than
+  -- read as an empty stack, or the pop would clear a Reply belonging to someone
+  -- else and leave this context's own head dangling.
+  assertBool "NEGATIVE: a head donating another context is refused"
+    (match returnDonatedSchedContext
+        ((BootstrapBuilder.empty
+          |>.withObject chainSc.toObjId
+              (.schedContext { SchedContext.empty chainSc with
+                                 boundThread := some popServer,
+                                 scReply := some chainHeadReply })
+          |>.withObject chainHeadReply.toObjId
+              (.reply { replyId := chainHeadReply, donatedSc := some chainOtherSc })
+          |>.withObject popServer.toObjId
+              (.tcb { mkTcb 81 50 none with
+                        schedContextBinding := .donated chainSc popClient })
+          |>.withObject popClient.toObjId (.tcb (mkTcb 82 40 none))
+          |>.build)) popServer chainSc popClient none with
+     | .error e => e == KernelError.invalidArgument
+     | .ok _ => false)
+  assertBool "NEGATIVE: a head naming no object is refused"
+    (match returnDonatedSchedContext (popStore (some chainAbsentReply) none)
+        popServer chainSc popClient none with
+     | .error e => e == KernelError.objectNotFound
+     | .ok _ => false)
+  -- The RR2.8 guard is unchanged by the widening: a context bound to someone
+  -- else is still refused before anything is read or written.
+  assertBool "NEGATIVE: a context not bound to the server is still refused"
+    (match returnDonatedSchedContext (popStore none none) popOuter chainSc popClient none with
+     | .error e => e == KernelError.invalidArgument
+     | .ok _ => false)
+
 def runSmpIpcChecks : IO Unit := do
   IO.println "WS-SM SM6.F.1 — Aggregate SMP cross-core IPC suite (4 threads / 4 cores)"
   IO.println "===================================="
@@ -1767,6 +1892,7 @@ def runSmpIpcChecks : IO Unit := do
   runSuspendArmChecks
   runHandlerContentionChecks
   runDonationChainStructureChecks
+  runDonationReturnPopChecks
   runTraceFixtureCheck
   IO.println "===================================="
   IO.println "All SM6.F cross-core IPC checks PASS."

@@ -572,18 +572,24 @@ example (n : SeLe4n.ObjId)
 
 /-- WS-RR RR7.22 (residual, remediation): after the corrected reply arm no thread
 holds a SchedContext donated by the cancelled caller — the invariant premise the
-old arm left dangling. -/
+old arm left dangling.
+
+WS-OD OD3.1: the arm's reclaim is now a reply-stack *pop*, whose head validation
+is fail-closed, so the statement gained `donationChainWellFormed` — the predicate
+that says the head this context names resolves.  Without it the reclaim could
+refuse, and a refused reclaim leaves exactly the donation this result denies. -/
 example (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId)
     (holder : SeLe4n.ThreadId) (holderTcb : TCB) (sc : SeLe4n.SchedContextId)
     (hInv : st.objects.invExt) (hLookup : lookupTcb st victim = some tcb)
     (hBlocked : tcb.ipcState = .blockedOnReply ep rt)
     (hOwner : donationOwnerValid st)
+    (hChain : donationChainWellFormed st)
     (hHolder : donationHolderIsReplyTarget st victim)
     (hTcb : (Lifecycle.Suspend.cancelIpcBlocking st victim tcb).objects[holder.toObjId]?
       = some (.tcb holderTcb)) :
     holderTcb.schedContextBinding ≠ .donated sc victim :=
   cancelIpcBlocking_reply_no_donation_to_victim st victim tcb ep rt hInv hLookup hBlocked
-    hOwner hHolder holder holderTcb sc hTcb
+    hOwner hChain hHolder holder holderTcb sc hTcb
 
 /-- WS-RR RR7.22 (residual): the swept thread holds no Reply object, derived from
 the bundle's own reciprocity rather than assumed. -/

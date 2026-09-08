@@ -937,7 +937,7 @@ theorem endpointReceiveDual_preserves_ipcInvariant
             cleanupPreReceiveDonation_frame_helper st receiver hInv
               (fun scId owner st' hRet =>
                 fun oid ntfn hObj' => hInv oid ntfn
-                  (returnDonatedSchedContext_notification_backward st st' receiver scId owner hObjInv hRet oid ntfn hObj'))
+                  (returnDonatedSchedContext_notification_backward st st' receiver scId owner hObjInv none hRet oid ntfn hObj'))
           cases hEnq : endpointQueueEnqueue endpointId true receiver (cleanupPreReceiveDonation st receiver) with
           | error e => simp [hEnq] at hStep
           | ok st1 =>

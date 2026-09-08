@@ -1536,7 +1536,7 @@ theorem ipcInvariantFull_of_schedBindingRewrite
       · intro hx; exact absurd (Option.some.inj hx) (fun h => KernelObject.noConfusion h)
     · rw [hFrame oid hT hS]
   have hAgree : donationReadAgreement st st' := by
-    refine ⟨?_, ?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, replyCallerAgree_of_objectAgree (fun rid r => ?_), ?_⟩
     · intro oid tx hx
       obtain ⟨ty, hy, h1, h2, h3, h4, h5, h6, h7, h8, _⟩ := hBwd oid tx hx
       exact ⟨ty, hy, h1, h2, h3, h4, h5, h6, h7, h8⟩
@@ -1552,7 +1552,7 @@ theorem ipcInvariantFull_of_schedBindingRewrite
           exact absurd (Option.some.inj hy) (fun h => KernelObject.noConfusion h)
         · exact ⟨ty, by rw [hFrame oid hT hS]; exact hy,
             rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
-    · intro oid k hkT hkS
+    · intro oid k hkT hkS _
       by_cases hT : oid = tid.toObjId
       · rw [hT, hAtT, hPreT]
         constructor
@@ -1564,6 +1564,17 @@ theorem ipcInvariantFull_of_schedBindingRewrite
           · intro hx; exact absurd (Option.some.inj hx).symm (hkS sc')
           · intro hx; exact absurd (Option.some.inj hx).symm (hkS sc)
         · rw [hFrame oid hT hS]
+    · by_cases hT : rid.toObjId = tid.toObjId
+      · rw [hT, hAtT, hPreT]
+        constructor
+        · intro hx; cases hx
+        · intro hx; cases hx
+      · by_cases hS : rid.toObjId = scId.toObjId
+        · rw [hS, hAtS, hPreS]
+          constructor
+          · intro hx; cases hx
+          · intro hx; cases hx
+        · rw [hFrame _ hT hS]
     · intro oid x hx
       by_cases hS : oid = scId.toObjId
       · exact ⟨sc', by rw [hS]; exact hAtS⟩
@@ -2019,18 +2030,24 @@ private theorem insertObjects_schedContextClear_preserves_ipcInvariantFull
     · rw [hNe oid h]
   have hAgree : donationReadAgreement st
       { st with objects := st.objects.insert scObj (.schedContext sc') } := by
-    refine ⟨?_, ?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, replyCallerAgree_of_objectAgree (fun rid r => ?_), ?_⟩
     · intro oid tx hx
       exact ⟨tx, (hTcbEq oid tx).mp hx, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
     · intro oid ty hy
       exact ⟨ty, (hTcbEq oid ty).mpr hy, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
-    · intro oid k hkT hkS
+    · intro oid k hkT hkS _
       by_cases h : oid = scObj
       · rw [h, hAt, hPre]
         constructor
         · intro hx; exact absurd (Option.some.inj hx).symm (hkS sc')
         · intro hx; exact absurd (Option.some.inj hx).symm (hkS sc)
       · rw [hNe oid h]
+    · by_cases h : rid.toObjId = scObj
+      · rw [h, hAt, hPre]
+        constructor
+        · intro hx; cases hx
+        · intro hx; cases hx
+      · rw [hNe _ h]
     · intro oid x hx
       by_cases h : oid = scObj
       · exact ⟨sc', by rw [h]; exact hAt⟩
@@ -4393,7 +4410,7 @@ private theorem cancelDonatedDonationOnCore_preserves_ipcInvariantFull
               rw [hStored] at hX
               obtain rfl : tcb = tcbX := Option.some.inj hX
               exact hAllowed)
-            hCl
+            none rfl hCl
 
 /-- The bound-donation cancel touches only the victim's binding — every other
 bundle-read TCB field survives. -/
@@ -4465,104 +4482,23 @@ private theorem returnDonatedSchedContext_victim_shape
     (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId) (tcb : TCB)
     (hObjInv : st.objects.invExt)
     (hStored : st.objects[tid.toObjId]? = some (.tcb tcb))
-    (hStep : returnDonatedSchedContext st tid scId owner = .ok st') :
+    (newOwner? : Option SeLe4n.ThreadId)
+    (hStep : returnDonatedSchedContext st tid scId owner newOwner? = .ok st') :
     ∀ tcbX : TCB, st'.getTcb? tid = some tcbX →
       tcbX.ipcState = tcb.ipcState ∧ tcbX.pendingMessage = tcb.pendingMessage ∧
       tcbX.timeoutBudget = tcb.timeoutBudget ∧ tcbX.queuePrev = tcb.queuePrev ∧
       tcbX.queueNext = tcb.queueNext ∧ tcbX.queuePPrev = tcb.queuePPrev := by
-  unfold returnDonatedSchedContext at hStep
-  cases hScLk : st.objects[scId.toObjId]? with
-  | none => rw [hScLk] at hStep; cases hStep
-  | some obj =>
-      cases obj with
-      | schedContext sc =>
-          rw [hScLk] at hStep
-          dsimp only [] at hStep
-          split at hStep
-          · cases hStep
-          · cases hS1 : storeObject scId.toObjId (.schedContext { sc with boundThread := some owner }) st with
-            | error e => rw [hS1] at hStep; cases hStep
-            | ok p1 =>
-                obtain ⟨u1, st1⟩ := p1; cases u1
-                rw [hS1] at hStep
-                dsimp only [] at hStep
-                have hObjInv1 : st1.objects.invExt := by
-                  unfold storeObject at hS1
-                  cases hS1
-                  exact RHTable_insert_preserves_invExt _ _ _ hObjInv
-                have hNeTS : tid.toObjId ≠ scId.toObjId := by
-                  intro hEq
-                  rw [hEq, hScLk] at hStored
-                  cases hStored
-                have hT1 : st1.objects[tid.toObjId]? = some (.tcb tcb) := by
-                  rw [storeObject_objects_ne st st1 scId.toObjId tid.toObjId _ hNeTS hObjInv hS1]
-                  exact hStored
-                cases hL1 : lookupTcb st1 owner with
-                | none => rw [hL1] at hStep; cases hStep
-                | some clientTcb =>
-                    rw [hL1] at hStep
-                    dsimp only [] at hStep
-                    cases hS2 : storeObject owner.toObjId (.tcb { clientTcb with schedContextBinding := .bound scId }) st1 with
-                    | error e => rw [hS2] at hStep; cases hStep
-                    | ok p2 =>
-                        obtain ⟨u2, st2⟩ := p2; cases u2
-                        rw [hS2] at hStep
-                        dsimp only [] at hStep
-                        have hObjInv2 : st2.objects.invExt := by
-                          unfold storeObject at hS2
-                          cases hS2
-                          exact RHTable_insert_preserves_invExt _ _ _ hObjInv1
-                        have hT2 : ∃ tcbM : TCB, st2.objects[tid.toObjId]? = some (.tcb tcbM) ∧
-                            tcbM.ipcState = tcb.ipcState ∧ tcbM.pendingMessage = tcb.pendingMessage ∧
-                            tcbM.timeoutBudget = tcb.timeoutBudget ∧ tcbM.queuePrev = tcb.queuePrev ∧
-                            tcbM.queueNext = tcb.queueNext ∧ tcbM.queuePPrev = tcb.queuePPrev := by
-                          by_cases hOw : owner.toObjId = tid.toObjId
-                          · refine ⟨{ clientTcb with schedContextBinding := .bound scId }, ?_, ?_⟩
-                            · rw [← hOw]
-                              exact storeObject_objects_eq st1 st2 owner.toObjId _ hObjInv1 hS2
-                            · have hCl : clientTcb = tcb := by
-                                unfold lookupTcb at hL1
-                                split at hL1
-                                · cases hL1
-                                · rw [hOw, hT1] at hL1
-                                  simp only [Option.some.injEq] at hL1
-                                  exact hL1.symm
-                              rw [hCl]
-                              exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
-                          · refine ⟨tcb, ?_, rfl, rfl, rfl, rfl, rfl, rfl⟩
-                            rw [storeObject_objects_ne st1 st2 owner.toObjId tid.toObjId _
-                              (fun h => hOw h.symm) hObjInv1 hS2]
-                            exact hT1
-                        obtain ⟨tcbM, hTM, hFlds⟩ := hT2
-                        cases hL2 : lookupTcb st2 tid with
-                        | none => rw [hL2] at hStep; cases hStep
-                        | some serverTcb =>
-                            rw [hL2] at hStep
-                            dsimp only [] at hStep
-                            have hSrv : serverTcb = tcbM := by
-                              unfold lookupTcb at hL2
-                              split at hL2
-                              · cases hL2
-                              · rw [hTM] at hL2
-                                simp only [Option.some.injEq] at hL2
-                                exact hL2.symm
-                            cases hS3 : storeObject tid.toObjId (.tcb { serverTcb with schedContextBinding := .unbound }) st2 with
-                            | error e => rw [hS3] at hStep; cases hStep
-                            | ok p3 =>
-                                obtain ⟨u3, st3⟩ := p3; cases u3
-                                rw [hS3] at hStep
-                                dsimp only [] at hStep
-                                cases hStep
-                                intro tcbX hX
-                                have hXobj := (SystemState.getTcb?_eq_some_iff _ tid tcbX).mp hX
-                                dsimp only [] at hXobj
-                                rw [storeObject_objects_eq st2 st3 tid.toObjId _ hObjInv2 hS3] at hXobj
-                                obtain rfl : ({ serverTcb with schedContextBinding := .unbound } : TCB) = tcbX := by
-                                  simpa using hXobj
-                                rw [hSrv]
-                                exact hFlds
-      | tcb _ | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-      | reply _ => rw [hScLk] at hStep; cases hStep
+  -- WS-OD OD3.2: the shared TCB rewrite — one field moves, the rest agree by
+  -- `rfl` on the record update, so the pop's fourth store needs no new case.
+  intro tcbX hX
+  obtain ⟨t', hPost, sb, hEq⟩ :=
+    returnDonatedSchedContext_tcb_rewrite st st' tid scId owner hObjInv newOwner? hStep
+      tid.toObjId tcb hStored
+  rw [SystemState.getTcb?_eq_some_iff] at hX
+  rw [hPost] at hX
+  obtain rfl : t' = tcbX := KernelObject.tcb.inj (Option.some.inj hX)
+  subst hEq
+  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 private theorem cancelDonatedDonationOnCore_victim_shape
     (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (tcb : TCB)
@@ -4605,7 +4541,7 @@ private theorem cancelDonatedDonationOnCore_victim_shape
           unfold cleanupDonatedSchedContext at hCl
           simp only [hLk, hB] at hCl
           exact returnDonatedSchedContext_victim_shape st st1 tval scId owner tcb hObjInv
-            ((SystemState.getTcb?_eq_some_iff st tval tcb).mp hStored) hCl tcbX hX1
+            ((SystemState.getTcb?_eq_some_iff st tval tcb).mp hStored) none hCl tcbX hX1
 
 /-- The suspend tail's clear-and-deactivate stage: pending-state clear
 (pointwise inert on a quiescent victim) then the `threadState := .Inactive`

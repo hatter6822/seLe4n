@@ -163,6 +163,17 @@ projections the walk actually reads (`replyStackLinks?`,
 over-approximation of it. Nothing writes the three stack fields yet, so the
 predicate is vacuously true of every reachable state — deliberately: the
 invariant and its frames land before the transitions that must preserve them.
+
+OD3.1–OD3.3 (`v0.34.126`) landed the transition that **reads** it. The donation
+return is now a four-write reply-stack pop with a fail-closed head validation,
+and `returnDonatedSchedContext_eq_legacy_of_none` proves it is the pre-OD3 body
+at `newOwner? = none` over a context heading no stack — which every call site in
+the tree passes, so the behaviour is unchanged and OD4's push remains the only
+phase that changes it. Three statements moved with it, because three claims
+stopped being true: exact Reply preservation became a Reply **frame**, the
+binding trichotomy widened at the target, and the two reusable frames that
+asserted whole-object Reply identity dropped to the `caller` projection the
+conjunct they serve actually reads.
 See [`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.12.7 for the canonical text.
 
 ### 3.4 Lifecycle — `SeLe4n/Kernel/Lifecycle/Invariant/`

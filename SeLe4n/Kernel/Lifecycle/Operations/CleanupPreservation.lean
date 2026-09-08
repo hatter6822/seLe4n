@@ -863,7 +863,7 @@ theorem cleanupDonatedSchedContext_preserves_objects_invExt
     injection h with h; subst h; exact hInv
   · split at h
     · -- `.donated scId originalOwner`: delegate to returnDonatedSchedContext.
-      exact returnDonatedSchedContext_preserves_objects_invExt _ _ _ _ _ hInv h
+      exact returnDonatedSchedContext_preserves_objects_invExt _ _ _ _ _ hInv none h
     · -- `.bound` / `.unbound`: identity.
       injection h with h; subst h; exact hInv
 
@@ -882,7 +882,7 @@ theorem cleanupDonatedSchedContext_preserves_ipcInvariant
   · split at h
     · intro oid ntfn hL
       exact hIpc oid ntfn
-        (returnDonatedSchedContext_notification_backward _ _ _ _ _ hInv h oid ntfn hL)
+        (returnDonatedSchedContext_notification_backward _ _ _ _ _ hInv none h oid ntfn hL)
     · injection h with h; subst h; exact hIpc
 
 /-- After cleanup, the cleaned thread is not in the run queue. -/

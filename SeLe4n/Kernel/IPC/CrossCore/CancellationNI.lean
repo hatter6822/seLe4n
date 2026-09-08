@@ -700,42 +700,51 @@ theorem returnDonationToCancelledCaller_preserves_projection
         st holder hObjSetInv
       have hIdxCompleteA := Lifecycle.Suspend.abortHolderPendingIpc_preserves_objectIndexSetComplete
         st holder hObjInv hObjSetInv hIdxComplete
-      obtain ⟨sc, clientTcb, serverTcb, s1, s2, s3, hSc, hS1, hL1, hS2, hL2, hS3, hEq⟩ :=
-        returnDonatedSchedContext_ok_storeChain _ st' holder scId victim h
+      -- WS-OD OD3.2: the chain is four object writes now — the head clear sits
+      -- between the SchedContext store and the client's binding, and is
+      -- projection-stable for the same reason the other three are (every field
+      -- the return touches is stripped by `projectKernelObject`).
+      obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
+        hSc, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
+        returnDonatedSchedContext_ok_storeChain _ st' holder scId victim none h
       have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt _ s1 _ _ hObjInvA hS1
-      have hInv2 := SeLe4n.Model.storeObject_preserves_objects_invExt s1 s2 _ _ hInv1 hS2
+      have hInv2 := storeDonationHeadClear_preserves_objects_invExt hInv1 hClear
+      have hInv3 := SeLe4n.Model.storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
       have hSet1 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt _ s1 _ _
         hObjSetInvA hS1
-      have hSet2 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt s1 s2 _ _ hSet1 hS2
+      have hSet2 := storeDonationHeadClear_preserves_objectIndexSet_invExt hSet1 hClear
+      have hSet3 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt s2 s3 _ _ hSet2 hS3
       have hC1 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete _ s1 _ _ hObjInvA
         hObjSetInvA hIdxCompleteA hS1
-      have hC2 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete s1 s2 _ _ hInv1
-        hSet1 hC1 hS2
+      have hC2 := storeDonationHeadClear_preserves_objectIndexSetComplete hInv1 hSet1 hC1 hClear
+      have hC3 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete s2 s3 _ _ hInv2
+        hSet2 hC2 hS3
       have hP1 := storeObject_projectionStable_preserves_projection ctx observer _ s1
         scId.toObjId _ (.schedContext sc) hSc
-        (projectKernelObject_schedContext_boundThread_invariant ctx observer sc _)
+        (projectKernelObject_schedContext_donationWrite_invariant ctx observer sc _ _)
         (hIdxCompleteA scId.toObjId (by rw [hSc]; intro hx; cases hx))
         hObjInvA hS1
-      have hP2 := storeObject_projectionStable_preserves_projection ctx observer s1 s2
-        victim.toObjId _ (.tcb clientTcb) (lookupTcb_some_objects s1 victim clientTcb hL1)
-        (projectKernelObject_tcb_schedContextBinding_invariant ctx observer clientTcb _)
-        (hC1 victim.toObjId (by
-          rw [lookupTcb_some_objects s1 victim clientTcb hL1]
-          intro hx
-          cases hx))
-        hInv1 hS2
+      have hP2 := storeDonationHeadClear_preserves_projection ctx observer hC1 hInv1 hClear
       have hP3 := storeObject_projectionStable_preserves_projection ctx observer s2 s3
-        holder.toObjId _ (.tcb serverTcb) (lookupTcb_some_objects s2 holder serverTcb hL2)
-        (projectKernelObject_tcb_schedContextBinding_invariant ctx observer serverTcb _)
-        (hC2 holder.toObjId (by
-          rw [lookupTcb_some_objects s2 holder serverTcb hL2]
+        victim.toObjId _ (.tcb clientTcb) (lookupTcb_some_objects s2 victim clientTcb hL1)
+        (projectKernelObject_tcb_schedContextBinding_invariant ctx observer clientTcb _)
+        (hC2 victim.toObjId (by
+          rw [lookupTcb_some_objects s2 victim clientTcb hL1]
           intro hx
           cases hx))
         hInv2 hS3
-      have hFinal : projectState ctx observer st' = projectState ctx observer s3 := by
+      have hP4 := storeObject_projectionStable_preserves_projection ctx observer s3 s4
+        holder.toObjId _ (.tcb serverTcb) (lookupTcb_some_objects s3 holder serverTcb hL2)
+        (projectKernelObject_tcb_schedContextBinding_invariant ctx observer serverTcb _)
+        (hC3 holder.toObjId (by
+          rw [lookupTcb_some_objects s3 holder serverTcb hL2]
+          intro hx
+          cases hx))
+        hInv3 hS4
+      have hFinal : projectState ctx observer st' = projectState ctx observer s4 := by
         rw [hEq]
         rfl
-      rw [hFinal, hP3, hP2, hP1]
+      rw [hFinal, hP4, hP3, hP2, hP1]
       exact hAbortProj scId holder hRes
     · rfl
   · rfl

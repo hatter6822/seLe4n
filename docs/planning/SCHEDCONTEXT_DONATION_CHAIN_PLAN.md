@@ -318,9 +318,9 @@ dropped, and `donationChainWellFormed.replyWellFormedAt` is the bridge.
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
 | OD3.1 | `returnDonatedSchedContext` gains `newOwner?`, the head validation (fail-closed, symmetric with RR2.8's `boundThread` guard), the Reply clear and the head pop — a four-store chain.  The six theorems that case-analyse the literal store sequence re-derive **in this row**, because a fourth store makes them non-compiling and neither half compiles alone | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` | XL |
-| OD3.2 | Re-base the remaining thirty-five attached theorems.  Two change *statement*, not only proof: the one asserting the return touches no Reply becomes a Reply **frame**, and the binding trichotomy widens at the target.  Consumes OD3.1 | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean`, `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` | XL |
+| OD3.2 | Re-base the remaining thirty-five attached theorems.  **Three** change *statement*, not only proof: the one asserting the return touches no Reply becomes a Reply **frame**; the binding trichotomy widens at the target; and the two reusable frames that asserted whole-object Reply identity (`replyLinkageFrame.replyAgree`, `donationReadAgreement.otherKind`) drop to the `caller` projection the conjunct they serve actually reads.  Consumes OD3.1 | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean`, `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean`, `SeLe4n/Kernel/IPC/Invariant/Defs.lean` | XL |
 | OD3.3 | `returnDonatedSchedContext_eq_legacy_of_none` — at `newOwner? = none` the new definition **is** the old one.  This is the row that makes the phase inert and leaves OD4 as the only behaviour change | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` | S |
-| OD3.4 | `replyStackOuterCaller?` — the pre-state resolver and its correctness lemma, required because the reply leg consumes the target's link before the donation return runs (§3.3), on the same discipline as the two resolvers already beside it | `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean` | M |
+| OD3.4 | `replyStackOuterCaller?` — the pre-state resolver and its correctness lemma, required because the reply leg consumes the target's link before the donation return runs (§3.3), on the same discipline as the two resolvers already beside it.  **Placement corrected at OD3.1**: it goes in `Endpoint.lean` beside `donationHeadOf?`, not in `EndpointReplyDispatch.lean`, because three of the six call sites that must resolve it (`cleanupDonatedSchedContext`, `applyReplyDonation`, `returnDonationToCancelledCaller`) are **upstream** of that module and none of them imports it | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` | M |
 | OD3.5 | Thread `newOwner?` through all six call sites, each resolving from its own pre-state.  Consumes OD3.4 | `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean`, `SeLe4n/Kernel/IPC/Operations/Endpoint.lean`, `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean`, `SeLe4n/Kernel/Lifecycle/Suspend.lean`, `SeLe4n/Kernel/API.lean` | XL |
 | OD3.6 | **The arm-selected cancellation footprint.**  Split the summed `Option` arguments into footprints chosen by the victim's `ipcState`: the arms are mutually exclusive, but the bound census measures at full arity, so the summed form reaches nine before the next row adds a member.  Every later footprint change consumes this one.  **Also recovers the `.replyRecv` headroom** (PR #892 review round 6): a *delegated* reply — one answered by a thread other than the one the Reply records as its server — needs that server's own TCB lock, and the arm is already at nine of nine, so `lockSetForSyscall` answers `none` there and the delegated case keeps the coarser serialisation.  With the arms selected rather than summed, declare it | `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean`, `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` | L |
 | OD3.7 | Footprints: the reply, replyRecv and cancellation-reply-arm sets gain the previous reply's **read**; re-prove the bound at full arity on each.  If any exceeds the ceiling, stop and escalate — raising it widens the published covert-channel bound | `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean`, `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean`, `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` | L |
@@ -328,6 +328,19 @@ dropped, and `donationChainWellFormed.replyWellFormedAt` is the bridge.
 
 **Acceptance**: every call site passes `none`, and OD3.3 witnesses that the tree's
 behaviour is bit-identical to pre-OD3.
+
+**Landed OD3.1–OD3.3 at `v0.34.126`.**  Two decisions the rows record rather than
+inherit.  (1) **The depth-≥ 2 conjunct obligations are stated in OD3.2, not
+deferred to OD4**: `donationReturnOuterValid` names what the pop owes
+`donationOwnerValid` when it hands the context to a thread that is itself a
+donor, and `donationOwnerValid`, `donationOwnerUnique` and
+`donationBudgetTransfer` are general under it — so OD4.3 does not reopen them and
+no live transition is ever ahead of its own proof.  (2) **The one exception says
+so**: `returnDonatedSchedContext_establishes_ipcInvariantFull_of_except` takes
+`hBottom : newOwner? = none`, because its case analysis discharges the target's
+arm by `cases` on a `.bound` binding at four places; **OD4.3 removes it**, in the
+row whose subject is exactly the five conjunct preservations under the widened
+arm.  The arm it excludes is unreachable until OD4.1 writes a reply stack.
 
 ### OD4 — the push; the chain goes live
 

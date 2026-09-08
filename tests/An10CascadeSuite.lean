@@ -628,10 +628,14 @@ def an10_e_returnDonatedSchedContextValid_reduces : IO Bool := do
   let serverVtid : ValidThreadId := ⟨serverTid, by decide⟩
   let originalOwnerVtid : ValidThreadId := ⟨originalOwnerTid, by decide⟩
   let scId : SchedContextId := SchedContextId.ofNat 100
+  -- WS-OD OD3.1: the wrapper gained the reply-stack argument, so the reduction
+  -- has to be checked at *both* of its arms — a wrapper that dropped the new
+  -- argument and passed `none` would still reduce on the bottom-of-stack call.
+  let outerTid : ThreadId := ThreadId.ofNat 3
   -- Error path: empty state, no SchedContext.
   let errorOk : Bool :=
-    match SeLe4n.Kernel.returnDonatedSchedContextValid (default : SystemState) serverVtid scId originalOwnerVtid,
-          SeLe4n.Kernel.returnDonatedSchedContext (default : SystemState) serverVtid.val scId originalOwnerVtid.val with
+    match SeLe4n.Kernel.returnDonatedSchedContextValid (default : SystemState) serverVtid scId originalOwnerVtid none,
+          SeLe4n.Kernel.returnDonatedSchedContext (default : SystemState) serverVtid.val scId originalOwnerVtid.val none with
     | Except.error e1, Except.error e2 => e1 == e2
     | _, _ => false
   -- Success path: state with donated-binding server + bound client.
@@ -643,13 +647,26 @@ def an10_e_returnDonatedSchedContextValid_reduces : IO Bool := do
       |>.insert scId.toObjId (.schedContext sc)
       |>.insert serverTid.toObjId (.tcb serverTcb)
       |>.insert originalOwnerTid.toObjId (.tcb ownerTcb)) }
-  let successOk : Bool :=
-    match SeLe4n.Kernel.returnDonatedSchedContextValid stPop serverVtid scId originalOwnerVtid,
-          SeLe4n.Kernel.returnDonatedSchedContext stPop serverVtid.val scId originalOwnerVtid.val with
-    | Except.ok _, Except.ok _ => true
+  let reducesAt (newOwner? : Option ThreadId) : Bool :=
+    match SeLe4n.Kernel.returnDonatedSchedContextValid stPop serverVtid scId originalOwnerVtid newOwner?,
+          SeLe4n.Kernel.returnDonatedSchedContext stPop serverVtid.val scId originalOwnerVtid.val newOwner? with
+    | Except.ok st1, Except.ok st2 => st1.objects.toList.length == st2.objects.toList.length
     | Except.error e1, Except.error e2 => e1 == e2
     | _, _ => false
-  return errorOk && successOk
+  let successOk : Bool := reducesAt none && reducesAt (some outerTid)
+  -- ...and the two arms are genuinely different transitions, so a wrapper that
+  -- discarded the argument would be caught rather than agreeing vacuously.
+  let armsDiffer : Bool :=
+    match SeLe4n.Kernel.returnDonatedSchedContextValid stPop serverVtid scId originalOwnerVtid none,
+          SeLe4n.Kernel.returnDonatedSchedContextValid stPop serverVtid scId originalOwnerVtid
+            (some outerTid) with
+    | Except.ok stB, Except.ok stD =>
+      (stB.getTcb? originalOwnerTid).map (·.schedContextBinding) ==
+          some (.bound scId) &&
+        (stD.getTcb? originalOwnerTid).map (·.schedContextBinding) ==
+          some (.donated scId outerTid)
+    | _, _ => false
+  return errorOk && successOk && armsDiffer
 
 /-- AN10-E.production-wiring — verify `applyCallDonation` invokes the H5
 wrapper path on a state where both `caller`/`receiver` are non-sentinel.

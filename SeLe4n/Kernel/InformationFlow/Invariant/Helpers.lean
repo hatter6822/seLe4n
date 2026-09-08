@@ -588,6 +588,30 @@ theorem storeObject_projectionStable_preserves_projection
   · exact storeObject_preserves_projectMemory ctx observer st st' oid _ hStore
   · exact storeObject_preserves_projectServiceRegistry ctx observer st st' oid _ hStore
 
+/-- WS-OD OD3.2: **the donation return's reply-stack head clear is invisible to
+every observer.**
+
+The pop resets the popped Reply's `donatedSc` and `prev`, and
+`projectKernelObject` strips both (OD2.2), so the write is projection-stable
+whether or not the Reply is low-visible — the same reason the binding hand-off
+itself is invisible.  An instance of
+`storeObject_projectionStable_preserves_projection`, so a projection hop over the
+donation return is one more rewrite rather than a second case analysis. -/
+theorem storeDonationHeadClear_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    {head? : Option SeLe4n.ReplyId} {st st' : SystemState}
+    (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none → st.objectIndexSet.contains oid = true)
+    (hObjInv : st.objects.invExt)
+    (h : storeDonationHeadClear head? st = .ok st') :
+    projectState ctx observer st' = projectState ctx observer st := by
+  rcases storeDonationHeadClear_cases h with rfl | ⟨rid, r, _, hRead, hS⟩
+  · rfl
+  · exact storeObject_projectionStable_preserves_projection ctx observer st st' rid.toObjId
+      _ (.reply r) hRead
+      (projectKernelObject_reply_stackLinks_invariant ctx observer r none none)
+      (hIdxComplete rid.toObjId (by rw [hRead]; intro hx; cases hx))
+      hObjInv hS
+
 /-- WS-SM SM6.D (#7.1 fold): writing only a Reply object's `caller` back-link (the
 fold's atomic `linkCallerReply` reply-write) preserves `projectState`
 **unconditionally** — even when the Reply object is low-visible — because

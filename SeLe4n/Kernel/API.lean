@@ -825,7 +825,10 @@ def replyRecvReturnDonation (tid recordedServer : SeLe4n.ThreadId)
         | .donated oldScId owner =>
             match recordedServer.toValid?, owner.toValid? with
             | some srvV, some ownerV =>
-                match returnDonatedSchedContextValid st srvV oldScId ownerV with
+                -- WS-OD OD3.5 threads the reply-stack resolver here; OD3.1 passes
+                -- the bottom-of-stack answer, which is what that resolver
+                -- computes today.
+                match returnDonatedSchedContextValid st srvV oldScId ownerV none with
                 | .error e => .error e
                 | .ok st1' =>
                     -- WS-RR RR2.20: the return moved the SC's binding from the
@@ -928,16 +931,16 @@ theorem replyRecvReturnDonation_preserves_replenishQueueAffinityConsistent_smp
             SeLe4n.ThreadId.toValid?_some_val_eq recordedServer srvV hSrvV
           have hOwnerEq : ownerV.val = owner :=
             SeLe4n.ThreadId.toValid?_some_val_eq owner ownerV hOwnerV
-          cases hRet : returnDonatedSchedContext st recordedServer oldScId owner with
+          cases hRet : returnDonatedSchedContext st recordedServer oldScId owner none with
           | error e =>
-              rw [show returnDonatedSchedContextValid st srvV oldScId ownerV
-                    = returnDonatedSchedContext st recordedServer oldScId owner by
+              rw [show returnDonatedSchedContextValid st srvV oldScId ownerV none
+                    = returnDonatedSchedContext st recordedServer oldScId owner none by
                   simp only [returnDonatedSchedContextValid, hSrvEq, hOwnerEq], hRet] at h
               simp only [] at h
               cases h
           | ok st1' =>
-              rw [show returnDonatedSchedContextValid st srvV oldScId ownerV
-                    = returnDonatedSchedContext st recordedServer oldScId owner by
+              rw [show returnDonatedSchedContextValid st srvV oldScId ownerV none
+                    = returnDonatedSchedContext st recordedServer oldScId owner none by
                   simp only [returnDonatedSchedContextValid, hSrvEq, hOwnerEq], hRet] at h
               simp only [] at h
               -- Stage 1: the return plus its RR2.20 migration.
@@ -945,13 +948,13 @@ theorem replyRecvReturnDonation_preserves_replenishQueueAffinityConsistent_smp
                   (migrateSchedContextReplenishment st1' oldScId
                     (determineTargetCore st recordedServer) (determineTargetCore st owner)) :=
                 returnDonatedSchedContext_migrate_preserves_replenishQueueAffinityConsistent_smp
-                  st st1' recordedServer oldScId owner _ _ hObjInv hCons rfl rfl hRet
+                  st st1' recordedServer oldScId owner _ _ hObjInv hCons rfl rfl none hRet
               have hInv1 : (migrateSchedContextReplenishment st1' oldScId
                   (determineTargetCore st recordedServer)
                   (determineTargetCore st owner)).objects.invExt := by
                 rw [migrateSchedContextReplenishment_objects]
                 exact returnDonatedSchedContext_preserves_objects_invExt st st1' recordedServer
-                  oldScId owner hObjInv hRet
+                  oldScId owner hObjInv none hRet
               -- Stages 2-4 run on the migrated state; name it once.
               generalize hM : migrateSchedContextReplenishment st1' oldScId
                 (determineTargetCore st recordedServer) (determineTargetCore st owner) = st1 at *
@@ -1123,16 +1126,16 @@ theorem replyRecvReturnDonation_preserves_ipcInvariantFull
             SeLe4n.ThreadId.toValid?_some_val_eq recordedServer srvV hSrvV
           have hOwnerEq : ownerV.val = owner :=
             SeLe4n.ThreadId.toValid?_some_val_eq owner ownerV hOwnerV
-          cases hRet : returnDonatedSchedContext st recordedServer oldScId owner with
+          cases hRet : returnDonatedSchedContext st recordedServer oldScId owner none with
           | error e =>
-              rw [show returnDonatedSchedContextValid st srvV oldScId ownerV
-                    = returnDonatedSchedContext st recordedServer oldScId owner by
+              rw [show returnDonatedSchedContextValid st srvV oldScId ownerV none
+                    = returnDonatedSchedContext st recordedServer oldScId owner none by
                   simp only [returnDonatedSchedContextValid, hSrvEq, hOwnerEq], hRet] at h
               simp only [] at h
               cases h
           | ok st1' =>
-              rw [show returnDonatedSchedContextValid st srvV oldScId ownerV
-                    = returnDonatedSchedContext st recordedServer oldScId owner by
+              rw [show returnDonatedSchedContextValid st srvV oldScId ownerV none
+                    = returnDonatedSchedContext st recordedServer oldScId owner none by
                   simp only [returnDonatedSchedContextValid, hSrvEq, hOwnerEq], hRet] at h
               simp only [] at h
               -- The witnessed return, and what it did to every binding.
@@ -1144,8 +1147,8 @@ theorem replyRecvReturnDonation_preserves_ipcInvariantFull
                   hRetW
               obtain ⟨⟨oTcb0, hOPre0, hOPost⟩, ⟨pTcb0, hPPre0, hPPost⟩, hOther⟩ :=
                 returnDonatedSchedContext_getTcb?_char st st1' recordedServer oldScId owner
-                  hObjInv hNe hRet
-              have hRetV : returnDonatedSchedContext st srvV.val oldScId owner = .ok st1' := by
+                  hObjInv hNe none hRet
+              have hRetV : returnDonatedSchedContext st srvV.val oldScId owner none = .ok st1' := by
                 rw [hSrvEq]; exact hRet
               have hRetWV : replyDonationReturn? st srvV.val = some (oldScId, owner) := by
                 rw [hSrvEq]; exact hRetW
@@ -1154,10 +1157,10 @@ theorem replyRecvReturnDonation_preserves_ipcInvariantFull
                 returnDonatedSchedContext_preserves_ipcInvariantFull st st1' srvV oldScId owner
                   hObjInv hInv hRetWV
                   (by intro tcb hTcb; rw [hSrvEq] at hTcb; exact hServerIdleAllowed tcb hTcb)
-                  hRetV
+                  none rfl hRetV
               have hObjInv1' : st1'.objects.invExt :=
                 returnDonatedSchedContext_preserves_objects_invExt st st1' recordedServer
-                  oldScId owner hObjInv hRet
+                  oldScId owner hObjInv none hRet
               -- Stage 2: the migration is invisible to every bundle reading.
               have hObjsM : (migrateSchedContextReplenishment st1' oldScId
                   (determineTargetCore st recordedServer)
@@ -1260,7 +1263,7 @@ theorem replyRecvReturnDonation_preserves_ipcInvariantFull
                                 rw [hGetM] at hTcb
                                 rw [hTVEq]
                                 rcases returnDonatedSchedContext_binding_trichotomy st st1'
-                                    recordedServer owner oldScId pTcb0 oTcb0 hOPost hPPost
+                                    recordedServer owner oldScId none pTcb0 oTcb0 hOPost hPPost
                                     hOther tid' tcb hTcb with
                                   ⟨_, hBnd⟩ | ⟨_, hBnd⟩ | ⟨_, _, hPre⟩
                                 · rw [hBnd]; intro hAbs; cases hAbs

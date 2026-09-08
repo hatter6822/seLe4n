@@ -538,6 +538,16 @@ theorem projectKernelObject_reply_prev_invariant
       = projectKernelObject ctx observer (.reply r) := by
   simp [projectKernelObject]
 
+/-- **WS-OD OD3.2**: the projection is invariant under a Reply's whole reply-stack
+frame — the two links the donation return's head clear resets together.  Stated as
+one lemma so a projection hop over that write is one rewrite rather than two. -/
+theorem projectKernelObject_reply_stackLinks_invariant
+    (ctx : LabelingContext) (observer : IfObserver) (r : SeLe4n.Kernel.Reply)
+    (donated : Option SeLe4n.SchedContextId) (prev : Option SeLe4n.ReplyId) :
+    projectKernelObject ctx observer (.reply { r with donatedSc := donated, prev := prev })
+      = projectKernelObject ctx observer (.reply r) := by
+  simp [projectKernelObject]
+
 /-- **WS-RR RR7.22 (residual, remediation)**: the projection is invariant under a
 TCB's SchedContext binding — `projectKernelObject` strips the field (AI4-A), so a
 donation hand-off is invisible to any observer, not merely to a high one. -/
@@ -572,6 +582,17 @@ theorem projectKernelObject_schedContext_scReply_invariant
     (ctx : LabelingContext) (observer : IfObserver) (sc : SchedContext)
     (rid : Option SeLe4n.ReplyId) :
     projectKernelObject ctx observer (.schedContext { sc with scReply := rid })
+      = projectKernelObject ctx observer (.schedContext sc) := by
+  simp [projectKernelObject]
+
+/-- **WS-OD OD3.2**: the projection is invariant under the whole of the donation
+return's SchedContext write — the rebind and the reply-stack pop together.  The
+pairing of the two fields is the operation's actual write set, so a projection hop
+over it is one rewrite rather than two. -/
+theorem projectKernelObject_schedContext_donationWrite_invariant
+    (ctx : LabelingContext) (observer : IfObserver) (sc : SchedContext)
+    (bt : Option SeLe4n.ThreadId) (rid : Option SeLe4n.ReplyId) :
+    projectKernelObject ctx observer (.schedContext { sc with boundThread := bt, scReply := rid })
       = projectKernelObject ctx observer (.schedContext sc) := by
   simp [projectKernelObject]
 

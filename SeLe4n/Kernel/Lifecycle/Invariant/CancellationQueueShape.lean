@@ -993,9 +993,8 @@ theorem sweptAndRestored_replyLinkageFrame
     (hUnlinked : tcbV.replyObject = none) :
     replyLinkageFrame st (sweptAndRestored st v frame) := by
   have hVObj : st.objects[v.toObjId]? = some (.tcb tcbV) := lookupTcb_some_objects st v tcbV hLookup
-  refine ⟨?_, ?_, ?_⟩
-  · intro rid r
-    exact sweptAndRestored_nonTcbNonEndpoint st v frame tcbV hInv hLink hAcyc hLookup
+  refine ⟨replyLinkageFrame.callerAgree_of_objectAgree (fun rid r => ?_), ?_, ?_⟩
+  · exact sweptAndRestored_nonTcbNonEndpoint st v frame tcbV hInv hLink hAcyc hLookup
       rid.toObjId (.reply r) (by simp) (by simp)
   · intro tid tcb' hTcb'
     obtain ⟨t0, h0, hcase⟩ :=

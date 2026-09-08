@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.34.125` (`lakefile.toml`) |
+| **Package version** | `0.34.126` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 356,971 across 328 Lean files |
-| **Test LoC** | 73,043 across 70 Lean test suites |
-| **Proved declarations** | 11,935 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 357,374 across 328 Lean files |
+| **Test LoC** | 73,216 across 70 Lean test suites |
+| **Proved declarations** | 11,989 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4074,6 +4074,50 @@ own proofs.
 **binding** graph (`.donated scId owner` edges), which onward donation leaves
 chain-free because the binding's `owner` is always the *immediate* donor.  The
 transitive structure is the reply stack.
+
+**The pop reads it** (WS-OD OD3.1–OD3.3, v0.34.126), still with **no behavioural
+change**.  `returnDonatedSchedContext` takes `newOwner? : Option ThreadId` and
+performs four object writes: the context's rebind **and** stack pop as one store
+(`boundThread := some originalOwner`, `scReply := head?.bind (·.2.prev)` — one
+write, so a frame over either half alone would be false of the operation), the
+consumed head Reply's stack links cleared, the target's
+`donationReturnBinding scId newOwner?`, and the server's `.unbound`.
+`returnDonatedSchedContext_eq_legacy_of_none` proves that at `newOwner? = none`
+over a context heading no stack the new definition **is** the old one, and every
+call site in the tree passes `none`, so OD4's push remains the only phase that
+changes behaviour.
+
+- **The head is validated, not assumed.**  `donationHeadOf?` refuses a head that
+  resolves to no Reply, or to one donating a different context — the fail-closed
+  posture of the `boundThread` guard beside it.  Reading such a head as an empty
+  stack would leave a Reply naming a context that no longer names it, which is
+  the stale-link shape the chain design exists to refuse.  What rules that arm
+  out is named (`donationHeadResolves`) and has two discharges: the chain
+  invariant itself, and any step writing no chain object.
+- **One derivation, not sixteen copies.**  The fourth store made every remaining
+  hand-rolled copy of the operation's case analysis stop compiling, which is what
+  `returnDonatedSchedContext_ok_storeChain` was built for; the copies are gone,
+  replaced by shared frames (the object-kind transports, the TCB binding rewrite
+  in both directions, the binding trichotomy, the Reply frame and the SchedContext
+  post-state).  `returnDonatedSchedContext_walk` — the same question with a
+  weaker second answer — is retired.
+- **Three statements changed, because three claims stopped being true.**  The
+  return writes a Reply, so exact Reply preservation became a Reply **frame**
+  (`replyStackRewrite`: at most the stack links reset, `caller` exactly
+  preserved); the binding trichotomy widened at the target; and
+  `replyLinkageFrame` / `donationReadAgreement` dropped from whole-object Reply
+  identity to the `caller` projection the conjunct they serve
+  (`replyCallerLinkageReciprocal`) actually reads.
+- **The depth-≥ 2 obligation is stated now**, in the row that widens the binding
+  rather than the row that first produces a `some`: `donationReturnOuterValid`
+  says the outer caller is a TCB that gave up its binding and waits on its reply
+  and is neither the rebound thread nor the server, and the `donationOwnerValid`,
+  `donationOwnerUnique` and `donationBudgetTransfer` preservations are general
+  under it.  The `ipcInvariantFull` **composite** is the one exception and says
+  so, taking `newOwner? = none` until OD4.3.
+- **The return is invisible to every observer, not merely a high one.**  Every
+  field it writes is stripped by `projectKernelObject`, so the projection result
+  no longer carries an observability hypothesis on the server.
 
 ### 8.13 Priority Inheritance Protocol
 Priority inversion via Call/Reply IPC is mitigated by a deterministic Priority

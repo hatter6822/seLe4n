@@ -448,9 +448,8 @@ theorem purgedAndRestored_replyLinkageFrame
     (hUnlinked : tcbV.replyObject = none) :
     replyLinkageFrame st (purgedAndRestored st v frame) := by
   have hVObj : st.objects[v.toObjId]? = some (.tcb tcbV) := lookupTcb_some_objects st v tcbV hLookup
-  refine ⟨?_, ?_, ?_⟩
-  · intro rid r
-    exact purgedAndRestored_nonNotification st v frame tcbV hInv hLookup
+  refine ⟨replyLinkageFrame.callerAgree_of_objectAgree (fun rid r => ?_), ?_, ?_⟩
+  · exact purgedAndRestored_nonNotification st v frame tcbV hInv hLookup
       rid.toObjId (.reply r) (by simp) (by simp)
   · intro tid tcb' hTcb'
     rcases purgedAndRestored_tcb_pullback st v frame tcbV hInv hLookup tid.toObjId tcb' hTcb' with

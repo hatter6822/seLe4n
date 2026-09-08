@@ -350,7 +350,7 @@ theorem applyReplyDonation_characterisation
          | some (scId, owner) =>
              (match SeLe4n.ThreadId.toValid? owner with
               | some ownerVtid =>
-                  (match returnDonatedSchedContextValid st replierVtid scId ownerVtid with
+                  (match returnDonatedSchedContextValid st replierVtid scId ownerVtid none with
                    | .error e => .error e
                    | .ok st' => .ok (removeRunnable st' replierVtid.val))
               | none => .error .invalidArgument)
@@ -369,7 +369,7 @@ theorem applyReplyDonation_characterisation
         | none => rfl
         | some ownerVtid =>
             simp only []
-            cases returnDonatedSchedContextValid st replierVtid _ ownerVtid <;> rfl
+            cases returnDonatedSchedContextValid st replierVtid _ ownerVtid none <;> rfl
 
 /-- WS-RR RR2.1 / RR2.2 (operation): the cross-core `.call` SchedContext
 donation — the single-core `applyCallDonation` **plus** the SM5.H.4

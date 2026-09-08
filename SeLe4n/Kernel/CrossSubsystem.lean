@@ -1782,6 +1782,16 @@ theorem storeObject_preservesFieldsOutside_ipc
   preservesFieldsOutside_mono (fun _ hf => List.mem_append_left _ hf)
     (storeObject_preservesFieldsOutside id obj st st' hStep)
 
+/-- WS-OD OD3.2: the donation return's reply-stack head clear is at most one
+`storeObject`, so it writes no field the endpoint write set omits. -/
+theorem storeDonationHeadClear_preservesFieldsOutside_ipc
+    {head? : Option SeLe4n.ReplyId} {st st' : SystemState}
+    (hStep : storeDonationHeadClear head? st = .ok st') :
+    preservesFieldsOutside ipcEndpointOp_modifiedFields st st' := by
+  rcases storeDonationHeadClear_cases hStep with rfl | ⟨_, _, _, _, hS⟩
+  · exact preservesFieldsOutside_refl _ _
+  · exact storeObject_preservesFieldsOutside_ipc _ _ _ _ hS
+
 theorem ensureRunnable_preservesFieldsOutside (st : SystemState) (tid : SeLe4n.ThreadId) :
     preservesFieldsOutside ipcEndpointOp_modifiedFields st (ensureRunnable st tid) := by
   unfold ensureRunnable
@@ -1949,38 +1959,25 @@ theorem linkCallerReply_preservesFieldsOutside
 theorem returnDonatedSchedContext_preservesFieldsOutside
     (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
     (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
-    (hStep : returnDonatedSchedContext st serverTid scId originalOwner = .ok st') :
+    (newOwner? : Option SeLe4n.ThreadId)
+    (hStep : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
     preservesFieldsOutside ipcEndpointOp_modifiedFields st st' := by
-  unfold returnDonatedSchedContext at hStep
-  dsimp only at hStep
-  split at hStep
-  · split at hStep
-    · cases hStep
-    · split at hStep
-      · cases hStep
-      · rename_i st₁ hSc
-        split at hStep
-        · cases hStep
-        · split at hStep
-          · cases hStep
-          · rename_i st₂ hClient
-            split at hStep
-            · cases hStep
-            · split at hStep
-              · cases hStep
-              · rename_i st₃ hServer
-                cases hStep
-                refine preservesFieldsOutside_trans
-                  (storeObject_preservesFieldsOutside_ipc _ _ _ _ hSc) ?_
-                refine preservesFieldsOutside_trans
-                  (storeObject_preservesFieldsOutside_ipc _ _ _ _ hClient) ?_
-                refine preservesFieldsOutside_trans
-                  (storeObject_preservesFieldsOutside_ipc _ _ _ _ hServer) ?_
-                intro f hf
-                cases f <;> first
-                  | rfl
-                  | exact (hf (by decide)).elim
-  · cases hStep
+  -- WS-OD OD3.2: read off the operation's own store chain rather than by a copy
+  -- of its case analysis, which the reply-stack pop's fourth write invalidated.
+  obtain ⟨_, _, _, _, s1, s2, s3, s4, _, _, hS1, hClear, _, hS3, _, hS4, hEq⟩ :=
+    returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? hStep
+  refine preservesFieldsOutside_trans
+    (storeObject_preservesFieldsOutside_ipc _ _ _ _ hS1) ?_
+  refine preservesFieldsOutside_trans (storeDonationHeadClear_preservesFieldsOutside_ipc hClear) ?_
+  refine preservesFieldsOutside_trans
+    (storeObject_preservesFieldsOutside_ipc _ _ _ _ hS3) ?_
+  refine preservesFieldsOutside_trans
+    (storeObject_preservesFieldsOutside_ipc _ _ _ _ hS4) ?_
+  rw [hEq]
+  intro f hf
+  cases f <;> first
+    | rfl
+    | exact (hf (by decide)).elim
 
 theorem cleanupPreReceiveDonationChecked_preservesFieldsOutside
     (st st' : SystemState) (receiver : SeLe4n.ThreadId)
@@ -1991,7 +1988,7 @@ theorem cleanupPreReceiveDonationChecked_preservesFieldsOutside
   · cases hStep
     exact preservesFieldsOutside_refl _ _
   · split at hStep
-    · exact returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ hStep
+    · exact returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ none hStep
     · cases hStep
       exact preservesFieldsOutside_refl _ _
 

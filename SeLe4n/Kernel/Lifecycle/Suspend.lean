@@ -731,7 +731,9 @@ def returnDonationToCancelledCaller (st : SystemState) (tid : SeLe4n.ThreadId)
     -- `passiveServerIdle`, because a `.donated` holder is outside its reach.
     -- The donation is resolved once, above, and the resolution survives the
     -- abort because the abort writes no `schedContextBinding`.
-    match returnDonatedSchedContext (abortHolderPendingIpc st holder) holder scId tid with
+    -- WS-OD OD3.5 threads the reply-stack resolver here; OD3.1 passes the
+    -- bottom-of-stack answer, which is what that resolver computes today.
+    match returnDonatedSchedContext (abortHolderPendingIpc st holder) holder scId tid none with
     | .ok st' => st'
     -- All-or-nothing: the abort is discarded too.  `cancelledCallerDonation?`
     -- resolves through the *holder*, so it can answer `some` for a caller with
