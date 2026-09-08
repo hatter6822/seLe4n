@@ -1444,7 +1444,7 @@ check — an image built for the BCM2712 that finds itself on a board whose
 device tree does not cover the binding's RAM and MMIO refuses here, rather than
 programming peripherals that are not there.  Both halves are checked: the RAM
 against the `.ram` regions of the configuration the binding will install, the
-MMIO against `RPi5.mmioRegions` — the PL011, the GIC distributor and the GIC
+MMIO against `RPi5.requiredMmioWindows` — the PL011, the GIC distributor and the GIC
 CPU interface, which is the granularity a device tree discovers peripherals at.
 
 **PR #892 review round 2**: the RAM is validated against the **detected
@@ -1470,7 +1470,7 @@ def rpi5PlatformConfigFromDtb (blob : ByteArray)
       if SeLe4n.Platform.Boot.deviceTreeCoversMachineConfig dt
             (SeLe4n.Platform.RPi5.rpi5BoundMachineConfig dt.machineConfig)
           && SeLe4n.Platform.Boot.deviceTreeCoversMmioRegions dt
-            SeLe4n.Platform.RPi5.mmioRegions then
+            SeLe4n.Platform.RPi5.requiredMmioWindows then
         .ok (SeLe4n.Platform.Boot.PlatformConfig.fromDeviceTree dt irqTable initialObjects
           bootVSpaceRoot)
       else
@@ -1583,7 +1583,7 @@ theorem rpi5PlatformConfigFromDtb_refuses_missing_mmio (blob : ByteArray)
     (hParse : SeLe4n.Platform.DeviceTree.fromDtbFull blob
       SeLe4n.Platform.RPi5.rpi5MachineConfig.physicalAddressWidth = .ok dt)
     (hMmio : SeLe4n.Platform.Boot.deviceTreeCoversMmioRegions dt
-      SeLe4n.Platform.RPi5.mmioRegions = false) :
+      SeLe4n.Platform.RPi5.requiredMmioWindows = false) :
     rpi5PlatformConfigFromDtb blob irqTable initialObjects bootVSpaceRoot
       = .error .boardDoesNotMatchBinding := by
   unfold rpi5PlatformConfigFromDtb
@@ -1604,7 +1604,7 @@ theorem rpi5PlatformConfigFromDtb_ok_machineConfig (blob : ByteArray)
     (hCover : SeLe4n.Platform.Boot.deviceTreeCoversMachineConfig dt
       (SeLe4n.Platform.RPi5.rpi5BoundMachineConfig dt.machineConfig) = true)
     (hMmio : SeLe4n.Platform.Boot.deviceTreeCoversMmioRegions dt
-      SeLe4n.Platform.RPi5.mmioRegions = true) :
+      SeLe4n.Platform.RPi5.requiredMmioWindows = true) :
     rpi5PlatformConfigFromDtb blob irqTable initialObjects bootVSpaceRoot
       = .ok (SeLe4n.Platform.Boot.PlatformConfig.fromDeviceTree dt irqTable initialObjects
           bootVSpaceRoot) := by
@@ -1645,7 +1645,7 @@ theorem rpi5PlatformConfigFromDtb_ok_binds_detected_variant (blob : ByteArray)
           (SeLe4n.Platform.Boot.deviceTreeCoversMachineConfig dt
               (SeLe4n.Platform.RPi5.rpi5BoundMachineConfig dt.machineConfig)
             && SeLe4n.Platform.Boot.deviceTreeCoversMmioRegions dt
-              SeLe4n.Platform.RPi5.mmioRegions) = true
+              SeLe4n.Platform.RPi5.requiredMmioWindows) = true
       · rw [if_pos hGuard] at h
         injection h with hConfig
         rw [← hConfig, SeLe4n.Platform.Boot.PlatformConfig.fromDeviceTree_machineConfig]

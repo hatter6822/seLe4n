@@ -1230,7 +1230,7 @@ run_negative_check "INVARIANT" rg -n -U 'if device_type_ok \{\n\s+if let Some\(\
 # `fatal_halt` — dominates the table build, and the check reads the clamped
 # top the tables are built for, not the raw one.  The pure core is a
 # conjunction over every range, with `false` the fold's only early exit.
-run_check "INVARIANT" rg -n -U 'let mapped_top = clamp_ram_top\(ram_top\);\n    let dtb_extent = crate::cmdline::dtb_extent_from_dtb\(dtb_ptr\);\n    if !boot_ranges_mapped_under\(mapped_top, dtb_extent\) \{\n(.*\n)*?        crate::cpu::fatal_halt\(\);\n    \}\n    build_identity_tables\(ram_top\);' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -U 'let mapped_top = clamp_ram_top\(ram_top\);\n(\s*\n)*    let dtb_extent = crate::cmdline::dtb_dereferenced_range\(dtb_ptr\);\n    if !boot_ranges_mapped_under\(mapped_top, dtb_extent\) \{\n(.*\n)*?        crate::cpu::fatal_halt\(\);\n    \}\n    build_identity_tables\(ram_top\);' rust/sele4n-hal/src/mmu.rs
 run_check "INVARIANT" rg -n -U 'pub const fn boot_critical_ranges_mapped\(ram_top: u64, ranges: &\[\(u64, u64\)\]\) -> bool \{\n    let mut i = 0;\n    while i < ranges\.len\(\) \{\n        let \(base, size\) = ranges\[i\];\n        if !boot_cacheable_range_in\(base, size, ram_top\) \{\n            return false;' rust/sele4n-hal/src/mmu.rs
 # NEGATIVE: the pre-round entry — the tables built straight from the parsed top.
 run_negative_check "INVARIANT" rg -n -U 'let ram_top = crate::cmdline::ram_top_from_dtb\(dtb_ptr\)\.unwrap_or\(LOW_RAM_TOP\);\n    build_identity_tables\(ram_top\);' rust/sele4n-hal/src/mmu.rs
@@ -1528,7 +1528,7 @@ run_negative_check "INVARIANT" rg -n 'value != "disabled"' SeLe4n/Platform/Devic
 # physical address at all (Devicetree Specification v0.4 §2.3.8).
 # (Round 6 gave the call its span: the anchor is stated at the current shape,
 # and `ctx.translate childBase` alone is the negative below.)
-run_check "INVARIANT" rg -n -U 'match ctx\.translate childBase size with\n            \| none => none\n            \| some base => some \{ name := node\.name, base := \(SeLe4n\.PAddr\.ofNat base\), size \}' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U 'match ctx\.translate childBase size with\n            \| none => none\n            \| some base =>\n              some \{ name := node\.name, base := \(SeLe4n\.PAddr\.ofNat base\), size, compatible \}' SeLe4n/Platform/DeviceTree.lean
 run_negative_check "INVARIANT" rg -n 'ctx\.translate childBase with' SeLe4n/Platform/DeviceTree.lean
 # (Round 6 gave `translate` its span argument, so the refusal is `fun _ _`; the
 # one-argument spelling is the negative, since it would not typecheck against a
@@ -1551,7 +1551,7 @@ run_negative_check "INVARIANT" rg -n -U 'let base := match readBE64 regBytes 0 w
 run_check "INVARIANT" rg -n -U 'def memoryNodesWithCells \(root : FdtNode\) : List \(FdtNode × Nat × Nat\) :=\n  root\.children\.filterMap fun n =>' SeLe4n/Platform/DeviceTree.lean
 run_negative_check "INVARIANT" rg -n 'nodes\.flatMap \(fun parent =>' SeLe4n/Platform/DeviceTree.lean
 run_check "INVARIANT" rg -n '^def fdtDefaultSizeCells : Nat := 1$' SeLe4n/Platform/DeviceTree.lean
-run_check "INVARIANT" rg -n -U 'if entrySize == 0 \|\| regBytes\.size % entrySize != 0 then none\n  else some \(extractMemoryRegionsGeneral regBytes addressCells sizeCells\)' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U 'match fdtWholeEntryCount regBytes \(\(addressCells \+ sizeCells\) \* 4\) with\n  \| none => none\n  \| some _ => some \(extractMemoryRegionsGeneral regBytes addressCells sizeCells\)' SeLe4n/Platform/DeviceTree.lean
 run_check "INVARIANT" rg -n 'node\.name\.startsWith "memory@" && node\.name\.length > 7' SeLe4n/Platform/DeviceTree.lean
 run_check "INVARIANT" rg -n -U 'match memoryRegionsFromNodes root with\n      \| none => \.error \.malformedBlob' SeLe4n/Platform/DeviceTree.lean
 # NEGATIVE: the first-node selector, the fixed-stride extractor, and the
@@ -1573,7 +1573,9 @@ run_negative_check "INVARIANT" rg -n -U '\(\(endpointReplyDonation\? st replier\
 # PR #892 review round 6: a peripheral's `reg` is a LIST of blocks (a GIC node
 # carries its distributor and CPU interface in one), and a block is reported
 # only if the WHOLE interval fits one translation window.
-run_check "INVARIANT" rg -n -U '\(List\.range \(regBytes\.size / entryBytes\)\)\.filterMap fun i =>' SeLe4n/Platform/DeviceTree.lean
+# (Round 8 replaced the floor division with the checked entry count; the loop
+# over every block is unchanged and is pinned at its new bound.)
+run_check "INVARIANT" rg -n -U '\(List\.range entryCount\)\.filterMap fun i =>' SeLe4n/Platform/DeviceTree.lean
 run_check "INVARIANT" rg -n -U 'decide \(r\.childBase ≤ addr ∧ addr \+ size ≤ r\.childBase \+ r\.length\)' SeLe4n/Platform/DeviceTree.lean
 run_check "INVARIANT" rg -n -U 'match ctx\.translate childBase size with' SeLe4n/Platform/DeviceTree.lean
 # NEGATIVE: the base-only containment test, which reported a region running past
@@ -10931,7 +10933,7 @@ run_check "INVARIANT" rg -n -U 'match fdtRoot\? nodes with\n      \| none => \.e
 # A `ranges` that is not a whole number of tuples maps NOTHING; the readable
 # prefix is the negative, since it let a peripheral in the first window satisfy
 # the coverage check on a blob the parser had refused to read.
-run_check "INVARIANT" rg -n -U 'if entrySize == 0 \|\| bytes\.size % entrySize != 0 then none\n  else go 0 fuel \[\]' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U 'match fdtWholeEntryCount bytes \(\(childAddressCells \+ parentAddressCells \+ childSizeCells\) \* 4\) with\n  \| none => none\n  \| some _ => go 0 fuel \[\]' SeLe4n/Platform/DeviceTree.lean
 run_check "INVARIANT" rg -n -U 'match parseFdtRanges bytes childAddressCells parent\.addressCells childSizeCells with\n        \| none =>' SeLe4n/Platform/DeviceTree.lean
 run_negative_check "INVARIANT" rg -n 'let ranges := parseFdtRanges bytes childAddressCells' SeLe4n/Platform/DeviceTree.lean
 # A parse establishes the invariant `DeviceTree`'s own docstring states.
@@ -10949,5 +10951,71 @@ open SeLe4n.Platform
 #check @SeLe4n.Platform.fdtRoot?
 EOF
 lake env lean /tmp/fdt_bounded_view_probe.lean'
+
+# ---------------------------------------------------------------------------
+# PR #892 review round 8.
+# ---------------------------------------------------------------------------
+# A non-null device-tree pointer whose extent cannot be recovered is still
+# dereferenced by Phase 5, so it is still checked before translation is enabled.
+run_check "INVARIANT" rg -n -U 'pub fn dtb_dereferenced_range\(dtb_ptr: u64\) -> Option<\(u64, u64\)> \{\n    if dtb_ptr == 0 \{\n        return None;\n    \}\n    Some\(dtb_extent_from_dtb\(dtb_ptr\)\.unwrap_or\(\(dtb_ptr, FDT_HEADER_SIZE as u64\)\)\)' rust/sele4n-hal/src/cmdline.rs
+run_check "INVARIANT" rg -n 'let dtb_extent = crate::cmdline::dtb_dereferenced_range\(dtb_ptr\);' rust/sele4n-hal/src/mmu.rs
+# NEGATIVE: the extent reader, which conflates "no device tree" with "a device
+# tree whose header this parser cannot read".
+run_negative_check "INVARIANT" rg -n 'let dtb_extent = crate::cmdline::dtb_extent_from_dtb\(dtb_ptr\);' rust/sele4n-hal/src/mmu.rs
+run_negative_check "INVARIANT" rg -n 'let dtb = dtb_extent\.unwrap_or_default\(\);' rust/sele4n-hal/src/mmu.rs
+
+# A cell-tuple property is read whole or not at all, and ONE function decides
+# it — the relation was answered three different ways at four sites.
+run_check "INVARIANT" rg -n -U 'def fdtWholeEntryCount \(bytes : ByteArray\) \(entryBytes : Nat\) : Option Nat :=\n  if entryBytes == 0 \|\| bytes\.size % entryBytes != 0 then none\n  else some \(bytes\.size / entryBytes\)' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U 'match fdtWholeEntryCount bytes \(\(childAddressCells \+ parentAddressCells \+ childSizeCells\) \* 4\) with' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U 'match fdtWholeEntryCount regBytes \(\(addressCells \+ sizeCells\) \* 4\) with' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U 'match fdtWholeEntryCount regBytes entryBytes with\n    \| none => \[\]\n    \| some entryCount =>' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U '\(fdtWholeEntryCount regBlob 16\)\.map fun _ =>' SeLe4n/Platform/DeviceTree.lean
+# NEGATIVE: the floor division that dropped a trailing partial tuple, and the
+# two hand-written remainder tests it replaced.
+run_negative_check "INVARIANT" rg -n -U '\(List\.range \(regBytes\.size / entryBytes\)\)\.filterMap' SeLe4n/Platform/DeviceTree.lean
+run_negative_check "INVARIANT" rg -n 'if entrySize == 0 \|\| regBytes\.size % entrySize != 0 then none' SeLe4n/Platform/DeviceTree.lean
+run_negative_check "INVARIANT" rg -n -U '\| some regBlob => fdtRegionsToMemoryRegions \(extractMemoryRegions regBlob\)' SeLe4n/Platform/DeviceTree.lean
+
+# An MMIO window is covered by the DEVICE that belongs there, not by whatever
+# occupies the address.
+run_check "INVARIANT" rg -n -U 'd\.compatible\.any \(fun c => w\.compatible\.contains c\)\n        && d\.base\.toNat ≤ w\.region\.base\.toNat\n        && w\.region\.endAddr ≤ d\.base\.toNat \+ d\.size' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U 'structure RequiredMmioWindow where' SeLe4n/Platform/Boot/MemoryCoverage.lean
+run_check "INVARIANT" rg -n 'theorem requiredMmioWindows_regions_eq' SeLe4n/Platform/RPi5/Board.lean
+run_check "INVARIANT" rg -n -U 'some \{ name := node\.name, base := \(SeLe4n\.PAddr\.ofNat base\), size, compatible \}' SeLe4n/Platform/DeviceTree.lean
+# NEGATIVE: the extent-only predicate, which counted any peripheral covering an
+# address as the PL011 and as both GIC blocks.
+run_negative_check "INVARIANT" rg -n -U 'regions\.all fun r =>\n    dt\.peripherals\.any fun d =>\n      d\.base\.toNat ≤ r\.base\.toNat && r\.endAddr ≤ d\.base\.toNat \+ d\.size' SeLe4n/Platform/Boot.lean
+
+# The physical-width gate reads the code view, in BOTH directions.
+# `[$]` rather than an escaped dollar: the pattern needs a literal one, and this
+# file is linted at default severity where a dollar inside single quotes is
+# SC2016.  (A comment here must not begin with the linter's own name, which it
+# would read as a directive — SC1073.)
+run_check "INVARIANT" rg -n -U 'require_width_binding\(\) \{\n  local src="[$]1" width="[$]2" message="[$]3"\n  local view\n  view="[$]\(lean_view_of "[$]\{src\}"\)"\n  if ! grep -q "physicalAddressWidth := [$]\{width\}" "[$]\{view\}"; then' scripts/check_physical_address_width.sh
+run_check "INVARIANT" rg -n '2 width-view cases' scripts/check_physical_address_width.sh
+# NEGATIVE: the raw scans.
+run_negative_check "INVARIANT" rg -n "grep -q 'physicalAddressWidth := 44' SeLe4n/Platform/RPi5/Board\.lean" scripts/check_physical_address_width.sh
+
+# The claim-evidence gate builds its declaration inventories from code views.
+run_check "INVARIANT" rg -n -U 'def view\(rel: str\) -> str:\n        return _code_view\(rel, _read\(root, rel\)\)' scripts/check_claim_evidence_citations.py
+run_check "INVARIANT" rg -n -U 'for m in LEAN_DECL\.finditer\(view\(rel\)\):' scripts/check_claim_evidence_citations.py
+run_check "INVARIANT" rg -n -U 'for name in RUST_DECL\.findall\(view\(rel\)\):' scripts/check_claim_evidence_citations.py
+# NEGATIVE: the raw-text inventories, which let a deleted symbol's comment
+# certify a citation.
+run_negative_check "INVARIANT" rg -n -U 'LEAN_DECL\.finditer\(_read\(root, rel\)\)' scripts/check_claim_evidence_citations.py
+run_negative_check "INVARIANT" rg -n -U 'RUST_DECL\.findall\(_read\(root, rel\)\)' scripts/check_claim_evidence_citations.py
+# The round's Lean surface resolves.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && cat > /tmp/mmio_identity_probe.lean <<EOF
+import SeLe4n.Platform.Boot
+open SeLe4n.Platform
+#check @SeLe4n.Platform.fdtWholeEntryCount
+#check @SeLe4n.Platform.FdtNode.compatibleStrings
+#check @SeLe4n.Platform.Boot.RequiredMmioWindow
+#check @SeLe4n.Platform.RPi5.requiredMmioWindows
+#check @SeLe4n.Platform.RPi5.requiredMmioWindows_regions_eq
+#check @SeLe4n.Platform.RPi5.requiredMmioWindows_compatible_nonempty
+EOF
+lake env lean /tmp/mmio_identity_probe.lean'
 
 finalize_report

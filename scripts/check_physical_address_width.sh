@@ -201,10 +201,45 @@ LEANEOF
   fi
   rm -f "${fx}" "${view}"
 
+  # PR #892 review round 8: the width scans read the code view too, and both
+  # directions of that need a witness — a *presence* case (prose must not
+  # satisfy a positive) and an *absence* case (prose must not trip the
+  # negative).  Both mutations keep the token and change only whether it is
+  # code, which is the mutation shape this project requires.
+  local wfx wview
+  wfx="$(mktemp)"; wview="$(mktemp)"
+  cat > "${wfx}" <<'LEANEOF'
+-- A fixture, written and deleted by scripts/check_physical_address_width.sh.
+-- The binding below has been changed; the old one survives only in this
+-- comment: physicalAddressWidth := 44
+def fixtureConfig :=
+  { physicalAddressWidth := 40 }
+LEANEOF
+  python3 scripts/lean_code_view.py "${wfx}" > "${wview}"
+  if grep -q 'physicalAddressWidth := 44' "${wview}"; then
+    echo "self-test FAIL: width: a commented-out binding satisfied the positive scan" >&2
+    failures=$((failures + 1))
+  fi
+  cat > "${wfx}" <<'LEANEOF'
+-- A fixture, written and deleted by scripts/check_physical_address_width.sh.
+/-- Never `physicalAddressWidth := 48`: 48 is the ARMv8 *virtual* address
+    width, and using it for a physical one is the misconfiguration this gate
+    refuses.  (A heredoc body is lexed as a document of its own, so an audit
+    identifier written here would be read as code by the naming gate; the
+    reference lives in the shell comment above.) -/
+def fixtureDoc := 0
+LEANEOF
+  python3 scripts/lean_code_view.py "${wfx}" > "${wview}"
+  if grep -qE 'physicalAddressWidth[[:space:]]*:=[[:space:]]*48([^0-9]|$)' "${wview}"; then
+    echo "self-test FAIL: width: prose describing the forbidden binding tripped the negative" >&2
+    failures=$((failures + 1))
+  fi
+  rm -f "${wfx}" "${wview}"
+
   if [ "${failures}" -ne 0 ]; then
     fail "device-window relation self-test: ${failures} case(s) failed"
   fi
-  echo "device-window relation self-test passed (6 verdict cases, 3 parse cases)."
+  echo "device-window relation self-test passed (6 verdict cases, 3 parse cases, 2 width-view cases)."
 }
 
 # The self-test runs first on every invocation: a relation check that has
@@ -214,33 +249,76 @@ if [ "${1:-}" = "--self-test" ]; then
   exit 0
 fi
 
+# PR #892 review round 8: all four width scans read the **code view**, not the
+# raw file.  Raw text is wrong in both directions here, and the gate was wrong
+# in both: a width changed while the old assignment survived in a docstring
+# satisfied the three positives, and a comment explaining what `48` means for
+# virtual addresses tripped the negative — the very shape this project's
+# conventions forbid (*never contort prose to satisfy a scanner*).
+#
+# Views go to files rather than into a pipeline: under `pipefail`, `grep -q`
+# closes the pipe on its first match and the writer takes SIGPIPE, so the status
+# is 141 exactly when the pattern *is* present.
+WIDTH_VIEW_DIR="$(mktemp -d)"
+trap 'rm -rf "${WIDTH_VIEW_DIR}"' EXIT
+
+# Emit the comment-free view of a Lean file and echo the path.
+lean_view_of() {
+  local src="$1"
+  local out
+  out="${WIDTH_VIEW_DIR}/$(echo "${src}" | tr '/' '_')"
+  python3 scripts/lean_code_view.py "${src}" > "${out}"
+  echo "${out}"
+}
+
+require_width_binding() {
+  local src="$1" width="$2" message="$3"
+  local view
+  view="$(lean_view_of "${src}")"
+  if ! grep -q "physicalAddressWidth := ${width}" "${view}"; then
+    fail "${message}"
+  fi
+}
+
 # 1. RPi5 Board.lean must bind 44.
-if ! grep -q 'physicalAddressWidth := 44' SeLe4n/Platform/RPi5/Board.lean; then
-  fail "RPi5/Board.lean must declare physicalAddressWidth := 44 (BCM2712 hardware limit)."
-fi
+require_width_binding SeLe4n/Platform/RPi5/Board.lean 44 \
+  "RPi5/Board.lean must declare physicalAddressWidth := 44 (BCM2712 hardware limit)."
 
 # 2. Sim Contract.lean must bind 52.
-if ! grep -q 'physicalAddressWidth := 52' SeLe4n/Platform/Sim/Contract.lean; then
-  fail "Sim/Contract.lean must declare physicalAddressWidth := 52 (ARMv8 LPA max)."
-fi
+require_width_binding SeLe4n/Platform/Sim/Contract.lean 52 \
+  "Sim/Contract.lean must declare physicalAddressWidth := 52 (ARMv8 LPA max)."
 
 # 3. defaultMachineConfig must bind 52.
-if ! grep -q 'physicalAddressWidth := 52' SeLe4n/Machine.lean; then
-  fail "Machine.lean::defaultMachineConfig must declare physicalAddressWidth := 52."
-fi
+require_width_binding SeLe4n/Machine.lean 52 \
+  "Machine.lean::defaultMachineConfig must declare physicalAddressWidth := 52."
 
 # 4. No file may declare `physicalAddressWidth := 48`.  48 is the ARMv8 VA
 #    width; using it for PA is a known misconfiguration on BCM2712 (AJ3-B / M-18).
-if command -v rg >/dev/null 2>&1; then
-  if rg -n 'physicalAddressWidth\s*:=\s*48\b' \
-       --type-add 'source:*.{lean,rs,toml}' -tsource . 2>/dev/null; then
-    fail "physicalAddressWidth := 48 is forbidden (VA-width confusion; see AJ3-B / M-18)."
+#    Scanned over each file's own code view, so prose that *discusses* the
+#    forbidden binding is not the forbidden binding.
+width_48_hits="${WIDTH_VIEW_DIR}/forbidden_48"
+: > "${width_48_hits}"
+while IFS= read -r src; do
+  case "${src}" in
+    *.lean) view="$(lean_view_of "${src}")" ;;
+    *.rs)
+      view="${WIDTH_VIEW_DIR}/$(echo "${src}" | tr '/' '_')"
+      python3 scripts/rust_code_view.py "${src}" > "${view}"
+      ;;
+    # A language with no stripper in the table is read raw, deliberately: this
+    # scan builds a set of REFUSALS, and a refusal it drops is a check nobody
+    # runs, so the fail-closed direction is to over-report.
+    *) view="${src}" ;;
+  esac
+  if grep -nE 'physicalAddressWidth[[:space:]]*:=[[:space:]]*48([^0-9]|$)' "${view}" \
+      | sed "s|^|${src}:|" >> "${width_48_hits}"; then
+    :
   fi
-else
-  if (find SeLe4n tests rust -name '*.lean' -o -name '*.rs' -o -name '*.toml' 2>/dev/null) \
-      | xargs grep -nE 'physicalAddressWidth[[:space:]]*:=[[:space:]]*48\b' 2>/dev/null; then
-    fail "physicalAddressWidth := 48 is forbidden (VA-width confusion; see AJ3-B / M-18)."
-  fi
+done < <(find SeLe4n tests rust -name '*.lean' -o -name '*.rs' -o -name '*.toml' 2>/dev/null)
+
+if [ -s "${width_48_hits}" ]; then
+  cat "${width_48_hits}"
+  fail "physicalAddressWidth := 48 is forbidden (VA-width confusion; see AJ3-B / M-18)."
 fi
 
 # ---------------------------------------------------------------------------

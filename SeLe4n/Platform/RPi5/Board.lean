@@ -182,6 +182,44 @@ def mmioRegions : List SeLe4n.MemoryRegion :=
   , { base := gicCpuInterfaceBase,  size := 0x2000, kind := .device }  -- GIC-400 CPU interface
   ]
 
+/-- **PR #892 review round 8**: the MMIO windows this binding requires, each
+paired with the identity of the device that must be at it.
+
+`mmioRegions` above says *where* the binding programs registers, which is what
+the RAM-disjointness proofs need; it does not say *what* is there, and the board
+check was comparing extents alone — so a board with no PL011 and no GIC-400 was
+accepted as long as some operational node's aperture happened to cover those
+addresses, and the image then programmed unrelated hardware.
+
+The compatible strings are the ones the Linux bindings define for this
+hardware: `arm,pl011` for the UART (BCM2712 boards additionally name
+`brcm,bcm2835-pl011`, which is listed so a board describing itself precisely is
+not refused), and `arm,gic-400` for the interrupt controller, whose distributor
+and CPU interface are two `reg` blocks of one node and therefore share it.
+
+Derived from `mmioRegions` rather than restated, so the two cannot name
+different windows: the region list is the source and this pairs each entry with
+its device. -/
+def requiredMmioWindows : List SeLe4n.Platform.Boot.RequiredMmioWindow :=
+  match mmioRegions with
+  | uart :: dist :: cpuIf :: _ =>
+    [ { region := uart,  compatible := ["arm,pl011", "brcm,bcm2835-pl011"] }
+    , { region := dist,  compatible := ["arm,gic-400", "brcm,bcm2712-gic-400"] }
+    , { region := cpuIf, compatible := ["arm,gic-400", "brcm,bcm2712-gic-400"] } ]
+  | _ => []
+
+/-- **PR #892 review round 8**: the required windows are exactly `mmioRegions`,
+in order — so a window added to the binding and not paired with a device, or
+paired with the wrong one, is visible here rather than silently unchecked. -/
+theorem requiredMmioWindows_regions_eq :
+    requiredMmioWindows.map (·.region) = mmioRegions := by decide
+
+/-- **PR #892 review round 8**: every required window names at least one
+`compatible` string.  A window with an empty list would be satisfiable by no
+device at all, which is a refusal dressed as a check. -/
+theorem requiredMmioWindows_compatible_nonempty :
+    requiredMmioWindows.all (fun w => !w.compatible.isEmpty) = true := by decide
+
 /-- WS-H15b/A-41: Computable check that MMIO regions do not overlap with any
     RAM region in the RPi5 memory map. Returns `true` iff every MMIO-RAM pair
     is non-overlapping. -/

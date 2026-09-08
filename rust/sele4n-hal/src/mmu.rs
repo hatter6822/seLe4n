@@ -860,12 +860,17 @@ fn enable_mmu() {
 pub fn init_mmu(dtb_ptr: u64) {
     let ram_top = crate::cmdline::ram_top_from_dtb(dtb_ptr).unwrap_or(UNDESCRIBED_RAM_TOP);
     let mapped_top = clamp_ram_top(ram_top);
-    let dtb_extent = crate::cmdline::dtb_extent_from_dtb(dtb_ptr);
+    // PR #892 review round 8: the range Phase 5 will dereference, which for a
+    // non-null pointer whose header cannot be read is still its header window —
+    // `dtb_extent_from_dtb`'s `None` conflated that with "no device tree", and
+    // the empty range it became is accepted by `boot_cacheable_range_in`.
+    let dtb_extent = crate::cmdline::dtb_dereferenced_range(dtb_ptr);
     if !boot_ranges_mapped_under(mapped_top, dtb_extent) {
         crate::kprintln!(
             "[boot] FATAL: the device tree's RAM (top {:#x}) does not cover the image, its \
-             stacks or the blob; refusing to enable translation",
-            mapped_top
+             stacks or the blob at {:#x}; refusing to enable translation",
+            mapped_top,
+            dtb_ptr
         );
         crate::cpu::fatal_halt();
     }
@@ -973,7 +978,11 @@ fn image_ranges() -> [(u64, u64); 3] {
 #[must_use]
 fn boot_ranges_mapped_under(ram_top: u64, dtb_extent: Option<(u64, u64)>) -> bool {
     let image = image_ranges();
-    let dtb = dtb_extent.unwrap_or_default();
+    // PR #892 review round 8: `None` now means the **null pointer** alone (see
+    // `cmdline::dtb_dereferenced_range`), and a null pointer is dereferenced by
+    // nothing, so the empty range is the honest encoding rather than a silent
+    // pass — `boot_cacheable_range_in` accepts it by design.
+    let dtb = dtb_extent.unwrap_or((0, 0));
     boot_critical_ranges_mapped(ram_top, &[image[0], image[1], image[2], dtb])
 }
 
@@ -1767,6 +1776,54 @@ mod boot_map_tests {
     /// `const _: () = assert!(UNDESCRIBED_RAM_TOP < LOW_RAM_TOP)` beside the
     /// constant, so a widened fallback fails to build rather than failing here;
     /// what this test covers is the consequence — the map that constant yields.
+    /// **PR #892 review round 8**: a non-null device-tree pointer whose extent
+    /// cannot be recovered is still dereferenced, so it is still checked.
+    ///
+    /// The mutation that finds the old behaviour keeps the pointer and makes
+    /// its header unreadable: `dtb_extent_from_dtb` then answers `None`,
+    /// `unwrap_or_default()` turned that into the empty range, and
+    /// `boot_cacheable_range_in` accepts an empty range — so a blob above the
+    /// mapped top passed a check that named it. Round 6 sharpened the edge by
+    /// lowering the fallback from ~4 GiB to 1 GiB: a blob between them used to
+    /// be mapped by accident and now is not.
+    #[test]
+    fn a_nonrecoverable_device_tree_pointer_is_still_checked() {
+        let image = (0x8_0000u64, 0x18_0000u64);
+        let stack = (0x20_0000u64, 0x4000u64);
+        // A null pointer is dereferenced by nothing: the empty range, accepted.
+        assert!(boot_ranges_mapped_under(
+            clamp_ram_top(UNDESCRIBED_RAM_TOP),
+            None
+        ));
+        assert_eq!(crate::cmdline::dtb_dereferenced_range(0), None);
+        // A non-null pointer answers its header window even when the blob is
+        // unreadable — on the host `dtb_extent_from_dtb` is the `None` stub, so
+        // this exercises exactly the fallback arm.
+        let blob_low = 0x1000_0000u64;
+        let blob_high = 0x8000_0000u64;
+        assert_eq!(
+            crate::cmdline::dtb_dereferenced_range(blob_low),
+            Some((blob_low, 40))
+        );
+        // Inside the fallback map: the boot proceeds and Phase 5 reads 40 bytes
+        // it is allowed to read, fails to validate, and falls back to defaults.
+        assert!(boot_critical_ranges_mapped(
+            clamp_ram_top(UNDESCRIBED_RAM_TOP),
+            &[image, stack, (blob_low, 40)]
+        ));
+        // Above it: refused before translation is enabled, rather than faulting
+        // in Phase 5 with no handler installed.
+        assert!(!boot_critical_ranges_mapped(
+            clamp_ram_top(UNDESCRIBED_RAM_TOP),
+            &[image, stack, (blob_high, 40)]
+        ));
+        // And the same range routed through the helper the boot actually calls.
+        assert!(!boot_ranges_mapped_under(
+            clamp_ram_top(UNDESCRIBED_RAM_TOP),
+            crate::cmdline::dtb_dereferenced_range(blob_high)
+        ));
+    }
+
     #[test]
     fn an_unusable_device_tree_does_not_license_the_low_aperture() {
         assert_eq!(

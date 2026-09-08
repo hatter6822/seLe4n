@@ -1,3 +1,89 @@
+## v0.34.118 — PR #892 review round 8: an unreadable DTB pointer is still dereferenced, a `reg` is read whole at every site, and an MMIO window names its device
+
+Five findings on `8cec0945`. Two are the same relations one site further on —
+which is the signal that patching sites was the wrong shape both times — and
+two are gates reading raw text where this project's own convention says they
+must read the code view.
+
+**A non-null device-tree pointer whose extent cannot be recovered is still
+dereferenced, so it is still checked.** `dtb_extent_from_dtb` answers `None`
+for four different situations — a null pointer, a header that does not parse,
+one that does not validate, and a `totalsize` above `MAX_DTB_SIZE` — and only
+the first means *nothing is dereferenced*. `init_mmu` collapsed all four to the
+empty range, `boot_cacheable_range_in` accepts an empty range, and so a blob the
+firmware placed above the mapped top passed a check that named it: translation
+was enabled and Phase 5's `parse_cmdline_from_dtb` faulted reading its header,
+with no handler installed and no way to say why. `cmdline::dtb_dereferenced_range`
+distinguishes them and answers, for any non-null pointer, the range Phase 5 will
+actually touch — the blob's `totalsize` extent when the header is recoverable,
+the **header window** otherwise, because `dtb_blob_from_ptr` reads exactly those
+bytes before reaching the same verdict and giving up. So the boot refuses
+exactly when it would fault, and a garbage pointer inside the map still boots.
+`v0.34.116` sharpened this edge by lowering the fallback from ~4 GiB to 1 GiB: a
+blob between them used to be mapped by accident and now is not.
+
+**A cell-tuple property is read whole or not at all — at all four sites.**
+`classifyPeripheralNode` floor-divided, so a malformed peripheral `reg` still
+contributed its complete prefix — enough to supply the UART/GIC windows
+`deviceTreeCoversMmioRegions` requires. That is the *third* round in which this
+relation was found at a site the previous fix did not sweep: the memory `reg`
+(`v0.34.115` audit), the bus `ranges` (`v0.34.117`), and now the peripheral
+`reg`. Patching a fourth site would have been the same mistake, so the relation
+has **one** answer — `fdtWholeEntryCount` — and all four readers call it,
+including the legacy fixed-stride entry point `DeviceTree.fromDtbWithRegions`,
+which was the last truncating one. A future reader that floor-divides is now
+visible as one that does not call the function, rather than as one more site to
+remember.
+
+**An MMIO window is covered by the device that belongs there.**
+`deviceTreeCoversMmioRegions` compared *extents alone*, so any operational node
+whose aperture covered an address counted as the PL011 and as both GIC blocks: a
+board with no UART and no GIC-400 was accepted and the image then programmed
+unrelated hardware at those addresses. The identity was already parsed and
+thrown away — `classifyPeripheralNode` has always *required* a `compatible`
+property and discarded its value, which is the unwired-proven-structure shape
+this project's conventions name. `DeviceEntry` now carries `compatible` (all of
+the node's strings, most specific first, since a board naming
+`brcm,bcm2712-gic-400` ahead of `arm,gic-400` must not be refused for describing
+itself precisely), the predicate takes `RequiredMmioWindow`s pairing each window
+with the strings that identify its device, and `RPi5.requiredMmioWindows`
+declares the three — derived from `mmioRegions` rather than restated, with
+`requiredMmioWindows_regions_eq` holding the two lists to one answer.
+
+**Two gates were reading raw text.** `check_physical_address_width.sh` scanned
+raw files in all four of its width checks, so a width changed while the old
+assignment survived in a docstring satisfied the three positives, and a comment
+explaining what `48` means for *virtual* addresses tripped the negative — both
+directions of the failure this project's convention exists to prevent, and the
+second is the one it names specifically (*never contort prose to satisfy a
+scanner*). And `check_claim_evidence_citations.py` built every language's
+declaration inventory with a regex over the raw file, so a symbol deleted or
+renamed while its name survived in a comment still entered the set and the gate
+certified a citation whose artefact does not exist — precisely the failure it is
+there to prevent. Both now read the tree's existing code views, and the claim
+gate's `_code_view` states the direction explicitly: it builds a set of
+**providers**, so unreadable input is *dropped* rather than read raw, and adding
+a language the index cites means adding its stripper.
+
+**Evidence.** Twenty-four Tier 3 relation anchors, each mutation-tested by
+keeping the token and breaking the relation (sixteen mutations, all preserving:
+the null test kept while the fallback is dropped and while it is inverted; the
+header window emptied; the whole-entry decision made vacuous and its remainder
+taken against the wrong operand; the classifier floor-dividing again and
+returning the prefix on refusal; the identity conjunct turned into a disjunct,
+computed-and-discarded, and matched against itself; the width gate building its
+view and scanning the raw file; the claim gate's view helper returning raw
+text). Six anchors from rounds 4–7 were restated at the shapes these fixes
+produced rather than left pinning the old ones. Six new runtime checks in
+`Ak9PlatformSuite` over a fixture whose peripherals sit at exactly the binding's
+windows and are the wrong devices — the preserving mutation for an identity
+check, and the test asserts that *every required extent is present* on it, which
+is what the old predicate saw. Four new `mmu.rs` assertions; two new width-view
+cases in the physical-width gate's own self-test; two new cases in the claim
+gate's, both verified to fail without the fix.
+
+Refs: docs/REGISTERED_DEBT.md WS-XV
+
 ## v0.34.117 — PR #892 review round 7: the FDT parser reads through a bounded view, and there is now one parser
 
 Codex's seventh round raised five threads, all in `SeLe4n/Platform/DeviceTree.lean`,

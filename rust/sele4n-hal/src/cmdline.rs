@@ -1425,6 +1425,34 @@ pub fn dtb_extent_from_dtb(dtb_ptr: u64) -> Option<(u64, u64)> {
     }
 }
 
+/// **PR #892 review round 8**: the extent at `dtb_ptr` that this image will
+/// dereference **after** translation is enabled, for a caller that must map it.
+///
+/// [`dtb_extent_from_dtb`] answers `None` for four different situations — a
+/// null pointer, a header that does not parse, a header that does not validate,
+/// and a `totalsize` above [`MAX_DTB_SIZE`] — and only the first of them means
+/// *nothing is dereferenced*.  `init_mmu` collapsed all four to the empty range
+/// and `boot_cacheable_range_in` accepts an empty range, so a non-null pointer
+/// whose extent could not be recovered was checked against nothing: if firmware
+/// placed that blob above the mapped top, translation was enabled anyway and
+/// Phase 5's [`parse_cmdline_from_dtb`] faulted reading its header, at a point
+/// with no handler installed and no way to say why.
+///
+/// So this distinguishes them.  A null pointer is `None`.  For any non-null
+/// pointer the answer is the range Phase 5 will actually touch: the blob's own
+/// `totalsize` extent when the header is recoverable, and the **header window**
+/// otherwise — because `dtb_blob_from_ptr` reads exactly those bytes before
+/// reaching the same verdict and giving up.  A caller therefore refuses exactly
+/// when the boot would fault, and a garbage non-null pointer that happens to
+/// lie inside the map still boots.
+#[must_use]
+pub fn dtb_dereferenced_range(dtb_ptr: u64) -> Option<(u64, u64)> {
+    if dtb_ptr == 0 {
+        return None;
+    }
+    Some(dtb_extent_from_dtb(dtb_ptr).unwrap_or((dtb_ptr, FDT_HEADER_SIZE as u64)))
+}
+
 /// **WS-SM SM1.D.1 + SM1.D.2**: One-shot helper combining
 /// [`extract_bootargs_into`] and [`parse_cmdline`].
 ///

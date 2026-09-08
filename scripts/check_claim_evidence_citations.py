@@ -39,6 +39,10 @@ import subprocess
 import sys
 import tempfile
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import check_identifier_naming as _naming  # noqa: E402
+import lean_code_view as _lean_code_view  # noqa: E402
+
 REPO = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 INDEX = "docs/CLAIM_EVIDENCE_INDEX.md"
 
@@ -106,12 +110,50 @@ def _read(root: str, rel: str) -> str:
         return ""
 
 
+def _code_view(rel: str, text: str) -> str:
+    """`text` with its comments and prose blanked, byte-aligned.
+
+    **PR #892 review round 8.**  Every inventory below used to run its
+    declaration regex over the raw file, so a symbol that had been deleted or
+    renamed while its old name survived in a comment or a string still entered
+    the declaration set — and the gate then certified a citation whose artefact
+    does not exist, which is precisely the failure it is here to prevent.
+
+    The direction matters and is the one this project's conventions state for a
+    scanner that builds a set of **providers**: a provider it invents satisfies
+    a requirement that was never met, so unreadable input is *dropped* rather
+    than read raw.  A suffix absent from the table below therefore contributes
+    nothing, and adding a language the index cites means adding its stripper.
+
+    The strippers are the tree's existing ones — `lean_code_view.strip` and the
+    per-language views `check_identifier_naming` already maintains — rather than
+    a fourth set written here, because "what counts as code in this language" is
+    one question and this file answering it separately is how the views drift.
+    """
+    if rel.endswith(".lean"):
+        return _lean_code_view.strip(text)
+    if rel.endswith(".rs"):
+        return _naming.strip_rust(text)
+    if rel.endswith(".S"):
+        return _naming.strip_asm(text)
+    if rel.endswith(".py") or rel.endswith(".sh"):
+        return _naming.strip_shell(text) if rel.endswith(".sh") else _naming.strip_hash(text)
+    return ""
+
+
 def declared_names(root: str) -> set[str]:
     """Every name the tree declares, across the languages the index cites.
 
+    Read over each language's **code view** (PR #892 review round 8): a name
+    that survives only in a comment or a string is not a declaration, and a
+    citation it would have satisfied is exactly the stale one this gate exists
+    to catch.
+
     Includes file-derived names, because some artefacts *are* files: a Rust
     integration test is a binary named by its source file and the index cites it
-    the way `cargo test` names it, and a script is cited by its stem.
+    the way `cargo test` names it, and a script is cited by its stem.  Those
+    come from the tracked path list rather than from any file's contents, so
+    they are unaffected.
     """
     names: set[str] = set()
 
@@ -121,23 +163,26 @@ def declared_names(root: str) -> set[str]:
             names.add(name)
             names.add(name.split(".")[-1])
 
+    def view(rel: str) -> str:
+        return _code_view(rel, _read(root, rel))
+
     for rel in tracked(root, "*.lean"):
-        for m in LEAN_DECL.finditer(_read(root, rel)):
+        for m in LEAN_DECL.finditer(view(rel)):
             add(m.group(1))
     for rel in tracked(root, "*.rs"):
-        for name in RUST_DECL.findall(_read(root, rel)):
+        for name in RUST_DECL.findall(view(rel)):
             add(name)
     for rel in tracked(root, "*.S"):
-        text = _read(root, rel)
+        text = view(rel)
         for name in ASM_DECL.findall(text):
             add(name)
         for name in re.findall(r"\.(?:globl|global)\s+([A-Za-z_][A-Za-z0-9_]*)", text):
             add(name)
     for rel in tracked(root, "*.py"):
-        for a, b in PY_DECL.findall(_read(root, rel)):
+        for a, b in PY_DECL.findall(view(rel)):
             add(a or b)
     for rel in tracked(root, "*.sh"):
-        for a, b in SH_DECL.findall(_read(root, rel)):
+        for a, b in SH_DECL.findall(view(rel)):
             add(a or b)
     # File-named artefacts: test binaries, scripts, fixtures.
     for pattern in ("*.rs", "*.sh", "*.py", "*.lean", "*.expected", "*.txt", "*.json"):
@@ -226,6 +271,32 @@ def self_test() -> int:
     rust_renamed = _tree()
     rust_renamed["rust/sample/src/lib.rs"] = CLEAN_RUST.replace("a_rust_fn", "a_renamed_fn")
     case("a renamed Rust artefact fails its citation", rust_renamed, True)
+
+    # PR #892 review round 8: the mutation that finds a raw-text inventory.
+    # The declaration is deleted and its name is KEPT, in a comment and in a
+    # string — the preserving mutation for "is this name declared".  Reading
+    # the raw file, the regex found it and the citation resolved; over the code
+    # view there is no declaration and the citation fails, which is the whole
+    # point of the gate.
+    # `LEAN_DECL` is line-anchored, so a `--` line comment could never have
+    # matched it and a fixture built from one asserts nothing.  A *commented-out
+    # declaration* is the realistic shape and the one that did match: the
+    # keyword and the name are at line start, inside a block comment.
+    lean_prose_only = _tree()
+    lean_prose_only["SeLe4n/Sample.lean"] = (
+        "/-\n"
+        "theorem a_real_theorem : True := trivial\n"
+        "-/\n"
+        "def note : Nat := 0\n"
+    )
+    case("a commented-out Lean declaration does not declare it", lean_prose_only, True)
+
+    rust_prose_only = _tree()
+    rust_prose_only["rust/sample/src/lib.rs"] = (
+        "// `a_rust_fn` was renamed; this comment is all that is left of it.\n"
+        'pub const NOTE: &str = "pub fn a_rust_fn";\n'
+    )
+    case("a Rust name left only in prose does not declare it", rust_prose_only, True)
 
     # A namespaced Lean declaration resolves by its final component, the way the
     # index cites it.

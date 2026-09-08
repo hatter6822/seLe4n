@@ -5776,8 +5776,8 @@ one question, and cannot drift apart. -/
 theorem deviceTreeCoversMachineConfig_eq (dt : DeviceTree) (mc : SeLe4n.MachineConfig) :
     deviceTreeCoversMachineConfig dt mc = machineConfigCovers dt.machineConfig mc := rfl
 
-/-- **WS-RR RR7.27**: is every MMIO window in `regions` inside a peripheral the
-device tree discovered?
+/-- **WS-RR RR7.27**: is every MMIO window in `required` inside a peripheral the
+device tree discovered **as that device**?
 
 The other half of the board check, at the granularity the two sides actually
 share: a binding names its MMIO windows one register block at a time
@@ -5785,10 +5785,12 @@ share: a binding names its MMIO windows one register block at a time
 and a device tree discovers peripherals the same way.  An image that would
 program a GIC the board's own device tree does not have must refuse. -/
 def deviceTreeCoversMmioRegions (dt : DeviceTree)
-    (regions : List SeLe4n.MemoryRegion) : Bool :=
-  regions.all fun r =>
+    (required : List RequiredMmioWindow) : Bool :=
+  required.all fun w =>
     dt.peripherals.any fun d =>
-      d.base.toNat ≤ r.base.toNat && r.endAddr ≤ d.base.toNat + d.size
+      d.compatible.any (fun c => w.compatible.contains c)
+        && d.base.toNat ≤ w.region.base.toNat
+        && w.region.endAddr ≤ d.base.toNat + d.size
 
 /-- **WS-RR RR7.27**: the bridge the finding names — a `PlatformConfig` whose
 machine configuration is the device tree's and whose deployment half (the IRQ
@@ -5834,11 +5836,11 @@ fail-closed on a non-empty one against a device tree that discovered nothing —
 the direction that matters, since "no peripherals" is what a truncated or
 foreign blob produces. -/
 theorem deviceTreeCoversMmioRegions_no_peripherals (dt : DeviceTree)
-    (regions : List SeLe4n.MemoryRegion) (hEmpty : dt.peripherals = [])
-    (hNonEmpty : regions ≠ []) :
-    deviceTreeCoversMmioRegions dt regions = false := by
+    (required : List RequiredMmioWindow) (hEmpty : dt.peripherals = [])
+    (hNonEmpty : required ≠ []) :
+    deviceTreeCoversMmioRegions dt required = false := by
   unfold deviceTreeCoversMmioRegions
-  cases regions with
+  cases required with
   | nil => exact absurd rfl hNonEmpty
   | cons r rest => simp [hEmpty]
 

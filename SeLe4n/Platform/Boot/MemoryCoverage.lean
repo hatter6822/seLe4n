@@ -270,4 +270,24 @@ theorem machineConfigCovers_sound (board mc : SeLe4n.MachineConfig)
   rw [beq_iff_eq] at hK
   rw [hK, hKind]
 
+/-- **PR #892 review round 8**: an MMIO window a binding requires, together with
+the identity of the device that must be at it.
+
+The predicate below used to compare **extents alone**, so any operational node
+whose aperture covered an address satisfied it: a `simple-bus`, a framebuffer,
+or a memory-mapped anything counted as the PL011 *and* as both GIC blocks, and a
+board without the expected UART or GIC was accepted and then programmed at those
+addresses.  Extents are not identity.
+
+`compatible` is a **list** because a device is identified by any of the strings
+a board may use for it — an FDT node names itself most-specific first
+(`brcm,bcm2712-gic-400`, then `arm,gic-400`), and a binding that accepted only
+the generic name would refuse the boards that describe themselves best. -/
+structure RequiredMmioWindow where
+  /-- Where the binding will program the device. -/
+  region : SeLe4n.MemoryRegion
+  /-- Any one of these `compatible` strings identifies the device. -/
+  compatible : List String
+  deriving Repr
+
 end SeLe4n.Platform.Boot

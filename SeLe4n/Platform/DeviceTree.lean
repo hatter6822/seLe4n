@@ -66,6 +66,17 @@ structure DeviceEntry where
   base : PAddr
   /-- Size of the register space in bytes. -/
   size : Nat
+  /-- **PR #892 review round 8**: the node's `compatible` strings, most specific
+  first — the device's *identity*, as distinct from where its registers live.
+
+  `classifyPeripheralNode` has always required a `compatible` property and then
+  discarded its value, so `deviceTreeCoversMmioRegions` could only compare
+  extents: any operational node whose aperture covered an address counted as the
+  PL011 and as both GIC blocks, and a board without the expected UART or GIC was
+  accepted and then programmed at those addresses.  A parsed-and-discarded value
+  is the *unwired proven structure* shape this project's conventions name; it is
+  wired now. -/
+  compatible : List String := []
   /-- Optional IRQ number associated with this peripheral. -/
   irq : Option Irq := none
   deriving Repr
@@ -269,6 +280,28 @@ def readBE64 (blob : ByteArray) (offset : Nat) : Option UInt64 :=
     | _, _ => none
   else none
 
+/-- **PR #892 review round 8**: how many `entryBytes`-wide entries a property
+holds, or `none` if it does not hold a whole number of them.
+
+The relation *a cell-tuple property is read whole or not at all* has now been
+asked at **four** sites in this file and answered three different ways across
+three review rounds: `extractMemoryRegionsChecked` refuses (round 5 audit),
+`parseFdtRanges` refuses (round 7), `classifyPeripheralNode` floor-divided and
+silently dropped the partial tail (round 8), and the legacy fixed-stride fold
+truncates.  Each fix was correct and the next round found the next site, which
+is this project's own rule failing — *when a fix names a relation, grep for
+every other place that asks it*.
+
+So the relation has **one** answer and every reader calls it.  A future reader
+that floor-divides is then visible as one that does not call this function,
+rather than as one more site to remember.  A zero-width entry is refused too:
+`bytes.size % 0` is `bytes.size`, which would make an empty property read as
+zero entries and a non-empty one as a refusal, and neither is a decision anyone
+intended. -/
+def fdtWholeEntryCount (bytes : ByteArray) (entryBytes : Nat) : Option Nat :=
+  if entryBytes == 0 || bytes.size % entryBytes != 0 then none
+  else some (bytes.size / entryBytes)
+
 /-- T6-M/V4-H: Extract memory regions from a raw `reg` property byte array.
     Assumes `#address-cells = 2` and `#size-cells = 2` (standard for 64-bit
     ARM platforms). Each region is a (base, size) pair of 64-bit big-endian
@@ -429,9 +462,16 @@ def DeviceTree.fromDtbWithRegions (blob : ByteArray)
     (physicalAddressWidth : Nat)
     (memoryRegBytes : Option ByteArray := none) : Option DeviceTree := do
   let hdr ← parseAndValidateFdtHeader blob
-  let memRegions := match memoryRegBytes with
-    | some regBlob => fdtRegionsToMemoryRegions (extractMemoryRegions regBlob)
-    | none => []
+  -- PR #892 review round 8: the fourth site of the whole-entry relation, and
+  -- the last truncating one.  `extractMemoryRegions` is the raw fixed-stride
+  -- fold and drops a trailing partial pair; every *entry point* now reads the
+  -- property whole or refuses it, so this one goes through the checked form at
+  -- the 2/2 cell widths its 16-byte stride stands for.
+  let memRegions ← match memoryRegBytes with
+    | some regBlob =>
+      (fdtWholeEntryCount regBlob 16).map fun _ =>
+        fdtRegionsToMemoryRegions (extractMemoryRegions regBlob)
+    | none => some []
   -- AJ3-B (M-18): physicalAddressWidth is a required parameter — callers must
   -- pass the platform-specific value (e.g., 44 for RPi5 BCM2712, 52 for Sim).
   let config : MachineConfig := {
@@ -771,6 +811,28 @@ def FdtNode.compatibleString (node : FdtNode) : Option String :=
       else some (String.ofList (byteList.map (fun b => Char.ofNat b.toNat)))
   | none => none
 
+/-- **PR #892 review round 8**: **every** string in the node's `compatible`
+property, most specific first.
+
+`compatible` is a list of null-separated strings (Devicetree Specification v0.4
+§2.3.1) and `FdtNode.compatibleString` returns only the first, which is the
+SoC-specific name where a board declares one — `brcm,bcm2712-gic-400` ahead of
+`arm,gic-400`.  A device-identity check written against the first string alone
+would therefore refuse exactly the boards that name themselves precisely. -/
+def FdtNode.compatibleStrings (node : FdtNode) : List String :=
+  match node.findProperty "compatible" with
+  | none => []
+  | some bytes =>
+    let rec split (remaining : List UInt8) (acc : List Char) (out : List String)
+        : List String :=
+      match remaining with
+      | [] => (if acc.isEmpty then out else String.ofList acc.reverse :: out).reverse
+      | b :: rest =>
+        if b == 0 then
+          split rest [] (if acc.isEmpty then out else String.ofList acc.reverse :: out)
+        else split rest (Char.ofNat b.toNat :: acc) out
+    split bytes.data.toList [] []
+
 /-- **PR #892 review round 5**: is this node's `status` operational?
 
 Devicetree Specification v0.4 §2.3.4: an absent `status` means `okay`; `okay`
@@ -863,9 +925,9 @@ rule it broke is this project's own: *when a fix names a relation, grep for
 every other place that asks it*. -/
 def parseFdtRanges (bytes : ByteArray) (childAddressCells parentAddressCells childSizeCells : Nat)
     (fuel : Nat := bytes.size / 4 + 1) : Option (List FdtRangeEntry) :=
-  let entrySize := (childAddressCells + parentAddressCells + childSizeCells) * 4
-  if entrySize == 0 || bytes.size % entrySize != 0 then none
-  else go 0 fuel []
+  match fdtWholeEntryCount bytes ((childAddressCells + parentAddressCells + childSizeCells) * 4) with
+  | none => none
+  | some _ => go 0 fuel []
 where
   go (offset : Nat) : Nat → List FdtRangeEntry → Option (List FdtRangeEntry)
   | 0, acc => some acc.reverse
@@ -1196,9 +1258,9 @@ contributed the entries before it here.  A malformed `reg` fails the whole query
 closed, on both sides. -/
 def extractMemoryRegionsChecked (regBytes : ByteArray)
     (addressCells sizeCells : Nat) : Option (List FdtMemoryRegion) :=
-  let entrySize := (addressCells + sizeCells) * 4
-  if entrySize == 0 || regBytes.size % entrySize != 0 then none
-  else some (extractMemoryRegionsGeneral regBytes addressCells sizeCells)
+  match fdtWholeEntryCount regBytes ((addressCells + sizeCells) * 4) with
+  | none => none
+  | some _ => some (extractMemoryRegionsGeneral regBytes addressCells sizeCells)
 
 /-- **PR #892 review round 5 audit**: the memory regions a parsed tree declares —
 every available top-level `/memory` node's `reg`, read at the cell widths its
@@ -1376,10 +1438,19 @@ private def classifyPeripheralNode (ctx : FdtAddressContext) (node : FdtNode) :
   else if !node.statusIsOperational then []
   else match node.findProperty "reg", node.compatibleString with
   | some regBytes, some _ =>
+    -- PR #892 review round 8: the identity this arm already required is now
+    -- carried, so a coverage check can ask *which device* is at a window.
+    let compatible := node.compatibleStrings
     let entryBytes := (ctx.addressCells + ctx.sizeCells) * 4
-    if entryBytes == 0 then []
-    else
-      (List.range (regBytes.size / entryBytes)).filterMap fun i =>
+    -- PR #892 review round 8: floor division silently dropped a trailing
+    -- partial tuple, so a `reg` this parser cannot read whole still contributed
+    -- its complete prefix — enough to supply the UART/GIC windows
+    -- `deviceTreeCoversMmioRegions` requires.  The property is read whole or
+    -- the node contributes nothing.
+    match fdtWholeEntryCount regBytes entryBytes with
+    | none => []
+    | some entryCount =>
+      (List.range entryCount).filterMap fun i =>
         let offset := i * entryBytes
         match readFdtCells regBytes offset ctx.addressCells,
               readFdtCells regBytes (offset + ctx.addressCells * 4) ctx.sizeCells with
@@ -1388,7 +1459,8 @@ private def classifyPeripheralNode (ctx : FdtAddressContext) (node : FdtNode) :
           else
             match ctx.translate childBase size with
             | none => none
-            | some base => some { name := node.name, base := (SeLe4n.PAddr.ofNat base), size }
+            | some base =>
+              some { name := node.name, base := (SeLe4n.PAddr.ofNat base), size, compatible }
         | _, _ => none
   | _, _ => []
 

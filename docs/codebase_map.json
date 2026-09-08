@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/rr7-medium-severity-sweep-tn327q",
-      "commit_sha": "8cec09450727aa25e8da048a257171437805460f",
-      "tree_sha": "a90703aaab3b5c5987e85045b77492638350bd11",
-      "committed_at_utc": "2026-09-08T03:59:16+00:00"
+      "commit_sha": "db9abb64b085ae9767480a79a297e856aead23d0",
+      "tree_sha": "00258b93cb18e9193a59ad54610d26c78d081f07",
+      "committed_at_utc": "2026-09-08T04:37:44+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "65dfeef61933a5c0d86346cbe9abe14aeca0ba87352b325cb74c4c1e0144d852"
+    "source_digest": "05c006a0d3c975516509ac2865046750aaf20bd8e678fd0497f02ccb83a5bf18"
   },
   "summary": {
     "module_count": 398,
-    "declaration_count": 20320
+    "declaration_count": 20328
   },
   "readme_sync": {
-    "version": "0.34.117",
+    "version": "0.34.118",
     "lean_toolchain": "v4.28.0",
     "production_files": 328,
-    "production_loc": 355474,
+    "production_loc": 355606,
     "test_files": 70,
-    "test_loc": 72433,
-    "proved_theorem_lemma_decls": 11887,
+    "test_loc": 72488,
+    "proved_theorem_lemma_decls": 11889,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -229929,7 +229929,7 @@
     {
       "module": "SeLe4n.Platform.Boot.MemoryCoverage",
       "path": "SeLe4n/Platform/Boot/MemoryCoverage.lean",
-      "declaration_count": 15,
+      "declaration_count": 16,
       "declarations": [
         {
           "kind": "namespace",
@@ -230100,6 +230100,14 @@
             "machineConfigCovers",
             "memoryRegionCovered_sound",
             "toNat"
+          ]
+        },
+        {
+          "kind": "structure",
+          "name": "RequiredMmioWindow",
+          "line": 286,
+          "called": [
+            "MemoryRegion"
           ]
         }
       ]
@@ -234931,9 +234939,10 @@
           "line": 5787,
           "called": [
             "DeviceTree",
-            "MemoryRegion",
+            "RequiredMmioWindow",
             "all",
             "any",
+            "contains",
             "endAddr",
             "size",
             "toNat"
@@ -234942,7 +234951,7 @@
         {
           "kind": "def",
           "name": "PlatformConfig.fromDeviceTree",
-          "line": 5799,
+          "line": 5801,
           "called": [
             "BootVSpaceRootEntry",
             "DeviceTree",
@@ -234954,7 +234963,7 @@
         {
           "kind": "theorem",
           "name": "PlatformConfig.fromDeviceTree_machineConfig",
-          "line": 5810,
+          "line": 5812,
           "called": [
             "BootVSpaceRootEntry",
             "DeviceTree",
@@ -234966,7 +234975,7 @@
         {
           "kind": "theorem",
           "name": "PlatformConfig.fromDeviceTree_deployment",
-          "line": 5817,
+          "line": 5819,
           "called": [
             "BootVSpaceRootEntry",
             "DeviceTree",
@@ -234978,7 +234987,7 @@
         {
           "kind": "theorem",
           "name": "deviceTreeCoversMachineConfig_self",
-          "line": 5828,
+          "line": 5830,
           "called": [
             "DeviceTree",
             "deviceTreeCoversMachineConfig",
@@ -234988,10 +234997,10 @@
         {
           "kind": "theorem",
           "name": "deviceTreeCoversMmioRegions_no_peripherals",
-          "line": 5836,
+          "line": 5838,
           "called": [
             "DeviceTree",
-            "MemoryRegion",
+            "RequiredMmioWindow",
             "cons",
             "deviceTreeCoversMmioRegions"
           ]
@@ -235238,7 +235247,7 @@
     {
       "module": "SeLe4n.Platform.DeviceTree",
       "path": "SeLe4n/Platform/DeviceTree.lean",
-      "declaration_count": 87,
+      "declaration_count": 89,
       "declarations": [
         {
           "kind": "namespace",
@@ -235266,7 +235275,7 @@
         {
           "kind": "structure",
           "name": "InterruptControllerInfo",
-          "line": 74,
+          "line": 85,
           "called": [
             "Irq",
             "PAddr",
@@ -235276,7 +235285,7 @@
         {
           "kind": "structure",
           "name": "DeviceTree",
-          "line": 94,
+          "line": 105,
           "called": [
             "DeviceEntry",
             "InterruptControllerInfo",
@@ -235289,7 +235298,7 @@
         {
           "kind": "def",
           "name": "DeviceTree.validate",
-          "line": 112,
+          "line": 123,
           "called": [
             "DeviceTree",
             "wellFormed"
@@ -235298,7 +235307,7 @@
         {
           "kind": "def",
           "name": "DeviceTree.fromBoardConstants",
-          "line": 119,
+          "line": 130,
           "called": [
             "DeviceEntry",
             "DeviceTree",
@@ -235313,19 +235322,19 @@
         {
           "kind": "def",
           "name": "fdtMagic",
-          "line": 164,
+          "line": 175,
           "called": []
         },
         {
           "kind": "structure",
           "name": "FdtHeader",
-          "line": 167,
+          "line": 178,
           "called": []
         },
         {
           "kind": "def",
           "name": "readBE32",
-          "line": 192,
+          "line": 203,
           "called": [
             "none",
             "size",
@@ -235335,7 +235344,7 @@
         {
           "kind": "def",
           "name": "parseFdtHeader",
-          "line": 204,
+          "line": 215,
           "called": [
             "FdtHeader",
             "fdtMagic",
@@ -235347,7 +235356,7 @@
         {
           "kind": "def",
           "name": "FdtHeader.isValid",
-          "line": 223,
+          "line": 234,
           "called": [
             "FdtHeader",
             "fdtMagic",
@@ -235357,7 +235366,7 @@
         {
           "kind": "def",
           "name": "parseAndValidateFdtHeader",
-          "line": 231,
+          "line": 242,
           "called": [
             "FdtHeader",
             "isValid",
@@ -235368,7 +235377,7 @@
         {
           "kind": "theorem",
           "name": "parseFdtHeader_empty",
-          "line": 236,
+          "line": 247,
           "called": [
             "empty",
             "none",
@@ -235379,37 +235388,37 @@
         {
           "kind": "def",
           "name": "fdtBeginNode",
-          "line": 247,
+          "line": 258,
           "called": []
         },
         {
           "kind": "def",
           "name": "fdtEndNode",
-          "line": 248,
+          "line": 259,
           "called": []
         },
         {
           "kind": "def",
           "name": "fdtProp",
-          "line": 249,
+          "line": 260,
           "called": []
         },
         {
           "kind": "def",
           "name": "fdtNop",
-          "line": 250,
+          "line": 261,
           "called": []
         },
         {
           "kind": "def",
           "name": "fdtEnd",
-          "line": 251,
+          "line": 262,
           "called": []
         },
         {
           "kind": "structure",
           "name": "FdtMemoryRegion",
-          "line": 257,
+          "line": 268,
           "called": [
             "size"
           ]
@@ -235417,7 +235426,7 @@
         {
           "kind": "def",
           "name": "readBE64",
-          "line": 265,
+          "line": 276,
           "called": [
             "none",
             "readBE32",
@@ -235426,8 +235435,17 @@
         },
         {
           "kind": "def",
+          "name": "fdtWholeEntryCount",
+          "line": 301,
+          "called": [
+            "none",
+            "size"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "extractMemoryRegions",
-          "line": 284,
+          "line": 317,
           "called": [
             "FdtMemoryRegion",
             "readBE64",
@@ -235438,7 +235456,7 @@
         {
           "kind": "theorem",
           "name": "extractMemoryRegions_truncated",
-          "line": 305,
+          "line": 338,
           "called": [
             "extractMemoryRegions",
             "size"
@@ -235447,7 +235465,7 @@
         {
           "kind": "def",
           "name": "classifyMemoryRegion",
-          "line": 335,
+          "line": 368,
           "called": [
             "FdtMemoryRegion",
             "MemoryKind",
@@ -235460,7 +235478,7 @@
         {
           "kind": "def",
           "name": "classifyMemoryRegionChecked",
-          "line": 345,
+          "line": 378,
           "called": [
             "FdtMemoryRegion",
             "MemoryKind",
@@ -235473,7 +235491,7 @@
         {
           "kind": "theorem",
           "name": "classifyMemoryRegionChecked_empty_none",
-          "line": 356,
+          "line": 389,
           "called": [
             "FdtMemoryRegion",
             "classifyMemoryRegionChecked",
@@ -235483,7 +235501,7 @@
         {
           "kind": "theorem",
           "name": "classifyMemoryRegionChecked_some_agrees",
-          "line": 364,
+          "line": 397,
           "called": [
             "FdtMemoryRegion",
             "MemoryKind",
@@ -235499,7 +235517,7 @@
         {
           "kind": "def",
           "name": "classifyAddress",
-          "line": 383,
+          "line": 416,
           "called": [
             "MemoryKind",
             "MemoryRegion",
@@ -235511,7 +235529,7 @@
         {
           "kind": "def",
           "name": "fdtRegionsToMemoryRegions",
-          "line": 395,
+          "line": 428,
           "called": [
             "FdtMemoryRegion",
             "MemoryRegion",
@@ -235523,7 +235541,7 @@
         {
           "kind": "theorem",
           "name": "classifyMemoryRegion_default",
-          "line": 403,
+          "line": 436,
           "called": [
             "FdtMemoryRegion",
             "classifyMemoryRegion"
@@ -235532,7 +235550,7 @@
         {
           "kind": "theorem",
           "name": "classifyAddress_unmapped",
-          "line": 407,
+          "line": 440,
           "called": [
             "MemoryRegion",
             "PAddr",
@@ -235544,7 +235562,7 @@
         {
           "kind": "theorem",
           "name": "classifyAddress_found",
-          "line": 413,
+          "line": 446,
           "called": [
             "MemoryRegion",
             "PAddr",
@@ -235555,13 +235573,14 @@
         {
           "kind": "def",
           "name": "DeviceTree.fromDtbWithRegions",
-          "line": 428,
+          "line": 461,
           "called": [
             "DeviceTree",
             "MachineConfig",
             "config",
             "extractMemoryRegions",
             "fdtRegionsToMemoryRegions",
+            "fdtWholeEntryCount",
             "none",
             "ofNat",
             "parseAndValidateFdtHeader",
@@ -235573,7 +235592,7 @@
         {
           "kind": "theorem",
           "name": "extractMemoryRegions_empty",
-          "line": 458,
+          "line": 498,
           "called": [
             "empty",
             "extractMemoryRegions"
@@ -235582,7 +235601,7 @@
         {
           "kind": "def",
           "name": "readCells",
-          "line": 472,
+          "line": 512,
           "called": [
             "none",
             "readBE32",
@@ -235594,7 +235613,7 @@
         {
           "kind": "def",
           "name": "extractMemoryRegionsGeneral",
-          "line": 483,
+          "line": 523,
           "called": [
             "FdtMemoryRegion",
             "addressCells",
@@ -235606,13 +235625,13 @@
         {
           "kind": "theorem",
           "name": "extractMemoryRegionsGeneral_entrySize_eq",
-          "line": 506,
+          "line": 546,
           "called": []
         },
         {
           "kind": "def",
           "name": "readCString",
-          "line": 527,
+          "line": 567,
           "called": [
             "none",
             "ofList",
@@ -235624,7 +235643,7 @@
         {
           "kind": "def",
           "name": "readCStringChecked",
-          "line": 560,
+          "line": 600,
           "called": [
             "DeviceTreeParseError",
             "none",
@@ -235637,7 +235656,7 @@
         {
           "kind": "theorem",
           "name": "readCStringChecked_rejects_oob",
-          "line": 582,
+          "line": 622,
           "called": [
             "readCStringChecked",
             "size"
@@ -235646,7 +235665,7 @@
         {
           "kind": "theorem",
           "name": "readCStringChecked_rejects_fuel_zero",
-          "line": 589,
+          "line": 629,
           "called": [
             "readCStringChecked",
             "size"
@@ -235655,7 +235674,7 @@
         {
           "kind": "def",
           "name": "readCStringWithin",
-          "line": 601,
+          "line": 641,
           "called": [
             "none",
             "ofList",
@@ -235666,13 +235685,13 @@
         {
           "kind": "structure",
           "name": "FdtBlob",
-          "line": 642,
+          "line": 682,
           "called": []
         },
         {
           "kind": "def",
           "name": "FdtBlob.of",
-          "line": 659,
+          "line": 699,
           "called": [
             "FdtBlob",
             "FdtHeader",
@@ -235684,7 +235703,7 @@
         {
           "kind": "def",
           "name": "FdtBlob.structBE32",
-          "line": 671,
+          "line": 711,
           "called": [
             "FdtBlob",
             "none",
@@ -235694,7 +235713,7 @@
         {
           "kind": "def",
           "name": "FdtBlob.structCString",
-          "line": 677,
+          "line": 717,
           "called": [
             "FdtBlob",
             "none",
@@ -235704,7 +235723,7 @@
         {
           "kind": "def",
           "name": "FdtBlob.structExtract",
-          "line": 685,
+          "line": 725,
           "called": [
             "FdtBlob",
             "none"
@@ -235713,7 +235732,7 @@
         {
           "kind": "def",
           "name": "FdtBlob.stringsName",
-          "line": 697,
+          "line": 737,
           "called": [
             "FdtBlob",
             "none",
@@ -235723,7 +235742,7 @@
         {
           "kind": "def",
           "name": "lookupFdtString",
-          "line": 710,
+          "line": 750,
           "called": [
             "none",
             "readCString"
@@ -235732,13 +235751,13 @@
         {
           "kind": "structure",
           "name": "FdtSearchResult",
-          "line": 723,
+          "line": 763,
           "called": []
         },
         {
           "kind": "structure",
           "name": "FdtProperty",
-          "line": 743,
+          "line": 783,
           "called": [
             "value"
           ]
@@ -235746,7 +235765,7 @@
         {
           "kind": "structure",
           "name": "FdtNode",
-          "line": 749,
+          "line": 789,
           "called": [
             "FdtProperty"
           ]
@@ -235754,7 +235773,7 @@
         {
           "kind": "def",
           "name": "FdtNode.findProperty",
-          "line": 755,
+          "line": 795,
           "called": [
             "FdtNode",
             "none",
@@ -235764,7 +235783,7 @@
         {
           "kind": "def",
           "name": "FdtNode.compatibleString",
-          "line": 763,
+          "line": 803,
           "called": [
             "FdtNode",
             "findProperty",
@@ -235778,8 +235797,23 @@
         },
         {
           "kind": "def",
+          "name": "FdtNode.compatibleStrings",
+          "line": 822,
+          "called": [
+            "FdtNode",
+            "findProperty",
+            "isEmpty",
+            "none",
+            "ofList",
+            "ofNat",
+            "toList",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "FdtNode.statusIsOperational",
-          "line": 784,
+          "line": 846,
           "called": [
             "FdtNode",
             "findProperty",
@@ -235793,7 +235827,7 @@
         {
           "kind": "def",
           "name": "readFdtCells",
-          "line": 797,
+          "line": 859,
           "called": [
             "count",
             "none",
@@ -235804,19 +235838,19 @@
         {
           "kind": "def",
           "name": "fdtDefaultAddressCells",
-          "line": 810,
+          "line": 872,
           "called": []
         },
         {
           "kind": "def",
           "name": "fdtDefaultSizeCells",
-          "line": 819,
+          "line": 881,
           "called": []
         },
         {
           "kind": "def",
           "name": "FdtNode.addressCells",
-          "line": 823,
+          "line": 885,
           "called": [
             "FdtNode",
             "fdtDefaultAddressCells",
@@ -235829,7 +235863,7 @@
         {
           "kind": "def",
           "name": "FdtNode.sizeCells",
-          "line": 831,
+          "line": 893,
           "called": [
             "FdtNode",
             "fdtDefaultSizeCells",
@@ -235842,7 +235876,7 @@
         {
           "kind": "structure",
           "name": "FdtRangeEntry",
-          "line": 839,
+          "line": 901,
           "called": [
             "length"
           ]
@@ -235850,9 +235884,10 @@
         {
           "kind": "def",
           "name": "parseFdtRanges",
-          "line": 864,
+          "line": 926,
           "called": [
             "FdtRangeEntry",
+            "fdtWholeEntryCount",
             "length",
             "none",
             "readFdtCells",
@@ -235862,7 +235897,7 @@
         {
           "kind": "def",
           "name": "translateThroughFdtRanges",
-          "line": 900,
+          "line": 962,
           "called": [
             "FdtRangeEntry",
             "length",
@@ -235873,7 +235908,7 @@
         {
           "kind": "structure",
           "name": "FdtAddressContext",
-          "line": 917,
+          "line": 979,
           "called": [
             "addressCells",
             "sizeCells"
@@ -235882,7 +235917,7 @@
         {
           "kind": "def",
           "name": "FdtAddressContext.cpuPhysical",
-          "line": 936,
+          "line": 998,
           "called": [
             "FdtAddressContext",
             "addressCells",
@@ -235892,7 +235927,7 @@
         {
           "kind": "def",
           "name": "FdtAddressContext.forChildren",
-          "line": 951,
+          "line": 1013,
           "called": [
             "FdtAddressContext",
             "FdtNode",
@@ -235909,7 +235944,7 @@
         {
           "kind": "def",
           "name": "parseFdtNodes",
-          "line": 1015,
+          "line": 1077,
           "called": [
             "DeviceTreeParseError",
             "FdtBlob",
@@ -235934,7 +235969,7 @@
         {
           "kind": "def",
           "name": "FdtNode.isMemoryNode",
-          "line": 1121,
+          "line": 1183,
           "called": [
             "FdtNode",
             "findProperty",
@@ -235948,7 +235983,7 @@
         {
           "kind": "def",
           "name": "fdtRoot",
-          "line": 1143,
+          "line": 1205,
           "called": [
             "FdtNode",
             "isEmpty",
@@ -235958,7 +235993,7 @@
         {
           "kind": "def",
           "name": "memoryNodesWithCells",
-          "line": 1174,
+          "line": 1236,
           "called": [
             "FdtNode",
             "addressCells",
@@ -235971,7 +236006,7 @@
         {
           "kind": "def",
           "name": "memoryNodeReg",
-          "line": 1186,
+          "line": 1248,
           "called": [
             "FdtNode",
             "findProperty",
@@ -235981,20 +236016,20 @@
         {
           "kind": "def",
           "name": "extractMemoryRegionsChecked",
-          "line": 1197,
+          "line": 1259,
           "called": [
             "FdtMemoryRegion",
             "addressCells",
             "extractMemoryRegionsGeneral",
+            "fdtWholeEntryCount",
             "none",
-            "size",
             "sizeCells"
           ]
         },
         {
           "kind": "def",
           "name": "memoryRegionsFromNodes",
-          "line": 1210,
+          "line": 1272,
           "called": [
             "FdtMemoryRegion",
             "FdtNode",
@@ -236007,7 +236042,7 @@
         {
           "kind": "def",
           "name": "findMemoryRegPropertyChecked",
-          "line": 1243,
+          "line": 1305,
           "called": [
             "DeviceTreeParseError",
             "FdtHeader",
@@ -236022,7 +236057,7 @@
         {
           "kind": "def",
           "name": "extractInterruptController",
-          "line": 1268,
+          "line": 1330,
           "called": [
             "FdtNode",
             "InterruptControllerInfo",
@@ -236039,7 +236074,7 @@
         {
           "kind": "def",
           "name": "extractTimerFrequency",
-          "line": 1316,
+          "line": 1378,
           "called": [
             "FdtNode",
             "compatibleString",
@@ -236054,13 +236089,15 @@
         {
           "kind": "def",
           "name": "classifyPeripheralNode",
-          "line": 1370,
+          "line": 1432,
           "called": [
             "DeviceEntry",
             "FdtAddressContext",
             "FdtNode",
             "addressCells",
             "compatibleString",
+            "compatibleStrings",
+            "fdtWholeEntryCount",
             "findProperty",
             "none",
             "ofNat",
@@ -236073,7 +236110,7 @@
         {
           "kind": "def",
           "name": "extractPeripheralsWalk",
-          "line": 1399,
+          "line": 1471,
           "called": [
             "DeviceEntry",
             "FdtAddressContext",
@@ -236085,7 +236122,7 @@
         {
           "kind": "def",
           "name": "extractPeripherals",
-          "line": 1429,
+          "line": 1501,
           "called": [
             "DeviceEntry",
             "FdtAddressContext.cpuPhysical",
@@ -236096,7 +236133,7 @@
         {
           "kind": "theorem",
           "name": "extractPeripheralsWalk_zero_fuel",
-          "line": 1436,
+          "line": 1508,
           "called": [
             "FdtAddressContext",
             "FdtNode",
@@ -236106,7 +236143,7 @@
         {
           "kind": "theorem",
           "name": "extractPeripheralsWalk_empty_nodes",
-          "line": 1442,
+          "line": 1514,
           "called": [
             "FdtAddressContext",
             "extractPeripheralsWalk"
@@ -236115,7 +236152,7 @@
         {
           "kind": "theorem",
           "name": "extractPeripherals_zero_fuel",
-          "line": 1448,
+          "line": 1520,
           "called": [
             "FdtNode",
             "extractPeripherals"
@@ -236124,7 +236161,7 @@
         {
           "kind": "theorem",
           "name": "extractPeripherals_empty",
-          "line": 1453,
+          "line": 1525,
           "called": [
             "FdtNode",
             "extractPeripherals",
@@ -236134,13 +236171,13 @@
         {
           "kind": "theorem",
           "name": "extractPeripherals_fuel_sufficient_for_BCM2712",
-          "line": 1463,
+          "line": 1535,
           "called": []
         },
         {
           "kind": "def",
           "name": "DeviceTree.fromDtbFull",
-          "line": 1487,
+          "line": 1559,
           "called": [
             "DeviceTree",
             "DeviceTreeParseError",
@@ -236164,7 +236201,7 @@
         {
           "kind": "theorem",
           "name": "parseFdtHeader_fromDtbFull_ok",
-          "line": 1556,
+          "line": 1628,
           "called": [
             "DeviceTree.fromDtbFull",
             "DeviceTree.validate",
@@ -236184,7 +236221,7 @@
         {
           "kind": "theorem",
           "name": "findMemoryRegPropertyChecked_eq_memoryNodeReg",
-          "line": 1585,
+          "line": 1657,
           "called": [
             "FdtHeader",
             "FdtNode",
@@ -236958,7 +236995,7 @@
             "PlatformConfig.fromDeviceTree",
             "deviceTreeCoversMachineConfig",
             "deviceTreeCoversMmioRegions",
-            "mmioRegions",
+            "requiredMmioWindows",
             "rpi5BoundMachineConfig"
           ]
         },
@@ -237051,7 +237088,7 @@
             "IrqEntry",
             "ObjectEntry",
             "deviceTreeCoversMmioRegions",
-            "mmioRegions",
+            "requiredMmioWindows",
             "rpi5PlatformConfigFromDtb"
           ]
         },
@@ -237068,7 +237105,7 @@
             "PlatformConfig.fromDeviceTree",
             "deviceTreeCoversMachineConfig",
             "deviceTreeCoversMmioRegions",
-            "mmioRegions",
+            "requiredMmioWindows",
             "rpi5BoundMachineConfig",
             "rpi5PlatformConfigFromDtb"
           ]
@@ -237091,7 +237128,7 @@
             "deviceTreeCoversMachineConfig_eq",
             "deviceTreeCoversMmioRegions",
             "machineConfigCovers",
-            "mmioRegions",
+            "requiredMmioWindows",
             "rpi5BoundMachineConfig",
             "rpi5PlatformConfigFromDtb"
           ]
@@ -238345,7 +238382,7 @@
     {
       "module": "SeLe4n.Platform.RPi5.Board",
       "path": "SeLe4n/Platform/RPi5/Board.lean",
-      "declaration_count": 52,
+      "declaration_count": 55,
       "declarations": [
         {
           "kind": "namespace",
@@ -238485,8 +238522,34 @@
         },
         {
           "kind": "def",
+          "name": "requiredMmioWindows",
+          "line": 203,
+          "called": [
+            "RequiredMmioWindow",
+            "mmioRegions"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "requiredMmioWindows_regions_eq",
+          "line": 214,
+          "called": [
+            "mmioRegions"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "requiredMmioWindows_compatible_nonempty",
+          "line": 220,
+          "called": [
+            "all",
+            "isEmpty"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "mmioRegionDisjointCheck",
-          "line": 188,
+          "line": 226,
           "called": [
             "all",
             "overlaps"
@@ -238495,7 +238558,7 @@
         {
           "kind": "theorem",
           "name": "mmioRegionDisjoint_holds",
-          "line": 197,
+          "line": 235,
           "called": [
             "mmioRegionDisjointCheck"
           ]
@@ -238503,7 +238566,7 @@
         {
           "kind": "def",
           "name": "mmioRegionsPairwiseDisjointCheck",
-          "line": 204,
+          "line": 242,
           "called": [
             "all",
             "overlaps"
@@ -238512,7 +238575,7 @@
         {
           "kind": "theorem",
           "name": "mmioRegionsPairwiseDisjoint_holds",
-          "line": 217,
+          "line": 255,
           "called": [
             "mmioRegionsPairwiseDisjointCheck"
           ]
@@ -238520,7 +238583,7 @@
         {
           "kind": "theorem",
           "name": "rpi5MachineConfig_wellFormed",
-          "line": 224,
+          "line": 262,
           "called": [
             "wellFormed"
           ]
@@ -238528,7 +238591,7 @@
         {
           "kind": "def",
           "name": "rpi5DeviceTree",
-          "line": 272,
+          "line": 310,
           "called": [
             "DeviceTree",
             "DeviceTree.fromBoardConstants",
@@ -238545,7 +238608,7 @@
         {
           "kind": "theorem",
           "name": "rpi5DeviceTree_valid",
-          "line": 289,
+          "line": 327,
           "called": [
             "validate"
           ]
@@ -238553,7 +238616,7 @@
         {
           "kind": "def",
           "name": "rpi5Variants",
-          "line": 374,
+          "line": 412,
           "called": [
             "BCM2712Config"
           ]
@@ -238561,7 +238624,7 @@
         {
           "kind": "def",
           "name": "rpi5SmallestVariant",
-          "line": 393,
+          "line": 431,
           "called": [
             "BCM2712Config"
           ]
@@ -238569,7 +238632,7 @@
         {
           "kind": "theorem",
           "name": "rpi5Variants_head",
-          "line": 395,
+          "line": 433,
           "called": [
             "head",
             "rpi5SmallestVariant"
@@ -238578,7 +238641,7 @@
         {
           "kind": "theorem",
           "name": "rpi5SmallestVariant_mem",
-          "line": 397,
+          "line": 435,
           "called": [
             "rpi5SmallestVariant",
             "rpi5Variants"
@@ -238587,7 +238650,7 @@
         {
           "kind": "theorem",
           "name": "bcm2712DefaultConfig_mem_rpi5Variants",
-          "line": 400,
+          "line": 438,
           "called": [
             "bcm2712DefaultConfig",
             "rpi5Variants"
@@ -238596,13 +238659,13 @@
         {
           "kind": "theorem",
           "name": "rpi5Variants_ascending",
-          "line": 404,
+          "line": 442,
           "called": []
         },
         {
           "kind": "def",
           "name": "rpi5MachineConfigForVariant",
-          "line": 412,
+          "line": 450,
           "called": [
             "BCM2712Config",
             "MachineConfig",
@@ -238613,7 +238676,7 @@
         {
           "kind": "theorem",
           "name": "rpi5MachineConfigForVariant_default",
-          "line": 416,
+          "line": 454,
           "called": [
             "bcm2712DefaultConfig",
             "rpi5MachineConfig",
@@ -238623,7 +238686,7 @@
         {
           "kind": "theorem",
           "name": "rpi5MachineConfigForVariant_declaredCoreCount",
-          "line": 421,
+          "line": 459,
           "called": [
             "BCM2712Config",
             "rpi5MachineConfigForVariant"
@@ -238632,7 +238695,7 @@
         {
           "kind": "theorem",
           "name": "rpi5MachineConfigForVariant_physicalAddressWidth",
-          "line": 425,
+          "line": 463,
           "called": [
             "BCM2712Config",
             "rpi5MachineConfigForVariant"
@@ -238641,7 +238704,7 @@
         {
           "kind": "theorem",
           "name": "rpi5Variants_wellFormed",
-          "line": 433,
+          "line": 471,
           "called": [
             "all",
             "rpi5MachineConfigForVariant",
@@ -238651,7 +238714,7 @@
         {
           "kind": "def",
           "name": "rpi5VariantsCoveredBy",
-          "line": 439,
+          "line": 477,
           "called": [
             "BCM2712Config",
             "MachineConfig",
@@ -238663,7 +238726,7 @@
         {
           "kind": "def",
           "name": "rpi5VariantFor",
-          "line": 451,
+          "line": 489,
           "called": [
             "BCM2712Config",
             "MachineConfig",
@@ -238675,7 +238738,7 @@
         {
           "kind": "def",
           "name": "rpi5BoundMachineConfig",
-          "line": 459,
+          "line": 497,
           "called": [
             "MachineConfig",
             "rpi5MachineConfigForVariant",
@@ -238685,7 +238748,7 @@
         {
           "kind": "theorem",
           "name": "mem_rpi5VariantsCoveredBy",
-          "line": 462,
+          "line": 500,
           "called": [
             "BCM2712Config",
             "MachineConfig",
@@ -238698,7 +238761,7 @@
         {
           "kind": "theorem",
           "name": "rpi5VariantFor_mem",
-          "line": 471,
+          "line": 509,
           "called": [
             "MachineConfig",
             "mem_rpi5VariantsCoveredBy",
@@ -238712,7 +238775,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BoundMachineConfig_mem_family",
-          "line": 478,
+          "line": 516,
           "called": [
             "MachineConfig",
             "rpi5BoundMachineConfig",
@@ -238725,7 +238788,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BoundMachineConfig_declaredCoreCount",
-          "line": 484,
+          "line": 522,
           "called": [
             "MachineConfig",
             "rpi5BoundMachineConfig"
@@ -238734,7 +238797,7 @@
         {
           "kind": "theorem",
           "name": "rpi5VariantFor_covers_of_getLast",
-          "line": 487,
+          "line": 525,
           "called": [
             "BCM2712Config",
             "MachineConfig",
@@ -238747,7 +238810,7 @@
         {
           "kind": "theorem",
           "name": "rpi5VariantFor_of_uncovered",
-          "line": 494,
+          "line": 532,
           "called": [
             "MachineConfig",
             "machineConfigCovers",
@@ -238761,7 +238824,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BoundMachineConfig_covered_iff",
-          "line": 512,
+          "line": 550,
           "called": [
             "MachineConfig",
             "machineConfigCovers",
@@ -238779,7 +238842,7 @@
         {
           "kind": "theorem",
           "name": "rpi5VariantFor_maximal",
-          "line": 534,
+          "line": 572,
           "called": [
             "BCM2712Config",
             "MachineConfig",
@@ -238797,7 +238860,7 @@
         {
           "kind": "theorem",
           "name": "rpi5VariantFor_rpi5MachineConfig",
-          "line": 561,
+          "line": 599,
           "called": [
             "bcm2712DefaultConfig",
             "rpi5MachineConfig",
@@ -238807,7 +238870,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BoundMachineConfig_rpi5MachineConfig",
-          "line": 565,
+          "line": 603,
           "called": [
             "rpi5BoundMachineConfig",
             "rpi5MachineConfig",
@@ -238818,7 +238881,7 @@
         {
           "kind": "theorem",
           "name": "rpi5VariantFor_defaultMachineConfig",
-          "line": 574,
+          "line": 612,
           "called": [
             "defaultMachineConfig",
             "rpi5SmallestVariant",
@@ -238828,7 +238891,7 @@
         {
           "kind": "theorem",
           "name": "rpi5VariantFor_one_gib",
-          "line": 581,
+          "line": 619,
           "called": [
             "ofNat",
             "rpi5MachineConfig",
@@ -238839,7 +238902,7 @@
         {
           "kind": "theorem",
           "name": "rpi5VariantFor_two_gib",
-          "line": 587,
+          "line": 625,
           "called": [
             "ofNat",
             "rpi5MachineConfig",
@@ -238850,7 +238913,7 @@
         {
           "kind": "theorem",
           "name": "rpi5VariantFor_eight_gib_as_reported",
-          "line": 598,
+          "line": 636,
           "called": [
             "ofNat",
             "rpi5MachineConfig",
@@ -238861,7 +238924,7 @@
         {
           "kind": "theorem",
           "name": "rpi5VariantFor_foreign_base",
-          "line": 608,
+          "line": 646,
           "called": [
             "ofNat",
             "rpi5MachineConfig",
@@ -248476,7 +248539,7 @@
     {
       "module": "tests.Ak9PlatformSuite",
       "path": "tests/Ak9PlatformSuite.lean",
-      "declaration_count": 122,
+      "declaration_count": 124,
       "declarations": [
         {
           "kind": "namespace",
@@ -249311,7 +249374,7 @@
         {
           "kind": "def",
           "name": "assembleDtb",
-          "line": 892,
+          "line": 893,
           "called": [
             "be32",
             "size",
@@ -249321,7 +249384,7 @@
         {
           "kind": "def",
           "name": "boardDtbRegions",
-          "line": 906,
+          "line": 907,
           "called": [
             "assembleDtb",
             "be64",
@@ -249339,7 +249402,7 @@
         {
           "kind": "def",
           "name": "boardDtb",
-          "line": 923,
+          "line": 924,
           "called": [
             "boardDtbRegions"
           ]
@@ -249347,7 +249410,7 @@
         {
           "kind": "def",
           "name": "assembleDtbDeclaring",
-          "line": 935,
+          "line": 936,
           "called": [
             "be32",
             "size",
@@ -249357,7 +249420,7 @@
         {
           "kind": "def",
           "name": "canonicalStructBlock",
-          "line": 947,
+          "line": 948,
           "called": [
             "be64",
             "deviceTypeNameOff",
@@ -249374,7 +249437,7 @@
         {
           "kind": "def",
           "name": "terminatorOutsideStructBlockDtb",
-          "line": 968,
+          "line": 969,
           "called": [
             "assembleDtbDeclaring",
             "canonicalStructBlock",
@@ -249384,7 +249447,7 @@
         {
           "kind": "def",
           "name": "nameOutsideStringsBlockDtb",
-          "line": 980,
+          "line": 981,
           "called": [
             "assembleDtbDeclaring",
             "canonicalStructBlock",
@@ -249395,7 +249458,7 @@
         {
           "kind": "def",
           "name": "memoryNamedRootDtb",
-          "line": 989,
+          "line": 990,
           "called": [
             "assembleDtb",
             "be64",
@@ -249411,7 +249474,7 @@
         {
           "kind": "def",
           "name": "twoRootDtb",
-          "line": 997,
+          "line": 998,
           "called": [
             "assembleDtb",
             "be64",
@@ -249428,7 +249491,7 @@
         {
           "kind": "def",
           "name": "overlappingMemoryDtb",
-          "line": 1017,
+          "line": 1018,
           "called": [
             "boardDtbRegions"
           ]
@@ -249436,7 +249499,7 @@
         {
           "kind": "def",
           "name": "unterminatedBoardDtb",
-          "line": 1028,
+          "line": 1029,
           "called": [
             "assembleDtb",
             "be64",
@@ -249453,7 +249516,7 @@
         {
           "kind": "def",
           "name": "unknownTokenBoardDtb",
-          "line": 1042,
+          "line": 1043,
           "called": [
             "assembleDtb",
             "be32",
@@ -249471,7 +249534,7 @@
         {
           "kind": "def",
           "name": "boardDtbWithMemoryStatus",
-          "line": 1052,
+          "line": 1053,
           "called": [
             "assembleDtb",
             "be64",
@@ -249490,7 +249553,7 @@
         {
           "kind": "def",
           "name": "singleGicNodeBoardDtb",
-          "line": 1070,
+          "line": 1071,
           "called": [
             "assembleDtb",
             "be64",
@@ -249508,8 +249571,26 @@
         },
         {
           "kind": "def",
+          "name": "wrongDevicesAtRightWindowsDtb",
+          "line": 1094,
+          "called": [
+            "assembleDtb",
+            "be64",
+            "deviceTypeNameOff",
+            "fdtBeginNode",
+            "fdtEndNodeTok",
+            "fdtEndTok",
+            "fdtProp",
+            "fdtString",
+            "peripheralNode",
+            "regNameOff",
+            "rootCellProperties"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "twoMemoryNodeDtb",
-          "line": 1090,
+          "line": 1110,
           "called": [
             "assembleDtb",
             "be64",
@@ -249528,7 +249609,7 @@
         {
           "kind": "def",
           "name": "singleCellBoardDtb",
-          "line": 1108,
+          "line": 1128,
           "called": [
             "addressCellsNameOff",
             "assembleDtb",
@@ -249547,7 +249628,7 @@
         {
           "kind": "def",
           "name": "truncatedRegBoardDtb",
-          "line": 1124,
+          "line": 1144,
           "called": [
             "assembleDtb",
             "be64",
@@ -249564,7 +249645,7 @@
         {
           "kind": "def",
           "name": "emptyUnitAddressDtb",
-          "line": 1135,
+          "line": 1155,
           "called": [
             "assembleDtb",
             "be64",
@@ -249581,7 +249662,7 @@
         {
           "kind": "def",
           "name": "reservedMemoryOnlyDtb",
-          "line": 1146,
+          "line": 1166,
           "called": [
             "assembleDtb",
             "be64",
@@ -249598,7 +249679,7 @@
         {
           "kind": "def",
           "name": "boundMapOf",
-          "line": 1158,
+          "line": 1178,
           "called": [
             "MemoryRegion",
             "PlatformConfig",
@@ -249610,7 +249691,7 @@
         {
           "kind": "def",
           "name": "variantMap",
-          "line": 1162,
+          "line": 1182,
           "called": [
             "MemoryRegion",
             "rpi5MemoryMapForConfig"
@@ -249619,7 +249700,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_01_fixture_blob_parses",
-          "line": 1168,
+          "line": 1188,
           "called": [
             "DeviceTree.fromDtbFull",
             "boardDtb",
@@ -249630,7 +249711,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_02_matching_board_accepted",
-          "line": 1181,
+          "line": 1201,
           "called": [
             "boardDtb",
             "config",
@@ -249644,7 +249725,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_03_short_ram_refused",
-          "line": 1198,
+          "line": 1218,
           "called": [
             "boardDtb",
             "expect",
@@ -249655,7 +249736,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_04_missing_mmio_refused",
-          "line": 1207,
+          "line": 1227,
           "called": [
             "boardDtb",
             "expect",
@@ -249666,7 +249747,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_05_unparseable_blob_refused",
-          "line": 1215,
+          "line": 1235,
           "called": [
             "expect",
             "none",
@@ -249676,7 +249757,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_06_coverage_is_refusable",
-          "line": 1224,
+          "line": 1244,
           "called": [
             "DeviceTree.fromDtbFull",
             "boardDtb",
@@ -249684,14 +249765,14 @@
             "deviceTreeCoversMmioRegions",
             "expect",
             "isEmpty",
-            "mmioRegions",
+            "requiredMmioWindows",
             "rpi5MachineConfig"
           ]
         },
         {
           "kind": "def",
           "name": "deviceTreeBridge_07_small_variants_bind_their_own_map",
-          "line": 1239,
+          "line": 1259,
           "called": [
             "boardDtb",
             "boundMapOf",
@@ -249705,7 +249786,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_08_canonical_board_binds_canonical_map",
-          "line": 1258,
+          "line": 1278,
           "called": [
             "boardDtb",
             "boundMapOf",
@@ -249718,7 +249799,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_09_eight_gib_as_reported",
-          "line": 1269,
+          "line": 1289,
           "called": [
             "boardDtbRegions",
             "boundMapOf",
@@ -249733,7 +249814,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_10_between_variants_binds_largest_covered",
-          "line": 1282,
+          "line": 1302,
           "called": [
             "boardDtb",
             "boundMapOf",
@@ -249747,7 +249828,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_11_foreign_base_refused",
-          "line": 1293,
+          "line": 1313,
           "called": [
             "boardDtbRegions",
             "expect",
@@ -249758,7 +249839,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_12_split_aperture_binds_canonical_map",
-          "line": 1302,
+          "line": 1322,
           "called": [
             "boardDtbRegions",
             "boundMapOf",
@@ -249772,7 +249853,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_13_direct_path_fallback_is_smallest",
-          "line": 1326,
+          "line": 1346,
           "called": [
             "PlatformConfig",
             "all",
@@ -249791,7 +249872,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_22_every_register_block_is_a_window",
-          "line": 1346,
+          "line": 1366,
           "called": [
             "DeviceTree.fromDtbFull",
             "any",
@@ -249806,7 +249887,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_23_extent_past_the_window_is_refused",
-          "line": 1366,
+          "line": 1386,
           "called": [
             "any",
             "expect",
@@ -249821,7 +249902,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_18_every_memory_node_contributes",
-          "line": 1395,
+          "line": 1415,
           "called": [
             "DeviceTree.fromDtbFull",
             "any",
@@ -249840,7 +249921,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_19_root_cell_widths_are_honoured",
-          "line": 1414,
+          "line": 1434,
           "called": [
             "DeviceTree.fromDtbFull",
             "any",
@@ -249855,7 +249936,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_20_partial_reg_pair_refused",
-          "line": 1426,
+          "line": 1446,
           "called": [
             "DeviceTree.fromDtbFull",
             "expect",
@@ -249865,7 +249946,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_21_empty_unit_address_is_not_memory",
-          "line": 1433,
+          "line": 1453,
           "called": [
             "DeviceTree.fromDtbFull",
             "emptyUnitAddressDtb",
@@ -249875,7 +249956,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_14_unterminated_blob_refused",
-          "line": 1445,
+          "line": 1465,
           "called": [
             "DeviceTree.fromDtbFull",
             "boardDtb",
@@ -249889,7 +249970,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_15_unknown_token_refused",
-          "line": 1458,
+          "line": 1478,
           "called": [
             "DeviceTree.fromDtbFull",
             "expect",
@@ -249899,7 +249980,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_16_disabled_memory_refused",
-          "line": 1467,
+          "line": 1487,
           "called": [
             "DeviceTree.fromDtbFull",
             "boardDtbWithMemoryStatus",
@@ -249911,7 +249992,7 @@
         {
           "kind": "def",
           "name": "deviceTreeBridge_17_reserved_memory_child_is_not_ram",
-          "line": 1482,
+          "line": 1502,
           "called": [
             "DeviceTree.fromDtbFull",
             "expect",
@@ -249920,8 +250001,31 @@
         },
         {
           "kind": "def",
+          "name": "review8_mmio_windows_require_the_right_devices",
+          "line": 1510,
+          "called": [
+            "DeviceTree.fromDtbFull",
+            "all",
+            "any",
+            "boardDtb",
+            "contains",
+            "deviceTreeCoversMmioRegions",
+            "endAddr",
+            "expect",
+            "filter",
+            "length",
+            "none",
+            "requiredMmioWindows",
+            "rpi5PlatformConfigFromDtb",
+            "size",
+            "toNat",
+            "wrongDevicesAtRightWindowsDtb"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "review7_declared_block_extents_are_enforced",
-          "line": 1495,
+          "line": 1549,
           "called": [
             "DeviceTree.fromDtbFull",
             "FdtBlob.of",
@@ -249943,7 +250047,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1556,
+          "line": 1610,
           "called": [
             "ak9a_01_mmioRead32_rejects_unaligned",
             "ak9a_02_mmioRead64_rejects_unaligned",
@@ -250015,7 +250119,8 @@
             "review5_empty_ranges_is_the_identity",
             "review5_untranslatable_address_is_refused",
             "review7_declared_block_extents_are_enforced",
-            "review7_partial_ranges_tuple_maps_nothing"
+            "review7_partial_ranges_tuple_maps_nothing",
+            "review8_mmio_windows_require_the_right_devices"
           ]
         }
       ]
