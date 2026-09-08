@@ -1,3 +1,100 @@
+## v0.34.119 — PR #892 review round 9: the specification's own rules, both reservation sources, and a gate whose claim I had overstated
+
+Seven findings on `db9abb64`. Four are places where the Devicetree Specification
+states a rule the Lean parser did not enforce and the Rust walker does, so the
+two read the same blob differently; one is memory the firmware reserved and
+nothing subtracted; one is a predicate left behind by a variant binding added
+two rounds earlier; and one is a claim I made in a round-7 reply that was false.
+
+**The gate claim first, because it was mine.** `v0.34.117` removed
+`findMemoryRegProperty` and I wrote — in the changelog and in a review reply —
+that `check_devicetree_legacy_consumers.sh` "keeps the pattern, so a
+reintroduction is still a finding". It does keep the pattern, and the claim was
+still wrong: `scan` discarded every match from `DeviceTree.lean` unconditionally,
+so the walker could be reintroduced at exactly the place it was deleted from and
+the gate stayed silent. The host-file exemption exists for one reason — the
+symbol is still *declared* there — so it is now **per symbol**:
+`classifyMemoryRegion` keeps it, `findMemoryRegProperty` is scanned everywhere.
+And the scan reads the Lean **code view**, because with the exemption removed the
+gate immediately flagged its own removal note: the same correction round 8 made
+at two other gates, at the third, which the sweep did not reach because this
+gate's `filter_comments` asserted the names were "distinctive enough that every
+match is a real consumer" — true until one of them appeared in prose.
+
+**Four specification rules the parser did not enforce.**
+
+- **§5.1 header compatibility.** `FdtHeader.isValid` checked `version ≥ 16` and
+  never bounded `lastCompVersion`, which is the lowest version a reader must
+  implement. Above ours the layout fields may sit at different offsets and every
+  value below is read from the wrong place; `cmdline::validate_fdt_header` has
+  rejected this since its audit pass, so the Rust walker fell back to its 1 GiB
+  map on a blob this parser read and believed. `fdtParserVersion` is 17, the
+  value `FDT_PARSER_VERSION` carries.
+- **§5.4.2 node internal order.** Properties precede child nodes. This parser
+  accepted a property *after* a child and appended it, so a root placing
+  `#size-cells` after its `/memory` child had that value applied retrospectively
+  to a `reg` already parsed — while `find_ram_top_in_dtb` folds the memory node
+  at its `FDT_END_NODE`, before the late property exists, and reads the same
+  `reg` at the specification's defaults. Two readers, one blob, different RAM.
+- **§2.2.4 unique property names.** Where a blob breaks that, `findProperty`
+  answers the **first** occurrence and the Rust walker's running verdict answers
+  the **last**: a `status` of `okay` followed by `disabled` was operational here
+  and withheld there. Rejecting the duplicate is better than picking a side —
+  neither answer is the blob's meaning, because the blob has none.
+- **§2.3.4 availability is inherited.** `classifyPeripheralNode` dropped a
+  disabled node and the walk recursed into its children anyway, whose own
+  `status` is absent and therefore operational; a UART or GIC under a `disabled`
+  bus was discovered, at an address translated through that very bus's `ranges`,
+  and could satisfy the binding's MMIO windows. A disabled bus is not a working
+  path to its children, so the subtree is skipped rather than filtered child by
+  child.
+
+**Reserved memory is subtracted, from both sources.** A blob may declare
+carve-outs as `/reserved-memory` children (§3.5) or in the header's own
+reservation block (§5.3), and neither was applied — so the bound configuration
+permitted `MachineState.addrInRange` over firmware, DMA and crash-kernel
+reservations. `fdtReservedRanges` reads the first, `FdtBlob.reservations` the
+second, and `subtractReservations` removes both from the discovered RAM before
+coverage is evaluated. Two notes. The reservation block has no declared length,
+so its reads are bounded by §5.1's block order — it ends where the structure
+block begins — which is what stops a blob whose two offsets coincide from
+reading `FDT_BEGIN_NODE`'s tag as a 4 GiB reservation. And the direction is
+stated: this builds a set of *subtractions*, so a pair the bound cuts short ends
+the list rather than contributing, since an invented subtraction removes RAM
+that exists while a dropped one hands back memory the firmware reserved.
+
+**The runtime contract follows the installed map.**
+`PlatformBinding.bindMachineConfig` (round 2) installs the variant the board
+covers, so `st.machine.memoryMap` is 1 GiB on a 1 GiB Raspberry Pi 5 — while
+`rpi5RuntimeContract.memoryAccessAllowed` and its restrictive sibling ignored
+the state and read `rpi5MachineConfig.memoryMap`, fixed at 4 GiB. On those
+boards the production adapter contract authorised reads above physical RAM and
+above what the tables map. The binding and the contract were answering "what
+memory does this machine have" from two places and only one of them moved.
+Both contracts now name **one** definition, `rpi5MemoryAccessAllowed`: the
+predicate was written out twice, which is how it came to be corrected in
+neither, and the two contracts are supposed to differ in `registerContextStable`
+alone.
+
+**Evidence.** Twenty Tier 3 relation anchors, each mutation-tested by keeping
+the token and breaking the relation (twenty mutations, all preserving: the
+version bound stated of `version` instead of `lastCompVersion` and inverted and
+raised past refusal; the ordering flag read-and-ignored and dropped at the
+continuation; the duplicate test made vacuous; the subtree walked in both arms;
+each reservation source dropped; the subtraction computed-and-ignored; the
+reservation read run into the structure block; the contract reverted, its state
+bound-and-ignored, and one of the two references un-shared; the host-file
+exemption restored to the removed symbol; the gate's view built and the raw
+source scanned). Seventeen new runtime checks in `Ak9PlatformSuite` — the four
+refusals, both reservation sources subtracted with the RAM above and below each
+carve-out surviving, the disabled bus's child hidden while the same child under
+an operational bus is found, and the runtime contract answering differently for
+the same address under a 1 GiB and a 4 GiB installed map. Two mutation checks
+against the tree for the legacy-consumer gate: a walker reintroduced in the host
+file is now caught, and a docstring mention outside it is not flagged.
+
+Refs: docs/REGISTERED_DEBT.md WS-XV
+
 ## v0.34.118 — PR #892 review round 8: an unreadable DTB pointer is still dereferenced, a `reg` is read whole at every site, and an MMIO window names its device
 
 Five findings on `8cec0945`. Two are the same relations one site further on —

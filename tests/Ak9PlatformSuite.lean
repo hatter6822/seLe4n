@@ -924,6 +924,28 @@ private def boardDtbRegions (regions : List (Nat × Nat)) (withMmio : Bool := tr
 private def boardDtb (ramSize : Nat) (withMmio : Bool := true) : ByteArray :=
   boardDtbRegions [(0, ramSize)] withMmio
 
+/-- **PR #892 review round 9**: `assembleDtb` with a real **memory reservation
+block** (§5.3) between the header and the structure block, and with the header's
+`lastCompVersion` under the caller's control.
+
+Every fixture above points `offMemRsvmap` at the structure block, which is what
+a blob with no reservations has always looked like here; §5.1 fixes the block
+order, so the parser reads no reservations from such a header and the fixtures
+are unaffected.  A blob that *does* reserve memory needs the block to exist. -/
+private def assembleDtbReserving (structBlock : Array UInt8)
+    (reservations : List (Nat × Nat)) (lastCompVersion : Nat := 16) : ByteArray :=
+  let rsvBlock : Array UInt8 :=
+    (reservations.foldl (fun acc r => acc ++ be64 r.1 ++ be64 r.2) #[]) ++ be64 0 ++ be64 0
+  let offMemRsvmap := 40
+  let offDtStruct := offMemRsvmap + rsvBlock.size
+  let offDtStrings := offDtStruct + structBlock.size
+  let totalsize := offDtStrings + stringsBlock.size
+  let header : Array UInt8 :=
+    be32 0xD00DFEED ++ be32 totalsize ++ be32 offDtStruct ++ be32 offDtStrings
+      ++ be32 offMemRsvmap ++ be32 17 ++ be32 lastCompVersion ++ be32 0
+      ++ be32 stringsBlock.size ++ be32 structBlock.size
+  ByteArray.mk (header ++ rsvBlock ++ structBlock ++ stringsBlock)
+
 /-- **PR #892 review round 7**: `assembleDtb` with the two declared block sizes
 supplied by the caller rather than measured.
 
@@ -1083,6 +1105,76 @@ private def singleGicNodeBoardDtb : ByteArray :=
   assembleDtb (fdtBeginNode "" ++ rootCellProperties ++ memoryNode
     ++ peripheralNode "serial@fe201000" 0xFE201000 0x1000 "arm,pl011"
     ++ gicNode ++ fdtEndNodeTok ++ fdtEndTok)
+
+/-- **PR #892 review round 9**: the canonical board's nodes, as a reusable body. -/
+private def canonicalBodyWithMemory (memReg : Array UInt8) : Array UInt8 :=
+  fdtBeginNode "" ++ rootCellProperties
+    ++ (fdtBeginNode "memory@0"
+        ++ fdtProp deviceTypeNameOff (fdtString "memory")
+        ++ fdtProp regNameOff memReg
+        ++ fdtEndNodeTok)
+    ++ peripheralNode "serial@fe201000" 0xFE201000 0x1000 "arm,pl011"
+    ++ peripheralNode "interrupt-controller@ff841000" 0xFF841000 0x1000 "arm,gic-400"
+    ++ peripheralNode "interrupt-controller@ff842000" 0xFF842000 0x2000 "arm,gic-400"
+    ++ fdtEndNodeTok ++ fdtEndTok
+
+/-- **PR #892 review round 9**: a board declaring the full low aperture and
+reserving 16 MiB of it in the **header's** reservation block (§5.3). -/
+private def headerReservedBoardDtb : ByteArray :=
+  assembleDtbReserving (canonicalBodyWithMemory (be64 0 ++ be64 0xFC000000))
+    [(0xF0000000, 0x1000000)]
+
+/-- **PR #892 review round 9**: the same carve-out declared the other way — a
+`/reserved-memory` child (§3.5) rather than the header block. -/
+private def reservedMemoryNodeBoardDtb : ByteArray :=
+  let reservedNode :=
+    fdtBeginNode "reserved-memory"
+      ++ fdtProp addressCellsNameOff (be32 2) ++ fdtProp sizeCellsNameOff (be32 2)
+      ++ (fdtBeginNode "firmware@f0000000"
+          ++ fdtProp regNameOff (be64 0xF0000000 ++ be64 0x1000000)
+          ++ fdtEndNodeTok)
+      ++ fdtEndNodeTok
+  assembleDtb (fdtBeginNode "" ++ rootCellProperties
+    ++ (fdtBeginNode "memory@0"
+        ++ fdtProp deviceTypeNameOff (fdtString "memory")
+        ++ fdtProp regNameOff (be64 0 ++ be64 0xFC000000)
+        ++ fdtEndNodeTok)
+    ++ reservedNode
+    ++ peripheralNode "serial@fe201000" 0xFE201000 0x1000 "arm,pl011"
+    ++ peripheralNode "interrupt-controller@ff841000" 0xFF841000 0x1000 "arm,gic-400"
+    ++ peripheralNode "interrupt-controller@ff842000" 0xFF842000 0x2000 "arm,gic-400"
+    ++ fdtEndNodeTok ++ fdtEndTok)
+
+/-- **PR #892 review round 9**: a blob demanding a newer parser than this one
+(`lastCompVersion = 18`). -/
+private def futureVersionBoardDtb : ByteArray :=
+  assembleDtbReserving (canonicalBodyWithMemory (be64 0 ++ be64 0xFC000000)) [] 18
+
+/-- **PR #892 review round 9**: the root declares `#size-cells` **after** its
+`/memory` child, which §5.4.2 forbids and which the two readers resolve
+differently. -/
+private def latePropertyBoardDtb : ByteArray :=
+  assembleDtb (fdtBeginNode ""
+    ++ fdtProp addressCellsNameOff (be32 2)
+    ++ (fdtBeginNode "memory@0"
+        ++ fdtProp deviceTypeNameOff (fdtString "memory")
+        ++ fdtProp regNameOff (be64 0 ++ be64 0xFC000000)
+        ++ fdtEndNodeTok)
+    ++ fdtProp sizeCellsNameOff (be32 2)
+    ++ fdtEndNodeTok ++ fdtEndTok)
+
+/-- **PR #892 review round 9**: a `/memory` node whose `status` is declared
+twice — `okay` then `disabled`.  The first occurrence is what `findProperty`
+answers and the last is what the Rust walker's running verdict answers. -/
+private def duplicateStatusBoardDtb : ByteArray :=
+  assembleDtb (fdtBeginNode "" ++ rootCellProperties
+    ++ (fdtBeginNode "memory@0"
+        ++ fdtProp deviceTypeNameOff (fdtString "memory")
+        ++ fdtProp regNameOff (be64 0 ++ be64 0xFC000000)
+        ++ fdtProp statusNameOff (fdtString "okay")
+        ++ fdtProp statusNameOff (fdtString "disabled")
+        ++ fdtEndNodeTok)
+    ++ fdtEndNodeTok ++ fdtEndTok)
 
 /-- **PR #892 review round 8**: a board whose peripherals sit at exactly the
 binding's MMIO windows and are **not** the devices the binding programs there.
@@ -1604,6 +1696,86 @@ def review7_declared_block_extents_are_enforced : IO Unit := do
   | .error _ => expect "review7 an accepted device tree validates" false
 
 
+/-- **PR #892 review round 9**: the four parser findings and the two reservation
+sources, each on a blob that keeps every byte the accepting parser read. -/
+def review9_parser_conformance_and_reservations : IO Unit := do
+  let width := rpi5MachineConfig.physicalAddressWidth
+  -- The control: the canonical board, and the same board built through the
+  -- reservation-aware assembler with no reservations, are both accepted.
+  match DeviceTree.fromDtbFull (boardDtb 0xFC000000) width with
+  | .ok _ => expect "review9 the canonical board is accepted" true
+  | .error _ => expect "review9 the canonical board is accepted" false
+  match DeviceTree.fromDtbFull
+      (assembleDtbReserving (canonicalBodyWithMemory (be64 0 ++ be64 0xFC000000)) []) width with
+  | .ok dt =>
+    expect "review9 a real but empty reservation block changes nothing"
+      (dt.machineConfig.memoryMap.any (fun r => r.kind == .ram && r.size == 0xFC000000))
+  | .error _ => expect "review9 a real but empty reservation block changes nothing" false
+  -- A blob demanding a newer parser is refused (§5.1 header compatibility).
+  match DeviceTree.fromDtbFull futureVersionBoardDtb width with
+  | .ok _ => expect "NEGATIVE review9 a blob needing a newer parser is refused" false
+  | .error _ => expect "NEGATIVE review9 a blob needing a newer parser is refused" true
+  -- A property after a child (§5.4.2) is refused rather than applied backwards.
+  match DeviceTree.fromDtbFull latePropertyBoardDtb width with
+  | .ok _ => expect "NEGATIVE review9 a property after a child node is refused" false
+  | .error _ => expect "NEGATIVE review9 a property after a child node is refused" true
+  -- A duplicate property name (§2.2.4) is refused rather than resolved to
+  -- whichever occurrence a given consumer happens to read.
+  match DeviceTree.fromDtbFull duplicateStatusBoardDtb width with
+  | .ok _ => expect "NEGATIVE review9 a duplicate property name is refused" false
+  | .error _ => expect "NEGATIVE review9 a duplicate property name is refused" true
+  -- Both reservation sources are subtracted from the discovered RAM.
+  for (label, blob) in
+      [("the header block", headerReservedBoardDtb),
+       ("a /reserved-memory child", reservedMemoryNodeBoardDtb)] do
+    match DeviceTree.fromDtbFull blob width with
+    | .error _ => expect s!"review9 {label}: the board still parses" false
+    | .ok dt =>
+      expect s!"review9 {label}: the reserved range is not RAM"
+        (!dt.machineConfig.memoryMap.any
+          (fun r => r.kind == .ram && r.contains (SeLe4n.PAddr.ofNat 0xF0800000)))
+      expect s!"review9 {label}: the RAM below it survives"
+        (dt.machineConfig.memoryMap.any
+          (fun r => r.kind == .ram && r.contains (SeLe4n.PAddr.ofNat 0x1000)))
+      expect s!"review9 {label}: the RAM above it survives"
+        (dt.machineConfig.memoryMap.any
+          (fun r => r.kind == .ram && r.contains (SeLe4n.PAddr.ofNat 0xF1000000)))
+  -- A disabled bus hides its whole subtree, not only itself.
+  let disabledBus :=
+    withStatus (mkBus "gated-bus" 0x10000000 (mkRangesProperty 0 0x100000000 0x200000000)
+      [mkPeripheral "hidden-uart" 0x20000000 []]) "disabled"
+  expect "NEGATIVE review9 a child of a disabled bus is not discovered"
+    (!(extractPeripherals [disabledBus] 1024).any (fun d => d.name == "hidden-uart"))
+  let liveBus :=
+    mkBus "live-bus" 0x10000000 (mkRangesProperty 0 0x100000000 0x200000000)
+      [mkPeripheral "hidden-uart" 0x20000000 []]
+  expect "review9 the same child under an operational bus is discovered"
+    ((extractPeripherals [liveBus] 1024).any (fun d => d.name == "hidden-uart"))
+
+/-- **PR #892 review round 9**: the runtime contract authorises reads against
+the **installed** memory map, not the canonical 4 GiB one.
+
+The preserving mutation for this is the state, not the code: the same address is
+asked of the same predicate under two machine configurations the binding can
+install.  Before the fix both answered from `rpi5MachineConfig.memoryMap`, so the
+1 GiB board authorised a read 2 GiB up — above its RAM and above what the tables
+map. -/
+def review9_runtime_contract_follows_the_installed_map : IO Unit := do
+  let stFor (mc : SeLe4n.MachineConfig) : SystemState :=
+    { (default : SystemState) with machine := { (default : MachineState) with memoryMap := mc.memoryMap } }
+  let twoGiB := SeLe4n.PAddr.ofNat 0x8000_0000
+  let lowAddr := SeLe4n.PAddr.ofNat 0x1000
+  let small := rpi5MachineConfigForVariant rpi5SmallestVariant
+  let full := rpi5MachineConfig
+  expect "review9 the 4 GiB board authorises a read 2 GiB up"
+    (@decide _ (rpi5RuntimeContract.memoryAccessAllowedDecidable (stFor full) twoGiB))
+  expect "NEGATIVE review9 the 1 GiB board does not"
+    (!@decide _ (rpi5RuntimeContract.memoryAccessAllowedDecidable (stFor small) twoGiB))
+  expect "review9 the 1 GiB board still authorises a read inside its RAM"
+    (@decide _ (rpi5RuntimeContract.memoryAccessAllowedDecidable (stFor small) lowAddr))
+  expect "NEGATIVE review9 the restrictive contract agrees on the small board"
+    (!@decide _ (rpi5RuntimeContractRestrictive.memoryAccessAllowedDecidable (stFor small) twoGiB))
+
 end SeLe4n.Testing.Ak9PlatformSuite
 
 open SeLe4n.Testing.Ak9PlatformSuite in
@@ -1682,6 +1854,8 @@ def main : IO Unit := do
   review7_partial_ranges_tuple_maps_nothing
   review7_declared_block_extents_are_enforced
   review8_mmio_windows_require_the_right_devices
+  review9_parser_conformance_and_reservations
+  review9_runtime_contract_follows_the_installed_map
   deviceTreeBridge_18_every_memory_node_contributes
   deviceTreeBridge_19_root_cell_widths_are_honoured
   deviceTreeBridge_20_partial_reg_pair_refused

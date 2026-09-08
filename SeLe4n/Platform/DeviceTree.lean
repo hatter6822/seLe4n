@@ -230,10 +230,26 @@ def parseFdtHeader (blob : ByteArray) : Option FdtHeader := do
       some { magic, totalsize, offDtStruct, offDtStrings, offMemRsvmap,
              version, lastCompVersion, bootCpuidPhys, sizeDtStrings, sizeDtStruct }
 
+/-- **PR #892 review round 9**: the FDT layout version this parser implements.
+
+The value `cmdline::FDT_PARSER_VERSION` carries, so the two readers agree on
+which blobs they can read.  A blob whose `lastCompVersion` exceeds it demands a
+reader this one is not. -/
+def fdtParserVersion : Nat := 17
+
 /-- T6-M: Validate an FDT header — magic is correct and sizes are consistent. -/
 def FdtHeader.isValid (hdr : FdtHeader) : Bool :=
   hdr.magic == fdtMagic &&
   hdr.version.toNat ≥ 16 &&    -- Minimum supported DTB version
+  -- **PR #892 review round 9**: and not a blob that requires a *newer* parser
+  -- than this one.  `lastCompVersion` is the lowest version a reader must
+  -- implement to read the blob correctly; above ours, the layout fields may sit
+  -- at different offsets and every value below is read from the wrong place.
+  -- `cmdline::validate_fdt_header` has rejected this since its audit pass, so
+  -- the Rust walker fell back to its 1 GiB map on a blob this parser read and
+  -- believed — the two answering "is this blob readable" differently, which is
+  -- the divergence WS-XV registers.
+  hdr.lastCompVersion.toNat ≤ fdtParserVersion &&
   hdr.totalsize.toNat ≥ 40 &&  -- At least header size
   hdr.offDtStruct.toNat < hdr.totalsize.toNat &&
   hdr.offDtStrings.toNat < hdr.totalsize.toNat
@@ -690,6 +706,12 @@ structure FdtBlob where
   stringsStart : Nat
   /-- One past its last byte (`offDtStrings + sizeDtStrings`). -/
   stringsEnd : Nat
+  /-- **PR #892 review round 9**: first byte of the memory reservation block
+  (`offMemRsvmap`).  It has no declared size — §5.3 ends it with a zero entry —
+  so reads are bounded by the blob's own `totalsize`. -/
+  reservationsStart : Nat
+  /-- One past the last byte the header claims the blob occupies. -/
+  blobEnd : Nat
 
 /-- **PR #892 review round 7**: the only constructor — a view exists exactly
 when the header's two declared blocks fit inside the blob *and* inside the
@@ -701,9 +723,13 @@ def FdtBlob.of? (blob : ByteArray) (hdr : FdtHeader) : Option FdtBlob :=
   let structEnd := structStart + hdr.sizeDtStruct.toNat
   let stringsStart := hdr.offDtStrings.toNat
   let stringsEnd := stringsStart + hdr.sizeDtStrings.toNat
+  let reservationsStart := hdr.offMemRsvmap.toNat
+  let blobEnd := min blob.size hdr.totalsize.toNat
   if structEnd ≤ blob.size && stringsEnd ≤ blob.size
-      && structEnd ≤ hdr.totalsize.toNat && stringsEnd ≤ hdr.totalsize.toNat then
-    some { bytes := blob, structStart, structEnd, stringsStart, stringsEnd }
+      && structEnd ≤ hdr.totalsize.toNat && stringsEnd ≤ hdr.totalsize.toNat
+      && reservationsStart ≤ blobEnd then
+    some { bytes := blob, structStart, structEnd, stringsStart, stringsEnd,
+           reservationsStart, blobEnd }
   else none
 
 /-- A 32-bit token, refused unless it lies **wholly** inside the declared
@@ -739,6 +765,37 @@ def FdtBlob.stringsName? (v : FdtBlob) (nameoff : Nat) (fuel : Nat := 256)
   if nameoff < v.stringsEnd - v.stringsStart then
     (readCStringWithin v.bytes v.stringsEnd (v.stringsStart + nameoff) fuel).map (·.1)
   else none
+
+/-- **PR #892 review round 9**: the blob's **memory reservation block** — the
+ranges the firmware tells the operating system not to use.
+
+§5.3 of the Devicetree Specification puts a list of 16-byte (address, size)
+big-endian pairs at `offMemRsvmap`, terminated by a pair of zeros.  The block
+has no declared length, so each read is bounded by the blob's own `totalsize`
+and the list ends at the terminator, at the bound, or at the fuel — whichever
+comes first.  A pair the bound cuts short ends the list rather than
+contributing, which is the fail-closed side here: this builds a set of
+*subtractions*, and one it invents removes RAM that exists, while one it drops
+would hand back memory the firmware reserved. -/
+def FdtBlob.reservations (v : FdtBlob) (fuel : Nat := 64) : List (Nat × Nat) :=
+  go v.reservationsStart fuel []
+where
+  go (offset : Nat) : Nat → List (Nat × Nat) → List (Nat × Nat)
+  | 0, acc => acc.reverse
+  | fuel + 1, acc =>
+    -- §5.1 fixes the block order: header, reservation block, structure block,
+    -- strings block.  So the reservation block ends where the structure block
+    -- begins, and a `offMemRsvmap` pointing into (or past) the structure block
+    -- declares no reservations rather than reading tokens as address pairs —
+    -- which is what a blob whose two offsets coincide would otherwise do, at
+    -- `FDT_BEGIN_NODE`'s tag read as a 4 GiB base.
+    if offset + 16 > min v.blobEnd v.structStart then acc.reverse
+    else
+      match readBE64 v.bytes offset, readBE64 v.bytes (offset + 8) with
+      | some base, some size =>
+        if base == 0 && size == 0 then acc.reverse
+        else go (offset + 16) fuel ((base.toNat, size.toNat) :: acc)
+      | _, _ => acc.reverse
 
 /-- V4-M2/L-PLAT-1: Look up a property name in the FDT string table.
     Given the string table offset and a property's `nameoff`, reads the
@@ -1107,7 +1164,7 @@ where
         | none => .error .malformedBlob
         | some (name, nextOffset) =>
           -- Parse this node's contents (properties + children)
-          match parseNodeContents v nextOffset fuel with
+          match parseNodeContents v nextOffset false [] fuel with
           | .error e => .error e
           | .ok (props, children, afterOffset) =>
             let node : FdtNode := { name, properties := props, children }
@@ -1127,7 +1184,28 @@ where
   /-- Parse properties and children within a single node.
       Returns (properties, children, offset past FDT_END_NODE), or an error for
       input this parser cannot read whole. -/
-  parseNodeContents (v : FdtBlob) (offset : Nat) :
+  -- Parse a node's contents.  `seenChild` says whether a `FDT_BEGIN_NODE` has
+  -- already been consumed at this level, and `seenNames` the property names
+  -- already taken — both **PR #892 review round 9**.
+
+  -- §5.4.2 of the Devicetree Specification fixes a node's internal order:
+  -- properties, then child nodes.  This parser accepted a property *after* a
+  -- child and appended it to the node's list, so a root that placed
+  -- `#size-cells` after its `/memory` child had that value applied
+  -- retrospectively to a `reg` already parsed — while `find_ram_top_in_dtb`
+  -- folds the memory node at its `FDT_END_NODE`, before the late property
+  -- exists, and reads the same `reg` at the specification's defaults.  Two
+  -- readers, one blob, different RAM.
+
+  -- Duplicate names are the same shape one level down: §2.2.4 gives a node's
+  -- properties unique names, and where a blob breaks that, `findProperty`
+  -- answers the **first** occurrence while the Rust walker updates its verdict
+  -- at every one and so answers the **last**.  A `status` of `okay` followed by
+  -- `disabled` was therefore operational here and withheld there.  Rejecting
+  -- the duplicate is better than picking a side: neither answer is the blob's
+  -- meaning, because the blob has none.
+  parseNodeContents (v : FdtBlob) (offset : Nat) (seenChild : Bool)
+      (seenNames : List String) :
       Nat → Except DeviceTreeParseError (List FdtProperty × List FdtNode × Nat)
   | 0 => .error .fuelExhausted -- AF3-A: Fuel exhausted — signal parse failure
   | fuel + 1 =>
@@ -1135,6 +1213,9 @@ where
     | none => .error .malformedBlob
     | some token =>
       if token == fdtProp then
+        if seenChild then
+          .error .malformedBlob -- A property after a child: §5.4.2 forbids it
+        else
         -- Read property header: len (u32), nameoff (u32)
         match v.structBE32? (offset + 4), v.structBE32? (offset + 8) with
         | some len, some nameoff =>
@@ -1147,10 +1228,13 @@ where
           -- the fail-open direction: the blob declared a name it does not hold.
           match v.structExtract? valueOffset valueEnd, v.stringsName? nameoff.toNat with
           | some propValue, some propName =>
-            match parseNodeContents v alignedNext fuel with
-            | .error e => .error e
-            | .ok (moreProps, children, endOffset) =>
-              .ok ({ name := propName, value := propValue } :: moreProps, children, endOffset)
+            if seenNames.contains propName then
+              .error .malformedBlob -- A second property of this name (§2.2.4)
+            else
+              match parseNodeContents v alignedNext false (propName :: seenNames) fuel with
+              | .error e => .error e
+              | .ok (moreProps, children, endOffset) =>
+                .ok ({ name := propName, value := propValue } :: moreProps, children, endOffset)
           | _, _ => .error .malformedBlob -- Truncated property, or a name outside the table
         | _, _ => .error .malformedBlob
       else if token == fdtBeginNode then
@@ -1158,19 +1242,21 @@ where
         match v.structCString? (offset + 4) with
         | none => .error .malformedBlob
         | some (childName, nextOffset) =>
-          match parseNodeContents v nextOffset fuel with
+          match parseNodeContents v nextOffset false [] fuel with
           | .error e => .error e
           | .ok (childProps, grandchildren, afterChild) =>
             let child : FdtNode :=
               { name := childName, properties := childProps, children := grandchildren }
-            match parseNodeContents v afterChild fuel with
+            -- A child has been seen at *this* level, so no further property may
+            -- follow; the child's own contents start fresh.
+            match parseNodeContents v afterChild true seenNames fuel with
             | .error e => .error e
             | .ok (moreProps, moreSiblings, endOffset) =>
               .ok (moreProps, child :: moreSiblings, endOffset)
       else if token == fdtEndNode then
         .ok ([], [], offset + 4) -- End of this node
       else if token == fdtNop then
-        parseNodeContents v (offset + 4) fuel
+        parseNodeContents v (offset + 4) seenChild seenNames fuel
       else
         .error .malformedBlob -- Unknown token, or an `FDT_END` inside an open node
 
@@ -1282,6 +1368,56 @@ def memoryRegionsFromNodes (root : FdtNode) : Option (List FdtMemoryRegion) :=
           | none => none
           | some more => some (regions ++ more))
     (some [])
+
+/-- **PR #892 review round 9**: the `/reserved-memory` node's carve-outs.
+
+§3.5 puts firmware, DMA and crash-kernel reservations under a `/reserved-memory`
+child of the root, each an entry whose `reg` is read at **that node's** declared
+cell widths.  A node with no `reg` (a `size`-only dynamic allocation) reserves no
+*particular* range and contributes nothing here.
+
+Round 5 stopped `/reserved-memory`'s children being read as the machine's RAM;
+that is a different question from this one.  Excluding them from aperture
+*discovery* leaves the aperture the `/memory` node declares intact, and the
+carve-outs sit inside it — so the model still permitted `MachineState.addrInRange`
+over memory the firmware has claimed. -/
+def fdtReservedRanges (root : FdtNode) : List (Nat × Nat) :=
+  match root.children.find? (fun n => n.name == "reserved-memory") with
+  | none => []
+  | some reserved =>
+    reserved.children.flatMap fun child =>
+      match child.findProperty "reg" with
+      | none => []
+      | some regBytes =>
+        match extractMemoryRegionsChecked regBytes reserved.addressCells reserved.sizeCells with
+        | none => []
+        | some regions => regions.map (fun r => (r.base, r.size))
+
+/-- **PR #892 review round 9**: one region with one reserved interval removed.
+
+Yields the pieces of `r` outside `[resBase, resBase + resSize)` — two when the
+reservation is strictly interior, one when it clips an end, none when it covers
+the region.  An empty reservation removes nothing. -/
+def fdtRegionMinus (r : FdtMemoryRegion) (resBase resSize : Nat) : List FdtMemoryRegion :=
+  let rEnd := r.base + r.size
+  let resEnd := resBase + resSize
+  if resSize == 0 || resEnd ≤ r.base || rEnd ≤ resBase then [r]
+  else
+    let below := if r.base < resBase then [{ base := r.base, size := resBase - r.base }] else []
+    let above := if resEnd < rEnd then [{ base := resEnd, size := rEnd - resEnd }] else []
+    below ++ above
+
+/-- **PR #892 review round 9**: the RAM that remains after every declared
+reservation is removed.
+
+Both sources are subtracted — the `/reserved-memory` children and the header's
+own reservation block (§5.3) — because a blob may use either and the model must
+not permit an access to memory declared unusable by whichever one it used. -/
+def subtractReservations (regions : List FdtMemoryRegion)
+    (reservations : List (Nat × Nat)) : List FdtMemoryRegion :=
+  reservations.foldl
+    (fun acc res => acc.flatMap (fun r => fdtRegionMinus r res.1 res.2))
+    regions
 
 /-- AK9-F (P-M07): `Except`-returning variant of `findMemoryRegProperty`.  Unlike
     the legacy `Option` form that collapses "fuel exhausted" and "malformed
@@ -1473,7 +1609,22 @@ private def extractPeripheralsWalk : Nat → FdtAddressContext → List FdtNode 
   | _ + 1,     _,   []     => []
   | fuel + 1,  ctx, node :: rest =>
     let selfEntries := classifyPeripheralNode ctx node
-    let childDevs  := extractPeripheralsWalk fuel (ctx.forChildren node) node.children
+    -- **PR #892 review round 9**: availability is inherited, not node-local.
+    -- `classifyPeripheralNode` drops a node the firmware marked unavailable,
+    -- but the walk recursed into its children regardless — and a child's own
+    -- `status` is absent, which defaults to operational.  So a UART or GIC
+    -- under a `disabled` bus was discovered, at an address translated through
+    -- that very bus's `ranges`, and could satisfy the binding's MMIO windows:
+    -- the bridge accepting hardware firmware has made inaccessible.
+    --
+    -- §2.3.4 makes `status` a statement about the node *and everything behind
+    -- it* — a disabled bus is not a working path to its children — so the
+    -- subtree is skipped rather than filtered child by child, which would ask
+    -- each descendant a question its ancestor has already answered.
+    let childDevs :=
+      if node.statusIsOperational then
+        extractPeripheralsWalk fuel (ctx.forChildren node) node.children
+      else []
     let siblingDevs := extractPeripheralsWalk fuel ctx rest
     selfEntries ++ (childDevs ++ siblingDevs)
 
@@ -1578,7 +1729,18 @@ def DeviceTree.fromDtbFull (blob : ByteArray) (physicalAddressWidth : Nat)
       | some root =>
       match memoryRegionsFromNodes root with
       | none => .error .malformedBlob
-      | some fdtRegions =>
+      | some declaredRegions =>
+        -- PR #892 review round 9: what `/memory` declares, minus every range
+        -- the firmware reserved — the `/reserved-memory` children (§3.5) and
+        -- the header's own reservation block (§5.3).  Neither was subtracted,
+        -- so the bound configuration permitted `MachineState.addrInRange` over
+        -- firmware, DMA and crash-kernel carve-outs.
+        let headerReservations :=
+          match FdtBlob.of? blob hdr with
+          | some v => v.reservations
+          | none => []
+        let reservations := fdtReservedRanges root ++ headerReservations
+        let fdtRegions := subtractReservations declaredRegions reservations
         let memRegions := fdtRegionsToMemoryRegions fdtRegions
         if memRegions.isEmpty then .error .malformedBlob
         else
@@ -1633,19 +1795,33 @@ theorem parseFdtHeader_fromDtbFull_ok (blob : ByteArray)
     (hNodes : parseFdtNodes blob hdr = .ok nodes)
     (root : FdtNode)
     (hRoot : fdtRoot? nodes = some root)
-    (fdtRegions : List FdtMemoryRegion)
-    (hMem : memoryRegionsFromNodes root = some fdtRegions)
-    (hNonEmpty : (fdtRegionsToMemoryRegions fdtRegions).isEmpty = false)
+    (declaredRegions : List FdtMemoryRegion)
+    (hMem : memoryRegionsFromNodes root = some declaredRegions)
+    -- PR #892 review round 9: the regions the configuration is built from are
+    -- the declared ones **minus every reservation**, from both sources, so the
+    -- two hypotheses below are about that set rather than about what `/memory`
+    -- declares.  A board whose `/memory` aperture is entirely reserved has a
+    -- non-empty declared set and an empty available one, and does not boot.
+    (reservations : List (Nat × Nat))
+    (hRes : reservations =
+      fdtReservedRanges root ++
+        (match FdtBlob.of? blob hdr with | some v => v.reservations | none => []))
+    (hNonEmpty :
+      (fdtRegionsToMemoryRegions (subtractReservations declaredRegions reservations)).isEmpty
+        = false)
     -- PR #892 review round 7: a successful parse now *establishes* the
     -- invariant `DeviceTree`'s docstring states, so the hypothesis that the
     -- constructed configuration is well formed is what the last step needs.
     (hWf : ({ registerWidth := 64, virtualAddressWidth := 48,
               physicalAddressWidth := physicalAddressWidth, pageSize := 4096,
               maxASID := 65536,
-              memoryMap := fdtRegionsToMemoryRegions fdtRegions } :
+              memoryMap :=
+                fdtRegionsToMemoryRegions
+                  (subtractReservations declaredRegions reservations) } :
                 MachineConfig).wellFormed = true) :
     ∃ dt, DeviceTree.fromDtbFull blob physicalAddressWidth = .ok dt := by
   unfold DeviceTree.fromDtbFull
+  subst hRes
   simp [hValid, hNodes, hRoot, hMem, hNonEmpty, DeviceTree.validate, hWf]
 
 /-- **PR #892 review round 5**: the standalone search and the boot path's

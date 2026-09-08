@@ -10910,7 +10910,11 @@ lake env lean /tmp/sm5i_suite.lean'
 # refuse; `FdtBlob` is the contract, built only by `FdtBlob.of?` and read only
 # through accessors that refuse an access outside the block they name.
 # ---------------------------------------------------------------------------
-run_check "INVARIANT" rg -n -U 'if structEnd ≤ blob\.size && stringsEnd ≤ blob\.size\n      && structEnd ≤ hdr\.totalsize\.toNat && stringsEnd ≤ hdr\.totalsize\.toNat then' SeLe4n/Platform/DeviceTree.lean
+# (Round 9 added the reservation block to the view, so the constructor's guard
+# carries a fourth conjunct; the three the round-7 finding is about are pinned
+# as a prefix, and the new one on its own line below.)
+run_check "INVARIANT" rg -n -U 'if structEnd ≤ blob\.size && stringsEnd ≤ blob\.size\n      && structEnd ≤ hdr\.totalsize\.toNat && stringsEnd ≤ hdr\.totalsize\.toNat' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U '&& reservationsStart ≤ blobEnd then' SeLe4n/Platform/DeviceTree.lean
 run_check "INVARIANT" rg -n -U 'def FdtBlob\.structBE32\? \(v : FdtBlob\) \(offset : Nat\) : Option UInt32 :=\n  if v\.structStart ≤ offset && offset \+ 4 ≤ v\.structEnd then readBE32 v\.bytes offset' SeLe4n/Platform/DeviceTree.lean
 run_check "INVARIANT" rg -n -U 'if v\.structStart ≤ offset && offset < v\.structEnd then\n    readCStringWithin v\.bytes v\.structEnd offset fuel' SeLe4n/Platform/DeviceTree.lean
 run_check "INVARIANT" rg -n -U 'if v\.structStart ≤ start && start ≤ stop && stop ≤ v\.structEnd then\n    some \(v\.bytes\.extract start stop\)' SeLe4n/Platform/DeviceTree.lean
@@ -11017,5 +11021,57 @@ open SeLe4n.Platform
 #check @SeLe4n.Platform.RPi5.requiredMmioWindows_compatible_nonempty
 EOF
 lake env lean /tmp/mmio_identity_probe.lean'
+
+# ---------------------------------------------------------------------------
+# PR #892 review round 9.
+# ---------------------------------------------------------------------------
+# The header must not demand a newer parser than this one (§5.1), the value the
+# Rust reader has enforced since its audit pass.
+run_check "INVARIANT" rg -n 'hdr\.lastCompVersion\.toNat ≤ fdtParserVersion &&' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n '^def fdtParserVersion : Nat := 17$' SeLe4n/Platform/DeviceTree.lean
+# A node's properties come before its children (§5.4.2), and its property names
+# are unique (§2.2.4) — both refused rather than resolved to one reading.
+run_check "INVARIANT" rg -n -U 'if seenChild then\n          \.error \.malformedBlob' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U 'if seenNames\.contains propName then\n              \.error \.malformedBlob' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U 'match parseNodeContents v afterChild true seenNames fuel with' SeLe4n/Platform/DeviceTree.lean
+# NEGATIVE: the ordering-blind continuation, which appended a late property to
+# the node it had already finished reading children for.
+run_negative_check "INVARIANT" rg -n -U 'match parseNodeContents v afterChild fuel with' SeLe4n/Platform/DeviceTree.lean
+# Availability is inherited: a disabled bus hides its subtree.
+run_check "INVARIANT" rg -n -U 'let childDevs :=\n      if node\.statusIsOperational then\n        extractPeripheralsWalk fuel \(ctx\.forChildren node\) node\.children\n      else \[\]' SeLe4n/Platform/DeviceTree.lean
+run_negative_check "INVARIANT" rg -n -U 'let childDevs  := extractPeripheralsWalk fuel \(ctx\.forChildren node\) node\.children' SeLe4n/Platform/DeviceTree.lean
+# Both reservation sources are subtracted from the discovered RAM.
+run_check "INVARIANT" rg -n -U 'let reservations := fdtReservedRanges root \+\+ headerReservations' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U 'let fdtRegions := subtractReservations declaredRegions reservations' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n '^def fdtReservedRanges \(root : FdtNode\) : List \(Nat × Nat\) :=' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U 'if offset \+ 16 > min v\.blobEnd v\.structStart then acc\.reverse' SeLe4n/Platform/DeviceTree.lean
+# The runtime contract reads the INSTALLED map, not the canonical one.
+# One definition, and both contracts name it: the predicate was written out
+# twice, which is how it came to be corrected in neither.  A file-wide anchor on
+# a duplicated expression is satisfied by either copy being right; anchoring the
+# single definition and counting its two references is the relation.
+run_check "INVARIANT" rg -n -U 'def rpi5MemoryAccessAllowed \(st : SystemState\) \(addr : SeLe4n\.PAddr\) : Prop :=\n  \(st\.machine\.memoryMap\.any fun region =>\n    region\.kind == \.ram && region\.contains addr\) = true' SeLe4n/Platform/RPi5/RuntimeContract.lean
+# Both contracts name it: a multiline pattern requiring two occurrences, rather
+# than a counting subshell (a dollar inside single quotes is SC2016 here).
+run_check "INVARIANT" rg -n -U 'memoryAccessAllowed := rpi5MemoryAccessAllowed\n(.*\n)*?    memoryAccessAllowed := rpi5MemoryAccessAllowed' SeLe4n/Platform/RPi5/RuntimeContract.lean
+run_negative_check "INVARIANT" rg -n -U 'memoryAccessAllowed := fun _ addr =>\n      rpi5MachineConfig\.memoryMap\.any' SeLe4n/Platform/RPi5/RuntimeContract.lean
+# The legacy-consumer gate exempts the host file per SYMBOL, and reads code.
+run_check "INVARIANT" rg -n "scan 'findMemoryRegProperty' scan-everywhere" scripts/check_devicetree_legacy_consumers.sh
+run_check "INVARIANT" rg -n "scan 'classifyMemoryRegion' exempt-host" scripts/check_devicetree_legacy_consumers.sh
+run_check "INVARIANT" rg -n 'lean_code_view\.py" "\$\{src\}" > "\$\{view\}"' scripts/check_devicetree_legacy_consumers.sh
+# NEGATIVE: the unconditional host-file exemption, which let the removed walker
+# be reintroduced at exactly the place it was deleted from.
+run_negative_check "INVARIANT" rg -n -U "grep -v '\^\./SeLe4n/Platform/DeviceTree\\\\\.lean:' \|\| true\n    else\n      find \. -name '\*\.lean'" scripts/check_devicetree_legacy_consumers.sh
+# The round's Lean surface resolves.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && cat > /tmp/reserved_memory_probe.lean <<EOF
+import SeLe4n.Platform.DeviceTree
+open SeLe4n.Platform
+#check @SeLe4n.Platform.fdtParserVersion
+#check @SeLe4n.Platform.fdtReservedRanges
+#check @SeLe4n.Platform.fdtRegionMinus
+#check @SeLe4n.Platform.subtractReservations
+#check @SeLe4n.Platform.FdtBlob.reservations
+EOF
+lake env lean /tmp/reserved_memory_probe.lean'
 
 finalize_report

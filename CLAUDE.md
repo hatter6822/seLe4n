@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.118.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.119.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,12 +203,12 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~58865 lines)
+- `CHANGELOG.md` (~59048 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22578 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12092 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
 - `SeLe4n/Kernel/API.lean` (~7210 lines)
-- `SeLe4n/Platform/Boot.lean` (~5845 lines)
+- `SeLe4n/Platform/Boot.lean` (~5847 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5822 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~5450 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5129 lines)
@@ -285,7 +285,9 @@ To find files that need pagination today, run:
 - `docs/dev_history/planning/V3E_IPC_UNWRAP_CAPS_LOOP_COMPOSITION_PLAN.md` (~1891 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md` (~1889 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1878 lines)
+- `tests/Ak9PlatformSuite.lean` (~1866 lines)
 - `SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean` (~1849 lines)
+- `SeLe4n/Platform/DeviceTree.lean` (~1843 lines)
 - `SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean` (~1833 lines)
 - `SeLe4n/Model/FreezeProofs.lean` (~1827 lines)
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1822 lines)
@@ -305,10 +307,8 @@ To find files that need pagination today, run:
 - `tests/FaultHandlingSuite.lean` (~1660 lines)
 - `tests/SmpIpcSuite.lean` (~1660 lines)
 - `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1645 lines)
-- `tests/Ak9PlatformSuite.lean` (~1637 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1604 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1600 lines)
-- `SeLe4n/Platform/DeviceTree.lean` (~1595 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1559 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~1556 lines)
 - `tests/LockSetSuite.lean` (~1541 lines)
