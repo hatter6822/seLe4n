@@ -1525,8 +1525,15 @@ run_negative_check "INVARIANT" rg -n 'value != "disabled"' SeLe4n/Platform/Devic
 # classifier reports the TRANSLATED base and refuses a node whose address does
 # not translate; a bus with no `ranges` maps nothing, so its children have no
 # physical address at all (Devicetree Specification v0.4 §2.3.8).
-run_check "INVARIANT" rg -n -U 'match ctx\.translate childBase with\n          \| none => none\n          \| some base => some \{ name := node\.name, base := \(SeLe4n\.PAddr\.ofNat base\), size \}' SeLe4n/Platform/DeviceTree.lean
-run_check "INVARIANT" rg -n -U '\| none => \{ addressCells := childAddressCells, sizeCells := childSizeCells,\n                translate := fun _ => none \}' SeLe4n/Platform/DeviceTree.lean
+# (Round 6 gave the call its span: the anchor is stated at the current shape,
+# and `ctx.translate childBase` alone is the negative below.)
+run_check "INVARIANT" rg -n -U 'match ctx\.translate childBase size with\n            \| none => none\n            \| some base => some \{ name := node\.name, base := \(SeLe4n\.PAddr\.ofNat base\), size \}' SeLe4n/Platform/DeviceTree.lean
+run_negative_check "INVARIANT" rg -n 'ctx\.translate childBase with' SeLe4n/Platform/DeviceTree.lean
+# (Round 6 gave `translate` its span argument, so the refusal is `fun _ _`; the
+# one-argument spelling is the negative, since it would not typecheck against a
+# context whose translation is interval-aware.)
+run_check "INVARIANT" rg -n -U '\| none => \{ addressCells := childAddressCells, sizeCells := childSizeCells,\n                translate := fun _ _ => none \}' SeLe4n/Platform/DeviceTree.lean
+run_negative_check "INVARIANT" rg -n 'translate := fun _ => none' SeLe4n/Platform/DeviceTree.lean
 # NEGATIVE: the pre-round classifier, reporting the raw `reg` base.
 run_negative_check "INVARIANT" rg -n -U 'let base := match readBE64 regBytes 0 with \| some v => v\.toNat \| none => 0' SeLe4n/Platform/DeviceTree.lean
 # PR #892 review round 5 audit: the Lean and Rust device-tree walkers answer
@@ -1545,6 +1552,38 @@ run_check "INVARIANT" rg -n -U 'match memoryRegionsFromNodes nodes with\n      \
 # non-specification size-cell default.
 run_negative_check "INVARIANT" rg -n 'fdtRegionsToMemoryRegions \(extractMemoryRegions regBytes\)' SeLe4n/Platform/DeviceTree.lean
 run_negative_check "INVARIANT" rg -n '^def fdtDefaultSizeCells : Nat := 2$' SeLe4n/Platform/DeviceTree.lean
+# PR #892 review round 6: `.replyRecv` declares a footprint only for a
+# non-delegated reply, and resolves its donation from the RECORDED SERVER — the
+# resolver `lockSet_endpointReplyOnCore` has used since PR #822's review.  The
+# transition returns `(recordedReplyServer? st prevCaller).getD tid`'s donation,
+# so a delegate-derived footprint named a donation the transition does not touch
+# and omitted the one it does; the server's own TCB lock has no room under
+# `maxLockSetSize`, so the arm refuses rather than declaring a false footprint.
+run_check "INVARIANT" rg -n -U 'if \(recordedReplyServer\? st prevCaller\)\.getD ops\.caller = ops\.caller then\n                some \(lockSet_endpointReplyRecvOnCore' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+run_check "INVARIANT" rg -n -U 'lockSet_replyRecv replier cnodeRootObjId target endpointObjId newSender\?\n    \(\(endpointReplyServerDonation\? st target\)\.map \(·\.1\)\)\n    \(\(endpointReplyServerDonation\? st target\)\.map \(·\.2\)\)' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_replyRecv_delegated' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+# NEGATIVE: the delegate-derived donation, and an unconditional declaration.
+run_negative_check "INVARIANT" rg -n -U '\(\(endpointReplyDonation\? st replier\)\.map \(·\.1\)\)' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+# PR #892 review round 6: a peripheral's `reg` is a LIST of blocks (a GIC node
+# carries its distributor and CPU interface in one), and a block is reported
+# only if the WHOLE interval fits one translation window.
+run_check "INVARIANT" rg -n -U '\(List\.range \(regBytes\.size / entryBytes\)\)\.filterMap fun i =>' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U 'decide \(r\.childBase ≤ addr ∧ addr \+ size ≤ r\.childBase \+ r\.length\)' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U 'match ctx\.translate childBase size with' SeLe4n/Platform/DeviceTree.lean
+# NEGATIVE: the base-only containment test, which reported a region running past
+# the end of the window it started in.
+run_negative_check "INVARIANT" rg -n -U 'decide \(r\.childBase ≤ addr ∧ addr < r\.childBase \+ r\.length\)' SeLe4n/Platform/DeviceTree.lean
+# PR #892 review round 6: an unusable device tree does not license the low
+# aperture — the boot map falls back to the smallest supported variant, the same
+# direction `rpi5VariantFor` takes for an account it cannot place.
+run_check "INVARIANT" rg -n 'ram_top_from_dtb\(dtb_ptr\)\.unwrap_or\(UNDESCRIBED_RAM_TOP\)' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n '^pub const UNDESCRIBED_RAM_TOP: u64 = 0x4000_0000;$' rust/sele4n-hal/src/mmu.rs
+# The relation is a compile-time refusal, and it is STRICT: the fallback must
+# not license the low aperture, so widening the constant fails the build.
+run_check "INVARIANT" rg -n 'const _: \(\) = assert!\(UNDESCRIBED_RAM_TOP < LOW_RAM_TOP\);' rust/sele4n-hal/src/mmu.rs
+run_negative_check "INVARIANT" rg -n 'const _: \(\) = assert!\(UNDESCRIBED_RAM_TOP <= LOW_RAM_TOP\);' rust/sele4n-hal/src/mmu.rs
+# NEGATIVE: the linker-extent fallback, which claimed nearly 4 GiB on a 1 GiB board.
+run_negative_check "INVARIANT" rg -n 'ram_top_from_dtb\(dtb_ptr\)\.unwrap_or\(LOW_RAM_TOP\)' rust/sele4n-hal/src/mmu.rs
 # The round's Lean surface resolves.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
 import SeLe4n.Platform.DeviceTree

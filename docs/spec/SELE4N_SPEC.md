@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.34.115` (`lakefile.toml`) |
+| **Package version** | `0.34.116` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 355,237 across 328 Lean files |
-| **Test LoC** | 72,114 across 70 Lean test suites |
-| **Proved declarations** | 11,886 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 355,345 across 328 Lean files |
+| **Test LoC** | 72,242 across 70 Lean test suites |
+| **Proved declarations** | 11,887 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -1771,7 +1771,14 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    through the SM6 state-resolved footprint its cross-core transition
    is already stated against, and each with its coverage — the
    membership statements a 2PL consumer needs, plus the *changed ⇒
-   declared* capstones for the two capability-transferring arms.  The
+   declared* capstones for the two capability-transferring arms.
+   `.replyRecv` declares only where the replier **is** the thread the
+   Reply records as its server (PR #892 review round 6): the
+   transition returns the *recorded* server's donation, so a delegated
+   reply needs that server's own TCB lock and the arm already sits at
+   nine of nine — it answers `none` there rather than declaring a
+   footprint that names a SchedContext it does not touch, and
+   recovering the headroom is WS-OD OD3.6.  The
    remaining twenty-seven answer `none`
    (`declaredFootprintSyscall`, `lockSetForSyscall_undeclared_none`),
    which is the fail-closed direction: a declared footprint that does

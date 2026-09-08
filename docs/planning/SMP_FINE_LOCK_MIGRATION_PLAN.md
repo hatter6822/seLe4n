@@ -24,7 +24,10 @@
 >
 > **What that means for the v1.0.0 claim.**  "Per-object reader-writer fine
 > locks" is true of the **syscall seam** — eight of the thirty-five arms
-> declare a footprint and the seam acquires it — and not yet true of the
+> declare a footprint and the seam acquires it (`.replyRecv` for a reply the
+> replier itself recorded; a delegated one answers `none` and keeps the coarser
+> serialisation, since covering it needs the recorded server's own TCB lock and
+> the arm sits at nine of nine — WS-OD OD3.6 recovers the headroom) — and not yet true of the
 > **per-core scheduler entries**, which commit run-queue and replenish-queue
 > state under the SM5.I global entry lock only.  `ExportCommitDisciplineCensus`
 > measures it rather than asserting it: **seven seams commit, five bracket**

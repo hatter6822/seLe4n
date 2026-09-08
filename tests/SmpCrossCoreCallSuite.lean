@@ -908,6 +908,65 @@ private def undeclaredDecl (st : SystemState) : Option Concurrency.LockSet :=
   declaredLockSetForAbiEntry harnessLabelingContext bootCoreId
     (syscallId := 4) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
 
+/-- **PR #892 review round 6**: `.replyRecv`'s footprint declares for a
+non-delegated reply and **refuses** a delegated one.
+
+`replyRecvBody` returns the donation of `(recordedReplyServer? st prevCaller).getD tid`,
+which on a delegated reply is not the invoking thread — so the transition writes
+that server's TCB and SchedContext while the footprint named neither.  The
+server's TCB write lock cannot be added: `lockSet_replyRecv`'s worst case is
+already `maxLockSetSize` exactly.  So the arm refuses and the bracket runs its
+undeclared fallback, which is always sound.
+
+The two states differ in **one field** — the answered caller's recorded reply
+target — which is the mutation this pins: keep every operand and change who the
+reply was issued to. -/
+private def runDelegatedReplyRecvFootprintChecks : IO Unit := do
+  IO.println "--- PR #892 round 6: `.replyRecv` refuses a delegated footprint ---"
+  let replier : SeLe4n.ThreadId := ⟨2⟩
+  let prevCaller : SeLe4n.ThreadId := ⟨3⟩
+  let delegate : SeLe4n.ThreadId := ⟨4⟩
+  let epId : SeLe4n.ObjId := SeLe4n.ObjId.ofNat 20
+  let rid : SeLe4n.ReplyId := ⟨21⟩
+  let mkTcb := fun (t : SeLe4n.ThreadId) (ipc : SeLe4n.Model.ThreadIpcState) =>
+    SeLe4n.Model.KernelObject.tcb
+      { tid := t, priority := ⟨10⟩, domain := ⟨0⟩,
+        cspaceRoot := SeLe4n.ObjId.ofNat 0, vspaceRoot := SeLe4n.ObjId.ofNat 0,
+        ipcBuffer := SeLe4n.VAddr.ofNat 0, ipcState := ipc }
+  -- The reply object answers `prevCaller`; `prevCaller` records `replier` as the
+  -- server it is blocked on.  That is the ordinary, non-delegated shape.
+  let base : SystemState := { (default : SystemState) with
+    objects := (((default : SystemState).objects.insert replier.toObjId
+        (mkTcb replier .ready)).insert epId (.endpoint { })).insert rid.toObjId
+        (.reply { replyId := rid, caller := some prevCaller }) }
+  let stOwn : SystemState := { base with
+    objects := base.objects.insert prevCaller.toObjId
+      (mkTcb prevCaller (.blockedOnReply epId (some replier))) }
+  -- The delegated shape: same operands, same reply object, same everything —
+  -- except that the caller records a *different* thread as its server.
+  let stDelegated : SystemState := { base with
+    objects := base.objects.insert prevCaller.toObjId
+      (mkTcb prevCaller (.blockedOnReply epId (some delegate))) }
+  let ops : Concurrency.SyscallLockOperands :=
+    { caller := replier, targetObject := some epId, targetReply := some rid }
+  assertBool "the reply object answers the caller in both states"
+    (decide (SeLe4n.Kernel.replyAnsweredCaller? stOwn rid = some prevCaller) &&
+     decide (SeLe4n.Kernel.replyAnsweredCaller? stDelegated rid = some prevCaller))
+  assertBool "the non-delegated state records the replier as the server"
+    (decide (SeLe4n.Kernel.recordedReplyServer? stOwn prevCaller = some replier))
+  assertBool "the delegated state records some OTHER thread"
+    (decide (SeLe4n.Kernel.recordedReplyServer? stDelegated prevCaller = some delegate))
+  assertBool "a non-delegated `.replyRecv` declares a footprint"
+    (Concurrency.lockSetForSyscall .replyRecv ops stOwn).isSome
+  assertBool "NEGATIVE: a delegated `.replyRecv` declares NONE"
+    (Concurrency.lockSetForSyscall .replyRecv ops stDelegated).isNone
+  -- And the declared one is inside the ceiling, which is why there is no room
+  -- for the delegated server's TCB.
+  assertBool "the declared footprint is at or under the ceiling"
+    (match Concurrency.lockSetForSyscall .replyRecv ops stOwn with
+     | some fp => decide (fp.size ≤ Concurrency.maxLockSetSize)
+     | none => false)
+
 /-- WS-RR RR7.12: the bracket, exercised. -/
 private def runDeclaredFootprintBracketChecks : IO Unit := do
   IO.println "--- WS-RR RR7.12 the declared footprint at the live syscall seam ---"
@@ -992,6 +1051,7 @@ def runSmpCrossCoreCallChecks : IO Unit := do
   runRendezvousChecks
   runPerCoreBundleChecks
   runDeclaredFootprintBracketChecks
+  runDelegatedReplyRecvFootprintChecks
   IO.println "===================================="
   IO.println "All SM6.A cross-core call checks PASS."
 

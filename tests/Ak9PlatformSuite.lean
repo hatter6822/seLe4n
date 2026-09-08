@@ -939,6 +939,27 @@ private def boardDtbWithMemoryStatus (status : String) : ByteArray :=
       ++ peripheralNode "interrupt-controller@ff842000" 0xFF842000 0x2000
   assembleDtb (fdtBeginNode "" ++ rootCellProperties ++ memoryNode ++ peripherals ++ fdtEndNodeTok ++ fdtEndTok)
 
+/-- **PR #892 review round 6**: a board whose interrupt controller declares both
+its windows in **one** node's `reg`, as a standard GIC node does.  The Rust-side
+sibling `parseGicRegProperty` has always read both blocks; the peripheral
+classifier read only the first, so the CPU-interface window was absent from
+`dt.peripherals` and the board was refused. -/
+private def singleGicNodeBoardDtb : ByteArray :=
+  let memoryNode :=
+    fdtBeginNode "memory@0"
+      ++ fdtProp deviceTypeNameOff (fdtString "memory")
+      ++ fdtProp regNameOff (be64 0 ++ be64 0xFC000000)
+      ++ fdtEndNodeTok
+  let gicNode :=
+    fdtBeginNode "interrupt-controller@ff841000"
+      ++ fdtProp regNameOff
+        (be64 0xFF841000 ++ be64 0x1000 ++ be64 0xFF842000 ++ be64 0x2000)
+      ++ fdtProp compatibleNameOff (fdtString "arm,fixture")
+      ++ fdtEndNodeTok
+  assembleDtb (fdtBeginNode "" ++ rootCellProperties ++ memoryNode
+    ++ peripheralNode "serial@fe201000" 0xFE201000 0x1000
+    ++ gicNode ++ fdtEndNodeTok ++ fdtEndTok)
+
 /-- **PR #892 review round 5 audit**: a board that reports its RAM as **two**
 `/memory` nodes rather than two `reg` pairs in one — a shape the specification
 allows and firmware uses.  The Rust walker folds every node's extents into one
@@ -1195,6 +1216,51 @@ def deviceTreeBridge_13_direct_path_fallback_is_smallest : IO Unit := do
   expect "PR892-13 the family is ascending"
     (decide (rpi5Variants.Pairwise (fun a b => a.ramSize ≤ b.ramSize)))
 
+/-- **PR #892 review round 6**: every register block a peripheral node declares
+becomes its own entry, so a GIC carrying both windows in one `reg` satisfies the
+binding's MMIO coverage.  Before this cut only the first block was read and the
+board was refused with `boardDoesNotMatchBinding`. -/
+def deviceTreeBridge_22_every_register_block_is_a_window : IO Unit := do
+  match DeviceTree.fromDtbFull singleGicNodeBoardDtb rpi5MachineConfig.physicalAddressWidth with
+  | .error _ => expect "RR892-22 the single-GIC-node board parses" false
+  | .ok dt =>
+    expect "RR892-22 the distributor window is present"
+      (dt.peripherals.any (fun d => d.base.toNat == 0xFF841000))
+    expect "RR892-22 the CPU-interface window is present too"
+      (dt.peripherals.any (fun d => d.base.toNat == 0xFF842000 && d.size == 0x2000))
+  match rpi5PlatformConfigFromDtb singleGicNodeBoardDtb [] [] none with
+  | .ok _ => expect "RR892-22 the board is accepted" true
+  | .error _ => expect "RR892-22 the board is accepted" false
+
+/-- **PR #892 review round 6**: a region that starts inside a bus window but
+runs past its end has no contiguous parent address, so it is not reported.
+
+`translateThroughFdtRanges` checked containment of the *base* and the classifier
+then carried the node's full `size` through untouched, so such a node was
+offered to the MMIO coverage check as a mapped region of that length — bytes the
+parent bus does not map.  The mutation this pins keeps the node inside the
+window and grows only its size. -/
+def deviceTreeBridge_23_extent_past_the_window_is_refused : IO Unit := do
+  -- A bus mapping child `[0, 0x2000)` to parent `0x1_0000_0000`.
+  let bus := fun (childSize : UInt64) =>
+    mkBus "narrow-bus" 0x10000000 (mkRangesProperty 0 0x100000000 0x2000)
+      [{ name := "device@0"
+         properties :=
+           [ { name := "reg", value := mkRegProperty 0x1000 childSize }
+           , { name := "compatible", value := ByteArray.mk #[0x61, 0x72, 0x6D, 0x00] } ]
+         children := [] }]
+  let fits := extractPeripherals [bus 0x1000] 1024
+  expect "RR892-23 a region inside the window is translated and reported"
+    (fits.any (fun d => d.name == "device@0" && d.base.toNat == 0x100001000))
+  let overruns := extractPeripherals [bus 0x2000] 1024
+  expect "NEGATIVE RR892-23 a region running past the window is not reported"
+    (!overruns.any (fun d => d.name == "device@0"))
+  -- The bus itself is unaffected either way — it is addressed in its parent's
+  -- space, not its own.
+  expect "RR892-23 the bus is still discovered in both"
+    (fits.any (fun d => d.name == "narrow-bus") &&
+     overruns.any (fun d => d.name == "narrow-bus"))
+
 /-- **PR #892 review round 5 audit**: every available top-level `/memory` node
 contributes, not the first.
 
@@ -1374,5 +1440,7 @@ def main : IO Unit := do
   deviceTreeBridge_19_root_cell_widths_are_honoured
   deviceTreeBridge_20_partial_reg_pair_refused
   deviceTreeBridge_21_empty_unit_address_is_not_memory
+  deviceTreeBridge_22_every_register_block_is_a_window
+  deviceTreeBridge_23_extent_past_the_window_is_refused
   IO.println ""
   IO.println "=== All AK9 platform tests passed ==="

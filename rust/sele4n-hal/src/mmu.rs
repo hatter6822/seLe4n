@@ -858,7 +858,7 @@ fn enable_mmu() {
 /// on the boot core alone before the GIC exists — there is no other PE to
 /// halt, and the barrier the rest of the tree calls is not yet callable.
 pub fn init_mmu(dtb_ptr: u64) {
-    let ram_top = crate::cmdline::ram_top_from_dtb(dtb_ptr).unwrap_or(LOW_RAM_TOP);
+    let ram_top = crate::cmdline::ram_top_from_dtb(dtb_ptr).unwrap_or(UNDESCRIBED_RAM_TOP);
     let mapped_top = clamp_ram_top(ram_top);
     let dtb_extent = crate::cmdline::dtb_extent_from_dtb(dtb_ptr);
     if !boot_ranges_mapped_under(mapped_top, dtb_extent) {
@@ -872,6 +872,40 @@ pub fn init_mmu(dtb_ptr: u64) {
     build_identity_tables(ram_top);
     init_mmu_per_core(0);
 }
+
+/// **PR #892 review round 6**: the RAM top to build tables for when the device
+/// tree does not describe the board's memory.
+///
+/// A null `dtb_ptr`, an invalid header, a malformed structure block, a cell
+/// width this parser refuses, or no available `/memory` node all yield `None`
+/// from [`crate::cmdline::ram_top_from_dtb`], and the fallback used to be
+/// [`LOW_RAM_TOP`] — the linker's declared extent, just under 4 GiB.  On the
+/// explicitly supported 1 and 2 GiB Raspberry Pi 5 variants that marks the
+/// board's **absent** memory Normal-cacheable, which is the same overclaim the
+/// variant-aware binding exists to prevent: `rpi5VariantFor` answers the
+/// *smallest* variant for an account it cannot place, because that is the only
+/// member claiming no RAM a Raspberry Pi 5 lacks.  The boot map now answers the
+/// same way.
+///
+/// 1 GiB, therefore.  A 4 or 8 GiB board that hands the kernel no usable device
+/// tree boots on 1 GiB of mapped RAM — a lost resource, never a false claim,
+/// which is this tree's standing direction for an unreadable description.  The
+/// image, both stacks and the boot tables all live below it (`link.ld` puts the
+/// image at `0x80000`), so the boot-critical check below still passes; a device
+/// tree blob the firmware placed above 1 GiB and this parser could not read is
+/// refused there rather than silently unmapped.
+///
+/// **This constant is interim.** WS-XV's XV1 removes the device-tree read from
+/// the boot path entirely: the map is built from the linker's symbols and board
+/// constants, translation is enabled, and the verified Lean parser is the
+/// blob's only reader.  There is then no parsed top to fall back from.
+pub const UNDESCRIBED_RAM_TOP: u64 = 0x4000_0000;
+
+// The fallback must not license the low aperture — that is the whole finding —
+// so the inequality is STRICT and it is a compile-time refusal rather than a
+// test: widening the constant back to `LOW_RAM_TOP` fails the build.
+const _: () = assert!(UNDESCRIBED_RAM_TOP < LOW_RAM_TOP);
+const _: () = assert!(UNDESCRIBED_RAM_TOP.is_multiple_of(L2_BLOCK_SIZE));
 
 /// **PR #892 review round 4**: is every range the boot cannot proceed without
 /// Normal RAM under tables built for `ram_top`?
@@ -1721,6 +1755,41 @@ mod boot_map_tests {
         // No TTBR1 table exists, so the top half of the virtual address space
         // must fault rather than alias the TTBR0 identity map.
         assert_ne!(TCR_VALUE & (1 << 23), 0, "EPD1 must be set");
+    }
+
+    /// **PR #892 review round 6**: a device tree the parser cannot use does not
+    /// license a 4 GiB map.
+    ///
+    /// The fallback is the smallest supported variant, so a 1 or 2 GiB board
+    /// that hands the kernel an unusable blob maps only memory every Raspberry
+    /// Pi 5 has — the direction `rpi5VariantFor` already takes for an account
+    /// it cannot place.  The relation to `LOW_RAM_TOP` is pinned by the strict
+    /// `const _: () = assert!(UNDESCRIBED_RAM_TOP < LOW_RAM_TOP)` beside the
+    /// constant, so a widened fallback fails to build rather than failing here;
+    /// what this test covers is the consequence — the map that constant yields.
+    #[test]
+    fn an_unusable_device_tree_does_not_license_the_low_aperture() {
+        assert_eq!(
+            UNDESCRIBED_RAM_TOP,
+            1 << 30,
+            "the smallest supported variant"
+        );
+        // Every boot-critical range the image itself contributes still fits, so
+        // the refusal above does not fire on a board with no device tree.
+        let image = (0x8_0000u64, 0x18_0000u64);
+        let stack = (0x20_0000u64, 0x4000u64);
+        assert!(boot_critical_ranges_mapped(
+            clamp_ram_top(UNDESCRIBED_RAM_TOP),
+            &[image, stack]
+        ));
+        // And the clamp leaves it alone: it is already a whole 2 MiB block.
+        assert_eq!(clamp_ram_top(UNDESCRIBED_RAM_TOP), UNDESCRIBED_RAM_TOP);
+        // A blob the firmware placed above the fallback is refused rather than
+        // silently unmapped — the boot cannot read what it did not map.
+        assert!(!boot_critical_ranges_mapped(
+            UNDESCRIBED_RAM_TOP,
+            &[(0x8000_0000, 0x1_0000)]
+        ));
     }
 
     #[test]

@@ -559,9 +559,27 @@ def lockSet_endpointReplyRecvOnCore (st : SystemState) (replier : SeLe4n.ThreadI
   -- root in WRITE mode exactly then.  Resolved from `st` by the same predicate
   -- the transition branches on, so the declared footprint and the transition
   -- cannot disagree about when the write happens.
+  -- **PR #892 review round 6**: the donation returned on this reply is the
+  -- **recorded server's**, resolved through `endpointReplyServerDonation?` — the
+  -- same resolver `lockSet_endpointReplyOnCore` has used since PR #822's review,
+  -- and for the same reason.  This arm read `endpointReplyDonation? st replier`,
+  -- the possibly-*delegated* cap holder's own binding, while `replyRecvBody`
+  -- passes `(recordedReplyServer? st prevCaller).getD tid` to
+  -- `replyRecvReturnDonation`, which writes **that** server's binding and its
+  -- SchedContext.  On a delegated reply the two are different threads, so the
+  -- declared members named a donation the transition does not touch and omitted
+  -- the one it does — a footprint that is *false*, which this tree rates worse
+  -- than a wide one.  One question, two answers, with the right answer sitting
+  -- thirty lines up in this same file.
+  --
+  -- The delegated case is *also* refused at the entry resolver
+  -- (`lockSetForSyscall`), because the recorded server's own TCB write lock has
+  -- no room left under `maxLockSetSize` — see `lockSetForSyscall_replyRecv_delegated`.
+  -- Fixing the resolution here is still right: it makes the two reply arms agree,
+  -- and it is what a future consumer that finds room would take.
   lockSet_replyRecv replier cnodeRootObjId target endpointObjId newSender?
-    ((endpointReplyDonation? st replier).map (·.1))
-    ((endpointReplyDonation? st replier).map (·.2))
+    ((endpointReplyServerDonation? st target).map (·.1))
+    ((endpointReplyServerDonation? st target).map (·.2))
     ((st.getTcb? target).bind (·.replyObject))
     (receiveInstallsCaps st endpointObjId)
 

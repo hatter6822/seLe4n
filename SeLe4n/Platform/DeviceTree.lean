@@ -811,14 +811,25 @@ where
         go (offset + entrySize) fuel ({ childBase, parentBase, length } :: acc)
       | _, _, _ => acc.reverse
 
-/-- **PR #892 review round 5**: translate a child-bus address into the parent's
-address space through a `ranges` list.
+/-- **PR #892 review round 5**: translate a child-bus **interval** into the
+parent's address space through a `ranges` list.
 
-`none` when no entry contains the address — the child window is not visible in
-the parent, so no physical address exists for it and the classification must
-fail closed rather than report the untranslated number. -/
-def translateThroughFdtRanges (ranges : List FdtRangeEntry) (addr : Nat) : Option Nat :=
-  match ranges.find? (fun r => decide (r.childBase ≤ addr ∧ addr < r.childBase + r.length)) with
+`none` when no single entry contains the whole interval — the child window is
+not visible in the parent, so no physical address exists for it and the
+classification must fail closed rather than report the untranslated number.
+
+**The whole interval, not its base** (PR #892 review round 6).  This checked
+`childBase` alone and then carried the node's full `size` through untouched, so
+a peripheral starting inside a bus window and running past its end was reported
+as a mapped region of that length.  `deviceTreeCoversMmioRegions` would then
+accept a required window on the strength of bytes the parent bus does not map.
+A region that straddles the end of a window has no contiguous parent address at
+all — the two halves land in different places, if the second lands anywhere —
+so there is nothing to report and the honest answer is `none`.  An empty region
+is refused earlier, by the classifier's `size == 0` test. -/
+def translateThroughFdtRanges (ranges : List FdtRangeEntry) (addr size : Nat) : Option Nat :=
+  match ranges.find? (fun r =>
+      decide (r.childBase ≤ addr ∧ addr + size ≤ r.childBase + r.length)) with
   | some r => some (r.parentBase + (addr - r.childBase))
   | none => none
 
@@ -838,9 +849,10 @@ structure FdtAddressContext where
   addressCells : Nat
   /-- `#size-cells` governing the children's `reg`. -/
   sizeCells : Nat
-  /-- Child address → CPU physical address; `none` where the child's space is
-  not mapped into the CPU's. -/
-  translate : Nat → Option Nat
+  /-- Child address and region length → CPU physical base; `none` where the
+  child's space is not mapped into the CPU's, or where the region runs past the
+  end of the window that would map its base (PR #892 review round 6). -/
+  translate : Nat → Nat → Option Nat
 
 /-- **PR #892 review round 5**: the CPU's own address space — the context the
 nodes handed to `extractPeripherals` live in.
@@ -852,7 +864,7 @@ so these widths govern nothing on a real tree.  Every node below takes its
 widths from its parent's declaration (`forChildren`), where the specification's
 defaults apply. -/
 def FdtAddressContext.cpuPhysical : FdtAddressContext :=
-  { addressCells := 2, sizeCells := 2, translate := some }
+  { addressCells := 2, sizeCells := 2, translate := fun addr _ => some addr }
 
 /-- **PR #892 review round 5**: the context this node's children live in, given
 the context the node itself lives in.
@@ -876,7 +888,7 @@ def FdtAddressContext.forChildren (parent : FdtAddressContext) (node : FdtNode) 
   else
     match node.findProperty "ranges" with
     | none => { addressCells := childAddressCells, sizeCells := childSizeCells,
-                translate := fun _ => none }
+                translate := fun _ _ => none }
     | some bytes =>
       if bytes.size == 0 then
         { addressCells := childAddressCells, sizeCells := childSizeCells,
@@ -884,9 +896,9 @@ def FdtAddressContext.forChildren (parent : FdtAddressContext) (node : FdtNode) 
       else
         let ranges := parseFdtRanges bytes childAddressCells parent.addressCells childSizeCells
         { addressCells := childAddressCells, sizeCells := childSizeCells,
-          translate := fun a =>
-            match translateThroughFdtRanges ranges a with
-            | some parentAddr => parent.translate parentAddr
+          translate := fun a size =>
+            match translateThroughFdtRanges ranges a size with
+            | some parentAddr => parent.translate parentAddr size
             | none => none }
 
 /-- X4-A/H-7: Fuel-bounded generic FDT structure block traversal.
@@ -1225,11 +1237,20 @@ def extractTimerFrequency (nodes : List FdtNode) : Nat :=
         | some freq => freq.toNat
         | none => 0
 
-/-- AN7-D.5 (PLT-M06): Per-node peripheral classifier.  Returns `some entry`
-    iff the node has both `reg` (wide enough for the context's address and size
-    cells) and `compatible` properties, is NOT a `/memory`, `/reserved-memory`,
-    `/chosen`, or `/cpus` node, is **operational**, and has an address the CPU
-    can reach.  Returns `none` otherwise.
+/-- AN7-D.5 (PLT-M06): Per-node peripheral classifier.  Returns **one entry per
+    register block** the node declares: the node must have `reg` and
+    `compatible`, must not be a `/memory`, `/reserved-memory`, `/chosen` or
+    `/cpus` node, must be **operational**, and each block must have a non-zero
+    size and an address the CPU can reach.  Blocks that fail any of those are
+    dropped; a node with none left contributes nothing.
+
+    **Every block, not the first** (PR #892 review round 6).  A `reg` is a *list*
+    of (address, size) pairs, and a standard GIC node carries its distributor
+    and its CPU interface in one — `parseGicRegProperty` in this same file reads
+    both, which is what made reading only the first here a divergence inside one
+    module.  `deviceTreeCoversMmioRegions` searches `dt.peripherals`, so the
+    second required GIC window was simply absent and an otherwise matching board
+    was refused.
 
     **PR #892 review round 5** added the last two.  A node the firmware marked
     `status = "disabled"` is hardware that is not there, and reporting it let
@@ -1242,28 +1263,29 @@ def extractTimerFrequency (nodes : List FdtNode) : Nat :=
     whose address does not translate has no physical address, and this returns
     `none` for it rather than inventing one. -/
 private def classifyPeripheralNode (ctx : FdtAddressContext) (node : FdtNode) :
-    Option DeviceEntry :=
+    List DeviceEntry :=
   if node.name == "memory" || node.name.startsWith "memory@"
      || node.name == "reserved-memory" || node.name.startsWith "reserved-memory@"
      || node.name == "chosen" || node.name == "cpus" || node.name.startsWith "cpus@"
-  then none
-  else if !node.statusIsOperational then none
+  then []
+  else if !node.statusIsOperational then []
   else match node.findProperty "reg", node.compatibleString with
   | some regBytes, some _ =>
-    let addressBytes := ctx.addressCells * 4
-    let sizeBytes := ctx.sizeCells * 4
-    if regBytes.size < addressBytes + sizeBytes then none
+    let entryBytes := (ctx.addressCells + ctx.sizeCells) * 4
+    if entryBytes == 0 then []
     else
-      match readFdtCells regBytes 0 ctx.addressCells,
-            readFdtCells regBytes addressBytes ctx.sizeCells with
-      | some childBase, some size =>
-        if size == 0 then none
-        else
-          match ctx.translate childBase with
-          | none => none
-          | some base => some { name := node.name, base := (SeLe4n.PAddr.ofNat base), size }
-      | _, _ => none
-  | _, _ => none
+      (List.range (regBytes.size / entryBytes)).filterMap fun i =>
+        let offset := i * entryBytes
+        match readFdtCells regBytes offset ctx.addressCells,
+              readFdtCells regBytes (offset + ctx.addressCells * 4) ctx.sizeCells with
+        | some childBase, some size =>
+          if size == 0 then none
+          else
+            match ctx.translate childBase size with
+            | none => none
+            | some base => some { name := node.name, base := (SeLe4n.PAddr.ofNat base), size }
+        | _, _ => none
+  | _, _ => []
 
 /-- AN7-D.5 (PLT-M06): Fuel-bounded depth-first walk of an FDT tree.  At
     each node, check for a peripheral classification AND recurse into its
@@ -1273,12 +1295,10 @@ private def extractPeripheralsWalk : Nat → FdtAddressContext → List FdtNode 
   | 0,         _,   _      => []   -- AN7-D.5: fuel exhausted — stop gracefully
   | _ + 1,     _,   []     => []
   | fuel + 1,  ctx, node :: rest =>
-    let selfEntry  := classifyPeripheralNode ctx node
+    let selfEntries := classifyPeripheralNode ctx node
     let childDevs  := extractPeripheralsWalk fuel (ctx.forChildren node) node.children
     let siblingDevs := extractPeripheralsWalk fuel ctx rest
-    match selfEntry with
-    | some e => e :: (childDevs ++ siblingDevs)
-    | none   => childDevs ++ siblingDevs
+    selfEntries ++ (childDevs ++ siblingDevs)
 
 /-- AN7-D.5 / X4-A / H-7 / PLT-M06: Extract peripheral device entries from
     an FDT tree by fuel-bounded recursive descent.

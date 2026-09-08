@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.115.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.116.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1664,7 +1664,19 @@ code may assume:
   parametric in it, and a theorem named `_size_le_maxLockSetSize` must state the
   constant, never the numeral — five in the scheduler pinned `≤ 8` literally,
   which is why the constant now lives in `Locks/LockSet.lean` where every
-  footprint-declaring module can name it.  The
+  footprint-declaring module can name it.  (4) **`.replyRecv` declares only for
+  the recorded server** (PR #892 review round 6): the transition returns the
+  donation of `(recordedReplyServer? st prevCaller).getD tid`, so a *delegated*
+  reply — one answered by a thread other than the one the Reply records — would
+  need that server's own TCB lock, and the arm already sits at nine of nine.  It
+  therefore answers `none` there (`lockSetForSyscall_replyRecv_delegated`), and
+  every result about the arm (`lockSetForSyscall_replyRecv`, `_isSome_iff`,
+  `_eq`, `_covers_writes`, `_covers_capsWrites`) carries that ownership
+  hypothesis; `lockSet_endpointReplyRecvOnCore` resolves its donation from
+  `endpointReplyServerDonation? st target`, the resolver the `.reply` footprint
+  has used since PR #822's review — one question, one answer.  Recovering the
+  headroom so the delegated case can declare is WS-OD OD3.6's arm-selected
+  split, scheduled before OD3.7 for exactly this reason.  The
   migration plus commit partitioning is planned in
   [`docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md`](docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md),
   whose High-severity revocation-precision finding is **closed** at v0.33.88

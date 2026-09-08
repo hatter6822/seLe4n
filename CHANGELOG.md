@@ -1,3 +1,75 @@
+## v0.34.116 — PR #892 review round 6: a delegated `.replyRecv` declares nothing, a peripheral's `reg` is a list, and an unreadable device tree buys no RAM
+
+Codex's sixth round on `41a9216b` raised six threads; two of them named
+divergences the `v0.34.115` audit had already closed by hand, which is the
+first independent confirmation that the WS-XV reading is the right one — a
+by-hand behavioural comparison found the same defects a review round found,
+one cut earlier, and no gate found either.  The four new findings are fixed
+at the cause.
+
+**A `.replyRecv` that answers a reply it did not record declares no
+footprint.**  `lockSetForSyscall`'s `.replyRecv` arm resolved
+`lockSet_endpointReplyRecvOnCore` unconditionally, and that footprint's
+donation members came from `endpointReplyDonation? st replier` — the
+*delegate's* own binding.  The transition returns the **recorded server's**
+donation (`(recordedReplyServer? st prevCaller).getD tid`), so on a delegated
+reply the declared footprint named a SchedContext the transition does not
+touch and omitted the one it does: a false footprint, which this project
+rates worse than a wide one.  Two changes, and the second is why the first is
+a refusal rather than a widening:
+
+- `lockSet_endpointReplyRecvOnCore` now resolves its donation from
+  `endpointReplyServerDonation? st target`, the resolver
+  `lockSet_endpointReplyOnCore` has used since PR #822's review.  One
+  question, one answer — the `.reply` arm got this and `.replyRecv` never
+  did, which is the *one question answered in two places* shape.
+- The `.replyRecv` arm declares only when the replier **is** the recorded
+  server (`lockSetForSyscall_replyRecv_delegated` is the refusal), because
+  covering a delegated reply needs the recorded server's own TCB lock and
+  the arm already sits at nine of nine against `maxLockSetSize`.  The
+  delegated case therefore keeps its existing serialisation, exactly as the
+  twenty-seven undeclared arms do, and `lockSetForSyscall_replyRecv`,
+  `_isSome_iff`, `_eq`, `_covers_writes` and `_covers_capsWrites` are all
+  restated with that ownership hypothesis rather than asserted of a state
+  they are false on.  Recovering the headroom is WS-OD OD3.6's
+  arm-selected split, which is already scheduled before OD3.7 for this
+  reason.
+
+**A peripheral's `reg` is a list of blocks, and a block is reported only if
+the whole interval fits one window.**  `classifyPeripheralNode` read the
+first `(address, size)` pair and discarded the rest, so a GIC node — whose
+distributor and CPU interface are two blocks of one `reg` — surfaced as one
+device and the second aperture was invisible to the platform config.  It now
+emits one `DeviceEntry` per block.  And `translateThroughFdtRanges` selected
+a window by testing the base alone, so a region straddling a window's end was
+reported at a parent address only its first byte has; it now requires
+`childBase ≤ addr ∧ addr + size ≤ childBase + length`, and a straddling
+region is `none` — there is no contiguous parent address to report.
+
+**An unreadable device tree does not license the low aperture.**
+`init_mmu` fell back to `LOW_RAM_TOP` (0xFC00_0000) when the DTB could not be
+parsed, so a 1 GiB board with a malformed blob got a boot map claiming nearly
+4 GiB of RAM that is not there.  The fallback is `UNDESCRIBED_RAM_TOP`
+(0x4000_0000, one L2 block-aligned gibibyte) — the smallest configuration any
+supported board has, the same direction `rpi5VariantFor` takes for an account
+it cannot place.  Const assertions pin it below `LOW_RAM_TOP` and on an L2
+block boundary.
+
+**Evidence.**  Twelve Tier 3 relation anchors, each mutation-tested by
+keeping the token and breaking the relation — seventeen mutations, all
+preserving: the ownership guard inverted, evaluated beside the declaration
+and compared against the wrong thread; the donation resolver reverted and
+re-pointed at the replier; the block loop capped at one and pinned to
+offset 0; the containment test reverted to the base-only form and its span
+zeroed; the RAM fallback reverted, computed elsewhere, widened, and its
+bound assertion restated of the wrong constant.  Six new runtime checks in
+`SmpCrossCoreCallSuite` (including the negative: a delegated `.replyRecv`
+declares `none`), two new device-tree fixtures in `Ak9PlatformSuite` (a
+two-block GIC node, a straddling region), and a new `mmu.rs` test that an
+unusable device tree does not license the low aperture.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md (WS-RR RR7)
+
 ## v0.34.115 — the WS-XV audit run rather than registered: four divergences the review had not reached
 
 **Not a review round.**  `v0.34.114` registered WS-XV — the observation that
