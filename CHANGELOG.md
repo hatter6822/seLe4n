@@ -1,3 +1,72 @@
+## v0.34.123 — the two device-tree header validators answer one question
+
+**Third finding of the same audit, and the first that is a divergence in the
+register's own sense** — two implementations of one question that had drifted.
+`cmdline::validate_fdt_header` has enforced four §5.1 layout conditions since
+its audit pass; `FdtHeader.isValid` enforced none of them, checking only that
+each block offset was below `totalsize`.  Lean was the **permissive** side, and
+Lean is the side WS-BP `BP2.6` makes the blob's only reader.
+
+| Condition | Rust | Lean, before |
+|---|---|---|
+| `off_dt_struct` 4-byte aligned | refuses | **accepts** |
+| `off_dt_strings` 4-byte aligned | refuses | **accepts** |
+| `off_dt_struct ≥ 40` (no overlap with the header) | refuses | **accepts** |
+| `off_dt_strings ≥ 40` | refuses | **accepts** |
+
+FDT tokens are 4-byte, so an unaligned structure block is read at offsets no
+token starts at.  The overlap conditions are sharper, and the *strings* case is
+the sharpest: a property's `nameoff` then resolves into header bytes, and every
+field there — `totalsize`, the offsets, `boot_cpuid_phys` — is the blob author's
+to choose, so `reg`, `status` or `device_type` can be spelled inside one.
+
+**And two conditions neither side had.**  §5.1 aligns the memory reservation
+block to 8 bytes and places it after the header, and nothing checked either.
+That mattered little while the reservation set was a list that could quietly
+come back short; since `v0.34.121` made it a **refusal**, a misaligned or
+overlapping block is a blob whose carve-outs cannot be located rather than one
+that reserves nothing.  The Rust `FdtHeader` did not even parse
+`off_mem_rsvmap` — it never reads that block — and leaving the field unparsed is
+precisely what let the two validators disagree about a blob.  It is parsed now,
+because the header's validity is one question whichever walker asks it.
+
+**And the version floor, which both had wrong together** — a shared defect
+rather than a divergence.  `size_dt_struct` sits at byte 36 and enters the
+header at **version 17**; a version-16 header ends at byte 36.  Both parsers
+accepted `version ≥ 16` and then read that field regardless, so on a genuine v16
+blob the structure block's declared end came from bytes outside the header.  In
+practice those bytes are the reservation block's padding, giving a size of `0`,
+an empty structure block and a `.malformedBlob` from the walk — so the blob was
+already refused, for a reason naming neither the version nor the field.
+Requiring the version that *has* the field turns a confusing refusal into an
+honest one and rejects nothing that worked.
+
+**The tests had to be moved to the validator, and that is the finding inside the
+finding.**  Written first as end-to-end `fromDtbFull` refusals, **five of the six
+passed with the header check reverted**: a misaligned structure block yields
+tokens at offsets no token starts at, a strings block over the header resolves
+`nameoff` into bytes that are not a name, and the walk refuses all of it anyway.
+The outcome had another cause, which is exactly the confound this project's own
+rule warns of — a mutation that passes both ways asserts nothing.  The negatives
+are now asserted at `parseAndValidateFdtHeader`, where reverting the check makes
+the first of them fail, with the end-to-end assertion kept **beside** rather
+than instead of it, since that is the property a caller relies on.
+
+**Tests**: six header-level cases plus a control on each side, every mutation
+moving exactly one header field and keeping all three blocks byte-for-byte;
+`validate_fdt_header_rejects_each_layout_violation` and
+`validate_fdt_header_requires_the_version_carrying_size_dt_struct` on the Rust
+side, both confirmed to fail when the conditions are reverted.
+
+**Tier 3**: fifteen anchors, on **both** implementations — a condition anchored
+on one side only is the divergence this cut closes.
+
+**Files**: `SeLe4n/Platform/DeviceTree.lean`, `rust/sele4n-hal/src/cmdline.rs`,
+`tests/Ak9PlatformSuite.lean`, `scripts/test_tier3_invariant_surface.sh`,
+`CLAUDE.md`, `AGENTS.md`.
+
+Refs: docs/REGISTERED_DEBT.md WS-XV (table C, the device-tree pair)
+
 ## v0.34.122 — the selectors' own premise: sibling node names are unique, or the blob is refused
 
 **Second security finding of the same audit, reached one level up.**  `v0.34.121`

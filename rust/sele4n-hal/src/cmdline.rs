@@ -150,6 +150,13 @@ const FDT_END: u32 = 0x0000_0009;
 /// `boot_cpuid_phys`, `size_dt_strings`, `size_dt_struct`.
 const FDT_HEADER_SIZE: usize = 40;
 
+/// **RR7 audit round**: the lowest FDT layout version this parser may
+/// accept, because `size_dt_struct` — which `parse_fdt_header` reads
+/// unconditionally at byte 36 — enters the header at version 17.  Held
+/// equal to `SeLe4n.Platform.fdtMinimumVersion`; the two validators
+/// answer one question.
+const FDT_MINIMUM_VERSION: u32 = 17;
+
 /// **WS-SM SM1.D.1**: Fuel bound for the DTB structure walk.
 ///
 /// Caps the number of FDT tokens we'll consume before giving up.
@@ -436,7 +443,13 @@ struct FdtHeader {
     off_dt_struct: u32,
     /// Byte offset into the blob where the strings block begins.
     off_dt_strings: u32,
-    /// DTB format version.  v1.0.0 requires ≥ 16.
+    /// Byte offset into the blob where the memory reservation block
+    /// begins.  **RR7 audit round**: this walker does not read that
+    /// block -- the Lean reader does -- but the header's validity is
+    /// one question, and leaving the field unparsed is what let the
+    /// two validators disagree about a blob.
+    off_mem_rsvmap: u32,
+    /// DTB format version.  Must be >= [`FDT_MINIMUM_VERSION`].
     version: u32,
     /// Minimum FDT version required to parse this DTB.  Per the
     /// FDT spec, a parser at layout version `P` may read DTBs whose
@@ -465,7 +478,7 @@ fn parse_fdt_header(blob: &[u8]) -> Option<FdtHeader> {
     let totalsize = read_be_u32(blob, 4)?;
     let off_dt_struct = read_be_u32(blob, 8)?;
     let off_dt_strings = read_be_u32(blob, 12)?;
-    // Skip off_mem_rsvmap at 16.
+    let off_mem_rsvmap = read_be_u32(blob, 16)?;
     let version = read_be_u32(blob, 20)?;
     let last_comp_version = read_be_u32(blob, 24)?;
     // Skip boot_cpuid_phys at 28.
@@ -476,6 +489,7 @@ fn parse_fdt_header(blob: &[u8]) -> Option<FdtHeader> {
         totalsize,
         off_dt_struct,
         off_dt_strings,
+        off_mem_rsvmap,
         version,
         last_comp_version,
         size_dt_struct,
@@ -488,7 +502,8 @@ fn parse_fdt_header(blob: &[u8]) -> Option<FdtHeader> {
 /// Returns `true` if the header passes the full sanity check set:
 ///   1. Magic = `0xD00DFEED` (re-verified for defense-in-depth even
 ///      though [`parse_fdt_header`] already gates on it).
-///   2. `version >= 16` (the minimum we support).
+///   2. `version >= FDT_MINIMUM_VERSION` (the lowest whose header
+///      carries `size_dt_struct`, which this parser reads).
 ///   3. `last_comp_version <= FDT_PARSER_VERSION` — refuses DTBs
 ///      requiring a newer layout than this parser supports
 ///      (audit-pass-1 forward-compat defense).
@@ -506,7 +521,15 @@ fn validate_fdt_header(hdr: &FdtHeader) -> bool {
     if hdr.magic != FDT_MAGIC {
         return false;
     }
-    if hdr.version < 16 {
+    // RR7 audit round: `size_dt_struct` sits at byte 36 and exists only from
+    // version 17; a version-16 header ends at byte 36.  This parser reads that
+    // field unconditionally (`read_be_u32(blob, 36)`), so accepting version 16
+    // meant bounding the structure block by bytes outside the header.  Both
+    // this validator and the Lean one had the same gap, so it was a shared
+    // defect rather than a divergence -- and requiring the version that has the
+    // field rejects nothing that worked, since a v16 blob's byte 36 is padding
+    // and yielded an empty structure block the walker already refused.
+    if hdr.version < FDT_MINIMUM_VERSION {
         return false;
     }
     // Audit-pass-1: reject DTBs that require a newer parser than us.
@@ -540,6 +563,18 @@ fn validate_fdt_header(hdr: &FdtHeader) -> bool {
         return false;
     }
     if (hdr.off_dt_strings as u64) < FDT_HEADER_SIZE as u64 {
+        return false;
+    }
+    // RR7 audit round: and the memory reservation block, which neither
+    // validator checked.  Section 5.1 aligns it to 8 bytes and places it after
+    // the header; the Lean reader takes 16-byte entries from `off_mem_rsvmap`
+    // and, since its reservation set became a refusal rather than a shorter
+    // list, a misaligned or overlapping block is a blob whose carve-outs cannot
+    // be located rather than one that reserves nothing.
+    if !hdr.off_mem_rsvmap.is_multiple_of(8) {
+        return false;
+    }
+    if (hdr.off_mem_rsvmap as u64) < FDT_HEADER_SIZE as u64 {
         return false;
     }
     // Block end must fit inside the total size.  Use u64 arithmetic
@@ -1947,6 +1982,48 @@ mod tests {
         blob[20..24].copy_from_slice(&15u32.to_be_bytes()); // version 15 < 16
         let hdr = parse_fdt_header(&blob).expect("should still parse fields");
         assert!(!validate_fdt_header(&hdr));
+    }
+
+    /// **RR7 audit round**: the conditions this validator had and the Lean
+    /// one did not, plus the two neither had.  Each case keeps every other
+    /// header field at its canonical value and moves exactly one.
+    #[test]
+    fn validate_fdt_header_rejects_each_layout_violation() {
+        // The control: the canonical header is accepted, so a rejection below
+        // is the moved field's doing and not the fixture's.
+        let base = build_minimal_dtb_header();
+        assert!(validate_fdt_header(
+            &parse_fdt_header(&base).expect("canonical header parses")
+        ));
+        // (offset of the field, replacement value, what it violates)
+        let cases: [(usize, u32, &str); 6] = [
+            (8, 41, "off_dt_struct must be 4-byte aligned"),
+            (12, 42, "off_dt_strings must be 4-byte aligned"),
+            (8, 0, "off_dt_struct must not overlap the header"),
+            (12, 4, "off_dt_strings must not overlap the header"),
+            (16, 44, "off_mem_rsvmap must be 8-byte aligned"),
+            (16, 8, "off_mem_rsvmap must not overlap the header"),
+        ];
+        for (at, value, why) in cases {
+            let mut blob = build_minimal_dtb_header();
+            blob[at..at + 4].copy_from_slice(&value.to_be_bytes());
+            let hdr = parse_fdt_header(&blob).expect("fields still parse");
+            assert!(!validate_fdt_header(&hdr), "{why}");
+        }
+    }
+
+    /// **RR7 audit round**: version 16 is refused, because `size_dt_struct`
+    /// -- which `parse_fdt_header` reads at byte 36 -- enters the header at
+    /// 17.  Version 15 was already refused; 16 is the case this round adds,
+    /// and 17 must still be accepted or the floor has been raised too far.
+    #[test]
+    fn validate_fdt_header_requires_the_version_carrying_size_dt_struct() {
+        for (version, want) in [(15u32, false), (16, false), (17, true)] {
+            let mut blob = build_minimal_dtb_header();
+            blob[20..24].copy_from_slice(&version.to_be_bytes());
+            let hdr = parse_fdt_header(&blob).expect("fields still parse");
+            assert_eq!(validate_fdt_header(&hdr), want, "version {version}");
+        }
     }
 
     #[test]

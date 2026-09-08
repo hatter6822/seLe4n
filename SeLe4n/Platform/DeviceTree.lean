@@ -237,10 +237,27 @@ which blobs they can read.  A blob whose `lastCompVersion` exceeds it demands a
 reader this one is not. -/
 def fdtParserVersion : Nat := 17
 
+/-- **The RR7 audit round**: the header's own size, §5.1.  Every block the
+header declares begins at or after it. -/
+def fdtHeaderSize : Nat := 40
+
+/-- **The RR7 audit round**: the version at which `size_dt_struct` enters the
+header, and therefore the lowest this parser may accept.
+
+That field sits at byte 36 and exists only from **version 17**; a version-16
+header ends at byte 36.  Both parsers accepted `version ≥ 16` and then read it
+regardless, so on a genuine v16 blob the structure block's declared end came
+from bytes outside the header — in practice the reservation block's padding,
+giving a size of `0`, an empty structure block and a `.malformedBlob` from the
+walk.  The blob was therefore already refused, but for a reason that named
+neither the version nor the field.  Requiring the version that *has* the field
+turns a confusing refusal into an honest one and rejects nothing that worked. -/
+def fdtMinimumVersion : Nat := 17
+
 /-- T6-M: Validate an FDT header — magic is correct and sizes are consistent. -/
 def FdtHeader.isValid (hdr : FdtHeader) : Bool :=
   hdr.magic == fdtMagic &&
-  hdr.version.toNat ≥ 16 &&    -- Minimum supported DTB version
+  hdr.version.toNat ≥ fdtMinimumVersion &&
   -- **PR #892 review round 9**: and not a blob that requires a *newer* parser
   -- than this one.  `lastCompVersion` is the lowest version a reader must
   -- implement to read the blob correctly; above ours, the layout fields may sit
@@ -250,9 +267,35 @@ def FdtHeader.isValid (hdr : FdtHeader) : Bool :=
   -- believed — the two answering "is this blob readable" differently, which is
   -- the divergence WS-XV registers.
   hdr.lastCompVersion.toNat ≤ fdtParserVersion &&
-  hdr.totalsize.toNat ≥ 40 &&  -- At least header size
+  hdr.totalsize.toNat ≥ fdtHeaderSize &&  -- At least header size
   hdr.offDtStruct.toNat < hdr.totalsize.toNat &&
-  hdr.offDtStrings.toNat < hdr.totalsize.toNat
+  hdr.offDtStrings.toNat < hdr.totalsize.toNat &&
+  -- **The RR7 audit round**: four conditions `cmdline::validate_fdt_header`
+  -- has enforced since its audit pass and this one did not, every one of them
+  -- in the direction where *this* side is the permissive one — and this is the
+  -- side WS-BP `BP2.6` makes the blob's only reader.
+  --
+  -- Alignment: FDT tokens are 4-byte, so an unaligned structure block is read
+  -- at offsets no token starts at.  The strings block is 4-byte aligned by
+  -- §5.1 for the same reason.
+  --
+  -- Position: a block overlapping the 40-byte header is the sharper of the
+  -- two.  A structure block at offset 0 has the walker read `magic` and
+  -- `totalsize` as tokens; a *strings* block there has a property's `nameoff`
+  -- resolve into header bytes, so a name is taken from fields the blob's author
+  -- chooses freely — `reg`, `status` or `device_type` can be spelled inside a
+  -- `totalsize` or an `offMemRsvmap`.  §5.1 puts both blocks after the header.
+  hdr.offDtStruct.toNat % 4 == 0 &&
+  hdr.offDtStrings.toNat % 4 == 0 &&
+  hdr.offDtStruct.toNat ≥ fdtHeaderSize &&
+  hdr.offDtStrings.toNat ≥ fdtHeaderSize &&
+  -- ...and one neither side checked.  §5.1 aligns the memory reservation block
+  -- to 8 bytes and places it after the header; `FdtBlob.reservations` reads
+  -- 16-byte entries from `offMemRsvmap` and, since the reservation set became a
+  -- refusal, a misaligned or overlapping block is a blob whose carve-outs this
+  -- parser cannot locate rather than one that reserves nothing.
+  hdr.offMemRsvmap.toNat % 8 == 0 &&
+  hdr.offMemRsvmap.toNat ≥ fdtHeaderSize
 
 /-- T6-M: Parse FDT header and validate. Returns the header only if valid. -/
 def parseAndValidateFdtHeader (blob : ByteArray) : Option FdtHeader := do

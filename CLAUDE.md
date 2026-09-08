@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.122.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.123.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,7 +203,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~59048 lines)
+- `CHANGELOG.md` (~59342 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22578 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12092 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
@@ -267,6 +267,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Prelude.lean` (~2137 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2105 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2079 lines)
+- `tests/Ak9PlatformSuite.lean` (~2079 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~2074 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2059 lines)
 - `SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean` (~2043 lines)
@@ -276,6 +277,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean` (~1994 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1967 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
+- `SeLe4n/Platform/DeviceTree.lean` (~1960 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean` (~1956 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md` (~1917 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean` (~1909 lines)
@@ -285,9 +287,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/planning/V3E_IPC_UNWRAP_CAPS_LOOP_COMPOSITION_PLAN.md` (~1891 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md` (~1889 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1878 lines)
-- `tests/Ak9PlatformSuite.lean` (~1866 lines)
 - `SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean` (~1849 lines)
-- `SeLe4n/Platform/DeviceTree.lean` (~1843 lines)
 - `SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean` (~1833 lines)
 - `SeLe4n/Model/FreezeProofs.lean` (~1827 lines)
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1822 lines)
@@ -2449,7 +2449,19 @@ code may assume:
   `parseFdtNodes` refuses a structure block that does not reach a top-level
   `FDT_END` at depth zero — every partial exit is `.malformedBlob`, fuel
   exhaustion stays `.fuelExhausted` — so a *fixture* blob must carry its
-  terminators or the bridge rejects it.  It also refuses a property after a
+  terminators or the bridge rejects it.  The header is validated first, and the two
+  validators are **one question**: `FdtHeader.isValid` and
+  `cmdline::validate_fdt_header` both require §5.1's layout — each block offset
+  4-byte aligned (8 for the reservation block) and at or beyond the 40-byte
+  header — and both require **version ≥ 17**, the version at which
+  `size_dt_struct` enters the header, since both read that field
+  unconditionally.  Four of those conditions were Rust-only, with Lean the
+  permissive side and Lean the side `BP2.6` makes the only reader; the
+  reservation-block pair and the version floor were missing from both.  A
+  strings block over the header is the sharpest of them: a property's `nameoff`
+  then resolves into header bytes, and every field there is the blob author's to
+  choose, so `reg` or `status` can be spelled inside a `totalsize`.  The walk
+  then refuses a property after a
   child (§5.4.2), a repeated property name (§2.2.4) and — since the RR7 audit
   round — **a repeated sibling node name**: §2.2.3 identifies a node by its full
   path, which is unique only if siblings differ, and every selector in the file

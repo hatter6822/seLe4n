@@ -975,6 +975,36 @@ private def assembleDtbWithoutRsvBlock (structBlock : Array UInt8) : ByteArray :
       ++ be32 stringsBlock.size ++ be32 structBlock.size
   ByteArray.mk (header ++ structBlock ++ stringsBlock)
 
+/-- **The RR7 audit round**: `assembleDtb` with the three block *offsets* under
+the caller's control, so a fixture can move one and change nothing else.
+
+The header's validity is one question and two implementations answered it
+differently: `cmdline::validate_fdt_header` has refused an unaligned or
+header-overlapping block offset since its audit pass, and `FdtHeader.isValid`
+checked only that each offset was below `totalsize`.  Every mutation built from
+here keeps all three blocks byte-for-byte and moves a single offset. -/
+private def assembleDtbAtOffsets (structBlock : Array UInt8)
+    (offMemRsvmap offDtStruct offDtStrings : Nat) : ByteArray :=
+  let body : Array UInt8 := emptyRsvBlock ++ structBlock ++ stringsBlock
+  let totalsize := 40 + body.size
+  let header : Array UInt8 :=
+    be32 0xD00DFEED ++ be32 totalsize ++ be32 offDtStruct ++ be32 offDtStrings
+      ++ be32 offMemRsvmap ++ be32 17 ++ be32 16 ++ be32 0
+      ++ be32 stringsBlock.size ++ be32 structBlock.size
+  ByteArray.mk (header ++ body)
+
+/-- **The RR7 audit round**: `assembleDtb` with the header `version` under the
+caller's control, so the minimum-version refusal can be exercised without
+touching a byte of any block. -/
+private def assembleDtbVersioned (structBlock : Array UInt8) (version : Nat) : ByteArray :=
+  let body : Array UInt8 := emptyRsvBlock ++ structBlock ++ stringsBlock
+  let totalsize := 40 + body.size
+  let header : Array UInt8 :=
+    be32 0xD00DFEED ++ be32 totalsize ++ be32 56 ++ be32 (56 + structBlock.size)
+      ++ be32 40 ++ be32 version ++ be32 16 ++ be32 0
+      ++ be32 stringsBlock.size ++ be32 structBlock.size
+  ByteArray.mk (header ++ body)
+
 /-- **PR #892 review round 7**: `assembleDtb` with the two declared block sizes
 supplied by the caller rather than measured.
 
@@ -1877,6 +1907,52 @@ def review9_parser_conformance_and_reservations : IO Unit := do
     expect "audit distinct sibling names both carve out"
       (!dt.machineConfig.memoryMap.any
         (fun r => r.kind == .ram && r.contains (SeLe4n.PAddr.ofNat 0xA0000800)))
+  -- (g) **the header's validity is one question**.  `validate_fdt_header` has
+  -- refused an unaligned or header-overlapping block offset since its audit
+  -- pass; `FdtHeader.isValid` checked only `< totalsize`, so the Lean side --
+  -- the one WS-BP BP2.6 makes the blob's only reader -- was the permissive one.
+  -- The sharpest consequence is a *strings* block over the header: a property's
+  -- `nameoff` then resolves into header bytes, and every field there is the
+  -- blob author's to choose, so `reg` or `status` can be spelled inside a
+  -- `totalsize`.  Each mutation keeps all three blocks byte-for-byte and moves
+  -- one offset.
+  let canonRsv := 40
+  let canonStruct := canonRsv + 16
+  let canonStrings := canonStruct + reservedBody.size
+  match DeviceTree.fromDtbFull
+      (assembleDtbAtOffsets reservedBody canonRsv canonStruct canonStrings) width with
+  | .error _ => expect "audit the canonical offsets are accepted" false
+  | .ok _ => expect "audit the canonical offsets are accepted" true
+  -- Asserted at `parseAndValidateFdtHeader`, **not** through `fromDtbFull`.
+  -- Five of these six blobs are refused by the *walk* as well -- a misaligned
+  -- structure block yields tokens at offsets no token starts at, a strings
+  -- block over the header resolves `nameoff` into bytes that are not a name --
+  -- so an end-to-end assertion passes with the header check reverted and tests
+  -- nothing about it.  This is the confound this project's own rule warns of:
+  -- the outcome had another cause.  Only the reservation-over-header case
+  -- discriminates end to end, and it does so through a different fix.
+  for (label, r, st, sg) in
+      [("an unaligned structure offset", canonRsv, canonStruct + 1, canonStrings),
+       ("an unaligned strings offset", canonRsv, canonStruct, canonStrings + 2),
+       ("a structure block over the header", canonRsv, 0, canonStrings),
+       ("a strings block over the header", canonRsv, canonStruct, 4),
+       ("an unaligned reservation block", 44, canonStruct, canonStrings),
+       ("a reservation block over the header", 8, canonStruct, canonStrings)] do
+    expect s!"NEGATIVE audit {label} fails header validation"
+      (!(parseAndValidateFdtHeader (assembleDtbAtOffsets reservedBody r st sg)).isSome)
+    -- ...and the blob does not parse either, which is the property a caller
+    -- relies on.  Kept beside the header assertion rather than instead of it.
+    match DeviceTree.fromDtbFull (assembleDtbAtOffsets reservedBody r st sg) width with
+    | .ok _ => expect s!"NEGATIVE audit {label} is refused" false
+    | .error _ => expect s!"NEGATIVE audit {label} is refused" true
+  -- ...and the version that carries the field this parser reads.  `size_dt_struct`
+  -- enters the header at 17, so a v16 header ends before it; both parsers read
+  -- byte 36 regardless.  The refusal now names the version.
+  expect "NEGATIVE audit a header below the minimum version is refused"
+    (!(parseAndValidateFdtHeader
+        (assembleDtbVersioned reservedBody 16)).isSome)
+  expect "audit the minimum version itself is accepted"
+    (parseAndValidateFdtHeader (assembleDtbVersioned reservedBody 17)).isSome
   -- A disabled bus hides its whole subtree, not only itself.
   let disabledBus :=
     withStatus (mkBus "gated-bus" 0x10000000 (mkRangesProperty 0 0x100000000 0x200000000)

@@ -11127,4 +11127,33 @@ run_check "INVARIANT" rg -n -U 'match parseNodeContents v nextOffset false \[\] 
 run_check "INVARIANT" rg -n 'NEGATIVE audit two siblings of one name are refused' tests/*PlatformSuite.lean
 run_check "INVARIANT" rg -n 'audit distinct sibling names both carve out' tests/*PlatformSuite.lean
 
+# ---------------------------------------------------------------------------
+# The RR7 audit round: the two header validators answer ONE question.  The four
+# conditions Lean lacked, the two neither had, and the version floor -- anchored
+# on both sides, because a condition on one side only is the divergence itself.
+# ---------------------------------------------------------------------------
+run_check "INVARIANT" rg -n -U 'hdr\.offDtStruct\.toNat % 4 == 0 &&\n  hdr\.offDtStrings\.toNat % 4 == 0 &&\n  hdr\.offDtStruct\.toNat ≥ fdtHeaderSize &&\n  hdr\.offDtStrings\.toNat ≥ fdtHeaderSize' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U 'hdr\.offMemRsvmap\.toNat % 8 == 0 &&\n  hdr\.offMemRsvmap\.toNat ≥ fdtHeaderSize' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n 'hdr\.version\.toNat ≥ fdtMinimumVersion' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n 'def fdtMinimumVersion : Nat := 17' SeLe4n/Platform/DeviceTree.lean
+# NEGATIVE: the permissive forms.  `< totalsize` stays -- it is a separate and
+# still-required condition -- so a mutation deleting it would not test this.
+run_negative_check "INVARIANT" rg -n 'hdr\.version\.toNat ≥ 16' SeLe4n/Platform/DeviceTree.lean
+# The Rust half, held to the same conditions and the same floor.
+run_check "INVARIANT" rg -n 'if !hdr\.off_mem_rsvmap\.is_multiple_of\(8\) \{' rust/sele4n-hal/src/cmdline.rs
+run_check "INVARIANT" rg -n -U 'if \(hdr\.off_mem_rsvmap as u64\) < FDT_HEADER_SIZE as u64 \{' rust/sele4n-hal/src/cmdline.rs
+run_check "INVARIANT" rg -n 'if hdr\.version < FDT_MINIMUM_VERSION \{' rust/sele4n-hal/src/cmdline.rs
+run_check "INVARIANT" rg -n 'const FDT_MINIMUM_VERSION: u32 = 17;' rust/sele4n-hal/src/cmdline.rs
+run_negative_check "INVARIANT" rg -n 'if hdr\.version < 16 \{' rust/sele4n-hal/src/cmdline.rs
+# ...and the field the Rust header had to start parsing for the question to be
+# askable at all.
+run_check "INVARIANT" rg -n 'let off_mem_rsvmap = read_be_u32\(blob, 16\)\?;' rust/sele4n-hal/src/cmdline.rs
+run_negative_check "INVARIANT" rg -n '// Skip off_mem_rsvmap at 16\.' rust/sele4n-hal/src/cmdline.rs
+# The header-level cases are asserted at the validator, not through the walk:
+# five of the six blobs are refused by the walk too, so an end-to-end assertion
+# alone passes with the header check reverted.
+run_check "INVARIANT" rg -n 'fails header validation' tests/*PlatformSuite.lean
+run_check "INVARIANT" rg -n 'validate_fdt_header_rejects_each_layout_violation' rust/sele4n-hal/src/cmdline.rs
+run_check "INVARIANT" rg -n 'validate_fdt_header_requires_the_version_carrying_size_dt_struct' rust/sele4n-hal/src/cmdline.rs
+
 finalize_report
