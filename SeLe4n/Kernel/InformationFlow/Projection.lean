@@ -293,7 +293,19 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
       -- AI4-A: Strip boundThread — internal scheduling plumbing binding a
       -- SchedContext to its owning thread. Donation chain changes modify only
       -- this field and must not leak through the NI projection.
-      .schedContext { sc with boundThread := none,
+      --
+      -- WS-OD OD2.2: strip `scReply` for the same reason, and in the same cut
+      -- as the field itself.  It is the head of this context's MCS reply stack
+      -- — a **ReplyId**, so it names the innermost Call the context was donated
+      -- through, and with it the caller that Call blocked.  That is the same
+      -- class of cross-domain linkage the `.reply` arm below erases
+      -- (`caller` / `donatedSc` / `prev`) and the TCB arm erases
+      -- (`schedContextBinding` / `replyObject`): internal donation plumbing,
+      -- not part of the context's observable logical identity.  Landing the
+      -- erasure with the field is what keeps the OD4 push *unobservable* — a
+      -- push writes this head, and an un-erased head would make a high caller's
+      -- Call visible through a low-visible scheduling context.
+      .schedContext { sc with boundThread := none, scReply := none,
                               lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld }
   | .reply r =>
       -- WS-SM SM6.D (PR #822 review, Reply objects): Strip the Reply object's
@@ -500,6 +512,32 @@ theorem projectKernelObject_reply_caller_invariant
       = projectKernelObject ctx observer (.reply r) := by
   simp [projectKernelObject]
 
+/-- **WS-OD OD2.2**: the projection is invariant under a Reply's donated
+scheduling context — the `.reply` arm has stripped `donatedSc` since SM6.D, and
+this is the theorem that says so, stated in the same cut as the SchedContext
+head so that all three reply-stack fields have one.
+
+The sibling sweep is the point: the erasure covered `caller`, `donatedSc` and
+`prev` from the day the arm was written, but only `caller` had a theorem — so a
+reader asking whether the donation push is observable would have found the
+question answered for one field of three. -/
+theorem projectKernelObject_reply_donatedSc_invariant
+    (ctx : LabelingContext) (observer : IfObserver) (r : SeLe4n.Kernel.Reply)
+    (sc : Option SeLe4n.SchedContextId) :
+    projectKernelObject ctx observer (.reply { r with donatedSc := sc })
+      = projectKernelObject ctx observer (.reply r) := by
+  simp [projectKernelObject]
+
+/-- **WS-OD OD2.2**: the projection is invariant under a Reply's link to the
+reply below it on the stack — the third of the three fields the `.reply` arm
+erases, and the one the donation pop rewrites. -/
+theorem projectKernelObject_reply_prev_invariant
+    (ctx : LabelingContext) (observer : IfObserver) (r : SeLe4n.Kernel.Reply)
+    (p : Option SeLe4n.ReplyId) :
+    projectKernelObject ctx observer (.reply { r with prev := p })
+      = projectKernelObject ctx observer (.reply r) := by
+  simp [projectKernelObject]
+
 /-- **WS-RR RR7.22 (residual, remediation)**: the projection is invariant under a
 TCB's SchedContext binding — `projectKernelObject` strips the field (AI4-A), so a
 donation hand-off is invisible to any observer, not merely to a high one. -/
@@ -517,6 +555,23 @@ theorem projectKernelObject_schedContext_boundThread_invariant
     (ctx : LabelingContext) (observer : IfObserver) (sc : SchedContext)
     (bt : Option SeLe4n.ThreadId) :
     projectKernelObject ctx observer (.schedContext { sc with boundThread := bt })
+      = projectKernelObject ctx observer (.schedContext sc) := by
+  simp [projectKernelObject]
+
+/-- **WS-OD OD2.2**: the projection is invariant under a SchedContext's
+reply-stack head — `projectKernelObject` strips `scReply` (OD2.2), so pushing a
+donation onto the stack, or popping it off, is invisible to any observer rather
+than only to a high one.
+
+Stated beside `projectKernelObject_schedContext_boundThread_invariant` and in
+the same cut as the field, because the two are the write set of a donation
+hand-off: the binding moves (`boundThread`) and the stack moves (`scReply`).
+An erasure that landed a cut later would make the OD4 push observable in the
+interval. -/
+theorem projectKernelObject_schedContext_scReply_invariant
+    (ctx : LabelingContext) (observer : IfObserver) (sc : SchedContext)
+    (rid : Option SeLe4n.ReplyId) :
+    projectKernelObject ctx observer (.schedContext { sc with scReply := rid })
       = projectKernelObject ctx observer (.schedContext sc) := by
   simp [projectKernelObject]
 

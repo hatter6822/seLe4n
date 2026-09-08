@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.124.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.125.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,17 +203,17 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~59342 lines)
+- `CHANGELOG.md` (~59518 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22578 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12092 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
 - `SeLe4n/Kernel/API.lean` (~7210 lines)
-- `SeLe4n/Platform/Boot.lean` (~5847 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~6063 lines)
+- `SeLe4n/Platform/Boot.lean` (~5861 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5822 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~5450 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5129 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5001 lines)
-- `docs/spec/SELE4N_SPEC.md` (~4939 lines)
+- `docs/spec/SELE4N_SPEC.md` (~4987 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4840 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `SeLe4n/Model/State.lean` (~4708 lines)
@@ -240,8 +240,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Model/Object/Structures.lean` (~3116 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean` (~3105 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean` (~3038 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~2811 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2784 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~2768 lines)
 - `SeLe4n/Kernel/Capability/Operations.lean` (~2714 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2639 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean` (~2637 lines)
@@ -298,6 +298,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` (~1794 lines)
 - `docs/planning/UNFINISHED_SMP_WORK.md` (~1793 lines)
 - `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` (~1776 lines)
+- `tests/SmpIpcSuite.lean` (~1776 lines)
 - `SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean` (~1746 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
@@ -305,7 +306,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` (~1702 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
 - `tests/FaultHandlingSuite.lean` (~1660 lines)
-- `tests/SmpIpcSuite.lean` (~1660 lines)
 - `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1645 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1604 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1600 lines)
@@ -355,13 +355,13 @@ To find files that need pagination today, run:
 - `tests/SyscallReturnAbiSuite.lean` (~1130 lines)
 - `SeLe4n/Machine.lean` (~1128 lines)
 - `tests/PerObjectLockSuite.lean` (~1104 lines)
+- `tests/SmpIdleSuite.lean` (~1104 lines)
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1085 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean` (~1084 lines)
-- `tests/SmpIdleSuite.lean` (~1079 lines)
+- `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1079 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetHeld.lean` (~1063 lines)
 - `tests/SmpCrossCoreCallSuite.lean` (~1061 lines)
-- `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1050 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
 - `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~1019 lines)
 - `SeLe4n/Model/FrozenState.lean` (~1007 lines)
@@ -397,8 +397,8 @@ To find files that need pagination today, run:
 - `tests/DecodingSuite.lean` (~833 lines)
 - `SeLe4n/Kernel/SchedContext/BindingAffinity.lean` (~825 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean` (~824 lines)
+- `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` (~820 lines)
 - `tests/WithLockSetSuite.lean` (~820 lines)
-- `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` (~819 lines)
 - `docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` (~817 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRecord.lean` (~811 lines)
@@ -1384,7 +1384,7 @@ fell into with the rule that closes each.
 
 Plan: [`docs/planning/HIERARCHICAL_CBS_PLAN.md`](docs/planning/HIERARCHICAL_CBS_PLAN.md).
 
-### WS-OD SchedContext donation chains — IN FLIGHT (registered v0.34.98; OD1 closed v0.34.108)
+### WS-OD SchedContext donation chains — IN FLIGHT (registered v0.34.98; OD1 closed v0.34.108, OD2 v0.34.125)
 
 `applyCallDonation` donates only from a **`.bound`** caller, and
 `donateSchedContext` is the only operational construction site of a `.donated`
@@ -1394,7 +1394,8 @@ passive-server pattern does not work at call depth ≥ 2, where the callee stays
 sender's *effective* context, bound or donated, and passes it down the chain.
 Two register rows close here: that gap, and the `passiveServerIdle` break the
 `v0.34.97` reclaim introduced.  **41 sub-tasks across OD1..OD6.**  **OD1 is
-closed** (`v0.34.100` → `v0.34.108`); OD2..OD6 have not started.
+closed** (`v0.34.100` → `v0.34.108`) and **OD2 is closed** (`v0.34.125`, one
+cut); OD3..OD6 have not started.
 
 Six things new code must respect once this lands, and each is a decision the plan
 records rather than a default it inherited.  (1) **The `passiveServerIdle` hole was
@@ -1407,15 +1408,39 @@ reclaim now does.  (2) **The pop
 lands before the push, and lands inert**: with the push first, a depth-2 chain is
 serviced by the flat return, which writes `.bound` at the intermediate thread and
 moves a context across a domain boundary in a state that *breaks no conjunct*.
-(3) **`SchedContext.scReply` is built**, because `Reply.wellFormed`'s docstring
-already requires "`donatedSc.scReply` agrees with this reply" of a field that does
-not exist — and because without it the push must read the owner's TCB and the
-outer reply, taking `lockSet_endpointCall` to ten against a ceiling of nine.
+(3) **`SchedContext.scReply` is built** — done at `v0.34.125`, because
+`Reply.wellFormed`'s docstring already required "`donatedSc.scReply` agrees with
+this reply" of a field that did not exist, and because without it the push must
+read the owner's TCB and the outer reply, taking `lockSet_endpointCall` to ten
+against a ceiling of nine.  Four things OD2 fixes about the surface new code
+writes against.  The field is **erased by `projectKernelObject`** in the same cut
+that adds it (`projectKernelObject_schedContext_scReply_invariant`), or the OD4
+push would be observable in the interval; a **boot SchedContext heads no stack**
+(`bootSafeObjectCheck` refuses one, since every admissible boot Reply is inert,
+so a config-supplied head could only dangle); **`Reply.wellFormed` is no longer
+`True`** but "a `prev` link only on a reply that is itself on a stack", with the
+two store-level clauses its docstring also promised stated in
+`donationChainWellFormed`, which carries it as its own first conjunct; and the
+chain invariant is a conjunct of **`ipcReachable`**, not of `ipcInvariantFull`
+(twenty, unchanged), *preserved* through `donationChainFrame` rather than
+assumed.  The frame is stated over the two projections the walk actually reads
+(`replyStackLinks?`, `schedContextStackHead?`), so it **is** the read set rather
+than an over-approximation of it, and a field the chain starts reading has to
+enter a projection before any frame can be re-proved.  And the predicate is
+known to **decide** rather than refuse: it is discharged vacuously everywhere
+today, so `donationChainWitness_wellFormed` proves it whole — completeness
+clause included — of the store a depth-2 Call chain leaves, which is what stops
+an over-strong conjunct from hiding behind an obligation that never fires.
 (4) **The pop's new owner is an argument**, since the reply leg consumes the
 target's reply link before the donation return runs.  (5) **The pop validates the
 link it follows** — `Reply` has `prev` and no `next`, and Reply objects are
 re-linked to new callers, so a stale `prev` over a reused Reply would hand a
-thread's context to an unrelated thread in another domain.  (6) **The binding's
+thread's context to an unrelated thread in another domain.  Since `v0.34.125`
+that validation is *structural*: `donationChainFrom` follows a link only after
+checking the target's own `donatedSc`, never its `caller`, and a Reply carrying
+no donation is provably on no chain
+(`not_mem_donationChainFrom_of_not_donating` — the freshness fact the push
+consumes).  (6) **The binding's
 `owner` stays the immediate donor**, which is what keeps all five donation
 conjuncts true at depth `n` unchanged and leaves the *binding* graph chain-free —
 the chain lives entirely in the reply stack.

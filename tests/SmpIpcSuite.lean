@@ -851,6 +851,24 @@ private def runDonationChecks : IO Unit := do
       assertBool "donation return descheds the now-passive server from core 1"
         (stReply.scheduler.currentOnCore c1 != some donServer
           && !(stReply.scheduler.runQueueOnCore c1).contains donServer)
+      -- WS-OD OD2: the reply-stack fields are **inert** in this phase.  A live
+      -- donating call and its return leave `Reply.donatedSc`, `Reply.prev` and
+      -- `SchedContext.scReply` at `none`, which is why `donationChainWellFormed`
+      -- is vacuously true of every state this tree reaches today.  The push
+      -- (which writes all three) is a later phase; this check is what will fail
+      -- the day it lands without its chain-preservation theorem.
+      assertBool "OD2 inert: the donating call writes none of the three reply-stack fields"
+        (match stCall.getReply? donReply, stCall.getSchedContext? scClient with
+         | some r, some sc =>
+             decide (r.donatedSc = none) && decide (r.prev = none) &&
+             decide (sc.scReply = none)
+         | _, _ => false)
+      assertBool "OD2 inert: the donation return writes none of the three reply-stack fields"
+        (match stReply.getReply? donReply, stReply.getSchedContext? scClient with
+         | some r, some sc =>
+             decide (r.donatedSc = none) && decide (r.prev = none) &&
+             decide (sc.scReply = none)
+         | _, _ => false)
 
 -- ============================================================================
 -- §3.9b WS-RR RR2.19 — the donation's replenish-queue migration
@@ -1631,6 +1649,104 @@ private def runTraceFixtureCheck : IO Unit := do
     IO.println s!" (then refresh {fixturePath}.sha256 — see tests/fixtures/README.md)"
     throw (IO.userError "4-core IPC trace fixture mismatch")
 
+-- ============================================================================
+-- §3.15 the SchedContext donation chain's structure (WS-OD OD2 — inert)
+-- ============================================================================
+
+/-! The reply stack the donation push will build, exercised *before* any
+transition writes it.  The store below is what a depth-2 Call chain leaves:
+`chainSc` heads the inner call's Reply, which links down to the outer call's,
+and both replies name `chainSc` as the context they carry.
+
+The negatives are the mutation this project asks for — they **keep the link and
+break the relation** rather than deleting it.  In each, the head still carries a
+`prev`; what changes is what that link leads to: a live Reply donating a
+*different* context, a live Reply donating none, the head itself (a cycle), or a
+`ReplyId` no object answers.  Deleting the link would be caught by the positive
+above; the first two are what a re-linked (reused) Reply object actually looks
+like, which is the confused deputy the walk's `donatedSc` validation exists to
+refuse. -/
+
+private def chainSc : SeLe4n.SchedContextId := ⟨71⟩
+private def chainOtherSc : SeLe4n.SchedContextId := ⟨74⟩
+private def chainHeadReply : SeLe4n.ReplyId := ⟨72⟩
+private def chainOuterReply : SeLe4n.ReplyId := ⟨73⟩
+private def chainAbsentReply : SeLe4n.ReplyId := ⟨75⟩
+
+/-- A donation-chain store, parameterised by the two things the negatives vary:
+what the head links down to, and what the reply below it donates. -/
+private def chainStore (headPrev : Option SeLe4n.ReplyId)
+    (outerDonated : Option SeLe4n.SchedContextId) : SystemState :=
+  (BootstrapBuilder.empty
+    |>.withObject chainSc.toObjId
+        (.schedContext { SchedContext.empty chainSc with scReply := some chainHeadReply })
+    |>.withObject chainOtherSc.toObjId (.schedContext (SchedContext.empty chainOtherSc))
+    |>.withObject chainHeadReply.toObjId
+        (.reply { replyId := chainHeadReply, donatedSc := some chainSc, prev := headPrev })
+    |>.withObject chainOuterReply.toObjId
+        (.reply { replyId := chainOuterReply, donatedSc := outerDonated })
+    |>.build)
+
+/-- The well-formed depth-2 chain. -/
+private def stChain : SystemState := chainStore (some chainOuterReply) (some chainSc)
+
+private def runDonationChainStructureChecks : IO Unit := do
+  IO.println "--- §3.15 the SchedContext donation chain's structure (WS-OD OD2, inert) ---"
+  -- `Reply.wellFormed`: a stack link only on a reply that is itself on a stack.
+  assertBool "an inert Reply is well formed"
+    (decide (Reply.empty chainHeadReply).wellFormed)
+  assertBool "a Reply on a stack may carry a prev link"
+    (decide ({ replyId := chainHeadReply, donatedSc := some chainSc,
+               prev := some chainOuterReply } : Reply).wellFormed)
+  assertBool "NEGATIVE: a Reply off every stack may not carry a prev link"
+    (!decide ({ replyId := chainHeadReply, prev := some chainOuterReply } : Reply).wellFormed)
+  -- The walk: the head's chain is the two replies, innermost first.
+  assertBool "the context's head walks the whole depth-2 chain"
+    (donationChainFrom stChain chainSc 2 (some chainHeadReply)
+       == some [chainHeadReply, chainOuterReply])
+  assertBool "walking from the context's own scReply gives the same chain"
+    (match stChain.getSchedContext? chainSc with
+     | some sc => donationChainFrom stChain chainSc 2 sc.scReply
+                    == some [chainHeadReply, chainOuterReply]
+     | none => false)
+  assertBool "the walk is fuel-bounded: one step short returns none"
+    (donationChainFrom stChain chainSc 1 (some chainHeadReply) == none)
+  assertBool "more fuel than the chain needs returns the same chain"
+    (donationChainFrom stChain chainSc 8 (some chainHeadReply)
+       == some [chainHeadReply, chainOuterReply])
+  -- NEGATIVE: the link is still there and still names a LIVE Reply — but that
+  -- reply donates a DIFFERENT context, which is what a re-linked Reply looks
+  -- like.  Following it would hand this context to the other stack's caller.
+  assertBool "NEGATIVE: a prev naming a live reply that donates another context is refused"
+    (donationChainFrom (chainStore (some chainOuterReply) (some chainOtherSc))
+       chainSc 8 (some chainHeadReply) == none)
+  assertBool "NEGATIVE: a prev naming a live reply that donates nothing is refused"
+    (donationChainFrom (chainStore (some chainOuterReply) none)
+       chainSc 8 (some chainHeadReply) == none)
+  assertBool "NEGATIVE: a self-linked head (a cycle) is refused at every fuel"
+    ((List.range 12).all (fun f =>
+      donationChainFrom (chainStore (some chainHeadReply) (some chainSc))
+        chainSc f (some chainHeadReply) == none))
+  assertBool "NEGATIVE: a prev naming no object at all is refused"
+    (donationChainFrom (chainStore (some chainAbsentReply) (some chainSc))
+       chainSc 8 (some chainHeadReply) == none)
+  -- One chain per context: the second context's stack is empty and does not
+  -- pick up a chain whose members name the first.
+  assertBool "a second context's stack is empty and does not pick up this chain"
+    (donationChainFrom stChain chainOtherSc 8 none == some [] &&
+     donationChainFrom stChain chainOtherSc 8 (some chainHeadReply) == none)
+  -- The head is erased by the NI projection, in the same class as `boundThread`.
+  -- The second check is the discriminating control: without it the first would
+  -- pass for a comparator that cannot see the field at all.
+  let obs : IfObserver := { clearance := lowLabel }
+  assertBool "the reply-stack head is erased by the NI projection"
+    (projectKernelObject allPublicCtx obs
+        (.schedContext { SchedContext.empty chainSc with scReply := some chainHeadReply })
+      == projectKernelObject allPublicCtx obs (.schedContext (SchedContext.empty chainSc)))
+  assertBool "...and the structural comparator does distinguish the head"
+    (!(KernelObject.schedContext { SchedContext.empty chainSc with scReply := some chainHeadReply }
+        == KernelObject.schedContext (SchedContext.empty chainSc)))
+
 def runSmpIpcChecks : IO Unit := do
   IO.println "WS-SM SM6.F.1 — Aggregate SMP cross-core IPC suite (4 threads / 4 cores)"
   IO.println "===================================="
@@ -1650,6 +1766,7 @@ def runSmpIpcChecks : IO Unit := do
   runCancellationCompositionChecks
   runSuspendArmChecks
   runHandlerContentionChecks
+  runDonationChainStructureChecks
   runTraceFixtureCheck
   IO.println "===================================="
   IO.println "All SM6.F cross-core IPC checks PASS."

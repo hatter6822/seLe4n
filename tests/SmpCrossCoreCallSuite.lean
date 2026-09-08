@@ -479,6 +479,15 @@ private def runRendezvousChecks : IO Unit := do
 -- WS-RR RR3.13/RR3.14 — the pre-state side: the bundles' preconditions, derived:
 #check @ipcReachable
 #check @ipcReachable_default
+-- WS-OD OD2 — the donation chain: the predicate, its walk, its frame family,
+-- and the two witnesses that keep it from being discharged only vacuously.
+#check @donationChainWellFormed
+#check @donationChainFrom
+#check @replyStackLinksAt?
+#check @donationChainFrame
+#check @donationChainWellFormed_of_frame
+#check @donationChainWellFormed_of_no_donations
+#check @donationChainWitness_wellFormed
 #check @readyThread_endpointQueueFresh
 #check @readyThread_ownsNoDonation
 #check @sendTailCrossQueueFresh
@@ -651,6 +660,23 @@ satisfies it. Without this the pre-state conditions the de-threaded bundles now
 carry could be an unsatisfiable conjunction, and every theorem taking them would
 be vacuous: the failure shape de-threading exists to remove, one level up. -/
 example : ipcReachable (default : SystemState) := ipcReachable_default
+
+/-- WS-OD OD2.4: the donation-chain conjunct **decides** rather than refuses.
+Every reachable state discharges it vacuously today (nothing writes the three
+reply-stack fields), and a conjunct that only ever fires vacuously is one nobody
+has checked against the structure it constrains — an over-strong one would look
+identical from that side.  The witness is the state a depth-2 Call chain leaves,
+and it satisfies the predicate whole, completeness clause included. -/
+example : donationChainWellFormed donationChainWitness :=
+  donationChainWitness_wellFormed
+
+/-- WS-OD OD2.4: ...and the walk from the context's own head returns the whole
+stack, innermost first — computed, not asserted. -/
+example :
+    donationChainFrom donationChainWitness donationChainWitnessContext 2
+        (some donationChainWitnessInner)
+      = some [donationChainWitnessInner, donationChainWitnessOuter] :=
+  donationChainWitness_chain
 
 /-- WS-RR RR3.13: the enqueueing bundles' freshness precondition is a
 **consequence**, not an assumption — a `.ready` thread cannot head or tail any

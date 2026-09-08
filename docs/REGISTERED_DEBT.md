@@ -402,7 +402,12 @@ ASID surface**, and the release note must not imply one.
 Registered at `v0.34.98`. **OD1 is closed** — OD1.1–OD1.7 landed at
 `v0.34.100`, `v0.34.101`, `v0.34.103`, `v0.34.104`, `v0.34.105`, `v0.34.106` and
 `v0.34.108` (OD1.7, the aborted holder placed rather than merely unblocked, found
-by review and reported as a security finding); OD2 onward are open. Plan:
+by review and reported as a security finding). **OD2 is closed** at `v0.34.125` —
+`SchedContext.scReply`, an implemented `Reply.wellFormed`, `donationChainFrom`
+and `donationChainWellFormed` with its frame family, and the conjunct in
+`ipcReachable` with all three inhabitation witnesses re-discharged; additive, so
+no transition changed, and the predicate is vacuously true of every reachable
+state. OD3 onward are open. Plan:
 [`docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`](planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md)
 (41 sub-tasks across OD1..OD6). It closes two section-A rows: the onward-donation
 gap above, and the `passiveServerIdle` break the `v0.34.97` reclaim introduced —
@@ -426,13 +431,20 @@ passive server, and seL4's passive-server pattern does not work at call depth
   the intermediate thread — permanently moving a scheduling context across a
   domain boundary in a state that **breaks no conjunct**, which is exactly the
   live-transition-ahead-of-its-proofs failure the numbering rule names.
-* **`SchedContext.scReply` is built, not designed around.** `Reply.wellFormed`'s
-  docstring already says the strengthened form requires "`donatedSc.scReply`
-  agrees with this reply", and that field does not exist — the
-  implement-the-improvement case in its plainest form. It also keeps the call
+* **`SchedContext.scReply` is built, not designed around** — done at `v0.34.125`.
+  `Reply.wellFormed`'s docstring already said the strengthened form requires
+  "`donatedSc.scReply` agrees with this reply", of a field that did not exist —
+  the implement-the-improvement case in its plainest form. It also keeps the call
   footprint at eight of nine: without it the push must read the owner's TCB and
   the outer reply, for ten, and raising the ceiling would widen the published
-  covert-channel bound.
+  covert-channel bound. What OD2 shipped with it: the projection erasure in the
+  **same cut** as the field (or the OD4 push would be observable in the interval);
+  a boot-safety refusal of a config SchedContext that heads a stack; an
+  implemented `Reply.wellFormed` whose two store-level clauses live in
+  `donationChainWellFormed`, which carries the local one as its first conjunct;
+  and the chain invariant as a conjunct of `ipcReachable` rather than of
+  `ipcInvariantFull` — preserved through `donationChainFrame`, which is stated
+  over the two projections the walk actually reads, so it *is* the read set.
 * **The pop takes its new owner as an argument.** The reply leg consumes the
   target's reply link *before* the donation return runs, so the link is not there
   to read; the new owner is resolved from the pre-state and passed in, on the same
@@ -474,7 +486,7 @@ Scope, findings and evidence for any of these are in
 | Workstream | Versions |
 |------------|----------|
 | **WS-AP** | v0.34.71– (closure post-v1.0.0 — the ASID capability surface; two SM7 debts re-targeted from the closed SM8) |
-| **WS-OD** | v0.34.98– (planned; opens beside WS-RR RR7 and closes before RR8 — SchedContext donation chains, [`SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`](planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md)) |
+| **WS-OD** | v0.34.98– (in flight; OD1 closed at v0.34.108 and OD2 at v0.34.125; closes before WS-RR RR8 — SchedContext donation chains, [`SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`](planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md)) |
 | **WS-XV** | v0.34.114–v0.34.124 (registered, then **absorbed into WS-BP as its BP0 phase**; the finding is retained in this file, the work is [`SMP_BOOT_PATH_PLAN.md`](planning/SMP_BOOT_PATH_PLAN.md) §5 BP0) |
 | **WS-BP** | v0.34.59– (planned; opens after WS-RR RR8 closes — the bare-metal boot path **and the cross-implementation agreement it ends**, absorbing WS-XV as BP0 at `v0.34.124`, [`SMP_BOOT_PATH_PLAN.md`](planning/SMP_BOOT_PATH_PLAN.md)) |
 | **WS-LC** | v0.34.51–v0.34.56 |

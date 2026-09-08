@@ -120,8 +120,12 @@ any conjunct on a **post** state as a hypothesis — a threaded conjunct would
 make the theorem assume what it claims to prove.
 `scripts/check_ipc_invariant_dethreading.py` (Tier 0) measures this over the
 comment-free code view, deriving the conjunct set and each bundle's own
-pre-state rather than matching binder names, and reports zero across all 146
-statements.
+pre-state rather than matching binder names, and reports **zero** conjuncts
+bound on a post-state across all **169** statements in the family, with the
+conjunct set and the bundle family both derived from the sources.  The figure is
+spelled in the form the gate reads, so a cut that grows the family fails until
+this sentence is corrected — it said 146 while the tree measured 169, unwatched,
+because the claim was phrased in words the gate's locator does not match.
 
 The payoff is at the dispatcher:
 
@@ -144,6 +148,22 @@ unsatisfiable pack field cannot hide. The state-shaped fields are collected in
 > `ipcInvariantFullExceptDonationOwner`, which the donation return upgrades back.
 > Do not assume `ipcInvariantFull` of a state between a reply and its donation
 > return.
+
+**The donation chain sits beside the bundle, not inside it.** WS-OD OD2
+(`v0.34.125`) added `SchedContext.scReply` — the head of a context's MCS reply
+stack — and `donationChainWellFormed`
+([`Defs.lean`](../../SeLe4n/Kernel/IPC/Invariant/Defs.lean)): every
+`Reply.donatedSc` resolves, and each context's head walks a **terminating**
+`prev`-chain (`donationChainFrom`, fuel-bounded) holding **exactly** the replies
+naming that context. It is a conjunct of `ipcReachable`, not of
+`ipcInvariantFull`, which keeps its twenty; and it is *preserved* through
+`donationChainFrame` rather than assumed. The frame is stated over the two
+projections the walk actually reads (`replyStackLinks?`,
+`schedContextStackHead?`), so it **is** the read set rather than an
+over-approximation of it. Nothing writes the three stack fields yet, so the
+predicate is vacuously true of every reachable state — deliberately: the
+invariant and its frames land before the transitions that must preserve them.
+See [`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.12.7 for the canonical text.
 
 ### 3.4 Lifecycle — `SeLe4n/Kernel/Lifecycle/Invariant/`
 

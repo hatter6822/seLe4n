@@ -1434,9 +1434,11 @@ RR3.24/RR3.25 composed them: `dispatchCapabilityOnly_preserves_ipcInvariantFull`
 (`SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean`, staged with the `.call`
 surface they compose), all under pre-state quiescence packs.  The pending
 register [`ipc_dethreading_pending.txt`](ipc_dethreading_pending.txt) is empty
-and the gate, which checks it in both directions, now measures 146 statements
-at zero post-state bindings and prints its end-to-end PASS line.  The family
-grew from sixty-five to 146 with the per-arm and checked tiers.  (`syscallDispatch` named
+and the gate, which checks it in both directions, reports **zero** conjuncts
+bound on a post-state across all **169** statements in the family, with the
+conjunct set and the bundle family both derived from the sources, and prints its
+end-to-end PASS line.  The family grew from sixty-five with the per-arm and
+checked tiers, and later cuts.  (`syscallDispatch` named
 nothing in the tree; the dispatcher is `dispatchSyscall`, and the theorem is
 named for it.)  The plan itself is retired to `docs/dev_history/planning/`
 (RR3.26); WS-DT is **CLOSED** with five registered follow-up debt rows in

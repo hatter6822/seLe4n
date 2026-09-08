@@ -1676,6 +1676,12 @@ Formalized as: for every pair of threads with donated bindings, the donation
 edges do not form a cycle of length 2. Longer cycles are prevented by the
 IPC structure: a thread blocked on reply cannot initiate another Call.
 
+WS-OD OD2: this is about the **binding** graph — the `.donated scId owner` edges
+— and it stays true once donation becomes transitive, because the binding's
+`owner` is always the *immediate* donor, so a `.donated` thread never acquires an
+outgoing edge at all.  The transitive structure is the reply stack, and its
+acyclicity is `donationChainWellFormed`'s obligation, not this conjunct's.
+
 AF5-E (AF-39): `donationChainAcyclic` explicitly prevents 2-cycles (mutual
 donation pairs). Longer cycles (k > 2) are prevented by IPC protocol:
 a thread in `.blockedOnReply` state (waiting for reply from its donation
@@ -1715,10 +1721,19 @@ For every TCB with `.donated(scId, originalOwner)`:
    `.donated`).  This is what makes `donationBudgetTransfer` satisfiable for
    donated states.  The donor is recoverable through the reply object (clause 3),
    not through a residual `.bound` binding: `returnDonatedSchedContext` rebinds
-   it on reply.  `.unbound` is distinct from `.donated`, so this clause still
-   forbids donation chains of length ≥ 2 (see
+   it on reply.  `.unbound` is distinct from `.donated`, so this clause keeps the
+   **binding graph** free of `.donated` chains of length ≥ 2 (see
    `donationOwnerValid_implies_donationChainAcyclic` and
-   `donationChain_no_extension`). -/
+   `donationChain_no_extension`).
+
+   WS-OD OD2: read that as a statement about *bindings*, which is what it is —
+   not as a bound on how far a scheduling context may travel.  Onward donation
+   keeps it true at every call depth by keeping the binding's `owner` at the
+   **immediate** donor: in a chain `D0 → D1 → D2`, only `D2` is `.donated sc D1`,
+   while `D1` and `D0` are `.unbound` ∧ `.blockedOnReply`.  The transitive
+   structure lives in the reply stack (`Reply.prev` / `SchedContext.scReply`),
+   where `donationChainWellFormed` constrains it, so this clause and a depth-`n`
+   chain are not in tension. -/
 def donationOwnerValid (st : SystemState) : Prop :=
   ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
     (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId),
@@ -1893,6 +1908,625 @@ theorem of_objects_scheduler_eq {st st' : SystemState}
       by rw [hCur] at hC; exact hC, rfl⟩⟩
 
 end passiveServerIdleFrame
+
+-- ============================================================================
+-- WS-OD OD2.4 / OD2.5: the SchedContext donation chain (the MCS reply stack)
+-- ============================================================================
+
+/-! ### The reply stack, and the two projections every reader of it goes through
+
+A `Call` that donates a scheduling context pushes the donor's Reply object onto
+that context's stack: the Reply records the context it carries (`donatedSc`) and
+the link to the reply below it (`prev`), and the context records the top of the
+stack (`SchedContext.scReply`).  Popping the stack is how the context travels
+back along the reply path.  Nothing writes those three fields yet — the pop
+lands first and inert, the push after it — so everything below is *vacuously*
+true of every state this tree reaches today.  That is the point: the invariant
+and its frames exist before the transitions that have to preserve them, so no
+live transition is ever ahead of its own proofs.
+
+The walk and the frame both read the object store through **`replyStackLinks?`**
+and **`schedContextStackHead?`** rather than through a raw lookup — the walk
+through `replyStackLinksAt?`, which is the first of them applied to a state and a
+reply id, so the two are one projection and not two.  That is not a convenience.
+It makes the chain's data dependence *structural*: a step that leaves those
+projections alone frames the whole predicate through
+`donationChainWellFormed_of_frame` with no case analysis on what else it wrote,
+and a field the chain starts reading has to enter a projection before any frame
+can be re-proved — where a frame stated over hand-listed fields would simply
+stop mentioning it and keep passing. -/
+
+/-- WS-OD OD2.4: the reply-stack data an object carries **as a Reply** — the
+scheduling context it is donating and the link to the reply below it on that
+context's stack.
+
+`none` for every object that is not a Reply, and for an absent key, so an
+equality of this projection at a key says both *the same kind is there* and *it
+carries the same links*.  Everything the chain walk reads of a Reply is here;
+`caller`, `replyId` and `lock` are deliberately absent, because a link is
+validated by the target's own `donatedSc` and never by who is blocked on it. -/
+def replyStackLinks? :
+    Option KernelObject → Option (Option SeLe4n.SchedContextId × Option SeLe4n.ReplyId)
+  | some (.reply r) => some (r.donatedSc, r.prev)
+  | _ => none
+
+/-- WS-OD OD2.4: the reply-stack data an object carries **as a SchedContext** —
+the head of its stack.  `none` for every other kind and for an absent key, on the
+same reading as `replyStackLinks?`. -/
+def schedContextStackHead? : Option KernelObject → Option (Option SeLe4n.ReplyId)
+  | some (.schedContext sc) => some sc.scReply
+  | _ => none
+
+/-- WS-OD OD2.4: the reply-stack links a **state** carries at a reply id — the
+one place the chain walk touches the object store.
+
+Naming it is what lets `donationChainFrom` read *the links at this id* rather
+than inlining a store lookup into its own `match`, and it is the form
+`donationChainFrame` transports: the frame fixes these two fields and nothing
+else, so a Reply rewrite that only touches `caller` (`consumeCallerReply`,
+`replyIdEstablishFresh`) frames past it.  Reading `SystemState.getReply?` here
+instead would be strictly weaker — that accessor returns the whole Reply, so a
+`caller`-only rewrite would move it and the frame would stop covering the very
+operations it exists for. -/
+def replyStackLinksAt? (st : SystemState) (rid : SeLe4n.ReplyId) :
+    Option (Option SeLe4n.SchedContextId × Option SeLe4n.ReplyId) :=
+  replyStackLinks? st.objects[rid.toObjId]?
+
+@[simp] theorem replyStackLinks?_reply (r : Reply) :
+    replyStackLinks? (some (.reply r)) = some (r.donatedSc, r.prev) := rfl
+
+@[simp] theorem replyStackLinks?_none : replyStackLinks? none = none := rfl
+
+@[simp] theorem replyStackLinks?_tcb (t : TCB) :
+    replyStackLinks? (some (.tcb t)) = none := rfl
+
+@[simp] theorem replyStackLinks?_schedContext (sc : SchedContext) :
+    replyStackLinks? (some (.schedContext sc)) = none := rfl
+
+@[simp] theorem schedContextStackHead?_schedContext (sc : SchedContext) :
+    schedContextStackHead? (some (.schedContext sc)) = some sc.scReply := rfl
+
+@[simp] theorem schedContextStackHead?_none : schedContextStackHead? none = none := rfl
+
+@[simp] theorem schedContextStackHead?_tcb (t : TCB) :
+    schedContextStackHead? (some (.tcb t)) = none := rfl
+
+@[simp] theorem schedContextStackHead?_reply (r : Reply) :
+    schedContextStackHead? (some (.reply r)) = none := rfl
+
+/-- WS-OD OD2.4: what a `replyStackLinks?` answer *says* about the object — the
+bridge back to the raw lookups every invariant in this file is stated over. -/
+theorem replyStackLinks?_eq_some_iff {o : Option KernelObject}
+    {donated : Option SeLe4n.SchedContextId} {below : Option SeLe4n.ReplyId} :
+    replyStackLinks? o = some (donated, below) ↔
+      ∃ r : Reply, o = some (.reply r) ∧ r.donatedSc = donated ∧ r.prev = below := by
+  constructor
+  · intro h
+    unfold replyStackLinks? at h
+    split at h
+    · next r =>
+      have hPair := Option.some.inj h
+      exact ⟨r, rfl, congrArg Prod.fst hPair, congrArg Prod.snd hPair⟩
+    · exact absurd h (by simp)
+  · rintro ⟨r, rfl, rfl, rfl⟩; rfl
+
+/-- WS-OD OD2.4: the SchedContext half of `replyStackLinks?_eq_some_iff`. -/
+theorem schedContextStackHead?_eq_some_iff {o : Option KernelObject}
+    {head : Option SeLe4n.ReplyId} :
+    schedContextStackHead? o = some head ↔
+      ∃ sc : SchedContext, o = some (.schedContext sc) ∧ sc.scReply = head := by
+  constructor
+  · intro h
+    unfold schedContextStackHead? at h
+    split at h
+    · next sc => exact ⟨sc, rfl, Option.some.inj h⟩
+    · exact absurd h (by simp)
+  · rintro ⟨sc, rfl, rfl⟩; rfl
+
+/-- WS-OD OD2.4: **the fuel-bounded walk down a scheduling context's reply
+stack.**
+
+`donationChainFrom st scId fuel rid?` is `some chain` when the `prev`-walk from
+`rid?` reaches the bottom of the stack (`none`) in at most `fuel` steps, with
+every reply on the way resolving in `st` **and naming `scId` as the context it
+carries**; it is `none` when the walk runs out of fuel, meets a `ReplyId` that
+resolves to no Reply, or meets one whose `donatedSc` names a different context
+(or none at all).
+
+Three decisions, each a decision rather than a default.
+
+* **Fuel, not well-founded recursion.**  The `prev` graph is exactly what the
+  invariant is *about*, so a definition that presupposed its acyclicity in order
+  to terminate would be circular.  Fuel makes the walk total on any store, and
+  "this stack terminates" becomes the ∃-statement `donationChainWellFormed`
+  carries rather than a side condition of the definition.  It also means the
+  fuel is not a budget on call depth: the invariant asks for *some* fuel, so a
+  deeper chain is admitted with a larger one, and nothing here caps how far a
+  Call chain may nest.
+* **A link is validated by the target's own `donatedSc`, never by its
+  `caller`.**  Reply objects are re-linked to new callers
+  (`replyIdEstablishFresh`), so a stale `prev` naming a *reused* Reply would let
+  a donation return read the new caller and hand the original thread's
+  scheduling context to an unrelated thread, in another domain, driven by object
+  reuse.  The `donatedSc` test is what refuses that: a re-linked Reply carries
+  no donation, so the walk stops at it rather than walking through it.
+* **The chain is returned, not merely accepted.**  `donationChainWellFormed`'s
+  completeness clause has to say *which* replies a context's stack holds, and a
+  Boolean walk cannot; the list is also what makes `donationChainFrom_mem`
+  available, and with it the freshness fact the push needs — a Reply carrying no
+  donation is on no chain. -/
+def donationChainFrom (st : SystemState) (scId : SeLe4n.SchedContextId) :
+    Nat → Option SeLe4n.ReplyId → Option (List SeLe4n.ReplyId)
+  | _, none => some []
+  | 0, some _ => none
+  | fuel + 1, some rid =>
+    match replyStackLinksAt? st rid with
+    | some (donated, below) =>
+      if donated = some scId then
+        (donationChainFrom st scId fuel below).map (rid :: ·)
+      else none
+    | none => none
+
+@[simp] theorem donationChainFrom_bottom
+    (st : SystemState) (scId : SeLe4n.SchedContextId) (fuel : Nat) :
+    donationChainFrom st scId fuel none = some [] := by
+  cases fuel <;> rfl
+
+@[simp] theorem donationChainFrom_zero
+    (st : SystemState) (scId : SeLe4n.SchedContextId) (rid : SeLe4n.ReplyId) :
+    donationChainFrom st scId 0 (some rid) = none := rfl
+
+theorem donationChainFrom_succ
+    (st : SystemState) (scId : SeLe4n.SchedContextId) (fuel : Nat) (rid : SeLe4n.ReplyId) :
+    donationChainFrom st scId (fuel + 1) (some rid) =
+      match replyStackLinksAt? st rid with
+      | some (donated, below) =>
+        if donated = some scId then
+          (donationChainFrom st scId fuel below).map (rid :: ·)
+        else none
+      | none => none := rfl
+
+/-- WS-OD OD2.4: a walk that succeeds on some fuel succeeds on more.  This is
+what lets `donationChainWellFormed`'s ∃-fuel be *re-established* after a push:
+the new chain is one step longer, so the old witness plus one suffices. -/
+theorem donationChainFrom_mono (st : SystemState) (scId : SeLe4n.SchedContextId) :
+    ∀ (fuel : Nat) (rid? : Option SeLe4n.ReplyId) (chain : List SeLe4n.ReplyId),
+      donationChainFrom st scId fuel rid? = some chain →
+      donationChainFrom st scId (fuel + 1) rid? = some chain := by
+  intro fuel
+  induction fuel with
+  | zero =>
+    intro rid? chain h
+    cases rid? with
+    | none => simpa using h
+    | some rid => exact absurd h (by simp)
+  | succ n ih =>
+    intro rid? chain h
+    cases rid? with
+    | none => simpa using h
+    | some rid =>
+      rw [donationChainFrom_succ] at h
+      rw [donationChainFrom_succ]
+      split at h
+      · rename_i donated below _hLinks
+        split at h
+        · rename_i hDon
+          rw [if_pos hDon]
+          cases hRec : donationChainFrom st scId n below with
+          | none => rw [hRec] at h; exact absurd h (by simp)
+          | some tail =>
+            rw [hRec] at h
+            rw [ih below tail hRec]
+            exact h
+        · exact absurd h (by simp)
+      · exact absurd h (by simp)
+
+/-- WS-OD OD2.4: **every member of a chain is a Reply that names that chain's
+context.**  Read straight off the walk's own link validation, and the reason the
+completeness clause below says something: with this, a context's stack is
+*exactly* the set of replies naming it, not merely a subset of it. -/
+theorem donationChainFrom_mem (st : SystemState) (scId : SeLe4n.SchedContextId) :
+    ∀ (fuel : Nat) (rid? : Option SeLe4n.ReplyId) (chain : List SeLe4n.ReplyId),
+      donationChainFrom st scId fuel rid? = some chain →
+      ∀ rid ∈ chain, ∃ r : Reply,
+        st.objects[rid.toObjId]? = some (.reply r) ∧ r.donatedSc = some scId := by
+  intro fuel
+  induction fuel with
+  | zero =>
+    intro rid? chain h
+    cases rid? with
+    | none => cases h; intro rid hMem; cases hMem
+    | some rid => exact absurd h (by simp)
+  | succ n ih =>
+    intro rid? chain h
+    cases rid? with
+    | none => cases h; intro rid hMem; cases hMem
+    | some rid =>
+      rw [donationChainFrom_succ] at h
+      cases hLinks : replyStackLinksAt? st rid with
+      | none => rw [hLinks] at h; exact absurd h (by simp)
+      | some pair =>
+        obtain ⟨donated, below⟩ := pair
+        rw [hLinks] at h
+        simp only at h
+        split at h
+        · next hDon =>
+          cases hRec : donationChainFrom st scId n below with
+          | none => rw [hRec] at h; exact absurd h (by simp)
+          | some tail =>
+            rw [hRec] at h
+            simp only [Option.map_some] at h
+            cases h
+            intro member hMem
+            rcases List.mem_cons.mp hMem with hHead | hTail
+            · subst hHead
+              obtain ⟨r, hR, hDonEq, _⟩ := replyStackLinks?_eq_some_iff.mp hLinks
+              exact ⟨r, hR, hDonEq.trans hDon⟩
+            · exact ih below tail hRec member hTail
+        · exact absurd h (by simp)
+
+/-- WS-OD OD2.4: **a Reply that is not donating this context is on none of its
+chains** — the contrapositive of `donationChainFrom_mem`, and the freshness fact
+the donation push consumes: the Reply it is about to push carries no donation,
+so it cannot already be a member and the pushed chain cannot close a cycle. -/
+theorem not_mem_donationChainFrom_of_not_donating
+    {st : SystemState} {scId : SeLe4n.SchedContextId} {fuel : Nat}
+    {rid? : Option SeLe4n.ReplyId} {chain : List SeLe4n.ReplyId}
+    (hChain : donationChainFrom st scId fuel rid? = some chain)
+    {rid : SeLe4n.ReplyId} {r : Reply}
+    (hR : st.objects[rid.toObjId]? = some (.reply r))
+    (hNot : r.donatedSc ≠ some scId) :
+    rid ∉ chain := by
+  intro hMem
+  obtain ⟨r', hR', hDon'⟩ := donationChainFrom_mem st scId fuel rid? chain hChain rid hMem
+  rw [hR] at hR'
+  obtain rfl := KernelObject.reply.inj (Option.some.inj hR'.symm)
+  exact hNot hDon'
+
+/-- WS-OD OD2.5: **the no-Reply-write frame for the walk itself.**  A step that
+leaves every key's `replyStackLinks?` alone computes the same chain from every
+starting point, at every fuel — which is the whole of what the walk reads, by
+construction of `donationChainFrom`. -/
+theorem donationChainFrom_congr {st st' : SystemState} (scId : SeLe4n.SchedContextId)
+    (hLinks : ∀ oid : SeLe4n.ObjId,
+      replyStackLinks? st'.objects[oid]? = replyStackLinks? st.objects[oid]?) :
+    ∀ (fuel : Nat) (rid? : Option SeLe4n.ReplyId),
+      donationChainFrom st' scId fuel rid? = donationChainFrom st scId fuel rid? := by
+  intro fuel
+  induction fuel with
+  | zero => intro rid?; cases rid? <;> rfl
+  | succ n ih =>
+    intro rid?
+    cases rid? with
+    | none => rfl
+    | some rid =>
+      rw [donationChainFrom_succ, donationChainFrom_succ,
+        show replyStackLinksAt? st' rid = replyStackLinksAt? st rid from hLinks rid.toObjId]
+      cases replyStackLinksAt? st rid with
+      | none => rfl
+      | some pair =>
+        obtain ⟨donated, below⟩ := pair
+        simp only
+        split
+        · rw [ih below]
+        · rfl
+
+/-- WS-OD OD2.4: **the SchedContext donation chain is well formed.**
+
+Three fields, each of them a *relation* rather than the presence of a link.  The
+fourth property the reply stack needs — that a `prev` is followed only after the
+**target's own** `donatedSc` has been checked — is not a field here: it lives
+inside `donationChainFrom`, so no conjunct can be satisfied by a link the walk
+would refuse.
+
+* `replyWellFormed` — every stored Reply satisfies `Reply.wellFormed`: a `prev`
+  link exists only on a reply that is itself on a stack.  This is the conjunct
+  that gives that predicate an operational reader rather than leaving it
+  decorative.
+* `donatedContextResolves` — a reply that names a donated context names one that
+  **exists**.  Without it the completeness clause below would say nothing about
+  a reply naming a context the store does not hold.
+* `headHoldsWholeChain` — each context's `scReply` heads a chain that
+  **terminates** (some fuel suffices; the `prev`-walk reaches the bottom), and
+  that chain holds **exactly** the replies naming that context.  Termination is
+  acyclicity; that every member names the same context is inside the walk; and
+  completeness is what makes `scReply` *the* head rather than the head of one of
+  several stacks a context might have — with it, `donatedSc = some scId` and
+  "on `scId`'s stack" are the same statement, which is what the donation return
+  relies on when it validates a link before following it.
+
+**Not a conjunct of `ipcInvariantFull`.**  That bundle has exactly twenty
+conjuncts and a family of theorems whose size a Tier-0 gate holds equal to the
+prose that quotes it; widening it is a change of a different size.  This
+predicate joins `ipcReachable` and the two dispatch quiescence packs instead —
+where, per the same discipline, it is *preserved* rather than assumed: the frame
+family below is what every transition discharges it through.
+
+**Vacuously true today, and deliberately so.**  No transition writes
+`Reply.donatedSc`, `Reply.prev` or `SchedContext.scReply` yet, so every stored
+reply has `donatedSc = none` (which makes the first two conjuncts immediate) and
+every context has `scReply = none` (which makes the walk `some []` at fuel `0`,
+with completeness vacuous).  The predicate is stated first so that the pop and
+the push land against a surface that already carries their obligation. -/
+structure donationChainWellFormed (st : SystemState) : Prop where
+  /-- Every stored Reply is locally well formed: no stack link without a stack. -/
+  replyWellFormed : ∀ (rid : SeLe4n.ReplyId) (r : Reply),
+    st.objects[rid.toObjId]? = some (.reply r) → r.wellFormed
+  /-- A donated scheduling context resolves to a SchedContext object. -/
+  donatedContextResolves : ∀ (rid : SeLe4n.ReplyId) (r : Reply)
+      (scId : SeLe4n.SchedContextId),
+    st.objects[rid.toObjId]? = some (.reply r) →
+    r.donatedSc = some scId →
+    ∃ sc : SchedContext, st.objects[scId.toObjId]? = some (.schedContext sc)
+  /-- A context's `scReply` heads a terminating chain holding exactly the
+  replies that name that context. -/
+  headHoldsWholeChain : ∀ (scId : SeLe4n.SchedContextId) (sc : SchedContext),
+    st.objects[scId.toObjId]? = some (.schedContext sc) →
+    ∃ (fuel : Nat) (chain : List SeLe4n.ReplyId),
+      donationChainFrom st scId fuel sc.scReply = some chain ∧
+      ∀ (rid : SeLe4n.ReplyId) (r : Reply),
+        st.objects[rid.toObjId]? = some (.reply r) →
+        r.donatedSc = some scId → rid ∈ chain
+
+/-- WS-OD OD2.4: a store with no Reply and no SchedContext object satisfies the
+chain invariant — the shape the empty boot store has, and the inhabitation
+witness that keeps the predicate from being an unsatisfiable conjunction. -/
+theorem donationChainWellFormed_of_no_reply_or_schedContext
+    (st : SystemState)
+    (hNoReply : ∀ (rid : SeLe4n.ReplyId) (r : Reply),
+      st.objects[rid.toObjId]? ≠ some (.reply r))
+    (hNoSc : ∀ (scId : SeLe4n.SchedContextId) (sc : SchedContext),
+      st.objects[scId.toObjId]? ≠ some (.schedContext sc)) :
+    donationChainWellFormed st :=
+  ⟨fun rid r hR => absurd hR (hNoReply rid r),
+   fun rid r _ hR => absurd hR (hNoReply rid r),
+   fun scId sc hSc => absurd hSc (hNoSc scId sc)⟩
+
+/-- WS-OD OD2.4: **the state of the tree before the push lands.**  When no stored
+Reply carries a donation and no stored SchedContext heads a stack, the chain
+invariant holds — every conjunct by evaluation rather than by there being nothing
+to evaluate.  This is the witness every current transition discharges the
+predicate through, and it stops being available exactly when the push starts
+writing the fields, which is when the per-transition preservation theorems take
+over. -/
+theorem donationChainWellFormed_of_no_donations
+    (st : SystemState)
+    (hReplies : ∀ (rid : SeLe4n.ReplyId) (r : Reply),
+      st.objects[rid.toObjId]? = some (.reply r) → r.donatedSc = none ∧ r.prev = none)
+    (hHeads : ∀ (scId : SeLe4n.SchedContextId) (sc : SchedContext),
+      st.objects[scId.toObjId]? = some (.schedContext sc) → sc.scReply = none) :
+    donationChainWellFormed st := by
+  refine ⟨fun rid r hR => fun _ => (hReplies rid r hR).2, ?_, ?_⟩
+  · intro rid r scId hR hDon
+    rw [(hReplies rid r hR).1] at hDon
+    cases hDon
+  · intro scId sc hSc
+    refine ⟨0, [], by rw [hHeads scId sc hSc]; simp, ?_⟩
+    intro rid r hR hDon
+    rw [(hReplies rid r hR).1] at hDon
+    cases hDon
+
+-- ----------------------------------------------------------------------------
+-- OD2.5: the frame family
+-- ----------------------------------------------------------------------------
+
+/-- WS-OD OD2.5: **the data `donationChainWellFormed` reads.**
+
+A step frames the donation chain when it leaves every key's `replyStackLinks?`
+and `schedContextStackHead?` alone.  Those two projections are exactly what the
+walk and the invariant consult, so the frame is not an over-approximation of the
+read set — it *is* the read set, and `donationChainWellFormed_of_frame` needs no
+case analysis on anything else the step wrote.
+
+Mirrors `passiveServerIdleFrame` and `replyLinkageFrame`: reflexive, transitive,
+and trivially satisfied by any step that leaves the object store untouched, so a
+folded transition's frame is the composition of its primitives'. -/
+structure donationChainFrame (st st' : SystemState) : Prop where
+  /-- No Reply is created, destroyed, or has either stack field rewritten. -/
+  replyLinks : ∀ oid : SeLe4n.ObjId,
+    replyStackLinks? st'.objects[oid]? = replyStackLinks? st.objects[oid]?
+  /-- No SchedContext is created, destroyed, or has its stack head rewritten. -/
+  stackHeads : ∀ oid : SeLe4n.ObjId,
+    schedContextStackHead? st'.objects[oid]? = schedContextStackHead? st.objects[oid]?
+
+namespace donationChainFrame
+
+/-- Reflexivity: a state frames onto itself. -/
+theorem refl (st : SystemState) : donationChainFrame st st :=
+  ⟨fun _ => rfl, fun _ => rfl⟩
+
+/-- Transitivity: chain two donation-chain frames. -/
+theorem trans {st st' st'' : SystemState}
+    (h1 : donationChainFrame st st') (h2 : donationChainFrame st' st'') :
+    donationChainFrame st st'' :=
+  ⟨fun oid => (h2.replyLinks oid).trans (h1.replyLinks oid),
+   fun oid => (h2.stackHeads oid).trans (h1.stackHeads oid)⟩
+
+/-- WS-OD OD2.5: **the objects-equality frame.**  A scheduler-only or
+machine-only step frames the chain, which reads the object store and nothing
+else. -/
+theorem of_objects_eq {st st' : SystemState} (hObjs : st'.objects = st.objects) :
+    donationChainFrame st st' :=
+  ⟨fun oid => by rw [hObjs], fun oid => by rw [hObjs]⟩
+
+/-- WS-OD OD2.5: **the no-chain-object-write frame.**  A step that creates,
+destroys or rewrites no Reply and no SchedContext frames the chain, however many
+objects of other kinds it writes — which is the shape of every endpoint-queue
+splice, every TCB rewrite and every scheduler write in the tree, so most
+transitions reach `donationChainWellFormed_of_frame` through this. -/
+theorem of_no_chain_object_write {st st' : SystemState}
+    (hReply : ∀ (oid : SeLe4n.ObjId) (r : Reply),
+      st'.objects[oid]? = some (.reply r) ↔ st.objects[oid]? = some (.reply r))
+    (hSc : ∀ (oid : SeLe4n.ObjId) (sc : SchedContext),
+      st'.objects[oid]? = some (.schedContext sc) ↔ st.objects[oid]? = some (.schedContext sc)) :
+    donationChainFrame st st' := by
+  refine ⟨fun oid => ?_, fun oid => ?_⟩
+  · cases hPost : replyStackLinks? st'.objects[oid]? with
+    | none =>
+      cases hPre : replyStackLinks? st.objects[oid]? with
+      | none => rfl
+      | some pair =>
+        obtain ⟨donated, below⟩ := pair
+        obtain ⟨r, hR, _, _⟩ := replyStackLinks?_eq_some_iff.mp hPre
+        rw [(hReply oid r).mpr hR] at hPost
+        exact absurd hPost (by simp)
+    | some pair =>
+      obtain ⟨donated, below⟩ := pair
+      obtain ⟨r, hR, hDon, hPrev⟩ := replyStackLinks?_eq_some_iff.mp hPost
+      rw [(hReply oid r).mp hR]
+      exact (replyStackLinks?_eq_some_iff.mpr ⟨r, rfl, hDon, hPrev⟩).symm
+  · cases hPost : schedContextStackHead? st'.objects[oid]? with
+    | none =>
+      cases hPre : schedContextStackHead? st.objects[oid]? with
+      | none => rfl
+      | some head =>
+        obtain ⟨sc, hSc', _⟩ := schedContextStackHead?_eq_some_iff.mp hPre
+        rw [(hSc oid sc).mpr hSc'] at hPost
+        exact absurd hPost (by simp)
+    | some head =>
+      obtain ⟨sc, hSc', hHead⟩ := schedContextStackHead?_eq_some_iff.mp hPost
+      rw [(hSc oid sc).mp hSc']
+      exact (schedContextStackHead?_eq_some_iff.mpr ⟨sc, rfl, hHead⟩).symm
+
+end donationChainFrame
+
+/-- WS-OD OD2.5: **the single-`storeObject` frame.**  One store frames the chain
+when the object it writes carries the same chain data as the one it displaces.
+The three per-kind frames below are its instances, and a future kind that starts
+carrying chain data is covered by adding it to the two projections rather than by
+adding a fourth theorem here. -/
+theorem donationChainFrame_of_storeObject
+    {st st' : SystemState} {oid : SeLe4n.ObjId} {obj : KernelObject}
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject oid obj st = .ok ((), st'))
+    (hLinks : replyStackLinks? (some obj) = replyStackLinks? st.objects[oid]?)
+    (hHead : schedContextStackHead? (some obj) = schedContextStackHead? st.objects[oid]?) :
+    donationChainFrame st st' := by
+  refine ⟨fun key => ?_, fun key => ?_⟩
+  · by_cases hEq : key = oid
+    · subst hEq
+      rw [storeObject_objects_eq st st' key obj hObjInv hStore]
+      exact hLinks
+    · rw [storeObject_objects_ne st st' oid key obj hEq hObjInv hStore]
+  · by_cases hEq : key = oid
+    · subst hEq
+      rw [storeObject_objects_eq st st' key obj hObjInv hStore]
+      exact hHead
+    · rw [storeObject_objects_ne st st' oid key obj hEq hObjInv hStore]
+
+/-- WS-OD OD2.5: **the TCB store frames the chain.**  A TCB carries no chain
+data, so the only obligation is on the key it lands on: it must not have held a
+Reply or a SchedContext — a store that *replaced* one would destroy a stack
+member or a stack head.  Both hypotheses are `simp`-discharged from any of the
+usual pre-state facts (`st.objects[oid]? = some (.tcb _)`, or `= none` for a
+freshly created thread). -/
+theorem donationChainFrame_of_storeObject_tcb
+    {st st' : SystemState} {oid : SeLe4n.ObjId} {tcb : TCB}
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject oid (.tcb tcb) st = .ok ((), st'))
+    (hNoLinks : replyStackLinks? st.objects[oid]? = none)
+    (hNoHead : schedContextStackHead? st.objects[oid]? = none) :
+    donationChainFrame st st' :=
+  donationChainFrame_of_storeObject hObjInv hStore (by rw [hNoLinks]; rfl)
+    (by rw [hNoHead]; rfl)
+
+/-- WS-OD OD2.5: the TCB store in the shape every IPC transition supplies it —
+the key already held a TCB. -/
+theorem donationChainFrame_of_tcb_rewrite
+    {st st' : SystemState} {oid : SeLe4n.ObjId} {tcbOld tcb : TCB}
+    (hObjInv : st.objects.invExt)
+    (hOld : st.objects[oid]? = some (.tcb tcbOld))
+    (hStore : storeObject oid (.tcb tcb) st = .ok ((), st')) :
+    donationChainFrame st st' :=
+  donationChainFrame_of_storeObject_tcb hObjInv hStore (by rw [hOld]; rfl)
+    (by rw [hOld]; rfl)
+
+/-- WS-OD OD2.5: **a SchedContext store that leaves the stack head alone frames
+the chain.**  Every CBS write in the tree — budget, replenishments,
+`boundThread`, the lock — is of this shape; only the donation push and pop move
+`scReply`, and those two carry their own preservation theorems rather than a
+frame. -/
+theorem donationChainFrame_of_storeObject_schedContext
+    {st st' : SystemState} {scId : SeLe4n.SchedContextId} {scOld sc : SchedContext}
+    (hObjInv : st.objects.invExt)
+    (hOld : st.objects[scId.toObjId]? = some (.schedContext scOld))
+    (hHeadEq : sc.scReply = scOld.scReply)
+    (hStore : storeObject scId.toObjId (.schedContext sc) st = .ok ((), st')) :
+    donationChainFrame st st' :=
+  donationChainFrame_of_storeObject hObjInv hStore (by rw [hOld]; rfl)
+    (by rw [hOld]; simp [hHeadEq])
+
+/-- WS-OD OD2.5: **a Reply store that leaves both stack fields alone frames the
+chain.**  `consumeCallerReply` and `replyIdEstablishFresh` are of this shape:
+they write `caller`, which the chain deliberately does not read. -/
+theorem donationChainFrame_of_storeObject_reply
+    {st st' : SystemState} {rid : SeLe4n.ReplyId} {rOld r : Reply}
+    (hObjInv : st.objects.invExt)
+    (hOld : st.objects[rid.toObjId]? = some (.reply rOld))
+    (hDonatedEq : r.donatedSc = rOld.donatedSc)
+    (hPrevEq : r.prev = rOld.prev)
+    (hStore : storeObject rid.toObjId (.reply r) st = .ok ((), st')) :
+    donationChainFrame st st' :=
+  donationChainFrame_of_storeObject hObjInv hStore
+    (by rw [hOld]; simp [hDonatedEq, hPrevEq]) (by rw [hOld]; rfl)
+
+/-- WS-OD OD2.4/OD2.5: **preservation from the reusable frame** — the payoff the
+whole family exists for.  A transition preserves the donation chain by exhibiting
+a `donationChainFrame`, and nothing else about it has to be said. -/
+theorem donationChainWellFormed_of_frame {st st' : SystemState}
+    (hFrame : donationChainFrame st st') (hInv : donationChainWellFormed st) :
+    donationChainWellFormed st' := by
+  -- Both directions of the Reply correspondence, used by all three conjuncts.
+  have hReplyBack : ∀ (rid : SeLe4n.ReplyId) (r' : Reply),
+      st'.objects[rid.toObjId]? = some (.reply r') →
+      ∃ r : Reply, st.objects[rid.toObjId]? = some (.reply r) ∧
+        r.donatedSc = r'.donatedSc ∧ r.prev = r'.prev := by
+    intro rid r' hR'
+    have hL := hFrame.replyLinks rid.toObjId
+    rw [hR', replyStackLinks?_reply] at hL
+    exact replyStackLinks?_eq_some_iff.mp hL.symm
+  have hReplyFwd : ∀ (rid : SeLe4n.ReplyId) (r : Reply),
+      st.objects[rid.toObjId]? = some (.reply r) →
+      ∃ r' : Reply, st'.objects[rid.toObjId]? = some (.reply r') ∧
+        r'.donatedSc = r.donatedSc ∧ r'.prev = r.prev := by
+    intro rid r hR
+    have hL := hFrame.replyLinks rid.toObjId
+    rw [hR, replyStackLinks?_reply] at hL
+    exact replyStackLinks?_eq_some_iff.mp hL
+  refine ⟨?_, ?_, ?_⟩
+  · intro rid r' hR' hDon'
+    obtain ⟨r, hR, hDonEq, hPrevEq⟩ := hReplyBack rid r' hR'
+    have := hInv.replyWellFormed rid r hR (hDonEq.trans hDon')
+    rw [hPrevEq] at this
+    exact this
+  · intro rid r' scId hR' hDon'
+    obtain ⟨r, hR, hDonEq, _⟩ := hReplyBack rid r' hR'
+    obtain ⟨sc, hSc⟩ := hInv.donatedContextResolves rid r scId hR (hDonEq.trans hDon')
+    have hH := hFrame.stackHeads scId.toObjId
+    rw [hSc, schedContextStackHead?_schedContext] at hH
+    obtain ⟨sc', hSc', _⟩ := schedContextStackHead?_eq_some_iff.mp hH
+    exact ⟨sc', hSc'⟩
+  · intro scId sc' hSc'
+    have hH := hFrame.stackHeads scId.toObjId
+    rw [hSc', schedContextStackHead?_schedContext] at hH
+    obtain ⟨sc, hSc, hHeadEq⟩ := schedContextStackHead?_eq_some_iff.mp hH.symm
+    obtain ⟨fuel, chain, hChain, hComplete⟩ := hInv.headHoldsWholeChain scId sc hSc
+    refine ⟨fuel, chain, ?_, ?_⟩
+    · rw [donationChainFrom_congr scId hFrame.replyLinks fuel sc'.scReply, ← hHeadEq]
+      exact hChain
+    · intro rid r' hR' hDon'
+      obtain ⟨r, hR, hDonEq, _⟩ := hReplyBack rid r' hR'
+      exact hComplete rid r hR (hDonEq.trans hDon')
+
+/-- WS-OD OD2.3/OD2.4: **the bridge to `Reply.wellFormed`.**  The state-level
+invariant carries the object-level predicate, so a reader that has one has the
+other — which is what keeps `Reply.wellFormed` a consumed property rather than
+an unwired decoration beside the structure it describes. -/
+theorem donationChainWellFormed.replyWellFormedAt {st : SystemState}
+    (h : donationChainWellFormed st) {rid : SeLe4n.ReplyId} {r : Reply}
+    (hR : st.objects[rid.toObjId]? = some (.reply r)) :
+    r.wellFormed :=
+  h.replyWellFormed rid r hR
 
 /-- WS-RR RR3.7: **a linked caller is always `.blockedOnReply`.**
 

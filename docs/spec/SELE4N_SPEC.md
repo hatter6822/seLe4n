@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.34.124` (`lakefile.toml`) |
+| **Package version** | `0.34.125` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 355,916 across 328 Lean files |
-| **Test LoC** | 72,875 across 70 Lean test suites |
-| **Proved declarations** | 11,889 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 356,971 across 328 Lean files |
+| **Test LoC** | 73,043 across 70 Lean test suites |
+| **Proved declarations** | 11,935 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4026,6 +4026,54 @@ retype from proceeding with dangling SchedContext references.
 
 **Defense-in-depth**: `donateSchedContext` validates `sc.boundThread = some
 clientTid` before transferring ownership.
+
+**The MCS reply stack** (WS-OD OD2, v0.34.125).  Donation is not yet
+*transitive*: `applyCallDonation` donates only from a `.bound` caller, so a
+scheduling context stops at the first passive server and the "passive servers"
+claim above is false at call depth ≥ 2.  OD2 lands the structure the fix needs,
+with **no behavioural change** — no transition writes any of the fields below
+yet, and the invariant is therefore vacuously true of every state this tree
+reaches.  That is the point: the invariant and its frames exist *before* the
+transitions that must preserve them, so no live transition is ever ahead of its
+own proofs.
+
+- **`SchedContext.scReply : Option ReplyId`** — the head of the context's reply
+  stack (seL4-MCS's `sc->scReply`), the field `Reply.wellFormed`'s docstring has
+  named since SM6.D and the structure did not have.  Erased by
+  `projectKernelObject` in the same class as `boundThread`
+  (`projectKernelObject_schedContext_scReply_invariant`), refused by
+  `bootSafeObjectCheck` on a boot SchedContext (every admissible boot Reply is
+  inert, so a config-supplied head could only dangle), and read by the
+  reserved-idle-slot check, because it holds an object id.  Building it is also
+  what keeps the eventual push inside `maxLockSetSize`: the push reads the
+  previous head off an object the call footprint already write-locks.
+- **`Reply.wellFormed` is no longer `True`** — a `prev` link exists only on a
+  Reply that is itself on a stack.  The two store-level clauses its SM6.D
+  docstring also promised (`donatedSc` resolves; the context's head agrees) are
+  stated where their data is, in the predicate below, which carries this one as
+  its own first conjunct.
+- **`donationChainWellFormed`** (`SeLe4n/Kernel/IPC/Invariant/Defs.lean`) — every
+  `donatedSc` resolves to a SchedContext, and each context's `scReply` heads a
+  **terminating** `prev`-chain (`donationChainFrom`, a fuel-bounded walk) that
+  holds **exactly** the replies naming that context.  Each link is validated by
+  the target's own `donatedSc` and never by its `caller`: Reply objects are
+  re-linked to new callers, so a stale link over a reused Reply would otherwise
+  let a donation return read the *new* caller and hand the original thread's
+  scheduling context to an unrelated thread, in another domain, driven by object
+  reuse.
+- **A conjunct of `ipcReachable`, not of `ipcInvariantFull`**, which keeps its
+  twenty — and *preserved* rather than assumed.  `donationChainFrame` is the
+  reusable frame, stated over the two projections the walk actually reads
+  (`replyStackLinks?`, `schedContextStackHead?`) so it is the read set rather
+  than an over-approximation of it, with an objects-equality instance, a
+  no-chain-object-write instance, the walk's own congruence (the no-Reply-write
+  frame) and single-`storeObject` instances for the TCB, SchedContext and Reply
+  kinds; `donationChainWellFormed_of_frame` is the payoff.
+
+`donationChainAcyclic` is unrelated and stays as it is: it constrains the
+**binding** graph (`.donated scId owner` edges), which onward donation leaves
+chain-free because the binding's `owner` is always the *immediate* donor.  The
+transitive structure is the reply stack.
 
 ### 8.13 Priority Inheritance Protocol
 Priority inversion via Call/Reply IPC is mitigated by a deterministic Priority

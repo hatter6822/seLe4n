@@ -48,6 +48,7 @@ stands behind.
 | Capability derivation is acyclic and complete, so revocation terminates and is total | `SELE4N_SPEC.md` | `lake build SeLe4n.Kernel.Capability.Invariant` | `capabilityInvariantBundle` |
 | Twelve cross-subsystem predicates hold, including blocking-graph acyclicity | `SELE4N_SPEC.md` | `lake build SeLe4n.Kernel.CrossSubsystem` | `crossSubsystemInvariant` |
 | Slot uniqueness and waiter uniqueness are structural, not state predicates | GitBook 12 | `lake build SeLe4n.Model.Object.Structures` | `UniqueSlotMap`, `NoDupList ThreadId` |
+| The SchedContext donation chain is well formed: every `donatedSc` resolves, and each context's reply-stack head walks a terminating chain holding exactly the replies that name it — preserved through a frame stated over the projections the walk reads, not assumed | `SELE4N_SPEC.md` §8.12.7 | `lake build SeLe4n.Kernel.IPC.Invariant.Reachability`; `lake exe smp_ipc_suite` (§3.15) | `donationChainWellFormed`, `donationChainFrom`, `replyStackLinks?`, `schedContextStackHead?`, `donationChainFrame`, `donationChainWellFormed_of_frame`, `donationChainFrom_mem`, `not_mem_donationChainFrom_of_not_donating`, `ipcReachable`; vacuous today by `donationChainWellFormed_of_no_donations` because no transition writes `Reply.donatedSc`, `Reply.prev` or `SchedContext.scReply` |
 
 ## 3. Fault handling
 

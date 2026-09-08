@@ -3,6 +3,10 @@
 > **Status**: IN FLIGHT — registered at `v0.34.98`; OD1.1 landed at `v0.34.100`,
 > OD1.2 at `v0.34.101`, OD1.3 at `v0.34.103`, OD1.4 at `v0.34.104`, OD1.5 at
 > `v0.34.105`, OD1.6 at `v0.34.106`, OD1.7 at `v0.34.108` — **OD1 is closed**.
+> **OD2 is closed** at `v0.34.125`: OD2.1–OD2.7 landed in one cut, because the
+> phase is additive and its rows do not compile apart — the field, its projection
+> erasure and the two exhaustive positional patterns are one arity change, and
+> the predicate, its frames and the pack conjunct are one elaboration.
 > **Opens**: beside WS-RR RR7, and must close **before RR8 closes** — RR8 is the
 > closure phase and cannot close over open work.
 > **Predecessor findings**: the two Medium-severity model/specification gaps
@@ -280,9 +284,34 @@ No operational behaviour changes in this phase; every row is additive.
 | OD2.6 | Conjoin into `ipcReachable` and re-discharge the twenty inhabitation witnesses (the default state, two reachability witnesses and seventeen dispatch-pack ones).  Consumes OD2.4 and OD2.5 | `SeLe4n/Kernel/IPC/Invariant/Reachability.lean`, `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` | XL |
 | OD2.7 | Tier-3 anchors for the new definitions; correct the acyclicity prose that reads as forbidding what OD4 builds; version and CHANGELOG | `scripts/test_tier3_invariant_surface.sh`, `SeLe4n/Kernel/IPC/Invariant/Defs.lean`, `CHANGELOG.md` | S |
 
-**Acceptance**: the tree builds with the field, the predicate and the pack
-conjunct present, and the predicate is vacuously true of every reachable state
-because nothing writes `prev`.
+**Acceptance** — **MET at `v0.34.125`**: the tree builds (default target and
+`SeLe4n.Platform.Staged`) with the field, the predicate and the pack conjunct
+present, and the predicate is vacuously true of every reachable state because
+nothing writes `prev` — witnessed both ways.  By *theorem*:
+`donationChainWellFormed_of_no_donations` discharges all three conjuncts from
+"no reply carries a donation and no context heads a stack", and it is what
+`ipcReachable_default` and the two dispatch-pack witnesses use.  And the predicate *decides* rather than
+refuses: `donationChainWitness_wellFormed` proves the whole predicate — the
+completeness clause included — of the store a depth-2 Call chain leaves, which is
+what keeps a conjunct discharged only vacuously from hiding an over-strong
+obligation.  By *executed
+run*: `smp_ipc_suite` §3.15 walks a hand-built depth-2 chain and reports
+`some [head, outer]`, refuses the same chain one step short of fuel, and refuses
+four token-preserving mutations — a `prev` naming a live reply that donates a
+*different* context, one that donates nothing, a self-linked head, and a link to
+no object at all — while §3.9 reports that a live donating call and its return
+leave all three fields at `none`.
+
+Two things the phase decided beyond the row list.  **The boot admission was
+tightened**: `bootSafeObjectCheck` refuses a config SchedContext that heads a
+stack, because every admissible boot Reply is inert, so a config-supplied head
+could only dangle — a `donationChainWellFormed` violation installed before the
+first instruction runs.  And **`Reply.wellFormed` states only its local half**:
+`Model.Object.Reply` is imported *by* `KernelObject`, so a `Reply → Prop` has no
+store, and the docstring's two store-level clauses (`donatedSc` resolves; the
+context's head agrees) are stated in `donationChainWellFormed`, which carries the
+local predicate as its own first conjunct — nothing of the SM6.D promise is
+dropped, and `donationChainWellFormed.replyWellFormedAt` is the bridge.
 
 ### OD3 — the pop, generalised and inert
 

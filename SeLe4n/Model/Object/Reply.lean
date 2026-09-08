@@ -24,7 +24,10 @@ caller and the authority to reply to it:
   (`caller := none`), giving reply capabilities their single-use semantics.
 - `donatedSc` / `prev`: the MCS reply-stack — the SchedContext donated through
   this reply and the link to the enclosing (outer) reply for nested calls.
-  Populated in the donation-re-homing slices (Phase E); `none` until then.
+  Written by the donation push and cleared by the pop (WS-OD); the stack they
+  form is constrained by `donationChainWellFormed`
+  (`SeLe4n/Kernel/IPC/Invariant/Defs.lean`), whose head is
+  `SchedContext.scReply`.
 - `lock`: per-object reader-writer lock state (SM3 per-object lock discipline),
   defaulting to `unheld` for a freshly-allocated object.
 -/
@@ -60,10 +63,45 @@ instance : BEq Reply where
     a.replyId == b.replyId && a.caller == b.caller &&
     a.donatedSc == b.donatedSc && a.prev == b.prev && a.lock == b.lock
 
-/-- WS-SM SM6.D: Reply well-formedness.  Trivial in this slice; strengthened
-when the reply-stack and donation linkage land (Phase E) — `donatedSc` resolves,
-`prev` is acyclic, and `donatedSc.scReply` agrees with this reply. -/
-def wellFormed (_r : Reply) : Prop := True
+/-- WS-OD OD2.3: Reply well-formedness — the half of the reply-stack discipline
+that is a property of the object **alone**.
+
+A Reply is on a scheduling context's donation stack exactly when it carries that
+context (`donatedSc = some scId`), and `prev` is the link to the reply *below* it
+on that same stack.  So a Reply that is on no stack carries no link: without a
+`donatedSc` there is no stack for `prev` to be a position in, and a link without
+one would name a neighbour in a stack this reply is not a member of.
+
+That is also the direction the chain walk validates in.  `donationChainFrom`
+follows `prev` only after checking the **target's own** `donatedSc`, never its
+`caller`: Reply objects are re-linked to new callers (`replyIdEstablishFresh`),
+so a stale link over a reused Reply would otherwise let a donation return read
+the *new* caller and hand the original thread's scheduling context to an
+unrelated thread, in another domain, driven by object reuse.
+
+**Where the rest of the SM6.D promise lives.**  The docstring this replaces also
+promised that `donatedSc` *resolves* and that `donatedSc.scReply` *agrees with
+this reply*.  Both read the object store, and a `Reply → Prop` has no store to
+read — `Model.Object.Reply` is imported *by* `KernelObject`, not the other way
+round — so they are stated where their data is, and nothing is dropped:
+`donationChainWellFormed` (`SeLe4n/Kernel/IPC/Invariant/Defs.lean`) carries this
+predicate as its own first conjunct, requires every `donatedSc` to resolve to a
+SchedContext, and requires each context's `scReply` to head a terminating chain
+holding **exactly** the replies that name it — which is the general form of
+"agrees with this reply", true at every stack depth rather than only at the top.
+`donationChainWellFormed.replyWellFormed` is the bridge between the two. -/
+def wellFormed (r : Reply) : Prop :=
+  r.donatedSc = none → r.prev = none
+
+/-- WS-OD OD2.3: an inert Reply — the shape `KernelObject.wellFormed`'s `.reply`
+arm and `bootSafeReplyCheck` both admit — is well-formed. -/
+theorem empty_wellFormed (rid : SeLe4n.ReplyId) : (empty rid).wellFormed :=
+  fun _ => rfl
+
+/-- WS-OD OD2.3: well-formedness is decidable, so a Boolean checker can mirror
+it without a second reading of the property. -/
+instance (r : Reply) : Decidable r.wellFormed := by
+  unfold wellFormed; infer_instance
 
 end Reply
 end SeLe4n.Kernel

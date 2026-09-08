@@ -157,6 +157,10 @@ instance : BEq ReplenishmentEntry where
 - `periodStart`: absolute tick at which the current period started.
 - `replenishments`: pending replenishment events (bounded list).
 - `boundThread`: the thread currently bound to this SchedContext (at most one).
+- `scReply`: the head of this SchedContext's MCS reply stack — the innermost
+  Reply object through which the context has been donated (seL4-MCS's
+  `sc->scReply`).  `none` when the context has not been donated through any
+  Call.  See `donationChainWellFormed`.
 - `isActive`: whether this SchedContext is actively scheduling a thread. -/
 structure SchedContext where
   scId : SeLe4n.SchedContextId
@@ -169,6 +173,21 @@ structure SchedContext where
   periodStart : Nat := 0
   replenishments : List ReplenishmentEntry := []
   boundThread : Option SeLe4n.ThreadId := none
+  /-- WS-OD OD2.1: the head of this SchedContext's MCS reply stack — seL4-MCS's
+      `sc->scReply`.  A `Call` that donates this context pushes the donor's
+      Reply object here (`Reply.donatedSc = some scId`, `Reply.prev` = the
+      previous head), and the donation return pops it; the stack is what makes
+      donation *transitive*, so a passive server can itself Call and pass the
+      context on.  `Reply.wellFormed`'s docstring has named this field since
+      SM6.D — it is built rather than designed around, and building it is also
+      what keeps the call footprint inside `maxLockSetSize`: the push reads the
+      previous head off an object the footprint already write-locks, instead of
+      re-deriving it from the owner's TCB and the outer reply.
+
+      The chain this field heads is constrained by `donationChainWellFormed`
+      (`SeLe4n/Kernel/IPC/Invariant/Defs.lean`) and erased by
+      `projectKernelObject`, in the same class as `boundThread`. -/
+  scReply : Option SeLe4n.ReplyId := none
   isActive : Bool := false
   /-- WS-SM SM3.A.6: per-SchedContext reader-writer lock state.  Default
       `RwLockState.unheld` means a freshly-allocated SchedContext starts
@@ -306,6 +325,9 @@ instance : BEq SchedContext where
     a.priority == b.priority && a.deadline == b.deadline && a.domain == b.domain &&
     a.budgetRemaining == b.budgetRemaining && a.periodStart == b.periodStart &&
     a.replenishments == b.replenishments && a.boundThread == b.boundThread &&
+    -- WS-OD OD2.1: the reply-stack head participates in structural equality, so
+    -- a push or a pop is visible to every caller that compares with `==`.
+    a.scReply == b.scReply &&
     a.isActive == b.isActive &&
     -- WS-SM SM3.A audit-pass-7: per-SchedContext lock state participates
     -- in structural equality so lock-state regressions are not masked.

@@ -847,14 +847,16 @@ def untypedReferencesReservedIdleSlot (ut : UntypedObject) : Bool :=
     parent.any SeLe4n.Kernel.isIdleObjId
 
 /-- PR #889 review round 8: a boot **SchedContext**'s own id (`scId`, which
-    `replenishScOnCore` keys the replenishment queue by) and its bound thread.
+    `replenishScOnCore` keys the replenishment queue by), its bound thread and
+    — since WS-OD OD2.1 — its reply-stack head (`scReply`, a Reply object id).
     Budgets, periods, priorities and replenishment entries hold no id. -/
 def schedContextReferencesReservedIdleSlot (sc : SchedContext) : Bool :=
   match sc with
   | ⟨scId, _budget, _period, _priority, _deadline, _domain, _budgetRemaining, _periodStart,
-     _replenishments, boundThread, _isActive, _lock⟩ =>
+     _replenishments, boundThread, scReply, _isActive, _lock⟩ =>
     SeLe4n.Kernel.isIdleObjId scId.toObjId ||
-    boundThread.any SeLe4n.Kernel.isIdleThreadId
+    boundThread.any SeLe4n.Kernel.isIdleThreadId ||
+    scReply.any (fun rid => SeLe4n.Kernel.isIdleObjId rid.toObjId)
 
 /-- PR #889 review round 8: a boot **Reply**'s own id, its blocked caller, its
     donated SchedContext and its `prev` link — a reply object id the round-6
@@ -1412,20 +1414,28 @@ def bootSafeUntypedCheck (ut : UntypedObject) : Bool :=
 @[simp] theorem bootSafeUntypedCheck_def (ut : UntypedObject) :
     bootSafeUntypedCheck ut = true := rfl
 
-/-- A boot **SchedContext** has a well-formed CBS budget and no bound thread.
-    `scId` is pinned to the slot by `PlatformConfig.wellFormed`; `priority`,
-    `deadline`, `domain`, `periodStart` and `isActive` are the deployment's. -/
+/-- A boot **SchedContext** has a well-formed CBS budget, no bound thread and
+    (WS-OD OD2.1) an empty reply stack.  `scId` is pinned to the slot by
+    `PlatformConfig.wellFormed`; `priority`, `deadline`, `domain`, `periodStart`
+    and `isActive` are the deployment's.
+
+    `scReply` is refused for the same reason `bootSafeReplyCheck` refuses a
+    boot Reply's `donatedSc`: a head names a Reply that must be *on* this
+    context's stack (`Reply.donatedSc = some scId`), and every admissible boot
+    Reply is inert — so a config-supplied head could only dangle, installing a
+    `donationChainWellFormed` violation before the first instruction runs. -/
 def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
   match sc with
   | ⟨_scId, _budget, _period, _priority, _deadline, _domain, _budgetRemaining, _periodStart,
-     _replenishments, _boundThread, _isActive, _lock⟩ =>
+     _replenishments, _boundThread, _scReply, _isActive, _lock⟩ =>
     sc.period.isPositive &&
     decide (sc.budget.val ≤ sc.period.val) &&
     decide (sc.budgetRemaining.val ≤ sc.budget.val) &&
     decide (sc.replenishments.length ≤ maxReplenishments) &&
     sc.replenishments.all (fun r => decide (r.amount.val > 0)) &&
     sc.replenishments.all (fun r => decide (r.amount.val ≤ sc.budget.val)) &&
-    sc.boundThread.isNone
+    sc.boundThread.isNone &&
+    sc.scReply.isNone
 
 @[simp] theorem bootSafeSchedContextCheck_def (sc : SchedContext) :
     bootSafeSchedContextCheck sc =
@@ -1435,7 +1445,8 @@ def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
        decide (sc.replenishments.length ≤ maxReplenishments) &&
        sc.replenishments.all (fun r => decide (r.amount.val > 0)) &&
        sc.replenishments.all (fun r => decide (r.amount.val ≤ sc.budget.val)) &&
-       sc.boundThread.isNone) := rfl
+       sc.boundThread.isNone &&
+       sc.scReply.isNone) := rfl
 
 /-- WS-SM SM6.D: a boot **Reply** is inert — no blocked caller, no donated SC,
     no `prev` link.  `replyId` is pinned to the slot by
@@ -1510,9 +1521,10 @@ theorem bootSafeObjectCheck_sound_structural (obj : KernelObject)
     -- WS-RC R3 (DEEP-BOOT-01): VSpaceRoots admitted iff bootSafeVSpaceRoot
     (∀ vs, obj = .vspaceRoot vs →
       SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeVSpaceRoot vs) ∧
-    -- SchedContexts: well-formed and unbound
+    -- SchedContexts: well-formed, unbound, and (WS-OD OD2.1) with an empty
+    -- reply stack
     (∀ sc, obj = .schedContext sc →
-      schedContextWellFormed sc ∧ sc.boundThread = none) ∧
+      schedContextWellFormed sc ∧ sc.boundThread = none ∧ sc.scReply = none) ∧
     -- WS-SM SM6.D / PR #822: a boot Reply is inert — no blocked caller,
     -- donated SC, or prev link.
     (∀ r, obj = .reply r →
@@ -1578,19 +1590,19 @@ theorem bootSafeObjectCheck_sound_structural (obj : KernelObject)
   | schedContext sc =>
     simp only [bootSafeObjectCheck, bootSafeSchedContextCheck_def, Bool.and_eq_true,
       decide_eq_true_eq] at h
-    obtain ⟨⟨⟨⟨⟨⟨hPeriod, hBudgetPeriod⟩, hRemaining⟩, hRepLen⟩, hRepPos⟩, hRepBound⟩, hUnbound⟩ := h
+    obtain ⟨⟨⟨⟨⟨⟨⟨hPeriod, hBudgetPeriod⟩, hRemaining⟩, hRepLen⟩, hRepPos⟩, hRepBound⟩,
+      hUnbound⟩, hNoReplyStack⟩ := h
     refine ⟨fun _ he => by injection he, fun _ he => by injection he,
             fun _ he => by injection he, fun _ he => by injection he,
             fun _ he => by injection he, fun s hs => ?_,
             fun _ he => by injection he⟩
     injection hs; subst_vars
-    constructor
-    · unfold schedContextWellFormed
-      refine ⟨⟨hPeriod, hBudgetPeriod, hRemaining, hRepLen⟩, ⟨hRemaining, hBudgetPeriod⟩,
-              ⟨hRepLen, ?_⟩, ?_⟩
-      · intro r hr; exact decide_eq_true_eq.mp (List.all_eq_true.mp hRepPos r hr)
-      · intro r hr; exact decide_eq_true_eq.mp (List.all_eq_true.mp hRepBound r hr)
-    · exact Option.eq_none_of_isNone hUnbound
+    refine ⟨?_, Option.eq_none_of_isNone hUnbound, Option.eq_none_of_isNone hNoReplyStack⟩
+    unfold schedContextWellFormed
+    refine ⟨⟨hPeriod, hBudgetPeriod, hRemaining, hRepLen⟩, ⟨hRemaining, hBudgetPeriod⟩,
+            ⟨hRepLen, ?_⟩, ?_⟩
+    · intro r hr; exact decide_eq_true_eq.mp (List.all_eq_true.mp hRepPos r hr)
+    · intro r hr; exact decide_eq_true_eq.mp (List.all_eq_true.mp hRepBound r hr)
 
 -- ============================================================================
 -- WS-RC R3 (DEEP-BOOT-01) — Boot-safety admission witness theorems
@@ -4556,9 +4568,11 @@ def bootSafeObject (obj : KernelObject) : Prop :=
   -- WS-RC R3 (DEEP-BOOT-01): VSpaceRoots admitted iff bootSafeVSpaceRoot
   (∀ vs, obj = .vspaceRoot vs →
     SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeVSpaceRoot vs) ∧
-  -- Z9-I: SchedContexts must be well-formed and unbound at boot
+  -- Z9-I: SchedContexts must be well-formed and unbound at boot, and — WS-OD
+  -- OD2.1 — must head no reply stack: every admissible boot Reply is inert,
+  -- so a config-supplied `scReply` could only dangle.
   (∀ sc, obj = .schedContext sc →
-    schedContextWellFormed sc ∧ sc.boundThread = none) ∧
+    schedContextWellFormed sc ∧ sc.boundThread = none ∧ sc.scReply = none) ∧
   -- WS-SM SM6.D: a boot Reply is inert — no blocked caller, donated SC, or prev link.
   (∀ r, obj = .reply r →
     r.caller = none ∧ r.donatedSc = none ∧ r.prev = none)
@@ -5329,7 +5343,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
         rw [hTcbProps.2.2.2.2.2.2.1] at hBound; cases hBound
       · intro scId sc hSc tid hBound
         -- At boot, all SchedContexts have boundThread = none (Z9-I bootSafeObject)
-        have hNone := ((hBS scId.toObjId _ hSc).2.2.2.2.2.1 sc rfl).2
+        have hNone := ((hBS scId.toObjId _ hSc).2.2.2.2.2.1 sc rfl).2.1
         rw [hNone] at hBound; cases hBound
     · -- effectiveParamsMatchRunQueue: empty runQueue at boot
       intro tid hMem

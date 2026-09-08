@@ -1644,8 +1644,32 @@ private theorem witnessSt3_getTcb :
   rw [witnessSt3_lookup]
   simp [show (witnessScId.toObjId == witnessTid.toObjId) = false from by decide]
 
+/-- WS-OD OD2.6: the bound-SchedContext witness store holds no Reply — the fact
+the chain conjunct's first two clauses are discharged from. -/
+private theorem witnessSt3_no_reply (rid : SeLe4n.ReplyId) (r : Reply)
+    (hLk : witnessSt3.objects[rid.toObjId]? = some (.reply r)) : False := by
+  rw [witnessSt3_lookup] at hLk
+  split at hLk
+  · simp at hLk
+  · split at hLk
+    · simp at hLk
+    · cases hLk
+
+/-- WS-OD OD2.6: the one SchedContext in the witness store heads no reply
+stack, so its chain is the empty one. -/
+private theorem witnessSt3_no_stack_head (scId : SeLe4n.SchedContextId)
+    (sc : SchedContext)
+    (hLk : witnessSt3.objects[scId.toObjId]? = some (.schedContext sc)) :
+    sc.scReply = none := by
+  rw [witnessSt3_lookup] at hLk
+  split at hLk
+  · cases hLk; rfl
+  · split at hLk
+    · simp at hLk
+    · cases hLk
+
 private theorem witnessReachable3 : ipcReachable witnessSt3 := by
-  refine ⟨witnessInv3, witnessObjInv3, ?_, ?_, ?_⟩
+  refine ⟨witnessInv3, witnessObjInv3, ?_, ?_, ?_, ?_⟩
   · intro tid tcb hLk
     rw [witnessSt3_lookup] at hLk
     split at hLk
@@ -1667,6 +1691,11 @@ private theorem witnessReachable3 : ipcReachable witnessSt3 := by
     · split at hLk
       · cases hLk
       · cases hLk
+  · -- WS-OD OD2.6: no Reply carries a donation and no SchedContext heads a
+    -- stack, so the chain invariant holds by evaluation.
+    exact donationChainWellFormed_of_no_donations _
+      (fun rid r hR => absurd hR (fun h => witnessSt3_no_reply rid r h))
+      witnessSt3_no_stack_head
 
 private def witnessDecoded : SyscallDecodeResult :=
   { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := default, syscallId := .send }
@@ -2438,7 +2467,7 @@ private theorem witnessInv4 : ipcInvariantFull witnessSt4 := by
 
 set_option maxHeartbeats 1000000 in
 private theorem witnessReachable4 : ipcReachable witnessSt4 := by
-  refine ⟨witnessInv4, witnessObjInv4, ?_, ?_, ?_⟩
+  refine ⟨witnessInv4, witnessObjInv4, ?_, ?_, ?_, ?_⟩
   · intro tid tcb hLk
     rw [witnessSt4_lookup] at hLk
     split at hLk
@@ -2454,6 +2483,20 @@ private theorem witnessReachable4 : ipcReachable witnessSt4 := by
     split at hLk
     · cases hLk
     · exact absurd hLk (fun h => witnessSt3_no_notification _ _ h)
+  · -- WS-OD OD2.6: the fresh Reply this state adds carries neither a donation
+    -- nor a stack link (`Reply.empty`'s defaults), and the SchedContext beneath
+    -- it still heads no stack.
+    refine donationChainWellFormed_of_no_donations _ ?_ ?_
+    · intro rid r hR
+      rw [witnessSt4_lookup] at hR
+      split at hR
+      · cases hR; exact ⟨rfl, rfl⟩
+      · exact absurd hR (fun h => witnessSt3_no_reply rid r h)
+    · intro scId sc hSc
+      rw [witnessSt4_lookup] at hSc
+      split at hSc
+      · cases hSc
+      · exact witnessSt3_no_stack_head scId sc hSc
 
 private theorem witnessSt4_getTcb :
     witnessSt4.getTcb? witnessTid = some witnessTcbBound := by

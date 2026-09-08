@@ -1,3 +1,165 @@
+## v0.34.125 — WS-OD OD2: the reply stack exists before anything writes it
+
+**The structure the donation chain needs, with no behaviour changed.**  WS-OD
+OD1 closed the `passiveServerIdle` hole the `v0.34.97` reclaim introduced; OD2 is
+the phase that makes the *chain* expressible.  Nothing in this cut writes
+`Reply.donatedSc`, `Reply.prev` or the new `SchedContext.scReply`, and the
+invariant over them is therefore vacuously true of every state this tree reaches
+— which is the point.  The pop lands next and lands inert, the push after it, and
+each arrives against a surface that already carries its obligation, so no live
+transition is ever ahead of its own proofs.
+
+**`SchedContext.scReply` is built rather than designed around** (OD2.1).
+`Reply.wellFormed`'s docstring has required "`donatedSc.scReply` agrees with this
+reply" since SM6.D, of a field the structure did not have — the
+implement-the-improvement case in its plainest form.  It is also what keeps the
+eventual push inside `maxLockSetSize`: the push reads the previous head off an
+object `lockSet_endpointCall` already write-locks, where deriving it from the
+owner's TCB and the outer reply would take that footprint to ten against a
+ceiling of nine, and raising the ceiling widens the published covert-channel
+bound.  The field joins the structural comparator (a push a `==` cannot see is a
+push that masks regressions), both exhaustive positional patterns in
+`Platform/Boot.lean`, and the reserved-idle-slot check, because it holds an
+object id.
+
+**A boot SchedContext heads no stack.**  `bootSafeSchedContextCheck` and the
+Prop-level `bootSafeObject` both refuse a config-supplied `scReply`, for the
+reason `bootSafeReplyCheck` already refuses a boot Reply's `donatedSc`: a head
+names a Reply that must be *on* this context's stack, every admissible boot Reply
+is inert, so a config head could only dangle — a `donationChainWellFormed`
+violation installed before the first instruction runs.
+
+**The erasure lands in the same cut as the field** (OD2.2), or the OD4 push would
+be observable in the interval.  `projectKernelObject` strips `scReply` in the
+`.schedContext` arm beside `boundThread`, with
+`projectKernelObject_schedContext_scReply_invariant` stated next to its
+`boundThread` twin: the head is a **ReplyId**, so it names the innermost Call the
+context was donated through, and with it the caller that Call blocked.
+
+The sibling sweep came with it: the `.reply` arm has erased `caller`,
+`donatedSc` and `prev` since SM6.D and only `caller` had a theorem, so
+`projectKernelObject_reply_donatedSc_invariant` and `…_prev_invariant` join it —
+the question "is a donation push observable?" was answered for one field of
+three.
+
+**`Reply.wellFormed` stops being `True`** (OD2.3) — a `prev` link exists only on
+a Reply that is itself on a stack.  That is the whole of what a single Reply can
+say: `Model.Object.Reply` is imported *by* `KernelObject`, so a `Reply → Prop`
+has no object store, and the docstring's other two clauses (`donatedSc` resolves;
+the context's head agrees) are stated where their data is.  Nothing is dropped
+and the predicate is not decorative: `donationChainWellFormed` carries it as its
+own first conjunct, with `donationChainWellFormed.replyWellFormedAt` the bridge.
+
+**The chain invariant, and a link validated by what a reused Reply does not
+have** (OD2.4).  `donationChainFrom` is a fuel-bounded `prev`-walk returning the
+chain; `donationChainWellFormed` says every `donatedSc` resolves and each
+context's `scReply` heads a **terminating** chain holding **exactly** the replies
+naming that context.  Three decisions.  Fuel rather than well-founded recursion,
+because the `prev` graph is what the invariant is *about*, so a definition that
+presupposed its acyclicity to terminate would be circular — and because an
+∃-fuel is not a budget on call depth.  A link followed only after the **target's
+own `donatedSc`** has been checked, never its `caller`: Reply objects are
+re-linked to new callers, so a stale link over a reused Reply would otherwise let
+a donation return read the *new* caller and hand the original thread's scheduling
+context to an unrelated thread, in another domain, driven by object reuse.  And
+the chain returned rather than merely accepted, because completeness has to name
+*which* replies a stack holds — and because that is what makes
+`not_mem_donationChainFrom_of_not_donating` available, the freshness fact the
+push consumes: a Reply carrying no donation is provably on no chain.
+
+**The frame is the read set, not an over-approximation of it** (OD2.5).  The walk
+and the invariant read the store through `replyStackLinks?` and
+`schedContextStackHead?` rather than through raw lookups, so `donationChainFrame`
+is exactly "those two projections agree at every key" — which makes
+`donationChainWellFormed_of_frame` need no case analysis on anything else a step
+wrote, and makes a field the chain starts reading enter a projection before any
+frame can be re-proved.  The family: reflexivity and transitivity, an
+objects-equality instance, a no-chain-object-write instance, the walk's own
+congruence (the no-Reply-write frame), the single-`storeObject` primitive and its
+three per-kind instances — TCB, SchedContext with the head unchanged, Reply with
+both stack fields unchanged, which is the shape `consumeCallerReply` and every
+CBS write already have.
+
+**A conjunct of `ipcReachable`, not of `ipcInvariantFull`** (OD2.6).  That bundle
+keeps its twenty conjuncts and its 169-statement family, whose size a Tier-0 gate
+holds equal to the prose quoting it; widening it is a change of a different size.
+All three sites that construct an `ipcReachable` are re-discharged —
+`ipcReachable_default` and the two dispatch-pack witnesses — so the new field is
+established rather than assumed, and every pack witness downstream of them is
+inhabited as before.
+
+**And the predicate decides rather than refuses.**  Every reachable state
+discharges it *vacuously*, because nothing writes the three fields — and a
+conjunct that only ever fires vacuously is one nobody has checked against the
+structure it constrains, since an **over-strong** one would look identical from
+that side.  So `donationChainWitness` (`IPC/Invariant/Reachability.lean`, beside
+`ipcReachable_default`, which makes the same argument for the bundle) builds the
+store a depth-2 Call chain leaves, `donationChainWitness_chain` computes the walk
+from the context's own head to `[inner, outer]`, and
+`donationChainWitness_wellFormed` proves the **whole** predicate of it,
+completeness clause included.  With that on one side and
+`donationChainWellFormed_of_no_donations` on the other, the conjunct is known to
+admit both the state the tree has today and the state OD3 and OD4 will produce.
+
+**Evidence, both ways.**  By theorem:
+`donationChainWellFormed_of_no_donations` discharges all three conjuncts from
+"no reply carries a donation and no context heads a stack".  By executed run:
+`smp_ipc_suite` §3.15 walks a hand-built depth-2 chain and reports
+`some [head, outer]`, refuses it one step short of fuel, and refuses four
+**token-preserving** mutations — a `prev` naming a live reply that donates a
+*different* context, one that donates nothing, a self-linked head, and a link to
+no object at all — while §3.9 reports that a live donating call and its return
+leave all three fields at `none`.  `smp_idle_suite` reports that the boot path
+refuses a config SchedContext heading a stack.  Forty-five Tier-3 anchors pin the
+surface, four of them negatives that keep the token and break the relation: the
+guardless walk, a projection reading the `caller` instead of the donation, the
+pre-OD2.2 projection arm, and the `True` well-formedness.
+
+**One should-drop floor re-anchored, and one deliberately not.**  The AK7
+cascade check holds `RAW_LOOKUP_TID` — bare `x.toObjId` lookups at the object
+store — monotonically non-increasing.  The chain invariant's three conjuncts and
+its frame family are stated in this file's own idiom
+(`st.objects[x.toObjId]? = some (.kind v)`), because every conjunct they must
+compose with is; stating one in a different idiom would be the
+one-question-two-answers shape.  So the floor is re-anchored 1581 → 1601, which
+is what the three preceding invariant-surface cuts did (1536 → 1565 → 1578 →
+1581) and what the gate's own message sanctions.  `RAW_MATCH_TOTAL` is **not**
+re-anchored: the walk reads `replyStackLinksAt?` — a named state-level
+projection — rather than inlining a store lookup into its own `match`, so the
+coarse counter stays at 130 and the per-variant counters, which are the binding
+targets, never moved.  That is a real improvement rather than a dodge: the frame
+transports exactly those two fields, so a Reply rewrite that touches only
+`caller` frames past it, which reading `SystemState.getReply?` would not.
+
+**Prose corrected where it read as forbidding what OD4 builds.**
+`donationChainAcyclic` and `donationOwnerValid`'s fourth clause constrain the
+**binding** graph, which onward donation leaves chain-free because the binding's
+`owner` is always the *immediate* donor; the transitive structure is the reply
+stack, and its acyclicity is this new invariant's obligation.
+
+**Two stale figures corrected while passing.**  The de-threading gate's
+family-size claim is enforced only where the prose is spelled in the form its
+locator reads (`post-state across all **<n>**`).  GitBook 12 and
+`UNFINISHED_SMP_WORK.md` each stated the same claim in different words and had
+said **146** since RR3 while the census measured **169** — unwatched, because the
+gate could not see them.  Both are corrected *and* restated in the checkable
+form, so the same drift now fails the build; a mutation of the digit was run to
+confirm the gate reads them.
+
+**Files**: `SeLe4n/Kernel/SchedContext/Types.lean`,
+`SeLe4n/Model/Object/Reply.lean`, `SeLe4n/Platform/Boot.lean`,
+`SeLe4n/Kernel/InformationFlow/Projection.lean`,
+`SeLe4n/Kernel/IPC/Invariant/Defs.lean`,
+`SeLe4n/Kernel/IPC/Invariant/Reachability.lean`,
+`SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean`, `tests/SmpIpcSuite.lean`,
+`tests/SmpIdleSuite.lean`, `tests/SmpCrossCoreCallSuite.lean`,
+`scripts/test_tier3_invariant_surface.sh`,
+`docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`,
+`docs/REGISTERED_DEBT.md`, `docs/spec/SELE4N_SPEC.md`,
+`docs/CLAIM_EVIDENCE_INDEX.md`, `docs/gitbook/12-proof-and-invariant-map.md`,
+`docs/planning/UNFINISHED_SMP_WORK.md`,
+`docs/dev_history/audits/AL0_baseline.txt`, `CLAUDE.md`, `AGENTS.md`.
+
 ## v0.34.124 — WS-XV is WS-BP's BP0, not a workstream of its own
 
 **One planning document where there were two, at the maintainer's direction.**

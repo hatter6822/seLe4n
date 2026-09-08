@@ -1172,6 +1172,119 @@ run_check "INVARIANT" rg -n '^@\[simp\] theorem wakeAbortedDonationHolder_curren
 run_check "INVARIANT" rg -n '^def abortHolderWakeHigh' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
 run_check "INVARIANT" rg -n '^theorem abortHolderWakeHigh_of_no_donation' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlockingOnCore_reply_cancellation_NI(.|\n)*hWakeHigh : abortHolderWakeHigh ctx observer st victim tcb\) :\n    projectState" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
+# ============================================================================
+# WS-OD OD2 — inert structure and the chain predicate
+# ============================================================================
+# OD2.1: `SchedContext.scReply` — the reply-stack head `Reply.wellFormed`'s
+# docstring has named since SM6.D and the structure did not have.  The field is
+# what keeps the OD4 push inside `maxLockSetSize`: the push reads the previous
+# head off an object the call footprint already write-locks.
+run_check "INVARIANT" rg -n '^  scReply : Option SeLe4n\.ReplyId := none$' SeLe4n/Kernel/SchedContext/Types.lean
+# ...and it participates in structural equality, or a push would be invisible to
+# every caller that compares states with `==`.  Relation, not presence: the field
+# can exist while the comparator ignores it, which is the shape that masked
+# lock-state regressions before SM3.A audit-pass-7.
+run_check "INVARIANT" rg -n 'a\.scReply == b\.scReply &&' SeLe4n/Kernel/SchedContext/Types.lean
+# The two exhaustive positional patterns keep their arity pin: a field added to
+# `SchedContext` fails these definitions rather than defaulting to "unread".
+run_check "INVARIANT" bash -lc 'rg -U -n "_replenishments, boundThread, scReply, _isActive, _lock⟩" SeLe4n/Platform/Boot.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "_replenishments, _boundThread, _scReply, _isActive, _lock⟩" SeLe4n/Platform/Boot.lean'
+# A boot SchedContext heads no reply stack: every admissible boot Reply is inert
+# (`bootSafeReplyCheck` refuses a `donatedSc`), so a config-supplied head could
+# only dangle — a `donationChainWellFormed` violation installed before the first
+# instruction runs.  The reservation reads the head too, since it is an object id.
+run_check "INVARIANT" bash -lc 'rg -U -n "sc\.boundThread\.isNone &&\n    sc\.scReply\.isNone" SeLe4n/Platform/Boot.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "scReply\.any \(fun rid => SeLe4n\.Kernel\.isIdleObjId rid\.toObjId\)" SeLe4n/Platform/Boot.lean'
+# OD2.2: the head is erased by the NI projection, in the same class as
+# `boundThread` — and erased in the SAME cut as the field, or the OD4 push would
+# be observable in the interval.
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_schedContext_scReply_invariant' SeLe4n/Kernel/InformationFlow/Projection.lean
+# ...and the sibling sweep: the `.reply` arm has erased all three reply-stack
+# fields since SM6.D, but only `caller` had a theorem, so the question "is the
+# donation push observable?" was answered for one field of three.
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_reply_donatedSc_invariant' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_reply_prev_invariant' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "\.schedContext \{ sc with boundThread := none, scReply := none," SeLe4n/Kernel/InformationFlow/Projection.lean'
+# NEGATIVE: the pre-OD2.2 arm, which erased `boundThread` alone.  The mutation
+# that finds this keeps the arm and the erasure it already had, and drops the
+# head — deleting the whole arm would be caught by the positive above.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "\.schedContext \{ sc with boundThread := none,\n                              lock :=" SeLe4n/Kernel/InformationFlow/Projection.lean'
+# OD2.3: `Reply.wellFormed` states the half of the reply-stack discipline that is
+# a property of the object alone — a stack link only on a reply that is on a
+# stack.  It was `True`.
+run_check "INVARIANT" bash -lc 'rg -U -n "def wellFormed \(r : Reply\) : Prop :=\n  r\.donatedSc = none → r\.prev = none" SeLe4n/Model/Object/Reply.lean'
+run_negative_check "INVARIANT" rg -n 'def wellFormed \(_r : Reply\) : Prop := True' SeLe4n/Model/Object/Reply.lean
+# ...and it is CONSUMED rather than decorative: the state-level invariant carries
+# it as its own first conjunct, which is what the bridge below reads back.
+run_check "INVARIANT" rg -n '^theorem donationChainWellFormed\.replyWellFormedAt' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# OD2.4: the chain walk and the invariant.  The walk reads the store through two
+# projections rather than through raw lookups, which is what makes the frame the
+# read set rather than an over-approximation of it.
+run_check "INVARIANT" rg -n '^def replyStackLinks\?' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^def schedContextStackHead\?' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^def donationChainFrom' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^structure donationChainWellFormed' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# Relation, not presence: a link is followed only AFTER the target's own
+# `donatedSc` has been checked against the context being walked.  Reply objects
+# are re-linked to new callers, so a stale `prev` over a reused Reply would
+# otherwise hand a scheduling context to an unrelated thread in another domain.
+run_check "INVARIANT" bash -lc 'rg -U -n "if donated = some scId then\n        \(donationChainFrom st scId fuel below\)\.map \(rid :: ·\)" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+# NEGATIVE: the guardless walk.  The mutation keeps the recursion and drops the
+# validation, which is precisely the confused deputy §3.4 of the plan describes.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "some \(donated, below\) =>\n      \(donationChainFrom" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+# ...and the projection the walk reads exposes the two STACK fields, never the
+# caller: validating a link by "the target has a caller" is exactly what a
+# re-linked Reply satisfies.
+run_check "INVARIANT" bash -lc 'rg -U -n "\| some \(\.reply r\) => some \(r\.donatedSc, r\.prev\)" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "some \(\.reply r\) => some \(r\.caller" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+# The two facts the walk's own link validation yields, and the freshness
+# corollary the OD4 push consumes: a Reply carrying no donation is on no chain.
+run_check "INVARIANT" rg -n '^theorem donationChainFrom_mem' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem not_mem_donationChainFrom_of_not_donating' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainFrom_mono' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# The predicate is inhabited, and inhabited by evaluation rather than by there
+# being nothing to evaluate — the shape every current transition discharges it
+# through, and the one that stops being available when the push lands.
+run_check "INVARIANT" rg -n '^theorem donationChainWellFormed_of_no_reply_or_schedContext' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainWellFormed_of_no_donations' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# OD2.5: the frame family — the objects-equality frame, the no-chain-object-write
+# frame, the walk's own congruence (the no-Reply-write frame), the single-store
+# primitive and its three per-kind instances, and the preservation payoff.
+run_check "INVARIANT" rg -n '^structure donationChainFrame' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem of_no_chain_object_write' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainFrom_congr' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainFrame_of_storeObject$' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainFrame_of_storeObject_tcb' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainFrame_of_storeObject_schedContext' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainFrame_of_storeObject_reply' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainWellFormed_of_frame' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# OD2.6: the chain joins `ipcReachable`, not `ipcInvariantFull` — that bundle has
+# exactly twenty conjuncts and a theorem family whose size a Tier-0 gate holds
+# equal to the prose quoting it.  Relation, not presence: the conjunct must be in
+# the DEFINITION, which is what the accessor below reads back.
+run_check "INVARIANT" bash -lc 'rg -U -n "notificationWaiterConsistent st ∧\n  donationChainWellFormed st" SeLe4n/Kernel/IPC/Invariant/Reachability.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem donationChainWellFormed \{st : SystemState\} \(h : ipcReachable st\) :\n    _root_\.SeLe4n\.Kernel\.donationChainWellFormed st := h\.2\.2\.2\.2\.2" SeLe4n/Kernel/IPC/Invariant/Reachability.lean'
+# The inhabitation witnesses are re-discharged rather than left to a default: a
+# pack whose new field nobody can establish is conditional in a different way.
+run_check "INVARIANT" rg -n '^private theorem witnessSt3_no_stack_head' SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean
+run_check "INVARIANT" rg -n '^private theorem witnessSt3_no_reply' SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean
+# ...and the walk reads the store through ONE named state-level projection
+# rather than inlining a lookup into its own `match`.  That is what lets the
+# frame fix exactly the two stack fields, so a Reply rewrite touching only
+# `caller` frames past it — which reading `SystemState.getReply?` would not.
+run_check "INVARIANT" rg -n '^def replyStackLinksAt\?' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "match replyStackLinksAt\? st rid with" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+# The predicate DECIDES rather than refuses: a depth-2 chain — the state OD3 and
+# OD4 will produce — satisfies it whole, completeness clause included.  Without
+# this the conjunct is only ever discharged vacuously, and an over-strong one
+# would look identical from that side.  An acceptance case, deliberately.
+run_check "INVARIANT" rg -n '^def donationChainWitness' SeLe4n/Kernel/IPC/Invariant/Reachability.lean
+run_check "INVARIANT" rg -n '^theorem donationChainWitness_chain' SeLe4n/Kernel/IPC/Invariant/Reachability.lean
+run_check "INVARIANT" rg -n '^theorem donationChainWitness_wellFormed' SeLe4n/Kernel/IPC/Invariant/Reachability.lean
+# OD2.7: the structural checks are RUN, not merely defined — the relation a
+# presence check on the section's name would miss.
+run_check "INVARIANT" bash -lc 'rg -U -n "  runHandlerContentionChecks\n  runDonationChainStructureChecks\n  runTraceFixtureCheck" tests/SmpIpcSuite.lean'
+
 # PR #892 review: a refused current-thread record CLEARS the mirror rather than
 # leaving it naming the previous thread.  `switchToThreadHw` refuses a tid at or
 # above the `u64::MAX` sentinel *without touching the HAL*, so discarding that
