@@ -889,16 +889,28 @@ private def peripheralNode (name : String) (base size : Nat)
     ++ fdtProp compatibleNameOff (fdtString compatible)
     ++ fdtEndNodeTok
 
-/-- Assemble a complete DTB blob: header, structure block, strings block. -/
+/-- The memory reservation block of a blob that reserves nothing: §5.3's
+terminating zero entry, and nothing else.
+
+**A reservation-free blob is not a blob without a reservation block** (the RR7
+audit round).  These fixtures used to point `offMemRsvmap` at the structure
+block and call that "no reservations", and the parser was written to tolerate
+it — which is the same silent acceptance that let a *truncated* block read as a
+complete one.  A real DTB always carries these sixteen bytes. -/
+private def emptyRsvBlock : Array UInt8 := be64 0 ++ be64 0
+
+/-- Assemble a complete DTB blob: header, reservation block, structure block,
+strings block — §5.1's order. -/
 private def assembleDtb (structBlock : Array UInt8) : ByteArray :=
-  let offDtStruct := 40
+  let offMemRsvmap := 40
+  let offDtStruct := offMemRsvmap + emptyRsvBlock.size
   let offDtStrings := offDtStruct + structBlock.size
   let totalsize := offDtStrings + stringsBlock.size
   let header : Array UInt8 :=
     be32 0xD00DFEED ++ be32 totalsize ++ be32 offDtStruct ++ be32 offDtStrings
-      ++ be32 40 ++ be32 17 ++ be32 16 ++ be32 0
+      ++ be32 offMemRsvmap ++ be32 17 ++ be32 16 ++ be32 0
       ++ be32 stringsBlock.size ++ be32 structBlock.size
-  ByteArray.mk (header ++ structBlock ++ stringsBlock)
+  ByteArray.mk (header ++ emptyRsvBlock ++ structBlock ++ stringsBlock)
 
 /-- A device tree for a board whose `/memory` node carries one `reg` pair per
 entry of `regions` (base, size), plus the three MMIO windows the RPi5 binding
@@ -928,14 +940,15 @@ private def boardDtb (ramSize : Nat) (withMmio : Bool := true) : ByteArray :=
 block** (§5.3) between the header and the structure block, and with the header's
 `lastCompVersion` under the caller's control.
 
-Every fixture above points `offMemRsvmap` at the structure block, which is what
-a blob with no reservations has always looked like here; §5.1 fixes the block
-order, so the parser reads no reservations from such a header and the fixtures
-are unaffected.  A blob that *does* reserve memory needs the block to exist. -/
+Every fixture above carries `emptyRsvBlock` — §5.3's terminator and nothing
+else — so this builder differs from `assembleDtb` only in the entries it puts
+*before* that terminator and in exposing `lastCompVersion`. -/
 private def assembleDtbReserving (structBlock : Array UInt8)
-    (reservations : List (Nat × Nat)) (lastCompVersion : Nat := 16) : ByteArray :=
+    (reservations : List (Nat × Nat)) (lastCompVersion : Nat := 16)
+    (terminated : Bool := true) : ByteArray :=
   let rsvBlock : Array UInt8 :=
-    (reservations.foldl (fun acc r => acc ++ be64 r.1 ++ be64 r.2) #[]) ++ be64 0 ++ be64 0
+    (reservations.foldl (fun acc r => acc ++ be64 r.1 ++ be64 r.2) #[])
+      ++ (if terminated then emptyRsvBlock else #[])
   let offMemRsvmap := 40
   let offDtStruct := offMemRsvmap + rsvBlock.size
   let offDtStrings := offDtStruct + structBlock.size
@@ -945,6 +958,22 @@ private def assembleDtbReserving (structBlock : Array UInt8)
       ++ be32 offMemRsvmap ++ be32 17 ++ be32 lastCompVersion ++ be32 0
       ++ be32 stringsBlock.size ++ be32 structBlock.size
   ByteArray.mk (header ++ rsvBlock ++ structBlock ++ stringsBlock)
+
+/-- **The RR7 audit round**: a blob with **no** memory reservation block —
+`offMemRsvmap` pointing straight at the structure block, which is the shape
+every fixture in this file had until that round.  §5.3 gives the block no
+declared length and ends it with a zero entry, so a block with no room for even
+that terminator is malformed, and the parser must refuse rather than read
+`FDT_BEGIN_NODE`'s tag as a 4 GiB reservation base. -/
+private def assembleDtbWithoutRsvBlock (structBlock : Array UInt8) : ByteArray :=
+  let offDtStruct := 40
+  let offDtStrings := offDtStruct + structBlock.size
+  let totalsize := offDtStrings + stringsBlock.size
+  let header : Array UInt8 :=
+    be32 0xD00DFEED ++ be32 totalsize ++ be32 offDtStruct ++ be32 offDtStrings
+      ++ be32 offDtStruct ++ be32 17 ++ be32 16 ++ be32 0
+      ++ be32 stringsBlock.size ++ be32 structBlock.size
+  ByteArray.mk (header ++ structBlock ++ stringsBlock)
 
 /-- **PR #892 review round 7**: `assembleDtb` with the two declared block sizes
 supplied by the caller rather than measured.
@@ -957,14 +986,15 @@ structure and strings blocks and **shrinks what the header declares**, so the
 data the old parser read is still there to be read. -/
 private def assembleDtbDeclaring (structBlock : Array UInt8)
     (declaredStructSize declaredStringsSize : Nat) : ByteArray :=
-  let offDtStruct := 40
+  let offMemRsvmap := 40
+  let offDtStruct := offMemRsvmap + emptyRsvBlock.size
   let offDtStrings := offDtStruct + structBlock.size
   let totalsize := offDtStrings + stringsBlock.size
   let header : Array UInt8 :=
     be32 0xD00DFEED ++ be32 totalsize ++ be32 offDtStruct ++ be32 offDtStrings
-      ++ be32 40 ++ be32 17 ++ be32 16 ++ be32 0
+      ++ be32 offMemRsvmap ++ be32 17 ++ be32 16 ++ be32 0
       ++ be32 declaredStringsSize ++ be32 declaredStructSize
-  ByteArray.mk (header ++ structBlock ++ stringsBlock)
+  ByteArray.mk (header ++ emptyRsvBlock ++ structBlock ++ stringsBlock)
 
 /-- The canonical board's structure block, reused by the round-7 fixtures. -/
 private def canonicalStructBlock : Array UInt8 :=
@@ -1740,6 +1770,81 @@ def review9_parser_conformance_and_reservations : IO Unit := do
       expect s!"review9 {label}: the RAM above it survives"
         (dt.machineConfig.memoryMap.any
           (fun r => r.kind == .ram && r.contains (SeLe4n.PAddr.ofNat 0xF1000000)))
+  -- **The RR7 audit round**: a reservation block this parser cannot read whole
+  -- is refused, not read as far as it goes.  The list is a set of
+  -- *subtractions*, so a dropped entry hands the range back and the map then
+  -- permits access to memory the firmware reserved -- the fail-open direction
+  -- for a scanner that builds requirements.
+  --
+  -- Each mutation below is **preserving**: every reservation byte the accepted
+  -- fixture carries is still there, and only the relation moves.
+  let reservedBody := canonicalBodyWithMemory (be64 0 ++ be64 0xFC000000)
+  -- (a) the control: terminated, and the carve-out is honoured.
+  match DeviceTree.fromDtbFull
+      (assembleDtbReserving reservedBody [(0xF0000000, 0x1000000)]) width with
+  | .error _ => expect "audit the terminated reservation block is accepted" false
+  | .ok dt =>
+    expect "audit the terminated reservation block is accepted"
+      (!dt.machineConfig.memoryMap.any
+        (fun r => r.kind == .ram && r.contains (SeLe4n.PAddr.ofNat 0xF0800000)))
+  -- (b) the same entries, terminator removed: the block runs into the
+  -- structure block.  Before this round the two reservations were returned and
+  -- the blob parsed.
+  match DeviceTree.fromDtbFull
+      (assembleDtbReserving reservedBody [(0xF0000000, 0x1000000)]
+        (terminated := false)) width with
+  | .ok _ => expect "NEGATIVE audit an unterminated reservation block is refused" false
+  | .error _ => expect "NEGATIVE audit an unterminated reservation block is refused" true
+  -- (c) no reservation block at all: `offMemRsvmap` = `offDtStruct`, so the
+  -- block has no room for even §5.3's terminator.
+  match DeviceTree.fromDtbFull (assembleDtbWithoutRsvBlock reservedBody) width with
+  | .ok _ => expect "NEGATIVE audit a blob with no reservation block is refused" false
+  | .error _ => expect "NEGATIVE audit a blob with no reservation block is refused" true
+  -- (d) the walk itself: a fuel smaller than the block's own capacity refuses
+  -- rather than truncating, so no caller can obtain a partial list.
+  let reservingBlob := assembleDtbReserving reservedBody [(0xF0000000, 0x1000000)]
+  match parseAndValidateFdtHeader reservingBlob with
+  | none => expect "audit the reserving fixture has a valid header" false
+  | some rhdr =>
+    match FdtBlob.of? reservingBlob rhdr with
+    | none => expect "audit the reserving fixture has a view" false
+    | some v =>
+      expect "audit the reserving fixture has a view" true
+      expect "audit the block's own capacity reads it whole" v.reservations.isSome
+      expect "NEGATIVE audit a fuel below capacity refuses rather than truncating"
+        (v.reservations (fuel := 0)).isNone
+  -- (e) the sibling site: a `/reserved-memory` child whose `reg` is not a whole
+  -- number of tuples at the declared cell widths.  Same direction, same file --
+  -- dropping it hands the range back.  The mutation keeps the child, its
+  -- `reg` property and the declared cells, and removes eight bytes from the
+  -- tuple.
+  let reservedChild (regBytes : Array UInt8) : Array UInt8 :=
+    fdtBeginNode "reserved-memory"
+      ++ fdtProp addressCellsNameOff (be32 2) ++ fdtProp sizeCellsNameOff (be32 2)
+      ++ (fdtBeginNode "firmware@f0000000"
+          ++ fdtProp regNameOff regBytes
+          ++ fdtEndNodeTok)
+      ++ fdtEndNodeTok
+  let withReservedChild (regBytes : Array UInt8) : ByteArray :=
+    assembleDtb (fdtBeginNode "" ++ rootCellProperties
+      ++ (fdtBeginNode "memory@0"
+          ++ fdtProp deviceTypeNameOff (fdtString "memory")
+          ++ fdtProp regNameOff (be64 0 ++ be64 0xFC000000)
+          ++ fdtEndNodeTok)
+      ++ reservedChild regBytes
+      ++ fdtEndNodeTok ++ fdtEndTok)
+  match DeviceTree.fromDtbFull
+      (withReservedChild (be64 0xF0000000 ++ be64 0x1000000)) width with
+  | .error _ => expect "audit a whole reserved-memory reg is accepted" false
+  | .ok dt =>
+    expect "audit a whole reserved-memory reg is accepted"
+      (!dt.machineConfig.memoryMap.any
+        (fun r => r.kind == .ram && r.contains (SeLe4n.PAddr.ofNat 0xF0800000)))
+  match DeviceTree.fromDtbFull (withReservedChild (be64 0xF0000000)) width with
+  | .ok _ =>
+    expect "NEGATIVE audit a partial reserved-memory reg is refused" false
+  | .error _ =>
+    expect "NEGATIVE audit a partial reserved-memory reg is refused" true
   -- A disabled bus hides its whole subtree, not only itself.
   let disabledBus :=
     withStatus (mkBus "gated-bus" 0x10000000 (mkRangesProperty 0 0x100000000 0x200000000)

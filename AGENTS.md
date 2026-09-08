@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.120.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.121.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -2459,7 +2459,24 @@ code may assume:
   `findMemoryRegPropertyChecked` is now a selector over the same tree, not a
   second token walk, and `findMemoryRegPropertyChecked_eq_memoryNodeReg?` is
   what keeps the standalone API and the boot path from disagreeing about a
-  blob.  (3) A peripheral's `reg` is a **child-bus** address until it is
+  blob.  (3) **A reservation set this parser cannot read whole is a refusal**, not a
+  shorter list (the RR7 audit round).  Both sources answer `Option`:
+  `FdtBlob.reservations` gives `none` when the §5.3 block reaches no zero
+  terminator inside its declared bound or holds an unreadable pair, and
+  `fdtReservedRanges` gives `none` when a `/reserved-memory` child's `reg` is
+  not a whole number of tuples at the declared cell widths — a child with **no**
+  `reg` still contributes nothing, because §3.5 says that is what a dynamic
+  allocation means.  `fromDtbFull` refuses on either.  The direction is the one
+  `CLAUDE.md` states for scanners: this list is a set of *subtractions*, so an
+  entry dropped hands back memory the firmware reserved and the map then permits
+  `MachineState.addrInRange` over a firmware, DMA or crash-kernel carve-out,
+  while one invented merely costs RAM.  The first cut ended the list at the
+  bound, at an unreadable pair and at a fixed fuel of 64 and called that
+  "fail-closed"; the fuel is now the block's own capacity, so only the
+  terminator or the declared bound can end the walk.  A **fixture** blob must
+  therefore carry a real reservation block: `offMemRsvmap` pointing at the
+  structure block is not "no reservations", it is no room for the terminator,
+  and it is refused.  (4) A peripheral's `reg` is a **child-bus** address until it is
   translated: `extractPeripherals` carries an `FdtAddressContext` and composes
   each bus's `ranges` outward, so a node under a bus with no `ranges` is not
   reported at all (Devicetree Specification v0.4 §2.3.8 — nothing maps), an

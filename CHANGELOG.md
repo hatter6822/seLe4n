@@ -1,3 +1,86 @@
+## v0.34.121 — a device-tree reservation set this parser cannot read whole is a refusal, not a shorter list
+
+**Security finding, found by auditing this branch's own unreviewed cuts and
+reported before it was fixed.**  `FdtBlob.reservations` builds the set of ranges
+the firmware has declared **unusable**, and it ended that list silently on three
+abnormal conditions: fuel exhaustion at a fixed 64 pairs, the §5.3 block
+reaching no zero terminator inside its declared bound, and an unreadable pair.
+Because the list is a set of *subtractions*, an entry dropped hands the range
+back: `MachineConfig.memoryMap` then permits `MachineState.addrInRange` over
+memory the firmware reserved — a firmware, DMA or crash-kernel carve-out.
+
+Three probes under `lake env lean` before the fix: two pairs with **no**
+terminator returned both pairs and the blob parsed; 65 pairs followed by a
+terminator returned **64**; and the dropped reservation's range was still RAM in
+the resulting map.  Not reachable today — the kernel does not boot and no live
+path parses a blob — but WS-BP `BP2.6`/`BP4.3` make this parser the blob's
+**only** reader and the blob is firmware-supplied, so it is a model gap with
+security relevance rather than a cosmetic one.
+
+**The direction rule, which the first cut had backwards.**  `CLAUDE.md` states
+it: a scanner that builds a set of **requirements** fails closed by *refusing*
+unreadable input; one that builds **providers** fails closed by dropping it.
+Reservations are requirements.  The docstring called ending the list early "the
+fail-closed side here" and then gave, in its own next sentence, the reasoning
+that shows the opposite — "one it drops would hand back memory the firmware
+reserved".  Per the implement-the-improvement rule the code changed, not the
+comment.
+
+**The fix.**  Both sources now answer `Option`.  `FdtBlob.reservations` is
+`none` at every exit but the terminator, and its fuel is **derived** —
+`reservationCapacity`, the number of pairs the declared block can physically
+hold — so fuel can never run out before the bound does and the arbitrary 64 is
+gone; a caller passing a smaller fuel gets `none` rather than a truncated list.
+`fromDtbFull` refuses with `.malformedBlob`, and `FdtBlob.of?` answering `none`
+is now that refusal too rather than silently contributing zero reservations.
+`parseFdtHeader_fromDtbFull_ok` gained the matching hypotheses, so a `.ok`
+result entails that the reservation block read whole instead of the theorem
+quietly covering a blob the function rejects.
+
+**And the sweep, which is where the second instance was.**  `fdtReservedRanges`
+had the same shape one function along: a `/reserved-memory` child whose `reg` is
+not a whole number of tuples at the declared cell widths contributed **nothing**
+and the parse succeeded.  It refuses too.  A child with *no* `reg` still
+contributes nothing, because §3.5 says that is what a dynamic allocation means —
+which is exactly why the refusal cannot be spelled "no regions".
+
+This is round 9's own structure-block fix unswept to the sibling written in the
+same cut: `parseFdtNodes` was made to refuse a block that never reaches a
+top-level `FDT_END`, and `FdtBlob.reservations` shipped beside it with a silent
+truncation.  The rule is this tree's own — *when a fix names a relation, grep
+for every other place that asks it* — and it failed at a distance of forty
+lines.
+
+**A reservation-free blob is not a blob without a reservation block.**  Every
+fixture in `tests/Ak9PlatformSuite.lean` pointed `offMemRsvmap` at the structure
+block and called that "no reservations", and round 9 wrote the parser to
+tolerate it.  That tolerance *is* the silent acceptance being removed, so the
+builders now emit `emptyRsvBlock` — §5.3's sixteen terminating bytes, which a
+real DTB always carries — and a blob without one is refused.
+
+**Tests**: eight new cases, each mutation *preserving*.  The unterminated
+fixture keeps both reservations and removes only the terminator; the partial
+`/reserved-memory` fixture keeps the child, its `reg` and the declared cells and
+removes eight bytes from the tuple; the fuel case keeps a well-formed block and
+lowers the budget.  Verified by restoring the truncation and confirming the
+negative fails.
+
+**Tier 3**: fourteen anchors over the relation, mutation-tested three ways, each
+keeping the `Option` and moving only the relation — returning the partial list
+at the bound (2 anchors fire), replacing the derived fuel with 64 (1), and
+making the caller's node-side refusal a different error (1).  One negative had
+to be **scoped by the walk's accumulator type**: `parseFdtRanges`'s `go` answers
+`some acc.reverse` at fuel 0 four hundred lines below, and that is *correct*
+there — its result is a set of providers, where dropping one is the fail-closed
+direction — so a file-wide pattern, and a lazy multiline one anchored on the
+`def`, both read that arm as this one.  Three round-9 anchors pinning the
+`List`-returning shapes were retired with the shapes.
+
+**Files**: `SeLe4n/Platform/DeviceTree.lean`, `tests/Ak9PlatformSuite.lean`,
+`scripts/test_tier3_invariant_surface.sh`, `CLAUDE.md`, `AGENTS.md`.
+
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md (BP2.6, BP4.3)
+
 ## v0.34.120 — the boot map the register promised has a scheduled row, and a plan's sub-task count is derived rather than hand-copied
 
 **WS-BP gains BP2.6, and it is the maintainer's own correction made

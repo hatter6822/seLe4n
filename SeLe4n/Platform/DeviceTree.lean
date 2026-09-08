@@ -770,32 +770,53 @@ def FdtBlob.stringsName? (v : FdtBlob) (nameoff : Nat) (fuel : Nat := 256)
 ranges the firmware tells the operating system not to use.
 
 §5.3 of the Devicetree Specification puts a list of 16-byte (address, size)
-big-endian pairs at `offMemRsvmap`, terminated by a pair of zeros.  The block
-has no declared length, so each read is bounded by the blob's own `totalsize`
-and the list ends at the terminator, at the bound, or at the fuel — whichever
-comes first.  A pair the bound cuts short ends the list rather than
-contributing, which is the fail-closed side here: this builds a set of
-*subtractions*, and one it invents removes RAM that exists, while one it drops
-would hand back memory the firmware reserved. -/
-def FdtBlob.reservations (v : FdtBlob) (fuel : Nat := 64) : List (Nat × Nat) :=
+big-endian pairs at `offMemRsvmap`, **terminated by a pair of zeros**.  The
+block has no declared length, so each read is bounded by the blob's own
+`totalsize` and by where §5.1 puts the next block.
+
+**`none` is every exit but the terminator** (the RR7 audit round, correcting
+this function's own first cut).  This builds a set of *subtractions*, so the
+fail-closed direction is to **over**-report: a reservation invented removes RAM
+that exists — a lost resource — while one dropped hands back memory the
+firmware reserved, and the machine map then permits `MachineState.addrInRange`
+over a firmware, DMA or crash-kernel carve-out.  The first cut ended the list at
+the bound, at an unreadable pair and at a fixed fuel of 64, returning the pairs
+read so far *as if they were the whole list*, and claimed in as many words that
+this was "the fail-closed side" while its own next sentence said dropping was
+the unsafe one.  It is the direction rule in `CLAUDE.md`: a scanner that builds
+a set of **requirements** fails closed by refusing unreadable input, never by
+dropping it — and it is round 9's own structure-block fix (`parseFdtNodes`
+refuses a block that never reaches a top-level `FDT_END`) unswept to the sibling
+written in the same cut.
+
+`fuel` is **derived, not chosen**: the declared block cannot hold more than
+`capacity` pairs, so fuel can never run out before the bound does, and the
+`0` case is unreachable for the default.  A caller passing a smaller fuel gets
+`none` rather than a truncated list, which is the same refusal by a different
+route.  An `offMemRsvmap` pointing into or past the structure block gives
+`capacity = 0` and is refused, rather than reading `FDT_BEGIN_NODE`'s tag as a
+4 GiB base — which is what a blob whose two offsets coincide would otherwise
+do. -/
+def FdtBlob.reservationCapacity (v : FdtBlob) : Nat :=
+  (min v.blobEnd v.structStart - v.reservationsStart) / 16
+
+def FdtBlob.reservations (v : FdtBlob)
+    (fuel : Nat := v.reservationCapacity) : Option (List (Nat × Nat)) :=
   go v.reservationsStart fuel []
 where
-  go (offset : Nat) : Nat → List (Nat × Nat) → List (Nat × Nat)
-  | 0, acc => acc.reverse
+  go (offset : Nat) : Nat → List (Nat × Nat) → Option (List (Nat × Nat))
+  | 0, _ => none
   | fuel + 1, acc =>
     -- §5.1 fixes the block order: header, reservation block, structure block,
     -- strings block.  So the reservation block ends where the structure block
-    -- begins, and a `offMemRsvmap` pointing into (or past) the structure block
-    -- declares no reservations rather than reading tokens as address pairs —
-    -- which is what a blob whose two offsets coincide would otherwise do, at
-    -- `FDT_BEGIN_NODE`'s tag read as a 4 GiB base.
-    if offset + 16 > min v.blobEnd v.structStart then acc.reverse
+    -- begins.
+    if offset + 16 > min v.blobEnd v.structStart then none
     else
       match readBE64 v.bytes offset, readBE64 v.bytes (offset + 8) with
       | some base, some size =>
-        if base == 0 && size == 0 then acc.reverse
+        if base == 0 && size == 0 then some acc.reverse
         else go (offset + 16) fuel ((base.toNat, size.toNat) :: acc)
-      | _, _ => acc.reverse
+      | _, _ => none
 
 /-- V4-M2/L-PLAT-1: Look up a property name in the FDT string table.
     Given the string table offset and a property's `nameoff`, reads the
@@ -1380,18 +1401,38 @@ Round 5 stopped `/reserved-memory`'s children being read as the machine's RAM;
 that is a different question from this one.  Excluding them from aperture
 *discovery* leaves the aperture the `/memory` node declares intact, and the
 carve-outs sit inside it — so the model still permitted `MachineState.addrInRange`
-over memory the firmware has claimed. -/
-def fdtReservedRanges (root : FdtNode) : List (Nat × Nat) :=
+over memory the firmware has claimed.
+
+`none` is a child whose `reg` this parser cannot read whole (the RR7 audit
+round).  A child with **no** `reg` is `some` and contributes nothing, because
+that is what §3.5 says it means; a child with a malformed one is a refusal,
+because dropping it would hand its range back. -/
+def fdtReservedRanges (root : FdtNode) : Option (List (Nat × Nat)) :=
   match root.children.find? (fun n => n.name == "reserved-memory") with
-  | none => []
+  | none => some []
   | some reserved =>
-    reserved.children.flatMap fun child =>
-      match child.findProperty "reg" with
-      | none => []
-      | some regBytes =>
-        match extractMemoryRegionsChecked regBytes reserved.addressCells reserved.sizeCells with
-        | none => []
-        | some regions => regions.map (fun r => (r.base, r.size))
+    reserved.children.foldl
+      (fun acc child =>
+        match acc with
+        | none => none
+        | some got =>
+          match child.findProperty "reg" with
+          -- §3.5: a `size`-only child is a *dynamic* allocation.  It reserves no
+          -- particular range, so contributing nothing is what it means — this is
+          -- the one legitimate empty result, and it is why the refusal below
+          -- cannot simply be "no regions".
+          | none => some got
+          | some regBytes =>
+            match extractMemoryRegionsChecked regBytes
+                reserved.addressCells reserved.sizeCells with
+            -- RR7 audit round: a `reg` that is not a whole number of
+            -- (address, size) tuples at the declared cell widths is malformed,
+            -- and dropping it hands the range back.  Same direction, same file
+            -- and same cut as the header block's silent truncation: this list is
+            -- a set of subtractions, so an unreadable entry is a refusal.
+            | none => none
+            | some regions => some (got ++ regions.map (fun r => (r.base, r.size))))
+      (some [])
 
 /-- **PR #892 review round 9**: one region with one reserved interval removed.
 
@@ -1735,11 +1776,18 @@ def DeviceTree.fromDtbFull (blob : ByteArray) (physicalAddressWidth : Nat)
         -- the header's own reservation block (§5.3).  Neither was subtracted,
         -- so the bound configuration permitted `MachineState.addrInRange` over
         -- firmware, DMA and crash-kernel carve-outs.
-        let headerReservations :=
-          match FdtBlob.of? blob hdr with
-          | some v => v.reservations
-          | none => []
-        let reservations := fdtReservedRanges root ++ headerReservations
+        -- RR7 audit round: a reservation block this parser cannot read whole
+        -- is a **refusal**, not an empty list.  Both failure modes reach here:
+        -- `of?` answering `none` (the header's blocks do not fit the blob) and
+        -- `reservations` answering `none` (no §5.3 terminator inside the
+        -- declared bound, or an unreadable pair).  Either one previously
+        -- contributed zero subtractions and the map was built anyway.
+        match (FdtBlob.of? blob hdr).bind FdtBlob.reservations,
+              fdtReservedRanges root with
+        | none, _ => .error .malformedBlob
+        | _, none => .error .malformedBlob
+        | some headerReservations, some nodeReservations =>
+        let reservations := nodeReservations ++ headerReservations
         let fdtRegions := subtractReservations declaredRegions reservations
         let memRegions := fdtRegionsToMemoryRegions fdtRegions
         if memRegions.isEmpty then .error .malformedBlob
@@ -1802,10 +1850,18 @@ theorem parseFdtHeader_fromDtbFull_ok (blob : ByteArray)
     -- two hypotheses below are about that set rather than about what `/memory`
     -- declares.  A board whose `/memory` aperture is entirely reserved has a
     -- non-empty declared set and an empty available one, and does not boot.
+    -- RR7 audit round: the header's reservation block must read **whole**.
+    -- `fromDtbFull` refuses a blob whose §5.3 block has no zero terminator
+    -- inside its declared bound, so a `.ok` result now entails this, and the
+    -- hypothesis says so rather than the theorem quietly covering a blob the
+    -- function rejects.
+    (headerReservations : List (Nat × Nat))
+    (hHeaderRes : (FdtBlob.of? blob hdr).bind FdtBlob.reservations
+      = some headerReservations)
+    (nodeReservations : List (Nat × Nat))
+    (hNodeRes : fdtReservedRanges root = some nodeReservations)
     (reservations : List (Nat × Nat))
-    (hRes : reservations =
-      fdtReservedRanges root ++
-        (match FdtBlob.of? blob hdr with | some v => v.reservations | none => []))
+    (hRes : reservations = nodeReservations ++ headerReservations)
     (hNonEmpty :
       (fdtRegionsToMemoryRegions (subtractReservations declaredRegions reservations)).isEmpty
         = false)
@@ -1822,7 +1878,8 @@ theorem parseFdtHeader_fromDtbFull_ok (blob : ByteArray)
     ∃ dt, DeviceTree.fromDtbFull blob physicalAddressWidth = .ok dt := by
   unfold DeviceTree.fromDtbFull
   subst hRes
-  simp [hValid, hNodes, hRoot, hMem, hNonEmpty, DeviceTree.validate, hWf]
+  simp [hValid, hNodes, hRoot, hMem, hHeaderRes, hNodeRes, hNonEmpty,
+    DeviceTree.validate, hWf]
 
 /-- **PR #892 review round 5**: the standalone search and the boot path's
 selector are the same answer, by definition rather than by agreement.

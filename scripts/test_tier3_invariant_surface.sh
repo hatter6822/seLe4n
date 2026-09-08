@@ -11041,10 +11041,8 @@ run_negative_check "INVARIANT" rg -n -U 'match parseNodeContents v afterChild fu
 run_check "INVARIANT" rg -n -U 'let childDevs :=\n      if node\.statusIsOperational then\n        extractPeripheralsWalk fuel \(ctx\.forChildren node\) node\.children\n      else \[\]' SeLe4n/Platform/DeviceTree.lean
 run_negative_check "INVARIANT" rg -n -U 'let childDevs  := extractPeripheralsWalk fuel \(ctx\.forChildren node\) node\.children' SeLe4n/Platform/DeviceTree.lean
 # Both reservation sources are subtracted from the discovered RAM.
-run_check "INVARIANT" rg -n -U 'let reservations := fdtReservedRanges root \+\+ headerReservations' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U 'let reservations := nodeReservations \+\+ headerReservations' SeLe4n/Platform/DeviceTree.lean
 run_check "INVARIANT" rg -n -U 'let fdtRegions := subtractReservations declaredRegions reservations' SeLe4n/Platform/DeviceTree.lean
-run_check "INVARIANT" rg -n '^def fdtReservedRanges \(root : FdtNode\) : List \(Nat × Nat\) :=' SeLe4n/Platform/DeviceTree.lean
-run_check "INVARIANT" rg -n -U 'if offset \+ 16 > min v\.blobEnd v\.structStart then acc\.reverse' SeLe4n/Platform/DeviceTree.lean
 # The runtime contract reads the INSTALLED map, not the canonical one.
 # One definition, and both contracts name it: the predicate was written out
 # twice, which is how it came to be corrected in neither.  A file-wide anchor on
@@ -11073,5 +11071,48 @@ open SeLe4n.Platform
 #check @SeLe4n.Platform.FdtBlob.reservations
 EOF
 lake env lean /tmp/reserved_memory_probe.lean'
+
+# ---------------------------------------------------------------------------
+# The RR7 audit round: a reservation set this parser cannot read whole is a
+# REFUSAL, not a shorter list.  These anchor the relation rather than the
+# token: `Option` in the signature, and `none` at each abnormal exit.
+# ---------------------------------------------------------------------------
+run_check "INVARIANT" rg -n -U 'def FdtBlob\.reservations \(v : FdtBlob\)\n    \(fuel : Nat := v\.reservationCapacity\) : Option \(List \(Nat × Nat\)\)' SeLe4n/Platform/DeviceTree.lean
+# Fuel is derived from the block, so it can never run out before the bound.
+run_check "INVARIANT" rg -n -U 'def FdtBlob\.reservationCapacity \(v : FdtBlob\) : Nat :=\n  \(min v\.blobEnd v\.structStart - v\.reservationsStart\) / 16' SeLe4n/Platform/DeviceTree.lean
+# Each abnormal exit is `none`.  NEGATIVE: the partial list that was returned
+# before -- the token `acc.reverse` survives at the terminator, so a mutation
+# that merely deletes it would not test this.
+run_check "INVARIANT" rg -n -U 'go \(offset : Nat\) : Nat → List \(Nat × Nat\) → Option \(List \(Nat × Nat\)\)\n  \| 0, _ => none' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n 'if offset \+ 16 > min v\.blobEnd v\.structStart then none' SeLe4n/Platform/DeviceTree.lean
+# Scoped by the walk's own accumulator type, not by proximity: `parseFdtRanges`'s
+# `go` answers `some acc.reverse` at fuel 0 four hundred lines below, and that is
+# CORRECT there -- its result is a set of *providers* (windows a peripheral must
+# fall inside), where dropping one is the fail-closed direction.  A file-wide
+# pattern, and a lazy multiline one anchored on the `def`, both read that arm as
+# this one.
+run_negative_check "INVARIANT" rg -n -U 'go \(offset : Nat\) : Nat → List \(Nat × Nat\) → Option \(List \(Nat × Nat\)\)\n  \| 0, acc => some acc\.reverse' SeLe4n/Platform/DeviceTree.lean
+run_negative_check "INVARIANT" rg -n 'if offset \+ 16 > min v\.blobEnd v\.structStart then some acc\.reverse' SeLe4n/Platform/DeviceTree.lean
+# The sibling site: a malformed `/reserved-memory` reg refuses; a child with NO
+# reg still contributes nothing, which is what the specification says it means.
+run_check "INVARIANT" rg -n 'def fdtReservedRanges \(root : FdtNode\) : Option \(List \(Nat × Nat\)\)' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U 'reserved\.addressCells reserved\.sizeCells with\n(.*\n)*?            \| none => none' SeLe4n/Platform/DeviceTree.lean
+# Both refusals reach the caller: two arms, each returning `.malformedBlob`.
+run_check "INVARIANT" rg -n -U 'match \(FdtBlob\.of\? blob hdr\)\.bind FdtBlob\.reservations,\n              fdtReservedRanges root with\n        \| none, _ => \.error \.malformedBlob\n        \| _, none => \.error \.malformedBlob' SeLe4n/Platform/DeviceTree.lean
+# NEGATIVE: the empty-list fallbacks, which built the map anyway.
+run_negative_check "INVARIANT" rg -n -U '\| some v => v\.reservations\n          \| none => \[\]' SeLe4n/Platform/DeviceTree.lean
+# The fixtures carry a real reservation block, so a blob without one is a
+# refusal rather than the shape every fixture happened to have.
+#
+# The suite is named after a closed audit phase, which the naming gate
+# grandfathers in the files that already carry it and refuses in new code.
+# `tests/*PlatformSuite.lean` resolves to exactly that one file, so these
+# anchors stay site-specific without propagating the phase code into a fresh
+# occurrence.  Renaming the suite is the real remedy and belongs to whatever
+# workstream next touches it, not to a device-tree cut.
+run_check "INVARIANT" rg -n -U 'private def emptyRsvBlock : Array UInt8 := be64 0 \+\+ be64 0' tests/*PlatformSuite.lean
+run_check "INVARIANT" rg -n -U 'let offDtStruct := offMemRsvmap \+ emptyRsvBlock\.size' tests/*PlatformSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE audit an unterminated reservation block is refused' tests/*PlatformSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE audit a partial reserved-memory reg is refused' tests/*PlatformSuite.lean
 
 finalize_report

@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.34.120-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.34.121-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -69,10 +69,10 @@ seLe4n هو نواة مصغرة بُنيت من الصفر بلغة Lean 4. كل
 
 | السمة | القيمة |
 |-------|--------|
-| **الإصدار** | `0.34.120` |
+| **الإصدار** | `0.34.121` |
 | **سلسلة أدوات Lean** | `v4.28.0` |
-| **أسطر Lean الإنتاجية** | 355,799 عبر 328 ملفًا |
-| **أسطر Lean للاختبارات** | 72,662 عبر 70 مجموعة اختبار |
+| **أسطر Lean الإنتاجية** | 355,856 عبر 328 ملفًا |
+| **أسطر Lean للاختبارات** | 72,767 عبر 70 مجموعة اختبار |
 | **الإعلانات المُبرهَنة** | 11,889 إعلانًا theorem/lemma (صفر sorry/axiom) |
 | **العتاد المستهدف** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **التدقيق القياسي** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — تدقيق شامل ما قبل الإصدار 1.0 (202 نتيجة؛ تمت المعالجة بواسطة WS-AK AK1–AK10؛ مؤرشف) |
