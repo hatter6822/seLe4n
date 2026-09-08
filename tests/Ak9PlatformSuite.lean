@@ -579,14 +579,31 @@ this suite's `reg` helper already writes — child base, parent base, length. -/
 private def mkRangesProperty (childBase parentBase length : UInt64) : ByteArray :=
   (mkRegProperty childBase parentBase) ++ (mkRegProperty length 0).extract 0 8
 
+/-- **PR #892 review round 5 audit**: a one-cell property value, big-endian —
+what `#address-cells` and `#size-cells` carry. -/
+private def mkCellProperty (n : UInt32) : ByteArray :=
+  ByteArray.mk
+    #[ ((n >>> 24) &&& 0xFF).toUInt8
+     , ((n >>> 16) &&& 0xFF).toUInt8
+     , ((n >>> 8)  &&& 0xFF).toUInt8
+     , ( n         &&& 0xFF).toUInt8 ]
+
 /-- **PR #892 review round 5**: a bus node — a peripheral that also translates
-its children's addresses through `ranges`. -/
+its children's addresses through `ranges`.
+
+It declares `#address-cells` and `#size-cells`, as a real bus node does: the
+specification's defaults are 2 and **1**, so a bus whose children carry a
+two-cell size must say so.  The fixture used to declare neither and rely on this
+parser defaulting `#size-cells` to 2, which was itself a divergence from the
+specification and from the Rust walker reading the same blob. -/
 private def mkBus (name : String) (base : UInt64)
     (ranges : ByteArray) (children : List FdtNode := []) : FdtNode :=
   { name
     properties :=
       [ { name := "reg", value := mkRegProperty base 0x1000 }
       , { name := "compatible", value := ByteArray.mk #[0x61, 0x72, 0x6D, 0x00] }  -- "arm\0"
+      , { name := "#address-cells", value := mkCellProperty 2 }
+      , { name := "#size-cells", value := mkCellProperty 2 }
       , { name := "ranges", value := ranges } ]
     children }
 
@@ -809,7 +826,7 @@ private def fdtEndTok : Array UInt8 := be32 0x00000009
 /-- The strings block this fixture uses, and each name's offset in it. -/
 private def stringsBlock : Array UInt8 :=
   fdtString "reg" ++ fdtString "device_type" ++ fdtString "compatible"
-    ++ fdtString "status"
+    ++ fdtString "status" ++ fdtString "#address-cells" ++ fdtString "#size-cells"
 
 private def regNameOff : Nat := 0
 private def deviceTypeNameOff : Nat := (fdtString "reg").size
@@ -819,6 +836,20 @@ private def compatibleNameOff : Nat :=
 every offset above is unchanged. -/
 private def statusNameOff : Nat :=
   (fdtString "reg").size + (fdtString "device_type").size + (fdtString "compatible").size
+/-- **PR #892 review round 5 audit**: the root's cell-count property offsets. -/
+private def addressCellsNameOff : Nat := statusNameOff + (fdtString "status").size
+private def sizeCellsNameOff : Nat := addressCellsNameOff + (fdtString "#address-cells").size
+
+/-- **PR #892 review round 5 audit**: the root's `#address-cells` / `#size-cells`,
+which govern its children's `reg`.
+
+The Rust fixture builder has always written both (`build_dtb(address_cells,
+size_cells, …)`); this one did not, and relied on the Lean parser defaulting
+`#size-cells` to 2.  The specification's default is **1**, so the two builders
+were producing different blobs for "the same" board — the same
+one-question-two-answers shape as the parsers they feed. -/
+private def rootCellProperties : Array UInt8 :=
+  fdtProp addressCellsNameOff (be32 2) ++ fdtProp sizeCellsNameOff (be32 2)
 
 /-- A peripheral node: `reg = <base size>` plus a `compatible` string, the two
 properties `classifyPeripheralNode` requires. -/
@@ -857,7 +888,7 @@ private def boardDtbRegions (regions : List (Nat × Nat)) (withMmio : Bool := tr
         ++ peripheralNode "interrupt-controller@ff841000" 0xFF841000 0x1000
         ++ peripheralNode "interrupt-controller@ff842000" 0xFF842000 0x2000
     else #[]
-  assembleDtb (fdtBeginNode "" ++ memoryNode ++ peripherals ++ fdtEndNodeTok ++ fdtEndTok)
+  assembleDtb (fdtBeginNode "" ++ rootCellProperties ++ memoryNode ++ peripherals ++ fdtEndNodeTok ++ fdtEndTok)
 
 /-- A device tree for a board with `ramSize` bytes of RAM starting at 0. -/
 private def boardDtb (ramSize : Nat) (withMmio : Bool := true) : ByteArray :=
@@ -881,7 +912,7 @@ private def unterminatedBoardDtb : ByteArray :=
     peripheralNode "serial@fe201000" 0xFE201000 0x1000
       ++ peripheralNode "interrupt-controller@ff841000" 0xFF841000 0x1000
       ++ peripheralNode "interrupt-controller@ff842000" 0xFF842000 0x2000
-  assembleDtb (fdtBeginNode "" ++ memoryNode ++ peripherals)
+  assembleDtb (fdtBeginNode "" ++ rootCellProperties ++ memoryNode ++ peripherals)
 
 /-- **PR #892 review round 5**: the canonical board with an **unknown** token
 where the terminator belongs — the other partial exit the walk used to accept. -/
@@ -891,7 +922,7 @@ private def unknownTokenBoardDtb : ByteArray :=
       ++ fdtProp deviceTypeNameOff (fdtString "memory")
       ++ fdtProp regNameOff (be64 0 ++ be64 0xFC000000)
       ++ fdtEndNodeTok
-  assembleDtb (fdtBeginNode "" ++ memoryNode ++ be32 0x000000FF ++ fdtEndNodeTok ++ fdtEndTok)
+  assembleDtb (fdtBeginNode "" ++ rootCellProperties ++ memoryNode ++ be32 0x000000FF ++ fdtEndNodeTok ++ fdtEndTok)
 
 /-- **PR #892 review round 5**: a board whose `/memory` node carries the given
 `status`.  A withheld bank is DRAM the firmware says is not usable. -/
@@ -906,7 +937,65 @@ private def boardDtbWithMemoryStatus (status : String) : ByteArray :=
     peripheralNode "serial@fe201000" 0xFE201000 0x1000
       ++ peripheralNode "interrupt-controller@ff841000" 0xFF841000 0x1000
       ++ peripheralNode "interrupt-controller@ff842000" 0xFF842000 0x2000
-  assembleDtb (fdtBeginNode "" ++ memoryNode ++ peripherals ++ fdtEndNodeTok ++ fdtEndTok)
+  assembleDtb (fdtBeginNode "" ++ rootCellProperties ++ memoryNode ++ peripherals ++ fdtEndNodeTok ++ fdtEndTok)
+
+/-- **PR #892 review round 5 audit**: a board that reports its RAM as **two**
+`/memory` nodes rather than two `reg` pairs in one — a shape the specification
+allows and firmware uses.  The Rust walker folds every node's extents into one
+store; the Lean selector took the first node only. -/
+private def twoMemoryNodeDtb : ByteArray :=
+  let node := fun (name : String) (base size : Nat) =>
+    fdtBeginNode name
+      ++ fdtProp deviceTypeNameOff (fdtString "memory")
+      ++ fdtProp regNameOff (be64 base ++ be64 size)
+      ++ fdtEndNodeTok
+  let peripherals :=
+    peripheralNode "serial@fe201000" 0xFE201000 0x1000
+      ++ peripheralNode "interrupt-controller@ff841000" 0xFF841000 0x1000
+      ++ peripheralNode "interrupt-controller@ff842000" 0xFF842000 0x2000
+  assembleDtb (fdtBeginNode "" ++ rootCellProperties
+    ++ node "memory@0" 0 0xFC000000
+    ++ node "memory@100000000" 0x100000000 0x100000000
+    ++ peripherals ++ fdtEndNodeTok ++ fdtEndTok)
+
+/-- **PR #892 review round 5 audit**: a board whose root declares **one**-cell
+addresses and sizes, with a `reg` written at that width.  The Rust walker reads
+the root's declaration; the Lean path read a fixed two-cell stride. -/
+private def singleCellBoardDtb : ByteArray :=
+  let rootCells := fdtProp addressCellsNameOff (be32 1) ++ fdtProp sizeCellsNameOff (be32 1)
+  let memoryNode :=
+    fdtBeginNode "memory@0"
+      ++ fdtProp deviceTypeNameOff (fdtString "memory")
+      ++ fdtProp regNameOff (be32 0 ++ be32 0xFC000000)
+      ++ fdtEndNodeTok
+  let peripherals :=
+    peripheralNode "serial@fe201000" 0xFE201000 0x1000
+      ++ peripheralNode "interrupt-controller@ff841000" 0xFF841000 0x1000
+      ++ peripheralNode "interrupt-controller@ff842000" 0xFF842000 0x2000
+  assembleDtb (fdtBeginNode "" ++ rootCells ++ memoryNode ++ peripherals
+    ++ fdtEndNodeTok ++ fdtEndTok)
+
+/-- **PR #892 review round 5 audit**: a `reg` that is not a whole number of
+(address, size) pairs — three 64-bit cells where the pair is four. -/
+private def truncatedRegBoardDtb : ByteArray :=
+  let memoryNode :=
+    fdtBeginNode "memory@0"
+      ++ fdtProp deviceTypeNameOff (fdtString "memory")
+      ++ fdtProp regNameOff (be64 0 ++ be64 0xFC000000 ++ be64 0x100000000)
+      ++ fdtEndNodeTok
+  assembleDtb (fdtBeginNode "" ++ rootCellProperties ++ memoryNode
+    ++ fdtEndNodeTok ++ fdtEndTok)
+
+/-- **PR #892 review round 5 audit**: a node named `memory@` with no unit
+address.  `is_memory_node_name` refuses it on the Rust side. -/
+private def emptyUnitAddressDtb : ByteArray :=
+  let memoryNode :=
+    fdtBeginNode "memory@"
+      ++ fdtProp deviceTypeNameOff (fdtString "memory")
+      ++ fdtProp regNameOff (be64 0 ++ be64 0xFC000000)
+      ++ fdtEndNodeTok
+  assembleDtb (fdtBeginNode "" ++ rootCellProperties ++ memoryNode
+    ++ fdtEndNodeTok ++ fdtEndTok)
 
 /-- **PR #892 review round 5**: a board whose only `memory@…` node is a child of
 `/reserved-memory` — a carve-out, at depth 2, not the machine's RAM. -/
@@ -918,7 +1007,7 @@ private def reservedMemoryOnlyDtb : ByteArray :=
         ++ fdtProp regNameOff (be64 0 ++ be64 0xFC000000)
         ++ fdtEndNodeTok
       ++ fdtEndNodeTok
-  assembleDtb (fdtBeginNode "" ++ carveOut ++ fdtEndNodeTok ++ fdtEndTok)
+  assembleDtb (fdtBeginNode "" ++ rootCellProperties ++ carveOut ++ fdtEndNodeTok ++ fdtEndTok)
 
 /-- The machine configuration the bridge binds for an accepted blob, read back
 through the binding exactly as the hardware boot binds it. -/
@@ -1106,6 +1195,57 @@ def deviceTreeBridge_13_direct_path_fallback_is_smallest : IO Unit := do
   expect "PR892-13 the family is ascending"
     (decide (rpi5Variants.Pairwise (fun a b => a.ramSize ≤ b.ramSize)))
 
+/-- **PR #892 review round 5 audit**: every available top-level `/memory` node
+contributes, not the first.
+
+Found by auditing the pairs WS-XV registers rather than by review: the Rust
+walker folds each node's extents into one store as it passes them, so a board
+reporting its low aperture and its high bank as two nodes was read whole there
+and truncated to its first node here — the two implementations answering "which
+memory does this blob declare" differently. -/
+def deviceTreeBridge_18_every_memory_node_contributes : IO Unit := do
+  match DeviceTree.fromDtbFull twoMemoryNodeDtb rpi5MachineConfig.physicalAddressWidth with
+  | .error _ => expect "RR892-18 the two-node board parses" false
+  | .ok dt =>
+    let ram := dt.machineConfig.memoryMap.filter (fun r => r.kind == MemoryKind.ram)
+    expect "RR892-18 both memory nodes contribute" (decide (ram.length = 2))
+    expect "RR892-18 the high bank is present"
+      (ram.any (fun r => r.base.toNat == 0x100000000))
+  -- And the bridge binds the variant the two nodes together cover, not the one
+  -- the first node alone would: 8 GiB, whose map the binding installs.
+  match rpi5PlatformConfigFromDtb twoMemoryNodeDtb [] [] none with
+  | .error _ => expect "RR892-18 the two-node board is accepted" false
+  | .ok config =>
+    expect "RR892-18 the bound map is the 8 GiB variant's"
+      (decide (boundMapOf config = variantMap 8))
+
+/-- **PR #892 review round 5 audit**: the root's declared cell widths govern the
+`reg`, as they do on the Rust side; the Lean path read a fixed two-cell stride
+and would have mis-parsed a one-cell board entirely. -/
+def deviceTreeBridge_19_root_cell_widths_are_honoured : IO Unit := do
+  match DeviceTree.fromDtbFull singleCellBoardDtb rpi5MachineConfig.physicalAddressWidth with
+  | .error _ => expect "RR892-19 a one-cell board parses" false
+  | .ok dt =>
+    let ram := dt.machineConfig.memoryMap.filter (fun r => r.kind == MemoryKind.ram)
+    expect "RR892-19 the one-cell reg reads as one region" (decide (ram.length = 1))
+    expect "RR892-19 …at the declared base and size"
+      (ram.any (fun r => r.base.toNat == 0 && r.size == 0xFC000000))
+
+/-- **PR #892 review round 5 audit**: a `reg` that is not a whole number of
+pairs fails the whole query closed, as `fold_memory_reg` does — rather than
+contributing the entries before the partial one. -/
+def deviceTreeBridge_20_partial_reg_pair_refused : IO Unit := do
+  match DeviceTree.fromDtbFull truncatedRegBoardDtb rpi5MachineConfig.physicalAddressWidth with
+  | .ok _ => expect "RR892-20 a partial reg pair is refused" false
+  | .error _ => expect "RR892-20 a partial reg pair is refused" true
+
+/-- **PR #892 review round 5 audit**: `memory@` with no unit address is not a
+memory node, matching `is_memory_node_name`. -/
+def deviceTreeBridge_21_empty_unit_address_is_not_memory : IO Unit := do
+  match DeviceTree.fromDtbFull emptyUnitAddressDtb rpi5MachineConfig.physicalAddressWidth with
+  | .ok _ => expect "RR892-21 memory@ with no unit address is not memory" false
+  | .error _ => expect "RR892-21 memory@ with no unit address is not memory" true
+
 /-- **PR #892 review round 5**: a structure block that simply stops is refused.
 
 The intact fixture parses and the truncated one does not — the mutation keeps
@@ -1230,5 +1370,9 @@ def main : IO Unit := do
   deviceTreeBridge_15_unknown_token_refused
   deviceTreeBridge_16_disabled_memory_refused
   deviceTreeBridge_17_reserved_memory_child_is_not_ram
+  deviceTreeBridge_18_every_memory_node_contributes
+  deviceTreeBridge_19_root_cell_widths_are_honoured
+  deviceTreeBridge_20_partial_reg_pair_refused
+  deviceTreeBridge_21_empty_unit_address_is_not_memory
   IO.println ""
   IO.println "=== All AK9 platform tests passed ==="

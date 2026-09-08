@@ -1518,7 +1518,7 @@ run_negative_check "INVARIANT" rg -n 'some \(\[\], offset\) -- Read failure' SeL
 # the Rust one does — `okay`/`ok` and nothing else — and the memory selector
 # applies it beside the kind test, at the top level only.
 run_check "INVARIANT" rg -n 'value == "okay" \|\| value == "ok"' SeLe4n/Platform/DeviceTree.lean
-run_check "INVARIANT" rg -n -U 'if n\.isMemoryNode && n\.statusIsOperational then n\.findProperty "reg" else none' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U 'if n\.isMemoryNode && n\.statusIsOperational then\n      some \(n, parentAddressCells, parentSizeCells\)' SeLe4n/Platform/DeviceTree.lean
 # NEGATIVE: a `!= disabled` verdict, which passes `reserved` and `fail`.
 run_negative_check "INVARIANT" rg -n 'value != "disabled"' SeLe4n/Platform/DeviceTree.lean
 # PR #892 review round 5: a child-relative address is not a physical one.  The
@@ -1529,6 +1529,22 @@ run_check "INVARIANT" rg -n -U 'match ctx\.translate childBase with\n          \
 run_check "INVARIANT" rg -n -U '\| none => \{ addressCells := childAddressCells, sizeCells := childSizeCells,\n                translate := fun _ => none \}' SeLe4n/Platform/DeviceTree.lean
 # NEGATIVE: the pre-round classifier, reporting the raw `reg` base.
 run_negative_check "INVARIANT" rg -n -U 'let base := match readBE64 regBytes 0 with \| some v => v\.toNat \| none => 0' SeLe4n/Platform/DeviceTree.lean
+# PR #892 review round 5 audit: the Lean and Rust device-tree walkers answer
+# "which memory does this blob declare" the same way — the audit WS-XV's
+# registration asked for, run against the pairs rather than waiting for review.
+# Four relations: EVERY available top-level memory node contributes (the Rust
+# store folds each node it passes), the root's declared cell widths govern the
+# `reg`, a `reg` that is not a whole number of pairs fails the query closed, and
+# `memory@` with no unit address is not a memory node.
+run_check "INVARIANT" rg -n -U 'let top := nodes\.filterMap \(pick fdtDefaultAddressCells fdtDefaultSizeCells\)\n  match top with\n  \| _ :: _ => top\n  \| \[\] => nodes\.flatMap' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n '^def fdtDefaultSizeCells : Nat := 1$' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U 'if entrySize == 0 \|\| regBytes\.size % entrySize != 0 then none\n  else some \(extractMemoryRegionsGeneral regBytes addressCells sizeCells\)' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n 'node\.name\.startsWith "memory@" && node\.name\.length > 7' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U 'match memoryRegionsFromNodes nodes with\n      \| none => \.error \.malformedBlob' SeLe4n/Platform/DeviceTree.lean
+# NEGATIVE: the first-node selector, the fixed-stride extractor, and the
+# non-specification size-cell default.
+run_negative_check "INVARIANT" rg -n 'fdtRegionsToMemoryRegions \(extractMemoryRegions regBytes\)' SeLe4n/Platform/DeviceTree.lean
+run_negative_check "INVARIANT" rg -n '^def fdtDefaultSizeCells : Nat := 2$' SeLe4n/Platform/DeviceTree.lean
 # The round's Lean surface resolves.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
 import SeLe4n.Platform.DeviceTree

@@ -49,10 +49,10 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.34.114` (`lakefile.toml`) |
+| **Package version** | `0.34.115` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 355,159 across 328 Lean files |
-| **Test LoC** | 71,970 across 70 Lean test suites |
+| **Production LoC** | 355,237 across 328 Lean files |
+| **Test LoC** | 72,114 across 70 Lean test suites |
 | **Proved declarations** | 11,886 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |

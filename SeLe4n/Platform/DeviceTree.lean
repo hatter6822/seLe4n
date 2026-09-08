@@ -747,18 +747,35 @@ def readFdtCells (bytes : ByteArray) (offset count : Nat) : Option Nat :=
         | _, _ => none)
       (some 0)
 
+/-- **PR #892 review round 5 audit**: `#address-cells` when a node declares
+none — 2, Devicetree Specification v0.4 §2.3.5, and the value
+`cmdline::FDT_DEFAULT_ADDRESS_CELLS` uses on the Rust side. -/
+def fdtDefaultAddressCells : Nat := 2
+
+/-- **PR #892 review round 5 audit**: `#size-cells` when a node declares none —
+**1**, §2.3.5, and `cmdline::FDT_DEFAULT_SIZE_CELLS`.
+
+It was 2 here for one cut, which is a divergence from both the specification and
+the Rust walker that reads the same blob: a root declaring `#address-cells` and
+no `#size-cells` had its children's `reg` read at a different stride on the two
+sides. -/
+def fdtDefaultSizeCells : Nat := 1
+
 /-- **PR #892 review round 5**: a node's declared `#address-cells`, or the
-default this parser has always used for a `reg` it reads (2). -/
+specification's default. -/
 def FdtNode.addressCells (node : FdtNode) : Nat :=
   match node.findProperty "#address-cells" with
-  | some bytes => match readBE32 bytes 0 with | some v => v.toNat | none => 2
-  | none => 2
+  | some bytes =>
+    match readBE32 bytes 0 with | some v => v.toNat | none => fdtDefaultAddressCells
+  | none => fdtDefaultAddressCells
 
-/-- **PR #892 review round 5**: a node's declared `#size-cells`, or 2. -/
+/-- **PR #892 review round 5**: a node's declared `#size-cells`, or the
+specification's default. -/
 def FdtNode.sizeCells (node : FdtNode) : Nat :=
   match node.findProperty "#size-cells" with
-  | some bytes => match readBE32 bytes 0 with | some v => v.toNat | none => 2
-  | none => 2
+  | some bytes =>
+    match readBE32 bytes 0 with | some v => v.toNat | none => fdtDefaultSizeCells
+  | none => fdtDefaultSizeCells
 
 /-- **PR #892 review round 5**: one `ranges` entry — a child window, where it
 lands in the parent's address space, and how long it is. -/
@@ -828,9 +845,12 @@ structure FdtAddressContext where
 /-- **PR #892 review round 5**: the CPU's own address space — the context the
 nodes handed to `extractPeripherals` live in.
 
-The cell widths are the 2/2 this parser has always read a `reg` with, so a node
-passed at the top level classifies exactly as it did before this cut; what
-changes is what happens *below* a bus. -/
+The cell widths are the 2/2 this parser has always read a top-level `reg` with,
+and they stay that way deliberately: the list handed to `extractPeripherals` is
+the tree's **roots**, whose own `reg` is not a thing the specification defines,
+so these widths govern nothing on a real tree.  Every node below takes its
+widths from its parent's declaration (`forChildren`), where the specification's
+defaults apply. -/
 def FdtAddressContext.cpuPhysical : FdtAddressContext :=
   { addressCells := 2, sizeCells := 2, translate := some }
 
@@ -1001,15 +1021,15 @@ The name test plus the `device_type` test the Rust walker applies — a node nam
 a separate question (`statusIsOperational`), asked beside this one wherever a
 memory node is selected. -/
 def FdtNode.isMemoryNode (node : FdtNode) : Bool :=
-  (node.name == "memory" || node.name.startsWith "memory@")
+  (node.name == "memory" || (node.name.startsWith "memory@" && node.name.length > 7))
   && (match node.findProperty "device_type" with
       | none => true
       | some bytes =>
         let byteList := bytes.data.toList.takeWhile (· != 0)
         String.ofList (byteList.map (fun b => Char.ofNat b.toNat)) == "memory")
 
-/-- **PR #892 review round 5**: the `reg` of the first **available top-level**
-memory node in a parsed tree.
+/-- **PR #892 review round 5**: **every** available top-level memory node in a
+parsed tree, with the cell widths that govern its `reg`.
 
 Three filters, and each one closes a way the previous selector could pick RAM
 the machine does not have: the node must describe memory (`isMemoryNode`), it
@@ -1017,18 +1037,76 @@ must be operational (`statusIsOperational` — firmware marks a withheld bank
 `disabled`, and folding its `reg` maps DRAM that is not there), and it must sit
 at the **top level**, so a `memory@…` under `/reserved-memory` — a carve-out,
 not an aperture — is not read as the machine's RAM.  All three are the filters
-`cmdline::find_ram_top_in_dtb` applies on the Rust side; this is the sweep that
-round 4's fix owed its Lean sibling.
+`cmdline::find_ram_top_in_dtb` applies on the Rust side.
 
 Searched at the top level and one level down, which is how this file's other
 selectors (`extractInterruptController`, `extractTimerFrequency`) reach past the
-tree root that `parseFdtNodes` returns. -/
+tree root that `parseFdtNodes` returns.  The widths come from the node's
+**parent**, since `#address-cells` and `#size-cells` govern a node's children;
+at the top level there is no parent in the list, so the specification's defaults
+apply.
+
+**Every** node, not the first (PR #892 review round 5 audit).  The Rust walker
+folds each `/memory` node's extents into one store as it passes them, so a board
+reporting its low aperture and its high bank as two `/memory` nodes — a shape
+the specification allows and firmware uses — was read whole on that side and
+truncated to its first node here.  The two implementations answered "which
+memory does this blob declare" differently, which is the class this PR's fifth
+round registered as WS-XV; this is that audit finding its first instance. -/
+def memoryNodesWithCells (nodes : List FdtNode) : List (FdtNode × Nat × Nat) :=
+  let pick := fun (parentAddressCells parentSizeCells : Nat) (n : FdtNode) =>
+    if n.isMemoryNode && n.statusIsOperational then
+      some (n, parentAddressCells, parentSizeCells)
+    else none
+  let top := nodes.filterMap (pick fdtDefaultAddressCells fdtDefaultSizeCells)
+  match top with
+  | _ :: _ => top
+  | [] => nodes.flatMap (fun parent =>
+      parent.children.filterMap (pick parent.addressCells parent.sizeCells))
+
+/-- **PR #892 review round 5**: the `reg` of the first available top-level
+memory node — the raw-bytes search `findMemoryRegPropertyChecked` answers.
+
+Derived from `memoryNodesWithCells`, so the search API and the boot path cannot
+disagree about *which* nodes are the machine's RAM; they differ only in how many
+of them each needs. -/
 def memoryNodeReg? (nodes : List FdtNode) : Option ByteArray :=
-  let pick := fun (n : FdtNode) =>
-    if n.isMemoryNode && n.statusIsOperational then n.findProperty "reg" else none
-  match nodes.findSome? pick with
-  | some regBytes => some regBytes
-  | none => nodes.findSome? (fun n => n.children.findSome? pick)
+  (memoryNodesWithCells nodes).findSome? (fun entry => entry.1.findProperty "reg")
+
+/-- **PR #892 review round 5 audit**: read a `/memory` node's `reg` at the given
+cell widths, refusing one that is not a whole number of (address, size) pairs.
+
+`extractMemoryRegionsGeneral` *truncates* a trailing partial entry, which is the
+fail-open direction: a `reg` the Rust walker rejects outright
+(`fold_memory_reg`'s `value_len.is_multiple_of(pair_bytes)`) would have
+contributed the entries before it here.  A malformed `reg` fails the whole query
+closed, on both sides. -/
+def extractMemoryRegionsChecked (regBytes : ByteArray)
+    (addressCells sizeCells : Nat) : Option (List FdtMemoryRegion) :=
+  let entrySize := (addressCells + sizeCells) * 4
+  if entrySize == 0 || regBytes.size % entrySize != 0 then none
+  else some (extractMemoryRegionsGeneral regBytes addressCells sizeCells)
+
+/-- **PR #892 review round 5 audit**: the memory regions a parsed tree declares —
+every available top-level `/memory` node's `reg`, read at the cell widths its
+parent declares, refused whole if any of them is malformed.
+
+This is the single answer the boot path takes, and the Lean counterpart of the
+Rust walker's extent store: same node filters, same cell widths, same
+whole-pairs refusal, and the same accumulation across nodes. -/
+def memoryRegionsFromNodes (nodes : List FdtNode) : Option (List FdtMemoryRegion) :=
+  (memoryNodesWithCells nodes).foldl
+    (fun acc entry =>
+      match acc with
+      | none => none
+      | some regions =>
+        match entry.1.findProperty "reg" with
+        | none => some regions
+        | some regBytes =>
+          match extractMemoryRegionsChecked regBytes entry.2.1 entry.2.2 with
+          | none => none
+          | some more => some (regions ++ more))
+    (some [])
 
 /-- AK9-F (P-M07): `Except`-returning variant of `findMemoryRegProperty`.  Unlike
     the legacy `Option` form that collapses "fuel exhausted" and "malformed
@@ -1296,10 +1374,10 @@ def DeviceTree.fromDtbFull (blob : ByteArray) (physicalAddressWidth : Nat)
     match parseFdtNodes blob hdr with
     | .error e => .error e
     | .ok nodes =>
-      match memoryNodeReg? nodes with
+      match memoryRegionsFromNodes nodes with
       | none => .error .malformedBlob
-      | some regBytes =>
-        let memRegions := fdtRegionsToMemoryRegions (extractMemoryRegions regBytes)
+      | some fdtRegions =>
+        let memRegions := fdtRegionsToMemoryRegions fdtRegions
         if memRegions.isEmpty then .error .malformedBlob
         else
           let config : MachineConfig := {
@@ -1343,9 +1421,9 @@ theorem parseFdtHeader_fromDtbFull_ok (blob : ByteArray)
     (hValid : parseAndValidateFdtHeader blob = some hdr)
     (nodes : List FdtNode)
     (hNodes : parseFdtNodes blob hdr = .ok nodes)
-    (regBytes : ByteArray)
-    (hMem : memoryNodeReg? nodes = some regBytes)
-    (hNonEmpty : (fdtRegionsToMemoryRegions (extractMemoryRegions regBytes)).isEmpty = false) :
+    (fdtRegions : List FdtMemoryRegion)
+    (hMem : memoryRegionsFromNodes nodes = some fdtRegions)
+    (hNonEmpty : (fdtRegionsToMemoryRegions fdtRegions).isEmpty = false) :
     ∃ dt, DeviceTree.fromDtbFull blob physicalAddressWidth = .ok dt := by
   unfold DeviceTree.fromDtbFull
   simp [hValid, hNodes, hMem, hNonEmpty]

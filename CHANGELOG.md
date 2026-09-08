@@ -1,3 +1,91 @@
+## v0.34.115 — the WS-XV audit run rather than registered: four divergences the review had not reached
+
+**Not a review round.**  `v0.34.114` registered WS-XV — the observation that
+every mechanical cross-implementation gate in this tree is *nominal*, so a
+behavioural divergence between the Lean model and its executable Rust twin is
+invisible to CI.  This cut is that audit **run by hand** against the pair with
+the most history, the device-tree parsers, instead of waiting for a sixth review
+round to find the next instance.  It found four, all live on `41a9216b`, all
+fixed here.
+
+**Only the first `/memory` node was read.**  `find_ram_top_in_dtb` folds each
+memory node's extents into one store as it passes them, so a board reporting its
+low aperture and its high bank as **two** `/memory` nodes — a shape the
+specification allows and firmware uses — was read whole on the Rust side and
+truncated to its first node on the Lean one.  The consequence is not cosmetic:
+such a board bound the variant its *first* node covers, so an 8 GiB Raspberry Pi
+reporting two nodes would have booted on the 4 GiB map, declaring RAM it has and
+hiding RAM it has.  `memoryNodesWithCells` now collects every available
+top-level node and `memoryRegionsFromNodes` folds them, exactly as the Rust
+store does; a suite case drives the two-node board through the bridge and pins
+that it binds the 8 GiB variant's map.
+
+**The root's cell widths were ignored.**  The Rust walker reads the root's
+`#address-cells` / `#size-cells` and reads each `reg` pair at that width; the
+Lean boot path called `extractMemoryRegions`, a **fixed** 16-byte stride, while
+the cell-aware `extractMemoryRegionsGeneral` sat in the same file with no caller
+on that path — an unwired proven structure, which this project's own rule says
+to wire rather than delete.  A board declaring one-cell addresses and sizes was
+therefore parsed correctly by the code that maps the RAM and mis-parsed by the
+code that validates the board.  The boot path now reads the declaring node's
+parent's widths.
+
+**A partial `reg` pair was kept rather than refused.**  `fold_memory_reg` rejects
+a `reg` whose length is not a whole number of (address, size) pairs;
+`extractMemoryRegionsGeneral` *truncates*, contributing the entries before the
+partial one.  `extractMemoryRegionsChecked` refuses, so the two sides fail closed
+on the same input.
+
+**`#size-cells` defaulted to 2, against the specification and against Rust.**
+Devicetree Specification v0.4 §2.3.5 gives 2 for `#address-cells` and **1** for
+`#size-cells`, which is what `cmdline::FDT_DEFAULT_SIZE_CELLS` uses.  The Lean
+defaults are now named constants (`fdtDefaultAddressCells`,
+`fdtDefaultSizeCells`) carrying the specification's values.  The fixtures moved
+with it: `mkBus` declares its cell counts as a real bus node does, and every
+blob builder writes the root's `#address-cells` / `#size-cells`, which the Rust
+fixture builder has always written — the two builders were producing different
+blobs for "the same" board, the same one-question-two-answers shape as the
+parsers they feed.
+
+Also: `memory@` with an empty unit address is no longer a memory node, matching
+`is_memory_node_name`'s `name.len() > b"memory@".len()`.
+
+Four suite cases (the two-node board, the one-cell board, the partial pair, the
+empty unit address), seven Tier 3 anchors and nine anchor mutations that keep the
+tokens and break one relation each — the first-node selector restored, the child
+branch taking only the first, the size-cell default at 2, the whole-pairs check
+dropped and then made to truncate, the unit-address requirement dropped, and the
+boot path repointed at the fixed-stride extractor.
+
+**And the workstream's own premise was corrected in the same cut.**  `v0.34.114`
+justified the device-tree duplication as *forced* — "`init_mmu` must read the
+device tree before the MMU is on, in `no_std`, with no Lean runtime to call" —
+and the maintainer's correction is that both halves of that are wrong.  Parsing
+a firmware-supplied blob with translation off is bad practice: it runs an
+attacker-influenced parser in the one window with no memory protection and no
+recovery but a halt.  And it is unnecessary, because boot page tables do not
+need the RAM *size*.  They need the image `[_start, __bss_end)`, both stacks, an
+early heap, a bounded window at the firmware's DTB pointer, and the device
+window — every one a linker symbol or a board constant, and exactly the list
+round 4's `boot_critical_ranges_mapped` already enumerates.  The standard arm64
+sequence builds the boot map from those, enables the MMU, and only then maps the
+FDT and parses it with translation on.
+
+So the device-tree pair's remedy is **elimination, not a differential**: build
+the boot map from constants, bring the Lean runtime up — which is what WS-BP is
+for — and let the verified Lean parser be the blob's only reader, installing the
+real memory map from the kernel side.  `find_ram_top_in_dtb`, `contiguous_ram_top`,
+`MemoryExtents`, `clamp_ram_top`'s coverage cap and `init_mmu`'s boot-critical
+refusal all leave the boot path with it.  That is tier 1 of this file's own
+remedy list — *make the second implementation impossible* — which `v0.34.114`
+recorded as unavailable on a premise that does not hold.  WS-XV's work list is
+renumbered accordingly: the removal is XV1 and a WS-BP obligation, the shared
+corpus is XV2 and explicitly *interim*, and only the genuinely two-sided pairs
+(the ABI encoder against the kernel's decoder, the HAL's boot map against the
+model's) keep the harness remedy.  The ordering constraint is stated where it
+binds: the boot map may not shrink before the Lean side that installs the full
+map exists.
+
 ## v0.34.114 — the recurring review class named and registered: no cross-implementation gate in this tree is behavioural
 
 **Not a code cut.**  PR #892 has now had five review rounds and twenty findings,
