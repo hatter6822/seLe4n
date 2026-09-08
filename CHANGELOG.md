@@ -1,3 +1,65 @@
+## v0.34.124 — WS-XV is WS-BP's BP0, not a workstream of its own
+
+**One planning document where there were two, at the maintainer's direction.**
+WS-XV was registered at `v0.34.114` after the review rounds on PR #892 showed
+that twenty of thirty-six findings across nine rounds were two implementations
+of one question that had drifted.  It was never given a plan file, and reading
+its five rows back shows why it should not have had one: they are not a
+workstream, they are WS-BP's first phase and one of its later rows.
+
+| Was | Now | Kind |
+|-----|-----|------|
+| XV1 — the device-tree pair removed rather than tied | **BP2.6** | scheduled since `v0.34.120` |
+| XV2 — the shared device-tree fixture corpus | **BP0.1** | interim; BP2.6 retires it |
+| XV3 — both sides consume every fixture | **BP0.2** | interim; BP2.6 retires it |
+| XV4 — the ABI layout stated once, from Lean | **BP0.3** | permanent |
+| XV5 — the boot-map pair, driven not mirrored | **BP0.4** | permanent |
+
+The merge is not tidying.  **XV1 was always a WS-BP obligation** and became
+BP2.6 two cuts ago.  **XV2 and XV3 are interim by their own text** — *"only if
+XV1 is far off"* — and BP2.6 is what retires them, so a workstream whose work
+exists only until another workstream reaches a particular row is a phase of
+that workstream.  **XV4 and XV5 sit on surfaces WS-BP modifies**: the ABI is
+what BP7's context restore delivers, the boot map is what BP2.6 rebuilds.  Half
+of WS-XV is deleted by WS-BP's own work and the other half is a harness over
+what WS-BP changes; held apart, each document had to describe the other's
+schedule to be readable.
+
+**`BP0`, not a renumber.**  `BP2.6` is frozen in three commits and six CHANGELOG
+entries, so `BP1..BP8` may not move — the new phase sits *before* `BP1`, which
+is also its correct execution order, since BP0's value decays as the rest
+lands.  `RR0` sets the precedent for a zero-indexed phase.  BP0 is the one
+phase that may run **in parallel** with any other: it touches test harnesses
+and generated tables, not the boot path, and nothing in `BP1..BP8` consumes it.
+
+**Where the forward pointer lives.**  The interim rows do not name BP2.6; BP2.6
+names them.  `check_workstream_plan.py` reported BP0.1 and BP0.4 as depending on
+a later row when the first draft had them cite it, and the remedy is the one
+`CLAUDE.md` states — *state the dependency in the row that consumes it, so the
+constraint is visible where it binds*.  The retirement binds at BP2.6, so BP2.6's
+row carries **"Retires BP0.1 and BP0.2 with the pair they tie, and updates
+BP0.4's expectations, which must keep passing"**.
+
+**What the merge does not claim.**  BP0 does not make the pairs behaviourally
+equivalent; it makes a divergence *fail a gate* rather than wait for a reviewer.
+The three device-tree divergences fixed at `v0.34.121`–`v0.34.123` were each
+found by a person reading two files side by side, which is the method BP0 exists
+to replace and the evidence that the method does not scale.
+
+**The register keeps the finding, not the work.**  `docs/REGISTERED_DEBT.md`'s
+WS-XV section is now the evidence that nominal gates miss behavioural drift,
+with a pointer table to the BP rows; its work list is gone.  The workstream
+registry records WS-XV as `v0.34.114–v0.34.124 (absorbed)`.  Counts corrected
+from 38/8 to **42/9** at every site: the plan header and phase map, `CLAUDE.md`,
+`AGENTS.md`, `SMP_RELEASE_CLOSURE_PLAN.md` (twice) and `UNFINISHED_SMP_WORK.md`
+— the derived check added at `v0.34.120` is what found all six.
+
+**Files**: `docs/planning/SMP_BOOT_PATH_PLAN.md`, `docs/REGISTERED_DEBT.md`,
+`docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`,
+`docs/planning/UNFINISHED_SMP_WORK.md`, `CLAUDE.md`, `AGENTS.md`.
+
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §4.1 (why WS-XV is BP0)
+
 ## v0.34.123 — the two device-tree header validators answer one question
 
 **Third finding of the same audit, and the first that is a divergence in the

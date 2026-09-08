@@ -107,8 +107,8 @@ is planned against them. This is the largest single risk in the register.
 `v0.34.26` (WS-RR RR0.4); the estimate was re-derived from a sized breakdown
 at `v0.34.41` (RR1.11), giving 14–24 weeks in place of 4–6; and at `v0.34.59`
 (RR7.5 + RR7.15) the port was **split out and sequenced** as
-[`SMP_BOOT_PATH_PLAN.md`](SMP_BOOT_PATH_PLAN.md) — WS-BP, 38 sub-tasks across
-`BP1..BP8` in execution order, each of findings 19, 32 and 40–44 scheduled to a
+[`SMP_BOOT_PATH_PLAN.md`](SMP_BOOT_PATH_PLAN.md) — WS-BP, 42 sub-tasks across
+`BP0..BP8` in execution order, each of findings 19, 32 and 40–44 scheduled to a
 named row with an acceptance box. The risk itself does not go away by being
 planned: `BP2` (bare-metal runtime hosting) remains the largest single unknown
 in the project, and that plan's risk inventory says so and states what bounds

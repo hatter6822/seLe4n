@@ -211,11 +211,23 @@ capstones state `hBandProgress` explicitly rather than hiding it. The cost is
 that v1.0.0's liveness claim is **conditional** and must be stated that way.
 **SM10 may not claim unconditional SMP starvation-freedom.**
 
-## WS-XV — cross-implementation behavioural agreement
+## WS-XV — cross-implementation behavioural agreement (**absorbed into WS-BP**)
 
-**Owner**: whole-tree validation. **Closure target**: post-v1.0.0 unless the
-maintainer opens it beside RR8. Registered as a row in table C above; the work
-list is here because it has no plan file.
+**Owner**: **WS-BP**, as its phase **BP0**
+([`SMP_BOOT_PATH_PLAN.md`](planning/SMP_BOOT_PATH_PLAN.md) §4.1, §5). **Closure
+target**: with WS-BP.
+
+This section is retained as the *finding* — the evidence that nominal gates do
+not catch behavioural drift — and no longer as a work list. The work is four
+rows in that plan, and the merge is not tidying: XV1 was always a WS-BP
+obligation and became **BP2.6** at `v0.34.120`; XV2 and XV3 are interim *by
+their own text* and are retired by BP2.6; XV4 and XV5 sit on surfaces WS-BP
+modifies. Half of WS-XV is deleted by WS-BP's own work and the other half is a
+harness over what WS-BP changes, so held apart each document had to describe
+the other's schedule to be readable.
+
+The row-by-row mapping is at the end of this section, beside the pairs it
+names; stating it twice is how a register drifts from itself.
 
 The tree maintains a verified Lean model beside an executable Rust HAL, and in
 several places the same question is answered on both sides.
@@ -303,15 +315,17 @@ The pairs, and what ties them today:
 | `mmu::boot_mapping_for` / `RPi5.rpi5MemoryMapForConfig` | what does the boot map at this address? | partial — `check_physical_address_width.sh` derives the *device window* from `Board.lean`, and one Rust test mirrors the boundaries |
 | `objectLockBracketDomain` / `schedulerLockBracketDomain` | in what order does a bracket acquire a footprint? | **closed at v0.34.113** — one definition answers it |
 
-What remains, in execution order:
+What remains — **now scheduled as WS-BP's BP0 phase**, so this is a pointer
+rather than a work list.  Each row's design, files and estimate live in
+[`SMP_BOOT_PATH_PLAN.md`](planning/SMP_BOOT_PATH_PLAN.md) §5.
 
-| # | Item | Where |
-|---|------|-------|
-| XV1 | **The device-tree pair, removed rather than tied** — a WS-BP obligation, listed here because this is where the pair is registered.  `init_mmu` builds the boot map from linker symbols and board constants (the image, both stacks, an early heap, a bounded window at the firmware's DTB pointer, the device window) with **no** device-tree read; translation is enabled; the Lean runtime comes up; and the verified Lean parser is the blob's only reader, installing the real memory map from the kernel side.  `find_ram_top_in_dtb`, `contiguous_ram_top`, `MemoryExtents`, `clamp_ram_top`'s coverage cap and `init_mmu`'s boot-critical refusal all leave the boot path with it.  **Ordering**: the boot map may not shrink before the Lean side that installs the full map exists, so this lands inside WS-BP and not before | `rust/sele4n-hal/src/mmu.rs`, `rust/sele4n-hal/src/boot.rs`, `rust/sele4n-hal/src/cmdline.rs`, [`SMP_BOOT_PATH_PLAN.md`](planning/SMP_BOOT_PATH_PLAN.md) |
-| XV2 | **Interim only, and only if XV1 is far off**: a shared fixture corpus for the device-tree pair — blobs checked in as reviewable hex with a generator, and a manifest stating the regions each declares and the RAM top they imply, read by both suites so a filter added to one side fails that side's assertion.  The four divergences the `v0.34.115` hand audit found are the case for doing this if the boot-path change is distant, and the case for doing XV1 sooner if it is not.  A corpus that ties two parsers is the wrong permanent answer when one of them should not exist | `tests/fixtures/dtb/`, `rust/sele4n-hal/src/cmdline.rs`, `tests/Ak9PlatformSuite.lean` |
-| XV3 | A Tier 0 check that **both** sides consume **every** fixture of whatever shared corpus exists, so adding a case to one suite alone is a failure rather than a silent gap | `scripts/` |
-| XV4 | Derive the ABI conformance expectations from the Lean layout rather than transcribing them, or state the layout once in a generated table both sides read.  This pair is genuinely two-sided — the Rust encoder is the userspace ABI and the Lean decoder is the kernel's — so it keeps the harness remedy | `rust/sele4n-abi/tests/conformance.rs`, `SeLe4n/Model/Object/Types.lean` |
-| XV5 | Extend the same treatment to the boot map: the same address set through `mmu::boot_mapping_for` and `rpi5MemoryMapForConfig`, replacing the single mirrored-boundaries test.  Two-sided for the same reason — the HAL programs the tables and the model reasons about them | `rust/sele4n-hal/src/mmu.rs`, `SeLe4n/Platform/RPi5/Board.lean` |
+| Was | Now | Kind |
+|-----|-----|------|
+| XV1 | **BP2.6** — the device-tree pair removed rather than tied: the boot map built from linker symbols and board constants, the verified Lean parser left as the blob's only reader | scheduled since `v0.34.120` |
+| XV2 | **BP0.1** — the shared device-tree fixture corpus, read by both suites | interim; BP2.6 retires it |
+| XV3 | **BP0.2** — a Tier 0 check that both sides consume every fixture | interim; BP2.6 retires it |
+| XV4 | **BP0.3** — the `MessageInfo` layout emitted from Lean and asserted by the Rust conformance suite, replacing hand-transcribed shifts across 112 tests | permanent |
+| XV5 | **BP0.4** — one address set through `mmu::boot_mapping_for` and `rpi5MemoryMapForConfig`, replacing the single mirrored-boundaries test | permanent |
 
 None of the five is a soundness defect, and none of the drifts they would have
 caught is open: every instance is fixed, including the four the `v0.34.115`
@@ -461,8 +475,8 @@ Scope, findings and evidence for any of these are in
 |------------|----------|
 | **WS-AP** | v0.34.71– (closure post-v1.0.0 — the ASID capability surface; two SM7 debts re-targeted from the closed SM8) |
 | **WS-OD** | v0.34.98– (planned; opens beside WS-RR RR7 and closes before RR8 — SchedContext donation chains, [`SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`](planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md)) |
-| **WS-XV** | v0.34.114– (registered; post-v1.0.0 unless opened beside RR8 — cross-implementation behavioural agreement, work list in this file) |
-| **WS-BP** | v0.34.59– (planned; opens after WS-RR RR8 closes — the bare-metal boot path, [`SMP_BOOT_PATH_PLAN.md`](planning/SMP_BOOT_PATH_PLAN.md)) |
+| **WS-XV** | v0.34.114–v0.34.124 (registered, then **absorbed into WS-BP as its BP0 phase**; the finding is retained in this file, the work is [`SMP_BOOT_PATH_PLAN.md`](planning/SMP_BOOT_PATH_PLAN.md) §5 BP0) |
+| **WS-BP** | v0.34.59– (planned; opens after WS-RR RR8 closes — the bare-metal boot path **and the cross-implementation agreement it ends**, absorbing WS-XV as BP0 at `v0.34.124`, [`SMP_BOOT_PATH_PLAN.md`](planning/SMP_BOOT_PATH_PLAN.md)) |
 | **WS-LC** | v0.34.51–v0.34.56 |
 | **WS-CB** | v0.34.49– (planned; opens after WS-RR, or beside RR6–RR8 under the file partition in its plan's §2.3) |
 | **WS-RR** | v0.34.26– |

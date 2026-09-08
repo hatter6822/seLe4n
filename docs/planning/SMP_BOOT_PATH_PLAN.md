@@ -1,10 +1,13 @@
-# WS-BP — The bare-metal boot path
+# WS-BP — The bare-metal boot path, and the cross-implementation
+# agreement it ends
 
 > **Status**: **PLANNED — BLOCKED on WS-RR.**  Registered at `v0.34.59`
 > by WS-RR RR7.5 + RR7.15 (register §6 findings 19, 40–44).  No sub-task
 > has started.
 >
-> **Workstream**: WS-BP
+> **Workstream**: WS-BP.  **Absorbs WS-XV** (cross-implementation
+> behavioural agreement), which was register-only and is now this plan's
+> BP0 — see §4.1 for why the two belong in one document
 > **Produces**: the content of **SM10.1**
 > ([`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) §3), whose
 > `SM10.1.1` row — the `kernel8.img` packaging — is this workstream's BP5.3
@@ -20,7 +23,7 @@
 > [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) §1.1 derives
 > from a sized breakdown; this plan sequences that breakdown without
 > re-pricing it
-> **Sub-task count**: 38 across 8 phases (BP1..BP8), each phase numbered in
+> **Sub-task count**: 42 across 9 phases (BP0..BP8), each phase numbered in
 > execution order
 
 ## 1. Why this plan exists
@@ -49,8 +52,10 @@ resolution that note itself names ("a restructuring of SM10, with its own
 prefix and no repurposed ID").  `SM10.1.1` keeps its meaning — the image
 packaging, the deliverable the release cut consumes — and every citation of
 it stays true.  WS-BP numbers the work that produces that image, in
-execution order, under `BP1..BP8`.  Nothing is renumbered; something is
-numbered that never was.
+execution order, under `BP1..BP8`, with `BP0` added at `v0.34.124` for the
+cross-implementation work WS-XV had registered and never scheduled.  Nothing
+is renumbered — `BP0` sits *before* `BP1` precisely so that `BP2.6` and every
+other cited ID keeps its meaning; something is numbered that never was.
 
 ## 2. What does not exist at HEAD
 
@@ -95,8 +100,16 @@ be written until BP3 supplies the configuration it boots, and BP3's
 configuration cannot be elaborated into an image until BP1 emits Lean object
 code for the target.
 
+**BP0 is first because its value decays as the rest lands**, and it is the
+one phase that may run **in parallel** with any other: it touches test
+harnesses and generated tables, not the boot path itself.  Nothing in BP1..BP8
+consumes it, and it consumes nothing — the only coupling is the other way
+round, where BP2.6 changes what BP0.4 compares and must keep it passing.
+Every other phase pair here is strictly sequential.
+
 | Phase | Scope | Sub | Est |
 |-------|-------|-----|-----|
+| BP0 | Cross-implementation agreement — the pairs held while this path removes one of them | 4 | M |
 | BP1 | aarch64 Lean object code — the cross-compile lane and `libsele4n.a` | 4 | L |
 | BP2 | Bare-metal Lean runtime hosting — heap, shims, initialization, and the boot map the arena lives in | 6 | XL |
 | BP3 | The RPi5 deployment — `PlatformConfig`, root task, labeling | 4 | L |
@@ -106,7 +119,70 @@ code for the target.
 | BP7 | The context restore — TTBR0, the full frame, delivery | 7 | XL |
 | BP8 | First boot and bring-up — QEMU, then the board | 5 | XL |
 
+### 4.1 Why WS-XV is BP0 rather than a workstream of its own
+
+WS-XV was registered at `v0.34.114` after the review rounds on PR #892 showed
+that **twenty of thirty-six findings across nine rounds** were two
+implementations of one question that had drifted.  It was never given a plan
+file, and reading its five rows back shows why it should not have one: they
+are not a workstream, they are this workstream's first phase and one of its
+later rows.
+
+- **XV1** — the device-tree pair's *removal* — was always a WS-BP obligation,
+  and `v0.34.120` made it **BP2.6**.  It is not restated below.
+- **XV2 and XV3** — a shared device-tree fixture corpus and a check that both
+  suites consume all of it — are **interim by their own text**: *"only if XV1
+  is far off"*.  BP2.6 is far off, so they are indicated, and BP2.6 is what
+  retires them.  A workstream whose work exists only until another workstream
+  reaches a particular row is a phase of that workstream.
+- **XV4 and XV5** — the ABI layout table and the boot-map pair — are the two
+  genuinely two-sided pairs, permanent, and both sit on surfaces this plan
+  changes: the ABI is what BP7's context restore delivers, and the boot map is
+  what BP2.6 rebuilds.
+
+So the merge is not tidying.  Half of WS-XV is deleted by this plan's own
+work, and the other half is a harness over surfaces this plan modifies.  Held
+apart, the two documents would each have had to describe the other's schedule
+to be readable.
+
+**What the merge does not claim.**  BP0 does not make the pairs behaviourally
+equivalent; it makes a divergence *fail a gate* rather than wait for a
+reviewer.  The three device-tree divergences fixed at `v0.34.121`–`v0.34.123`
+were each found by a person reading two files side by side, which is the
+method BP0 exists to replace and the evidence that the method does not scale.
+
 ## 5. Phases
+
+### BP0 — Cross-implementation agreement (4 sub-tasks)
+
+The tree maintains a verified Lean model beside an executable Rust HAL, and in
+several places the same question is answered on both sides.  Every mechanical
+gate that reconciles them today is **nominal** — `check_lock_ffi_symmetry.sh`
+reconciles symbols and their types, `check_kernel_entry_exports.py` an
+`extern` set against object code, `build.rs` the readiness seams against the
+Lean `@[export]` inventory.  **None is behavioural**: nothing drives one input
+through both implementations of a question and requires the same answer.  The
+surface actually named "conformance" (`rust/sele4n-abi/tests/conformance.rs`,
+112 tests) does it with hand-transcribed literals, so a Lean-side layout change
+leaves every one of them green.
+
+This phase is independent of BP1..BP8 and may run beside any of them.  Two of
+its four rows (BP0.1, BP0.2) are **interim** and are retired by BP2.6, which
+deletes the device-tree pair they tie; the other two are permanent.  That
+pointer is stated here and in BP2.6's own row rather than in the interim rows
+themselves, because a dependency belongs where it binds and BP2.6 is what
+performs the retirement.
+
+| Sub | Description | Files | Est |
+|-----|-------------|-------|-----|
+| BP0.1 | **The shared device-tree fixture corpus** (was XV2).  Blobs checked in as reviewable hex with a generator, and a manifest stating the regions each declares and the RAM top they imply, read by **both** the Rust walker's suite and the Lean parser's.  A filter added to one side alone then fails that side's assertion instead of passing silently.  **Interim**: the phase preamble names the later row that deletes the pair this ties, and deletes this with it — which is the right permanent answer and the reason this row is not larger | `tests/fixtures/dtb/`, `rust/sele4n-hal/src/cmdline.rs`, `tests/Ak9PlatformSuite.lean` | M |
+| BP0.2 | A Tier 0 check that **both** sides consume **every** fixture of the corpus, so adding a case to one suite alone is a failure rather than a silent gap.  Consumes BP0.1.  **Interim**, retired with it | `scripts/`, `tests/fixtures/dtb/` | S |
+| BP0.3 | **The ABI layout, stated once** (was XV4).  Emit the `MessageInfo` field layout and its bounds from Lean — the field shifts, `maxLabel`, `maxMessageRegisters`, `maxExtraCaps`, `errorLabelBase`, `SYSCALL_ABI_VERSION` — into a checked-in table, and have the Rust conformance suite assert its own constants against it, with a Tier 0 freshness gate on the pattern `generate_smp_theorem_manifest.py --check` already sets.  Today both sides spell `(length) \| (extraCaps <<< 7) \| (label <<< 9)` by hand.  **Permanent**: this pair is genuinely two-sided, the Rust encoder being the userspace ABI and the Lean decoder the kernel's | `SeLe4n/Model/Object/Types.lean`, `rust/sele4n-abi/`, `scripts/` | M |
+| BP0.4 | **The boot-map pair, driven rather than mirrored** (was XV5).  One address set through `mmu::boot_mapping_for` and `rpi5MemoryMapForConfig`, replacing the single `the_boot_map_boundaries_mirror_the_lean_memory_map` test and the comment that says the boundaries "mirror" the Lean map.  Reuses BP0.3's emitter, so it is materially cheaper second.  **Permanent**, and the one row a later phase must keep passing: the boot map's extent changes source, not the requirement that the two sides agree on it | `rust/sele4n-hal/src/mmu.rs`, `SeLe4n/Platform/RPi5/Board.lean` | S |
+
+**Acceptance**: a divergence introduced on either side of any of the three
+pairs fails a gate rather than a review; and `check_lock_ffi_symmetry.sh`'s
+docstring no longer overstates what a nominal reconciliation proves.
 
 ### BP1 — aarch64 Lean object code (4 sub-tasks)
 
@@ -138,7 +214,7 @@ supplies none of them.
 | BP2.3 | `lean_initialize_runtime_module` and `lean_io_mark_end_initialization` called once, on the primary, before any Lean code runs.  Consumes BP2.1 and BP2.2 | `rust/sele4n-hal/src/boot.rs` | M |
 | BP2.4 | Fail closed when initialization cannot complete: the primary parks with `cpu::fatal_halt()` rather than entering a kernel whose runtime is half-built.  Never a silent continue | `rust/sele4n-hal/src/boot.rs` | S |
 | BP2.5 | A host witness suite for the shims and the allocator — the arena's bounds, exhaustion, alignment — since the first place they run for real is a board with no debugger attached | `rust/sele4n-hal/src/` | M |
-| BP2.6 | **The boot map is built from constants, and the blob is parsed with translation on.**  `init_mmu` reads the firmware's device tree *before* the MMU is enabled — an attacker-influenced parser running in the window with no memory protection and no recovery but a halt — and it does so to obtain a RAM *size* the boot map does not need.  Build the map from what the boot actually stands on: the image `[_start, __bss_end)`, the primary and secondary stacks, BP2.1's arena, a bounded window at the firmware's DTB pointer, and the board's device window — every one a linker symbol or a board constant, and every one already enumerated by `boot_critical_ranges_mapped`, which is the map rather than a check on one.  Retires `ram_top_from_dtb`, `find_ram_top_in_dtb`, `clamp_ram_top`, `dtb_dereferenced_range` and `boot_ranges_mapped_under`, deleting the Rust FDT walker from the boot path: the boot seam's Lean parse becomes the blob's **only** parse, so the device-tree half of the WS-XV pair stops existing rather than being gated (`docs/REGISTERED_DEBT.md` table C, whose remedy for that pair is this row).  Consumes BP2.1 — the arena is a window the map must cover | `rust/sele4n-hal/src/mmu.rs`, `rust/sele4n-hal/src/cmdline.rs`, `rust/sele4n-hal/link.ld` | L |
+| BP2.6 | **The boot map is built from constants, and the blob is parsed with translation on.**  `init_mmu` reads the firmware's device tree *before* the MMU is enabled — an attacker-influenced parser running in the window with no memory protection and no recovery but a halt — and it does so to obtain a RAM *size* the boot map does not need.  Build the map from what the boot actually stands on: the image `[_start, __bss_end)`, the primary and secondary stacks, BP2.1's arena, a bounded window at the firmware's DTB pointer, and the board's device window — every one a linker symbol or a board constant, and every one already enumerated by `boot_critical_ranges_mapped`, which is the map rather than a check on one.  Retires `ram_top_from_dtb`, `find_ram_top_in_dtb`, `clamp_ram_top`, `dtb_dereferenced_range` and `boot_ranges_mapped_under`, deleting the Rust FDT walker from the boot path: the boot seam's Lean parse becomes the blob's **only** parse, so the device-tree half of the WS-XV pair stops existing rather than being gated (`docs/REGISTERED_DEBT.md` table C, whose remedy for that pair is this row).  Consumes BP2.1 — the arena is a window the map must cover.  **Retires BP0.1 and BP0.2** with the pair they tie, and updates BP0.4's expectations, which must keep passing | `rust/sele4n-hal/src/mmu.rs`, `rust/sele4n-hal/src/cmdline.rs`, `rust/sele4n-hal/link.ld` | L |
 
 **Acceptance**: a Lean `IO` action that allocates runs to completion on
 `aarch64-unknown-none` under QEMU, the arena's exhaustion path halts, and

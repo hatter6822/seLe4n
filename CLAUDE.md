@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.123.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.124.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1479,20 +1479,20 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — PLANNED (registered v0.34.59)
+### WS-BP The bare-metal boot path — PLANNED (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
 SMP work is complete") that was false of the phase's own first row.  WS-RR
 RR7.5 + RR7.15 split it out: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md)
-sequences **38 sub-tasks across 8 phases `BP1..BP8`** in execution order — the
-aarch64 Lean object code, bare-metal runtime hosting, the RPi5 deployment, the
-boot seam and its install ordering, the image, per-core readiness, the context
-restore, and first boot — with an acceptance gate whose every box is ticked by
+sequences **42 sub-tasks across 9 phases `BP0..BP8`** in execution order — the
+cross-implementation gates, the aarch64 Lean object code, bare-metal runtime
+hosting, the RPi5 deployment, the boot seam and its install ordering, the
+image, per-core readiness, the context restore, and first boot — with an acceptance gate whose every box is ticked by
 an *executed run* rather than by an artefact existing.  No sub-task has started;
 WS-BP must not open until RR8 closes.
 
-Three things new code must respect.  **WS-BP takes its own prefix and renumbers
+Four things new code must respect.  **WS-BP takes its own prefix and renumbers
 nothing**: `SM10.1.1` still means the image *packaging* the release cut
 consumes, and `BP5.3` is the sub-task that produces what it packages — the
 collision between "numbering is execution order" and "IDs in CHANGELOG entries
@@ -1517,6 +1517,20 @@ Lean parse is the blob's only parse and the device-tree half of the WS-XV pair
 stops existing rather than being gated — which is what
 [`docs/REGISTERED_DEBT.md`](docs/REGISTERED_DEBT.md) table C names as that
 pair's remedy.
+
+And **WS-XV is BP0, not a workstream** (`v0.34.124`).  The cross-implementation
+findings registered at `v0.34.114` were never given a plan file, and reading
+their five rows back showed why: XV1 was always a WS-BP obligation and became
+**BP2.6**; XV2 and XV3 are interim *by their own text* ("only if XV1 is far
+off") and are retired by BP2.6; XV4 and XV5 sit on surfaces this plan modifies
+— the ABI BP7's context restore delivers, and the boot map BP2.6 rebuilds.
+Half of WS-XV is deleted by WS-BP's own work and the other half is a harness
+over what WS-BP changes.  BP0 is first because its value decays as the rest
+lands, and it is the one phase that may run **in parallel** with any other:
+nothing in BP1..BP8 consumes it, and the only coupling is BP2.6 retiring two of
+its rows and updating a third.  `docs/REGISTERED_DEBT.md` keeps the WS-XV
+*finding* — the evidence that nominal gates miss behavioural drift — and no
+longer a work list.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 
