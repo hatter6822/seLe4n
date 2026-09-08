@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.121.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.122.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -2445,11 +2445,18 @@ code may assume:
   before the boot switch above: the boot state queues idle on all four cores.
 
 - **A device tree is read whole, and what it withholds is not a resource**
-  (PR #892 review round 5, v0.34.113).  Three facts new code must respect.  (1)
+  (PR #892 review round 5, v0.34.113).  Five facts new code must respect.  (1)
   `parseFdtNodes` refuses a structure block that does not reach a top-level
   `FDT_END` at depth zero — every partial exit is `.malformedBlob`, fuel
   exhaustion stays `.fuelExhausted` — so a *fixture* blob must carry its
-  terminators or the bridge rejects it.  (2) The machine's RAM is selected by
+  terminators or the bridge rejects it.  It also refuses a property after a
+  child (§5.4.2), a repeated property name (§2.2.4) and — since the RR7 audit
+  round — **a repeated sibling node name**: §2.2.3 identifies a node by its full
+  path, which is unique only if siblings differ, and every selector in the file
+  reaches for a node by name and takes the **first** match.  A second
+  `reserved-memory` child was therefore never read, so its carve-outs were never
+  subtracted; enforcing uniqueness for properties and not for the nodes those
+  properties hang on left the selectors' own premise unchecked.  (2) The machine's RAM is selected by
   `memoryNodeReg?` over that parsed tree, with the same three filters the Rust
   walk applies: the node describes memory (`device_type`), it is operational
   (`FdtNode.statusIsOperational` — `okay`/`ok` and nothing else, decided on the

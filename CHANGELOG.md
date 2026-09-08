@@ -1,3 +1,55 @@
+## v0.34.122 — the selectors' own premise: sibling node names are unique, or the blob is refused
+
+**Second security finding of the same audit, reached one level up.**  `v0.34.121`
+made the reservation *walks* refuse what they cannot read whole.  This is the
+same fail-open direction arriving through the *selector*: every place in
+`SeLe4n/Platform/DeviceTree.lean` that reaches for a node by name takes the
+**first** match, and nothing enforced the specification rule that makes that
+sound.
+
+§2.2.3 identifies a node by its full path from the root, which is unique only if
+siblings have distinct names.  Round 9 enforced §2.2.4 for a node's *properties*
+— a repeated property name is `.malformedBlob`, because `findProperty` answers
+the first occurrence while the Rust walker answers the last — and left the rule
+unenforced for the nodes those properties hang on.  So a blob with **two**
+`reserved-memory` children had only the first read: measured before the fix,
+`fdtReservedRanges` returned `some [(0xA0000000, 0x1000)]` for a root declaring
+carve-outs at `0xA0000000` *and* `0xB0000000`, so the second range stayed RAM in
+`MachineConfig.memoryMap` and the model permitted `MachineState.addrInRange`
+over memory the firmware had reserved.  A single node with two children — the
+control — returned both.
+
+**The fix is at the parser, not at the selector.**  `parseNodeContents` carries
+`seenChildNames` beside `seenNames` and refuses a repeated sibling name, so
+every `find?`-style selector in the file inherits the guarantee rather than each
+one having to defend itself — and a selector written tomorrow inherits it too.
+A child's own level starts fresh, so a grandchild may reuse a name a sibling of
+its parent took, which is what the specification says and what `name@unit-address`
+exists to make workable: `serial@fe201000` and `serial@fe202000` are distinct
+names and both parse.
+
+Fixing this at the two known selectors would have been the enumeration this
+project keeps recording as a defect shape — *an enumeration standing in for a
+derivation*, where the list cannot see the selector that does not exist yet.
+
+**Tests**: two cases, and the mutation between them is *preserving* in the
+strongest available sense — both `reserved-memory` nodes, both `reg` properties
+and both declared cell widths are byte-identical, and only the second node's
+**name** changes.  Identical names are refused; distinct names parse and both
+carve-outs land.
+
+**Tier 3**: six anchors, including one that pins the *accumulation* rather than
+the check — a `contains` against a list nothing ever adds to keeps every token
+of this fix and restores the defect exactly, and that inert form is caught by
+the anchor and by the runtime case.  One round-9 anchor pinning the
+continuation's old call shape was retired, superseded by the audit round's own,
+which pins the same `seenChild = true` relation *and* the accumulation.
+
+**Files**: `SeLe4n/Platform/DeviceTree.lean`, `tests/Ak9PlatformSuite.lean`,
+`scripts/test_tier3_invariant_surface.sh`, `CLAUDE.md`, `AGENTS.md`.
+
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md (BP2.6, BP4.3)
+
 ## v0.34.121 — a device-tree reservation set this parser cannot read whole is a refusal, not a shorter list
 
 **Security finding, found by auditing this branch's own unreviewed cuts and

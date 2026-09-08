@@ -1845,6 +1845,38 @@ def review9_parser_conformance_and_reservations : IO Unit := do
     expect "NEGATIVE audit a partial reserved-memory reg is refused" false
   | .error _ =>
     expect "NEGATIVE audit a partial reserved-memory reg is refused" true
+  -- (f) **the selector's premise**: §2.2.3 identifies a node by its full path,
+  -- which is unique only if siblings have distinct names -- and every selector
+  -- here takes the *first* match, so a second `reserved-memory` was not read at
+  -- all and its carve-outs were never subtracted.  The mutation keeps both
+  -- nodes, both `reg` properties and both declared cell widths, and changes
+  -- only the second node's NAME: identical names are refused, distinct ones
+  -- parse and both carve-outs land.
+  let rsvSibling (nodeName childName : String) (base : Nat) : Array UInt8 :=
+    fdtBeginNode nodeName
+      ++ fdtProp addressCellsNameOff (be32 2) ++ fdtProp sizeCellsNameOff (be32 2)
+      ++ (fdtBeginNode childName
+          ++ fdtProp regNameOff (be64 base ++ be64 0x1000)
+          ++ fdtEndNodeTok)
+      ++ fdtEndNodeTok
+  let twoSiblings (secondName : String) : ByteArray :=
+    assembleDtb (fdtBeginNode "" ++ rootCellProperties
+      ++ (fdtBeginNode "memory@0"
+          ++ fdtProp deviceTypeNameOff (fdtString "memory")
+          ++ fdtProp regNameOff (be64 0 ++ be64 0xFC000000)
+          ++ fdtEndNodeTok)
+      ++ rsvSibling "reserved-memory" "firmware@a0000000" 0xA0000000
+      ++ rsvSibling secondName "firmware@b0000000" 0xB0000000
+      ++ fdtEndNodeTok ++ fdtEndTok)
+  match DeviceTree.fromDtbFull (twoSiblings "reserved-memory") width with
+  | .ok _ => expect "NEGATIVE audit two siblings of one name are refused" false
+  | .error _ => expect "NEGATIVE audit two siblings of one name are refused" true
+  match DeviceTree.fromDtbFull (twoSiblings "reserved-memory-b") width with
+  | .error _ => expect "audit distinct sibling names both carve out" false
+  | .ok dt =>
+    expect "audit distinct sibling names both carve out"
+      (!dt.machineConfig.memoryMap.any
+        (fun r => r.kind == .ram && r.contains (SeLe4n.PAddr.ofNat 0xA0000800)))
   -- A disabled bus hides its whole subtree, not only itself.
   let disabledBus :=
     withStatus (mkBus "gated-bus" 0x10000000 (mkRangesProperty 0 0x100000000 0x200000000)

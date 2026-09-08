@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/rr7-medium-severity-sweep-tn327q",
-      "commit_sha": "d1271cf2cc086090d02c892ec92fd7ea4de031c8",
-      "tree_sha": "6107405ad0b041388ef7b9cf255ffe2c89637d6c",
-      "committed_at_utc": "2026-09-08T06:39:58+00:00"
+      "commit_sha": "cff0d212ffa151ad185811fff8f02fa9aa17049f",
+      "tree_sha": "6f05a50289059374fbe426d3494ff71acfcd0f27",
+      "committed_at_utc": "2026-09-08T07:47:57+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "66113eeb32511b3ac85d66a0b5844b3e46f7a663fd5803bdcf700244bbb7c990"
+    "source_digest": "67c9c453b4d7cb3634e44bccc616761d16fb76bf5de3da23c6a82665b0040a71"
   },
   "summary": {
     "module_count": 398,
     "declaration_count": 20347
   },
   "readme_sync": {
-    "version": "0.34.121",
+    "version": "0.34.122",
     "lean_toolchain": "v4.28.0",
     "production_files": 328,
-    "production_loc": 355856,
+    "production_loc": 355873,
     "test_files": 70,
-    "test_loc": 72767,
+    "test_loc": 72799,
     "proved_theorem_lemma_decls": 11889,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -235998,7 +235998,7 @@
         {
           "kind": "def",
           "name": "FdtNode.isMemoryNode",
-          "line": 1290,
+          "line": 1307,
           "called": [
             "FdtNode",
             "findProperty",
@@ -236012,7 +236012,7 @@
         {
           "kind": "def",
           "name": "fdtRoot",
-          "line": 1312,
+          "line": 1329,
           "called": [
             "FdtNode",
             "isEmpty",
@@ -236022,7 +236022,7 @@
         {
           "kind": "def",
           "name": "memoryNodesWithCells",
-          "line": 1343,
+          "line": 1360,
           "called": [
             "FdtNode",
             "addressCells",
@@ -236035,7 +236035,7 @@
         {
           "kind": "def",
           "name": "memoryNodeReg",
-          "line": 1355,
+          "line": 1372,
           "called": [
             "FdtNode",
             "findProperty",
@@ -236045,7 +236045,7 @@
         {
           "kind": "def",
           "name": "extractMemoryRegionsChecked",
-          "line": 1366,
+          "line": 1383,
           "called": [
             "FdtMemoryRegion",
             "addressCells",
@@ -236058,7 +236058,7 @@
         {
           "kind": "def",
           "name": "memoryRegionsFromNodes",
-          "line": 1379,
+          "line": 1396,
           "called": [
             "FdtMemoryRegion",
             "FdtNode",
@@ -236071,7 +236071,7 @@
         {
           "kind": "def",
           "name": "fdtReservedRanges",
-          "line": 1410,
+          "line": 1427,
           "called": [
             "FdtNode",
             "addressCells",
@@ -236085,7 +236085,7 @@
         {
           "kind": "def",
           "name": "fdtRegionMinus",
-          "line": 1442,
+          "line": 1459,
           "called": [
             "FdtMemoryRegion",
             "size"
@@ -236094,7 +236094,7 @@
         {
           "kind": "def",
           "name": "subtractReservations",
-          "line": 1457,
+          "line": 1474,
           "called": [
             "FdtMemoryRegion",
             "fdtRegionMinus",
@@ -236104,7 +236104,7 @@
         {
           "kind": "def",
           "name": "findMemoryRegPropertyChecked",
-          "line": 1482,
+          "line": 1499,
           "called": [
             "DeviceTreeParseError",
             "FdtHeader",
@@ -236119,7 +236119,7 @@
         {
           "kind": "def",
           "name": "extractInterruptController",
-          "line": 1507,
+          "line": 1524,
           "called": [
             "FdtNode",
             "InterruptControllerInfo",
@@ -236136,7 +236136,7 @@
         {
           "kind": "def",
           "name": "extractTimerFrequency",
-          "line": 1555,
+          "line": 1572,
           "called": [
             "FdtNode",
             "compatibleString",
@@ -236151,7 +236151,7 @@
         {
           "kind": "def",
           "name": "classifyPeripheralNode",
-          "line": 1609,
+          "line": 1626,
           "called": [
             "DeviceEntry",
             "FdtAddressContext",
@@ -236172,7 +236172,7 @@
         {
           "kind": "def",
           "name": "extractPeripheralsWalk",
-          "line": 1648,
+          "line": 1665,
           "called": [
             "DeviceEntry",
             "FdtAddressContext",
@@ -236185,7 +236185,7 @@
         {
           "kind": "def",
           "name": "extractPeripherals",
-          "line": 1693,
+          "line": 1710,
           "called": [
             "DeviceEntry",
             "FdtAddressContext.cpuPhysical",
@@ -236196,7 +236196,7 @@
         {
           "kind": "theorem",
           "name": "extractPeripheralsWalk_zero_fuel",
-          "line": 1700,
+          "line": 1717,
           "called": [
             "FdtAddressContext",
             "FdtNode",
@@ -236206,7 +236206,7 @@
         {
           "kind": "theorem",
           "name": "extractPeripheralsWalk_empty_nodes",
-          "line": 1706,
+          "line": 1723,
           "called": [
             "FdtAddressContext",
             "extractPeripheralsWalk"
@@ -236215,7 +236215,7 @@
         {
           "kind": "theorem",
           "name": "extractPeripherals_zero_fuel",
-          "line": 1712,
+          "line": 1729,
           "called": [
             "FdtNode",
             "extractPeripherals"
@@ -236224,7 +236224,7 @@
         {
           "kind": "theorem",
           "name": "extractPeripherals_empty",
-          "line": 1717,
+          "line": 1734,
           "called": [
             "FdtNode",
             "extractPeripherals",
@@ -236234,13 +236234,13 @@
         {
           "kind": "theorem",
           "name": "extractPeripherals_fuel_sufficient_for_BCM2712",
-          "line": 1727,
+          "line": 1744,
           "called": []
         },
         {
           "kind": "def",
           "name": "DeviceTree.fromDtbFull",
-          "line": 1751,
+          "line": 1768,
           "called": [
             "DeviceTree",
             "DeviceTreeParseError",
@@ -236270,7 +236270,7 @@
         {
           "kind": "theorem",
           "name": "parseFdtHeader_fromDtbFull_ok",
-          "line": 1838,
+          "line": 1855,
           "called": [
             "DeviceTree.fromDtbFull",
             "DeviceTree.validate",
@@ -236296,7 +236296,7 @@
         {
           "kind": "theorem",
           "name": "findMemoryRegPropertyChecked_eq_memoryNodeReg",
-          "line": 1890,
+          "line": 1907,
           "called": [
             "FdtHeader",
             "FdtNode",
@@ -250312,7 +250312,7 @@
         {
           "kind": "def",
           "name": "review9_runtime_contract_follows_the_installed_map",
-          "line": 1868,
+          "line": 1900,
           "called": [
             "MachineConfig",
             "MachineState",
@@ -250328,7 +250328,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1887,
+          "line": 1919,
           "called": [
             "ak9a_01_mmioRead32_rejects_unaligned",
             "ak9a_02_mmioRead64_rejects_unaligned",

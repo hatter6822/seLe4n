@@ -1185,7 +1185,7 @@ where
         | none => .error .malformedBlob
         | some (name, nextOffset) =>
           -- Parse this node's contents (properties + children)
-          match parseNodeContents v nextOffset false [] fuel with
+          match parseNodeContents v nextOffset false [] [] fuel with
           | .error e => .error e
           | .ok (props, children, afterOffset) =>
             let node : FdtNode := { name, properties := props, children }
@@ -1225,8 +1225,19 @@ where
   -- `disabled` was therefore operational here and withheld there.  Rejecting
   -- the duplicate is better than picking a side: neither answer is the blob's
   -- meaning, because the blob has none.
+
+  -- `seenChildNames` is the same rule one level *up* (the RR7 audit round).
+  -- §2.2.3 identifies a node by its full path from the root, which is only
+  -- unique if siblings have distinct names -- and every selector in this file
+  -- that reaches for a node by name takes the **first** match.  A second
+  -- `reserved-memory` child was therefore not read at all, so its carve-outs
+  -- were never subtracted and the map permitted access to memory the firmware
+  -- reserved: the same fail-open direction as the reservation walk's silent
+  -- truncation, reached through the selector rather than through the walk.
+  -- Round 9 enforced uniqueness for properties and left it unenforced for the
+  -- nodes those properties hang on.
   parseNodeContents (v : FdtBlob) (offset : Nat) (seenChild : Bool)
-      (seenNames : List String) :
+      (seenNames : List String) (seenChildNames : List String) :
       Nat → Except DeviceTreeParseError (List FdtProperty × List FdtNode × Nat)
   | 0 => .error .fuelExhausted -- AF3-A: Fuel exhausted — signal parse failure
   | fuel + 1 =>
@@ -1252,7 +1263,8 @@ where
             if seenNames.contains propName then
               .error .malformedBlob -- A second property of this name (§2.2.4)
             else
-              match parseNodeContents v alignedNext false (propName :: seenNames) fuel with
+              match parseNodeContents v alignedNext false (propName :: seenNames)
+                  seenChildNames fuel with
               | .error e => .error e
               | .ok (moreProps, children, endOffset) =>
                 .ok ({ name := propName, value := propValue } :: moreProps, children, endOffset)
@@ -1263,21 +1275,26 @@ where
         match v.structCString? (offset + 4) with
         | none => .error .malformedBlob
         | some (childName, nextOffset) =>
-          match parseNodeContents v nextOffset false [] fuel with
+          if seenChildNames.contains childName then
+            .error .malformedBlob -- A second sibling of this name (§2.2.3)
+          else
+          match parseNodeContents v nextOffset false [] [] fuel with
           | .error e => .error e
           | .ok (childProps, grandchildren, afterChild) =>
             let child : FdtNode :=
               { name := childName, properties := childProps, children := grandchildren }
             -- A child has been seen at *this* level, so no further property may
-            -- follow; the child's own contents start fresh.
-            match parseNodeContents v afterChild true seenNames fuel with
+            -- follow; the child's own contents start fresh, and this level
+            -- remembers the name so a repeat is refused rather than shadowed.
+            match parseNodeContents v afterChild true seenNames
+                (childName :: seenChildNames) fuel with
             | .error e => .error e
             | .ok (moreProps, moreSiblings, endOffset) =>
               .ok (moreProps, child :: moreSiblings, endOffset)
       else if token == fdtEndNode then
         .ok ([], [], offset + 4) -- End of this node
       else if token == fdtNop then
-        parseNodeContents v (offset + 4) seenChild seenNames fuel
+        parseNodeContents v (offset + 4) seenChild seenNames seenChildNames fuel
       else
         .error .malformedBlob -- Unknown token, or an `FDT_END` inside an open node
 

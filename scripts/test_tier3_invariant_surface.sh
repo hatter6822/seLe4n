@@ -11033,7 +11033,6 @@ run_check "INVARIANT" rg -n '^def fdtParserVersion : Nat := 17$' SeLe4n/Platform
 # are unique (§2.2.4) — both refused rather than resolved to one reading.
 run_check "INVARIANT" rg -n -U 'if seenChild then\n          \.error \.malformedBlob' SeLe4n/Platform/DeviceTree.lean
 run_check "INVARIANT" rg -n -U 'if seenNames\.contains propName then\n              \.error \.malformedBlob' SeLe4n/Platform/DeviceTree.lean
-run_check "INVARIANT" rg -n -U 'match parseNodeContents v afterChild true seenNames fuel with' SeLe4n/Platform/DeviceTree.lean
 # NEGATIVE: the ordering-blind continuation, which appended a late property to
 # the node it had already finished reading children for.
 run_negative_check "INVARIANT" rg -n -U 'match parseNodeContents v afterChild fuel with' SeLe4n/Platform/DeviceTree.lean
@@ -11114,5 +11113,18 @@ run_check "INVARIANT" rg -n -U 'private def emptyRsvBlock : Array UInt8 := be64 
 run_check "INVARIANT" rg -n -U 'let offDtStruct := offMemRsvmap \+ emptyRsvBlock\.size' tests/*PlatformSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE audit an unterminated reservation block is refused' tests/*PlatformSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE audit a partial reserved-memory reg is refused' tests/*PlatformSuite.lean
+
+# The selector's premise: sibling node names are unique (§2.2.3), so the
+# `find?`-style selectors in this file cannot silently read the first of two.
+run_check "INVARIANT" rg -n -U 'parseNodeContents \(v : FdtBlob\) \(offset : Nat\) \(seenChild : Bool\)\n      \(seenNames : List String\) \(seenChildNames : List String\)' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U 'if seenChildNames\.contains childName then\n            \.error \.malformedBlob' SeLe4n/Platform/DeviceTree.lean
+# The name must actually be accumulated: a check against a list nothing adds to
+# is the inert form of this fix, and it keeps every token.
+run_check "INVARIANT" rg -n -U 'match parseNodeContents v afterChild true seenNames\n                \(childName :: seenChildNames\) fuel with' SeLe4n/Platform/DeviceTree.lean
+# ...and a child's own level starts fresh, so a grandchild may reuse a name a
+# sibling of its parent took.
+run_check "INVARIANT" rg -n -U 'match parseNodeContents v nextOffset false \[\] \[\] fuel with' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n 'NEGATIVE audit two siblings of one name are refused' tests/*PlatformSuite.lean
+run_check "INVARIANT" rg -n 'audit distinct sibling names both carve out' tests/*PlatformSuite.lean
 
 finalize_report
