@@ -1,3 +1,59 @@
+## v0.34.114 — the recurring review class named and registered: no cross-implementation gate in this tree is behavioural
+
+**Not a code cut.**  PR #892 has now had five review rounds and twenty findings,
+and this entry records what they have in common, because fixing them one at a
+time was not converging.
+
+Sorted by cause rather than by symptom, three of the four classes are
+first-order — a documented invariant nothing enforced (4), a partial or
+unreadable input accepted as complete (4), a specification behaviour not
+implemented (4).  The fourth **recurs every round**: two implementations of one
+question that had drifted.  Seven of the twenty were that, plus one the branch
+found itself (the two endpoint-queue removals disagreeing about `queuePPrev`):
+the chain extension against the revalidating bracket, board validation against
+board installation, the Rust RAM fold against the Lean coverage walk, the Rust
+token walk against the Lean tree walk, the Rust `status` filter against the Lean
+selector that never got it, the object lock domain's sorted acquisition against
+the scheduler domain's verbatim one, and `schedContextUnbind`'s already-fixed
+re-queue against the cancellation reclaim's missing one.
+
+The cause is visible once the gates are inventoried.  **Every mechanical
+cross-implementation gate in this tree is nominal** —
+`check_lock_ffi_symmetry.sh` reconciles symbols and their types,
+`check_kernel_entry_exports.py` an `extern` set against object code, `build.rs`
+the readiness seams against the Lean `@[export]` inventory,
+`check_physical_address_width.sh` a constant against `Board.lean`, and
+`ExportCommitDisciplineCensus` a derived set against a registry.  **None is
+behavioural**: nothing drives one input through both implementations of a
+question and requires the same answer.  The one surface named "conformance"
+(`rust/sele4n-abi/tests/conformance.rs`, whose header says it "validates that
+Rust encoding matches the Lean decode layer") does it with hand-transcribed
+literals and a docstring citing the Lean file — the shape this project's own
+rules forbid elsewhere — so a Lean-side layout change leaves all 112 of those
+tests green.  The gates can see when two implementations stop *existing* in
+agreement and cannot see when they stop *behaving* in agreement, which is
+exactly where every instance of the class lives.
+
+`CLAUDE.md`'s remedy is the sweep rule — *when a fix names a relation, grep for
+every other place that asks it* — which is manual and reactive; PR #889's round
+22 had already recorded that the reactive form is not enough, and round 4 of
+this PR skipped it precisely because its author was confident, which is when
+confidence is highest.  The duplications are also **forced** rather than
+accidental: `init_mmu` must read the device tree before the MMU is on, in
+`no_std`, with no Lean runtime to call, so the two parsers cannot be collapsed
+and the only available remedy is a differential over shared inputs.
+
+Registered as **WS-XV — cross-implementation behavioural agreement** in
+`docs/REGISTERED_DEBT.md`: a table C row, a work list of four items in
+execution order (a shared device-tree fixture corpus with a manifest both
+suites read; a Tier 0 check that both sides consume every fixture; ABI
+expectations derived rather than transcribed; the same treatment for the boot
+map), and a registry entry.  The table of pairs records what ties each one
+today — three have nothing, one has hand-written literals, one has a partial
+derivation, and the lock-domain pair was closed at `v0.34.113` by giving the
+question a single answer.  No instance is open; what is registered is the gate
+that would catch the next one.
+
 ## v0.34.113 — the Lean device tree is read whole, withheld and untranslated nodes are not resources, and the scheduler bracket sorts
 
 **PR #892 review round 5 (Codex, on `0a393187`).**  Four findings, all confirmed

@@ -123,6 +123,7 @@ constrains what v1.0.0 may claim, and RR8.4's hand-off check reads this table.
 |------|-----------------|------------------------|
 | **WS-CB** — scheduling contexts are flat: a reservation cannot contain reservations, so a component's bandwidth is the sum of its threads' and nothing bounds a group jointly; the root scheduler is fixed-priority, so the CBS guarantee (an admitted server receives its budget every window) is not a statement the model can make; the live CBS engine's exhaustion arms schedule a refill of at most one tick (`consumedAmount := budgetRemaining` under `budgetRemaining ≤ 1`), so a bound thread receives about one tick per period after its first window and budget consumed without exhaustion is never returned; admission sums every SchedContext in the store against one 1000 ‰ ceiling rather than per core; and `schedContextConfigure` applies `priority`, `domain` and a caller-supplied `deadline` to the bound SchedContext and TCB under the SchedContext write right alone, with no caller-MCP check and no domain authority | The hierarchy and the EDF-first root are feature work, not soundness defects of the flat model — every flat theorem stands.  Two rows here are **not** deferrals: the configure authority gap is CB0.3, the first implementation cut, recommended as the next PR regardless of when the rest of the workstream opens, and the one-tick refill is the engine switch CB1.6 (with its inert preparation CB1.2), recommended as the cuts after it; the deadline argument's retirement is CB1.6 too, and per-core admission — with every reservation move re-admitted on its destination core — is CB5.2 | [`docs/planning/HIERARCHICAL_CBS_PLAN.md`](planning/HIERARCHICAL_CBS_PLAN.md); post-v1.0.0 unless the maintainer opens it beside RR6–RR8; CB0.3 next, CB1.2 and CB1.6 after it |
 | **WS-SL** — the scheduler liveness trace step relation (`stepPrecondition` / `stepPost` / `ValidTrace`) is `bootCoreId`-pinned, so no `ValidTrace` exhibits a step on a secondary core; and `hBandProgress` is an externalized deployment hypothesis whose FIFO/bucket-rotation composition was never built | Model completeness, not soundness: the per-core liveness *predicates* were lifted by SM5.J, and the capstones state their hypothesis explicitly.  v1.0.0 must therefore not claim unconditional SMP starvation-freedom | **WS-SL**, post-v1.0.0 (section below) |
+| **WS-XV** — every mechanical cross-implementation gate in this tree is **nominal**: `check_lock_ffi_symmetry.sh` reconciles symbols and their types, `check_kernel_entry_exports.py` an `extern` set against object code, `build.rs` the readiness seams against the Lean `@[export]` inventory, `check_physical_address_width.sh` a constant against `Board.lean`, and `ExportCommitDisciplineCensus` a derived set against a registry.  **None is behavioural** — nothing drives one input through both implementations of a question and requires the same answer.  The surface named "conformance" (`rust/sele4n-abi/tests/conformance.rs`, RUST-XVAL-001..019, whose header says it "validates that Rust encoding matches the Lean decode layer") does it with *hand-transcribed literals* and a docstring citing the Lean file; the shifts it encodes live in `SeLe4n/Model/Object/Types.lean`, so a Lean-side layout change leaves all 112 conformance tests green.  The evidence that this is the tree's recurring defect class rather than a hypothesis: **seven of the twenty findings** across PR #892's five review rounds were two implementations of one question that had drifted — the chain extension against the revalidating bracket, board validation against board installation, the Rust RAM fold against the Lean coverage walk, the Rust token walk against the Lean tree walk, the Rust `status` filter against the Lean selector that did not get it, the object lock domain's sorted acquisition against the scheduler domain's verbatim one, and `schedContextUnbind`'s already-fixed re-queue against the cancellation reclaim's missing one — **plus one the branch found itself**, the two endpoint-queue removals that disagreed about `queuePPrev` (row A.5 above).  Each was fixed at its own site and the class stayed open, because the remedy `CLAUDE.md` states — *when a fix names a relation, grep for every other place that asks it* — is manual and reactive, and is skipped exactly when its author is most confident.  The work is `WS-XV` below | The instances are closed; what is missing is the gate that catches the *next* drift, and the duplications it covers are **forced** rather than accidental — `init_mmu` must read the device tree before the MMU is on, in `no_std`, with no Lean runtime to call, so the Rust and Lean parsers cannot be collapsed.  Nothing in v1.0.0's claim set is false without this; the cost is that a behavioural divergence between a verified model and its executable twin is invisible to CI until a reviewer reads both | Cross-implementation validation; **post-v1.0.0 unless the maintainer opens it beside RR8** |
 | WS-RC **R7** — CDT `descendantsOf` fuel-sufficiency proofs; `descendantsOf_fuel_sufficient` proves only `edges.length ≥ 0` | Proof hygiene: CDT operations are sound under the fuel-bound discipline; the sufficiency theorem is defence in depth | post-v1.0.0 hardening |
 | WS-RC **R14** — the v1.x backlog the WS-RC plan deferred | Explicitly scoped out of v1.0 closure by that plan | post-v1.0.0 |
 | WS-RC R4's two deliberate follow-on type-level promotions, registered only inside [`docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md`](planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md), a plan marked COMPLETE | Both are strengthenings of an already-sound surface | post-v1.0.0 hardening; SM10.6.2 archives the plan, so the items must not travel with it |
@@ -209,6 +210,43 @@ None of the three is a soundness defect: the per-core forms are correct and the
 capstones state `hBandProgress` explicitly rather than hiding it. The cost is
 that v1.0.0's liveness claim is **conditional** and must be stated that way.
 **SM10 may not claim unconditional SMP starvation-freedom.**
+
+## WS-XV — cross-implementation behavioural agreement
+
+**Owner**: whole-tree validation. **Closure target**: post-v1.0.0 unless the
+maintainer opens it beside RR8. Registered as a row in table C above; the work
+list is here because it has no plan file.
+
+The tree maintains a verified Lean model beside an executable Rust HAL, and in
+several places the same question is answered on both sides. That duplication is
+**forced**, not accidental: `init_mmu` needs the device tree's RAM extent before
+translation is enabled, in `no_std`, with no Lean runtime to call. What is
+missing is not a shared implementation — it is a check that the two answers
+agree.
+
+The pairs, and what ties them today:
+
+| Pair | The shared question | Tie today |
+|------|---------------------|-----------|
+| `cmdline::find_ram_top_in_dtb` / `DeviceTree.memoryNodeReg?` + `extractMemoryRegions` | which memory does this blob declare as available? | **none** — separate fixtures, separate suites |
+| `cmdline`'s FDT token walk / `DeviceTree.parseFdtNodes` | is this structure block readable at all? | **none** |
+| `sele4n-abi::encode_syscall` / `Architecture.RegisterDecode` | which register carries which field? | hand-transcribed literals in a Rust test |
+| `mmu::boot_mapping_for` / `RPi5.rpi5MemoryMapForConfig` | what does the boot map at this address? | partial — `check_physical_address_width.sh` derives the *device window* from `Board.lean`, and one Rust test mirrors the boundaries |
+| `objectLockBracketDomain` / `schedulerLockBracketDomain` | in what order does a bracket acquire a footprint? | **closed at v0.34.113** — one definition answers it |
+
+What remains, in execution order:
+
+| # | Item | Where |
+|---|------|-------|
+| XV1 | A shared fixture corpus for the device-tree pair: blobs checked in as reviewable hex with a generator, and a manifest stating the regions each declares and the RAM top they imply.  Both suites read the same manifest, so a filter added to one side fails that side's assertion | `tests/fixtures/dtb/`, `rust/sele4n-hal/src/cmdline.rs`, `tests/Ak9PlatformSuite.lean` |
+| XV2 | A Tier 0 check that **both** sides consume **every** fixture, so adding a case to one suite alone is a failure rather than a silent gap | `scripts/` |
+| XV3 | Derive the ABI conformance expectations from the Lean layout rather than transcribing them, or state the layout once in a generated table both sides read | `rust/sele4n-abi/tests/conformance.rs`, `SeLe4n/Model/Object/Types.lean` |
+| XV4 | Extend the corpus to the boot map: the same address set through `mmu::boot_mapping_for` and `rpi5MemoryMapForConfig`, replacing the single mirrored-boundaries test | `rust/sele4n-hal/src/mmu.rs`, `SeLe4n/Platform/RPi5/Board.lean` |
+
+None of the four is a soundness defect, and none of the drifts they would have
+caught is open: every instance is fixed. The cost of leaving them is that the
+**next** divergence between the model and its executable twin is invisible to
+CI, which is how seven of PR #892's twenty review findings arose.
 
 ## WS-IN — internal-first naming, the grandfathered remainder
 
@@ -352,6 +390,7 @@ Scope, findings and evidence for any of these are in
 |------------|----------|
 | **WS-AP** | v0.34.71– (closure post-v1.0.0 — the ASID capability surface; two SM7 debts re-targeted from the closed SM8) |
 | **WS-OD** | v0.34.98– (planned; opens beside WS-RR RR7 and closes before RR8 — SchedContext donation chains, [`SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`](planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md)) |
+| **WS-XV** | v0.34.114– (registered; post-v1.0.0 unless opened beside RR8 — cross-implementation behavioural agreement, work list in this file) |
 | **WS-BP** | v0.34.59– (planned; opens after WS-RR RR8 closes — the bare-metal boot path, [`SMP_BOOT_PATH_PLAN.md`](planning/SMP_BOOT_PATH_PLAN.md)) |
 | **WS-LC** | v0.34.51–v0.34.56 |
 | **WS-CB** | v0.34.49– (planned; opens after WS-RR, or beside RR6–RR8 under the file partition in its plan's §2.3) |

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/rr7-medium-severity-sweep-tn327q",
-      "commit_sha": "0a3931877d9aad9c72a928af856feaeb3163a8aa",
-      "tree_sha": "13df8c52e9f91338fe60d96397f6b26875f96f27",
-      "committed_at_utc": "2026-09-08T00:59:41+00:00"
+      "commit_sha": "99a213fca2bd2914adac150890da99cc0cb7efe7",
+      "tree_sha": "a68e4ab8213ed90f514889ad2b6fb44dc0f3df8a",
+      "committed_at_utc": "2026-09-08T01:59:42+00:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 20282
   },
   "readme_sync": {
-    "version": "0.34.113",
+    "version": "0.34.114",
     "lean_toolchain": "v4.28.0",
     "production_files": 328,
     "production_loc": 355159,
