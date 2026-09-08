@@ -264,9 +264,13 @@ def cleanupDonatedSchedContext (st : SystemState) (tid : SeLe4n.ThreadId)
   | some tcb =>
     match tcb.schedContextBinding with
     | .donated scId originalOwner =>
-      -- WS-OD OD3.5 will resolve the outer caller from the context's reply stack
-      -- here; until the push exists, no chain has depth ≥ 2 and the resolver's
-      -- answer on every reachable state is `none` — the value passed today.
+      -- WS-OD OD3.4 built the resolver this site will use; OD4.4 cannot thread
+      -- it here yet.  This site's invariant surface goes through
+      -- `returnDonatedSchedContext_preserves_ipcInvariantFull`, which OD3.2
+      -- states under `hBottom : newOwner? = none` and which **OD4.3**
+      -- generalises — so the resolver arrives with OD4.3, and until then this is
+      -- the bottom-of-stack answer that resolver computes on every reachable
+      -- state (`replyStackOuterCaller?_of_no_stack`).
       returnDonatedSchedContext st tid scId originalOwner none
     | _ => .ok st
 

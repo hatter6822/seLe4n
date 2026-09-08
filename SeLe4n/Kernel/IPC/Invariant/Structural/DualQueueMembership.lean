@@ -5883,7 +5883,7 @@ theorem returnDonatedSchedContext_replyLinkageFrame
   -- fourth write is one extra `.trans` rather than a fourth arm in a copy of the
   -- operation's case analysis.
   obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
-    hSc, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
+    hSc, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? hStep
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 : s2.objects.invExt := storeDonationHeadClear_preserves_objects_invExt hInv1 hClear

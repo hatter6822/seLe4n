@@ -107,8 +107,8 @@ def applyReplyDonationOnCore (st : SystemState) (replierVtid : SeLe4n.ValidThrea
     | .donated scId originalOwner =>
       match SeLe4n.ThreadId.toValid? originalOwner with
       | some ownerVtid =>
-          -- WS-OD OD3.5 threads the reply-stack resolver here; OD3.1 passes the
-          -- bottom-of-stack answer, which is what that resolver computes today.
+          -- WS-OD OD4.4: blocked on OD4.3 with its single-core twin — see
+          -- `applyReplyDonation` in `Donation/Primitives.lean`.
           match returnDonatedSchedContextValid st replierVtid scId ownerVtid none with
           | .error e => .error e
           | .ok st' =>

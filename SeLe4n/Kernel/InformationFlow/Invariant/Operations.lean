@@ -1758,7 +1758,7 @@ private theorem returnDonatedSchedContext_preserves_projection
   -- it was never needed, and demanding it made the result unusable wherever the
   -- server is low.
   obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
-    hSc, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
+    hSc, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? hReturn
   have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 := storeDonationHeadClear_preserves_objects_invExt hInv1 hClear

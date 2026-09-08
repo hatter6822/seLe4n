@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.34.126` (`lakefile.toml`) |
+| **Package version** | `0.34.127` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 357,374 across 328 Lean files |
-| **Test LoC** | 73,216 across 70 Lean test suites |
-| **Proved declarations** | 11,989 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 357,749 across 328 Lean files |
+| **Test LoC** | 73,315 across 70 Lean test suites |
+| **Proved declarations** | 11,997 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -1778,7 +1778,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    reply needs that server's own TCB lock and the arm already sits at
    nine of nine — it answers `none` there rather than declaring a
    footprint that names a SchedContext it does not touch, and
-   recovering the headroom is WS-OD OD3.6.  The
+   recovering the headroom is WS-OD OD3.5.  The
    remaining twenty-seven answer `none`
    (`declaredFootprintSyscall`, `lockSetForSyscall_undeclared_none`),
    which is the fail-closed direction: a declared footprint that does

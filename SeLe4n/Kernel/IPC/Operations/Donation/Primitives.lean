@@ -207,8 +207,12 @@ def applyReplyDonation (st : SystemState) (replierVtid : SeLe4n.ValidThreadId)
       -- after promoting the stored `originalOwner` field via `toValid?`.
       match SeLe4n.ThreadId.toValid? originalOwner with
       | some ownerVtid =>
-          -- WS-OD OD3.5 threads the reply-stack resolver here; OD3.1 passes the
-          -- bottom-of-stack answer, which is what that resolver computes today.
+          -- WS-OD OD4.4: this site cannot thread OD3.4's resolver yet.  Its
+          -- invariant surface goes through
+          -- `returnDonatedSchedContext_preserves_ipcInvariantFull`, which OD3.2
+          -- states under `hBottom : newOwner? = none` and which **OD4.3**
+          -- generalises; threading here first would make that composite
+          -- unusable at this site.  The resolver arrives with OD4.3.
           match returnDonatedSchedContextValid st replierVtid scId ownerVtid none with
           | .error e => .error e
           | .ok st' => .ok (removeRunnable st' replier)
@@ -289,7 +293,7 @@ theorem returnDonatedSchedContext_server_unbound
   -- second copy of its case analysis.  The fourth store made that copy
   -- non-compiling, which is exactly what the shared derivation exists to
   -- prevent — and what it prevented at three other sites in this file.
-  obtain ⟨_, _, _, serverTcb, s1, s2, s3, s4, _, _, hS1, hClear, _, hS3, _, hS4, hEq⟩ :=
+  obtain ⟨_, _, _, serverTcb, s1, s2, s3, s4, _, _, _, hS1, hClear, _, hS3, _, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 : s2.objects.invExt := storeDonationHeadClear_preserves_objects_invExt hInv1 hClear
@@ -462,7 +466,7 @@ theorem returnDonatedSchedContext_machine_eq
   -- WS-RR RR7.22 (residual, remediation): read off the shared decomposition
   -- rather than re-running its case analysis, which this file used to carry a
   -- second copy of.
-  obtain ⟨_, _, _, _, s1, s2, s3, s4, _, _, h1, hClear, _, h3, _, h4, hEq⟩ :=
+  obtain ⟨_, _, _, _, s1, s2, s3, s4, _, _, _, h1, hClear, _, h3, _, h4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   rw [hEq]
   show s4.machine = st.machine
@@ -989,7 +993,7 @@ theorem returnDonatedSchedContext_getTcb?_cpuAffinity_eq
     (tid : SeLe4n.ThreadId) :
     (st'.getTcb? tid).map (·.cpuAffinity) = (st.getTcb? tid).map (·.cpuAffinity) := by
   obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
-    hSc, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
+    hSc, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 : s2.objects.invExt := storeDonationHeadClear_preserves_objects_invExt hInv1 hClear
@@ -1028,7 +1032,7 @@ theorem returnDonatedSchedContext_getSchedContext?_ne
     (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
     st'.getSchedContext? scId' = st.getSchedContext? scId' := by
   obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
-    hSc, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
+    hSc, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 : s2.objects.invExt := storeDonationHeadClear_preserves_objects_invExt hInv1 hClear

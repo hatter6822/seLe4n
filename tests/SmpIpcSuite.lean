@@ -1764,10 +1764,17 @@ private def popServer : SeLe4n.ThreadId := ⟨81⟩
 private def popClient : SeLe4n.ThreadId := ⟨82⟩
 private def popOuter : SeLe4n.ThreadId := ⟨83⟩
 
+/-- The donor shape the pop requires of an outer caller: a thread that has given
+up its binding and waits on a reply.  Named so the negatives can vary one clause
+at a time rather than deleting the caller outright. -/
+private def popWaitingDonor : TCB :=
+  { mkTcb 83 40 none with
+      ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 76) (some popClient) }
+
 /-- A donation return's pre-state: the context is bound to the server, which
 holds it `.donated` from the client.  `head?` says whether the context heads a
 reply stack, and `prev?` what that head links down to. -/
-private def popStore (head? : Option SeLe4n.ReplyId)
+private def popStoreWith (outerTcb : TCB) (head? : Option SeLe4n.ReplyId)
     (prev? : Option SeLe4n.ReplyId) : SystemState :=
   (BootstrapBuilder.empty
     |>.withObject chainSc.toObjId
@@ -1782,7 +1789,35 @@ private def popStore (head? : Option SeLe4n.ReplyId)
     |>.withObject popServer.toObjId
         (.tcb { mkTcb 81 50 none with schedContextBinding := .donated chainSc popClient })
     |>.withObject popClient.toObjId (.tcb (mkTcb 82 40 none))
-    |>.withObject popOuter.toObjId (.tcb (mkTcb 83 40 none))
+    -- WS-OD OD4.4: the outer caller must be a *waiting donor*, because the pop
+    -- validates it before handing it the context.  A fixture that made it merely
+    -- `.ready` was modelling a state the kernel now refuses — the guard doing its
+    -- job — so the shape is a parameter and the negatives below vary it.
+    |>.withObject popOuter.toObjId (.tcb outerTcb)
+    |>.build)
+
+/-- The well-formed depth-≥ 2 fixture: a waiting-donor outer caller. -/
+private def popStore (head? : Option SeLe4n.ReplyId)
+    (prev? : Option SeLe4n.ReplyId) : SystemState :=
+  popStoreWith popWaitingDonor head? prev?
+
+/-- ...and the same store with the frame *below* the head donating some other
+context — what a re-linked (reused) Reply looks like from the resolver's side. -/
+private def popStoreOuterDonating (other : SeLe4n.SchedContextId) : SystemState :=
+  (BootstrapBuilder.empty
+    |>.withObject chainSc.toObjId
+        (.schedContext { SchedContext.empty chainSc with
+                           boundThread := some popServer, scReply := some chainHeadReply })
+    |>.withObject chainHeadReply.toObjId
+        (.reply { replyId := chainHeadReply, caller := some popClient,
+                  donatedSc := some chainSc, prev := some chainOuterReply })
+    |>.withObject chainOuterReply.toObjId
+        (.reply { replyId := chainOuterReply, caller := some popOuter,
+                  donatedSc := some other })
+    |>.withObject popServer.toObjId
+        (.tcb { mkTcb 81 50 none with schedContextBinding := .donated chainSc popClient })
+    |>.withObject popClient.toObjId (.tcb (mkTcb 82 40 none))
+    |>.withObject popOuter.toObjId (.tcb popWaitingDonor)
     |>.build)
 
 private def popBindingOf (st : SystemState) (tid : SeLe4n.ThreadId) :
@@ -1864,6 +1899,63 @@ private def runDonationReturnPopChecks : IO Unit := do
     (match returnDonatedSchedContext (popStore (some chainAbsentReply) none)
         popServer chainSc popClient none with
      | .error e => e == KernelError.objectNotFound
+     | .ok _ => false)
+  -- WS-OD OD4.4 NEGATIVE: **the outer caller is validated, not trusted.**  The
+  -- pop mints a `.donated` binding, so it checks its donee the way
+  -- `donateSchedContext` checks its donor.  Each mutation below keeps the whole
+  -- depth-2 chain intact and breaks exactly one clause of the donor shape, so a
+  -- check that merely looked for "an outer caller exists" would pass all three.
+  assertBool "NEGATIVE: an outer caller that is not blocked on a reply is refused"
+    (match returnDonatedSchedContext
+        (popStoreWith (mkTcb 83 40 none) (some chainHeadReply) (some chainOuterReply))
+        popServer chainSc popClient (some popOuter) with
+     | .error e => e == KernelError.invalidArgument
+     | .ok _ => false)
+  assertBool "NEGATIVE: an outer caller that still holds a binding is refused"
+    (match returnDonatedSchedContext
+        (popStoreWith { popWaitingDonor with schedContextBinding := .bound chainOtherSc }
+          (some chainHeadReply) (some chainOuterReply))
+        popServer chainSc popClient (some popOuter) with
+     | .error e => e == KernelError.invalidArgument
+     | .ok _ => false)
+  assertBool "NEGATIVE: an outer caller naming no TCB is refused"
+    (match returnDonatedSchedContext (popStore (some chainHeadReply) (some chainOuterReply))
+        popServer chainSc popClient (some ⟨99⟩) with
+     | .error e => e == KernelError.invalidArgument
+     | .ok _ => false)
+  -- ...and the two self-reference clauses: the pop rewrites both of these
+  -- threads, so a claim about their pre-state shape would not survive the step.
+  assertBool "NEGATIVE: an outer caller that IS the rebound thread is refused"
+    (match returnDonatedSchedContext (popStore (some chainHeadReply) (some chainOuterReply))
+        popServer chainSc popClient (some popClient) with
+     | .error e => e == KernelError.invalidArgument
+     | .ok _ => false)
+  assertBool "NEGATIVE: an outer caller that IS the server is refused"
+    (match returnDonatedSchedContext (popStore (some chainHeadReply) (some chainOuterReply))
+        popServer chainSc popClient (some popServer) with
+     | .error e => e == KernelError.invalidArgument
+     | .ok _ => false)
+  -- WS-OD OD3.4: the resolver reads the *frame below the head*, and answers
+  -- `none` at the bottom.  Both readings are exercised, because a resolver only
+  -- ever run on an empty stack is one nothing has evaluated.
+  assertBool "the resolver answers the caller of the frame below the head"
+    (match replyStackOuterCaller? (popStore (some chainHeadReply) (some chainOuterReply))
+        chainSc with
+     | .ok (some t) => t == popOuter
+     | _ => false)
+  assertBool "the resolver answers `none` at the bottom of the stack"
+    (match replyStackOuterCaller? (popStore (some chainHeadReply) none) chainSc with
+     | .ok none => true | _ => false)
+  assertBool "the resolver answers `none` for a context heading no stack"
+    (match replyStackOuterCaller? (popStore none none) chainSc with
+     | .ok none => true | _ => false)
+  -- NEGATIVE: the frame below is validated too — the confused deputy of §3.4.
+  -- A reused Reply keeps its `caller`; what it loses is the donation, and that
+  -- is what the resolver refuses to read past.
+  assertBool "NEGATIVE: a frame below the head donating another context is refused"
+    (match replyStackOuterCaller?
+        (popStoreOuterDonating chainOtherSc) chainSc with
+     | .error e => e == KernelError.invalidArgument
      | .ok _ => false)
   -- The RR2.8 guard is unchanged by the widening: a context bound to someone
   -- else is still refused before anything is read or written.

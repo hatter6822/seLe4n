@@ -731,8 +731,12 @@ def returnDonationToCancelledCaller (st : SystemState) (tid : SeLe4n.ThreadId)
     -- `passiveServerIdle`, because a `.donated` holder is outside its reach.
     -- The donation is resolved once, above, and the resolution survives the
     -- abort because the abort writes no `schedContextBinding`.
-    -- WS-OD OD3.5 threads the reply-stack resolver here; OD3.1 passes the
-    -- bottom-of-stack answer, which is what that resolver computes today.
+    -- WS-OD OD4.4: the new owner is resolved off the context's reply stack on
+    -- the **post-abort** state, which is the pop's own pre-state.  That is the
+    -- same answer the pre-abort state gives, because the abort writes no Reply
+    -- at all (`abortHolderPendingIpc_unwritten_kind_backward`) — a fact strictly
+    -- stronger than `donationChainFrame`, which is what this needs: the resolver
+    -- reads `Reply.caller`, and that field is deliberately outside the frame.
     match returnDonatedSchedContext (abortHolderPendingIpc st holder) holder scId tid none with
     | .ok st' => st'
     -- All-or-nothing: the abort is discarded too.  `cancelledCallerDonation?`

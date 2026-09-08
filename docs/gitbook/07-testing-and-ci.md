@@ -27,7 +27,7 @@ What each version changed is in [`CHANGELOG.md`](../../CHANGELOG.md).
   - malformed/negative and IF-M1 runtime suites (`lake exe negative_state_suite`, `lake exe information_flow_suite`) run under `scripts/test_tier2_negative.sh`,
   - R8-D (I-M04): frozen/radix correctness suites (`radix_tree_suite`, `frozen_state_suite`, `freeze_proof_suite`, `frozen_ops_suite`) now execute in Tier 2 negative tests (67 scenarios),
   - fixture lines are bracket-prefixed (`[PREFIX-NNN] expected_trace_fragment`; the parser also accepts an optional pipe-delimited `scenario_id | risk_class | fragment` form) for audit traceability (WS-I1/R-03), with the subsystem mapping in `scenario_registry.yaml`,
-  - all trace output lines (237 fixture lines at v0.34.126) tagged with scenario IDs across 15+ prefix families (ENT, CAT, SST, LEP, CIC, IMT, IMB, DDT, ICS, BME, STD, UMT, SGT, RCF, ITR, PTY, …),
+  - all trace output lines (237 fixture lines at v0.34.127) tagged with scenario IDs across 15+ prefix families (ENT, CAT, SST, LEP, CIC, IMT, IMB, DDT, ICS, BME, STD, UMT, SGT, RCF, ITR, PTY, …),
   - 38 inter-transition invariant assertions (WS-I1/R-01, V8-C) check invariant families after every major transition group including post-mutation checks,
   - fixtures include WS-A4 scale scenarios for deep CNode radix, large runnable queues, multi-endpoint IPC, depth-5 service dependencies, and boundary memory addresses.
   - WS-B11 scenario metadata is maintained in `tests/scenarios/scenario_catalog.json` and validated by `scripts/scenario_catalog.py` in smoke/nightly gates.

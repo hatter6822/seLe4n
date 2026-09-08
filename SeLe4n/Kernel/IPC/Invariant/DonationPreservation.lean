@@ -203,7 +203,7 @@ theorem returnDonatedSchedContext_getTcb?_char
   -- WS-OD OD3.2: read off `returnDonatedSchedContext_ok_storeChain`, the shared
   -- derivation, rather than off a second copy of the operation's case analysis.
   obtain ⟨sc, head?, ownerTcb, serverTcb, s1, s2, s3, s4,
-    hScObj, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
+    hScObj, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 : s2.objects.invExt := storeDonationHeadClear_preserves_objects_invExt hInv1 hClear
@@ -936,7 +936,7 @@ theorem returnDonatedSchedContext_donationReadAgreement
   -- one extra hop — it writes a Reply, and the read agreement is about
   -- SchedContexts and bindings.
   obtain ⟨sc, head?, ownerTcb, serverTcb, s1, s2, s3, s4,
-    hScObj, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
+    hScObj, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 : s2.objects.invExt := storeDonationHeadClear_preserves_objects_invExt hInv1 hClear

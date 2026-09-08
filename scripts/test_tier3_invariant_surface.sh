@@ -1405,6 +1405,57 @@ run_check "INVARIANT" rg -n '^theorem abortHolderPendingIpc_donationChainFrame' 
 run_check "INVARIANT" rg -n '^structure donationReturnOuterValid' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 run_check "INVARIANT" rg -n '^theorem donationReturnOuterValid_none' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_donationOwnerValid_at_target' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# OD3.4: the pre-state resolver, and the three answers it distinguishes.  A
+# resolver that conflated "no link" with "a link that does not validate" would
+# read a corrupt stack as an empty one and settle a context still owed outward,
+# so the shape is `Except _ (Option _)` and not `Option _`.
+run_check "INVARIANT" rg -n '^def replyStackOuterCaller\?' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyStackOuterCaller\?[^\n]*(\n([ \t][^\n]*)?)*Except KernelError \(Option SeLe4n\.ThreadId\)" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+# It walks exactly ONE link past the head — the pop consumes one frame, so it
+# needs one frame of lookahead.  Relation, not presence: the mutation keeps the
+# resolver and makes it read the head's own caller instead of the frame below.
+run_check "INVARIANT" bash -lc 'rg -U -n "match head\.prev with[^\n]*(\n([ \t][^\n]*)?)*\| some below =>" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyStackOuterCaller\?[^\n]*(\n([ \t][^\n]*)?)*\.ok head\.caller" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+# ...and it VALIDATES that frame (plan §3.4, the confused deputy).  A reused
+# Reply keeps its `caller`; what it loses is the donation, so the check is on
+# `donatedSc` and refusing is the only safe verdict.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyStackOuterCaller\?[^\n]*(\n([ \t][^\n]*)?)*if b\.donatedSc != some scId then \.error \.invalidArgument" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyStackOuterCaller\?[^\n]*(\n([ \t][^\n]*)?)*if b\.donatedSc != some scId then \.ok none" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+# The resolution obligation is named, discharged from the chain invariant, and
+# framed — the same pair the head validation has, for the same reason.
+run_check "INVARIANT" rg -n '^def replyStackOuterCallerResolves' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem replyStackOuterCallerResolves_of_chainWellFormed' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem replyStackOuterCallerResolves_of_frame' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem replyStackOuterCaller\?_of_no_stack' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+
+# OD3.4: **the pop validates its donee, because it mints a donation.**  The
+# donating operation checks its donor side; the pop mints `.donated scId outer`
+# and checked nothing, which is why the depth-≥ 2 obligation was undischargeable
+# on the reply path.  The guard is O(1) and fail-closed.
+run_check "INVARIANT" rg -n '^def outerCallerAcceptable' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "if !outerCallerAcceptable st serverTid originalOwner newOwner\? then\n      \.error \.invalidArgument" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+# All three clauses, each load-bearing: the donor shape, and the two threads the
+# pop rewrites (a claim about their pre-state shape would not survive the step).
+run_check "INVARIANT" bash -lc 'rg -U -n "outer != originalOwner && outer != serverTid" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "outerTcb\.schedContextBinding == \.unbound &&[^\n]*(\n([ \t][^\n]*)?)*\| \.blockedOnReply _ _ => true" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+# The guard is part of the ONE decomposition, not beside it: that theorem already
+# carries the context lookup and the head validation, neither of which is a
+# store, so it is "what a successful pop tells you" and an incomplete one would
+# license conclusions the operation does not earn.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem returnDonatedSchedContext_ok_storeChain[^\n]*(\n([ \t][^\n]*)?)*outerCallerAcceptable st serverTid originalOwner newOwner\? = true ∧" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_ok_outerAcceptable' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+# ...and it is free at the bottom of the stack, which is what keeps every call
+# site in the tree passing `none` without a new hypothesis.
+run_check "INVARIANT" rg -n '^@\[simp\] theorem outerCallerAcceptable_none' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+# The guard's negatives are RUN, and each varies one clause of the donor shape
+# while keeping the whole depth-2 chain — a suite that deleted the outer caller
+# instead would pass a check that only asked whether one exists.
+run_check "INVARIANT" bash -lc 'rg -U -n "NEGATIVE: an outer caller that is not blocked on a reply is refused" tests/SmpIpcSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "NEGATIVE: an outer caller that still holds a binding is refused" tests/SmpIpcSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "NEGATIVE: an outer caller that IS the rebound thread is refused" tests/SmpIpcSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "NEGATIVE: an outer caller that IS the server is refused" tests/SmpIpcSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "NEGATIVE: a frame below the head donating another context is refused" tests/SmpIpcSuite.lean'
+
 # The projection result got STRONGER: every field the return writes is stripped,
 # so no observability hypothesis on the server is needed at all.  The gap is
 # bounded to the declaration's OWN signature — its header at column 0 followed by

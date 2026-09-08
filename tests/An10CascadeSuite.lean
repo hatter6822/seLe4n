@@ -642,11 +642,18 @@ def an10_e_returnDonatedSchedContextValid_reduces : IO Bool := do
   let sc : Kernel.SchedContext := { mkEmptySchedContext 100 with boundThread := some serverTid }
   let serverTcb : TCB := { mkTcb 1 with schedContextBinding := .donated scId originalOwnerTid }
   let ownerTcb : TCB := mkTcb 2
+  -- WS-OD OD3.4: the pop validates its donee, so the outer caller of the `some`
+  -- arm must be a *waiting donor* — `.unbound` and `.blockedOnReply`.  A plain
+  -- TCB here is a state the kernel refuses, which would make the two arms differ
+  -- for the wrong reason and say nothing about the wrapper.
+  let outerTcb : TCB := { mkTcb 3 with
+                            ipcState := .blockedOnReply (ObjId.ofNat 200) (some originalOwnerTid) }
   let stPop : SystemState := { (default : SystemState) with
     objects := ((default : SystemState).objects
       |>.insert scId.toObjId (.schedContext sc)
       |>.insert serverTid.toObjId (.tcb serverTcb)
-      |>.insert originalOwnerTid.toObjId (.tcb ownerTcb)) }
+      |>.insert originalOwnerTid.toObjId (.tcb ownerTcb)
+      |>.insert outerTid.toObjId (.tcb outerTcb)) }
   let reducesAt (newOwner? : Option ThreadId) : Bool :=
     match SeLe4n.Kernel.returnDonatedSchedContextValid stPop serverVtid scId originalOwnerVtid newOwner?,
           SeLe4n.Kernel.returnDonatedSchedContext stPop serverVtid.val scId originalOwnerVtid.val newOwner? with

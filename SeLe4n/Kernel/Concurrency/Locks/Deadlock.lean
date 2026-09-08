@@ -730,7 +730,7 @@ cancellation footprint reaches once the reclaim's abort prefix declares the
 holder's endpoint and its two queue neighbours.  On the reply arm, where the
 victim's own blocked-object members are `none`, that is nine of nine: the
 footprint sits **at** `maxLockSetSize`, which is the headroom the arm-selected
-split (WS-OD OD3.6) is scheduled to recover before anything else is added. -/
+split (WS-OD OD3.5) is scheduled to recover before anything else is added. -/
 theorem size_le_8 (L : List (LockId × AccessMode))
     (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ : Option (LockId × AccessMode)) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt

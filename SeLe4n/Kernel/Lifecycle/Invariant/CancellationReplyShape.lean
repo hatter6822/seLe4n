@@ -144,6 +144,9 @@ theorem returnDonationToCancelledCaller_no_donation_to_victim
       scId0 v hInvA hOwnerA hHeadResA hLkHA (hBindEqA.trans hBindH)
       (lookupTcb_some_not_reserved st holder holderTcb hLkH)
       (lookupTcb_some_not_reserved st v tcbV hLookup) none
+      -- WS-OD OD4.4: the pop's outer-caller guard is free at the bottom of the
+      -- reply stack, which is what this site passes.
+      (outerCallerAcceptable_none _ holder v)
     rw [hOk] at hTcb
     simp only at hTcb
     obtain ⟨hSrv, hOwn, hOther⟩ := returnDonatedSchedContext_tcb_schedContextBinding_backward

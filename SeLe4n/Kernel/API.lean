@@ -825,9 +825,7 @@ def replyRecvReturnDonation (tid recordedServer : SeLe4n.ThreadId)
         | .donated oldScId owner =>
             match recordedServer.toValid?, owner.toValid? with
             | some srvV, some ownerV =>
-                -- WS-OD OD3.5 threads the reply-stack resolver here; OD3.1 passes
-                -- the bottom-of-stack answer, which is what that resolver
-                -- computes today.
+                -- WS-OD OD4.4: blocked on OD4.3 — see `applyReplyDonation`.
                 match returnDonatedSchedContextValid st srvV oldScId ownerV none with
                 | .error e => .error e
                 | .ok st1' =>

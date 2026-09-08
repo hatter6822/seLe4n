@@ -242,7 +242,7 @@ answer `some` only for the other blocking states.
 
 So the reply arm is `1 + 8 = 9`, exactly `maxLockSetSize`, and every other arm is
 `1 + 3 = 4` or less.  **Nine leaves no headroom**: the arm-selected split (WS-OD
-OD3.6) is what buys it back, and it is scheduled before OD3.7 adds the previous
+OD3.5) is what buys it back, and it is scheduled before OD3.6 adds the previous
 reply's read for exactly this reason. -/
 theorem lockSet_cancelIpcBlockingOnCore_size_le (st : SystemState)
     (victimTid : SeLe4n.ThreadId) :

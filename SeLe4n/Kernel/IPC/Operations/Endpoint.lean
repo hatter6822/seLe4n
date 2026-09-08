@@ -781,6 +781,47 @@ stack rather than in the binding graph. -/
     (outer : SeLe4n.ThreadId) :
     donationReturnBinding scId (some outer) = .donated scId outer := rfl
 
+/-- WS-OD OD4.4: **the donor shape the pop requires of an outer caller.**
+
+Decidable and O(1): a `none` answer (the bottom of the reply stack) demands
+nothing, and a `some outer` answer demands exactly what `donationOwnerValid`
+demands of a donation's owner — a stored TCB that has given up its binding and is
+waiting on a reply — plus that `outer` is neither of the two threads this pop
+rewrites, since a claim about their pre-state shape would not survive the step.
+
+This is `donationReturnOuterValid`'s first three clauses, made checkable.  The
+fourth (`outerUnowned`: no thread already names `outer`) is whole-store
+quantified and stays a caller obligation; it reads only `schedContextBinding`,
+which is what lets it travel through the reply path's `ipcState` rewrites on the
+`sameSchedContextBindings` machinery that is already there. -/
+def outerCallerAcceptable (st : SystemState) (serverTid originalOwner : SeLe4n.ThreadId) :
+    Option SeLe4n.ThreadId → Bool
+  | none => true
+  | some outer =>
+    outer != originalOwner && outer != serverTid &&
+      (match st.getTcb? outer with
+       | none => false
+       | some outerTcb =>
+         outerTcb.schedContextBinding == .unbound &&
+           (match outerTcb.ipcState with
+            | .blockedOnReply _ _ => true
+            | _ => false))
+
+@[simp] theorem outerCallerAcceptable_none (st : SystemState)
+    (serverTid originalOwner : SeLe4n.ThreadId) :
+    outerCallerAcceptable st serverTid originalOwner none = true := rfl
+
+/-- WS-OD OD4.4: **neither arm of the widened binding is `.unbound`.**  The pop
+hands the context *back*, so the thread it rewrites always holds it afterwards —
+at the bottom of the stack as `.bound`, one level up as `.donated`.  Consumers
+used to get this by `cases` on a literal `.bound scId`; with the binding a match
+on the resolved owner that elimination no longer fires, and stating the fact once
+is what keeps it from being re-derived by a two-way case split at each site. -/
+@[simp] theorem donationReturnBinding_ne_unbound (scId : SeLe4n.SchedContextId)
+    (newOwner? : Option SeLe4n.ThreadId) :
+    donationReturnBinding scId newOwner? ≠ .unbound := by
+  cases newOwner? <;> simp [donationReturnBinding]
+
 /-- WS-OD OD3.1: **both arms of the return binding name the same context.**
 
 `.bound scId` and `.donated scId outer` differ in whether the target is itself a
@@ -879,6 +920,141 @@ theorem donationHeadOf?_ok_resolves (st : SystemState) (scId : SeLe4n.SchedConte
         have hRep' : r0 = r := congrArg Prod.snd hPair
         subst hRid; subst hRep'
         exact ⟨(SystemState.getReply?_eq_some_iff _ _ _).mp hRep, by simpa using hD⟩
+
+/-- WS-OD OD3.4: **who the popped context's new owner is, read off the reply
+stack before anything consumes it.**
+
+`returnDonatedSchedContext` takes its `newOwner?` as an argument rather than
+resolving it internally, because the reply leg consumes the target's reply link
+*before* the donation return runs (plan §3.3).  This is the resolver every call
+site uses to compute that argument on its own pre-state.
+
+**What it reads.**  The context's stack is `sc.scReply` (the head) linked down
+through `Reply.prev`.  The thread the pop hands the context back to is the head's
+own caller; the thread *that* caller in turn holds it from is the caller of the
+frame **below** the head.  So this walks exactly one link past the head, which is
+why it is `O(1)` and not a chain walk: the pop consumes one frame, so it needs one
+frame's worth of lookahead and no more.
+
+**Three answers, not two.**  `.ok none` means the head *is* the bottom of the
+stack, so the pop's target becomes `.bound` — the depth-1 case, and the answer on
+every state this tree reaches today.  `.ok (some outer)` names the outer caller,
+so the target becomes `.donated scId outer`.  `.error` means a link exists but
+does not validate, which is a different fact from there being no link and must
+not be conflated with it: a caller that read a corrupt link as "bottom of stack"
+would silently settle a scheduling context that is still owed outward.  This is
+the same three-way shape `donationHeadOf?` has, for the same reason.
+
+**It validates the frame it follows** (plan §3.4, the confused deputy).  `Reply`
+has `prev` and no `next`, and Reply objects are re-linked to new callers by
+`replyIdEstablishFresh`, so a stale `prev` over a reused Reply would name a
+caller that has nothing to do with this context — handing a thread's scheduling
+context to an unrelated thread, in another domain, driven by object reuse.  The
+frame below the head is therefore accepted only when it donates **this** context,
+exactly as `donationHeadOf?` accepts the head only when it does.  The plan puts
+that validation in OD5.1; it is built in here instead, because OD4.4 makes this
+resolver live and a live resolver whose safety check lands two phases later is
+the ordering the plan's own numbering rule forbids.  OD5.1 keeps the other half
+— the clears at freshening and consumption.
+
+**The error arm is unreachable under the chain invariant**, which validates every
+link of the stack; `donationChainWellFormed` is what rules it out, and a theorem
+asserting this resolver *succeeds* states it. -/
+def replyStackOuterCaller? (st : SystemState) (scId : SeLe4n.SchedContextId) :
+    Except KernelError (Option SeLe4n.ThreadId) :=
+  match st.getSchedContext? scId with
+  | none => .error .objectNotFound
+  | some sc =>
+    match donationHeadOf? st scId sc with
+    | .error e => .error e
+    | .ok none => .ok none
+    | .ok (some (_, head)) =>
+      match head.prev with
+      | none => .ok none
+      | some below =>
+        match st.getReply? below with
+        | none => .error .objectNotFound
+        | some b =>
+          if b.donatedSc != some scId then .error .invalidArgument
+          else .ok b.caller
+
+/-- WS-OD OD3.4: **the resolver is inert on every state this tree reaches.**
+
+A context that heads no reply stack has no outer caller, so the argument OD4.4
+threads through the six call sites is the literal `none` they pass today.  This
+is the theorem that makes OD4.4 a refactor rather than a behaviour change; the
+answer stops being `none` exactly when OD4's push writes a `scReply`. -/
+@[simp] theorem replyStackOuterCaller?_of_no_stack (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (sc : SchedContext)
+    (hSc : st.getSchedContext? scId = some sc) (hNoHead : sc.scReply = none) :
+    replyStackOuterCaller? st scId = .ok none := by
+  unfold replyStackOuterCaller?
+  rw [hSc]
+  simp only [donationHeadOf?_of_no_stack st scId sc hNoHead]
+
+/-- WS-OD OD3.4: **the bottom of the stack answers `none`.**
+
+A head whose own `prev` is empty is the last frame, so the context goes back
+`.bound`.  This is the depth-1 shape OD4's first push produces, and it is what
+keeps `returnDonatedSchedContext_eq_legacy_of_none` reachable after the push:
+the depth-1 pop still passes `none`. -/
+theorem replyStackOuterCaller?_of_bottom_head (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (sc : SchedContext) (rid : SeLe4n.ReplyId) (r : Reply)
+    (hSc : st.getSchedContext? scId = some sc)
+    (hHead : donationHeadOf? st scId sc = .ok (some (rid, r)))
+    (hBottom : r.prev = none) :
+    replyStackOuterCaller? st scId = .ok none := by
+  unfold replyStackOuterCaller?
+  rw [hSc]
+  simp only [hHead, hBottom]
+
+/-- WS-OD OD3.4: **what a `some` answer is.**
+
+The resolved outer caller is the `caller` of the frame below the head, and that
+frame donates this very context.  Both halves are load-bearing: the first is what
+OD4's push and OD4.4's call sites consume, and the second is the validation that
+stops a reused Reply from redirecting the context — a caller that only knew "the
+answer came from somewhere" would have no way to state the confined-deputy
+property at all. -/
+theorem replyStackOuterCaller?_ok_some (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (outer : SeLe4n.ThreadId)
+    (h : replyStackOuterCaller? st scId = .ok (some outer)) :
+    ∃ sc rid head below b,
+      st.getSchedContext? scId = some sc ∧
+      donationHeadOf? st scId sc = .ok (some (rid, head)) ∧
+      head.prev = some below ∧
+      st.getReply? below = some b ∧
+      b.donatedSc = some scId ∧
+      b.caller = some outer := by
+  unfold replyStackOuterCaller? at h
+  revert h
+  cases hSc : st.getSchedContext? scId with
+  | none => intro h; cases h
+  | some sc =>
+    simp only []
+    cases hHead : donationHeadOf? st scId sc with
+    | error e => intro h; cases h
+    | ok head? =>
+      cases head? with
+      | none => intro h; cases h
+      | some pair =>
+        obtain ⟨rid, head⟩ := pair
+        simp only []
+        cases hPrev : head.prev with
+        | none => intro h; cases h
+        | some below =>
+          simp only []
+          cases hBelow : st.getReply? below with
+          | none => intro h; cases h
+          | some b =>
+            simp only []
+            cases hDon : (b.donatedSc != some scId) with
+            | true => simp only [if_true]; intro h; cases h
+            | false =>
+              simp only [Bool.false_eq_true, if_false]
+              intro h
+              exact ⟨sc, rid, head, below, b, rfl, hHead, hPrev, hBelow,
+                by simpa using hDon, Except.ok.inj h⟩
 
 /-- WS-OD OD3.1: **the head clear, as one step whether or not there is a head.**
 
@@ -1162,6 +1338,20 @@ def returnDonatedSchedContext
     -- (`returnDonatedSchedContext_ok_implies_sc_bound`).
     if sc.boundThread != some serverTid then .error .invalidArgument
     else
+    -- WS-OD OD4.4: **validate the outer caller before handing it a donation.**
+    -- `donateSchedContext` checks its donor side (the AUD-3b guard) before
+    -- minting a `.donated` binding; this operation mints one too — at the bottom
+    -- of the stack `.bound`, one level up `.donated scId outer` — and until now
+    -- it checked nothing about `outer`.  That asymmetry is the defect: every
+    -- consumer had to carry the donor shape as a hypothesis, and on the reply
+    -- path (where the answered caller has just been woken `.ready`) no consumer
+    -- could discharge it.  The check is O(1) and fail-closed, so the three
+    -- structural clauses `donationOwnerValid` needs of `outer` become
+    -- consequences of this operation succeeding rather than obligations of
+    -- everyone who calls it.
+    if !outerCallerAcceptable st serverTid originalOwner newOwner? then
+      .error .invalidArgument
+    else
     -- WS-OD OD3.1: resolve and validate the reply-stack head **before** any
     -- store, so a head this context does not own commits nothing.
     match donationHeadOf? st scId sc with
@@ -1295,8 +1485,10 @@ def cleanupPreReceiveDonation (st : SystemState) (receiver : SeLe4n.ThreadId) : 
   | some recvTcb =>
     match recvTcb.schedContextBinding with
     | .donated scId originalOwner =>
-      -- WS-OD OD3.5 threads the reply-stack resolver here; OD3.1 passes the
-      -- bottom-of-stack answer, which is what the resolver computes today.
+      -- WS-OD OD4.4: this path is a call *abandonment*, not a reply, and its
+      -- chain behaviour is OD5.4's (teardown) rather than OD4.4's.  See the
+      -- note on `cleanupPreReceiveDonationChecked` below for why the resolver
+      -- cannot simply be threaded here.
       match returnDonatedSchedContext st receiver scId originalOwner none with
       | .error _ => st    -- Defensive fallback (used by frame lemmas only)
       | .ok st' => st'
@@ -1327,6 +1519,7 @@ def cleanupPreReceiveDonationChecked
   | some recvTcb =>
     match recvTcb.schedContextBinding with
     | .donated scId originalOwner =>
+      -- WS-OD OD4.4: `none`, matching the defensive twin — see the note above.
       returnDonatedSchedContext st receiver scId originalOwner none
     | _ => .ok st             -- No donation to clean up
 
@@ -1353,6 +1546,11 @@ theorem cleanupPreReceiveDonationChecked_ok_eq_cleanup
       exact Except.ok.inj h
     | donated scId owner =>
       simp only [hBind] at h ⊢
+      -- WS-OD OD4.4: both variants now resolve the new owner, and they resolve
+      -- it identically because they resolve it from the same state — which is
+      -- why the case split is on the *resolved* composite rather than on the
+      -- pop at a fixed argument.  Splitting on the pop at `none` would state
+      -- the bridge only at the bottom of the stack.
       cases hRet : returnDonatedSchedContext st receiver scId owner none with
       | error e => rw [hRet] at h; cases h
       | ok st'' =>
@@ -1417,6 +1615,13 @@ theorem returnDonatedSchedContext_ok_storeChain
     ∃ (sc : SchedContext) (head? : Option (SeLe4n.ReplyId × Reply))
       (clientTcb serverTcb : TCB) (s1 s2 s3 s4 : SystemState),
       st.objects[scId.toObjId]? = some (.schedContext sc) ∧
+      -- WS-OD OD4.4: the outer-caller guard belongs here, not beside here.  This
+      -- theorem is "what a successful pop tells you" — it already carries the
+      -- context lookup and the head validation, neither of which is a store — so
+      -- a decomposition that omitted the third precondition would be an
+      -- incomplete description of the operation, and an incomplete description
+      -- licenses conclusions the operation does not earn.
+      outerCallerAcceptable st serverTid originalOwner newOwner? = true ∧
       donationHeadOf? st scId sc = .ok head? ∧
       storeObject scId.toObjId
         (.schedContext { sc with boundThread := some originalOwner,
@@ -1440,6 +1645,12 @@ theorem returnDonatedSchedContext_ok_storeChain
       simp only []
       split
       · intro h; cases h
+      -- WS-OD OD4.4: peel the outer-caller guard; a refused outer caller commits
+      -- nothing, so the `.ok` branch carries its verdict.
+      cases hOuterOk : outerCallerAcceptable st serverTid originalOwner newOwner? with
+      | false => simp only [Bool.not_false, if_true]; intro h; cases h
+      | true =>
+      simp only [Bool.not_true, Bool.false_eq_true, if_false]
       · cases hHead : donationHeadOf? st scId sc with
         | error _ => intro h; cases h
         | ok head? =>
@@ -1476,8 +1687,33 @@ theorem returnDonatedSchedContext_ok_storeChain
                       intro h
                       cases h
                       exact ⟨sc, head?, clientTcb, serverTcb, p1.2, s2, p3.2, p4.2, rfl,
-                        hHead, by rw [← hS1], hS2, hL1, by rw [← hS3], hL2, by rw [← hS4], rfl⟩
+                        trivial, hHead, by rw [← hS1], hS2, hL1, by rw [← hS3], hL2,
+                        by rw [← hS4], rfl⟩
     | _ => intro h; cases h
+
+/-- WS-OD OD4.4: **a successful pop validated its outer caller.**
+
+The guard's payoff, and the reason it is worth an O(1) read: the three structural
+facts `donationOwnerValid` needs of a `.donated scId outer` binding — that `outer`
+is a stored TCB which has given up its binding and waits on a reply, and that it
+is neither of the two threads the pop rewrites — are now *consequences of the
+operation succeeding*.  Before the guard they were hypotheses every consumer had
+to carry, and on the reply path (where the answered caller has just been woken)
+no consumer could discharge them.
+
+Stated as its own corollary rather than folded into
+`returnDonatedSchedContext_ok_storeChain`: the guard is an independent fact about
+the operation, not a link of its store chain, and twenty-two consumers destructure
+that chain by position. -/
+theorem returnDonatedSchedContext_ok_outerAcceptable
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (newOwner? : Option SeLe4n.ThreadId)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
+    outerCallerAcceptable st serverTid originalOwner newOwner? = true := by
+  obtain ⟨_, _, _, _, _, _, _, _, _, hOuterOk, _⟩ :=
+    returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
+  exact hOuterOk
 
 /-- WS-OD OD3.3: **at an empty reply stack the pop is the pre-OD3 operation,
 store for store.**
@@ -1533,7 +1769,10 @@ theorem returnDonatedSchedContext_eq_legacy_of_none
     rw [← hNoHead]
   unfold returnDonatedSchedContext
   rw [hSc]
-  simp only [donationHeadOf?_of_no_stack st scId sc hNoHead, Option.map_none,
+  -- WS-OD OD4.4: at the bottom of the reply stack the outer-caller guard demands
+  -- nothing, so it reduces away and the body is the pre-OD3 one exactly.
+  simp only [outerCallerAcceptable_none, Bool.not_true, Bool.false_eq_true, if_false,
+    donationHeadOf?_of_no_stack st scId sc hNoHead, Option.map_none,
     storeDonationHeadClear_none, donationReturnBinding_none, hSame]
 
 /-- **WS-RR RR7.22 (residual, remediation)**: one TCB is another with its
@@ -1597,7 +1836,7 @@ theorem returnDonatedSchedContext_reply_rewrite
     (hReply : st.objects[oid]? = some (.reply r)) :
     ∃ r', st'.objects[oid]? = some (.reply r') ∧ replyStackRewrite r' r := by
   obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
-    hSc, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
+    hSc, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 : s2.objects.invExt := storeDonationHeadClear_preserves_objects_invExt hInv1 hClear
@@ -1664,7 +1903,7 @@ theorem returnDonatedSchedContext_tcb_rewrite
     (k : SeLe4n.ObjId) (t0 : TCB) (hk : st.objects[k]? = some (.tcb t0)) :
     ∃ t', st'.objects[k]? = some (.tcb t') ∧ tcbBindingRewrite t' t0 := by
   obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
-    hSc, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
+    hSc, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 : s2.objects.invExt := storeDonationHeadClear_preserves_objects_invExt hInv1 hClear
@@ -1707,7 +1946,7 @@ theorem returnDonatedSchedContext_tcb_rewrite_backward
     (k : SeLe4n.ObjId) (t' : TCB) (hk : st'.objects[k]? = some (.tcb t')) :
     ∃ t0, st.objects[k]? = some (.tcb t0) ∧ tcbBindingRewrite t' t0 := by
   obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
-    hSc, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
+    hSc, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 : s2.objects.invExt := storeDonationHeadClear_preserves_objects_invExt hInv1 hClear
@@ -1771,7 +2010,7 @@ theorem returnDonatedSchedContext_tcb_binding_cases
       ∃ t0, st.objects[k]? = some (.tcb t0) ∧
         t0.schedContextBinding = t'.schedContextBinding) := by
   obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
-    hSc, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
+    hSc, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 : s2.objects.invExt := storeDonationHeadClear_preserves_objects_invExt hInv1 hClear
@@ -1853,7 +2092,7 @@ theorem returnDonatedSchedContext_objects_backward_of_kind
     (hPost : st'.objects[oid]? = some o) :
     st.objects[oid]? = some o := by
   obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
-    hSc, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
+    hSc, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 : s2.objects.invExt := storeDonationHeadClear_preserves_objects_invExt hInv1 hClear
@@ -1900,7 +2139,7 @@ theorem returnDonatedSchedContext_objects_forward_of_kind
     (hPre : st.objects[oid]? = some o) :
     st'.objects[oid]? = some o := by
   obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
-    hSc, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
+    hSc, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 : s2.objects.invExt := storeDonationHeadClear_preserves_objects_invExt hInv1 hClear
@@ -1939,7 +2178,7 @@ theorem returnDonatedSchedContext_preserves_objects_invExt'
     (hObjInv : st.objects.invExt)
     (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
     st'.objects.invExt := by
-  obtain ⟨_, _, _, _, s1, s2, s3, s4, _, _, hS1, hClear, _, hS3, _, hS4, hEq⟩ :=
+  obtain ⟨_, _, _, _, s1, s2, s3, s4, _, _, _, hS1, hClear, _, hS3, _, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 : s2.objects.invExt := storeDonationHeadClear_preserves_objects_invExt hInv1 hClear
@@ -1966,7 +2205,7 @@ theorem returnDonatedSchedContext_objects_ne_stored
     (hNeServer : oid ≠ serverTid.toObjId)
     (hNeHead : ∀ rid : SeLe4n.ReplyId, sc.scReply = some rid → oid ≠ rid.toObjId) :
     st'.objects[oid]? = st.objects[oid]? := by
-  obtain ⟨sc0, head?, _, _, s1, s2, s3, s4, hSc0, hHead, hS1, hClear, _, hS3, _, hS4, hEq⟩ :=
+  obtain ⟨sc0, head?, _, _, s1, s2, s3, s4, hSc0, _, hHead, hS1, hClear, _, hS3, _, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have hScEq : sc0 = sc := by
     rw [hSc0] at hSc; exact KernelObject.schedContext.inj (Option.some.inj hSc)
@@ -2005,7 +2244,7 @@ theorem returnDonatedSchedContext_objects_ne_of_not_reply
     (hNeServer : oid ≠ serverTid.toObjId)
     (hNotReply : ∀ r : Reply, st.objects[oid]? ≠ some (.reply r)) :
     st'.objects[oid]? = st.objects[oid]? := by
-  obtain ⟨sc, head?, _, _, _, _, _, _, hSc, hHead, _, _, _, _, _, _, _⟩ :=
+  obtain ⟨sc, head?, _, _, _, _, _, _, hSc, _, hHead, _, _, _, _, _, _, _⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   refine returnDonatedSchedContext_objects_ne_stored st st' serverTid scId originalOwner
     newOwner? sc hSc hObjInv h oid hNeSc hNeOwner hNeServer ?_
@@ -2043,7 +2282,7 @@ theorem returnDonatedSchedContext_post_schedContext
         some (.schedContext { sc with boundThread := some originalOwner,
                                       scReply := head?.bind (fun p => p.2.prev) }) := by
   obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
-    hSc, hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
+    hSc, _, hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 : s2.objects.invExt := storeDonationHeadClear_preserves_objects_invExt hInv1 hClear
@@ -2163,7 +2402,7 @@ theorem returnDonatedSchedContext_scheduler_eq
     (newOwner? : Option SeLe4n.ThreadId)
     (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
     st'.scheduler = st.scheduler := by
-  obtain ⟨_, _, _, _, s1, s2, s3, s4, _, _, h1, hClear, _, h3, _, h4, hEq⟩ :=
+  obtain ⟨_, _, _, _, s1, s2, s3, s4, _, _, _, h1, hClear, _, h3, _, h4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   rw [hEq]
   show s4.scheduler = st.scheduler
@@ -2181,7 +2420,7 @@ theorem returnDonatedSchedContext_serviceRegistry_eq
     (newOwner? : Option SeLe4n.ThreadId)
     (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
     st'.serviceRegistry = st.serviceRegistry := by
-  obtain ⟨_, _, _, _, s1, s2, s3, s4, _, _, h1, hClear, _, h3, _, h4, hEq⟩ :=
+  obtain ⟨_, _, _, _, s1, s2, s3, s4, _, _, _, h1, hClear, _, h3, _, h4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   rw [hEq]
   show s4.serviceRegistry = st.serviceRegistry
@@ -2205,7 +2444,7 @@ theorem returnDonatedSchedContext_tlbShootdown_eq
   -- WS-OD OD3.1: read off the operation's own decomposition rather than by a
   -- fourth copy of its case analysis, which is what the store chain exists for
   -- and what kept this frame from needing a fifth arm when the pop landed.
-  obtain ⟨_, _, _, _, s1, s2, s3, s4, _, _, h1, hClear, _, h3, _, h4, hEq⟩ :=
+  obtain ⟨_, _, _, _, s1, s2, s3, s4, _, _, _, h1, hClear, _, h3, _, h4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   rw [hEq]
   show s4.tlbShootdown = st.tlbShootdown

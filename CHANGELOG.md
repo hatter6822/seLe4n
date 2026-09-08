@@ -1,3 +1,96 @@
+## v0.34.127 — WS-OD OD3.4: the outer-caller resolver, and the pop that validates what it is handed
+
+**The resolver OD3.5 will thread, and the guard that makes threading safe.**
+`returnDonatedSchedContext` takes its `newOwner?` as an argument because the reply
+leg consumes the target's reply link before the donation return runs (plan §3.3).
+`replyStackOuterCaller?` is the resolver every call site will use to compute that
+argument on its own pre-state: it walks exactly one link past the context's stack
+head — the pop consumes one frame, so it needs one frame of lookahead and no more
+— and answers three ways, not two.  `.ok none` is the bottom of the stack, `.ok
+(some outer)` names the outer caller, and `.error` is a link that exists but does
+not validate.  Conflating the last two would let a corrupt link read as "nothing
+owed", silently settling a scheduling context that is still owed outward, so the
+resolver has the same three-way shape `donationHeadOf?` has and for the same
+reason.
+
+**It validates the frame it follows** (plan §3.4, the confused deputy).  `Reply`
+has `prev` and no `next`, and Reply objects are re-linked to new callers by
+`replyIdEstablishFresh`, so a stale `prev` over a reused Reply would name a caller
+with nothing to do with this context — handing a thread's scheduling context to an
+unrelated thread, in another domain, driven by object reuse.  The plan puts that
+check in OD5.1; it is built in here instead, because OD3.5 makes the resolver live
+and a live resolver whose safety check lands two phases later is precisely the
+ordering the plan's own numbering rule forbids.  `replyStackOuterCallerResolves`
+names the obligation, `donationChainWellFormed` discharges it
+(`headHoldsWholeChain`'s first clause earning its keep — a chain that terminates
+validates every link along the way), and the frame carries it.
+
+**The frame transports resolvability, not the answer, and says so.**
+`donationChainFrame`'s read set is `replyStackLinks?` — `donatedSc` and `prev` —
+and deliberately not `caller`, so a `caller`-only rewrite (`consumeCallerReply`,
+`replyIdEstablishFresh`) frames past it.  The resolver reads `caller`.  So a step
+that reassigns a Reply's caller carries the *predicate* and changes the *answer*,
+which is exactly the confused deputy and exactly why the resolver validates rather
+than trusts.  Widening the frame to cover `caller` would stop it covering the
+operations it exists for; the honest statement is the narrow one, written into the
+frame's docstring so the next reader does not mistake it for value-agreement.
+
+**The pop now validates its donee, because it mints a donation.**
+`donateSchedContext` checks its donor side before minting a `.donated` binding
+(the AUD-3b guard).  `returnDonatedSchedContext` mints one too — `.bound scId` at
+the bottom of the stack, `.donated scId outer` one level up — and checked nothing
+about `outer`.  That asymmetry is a defect in its own right, and it is the reason
+the depth-≥ 2 obligation was unusable: every consumer had to carry the donor shape
+as a hypothesis, and on the reply path, where the answered caller has just been
+woken `.ready`, no consumer could discharge it.  `outerCallerAcceptable` is an
+O(1), fail-closed check — a stored TCB that is `.unbound` and `.blockedOnReply`,
+and neither of the two threads this pop rewrites — so three of
+`donationReturnOuterValid`'s four clauses become *consequences of the operation
+succeeding* rather than obligations of everyone who calls it.  It sits in
+`returnDonatedSchedContext_ok_storeChain`, the single decomposition every field
+frame is a corollary of: that theorem already carries the context lookup and the
+head validation, neither of which is a store, so it is "what a successful pop
+tells you", and omitting the third precondition would have made it an incomplete
+description — which licenses conclusions the operation does not earn.  Twenty-three
+destructures widened by one slot, and `_ok_outerAcceptable` is the one-fact reading,
+derived from the chain rather than proved beside it.
+
+**Why OD3.5 does not land here, and what that says about the plan.**  Threading
+the resolver was attempted at all six call sites and reverted at all six, for one
+reason found the same way each time: every site's invariant surface runs through
+`returnDonatedSchedContext_preserves_ipcInvariantFull`, which OD3.2 states under
+`hBottom : newOwner? = none` and which **OD4.3** generalises.  A site that resolves
+its argument cannot use a composite conditioned on that argument being `none`, so
+**OD3.5 consumes OD4.3** — a backward dependency the plan's numbering does not
+record, and the semantic half of its own ordering rule: the numbers ascend and the
+proofs still arrive after the transition that needs them.  The plan is corrected to
+run OD4.3 before OD3.5 rather than papering over it with a hypothesis nobody could
+discharge; the six call sites carry a comment naming the blocker, and each passes
+the literal `none` that `replyStackOuterCaller?_of_no_stack` proves is the answer on
+every state this tree reaches.
+
+**Tests.**  §3.16 grows from twelve checks to twenty-one.  The depth-≥ 2 fixture's
+outer caller had to become a *waiting donor*: the previous fixture made it merely
+`.ready`, which is a state the kernel now refuses — the guard finding a fixture that
+modelled the impossible, on its first run.  Five negatives vary one clause of the
+donor shape at a time (not blocked on a reply; still holding a binding; naming no
+TCB; being the rebound thread; being the server), each keeping the whole depth-2
+chain intact, so a check that merely looked for "an outer caller exists" would pass
+all five.  Three positives exercise the resolver's own three answers, and one
+negative gives it a frame below the head that keeps its `caller` and loses its
+donation — the reused-Reply shape, which is the thing the validation is for.
+
+**The AK7 cascade.**  `RAW_MATCH_TOTAL` holds at **130**: every store read this
+cut adds goes through a typed accessor (`getSchedContext?`, `getReply?`,
+`getTcb?`), and the two adoption counters register it in the other direction
+(`GETTCB_ADOPTION` 3137 → 3140, `GETSCHEDCTX_ADOPTION` 423 → 430).
+`RAW_LOOKUP_TID` is re-anchored 1608 → **1609**, for the reason the preceding
+invariant cuts re-anchored it: `replyStackOuterCallerResolves` is a predicate
+*about* a stored SchedContext, so it names the object-store key, exactly as its
+sibling `donationHeadResolves` does.
+
+Refs: docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md OD3 (OD3.4)
+
 ## v0.34.126 — WS-OD OD3.1–OD3.3: the pop, generalised and inert
 
 **The donation return becomes a reply-stack pop, and provably does nothing new.**

@@ -1964,7 +1964,7 @@ theorem returnDonatedSchedContext_preservesFieldsOutside
     preservesFieldsOutside ipcEndpointOp_modifiedFields st st' := by
   -- WS-OD OD3.2: read off the operation's own store chain rather than by a copy
   -- of its case analysis, which the reply-stack pop's fourth write invalidated.
-  obtain ⟨_, _, _, _, s1, s2, s3, s4, _, _, hS1, hClear, _, hS3, _, hS4, hEq⟩ :=
+  obtain ⟨_, _, _, _, s1, s2, s3, s4, _, _, _, hS1, hClear, _, hS3, _, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? hStep
   refine preservesFieldsOutside_trans
     (storeObject_preservesFieldsOutside_ipc _ _ _ _ hS1) ?_

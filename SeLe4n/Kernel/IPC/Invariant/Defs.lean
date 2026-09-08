@@ -2375,6 +2375,94 @@ theorem donationHeadResolves_of_chainWellFormed (st : SystemState)
               Bool.false_eq_true, if_false]⟩
         · rw [if_neg hDon]; intro hc; cases hc
 
+/-- WS-OD OD3.4: **the outer-caller resolution succeeds.**
+
+`replyStackOuterCaller?` refuses a stack whose frame below the head does not
+resolve to a Reply donating this very context — the confused-deputy guard of plan
+§3.4.  This is the property that rules that arm out, stated exactly as
+`donationHeadResolves` is and for the same reason: a caller states the fact it
+has rather than the whole chain invariant, and the two ways of establishing it
+sit side by side. -/
+def replyStackOuterCallerResolves (st : SystemState) (scId : SeLe4n.SchedContextId) : Prop :=
+  ∀ sc : SchedContext, st.objects[scId.toObjId]? = some (.schedContext sc) →
+    ∃ outer?, replyStackOuterCaller? st scId = .ok outer?
+
+/-- WS-OD OD3.4: the chain invariant establishes the outer-caller resolution.
+
+The head validation needs only that the chain from `scReply` *starts*; this needs
+one link more, because the resolver walks one frame past the head.  Both come out
+of `headHoldsWholeChain`'s first clause: a chain that terminates validates every
+link along the way, so the frame below the head resolves to a Reply donating this
+context exactly as the head does.  That is the clause earning its keep — it is
+why the resolver may follow `prev` at all rather than treating every link as
+suspect. -/
+theorem replyStackOuterCallerResolves_of_chainWellFormed (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (hChain : donationChainWellFormed st) :
+    replyStackOuterCallerResolves st scId := by
+  intro sc hSc
+  have hScGet : st.getSchedContext? scId = some sc :=
+    (SystemState.getSchedContext?_eq_some_iff st scId sc).mpr hSc
+  obtain ⟨head?, hHead⟩ := donationHeadResolves_of_chainWellFormed st scId hChain sc hSc
+  -- No head, or a head that is itself the bottom: the resolver answers `none`
+  -- without following anything.
+  cases head? with
+  | none => exact ⟨none, by unfold replyStackOuterCaller?; rw [hScGet]; simp only [hHead]⟩
+  | some pair =>
+    obtain ⟨rid, head⟩ := pair
+    cases hPrev : head.prev with
+    | none =>
+      exact ⟨none, replyStackOuterCaller?_of_bottom_head st scId sc rid head hScGet hHead hPrev⟩
+    | some below =>
+      -- The head is on the chain, so the walk took its `prev` link and validated
+      -- the frame there.  Two unfoldings of `donationChainFrom` extract that.
+      obtain ⟨hHeadObj, hHeadDon⟩ := donationHeadOf?_ok_resolves st scId sc rid head hHead
+      obtain ⟨fuel, chain, hChainEq, _⟩ := hChain.headHoldsWholeChain scId sc hSc
+      have hScReply : sc.scReply = some rid := by
+        have := donationHeadOf?_ok_key st scId sc _ hHead
+        simpa using this.symm
+      rw [hScReply] at hChainEq
+      have hLinksHead : replyStackLinksAt? st rid = some (head.donatedSc, head.prev) := by
+        unfold replyStackLinksAt?; rw [hHeadObj]; rfl
+      -- Step one: past the head.
+      obtain ⟨f, hf⟩ : ∃ f, fuel = f + 1 := by
+        cases fuel with
+        | zero => rw [donationChainFrom_zero] at hChainEq; cases hChainEq
+        | succ f => exact ⟨f, rfl⟩
+      subst hf
+      rw [donationChainFrom, hLinksHead] at hChainEq
+      simp only [] at hChainEq
+      rw [hHeadDon, if_pos rfl, hPrev] at hChainEq
+      obtain ⟨tail, hTail⟩ : ∃ tail, donationChainFrom st scId f (some below) = some tail := by
+        cases hT : donationChainFrom st scId f (some below) with
+        | none => rw [hT] at hChainEq; cases hChainEq
+        | some tail => exact ⟨tail, rfl⟩
+      -- Step two: at the frame below, which the walk validated.
+      obtain ⟨g, hg⟩ : ∃ g, f = g + 1 := by
+        cases f with
+        | zero => rw [donationChainFrom_zero] at hTail; cases hTail
+        | succ g => exact ⟨g, rfl⟩
+      subst hg
+      rw [donationChainFrom] at hTail
+      revert hTail
+      cases hLinksBelow : replyStackLinksAt? st below with
+      | none => intro hc; cases hc
+      | some pairBelow =>
+        obtain ⟨donatedBelow, belowNext⟩ := pairBelow
+        simp only []
+        by_cases hDonBelow : donatedBelow = some scId
+        · rw [if_pos hDonBelow]
+          intro _
+          obtain ⟨b, hBObj, hBDon, _⟩ :=
+            replyStackLinks?_eq_some_iff.mp hLinksBelow
+          have hBGet : st.getReply? below = some b :=
+            (SystemState.getReply?_eq_some_iff st below b).mpr hBObj
+          refine ⟨b.caller, ?_⟩
+          unfold replyStackOuterCaller?
+          rw [hScGet]
+          simp only [hHead, hPrev, hBGet, hBDon.trans hDonBelow, bne_self_eq_false,
+            Bool.false_eq_true, if_false]
+        · rw [if_neg hDonBelow]; intro hc; cases hc
+
 /-- WS-OD OD2.4: a store with no Reply and no SchedContext object satisfies the
 chain invariant — the shape the empty boot store has, and the inhabitation
 witness that keeps the predicate from being an unsatisfiable conjunction. -/
@@ -2663,6 +2751,28 @@ theorem donationChainWellFormed_of_frame {st st' : SystemState}
     · intro rid r' hR' hDon'
       obtain ⟨r, hR, hDonEq, _⟩ := hReplyBack rid r' hR'
       exact hComplete rid r hR (hDonEq.trans hDon')
+
+/-- WS-OD OD3.4: the outer-caller resolution is carried by any step that writes
+no chain object — the frame family of OD2.5 applied to the second guard, exactly
+as `donationHeadResolves_of_frame` applies it to the first.
+
+**It transports resolvability, not the answer, and the difference is
+deliberate.**  `replyStackOuterCaller?` reads `Reply.caller`, which
+`donationChainFrame` does **not** fix: OD2.5 kept the frame's read set to
+`replyStackLinks?` (`donatedSc` and `prev`) precisely so a `caller`-only rewrite
+— `consumeCallerReply`, `replyIdEstablishFresh` — frames past it, and widening
+the frame to cover `caller` would stop it covering the very operations it exists
+for.  So a step that reassigns a Reply's caller carries this predicate and
+changes what the resolver returns, which is exactly the confused deputy of plan
+§3.4 and why the resolver validates the frame it follows rather than trusting
+one.  A caller that needs the *value* to agree across a step states that step's
+own Reply preservation; it does not reach for this. -/
+theorem replyStackOuterCallerResolves_of_frame {st st' : SystemState}
+    (hFrame : donationChainFrame st st') (scId : SeLe4n.SchedContextId)
+    (hChain : donationChainWellFormed st) :
+    replyStackOuterCallerResolves st' scId :=
+  replyStackOuterCallerResolves_of_chainWellFormed st' scId
+    (donationChainWellFormed_of_frame hFrame hChain)
 
 /-- WS-OD OD2.3/OD2.4: **the bridge to `Reply.wellFormed`.**  The state-level
 invariant carries the object-level predicate, so a reader that has one has the
@@ -5406,7 +5516,13 @@ theorem returnDonatedSchedContext_ok_under_invariants
     (hBind : recvTcb.schedContextBinding = .donated scId owner)
     (hRecvNotRes : ¬receiver.isReserved = true)
     (hOwnerNotRes : ¬owner.isReserved = true)
-    (newOwner? : Option SeLe4n.ThreadId) :
+    (newOwner? : Option SeLe4n.ThreadId)
+    -- WS-OD OD4.4: the pop refuses an outer caller it cannot validate, so a claim
+    -- that it *succeeds* has to say the outer caller is acceptable.  At the bottom
+    -- of the reply stack this is `rfl` (`outerCallerAcceptable_none`), which is
+    -- every call site in the tree today; one level up it is a decidable check on
+    -- the pre-state rather than the four-clause obligation consumers used to carry.
+    (hOuterOk : outerCallerAcceptable st receiver owner newOwner? = true) :
     ∃ st', returnDonatedSchedContext st receiver scId owner newOwner? = .ok st' := by
   -- Recover hypotheses from donationOwnerValid.
   have hRecvObj : st.objects[receiver.toObjId]? = some (.tcb recvTcb) :=
@@ -5434,6 +5550,10 @@ theorem returnDonatedSchedContext_ok_under_invariants
   -- `donationOwnerValid` witness that discharges the others — it is exactly
   -- that invariant's "the donated SchedContext is bound to the server" clause.
   rw [if_neg (by simp [hScBound])]
+  -- WS-OD OD4.4: ...and then the outer-caller guard, discharged from the
+  -- hypothesis — the pop refuses an outer caller it cannot validate, so a claim
+  -- that it succeeds owes that fact.  The order is the operation's own.
+  rw [if_neg (by simp [hOuterOk])]
   rw [hHead]
   simp only []
   generalize hS1 : storeObject scId.toObjId
@@ -5572,6 +5692,9 @@ theorem cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull
         st receiver recvTcb scId owner hObjInv hDOV
         (donationHeadResolves_of_chainWellFormed st scId hChain) hLk hBind hRecvNotRes
         (hOwnerNotRes recvTcb scId owner hLk hBind) none
+        -- WS-OD OD4.4: free at the bottom of the reply stack, which is what every
+        -- call site in the tree passes today (`outerCallerAcceptable_none`).
+        (outerCallerAcceptable_none st receiver owner)
 
 /-- AK1-A (I-H01): Plan-compliant alias. The plan specifies the lemma name
     `cleanupPreReceiveDonation_never_errors_under_ipcInvariantFull` at the

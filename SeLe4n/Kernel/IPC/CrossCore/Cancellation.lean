@@ -1340,7 +1340,7 @@ The **summed** arity is now eleven, over `maxLockSetSize`; the resolved bound
 holds because the donation-derived members and the victim's own blocked-object
 members are mutually exclusive, both keying on `tcb.ipcState`
 (`lockSet_cancelIpcBlockingOnCore_size_le`).  On the reply arm that is nine of
-nine — no headroom, which is what WS-OD OD3.6's arm-selected split recovers. -/
+nine — no headroom, which is what WS-OD OD3.5's arm-selected split recovers. -/
 def lockSet_cancelIpcBlocking (victimTid : SeLe4n.ThreadId)
     (blockedEndpointObjId : Option SeLe4n.ObjId)
     (blockedNotificationObjId : Option SeLe4n.ObjId)

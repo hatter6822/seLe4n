@@ -1911,7 +1911,7 @@ def replyRecvReturnDonationWriteSet (tid recordedServer nextThread : SeLe4n.Thre
       match recordedServer.toValid?, owner.toValid? with
       | some srvV, some ownerV =>
         -- WS-OD OD3.1: the mirror passes the same bottom-of-stack answer the
-        -- transition it models passes; OD3.5 threads the resolver into both.
+        -- transition it models passes; OD4.4 threads the resolver into both.
         match returnDonatedSchedContextValid st srvV oldScId ownerV none with
         | .error _ => []
         | .ok st1' =>
