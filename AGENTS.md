@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.119.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.120.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1485,14 +1485,14 @@ SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
 SMP work is complete") that was false of the phase's own first row.  WS-RR
 RR7.5 + RR7.15 split it out: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md)
-sequences **34 sub-tasks across 8 phases `BP1..BP8`** in execution order — the
+sequences **38 sub-tasks across 8 phases `BP1..BP8`** in execution order — the
 aarch64 Lean object code, bare-metal runtime hosting, the RPi5 deployment, the
 boot seam and its install ordering, the image, per-core readiness, the context
 restore, and first boot — with an acceptance gate whose every box is ticked by
 an *executed run* rather than by an artefact existing.  No sub-task has started;
 WS-BP must not open until RR8 closes.
 
-Two things new code must respect.  **WS-BP takes its own prefix and renumbers
+Three things new code must respect.  **WS-BP takes its own prefix and renumbers
 nothing**: `SM10.1.1` still means the image *packaging* the release cut
 consumes, and `BP5.3` is the sub-task that produces what it packages — the
 collision between "numbering is execution order" and "IDs in CHANGELOG entries
@@ -1502,6 +1502,21 @@ only described: `BP7.1`/`BP7.2` (the `VSpaceRoot → TTBR0` binding and its
 install), `BP7.3` (the full outgoing-frame save — `writeFfiRegistersToTcb`
 spills only x0–x5 and x7 today), `BP7.4` (per-core staging), with `BP7.6` the
 flip they gate.
+
+And **the boot map is BP2.6's, not the device tree's** (the maintainer's
+correction, recorded as a scheduled row rather than as prose).  `init_mmu`
+parses the firmware blob *before* translation is enabled — an
+attacker-influenced parser running in the window with no memory protection and
+no recovery but a halt — and it does so to obtain a RAM *size* the boot map does
+not need.  BP2.6 builds the map from the image, both stacks, BP2.1's arena, a
+bounded window at the firmware's DTB pointer and the board's device window,
+every one a linker symbol or a board constant, and retires `ram_top_from_dtb`,
+`clamp_ram_top`, `dtb_dereferenced_range` and `boot_ranges_mapped_under` with
+it.  That deletes the Rust FDT walker from the boot path, so the boot seam's
+Lean parse is the blob's only parse and the device-tree half of the WS-XV pair
+stops existing rather than being gated — which is what
+[`docs/REGISTERED_DEBT.md`](docs/REGISTERED_DEBT.md) table C names as that
+pair's remedy.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 

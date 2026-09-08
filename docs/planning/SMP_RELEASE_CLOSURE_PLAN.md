@@ -162,7 +162,7 @@ repurposed ID**.
 
 WS-RR RR7.5 + RR7.15 landed that split at `v0.34.59`:
 [`SMP_BOOT_PATH_PLAN.md`](SMP_BOOT_PATH_PLAN.md) sequences the port as
-**34 sub-tasks across 8 phases `BP1..BP8`**, in execution order, with
+**38 sub-tasks across 8 phases `BP1..BP8`**, in execution order, with
 findings 19, 32 and 40–44 each scheduled to a named row.  Nothing here is
 renumbered: `SM10.1.1` still means the image packaging, and `BP5.3` is the
 sub-task that produces what it packages.  The rows above stay as this
@@ -314,7 +314,7 @@ image, `SM10.3.10`'s Tier-4 gate reports NOT RUN until one exists, and
 `SM10.5` boots the artefact this phase produces.
 
 **The port itself is planned in
-[`SMP_BOOT_PATH_PLAN.md`](SMP_BOOT_PATH_PLAN.md)** (WS-BP, 34 sub-tasks
+[`SMP_BOOT_PATH_PLAN.md`](SMP_BOOT_PATH_PLAN.md)** (WS-BP, 38 sub-tasks
 across `BP1..BP8`), which is where its schedule, its acceptance gate and its
 risk inventory live.  `SM10.1.1` below is unchanged and remains the release
 cut's row for the image *packaging*; `BP5.3` is the sub-task that produces

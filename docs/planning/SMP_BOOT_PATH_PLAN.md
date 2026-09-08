@@ -20,7 +20,7 @@
 > [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) §1.1 derives
 > from a sized breakdown; this plan sequences that breakdown without
 > re-pricing it
-> **Sub-task count**: 37 across 8 phases (BP1..BP8), each phase numbered in
+> **Sub-task count**: 38 across 8 phases (BP1..BP8), each phase numbered in
 > execution order
 
 ## 1. Why this plan exists
@@ -98,7 +98,7 @@ code for the target.
 | Phase | Scope | Sub | Est |
 |-------|-------|-----|-----|
 | BP1 | aarch64 Lean object code — the cross-compile lane and `libsele4n.a` | 4 | L |
-| BP2 | Bare-metal Lean runtime hosting — heap, shims, initialization | 5 | XL |
+| BP2 | Bare-metal Lean runtime hosting — heap, shims, initialization, and the boot map the arena lives in | 6 | XL |
 | BP3 | The RPi5 deployment — `PlatformConfig`, root task, labeling | 4 | L |
 | BP4 | The boot seam — `lean_kernel_main` and its install ordering | 5 | L |
 | BP5 | The bootable image — `[[bin]]`, the link, `kernel8.img` | 4 | M |
@@ -124,7 +124,7 @@ this is first.
 **Acceptance**: `libsele4n.a` exists for `aarch64-unknown-none`, CI builds it
 on every push, and the export gate reads it.
 
-### BP2 — Bare-metal Lean runtime hosting (5 sub-tasks)
+### BP2 — Bare-metal Lean runtime hosting (6 sub-tasks)
 
 The largest single unknown in the workstream, and the one with no precedent
 in this tree to calibrate against.  The Lean runtime expects a heap, a small
@@ -138,9 +138,12 @@ supplies none of them.
 | BP2.3 | `lean_initialize_runtime_module` and `lean_io_mark_end_initialization` called once, on the primary, before any Lean code runs.  Consumes BP2.1 and BP2.2 | `rust/sele4n-hal/src/boot.rs` | M |
 | BP2.4 | Fail closed when initialization cannot complete: the primary parks with `cpu::fatal_halt()` rather than entering a kernel whose runtime is half-built.  Never a silent continue | `rust/sele4n-hal/src/boot.rs` | S |
 | BP2.5 | A host witness suite for the shims and the allocator — the arena's bounds, exhaustion, alignment — since the first place they run for real is a board with no debugger attached | `rust/sele4n-hal/src/` | M |
+| BP2.6 | **The boot map is built from constants, and the blob is parsed with translation on.**  `init_mmu` reads the firmware's device tree *before* the MMU is enabled — an attacker-influenced parser running in the window with no memory protection and no recovery but a halt — and it does so to obtain a RAM *size* the boot map does not need.  Build the map from what the boot actually stands on: the image `[_start, __bss_end)`, the primary and secondary stacks, BP2.1's arena, a bounded window at the firmware's DTB pointer, and the board's device window — every one a linker symbol or a board constant, and every one already enumerated by `boot_critical_ranges_mapped`, which is the map rather than a check on one.  Retires `ram_top_from_dtb`, `find_ram_top_in_dtb`, `clamp_ram_top`, `dtb_dereferenced_range` and `boot_ranges_mapped_under`, deleting the Rust FDT walker from the boot path: the boot seam's Lean parse becomes the blob's **only** parse, so the device-tree half of the WS-XV pair stops existing rather than being gated (`docs/REGISTERED_DEBT.md` table C, whose remedy for that pair is this row).  Consumes BP2.1 — the arena is a window the map must cover | `rust/sele4n-hal/src/mmu.rs`, `rust/sele4n-hal/src/cmdline.rs`, `rust/sele4n-hal/link.ld` | L |
 
 **Acceptance**: a Lean `IO` action that allocates runs to completion on
-`aarch64-unknown-none` under QEMU, and the arena's exhaustion path halts.
+`aarch64-unknown-none` under QEMU, the arena's exhaustion path halts, and
+`init_mmu` names no device-tree entry point — the boot map is built from
+linker symbols and board constants alone.
 
 ### BP3 — The RPi5 deployment (4 sub-tasks)
 
@@ -160,7 +163,7 @@ nothing to boot cannot be reviewed.
 `.ok` in Lean, with every refusal arm shown unreachable for this
 configuration.
 
-### BP4 — The boot seam and its install ordering (4 sub-tasks)
+### BP4 — The boot seam and its install ordering (5 sub-tasks)
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
@@ -227,7 +230,7 @@ with the frame the kernel staged, on hardware, no path in the image still
 installs a sentinel, and a wait-before-signal declassified badge reaches the
 waiter's `x0` with its audit record.
 
-### BP8 — First boot and bring-up (4 sub-tasks)
+### BP8 — First boot and bring-up (5 sub-tasks)
 
 Sixteen QEMU scripts exist in `scripts/` and every one of them has always
 reported SKIP for want of an image.  This phase is the first time any of

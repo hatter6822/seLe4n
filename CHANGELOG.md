@@ -1,3 +1,93 @@
+## v0.34.120 — the boot map the register promised has a scheduled row, and a plan's sub-task count is derived rather than hand-copied
+
+**WS-BP gains BP2.6, and it is the maintainer's own correction made
+schedulable.**  `docs/REGISTERED_DEBT.md` has said since `v0.34.114` that
+parsing a firmware-supplied device tree with the MMU off is bad practice — an
+attacker-influenced parser running in the window with no memory protection and
+no recovery but a halt — and that it is *unnecessary*, because boot page tables
+do not need a RAM **size**: they need the image `[_start, __bss_end)`, both
+stacks, an early heap, a bounded window at the firmware's DTB pointer and the
+device window, every one a linker symbol or a board constant.  It concluded
+"the device-tree remedy is **BP**".  `SMP_BOOT_PATH_PLAN.md` carried no row
+discharging that, so the obligation had an owner and no place in the schedule —
+the *plan-named artefact that does not exist* shape WS-RR RR7.34 closed for
+five other claims, here applied to a claim this branch itself wrote.
+
+**BP2.6** is that row: build the boot map from those constants, and retire
+`ram_top_from_dtb`, `find_ram_top_in_dtb`, `clamp_ram_top`,
+`dtb_dereferenced_range` and `boot_ranges_mapped_under` with it.  That deletes
+the Rust FDT walker from the boot path, so the boot seam's Lean parse becomes
+the blob's **only** parse and the device-tree half of the WS-XV pair stops
+existing rather than being gated.  It consumes BP2.1 (the arena is a window the
+map must cover) and sits at the end of BP2, before every phase that boots
+anything.  `init_mmu`'s round-4 refusal already enumerates the window list, so
+the row converts a *check on* the map into the map.  WS-BP is 38 sub-tasks.
+
+**And check 7: a prose sub-task count is held to the plan's rows.**  Checks 1–3
+hold a plan's internal arithmetic — rows, phase map, declared total.  Nothing
+held the documents that *cite* it, and six claims had drifted silently through
+the rounds that added rows: `CLAUDE.md`, `AGENTS.md`,
+`SMP_RELEASE_CLOSURE_PLAN.md`, `SMP_RELEASE_READINESS_PLAN.md` and
+`UNFINISHED_SMP_WORK.md` all said WS-BP was 34 sub-tasks against a plan
+declaring 37, and `UNFINISHED_SMP_WORK.md` said WS-RR was 155 against 187.  A
+hand-maintained count beside a derivation is the shape `CLAUDE.md` warns about
+and the shape this file's own opening paragraph describes; it drifted exactly
+that way.  All six are corrected, and the gate now derives them.
+
+Two forms are accepted, because both are natural English and this project
+forbids contorting prose to satisfy a scanner: `<N> sub-tasks across [<K>
+phases] <PFX><a>..<PFX><b>`, where `N` counts exactly phases `a..b`; and `<N>
+sub-tasks across <K> phases` naming one plan, where `N` is the whole plan.  The
+second is what reads `README.md`'s *"187 sub-tasks across nine phases, of which
+RR0–RR6 have landed"* correctly — the range there is a sub-clause about a
+different quantity, and a scanner taking the nearest range as the claim's
+object would have demanded the RR0..RR6 sum.  **Proximity of a number and a
+range is not the claim that the number counts that range**, which is *a
+presence check is not a relation check* in its grammatical form.
+
+The scope is every tracked Markdown file outside `CHANGELOG.md` (its numbers
+are history — an entry saying a plan was 34 sub-tasks when it was written stays
+true, and rewriting it would be the falsification) and `docs/dev_history/` —
+the scope `check_ipc_invariant_dethreading.py` already uses for the same kind of
+claim, rather than a second answer to one question.
+
+A **backstop** reports a phase-scoped claim written in neither form, because
+this scanner produces requirements and a requirement it drops is a claim nobody
+checks.  Its trigger is `across` **and** a phase object; both halves are
+load-bearing.  Without `across`, "All 8 sub-tasks LANDED" beside an unrelated
+`SM4..SM6` reads as a size claim; without the phase object, the estimate headers
+("60-80 sub-tasks across ~22-32 PRs", "21 sub-tasks across 6 categories") do.
+Three candidate forms were tried and discarded before this one: a proximity
+window, and a link-anchored form that took any count near a `*_PLAN.md` link as
+the plan's total — which promptly read "10 sub-tasks" of one phase as the
+plan's 37.  That form was a presence check wearing a relation's clothes, and
+removing it rather than tuning it is why the gate now reports six real drifts
+and nothing else.
+
+**And check 2b: the phase heading is a third copy of the same number.**  It
+found two more on its first run — `BP4 — The boot seam and its install ordering
+(4 sub-tasks)` above five rows, and `BP8 ... (4 sub-tasks)` above five, both
+left behind when a row was added to the table and the phase map.  A reader
+meets the heading first.  Fixing check 7 and not its sibling would have been
+*a fix applied at one site and not the other*, which this tree keeps finding.
+
+**Self-test**: 37 cases, up from 28, and every new one is **preserving** —
+the mutation keeps the count, the `across`, and the range, and moves only the
+relation.  Verified by breaking the implementation four ways and confirming the
+intended case fails each time: a greedy window between `across` and the range
+(the sub-clause case starts reporting); comparing every claim against the plan
+total instead of summing the named range (a correct sub-range claim starts
+reporting, and a wrong one stops); deleting check 2b; and dropping the phase
+object from the backstop's trigger (the PR-estimate case starts reporting).
+
+**Files**: `scripts/check_workstream_plan.py`,
+`docs/planning/SMP_BOOT_PATH_PLAN.md`, `docs/planning/UNFINISHED_SMP_WORK.md`,
+`docs/planning/SMP_RELEASE_CLOSURE_PLAN.md`,
+`docs/planning/SMP_RELEASE_READINESS_PLAN.md`, `docs/REGISTERED_DEBT.md`,
+`CLAUDE.md`, `AGENTS.md`.
+
+Refs: docs/REGISTERED_DEBT.md WS-XV (table C, the device-tree pair)
+
 ## v0.34.119 — PR #892 review round 9: the specification's own rules, both reservation sources, and a gate whose claim I had overstated
 
 Seven findings on `db9abb64`. Four are places where the Devicetree Specification
