@@ -1925,8 +1925,8 @@ transitions whose bodies the inductive does not pin — the live cross-core
 dispatch is one of them, and it genuinely writes a remote core's run queue.
 Supplying the premise there is the honest treatment, not a gap: the SM6 phases
 prove the corresponding cross-core statements directly
-(`endpointCallOnCore_call_path_NI_smp`, `notificationSignalOnCore_NI_smp`,
-`endpointReplyOnCore_NI_smp`), and §5 records the split as a checked fact. -/
+(`endpointCallOnCore_call_path_NI_smp`, `notificationSignalOnCore_signal_path_NI_smp`,
+`endpointReplyOnCore_reply_path_NI_smp`), and §5 records the split as a checked fact. -/
 
 theorem nonInterference_perCore_chooseThread (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState) (next : Option SeLe4n.ThreadId)
@@ -2364,7 +2364,7 @@ theorem nonInterference_perCore_registerServiceChecked (ctx : LabelingContext)
 projection hypothesis instead of an operational one, so nothing about their
 per-core write set can be derived — and under SMP the dispatch they stand for
 genuinely writes a remote core (the cross-core wake).  Each therefore takes the
-confinement premise; `nonInterference_perCore_catchAll_count` records that this
+confinement premise; `perCoreConfinementDerived_count` records that this
 is exactly four of the thirty-five. -/
 
 theorem nonInterference_perCore_syscallDispatch (ctx : LabelingContext) (observer : IfObserver)
@@ -2503,7 +2503,7 @@ rather than list positions: its predecessor spelled the thirty-five applications
 out, which meant a new `KernelOperation` variant left it true and unedited.
 Paired with `KernelOperation.mem_all` the enumeration is now tied to the type,
 and `eraseDups` makes the "distinct" in the sentence above a checked word rather
-than a claim resting on `kernelOperationPerCoreNiTheorem_injective` alone. -/
+than a claim resting on `niStepCoverage_perCore_injective` alone. -/
 theorem niStepCoverage_perCore_count :
     (KernelOperation.all.map kernelOperationPerCoreNiTheorem).eraseDups.length = 35 := by
   decide
@@ -3093,7 +3093,7 @@ theorem crossCoreLeakage_bounded_by_globalProjection (ctx : LabelingContext)
 stated in `lowEquivalent_smp` form, and SM8.A's
 `lowEquivalent_smp_iff_forall_observer` says that form **is** "invisible to every
 per-core observer at that clearance".  So `endpointCallOnCore_call_path_NI_smp`,
-`notificationSignalOnCore_call_path_NI_smp` and their siblings are consumers of
+`notificationSignalOnCore_signal_path_NI_smp` and their siblings are consumers of
 this module's observer layer without needing to be restated. -/
 theorem crossCoreTransition_invisible_to_every_observer (ctx : LabelingContext)
     (L : SecurityLabel) (st st' : SystemState)

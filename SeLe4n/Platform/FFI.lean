@@ -1251,24 +1251,60 @@ A `PlatformConfig` carries four fields.  Two of them describe what the boot
 image creates and only the caller can know (`irqTable`, `initialObjects`); the
 other two describe the hardware (`machineConfig`) and the platform-reserved
 boot VSpace root (`bootVSpaceRoot`), which the binding already states
-(`PlatformBinding.machineConfig`, `PlatformBinding.bootVSpaceRoot`).  The
+(`PlatformBinding.bindMachineConfig`, `PlatformBinding.bootVSpaceRoot`).  The
 platform entry used to take the caller's word for the latter two, so a caller
 could boot the RPi5 binding without its canonical root or under another
 machine's address widths.  Applying the binding's values is the fail-safe
 direction — a caller cannot make the hardware boot describe hardware it is not
 running on — and it is what makes the checked boot's canonical-root theorems
 theorems of the hardware boot rather than of a config a caller happened to
-pass.  The four projections below are definitional. -/
+pass.  The four projections below are definitional.
+
+**PR #892 review round 2**: the machine configuration is the binding's, *bound
+for the caller's account*: `bindMachineConfig config.machineConfig`.  The
+caller's `machineConfig` does not become the hardware description — it selects
+among the configurations the binding declares, which on the RPi5 are its RAM
+variants (`rpi5BoundMachineConfig`), so a device tree's account of a 2 GiB
+board boots the 2 GiB configuration and a caller that describes nothing boots
+the smallest.  Round 7's guarantee is kept in the form that survives a family:
+the bound configuration is a member of the binding's family whatever the caller
+said (`rpi5BoundMachineConfig_mem_family`), and it declares the binding's PE
+count (`bindPlatformConfig_declaredCoreCount`). -/
 def bindPlatformConfig (platform : Type) [PlatformBinding platform]
     (config : PlatformConfig) : PlatformConfig :=
   { config with
-    machineConfig := PlatformBinding.machineConfig (platform := platform)
+    machineConfig := PlatformBinding.bindMachineConfig (platform := platform) config.machineConfig
     bootVSpaceRoot := PlatformBinding.bootVSpaceRoot (platform := platform) }
 
 theorem bindPlatformConfig_machineConfig (platform : Type) [PlatformBinding platform]
     (config : PlatformConfig) :
     (bindPlatformConfig platform config).machineConfig =
-      PlatformBinding.machineConfig (platform := platform) := rfl
+      PlatformBinding.bindMachineConfig (platform := platform) config.machineConfig := rfl
+
+/-- **PR #892 review round 2**: the bound configuration declares the binding's
+PE count — the class obligation `bindMachineConfig_declaredCoreCount` at the
+configuration the boot actually installs. -/
+theorem bindPlatformConfig_declaredCoreCount (platform : Type) [PlatformBinding platform]
+    (config : PlatformConfig) :
+    (bindPlatformConfig platform config).machineConfig.declaredCoreCount =
+      PlatformBinding.coreCount (platform := platform) :=
+  PlatformBinding.bindMachineConfig_declaredCoreCount (platform := platform) config.machineConfig
+
+/-- **PR #892 review round 2**: the live PE count of a state the platform boot
+produces is the binding's `coreCount` — the theorem PR #889 review round 20
+described in prose ("with the obligation discharged by every binding, the two
+are the same number on any state this entry produces") and no statement
+carried.  Read off the checked boot's `declaredCoreCount` link and the bound
+configuration's obligation; `bootAndInitialisePlatform_eq_checked_boot` is what
+says the platform entry runs exactly this checked boot. -/
+theorem bootAndInitialisePlatform_checked_declaredCoreCount (platform : Type)
+    [PlatformBinding platform] (config : PlatformConfig) (ist : IntermediateState)
+    (h : bootFromPlatformCheckedWithIdleThreadsFor
+        (PlatformBinding.declaredCores (platform := platform))
+        (bindPlatformConfig platform config) = .ok ist) :
+    ist.state.machine.declaredCoreCount = PlatformBinding.coreCount (platform := platform) := by
+  rw [bootFromPlatformCheckedWithIdleThreadsFor_declaredCoreCount _ _ _ h]
+  exact bindPlatformConfig_declaredCoreCount platform config
 
 theorem bindPlatformConfig_bootVSpaceRoot (platform : Type) [PlatformBinding platform]
     (config : PlatformConfig) :
@@ -1315,9 +1351,11 @@ without the canonical ASID root, modelling a memory map and address widths the
 hardware adapters do not have.  Those two fields are the binding's decisions in
 exactly the sense the labeling and the cores are — made once, where the platform
 is described — so the entry boots `bindPlatformConfig platform config`: the
-caller's IRQ table and initial objects under the binding's machine configuration
-and boot VSpace root.  SM10.1's `lean_kernel_main` calls `bootAndInitialiseRPi5`,
-the instance of this entry fixed at `RPi5Platform`. -/
+caller's IRQ table and initial objects under the binding's boot VSpace root and
+the machine configuration the binding binds for the caller's account
+(`PlatformBinding.bindMachineConfig`, PR #892 review round 2 — on the RPi5, the
+RAM variant the account covers).  SM10.1's `lean_kernel_main` calls
+`bootAndInitialiseRPi5`, the instance of this entry fixed at `RPi5Platform`. -/
 def bootAndInitialisePlatform (platform : Type) [PlatformBinding platform]
     (config : PlatformConfig) : BaseIO (Except String SystemState) :=
   bootAndInitialiseFromPlatformOn (PlatformBinding.declaredCores (platform := platform))
@@ -1365,6 +1403,257 @@ def bootAndInitialiseRPi5OrHalt (config : PlatformConfig) : BaseIO Unit := do
   | .ok _ => pure ()
   | .error _ => ffiFatalHaltAll
 
+-- ============================================================================
+-- WS-RR RR7.27 — the DTB-driven hardware boot
+--
+-- Register §6 finding 46's consumer: the path from a bootloader's flattened
+-- device tree to the checked RPi5 boot.  `DeviceTree.fromDtbFull` had no
+-- caller at all; this is its production one.
+--
+-- Everything here is a function of *data*.  The blob arrives as a `ByteArray`
+-- rather than as the raw `dtb_ptr` `rust_boot_main` holds, because turning a
+-- pointer into a `ByteArray` is a Lean-runtime allocation the bare-metal
+-- runtime port owns (register §6 finding 40, SM10.1's largest deliverable).
+-- Keeping that one read outside means the whole decision — parse, check the
+-- board against the binding, boot or halt — is decidable here and testable
+-- without a runtime.
+-- ============================================================================
+
+/-- **WS-RR RR7.27**: why a DTB-driven boot refused.
+
+Distinct from the boot's own `String` errors because the two are refused at
+different places for different reasons: these say the *board* is not the one
+this image was built for, before any kernel state is considered. -/
+inductive DeviceTreeBootRefusal where
+  /-- The blob is not a well-formed flattened device tree, or carries no
+      `/memory` node the parser accepts. -/
+  | unparseableBlob (reason : SeLe4n.Platform.DeviceTreeParseError)
+  /-- The blob parsed, but the board it describes does not have the RAM and
+      MMIO the platform binding declares. -/
+  | boardDoesNotMatchBinding
+  deriving Repr
+
+/-- **WS-RR RR7.27**: the pure half of the DTB-driven RPi5 boot — parse the
+blob, check the board against the binding, and produce the configuration the
+checked boot runs on.
+
+The device tree does **not** get to describe the hardware the kernel programs:
+`bindPlatformConfig` binds the binding's own machine configuration, and
+`bootAndInitialisePlatform_eq_checked_boot` is what says so.  Its role is the
+check — an image built for the BCM2712 that finds itself on a board whose
+device tree does not cover the binding's RAM and MMIO refuses here, rather than
+programming peripherals that are not there.  Both halves are checked: the RAM
+against the `.ram` regions of the configuration the binding will install, the
+MMIO against `RPi5.requiredMmioWindows` — the PL011, the GIC distributor and the GIC
+CPU interface, which is the granularity a device tree discovers peripherals at.
+
+**PR #892 review round 2**: the RAM is validated against the **detected
+variant**, not the fixed 4 GiB map.  The RPi5 ships in 1, 2, 4, 8 and 16 GiB
+(`rpi5Variants`), and checking every board against `rpi5MachineConfig` refused
+the 1 and 2 GiB boards outright.  The configuration checked here is
+`rpi5BoundMachineConfig dt.machineConfig` — the very function the binding's
+`bindMachineConfig` installs for this account — so the variant validated and
+the variant booted are one value (`rpi5PlatformConfigFromDtb_ok_binds_detected_variant`),
+and by `rpi5BoundMachineConfig_covered_iff` the check passes exactly when the
+board covers *some* variant: a board below the smallest, or with its RAM at a
+foreign base, is refused (`rpi5PlatformConfigFromDtb_refuses_uncovered_family`),
+and an accepted board boots on the largest variant it covers. -/
+def rpi5PlatformConfigFromDtb (blob : ByteArray)
+    (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
+    (initialObjects : List SeLe4n.Platform.Boot.ObjectEntry)
+    (bootVSpaceRoot : Option SeLe4n.Platform.Boot.BootVSpaceRootEntry) :
+    Except DeviceTreeBootRefusal SeLe4n.Platform.Boot.PlatformConfig :=
+  match SeLe4n.Platform.DeviceTree.fromDtbFull blob
+      SeLe4n.Platform.RPi5.rpi5MachineConfig.physicalAddressWidth with
+  | .error e => .error (.unparseableBlob e)
+  | .ok dt =>
+      if SeLe4n.Platform.Boot.deviceTreeCoversMachineConfig dt
+            (SeLe4n.Platform.RPi5.rpi5BoundMachineConfig dt.machineConfig)
+          && SeLe4n.Platform.Boot.deviceTreeCoversMmioRegions dt
+            SeLe4n.Platform.RPi5.requiredMmioWindows then
+        .ok (SeLe4n.Platform.Boot.PlatformConfig.fromDeviceTree dt irqTable initialObjects
+          bootVSpaceRoot)
+      else
+        .error .boardDoesNotMatchBinding
+
+/-- **WS-RR RR7.27**: the DTB-driven hardware boot, with its failure handled.
+
+Composed so that every accepting path goes through
+`bootAndInitialiseRPi5OrHalt` — the checked platform boot at the RPi5 binding
+with its own failure handled — and every refusing path parks the PE.  That is
+the same disposition a refused boot already had, extended to the two ways a
+device tree can refuse one: an unparseable blob and a board that is not this
+image's.
+
+This is the wrapper `SeLe4n/Testing/BootEntryContract.lean` anticipates by
+name when it says the kernel supplies one rather than letting the boot entry
+carry an effectful prologue.  What SM10.1 still owes is the one read this
+signature keeps out: turning `rust_boot_main`'s `dtb_ptr` into this
+`ByteArray`, which needs the bare-metal Lean runtime (`docs/REGISTERED_DEBT.md`,
+owned by SM10.1). -/
+def bootAndInitialiseRPi5FromDtbOrHalt (blob : ByteArray)
+    (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
+    (initialObjects : List SeLe4n.Platform.Boot.ObjectEntry)
+    (bootVSpaceRoot : Option SeLe4n.Platform.Boot.BootVSpaceRootEntry) : BaseIO Unit :=
+  match rpi5PlatformConfigFromDtb blob irqTable initialObjects bootVSpaceRoot with
+  | .error _ => ffiFatalHaltAll
+  | .ok config => bootAndInitialiseRPi5OrHalt config
+
+/-- **WS-RR RR7.27**: an unparseable blob boots nothing — it parks the PE
+rather than falling through to a boot on a default configuration. -/
+theorem bootAndInitialiseRPi5FromDtbOrHalt_unparseable (blob : ByteArray)
+    (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
+    (initialObjects : List SeLe4n.Platform.Boot.ObjectEntry)
+    (bootVSpaceRoot : Option SeLe4n.Platform.Boot.BootVSpaceRootEntry)
+    (e : DeviceTreeBootRefusal)
+    (h : rpi5PlatformConfigFromDtb blob irqTable initialObjects bootVSpaceRoot = .error e) :
+    bootAndInitialiseRPi5FromDtbOrHalt blob irqTable initialObjects bootVSpaceRoot
+      = ffiFatalHaltAll := by
+  unfold bootAndInitialiseRPi5FromDtbOrHalt
+  rw [h]
+
+/-- **WS-RR RR7.27**: an accepted board boots through the checked entry and
+nothing else — the property that makes this wrapper safe to name from the boot
+entry contract. -/
+theorem bootAndInitialiseRPi5FromDtbOrHalt_accepted (blob : ByteArray)
+    (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
+    (initialObjects : List SeLe4n.Platform.Boot.ObjectEntry)
+    (bootVSpaceRoot : Option SeLe4n.Platform.Boot.BootVSpaceRootEntry)
+    (config : SeLe4n.Platform.Boot.PlatformConfig)
+    (h : rpi5PlatformConfigFromDtb blob irqTable initialObjects bootVSpaceRoot = .ok config) :
+    bootAndInitialiseRPi5FromDtbOrHalt blob irqTable initialObjects bootVSpaceRoot
+      = bootAndInitialiseRPi5OrHalt config := by
+  unfold bootAndInitialiseRPi5FromDtbOrHalt
+  rw [h]
+
+/-- **WS-RR RR7.27**: a board the device tree does not describe as covering the
+binding's declared RAM and MMIO is refused, whatever else the blob says. -/
+theorem rpi5PlatformConfigFromDtb_refuses_foreign_board (blob : ByteArray)
+    (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
+    (initialObjects : List SeLe4n.Platform.Boot.ObjectEntry)
+    (bootVSpaceRoot : Option SeLe4n.Platform.Boot.BootVSpaceRootEntry)
+    (dt : SeLe4n.Platform.DeviceTree)
+    (hParse : SeLe4n.Platform.DeviceTree.fromDtbFull blob
+      SeLe4n.Platform.RPi5.rpi5MachineConfig.physicalAddressWidth = .ok dt)
+    (hCover : SeLe4n.Platform.Boot.deviceTreeCoversMachineConfig dt
+      (SeLe4n.Platform.RPi5.rpi5BoundMachineConfig dt.machineConfig) = false) :
+    rpi5PlatformConfigFromDtb blob irqTable initialObjects bootVSpaceRoot
+      = .error .boardDoesNotMatchBinding := by
+  unfold rpi5PlatformConfigFromDtb
+  rw [hParse]
+  simp [hCover]
+
+/-- **PR #892 review round 2**: a board whose account covers **no** variant of
+the family — below the smallest, or with its RAM somewhere the BCM2712 does not
+put it — is refused: the bound configuration is then a member the board does
+not cover (`rpi5BoundMachineConfig_covered_iff`), and the check is that
+member's.  This is the form the finding's negative takes now that a 1 GiB board
+is accepted: what a short board is short *of* is the smallest variant. -/
+theorem rpi5PlatformConfigFromDtb_refuses_uncovered_family (blob : ByteArray)
+    (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
+    (initialObjects : List SeLe4n.Platform.Boot.ObjectEntry)
+    (bootVSpaceRoot : Option SeLe4n.Platform.Boot.BootVSpaceRootEntry)
+    (dt : SeLe4n.Platform.DeviceTree)
+    (hParse : SeLe4n.Platform.DeviceTree.fromDtbFull blob
+      SeLe4n.Platform.RPi5.rpi5MachineConfig.physicalAddressWidth = .ok dt)
+    (hNone : ∀ v ∈ SeLe4n.Platform.RPi5.rpi5Variants,
+      SeLe4n.Platform.Boot.machineConfigCovers dt.machineConfig
+        (SeLe4n.Platform.RPi5.rpi5MachineConfigForVariant v) = false) :
+    rpi5PlatformConfigFromDtb blob irqTable initialObjects bootVSpaceRoot
+      = .error .boardDoesNotMatchBinding := by
+  apply rpi5PlatformConfigFromDtb_refuses_foreign_board blob irqTable initialObjects
+    bootVSpaceRoot dt hParse
+  rw [SeLe4n.Platform.Boot.deviceTreeCoversMachineConfig_eq]
+  cases hCov : SeLe4n.Platform.Boot.machineConfigCovers dt.machineConfig
+      (SeLe4n.Platform.RPi5.rpi5BoundMachineConfig dt.machineConfig) with
+  | false => rfl
+  | true =>
+      obtain ⟨v, hv, hc⟩ :=
+        (SeLe4n.Platform.RPi5.rpi5BoundMachineConfig_covered_iff dt.machineConfig).mp hCov
+      rw [hNone v hv] at hc
+      exact absurd hc Bool.false_ne_true
+
+/-- **WS-RR RR7.27**: and a board whose device tree discovered none of the MMIO
+the binding programs is refused too — the half a RAM-only check would miss. -/
+theorem rpi5PlatformConfigFromDtb_refuses_missing_mmio (blob : ByteArray)
+    (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
+    (initialObjects : List SeLe4n.Platform.Boot.ObjectEntry)
+    (bootVSpaceRoot : Option SeLe4n.Platform.Boot.BootVSpaceRootEntry)
+    (dt : SeLe4n.Platform.DeviceTree)
+    (hParse : SeLe4n.Platform.DeviceTree.fromDtbFull blob
+      SeLe4n.Platform.RPi5.rpi5MachineConfig.physicalAddressWidth = .ok dt)
+    (hMmio : SeLe4n.Platform.Boot.deviceTreeCoversMmioRegions dt
+      SeLe4n.Platform.RPi5.requiredMmioWindows = false) :
+    rpi5PlatformConfigFromDtb blob irqTable initialObjects bootVSpaceRoot
+      = .error .boardDoesNotMatchBinding := by
+  unfold rpi5PlatformConfigFromDtb
+  rw [hParse]
+  simp [hMmio]
+
+/-- **WS-RR RR7.27**: and an accepted one carries the device tree's own machine
+configuration into the config — which `bindPlatformConfig` then replaces with
+the binding's, so the board's account is a *check* and never the hardware
+description the kernel programs. -/
+theorem rpi5PlatformConfigFromDtb_ok_machineConfig (blob : ByteArray)
+    (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
+    (initialObjects : List SeLe4n.Platform.Boot.ObjectEntry)
+    (bootVSpaceRoot : Option SeLe4n.Platform.Boot.BootVSpaceRootEntry)
+    (dt : SeLe4n.Platform.DeviceTree)
+    (hParse : SeLe4n.Platform.DeviceTree.fromDtbFull blob
+      SeLe4n.Platform.RPi5.rpi5MachineConfig.physicalAddressWidth = .ok dt)
+    (hCover : SeLe4n.Platform.Boot.deviceTreeCoversMachineConfig dt
+      (SeLe4n.Platform.RPi5.rpi5BoundMachineConfig dt.machineConfig) = true)
+    (hMmio : SeLe4n.Platform.Boot.deviceTreeCoversMmioRegions dt
+      SeLe4n.Platform.RPi5.requiredMmioWindows = true) :
+    rpi5PlatformConfigFromDtb blob irqTable initialObjects bootVSpaceRoot
+      = .ok (SeLe4n.Platform.Boot.PlatformConfig.fromDeviceTree dt irqTable initialObjects
+          bootVSpaceRoot) := by
+  unfold rpi5PlatformConfigFromDtb
+  rw [hParse]
+  simp [hCover, hMmio]
+
+/-- **PR #892 review round 2 — the relation the round asks for**: on every
+configuration the bridge accepts, the machine configuration the hardware boot
+installs is the variant the board's account selected **and the board covers
+it**.  The first half is `bindPlatformConfig` at the RPi5 binding on the
+device tree's own account (`PlatformConfig.fromDeviceTree` carries it through
+unchanged); the second is the check the bridge just passed, stated on the same
+function.  Validation and installation cannot name different variants, because
+there is one function and it is named twice. -/
+theorem rpi5PlatformConfigFromDtb_ok_binds_detected_variant (blob : ByteArray)
+    (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
+    (initialObjects : List SeLe4n.Platform.Boot.ObjectEntry)
+    (bootVSpaceRoot : Option SeLe4n.Platform.Boot.BootVSpaceRootEntry)
+    (config : SeLe4n.Platform.Boot.PlatformConfig)
+    (h : rpi5PlatformConfigFromDtb blob irqTable initialObjects bootVSpaceRoot = .ok config) :
+    (bindPlatformConfig SeLe4n.Platform.RPi5.RPi5Platform config).machineConfig =
+        SeLe4n.Platform.RPi5.rpi5BoundMachineConfig config.machineConfig ∧
+    SeLe4n.Platform.Boot.machineConfigCovers config.machineConfig
+        (SeLe4n.Platform.RPi5.rpi5BoundMachineConfig config.machineConfig) = true := by
+  refine ⟨rfl, ?_⟩
+  unfold rpi5PlatformConfigFromDtb at h
+  cases hParse : SeLe4n.Platform.DeviceTree.fromDtbFull blob
+      SeLe4n.Platform.RPi5.rpi5MachineConfig.physicalAddressWidth with
+  | error e =>
+      rw [hParse] at h
+      dsimp only at h
+      cases h
+  | ok dt =>
+      rw [hParse] at h
+      dsimp only at h
+      by_cases hGuard :
+          (SeLe4n.Platform.Boot.deviceTreeCoversMachineConfig dt
+              (SeLe4n.Platform.RPi5.rpi5BoundMachineConfig dt.machineConfig)
+            && SeLe4n.Platform.Boot.deviceTreeCoversMmioRegions dt
+              SeLe4n.Platform.RPi5.requiredMmioWindows) = true
+      · rw [if_pos hGuard] at h
+        injection h with hConfig
+        rw [← hConfig, SeLe4n.Platform.Boot.PlatformConfig.fromDeviceTree_machineConfig]
+        rw [Bool.and_eq_true, SeLe4n.Platform.Boot.deviceTreeCoversMachineConfig_eq] at hGuard
+        exact hGuard.1
+      · rw [if_neg hGuard] at h
+        cases h
+
 /-- WS-RR RR5.2: under a binding's labeling the boot entry **cannot** be refused
     on the labeling — it is the checked idle boot followed by the two installs,
     and nothing else.  The proof is the binding-level admission theorem
@@ -1401,13 +1690,45 @@ theorem bootAndInitialisePlatform_rpi5_all_cores (config : PlatformConfig) :
   exact bootFromPlatformCheckedWithIdleThreadsFor_allCores config
 
 /-- PR #889 review round 7: the hardware boot carries the **canonical** RPi5
-boot VSpace root and machine configuration whatever the caller's config said —
-the bound config's two hardware fields are the binding's, by definition. -/
+boot VSpace root and the binding's machine configuration whatever the caller's
+config said — the bound config's two hardware fields are the binding's, by
+definition.  **PR #892 review round 2**: the machine configuration is the
+binding's *for the caller's account* — the member of `rpi5Variants` the
+account selects (`rpi5BoundMachineConfig`), which is what lets a 1 GiB or
+2 GiB board boot at all. -/
 theorem bootAndInitialiseRPi5_bound_config (config : PlatformConfig) :
     (bindPlatformConfig SeLe4n.Platform.RPi5.RPi5Platform config).bootVSpaceRoot =
         some SeLe4n.Platform.RPi5.rpi5BootVSpaceRootEntry ∧
     (bindPlatformConfig SeLe4n.Platform.RPi5.RPi5Platform config).machineConfig =
-        SeLe4n.Platform.RPi5.rpi5MachineConfig := ⟨rfl, rfl⟩
+        SeLe4n.Platform.RPi5.rpi5BoundMachineConfig config.machineConfig := ⟨rfl, rfl⟩
+
+/-- **PR #892 review round 2**: round 7's guarantee in the form that survives a
+family — whatever the caller's configuration describes, the hardware boot's
+machine configuration is a member of the RPi5's declared variants.  A caller
+selects among them; it cannot describe hardware outside them. -/
+theorem bootAndInitialiseRPi5_bound_config_mem_family (config : PlatformConfig) :
+    ∃ v ∈ SeLe4n.Platform.RPi5.rpi5Variants,
+      (bindPlatformConfig SeLe4n.Platform.RPi5.RPi5Platform config).machineConfig =
+        SeLe4n.Platform.RPi5.rpi5MachineConfigForVariant v :=
+  SeLe4n.Platform.RPi5.rpi5BoundMachineConfig_mem_family config.machineConfig
+
+/-- **PR #892 review round 2**: a caller describing the canonical 4 GiB board
+boots the canonical configuration — the pre-round behaviour on the account
+every existing caller passes, kept. -/
+theorem bootAndInitialiseRPi5_bound_config_canonical (config : PlatformConfig)
+    (h : config.machineConfig = SeLe4n.Platform.RPi5.rpi5MachineConfig) :
+    (bindPlatformConfig SeLe4n.Platform.RPi5.RPi5Platform config).machineConfig =
+        SeLe4n.Platform.RPi5.rpi5MachineConfig := by
+  rw [bindPlatformConfig_machineConfig, SeLe4n.Platform.RPi5.rpi5_bindMachineConfig, h]
+  exact SeLe4n.Platform.RPi5.rpi5BoundMachineConfig_rpi5MachineConfig
+
+/-- **PR #892 review round 2**: the bound configuration's PE count is the
+BCM2712's four on every account — `bindPlatformConfig_declaredCoreCount` at the
+hardware binding, which is what makes the round-20 affinity refusal read the
+right number on every RPi5 variant. -/
+theorem bootAndInitialiseRPi5_bound_config_declaredCoreCount (config : PlatformConfig) :
+    (bindPlatformConfig SeLe4n.Platform.RPi5.RPi5Platform config).machineConfig.declaredCoreCount
+      = 4 := rfl
 
 /-- WS-RC R2.B.1 helper: Write the FFI-passed register values into the
     given thread's TCB register file.
@@ -1529,6 +1850,178 @@ def syscallReturnOutcome (syscallId : UInt32) (st : SystemState)
     let shape :=
       ((SyscallId.ofNat? syscallId.toNat).map Architecture.syscallReturnShape).getD .unit
     .returns (Architecture.frameForShape shape (Architecture.readReturnFrame st tid))
+
+/-! ### WS-RA RA.B.5a — the blocking arm returns no frame (plan §10)
+
+`syscallReturnOutcome`'s body is one `if`, so each direction below is close to
+definitional.  What the family asserts is not the `if` but the three properties
+the rest of the system reads off it, each of which a plausible alternative
+definition would break:
+
+* the decision is **state-dependent, not id-dependent** (§3.5).  The pre-WS-RA
+  design chose the shape from the syscall number, and a `.send` that found a
+  waiting receiver returns while a `.send` that parked does not — so the
+  characterisation is stated `∀ syscallId`, which is what pins that no id can
+  resurrect a frame for a parked caller;
+* a blocked caller's outcome carries **no frame at all** — not a zero frame, not
+  a stale one.  That is what the interim trap layer relies on when it poisons
+  `x0`-`x5` with `blocked_resume_sentinel_regs()` rather than delivering
+  anything, and what SM10.1 will replace with a successor install;
+* the staged registers are **not read** on that arm, so a blocked caller's own
+  argument spill can never reach the boundary as a return value — the §1.2
+  defect, in the one place that would reintroduce it silently.
+
+`.faulted` is deliberately outside this function's range: a seam fault is
+raised by `syscallDispatchFromAbi`'s cap-fault arm, which never reaches the
+outcome composition (PR #887 review round 5). -/
+
+/-- The frame a *returning* caller gets: the shape `syscallReturnShape` assigns
+the id, applied to the staged registers (`.unit` discards them, §3.3).  Named so
+the reductions below and their callers read one expression rather than three
+copies of it. -/
+def syscallReturnOutcomeFrame (syscallId : UInt32) (st : SystemState)
+    (tid : SeLe4n.ThreadId) : Architecture.SyscallReturnFrame :=
+  Architecture.frameForShape
+    (((SyscallId.ofNat? syscallId.toNat).map Architecture.syscallReturnShape).getD .unit)
+    (Architecture.readReturnFrame st tid)
+
+/-- The reduction at a resolvable caller — the shape every proof below rewrites
+with, so none of them has to unfold the `let`-bound `match`. -/
+theorem syscallReturnOutcome_of_getTcb?
+    (syscallId : UInt32) (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hTcb : st.getTcb? tid = some tcb) :
+    syscallReturnOutcome syscallId st tid =
+      if Architecture.ipcStateBlocksReturn tcb.ipcState then .blocks
+      else .returns (syscallReturnOutcomeFrame syscallId st tid) := by
+  unfold syscallReturnOutcome syscallReturnOutcomeFrame
+  rw [hTcb]
+
+/-- …and at a caller whose TCB the dispatch destroyed: fail closed to a frame,
+never to `.blocks`.  A vanished thread is not waiting for anything. -/
+theorem syscallReturnOutcome_of_getTcb?_none
+    (syscallId : UInt32) (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hTcb : st.getTcb? tid = none) :
+    syscallReturnOutcome syscallId st tid
+      = .returns (syscallReturnOutcomeFrame syscallId st tid) := by
+  unfold syscallReturnOutcome syscallReturnOutcomeFrame
+  rw [hTcb]
+  rfl
+
+/-- **WS-RA RA.B.5a (`blockingArm_returns_no_frame`, plan §10) — the forward
+direction.**  A caller left in a blocking IPC state by the dispatch gets
+`.blocks`, whatever syscall it issued. -/
+theorem syscallReturnOutcome_blocks_of_ipcBlocked
+    (syscallId : UInt32) (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hTcb : st.getTcb? tid = some tcb)
+    (hBlocked : Architecture.ipcStateBlocksReturn tcb.ipcState = true) :
+    syscallReturnOutcome syscallId st tid = .blocks := by
+  rw [syscallReturnOutcome_of_getTcb? syscallId st tid tcb hTcb, hBlocked, if_pos rfl]
+
+/-- **…and the converse.**  A caller the dispatch left runnable — or one whose
+TCB the dispatch destroyed, which fails closed to a frame — gets a frame.
+Stated as the `.returns` witness rather than as `≠ .blocks`, so it cannot be
+satisfied by a third outcome. -/
+theorem syscallReturnOutcome_returns_of_not_ipcBlocked
+    (syscallId : UInt32) (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hNotBlocked : ∀ tcb : TCB, st.getTcb? tid = some tcb →
+      Architecture.ipcStateBlocksReturn tcb.ipcState = false) :
+    syscallReturnOutcome syscallId st tid
+      = .returns (syscallReturnOutcomeFrame syscallId st tid) := by
+  cases hTcb : st.getTcb? tid with
+  | none => exact syscallReturnOutcome_of_getTcb?_none syscallId st tid hTcb
+  | some tcb =>
+      rw [syscallReturnOutcome_of_getTcb? syscallId st tid tcb hTcb,
+          hNotBlocked tcb hTcb, if_neg (by simp)]
+
+/-- **The characterisation, both directions at once.**  `.blocks` happens
+exactly when the caller's **post-state** says it is blocked — so a reader of
+the seam may use either direction, and neither the syscall id nor the staged
+registers enter the decision. -/
+theorem syscallReturnOutcome_blocks_iff
+    (syscallId : UInt32) (st : SystemState) (tid : SeLe4n.ThreadId) :
+    syscallReturnOutcome syscallId st tid = .blocks
+      ↔ ∃ tcb : TCB, st.getTcb? tid = some tcb
+          ∧ Architecture.ipcStateBlocksReturn tcb.ipcState = true := by
+  constructor
+  · intro h
+    cases hTcb : st.getTcb? tid with
+    | none =>
+        rw [syscallReturnOutcome_of_getTcb?_none syscallId st tid hTcb] at h
+        exact absurd h (by simp)
+    | some tcb =>
+        cases hB : Architecture.ipcStateBlocksReturn tcb.ipcState with
+        | false =>
+            rw [syscallReturnOutcome_of_getTcb? syscallId st tid tcb hTcb, hB,
+                if_neg (by simp)] at h
+            exact absurd h (by simp)
+        | true => exact ⟨tcb, rfl, hB⟩
+  · rintro ⟨tcb, hTcb, hB⟩
+    exact syscallReturnOutcome_blocks_of_ipcBlocked syscallId st tid tcb hTcb hB
+
+/-- **The plan's headline, stated as the negative it names**: a blocking arm
+returns **no frame**.  Not a zero frame and not a stale one — there is no
+`SyscallReturnFrame` the boundary hands back, which is what makes the interim
+`blocked_resume_sentinel_regs()` poisoning the only thing a blocked caller's
+registers can hold before SM10.1. -/
+theorem blockingArm_returns_no_frame
+    (syscallId : UInt32) (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hTcb : st.getTcb? tid = some tcb)
+    (hBlocked : Architecture.ipcStateBlocksReturn tcb.ipcState = true) :
+    ∀ frame : Architecture.SyscallReturnFrame,
+      syscallReturnOutcome syscallId st tid ≠ .returns frame := by
+  intro frame h
+  rw [syscallReturnOutcome_blocks_of_ipcBlocked syscallId st tid tcb hTcb hBlocked] at h
+  exact absurd h (by simp)
+
+/-- **The id-independence half, stated on its own** (§3.5): two *different*
+syscalls whose callers end blocked get the same outcome.  This is the property
+the pre-WS-RA id-driven design lacked, and the reason `.send` — which returns
+at a rendezvous and blocks when it parks — cannot be classified from its
+number. -/
+theorem syscallReturnOutcome_blocked_independent_of_id
+    (sid₁ sid₂ : UInt32) (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hTcb : st.getTcb? tid = some tcb)
+    (hBlocked : Architecture.ipcStateBlocksReturn tcb.ipcState = true) :
+    syscallReturnOutcome sid₁ st tid = syscallReturnOutcome sid₂ st tid := by
+  rw [syscallReturnOutcome_blocks_of_ipcBlocked sid₁ st tid tcb hTcb hBlocked,
+      syscallReturnOutcome_blocks_of_ipcBlocked sid₂ st tid tcb hTcb hBlocked]
+
+/-- **The staged registers are not consulted on the blocking arm.**  Whatever
+the caller's saved `x0`-`x5` hold — its own argument spill, in every blocking
+case — the outcome is the same, so the §1.2 defect cannot re-enter through this
+seam.  Stated by *varying the register context* and fixing everything else,
+which is the token-preserving mutation: a definition that read the registers on
+this arm keeps every identifier and fails this. -/
+theorem syscallReturnOutcome_blocked_ignores_staged_registers
+    (syscallId : UInt32) (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (frame : Architecture.SyscallReturnFrame)
+    (hTcb : st.getTcb? tid = some tcb)
+    (hBlocked : Architecture.ipcStateBlocksReturn tcb.ipcState = true)
+    (hObjInv : st.objects.invExt) :
+    syscallReturnOutcome syscallId (Architecture.writeReturnFrameToTcb st tid frame) tid
+      = syscallReturnOutcome syscallId st tid := by
+  have hTcb' : (Architecture.writeReturnFrameToTcb st tid frame).getTcb? tid
+      = some (tcb.withReturnFrame frame) := by
+    unfold Architecture.writeReturnFrameToTcb
+    rw [hTcb]
+    simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+    rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hObjInv]
+  rw [syscallReturnOutcome_blocks_of_ipcBlocked syscallId _ tid _ hTcb' hBlocked,
+      syscallReturnOutcome_blocks_of_ipcBlocked syscallId st tid tcb hTcb hBlocked]
+
+/-- **`.faulted` is outside this function's range.**  A seam fault is raised by
+`syscallDispatchFromAbi`'s cap-fault arm, which returns before the outcome is
+composed; a reader that sees `.faulted` therefore knows it came from there and
+not from a blocked or returning caller. -/
+theorem syscallReturnOutcome_ne_faulted
+    (syscallId : UInt32) (st : SystemState) (tid : SeLe4n.ThreadId) :
+    syscallReturnOutcome syscallId st tid ≠ .faulted := by
+  cases hTcb : st.getTcb? tid with
+  | none =>
+      rw [syscallReturnOutcome_of_getTcb?_none syscallId st tid hTcb]; simp
+  | some tcb =>
+      rw [syscallReturnOutcome_of_getTcb? syscallId st tid tcb hTcb]
+      split <;> simp
 
 -- ============================================================================
 -- WS-SM SM9.B.9 — the refusal seam
@@ -2446,6 +2939,23 @@ opaque ffiIcMaintenance : UInt32 → UInt64 → UInt64 → BaseIO Unit
     address**: the `IC IVAU` instruction takes a *virtual* address and the PE
     translates it, and the boot tables identity-map RAM, so a RAM frame's kernel
     VA equals its PA and `ICacheInvalidation.toPaddr` is the correct operand.
+
+    **WS-RR RR7.1 / RR7.2 — the identity map, and what enforces it.**  That
+    argument is a claim about the boot page tables, and until RR7.1 the tables
+    did not support it: they mapped `0xC000_0000`–`0xFFFF_FFFF` as one Device
+    block, so 960 MiB of the RAM `link.ld` declares was Device-typed, and
+    nothing above 4 GiB was mapped at all.  RR7.1 builds the tables from
+    `mmu::boot_mapping_for`, which mirrors `rpi5MemoryMapForConfig` below and
+    is sized to the board's own `/memory` node, so every RAM frame a BCM2712
+    board reports is identity-mapped Normal.  RR7.2 makes the claim *enforced*
+    rather than merely true: `cache::apply_icache_invalidation` refuses an
+    operand outside that window — at the extent it maintains, so a range that
+    starts in RAM and runs off the end of it is refused too — and halts the PE
+    rather than issuing an instruction whose address is not the address the
+    kernel means.  A well-formed caller cannot reach the refusal; a caller that
+    could would otherwise have left a stale instruction line behind a re-typed
+    frame with nothing to detect it.
+
     Note the granularity expansion — `IC IVAU` invalidates one 64-byte cache
     line, so the HAL issues `icacheLinesPerPage` of them for one page operand
     (`cache::ic_invalidate_page_inner_shareable`), exactly as seL4's
@@ -2622,6 +3132,148 @@ theorem syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok
       = Except.ok (syscallReturnOutcome syscallId st' tid, st') := by
   unfold syscallDispatchFromAbi
   simp [hMsg, hCur, hSyscall]
+
+
+/-- **WS-RA RA.B.5a at the live seam (`blockingArm_returns_no_frame`, plan
+§10)**: when the checked entry leaves the caller in a blocking IPC state, the
+**exported boundary** returns `.blocks` — no frame reaches the trap layer.
+
+The family above is about `syscallReturnOutcome`; this is the composition that
+makes it a statement about `lean_syscall_dispatch_cross_core`'s own result, and
+it is where the property is actually load-bearing: `dispatch_svc` reads the
+outcome tag, and tag 1 is what sends it down the poison-and-park path rather
+than writing a return frame into a thread that has not been answered. -/
+theorem syscallDispatchFromAbi_blocks_of_ipcBlocked
+    (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : UInt32) (msgInfo : UInt64)
+    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (st' : SystemState) (tcb : TCB)
+    (hMsg : msgInfo = x1)
+    (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
+    (hSyscall :
+      syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
+          (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+        = Except.ok ((), st'))
+    (hTcb : st'.getTcb? tid = some tcb)
+    (hBlocked : Architecture.ipcStateBlocksReturn tcb.ipcState = true) :
+    syscallDispatchFromAbi ctx executingCore syscallId msgInfo
+        x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+      = Except.ok (.blocks, st') := by
+  rw [syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok ctx executingCore syscallId
+        msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid st' hMsg hCur hSyscall,
+      syscallReturnOutcome_blocks_of_ipcBlocked syscallId st' tid tcb hTcb hBlocked]
+
+/-- …and the negative form the trap layer relies on: **no frame** crosses the
+boundary for such a caller. -/
+theorem syscallDispatchFromAbi_blocked_returns_no_frame
+    (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : UInt32) (msgInfo : UInt64)
+    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (st' : SystemState) (tcb : TCB)
+    (hMsg : msgInfo = x1)
+    (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
+    (hSyscall :
+      syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
+          (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+        = Except.ok ((), st'))
+    (hTcb : st'.getTcb? tid = some tcb)
+    (hBlocked : Architecture.ipcStateBlocksReturn tcb.ipcState = true) :
+    ∀ (frame : Architecture.SyscallReturnFrame) (stAny : SystemState),
+      syscallDispatchFromAbi ctx executingCore syscallId msgInfo
+          x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+        ≠ Except.ok (.returns frame, stAny) := by
+  intro frame stAny h
+  rw [syscallDispatchFromAbi_blocks_of_ipcBlocked ctx executingCore syscallId msgInfo
+        x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid st' tcb
+        hMsg hCur hSyscall hTcb hBlocked] at h
+  exact absurd h (by simp)
+
+/-- **WS-RR RR7.3**: the FFI argument spill leaves the scheduler untouched.
+
+`writeFfiRegistersToTcb` rewrites one TCB's register mirror in the object store
+and nothing else, so the thread the entry finds on the executing core is the one
+the seam resolved before spilling. -/
+theorem writeFfiRegistersToTcb_scheduler
+    (st : SystemState) (tid : SeLe4n.ThreadId) (syscallId : UInt32)
+    (x0 x1 x2 x3 x4 x5 : UInt64) :
+    (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).scheduler = st.scheduler := by
+  unfold writeFfiRegistersToTcb
+  split <;> rfl
+
+/-- **WS-RR RR7.3**: the capability guarantee at the **exported seam**.
+
+Register §4 finding 5: the flagship "syscall entry implies capability held"
+theorem was stated over the legacy `syscallEntry`, whose only non-test callers
+are the trace harness and the exception model, while the path the hardware takes
+is `@[export lean_syscall_dispatch_cross_core]` →
+`syscallDispatchCrossCoreEntry` → this function → `syscallEntryChecked` →
+`dispatchSyscallChecked`.  `syscallEntryChecked_implies_capability_held` covers
+the entry; this carries it the last hop, to the state the seam itself builds.
+
+The hypothesis is the same one every other `syscallDispatchFromAbi_*` theorem
+takes — the entry's success on the register-spilled state — and
+`syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok` is its converse: together
+they say that a success outcome exists at this seam **only** for a caller whose
+capability carried the required right.  The rejection arms cannot manufacture
+one: `syscallDispatchFromAbi_error_of_syscallEntryChecked_error` sends an entry
+rejection to a computed error frame, `syscallDispatchFromAbi_capFault_faulted`
+sends a capability-lookup failure to `.faulted`, and the two pre-dispatch
+rejections return the pre-state.
+
+The resolution is stated against `writeFfiRegistersToTcb st tid …` — the
+argument spill the seam performs before the entry — because that is the state
+the entry is handed.  The spill writes the caller's own register mirror and
+nothing else, so this is the same CSpace the trapping thread had. -/
+theorem syscallDispatchFromAbi_implies_capability_held
+    (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : UInt32) (msgInfo : UInt64)
+    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (st' : SystemState)
+    (hMsg : msgInfo = x1)
+    (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
+    (hSyscall :
+      syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
+          (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+        = Except.ok ((), st')) :
+    syscallDispatchFromAbi ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+        ipcBufferAddr elr spsr spEl0 x30 st
+      = Except.ok (syscallReturnOutcome syscallId st' tid, st') ∧
+    isInsecureDefaultContext ctx = false ∧
+    ∃ regs decoded,
+      SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+        (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+        tid SeLe4n.arm64DefaultLayout regs 32 = Except.ok decoded ∧
+      ∃ tcb, (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).getTcb? tid
+          = some tcb ∧
+        ∃ rootCn,
+          (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).getCNode? tcb.cspaceRoot
+            = some rootCn ∧
+          ∃ cap ref,
+            resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth
+                (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) = Except.ok ref ∧
+            SystemState.lookupSlotCap
+                (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) ref = some cap ∧
+            cap.hasRight (syscallRequiredRight decoded.syscallId) = true := by
+  refine ⟨syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok ctx executingCore syscallId
+            msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid st'
+            hMsg hCur hSyscall, ?_⟩
+  obtain ⟨hCtx, tid', regs, decoded, hCurrent', hLookup, hDecode,
+          tcb, hTcb, rootCn, hRoot, cap, ref, hResolve, hSlot, hRight⟩ :=
+    syscallEntryChecked_implies_capability_held_of_pre_state
+      ctx SeLe4n.arm64DefaultLayout executingCore 32 _ st' hSyscall
+  -- The spill leaves the scheduler untouched, so the thread the entry found on
+  -- the executing core is the one this seam resolved.
+  have hTidEq : tid' = tid := by
+    have hSched : (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).scheduler
+        = st.scheduler := writeFfiRegistersToTcb_scheduler st tid syscallId x0 x1 x2 x3 x4 x5
+    rw [hSched, hCur] at hCurrent'
+    exact (Option.some.inj hCurrent').symm
+  subst hTidEq
+  exact ⟨hCtx, regs, decoded, hDecode, tcb, hTcb, rootCn, hRoot, cap, ref,
+         hResolve, hSlot, hRight⟩
 
 /-- WS-RC R2.B.5 (restated at the WS-RA type, and again at SM9.B.9): when
     `syscallEntryChecked` rejects on the register-spilled state,

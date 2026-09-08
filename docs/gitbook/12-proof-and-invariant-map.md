@@ -308,9 +308,59 @@ platform rather than with the lock.
 
 > Two standing caveats. **Kernel entry is serialised by one global ticket
 > lock**, so live WCRT is weaker than the fine-lock bound `PerCoreWcrt.lean`
-> proves. And **SM3.C.9 is deferred**: the `@[export]` bodies are, with one
-> exception, not yet wrapped in `withLockSet`, so per-object fine locks remain a
-> model-level discipline. Both are registered debt with closure targets.
+> proves. And **SM3.C.9's `@[export]` body migration is not finished**: outside
+> the syscall seam the bodies are not wrapped in `withLockSet`, so per-object
+> fine locks remain a model-level discipline there. Both are registered debt
+> with closure targets.
+>
+> `lockSetForSyscall` answers `some` for eight of the thirty-five syscalls since
+> WS-RR RR7.11 — the suspend arm plus the seven IPC hot-path arms — each with its
+> coverage proof (`.replyRecv` only for a reply the replier itself recorded: the
+> transition returns the *recorded* server's donation, so a delegated reply would
+> need that server's own TCB lock and the arm is already at nine of nine, and it
+> answers `none` there), while the remaining twenty-seven answer `none` and their
+> callers keep the coarser serialisation. WS-RR RR7.12 makes the **syscall seam
+> acquire** those eight: the entry resolves the footprint from its own decode,
+> acquires, re-resolves at the state the growing phase ended in, refuses on
+> change, and unwinds — with the undeclared arms running bit-identically to
+> before. The **per-core scheduler entries** still bracket nothing.
+>
+> How much of the kernel that is, is measured rather than asserted: WS-RR RR7.13
+> derives the state-committing `@[export]` set from the elaborated environment
+> and reconciles it against a registry in both directions, so a new seam that
+> commits without a bracket fails the build. **Seven seams commit; five bracket**
+> (WS-RR RR7.39; two before it).
+> The same cut moved `maxLockSetSize` from 8 to 9: a `.replyRecv` that both
+> returns a donation and installs capabilities is nine locks, the ninth being
+> the state-level lock the install's derivation-tree write needs. See
+> [`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §SM3.C.9 for the
+> canonical statement.
+
+> **A blocking arm returns no frame** (WS-RR RR7.17, `v0.34.68`). Which
+> syscalls return a value is decided from the caller's **post-state**, never
+> from its number — a `.send` that finds a waiting receiver returns, one that
+> parks does not. `blockingArm_returns_no_frame` and its family state that both
+> ways, state that the staged registers are not consulted on the blocking arm
+> (so a blocked caller's own argument spill cannot reach the boundary as a
+> return value), and compose onto the exported seam, where the trap layer reads
+> the outcome tag. The Rust `ReturnShape` mirror lost its wildcard and gained a
+> cross-check: both sides render the same `id → shape` table against one
+> fixture, so two total functions cannot disagree silently.
+
+> **The answer a forcibly unblocked thread gets** (WS-RR RR7.14, `v0.34.67`).
+> A thread taken out of a blocking IPC has no value to receive, and until this
+> cut both unblocking paths staged nothing — so the SM10.1 context restore
+> would have delivered the thread's own argument spill back as a return value.
+> `timeoutThread` now stages `Architecture.timeoutFrame` (`.ipcTimeout`) and
+> `cancelIpcBlocking`'s four blocked arms stage
+> `Architecture.cancelledIpcFrame` (`.ipcCancelled`, a new `KernelError` at
+> discriminant 57): a caller may reissue a timed-out request, but a cancelled
+> one may name an endpoint that is gone, so conflating them would make a
+> correct userspace retry impossible. Two paths stage nothing on purpose and
+> are pinned as negatives — the `.ready` arm, and `restoreToReady`, the
+> *resume* spelling of the same field clear, since `.tcbResume` restarts a
+> thread where it was. **Delivery is still owed to WS-BP BP7**: a staged frame
+> reaches no hardware register while `contextRestoreSeamLive` is `false`.
 
 ## 4. Per-core (SMP) lifts
 

@@ -189,6 +189,29 @@ def lean_exports_in(text: str) -> set[str]:
     return lean_exports_in_view(lean_code_view.code_no_strings(text))
 
 
+def lean_extern_symbols_in(text: str) -> set[str]:
+    """The linker symbols one Lean source declares `@[extern …]`.
+
+    These are the symbols the Lean side **requires a provider for** — the HAL's
+    half of the FFI boundary.  The archive must therefore never *define* one:
+    a Lean-side definition of a HAL symbol inside `libSeLe4n.a` is a second
+    definition at the SM10.1 image link, and the failure mode when the linker
+    prefers it is silent — the kernel's calls reach a stand-in and the hardware
+    is never touched.  The one such stand-in the tree has,
+    `SeLe4n/Testing/HostFfiStubs.lean` (WS-RR RR7.16), stays out of the archive
+    by staying out of `SeLe4n.lean`'s import closure; this is what holds it
+    there, and holds anything else that follows it.
+
+    Read from the STRING-KEEPING view, because the argument *is* a string
+    (`@[extern "ffi_switch_to_thread"]`).  That over-approximates — an
+    `@[extern …]` quoted inside a docstring counts — and over-approximating is
+    the fail-closed direction for this scan: the set is used to FORBID archive
+    definitions, so a spurious member forbids one symbol too many rather than
+    one too few.
+    """
+    return set(lean_code_view.attribute_arguments(lean_code_view.strip(text), "extern"))
+
+
 LEAN_LIBRARY_ROOT_MODULE = REPO / "SeLe4n.lean"
 
 
@@ -971,6 +994,27 @@ def self_test() -> int:
     live_lean = "@[export lean_alpha]\ndef alpha : Nat := 0\n"
     if lean_exports_in(live_lean) != {"lean_alpha"}:
         failures.append("a live `@[export]` was not collected")
+
+    # WS-RR RR7.16: the archive-shadowing relation.  Every token a presence
+    # check would look for stays put — the `@[extern]` binding is a real one and
+    # the symbol name is spelled identically on both sides; what changes is that
+    # the Lean tree also DEFINES it, which is the second definition at the image
+    # link.  A scan that only collected `@[export]`s, or only compared names,
+    # sees nothing wrong.
+    binding_lean = '@[extern "ffi_switch_to_thread"]\nopaque bind : IO Unit\n'
+    if lean_extern_symbols_in(binding_lean) != {"ffi_switch_to_thread"}:
+        failures.append("a live `@[extern]` binding was not collected as a required symbol")
+    stub_lean = (
+        '@[export ffi_switch_to_thread]\ndef stub : IO Unit := pure ()\n'
+    )
+    if not (lean_extern_symbols_in(binding_lean) & lean_exports_in(stub_lean)):
+        failures.append(
+            "a Lean `@[export]` of a symbol the Lean tree binds with `@[extern]` was not "
+            "detected as shadowing the HAL provider"
+        )
+    commented_binding_lean = '-- @[extern "ffi_switch_to_thread"]\nopaque bind : IO Unit\n'
+    if lean_extern_symbols_in(commented_binding_lean):
+        failures.append("a commented-out `@[extern]` binding was collected as a required symbol")
 
     commented_lean = "-- @[export lean_alpha]\ndef alpha : Nat := 0\n"
     if lean_exports_in(commented_lean):
@@ -1772,11 +1816,35 @@ def main() -> int:
             "one of the two scans stopped matching and this gate would pass vacuously."
         )
 
+    lean_externs = set()
+    for text in sources.values():
+        lean_externs.update(lean_extern_symbols_in(text))
+    if not lean_externs:
+        sys.exit(
+            "[FAIL] no `@[extern …]` found under SeLe4n/ — the Lean-requires-a-provider "
+            "derivation is broken, and the archive-shadowing check below would pass "
+            "vacuously"
+        )
+
     defined = archive_defined_symbols(ARCHIVE)
+    shadowed = sorted(lean_externs & defined)
     missing, stale_undeclared, stale_defined, stale_exported = classify_link_requirements(
         externs, asm_globals, EXPECTED_UNRESOLVED, defined, exports
     )
     failed = False
+    if shadowed:
+        failed = True
+        print(
+            "[FAIL] the Lean static archive DEFINES symbols the Lean tree declares "
+            "`@[extern]` — a host stand-in has reached the library the kernel image "
+            "links, where it is a duplicate definition at best and a silently preferred "
+            "one at worst:"
+        )
+        for symbol in shadowed:
+            print(
+                f"         {symbol}: move its `@[export]` out of `SeLe4n.lean`'s import "
+                f"closure (`SeLe4n/Testing/` is where the host stand-ins live)"
+            )
     if missing:
         failed = True
         print("[FAIL] HAL `extern \"C\"` declarations no provider defines:")

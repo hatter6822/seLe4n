@@ -990,9 +990,10 @@ theorem replenishOnCoreLockSet_contains_replenishQueue_write (c : CoreId) :
     (SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write) ∈ replenishOnCoreLockSet c := by
   simp [replenishOnCoreLockSet]
 
-/-- SM5.H.2: the footprint is within the SM3.D `maxLockSetSize` (= 8) cap. -/
+/-- SM5.H.2: the footprint is within the SM3.D `maxLockSetSize` cap. -/
 theorem replenishOnCoreLockSet_size_le_maxLockSetSize (c : CoreId) :
-    (replenishOnCoreLockSet c).length ≤ 8 := by rw [replenishOnCoreLockSet_length]; decide
+    (replenishOnCoreLockSet c).length ≤ Concurrency.maxLockSetSize := by
+  rw [replenishOnCoreLockSet_length]; decide
 
 -- WS-RR RR2.4: `migrateSchedContextReplenishmentLockSet` and its five lemmas
 -- moved to the production `Scheduler/Operations/PerCoreChooseThread.lean`,
@@ -1111,9 +1112,10 @@ theorem setThreadCpuAffinityWithMigrationLockSet_pairwise_le_of_core_le (oldCore
   setThreadCpuAffinityWithMigrationLockSet_pairwise_le oldCore newCore
 
 /-- SM5.H.4 (WCRT): the composite footprint (5 locks) is within the SM3.D
-`maxLockSetSize` (= 8) cap — so its worst-case lock-wait is bounded. -/
+`maxLockSetSize` cap — so its worst-case lock-wait is bounded. -/
 theorem setThreadCpuAffinityWithMigrationLockSet_size_le_maxLockSetSize (oldCore newCore : CoreId) :
-    (setThreadCpuAffinityWithMigrationLockSet oldCore newCore).length ≤ 8 := by
+    (setThreadCpuAffinityWithMigrationLockSet oldCore newCore).length
+      ≤ Concurrency.maxLockSetSize := by
   rw [setThreadCpuAffinityWithMigrationLockSet_length]; decide
 
 -- ============================================================================
@@ -1465,24 +1467,24 @@ theorem timeoutThread_replenishQueueOnCore (epId : SeLe4n.ObjId) (isReceiveQ : B
     (st : SystemState) (r : SystemState × Option (CoreId × SgiKind)) (c : CoreId)
     (h : timeoutThread epId isReceiveQ tid execCore st = .ok r) :
     r.1.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  -- WS-OD OD1.2: the queue removal and the TCB store are the abort's, and the
+  -- abort writes no scheduler state at all, so this composes
+  -- `abortPendingIpcOnEndpoint_scheduler_eq` rather than re-deriving it.
   unfold timeoutThread at h
   split at h
   · simp at h
-  · rename_i st1 hER
-    have hSched1 := endpointQueueRemove_scheduler_eq epId isReceiveQ tid st st1 hER
-    split at h
-    · simp at h
-    · rename_i tcb hLk
-      simp only [storeObject] at h
-      split at h <;>
-        · simp only [Except.ok.injEq] at h
-          subst h
-          first
-            | rw [revertPriorityInheritance_replenishQueueOnCore]
-            | skip
-          rw [wakeThread_replenishQueueOnCore_local]
-          show st1.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c
-          rw [hSched1]
+  · rename_i st2 hAbort
+    have hSched2 := abortPendingIpcOnEndpoint_scheduler_eq epId isReceiveQ tid st st2 hAbort
+    simp only [] at h
+    split at h <;>
+      · simp only [Except.ok.injEq] at h
+        subst h
+        first
+          | rw [revertPriorityInheritance_replenishQueueOnCore]
+          | skip
+        rw [wakeThread_replenishQueueOnCore_local]
+        show st2.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c
+        rw [hSched2]
 
 /-- WS-SM SM5.H (frame): timing out **all** of a SchedContext's IPC-blocked threads
 never touches any replenish queue (each step is a `timeoutThread`). -/
@@ -1546,6 +1548,52 @@ theorem timerTickBudgetOnCore_bound_exhausted_replenish_eq
     SeLe4n.Model.SchedulerState.setLastTimeoutErrorsOnCore_replenishQueueOnCore,
     timeoutBlockedThreads_replenishQueueOnCore,
     SeLe4n.Model.SchedulerState.setRunQueueOnCore_replenishQueueOnCore]
+
+/-- **WS-RR RR7.39 (frame)**: the per-core budget charge writes **only core `c`'s**
+replenish queue.
+
+The two unbound arms and the bound-not-exhausted arm write objects and core `c`'s
+run queue; the exhausted arm inserts through `replenishOnCore st' c` — core `c`'s
+slot — and then runs `timeoutBlockedThreads`, whose wakes are target-aware but
+touch only *run* queues (`timeoutBlockedThreads_replenishQueueOnCore`), and a
+diagnostic write.
+
+This is the fact that makes `replenishQueue ⟨c⟩` alone the exact — not
+over-approximated — replenish segment of the tick's declared footprint
+(`timerTickOnCoreCompleteLockSet`).  A wake moves a thread between run queues; it
+does not move a replenishment. -/
+theorem timerTickBudgetOnCore_replenishQueueOnCore_ne (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (st' : SystemState) (b : Bool)
+    {sgis : List (CoreId × SgiKind)} (c' : CoreId) (hne : c ≠ c')
+    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', b, sgis)) :
+    st'.scheduler.replenishQueueOnCore c' = st.scheduler.replenishQueueOnCore c' := by
+  unfold timerTickBudgetOnCore at hStep
+  split at hStep
+  · -- unbound: both arms write objects and (possibly) core `c`'s run queue
+    split at hStep <;>
+      · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨hst, _⟩ := hStep
+        subst hst
+        simp [SchedulerState.setRunQueueOnCore_replenishQueueOnCore]
+  -- bound and donated: the same three sub-arms (an or-pattern in the source is
+  -- two goals here), so the script runs on both.
+  all_goals
+    (split at hStep
+     · split at hStep
+       · -- exhausted: the replenish insert is at core `c`
+         simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+         obtain ⟨hst, _⟩ := hStep
+         subst hst
+         simp only [SchedulerState.setLastTimeoutErrorsOnCore_replenishQueueOnCore,
+           timeoutBlockedThreads_replenishQueueOnCore,
+           SchedulerState.setRunQueueOnCore_replenishQueueOnCore]
+         exact replenishOnCore_replenishQueueOnCore_ne _ c c' _ _ hne
+       · -- not exhausted: an object write only
+         simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+         obtain ⟨hst, _⟩ := hStep
+         subst hst
+         rfl
+     · simp at hStep)
 
 /-- WS-SM SM5.H.4 (A4): the per-core budget tick preserves replenish-queue validity
 on **every** core.  The unbound and bound-not-exhausted branches leave every

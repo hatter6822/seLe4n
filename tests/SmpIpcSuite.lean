@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-3.0-or-later
 /-
-  seLe4n  - A Lean Microkernel
-  Copyright (C) 2026  Adam Hall
+  seLe4n - A Lean Microkernel
+  Copyright (C) 2026 Adam Hall
   This program comes with ABSOLUTELY NO WARRANTY.
   This is free software, and you are welcome to redistribute it
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
@@ -78,7 +78,7 @@ pipelines** threaded through the evolving state:
 `lake exe smp_ipc_suite` runs all scenarios; an IPC-logic regression flips a
 decidable check or diverges the golden trace.
 
-**Coverage note.**  There is deliberately no cross-core `.replyRecv` dispatch
+**Coverage note.** There is deliberately no cross-core `.replyRecv` dispatch
 wrapper to exercise: the raw-thread `endpointReplyRecvCrossCoreDispatch{,Checked}`
 were removed (they exposed a reply-without-reply-cap surface); the live
 `.replyRecv` routes through `API.replyRecvBody`, and the below-API building block
@@ -93,7 +93,7 @@ open SeLe4n.Kernel.Concurrency
 open SeLe4n.Testing
 
 -- ============================================================================
--- §1  Surface anchors (elaboration-time: rename/removal breaks this suite)
+-- §1 Surface anchors (elaboration-time: rename/removal breaks this suite)
 -- ============================================================================
 
 -- The cross-core IPC transitions (SM6.A / SM6.C, production):
@@ -163,7 +163,7 @@ open SeLe4n.Testing
 #check @Lifecycle.Suspend.suspendThreadOnCore
 
 -- ============================================================================
--- §2  Elaboration-time witnesses (headline theorems applied to typed inputs)
+-- §2 Elaboration-time witnesses (headline theorems applied to typed inputs)
 -- ============================================================================
 
 /-- SM6.A bridge: the per-core deschedule at the boot core is exactly the
@@ -202,13 +202,13 @@ example (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
 /-- SM6.A info-flow gate: a disallowed caller→endpoint flow rejects the checked
 cross-core call before any state change (fail-closed). -/
 example (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet) (callerCspaceRoot : SeLe4n.ObjId)
+    (msg : IpcMessage) (endpointRights : AccessRightSet)
     (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
     (hDeny : securityFlowsTo (ctx.threadLabelOf caller) (ctx.endpointLabelOf endpointId) = false) :
     endpointCallCrossCoreDispatchChecked ctx endpointId caller msg endpointRights
-        callerCspaceRoot receiverSlotBase executingCore st = (st, .error .flowDenied) :=
+        receiverSlotBase executingCore st = (st, .error .flowDenied) :=
   endpointCallCrossCoreDispatchChecked_flow_denied ctx endpointId caller msg endpointRights
-    callerCspaceRoot receiverSlotBase executingCore st hDeny
+    receiverSlotBase executingCore st hDeny
 
 /-- SM6.C info-flow gate: when the replier→target flow is permitted, the checked
 cross-core reply is exactly the unchecked one (the guard is a pure precondition). -/
@@ -220,13 +220,13 @@ example (ctx : LabelingContext) (replier target : SeLe4n.ThreadId) (msg : IpcMes
   endpointReplyCrossCoreDispatchChecked_flow_allowed ctx replier target msg executingCore st hAllow
 
 -- ============================================================================
--- §3  Runtime scenarios — the deterministic 4-thread / 4-core IPC fixture
+-- §3 Runtime scenarios — the deterministic 4-thread / 4-core IPC fixture
 -- ============================================================================
 
 private def assertBool (name : String) (b : Bool) : IO Unit := do
-  if b then IO.println s!"  PASS: {name}"
+  if b then IO.println s!" PASS: {name}"
   else
-    IO.println s!"  FAIL: {name}"
+    IO.println s!" FAIL: {name}"
     throw (IO.userError s!"Assertion failed: {name}")
 
 /-- The four RPi5 cores. -/
@@ -269,7 +269,7 @@ private def mkTcb (tid : Nat) (prio : Nat) (aff : Option CoreId) : TCB :=
 /-- The 4-thread / 4-core IPC workload: two client/server pairs, one per core
 pair (client A on core 0 ↔ server B homed core 1; client C on core 2 ↔ server D
 homed core 3), each endpoint with a free Reply object the server stashes on its
-`Recv`, each thread runnable on its **own** core's run queue.  Client A is
+`Recv`, each thread runnable on its **own** core's run queue. Client A is
 unbound (home = boot core 0); B/C/D are affinity-bound to cores 1/2/3. -/
 private def stFourCore : SystemState :=
   let base :=
@@ -322,23 +322,23 @@ private def stepExcept {α : Type} (label : String) (r : Except KernelError α) 
   | .error _ => .error label
 
 /-- The full interleaved 4-thread round-trip pipeline (every intermediate state
-+ every surfaced SGI).  Both servers block on their endpoints from their own
++ every surfaced SGI). Both servers block on their endpoints from their own
 cores; both clients call cross-core; each SGI is handled on its target core;
 both servers reply cross-core; each reply SGI is handled on its target core. -/
 private structure RoundTrip where
-  afterRecv   : SystemState
-  afterCallA  : SystemState
-  sgiCallA    : Option (CoreId × SgiKind)
-  afterSgiB   : SystemState
-  afterCallC  : SystemState
-  sgiCallC    : Option (CoreId × SgiKind)
-  afterSgiD   : SystemState
+  afterRecv : SystemState
+  afterCallA : SystemState
+  sgiCallA : Option (CoreId × SgiKind)
+  afterSgiB : SystemState
+  afterCallC : SystemState
+  sgiCallC : Option (CoreId × SgiKind)
+  afterSgiD : SystemState
   afterReplyB : SystemState
-  sgiReplyB   : Option (CoreId × SgiKind)
-  afterSgiA   : SystemState
+  sgiReplyB : Option (CoreId × SgiKind)
+  afterSgiA : SystemState
   afterReplyD : SystemState
-  sgiReplyD   : Option (CoreId × SgiKind)
-  afterSgiC   : SystemState
+  sgiReplyD : Option (CoreId × SgiKind)
+  afterSgiC : SystemState
 
 /-- The full interleaved 4-thread round trip, computed once with **step
 attribution** — each step names itself, so a break reports the exact failing
@@ -370,7 +370,7 @@ private def roundTripE : Except String RoundTrip := do
 private def roundTrip? : Option RoundTrip := roundTripE.toOption
 
 /-- The cross-core send/receive rendezvous: blocked sender E (homed core 2) is
-woken by a receive executing on core 1.  Returns (post-state, popped sender,
+woken by a receive executing on core 1. Returns (post-state, popped sender,
 surfaced SGI). -/
 private def sendRendezvous? :
     Option (SystemState × SeLe4n.ThreadId × Option (CoreId × SgiKind)) := do
@@ -393,7 +393,7 @@ private def pendingMessageIs (st : SystemState) (tid : SeLe4n.ThreadId)
   | none => false
 
 -- ============================================================================
--- §3.1  The 2-thread cross-core IPC round trip (acceptance gate)
+-- §3.1 The 2-thread cross-core IPC round trip (acceptance gate)
 -- ============================================================================
 
 private def runTwoThreadRoundTripChecks : IO Unit := do
@@ -453,7 +453,7 @@ private def runTwoThreadRoundTripChecks : IO Unit := do
        | .error .replyCapInvalid => true | _ => false)
 
 -- ============================================================================
--- §3.2  The 4-thread SMP rendezvous (acceptance gate)
+-- §3.2 The 4-thread SMP rendezvous (acceptance gate)
 -- ============================================================================
 
 private def runFourThreadRendezvousChecks : IO Unit := do
@@ -508,7 +508,7 @@ private def runFourThreadRendezvousChecks : IO Unit := do
         && rt.afterSgiC.scheduler.currentOnCore c3 == some serverD)
 
 -- ============================================================================
--- §3.3  Cross-core send/receive rendezvous (sender woken to its home core)
+-- §3.3 Cross-core send/receive rendezvous (sender woken to its home core)
 -- ============================================================================
 
 private def runSendReceiveChecks : IO Unit := do
@@ -539,7 +539,7 @@ private def runSendReceiveChecks : IO Unit := do
       (pendingMessageIs st2 serverB (some sendMsgE))
 
 -- ============================================================================
--- §3.4  Client-first ordering (blockedOnCall, then the server's receive)
+-- §3.4 Client-first ordering (blockedOnCall, then the server's receive)
 -- ============================================================================
 
 private def runClientFirstChecks : IO Unit := do
@@ -585,7 +585,7 @@ private def runClientFirstChecks : IO Unit := do
           (ipcStateIs stRep clientA .ready && pendingMessageIs stRep clientA (some replyMsgB))
 
 -- ============================================================================
--- §3.5  Server steady-state: replyRecv (reply leg + receive leg, SGI union)
+-- §3.5 Server steady-state: replyRecv (reply leg + receive leg, SGI union)
 -- ============================================================================
 
 private def runReplyRecvLoopChecks : IO Unit := do
@@ -622,7 +622,7 @@ private def runReplyRecvLoopChecks : IO Unit := do
        | none => false)
 
 -- ============================================================================
--- §3.6  Fail-closed error paths (pre-state returned on every error)
+-- §3.6 Fail-closed error paths (pre-state returned on every error)
 -- ============================================================================
 
 private def bigMsg : IpcMessage :=
@@ -675,7 +675,7 @@ private def runErrorPathChecks : IO Unit := do
        | .error .replyCapInvalid => true | _ => false)
 
 -- ============================================================================
--- §3.7  2PL lock-set discipline on the live pipeline states
+-- §3.7 2PL lock-set discipline on the live pipeline states
 -- ============================================================================
 
 private def runLockDisciplineChecks : IO Unit := do
@@ -702,7 +702,7 @@ private def runLockDisciplineChecks : IO Unit := do
     -- Exact resolved footprint size: on this rendezvous state the footprint is
     -- exactly the five declared locks — caller TCB (W), sender CNode (R),
     -- endpoint (W), woken-receiver TCB (W), server-first reply (W); no donated
-    -- SC (the client is `.unbound`).  Pinning the exact size catches a regression
+    -- SC (the client is `.unbound`). Pinning the exact size catches a regression
     -- that silently adds or drops a lock, which a `≤` bound would not.
     assertBool "state-resolved call footprint has exactly 5 locks (caller/cnode/ep/receiver/reply)"
       (decide (callLs.pairs.length = 5))
@@ -724,7 +724,7 @@ private def runLockDisciplineChecks : IO Unit := do
       (decide ((tcbLock clientA, AccessMode.write) ∈ replyLs.pairs))
 
 -- ============================================================================
--- §3.8  Live-dispatch coherence (determineExecutingCore + full dispatch)
+-- §3.8 Live-dispatch coherence (determineExecutingCore + full dispatch)
 -- ============================================================================
 
 private def runDispatchCoherenceChecks : IO Unit := do
@@ -743,7 +743,7 @@ private def runDispatchCoherenceChecks : IO Unit := do
   | none => assertBool "dispatch fixture setup succeeded" false
   | some (stWait, _) =>
     let (stDisp, resDisp) := endpointCallCrossCoreDispatch epAB clientA callMsgA
-      AccessRightSet.empty cnRoot (SeLe4n.Slot.ofNat 0) c0 stWait
+      AccessRightSet.empty (SeLe4n.Slot.ofNat 0) c0 stWait
     assertBool "cross-core dispatch rendezvous fires the remote reschedule SGI"
       (match resDisp with
        | .ok (_, some (tgt, kind)) => decide (tgt = c1 ∧ kind = SgiKind.reschedule)
@@ -754,12 +754,12 @@ private def runDispatchCoherenceChecks : IO Unit := do
       (ipcStateIs stDisp clientA (.blockedOnReply epAB (some serverB)))
 
 -- ============================================================================
--- §3.9  SchedContext donation round trip (call donates, reply returns)
+-- §3.9 SchedContext donation round trip (call donates, reply returns)
 -- ============================================================================
 
 private def scClient : SeLe4n.SchedContextId := SchedContextId.ofNat 840
-private def donClient : SeLe4n.ThreadId := ⟨841⟩   -- active, bound-SC, home boot core
-private def donServer : SeLe4n.ThreadId := ⟨842⟩   -- passive (.unbound), home core 1
+private def donClient : SeLe4n.ThreadId := ⟨841⟩ -- active, bound-SC, home boot core
+private def donServer : SeLe4n.ThreadId := ⟨842⟩ -- passive (.unbound), home core 1
 private def donEp : SeLe4n.ObjId := ⟨843⟩
 private def donReply : SeLe4n.ReplyId := ⟨844⟩
 
@@ -795,7 +795,7 @@ private def runDonationChecks : IO Unit := do
   | none => assertBool "donation setup (server recv) succeeded" false
   | some (stRecv, _) =>
     let (stCall, resCall) := endpointCallCrossCoreDispatch donEp donClient IpcMessage.empty
-      AccessRightSet.empty cnRoot (SeLe4n.Slot.ofNat 0) c0 stRecv
+      AccessRightSet.empty (SeLe4n.Slot.ofNat 0) c0 stRecv
     assertBool "donating call succeeds and fires the remote reschedule SGI to core 1"
       (match resCall with
        | .ok (_, some (tgt, kind)) => decide (tgt = c1 ∧ kind = SgiKind.reschedule)
@@ -853,13 +853,13 @@ private def runDonationChecks : IO Unit := do
           && !(stReply.scheduler.runQueueOnCore c1).contains donServer)
 
 -- ============================================================================
--- §3.9b  WS-RR RR2.19 — the donation's replenish-queue migration
+-- §3.9b WS-RR RR2.19 — the donation's replenish-queue migration
 -- ============================================================================
 -- RR2.2 / RR2.8 / RR2.20 made all three live donation paths carry the
--- SchedContext's pending CBS replenishments across cores with it.  §3.9 above
+-- SchedContext's pending CBS replenishments across cores with it. §3.9 above
 -- proves the *binding* moves; these checks prove the **replenish queue entries**
 -- move with it, which is the half the SM5.H affinity invariant reads and the
--- half that was missing on the live path.  Without the migration the entries sit
+-- half that was missing on the live path. Without the migration the entries sit
 -- on the donor's core, where nothing drains them for a SchedContext the donee
 -- now runs on.
 --
@@ -867,7 +867,7 @@ private def runDonationChecks : IO Unit := do
 -- (RR2.8), and `.replyRecv`'s return-and-re-donate pair (RR2.20) — the last of
 -- which the pre-SM10 audit's blocker 2 did not name.
 
-/-- `stDonBase`'s threads with an explicit live `threadState`.  `mkTcb` leaves the
+/-- `stDonBase`'s threads with an explicit live `threadState`. `mkTcb` leaves the
 field at its `.Inactive` default, which `suspendThreadOnCore` rejects outright
 (`illegalState`) — so the suspend-arm fixture has to say the threads are running,
 which is the state the live dispatch entry suspends from. -/
@@ -887,7 +887,7 @@ private def stDonRunning : SystemState :=
 /-- `stDonBase` with two pending replenishments for the client's SchedContext
 already on the client's home core (the boot core), and one unrelated
 SchedContext's entry on the *server's* home core — the bystander that must not
-move.  Two entries rather than one so a migration that moves only the first is
+move. Two entries rather than one so a migration that moves only the first is
 visible. -/
 private def scBystander : SeLe4n.SchedContextId := SchedContextId.ofNat 845
 
@@ -908,12 +908,12 @@ private def donDelegateTcb : TCB :=
 /-- WS-RR RR2.20 (PR #885 review round 1): the **distinct queued caller**.
 
 The rendezvous arm below re-donates *this* thread's SchedContext rather than the
-one being replied to.  That matters because `replyRecvReturnDonation` branches on
+one being replied to. That matters because `replyRecvReturnDonation` branches on
 `nextThread`'s `.blockedOnReply` — and the thread being replied to is *already*
 `.blockedOnReply` from its own outgoing call, so passing it as `nextThread` lets
 the branch fire for a reason the live `.replyRecv` ordering would not produce
 (there the reply leg unblocks that thread before the receive leg dequeues the
-next request).  With a distinct caller the two hops move **two different
+next request). With a distinct caller the two hops move **two different
 SchedContexts**, so neither can stand in for the other: the return hop is
 `scClient` core 1 → core 0, and the re-donation hop is `scCaller2` core 3 →
 core 2.
@@ -957,7 +957,7 @@ private def runDonationMigrationChecks : IO Unit := do
       (decide (replenishCountFor stRecv c0 scClient = 2)
         && decide (replenishCountFor stRecv c1 scClient = 0))
     let (stCall, resCall) := endpointCallCrossCoreDispatch donEp donClient IpcMessage.empty
-      AccessRightSet.empty cnRoot (SeLe4n.Slot.ofNat 0) c0 stRecv
+      AccessRightSet.empty (SeLe4n.Slot.ofNat 0) c0 stRecv
     assertBool "the donating call succeeds"
       (match resCall with | .ok _ => true | .error _ => false)
     -- RR2.2: donor home (core 0) → donee home (core 1).
@@ -987,10 +987,10 @@ private def runDonationMigrationChecks : IO Unit := do
       assertBool "the round trip restores the original eligibility times"
         (decide (((replenishEntriesOn stReply c0).filter (fun e => e.1 == scClient)).map (·.2)
           = [100, 200]))
-    -- RR2.20: the THIRD live donation path.  `.replyRecv` returns the recorded
+    -- RR2.20: the THIRD live donation path. `.replyRecv` returns the recorded
     -- server's donated context and, when the receive rendezvoused with a queued
     -- `Call`, immediately re-donates the next caller's — two hand-offs, neither
-    -- of which migrated before RR2.20.  Both arms are exercised, because the
+    -- of which migrated before RR2.20. Both arms are exercised, because the
     -- round-trip arm alone cannot tell "both migrations ran" from "neither did":
     -- returning to the owner and re-donating to the same server lands the entries
     -- back where they started.
@@ -1008,7 +1008,7 @@ private def runDonationMigrationChecks : IO Unit := do
         (decide (((replenishEntriesOn stRet c0).filter (fun e => e.1 == scClient)).map (·.2)
           = [100, 200]))
     -- The rendezvous arm: a *delegated* reply cap, so the next caller's context
-    -- is re-donated to a receiver on a third core.  Two migrations in one
+    -- is re-donated to a receiver on a third core. Two migrations in one
     -- transition — core 1 → core 0 on the return, core 0 → core 2 on the
     -- re-donation — and the third core is what makes them distinguishable.
     let stCallD : SystemState :=
@@ -1029,10 +1029,10 @@ private def runDonationMigrationChecks : IO Unit := do
         (decide (((replenishEntriesOn stRr c2).filter (fun e => e.1 == scClient)).map (·.2)
           = [100, 200]))
     -- RR2.20 (PR #885 review round 1): the same rendezvous with a **distinct**
-    -- queued caller.  The arm above re-donates the replied-to thread's own
+    -- queued caller. The arm above re-donates the replied-to thread's own
     -- context, so it cannot tell "the re-donation branch fired because a new
     -- request was dequeued" from "it fired because that thread's outgoing call
-    -- was still parked `.blockedOnReply`".  Here the returned context
+    -- was still parked `.blockedOnReply`". Here the returned context
     -- (`scClient`) and the re-donated one (`scCaller2`) are different
     -- SchedContexts homed on different cores, so each hop is pinned
     -- independently and neither can stand in for the other.
@@ -1073,23 +1073,23 @@ private def runDonationMigrationChecks : IO Unit := do
           = [400, 500]))
 
 -- ============================================================================
--- §3.10  Capability transfer across cores (ipcUnwrapCaps, grant-gated)
+-- §3.10 Capability transfer across cores (ipcUnwrapCaps, grant-gated)
 -- ============================================================================
 
-private def capCallerCn : SeLe4n.ObjId := ⟨850⟩   -- the caller's own CSpace root
+private def capCallerCn : SeLe4n.ObjId := ⟨850⟩ -- the caller's own CSpace root
 private def capEp : SeLe4n.ObjId := ⟨851⟩
 private def capCaller : SeLe4n.ThreadId := ⟨852⟩
-private def capServer : SeLe4n.ThreadId := ⟨853⟩   -- home core 1
+private def capServer : SeLe4n.ThreadId := ⟨853⟩ -- home core 1
 private def capReply : SeLe4n.ReplyId := ⟨854⟩
-private def capServerCn : SeLe4n.ObjId := ⟨855⟩   -- the server's DISTINCT CSpace root
-private def capMarkerObj : SeLe4n.ObjId := ⟨856⟩  -- the object the transferred cap targets
+private def capServerCn : SeLe4n.ObjId := ⟨855⟩ -- the server's DISTINCT CSpace root
+private def capMarkerObj : SeLe4n.ObjId := ⟨856⟩ -- the object the transferred cap targets
 private def recvSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 1
 /-- The capability the Call transfers — a distinctive **read** cap on a marker
 object (not the endpoint), so it is uniquely identifiable in whichever CSpace it
 lands, letting the test prove it reaches the *receiver's* root and only there. -/
 private def payloadCap : Capability :=
   { target := .object capMarkerObj, rights := AccessRightSet.ofList [.read] }
-/-- The caller's slot the payload capability is resolved from.  The transfer
+/-- The caller's slot the payload capability is resolved from. The transfer
 records its edge against that slot's derivation node, so revoking the slot is
 what must reach the copy installed in the server's CSpace — and the slot has to
 be a real one, since a node no slot points at is the orphan shape the transfer
@@ -1103,7 +1103,7 @@ private def tooManyCapsMsg : IpcMessage :=
 
 /-- **Distinct** single-level CNodes (`depth=4, radixWidth=4, guard=0`) for the
 caller (`capCallerCn`) and the server (`capServerCn`), both empty at the receive
-slot.  Separate roots are what let the test prove the transferred cap lands in
+slot. Separate roots are what let the test prove the transferred cap lands in
 the **server's** CSpace — not a shared/caller root — exercising the receiver-root
 plumbing in `endpointCallWithCapsOnCore` / `ipcUnwrapCaps`.
 
@@ -1167,7 +1167,7 @@ private def runCapTransferChecks : IO Unit := do
   | some (stRecv, _) =>
     -- WITH grant: the carried cap is installed into the SERVER's CSpace root.
     let (stGrant, resGrant) := endpointCallWithCapsOnCore capEp capCaller capMsg
-      (AccessRightSet.ofList [.write, .grant]) capCallerCn recvSlot c0 stRecv
+      (AccessRightSet.ofList [.write, .grant]) recvSlot c0 stRecv
     assertBool "a granted cross-core Call installs the transferred cap into the SERVER's CSpace root"
       (match resGrant with
        | .ok (summary, _) => summaryInstalledInto summary capServerCn
@@ -1181,7 +1181,7 @@ private def runCapTransferChecks : IO Unit := do
         && !slotHoldsPayload stGrant capCallerCn (SeLe4n.Slot.ofNat 0))
     -- WITHOUT grant: the transfer is denied and the server's CSpace is untouched.
     let (stNoGrant, resNoGrant) := endpointCallWithCapsOnCore capEp capCaller capMsg
-      (AccessRightSet.ofList [.write]) capCallerCn recvSlot c0 stRecv
+      (AccessRightSet.ofList [.write]) recvSlot c0 stRecv
     assertBool "an ungranted cross-core Call denies the transfer (summary = grantDenied)"
       (match resNoGrant with
        | .ok (summary, _) => summaryAllGrantDenied summary
@@ -1200,7 +1200,7 @@ private def runCapTransferChecks : IO Unit := do
      | .error .ipcMessageTooManyCaps => true | _ => false)
 
 -- ============================================================================
--- §3.11  Info-flow-checked cross-core dispatch (flow-allowed vs flow-denied)
+-- §3.11 Info-flow-checked cross-core dispatch (flow-allowed vs flow-denied)
 -- ============================================================================
 
 private def lowLabel : SecurityLabel := { confidentiality := .low, integrity := .untrusted }
@@ -1208,34 +1208,34 @@ private def highLabel : SecurityLabel := { confidentiality := .high, integrity :
 
 /-- Call gate is `caller → endpoint`; DENY = HIGH caller (client A) → LOW endpoint. -/
 private def callDeniedCtx : LabelingContext :=
-  { objectLabelOf   := fun _ => lowLabel
-    threadLabelOf   := fun t => if t == clientA then highLabel else lowLabel
+  { objectLabelOf := fun _ => lowLabel
+    threadLabelOf := fun t => if t == clientA then highLabel else lowLabel
     endpointLabelOf := fun _ => lowLabel
-    serviceLabelOf  := fun _ => lowLabel }
+    serviceLabelOf := fun _ => lowLabel }
 /-- Everything public ⇒ every flow permitted (reflexive `securityFlowsTo`). -/
 private def allPublicCtx : LabelingContext :=
   { objectLabelOf := fun _ => lowLabel, threadLabelOf := fun _ => lowLabel,
     endpointLabelOf := fun _ => lowLabel, serviceLabelOf := fun _ => lowLabel }
 /-- Reply gate is `replier → target`; DENY = HIGH replier (server B) → LOW target. -/
 private def replyDeniedCtx : LabelingContext :=
-  { objectLabelOf   := fun _ => lowLabel
-    threadLabelOf   := fun t => if t == serverB then highLabel else lowLabel
+  { objectLabelOf := fun _ => lowLabel
+    threadLabelOf := fun t => if t == serverB then highLabel else lowLabel
     endpointLabelOf := fun _ => lowLabel
-    serviceLabelOf  := fun _ => lowLabel }
+    serviceLabelOf := fun _ => lowLabel }
 
 private def runFlowCheckedChecks : IO Unit := do
   IO.println "--- §3.11 info-flow-checked cross-core dispatch (allowed vs flowDenied) ---"
   match roundTripE with
   | .error step => assertBool s!"info-flow fixture ({step} failed)" false
   | .ok rt =>
-    -- (a) Call gate.  Fixture: rt.afterRecv (server B waiting on epAB).
+    -- (a) Call gate. Fixture: rt.afterRecv (server B waiting on epAB).
     -- DENIED (high client A → low endpoint): fail-closed — the WHOLE affected
     -- footprint (endpoint, waiting server, caller, reply object) and the two
     -- involved cores' run queues are unchanged from the pre-state `rt.afterRecv`,
     -- so a regression that dequeues the server or mutates state before returning
     -- `.flowDenied` fails here, not just an endpoint-object check.
     let (stDenied, resDenied) := endpointCallCrossCoreDispatchChecked callDeniedCtx epAB clientA
-      callMsgA AccessRightSet.empty cnRoot (SeLe4n.Slot.ofNat 0) c0 rt.afterRecv
+      callMsgA AccessRightSet.empty (SeLe4n.Slot.ofNat 0) c0 rt.afterRecv
     assertBool "a high→low call is denied with .flowDenied"
       (match resDenied with | .error .flowDenied => true | _ => false)
     assertBool "the denied call leaves the whole footprint unchanged (endpoint/server/caller/reply)"
@@ -1252,9 +1252,9 @@ private def runFlowCheckedChecks : IO Unit := do
     -- the SGI, the woken server, the blocked caller, the linked reply object, and the
     -- two cores' run queues (parity with the reply-side check), not just the server.
     let checkedAllowed := endpointCallCrossCoreDispatchChecked allPublicCtx epAB clientA
-      callMsgA AccessRightSet.empty cnRoot (SeLe4n.Slot.ofNat 0) c0 rt.afterRecv
+      callMsgA AccessRightSet.empty (SeLe4n.Slot.ofNat 0) c0 rt.afterRecv
     let uncheckedCall := endpointCallCrossCoreDispatch epAB clientA callMsgA
-      AccessRightSet.empty cnRoot (SeLe4n.Slot.ofNat 0) c0 rt.afterRecv
+      AccessRightSet.empty (SeLe4n.Slot.ofNat 0) c0 rt.afterRecv
     assertBool "an allowed checked call equals the unchecked cross-core call (SGI + server/caller/reply/queues)"
       ((match checkedAllowed.2, uncheckedCall.2 with
         | .ok (_, s1), .ok (_, s2) => s1 == s2 | _, _ => false)
@@ -1266,7 +1266,7 @@ private def runFlowCheckedChecks : IO Unit := do
             == (uncheckedCall.1.scheduler.runQueueOnCore c0).toList
         && (checkedAllowed.1.scheduler.runQueueOnCore c1).toList
             == (uncheckedCall.1.scheduler.runQueueOnCore c1).toList)
-    -- (b) Reply gate.  Fixture: rt.afterCallA (client A blockedOnReply, server B ready).
+    -- (b) Reply gate. Fixture: rt.afterCallA (client A blockedOnReply, server B ready).
     -- DENIED (high server B → low client A): fail-closed — the whole affected
     -- footprint (caller, replier, reply object, endpoint) and cores 0/1 run queues
     -- are unchanged from `rt.afterCallA`, so a regression that delivers/relinks
@@ -1302,13 +1302,13 @@ private def runFlowCheckedChecks : IO Unit := do
             == (uncheckedReply.1.scheduler.runQueueOnCore c0).toList)
 
 -- ============================================================================
--- §3.12  Live API dispatch (`dispatchSyscall` .call through CSpace resolution)
+-- §3.12 Live API dispatch (`dispatchSyscall` .call through CSpace resolution)
 -- ============================================================================
 
 private def apiCn : SeLe4n.ObjId := ⟨860⟩
 private def apiEp : SeLe4n.ObjId := ⟨861⟩
 private def apiCaller : SeLe4n.ThreadId := ⟨862⟩
-private def apiServer : SeLe4n.ThreadId := ⟨863⟩   -- home core 1
+private def apiServer : SeLe4n.ThreadId := ⟨863⟩ -- home core 1
 private def apiReply : SeLe4n.ReplyId := ⟨864⟩
 private def apiEpCap : Capability := { target := .object apiEp, rights := AccessRightSet.ofList [.write] }
 private def apiEpCapRO : Capability := { target := .object apiEp, rights := AccessRightSet.ofList [.read] }
@@ -1371,10 +1371,10 @@ private def runLiveApiChecks : IO Unit := do
   | .error _ => assertBool "checked-dispatch setup (server recv) succeeded" false
   | .ok (_, stRecv) =>
     let apiDeniedCtx : LabelingContext :=
-      { objectLabelOf   := fun _ => lowLabel
-        threadLabelOf   := fun t => if t == apiCaller then highLabel else lowLabel
+      { objectLabelOf := fun _ => lowLabel
+        threadLabelOf := fun t => if t == apiCaller then highLabel else lowLabel
         endpointLabelOf := fun _ => lowLabel
-        serviceLabelOf  := fun _ => lowLabel }
+        serviceLabelOf := fun _ => lowLabel }
     assertBool "live checked .call under a high→low policy fails with flowDenied"
       (match dispatchSyscallChecked apiDeniedCtx (apiCallDecoded 0) apiCaller stRecv with
        | .error .flowDenied => true | _ => false)
@@ -1383,7 +1383,7 @@ private def runLiveApiChecks : IO Unit := do
        | .ok _ => true | _ => false)
 
 -- ============================================================================
--- §3.13  Cancellation × IPC composition (cancel a reply-blocked client)
+-- §3.13 Cancellation × IPC composition (cancel a reply-blocked client)
 -- ============================================================================
 
 private def runCancellationCompositionChecks : IO Unit := do
@@ -1415,11 +1415,11 @@ private def runCancellationCompositionChecks : IO Unit := do
          | .error .replyCapInvalid => true | _ => false)
 
 -- ============================================================================
--- §3.13b  WS-RR RR2.19 — the live `.tcbSuspend` operation, end to end
+-- §3.13b WS-RR RR2.19 — the live `.tcbSuspend` operation, end to end
 -- ============================================================================
 -- RR2.17 extended the cancellation's `ipcInvariant` closure from the teardown
 -- composite to `suspendThreadOnCore`, which is what the dispatch entry's
--- `.tcbSuspend` arm actually calls.  These checks exercise that operation on the
+-- `.tcbSuspend` arm actually calls. These checks exercise that operation on the
 -- state the donation round trip produces — a passive server holding a donated
 -- SchedContext, current on its own core — which is the arm where the five
 -- post-teardown stages (PIP revert, two deschedules, pending-state clear,
@@ -1432,7 +1432,7 @@ private def runSuspendArmChecks : IO Unit := do
   | none => assertBool "suspend-arm setup (server recv) succeeded" false
   | some (stRecv, _) =>
     let (stCall, _) := endpointCallCrossCoreDispatch donEp donClient IpcMessage.empty
-      AccessRightSet.empty cnRoot (SeLe4n.Slot.ofNat 0) c0 stRecv
+      AccessRightSet.empty (SeLe4n.Slot.ofNat 0) c0 stRecv
     match okExcept (handleRescheduleSgiOnCore stCall c1) with
     | none => assertBool "suspend-arm setup: core 1 handles the call wake SGI" false
     | some stDispatched =>
@@ -1465,7 +1465,7 @@ private def runSuspendArmChecks : IO Unit := do
                  && decide (t.queueNext = none) && decide (t.queuePrev = none)
              | none => false)
           -- RR2.17's subject: the suspend's five extra stages write TCBs and
-          -- scheduler slots only, so no notification object moves.  The donated
+          -- scheduler slots only, so no notification object moves. The donated
           -- SC's replenishments follow the binding home, exactly as on the reply.
           assertBool "the suspend migrates the returned SC's replenishments back to core 0"
             (decide (replenishCountFor stSusp c0 scClient = 2)
@@ -1480,7 +1480,7 @@ private def runSuspendArmChecks : IO Unit := do
         && decide (replenishEntriesOn stSelf c1 = replenishEntriesOn stCall c1))
 
 -- ============================================================================
--- §3.14  Scheduler contention on the handler path (no wrongful preemption)
+-- §3.14 Scheduler contention on the handler path (no wrongful preemption)
 -- ============================================================================
 
 private def highPrioT : SeLe4n.ThreadId := ⟨870⟩
@@ -1489,10 +1489,10 @@ private def highPrioT : SeLe4n.ThreadId := ⟨870⟩
 (priority 50) about to be woken onto core 1 by a cross-core call from the client.
 `highPrioT` is CURRENT on core 1 and **not** in its run queue — the scheduler's
 dequeue-on-dispatch discipline (`queueCurrentConsistentOnCore`: the current thread
-is not in its own run queue).  This matters: with the current left in the queue,
+is not in its own run queue). This matters: with the current left in the queue,
 the woken server would simply lose the reselection to a still-queued higher-prio
 thread, so the no-preemption gate would pass without actually protecting a
-*dispatched* current.  Here the woken server B is the **only** entry in core 1's
+*dispatched* current. Here the woken server B is the **only** entry in core 1's
 queue, so the gate passes iff the current genuinely outranks the candidate. -/
 private def stContention (curPrio : Nat) : SystemState :=
   let base :=
@@ -1531,7 +1531,7 @@ private def runHandlerContentionChecks : IO Unit := do
       (st.scheduler.currentOnCore c1 == some serverB)
 
 -- ============================================================================
--- §9  The deterministic 4-core IPC trace (SM6.F.4 golden fixture)
+-- §9 The deterministic 4-core IPC trace (SM6.F.4 golden fixture)
 -- ============================================================================
 
 /-- Human label for a fixture thread id (stable across `ThreadId` internals). -/
@@ -1580,7 +1580,7 @@ private def payloadLabel (st : SystemState) (tid : SeLe4n.ThreadId) : String :=
 /-- The deterministic 4-core IPC trace — each line is COMPUTED from the live
 `endpointReceiveDualOnCore` / `endpointCallOnCore` / `handleRescheduleSgiOnCore`
 / `endpointReplyOnCore` / `endpointSendDual` decisions on the fixture, so an
-IPC-logic regression diverges the golden fixture.  Every line carries the
+IPC-logic regression diverges the golden fixture. Every line carries the
 `[smp-ipc-4core]` prefix (the fixture extraction key). -/
 private def ipcFourCoreTraceLines : List String :=
   match roundTrip?, sendRendezvous? with
@@ -1606,7 +1606,7 @@ private def ipcFourCoreTraceLines : List String :=
 private def fixturePath : String := "tests/fixtures/smp_ipc_4core.expected"
 
 /-- §9: print the deterministic 4-core IPC trace and verify it byte-for-byte
-against the golden fixture.  The lines print before the (strict) verification,
+against the golden fixture. The lines print before the (strict) verification,
 so the fixture is regenerable via `lake exe smp_ipc_suite | grep '^\[smp-ipc-4core\]'`
 (the brackets MUST be escaped — unescaped they form a regex character class that
 also matches the suite's `---` section headers, corrupting the regenerated
@@ -1618,17 +1618,17 @@ private def runTraceFixtureCheck : IO Unit := do
   let expectedContent := String.intercalate "\n" ipcFourCoreTraceLines ++ "\n"
   let fixtureExists ← System.FilePath.pathExists fixturePath
   if !fixtureExists then
-    IO.println s!"  FAIL: golden fixture {fixturePath} not found"
-    IO.println s!"        regenerate: lake exe smp_ipc_suite | grep '^\\[smp-ipc-4core\\]' > {fixturePath}"
+    IO.println s!" FAIL: golden fixture {fixturePath} not found"
+    IO.println s!" regenerate: lake exe smp_ipc_suite | grep '^\\[smp-ipc-4core\\]' > {fixturePath}"
     throw (IO.userError s!"missing fixture {fixturePath}")
   let actual ← IO.FS.readFile fixturePath
   if actual == expectedContent then
-    IO.println s!"  PASS: 4-core IPC trace matches golden fixture {fixturePath}"
+    IO.println s!" PASS: 4-core IPC trace matches golden fixture {fixturePath}"
   else
-    IO.println s!"  FAIL: 4-core IPC trace differs from golden fixture {fixturePath}"
-    IO.println s!"        the live trace is printed above; regenerate the golden fixture with:"
-    IO.println s!"          lake exe smp_ipc_suite | grep '^\\[smp-ipc-4core\\]' > {fixturePath}"
-    IO.println s!"          (then refresh {fixturePath}.sha256 — see tests/fixtures/README.md)"
+    IO.println s!" FAIL: 4-core IPC trace differs from golden fixture {fixturePath}"
+    IO.println s!" the live trace is printed above; regenerate the golden fixture with:"
+    IO.println s!" lake exe smp_ipc_suite | grep '^\\[smp-ipc-4core\\]' > {fixturePath}"
+    IO.println s!" (then refresh {fixturePath}.sha256 — see tests/fixtures/README.md)"
     throw (IO.userError "4-core IPC trace fixture mismatch")
 
 def runSmpIpcChecks : IO Unit := do

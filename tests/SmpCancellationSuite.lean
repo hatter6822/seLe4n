@@ -8,6 +8,11 @@
 -/
 
 import SeLe4n.Kernel.IPC.CrossCore.Cancellation
+import SeLe4n.Kernel.Lifecycle.Invariant.CancellationQueueShape
+import SeLe4n.Kernel.Lifecycle.Invariant.CancellationNotificationShape
+import SeLe4n.Kernel.Lifecycle.Invariant.CancellationReplyShape
+import SeLe4n.Kernel.Concurrency.Locks.ResolvedFootprintBounds
+import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
 import SeLe4n.Testing.StateBuilder
 
@@ -201,6 +206,204 @@ open SeLe4n.Testing
 #check @descheduleThread_preserves_currentThreadUniqueAcrossCores
 #check @cancelDonationOnCore_observer_atomic
 #check @PriorityInheritance.crossCoreSgiBody_remote_deschedule
+-- WS-RR RR7.22 (residual): the object-store sweep, characterised per key.  The
+-- fact the cancellation bundle needs — "afterwards no endpoint still names the
+-- swept thread at a boundary" — is false of the accumulator mid-fold, so it is
+-- not a fold invariant; `RHTable.fold_pointwise` is the lemma that establishes
+-- a pointwise one, and the sweep body is named so a proof can quantify over it.
+#check @SeLe4n.Kernel.RobinHood.RHTable.fold_pointwise
+#check @endpointSweepBody
+#check @removeFromAllEndpointQueues_eq_fold
+#check @threadOffQueueBoundaries
+#check @removeThreadFromQueue_off_boundary
+#check @removeFromAllEndpointQueues_off_boundary
+#check @removeFromAllEndpointQueues_endpoint_value
+#check @removeFromAllEndpointQueues_tcb_frame
+#check @removeFromAllEndpointQueues_tcb_source
+#check @removeFromAllEndpointQueues_endpoint_source
+-- The mid-queue splice's own per-key readings: what it installs at the two
+-- neighbours, and what it leaves everywhere else.
+#check @tcbQueueLinkRewrite
+#check @queueNeighbourPatch
+#check @spliceOutMidQueueNode_eq_patches
+#check @spliceOutMidQueueNode_tcb_backward
+#check @spliceOutMidQueueNode_nonTcb
+#check @spliceOutMidQueueNode_victim_tcb
+#check @spliceOutMidQueueNode_next_queuePrev
+#check @spliceOutMidQueueNode_prev_queueNext
+#check @spliceOutMidQueueNode_queuePrev_frame
+#check @spliceOutMidQueueNode_queueNext_frame
+-- WS-RR RR7.22 (residual): the queue shape across sweep-then-restore, and the
+-- three facts `ipcInvariantFull` does not entail, stated rather than assumed.
+#check @queueBoundaryCoherentAt
+#check @sweptThreadBoundaryCoherent
+#check @sweptPredecessorBlocked
+#check @sweptSuccessorAnchored
+#check @sweptThreadQueueCoherent
+#check @queueBoundaryCoherentAt_of_off_boundary
+#check @sweptQueue_wellFormed
+#check @restoredTcb
+#check @restoredTcb_eq
+#check @sweptAndRestored
+#check @sweptAndRestored_tcb_iff
+#check @sweptAndRestored_victim_tcb
+#check @sweptAndRestored_tcbQueueLinkIntegrity
+#check @sweptAndRestored_edge_source
+#check @sweptAndRestored_path_transport
+#check @sweptAndRestored_tcbQueueChainAcyclic
+#check @sweptAndRestored_dualQueueSystemInvariant
+-- WS-RR RR7.22 (residual): the sharp pointwise reading and the transports.
+#check @sweptAndRestored_tcb_pullback
+#check @sweptAndRestored_tcb_value
+#check @sweptAndRestored_tcb_forward
+#check @sweptAndRestored_no_next_to_victim
+#check @sweptAndRestored_endpoint_queues
+#check @sweptAndRestored_endpoint_forward
+#check @sweptAndRestored_membership_witness
+#check @sweptAndRestored_nonTcbNonEndpoint
+#check @sweptAndRestored_sameSchedContextBindings
+#check @sweptAndRestored_timeoutBudgetFrame
+#check @sweptAndRestored_passiveServerIdleFrame
+#check @sweptAndRestored_donationOwnerFrame
+#check @sweptAndRestored_replyLinkageFrame
+-- WS-RR RR7.22 (residual): every conjunct of `ipcInvariantFull`, then the bundle
+-- and the live cancellation arm it covers.
+#check @sweptAndRestored_ipcInvariant
+#check @sweptAndRestored_badgeWellFormed
+#check @sweptAndRestored_allPendingMessagesBounded
+#check @sweptAndRestored_blockedThreadsPendingMessageConsistent
+#check @sweptAndRestored_blockedOnReplyHasTarget
+#check @sweptAndRestored_donationChainAcyclic
+#check @sweptAndRestored_queueNextTargetBlocked
+#check @sweptAndRestored_queueNextBlockingConsistent
+#check @sweptAndRestored_endpointQueueNoDup
+#check @sweptAndRestored_ipcStateQueueMembershipConsistent
+#check @sweptAndRestored_queueHeadBlockedConsistent
+#check @sweptAndRestored_endpointQueueTailBlockedConsistent
+#check @sweptAndRestored_replyCallerLinkage
+#check @sweptAndRestored_pendingReceiveReplyWellFormed
+#check @sweptAndRestored_preserves_ipcInvariantFull
+#check @cancelIpcBlocking_endpoint_arm_eq
+#check @cancelIpcBlocking_endpointArm_preserves_ipcInvariantFull
+#check @replyObject_none_of_not_blockedOnReply
+-- WS-RR RR7.22 (residual): the notification arm — its purge description, its one
+-- coherence hypothesis, every conjunct, the keystone and the live arm.
+#check @notificationPurgeBody
+#check @removeFromAllNotificationWaitLists_eq_fold
+#check @removeFromAllNotificationWaitLists_nonNotification
+#check @removeFromAllNotificationWaitLists_notification_badge
+#check @purgedAndRestored
+#check @sweptThreadOffQueueChains
+#check @purgedAndRestored_tcb_iff
+#check @purgedAndRestored_victim_tcb
+#check @purgedAndRestored_tcb_pullback
+#check @purgedAndRestored_tcb_links
+#check @purgedAndRestored_tcb_links_forward
+#check @purgedAndRestored_path_transport
+#check @purgedAndRestored_dualQueueSystemInvariant
+#check @purgedAndRestored_sameSchedContextBindings
+#check @purgedAndRestored_timeoutBudgetFrame
+#check @purgedAndRestored_passiveServerIdleFrame
+#check @purgedAndRestored_donationOwnerFrame
+#check @purgedAndRestored_replyLinkageFrame
+#check @purgedAndRestored_ipcInvariant
+#check @purgedAndRestored_badgeWellFormed
+#check @purgedAndRestored_allPendingMessagesBounded
+#check @purgedAndRestored_blockedThreadsPendingMessageConsistent
+#check @purgedAndRestored_blockedOnReplyHasTarget
+#check @purgedAndRestored_donationChainAcyclic
+#check @purgedAndRestored_pendingReceiveReplyWellFormed
+#check @purgedAndRestored_replyCallerLinkage
+#check @purgedAndRestored_victim_off_endpoint_boundaries
+#check @purgedAndRestored_queueHeadBlockedConsistent
+#check @purgedAndRestored_endpointQueueTailBlockedConsistent
+#check @purgedAndRestored_edge_avoids_victim
+#check @purgedAndRestored_queueNextTargetBlocked
+#check @purgedAndRestored_queueNextBlockingConsistent
+#check @purgedAndRestored_endpointQueueNoDup
+#check @purgedAndRestored_ipcStateQueueMembershipConsistent
+#check @purgedAndRestored_preserves_ipcInvariantFull
+#check @cancelIpcBlocking_notification_arm_eq
+#check @cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull
+-- WS-RR RR7.22 (residual, remediation): the cancelled caller's donation goes
+-- back — seL4-MCS's `reply_remove` — and the fact that makes the return well
+-- defined, stated rather than assumed.
+#check @Lifecycle.Suspend.cancelledCallerDonation?
+#check @Lifecycle.Suspend.returnDonationToCancelledCaller
+#check @cancelledCallerDonation?_some
+#check @donationHolderIsReplyTarget
+#check @returnDonationToCancelledCaller_no_donation_to_victim
+#check @cancelIpcBlocking_reply_no_donation_to_victim
+#check @Lifecycle.Suspend.returnDonationToCancelledCaller_scheduler_eq
+#check @Lifecycle.Suspend.returnDonationToCancelledCaller_machine_eq
+#check @Lifecycle.Suspend.returnDonationToCancelledCaller_serviceRegistry_eq
+#check @Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
+#check @Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_ipcInvariant
+#check @Lifecycle.Suspend.returnDonationToCancelledCaller_tcb_lookup
+#check @Lifecycle.Suspend.returnDonationToCancelledCaller_eq_self_of_getTcb?_none
+-- WS-OD OD1.4: the reclaim's holder abort — the `passiveServerIdle` half.  The
+-- operation, its frames, the two facts the hand-back reads across it
+-- (`donationOwnerValid`, the holder's own binding), the identity-registry
+-- carriage its information-flow argument needs, and the exact bound on its
+-- reach: it is the identity unless the holder is blocked sending or calling.
+#check @Lifecycle.Suspend.abortHolderPendingIpc
+#check @abortPendingIpcOnEndpoint_shape
+#check @abortPendingIpcOnEndpoint_preserves_ipcInvariantFull
+#check @abortPendingIpcOnEndpoint_preserves_donationOwnerValid
+#check @abortPendingIpcOnEndpoint_schedContext_forward
+#check @abortPendingIpcOnEndpoint_unwritten_kind_forward
+#check @abortPendingIpcOnEndpoint_preserves_objectIndexSetComplete
+#check @abortPendingIpcOnEndpoint_preserves_objectIndexSet_invExt
+#check @endpointQueueRemove_objects_present_backward
+#check @endpointQueueRemove_objectIndexSet_eq
+#check @endpointQueueRemove_preserves_objectIndexSetComplete
+#check @Lifecycle.Suspend.abortHolderPendingIpc_scheduler_eq
+#check @Lifecycle.Suspend.abortHolderPendingIpc_machine_eq
+#check @Lifecycle.Suspend.abortHolderPendingIpc_serviceRegistry_eq
+#check @Lifecycle.Suspend.abortHolderPendingIpc_preserves_objects_invExt
+#check @Lifecycle.Suspend.abortHolderPendingIpc_preserves_objectIndexSetComplete
+#check @Lifecycle.Suspend.abortHolderPendingIpc_preserves_objectIndexSet_invExt
+#check @Lifecycle.Suspend.abortHolderPendingIpc_preserves_donationOwnerValid
+#check @Lifecycle.Suspend.abortHolderPendingIpc_binding_forward
+#check @Lifecycle.Suspend.abortHolderPendingIpc_binding_backward
+#check @Lifecycle.Suspend.abortHolderPendingIpc_eq_self_of_allowed
+-- WS-OD OD1.4: the information-flow obligation the abort adds
+-- (`abortHolderProjectionStable`) and the states on which it is free live in
+-- the **staged** `IPC/CrossCore/CancellationNI.lean`, which no executable suite
+-- imports; they are pinned by Tier 3 anchors instead.
+#check @returnDonatedSchedContext_ok_storeChain
+#check @returnDonatedSchedContext_tcb_rewrite
+#check @tcbBindingRewrite
+#check @cancelIpcBlockingMigrated
+#check @cancelIpcBlockingMigrated_of_no_donation
+#check @cancelIpcBlockingMigrated_objects
+#check @lockSet_cancelIpcBlocking_returned_donation_sc_write_mem
+#check @lockSet_cancelIpcBlocking_donation_holder_tcb_write_mem
+#check @lockSet_cancelIpcBlockingOnCore_size_le
+-- WS-OD OD1.5: the reclaim's abort prefix is three more declared writes — the
+-- holder's endpoint and its two queue neighbours — resolved from `st` rather
+-- than from the victim's TCB, since the holder is resolved rather than supplied.
+#check @cancelHolderBlockedEndpoint?
+#check @cancelHolderSpliceNeighbors?
+#check @lockSet_cancelIpcBlocking_holder_endpoint_write_mem
+#check @lockSet_cancelIpcBlocking_holder_splice_prev_write_mem
+#check @lockSet_cancelIpcBlocking_holder_splice_next_write_mem
+#check @lockSet_cancelIpcBlocking_reply_size_le
+#check @lockSet_cancelIpcBlocking_noDonation_size_le
+-- WS-OD OD1.5: and the payoff — `passiveServerIdle` is preserved by
+-- `cancelIpcBlocking` on every arm, which is what OD1 exists to prove.
+#check @passiveServerIdleFrame_of_backward_of_not_allowed
+#check @abortPendingIpcOnEndpoint_ok
+#check @abortPendingIpcOnEndpoint_aborted_ipcState
+#check @abortPendingIpcOnEndpoint_passiveServerIdleFrame
+#check @Lifecycle.Suspend.abortHolderPendingIpc_passiveServerIdleFrame
+#check @Lifecycle.Suspend.abortHolderPendingIpc_holder_ipcState_allowed
+#check @consumeReplyLink_passiveServerIdleFrame
+#check @restoreToReadyStaging_passiveServerIdleFrame
+#check @returnDonatedSchedContext_passiveServerIdleFrame
+#check @returnDonationToCancelledCaller_passiveServerIdleFrame
+#check @cancelIpcBlocking_passiveServerIdleFrame
+#check @cancelIpcBlocking_preserves_passiveServerIdle
 
 -- ============================================================================
 -- §2  Elaboration-time examples: headline theorems applied
@@ -212,6 +415,11 @@ variable (victim : SeLe4n.ThreadId) (tcb tcb0 : TCB) (ec : CoreId)
 variable (st s : SystemState)
 variable (blEp blN : Option SeLe4n.ObjId) (r? : Option SeLe4n.ReplyId)
 variable (sc? : Option SeLe4n.SchedContextId) (ot? : Option SeLe4n.ThreadId)
+variable (rdSc? : Option SeLe4n.SchedContextId) (dh? : Option SeLe4n.ThreadId)
+-- WS-OD OD1.5: the reclaim's abort prefix declares three more members — the
+-- holder's endpoint and its two queue neighbours.
+variable (hEp? : Option SeLe4n.ObjId)
+variable (hNb? : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId)
 
 /-- SM6.E.5: the flagship's remote-poke conjunct applies. -/
 example (h1 : st.getTcb? victim = some tcb0)
@@ -235,19 +443,85 @@ example (h1 : st.getTcb? victim = some tcb0)
     (h3 : determineTargetCore st victim ≠ ec) :
     (cancelIpcBlockingOnCore victim tcb ec st).1.objects
       = (cancelIpcBlocking st victim tcb).objects :=
-  (cancellation_cross_core_correct victim tcb tcb0 ec st h1 h2 h3).2.2.2.2
+  -- WS-OD OD1.7: one projection deeper — the per-core locality conjunct split
+  -- into a run-queue half (conditioned on the holder wake's core) and an
+  -- unconditional current-slot half.
+  (cancellation_cross_core_correct victim tcb tcb0 ec st h1 h2 h3).2.2.2.2.2
+
+/-- WS-OD OD1.7: the flagship's **current-slot** locality conjunct applies, and
+is still unconditional — the reclaim's holder wake inserts into a run queue and
+moves nothing onto a core. -/
+example (h1 : st.getTcb? victim = some tcb0)
+    (h2 : st.scheduler.currentOnCore (determineTargetCore st victim) = some victim)
+    (h3 : determineTargetCore st victim ≠ ec) (c' : CoreId)
+    (hc' : c' ≠ determineTargetCore st victim) :
+    (cancelIpcBlockingOnCore victim tcb ec st).1.scheduler.currentOnCore c'
+      = st.scheduler.currentOnCore c' :=
+  (cancellation_cross_core_correct victim tcb tcb0 ec st h1 h2 h3).2.2.2.2.1 c' hc'
+
+/-- WS-OD OD1.7: the flagship's **run-queue** locality conjunct applies, on a
+core the holder wake does not target. -/
+example (h1 : st.getTcb? victim = some tcb0)
+    (h2 : st.scheduler.currentOnCore (determineTargetCore st victim) = some victim)
+    (h3 : determineTargetCore st victim ≠ ec) (c' : CoreId)
+    (hc' : c' ≠ determineTargetCore st victim)
+    (hWake : cancelAbortedHolderWakeCore? st (cancelIpcBlockingMigrated victim tcb st)
+        victim tcb ≠ some c') :
+    (cancelIpcBlockingOnCore victim tcb ec st).1.scheduler.runQueueOnCore c'
+      = st.scheduler.runQueueOnCore c' :=
+  (cancellation_cross_core_correct victim tcb tcb0 ec st h1 h2 h3).2.2.2.1 c' hc' hWake
+
+-- WS-OD OD1.7: the holder-wake surface — the resolver, its core, the
+-- scheduler-only placement, its frames, and the payoff that says a holder the
+-- reclaim's abort unblocked is on a run queue afterwards.
+#check @cancelAbortedHolderWake?
+#check @cancelAbortedHolderWakeCore?
+#check @cancelAbortedHolderWakeCore?_of_no_donation
+#check @enqueueAbortedHolderOnCore
+#check @enqueueAbortedHolderOnCore_objects
+#check @enqueueAbortedHolderOnCore_getTcb?
+#check @enqueueAbortedHolderOnCore_currentOnCore
+#check @enqueueAbortedHolderOnCore_runQueueOnCore_ne
+#check @enqueueAbortedHolderOnCore_agrees_runQueueOnCore
+#check @enqueueAbortedHolderOnCore_ipcState_ready
+#check @wakeAbortedDonationHolder
+#check @wakeAbortedDonationHolder_of_no_donation
+#check @wakeAbortedDonationHolder_objects
+#check @wakeAbortedDonationHolder_getTcb?
+#check @wakeAbortedDonationHolder_currentOnCore
+#check @wakeAbortedDonationHolder_runQueueOnCore_ne
+#check @wakeAbortedDonationHolder_holder_runnable
+#check @cancelIpcBlockingOnCoreSchedLockSet_none
+#check @cancelIpcBlockingOnCoreSchedLockSet_dedup
+#check @cancelIpcBlockingOnCoreSchedLockSet_write_only
+#check @cancelIpcBlockingOnCoreSchedLockSet_contains_wake_runQueue_write
+#check @cancelIpcBlockingOnCoreSchedLockSet_contains_home_runQueue_write
+
+/-- WS-OD OD1.7 payoff: a holder the reclaim's abort unblocked is queued or
+executing afterwards — the complete statement of "not stranded", and the one the
+defect made false.  The disjunction rather than plain `runnableOnSomeCore`
+because the placement declines a thread that is already *running*: dequeue-on-
+dispatch means a running thread is on no run queue, and enqueuing it would break
+`queueCurrentConsistent`. -/
+example (stPost : SystemState) (holder : SeLe4n.ThreadId) (t : TCB)
+    (hW : cancelAbortedHolderWake? st stPost victim tcb = some holder)
+    (hT : stPost.getTcb? holder = some t) :
+    (runnableOnSomeCore (wakeAbortedDonationHolder st stPost victim tcb) holder
+      || runningOnSomeCore (wakeAbortedDonationHolder st stPost victim tcb) holder) = true :=
+  wakeAbortedDonationHolder_holder_runnable st stPost victim tcb holder t hW hT
 
 /-- SM6.E.2: the single-core atomicity theorem applies (2PL bracket shape). -/
 example :
-    withLockSet (lockSet_cancelIpcBlocking victim blEp blN r?) ec
+    withLockSet (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb?) ec
         (fun st => (cancelIpcBlocking st victim tcb, ())) s
       = (unwindAll ec
-          (lockSet_cancelIpcBlocking victim blEp blN r?).lockAcquireSequence.reverse
+          (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb?).lockAcquireSequence.reverse
           (cancelIpcBlocking
-            (acquireAll ec (lockSet_cancelIpcBlocking victim blEp blN r?).lockAcquireSequence s)
+            (acquireAll ec
+              (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb?).lockAcquireSequence s)
             victim tcb),
          ()) :=
-  cancelIpcBlocking_atomic_under_lockSet victim tcb ec blEp blN r? s
+  cancelIpcBlocking_atomic_under_lockSet victim tcb ec blEp blN r? rdSc? dh? hEp? hNb? s
 
 /-- SM6.E.4: the donation atomicity companion applies (dispatcher form). -/
 example :
@@ -265,6 +539,61 @@ example :
 example (hInv : st.objects.invExt) :
     (cancelIpcBlockingOnCore victim tcb ec st).1.objects.invExt :=
   cancelIpcBlockingOnCore_preserves_objects_invExt victim tcb ec st hInv
+
+/-- WS-RR RR7.22 (residual): the whole bundle across the cancellation's endpoint
+arm, applied — the shape a caller sees. -/
+example (ep : SeLe4n.ObjId)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st victim = some tcb)
+    (hBlocked : tcb.ipcState = .blockedOnSend ep)
+    (hBundle : ipcInvariantFull st) (hBudgets : allTimeoutBudgetsNone st)
+    (hCoh : sweptThreadQueueCoherent st victim) :
+    ipcInvariantFull (Lifecycle.Suspend.cancelIpcBlocking st victim tcb) :=
+  cancelIpcBlocking_endpointArm_preserves_ipcInvariantFull st victim tcb ep hInv hLookup
+    (Or.inl hBlocked) hBundle hBudgets hCoh
+
+/-- WS-RR RR7.22 (residual): the boundary clause costs a caller nothing on an
+endpoint the swept thread does not bound — which is every endpoint but the one it
+is being cancelled out of. -/
+example (q : IntrusiveQueue)
+    (hH : q.head ≠ some victim) (hT : q.tail ≠ some victim) :
+    queueBoundaryCoherentAt q victim tcb :=
+  queueBoundaryCoherentAt_of_off_boundary q victim tcb hH hT
+
+/-- WS-RR RR7.22 (residual): the whole bundle across the cancellation's
+notification arm, applied. -/
+example (n : SeLe4n.ObjId)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st victim = some tcb)
+    (hBlocked : tcb.ipcState = .blockedOnNotification n)
+    (hBundle : ipcInvariantFull st) (hBudgets : allTimeoutBudgetsNone st)
+    (hOff : sweptThreadOffQueueChains st victim) :
+    ipcInvariantFull (Lifecycle.Suspend.cancelIpcBlocking st victim tcb) :=
+  cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull st victim tcb n hInv hLookup
+    hBlocked hBundle hBudgets hOff
+
+/-- WS-RR RR7.22 (residual, remediation): after the corrected reply arm no thread
+holds a SchedContext donated by the cancelled caller — the invariant premise the
+old arm left dangling. -/
+example (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId)
+    (holder : SeLe4n.ThreadId) (holderTcb : TCB) (sc : SeLe4n.SchedContextId)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st victim = some tcb)
+    (hBlocked : tcb.ipcState = .blockedOnReply ep rt)
+    (hOwner : donationOwnerValid st)
+    (hHolder : donationHolderIsReplyTarget st victim)
+    (hTcb : (Lifecycle.Suspend.cancelIpcBlocking st victim tcb).objects[holder.toObjId]?
+      = some (.tcb holderTcb)) :
+    holderTcb.schedContextBinding ≠ .donated sc victim :=
+  cancelIpcBlocking_reply_no_donation_to_victim st victim tcb ep rt hInv hLookup hBlocked
+    hOwner hHolder holder holderTcb sc hTcb
+
+/-- WS-RR RR7.22 (residual): the swept thread holds no Reply object, derived from
+the bundle's own reciprocity rather than assumed. -/
+example (ep : SeLe4n.ObjId)
+    (hLink : replyCallerLinkage st)
+    (hTcb : st.objects[victim.toObjId]? = some (.tcb tcb))
+    (hBlocked : tcb.ipcState = .blockedOnReceive ep) :
+    tcb.replyObject = none :=
+  replyObject_none_of_not_blockedOnReply st hLink victim tcb hTcb
+    (fun _ _ hEq => by rw [hBlocked] at hEq; cases hEq)
 
 end ElaborationExamples
 
@@ -1220,6 +1549,135 @@ private def runDiffSeamEdfChecks : IO Unit := do
 -- Aggregate runner
 -- ============================================================================
 
+-- ----------------------------------------------------------------------------
+-- Scenario R: WS-RR RR7.14 — the return frame a forcibly unblocked thread reads
+-- ----------------------------------------------------------------------------
+--
+-- A thread whose blocking IPC is destroyed under it has no value to receive.
+-- Until RR7.14 the teardown staged nothing, so the SM10.1 context restore would
+-- have delivered whatever the argument spill left in `x0`-`x5` — the thread's
+-- own request registers, decoded as a return value.  The checks below are
+-- written so they cannot pass vacuously: the victim carries a **recognisable**
+-- pre-state register file (`x0 = 0xBAD0`, `x1 = 0xBAD1`, ...), so "the frame is
+-- `.ipcCancelled`" and "the frame is not what was there before" are two
+-- different assertions and both are made.
+
+/-- A register file whose `x0`-`x5` are all recognisable non-frame values —
+what a blocked caller's argument spill leaves behind. -/
+private def staleRequestRegs : SeLe4n.RegisterFile :=
+  { pc := ⟨0x4000⟩, sp := ⟨0x9000⟩,
+    gpr := fun r => ⟨0xBAD0 + r.val⟩ }
+
+private def mkTcbWithStaleRegs (tid : Nat) (prio : Nat) (aff : Option CoreId) : TCB :=
+  { mkTcb tid prio aff with registerContext := staleRequestRegs }
+
+/-- The endpoint-blocked scenario, with the victim carrying the stale window. -/
+private def stCallBlockedStale? : Option SystemState :=
+  let base :=
+    (BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject victimTid.toObjId (.tcb (mkTcbWithStaleRegs 710 30 (some core1)))
+      |>.withObject bystanderTid.toObjId (.tcb (mkTcb 712 20 none))
+      |>.withRunnable [victimTid, bystanderTid]
+      |>.build)
+  match endpointCallOnCore epId victimTid IpcMessage.empty bootCoreId base with
+  | (st, .ok none) => some st
+  | _ => none
+
+/-- The notification-blocked scenario, likewise. -/
+private def stNtfnBlockedStale? : Option SystemState :=
+  let base :=
+    (BootstrapBuilder.empty
+      |>.withObject nId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty })
+      |>.withObject victimTid.toObjId (.tcb (mkTcbWithStaleRegs 710 30 (some core1)))
+      |>.withRunnable [victimTid]
+      |>.build)
+  match notificationWaitOnCore nId victimTid bootCoreId base with
+  | (st, .ok none) => some st
+  | _ => none
+
+private def runUnblockFrameStagingChecks : IO Unit := do
+  IO.println "--- §3.19 WS-RR RR7.14 the cancellation return frame ---"
+  -- The two frames are distinguishable, and neither is the success frame.
+  assertBool "the timeout and cancellation frames differ"
+    (decide (Architecture.timeoutFrame ≠ Architecture.cancelledIpcFrame))
+  assertBool "neither unblock frame is the success frame (x1 = 0)"
+    (decide (Architecture.timeoutFrame.x1 ≠ 0 ∧ Architecture.cancelledIpcFrame.x1 ≠ 0))
+  assertBool "each unblock frame's label decodes back to its own error"
+    (decide (Architecture.ofErrorLabel? (Architecture.errorLabel KernelError.ipcTimeout)
+               = some KernelError.ipcTimeout
+             ∧ Architecture.ofErrorLabel? (Architecture.errorLabel KernelError.ipcCancelled)
+               = some KernelError.ipcCancelled))
+  assertBool "the cancellation error is its own discriminant, not folded into the timeout"
+    (decide (KernelError.toDiscriminant .ipcCancelled = 57
+             ∧ KernelError.toDiscriminant .ipcTimeout = 42
+             ∧ KernelError.ofDiscriminant? 57 = some KernelError.ipcCancelled))
+  -- The endpoint-blocked victim.
+  match stCallBlockedStale? with
+  | some st =>
+      let tcb := victimTcb st
+      assertBool "setup: the blocked victim still holds its stale request window"
+        (decide (Architecture.readReturnFrame st victimTid
+                   ≠ Architecture.cancelledIpcFrame)
+         && decide ((Architecture.readReturnFrame st victimTid).x0 = 0xBAD0))
+      let (st', _) := cancelIpcBlockingOnCore victimTid tcb bootCoreId st
+      assertBool "an endpoint-blocked victim reads back .ipcCancelled after cancellation"
+        (decide (Architecture.readReturnFrame st' victimTid
+                   = Architecture.cancelledIpcFrame))
+      assertBool "…and the stale window is GONE (x0 no longer the spilled argument)"
+        (decide ((Architecture.readReturnFrame st' victimTid).x0 ≠ 0xBAD0))
+      assertBool "…while x7 and pc/sp are untouched (staging writes x0-x5 only)"
+        (match st'.getTcb? victimTid with
+         | some t => decide (t.registerContext.gpr ⟨7⟩ = staleRequestRegs.gpr ⟨7⟩
+                             ∧ t.registerContext.pc = staleRequestRegs.pc
+                             ∧ t.registerContext.sp = staleRequestRegs.sp)
+         | none => false)
+      -- The bystander is untouched: staging is confined to the victim.
+      assertBool "the bystander's register context is untouched by the victim's staging"
+        (decide (Architecture.readReturnFrame st' bystanderTid
+                   = Architecture.readReturnFrame st bystanderTid))
+  | none => assertBool "setup: endpointCallOnCore block path succeeded (stale-reg fixture)" false
+  -- The notification-blocked victim: the fourth arm, and the one whose return
+  -- would otherwise have been a badge.
+  match stNtfnBlockedStale? with
+  | some st =>
+      let tcb := victimTcb st
+      let (st', _) := cancelIpcBlockingOnCore victimTid tcb bootCoreId st
+      assertBool "a notification-blocked victim reads back .ipcCancelled (never a stale badge)"
+        (decide (Architecture.readReturnFrame st' victimTid
+                   = Architecture.cancelledIpcFrame))
+  | none => assertBool "setup: notificationWaitOnCore block path succeeded (stale-reg fixture)" false
+  -- NEGATIVE: the `.ready` arm is a no-op and stages NOTHING.  A thread that
+  -- was not blocked has a live register window of its own; overwriting it would
+  -- destroy a return value the kernel had already staged.
+  let stReady : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject victimTid.toObjId (.tcb (mkTcbWithStaleRegs 710 30 (some core1)))
+      |>.withRunnable [victimTid]
+      |>.build)
+  let readyTcb := victimTcb stReady
+  assertBool "setup: the .ready victim is not blocked"
+    (decide (readyTcb.ipcState = ThreadIpcState.ready))
+  assertBool "NEGATIVE: cancelling a .ready thread stages no frame — its window survives"
+    (decide (Architecture.readReturnFrame (cancelIpcBlocking stReady victimTid readyTcb) victimTid
+               = Architecture.readReturnFrame stReady victimTid)
+     && decide (Architecture.readReturnFrame (cancelIpcBlocking stReady victimTid readyTcb)
+                  victimTid ≠ Architecture.cancelledIpcFrame))
+  -- NEGATIVE: `restoreToReady` (the RESUME spelling) stages nothing either — a
+  -- resumed thread restarts where it was, so its window must survive.
+  assertBool "NEGATIVE: restoreToReady (the resume spelling) stages no frame"
+    (decide (Architecture.readReturnFrame (restoreToReady stReady victimTid) victimTid
+               = Architecture.readReturnFrame stReady victimTid))
+  assertBool "…and it is the SAME field clear as the cancellation spelling, frame aside"
+    (match (restoreToReady stReady victimTid).getTcb? victimTid,
+           (restoreToReadyCancelled stReady victimTid).getTcb? victimTid with
+     | some a, some b =>
+         decide (a.ipcState = b.ipcState ∧ a.queuePrev = b.queuePrev
+                 ∧ a.queueNext = b.queueNext ∧ a.queuePPrev = b.queuePPrev
+                 ∧ a.pendingReceiveReply = b.pendingReceiveReply
+                 ∧ b.registerContext.gpr ⟨1⟩ ≠ a.registerContext.gpr ⟨1⟩)
+     | _, _ => false)
+
 def runSmpCancellationChecks : IO Unit := do
   IO.println "=== SmpCancellationSuite (WS-SM SM6.E cancellation across cores) ==="
   runEndpointCancelChecks
@@ -1239,6 +1697,7 @@ def runSmpCancellationChecks : IO Unit := do
   runDisinheritanceSchedulingChecks
   runUnboundRunningSuspendChecks
   runDiffSeamEdfChecks
+  runUnblockFrameStagingChecks
   IO.println "SmpCancellationSuite: all checks passed."
 
 end SeLe4n.Testing.SmpCancellation

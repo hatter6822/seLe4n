@@ -1,6 +1,14 @@
 import Lean.Elab.Command
 import Lean.Meta.Basic
 import SeLe4n.Platform.Staged
+-- WS-RR RR7.22 (residual): the cancellation sweep's bundle lives outside the
+-- staged closure -- it is production, reachable from the library root -- so the
+-- census imports it directly.  Without this its `_preserves_ipcInvariantFull`
+-- statements are invisible to the elaborator layer while the lexical scan still
+-- counts them, which is the drift the reachability check exists to catch.
+import SeLe4n.Kernel.Lifecycle.Invariant.CancellationQueueShape
+import SeLe4n.Kernel.Lifecycle.Invariant.CancellationNotificationShape
+import SeLe4n.Kernel.Lifecycle.Invariant.CancellationReplyShape
 
 /-!
 # The elaborator-backed de-threading census

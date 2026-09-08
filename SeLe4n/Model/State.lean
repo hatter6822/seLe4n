@@ -596,6 +596,45 @@ def adapterFlushTlbByAsid (tlb : TlbState) (asid : SeLe4n.ASID) : TlbState :=
 def adapterFlushTlbByVAddr (tlb : TlbState) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) : TlbState :=
   { entries := tlb.entries.filter (fun e => !(e.asid == asid && e.vaddr == vaddr)) }
 
+/-- **WS-RR RR7.39**: the per-core scheduler lock words — the state
+representation of the two `SchedLockId` constructors the object domain cannot
+name.
+
+`SchedLockId` (SM5.A.2) unifies three lock domains under one order —
+`object < runQueue < replenishQueue` — and every per-core scheduler transition
+declares its footprint over it.  Two of the three constructors had no state to
+advance: `LockSet`'s primitives route `.objStore` to `SystemState.objStoreLock`
+and a modeled kind to the object's own `lock` field, and neither is a per-core
+scheduler word.  So a bracket over a scheduler footprint could sort the list,
+walk it, and change nothing — the footprints were declarations without a
+runtime.  These are the words that give them one.
+
+**What each guards.**  `runQueue[c]` guards core `c`'s scheduling slots: its run
+queue (`SchedulerState.runQueue[c]`), its current-thread slot
+(`SchedulerState.current[c]`) and its domain triple (`activeDomain`,
+`domainTimeRemaining`, `domainScheduleIndex` at `c`) — exactly the reads and
+writes `chooseThreadOnCoreLockSet`, `switchToThreadOnCoreLockSet`,
+`wakeThreadLockSet`, `enqueueIdleThreadOnCoreLockSet` and
+`advanceDomainOnCoreLockSet` declare it for.  `replenishQueue[c]` guards core
+`c`'s CBS replenishment queue (`SchedulerState.replenishQueue[c]`).
+
+**Why two words and not one per core.**  The SM5.D timer tick declares them
+separately and the ladder orders them; collapsing them into a single per-core
+scheduler word would erase a level of the hierarchy the deadlock-freedom
+argument walks, and would make `advanceDomainOnCoreLockSet` — a rotation that
+touches no replenishment at all — exclude a concurrent replenishment it has no
+conflict with. -/
+structure SchedulerLockState where
+  /-- Core `c`'s run-queue lock word.  Unheld at boot. -/
+  runQueue : Vector SeLe4n.Kernel.Concurrency.RwLockState numCores :=
+    Vector.replicate numCores SeLe4n.Kernel.Concurrency.RwLockState.unheld
+  /-- Core `c`'s replenish-queue lock word.  Unheld at boot. -/
+  replenishQueue : Vector SeLe4n.Kernel.Concurrency.RwLockState numCores :=
+    Vector.replicate numCores SeLe4n.Kernel.Concurrency.RwLockState.unheld
+  deriving Repr
+
+instance : Inhabited SchedulerLockState := ⟨{}⟩
+
 structure SystemState where
   machine : SeLe4n.MachineState
   /-- Q2-C: Object store backed by `RHTable` (verified Robin Hood hash table)
@@ -706,6 +745,27 @@ structure SystemState where
       `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` §5.1 (SM3.A.10). -/
   objStoreLock : SeLe4n.Kernel.Concurrency.RwLockState :=
     SeLe4n.Kernel.Concurrency.RwLockState.unheld
+  /-- **WS-RR RR7.39**: the per-core scheduler lock words — the state
+      representation of `SchedLockId.runQueue` and `SchedLockId.replenishQueue`.
+
+      SM5.A.2 gave the per-core scheduler its cross-domain lock identifier
+      (`SchedLockId`, ordered object < runQueue < replenishQueue) and SM5.B–G
+      declared a footprint for every per-core transition — but the run-queue and
+      replenish-queue constructors named locks the state had no word for, so a
+      bracket over them could sort a list and acquire nothing.  This field is
+      those words.
+
+      It sits here, beside `objStoreLock`, and **not** inside `SchedulerState`,
+      for the reason the object store's lock sits beside `objects` rather than
+      inside the table: a lock write must *frame* the data it guards, and every
+      `st.scheduler` frame lemma in the tree would be false of an acquisition
+      that lived in the scheduler record.
+
+      Grouped as one nested record rather than two parallel vectors because
+      `SystemState` is compared field-by-field by `isDefEq` in several thousand
+      `rfl`-shaped proofs, and a nested record costs one such comparison instead
+      of two.  See `SchedulerLockState` for what each word guards. -/
+  schedulerLocks : SchedulerLockState := {}
   /-- WS-SM SM7.A: per-core TLB-shootdown coordination state — the
       pending-invalidation queues and acknowledgment flags of
       `SeLe4n/Kernel/Architecture/TlbShootdown.lean`.
@@ -1130,6 +1190,11 @@ instance : Inhabited SystemState where
     -- `default_objStoreLock_unheld` and `default_objects_locks_unheld`
     -- theorems (SM3.A.11) can discharge by `rfl`.
     objStoreLock := SeLe4n.Kernel.Concurrency.RwLockState.unheld
+    -- **WS-RR RR7.39**: every per-core scheduler lock word starts unheld at
+    -- boot, exactly as the table-level lock above does.  Explicit listing pins
+    -- `default_runQueueLocks_unheld` / `default_replenishQueueLocks_unheld` by
+    -- `rfl` rather than through the field default.
+    schedulerLocks := {}
     -- WS-SM SM7.A: TLB-shootdown coordination state starts quiescent
     -- at boot (all pending queues empty; every acknowledged
     -- generation and `roundGeneration` zero, so no round is
@@ -1259,6 +1324,146 @@ construction.  Subsequent boot operations (`storeObject`, etc.) acquire
 the lock per the SM3.C.1 `withLockSet` discipline. -/
 theorem default_objStoreLock_unheld :
     (default : SystemState).objStoreLock = SeLe4n.Kernel.Concurrency.RwLockState.unheld := rfl
+
+/-- **WS-RR RR7.39**: core `c`'s run-queue lock word.
+
+Named rather than indexed at each use site, so the RR7.39 primitives and the
+information-flow theorems about them all read the same accessor. -/
+@[inline] def SystemState.runQueueLockOnCore (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) : SeLe4n.Kernel.Concurrency.RwLockState :=
+  st.schedulerLocks.runQueue.get c
+
+/-- **WS-RR RR7.39**: core `c`'s replenish-queue lock word. -/
+@[inline] def SystemState.replenishQueueLockOnCore (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) : SeLe4n.Kernel.Concurrency.RwLockState :=
+  st.schedulerLocks.replenishQueue.get c
+
+/-- **WS-RR RR7.39**: every per-core run-queue lock is unheld on the default
+state — the scheduler-domain counterpart of `default_objStoreLock_unheld`. -/
+theorem default_runQueueLocks_unheld (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (default : SystemState).runQueueLockOnCore c
+      = SeLe4n.Kernel.Concurrency.RwLockState.unheld :=
+  PerCoreVector.replicate_get _ _ c
+
+/-- **WS-RR RR7.39**: every per-core replenish-queue lock is unheld on the
+default state. -/
+theorem default_replenishQueueLocks_unheld (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (default : SystemState).replenishQueueLockOnCore c
+      = SeLe4n.Kernel.Concurrency.RwLockState.unheld :=
+  PerCoreVector.replicate_get _ _ c
+
+/-- **WS-RR RR7.39**: write core `c`'s run-queue lock word, leaving every other
+core's untouched and the whole rest of the state alone.
+
+Framing this narrowly is the point: an acquisition must be visible only in the
+word it advances, so every `runQueueLockOnCore_setRunQueueLockOnCore_ne`-shaped
+frame lemma below, and the information-flow results that consume them, are
+statements about a single-slot vector write. -/
+@[inline] def SystemState.setRunQueueLockOnCore (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (lk : SeLe4n.Kernel.Concurrency.RwLockState) : SystemState :=
+  { st with schedulerLocks :=
+      { st.schedulerLocks with runQueue := st.schedulerLocks.runQueue.set c.val lk c.isLt } }
+
+/-- **WS-RR RR7.39**: write core `c`'s replenish-queue lock word. -/
+@[inline] def SystemState.setReplenishQueueLockOnCore (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (lk : SeLe4n.Kernel.Concurrency.RwLockState) : SystemState :=
+  { st with schedulerLocks :=
+      { st.schedulerLocks with
+          replenishQueue := st.schedulerLocks.replenishQueue.set c.val lk c.isLt } }
+
+/-- **WS-RR RR7.39**: reading back the slot just written returns the written
+word. -/
+@[simp] theorem runQueueLockOnCore_setRunQueueLockOnCore_self (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (lk : SeLe4n.Kernel.Concurrency.RwLockState) :
+    (st.setRunQueueLockOnCore c lk).runQueueLockOnCore c = lk :=
+  PerCoreVector.get_set_eq _ c lk
+
+/-- **WS-RR RR7.39**: a run-queue lock write is invisible at every other core —
+the per-core independence the deadlock and WCRT arguments read off the
+footprints. -/
+theorem runQueueLockOnCore_setRunQueueLockOnCore_ne (st : SystemState)
+    (c d : SeLe4n.Kernel.Concurrency.CoreId)
+    (lk : SeLe4n.Kernel.Concurrency.RwLockState) (h : c ≠ d) :
+    (st.setRunQueueLockOnCore c lk).runQueueLockOnCore d = st.runQueueLockOnCore d :=
+  PerCoreVector.get_set_ne _ c d lk h
+
+/-- **WS-RR RR7.39**: reading back the replenish slot just written. -/
+@[simp] theorem replenishQueueLockOnCore_setReplenishQueueLockOnCore_self
+    (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (lk : SeLe4n.Kernel.Concurrency.RwLockState) :
+    (st.setReplenishQueueLockOnCore c lk).replenishQueueLockOnCore c = lk :=
+  PerCoreVector.get_set_eq _ c lk
+
+/-- **WS-RR RR7.39**: a replenish-queue lock write is invisible at every other
+core. -/
+theorem replenishQueueLockOnCore_setReplenishQueueLockOnCore_ne (st : SystemState)
+    (c d : SeLe4n.Kernel.Concurrency.CoreId)
+    (lk : SeLe4n.Kernel.Concurrency.RwLockState) (h : c ≠ d) :
+    (st.setReplenishQueueLockOnCore c lk).replenishQueueLockOnCore d
+      = st.replenishQueueLockOnCore d :=
+  PerCoreVector.get_set_ne _ c d lk h
+
+/-- **WS-RR RR7.39**: a run-queue lock write does not touch the replenish-queue
+words.  The two levels of the ladder are independent, which is why they are two
+levels. -/
+@[simp] theorem replenishQueueLockOnCore_setRunQueueLockOnCore (st : SystemState)
+    (c d : SeLe4n.Kernel.Concurrency.CoreId)
+    (lk : SeLe4n.Kernel.Concurrency.RwLockState) :
+    (st.setRunQueueLockOnCore c lk).replenishQueueLockOnCore d
+      = st.replenishQueueLockOnCore d := rfl
+
+/-- **WS-RR RR7.39**: a replenish-queue lock write does not touch the run-queue
+words. -/
+@[simp] theorem runQueueLockOnCore_setReplenishQueueLockOnCore (st : SystemState)
+    (c d : SeLe4n.Kernel.Concurrency.CoreId)
+    (lk : SeLe4n.Kernel.Concurrency.RwLockState) :
+    (st.setReplenishQueueLockOnCore c lk).runQueueLockOnCore d
+      = st.runQueueLockOnCore d := rfl
+
+/-- **WS-RR RR7.39**: a scheduler-lock write frames the object store — the
+guarantee that makes an acquisition invisible to every kernel transition, and
+the reason these words live on `SystemState` rather than inside
+`SchedulerState`. -/
+@[simp] theorem setRunQueueLockOnCore_objects (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (lk : SeLe4n.Kernel.Concurrency.RwLockState) :
+    (st.setRunQueueLockOnCore c lk).objects = st.objects := rfl
+
+/-- **WS-RR RR7.39**: a scheduler-lock write frames the scheduler itself. -/
+@[simp] theorem setRunQueueLockOnCore_scheduler (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (lk : SeLe4n.Kernel.Concurrency.RwLockState) :
+    (st.setRunQueueLockOnCore c lk).scheduler = st.scheduler := rfl
+
+/-- **WS-RR RR7.39**: the replenish-lock write frames the object store. -/
+@[simp] theorem setReplenishQueueLockOnCore_objects (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (lk : SeLe4n.Kernel.Concurrency.RwLockState) :
+    (st.setReplenishQueueLockOnCore c lk).objects = st.objects := rfl
+
+/-- **WS-RR RR7.39**: the replenish-lock write frames the scheduler. -/
+@[simp] theorem setReplenishQueueLockOnCore_scheduler (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (lk : SeLe4n.Kernel.Concurrency.RwLockState) :
+    (st.setReplenishQueueLockOnCore c lk).scheduler = st.scheduler := rfl
+
+/-- **WS-RR RR7.39**: a scheduler-lock write frames the object-store table lock
+— the object domain's own word is untouched, so the two domains' brackets
+compose without either overwriting the other's state. -/
+@[simp] theorem setRunQueueLockOnCore_objStoreLock (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (lk : SeLe4n.Kernel.Concurrency.RwLockState) :
+    (st.setRunQueueLockOnCore c lk).objStoreLock = st.objStoreLock := rfl
+
+/-- **WS-RR RR7.39**: the replenish-lock write frames the object-store table
+lock. -/
+@[simp] theorem setReplenishQueueLockOnCore_objStoreLock (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (lk : SeLe4n.Kernel.Concurrency.RwLockState) :
+    (st.setReplenishQueueLockOnCore c lk).objStoreLock = st.objStoreLock := rfl
 
 /-- WS-SM SM3.A.11: Every object reachable through the default SystemState
 has its per-object lock in the `.unheld` state.

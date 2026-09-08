@@ -243,11 +243,11 @@ The current placeholder rows in §3.D , §3.E , and §3.F are populated by these
 
 | Field | Value |
 |-------|-------|
-| Theorem name | `SeLe4n.notification_waiters_nodup` |
+| Theorem name | `SeLe4n.Kernel.notification_waiters_nodup` |
 | File:Line | `SeLe4n/Model/Object/NoDupList.lean:<line>` |
 | Promoted invariant | `uniqueWaiters` (formerly per-transition state-level invariant, now structural) |
 | Discharge site | `NoDupList.{empty,consWithGuard,consWithGuard?,tail?,filter}` smart constructors — each carries `hNodup : val.Nodup` |
-| Reachability check | `#check @SeLe4n.notification_waiters_nodup` |
+| Reachability check | `#check @SeLe4n.Kernel.notification_waiters_nodup` |
 
 ### §3.E — Predecessor reroutings
 
@@ -338,7 +338,7 @@ lake build SeLe4n.Kernel.CrossSubsystem
 
 # 4. Discharge index reachability gate (compiles only if §3.D D.1, D.3 and §3.E E.1 are correctly named)
 lake env lean -e '#check @SeLe4n.UniqueSlotMap.keys_unique'
-lake env lean -e '#check @SeLe4n.notification_waiters_nodup'
+lake env lean -e '#check @SeLe4n.Kernel.notification_waiters_nodup'
 lake env lean -e '#check @SeLe4n.Kernel.notificationWait_runtime_check_implied_by_nodup'
 lake env lean -e '#check @SeLe4n.Kernel.cspaceSlotUnique_promoted_to_structural'
 lake env lean -e '#check @SeLe4n.Kernel.uniqueWaiters_promoted_to_structural'

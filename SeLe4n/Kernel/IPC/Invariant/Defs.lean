@@ -864,6 +864,32 @@ theorem blockedOnReply_caller_is_answerable (st : SystemState)
   obtain ⟨r, hr, hrc⟩ := h.1.1 tid tcb rid hTcb hRep
   exact ⟨rid, r, hRep, hr, hrc⟩
 
+/-- WS-RR RR7.22 (residual), the **contrapositive** consumer of the same
+reciprocity: a thread that is *not* `.blockedOnReply` holds no Reply object.
+
+Clause 1 of the reciprocal turns a held `replyObject` into a Reply naming this
+thread back, and clause 2 turns that Reply into the thread being
+`.blockedOnReply` — so holding one and not being blocked on it is contradictory.
+This is what lets a transition that moves a thread out of a blocking state
+(cancellation, timeout) discharge the "holds no reply" side conditions of the
+reply-linkage and donation-owner frames from the bundle it already has, rather
+than carrying them as extra hypotheses. -/
+theorem replyObject_none_of_not_blockedOnReply (st : SystemState)
+    (h : replyCallerLinkage st) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hNot : ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt) :
+    tcb.replyObject = none := by
+  cases hRO : tcb.replyObject with
+  | none => rfl
+  | some rid =>
+    exfalso
+    obtain ⟨r, hr, hrc⟩ := h.1.1 tid tcb rid hTcb hRO
+    obtain ⟨tcb', hTcb', _, ep, rt, hBlk⟩ := h.1.2 rid r tid hr hrc
+    rw [hTcb] at hTcb'
+    have hx : tcb' = tcb := (KernelObject.tcb.inj (Option.some.inj hTcb')).symm
+    rw [hx] at hBlk
+    exact hNot ep rt hBlk
+
 /-- WS-SM SM6.D (PR #822 review 6J9Kjg/6J9Kp6): a server-first receive **stash**
 (`TCB.pendingReceiveReply`) is well-formed — it occurs only on a TCB that is still
 `.blockedOnReceive` (the only state in which the server is awaiting its next `Call`
@@ -2547,6 +2573,244 @@ def ipcInvariantFull (st : SystemState) : Prop :=
   pendingReceiveReplyWellFormed st ∧ donationOwnerUnique st ∧
   endpointQueueTailBlockedConsistent st ∧
   queueNextTargetBlocked st
+
+
+-- ============================================================================
+-- WS-OD OD1.3 — the object store, compared **pointwise**
+-- ============================================================================
+
+/-- WS-OD OD1.3: two states hold the same object at every key.
+
+This is the pointwise reading of "the object store is unchanged", and it is
+strictly weaker than `st'.objects = st.objects`.  The difference is
+load-bearing rather than stylistic: the store is a Robin Hood hash table whose
+*value* records the probe displacement its insertion order produced, so two
+runs that write the same objects to the same keys in a different order agree
+here and are **not** equal.  That is exactly the relation between this tree's
+two endpoint-queue removals (`endpointQueueRemove_agrees_with_dual`), whose
+head branches write the endpoint a different number of times in a different
+order.
+
+Nothing in `ipcInvariantFull` can tell the two apart: every one of its twenty
+conjuncts reads the store through `getElem?` and nothing else — with the single
+exception of `passiveServerIdle`, which also reads the boot core's run queue,
+and whose frame therefore names the scheduler as well.
+
+The family below is the pointwise counterpart of the `_of_objects_eq` frames.
+Four of those (`endpointQueueNoDup`, `ipcStateQueueMembershipConsistent`,
+`queueNextBlockingConsistent`, `queueNextTargetBlocked`) already took a
+pointwise hypothesis under the equality name; the rest took the equality.  A
+`_of_storeAgrees` wrapper exists for all twenty so a caller need not know which
+was which. -/
+def objectStoreAgrees (st st' : SystemState) : Prop :=
+  ∀ k : SeLe4n.ObjId, st'.objects[k]? = st.objects[k]?
+
+theorem objectStoreAgrees.refl (st : SystemState) : objectStoreAgrees st st :=
+  fun _ => rfl
+
+theorem objectStoreAgrees.symm {st st' : SystemState}
+    (h : objectStoreAgrees st st') : objectStoreAgrees st' st :=
+  fun k => (h k).symm
+
+theorem objectStoreAgrees.trans {st st' st'' : SystemState}
+    (h : objectStoreAgrees st st') (h' : objectStoreAgrees st' st'') :
+    objectStoreAgrees st st'' :=
+  fun k => (h' k).trans (h k)
+
+/-- WS-OD OD1.3: literal store equality is the special case. -/
+theorem objectStoreAgrees_of_objects_eq {st st' : SystemState}
+    (hObjs : st'.objects = st.objects) : objectStoreAgrees st st' :=
+  fun k => by rw [hObjs]
+
+theorem ipcInvariant_of_storeAgrees {st st' : SystemState}
+    (hA : objectStoreAgrees st st') (h : ipcInvariant st) : ipcInvariant st' := by
+  intro oid ntfn hL
+  rw [hA] at hL
+  exact h oid ntfn hL
+
+theorem intrusiveQueueWellFormed_of_storeAgrees {st st' : SystemState}
+    {q : IntrusiveQueue}
+    (hA : objectStoreAgrees st st') (h : intrusiveQueueWellFormed q st) :
+    intrusiveQueueWellFormed q st' := by
+  obtain ⟨hEmpty, hHead, hTail⟩ := h
+  refine ⟨hEmpty, ?_, ?_⟩
+  · intro hd hHd
+    obtain ⟨tcb, hTcb, hPrev⟩ := hHead hd hHd
+    exact ⟨tcb, by rw [hA]; exact hTcb, hPrev⟩
+  · intro tl hTl
+    obtain ⟨tcb, hTcb, hNext⟩ := hTail tl hTl
+    exact ⟨tcb, by rw [hA]; exact hTcb, hNext⟩
+
+theorem tcbQueueLinkIntegrity_of_storeAgrees {st st' : SystemState}
+    (hA : objectStoreAgrees st st') (h : tcbQueueLinkIntegrity st) :
+    tcbQueueLinkIntegrity st' := by
+  obtain ⟨hFwd, hRev⟩ := h
+  constructor
+  · intro a tcbA hAt b hNext
+    rw [hA] at hAt
+    obtain ⟨tcbB, hB, hPrev⟩ := hFwd a tcbA hAt b hNext
+    exact ⟨tcbB, by rw [hA]; exact hB, hPrev⟩
+  · intro b tcbB hB a hPrev
+    rw [hA] at hB
+    obtain ⟨tcbA, hAt, hNext⟩ := hRev b tcbB hB a hPrev
+    exact ⟨tcbA, by rw [hA]; exact hAt, hNext⟩
+
+theorem QueueNextPath_of_storeAgrees {st st' : SystemState}
+    (hA : objectStoreAgrees st st') {a b : SeLe4n.ThreadId}
+    (hp : QueueNextPath st' a b) : QueueNextPath st a b := by
+  induction hp with
+  | single x y tcbA hObj hNext =>
+    exact .single x y tcbA (by rw [← hA]; exact hObj) hNext
+  | cons x y z tcbA hObj hNext _ ih =>
+    exact .cons x y z tcbA (by rw [← hA]; exact hObj) hNext ih
+
+theorem tcbQueueChainAcyclic_of_storeAgrees {st st' : SystemState}
+    (hA : objectStoreAgrees st st') (h : tcbQueueChainAcyclic st) :
+    tcbQueueChainAcyclic st' :=
+  fun tid hp => h tid (QueueNextPath_of_storeAgrees hA hp)
+
+theorem dualQueueSystemInvariant_of_storeAgrees {st st' : SystemState}
+    (hA : objectStoreAgrees st st') (h : dualQueueSystemInvariant st) :
+    dualQueueSystemInvariant st' := by
+  obtain ⟨hEp, hLinks, hAcyc⟩ := h
+  refine ⟨?_, tcbQueueLinkIntegrity_of_storeAgrees hA hLinks,
+    tcbQueueChainAcyclic_of_storeAgrees hA hAcyc⟩
+  intro epId ep hLk
+  have hLk0 : st.objects[epId]? = some (.endpoint ep) := by rw [← hA]; exact hLk
+  have := hEp epId ep hLk0
+  unfold dualQueueEndpointWellFormed at this ⊢
+  rw [hLk]; rw [hLk0] at this
+  exact ⟨intrusiveQueueWellFormed_of_storeAgrees hA this.1,
+    intrusiveQueueWellFormed_of_storeAgrees hA this.2⟩
+
+theorem allPendingMessagesBounded_of_storeAgrees {st st' : SystemState}
+    (hA : objectStoreAgrees st st') (h : allPendingMessagesBounded st) :
+    allPendingMessagesBounded st' := by
+  intro tid tcb msg hTcb hMsg
+  rw [hA] at hTcb
+  exact h tid tcb msg hTcb hMsg
+
+theorem badgeWellFormed_of_storeAgrees {st st' : SystemState}
+    (hA : objectStoreAgrees st st') (h : badgeWellFormed st) :
+    badgeWellFormed st' :=
+  ⟨fun oid ntfn badge hLk hP => h.1 oid ntfn badge (by rw [hA] at hLk; exact hLk) hP,
+   fun oid cn slot cap badge hLk hS hB =>
+     h.2 oid cn slot cap badge (by rw [hA] at hLk; exact hLk) hS hB⟩
+
+theorem blockedThreadsPendingMessageConsistent_of_storeAgrees {st st' : SystemState}
+    (hA : objectStoreAgrees st st')
+    (h : blockedThreadsPendingMessageConsistent st) :
+    blockedThreadsPendingMessageConsistent st' := by
+  intro tid tcb hTcb
+  rw [hA] at hTcb
+  exact h tid tcb hTcb
+
+theorem queueHeadBlockedConsistent_of_storeAgrees {st st' : SystemState}
+    (hA : objectStoreAgrees st st') (h : queueHeadBlockedConsistent st) :
+    queueHeadBlockedConsistent st' := by
+  intro epId ep hd tcb hEp hTcb
+  rw [hA] at hEp hTcb
+  exact h epId ep hd tcb hEp hTcb
+
+theorem blockedThreadTimeoutConsistent_of_storeAgrees {st st' : SystemState}
+    (hA : objectStoreAgrees st st') (h : blockedThreadTimeoutConsistent st) :
+    blockedThreadTimeoutConsistent st' := by
+  intro tid tcb scId hTcb hBudget
+  rw [hA] at hTcb
+  obtain ⟨⟨sc, hSc⟩, hBlocked⟩ := h tid tcb scId hTcb hBudget
+  exact ⟨⟨sc, by rw [hA]; exact hSc⟩, hBlocked⟩
+
+theorem donationChainAcyclic_of_storeAgrees {st st' : SystemState}
+    (hA : objectStoreAgrees st st') (h : donationChainAcyclic st) :
+    donationChainAcyclic st' := by
+  intro tid1 tid2 tcb1 tcb2 scId1 scId2 h1 h2 hB1 hB2
+  rw [hA] at h1 h2
+  exact h tid1 tid2 tcb1 tcb2 scId1 scId2 h1 h2 hB1 hB2
+
+theorem donationOwnerValid_of_storeAgrees {st st' : SystemState}
+    (hA : objectStoreAgrees st st') (h : donationOwnerValid st) :
+    donationOwnerValid st' := by
+  intro tid tcb scId owner hTcb hBind
+  rw [hA] at hTcb
+  obtain ⟨⟨sc, hSc, hBound⟩, ownerTcb, hOwner, hUnbound, hBlk⟩ :=
+    h tid tcb scId owner hTcb hBind
+  exact ⟨⟨sc, by rw [hA]; exact hSc, hBound⟩,
+    ownerTcb, by rw [hA]; exact hOwner, hUnbound, hBlk⟩
+
+/-- WS-OD OD1.3: the one bundle conjunct an object-store frame alone cannot
+carry.  `passiveServerIdle`'s two guards read the boot core's run queue and
+current slot, so a step that emptied the run queue would satisfy the
+*hypothesis* at threads the pre-state never covered.  Naming the scheduler is
+not a formality: a scheduler-writing step owes the conjunct its own proof. -/
+theorem passiveServerIdle_of_storeAgrees {st st' : SystemState}
+    (hA : objectStoreAgrees st st') (hSched : st'.scheduler = st.scheduler)
+    (h : passiveServerIdle st) : passiveServerIdle st' := by
+  intro tid tcb hTcb hUnbound hNotQueued hNotCurrent
+  rw [hA] at hTcb
+  rw [hSched] at hNotQueued hNotCurrent
+  exact h tid tcb hTcb hUnbound hNotQueued hNotCurrent
+
+theorem donationBudgetTransfer_of_storeAgrees {st st' : SystemState}
+    (hA : objectStoreAgrees st st') (h : donationBudgetTransfer st) :
+    donationBudgetTransfer st' := by
+  intro tid1 tid2 tcb1 tcb2 scId h1 h2 hNe hS1 hS2
+  rw [hA] at h1 h2
+  exact h tid1 tid2 tcb1 tcb2 scId h1 h2 hNe hS1 hS2
+
+theorem blockedOnReplyHasTarget_of_storeAgrees {st st' : SystemState}
+    (hA : objectStoreAgrees st st') (h : blockedOnReplyHasTarget st) :
+    blockedOnReplyHasTarget st' := by
+  intro tid tcb ep rt hTcb hBlk
+  rw [hA] at hTcb
+  exact h tid tcb ep rt hTcb hBlk
+
+theorem replyCallerLinkage_of_storeAgrees {st st' : SystemState}
+    (hA : objectStoreAgrees st st') (h : replyCallerLinkage st) :
+    replyCallerLinkage st' := by
+  obtain ⟨⟨hFwd, hBwd⟩, hHas⟩ := h
+  refine ⟨⟨?_, ?_⟩, ?_⟩
+  · intro tid tcb rid hTcb hRep
+    rw [hA] at hTcb
+    obtain ⟨r, hR, hCaller⟩ := hFwd tid tcb rid hTcb hRep
+    exact ⟨r, by rw [hA]; exact hR, hCaller⟩
+  · intro rid r tid hR hCaller
+    rw [hA] at hR
+    obtain ⟨tcb, hTcb, hRep, ep, rt, hBlk⟩ := hBwd rid r tid hR hCaller
+    exact ⟨tcb, by rw [hA]; exact hTcb, hRep, ep, rt, hBlk⟩
+  · intro tid tcb ep rt hTcb hBlk
+    rw [hA] at hTcb
+    exact hHas tid tcb ep rt hTcb hBlk
+
+theorem pendingReceiveReplyWellFormed_of_storeAgrees {st st' : SystemState}
+    (hA : objectStoreAgrees st st') (h : pendingReceiveReplyWellFormed st) :
+    pendingReceiveReplyWellFormed st' := by
+  obtain ⟨hWf, hInj⟩ := h
+  constructor
+  · intro tid tcb rid hTcb hStash
+    unfold SystemState.getTcb? at hTcb
+    rw [hA] at hTcb
+    obtain ⟨hRecv, r, hR, hCaller⟩ := hWf tid tcb rid hTcb hStash
+    refine ⟨hRecv, r, ?_, hCaller⟩
+    unfold SystemState.getReply? at hR ⊢
+    rw [hA]; exact hR
+  · intro tid1 tid2 tcb1 tcb2 rid hT1 hT2 hS1 hS2
+    unfold SystemState.getTcb? at hT1 hT2
+    rw [hA] at hT1 hT2
+    exact hInj tid1 tid2 tcb1 tcb2 rid hT1 hT2 hS1 hS2
+
+theorem donationOwnerUnique_of_storeAgrees {st st' : SystemState}
+    (hA : objectStoreAgrees st st') (h : donationOwnerUnique st) :
+    donationOwnerUnique st' := by
+  intro tid1 tid2 tcb1 tcb2 scId1 scId2 owner h1 h2 hB1 hB2
+  rw [hA] at h1 h2
+  exact h tid1 tid2 tcb1 tcb2 scId1 scId2 owner h1 h2 hB1 hB2
+
+theorem endpointQueueTailBlockedConsistent_of_storeAgrees {st st' : SystemState}
+    (hA : objectStoreAgrees st st') (h : endpointQueueTailBlockedConsistent st) :
+    endpointQueueTailBlockedConsistent st' := by
+  intro epId ep tl tcb hEp hTcb
+  rw [hA] at hEp hTcb
+  exact h epId ep tl tcb hEp hTcb
 
 /-- WS-RR RR3.12: `ipcInvariantFull` with `donationOwnerValid` relaxed at one
 thread — the honest post-state of a **bare** reply delivery.

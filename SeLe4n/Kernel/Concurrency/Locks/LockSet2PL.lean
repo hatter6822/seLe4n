@@ -353,6 +353,97 @@ def UnwindInsensitiveOn {β : Type} (P : SystemState → Prop) (core : CoreId)
   (∀ (s : SystemState) (l : LockId) (m : AccessMode),
     P s → π (cancelLockOnObject s core l m) = π s)
 
+/-- **WS-RR RR7.4**: an observer that reads only the object store, and that a
+lock-field-only write leaves alone, is insensitive to **all three** lock
+primitives at once.
+
+The two hypotheses are the whole content, stated where the primitives are
+rather than re-derived per observer:
+
+* `hObjectsOnly` — `π` is a function of `SystemState.objects`.  This discharges
+  the `.objStore` arm, which advances the state-level `objStoreLock` field and
+  touches no object, and the `.page` arm, which is the identity.
+* `hLockWrite` — a lock-field-only object write is invisible to `π`.  This
+  discharges the eight per-object arms, all of which are `updateObjectLockAt`.
+
+Before RR7.4 every observer restated the same three-way case analysis, once per
+primitive: four copies in `Cancellation.lean` alone, and the five SM6
+transitions this row covers would have added ten more.  One question, one
+answer. -/
+theorem lockPrimitives_insensitiveOn_of_objectStoreObserver {β : Type}
+    (core : CoreId) (π : SystemState → β)
+    (hObjectsOnly : ∀ s₁ s₂ : SystemState, s₁.objects = s₂.objects → π s₁ = π s₂)
+    (hLockWrite : ∀ (s : SystemState) (l : LockId) (op : RwLockOp),
+      s.objects.invExt → π (updateObjectLockAt s l op) = π s) :
+    AcquireInsensitiveOn (fun s => s.objects.invExt) core π ∧
+    UnwindInsensitiveOn (fun s => s.objects.invExt) core π := by
+  refine ⟨?_, ?_, ?_⟩
+  · intro s l m hExt
+    unfold acquireLockOnObject
+    cases l.kind <;> first
+      | exact hObjectsOnly _ _ rfl
+      | exact hLockWrite s l _ hExt
+  · intro s l m hExt
+    unfold releaseLockOnObject
+    cases l.kind <;> first
+      | exact hObjectsOnly _ _ rfl
+      | exact hLockWrite s l _ hExt
+  · intro s l m hExt
+    unfold cancelLockOnObject
+    cases l.kind <;> first
+      | exact hObjectsOnly _ _ rfl
+      | exact hLockWrite s l _ hExt
+
+-- ---------------------------------------------------------------------------
+-- WS-RR RR7.4: the two shared decisive observers of the IPC surface
+--
+-- Register §4 finding 7: every `_atomic_under_lockSet` theorem is a `rfl`
+-- instance of the body-agnostic `lockSet_atomic_under_2pl`, and the
+-- *substantive* form `lockSet_observer_atomic_on` was instantiated at exactly
+-- two sites, both cancellation.  The five remaining SM6 transitions —
+-- `endpointCall`, `endpointReply`, `endpointReplyRecv`, `notificationSignal`,
+-- `notificationWait` — each need an observer and its two insensitivity facts,
+-- and every one of them watches either a thread's IPC state or a
+-- notification's delivery state.  Two observers, declared once, rather than
+-- five copies of each.
+--
+-- Parameterised by an arbitrary thread / notification rather than by "the"
+-- decisive one: the capstones then hold for *every* choice, which is strictly
+-- stronger than picking the receiver, and removes the judgement call about
+-- which participant a composite transition's decisive observable is.
+-- ---------------------------------------------------------------------------
+
+/-- **WS-RR RR7.4**: a thread's IPC state — the field every IPC rendezvous
+writes and the one a partially-locked intermediate would expose. -/
+def threadIpcStateObserver (tid : SeLe4n.ThreadId) : SystemState → Option ThreadIpcState :=
+  fun s => (s.getTcb? tid).map TCB.ipcState
+
+/-- **WS-RR RR7.4**: a notification's delivery state — its `state` (which
+carries the pending badge) and its waiter list, as one projection so a caller
+cannot watch half of the rendezvous. -/
+def notificationDeliveryObserver (nid : SeLe4n.ObjId) :
+    SystemState → Option (NotificationState × SeLe4n.NoDupList SeLe4n.ThreadId) :=
+  fun s => (s.getNotification? nid).map (fun n => (n.state, n.waitingThreads))
+
+/-- **WS-RR RR7.4**: the thread-IPC-state observer is blind to all three lock
+primitives, under the object-store guard. -/
+theorem threadIpcStateObserver_insensitiveOn (core : CoreId) (tid : SeLe4n.ThreadId) :
+    AcquireInsensitiveOn (fun s => s.objects.invExt) core (threadIpcStateObserver tid) ∧
+    UnwindInsensitiveOn (fun s => s.objects.invExt) core (threadIpcStateObserver tid) :=
+  lockPrimitives_insensitiveOn_of_objectStoreObserver core _
+    (fun _ _ h => by simp only [threadIpcStateObserver, SystemState.getTcb?, h])
+    (fun s l op hExt => updateObjectLockAt_getTcb?_ipcState s l op tid hExt)
+
+/-- **WS-RR RR7.4**: and so is the notification-delivery observer. -/
+theorem notificationDeliveryObserver_insensitiveOn (core : CoreId) (nid : SeLe4n.ObjId) :
+    AcquireInsensitiveOn (fun s => s.objects.invExt) core
+      (notificationDeliveryObserver nid) ∧
+    UnwindInsensitiveOn (fun s => s.objects.invExt) core
+      (notificationDeliveryObserver nid) :=
+  lockPrimitives_insensitiveOn_of_objectStoreObserver core _
+    (fun _ _ h => by simp only [notificationDeliveryObserver, SystemState.getNotification?, h])
+    (fun s l op hExt => updateObjectLockAt_getNotification?_delivery s l op nid hExt)
+
 /-- WS-SM SM6.E: the acquire fold is invisible to a `P`-guardedly
 acquire-insensitive observer, and threads the guard — provided `P` is stable
 under single acquires. -/
@@ -457,6 +548,36 @@ theorem lockSet_observer_atomic_on {α β : Type} (S : LockSet) (core : CoreId)
   rw [withLockSet_fst]
   exact (unwindAll_lockInsensitiveOn P core π hRel hRelStable hCanStable
     S.lockAcquireSequence.reverse _ hActionP).1
+
+/-- **WS-RR RR7.4**: the observer-atomicity capstone, packaged for the shape
+every IPC transition has.
+
+`lockSet_observer_atomic_on` takes six discharges, five of which are the same
+every time: the observer's two insensitivity facts and the three lock
+primitives' `invExt` stability.  Only the sixth — that the transition itself
+preserves `invExt` on the acquired state — is the transition's own.  This
+wrapper takes exactly that one, so an instantiation is one line and the five
+SM6 transitions cannot each get the boilerplate subtly different. -/
+theorem lockSet_observer_atomic_of_objectStoreObserver {α β : Type}
+    (S : LockSet) (core : CoreId)
+    (action : SystemState → SystemState × α) (s : SystemState) (π : SystemState → β)
+    (hIns : AcquireInsensitiveOn (fun s => s.objects.invExt) core π ∧
+            UnwindInsensitiveOn (fun s => s.objects.invExt) core π)
+    (hInv : s.objects.invExt)
+    (hActionInv : ∀ s', s'.objects.invExt → (action s').1.objects.invExt) :
+    π (acquireAll core S.lockAcquireSequence s) = π s ∧
+    π (withLockSet S core action s).1
+      = π (action (acquireAll core S.lockAcquireSequence s)).1 := by
+  have hAcqStable : ∀ (s' : SystemState) l m, s'.objects.invExt →
+      (acquireLockOnObject s' core l m).objects.invExt :=
+    fun s' l m h => acquireLockOnObject_preserves_invExt s' core l m h
+  have hInvAcq : (acquireAll core S.lockAcquireSequence s).objects.invExt :=
+    (acquireAll_lockInsensitiveOn _ core π hIns.1 hAcqStable _ s hInv).2
+  exact lockSet_observer_atomic_on S core action s (fun st => st.objects.invExt) π
+    hIns.1 hIns.2 hAcqStable
+    (fun s' l m h => releaseLockOnObject_preserves_invExt s' core l m h)
+    (fun s' l m h => cancelLockOnObject_preserves_invExt s' core l m h)
+    hInv (hActionInv _ hInvAcq)
 
 -- ============================================================================
 -- §5 — SM3.C.8 — `lockSet_invariant_preserved` (Corollary 2.1.11)

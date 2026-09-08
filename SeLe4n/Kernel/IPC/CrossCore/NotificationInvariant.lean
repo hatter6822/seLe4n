@@ -652,4 +652,92 @@ theorem notificationWaitOnCore_preserves_ipcInvariantFull_perCore
         st c hObjInv)
       (hInv c).passiveServerIdle)
 
+-- ============================================================================
+-- WS-RR RR7.4: observer atomicity for the notification pair
+--
+-- Register §4 finding 7: `notificationSignalOnCore_atomic_under_lockSet` and
+-- its `wait` companion are `rfl` instances of the body-agnostic
+-- `lockSet_atomic_under_2pl`, which is true of *any* action — the substantive
+-- form `lockSet_observer_atomic_on` had been instantiated only for the
+-- cancellation.  These are the notification half of the five that were missing:
+-- under each transition's declared footprint, the whole 2PL bracket is
+-- invisible to the rendezvous's own observable.
+-- ============================================================================
+
+/-- **WS-RR RR7.4**: under its declared footprint the cross-core notification
+signal is observationally atomic — the acquire fold shows the notification's
+delivery state exactly as the pre-state had it, and the bracketed run shows
+exactly the transition's own effect.  No partially-locked intermediate is ever
+observable.
+
+Stated for **every** notification, not only the signalled one: the lock
+machinery writes `lock` fields and nothing else, so a caller watching a
+different notification sees no more than a caller watching this one. -/
+theorem notificationSignalOnCore_observer_atomic
+    (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (executingCore : CoreId)
+    (signaller : SeLe4n.ThreadId) (cnRoot : SeLe4n.ObjId)
+    (waiter? : Option SeLe4n.ThreadId) (observed : SeLe4n.ObjId)
+    (s : SystemState) (hInv : s.objects.invExt) :
+    notificationDeliveryObserver observed
+        (acquireAll executingCore
+          (lockSet_notificationSignal signaller cnRoot notificationId
+            waiter?).lockAcquireSequence s)
+      = notificationDeliveryObserver observed s
+    ∧ notificationDeliveryObserver observed
+        (withLockSet (lockSet_notificationSignal signaller cnRoot notificationId waiter?)
+          executingCore (notificationSignalOnCore notificationId badge executingCore) s).1
+      = notificationDeliveryObserver observed
+          (notificationSignalOnCore notificationId badge executingCore
+            (acquireAll executingCore
+              (lockSet_notificationSignal signaller cnRoot notificationId
+                waiter?).lockAcquireSequence s)).1 :=
+  lockSet_observer_atomic_of_objectStoreObserver _ executingCore _ s _
+    (notificationDeliveryObserver_insensitiveOn executingCore observed) hInv
+    (fun s' h => notificationSignalOnCore_preserves_objects_invExt
+      notificationId badge executingCore s' h)
+
+/-- **WS-RR RR7.4**: and the wait companion. -/
+theorem notificationWaitOnCore_observer_atomic
+    (notificationId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (executingCore : CoreId)
+    (cnRoot : SeLe4n.ObjId) (observed : SeLe4n.ObjId)
+    (s : SystemState) (hInv : s.objects.invExt) :
+    notificationDeliveryObserver observed
+        (acquireAll executingCore
+          (lockSet_notificationWait caller cnRoot notificationId).lockAcquireSequence s)
+      = notificationDeliveryObserver observed s
+    ∧ notificationDeliveryObserver observed
+        (withLockSet (lockSet_notificationWait caller cnRoot notificationId)
+          executingCore (notificationWaitOnCore notificationId caller executingCore) s).1
+      = notificationDeliveryObserver observed
+          (notificationWaitOnCore notificationId caller executingCore
+            (acquireAll executingCore
+              (lockSet_notificationWait caller cnRoot notificationId).lockAcquireSequence s)).1 :=
+  lockSet_observer_atomic_of_objectStoreObserver _ executingCore _ s _
+    (notificationDeliveryObserver_insensitiveOn executingCore observed) hInv
+    (fun s' h => notificationWaitOnCore_preserves_objects_invExt
+      notificationId caller executingCore s' h)
+
+/-- **WS-RR RR7.4**: the waiter's own IPC state is equally unexposed by the
+`wait` bracket — the participant-side observable, beside the object-side one. -/
+theorem notificationWaitOnCore_thread_observer_atomic
+    (notificationId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (executingCore : CoreId)
+    (cnRoot : SeLe4n.ObjId) (observed : SeLe4n.ThreadId)
+    (s : SystemState) (hInv : s.objects.invExt) :
+    threadIpcStateObserver observed
+        (acquireAll executingCore
+          (lockSet_notificationWait caller cnRoot notificationId).lockAcquireSequence s)
+      = threadIpcStateObserver observed s
+    ∧ threadIpcStateObserver observed
+        (withLockSet (lockSet_notificationWait caller cnRoot notificationId)
+          executingCore (notificationWaitOnCore notificationId caller executingCore) s).1
+      = threadIpcStateObserver observed
+          (notificationWaitOnCore notificationId caller executingCore
+            (acquireAll executingCore
+              (lockSet_notificationWait caller cnRoot notificationId).lockAcquireSequence s)).1 :=
+  lockSet_observer_atomic_of_objectStoreObserver _ executingCore _ s _
+    (threadIpcStateObserver_insensitiveOn executingCore observed) hInv
+    (fun s' h => notificationWaitOnCore_preserves_objects_invExt
+      notificationId caller executingCore s' h)
+
+
 end SeLe4n.Kernel

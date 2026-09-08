@@ -24,7 +24,7 @@ former file — and the original public API is preserved byte-for-byte:
 | `Preservation.CopyMoveMutate`             | `cspaceCopy` / `cspaceMove` / `cspaceMintWithCdt` / `cspaceMutate`        |
 | `Preservation.Revoke`                     | `processRevokeNode` + `cspaceRevokeCdt` (+ strict/streaming variants)     |
 | `Preservation.EndpointReplyAndLifecycle`  | `endpointReply` + `coreIpcInvariantBundle` + `lifecycleRetypeObject` / `lifecycleRevokeDeleteRetype` preservation cluster |
-| `Preservation.BadgeIpcCapsAndCdtMaps`     | Mint/Mutate badge preservation + `ipcTransferSingleCap` / `ipcUnwrapCaps` variants + `cdtMapsConsistent` preservation + CDT composition witnesses |
+| `Preservation.BadgeIpcCapsAndCdtMaps` | Mint/Mutate badge preservation + `ipcTransferSingleCap` / `ipcUnwrapCaps` variants + `cdtMapsConsistent` preservation + CDT composition witnesses |
 
 The children form a linear import chain
 (`Insert ← Delete ← CopyMoveMutate ← Revoke ← EndpointReplyAndLifecycle ←

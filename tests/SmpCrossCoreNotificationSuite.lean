@@ -147,6 +147,56 @@ open SeLe4n.Testing
 #check @bindNotification_preserves_ipcInvariant
 #check @unbindNotification_preserves_ipcInvariant
 #check @endpointQueueRemoveDual_preserves_objects_invExt
+-- WS-RR RR7.22 (register finding 3): the bound-delivery path's non-interference —
+-- the endpoint-splice engine that did not exist, its per-core forms, and the
+-- boot-core and ∀-core theorems it makes possible:
+#check @endpointSpliceHigh
+#check @endpointQueueRemoveDual_preserves_projection_and_invExt
+#check @endpointQueueRemoveDual_preserves_projection
+#check @endpointQueueRemoveDual_preserves_projectionOnCore
+#check @storeTcbReceiveComplete_preserves_projectionOnCore
+#check @notificationSignalBoundOnCore_bound_path_NI
+#check @notificationSignalBoundOnCore_bound_path_NI_smp
+-- WS-RR RR7.22 (register finding 4): the queue splice decomposed once, and every
+-- `ipcInvariantFull` conjunct carried across it:
+#check @SpliceShape
+#check @endpointQueueRemoveDual_shape
+#check @endpointQueueRemoveDual_carry
+#check @endpointQueueRemoveDual_preserves_queueNextTargetBlocked
+#check @endpointQueueRemoveDual_preserves_queueNextBlockingConsistent
+#check @endpointQueueRemoveDual_preserves_queueHeadBlockedConsistent
+#check @endpointQueueRemoveDual_preserves_endpointQueueTailBlockedConsistent
+#check @endpointQueueRemoveDual_preserves_endpointQueueNoDup
+#check @endpointQueueRemoveDual_preserves_ipcStateQueueMembershipConsistent_except
+#check @endpointQueueRemoveDual_preserves_donationOwnerValid
+#check @endpointQueueRemoveDual_preserves_passiveServerIdle
+#check @endpointQueueRemoveDual_preserves_blockedThreadTimeoutConsistent
+#check @splicePredecessorBlocked
+#check @splicePredecessorBlocked_of_head
+#check @splicePredecessorBlocked_of_path
+#check @spliceSideBlocked_along_path
+#check @endpointQueueNoDup_of_dualQueue_of_headBlocked
+#check @ipcInvariantFullExceptMembership
+#check @endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership
+-- WS-RR RR7.22 (residual): the pair closes.  The store that unblocks the spliced
+-- thread restores the one relaxed conjunct and carries the other nineteen; the
+-- splice establishes the three detachment facts it asks for; and the live
+-- bound-delivery arm therefore carries the whole bundle, per core and at the
+-- flow-checked dispatch the SM9 arm runs.
+#check @storeTcbReceiveComplete_closes_exceptMembership
+#check @spliceFinalEndpoint
+#check @endpointQueueRemoveDual_removed_links_cleared
+#check @endpointQueueRemoveDual_removed_no_incoming
+#check @endpointQueueRemoveDual_removed_not_boundary
+#check @endpointQueueRemoveDual_removed_detached
+#check @spliceQueue_wellFormed_of_dual
+#check @boundDeliveryTarget?_some
+#check @endpointQueueRemoveDual_passiveServerIdleFrameOnCore
+#check @notificationSignalBoundOnCore_preserves_ipcInvariantFull
+#check @notificationSignalBoundOnCore_passiveServerIdleFrameOnCore
+#check @notificationSignalBoundOnCore_preserves_ipcInvariantFull_perCore
+#check @notificationSignalBoundCrossCoreDispatch_preserves_ipcInvariantFull
+#check @notificationSignalBoundCrossCoreDispatchChecked_preserves_ipcInvariantFull
 
 -- ============================================================================
 -- §2  Elaboration-time examples (Tier-3): theorems apply to typed inputs
@@ -203,6 +253,70 @@ example (ctx : LabelingContext) (observer : IfObserver)
       (notificationSignalOnCore notificationId badge executingCore st).1 st :=
   notificationSignalOnCore_signal_path_NI_smp ctx observer notificationId badge executingCore st
     ntfn waiter rest st' st'' hObj hWaiters hStore hMsg hObjInv hNtfnHigh hWaiterHigh hWaiterObjHigh
+
+/-- WS-RR RR7.22 (register finding 3): the **bound**-delivery arm is invisible on
+every core.  The typed evidence that the `lowEquivalent_smp` conclusion is the
+one a caller gets, and that `endpointSpliceHigh` is the only label hypothesis
+the splice needs — the notification object carries none, because the badge goes
+to the thread and the notification is not written on this path. -/
+example (ctx : LabelingContext) (observer : IfObserver)
+    (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (executingCore : CoreId)
+    (st st1 st2 : SystemState) (t : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
+    (hTarget : boundDeliveryTarget? st notificationId = some (t, epId))
+    (hRemove : endpointQueueRemoveDual epId true t st = .ok ((), st1))
+    (hRecv : storeTcbReceiveComplete st1 t
+        (some { IpcMessage.empty with badge := some badge }) = .ok st2)
+    (hSplice : endpointSpliceHigh ctx observer st epId t)
+    (hObjInv : st.objects.invExt)
+    (hBoundHigh : threadObservable ctx observer t = false)
+    (hBoundObjHigh : objectObservable ctx observer t.toObjId = false) :
+    lowEquivalent_smp ctx observer
+      (notificationSignalBoundOnCore notificationId badge executingCore st).1 st :=
+  notificationSignalBoundOnCore_bound_path_NI_smp ctx observer notificationId badge
+    executingCore st st1 st2 t epId hTarget hRemove hRecv hSplice hObjInv
+    hBoundHigh hBoundObjHigh
+
+/-- WS-RR RR7.22: the splice's own projection lemma, applied at typed inputs —
+the engine the bound path had been missing.  Its `endpointSpliceHigh` argument
+names the two queue neighbours **through the pre-state lookup**, so this call
+site supplies one hypothesis rather than naming threads it cannot know. -/
+example (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (tid : SeLe4n.ThreadId) (c : CoreId)
+    (hHigh : endpointSpliceHigh ctx observer st endpointId tid)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
+    projectState ctx observer st' = projectState ctx observer st
+      ∧ projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
+  ⟨endpointQueueRemoveDual_preserves_projection ctx observer st st' endpointId
+      isReceiveQ tid hHigh hObjInv hStep,
+   endpointQueueRemoveDual_preserves_projectionOnCore ctx observer st st' endpointId
+      isReceiveQ tid c hHigh hObjInv hStep⟩
+
+/-- WS-RR RR7.22 (register finding 4): the capstone at typed inputs.  A bare
+endpoint splice takes the whole IPC bundle to the bundle with the membership
+conjunct relaxed **at the removed thread** — nineteen conjuncts unconditional,
+the twentieth relaxed rather than assumed, under the one hypothesis the bundle
+genuinely does not entail. -/
+example (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st'))
+    (hInv : ipcInvariantFull st)
+    (hPred : splicePredecessorBlocked isReceiveQ endpointId st tid) :
+    ipcInvariantFullExceptMembership st' tid :=
+  endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership st st' endpointId
+    isReceiveQ tid hObjInv hStep hInv hPred
+
+/-- WS-RR RR7.22: the stated hypothesis is **vacuous** when the removed thread
+is the queue head — which is the shape the bound-notification delivery takes,
+and the reason that path needs nothing extra. -/
+example (isReceiveQ : Bool) (endpointId : SeLe4n.ObjId) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb0 : TCB)
+    (hTcb : lookupTcb st tid = some tcb0)
+    (hPPrev : tcb0.queuePPrev = some .endpointHead) :
+    splicePredecessorBlocked isReceiveQ endpointId st tid :=
+  splicePredecessorBlocked_of_head isReceiveQ endpointId st tid tcb0 hTcb hPPrev
 
 -- ============================================================================
 -- §3  Runtime assertions (Tier-2): the SM6.B cross-core notification scenarios
@@ -486,6 +600,190 @@ private def runBoundChecks : IO Unit := do
       | .error _ => assertBool "bind setup for precondition check succeeded" false
   | .error _ => assertBool "receive setup for precondition check succeeded" false
 
+-- WS-RR RR7.22 (register finding 4) — a three-thread endpoint receive queue, so
+-- every branch of `SpliceShape` is exercised by an executed removal and not only
+-- by a proof.
+private def queueA : SeLe4n.ThreadId := ⟨505⟩
+private def queueB : SeLe4n.ThreadId := ⟨506⟩
+private def queueC : SeLe4n.ThreadId := ⟨507⟩
+
+private def stQueueBase : SystemState :=
+  (BootstrapBuilder.empty
+    |>.withObject epId (.endpoint {})
+    |>.withObject queueA.toObjId (.tcb (mkTcb 505 30 none))
+    |>.withObject queueB.toObjId (.tcb (mkTcb 506 30 none))
+    |>.withObject queueC.toObjId (.tcb (mkTcb 507 30 none))
+    |>.withRunnable [queueA, queueB, queueC]
+    |>.build)
+
+/-- Block `ts` on `epId`'s receive queue, in order. -/
+private def enqueueReceivers (st : SystemState) : List SeLe4n.ThreadId →
+    Except KernelError SystemState
+  | [] => .ok st
+  | t :: rest =>
+      match endpointReceiveDual epId t none st with
+      | .ok (_, st') => enqueueReceivers st' rest
+      | .error e => .error e
+
+private def receiveQueueOf (st : SystemState) : Option IntrusiveQueue :=
+  match st.objects[epId]? with
+  | some (.endpoint ep) => some ep.receiveQ
+  | _ => none
+
+private def linksOf (st : SystemState) (t : SeLe4n.ThreadId) :
+    Option (Option SeLe4n.ThreadId × Option SeLe4n.ThreadId) :=
+  match st.getTcb? t with
+  | some tcb => some (tcb.queuePrev, tcb.queueNext)
+  | none => none
+
+/-- §3.11: WS-RR RR7.22 (register finding 4) — the four splice branches, executed.
+
+`SpliceShape` says `endpointQueueRemoveDual` is one of four programs, selected by
+whether the removed thread is the queue head and whether it has a successor.
+This runs one removal of each shape against a real queue and pins what each
+leaves behind, so the decomposition the whole conjunct suite rests on is
+exercised and not merely asserted. -/
+private def runQueueSpliceChecks : IO Unit := do
+  IO.println "--- §3.11 WS-RR RR7.22 endpoint queue splice (four shapes) ---"
+  match enqueueReceivers stQueueBase [queueA, queueB, queueC] with
+  | .error _ => assertBool "three-thread receive queue built" false
+  | .ok st3 =>
+    assertBool "splice fixture: the queue is A -> B -> C"
+      (match receiveQueueOf st3, linksOf st3 queueA, linksOf st3 queueB, linksOf st3 queueC with
+       | some q, some (pa, na), some (pb, nb), some (pc, nc) =>
+           decide (q.head = some queueA ∧ q.tail = some queueC ∧
+             pa = none ∧ na = some queueB ∧
+             pb = some queueA ∧ nb = some queueC ∧
+             pc = some queueB ∧ nc = none)
+       | _, _, _, _ => false)
+    -- Shape 3 (mid-queue, has a successor): both neighbours relink, both ends stay.
+    match endpointQueueRemoveDual epId true queueB st3 with
+    | .error _ => assertBool "mid-queue removal with a successor succeeds" false
+    | .ok (_, stB) =>
+      assertBool "mid removal keeps both ends and relinks the neighbours"
+        (match receiveQueueOf stB, linksOf stB queueA, linksOf stB queueC with
+         | some q, some (_, na), some (pc, _) =>
+             decide (q.head = some queueA ∧ q.tail = some queueC ∧
+               na = some queueC ∧ pc = some queueA)
+         | _, _, _ => false)
+      assertBool "mid removal clears the removed thread's own links"
+        (match linksOf stB queueB with
+         | some (p, n) => decide (p = none ∧ n = none)
+         | none => false)
+    -- Shape 4 (mid-queue, no successor): the predecessor becomes the tail.
+    match endpointQueueRemoveDual epId true queueC st3 with
+    | .error _ => assertBool "tail removal succeeds" false
+    | .ok (_, stC) =>
+      assertBool "tail removal promotes the predecessor to tail"
+        (match receiveQueueOf stC, linksOf stC queueB with
+         | some q, some (_, nb) =>
+             decide (q.head = some queueA ∧ q.tail = some queueB ∧ nb = none)
+         | _, _ => false)
+    -- Shape 2 (head, has a successor): the successor becomes the head.
+    match endpointQueueRemoveDual epId true queueA st3 with
+    | .error _ => assertBool "head removal with a successor succeeds" false
+    | .ok (_, stA) =>
+      assertBool "head removal promotes the successor to head"
+        (match receiveQueueOf stA, linksOf stA queueB with
+         | some q, some (pb, _) =>
+             decide (q.head = some queueB ∧ q.tail = some queueC ∧ pb = none)
+         | _, _ => false)
+  -- Shape 1 (head, no successor): the queue empties.
+  match enqueueReceivers stQueueBase [queueA] with
+  | .error _ => assertBool "single-thread receive queue built" false
+  | .ok st1 =>
+    match endpointQueueRemoveDual epId true queueA st1 with
+    | .error _ => assertBool "sole-member removal succeeds" false
+    | .ok (_, st0) =>
+      assertBool "removing the only queued thread empties both ends"
+        (match receiveQueueOf st0 with
+         | some q => decide (q.head = none ∧ q.tail = none)
+         | none => false)
+      assertBool "removing the only queued thread clears its links"
+        (match linksOf st0 queueA with
+         | some (p, n) => decide (p = none ∧ n = none)
+         | none => false)
+
+/-- WS-RR RR7.22 (register finding 3): a labelling under which the whole
+bound-delivery footprint is **high** — the endpoint, the bound TCB and the
+notification are all above the observer, and nothing else the fixture touches
+is.  `endpointSpliceHigh` names the two queue neighbours through the pre-state
+lookup, and this fixture's bound TCB is the receive queue's only member, so
+both neighbour clauses are vacuous here and the endpoint/bound-TCB clauses are
+what the labelling has to supply. -/
+private def lowLabel : SeLe4n.Kernel.SecurityLabel :=
+  { confidentiality := .low, integrity := .untrusted }
+
+private def highLabel : SeLe4n.Kernel.SecurityLabel :=
+  { confidentiality := .high, integrity := .trusted }
+
+private def boundDeliveryLabeling : SeLe4n.Kernel.LabelingContext :=
+  { objectLabelOf := fun oid =>
+      if oid = epId ∨ oid = boundTid.toObjId ∨ oid = nId then highLabel else lowLabel
+    threadLabelOf := fun tid => if tid = boundTid then highLabel else lowLabel
+    endpointLabelOf := fun oid => if oid = epId then highLabel else lowLabel
+    serviceLabelOf := fun _ => lowLabel }
+
+/-- The low observer for `boundDeliveryLabeling`: it is cleared for the public
+domain and therefore for none of the three objects the bound delivery writes. -/
+private def lowObserver : SeLe4n.Kernel.IfObserver :=
+  { clearance := lowLabel }
+
+/-- §3.10: WS-RR RR7.22 (register finding 3) — the bound-delivery arm is
+invisible to a low observer, executed rather than only proved.
+
+The theorem is `notificationSignalBoundOnCore_bound_path_NI{,_smp}`; this is
+the runtime witness that its hypotheses are inhabited by a real state and that
+its conclusion is what that state exhibits.  Three guards keep it from passing
+vacuously: the delivery must actually have happened (the badge lands, the queue
+empties), the two states must genuinely **differ** at the high keys, and the
+signaller — a low object the operation does not write — must be visible in the
+projection, so "the projections agree" is not "the projection is empty". -/
+private def runBoundDeliveryNonInterferenceChecks : IO Unit := do
+  IO.println "--- §3.10 WS-RR RR7.22 bound-delivery non-interference ---"
+  match endpointReceiveDual epId boundTid none stBoundBase with
+  | .error _ => assertBool "receive setup (bound-delivery NI) succeeded" false
+  | .ok (_, stRecv) =>
+    match bindNotification nId boundTid stRecv with
+    | .error _ => assertBool "bind setup (bound-delivery NI) succeeded" false
+    | .ok ((), stBound) =>
+      let stSig := (notificationSignalBoundOnCore nId badge bootCoreId stBound).1
+      -- Guard 1: the delivery really ran (otherwise every equality below is trivial).
+      assertBool "bound-delivery NI fixture: the badge was delivered"
+        (match stSig.getTcb? boundTid with
+         | some t => decide (t.pendingMessage.bind (·.badge) = some badge)
+         | none => false)
+      assertBool "bound-delivery NI fixture: the endpoint receive queue emptied"
+        (match stSig.objects[epId]? with
+         | some (.endpoint ep) => decide (ep.receiveQ.head = none)
+         | _ => false)
+      -- Guard 2: the two states genuinely differ at the high keys.
+      assertBool "bound-delivery NI fixture: the raw states differ at the bound TCB"
+        (!(stSig.objects[boundTid.toObjId]? == stBound.objects[boundTid.toObjId]?))
+      assertBool "bound-delivery NI fixture: the raw states differ at the endpoint"
+        (!(stSig.objects[epId]? == stBound.objects[epId]?))
+      let pPost := SeLe4n.Kernel.projectState boundDeliveryLabeling lowObserver stSig
+      let pPre := SeLe4n.Kernel.projectState boundDeliveryLabeling lowObserver stBound
+      -- Guard 3: the projection is not empty — a low object the delivery does
+      -- not write is visible in both.
+      assertBool "bound-delivery NI fixture: the low signaller is visible in both projections"
+        (match pPre.objects signallerTid.toObjId, pPost.objects signallerTid.toObjId with
+         | some a, some b => a == b
+         | _, _ => false)
+      -- The finding-3 claim: every high key the delivery writes projects identically.
+      assertBool "bound delivery is invisible at the bound TCB"
+        (pPost.objects boundTid.toObjId == pPre.objects boundTid.toObjId)
+      assertBool "bound delivery is invisible at the endpoint"
+        (pPost.objects epId == pPre.objects epId)
+      assertBool "bound delivery is invisible at the notification"
+        (pPost.objects nId == pPre.objects nId)
+      assertBool "bound delivery leaves the projected run queue unchanged"
+        (pPost.runnable == pPre.runnable)
+      assertBool "bound delivery leaves the projected current thread unchanged"
+        (pPost.current == pPre.current)
+      assertBool "bound delivery leaves the projected object index unchanged"
+        (pPost.objectIndex == pPre.objectIndex)
+
 /-- §3.9: WS-SM SM6.B audit closure (codex review #2 binding preservation + #5
 bound-delivery lock-set footprint). -/
 private def runReviewFixChecks : IO Unit := do
@@ -542,6 +840,8 @@ def runSmpCrossCoreNotificationChecks : IO Unit := do
   runErrorChecks
   runBoundChecks
   runReviewFixChecks
+  runBoundDeliveryNonInterferenceChecks
+  runQueueSpliceChecks
   IO.println "===================================="
   IO.println "All SM6.B cross-core notification checks PASS."
 

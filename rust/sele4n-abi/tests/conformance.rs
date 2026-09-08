@@ -552,12 +552,13 @@ fn syscall_id_exhaustive_roundtrip() {
 /// range of 0..=55 (which extended SM8.C.9's range of 0..=54).
 #[test]
 fn kernel_error_exhaustive_roundtrip() {
-    for i in 0..=56u32 {
+    // WS-RR RR7.14: 58 variants (0–57), IpcCancelled at 57.
+    for i in 0..=57u32 {
         let err =
             KernelError::from_u32(i).unwrap_or_else(|| panic!("valid error for discriminant {i}"));
         assert_eq!(err as u32, i);
     }
-    assert!(KernelError::from_u32(57).is_none());
+    assert!(KernelError::from_u32(58).is_none());
 }
 
 /// Verify TypeTag roundtrip for all 8 variants (0–7, including SchedContext + Reply).
@@ -857,14 +858,14 @@ fn access_rights_ops_preserve_validity() {
 /// and that unknown discriminants return None (forward-compatible).
 #[test]
 fn kernel_error_non_exhaustive() {
-    // WS-SM SM9.C.1: 57 variants (0–56) roundtrip
+    // WS-RR RR7.14: 58 variants (0–57) roundtrip
     // (SM9.A.2 previously stood at 55 with AuditFieldTooLarge).
     for i in 0..=56u32 {
         let e = KernelError::from_u32(i).unwrap();
         assert_eq!(e as u32, i);
     }
     // Future discriminants return None
-    assert!(KernelError::from_u32(57).is_none());
+    assert!(KernelError::from_u32(58).is_none());
     assert!(KernelError::from_u32(100).is_none());
     assert!(KernelError::from_u32(u32::MAX).is_none());
 }
@@ -932,10 +933,9 @@ fn unknown_kernel_error_fallback() {
 
     // WS-RA / WS-RR RR4 (ABI v3): errors ride the x1 label in the top of
     // the 20-bit range — label ERROR_LABEL_BASE + d names discriminant d.
-    // Discriminant 57 — first unrecognized after
-    // DeclassificationDeniedAtReceiver (56).
+    // Discriminant 58 — first unrecognized after IpcCancelled (57).
     let base = sele4n_types::ERROR_LABEL_BASE;
-    let regs = [0, (base + 57) << 9, 0, 0, 0, 0, 0];
+    let regs = [0, (base + 58) << 9, 0, 0, 0, 0, 0];
     assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
 
     // Discriminant 100 — arbitrary unrecognized code
@@ -1121,7 +1121,7 @@ fn identifier_validation() {
 /// automatically.
 #[test]
 fn kernel_error_variant_count() {
-    const KERNEL_ERROR_COUNT: u32 = 57;
+    const KERNEL_ERROR_COUNT: u32 = 58;
     // All expected variants exist
     for i in 0..KERNEL_ERROR_COUNT {
         assert!(
@@ -1506,7 +1506,8 @@ fn error_boundary_after_invalid_irq() {
     assert!(KernelError::from_u32(54).is_some()); // AuditLogCapacityExceeded (SM8.C.9)
     assert!(KernelError::from_u32(55).is_some()); // AuditFieldTooLarge (SM9.A.2)
     assert!(KernelError::from_u32(56).is_some()); // DeclassificationDeniedAtReceiver (SM9.C.1)
-    assert!(KernelError::from_u32(57).is_none());
+    assert!(KernelError::from_u32(57).is_some()); // IpcCancelled (WS-RR RR7.14)
+    assert!(KernelError::from_u32(58).is_none());
 }
 
 // --- D6: TCB operation conformance ---
@@ -1902,17 +1903,167 @@ enum ReturnShape {
 }
 
 /// The mirror of `Architecture.syscallReturnShape` — total over the same
-/// 33 variants (`SyscallId` here is `sele4n-types`', whose count pin is
+/// 35 variants (`SyscallId` here is `sele4n-types`', whose count pin is
 /// `syscall_id_variant_count`).
+///
+/// **WS-RR RR7.17: no wildcard.**  This match had a `_ => ReturnShape::Unit`
+/// arm, which is exactly the shape §3.4 refuses on the Lean side and for the
+/// same reason: a wildcard makes a *new* syscall silently `Unit` here while
+/// Lean's exhaustive match rejects the tree until the variant is classified.
+/// The two would then disagree with nothing failing — a value-returning
+/// syscall whose Rust wrapper is typed for a unit result.  Every variant is
+/// listed, so rustc's exhaustiveness check plays the role Lean's totality
+/// plays: adding a `SyscallId` variant stops this crate compiling until
+/// someone decides what it returns.
+///
+/// Deliberately grouped by shape rather than by subsystem, so the value
+/// surface — the seven arms that are not `Unit` — reads at a glance and a
+/// misplacement is visible rather than buried in an alphabetical list.
 fn syscall_return_shape(sid: SyscallId) -> ReturnShape {
     match sid {
+        // --- Message: badge in x0, MessageInfo in x1, MR0-MR3 in x2-x5. ---
+        // `Call` is `Message` because it classifies the frame its *reply*
+        // delivers: a successful call leaves the caller `blockedOnReply`, so
+        // the frame is staged by the reply and delivered at the context
+        // restore, never composed at the call's own boundary.
         SyscallId::Receive | SyscallId::Call | SyscallId::ReplyRecv => ReturnShape::Message,
+
+        // --- Badge: a full-width badge the *sender* chose. ---
         SyscallId::NotificationWait => ReturnShape::Badge,
+
+        // --- Word: a scalar the *kernel* computed. ---
         // WS-SM SM9.A.10: the two audit accessors join `ServiceQuery` as
-        // `Word` — a scalar the kernel computed, not a badge a sender chose.
+        // `Word` — a scalar the kernel computed, not a badge a sender chose,
+        // and the Rust wrapper layer types the two differently.
         SyscallId::ServiceQuery | SyscallId::AuditRead | SyscallId::AuditDrain => ReturnShape::Word,
-        _ => ReturnShape::Unit,
+
+        // --- Unit: x0 = 0, no message.  Everything else, spelled out. ---
+        SyscallId::Send
+        | SyscallId::Reply
+        | SyscallId::CSpaceMint
+        | SyscallId::CSpaceCopy
+        | SyscallId::CSpaceMove
+        | SyscallId::CSpaceDelete
+        | SyscallId::LifecycleRetype
+        | SyscallId::VSpaceMap
+        | SyscallId::VSpaceUnmap
+        | SyscallId::ServiceRegister
+        | SyscallId::ServiceRevoke
+        | SyscallId::NotificationSignal
+        | SyscallId::SchedContextConfigure
+        | SyscallId::SchedContextBind
+        | SyscallId::SchedContextUnbind
+        | SyscallId::TcbSuspend
+        | SyscallId::TcbResume
+        | SyscallId::TcbSetPriority
+        | SyscallId::TcbSetMCPriority
+        | SyscallId::TcbSetIPCBuffer
+        | SyscallId::TcbSetAffinity
+        | SyscallId::TcbSetFaultHandler
+        | SyscallId::TcbBindNotification
+        | SyscallId::TcbUnbindNotification
+        | SyscallId::MintReplyCap
+        | SyscallId::VSpaceUnifyInstruction
+        | SyscallId::Declassify
+        // WS-SM SM9.C.8: a declassifying signal returns nothing, exactly like
+        // the ordinary signal it wraps — the badge it moves goes to the
+        // *receiver*, not back to the signaller.
+        | SyscallId::DeclassifySignal => ReturnShape::Unit,
     }
+}
+
+/// **WS-RR RR7.17**: the mirror is total, and its totality is *checked* rather
+/// than asserted by the absence of a wildcard.
+///
+/// A reader cannot tell from the source whether the arm list is exhaustive
+/// because rustc accepted it or because a wildcard is hiding somewhere in the
+/// 28-member `Unit` group; this drives every id in the count-pinned range
+/// through the function, so a variant that reached the wrong arm — or a
+/// `from_u64` that stopped resolving one — fails here.  The per-shape
+/// partition is checked against the exact expected sets, so a variant that
+/// moved between groups is a failure and not a silent reclassification.
+#[test]
+fn return_shape_mirror_is_total_and_partitions_the_surface() {
+    let mut message = std::vec::Vec::new();
+    let mut badge = std::vec::Vec::new();
+    let mut word = std::vec::Vec::new();
+    let mut unit_count = 0usize;
+    for raw in 0..SyscallId::COUNT as u64 {
+        let sid = SyscallId::from_u64(raw).expect("count-pinned range");
+        match syscall_return_shape(sid) {
+            ReturnShape::Message => message.push(sid),
+            ReturnShape::Badge => badge.push(sid),
+            ReturnShape::Word => word.push(sid),
+            ReturnShape::Unit => unit_count += 1,
+        }
+    }
+    assert_eq!(
+        message,
+        [SyscallId::Receive, SyscallId::Call, SyscallId::ReplyRecv],
+        "the message-shaped surface must be exactly the three rendezvous reads"
+    );
+    assert_eq!(
+        badge,
+        [SyscallId::NotificationWait],
+        "notification_wait is the only badge-shaped syscall"
+    );
+    assert_eq!(
+        word,
+        [
+            SyscallId::ServiceQuery,
+            SyscallId::AuditRead,
+            SyscallId::AuditDrain
+        ],
+        "the word-shaped surface is the service query plus SM9.A's two audit reads"
+    );
+    // The complement, so the three sets above plus Unit account for every
+    // variant: a new syscall cannot be absorbed without moving this number.
+    assert_eq!(
+        unit_count,
+        SyscallId::COUNT - 7,
+        "exactly seven syscalls are value-returning; the rest are Unit"
+    );
+}
+
+/// **WS-RR RR7.17: the Lean⇄Rust cross-check the mirror lacked.**
+///
+/// Removing the wildcard above makes this side *total*; it does not make the
+/// two sides *agree*.  Two independently maintained total functions can still
+/// classify a syscall differently, and nothing would have caught it — which is
+/// the actual finding, since a wrapper typed for the wrong shape is an ABI
+/// break that compiles on both sides.
+///
+/// So both sides render the same `id → shape` table and compare against the
+/// same bytes.  `tests/SyscallReturnAbiSuite.lean` writes its rendering of
+/// `Architecture.syscallReturnShape` against this file; this test writes its
+/// rendering of the mirror against it.  A reclassification on either side
+/// fails on that side, and the diff names the id.
+///
+/// Keyed by the numeric id rather than by the constructor name because the two
+/// languages spell the names differently (`notificationWait` /
+/// `NotificationWait`) and the id is what actually crosses the ABI; the name
+/// correspondence is pinned separately by the `xval_*` tests.
+#[test]
+fn return_shape_mirror_matches_the_lean_table() {
+    const LEAN_TABLE: &str = include_str!("../../../tests/fixtures/syscall_return_shape.expected");
+    let mut rendered = std::string::String::new();
+    rendered.push_str("# syscall return shapes: <id> <shape> (Lean/Rust cross-check)\n");
+    rendered.push_str(&std::format!("count {}\n", SyscallId::COUNT));
+    for raw in 0..SyscallId::COUNT as u64 {
+        let sid = SyscallId::from_u64(raw).expect("count-pinned range");
+        let shape = match syscall_return_shape(sid) {
+            ReturnShape::Unit => "unit",
+            ReturnShape::Badge => "badge",
+            ReturnShape::Word => "word",
+            ReturnShape::Message => "message",
+        };
+        rendered.push_str(&std::format!("{raw} {shape}\n"));
+    }
+    assert_eq!(
+        rendered, LEAN_TABLE,
+        "the Rust return-shape mirror disagrees with Lean's syscallReturnShape; \
+         regenerate deliberately — the two are meant to be the same function"
+    );
 }
 
 /// WS-RA RA.D.4: exactly seven syscalls are value-returning — the five the

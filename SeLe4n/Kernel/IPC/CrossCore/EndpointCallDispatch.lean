@@ -1,16 +1,16 @@
 -- SPDX-License-Identifier: GPL-3.0-or-later
 /-
-  seLe4n  - A Lean Microkernel
-  Copyright (C) 2026  Adam Hall
+  seLe4n - A Lean Microkernel
+  Copyright (C) 2026 Adam Hall
   This program comes with ABSOLUTELY NO WARRANTY.
   This is free software, and you are welcome to redistribute it
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
--- WS-SM SM6.A: PRODUCTION (LANDED).  The pure `.call` dispatch ops below the API
+-- WS-SM SM6.A: PRODUCTION (LANDED). The pure `.call` dispatch ops below the API
 -- layer; the live `API.dispatchWithCap{,Checked}` `.call` arm routes through
 -- `endpointCallCrossCoreDispatch{,Checked}` here, deriving the executing core
--- from the live state (`determineExecutingCore`).  (Former "STATUS: staged"
+-- from the live state (`determineExecutingCore`). (Former "STATUS: staged"
 -- marker replaced with this landing note per the implement-the-improvement rule;
 -- see docs/planning/SMP_CROSS_CORE_IPC_PLAN.md.)
 
@@ -25,9 +25,9 @@ import SeLe4n.Kernel.InformationFlow.Enforcement.Wrappers
 
 The pure cross-core `.call` dispatch operations — `endpointCallWithCapsOnCore`,
 `endpointCallCrossCoreDispatch`, and the information-flow-checked
-`endpointCallCrossCoreDispatchChecked`.  These live *below* `SeLe4n.Kernel.API`
+`endpointCallCrossCoreDispatchChecked`. These live *below* `SeLe4n.Kernel.API`
 (no `Platform.FFI` dependency) so the live `.call` dispatch arm can route through
-them.  The BaseIO live driver (`endpointCallCrossCoreEntry`, which reads the
+them. The BaseIO live driver (`endpointCallCrossCoreEntry`, which reads the
 hardware core and fires the SGI) layers on top of these in
 `EndpointCallEntry.lean`, which imports `Platform.FFI`.
 -/
@@ -38,14 +38,14 @@ open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (CoreId SgiKind)
 
 -- ============================================================================
--- §0  Executing-core derivation (per-core dispatch without a parameter)
+-- §0 Executing-core derivation (per-core dispatch without a parameter)
 -- ============================================================================
 
 /-- WS-SM SM6.A: the core a syscall is executing on, derived from the live state.
 A thread issuing a syscall is the *current* thread on its core, so the executing
 core is the unique `c` with `currentOnCore c = some tid` — found by scanning
 `Concurrency.allCores`, defaulting to `bootCoreId` (the boot-pinned fallback, and
-the single-core answer).  This lets the live `.call` dispatch identify and
+the single-core answer). This lets the live `.call` dispatch identify and
 deschedule the caller on its *own* core without threading a hardware-core
 parameter through the `Kernel`-monad dispatch chain (which returns `Kernel Unit`,
 applying its state positionally). -/
@@ -55,7 +55,7 @@ def determineExecutingCore (st : SystemState) (tid : SeLe4n.ThreadId) : CoreId :
 
 /-- `determineExecutingCore` always returns a core on which the caller is the
 current thread, *or* the `bootCoreId` fallback — it never invents a core that
-isn't running the caller.  (Either `find?` succeeds, witnessing `currentOnCore c
+isn't running the caller. (Either `find?` succeeds, witnessing `currentOnCore c
 = some tid`, or it falls back to the boot core.) -/
 theorem determineExecutingCore_sound (st : SystemState) (tid : SeLe4n.ThreadId) :
     determineExecutingCore st tid = Concurrency.bootCoreId
@@ -68,27 +68,27 @@ theorem determineExecutingCore_sound (st : SystemState) (tid : SeLe4n.ThreadId) 
     exact Or.inr (by simpa using hc)
 
 -- ============================================================================
--- §1  Cross-core `endpointCallWithCaps`
+-- §1 Cross-core `endpointCallWithCaps`
 -- ============================================================================
 
 /-- WS-SM SM6.A.8 (operation): endpoint call with capability transfer, across
-cores.  The cross-core `endpointCallOnCore` rendezvous (which surfaces the
+cores. The cross-core `endpointCallOnCore` rendezvous (which surfaces the
 receiver-wake SGI), then — on an immediate rendezvous carrying caps —
 `ipcUnwrapCaps` installs the transferred capabilities into the receiver's
-CSpace (gated on the endpoint's `grant` right).  Returns the post-state, the
+CSpace (gated on the endpoint's `grant` right). Returns the post-state, the
 capability-transfer summary, and the optional cross-core SGI. -/
 def endpointCallWithCapsOnCore
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) :
     SystemState × Except KernelError (CapTransferSummary × Option (CoreId × SgiKind)) :=
   -- PR #873 round 13: stamp the endpoint's grant right into the message, so the
   -- queued ordering and the immediate rendezvous read the same authority from the
-  -- same place.  See `endpointSendDualWithCaps` for the ordering this removes.
+  -- same place. See `endpointSendDualWithCaps` for the ordering this removes.
   let hasReceiver := match st.getEndpoint? endpointId with
     | some ep => ep.receiveQ.head.isSome
-    | none    => false
+    | none => false
   match endpointCallOnCore endpointId caller { msg with capsGranted := endpointRights.mem .grant } executingCore st with
   | (st', .error e) => (st', .error e)
   | (st', .ok sgi) =>
@@ -100,7 +100,7 @@ def endpointCallWithCapsOnCore
           | some receiverId =>
             match lookupCspaceRoot st' receiverId with
             | some recvRoot =>
-              match ipcUnwrapCaps { msg with capsGranted := endpointRights.mem .grant } callerCspaceRoot recvRoot
+              match ipcUnwrapCaps { msg with capsGranted := endpointRights.mem .grant } recvRoot
                   receiverSlotBase (endpointRights.mem .grant) st' with
               | .error e => (st', .error e)
               | .ok (summary, st'') => (st'', .ok (summary, sgi))
@@ -109,23 +109,23 @@ def endpointCallWithCapsOnCore
         | none => (st', .ok ({ results := #[] }, sgi))
 
 -- ============================================================================
--- §2  Full cross-core `.call` dispatch (WithCaps + donation + PIP)
+-- §2 Full cross-core `.call` dispatch (WithCaps + donation + PIP)
 -- ============================================================================
 
 /-- WS-SM SM6.A.5 (operation): the full cross-core `Call` syscall semantics.
 The cross-core WithCaps call, then — if a receiver rendezvoused — the
 SchedContext **donation** to a passive server and priority-inheritance
-propagation.  The cross-core `.reschedule` SGI is surfaced for the runtime to
-fire after the commit.  Mirrors the live single-core `.call` dispatch arm
+propagation. The cross-core `.reschedule` SGI is surfaced for the runtime to
+fire after the commit. Mirrors the live single-core `.call` dispatch arm
 (`API.dispatchWithCap`).
 
 **WS-RR RR2.7**: the donation is `applyCallDonationOnCore`, not the boot-pinned
-`applyCallDonation`.  The rebinding of the caller's SchedContext to the receiver
+`applyCallDonation`. The rebinding of the caller's SchedContext to the receiver
 is an object-store-only update and is cross-core-safe on its own, but the
 SchedContext's pending CBS replenishments are **not** in the object store — they
 live on a per-core replenish queue, the donor's, and the SM5.H affinity
 invariant `replenishQueueAffinityConsistentOnCore` says they must live on the
-*bound thread's* home core.  The per-core form carries them across with
+*bound thread's* home core. The per-core form carries them across with
 `migrateSchedContextReplenishment`, exactly as the cancellation arm
 `cancelDonatedDonationOnCore` has since SM6.E, and
 `applyCallDonationOnCore_preserves_replenishQueueAffinityConsistent_smp` proves
@@ -133,13 +133,13 @@ the invariant holds on every core afterwards. -/
 def endpointCallCrossCoreDispatch
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) :
     SystemState × Except KernelError (CapTransferSummary × Option (CoreId × SgiKind)) :=
   let maybeReceiver := match st.getEndpoint? endpointId with
     | some ep => ep.receiveQ.head
-    | none    => none
-  match endpointCallWithCapsOnCore endpointId caller msg endpointRights callerCspaceRoot
+    | none => none
+  match endpointCallWithCapsOnCore endpointId caller msg endpointRights
       receiverSlotBase executingCore st with
   | (st', .error e) => (st', .error e)
   | (st', .ok (summary, sgi)) =>
@@ -148,17 +148,17 @@ def endpointCallCrossCoreDispatch
         match SeLe4n.ThreadId.toValid? caller, SeLe4n.ThreadId.toValid? receiverTid with
         | some callerV, some receiverV =>
           -- WS-RR RR2.7: the live `.call` arm routes through the **migrating**
-          -- donation.  A SchedContext donated to a server homed on another core
+          -- donation. A SchedContext donated to a server homed on another core
           -- must drag its pending CBS replenishments with it, or the SM5.H
           -- affinity invariant `replenishQueueAffinityConsistentOnCore` breaks on
           -- a reachable path and the donee's budget is refilled by a core that no
-          -- longer runs it.  Both endpoints are resolved from the **pre**-state
+          -- longer runs it. Both endpoints are resolved from the **pre**-state
           -- `st`, which is what the `withLockSet` bracket sees when it acquires
           -- the two `SchedLockId.replenishQueue` write locks
           -- (`endpointCallCrossCoreDispatchSchedLockSet`); the intervening
           -- rendezvous writes `ipcState` / queue links / scheduler slots and the
           -- receiver's CSpace, never a `cpuAffinity`, so the pre-state reading is
-          -- the reading at the donation site.  Donor and donee on one core makes
+          -- the reading at the donation site. Donor and donee on one core makes
           -- the migration a definitional no-op, which is every single-core
           -- configuration.
           match applyCallDonationOnCore st' callerV receiverV
@@ -168,12 +168,12 @@ def endpointCallCrossCoreDispatch
               -- WS-SM SM6.A: propagate the donated-priority boost with the
               -- *cross-core* chain walk (`propagatePipChainCrossCore`, SM5.F.4 — in
               -- the FFI-free `Propagate`, so no import cycle below the API layer);
-              -- its `.1` is the post-walk state.  Each boosted server's run-queue
+              -- its `.1` is the post-walk state. Each boosted server's run-queue
               -- bucket migrates on its *home* core (via `pipBoostWithWake`'s
               -- `updatePipBoostOnCore`), so a passive server pinned to a remote core
               -- becomes schedulable at the donated priority there — and the run-queue
               -- change surfaces in the `(pre, post)` diff the syscall seam fires the
-              -- cross-core SGI from.  On the boot core with an unbound receiver this
+              -- cross-core SGI from. On the boot core with an unbound receiver this
               -- is state-identical to the single-core `propagatePriorityInheritance`
               -- (`pipBoostWithWake … bootCoreId` of an unbound thread = `updatePipBoost`).
               ((PriorityInheritance.propagatePipChainCrossCore st'' receiverTid executingCore).1,
@@ -183,24 +183,24 @@ def endpointCallCrossCoreDispatch
 
 /-- WS-SM SM6.A (live `.call` enforcement): the **information-flow-checked**
 cross-core call dispatch — the cross-core analogue of `endpointCallChecked`
-composed with `endpointCallCrossCoreDispatch`.  Mirrors the single-core checked
+composed with `endpointCallCrossCoreDispatch`. Mirrors the single-core checked
 `.call` arm exactly: it first applies the SM-IF security guard
 (`securityFlowsTo callerLabel endpointLabel`, rejecting with `.flowDenied` on a
 disallowed flow), then runs the full cross-core dispatch (WithCaps +
 `applyCallDonation` + PIP propagation), surfacing the cross-core `.reschedule`
-SGI.  This is the operation the live `dispatchWithCapChecked` `.call` arm routes
+SGI. This is the operation the live `dispatchWithCapChecked` `.call` arm routes
 through, replacing the boot-pinned `endpointCallChecked` so the receiver is woken
 on its *home* core. -/
 def endpointCallCrossCoreDispatchChecked
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) :
     SystemState × Except KernelError (CapTransferSummary × Option (CoreId × SgiKind)) :=
   -- WS-SM SM8.C: global lattice check AND this endpoint's configured override.
   if endpointFlowGate ctx endpointId (ctx.threadLabelOf caller)
       (ctx.endpointLabelOf endpointId) then
-    endpointCallCrossCoreDispatch endpointId caller msg endpointRights callerCspaceRoot
+    endpointCallCrossCoreDispatch endpointId caller msg endpointRights
       receiverSlotBase executingCore st
   else
     (st, .error .flowDenied)
@@ -210,11 +210,11 @@ checked cross-core dispatch is fail-closed (state unchanged, `.flowDenied`). -/
 theorem endpointCallCrossCoreDispatchChecked_flow_denied
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState)
     (hDeny : securityFlowsTo (ctx.threadLabelOf caller) (ctx.endpointLabelOf endpointId) = false) :
     endpointCallCrossCoreDispatchChecked ctx endpointId caller msg endpointRights
-        callerCspaceRoot receiverSlotBase executingCore st = (st, .error .flowDenied) := by
+        receiverSlotBase executingCore st = (st, .error .flowDenied) := by
   -- WS-SM SM8.C: a denied global flow denies the gate whatever the override says,
   -- so the hypothesis is the one this theorem always had.
   simp [endpointCallCrossCoreDispatchChecked,
@@ -225,21 +225,21 @@ unchecked cross-core dispatch — the guard is a pure precondition. -/
 theorem endpointCallCrossCoreDispatchChecked_flow_allowed
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState)
     (hAllow : securityFlowsTo (ctx.threadLabelOf caller) (ctx.endpointLabelOf endpointId) = true)
     -- WS-SM SM8.C: the endpoint's override must admit the flow too.
     (hOverride : endpointOverrideAllows ctx endpointId (ctx.threadLabelOf caller)
       (ctx.endpointLabelOf endpointId) = true) :
     endpointCallCrossCoreDispatchChecked ctx endpointId caller msg endpointRights
-        callerCspaceRoot receiverSlotBase executingCore st
+        receiverSlotBase executingCore st
       = endpointCallCrossCoreDispatch endpointId caller msg endpointRights
-          callerCspaceRoot receiverSlotBase executingCore st := by
+          receiverSlotBase executingCore st := by
   simp [endpointCallCrossCoreDispatchChecked,
     endpointFlowGate_of ctx endpointId _ _ hAllow hOverride]
 
 -- ============================================================================
--- §3  Characterisation theorems
+-- §3 Characterisation theorems
 -- ============================================================================
 
 /-- WS-SM SM6.A.8: with no capabilities to transfer, the WithCaps cross-core
@@ -248,16 +248,16 @@ surfaced SGI is the bare call's — the SM6.A.3 SGI characterisation carries to
 the WithCaps path. -/
 theorem endpointCallWithCapsOnCore_no_caps
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (endpointRights : AccessRightSet) (callerCspaceRoot : SeLe4n.ObjId)
+    (endpointRights : AccessRightSet)
     (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
     (hCaps : msg.caps.isEmpty = true) :
-    endpointCallWithCapsOnCore endpointId caller msg endpointRights callerCspaceRoot
+    endpointCallWithCapsOnCore endpointId caller msg endpointRights
         receiverSlotBase executingCore st
       = ((endpointCallOnCore endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1,
          (endpointCallOnCore endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).2.map
            (fun sgi => ({ results := #[] }, sgi))) := by
   -- PR #873 round 13: against the **stamped** message, because that is what the
-  -- wrapper transmits.  With no capabilities the grant bit changes no behaviour,
+  -- wrapper transmits. With no capabilities the grant bit changes no behaviour,
   -- but it is part of the message the send parks, so saying otherwise would be
   -- saying something false about the state.
   unfold endpointCallWithCapsOnCore
@@ -271,17 +271,17 @@ the cross-core dispatch performs no donation — it is exactly the WithCaps call
 Donation only fires on an immediate rendezvous with a passive server. -/
 theorem endpointCallCrossCoreDispatch_no_receiver
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (endpointRights : AccessRightSet) (callerCspaceRoot : SeLe4n.ObjId)
+    (endpointRights : AccessRightSet)
     (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
     (hNoRecv : (match st.getEndpoint? endpointId with
       | some ep => ep.receiveQ.head | none => none) = none) :
-    endpointCallCrossCoreDispatch endpointId caller msg endpointRights callerCspaceRoot
+    endpointCallCrossCoreDispatch endpointId caller msg endpointRights
         receiverSlotBase executingCore st
-      = endpointCallWithCapsOnCore endpointId caller msg endpointRights callerCspaceRoot
+      = endpointCallWithCapsOnCore endpointId caller msg endpointRights
           receiverSlotBase executingCore st := by
   unfold endpointCallCrossCoreDispatch
   rw [hNoRecv]
-  cases h : endpointCallWithCapsOnCore endpointId caller msg endpointRights callerCspaceRoot
+  cases h : endpointCallWithCapsOnCore endpointId caller msg endpointRights
       receiverSlotBase executingCore st with
   | mk st' res => cases res with
     | error e => rfl

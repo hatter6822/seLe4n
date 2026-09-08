@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Безпека" /></a>
-  <img src="https://img.shields.io/badge/version-0.34.56-blue" alt="Версія" />
+  <img src="https://img.shields.io/badge/version-0.34.124-blue" alt="Версія" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Ліцензія" /></a>
 </p>
@@ -86,13 +86,21 @@ security model) від seL4, водночас впроваджуючи архі�
      Регенерація: ./scripts/generate_codebase_map.py --pretty
      Джерело істини: docs/codebase_map.json (readme_sync) -->
 
+<!-- MAINTAINERS/TRANSLATORS: the three metric rows below (production LoC,
+     test LoC, proved declarations) are WRITTEN by
+     scripts/sync_translated_metrics.py from docs/codebase_map.json.  A hand
+     edit is overwritten on the next sync.  To reword a label, a preposition
+     or an inflected noun, edit that script's TARGETS table in the same
+     commit: it matches the surrounding literals verbatim and fails loudly
+     when they change, so it can never quietly stop syncing this file. -->
+
 | Атрибут | Значення |
 |---------|----------|
-| **Версія** | `0.34.56` |
+| **Версія** | `0.34.124` |
 | **Тулчейн Lean** | `v4.28.0` |
-| **Продуктовий код (Lean LoC)** | 286 841 рядок у 286 файлах |
-| **Тестовий код (Lean LoC)** | 64 078 рядків у 69 тест-сьютах |
-| **Доведені декларації** | 9 601 декларація theorem/lemma (нуль sorry/axiom) |
+| **Продуктовий код (Lean LoC)** | 355 916 рядків у 328 файлах |
+| **Тестовий код (Lean LoC)** | 72 875 рядків у 70 тест-сьютах |
+| **Доведені декларації** | 11 889 декларацій theorem/lemma (нуль sorry/axiom) |
 | **Крейти Rust** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) у 48 файлах вихідного коду |
 | **Цільове обладнання** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Прив'язка до обладнання** | **H3 ЗАВЕРШЕНО** (WS-AG AG1–AG10): HAL, GIC-400, таймер, таблиці сторінок ARMv8, FFI-міст, завантаження в QEMU |

@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.Lifecycle.Suspend
+import SeLe4n.Kernel.IPC.Invariant.TimeoutAbortPreservation
 -- WS-SM SM6.E: cleanup-primitive `objects.invExt` lemmas
 -- (`removeFromAll*_preserves_objects_invExt`,
 -- `cleanupDonatedSchedContext_preserves_objects_invExt`), composed by the
@@ -45,6 +46,539 @@ open SeLe4n.Kernel
 -- D1-I: Transport lemmas — scheduler field preservation
 -- ============================================================================
 
+-- ============================================================================
+-- WS-OD OD1.4: the holder-abort prefix's frames
+-- ============================================================================
+--
+-- `returnDonationToCancelledCaller` gained a step: before handing the donated
+-- SchedContext back it ends the holder's outstanding send or call, because the
+-- hand-back is what leaves the holder `.unbound` and `passiveServerIdle` forbids
+-- an unbound thread to be blocked on one.  The frames below are that step's
+-- half of every field theorem the reclaim already proved — each is the abort's
+-- own frame lifted through two `match`es, so the reclaim's proofs gain one
+-- composition step rather than a second case analysis.
+
+/-- WS-OD OD1.4: the holder abort writes no scheduler state.  This is the
+property `cancelIpcBlocking_scheduler_eq` — with four cross-core consumers —
+rests on, and the reason the reclaim calls `abortPendingIpcOnEndpoint` rather
+than `timeoutThread`. -/
+theorem abortHolderPendingIpc_scheduler_eq (st : SystemState)
+    (holder : SeLe4n.ThreadId) :
+    (abortHolderPendingIpc st holder).scheduler = st.scheduler := by
+  unfold abortHolderPendingIpc
+  split
+  · rfl
+  · rename_i holderTcb _
+    split
+    · rename_i epId _
+      cases h : abortPendingIpcOnEndpoint epId false holder st with
+      | error _ => rfl
+      | ok st' => exact abortPendingIpcOnEndpoint_scheduler_eq epId false holder st st' h
+    · rename_i epId _
+      cases h : abortPendingIpcOnEndpoint epId false holder st with
+      | error _ => rfl
+      | ok st' => exact abortPendingIpcOnEndpoint_scheduler_eq epId false holder st st' h
+    · rfl
+
+/-- WS-OD OD1.4: the holder abort never touches the machine, hence no core's
+register bank. -/
+theorem abortHolderPendingIpc_machine_eq (st : SystemState)
+    (holder : SeLe4n.ThreadId) :
+    (abortHolderPendingIpc st holder).machine = st.machine := by
+  unfold abortHolderPendingIpc
+  split
+  · rfl
+  · rename_i holderTcb _
+    split
+    · rename_i epId _
+      cases h : abortPendingIpcOnEndpoint epId false holder st with
+      | error _ => rfl
+      | ok st' => exact abortPendingIpcOnEndpoint_machine epId false holder st st' h
+    · rename_i epId _
+      cases h : abortPendingIpcOnEndpoint epId false holder st with
+      | error _ => rfl
+      | ok st' => exact abortPendingIpcOnEndpoint_machine epId false holder st st' h
+    · rfl
+
+/-- WS-OD OD1.4: the holder abort preserves the service registry. -/
+theorem abortHolderPendingIpc_serviceRegistry_eq (st : SystemState)
+    (holder : SeLe4n.ThreadId) :
+    (abortHolderPendingIpc st holder).serviceRegistry = st.serviceRegistry := by
+  unfold abortHolderPendingIpc
+  split
+  · rfl
+  · rename_i holderTcb _
+    split
+    · rename_i epId _
+      cases h : abortPendingIpcOnEndpoint epId false holder st with
+      | error _ => rfl
+      | ok st' => exact abortPendingIpcOnEndpoint_serviceRegistry_eq epId false holder st st' h
+    · rename_i epId _
+      cases h : abortPendingIpcOnEndpoint epId false holder st with
+      | error _ => rfl
+      | ok st' => exact abortPendingIpcOnEndpoint_serviceRegistry_eq epId false holder st st' h
+    · rfl
+
+/-- WS-OD OD1.4: the holder abort preserves the object-store invariant. -/
+theorem abortHolderPendingIpc_preserves_objects_invExt (st : SystemState)
+    (holder : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    (abortHolderPendingIpc st holder).objects.invExt := by
+  unfold abortHolderPendingIpc
+  split
+  · exact hInv
+  · rename_i holderTcb _
+    split
+    · rename_i epId _
+      cases h : abortPendingIpcOnEndpoint epId false holder st with
+      | error _ => exact hInv
+      | ok st' =>
+        exact abortPendingIpcOnEndpoint_preserves_objects_invExt epId false holder st st' hInv h
+    · rename_i epId _
+      cases h : abortPendingIpcOnEndpoint epId false holder st with
+      | error _ => exact hInv
+      | ok st' =>
+        exact abortPendingIpcOnEndpoint_preserves_objects_invExt epId false holder st st' hInv h
+    · exact hInv
+
+/-- WS-OD OD1.4: the holder abort carries every pre-state TCB's `cpuAffinity`.
+`cancelIpcBlocking_tcb_lookup` is what ultimately needs it, and affinity is the
+one field that theorem's whole chain tracks. -/
+theorem abortHolderPendingIpc_tcb_lookup (st : SystemState)
+    (holder : SeLe4n.ThreadId) (hInv : st.objects.invExt)
+    (k : SeLe4n.ObjId) (t0 : TCB) (hk : st.objects[k]? = some (.tcb t0)) :
+    ∃ t', (abortHolderPendingIpc st holder).objects[k]? = some (.tcb t') ∧
+      t'.cpuAffinity = t0.cpuAffinity := by
+  unfold abortHolderPendingIpc
+  split
+  · exact ⟨t0, hk, rfl⟩
+  · rename_i holderTcb _
+    split
+    · rename_i epId _
+      cases h : abortPendingIpcOnEndpoint epId false holder st with
+      | error _ => exact ⟨t0, hk, rfl⟩
+      | ok st' =>
+        exact abortPendingIpcOnEndpoint_tcb_lookup epId false holder st st' hInv h k t0 hk
+    · rename_i epId _
+      cases h : abortPendingIpcOnEndpoint epId false holder st with
+      | error _ => exact ⟨t0, hk, rfl⟩
+      | ok st' =>
+        exact abortPendingIpcOnEndpoint_tcb_lookup epId false holder st st' hInv h k t0 hk
+    · exact ⟨t0, hk, rfl⟩
+
+/-- WS-OD OD1.4: the holder abort never writes a notification. -/
+theorem abortHolderPendingIpc_notification_backward (st : SystemState)
+    (holder : SeLe4n.ThreadId) (hInv : st.objects.invExt)
+    (oid : SeLe4n.ObjId) (ntfn : Notification)
+    (hPost : (abortHolderPendingIpc st holder).objects[oid]? = some (.notification ntfn)) :
+    st.objects[oid]? = some (.notification ntfn) := by
+  unfold abortHolderPendingIpc at hPost
+  split at hPost
+  · exact hPost
+  · rename_i holderTcb _
+    split at hPost
+    · rename_i epId _
+      cases h : abortPendingIpcOnEndpoint epId false holder st with
+      | error _ => rw [h] at hPost; exact hPost
+      | ok st' =>
+        rw [h] at hPost
+        exact abortPendingIpcOnEndpoint_notification_backward epId false holder st st' hInv h
+          oid ntfn hPost
+    · rename_i epId _
+      cases h : abortPendingIpcOnEndpoint epId false holder st with
+      | error _ => rw [h] at hPost; exact hPost
+      | ok st' =>
+        rw [h] at hPost
+        exact abortPendingIpcOnEndpoint_notification_backward epId false holder st st' hInv h
+          oid ntfn hPost
+    · exact hPost
+
+/-- WS-OD OD1.4: the holder abort preserves the identity registry's
+well-formedness. -/
+theorem abortHolderPendingIpc_preserves_objectIndexSet_invExt (st : SystemState)
+    (holder : SeLe4n.ThreadId) (hObjSetInv : st.objectIndexSet.table.invExt) :
+    (abortHolderPendingIpc st holder).objectIndexSet.table.invExt := by
+  unfold abortHolderPendingIpc
+  split
+  · exact hObjSetInv
+  · rename_i holderTcb _
+    split
+    · rename_i epId _
+      cases h : abortPendingIpcOnEndpoint epId false holder st with
+      | error _ => exact hObjSetInv
+      | ok stA =>
+        exact abortPendingIpcOnEndpoint_preserves_objectIndexSet_invExt epId false holder st stA
+          hObjSetInv h
+    · rename_i epId _
+      cases h : abortPendingIpcOnEndpoint epId false holder st with
+      | error _ => exact hObjSetInv
+      | ok stA =>
+        exact abortPendingIpcOnEndpoint_preserves_objectIndexSet_invExt epId false holder st stA
+          hObjSetInv h
+    · exact hObjSetInv
+
+/-- WS-OD OD1.4: the holder abort preserves the identity registry's
+completeness. -/
+theorem abortHolderPendingIpc_preserves_objectIndexSetComplete (st : SystemState)
+    (holder : SeLe4n.ThreadId) (hInv : st.objects.invExt)
+    (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hComplete : SeLe4n.Model.objectIndexSetComplete st) :
+    SeLe4n.Model.objectIndexSetComplete (abortHolderPendingIpc st holder) := by
+  unfold abortHolderPendingIpc
+  split
+  · exact hComplete
+  · rename_i holderTcb _
+    split
+    · rename_i epId _
+      cases h : abortPendingIpcOnEndpoint epId false holder st with
+      | error _ => exact hComplete
+      | ok stA =>
+        exact abortPendingIpcOnEndpoint_preserves_objectIndexSetComplete epId false holder st stA
+          hInv hObjSetInv hComplete h
+    · rename_i epId _
+      cases h : abortPendingIpcOnEndpoint epId false holder st with
+      | error _ => exact hComplete
+      | ok stA =>
+        exact abortPendingIpcOnEndpoint_preserves_objectIndexSetComplete epId false holder st stA
+          hInv hObjSetInv hComplete h
+    · exact hComplete
+
+/-- **WS-OD OD1.4**: the holder abort is the identity unless the holder is
+blocked sending or calling.
+
+That is the whole of its reach, and the bound is exact rather than approximate:
+`passiveServerIdle` forbids `.blockedOnSend` / `.blockedOnCall` for an unbound
+descheduled thread and permits every other `ipcState`, so those two are the only
+states the reclaim has to end and every other holder is left untouched — bit for
+bit, not merely up to the invariants.
+
+The information-flow argument reads this: the abort's write set (the holder's
+endpoint object, the holder's queue neighbours, the holder's own TCB) is
+projection-*visible*, so `returnDonationToCancelledCaller_preserves_projection`
+carries an obligation about it — and this theorem discharges that obligation
+outright on every state where the abort does nothing. -/
+theorem abortHolderPendingIpc_eq_self_of_allowed (st : SystemState)
+    (holder : SeLe4n.ThreadId)
+    (hAllowed : ∀ t, lookupTcb st holder = some t → passiveServerIdleAllowed t.ipcState) :
+    abortHolderPendingIpc st holder = st := by
+  unfold abortHolderPendingIpc
+  split
+  · rfl
+  · rename_i holderTcb hLk
+    split
+    · rename_i epId hIp
+      rcases hAllowed holderTcb hLk with h | ⟨_, h | h⟩ | ⟨_, _, h⟩ <;> rw [hIp] at h <;> cases h
+    · rename_i epId hIp
+      rcases hAllowed holderTcb hLk with h | ⟨_, h | h⟩ | ⟨_, _, h⟩ <;> rw [hIp] at h <;> cases h
+    · rfl
+
+/-- WS-OD OD1.4: the holder abort never changes a thread's
+`schedContextBinding` — backwards.
+
+The abort writes queue links and the aborted thread's timeout fields; a binding
+is not among them.  This is what makes the reclaim's ordering sound: the
+donation is resolved on the pre-state, the abort runs, and the resolution is
+still the truth about the state the hand-back is applied to. -/
+theorem abortHolderPendingIpc_binding_backward (st : SystemState)
+    (holder : SeLe4n.ThreadId) (hInv : st.objects.invExt)
+    (k : SeLe4n.ObjId) (t' : TCB)
+    (hPost : (abortHolderPendingIpc st holder).objects[k]? = some (.tcb t')) :
+    ∃ t, st.objects[k]? = some (.tcb t) ∧
+      t.schedContextBinding = t'.schedContextBinding := by
+  unfold abortHolderPendingIpc at hPost
+  split at hPost
+  · exact ⟨t', hPost, rfl⟩
+  · rename_i holderTcb _
+    split at hPost
+    · rename_i epId _
+      cases h : abortPendingIpcOnEndpoint epId false holder st with
+      | error _ => rw [h] at hPost; exact ⟨t', hPost, rfl⟩
+      | ok stA =>
+        rw [h] at hPost
+        exact abortPendingIpcOnEndpoint_binding_backward epId false holder st stA hInv h
+          k t' hPost
+    · rename_i epId _
+      cases h : abortPendingIpcOnEndpoint epId false holder st with
+      | error _ => rw [h] at hPost; exact ⟨t', hPost, rfl⟩
+      | ok stA =>
+        rw [h] at hPost
+        exact abortPendingIpcOnEndpoint_binding_backward epId false holder st stA hInv h
+          k t' hPost
+    · exact ⟨t', hPost, rfl⟩
+
+/-- WS-OD OD1.4: the holder abort never changes a thread's
+`schedContextBinding` — forwards.
+
+Derived rather than re-proved: `_tcb_lookup` says the key still holds a TCB
+after the abort, and `_binding_backward` says whatever it holds has the binding
+the pre-state had there.  The two together are the forward statement, and the
+reclaim needs it in that direction — it resolves the holder's `.donated` binding
+before the abort and hands the context back after it. -/
+theorem abortHolderPendingIpc_binding_forward (st : SystemState)
+    (holder : SeLe4n.ThreadId) (hInv : st.objects.invExt)
+    (k : SeLe4n.ObjId) (t : TCB) (hPre : st.objects[k]? = some (.tcb t)) :
+    ∃ t', (abortHolderPendingIpc st holder).objects[k]? = some (.tcb t') ∧
+      t'.schedContextBinding = t.schedContextBinding := by
+  obtain ⟨t', hAt', _⟩ := abortHolderPendingIpc_tcb_lookup st holder hInv k t hPre
+  obtain ⟨t0, hAt0, hEq0⟩ := abortHolderPendingIpc_binding_backward st holder hInv k t' hAt'
+  rw [hPre] at hAt0
+  have hEqT : t = t0 := KernelObject.tcb.inj (Option.some.inj hAt0)
+  exact ⟨t', hAt', by rw [hEqT]; exact hEq0.symm⟩
+
+/-- **WS-OD OD1.5**: the holder abort frames `passiveServerIdle`.
+
+Each of the four arms is either the identity or one successful
+`abortPendingIpcOnEndpoint`, and a refused abort is the identity too — so the
+frame composes rather than re-running the case analysis. -/
+theorem abortHolderPendingIpc_passiveServerIdleFrame (st : SystemState)
+    (holder : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    passiveServerIdleFrame st (abortHolderPendingIpc st holder) := by
+  unfold abortHolderPendingIpc
+  split
+  · exact passiveServerIdleFrame.refl st
+  · rename_i holderTcb _
+    split
+    · rename_i epId _
+      cases h : abortPendingIpcOnEndpoint epId false holder st with
+      | error _ => exact passiveServerIdleFrame.refl st
+      | ok stA =>
+        simp only []
+        exact abortPendingIpcOnEndpoint_passiveServerIdleFrame hInv h
+    · rename_i epId _
+      cases h : abortPendingIpcOnEndpoint epId false holder st with
+      | error _ => exact passiveServerIdleFrame.refl st
+      | ok stA =>
+        simp only []
+        exact abortPendingIpcOnEndpoint_passiveServerIdleFrame hInv h
+    · exact passiveServerIdleFrame.refl st
+
+/-- **WS-OD OD1.5**: the holder the reclaim unbinds ends in a state
+`passiveServerIdle` permits.
+
+Two cases, and the endpoint conjunct is what rules out the third.  A holder in an
+allowed state is left untouched, so it stays allowed.  A holder blocked sending
+or calling is aborted — and the abort *succeeds*, because
+`ipcStateQueueMembershipConsistent` says the endpoint such a thread names is one
+(`abortPendingIpcOnEndpoint_ok`), which is the only way its two steps can fail.
+Without that conjunct the reclaim would have to admit a refused abort, and a
+refused abort leaves the holder exactly where it was: `.unbound` after the
+hand-back and still `.blockedOnCall`, the state OD1 exists to remove. -/
+theorem abortHolderPendingIpc_holder_ipcState_allowed (st : SystemState)
+    (holder : SeLe4n.ThreadId) (holderTcb : TCB)
+    (hInv : st.objects.invExt)
+    (hMem : ipcStateQueueMembershipConsistent st)
+    (hLk : lookupTcb st holder = some holderTcb)
+    (t' : TCB)
+    (h : (abortHolderPendingIpc st holder).getTcb? holder = some t') :
+    passiveServerIdleAllowed t'.ipcState := by
+  rw [SystemState.getTcb?_eq_some_iff] at h
+  have hHolderAt := lookupTcb_some_objects st holder holderTcb hLk
+  have hMemH := hMem holder holderTcb hHolderAt
+  unfold abortHolderPendingIpc at h
+  rw [hLk] at h
+  simp only [] at h
+  -- The two blocked arms abort; every other arm is the identity and already allowed.
+  cases hIp : holderTcb.ipcState with
+  | ready =>
+    rw [hIp] at h; simp only [] at h
+    rw [hHolderAt] at h
+    exact Or.inl (by rw [← KernelObject.tcb.inj (Option.some.inj h), hIp])
+  | blockedOnReceive ep =>
+    rw [hIp] at h; simp only [] at h
+    rw [hHolderAt] at h
+    exact Or.inr (Or.inl ⟨ep, Or.inl (by
+      rw [← KernelObject.tcb.inj (Option.some.inj h), hIp])⟩)
+  | blockedOnNotification n =>
+    rw [hIp] at h; simp only [] at h
+    rw [hHolderAt] at h
+    exact Or.inr (Or.inl ⟨n, Or.inr (by
+      rw [← KernelObject.tcb.inj (Option.some.inj h), hIp])⟩)
+  | blockedOnReply ep rt =>
+    rw [hIp] at h; simp only [] at h
+    rw [hHolderAt] at h
+    exact Or.inr (Or.inr ⟨ep, rt, by
+      rw [← KernelObject.tcb.inj (Option.some.inj h), hIp]⟩)
+  | blockedOnSend epId =>
+    rw [hIp] at hMemH
+    obtain ⟨ep, hEp, _⟩ := hMemH
+    obtain ⟨stA, hOk⟩ := abortPendingIpcOnEndpoint_ok (isReceiveQ := false) hInv hEp hLk
+    rw [hIp] at h
+    simp only [] at h
+    rw [hOk] at h
+    simp only [] at h
+    exact Or.inl (abortPendingIpcOnEndpoint_aborted_ipcState hInv hOk t'
+      ((SystemState.getTcb?_eq_some_iff stA holder t').mpr h))
+  | blockedOnCall epId =>
+    rw [hIp] at hMemH
+    obtain ⟨ep, hEp, _⟩ := hMemH
+    obtain ⟨stA, hOk⟩ := abortPendingIpcOnEndpoint_ok (isReceiveQ := false) hInv hEp hLk
+    rw [hIp] at h
+    simp only [] at h
+    rw [hOk] at h
+    simp only [] at h
+    exact Or.inl (abortPendingIpcOnEndpoint_aborted_ipcState hInv hOk t'
+      ((SystemState.getTcb?_eq_some_iff stA holder t').mpr h))
+
+/-- **WS-OD OD1.4**: the holder abort carries `donationOwnerValid`.
+
+The reclaim resolves the donation on the pre-state and then hands it back on the
+*aborted* state, so the fact `returnDonatedSchedContext_ok_under_invariants`
+reads has to survive the abort.  It does, and for a reason that is specific to
+the thread the reclaim aborts: that thread is the *holder* of the cancelled
+caller's donation, so its binding is `.donated`, while `donationOwnerValid`'s own
+second clause puts every owner at `.unbound` — the abort's one substantive write
+therefore lands on no owner, and everything else it touches (queue links) no
+conjunct of this shape reads.
+
+The `.donated` binding is not assumed here: it is read off the state through the
+same lookup `abortHolderPendingIpc` itself performs, so the hypothesis is a fact
+about the *holder*, supplied by `cancelledCallerDonation?`'s characterisation
+rather than by the caller. -/
+theorem abortHolderPendingIpc_preserves_donationOwnerValid (st : SystemState)
+    (holder : SeLe4n.ThreadId) (hInv : st.objects.invExt)
+    (hBound : ∀ t, st.getTcb? holder = some t → t.schedContextBinding ≠ .unbound)
+    (hOwner : donationOwnerValid st) :
+    donationOwnerValid (abortHolderPendingIpc st holder) := by
+  unfold abortHolderPendingIpc
+  split
+  · exact hOwner
+  · rename_i holderTcb _
+    split
+    · rename_i epId _
+      cases h : abortPendingIpcOnEndpoint epId false holder st with
+      | error _ => exact hOwner
+      | ok st' =>
+        simp only []
+        exact abortPendingIpcOnEndpoint_preserves_donationOwnerValid epId false holder st st'
+          hInv h hBound hOwner
+    · rename_i epId _
+      cases h : abortPendingIpcOnEndpoint epId false holder st with
+      | error _ => exact hOwner
+      | ok st' =>
+        simp only []
+        exact abortPendingIpcOnEndpoint_preserves_donationOwnerValid epId false holder st st'
+          hInv h hBound hOwner
+    · exact hOwner
+
+/-- **WS-RR RR7.22 (residual, remediation)**: the donation return preserves the
+scheduler — its three `storeObject`s write `objects` and the bookkeeping maps,
+and the replenishment migration that *does* write the scheduler sits at the
+`OnCore` layer, where the two home cores are resolved for the bracket. -/
+theorem returnDonationToCancelledCaller_scheduler_eq (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) :
+    (returnDonationToCancelledCaller st tid tcb).scheduler = st.scheduler := by
+  unfold returnDonationToCancelledCaller
+  split
+  · rename_i scId holder _ _ _
+    cases h : returnDonatedSchedContext (abortHolderPendingIpc st holder) holder scId tid with
+    | error _ => rfl
+    | ok st' =>
+      exact (returnDonatedSchedContext_scheduler_eq _ st' holder scId tid h).trans
+        (abortHolderPendingIpc_scheduler_eq st holder)
+  · rfl
+
+/-- **WS-RR RR7.22 (residual, remediation)**: the donation return never touches
+the machine, hence no core's register bank. -/
+theorem returnDonationToCancelledCaller_machine_eq (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) :
+    (returnDonationToCancelledCaller st tid tcb).machine = st.machine := by
+  unfold returnDonationToCancelledCaller
+  split
+  · rename_i scId holder _ _ _
+    cases h : returnDonatedSchedContext (abortHolderPendingIpc st holder) holder scId tid with
+    | error _ => rfl
+    | ok st' =>
+      exact (returnDonatedSchedContext_machine_eq _ st' holder scId tid h).trans
+        (abortHolderPendingIpc_machine_eq st holder)
+  · rfl
+
+/-- **WS-RR RR7.22 (residual, remediation)**: the donation return preserves the
+service registry. -/
+theorem returnDonationToCancelledCaller_serviceRegistry_eq (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) :
+    (returnDonationToCancelledCaller st tid tcb).serviceRegistry = st.serviceRegistry := by
+  unfold returnDonationToCancelledCaller
+  split
+  · rename_i scId holder _ _ _
+    cases h : returnDonatedSchedContext (abortHolderPendingIpc st holder) holder scId tid with
+    | error _ => rfl
+    | ok st' =>
+      exact (returnDonatedSchedContext_serviceRegistry_eq _ st' holder scId tid h).trans
+        (abortHolderPendingIpc_serviceRegistry_eq st holder)
+  · rfl
+
+/-- **WS-RR RR7.22 (residual, remediation)**: the donation return is the identity
+at a key that holds no TCB.
+
+Not a special case but a consequence of the operation's shape: the return's
+second step looks the *caller* up, so a caller with no TCB makes the whole return
+fail with `.objectNotFound`, and the arm declines. -/
+theorem returnDonationToCancelledCaller_eq_self_of_getTcb?_none (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hT : st.getTcb? tid = none) :
+    returnDonationToCancelledCaller st tid tcb = st := by
+  unfold returnDonationToCancelledCaller
+  rw [hT]
+  cases cancelledCallerDonation? st tid tcb <;> rfl
+
+/-- **WS-RR RR7.22 (residual, remediation)**, restated at WS-OD OD1.4: the
+donation return carries every pre-state TCB's `cpuAffinity`.
+
+It used to say more — that the reclaim rewrites `schedContextBinding` and
+nothing else (`tcbBindingRewrite`) — and that was true while the reclaim's only
+write *was* the binding hand-back.  OD1.4 gave it a second write: before handing
+the context back it ends the holder's outstanding send or call, which rewrites
+that thread's `ipcState`, queue links, timeout fields and return frame.  So the
+binding-only claim is false of the operation now, and the honest statement is
+the one its single consumer (`cancelIpcBlocking_tcb_lookup`) actually needs —
+affinity, which neither write touches.  The three-step chain in that consumer
+reads exactly this shape from `removeFromAllEndpointQueues_tcb_lookup` and
+`restoreToReadyCancelled_tcb_lookup`, so the reply arm now matches its
+siblings. -/
+theorem returnDonationToCancelledCaller_tcb_lookup (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (hInv : st.objects.invExt)
+    (k : SeLe4n.ObjId) (t0 : TCB) (hk : st.objects[k]? = some (.tcb t0)) :
+    ∃ t', (returnDonationToCancelledCaller st tid tcb).objects[k]? = some (.tcb t') ∧
+      t'.cpuAffinity = t0.cpuAffinity := by
+  unfold returnDonationToCancelledCaller
+  split
+  · rename_i scId holder _ _ _
+    obtain ⟨tA, hkA, hAffA⟩ := abortHolderPendingIpc_tcb_lookup st holder hInv k t0 hk
+    have hInvA := abortHolderPendingIpc_preserves_objects_invExt st holder hInv
+    split
+    · rename_i st' h
+      obtain ⟨tB, hkB, hRw⟩ :=
+        returnDonatedSchedContext_tcb_rewrite _ st' holder scId tid hInvA h k tA hkA
+      obtain ⟨sb, rfl⟩ := hRw
+      exact ⟨_, hkB, hAffA⟩
+    -- The refusal arm is all-or-nothing: it returns the *pre*-state, abort and
+    -- all, so the pre-state's own TCB is the witness.
+    · exact ⟨t0, hk, rfl⟩
+  · exact ⟨t0, hk, rfl⟩
+
+/-- **WS-RR RR7.22 (residual, remediation)**: the donation return preserves the
+Robin-Hood external invariant — three `storeObject`s, each of which does. -/
+theorem returnDonationToCancelledCaller_preserves_objects_invExt (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (hInv : st.objects.invExt) :
+    (returnDonationToCancelledCaller st tid tcb).objects.invExt := by
+  unfold returnDonationToCancelledCaller
+  split
+  · rename_i scId holder _ _ _
+    split
+    · rename_i st' h
+      exact returnDonatedSchedContext_preserves_objects_invExt _ st' holder scId tid
+        (abortHolderPendingIpc_preserves_objects_invExt st holder hInv) h
+    · exact hInv
+  · exact hInv
+
+/-- **WS-RR RR7.22 (residual, remediation)**: the donation return is the identity
+when there is nothing to return — no recorded reply target, no such thread, or a
+holder whose binding is not a donation naming this caller. -/
+@[simp] theorem returnDonationToCancelledCaller_none (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (h : cancelledCallerDonation? st tid tcb = none) :
+    returnDonationToCancelledCaller st tid tcb = st := by
+  unfold returnDonationToCancelledCaller
+  rw [h]
+
 /-- D1-I: cancelIpcBlocking only modifies `objects`, preserving the scheduler.
     Each IPC state branch either (a) is a no-op, (b) uses
     removeFromAllEndpointQueues (which preserves scheduler) then inserts into
@@ -56,13 +590,17 @@ theorem cancelIpcBlocking_scheduler_eq
   cases tcb.ipcState with
   | ready => rfl
   | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
-    -- clearTcbIpcFields preserves scheduler, removeFromAllEndpointQueues preserves scheduler
-    rw [clearTcbIpcFields_scheduler_eq, removeFromAllEndpointQueues_scheduler_eq]
+    -- restoreToReadyCancelled preserves scheduler, removeFromAllEndpointQueues preserves scheduler
+    rw [restoreToReadyCancelled_scheduler_eq, removeFromAllEndpointQueues_scheduler_eq]
   | blockedOnReply _ _ =>
     -- WS-SM SM6.D (PR #822 review): the reply-link consume only writes `objects`.
-    rw [consumeReplyLink_scheduler_eq, clearTcbIpcFields_scheduler_eq]
+    -- WS-RR RR7.22 (residual, remediation): so does the donation return — its
+    -- three `storeObject`s leave the scheduler alone, which is why the
+    -- replenishment migration sits at the `OnCore` layer and not here.
+    rw [consumeReplyLink_scheduler_eq, restoreToReadyCancelled_scheduler_eq,
+      returnDonationToCancelledCaller_scheduler_eq]
   | blockedOnNotification _ =>
-    rw [clearTcbIpcFields_scheduler_eq, removeFromAllNotificationWaitLists_scheduler_eq]
+    rw [restoreToReadyCancelled_scheduler_eq, removeFromAllNotificationWaitLists_scheduler_eq]
 
 /-- WS-SM SM8.B: **the IPC-blocking teardown never touches the machine** — and
 hence never touches any core's register bank.
@@ -82,11 +620,12 @@ theorem cancelIpcBlocking_machine_eq
   cases tcb.ipcState with
   | ready => rfl
   | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
-    rw [clearTcbIpcFields_machine_eq, removeFromAllEndpointQueues_machine_eq]
+    rw [restoreToReadyCancelled_machine_eq, removeFromAllEndpointQueues_machine_eq]
   | blockedOnReply _ _ =>
-    rw [consumeReplyLink_machine_eq, clearTcbIpcFields_machine_eq]
+    rw [consumeReplyLink_machine_eq, restoreToReadyCancelled_machine_eq,
+      returnDonationToCancelledCaller_machine_eq]
   | blockedOnNotification _ =>
-    rw [clearTcbIpcFields_machine_eq, removeFromAllNotificationWaitLists_machine_eq]
+    rw [restoreToReadyCancelled_machine_eq, removeFromAllNotificationWaitLists_machine_eq]
 
 /-- D1-I/AE3-C/R5.A: `cancelBoundDonation` preserves `runQueue` and
 `current`. The bound arm rewrites the SchedContext, drops it from the
@@ -157,11 +696,12 @@ theorem cancelIpcBlocking_serviceRegistry_eq
   cases tcb.ipcState with
   | ready => rfl
   | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
-    rw [clearTcbIpcFields_serviceRegistry_eq, removeFromAllEndpointQueues_serviceRegistry_eq]
+    rw [restoreToReadyCancelled_serviceRegistry_eq, removeFromAllEndpointQueues_serviceRegistry_eq]
   | blockedOnReply _ _ =>
-    rw [consumeReplyLink_serviceRegistry_eq, clearTcbIpcFields_serviceRegistry_eq]
+    rw [consumeReplyLink_serviceRegistry_eq, restoreToReadyCancelled_serviceRegistry_eq,
+      returnDonationToCancelledCaller_serviceRegistry_eq]
   | blockedOnNotification _ =>
-    rw [clearTcbIpcFields_serviceRegistry_eq, removeFromAllNotificationWaitLists_serviceRegistry_eq]
+    rw [restoreToReadyCancelled_serviceRegistry_eq, removeFromAllNotificationWaitLists_serviceRegistry_eq]
 
 /-- D1-I: clearPendingState preserves serviceRegistry. -/
 theorem clearPendingState_serviceRegistry_eq
@@ -174,58 +714,6 @@ theorem clearPendingState_lifecycle_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (clearPendingState st tid).lifecycle = st.lifecycle := by
   unfold clearPendingState; split <;> rfl
-
-/-- Helper: storeObject preserves serviceRegistry. -/
-private theorem storeObject_serviceRegistry_eq (st : SystemState) (oid : SeLe4n.ObjId)
-    (obj : KernelObject) (pair : Unit × SystemState)
-    (h : storeObject oid obj st = .ok pair) :
-    pair.2.serviceRegistry = st.serviceRegistry := by
-  unfold storeObject at h; cases h; rfl
-
-/-- Helper: returnDonatedSchedContext preserves serviceRegistry.
-    Mirrors the proof structure of `returnDonatedSchedContext_scheduler_eq`. -/
-private theorem returnDonatedSchedContext_serviceRegistry_eq
-    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
-    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
-    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st') :
-    st'.serviceRegistry = st.serviceRegistry := by
-  unfold returnDonatedSchedContext at h
-  revert h
-  cases hObj : st.objects[scId.toObjId]? with
-  | none => intro h; cases h
-  | some obj =>
-    cases obj with
-    | schedContext sc =>
-      simp only []
-      -- WS-RR RR2.8: the new `sc.boundThread = some serverTid` guard.
-      split
-      · intro h; cases h
-      · cases hS1 : storeObject scId.toObjId _ st with
-        | error _ => intro h; cases h
-        | ok p1 =>
-          simp only []
-          cases hL1 : lookupTcb p1.2 originalOwner with
-          | none => intro h; cases h
-          | some _ =>
-            simp only []
-            cases hS2 : storeObject originalOwner.toObjId _ p1.2 with
-            | error _ => intro h; cases h
-            | ok p2 =>
-              simp only []
-              cases hL2 : lookupTcb p2.2 serverTid with
-              | none => intro h; cases h
-              | some _ =>
-                simp only []
-                cases hS3 : storeObject serverTid.toObjId _ p2.2 with
-                | error _ => intro h; cases h
-                | ok p3 =>
-                  simp only [Except.ok.injEq]
-                  intro hEq; subst hEq
-                  have h1 := storeObject_serviceRegistry_eq st _ _ _ hS1
-                  have h2 := storeObject_serviceRegistry_eq p1.2 _ _ _ hS2
-                  have h3 := storeObject_serviceRegistry_eq p2.2 _ _ _ hS3
-                  exact h3.trans (h2.trans h1)
-    | _ => simp only []; intro h; cases h
 
 /-- Helper / AJ1-A (M-14): cleanupDonatedSchedContext preserves serviceRegistry
 (conditional on success). -/
@@ -284,19 +772,37 @@ theorem cancelDonation_serviceRegistry_eq
 -- D1-I: Transport lemmas — lifecycle preservation
 -- ============================================================================
 
-/-- D1-I: cancelIpcBlocking preserves lifecycle. -/
+/-- D1-I: `cancelIpcBlocking` preserves the lifecycle metadata — **when there is
+no donation to return**.
+
+WS-RR RR7.22 (residual, remediation) added that hypothesis rather than dropping
+the theorem, because the reply arm's donation return goes through `storeObject`,
+whose whole point is to maintain the lifecycle bookkeeping (`objectTypes` and
+`capabilityRefs` are rewritten at the stored key).  The other three writes on
+that arm — `consumeReplyLink` and the two halves of the restore — insert into
+`objects` directly and so leave the metadata alone; the return does not, and a
+theorem saying otherwise would be false of the corrected operation.
+
+The values written are the ones already there (the same object types, and a
+`capabilityRefs` filter that removes nothing at a TCB or SchedContext key), so
+the metadata is semantically unchanged; it is not *definitionally* unchanged, and
+this frame is about definitional equality.  Nothing in the tree consumes this
+lemma today, which is why the hypothesis costs nothing; a caller that needs the
+unconditional form needs a semantic-equality frame instead. -/
 theorem cancelIpcBlocking_lifecycle_eq
-    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hNoDonation : cancelledCallerDonation? st tid tcb = none) :
     (cancelIpcBlocking st tid tcb).lifecycle = st.lifecycle := by
   unfold cancelIpcBlocking
-  cases tcb.ipcState with
+  cases hI : tcb.ipcState with
   | ready => rfl
   | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
-    rw [clearTcbIpcFields_lifecycle_eq, removeFromAllEndpointQueues_lifecycle_eq]
+    rw [restoreToReadyCancelled_lifecycle_eq, removeFromAllEndpointQueues_lifecycle_eq]
   | blockedOnReply _ _ =>
-    rw [consumeReplyLink_lifecycle_eq, clearTcbIpcFields_lifecycle_eq]
+    rw [consumeReplyLink_lifecycle_eq, restoreToReadyCancelled_lifecycle_eq,
+      returnDonationToCancelledCaller_none st tid tcb hNoDonation]
   | blockedOnNotification _ =>
-    rw [clearTcbIpcFields_lifecycle_eq, removeFromAllNotificationWaitLists_lifecycle_eq]
+    rw [restoreToReadyCancelled_lifecycle_eq, removeFromAllNotificationWaitLists_lifecycle_eq]
 
 -- ============================================================================
 -- R5.B (DEEP-SUSP-01): resumeThread PIP-readiness — structural witnesses
@@ -332,7 +838,7 @@ theorem cancelIpcBlocking_lifecycle_eq
 theorem restoreToReady_objectIndex_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (restoreToReady st tid).objectIndex = st.objectIndex := by
-  unfold restoreToReady; split <;> rfl
+  unfold restoreToReady restoreToReadyStaging; split <;> rfl
 
 /-- R5.B: When `restoreToReady` rewrites the TCB at `tid`, the resulting
 TCB has `ipcState = .ready` and the three queue link fields cleared. The
@@ -353,7 +859,7 @@ theorem restoreToReady_objects_eq_at_tid
                 queueNext := none
                 queuePPrev := none
                 pendingReceiveReply := none }) := by
-  unfold restoreToReady
+  unfold restoreToReady restoreToReadyStaging
   rw [hLook]
 
 /-- R5.B: The resumed thread's TCB has `pipBoost` equal to the post-
@@ -423,14 +929,29 @@ theorem resumeThread_pipBoost_consistent_post_restore
 
 /-- WS-RC R5.B.2 / Phase Q1: `restoreToReady` preserves `invExt` (the
     RHTable external invariant) on the `objects` field. -/
-theorem restoreToReady_invExt
+theorem restoreToReadyStaging_invExt
     (st : SystemState) (tid : SeLe4n.ThreadId)
+    (frame : Option Architecture.SyscallReturnFrame)
     (hObjInv : st.objects.invExt) :
-    (restoreToReady st tid).objects.invExt := by
-  unfold restoreToReady
+    (restoreToReadyStaging st tid frame).objects.invExt := by
+  unfold restoreToReadyStaging
   cases st.getTcb? tid with
   | none => exact hObjInv
   | some _ => exact RobinHood.RHTable.insert_preserves_invExt _ _ _ hObjInv
+
+theorem restoreToReady_invExt
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt) :
+    (restoreToReady st tid).objects.invExt :=
+  restoreToReadyStaging_invExt st tid none hObjInv
+
+/-- **WS-RR RR7.14**: and the cancellation spelling — the staged frame is one
+more field of the same single TCB insert. -/
+theorem restoreToReadyCancelled_invExt
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt) :
+    (restoreToReadyCancelled st tid).objects.invExt :=
+  restoreToReadyStaging_invExt st tid _ hObjInv
 
 /-- WS-RC R5.B.2 / Phase Q1: `restoreToReady`'s blocking-graph subgraph
     witness.
@@ -459,7 +980,7 @@ theorem restoreToReady_blockingServer_subgraph
       right
       unfold PriorityInheritance.blockingServer
       have hRR : restoreToReady st tid = st := by
-        unfold restoreToReady; rw [hPre]
+        unfold restoreToReady restoreToReadyStaging; rw [hPre]
       rw [hRR]
     | some origTcb =>
       -- Post-state TCB at tid has ipcState = .ready.
@@ -470,7 +991,7 @@ theorem restoreToReady_blockingServer_subgraph
             = some (.tcb { origTcb with ipcState := .ready, queuePrev := none,
                                         queueNext := none, queuePPrev := none,
                                         pendingReceiveReply := none }) := by
-        unfold restoreToReady
+        unfold restoreToReady restoreToReadyStaging
         rw [hPre]
         show (st.objects.insert tid.toObjId _).get? t.toObjId = _
         rw [hEq]
@@ -482,7 +1003,7 @@ theorem restoreToReady_blockingServer_subgraph
     have hRRObj :
         (restoreToReady st tid).objects[t.toObjId]?
           = st.objects[t.toObjId]? := by
-      unfold restoreToReady
+      unfold restoreToReady restoreToReadyStaging
       cases hPre : st.getTcb? tid with
       | none => rfl
       | some _ =>
@@ -1071,13 +1592,14 @@ theorem cancelIpcBlocking_preserves_objects_invExt
   cases tcb.ipcState with
   | ready => exact hInv
   | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
-    exact restoreToReady_invExt _ _
+    exact restoreToReadyCancelled_invExt _ _
       (removeFromAllEndpointQueues_preserves_objects_invExt st tid hInv)
   | blockedOnReply _ _ =>
     exact consumeReplyLink_preserves_objects_invExt _ _ _
-      (restoreToReady_invExt _ _ hInv)
+      (restoreToReadyCancelled_invExt _ _
+        (returnDonationToCancelledCaller_preserves_objects_invExt st tid tcb hInv))
   | blockedOnNotification _ =>
-    exact restoreToReady_invExt _ _
+    exact restoreToReadyCancelled_invExt _ _
       (removeFromAllNotificationWaitLists_preserves_objects_invExt st tid hInv)
 
 -- ============================================================================
@@ -1092,18 +1614,43 @@ theorem cancelIpcBlocking_preserves_objects_invExt
 
 /-- WS-SM SM6.E: `restoreToReady` preserves TCB-kind and `cpuAffinity` at
 every key — the conditional rewrite clears IPC and queue-link fields only. -/
+theorem restoreToReadyStaging_tcb_lookup
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (frame : Option Architecture.SyscallReturnFrame)
+    (k : SeLe4n.ObjId) (t0 : TCB)
+    (hInv : st.objects.invExt)
+    (hPre : st.objects[k]? = some (.tcb t0)) :
+    ∃ t' : TCB, (restoreToReadyStaging st tid frame).objects[k]? = some (.tcb t')
+      ∧ t'.cpuAffinity = t0.cpuAffinity := by
+  unfold restoreToReadyStaging
+  cases hT : st.getTcb? tid with
+  | none => exact ⟨t0, hPre, rfl⟩
+  | some t =>
+    cases frame with
+    | none =>
+        exact insert_tcb_rewrite_lookup st.objects tid.toObjId k t _ t0 hInv
+          ((SystemState.getTcb?_eq_some_iff st tid t).mp hT) rfl hPre
+    | some f =>
+        exact insert_tcb_rewrite_lookup st.objects tid.toObjId k t _ t0 hInv
+          ((SystemState.getTcb?_eq_some_iff st tid t).mp hT) rfl hPre
+
 theorem restoreToReady_tcb_lookup
     (st : SystemState) (tid : SeLe4n.ThreadId) (k : SeLe4n.ObjId) (t0 : TCB)
     (hInv : st.objects.invExt)
     (hPre : st.objects[k]? = some (.tcb t0)) :
     ∃ t' : TCB, (restoreToReady st tid).objects[k]? = some (.tcb t')
-      ∧ t'.cpuAffinity = t0.cpuAffinity := by
-  unfold restoreToReady
-  cases hT : st.getTcb? tid with
-  | none => exact ⟨t0, hPre, rfl⟩
-  | some t =>
-    exact insert_tcb_rewrite_lookup st.objects tid.toObjId k t _ t0 hInv
-      ((SystemState.getTcb?_eq_some_iff st tid t).mp hT) rfl hPre
+      ∧ t'.cpuAffinity = t0.cpuAffinity :=
+  restoreToReadyStaging_tcb_lookup st tid none k t0 hInv hPre
+
+/-- **WS-RR RR7.14**: and the cancellation spelling.  The staged frame writes
+`registerContext`, which is neither the object's kind nor its `cpuAffinity`. -/
+theorem restoreToReadyCancelled_tcb_lookup
+    (st : SystemState) (tid : SeLe4n.ThreadId) (k : SeLe4n.ObjId) (t0 : TCB)
+    (hInv : st.objects.invExt)
+    (hPre : st.objects[k]? = some (.tcb t0)) :
+    ∃ t' : TCB, (restoreToReadyCancelled st tid).objects[k]? = some (.tcb t')
+      ∧ t'.cpuAffinity = t0.cpuAffinity :=
+  restoreToReadyStaging_tcb_lookup st tid _ k t0 hInv hPre
 
 /-- WS-SM SM6.E: `clearTcbReplyObject` preserves TCB-kind and `cpuAffinity`
 at every key — the conditional rewrite clears `replyObject` only. -/
@@ -1179,31 +1726,57 @@ theorem cancelIpcBlocking_tcb_lookup
     obtain ⟨hInvE, t₁, hL1, hAff1⟩ :=
       removeFromAllEndpointQueues_tcb_lookup st tid k t0 hInv hPre
     obtain ⟨t₂, hL2, hAff2⟩ :=
-      restoreToReady_tcb_lookup (removeFromAllEndpointQueues st tid) tid k t₁
+      restoreToReadyCancelled_tcb_lookup (removeFromAllEndpointQueues st tid) tid k t₁
         hInvE hL1
     exact ⟨t₂, hL2, hAff2.trans hAff1⟩
   | blockedOnReply _ _ =>
-    obtain ⟨t₁, hL1, hAff1⟩ := restoreToReady_tcb_lookup st tid k t0 hInv hPre
+    -- WS-RR RR7.22 (residual, remediation), extended at WS-OD OD1.4: the
+    -- donation return is the extra step, and since OD1.4 it is two writes — the
+    -- holder's aborted IPC and the binding hand-back.  Neither touches
+    -- `cpuAffinity`, which is what this chain tracks, so the reply arm reads the
+    -- same shape as its three siblings.
+    obtain ⟨t₀, hL0, hAff0⟩ :=
+      returnDonationToCancelledCaller_tcb_lookup st tid tcb hInv k t0 hPre
+    obtain ⟨t₁, hL1, hAff1⟩ :=
+      restoreToReadyCancelled_tcb_lookup (returnDonationToCancelledCaller st tid tcb) tid k _
+        (returnDonationToCancelledCaller_preserves_objects_invExt st tid tcb hInv) hL0
     obtain ⟨t₂, hL2, hAff2⟩ :=
-      consumeReplyLink_tcb_lookup (restoreToReady st tid) tid tcb k t₁
-        (restoreToReady_invExt st tid hInv) hL1
-    exact ⟨t₂, hL2, hAff2.trans hAff1⟩
+      consumeReplyLink_tcb_lookup
+        (restoreToReadyCancelled (returnDonationToCancelledCaller st tid tcb) tid) tid tcb k t₁
+        (restoreToReadyCancelled_invExt _ tid
+          (returnDonationToCancelledCaller_preserves_objects_invExt st tid tcb hInv)) hL1
+    exact ⟨t₂, hL2, ((hAff2.trans hAff1).trans hAff0)⟩
   | blockedOnNotification _ =>
     obtain ⟨hInvN, t₁, hL1, hAff1⟩ :=
       removeFromAllNotificationWaitLists_tcb_lookup st tid k t0 hInv hPre
     obtain ⟨t₂, hL2, hAff2⟩ :=
-      restoreToReady_tcb_lookup (removeFromAllNotificationWaitLists st tid) tid k t₁
+      restoreToReadyCancelled_tcb_lookup (removeFromAllNotificationWaitLists st tid) tid k t₁
         hInvN hL1
     exact ⟨t₂, hL2, hAff2.trans hAff1⟩
 
 /-- WS-SM SM6.E: `restoreToReady` is the identity when the thread resolves
 to no TCB — the rewrite is guarded on the TCB read. -/
+theorem restoreToReadyStaging_eq_self_of_getTcb?_none
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (frame : Option Architecture.SyscallReturnFrame)
+    (h : st.getTcb? tid = none) :
+    restoreToReadyStaging st tid frame = st := by
+  unfold restoreToReadyStaging
+  rw [h]
+
 theorem restoreToReady_eq_self_of_getTcb?_none
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (h : st.getTcb? tid = none) :
-    restoreToReady st tid = st := by
-  unfold restoreToReady
-  rw [h]
+    restoreToReady st tid = st :=
+  restoreToReadyStaging_eq_self_of_getTcb?_none st tid none h
+
+/-- **WS-RR RR7.14**: and the cancellation spelling — the frame is staged into
+a TCB, so no TCB means nothing to stage into and nothing written. -/
+theorem restoreToReadyCancelled_eq_self_of_getTcb?_none
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (h : st.getTcb? tid = none) :
+    restoreToReadyCancelled st tid = st :=
+  restoreToReadyStaging_eq_self_of_getTcb?_none st tid _ h
 
 /-- WS-SM SM6.E: `clearTcbReplyObject` is the identity when the thread
 resolves to no TCB. -/
@@ -1260,13 +1833,16 @@ theorem cancelIpcBlocking_getTcb?_none
       | none => rfl
       | some t =>
         exact absurd ((SystemState.getTcb?_eq_some_iff _ tid t).mp hX) (hNoE t)
-    show (restoreToReady (removeFromAllEndpointQueues st tid) tid).getTcb? tid
+    show (restoreToReadyCancelled (removeFromAllEndpointQueues st tid) tid).getTcb? tid
       = none
-    rw [restoreToReady_eq_self_of_getTcb?_none _ tid hTE]
+    rw [restoreToReadyCancelled_eq_self_of_getTcb?_none _ tid hTE]
     exact hTE
   | blockedOnReply _ _ =>
-    show (consumeReplyLink (restoreToReady st tid) tid tcb).getTcb? tid = none
-    rw [restoreToReady_eq_self_of_getTcb?_none st tid hT]
+    show (consumeReplyLink
+      (restoreToReadyCancelled (returnDonationToCancelledCaller st tid tcb) tid) tid tcb).getTcb?
+        tid = none
+    rw [returnDonationToCancelledCaller_eq_self_of_getTcb?_none st tid tcb hT,
+      restoreToReadyCancelled_eq_self_of_getTcb?_none st tid hT]
     unfold consumeReplyLink
     cases tcb.replyObject with
     | none => exact hT
@@ -1285,9 +1861,9 @@ theorem cancelIpcBlocking_getTcb?_none
       | none => rfl
       | some t =>
         exact absurd ((SystemState.getTcb?_eq_some_iff _ tid t).mp hX) (hNoN t)
-    show (restoreToReady (removeFromAllNotificationWaitLists st tid) tid).getTcb? tid
+    show (restoreToReadyCancelled (removeFromAllNotificationWaitLists st tid) tid).getTcb? tid
       = none
-    rw [restoreToReady_eq_self_of_getTcb?_none _ tid hTN]
+    rw [restoreToReadyCancelled_eq_self_of_getTcb?_none _ tid hTN]
     exact hTN
 
 /-- WS-SM SM6.E: `cancelBoundDonation` preserves `objects.invExt` — the bound
@@ -1349,14 +1925,32 @@ theorem cancelDonation_preserves_objects_invExt
 
 /-- WS-SM SM6.E: `restoreToReady` preserves `ipcInvariant` — its only write
 is a `.tcb` rewrite. -/
+theorem restoreToReadyStaging_preserves_ipcInvariant
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (frame : Option Architecture.SyscallReturnFrame)
+    (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
+    ipcInvariant (restoreToReadyStaging st tid frame) := by
+  unfold restoreToReadyStaging
+  cases st.getTcb? tid with
+  | none => exact hIpc
+  | some t =>
+    cases frame with
+    | none => exact ipcInvariant_insert_tcb st tid.toObjId _ hInv hIpc
+    | some f => exact ipcInvariant_insert_tcb st tid.toObjId _ hInv hIpc
+
 theorem restoreToReady_preserves_ipcInvariant
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
-    ipcInvariant (restoreToReady st tid) := by
-  unfold restoreToReady
-  cases st.getTcb? tid with
-  | none => exact hIpc
-  | some t => exact ipcInvariant_insert_tcb st tid.toObjId _ hInv hIpc
+    ipcInvariant (restoreToReady st tid) :=
+  restoreToReadyStaging_preserves_ipcInvariant st tid none hInv hIpc
+
+/-- **WS-RR RR7.14**: and the cancellation spelling — still a single `.tcb`
+rewrite, so still notification-safe. -/
+theorem restoreToReadyCancelled_preserves_ipcInvariant
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
+    ipcInvariant (restoreToReadyCancelled st tid) :=
+  restoreToReadyStaging_preserves_ipcInvariant st tid _ hInv hIpc
 
 /-- WS-SM SM6.E: `clearTcbReplyObject` preserves `ipcInvariant` — its only
 write is a `.tcb` rewrite. -/
@@ -1397,6 +1991,24 @@ theorem consumeReplyLink_preserves_ipcInvariant
       (clearTcbReplyObject_preserves_objects_invExt st tid hInv)
       (clearTcbReplyObject_preserves_ipcInvariant st tid hInv hIpc)
 
+/-- **WS-RR RR7.22 (residual, remediation)**: the donation return preserves
+`ipcInvariant` — it writes a SchedContext and two TCBs, never a notification. -/
+theorem returnDonationToCancelledCaller_preserves_ipcInvariant (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
+    ipcInvariant (returnDonationToCancelledCaller st tid tcb) := by
+  unfold returnDonationToCancelledCaller
+  split
+  · rename_i scId holder _ _ _
+    split
+    · rename_i st' h
+      intro oid ntfn hN
+      refine hIpc oid ntfn
+        (abortHolderPendingIpc_notification_backward st holder hInv oid ntfn ?_)
+      exact returnDonatedSchedContext_notification_backward _ st' holder scId tid
+        (abortHolderPendingIpc_preserves_objects_invExt st holder hInv) h oid ntfn hN
+    · exact hIpc
+  · exact hIpc
+
 /-- WS-SM SM6.E: `cancelIpcBlocking` preserves `ipcInvariant` — every
 `ipcState` arm composes the sweeps' notification-safe rewrites with the
 non-notification teardown writes. -/
@@ -1408,15 +2020,17 @@ theorem cancelIpcBlocking_preserves_ipcInvariant
   cases tcb.ipcState with
   | ready => exact hIpc
   | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
-    exact restoreToReady_preserves_ipcInvariant _ tid
+    exact restoreToReadyCancelled_preserves_ipcInvariant _ tid
       (removeFromAllEndpointQueues_preserves_objects_invExt st tid hInv)
       (removeFromAllEndpointQueues_preserves_ipcInvariant st tid hInv hIpc)
   | blockedOnReply _ _ =>
+    have hInvR := returnDonationToCancelledCaller_preserves_objects_invExt st tid tcb hInv
     exact consumeReplyLink_preserves_ipcInvariant _ tid tcb
-      (restoreToReady_invExt st tid hInv)
-      (restoreToReady_preserves_ipcInvariant st tid hInv hIpc)
+      (restoreToReadyCancelled_invExt _ tid hInvR)
+      (restoreToReadyCancelled_preserves_ipcInvariant _ tid hInvR
+        (returnDonationToCancelledCaller_preserves_ipcInvariant st tid tcb hInv hIpc))
   | blockedOnNotification _ =>
-    exact restoreToReady_preserves_ipcInvariant _ tid
+    exact restoreToReadyCancelled_preserves_ipcInvariant _ tid
       (removeFromAllNotificationWaitLists_preserves_objects_invExt st tid hInv)
       (removeFromAllNotificationWaitLists_preserves_ipcInvariant st tid hInv hIpc)
 

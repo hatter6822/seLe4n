@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-3.0-or-later
 /-
-  seLe4n  - A Lean Microkernel
-  Copyright (C) 2026  Adam Hall
+  seLe4n - A Lean Microkernel
+  Copyright (C) 2026 Adam Hall
   This program comes with ABSOLUTELY NO WARRANTY.
   This is free software, and you are welcome to redistribute it
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
@@ -47,7 +47,7 @@ open SeLe4n.Kernel.Concurrency
 open SeLe4n.Testing
 
 -- ============================================================================
--- §1  Surface anchors (Tier-3): every SM6.A public symbol resolves
+-- §1 Surface anchors (Tier-3): every SM6.A public symbol resolves
 -- ============================================================================
 
 -- SM6.A.1 production transitions:
@@ -139,7 +139,7 @@ open SeLe4n.Testing
 #check @syscallDispatchCrossCoreEntry_sgis_nil_single_core
 
 -- ============================================================================
--- §2  Elaboration-time examples (Tier-3): theorems apply to typed inputs
+-- §2 Elaboration-time examples (Tier-3): theorems apply to typed inputs
 -- ============================================================================
 
 /-- SM6.A.3: a rendezvous unblocking a remote receiver emits the reschedule SGI. -/
@@ -206,13 +206,13 @@ example (ctx : LabelingContext) (observer : IfObserver)
     hReceiverHigh hReceiverObjHigh hCallerHigh hCallerObjHigh hNextHigh
 
 -- ============================================================================
--- §3  Runtime assertions (Tier-2): the SM6.A cross-core call scenarios
+-- §3 Runtime assertions (Tier-2): the SM6.A cross-core call scenarios
 -- ============================================================================
 
 private def assertBool (name : String) (b : Bool) : IO Unit := do
-  if b then IO.println s!"  PASS: {name}"
+  if b then IO.println s!" PASS: {name}"
   else
-    IO.println s!"  FAIL: {name}"
+    IO.println s!" FAIL: {name}"
     throw (IO.userError s!"Assertion failed: {name}")
 
 private def core1 : CoreId := ⟨1, by decide⟩
@@ -298,7 +298,7 @@ private def runLockSetChecks : IO Unit := do
         (some recvRemoteTid) (some scId)).pairs, p.fst.kind ∈ permittedKinds .call))
   -- SM6.A.1/.2: the runtime acquires a *state-resolved* lock-set — the receiver
   -- and donated SC pre-resolved from `st` via `endpointCallReceiver?` /
-  -- `endpointCallDonatedSc?`.  On the empty base state both resolve to `none`.
+  -- `endpointCallDonatedSc?`. On the empty base state both resolve to `none`.
   assertBool "endpointCallReceiver? resolves none on an endpoint with no waiter"
     (decide (endpointCallReceiver? stBase epId = none))
   assertBool "endpointCallDonatedSc? resolves none for an unbound caller"
@@ -339,11 +339,11 @@ private def runNoReceiverChecks : IO Unit := do
   -- on the no-receiver path (no caps to transfer; no donation without a server).
   assertBool "no-receiver WithCaps cross-core call also surfaces no SGI"
     (match (endpointCallWithCapsOnCore epId callerTid IpcMessage.empty AccessRightSet.empty
-        cnRoot (SeLe4n.Slot.ofNat 0) bootCoreId stBase).2 with
+        (SeLe4n.Slot.ofNat 0) bootCoreId stBase).2 with
      | .ok (_, none) => true | _ => false)
   assertBool "no-receiver cross-core dispatch performs no donation (= WithCaps)"
     (match (endpointCallCrossCoreDispatch epId callerTid IpcMessage.empty AccessRightSet.empty
-        cnRoot (SeLe4n.Slot.ofNat 0) bootCoreId stBase).2 with
+        (SeLe4n.Slot.ofNat 0) bootCoreId stBase).2 with
      | .ok (_, none) => true | _ => false)
 
 private def runRendezvousChecks : IO Unit := do
@@ -395,14 +395,14 @@ private def runRendezvousChecks : IO Unit := do
   | none => assertBool "rendezvous setup (no-reply receiver) succeeded" false
 
 -- ============================================================================
--- §SM6.D  Per-core IPC invariant bundle (surface anchors + witnesses)
+-- §SM6.D Per-core IPC invariant bundle (surface anchors + witnesses)
 -- ============================================================================
 --
 -- WS-SM SM6.D coverage: the per-core bundle definitions (SM6.D.1, D.3–D.6),
 -- the exact-decomposition bridges, the six per-operation preservation
 -- theorems (SM6.D.2) plus the cross-core call flagship, and the home-core /
--- wake-target coherence.  Elaboration-time: every symbol resolves and every
--- headline theorem applies to typed inputs.  Runtime: `threadHomeCore`
+-- wake-target coherence. Elaboration-time: every symbol resolves and every
+-- headline theorem applies to typed inputs. Runtime: `threadHomeCore`
 -- agrees with the operational `determineTargetCore` on the suite fixtures.
 
 -- SM6.D.1 bundle + SMP aggregate + bridges:
@@ -635,7 +635,7 @@ example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (ec : CoreId)
 
 /-- WS-RR RR3.12: the cross-core reply's **unconditional** bundle statement — the
 one that holds on the donating path too, with `donationOwnerValid` relaxed at the
-answered caller.  No hypothesis about the result at all; the relaxation is exactly
+answered caller. No hypothesis about the result at all; the relaxation is exactly
 the transient the donation return closes. -/
 example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (ec : CoreId)
     (st : SystemState)
@@ -647,7 +647,7 @@ example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (ec : CoreId)
     hInv hObjInv hAllBudgetsNone
 
 /-- WS-RR RR3.14: the reachability bundle is **inhabited** — the boot state
-satisfies it.  Without this the pre-state conditions the de-threaded bundles now
+satisfies it. Without this the pre-state conditions the de-threaded bundles now
 carry could be an unsatisfiable conjunction, and every theorem taking them would
 be vacuous: the failure shape de-threading exists to remove, one level up. -/
 example : ipcReachable (default : SystemState) := ipcReachable_default
@@ -684,7 +684,7 @@ example (st : SystemState) (endpointId : SeLe4n.ObjId) (hInv : ipcInvariantFull 
 
 /-- WS-RR RR3.12 (payoff): the **live** cross-core `.reply` dispatch preserves the
 whole twenty-conjunct bundle on the *donating* path — the seL4-MCS path the previous
-statement was vacuous on.  Nothing about the result is assumed: `hDonationReturned`
+statement was vacuous on. Nothing about the result is assumed: `hDonationReturned`
 says only that whatever the answered caller donated is what the recorded reply server
 returns, a fact about the pre-state and the operation's arguments. -/
 example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (ec : CoreId)
@@ -767,7 +767,7 @@ transition behind the **live** `.send` dispatch — preserves every core's
 bundle view. -/
 example (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary) (c : CoreId)
     (hInv : ipcInvariantFull_smp st) (hObjInv : st.objects.invExt)
     -- WS-RR RR3.11: one condition on the syscall's own message argument, where the
@@ -794,10 +794,10 @@ example (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (hSenderNotUnbound : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
         tcb.schedContextBinding ≠ .unbound)
     (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
-             senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     ipcInvariantFull_perCore st' c :=
   endpointSendDualWithCaps_preserves_ipcInvariantFull_perCore endpointId sender msg
-    endpointRights senderCspaceRoot receiverSlotBase st st' summary hInv hObjInv
+    endpointRights receiverSlotBase st st' summary hInv hObjInv
     hMsgCaps hAllBudgetsNone hFreshSender hSendTailFresh
     hSenderNotRecv hSenderNotReply hSenderNotUnbound hStep c
 
@@ -816,6 +816,232 @@ private def runPerCoreBundleChecks : IO Unit := do
   assertBool "determineTargetCore routes the remote receiver's wake to core 1"
     (decide (determineTargetCore stBase recvRemoteTid = core1))
 
+-- ---------------------------------------------------------------------------
+-- WS-RR RR7.12 — the declared footprint, ACQUIRED at the live syscall seam.
+--
+-- Everything above exercises transitions; this group exercises the *bracket*.
+-- Without it the row would ship a mechanism nobody had seen engage: the smoke
+-- and trace tiers pass either way, because the golden fixture drives no syscall
+-- whose footprint is declared through this seam.
+--
+-- `.tcbSuspend` is the arm used, for the same reason SM8.D.5's fixture uses it:
+-- it is the one whose whole resolution chain — the single-level CSpace guard,
+-- the rights-gated lookup, the sentinel check, the state-resolved optionals —
+-- was already exercised, so a failure here is the bracket's and not the
+-- resolver's.
+-- ---------------------------------------------------------------------------
+
+private def bracketCNode : SeLe4n.ObjId := ⟨430⟩
+private def bracketVictim : SeLe4n.ThreadId := ⟨431⟩
+private def bracketSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 1
+
+/-- `.tcbSuspend` requires `.write` on the victim's capability. -/
+private def bracketSlotCap : Capability :=
+  { target := .object bracketVictim.toObjId,
+    rights := AccessRightSet.ofList [.read, .write] }
+
+/-- Depth 4 = `radixWidth`, so the resolution consumes every bit in one hop and
+the leaf **is** this root — the single-level shape `abiEntryGate` requires. -/
+private def bracketCNodeValue : CNode :=
+  { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+    slots := SeLe4n.UniqueSlotMap.ofListWF [(bracketSlot, bracketSlotCap)] }
+
+/-- A caller whose registers really decode to `.tcbSuspend` (`x7 = 20`) on the
+capability at slot 1 (`x0 = 1`). -/
+private def bracketCaller : TCB :=
+  { mkTcb 401 40 none with
+      cspaceRoot := bracketCNode
+      registerContext :=
+        { pc := ⟨0x1000⟩, sp := ⟨0x8000⟩,
+          gpr := fun r => if r.val == 0 then ⟨1⟩ else if r.val == 7 then ⟨20⟩ else ⟨0⟩ } }
+
+private def bracketState : SystemState :=
+  let base :=
+    (BootstrapBuilder.empty
+      |>.withObject bracketCNode (.cnode bracketCNodeValue)
+      |>.withObject callerTid.toObjId (.tcb bracketCaller)
+      |>.withObject bracketVictim.toObjId (.tcb (mkTcb 431 30 none))
+      |>.withRunnable [callerTid]
+      |>.withCurrent (some callerTid)
+      |>.build)
+  base
+
+/-- The ABI words of a `.tcbSuspend` on the capability at slot 1:
+`syscallId = 20`, `msgInfo = 0`, `x0 = 1` (the CPtr), `x1..x5 = 0`. -/
+private def bracketDecl (st : SystemState) : Option Concurrency.LockSet :=
+  declaredLockSetForAbiEntry harnessLabelingContext bootCoreId
+    (syscallId := 20) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+
+private def bracketPlan (st : SystemState) :
+    Option (SeLe4n.ThreadId × SyscallDecodeResult × SystemState) :=
+  abiEntryPlan harnessLabelingContext bootCoreId
+    (syscallId := 20) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+
+/-- The step the bracket wraps, at those same words. -/
+private def bracketStepFn (st : SystemState) :=
+  syscallDispatchCrossCoreStep harnessLabelingContext bootCoreId
+    (syscallId := 20) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0)
+    (ipcBufferAddr := 0) (elr := 0) (spsr := 0) (spEl0 := 0) (x30 := 0) st
+
+/-- Which arm of the bracket this entry takes, as the bracket itself computes
+it — `syscallDispatchCrossCoreBracketedStep` is this `match`ed and flattened. -/
+private def bracketOutcome (st : SystemState) :=
+  runUnderDeclaredLockSet bracketDecl bootCoreId bracketStepFn st
+
+private def bracketRun (st : SystemState) :=
+  syscallDispatchCrossCoreBracketedStep harnessLabelingContext bootCoreId
+    (syscallId := 20) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0)
+    (ipcBufferAddr := 0) (elr := 0) (spsr := 0) (spEl0 := 0) (x30 := 0) st
+
+/-- `.cspaceMint` (id 4) — an arm this cut leaves undeclared, for the fallback. -/
+private def undeclaredRun (st : SystemState) :=
+  syscallDispatchCrossCoreBracketedStep harnessLabelingContext bootCoreId
+    (syscallId := 4) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0)
+    (ipcBufferAddr := 0) (elr := 0) (spsr := 0) (spEl0 := 0) (x30 := 0) st
+
+private def undeclaredBare (st : SystemState) :=
+  syscallDispatchCrossCoreStep harnessLabelingContext bootCoreId
+    (syscallId := 4) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0)
+    (ipcBufferAddr := 0) (elr := 0) (spsr := 0) (spEl0 := 0) (x30 := 0) st
+
+private def undeclaredDecl (st : SystemState) : Option Concurrency.LockSet :=
+  declaredLockSetForAbiEntry harnessLabelingContext bootCoreId
+    (syscallId := 4) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+
+/-- **PR #892 review round 6**: `.replyRecv`'s footprint declares for a
+non-delegated reply and **refuses** a delegated one.
+
+`replyRecvBody` returns the donation of `(recordedReplyServer? st prevCaller).getD tid`,
+which on a delegated reply is not the invoking thread — so the transition writes
+that server's TCB and SchedContext while the footprint named neither.  The
+server's TCB write lock cannot be added: `lockSet_replyRecv`'s worst case is
+already `maxLockSetSize` exactly.  So the arm refuses and the bracket runs its
+undeclared fallback, which is always sound.
+
+The two states differ in **one field** — the answered caller's recorded reply
+target — which is the mutation this pins: keep every operand and change who the
+reply was issued to. -/
+private def runDelegatedReplyRecvFootprintChecks : IO Unit := do
+  IO.println "--- PR #892 round 6: `.replyRecv` refuses a delegated footprint ---"
+  let replier : SeLe4n.ThreadId := ⟨2⟩
+  let prevCaller : SeLe4n.ThreadId := ⟨3⟩
+  let delegate : SeLe4n.ThreadId := ⟨4⟩
+  let epId : SeLe4n.ObjId := SeLe4n.ObjId.ofNat 20
+  let rid : SeLe4n.ReplyId := ⟨21⟩
+  let mkTcb := fun (t : SeLe4n.ThreadId) (ipc : SeLe4n.Model.ThreadIpcState) =>
+    SeLe4n.Model.KernelObject.tcb
+      { tid := t, priority := ⟨10⟩, domain := ⟨0⟩,
+        cspaceRoot := SeLe4n.ObjId.ofNat 0, vspaceRoot := SeLe4n.ObjId.ofNat 0,
+        ipcBuffer := SeLe4n.VAddr.ofNat 0, ipcState := ipc }
+  -- The reply object answers `prevCaller`; `prevCaller` records `replier` as the
+  -- server it is blocked on.  That is the ordinary, non-delegated shape.
+  let base : SystemState := { (default : SystemState) with
+    objects := (((default : SystemState).objects.insert replier.toObjId
+        (mkTcb replier .ready)).insert epId (.endpoint { })).insert rid.toObjId
+        (.reply { replyId := rid, caller := some prevCaller }) }
+  let stOwn : SystemState := { base with
+    objects := base.objects.insert prevCaller.toObjId
+      (mkTcb prevCaller (.blockedOnReply epId (some replier))) }
+  -- The delegated shape: same operands, same reply object, same everything —
+  -- except that the caller records a *different* thread as its server.
+  let stDelegated : SystemState := { base with
+    objects := base.objects.insert prevCaller.toObjId
+      (mkTcb prevCaller (.blockedOnReply epId (some delegate))) }
+  let ops : Concurrency.SyscallLockOperands :=
+    { caller := replier, targetObject := some epId, targetReply := some rid }
+  assertBool "the reply object answers the caller in both states"
+    (decide (SeLe4n.Kernel.replyAnsweredCaller? stOwn rid = some prevCaller) &&
+     decide (SeLe4n.Kernel.replyAnsweredCaller? stDelegated rid = some prevCaller))
+  assertBool "the non-delegated state records the replier as the server"
+    (decide (SeLe4n.Kernel.recordedReplyServer? stOwn prevCaller = some replier))
+  assertBool "the delegated state records some OTHER thread"
+    (decide (SeLe4n.Kernel.recordedReplyServer? stDelegated prevCaller = some delegate))
+  assertBool "a non-delegated `.replyRecv` declares a footprint"
+    (Concurrency.lockSetForSyscall .replyRecv ops stOwn).isSome
+  assertBool "NEGATIVE: a delegated `.replyRecv` declares NONE"
+    (Concurrency.lockSetForSyscall .replyRecv ops stDelegated).isNone
+  -- And the declared one is inside the ceiling, which is why there is no room
+  -- for the delegated server's TCB.
+  assertBool "the declared footprint is at or under the ceiling"
+    (match Concurrency.lockSetForSyscall .replyRecv ops stOwn with
+     | some fp => decide (fp.size ≤ Concurrency.maxLockSetSize)
+     | none => false)
+
+/-- WS-RR RR7.12: the bracket, exercised. -/
+private def runDeclaredFootprintBracketChecks : IO Unit := do
+  IO.println "--- WS-RR RR7.12 the declared footprint at the live syscall seam ---"
+  -- The seam declares a footprint for this entry at all — the precondition for
+  -- everything else in this group.
+  assertBool "the ABI seam declares a footprint for a `.tcbSuspend` decode"
+    (decide (bracketDecl bracketState).isSome)
+  -- …and it is the resolver's own answer at the operands the entry resolved,
+  -- not a set the test supplied.
+  assertBool "the declared footprint is `lockSetForSyscall`'s answer at the entry's decode"
+    (match bracketPlan bracketState with
+     | some (tid, decoded, stFilled) =>
+       decide (decoded.syscallId = .tcbSuspend) &&
+       (match abiEntryLockOperands decoded tid stFilled with
+        | some ops =>
+          decide (Concurrency.lockSetForSyscall decoded.syscallId ops stFilled
+                    = bracketDecl bracketState) &&
+          decide (ops.caller = tid)
+        | none => false)
+     | none => false)
+  -- **The committed arm is taken.** The guard passes on an uncontended state,
+  -- so the syscall runs bracketed rather than being refused — the check that
+  -- would have caught a bracket that engages and then always declines.
+  assertBool "the guard PASSES on an uncontended state (the committed arm is taken)"
+    (match bracketDecl bracketState with
+     | some fp =>
+       let acquired := Concurrency.acquireAll bootCoreId fp.lockAcquireSequence bracketState
+       decide (bracketDecl acquired = some fp) &&
+       decide (Concurrency.lockSetHeld bootCoreId fp acquired)
+     | none => false)
+  -- **Which arm**, stated directly rather than inferred from the outcome: the
+  -- committed one. Comparing outcome frames would not settle it — a syscall
+  -- that legitimately errors returns the same `.illegalState` frame a refusal
+  -- does, so a bracket that always declined would look identical.
+  assertBool "the bracket takes the COMMITTED arm (not `undeclared`, not `refused`)"
+    (match bracketOutcome bracketState with
+     | .committed _ => true
+     | _ => false)
+  -- NEGATIVE: and neither of the other two.
+  assertBool "NEGATIVE: the bracket neither falls back nor refuses here"
+    (match bracketOutcome bracketState with
+     | .undeclared _ => false
+     | .refused _ => false
+     | .committed _ => true)
+  -- **Bracketing does not change what the syscall returns.** The declared
+  -- footprint is exclusion, not semantics: the growing and shrinking phases
+  -- write lock words and nothing else, so the caller's frame is the frame the
+  -- unbracketed step produced.
+  assertBool "the bracketed step returns the unbracketed step's frame"
+    (let br := bracketRun bracketState
+     let ba := bracketStepFn bracketState
+     decide (br.1.1.tagWord = ba.1.1.tagWord) &&
+     decide (br.1.1.mailboxFrame.x0 = ba.1.1.mailboxFrame.x0) &&
+     decide (br.1.1.mailboxFrame.x1 = ba.1.1.mailboxFrame.x1))
+  -- The bracket leaves nothing held: the shrinking phase runs on the committed
+  -- path too, so the next syscall on these objects is not blocked by this one.
+  assertBool "every declared member is released after the bracketed step"
+    (match bracketDecl bracketState with
+     | some fp =>
+       fp.pairs.all (fun p =>
+         decide (¬ Concurrency.lockHeld bootCoreId p.1 p.2 (bracketRun bracketState).2))
+     | none => false)
+  -- The fallback: an UNDECLARED syscall runs bit-identically to the unbracketed
+  -- step, which is what makes landing the bracket safe ahead of the remaining
+  -- declarations.
+  assertBool "an undeclared syscall's bracketed step IS the unbracketed step"
+    -- The equality itself is `syscallDispatchCrossCoreBracketedStep_undeclared`,
+    -- which is definitional; what a runtime check can add is that the fallback
+    -- path is the one this state actually takes, and that the two agree on the
+    -- word the ABI returns.
+    (have _h := @syscallDispatchCrossCoreBracketedStep_undeclared
+     decide (undeclaredDecl bracketState = none) &&
+     decide ((undeclaredRun bracketState).1.1.tagWord
+               = (undeclaredBare bracketState).1.1.tagWord))
+
 def runSmpCrossCoreCallChecks : IO Unit := do
   IO.println "WS-SM SM6.A — Cross-core endpoint call suite"
   IO.println "===================================="
@@ -824,6 +1050,8 @@ def runSmpCrossCoreCallChecks : IO Unit := do
   runNoReceiverChecks
   runRendezvousChecks
   runPerCoreBundleChecks
+  runDeclaredFootprintBracketChecks
+  runDelegatedReplyRecvFootprintChecks
   IO.println "===================================="
   IO.println "All SM6.A cross-core call checks PASS."
 

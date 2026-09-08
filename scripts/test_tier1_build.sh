@@ -60,6 +60,34 @@ run_check "BUILD" lake build SeLe4n.Testing.IpcDethreadingEnvironmentCensus
 # wrongly; a resolved constant has one definition and no spelling.
 run_check "BUILD" lake build SeLe4n.Testing.BootEntryContract
 
+# WS-RR RR7.13: every `@[export]` that commits kernel state is classified, and
+# the classification is decided by the elaborator rather than by a scanner.
+#
+# RR7.12 made the syscall seam acquire the footprint `lockSetForSyscall`
+# declares.  What keeps that true is that the NEXT seam cannot quietly skip it:
+# this census derives the state-committing export set from the environment
+# (transitive `getUsedConstants` reachability to a `kernelStateRef` write), and
+# reconciles it against a registry in both directions -- an unclassified
+# committing seam and a stale registry entry are each a failure.  A body
+# recorded as bracketed must reach `runUnderDeclaredLockSet` or
+# `Concurrency.withLockSet`; one recorded unbracketed must carry a reason.
+#
+# Building it IS the check.  Its witnesses -- a planted BARE-COMMIT body, a
+# commit reached only through a helper, and a read-only body -- keep it from
+# passing vacuously, and the bare-commit one is the shape the row exists to
+# catch.  Today: seven committing seams, two of them bracketed.
+run_check "BUILD" lake build SeLe4n.Testing.ExportCommitDisciplineCensus
+
+# WS-RR RR7.18: every declared `LockSet` footprint has a size bound, stated at
+# the footprint's OWN arity.  The bound is what `boundedWait_under_2pl` and the
+# WCRT surface take as a premise, so a footprint without one is a transition
+# that reasoning is silent about — and a bound stated at fewer arguments than
+# the footprint takes is the same thing wearing the right name, because a
+# defaulted trailing `Option` is filled in silently at the citation.  The
+# footprint set is derived from the environment; building the module IS the
+# check.
+run_check "BUILD" lake build SeLe4n.Testing.LockFootprintBoundCensus
+
 # WS-SM SM8.B: no live syscall arm may reach a boot-pinned scheduler primitive.
 # PR #861 review rounds 10 and 12 found this defect three times, one syscall per
 # round — `.tcbResume`, `.send`, `.tcbSetPriority`/`.tcbSetMCPriority` — each

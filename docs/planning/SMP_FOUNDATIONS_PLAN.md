@@ -497,10 +497,13 @@ No new Lean axioms.
 
 ### 6.3 Testing
 
-- **Tier 0 (hygiene)**: `scripts/test_tier0_hygiene.sh` runs
-  unchanged; verifies SM0 doesn't introduce `sorry`, `axiom`,
-  or `native_decide` (it shouldn't — all theorems are
-  decidable).
+- **Tier 0 (hygiene)**: `scripts/test_tier0_hygiene.sh` verifies
+  SM0 doesn't introduce `sorry`, `axiom`, or `native_decide`
+  (it shouldn't — all theorems are decidable).  *`native_decide`
+  was named here from the start and scanned for by nothing until
+  WS-RR RR7.34 (register finding 77) added it to the
+  forbidden-marker alternation; the other two were always
+  scanned.*
 - **Tier 1 (build)**: `lake build` on the SM0 modules.
 - **Tier 2 (trace)**: SM0 doesn't change runtime behavior; the
   existing `main_trace_smoke.expected` fixture stays

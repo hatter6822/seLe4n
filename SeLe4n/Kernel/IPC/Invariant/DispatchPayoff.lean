@@ -278,7 +278,7 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
         caps := (resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded)
           gate.capDepth (cap.rights.mem .grant) st).1,
         badge := cap.badge, capsGranted := cap.rights.mem .grant } cap.rights
-      gate.cspaceRoot decoded.capRecvSlot
+      decoded.capRecvSlot
       (determineExecutingCore (resolveExtraCaps gate.cspaceRoot
         (decodeExtraCapAddrs decoded) gate.capDepth (cap.rights.mem .grant) st).2 tid)
       (resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded) gate.capDepth
@@ -290,7 +290,7 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
         caps := (resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded)
           gate.capDepth (cap.rights.mem .grant) st).1,
         badge := cap.badge, capsGranted := cap.rights.mem .grant } cap.rights
-      gate.cspaceRoot decoded.capRecvSlot
+      decoded.capRecvSlot
       (determineExecutingCore (resolveExtraCaps gate.cspaceRoot
         (decodeExtraCapAddrs decoded) gate.capDepth (cap.rights.mem .grant) st).2 tid)
       (resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded) gate.capDepth
@@ -459,7 +459,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                 hInvR.dualQueueSystemInvariant hInvR.endpointQueueTailBlockedConsistent
               have hSendInv := endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull
                 epId tid { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, caps := resolvedCaps, badge := cap.badge, capsGranted := cap.rights.mem .grant }
-                cap.rights gate.cspaceRoot decoded.capRecvSlot
+                cap.rights decoded.capRecvSlot
                 (determineExecutingCore stR tid) stR
                 hInvR hObjInvR hBudgetsR hRB hFreshR hTailR
                 (fun tcb hTcb => by
@@ -476,7 +476,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                   exact hBoundC)
               cases hSend : endpointSendDualWithCapsOnCore epId tid
                   { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, caps := resolvedCaps, badge := cap.badge, capsGranted := cap.rights.mem .grant }
-                  cap.rights gate.cspaceRoot decoded.capRecvSlot
+                  cap.rights decoded.capRecvSlot
                   (determineExecutingCore stR tid) stR with
               | mk st1 res1 =>
                   rw [hSend] at hStep hSendInv
@@ -597,7 +597,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                 exact hEp
               have hCallInv := endpointCallCrossCoreDispatch_preserves_ipcInvariantFull
                 epId tid { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, caps := resolvedCaps, badge := cap.badge, capsGranted := cap.rights.mem .grant }
-                cap.rights gate.cspaceRoot decoded.capRecvSlot
+                cap.rights decoded.capRecvSlot
                 (determineExecutingCore stR tid) stR
                 hInvR hObjInvR hBudgetsR hRB hFreshR hTailR
                 (fun tcb hTcb => by
@@ -619,7 +619,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                 hNeR
               cases hCall : endpointCallCrossCoreDispatch epId tid
                   { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, caps := resolvedCaps, badge := cap.badge, capsGranted := cap.rights.mem .grant }
-                  cap.rights gate.cspaceRoot decoded.capRecvSlot
+                  cap.rights decoded.capRecvSlot
                   (determineExecutingCore stR tid) stR with
               | mk st1 res1 =>
                   rw [hCall] at hStep hCallInv
@@ -637,14 +637,20 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
       case reply =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
         case replyCap rid =>
+          -- WS-RR RR7.11: the arm resolves the answered thread through
+          -- `replyAnsweredCaller?`, so the two-level match is one rewrite.
           cases hR : st.getReply? rid with
-          | none => simp only [hR] at hStep; cases hStep
+          | none =>
+              simp only [replyAnsweredCaller?_of_none st rid hR] at hStep; cases hStep
           | some reply =>
-              simp only [hR] at hStep
               cases hCaller : reply.caller with
-              | none => simp only [hCaller] at hStep; cases hStep
+              | none =>
+                  simp only [replyAnsweredCaller?_of_getReply st rid reply hR, hCaller]
+                    at hStep
+                  cases hStep
               | some callerTid =>
-                  simp only [hCaller] at hStep
+                  simp only [replyAnsweredCaller?_of_getReply st rid reply hR, hCaller]
+                    at hStep
                   obtain ⟨hDon, hReplyInvExt⟩ :=
                     hPack.replyStage rid reply callerTid hSy hTgt hR hCaller
                   -- WS-RR RR4.14: the seam's ordinary branch, under the pack's
@@ -981,7 +987,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
               cases hDisp : endpointSendCrossCoreDispatchChecked ctx epId tid
                   { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
                     caps := resolvedCaps, badge := cap.badge,
-                    capsGranted := cap.rights.mem .grant } cap.rights gate.cspaceRoot
+                    capsGranted := cap.rights.mem .grant } cap.rights
                   decoded.capRecvSlot (determineExecutingCore stR tid) stR with
               | mk st1 res1 =>
                   rw [hDisp] at hStep
@@ -1028,7 +1034,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
               cases hDisp : endpointCallCrossCoreDispatchChecked ctx epId tid
                   { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
                     caps := resolvedCaps, badge := cap.badge,
-                    capsGranted := cap.rights.mem .grant } cap.rights gate.cspaceRoot
+                    capsGranted := cap.rights.mem .grant } cap.rights
                   decoded.capRecvSlot (determineExecutingCore stR tid) stR with
               | mk st1 res1 =>
                   rw [hDisp] at hStep
@@ -1048,14 +1054,20 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
       case reply =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
         case replyCap rid =>
+          -- WS-RR RR7.11: as in the unchecked payoff, the answered thread comes
+          -- through `replyAnsweredCaller?`.
           cases hRep : st.getReply? rid with
-          | none => simp only [hRep] at hStep; cases hStep
+          | none =>
+              simp only [replyAnsweredCaller?_of_none st rid hRep] at hStep; cases hStep
           | some reply =>
-              simp only [hRep] at hStep
               cases hCaller : reply.caller with
-              | none => simp only [hCaller] at hStep; cases hStep
+              | none =>
+                  simp only [replyAnsweredCaller?_of_getReply st rid reply hRep, hCaller]
+                    at hStep
+                  cases hStep
               | some callerTid =>
-                  simp only [hCaller] at hStep
+                  simp only [replyAnsweredCaller?_of_getReply st rid reply hRep, hCaller]
+                    at hStep
                   split at hStep
                   next hFlow =>
                     -- WS-RR RR4.14: the reply seam collapses checked → unchecked
@@ -1066,7 +1078,8 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                     have hU : dispatchWithCap decoded tid gate cap st
                         = .ok ((), st') := by
                       unfold dispatchWithCap
-                      simp only [hCapOnly0, hSy, hTgt, hRep, hCaller]
+                      simp only [hCapOnly0, hSy, hTgt,
+                        replyAnsweredCaller?_of_getReply st rid reply hRep, hCaller]
                       exact hStep
                     exact dispatchWithCap_preserves_ipcInvariantFull decoded tid gate
                       cap st st' hQ.base hU

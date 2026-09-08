@@ -1063,7 +1063,7 @@ mod tests {
         // zero exists to prevent; and every label below the base is a
         // delivered message's own, so no error can be read as a delivery
         // either), and no other register carries anything.
-        for disc in 0..=56u32 {
+        for disc in 0..=57u32 {
             let regs = error_frame_regs(disc);
             assert_eq!(
                 regs[1] >> 9,
@@ -1119,20 +1119,20 @@ mod tests {
         assert_eq!(mi.label(), BLOCKED_RESUME_SENTINEL_LABEL);
         // Nonzero (never success) and the last label of the status range,
         // naming discriminant 255 — beyond the kernel-emittable set
-        // 0..=56, and exactly the Rust-only `UnknownKernelError` sentinel.
+        // 0..=57, and exactly the Rust-only `UnknownKernelError` sentinel.
         // The range position is a compile-time assert at the constant's
-        // definition; these GROUND the 56 against the canonical KernelError
-        // space (56 is the last real discriminant, 57 the first unknown)
-        // and the 255 against the sentinel variant.
+        // definition; these GROUND the 57 against the canonical KernelError
+        // space (WS-RR RR7.14's `IpcCancelled` is the last real discriminant,
+        // 58 the first unknown) and the 255 against the sentinel variant.
         assert_ne!(BLOCKED_RESUME_SENTINEL_LABEL, 0);
         assert_eq!(BLOCKED_RESUME_SENTINEL_LABEL - ERROR_LABEL_BASE, 255);
-        assert!(sele4n_types::KernelError::from_u32(56).is_some());
-        assert!(sele4n_types::KernelError::from_u32(57).is_none());
+        assert!(sele4n_types::KernelError::from_u32(57).is_some());
+        assert!(sele4n_types::KernelError::from_u32(58).is_none());
         assert_eq!(
             sele4n_types::KernelError::from_u32(255),
             Some(sele4n_types::KernelError::UnknownKernelError)
         );
-        for disc in 0..=56u32 {
+        for disc in 0..=57u32 {
             assert_ne!(
                 error_frame_regs(disc)[1],
                 regs[1],

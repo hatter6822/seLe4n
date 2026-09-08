@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.34.56` (`lakefile.toml`) |
+| **Package version** | `0.34.124` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 330,569 across 311 Lean files |
-| **Test LoC** | 68,907 across 70 Lean test suites |
-| **Proved declarations** | 11,000 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 355,916 across 328 Lean files |
+| **Test LoC** | 72,875 across 70 Lean test suites |
+| **Proved declarations** | 11,889 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -1409,7 +1409,8 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
      `simp only [<lockBuilder>_kind] + decide` discharge of the
      finite kinds-list membership.
 
-   **SM3.B inventory (90 entries after audit-pass-5)**:
+   **SM3.B inventory (90 entries at audit-pass-5; `lockSetTheorems_count`
+   pins the live figure, 111)**:
    `Concurrency/Locks/LockSetInventory.lean` mirrors SM3.A's
    `PerObjectLockInventory.lean` pattern with a typed
    `LockSetTheorem` struct, a `lkst!` macro that compile-time
@@ -1583,13 +1584,21 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
      `withDynamicChainExtension` combinator (optimistic walk +
      verify, `ObjId.val` ascending discipline, bounded
      retries), `dynamicChainHeld` predicate,
-     `dynamic_chain_deadlock_free` theorem,
-     `walkAndAcquire_terminates` theorem, per-transition
-     wrappers, and 6 sub-sub-tasks (SM3.C.11.a..f).  SM3.C
+     `dynamic_chain_deadlock_free` theorem, the termination
+     result — **three theorems**, not the one `walkAndAcquire_terminates`
+     this paragraph used to name, which was never authored under that
+     spelling: `walkAndAcquireAux_terminated_length_le` (the fuel
+     bound), `walkAndAcquire_terminated_length_bounded` (the top-level
+     boundedness witness) and `walkAndAcquire_total` (totality) —
+     per-transition wrappers, and 6 sub-sub-tasks (SM3.C.11.a..f).  SM3.C
      lifts from 4 PRs / 10 sub-tasks to 5 PRs / 11 sub-tasks.
    * **Inventory expansion**: 87 → 90 entries (+3 in the NEW
      `chainStart` category).  `lockSetTheorems_chainStart_count
-     = 3` new witness; partition-sum updated to 6-way.
+     = 3` new witness; partition-sum updated to 6-way.  *(The 90
+     is that cut's figure and is kept as the record of it; the
+     inventory has since grown to `lockSetTheorems.length = 111`,
+     which `lockSetTheorems_count` pins by `decide`.  Quote the
+     theorem, not this line.)*
    * **Test-coverage expansion**: 96 → 106 runtime assertions
      (+10 = +9 §16 `runPipChainStartChecks` + 1 inventory
      chainStart check).  3 new surface anchors + 6 new
@@ -1736,12 +1745,79 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    acquire-fold + action + release-fold preservation into the full
    closure that SM4..SM6 phase migrations consume.
 
-   **SM3.C.9 — `@[export]` body migration**: DEFERRED to SM5+.  At
-   SM3.C the kernel is modelled single-core, so wrapping each
-   `@[export]` body in `withLockSet` would be a no-op on the current
-   abstract model.  The migration lands with SM5's per-core scheduler
-   integration, which is when the wrappers become semantically
-   active.
+   **SM3.C.9 — `@[export]` body migration**: DEFERRED at SM3.C.  At
+   that point the kernel was modelled single-core, so wrapping each
+   `@[export]` body in `withLockSet` would have been a no-op on the
+   abstract model.  *(This paragraph used to say the migration "lands
+   with SM5's per-core scheduler integration".  It did not: SM5 made
+   the wrappers semantically meaningful without wrapping anything.
+   The **syscall seam** brackets since WS-RR RR7.12 (`v0.34.65`), the
+   raw `suspend_thread_cross_core` since SM3.C.9's own exception, and
+   the three per-core scheduler entries do too since WS-RR RR7.39, which
+   gave the `SchedLockId` domain a runtime.  What remains uncovered is
+   the *syscall* seam's scheduler writes —
+   `UncoveredLockDomain.syscallSeamSchedulerDomain`, since
+   `lockSetForSyscall` returns a `LockSet` whose `LockId` cannot name a
+   run-queue lock.  `ExportCommitDisciplineCensus` measures which is
+   which: seven seams commit, five bracket.)*
+
+   *Progress.*  The piece that connects the SM3 footprints to a
+   running syscall is `lockSetForSyscall : SyscallId →
+   SyscallLockOperands → SystemState → Option LockSet`, and it
+   **declares eight of the thirty-five arms** as of WS-RR RR7.11
+   (v0.34.64): `.tcbSuspend` plus the seven IPC hot-path arms
+   `.send`, `.receive`, `.call`, `.reply`, `.replyRecv`,
+   `.notificationSignal` and `.notificationWait`, each resolved
+   through the SM6 state-resolved footprint its cross-core transition
+   is already stated against, and each with its coverage — the
+   membership statements a 2PL consumer needs, plus the *changed ⇒
+   declared* capstones for the two capability-transferring arms.
+   `.replyRecv` declares only where the replier **is** the thread the
+   Reply records as its server (PR #892 review round 6): the
+   transition returns the *recorded* server's donation, so a delegated
+   reply needs that server's own TCB lock and the arm already sits at
+   nine of nine — it answers `none` there rather than declaring a
+   footprint that names a SchedContext it does not touch, and
+   recovering the headroom is WS-OD OD3.6.  The
+   remaining twenty-seven answer `none`
+   (`declaredFootprintSyscall`, `lockSetForSyscall_undeclared_none`),
+   which is the fail-closed direction: a declared footprint that does
+   not cover a write is not a smaller optimisation but a false
+   footprint, and a caller reading `none` keeps whatever coarser
+   serialisation it already has.
+
+   *And the live syscall seam acquires them* (WS-RR RR7.12,
+   `v0.34.65`).  `syscallDispatchCrossCoreEntry` runs its atomic step
+   inside the declared footprint — resolve, acquire, re-resolve at the
+   state the growing phase ended in, refuse on change, unwind — with
+   the operands read off the capability the entry's own decode
+   addresses (`abiEntryPlan_dispatches` ties the two) and a
+   single-level CSpace guard, since a deeper walk selects the target
+   through CNodes no declared footprint holds a lock on.  A syscall
+   with no declared footprint runs bit-identically to the pre-RR7.12
+   seam (`syscallDispatchCrossCoreBracketedStep_undeclared`), which is
+   what makes bracketing safe while most arms are undeclared.  The
+   **per-core scheduler path** brackets too since WS-RR RR7.39
+   (`v0.34.89`), which gave `SchedLockId` the state words it never had
+   and made the revalidating bracket shared between the two domains;
+   what remains uncovered is the *syscall* seam's scheduler writes
+   (`UncoveredLockDomain.syscallSeamSchedulerDomain`, owner RR8),
+   because `lockSetForSyscall` returns a `LockSet` whose `LockId`
+   cannot name a run-queue lock.  Live WCRT remains the global entry
+   lock's until Track D retires it.
+
+   *And how much of the kernel that is, is measured* (WS-RR RR7.13,
+   `v0.34.66`).  `SeLe4n/Testing/ExportCommitDisciplineCensus.lean`
+   derives the state-committing `@[export]` set from the elaborated
+   environment — transitive `Expr.getUsedConstants` reachability from
+   each export to a `kernelStateRef` write — and reconciles it against
+   a registry in both directions, so an unclassified committing seam
+   and a stale entry are each a build failure.  **Seven seams commit;
+   five bracket** (WS-RR RR7.39; two before it).  A record of `bracketed` must be substantiated by
+   reachability to a bracket form; one of `unbracketed` must carry a
+   reason.  Building the module is the check, and its witnesses — a
+   planted bare-commit body, a commit reached only through a helper, a
+   read-only body — keep it from passing vacuously.
 
    **SM3.C.11 — dynamic PIP chain-walk locking**: the 3 PIP-invoking
    transitions (`.call`/`.reply`/`.replyRecv`) walk a blocking chain
@@ -1926,6 +2002,43 @@ below), and results now cross the boundary as a full seL4 ARM64
 return frame — `x0` = badge/primary result, `x1` = `MessageInfo`
 whose label carries the error, `x2`–`x5` = message registers —
 through a per-core return-frame mailbox.
+
+**WS-RR RR7.17 (v0.34.68) — a blocking arm returns no frame, and the Rust
+shape mirror agrees with Lean's.**  Which syscalls return a value is decided
+from the caller's **post-state**, never from its number: a `.send` that finds a
+waiting receiver returns, and one that parks does not.  The family in
+`Platform/FFI.lean` states that both ways
+(`syscallReturnOutcome_blocks_iff`), states the id-independence it rests on,
+states that the staged registers are *not consulted* on the blocking arm — so a
+blocked caller's own argument spill cannot reach the boundary as a return value
+— and composes onto the exported seam
+(`syscallDispatchFromAbi_blocked_returns_no_frame`), which is where the trap
+layer reads it.  The Rust `ReturnShape` mirror is exhaustive (no wildcard, so
+rustc plays the role Lean's totality plays) **and** cross-checked: both sides
+render the same `id → shape` table against `tests/fixtures/syscall_return_shape.expected`,
+so two independently maintained total functions cannot disagree silently.  The
+`KernelError` count is `SeLe4n.Model.KernelError.kernelErrorCount`, bounded from
+both sides so it is the least strict upper bound.
+
+**WS-RR RR7.14 (v0.34.67) — the frame a forcibly unblocked thread is owed.**
+A thread taken out of a blocking IPC has no value to receive, and both
+unblocking paths staged nothing at all, so the SM10.1 context restore would
+have delivered its own argument spill back as a return value.  Both now stage,
+and they stage **different** errors because they are different facts:
+`timeoutThread` stages `Architecture.timeoutFrame` (`.ipcTimeout` — a
+SchedContext budget expiring under a well-formed operation the caller may
+reissue) and `cancelIpcBlocking`'s four blocked arms stage
+`Architecture.cancelledIpcFrame` (`.ipcCancelled`, a new `KernelError` at
+discriminant **57** — the operation was destroyed, so reissuing may be
+meaningless and a userspace library cannot write a correct retry against a
+conflated code).  seL4 answers this by setting the thread `Restart`; this
+kernel has no restart state, so the crossing has to end in a distinguishable
+error.  Two paths deliberately stage nothing: the `.ready` arm (the thread was
+not blocked) and `restoreToReady` itself, the *resume* spelling of the same
+field clear, because `.tcbResume` restarts a thread where it was and
+overwriting `x0`-`x5` would destroy the window the restart preserves.  The
+`KernelError` range is therefore `0..57` in Lean and in the three Rust crates
+that mirror it.
 
 **WS-RR RR4 (v0.34.44) — a fault is delivered, never returned.**  Before RR4
 the abort and alignment arms of the Rust trap handler wrote an *error frame*
@@ -2522,12 +2635,29 @@ is `bootAndInitialisePlatform RPi5Platform` by definition
 `lean_kernel_main` to execute it and no other kernel-state installer — the
 generic entry included, so the platform cannot be varied by the entry.  The
 platform entry boots `bindPlatformConfig platform config`: the caller's IRQ
-table and initial objects under the binding's `machineConfig` and
-`bootVSpaceRoot` (`bindPlatformConfig_machineConfig`,
+table and initial objects under the binding's `bootVSpaceRoot` and the machine
+configuration the binding binds for the caller's account
+(`PlatformBinding.bindMachineConfig`; `bindPlatformConfig_machineConfig`,
 `bindPlatformConfig_bootVSpaceRoot`, `bindPlatformConfig_initialObjects`,
 `bindPlatformConfig_irqTable`, all definitional; `bootAndInitialiseRPi5_bound_config`
 pins the RPi5 pair), so a caller can neither omit the canonical ASID root nor
-describe hardware the image does not run on.  And a boot TCB is stored under
+describe hardware the image does not run on.  **The account selects among the
+binding's declared configurations and never becomes one** (PR #892 review
+round 2): the Raspberry Pi 5 ships in 1, 2, 4, 8 and 16 GiB (`rpi5Variants`),
+the binding installs the largest variant the account covers and the smallest
+when it covers none (`rpi5VariantFor`, `rpi5BoundMachineConfig`;
+`rpi5VariantFor_maximal`, `rpi5VariantFor_of_uncovered`), and the bound
+configuration is a member of the family whatever the caller said
+(`bootAndInitialiseRPi5_bound_config_mem_family`) with the binding's PE count on
+every member (`bindMachineConfig_declaredCoreCount`, read off the live boot
+state by `bootAndInitialisePlatform_checked_declaredCoreCount`).  The DTB bridge
+validates the board against the same function the binding installs
+(`rpi5PlatformConfigFromDtb_ok_binds_detected_variant`), so a 1 GiB board boots
+its own map where the fixed 4 GiB check refused it, and a board covering no
+variant is refused (`rpi5PlatformConfigFromDtb_refuses_uncovered_family`).  The
+coverage predicate both decide by, `machineConfigCovers`, lives in
+`Platform/Boot/MemoryCoverage.lean` upstream of the bindings, with the union
+reading of "covered" (`memoryRegionCoveredByUnion`) and its soundness theorem.  And a boot TCB is stored under
 its own thread id: `PlatformConfig.wellFormed`'s fourth conjunct
 `tcbIdentitiesMatchSlots` requires every `.tcb` entry's `tid.toObjId` to be
 its `id` (`tcbIdentitiesMatchSlots_tid_eq`), the reference check reads the
@@ -2752,8 +2882,20 @@ alongside the latent inventory (closing SMP-H3).
    actually holding it (`≤ numCores − 1`).  `KernelOperation` carries a
    `LockSet` footprint plus a `sizeWithinBound` proof, and
    `lockSetTransitions_within_bound` discharges that proof for all 25
-   SM3.B `lockSet_<τ>` declarations (size `≤ 8`) — so the bound is
-   never vacuous.
+   SM3.B `lockSet_<τ>` declarations (size `≤ maxLockSetSize`) — so the
+   bound is never vacuous.  **WS-RR RR7.11 (v0.34.64) moved
+   `maxLockSetSize` from 8 to 9**, and moved the constant itself to
+   `Locks/LockSet.lean` beside the datatype whose cardinality it
+   bounds.  The widest declared footprint is a `.replyRecv` that both
+   returns a donation and installs capabilities, and its ninth member
+   is the state-level lock the capability install's CDT write needs —
+   a member RR7.7 had declared on the two *sending* arms and neither
+   receiving one, though all four reach the same
+   `ipcTransferSingleCap`.  The WCRT headline is parametric in the
+   constant and widens by an eighth; the alternative was a declared
+   footprint that does not cover its own writes, or a lock acquired
+   outside the declared set, which is invisible to the
+   deadlock-freedom and serializability theorems.
 
    **SM3.D.5b — mode-aware deadlock-freedom**: the plan-signature
    `noDeadlock` / `waitGraph_acyclic_under_2pl` use bare `LockId`,
@@ -3784,11 +3926,15 @@ carry an explicit `h : ... = .ok st'` success hypothesis.
 `*_preserves_ipcInvariantFull` theorem now *establishes* each conjunct from its
 pre-state and the step rather than assuming it of its own post-state: the Tier-0
 gate `scripts/check_ipc_invariant_dethreading.py` reports **zero** conjuncts
-bound on a post-state across all **146** statements in the family (the
+bound on a post-state across all **169** statements in the family (the
 `*_establishes_ipcInvariantFull*` composites included), with the conjunct
 set, the bundle family and each bundle's pre-state all derived from the sources
 rather than listed, and prints `[PASS] ipcInvariantFull is de-threaded end to
-end`.  The pre-state conditions that replaced them are collected
+end`.  Since WS-RR RR7.28 the **figure itself** is gated: the same check holds
+every tracked Markdown file outside `CHANGELOG.md` and `docs/dev_history/` — the
+two places the number is history rather than a claim about HEAD — to its own
+measurement, so a cut that adds a bundle fails until the prose it made stale is
+corrected.  The pre-state conditions that replaced them are collected
 and, where possible, *derived* in
 `SeLe4n/Kernel/IPC/Invariant/Reachability.lean` (`ipcReachable`, proved
 inhabited by the boot state).  The top-level dispatch payoff **exists**:
@@ -3834,7 +3980,25 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   vacuous rather than conditional.
 - `passiveServerIdle`: unbound non-runnable threads are
   ready/receiving/blocked-on-reply (a donor awaiting the reply that returns
-  its SchedContext)
+  its SchedContext).  **Preserved by `cancelIpcBlocking` on every arm** since
+  `v0.34.105` (WS-OD OD1.5).  It was not before: the reply arm's reclaim hands
+  a donated SchedContext back and thereby makes its holder `.unbound`, and a
+  holder that had Called an endpoint with no receiver waiting was left
+  `.blockedOnCall` — which this conjunct forbids, reachable at depth 1 with no
+  donation chain.  The reclaim now ends that holder's outstanding send or call
+  first (`abortHolderPendingIpc`, seL4-MCS's timeout semantics: the budget the
+  operation was issued on has been revoked), and the abort's reach is exactly
+  those two states — a holder in any state the conjunct permits is left
+  untouched.  **And the cross-core composite places the holder it unblocks**
+  since `v0.34.108` (WS-OD OD1.7): satisfying the conjunct is not the same as
+  being schedulable, and the abort alone left the holder `.ready` on no run
+  queue with every recovery path closed — `.tcbResume` demands `.Inactive`,
+  `schedContextBind` re-buckets only an already-queued thread, and
+  `chooseThreadOnCore` never scans ready TCBs — so the server was stranded
+  permanently.  `cancelIpcBlockingOnCore` now enqueues it on its **home** core,
+  which is neither necessarily the victim's nor the executing core; the declared
+  scheduler footprint names that core's run-queue write lock, and the composite's
+  per-core run-queue locality clause excludes it.
 - `donationBudgetTransfer`: at most one thread per SchedContext — now satisfiable
   for donated states (the donor is `.unbound`; only the server's `.donated`
   references the SchedContext)

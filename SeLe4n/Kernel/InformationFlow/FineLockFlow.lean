@@ -2632,7 +2632,7 @@ path; the footprint declares a read lock on the **root** only
 (`lockSet_tcbSuspend`'s `cnodeRootObjId`), so a deeper path would have the
 target selected by CNodes no declared lock covers — a concurrent writer could
 redirect the resolution without conflicting with the footprint.  Locking the
-whole path is not expressible: a `LockSet` is bounded by `maxLockSetSize` (8)
+whole path is not expressible: a `LockSet` is bounded by `maxLockSetSize`
 while a CSpace path is bounded only by the address width, so the set cannot
 name the path in general.  Rejecting is therefore the fail-closed option, and
 it is the one the reviewer's own second alternative names.  A rejected entry
@@ -2779,7 +2779,26 @@ def declaredLockSetForEntry (ctx : LabelingContext) (layout : SeLe4n.SyscallRegi
     match entryCapTarget decoded tid s with
     | none => none
     | some targetTid =>
-      SeLe4n.Kernel.Concurrency.lockSetForSyscall decoded.syscallId tid targetTid s
+      -- WS-RR RR7.10: the operands the entry resolved, in the shape the
+      -- resolver now takes.  `entryCapTarget` yields a thread, so this is a
+      -- thread-directed target.
+      --
+      -- WS-RR RR7.11 declared the seven IPC arms, and they read operands this
+      -- shape leaves absent — an endpoint or notification `ObjId`, a `ReplyId`,
+      -- and (for the two sending arms) the message, whose capabilities decide
+      -- whether the receiver's CSpace root and the state-level lock are members.
+      -- So this entry still declares exactly `.tcbSuspend`, and
+      -- `lockSetForSyscall_ofThreadTarget_undeclared` is the theorem that says
+      -- so from the operands rather than from the set of declared arms.
+      --
+      -- Supplying the rest belongs to **RR7.12**, at the production entry: the
+      -- message is built by `resolveExtraCaps`, which mints CDT nodes, so the
+      -- bracket has to decide which state it resolves the footprint at — and
+      -- that decision is inseparable from the acquire/re-resolve/refuse
+      -- discipline RR7.12 lands.  Doing it here would be that row's work in a
+      -- module the kernel does not link.
+      SeLe4n.Kernel.Concurrency.lockSetForSyscall decoded.syscallId
+        (.ofThreadTarget tid targetTid) s
 
 /-- SM8.D.5 (**the binding, as a theorem**): a resolved footprint is
 `lockSetForSyscall`'s output at the **decoded** syscall id, the **executing
@@ -2796,7 +2815,8 @@ theorem declaredLockSetForEntry_binds_decode (ctx : LabelingContext)
     ∃ tid decoded targetTid,
       entryDecode ctx layout executingCore regCount s = some (tid, decoded) ∧
       entryCapTarget decoded tid s = some targetTid ∧
-      SeLe4n.Kernel.Concurrency.lockSetForSyscall decoded.syscallId tid targetTid s = some S := by
+      SeLe4n.Kernel.Concurrency.lockSetForSyscall decoded.syscallId
+        (.ofThreadTarget tid targetTid) s = some S := by
   unfold declaredLockSetForEntry at h
   cases hDec : entryDecode ctx layout executingCore regCount s with
   | none => rw [hDec] at h; exact absurd h (by simp)
@@ -2854,19 +2874,26 @@ footprint reads, so it is a theorem about the splice rather than about the
 endpoint lock in isolation.
 
 **Why the footprint is not simply widened instead**: `lockSet_tcbSuspend` is
-already `maxLockSetSize` (8) at full resolution, and that constant is the WCRT
-headline (`maxLockSetSize · (numCores − 1) · tCs`, the figure the 1 ms tick fit
-rests on).  Adding two neighbour locks would break a bound.
+eight members at full resolution, and `maxLockSetSize` is nine (WS-RR RR7.11
+raised it from eight, measured against a caps-installing `.replyRecv`).  So one
+neighbour lock would now fit and two would not — and the constant is the WCRT
+headline (`maxLockSetSize · (numCores − 1) · tCs`), so widening it again to make
+room is not free.  Adding two neighbour locks still breaks the bound.
 
 **What this theorem does *not* establish — and an earlier version of this
 docstring wrongly claimed it did.**  This is an *authorization* statement: the
 splice's neighbour writes fall under a lock the suspend holds.  Authorization is
 not exclusion.  Exclusion additionally requires that **every** writer of a queued
-TCB hold that endpoint's lock, and that is false today —
-`queueOwnership_violated_by_tcbSetPriority` below exhibits the counterexample as
-a theorem.  The sentence this replaces read "there is no hole to close"; there
-is one, it is in the *inventory* rather than in this theorem, and it is
-registered as `UncoveredLockDomain.queueOwnershipProtocol`. -/
+TCB hold that endpoint's lock.
+
+That was false until **WS-RR RR7.38**, which is why an earlier version of this
+docstring wrongly read "there is no hole to close": there was one, in the
+*inventory* rather than in this theorem, registered as
+`UncoveredLockDomain.queueOwnershipProtocol` and exhibited as a `¬` by
+`queueOwnership_violated_by_tcbSetPriority`.  It is closed: the eleven
+footprints that can write a queued TCB now carry the queue owner's write lock as
+a declared member, the `¬` is replaced by the eleven
+`queueOwnership_respected_by_*` positives, and the domain constructor is gone. -/
 theorem suspendFootprint_splice_neighbors_under_endpoint_lock (st : SystemState)
     (callerTid targetTid : SeLe4n.ThreadId) (S : LockSet) (victim : TCB)
     (ep : SeLe4n.ObjId)
@@ -2922,10 +2949,20 @@ also holds `ep`'s write lock.  The discipline
 footprint whose target is queued on `ep` — which is what would make the endpoint
 lock an exclusion mechanism for queue-link writes rather than merely an
 authorization for them. -/
+def queueOwnershipRespectedBy (S : LockSet) (t : SeLe4n.ThreadId)
+    (o : SeLe4n.Kernel.Concurrency.QueueOwner) : Prop :=
+  (SeLe4n.Kernel.Concurrency.tcbLock t, AccessMode.write) ∈ S.pairs →
+    (o.lock, AccessMode.write) ∈ S.pairs
+
+/-- SM8.D.5: the endpoint instance, which is the shape the splice argument uses.
+
+**WS-RR RR7.38** generalised the predicate to any queue owner, because a thread
+blocked on a *notification* sits in that object's queue on exactly the same
+terms.  This abbreviation keeps the endpoint reading — the one the suspend
+argument is stated in — spelled as it was. -/
 def queueOwnershipRespected (S : LockSet) (t : SeLe4n.ThreadId)
     (ep : SeLe4n.ObjId) : Prop :=
-  (SeLe4n.Kernel.Concurrency.tcbLock t, AccessMode.write) ∈ S.pairs →
-    (SeLe4n.Kernel.Concurrency.endpointLock ep, AccessMode.write) ∈ S.pairs
+  queueOwnershipRespectedBy S t (.endpoint ep)
 
 /-- SM8.D.5: the suspend footprint **does** respect the protocol for its victim.
 
@@ -2944,104 +2981,150 @@ theorem suspendFootprint_respects_queueOwnership (st : SystemState)
   fun _ => (suspendFootprint_splice_neighbors_under_endpoint_lock st callerTid targetTid
     S victim ep hFp hVictim hBlocked hLinks).1
 
-/-- WS-SM SM9.D.17 (audit, **the violation as data**): the send and call
-footprints declare no CNode **write** — in particular not the receiver's CSpace
-root, which `ipcUnwrapCaps` writes on a caps-carrying rendezvous.  Concrete
-witnesses because the honest general statement needs a mode-aware inversion the
-kind-based `omits` pattern cannot supply (the caller's root IS a cnode-kind
-member, in read mode), and a `decide` over closed footprints pins the same
-fact: the fold that builds each set inserts exactly one CNode key, read-mode,
-the caller's.  Closing the gap deletes this theorem — the SM8.D round-11
-discipline, so the debt cannot quietly become a stale comment. -/
-theorem capTransfer_receiverCnode_write_undeclared :
-    ∃ (callerTid receiverTid : SeLe4n.ThreadId) (cnRoot epId recvRoot : SeLe4n.ObjId),
-      cnRoot ≠ recvRoot ∧
-      (SeLe4n.Kernel.Concurrency.cnodeLock recvRoot, AccessMode.write) ∉
-        (SeLe4n.Kernel.Concurrency.lockSet_endpointSend callerTid cnRoot epId
-          (some receiverTid)).pairs ∧
-      (SeLe4n.Kernel.Concurrency.cnodeLock recvRoot, AccessMode.write) ∉
-        (SeLe4n.Kernel.Concurrency.lockSet_endpointCall callerTid cnRoot epId
-          (some receiverTid) none none).pairs ∧
-      -- …and the gap is not an artifact of naming a FOREIGN root: even the
-      -- caller's own root — the one CNode the footprints do name — is held in
-      -- read mode only, so no CNode write is declared anywhere in either set.
-      (SeLe4n.Kernel.Concurrency.cnodeLock cnRoot, AccessMode.write) ∉
-        (SeLe4n.Kernel.Concurrency.lockSet_endpointSend callerTid cnRoot epId
-          (some receiverTid)).pairs := by
-  refine ⟨⟨1⟩, ⟨2⟩, SeLe4n.ObjId.ofNat 3, SeLe4n.ObjId.ofNat 4, SeLe4n.ObjId.ofNat 5,
-    by decide, ?_, ?_, ?_⟩ <;> decide
+/-! ## The capability-transfer destination — **covered at WS-RR RR7.8**
 
-/-- SM8.D.5: `lockSet_tcbSetPriority` never holds an endpoint lock.
+`capTransfer_receiverCnode_write_undeclared` stood here: concrete witnesses that
+`lockSet_endpointSend` / `lockSet_endpointCall` declared no CNode **write**, so
+the receiver's CSpace root — which `ipcUnwrapCaps` writes on a caps-carrying
+rendezvous — had no covering lock.
 
-Its four possible members are a caller TCB read, a CNode read, a target TCB write
-and an optional SchedContext write — four `LockKind`s, none of them
-`.endpoint`. -/
-theorem lockSet_tcbSetPriority_omits_endpointLock (callerTid : SeLe4n.ThreadId)
-    (cnodeRootObjId : SeLe4n.ObjId) (targetTcbTid : SeLe4n.ThreadId)
-    (boundSchedContextId : Option SeLe4n.SchedContextId) (ep : SeLe4n.ObjId) :
-    (SeLe4n.Kernel.Concurrency.endpointLock ep, AccessMode.write) ∉
-      (SeLe4n.Kernel.Concurrency.lockSet_tcbSetPriority callerTid cnodeRootObjId
-        targetTcbTid boundSchedContextId).pairs := by
-  -- Every member's key carries a `LockKind` other than `.endpoint`, so the
-  -- three-way `insertOrMerge_mem` inversion closes on the kind at each layer.
-  have step : ∀ (S : LockSet) (l : SeLe4n.Kernel.Concurrency.LockId) (m : AccessMode),
-      l.kind ≠ SeLe4n.Kernel.Concurrency.LockKind.endpoint →
-      (SeLe4n.Kernel.Concurrency.endpointLock ep, AccessMode.write) ∉ S.pairs →
-      (SeLe4n.Kernel.Concurrency.endpointLock ep, AccessMode.write) ∉
-        (S.insertOrMerge l m).pairs := by
-    intro S l m hKind hS hMem
-    rcases LockSet.insertOrMerge_mem S l m _ hMem with h | h | h
-    · have hl : l = SeLe4n.Kernel.Concurrency.endpointLock ep := (congrArg Prod.fst h).symm
-      exact hKind (by rw [hl]; rfl)
-    · exact hKind (by rw [← h]; rfl)
-    · exact hS h
-  cases boundSchedContextId <;>
-    simp only [SeLe4n.Kernel.Concurrency.lockSet_tcbSetPriority,
-      SeLe4n.Kernel.Concurrency.lockSetExtendOpt,
-      SeLe4n.Kernel.Concurrency.lockSetOfList,
-      Option.map_some, Option.map_none] <;>
-    repeat' apply step
-  all_goals
-    simp [SeLe4n.Kernel.Concurrency.tcbLock, SeLe4n.Kernel.Concurrency.cnodeLock,
-      SeLe4n.Kernel.Concurrency.schedContextLock, LockSet.empty]
+It is deleted because the domain is covered, not to make a count fall.  RR7.7
+gave both footprints a capability-transfer destination optional whose `some`
+declares `(cnodeLock r, .write)` and `(stateLevelLock, .write)`; RR7.8 resolves
+that optional from `rendezvousCapsDestination?`, the expression the WithCaps
+arms themselves evaluate, and proves the closure:
+`endpointSendDualWithCaps_object_writes_declared` and
+`endpointCallWithCaps_object_writes_declared`
+(`SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean`) say that **every object either
+arm's transfer changes is declared write-mode in the footprint its bracket
+acquires**.
 
-/-- SM8.D.5 (**the protocol is violated — the gap, as a theorem**).
+A Tier-3 negative pins that the theorem and the constructor cannot return.
+-/
 
-`tcbSetPriority` writes its target TCB whole (the model's `storeObject` replaces
-the object), and its footprint carries no endpoint lock.  So when the target is a
-queued neighbour of a suspend victim, the two footprints hold **no lock in
-common on that TCB**: the suspend holds `endpointLock ep .write` and the victim's
-`tcbLock`, the reprioritisation holds the neighbour's `tcbLock`.  Neither
-excludes the other, and both write the neighbour object.
+/-- **WS-RR RR7.38**: a footprint whose last layer is the queue-owner member
+holds that owner's write lock.
 
-This is what distinguishes authorization from exclusion, and it is why
-`suspendFootprint_splice_neighbors_under_endpoint_lock` — which is true — does
-not by itself make the splice safe under fine locks.
+The one fact the eleven results below need, so it is proved once over the shape
+rather than eleven times over the footprints. -/
+theorem queueOwner_mem_write_of_extendOpt (S : LockSet)
+    (o : SeLe4n.Kernel.Concurrency.QueueOwner) :
+    (o.lock, AccessMode.write) ∈
+      (SeLe4n.Kernel.Concurrency.lockSetExtendOpt S
+        (SeLe4n.Kernel.Concurrency.queueOwnerMember (some o))).pairs := by
+  simp only [SeLe4n.Kernel.Concurrency.lockSetExtendOpt,
+    SeLe4n.Kernel.Concurrency.queueOwnerMember, Option.map_some]
+  exact SeLe4n.Kernel.self_write_mem_insertOrMerge _ o.lock
 
-**Not live**: SM3.C.9 still defers `withLockSet` at the `@[export]` bodies and
-SM5.I serialises kernel entry behind one global ticket lock, so no runtime lock
-is taken from either footprint today.  It is a defect in the *declared*
-discipline, which is precisely what a declared footprint exists to get right.
+/-- **WS-RR RR7.38 (the domain, closed)**: every footprint that can write a
+*queued* TCB respects the queue-ownership protocol.
 
-Stated as a `¬` rather than described, so a cut that closes it deletes this
-theorem instead of leaving prose that has quietly become false — the failure
-mode this PR hit twice already. -/
-theorem queueOwnership_violated_by_tcbSetPriority (callerTid : SeLe4n.ThreadId)
+This replaces `queueOwnership_violated_by_tcbSetPriority`, which stated the gap
+as a `¬` precisely so that closing it would delete the theorem rather than leave
+prose that had become false.  What closed it: each of these eleven footprints
+now carries the queue owner's write lock as a declared member, resolved from the
+pre-state by `queueOwnerAt`.  A suspend splicing a victim out of `ep`'s queue
+holds `endpointLock ep .write`; any of these targeting one of that victim's
+queued neighbours now holds the same lock, so the two are mutually excluded on
+the TCBs the splice writes rather than merely authorized.
+
+The cost is `permittedKinds` admitting `.endpoint` and `.notification` on those
+eleven arms — two kinds, fixed by `QueueOwner.lock_kind`, rather than the
+`.declassify` admit-everything shape — and it is the cheaper of the two options
+the domain's own entry costed: the alternative was to let the suspend name both
+neighbours' `tcbLock`s, which raises `maxLockSetSize` and so moves the WCRT
+ceiling (`admissibleCriticalSection`) for every syscall. -/
+theorem queueOwnership_respected_by_tcbSetPriority (callerTid : SeLe4n.ThreadId)
     (cnodeRootObjId : SeLe4n.ObjId) (neighbourTid : SeLe4n.ThreadId)
-    (boundSchedContextId : Option SeLe4n.SchedContextId) (ep : SeLe4n.ObjId) :
-    ¬ queueOwnershipRespected
-        (SeLe4n.Kernel.Concurrency.lockSet_tcbSetPriority callerTid cnodeRootObjId
-          neighbourTid boundSchedContextId) neighbourTid ep := by
-  intro hResp
-  refine lockSet_tcbSetPriority_omits_endpointLock callerTid cnodeRootObjId
-    neighbourTid boundSchedContextId ep (hResp ?_)
-  -- The target TCB write lock *is* declared — which is what makes the omission a
-  -- gap rather than an operation that simply does not touch the neighbour.
-  unfold SeLe4n.Kernel.Concurrency.lockSet_tcbSetPriority
-  refine SeLe4n.Kernel.Concurrency.mem_write_lockSetExtendOpt _ _ _ ?_
-  simp only [SeLe4n.Kernel.Concurrency.lockSetOfList]
-  exact SeLe4n.Kernel.self_write_mem_insertOrMerge _
-    (SeLe4n.Kernel.Concurrency.tcbLock neighbourTid)
+    (boundSchedContextId : Option SeLe4n.SchedContextId)
+    (o : SeLe4n.Kernel.Concurrency.QueueOwner) :
+    queueOwnershipRespectedBy
+      (SeLe4n.Kernel.Concurrency.lockSet_tcbSetPriority callerTid cnodeRootObjId
+        neighbourTid boundSchedContextId (some o)) neighbourTid o :=
+  fun _ => queueOwner_mem_write_of_extendOpt _ o
+
+
+/-- **WS-RR RR7.38**: the other ten arms that can write a queued TCB, each by the
+same one-line argument.  They are eleven separate theorems because they are
+eleven separate functions — the enumeration is of the *footprints*, not of a
+property, and `permittedKinds`' own arms are what say which syscalls are in
+scope. -/
+theorem queueOwnership_respected_by_schedContextConfigure (callerTid : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (scid : SeLe4n.SchedContextId)
+    (neighbourTid : SeLe4n.ThreadId)
+    (o : SeLe4n.Kernel.Concurrency.QueueOwner) :
+    queueOwnershipRespectedBy
+      (SeLe4n.Kernel.Concurrency.lockSet_schedContextConfigure callerTid cnodeRootObjId scid (some neighbourTid) (some o)) neighbourTid o :=
+  fun _ => queueOwner_mem_write_of_extendOpt _ o
+
+theorem queueOwnership_respected_by_schedContextBind (callerTid : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (scid : SeLe4n.SchedContextId)
+    (neighbourTid : SeLe4n.ThreadId)
+    (o : SeLe4n.Kernel.Concurrency.QueueOwner) :
+    queueOwnershipRespectedBy
+      (SeLe4n.Kernel.Concurrency.lockSet_schedContextBind callerTid cnodeRootObjId scid neighbourTid (some o)) neighbourTid o :=
+  fun _ => queueOwner_mem_write_of_extendOpt _ o
+
+theorem queueOwnership_respected_by_schedContextUnbind (callerTid : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (scid : SeLe4n.SchedContextId)
+    (neighbourTid : SeLe4n.ThreadId)
+    (o : SeLe4n.Kernel.Concurrency.QueueOwner) :
+    queueOwnershipRespectedBy
+      (SeLe4n.Kernel.Concurrency.lockSet_schedContextUnbind callerTid cnodeRootObjId scid neighbourTid (some o)) neighbourTid o :=
+  fun _ => queueOwner_mem_write_of_extendOpt _ o
+
+theorem queueOwnership_respected_by_tcbBindNotification (callerTid : SeLe4n.ThreadId)
+    (cnodeRootObjId ntfnObjId : SeLe4n.ObjId) (neighbourTid : SeLe4n.ThreadId)
+    (o : SeLe4n.Kernel.Concurrency.QueueOwner) :
+    queueOwnershipRespectedBy
+      (SeLe4n.Kernel.Concurrency.lockSet_tcbBindNotification callerTid cnodeRootObjId ntfnObjId neighbourTid (some o)) neighbourTid o :=
+  fun _ => queueOwner_mem_write_of_extendOpt _ o
+
+theorem queueOwnership_respected_by_tcbUnbindNotification (callerTid : SeLe4n.ThreadId)
+    (cnodeRootObjId ntfnObjId : SeLe4n.ObjId) (neighbourTid : SeLe4n.ThreadId)
+    (o : SeLe4n.Kernel.Concurrency.QueueOwner) :
+    queueOwnershipRespectedBy
+      (SeLe4n.Kernel.Concurrency.lockSet_tcbUnbindNotification callerTid cnodeRootObjId ntfnObjId neighbourTid (some o)) neighbourTid o :=
+  fun _ => queueOwner_mem_write_of_extendOpt _ o
+
+theorem queueOwnership_respected_by_tcbResume (callerTid : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (neighbourTid : SeLe4n.ThreadId)
+    (o : SeLe4n.Kernel.Concurrency.QueueOwner) :
+    queueOwnershipRespectedBy
+      (SeLe4n.Kernel.Concurrency.lockSet_tcbResume callerTid cnodeRootObjId neighbourTid (some o)) neighbourTid o :=
+  fun _ => queueOwner_mem_write_of_extendOpt _ o
+
+theorem queueOwnership_respected_by_tcbSetMCPriority (callerTid : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (neighbourTid : SeLe4n.ThreadId)
+    (boundSchedContextId : Option SeLe4n.SchedContextId)
+    (o : SeLe4n.Kernel.Concurrency.QueueOwner) :
+    queueOwnershipRespectedBy
+      (SeLe4n.Kernel.Concurrency.lockSet_tcbSetMCPriority callerTid cnodeRootObjId neighbourTid boundSchedContextId (some o)) neighbourTid o :=
+  fun _ => queueOwner_mem_write_of_extendOpt _ o
+
+theorem queueOwnership_respected_by_tcbSetIPCBuffer (callerTid : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (neighbourTid : SeLe4n.ThreadId)
+    (targetVSpaceRootObjId : Option SeLe4n.ObjId)
+    (o : SeLe4n.Kernel.Concurrency.QueueOwner) :
+    queueOwnershipRespectedBy
+      (SeLe4n.Kernel.Concurrency.lockSet_tcbSetIPCBuffer callerTid cnodeRootObjId neighbourTid targetVSpaceRootObjId (some o)) neighbourTid o :=
+  fun _ => queueOwner_mem_write_of_extendOpt _ o
+
+theorem queueOwnership_respected_by_tcbSetAffinity (callerTid : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (neighbourTid : SeLe4n.ThreadId)
+    (boundSchedContextId : Option SeLe4n.SchedContextId)
+    (o : SeLe4n.Kernel.Concurrency.QueueOwner) :
+    queueOwnershipRespectedBy
+      (SeLe4n.Kernel.Concurrency.lockSet_tcbSetAffinity callerTid cnodeRootObjId neighbourTid boundSchedContextId (some o)) neighbourTid o :=
+  fun _ => queueOwner_mem_write_of_extendOpt _ o
+
+theorem queueOwnership_respected_by_tcbSetFaultHandler (callerTid : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (neighbourTid : SeLe4n.ThreadId)
+    (targetCnodeRootObjId handlerEndpointObjId : Option SeLe4n.ObjId)
+    (o : SeLe4n.Kernel.Concurrency.QueueOwner) :
+    queueOwnershipRespectedBy
+      (SeLe4n.Kernel.Concurrency.lockSet_tcbSetFaultHandler callerTid cnodeRootObjId neighbourTid targetCnodeRootObjId handlerEndpointObjId (some o)) neighbourTid o :=
+  fun _ => queueOwner_mem_write_of_extendOpt _ o
 
 /-- SM8.D.5 (**fail-closed**): a footprint is declared only where the **decoded**
 syscall is `.tcbSuspend`.
@@ -3061,8 +3144,12 @@ theorem declaredLockSetForEntry_undeclared (ctx : LabelingContext)
   cases hTgt : entryCapTarget decoded tid s with
   | none => rfl
   | some targetTid =>
-    exact SeLe4n.Kernel.Concurrency.lockSetForSyscall_undeclared_none decoded.syscallId tid
-      targetTid s hSid
+    -- WS-RR RR7.11: through the thread-directed form.  The seven IPC arms are
+    -- declared now, but they read operands `ofThreadTarget` leaves absent, so
+    -- this entry resolver still declares exactly `.tcbSuspend` — and that is now
+    -- a theorem about the operands rather than about the set of declared arms.
+    exact SeLe4n.Kernel.Concurrency.lockSetForSyscall_ofThreadTarget_undeclared
+      decoded.syscallId tid targetTid s hSid
 
 /-- SM8.D.5: the lock domains a live `.tcbSuspend` needs that the object-domain
 `LockSet` cannot express.
@@ -3071,41 +3158,33 @@ Data rather than prose, so the scope of `syscallEntryUnderDeclaredLockSet` is
 checkable and a future cut that composes a domain has to delete an entry here
 rather than quietly leave a stale comment. -/
 inductive UncoveredLockDomain where
-  /-- Per-core run-queue and replenish-queue locks — `SchedLockId`, taken by
-  `suspendThreadOnCoreSchedLockSet`. -/
-  | schedulerDomain
-  /-- The PIP chain walk's per-member TCB and home-core run-queue write locks,
-  discovered as the walk proceeds (SM3.C.11) and so not resolvable from the
-  pre-state at all. -/
-  | dynamicPipChain
-  /-- The queue-owning-object protocol for splice neighbours.  A suspend's
-  neighbour link writes are *authorized* by the endpoint write lock
-  (`suspendFootprint_splice_neighbors_under_endpoint_lock`) but not *excluded*
-  against other writers of the same TCB: `lockSet_tcbSetPriority` writes a queued
-  neighbour holding neither the endpoint lock nor a lock the suspend takes
-  (`queueOwnership_violated_by_tcbSetPriority`).  Closing it is an SM3.B
-  inventory decision between two options, both costed in that theorem's
-  neighbourhood — widen the ~10 TCB-writing footprints that can target a queued
-  thread with a conditional endpoint lock, or raise `maxLockSetSize` (8, and
-  `lockSet_tcbSuspend` is at it exactly) so the suspend can name the neighbours,
-  which moves the WCRT headline. -/
-  | queueOwnershipProtocol
-  /-- WS-SM SM9.D.17 (audit): the **capability-transfer destination CNode**.  On
-  a caps-carrying rendezvous the live `.send` / `.call` run `ipcUnwrapCaps`,
-  which installs the transferred capabilities into the *receiver's* CSpace root
-  — a CNode write — while `lockSet_endpointSend` / `lockSet_endpointCall`
-  declare no CNode **write** at all (their one CNode member is the *caller's*
-  root, in read mode; `capTransfer_receiverCnode_write_undeclared`).  Surfaced
-  by SM9.D's cap-transfer taint sink, which names exactly this object: the taint
-  write at that key has no covering lock because the underlying transition's own
-  footprint predates the WithCaps path.  Not a live race (SM5.I's global entry
-  lock serialises every commit; `withLockSet` is deferred at the export bodies,
-  SM3.C.9), and closing it is an SM3.B inventory decision with a real cost — a
-  conditional receiver-CNode write member moves both signatures, the size
-  bounds, and the resolved-footprint WCRT arithmetic the IPC suites pin (a
-  caps-carrying call's footprint would exceed the 1 ms tick fit that holds for
-  the capless shape). -/
-  | capTransferReceiverCnode
+  /-- **WS-RR RR7.39**: the per-core run-queue and replenish-queue locks a
+  **syscall** takes — `SchedLockId`, as `suspendThreadOnCoreSchedLockSet`
+  declares them for a live `.tcbSuspend`.
+
+  RR7.39 gave the scheduler domain a runtime — `SystemState.schedulerLocks`,
+  the `SchedLockId` primitives, the `SchedLockSet` footprint type and the
+  `schedulerLockBracketDomain` instance of the shared bracket — and put the three
+  per-core scheduler *entries* (the timer tick, the `.reschedule` SGI receiver and
+  the secondary bring-up entry) inside their declared footprints, with the
+  write-set containment proved for both steps.  What it did **not** do is move the
+  RR7.12 **syscall** seam onto that domain, and this constructor is the syscall
+  half: `lockSetForSyscall` returns a `LockSet`, whose `LockId` cannot name a
+  run-queue lock at all, so the scheduler writes an `endpointSend`'s receiver wake
+  or a `.tcbSuspend`'s cancellation performs are still outside the footprint the
+  seam acquires.
+
+  Narrowed rather than deleted, deliberately.  The blanket entry read as "the
+  scheduler domain is uncovered", which after RR7.39 is false of the entries and
+  true of the syscalls; deleting it would have been false of the syscalls.  Why
+  the syscall half is its own cut: the object-domain syscall footprints hold
+  `stateLevelLock` and per-object locks, **not** the object-store table lock, so
+  the over-approximation that made the scheduler entries' widening free (see
+  `timerTickOnCoreCompleteLockSet_serialises_pairwise`) would here serialise
+  unrelated IPC on unrelated endpoints across every core's run queue.  The
+  footprints must therefore name the *resolved* wake targets, per arm — RR7.11's
+  shape, over a domain RR7.39 has now built. -/
+  | syscallSeamSchedulerDomain
   /-- WS-SM SM9.D.17 (audit): the **taint table's per-key realisation**.
 
   Every content-moving syscall writes `SystemState.declassificationTaint` at the
@@ -3127,44 +3206,6 @@ inductive UncoveredLockDomain where
   the difference between an obligation a later cut must discharge and one it can
   forget: the completeness theorem below now fails until this entry is removed. -/
   | taintTablePerKeyStore
-  /-- WS-SM (PR #873 round 13): the **CDT node allocator's global counter**.
-
-  Resolving an extra capability whose source slot has no CDT node yet mints one
-  through `ensureCdtNodeForSlotChecked`, which writes `cdtNextNode` (a global
-  monotone counter) and both keyed maps (`cdtSlotNode` / `cdtNodeSlot`).  That
-  happens on the `.send` and `.call` paths, whose footprints
-  (`lockSet_endpointSend` / `lockSet_endpointCall`) hold the source CNode in
-  **read** mode and declare no state-level or CDT write at all.
-
-  Under the declared fine locks two sends on otherwise disjoint endpoints would
-  hold disjoint footprints while allocating from the same pre-state counter, and
-  the later commit would either collide on a node id or lose one slot mapping.
-  Not live today for the same reason the sibling domains are not — SM5.I's global
-  entry ticket lock serialises every commit and `withLockSet` is deferred at the
-  export bodies (SM3.C.9).
-
-  The counter is not key-decomposable, so covering it means `stateLevelLock` in
-  **write** mode on the two hottest IPC arms, which moves the resolved-footprint
-  WCRT arithmetic the IPC suites pin — the same cost that keeps
-  `capTransferReceiverCnode` registered, and the same owner.  The remedy is
-  planned as Track B of `SMP_FINE_LOCK_MIGRATION_PLAN`, which declares
-  `(stateLevelLock, .write)` on send/call together with the four `cspace*`
-  operations that write the identical fields. -/
-  | cdtNodeAllocation
-  /-- PR #887 review round 3: the **interior CNodes of a multi-level CSpace
-  walk**.  `resolveCapAddress` descends through child CNodes while address
-  bits remain, and every per-object footprint names only the walk's *root*
-  (`cnodeLock cnodeRootObjId`), because the interior is discovered by the
-  walk — from the guard and radix of each CNode it reads — and so cannot be
-  resolved from the arguments before the locks are taken.  A concurrent
-  `cspaceDelete` of an interior slot therefore has no conflicting lock
-  against a resolution passing through it.  Found while adding the validated
-  endpoint to `lockSet_tcbSetFaultHandler`; it is a property of every
-  footprint that resolves a CPtr, so it is registered once here rather than
-  restated at each.  The remedy is a lock-coupling walk (hand-over-hand
-  read locks down the CSpace), which is the same dynamic-acquisition shape
-  as `dynamicPipChain` and has the same owner. -/
-  | cspaceWalkInteriorCnodes
   deriving DecidableEq, Repr
 
 /-- SM8.D.5: the domains this bracket does **not** cover, and the workstream that
@@ -3187,23 +3228,55 @@ extends a lock set along a PIP chain, or couples locks down a CSpace walk, so
 naming that range left three domains with an owner that could not close them.
 Each now names the closure row written for it: RR7.39 (the scheduler domain —
 the fine-lock plan's SM3.C.9.b follow-on), RR7.40 (the dynamic PIP chain),
-RR7.41 (the CSpace-walk interior). -/
+RR7.41 (the CSpace-walk interior).
+
+**The CSpace-walk interior's entry is deleted at v0.34.90 (WS-RR RR7.41).**
+`Capability.cspaceWalkPath` derives the CNodes a resolution passes through from
+`resolveCapAddress`'s own recursion, `cspaceWalkLockSet` declares a **read** lock
+on each, and `cspaceWalk_conflicts_with_delete` proves what the root-only
+footprint could not: a `cspaceDelete` whose target lies on the path shares a
+conflicting lock with the resolution, so SM3.E's conflict order separates them.
+The acquisition is `runUnderDeclaredLockSet` over the sorted set rather than a
+hand-over-hand coupling walk — coupling would abandon the SM0.I total order the
+whole tree's deadlock freedom rests on, and the revalidating bracket buys the
+same exclusion while keeping it.  Two relations PR #892 review round 4 closed
+in that mechanism: the declaration is **refused** above `maxLockSetSize`
+(`declaredLockSetForCSpaceWalk` answers `none` for a walk past the ceiling and
+the bracket falls back — a footprint the bound is false for is never claimed),
+and a **failed** lookup is a read the footprint names: a key holding no CNode
+declares `stateLevelLock` in read mode (`cspaceWalkKeyLock`), which conflicts
+with the write every structural writer declares.
+
+**The dynamic PIP chain's entry is deleted at v0.34.90 (WS-RR RR7.40).**  Its
+locks are nameable now that RR7.39 gave the scheduler domain a runtime:
+`PriorityInheritance.pipChainSchedFootprint` declares every visited thread's TCB
+write lock **and** its home core's run-queue write lock — two segments, because
+the `SchedLockId` ladder puts every object lock below every run-queue lock and
+per-member coupling would walk it backwards.  `withPipChainSchedExtension`
+acquires it through the shared `runChainExtension` — which acts only once the
+footprint is held and otherwise unwinds and returns the fallback (PR #892 review
+round 2) — and
+`propagatePipChainCrossCore_coversWrites` proves the walk writes nothing outside
+it.  The entry goes rather than narrows because the walk is now covered end to
+end; the inventory falls from four to three, which is the only reason it may.
+
+**The scheduler domain's owner moves again at v0.34.89 (WS-RR RR7.39).**  RR7.39
+closed the *entries*' half — the three per-core scheduler seams now acquire their
+declared footprints, and the domain has a runtime for them to acquire — and the
+constructor was narrowed to `syscallSeamSchedulerDomain`, the half that remains:
+moving the RR7.12 syscall seam onto the same domain, with each declared arm's
+resolved wake targets named.  That is RR8's, not RR7.39's, because it is a
+per-arm footprint cut of RR7.11's shape rather than a domain-construction one. -/
 def declaredFootprintUncoveredDomains : List (UncoveredLockDomain × String) :=
-  [(.schedulerDomain, "WS-RR RR7.39 (fine-lock Track C closure)"),
-   (.dynamicPipChain, "WS-RR RR7.40 (fine-lock Track C closure)"),
-   (.queueOwnershipProtocol, "WS-RR RR7.38"),
-   (.capTransferReceiverCnode, "WS-RR RR7.8 (fine-lock Track B)"),
+  [(.syscallSeamSchedulerDomain, "WS-RR RR8 (fine-lock Track C closure)"),
    (.taintTablePerKeyStore, "SM10.1 (fine-lock Track D)"),
-   (.cdtNodeAllocation, "WS-RR RR7.9 (fine-lock Track B)"),
-   (.cspaceWalkInteriorCnodes, "WS-RR RR7.41 (fine-lock Track C closure)")]
+]
 
 /-- SM8.D.5: the exhaustive list of uncovered domains, in the shape the claim
 inventory uses — so completeness can be quantified over the *constructors*
 rather than compared against a literal. -/
 def UncoveredLockDomain.all : List UncoveredLockDomain :=
-  [.schedulerDomain, .dynamicPipChain, .queueOwnershipProtocol,
-   .capTransferReceiverCnode, .taintTablePerKeyStore, .cdtNodeAllocation,
-   .cspaceWalkInteriorCnodes]
+  [.syscallSeamSchedulerDomain, .taintTablePerKeyStore]
 
 /-- SM8.D.5: every constructor is listed.  This is the clause a literal
 comparison cannot supply: adding a new domain makes `cases d` non-exhaustive
@@ -3263,9 +3336,14 @@ def fineLockDisciplineComplete : Bool :=
 
 /-- SM8.D.5 (PR #873 round 6): **it is false today**, and this is the pin that
 makes flipping it a deliberate act.  Deleting it is the same edit as claiming
-every registered domain is covered — six of them today, and the count is read
-off `declaredFootprintUncoveredDomains` rather than restated here, because a
-number written twice is a number that can disagree with itself. -/
+every registered domain is covered.
+
+**How many that is, is deliberately not written here.**  It was — "six of them
+today", which had already drifted to seven by the time WS-RR RR7.8 deleted
+`capTransferReceiverCnode` and made it six again by coincidence.  A number
+restated beside the list it counts is the shape the sentence itself warns
+against; the count is `declaredFootprintUncoveredDomains.length` and nothing
+else. -/
 theorem fineLockDisciplineComplete_is_false : fineLockDisciplineComplete = false := by
   decide
 
@@ -3826,8 +3904,8 @@ theorem declaredLockSetForEntry_is_suspend_footprint (ctx : LabelingContext)
     rw [hSid, SeLe4n.Kernel.Concurrency.lockSetForSyscall_tcbSuspend] at hLock
     exact hLock
   · exact absurd hLock (by
-      rw [SeLe4n.Kernel.Concurrency.lockSetForSyscall_undeclared_none decoded.syscallId tid
-        targetTid s hSid]
+      rw [SeLe4n.Kernel.Concurrency.lockSetForSyscall_ofThreadTarget_undeclared
+        decoded.syscallId tid targetTid s hSid]
       simp)
 
 -- ============================================================================

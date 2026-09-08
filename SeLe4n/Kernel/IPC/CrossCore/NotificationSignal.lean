@@ -441,27 +441,24 @@ footprint, present whether or not a waiter is woken.  Together with
 TCB binding is held under lock": the notification end. -/
 theorem lockSet_notificationSignal_notification_write_mem
     (signaller : SeLe4n.ThreadId) (cnRoot notificationId : SeLe4n.ObjId)
-    (waiter? : Option SeLe4n.ThreadId) :
+    (waiter? : Option SeLe4n.ThreadId)
+    -- **WS-RR RR7.11**: stated over the SM6.B bound-delivery optionals too.
+    -- Left at their defaults this covered only the non-bound footprint, while
+    -- `lockSet_notificationSignalOnCore` resolves them from the state — so the
+    -- bound-delivery shape, the one the SM6.B finding was about, was outside
+    -- the theorem that records the finding's closure.
+    (boundEp? : Option SeLe4n.ObjId) (boundTcb? : Option SeLe4n.ThreadId) :
     (notificationLock notificationId, AccessMode.write)
-      ∈ (lockSet_notificationSignal signaller cnRoot notificationId waiter?).pairs := by
-  -- Base: the notification lock is the outermost `insertOrMerge` of the list.
-  have hBase : (notificationLock notificationId, AccessMode.write)
-      ∈ (lockSetOfList [(tcbLock signaller, .read), (cnodeLock cnRoot, .read),
-            (notificationLock notificationId, .write)]).pairs := by
-    show (notificationLock notificationId, AccessMode.write)
-      ∈ (((LockSet.empty.insertOrMerge (tcbLock signaller) .read).insertOrMerge
-          (cnodeLock cnRoot) .read).insertOrMerge (notificationLock notificationId)
-          AccessMode.write).pairs
-    exact self_write_mem_insertOrMerge _ (notificationLock notificationId)
-  -- The optional waiter extension (a distinct TCB-kind lock) preserves it.
-  unfold lockSet_notificationSignal
-  cases hw : waiter? with
-  | none => simp only [lockSetExtendOpt, Option.map_none]; exact hBase
-  | some wt =>
-    simp only [lockSetExtendOpt, Option.map_some]
-    refine mem_insertOrMerge_of_mem_of_ne _ _ _ _ hBase ?_
-    show notificationLock notificationId ≠ tcbLock wt
-    intro h; simp [notificationLock, tcbLock] at h
+      ∈ (lockSet_notificationSignal signaller cnRoot notificationId waiter?
+          boundEp? boundTcb?).pairs := by
+  -- The notification lock is the outermost `insertOrMerge` of the base list, and
+  -- every extension carries a write member through unconditionally.
+  unfold lockSet_notificationSignal lockSetOfList
+  simp only [List.foldl]
+  exact mem_write_lockSetExtendOpt _ _ _
+    (mem_write_lockSetExtendOpt _ _ _
+      (mem_write_lockSetExtendOpt _ _ _
+        (LockSet.mem_insertOrMerge_write_self _ _)))
 
 /-- WS-SM SM6.B.6 (binding under lock-set, TCB end): the **woken waiter's TCB
 write lock** — under which the signal writes the waiter's `ipcState := .ready` and
@@ -476,12 +473,18 @@ distinctness side-condition): even were the waiter the signaller itself, the
 write lock subsumes the signaller's read lock via the `AccessMode.lub`. -/
 theorem lockSet_notificationSignal_waiter_tcb_write_mem
     (signaller : SeLe4n.ThreadId) (cnRoot notificationId : SeLe4n.ObjId)
-    (wt : SeLe4n.ThreadId) :
+    (wt : SeLe4n.ThreadId)
+    -- **WS-RR RR7.11**: over the bound-delivery optionals too, for the reason
+    -- stated at `lockSet_notificationSignal_notification_write_mem`.
+    (boundEp? : Option SeLe4n.ObjId) (boundTcb? : Option SeLe4n.ThreadId) :
     (tcbLock wt, AccessMode.write)
-      ∈ (lockSet_notificationSignal signaller cnRoot notificationId (some wt)).pairs := by
+      ∈ (lockSet_notificationSignal signaller cnRoot notificationId (some wt)
+          boundEp? boundTcb?).pairs := by
   unfold lockSet_notificationSignal
-  simp only [lockSetExtendOpt, Option.map_some, Option.map_none]
-  exact self_write_mem_insertOrMerge _ (tcbLock wt)
+  simp only [lockSetExtendOpt, Option.map_some]
+  exact mem_write_lockSetExtendOpt _ _ _
+    (mem_write_lockSetExtendOpt _ _ _
+      (LockSet.mem_insertOrMerge_write_self _ _))
 
 /-- WS-SM SM6.B/SM6.D (PR #822 Codex review): the bound-delivery **bound-TCB write
 lock** — under which `notificationSignalBoundOnCore` writes the dequeued bound TCB

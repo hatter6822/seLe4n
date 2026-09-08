@@ -129,6 +129,56 @@ theorem notificationSignalBoundCrossCoreDispatch_preserves_ipcInvariant
   notificationSignalBoundOnCore_preserves_ipcInvariant notificationId badge
     (determineExecutingCore st signaler) st hInv hObjInv
 
+/-- **WS-RR RR7.22 (residual)**: the unchecked bound-signal dispatch preserves
+the whole twenty-conjunct bundle — the live arm's payoff for the splice engine.
+
+The dispatch is `notificationSignalBoundOnCore` with the executing core read
+from the state, so the bundle is that transition's, instantiated. -/
+theorem notificationSignalBoundCrossCoreDispatch_preserves_ipcInvariantFull
+    (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (signaler : SeLe4n.ThreadId)
+    (st : SystemState)
+    (hInv : ipcInvariantFull st)
+    (hObjInv : st.objects.invExt)
+    (hNWC : notificationWaiterConsistent st)
+    (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    (hPred : ∀ (t : SeLe4n.ThreadId) (epId : SeLe4n.ObjId),
+      boundDeliveryTarget? st notificationId = some (t, epId) →
+      splicePredecessorBlocked true epId st t) :
+    ipcInvariantFull
+      (notificationSignalBoundCrossCoreDispatch notificationId badge signaler st).1 :=
+  notificationSignalBoundOnCore_preserves_ipcInvariantFull notificationId badge
+    (determineExecutingCore st signaler) st hInv hObjInv hNWC hAllBudgetsNone hPred
+
+/-- **WS-RR RR7.22 (residual)**: the *flow-checked* bound-signal dispatch —
+the form the live SM9 arm runs — preserves the bundle.
+
+Three arms, and each is settled by an existing reduction rather than by a fresh
+argument: a denied signaler flow and a denied receiver flow both return the
+pre-state untouched, and the two permitted arms are literally the unchecked
+dispatch. -/
+theorem notificationSignalBoundCrossCoreDispatchChecked_preserves_ipcInvariantFull
+    (ctx : LabelingContext) (notificationId : SeLe4n.ObjId) (signaler : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge) (st : SystemState)
+    (hInv : ipcInvariantFull st)
+    (hObjInv : st.objects.invExt)
+    (hNWC : notificationWaiterConsistent st)
+    (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    (hPred : ∀ (t : SeLe4n.ThreadId) (epId : SeLe4n.ObjId),
+      boundDeliveryTarget? st notificationId = some (t, epId) →
+      splicePredecessorBlocked true epId st t) :
+    ipcInvariantFull
+      (notificationSignalBoundCrossCoreDispatchChecked ctx notificationId signaler badge st).1 := by
+  unfold notificationSignalBoundCrossCoreDispatchChecked
+  split
+  · split
+    · split
+      · exact notificationSignalBoundOnCore_preserves_ipcInvariantFull notificationId badge
+          (determineExecutingCore st signaler) st hInv hObjInv hNWC hAllBudgetsNone hPred
+      · exact hInv
+    · exact notificationSignalBoundOnCore_preserves_ipcInvariantFull notificationId badge
+        (determineExecutingCore st signaler) st hInv hObjInv hNWC hAllBudgetsNone hPred
+  · exact hInv
+
 -- ============================================================================
 -- §5  Cross-core notification WAIT dispatch (per-core deschedule)
 -- ============================================================================

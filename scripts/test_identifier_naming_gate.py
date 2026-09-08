@@ -182,6 +182,45 @@ check("a command inside a double-quoted backtick substitution is kept",
           "echo " + dq + "`" + CODED + " # note\n`" + dq + "\n"), True)
 check("an unterminated backtick does not swallow the lines below it",
       CODED in gate.strip_shell("X=`echo\n# " + CODED + "\n"), False)
+# --- A here-document is a document of its own --------------------------
+# Lexing a heredoc body as part of the enclosing script let an apostrophe
+# in a fixture line open a single-quoted span that ran to the next quote
+# in the FILE, so every double-quoted diagnostic below it was read as code
+# and its workstream citation counted (the RR7 audit round found it
+# through `check_physical_address_width.sh`'s fixture).  The body is lexed
+# recursively as a document of its own -- its `#` comments are prose, its
+# identifiers are code -- and nothing inside it carries state past the
+# terminator.  The mutations keep the heredoc and move what surrounds it.
+check("a heredoc body's apostrophe does not swallow the diagnostic below it",
+      CODED in gate.strip_shell("cat <<'EOF'\nit" + q + "s a fixture\nEOF\necho "
+                                + dq + "AN7-A: " + CODED + dq + "\n"), False)
+check("a heredoc body's own identifiers are kept (the fail-closed direction)",
+      CODED in gate.strip_shell("cat <<'EOF'\ndef " + CODED + " := 0\nEOF\n"), True)
+check("a heredoc body's own comment is prose",
+      CODED in gate.strip_shell("cat <<'EOF'\n# " + CODED + "\nEOF\n"), False)
+check("an apostrophe in a body comment does not leak either",
+      CODED in gate.strip_shell("cat <<'EOF'\n# it" + q + "s\nx=1\nEOF\necho "
+                                + dq + "AN7-A: " + CODED + dq + "\n"), False)
+check("an unterminated heredoc runs to the end and swallows nothing outside the text",
+      CODED in gate.strip_shell("cat <<'EOF'\ndef " + CODED + " := 0\n"), True)
+check("an unquoted heredoc body is kept too",
+      CODED in gate.strip_shell("cat <<EOF\n" + CODED + "\nEOF\n"), True)
+check("a space between << and the quoted terminator is still a heredoc",
+      CODED in gate.strip_shell("cat << 'EOF'\nit" + q + "s\nEOF\necho "
+                                + dq + "AN7-A: " + CODED + dq + "\n"), False)
+check("a <<- heredoc closes on a tab-indented terminator",
+      CODED in gate.strip_shell("cat <<-EOF\n\tit" + q + "s\n\tEOF\necho "
+                                + dq + "AN7-A: " + CODED + dq + "\n"), False)
+check("the terminator must be the whole line: a prefix does not close the body",
+      CODED in gate.strip_shell("cat <<'EOF'\nEOFX " + CODED + "\nEOF\n"), True)
+check("lexing resumes after the terminator (a comment below it is blanked)",
+      CODED in gate.strip_shell("cat <<'EOF'\nx\nEOF\n# " + CODED + "\n"), False)
+check("the rest of the operator's own line is still shell (its comment is blanked)",
+      CODED in gate.strip_shell("cat <<'EOF' # " + CODED + "\nx\nEOF\n"), False)
+check("a here-string is not a heredoc",
+      CODED in gate.strip_shell("read -r x <<<" + dq + "AN7-A: " + CODED + dq + "\n"), False)
+check("a shift in arithmetic is not a heredoc",
+      CODED in gate.strip_shell("x=$(( 1 << 20 ))\n# " + CODED + "\n"), False)
 # PR #889 review round 20: a parameter expansion is a brace-delimited region
 # in which `)` is pattern text.  `x="$(echo ${y%)} <token>)"` is accepted by
 # bash (verified), and closing the substitution on the `)` inside `${y%)}`

@@ -430,10 +430,55 @@ pub const fn decode_icache_invalidation(
     }
 }
 
+/// **WS-RR RR7.2**: is this operand's address inside the identity-mapped,
+/// Normal (cacheable) window the boot tables install?
+///
+/// `IC IVAU` and `DC CVAU` take a **virtual** address; the kernel passes the
+/// frame's **physical** address, and the two are the same address only inside
+/// the boot identity map (`mmu::boot_mapping_for`).  Outside it the operand
+/// either takes a translation fault at EL1 or operates through a Device alias,
+/// and a silently under-maintained instruction cache is exactly the SMP-C4
+/// hazard arriving from the cache side — a correctness violation the caller
+/// cannot detect.
+///
+/// [`ICacheInvalidation::Iallu`] carries no address (the Lean encoder sends
+/// `0`, which `ICacheInvalidation.toPaddr` pins) and is domain-wide, so it is
+/// always in range.  The three addressed operands are checked at the extent
+/// they actually maintain: a page for `IvauPage`/`UnifyPage`, the caller's
+/// range for `CleanRangeIallu`.  Checking the extent rather than the base is
+/// what catches a range that starts in RAM and runs off the end of it.
+#[must_use]
+pub fn icache_operand_within_identity_map(op: ICacheInvalidation) -> bool {
+    match op {
+        ICacheInvalidation::Iallu => true,
+        ICacheInvalidation::IvauPage(addr) | ICacheInvalidation::UnifyPage(addr) => {
+            // Both expand to a loop over the page holding `addr`, so the page
+            // is the extent that must be mapped.
+            let page_base = addr & !(PAGE_SIZE - 1);
+            crate::mmu::is_boot_cacheable_range(page_base, PAGE_SIZE)
+        }
+        ICacheInvalidation::CleanRangeIallu(base, size) => {
+            crate::mmu::is_boot_cacheable_range(base, size)
+        }
+    }
+}
+
 /// **WS-SM SM7.D.1**: retire one typed instruction-cache maintenance operand,
 /// broadcast across the Inner Shareable domain.
+///
+/// **WS-RR RR7.2 — fail closed on an out-of-window operand.**  An operand
+/// outside the boot identity map cannot be maintained: the address the
+/// instruction would take is not the address the kernel means.  Continuing
+/// would leave a stale instruction line behind a re-typed frame, which is
+/// undetectable at the call site, so the PE halts instead — the same
+/// disposition [`crate::ffi::cache_ic_maintenance`] takes for an unknown op
+/// tag, and for the same reason.  A well-formed kernel cannot reach it: every
+/// operand names a RAM frame, and RR7.1 maps every RAM frame the board reports.
 #[inline]
 pub fn apply_icache_invalidation(op: ICacheInvalidation) {
+    if !icache_operand_within_identity_map(op) {
+        crate::cpu::fatal_halt();
+    }
     match op {
         ICacheInvalidation::Iallu => ic_invalidate_all_inner_shareable(),
         ICacheInvalidation::IvauPage(addr) => ic_invalidate_page_inner_shareable(addr),
@@ -889,5 +934,116 @@ mod tests {
         // identically on host. This test documents the invariant.
         cache_range(dc_civac, 0x1000, 0x1000);
         memory_fence();
+    }
+}
+
+// ===========================================================================
+// WS-RR RR7.2: identity-map witnesses for the cache-maintenance operand family
+//
+// The mutation that finds this class keeps the operand and moves it out of the
+// window — the address is still well-formed, still page-aligned, still a legal
+// `u64`; only its *relation* to the boot identity map changes.
+// ===========================================================================
+
+#[cfg(test)]
+mod identity_map_operand_tests {
+    use super::*;
+
+    /// An address inside the low RAM aperture the boot tables map Normal.
+    const IN_WINDOW: u64 = 0x0010_0000;
+    /// An address inside the BCM2712 peripheral window — mapped Device, so
+    /// `IC IVAU` against it maintains nothing the kernel meant.
+    const IN_DEVICE_WINDOW: u64 = 0xFE20_1000;
+    /// An address above the RAM top a 4 GiB board reports — unmapped, so the
+    /// instruction takes a translation fault at EL1.
+    const ABOVE_RAM: u64 = 0x1_0000_0000;
+
+    #[test]
+    fn the_domain_wide_operand_carries_no_address_and_is_always_in_range() {
+        assert!(icache_operand_within_identity_map(
+            ICacheInvalidation::Iallu
+        ));
+    }
+
+    #[test]
+    fn page_operands_inside_the_window_are_accepted() {
+        assert!(icache_operand_within_identity_map(
+            ICacheInvalidation::IvauPage(IN_WINDOW)
+        ));
+        assert!(icache_operand_within_identity_map(
+            ICacheInvalidation::UnifyPage(IN_WINDOW)
+        ));
+        assert!(icache_operand_within_identity_map(
+            ICacheInvalidation::CleanRangeIallu(IN_WINDOW, PAGE_SIZE)
+        ));
+    }
+
+    #[test]
+    fn a_page_operand_in_the_device_window_is_refused() {
+        assert!(!icache_operand_within_identity_map(
+            ICacheInvalidation::IvauPage(IN_DEVICE_WINDOW)
+        ));
+        assert!(!icache_operand_within_identity_map(
+            ICacheInvalidation::UnifyPage(IN_DEVICE_WINDOW)
+        ));
+    }
+
+    #[test]
+    fn a_page_operand_above_the_boards_ram_top_is_refused() {
+        assert!(!icache_operand_within_identity_map(
+            ICacheInvalidation::IvauPage(ABOVE_RAM)
+        ));
+    }
+
+    #[test]
+    fn an_unaligned_page_operand_is_judged_by_the_page_that_holds_it() {
+        // `ic_invalidate_page_inner_shareable` loops over the whole page, so
+        // the extent is the page, not the byte.  An address in the last page
+        // of RAM is in range; one just past the RAM top is not, even though
+        // its containing page starts inside RAM.
+        let last_page = crate::mmu::LOW_RAM_TOP - PAGE_SIZE;
+        assert!(icache_operand_within_identity_map(
+            ICacheInvalidation::IvauPage(last_page + 0x40)
+        ));
+        assert!(!icache_operand_within_identity_map(
+            ICacheInvalidation::IvauPage(crate::mmu::LOW_RAM_TOP)
+        ));
+    }
+
+    #[test]
+    fn a_range_that_starts_in_ram_and_runs_past_its_end_is_refused() {
+        // The relation a base-address check would miss.  The base is a
+        // perfectly good RAM frame; the range is not.
+        let base = crate::mmu::LOW_RAM_TOP - PAGE_SIZE;
+        assert!(icache_operand_within_identity_map(
+            ICacheInvalidation::CleanRangeIallu(base, PAGE_SIZE)
+        ));
+        assert!(!icache_operand_within_identity_map(
+            ICacheInvalidation::CleanRangeIallu(base, 2 * PAGE_SIZE)
+        ));
+    }
+
+    #[test]
+    fn an_empty_range_is_vacuously_in_range() {
+        assert!(icache_operand_within_identity_map(
+            ICacheInvalidation::CleanRangeIallu(IN_DEVICE_WINDOW, 0)
+        ));
+    }
+
+    #[test]
+    #[should_panic(expected = "fail-closed halt reached")]
+    fn applying_an_out_of_window_operand_halts() {
+        // `cpu::fatal_halt` parks the PE on aarch64 and panics on the host, so
+        // the fail-closed disposition is observable here.
+        apply_icache_invalidation(ICacheInvalidation::IvauPage(ABOVE_RAM));
+    }
+
+    #[test]
+    fn applying_an_in_window_operand_returns() {
+        // The complementary case: the same call shape with the operand back
+        // inside the window must not halt.  Without it the witness above would
+        // pass for a function that halted unconditionally.
+        apply_icache_invalidation(ICacheInvalidation::IvauPage(IN_WINDOW));
+        apply_icache_invalidation(ICacheInvalidation::Iallu);
     }
 }

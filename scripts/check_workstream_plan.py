@@ -30,6 +30,11 @@ Checks, per plan that declares a `Sub-task count` header:
      in execution order), which is the numbering rule stated in CLAUDE.md.
   6. Where a phase's table carries a per-row findings count, the column sums
      to the total the phase's acceptance text declares.
+  7. Every prose claim of a plan's sub-task count -- in any tracked Markdown
+     file outside `CHANGELOG.md` and `docs/dev_history/` -- equals what the
+     plan's rows actually define.  Checks 1-3 hold a plan's own arithmetic;
+     this one holds the documents that cite it, which is where the drift
+     that prompted it lived.
 
 Run `--self-test` to check the checker: a scanner that under-reaches fails
 silently, which is how the drift survived review in the first place.
@@ -103,6 +108,57 @@ def phase_map_rows(text: str, prefix: str, depth: int) -> dict[str, int]:
     return out, dupes
 
 
+# The canonical indices: the documents a reader is told to start from.
+#
+# A plan named in none of them is an invisible workstream, and that is not
+# hypothetical -- `IPC_INVARIANT_DETHREADING_PLAN.md` was an open IPC
+# verification workstream registered in no canonical source (register finding
+# 39, closed by WS-RR RR7.32, which added this check so the class cannot
+# recur).  Derived on both sides: the plan set is whatever `docs/planning/`
+# holds and the reference set is whatever those documents say, so a plan added
+# tomorrow is checked the day it lands rather than the day someone remembers.
+#
+# `UNFINISHED_SMP_WORK.md` is deliberately NOT canonical here: it is the audit
+# *finding* register, not the workstream index, and a plan visible only to an
+# auditor is precisely the state finding 39 describes.
+# `docs/dev_history/planning/` is out of scope for the opposite reason --
+# CLAUDE.md tells readers not to reference it, so a retired plan being
+# unreachable is the intended state.
+CANONICAL_INDICES = [
+    "CLAUDE.md",
+    "AGENTS.md",
+    "docs/REGISTERED_DEBT.md",
+    "docs/spec/SELE4N_SPEC.md",
+]
+
+
+def plan_visibility_errors(plans: list[str], indices: dict[str, str]) -> list[str]:
+    """Plans under `docs/planning/` that no canonical index names.
+
+    Matched on the plain text rather than the prose view: a link in a table, a
+    sentence or a fenced block all make a plan findable, and this check is
+    about reachability, not about a claim a scanner has to trust.
+    """
+    errors: list[str] = []
+    if not indices:
+        # Fail closed: with no index readable every plan would pass vacuously,
+        # which reads exactly like a tree in which every plan is indexed.
+        return ["plan visibility: no canonical index could be read, so the "
+                "check would pass vacuously"]
+    for rel in plans:
+        if not rel.startswith("docs/planning/"):
+            continue
+        name = os.path.basename(rel)
+        if any(name in body for body in indices.values()):
+            continue
+        errors.append(
+            f"{rel}: named in no canonical index "
+            f"({', '.join(sorted(indices))}) -- a plan a reader cannot reach "
+            f"from CLAUDE.md, the debt register or the spec is an invisible "
+            f"workstream; name it where its workstream is tracked")
+    return errors
+
+
 def read_indexed(rel: str) -> str | None:
     """Read from the git index, not the working tree: the gate must check what
     is being committed.  Validating the tree while the gate reads the index is
@@ -167,6 +223,20 @@ def check_plan(rel: str, text: str, companions: dict[str, str]) -> list[str]:
         elif want != have:
             errors.append(
                 f"{rel}: phase map says {ph} has {want} sub-tasks, table has {have}")
+    # 2b. and the phase's own section heading, which is a third hand-written
+    # copy of the same number.  `BP4 — The boot seam and its install ordering
+    # (4 sub-tasks)` sat above five rows, and `BP8 ... (4 sub-tasks)` above
+    # five, because a row added to the table updated the map and not the
+    # heading.  A reader meets the heading first.
+    head = re.compile(r"^###\s+(" + prefix + r"\d+(?:\.\d+)*)\s*[—–-].*?"
+                      r"\((\d+)\s+sub-?tasks?\)", re.M)
+    for hm in head.finditer(text):
+        ph, stated = hm.group(1), int(hm.group(2))
+        have = len(by_phase.get(ph, []))
+        if ph in by_phase and stated != have:
+            errors.append(
+                f"{rel}: the {ph} heading says {stated} sub-tasks, its table "
+                f"has {have}")
     m = HEADER_TOTAL.search(text)
     if m and declared:
         total, summed = int(m.group(1)), sum(declared.values())
@@ -352,6 +422,222 @@ def companion_citation_errors(companions: dict[str, str]) -> list[str]:
     return errors
 
 
+NUMBER_WORDS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+    "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11,
+    "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15,
+    "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19,
+    "twenty": 20,
+}
+
+# `34 sub-tasks`, `155 PR-sized sub-tasks`, `**41 sub-tasks**`.  Up to two
+# adjectives, because the tree writes both "sub-tasks" and "PR-sized sub-tasks".
+_COUNT = r"(\d+)\s+(?:[A-Za-z][A-Za-z-]*\s+){0,2}sub-?tasks?"
+_PHASES = r"(\d+|" + "|".join(NUMBER_WORDS) + r")\s+(?:sub-)?phases"
+# `BP1..BP8`, `OD1..OD6`, `RR0-RR8`, `RR0–RR6`.
+_RANGE = (r"([A-Z]{2,})(\d+)\s*(?:\.\.|–|—|--|-)\s*"
+          r"(?:[A-Z]{2,})?(\d+)\b")
+
+# Form A: the range is the direct object of "across", so the count is a claim
+# about exactly those phases.
+CLAIM_RANGE = re.compile(r"\*{0,2}" + _COUNT + r"\*{0,2}\s+across\s+"
+                         r"(?:" + _PHASES + r"\s+)?[`(\[*'\"]{0,3}\s*" + _RANGE)
+# Form B: "N sub-tasks across K phases", with the plan named by a link or by a
+# range elsewhere in the segment -- a claim about the whole plan.
+CLAIM_PHASES = re.compile(r"\*{0,2}" + _COUNT + r"\*{0,2}\s+across\s+" + _PHASES)
+ANY_COUNT = re.compile(_COUNT)
+# The backstop's trigger: a count whose scope is announced with `across` **and
+# whose scope object is phases**.  Both halves are load-bearing.  Without
+# `across`, "All 8 sub-tasks LANDED" beside an unrelated `SM4..SM6` reads as a
+# size claim; without the phase object, the estimate headers
+# ("60-80 sub-tasks across ~22-32 PRs", "21 sub-tasks across 6 categories") do.
+# Neither is claiming a plan's phase count, and reporting either would push an
+# author to reword correct prose -- which this project forbids.  The window
+# stops at a sentence end so the scope object is the one `across` introduces.
+_RANGE_NC = (r"[A-Z]{2,}\d+\s*(?:\.\.|–|—|--|-)\s*"
+             r"(?:[A-Z]{2,})?\d+\b")
+CLAIM_ACROSS = re.compile(_COUNT + r"\*{0,2}\s+across\s+[^.\n]{0,48}?"
+                          r"(?:\bsub-phases\b|\bphases\b|" + _RANGE_NC + r")")
+ANY_RANGE = re.compile(_RANGE)
+PLAN_FILE = re.compile(r"\b([A-Za-z0-9_]+_PLAN\.md)\b")
+
+
+def count_segments(text: str):
+    """The units a sub-task-count claim and its subject share.
+
+    A paragraph, except that a table row is its own segment: two rows of one
+    table are not one claim, and joining them would let a count in one row take
+    its subject from the next.  Blank lines and table rows are the boundaries
+    markdown already gives; nothing here invents one.
+    """
+    buf: list[str] = []
+    for line in text.split("\n"):
+        if line.lstrip().startswith("|"):
+            if buf:
+                yield "\n".join(buf)
+                buf = []
+            yield line
+        elif not line.strip():
+            if buf:
+                yield "\n".join(buf)
+                buf = []
+        else:
+            buf.append(line)
+    if buf:
+        yield "\n".join(buf)
+
+
+def plan_phase_rows() -> dict[str, tuple[str, dict[int, int]]]:
+    """`prefix -> (plan path, {phase number: sub-task rows in that phase})`.
+
+    Derived from the rows themselves, not from the phase map: check 2 already
+    holds the two equal, and reading the rows means this check cannot be
+    satisfied by a phase map that is itself wrong.
+    """
+    out: dict[str, tuple[str, dict[int, int]]] = {}
+    for prefix, (rel, ids) in global_definitions().items():
+        phases: dict[int, int] = defaultdict(int)
+        for ident in ids:
+            phases[int(ident[len(prefix):].split(".")[0])] += 1
+        out[prefix] = (rel, dict(phases))
+    return out
+
+
+def prose_count_errors(sources: dict[str, str],
+                       by_prefix: dict[str, tuple[str, dict[int, int]]]) -> list[str]:
+    """Hold every prose claim of a plan's sub-task count to the plan's rows.
+
+    A hand-written total beside a derivation drifts -- this file's own opening
+    paragraph says so about phase maps, and it happened here: `CLAUDE.md`,
+    `AGENTS.md`, `UNFINISHED_SMP_WORK.md` and two plans said WS-BP was 34
+    sub-tasks while the plan declared and held 37, and `UNFINISHED_SMP_WORK.md`
+    said WS-RR was 155 against 187.  Checks 1-3 hold a plan's *internal*
+    arithmetic; nothing held the prose that cites it, so five documents drifted
+    silently through the review rounds that added the rows.
+
+    Two forms are accepted, because both are natural English and this project
+    forbids contorting prose to satisfy a scanner:
+
+      A. `<N> sub-tasks across [<K> phases] <PFX><a>..<PFX><b>` -- the range is
+         the direct object, so `N` counts exactly phases `a..b`.
+      B. `<N> sub-tasks across <K> phases`, the plan named by a `*_PLAN.md`
+         link or by a phase range elsewhere in the segment -- `N` is the whole
+         plan.
+
+    Form B is what makes `187 sub-tasks across nine phases, of which RR0-RR6
+    have landed` read correctly: the range there is a sub-clause about a
+    different quantity, and a scanner that took the nearest range as the
+    claim's object would have demanded the RR0..RR6 sum.  Proximity of a number
+    and a range is not the claim that the number counts that range.
+
+    A segment carrying both a sub-task count and a known plan's phase range in
+    neither form is **reported**, not skipped: this scanner produces
+    requirements, and a requirement it drops is a claim nobody checks.
+    """
+    errors: list[str] = []
+    known = set(by_prefix)
+
+    def subject_of(seg: str) -> list[str]:
+        """The plans a Form-B segment could be about, by link or by range."""
+        by_link = {p for f in PLAN_FILE.findall(seg)
+                   for p, (rel, _) in by_prefix.items()
+                   if rel.endswith("/" + f) or rel == f}
+        by_range = {m.group(1) for m in ANY_RANGE.finditer(seg)
+                    if m.group(1) in known}
+        return sorted(by_link | by_range)
+
+    for where, text in sorted(sources.items()):
+        for seg in count_segments(prose_view(text)):
+            m = CLAIM_RANGE.search(seg)
+            if m and m.group(3) in known:
+                stated, kword, prefix, lo, hi = m.groups()
+                rel, phases = by_prefix[prefix]
+                lo, hi = int(lo), int(hi)
+                if lo > hi:
+                    errors.append(f"{where}: claims {stated} sub-tasks across "
+                                  f"{prefix}{lo}..{prefix}{hi}, which is not a range")
+                    continue
+                missing = [p for p in range(lo, hi + 1) if p not in phases]
+                if missing:
+                    errors.append(
+                        f"{where}: claims a sub-task count across "
+                        f"{prefix}{lo}..{prefix}{hi}, but {rel} defines no "
+                        f"{prefix}{missing[0]}")
+                    continue
+                expected = sum(phases[p] for p in range(lo, hi + 1))
+                if int(stated) != expected:
+                    errors.append(
+                        f"{where}: says {prefix}{lo}..{prefix}{hi} is {stated} "
+                        f"sub-tasks; {rel} defines {expected}")
+                if kword is not None:
+                    k = NUMBER_WORDS.get(kword, kword)
+                    if int(k) != hi - lo + 1:
+                        errors.append(
+                            f"{where}: says {prefix}{lo}..{prefix}{hi} is {kword} "
+                            f"phases; it is {hi - lo + 1}")
+                continue
+            m = CLAIM_PHASES.search(seg)
+            if m:
+                stated, kword = m.groups()
+                subjects = subject_of(seg)
+                if len(subjects) != 1:
+                    errors.append(
+                        f"{where}: claims {stated} sub-tasks across {kword} "
+                        f"phases, but the segment names "
+                        f"{'no plan' if not subjects else 'plans ' + ', '.join(subjects)}"
+                        f"; name exactly one plan (a *_PLAN.md link or its phase range)")
+                    continue
+                prefix = subjects[0]
+                rel, phases = by_prefix[prefix]
+                expected = sum(phases.values())
+                if int(stated) != expected:
+                    errors.append(f"{where}: says {rel} is {stated} sub-tasks; "
+                                  f"it defines {expected}")
+                k = NUMBER_WORDS.get(kword, kword)
+                if int(k) != len(phases):
+                    errors.append(f"{where}: says {rel} has {kword} phases; "
+                                  f"it defines {len(phases)}")
+                continue
+            if CLAIM_ACROSS.search(seg):
+                errors.append(
+                    f"{where}: states a sub-task count beside a plan's phase "
+                    f"range in a form this gate cannot check; write it as "
+                    f"'<N> sub-tasks across [<K> phases] <PFX><a>..<PFX><b>' "
+                    f"or '<N> sub-tasks across <K> phases' naming one plan")
+    return errors
+
+
+def prose_count_sources() -> dict[str, str]:
+    """Every tracked Markdown file whose sub-task-count claims must be live.
+
+    `CHANGELOG.md` is excluded because its numbers are history -- an entry
+    saying a plan was 34 sub-tasks when it was written stays true, and
+    rewriting it would be the falsification.  `docs/dev_history/` is excluded
+    because CLAUDE.md tells readers not to reference it.  Everything else is
+    in, derived from the tree rather than listed, so a document added tomorrow
+    is checked the day it lands.  This is the scope `check_ipc_invariant_dethreading.py`
+    already uses for the same kind of claim; one question, one answer.
+    """
+    out: dict[str, str] = {}
+    # Not `list_tracked`, which is scoped to the plan directories: the drift
+    # this check exists for was in `CLAUDE.md` and `AGENTS.md` as well, and a
+    # scan that cannot see the canonical index cannot see the claim readers
+    # actually read.
+    try:
+        listing = subprocess.run(["git", "ls-files", "--", "*.md"], cwd=REPO,
+                                 capture_output=True, text=True,
+                                 check=True).stdout.splitlines()
+    except subprocess.CalledProcessError:
+        return {}
+    for rel in sorted(listing):
+        if rel == "CHANGELOG.md" or rel.startswith("docs/dev_history/"):
+            continue
+        body = read_indexed(rel)
+        if body is not None:
+            out[rel] = body
+    return out
+
+
 def baseline_refs() -> list[str]:
     """Revisions a plan may have existed in but the index no longer carries.
 
@@ -450,6 +736,22 @@ def main(argv: list[str]) -> int:
     # exact-count plan while a companion still cites it left `plans` empty, so
     # returning here skipped the very check that deletion is supposed to trip.
     orphan_errors = companion_citation_errors(companions)
+    # WS-RR RR7.32: a plan no canonical index names is an invisible workstream.
+    # Runs over every tracked plan, not only the ones declaring a sub-task
+    # count, and before the "nothing to validate" exit below for the same
+    # reason the citation check does: the population it measures is the
+    # filesystem's, not the subset this gate happens to parse.
+    index_bodies = {}
+    for rel in CANONICAL_INDICES:
+        body = read_indexed(rel)
+        if body is not None:
+            index_bodies[rel] = body
+    orphan_errors += plan_visibility_errors(list_tracked(":"), index_bodies)
+    # WS-RR RR7 audit round: a prose sub-task count is a hand-written copy of a
+    # derivable number.  Runs over the whole tracked Markdown surface, not the
+    # four companions, because the drift it caught was in a plan and in the
+    # audit register as well as in CLAUDE.md.
+    orphan_errors += prose_count_errors(prose_count_sources(), plan_phase_rows())
     if not plans:
         if orphan_errors:
             print(f"FAIL: {len(orphan_errors)} workstream-plan structure error(s):")
@@ -493,7 +795,7 @@ def main(argv: list[str]) -> int:
         return 1
     print(f"PASS: {len(checked)} workstream plan(s) structurally consistent "
           f"(sequential IDs, phase counts, declared totals, cross-references, "
-          f"no forward dependencies); "
+          f"no forward dependencies, prose counts); "
           f"{len(legacy)} legacy letter-group plan(s) and {len(ranged)} declaring an "
           f"estimate range are not held to flat numbering.")
     if not baseline_is_complete():
@@ -518,11 +820,18 @@ CLEAN = """
 | XX0 | first | 3 | S |
 | XX1 | second | 2 | M |
 
+### XX0 — first (3 sub-tasks)
+
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
 | XX0.1 | groundwork | a | S |
 | XX0.2 | builds on XX0.1 | a | S |
 | XX0.3 | third | a | S |
+
+### XX1 — second (2 sub-tasks)
+
+| Sub | Description | Files | Est |
+|-----|-------------|-------|-----|
 | XX1.1 | consumes XX0.2 | b | M |
 | XX1.2 | last | b | M |
 """
@@ -549,7 +858,11 @@ def _cli_cases():
         (root / "scripts").mkdir()
         shutil.copy(src, root / "scripts" / src.name)
         (root / "docs" / "planning" / "XX_PLAN.md").write_text(CLEAN, encoding="utf-8")
-        (root / "CLAUDE.md").write_text("cites XX0.1\n", encoding="utf-8")
+        # Names the plan as well as citing a sub-task: WS-RR RR7.32 requires a
+        # canonical index to name every plan, and a fixture repository whose
+        # index does not is testing a tree the gate is right to reject.
+        (root / "CLAUDE.md").write_text(
+            "cites XX0.1, see docs/planning/XX_PLAN.md\n", encoding="utf-8")
         git = lambda *a: subprocess.run(["git", *a], cwd=root, capture_output=True, check=True)
         git("init", "-q", "-b", "main")
         git("config", "user.email", "gate@example.invalid")
@@ -607,6 +920,10 @@ def _cli_cases():
         schedule."""
         (root / "docs" / "planning" / "YY_PLAN.md").write_text(
             SUBPHASE, encoding="utf-8")
+        # The index names it, as WS-RR RR7.32 requires of every live plan.
+        (root / "CLAUDE.md").write_text(
+            "cites XX0.1, see docs/planning/XX_PLAN.md and "
+            "docs/planning/YY_PLAN.md\n", encoding="utf-8")
         git("add", "-A")
 
     def sub_phase_numbered_defect(root, git):
@@ -618,6 +935,9 @@ def _cli_cases():
                     .replace("| YY0.2.1 | consumes YY0.1.2 | b | M |",
                              "| YY0.2.2 | consumes YY0.1.2 | b | M |"),
             encoding="utf-8")
+        (root / "CLAUDE.md").write_text(
+            "cites XX0.1, see docs/planning/XX_PLAN.md and "
+            "docs/planning/YY_PLAN.md\n", encoding="utf-8")
         git("add", "-A")
 
     def stray_letter_row(root, git):
@@ -817,6 +1137,75 @@ def self_test() -> int:
                        lambda t: t.replace("| XX0.2 | builds on XX0.1", "| XX0.2 | builds on XX0.2"),
                        "depends on itself"))
 
+    # 2b: the heading is a third copy of the phase's count.  Preserving: the
+    # heading keeps the words "sub-tasks" and only the number moves, which is
+    # exactly how BP4's and BP8's headings came to sit above five rows each.
+    cases.append(_case("phase-heading count drift",
+                       lambda t: t.replace("### XX0 — first (3 sub-tasks)",
+                                           "### XX0 — first (4 sub-tasks)"),
+                       "the XX0 heading says 4 sub-tasks, its table has 3"))
+
+    # Check 7.  `prose_count_errors` is a whole-tree pass, so it is exercised
+    # directly against a hand-built plan map rather than through `check_plan`.
+    # `XX` has 3 sub-tasks in XX0 and 2 in XX1, total 5, over 2 phases.
+    pmap = {"XX": ("plan.md", {0: 3, 1: 2})}
+
+    def prose(text, name="CLAUDE.md"):
+        return prose_count_errors({name: text}, pmap)
+
+    # The BP 34-vs-37 class: the form is right, only the number is wrong.
+    cases.append(("prose sub-task count drift",
+                  any("says XX0..XX1 is 7 sub-tasks; plan.md defines 5" in e
+                      for e in prose("**7 sub-tasks across XX0..XX1**.")),
+                  prose("**7 sub-tasks across XX0..XX1**.")))
+
+    # Preserving, and the one that separates summing the range from comparing
+    # the total: a claim about XX0 alone is 3, not the plan's 5.  A check that
+    # compared every claim against the total would report this correct
+    # sentence, and a check that never summed would miss the next one.
+    cases.append(("a correct sub-range claim is not reported",
+                  not prose("3 sub-tasks across XX0..XX0."),
+                  prose("3 sub-tasks across XX0..XX0.")))
+    cases.append(("a wrong sub-range claim is reported",
+                  any("says XX0..XX0 is 5 sub-tasks" in e
+                      for e in prose("5 sub-tasks across XX0..XX0.")),
+                  prose("5 sub-tasks across XX0..XX0.")))
+
+    # The phase count beside the sub-task count is a claim too.
+    cases.append(("prose phase count drift",
+                  any("is three phases; it is 2" in e
+                      for e in prose("5 sub-tasks across three phases XX0..XX1.")),
+                  prose("5 sub-tasks across three phases XX0..XX1.")))
+
+    # Form B, and the relation that a nearby range is not the claim's object:
+    # `README.md` reads "187 sub-tasks across nine phases, of which RR0-RR6
+    # have landed", where the range counts landed phases, not the claim.  Both
+    # the count and the range survive this mutation; only the grammar says
+    # which is which.  A scanner taking the nearest range would demand 3.
+    landed = "5 sub-tasks across two phases, of which XX0..XX0 has landed ([plan.md](plan.md))."
+    cases.append(("a range in a sub-clause is not the claim's object",
+                  not prose(landed), prose(landed)))
+    wrong_b = "9 sub-tasks across two phases, of which XX0..XX0 has landed ([plan.md](plan.md))."
+    cases.append(("a whole-plan claim is still checked through the sub-clause",
+                  any("says plan.md is 9 sub-tasks; it defines 5" in e
+                      for e in prose(wrong_b)),
+                  prose(wrong_b)))
+
+    # The backstop: a phase-scoped claim in neither form is reported rather
+    # than skipped.  Count, `across` and range all survive; only the shape the
+    # gate can resolve is gone.
+    unparsed = "5 sub-tasks across the phases XX0..XX1."
+    cases.append(("an unresolvable phase-scope claim is reported",
+                  any("in a form this gate cannot check" in e
+                      for e in prose(unparsed)),
+                  prose(unparsed)))
+
+    # ...and the backstop does not fire on a scope that is not phases, which is
+    # what the estimate headers say ("60-80 sub-tasks across ~22-32 PRs").
+    est = "9 sub-tasks across ~2-3 PRs.  See XX0..XX1 for the rows."
+    cases.append(("an estimate over PRs is not a phase-count claim",
+                  not prose(est), prose(est)))
+
     # A stale citation in a companion document, not in the plan itself.
     companion_errs = check_plan("plan.md", CLEAN, {"CLAUDE.md": "see XX1.7 for detail"})
     cases.append(("stale reference in a companion document",
@@ -866,6 +1255,43 @@ def self_test() -> int:
     derrs = check_plan("plan.md", dup, {})
     cases.append(("a duplicated phase-map row is rejected",
                   any("appears twice in the phase map" in e for e in derrs), derrs))
+
+    # --- WS-RR RR7.32: plan visibility -----------------------------------
+    # The finding-39 class: an open workstream whose plan no canonical index
+    # names.  Every case keeps the plan and moves what the indices say, which
+    # is the relation the check is about.
+    plans = ["docs/planning/A_PLAN.md", "docs/planning/B_PLAN.md"]
+    both = {"CLAUDE.md": "see A_PLAN.md", "docs/REGISTERED_DEBT.md": "and B_PLAN.md"}
+    verrs = plan_visibility_errors(plans, both)
+    cases.append(("a plan named in a canonical index is visible", verrs == [], verrs))
+
+    # The instance: one plan drops out of every index while still existing.
+    one = {"CLAUDE.md": "see A_PLAN.md", "docs/REGISTERED_DEBT.md": "nothing here"}
+    verrs = plan_visibility_errors(plans, one)
+    cases.append(("a plan named in no canonical index is reported",
+                  any("B_PLAN.md: named in no canonical index" in e for e in verrs)
+                  and len(verrs) == 1, verrs))
+
+    # A *sibling plan* naming it is not an index.  This is the exact shape the
+    # orphan had: reachable only by walking from another plan's prerequisites.
+    sibling = dict(one)
+    sibling["docs/planning/A_PLAN.md"] = "prerequisites: B_PLAN.md"
+    verrs = plan_visibility_errors(plans, {k: v for k, v in sibling.items()
+                                           if k in CANONICAL_INDICES})
+    cases.append(("a sibling plan's reference does not make a plan visible",
+                  any("B_PLAN.md" in e for e in verrs), verrs))
+
+    # Retired plans are out of scope by location, and that is a decision: a
+    # `docs/dev_history/planning/` file is deliberately unreachable.
+    verrs = plan_visibility_errors(
+        ["docs/dev_history/planning/OLD_PLAN.md"], one)
+    cases.append(("a retired plan is not required to be indexed", verrs == [], verrs))
+
+    # Fail closed: with no index readable the check must report rather than
+    # pass, since a vacuous pass is indistinguishable from a fully indexed tree.
+    verrs = plan_visibility_errors(plans, {})
+    cases.append(("no readable index reports rather than passing vacuously",
+                  any("pass vacuously" in e for e in verrs), verrs))
 
     failed = 0
     for name, ok, detail in cases:

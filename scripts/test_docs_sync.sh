@@ -42,9 +42,17 @@ python3 "${SCRIPT_DIR}/generate_codebase_map.py" --pretty --check
 #      and no workflow, so the "warning" it emits had never been seen.
 #      Tolerant by design (see that script's header) so it is quiet about
 #      the per-patch churn the `~N lines` approximation already signals.
-#   3. Source citations carrying line numbers (`Boot.lean:551`), which are
+#   3. The same figures where they are *translated*.  Eleven i18n READMEs
+#      and four GitBook surfaces quoted them, the sync matrix said the
+#      translations mirror the root README, and nothing propagated: the
+#      locales published a `v0.33.101` snapshot against a `v0.34.x` tree.
+#      Its self-test runs beside it because three of those languages
+#      inflect the counted noun, so the sync emits translated text and a
+#      scanner that stopped selecting the right form would fail silently
+#      in a language no reader of this file need speak.
+#   4. Source citations carrying line numbers (`Boot.lean:551`), which are
 #      stale on the next edit above them.
-#   4. CLAUDE.md ↔ AGENTS.md byte-identity.  Both files state the rule in
+#   5. CLAUDE.md ↔ AGENTS.md byte-identity.  Both files state the rule in
 #      their own headers ("the two files must stay byte-identical apart
 #      from this header"), and only the *version line* was checked, so any
 #      other divergence was invisible to CI.
@@ -52,9 +60,12 @@ python3 "${SCRIPT_DIR}/generate_codebase_map.py" --pretty --check
 
 "${SCRIPT_DIR}/sync_readme_from_codebase_map.sh" --check
 
+python3 "${SCRIPT_DIR}/sync_translated_metrics.py" --self-test
+python3 "${SCRIPT_DIR}/sync_translated_metrics.py" --check
+
 "${SCRIPT_DIR}/find_large_lean_files.sh" --check
 
-# 4. Source citations must not carry line numbers.  See the script header:
+# 5. Source citations must not carry line numbers.  See the script header:
 #    511 such citations had accumulated, 178 verifiably pointing at unrelated
 #    code and 3 past end-of-file, because a line number goes stale the moment
 #    anything above it changes.  Fenced blocks (verbatim tool output) and

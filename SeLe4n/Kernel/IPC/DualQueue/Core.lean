@@ -678,13 +678,30 @@ def endpointQueueRemove
           | some (.tcb prevTcb) =>
             objs.insert prevTid.toObjId (.tcb { prevTcb with queueNext := tcb.queueNext })
           | _ => objs
-      -- Step 2: Patch successor's queuePrev to skip tid
+      -- Step 2: Patch successor's queuePrev **and queuePPrev** to skip tid.
+      -- WS-OD OD1.1: `queuePPrev` was omitted here, and that stranded the
+      -- successor.  `endpointQueueRemoveDual` -- the removal every other kernel
+      -- path uses -- gives the successor the removed thread's own `queuePPrev`
+      -- and *requires* the field to agree with `queuePrev` (`pprevConsistent`,
+      -- else `.illegalState`).  Leaving it naming `tid` meant that after a
+      -- timeout the thread behind the timed-out one failed every later
+      -- dual-queue removal -- a cancellation, a rendezvous pop, a
+      -- `.tcbSuspend` -- and could never leave the endpoint queue.  No
+      -- `ipcInvariantFull` conjunct reads `queuePPrev`, so nothing caught it.
+      --
+      -- `tcb.queuePPrev` is the right value in both cases by construction: a
+      -- removed head carries `.endpointHead`, which the successor inherits as
+      -- the new head, and a removed interior node carries `.tcbNext prev`,
+      -- which is exactly the back-pointer the successor's new `queuePrev`
+      -- names.  The two removals now write the same fields to the same values.
       let objs := match tcb.queueNext with
         | none => objs  -- tid is tail; no successor to patch
         | some nextTid =>
           match objs[nextTid.toObjId]? with
           | some (.tcb nextTcb) =>
-            objs.insert nextTid.toObjId (.tcb { nextTcb with queuePrev := tcb.queuePrev })
+            objs.insert nextTid.toObjId
+              (.tcb { nextTcb with queuePrev := tcb.queuePrev,
+                                   queuePPrev := tcb.queuePPrev })
           | _ => objs
       -- Step 3: Update endpoint head/tail pointers
       let q' : IntrusiveQueue := {
@@ -698,6 +715,75 @@ def endpointQueueRemove
       .ok { st with objects := objs }
   | some _ => .error .invalidCapability
   | none => .error .objectNotFound
+
+/-- Z6-K: endpointQueueRemove does not modify the scheduler. -/
+theorem endpointQueueRemove_scheduler_eq
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (st st' : SystemState)
+    (hStep : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') :
+    st'.scheduler = st.scheduler := by
+  unfold endpointQueueRemove at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+      simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hTcb : lookupTcb st tid with
+      | none => simp [hTcb] at hStep
+      | some tcb =>
+        simp only [hTcb] at hStep
+        simp only [Except.ok.injEq] at hStep
+        rw [← hStep]
+
+/-- WS-SM SM5.I: `endpointQueueRemove` leaves the machine unchanged (it writes only
+the object store — queue links + `ipcState`).  Mirrors
+`endpointQueueRemove_scheduler_eq`. -/
+theorem endpointQueueRemove_machine
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (st st' : SystemState)
+    (hStep : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') :
+    st'.machine = st.machine := by
+  unfold endpointQueueRemove at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+      simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hTcb : lookupTcb st tid with
+      | none => simp [hTcb] at hStep
+      | some tcb =>
+        simp only [hTcb] at hStep
+        simp only [Except.ok.injEq] at hStep
+        rw [← hStep]
+
+/-- WS-OD OD1.4: `endpointQueueRemove` does not modify the service registry.
+
+Stated beside its scheduler sibling because the cancellation reclaim's
+`returnDonationToCancelledCaller_serviceRegistry_eq` composes it through the
+abort prefix, and the registry is one of the three fields those frames pin. -/
+theorem endpointQueueRemove_serviceRegistry_eq
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (st st' : SystemState)
+    (hStep : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') :
+    st'.serviceRegistry = st.serviceRegistry := by
+  unfold endpointQueueRemove at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+      simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hTcb : lookupTcb st tid with
+      | none => simp [hTcb] at hStep
+      | some tcb =>
+        simp only [hTcb] at hStep
+        simp only [Except.ok.injEq] at hStep
+        rw [← hStep]
 
 /-- Z6-D: `endpointQueueRemove` preserves `objects.invExt`.
 
@@ -751,27 +837,34 @@ theorem endpointQueueRemove_preserves_objects_invExt
 section EndpointQueueRemoveRegCtx
 open SeLe4n.Kernel.RobinHood
 
-/-- `T` registerContext-refines `base`: every TCB key in `base` has a TCB in
-    `T` with equal `registerContext`. -/
-private def RegCtxRefines (base T : RHTable SeLe4n.ObjId KernelObject) : Prop :=
-  ∀ k x, base.get? k = some (.tcb x) →
-    ∃ x', T.get? k = some (.tcb x') ∧ x.registerContext = x'.registerContext
+/-- WS-OD OD1.4: `T` **`f`-refines** `base`: every TCB key in `base` has a TCB
+    in `T` on which the field projection `f` agrees.
 
-private theorem RegCtxRefines.rfl_self
-    (base : RHTable SeLe4n.ObjId KernelObject) : RegCtxRefines base base :=
+    Generalised from the `registerContext`-only form SM5.I introduced: the
+    cancellation reclaim needs the same statement about `cpuAffinity`, and the
+    four-insert chain's analysis is a property of the *operation*, not of the
+    field.  The two instances are `endpointQueueRemove_getTcb_upToReg` and
+    `endpointQueueRemove_getTcb_upToAffinity` below. -/
+private def FieldRefines {α : Type} (f : TCB → α)
+    (base T : RHTable SeLe4n.ObjId KernelObject) : Prop :=
+  ∀ k x, base.get? k = some (.tcb x) →
+    ∃ x', T.get? k = some (.tcb x') ∧ f x = f x'
+
+private theorem FieldRefines.rfl_self {α : Type} (f : TCB → α)
+    (base : RHTable SeLe4n.ObjId KernelObject) : FieldRefines f base base :=
   fun _ x h => ⟨x, h, rfl⟩
 
 /-- Inserting a FIXED value preserves refinement, given: if `base` holds a TCB
     at the inserted key, the value is a TCB with equal `registerContext`.
     Used for the removed-TCB link clear; the endpoint head/tail update is
     vacuous (base holds a non-TCB at `endpointId`). -/
-private theorem RegCtxRefines.insert_step
+private theorem FieldRefines.insert_step {α : Type} (f : TCB → α)
     (base T : RHTable SeLe4n.ObjId KernelObject)
     (k₀ : SeLe4n.ObjId) (v₀ : KernelObject)
-    (hT : T.invExt) (hR : RegCtxRefines base T)
+    (hT : T.invExt) (hR : FieldRefines f base T)
     (hSide : ∀ x, base.get? k₀ = some (.tcb x) →
-      ∃ y, v₀ = .tcb y ∧ x.registerContext = y.registerContext) :
-    RegCtxRefines base (T.insert k₀ v₀) := by
+      ∃ y, v₀ = .tcb y ∧ f x = f y) :
+    FieldRefines f base (T.insert k₀ v₀) := by
   intro k x hk
   rw [RHTable_getElem?_insert _ _ _ hT k]
   split
@@ -785,13 +878,13 @@ private theorem RegCtxRefines.insert_step
 /-- Inserting a LINK-ONLY update of `T`'s own TCB at `k₀` preserves refinement
     (`registerContext` unchanged).  Used for the predecessor / successor queue
     patches; `hR` + `hTk` absorb any key collision with a prior insert. -/
-private theorem RegCtxRefines.insert_link_update
+private theorem FieldRefines.insert_link_update {α : Type} (f : TCB → α)
     (base T : RHTable SeLe4n.ObjId KernelObject)
     (k₀ : SeLe4n.ObjId) (w w' : TCB)
-    (hT : T.invExt) (hR : RegCtxRefines base T)
+    (hT : T.invExt) (hR : FieldRefines f base T)
     (hTk : T.get? k₀ = some (.tcb w))
-    (hreg : w.registerContext = w'.registerContext) :
-    RegCtxRefines base (T.insert k₀ (.tcb w')) := by
+    (hreg : f w = f w') :
+    FieldRefines f base (T.insert k₀ (.tcb w')) := by
   intro k x hk
   rw [RHTable_getElem?_insert _ _ _ hT k]
   split
@@ -805,15 +898,19 @@ private theorem RegCtxRefines.insert_link_update
     exact ⟨w', rfl, by rw [hxreg, ← hwx]; exact hreg⟩
   · exact hR k x hk
 
-/-- SM5.I: `endpointQueueRemove` preserves every pre-state TCB at its key with
-    an unchanged `registerContext`. -/
-theorem endpointQueueRemove_getTcb_upToReg
+/-- WS-OD OD1.4 (generalising SM5.I): `endpointQueueRemove` preserves every
+    pre-state TCB at its key, with any field the splice does not write left
+    alone.  The four conditional inserts write queue links and the removed
+    thread's own link clear, so `f` carries whenever it reads none of those. -/
+theorem endpointQueueRemove_getTcb_upToField {α : Type} (f : TCB → α)
+    (hLinkFree : ∀ (t : TCB) (qp : Option SeLe4n.ThreadId) (qpp : Option QueuePPrev)
+      (qn : Option SeLe4n.ThreadId),
+      f { t with queuePrev := qp, queuePPrev := qpp, queueNext := qn } = f t)
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
     (st st' : SystemState) (hInv : st.objects.invExt)
     (h : endpointQueueRemove endpointId isReceiveQ tid st = .ok st')
     (a : SeLe4n.ObjId) (ot : TCB) (ha : st.objects.get? a = some (.tcb ot)) :
-    ∃ ot', st'.objects.get? a = some (.tcb ot') ∧
-      ot.registerContext = ot'.registerContext := by
+    ∃ ot', st'.objects.get? a = some (.tcb ot') ∧ f ot = f ot' := by
   unfold endpointQueueRemove at h
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at h
@@ -829,12 +926,12 @@ theorem endpointQueueRemove_getTcb_upToReg
         simp only [Except.ok.injEq] at h
         rw [← h]; simp only []
         -- Goal: ∃ ot', CHAIN.get? a = some (.tcb ot') ∧ ot.reg = ot'.reg
-        refine (?_ : RegCtxRefines st.objects _) a ot ha
+        refine (?_ : FieldRefines f st.objects _) a ot ha
         -- Step 4 (outermost): removed-TCB link clear.
-        apply RegCtxRefines.insert_step st.objects _ tid.toObjId _
+        apply FieldRefines.insert_step f st.objects _ tid.toObjId _
         · repeat (first | exact hInv | apply RHTable.insert_preserves_invExt | split)
         · -- Step 3: endpoint head/tail update.
-          apply RegCtxRefines.insert_step st.objects _ endpointId _
+          apply FieldRefines.insert_step f st.objects _ endpointId _
           · repeat (first | exact hInv | apply RHTable.insert_preserves_invExt | split)
           · -- Steps 1 & 2: predecessor / successor link patches.
             -- `simp only [hX]` reduces each patch match in the goal (and
@@ -846,18 +943,18 @@ theorem endpointQueueRemove_getTcb_upToReg
               simp only []
               -- objs₁ = st.objects
               cases hNext : tcb.queueNext with
-              | none => simp only []; exact RegCtxRefines.rfl_self st.objects
+              | none => simp only []; exact FieldRefines.rfl_self f st.objects
               | some nextTid =>
                 simp only []
                 cases hN1 : st.objects[nextTid.toObjId]? with
-                | none => simp only []; exact RegCtxRefines.rfl_self st.objects
+                | none => simp only []; exact FieldRefines.rfl_self f st.objects
                 | some nobj => cases nobj with
                   | tcb nt =>
                     simp only []
-                    exact RegCtxRefines.insert_link_update st.objects st.objects
-                      nextTid.toObjId nt _ hInv (RegCtxRefines.rfl_self st.objects) hN1 rfl
+                    exact FieldRefines.insert_link_update f st.objects st.objects
+                      nextTid.toObjId nt _ hInv (FieldRefines.rfl_self f st.objects) hN1 (hLinkFree _ _ _ _).symm
                   | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
-                    simp only []; exact RegCtxRefines.rfl_self st.objects
+                    simp only []; exact FieldRefines.rfl_self f st.objects
             | some prevTid =>
               simp only []
               cases hNext : tcb.queueNext with
@@ -865,14 +962,14 @@ theorem endpointQueueRemove_getTcb_upToReg
                 simp only []
                 -- objs₂ = objs₁ (predecessor patch only)
                 cases hP1 : st.objects[prevTid.toObjId]? with
-                | none => simp only []; exact RegCtxRefines.rfl_self st.objects
+                | none => simp only []; exact FieldRefines.rfl_self f st.objects
                 | some pobj => cases pobj with
                   | tcb pt =>
                     simp only []
-                    exact RegCtxRefines.insert_link_update st.objects st.objects
-                      prevTid.toObjId pt _ hInv (RegCtxRefines.rfl_self st.objects) hP1 rfl
+                    exact FieldRefines.insert_link_update f st.objects st.objects
+                      prevTid.toObjId pt _ hInv (FieldRefines.rfl_self f st.objects) hP1 (hLinkFree _ _ _ _).symm
                   | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
-                    simp only []; exact RegCtxRefines.rfl_self st.objects
+                    simp only []; exact FieldRefines.rfl_self f st.objects
               | some nextTid =>
                 simp only []
                 cases hP1 : st.objects[prevTid.toObjId]? with
@@ -880,23 +977,23 @@ theorem endpointQueueRemove_getTcb_upToReg
                   simp only []
                   -- objs₁ = st.objects
                   cases hN1 : st.objects[nextTid.toObjId]? with
-                  | none => simp only []; exact RegCtxRefines.rfl_self st.objects
+                  | none => simp only []; exact FieldRefines.rfl_self f st.objects
                   | some nobj => cases nobj with
                     | tcb nt =>
                       simp only []
-                      exact RegCtxRefines.insert_link_update st.objects st.objects
-                        nextTid.toObjId nt _ hInv (RegCtxRefines.rfl_self st.objects) hN1 rfl
+                      exact FieldRefines.insert_link_update f st.objects st.objects
+                        nextTid.toObjId nt _ hInv (FieldRefines.rfl_self f st.objects) hN1 (hLinkFree _ _ _ _).symm
                     | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
-                      simp only []; exact RegCtxRefines.rfl_self st.objects
+                      simp only []; exact FieldRefines.rfl_self f st.objects
                 | some pobj => cases pobj with
                   | tcb pt =>
                     simp only []
                     -- objs₁ = st.objects.insert prevTid (.tcb {pt with queueNext := some nextTid})
-                    have hR1 : RegCtxRefines st.objects
+                    have hR1 : FieldRefines f st.objects
                         (st.objects.insert prevTid.toObjId
                           (.tcb { pt with queueNext := some nextTid })) :=
-                      RegCtxRefines.insert_link_update st.objects st.objects prevTid.toObjId
-                        pt _ hInv (RegCtxRefines.rfl_self st.objects) hP1 rfl
+                      FieldRefines.insert_link_update f st.objects st.objects prevTid.toObjId
+                        pt _ hInv (FieldRefines.rfl_self f st.objects) hP1 (hLinkFree _ _ _ _).symm
                     have hT1 : (st.objects.insert prevTid.toObjId
                         (.tcb { pt with queueNext := some nextTid })).invExt :=
                       RHTable.insert_preserves_invExt _ _ _ hInv
@@ -906,24 +1003,24 @@ theorem endpointQueueRemove_getTcb_upToReg
                     | some nobj => cases nobj with
                       | tcb nt =>
                         simp only []
-                        exact RegCtxRefines.insert_link_update st.objects
+                        exact FieldRefines.insert_link_update f st.objects
                           (st.objects.insert prevTid.toObjId
                             (.tcb { pt with queueNext := some nextTid }))
-                          nextTid.toObjId nt _ hT1 hR1 hN1 rfl
+                          nextTid.toObjId nt _ hT1 hR1 hN1 (hLinkFree _ _ _ _).symm
                       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
                         simp only []; exact hR1
                   | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
                     simp only []
                     -- objs₁ = st.objects (predecessor lookup is not a TCB)
                     cases hN1 : st.objects[nextTid.toObjId]? with
-                    | none => simp only []; exact RegCtxRefines.rfl_self st.objects
+                    | none => simp only []; exact FieldRefines.rfl_self f st.objects
                     | some nobj => cases nobj with
                       | tcb nt =>
                         simp only []
-                        exact RegCtxRefines.insert_link_update st.objects st.objects
-                          nextTid.toObjId nt _ hInv (RegCtxRefines.rfl_self st.objects) hN1 rfl
+                        exact FieldRefines.insert_link_update f st.objects st.objects
+                          nextTid.toObjId nt _ hInv (FieldRefines.rfl_self f st.objects) hN1 (hLinkFree _ _ _ _).symm
                       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
-                        simp only []; exact RegCtxRefines.rfl_self st.objects
+                        simp only []; exact FieldRefines.rfl_self f st.objects
           · -- hSide (endpoint update): vacuous, base holds .endpoint at endpointId.
             intro x hx
             rw [← RHTable_getElem?_eq_get?, hObj] at hx
@@ -937,7 +1034,468 @@ theorem endpointQueueRemove_getTcb_upToReg
           injection hx2 with hxt
           subst hxt
           exact ⟨{ tcb with queuePrev := none, queuePPrev := none, queueNext := none },
-                 rfl, rfl⟩
+                 rfl, (hLinkFree _ _ _ _).symm⟩
+
+/-- SM5.I: `endpointQueueRemove` preserves every pre-state TCB at its key with
+    an unchanged `registerContext` — the `registerContext` instance of
+    `endpointQueueRemove_getTcb_upToField`.  Name and statement kept as SM5.I
+    left them; only the proof is now one line. -/
+theorem endpointQueueRemove_getTcb_upToReg
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (hInv : st.objects.invExt)
+    (h : endpointQueueRemove endpointId isReceiveQ tid st = .ok st')
+    (a : SeLe4n.ObjId) (ot : TCB) (ha : st.objects.get? a = some (.tcb ot)) :
+    ∃ ot', st'.objects.get? a = some (.tcb ot') ∧
+      ot.registerContext = ot'.registerContext :=
+  endpointQueueRemove_getTcb_upToField (fun t => t.registerContext)
+    (fun _ _ _ _ => rfl) endpointId isReceiveQ tid st st' hInv h a ot ha
+
+/-- WS-OD OD1.4: the `cpuAffinity` instance.  The cancellation reclaim's
+    `_tcb_lookup` frame carries affinity across the holder abort, and the abort's
+    first write is this splice. -/
+theorem endpointQueueRemove_getTcb_upToAffinity
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (hInv : st.objects.invExt)
+    (h : endpointQueueRemove endpointId isReceiveQ tid st = .ok st')
+    (a : SeLe4n.ObjId) (ot : TCB) (ha : st.objects.get? a = some (.tcb ot)) :
+    ∃ ot', st'.objects.get? a = some (.tcb ot') ∧ ot.cpuAffinity = ot'.cpuAffinity :=
+  endpointQueueRemove_getTcb_upToField (fun t => t.cpuAffinity)
+    (fun _ _ _ _ => rfl) endpointId isReceiveQ tid st st' hInv h a ot ha
+
+/-- WS-OD OD1.4: the **backward** direction of `FieldRefines` — every TCB `T`
+    holds has a `base` TCB at the same key on which `f` agrees.
+
+    `FieldRefines` reads pre-state facts forward; the donation invariants read
+    post-state TCBs and need the pre-state one, so both directions exist.  The
+    two are separate predicates rather than an `Iff` because the splice's insert
+    steps discharge them differently: forward, the inserted value's field is
+    compared to the key's *pre-state* TCB; backward, to whatever `T` holds. -/
+private def FieldRefinesBack {α : Type} (f : TCB → α)
+    (base T : RHTable SeLe4n.ObjId KernelObject) : Prop :=
+  T.invExt ∧ ∀ k x', T.get? k = some (.tcb x') →
+    ∃ x, base.get? k = some (.tcb x) ∧ f x = f x'
+
+private theorem FieldRefinesBack.rfl_self {α : Type} {f : TCB → α}
+    {base : RHTable SeLe4n.ObjId KernelObject} (h : base.invExt) :
+    FieldRefinesBack f base base :=
+  ⟨h, fun _ x' hk => ⟨x', hk, rfl⟩⟩
+
+/-- Inserting a value whose TCB (if any) has a `base` pre-image at the key. -/
+private theorem FieldRefinesBack.insert_step {α : Type} {f : TCB → α}
+    {base T : RHTable SeLe4n.ObjId KernelObject}
+    {k₀ : SeLe4n.ObjId} {v₀ : KernelObject}
+    (hB : FieldRefinesBack f base T)
+    (hSide : ∀ y, v₀ = .tcb y → ∃ x, base.get? k₀ = some (.tcb x) ∧ f x = f y) :
+    FieldRefinesBack f base (T.insert k₀ v₀) := by
+  refine ⟨SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt T k₀ v₀ hB.1, ?_⟩
+  intro k x' hk
+  rw [RHTable_getElem?_insert _ _ _ hB.1 k] at hk
+  split at hk
+  · rename_i hc
+    obtain rfl : k₀ = k := eq_of_beq hc
+    exact hSide x' (Option.some.inj hk)
+  · exact hB.2 k x' hk
+
+/-- Inserting a link-only update of `T`'s own TCB at `k₀`. -/
+private theorem FieldRefinesBack.insert_link_update {α : Type} {f : TCB → α}
+    {base T : RHTable SeLe4n.ObjId KernelObject}
+    {k₀ : SeLe4n.ObjId} {w w' : TCB}
+    (hB : FieldRefinesBack f base T)
+    (hTk : T.get? k₀ = some (.tcb w))
+    (hf : f w = f w') :
+    FieldRefinesBack f base (T.insert k₀ (.tcb w')) :=
+  hB.insert_step (fun y hy => by
+    obtain rfl : y = w' := (KernelObject.tcb.inj hy).symm
+    obtain ⟨x, hx, hfx⟩ := hB.2 k₀ w hTk
+    exact ⟨x, hx, hfx.trans hf⟩)
+
+/-- WS-OD OD1.4: the splice's backward field frame — the donation invariants
+    read post-state TCBs and need the pre-state one. -/
+theorem endpointQueueRemove_getTcb_backward_upToField {α : Type} (f : TCB → α)
+    (hLinkFree : ∀ (t : TCB) (qp : Option SeLe4n.ThreadId) (qpp : Option QueuePPrev)
+      (qn : Option SeLe4n.ThreadId),
+      f { t with queuePrev := qp, queuePPrev := qpp, queueNext := qn } = f t)
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (hInv : st.objects.invExt)
+    (h : endpointQueueRemove endpointId isReceiveQ tid st = .ok st')
+    (a : SeLe4n.ObjId) (ot' : TCB) (ha : st'.objects[a]? = some (.tcb ot')) :
+    ∃ ot, st.objects[a]? = some (.tcb ot) ∧ f ot = f ot' := by
+  rw [RHTable_getElem?_eq_get?] at ha
+  have hmain : FieldRefinesBack f st.objects st'.objects := by
+    unfold endpointQueueRemove at h
+    cases hObj : st.objects[endpointId]? with
+    | none => simp [hObj] at h
+    | some obj => cases obj with
+      | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+        simp [hObj] at h
+      | endpoint ep =>
+        simp only [hObj] at h
+        cases hTcbLk : lookupTcb st tid with
+        | none => simp [hTcbLk] at h
+        | some tcb =>
+          simp only [hTcbLk, Except.ok.injEq] at h
+          subst h
+          simp only []
+          have hTidAt : st.objects.get? tid.toObjId = some (.tcb tcb) := by
+            rw [← RHTable_getElem?_eq_get?]; exact lookupTcb_some_objects st tid tcb hTcbLk
+          repeat (first
+            | exact FieldRefinesBack.rfl_self hInv
+            | (apply FieldRefinesBack.insert_link_update
+               case hf => exact (hLinkFree _ _ _ _).symm
+               case hTk => assumption)
+            | (apply FieldRefinesBack.insert_step
+               case hSide =>
+                 intro y hy
+                 cases hy
+                 all_goals exact ⟨tcb, hTidAt, (hLinkFree tcb _ _ _).symm⟩)
+            | split)
+  obtain ⟨ot, hot, hf⟩ := hmain.2 a ot' ha
+  rw [← RHTable_getElem?_eq_get?] at hot
+  exact ⟨ot, hot, hf⟩
+
+/-- WS-OD OD1.4: `T` **preserves every `base` object the splice never writes**,
+    and is well-formed.
+
+    The dual of `FieldRefines` for whole object *kinds*.  The chain's four
+    conditional inserts store TCBs and one endpoint, so an object of any other
+    kind that `T` holds can only have come from `base` — which is what
+    `ipcInvariant` (a statement about notifications and nothing else) and the
+    donation invariants (statements about SchedContexts) each need to carry
+    across the abort.  One predicate rather than one copy per kind: the argument
+    is a property of the *operation*, not of the kind.
+
+    `invExt` travels in the same conjunction because each insert step needs it to
+    read the previous table. -/
+private def UnwrittenKindBack (P : KernelObject → Prop)
+    (base T : RHTable SeLe4n.ObjId KernelObject) : Prop :=
+  T.invExt ∧ ∀ k o, P o → T.get? k = some o → base.get? k = some o
+
+private theorem UnwrittenKindBack.rfl_self {P : KernelObject → Prop}
+    {base : RHTable SeLe4n.ObjId KernelObject} (h : base.invExt) :
+    UnwrittenKindBack P base base :=
+  ⟨h, fun _ _ _ hk => hk⟩
+
+/-- Inserting a value outside `P` preserves the backward map. -/
+private theorem UnwrittenKindBack.insert_step {P : KernelObject → Prop}
+    {base T : RHTable SeLe4n.ObjId KernelObject}
+    {k₀ : SeLe4n.ObjId} {v₀ : KernelObject}
+    (hB : UnwrittenKindBack P base T)
+    (hNot : ¬ P v₀) :
+    UnwrittenKindBack P base (T.insert k₀ v₀) := by
+  refine ⟨SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt T k₀ v₀ hB.1, ?_⟩
+  intro k o hP hk
+  rw [RHTable_getElem?_insert _ _ _ hB.1 k] at hk
+  split at hk
+  · exact absurd (Option.some.inj hk ▸ hP) hNot
+  · exact hB.2 k o hP hk
+
+/-- WS-OD OD1.4: the splice writes only TCBs and one endpoint, so every object of
+    any other kind carries across it backwards. -/
+theorem endpointQueueRemove_unwritten_kind_backward
+    (P : KernelObject → Prop)
+    (hTcb : ∀ t, ¬ P (.tcb t)) (hEp : ∀ e, ¬ P (.endpoint e))
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (hInv : st.objects.invExt)
+    (h : endpointQueueRemove endpointId isReceiveQ tid st = .ok st')
+    (oid : SeLe4n.ObjId) (o : KernelObject) (hP : P o)
+    (hPost : st'.objects[oid]? = some o) :
+    st.objects[oid]? = some o := by
+  rw [RHTable_getElem?_eq_get?] at hPost ⊢
+  refine (?_ : UnwrittenKindBack P st.objects st'.objects).2 oid o hP hPost
+  unfold endpointQueueRemove at h
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at h
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+      simp [hObj] at h
+    | endpoint ep =>
+      simp only [hObj] at h
+      cases hTcbLk : lookupTcb st tid with
+      | none => simp [hTcbLk] at h
+      | some tcb =>
+        simp only [hTcbLk, Except.ok.injEq] at h
+        subst h
+        simp only []
+        repeat (first
+          | exact UnwrittenKindBack.rfl_self hInv
+          | (apply UnwrittenKindBack.insert_step
+             case hNot => first | exact hTcb _ | exact hEp _)
+          | split)
+
+/-- WS-OD OD1.4: the notification instance — `ipcInvariant` reads notifications
+    and nothing else. -/
+theorem endpointQueueRemove_notification_backward
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (hInv : st.objects.invExt)
+    (h : endpointQueueRemove endpointId isReceiveQ tid st = .ok st')
+    (oid : SeLe4n.ObjId) (ntfn : Notification)
+    (hPost : st'.objects[oid]? = some (.notification ntfn)) :
+    st.objects[oid]? = some (.notification ntfn) :=
+  endpointQueueRemove_unwritten_kind_backward (fun o => ∃ n, o = .notification n)
+    (fun _ hc => by obtain ⟨_, hc⟩ := hc; cases hc)
+    (fun _ hc => by obtain ⟨_, hc⟩ := hc; cases hc)
+    endpointId isReceiveQ tid st st' hInv h oid _ ⟨ntfn, rfl⟩ hPost
+
+/-- WS-OD OD1.4: the SchedContext instance — the donation invariants read
+    SchedContexts, which the splice never writes. -/
+theorem endpointQueueRemove_schedContext_backward
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (hInv : st.objects.invExt)
+    (h : endpointQueueRemove endpointId isReceiveQ tid st = .ok st')
+    (oid : SeLe4n.ObjId) (sc : SchedContext)
+    (hPost : st'.objects[oid]? = some (.schedContext sc)) :
+    st.objects[oid]? = some (.schedContext sc) :=
+  endpointQueueRemove_unwritten_kind_backward (fun o => ∃ c, o = .schedContext c)
+    (fun _ hc => by obtain ⟨_, hc⟩ := hc; cases hc)
+    (fun _ hc => by obtain ⟨_, hc⟩ := hc; cases hc)
+    endpointId isReceiveQ tid st st' hInv h oid _ ⟨sc, rfl⟩ hPost
+
+/-- WS-OD OD1.4: `T` **holds every `base` object of a kind the splice never
+    writes**, and is well-formed.
+
+    The forward companion of `UnwrittenKindBack`, and needed for the same reason
+    in the other direction: `donationOwnerValid`'s first clause names a
+    SchedContext in the *pre*-state, so carrying the conjunct across a splice
+    means producing that same SchedContext in the post-state.  Backwards and
+    forwards are genuinely two statements — a table can lose a key it never
+    gains — so neither implies the other and both are proved.
+
+    The insert step takes the key-distinctness as a hypothesis rather than
+    deriving it from a fixed side, because the four inserts justify it
+    differently: the two conditional link patches are guarded by a lookup in the
+    table *being* extended, while the endpoint and the removed thread's own key
+    are known non-`P` in `base`. -/
+private def UnwrittenKindFwd (P : KernelObject → Prop)
+    (base T : RHTable SeLe4n.ObjId KernelObject) : Prop :=
+  T.invExt ∧ ∀ k o, P o → base.get? k = some o → T.get? k = some o
+
+private theorem UnwrittenKindFwd.rfl_self {P : KernelObject → Prop}
+    {base : RHTable SeLe4n.ObjId KernelObject} (h : base.invExt) :
+    UnwrittenKindFwd P base base :=
+  ⟨h, fun _ _ _ hk => hk⟩
+
+/-- Inserting at a key no `P`-object of `base` occupies preserves the forward
+    map. -/
+private theorem UnwrittenKindFwd.insert_step {P : KernelObject → Prop}
+    {base T : RHTable SeLe4n.ObjId KernelObject}
+    {k₀ : SeLe4n.ObjId} {v₀ : KernelObject}
+    (hF : UnwrittenKindFwd P base T)
+    (hNe : ∀ k o, P o → base.get? k = some o → k₀ ≠ k) :
+    UnwrittenKindFwd P base (T.insert k₀ v₀) := by
+  refine ⟨SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt T k₀ v₀ hF.1, ?_⟩
+  intro k o hP hk
+  rw [RHTable_getElem?_insert _ _ _ hF.1 k,
+    if_neg (by intro hc; exact hNe k o hP hk (eq_of_beq hc))]
+  exact hF.2 k o hP hk
+
+/-- The instance the two conditional link patches use: the key being written
+    holds a TCB in the table the patch extends, and the forward map already
+    places `base`'s `P`-object there, so the two keys are distinct. -/
+private theorem UnwrittenKindFwd.insert_tcb_step {P : KernelObject → Prop}
+    {base T : RHTable SeLe4n.ObjId KernelObject}
+    {k₀ : SeLe4n.ObjId} {t : TCB} {v₀ : KernelObject}
+    (hF : UnwrittenKindFwd P base T) (hTcb : ∀ t, ¬ P (.tcb t))
+    (hAt : T.get? k₀ = some (.tcb t)) :
+    UnwrittenKindFwd P base (T.insert k₀ v₀) :=
+  hF.insert_step (by
+    intro k o hP hk hEq
+    subst hEq
+    exact hTcb t (Option.some.inj ((hF.2 k₀ o hP hk).symm.trans hAt) ▸ hP))
+
+/-- The distinctness the endpoint write and the removed thread's own write
+    supply: `base` holds a non-`P` object at the key. -/
+private theorem UnwrittenKindFwd.ne_of_base_not {P : KernelObject → Prop}
+    {base : RHTable SeLe4n.ObjId KernelObject} {k₀ : SeLe4n.ObjId}
+    {o₀ : KernelObject} (hAt : base.get? k₀ = some o₀) (hNot : ¬ P o₀) :
+    ∀ k o, P o → base.get? k = some o → k₀ ≠ k := by
+  intro k o hP hk hEq
+  subst hEq
+  exact hNot (Option.some.inj (hAt.symm.trans hk) ▸ hP)
+
+/-- WS-OD OD1.4: the splice writes only TCBs and one endpoint, so every object of
+    any other kind carries across it forwards. -/
+theorem endpointQueueRemove_unwritten_kind_forward
+    (P : KernelObject → Prop)
+    (hTcb : ∀ t, ¬ P (.tcb t)) (hEp : ∀ e, ¬ P (.endpoint e))
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (hInv : st.objects.invExt)
+    (h : endpointQueueRemove endpointId isReceiveQ tid st = .ok st')
+    (oid : SeLe4n.ObjId) (o : KernelObject) (hP : P o)
+    (hPre : st.objects[oid]? = some o) :
+    st'.objects[oid]? = some o := by
+  rw [RHTable_getElem?_eq_get?] at hPre ⊢
+  refine (?_ : UnwrittenKindFwd P st.objects st'.objects).2 oid o hP hPre
+  unfold endpointQueueRemove at h
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at h
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+      simp [hObj] at h
+    | endpoint ep =>
+      simp only [hObj] at h
+      cases hTcbLk : lookupTcb st tid with
+      | none => simp [hTcbLk] at h
+      | some tcb =>
+        simp only [hTcbLk, Except.ok.injEq] at h
+        subst h
+        simp only []
+        have hEpAt : st.objects.get? endpointId = some (.endpoint ep) := by
+          rw [← RHTable_getElem?_eq_get?]; exact hObj
+        have hTidAt : st.objects.get? tid.toObjId = some (.tcb tcb) := by
+          rw [← RHTable_getElem?_eq_get?]
+          exact lookupTcb_some_objects st tid tcb hTcbLk
+        refine UnwrittenKindFwd.insert_step (k₀ := tid.toObjId)
+          (UnwrittenKindFwd.insert_step (k₀ := endpointId) ?_
+            (UnwrittenKindFwd.ne_of_base_not hEpAt (hEp ep)))
+          (UnwrittenKindFwd.ne_of_base_not hTidAt (hTcb tcb))
+        repeat (first
+          | exact UnwrittenKindFwd.rfl_self hInv
+          | (apply UnwrittenKindFwd.insert_tcb_step (hTcb := hTcb)
+             case hAt => assumption)
+          | split)
+
+/-- WS-OD OD1.4: the SchedContext instance, forwards — `donationOwnerValid`'s
+    first clause names a SchedContext in the pre-state. -/
+theorem endpointQueueRemove_schedContext_forward
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (hInv : st.objects.invExt)
+    (h : endpointQueueRemove endpointId isReceiveQ tid st = .ok st')
+    (oid : SeLe4n.ObjId) (sc : SchedContext)
+    (hPre : st.objects[oid]? = some (.schedContext sc)) :
+    st'.objects[oid]? = some (.schedContext sc) :=
+  endpointQueueRemove_unwritten_kind_forward (fun o => ∃ c, o = .schedContext c)
+    (fun _ hc => by obtain ⟨_, hc⟩ := hc; cases hc)
+    (fun _ hc => by obtain ⟨_, hc⟩ := hc; cases hc)
+    endpointId isReceiveQ tid st st' hInv h oid _ ⟨sc, rfl⟩ hPre
+
+/-- WS-OD OD1.4: `T` **occupies no key `base` does not**, and is well-formed.
+
+    The splice's four inserts are each guarded by a lookup that succeeded, so
+    every key it writes was already occupied: the removal rewrites objects and
+    creates none.  That is what carries `objectIndexSetComplete` — an index that
+    was complete for `base`'s keys is complete for a table with no new ones —
+    across an operation that writes `objects` directly rather than through
+    `storeObject`. -/
+private def KeyPresenceBack (base T : RHTable SeLe4n.ObjId KernelObject) : Prop :=
+  T.invExt ∧ ∀ k, T.get? k ≠ none → base.get? k ≠ none
+
+private theorem KeyPresenceBack.rfl_self
+    {base : RHTable SeLe4n.ObjId KernelObject} (h : base.invExt) :
+    KeyPresenceBack base base :=
+  ⟨h, fun _ hk => hk⟩
+
+/-- Inserting at a key `base` occupies preserves the presence map. -/
+private theorem KeyPresenceBack.insert_base_step
+    {base T : RHTable SeLe4n.ObjId KernelObject}
+    {k₀ : SeLe4n.ObjId} {o₀ v₀ : KernelObject}
+    (hB : KeyPresenceBack base T) (hAt : base.get? k₀ = some o₀) :
+    KeyPresenceBack base (T.insert k₀ v₀) := by
+  refine ⟨SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt T k₀ v₀ hB.1, ?_⟩
+  intro k hk
+  rw [RHTable_getElem?_insert _ _ _ hB.1 k] at hk
+  split at hk
+  · rename_i hEq
+    rw [← eq_of_beq hEq, hAt]
+    exact fun hc => by cases hc
+  · exact hB.2 k hk
+
+/-- Inserting at a key the table being extended occupies preserves the presence
+    map — the key is `base`'s by the map itself.  This is the form the two
+    conditional link patches use: each is guarded by a lookup in the table it
+    extends, not in `base`. -/
+private theorem KeyPresenceBack.insert_here_step
+    {base T : RHTable SeLe4n.ObjId KernelObject}
+    {k₀ : SeLe4n.ObjId} {o₀ v₀ : KernelObject}
+    (hB : KeyPresenceBack base T) (hAt : T.get? k₀ = some o₀) :
+    KeyPresenceBack base (T.insert k₀ v₀) := by
+  cases hBase : base.get? k₀ with
+  | none => exact absurd hBase (hB.2 k₀ (by rw [hAt]; exact fun hc => by cases hc))
+  | some o => exact hB.insert_base_step hBase
+
+/-- WS-OD OD1.4: the splice occupies no key the pre-state did not.
+
+    Every one of its four inserts is guarded by a successful lookup, so it
+    rewrites objects and creates none.  Consumed by
+    `endpointQueueRemove_preserves_objectIndexSetComplete`: the removal writes
+    `objects` directly rather than through `storeObject`, so the identity
+    registry is not extended alongside it and completeness has to come from the
+    key set instead. -/
+theorem endpointQueueRemove_objects_present_backward
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (hInv : st.objects.invExt)
+    (h : endpointQueueRemove endpointId isReceiveQ tid st = .ok st')
+    (oid : SeLe4n.ObjId) (hPost : st'.objects[oid]? ≠ none) :
+    st.objects[oid]? ≠ none := by
+  rw [RHTable_getElem?_eq_get?] at hPost ⊢
+  refine (?_ : KeyPresenceBack st.objects st'.objects).2 oid hPost
+  unfold endpointQueueRemove at h
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at h
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+      simp [hObj] at h
+    | endpoint ep =>
+      simp only [hObj] at h
+      cases hTcbLk : lookupTcb st tid with
+      | none => simp [hTcbLk] at h
+      | some tcb =>
+        simp only [hTcbLk, Except.ok.injEq] at h
+        subst h
+        simp only []
+        have hEpAt : st.objects.get? endpointId = some (.endpoint ep) := by
+          rw [← RHTable_getElem?_eq_get?]; exact hObj
+        have hTidAt : st.objects.get? tid.toObjId = some (.tcb tcb) := by
+          rw [← RHTable_getElem?_eq_get?]
+          exact lookupTcb_some_objects st tid tcb hTcbLk
+        refine KeyPresenceBack.insert_base_step (k₀ := tid.toObjId)
+          (KeyPresenceBack.insert_base_step (k₀ := endpointId) ?_ hEpAt) hTidAt
+        repeat (first
+          | exact KeyPresenceBack.rfl_self hInv
+          | (apply KeyPresenceBack.insert_here_step
+             case hAt => assumption)
+          | split)
+
+/-- WS-OD OD1.4: the splice leaves the identity registry alone.
+
+    It writes `objects` through `RHTable.insert` rather than `storeObject`
+    (`AF5-C`), so the registry is not extended alongside it — which is sound
+    only because the removal creates no key
+    (`endpointQueueRemove_objects_present_backward`). -/
+theorem endpointQueueRemove_objectIndexSet_eq
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState)
+    (h : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') :
+    st'.objectIndexSet = st.objectIndexSet := by
+  unfold endpointQueueRemove at h
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at h
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+      simp [hObj] at h
+    | endpoint ep =>
+      simp only [hObj] at h
+      cases hTcb : lookupTcb st tid with
+      | none => simp [hTcb] at h
+      | some tcb =>
+        simp only [hTcb] at h
+        simp only [Except.ok.injEq] at h
+        rw [← h]
+
+/-- WS-OD OD1.4: the splice preserves the identity registry's completeness.
+
+    Both halves are needed and neither alone would do: the registry is
+    *unchanged*, and the key set does not grow. -/
+theorem endpointQueueRemove_preserves_objectIndexSetComplete
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (hInv : st.objects.invExt)
+    (hComplete : SeLe4n.Model.objectIndexSetComplete st)
+    (h : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') :
+    SeLe4n.Model.objectIndexSetComplete st' := by
+  intro oid hSome
+  rw [endpointQueueRemove_objectIndexSet_eq endpointId isReceiveQ tid st st' h]
+  exact hComplete oid
+    (endpointQueueRemove_objects_present_backward endpointId isReceiveQ tid st st' hInv h
+      oid hSome)
 
 end EndpointQueueRemoveRegCtx
 

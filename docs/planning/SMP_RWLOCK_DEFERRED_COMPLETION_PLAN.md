@@ -1242,7 +1242,7 @@ per audit finding M-10):
 
 | Item | Gate |
 |------|------|
-| D-1 | `rwLock_fifo_admission_temporal` proven under `e.initial = unheld`; Tier 3 surface anchor added; ≥3 `decide`-checked test fixtures (success, reader-batching tie, writer-after-readers) |
+| D-1 | `rwLock_fifo_admission_temporal` proven under `e.initial = unheld`; Tier 3 surface anchor added; ≥3 `decide`-checked test fixtures (success, reader-batching tie, writer-after-readers).  **The fixtures landed at `v0.34.87`** (WS-RR RR7.37, register finding 59): the theorem and the anchor had been in place since D-1.9, and every `decide` in `RwLockDeferredSuite` was over `applyOp`, `writerWaitDepth` or the concrete event model, so this row's third clause was unmet for the whole interval.  All three scenarios are now pinned over `enqueueStep`/`admissionStep`, and `rwLock_fifo_admission_temporal` is instantiated on a concrete two-writer trace with every premise discharged by `decide` |
 | D-2 | `rwLock_bounded_wait_write_distinct` proven (no longer alias) with the **tight** `numCores - 1` bound; Tier 3 anchor added; ≥3 `decide`-checked test fixtures |
 | D-3 | `rwLock_writer_liveness` proven under the strengthened §4.5 `FairTrace`; Tier 3 anchor added; `FairTrace` `Decidable` instance for finite traces |
 | D-4 | `rust_rwLock_refines_lean` proven over the full `opCorresponds`-closed correspondence (CAS-retry + park-retry + conditional-SEV all covered); Tier 3 anchor added; the `concreteApplyOp_fetch_sub_no_underflow` helper landed |

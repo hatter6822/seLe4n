@@ -1264,8 +1264,26 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @suspendFootprint_splice_neighbors_under_endpoint_lock
 #check @queueOwnershipRespected
 #check @suspendFootprint_respects_queueOwnership
-#check @lockSet_tcbSetPriority_omits_endpointLock
-#check @queueOwnership_violated_by_tcbSetPriority
+-- WS-RR RR7.38: the domain is closed, so the `¬` that stated the gap
+-- (`queueOwnership_violated_by_tcbSetPriority`, with its
+-- `lockSet_tcbSetPriority_omits_endpointLock` witness) is deleted and these
+-- eleven positives stand in its place.
+#check @queueOwnershipRespectedBy
+#check @SeLe4n.Kernel.Concurrency.QueueOwner.lock_kind
+#check @SeLe4n.Kernel.Concurrency.queueOwnerOf?
+#check @SeLe4n.Kernel.Concurrency.queueOwnerAt
+#check @queueOwner_mem_write_of_extendOpt
+#check @queueOwnership_respected_by_tcbSetPriority
+#check @queueOwnership_respected_by_tcbSetMCPriority
+#check @queueOwnership_respected_by_tcbSetIPCBuffer
+#check @queueOwnership_respected_by_tcbSetAffinity
+#check @queueOwnership_respected_by_tcbSetFaultHandler
+#check @queueOwnership_respected_by_tcbResume
+#check @queueOwnership_respected_by_tcbBindNotification
+#check @queueOwnership_respected_by_tcbUnbindNotification
+#check @queueOwnership_respected_by_schedContextConfigure
+#check @queueOwnership_respected_by_schedContextBind
+#check @queueOwnership_respected_by_schedContextUnbind
 #check @lockContentionChannel_run_capacity
 #check @lockContentionRun_rejects_repeated_step
 #check @lockContentionRun_rejects_still_queued_step
@@ -1587,6 +1605,10 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @Concurrency.lockSet_auditRead_stateLevel_read_mem
 #check @Concurrency.lockSet_auditDrain_stateLevel_write_mem
 #check @Concurrency.auditState_footprints_share_serialization
+-- WS-RR RR7.23 (register finding 5): the same pin for the service registry —
+-- four writers, all declaring `stateLevelLock`, the retype's registry sweep
+-- among them.
+#check @Concurrency.serviceRegistry_footprints_share_serialization
 #check @Concurrency.stateLevelLock_objId_irrelevant
 -- (P1) the occupancy channel: CC-8's inventory entry and witness live in
 -- `CovertChannelPerCore` (§4.8 runs the literals and the record-layer flip);
@@ -2218,11 +2240,19 @@ no observer projects, the write is confined to no core at all. -/
 #check @applySyscallTaint_preserves_onCore
 #check @applySyscallTaint_preserves_proofLayerInvariantBundle
 
--- SM9.D audit: the pre-existing SM3.B footprint gap the cap-transfer sink
--- surfaced, registered as data with its violation witness — closing it deletes
--- the theorem, so the debt cannot quietly become a stale comment.
-#check @UncoveredLockDomain.capTransferReceiverCnode
-#check @capTransfer_receiverCnode_write_undeclared
+-- WS-RR RR7.8: the cap-transfer destination domain is **covered and deleted**.
+-- What stands in its place is the closure — every object either caps-carrying
+-- arm's transfer changes is declared write-mode in the footprint its bracket
+-- acquires — plus the two members that make it true.
+#check @SeLe4n.Kernel.endpointSendDualWithCaps_object_writes_declared
+#check @SeLe4n.Kernel.endpointCallWithCaps_object_writes_declared
+#check @SeLe4n.Kernel.lockSet_endpointSendOnCore_covers_capsDestination
+#check @SeLe4n.Kernel.lockSet_endpointCallOnCore_covers_capsDestination
+#check @SeLe4n.Kernel.lockSet_endpointSendOnCore_covers_cdt
+#check @SeLe4n.Kernel.lockSet_endpointCallOnCore_covers_cdt
+#check @SeLe4n.Kernel.rendezvousCapsDestination?
+#check @SeLe4n.Kernel.endpointSendDualWithCaps_reduces_to_unwrap
+#check @SeLe4n.Kernel.endpointCallWithCaps_reduces_to_unwrap
 
 -- SM9.D audit: the taint table's per-key realisation, owed by the representation
 -- cut.  The footprints declare the objects' own locks for taint keys while the
@@ -6253,7 +6283,7 @@ private def crossCoreSendUnder (ctx : LabelingContext) (epId : SeLe4n.ObjId) :
       Except KernelError (CapTransferSummary ×
         Option (CoreId × SeLe4n.Kernel.Concurrency.SgiKind)) :=
   endpointSendCrossCoreDispatchChecked ctx epId lowCurrent IpcMessage.empty
-    (AccessRightSet.ofList [.write]) cnRoot (SeLe4n.Slot.ofNat 0) c0 niState
+    (AccessRightSet.ofList [.write]) (SeLe4n.Slot.ofNat 0) c0 niState
 
 /-- §6.8  The live per-endpoint flow policy — SM8.B's registered debt (a). -/
 private def runEndpointPolicyGateChecks : IO Unit := do
@@ -7679,9 +7709,11 @@ lockOnly={lockWritesOnlyCheck niState bracketedEntryResult.1}"
 lowInvisible={allCores.all (fun c => lowEquivalentSliceOnCoreCheckWithRegs
   fineLockEntryLabeling c lowLabel successEntryResult.1 successEntryState)}"
   , s!"[smp-fine-lock] declared footprints: \
-tcbSuspend={(SeLe4n.Kernel.Concurrency.lockSetForSyscall .tcbSuspend lowCurrent highCurrent
+tcbSuspend={(SeLe4n.Kernel.Concurrency.lockSetForSyscall .tcbSuspend
+      (.ofThreadTarget lowCurrent highCurrent)
   niState).isSome} \
-send={(SeLe4n.Kernel.Concurrency.lockSetForSyscall .send lowCurrent highCurrent niState).isSome}"
+send={(SeLe4n.Kernel.Concurrency.lockSetForSyscall .send
+      (.ofThreadTarget lowCurrent highCurrent) niState).isSome}"
   , s!"[smp-fine-lock] claims: {FineLockClaimId.all.length} over \
 {traceClaimSubTaskCount} distinct proof-carrying sub-tasks" ]
 
@@ -7776,6 +7808,187 @@ private def distinctRootState : SystemState :=
   { niState with
       objects := niState.objects.insert highCurrent.toObjId (.tcb distinctRootVictim) }
 
+-- ---------------------------------------------------------------------------
+-- §7.10 fixture: the WS-RR RR7.11 IPC hot-path footprints.
+--
+-- Until this group existed the only declared arm was `.tcbSuspend`, so every
+-- runtime observation of `lockSetForSyscall` was of a thread-directed
+-- footprint.  The seven IPC arms are object- and reply-directed and their
+-- state-dependent members — the rendezvous partner, the capability-transfer
+-- destination, the CDT write that install performs — are resolved from the
+-- pre-state, so a fixture is the only way to run them.
+--
+-- The state parks a receiver on `lowEndpoint`'s receive queue (giving the
+-- caps destination a CSpace root to resolve to), a sender on its send queue
+-- carrying a caps-bearing message (which is what makes `receiveInstallsCaps`
+-- true), and a Reply object linked to `lowQueued` (which is what makes the two
+-- reply-shaped arms resolvable).
+-- ---------------------------------------------------------------------------
+
+private def ipcReplyId : SeLe4n.ReplyId := ⟨1041⟩
+private def ipcReceiverRoot : SeLe4n.ObjId := ⟨1042⟩
+private def ipcReceiver : SeLe4n.ThreadId := ⟨1043⟩
+private def ipcSender : SeLe4n.ThreadId := ⟨1044⟩
+
+/-- One transferred capability, so a message counts as caps-carrying. -/
+private def ipcCapsMessage : IpcMessage :=
+  { registers := #[],
+    caps := #[{ cap := { target := .object lowEndpoint,
+                         rights := AccessRightSet.ofList [.read] },
+                srcNode := ⟨0⟩ }],
+    capsGranted := true }
+
+/-- The capless shape, for the negatives. -/
+private def ipcCaplessMessage : IpcMessage := { registers := #[] }
+
+private def ipcReceiverTcb : TCB :=
+  { mkTcb 1043 40 (some c1) with cspaceRoot := ipcReceiverRoot }
+
+/-- A sender parked with a caps-bearing message — `receiveInstallsCaps`'s
+condition, read from exactly this field. -/
+private def ipcSenderTcb : TCB :=
+  { mkTcb 1044 40 (some c0) with pendingMessage := some ipcCapsMessage }
+
+private def ipcFootprintState : SystemState :=
+  { niState with
+      objects :=
+        ((((niState.objects.insert ipcReplyId.toObjId
+              (.reply { replyId := ipcReplyId, caller := some lowQueued })).insert
+            ipcReceiver.toObjId (.tcb ipcReceiverTcb)).insert
+            ipcSender.toObjId (.tcb ipcSenderTcb)).insert
+          lowEndpoint
+          (.endpoint { sendQ := { head := some ipcSender, tail := some ipcSender },
+                       receiveQ := { head := some ipcReceiver, tail := some ipcReceiver } })) }
+
+/-- The operands a live `.send` supplies: the endpoint its capability names and
+the message it built. -/
+private def ipcSendOperands (msg : IpcMessage) : Concurrency.SyscallLockOperands :=
+  .ofObjectTarget lowCurrent lowEndpoint (some msg)
+
+private def ipcDeclaredMember
+    (declared : Option Concurrency.LockSet)
+    (l : Concurrency.LockId) (m : Concurrency.AccessMode) : Bool :=
+  match declared with
+  | some S => decide ((l, m) ∈ S.pairs)
+  | none => false
+
+/-- §7.10  WS-RR RR7.11 — the seven IPC hot-path footprints, resolved from
+operands and covering their transitions' writes.
+
+Positive and negative in the same group, because the whole value of a declared
+footprint is that it is `some` exactly when its operands resolve and covers
+exactly what the arm writes. -/
+private def runIpcDeclaredFootprintChecks : IO Unit := do
+  IO.println "--- §7.10 WS-RR RR7.11 — the seven IPC hot-path footprints ---"
+  -- Each arm declares at the operands its live dispatcher supplies.
+  assertBool "`.send` declares at (endpoint, message)"
+    (decide ((Concurrency.lockSetForSyscall .send
+      (ipcSendOperands ipcCaplessMessage) ipcFootprintState).isSome))
+  assertBool "`.call` declares at (endpoint, message)"
+    (decide ((Concurrency.lockSetForSyscall .call
+      (ipcSendOperands ipcCaplessMessage) ipcFootprintState).isSome))
+  assertBool "`.receive` declares at an endpoint, with no message"
+    (decide ((Concurrency.lockSetForSyscall .receive
+      (.ofObjectTarget lowCurrent lowEndpoint) ipcFootprintState).isSome))
+  assertBool "`.notificationSignal` declares at a notification"
+    (decide ((Concurrency.lockSetForSyscall .notificationSignal
+      (.ofObjectTarget lowCurrent lowEndpoint) ipcFootprintState).isSome))
+  assertBool "`.notificationWait` declares at a notification"
+    (decide ((Concurrency.lockSetForSyscall .notificationWait
+      (.ofObjectTarget lowCurrent lowEndpoint) ipcFootprintState).isSome))
+  assertBool "`.reply` declares at a linked reply capability"
+    (decide ((Concurrency.lockSetForSyscall .reply
+      (.ofReplyTarget lowCurrent ipcReplyId) ipcFootprintState).isSome))
+  assertBool "`.replyRecv` declares at a reply capability AND an endpoint"
+    (decide ((Concurrency.lockSetForSyscall .replyRecv
+      (.ofReplyTarget lowCurrent ipcReplyId (some lowEndpoint))
+      ipcFootprintState).isSome))
+  -- NEGATIVE: a send whose message is unknown declares nothing.  Defaulting to
+  -- the capless footprint would omit the receiver's CSpace root and the
+  -- state-level lock on precisely the path that writes them.
+  assertBool "NEGATIVE: `.send` with no message declares nothing"
+    (decide ((Concurrency.lockSetForSyscall .send
+      (.ofObjectTarget lowCurrent lowEndpoint) ipcFootprintState) = none))
+  -- NEGATIVE: a reply capability naming no live Reply object declares nothing —
+  -- the live arm answers `.replyCapInvalid` for it.
+  assertBool "NEGATIVE: `.reply` at a dangling reply capability declares nothing"
+    (decide ((Concurrency.lockSetForSyscall .reply
+      (.ofReplyTarget lowCurrent ⟨999999⟩) ipcFootprintState) = none))
+  -- NEGATIVE: and `.replyRecv` needs both its operands.
+  assertBool "NEGATIVE: `.replyRecv` without an endpoint declares nothing"
+    (decide ((Concurrency.lockSetForSyscall .replyRecv
+      (.ofReplyTarget lowCurrent ipcReplyId) ipcFootprintState) = none))
+  -- NEGATIVE: the twenty-seven arms this cut did not declare still answer
+  -- `none`, whatever operands are handed to them.
+  assertBool "NEGATIVE: `.cspaceMint` is undeclared even at full operands"
+    (decide ((Concurrency.lockSetForSyscall .cspaceMint
+      (ipcSendOperands ipcCapsMessage) ipcFootprintState) = none))
+  -- **RR7.11's finding, at runtime.**  A caps-carrying rendezvous writes the
+  -- CDT maps through `ipcTransferSingleCap`, and the state-level lock is the
+  -- declared subject for `SystemState`-level structure.  The sending arms
+  -- declared it since RR7.7; the receiving arms declared it on neither side.
+  assertBool "a caps-carrying `.send` declares the state-level write"
+    (ipcDeclaredMember (Concurrency.lockSetForSyscall .send
+      (ipcSendOperands ipcCapsMessage) ipcFootprintState)
+      Concurrency.stateLevelLock .write)
+  assertBool "a caps-carrying `.send` declares the receiver's CSpace root"
+    (ipcDeclaredMember (Concurrency.lockSetForSyscall .send
+      (ipcSendOperands ipcCapsMessage) ipcFootprintState)
+      (Concurrency.cnodeLock ipcReceiverRoot) .write)
+  assertBool "a caps-installing `.receive` declares the state-level write (RR7.11)"
+    (ipcDeclaredMember (Concurrency.lockSetForSyscall .receive
+      (.ofObjectTarget lowCurrent lowEndpoint) ipcFootprintState)
+      Concurrency.stateLevelLock .write)
+  assertBool "a caps-installing `.replyRecv` declares the state-level write (RR7.11)"
+    (ipcDeclaredMember (Concurrency.lockSetForSyscall .replyRecv
+      (.ofReplyTarget lowCurrent ipcReplyId (some lowEndpoint)) ipcFootprintState)
+      Concurrency.stateLevelLock .write)
+  -- NEGATIVE: and a **capless** send does not, so the member tracks the write
+  -- rather than being unconditionally present.
+  assertBool "NEGATIVE: a capless `.send` does not declare the state-level write"
+    (decide (¬ ipcDeclaredMember (Concurrency.lockSetForSyscall .send
+      (ipcSendOperands ipcCaplessMessage) ipcFootprintState)
+      Concurrency.stateLevelLock .write))
+  -- Coverage: the endpoint queue is the rendezvous' primary write, and every
+  -- endpoint-shaped arm declares it.
+  assertBool "every endpoint-shaped arm declares the endpoint write"
+    (ipcDeclaredMember (Concurrency.lockSetForSyscall .send
+        (ipcSendOperands ipcCaplessMessage) ipcFootprintState)
+        (Concurrency.endpointLock lowEndpoint) .write &&
+     ipcDeclaredMember (Concurrency.lockSetForSyscall .call
+        (ipcSendOperands ipcCaplessMessage) ipcFootprintState)
+        (Concurrency.endpointLock lowEndpoint) .write &&
+     ipcDeclaredMember (Concurrency.lockSetForSyscall .receive
+        (.ofObjectTarget lowCurrent lowEndpoint) ipcFootprintState)
+        (Concurrency.endpointLock lowEndpoint) .write &&
+     ipcDeclaredMember (Concurrency.lockSetForSyscall .replyRecv
+        (.ofReplyTarget lowCurrent ipcReplyId (some lowEndpoint)) ipcFootprintState)
+        (Concurrency.endpointLock lowEndpoint) .write)
+  -- Coverage: `.reply` locks the thread it answers — read from the Reply object
+  -- the capability names, exactly as the live arm reads it.
+  assertBool "`.reply` locks the thread its capability answers"
+    (ipcDeclaredMember (Concurrency.lockSetForSyscall .reply
+      (.ofReplyTarget lowCurrent ipcReplyId) ipcFootprintState)
+      (Concurrency.tcbLock lowQueued) .write)
+  -- Every declared footprint is within the static size bound, which is what
+  -- makes it usable by the bounded-wait argument.
+  assertBool "every declared IPC footprint is within maxLockSetSize"
+    ([Concurrency.lockSetForSyscall .send (ipcSendOperands ipcCapsMessage) ipcFootprintState,
+      Concurrency.lockSetForSyscall .call (ipcSendOperands ipcCapsMessage) ipcFootprintState,
+      Concurrency.lockSetForSyscall .receive (.ofObjectTarget lowCurrent lowEndpoint)
+        ipcFootprintState,
+      Concurrency.lockSetForSyscall .reply (.ofReplyTarget lowCurrent ipcReplyId)
+        ipcFootprintState,
+      Concurrency.lockSetForSyscall .replyRecv
+        (.ofReplyTarget lowCurrent ipcReplyId (some lowEndpoint)) ipcFootprintState,
+      Concurrency.lockSetForSyscall .notificationSignal
+        (.ofObjectTarget lowCurrent lowEndpoint) ipcFootprintState,
+      Concurrency.lockSetForSyscall .notificationWait
+        (.ofObjectTarget lowCurrent lowEndpoint) ipcFootprintState].all
+      (fun d => match d with
+                | some S => decide (S.size ≤ Concurrency.maxLockSetSize)
+                | none => false))
+
 /-- §7.9  SM8.D.5 — the declared footprint, bound to the decode, and the
 fail-closed default.
 
@@ -7785,7 +7998,8 @@ decode rather than against arguments the test supplies. -/
 private def runDeclaredFootprintChecks : IO Unit := do
   IO.println "--- §7.9 the bracket over SM3.C.9's declared footprint (SM8.D.5) ---"
   assertBool "`.tcbSuspend` is the one declared arm, and it resolves for a real TCB"
-    (decide ((SeLe4n.Kernel.Concurrency.lockSetForSyscall .tcbSuspend lowCurrent highCurrent
+    (decide ((SeLe4n.Kernel.Concurrency.lockSetForSyscall .tcbSuspend
+      (.ofThreadTarget lowCurrent highCurrent)
       niState).isSome))
   -- The resolver reads the entry's own decode: caller from the executing core's
   -- current thread, syscall id from that thread's registers.
@@ -7800,7 +8014,8 @@ private def runDeclaredFootprintChecks : IO Unit := do
   -- old free-parameter form a caller could pass `.tcbSuspend` alongside these
   -- very registers and bracket an unrelated operation in the suspend footprint.
   assertBool "NEGATIVE: a resolvable suspend footprint does not bracket a `.receive` decode"
-    (decide ((SeLe4n.Kernel.Concurrency.lockSetForSyscall .tcbSuspend lowCurrent highCurrent
+    (decide ((SeLe4n.Kernel.Concurrency.lockSetForSyscall .tcbSuspend
+      (.ofThreadTarget lowCurrent highCurrent)
         niState).isSome) &&
      decide ((declaredLockSetForEntry fineLockEntryLabeling SeLe4n.arm64DefaultLayout c1 32
         successEntryState) = none) &&
@@ -7939,35 +8154,73 @@ private def runDeclaredFootprintChecks : IO Unit := do
   assertBool "the suspend footprint respects the queue-ownership protocol (theorem)"
     (have _r := @suspendFootprint_respects_queueOwnership
      true)
-  -- LOAD-BEARING NEGATIVE: `tcbSetPriority` writes a queued neighbour's TCB and
-  -- declares no endpoint lock, so the protocol the umbrella rests on is
-  -- violated — the reason the gap is registered rather than claimed closed.
-  assertBool "NEGATIVE: tcbSetPriority writes a queued neighbour with no endpoint lock"
-    (have _v := @queueOwnership_violated_by_tcbSetPriority
-     have _o := @lockSet_tcbSetPriority_omits_endpointLock
+  -- WS-RR RR7.38: the negative this replaces asserted that `tcbSetPriority`
+  -- writes a queued neighbour with no endpoint lock — the gap.  It is closed by
+  -- the eleven footprints declaring the queue owner's write lock, so the `¬` is
+  -- deleted and the positives take its place.  A Tier-3 *negative* pins that the
+  -- violation theorem cannot come back.
+  assertBool "the eleven queued-TCB writers respect the queue-ownership protocol"
+    (have _p := @queueOwnership_respected_by_tcbSetPriority
+     have _m := @queueOwnership_respected_by_tcbSetMCPriority
+     have _i := @queueOwnership_respected_by_tcbSetIPCBuffer
+     have _a := @queueOwnership_respected_by_tcbSetAffinity
+     have _f := @queueOwnership_respected_by_tcbSetFaultHandler
+     have _r := @queueOwnership_respected_by_tcbResume
+     have _b := @queueOwnership_respected_by_tcbBindNotification
+     have _u := @queueOwnership_respected_by_tcbUnbindNotification
+     have _c := @queueOwnership_respected_by_schedContextConfigure
+     have _sb := @queueOwnership_respected_by_schedContextBind
+     have _su := @queueOwnership_respected_by_schedContextUnbind
      true)
+  -- ... and the queue owner's kind is one of exactly two, which is what keeps
+  -- the `permittedKinds` widening a two-kind admission rather than the
+  -- `.declassify` admit-everything shape.
+  assertBool "a queue owner's lock kind is endpoint or notification"
+    (decide ((SeLe4n.Kernel.Concurrency.QueueOwner.endpoint ⟨7⟩).lock.kind
+        = SeLe4n.Kernel.Concurrency.LockKind.endpoint) &&
+     decide ((SeLe4n.Kernel.Concurrency.QueueOwner.notification ⟨9⟩).lock.kind
+        = SeLe4n.Kernel.Concurrency.LockKind.notification))
   -- The bracket covers the OBJECT domain only; the scheduler domain, the
-  -- dynamic PIP chain, the queue-ownership protocol, (SM9.D audit) the
-  -- capability-transfer destination CNode, (SM9.D audit) the taint table's
-  -- per-key realisation and (PR #873 round 13) the CDT node allocator's global
-  -- counter and (PR #887 review round 3) the interior CNodes of a multi-level
-  -- CSpace walk are named as data with owners rather than left implicit.
-  assertBool "the seven uncovered lock domains are registered, each with an owner"
-    (decide (declaredFootprintUncoveredDomains.length = 7) &&
+  -- dynamic PIP chain, the queue-ownership protocol, (SM9.D audit) the taint
+  -- table's per-key realisation and (PR #887 review round 3) the interior
+  -- CNodes of a multi-level CSpace walk are named as data with owners rather
+  -- than left implicit.
+  -- WS-RR RR7.8, then RR7.9, then RR7.38: **four**, from seven.  The
+  -- capability-transfer destination CNode, the CDT node allocator and the
+  -- splice-neighbour queue-ownership protocol are all covered and their entries
+  -- deleted.  The count falls because domains closed, which is the only reason
+  -- it may.
+  --
+  -- WS-RR RR7.39 **narrowed** rather than deleted: the blanket `schedulerDomain`
+  -- became `syscallSeamSchedulerDomain`.  RR7.39 closed the per-core scheduler
+  -- *entries*' half — they now acquire their declared footprints — and the
+  -- syscall seam's half remains, because `lockSetForSyscall` returns a `LockSet`
+  -- whose `LockId` cannot name a run-queue lock.  A narrowing kept the count at
+  -- four and is the honest record: deleting would have claimed the syscall half.
+  --
+  -- WS-RR RR7.40: **three**, from four.  The dynamic PIP chain's entry is
+  -- deleted — `pipChainSchedFootprint` names every visited thread's TCB lock and
+  -- its home core's run-queue lock over the domain RR7.39 built, and
+  -- `propagatePipChainCrossCore_coversWrites` proves the walk writes nothing
+  -- outside it.
+  --
+  -- WS-RR RR7.41: **two**, from three.  The CSpace walk's interior is deleted —
+  -- `cspaceWalkPath` derives the CNodes a resolution reads from
+  -- `resolveCapAddress`'s own recursion, `cspaceWalkLockSet` read-locks each, and
+  -- `cspaceWalk_conflicts_with_delete` proves the conflict with a `cspaceDelete`
+  -- on the path that the root-only footprint could not state.
+  assertBool "the two uncovered lock domains are registered, each with an owner"
+    (decide (declaredFootprintUncoveredDomains.length = 2) &&
      decide (declaredFootprintUncoveredDomains.map Prod.fst
-       = [UncoveredLockDomain.schedulerDomain, UncoveredLockDomain.dynamicPipChain,
-          UncoveredLockDomain.queueOwnershipProtocol,
-          UncoveredLockDomain.capTransferReceiverCnode,
-          UncoveredLockDomain.taintTablePerKeyStore,
-          UncoveredLockDomain.cdtNodeAllocation,
-          UncoveredLockDomain.cspaceWalkInteriorCnodes]) &&
+       = [UncoveredLockDomain.syscallSeamSchedulerDomain,
+          UncoveredLockDomain.taintTablePerKeyStore]) &&
      declaredFootprintUncoveredDomains.all (fun d => !d.2.isEmpty))
   -- LOAD-BEARING NEGATIVE: completeness is quantified over the *constructors*,
   -- so a domain added without a registration cannot pass.
   assertBool "NEGATIVE: every uncovered-domain constructor is registered"
     (UncoveredLockDomain.all.all
        (fun d => declaredFootprintUncoveredDomains.map Prod.fst |>.contains d) &&
-     decide (UncoveredLockDomain.all.length = 7))
+     decide (UncoveredLockDomain.all.length = 2))
   -- PR #873 round 6: the inventory is no longer data alone.  Relying on declared
   -- footprints as a complete serialization discipline is gated on it being
   -- EMPTY, so the per-key taint store — the entry the review pressed twice — is
@@ -10916,7 +11169,7 @@ private def sendRendezvousState : SystemState :=
                                      tail := some lowCurrent } }) }
   -- PR #873 round 5: the send gate requires **Grant** as well as a declared
   -- capability count, because an endpoint capability without it installs nothing
-  -- (`ipcUnwrapCaps` answers `.grantDenied` for every cap).  The shared probe
+  -- (`ipcUnwrapCaps` answers `.grantDenied` for every cap). The shared probe
   -- capability carries `.read` only, so this scenario — whose whole subject is
   -- the caps-carrying edge list — installs a Grant-bearing endpoint capability
   -- at a slot of its own rather than weakening the gate to suit the fixture.
@@ -10980,14 +11233,18 @@ private def runTaintFootprintChecks : IO Unit := do
   -- The write-lock coverage claim, computed on the REAL edge list a rendezvous
   -- send declares — not on a hand-built plan, which is how the audit's first
   -- form of this check missed the capability-transfer sink.  The woken
-  -- receiver's TCB (W) is a declared member; the receiver's CSpace root — the
-  -- object `ipcUnwrapCaps` writes — is NOT, a pre-existing SM3.B footprint gap
-  -- registered as `UncoveredLockDomain.capTransferReceiverCnode`
-  -- (`capTransfer_receiverCnode_write_undeclared`).
+  -- receiver's TCB (W) is a declared member.
   --
-  -- The ENDPOINT is no longer among the sinks at all: the content-derived model
-  -- does not tag it, because it holds no content of its own.  That makes the
-  -- registered CNode gap the *only* uncovered key here, rather than one of two.
+  -- The receiver's CSpace root — the object `ipcUnwrapCaps` writes — used to be
+  -- the exception: a pre-existing SM3.B footprint gap registered as
+  -- `UncoveredLockDomain.capTransferReceiverCnode`.  **WS-RR RR7.7 + RR7.8
+  -- closed it**, and this footprint is built at the *capless* argument, so the
+  -- set below is still the capless one; what changed is that the caps-carrying
+  -- footprint now names that root in write mode
+  -- (`lockSet_endpointSendOnCore_covers_capsDestination`).
+  --
+  -- The ENDPOINT is not among the sinks at all: the content-derived model does
+  -- not tag it, because it holds no content of its own.
   let sendSet := SeLe4n.Kernel.Concurrency.lockSet_endpointSend highCurrent probeCNode
                    highEndpoint (some lowCurrent)
   let sendWriteObjects : List SeLe4n.ObjId :=
@@ -11023,30 +11280,67 @@ private def runTaintFootprintChecks : IO Unit := do
     ((sendRendezvousCaplessEdges.map (·.sink)).all (fun o => sendWriteObjects.contains o))
   assertBool "EVERY taint write key is write-locked by the send footprint"
     ((sendRendezvousEdges.map (·.sink)).all (fun o => sendWriteObjects.contains o))
-  -- The registered footprint gap is unchanged and is now purely an *object*
-  -- write: `ipcUnwrapCaps` still writes the receiver's CSpace root CNode with no
-  -- declared lock (`UncoveredLockDomain.capTransferReceiverCnode`).  Pinned
-  -- positively so closing it breaks this line.  What changed is that it is no
-  -- longer also a taint write key, so the taint-coverage claim above no longer
-  -- has to carve it out.
-  assertBool "GAP (registered lock-inventory debt): the receiver's CSpace root is NOT write-locked"
+  -- **WS-RR RR7.8: the gap this line used to pin is closed.**  It read "GAP
+  -- (registered lock-inventory debt): the receiver's CSpace root is NOT
+  -- write-locked", pinned positively so closing it would break the line — and
+  -- this is that break.  `sendSet` is built at the **capless** argument, so the
+  -- root is still absent from it, and that is now a *property* rather than a
+  -- gap: the member belongs to the transfer, so a send that carries no
+  -- capabilities must not pay for it.
+  assertBool "a capless send declares no CSpace-root write, because it writes none"
     (!sendWriteObjects.contains recvRoot &&
      decide ((SeLe4n.Kernel.Concurrency.cnodeLock recvRoot,
         SeLe4n.Kernel.Concurrency.AccessMode.write) ∉ sendSet.pairs))
+  -- …and the caps-carrying footprint DOES declare it, which is the half that
+  -- makes the line above a property instead of an excuse.  Same arguments, the
+  -- destination supplied.
+  assertBool "a caps-carrying send declares the receiver's CSpace root in write mode"
+    (decide ((SeLe4n.Kernel.Concurrency.cnodeLock recvRoot,
+        SeLe4n.Kernel.Concurrency.AccessMode.write)
+      ∈ (SeLe4n.Kernel.Concurrency.lockSet_endpointSend highCurrent probeCNode
+           highEndpoint (some lowCurrent) (some recvRoot)).pairs))
   -- The design decision, pinned: the hot IPC path does NOT carry the coarse
   -- `.objStore` singleton.  A keyed table decomposes, so its writes ride the
   -- key's own lock exactly as `storeObject`'s writes ride the object's; putting
   -- the level-0 lock on `.send` would serialise every IPC in the system against
   -- every other, and would blow the SM5.J tick budget the IPC-suite fixtures pin.
-  assertBool "the content-moving footprints do NOT declare the coarse table lock"
+  --
+  -- **WS-RR RR7.7 narrowed this claim rather than breaking it.**  A
+  -- *caps-carrying* rendezvous does declare the state-level write, because it
+  -- writes the CDT maps — global structure that does not decompose by key, so
+  -- two such transfers into different CSpaces genuinely conflict and must
+  -- serialise.  What the claim protects is the **capless** hot path, which is
+  -- what `sendSet` is, and the next assertion pins the other side so the
+  -- narrowing cannot widen back by accident.
+  --
+  -- **WS-RR RR7.23 moved the retype off this line, and this comment's own
+  -- criterion is why.**  The line held three footprints: two because they are
+  -- the capless hot path, and `lockSet_lifecycleRetype` because it happened to
+  -- be free of the singleton — not because a retype is a hot path.  It is not.
+  -- `lifecyclePreRetypeCleanup` sweeps `serviceRegistry` and detaches the
+  -- target's CDT slot mappings, both global structure that does not decompose
+  -- by the retype's own object keys — exactly the property under which the
+  -- caps-carrying rendezvous above is admitted.  So the retype declares the
+  -- state-level write, and the assertion after this one is the positive form.
+  -- Keeping it here would have pinned the under-declaration in place: a retype
+  -- and a concurrent `serviceRegister` had provably disjoint footprints while
+  -- read-modify-writing one map.
+  assertBool "the capless content-moving footprints do NOT declare the coarse table lock"
     (decide ((SeLe4n.Kernel.Concurrency.stateLevelLock, SeLe4n.Kernel.Concurrency.AccessMode.write)
         ∉ sendSet.pairs) &&
      decide ((SeLe4n.Kernel.Concurrency.stateLevelLock, SeLe4n.Kernel.Concurrency.AccessMode.write)
         ∉ (SeLe4n.Kernel.Concurrency.lockSet_notificationWait highCurrent probeCNode
-             highNotification).pairs) &&
-     decide ((SeLe4n.Kernel.Concurrency.stateLevelLock, SeLe4n.Kernel.Concurrency.AccessMode.write)
-        ∉ (SeLe4n.Kernel.Concurrency.lockSet_lifecycleRetype highCurrent probeCNode declassTargetA
-             declassTargetB).pairs))
+             highNotification).pairs))
+  -- WS-RR RR7.23: the retype declares it, for `serviceRegistry` and the CDT.
+  assertBool "the retype DOES declare the coarse table lock, for the registry and the CDT"
+    (decide ((SeLe4n.Kernel.Concurrency.stateLevelLock, SeLe4n.Kernel.Concurrency.AccessMode.write)
+      ∈ (SeLe4n.Kernel.Concurrency.lockSet_lifecycleRetype highCurrent probeCNode declassTargetA
+           declassTargetB).pairs))
+  -- WS-RR RR7.7: and the caps-carrying send does declare it, for the CDT maps.
+  assertBool "a caps-carrying send DOES declare the coarse table lock, for the CDT maps"
+    (decide ((SeLe4n.Kernel.Concurrency.stateLevelLock, SeLe4n.Kernel.Concurrency.AccessMode.write)
+      ∈ (SeLe4n.Kernel.Concurrency.lockSet_endpointSend highCurrent probeCNode
+           highEndpoint (some lowCurrent) (some recvRoot)).pairs))
   -- ...and the two syscalls that append to the *trail* — a `List`, which does
   -- not decompose by key — still do.  That is what covers their origination
   -- keys, including the actor's TCB, which their footprints hold only in read
@@ -11743,6 +12037,7 @@ declassification, causal provenance and the acceptance scenarios"
   runFineLockEntryChecks
   runFineLockSuccessPathChecks
   runDeclaredFootprintChecks
+  runIpcDeclaredFootprintChecks
   runFineLockClaimInventoryChecks
   runFineLockTraceFixtureCheck
   runPhaseSurfaceChecks

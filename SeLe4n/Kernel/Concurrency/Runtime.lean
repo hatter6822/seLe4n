@@ -171,6 +171,132 @@ def perCoreSgiCount (core : CoreId) : BaseIO UInt64 :=
 def perCoreSyscallCount (core : CoreId) : BaseIO UInt64 :=
   Platform.FFI.ffiPerCoreSyscallCount (UInt64.ofNat core.val)
 
+-- ============================================================================
+-- WS-RR RR7.33 — the snapshot the four accessors feed, and what it must say
+-- ============================================================================
+
+/-- **WS-RR RR7.33**: one core's counters, read together.
+
+Register finding 98 was that the four accessors above are "declared, wrapped and
+proven but read by nothing".  They are read by `perCoreStats` now, and the point
+of reading them *together* is that the interesting facts are relations between
+them: a tick and an SGI are both IRQs, and separately counted, so a snapshot of
+one counter says nothing a snapshot of all four does not say better.
+
+`syscalls` is not an interrupt count and is included because the same Rust
+`PerCpuStats` slot carries it — a post-mortem that has the IRQ picture and not
+the syscall picture is missing the half that says whether the core was running
+user code at all. -/
+structure PerCoreStatsSnapshot where
+  /-- Total IRQs this core's handler dispatched — timer PPI, SGIs, and routed SPIs. -/
+  irqs : UInt64
+  /-- Timer PPI (INTID 30) only; a subset of `irqs`. -/
+  timerTicks : UInt64
+  /-- SGIs (INTID 0..15) only; a subset of `irqs`, disjoint from the timer PPI. -/
+  sgis : UInt64
+  /-- Synchronous `SVC` dispatches — not an interrupt, counted separately. -/
+  syscalls : UInt64
+  deriving Repr, DecidableEq, Inhabited
+
+/-- **WS-RR RR7.33**: read one core's whole counter slot.
+
+The consumer the four accessors did not have.  Four independent loads, so the
+snapshot is *not* atomic as a whole — a counter may move between any two of
+them.  That is the right trade for counters the Rust module states are "not
+required for correctness": a seq-cst snapshot would put barriers on the IRQ hot
+path to buy an exactness no consumer needs.
+
+**The order of the loads is the relation, not a convenience** (PR #892 review
+round 2).  The handler increments the **total** first and the subtype it then
+dispatches second (`trap::handle_irq_per_core`, then the timer or SGI path), so
+a snapshot must read the subtypes **first** and the total **last**: every
+subtype increment it observes was preceded by a total increment, which the
+later total read then includes.  Reading the total first — as this did until
+that round — made `timerTicks + sgis > irqs` reachable on a perfectly coherent
+slot, whenever a tick or an SGI landed between the total's load and its
+subtype's, and the planned hardware plausibility check would have rejected a
+healthy core.  Across cores the Rust side pairs the subtype increments'
+`Release` with the subtype loads' `Acquire` (`per_cpu_stats.rs`), so the same
+order holds for a slot read from another PE.  `syscalls` is read last and is
+constrained by nothing. -/
+def perCoreStats (core : CoreId) : BaseIO PerCoreStatsSnapshot := do
+  let timerTicks ← perCoreTimerTickCount core
+  let sgis ← perCoreSgiCount core
+  let irqs ← perCoreIrqCount core
+  let syscalls ← perCoreSyscallCount core
+  pure { irqs, timerTicks, sgis, syscalls }
+
+/-- **WS-RR RR7.33**: the sanity invariant `per_cpu_stats.rs` names and nothing
+stated — "every core that ran for ≥ 1 tick saw ≥ 1 IRQ", generalised to the
+containment the counters are defined by.
+
+`timer_tick_count` counts INTID 30 and `sgi_count` counts INTIDs 0..15; both are
+`irq_count` increments and the two INTID ranges are disjoint, so their sum is
+bounded by the total.  Nothing constrains `syscalls`: an `SVC` is a synchronous
+exception, not an interrupt.
+
+**Read in a single direction.**  `false` means the snapshot cannot have come from
+a coherent counter slot — a wiring defect in the FFI bridge, a core id resolving
+to the wrong slot, or a counter that stopped being incremented where it is
+documented to be.  That reading is exact only because of the load order
+`perCoreStats` fixes (subtypes first, total last) together with the
+release/acquire pairing on the Rust side: under them the containment holds of
+**every** snapshot, torn or not, so a `false` is never a burst of interrupts
+caught mid-count (PR #892 review round 2).  `true` means only that nothing is
+provably wrong: the four loads are still independent, so a snapshot torn across
+a burst is plausible and still not a consistent instant. -/
+def perCoreStatsPlausible (s : PerCoreStatsSnapshot) : Bool :=
+  s.timerTicks.toNat + s.sgis.toNat ≤ s.irqs.toNat
+
+/-- The docstring's own sentence, as a decidable consequence: a core that
+recorded a timer tick recorded at least one IRQ. -/
+theorem perCoreStatsPlausible_tick_implies_irq (s : PerCoreStatsSnapshot)
+    (hPlausible : perCoreStatsPlausible s = true) (hTick : 0 < s.timerTicks.toNat) :
+    0 < s.irqs.toNat := by
+  unfold perCoreStatsPlausible at hPlausible
+  have h := of_decide_eq_true hPlausible
+  omega
+
+/-- …and the same for an SGI, which is the cross-core half of the sentence. -/
+theorem perCoreStatsPlausible_sgi_implies_irq (s : PerCoreStatsSnapshot)
+    (hPlausible : perCoreStatsPlausible s = true) (hSgi : 0 < s.sgis.toNat) :
+    0 < s.irqs.toNat := by
+  unfold perCoreStatsPlausible at hPlausible
+  have h := of_decide_eq_true hPlausible
+  omega
+
+/-- A core that has taken no interrupt at all is plausible — the boot state of
+every secondary before its first tick, so the check must not fire there. -/
+theorem perCoreStatsPlausible_zero :
+    perCoreStatsPlausible { irqs := 0, timerTicks := 0, sgis := 0, syscalls := 0 } = true := by
+  decide
+
+/-- The load-bearing negative: a tick count that exceeds the IRQ total is
+refused.  This is the shape a mis-wired accessor produces — two counters read
+from different cores' slots — and the reason the predicate is worth stating
+rather than assuming. -/
+theorem perCoreStatsPlausible_refuses_ticks_over_irqs :
+    perCoreStatsPlausible { irqs := 1, timerTicks := 2, sgis := 0, syscalls := 0 } = false := by
+  decide
+
+/-- **WS-RR RR7.33 / PR #892 review round 2**: `perCoreStats` reads every
+accessor, **subtypes first and the total last**.
+
+The structural pin behind both findings: a refactor that drops one of the four
+loads — the failure that would silently return a `default` field — fails here,
+and so does one that reads the total before its subtypes, which is the order
+that made `perCoreStatsPlausible` refuse a healthy core mid-interrupt.  The
+order is the relation, so it is stated as the definition's own equation rather
+than in a comment. -/
+theorem perCoreStats_reads_subtypes_then_total (core : CoreId) :
+    perCoreStats core = (do
+      let timerTicks ← perCoreTimerTickCount core
+      let sgis ← perCoreSgiCount core
+      let irqs ← perCoreIrqCount core
+      let syscalls ← perCoreSyscallCount core
+      pure { irqs, timerTicks, sgis, syscalls }) := by
+  rfl
+
 /-- **WS-SM SM1.I.4** structural marker: per-core stats accessors
 return `BaseIO UInt64`.
 
@@ -305,6 +431,165 @@ theorem perCoreCurrentThreadHw_returns_baseio_uint64_marker (c : CoreId) :
     (perCoreCurrentThreadHw c : BaseIO UInt64) =
       Platform.FFI.ffiPerCoreCurrentThread (UInt64.ofNat c.val) := by
   rfl
+
+
+-- ============================================================================
+-- WS-RR RR7.26 — recording the verified per-core thread choice on the HAL
+--
+-- Register §6 finding 45: `switchToThreadHw` had zero production callers while
+-- both sides documented it as the seam the per-core scheduler's thread choice
+-- reaches the hardware through.  The three state-committing per-core entries
+-- now record their post-state's current thread through it, so the HAL's
+-- per-core mirror follows the verified scheduler rather than lagging it.
+--
+-- One verb, not two call shapes: a transition that *vacates* a core has to
+-- clear the mirror, and `switchToThreadHw` deliberately cannot write the
+-- HAL's `NO_CURRENT_THREAD` sentinel (a `ThreadId` at that value is rejected
+-- by `switchToThreadHwTidBound`, so no thread can be recorded as "none").
+-- `recordCurrentThreadHw` takes the post-state's `Option ThreadId` and routes
+-- each case to the verb that can express it.
+-- ============================================================================
+
+/-- **WS-RR RR7.26**: the HAL's "no thread recorded for this core" sentinel,
+`ffi::NO_CURRENT_THREAD` = `u64::MAX`.
+
+Equal to `switchToThreadHwTidBound` by construction, which is exactly why
+`switchToThreadHw` refuses a `ThreadId` at or above it: the two meanings must
+not alias, so the sentinel is writable only through `clearCurrentThreadHw`. -/
+def noCurrentThreadHw : UInt64 := UInt64.ofNat switchToThreadHwTidBound
+
+/-- **WS-RR RR7.26**: clear core `c`'s HAL current-thread mirror.
+
+Writes the `NO_CURRENT_THREAD` sentinel through the same FFI verb
+`switchToThreadHw` uses, which is the only way to express it: the typed
+`ThreadId` path refuses that value precisely so a real thread can never be
+recorded as "none".  Returns the HAL's `0 = recorded` status. -/
+def clearCurrentThreadHw (c : CoreId) : BaseIO UInt64 :=
+  Platform.FFI.ffiSwitchToThread noCurrentThreadHw (UInt64.ofNat c.val)
+
+/-- **WS-RR RR7.26**: record what the verified per-core scheduler left running
+on core `c`.
+
+`some tid` records the thread; `none` — a transition that vacated the core —
+clears the mirror rather than leaving it naming a thread that is no longer
+current.  Leaving a stale name is not a harmless omission: `ffi_switch_to_thread`
+is what a dispatch path reads to decide whose context to restore, so a mirror
+that outlives its thread is a restore into a descheduled frame. -/
+def recordCurrentThreadHw (cur? : Option SeLe4n.ThreadId) (c : CoreId) :
+    BaseIO UInt64 :=
+  match cur? with
+  | some tid => switchToThreadHw tid c
+  | none     => clearCurrentThreadHw c
+
+/-- **WS-RR RR7.26**: the running case is the typed switch. -/
+theorem recordCurrentThreadHw_some (tid : SeLe4n.ThreadId) (c : CoreId) :
+    recordCurrentThreadHw (some tid) c = switchToThreadHw tid c := rfl
+
+/-- **WS-RR RR7.26**: the vacated case clears the mirror — it is **not** a
+no-op, which is the property the wiring depends on. -/
+theorem recordCurrentThreadHw_none (c : CoreId) :
+    recordCurrentThreadHw none c = clearCurrentThreadHw c := rfl
+
+/-- **WS-RR RR7.26**: the sentinel a cleared mirror carries is exactly the value
+`switchToThreadHw` refuses, so "no current thread" and "thread `u64::MAX`" can
+never be confused at the seam. -/
+theorem noCurrentThreadHw_not_writable_as_thread (tid : SeLe4n.ThreadId)
+    (h : UInt64.ofNat tid.toNat = noCurrentThreadHw)
+    (hFits : tid.toNat < UInt64.size) :
+    ¬ tid.toNat < switchToThreadHwTidBound := by
+  unfold noCurrentThreadHw switchToThreadHwTidBound at *
+  have : tid.toNat = UInt64.size - 1 := by
+    have := congrArg UInt64.toNat h
+    simpa [UInt64.toNat_ofNat, Nat.mod_eq_of_lt hFits,
+      Nat.mod_eq_of_lt (by omega : UInt64.size - 1 < UInt64.size)] using this
+  omega
+
+/-- **WS-RR RR7.26**: decode the raw core id a per-core kernel entry is invoked
+with into a typed `CoreId`, or `none` when it names no core the model has.
+
+The same guard the verified steps make (`perCoreRescheduleStep`,
+`perCoreTimerTickStep`), lifted so the entry's *effects* can be gated by it too:
+an entry called with an out-of-range id commits nothing, and must therefore
+record nothing on the HAL either. -/
+def coreIdOfUInt64? (coreId : UInt64) : Option CoreId :=
+  if h : coreId.toNat < numCores then some ⟨coreId.toNat, h⟩ else none
+
+/-- **WS-RR RR7.26**: `coreIdOfUInt64?` accepts exactly the ids the model has a
+core for, and the core it yields is the one the verified step used. -/
+@[simp] theorem coreIdOfUInt64?_eq_some (coreId : UInt64) (h : coreId.toNat < numCores) :
+    coreIdOfUInt64? coreId = some ⟨coreId.toNat, h⟩ := by
+  unfold coreIdOfUInt64?; rw [dif_pos h]
+
+/-- **WS-RR RR7.26**: and refuses the rest. -/
+@[simp] theorem coreIdOfUInt64?_eq_none (coreId : UInt64) (h : ¬ coreId.toNat < numCores) :
+    coreIdOfUInt64? coreId = none := by
+  unfold coreIdOfUInt64?; rw [dif_neg h]
+
+/-- **WS-RR RR7.26**: the shared tail of the three state-committing per-core
+entries — record on the HAL what the committed post-state left running.
+
+Takes the pair the entry's atomic step returns: the core the raw id decoded to
+and the thread that core's `current` slot holds afterwards.  `none` — a raw id
+the model has no core for — records nothing, matching the step, which commits
+nothing for such an id.
+
+**A refused record clears the mirror rather than leaving it stale** (PR #892
+review).  `switchToThreadHw` returns `switchToThreadHwRejected` *without
+touching the HAL* for a `ThreadId` at or above `switchToThreadHwTidBound` — the
+`u64::MAX` sentinel included — because that value is reserved for "no current
+thread".  Discarding that verdict, as this tail did, left the mirror naming the
+**previous** thread while the model had already committed a new one, which is
+exactly the "restore into a descheduled frame" hazard `recordCurrentThreadHw`'s
+own docstring warns about: `ffi_switch_to_thread`'s mirror is what a dispatch
+path reads to decide whose context to restore.  Clearing is the fail-closed
+answer available today — a cleared mirror means "no current thread", which a
+restore path must treat as nothing to restore, rather than as somebody else.
+
+The branch is **unreachable** on a well-formed state: `objectIndexBounded`
+bounds every object id by `maxObjects` (65536), so no installed thread has an
+id anywhere near `2 ^ 64 - 1`.  It is defence in depth against a corrupted
+committed state, and defence in depth that throws its verdict away is not
+defence at all.  Halting the core instead — the other fail-closed answer — is an
+SM10.1 decision, because that is where the mirror is *read*; it is registered
+rather than pre-empted here. -/
+def recordCommittedCurrentThreadHw
+    (r : Option (CoreId × Option SeLe4n.ThreadId)) : BaseIO Unit :=
+  match r with
+  | none => pure ()
+  | some (c, cur?) => do
+      let status ← recordCurrentThreadHw cur? c
+      if status == switchToThreadHwRejected then
+        let _ ← clearCurrentThreadHw c
+        pure ()
+      else
+        pure ()
+
+/-- **PR #892 review**: recording `none` never takes the fail-closed clear —
+`clearCurrentThreadHw` is the record in that case, so the guard cannot loop or
+double-write. -/
+theorem recordCommittedCurrentThreadHw_none_is_clear (c : CoreId) :
+    recordCommittedCurrentThreadHw (some (c, none)) =
+      (do
+        let status ← clearCurrentThreadHw c
+        if status == switchToThreadHwRejected then
+          let _ ← clearCurrentThreadHw c
+          pure ()
+        else
+          pure ()) := rfl
+
+/-- **PR #892 review**: an encodable thread takes the pass-through unchanged —
+the fail-closed clear is reached only on the refusal `switchToThreadHw` returns
+without touching the HAL. -/
+theorem recordCommittedCurrentThreadHw_some_is_switch
+    (c : CoreId) (tid : SeLe4n.ThreadId) :
+    recordCommittedCurrentThreadHw (some (c, some tid)) =
+      (do
+        let status ← switchToThreadHw tid c
+        if status == switchToThreadHwRejected then
+          let _ ← clearCurrentThreadHw c
+          pure ()
+        else
+          pure ()) := rfl
 
 -- ============================================================================
 -- WS-SM SM5.C.4 — Cross-core wake SGI-emission typed wrappers

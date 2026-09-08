@@ -45,8 +45,8 @@ runtime-observable surface:
 AK8-C (caller-rights obligation block at `resolveCapAddress`),
 AK8-J (`RHTable.BEq` lawful-instance documentation), and the AK8-K LOW
 batch are pure-documentation closures that do not have a runtime-observable
-surface; they are documented in the AK8 audit row of
-`docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` rather than
+surface; they closed with WS-AN (see the *Workstream registry* of
+`docs/REGISTERED_DEBT.md`, closed at `v0.30.11`) rather than being
 exercised here.
 -/
 

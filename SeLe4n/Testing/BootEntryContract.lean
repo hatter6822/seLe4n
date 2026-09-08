@@ -106,12 +106,12 @@ approved boot applied to a configuration:
 Every question the walk approximated is then either answered exactly or has no
 subject.  Does the boot execute?  The entry *is* the boot.  Does anything
 diverge before it?  Nothing precedes it.  Is the `Bind` instance lawful?  There
-is no bind.  Is a `let`-bound head normalized?  `isDefEq` zeta-reduces, and
-beta-reduces, and sees through `mdata`, aliases and notation, because that is
-what definitional equality is.  Does some reachable declaration install kernel
-state?  Nothing else runs — which makes this contract *stronger* than the walk
-it replaces, not weaker: that one permitted arbitrary extra actions provided
-none of them wrote kernel state.
+is no bind.  Is a `let`-bound head normalized?  Weak-head reduction
+zeta-reduces, and beta-reduces, and sees through `mdata`, aliases and
+notation, because that is what reduction to a head is.  Does some reachable
+declaration install kernel state?  Nothing else runs — which makes this
+contract *stronger* than the walk it replaces, not weaker: that one permitted
+arbitrary extra actions provided none of them wrote kernel state.
 
 The argument is where the strength comes from, and it is type-theoretic rather
 than analysed: `PlatformConfig` is **data**.  A term of that type performs no
@@ -126,12 +126,34 @@ rounds of evidence that it cannot be analysed.  If SM10.1 needs one, the
 kernel supplies it as a definition — `bootAndInitialiseRPi5FromDtb`, wrapping
 the read and the boot — and `approvedBootCall` moves to that wrapper, which is
 a one-line change here and a reviewed one there.  Refusing what cannot be
-decided is the posture; silently admitting it is what the walk did. -/
+decided is the posture; silently admitting it is what the walk did.
+
+**The reduction is directed, not symmetric** (PR #892 review round 2).  Round
+21 decided the shape with one `Meta.isDefEq` against the pattern, and
+definitional equality unfolds *both* sides: on a deviating entry the unifier
+opened `bootAndInitialiseRPi5OrHalt` itself and kept unfolding through the
+checked boot in search of a match — a search whose depth is that of the boot's
+own definition, and which the elaborator refused (`maxRecDepth`) the moment
+`bindPlatformConfig` reached the RPi5 binding's RAM-variant selection.  It was
+also the wrong question: an entry that *inlined* the approved call's body
+verbatim would have been definitionally equal to it, and accepted, when the
+whole point of naming the wrapper is that the halt lives in one definition and
+an inlined copy drifts.  So the body is reduced **towards the approved call**
+(`Meta.whnfUntil`: beta, zeta, `mdata`, and delta through aliases, until the
+head constant is `approvedBootCall` or reduction is stuck), and only then held
+to exactly one argument at reducible transparency, where nothing further can
+unfold.  The approved call is never opened.  What this accepts is exactly the
+canonical spelling and its reductions; what it refuses is everything else,
+including a re-spelling of the wrapper's body, and it decides in constant time
+on every witness rather than by exhausting a budget. -/
 def isApprovedBootApplication (value : Expr) : MetaM Bool :=
   Meta.lambdaTelescope value fun _ body => do
-    let configType := mkConst ``SeLe4n.Platform.Boot.PlatformConfig
-    let config ← Meta.mkFreshExprMVar configType
-    Meta.isDefEq body (mkApp (mkConst approvedBootCall) config)
+    match ← Meta.whnfUntil body approvedBootCall with
+    | none => pure false
+    | some reduced =>
+        let configType := mkConst ``SeLe4n.Platform.Boot.PlatformConfig
+        let config ← Meta.mkFreshExprMVar configType
+        Meta.withReducible <| Meta.isDefEq reduced (mkApp (mkConst approvedBootCall) config)
 
 
 /-- The type the exported entry must have.
@@ -199,7 +221,7 @@ are refused for one reason instead of six — which is what it means for a class
 to be closed rather than enumerated.  Two accepted witnesses keep the contract
 from being merely restrictive: an entry that binds its configuration with a
 `let`, and one that reaches the same program through an alias — both are that
-application after reduction, and `isDefEq` says so. -/
+application after reduction, and the head-directed reduction says so. -/
 
 /-- The configuration SM10.1 derives from the DTB pointer.  A placeholder: the
 witnesses need *a* pure `UInt64 → PlatformConfig`, and the real derivation
@@ -227,7 +249,7 @@ private def bootEntryWitnessSequenced (dtbPointer : UInt64) : BaseIO Unit := do
   Platform.FFI.bootAndInitialiseRPi5OrHalt (bootEntryWitnessConfig dtbPointer)
 
 /-- The configuration bound by a `let` — round 21's finding, in the position it
-was reported at.  **Accepted**: `isDefEq` zeta-reduces, so this *is* the
+was reported at.  **Accepted**: the reduction zeta-reduces, so this *is* the
 approved application, and no `letE` arm has to be written to see it. -/
 private def bootEntryWitnessLetBoundConfig (dtbPointer : UInt64) : BaseIO Unit :=
   let config := bootEntryWitnessConfig dtbPointer

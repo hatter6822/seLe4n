@@ -17,17 +17,37 @@
 //! a busy core would trigger cache-line ping-pong with every other
 //! core that happens to be reading any of its own stats.
 //!
-//! Each counter is an [`core::sync::atomic::AtomicU64`] with `Relaxed`
-//! ordering.  `Relaxed` is correct because:
+//! Each counter is an [`core::sync::atomic::AtomicU64`].  The totals use
+//! `Relaxed` ordering; the two **subtype** counters (`timer_tick_count`,
+//! `sgi_count`) are incremented with `Release` and read with `Acquire`.
+//! `Relaxed` is correct for the totals because:
 //!
 //! 1. The counters are not used as synchronisation primitives — no
 //!    correctness property depends on the value being observed by
 //!    another core in any particular order.
-//! 2. `fetch_add(1, Relaxed)` on ARMv8-A compiles to `ldaddal` (or
-//!    `ldxr/stxr` on pre-FEAT_LSE cores), both of which are
-//!    wait-free at the hardware level.
-//! 3. Loose ordering avoids inserting unnecessary `dmb` barriers that
-//!    would slow the IRQ hot path for no observable benefit.
+//! 2. `fetch_add(1, Relaxed)` on ARMv8-A compiles to `ldadd` (or an
+//!    `ldxr/stxr` loop on pre-FEAT_LSE cores), wait-free at the hardware
+//!    level; the `Release` form is `ldaddl`, a release-RMW rather than a
+//!    barrier.  (This paragraph named `ldaddal` for the `Relaxed` form
+//!    until PR #892 review round 2; that is the acquire-release form.)
+//! 3. Neither ordering inserts a `dmb` on the IRQ hot path.
+//!
+//! **Why the subtypes pair `Release` with `Acquire`** (PR #892 review round
+//! 2).  The per-core handler increments the total *before* the subtype it
+//! then dispatches (`trap::handle_irq_per_core` records the dispatch, then
+//! the timer or SGI path records its own), and the only cross-counter fact
+//! anything reads is the containment `timer_tick_count + sgi_count <=
+//! irq_count` (`Concurrency.perCoreStatsPlausible` on the Lean side).  A
+//! reader that takes the subtypes first and the total last sees that
+//! relation hold on its own core by program order; from *another* core two
+//! `Relaxed` stores to different words may become visible in either order,
+//! so the subtype increment carries release semantics and the subtype load
+//! acquire semantics: whoever observes a subtype increment then observes the
+//! total increment that preceded it, and the total read afterwards is at
+//! least the sum of the subtypes read before.  Reading the total *first* —
+//! which the Lean snapshot did until this round — made the relation false
+//! on a perfectly coherent slot whenever an interrupt landed between the
+//! two loads.
 //!
 //! ## Counters
 //!
@@ -245,7 +265,7 @@ pub fn record_irq_dispatch() -> u64 {
 pub fn record_timer_tick() -> u64 {
     current_per_cpu_stats()
         .timer_tick_count
-        .fetch_add(1, Ordering::Relaxed)
+        .fetch_add(1, Ordering::Release)
         .wrapping_add(1)
 }
 
@@ -257,7 +277,7 @@ pub fn record_timer_tick() -> u64 {
 pub fn record_sgi_dispatch() -> u64 {
     current_per_cpu_stats()
         .sgi_count
-        .fetch_add(1, Ordering::Relaxed)
+        .fetch_add(1, Ordering::Release)
         .wrapping_add(1)
 }
 
@@ -326,7 +346,7 @@ pub fn timer_tick_count_for(core_id: usize) -> u64 {
     }
     PER_CPU_STATS[core_id]
         .timer_tick_count
-        .load(Ordering::Relaxed)
+        .load(Ordering::Acquire)
 }
 
 /// **WS-SM SM1.I.4**: read a specific core's SGI count.
@@ -335,7 +355,7 @@ pub fn sgi_count_for(core_id: usize) -> u64 {
     if core_id >= PER_CPU_STATS.len() {
         return 0;
     }
-    PER_CPU_STATS[core_id].sgi_count.load(Ordering::Relaxed)
+    PER_CPU_STATS[core_id].sgi_count.load(Ordering::Acquire)
 }
 
 /// **WS-SM SM1.I.4**: read a specific core's syscall count.
@@ -426,7 +446,7 @@ pub fn record_timer_tick_in_slice(slots: &[PerCpuStats], core_id: usize) -> u64 
     );
     slots[core_id]
         .timer_tick_count
-        .fetch_add(1, Ordering::Relaxed)
+        .fetch_add(1, Ordering::Release)
         .wrapping_add(1)
 }
 
@@ -441,7 +461,7 @@ pub fn record_sgi_dispatch_in_slice(slots: &[PerCpuStats], core_id: usize) -> u6
     );
     slots[core_id]
         .sgi_count
-        .fetch_add(1, Ordering::Relaxed)
+        .fetch_add(1, Ordering::Release)
         .wrapping_add(1)
 }
 

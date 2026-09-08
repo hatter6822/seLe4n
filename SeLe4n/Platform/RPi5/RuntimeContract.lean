@@ -35,7 +35,8 @@ are well-typed and decidable, enabling non-vacuous `AdapterProofHooks`
 for both `preserveWriteRegister` and `preserveContextSwitch` on the
 production contract. Full hardware validation against actual RPi5 behavior
 is part of AN9 (hardware binding) per
-docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12.
+WS-AN's closure
+(`docs/REGISTERED_DEBT.md`, workstream registry).
 -/
 
 namespace SeLe4n.Platform.RPi5
@@ -142,19 +143,39 @@ instance registerContextStablePred_decidable (st st' : SystemState) :
     Decidable (registerContextStablePred st st') :=
   inferInstanceAs (Decidable (_ = true))
 
+/-- **PR #892 review round 9**: may this state's memory be read at `addr`?
+
+The *installed* map decides, not the canonical one.
+`PlatformBinding.bindMachineConfig` (round 2) installs the variant the board
+covers, so `st.machine.memoryMap` is 1 GiB on a 1 GiB Raspberry Pi 5 — while
+both contracts below read `rpi5MachineConfig.memoryMap`, fixed at 4 GiB, and so
+authorised reads above the RAM the board has and above what the boot tables map.
+The binding and the contract were answering "what memory does this machine have"
+from two places and only one of them moved.
+
+**One definition, two contracts.**  The predicate was written out twice, which
+is how it came to be corrected in neither: the production contract and the
+restrictive one are supposed to differ in `registerContextStable` alone, and
+stating their shared field once makes that structural rather than a convention
+to remember. -/
+def rpi5MemoryAccessAllowed (st : SystemState) (addr : SeLe4n.PAddr) : Prop :=
+  (st.machine.memoryMap.any fun region =>
+    region.kind == .ram && region.contains addr) = true
+
+instance rpi5MemoryAccessAllowed_decidable (st : SystemState) (addr : SeLe4n.PAddr) :
+    Decidable (rpi5MemoryAccessAllowed st addr) :=
+  inferInstanceAs (Decidable (_ = true))
+
 def rpi5RuntimeContract : RuntimeBoundaryContract :=
   {
     timerMonotonic := fun st st' => st.machine.timer ≤ st'.machine.timer
     registerContextStable := registerContextStablePred
-    memoryAccessAllowed := fun _ addr =>
-      rpi5MachineConfig.memoryMap.any fun region =>
-        region.kind == .ram && region.contains addr
+    memoryAccessAllowed := rpi5MemoryAccessAllowed
     timerMonotonicDecidable := by intro st st'; infer_instance
     registerContextStableDecidable := by intro st st'; exact registerContextStablePred_decidable st st'
     memoryAccessAllowedDecidable := by
-      intro _ addr
-      simp only [rpi5MachineConfig, rpi5MemoryMap]
-      infer_instance
+      intro st addr
+      exact rpi5MemoryAccessAllowed_decidable st addr
   }
 
 /-- WS-H15d/A-33, X1-F: Restrictive RPi5 runtime contract for `AdapterProofHooks`
@@ -180,15 +201,12 @@ def rpi5RuntimeContractRestrictive : RuntimeBoundaryContract :=
   {
     timerMonotonic := fun st st' => st.machine.timer ≤ st'.machine.timer
     registerContextStable := fun _ _ => False
-    memoryAccessAllowed := fun _ addr =>
-      rpi5MachineConfig.memoryMap.any fun region =>
-        region.kind == .ram && region.contains addr
+    memoryAccessAllowed := rpi5MemoryAccessAllowed
     timerMonotonicDecidable := by intro st st'; infer_instance
     registerContextStableDecidable := by intro st st'; infer_instance
     memoryAccessAllowedDecidable := by
-      intro _ addr
-      simp only [rpi5MachineConfig, rpi5MemoryMap]
-      infer_instance
+      intro st addr
+      exact rpi5MemoryAccessAllowed_decidable st addr
   }
 
 -- ============================================================================

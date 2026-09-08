@@ -268,28 +268,13 @@ theorem restoreIncomingContext_machine_timer (st : SystemState) (tid : SeLe4n.Th
     (restoreIncomingContext st tid).machine.timer = st.machine.timer := by
   unfold restoreIncomingContext; split <;> rfl
 
-/-- WS-SM SM5.I: `endpointQueueRemove` leaves the machine unchanged (it writes only
-the object store — queue links + `ipcState`).  Mirrors
-`endpointQueueRemove_scheduler_eq`. -/
-theorem endpointQueueRemove_machine
-    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
-    (tid : SeLe4n.ThreadId) (st st' : SystemState)
-    (hStep : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') :
-    st'.machine = st.machine := by
-  unfold endpointQueueRemove at hStep
-  cases hObj : st.objects[endpointId]? with
-  | none => simp [hObj] at hStep
-  | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
-      simp [hObj] at hStep
-    | endpoint ep =>
-      simp only [hObj] at hStep
-      cases hTcb : lookupTcb st tid with
-      | none => simp [hTcb] at hStep
-      | some tcb =>
-        simp only [hTcb] at hStep
-        simp only [Except.ok.injEq] at hStep
-        rw [← hStep]
+-- WS-OD OD1.4: `endpointQueueRemove_machine` moved to
+-- `SeLe4n/Kernel/IPC/DualQueue/Core.lean` and `abortPendingIpcOnEndpoint_machine`
+-- to `SeLe4n/Kernel/IPC/Operations/Timeout.lean`, each beside the operation it
+-- is about and beside that operation's `_scheduler_eq` / `_serviceRegistry_eq`
+-- siblings.  The cancellation reclaim needs the abort's machine frame and does
+-- not import this scheduler module; one home per question is the fix, not a
+-- second proof.
 
 /-- WS-SM SM5.I: `timeoutThread` leaves the machine unchanged — every step
 (`endpointQueueRemove`, `storeObject`, `ensureRunnable`, optional
@@ -300,25 +285,24 @@ theorem timeoutThread_machine (epId : SeLe4n.ObjId) (isReceiveQ : Bool)
     (r : SystemState × Option (CoreId × SgiKind))
     (h : timeoutThread epId isReceiveQ tid execCore st = .ok r) :
     r.1.machine = st.machine := by
+  -- WS-OD OD1.2: the removal and the TCB store are the abort's; compose its
+  -- own machine frame rather than re-deriving the case analysis.
   unfold timeoutThread at h
   split at h
   · simp at h
-  · rename_i st1 hER
-    have hMach1 : st1.machine = st.machine :=
-      endpointQueueRemove_machine epId isReceiveQ tid st st1 hER
-    split at h
-    · simp at h
-    · rename_i tcb hLk
-      simp only [storeObject] at h
-      split at h <;>
-        · simp only [Except.ok.injEq] at h
-          subst h
-          first
-            | rw [PriorityInheritance.revert_preserves_machine]
-            | skip
-          rw [wakeThread_state_eq_enqueue, enqueueRunnableOnCore_machine_eq]
-          show st1.machine = st.machine
-          rw [hMach1]
+  · rename_i st2 hAbort
+    have hMach2 : st2.machine = st.machine :=
+      abortPendingIpcOnEndpoint_machine epId isReceiveQ tid st st2 hAbort
+    simp only [] at h
+    split at h <;>
+      · simp only [Except.ok.injEq] at h
+        subst h
+        first
+          | rw [PriorityInheritance.revert_preserves_machine]
+          | skip
+        rw [wakeThread_state_eq_enqueue, enqueueRunnableOnCore_machine_eq]
+        show st2.machine = st.machine
+        rw [hMach2]
 
 /-- WS-SM SM5.I: timing out **all** of a SchedContext's IPC-blocked threads leaves the
 machine unchanged (each step is a `timeoutThread`).  Mirrors
@@ -817,6 +801,33 @@ theorem switchDomainOnCore_machine (st : SystemState) (c : CoreId)
     · simp at h
     · simp only [Except.ok.injEq] at h; subst h
       exact saveOutgoingContextOnCore_machine st c
+
+/-- **WS-RR RR7.39 (frame)**: the domain tick never touches any core's replenish
+queue.
+
+Three arms, none of which reaches a replenishment: single-domain mode is the
+identity, the boundary composes the queue-framing `switchDomainOnCore` with the
+queue-framing `scheduleEffectiveOnCore`, and the non-boundary arm writes one
+domain-time slot.
+
+Consumed by `perCoreTimerTickStep_replenishQueueOnCore_ne` (RR7.39), which is the
+last link in "the tick writes only its own core's replenish queue" — the fact the
+tick's declared footprint asserts when it names `replenishQueue ⟨c⟩` alone. -/
+theorem scheduleDomainOnCore_replenishQueueOnCore (st : SystemState) (c : CoreId)
+    (st' : SystemState) (c' : CoreId) (hStep : scheduleDomainOnCore st c = .ok st') :
+    st'.scheduler.replenishQueueOnCore c' = st.scheduler.replenishQueueOnCore c' := by
+  unfold scheduleDomainOnCore at hStep
+  split at hStep
+  · simp only [Except.ok.injEq] at hStep; subst hStep; rfl
+  · split at hStep
+    · split at hStep
+      · simp at hStep
+      · rename_i stMid hsw
+        rw [scheduleEffectiveOnCore_replenishQueueOnCore stMid c st' c' hStep,
+          switchDomainOnCore_replenishQueueOnCore st c stMid c' hsw]
+    · simp only [Except.ok.injEq] at hStep; subst hStep
+      simp [decrementDomainTimeOnCore,
+        SchedulerState.setDomainTimeRemainingOnCore_replenishQueueOnCore]
 
 /-- WS-SM (PR #880 round 4): the domain tick preserves pipeline order on every
 core — the inert arm is the identity, the decrement writes one domain slot,

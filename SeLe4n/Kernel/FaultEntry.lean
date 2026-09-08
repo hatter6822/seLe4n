@@ -304,10 +304,15 @@ closure, while the delivery must be. -/
 def faultEntry (coreId : UInt64) (esr elr spsr far : UInt64)
     (x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) (sp lr : UInt64) : BaseIO Unit := do
   let lctx ← Platform.FFI.getKernelLabelingContext
-  let sgis ← Platform.FFI.modifyGetKernelState (fun st =>
-    faultEntryStep lctx st { esr := esr, elr := elr, spsr := spsr, far := far }
-      { gprs := #[x0, x1, x2, x3, x4, x5, x6, x7], sp := sp, lr := lr } coreId)
-  Concurrency.fireCrossCoreSgis sgis
+  let r ← Platform.FFI.modifyGetKernelState (fun st =>
+    let (sgis, st') :=
+      faultEntryStep lctx st { esr := esr, elr := elr, spsr := spsr, far := far }
+        { gprs := #[x0, x1, x2, x3, x4, x5, x6, x7], sp := sp, lr := lr } coreId
+    ((sgis,
+      (Concurrency.coreIdOfUInt64? coreId).map
+        (fun c => (c, st'.scheduler.currentOnCore c))), st'))
+  Concurrency.fireCrossCoreSgis r.1
+  Concurrency.recordCommittedCurrentThreadHw r.2
 
 /-- Review round (PR #887, **the export**): the C-callable unknown-syscall
 seam.  `trap.rs`'s `SVC` arm invokes it — inside `with_kernel_entry`, behind
@@ -320,30 +325,46 @@ syscall number rides in the window's `x7`. -/
 def unknownSyscallEntry (coreId : UInt64) (esr elr spsr far : UInt64)
     (x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) (sp lr : UInt64) : BaseIO Unit := do
   let lctx ← Platform.FFI.getKernelLabelingContext
-  let sgis ← Platform.FFI.modifyGetKernelState (fun st =>
-    unknownSyscallEntryStep lctx st { esr := esr, elr := elr, spsr := spsr, far := far }
-      { gprs := #[x0, x1, x2, x3, x4, x5, x6, x7], sp := sp, lr := lr } coreId)
-  Concurrency.fireCrossCoreSgis sgis
+  let r ← Platform.FFI.modifyGetKernelState (fun st =>
+    let (sgis, st') :=
+      unknownSyscallEntryStep lctx st { esr := esr, elr := elr, spsr := spsr, far := far }
+        { gprs := #[x0, x1, x2, x3, x4, x5, x6, x7], sp := sp, lr := lr } coreId
+    ((sgis,
+      (Concurrency.coreIdOfUInt64? coreId).map
+        (fun c => (c, st'.scheduler.currentOnCore c))), st'))
+  Concurrency.fireCrossCoreSgis r.1
+  Concurrency.recordCommittedCurrentThreadHw r.2
 
 /-- WS-RR RR4.23 structural marker: `faultEntry` unfolds to the atomic commit
 of the verified step followed by the SGI firing.
 
 Pins the entry's body shape so a refactor that drops the state commit, drops
 the SGI firing, drops the labeling-context read that makes the delivery
-flow-checked, or inserts a side effect the verified step does not describe
-breaks this marker at elaboration.  Combined with the `@[export]` attribute
-(which the Rust `lean_handle_fault` extern resolves against) and the `build.rs`
-trap-path scanner, the seam cannot regress silently — the discipline the timer
-and `.reschedule` entries already carry. -/
+flow-checked, drops the **WS-RR RR7.26** HAL current-thread record, or inserts
+a side effect the verified step does not describe breaks this marker at
+elaboration.  Combined with the `@[export]` attribute (which the Rust
+`lean_handle_fault` extern resolves against) and the `build.rs` trap-path
+scanner, the seam cannot regress silently — the discipline the timer and
+`.reschedule` entries already carry.
+
+The record matters here even though the trap layer halts after a delivered
+fault (pending SM10.1): the delivery *vacates* this core, so leaving the HAL
+mirror naming the faulted thread would be a stale name pointing at a
+descheduled frame — exactly what RR7.26's clear-on-vacate exists to prevent. -/
 theorem faultEntry_def (coreId : UInt64) (esr elr spsr far : UInt64)
     (x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) (sp lr : UInt64) :
     faultEntry coreId esr elr spsr far x0 x1 x2 x3 x4 x5 x6 x7 sp lr =
       (do
         let lctx ← Platform.FFI.getKernelLabelingContext
-        let sgis ← Platform.FFI.modifyGetKernelState (fun st =>
-          faultEntryStep lctx st { esr := esr, elr := elr, spsr := spsr, far := far }
-            { gprs := #[x0, x1, x2, x3, x4, x5, x6, x7], sp := sp, lr := lr } coreId)
-        Concurrency.fireCrossCoreSgis sgis) := rfl
+        let r ← Platform.FFI.modifyGetKernelState (fun st =>
+          let (sgis, st') :=
+            faultEntryStep lctx st { esr := esr, elr := elr, spsr := spsr, far := far }
+              { gprs := #[x0, x1, x2, x3, x4, x5, x6, x7], sp := sp, lr := lr } coreId
+          ((sgis,
+            (Concurrency.coreIdOfUInt64? coreId).map
+              (fun c => (c, st'.scheduler.currentOnCore c))), st'))
+        Concurrency.fireCrossCoreSgis r.1
+        Concurrency.recordCommittedCurrentThreadHw r.2) := rfl
 
 /-- The same marker for the unknown-syscall seam. -/
 theorem unknownSyscallEntry_def (coreId : UInt64) (esr elr spsr far : UInt64)
@@ -351,10 +372,15 @@ theorem unknownSyscallEntry_def (coreId : UInt64) (esr elr spsr far : UInt64)
     unknownSyscallEntry coreId esr elr spsr far x0 x1 x2 x3 x4 x5 x6 x7 sp lr =
       (do
         let lctx ← Platform.FFI.getKernelLabelingContext
-        let sgis ← Platform.FFI.modifyGetKernelState (fun st =>
-          unknownSyscallEntryStep lctx st { esr := esr, elr := elr, spsr := spsr, far := far }
-            { gprs := #[x0, x1, x2, x3, x4, x5, x6, x7], sp := sp, lr := lr } coreId)
-        Concurrency.fireCrossCoreSgis sgis) := rfl
+        let r ← Platform.FFI.modifyGetKernelState (fun st =>
+          let (sgis, st') :=
+            unknownSyscallEntryStep lctx st { esr := esr, elr := elr, spsr := spsr, far := far }
+              { gprs := #[x0, x1, x2, x3, x4, x5, x6, x7], sp := sp, lr := lr } coreId
+          ((sgis,
+            (Concurrency.coreIdOfUInt64? coreId).map
+              (fun c => (c, st'.scheduler.currentOnCore c))), st'))
+        Concurrency.fireCrossCoreSgis r.1
+        Concurrency.recordCommittedCurrentThreadHw r.2) := rfl
 
 /-- The shared delivery inherits the progress guarantee: whatever it commits,
 the thread that was current on `c` is not dispatchable there afterwards.

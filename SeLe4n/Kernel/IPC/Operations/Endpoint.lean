@@ -1017,6 +1017,151 @@ private theorem storeObject_scheduler_eq_z7 (st : SystemState) (oid : SeLe4n.Obj
     pair.2.scheduler = st.scheduler := by
   unfold storeObject at h; cases h; rfl
 
+/-- **WS-RR RR7.22 (residual, remediation)**: the donation return **is** three
+`storeObject`s followed by a `scThreadIndex` update.
+
+The one derivation every field frame for this operation is a corollary of.  Three
+copies of its case analysis had accumulated — the scheduler frame here, the
+machine frame in `Donation/Primitives.lean`, the serviceRegistry frame in
+`Lifecycle/Invariant/SuspendPreservation.lean` — which is one question answered
+in three places; they are now three-line consequences of this, and a fourth field
+frame is three more lines rather than a fourth copy.
+
+It is stated as a **complete** decomposition — the SchedContext read, the three
+objects actually stored, and `st' = { s3 with scThreadIndex := st'.scThreadIndex }`
+for the final step — rather than as a list of properties that happen to hold, so
+every consequence (which fields of a TCB move, which objects survive, which state
+fields agree) is a corollary rather than a fresh case analysis, and a field added
+to `TCB` or `SystemState` is covered by construction. -/
+theorem returnDonatedSchedContext_ok_storeChain
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st') :
+    ∃ (sc : SchedContext) (clientTcb serverTcb : TCB) (s1 s2 s3 : SystemState),
+      st.objects[scId.toObjId]? = some (.schedContext sc) ∧
+      storeObject scId.toObjId
+        (.schedContext { sc with boundThread := some originalOwner }) st = .ok ((), s1) ∧
+      lookupTcb s1 originalOwner = some clientTcb ∧
+      storeObject originalOwner.toObjId
+        (.tcb { clientTcb with schedContextBinding := .bound scId }) s1 = .ok ((), s2) ∧
+      lookupTcb s2 serverTid = some serverTcb ∧
+      storeObject serverTid.toObjId
+        (.tcb { serverTcb with schedContextBinding := .unbound }) s2 = .ok ((), s3) ∧
+      st' = { s3 with scThreadIndex := st'.scThreadIndex } := by
+  unfold returnDonatedSchedContext at h
+  revert h
+  cases hObj : st.objects[scId.toObjId]? with
+  | none => intro h; cases h
+  | some obj => cases obj with
+    | schedContext sc =>
+      simp only []
+      split
+      · intro h; cases h
+      · cases hS1 : storeObject scId.toObjId
+            (.schedContext { sc with boundThread := some originalOwner }) st with
+        | error _ => intro h; cases h
+        | ok p1 =>
+          simp only []
+          cases hL1 : lookupTcb p1.2 originalOwner with
+          | none => intro h; cases h
+          | some clientTcb =>
+            simp only []
+            cases hS2 : storeObject originalOwner.toObjId
+                (.tcb { clientTcb with schedContextBinding := .bound scId }) p1.2 with
+            | error _ => intro h; cases h
+            | ok p2 =>
+              simp only []
+              cases hL2 : lookupTcb p2.2 serverTid with
+              | none => intro h; cases h
+              | some serverTcb =>
+                simp only []
+                cases hS3 : storeObject serverTid.toObjId
+                    (.tcb { serverTcb with schedContextBinding := .unbound }) p2.2 with
+                | error _ => intro h; cases h
+                | ok p3 =>
+                  simp only []
+                  intro h
+                  cases h
+                  exact ⟨sc, clientTcb, serverTcb, p1.2, p2.2, p3.2, rfl,
+                    by rw [← hS1], hL1, by rw [← hS2], hL2, by rw [← hS3], rfl⟩
+    | _ => intro h; cases h
+
+/-- **WS-RR RR7.22 (residual, remediation)**: one TCB is another with its
+SchedContext binding rewritten — the complete description of what a donation
+hand-off does to a thread, stated as a record update rather than as a list of
+fields that agree, so a field added to `TCB` is covered by construction. -/
+def tcbBindingRewrite (a b : TCB) : Prop :=
+  ∃ sb, a = { b with schedContextBinding := sb }
+
+theorem tcbBindingRewrite.refl (t : TCB) : tcbBindingRewrite t t := ⟨t.schedContextBinding, rfl⟩
+
+theorem tcbBindingRewrite.trans {a b c : TCB}
+    (h1 : tcbBindingRewrite a b) (h2 : tcbBindingRewrite b c) : tcbBindingRewrite a c := by
+  obtain ⟨sb1, rfl⟩ := h1
+  obtain ⟨sb2, rfl⟩ := h2
+  exact ⟨sb1, rfl⟩
+
+theorem storeObject_tcb_bindingRewrite (st s : SystemState) (id : SeLe4n.ObjId)
+    (obj : KernelObject) (hInv : st.objects.invExt)
+    (hStore : storeObject id obj st = .ok ((), s))
+    (hDisj : ∀ t0, st.objects[id]? = some (.tcb t0) →
+      ∃ t, obj = .tcb t ∧ tcbBindingRewrite t t0)
+    (k : SeLe4n.ObjId) (t0 : TCB) (hk : st.objects[k]? = some (.tcb t0)) :
+    ∃ t', s.objects[k]? = some (.tcb t') ∧ tcbBindingRewrite t' t0 := by
+  by_cases hEq : k = id
+  · subst hEq
+    obtain ⟨t, hObjEq, hRw⟩ := hDisj t0 hk
+    refine ⟨t, ?_, hRw⟩
+    rw [← hObjEq]
+    exact storeObject_objects_eq' st k obj ((), s) hInv hStore
+  · exact ⟨t0, by
+      rw [storeObject_objects_ne st s id k obj hEq hInv hStore]
+      exact hk, tcbBindingRewrite.refl t0⟩
+
+/-- **WS-RR RR7.22 (residual, remediation)**: the complete description of what the
+donation return does to a TCB — exactly one field is rewritten, at every key.
+
+Read off the operation's own decomposition, so every field a conjunct might
+consume (`ipcState`, the queue links, `cpuAffinity`, `replyObject`,
+`pendingReceiveReply`, `timeoutBudget`) follows by `rfl`, and a field added to
+`TCB` is covered by construction.  The narrower per-field forms in this file are
+corollaries. -/
+theorem returnDonatedSchedContext_tcb_rewrite
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st')
+    (k : SeLe4n.ObjId) (t0 : TCB) (hk : st.objects[k]? = some (.tcb t0)) :
+    ∃ t', st'.objects[k]? = some (.tcb t') ∧ tcbBindingRewrite t' t0 := by
+  obtain ⟨sc, clientTcb, serverTcb, s1, s2, s3, hSc, hS1, hL1, hS2, hL2, hS3, hEq⟩ :=
+    returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner h
+  have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+  have hInv2 : s2.objects.invExt := storeObject_preserves_objects_invExt s1 s2 _ _ hInv1 hS2
+  obtain ⟨t1, hk1, hR1⟩ := storeObject_tcb_bindingRewrite st s1 scId.toObjId _ hObjInv hS1
+    (by intro u hu; rw [hSc] at hu; cases hu) k t0 hk
+  obtain ⟨t2, hk2, hR2⟩ := storeObject_tcb_bindingRewrite s1 s2 originalOwner.toObjId _ hInv1 hS2
+    (by
+      intro u hu
+      have hEqU : clientTcb = u := by
+        rw [lookupTcb_some_objects s1 originalOwner clientTcb hL1] at hu
+        exact (KernelObject.tcb.inj (Option.some.inj hu))
+      exact ⟨_, rfl, by rw [hEqU]; exact ⟨_, rfl⟩⟩) k t1 hk1
+  obtain ⟨t3, hk3, hR3⟩ := storeObject_tcb_bindingRewrite s2 s3 serverTid.toObjId _ hInv2 hS3
+    (by
+      intro u hu
+      have hEqU : serverTcb = u := by
+        rw [lookupTcb_some_objects s2 serverTid serverTcb hL2] at hu
+        exact (KernelObject.tcb.inj (Option.some.inj hu))
+      exact ⟨_, rfl, by rw [hEqU]; exact ⟨_, rfl⟩⟩) k t2 hk2
+  exact ⟨t3, by rw [hEq]; exact hk3, (hR3.trans hR2).trans hR1⟩
+
+/-- Helper: `storeObject` preserves the service registry. -/
+theorem storeObject_serviceRegistry_eq
+    (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    st'.serviceRegistry = st.serviceRegistry := by
+  unfold storeObject at hStore; cases hStore; rfl
+
 /-- Z7-C: returnDonatedSchedContext only modifies objects — scheduler preserved. -/
 theorem returnDonatedSchedContext_scheduler_eq
     (st st' : SystemState)
@@ -1025,43 +1170,28 @@ theorem returnDonatedSchedContext_scheduler_eq
     (originalOwner : SeLe4n.ThreadId)
     (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st') :
     st'.scheduler = st.scheduler := by
-  unfold returnDonatedSchedContext at h
-  revert h
-  cases hObj : st.objects[scId.toObjId]? with
-  | none => intro h; cases h
-  | some obj =>
-    cases obj with
-    | schedContext sc =>
-      simp only []
-      -- WS-RR RR2.8: the new `sc.boundThread = some serverTid` guard.
-      split
-      · intro h; cases h
-      · cases hS1 : storeObject scId.toObjId _ st with
-        | error _ => intro h; cases h
-        | ok p1 =>
-          simp only []
-          cases hL1 : lookupTcb p1.2 originalOwner with
-          | none => intro h; cases h
-          | some _ =>
-            simp only []
-            cases hS2 : storeObject originalOwner.toObjId _ p1.2 with
-            | error _ => intro h; cases h
-            | ok p2 =>
-              simp only []
-              cases hL2 : lookupTcb p2.2 serverTid with
-              | none => intro h; cases h
-              | some _ =>
-                simp only []
-                cases hS3 : storeObject serverTid.toObjId _ p2.2 with
-                | error _ => intro h; cases h
-                | ok p3 =>
-                  simp only [Except.ok.injEq]
-                  intro hEq; subst hEq
-                  have h1 := storeObject_scheduler_eq_z7 st _ _ _ hS1
-                  have h2 := storeObject_scheduler_eq_z7 p1.2 _ _ _ hS2
-                  have h3 := storeObject_scheduler_eq_z7 p2.2 _ _ _ hS3
-                  exact h3.trans (h2.trans h1)
-    | _ => simp only []; intro h; cases h
+  obtain ⟨_, _, _, s1, s2, s3, _, h1, _, h2, _, h3, hEq⟩ :=
+    returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner h
+  rw [hEq]
+  show s3.scheduler = st.scheduler
+  rw [SeLe4n.Model.storeObject_scheduler_eq s2 s3 _ _ h3,
+    SeLe4n.Model.storeObject_scheduler_eq s1 s2 _ _ h2,
+    SeLe4n.Model.storeObject_scheduler_eq st s1 _ _ h1]
+
+/-- **WS-RR RR7.22 (residual, remediation)**: the donation return preserves the
+service registry.  Relocated here from `SuspendPreservation`, where it was a
+private third copy of the case analysis above. -/
+theorem returnDonatedSchedContext_serviceRegistry_eq
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st') :
+    st'.serviceRegistry = st.serviceRegistry := by
+  obtain ⟨_, _, _, s1, s2, s3, _, h1, _, h2, _, h3, hEq⟩ :=
+    returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner h
+  rw [hEq]
+  show s3.serviceRegistry = st.serviceRegistry
+  rw [storeObject_serviceRegistry_eq s2 s3 _ _ h3, storeObject_serviceRegistry_eq s1 s2 _ _ h2,
+    storeObject_serviceRegistry_eq st s1 _ _ h1]
 
 /-- WS-SM SM7.B: `returnDonatedSchedContext` only modifies `objects` and
 `scThreadIndex` — the TLB-shootdown state is framed.  Mirrors the proof

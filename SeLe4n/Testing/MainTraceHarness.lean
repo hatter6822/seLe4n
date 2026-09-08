@@ -472,10 +472,10 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
       objects := st1.objects.insert demoEndpoint (.endpoint {})
         |>.insert ⟨31⟩ (.endpoint {})
     }
-  match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.harnessLabelingContext demoEndpoint ⟨1⟩ .empty default default default stMultiEndpoint with
+  match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.harnessLabelingContext demoEndpoint ⟨1⟩ .empty default default stMultiEndpoint with
   | .error err => IO.println s!"[SST-033] multi-endpoint send A error: {reprStr err}"
   | .ok (_, stEp1) =>
-      match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.harnessLabelingContext ⟨31⟩ ⟨12⟩ .empty default default default stEp1 with
+      match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.harnessLabelingContext ⟨31⟩ ⟨12⟩ .empty default default stEp1 with
       | .error err => IO.println s!"[SST-034] multi-endpoint send B error: {reprStr err}"
       | .ok (_, stEp2) =>
           match SeLe4n.Kernel.endpointReceiveDual demoEndpoint ⟨12⟩ none stEp2 with
@@ -613,12 +613,12 @@ private def runLifecycleAndEndpointTrace (counter : IO.Ref Nat) (st1 : SystemSta
               match SeLe4n.Kernel.endpointReceiveDual demoEndpoint ⟨12⟩ none st3 with
                   | .error err => IO.println s!"[LEP-022] endpoint await-receive error: {reprStr err}"
                   | .ok (_, st6) =>
-                      match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.harnessLabelingContext demoEndpoint ⟨1⟩ .empty default default default st6 with
+                      match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.harnessLabelingContext demoEndpoint ⟨1⟩ .empty default default st6 with
                       | .error err => IO.println s!"[LEP-023] endpoint handshake send error: {reprStr err}"
                       | .ok (_, st7) =>
                           IO.println "[LEP-024] handshake send matched waiting receiver"
                           -- Sender blocks (no receiver waiting), then receiver dequeues
-                          match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.harnessLabelingContext demoEndpoint ⟨1⟩ .empty default default default st7 with
+                          match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.harnessLabelingContext demoEndpoint ⟨1⟩ .empty default default st7 with
                           | .error err => IO.println s!"[LEP-025] endpoint send #1 error: {reprStr err}"
                           | .ok (_, st8) =>
                               IO.println "[LEP-026] queued sender on endpoint"
@@ -647,7 +647,7 @@ private def runLifecycleAndEndpointTrace (counter : IO.Ref Nat) (st1 : SystemSta
   -- T7-B: Post-mutation invariant check after IPC handshake chain
   match SeLe4n.Kernel.endpointReceiveDual demoEndpoint ⟨12⟩ none st1 with
   | .ok (_, stIpcMut1) =>
-    match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.harnessLabelingContext demoEndpoint ⟨1⟩ .empty default default default stIpcMut1 with
+    match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.harnessLabelingContext demoEndpoint ⟨1⟩ .empty default default stIpcMut1 with
     | .ok (_, stIpcMut2) => checkInvariants counter "post-ipc-handshake-chain-mutated" stIpcMut2
     | .error _ => pure ()
   | .error _ => pure ()
@@ -2556,6 +2556,120 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
       let newTail := ep'.sendQ.tail == some tid2
       IO.println s!"[SCO-020] endpointQueueRemove head: newHead=tid2:{newHead} newTail=tid2:{newTail}"
     | _ => IO.println s!"[SCO-020] endpointQueueRemove head: endpoint not found"
+
+  -- SCO-020a (WS-OD OD1.1): the removal hands the successor the removed
+  -- thread's own `queuePPrev`, and the successor can still be dequeued by the
+  -- **dual** removal afterwards.  Before OD1.1 it could not: the single removal
+  -- patched `queuePrev` alone, so tid2 kept `queuePPrev = .tcbNext tid1` while
+  -- becoming the head, `pprevConsistent` failed, and every later dual-queue
+  -- removal on it returned `.illegalState` — the thread was stranded in the
+  -- queue for the life of the system.  No `ipcInvariantFull` conjunct reads
+  -- `queuePPrev`, so only an executed check sees this.
+  match SeLe4n.Kernel.endpointQueueRemove epId false tid1 stQ with
+  | .error _ => IO.println s!"[SCO-020a] successor pprev: removal failed"
+  | .ok stRm =>
+    let succPPrev := match stRm.objects[tid2.toObjId]? with
+      | some (.tcb t) => t.queuePPrev == some QueuePPrev.endpointHead
+      | _ => false
+    let succDequeues := match SeLe4n.Kernel.endpointQueueRemoveDual epId false tid2 stRm with
+      | .ok _ => true
+      | .error _ => false
+    IO.println s!"[SCO-020a] successor pprev inherited={succPPrev} dual_dequeue_ok={succDequeues}"
+
+  -- SCO-020b (WS-OD OD1.4/OD1.5): **the cancellation reclaim ends the holder's
+  -- outstanding call before it takes the donation back.**  A server that Called
+  -- an endpoint with no receiver waiting blocks `.blockedOnCall` while still
+  -- holding the caller's donated SchedContext; cancelling the caller then
+  -- unbinds it.  Before OD1.4 that left the holder `.unbound` **and** still
+  -- `.blockedOnCall`, which `passiveServerIdle` forbids — reachable at depth 1
+  -- with no donation chain at all.  The abort prefix moves it to `.ready` and
+  -- splices it off its endpoint, so the state the reclaim leaves satisfies the
+  -- conjunct.  Executed rather than asserted: the theorem
+  -- (`cancelIpcBlocking_preserves_passiveServerIdle`) says it holds, this says
+  -- the live operation does it.
+  let epH : SeLe4n.ObjId := ⟨6010⟩
+  let scH : SeLe4n.SchedContextId := ⟨6011⟩
+  let vTid : SeLe4n.ThreadId := ⟨6012⟩
+  let hTid : SeLe4n.ThreadId := ⟨6013⟩
+  let victimTcb : TCB := {
+    tid := vTid, priority := ⟨50⟩, domain := ⟨0⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
+    ipcState := .blockedOnReply epH (some hTid),
+    schedContextBinding := .unbound }
+  let holderTcb : TCB := {
+    tid := hTid, priority := ⟨50⟩, domain := ⟨0⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192),
+    ipcState := .blockedOnCall epH,
+    schedContextBinding := .donated scH vTid,
+    queuePrev := none, queueNext := none, queuePPrev := some .endpointHead }
+  let holderSc : SeLe4n.Kernel.SchedContext := {
+    scId := scH, budget := ⟨1000⟩, period := ⟨1000⟩, priority := ⟨50⟩,
+    deadline := ⟨1000⟩, domain := ⟨0⟩, budgetRemaining := ⟨1000⟩,
+    boundThread := some hTid }
+  let epObj : Endpoint := { sendQ := { head := some hTid, tail := some hTid }, receiveQ := {} }
+  let stR := { st1 with
+    objects := (st1.objects.insert epH (.endpoint epObj))
+      |>.insert scH.toObjId (.schedContext holderSc)
+      |>.insert vTid.toObjId (.tcb victimTcb)
+      |>.insert hTid.toObjId (.tcb holderTcb) }
+  let stAfter := SeLe4n.Kernel.Lifecycle.Suspend.cancelIpcBlocking stR vTid victimTcb
+  let holderIdle := match stAfter.objects[hTid.toObjId]? with
+    | some (.tcb t) => t.ipcState == ThreadIpcState.ready
+    | _ => false
+  let holderUnbound := match stAfter.objects[hTid.toObjId]? with
+    | some (.tcb t) => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.unbound
+    | _ => false
+  let victimRebound := match stAfter.objects[vTid.toObjId]? with
+    | some (.tcb t) => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.bound scH
+    | _ => false
+  let holderOffQueue := match stAfter.objects[epH]? with
+    | some (.endpoint e) => e.sendQ.head == none && e.sendQ.tail == none
+    | _ => false
+  IO.println s!"[SCO-020b] reclaim holder_ready={holderIdle} holder_unbound={holderUnbound} caller_rebound={victimRebound} holder_spliced={holderOffQueue}"
+
+  -- SCO-020c (WS-OD OD1.5): **and the abort's reach is exactly the two states
+  -- `passiveServerIdle` forbids.**  The same reclaim, with the holder blocked on
+  -- *receive* instead — a passive server waiting for its next client, which the
+  -- conjunct permits — leaves the holder's `ipcState` and its endpoint queue bit
+  -- for bit as they were, while still handing the donation back.  This is the
+  -- executed half of `abortHolderPendingIpc_eq_self_of_allowed`, and it is what
+  -- makes SCO-020b above a discriminating check rather than one that would read
+  -- `true` however the reclaim were written.
+  let holderRecvTcb : TCB := { holderTcb with ipcState := .blockedOnReceive epH }
+  let epRecv : Endpoint := { sendQ := {}, receiveQ := { head := some hTid, tail := some hTid } }
+  let stRecv := { stR with
+    objects := (stR.objects.insert epH (.endpoint epRecv))
+      |>.insert hTid.toObjId (.tcb holderRecvTcb) }
+  let stRecvAfter := SeLe4n.Kernel.Lifecycle.Suspend.cancelIpcBlocking stRecv vTid victimTcb
+  let recvHolderUntouched := match stRecvAfter.objects[hTid.toObjId]? with
+    | some (.tcb t) => t.ipcState == ThreadIpcState.blockedOnReceive epH
+    | _ => false
+  let recvHolderUnbound := match stRecvAfter.objects[hTid.toObjId]? with
+    | some (.tcb t) => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.unbound
+    | _ => false
+  let recvQueueUntouched := match stRecvAfter.objects[epH]? with
+    | some (.endpoint e) => e.receiveQ.head == some hTid && e.receiveQ.tail == some hTid
+    | _ => false
+  IO.println s!"[SCO-020c] reclaim allowed_holder untouched={recvHolderUntouched} unbound={recvHolderUnbound} queue_intact={recvQueueUntouched}"
+
+  -- SCO-020d (WS-OD OD1.7): **and the reclaim puts the aborted holder back on a
+  -- run queue.**  SCO-020b shows the abort ends the holder's call; on its own
+  -- that left the holder `.ready`, spliced off its endpoint and on *no* run
+  -- queue, with every recovery path closed — `.tcbResume` demands `.Inactive`,
+  -- `schedContextBind` re-buckets only an already-queued thread, and
+  -- `chooseThreadOnCore` never scans ready TCBs.  The server was stranded
+  -- permanently.  The cross-core composite now places it, on the **holder's**
+  -- home core, which this fixture deliberately makes a *different* core from the
+  -- victim's: core 1 rather than the boot core.  So the run-queue write the
+  -- reclaim performs is one the victim's own deschedule does not cover, which is
+  -- why `cancelIpcBlockingOnCoreSchedLockSet` names it.
+  let holderPinned : TCB := { holderTcb with cpuAffinity := some ⟨1, by decide⟩ }
+  let stPin := { stR with objects := stR.objects.insert hTid.toObjId (.tcb holderPinned) }
+  let stWoken := (SeLe4n.Kernel.cancelIpcBlockingOnCore vTid victimTcb ⟨0, by decide⟩ stPin).1
+  let holderQueued := (stWoken.scheduler.runQueueOnCore ⟨1, by decide⟩).contains hTid
+  let holderRunnable := SeLe4n.Kernel.runnableOnSomeCore stWoken hTid
+  let victimDescheduled := !((stWoken.scheduler.runQueueOnCore ⟨0, by decide⟩).contains vTid)
+  IO.println s!"[SCO-020d] reclaim holder_queued={holderQueued} holder_runnable={holderRunnable} victim_descheduled={victimDescheduled}"
 
   -- SCO-021: endpointQueueRemove — thread not found error
   let badTid : SeLe4n.ThreadId := ⟨9999⟩

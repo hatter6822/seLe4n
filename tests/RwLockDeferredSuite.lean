@@ -188,6 +188,82 @@ private def c1 : CoreId := ⟨1, by decide⟩
 private def c2 : CoreId := ⟨2, by decide⟩
 private def c3 : CoreId := ⟨3, by decide⟩
 
+-- ============================================================================
+-- **WS-RR RR7.37 (register finding 59)** — D-1's admission-order fixtures.
+--
+-- §8's D-1 gate asks for "≥3 `decide`-checked test fixtures (success,
+-- reader-batching tie, writer-after-readers)" and this suite had none over
+-- `enqueueStep` / `admissionStep` — every `decide` fixture here was over
+-- `applyOp`, `writerWaitDepth` or the concrete event model, so the *temporal*
+-- claim the gate is about had no executable witness at all.
+--
+-- These are executions from `unheld`, so `initial_reachable` is `.base` and
+-- the whole admission machinery reduces: `admissionStep` is a `List.find?`
+-- over decidable predicates, which is what makes `decide` the right tool
+-- rather than a proof.  The cost model is present and irrelevant (WS-LC
+-- LC5.1) — nothing the fixtures read consults `stepCost`.
+-- ============================================================================
+
+/-- An execution seeded at `unheld`, so `enqueueStep` and `admissionStep` are
+both defined for every core that participates. -/
+private def d1Exec (ops : List RwLockOp) : RwLockExecution :=
+  { initial := RwLockState.unheld, ops := ops,
+    initial_reachable := RwLockReachable.base, stepCost := fun _ => 1 }
+
+/-- **Success**: a lone writer takes the free lock. -/
+example : (d1Exec [.tryAcquireWrite c0]).admissionStep c0 = some 1 := by decide
+
+/-- ... and it was never a *waiter*, so the strict-transition `enqueueStep`
+answers `none`.  The pair is the point: an admission with no enqueue is exactly
+the shape D-1.9's `h_enqueue` premises exclude, so a fixture that only checked
+the admission would not show why the premise is needed. -/
+example : (d1Exec [.tryAcquireWrite c0]).enqueueStep c0 .write = none := by decide
+
+/-- **Reader-batching tie**: two readers queue behind a writer at *different*
+steps and are admitted at the *same* one, because the writer's release promotes
+the whole leading reader run at once. -/
+private def d1ReaderBatch : RwLockExecution :=
+  d1Exec [.tryAcquireWrite c0, .tryAcquireRead c1, .tryAcquireRead c2,
+          .releaseWrite c0]
+
+example : d1ReaderBatch.enqueueStep c1 .read = some 2 := by decide
+example : d1ReaderBatch.enqueueStep c2 .read = some 3 := by decide
+example :
+    d1ReaderBatch.admissionStep c1 = some 4 ∧
+      d1ReaderBatch.admissionStep c2 = some 4 := by decide
+
+/-- **Writer-after-readers**: a writer queued behind two readers waits for the
+*last* of them, not the first. -/
+private def d1WriterAfterReaders : RwLockExecution :=
+  d1Exec [.tryAcquireRead c0, .tryAcquireRead c1, .tryAcquireWrite c2,
+          .releaseRead c0, .releaseRead c1]
+
+example : d1WriterAfterReaders.admissionStep c0 = some 1 := by decide
+example : d1WriterAfterReaders.enqueueStep c2 .write = some 3 := by decide
+example : d1WriterAfterReaders.admissionStep c2 = some 5 := by decide
+
+/-- The theorem itself, instantiated.  Two writers queue behind a holder at
+steps 2 and 3 and are admitted at 4 and 5, so `rwLock_fifo_admission_temporal`
+must produce an admission step for the *earlier* one that does not exceed the
+later one's — and every premise, including the WS-LC LC1 no-withdrawal window,
+is discharged by `decide` on this concrete trace rather than assumed. -/
+private def d1FifoWriters : RwLockExecution :=
+  d1Exec [.tryAcquireWrite c0, .tryAcquireWrite c1, .tryAcquireWrite c2,
+          .releaseWrite c0, .releaseWrite c1]
+
+private theorem d1FifoWriters_cancelFree : d1FifoWriters.cancelFree := by decide
+
+theorem d1_earlier_writer_is_admitted_no_later :
+    ∃ a₁, d1FifoWriters.admissionStep c1 = some a₁ ∧ a₁ ≤ 5 :=
+  rwLock_fifo_admission_temporal d1FifoWriters rfl c1 c2 .write .write 2 3 5
+    (by decide) (by decide) (by decide) (by decide) (by decide)
+    (d1FifoWriters_cancelFree.noCancelIn c1 2 5)
+    (d1FifoWriters_cancelFree.noCancelIn c2 3 5)
+
+/-- ... and the witness it produces is the step the trace actually admits `c1`
+at, so the theorem's conclusion is not merely satisfiable. -/
+example : d1FifoWriters.admissionStep c1 = some 4 := by decide
+
 -- D-2.3: writerWaitDepth bounded by numCores - 1 = 3 on RPi5.
 example :
     let s : RwLockState :=

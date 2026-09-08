@@ -14,7 +14,13 @@
 #      from the live tree so `readme_sync` reflects reality.
 #   2. `sync_readme_from_codebase_map.sh` — push the freshly-computed
 #      metrics into README.md and docs/spec/SELE4N_SPEC.md.
-#   3. `find_large_lean_files.sh --check` — warn (not fail) when the
+#   3. `sync_translated_metrics.py` — push the same figures into the
+#      eleven translated READMEs and the four GitBook surfaces that quote
+#      them, then regenerate the navigation the manifest feeds.  These
+#      were hand-copied until WS-RR RR7.35 and sat two stale generations
+#      behind; see that script's header for how it handles the languages
+#      whose counted nouns inflect.
+#   4. `find_large_lean_files.sh --check` — warn (not fail) when the
 #      CLAUDE.md "Known large files" list has drifted. Warning is right
 #      *here* because this script is the write-through helper, not a
 #      gate; the hard enforcement lives in `test_docs_sync.sh`, which
@@ -24,7 +30,7 @@
 #      on every patch — it fails only when a file enters or leaves the
 #      list, or when a count has moved enough to change the reading
 #      guidance.
-#   4. `test_docs_sync.sh` — run the existing docs-sync CI gate to
+#   5. `test_docs_sync.sh` — run the existing docs-sync CI gate to
 #      confirm no downstream regression (GitBook nav, markdown links,
 #      codebase-map --check).
 #
@@ -51,7 +57,7 @@ case "${1:-}" in
   --check) CHECK_MODE=1 ;;
   "")      ;;
   -h|--help)
-    sed -n '9,36p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '9,42p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
     exit 0 ;;
   *) echo "unknown option: $1" >&2; exit 2 ;;
 esac
@@ -63,7 +69,7 @@ overall_exit=0
 # ──────────────────────────────────────────────────────────────────
 # Step 1 — Regenerate (or --check) docs/codebase_map.json
 # ──────────────────────────────────────────────────────────────────
-section "1/4  codebase_map.json"
+section "1/5  codebase_map.json"
 if (( CHECK_MODE )); then
   if python3 "${SCRIPT_DIR}/generate_codebase_map.py" --pretty --check; then
     echo "  PASS"
@@ -79,7 +85,7 @@ fi
 # ──────────────────────────────────────────────────────────────────
 # Step 2 — Push readme_sync into README.md + SELE4N_SPEC.md
 # ──────────────────────────────────────────────────────────────────
-section "2/4  README.md / SELE4N_SPEC.md"
+section "2/5  README.md / SELE4N_SPEC.md"
 if (( CHECK_MODE )); then
   if "${SCRIPT_DIR}/sync_readme_from_codebase_map.sh" --check; then
     :
@@ -91,13 +97,35 @@ else
 fi
 
 # ──────────────────────────────────────────────────────────────────
-# Step 3 — Advisory check on CLAUDE.md "Known large files" list.
+# Step 3 — Push the same figures into the translated READMEs and the
+# GitBook surfaces that quote them.  Unlike step 4 this is a hard gate:
+# a translated figure that nobody can regenerate is drift by
+# construction, which is how eleven locales came to publish a
+# `v0.33.101` snapshot.  Writing the navigation manifest requires
+# regenerating the navigation it feeds, so that runs here rather than
+# being left to step 5.
+# ──────────────────────────────────────────────────────────────────
+section "3/5  translated READMEs / GitBook chapters"
+if (( CHECK_MODE )); then
+  if python3 "${SCRIPT_DIR}/sync_translated_metrics.py" --check; then
+    :
+  else
+    overall_exit=1
+  fi
+else
+  python3 "${SCRIPT_DIR}/sync_translated_metrics.py"
+  python3 "${SCRIPT_DIR}/generate_doc_navigation.py" >/dev/null
+  echo "  OK — navigation regenerated from the manifest"
+fi
+
+# ──────────────────────────────────────────────────────────────────
+# Step 4 — Advisory check on CLAUDE.md "Known large files" list.
 # Warnings only: the CLAUDE.md list is a curated snapshot with
 # approximate "(~N lines)" entries; expecting exact equality on every
 # commit would be noise. A full refresh (as AK10-E did) is a
 # maintainer-curated step.
 # ──────────────────────────────────────────────────────────────────
-section "3/4  CLAUDE.md large-files advisory"
+section "4/5  CLAUDE.md large-files advisory"
 if "${SCRIPT_DIR}/find_large_lean_files.sh" --check >/dev/null 2>&1; then
   echo "  PASS — CLAUDE.md list matches live tree exactly"
 else
@@ -107,11 +135,11 @@ else
 fi
 
 # ──────────────────────────────────────────────────────────────────
-# Step 4 — Existing docs-sync CI gate (navigation, markdown links,
+# Step 5 — Existing docs-sync CI gate (navigation, markdown links,
 # codebase_map --check). Only run when not in --check mode and only if
 # the harness is expected to succeed in this environment.
 # ──────────────────────────────────────────────────────────────────
-section "4/4  test_docs_sync.sh"
+section "5/5  test_docs_sync.sh"
 if (( CHECK_MODE )); then
   echo "  skipped in --check mode (run test_docs_sync.sh directly for full validation)"
 else

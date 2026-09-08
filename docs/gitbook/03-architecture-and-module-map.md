@@ -196,9 +196,20 @@ inventory was written:
     (WS-K-E); SchedContext ops via `dispatchCapabilityOnly` (WS-Z5). *(WS-Q1:
     `ServiceConfig`-sourced policy for service start/stop removed — registry-only model.)*
   - `syscallRequiredRight` — total mapping from `SyscallId` to `AccessRight`,
-  - soundness theorems: `syscallEntry_requires_valid_decode`,
+  - soundness theorems on the legacy entry: `syscallEntry_requires_valid_decode`,
     `syscallEntry_implies_capability_held`, `dispatchSyscall_requires_right`,
     `lookupThreadRegisterContext_state_unchanged`,
+  - **the same guarantee on the live, flow-checked path the hardware takes**
+    (WS-RR RR7.3): `dispatchSyscallChecked_requires_right` and
+    `syscallEntryChecked_implies_capability_held`, parameterized over the
+    *executing* core rather than the boot core and covering both gate shapes —
+    the 31 arms that take the rights-checking `syscallInvoke` and the two
+    `syscallChecksTargetFirst` (audit) arms that take the resolve-only
+    `syscallInvokeResolved` and check the right in the arm
+    (`dispatchWithCapChecked_audit_success_requires_right`).
+    `…_of_pre_state` restates it on the state the caller trapped in, and
+    `Platform.FFI.syscallDispatchFromAbi_implies_capability_held` carries it to
+    the exported seam,
   - 12 delegation theorems (WS-K-C/K-D/K-E): 4 CSpace + 3 lifecycle/VSpace +
     2 service + 3 IPC message population,
   - `dispatchWithCap_layer2_decode_pure`, `dispatchWithCap_preservation_composition_witness` (WS-K-F).

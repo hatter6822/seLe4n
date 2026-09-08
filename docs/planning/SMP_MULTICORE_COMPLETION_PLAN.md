@@ -110,6 +110,29 @@ elaborates the subset relevant to it.
 
 ### 2.1 Concurrency model: per-object RW fine-lock serialization
 
+> **WS-RR RR7.31 — what ships, and what this section describes.** The
+> present tense below is the **intended** discipline, not the deployed
+> one. Kernel entry is serialised by a single global ticket lock
+> (`rust/sele4n-hal/src/kernel_entry.rs`, SM5.I, v0.32.142), which
+> brackets all five state-committing entries. Inside it, WS-RR RR7.12
+> (v0.34.65) brackets the **syscall seam** through `withLockSet` for the
+> eight arms that declare a footprint; the other twenty-seven answer
+> `none`. The per-core scheduler entries — the timer tick, the
+> `.reschedule` SGI receiver, the secondary bring-up entry — bracket too
+> since **RR7.39** (v0.34.89), which gave `SchedLockId` its state words
+> and made the revalidating bracket shared; what remains uncovered there
+> is the *syscall* seam's scheduler writes
+> (`UncoveredLockDomain.syscallSeamSchedulerDomain`, owner RR8). So the
+> per-object locks are still a model-level discipline on much of the
+> surface, and the shipping worst case is the global lock's, not §7.2's.
+>
+> Removing the entry lock is scheduled, not assumed: **RR7.39** (the
+> scheduler domain), **RR7.40** (the dynamic PIP chain) and **RR7.41**
+> (CSpace-walk interior CNodes) in `SMP_RELEASE_READINESS_PLAN.md`, plus
+> Track D's partitioned commit in `SMP_FINE_LOCK_MIGRATION_PLAN.md`.
+> `CLAUDE.md`'s standing constraints carry the same statement, and
+> `Scheduler/Operations/PerCoreWcrt.lean`'s header says it at the proofs.
+
 The kernel runs under **per-object reader-writer fine locking**
 with **hierarchical-by-kind acquire order** and **two-phase
 locking (2PL)**. Each kernel-object struct (`TCB`, `Endpoint`,
@@ -261,6 +284,20 @@ summarize.
 `SMP-M1`..`SMP-M7`, `SMP-L1`..`SMP-L5` — documentation, hygiene,
 scope items. All closed in SM0 honesty patches per
 [`SMP_FOUNDATIONS_PLAN.md`](SMP_FOUNDATIONS_PLAN.md).
+
+**`SMP-M1` is held by a gate rather than by that claim** (WS-RR RR7.35,
+`v0.34.85`).  "Closed in SM0" was made on three different surfaces — this
+plan's §11 verification command reads `rust/sele4n-hal/src/` and
+`SeLe4n/Kernel/`, the foundations plan says "production sources", and a reader
+checking either one would find it true — so nothing owned the difference, and
+eleven `docs/dev_history` cross-references survived outside the intersection:
+nine under `SeLe4n/` and two under `tests/`.  All eleven are redirected to the
+live canonical source (`docs/REGISTERED_DEBT.md`'s *Workstream registry*), and
+Tier 0 now scans `SeLe4n`, `Main.lean`, `tests` and `rust` — strictly wider
+than any of the three spellings, so every spelling of the claim is true at
+once.  `docs/` and `scripts/` stay out of scope by decision, not by omission:
+`docs/` cites its own history legitimately, and `scripts/` reads the AK7
+baseline there by design.
 
 ## 4. Architectural design choices
 
@@ -478,12 +515,46 @@ Worst-case syscall response time under per-object fine locks:
 
     WCRT(syscall) ≤ max-lock-set-size × (coreCount - 1) × WCRT_per_lock
 
-For RPi5 (coreCount = 4, typical lock-set size ≤ 4):
+**This section previously instantiated that formula as `4 × 3 × ~60 µs ≈ 720 µs`
+and concluded it "comfortably fits within the 1-ms timer tick budget". Both the
+instantiation and the conclusion were wrong, and WS-RR RR7.31 corrects them.**
 
-    WCRT(syscall) ≤ 4 × 3 × ~60 µs ≈ 720 µs
+*The first factor was a typical footprint size, not the ceiling.* The ceiling is
+`maxLockSetSize`, which is **9** (`Locks/LockSet.lean`; WS-RR RR7.11 raised it
+from 8 for the caps-installing `.replyRecv` footprint). At 60 µs the tick admits
+a footprint of **five** locks and refuses six
+(`rpi5Tick_sixty_micro_section_footprint_boundary`), so the product held for a
+four-lock op and never for the declared bound — not at 9, and not at the 8 that
+was already in force when this paragraph was written
+(`rpi5Tick_refused_sixty_micro_sections_at_the_previous_ceiling`).
 
-Comfortably fits within the 1-ms timer tick budget. Better than
-BKL's 4 × 250 µs = 1 ms because fine locks distribute the wait.
+*The third factor is ungrounded.* Nothing in this tree measures a per-object
+critical section on a Cortex-A76. `WCRT_per_lock` (`tCs`) is a free parameter
+throughout `Scheduler/Operations/PerCoreWcrt.lean`, and 60 µs was an estimate
+carried in prose only.
+
+So the plan states the **budget condition solved for the factor a deployment can
+measure**, rather than a product:
+
+    WCRT(syscall) ≤ budget   whenever   WCRT_per_lock ≤ budget ÷ (max-lock-set-size × (coreCount - 1))
+
+For RPi5 against the 1 ms tick, `9 × 3 = 27`, so the admissible per-lock
+critical section is **≤ 37 µs** (`admissibleCriticalSection_rpi5Tick`), and the
+60 µs previously assumed gives `9 × 3 × 60 = 1620 µs` — outside the tick
+(`rpi5Tick_refuses_sixty_micro_sections`). Both figures are `decide`-checked
+theorems, so a future cut that moves `maxLockSetSize` again has to confront them
+rather than a paragraph.
+
+*And none of this is the shipping bound.* §2.1's discipline is the **intended**
+one; the live seam is the SM5.I global kernel-entry ticket lock (see §2.1's own
+note), so the deployed worst case is that lock's — the BKL figure this section
+used to compare against favourably. Measuring `tCs` on the target, and making the
+fine-lock bound the shipping one, are the acceptance criteria of the rows that
+remove the entry lock: **RR7.39** (the scheduler domain), **RR7.40** (the dynamic
+PIP chain), **RR7.41** (CSpace-walk interior CNodes) in
+`SMP_RELEASE_READINESS_PLAN.md`, and Track D's partitioned commit in
+`SMP_FINE_LOCK_MIGRATION_PLAN.md`. Until they land, this plan claims no numeric
+syscall WCRT.
 
 ## 8. Risk inventory
 
@@ -616,8 +687,11 @@ grep -A 10 "inductive ArchAssumption" SeLe4n/Kernel/Architecture/Assumptions.lea
 # SMP-H3: Inventory Lean.Name disclaimer
 grep -A 3 "Lean does not enforce" SeLe4n/Kernel/Concurrency/Assumptions.lean
 
-# SMP-M1: dev_history cross-references
-grep -rn "dev_history" rust/sele4n-hal/src/ SeLe4n/Kernel/
+# SMP-M1: dev_history cross-references.  The surface is the whole source tree,
+# not this command's original `rust/sele4n-hal/src/` + `SeLe4n/Kernel/` pair —
+# see §3.9.  Held by Tier 0 (`scripts/test_tier0_hygiene.sh`), so this is a
+# reader's spot-check rather than the enforcement.
+rg -n "docs/dev_history" SeLe4n Main.lean tests rust
 
 # SMP-M2: stale WS-V claim
 grep -n "deferred to WS-V" docs/spec/SELE4N_SPEC.md

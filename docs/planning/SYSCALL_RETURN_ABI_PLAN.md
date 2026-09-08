@@ -16,7 +16,8 @@
 > half returned at the boundary, the blocked half staged by the unblocking
 > arm), and the per-arm shape-coherence family is proven.  What remains is
 > owed to SM10.1, not to this workstream: frame *delivery* at the context
-> restore, and the cancellation/timeout error-frame staging (§9).  §1 below
+> restore (§9).  The cancellation/timeout error-frame staging that §9 also
+> registered is **CLOSED at v0.34.67** by WS-RR RR7.14 — see §9.  §1 below
 > records the **pre-flip** state the workstream removed.
 
 ## Landing record — core landed at v0.33.37; completed at v0.33.38
@@ -25,7 +26,7 @@ Six commits, sequenced as §5 prescribed: the RA.E.1 witness suite landed
 first and **failed on the pre-migration tree** (its assertions then inverted
 to post-flip pins in the same file); RA.A landed the model
 (`SeLe4n/Kernel/Architecture/SyscallReturn.lean`, ~800 lines — the total
-`syscallReturnShape`, the offset error label with all 55 discriminants
+`syscallReturnShape`, the offset error label with all 58 discriminants
 round-tripped, the frame codec, `SyscallOutcome`, the staging seam, and
 `bit63Encoding_not_injective_on_badges` as the retained hazard); RA.B landed
 the staging seam and the **arm-level** staging of all five value-returning
@@ -106,11 +107,12 @@ recovers it.  With `syscallReturnShape_value_returning` pinning the value
 surface at exactly those five syscalls, the family covers it.
 
 **Still owed elsewhere (registered in §9, owner SM10.1)**: frame *delivery*
-(the context restore — `contextRestoreSeamLive = false` until SM10.1) and
-the cancellation/timeout **error-frame** staging (`cancelIpcBlocking` /
-`timeoutThread` stage nothing; before the restore seam flips they must
-stage an error frame).  Neither is WS-RA scope: the workstream's staging
-obligations are complete.
+(the context restore — `contextRestoreSeamLive = false` until SM10.1).  The
+cancellation/timeout **error-frame** staging §9 registered beside it is
+**closed** — WS-RR RR7.14 (v0.34.67) made `timeoutThread` stage
+`Architecture.timeoutFrame` and `cancelIpcBlocking`'s four blocked arms stage
+`Architecture.cancelledIpcFrame`.  Neither was WS-RA scope: the workstream's
+staging obligations were complete.
 
 ## 1. Phase goal
 
@@ -275,13 +277,24 @@ sides; `ERROR_LABEL_BASE` is the fourth pinned literal.
 
 The carrier already exists: `MessageInfo.label` is a 20-bit field documented as
 "seL4 convention" (`maxLabel = 2^20 - 1`, mirrored and compile-time-checked in
-`sele4n-abi/src/message_info.rs`), and the offset labels occupy 1..55.  No new
+`sele4n-abi/src/message_info.rs`), and the status labels occupy the top 256 of
+the field.  No new
 register, no new structure.  One inverse is missing and must be authored:
 `KernelError.toUInt32` (`Platform/FFI.lean`) is the only Lean-side numeric
 map today and it is one-directional — RA.A.5 adds the canonical
-`KernelError.toDiscriminant` / `KernelError.ofDiscriminant?` pair (the 55-arm
+`KernelError.toDiscriminant` / `KernelError.ofDiscriminant?` pair (the whole
 map moves down to the new module; `toUInt32` becomes its instance so the
 discriminant table exists exactly once).
+
+**Arithmetic note (WS-RR RR7.17).**  This section was written when the
+enumeration held 55 discriminants and said so throughout; the tree has held
+more since, and now holds **58** (`0..57`, the newest being RR7.14's
+`.ipcCancelled`).  Rather than restate a number that goes stale on every
+cut, the figure is named once in Lean as
+`SeLe4n.Model.KernelError.kernelErrorCount`, bounded from above by
+`toDiscriminant_lt` and from below by `kernelErrorCount_tight`, so it is the
+*least* strict upper bound and a new variant fails elaboration until it moves.
+Prose here and in the tests reads that name rather than a literal.
 
 ### 3.2 Why the label, and what it costs
 
@@ -542,8 +555,8 @@ both sit above it without a cycle.  (The first draft said
 | RA.A.2 | **`syscallReturnShape : SyscallId → ReturnShape`** — a *total* function (§3.4), with `syscallReturnShape_total` and `returnShape_list_gate_insufficient` | same | M |
 | RA.A.3 | `SyscallReturnFrame` (the six-register result) + `zero` (the unit/success frame) + accessors; `returnFrame_unit_is_zero`; `returnFrameOfMessage : IpcMessage → SyscallReturnFrame` — the **single** place a delivered message becomes a frame (badge → `x0`, synthesized `MessageInfo` → `x1`, inline window → `x2`-`x5`), since `IpcMessage` carries no `MessageInfo` and every delivery site must synthesize the same way; `returnFrame_message_window` (§3.7) | same | M |
 | RA.A.4 | `SyscallOutcome` (`returns frame` / `blocks`) — moved here from RA.B.5a so RA.B.3's signature change lands against the finished type; plus the boundary composer `frameForShape` (`.unit` → zero frame *constructed*, value shapes → read staged registers — §3.3's shape-driven read) | same | M |
-| RA.A.5 | Error carriage: `KernelError.toDiscriminant` / `KernelError.ofDiscriminant?` (the canonical pair — the 55-arm map moves here; `Platform.FFI.KernelError.toUInt32` becomes its instance so the table exists once), `errorLabel e = toDiscriminant e + 1`, `errorFrame : KernelError → SyscallReturnFrame`, `errorLabel_roundtrip` both ways, `errorLabel_never_zero` (§3.1 — the non-aliasing), and `errorLabel_zero_iff_success` on the decode side (label 0 ⇔ no error) | same | M |
-| RA.A.6 | `kernelErrorFitsLabel` — all 55 offset labels (1..55) inside `MessageInfo.maxLabel`, by `decide`; the negative that an over-wide label is rejected by `MessageInfo.decode` (which fail-closes on bits ≥ 29), so the bound is load-bearing | same | S |
+| RA.A.5 | Error carriage: `KernelError.toDiscriminant` / `KernelError.ofDiscriminant?` (the canonical pair — the whole discriminant map moves here; `Platform.FFI.KernelError.toUInt32` becomes its instance so the table exists once), `errorLabel e = toDiscriminant e + 1`, `errorFrame : KernelError → SyscallReturnFrame`, `errorLabel_roundtrip` both ways, `errorLabel_never_zero` (§3.1 — the non-aliasing), and `errorLabel_zero_iff_success` on the decode side (label 0 ⇔ no error) | same | M |
+| RA.A.6 | `kernelErrorFitsLabel` — every status label inside `MessageInfo.maxLabel`, by `decide`; the negative that an over-wide label is rejected by `MessageInfo.decode` (which fail-closes on bits ≥ 29), so the bound is load-bearing | same | S |
 | RA.A.7 | `SYSCALL_ABI_VERSION` (§3.6) + the Lean half of the conformance pin | same | T |
 | RA.A.8 | **Retirement of the bit-63 protocol, stated**: `encodeOk_not_injective_on_badges` (the theorem that motivates the change — two valid badges differing only at bit 63 collide under the old encoding, since `encodeOk` masks it), kept as a negative so the protocol cannot return | `Platform/FFI.lean` (while `encodeOk` still exists), moving to `SyscallReturn.lean` as a historical statement at the flip | S |
 
@@ -701,7 +714,8 @@ diff caught.
       cannot be added without one (`syscallReturnShape` is a total match;
       `returnShape_list_gate_insufficient` records why a list gate was
       rejected).
-- [x] Every `KernelError` discriminant — all 55, `0..54` — round-trips through
+- [x] Every `KernelError` discriminant — all `kernelErrorCount` of them,
+      `0..kernelErrorCount - 1` — round-trips through
       the offset message label (§3.1), by enumeration, and
       `errorLabel_never_zero` pins that no error aliases success.
 - [x] `encodeOk` / `encodeError` and the bit-63 protocol are **gone**, with
@@ -729,11 +743,66 @@ diff caught.
   `false` until SM10.1).  §3.5 splits the blocking orderings out for this
   reason — WS-RA stages the waiter's frame and SM10.1 delivers it.  Recorded
   here so SM10 inherits a named obligation rather than discovering one.
-- **Registered debt, owner SM10.1 — cancellation frames** (§3.5): the
-  cancellation and timeout unblock paths (`cancelIpcBlocking`,
-  `timeoutThread`) stage no frame; before `contextRestoreSeamLive` flips they
-  must stage an error frame, or a cancelled waiter resumes reading its stale
-  staged arguments as a return value.
+- **Registered debt, owner SM10.1 — cancellation frames** (§3.5) —
+  **DISCHARGED at v0.34.67 by WS-RR RR7.14**: the cancellation and timeout
+  unblock paths staged no frame, so a forcibly unblocked waiter would have
+  resumed reading its stale staged arguments as a return value.  Both now
+  stage, and they stage **different** errors, because they are different
+  facts: `timeoutThread` stages `Architecture.timeoutFrame` (`.ipcTimeout` —
+  a budget expiry under a well-formed operation the caller may reissue), and
+  `cancelIpcBlocking`'s four blocked arms stage
+  `Architecture.cancelledIpcFrame` (`.ipcCancelled`, a **new** discriminant at
+  57 — the operation was destroyed, so reissuing may be meaningless and a
+  userspace library cannot write a correct retry against a conflated code).
+  The `.ready` arm stages nothing, and `restoreToReady` — the *resume*
+  spelling of the same field clear — stages nothing either, because
+  `.tcbResume` restarts a thread where it was.  Payoff theorems:
+  `restoreToReadyCancelled_readReturnFrame`,
+  `timeout_and_cancelled_frames_differ`.
+- **Registered debt, owner WS-CB — the application IPC label** (§3.1's
+  amendment, lifted out of that narrative by **WS-RR RR7.17**): seL4's
+  `seL4_MessageInfo` label is the *sender's*, passed through to the receiver
+  untouched, and a great deal of userspace protocol design rests on it — a
+  method number, a request discriminant, a version tag.  This kernel does not
+  pass it through.  `IpcMessage.label` is set by **kernel-originated** messages
+  only (RR4's fault deliveries carry their `seL4_Fault_tag` there); a user send
+  leaves it at `0`, so an application that wants a method number must spend a
+  message register on it.
+
+  **The constraint that rules out the naive fix.**  Carrying the sender's label
+  verbatim would let any thread holding a send capability to a fault endpoint
+  mint a message whose label *is* a `seL4_Fault_tag`, and the handler on the
+  other side cannot tell that from a kernel-delivered fault: it would decode a
+  forged `vmFault` and reply to it, restarting a thread that never faulted.
+  The range separation this section introduces protects the *kernel status*
+  half (`errorLabelBase ≤ label` is unreachable from a delivered message,
+  `returnMessageInfo` clamps) but says nothing about the four fault tags, which
+  live *below* the base precisely so a handler's receive can read them.
+
+  **Two candidate designs**, neither chosen here because both need an authority
+  story this workstream does not own:
+
+  1. **Reserve a sender range.**  Partition the sub-base label space into a
+     kernel-origin block (the `seL4_Fault_tag` values, plus room) and an
+     application block, and clamp a user send's label into the application
+     block.  Cheap, and the clamp is one function; the cost is that the
+     application label is no longer the full 20 bits and that every existing
+     fault tag becomes a reserved constant a future kernel message cannot
+     re-use freely.
+  2. **Carry provenance out of band.**  Keep the label full-width and add a
+     kernel-origin bit to the delivered `MessageInfo` — or, equivalently, make
+     the fault deliveries use a capability the application cannot hold a send
+     right to, so "this arrived on my fault endpoint" is itself the evidence.
+     Faithful to seL4's label semantics; the cost is an ABI field or a
+     capability-distribution obligation on the deployment, which is a policy
+     question rather than a kernel one.
+
+  **Owner**: WS-CB, whose hierarchical-CBS work already reopens the message
+  path for its admission protocol, with a row in
+  [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md).  Not WS-BP: the boot path
+  needs no label at all, and scheduling this against SM10.1 would have made
+  first boot wait on a userspace-protocol decision.
+
 - **Registered debt, no current consumer — the 4-register return window**
   (§3.7): a delivered `IpcMessage` with more than 4 registers returns only the
   inline window in `x2`-`x5`; the receiver-IPC-buffer write path for return
@@ -763,7 +832,7 @@ diff caught.
   (RA.A.4)
 - `errorLabel_roundtrip` + `errorLabel_never_zero` + `errorLabel_zero_iff_success`
   (RA.A.5, §3.1 — the offset carriage and its non-aliasing)
-- `kernelErrorFitsLabel` — all 55 offset labels inside the 20-bit field — + the
+- `kernelErrorFitsLabel` — every status label inside the 20-bit field — + the
   fail-closed over-wide negative (RA.A.6)
 - `encodeOk_not_injective_on_badges` — the hazard the flip removes, retained as a
   negative (RA.A.8)
@@ -780,7 +849,18 @@ diff caught.
   WS-H12c already strips `registerContext` from projected TCBs (RA.B.10)
 - `blockingArm_returns_no_frame` + `blockedReturn_staged_in_waiter_frame` — a
   blocking syscall has no frame yet, and the unblocking transition stages it
-  (RA.B.5a, RA.B.5b, §3.5)
+  (RA.B.5a, RA.B.5b, §3.5).  **Authored at v0.34.68 (WS-RR RR7.17)**: the first
+  was a catalogue line with no artefact.  It sits in `Platform/FFI.lean` beside
+  `syscallReturnOutcome` with the family the property actually needs — the
+  characterisation both ways (`syscallReturnOutcome_blocks_iff`), the
+  id-independence §3.5 rests on
+  (`syscallReturnOutcome_blocked_independent_of_id`), the statement that the
+  staged registers are not consulted on that arm
+  (`syscallReturnOutcome_blocked_ignores_staged_registers`, proved by *varying*
+  them), and the composition onto the exported seam
+  (`syscallDispatchFromAbi_blocked_returns_no_frame`), which is where the
+  property is load-bearing: `dispatch_svc` reads the outcome tag, and tag 1 is
+  what sends it down the poison-and-park path
 - the per-value authority statements riding each arm's existing flow gate
   (RA.B.10)
 - `notificationWait_delivers_badge_signal_first` — the SM9.C.0 closure on the

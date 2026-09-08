@@ -57,14 +57,48 @@ open SeLe4n.Kernel.Architecture
 -- SM0.E — Typed core identifier and enumeration
 -- ============================================================================
 
-/-- WS-SM SM0.E: number of cores on the kernel's target platform.
+/-- WS-SM SM0.E: the **model's** core width — the number of PEs the kernel
+state is shaped for.  Statically `4`, matching RPi5 BCM2712.
 
-At v0.31.4 this is statically `4` (matching RPi5 BCM2712); the
-`numCores_eq_rpi5_coreCount` theorem in
-`SeLe4n.Platform.RPi5.Contract` pins it to the RPi5
-`PlatformBinding.coreCount` field.  A future multi-platform build that
-introduces a different `coreCount` must update the literal here in the
-same PR (the pinning theorem will fail to elaborate otherwise). -/
+This is not the same number as a platform binding's `coreCount`, and the
+distinction is load-bearing (WS-RR RR7.30, which exists because this docstring
+once described only the equality below and a reader concluded that a narrower
+binding could never shape kernel state).  `numCores` fixes the type
+`CoreId = Fin numCores` and the width of every per-core `Vector` in
+`SchedulerState`, so it has to be a build-time constant: a `Fin` whose bound came
+from a typeclass would make every kernel theorem relative to a binding.  seL4
+makes the same choice (`CONFIG_MAX_NUM_NODES`).  A binding declares how many of
+those PEs its board actually has, and the two are related by **inequality**:
+
+* `PlatformBinding.coreCountLe : coreCount ≤ numCores` is a class obligation, so
+  no binding can declare more PEs than the model is shaped for.  A board needing
+  more requires raising this literal, and until it is raised that binding **fails
+  to elaborate** rather than producing a silently wrong image.
+* `PlatformBinding.declaredCores` is the prefix `allCores.take coreCount`, and the
+  production boot installs idle threads on exactly those
+  (`bootFromPlatformCheckedWithIdleThreadsFor`); an undeclared core's reserved idle
+  slot stays *absent*
+  (`bootFromPlatformCheckedWithIdleThreadsFor_undeclared_idle_absent`), never free.
+* `MachineConfig.declaredCoreCount` carries the same number into
+  `SystemState.machine`, because a kernel transition sees the machine and not the
+  binding, and `PlatformBinding.declaredCoreCountAgrees` holds the two equal.
+  `setThreadCpuAffinityWithMigration` refuses an affinity at or above it and
+  `bootAffinitiesDeclared` refuses a configured one, so no *pinned* thread reaches
+  a PE the board does not have; `determineTargetCore_lt_declaredCoreCount`
+  (`Scheduler/Operations/Selection.lean`) closes the unpinned half, since an
+  unpinned thread routes to `bootCoreId` — core 0 — and every binding declares at
+  least one PE (`coreCountPos`).
+
+So a narrower binding **does** shape kernel state — `SimSingleCorePlatform`
+declares one PE and boots one idle thread — while the model stays a fixed-width
+over-approximation of the topology.  Where a model-complete set would name absent
+PEs the runtime masks rather than the model narrowing: `shootdownTargets` is
+`allCores` minus the initiator by design, and the Rust wait is taken over the
+*online* mask, so a PE that never onlined is never waited on.
+
+`numCores_eq_rpi5_coreCount` additionally pins the hardware target at
+**equality**, so the production image carries no per-core state for a PE the board
+lacks. -/
 def numCores : Nat := 4
 
 /-- WS-SM SM0.E: typed core identifier.  `Fin numCores` makes every

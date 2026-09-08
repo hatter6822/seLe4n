@@ -61,7 +61,8 @@ namespace SeLe4n.Kernel.PriorityInheritance
 
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (bootCoreId CoreId SgiKind)
-open SeLe4n.Kernel.Lifecycle.Suspend (restoreToReady restoreToReadyOnCore restoreToReadyWithWake
+open SeLe4n.Kernel.Lifecycle.Suspend (restoreToReady restoreToReadyStaging
+  restoreToReadyOnCore restoreToReadyWithWake
   resumeReadyMidState resumeThreadOnCore)
 
 -- ============================================================================
@@ -428,7 +429,7 @@ theorem propagatePipChainCrossCore_head_sgi_remote (st : SystemState) (tid : Thr
 theorem restoreToReady_objects_invExt (st : SystemState) (tid : ThreadId)
     (hInv : st.objects.invExt) :
     (restoreToReady st tid).objects.invExt := by
-  unfold restoreToReady
+  unfold restoreToReady restoreToReadyStaging
   split
   · exact RHTable_insert_preserves_invExt _ _ _ hInv
   · exact hInv
@@ -1047,7 +1048,7 @@ theorem resumeReadyMidState_getTcb?_ready (st : SystemState) (tid : ThreadId) (t
   have hst1Inv : (restoreToReady st tid).objects.invExt := restoreToReady_objects_invExt st tid hInv
   have hst1 : (restoreToReady st tid).getTcb? tid
       = some { tcb with ipcState := .ready, queuePrev := none, queueNext := none, queuePPrev := none, pendingReceiveReply := none } := by
-    unfold restoreToReady
+    unfold restoreToReady restoreToReadyStaging
     simp only [hGet, SystemState.getTcb?_eq_some_iff, RHTable_getElem?_eq_get?]
     exact RHTable_get?_insert_self st.objects tid.toObjId _ hInv
   simp only [resumeReadyMidState, hst1]

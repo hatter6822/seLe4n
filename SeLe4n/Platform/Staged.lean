@@ -113,6 +113,7 @@ import SeLe4n.Kernel.Concurrency.Locks.QueuedRwLockRefinement
 -- `rust_ticketLock_refines_lean` for the SM2.D.7 lockPrimitives
 -- aggregator.
 import SeLe4n.Kernel.Concurrency.Locks.TicketLockRefinement
+import SeLe4n.Kernel.Concurrency.Locks.Refinement
 -- WS-SM SM2.D: typed lock FFI wrappers + RAII combinators.  Wraps the
 -- raw `Platform.FFI.ffi*` lock declarations into typed Lean APIs
 -- (`TicketLockHandle`, `RwLockHandle`, `withTicketLock`, `withReadLock`,
@@ -157,6 +158,12 @@ import SeLe4n.Kernel.Concurrency.PhaseTheoremManifest
 -- `withLockSet (lockSet_τ args)`, threading the SM3.B canonical sort
 -- through `acquireAll` and the reverse through `releaseAll`.
 import SeLe4n.Kernel.Concurrency.LockSet
+-- WS-RR RR7.18: size bounds for the STATE-RESOLVED lock footprints — the sets
+-- RR7.12's bracket actually acquires, as opposed to the argument-taking bases
+-- `lockSetTransitions_within_bound` covers.  Staged rather than stated beside
+-- each footprint because the bounds cite `Locks/Deadlock.lean`, whose WCRT and
+-- deadlock models no kernel image links.
+import SeLe4n.Kernel.Concurrency.Locks.ResolvedFootprintBounds
 -- WS-SM SM4.C: per-core scheduler invariant migration.  Lifts every
 -- per-core scheduler invariant predicate to an explicit `(c : CoreId)`
 -- parameter (plan §5.3/§5.6), exports the aggregate
@@ -399,6 +406,7 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbsInventory
 -- `timerTickOnCore_preserves_perCoreCbsInvariant` (affinity-consistency supplied as the
 -- placement-gated input).  The SM5.I per-core run loop is the runtime exerciser.
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsPreservation
+import SeLe4n.Kernel.Scheduler.Operations.SchedLockTimerContainment
 -- WS-SM SM5.I (affinity discharge): the live per-core timer tick preserves
 -- replenish-queue affinity-consistency.  Strengthens the perCoreCbsInvariant
 -- aggregate (timerTickOnCore_preserves_perCoreCbsInvariant_discharged) — the carried

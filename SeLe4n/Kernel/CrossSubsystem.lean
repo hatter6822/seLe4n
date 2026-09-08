@@ -867,12 +867,31 @@ theorem crossSubsystemInvariant_composition_gap_documented
 -- ============================================================================
 
 /-- V6-A1: Enumeration of SystemState top-level fields, for static
-    field-disjointness analysis between cross-subsystem predicates. -/
+    field-disjointness analysis between cross-subsystem predicates.
+
+    **Total over the structure, and pinned so** (WS-RR RR7 audit round,
+    v0.34.109).  Sixteen of `SystemState`'s twenty-seven fields were listed
+    here; the other eleven — `scThreadIndex`, the two lock words, the TLB
+    shootdown and per-core TLB/I-cache state, the pending I-cache maintenance,
+    and the four declassification ledgers — had no constructor, so
+    `preservesFieldsOutside` could not even *state* a write to them: an
+    operation that wrote `scThreadIndex` (the receive path's donation return
+    does) satisfied every write-set claim in the tree.  An enumeration of a
+    structure's fields is the enumeration-standing-in-for-a-derivation shape,
+    and the derivation is `SystemState.eq_of_fieldEq_all` below: agreement on
+    every constructor here *is* equality of states, which fails to elaborate the
+    day a field is added to one and not the other.  Constructors are in the
+    structure's declaration order, so a reader can diff the two by eye. -/
 inductive StateField where
   | machine | objects | objectIndex | objectIndexSet
   | services | scheduler | irqHandlers | lifecycle
   | asidTable | interfaceRegistry | serviceRegistry
-  | cdt | cdtSlotNode | cdtNodeSlot | cdtNextNode | tlb
+  | cdt | cdtSlotNode | cdtNodeSlot | cdtNextNode
+  | scThreadIndex | tlb
+  | objStoreLock | schedulerLocks | tlbShootdown
+  | perCoreTlb | perCoreICache | pendingIcacheMaintenance
+  | declassificationAuditLog | declassificationAuditEpoch
+  | declassificationRefusals | declassificationTaint
   deriving DecidableEq, Repr
 
 /-- V6-A2 + Z9-E: Field read-sets for each cross-subsystem predicate.
@@ -1172,9 +1191,24 @@ theorem crossSubsystem_pairwise_coverage_complete :
 -- ============================================================================
 
 /-- W2-A1: Fields modified by `storeObject`. Updates the object table,
-    associated indices, and lifecycle metadata (objectTypes + capabilityRefs). -/
+    associated indices, and lifecycle metadata (objectTypes + capabilityRefs).
+
+    **WS-RR RR7.19: and `asidTable`**, which this list omitted.  `storeObject`'s
+    record update erases the *outgoing* object's ASID entry when it was a
+    `.vspaceRoot` and inserts the incoming one when it is — see the
+    `asidTable :=` clause in `Model/State.lean`.  Found the moment RR7.19 gave
+    these lists a proof obligation (`storeObject_preservesFieldsOutside` below
+    is false at the old list), which is the argument for the mechanism rather
+    than for another careful read: RR7.9 found the same class in
+    `capabilityOp_modifiedFields` by reading, and this one survived that read.
+
+    Not exploitable before RR7.19, because the list had no consumer.  That is
+    exactly what makes it worth fixing *in the cut that wires it*: with
+    `predicateFramedByDisjointWrites` in the tree an omitted field licenses a
+    preservation conclusion the operation does not earn, and `asidTable` is the
+    ASID → VSpaceRoot map. -/
 def storeObject_modifiedFields : List StateField :=
-  [.objects, .objectIndex, .objectIndexSet, .lifecycle]
+  [.objects, .objectIndex, .objectIndexSet, .lifecycle, .asidTable]
 
 /-- W2-A1: Fields modified by `serviceRegisterDependency`. Only appends to a
     service entry's dependency list. -/
@@ -1182,29 +1216,924 @@ def serviceRegisterDependency_modifiedFields : List StateField :=
   [.services]
 
 /-- W2-A1: Fields modified by `lifecycleRetypeObject`. Updates objects, indices,
-    and lifecycle metadata. -/
+    and lifecycle metadata.
+
+    **WS-RR RR7.19**: defined *as* `storeObject`'s set rather than repeating it,
+    so the `asidTable` correction cannot reach one and miss the other — a retype
+    can mint a `.vspaceRoot`, which is precisely the case that writes it. -/
 def lifecycleRetypeObject_modifiedFields : List StateField :=
-  [.objects, .objectIndex, .objectIndexSet, .lifecycle]
+  storeObject_modifiedFields
 
 /-- W2-A1: Fields modified by IPC endpoint operations (`endpointSendDual`,
-    `endpointReceiveDual`, etc.). Modify TCB/endpoint state within objects
-    via `storeObject`, which also updates lifecycle metadata. For in-place
-    mutations of existing objects, `objectIndex`/`objectIndexSet` are unchanged. -/
-def ipcEndpointOp_modifiedFields : List StateField :=
-  [.objects, .lifecycle]
+    `endpointReceiveDual`, etc.).
 
-/-- W2-A1: Fields modified by capability operations (`cspaceMint`, `cspaceCopy`,
-    etc.). Modify CNode slots within objects via `storeObject`, which also
-    updates lifecycle metadata. For in-place CNode mutations, `objectIndex`/
-    `objectIndexSet` are unchanged. -/
+    **`storeObject`'s set, plus `.scheduler` and `.scThreadIndex`** (WS-RR RR7
+    audit round, v0.34.109).  RR7.19 widened this list from a narrow object-only
+    set to `storeObject`'s, on the argument that the narrower list rested on two
+    unproved conditional facts; that widening was right and still short by two
+    fields, each written on every path of both operations' definitions.
+    `ensureRunnable` / `removeRunnable` write **`scheduler`** — the rendezvous
+    wakes the receiver and the parking arm deschedules the sender — and the
+    receive path's `cleanupPreReceiveDonationChecked` runs
+    `returnDonatedSchedContext`, whose last step rewrites **`scThreadIndex`**,
+    the SchedContext → threads index.  Neither could have been declared at
+    v0.34.70: `StateField` had no `scThreadIndex` constructor, which is what
+    `SystemState.eq_of_fieldEq_all` now rules out.  Both are proved at this
+    list: `endpointSendDual_preservesFieldsOutside` and
+    `endpointReceiveDual_preservesFieldsOutside`, composed from one lemma per
+    primitive the two operations are built from.
+
+    Over-declaring is the safe direction (`preservesFieldsOutside_mono`): it
+    costs disjointness, never soundness.  Tightening `storeObject`'s three
+    index/ASID fields back out is a follow-up that must first prove the two
+    conditional facts the v0.34.70 docstring named — that `objectIndexSet.insert`
+    is a no-op on a present key, and that IPC never stores a `.vspaceRoot`;
+    registered rather than assumed. -/
+def ipcEndpointOp_modifiedFields : List StateField :=
+  storeObject_modifiedFields ++ [.scheduler, .scThreadIndex]
+
+/-- W2-A1: Fields modified by capability operations (`cspaceMintWithCdt`,
+    `cspaceCopy`, `cspaceMove`, `cspaceDeleteSlot`).
+
+    **`storeObject`'s set, plus the four CDT fields** (WS-RR RR7 audit round,
+    v0.34.109).  RR7.9 added the CDT fields, which the list had omitted.  The
+    v0.34.70 list still read `[.objects, .lifecycle, …]` under a sentence — "for
+    in-place CNode mutations, `objectIndex`/`objectIndexSet` are unchanged" —
+    that is the very sentence RR7.19 retracted for the IPC list two definitions
+    above, and the same omission RR7.19 found in `storeObject` itself: all four
+    operations store through `cspaceInsertSlot` / `cspaceDeleteSlotCore`, which
+    call `storeObject`, whose record update writes `objectIndex`,
+    `objectIndexSet` **and** `asidTable` unconditionally.  So the list is now
+    *defined as* `storeObject`'s set plus the CDT fields, the way the retype and
+    IPC lists are, and it is proved at every operation:
+    `cspaceMintWithCdt_preservesFieldsOutside`, `cspaceCopy_…`, `cspaceMove_…`,
+    `cspaceDeleteSlot_…`, with the base `cspaceMint`, `cspaceInsertSlot` and
+    `cspaceDeleteSlotCore` beneath them.
+
+    Which CDT fields each operation writes: mint and copy allocate nodes for
+    both slots (`ensureCdtNodeForSlot`: `cdtNextNode`, `cdtSlotNode`,
+    `cdtNodeSlot`) and record an edge (`cdt.addEdge`: `cdt`); move detaches the
+    source and re-attaches the destination (`cdtSlotNode`, `cdtNodeSlot`);
+    `cspaceDeleteSlot` detaches only (`detachSlotFromCdt` — it does **not** call
+    `cdt.removeNode`; that is the revoke sweep's).  One list covers the four
+    because these lists exist to support *disjointness* arguments, and an
+    omission makes two operations look independent when they contend. -/
 def capabilityOp_modifiedFields : List StateField :=
-  [.objects, .lifecycle]
+  storeObject_modifiedFields ++ [.cdt, .cdtSlotNode, .cdtNodeSlot, .cdtNextNode]
 
 /-- W2-A1: Fields modified by `revokeService` / `removeDependenciesOf`.
     `revokeService` erases from `serviceRegistry`, then `removeDependenciesOf`
     modifies the service dependency graph (`services`). -/
 def revokeService_modifiedFields : List StateField :=
   [.services, .serviceRegistry]
+
+-- ============================================================================
+-- WS-RR RR7.19 — the write-sets become load-bearing
+-- ============================================================================
+--
+-- The six `*_modifiedFields` lists above had **no consumer**.  They were
+-- declared, maintained by hand, and read by nothing — so an operation could
+-- write a field its own list omits and no proof would notice.  RR7.9 found
+-- exactly that: `capabilityOp_modifiedFields` read `[.objects, .lifecycle]`
+-- while all four capability operations also write the four CDT fields, and the
+-- direction matters — these lists support *disjointness* arguments, so an
+-- omission makes two contending operations look independent.
+--
+-- Correcting the list closed the instance.  This section closes the class, by
+-- making the lists carry a proof obligation:
+--
+--   * `SystemState.fieldEq f st st'` reads one named field on both states.
+--     Total over `StateField`, so a field added to that type is a missing case
+--     at elaboration rather than a silently unchecked component.
+--   * `preservesFieldsOutside fs st st'` says every field NOT in `fs` is equal.
+--     An operation's write-set is *honest* exactly when the operation satisfies
+--     this at its own list: omitting a written field makes the statement false.
+--   * `predicateFramedByDisjointWrites` is the payoff the two families exist
+--     for — a read-set disjoint from a write-set means the operation cannot
+--     disturb the predicate.  It consumes BOTH lists, so an under-declared
+--     write-set is not merely unused documentation: it would license a
+--     preservation conclusion the operation does not earn.
+
+/-- **WS-RR RR7.19**: read one named `StateField` off a `SystemState`, as a
+proposition equating it across two states.
+
+Total over `StateField` with no wildcard: a field added to that inductive is a
+missing case here, which is the property the whole family rests on — a
+`_modifiedFields` list can only be honest about fields something can compare.
+That `StateField` is in turn total over `SystemState` is
+`SystemState.eq_of_fieldEq_all`, immediately below. -/
+def SystemState.fieldEq : StateField → SystemState → SystemState → Prop
+  | .machine,                    st, st' => st'.machine = st.machine
+  | .objects,                    st, st' => st'.objects = st.objects
+  | .objectIndex,                st, st' => st'.objectIndex = st.objectIndex
+  | .objectIndexSet,             st, st' => st'.objectIndexSet = st.objectIndexSet
+  | .services,                   st, st' => st'.services = st.services
+  | .scheduler,                  st, st' => st'.scheduler = st.scheduler
+  | .irqHandlers,                st, st' => st'.irqHandlers = st.irqHandlers
+  | .lifecycle,                  st, st' => st'.lifecycle = st.lifecycle
+  | .asidTable,                  st, st' => st'.asidTable = st.asidTable
+  | .interfaceRegistry,          st, st' => st'.interfaceRegistry = st.interfaceRegistry
+  | .serviceRegistry,            st, st' => st'.serviceRegistry = st.serviceRegistry
+  | .cdt,                        st, st' => st'.cdt = st.cdt
+  | .cdtSlotNode,                st, st' => st'.cdtSlotNode = st.cdtSlotNode
+  | .cdtNodeSlot,                st, st' => st'.cdtNodeSlot = st.cdtNodeSlot
+  | .cdtNextNode,                st, st' => st'.cdtNextNode = st.cdtNextNode
+  | .scThreadIndex,              st, st' => st'.scThreadIndex = st.scThreadIndex
+  | .tlb,                        st, st' => st'.tlb = st.tlb
+  | .objStoreLock,               st, st' => st'.objStoreLock = st.objStoreLock
+  | .schedulerLocks,             st, st' => st'.schedulerLocks = st.schedulerLocks
+  | .tlbShootdown,               st, st' => st'.tlbShootdown = st.tlbShootdown
+  | .perCoreTlb,                 st, st' => st'.perCoreTlb = st.perCoreTlb
+  | .perCoreICache,              st, st' => st'.perCoreICache = st.perCoreICache
+  | .pendingIcacheMaintenance,   st, st' => st'.pendingIcacheMaintenance = st.pendingIcacheMaintenance
+  | .declassificationAuditLog,   st, st' => st'.declassificationAuditLog = st.declassificationAuditLog
+  | .declassificationAuditEpoch, st, st' => st'.declassificationAuditEpoch = st.declassificationAuditEpoch
+  | .declassificationRefusals,   st, st' => st'.declassificationRefusals = st.declassificationRefusals
+  | .declassificationTaint,      st, st' => st'.declassificationTaint = st.declassificationTaint
+
+/-- **`StateField` is total over `SystemState`** (WS-RR RR7 audit round,
+v0.34.109): two states that agree on every named field are the same state.
+
+This is the pin that turns the enumeration above into a derivation.  The proof
+is `SystemState.mk.injEq` — one conjunct per structure field — discharged by
+one `fieldEq` per constructor, so the two lists are held equal in **both**
+directions: a field added to `SystemState` without a constructor leaves a
+conjunct nobody supplies, and a constructor added without a field has no
+projection for `fieldEq` to read.  Before it existed, `StateField` named
+sixteen of twenty-seven fields and every `preservesFieldsOutside` claim was
+silent about the other eleven. -/
+theorem SystemState.eq_of_fieldEq_all (st st' : SystemState)
+    (h : ∀ f : StateField, SystemState.fieldEq f st st') : st' = st := by
+  cases st; cases st'
+  simp only [SystemState.mk.injEq]
+  exact ⟨h .machine, h .objects, h .objectIndex, h .objectIndexSet,
+    h .services, h .scheduler, h .irqHandlers, h .lifecycle,
+    h .asidTable, h .interfaceRegistry, h .serviceRegistry,
+    h .cdt, h .cdtSlotNode, h .cdtNodeSlot, h .cdtNextNode,
+    h .scThreadIndex, h .tlb,
+    h .objStoreLock, h .schedulerLocks, h .tlbShootdown,
+    h .perCoreTlb, h .perCoreICache, h .pendingIcacheMaintenance,
+    h .declassificationAuditLog, h .declassificationAuditEpoch,
+    h .declassificationRefusals, h .declassificationTaint⟩
+
+/-- **WS-RR RR7.19**: `st'` differs from `st` in no field outside `fs`.
+
+This is what an operation's `_modifiedFields` list *claims*.  Quantified over
+every `StateField`, not over the list's complement as a list, so the claim is
+about the whole state rather than about whatever the author remembered to
+enumerate. -/
+def preservesFieldsOutside (fs : List StateField) (st st' : SystemState) : Prop :=
+  ∀ f : StateField, f ∉ fs → SystemState.fieldEq f st st'
+
+/-- **WS-RR RR7.19**: field equality is reflexive, so an operation that changes
+nothing preserves every complement. -/
+theorem preservesFieldsOutside_refl (fs : List StateField) (st : SystemState) :
+    preservesFieldsOutside fs st st := by
+  intro f _
+  cases f <;> rfl
+
+/-- **WS-RR RR7.19**: a wider declared write-set is a weaker claim, so a
+transition that satisfies its list also satisfies any list containing it.
+
+The monotonicity direction is the honest one to have: a caller may always
+*over*-declare (and pay for it in lost disjointness), and never under-declare. -/
+theorem preservesFieldsOutside_mono {fs gs : List StateField} (h : ∀ f ∈ fs, f ∈ gs)
+    {st st' : SystemState} (hp : preservesFieldsOutside fs st st') :
+    preservesFieldsOutside gs st st' := by
+  intro f hf
+  exact hp f (fun hmem => hf (h f hmem))
+
+/-- **WS-RR RR7.19**: the composition — two steps each honest about their own
+write-set are jointly honest about the union. -/
+theorem preservesFieldsOutside_trans {fs : List StateField} {st st' st'' : SystemState}
+    (h₁ : preservesFieldsOutside fs st st') (h₂ : preservesFieldsOutside fs st' st'') :
+    preservesFieldsOutside fs st st'' := by
+  intro f hf
+  have e₁ := h₁ f hf
+  have e₂ := h₂ f hf
+  cases f <;> exact e₂.trans e₁
+
+/-- **WS-RR RR7.19 — the payoff, and the reason an under-declared write-set is
+a soundness problem rather than stale documentation.**
+
+If a predicate reads only fields in `readFields`, and an operation writes only
+fields in `writeFields`, and the two are disjoint, then the operation preserves
+the predicate.  Both lists are premises: shrink the write-set to exclude a
+field the operation really writes and this theorem hands you a preservation
+conclusion the operation does not earn.
+
+`readsOnly` is supplied by the caller as the predicate's own frame lemma — the
+`*_frame` family below is exactly that shape — so the disjointness argument the
+`fieldsDisjoint` witnesses above make about *lists* becomes an argument about
+*states*. -/
+theorem predicateFramedByDisjointWrites
+    {P : SystemState → Prop} {readFields writeFields : List StateField}
+    (readsOnly : ∀ st st' : SystemState,
+      (∀ f ∈ readFields, SystemState.fieldEq f st st') → P st → P st')
+    (hDisjoint : fieldsDisjoint readFields writeFields = true)
+    {st st' : SystemState}
+    (hWrites : preservesFieldsOutside writeFields st st')
+    (hP : P st) : P st' := by
+  refine readsOnly st st' (fun f hf => hWrites f ?_) hP
+  -- `fieldsDisjoint` is `all/all` over `!=`, so membership on both sides is a
+  -- contradiction with the decided witness.
+  intro hIn
+  unfold fieldsDisjoint at hDisjoint
+  have h := List.all_eq_true.mp hDisjoint f hf
+  have h2 := List.all_eq_true.mp h f hIn
+  rw [bne_self_eq_false] at h2
+  exact Bool.noConfusion h2
+
+-- ============================================================================
+-- WS-RR RR7.19 — the write-sets, proved honest
+-- ============================================================================
+--
+-- A `_modifiedFields` list is a *claim*, and until this section nothing tested
+-- it.  These theorems are the test: each says the operation changes nothing
+-- outside its own declared list, so removing a field from a list makes the
+-- theorem beside it fail to elaborate.
+--
+-- That is how the `asidTable` omission surfaced.  `storeObject`'s list read
+-- `[.objects, .objectIndex, .objectIndexSet, .lifecycle]` while its record
+-- update also writes `asidTable`; the list had no consumer, so the omission was
+-- inert — and would have stopped being inert the moment
+-- `predicateFramedByDisjointWrites` above gave it one.
+
+/-- **WS-RR RR7.19**: `storeObject` writes nothing outside its declared set.
+
+The proof is `cases f <;> rfl` on the eleven untouched fields and a
+`contradiction` on the five declared ones — which is exactly the shape that
+makes the statement load-bearing: drop a field from
+`storeObject_modifiedFields` and the `contradiction` arm becomes an unprovable
+`rfl` against a record update that really moved it. -/
+theorem storeObject_preservesFieldsOutside
+    (id : SeLe4n.ObjId) (obj : KernelObject) (st st' : SystemState)
+    (hStep : storeObject id obj st = .ok ((), st')) :
+    preservesFieldsOutside storeObject_modifiedFields st st' := by
+  unfold storeObject at hStep
+  simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+  obtain ⟨-, hEq⟩ := hStep
+  subst hEq
+  intro f hf
+  cases f <;> first
+    | rfl
+    | exact (hf (by decide)).elim
+
+/-- **WS-RR RR7.19**: `revokeService` writes nothing outside its declared set —
+the registry erase and the dependency-graph edit, and no more. -/
+theorem revokeService_preservesFieldsOutside
+    (sid : ServiceId) (st st' : SystemState)
+    (hStep : revokeService sid st = .ok ((), st')) :
+    preservesFieldsOutside revokeService_modifiedFields st st' := by
+  unfold revokeService at hStep
+  split at hStep
+  · exact absurd hStep (by simp)
+  · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+    obtain ⟨-, hEq⟩ := hStep
+    subst hEq
+    intro f hf
+    unfold removeDependenciesOf
+    cases f <;> first
+      | rfl
+      | exact (hf (by decide)).elim
+
+-- ============================================================================
+-- WS-RR RR7 audit round (v0.34.109) — the other four write-sets, proved honest
+-- ============================================================================
+--
+-- v0.34.70 stated that "each operation carries a `_preservesFieldsOutside`
+-- theorem at its own list" and shipped two of six.  The four it did not ship
+-- are exactly the four whose lists turned out to be wrong when the theorems
+-- were written: the IPC list omitted `.scheduler` and `.scThreadIndex`, the
+-- capability list omitted `storeObject`'s three index/ASID fields.  Each
+-- theorem below is `false` at the v0.34.70 list — which is the point of having
+-- it.  The operations are composites, so each is proved from one lemma per
+-- primitive it is built from, at the composite's own list, and the composition
+-- is `preservesFieldsOutside_trans`.
+
+
+
+theorem serviceRegisterDependency_preservesFieldsOutside
+    (svcId depId : ServiceId) (st st' : SystemState)
+    (hStep : serviceRegisterDependency svcId depId st = .ok ((), st')) :
+    preservesFieldsOutside serviceRegisterDependency_modifiedFields st st' := by
+  unfold serviceRegisterDependency at hStep
+  split at hStep
+  · cases hStep
+  · split at hStep
+    · cases hStep
+    · split at hStep
+      · cases hStep
+      · split at hStep
+        · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨-, hEq⟩ := hStep
+          subst hEq
+          exact preservesFieldsOutside_refl _ _
+        · split at hStep
+          · cases hStep
+          · unfold storeServiceEntry storeServiceState at hStep
+            simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨-, hEq⟩ := hStep
+            subst hEq
+            intro f hf
+            cases f <;> first
+              | rfl
+              | exact (hf (by decide)).elim
+
+theorem lifecycleRetypeObject_preservesFieldsOutside
+    (authority : CSpaceAddr) (target : SeLe4n.ObjId) (newObj : KernelObject)
+    (st st' : SystemState)
+    (hStep : SeLe4n.Kernel.Internal.lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
+    preservesFieldsOutside lifecycleRetypeObject_modifiedFields st st' := by
+  unfold SeLe4n.Kernel.Internal.lifecycleRetypeObject at hStep
+  split at hStep
+  · cases hStep
+  · split at hStep
+    · cases hLk : cspaceLookupSlot authority st with
+      | error e => simp [hLk] at hStep
+      | ok p =>
+        obtain ⟨authCap, st₁⟩ := p
+        simp only [hLk] at hStep
+        have hEq := cspaceLookupSlot_state_eq st st₁ authority authCap hLk
+        subst hEq
+        split at hStep
+        · exact storeObject_preservesFieldsOutside _ _ _ _ hStep
+        · cases hStep
+    · cases hStep
+
+-- Every capability operation is built from `storeObject`, the lifecycle
+-- reference map, and the four CDT fields; each primitive is stated at the
+-- capability list so the compositions below are plain transitivity.
+
+theorem storeObject_preservesFieldsOutside_capability
+    (id : SeLe4n.ObjId) (obj : KernelObject) (st st' : SystemState)
+    (hStep : storeObject id obj st = .ok ((), st')) :
+    preservesFieldsOutside capabilityOp_modifiedFields st st' :=
+  preservesFieldsOutside_mono (fun _ hf => List.mem_append_left _ hf)
+    (storeObject_preservesFieldsOutside id obj st st' hStep)
+
+theorem storeCapabilityRef_preservesFieldsOutside
+    (ref : SlotRef) (target : Option CapTarget) (st st' : SystemState)
+    (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
+    preservesFieldsOutside capabilityOp_modifiedFields st st' := by
+  unfold storeCapabilityRef at hStep
+  simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+  obtain ⟨-, hEq⟩ := hStep
+  subst hEq
+  intro f hf
+  cases f <;> first
+    | rfl
+    | exact (hf (by decide)).elim
+
+theorem detachSlotFromCdt_preservesFieldsOutside (st : SystemState) (ref : SlotRef) :
+    preservesFieldsOutside capabilityOp_modifiedFields st (st.detachSlotFromCdt ref) := by
+  unfold SystemState.detachSlotFromCdt
+  cases hN : st.cdtSlotNode[ref]? with
+  | none => exact preservesFieldsOutside_refl _ _
+  | some node =>
+    intro f hf
+    cases f <;> first
+      | rfl
+      | exact (hf (by decide)).elim
+
+theorem ensureCdtNodeForSlot_preservesFieldsOutside (st : SystemState) (ref : SlotRef) :
+    preservesFieldsOutside capabilityOp_modifiedFields st
+      (SystemState.ensureCdtNodeForSlot st ref).2 := by
+  unfold SystemState.ensureCdtNodeForSlot
+  cases hN : st.cdtSlotNode[ref]? with
+  | none =>
+    intro f hf
+    cases f <;> first
+      | rfl
+      | exact (hf (by decide)).elim
+  | some node => exact preservesFieldsOutside_refl _ _
+
+theorem attachSlotToCdtNode_preservesFieldsOutside
+    (st : SystemState) (ref : SlotRef) (node : CdtNodeId) :
+    preservesFieldsOutside capabilityOp_modifiedFields st
+      (SystemState.attachSlotToCdtNode st ref node) := by
+  unfold SystemState.attachSlotToCdtNode
+  intro f hf
+  cases f <;> first
+    | rfl
+    | exact (hf (by decide)).elim
+
+theorem cspaceInsertSlot_preservesFieldsOutside
+    (addr : CSpaceAddr) (cap : Capability) (st st' : SystemState)
+    (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
+    preservesFieldsOutside capabilityOp_modifiedFields st st' := by
+  unfold cspaceInsertSlot at hStep
+  dsimp only at hStep
+  split at hStep
+  · split at hStep
+    · cases hStep
+    · split at hStep
+      · cases hStep
+      · rename_i u st₁ hStore
+        cases u
+        exact preservesFieldsOutside_trans
+          (storeObject_preservesFieldsOutside_capability _ _ _ _ hStore)
+          (storeCapabilityRef_preservesFieldsOutside _ _ _ _ hStep)
+  · cases hStep
+
+theorem cspaceDeleteSlotCore_preservesFieldsOutside
+    (addr : CSpaceAddr) (st st' : SystemState)
+    (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
+    preservesFieldsOutside capabilityOp_modifiedFields st st' := by
+  unfold cspaceDeleteSlotCore at hStep
+  dsimp only at hStep
+  split at hStep
+  · split at hStep
+    · cases hStep
+    · rename_i u st₁ hStore
+      cases u
+      split at hStep
+      · cases hStep
+      · rename_i st₂ hRef
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨-, hEq⟩ := hStep
+        subst hEq
+        exact preservesFieldsOutside_trans
+          (storeObject_preservesFieldsOutside_capability _ _ _ _ hStore)
+          (preservesFieldsOutside_trans
+            (storeCapabilityRef_preservesFieldsOutside _ _ _ _ hRef)
+            (detachSlotFromCdt_preservesFieldsOutside _ _))
+  · cases hStep
+
+theorem cspaceDeleteSlot_preservesFieldsOutside
+    (addr : CSpaceAddr) (st st' : SystemState)
+    (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
+    preservesFieldsOutside capabilityOp_modifiedFields st st' := by
+  unfold cspaceDeleteSlot at hStep
+  split at hStep
+  · cases hStep
+  · exact cspaceDeleteSlotCore_preservesFieldsOutside _ _ _ hStep
+
+theorem cspaceMint_preservesFieldsOutside
+    (src dst : CSpaceAddr) (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
+    (st st' : SystemState)
+    (hStep : cspaceMint src dst rights badge st = .ok ((), st')) :
+    preservesFieldsOutside capabilityOp_modifiedFields st st' := by
+  unfold cspaceMint at hStep
+  cases hLk : cspaceLookupSlot src st with
+  | error e => simp [hLk] at hStep
+  | ok p =>
+    obtain ⟨parent, st₁⟩ := p
+    simp only [hLk] at hStep
+    have hEq := cspaceLookupSlot_state_eq st st₁ src parent hLk
+    subst hEq
+    split at hStep
+    · cases hStep
+    · split at hStep
+      · cases hStep
+      · exact cspaceInsertSlot_preservesFieldsOutside _ _ _ _ hStep
+
+theorem cspaceMintWithCdt_preservesFieldsOutside
+    (src dst : CSpaceAddr) (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
+    (st st' : SystemState)
+    (hStep : cspaceMintWithCdt src dst rights badge st = .ok ((), st')) :
+    preservesFieldsOutside capabilityOp_modifiedFields st st' := by
+  unfold cspaceMintWithCdt at hStep
+  split at hStep
+  · cases hStep
+  · rename_i st₁ hMint
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+    obtain ⟨-, hEq⟩ := hStep
+    subst hEq
+    refine preservesFieldsOutside_trans (cspaceMint_preservesFieldsOutside _ _ _ _ _ _ hMint) ?_
+    refine preservesFieldsOutside_trans (ensureCdtNodeForSlot_preservesFieldsOutside st₁ src) ?_
+    refine preservesFieldsOutside_trans
+      (ensureCdtNodeForSlot_preservesFieldsOutside _ dst) ?_
+    intro f hf
+    cases f <;> first
+      | rfl
+      | exact (hf (by decide)).elim
+
+theorem cspaceCopy_preservesFieldsOutside
+    (src dst : CSpaceAddr) (st st' : SystemState)
+    (hStep : cspaceCopy src dst st = .ok ((), st')) :
+    preservesFieldsOutside capabilityOp_modifiedFields st st' := by
+  unfold cspaceCopy at hStep
+  cases hLk : cspaceLookupSlot src st with
+  | error e => simp [hLk] at hStep
+  | ok p =>
+    obtain ⟨cap, st₁⟩ := p
+    simp only [hLk] at hStep
+    have hEq := cspaceLookupSlot_state_eq st st₁ src cap hLk
+    subst hEq
+    split at hStep
+    · cases hStep
+    · split at hStep
+      · cases hStep
+      · rename_i st₂ hIns
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨-, hEq⟩ := hStep
+        subst hEq
+        refine preservesFieldsOutside_trans (cspaceInsertSlot_preservesFieldsOutside _ _ _ _ hIns) ?_
+        refine preservesFieldsOutside_trans (ensureCdtNodeForSlot_preservesFieldsOutside st₂ src) ?_
+        refine preservesFieldsOutside_trans
+          (ensureCdtNodeForSlot_preservesFieldsOutside _ dst) ?_
+        intro f hf
+        cases f <;> first
+          | rfl
+          | exact (hf (by decide)).elim
+
+theorem cspaceMove_preservesFieldsOutside
+    (src dst : CSpaceAddr) (st st' : SystemState)
+    (hStep : cspaceMove src dst st = .ok ((), st')) :
+    preservesFieldsOutside capabilityOp_modifiedFields st st' := by
+  unfold cspaceMove at hStep
+  split at hStep
+  · cases hStep
+  · cases hLk : cspaceLookupSlot src st with
+    | error e => simp [hLk] at hStep
+    | ok p =>
+      obtain ⟨cap, st₁⟩ := p
+      simp only [hLk] at hStep
+      have hEq := cspaceLookupSlot_state_eq st st₁ src cap hLk
+      subst hEq
+      split at hStep
+      · cases hStep
+      · split at hStep
+        · cases hStep
+        · rename_i st₂ hIns
+          split at hStep
+          · cases hStep
+          · rename_i st₃ hDel
+            have hPre := preservesFieldsOutside_trans
+              (cspaceInsertSlot_preservesFieldsOutside _ _ _ _ hIns)
+              (cspaceDeleteSlotCore_preservesFieldsOutside _ _ _ hDel)
+            split at hStep
+            · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨-, hEq⟩ := hStep
+              subst hEq
+              exact hPre
+            · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨-, hEq⟩ := hStep
+              subst hEq
+              exact preservesFieldsOutside_trans hPre
+                (attachSlotToCdtNode_preservesFieldsOutside _ _ _)
+
+
+theorem storeObject_preservesFieldsOutside_ipc
+    (id : SeLe4n.ObjId) (obj : KernelObject) (st st' : SystemState)
+    (hStep : storeObject id obj st = .ok ((), st')) :
+    preservesFieldsOutside ipcEndpointOp_modifiedFields st st' :=
+  preservesFieldsOutside_mono (fun _ hf => List.mem_append_left _ hf)
+    (storeObject_preservesFieldsOutside id obj st st' hStep)
+
+theorem ensureRunnable_preservesFieldsOutside (st : SystemState) (tid : SeLe4n.ThreadId) :
+    preservesFieldsOutside ipcEndpointOp_modifiedFields st (ensureRunnable st tid) := by
+  unfold ensureRunnable
+  split
+  · exact preservesFieldsOutside_refl _ _
+  · split
+    · intro f hf
+      cases f <;> first
+        | rfl
+        | exact (hf (by decide)).elim
+    · exact preservesFieldsOutside_refl _ _
+
+theorem removeRunnable_preservesFieldsOutside (st : SystemState) (tid : SeLe4n.ThreadId) :
+    preservesFieldsOutside ipcEndpointOp_modifiedFields st (removeRunnable st tid) := by
+  unfold removeRunnable
+  intro f hf
+  cases f <;> first
+    | rfl
+    | exact (hf (by decide)).elim
+
+theorem storeTcbQueueLinks_preservesFieldsOutside
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId)
+    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
+    preservesFieldsOutside ipcEndpointOp_modifiedFields st st' := by
+  unfold storeTcbQueueLinks at hStep
+  split at hStep
+  · cases hStep
+  · split at hStep
+    · cases hStep
+    · rename_i st₁ hStore
+      cases hStep
+      exact storeObject_preservesFieldsOutside_ipc _ _ _ _ hStore
+
+theorem storeTcbIpcStateAndMessage_preservesFieldsOutside
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (ipcState : ThreadIpcState) (msg : Option IpcMessage)
+    (hStep : storeTcbIpcStateAndMessage st tid ipcState msg = .ok st') :
+    preservesFieldsOutside ipcEndpointOp_modifiedFields st st' := by
+  unfold storeTcbIpcStateAndMessage at hStep
+  split at hStep
+  · cases hStep
+  · split at hStep
+    · cases hStep
+    · rename_i st₁ hStore
+      cases hStep
+      exact storeObject_preservesFieldsOutside_ipc _ _ _ _ hStore
+
+theorem storeTcbReceiveComplete_preservesFieldsOutside
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (msg : Option IpcMessage)
+    (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
+    preservesFieldsOutside ipcEndpointOp_modifiedFields st st' := by
+  unfold storeTcbReceiveComplete at hStep
+  split at hStep
+  · cases hStep
+  · split at hStep
+    · cases hStep
+    · rename_i st₁ hStore
+      cases hStep
+      exact storeObject_preservesFieldsOutside_ipc _ _ _ _ hStore
+
+theorem endpointQueuePopHead_preservesFieldsOutside
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (st st' : SystemState)
+    (tid : SeLe4n.ThreadId) (headTcb : TCB)
+    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, headTcb, st')) :
+    preservesFieldsOutside ipcEndpointOp_modifiedFields st st' := by
+  unfold endpointQueuePopHead at hStep
+  dsimp only at hStep
+  split at hStep
+  · split at hStep
+    · cases hStep
+    · split at hStep
+      · cases hStep
+      · split at hStep
+        · cases hStep
+        · split at hStep
+          · cases hStep
+          · rename_i st₁ hStore
+            split at hStep
+            · cases hStep
+            · rename_i st₂ hRelink
+              split at hStep
+              · cases hStep
+              · rename_i st₃ hLinks
+                simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+                obtain ⟨-, -, hEq⟩ := hStep
+                subst hEq
+                refine preservesFieldsOutside_trans
+                  (storeObject_preservesFieldsOutside_ipc _ _ _ _ hStore) ?_
+                refine preservesFieldsOutside_trans ?_
+                  (storeTcbQueueLinks_preservesFieldsOutside _ _ _ _ _ _ hLinks)
+                split at hRelink
+                · cases hRelink
+                  exact preservesFieldsOutside_refl _ _
+                · split at hRelink
+                  · cases hRelink
+                  · exact storeTcbQueueLinks_preservesFieldsOutside _ _ _ _ _ _ hRelink
+  · cases hStep
+  · cases hStep
+
+theorem endpointQueueEnqueue_preservesFieldsOutside
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState)
+    (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
+    preservesFieldsOutside ipcEndpointOp_modifiedFields st st' := by
+  unfold endpointQueueEnqueue at hStep
+  dsimp only at hStep
+  split at hStep
+  · split at hStep
+    · cases hStep
+    · split at hStep
+      · cases hStep
+      · split at hStep
+        · cases hStep
+        · split at hStep
+          · split at hStep
+            · cases hStep
+            · rename_i st₁ hStore
+              exact preservesFieldsOutside_trans
+                (storeObject_preservesFieldsOutside_ipc _ _ _ _ hStore)
+                (storeTcbQueueLinks_preservesFieldsOutside _ _ _ _ _ _ hStep)
+          · split at hStep
+            · cases hStep
+            · split at hStep
+              · cases hStep
+              · rename_i st₁ hStore
+                split at hStep
+                · cases hStep
+                · rename_i st₂ hTail
+                  exact preservesFieldsOutside_trans
+                    (storeObject_preservesFieldsOutside_ipc _ _ _ _ hStore)
+                    (preservesFieldsOutside_trans
+                      (storeTcbQueueLinks_preservesFieldsOutside _ _ _ _ _ _ hTail)
+                      (storeTcbQueueLinks_preservesFieldsOutside _ _ _ _ _ _ hStep))
+  · cases hStep
+  · cases hStep
+
+theorem linkReply_preservesFieldsOutside
+    (rid : SeLe4n.ReplyId) (caller : SeLe4n.ThreadId) (st st' : SystemState)
+    (hStep : SystemState.linkReply rid caller st = .ok ((), st')) :
+    preservesFieldsOutside ipcEndpointOp_modifiedFields st st' := by
+  unfold SystemState.linkReply at hStep
+  split at hStep
+  · split at hStep
+    · exact storeObject_preservesFieldsOutside_ipc _ _ _ _ hStep
+    · cases hStep
+  · cases hStep
+
+theorem linkCallerReply_preservesFieldsOutside
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (st st' : SystemState)
+    (hStep : SystemState.linkCallerReply caller rid st = .ok ((), st')) :
+    preservesFieldsOutside ipcEndpointOp_modifiedFields st st' := by
+  unfold SystemState.linkCallerReply at hStep
+  split at hStep
+  · cases hStep
+  · rename_i st₁ hLink
+    split at hStep
+    · cases hStep
+    · split at hStep
+      · exact preservesFieldsOutside_trans
+          (linkReply_preservesFieldsOutside _ _ _ _ hLink)
+          (storeObject_preservesFieldsOutside_ipc _ _ _ _ hStep)
+      · cases hStep
+
+theorem returnDonatedSchedContext_preservesFieldsOutside
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (hStep : returnDonatedSchedContext st serverTid scId originalOwner = .ok st') :
+    preservesFieldsOutside ipcEndpointOp_modifiedFields st st' := by
+  unfold returnDonatedSchedContext at hStep
+  dsimp only at hStep
+  split at hStep
+  · split at hStep
+    · cases hStep
+    · split at hStep
+      · cases hStep
+      · rename_i st₁ hSc
+        split at hStep
+        · cases hStep
+        · split at hStep
+          · cases hStep
+          · rename_i st₂ hClient
+            split at hStep
+            · cases hStep
+            · split at hStep
+              · cases hStep
+              · rename_i st₃ hServer
+                cases hStep
+                refine preservesFieldsOutside_trans
+                  (storeObject_preservesFieldsOutside_ipc _ _ _ _ hSc) ?_
+                refine preservesFieldsOutside_trans
+                  (storeObject_preservesFieldsOutside_ipc _ _ _ _ hClient) ?_
+                refine preservesFieldsOutside_trans
+                  (storeObject_preservesFieldsOutside_ipc _ _ _ _ hServer) ?_
+                intro f hf
+                cases f <;> first
+                  | rfl
+                  | exact (hf (by decide)).elim
+  · cases hStep
+
+theorem cleanupPreReceiveDonationChecked_preservesFieldsOutside
+    (st st' : SystemState) (receiver : SeLe4n.ThreadId)
+    (hStep : cleanupPreReceiveDonationChecked st receiver = .ok st') :
+    preservesFieldsOutside ipcEndpointOp_modifiedFields st st' := by
+  unfold cleanupPreReceiveDonationChecked at hStep
+  split at hStep
+  · cases hStep
+    exact preservesFieldsOutside_refl _ _
+  · split at hStep
+    · exact returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ hStep
+    · cases hStep
+      exact preservesFieldsOutside_refl _ _
+
+theorem endpointSendDual_preservesFieldsOutside
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (msg : IpcMessage)
+    (st st' : SystemState)
+    (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
+    preservesFieldsOutside ipcEndpointOp_modifiedFields st st' := by
+  unfold endpointSendDual at hStep
+  split at hStep
+  · cases hStep
+  · split at hStep
+    · cases hStep
+    · split at hStep
+      · split at hStep
+        · split at hStep
+          · cases hStep
+          · split at hStep
+            · cases hStep
+            · rename_i receiver tcb st₁ hPop
+              split at hStep
+              · cases hStep
+              · rename_i st₂ hComplete
+                simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+                obtain ⟨-, hEq⟩ := hStep
+                subst hEq
+                exact preservesFieldsOutside_trans
+                  (endpointQueuePopHead_preservesFieldsOutside _ _ _ _ _ _ hPop)
+                  (preservesFieldsOutside_trans
+                    (storeTcbReceiveComplete_preservesFieldsOutside _ _ _ _ hComplete)
+                    (ensureRunnable_preservesFieldsOutside _ _))
+        · split at hStep
+          · cases hStep
+          · rename_i st₁ hEnq
+            split at hStep
+            · cases hStep
+            · rename_i st₂ hBlock
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨-, hEq⟩ := hStep
+              subst hEq
+              exact preservesFieldsOutside_trans
+                (endpointQueueEnqueue_preservesFieldsOutside _ _ _ _ _ hEnq)
+                (preservesFieldsOutside_trans
+                  (storeTcbIpcStateAndMessage_preservesFieldsOutside _ _ _ _ _ hBlock)
+                  (removeRunnable_preservesFieldsOutside _ _))
+      · cases hStep
+      · cases hStep
+
+theorem endpointReceiveDual_preservesFieldsOutside
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (st st' : SystemState) (sender : SeLe4n.ThreadId)
+    (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (sender, st')) :
+    preservesFieldsOutside ipcEndpointOp_modifiedFields st st' := by
+  unfold endpointReceiveDual at hStep
+  dsimp only at hStep
+  split at hStep
+  · split at hStep
+    · -- rendezvous: a sender is queued
+      split at hStep
+      · cases hStep
+      · rename_i senderTid senderTcb st₁ hPop
+        have hPopF := endpointQueuePopHead_preservesFieldsOutside _ _ _ _ _ _ hPop
+        -- `senderWasCall` is a Bool read off the dequeued sender's `ipcState`;
+        -- splitting it and then the `if` it guards leaves one call-path goal,
+        -- six send-path goals (one per non-call constructor) and seven absurd ones.
+        split at hStep <;> split at hStep <;>
+          first
+          | exact absurd rfl ‹¬true = true›
+          | exact absurd ‹false = true› (by decide)
+          | skip
+        all_goals first
+          | -- call path
+            (split at hStep
+             · cases hStep
+             · rename_i st₂ hSender
+               split at hStep
+               · cases hStep
+               · split at hStep
+                 · cases hStep
+                 · rename_i stLinked hLink
+                   split at hStep
+                   · rename_i st₃ hRecv
+                     simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+                     obtain ⟨-, hEq⟩ := hStep
+                     subst hEq
+                     exact preservesFieldsOutside_trans hPopF
+                       (preservesFieldsOutside_trans
+                         (storeTcbIpcStateAndMessage_preservesFieldsOutside _ _ _ _ _ hSender)
+                         (preservesFieldsOutside_trans
+                           (linkCallerReply_preservesFieldsOutside _ _ _ _ hLink)
+                           (storeTcbIpcStateAndMessage_preservesFieldsOutside _ _ _ _ _ hRecv)))
+                   · cases hStep)
+          | -- send path
+            (split at hStep
+             · cases hStep
+             · rename_i st₂ hSender
+               split at hStep
+               · rename_i st₄ hRecv
+                 simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+                 obtain ⟨-, hEq⟩ := hStep
+                 subst hEq
+                 exact preservesFieldsOutside_trans hPopF
+                   (preservesFieldsOutside_trans
+                     (storeTcbIpcStateAndMessage_preservesFieldsOutside _ _ _ _ _ hSender)
+                     (preservesFieldsOutside_trans
+                       (ensureRunnable_preservesFieldsOutside _ _)
+                       (storeTcbIpcStateAndMessage_preservesFieldsOutside _ _ _ _ _ hRecv)))
+               · cases hStep)
+    · -- no sender: block
+      split at hStep
+      · cases hStep
+      · rename_i stClean hClean
+        split at hStep
+        · cases hStep
+        · rename_i st₁ hEnq
+          split at hStep
+          · cases hStep
+          · rename_i st₂ hBlock
+            have hPre := preservesFieldsOutside_trans
+              (cleanupPreReceiveDonationChecked_preservesFieldsOutside _ _ _ hClean)
+              (preservesFieldsOutside_trans
+                (endpointQueueEnqueue_preservesFieldsOutside _ _ _ _ _ hEnq)
+                (storeTcbIpcStateAndMessage_preservesFieldsOutside _ _ _ _ _ hBlock))
+            split at hStep
+            · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨-, hEq⟩ := hStep
+              subst hEq
+              exact preservesFieldsOutside_trans hPre (removeRunnable_preservesFieldsOutside _ _)
+            · split at hStep
+              · split at hStep
+                · cases hStep
+                · rename_i stStashed hStash
+                  simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+                  obtain ⟨-, hEq⟩ := hStep
+                  subst hEq
+                  exact preservesFieldsOutside_trans hPre
+                    (preservesFieldsOutside_trans
+                      (storeObject_preservesFieldsOutside_ipc _ _ _ _ hStash)
+                      (removeRunnable_preservesFieldsOutside _ _))
+              · cases hStep
+  · cases hStep
+  · cases hStep
 
 -- ============================================================================
 -- W2-A2/A3: Per-predicate frame lemmas connecting field disjointness
@@ -1367,6 +2296,89 @@ theorem registryDependencyConsistent_frame
   rw [hServices] at hLookup
   have hPresent := hInv sid entry hLookup dep hDep
   rwa [hServices]
+
+/-! ### WS-RR RR7.19 — the two list families, joined
+
+`registryDependencyConsistent_frame` above is the `readsOnly` shape
+`predicateFramedByDisjointWrites` wants, expressed one field at a time.  Below
+it is restated over the predicate's own **read-set**, and then composed with an
+operation's **write-set** — which is the whole point of maintaining the two
+families and the thing nothing in the tree did before this row.
+
+Read the composition as the answer to a question the release plan actually
+asks: *may this operation and that invariant be reasoned about independently?*
+The `fieldsDisjoint` witnesses further up decide it for lists; these decide it
+for states. -/
+
+/-- **WS-RR RR7.19**: `registryDependencyConsistent` reads exactly its declared
+read-set.  The one-field frame lemma above, restated at the list — so the list
+is what a caller supplies, not a hand-picked hypothesis. -/
+theorem registryDependencyConsistent_readsOnly (st st' : SystemState)
+    (hFields : ∀ f ∈ registryDependencyConsistent_fields, SystemState.fieldEq f st st')
+    (hInv : registryDependencyConsistent st) :
+    registryDependencyConsistent st' :=
+  registryDependencyConsistent_frame st st'
+    (hFields .services (by decide)) hInv
+
+/-- **WS-RR RR7.19**: `noStaleEndpointQueueReferences` reads exactly its
+declared read-set. -/
+theorem noStaleEndpointQueueReferences_readsOnly (st st' : SystemState)
+    (hFields : ∀ f ∈ noStaleEndpointQueueReferences_fields, SystemState.fieldEq f st st')
+    (hInv : noStaleEndpointQueueReferences st) :
+    noStaleEndpointQueueReferences st' :=
+  noStaleEndpointQueueReferences_frame st st' (hFields .objects (by decide)) hInv
+
+/-- **WS-RR RR7.19 — the first consumer either family has ever had.**
+
+`storeObject` writes only `storeObject_modifiedFields`;
+`registryDependencyConsistent` reads only `registryDependencyConsistent_fields`;
+the two are disjoint, decided.  Therefore `storeObject` preserves the invariant
+— with no hand-written argument about *which* fields, and no opportunity to
+forget one.
+
+The under-declaration this cut fixed is what the theorem is guarding against:
+had `storeObject_modifiedFields` still omitted `.asidTable`, this shape would
+have licensed the same conclusion for a predicate that reads it. -/
+theorem storeObject_preserves_registryDependencyConsistent
+    (id : SeLe4n.ObjId) (obj : KernelObject) (st st' : SystemState)
+    (hStep : storeObject id obj st = .ok ((), st'))
+    (hInv : registryDependencyConsistent st) :
+    registryDependencyConsistent st' :=
+  predicateFramedByDisjointWrites
+    (readFields := registryDependencyConsistent_fields)
+    (writeFields := storeObject_modifiedFields)
+    registryDependencyConsistent_readsOnly (by decide)
+    (storeObject_preservesFieldsOutside id obj st st' hStep) hInv
+
+/-- **WS-RR RR7.19**: the dual direction — `revokeService` writes only the
+service registry and graph, `noStaleEndpointQueueReferences` reads only the
+object store, so the revoke cannot strand an endpoint queue reference.
+
+Stated because a *second* instance is what shows the shape is general rather
+than a bespoke argument dressed up as one. -/
+theorem revokeService_preserves_noStaleEndpointQueueReferences
+    (sid : ServiceId) (st st' : SystemState)
+    (hStep : revokeService sid st = .ok ((), st'))
+    (hInv : noStaleEndpointQueueReferences st) :
+    noStaleEndpointQueueReferences st' :=
+  predicateFramedByDisjointWrites
+    (readFields := noStaleEndpointQueueReferences_fields)
+    (writeFields := revokeService_modifiedFields)
+    noStaleEndpointQueueReferences_readsOnly (by decide)
+    (revokeService_preservesFieldsOutside sid st st' hStep) hInv
+
+/-- **WS-RR RR7.19 (the load-bearing negative)**: the disjointness premise is
+not decoration.  `storeObject` writes `.objects`, and
+`noStaleEndpointQueueReferences` reads `.objects`, so the two lists are **not**
+disjoint and the composition above does not apply to that pair — which is
+correct, since a `storeObject` really can strand a queue reference.
+
+Kept as a decided witness so a future widening of a read-set or a write-set
+that silently made this pair "disjoint" would fail here rather than quietly
+license an unsound frame. -/
+theorem storeObject_not_framed_from_noStaleEndpointQueueReferences :
+    fieldsDisjoint noStaleEndpointQueueReferences_fields storeObject_modifiedFields
+      = false := by decide
 
 /-- V6-A5: Frame lemma — if an operation preserves the `services` and
     `objectIndex` fields, `serviceGraphInvariant` is preserved.

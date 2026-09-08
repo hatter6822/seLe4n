@@ -721,17 +721,86 @@ pub enum TlbInvalidation {
 /// the domain as a separate `tlbi_for_sharing` argument makes the
 /// platform binding explicit at the call site without polluting the
 /// operation type.
+/// **WS-RR RR7.16**: which broadcast TLBI primitive a `(domain, operation)`
+/// pair selects.
+///
+/// Register §6 finding 26: nothing tested `tlbi_for_sharing`'s routing, and the
+/// theorem catalogue's `tlbi_for_sharing_routes_inner` did not exist.  It could
+/// not have: the dispatcher's arms call primitives that emit `asm!` on aarch64
+/// and nothing on the host, so a host test could observe neither which arm ran
+/// nor what it emitted — the routing was structurally untestable, which is why
+/// it had no test rather than an oversight.
+///
+/// Splitting the *decision* out makes it a pure function of two enums, and the
+/// witnesses below check all eight pairs.  What remains outside any host test
+/// is the chain from a decided variant to an executed instruction, and
+/// `scripts/check_tlbi_broadcast_discipline.py` holds both of its links: each
+/// dispatch arm calls the primitive its variant NAMES
+/// (`check_sharing_dispatcher_routing`), and each primitive emits the mnemonic
+/// ITS name spells (`check_emitter_naming`).  Neither link is enumerated in the
+/// gate — the variant set is read off this enum and the mnemonics off the
+/// `asm!` templates — so a ninth variant is covered the day it is declared.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TlbiVariant {
+    /// `TLBI VMALLE1IS`
+    Vmalle1Is,
+    /// `TLBI VMALLE1OS`
+    Vmalle1Os,
+    /// `TLBI VAE1IS`
+    Vae1Is,
+    /// `TLBI VAE1OS`
+    Vae1Os,
+    /// `TLBI ASIDE1IS`
+    Aside1Is,
+    /// `TLBI ASIDE1OS`
+    Aside1Os,
+    /// `TLBI VALE1IS`
+    Vale1Is,
+    /// `TLBI VALE1OS`
+    Vale1Os,
+}
+
+/// **WS-RR RR7.16**: the routing decision, as data.
+///
+/// Total over both enums: every `(domain, operation)` pair selects exactly one
+/// primitive, and the `Inner`/`Outer` axis selects the `*IS`/`*OS` half
+/// independently of the operation — the invariant a mis-typed arm would break
+/// and the witnesses assert directly.
+#[inline(always)]
+#[must_use]
+pub const fn tlbi_variant_for(domain: SharingDomain, op: TlbInvalidation) -> TlbiVariant {
+    match (domain, op) {
+        (SharingDomain::Inner, TlbInvalidation::Vmalle1) => TlbiVariant::Vmalle1Is,
+        (SharingDomain::Outer, TlbInvalidation::Vmalle1) => TlbiVariant::Vmalle1Os,
+        (SharingDomain::Inner, TlbInvalidation::Vae1 { .. }) => TlbiVariant::Vae1Is,
+        (SharingDomain::Outer, TlbInvalidation::Vae1 { .. }) => TlbiVariant::Vae1Os,
+        (SharingDomain::Inner, TlbInvalidation::Aside1 { .. }) => TlbiVariant::Aside1Is,
+        (SharingDomain::Outer, TlbInvalidation::Aside1 { .. }) => TlbiVariant::Aside1Os,
+        (SharingDomain::Inner, TlbInvalidation::Vale1 { .. }) => TlbiVariant::Vale1Is,
+        (SharingDomain::Outer, TlbInvalidation::Vale1 { .. }) => TlbiVariant::Vale1Os,
+    }
+}
+
 #[inline(always)]
 pub fn tlbi_for_sharing(domain: SharingDomain, op: TlbInvalidation) {
-    match (domain, op) {
-        (SharingDomain::Inner, TlbInvalidation::Vmalle1) => tlbi_vmalle1is(),
-        (SharingDomain::Outer, TlbInvalidation::Vmalle1) => tlbi_vmalle1os(),
-        (SharingDomain::Inner, TlbInvalidation::Vae1 { asid, vaddr }) => tlbi_vae1is(asid, vaddr),
-        (SharingDomain::Outer, TlbInvalidation::Vae1 { asid, vaddr }) => tlbi_vae1os(asid, vaddr),
-        (SharingDomain::Inner, TlbInvalidation::Aside1 { asid }) => tlbi_aside1is(asid),
-        (SharingDomain::Outer, TlbInvalidation::Aside1 { asid }) => tlbi_aside1os(asid),
-        (SharingDomain::Inner, TlbInvalidation::Vale1 { asid, vaddr }) => tlbi_vale1is(asid, vaddr),
-        (SharingDomain::Outer, TlbInvalidation::Vale1 { asid, vaddr }) => tlbi_vale1os(asid, vaddr),
+    // **WS-RR RR7.16**: the decision is `tlbi_variant_for`'s; this match is the
+    // one-line emission per variant, held to the primitive each variant names
+    // by `scripts/check_tlbi_broadcast_discipline.py`.
+    let (asid, vaddr) = match op {
+        TlbInvalidation::Vmalle1 => (0u16, 0u64),
+        TlbInvalidation::Vae1 { asid, vaddr } => (asid, vaddr),
+        TlbInvalidation::Aside1 { asid } => (asid, 0u64),
+        TlbInvalidation::Vale1 { asid, vaddr } => (asid, vaddr),
+    };
+    match tlbi_variant_for(domain, op) {
+        TlbiVariant::Vmalle1Is => tlbi_vmalle1is(),
+        TlbiVariant::Vmalle1Os => tlbi_vmalle1os(),
+        TlbiVariant::Vae1Is => tlbi_vae1is(asid, vaddr),
+        TlbiVariant::Vae1Os => tlbi_vae1os(asid, vaddr),
+        TlbiVariant::Aside1Is => tlbi_aside1is(asid),
+        TlbiVariant::Aside1Os => tlbi_aside1os(asid),
+        TlbiVariant::Vale1Is => tlbi_vale1is(asid, vaddr),
+        TlbiVariant::Vale1Os => tlbi_vale1os(asid, vaddr),
     }
 }
 
@@ -1317,5 +1386,139 @@ mod tests {
         // unit tests into `fatal_halt`.  Matches
         // `barriers::has_feat_csv2`'s host convention.
         assert!(has_feat_tlbios());
+    }
+}
+
+// ===========================================================================
+// WS-RR RR7.16: the broadcast-routing witnesses
+//
+// Register §6 finding 26: "No test verifies `tlbi_for_sharing`'s Inner/Outer
+// routing; the catalogued `tlbi_for_sharing_routes_inner` does not exist."  It
+// exists now, over `tlbi_variant_for` — the routing decision as data, which is
+// what made the property testable at all.
+// ===========================================================================
+
+#[cfg(test)]
+mod sharing_domain_routing_tests {
+    use super::*;
+
+    /// Every operation shape, so the witnesses below are exhaustive rather
+    /// than a sample.  The ASID and VA values are arbitrary and deliberately
+    /// distinct: the routing must not depend on them.
+    const OPERATIONS: [TlbInvalidation; 4] = [
+        TlbInvalidation::Vmalle1,
+        TlbInvalidation::Vae1 {
+            asid: 0x1234,
+            vaddr: 0xFFFF_0000,
+        },
+        TlbInvalidation::Aside1 { asid: 0x0042 },
+        TlbInvalidation::Vale1 {
+            asid: 0xABCD,
+            vaddr: 0x8000_0000,
+        },
+    ];
+
+    #[test]
+    fn tlbi_for_sharing_routes_inner() {
+        // The name the SM1 theorem catalogue advertised and the tree did not
+        // have.  Inner-shareable selects the `*IS` half, for every operation.
+        for op in OPERATIONS {
+            let variant = tlbi_variant_for(SharingDomain::Inner, op);
+            assert!(
+                matches!(
+                    variant,
+                    TlbiVariant::Vmalle1Is
+                        | TlbiVariant::Vae1Is
+                        | TlbiVariant::Aside1Is
+                        | TlbiVariant::Vale1Is
+                ),
+                "Inner routed {op:?} to {variant:?}, which is not an IS variant"
+            );
+        }
+    }
+
+    #[test]
+    fn tlbi_for_sharing_routes_outer() {
+        for op in OPERATIONS {
+            let variant = tlbi_variant_for(SharingDomain::Outer, op);
+            assert!(
+                matches!(
+                    variant,
+                    TlbiVariant::Vmalle1Os
+                        | TlbiVariant::Vae1Os
+                        | TlbiVariant::Aside1Os
+                        | TlbiVariant::Vale1Os
+                ),
+                "Outer routed {op:?} to {variant:?}, which is not an OS variant"
+            );
+        }
+    }
+
+    #[test]
+    fn every_domain_and_operation_pair_routes_to_its_own_primitive() {
+        // The full eight-cell table, written out rather than derived, because
+        // a derivation would reproduce the function under test.
+        let expected = [
+            (SharingDomain::Inner, OPERATIONS[0], TlbiVariant::Vmalle1Is),
+            (SharingDomain::Outer, OPERATIONS[0], TlbiVariant::Vmalle1Os),
+            (SharingDomain::Inner, OPERATIONS[1], TlbiVariant::Vae1Is),
+            (SharingDomain::Outer, OPERATIONS[1], TlbiVariant::Vae1Os),
+            (SharingDomain::Inner, OPERATIONS[2], TlbiVariant::Aside1Is),
+            (SharingDomain::Outer, OPERATIONS[2], TlbiVariant::Aside1Os),
+            (SharingDomain::Inner, OPERATIONS[3], TlbiVariant::Vale1Is),
+            (SharingDomain::Outer, OPERATIONS[3], TlbiVariant::Vale1Os),
+        ];
+        for (domain, op, want) in expected {
+            assert_eq!(
+                tlbi_variant_for(domain, op),
+                want,
+                "({domain:?}, {op:?}) must route to {want:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_domain_axis_is_independent_of_the_operation() {
+        // The relation a per-arm test would miss: swapping the domain must
+        // change the variant, for *every* operation — a table that routed one
+        // operation to the same primitive in both domains would pass a
+        // "some IS variant" check and silently under-broadcast (or
+        // over-broadcast) that one operation.
+        for op in OPERATIONS {
+            assert_ne!(
+                tlbi_variant_for(SharingDomain::Inner, op),
+                tlbi_variant_for(SharingDomain::Outer, op),
+                "{op:?} routes to the same primitive in both domains"
+            );
+        }
+    }
+
+    #[test]
+    fn distinct_operations_route_to_distinct_primitives_within_a_domain() {
+        // And the operation axis, symmetrically: two operations collapsing to
+        // one primitive would invalidate more or less than the caller asked.
+        for domain in [SharingDomain::Inner, SharingDomain::Outer] {
+            let mut seen: [Option<TlbiVariant>; 4] = [None; 4];
+            for (i, op) in OPERATIONS.into_iter().enumerate() {
+                let v = tlbi_variant_for(domain, op);
+                assert!(
+                    !seen.iter().flatten().any(|s| *s == v),
+                    "{domain:?} routes two operations to {v:?}"
+                );
+                seen[i] = Some(v);
+            }
+        }
+    }
+
+    #[test]
+    fn the_dispatcher_accepts_every_pair() {
+        // The emission half is a no-op on the host, but the dispatcher must at
+        // least be total over the same domain: a panic or an unreachable arm
+        // here would be a routing hole the pure witnesses could not see.
+        for domain in [SharingDomain::Inner, SharingDomain::Outer] {
+            for op in OPERATIONS {
+                tlbi_for_sharing(domain, op);
+            }
+        }
     }
 }

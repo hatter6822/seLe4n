@@ -1059,6 +1059,28 @@ def preemptCurrentOnCore (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreI
             scheduler := st.scheduler.setRunQueueOnCore c reenqueuedRq }
       | none => st
 
+/-- WS-SM SM5.B.3 (frame): `preemptCurrentOnCore` never writes *any* core's
+`current` slot — it only saves the outgoing thread's context (objects) and
+re-enqueues it into core `c`'s run queue (scheduler).  So *every* core's
+current thread is preserved.
+
+**WS-RR RR7.36** moved this from the staged `PerCoreSwitchToThread` to sit
+beside the transition it frames: `Operations/Core.lean`'s thread-state
+preservation needs it and cannot import a staged module, and a second copy
+there would be one question with two answers. -/
+theorem preemptCurrentOnCore_currentOnCore (st : SystemState) (c : CoreId)
+    (incoming : SeLe4n.ThreadId) (c' : CoreId) :
+    (preemptCurrentOnCore st c incoming).scheduler.currentOnCore c'
+      = st.scheduler.currentOnCore c' := by
+  unfold preemptCurrentOnCore
+  split
+  · rfl
+  · split
+    · rfl
+    · split
+      · simp
+      · rfl
+
 /-- WS-SM SM5.B.1 (plan §3.2): per-core context switch to `tid` on core `c`.
 
 Performs, in order:
@@ -1233,6 +1255,35 @@ def determineTargetCore (st : SystemState) (tid : SeLe4n.ThreadId) : CoreId :=
       | some c' => c'
       | none    => bootCoreId
   | none => bootCoreId
+/-- **WS-RR RR7.30**: the routing decision never names a PE the board does not
+have.
+
+`setThreadCpuAffinityWithMigration` refuses an affinity at or above
+`machine.declaredCoreCount` and `bootAffinitiesDeclared` refuses a configured
+one, so every *pinned* thread is already inside the declared set.  This is the
+other half — the unpinned one — and it is the half nothing stated: a thread with
+`cpuAffinity = none`, and a `tid` that resolves to no TCB at all, both route to
+`bootCoreId`, which is core `0`, and every binding declares at least one PE
+(`PlatformBinding.coreCountPos`, carried onto the machine by
+`declaredCoreCountAgrees`).  Together with the two refusals, no thread is ever
+enqueued on a core `chooseThreadOnCore` would find empty.
+
+Stated against `machine.declaredCoreCount` rather than against a binding's
+`coreCount` because that is what a kernel transition can read; the hypothesis is
+the pinned invariant the two refusals maintain, supplied rather than assumed. -/
+theorem determineTargetCore_lt_declaredCoreCount (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hPos : 0 < st.machine.declaredCoreCount)
+    (hAff : ∀ tcb, st.getTcb? tid = some tcb →
+        ∀ c, tcb.cpuAffinity = some c → c.val < st.machine.declaredCoreCount) :
+    (determineTargetCore st tid).val < st.machine.declaredCoreCount := by
+  unfold determineTargetCore
+  cases hT : st.getTcb? tid with
+  | none => simpa [bootCoreId] using hPos
+  | some tcb =>
+    cases hA : tcb.cpuAffinity with
+    | none => simp only [hA]; simpa [bootCoreId] using hPos
+    | some c => simp only [hA]; simpa using hAff tcb hT c hA
+
 /-- WS-SM SM5.C.2 / WS-RR RR2.3: `determineTargetCore` depends on the thread only
 through its TCB's `cpuAffinity` — two states whose `getTcb?` agree up to
 `cpuAffinity` route the thread to the same core.  The congruence that lets a

@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-3.0-or-later
 /-
-  seLe4n  - A Lean Microkernel
-  Copyright (C) 2026  Adam Hall
+  seLe4n - A Lean Microkernel
+  Copyright (C) 2026 Adam Hall
   This program comes with ABSOLUTELY NO WARRANTY.
   This is free software, and you are welcome to redistribute it
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
@@ -21,8 +21,8 @@ import SeLe4n.Kernel.IPC.Invariant.Structural.PerOperation
 
 Extracted from `SeLe4n.Kernel.IPC.Invariant.Structural` as part of
 AN3-C (IPC-M02 / Theme 4.7) to keep each module under the
-2000-LOC maintenance ceiling.  Declarations are unchanged in order,
-content, and proof; only the file boundary has moved.  The parent
+2000-LOC maintenance ceiling. Declarations are unchanged in order,
+content, and proof; only the file boundary has moved. The parent
 `Structural.lean` re-exports every child so all existing
 `import SeLe4n.Kernel.IPC.Invariant.Structural` consumers continue
 to typecheck without modification.
@@ -46,7 +46,7 @@ open SeLe4n.Model
 -- ============================================================================
 -- WS-SM SM6.D (#7.1 reply-objects fold): per-conjunct frame lemmas for the
 -- atomic reply-link (`SystemState.linkCallerReply`) and the server-first stash
--- store that the folded `endpointReceiveDual` now performs.  These mirror the
+-- store that the folded `endpointReceiveDual` now performs. These mirror the
 -- `linkCallerReply_preserves_<C>` helpers in `Structural.StoreObjectFrame`, but
 -- here the framed conjuncts are the single structural ones consumed by the V3-K
 -- / V3-J per-conjunct preservation theorems below (`endpointQueueNoDup`,
@@ -54,7 +54,7 @@ open SeLe4n.Model
 --
 -- `linkCallerReply` writes a `.reply` (via `linkReply`, a non-ep/non-tcb store)
 -- then a caller `.tcb` differing only in `replyObject`; the stash writes a
--- receiver `.tcb` differing only in `pendingReceiveReply`.  None of these three
+-- receiver `.tcb` differing only in `pendingReceiveReply`. None of these three
 -- conjuncts reads `replyObject` or `pendingReceiveReply` (only `ipcState`,
 -- `queueNext`, and endpoint objects), so a TCB store agreeing on those two read
 -- fields frames each conjunct.
@@ -249,7 +249,7 @@ private theorem linkCallerReply_preserves_endpointQueueNoDup
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D (#7.1 fold): `linkCallerReply` preserves
-`ipcStateQueueMembershipConsistent`.  The `.reply` store frames it (non-ep/
+`ipcStateQueueMembershipConsistent`. The `.reply` store frames it (non-ep/
 non-tcb); the caller `.tcb` store changes only `replyObject` (ipcState +
 queueNext unchanged). -/
 private theorem linkCallerReply_preserves_ipcStateQueueMembershipConsistent
@@ -387,7 +387,7 @@ theorem linkServerStashedReply_preserves_endpointQueueNoDup
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` preserves
-`ipcStateQueueMembershipConsistent`.  The server `.tcb` re-store clears
+`ipcStateQueueMembershipConsistent`. The server `.tcb` re-store clears
 `pendingReceiveReply` (`ipcState` + `queueNext` unchanged). -/
 -- IPC de-threading D8: public (consumed by the cross-core `endpointCallOnCore` QMC establisher).
 theorem linkServerStashedReply_preserves_ipcStateQueueMembershipConsistent
@@ -421,7 +421,7 @@ theorem linkServerStashedReply_preserves_ipcStateQueueMembershipConsistent
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` preserves
-`ipcStateQueueConsistent`.  The server `.tcb` re-store clears `pendingReceiveReply`
+`ipcStateQueueConsistent`. The server `.tcb` re-store clears `pendingReceiveReply`
 (`ipcState` unchanged). -/
 private theorem linkServerStashedReply_preserves_ipcStateQueueConsistent
     (st st' : SystemState) (caller server : SeLe4n.ThreadId)
@@ -513,7 +513,7 @@ theorem endpointSendDual_preserves_endpointQueueNoDup
       | some _ =>
         -- Rendezvous path: PopHead + storeTcbIpcStateAndMessage + ensureRunnable
         -- PR #873 round 17: the rendezvous arm resolves the sender before
-        -- popping.  It never did, so a send naming a nonexistent thread
+        -- popping. It never did, so a send naming a nonexistent thread
         -- delivered anyway and the receiver held a message attributed to it.
         cases hSnd : st.getTcb? sender with
         | none => simp [hHead, hSnd] at hStep
@@ -1010,7 +1010,7 @@ theorem endpointSendDual_preserves_ipcStateQueueMembershipConsistent
       | some _ =>
         -- RENDEZVOUS PATH: PopHead + storeTcb(.ready) + ensureRunnable
         -- PR #873 round 17: the rendezvous arm resolves the sender before
-        -- popping.  It never did, so a send naming a nonexistent thread
+        -- popping. It never did, so a send naming a nonexistent thread
         -- delivered anyway and the receiver held a message attributed to it.
         cases hSnd : st.getTcb? sender with
         | none => simp [hHead, hSnd] at hStep
@@ -1503,8 +1503,8 @@ theorem endpointCall_preserves_ipcStateQueueMembershipConsistent
 -- *de-threaded* form: they no longer assume the full `replyCallerLinkage st'`, instead
 -- threading only its reciprocal half (`replyCallerLinkageReciprocal st'`) and concretely
 -- *establishing* the third clause (`blockedOnReplyHasReplyObject st'`) from the pre-state
--- via `endpoint{ReceiveDual,Call}_establishes_blockedOnReplyHasReplyObject`.  They are
--- placed after those establish theorems to satisfy definition ordering.  (The reciprocal
+-- via `endpoint{ReceiveDual,Call}_establishes_blockedOnReplyHasReplyObject`. They are
+-- placed after those establish theorems to satisfy definition ordering. (The reciprocal
 -- half was threaded pre-#7.4; de-threading the new third clause is the #7.4 origin-gap
 -- closure at the transition boundary.)
 
@@ -1579,7 +1579,7 @@ theorem endpointQueuePopHead_preserves_tcbQueueLinkIntegrity
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2c: after `endpointQueuePopHead`, no thread's `queueNext` points to the
 popped head — it had no predecessor (it was the head) and the pop clears its `queuePrev`, so post-pop
-link integrity (`tcbQueueLinkIntegrity`) forbids any incoming link.  This is the obligation the
+link integrity (`tcbQueueLinkIntegrity`) forbids any incoming link. This is the obligation the
 rendezvous receiver-`.ready` store needs: setting a thread `.ready` only breaks `queueNextTargetBlocked`
 if some blocked thread links to it. -/
 theorem endpointQueuePopHead_popped_no_incoming
@@ -1629,12 +1629,12 @@ theorem endpointQueueEnqueue_preserves_tcbQueueLinkIntegrity
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2b core (b): after `endpointQueueEnqueue`, any predecessor of the
 enqueued thread (`a` with `a.queueNext = some enqueueTid` in the post-state) is the queue's old
-tail, hence blocked on `endpointId` matching the queue (pre-state tail-blocked).  Discharges the
-block-store `hBwd` of the enqueue transitions' `queueNextBlockingConsistent` establishers.  Proof:
+tail, hence blocked on `endpointId` matching the queue (pre-state tail-blocked). Discharges the
+block-store `hBwd` of the enqueue transitions' `queueNextBlockingConsistent` establishers. Proof:
 post-state `tcbQueueLinkIntegrity` (forward) gives `enqueueTid.queuePrev = some a`;
 `endpointQueueEnqueue_enqueued_queuePrev` pins `enqueueTid.queuePrev = oldQueue.tail`, so
 `a = oldTail`, blocked by `hTail`; `endpointQueueEnqueue_tcb_ipcState_backward` carries the blocking
-state to the post-state TCB.  The freshness side-conditions (`hFreshTid` / `hTailFresh`) are those of
+state to the post-state TCB. The freshness side-conditions (`hFreshTid` / `hTailFresh`) are those of
 `endpointQueueEnqueue_preserves_tcbQueueLinkIntegrity`, dischargeable from the pre-state since the
 enqueued thread is `.ready` (hence not a queue member). -/
 theorem endpointQueueEnqueue_predecessor_blocked
@@ -1682,7 +1682,7 @@ theorem endpointQueueEnqueue_predecessor_blocked
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2b core (c): an `endpointQueueEnqueue` followed by the block-store of
 the enqueued thread (to `.blockedOnSend`/`.blockedOnCall`/`.blockedOnReceive` on the *same* endpoint)
-**establishes** `endpointQueueTailBlockedConsistent`.  The freshly-enqueued thread becomes the new
+**establishes** `endpointQueueTailBlockedConsistent`. The freshly-enqueued thread becomes the new
 tail of the target queue (`endpointQueueEnqueue_enqueued_is_tail`) and the block-store makes it
 blocked-on-this-endpoint; every other tail is framed — the enqueue touches only the target queue's
 tail, and the block-store touches only the enqueued thread, which is fresh by `hFreshTid` (so it is no
@@ -1908,7 +1908,7 @@ theorem queueNextTargetBlocked_clause_of_predecessor_block
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2c: an `endpointQueueEnqueue` followed by the block-store of the
 enqueued thread (to `.blockedOnSend`/`.blockedOnCall`/`.blockedOnReceive` on the *same* endpoint)
-**establishes** `queueNextTargetBlocked`.  The only *new* link is `oldTail → tid`, whose source is
+**establishes** `queueNextTargetBlocked`. The only *new* link is `oldTail → tid`, whose source is
 blocked-on-`endpointId` (core (b) `endpointQueueEnqueue_predecessor_blocked`) and whose target `tid`
 is blocked-on-`endpointId` by the block-store (`hBlock`), so they strict-match; `tid` itself has
 `queueNext = none` (no outgoing link); every other link is pre-existing — its source's `queueNext`
@@ -2000,10 +2000,10 @@ theorem endpointQueueEnqueue_blockStore_establishes_queueNextTargetBlocked
 
 /-- IPC de-threading D4 Slice 2b core (a): after `endpointQueuePopHead`, the popped head `tid` is
 **not a tail** of any queue in the post-pop state — the `hNotTail` obligation the rendezvous
-branches' `storeTcbReceiveComplete`/receiver-`.ready` tail-blocked frames need.  For the popped
+branches' `storeTcbReceiveComplete`/receiver-`.ready` tail-blocked frames need. For the popped
 queue itself: the post-pop tail is `none` (sole element) or the unchanged pre-pop tail, which differs
 from the head `tid` by intrusive well-formedness (`tail.queueNext = none` while the multi-element
-head's `queueNext` is `some`).  For every other queue (other endpoint, or the same endpoint's other
+head's `queueNext` is `some`). For every other queue (other endpoint, or the same endpoint's other
 direction): `tid`'s blocked state is pinned by `queueHeadBlockedConsistent` to the popped queue's
 kind on `endpointId`, which `endpointQueueTailBlockedConsistent` would contradict for any *other*
 (kind, endpoint). -/
@@ -2089,11 +2089,11 @@ theorem endpointQueuePopHead_popped_not_tail
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2c: after `endpointQueuePopHead`, the popped head `tid` is **not a head**
 of any queue in the post-pop state — the `hNotHead` obligation the rendezvous branches'
-`storeTcbReceiveComplete` / receiver-`.ready` `qHBC` frames need.  For the popped queue itself: the
+`storeTcbReceiveComplete` / receiver-`.ready` `qHBC` frames need. For the popped queue itself: the
 post-pop head is `headTcb.queueNext`, which differs from `tid` since `tid.queueNext = some tid` would be
-a self-loop (`tcbQueueChainAcyclic`).  For every other queue: `tid`'s blocked state is pinned by
+a self-loop (`tcbQueueChainAcyclic`). For every other queue: `tid`'s blocked state is pinned by
 `queueHeadBlockedConsistent` to the popped queue's kind on `endpointId`, which a different (kind,
-endpoint) head would contradict.  Head dual of `endpointQueuePopHead_popped_not_tail`. -/
+endpoint) head would contradict. Head dual of `endpointQueuePopHead_popped_not_tail`. -/
 theorem endpointQueuePopHead_popped_not_head
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (headTcb : TCB) (ep : Endpoint)
@@ -2156,9 +2156,9 @@ theorem endpointQueuePopHead_popped_not_head
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2b: `endpointSendDual` **establishes** `queueNextBlockingConsistent`
-from the pre-state (de-threads `hQNBC'`).  Rendezvous (pop) branch is clean — pop frame +
+from the pre-state (de-threads `hQNBC'`). Rendezvous (pop) branch is clean — pop frame +
 *unconditional* `storeTcbReceiveComplete` (`.ready` matches any neighbour) + `ensureRunnable`
-frame.  Block branch — enqueue frame + the block-store, whose `hFwd` is vacuous
+frame. Block branch — enqueue frame + the block-store, whose `hFwd` is vacuous
 (`endpointQueueEnqueue_enqueued_queueNext_none`) and whose `hBwd` is discharged by core (b)
 `endpointQueueEnqueue_predecessor_blocked` (the old sendQ tail is the unique predecessor, blocked
 `.blockedOnSend`/`.blockedOnCall endpointId` by pre-state tail-blocked) + `removeRunnable` frame.
@@ -2201,7 +2201,7 @@ theorem endpointSendDual_preserves_queueNextBlockingConsistent
       cases hHead : ep.receiveQ.head with
       | some _ =>
         -- PR #873 round 17: the rendezvous arm resolves the sender before
-        -- popping.  It never did, so a send naming a nonexistent thread
+        -- popping. It never did, so a send naming a nonexistent thread
         -- delivered anyway and the receiver held a message attributed to it.
         cases hSnd : st.getTcb? sender with
         | none => simp [hHead, hSnd] at hStep
@@ -2254,8 +2254,8 @@ theorem endpointSendDual_preserves_queueNextBlockingConsistent
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2b core (a) companion: a thread `fresh` that is no pre-pop tail of any
-queue stays no post-pop tail.  Used to discharge the `hNotTail` of the rendezvous branches' *caller*
-`.blockedOnReply` store (the caller is `.ready`, hence by freshness no tail).  Unlike core (a) this
+queue stays no post-pop tail. Used to discharge the `hNotTail` of the rendezvous branches' *caller*
+`.blockedOnReply` store (the caller is `.ready`, hence by freshness no tail). Unlike core (a) this
 needs no `queueHeadBlockedConsistent` — `fresh` is never the popped head, so the popped-queue tail
 (post-pop `none` or the unchanged pre-pop tail) and every framed tail are `≠ some fresh` directly. -/
 theorem endpointQueuePopHead_fresh_not_tail
@@ -2301,9 +2301,9 @@ theorem endpointQueuePopHead_fresh_not_tail
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2b: `endpointSendDual` **establishes** `endpointQueueTailBlockedConsistent`
-from the pre-state (de-threads `hEQTB'`).  Rendezvous (pop) branch: pop frame + `storeTcbReceiveComplete`
+from the pre-state (de-threads `hEQTB'`). Rendezvous (pop) branch: pop frame + `storeTcbReceiveComplete`
 (the woken receiver is `.ready` but no tail, by core (a) `endpointQueuePopHead_popped_not_tail`) +
-`ensureRunnable`.  Block branch: core (c)
+`ensureRunnable`. Block branch: core (c)
 `endpointQueueEnqueue_blockStore_establishes_endpointQueueTailBlockedConsistent` (the freshly-blocked
 sender is the new sendQ tail, `.blockedOnSend endpointId`) + `removeRunnable`. -/
 theorem endpointSendDual_preserves_endpointQueueTailBlockedConsistent
@@ -2334,7 +2334,7 @@ theorem endpointSendDual_preserves_endpointQueueTailBlockedConsistent
       cases hHead : ep.receiveQ.head with
       | some _ =>
         -- PR #873 round 17: the rendezvous arm resolves the sender before
-        -- popping.  It never did, so a send naming a nonexistent thread
+        -- popping. It never did, so a send naming a nonexistent thread
         -- delivered anyway and the receiver held a message attributed to it.
         cases hSnd : st.getTcb? sender with
         | none => simp [hHead, hSnd] at hStep
@@ -2377,7 +2377,7 @@ theorem endpointSendDual_preserves_endpointQueueTailBlockedConsistent
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2c: `endpointSendDual` **establishes** `queueNextTargetBlocked`.
 Block branch: sendQ enqueue + `.blockedOnSend` block-store via the Slice-2c keystone, then
-`removeRunnable` (frame).  Rendezvous branch: receiveQ pop (preserves qNTB) + receiver `.ready`
+`removeRunnable` (frame). Rendezvous branch: receiveQ pop (preserves qNTB) + receiver `.ready`
 store (`storeTcbReceiveComplete`, `hNoIncoming` discharged by `endpointQueuePopHead_popped_no_incoming`)
 + `ensureRunnable` (frame). -/
 theorem endpointSendDual_preserves_queueNextTargetBlocked
@@ -2415,7 +2415,7 @@ theorem endpointSendDual_preserves_queueNextTargetBlocked
       cases hHead : ep.receiveQ.head with
       | some _ =>
         -- PR #873 round 17: the rendezvous arm resolves the sender before
-        -- popping.  It never did, so a send naming a nonexistent thread
+        -- popping. It never did, so a send naming a nonexistent thread
         -- delivered anyway and the receiver held a message attributed to it.
         cases hSnd : st.getTcb? sender with
         | none => simp [hHead, hSnd] at hStep
@@ -2589,7 +2589,7 @@ theorem storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent
 
 /-- Finding F-1: `storeTcbReceiveComplete` preserves `ipcStateQueueConsistent`.
 The stored ipcState is `.ready`, which carries no endpoint-existence obligation,
-so no `hNewIpc` precondition is needed.  Mirror of
+so no `hNewIpc` precondition is needed. Mirror of
 `storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent`. -/
 theorem storeTcbReceiveComplete_preserves_ipcStateQueueConsistent
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
@@ -2718,7 +2718,7 @@ theorem endpointSendDual_preserves_ipcStateQueueConsistent
       cases hHead : ep.receiveQ.head with
       | some _ =>
         -- PR #873 round 17: the rendezvous arm resolves the sender before
-        -- popping.  It never did, so a send naming a nonexistent thread
+        -- popping. It never did, so a send naming a nonexistent thread
         -- delivered anyway and the receiver held a message attributed to it.
         cases hSnd : st.getTcb? sender with
         | none => simp [hHead, hSnd] at hStep
@@ -2905,15 +2905,15 @@ theorem endpointReceiveDual_preserves_ipcStateQueueConsistent
 
 -- ============================================================================
 -- WS-SM SM6.D reply-fold (PR #827 review #3): per-conjunct `consumeCallerReply`
--- frames.  Placed before the first folded `endpointReply*` peel in this file;
+-- frames. Placed before the first folded `endpointReply*` peel in this file;
 -- built on the `Model/State.lean` consume transport drivers only.
 -- ============================================================================
 
 -- WS-RR RR3.2: `consumeCallerReply_preserves_blockedThreadsPendingMessageConsistent`
--- moved to `IPC/Invariant/WaitingThreadHelpers.lean`.  It was the single name
+-- moved to `IPC/Invariant/WaitingThreadHelpers.lean`. It was the single name
 -- this module supplied to `Structural/PerOperation.lean`, and that one edge is
 -- what forced `PerOperation` to sit *downstream* of the bundles that need its
--- establishers.  With the theorem upstream of both, the edge reverses and the
+-- establishers. With the theorem upstream of both, the edge reverses and the
 -- `ipcInvariantFull` bundles here can call the per-transition establishers
 -- directly instead of threading their conjuncts as post-state hypotheses.
 
@@ -3032,7 +3032,7 @@ theorem consumeCallerReply_preserves_passiveServerIdle
 
 open SeLe4n.Model.SystemState in
 /-- PR #827 #3 fold: the `consumeCallerReply` timeout-budget frame —
-`timeoutBudget` is a preserved TCB field.  Composes with a transition's own
+`timeoutBudget` is a preserved TCB field. Composes with a transition's own
 `timeoutBudgetFrame` via `timeoutBudgetFrame.trans` in the folded reply peels. -/
 theorem consumeCallerReply_timeoutBudgetFrame
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
@@ -3065,7 +3065,7 @@ open SeLe4n.Model.SystemState in
 /-- PR #827 #3 fold: `consumeCallerReply` preserves `blockedOnReplyHasReplyObject`
 when the answered caller is **no longer** `.blockedOnReply` — exactly the fold's
 composition order, where the fused reply transition wakes the caller `.ready`
-*before* tearing down its link.  Every other TCB keeps its `replyObject`
+*before* tearing down its link. Every other TCB keeps its `replyObject`
 untouched, and the consumed caller no longer constrains the clause. -/
 theorem consumeCallerReply_preserves_blockedOnReplyHasReplyObject
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
@@ -3357,7 +3357,7 @@ theorem endpointCall_preserves_ipcStateQueueConsistent
       cases hHead : ep.receiveQ.head with
       | some _ =>
         -- Handshake path: PopHead → storeTcbIpcStateAndMessage(receiver, .ready) → ensureRunnable →
-        --                 storeTcbIpcState(caller, .blockedOnReply) → removeRunnable
+        -- storeTcbIpcState(caller, .blockedOnReply) → removeRunnable
         cases hPop : endpointQueuePopHead endpointId true st with
         | error e => simp [hHead, hPop] at hStep
         | ok triple =>
@@ -3485,7 +3485,7 @@ theorem endpointReplyRecv_preserves_ipcStateQueueConsistent
 -- preserves `ipcInvariantFull`.
 --
 -- A `.reply` object is foreign to every `ipcInvariantFull` conjunct: no
--- conjunct dereferences a `.reply`.  The uniform `reply_store_kind_agree`
+-- conjunct dereferences a `.reply`. The uniform `reply_store_kind_agree`
 -- helper below captures the single fact that drives all fifteen conjuncts —
 -- for every *non-reply* object kind, the pre- and post-store lookups agree
 -- (the post-store slot at `id` holds `.reply r'` and the pre-store slot held
@@ -3517,13 +3517,13 @@ private theorem reply_store_kind_agree
 
 -- ----------------------------------------------------------------------------
 -- Conjunct 2 (`dualQueueSystemInvariant`) support: transport each sub-predicate
--- through `reply_store_kind_agree`.  The three sub-predicates
+-- through `reply_store_kind_agree`. The three sub-predicates
 -- (`dualQueueEndpointWellFormed` per endpoint, `tcbQueueLinkIntegrity`,
 -- `tcbQueueChainAcyclic`) dereference only endpoints and TCBs — both non-reply.
 -- ----------------------------------------------------------------------------
 
 /-- WS-SM SM6.D: a `QueueNextPath` in the post-state transports back to the
-pre-state.  Each constructor carries a `.tcb` lookup, transported by
+pre-state. Each constructor carries a `.tcb` lookup, transported by
 `reply_store_kind_agree`; this gives `tcbQueueChainAcyclic` preservation. -/
 private theorem reply_store_QueueNextPath_backward
     {st st' : SystemState}
@@ -3542,7 +3542,7 @@ private theorem reply_store_QueueNextPath_backward
         hNext ih
 
 /-- WS-SM SM6.D: `intrusiveQueueWellFormed` for a fixed queue `q` transports
-forward across the `.reply` store.  The two boundary clauses witness `.tcb`
+forward across the `.reply` store. The two boundary clauses witness `.tcb`
 objects (non-reply), transported via `reply_store_kind_agree`; the emptiness
 clause references only `q` itself, which is unchanged. -/
 private theorem reply_store_intrusiveQueueWellFormed_forward
@@ -3563,7 +3563,7 @@ private theorem reply_store_intrusiveQueueWellFormed_forward
       (fun rr => by exact KernelObject.noConfusion)).mpr hObj, hNext⟩
 
 /-- WS-SM SM6.D: `tcbQueueLinkIntegrity` transports forward across the `.reply`
-store.  Every lookup it touches is a `.tcb` (non-reply). -/
+store. Every lookup it touches is a `.tcb` (non-reply). -/
 private theorem reply_store_tcbQueueLinkIntegrity_forward
     {st st' : SystemState}
     (hAgree : ∀ (s : SeLe4n.ObjId) (k : KernelObject), (∀ rr, k ≠ .reply rr) →
@@ -3587,7 +3587,7 @@ private theorem reply_store_tcbQueueLinkIntegrity_forward
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D: storing a `.reply` object over a slot that already held a
-`.reply` preserves the full IPC invariant.  No `ipcInvariantFull` conjunct
+`.reply` preserves the full IPC invariant. No `ipcInvariantFull` conjunct
 reads `.reply` objects, and the slot held a `.reply` both before and after, so
 every notification/TCB/endpoint/cnode/schedContext lookup is unchanged. -/
 theorem storeObject_reply_preserves_ipcInvariantCore
@@ -3608,7 +3608,7 @@ theorem storeObject_reply_preserves_ipcInvariantCore
     exact hInv.ipcInvariant oid ntfn ((hAgree oid (.notification ntfn)
       (fun rr => by exact KernelObject.noConfusion)).mp hObj)
   -- 2. dualQueueSystemInvariant: per-endpoint well-formedness + link integrity
-  --    + chain acyclicity.  All lookups are `.endpoint`/`.tcb` (non-reply).
+  -- + chain acyclicity. All lookups are `.endpoint`/`.tcb` (non-reply).
   · obtain ⟨hEpWF, hLI, hAcyc⟩ := hInv.dualQueueSystemInvariant
     refine ⟨?_, reply_store_tcbQueueLinkIntegrity_forward hAgree hLI, ?_⟩
     · intro epId ep hEp
@@ -3629,7 +3629,7 @@ theorem storeObject_reply_preserves_ipcInvariantCore
       ((hAgree tid.toObjId (.tcb tcb)
         (fun rr => by exact KernelObject.noConfusion)).mp hObj) hMsg
   -- 4. badgeWellFormed: notification badges (reads `.notification`) +
-  --    capability badges (reads `.cnode`).
+  -- capability badges (reads `.cnode`).
   · obtain ⟨hNB, hCB⟩ := hInv.badgeWellFormed
     refine ⟨?_, ?_⟩
     · intro oid ntfn badge hObj hBadge
@@ -3644,7 +3644,7 @@ theorem storeObject_reply_preserves_ipcInvariantCore
       ((hAgree tid.toObjId (.tcb tcb)
         (fun rr => by exact KernelObject.noConfusion)).mp hObj)
   -- 6. endpointQueueNoDup: hypothesis `.endpoint`; body universally re-derives
-  --    a `.tcb` self-loop fact (transport that lookup with `.mp`).
+  -- a `.tcb` self-loop fact (transport that lookup with `.mp`).
   · intro oid ep hObj
     have hEp' := (hAgree oid (.endpoint ep)
       (fun rr => by exact KernelObject.noConfusion)).mp hObj
@@ -3654,8 +3654,8 @@ theorem storeObject_reply_preserves_ipcInvariantCore
     exact hSelf tid tcb ((hAgree tid.toObjId (.tcb tcb)
       (fun rr => by exact KernelObject.noConfusion)).mp hTcb)
   -- 7. ipcStateQueueMembershipConsistent: a `.reply` store is non-endpoint,
-  --    non-TCB, and the slot held `.reply r` before — exactly the precondition
-  --    of the reusable non-ep/non-tcb frame lemma.
+  -- non-TCB, and the slot held `.reply r` before — exactly the precondition
+  -- of the reusable non-ep/non-tcb frame lemma.
   · exact storeObject_non_ep_non_tcb_preserves_ipcStateQueueMembershipConsistent
       st st' id (.reply r')
       hInv.ipcStateQueueMembershipConsistent hObjInv
@@ -3679,7 +3679,7 @@ theorem storeObject_reply_preserves_ipcInvariantCore
       ((hAgree hd.toObjId (.tcb tcb)
         (fun rr => by exact KernelObject.noConfusion)).mp hHd)
   -- 10. blockedThreadTimeoutConsistent: hypothesis `.tcb`; conclusion has a
-  --     `.schedContext` existence witness to transport forward.
+  -- `.schedContext` existence witness to transport forward.
   · intro tid tcb scId hObj hBudget
     have hTcb' := (hAgree tid.toObjId (.tcb tcb)
       (fun rr => by exact KernelObject.noConfusion)).mp hObj
@@ -3695,7 +3695,7 @@ theorem storeObject_reply_preserves_ipcInvariantCore
       ((hAgree tid2.toObjId (.tcb tcb2)
         (fun rr => by exact KernelObject.noConfusion)).mp h2) hB1 hB2
   -- 12. donationOwnerValid: hypothesis `.tcb`; conclusion has a `.schedContext`
-  --     witness and an owner `.tcb` witness to transport forward.
+  -- witness and an owner `.tcb` witness to transport forward.
   · intro tid tcb scId owner hObj hBind
     have hTcb' := (hAgree tid.toObjId (.tcb tcb)
       (fun rr => by exact KernelObject.noConfusion)).mp hObj
@@ -3707,7 +3707,7 @@ theorem storeObject_reply_preserves_ipcInvariantCore
         (fun rr => by exact KernelObject.noConfusion)).mpr hOwner,
         hOwnerBind, hOwnerIpc⟩⟩
   -- 13. passiveServerIdle: hypothesis `.tcb`; goal also reads `st'.scheduler`
-  --     (rewritten to `st.scheduler` via `storeObject_scheduler_eq`).
+  -- (rewritten to `st.scheduler` via `storeObject_scheduler_eq`).
   · intro tid tcb hObj hUnbound hNotInQ hNotCur
     have hTcb' := (hAgree tid.toObjId (.tcb tcb)
       (fun rr => by exact KernelObject.noConfusion)).mp hObj
@@ -3733,23 +3733,23 @@ theorem storeObject_reply_preserves_ipcInvariantCore
 -- Unlike the `.reply` store above (whose changed slot is foreign to every
 -- conjunct), the changed slot here stays a `.tcb`, so the uniform driver is
 -- split in two:
---   (a) for every *non-`.tcb`* object kind the pre/post lookups still agree
---       (`tcb_replyObject_store_nonTcb_agree`), exactly as in the `.reply`
---       case; and
---   (b) for `.tcb` lookups the post-store TCB at `id` is
---       `{ tcb with replyObject := v }`, which agrees with `tcb` on every
---       field any conjunct reads (ipcState, pendingMessage,
---       queueNext/Prev/PPrev, schedContextBinding, timeoutBudget) — a
---       structure update of `replyObject` leaves all other projections
---       definitionally equal.  `tcb_replyObject_store_tcb_forward` /
---       `_backward` expose those read-field equalities in each direction.
+-- (a) for every *non-`.tcb`* object kind the pre/post lookups still agree
+-- (`tcb_replyObject_store_nonTcb_agree`), exactly as in the `.reply`
+-- case; and
+-- (b) for `.tcb` lookups the post-store TCB at `id` is
+-- `{ tcb with replyObject := v }`, which agrees with `tcb` on every
+-- field any conjunct reads (ipcState, pendingMessage,
+-- queueNext/Prev/PPrev, schedContextBinding, timeoutBudget) — a
+-- structure update of `replyObject` leaves all other projections
+-- definitionally equal. `tcb_replyObject_store_tcb_forward` /
+-- `_backward` expose those read-field equalities in each direction.
 -- No `ipcInvariantFull` conjunct reads `replyObject`.
 -- ============================================================================
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D: after storing `.tcb { tcb with replyObject := v }` over a slot
 that held `.tcb tcb`, the lookup of any *non-`.tcb`* object agrees between pre-
-and post-state.  This drives every conjunct that dereferences a notification,
+and post-state. This drives every conjunct that dereferences a notification,
 endpoint, cnode, or schedContext: the slot at `id` holds a `.tcb` both before
 and after, so neither side can witness a non-`.tcb` kind there, and every other
 slot is untouched by `storeObject_objects_ne`. -/
@@ -3799,7 +3799,7 @@ private theorem tcb_replyObject_store_tcb_forward
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D: a pre-store `.tcb` lookup transports forward to a post-store
-`.tcb` lookup, agreeing on every read field.  Symmetric counterpart of
+`.tcb` lookup, agreeing on every read field. Symmetric counterpart of
 `tcb_replyObject_store_tcb_forward`; used to push object witnesses that appear
 in conjunct *goals* (queue boundaries, link-integrity duals) forward to the
 post-state. -/
@@ -3828,14 +3828,14 @@ private theorem tcb_replyObject_store_tcb_backward
 
 -- ----------------------------------------------------------------------------
 -- Conjunct 2 (`dualQueueSystemInvariant`) support: the three sub-predicates
--- dereference only endpoints and TCBs.  Endpoints transport via the non-`.tcb`
+-- dereference only endpoints and TCBs. Endpoints transport via the non-`.tcb`
 -- iff; `.tcb` lookups transport via the forward/backward field-agreement
 -- helpers (queueNext/queuePrev are among the preserved fields, so each queue
 -- link carries through unchanged).
 -- ----------------------------------------------------------------------------
 
 /-- WS-SM SM6.D: a `QueueNextPath` in the post-state transports back to the
-pre-state.  Each constructor carries a `.tcb` lookup and a `queueNext` edge;
+pre-state. Each constructor carries a `.tcb` lookup and a `queueNext` edge;
 the forward field-agreement helper supplies a pre-state `.tcb` with the same
 `queueNext`. -/
 private theorem queueNextPath_backward_of_readAgreement
@@ -3856,7 +3856,7 @@ private theorem queueNextPath_backward_of_readAgreement
       exact .cons src mid dst ty hStObj (hQN ▸ hNext) ih
 
 /-- WS-SM SM6.D: `intrusiveQueueWellFormed` for a fixed queue `q` transports
-forward across the `replyObject` store.  The head/tail boundary clauses witness
+forward across the `replyObject` store. The head/tail boundary clauses witness
 `.tcb` objects whose `queuePrev`/`queueNext` are preserved; the emptiness
 clause references only `q` itself, which is unchanged. -/
 private theorem intrusiveQueueWellFormed_forward_of_readAgreement
@@ -3880,7 +3880,7 @@ private theorem intrusiveQueueWellFormed_forward_of_readAgreement
     exact ⟨tx, hStObj, hQN.trans hNextNone⟩
 
 /-- WS-SM SM6.D: `tcbQueueLinkIntegrity` transports forward across the
-`replyObject` store.  Every lookup it touches is a `.tcb`, and the relevant
+`replyObject` store. Every lookup it touches is a `.tcb`, and the relevant
 links (`queueNext`/`queuePrev`) are preserved fields. -/
 private theorem tcbQueueLinkIntegrity_forward_of_readAgreement
     {st st' : SystemState}
@@ -3911,7 +3911,7 @@ private theorem tcbQueueLinkIntegrity_forward_of_readAgreement
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D (#7.0), generalised at WS-RR RR2.5: the reusable `ipcInvariantCore`
-driver.  Given the neither-`.tcb`-nor-`.schedContext` kind agreement (`hNT`), the
+driver. Given the neither-`.tcb`-nor-`.schedContext` kind agreement (`hNT`), the
 SchedContext *survival* clause (`hSC` — the key still holds a SchedContext, whose
 value may differ), the forward/backward read-field agreement (`hFwd`/`hBwd` over
 ipcState, pendingMessage, queueNext/Prev/PPrev, timeoutBudget), the eleven
@@ -3921,13 +3921,13 @@ on the post-state.
 
 `hSC` is weaker than kind agreement on purpose: the only binding-free conjunct
 that touches a SchedContext is `blockedThreadTimeoutConsistent`, and it asks only
-that the referenced object still *be* a SchedContext.  A donation rebinds
+that the referenced object still *be* a SchedContext. A donation rebinds
 `SchedContext.boundThread`, so it can satisfy survival but never value equality.
 
-The binding is deliberately *absent* from the agreement.  A transition that
+The binding is deliberately *absent* from the agreement. A transition that
 frames it recovers the original all-15 discharge through
 `storeObject_tcb_ipcInvariantCore_of_agreements` below, which is this driver
-instantiated with the four conjuncts proved from the binding agreement.  A
+instantiated with the four conjuncts proved from the binding agreement. A
 transition that **writes** a binding — donation is the only one — cannot state
 that agreement at all, and takes this driver directly, proving the quartet from
 its own post-state characterisation (`Kernel/IPC/Invariant/DonationPreservation.lean`).
@@ -3936,7 +3936,7 @@ had no route to the eleven and no bundle theorem at all. -/
 theorem ipcInvariantCore_of_nonBindingAgreements
     (st st' : SystemState)
     -- WS-RR RR3.12: the pre-state hypothesis names the eleven conjuncts this
-    -- transport actually reads.  The four donation ones are taken at the
+    -- transport actually reads. The four donation ones are taken at the
     -- **post**-state, so demanding them of the pre-state as well (the former
     -- `ipcInvariantCore st`) blocked every caller whose pre-state is mid-reply,
     -- where `donationOwnerValid` is false.
@@ -4013,8 +4013,8 @@ theorem ipcInvariantCore_of_nonBindingAgreements
     obtain ⟨ty, hStObj, _, _, hQN, _⟩ := hFwd tid.toObjId tcb hTcb
     rw [hQN]; exact hSelf tid ty hStObj
   -- 7. ipcStateQueueMembershipConsistent: a `.tcb` store, proven directly via (b).
-  --    `tcb.ipcState` rewrites to `ty.ipcState`; the three blocking arms transport
-  --    the endpoint lookup via (a) and the `prev` queue witness via (b).
+  -- `tcb.ipcState` rewrites to `ty.ipcState`; the three blocking arms transport
+  -- the endpoint lookup via (a) and the `prev` queue witness via (b).
   · intro tid tcb hObj
     obtain ⟨ty, hStObj, hIS, _⟩ := hFwd tid.toObjId tcb hObj
     have hbase := hInv.ipcStateQueueMembershipConsistent tid ty hStObj
@@ -4081,9 +4081,9 @@ theorem ipcInvariantCore_of_nonBindingAgreements
     refine ⟨hSC scId.toObjId sc hSc, ?_⟩
     rw [hIS]; exact hState
   -- 11-14. The four `schedContextBinding`-reading conjuncts are supplied on the
-  --     post-state: the read agreement deliberately says nothing about bindings,
-  --     which is what lets a *donation* (the only kernel write to that field)
-  --     instantiate this driver.
+  -- post-state: the read agreement deliberately says nothing about bindings,
+  -- which is what lets a *donation* (the only kernel write to that field)
+  -- instantiate this driver.
   · exact hAcyclic
   · exact hOwnerValid
   · exact hPassiveIdle
@@ -4095,11 +4095,11 @@ theorem ipcInvariantCore_of_nonBindingAgreements
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D (#7.0): the all-15 `ipcInvariantCore` driver behind every TCB
-field-store whose changed field is read by *no* structural core conjunct.  Given
+field-store whose changed field is read by *no* structural core conjunct. Given
 the non-`.tcb` kind agreement (`hNT`), the forward/backward read-field agreement
 (`hFwd`/`hBwd` over ipcState, pendingMessage, queueNext/Prev/PPrev,
 schedContextBinding, timeoutBudget) and the scheduler frame (`hSched`, which only
-`passiveServerIdle` reads), the store preserves all 15 structural conjuncts.  Both the `replyObject` store and the
+`passiveServerIdle` reads), the store preserves all 15 structural conjuncts. Both the `replyObject` store and the
 `pendingReceiveReply` store (the server-first stash the #7 fold writes inside
 `endpointReceiveDual`) instantiate it via the field-specific agreement helpers,
 so the 15-conjunct discharge is proven exactly once.
@@ -4156,7 +4156,7 @@ theorem storeObject_tcb_ipcInvariantCore_of_agreements
     exact hInv.donationChainAcyclic tid1 tid2 ty1 ty2 scId1 scId2 hSt1 hSt2
       (hSCB1 ▸ hB1) (hSCB2 ▸ hB2)
   -- 12. donationOwnerValid: hyp `.tcb` via (b); `.schedContext` + owner `.tcb` witnesses
-  --     pushed forward via (a) and (b).
+  -- pushed forward via (a) and (b).
   · intro tid tcb scId owner hObj hBind
     obtain ⟨ty, hStObj, hIS, _, _, _, _, hSCB, _⟩ := hFwd tid.toObjId tcb hObj
     obtain ⟨⟨sc, hSc, hBound⟩, ⟨ownerTcb, hOwner, hOwnerBind, hOwnerIpc⟩⟩ :=
@@ -4183,9 +4183,9 @@ theorem storeObject_tcb_ipcInvariantCore_of_agreements
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D: storing a `.tcb` that differs from the stored slot's previous TCB
-only in `replyObject` preserves `ipcInvariantCore`.  No structural conjunct reads
+only in `replyObject` preserves `ipcInvariantCore`. No structural conjunct reads
 `replyObject`; every read field (ipcState, pendingMessage, queueNext/Prev/PPrev,
-schedContextBinding, timeoutBudget) is unchanged.  Thin instance of
+schedContextBinding, timeoutBudget) is unchanged. Thin instance of
 `storeObject_tcb_ipcInvariantCore_of_agreements`. -/
 theorem storeObject_tcb_replyObject_preserves_ipcInvariantCore
     (st st' : SystemState) (id : SeLe4n.ObjId) (tcb : TCB) (v : Option SeLe4n.ReplyId)
@@ -4272,7 +4272,7 @@ private theorem tcb_pendingReceiveReply_store_tcb_backward
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D (#7.0): storing a `.tcb` that differs only in `pendingReceiveReply`
 preserves `ipcInvariantCore` — the server-first stash field the #7 receive fold
-writes.  No structural conjunct reads it (only the full-invariant
+writes. No structural conjunct reads it (only the full-invariant
 `pendingReceiveReplyWellFormed` does, established separately), so this is the same
 read-field-agreement instance as the `replyObject` store. -/
 theorem storeObject_tcb_pendingReceiveReply_preserves_ipcInvariantCore
@@ -4296,7 +4296,7 @@ theorem storeObject_tcb_pendingReceiveReply_preserves_ipcInvariantCore
 -- the two generic frame lemmas above: store A (`…reply…`) on the reply write,
 -- store B (`…tcb_replyObject…`) on the TCB write, with `objects.invExt`
 -- threaded between by `linkReply_preserves_objects_invExt` /
--- `consumeReply_preserves_objects_invExt`.  The live `.call` / `.reply`
+-- `consumeReply_preserves_objects_invExt`. The live `.call` / `.reply`
 -- dispatch (Phase C-wire) composes these ops after `endpointCall` /
 -- `endpointReply`, so this is the preservation it needs.
 -- ============================================================================
@@ -4305,7 +4305,7 @@ open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D (PR #822 review): `linkCallerReply` frames every object slot other
 than the linked reply (`rid`) and the linking caller (`caller`) — its two stores
 (`linkReply` at `rid.toObjId`, the TCB write at `caller.toObjId`) leave all other
-slots intact.  The frame the `replyCallerLinkage` establishment reads for untouched
+slots intact. The frame the `replyCallerLinkage` establishment reads for untouched
 TCBs/Replies. -/
 theorem linkCallerReply_objects_frame (st st' : SystemState) (caller : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
@@ -4338,11 +4338,11 @@ theorem linkCallerReply_objects_frame (st st' : SystemState) (caller : SeLe4n.Th
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D (#7.0): `linkCallerReply` preserves the 15 structural conjuncts
-(`ipcInvariantCore`).  The reply store changes only `reply.caller` (read by no
+(`ipcInvariantCore`). The reply store changes only `reply.caller` (read by no
 core conjunct) and the TCB store changes only `replyObject` (likewise) — so the
 generic reply/TCB-field core-preservation lemmas chain directly, with no
 caller-blocked precondition (unlike the full-invariant version, which must also
-re-establish the 16th `replyCallerLinkage` conjunct).  The `#7` receive fold uses
+re-establish the 16th `replyCallerLinkage` conjunct). The `#7` receive fold uses
 the structural projections of this on the dequeued-caller link. -/
 theorem linkCallerReply_preserves_ipcInvariantCore
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
@@ -4411,7 +4411,7 @@ theorem consumeCallerReply_objects_frame (st st' : SystemState) (caller : SeLe4n
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D (PR #822 review): the success preconditions of `linkCallerReply`:
 the reply was **free** (`st.getReply? rid = some r0`, `r0.caller = none`) and the
-caller held **no** reply object (`tcbC.replyObject = none`).  Both are the
+caller held **no** reply object (`tcbC.replyObject = none`). Both are the
 single-use barriers `linkReply` / the caller-side guard enforce; the
 `replyCallerLinkage` establishment reads them to rule out a pre-existing link to
 `rid` or from `caller`. -/
@@ -4463,7 +4463,7 @@ theorem linkCallerReply_pre (st st' : SystemState) (caller : SeLe4n.ThreadId)
 -- IPC de-threading D2 — `blockedOnReplyHasReplyObject` frame family
 --
 -- The third clause of `replyCallerLinkage` reads only each TCB's `(ipcState,
--- replyObject)` pair.  The keystone below frames it through a single `storeObject`;
+-- replyObject)` pair. The keystone below frames it through a single `storeObject`;
 -- every IPC step (queue-link writes, ready stores, the endpoint store) is a
 -- `storeObject` and reuses it, so the folded transitions can *establish* the third
 -- clause concretely instead of threading it.
@@ -4472,9 +4472,9 @@ theorem linkCallerReply_pre (st st' : SystemState) (caller : SeLe4n.ThreadId)
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D2 (keystone): a single `storeObject` preserves
 `blockedOnReplyHasReplyObject` provided the stored object does not introduce a
-`.blockedOnReply` TCB lacking a `replyObject` (`hNew`).  Every TCB other than the
+`.blockedOnReply` TCB lacking a `replyObject` (`hNew`). Every TCB other than the
 stored slot is framed (`storeObject_objects_ne`); the stored slot is discharged by
-`hNew`.  All the per-step frames (`storeTcbQueueLinks`, ready stores, the endpoint
+`hNew`. All the per-step frames (`storeTcbQueueLinks`, ready stores, the endpoint
 store) instantiate this with an `hNew` discharged from the input invariant. -/
 theorem storeObject_preserves_blockedOnReplyHasReplyObject
     (st st' : SystemState) (oid : SeLe4n.ObjId) (o : KernelObject)
@@ -4505,7 +4505,7 @@ theorem blockedOnReplyHasReplyObject_of_objects_eq {st st' : SystemState}
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D2: a `storeTcbIpcStateAndMessage` whose new `ipcState` is **not**
 `.blockedOnReply` preserves the third clause — the stored TCB leaves the
-`.blockedOnReply` domain (so `hNew` is vacuous) and every other TCB is framed.  Covers
+`.blockedOnReply` domain (so `hNew` is vacuous) and every other TCB is framed. Covers
 the receiver-`.ready` store of the Call/Receive rendezvous. -/
 theorem storeTcbIpcStateAndMessage_nonBlocked_preserves_blockedOnReplyHasReplyObject
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
@@ -4535,7 +4535,7 @@ theorem storeTcbIpcStateAndMessage_nonBlocked_preserves_blockedOnReplyHasReplyOb
 open SeLe4n.Model.SystemState in
 /-- Finding F-1: `storeTcbReceiveComplete` preserves the third clause — the stored
 TCB is `.ready`, never `.blockedOnReply`, so the keystone discharge is automatic (no
-`hNotBlocked` hypothesis needed).  Mirror of
+`hNotBlocked` hypothesis needed). Mirror of
 `storeTcbIpcStateAndMessage_nonBlocked_preserves_blockedOnReplyHasReplyObject`. -/
 theorem storeTcbReceiveComplete_nonBlocked_preserves_blockedOnReplyHasReplyObject
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
@@ -4592,7 +4592,7 @@ theorem storeTcbIpcState_nonBlocked_preserves_blockedOnReplyHasReplyObject
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D2: `storeTcbQueueLinks` writes only queue-link fields
 (`tcbWithQueueLinks` preserves `ipcState` / `replyObject`), so it frames the third
-clause — `hNew` is discharged from the input invariant at the stored TCB.  Covers the
+clause — `hNew` is discharged from the input invariant at the stored TCB. Covers the
 queue-relink stores inside `endpointQueuePopHead` / `endpointQueueEnqueue`. -/
 theorem storeTcbQueueLinks_preserves_blockedOnReplyHasReplyObject
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
@@ -4622,7 +4622,7 @@ theorem storeTcbQueueLinks_preserves_blockedOnReplyHasReplyObject
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D2: storing an **endpoint** object frames the third clause — no TCB
-is written, so the keystone `hNew` is vacuous (`.endpoint ≠ .tcb`).  Covers the endpoint
+is written, so the keystone `hNew` is vacuous (`.endpoint ≠ .tcb`). Covers the endpoint
 store inside `endpointQueuePopHead` / `endpointQueueEnqueue`. -/
 theorem storeObject_endpoint_preserves_blockedOnReplyHasReplyObject
     (st st' : SystemState) (oid : SeLe4n.ObjId) (ep : Endpoint)
@@ -4647,9 +4647,9 @@ theorem storeObject_endpoint_preserves_blockedOnReplyHasReplyObject'
   exact storeObject_endpoint_preserves_blockedOnReplyHasReplyObject st st' oid ep hObjInv hInv hStore
 
 open SeLe4n.Model.SystemState in
-/-- IPC de-threading D2: `endpointQueuePopHead` frames the third clause.  The dequeue is
+/-- IPC de-threading D2: `endpointQueuePopHead` frames the third clause. The dequeue is
 one endpoint store (no TCB written — `.endpoint` helper) followed by one or two
-`storeTcbQueueLinks` (queue-link frame: `ipcState`/`replyObject` untouched).  Navigation
+`storeTcbQueueLinks` (queue-link frame: `ipcState`/`replyObject` untouched). Navigation
 mirrors `endpointQueuePopHead_preserves_objects_invExt` line-for-line, threading the
 predicate alongside `invExt`. -/
 theorem endpointQueuePopHead_preserves_blockedOnReplyHasReplyObject
@@ -4780,7 +4780,7 @@ theorem endpointQueueEnqueue_preserves_blockedOnReplyHasReplyObject
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D2: a `storeTcbIpcStateAndMessage` on `self` frames the third clause
 for **every TCB other than `self`** — only `self`'s slot is written, so any `tid ≠ self`
-is preserved.  Used for the caller's `.blockedOnReply` store inside `endpointCall`, where
+is preserved. Used for the caller's `.blockedOnReply` store inside `endpointCall`, where
 the full clause is momentarily false at `self` (no reply linked yet) but holds elsewhere. -/
 theorem storeTcbIpcStateAndMessage_off_preserves_blockedOnReplyHasReplyObject
     (st st' : SystemState) (self : SeLe4n.ThreadId)
@@ -4802,9 +4802,9 @@ theorem storeTcbIpcStateAndMessage_off_preserves_blockedOnReplyHasReplyObject
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D2: `linkCallerReply` **establishes** the third clause from the
-weaker `hThirdExc` (every TCB *other than* `caller` already carries a reply).  The link
+weaker `hThirdExc` (every TCB *other than* `caller` already carries a reply). The link
 sets `caller.replyObject := some rid`, so the caller's own obligation is discharged; every
-other TCB is framed past `linkCallerReply`'s two writes (`caller`, `rid`).  This is the
+other TCB is framed past `linkCallerReply`'s two writes (`caller`, `rid`). This is the
 third-clause-only companion of `linkCallerReply_establishes_replyCallerLinkage` (no
 reciprocal hypothesis needed), the seam the `endpointCall` fold composes. -/
 theorem linkCallerReply_establishes_blockedOnReplyHasReplyObject (st st' : SystemState)
@@ -4847,12 +4847,12 @@ theorem linkCallerReply_establishes_blockedOnReplyHasReplyObject (st st' : Syste
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D2: `linkServerStashedReply` **establishes** the third clause from
-`hThirdExc`.  It is `linkCallerReply caller rid` (which discharges the caller's obligation
+`hThirdExc`. It is `linkCallerReply caller rid` (which discharges the caller's obligation
 — `linkCallerReply_establishes_blockedOnReplyHasReplyObject`) followed by the server's
 stash-clear store, which writes only `server.pendingReceiveReply` (leaving every TCB's
 `ipcState`/`replyObject` intact), so the keystone frames it: any `.blockedOnReply` server
 in the post-link state already carries a reply by the clause `linkCallerReply` just
-established.  The composition seam for `endpointCall`'s server-waiting rendezvous. -/
+established. The composition seam for `endpointCall`'s server-waiting rendezvous. -/
 theorem linkServerStashedReply_establishes_blockedOnReplyHasReplyObject
     (st st' : SystemState) (caller server : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
@@ -4894,12 +4894,12 @@ theorem linkServerStashedReply_establishes_blockedOnReplyHasReplyObject
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D2: `endpointCall` **establishes** the third clause of
 `replyCallerLinkage` (`blockedOnReply ⇒ replyObject`) — concretely, no threaded
-post-state hypothesis.  Rendezvous branch: pop (frame) → receiver `.ready` store
+post-state hypothesis. Rendezvous branch: pop (frame) → receiver `.ready` store
 (non-blocked frame) → `ensureRunnable` (objects frame) → caller `.blockedOnReply` store
 (breaks the clause *only* for `caller`, leaving `hThirdExc`) → `linkServerStashedReply`
 (re-establishes it for `caller`, the link is *atomic* with the block) → `removeRunnable`
-(objects frame).  Blocking branch: the caller becomes `.blockedOnCall` (never
-`.blockedOnReply`), so the clause is framed throughout.  Closes the #7.4 origin gap at the
+(objects frame). Blocking branch: the caller becomes `.blockedOnCall` (never
+`.blockedOnReply`), so the clause is framed throughout. Closes the #7.4 origin gap at the
 transition boundary: `endpointCall` cannot strand a `.blockedOnReply` caller without a
 backing reply. -/
 theorem endpointCall_establishes_blockedOnReplyHasReplyObject
@@ -4977,12 +4977,12 @@ theorem endpointCall_establishes_blockedOnReplyHasReplyObject
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D2: `endpointReceiveDual` **establishes** the third clause of
-`replyCallerLinkage`.  Call path (a `.blockedOnCall` sender dequeued): pop (frame) → sender
+`replyCallerLinkage`. Call path (a `.blockedOnCall` sender dequeued): pop (frame) → sender
 `.blockedOnReply` store (breaks the clause only for the sender) → `linkCallerReply`
-(re-establishes it for the sender, *atomically*) → receiver `.ready` store (frame).  Send
-path: sender/receiver both go `.ready` — framed throughout.  Block path (no sender):
+(re-establishes it for the sender, *atomically*) → receiver `.ready` store (frame). Send
+path: sender/receiver both go `.ready` — framed throughout. Block path (no sender):
 cleanup (frame) → enqueue (frame) → receiver `.blockedOnReceive` store (frame) → stash
-store (keystone; the receiver is not `.blockedOnReply`) → `removeRunnable` (frame).  No
+store (keystone; the receiver is not `.blockedOnReply`) → `removeRunnable` (frame). No
 branch strands a `.blockedOnReply` thread without a reply. -/
 theorem endpointReceiveDual_establishes_blockedOnReplyHasReplyObject
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
@@ -5129,7 +5129,7 @@ open SeLe4n.Model.SystemState in
 The reciprocal half of `linkCallerReply_establishes_replyCallerLinkage`, split out
 because that is the half the endpoint transitions need: the third clause carries
 its own `hThirdExc` obligation, and a transition that only has to re-establish
-reciprocity should not have to discharge it.  The full theorem below is this plus
+reciprocity should not have to discharge it. The full theorem below is this plus
 the third clause, so there is one proof of each direction, not two. -/
 theorem linkCallerReply_establishes_replyCallerLinkageReciprocal (st st' : SystemState)
     (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
@@ -5213,10 +5213,10 @@ theorem linkCallerReply_establishes_replyCallerLinkageReciprocal (st st' : Syste
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D (PR #822 review): `linkCallerReply` **establishes**
-`replyCallerLinkage`.  On success the only changed slots are the linked reply
+`replyCallerLinkage`. On success the only changed slots are the linked reply
 (`rid`, now `caller := some caller`) and the linking caller (`caller`, now
 `replyObject := some rid`) — mutually reciprocal — while every other TCB/Reply is
-framed past unchanged.  The success preconditions (`linkCallerReply_pre`: the reply
+framed past unchanged. The success preconditions (`linkCallerReply_pre`: the reply
 was free, the caller held no reply) rule out a pre-existing link to `rid` or from
 `caller`, so the bidirectional invariant re-establishes from `replyCallerLinkage st`. -/
 theorem linkCallerReply_establishes_replyCallerLinkage (st st' : SystemState)
@@ -5271,7 +5271,7 @@ theorem linkCallerReply_establishes_replyCallerLinkage (st st' : SystemState)
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D (PR #822 review / #7.4): `consumeCallerReply` **preserves**
 `replyCallerLinkageReciprocal` when invoked on a *mutually linked* pair
-(`r0.caller = some caller`).  It clears both halves (`rid.caller := none`,
+(`r0.caller = some caller`). It clears both halves (`rid.caller := none`,
 `caller.replyObject := none`); by reciprocity the back-link is reciprocal
 (`caller.replyObject = some rid`), so clearing the pair removes exactly one consistent
 edge and frames the rest.
@@ -5279,10 +5279,10 @@ edge and frames the rest.
 This is deliberately the **reciprocal** half of `replyCallerLinkage`, not the full
 invariant: standalone `consumeCallerReply` clears the caller's `replyObject` **without**
 unblocking it, so on a still-`.blockedOnReply` caller it would *strand* the third clause
-(`blockedOnReply ⇒ replyObject`).  The live `.reply` path unblocks the caller (it leaves
+(`blockedOnReply ⇒ replyObject`). The live `.reply` path unblocks the caller (it leaves
 `.blockedOnReply` for `.ready`) **before** the link is torn down, so the fused
 reply transition — not this primitive — re-establishes the third clause (the unblocked
-caller no longer constrains it).  `consumeCallerReply` is reply-path prep awaiting that
+caller no longer constrains it). `consumeCallerReply` is reply-path prep awaiting that
 fusion; this lemma carries the part it genuinely preserves on its own. -/
 theorem consumeCallerReply_preserves_replyCallerLinkageReciprocal (st st' : SystemState)
     (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (r0 : SeLe4n.Kernel.Reply)
@@ -5410,7 +5410,7 @@ theorem endpointSendDual_preserves_blockedOnReplyHasReplyObject
       cases hHead : ep.receiveQ.head with
       | some _ =>
         -- PR #873 round 17: the rendezvous arm resolves the sender before
-        -- popping.  It never did, so a send naming a nonexistent thread
+        -- popping. It never did, so a send naming a nonexistent thread
         -- delivered anyway and the receiver held a message attributed to it.
         cases hSnd : st.getTcb? sender with
         | none => simp [hHead, hSnd] at hStep
@@ -5447,7 +5447,7 @@ theorem endpointSendDual_preserves_blockedOnReplyHasReplyObject
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D2: storing any **non-TCB** object frames the third clause — the
-keystone `hNew` is vacuous since the stored object is never a `.tcb`.  Generalises the
+keystone `hNew` is vacuous since the stored object is never a `.tcb`. Generalises the
 `.endpoint` helper; used by the notification transitions (`.notification` stores). -/
 theorem storeObject_nonTcb_preserves_blockedOnReplyHasReplyObject
     (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
@@ -5463,7 +5463,7 @@ theorem storeObject_nonTcb_preserves_blockedOnReplyHasReplyObject
 -- WS-RR RR3.7: the `replyLinkageFrame` primitive family.
 --
 -- `replyCallerLinkageReciprocal` was the last conjunct with no per-transition
--- establisher, so every `ipcInvariantFull` bundle threaded it.  These are the
+-- establisher, so every `ipcInvariantFull` bundle threaded it. These are the
 -- store-level frames the seven transitions compose, in the same shape as the
 -- `passiveServerIdleFrame` / `donationOwnerFrame` families beside them: a
 -- reflexive, transitive relation, one lemma per primitive, and the folded
@@ -5473,7 +5473,7 @@ theorem storeObject_nonTcb_preserves_blockedOnReplyHasReplyObject
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.7: a TCB store frames the reply linkage when it preserves the
 written thread's `replyObject` and — when that thread is linked — its
-`.blockedOnReply`-ness.  The generic store-level lemma the primitive frames below
+`.blockedOnReply`-ness. The generic store-level lemma the primitive frames below
 all reduce to. -/
 theorem storeObject_modifiedTcb_replyLinkageFrame
     (st st' : SystemState) (id : SeLe4n.ObjId) (origTcb newTcb : TCB)
@@ -5605,9 +5605,9 @@ theorem storeTcbQueueLinks_replyLinkageFrame
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.7: an `ipcState` (+ message) write on an **unlinked** thread frames
-the reply linkage.  The unlinked premise is what the conjunct actually needs:
+the reply linkage. The unlinked premise is what the conjunct actually needs:
 a thread carrying no reply object is invisible to both clauses, so its state may
-change freely.  Callers derive it from their `hSenderNotReply`-shaped side
+change freely. Callers derive it from their `hSenderNotReply`-shaped side
 condition via `replyCallerLinkageReciprocal.unlinkedOfNotBlockedOnReply`. -/
 theorem storeTcbIpcStateAndMessage_replyLinkageFrame_of_unlinked
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
@@ -5706,9 +5706,9 @@ theorem storeTcbReceiveComplete_replyLinkageFrame_of_unlinked
         (fun ⟨rid, hRid⟩ => absurd hRid (by rw [hUnlinked tcb hOrig]; simp)) hObjInv hSO
 
 open SeLe4n.Model.SystemState in
-/-- WS-RR RR3.7: `endpointQueuePopHead` frames the reply linkage.  One endpoint
+/-- WS-RR RR3.7: `endpointQueuePopHead` frames the reply linkage. One endpoint
 store followed by one or two queue-link writes — neither touches `replyObject`,
-`ipcState` or any Reply.  Navigation mirrors
+`ipcState` or any Reply. Navigation mirrors
 `endpointQueuePopHead_preserves_blockedOnReplyHasReplyObject` line for line. -/
 theorem endpointQueuePopHead_replyLinkageFrame
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
@@ -5954,7 +5954,7 @@ theorem storeTcbIpcStateAndMessage_fromTcb_nonBlocked_preserves_blockedOnReplyHa
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D2: `notificationSignal` **preserves** the third clause — it never
 sets any TCB to `.blockedOnReply` (the woken waiter goes `.ready`) and the notification
-stores are non-TCB, so the clause is framed.  Mirrors
+stores are non-TCB, so the clause is framed. Mirrors
 `notificationSignal_preserves_blockedThreadsPendingMessageConsistent`. -/
 theorem notificationSignal_preserves_blockedOnReplyHasReplyObject
     (st st' : SystemState) (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
@@ -5995,7 +5995,7 @@ theorem notificationSignal_preserves_blockedOnReplyHasReplyObject
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D2: `notificationWait` **preserves** the third clause — deliver path
 sets the waiter `.ready`, block path sets it `.blockedOnNotification` (neither
-`.blockedOnReply`), and the notification stores are non-TCB.  Mirrors
+`.blockedOnReply`), and the notification stores are non-TCB. Mirrors
 `notificationWait_preserves_blockedThreadsPendingMessageConsistent`'s split structure. -/
 theorem notificationWait_preserves_blockedOnReplyHasReplyObject
     (st st' : SystemState) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
@@ -6051,7 +6051,7 @@ theorem notificationWait_preserves_blockedOnReplyHasReplyObject
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D2: `endpointReply` **preserves** the third clause — it only *unblocks*
 the replied-to target (`.blockedOnReply → .ready`) and never sets any TCB to
-`.blockedOnReply`, so the `.blockedOnReply` set shrinks and the clause is framed.  (It does
+`.blockedOnReply`, so the `.blockedOnReply` set shrinks and the clause is framed. (It does
 not consume the reply object — that is `consumeCallerReply`.) -/
 theorem endpointReply_preserves_blockedOnReplyHasReplyObject
     (st st' : SystemState) (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
@@ -6093,7 +6093,7 @@ theorem endpointReply_preserves_blockedOnReplyHasReplyObject
             have hObjInvMid : (ensureRunnable st'' target).objects.invExt := by
               rw [ensureRunnable_preserves_objects]
               exact storeTcbIpcStateAndMessage_preserves_objects_invExt st st'' target .ready (some msg) hObjInv hMsg
-            -- PR #827 #3 fold: peel the atomic consume.  The consumed caller
+            -- PR #827 #3 fold: peel the atomic consume. The consumed caller
             -- (the reply `target`) was just stored `.ready`, so the frame's
             -- non-`.blockedOnReply` side condition discharges structurally.
             have hCallerNotBlocked : ∀ (t : TCB),
@@ -6117,7 +6117,7 @@ theorem endpointReply_preserves_blockedOnReplyHasReplyObject
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D2: `endpointReplyRecv` **preserves** the third clause — it unblocks
 the reply target (`.ready`, framed) then runs `endpointReceiveDual`, which *establishes*
-the clause (`endpointReceiveDual_establishes_blockedOnReplyHasReplyObject`).  Composes the
+the clause (`endpointReceiveDual_establishes_blockedOnReplyHasReplyObject`). Composes the
 unblock frame with the receive-leg establish. -/
 theorem endpointReplyRecv_preserves_blockedOnReplyHasReplyObject
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
@@ -6204,21 +6204,21 @@ theorem endpointReplyRecv_preserves_blockedOnReplyHasReplyObject
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D2: `ipcUnwrapCaps` (the IPC cap-transfer step) **preserves** the
-third clause.  It never creates a TCB — it writes only `receiverRoot`, and only as a CNode
+third clause. It never creates a TCB — it writes only `receiverRoot`, and only as a CNode
 — so every `.tcb` in the post-state maps back to the same `.tcb` in the pre-state
 (`ipcUnwrapCaps_tcb_backward`); the clause then transports unchanged. -/
 theorem ipcUnwrapCaps_preserves_blockedOnReplyHasReplyObject
-    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
     (hInv : blockedOnReplyHasReplyObject st)
-    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st
+    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st
              = .ok (summary, st')) :
     blockedOnReplyHasReplyObject st' := by
   intro tid tcb ep rt hTcb hBlk
   exact hInv tid tcb ep rt
-    (ipcUnwrapCaps_tcb_backward msg senderRoot receiverRoot slotBase grantRight st st' summary
+    (ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight st st' summary
       tid.toObjId tcb hObjInv hStep hTcb) hBlk
 
 open SeLe4n.Model.SystemState in
@@ -6227,12 +6227,12 @@ open SeLe4n.Model.SystemState in
 theorem endpointCallWithCaps_establishes_blockedOnReplyHasReplyObject
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : blockedOnReplyHasReplyObject st)
     (hObjInv : st.objects.invExt)
     (hStep : endpointCallWithCaps endpointId caller msg endpointRights
-             callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     blockedOnReplyHasReplyObject st' := by
   simp only [endpointCallWithCaps] at hStep
   cases hCall : endpointCall endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
@@ -6253,11 +6253,12 @@ theorem endpointCallWithCaps_establishes_blockedOnReplyHasReplyObject
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hPMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_blockedOnReplyHasReplyObject { msg with capsGranted := endpointRights.mem AccessRight.grant } callerCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_blockedOnReplyHasReplyObject { msg with capsGranted := endpointRights.mem AccessRight.grant } recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hPMid hStep
 
 open SeLe4n.Model.SystemState in
@@ -6297,19 +6298,15 @@ theorem endpointReceiveDualWithCaps_establishes_blockedOnReplyHasReplyObject
         simp [hMsg] at hStep
         split at hStep
         · obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hPMid
-        · cases hLookup : lookupCspaceRoot stMid sid with
-          | none => simp only [hLookup] at hStep; contradiction
-          | some senderRoot =>
-            simp only [hLookup] at hStep
-            cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase msg.capsGranted stMid with
-            | error e => simp [hUnwrap] at hStep
-            | ok pair =>
-              rcases pair with ⟨s, stFinal⟩
-              simp [hUnwrap] at hStep
-              obtain ⟨⟨_, _⟩, rfl⟩ := hStep
-              exact ipcUnwrapCaps_preserves_blockedOnReplyHasReplyObject msg senderRoot receiverCspaceRoot
-                receiverSlotBase _ stMid stFinal s hObjInvMid hPMid hUnwrap
+        · cases hUnwrap : ipcUnwrapCaps msg receiverCspaceRoot
+              receiverSlotBase msg.capsGranted stMid with
+          | error e => simp [hUnwrap] at hStep
+          | ok pair =>
+            rcases pair with ⟨s, stFinal⟩
+            simp [hUnwrap] at hStep
+            obtain ⟨⟨_, _⟩, rfl⟩ := hStep
+            exact ipcUnwrapCaps_preserves_blockedOnReplyHasReplyObject msg receiverCspaceRoot
+              receiverSlotBase _ stMid stFinal s hObjInvMid hPMid hUnwrap
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D2: `endpointSendDualWithCaps` **preserves** the third clause — base
@@ -6317,12 +6314,12 @@ open SeLe4n.Model.SystemState in
 theorem endpointSendDualWithCaps_preserves_blockedOnReplyHasReplyObject
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : blockedOnReplyHasReplyObject st)
     (hObjInv : st.objects.invExt)
     (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
-             senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     blockedOnReplyHasReplyObject st' := by
   simp only [endpointSendDualWithCaps] at hStep
   cases hSend : endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
@@ -6343,20 +6340,21 @@ theorem endpointSendDualWithCaps_preserves_blockedOnReplyHasReplyObject
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hPMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_blockedOnReplyHasReplyObject { msg with capsGranted := endpointRights.mem AccessRight.grant } senderCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_blockedOnReplyHasReplyObject { msg with capsGranted := endpointRights.mem AccessRight.grant } recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hPMid hStep
 
 -- ============================================================================
 -- IPC de-threading D3 — `blockedOnReplyHasTarget` frame family
 --
 -- `blockedOnReplyHasTarget` reads only each TCB's `ipcState` (a `.blockedOnReply` TCB
--- carries a `some` reply target).  Every IPC `.blockedOnReply` store uses `(some receiver)`,
+-- carries a `some` reply target). Every IPC `.blockedOnReply` store uses `(some receiver)`,
 -- so this clause is *established directly by the store* (no atomic reply link needed —
--- simpler than the third clause).  Frames mirror the `blockedOnReplyHasReplyObject` family.
+-- simpler than the third clause). Frames mirror the `blockedOnReplyHasReplyObject` family.
 -- ============================================================================
 
 open SeLe4n.Model.SystemState in
@@ -6573,7 +6571,7 @@ theorem storeObject_endpoint_sameSchedContextBindings'
 open SeLe4n.Model.SystemState in
 /-- D5: a `storeObject` rewriting a TCB whose `timeoutBudget` is preserved (`hBudgetEq`) frames
 `timeoutBudgetFrame` — the rewritten slot pulls back to the pre-state TCB with the same budget,
-every other slot is untouched.  (Every IPC TCB store satisfies `hBudgetEq` by `rfl`: none writes
+every other slot is untouched. (Every IPC TCB store satisfies `hBudgetEq` by `rfl`: none writes
 `timeoutBudget`.) -/
 theorem storeObject_modifiedTcb_timeoutBudgetFrame
     (st st' : SystemState) (id : SeLe4n.ObjId) (origTcb newTcb : TCB)
@@ -6667,7 +6665,7 @@ theorem storeObject_endpoint_timeoutBudgetFrame'
 
 open SeLe4n.Model.SystemState in
 /-- D6: a `storeObject` whose **old** slot is neither a SchedContext nor a TCB frames the
-SchedContext/owner side forward.  `storeObject` overwrites the key unconditionally, so the
+SchedContext/owner side forward. `storeObject` overwrites the key unconditionally, so the
 only way the store could disturb a SchedContext witness (or an owner TCB witness) is by
 landing on that very key — ruled out here because the old object at `id` is a notification /
 endpoint / reply, disjoint in kind from both a SchedContext and a TCB. -/
@@ -6692,7 +6690,7 @@ theorem storeObject_oldNonScNonTcb_donationOwnerFrame
 
 open SeLe4n.Model.SystemState in
 /-- D6: a `storeObject` that rewrites a TCB **whose pre-state `ipcState` is not
-`.blockedOnReply`** frames the SchedContext/owner side forward.  The store cannot disturb a
+`.blockedOnReply`** frames the SchedContext/owner side forward. The store cannot disturb a
 SchedContext witness (the old slot is a TCB, kind-disjoint from a SchedContext), and it
 cannot disturb an owner witness: an owner is `.blockedOnReply` in the pre-state, whereas the
 rewritten thread is not, so the two keys differ. -/
@@ -6838,7 +6836,7 @@ open SeLe4n.Model.SystemState in
 /-- D6: a `storeObject` that rewrites a TCB to a new value **preserving its `ipcState` and
 `schedContextBinding`** frames the SchedContext/owner side forward *unconditionally* — even when
 the rewritten thread is itself a `.blockedOnReply` owner, because the owner witness (binding +
-`.blockedOnReply` state) survives the rewrite.  This is the frame for queue-link rewrites
+`.blockedOnReply` state) survives the rewrite. This is the frame for queue-link rewrites
 (`tcbWithQueueLinks`), which touch only the `queuePrev`/`queuePPrev`/`queueNext` fields. -/
 theorem storeObject_modifiedTcbPreservingOwner_donationOwnerFrame
     (st st' : SystemState) (id : SeLe4n.ObjId) (origTcb newTcb : TCB)
@@ -6892,7 +6890,7 @@ theorem storeTcbQueueLinks_donationOwnerFrame
         rfl rfl hObjInv hSO
 
 open SeLe4n.Model.SystemState in
-/-- D6: pair-shaped endpoint-store frame for `donationOwnerFrame`.  The store overwrites the
+/-- D6: pair-shaped endpoint-store frame for `donationOwnerFrame`. The store overwrites the
 endpoint at `oid` (old slot a `.endpoint`, kind-disjoint from a SchedContext and a TCB), so it
 disturbs neither witness. -/
 theorem storeObject_endpoint_donationOwnerFrame'
@@ -6937,7 +6935,7 @@ theorem storeObject_oldNonTcb_passiveServerIdleFrame
 
 open SeLe4n.Model.SystemState in
 /-- D6: a `storeObject` rewriting a TCB **whose new `ipcState` is allowed for a passive thread, or
-whose pre-state binding is not `.unbound`** frames `passiveServerIdle`.  The boot scheduler is
+whose pre-state binding is not `.unbound`** frames `passiveServerIdle`. The boot scheduler is
 untouched; the rewritten thread is excluded from the pullback obligation because either its new
 `ipcState` is allowed (so the `¬ passiveServerIdleAllowed` filter rules it out) or it is bound (so
 the `unbound` hypothesis rules it out); every other slot is preserved. -/
@@ -7092,10 +7090,43 @@ theorem passiveServerIdleFrame_of_backward_monotone {st st' : SystemState}
     exact ⟨tcb, hTcb, hBindEq.trans hUnbound', fun hIn => hNotInQ' (hQueue tid hIn),
       by rw [hCurrent] at hNotCurrent'; exact hNotCurrent', hIpcEq⟩⟩
 
+/-- **WS-OD OD1.5**: the same frame, with the structure's own
+`¬ passiveServerIdleAllowed` filter available to the backward obligation.
+
+`passiveServerIdleFrame_of_backward` below demands the pullback at *every*
+post-state thread, which no cancellation satisfies: the arms rewrite the victim's
+`ipcState` and, on the reply arm, the victim's and the holder's
+`schedContextBinding` as well.  What is true of all of them is weaker and
+sufficient — **every thread a cancellation rewrites ends in a state
+`passiveServerIdle` permits**, so the conjunct's own filter discharges each one
+and the pullback only ever fires on threads the transition left alone.
+
+Handing `hBack` both of the structure's own discriminating hypotheses — the
+post-state thread is `.unbound`, and its state is *not* allowed — costs nothing
+(a caller that needs neither ignores the arguments) and is what makes them
+usable: `passiveServerIdleFrame` is a structure rather than a function, so they
+are otherwise unreachable from inside the pullback.  The donation return needs
+both: the caller it re-binds is discharged by the `.unbound` hypothesis and the
+holder it unbinds by the filter. -/
+theorem passiveServerIdleFrame_of_backward_of_not_allowed {st st' : SystemState}
+    (hBack : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB), st'.getTcb? tid = some tcb' →
+      tcb'.schedContextBinding = .unbound →
+      ¬ passiveServerIdleAllowed tcb'.ipcState →
+      ∃ tcb, st.getTcb? tid = some tcb ∧
+        tcb.ipcState = tcb'.ipcState ∧ tcb.schedContextBinding = tcb'.schedContextBinding)
+    (hSched : st'.scheduler = st.scheduler) :
+    passiveServerIdleFrame st st' :=
+  ⟨fun tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' hNA => by
+    obtain ⟨tcb, hTcb, hIpcEq, hBindEq⟩ :=
+      hBack tid tcb' ((SystemState.getTcb?_eq_some_iff st' tid tcb').mpr hTcb') hUnbound' hNA
+    rw [hSched] at hNotInQ' hNotCurrent'
+    exact ⟨tcb, (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb, hBindEq.trans hUnbound',
+      hNotInQ', hNotCurrent', hIpcEq⟩⟩
+
 /-- D6: a transition that preserves every TCB's `ipcState` and `schedContextBinding` **backward**
 and leaves the boot scheduler untouched frames `passiveServerIdle` — every post-state thread pulls
 back to a same-`ipcState`, same-binding pre-state thread (queue-link rewrites: `endpointQueue*`,
-`storeTcbQueueLinks`).  The scheduler-equality specialisation of
+`storeTcbQueueLinks`). The scheduler-equality specialisation of
 `passiveServerIdleFrame_of_backward_monotone`. -/
 theorem passiveServerIdleFrame_of_backward {st st' : SystemState}
     (hBack : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB), st'.objects[tid.toObjId]? = some (.tcb tcb') →
@@ -7227,7 +7258,7 @@ theorem storeObject_nonTcb_preserves_blockedOnReplyHasTarget
 
 open SeLe4n.Model.SystemState in
 /-- D3: `storeTcbIpcStateAndMessage` frames the clause provided the new `ipcState`, when
-`.blockedOnReply`, has a `some` target (`hTargetOk`).  Covers both the receiver `.ready`
+`.blockedOnReply`, has a `some` target (`hTargetOk`). Covers both the receiver `.ready`
 store (vacuous) and the caller `.blockedOnReply _ (some r)` store (`some r` is `isSome`). -/
 theorem storeTcbIpcStateAndMessage_preserves_blockedOnReplyHasTarget
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
@@ -7256,7 +7287,7 @@ theorem storeTcbIpcStateAndMessage_preserves_blockedOnReplyHasTarget
 
 open SeLe4n.Model.SystemState in
 /-- Finding F-1: `storeTcbReceiveComplete` frames the clause — the stored TCB is
-`.ready`, never `.blockedOnReply`, so no `hTargetOk` hypothesis is needed.  Mirror of
+`.ready`, never `.blockedOnReply`, so no `hTargetOk` hypothesis is needed. Mirror of
 `storeTcbIpcStateAndMessage_preserves_blockedOnReplyHasTarget`. -/
 theorem storeTcbReceiveComplete_preserves_blockedOnReplyHasTarget
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
@@ -8134,10 +8165,10 @@ theorem linkServerStashedReply_passiveServerIdleFrame
     (linkServerStashedReply_scheduler_eq st st' caller server hStep)
 
 open SeLe4n.Model.SystemState in
-/-- D6: `cleanupPreReceiveDonation` frames `passiveServerIdle`.  When the receiver holds a donated
+/-- D6: `cleanupPreReceiveDonation` frames `passiveServerIdle`. When the receiver holds a donated
 SchedContext, the return rebinds the owner `.unbound → .bound` (keeping its `.blockedOnReply`
 ipcState) and the receiver `.donated → .unbound` (the running receiver is `.ready`); `ipcState` and
-the scheduler are preserved throughout.  The pullback obligation excludes the owner (it becomes
+the scheduler are preserved throughout. The pullback obligation excludes the owner (it becomes
 **bound**, contradicting `unbound`) and the receiver (it is **allowed** — `.ready` by
 `hReceiverReady`, contradicting `¬ passiveServerIdleAllowed`); every other thread's binding is
 framed by the donation-return's 3-way binding lemma. -/
@@ -8325,26 +8356,26 @@ theorem consumeCallerReply_sameSchedContextBindings
 every TCB slot byte-identical (`ipcUnwrapCaps_tcb_backward` pulls each post-state TCB back to
 the *same* pre-state TCB). -/
 theorem ipcUnwrapCaps_sameSchedContextBindings
-    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st = .ok (summary, st')) :
     sameSchedContextBindings st st' :=
-  fun y tcY hY => ⟨tcY, ipcUnwrapCaps_tcb_backward msg senderRoot receiverRoot slotBase grantRight
+  fun y tcY hY => ⟨tcY, ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight
     st st' summary y.toObjId tcY hObjInv hStep hY, rfl⟩
 
 open SeLe4n.Model.SystemState in
 /-- D5: `ipcUnwrapCaps` frames `timeoutBudgetFrame` — it writes only CNode caps at `receiverRoot`,
 so every TCB object survives byte-identical (`ipcUnwrapCaps_tcb_backward`). -/
 theorem ipcUnwrapCaps_timeoutBudgetFrame
-    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st = .ok (summary, st')) :
     timeoutBudgetFrame st st' :=
-  fun y tcY hY => ⟨tcY, ipcUnwrapCaps_tcb_backward msg senderRoot receiverRoot slotBase grantRight
+  fun y tcY hY => ⟨tcY, ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight
     st st' summary y.toObjId tcY hObjInv hStep hY, rfl⟩
 
 open SeLe4n.Model.SystemState in
@@ -8352,16 +8383,16 @@ open SeLe4n.Model.SystemState in
 at `receiverRoot`, so every SchedContext object (`ipcUnwrapCaps_preserves_schedContext_objects`)
 and every TCB object (`ipcUnwrapCaps_preserves_tcb_objects`) survives byte-identical. -/
 theorem ipcUnwrapCaps_donationOwnerFrame
-    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st = .ok (summary, st')) :
     donationOwnerFrame st st' :=
-  ⟨fun scId sc hSc => ipcUnwrapCaps_preserves_schedContext_objects msg senderRoot receiverRoot
+  ⟨fun scId sc hSc => ipcUnwrapCaps_preserves_schedContext_objects msg receiverRoot
      slotBase grantRight st st' summary scId.toObjId sc hSc hObjInv hStep,
    fun owner ownerTcb hOwner hU hR =>
-     ⟨ownerTcb, ipcUnwrapCaps_preserves_tcb_objects msg senderRoot receiverRoot slotBase grantRight
+     ⟨ownerTcb, ipcUnwrapCaps_preserves_tcb_objects msg receiverRoot slotBase grantRight
        st st' summary owner.toObjId ownerTcb hOwner hObjInv hStep, hU, hR⟩⟩
 
 open SeLe4n.Model.SystemState in
@@ -8369,17 +8400,17 @@ open SeLe4n.Model.SystemState in
 so every TCB object survives byte-identical (`ipcUnwrapCaps_tcb_backward`) and the scheduler is
 untouched (`ipcUnwrapCaps_preserves_scheduler`). -/
 theorem ipcUnwrapCaps_passiveServerIdleFrame
-    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st = .ok (summary, st')) :
     passiveServerIdleFrame st st' :=
   passiveServerIdleFrame_of_backward
     (fun tid tcb' hTcb' =>
-      ⟨tcb', ipcUnwrapCaps_tcb_backward msg senderRoot receiverRoot slotBase grantRight st st'
+      ⟨tcb', ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight st st'
         summary tid.toObjId tcb' hObjInv hStep hTcb', rfl, rfl⟩)
-    (ipcUnwrapCaps_preserves_scheduler msg senderRoot receiverRoot slotBase grantRight st st' summary hStep)
+    (ipcUnwrapCaps_preserves_scheduler msg receiverRoot slotBase grantRight st st' summary hStep)
 
 open SeLe4n.Model.SystemState in
 /-- D3: `cleanupPreReceiveDonation` frames the clause (preserves every `ipcState`). -/
@@ -8592,7 +8623,7 @@ theorem endpointReceiveDual_establishes_blockedOnReplyHasTarget
                   exact blockedOnReplyHasTarget_of_objects_eq (removeRunnable_preserves_objects stStashed receiver) hPStash
 
 open SeLe4n.Model.SystemState in
-/-- D6: `endpointReceiveDual` preserves `donationBudgetTransfer`.  The sender-rendezvous path is
+/-- D6: `endpointReceiveDual` preserves `donationBudgetTransfer`. The sender-rendezvous path is
 binding-free (every step is `sameSchedContextBindings`); the no-sender block path begins with
 `cleanupPreReceiveDonation` (which preserves the conjunct via the donation-return) and is otherwise
 binding-free, so the conjunct threads through. -/
@@ -8731,7 +8762,7 @@ theorem endpointReceiveDual_preserves_donationBudgetTransfer
 open SeLe4n.Model.SystemState in
 /-- D6: `endpointReceiveDual` preserves `donationOwnerUnique` — the rendezvous path is
 `sameSchedContextBindings`-clean, the blocking path runs `cleanupPreReceiveDonation` (which only
-*removes* a donation), so post-state donations inject backward into pre-state donations.  Mirror of
+*removes* a donation), so post-state donations inject backward into pre-state donations. Mirror of
 `endpointReceiveDual_preserves_donationBudgetTransfer`. -/
 theorem endpointReceiveDual_preserves_donationOwnerUnique
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
@@ -8869,7 +8900,7 @@ open SeLe4n.Model.SystemState in
 /-- IPC de-threading D6: `endpointReceiveDual` preserves `donationOwnerValid`.
 
 Rendezvous (sendQ head present): pop the sender + set it `.blockedOnReply` (Call leg) or
-`.ready` (Send leg) + complete the receiver `.ready`.  Both rewritten threads are framed by
+`.ready` (Send leg) + complete the receiver `.ready`. Both rewritten threads are framed by
 `donationOwnerFrame`: the sender is the sendQ **head**, hence `.blockedOnSend`/`.blockedOnCall`
 by `hQHBC` (never a `.blockedOnReply` owner), and the running `receiver` is `.ready`
 (`hReceiverReady`) — so it is neither the dequeued sender (ruling out the Call-leg corner where
@@ -9092,9 +9123,9 @@ theorem endpointReceiveDual_preserves_donationOwnerValid
                     (donationOwnerFrame.of_objects_eq (removeRunnable_preserves_objects stStashed receiver)) hDStash
 
 open SeLe4n.Model.SystemState in
-/-- D6: `endpointReceiveDual` frames `passiveServerIdle`.  Rendezvous: pop the sender + set it
+/-- D6: `endpointReceiveDual` frames `passiveServerIdle`. Rendezvous: pop the sender + set it
 `.blockedOnReply` (Call) or `.ready` (Send) + complete the receiver `.ready` — every rewritten thread
-lands in an allowed passive state, so the frame is *clean* (no precondition).  Blocking: return the
+lands in an allowed passive state, so the frame is *clean* (no precondition). Blocking: return the
 receiver's own donation (`cleanupPreReceiveDonation`, needs the running receiver `.ready` via
 `hReceiverReady`) + enqueue + block `.blockedOnReceive` (allowed) + optional stash + deschedule. -/
 theorem endpointReceiveDual_passiveServerIdleFrame
@@ -9436,20 +9467,16 @@ theorem endpointReceiveDualWithCaps_preserves_donationBudgetTransfer
         simp [hMsg] at hStep
         split at hStep
         · obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hDMid
-        · cases hLookup : lookupCspaceRoot stMid sid with
-          | none => simp only [hLookup] at hStep; contradiction
-          | some senderRoot =>
-            simp only [hLookup] at hStep
-            cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase msg.capsGranted stMid with
-            | error e => simp [hUnwrap] at hStep
-            | ok pair =>
-              rcases pair with ⟨s, stFinal⟩
-              simp [hUnwrap] at hStep
-              obtain ⟨⟨_, _⟩, rfl⟩ := hStep
-              exact donationBudgetTransfer_of_sameSchedContextBindings
-                (ipcUnwrapCaps_sameSchedContextBindings msg senderRoot receiverCspaceRoot
-                  receiverSlotBase _ stMid stFinal s hObjInvMid hUnwrap) hDMid
+        · cases hUnwrap : ipcUnwrapCaps msg receiverCspaceRoot
+              receiverSlotBase msg.capsGranted stMid with
+          | error e => simp [hUnwrap] at hStep
+          | ok pair =>
+            rcases pair with ⟨s, stFinal⟩
+            simp [hUnwrap] at hStep
+            obtain ⟨⟨_, _⟩, rfl⟩ := hStep
+            exact donationBudgetTransfer_of_sameSchedContextBindings
+              (ipcUnwrapCaps_sameSchedContextBindings msg receiverCspaceRoot
+                receiverSlotBase _ stMid stFinal s hObjInvMid hUnwrap) hDMid
 
 open SeLe4n.Model.SystemState in
 /-- D6: `endpointReplyRecv` preserves `donationBudgetTransfer` (the reply leg unblocks the
@@ -9563,20 +9590,16 @@ theorem endpointReceiveDualWithCaps_preserves_donationOwnerUnique
         simp [hMsg] at hStep
         split at hStep
         · obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hDMid
-        · cases hLookup : lookupCspaceRoot stMid sid with
-          | none => simp only [hLookup] at hStep; contradiction
-          | some senderRoot =>
-            simp only [hLookup] at hStep
-            cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase msg.capsGranted stMid with
-            | error e => simp [hUnwrap] at hStep
-            | ok pair =>
-              rcases pair with ⟨s, stFinal⟩
-              simp [hUnwrap] at hStep
-              obtain ⟨⟨_, _⟩, rfl⟩ := hStep
-              exact donationOwnerUnique_of_sameSchedContextBindings
-                (ipcUnwrapCaps_sameSchedContextBindings msg senderRoot receiverCspaceRoot
-                  receiverSlotBase _ stMid stFinal s hObjInvMid hUnwrap) hDMid
+        · cases hUnwrap : ipcUnwrapCaps msg receiverCspaceRoot
+              receiverSlotBase msg.capsGranted stMid with
+          | error e => simp [hUnwrap] at hStep
+          | ok pair =>
+            rcases pair with ⟨s, stFinal⟩
+            simp [hUnwrap] at hStep
+            obtain ⟨⟨_, _⟩, rfl⟩ := hStep
+            exact donationOwnerUnique_of_sameSchedContextBindings
+              (ipcUnwrapCaps_sameSchedContextBindings msg receiverCspaceRoot
+                receiverSlotBase _ stMid stFinal s hObjInvMid hUnwrap) hDMid
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D6: `endpointReceiveDualWithCaps` preserves `donationOwnerValid`
@@ -9621,22 +9644,18 @@ theorem endpointReceiveDualWithCaps_preserves_donationOwnerValid
         simp [hMsg] at hStep
         split at hStep
         · obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hDMid
-        · cases hLookup : lookupCspaceRoot stMid sid with
-          | none => simp only [hLookup] at hStep; contradiction
-          | some senderRoot =>
-            simp only [hLookup] at hStep
-            cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase msg.capsGranted stMid with
-            | error e => simp [hUnwrap] at hStep
-            | ok pair =>
-              rcases pair with ⟨s, stFinal⟩
-              simp [hUnwrap] at hStep
-              obtain ⟨⟨_, _⟩, rfl⟩ := hStep
-              exact donationOwnerValid_of_frames
-                (ipcUnwrapCaps_sameSchedContextBindings msg senderRoot receiverCspaceRoot
-                  receiverSlotBase _ stMid stFinal s hObjInvMid hUnwrap)
-                (ipcUnwrapCaps_donationOwnerFrame msg senderRoot receiverCspaceRoot
-                  receiverSlotBase _ stMid stFinal s hObjInvMid hUnwrap) hDMid
+        · cases hUnwrap : ipcUnwrapCaps msg receiverCspaceRoot
+              receiverSlotBase msg.capsGranted stMid with
+          | error e => simp [hUnwrap] at hStep
+          | ok pair =>
+            rcases pair with ⟨s, stFinal⟩
+            simp [hUnwrap] at hStep
+            obtain ⟨⟨_, _⟩, rfl⟩ := hStep
+            exact donationOwnerValid_of_frames
+              (ipcUnwrapCaps_sameSchedContextBindings msg receiverCspaceRoot
+                receiverSlotBase _ stMid stFinal s hObjInvMid hUnwrap)
+              (ipcUnwrapCaps_donationOwnerFrame msg receiverCspaceRoot
+                receiverSlotBase _ stMid stFinal s hObjInvMid hUnwrap) hDMid
 
 open SeLe4n.Model.SystemState in
 /-- D6: `endpointReceiveDualWithCaps` frames `passiveServerIdle` (`endpointReceiveDual` + the
@@ -9677,19 +9696,15 @@ theorem endpointReceiveDualWithCaps_passiveServerIdleFrame
         simp [hMsg] at hStep
         split at hStep
         · obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hFMid
-        · cases hLookup : lookupCspaceRoot stMid sid with
-          | none => simp only [hLookup] at hStep; contradiction
-          | some senderRoot =>
-            simp only [hLookup] at hStep
-            cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase msg.capsGranted stMid with
-            | error e => simp [hUnwrap] at hStep
-            | ok pair =>
-              rcases pair with ⟨s, stFinal⟩
-              simp [hUnwrap] at hStep
-              obtain ⟨⟨_, _⟩, rfl⟩ := hStep
-              exact hFMid.trans (ipcUnwrapCaps_passiveServerIdleFrame msg senderRoot receiverCspaceRoot
-                receiverSlotBase _ stMid stFinal s hObjInvMid hUnwrap)
+        · cases hUnwrap : ipcUnwrapCaps msg receiverCspaceRoot
+              receiverSlotBase msg.capsGranted stMid with
+          | error e => simp [hUnwrap] at hStep
+          | ok pair =>
+            rcases pair with ⟨s, stFinal⟩
+            simp [hUnwrap] at hStep
+            obtain ⟨⟨_, _⟩, rfl⟩ := hStep
+            exact hFMid.trans (ipcUnwrapCaps_passiveServerIdleFrame msg receiverCspaceRoot
+              receiverSlotBase _ stMid stFinal s hObjInvMid hUnwrap)
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D6: `endpointReceiveDualWithCaps` preserves `passiveServerIdle`. -/
@@ -9745,19 +9760,15 @@ theorem endpointReceiveDualWithCaps_timeoutBudgetFrame
         simp [hMsg] at hStep
         split at hStep
         · obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hFMid
-        · cases hLookup : lookupCspaceRoot stMid sid with
-          | none => simp only [hLookup] at hStep; contradiction
-          | some senderRoot =>
-            simp only [hLookup] at hStep
-            cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase msg.capsGranted stMid with
-            | error e => simp [hUnwrap] at hStep
-            | ok pair =>
-              rcases pair with ⟨s, stFinal⟩
-              simp [hUnwrap] at hStep
-              obtain ⟨⟨_, _⟩, rfl⟩ := hStep
-              exact hFMid.trans (ipcUnwrapCaps_timeoutBudgetFrame msg senderRoot receiverCspaceRoot
-                receiverSlotBase _ stMid stFinal s hObjInvMid hUnwrap)
+        · cases hUnwrap : ipcUnwrapCaps msg receiverCspaceRoot
+              receiverSlotBase msg.capsGranted stMid with
+          | error e => simp [hUnwrap] at hStep
+          | ok pair =>
+            rcases pair with ⟨s, stFinal⟩
+            simp [hUnwrap] at hStep
+            obtain ⟨⟨_, _⟩, rfl⟩ := hStep
+            exact hFMid.trans (ipcUnwrapCaps_timeoutBudgetFrame msg receiverCspaceRoot
+              receiverSlotBase _ stMid stFinal s hObjInvMid hUnwrap)
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D5: `endpointReceiveDualWithCaps` preserves `blockedThreadTimeoutConsistent`. -/
@@ -9776,8 +9787,8 @@ theorem endpointReceiveDualWithCaps_preserves_blockedThreadTimeoutConsistent
       receiverCspaceRoot receiverSlotBase st st' senderId summary hObjInv hStep) hAll
 
 open SeLe4n.Model.SystemState in
-/-- D6: `endpointReplyRecv` frames `passiveServerIdle`.  The reply leg unblocks the reply target
-`.ready` + reschedules it (allowed); the receive leg is `endpointReceiveDual`.  The receive-leg
+/-- D6: `endpointReplyRecv` frames `passiveServerIdle`. The reply leg unblocks the reply target
+`.ready` + reschedules it (allowed); the receive leg is `endpointReceiveDual`. The receive-leg
 receiver is `.ready` in the post-reply state — whether it *is* the just-replied target (set `.ready`)
 or a distinct running thread (`hReceiverReady`). -/
 theorem endpointReplyRecv_passiveServerIdleFrame
@@ -10056,7 +10067,7 @@ theorem endpointReplyRecv_preserves_donationOwnerUnique
 open SeLe4n.Model.SystemState in
 /-- D6: `endpointCall` preserves every TCB's `schedContextBinding` (rendezvous: pop + wake +
 block caller `.blockedOnReply` + `linkServerStashedReply` + deschedule; block: enqueue +
-`.blockedOnCall` + deschedule — no binding write).  Donation is a *separate* dispatch step
+`.blockedOnCall` + deschedule — no binding write). Donation is a *separate* dispatch step
 (`applyCallDonation`), not part of this core transition. -/
 theorem endpointCall_sameSchedContextBindings
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
@@ -10123,12 +10134,12 @@ theorem endpointCall_sameSchedContextBindings
             exact (hS1.trans hS2).trans (sameSchedContextBindings.of_objects_eq (removeRunnable_preserves_objects st2 caller))
 
 open SeLe4n.Model.SystemState in
-/-- D6: `endpointCall` frames the SchedContext/owner side forward.  Rendezvous: pop the receiver
+/-- D6: `endpointCall` frames the SchedContext/owner side forward. Rendezvous: pop the receiver
 (queue-link) + wake it `.ready` + reschedule + block the caller `.blockedOnReply` + link the
 server-stashed reply + deschedule; block: enqueue the caller + `.blockedOnCall` + deschedule.
 The TCBs whose `ipcState` changes are the rendezvous receiver (receiveQ **head**, hence
 `.blockedOnReceive` via `hQHBC`) and the running `caller` (`hCallerNotReply`) — neither a
-`.blockedOnReply` donation owner.  The caller is *set* `.blockedOnReply` but was not one before,
+`.blockedOnReply` donation owner. The caller is *set* `.blockedOnReply` but was not one before,
 so no existing owner witness is lost; `linkServerStashedReply` preserves `ipcState`/binding. -/
 theorem endpointCall_donationOwnerFrame
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
@@ -10239,9 +10250,9 @@ theorem endpointCall_preserves_donationOwnerValid
     hInv
 
 open SeLe4n.Model.SystemState in
-/-- D6: `endpointCall` frames `passiveServerIdle`.  Rendezvous (receiveQ head): pop + complete the
+/-- D6: `endpointCall` frames `passiveServerIdle`. Rendezvous (receiveQ head): pop + complete the
 receiver `.ready` + reschedule + set the caller `.blockedOnReply` (an *allowed* passive state) +
-stash the reply + deschedule the caller — clean.  Block (no receiver): enqueue the caller + set it
+stash the reply + deschedule the caller — clean. Block (no receiver): enqueue the caller + set it
 `.blockedOnCall` (a *non-allowed* state) + deschedule — the descheduled `.blockedOnCall` caller must
 hold a SchedContext (`hCallerNotUnbound`) to be excluded from the pullback obligation. -/
 theorem endpointCall_passiveServerIdleFrame
@@ -10444,7 +10455,7 @@ theorem endpointSendDual_sameSchedContextBindings
       cases hHead : ep.receiveQ.head with
       | some _ =>
         -- PR #873 round 17: the rendezvous arm resolves the sender before
-        -- popping.  It never did, so a send naming a nonexistent thread
+        -- popping. It never did, so a send naming a nonexistent thread
         -- delivered anyway and the receiver held a message attributed to it.
         cases hSnd : st.getTcb? sender with
         | none => simp [hHead, hSnd] at hStep
@@ -10478,9 +10489,9 @@ theorem endpointSendDual_sameSchedContextBindings
               (sameSchedContextBindings.of_objects_eq (removeRunnable_preserves_objects st2 sender))
 
 open SeLe4n.Model.SystemState in
-/-- D6: `endpointSendDual` frames the SchedContext/owner side forward.  Rendezvous: pop the
+/-- D6: `endpointSendDual` frames the SchedContext/owner side forward. Rendezvous: pop the
 receiver (queue-link rewrite) + set it `.ready` (`storeTcbReceiveComplete`) + reschedule; block:
-enqueue the sender + set it `.blockedOnSend` + deschedule.  The two TCBs whose `ipcState`
+enqueue the sender + set it `.blockedOnSend` + deschedule. The two TCBs whose `ipcState`
 changes are the rendezvous receiver — the receiveQ **head**, hence `.blockedOnReceive` by
 `hQHBC : queueHeadBlockedConsistent` — and the running `sender` (`hSenderNotReply`); neither is a
 `.blockedOnReply` donation owner, so every owner witness survives. -/
@@ -10508,7 +10519,7 @@ theorem endpointSendDual_donationOwnerFrame
       cases hHead : ep.receiveQ.head with
       | some _ =>
         -- PR #873 round 17: the rendezvous arm resolves the sender before
-        -- popping.  It never did, so a send naming a nonexistent thread
+        -- popping. It never did, so a send naming a nonexistent thread
         -- delivered anyway and the receiver held a message attributed to it.
         cases hSnd : st.getTcb? sender with
         | none => simp [hHead, hSnd] at hStep
@@ -10571,8 +10582,8 @@ theorem endpointSendDual_preserves_donationOwnerValid
     hInv
 
 open SeLe4n.Model.SystemState in
-/-- D6: `endpointSendDual` frames `passiveServerIdle`.  Rendezvous (receiveQ head): pop the receiver
-(queue-link rewrite) + complete it `.ready` + reschedule — all allowed/clean.  Block: enqueue the
+/-- D6: `endpointSendDual` frames `passiveServerIdle`. Rendezvous (receiveQ head): pop the receiver
+(queue-link rewrite) + complete it `.ready` + reschedule — all allowed/clean. Block: enqueue the
 sender + set it `.blockedOnSend` + deschedule — the descheduled sender is `.blockedOnSend` (a
 *non-allowed* state), so it must hold a SchedContext (`hSenderNotUnbound`, dischargeable: a running
 sender runs on its own or a donated SchedContext) to be excluded from the pullback obligation. -/
@@ -10599,7 +10610,7 @@ theorem endpointSendDual_passiveServerIdleFrame
       cases hHead : ep.receiveQ.head with
       | some _ =>
         -- PR #873 round 17: the rendezvous arm resolves the sender before
-        -- popping.  It never did, so a send naming a nonexistent thread
+        -- popping. It never did, so a send naming a nonexistent thread
         -- delivered anyway and the receiver held a message attributed to it.
         cases hSnd : st.getTcb? sender with
         | none => simp [hHead, hSnd] at hStep
@@ -10677,7 +10688,7 @@ theorem endpointSendDual_timeoutBudgetFrame
       cases hHead : ep.receiveQ.head with
       | some _ =>
         -- PR #873 round 17: the rendezvous arm resolves the sender before
-        -- popping.  It never did, so a send naming a nonexistent thread
+        -- popping. It never did, so a send naming a nonexistent thread
         -- delivered anyway and the receiver held a message attributed to it.
         cases hSnd : st.getTcb? sender with
         | none => simp [hHead, hSnd] at hStep
@@ -10730,11 +10741,11 @@ open SeLe4n.Model.SystemState in
 theorem endpointSendDualWithCaps_sameSchedContextBindings
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
     (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
-             senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     sameSchedContextBindings st st' := by
   simp only [endpointSendDualWithCaps] at hStep
   cases hSend : endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
@@ -10755,11 +10766,12 @@ theorem endpointSendDualWithCaps_sameSchedContextBindings
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hSMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact hSMid.trans (ipcUnwrapCaps_sameSchedContextBindings { msg with capsGranted := endpointRights.mem AccessRight.grant } senderCspaceRoot recvRoot
+            exact hSMid.trans (ipcUnwrapCaps_sameSchedContextBindings { msg with capsGranted := endpointRights.mem AccessRight.grant } recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hStep)
 
 open SeLe4n.Model.SystemState in
@@ -10768,11 +10780,11 @@ open SeLe4n.Model.SystemState in
 theorem endpointCallWithCaps_sameSchedContextBindings
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
     (hStep : endpointCallWithCaps endpointId caller msg endpointRights
-             callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     sameSchedContextBindings st st' := by
   simp only [endpointCallWithCaps] at hStep
   cases hCall : endpointCall endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
@@ -10793,11 +10805,12 @@ theorem endpointCallWithCaps_sameSchedContextBindings
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hSMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact hSMid.trans (ipcUnwrapCaps_sameSchedContextBindings { msg with capsGranted := endpointRights.mem AccessRight.grant } callerCspaceRoot recvRoot
+            exact hSMid.trans (ipcUnwrapCaps_sameSchedContextBindings { msg with capsGranted := endpointRights.mem AccessRight.grant } recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hStep)
 
 open SeLe4n.Model.SystemState in
@@ -10806,14 +10819,14 @@ open SeLe4n.Model.SystemState in
 theorem endpointSendDualWithCaps_donationOwnerFrame
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
     (hQHBC : queueHeadBlockedConsistent st)
     (hSenderNotReply : ∀ (tcb : TCB), st.objects[sender.toObjId]? = some (.tcb tcb) →
         ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
     (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
-             senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     donationOwnerFrame st st' := by
   simp only [endpointSendDualWithCaps] at hStep
   cases hSend : endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
@@ -10834,11 +10847,12 @@ theorem endpointSendDualWithCaps_donationOwnerFrame
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact hFMid.trans (ipcUnwrapCaps_donationOwnerFrame { msg with capsGranted := endpointRights.mem AccessRight.grant } senderCspaceRoot recvRoot
+            exact hFMid.trans (ipcUnwrapCaps_donationOwnerFrame { msg with capsGranted := endpointRights.mem AccessRight.grant } recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hStep)
 
 open SeLe4n.Model.SystemState in
@@ -10846,7 +10860,7 @@ open SeLe4n.Model.SystemState in
 theorem endpointSendDualWithCaps_preserves_donationOwnerValid
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
     (hQHBC : queueHeadBlockedConsistent st)
@@ -10854,13 +10868,13 @@ theorem endpointSendDualWithCaps_preserves_donationOwnerValid
         ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
     (hInv : donationOwnerValid st)
     (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
-             senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     donationOwnerValid st' :=
   donationOwnerValid_of_frames
     (endpointSendDualWithCaps_sameSchedContextBindings endpointId sender msg endpointRights
-      senderCspaceRoot receiverSlotBase st st' summary hObjInv hStep)
+      receiverSlotBase st st' summary hObjInv hStep)
     (endpointSendDualWithCaps_donationOwnerFrame endpointId sender msg endpointRights
-      senderCspaceRoot receiverSlotBase st st' summary hObjInv hQHBC hSenderNotReply hStep)
+      receiverSlotBase st st' summary hObjInv hQHBC hSenderNotReply hStep)
     hInv
 
 open SeLe4n.Model.SystemState in
@@ -10869,14 +10883,14 @@ open SeLe4n.Model.SystemState in
 theorem endpointCallWithCaps_donationOwnerFrame
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
     (hQHBC : queueHeadBlockedConsistent st)
     (hCallerNotReply : ∀ (tcb : TCB), st.objects[caller.toObjId]? = some (.tcb tcb) →
         ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
     (hStep : endpointCallWithCaps endpointId caller msg endpointRights
-             callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     donationOwnerFrame st st' := by
   simp only [endpointCallWithCaps] at hStep
   cases hCall : endpointCall endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
@@ -10897,11 +10911,12 @@ theorem endpointCallWithCaps_donationOwnerFrame
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact hFMid.trans (ipcUnwrapCaps_donationOwnerFrame { msg with capsGranted := endpointRights.mem AccessRight.grant } callerCspaceRoot recvRoot
+            exact hFMid.trans (ipcUnwrapCaps_donationOwnerFrame { msg with capsGranted := endpointRights.mem AccessRight.grant } recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hStep)
 
 open SeLe4n.Model.SystemState in
@@ -10909,7 +10924,7 @@ open SeLe4n.Model.SystemState in
 theorem endpointCallWithCaps_preserves_donationOwnerValid
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
     (hQHBC : queueHeadBlockedConsistent st)
@@ -10917,13 +10932,13 @@ theorem endpointCallWithCaps_preserves_donationOwnerValid
         ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
     (hInv : donationOwnerValid st)
     (hStep : endpointCallWithCaps endpointId caller msg endpointRights
-             callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     donationOwnerValid st' :=
   donationOwnerValid_of_frames
     (endpointCallWithCaps_sameSchedContextBindings endpointId caller msg endpointRights
-      callerCspaceRoot receiverSlotBase st st' summary hObjInv hStep)
+      receiverSlotBase st st' summary hObjInv hStep)
     (endpointCallWithCaps_donationOwnerFrame endpointId caller msg endpointRights
-      callerCspaceRoot receiverSlotBase st st' summary hObjInv hQHBC hCallerNotReply hStep)
+      receiverSlotBase st st' summary hObjInv hQHBC hCallerNotReply hStep)
     hInv
 
 open SeLe4n.Model.SystemState in
@@ -10932,13 +10947,13 @@ TCB-preserving `ipcUnwrapCaps`). -/
 theorem endpointSendDualWithCaps_passiveServerIdleFrame
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
     (hSenderNotUnbound : ∀ (tcb : TCB), st.objects[sender.toObjId]? = some (.tcb tcb) →
         tcb.schedContextBinding ≠ .unbound)
     (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
-             senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     passiveServerIdleFrame st st' := by
   simp only [endpointSendDualWithCaps] at hStep
   cases hSend : endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
@@ -10959,11 +10974,12 @@ theorem endpointSendDualWithCaps_passiveServerIdleFrame
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact hFMid.trans (ipcUnwrapCaps_passiveServerIdleFrame { msg with capsGranted := endpointRights.mem AccessRight.grant } senderCspaceRoot recvRoot
+            exact hFMid.trans (ipcUnwrapCaps_passiveServerIdleFrame { msg with capsGranted := endpointRights.mem AccessRight.grant } recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hStep)
 
 open SeLe4n.Model.SystemState in
@@ -10971,18 +10987,18 @@ open SeLe4n.Model.SystemState in
 theorem endpointSendDualWithCaps_preserves_passiveServerIdle
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
     (hSenderNotUnbound : ∀ (tcb : TCB), st.objects[sender.toObjId]? = some (.tcb tcb) →
         tcb.schedContextBinding ≠ .unbound)
     (hInv : passiveServerIdle st)
     (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
-             senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     passiveServerIdle st' :=
   passiveServerIdle_of_frame
     (endpointSendDualWithCaps_passiveServerIdleFrame endpointId sender msg endpointRights
-      senderCspaceRoot receiverSlotBase st st' summary hObjInv hSenderNotUnbound hStep) hInv
+      receiverSlotBase st st' summary hObjInv hSenderNotUnbound hStep) hInv
 
 open SeLe4n.Model.SystemState in
 /-- D5: `endpointSendDualWithCaps` frames `timeoutBudgetFrame` (`endpointSendDual` +
@@ -10990,11 +11006,11 @@ open SeLe4n.Model.SystemState in
 theorem endpointSendDualWithCaps_timeoutBudgetFrame
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
     (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
-             senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     timeoutBudgetFrame st st' := by
   simp only [endpointSendDualWithCaps] at hStep
   cases hSend : endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
@@ -11015,11 +11031,12 @@ theorem endpointSendDualWithCaps_timeoutBudgetFrame
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact hFMid.trans (ipcUnwrapCaps_timeoutBudgetFrame { msg with capsGranted := endpointRights.mem AccessRight.grant } senderCspaceRoot recvRoot
+            exact hFMid.trans (ipcUnwrapCaps_timeoutBudgetFrame { msg with capsGranted := endpointRights.mem AccessRight.grant } recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hStep)
 
 open SeLe4n.Model.SystemState in
@@ -11027,29 +11044,29 @@ open SeLe4n.Model.SystemState in
 theorem endpointSendDualWithCaps_preserves_blockedThreadTimeoutConsistent
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
     (hAll : allTimeoutBudgetsNone st)
     (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
-             senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     blockedThreadTimeoutConsistent st' :=
   blockedThreadTimeoutConsistent_of_frame
     (endpointSendDualWithCaps_timeoutBudgetFrame endpointId sender msg endpointRights
-      senderCspaceRoot receiverSlotBase st st' summary hObjInv hStep) hAll
+      receiverSlotBase st st' summary hObjInv hStep) hAll
 
 open SeLe4n.Model.SystemState in
 /-- D6: `endpointCallWithCaps` frames `passiveServerIdle` (`endpointCall` + `ipcUnwrapCaps`). -/
 theorem endpointCallWithCaps_passiveServerIdleFrame
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
     (hCallerNotUnbound : ∀ (tcb : TCB), st.objects[caller.toObjId]? = some (.tcb tcb) →
         tcb.schedContextBinding ≠ .unbound)
     (hStep : endpointCallWithCaps endpointId caller msg endpointRights
-             callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     passiveServerIdleFrame st st' := by
   simp only [endpointCallWithCaps] at hStep
   cases hCall : endpointCall endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
@@ -11070,11 +11087,12 @@ theorem endpointCallWithCaps_passiveServerIdleFrame
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact hFMid.trans (ipcUnwrapCaps_passiveServerIdleFrame { msg with capsGranted := endpointRights.mem AccessRight.grant } callerCspaceRoot recvRoot
+            exact hFMid.trans (ipcUnwrapCaps_passiveServerIdleFrame { msg with capsGranted := endpointRights.mem AccessRight.grant } recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hStep)
 
 open SeLe4n.Model.SystemState in
@@ -11082,29 +11100,29 @@ open SeLe4n.Model.SystemState in
 theorem endpointCallWithCaps_preserves_passiveServerIdle
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
     (hCallerNotUnbound : ∀ (tcb : TCB), st.objects[caller.toObjId]? = some (.tcb tcb) →
         tcb.schedContextBinding ≠ .unbound)
     (hInv : passiveServerIdle st)
     (hStep : endpointCallWithCaps endpointId caller msg endpointRights
-             callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     passiveServerIdle st' :=
   passiveServerIdle_of_frame
     (endpointCallWithCaps_passiveServerIdleFrame endpointId caller msg endpointRights
-      callerCspaceRoot receiverSlotBase st st' summary hObjInv hCallerNotUnbound hStep) hInv
+      receiverSlotBase st st' summary hObjInv hCallerNotUnbound hStep) hInv
 
 open SeLe4n.Model.SystemState in
 /-- D5: `endpointCallWithCaps` frames `timeoutBudgetFrame` (`endpointCall` + `ipcUnwrapCaps`). -/
 theorem endpointCallWithCaps_timeoutBudgetFrame
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
     (hStep : endpointCallWithCaps endpointId caller msg endpointRights
-             callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     timeoutBudgetFrame st st' := by
   simp only [endpointCallWithCaps] at hStep
   cases hCall : endpointCall endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
@@ -11125,11 +11143,12 @@ theorem endpointCallWithCaps_timeoutBudgetFrame
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact hFMid.trans (ipcUnwrapCaps_timeoutBudgetFrame { msg with capsGranted := endpointRights.mem AccessRight.grant } callerCspaceRoot recvRoot
+            exact hFMid.trans (ipcUnwrapCaps_timeoutBudgetFrame { msg with capsGranted := endpointRights.mem AccessRight.grant } recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hStep)
 
 open SeLe4n.Model.SystemState in
@@ -11137,16 +11156,16 @@ open SeLe4n.Model.SystemState in
 theorem endpointCallWithCaps_preserves_blockedThreadTimeoutConsistent
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
     (hAll : allTimeoutBudgetsNone st)
     (hStep : endpointCallWithCaps endpointId caller msg endpointRights
-             callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     blockedThreadTimeoutConsistent st' :=
   blockedThreadTimeoutConsistent_of_frame
     (endpointCallWithCaps_timeoutBudgetFrame endpointId caller msg endpointRights
-      callerCspaceRoot receiverSlotBase st st' summary hObjInv hStep) hAll
+      receiverSlotBase st st' summary hObjInv hStep) hAll
 
 open SeLe4n.Model.SystemState in
 /-- D3: `endpointSendDual` frames the clause (never sets `.blockedOnReply`). -/
@@ -11171,7 +11190,7 @@ theorem endpointSendDual_preserves_blockedOnReplyHasTarget
       cases hHead : ep.receiveQ.head with
       | some _ =>
         -- PR #873 round 17: the rendezvous arm resolves the sender before
-        -- popping.  It never did, so a send naming a nonexistent thread
+        -- popping. It never did, so a send naming a nonexistent thread
         -- delivered anyway and the receiver held a message attributed to it.
         cases hSnd : st.getTcb? sender with
         | none => simp [hHead, hSnd] at hStep
@@ -11350,7 +11369,7 @@ theorem notificationWait_sameSchedContextBindings
   · contradiction
 
 open SeLe4n.Model.SystemState in
-/-- D6: `notificationWait` frames the SchedContext/owner side forward.  It stores the
+/-- D6: `notificationWait` frames the SchedContext/owner side forward. It stores the
 notification object (non-Sc/non-TCB) and rewrites only the `waiter` TCB (to `.ready` on the
 deliver path or `.blockedOnNotification` on the block path); given the waiter is not itself a
 `.blockedOnReply` donation owner (`hWaiterNotReply` — the syscall caller is running, not
@@ -11476,9 +11495,9 @@ theorem notificationSignal_sameSchedContextBindings
   · contradiction
 
 open SeLe4n.Model.SystemState in
-/-- D6: `notificationSignal` frames the SchedContext/owner side forward.  It stores the
+/-- D6: `notificationSignal` frames the SchedContext/owner side forward. It stores the
 notification object (non-Sc/non-TCB) and, when a waiter is present, wakes the **head** waiter
-`.ready`.  The head waiter is a notification-queue member, hence `.blockedOnNotification`
+`.ready`. The head waiter is a notification-queue member, hence `.blockedOnNotification`
 (`notificationWaiterConsistent`) — never a `.blockedOnReply` donation owner — so every donation
 owner witness survives. -/
 theorem notificationSignal_donationOwnerFrame
@@ -11535,7 +11554,7 @@ theorem notificationSignal_donationOwnerFrame
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.8: `linkServerStashedReply` **establishes**
-`replyCallerLinkageReciprocal`.  It is `linkCallerReply` on the server's stashed
+`replyCallerLinkageReciprocal`. It is `linkCallerReply` on the server's stashed
 Reply followed by a stash clear on the server, and the stash clear touches neither
 `replyObject`, `ipcState` nor any Reply — so it frames. -/
 theorem linkServerStashedReply_establishes_replyCallerLinkageReciprocal
@@ -11575,7 +11594,7 @@ theorem linkServerStashedReply_establishes_replyCallerLinkageReciprocal
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.8: `endpointSendDual` **establishes** `replyCallerLinkageReciprocal`
-from the pre-state.  Neither arm creates or consumes a caller↔Reply edge, so the
+from the pre-state. Neither arm creates or consumes a caller↔Reply edge, so the
 whole proof is a linkage *frame*; the only obligation is that each rewritten
 thread is unlinked.
 
@@ -11671,10 +11690,10 @@ open SeLe4n.Model.SystemState in
 from the pre-state.
 
 The blocking branch is a pure frame (the caller becomes `.blockedOnCall`, never
-linked).  The rendezvous branch is a frame **up to the link**: pop, ready the
+linked). The rendezvous branch is a frame **up to the link**: pop, ready the
 receiver (the `receiveQ` head, hence `.blockedOnReceive` and so unlinked), wake
 it, and block the caller `.blockedOnReply` (unlinked by `hCallerNotReply`) — none
-of which touches a caller↔Reply edge.  `linkServerStashedReply` then *creates*
+of which touches a caller↔Reply edge. `linkServerStashedReply` then *creates*
 exactly one, reciprocally, and its `.blockedOnReply` obligation on the caller is
 **derived** from the store immediately before it rather than assumed. -/
 theorem endpointCall_preserves_replyCallerLinkageReciprocal
@@ -11780,15 +11799,15 @@ open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.8: `endpointReceiveDual` **establishes** `replyCallerLinkageReciprocal`
 from the pre-state.
 
-Three branches, and only one touches the linkage.  The **Call** rendezvous blocks
+Three branches, and only one touches the linkage. The **Call** rendezvous blocks
 the dequeued caller `.blockedOnReply` and links it to the server-supplied Reply —
 `linkCallerReply` creates exactly one reciprocal edge, and its `.blockedOnReply`
-obligation on that caller is *derived* from the store immediately before it.  The
+obligation on that caller is *derived* from the store immediately before it. The
 **Send** rendezvous and the **block** branch are pure linkage frames.
 
 Every rewritten thread is unlinked where it has to be: the dequeued sender is the
 `sendQ` **head**, so `queueHeadBlockedConsistent` puts it at `.blockedOnSend` or
-`.blockedOnCall`, and the running receiver is `.ready`.  The same two facts give
+`.blockedOnCall`, and the running receiver is `.ready`. The same two facts give
 `receiver ≠ sender`, which the Call branch needs — readying the just-linked caller
 would tear the edge it had only in the case the two coincide, and they cannot. -/
 theorem endpointReceiveDual_preserves_replyCallerLinkageReciprocal
@@ -11996,8 +12015,8 @@ theorem endpointReceiveDual_preserves_replyCallerLinkageReciprocal
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.9: `notificationSignal` **establishes** `replyCallerLinkageReciprocal`
-from the pre-state.  It writes the notification object and, on the wake path, the
-head waiter (`.ready` + badge message).  That waiter is a wait-queue member, so
+from the pre-state. It writes the notification object and, on the wake path, the
+head waiter (`.ready` + badge message). That waiter is a wait-queue member, so
 `notificationWaiterConsistent` puts it at `.blockedOnNotification`; a thread that
 is not `.blockedOnReply` carries no reply object, so readying it is invisible to
 both clauses. -/
@@ -12056,9 +12075,9 @@ theorem notificationSignal_preserves_replyCallerLinkageReciprocal
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.9: `notificationWait` **establishes** `replyCallerLinkageReciprocal`.
-Deliver branch: the notification store plus a `.ready` write on the waiter.  Block
+Deliver branch: the notification store plus a `.ready` write on the waiter. Block
 branch: the notification store plus the atomic `.blockedOnNotification` +
-`pendingMessage := none` write, then a deschedule.  Either way the only rewritten
+`pendingMessage := none` write, then a deschedule. Either way the only rewritten
 thread is the running waiter, which `hWaiterNotReply` puts outside the linkage. -/
 theorem notificationWait_preserves_replyCallerLinkageReciprocal
     (st st' : SystemState) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
@@ -12146,7 +12165,7 @@ theorem notificationSignal_preserves_donationOwnerValid
     hInv
 
 open SeLe4n.Model.SystemState in
-/-- D6: `notificationWait` frames `passiveServerIdle`.  The deliver branch wakes the waiter
+/-- D6: `notificationWait` frames `passiveServerIdle`. The deliver branch wakes the waiter
 `.ready`; the block branch sets it `.blockedOnNotification` and deschedules it — both are allowed
 passive states, so the waiter is never a `.blockedOnSend`/`.blockedOnCall` descheduled thread, and
 the `removeRunnable` in the block branch removes a thread whose state is allowed. -/
@@ -12227,7 +12246,7 @@ theorem notificationWait_preserves_passiveServerIdle
     (notificationWait_passiveServerIdleFrame st st' notificationId waiter badge hObjInv hStep) hInv
 
 open SeLe4n.Model.SystemState in
-/-- D6: `notificationSignal` frames `passiveServerIdle`.  It wakes the head waiter `.ready` and
+/-- D6: `notificationSignal` frames `passiveServerIdle`. It wakes the head waiter `.ready` and
 reschedules it (allowed state); the no-waiter branch only rewrites the notification object. -/
 theorem notificationSignal_passiveServerIdleFrame
     (st st' : SystemState) (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
@@ -12515,7 +12534,7 @@ open SeLe4n.Model.SystemState in
 
 This is the store `storeObject_modifiedTcb_donationOwnerFrame` cannot cover: that
 one needs the rewritten thread not to be `.blockedOnReply` in the pre-state, which
-is exactly false for the thread a reply answers.  Relaxing at the rewritten thread
+is exactly false for the thread a reply answers. Relaxing at the rewritten thread
 is what removes the side condition. -/
 theorem storeObject_wokenTcb_donationOwnerFrameExcept
     (st st' : SystemState) (woken : SeLe4n.ThreadId) (origTcb newTcb : TCB)
@@ -12588,7 +12607,7 @@ theorem consumeCallerReply_donationOwnerFrameExcept
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.12: `endpointReply` frames the donation-owner side **relaxed at the
 answered caller** — the one thread whose `ipcState` it rewrites (`.blockedOnReply` →
-`.ready`).  No `schedContextBinding` is written anywhere, so the relaxed frame holds
+`.ready`). No `schedContextBinding` is written anywhere, so the relaxed frame holds
 unconditionally, where the unrelaxed `donationOwnerFrame` cannot: the woken caller
 *is* a donation owner on the seL4-MCS path. -/
 theorem endpointReply_donationOwnerFrameExcept
@@ -12645,7 +12664,7 @@ theorem endpointReply_donationOwnerFrameExcept
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.12: `endpointReply` **establishes** `donationOwnerValid` relaxed at the
-answered caller, from the pre-state's unrelaxed invariant.  This replaces the
+answered caller, from the pre-state's unrelaxed invariant. This replaces the
 post-state `hDOV'` the reply bundles used to thread: it is derived, not assumed, and
 it is true on the donating path, where `donationOwnerValid` of the same state is
 not. -/
@@ -12735,15 +12754,15 @@ The cap transfer writes only a CNode at `receiverRoot`; every TCB (hence every
 `pendingMessage`) is byte-identical, so a post-state bounded message pulls back to
 the same pre-state TCB via `ipcUnwrapCaps_tcb_backward`. -/
 theorem ipcUnwrapCaps_preserves_allPendingMessagesBounded
-    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt) (hInv : allPendingMessagesBounded st)
-    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st = .ok (summary, st')) :
     allPendingMessagesBounded st' := by
   intro tid tcb m hTcb' hPend
   exact hInv tid tcb m
-    (ipcUnwrapCaps_tcb_backward msg senderRoot receiverRoot slotBase grantRight st st' summary
+    (ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight st st' summary
       tid.toObjId tcb hObjInv hStep hTcb') hPend
 
 /-- IPC de-threading D8: `ipcUnwrapCaps` frames `endpointQueueNoDup`.
@@ -12752,21 +12771,21 @@ no-self-loop clause (pull each post-state TCB back via `ipcUnwrapCaps_tcb_backwa
 and the head-disjointness clause (the endpoint is unchanged via
 `ipcUnwrapCaps_endpoint_backward`) carry from the pre-state. -/
 theorem ipcUnwrapCaps_preserves_endpointQueueNoDup
-    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt) (hInv : endpointQueueNoDup st)
-    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st = .ok (summary, st')) :
     endpointQueueNoDup st' := by
   intro oid ep hEp'
   have hEp : st.objects[oid]? = some (.endpoint ep) :=
-    ipcUnwrapCaps_endpoint_backward msg senderRoot receiverRoot slotBase grantRight st st' summary
+    ipcUnwrapCaps_endpoint_backward msg receiverRoot slotBase grantRight st st' summary
       oid ep hObjInv hStep hEp'
   obtain ⟨hNoSelf, hDisjoint⟩ := hInv oid ep hEp
   refine ⟨?_, hDisjoint⟩
   intro tid tcb hTcb'
   exact hNoSelf tid tcb
-    (ipcUnwrapCaps_tcb_backward msg senderRoot receiverRoot slotBase grantRight st st' summary
+    (ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight st st' summary
       tid.toObjId tcb hObjInv hStep hTcb')
 
 /-- IPC de-threading D8: `ipcUnwrapCaps` frames `ipcStateQueueMembershipConsistent`.
@@ -12775,24 +12794,24 @@ witnessing endpoint and any predecessor TCB push forward unchanged
 (`ipcUnwrapCaps_preserves_ep_objects` / `_preserves_tcb_objects`), since the cap
 transfer touches only a CNode at `receiverRoot`. -/
 theorem ipcUnwrapCaps_preserves_ipcStateQueueMembershipConsistent
-    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt) (hInv : ipcStateQueueMembershipConsistent st)
-    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st = .ok (summary, st')) :
     ipcStateQueueMembershipConsistent st' := by
   intro tid tcb hTcb'
   have hTcb : st.objects[tid.toObjId]? = some (.tcb tcb) :=
-    ipcUnwrapCaps_tcb_backward msg senderRoot receiverRoot slotBase grantRight st st' summary
+    ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight st st' summary
       tid.toObjId tcb hObjInv hStep hTcb'
   have hPre := hInv tid tcb hTcb
   have epFwd : ∀ (eid : SeLe4n.ObjId) (e : Endpoint),
       st.objects[eid]? = some (.endpoint e) → st'.objects[eid]? = some (.endpoint e) :=
-    fun eid e h => ipcUnwrapCaps_preserves_ep_objects msg senderRoot receiverRoot slotBase
+    fun eid e h => ipcUnwrapCaps_preserves_ep_objects msg receiverRoot slotBase
       grantRight st st' summary eid e h hObjInv hStep
   have tcbFwd : ∀ (oid : SeLe4n.ObjId) (t : TCB),
       st.objects[oid]? = some (.tcb t) → st'.objects[oid]? = some (.tcb t) :=
-    fun oid t h => ipcUnwrapCaps_preserves_tcb_objects msg senderRoot receiverRoot slotBase
+    fun oid t h => ipcUnwrapCaps_preserves_tcb_objects msg receiverRoot slotBase
       grantRight st st' summary oid t h hObjInv hStep
   match hIpc : tcb.ipcState with
   | .blockedOnSend epId =>
@@ -12817,15 +12836,15 @@ theorem ipcUnwrapCaps_preserves_ipcStateQueueMembershipConsistent
 open SeLe4n.Model.SystemState in
 /-- D3: `ipcUnwrapCaps` frames the clause (it never creates a TCB — `ipcUnwrapCaps_tcb_backward`). -/
 theorem ipcUnwrapCaps_preserves_blockedOnReplyHasTarget
-    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt) (hInv : blockedOnReplyHasTarget st)
-    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st = .ok (summary, st')) :
     blockedOnReplyHasTarget st' := by
   intro tid tcb ep rt hTcb hBlk
   exact hInv tid tcb ep rt
-    (ipcUnwrapCaps_tcb_backward msg senderRoot receiverRoot slotBase grantRight st st' summary
+    (ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight st st' summary
       tid.toObjId tcb hObjInv hStep hTcb) hBlk
 
 open SeLe4n.Model.SystemState in
@@ -12833,11 +12852,11 @@ open SeLe4n.Model.SystemState in
 theorem endpointCallWithCaps_establishes_blockedOnReplyHasTarget
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : blockedOnReplyHasTarget st) (hObjInv : st.objects.invExt)
     (hStep : endpointCallWithCaps endpointId caller msg endpointRights
-             callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     blockedOnReplyHasTarget st' := by
   simp only [endpointCallWithCaps] at hStep
   cases hCall : endpointCall endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
@@ -12858,11 +12877,12 @@ theorem endpointCallWithCaps_establishes_blockedOnReplyHasTarget
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hPMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_blockedOnReplyHasTarget { msg with capsGranted := endpointRights.mem AccessRight.grant } callerCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_blockedOnReplyHasTarget { msg with capsGranted := endpointRights.mem AccessRight.grant } recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hPMid hStep
 
 open SeLe4n.Model.SystemState in
@@ -12900,30 +12920,26 @@ theorem endpointReceiveDualWithCaps_establishes_blockedOnReplyHasTarget
         simp [hMsg] at hStep
         split at hStep
         · obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hPMid
-        · cases hLookup : lookupCspaceRoot stMid sid with
-          | none => simp only [hLookup] at hStep; contradiction
-          | some senderRoot =>
-            simp only [hLookup] at hStep
-            cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase msg.capsGranted stMid with
-            | error e => simp [hUnwrap] at hStep
-            | ok pair =>
-              rcases pair with ⟨s, stFinal⟩
-              simp [hUnwrap] at hStep
-              obtain ⟨⟨_, _⟩, rfl⟩ := hStep
-              exact ipcUnwrapCaps_preserves_blockedOnReplyHasTarget msg senderRoot receiverCspaceRoot
-                receiverSlotBase _ stMid stFinal s hObjInvMid hPMid hUnwrap
+        · cases hUnwrap : ipcUnwrapCaps msg receiverCspaceRoot
+              receiverSlotBase msg.capsGranted stMid with
+          | error e => simp [hUnwrap] at hStep
+          | ok pair =>
+            rcases pair with ⟨s, stFinal⟩
+            simp [hUnwrap] at hStep
+            obtain ⟨⟨_, _⟩, rfl⟩ := hStep
+            exact ipcUnwrapCaps_preserves_blockedOnReplyHasTarget msg receiverCspaceRoot
+              receiverSlotBase _ stMid stFinal s hObjInvMid hPMid hUnwrap
 
 open SeLe4n.Model.SystemState in
 /-- D3: `endpointSendDualWithCaps` frames the clause. -/
 theorem endpointSendDualWithCaps_preserves_blockedOnReplyHasTarget
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : blockedOnReplyHasTarget st) (hObjInv : st.objects.invExt)
     (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
-             senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     blockedOnReplyHasTarget st' := by
   simp only [endpointSendDualWithCaps] at hStep
   cases hSend : endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
@@ -12944,11 +12960,12 @@ theorem endpointSendDualWithCaps_preserves_blockedOnReplyHasTarget
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hPMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_blockedOnReplyHasTarget { msg with capsGranted := endpointRights.mem AccessRight.grant } senderCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_blockedOnReplyHasTarget { msg with capsGranted := endpointRights.mem AccessRight.grant } recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hPMid hStep
 
 open SeLe4n.Model.SystemState in
@@ -12970,7 +12987,7 @@ theorem consumeReply_preserves_blockedOnReplyHasTarget
 
 open SeLe4n.Model.SystemState in
 /-- D3: `consumeCallerReply` frames the clause — it clears `reply.caller` and the caller's
-`replyObject` (never `ipcState`).  Unlike the third clause, this is *preservable* here. -/
+`replyObject` (never `ipcState`). Unlike the third clause, this is *preservable* here. -/
 theorem consumeCallerReply_preserves_blockedOnReplyHasTarget
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (hObjInv : st.objects.invExt) (hInv : blockedOnReplyHasTarget st)
@@ -13001,11 +13018,11 @@ theorem consumeCallerReply_preserves_blockedOnReplyHasTarget
 -- IPC de-threading D3 — `pendingReceiveReplyWellFormed` frame family.
 --
 -- `pendingReceiveReplyWellFormed` is the **2-clause coupling** conjunct:
---   C1: every TCB with `pendingReceiveReply = some rid` is `.blockedOnReceive`
---       AND the Reply `rid` is present with `caller = none`;
---   C2: the stash is **injective** (at most one blocked receiver per `rid`).
+-- C1: every TCB with `pendingReceiveReply = some rid` is `.blockedOnReceive`
+-- AND the Reply `rid` is present with `caller = none`;
+-- C2: the stash is **injective** (at most one blocked receiver per `rid`).
 -- C1 reads *both* the TCB store (`getTcb?`) and the Reply store (`getReply?`);
--- C2 couples two TCBs.  The keystones below split by stored-object kind.  The
+-- C2 couples two TCBs. The keystones below split by stored-object kind. The
 -- crucial fact making them tractable without a separate kind-stability
 -- invariant: a Reply slot and a TCB slot that *coincide* (raw `ObjId.ofNat`)
 -- hold disjoint kinds (`.reply` ≠ `.tcb`), so the two accessor facts contradict
@@ -13016,7 +13033,7 @@ open SeLe4n.Model.SystemState in
 /-- D3 keystone (TCB store): storing `.tcb newTcb` at `tid₀.toObjId` (which held a TCB,
 `hOld`) preserves `pendingReceiveReplyWellFormed`, given the new TCB's stash is
 well-formed in the pre-state (`hNewC1`: blocked-on-receive + a present free Reply) and
-fresh (`hNewC2`: no other thread already stashes it).  Reply lookups frame because a
+fresh (`hNewC2`: no other thread already stashes it). Reply lookups frame because a
 Reply slot cannot coincide with the stored TCB slot. -/
 theorem storeObject_tcb_preserves_pendingReceiveReplyWellFormed
     (st st' : SystemState) (tid₀ : SeLe4n.ThreadId) (oldTcb newTcb : TCB)
@@ -13081,7 +13098,7 @@ theorem storeObject_tcb_preserves_pendingReceiveReplyWellFormed
 
 open SeLe4n.Model.SystemState in
 /-- D3 keystone (Reply store): storing `.reply newR` at `rid₀.toObjId` (which held a Reply,
-`hOld`) preserves `pendingReceiveReplyWellFormed`.  TCBs are unchanged (a TCB slot cannot
+`hOld`) preserves `pendingReceiveReplyWellFormed`. TCBs are unchanged (a TCB slot cannot
 coincide with the stored Reply slot — `.tcb` ≠ `.reply`), so C2 and C1's blocked-half
 frame; C1's "free Reply" half needs the stored Reply to be free **iff** it is the one a
 blocked receiver stashes (`hNewFree`). -/
@@ -13127,7 +13144,7 @@ theorem storeObject_reply_preserves_pendingReceiveReplyWellFormed
 
 open SeLe4n.Model.SystemState in
 /-- D3 keystone (neither TCB nor Reply): storing a non-TCB, non-Reply object at a slot that
-did **not** hold a Reply (`hOldNonReply`) frames the clause.  A store may *remove* a TCB
+did **not** hold a Reply (`hOldNonReply`) frames the clause. A store may *remove* a TCB
 (if `oid` held one), but that only drops a constraint; no TCB is added, and Replies are
 untouched. -/
 theorem storeObject_nonTcbReply_preserves_pendingReceiveReplyWellFormed
@@ -13165,7 +13182,7 @@ theorem storeObject_nonTcbReply_preserves_pendingReceiveReplyWellFormed
 open SeLe4n.Model.SystemState in
 /-- D3: `storeTcbIpcStateAndMessage` (writes `ipcState` + `pendingMessage`; leaves
 `pendingReceiveReply` untouched) preserves `pendingReceiveReplyWellFormed`, provided the new
-`ipcState` keeps any stashing thread `.blockedOnReceive` (`hStashOk`).  The Reply and the
+`ipcState` keeps any stashing thread `.blockedOnReceive` (`hStashOk`). The Reply and the
 stash itself frame through the keystone; freshness is the pre-state injectivity. -/
 theorem storeTcbIpcStateAndMessage_preserves_pendingReceiveReplyWellFormed
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
@@ -13204,7 +13221,7 @@ open SeLe4n.Model.SystemState in
 `pendingMessage`, **and clears** `pendingReceiveReply := none`) preserves
 `pendingReceiveReplyWellFormed` **unconditionally** — the stored TCB carries no
 stash (`pendingReceiveReply = none`), so both keystone obligations are vacuous (no
-`hStashOk` precondition is required).  This is exactly the C1-repair the non-`Call`
+`hStashOk` precondition is required). This is exactly the C1-repair the non-`Call`
 receive-completion wakes need: a thread woken to `.ready` no longer stashes a reply,
 restoring clause C1 ("only `.blockedOnReceive` threads stash"). -/
 theorem storeTcbReceiveComplete_preserves_pendingReceiveReplyWellFormed
@@ -13369,7 +13386,7 @@ theorem linkReply_preserves_pendingReceiveReplyWellFormed
 open SeLe4n.Model.SystemState in
 /-- D3: `linkCallerReply` (sets `reply.caller := some caller` via `linkReply`, then the
 inverse forward link `caller.replyObject := some rid` on the caller TCB) preserves the clause
-provided **no** blocked receiver stashes `rid` (`hNotStashed`).  The `.reply` write is
+provided **no** blocked receiver stashes `rid` (`hNotStashed`). The `.reply` write is
 `linkReply` (delegates to `linkReply_preserves_pendingReceiveReplyWellFormed`); the trailing
 caller-TCB store touches only `replyObject`, leaving `ipcState`/`pendingReceiveReply`
 unchanged, so it frames the clause via `storeObject_tcb_preserveFields_…`. -/
@@ -13406,7 +13423,7 @@ theorem linkCallerReply_preserves_pendingReceiveReplyWellFormed
 open SeLe4n.Model.SystemState in
 /-- D3: **establishing** a stash — storing a TCB whose only stash is `some rid` establishes
 the clause, given the TCB is `.blockedOnReceive` (`hNewBlk`), the Reply `rid` is present and
-free (`hFree`), and `rid` is not already stashed by any thread (`hFresh`).  This is the
+free (`hFree`), and `rid` is not already stashed by any thread (`hFresh`). This is the
 server-first receive path (`pendingReceiveReply := some rid`). -/
 theorem storeObject_establishStash_pendingReceiveReplyWellFormed
     (st st' : SystemState) (tid₀ : SeLe4n.ThreadId) (oldTcb newTcb : TCB) (rid : SeLe4n.ReplyId)
@@ -13434,7 +13451,7 @@ theorem storeObject_establishStash_pendingReceiveReplyWellFormed
 open SeLe4n.Model.SystemState in
 /-- D3 (stash/ipcState backward): a `storeTcbIpcStateAndMessage st tid ipc msg` write keeps
 **every** TCB's `pendingReceiveReply` (it rewrites only `ipcState`/`pendingMessage`), and
-leaves every non-target TCB's `ipcState` intact.  Pulls a post-state TCB read back to a
+leaves every non-target TCB's `ipcState` intact. Pulls a post-state TCB read back to a
 pre-state TCB carrying the same stash. -/
 theorem storeTcbIpcStateAndMessage_getTcb?_backward
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
@@ -13473,10 +13490,10 @@ open SeLe4n.Model.SystemState in
 /-- D3 (crux frame): `linkServerStashedReply caller server` preserves
 `pendingReceiveReplyWellFormed` from the **post-deliver** state, where the `server`
 is `.ready` but still carries the stash `rid` it set on its earlier server-first
-`Recv` — a state that *violates* C1 for the server alone.  The composite (i) links
+`Recv` — a state that *violates* C1 for the server alone. The composite (i) links
 that stash `rid` to the freshly-blocked `caller` (`linkCallerReply`) and (ii) clears
 the server's stash, with the **net effect** that `rid` is linked-but-unstashed and
-the server is stash-free — so the C1 violation is repaired.  Rather than the full
+the server is stash-free — so the C1 violation is repaired. Rather than the full
 pre-state PRR (false here), the precondition is **PRR-minus-the-server**:
 
 - `hC1Other`: C1 for every thread *other than* `server` (every non-server thread that
@@ -13485,7 +13502,7 @@ pre-state PRR (false here), the precondition is **PRR-minus-the-server**:
 
 both of which hold at the post-deliver state because the deliver/block stores only
 move `ipcState`/`pendingMessage` (never a stash field) and the caller — known not to
-be `.blockedOnReceive` — stashes nothing.  The crucial fact discharging C1 at the
+be `.blockedOnReceive` — stashes nothing. The crucial fact discharging C1 at the
 post-state: by `hC2`, the `server` is the **unique** staser of `rid`, so once its
 stash is cleared *no* surviving thread stashes `rid`, and the link cannot strand any
 blocked receiver. -/
@@ -13625,7 +13642,7 @@ theorem linkServerStashedReply_preserves_pendingReceiveReplyWellFormed
         exact hC2 tid server tc0 sTcb0 rid hT0 hServer0 (hStash0.trans hStashRid) hServerStash0
       cases hT : st1.getTcb? server with
       | none =>
-        -- no server TCB at `st1` → the store is a no-op; `st' = st1`.  But the server
+        -- no server TCB at `st1` → the store is a no-op; `st' = st1`. But the server
         -- exists at `st` (`hServer0`) and is preserved by the link, contradiction.
         obtain ⟨tc1, hT1', _⟩ := hTcbFwdStash server sTcb0 hServer0
         rw [hT] at hT1'; cases hT1'
@@ -13723,7 +13740,7 @@ theorem linkServerStashedReply_preserves_pendingReceiveReplyWellFormed
 -- These mirror the `*_{preserves,establishes}_blockedOnReplyHasTarget` proofs
 -- above, but discharge the `pendingReceiveReplyWellFormed` frame-family
 -- obligations (`hStashOk` / `hNotStashed` / freshness) rather than the
--- `blockedOnReply`-target ones.  The key discharge pattern: a TCB store that
+-- `blockedOnReply`-target ones. The key discharge pattern: a TCB store that
 -- moves a thread to a *non-`.blockedOnReceive`* `ipcState` (`.ready`,
 -- `.blockedOnSend`, …) frames C1 only if that thread did **not** stash a reply
 -- in the pre-state; PRR's own C1 (stash ⇒ `.blockedOnReceive`) discharges this
@@ -13736,7 +13753,7 @@ open SeLe4n.Model.SystemState in
 is *not* `.blockedOnReceive`) frames `pendingReceiveReplyWellFormed`, **provided**
 `tid`'s *pre-state* `ipcState` is not `.blockedOnReceive` — then C1 of `hInv`
 forces `tid` not to stash, so the `storeTcbIpcStateAndMessage` keystone's
-`hStashOk` obligation is vacuous.  This is the canonical "wake / re-block a
+`hStashOk` obligation is vacuous. This is the canonical "wake / re-block a
 non-receiving thread" frame. -/
 theorem storeTcbIpcStateAndMessage_notReceiving_preserves_pendingReceiveReplyWellFormed
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
@@ -13926,13 +13943,13 @@ theorem endpointQueueEnqueue_preserves_pendingReceiveReplyWellFormed
 --
 -- The receive no-sender branch establishes a fresh server-first stash
 -- (`pendingReceiveReply := some rid`) via `storeObject_establishStash_…`, whose
--- preconditions name `rid` as *present-free-and-unstashed*.  The Call rendezvous
+-- preconditions name `rid` as *present-free-and-unstashed*. The Call rendezvous
 -- branch links the same `rid` via `linkCallerReply_preserves_…`, whose
--- `hNotStashed` is the *unstashed* half.  Both preconditions are facts about the
+-- `hNotStashed` is the *unstashed* half. Both preconditions are facts about the
 -- transition's *pre-state* `st` (discharged upstream by the receive syscall's
 -- reply-cap validation) that must be carried forward to the store site through
 -- the intervening steps (cleanup → enqueue → storeTcbIpcState; or popHead →
--- storeTcbIpcStateAndMessage).  Those steps write only TCB queue-links / ipcState
+-- storeTcbIpcStateAndMessage). Those steps write only TCB queue-links / ipcState
 -- / schedContext and the endpoint object — never a `.reply`, never any thread's
 -- `pendingReceiveReply` — so each frames the bundled freshness fact below.
 -- ============================================================================
@@ -14031,7 +14048,7 @@ theorem storeTcbIpcStateAndMessage_preserves_replyIdEstablishFresh
         (lookupTcb_some_objects st tid tcb hTcb) rfl hFresh hStore
 
 open SeLe4n.Model.SystemState in
-/-- D3: `endpointQueueEnqueue` frames `replyIdEstablishFresh`.  Reply preserved
+/-- D3: `endpointQueueEnqueue` frames `replyIdEstablishFresh`. Reply preserved
 (the enqueue writes only the endpoint object + queue links); stash preserved
 backward via `endpointQueueEnqueue_tcb_pendingReceiveReply_backward`. -/
 theorem endpointQueueEnqueue_preserves_replyIdEstablishFresh
@@ -14137,12 +14154,12 @@ theorem cleanupPreReceiveDonation_preserves_pendingReceiveReplyWellFormed
       (hStashEqA.trans hStash₁) (hStashEqB.trans hStash₂)
 
 open SeLe4n.Model.SystemState in
-/-- D3: `endpointSendDual` frames `pendingReceiveReplyWellFormed`.  Rendezvous
+/-- D3: `endpointSendDual` frames `pendingReceiveReplyWellFormed`. Rendezvous
 branch: the receiver is completed via `storeTcbReceiveComplete`, which *clears*
-its stash (unconditional frame).  Blocking branch: the sender is enqueued and set
+its stash (unconditional frame). Blocking branch: the sender is enqueued and set
 `.blockedOnSend`; that write frames C1 provided the sender was not a stashing
 `.blockedOnReceive` thread (`hSenderNotRecv` — a real precondition of the send
-syscall: the scheduler only dispatches `.ready` threads).  Threading
+syscall: the scheduler only dispatches `.ready` threads). Threading
 `hSenderNotRecv` replaces the post-state `pendingReceiveReplyWellFormed st'`. -/
 theorem endpointSendDual_preserves_pendingReceiveReplyWellFormed
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
@@ -14167,7 +14184,7 @@ theorem endpointSendDual_preserves_pendingReceiveReplyWellFormed
       cases hHead : ep.receiveQ.head with
       | some _ =>
         -- PR #873 round 17: the rendezvous arm resolves the sender before
-        -- popping.  It never did, so a send naming a nonexistent thread
+        -- popping. It never did, so a send naming a nonexistent thread
         -- delivered anyway and the receiver held a message attributed to it.
         cases hSnd : st.getTcb? sender with
         | none => simp [hHead, hSnd] at hStep
@@ -14216,9 +14233,9 @@ The server-waiting branch delivers the message to the dequeued server (keeping i
 stash `rid`), blocks the caller, then `linkServerStashedReply` links `rid` to the caller
 and clears the server's stash — the `linkServerStashedReply` frame above closes it from
 the **post-pop** PRR, with `hC1Other`/`hC2` discharged by object-framing the deliver/block
-stores (which only touch `ipcState`/`pendingMessage`, never a stash).  `hCallerNotRecv`
+stores (which only touch `ipcState`/`pendingMessage`, never a stash). `hCallerNotRecv`
 (the caller is not `.blockedOnReceive`) prevents the caller's block-store from creating a
-second C1 violation.  Needs the pre-state PRR, **not** `hReplyIdValid` —
+second C1 violation. Needs the pre-state PRR, **not** `hReplyIdValid` —
 `endpointCall` establishes no fresh stash. -/
 theorem endpointCall_preserves_pendingReceiveReplyWellFormed
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
@@ -14375,7 +14392,7 @@ theorem endpointCall_preserves_pendingReceiveReplyWellFormed
                   exact hP1.2 tid₁ tid₂ tc0₁ tc0₂ ridX hTc0₁ hTc0₂ (hStash0₁.trans hStash4₁) (hStash0₂.trans hStash4₂)
 
 open SeLe4n.Model.SystemState in
-/-- D3: `consumeCallerReply` frames `pendingReceiveReplyWellFormed`.  It clears
+/-- D3: `consumeCallerReply` frames `pendingReceiveReplyWellFormed`. It clears
 `reply.caller := none` (frees a reply — only relaxes C1's "free" half) and the
 caller's `replyObject := none` (touches neither `ipcState` nor
 `pendingReceiveReply`). -/
@@ -14402,14 +14419,14 @@ theorem consumeCallerReply_preserves_pendingReceiveReplyWellFormed
         { tcb with replyObject := none } hObjInv1 hT rfl rfl hP1 hStep
 
 open SeLe4n.Model.SystemState in
-/-- D3: `notificationWait` frames `pendingReceiveReplyWellFormed`.  It stores the
+/-- D3: `notificationWait` frames `pendingReceiveReplyWellFormed`. It stores the
 notification object (non-TCB, non-Reply) then writes the *waiter* — the calling
 thread — to `.ready` (badge path) or `.blockedOnNotification` (block path).
 Neither target is `.blockedOnReceive`, so the only way the write could break C1
 is if the caller were already a stashing `.blockedOnReceive` thread; the
 precondition `hWaiterNotRecv` (the calling thread is not mid-receive-stash — a
 real precondition of the wait syscall, the scheduler only dispatches `.ready`
-threads) rules that out.  Threading it replaces the post-state
+threads) rules that out. Threading it replaces the post-state
 `pendingReceiveReplyWellFormed st'` hypothesis. -/
 theorem notificationWait_preserves_pendingReceiveReplyWellFormed
     (st st' : SystemState) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
@@ -14485,12 +14502,12 @@ theorem notificationWait_preserves_pendingReceiveReplyWellFormed
   · contradiction
 
 open SeLe4n.Model.SystemState in
-/-- D3: `notificationSignal` frames `pendingReceiveReplyWellFormed`.  It stores the
+/-- D3: `notificationSignal` frames `pendingReceiveReplyWellFormed`. It stores the
 notification object (non-TCB, non-Reply — frames the clause) then wakes the head
-waiter to `.ready`.  That waiter is a notification-queue member, so
+waiter to `.ready`. That waiter is a notification-queue member, so
 `notificationWaiterConsistent` pins its pre-state `ipcState` to
 `.blockedOnNotification` (≠ `.blockedOnReceive`) ⇒ it does not stash ⇒ the wake
-frames C1.  `notificationWaiterConsistent st` is the *pre-state* invariant the
+frames C1. `notificationWaiterConsistent st` is the *pre-state* invariant the
 callers carry (a real system invariant of the notification subsystem); threading
 it replaces the post-state `pendingReceiveReplyWellFormed st'` hypothesis. -/
 theorem notificationSignal_preserves_pendingReceiveReplyWellFormed
@@ -14597,7 +14614,7 @@ theorem linkReply_endpoint_backward
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2b: `linkCallerReply` preserves endpoints backward (`linkReply` Reply
-store + the caller `replyObject` TCB store — neither writes an endpoint).  Used to transport the
+store + the caller `replyObject` TCB store — neither writes an endpoint). Used to transport the
 receiver-not-tail fact through the `endpointReceiveDual` Call-rendezvous reply-linking. -/
 theorem linkCallerReply_endpoint_backward
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
@@ -14774,7 +14791,7 @@ theorem linkReply_preserves_queueNextTargetBlocked
     · simp [hFree] at hStep
 
 open SeLe4n.Model.SystemState in
-/-- IPC de-threading D4 Slice 2c: `linkCallerReply` frames `queueNextTargetBlocked`.  Composes a
+/-- IPC de-threading D4 Slice 2c: `linkCallerReply` frames `queueNextTargetBlocked`. Composes a
 `linkReply` (Reply store) with a `caller.replyObject` write (preserves `ipcState`/`queueNext`). -/
 theorem linkCallerReply_preserves_queueNextTargetBlocked
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
@@ -14801,7 +14818,7 @@ theorem linkCallerReply_preserves_queueNextTargetBlocked
       · simp [hRO] at hStep
 
 open SeLe4n.Model.SystemState in
-/-- IPC de-threading D4 Slice 2c: `consumeCallerReply` frames `queueNextTargetBlocked`.  Composes a
+/-- IPC de-threading D4 Slice 2c: `consumeCallerReply` frames `queueNextTargetBlocked`. Composes a
 `consumeReply` (Reply store) with an optional `caller.replyObject := none` write. -/
 theorem consumeCallerReply_preserves_queueNextTargetBlocked
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
@@ -14827,7 +14844,7 @@ theorem consumeCallerReply_preserves_queueNextTargetBlocked
         ((getTcb?_eq_some_iff st1 caller tcb).mp hT) rfl rfl hInv1 hStep
 
 open SeLe4n.Model.SystemState in
-/-- WS-SM SM6.D / #7.4: `linkCallerReply` preserves `ipcInvariantFull`.  It is the
+/-- WS-SM SM6.D / #7.4: `linkCallerReply` preserves `ipcInvariantFull`. It is the
 reply store (`linkReply`, success ⇒ slot held `.reply r`, writes
 `.reply { r with caller := some caller }`) followed by the caller-TCB
 `replyObject := some rid` store; store A frames the first, store B the second.
@@ -14835,13 +14852,13 @@ reply store (`linkReply`, success ⇒ slot held `.reply r`, writes
 The preconditions are the **intermediate-state** invariants the fold actually has at the
 link site (post-blocking-store, pre-link): `ipcInvariantCore`, reply-link reciprocity
 (`replyCallerLinkageReciprocal`), and the third clause for every blockedOnReply caller
-**other** than `caller` (`hThirdExc`).  Taking the full `ipcInvariantFull st` would be
+**other** than `caller` (`hThirdExc`). Taking the full `ipcInvariantFull st` would be
 *vacuous* here — its third clause would force `caller.replyObject` to already be set, which
 contradicts `linkCallerReply`'s fail-closed precondition that the caller holds no reply.
 
 IPC de-threading D3 (de-threaded): the 17th conjunct is **derived** via
 `linkCallerReply_preserves_pendingReceiveReplyWellFormed` from the *pre-state* PRR
-(`hPRR`) rather than threaded on the post-state.  Linking a reply that some blocked
+(`hPRR`) rather than threaded on the post-state. Linking a reply that some blocked
 receiver still stashes would break C1's "free Reply" half, so the de-thread carries the
 `hNotStashed` side-condition (no blocked receiver stashes `rid`) — which the fold's caller
 discharges from `replyIsStashed` at the link site. -/
@@ -14914,14 +14931,14 @@ theorem linkCallerReply_preserves_ipcInvariantFull
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D / #7.4: `consumeCallerReply` preserves `ipcInvariantFull` on a *mutually
-linked* pair (`r0.caller = some caller`).  Structural core: the reply store
+linked* pair (`r0.caller = some caller`). Structural core: the reply store
 (`consumeReply`) then the caller-TCB `replyObject := none` store, both via
-`ipcInvariantCore`.  Reply linkage (`hRCL'`) is threaded as a post-state hypothesis,
+`ipcInvariantCore`. Reply linkage (`hRCL'`) is threaded as a post-state hypothesis,
 exactly as for the live IPC transitions: standalone consume clears `caller.replyObject`
 without unblocking it, so the strengthened `replyCallerLinkage` (third clause:
 `blockedOnReply ⇒ replyObject`) is re-established by the *fused* reply transition that
-unblocks the caller, not by the link-teardown primitive in isolation.  Its reciprocal
-half is `consumeCallerReply_preserves_replyCallerLinkageReciprocal`.  IPC de-threading D3
+unblocks the caller, not by the link-teardown primitive in isolation. Its reciprocal
+half is `consumeCallerReply_preserves_replyCallerLinkageReciprocal`. IPC de-threading D3
 (de-threaded): the 17th conjunct is **derived** via
 `consumeCallerReply_preserves_pendingReceiveReplyWellFormed` rather than threaded. -/
 theorem consumeCallerReply_preserves_ipcInvariantFull
@@ -14929,11 +14946,11 @@ theorem consumeCallerReply_preserves_ipcInvariantFull
     (r0 : SeLe4n.Kernel.Reply)
     (hInv : ipcInvariantFull st) (hObjInv : st.objects.invExt)
     (hGetR0 : st.getReply? rid = some r0) (hLinked : r0.caller = some caller)
-    -- WS-RR RR3.10: the answered caller has already been woken.  This replaces the
+    -- WS-RR RR3.10: the answered caller has already been woken. This replaces the
     -- threaded `hRCL' : replyCallerLinkage st'` and closes the documented exception:
     -- a *standalone* consume clears `replyObject` without unblocking, so on a
     -- still-`.blockedOnReply` caller it would strand the third clause
-    -- (`blockedOnReply ⇒ replyObject`).  The live reply paths wake the caller
+    -- (`blockedOnReply ⇒ replyObject`). The live reply paths wake the caller
     -- **before** the consume — `endpointReply` and `endpointReplyOnCore` both store
     -- `.ready` and only then tear the link down — so the precondition is exactly
     -- what every caller of this primitive already satisfies, and the reciprocal
@@ -15011,17 +15028,17 @@ theorem consumeCallerReply_preserves_ipcInvariantFull
 /-! ### WS-SM SM6.D reply-fold foundation (PR #827 review #3)
 
 `consumeCallerReply` tears down the answered TCB↔Reply link (`reply.caller := none`
-+ caller `tcb.replyObject := none`).  PR #827 #3 folds it into the `endpointReply` /
++ caller `tcb.replyObject := none`). PR #827 #3 folds it into the `endpointReply` /
 `endpointReplyRecv` primitives so a *direct* reply consumes the link (establishing
 `replyCallerLinkageReciprocal` internally and de-threading `hRCLRecip'`), and the
 redundant separate `consumeCallerReply` is dropped from `replyBody` / `replyRecvBody`
-/ the live `.reply` dispatch.  These `consumeCallerReply_preserves_*` lemmas are the
-per-conjunct frames the folded preservation peels consume.  Each composes a `.reply`
+/ the live `.reply` dispatch. These `consumeCallerReply_preserves_*` lemmas are the
+per-conjunct frames the folded preservation peels consume. Each composes a `.reply`
 store frame (the reply-leg write, a no-op when the reply is absent) with a `.tcb`
 `replyObject := none` store frame (queue links / `ipcState` unchanged). -/
 
 open SeLe4n.Model.SystemState in
-/-- `consumeCallerReply` preserves the 15-conjunct `ipcInvariantCore`.  The reply write
+/-- `consumeCallerReply` preserves the 15-conjunct `ipcInvariantCore`. The reply write
 frames the core (`storeObject_reply_preserves_ipcInvariantCore`; a no-op when the reply
 is absent) and the `replyObject := none` TCB write frames it
 (`storeObject_tcb_replyObject_preserves_ipcInvariantCore`). -/
@@ -15063,11 +15080,11 @@ theorem consumeCallerReply_preserves_ipcInvariantCore
 -- IPC de-threading D2 — de-threaded `ipcInvariantFull` bundle theorems
 --
 -- `endpointReceiveDual` / `endpointCall` no longer thread the full
--- `replyCallerLinkage st'`.  They thread only the reciprocal half
+-- `replyCallerLinkage st'`. They thread only the reciprocal half
 -- (`replyCallerLinkageReciprocal st'`, threaded pre-#7.4) and **establish** the third
 -- clause (`blockedOnReplyHasReplyObject st'`) concretely from the pre-state via the
 -- `*_establishes_blockedOnReplyHasReplyObject` theorems above — closing the #7.4 origin
--- gap at the transition boundary.  Placed here (rather than next to the other bundle
+-- gap at the transition boundary. Placed here (rather than next to the other bundle
 -- theorems) to follow the establish theorems they depend on.
 -- ============================================================================
 
@@ -15084,12 +15101,12 @@ open SeLe4n.Model.SystemState in
 * **Rendezvous branch** — a waiting sender is dequeued and the message delivered.
   No stash is established; the receiver- and sender-completions move threads to
   `.ready` / `.blockedOnReply` (never `.blockedOnReceive`), so PRR frames provided
-  those threads were not mid-receive-stash.  The dequeued head is a `sendQ` head,
+  those threads were not mid-receive-stash. The dequeued head is a `sendQ` head,
   hence `.blockedOnSend` / `.blockedOnCall` (`hQHBC : queueHeadBlockedConsistent` —
-  trivially available in the bundle), never `.blockedOnReceive`.  The completing
+  trivially available in the bundle), never `.blockedOnReceive`. The completing
   receiver is the running thread (`hReceiverNotRecv`, a real precondition — needed
   only when the receiver is *not* the dequeued sender; when it is, the sender
-  completion already left it `.ready` / `.blockedOnReply`).  A `Call` rendezvous
+  completion already left it `.ready` / `.blockedOnReply`). A `Call` rendezvous
   additionally links `replyId` to the dequeued caller;
   `linkCallerReply_preserves_…`'s `hNotStashed` is the *unstashed* half of
   `hReplyIdValid` carried to the link site. -/
@@ -15317,38 +15334,38 @@ theorem endpointReceiveDual_preserves_pendingReceiveReplyWellFormed
                   exact pendingReceiveReplyWellFormed_of_objects_eq (removeRunnable_preserves_objects stStashed receiver) hPStash
 
 open SeLe4n.Model.SystemState in
-/-- D3 (Step 4): `ipcUnwrapCaps` frames `pendingReceiveReplyWellFormed`.  Cap transfer
+/-- D3 (Step 4): `ipcUnwrapCaps` frames `pendingReceiveReplyWellFormed`. Cap transfer
 writes only CNode slots at `receiverRoot` (and CDT lifecycle fields) — never a `.reply`
-object and never any TCB's `pendingReceiveReply`.  So C1 (stash ⇒ `.blockedOnReceive`
+object and never any TCB's `pendingReceiveReply`. So C1 (stash ⇒ `.blockedOnReceive`
 ∧ reply-present-free) and C2 (injective) transport backward through the full-TCB
 preservation `ipcUnwrapCaps_tcb_backward`, and C1's reply-present half forward through
 `ipcUnwrapCaps_preserves_reply_objects`. -/
 theorem ipcUnwrapCaps_preserves_pendingReceiveReplyWellFormed
-    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt) (hInv : pendingReceiveReplyWellFormed st)
-    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st
+    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st
              = .ok (summary, st')) :
     pendingReceiveReplyWellFormed st' := by
   refine ⟨?_, ?_⟩
   · -- C1
     intro tid tcb rid hTcb hStash
     have hTcbSt : st.objects[tid.toObjId]? = some (.tcb tcb) :=
-      ipcUnwrapCaps_tcb_backward msg senderRoot receiverRoot slotBase grantRight st st' summary
+      ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight st st' summary
         tid.toObjId tcb hObjInv hStep ((getTcb?_eq_some_iff st' tid tcb).mp hTcb)
     obtain ⟨hBlk, r, hr, hrc⟩ := hInv.1 tid tcb rid ((getTcb?_eq_some_iff st tid tcb).mpr hTcbSt) hStash
     refine ⟨hBlk, r, ?_, hrc⟩
     rw [getReply?_eq_some_iff]
-    exact ipcUnwrapCaps_preserves_reply_objects msg senderRoot receiverRoot slotBase grantRight
+    exact ipcUnwrapCaps_preserves_reply_objects msg receiverRoot slotBase grantRight
       st st' summary rid.toObjId r ((getReply?_eq_some_iff st rid r).mp hr) hObjInv hStep
   · -- C2 (injectivity)
     intro tid₁ tid₂ tcb₁ tcb₂ rid hTcb₁ hTcb₂ hStash₁ hStash₂
     have hTcbSt₁ : st.objects[tid₁.toObjId]? = some (.tcb tcb₁) :=
-      ipcUnwrapCaps_tcb_backward msg senderRoot receiverRoot slotBase grantRight st st' summary
+      ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight st st' summary
         tid₁.toObjId tcb₁ hObjInv hStep ((getTcb?_eq_some_iff st' tid₁ tcb₁).mp hTcb₁)
     have hTcbSt₂ : st.objects[tid₂.toObjId]? = some (.tcb tcb₂) :=
-      ipcUnwrapCaps_tcb_backward msg senderRoot receiverRoot slotBase grantRight st st' summary
+      ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight st st' summary
         tid₂.toObjId tcb₂ hObjInv hStep ((getTcb?_eq_some_iff st' tid₂ tcb₂).mp hTcb₂)
     exact hInv.2 tid₁ tid₂ tcb₁ tcb₂ rid ((getTcb?_eq_some_iff st tid₁ tcb₁).mpr hTcbSt₁)
       ((getTcb?_eq_some_iff st tid₂ tcb₂).mpr hTcbSt₂) hStash₁ hStash₂
@@ -15401,19 +15418,15 @@ theorem endpointReceiveDualWithCaps_preserves_pendingReceiveReplyWellFormed
         simp [hMsg] at hStep
         split at hStep
         · obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hPMid
-        · cases hLookup : lookupCspaceRoot stMid sid with
-          | none => simp only [hLookup] at hStep; contradiction
-          | some senderRoot =>
-            simp only [hLookup] at hStep
-            cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase msg.capsGranted stMid with
-            | error e => simp [hUnwrap] at hStep
-            | ok pairU =>
-              rcases pairU with ⟨s, stFinal⟩
-              simp [hUnwrap] at hStep
-              obtain ⟨⟨_, _⟩, rfl⟩ := hStep
-              exact ipcUnwrapCaps_preserves_pendingReceiveReplyWellFormed msg senderRoot receiverCspaceRoot
-                receiverSlotBase _ stMid stFinal s hObjInvMid hPMid hUnwrap
+        · cases hUnwrap : ipcUnwrapCaps msg receiverCspaceRoot
+              receiverSlotBase msg.capsGranted stMid with
+          | error e => simp [hUnwrap] at hStep
+          | ok pairU =>
+            rcases pairU with ⟨s, stFinal⟩
+            simp [hUnwrap] at hStep
+            obtain ⟨⟨_, _⟩, rfl⟩ := hStep
+            exact ipcUnwrapCaps_preserves_pendingReceiveReplyWellFormed msg receiverCspaceRoot
+              receiverSlotBase _ stMid stFinal s hObjInvMid hPMid hUnwrap
 
 open SeLe4n.Model.SystemState in
 /-- D3: `endpointSendDualWithCaps` preserves `pendingReceiveReplyWellFormed` — the base
@@ -15422,13 +15435,13 @@ open SeLe4n.Model.SystemState in
 theorem endpointSendDualWithCaps_preserves_pendingReceiveReplyWellFormed
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt) (hInv : pendingReceiveReplyWellFormed st)
     (hSenderNotRecv : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
     (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
-             senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     pendingReceiveReplyWellFormed st' := by
   simp only [endpointSendDualWithCaps] at hStep
   cases hSend : endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
@@ -15450,11 +15463,12 @@ theorem endpointSendDualWithCaps_preserves_pendingReceiveReplyWellFormed
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hPMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_pendingReceiveReplyWellFormed { msg with capsGranted := endpointRights.mem AccessRight.grant } senderCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_pendingReceiveReplyWellFormed { msg with capsGranted := endpointRights.mem AccessRight.grant } recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hPMid hStep
 
 open SeLe4n.Model.SystemState in
@@ -15464,13 +15478,13 @@ pre-state PRR suffices), and the optional cap-transfer leg (`ipcUnwrapCaps`) fra
 theorem endpointCallWithCaps_preserves_pendingReceiveReplyWellFormed
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt) (hInv : pendingReceiveReplyWellFormed st)
     (hCallerNotRecv : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
     (hStep : endpointCallWithCaps endpointId caller msg endpointRights
-             callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     pendingReceiveReplyWellFormed st' := by
   simp only [endpointCallWithCaps] at hStep
   cases hCall : endpointCall endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
@@ -15492,11 +15506,12 @@ theorem endpointCallWithCaps_preserves_pendingReceiveReplyWellFormed
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hPMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_pendingReceiveReplyWellFormed { msg with capsGranted := endpointRights.mem AccessRight.grant } callerCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_pendingReceiveReplyWellFormed { msg with capsGranted := endpointRights.mem AccessRight.grant } recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hPMid hStep
 
 -- ============================================================================
@@ -15577,7 +15592,7 @@ theorem linkReply_preserves_queueNextBlockingConsistent
 
 open SeLe4n.Model.SystemState in
 /-- `storeObject` of a TCB that preserves `ipcState` and `queueNext` frames
-`queueNextBlockingConsistent`.  Used by the reply-cap link/unlink stores
+`queueNextBlockingConsistent`. Used by the reply-cap link/unlink stores
 (`replyObject` writes) which touch neither field. -/
 theorem storeObject_tcb_preserveLinks_queueNextBlockingConsistent
     (st st' : SystemState) (tid₀ : SeLe4n.ThreadId) (oldTcb newTcb : TCB)
@@ -15599,7 +15614,7 @@ theorem storeObject_tcb_preserveLinks_queueNextBlockingConsistent
     exact ⟨tcb', hY, rfl, rfl⟩
 
 open SeLe4n.Model.SystemState in
-/-- D4: `linkCallerReply` frames `queueNextBlockingConsistent`.  Composes a
+/-- D4: `linkCallerReply` frames `queueNextBlockingConsistent`. Composes a
 `linkReply` (Reply store) with a `caller.replyObject` write (preserves
 `ipcState`/`queueNext`). -/
 theorem linkCallerReply_preserves_queueNextBlockingConsistent
@@ -15627,7 +15642,7 @@ theorem linkCallerReply_preserves_queueNextBlockingConsistent
       · simp [hRO] at hStep
 
 open SeLe4n.Model.SystemState in
-/-- D4: `consumeCallerReply` frames `queueNextBlockingConsistent`.  Composes a
+/-- D4: `consumeCallerReply` frames `queueNextBlockingConsistent`. Composes a
 `consumeReply` (Reply store) with an optional `caller.replyObject := none` write. -/
 theorem consumeCallerReply_preserves_queueNextBlockingConsistent
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
@@ -15653,7 +15668,7 @@ theorem consumeCallerReply_preserves_queueNextBlockingConsistent
         ((getTcb?_eq_some_iff st1 caller tcb).mp hT) rfl rfl hInv1 hStep
 
 open SeLe4n.Model.SystemState in
-/-- D4: `linkServerStashedReply` frames `queueNextBlockingConsistent`.  Composes a
+/-- D4: `linkServerStashedReply` frames `queueNextBlockingConsistent`. Composes a
 `linkCallerReply` with a `server.pendingReceiveReply := none` write (preserves
 `ipcState`/`queueNext`). -/
 theorem linkServerStashedReply_preserves_queueNextBlockingConsistent
@@ -15683,7 +15698,7 @@ theorem linkServerStashedReply_preserves_queueNextBlockingConsistent
           { sTcb with pendingReceiveReply := none } hObjInv1
           ((getTcb?_eq_some_iff st1 server sTcb).mp hT) rfl rfl hInv1 hStep
 
-/-- IPC de-threading D4 Slice 2c: `linkServerStashedReply` frames `queueNextTargetBlocked`.  Composes a
+/-- IPC de-threading D4 Slice 2c: `linkServerStashedReply` frames `queueNextTargetBlocked`. Composes a
 `linkCallerReply` (qNTB-preserving) with a `server.pendingReceiveReply := none` write (preserves
 `ipcState`/`queueNext`). -/
 theorem linkServerStashedReply_preserves_queueNextTargetBlocked
@@ -15715,9 +15730,9 @@ theorem linkServerStashedReply_preserves_queueNextTargetBlocked
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2b: `endpointCall` **establishes** `queueNextBlockingConsistent`
-from the pre-state (de-threads `hQNBC'`).  Block branch mirrors `endpointSendDual` (sendQ enqueue,
+from the pre-state (de-threads `hQNBC'`). Block branch mirrors `endpointSendDual` (sendQ enqueue,
 `.blockedOnCall` — core (b) gives the old tail `.blockedOnSend`/`.blockedOnCall endpointId`, both
-matching `.blockedOnCall endpointId`).  Rendezvous (Call) branch: pop + receiver `.ready` store +
+matching `.blockedOnCall endpointId`). Rendezvous (Call) branch: pop + receiver `.ready` store +
 `ensureRunnable` + caller `.blockedOnReply` store (`queueNextBlockingMatch` is `True` whenever a
 neighbour is `.blockedOnReply` — the caller's catch-all) + `linkServerStashedReply` (reply store,
 no `queueNext`/`ipcState` change) + `removeRunnable`. -/
@@ -15926,7 +15941,7 @@ theorem endpointCall_preserves_endpointQueueTailBlockedConsistent
                 (by simp) hEnq hMsg
 
 open SeLe4n.Model.SystemState in
-/-- D4: `cleanupPreReceiveDonation` frames `queueNextBlockingConsistent`.  It either
+/-- D4: `cleanupPreReceiveDonation` frames `queueNextBlockingConsistent`. It either
 no-ops or runs `returnDonatedSchedContext`, whose stores preserve every TCB's
 `ipcState`/`queueNext` (`returnDonatedSchedContext_tcb_queue_backward`). -/
 theorem cleanupPreReceiveDonation_preserves_queueNextBlockingConsistent
@@ -15957,7 +15972,7 @@ open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2b: `cleanupPreReceiveDonation` preserves
 `endpointQueueTailBlockedConsistent` — it touches no endpoint and preserves every TCB's `ipcState`
 (`returnDonatedSchedContext` only rewrites `schedContextBinding`), so the combinator applies with the
-existing endpoint / ipcState backward lemmas.  Needed by `endpointReceiveDual`'s block path, which
+existing endpoint / ipcState backward lemmas. Needed by `endpointReceiveDual`'s block path, which
 enqueues on the post-cleanup state. -/
 theorem cleanupPreReceiveDonation_preserves_endpointQueueTailBlockedConsistent
     (st : SystemState) (receiver : SeLe4n.ThreadId)
@@ -15983,7 +15998,7 @@ theorem cleanupPreReceiveDonation_preserves_queueHeadBlockedConsistent
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2c: `cleanupPreReceiveDonation` preserves `queueNextTargetBlocked`
 (`returnDonatedSchedContext` rewrites only `schedContextBinding`, preserving every TCB's `ipcState`
-**and** `queueNext` — the two fields qNTB reads).  Needed by `endpointReceiveDual`'s block path,
+**and** `queueNext` — the two fields qNTB reads). Needed by `endpointReceiveDual`'s block path,
 which enqueues on the post-cleanup state. -/
 theorem cleanupPreReceiveDonation_preserves_queueNextTargetBlocked
     (st : SystemState) (receiver : SeLe4n.ThreadId)
@@ -16012,9 +16027,9 @@ theorem cleanupPreReceiveDonation_preserves_queueNextTargetBlocked
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2b: `endpointReceiveDual` **establishes** `queueNextBlockingConsistent`
-from the pre-state (de-threads `hQNBC'`).  Rendezvous (pop sendQ) — Call sub-path: caller
+from the pre-state (de-threads `hQNBC'`). Rendezvous (pop sendQ) — Call sub-path: caller
 `.blockedOnReply` store (catch-all match) + `linkCallerReply` + receiver `.ready` store; Send
-sub-path: sender `.ready` store + `ensureRunnable` + receiver `.ready` store.  Block path: cleanup
+sub-path: sender `.ready` store + `ensureRunnable` + receiver `.ready` store. Block path: cleanup
 (qNBC + tail-blocked preserved) + receiveQ enqueue + receiver `.blockedOnReceive` store (`hBwd` via
 core (b) with `isReceiveQ = true`: the old receiveQ tail is `.blockedOnReceive endpointId`) + optional
 reply-stash store (`queueNext`/`ipcState`-preserving) + `removeRunnable`. -/
@@ -16208,7 +16223,7 @@ open SeLe4n.Model.SystemState in
 Rendezvous (pop sendQ) branch — both Call and Send sub-paths: pop frame + the dequeued sender store
 (no tail, core (a)) + the receiver `.ready` store (no tail, `_fresh_not_tail` transported through the
 sender store and the reply-link / `ensureRunnable`); the Call sub-path additionally frames through
-`linkCallerReply`.  Block (receiveQ enqueue) branch: `cleanupPreReceiveDonation` frame + the
+`linkCallerReply`. Block (receiveQ enqueue) branch: `cleanupPreReceiveDonation` frame + the
 `storeTcbIpcState` core-(c) variant (the freshly-blocked receiver is the new receiveQ tail) + the
 optional reply-stash store + `removeRunnable`. -/
 theorem endpointReceiveDual_preserves_endpointQueueTailBlockedConsistent
@@ -16380,20 +16395,20 @@ theorem endpointReceiveDual_preserves_endpointQueueTailBlockedConsistent
                       receiver rTcb { rTcb with pendingReceiveReply := replyId } hObjInv2 hTcbPre rfl hTail2 hStash)
 
 open SeLe4n.Model.SystemState in
-/-- D4: `ipcUnwrapCaps` frames `queueNextBlockingConsistent`.  Every post-state TCB
+/-- D4: `ipcUnwrapCaps` frames `queueNextBlockingConsistent`. Every post-state TCB
 equals its pre-state (the cap-transfer touches only a CNode), so `ipcState` and
 `queueNext` are unchanged (`ipcUnwrapCaps_tcb_backward`). -/
 theorem ipcUnwrapCaps_preserves_queueNextBlockingConsistent
-    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt) (hInv : queueNextBlockingConsistent st)
-    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st
+    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st
              = .ok (summary, st')) :
     queueNextBlockingConsistent st' := by
   refine queueNextBlockingConsistent_of_tcb_links_backward st st' ?_ hInv
   intro y tcb' hY
-  exact ⟨tcb', ipcUnwrapCaps_tcb_backward msg senderRoot receiverRoot slotBase grantRight
+  exact ⟨tcb', ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight
     st st' summary y.toObjId tcb' hObjInv hStep hY, rfl, rfl⟩
 
 open SeLe4n.Model.SystemState in
@@ -16401,16 +16416,16 @@ open SeLe4n.Model.SystemState in
 writes only a CNode at `receiverRoot`, so every TCB's `ipcState` **and** `queueNext` are unchanged —
 `ipcUnwrapCaps_tcb_backward`). -/
 theorem ipcUnwrapCaps_preserves_queueNextTargetBlocked
-    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt) (hInv : queueNextTargetBlocked st)
-    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st
+    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st
              = .ok (summary, st')) :
     queueNextTargetBlocked st' := by
   refine queueNextTargetBlocked_of_tcb_links_backward st st' ?_ hInv
   intro y tcb' hY
-  exact ⟨tcb', ipcUnwrapCaps_tcb_backward msg senderRoot receiverRoot slotBase grantRight
+  exact ⟨tcb', ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight
     st st' summary y.toObjId tcb' hObjInv hStep hY, rfl, rfl⟩
 
 open SeLe4n.Model.SystemState in
@@ -16418,17 +16433,17 @@ open SeLe4n.Model.SystemState in
 cap transfer writes only a CNode at `receiverRoot`, so every endpoint and every TCB `ipcState` is
 unchanged — `ipcUnwrapCaps_{endpoint,tcb}_backward`). -/
 theorem ipcUnwrapCaps_preserves_endpointQueueTailBlockedConsistent
-    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt) (hInv : endpointQueueTailBlockedConsistent st)
-    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st
+    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st
              = .ok (summary, st')) :
     endpointQueueTailBlockedConsistent st' := by
   refine endpointQueueTailBlockedConsistent_of_endpoint_tcb_backward st st'
-    (fun eid e hE => ipcUnwrapCaps_endpoint_backward msg senderRoot receiverRoot slotBase grantRight
+    (fun eid e hE => ipcUnwrapCaps_endpoint_backward msg receiverRoot slotBase grantRight
       st st' summary eid e hObjInv hStep hE)
-    (fun y tcb' hY => ⟨tcb', ipcUnwrapCaps_tcb_backward msg senderRoot receiverRoot slotBase grantRight
+    (fun y tcb' hY => ⟨tcb', ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight
       st st' summary y.toObjId tcb' hObjInv hStep hY, rfl⟩)
     hInv
 
@@ -16437,17 +16452,17 @@ open SeLe4n.Model.SystemState in
 writes only a CNode at `receiverRoot`, so every endpoint and every TCB `ipcState` is unchanged —
 head dual of `ipcUnwrapCaps_preserves_endpointQueueTailBlockedConsistent`). -/
 theorem ipcUnwrapCaps_preserves_queueHeadBlockedConsistent
-    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt) (hInv : queueHeadBlockedConsistent st)
-    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st
+    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st
              = .ok (summary, st')) :
     queueHeadBlockedConsistent st' := by
   refine queueHeadBlockedConsistent_of_endpoint_tcb_backward st st'
-    (fun eid e hE => ipcUnwrapCaps_endpoint_backward msg senderRoot receiverRoot slotBase grantRight
+    (fun eid e hE => ipcUnwrapCaps_endpoint_backward msg receiverRoot slotBase grantRight
       st st' summary eid e hObjInv hStep hE)
-    (fun y tcb' hY => ⟨tcb', ipcUnwrapCaps_tcb_backward msg senderRoot receiverRoot slotBase grantRight
+    (fun y tcb' hY => ⟨tcb', ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight
       st st' summary y.toObjId tcb' hObjInv hStep hY, rfl⟩)
     hInv
 
@@ -16458,7 +16473,7 @@ open SeLe4n.Model.SystemState in
 theorem endpointSendDualWithCaps_preserves_queueNextBlockingConsistent
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : queueNextBlockingConsistent st)
     (hDQSI : dualQueueSystemInvariant st)
@@ -16477,7 +16492,7 @@ theorem endpointSendDualWithCaps_preserves_queueNextBlockingConsistent
           ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
         (epId' = endpointId → ep'.receiveQ.tail ≠ some tailTid))
     (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
-             senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     queueNextBlockingConsistent st' := by
   simp only [endpointSendDualWithCaps] at hStep
   cases hSend : endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
@@ -16499,11 +16514,12 @@ theorem endpointSendDualWithCaps_preserves_queueNextBlockingConsistent
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hQNBCMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_queueNextBlockingConsistent { msg with capsGranted := endpointRights.mem AccessRight.grant } senderCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_queueNextBlockingConsistent { msg with capsGranted := endpointRights.mem AccessRight.grant } recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hQNBCMid hStep
 
 open SeLe4n.Model.SystemState in
@@ -16512,7 +16528,7 @@ open SeLe4n.Model.SystemState in
 theorem endpointCallWithCaps_preserves_queueNextBlockingConsistent
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : queueNextBlockingConsistent st)
     (hDQSI : dualQueueSystemInvariant st)
@@ -16531,7 +16547,7 @@ theorem endpointCallWithCaps_preserves_queueNextBlockingConsistent
           ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
         (epId' = endpointId → ep'.receiveQ.tail ≠ some tailTid))
     (hStep : endpointCallWithCaps endpointId caller msg endpointRights
-             callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     queueNextBlockingConsistent st' := by
   simp only [endpointCallWithCaps] at hStep
   cases hCall : endpointCall endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
@@ -16553,11 +16569,12 @@ theorem endpointCallWithCaps_preserves_queueNextBlockingConsistent
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hQNBCMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_queueNextBlockingConsistent { msg with capsGranted := endpointRights.mem AccessRight.grant } callerCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_queueNextBlockingConsistent { msg with capsGranted := endpointRights.mem AccessRight.grant } recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hQNBCMid hStep
 
 open SeLe4n.Model.SystemState in
@@ -16616,19 +16633,15 @@ theorem endpointReceiveDualWithCaps_preserves_queueNextBlockingConsistent
         simp [hMsg] at hStep
         split at hStep
         · obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hQNBCMid
-        · cases hLookup : lookupCspaceRoot stMid sid with
-          | none => simp only [hLookup] at hStep; contradiction
-          | some senderRoot =>
-            simp only [hLookup] at hStep
-            cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase msg.capsGranted stMid with
-            | error e => simp [hUnwrap] at hStep
-            | ok pair =>
-              rcases pair with ⟨s, stFinal⟩
-              simp [hUnwrap] at hStep
-              obtain ⟨⟨_, _⟩, rfl⟩ := hStep
-              exact ipcUnwrapCaps_preserves_queueNextBlockingConsistent msg senderRoot
-                receiverCspaceRoot receiverSlotBase _ stMid stFinal s hObjInvMid hQNBCMid hUnwrap
+        · cases hUnwrap : ipcUnwrapCaps msg receiverCspaceRoot
+              receiverSlotBase msg.capsGranted stMid with
+          | error e => simp [hUnwrap] at hStep
+          | ok pair =>
+            rcases pair with ⟨s, stFinal⟩
+            simp [hUnwrap] at hStep
+            obtain ⟨⟨_, _⟩, rfl⟩ := hStep
+            exact ipcUnwrapCaps_preserves_queueNextBlockingConsistent msg
+              receiverCspaceRoot receiverSlotBase _ stMid stFinal s hObjInvMid hQNBCMid hUnwrap
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2b: `endpointSendDualWithCaps` **establishes**
@@ -16637,7 +16650,7 @@ open SeLe4n.Model.SystemState in
 theorem endpointSendDualWithCaps_preserves_endpointQueueTailBlockedConsistent
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : endpointQueueTailBlockedConsistent st)
     (hDQSI : dualQueueSystemInvariant st)
@@ -16648,7 +16661,7 @@ theorem endpointSendDualWithCaps_preserves_endpointQueueTailBlockedConsistent
       ep.sendQ.head ≠ some sender ∧ ep.sendQ.tail ≠ some sender ∧
       ep.receiveQ.head ≠ some sender ∧ ep.receiveQ.tail ≠ some sender)
     (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
-             senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     endpointQueueTailBlockedConsistent st' := by
   simp only [endpointSendDualWithCaps] at hStep
   cases hSend : endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
@@ -16670,11 +16683,12 @@ theorem endpointSendDualWithCaps_preserves_endpointQueueTailBlockedConsistent
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hTailMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_endpointQueueTailBlockedConsistent { msg with capsGranted := endpointRights.mem AccessRight.grant } senderCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_endpointQueueTailBlockedConsistent { msg with capsGranted := endpointRights.mem AccessRight.grant } recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hTailMid hStep
 
 open SeLe4n.Model.SystemState in
@@ -16683,7 +16697,7 @@ open SeLe4n.Model.SystemState in
 theorem endpointCallWithCaps_preserves_endpointQueueTailBlockedConsistent
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : endpointQueueTailBlockedConsistent st)
     (hDQSI : dualQueueSystemInvariant st)
@@ -16694,7 +16708,7 @@ theorem endpointCallWithCaps_preserves_endpointQueueTailBlockedConsistent
       ep.sendQ.head ≠ some caller ∧ ep.sendQ.tail ≠ some caller ∧
       ep.receiveQ.head ≠ some caller ∧ ep.receiveQ.tail ≠ some caller)
     (hStep : endpointCallWithCaps endpointId caller msg endpointRights
-             callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     endpointQueueTailBlockedConsistent st' := by
   simp only [endpointCallWithCaps] at hStep
   cases hCall : endpointCall endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
@@ -16716,11 +16730,12 @@ theorem endpointCallWithCaps_preserves_endpointQueueTailBlockedConsistent
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hTailMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_endpointQueueTailBlockedConsistent { msg with capsGranted := endpointRights.mem AccessRight.grant } callerCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_endpointQueueTailBlockedConsistent { msg with capsGranted := endpointRights.mem AccessRight.grant } recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hTailMid hStep
 
 open SeLe4n.Model.SystemState in
@@ -16768,23 +16783,19 @@ theorem endpointReceiveDualWithCaps_preserves_endpointQueueTailBlockedConsistent
         simp [hMsg] at hStep
         split at hStep
         · obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hTailMid
-        · cases hLookup : lookupCspaceRoot stMid sid with
-          | none => simp only [hLookup] at hStep; contradiction
-          | some senderRoot =>
-            simp only [hLookup] at hStep
-            cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase msg.capsGranted stMid with
-            | error e => simp [hUnwrap] at hStep
-            | ok pair =>
-              rcases pair with ⟨s, stFinal⟩
-              simp [hUnwrap] at hStep
-              obtain ⟨⟨_, _⟩, rfl⟩ := hStep
-              exact ipcUnwrapCaps_preserves_endpointQueueTailBlockedConsistent msg senderRoot
-                receiverCspaceRoot receiverSlotBase _ stMid stFinal s hObjInvMid hTailMid hUnwrap
+        · cases hUnwrap : ipcUnwrapCaps msg receiverCspaceRoot
+              receiverSlotBase msg.capsGranted stMid with
+          | error e => simp [hUnwrap] at hStep
+          | ok pair =>
+            rcases pair with ⟨s, stFinal⟩
+            simp [hUnwrap] at hStep
+            obtain ⟨⟨_, _⟩, rfl⟩ := hStep
+            exact ipcUnwrapCaps_preserves_endpointQueueTailBlockedConsistent msg
+              receiverCspaceRoot receiverSlotBase _ stMid stFinal s hObjInvMid hTailMid hUnwrap
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2b: `endpointReplyRecv` **establishes** `queueNextBlockingConsistent`
-from the pre-state.  Composes the reply phase (`storeTcbIpcStateAndMessage replyTarget .ready` +
+from the pre-state. Composes the reply phase (`storeTcbIpcStateAndMessage replyTarget .ready` +
 `ensureRunnable` — both clean `queueNext`/`ipcState` frames; the unblocked `replyTarget` was
 `.blockedOnReply`, hence by pre-state tail-blocked no endpoint tail, so `endpointQueueTailBlockedConsistent`
 survives) with the `endpointReceiveDual` receive leg (`endpointReceiveDual_preserves_queueNextBlockingConsistent`,
@@ -16969,7 +16980,7 @@ theorem endpointReplyRecv_preserves_queueNextBlockingConsistent
 -- ============================================================================
 
 open SeLe4n.Model.SystemState in
-/-- D4: `endpointReply` frames `queueNextBlockingConsistent`.  It moves the
+/-- D4: `endpointReply` frames `queueNextBlockingConsistent`. It moves the
 `.blockedOnReply` target to `.ready` (vacuously link-compatible both ways) then
 `ensureRunnable` (object no-op). -/
 theorem endpointReply_preserves_queueNextBlockingConsistent
@@ -17024,7 +17035,7 @@ theorem endpointReply_preserves_queueNextBlockingConsistent
 
 /-- IPC de-threading D4 Slice 2c: the `storeTcbIpcStateAndMessage` variant of the enqueue+block-store
 `queueHeadBlockedConsistent` keystone (for the `Send` transitions, which deliver a pending message
-with the block).  `qHBC` reads only `ipcState`, so the extra `pendingMessage` write is invisible;
+with the block). `qHBC` reads only `ipcState`, so the extra `pendingMessage` write is invisible;
 `qHBC` reads only `ipcState`, so the extra `pendingMessage` write is invisible. -/
 theorem endpointQueueEnqueue_blockStore_establishes_queueHeadBlockedConsistent
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
@@ -17131,11 +17142,11 @@ theorem endpointQueueEnqueue_blockStore_establishes_queueHeadBlockedConsistent
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2c: `endpointQueuePopHead` **preserves** `queueHeadBlockedConsistent`
-using the pre-state `queueNextTargetBlocked`.  The pop advances the popped queue's head to the old
+using the pre-state `queueNextTargetBlocked`. The pop advances the popped queue's head to the old
 head's `queueNext` target (`endpointQueuePopHead_post_endpoint_queues`); that target is blocked on the
 same queue/endpoint as the old head — which was the head, hence blocked by pre-state `qHBC` — via the
-strict link-target invariant `qNTB`.  The other queue's head and every other endpoint frame unchanged;
-`endpointQueuePopHead` never rewrites any `ipcState`.  This is the keystone the rendezvous (pop) legs
+strict link-target invariant `qNTB`. The other queue's head and every other endpoint frame unchanged;
+`endpointQueuePopHead` never rewrites any `ipcState`. This is the keystone the rendezvous (pop) legs
 of the enqueue/pop transition `qHBC` establishers compose over (de-threads `hQHBC'`). -/
 theorem endpointQueuePopHead_preserves_queueHeadBlockedConsistent
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
@@ -17444,7 +17455,7 @@ theorem linkServerStashedReply_preserves_queueHeadBlockedConsistent
           ((getTcb?_eq_some_iff st1 server sTcb).mp hT) rfl hInv1 hStep
 
 open SeLe4n.Model.SystemState in
-/-- D4: `notificationWait` frames `queueNextBlockingConsistent`.  Stores the
+/-- D4: `notificationWait` frames `queueNextBlockingConsistent`. Stores the
 notification object (non-endpoint, non-TCB) then writes the *waiter* to `.ready`
 (badge path) or `.blockedOnNotification` (block path) — both vacuously
 link-compatible (a `.ready` / `.blockedOnNotification` thread matches anything). -/
@@ -17502,9 +17513,9 @@ theorem notificationWait_preserves_queueNextBlockingConsistent
   · contradiction
 
 open SeLe4n.Model.SystemState in
-/-- IPC de-threading D4 Slice 2c: `notificationWait` **establishes** `queueNextTargetBlocked`.  The
+/-- IPC de-threading D4 Slice 2c: `notificationWait` **establishes** `queueNextTargetBlocked`. The
 notification store frames qNTB; the waiter is then either delivered the badge (`.ready`) or blocked
-(`.blockedOnNotification`) — both non-queue-blocking states.  The running waiter is `.ready`
+(`.blockedOnNotification`) — both non-queue-blocking states. The running waiter is `.ready`
 (`hWaiterReady`), so by the pre-state qNTB it carries no blocked incoming link, and either store
 preserves qNTB; the block path's `removeRunnable` frames. -/
 theorem notificationWait_preserves_queueNextTargetBlocked
@@ -17594,7 +17605,7 @@ theorem notificationWait_preserves_queueNextTargetBlocked
   · contradiction
 
 open SeLe4n.Model.SystemState in
-/-- D4: `notificationSignal` frames `queueNextBlockingConsistent`.  Stores the
+/-- D4: `notificationSignal` frames `queueNextBlockingConsistent`. Stores the
 notification object (non-endpoint, non-TCB) then wakes the head waiter to `.ready`
 (badge-merge branch only re-stores the notification). -/
 theorem notificationSignal_preserves_queueNextBlockingConsistent
@@ -17634,7 +17645,7 @@ theorem notificationSignal_preserves_queueNextBlockingConsistent
   · contradiction
 
 open SeLe4n.Model.SystemState in
-/-- D4: `notificationSignal` frames `queueHeadBlockedConsistent`.  The notification
+/-- D4: `notificationSignal` frames `queueHeadBlockedConsistent`. The notification
 store frames endpoints/TCBs; the woken head waiter is a notification-queue member,
 hence `.blockedOnNotification` (`notificationWaiterConsistent`), so it is not an
 endpoint queue head ⇒ the `.ready` write discharges `hNotHead`. -/
@@ -17692,7 +17703,7 @@ theorem notificationSignal_preserves_queueHeadBlockedConsistent
   · contradiction
 
 open SeLe4n.Model.SystemState in
-/-- IPC de-threading D4 Slice 2c: `notificationSignal` **establishes** `queueNextTargetBlocked`.  The
+/-- IPC de-threading D4 Slice 2c: `notificationSignal` **establishes** `queueNextTargetBlocked`. The
 notification store frames qNTB (non-endpoint, non-TCB); the woken head waiter is a notification-queue
 member, hence `.blockedOnNotification` (`hNWC`) — a non-queue-blocking state, so by the pre-state qNTB
 it carries no blocked incoming link, and the `.ready` wake preserves qNTB; `ensureRunnable` frames. -/
@@ -17894,10 +17905,10 @@ theorem notificationWait_preserves_endpointQueueTailBlockedConsistent
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2c: `notificationWait` **establishes** `queueHeadBlockedConsistent`
-from the pre-state (de-threads `hQHBC'`).  `notificationWait` touches the *notification* (its waitQ),
+from the pre-state (de-threads `hQHBC'`). `notificationWait` touches the *notification* (its waitQ),
 never an endpoint queue, so every endpoint head frames; the only `ipcState` write is the running
 waiter (`.ready` in the badge branch, `.blockedOnNotification` in the block branch), and the waiter is
-`.ready` (`hWaiterReady`), hence not an endpoint head — discharged exactly as the tail dual.  Mirrors
+`.ready` (`hWaiterReady`), hence not an endpoint head — discharged exactly as the tail dual. Mirrors
 `notificationWait_preserves_endpointQueueTailBlockedConsistent` (head for tail). -/
 theorem notificationWait_preserves_queueHeadBlockedConsistent
     (st st' : SystemState) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
@@ -17985,9 +17996,9 @@ theorem notificationWait_preserves_queueHeadBlockedConsistent
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2c: `endpointSendDual` **establishes** `queueHeadBlockedConsistent`
-from the pre-state (de-threads `hQHBC'`).  Deliver branch (receiveQ head present): pop the receiveQ
+from the pre-state (de-threads `hQHBC'`). Deliver branch (receiveQ head present): pop the receiveQ
 head (pop core, the new head blocked via `qNTB`) + complete its receive to `.ready`
-(`storeTcbReceiveComplete`, `hNotHead` = `…_popped_not_head`) + `ensureRunnable` frame.  Block branch
+(`storeTcbReceiveComplete`, `hNotHead` = `…_popped_not_head`) + `ensureRunnable` frame. Block branch
 (no receiver): the enqueue+block-store keystone + `removeRunnable` frame. -/
 theorem endpointSendDual_preserves_queueHeadBlockedConsistent
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
@@ -18017,7 +18028,7 @@ theorem endpointSendDual_preserves_queueHeadBlockedConsistent
       cases hHead : ep.receiveQ.head with
       | some _ =>
         -- PR #873 round 17: the rendezvous arm resolves the sender before
-        -- popping.  It never did, so a send naming a nonexistent thread
+        -- popping. It never did, so a send naming a nonexistent thread
         -- delivered anyway and the receiver held a message attributed to it.
         cases hSnd : st.getTcb? sender with
         | none => simp [hHead, hSnd] at hStep
@@ -18058,11 +18069,11 @@ theorem endpointSendDual_preserves_queueHeadBlockedConsistent
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2c: `endpointSendDualWithCaps` **establishes** `queueHeadBlockedConsistent`
 — the base `endpointSendDual` establish on `stMid`, then the optional `ipcUnwrapCaps` frame (the
-cap-transfer writes only CNode caps).  Head dual of the tail-blocked WithCaps establisher. -/
+cap-transfer writes only CNode caps). Head dual of the tail-blocked WithCaps establisher. -/
 theorem endpointSendDualWithCaps_preserves_queueHeadBlockedConsistent
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hQHBC : queueHeadBlockedConsistent st)
     (hQNTB : queueNextTargetBlocked st)
@@ -18073,7 +18084,7 @@ theorem endpointSendDualWithCaps_preserves_queueHeadBlockedConsistent
       ep.sendQ.head ≠ some sender ∧ ep.sendQ.tail ≠ some sender ∧
       ep.receiveQ.head ≠ some sender ∧ ep.receiveQ.tail ≠ some sender)
     (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
-             senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     queueHeadBlockedConsistent st' := by
   simp only [endpointSendDualWithCaps] at hStep
   cases hSend : endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
@@ -18095,11 +18106,12 @@ theorem endpointSendDualWithCaps_preserves_queueHeadBlockedConsistent
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hQHBCMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_queueHeadBlockedConsistent { msg with capsGranted := endpointRights.mem AccessRight.grant } senderCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_queueHeadBlockedConsistent { msg with capsGranted := endpointRights.mem AccessRight.grant } recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hQHBCMid hStep
 
 open SeLe4n.Model.SystemState in
@@ -18109,7 +18121,7 @@ writes only CNode caps). -/
 theorem endpointSendDualWithCaps_preserves_queueNextTargetBlocked
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hQNTB : queueNextTargetBlocked st)
     (hTail : endpointQueueTailBlockedConsistent st)
@@ -18127,7 +18139,7 @@ theorem endpointSendDualWithCaps_preserves_queueNextTargetBlocked
         (epId' ≠ endpointId → ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
         (epId' = endpointId → ep'.receiveQ.tail ≠ some tailTid))
     (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
-             senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     queueNextTargetBlocked st' := by
   simp only [endpointSendDualWithCaps] at hStep
   cases hSend : endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
@@ -18149,20 +18161,21 @@ theorem endpointSendDualWithCaps_preserves_queueNextTargetBlocked
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hQNTBMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_queueNextTargetBlocked { msg with capsGranted := endpointRights.mem AccessRight.grant } senderCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_queueNextTargetBlocked { msg with capsGranted := endpointRights.mem AccessRight.grant } recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hQNTBMid hStep
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2c: `endpointReceiveDual` **establishes** `queueHeadBlockedConsistent`
-from the pre-state (de-threads `hQHBC'`).  Rendezvous (pop sendQ) — Call sub-path: pop core + the
+from the pre-state (de-threads `hQHBC'`). Rendezvous (pop sendQ) — Call sub-path: pop core + the
 dequeued sender `.blockedOnReply` store (`hNotHead` = `…_popped_not_head`) + `linkCallerReply` frame +
 the *running* receiver `.ready` store (the receiver was `.ready`, transported backward through the
 pop+stores, so the ready-wake frame applies); Send sub-path: sender `.ready` store + `ensureRunnable`
-+ receiver `.ready` store.  Block path: cleanup frame + the `storeTcbIpcState` enqueue keystone +
++ receiver `.ready` store. Block path: cleanup frame + the `storeTcbIpcState` enqueue keystone +
 optional reply-stash (`preserveIpc`) + `removeRunnable`. -/
 theorem endpointReceiveDual_preserves_queueHeadBlockedConsistent
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
@@ -18348,7 +18361,7 @@ Rendezvous (pop sendQ): pop frame (qNTB-preserved) + the dequeued sender store (
 `.blockedOnReply`, Send: `.ready` — both non-queue-blocking, with **no blocked incoming link** since
 the popped head has none) + `linkCallerReply`/`ensureRunnable` frame + the *running* receiver `.ready`
 store (receiver `≠` sender via `hFreshReceiver`, readiness transported backward, hence no blocked
-incoming link by the pre-state qNTB).  Block path: cleanup frame + the fused enqueue+`.blockedOnReceive`
+incoming link by the pre-state qNTB). Block path: cleanup frame + the fused enqueue+`.blockedOnReceive`
 keystone + optional reply-stash (`ipcState`/`queueNext`-preserving) + `removeRunnable`. -/
 theorem endpointReceiveDual_preserves_queueNextTargetBlocked
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
@@ -18633,19 +18646,15 @@ theorem endpointReceiveDualWithCaps_preserves_queueHeadBlockedConsistent
         simp [hMsg] at hStep
         split at hStep
         · obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hQHBCMid
-        · cases hLookup : lookupCspaceRoot stMid sid with
-          | none => simp only [hLookup] at hStep; contradiction
-          | some senderRoot =>
-            simp only [hLookup] at hStep
-            cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase msg.capsGranted stMid with
-            | error e => simp [hUnwrap] at hStep
-            | ok pair =>
-              rcases pair with ⟨s, stFinal⟩
-              simp [hUnwrap] at hStep
-              obtain ⟨⟨_, _⟩, rfl⟩ := hStep
-              exact ipcUnwrapCaps_preserves_queueHeadBlockedConsistent msg senderRoot
-                receiverCspaceRoot receiverSlotBase _ stMid stFinal s hObjInvMid hQHBCMid hUnwrap
+        · cases hUnwrap : ipcUnwrapCaps msg receiverCspaceRoot
+              receiverSlotBase msg.capsGranted stMid with
+          | error e => simp [hUnwrap] at hStep
+          | ok pair =>
+            rcases pair with ⟨s, stFinal⟩
+            simp [hUnwrap] at hStep
+            obtain ⟨⟨_, _⟩, rfl⟩ := hStep
+            exact ipcUnwrapCaps_preserves_queueHeadBlockedConsistent msg
+              receiverCspaceRoot receiverSlotBase _ stMid stFinal s hObjInvMid hQHBCMid hUnwrap
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2c: `endpointReceiveDualWithCaps` **establishes** `queueNextTargetBlocked`
@@ -18703,25 +18712,21 @@ theorem endpointReceiveDualWithCaps_preserves_queueNextTargetBlocked
         simp [hMsg] at hStep
         split at hStep
         · obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hQNTBMid
-        · cases hLookup : lookupCspaceRoot stMid sid with
-          | none => simp only [hLookup] at hStep; contradiction
-          | some senderRoot =>
-            simp only [hLookup] at hStep
-            cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase msg.capsGranted stMid with
-            | error e => simp [hUnwrap] at hStep
-            | ok pair =>
-              rcases pair with ⟨s, stFinal⟩
-              simp [hUnwrap] at hStep
-              obtain ⟨⟨_, _⟩, rfl⟩ := hStep
-              exact ipcUnwrapCaps_preserves_queueNextTargetBlocked msg senderRoot
-                receiverCspaceRoot receiverSlotBase _ stMid stFinal s hObjInvMid hQNTBMid hUnwrap
+        · cases hUnwrap : ipcUnwrapCaps msg receiverCspaceRoot
+              receiverSlotBase msg.capsGranted stMid with
+          | error e => simp [hUnwrap] at hStep
+          | ok pair =>
+            rcases pair with ⟨s, stFinal⟩
+            simp [hUnwrap] at hStep
+            obtain ⟨⟨_, _⟩, rfl⟩ := hStep
+            exact ipcUnwrapCaps_preserves_queueNextTargetBlocked msg
+              receiverCspaceRoot receiverSlotBase _ stMid stFinal s hObjInvMid hQNTBMid hUnwrap
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2c: `endpointReplyRecv` **establishes** `queueHeadBlockedConsistent`
-from the pre-state.  Composes the reply phase (`storeTcbIpcStateAndMessage replyTarget .ready` +
+from the pre-state. Composes the reply phase (`storeTcbIpcStateAndMessage replyTarget .ready` +
 `ensureRunnable`; the unblocked `.blockedOnReply` target is no endpoint head, so head-blocked +
-qNTB + dualQueue frames survive) with the `endpointReceiveDual` receive-leg qHBC establisher.  The
+qNTB + dualQueue frames survive) with the `endpointReceiveDual` receive-leg qHBC establisher. The
 receive leg's `queueNextTargetBlocked` precondition is transported via the
 `.ready`-of-`.blockedOnReply` qNTB frame; the running-receiver readiness is transported across the
 reply phase (`receiver ≠ replyTarget`, the latter being `.blockedOnReply` while the former is
@@ -18878,7 +18883,7 @@ theorem endpointReplyRecv_preserves_queueHeadBlockedConsistent
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2c: `endpointReplyRecv` **establishes** `queueNextTargetBlocked` from the
-pre-state.  Composes the reply phase (`.ready`-wake of the `.blockedOnReply` target — qNTB-preserved
+pre-state. Composes the reply phase (`.ready`-wake of the `.blockedOnReply` target — qNTB-preserved
 via the `.ready`-of-`.blockedOnReply` frame) with the `endpointReceiveDual` receive-leg qNTB
 establisher; the receive leg's `dualQueueSystemInvariant`, `endpointQueueTailBlockedConsistent`,
 running-receiver readiness, and tail-freshness side-conditions are transported across the reply
@@ -19075,12 +19080,12 @@ theorem endpointReplyRecv_preserves_queueNextTargetBlocked
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2c: `endpointCall` **establishes** `queueHeadBlockedConsistent`
-from the pre-state (de-threads `hQHBC'`).  Rendezvous (pop receiveQ): pop core + receiver `.ready`
+from the pre-state (de-threads `hQHBC'`). Rendezvous (pop receiveQ): pop core + receiver `.ready`
 store (`hNotHead` = `…_popped_not_head`) + `ensureRunnable` + caller `.blockedOnReply` store +
-`linkServerStashedReply` frame + `removeRunnable`.  The caller-store `hNotHead` is derived from the
+`linkServerStashedReply` frame + `removeRunnable`. The caller-store `hNotHead` is derived from the
 existing preconditions: the caller is not a receiveQ head (else `qHBC` ⇒ `.blockedOnReceive`,
 contradicting `hCallerNotRecv`) and not a sendQ head (the pop leaves sendQ heads untouched, and
-`hFreshCaller` rules `caller` out in the pre-state).  Block path: the `storeTcbIpcStateAndMessage`
+`hFreshCaller` rules `caller` out in the pre-state). Block path: the `storeTcbIpcStateAndMessage`
 enqueue keystone + `removeRunnable`. -/
 theorem endpointCall_preserves_queueHeadBlockedConsistent
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
@@ -19239,12 +19244,12 @@ theorem endpointCall_preserves_queueHeadBlockedConsistent
                 hObjInv hObj hQHBC hFreshCaller (by simp) hEnq hMsg
 
 open SeLe4n.Model.SystemState in
-/-- IPC de-threading D4 Slice 2c: `endpointCall` **establishes** `queueNextTargetBlocked`.  Rendezvous
+/-- IPC de-threading D4 Slice 2c: `endpointCall` **establishes** `queueNextTargetBlocked`. Rendezvous
 (pop receiveQ): pop frame + the popped receiver `.ready` store (no-incoming via the popped head) +
 `ensureRunnable` + the caller `.blockedOnReply` store (non-queue-blocking; the running caller is
 `.ready`, so by the pre-state qNTB it carries no blocked incoming link — `hCallerReady` discharged at
 the D8 layer, `caller ≠ receiver` via `hFreshReceiver`) + `linkServerStashedReply` frame +
-`removeRunnable`.  Block path: the fused sendQ enqueue+`.blockedOnCall` keystone + `removeRunnable`. -/
+`removeRunnable`. Block path: the fused sendQ enqueue+`.blockedOnCall` keystone + `removeRunnable`. -/
 theorem endpointCall_preserves_queueNextTargetBlocked
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (msg : IpcMessage)
@@ -19379,11 +19384,11 @@ theorem endpointCall_preserves_queueNextTargetBlocked
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2c: `endpointCallWithCaps` **establishes** `queueHeadBlockedConsistent`
 — the base `endpointCall` establish on `stMid`, then the optional `ipcUnwrapCaps` frame (the
-cap-transfer writes only CNode caps).  Head dual of the WithCaps tail-blocked establisher. -/
+cap-transfer writes only CNode caps). Head dual of the WithCaps tail-blocked establisher. -/
 theorem endpointCallWithCaps_preserves_queueHeadBlockedConsistent
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hQHBC : queueHeadBlockedConsistent st)
     (hQNTB : queueNextTargetBlocked st)
@@ -19396,7 +19401,7 @@ theorem endpointCallWithCaps_preserves_queueHeadBlockedConsistent
       ep.sendQ.head ≠ some caller ∧ ep.sendQ.tail ≠ some caller ∧
       ep.receiveQ.head ≠ some caller ∧ ep.receiveQ.tail ≠ some caller)
     (hStep : endpointCallWithCaps endpointId caller msg endpointRights
-             callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     queueHeadBlockedConsistent st' := by
   simp only [endpointCallWithCaps] at hStep
   cases hCall : endpointCall endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
@@ -19418,11 +19423,12 @@ theorem endpointCallWithCaps_preserves_queueHeadBlockedConsistent
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hQHBCMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_queueHeadBlockedConsistent { msg with capsGranted := endpointRights.mem AccessRight.grant } callerCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_queueHeadBlockedConsistent { msg with capsGranted := endpointRights.mem AccessRight.grant } recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hQHBCMid hStep
 
 open SeLe4n.Model.SystemState in
@@ -19432,7 +19438,7 @@ writes only CNode caps). -/
 theorem endpointCallWithCaps_preserves_queueNextTargetBlocked
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hQNTB : queueNextTargetBlocked st)
     (hDQSI : dualQueueSystemInvariant st)
@@ -19454,7 +19460,7 @@ theorem endpointCallWithCaps_preserves_queueNextTargetBlocked
         (epId' = endpointId →
           ep'.receiveQ.tail ≠ some tailTid))
     (hStep : endpointCallWithCaps endpointId caller msg endpointRights
-             callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     queueNextTargetBlocked st' := by
   simp only [endpointCallWithCaps] at hStep
   cases hCall : endpointCall endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
@@ -19476,11 +19482,12 @@ theorem endpointCallWithCaps_preserves_queueNextTargetBlocked
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hQNTBMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_queueNextTargetBlocked { msg with capsGranted := endpointRights.mem AccessRight.grant } callerCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_queueNextTargetBlocked { msg with capsGranted := endpointRights.mem AccessRight.grant } recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hQNTBMid hStep
 
 /-- IPC de-threading D2 (de-threaded): `endpointReceiveDual` preserves `ipcInvariantFull`,
@@ -19921,7 +19928,7 @@ theorem notificationWait_preserves_ipcInvariantFull
 -- WS-SM SM6.D reply-fold (PR #827 review #3): folded `endpointReply*` peels
 -- that consume the late per-conjunct `consumeCallerReply` frames
 -- (`queueNextBlockingConsistent` / `queueHeadBlockedConsistent` /
--- `blockedOnReplyHasTarget` / `pendingReceiveReplyWellFormed`).  Relocated
+-- `blockedOnReplyHasTarget` / `pendingReceiveReplyWellFormed`). Relocated
 -- below those frames (definition-before-use within the file) and directly
 -- above the `ipcInvariantFull` bundles that consume them.
 -- ============================================================================
@@ -20052,9 +20059,9 @@ theorem endpointReplyRecv_preserves_blockedOnReplyHasTarget
         · simp at hStep
 
 open SeLe4n.Model.SystemState in
-/-- D3: `endpointReply` frames `pendingReceiveReplyWellFormed`.  It unblocks the
+/-- D3: `endpointReply` frames `pendingReceiveReplyWellFormed`. It unblocks the
 `.blockedOnReply` target to `.ready`; that target — being `.blockedOnReply` in
-the pre-state — does not stash, so the wake frames C1.  `ensureRunnable` is an
+the pre-state — does not stash, so the wake frames C1. `ensureRunnable` is an
 object-store no-op, and the folded consume frees a reply / clears a
 `replyObject` (neither an `ipcState` nor a `pendingReceiveReply`). -/
 theorem endpointReply_preserves_pendingReceiveReplyWellFormed
@@ -20117,7 +20124,7 @@ theorem endpointReply_preserves_pendingReceiveReplyWellFormed
 
 open SeLe4n.Model.SystemState in
 /-- PR #827 #3 fold: `consumeCallerReply` preserves `replyIdEstablishFresh` for
-the receive-leg reply id.  The consume writes the consumed reply's
+the receive-leg reply id. The consume writes the consumed reply's
 `caller := none` — which *re-establishes* the free half outright when the two
 ids coincide — and the answered caller's `replyObject := none` (a TCB store
 that never touches a `pendingReceiveReply`), so both halves transport. -/
@@ -20335,7 +20342,7 @@ theorem endpointReplyRecv_preserves_pendingReceiveReplyWellFormed
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2b: `endpointReplyRecv` **establishes** `endpointQueueTailBlockedConsistent`
-from the pre-state.  Composes the reply phase (`storeTcbIpcStateAndMessage replyTarget .ready` +
+from the pre-state. Composes the reply phase (`storeTcbIpcStateAndMessage replyTarget .ready` +
 `ensureRunnable` + the folded consume; the unblocked `.blockedOnReply replyTarget` is no endpoint tail,
 so the tail-blocked + head-blocked + dualQueue frames survive) with the `endpointReceiveDual` receive
 leg (tail-blocked establisher), its preconditions (`endpointQueueTailBlockedConsistent`,
@@ -20477,7 +20484,7 @@ theorem endpointReplyRecv_preserves_endpointQueueTailBlockedConsistent
         (by have : stR = (stR.1, stR.2) := Prod.ext rfl rfl; rw [this] at hRecv; exact hRecv)
 
 open SeLe4n.Model.SystemState in
-/-- D4: `endpointReply` frames `queueHeadBlockedConsistent`.  The `.blockedOnReply`
+/-- D4: `endpointReply` frames `queueHeadBlockedConsistent`. The `.blockedOnReply`
 target is not an endpoint queue head (heads are `.blockedOnSend`/`Receive`/`Call`),
 so the `.ready` write frames heads via `hNotHead`; the folded consume writes only
 a reply and a `replyObject`. -/
@@ -20723,7 +20730,7 @@ theorem endpointReplyRecv_preserves_ipcStateQueueMembershipConsistent
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.8: the reply delivery's **object-level** frame — every slot other
-than the answered caller's and its Reply's reads back to the pre-state.  Lets the
+than the answered caller's and its Reply's reads back to the pre-state. Lets the
 `.replyRecv` fold transport its receive leg's pre-state side conditions
 (`queueHeadBlockedConsistent`, the receiver's readiness) across the reply leg
 instead of restating them at an internal state no caller can see. -/
@@ -20903,7 +20910,7 @@ open SeLe4n.Model.SystemState in
 `replyCallerLinkageReciprocal` with **no post-state hypothesis** — the delivery
 wakes the answered caller `.ready` and the folded consume tears down exactly its
 (unique, by pre-state reciprocity) caller↔Reply edge, so reciprocity carries from
-the pre-state.  An unlinked caller (`replyObject = none`) has, by the pre-state
+the pre-state. An unlinked caller (`replyObject = none`) has, by the pre-state
 backward clause, no Reply naming it, so the wake alone preserves both clauses. -/
 theorem endpointReply_preserves_replyCallerLinkageReciprocal
     (st st' : SystemState) (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
@@ -20970,7 +20977,7 @@ theorem endpointReply_preserves_replyCallerLinkageReciprocal
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.4: on a successful `endpointReplyRecv` the two thread arguments are
-distinct — **derived from the transition, not assumed**.  The `.ok` outcome forces
+distinct — **derived from the transition, not assumed**. The `.ok` outcome forces
 `replyTarget` to have been `.blockedOnReply` in the pre-state (every other
 `ipcState` arm answers `.replyCapInvalid`), while `hReceiverReady` puts `receiver`
 at `.ready`, and the two states are different constructors.
@@ -21098,7 +21105,7 @@ theorem endpointReply_preserves_objects_invExt
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.9: away from the answered caller, `endpointReply` leaves every
-thread's `ipcState` alone.  The reply writes the target TCB and its Reply; a slot
+thread's `ipcState` alone. The reply writes the target TCB and its Reply; a slot
 that still holds a TCB afterwards is neither, so it reads back to the pre-state. -/
 theorem endpointReply_ipcState_backward_off_target
     (st st' : SystemState) (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
@@ -21158,7 +21165,7 @@ open SeLe4n.Model.SystemState in
 from the pre-state, by composition rather than by re-proof.
 
 `endpointReplyRecv_eq_reply_then_receive` reduces the fold to `endpointReply`
-followed by `endpointReceiveDual`, and each leg already has its establisher.  The
+followed by `endpointReceiveDual`, and each leg already has its establisher. The
 receive leg's two pre-state side conditions transport across the reply leg:
 `queueHeadBlockedConsistent` by `endpointReply_preserves_queueHeadBlockedConsistent`,
 and the receiver's readiness because the receiver is a different thread from the
@@ -21207,7 +21214,7 @@ theorem endpointReplyRecv_preserves_replyCallerLinkageReciprocal
 
 /-- IPC de-threading D2 (de-threaded): `endpointReply` preserves `ipcInvariantFull`,
 *preserving* the `replyCallerLinkage` third clause (framed — the reply only unblocks the
-target) rather than threading it.  All four core components derived internally.
+target) rather than threading it. All four core components derived internally.
 PR #827 review #3 (reply-fold payoff): `replyCallerLinkageReciprocal` is likewise
 **established internally** (`hRCLRecip'` de-threaded) — the folded single-use consume
 tears down exactly the answered caller↔Reply edge, so a direct reply preserves
@@ -21271,7 +21278,7 @@ theorem endpointReply_preserves_ipcInvariantFullExceptDonationOwner
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.12: `endpointReply` **establishes** the full `donationOwnerValid` on a
-reply that answers a caller which donated nothing.  `hNoDonationOwnedBy` is a
+reply that answers a caller which donated nothing. `hNoDonationOwnedBy` is a
 condition on the *pre*-state, so it is dischargeable before the step, unlike the
 post-state `hDOV'` it replaces; the reply preserves every `schedContextBinding`, so
 it carries forward and closes the relaxation. -/
@@ -21301,7 +21308,7 @@ The threaded post-state `hDOV'` this replaces was worse than an assumption: on t
 *donating* path — the ordinary seL4-MCS one — `donationOwnerValid` of this
 transition's own post-state is **false** (the reply wakes the caller `.ready` while
 the server still holds `.donated _ caller`), so the bundle asserted nothing exactly
-there.  `hNoDonationOwnedBy` is a pre-state condition, hence dischargeable, and
+there. `hNoDonationOwnedBy` is a pre-state condition, hence dischargeable, and
 carves out precisely the path on which the full bundle is true of a bare reply.
 
 The donating path is covered by
@@ -21384,7 +21391,7 @@ theorem endpointReplyRecv_establishes_donationOwnerValid_of_no_donation_owned_by
 
 /-- IPC de-threading D2 (de-threaded): `endpointReplyRecv` preserves `ipcInvariantFull`,
 *preserving* the `replyCallerLinkage` third clause (the unblock frames it, the receive leg
-establishes it) rather than threading it.  `allPendingMessagesBounded` / `badgeWellFormed`
+establishes it) rather than threading it. `allPendingMessagesBounded` / `badgeWellFormed`
 derived internally. -/
 theorem endpointReplyRecv_preserves_ipcInvariantFull
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
@@ -21397,7 +21404,7 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     -- WS-RR RR3.12: replaces the threaded post-state `hDOV'`, which no state on the
     -- donating path satisfies (the reply leg wakes the answered caller `.ready` while
-    -- the server still holds its donation).  A pre-state condition, hence
+    -- the server still holds its donation). A pre-state condition, hence
     -- dischargeable; the donating path is covered by the composite reply transitions,
     -- whose donation return upgrades the relaxed form back to the full one.
     (hNoDonationOwnedBy : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
@@ -21496,7 +21503,7 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull
 -- ============================================================================
 -- IPC de-threading D8: `*WithCaps` wiring establishers for the cap-transfer-touched
 -- conjuncts (`allPendingMessagesBounded` / `endpointQueueNoDup` /
--- `ipcStateQueueMembershipConsistent`).  Each composes the base transition's
+-- `ipcStateQueueMembershipConsistent`). Each composes the base transition's
 -- pre-state establish (`st → stMid`) with the cap-transfer frame (`stMid → st'`),
 -- so the `*WithCaps` `ipcInvariantFull` bundles no longer thread these post-state
 -- hypotheses.
@@ -21507,11 +21514,11 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull
 theorem endpointSendDualWithCaps_preserves_allPendingMessagesBounded
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : allPendingMessagesBounded st) (hObjInv : st.objects.invExt)
     (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
-             senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     allPendingMessagesBounded st' := by
   simp only [endpointSendDualWithCaps] at hStep
   cases hSend : endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
@@ -21533,11 +21540,12 @@ theorem endpointSendDualWithCaps_preserves_allPendingMessagesBounded
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_allPendingMessagesBounded { msg with capsGranted := endpointRights.mem AccessRight.grant } senderCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_allPendingMessagesBounded { msg with capsGranted := endpointRights.mem AccessRight.grant } recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hMid hStep
 
 /-- WS-RR RR3.8: `endpointSendDualWithCaps` **establishes**
@@ -21547,14 +21555,14 @@ the cap transfer writes CNode slots and the CDT, never a `replyObject`, an
 theorem endpointSendDualWithCaps_preserves_replyCallerLinkageReciprocal
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt) (hInv : replyCallerLinkageReciprocal st)
     (hQHBC : queueHeadBlockedConsistent st)
     (hSenderNotReply : ∀ (tcb : TCB), st.objects[sender.toObjId]? = some (.tcb tcb) →
         ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
     (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
-             senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     replyCallerLinkageReciprocal st' := by
   simp only [endpointSendDualWithCaps] at hStep
   cases hSend : endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
@@ -21577,26 +21585,27 @@ theorem endpointSendDualWithCaps_preserves_replyCallerLinkageReciprocal
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
             exact ipcUnwrapCaps_preserves_replyCallerLinkageReciprocal
-              { msg with capsGranted := endpointRights.mem AccessRight.grant } senderCspaceRoot
+              { msg with capsGranted := endpointRights.mem AccessRight.grant }
               recvRoot receiverSlotBase _ stMid st' summary hObjInvMid hMid hStep
 
 /-- WS-RR RR3.8: `endpointCallWithCaps` **establishes** `replyCallerLinkageReciprocal`. -/
 theorem endpointCallWithCaps_preserves_replyCallerLinkageReciprocal
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt) (hInv : replyCallerLinkageReciprocal st)
     (hQHBC : queueHeadBlockedConsistent st)
     (hCallerNotReply : ∀ (tcb : TCB), st.objects[caller.toObjId]? = some (.tcb tcb) →
         ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
     (hStep : endpointCallWithCaps endpointId caller msg endpointRights
-             callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     replyCallerLinkageReciprocal st' := by
   simp only [endpointCallWithCaps] at hStep
   cases hCall : endpointCall endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
@@ -21619,12 +21628,13 @@ theorem endpointCallWithCaps_preserves_replyCallerLinkageReciprocal
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
             exact ipcUnwrapCaps_preserves_replyCallerLinkageReciprocal
-              { msg with capsGranted := endpointRights.mem AccessRight.grant } callerCspaceRoot
+              { msg with capsGranted := endpointRights.mem AccessRight.grant }
               recvRoot receiverSlotBase _ stMid st' summary hObjInvMid hMid hStep
 
 /-- WS-RR RR3.8: `endpointReceiveDualWithCaps` **establishes**
@@ -21664,19 +21674,15 @@ theorem endpointReceiveDualWithCaps_preserves_replyCallerLinkageReciprocal
         simp [hMsg] at hStep
         split at hStep
         · obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hMid
-        · cases hLookup : lookupCspaceRoot stMid sid with
-          | none => simp only [hLookup] at hStep; contradiction
-          | some senderRoot =>
-            simp only [hLookup] at hStep
-            cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase msg.capsGranted stMid with
-            | error e => simp [hUnwrap] at hStep
-            | ok pairU =>
-              rcases pairU with ⟨sm, stFinal⟩
-              simp [hUnwrap] at hStep
-              obtain ⟨⟨_, _⟩, rfl⟩ := hStep
-              exact ipcUnwrapCaps_preserves_replyCallerLinkageReciprocal msg senderRoot
-                receiverCspaceRoot receiverSlotBase _ stMid stFinal sm hObjInvMid hMid hUnwrap
+        · cases hUnwrap : ipcUnwrapCaps msg receiverCspaceRoot
+              receiverSlotBase msg.capsGranted stMid with
+          | error e => simp [hUnwrap] at hStep
+          | ok pairU =>
+            rcases pairU with ⟨sm, stFinal⟩
+            simp [hUnwrap] at hStep
+            obtain ⟨⟨_, _⟩, rfl⟩ := hStep
+            exact ipcUnwrapCaps_preserves_replyCallerLinkageReciprocal msg
+              receiverCspaceRoot receiverSlotBase _ stMid stFinal sm hObjInvMid hMid hUnwrap
 
 /-- WS-RR RR3.3: `endpointSendDualWithCaps` **establishes**
 `blockedThreadsPendingMessageConsistent` (base send establish + the
@@ -21685,11 +21691,11 @@ never a TCB's `ipcState` or `pendingMessage`). -/
 theorem endpointSendDualWithCaps_preserves_blockedThreadsPendingMessageConsistent
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt) (hInv : blockedThreadsPendingMessageConsistent st)
     (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
-             senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     blockedThreadsPendingMessageConsistent st' := by
   simp only [endpointSendDualWithCaps] at hStep
   cases hSend : endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
@@ -21711,12 +21717,13 @@ theorem endpointSendDualWithCaps_preserves_blockedThreadsPendingMessageConsisten
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
             exact ipcUnwrapCaps_preserves_blockedThreadsPendingMessageConsistent
-              { msg with capsGranted := endpointRights.mem AccessRight.grant } senderCspaceRoot recvRoot
+              { msg with capsGranted := endpointRights.mem AccessRight.grant } recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hMid hStep
 
 /-- WS-RR RR3.3: `endpointCallWithCaps` **establishes**
@@ -21724,11 +21731,11 @@ theorem endpointSendDualWithCaps_preserves_blockedThreadsPendingMessageConsisten
 theorem endpointCallWithCaps_preserves_blockedThreadsPendingMessageConsistent
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt) (hInv : blockedThreadsPendingMessageConsistent st)
     (hStep : endpointCallWithCaps endpointId caller msg endpointRights
-             callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     blockedThreadsPendingMessageConsistent st' := by
   simp only [endpointCallWithCaps] at hStep
   cases hCall : endpointCall endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
@@ -21750,12 +21757,13 @@ theorem endpointCallWithCaps_preserves_blockedThreadsPendingMessageConsistent
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
             exact ipcUnwrapCaps_preserves_blockedThreadsPendingMessageConsistent
-              { msg with capsGranted := endpointRights.mem AccessRight.grant } callerCspaceRoot recvRoot
+              { msg with capsGranted := endpointRights.mem AccessRight.grant } recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hMid hStep
 
 /-- WS-RR RR3.3: `endpointReceiveDualWithCaps` **establishes**
@@ -21792,26 +21800,22 @@ theorem endpointReceiveDualWithCaps_preserves_blockedThreadsPendingMessageConsis
         simp [hMsg] at hStep
         split at hStep
         · obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hMid
-        · cases hLookup : lookupCspaceRoot stMid sid with
-          | none => simp only [hLookup] at hStep; contradiction
-          | some senderRoot =>
-            simp only [hLookup] at hStep
-            cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase msg.capsGranted stMid with
-            | error e => simp [hUnwrap] at hStep
-            | ok pair =>
-              rcases pair with ⟨sm, stFinal⟩
-              simp [hUnwrap] at hStep
-              obtain ⟨⟨_, _⟩, rfl⟩ := hStep
-              exact ipcUnwrapCaps_preserves_blockedThreadsPendingMessageConsistent msg senderRoot
-                receiverCspaceRoot receiverSlotBase _ stMid stFinal sm hObjInvMid hMid hUnwrap
+        · cases hUnwrap : ipcUnwrapCaps msg receiverCspaceRoot
+              receiverSlotBase msg.capsGranted stMid with
+          | error e => simp [hUnwrap] at hStep
+          | ok pair =>
+            rcases pair with ⟨sm, stFinal⟩
+            simp [hUnwrap] at hStep
+            obtain ⟨⟨_, _⟩, rfl⟩ := hStep
+            exact ipcUnwrapCaps_preserves_blockedThreadsPendingMessageConsistent msg
+              receiverCspaceRoot receiverSlotBase _ stMid stFinal sm hObjInvMid hMid hUnwrap
 
 /-- IPC de-threading D8: `endpointSendDualWithCaps` establishes `endpointQueueNoDup`
 (base send establish + the `ipcUnwrapCaps` frame). -/
 theorem endpointSendDualWithCaps_preserves_endpointQueueNoDup
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : endpointQueueNoDup st) (hDQSI : dualQueueSystemInvariant st)
     (hObjInv : st.objects.invExt)
@@ -21829,7 +21833,7 @@ theorem endpointSendDualWithCaps_preserves_endpointQueueNoDup
         (epId' = endpointId →
           ep'.receiveQ.tail ≠ some tailTid))
     (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
-             senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     endpointQueueNoDup st' := by
   simp only [endpointSendDualWithCaps] at hStep
   cases hSend : endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
@@ -21851,11 +21855,12 @@ theorem endpointSendDualWithCaps_preserves_endpointQueueNoDup
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_endpointQueueNoDup { msg with capsGranted := endpointRights.mem AccessRight.grant } senderCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_endpointQueueNoDup { msg with capsGranted := endpointRights.mem AccessRight.grant } recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hMid hStep
 
 /-- IPC de-threading D8: `endpointSendDualWithCaps` establishes
@@ -21863,7 +21868,7 @@ theorem endpointSendDualWithCaps_preserves_endpointQueueNoDup
 theorem endpointSendDualWithCaps_preserves_ipcStateQueueMembershipConsistent
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInvFull : ipcInvariantFull st) (hObjInv : st.objects.invExt)
     (hFreshSender : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
@@ -21880,7 +21885,7 @@ theorem endpointSendDualWithCaps_preserves_ipcStateQueueMembershipConsistent
         (epId' = endpointId →
           ep'.receiveQ.tail ≠ some tailTid))
     (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
-             senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     ipcStateQueueMembershipConsistent st' := by
   simp only [endpointSendDualWithCaps] at hStep
   cases hSend : endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
@@ -21902,11 +21907,12 @@ theorem endpointSendDualWithCaps_preserves_ipcStateQueueMembershipConsistent
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_ipcStateQueueMembershipConsistent { msg with capsGranted := endpointRights.mem AccessRight.grant } senderCspaceRoot
+            exact ipcUnwrapCaps_preserves_ipcStateQueueMembershipConsistent { msg with capsGranted := endpointRights.mem AccessRight.grant }
               recvRoot receiverSlotBase _ stMid st' summary hObjInvMid hMid hStep
 
 /-- IPC de-threading D8: `endpointReceiveDualWithCaps` establishes `allPendingMessagesBounded`
@@ -21945,19 +21951,15 @@ theorem endpointReceiveDualWithCaps_preserves_allPendingMessagesBounded
         simp [hMsg] at hStep
         split at hStep
         · obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hMid
-        · cases hLookup : lookupCspaceRoot stMid sid with
-          | none => simp only [hLookup] at hStep; contradiction
-          | some senderRoot =>
-            simp only [hLookup] at hStep
-            cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase msg.capsGranted stMid with
-            | error e => simp [hUnwrap] at hStep
-            | ok pair =>
-              rcases pair with ⟨s, stFinal⟩
-              simp [hUnwrap] at hStep
-              obtain ⟨⟨_, _⟩, rfl⟩ := hStep
-              exact ipcUnwrapCaps_preserves_allPendingMessagesBounded msg senderRoot receiverCspaceRoot
-                receiverSlotBase _ stMid stFinal s hObjInvMid hMid hUnwrap
+        · cases hUnwrap : ipcUnwrapCaps msg receiverCspaceRoot
+              receiverSlotBase msg.capsGranted stMid with
+          | error e => simp [hUnwrap] at hStep
+          | ok pair =>
+            rcases pair with ⟨s, stFinal⟩
+            simp [hUnwrap] at hStep
+            obtain ⟨⟨_, _⟩, rfl⟩ := hStep
+            exact ipcUnwrapCaps_preserves_allPendingMessagesBounded msg receiverCspaceRoot
+              receiverSlotBase _ stMid stFinal s hObjInvMid hMid hUnwrap
 
 /-- IPC de-threading D8: `endpointReceiveDualWithCaps` establishes `endpointQueueNoDup`
 (base receive establish + the `ipcUnwrapCaps` frame). -/
@@ -22009,19 +22011,15 @@ theorem endpointReceiveDualWithCaps_preserves_endpointQueueNoDup
         simp [hMsg] at hStep
         split at hStep
         · obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hMid
-        · cases hLookup : lookupCspaceRoot stMid sid with
-          | none => simp only [hLookup] at hStep; contradiction
-          | some senderRoot =>
-            simp only [hLookup] at hStep
-            cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase msg.capsGranted stMid with
-            | error e => simp [hUnwrap] at hStep
-            | ok pair =>
-              rcases pair with ⟨s, stFinal⟩
-              simp [hUnwrap] at hStep
-              obtain ⟨⟨_, _⟩, rfl⟩ := hStep
-              exact ipcUnwrapCaps_preserves_endpointQueueNoDup msg senderRoot receiverCspaceRoot
-                receiverSlotBase _ stMid stFinal s hObjInvMid hMid hUnwrap
+        · cases hUnwrap : ipcUnwrapCaps msg receiverCspaceRoot
+              receiverSlotBase msg.capsGranted stMid with
+          | error e => simp [hUnwrap] at hStep
+          | ok pair =>
+            rcases pair with ⟨s, stFinal⟩
+            simp [hUnwrap] at hStep
+            obtain ⟨⟨_, _⟩, rfl⟩ := hStep
+            exact ipcUnwrapCaps_preserves_endpointQueueNoDup msg receiverCspaceRoot
+              receiverSlotBase _ stMid stFinal s hObjInvMid hMid hUnwrap
 
 /-- IPC de-threading D8: `endpointReceiveDualWithCaps` establishes
 `ipcStateQueueMembershipConsistent` (base receive establish + the `ipcUnwrapCaps` frame). -/
@@ -22074,30 +22072,26 @@ theorem endpointReceiveDualWithCaps_preserves_ipcStateQueueMembershipConsistent
         simp [hMsg] at hStep
         split at hStep
         · obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hMid
-        · cases hLookup : lookupCspaceRoot stMid sid with
-          | none => simp only [hLookup] at hStep; contradiction
-          | some senderRoot =>
-            simp only [hLookup] at hStep
-            cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase msg.capsGranted stMid with
-            | error e => simp [hUnwrap] at hStep
-            | ok pair =>
-              rcases pair with ⟨s, stFinal⟩
-              simp [hUnwrap] at hStep
-              obtain ⟨⟨_, _⟩, rfl⟩ := hStep
-              exact ipcUnwrapCaps_preserves_ipcStateQueueMembershipConsistent msg senderRoot
-                receiverCspaceRoot receiverSlotBase _ stMid stFinal s hObjInvMid hMid hUnwrap
+        · cases hUnwrap : ipcUnwrapCaps msg receiverCspaceRoot
+              receiverSlotBase msg.capsGranted stMid with
+          | error e => simp [hUnwrap] at hStep
+          | ok pair =>
+            rcases pair with ⟨s, stFinal⟩
+            simp [hUnwrap] at hStep
+            obtain ⟨⟨_, _⟩, rfl⟩ := hStep
+            exact ipcUnwrapCaps_preserves_ipcStateQueueMembershipConsistent msg
+              receiverCspaceRoot receiverSlotBase _ stMid stFinal s hObjInvMid hMid hUnwrap
 
 /-- IPC de-threading D8: `endpointCallWithCaps` establishes `allPendingMessagesBounded`
 (base call establish + the `ipcUnwrapCaps` frame). -/
 theorem endpointCallWithCaps_preserves_allPendingMessagesBounded
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : allPendingMessagesBounded st) (hObjInv : st.objects.invExt)
     (hStep : endpointCallWithCaps endpointId caller msg endpointRights
-             callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     allPendingMessagesBounded st' := by
   simp only [endpointCallWithCaps] at hStep
   cases hCall : endpointCall endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
@@ -22119,11 +22113,12 @@ theorem endpointCallWithCaps_preserves_allPendingMessagesBounded
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_allPendingMessagesBounded { msg with capsGranted := endpointRights.mem AccessRight.grant } callerCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_allPendingMessagesBounded { msg with capsGranted := endpointRights.mem AccessRight.grant } recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hMid hStep
 
 /-- IPC de-threading D8: `endpointCallWithCaps` establishes `endpointQueueNoDup`
@@ -22131,7 +22126,7 @@ theorem endpointCallWithCaps_preserves_allPendingMessagesBounded
 theorem endpointCallWithCaps_preserves_endpointQueueNoDup
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : endpointQueueNoDup st) (hDQSI : dualQueueSystemInvariant st)
     (hObjInv : st.objects.invExt)
@@ -22149,7 +22144,7 @@ theorem endpointCallWithCaps_preserves_endpointQueueNoDup
         (epId' = endpointId →
           ep'.receiveQ.tail ≠ some tailTid))
     (hStep : endpointCallWithCaps endpointId caller msg endpointRights
-             callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     endpointQueueNoDup st' := by
   simp only [endpointCallWithCaps] at hStep
   cases hCall : endpointCall endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
@@ -22171,11 +22166,12 @@ theorem endpointCallWithCaps_preserves_endpointQueueNoDup
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_endpointQueueNoDup { msg with capsGranted := endpointRights.mem AccessRight.grant } callerCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_endpointQueueNoDup { msg with capsGranted := endpointRights.mem AccessRight.grant } recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hMid hStep
 
 /-- IPC de-threading D8: `endpointCallWithCaps` establishes
@@ -22183,7 +22179,7 @@ theorem endpointCallWithCaps_preserves_endpointQueueNoDup
 theorem endpointCallWithCaps_preserves_ipcStateQueueMembershipConsistent
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInvFull : ipcInvariantFull st) (hObjInv : st.objects.invExt)
     (hFreshCaller : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
@@ -22200,7 +22196,7 @@ theorem endpointCallWithCaps_preserves_ipcStateQueueMembershipConsistent
         (epId' = endpointId →
           ep'.receiveQ.tail ≠ some tailTid))
     (hStep : endpointCallWithCaps endpointId caller msg endpointRights
-             callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     ipcStateQueueMembershipConsistent st' := by
   simp only [endpointCallWithCaps] at hStep
   cases hCall : endpointCall endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
@@ -22222,11 +22218,12 @@ theorem endpointCallWithCaps_preserves_ipcStateQueueMembershipConsistent
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the pre-state.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_ipcStateQueueMembershipConsistent { msg with capsGranted := endpointRights.mem AccessRight.grant } callerCspaceRoot
+            exact ipcUnwrapCaps_preserves_ipcStateQueueMembershipConsistent { msg with capsGranted := endpointRights.mem AccessRight.grant }
               recvRoot receiverSlotBase _ stMid st' summary hObjInvMid hMid hStep
 
 /-- IPC de-threading D2 (de-threaded): `endpointSendDualWithCaps` preserves
@@ -22235,7 +22232,7 @@ threading it. -/
 theorem endpointSendDualWithCaps_preserves_ipcInvariantFull
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
@@ -22272,80 +22269,80 @@ theorem endpointSendDualWithCaps_preserves_ipcInvariantFull
     (hSenderNotUnbound : ∀ (tcb : TCB), st.objects[sender.toObjId]? = some (.tcb tcb) →
         tcb.schedContextBinding ≠ .unbound)
     (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
-             senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     ipcInvariantFull st' := by
   -- IPC de-threading D6: `donationOwnerValid` established from the pre-state (base frame +
   -- the cap-transfer frame — `ipcUnwrapCaps` writes only CNode caps).
   have hDOVest := endpointSendDualWithCaps_preserves_donationOwnerValid endpointId sender msg
-    endpointRights senderCspaceRoot receiverSlotBase st st' summary hObjInv
+    endpointRights receiverSlotBase st st' summary hObjInv
     hInv.queueHeadBlockedConsistent hSenderNotReply hInv.donationOwnerValid hStep
   -- IPC de-threading D6: `passiveServerIdle` established — the `.blockedOnSend` descheduled sender
   -- holds a SchedContext; the cap-transfer leaves every TCB byte-identical.
   have hPSIest := endpointSendDualWithCaps_preserves_passiveServerIdle endpointId sender msg
-    endpointRights senderCspaceRoot receiverSlotBase st st' summary hObjInv hSenderNotUnbound
+    endpointRights receiverSlotBase st st' summary hObjInv hSenderNotUnbound
     hInv.passiveServerIdle hStep
   exact ⟨endpointSendDualWithCaps_preserves_ipcInvariant endpointId sender msg
-     endpointRights senderCspaceRoot receiverSlotBase st st' summary hInv.1 hObjInv hStep,
+     endpointRights receiverSlotBase st st' summary hInv.1 hObjInv hStep,
    -- WS-RR RR3.11: `dualQueueSystemInvariant` **established** (base send + cap-transfer frame).
    endpointSendDualWithCaps_preserves_dualQueueSystemInvariant endpointId sender msg
-     endpointRights senderCspaceRoot receiverSlotBase st st' summary
+     endpointRights receiverSlotBase st st' summary
      hInv.dualQueueSystemInvariant hFreshSender hSendTailFresh hObjInv hStep,
    -- IPC de-threading D8: allPendingMessagesBounded **established** (base + cap-transfer frame).
    endpointSendDualWithCaps_preserves_allPendingMessagesBounded endpointId sender msg endpointRights
-     senderCspaceRoot receiverSlotBase st st' summary hInv.2.2.1 hObjInv hStep,
+     receiverSlotBase st st' summary hInv.2.2.1 hObjInv hStep,
    -- WS-RR RR3.11: `badgeWellFormed` **established** (base send frame + the transfer's own
    -- frame, discharged by the message-argument condition `hMsgCaps`).
    endpointSendDualWithCaps_preserves_badgeWellFormed endpointId sender msg endpointRights
-     senderCspaceRoot receiverSlotBase st st' summary hInv.badgeWellFormed hObjInv hMsgCaps hStep,
+     receiverSlotBase st st' summary hInv.badgeWellFormed hObjInv hMsgCaps hStep,
    -- WS-RR RR3.3: `blockedThreadsPendingMessageConsistent` **established** (base + cap-transfer frame).
    endpointSendDualWithCaps_preserves_blockedThreadsPendingMessageConsistent endpointId sender msg
-     endpointRights senderCspaceRoot receiverSlotBase st st' summary hObjInv
+     endpointRights receiverSlotBase st st' summary hObjInv
      hInv.blockedThreadsPendingMessageConsistent hStep,
    -- IPC de-threading D8: endpointQueueNoDup / ipcStateQueueMembershipConsistent **established**.
    endpointSendDualWithCaps_preserves_endpointQueueNoDup endpointId sender msg endpointRights
-     senderCspaceRoot receiverSlotBase st st' summary hInv.endpointQueueNoDup hInv.2.1 hObjInv
+     receiverSlotBase st st' summary hInv.endpointQueueNoDup hInv.2.1 hObjInv
      hFreshSender hSendTailFresh hStep,
    endpointSendDualWithCaps_preserves_ipcStateQueueMembershipConsistent endpointId sender msg
-     endpointRights senderCspaceRoot receiverSlotBase st st' summary hInv hObjInv hFreshSender
+     endpointRights receiverSlotBase st st' summary hInv hObjInv hFreshSender
      hSendTailFresh hStep,
    -- IPC de-threading D4 Slice 2b: queueNext **established** from the pre-state (base + cap-transfer frame).
    endpointSendDualWithCaps_preserves_queueNextBlockingConsistent endpointId sender msg endpointRights
-     senderCspaceRoot receiverSlotBase st st' summary hInv.queueNextBlockingConsistent hInv.2.1
+     receiverSlotBase st st' summary hInv.queueNextBlockingConsistent hInv.2.1
      hInv.endpointQueueTailBlockedConsistent hObjInv hFreshSender hSendTailFresh hStep,
    -- IPC de-threading D4 Slice 2c: queueHeadBlockedConsistent **established** from the pre-state
    -- (base establish via pop+enqueue keystone; the cap-transfer frames every endpoint head).
    endpointSendDualWithCaps_preserves_queueHeadBlockedConsistent endpointId sender msg endpointRights
-     senderCspaceRoot receiverSlotBase st st' summary hInv.queueHeadBlockedConsistent
+     receiverSlotBase st st' summary hInv.queueHeadBlockedConsistent
      hInv.queueNextTargetBlocked hInv.2.1 hObjInv hFreshSender hStep,
-   endpointSendDualWithCaps_preserves_blockedThreadTimeoutConsistent endpointId sender msg endpointRights senderCspaceRoot receiverSlotBase st st' summary hObjInv hAllBudgetsNone hStep,
+   endpointSendDualWithCaps_preserves_blockedThreadTimeoutConsistent endpointId sender msg endpointRights receiverSlotBase st st' summary hObjInv hAllBudgetsNone hStep,
    donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSIest,
    donationBudgetTransfer_of_sameSchedContextBindings
-     (endpointSendDualWithCaps_sameSchedContextBindings endpointId sender msg endpointRights senderCspaceRoot receiverSlotBase st st' summary hObjInv hStep)
+     (endpointSendDualWithCaps_sameSchedContextBindings endpointId sender msg endpointRights receiverSlotBase st st' summary hObjInv hStep)
      hInv.donationBudgetTransfer,
-   endpointSendDualWithCaps_preserves_blockedOnReplyHasTarget endpointId sender msg endpointRights senderCspaceRoot receiverSlotBase st st' summary hInv.blockedOnReplyHasTarget hObjInv hStep,
+   endpointSendDualWithCaps_preserves_blockedOnReplyHasTarget endpointId sender msg endpointRights receiverSlotBase st st' summary hInv.blockedOnReplyHasTarget hObjInv hStep,
    ⟨endpointSendDualWithCaps_preserves_replyCallerLinkageReciprocal endpointId sender msg
-      endpointRights senderCspaceRoot receiverSlotBase st st' summary hObjInv
+      endpointRights receiverSlotBase st st' summary hObjInv
       hInv.replyCallerLinkage.1 hInv.queueHeadBlockedConsistent hSenderNotReply hStep,
     endpointSendDualWithCaps_preserves_blockedOnReplyHasReplyObject endpointId sender msg
-      endpointRights senderCspaceRoot receiverSlotBase st st' summary hInv.replyCallerLinkage.2 hObjInv hStep⟩,
+      endpointRights receiverSlotBase st st' summary hInv.replyCallerLinkage.2 hObjInv hStep⟩,
    -- IPC de-threading D3: **preserve** PRR from the pre-state (was threaded `hPRR'`).
    endpointSendDualWithCaps_preserves_pendingReceiveReplyWellFormed endpointId sender msg endpointRights
-     senderCspaceRoot receiverSlotBase st st' summary hObjInv hInv.pendingReceiveReplyWellFormed
+     receiverSlotBase st st' summary hObjInv hInv.pendingReceiveReplyWellFormed
      hSenderNotRecv hStep,
    donationOwnerUnique_of_sameSchedContextBindings
      (endpointSendDualWithCaps_sameSchedContextBindings endpointId sender msg endpointRights
-       senderCspaceRoot receiverSlotBase st st' summary hObjInv hStep)
+       receiverSlotBase st st' summary hObjInv hStep)
      hInv.donationOwnerUnique,
    -- IPC de-threading D4 Slice 2b: tail-blocked **established** from the pre-state (base enqueue
    -- via core (c); the cap-transfer leaves every endpoint + TCB byte-identical).
    endpointSendDualWithCaps_preserves_endpointQueueTailBlockedConsistent endpointId sender msg
-     endpointRights senderCspaceRoot receiverSlotBase st st' summary
+     endpointRights receiverSlotBase st st' summary
      hInv.endpointQueueTailBlockedConsistent hInv.2.1 hInv.queueHeadBlockedConsistent hObjInv
      hFreshSender hStep,
    -- IPC de-threading D4 Slice 2c: queueNextTargetBlocked **established** from the pre-state
    -- (base send establish + the cap-transfer frame).
    endpointSendDualWithCaps_preserves_queueNextTargetBlocked endpointId sender msg
-     endpointRights senderCspaceRoot receiverSlotBase st st' summary hInv.queueNextTargetBlocked
+     endpointRights receiverSlotBase st st' summary hInv.queueNextTargetBlocked
      hInv.endpointQueueTailBlockedConsistent hInv.2.1 hObjInv hFreshSender hSendTailFresh hStep⟩
 
 /-- IPC de-threading D2 (de-threaded): `endpointReceiveDualWithCaps` preserves
@@ -22354,12 +22351,11 @@ receive establish + the cap-transfer frame) rather than threading it. -/
 theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : Option SeLe4n.ReplyId)
-   
     (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    -- WS-RR RR3.11: the pre-state in-flight badge invariant.  The caps this wrapper
+    -- WS-RR RR3.11: the pre-state in-flight badge invariant. The caps this wrapper
     -- installs are the ones in the message the base receive just delivered, so the
     -- transfer's side condition is discharged by transporting a *pre*-state property
     -- rather than by threading `badgeWellFormed` on the result.
@@ -22463,7 +22459,7 @@ cap-transfer frame) rather than threading it. -/
 theorem endpointCallWithCaps_preserves_ipcInvariantFull
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
@@ -22504,79 +22500,79 @@ theorem endpointCallWithCaps_preserves_ipcInvariantFull
     (hCallerReady : ∀ (tcb : TCB), st.objects[caller.toObjId]? = some (.tcb tcb) →
         tcb.ipcState = .ready)
     (hStep : endpointCallWithCaps endpointId caller msg endpointRights
-             callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     ipcInvariantFull st' := by
   -- IPC de-threading D6: `donationOwnerValid` established from the pre-state (base frame +
   -- the cap-transfer frame).
   have hDOVest := endpointCallWithCaps_preserves_donationOwnerValid endpointId caller msg
-    endpointRights callerCspaceRoot receiverSlotBase st st' summary hObjInv
+    endpointRights receiverSlotBase st st' summary hObjInv
     hInv.queueHeadBlockedConsistent hCallerNotReply hInv.donationOwnerValid hStep
   -- IPC de-threading D6: `passiveServerIdle` established — the `.blockedOnCall` descheduled caller
   -- holds a SchedContext; the cap-transfer leaves every TCB byte-identical.
   have hPSIest := endpointCallWithCaps_preserves_passiveServerIdle endpointId caller msg
-    endpointRights callerCspaceRoot receiverSlotBase st st' summary hObjInv hCallerNotUnbound
+    endpointRights receiverSlotBase st st' summary hObjInv hCallerNotUnbound
     hInv.passiveServerIdle hStep
   exact ⟨endpointCallWithCaps_preserves_ipcInvariant endpointId caller msg
-     endpointRights callerCspaceRoot receiverSlotBase st st' summary hInv.1 hObjInv hStep,
+     endpointRights receiverSlotBase st st' summary hInv.1 hObjInv hStep,
    -- WS-RR RR3.11: `dualQueueSystemInvariant` **established** (base call + cap-transfer frame).
    endpointCallWithCaps_preserves_dualQueueSystemInvariant endpointId caller msg endpointRights
-     callerCspaceRoot receiverSlotBase st st' summary hInv.dualQueueSystemInvariant hObjInv
+     receiverSlotBase st st' summary hInv.dualQueueSystemInvariant hObjInv
      hFreshCaller hSendTailFresh hStep,
    -- IPC de-threading D8: allPendingMessagesBounded **established** (base + cap-transfer frame).
    endpointCallWithCaps_preserves_allPendingMessagesBounded endpointId caller msg endpointRights
-     callerCspaceRoot receiverSlotBase st st' summary hInv.2.2.1 hObjInv hStep,
+     receiverSlotBase st st' summary hInv.2.2.1 hObjInv hStep,
    -- WS-RR RR3.11: `badgeWellFormed` **established** (base call frame + the transfer's own
    -- frame, discharged by the message-argument condition `hMsgCaps`).
    endpointCallWithCaps_preserves_badgeWellFormed endpointId caller msg endpointRights
-     callerCspaceRoot receiverSlotBase st st' summary hInv.badgeWellFormed hObjInv hMsgCaps hStep,
+     receiverSlotBase st st' summary hInv.badgeWellFormed hObjInv hMsgCaps hStep,
    -- WS-RR RR3.3: `blockedThreadsPendingMessageConsistent` **established** (base + cap-transfer frame).
    endpointCallWithCaps_preserves_blockedThreadsPendingMessageConsistent endpointId caller msg
-     endpointRights callerCspaceRoot receiverSlotBase st st' summary hObjInv
+     endpointRights receiverSlotBase st st' summary hObjInv
      hInv.blockedThreadsPendingMessageConsistent hStep,
    -- IPC de-threading D8: endpointQueueNoDup / ipcStateQueueMembershipConsistent **established**.
    endpointCallWithCaps_preserves_endpointQueueNoDup endpointId caller msg endpointRights
-     callerCspaceRoot receiverSlotBase st st' summary hInv.endpointQueueNoDup hInv.2.1 hObjInv
+     receiverSlotBase st st' summary hInv.endpointQueueNoDup hInv.2.1 hObjInv
      hFreshCaller hSendTailFresh hStep,
    endpointCallWithCaps_preserves_ipcStateQueueMembershipConsistent endpointId caller msg endpointRights
-     callerCspaceRoot receiverSlotBase st st' summary hInv hObjInv hFreshCaller hSendTailFresh hStep,
+     receiverSlotBase st st' summary hInv hObjInv hFreshCaller hSendTailFresh hStep,
    -- IPC de-threading D4 Slice 2b: queueNext **established** from the pre-state (base + cap-transfer frame).
    endpointCallWithCaps_preserves_queueNextBlockingConsistent endpointId caller msg endpointRights
-     callerCspaceRoot receiverSlotBase st st' summary hInv.queueNextBlockingConsistent hInv.2.1
+     receiverSlotBase st st' summary hInv.queueNextBlockingConsistent hInv.2.1
      hInv.endpointQueueTailBlockedConsistent hObjInv hFreshCaller hSendTailFresh hStep,
    -- IPC de-threading D4 Slice 2c: queueHeadBlockedConsistent **established** from the pre-state
    -- (base call establish + cap-transfer frame).
    endpointCallWithCaps_preserves_queueHeadBlockedConsistent endpointId caller msg endpointRights
-     callerCspaceRoot receiverSlotBase st st' summary hInv.queueHeadBlockedConsistent
+     receiverSlotBase st st' summary hInv.queueHeadBlockedConsistent
      hInv.queueNextTargetBlocked hInv.2.1 hObjInv hCallerNotRecv hFreshCaller hStep,
-   endpointCallWithCaps_preserves_blockedThreadTimeoutConsistent endpointId caller msg endpointRights callerCspaceRoot receiverSlotBase st st' summary hObjInv hAllBudgetsNone hStep,
+   endpointCallWithCaps_preserves_blockedThreadTimeoutConsistent endpointId caller msg endpointRights receiverSlotBase st st' summary hObjInv hAllBudgetsNone hStep,
    donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSIest,
    donationBudgetTransfer_of_sameSchedContextBindings
-     (endpointCallWithCaps_sameSchedContextBindings endpointId caller msg endpointRights callerCspaceRoot receiverSlotBase st st' summary hObjInv hStep)
+     (endpointCallWithCaps_sameSchedContextBindings endpointId caller msg endpointRights receiverSlotBase st st' summary hObjInv hStep)
      hInv.donationBudgetTransfer,
-   endpointCallWithCaps_establishes_blockedOnReplyHasTarget endpointId caller msg endpointRights callerCspaceRoot receiverSlotBase st st' summary hInv.blockedOnReplyHasTarget hObjInv hStep,
+   endpointCallWithCaps_establishes_blockedOnReplyHasTarget endpointId caller msg endpointRights receiverSlotBase st st' summary hInv.blockedOnReplyHasTarget hObjInv hStep,
    ⟨endpointCallWithCaps_preserves_replyCallerLinkageReciprocal endpointId caller msg
-      endpointRights callerCspaceRoot receiverSlotBase st st' summary hObjInv
+      endpointRights receiverSlotBase st st' summary hObjInv
       hInv.replyCallerLinkage.1 hInv.queueHeadBlockedConsistent hCallerNotReply hStep,
     endpointCallWithCaps_establishes_blockedOnReplyHasReplyObject endpointId caller msg
-      endpointRights callerCspaceRoot receiverSlotBase st st' summary hInv.replyCallerLinkage.2 hObjInv hStep⟩,
+      endpointRights receiverSlotBase st st' summary hInv.replyCallerLinkage.2 hObjInv hStep⟩,
    -- IPC de-threading D3: **establish** PRR from the pre-state (was threaded `hPRR'`).
    endpointCallWithCaps_preserves_pendingReceiveReplyWellFormed endpointId caller msg endpointRights
-     callerCspaceRoot receiverSlotBase st st' summary hObjInv hInv.pendingReceiveReplyWellFormed
+     receiverSlotBase st st' summary hObjInv hInv.pendingReceiveReplyWellFormed
      hCallerNotRecv hStep,
    donationOwnerUnique_of_sameSchedContextBindings
      (endpointCallWithCaps_sameSchedContextBindings endpointId caller msg endpointRights
-       callerCspaceRoot receiverSlotBase st st' summary hObjInv hStep)
+       receiverSlotBase st st' summary hObjInv hStep)
      hInv.donationOwnerUnique,
    -- IPC de-threading D4 Slice 2b: tail-blocked **established** from the pre-state (base call enqueue
    -- via core (c); the cap-transfer leaves every endpoint + TCB byte-identical).
    endpointCallWithCaps_preserves_endpointQueueTailBlockedConsistent endpointId caller msg
-     endpointRights callerCspaceRoot receiverSlotBase st st' summary
+     endpointRights receiverSlotBase st st' summary
      hInv.endpointQueueTailBlockedConsistent hInv.2.1 hInv.queueHeadBlockedConsistent hObjInv
      hFreshCaller hStep,
    -- IPC de-threading D4 Slice 2c: queueNextTargetBlocked **established** from the pre-state
    -- (base call establish + the cap-transfer frame).
    endpointCallWithCaps_preserves_queueNextTargetBlocked endpointId caller msg endpointRights
-     callerCspaceRoot receiverSlotBase st st' summary hInv.queueNextTargetBlocked hInv.2.1
+     receiverSlotBase st st' summary hInv.queueNextTargetBlocked hInv.2.1
      hInv.endpointQueueTailBlockedConsistent hObjInv hCallerReady hFreshCaller hSendTailFresh hStep⟩
 
 end SeLe4n.Kernel

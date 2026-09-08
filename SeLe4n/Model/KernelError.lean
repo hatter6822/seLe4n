@@ -187,6 +187,17 @@ inductive KernelError where
                            -- `.notificationSignal` on the same capability
                            -- already answers `.flowDenied` exactly when a bound
                            -- receiver is present and the flow to it is refused.
+  | ipcCancelled          -- WS-RR RR7.14: a thread's blocking IPC was forcibly
+                           -- cancelled — by `.tcbSuspend` on a blocked victim, by
+                           -- lifecycle cleanup, or by a retype of an object it was
+                           -- blocked on — so its syscall never completed and never
+                           -- will.  Distinct from `.ipcTimeout`, which is the
+                           -- SchedContext budget expiring under a *live* operation:
+                           -- a timed-out caller may retry the same call, a cancelled
+                           -- one has had its endpoint queue entry destroyed.  seL4
+                           -- restarts the thread instead; this kernel has no restart
+                           -- state, so the boundary crossing has to end in an error
+                           -- the caller can distinguish (WS-RA plan §3.5).
   deriving Repr, DecidableEq
 
 end SeLe4n.Model

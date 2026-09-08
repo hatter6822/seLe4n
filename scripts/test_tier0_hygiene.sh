@@ -13,14 +13,30 @@ source "${SCRIPT_DIR}/test_lib.sh"
 parse_common_args "$@"
 cd "${REPO_ROOT}"
 
-# Scan for forbidden markers (axiom, sorry, TODO) in production proof surface.
-# Lines annotated with a TPI-D* reference are explicitly tracked proof obligations
-# and are excluded from this check (see AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md).
+# Scan for forbidden markers (axiom, sorry, TODO, native_decide) in the
+# production proof surface.  Lines annotated with a TPI-D* reference are
+# explicitly tracked proof obligations and are excluded from this check (see
+# AUDIT_v0.11.0_TRACKED_PROOF_ISSUES.md).
+#
+# **WS-RR RR7.34 (register finding 77) added `native_decide`.**  The SM0 plan's
+# §6.3 said Tier 0 "verifies SM0 doesn't introduce `sorry`, `axiom`, or
+# `native_decide`"; the first two were scanned and the third never was.  It
+# belongs here rather than anywhere else: `native_decide` discharges a goal by
+# *compiling and running* it, which admits `Lean.ofReduceBool` and takes the
+# Lean compiler and its runtime into a trusted computing base whose whole claim
+# is that it contains neither `sorry` nor `axiom` — so it is an axiom under
+# another name, and this is the scan that forbids those.  `check_module_axioms`
+# would catch the *consequence* in the axiom set; this catches the *cause*, by
+# name, in the file that introduced it.
+#
+# The scan reads the comment-free code view, so the four docstrings that
+# explain why `decide` is used *instead of* `native_decide` are invisible to it
+# — the reason those docstrings can say so plainly.
 if command -v rg >/dev/null 2>&1; then
-  run_check "HYGIENE" bash -lc 'if rg -n -w "axiom|sorry|TODO" SeLe4n Main.lean | grep -v "TPI-D[0-9]"; then echo "Forbidden markers found in tracked proof surface." >&2; exit 1; fi'
+  run_check "HYGIENE" bash -lc 'if rg -n -w "axiom|sorry|TODO|native_decide" SeLe4n Main.lean | grep -v "TPI-D[0-9]"; then echo "Forbidden markers found in tracked proof surface." >&2; exit 1; fi'
 else
   log_section "HYGIENE" "ripgrep (rg) not found; using grep fallback for marker scan."
-  run_check "HYGIENE" bash -lc 'if (find SeLe4n -name "*.lean" -print0; printf "Main.lean\0") | xargs -0 grep -nwE "axiom|sorry|TODO" | grep -v "TPI-D[0-9]"; then echo "Forbidden markers found in tracked proof surface." >&2; exit 1; fi'
+  run_check "HYGIENE" bash -lc 'if (find SeLe4n -name "*.lean" -print0; printf "Main.lean\0") | xargs -0 grep -nwE "axiom|sorry|TODO|native_decide" | grep -v "TPI-D[0-9]"; then echo "Forbidden markers found in tracked proof surface." >&2; exit 1; fi'
 fi
 
 
@@ -100,23 +116,54 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_codeql_workflow_policy.py"
 # it exists to catch would otherwise go silent rather than loud.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_codeql_workflow_policy.py" --self-test
 
-if command -v shellcheck >/dev/null 2>&1; then
-  # AN11-F (LOW): comprehensive shell lint — covers every `.sh` under the
-  # repo (currently only `scripts/`, but enforced at find-time so any
-  # future shell script outside `scripts/` is caught automatically).
-  # `--exclude=SC1090,SC1091` covers dynamic source paths that shellcheck
-  # cannot statically resolve (e.g. user-supplied env files).
+# AN11-F (LOW): comprehensive shell lint — covers every `.sh` under the repo
+# (currently only `scripts/`, but enforced at find-time so any future shell
+# script outside `scripts/` is caught automatically).  `--exclude=SC1090,SC1091`
+# covers dynamic source paths that shellcheck cannot statically resolve (e.g.
+# user-supplied env files).
+#
+# **WS-OD OD1.6: unconditional, for the reason the CodeQL gate above already
+# states** — a gate that skips itself when a tool is absent is a gate that fails
+# open.  This one proved it.  The guard that used to stand here turned the lint
+# into a silent no-op wherever shellcheck was missing, which is every
+# environment set up with `setup_lean_env.sh --skip-test-deps`; an SC2016
+# introduced at v0.34.58 then survived every local full-suite run of the
+# following forty-odd cuts and was caught only by the first CI push, because CI
+# installs shellcheck.  A tier that prints "All checks passed" over a lint that
+# never executed is the exact failure this file's other gates are written to
+# avoid.
+#
+# So an environment without shellcheck now **fails** here rather than passing
+# vacuously, and the message names the fix: run the full `setup_lean_env.sh`,
+# which installs shellcheck and ripgrep, rather than `--skip-test-deps`.  This
+# is deliberately not the `record_skip` treatment: NOT RUN would make the
+# omission visible, but it would still let a local run diverge from CI, and
+# divergence is what hid the defect.  Note the contrast with the `rg` guards
+# earlier in this file — those have a real `grep` fallback that performs the
+# same check, which is the other honest answer to a missing tool.
+if ! command -v shellcheck >/dev/null 2>&1; then
+  record_failure "HYGIENE" \
+    "shellcheck is not installed, so the shell lint over scripts/*.sh cannot run; install it with ./scripts/setup_lean_env.sh (the full setup) rather than --skip-test-deps"
+  if [[ "${CONTINUE_MODE}" -eq 0 ]]; then
+    finalize_report
+  fi
+else
   shell_files_args=()
   while IFS= read -r f; do
     shell_files_args+=("$f")
   done < <(find scripts -type f -name "*.sh" | sort)
   if [[ "${#shell_files_args[@]}" -eq 0 ]]; then
-    log_section "HYGIENE" "no .sh files found under scripts/ — skipping shellcheck"
+    # Also a failure rather than a skip: `scripts/` always holds shell scripts,
+    # so an empty list means the find pattern stopped matching, not that the
+    # tree is clean.
+    record_failure "HYGIENE" \
+      "no .sh files found under scripts/ — the shell lint has no subject, which means its find pattern is wrong rather than that the tree is clean"
+    if [[ "${CONTINUE_MODE}" -eq 0 ]]; then
+      finalize_report
+    fi
   else
     run_check "HYGIENE" shellcheck --exclude=SC1090,SC1091 "${shell_files_args[@]}"
   fi
-else
-  log_section "HYGIENE" "shellcheck unavailable; optional shell lint not executed in this environment."
 fi
 
 # Website link protection: verify that all paths referenced by sele4n.org
@@ -136,6 +183,47 @@ run_check "HYGIENE" "${SCRIPT_DIR}/check_version_sync.sh"
 # same treatment.  Self-test first: a scanner that under-reaches fails silently.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_workstream_plan.py" --self-test
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_workstream_plan.py"
+
+# WS-RR RR7.34 (register finding 93): every artefact the claim/evidence index
+# names must exist.  A row that names a missing artefact asserts evidence that
+# does not, which is worse than a missing row.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_claim_evidence_citations.py" --self-test
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_claim_evidence_citations.py"
+
+# WS-RR RR7.35 (register findings 22 and 28): source must not send a reader
+# into `docs/dev_history/`.
+#
+# `SMP_FOUNDATIONS_PLAN` claimed "every dev_history cross-reference removed from
+# production sources" and nine remained, because the claim was made once and
+# checked never.  The rule it states is CLAUDE.md's own -- *do not read or
+# reference files in `docs/dev_history/` unless explicitly instructed* -- so a
+# docstring that cites one is directing a reader at what the project tells them
+# not to open, and the reference is stale by construction: those documents are
+# retired precisely because a live one superseded them.
+#
+# **The surface is the union of every surface the claim has been made on,** which
+# is finding 28: `SMP_MULTICORE_COMPLETION_PLAN` §3.9 says SMP-M1 "closed in SM0"
+# while its own §11 verification command reads `rust/sele4n-hal/src/` and
+# `SeLe4n/Kernel/`, and the foundations plan says "production sources" -- three
+# different sets, so the claim was true of whichever one a reader happened to
+# check and nothing owned the difference.  Scanning `SeLe4n`, `Main.lean`,
+# `tests` and `rust` is strictly wider than all three, so one gate makes every
+# spelling of the claim true at once rather than reconciling them.
+#
+# `docs/` and `scripts/` are deliberately out of scope, and this is a decision
+# rather than a default: `docs/` legitimately cites its own history (CHANGELOG
+# entries, the debt register's provenance, an audit trail), and `scripts/` reads
+# one file there by design -- the AK7 baseline the cascade gate regenerates.  A
+# rule the project does not hold is worse than no rule, because the exemption
+# list becomes the artefact.
+#
+# `run_prose_negative_check`, not `run_negative_check`: every one of the eleven
+# references was in a docstring or a comment, which is exactly the text the
+# code view blanks.  Routed through the view this check would scan a tree with
+# no comments in it, never fire, and report the references as absent -- the
+# silently-vacuous shape `test_lib.sh` introduced the prose helpers to avoid.
+# CLAUDE.md's rule decides it: the subject genuinely IS the text.
+run_prose_negative_check "HYGIENE" rg -n "docs/dev_history" SeLe4n Main.lean tests rust
 
 # WS-RR RR0.6: the SMP completion-phase theorem manifest.  The release-closure
 # plan carried its theorem total as a hand-summed literal that ran SM8 -> SM10

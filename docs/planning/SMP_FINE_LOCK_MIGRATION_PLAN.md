@@ -1,24 +1,50 @@
 # SMP Fine-Lock Migration & Commit-Partitioning Plan
 
-> **Status**: **PARTIAL — 2 of 12 PRs landed.**  Track A (security) is
-> closed; its High revocation-precision finding closed at v0.33.88 (§3.1).
-> **Tracks B, C and D are entirely unstarted**, including the phase's
-> headline SM3.C.9 deliverable, so the per-object fine locks remain a
-> model-level discipline and the v1.0.0 "per-object reader-writer fine
-> locks" capability claim is not yet true.
-> **Closure targets**: Tracks B and C → WS-RR **RR7.7–RR7.13** (one row per
-> PR: B = RR7.7–RR7.9, C = RR7.10–RR7.13; the three lock domains Track C
-> leaves uncovered — the scheduler domain, the dynamic PIP chain, the
-> CSpace-walk interior — close in RR7.39–RR7.41); Track D
-> (commit partitioning) is seam-gated to **SM10.1** and registered as a
-> named dependency by RR6.27.  A reader could not previously tell any of
-> this from the plan, which carried no status header at all (RR0, v0.34.26).
+> **Status**: **PARTIAL — 9 of 12 PRs landed** (WS-RR RR7.19, `v0.34.70`;
+> the header read "2 of 12" and "Tracks B, C and D are entirely unstarted"
+> until this row, which was true when RR0 wrote it at `v0.34.26` and false
+> from `v0.34.60` on).
+> **Track A** (security, 2 PRs) is closed; its High revocation-precision
+> finding closed at v0.33.88 (§3.1).
+> **Track B** (3 PRs) is closed: the capability-transfer footprint and its
+> coverage at `v0.34.60`/`v0.34.61` (RR7.7, RR7.8) and the four capability
+> operations' CDT members at `v0.34.62` (RR7.9), which deleted
+> `UncoveredLockDomain.capTransferReceiverCnode` and `.cdtNodeAllocation`.
+> The third SM3.B-owned domain, `.queueOwnershipProtocol`, closed at
+> `v0.34.88` (RR7.38) — outside Track B, whose rows never touched splice
+> neighbours — by giving the eleven footprints that can write a *queued* TCB
+> the queue owner's write lock.  Three of the register's seven domains are
+> therefore covered and four remain.
+> **Track C** (4 PRs) is closed: the decoded-driven resolver at `v0.34.63`
+> (RR7.10), the eight declared IPC footprints at `v0.34.64` (RR7.11), the
+> **syscall seam's bracket** at `v0.34.65` (RR7.12) and the export-commit
+> census at `v0.34.66` (RR7.13).
+> **Track D** (commit partitioning, 3 PRs) is **unstarted**, seam-gated to
+> **SM10.1** and registered as a named dependency by RR6.27.
+>
+> **What that means for the v1.0.0 claim.**  "Per-object reader-writer fine
+> locks" is true of the **syscall seam** — eight of the thirty-five arms
+> declare a footprint and the seam acquires it (`.replyRecv` for a reply the
+> replier itself recorded; a delegated one answers `none` and keeps the coarser
+> serialisation, since covering it needs the recorded server's own TCB lock and
+> the arm sits at nine of nine — WS-OD OD3.6 recovers the headroom) — and not yet true of the
+> **per-core scheduler entries**, which commit run-queue and replenish-queue
+> state under the SM5.I global entry lock only.  `ExportCommitDisciplineCensus`
+> measures it rather than asserting it: **seven seams commit, five bracket**
+> (WS-RR RR7.39; two before it).
+> Live WCRT is therefore still the global lock's, and the fine-lock bound
+> `PerCoreWcrt.lean` proves remains a statement about the intended discipline.
+> The three lock domains Track C leaves uncovered — the scheduler domain, the
+> dynamic PIP chain, the CSpace-walk interior — close in **RR7.39–RR7.41**.
 
 > **Phase**: SM3.C.9 (deferred `withLockSet` migration at the live kernel
-> entry) + the `capTransferReceiverCnode` footprint closure + commit
-> partitioning (the fine-lock end-state).
+> entry) + the capability-transfer footprint closure (**landed** as WS-RR
+> RR7.7 + RR7.8 at `v0.34.60`/`v0.34.61`: the send and call footprints declare
+> the transfer's destination CSpace root and the state-level lock its CDT write
+> needs, and `UncoveredLockDomain.capTransferReceiverCnode` is deleted because
+> the domain is covered) + commit partitioning (the fine-lock end-state).
 > **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
-> **Origin**: [`SMP_PER_OBJECT_LOCKS_PLAN.md`](SMP_PER_OBJECT_LOCKS_PLAN.md) §5.2 (SM3.C.9 deferral) + the v0.33.54 audit that registered `UncoveredLockDomain.capTransferReceiverCnode`.
+> **Origin**: [`SMP_PER_OBJECT_LOCKS_PLAN.md`](SMP_PER_OBJECT_LOCKS_PLAN.md) §5.2 (SM3.C.9 deferral) + the v0.33.54 audit that registered `UncoveredLockDomain.capTransferReceiverCnode` (closed at `v0.34.61`).
 > **Refs**: [`SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](SMP_DECLASSIFICATION_COMPLETION_PLAN.md) §SM9.D (audit-pass-7 closure); [`SMP_TLB_SHOOTDOWN_PLAN.md`](SMP_TLB_SHOOTDOWN_PLAN.md) §"Kernel-entry serialisation" (SM5.I).
 > **Target releases**: v0.33.55+ across 12 PRs in four tracks.
 > **Calendar estimate**: ~10–16 weeks (Track A security first; Track D is the largest — a runtime commit-model change).
@@ -292,7 +318,9 @@ PR body per the vulnerability rule.
   mapping one `receiverCnodeObjId : Option ObjId := none` — `some r` adds
   `(cnodeLock r, .write)` **and** `(stateLevelLock, .write)`; `none` = identity,
   so every capless pin survives by `rfl`. Maxima: **send 6, call 8**
-  (= `maxLockSetSize`).
+  (`maxLockSetSize` was 8 when this was written; WS-RR RR7.11 raised it to 9,
+  measured against the caps-installing `.replyRecv`, so the call footprint is
+  now one member below the cap rather than at it).
 - *Step 2:* fold `lockSet_endpointCallWithCaps`
   (`IPC/CrossCore/EndpointCall.lean`) → `lockSet_endpointCall … (some
   destCnode)` (tie by `rfl`, kills the parallel-function drift); add the
@@ -575,8 +603,33 @@ the argument removes that lookup, and with it an error a caller can currently
 observe, so the cut has to decide deliberately whether that fail-closed branch
 is still wanted on its own terms.
 
-**Closure target**: still open.  §9.1 closed at v0.33.80 without touching it:
-that cut threaded the *receiver* side through `replyRecvBody` and never had to
-decide the sender-side fail-closed question, which remains a deliberate call
-about an observable error rather than a mechanical deletion.  It stays owed
-before SM9 closes.
+**CLOSED at v0.34.82 (WS-RR RR7.33)**, with the decision this row was waiting
+for made explicitly: **the fail-closed branch is not wanted on its own terms**,
+and the parameter is gone from `ipcUnwrapCaps`, `ipcUnwrapCapsLoop`, and — since
+the deadness propagates — from `endpointSendDualWithCaps`,
+`endpointCallWithCaps`, their `OnCore` and cross-core-dispatch wrappers, the
+flow-checked wrappers, and the syscall dispatch arms that fed them
+`gate.cspaceRoot`.
+
+Three reasons, in the order they bind:
+
+1. *The transfer does not read it.*  The derivation parent has been
+   `TransferCap.srcNode` since the revocation-precision fix (`v0.33.59`), and
+   that node is minted at `resolveExtraCaps` **against the sender's own CSpace
+   root** — so the authority the parameter looked like it carried is already
+   established, at resolution, where the sender's root is the resolver's input.
+2. *The lookup's error was a cross-principal channel.*  AK1-I made all three
+   transfer paths fail closed on a missing CSpace root, and that is right for
+   the **receiver's** root — it is where capabilities install, and the send and
+   call arms still check it.  The receive arm looked up the **sender's** root
+   only to feed this parameter, so its `.invalidCapability` made the
+   *receiver's* syscall fail on a fact about the *sender's* TCB: a one-bit flow
+   from sender-domain state into a receiver-visible `KernelError`, which is the
+   shape AK1-I set out to remove rather than one it needed to add.
+3. *The case it appeared to cover is already covered, better.*  A source slot
+   destroyed between resolution and unwrap is declined per capability by
+   `CapTransferResult.sourceRevoked`, which installs the rest; failing the whole
+   transfer on the sender's root was coarser and answered a different question.
+
+The receive arm keeps `receiverCspaceRoot` and the send/call arms keep their
+receiver-root lookups, so every path still checks exactly the root it uses.

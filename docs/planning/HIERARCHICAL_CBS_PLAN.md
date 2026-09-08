@@ -358,7 +358,7 @@ a one-shot timer.
 | D20 | **Deadline inheritance reaches bound blockers only**: an unbound blocker keeps the priority boost and stays in the legacy class, so the inversion it causes is the deployment's to avoid (give the server a SchedContext, or make it passive so it runs on the donated one) | Inherit into unbound blockers (the first cut) | An unbound thread has no admitted budget and no window; running it at an inherited deadline is unbounded EDF-class demand that no admission sum sees, and it makes admitted roots miss (§4.7); the seL4-MCS answer is donation, which the tree already has |
 | D22 | **A derived fact is not stored.**  The stored `deadline` field goes: under implicit deadlines `deadline = periodStart + period` always, so `SchedContext.deadline` becomes a definition over the two fields it was mirroring, `deadlineWindowConsistent` is definitional rather than an invariant, and the twelve writer sites the engine rewrites anyway have one field fewer to keep consistent (CB1.6).  `isActive`, written by eleven sites with two meanings and read by one invariant, is settled in CB0.2 and pinned or retired in CB1.6 | Keep the field and carry the invariant (the previous cut) | Two representations of one fact diverge — the refill list and the replenish queue already did, and `schedContextYieldTo` wrote the pair inconsistently; a definition cannot |
 | D23 | **Bandwidth is released at the window's end, not at departure**: a root share that leaves a core — by any step that drops the core from `chargedCoresOf` or lowers `U` there: unbind, move, a donation's return, a shrink, a link under a server, destruction — keeps counting there until the deadline it was released with, recorded as a `residual` on the context; a context with a live residual is re-homed only on that core, never retyped, a root context that counts on a core is destroyed only after its window ends, and departs again only when the new share coalesces with the live one (same core and deadline), for at most one period; a cross-core donation reserves the slot for its return, so a donated leaf admits no other departure until then (§4.6) | Release the share when it leaves; freeze the whole root set as a hypothesis of T14 | Instantaneous admission is defeated by churn (§4.6's example starves a root that was admitted all along), and a guarantee hypothesised on nothing else changing is a guarantee about nothing; `SCHED_DEADLINE` releases at the zero-lag time for the same reason, and the deadline is its conservative simplification |
-| D21 | `maxLockSetSize` moves from `8` to `10` when the activation paths gain the ancestors' SchedContext locks (CB4.4), with the constant-dependent WCRT terms re-derived, and is re-verified when the per-core admission slot joins the admitting footprints (§4.12) | Leave the bound and take the ancestor locks outside the set; lower `maxServerDepth` to `2` | `lockSet_tcbSuspend` is already eight entries at its widest and a member leaf adds up to two ancestors; a lock taken outside the set is invisible to the deadlock-freedom and serializability theorems, and depth two forbids the root server → server → leaf shape D9 exists for |
+| D21 | `maxLockSetSize` moves from `9` (WS-RR RR7.11 raised it from `8`: the widest declared footprint is a caps-installing `.replyRecv`, whose ninth member is the state-level lock the CDT write needs) to `10` when the activation paths gain the ancestors' SchedContext locks (CB4.4), with the constant-dependent WCRT terms re-derived, and is re-verified when the per-core admission slot joins the admitting footprints (§4.12) | Leave the bound and take the ancestor locks outside the set; lower `maxServerDepth` to `2` | `lockSet_replyRecv` is already nine entries at its widest and a member leaf adds up to two ancestors; a lock taken outside the set is invisible to the deadlock-freedom and serializability theorems, and depth two forbids the root server → server → leaf shape D9 exists for |
 
 ### 3.1 The root policy, in one paragraph
 
@@ -2194,6 +2194,18 @@ rows named.
   (SM8, the observer and the reschedule seam), [`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md)
   (WS-RR, the partition in §2.3), [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md)
   (SM10, CB8.8's hand-off).
+* **Inherited from WS-RR RR7.17 (`v0.34.68`) — the application IPC label.**
+  seL4's `seL4_MessageInfo` label is the *sender's*, passed to the receiver
+  untouched; this kernel sets `IpcMessage.label` on kernel-originated messages
+  only, so a user send leaves it `0` and an application spends a message
+  register on its method number.  The naive pass-through is unsound: a thread
+  holding a send capability to a fault endpoint could mint a message whose
+  label *is* a `seL4_Fault_tag`, indistinguishable from a kernel-delivered
+  fault.  WS-CB owns it because CB6's admission protocol reopens the message
+  path; the gap, the constraint and the two candidate designs are stated in
+  [`SYSCALL_RETURN_ABI_PLAN.md`](SYSCALL_RETURN_ABI_PLAN.md) §9, and the row is
+  in the debt register.  Nothing in CB1..CB8 depends on it — it is scheduled
+  *with* WS-CB, not *into* it, and CB8.5 records whether it closed.
 * Specification: `docs/spec/SELE4N_SPEC.md` §8.12 (the flat model this
   extends, rewritten by CB1.6 and CB1.7 and completed by CB3.7, CB4.7 and
   CB6.6), §8.13 (priority inheritance, rewritten by CB1.8), §8.14 (the bound

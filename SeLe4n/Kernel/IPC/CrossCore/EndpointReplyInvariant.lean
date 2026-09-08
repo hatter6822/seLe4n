@@ -794,7 +794,7 @@ theorem endpointReceiveDualOnCore_preserves_ipcInvariantFull_perCore
       (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1 c :=
   ipcInvariantFull_perCore_of_full
     (endpointReceiveDualOnCore_preserves_ipcInvariantFull endpointId receiver replyId
-      executingCore st (ipcInvariantFull_of_smp hInv) hObjInv 
+      executingCore st (ipcInvariantFull_of_smp hInv) hObjInv
       hAllBudgetsNone hFreshReceiver hRecvTailFresh hReplyIdValid hReceiverNotRecv
       hReceiverReady)
     (passiveServerIdle_perCore_of_frameOnCore
@@ -1325,7 +1325,7 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
             rw [hR2]
           have hFull2 := endpointReceiveDualOnCore_preserves_ipcInvariantFull endpointId
             receiver replyId executingCore st1 hInv1 hObjInv1
-            
+
             hBudgets1 hFresh1 hTailFresh1 hReplyIdValid1 hNotRecv1 hReady1
           rwa [hStEq2] at hFull2
 
@@ -1588,19 +1588,15 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull
             simp only
             split
             · exact hBare
-            · cases hRoot : lookupCspaceRoot stRecv senderId with
-              | none => exact hBare
-              | some senderRoot =>
+            · cases hUnwrap : ipcUnwrapCaps msg receiverCspaceRoot
+                  receiverSlotBase msg.capsGranted stRecv with
+              | error e => exact hBare
+              | ok pair =>
+                obtain ⟨summary, stFinal⟩ := pair
                 simp only
-                cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                    receiverSlotBase msg.capsGranted stRecv with
-                | error e => exact hBare
-                | ok pair =>
-                  obtain ⟨summary, stFinal⟩ := pair
-                  simp only
-                  exact ipcUnwrapCaps_preserves_ipcInvariantFull msg senderRoot
-                    receiverCspaceRoot receiverSlotBase msg.capsGranted stRecv stFinal summary
-                    hBare hBareInv (hCapBadges receiverTcb hT msg hM) hUnwrap
+                exact ipcUnwrapCaps_preserves_ipcInvariantFull msg
+                  receiverCspaceRoot receiverSlotBase msg.capsGranted stRecv stFinal summary
+                  hBare hBareInv (hCapBadges receiverTcb hT msg hM) hUnwrap
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR2 (closure audit): the capability-carrying cross-core receive frames
@@ -1643,19 +1639,15 @@ theorem endpointReceiveDualWithCapsOnCore_passiveServerIdleFrameOnCore
             simp only
             split
             · exact hBare
-            · cases hRoot : lookupCspaceRoot stRecv senderId with
-              | none => exact hBare
-              | some senderRoot =>
+            · cases hUnwrap : ipcUnwrapCaps msg receiverCspaceRoot
+                  receiverSlotBase msg.capsGranted stRecv with
+              | error e => exact hBare
+              | ok pair =>
+                obtain ⟨summary, stFinal⟩ := pair
                 simp only
-                cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                    receiverSlotBase msg.capsGranted stRecv with
-                | error e => exact hBare
-                | ok pair =>
-                  obtain ⟨summary, stFinal⟩ := pair
-                  simp only
-                  exact hBare.trans (ipcUnwrapCaps_passiveServerIdleFrameOnCore msg senderRoot
-                    receiverCspaceRoot receiverSlotBase msg.capsGranted stRecv stFinal summary
-                    hBareInv hUnwrap)
+                exact hBare.trans (ipcUnwrapCaps_passiveServerIdleFrameOnCore msg
+                  receiverCspaceRoot receiverSlotBase msg.capsGranted stRecv stFinal summary
+                  hBareInv hUnwrap)
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR2 (closure audit): the per-core bundle form for the live `.receive`
@@ -1705,5 +1697,104 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull_perCore
       (endpointReceiveDualWithCapsOnCore_passiveServerIdleFrameOnCore endpointId receiver
         replyId receiverCspaceRoot receiverSlotBase executingCore st c hObjInv hReceiverReady)
       (hInv c).passiveServerIdle)
+
+-- ============================================================================
+-- WS-RR RR7.4: observer atomicity for the reply pair
+--
+-- The reply half of the five instantiations register §4 finding 7 names as
+-- missing.  `endpointReplyOnCore_atomic_under_lockSet` and its `replyRecv`
+-- companion are `rfl` instances of the body-agnostic `lockSet_atomic_under_2pl`;
+-- these carry the substantive form.
+-- ============================================================================
+
+/-- **WS-RR RR7.4**: the cross-core `replyRecv` preserves object-store integrity.
+The composite's own walk: the reply leg and the receive leg each preserve it,
+and the two error arms return the pre-state.
+
+Absent before RR7.4 because the composite's `ipcInvariantFull` carriage is
+assembled at the dispatch layer rather than from a bare `invExt` step; the
+observer capstone below is what needs it here. -/
+theorem endpointReplyRecvOnCore_preserves_objects_invExt
+    (endpointId : SeLe4n.ObjId) (receiver replyTarget : SeLe4n.ThreadId)
+    (msg : IpcMessage) (replyId : Option SeLe4n.ReplyId) (executingCore : CoreId)
+    (st : SystemState) (hObjInv : st.objects.invExt) :
+    (endpointReplyRecvOnCore endpointId receiver replyTarget msg replyId executingCore
+      st).1.objects.invExt := by
+  unfold endpointReplyRecvOnCore
+  cases hReply : endpointReplyOnCore receiver replyTarget msg executingCore st with
+  | mk st1 r1 =>
+    cases r1 with
+    | error _ => simpa using hObjInv
+    | ok _ =>
+      have hSt1 : st1.objects.invExt := by
+        have := endpointReplyOnCore_preserves_objects_invExt receiver replyTarget msg
+          executingCore st hObjInv
+        rwa [hReply] at this
+      simp only
+      cases hRecv : endpointReceiveDualOnCore endpointId receiver replyId executingCore st1 with
+      | mk st2 r2 =>
+        cases r2 with
+        | error _ => simpa using hObjInv
+        | ok _ =>
+          have := endpointReceiveDualOnCore_preserves_objects_invExt endpointId receiver
+            replyId executingCore st1 hSt1
+          rw [hRecv] at this
+          simpa using this
+
+/-- **WS-RR RR7.4**: under its declared footprint the cross-core reply is
+observationally atomic — the whole 2PL bracket is invisible to any thread's IPC
+state, the field the reply writes on the answered caller. -/
+theorem endpointReplyOnCore_observer_atomic
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
+    (cnRoot : SeLe4n.ObjId) (donatedSc? : Option SeLe4n.SchedContextId)
+    (donatedOwner? : Option SeLe4n.ThreadId) (observed : SeLe4n.ThreadId)
+    (s : SystemState) (hInv : s.objects.invExt) :
+    threadIpcStateObserver observed
+        (acquireAll executingCore
+          (lockSet_endpointReply replier cnRoot target donatedSc?
+            donatedOwner?).lockAcquireSequence s)
+      = threadIpcStateObserver observed s
+    ∧ threadIpcStateObserver observed
+        (withLockSet (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner?)
+          executingCore (endpointReplyOnCore replier target msg executingCore) s).1
+      = threadIpcStateObserver observed
+          (endpointReplyOnCore replier target msg executingCore
+            (acquireAll executingCore
+              (lockSet_endpointReply replier cnRoot target donatedSc?
+                donatedOwner?).lockAcquireSequence s)).1 :=
+  lockSet_observer_atomic_of_objectStoreObserver _ executingCore _ s _
+    (threadIpcStateObserver_insensitiveOn executingCore observed) hInv
+    (fun s' h => endpointReplyOnCore_preserves_objects_invExt replier target msg
+      executingCore s' h)
+
+/-- **WS-RR RR7.4**: and the `replyRecv` companion, over the composite's own
+footprint — the fused reply leg and receive leg are one atomic step to any
+IPC-state observer. -/
+theorem endpointReplyRecvOnCore_observer_atomic
+    (endpointId : SeLe4n.ObjId) (receiver target : SeLe4n.ThreadId) (msg : IpcMessage)
+    (replyId : Option SeLe4n.ReplyId) (executingCore : CoreId) (cnRoot : SeLe4n.ObjId)
+    (newSender? : Option SeLe4n.ThreadId) (donatedSc? : Option SeLe4n.SchedContextId)
+    (donatedOwner? : Option SeLe4n.ThreadId) (observed : SeLe4n.ThreadId)
+    (s : SystemState) (hInv : s.objects.invExt) :
+    threadIpcStateObserver observed
+        (acquireAll executingCore
+          (lockSet_replyRecv receiver cnRoot target endpointId newSender? donatedSc?
+            donatedOwner? replyId).lockAcquireSequence s)
+      = threadIpcStateObserver observed s
+    ∧ threadIpcStateObserver observed
+        (withLockSet (lockSet_replyRecv receiver cnRoot target endpointId newSender?
+            donatedSc? donatedOwner? replyId)
+          executingCore
+          (endpointReplyRecvOnCore endpointId receiver target msg replyId executingCore) s).1
+      = threadIpcStateObserver observed
+          (endpointReplyRecvOnCore endpointId receiver target msg replyId executingCore
+            (acquireAll executingCore
+              (lockSet_replyRecv receiver cnRoot target endpointId newSender? donatedSc?
+                donatedOwner? replyId).lockAcquireSequence s)).1 :=
+  lockSet_observer_atomic_of_objectStoreObserver _ executingCore _ s _
+    (threadIpcStateObserver_insensitiveOn executingCore observed) hInv
+    (fun s' h => endpointReplyRecvOnCore_preserves_objects_invExt endpointId receiver
+      target msg replyId executingCore s' h)
+
 
 end SeLe4n.Kernel

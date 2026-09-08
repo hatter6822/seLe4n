@@ -8,6 +8,7 @@
 -/
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerTick
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreRunLoop
+import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Testing.StateBuilder
 
 /-!
@@ -817,6 +818,56 @@ private def runAffinityTimeoutWakeChecks : IO Unit := do
      | .ok r => r.2.contains (bootCoreId, SgiKind.reschedule)
      | .error _ => false)
 
+/-- §3.15 (WS-RR RR7.14 — the timeout return frame): a thread whose blocking IPC
+budget expires is woken `.ready` with `timedOut := true`, and until this row it
+was handed **no answer at all**: its boundary crossing ended in `.blocks`, so
+`x0`-`x5` still held its own argument spill, and the SM10.1 context restore
+would have delivered that back as a return value.
+
+`timedOut` and the frame are not substitutes.  The flag is the *kernel-side*
+fact the scheduler and the invariants read; the frame is the *userspace-side*
+answer, and only one of them crosses the ABI.  The checks are written against a
+victim carrying a recognisable stale window, so "the frame is `.ipcTimeout`" and
+"the stale window is gone" are two assertions and both are made. -/
+private def runTimeoutFrameStagingChecks : IO Unit := do
+  IO.println "--- §3.15 WS-RR RR7.14 the timeout return frame ---"
+  let tidW := ThreadId.ofNat 321
+  let stLocal := mkTimeoutWakeState (some core1)
+  assertBool "setup: the budget-blocked waiter holds a window that is not the timeout frame"
+    (decide (Architecture.readReturnFrame stLocal tidW ≠ Architecture.timeoutFrame))
+  assertBool "a timed-out waiter reads back .ipcTimeout after the exhaustion tick"
+    (match timerTickOnCore stLocal core1 with
+     | .ok r => decide (Architecture.readReturnFrame r.1 tidW = Architecture.timeoutFrame)
+     | .error _ => false)
+  assertBool "…and it is the TIMEOUT frame, not the cancellation one"
+    (match timerTickOnCore stLocal core1 with
+     | .ok r => decide (Architecture.readReturnFrame r.1 tidW
+                          ≠ Architecture.cancelledIpcFrame)
+     | .error _ => false)
+  assertBool "…while `timedOut` is still set — the flag and the frame are both carried"
+    (match timerTickOnCore stLocal core1 with
+     | .ok r =>
+         match r.1.getTcb? tidW with
+         | some t => decide (t.timedOut = true ∧ t.ipcState = ThreadIpcState.ready)
+         | none => false
+     | .error _ => false)
+  assertBool "…and x7/pc/sp survive the staging (it writes x0-x5 only)"
+    (match timerTickOnCore stLocal core1, stLocal.getTcb? tidW with
+     | .ok r, some pre =>
+         match r.1.getTcb? tidW with
+         | some t => decide (t.registerContext.gpr ⟨7⟩ = pre.registerContext.gpr ⟨7⟩
+                             ∧ t.registerContext.pc = pre.registerContext.pc
+                             ∧ t.registerContext.sp = pre.registerContext.sp)
+         | none => false
+     | _, _ => false)
+  -- NEGATIVE: the still-running current thread on the ticking core is NOT
+  -- handed a timeout frame — only the thread whose blocking IPC expired is.
+  let tidCur := ThreadId.ofNat 320
+  assertBool "NEGATIVE: the ticking core's current thread is handed no timeout frame"
+    (match timerTickOnCore stLocal core1 with
+     | .ok r => decide (Architecture.readReturnFrame r.1 tidCur ≠ Architecture.timeoutFrame)
+     | .error _ => false)
+
 def runAll : IO Unit := do
   IO.println "=== WS-SM SM5.D — Per-core timer tick suite ==="
   runLockSetChecks
@@ -833,6 +884,7 @@ def runAll : IO Unit := do
   runClockAdvanceReplenishChecks
   runLocalReplenishRescheduleChecks
   runAffinityTimeoutWakeChecks
+  runTimeoutFrameStagingChecks
   IO.println "=== SM5.D timer suite: all checks passed ==="
 
 end SeLe4n.Testing.SmpTimer

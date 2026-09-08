@@ -21,6 +21,8 @@ import SeLe4n.Kernel.Scheduler.IdleThread
 -- structure so platform bindings (RPi5, sim) can expose the optional
 -- canonical boot VSpaceRoot from the typeclass.
 import SeLe4n.Platform.Contract
+import SeLe4n.Platform.Boot.MemoryCoverage
+import SeLe4n.Platform.DeviceTree
 import SeLe4n.Platform.RPi5.VSpaceBoot
 
 /-!
@@ -2163,8 +2165,8 @@ theorem bootToRuntime_invariantBridge_empty :
    satisfies all 12 runtime invariants simultaneously.
 
    Remediation closed by AN9 (hardware binding, DEF-A-M04 / DEF-A-M06 /
-   DEF-A-M08 / DEF-A-M09) per docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md
-   §12. When RPi5 boot is fully wired, either:
+   DEF-A-M08 / DEF-A-M09) per WS-AN's closure (`docs/REGISTERED_DEBT.md`,
+   workstream registry). When RPi5 boot is fully wired, either:
    (a) Prove `bootToRuntime_invariantBridge` for arbitrary well-formed
        PlatformConfig, or
    (b) Add a post-boot runtime invariant validation pass that asserts all
@@ -5548,7 +5550,7 @@ theorem bootFromPlatformCheckedWithIdleThreads_idle_threadState (config : Platfo
   apply inferThreadState_ready_of_runQueueOnCore ist'.state c
   · exact (SeLe4n.Kernel.RunQueue.mem_toList_iff_mem _ _).mp
       (bootFromPlatformCheckedWithIdleThreads_idle_available config ist' h c).1
-  · unfold threadRunningOnSomeCore
+  · unfold threadRunningOnSomeCore runningOnSomeCore
     rw [List.any_eq_false]
     intro c' _
     rw [bootFromPlatformCheckedWithIdleThreads_currentAllNone config ist' h c']
@@ -5600,19 +5602,19 @@ theorem bootFromPlatformChecked_ok_not_running_not_queued (config : PlatformConf
       threadQueuedOnSomeCore ist.state tid = false := by
   have hSched := bootFromPlatformChecked_ok_scheduler_eq config ist h
   constructor
-  · unfold threadRunningOnSomeCore
+  · unfold threadRunningOnSomeCore runningOnSomeCore
     rw [List.any_eq_false]
     intro c _
     rw [hSched]
     show ¬(((default : SchedulerState).currentOnCore c) == some tid) = true
     rw [(default_state_perCoreInitialized c).1]
     simp
-  · unfold threadQueuedOnSomeCore
+  · unfold threadQueuedOnSomeCore runnableOnSomeCore
     rw [List.any_eq_false]
     intro c _
     rw [hSched]
-    show ¬(decide (tid ∈ (default : SchedulerState).runQueueOnCore c)) = true
-    rw [(default_state_perCoreInitialized c).2.1, decide_eq_true_eq]
+    show tid ∉ (default : SchedulerState).runQueueOnCore c
+    rw [(default_state_perCoreInitialized c).2.1]
     exact SeLe4n.Kernel.RunQueue.not_mem_empty tid
 
 /-- **PR #889 review**: the plain checked boot is `threadStateConsistent` —
@@ -5690,7 +5692,7 @@ theorem bootFromPlatformCheckedWithIdleThreads_threadStateConsistent (config : P
         have hRun₂ : threadRunningOnSomeCore
             (SeLe4n.Kernel.Concurrency.allCores.foldl enqueueIdleThread ist).state ⟨oid.toNat⟩
               = false := by
-          unfold threadRunningOnSomeCore
+          unfold threadRunningOnSomeCore runningOnSomeCore
           rw [List.any_eq_false]
           intro c' _
           rw [bootFromPlatformCheckedWithIdleThreads_currentAllNone config _ hIdleBoot c']
@@ -5698,10 +5700,13 @@ theorem bootFromPlatformCheckedWithIdleThreads_threadStateConsistent (config : P
         have hQ₂ : threadQueuedOnSomeCore
             (SeLe4n.Kernel.Concurrency.allCores.foldl enqueueIdleThread ist).state ⟨oid.toNat⟩
               = false := by
-          unfold threadQueuedOnSomeCore
+          unfold threadQueuedOnSomeCore runnableOnSomeCore
           rw [List.any_eq_false]
           intro c' _
-          rw [decide_eq_true_eq, ← SeLe4n.Kernel.RunQueue.mem_toList_iff_mem,
+          show (⟨oid.toNat⟩ : SeLe4n.ThreadId) ∉
+            (SeLe4n.Kernel.Concurrency.allCores.foldl enqueueIdleThread
+              ist).state.scheduler.runQueueOnCore c'
+          rw [← SeLe4n.Kernel.RunQueue.mem_toList_iff_mem,
             bootFromPlatformCheckedWithIdleThreads_mem_runQueueOnCore_iff config _ hIdleBoot c']
           intro hEq
           apply hIdle
@@ -5720,5 +5725,123 @@ theorem bootFromPlatformCheckedWithIdleThreads_threadInactiveFlagConsistent
     threadInactiveFlagConsistent ist'.state :=
   threadStateConsistent_implies_threadInactiveFlagConsistent _
     (bootFromPlatformCheckedWithIdleThreads_threadStateConsistent config ist' h)
+
+-- ============================================================================
+-- WS-RR RR7.27 — the DeviceTree → PlatformConfig bridge
+--
+-- Register §6 finding 46: `DeviceTree.fromDtbFull` is documented as production
+-- DTB parsing, carries a correctness theorem, and had **zero consumers** —
+-- there was no path from a bootloader's blob to anything the kernel boots
+-- with.  This is that path's pure half.
+--
+-- What the device tree is *for* here is worth stating, because it is not what
+-- a first reading suggests.  It does **not** supply the machine configuration
+-- the kernel runs on: `bindPlatformConfig` binds the binding's own (PR #889
+-- review round 7 — a caller must not be able to describe other hardware).  It
+-- supplies the *board's own account of itself*, which the boot checks the
+-- binding against: an image built for the BCM2712 that finds itself on a board
+-- whose device tree does not describe the RAM and the MMIO the binding
+-- declares is on the wrong hardware, and must refuse rather than program
+-- peripherals that are not there.  What the account *does* decide is which
+-- member of the binding's declared family is installed (PR #892 review round
+-- 2, `PlatformBinding.bindMachineConfig`): the RPi5 ships in several RAM
+-- sizes, and the largest variant the account covers is the one the boot runs
+-- on.  The coverage vocabulary itself lives in `Boot/MemoryCoverage.lean`,
+-- upstream of the bindings, so a binding can select by the same predicate the
+-- bridge checks with.
+-- ============================================================================
+
+/-- **WS-RR RR7.27**: does the device tree describe a board with all the RAM
+`mc` declares, at least as wide a physical address space?
+
+Only the `.ram` regions are compared here, and that is not a narrowing — it is
+what the two maps are *about*.  A device tree's `machineConfig.memoryMap` is
+built by `DeviceTree.fromDtbFull` from the `/memory` nodes, which describe
+DRAM; its peripherals are a separate surface (`DeviceTree.peripherals`,
+discovered per node) and are checked by `deviceTreeCoversMmioRegions` below.
+`.reserved` regions are the binding's statement about memory it will *not*
+touch, and a board that does not carve out the same holes is not thereby
+unusable.
+
+Fail-closed by construction: anything the device tree does not mention is not
+covered, so a blob that parses to an empty or partial map is refused. -/
+def deviceTreeCoversMachineConfig (dt : DeviceTree) (mc : SeLe4n.MachineConfig) : Bool :=
+  machineConfigCovers dt.machineConfig mc
+
+/-- **PR #892 review round 2**: the device-tree check *is* the machine-level
+coverage predicate at the device tree's own machine configuration — stated so
+a binding that selects among its variants by `machineConfigCovers` and the
+bridge that validates the board by `deviceTreeCoversMachineConfig` are asking
+one question, and cannot drift apart. -/
+theorem deviceTreeCoversMachineConfig_eq (dt : DeviceTree) (mc : SeLe4n.MachineConfig) :
+    deviceTreeCoversMachineConfig dt mc = machineConfigCovers dt.machineConfig mc := rfl
+
+/-- **WS-RR RR7.27**: is every MMIO window in `required` inside a peripheral the
+device tree discovered **as that device**?
+
+The other half of the board check, at the granularity the two sides actually
+share: a binding names its MMIO windows one register block at a time
+(`RPi5.mmioRegions` — the PL011, the GIC distributor, the GIC CPU interface),
+and a device tree discovers peripherals the same way.  An image that would
+program a GIC the board's own device tree does not have must refuse. -/
+def deviceTreeCoversMmioRegions (dt : DeviceTree)
+    (required : List RequiredMmioWindow) : Bool :=
+  required.all fun w =>
+    dt.peripherals.any fun d =>
+      d.compatible.any (fun c => w.compatible.contains c)
+        && d.base.toNat ≤ w.region.base.toNat
+        && w.region.endAddr ≤ d.base.toNat + d.size
+
+/-- **WS-RR RR7.27**: the bridge the finding names — a `PlatformConfig` whose
+machine configuration is the device tree's and whose deployment half (the IRQ
+table, the initial objects, the boot VSpace root) is the caller's.
+
+The split is the honest one: a device tree describes the *board*, and the
+objects a deployment starts with are not on it. -/
+def PlatformConfig.fromDeviceTree (dt : DeviceTree)
+    (irqTable : List IrqEntry) (initialObjects : List ObjectEntry)
+    (bootVSpaceRoot : Option BootVSpaceRootEntry) : PlatformConfig :=
+  { irqTable := irqTable
+    initialObjects := initialObjects
+    machineConfig := dt.machineConfig
+    bootVSpaceRoot := bootVSpaceRoot }
+
+/-- **WS-RR RR7.27**: the bridge carries the device tree's machine map through
+unchanged — the property that makes the coverage check above a check *of the
+board*. -/
+@[simp] theorem PlatformConfig.fromDeviceTree_machineConfig (dt : DeviceTree)
+    (irqTable : List IrqEntry) (initialObjects : List ObjectEntry)
+    (bootVSpaceRoot : Option BootVSpaceRootEntry) :
+    (PlatformConfig.fromDeviceTree dt irqTable initialObjects bootVSpaceRoot).machineConfig
+      = dt.machineConfig := rfl
+
+/-- **WS-RR RR7.27**: and the deployment half through unchanged. -/
+@[simp] theorem PlatformConfig.fromDeviceTree_deployment (dt : DeviceTree)
+    (irqTable : List IrqEntry) (initialObjects : List ObjectEntry)
+    (bootVSpaceRoot : Option BootVSpaceRootEntry) :
+    (PlatformConfig.fromDeviceTree dt irqTable initialObjects bootVSpaceRoot).irqTable
+      = irqTable ∧
+    (PlatformConfig.fromDeviceTree dt irqTable initialObjects bootVSpaceRoot).bootVSpaceRoot
+      = bootVSpaceRoot := ⟨rfl, rfl⟩
+
+/-- **WS-RR RR7.27**: hence a device tree whose map is the binding's own covers
+it.  The witness that `deviceTreeCoversMachineConfig` is not vacuously false —
+the shape a board matching its own binding produces. -/
+theorem deviceTreeCoversMachineConfig_self (dt : DeviceTree) :
+    deviceTreeCoversMachineConfig dt dt.machineConfig = true :=
+  machineConfigCovers_self dt.machineConfig
+
+/-- **WS-RR RR7.27**: the MMIO half is vacuous on an empty demand and
+fail-closed on a non-empty one against a device tree that discovered nothing —
+the direction that matters, since "no peripherals" is what a truncated or
+foreign blob produces. -/
+theorem deviceTreeCoversMmioRegions_no_peripherals (dt : DeviceTree)
+    (required : List RequiredMmioWindow) (hEmpty : dt.peripherals = [])
+    (hNonEmpty : required ≠ []) :
+    deviceTreeCoversMmioRegions dt required = false := by
+  unfold deviceTreeCoversMmioRegions
+  cases required with
+  | nil => exact absurd rfl hNonEmpty
+  | cons r rest => simp [hEmpty]
 
 end SeLe4n.Platform.Boot

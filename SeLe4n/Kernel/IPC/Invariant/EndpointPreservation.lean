@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-3.0-or-later
 /-
-  seLe4n  - A Lean Microkernel
-  Copyright (C) 2026  Adam Hall
+  seLe4n - A Lean Microkernel
+  Copyright (C) 2026 Adam Hall
   This program comes with ABSOLUTELY NO WARRANTY.
   This is free software, and you are welcome to redistribute it
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
@@ -14,16 +14,16 @@ import SeLe4n.Kernel.IPC.Invariant.Defs
 The `storeTcbIpcState_*` / `storeTcbIpcStateAndMessage_*` /
 `storeTcbQueueLinks_*` preservation family at lines ~200-236 proves
 preservation of `ipcInvariant` specifically (an invariant about
-notifications, not TCB fields).  A companion "field-preservation"
+notifications, not TCB fields). A companion "field-preservation"
 lemma set — `storeObject_nonTcb_preserves_tcb_ipcState`,
 `storeObject_nonTcb_preserves_tcb_queueNext`, etc. — has been derived
 via `storeObject_objects_ne` at each call site in `Structural/*.lean`
-rather than lifted to a named helper per field.  Rationale: the
+rather than lifted to a named helper per field. Rationale: the
 derivation is a one-liner at every call site (`rw [storeObject_objects_ne]`)
 and lifting it to N × M individual helpers (N = field count, M = kind)
 would multiply the public API surface without reducing call-site
-complexity.  The preserved-by-frame facts are uniformly recoverable,
-so the on-site rewrite is preferred over a named lemma.  See IPC-L3
+complexity. The preserved-by-frame facts are uniformly recoverable,
+so the on-site rewrite is preferred over a named lemma. See IPC-L3
 disposition in the AN3-F work log.
 -/
 
@@ -232,9 +232,9 @@ theorem endpointReply_preserves_ipcInvariant
 
 -- WS-RR RR3.5: `scheduler_unchanged_through_store_tcb_msg` moved to
 -- `IPC/Invariant/Defs.lean`, beside its `storeTcbIpcState` twin, and made
--- public.  `notificationWait`'s block path now clears `pendingMessage`
+-- public. `notificationWait`'s block path now clears `pendingMessage`
 -- atomically with the block, so `NotificationPreservation/Signal.lean` needs
--- the same helper; `private` in this module put it out of reach.  The two
+-- the same helper; `private` in this module put it out of reach. The two
 -- call sites here resolve it unchanged through the `Defs` import.
 
 -- ============================================================================
@@ -248,18 +248,18 @@ theorem endpointReply_preserves_ipcInvariant
 --
 -- Structural argument (verified by construction):
 -- 1. endpointQueuePopHead/Enqueue modify ONLY sendQ/receiveQ intrusive fields
---    on the target endpoint (using `{ ep with sendQ := q' }` / `{ ep with receiveQ := q' }`).
---    Notification objects are UNCHANGED. Therefore ipcInvariant
---    (notification well-formedness) is preserved.
+-- on the target endpoint (using `{ ep with sendQ := q' }` / `{ ep with receiveQ := q' }`).
+-- Notification objects are UNCHANGED. Therefore ipcInvariant
+-- (notification well-formedness) is preserved.
 -- 2. All intermediate storeObject calls target either the endpoint ID or
---    thread TCBs. Objects at other IDs are backward-preserved through
---    storeObject_objects_ne / storeTcbQueueLinks_*_backward chains.
+-- thread TCBs. Objects at other IDs are backward-preserved through
+-- storeObject_objects_ne / storeTcbQueueLinks_*_backward chains.
 -- 3. No intermediate step modifies the scheduler (storeObject_scheduler_eq,
---    storeTcbQueueLinks_scheduler_eq, storeTcbIpcStateAndMessage_scheduler_eq).
+-- storeTcbQueueLinks_scheduler_eq, storeTcbIpcStateAndMessage_scheduler_eq).
 -- 4. IPC state transitions (.ready → .blockedOnSend or .blockedOnReceive)
---    plus removeRunnable/ensureRunnable maintain the scheduler contract
---    predicates via the same blocking_path/handshake_path decomposition
---    used in the legacy proofs.
+-- plus removeRunnable/ensureRunnable maintain the scheduler contract
+-- predicates via the same blocking_path/handshake_path decomposition
+-- used in the legacy proofs.
 --
 -- These theorems are structurally sound by the argument above. Full
 -- mechanical unfolding through the private multi-step chains requires
@@ -301,7 +301,7 @@ theorem storeTcbIpcStateAndMessage_preserves_ipcInvariant
   exact fun oid ntfn h => hInv oid ntfn (storeTcbIpcStateAndMessage_notification_backward st st' tid ipc msg oid ntfn hObjInv hStep h)
 
 /-- Finding F-1: `storeTcbReceiveComplete` preserves ipcInvariant (pure backward
-transport).  Mirror of `storeTcbIpcStateAndMessage_preserves_ipcInvariant`. -/
+transport). Mirror of `storeTcbIpcStateAndMessage_preserves_ipcInvariant`. -/
 theorem storeTcbReceiveComplete_preserves_ipcInvariant
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (msg : Option IpcMessage)
     (hInv : ipcInvariant st) (hObjInv : st.objects.invExt) (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
@@ -416,10 +416,10 @@ theorem endpointSendDual_preserves_ipcInvariant
       | some _ =>
         -- Handshake path: PopHead → storeTcbIpcStateAndMessage → ensureRunnable
         -- PR #873 round 17: the rendezvous arm resolves the sender before
-        -- popping.  It never did, so a send naming a nonexistent thread
+        -- popping. It never did, so a send naming a nonexistent thread
         -- delivered anyway and the receiver held a message attributed to it --
         -- the frozen mirror refused, and the frozen behaviour was the correct
-        -- one.  The extra split is the whole of the repair here.
+        -- one. The extra split is the whole of the repair here.
         cases hSnd : st.getTcb? sender with
         | none => simp [hHead, hSnd] at hStep
         | some _ =>
@@ -536,10 +536,10 @@ theorem endpointSendDual_preserves_schedulerInvariantBundle
       | some _ =>
         -- Handshake: PopHead → storeTcbIpcStateAndMessage(.ready) → ensureRunnable
         -- PR #873 round 17: the rendezvous arm resolves the sender before
-        -- popping.  It never did, so a send naming a nonexistent thread
+        -- popping. It never did, so a send naming a nonexistent thread
         -- delivered anyway and the receiver held a message attributed to it --
         -- the frozen mirror refused, and the frozen behaviour was the correct
-        -- one.  The extra split is the whole of the repair here.
+        -- one. The extra split is the whole of the repair here.
         cases hSnd : st.getTcb? sender with
         | none => simp [hHead, hSnd] at hStep
         | some _ =>
@@ -661,10 +661,10 @@ theorem endpointSendDual_preserves_ipcSchedulerContractPredicates
       | some _ =>
         -- Handshake: PopHead → storeTcbIpcStateAndMessage(.ready) → ensureRunnable
         -- PR #873 round 17: the rendezvous arm resolves the sender before
-        -- popping.  It never did, so a send naming a nonexistent thread
+        -- popping. It never did, so a send naming a nonexistent thread
         -- delivered anyway and the receiver held a message attributed to it --
         -- the frozen mirror refused, and the frozen behaviour was the correct
-        -- one.  The extra split is the whole of the repair here.
+        -- one. The extra split is the whole of the repair here.
         cases hSnd : st.getTcb? sender with
         | none => simp [hHead, hSnd] at hStep
         | some _ =>
@@ -981,7 +981,7 @@ theorem endpointReceiveDual_preserves_ipcInvariant
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D (#7.1 fold): `linkCallerReply` forwards TCB existence — it only
 re-stores the caller's TCB (`replyObject` field) and the reply object, so a TCB
-present at any slot `y` in the pre-state is still a TCB in the post-state.  Used
+present at any slot `y` in the pre-state is still a TCB in the post-state. Used
 by the scheduler-bundle and contract-predicate preservation proofs to carry the
 `currentThreadValid` / runnable-TCB obligations across the atomic reply-link. -/
 private theorem linkCallerReply_tcb_forward
@@ -1035,8 +1035,8 @@ private theorem linkCallerReply_tcb_forward
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D (#7.1 fold): `linkCallerReply` backward-preserves TCB ipcState —
 its only TCB write rewrites the caller's `replyObject` (never `ipcState`) and its
-reply write touches no TCB.  A TCB present at slot `y` in the post-state therefore
-maps back to a TCB at `y` in the pre-state with identical `ipcState`.  Feeds
+reply write touches no TCB. A TCB present at slot `y` in the post-state therefore
+maps back to a TCB at `y` in the pre-state with identical `ipcState`. Feeds
 `contracts_of_same_scheduler_ipcState` so the contract predicates transport across
 the atomic reply-link. -/
 theorem linkCallerReply_tcb_ipcState_backward
@@ -1107,9 +1107,9 @@ theorem linkCallerReply_tcb_ipcState_backward
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` forwards TCB existence — it
 composes `linkCallerReply` (whose only TCB write re-stores the caller's TCB) with a
-single `pendingReceiveReply`-clearing re-store of the `server` TCB.  Neither write
+single `pendingReceiveReply`-clearing re-store of the `server` TCB. Neither write
 removes a TCB, so a TCB present at any slot `y` in the pre-state is still a TCB in the
-post-state.  Feeds the scheduler-bundle `currentThreadValid` obligation across the
+post-state. Feeds the scheduler-bundle `currentThreadValid` obligation across the
 atomic call-path fold. -/
 theorem linkServerStashedReply_tcb_forward
     (st st' : SystemState) (caller server : SeLe4n.ThreadId)
@@ -1152,8 +1152,8 @@ open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` backward-preserves TCB ipcState —
 its `linkCallerReply` leg rewrites only the caller's `replyObject` (never `ipcState`),
 and the final server re-store clears `pendingReceiveReply` (also leaving `ipcState`
-untouched).  A TCB present at slot `y` in the post-state therefore maps back to a TCB at
-`y` in the pre-state with identical `ipcState`.  Feeds
+untouched). A TCB present at slot `y` in the post-state therefore maps back to a TCB at
+`y` in the pre-state with identical `ipcState`. Feeds
 `contracts_of_same_scheduler_ipcState` so the contract predicates transport across the
 atomic call-path fold. -/
 theorem linkServerStashedReply_tcb_ipcState_backward
@@ -1207,7 +1207,7 @@ theorem linkServerStashedReply_tcb_ipcState_backward
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` preserves the scheduler-invariant
-bundle.  The scheduler is unchanged (`linkServerStashedReply_scheduler_eq`), discharging
+bundle. The scheduler is unchanged (`linkServerStashedReply_scheduler_eq`), discharging
 the `queueCurrentConsistent` / `runQueueUnique` conjuncts; `currentThreadValid` carries
 across via `linkServerStashedReply_tcb_forward`. -/
 theorem linkServerStashedReply_preserves_schedulerInvariantBundle
@@ -1235,7 +1235,7 @@ theorem linkServerStashedReply_preserves_schedulerInvariantBundle
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` preserves the IPC↔scheduler
-contract predicates.  It leaves the scheduler unchanged and every TCB's `ipcState`
+contract predicates. It leaves the scheduler unchanged and every TCB's `ipcState`
 untouched (it writes only `replyObject` / `pendingReceiveReply` fields), so
 `contracts_of_same_scheduler_ipcState` transports the predicates verbatim. -/
 theorem linkServerStashedReply_preserves_ipcSchedulerContractPredicates
@@ -1424,7 +1424,7 @@ theorem endpointReceiveDual_preserves_schedulerInvariantBundle
                 storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 receiver _ _ hObjInvEnq hIpc
               -- Forward the current thread's TCB through cleanup → enqueue → ipcState
               -- store, parametric in the final post-state `S` (either `st2` or the
-              -- stash store of `st2`).  `hTcbInSt2 x hNe : ∃ t, st2.objects[x]? = .tcb t`.
+              -- stash store of `st2`). `hTcbInSt2 x hNe : ∃ t, st2.objects[x]? = .tcb t`.
               have hTcbInSt2 : ∀ x : SeLe4n.ThreadId, x ≠ receiver →
                   st.scheduler.currentOnCore bootCoreId = some x →
                   ∃ tcb, st2.objects[x.toObjId]? = some (.tcb tcb) := by
@@ -1984,12 +1984,12 @@ case-split on what was at receiverRoot in st: if it was a notification, it's
 preserved by `preserves_ntfn_objects`; otherwise, `receiverRoot_not_ntfn`
 shows no notification can appear. No precondition needed. -/
 theorem ipcUnwrapCaps_preserves_ipcInvariant
-    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot) (grantRight : Bool)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : ipcInvariant st)
     (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st
+    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st
              = .ok (summary, st')) :
     ipcInvariant st' := by
   intro oid ntfn hObj
@@ -2000,12 +2000,12 @@ theorem ipcUnwrapCaps_preserves_ipcInvariant
     | none =>
       have hNotNtfn : ∀ ntfn, st.objects[receiverRoot]? ≠ some (.notification ntfn) := by
         simp [hR]
-      exact absurd hObj (ipcUnwrapCaps_receiverRoot_not_ntfn msg senderRoot receiverRoot
+      exact absurd hObj (ipcUnwrapCaps_receiverRoot_not_ntfn msg receiverRoot
         slotBase grantRight st st' summary hNotNtfn hObjInv hStep ntfn)
     | some obj =>
       cases obj with
       | notification ntfn' =>
-        have hPreserved := ipcUnwrapCaps_preserves_ntfn_objects msg senderRoot receiverRoot
+        have hPreserved := ipcUnwrapCaps_preserves_ntfn_objects msg receiverRoot
           slotBase grantRight st st' summary receiverRoot ntfn' hR hObjInv hStep
         have hEq : KernelObject.notification ntfn' = KernelObject.notification ntfn :=
           Option.some.inj (hPreserved.symm.trans hObj)
@@ -2013,9 +2013,9 @@ theorem ipcUnwrapCaps_preserves_ipcInvariant
       | cnode _ | tcb _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
         have hNotNtfn : ∀ ntfn, st.objects[receiverRoot]? ≠ some (.notification ntfn) := by
           simp [hR]
-        exact absurd hObj (ipcUnwrapCaps_receiverRoot_not_ntfn msg senderRoot receiverRoot
+        exact absurd hObj (ipcUnwrapCaps_receiverRoot_not_ntfn msg receiverRoot
           slotBase grantRight st st' summary hNotNtfn hObjInv hStep ntfn)
-  · rw [ipcUnwrapCaps_preserves_objects_ne msg senderRoot receiverRoot slotBase
+  · rw [ipcUnwrapCaps_preserves_objects_ne msg receiverRoot slotBase
       grantRight st st' summary oid hNe hObjInv hStep] at hObj
     exact hInv oid ntfn hObj
 
@@ -2040,10 +2040,10 @@ theorem endpointSendDual_preserves_objects_invExt
       cases hHead : ep.receiveQ.head with
       | some _ =>
         -- PR #873 round 17: the rendezvous arm resolves the sender before
-        -- popping.  It never did, so a send naming a nonexistent thread
+        -- popping. It never did, so a send naming a nonexistent thread
         -- delivered anyway and the receiver held a message attributed to it --
         -- the frozen mirror refused, and the frozen behaviour was the correct
-        -- one.  The extra split is the whole of the repair here.
+        -- one. The extra split is the whole of the repair here.
         cases hSnd : st.getTcb? sender with
         | none => simp [hHead, hSnd] at hStep
         | some _ =>
@@ -2202,13 +2202,12 @@ which requires no precondition). -/
 theorem endpointSendDualWithCaps_preserves_ipcInvariant
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId)
     (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : ipcInvariant st)
     (hObjInv : st.objects.invExt)
     (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
-             senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+             receiverSlotBase st = .ok (summary, st')) :
     ipcInvariant st' := by
   -- PR #873 round 13: the wrapper stamps the endpoint's grant right into the
   -- message before sending, so the transition under it is the stamped one.
@@ -2240,18 +2239,20 @@ theorem endpointSendDualWithCaps_preserves_ipcInvariant
         by_cases hEmpty : msg.caps = #[]
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
         · simp [hEmpty] at hStep
-          cases hLookup : lookupCspaceRoot stMid receiverId with
+          -- WS-RR RR7.8: the destination is read from the **pre**-state, which
+          -- is the state whose locks the bracket took; the case split follows
+          -- the transition.
+          cases hLookup : lookupCspaceRoot st receiverId with
           | none => simp [hLookup] at hStep -- AK1-I: fail-closed, vacuous
           | some recvRoot =>
             simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_ipcInvariant { msg with capsGranted := endpointRights.mem AccessRight.grant } senderCspaceRoot recvRoot
+            exact ipcUnwrapCaps_preserves_ipcInvariant { msg with capsGranted := endpointRights.mem AccessRight.grant } recvRoot
               receiverSlotBase _ stMid st' summary hInvMid hObjInvMid hStep
 
 /-- M3-E4: endpointReceiveDualWithCaps preserves ipcInvariant. -/
 theorem endpointReceiveDualWithCaps_preserves_ipcInvariant
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : Option SeLe4n.ReplyId)
-   
     (receiverCspaceRoot : SeLe4n.ObjId)
     (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (senderId : SeLe4n.ThreadId)
@@ -2271,7 +2272,7 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariant
     have hObjInvMid := endpointReceiveDual_preserves_objects_invExt st stMid endpointId
       receiver sid replyId hObjInv hRecv
     simp [hRecv] at hStep
-    -- PR #873 round 8: the rendezvous gate.  A receive that dequeued nothing
+    -- PR #873 round 8: the rendezvous gate. A receive that dequeued nothing
     -- returns the bare transition's post-state, so the invariant is the one the
     -- bare transition already preserves.
     cases hRv : receiveRendezvousSender? st endpointId with
@@ -2292,24 +2293,17 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariant
         split at hStep
         · -- if-then: caps empty, state unchanged
           obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hInvMid
-        · -- if-else: caps non-empty, ipcUnwrapCaps runs
-          -- Case split on lookupCspaceRoot to determine senderRoot value
-          cases hLookup : lookupCspaceRoot stMid sid with
-          | none =>
-            -- U-H13: Missing CSpace root now returns error, contradicting .ok
-            simp only [hLookup] at hStep; contradiction
-          | some senderRoot =>
-            -- senderRoot = senderRoot
-            simp only [hLookup] at hStep
-            cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                receiverSlotBase msg.capsGranted stMid with
-            | error e => simp [hUnwrap] at hStep
-            | ok pair =>
-              rcases pair with ⟨s, stFinal⟩
-              simp [hUnwrap] at hStep
-              obtain ⟨⟨_, _⟩, rfl⟩ := hStep
-              exact ipcUnwrapCaps_preserves_ipcInvariant msg senderRoot receiverCspaceRoot
-                receiverSlotBase _ stMid stFinal s hInvMid hObjInvMid hUnwrap
+        · -- if-else: caps non-empty, ipcUnwrapCaps runs.  WS-RR RR7.33: no
+          -- sender-CSpace-root case split any more — the arm does not look it up.
+          cases hUnwrap : ipcUnwrapCaps msg receiverCspaceRoot
+              receiverSlotBase msg.capsGranted stMid with
+          | error e => simp [hUnwrap] at hStep
+          | ok pair =>
+            rcases pair with ⟨s, stFinal⟩
+            simp [hUnwrap] at hStep
+            obtain ⟨⟨_, _⟩, rfl⟩ := hStep
+            exact ipcUnwrapCaps_preserves_ipcInvariant msg receiverCspaceRoot
+              receiverSlotBase _ stMid stFinal s hInvMid hObjInvMid hUnwrap
 
 -- ============================================================================
 -- V3-G4 (M-PRF-5): blockedThreadsPendingMessageConsistent preservation
@@ -2319,7 +2313,7 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariant
 -- V3-G4 (M-PRF-5): `endpointSendDual`/`endpointReceiveDual` preserve
 -- `blockedThreadsPendingMessageConsistent`.
 -- Machine-checked proofs in Structural.lean:
---   `endpointSendDual_preserves_blockedThreadsPendingMessageConsistent`
---   `endpointReceiveDual_preserves_blockedThreadsPendingMessageConsistent`
---   `endpointReply_preserves_blockedThreadsPendingMessageConsistent`
+-- `endpointSendDual_preserves_blockedThreadsPendingMessageConsistent`
+-- `endpointReceiveDual_preserves_blockedThreadsPendingMessageConsistent`
+-- `endpointReply_preserves_blockedThreadsPendingMessageConsistent`
 

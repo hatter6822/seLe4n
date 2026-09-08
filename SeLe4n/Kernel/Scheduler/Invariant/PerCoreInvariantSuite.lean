@@ -2448,13 +2448,23 @@ theorem revertPriorityInheritance_preserves_schedulerInvariantStructuralRegNodup
 scheduler and register banks fixed, keeps every `getTcb?` resolvable, and
 preserves the current thread's saved `registerContext`, preserves the base safety
 invariant.  Subsumes the TCB-insert atom; reused for `storeObject` and
-`endpointQueueRemove`. -/
+`endpointQueueRemove`.
+
+**WS-RR RR7.14**: `hReg` is scoped to the **current** thread of a core.
+`contextMatchesCurrentOnCore` compares a core's register bank against its own
+current thread's saved context and reads no other TCB's, so a write that moves
+`registerContext` at a thread nobody is running preserves the invariant.  The
+premise was previously stated for every thread, which is strictly stronger than
+what the conclusion needs and refused exactly the write the timeout path now
+performs (staging the `.ipcTimeout` return frame into the thread it just took
+off an endpoint queue). -/
 theorem objects_change_preserves_schedulerInvariantStructuralRegNodup_smp
     (st st' : SystemState)
     (hsch : st'.scheduler = st.scheduler)
     (hmac : st'.machine = st.machine)
     (hSome : ∀ x : SeLe4n.ThreadId, (st.getTcb? x).isSome → (st'.getTcb? x).isSome)
-    (hReg : ∀ (x : SeLe4n.ThreadId) (txcb : TCB), st.getTcb? x = some txcb →
+    (hReg : ∀ (c : CoreId) (x : SeLe4n.ThreadId) (txcb : TCB),
+       st.scheduler.currentOnCore c = some x → st.getTcb? x = some txcb →
        ∃ tcb', st'.getTcb? x = some tcb' ∧ txcb.registerContext = tcb'.registerContext)
     (hPre : schedulerInvariantStructuralRegNodup_smp st) :
     schedulerInvariantStructuralRegNodup_smp st' := by
@@ -2466,18 +2476,29 @@ theorem objects_change_preserves_schedulerInvariantStructuralRegNodup_smp
   · refine contextMatchesCurrentOnCore_frame_at ?_ ?_ ?_ ((hPre c).1.1.2.1) ((hPre c).1.2)
     · rw [hsch]
     · rw [hmac]
-    · intro x txcb _hcur htcb
-      obtain ⟨tcb', htcb', hr⟩ := hReg x txcb htcb
+    · intro x txcb hcur htcb
+      obtain ⟨tcb', htcb', hr⟩ := hReg c x txcb hcur htcb
       exact ⟨tcb', htcb', by rw [hr]; exact RegisterFile.beq_self _⟩
   · exact (runQueueUniqueOnCore_frame (by rw [hsch])).mpr (hPre c).2
 
-/-- WS-SM SM5.I.8 (timeout atom): `storeObject` of a TCB with the same
-`registerContext` preserves the base safety invariant (objects insert + index /
-lifecycle changes the invariant never reads; scheduler + machine fixed). -/
+/-- WS-SM SM5.I.8 (timeout atom): `storeObject` of a TCB preserves the base
+safety invariant (objects insert + index / lifecycle changes the invariant never
+reads; scheduler + machine fixed), **provided** the written thread's saved
+register context still matches its core's bank where it is current.
+
+**WS-RR RR7.14**: `hReg` is a *disjunction* rather than an equality, because the
+two live writers satisfy different halves.  A write that keeps
+`registerContext` (the left disjunct) is safe outright; a write that moves it —
+the timeout's staged `.ipcTimeout` return frame — is safe because the written
+thread is current on no core (the right disjunct), which is the same `hNotCur`
+its caller already carries for the wake.  Demanding the equality alone would
+have refused the staging; dropping the premise entirely would let a running
+thread's context diverge from its bank. -/
 theorem storeObject_tcb_preserves_schedulerInvariantStructuralRegNodup_smp
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb tcb' : TCB) (st2 : SystemState)
     (hInv : st.objects.invExt) (hOld : st.getTcb? tid = some tcb)
-    (hReg : tcb'.registerContext = tcb.registerContext)
+    (hReg : tcb'.registerContext = tcb.registerContext
+      ∨ ∀ c : CoreId, st.scheduler.currentOnCore c ≠ some tid)
     (hStore : storeObject tid.toObjId (.tcb tcb') st = .ok ((), st2))
     (hPre : schedulerInvariantStructuralRegNodup_smp st) :
     schedulerInvariantStructuralRegNodup_smp st2 := by
@@ -2498,12 +2519,17 @@ theorem storeObject_tcb_preserves_schedulerInvariantStructuralRegNodup_smp
       simp only [SystemState.getTcb?, hobj, RHTable_getElem?_eq_get?]
       rw [RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId x.toObjId _ hNe hInv]
       simpa only [SystemState.getTcb?, RHTable_getElem?_eq_get?] using hx
-  · intro x txcb htcb
+  · intro c x txcb hcur htcb
     by_cases hEq : x = tid
     · subst hEq
+      -- The right disjunct rules this branch out: `x` IS current on `c`.
+      have hEqReg : tcb'.registerContext = tcb.registerContext := by
+        cases hReg with
+        | inl h => exact h
+        | inr h => exact absurd hcur (h c)
       rw [hOld] at htcb
       have hxt : txcb = tcb := (Option.some.injEq _ _).mp htcb.symm
-      refine ⟨tcb', ?_, by rw [hReg, hxt]⟩
+      refine ⟨tcb', ?_, by rw [hEqReg, hxt]⟩
       simp only [SystemState.getTcb?, hobj, RHTable_getElem?_eq_get?]
       rw [RobinHood.RHTable.getElem?_insert_self st.objects x.toObjId _ hInv]
     · have hNe : ¬ (tid.toObjId == x.toObjId) = true := fun h =>
@@ -2594,7 +2620,7 @@ theorem endpointQueueRemove_preserves_schedulerInvariantStructuralRegNodup_smp
       obtain ⟨t', ht', _⟩ :=
         endpointQueueRemove_getTcb?_upToReg endpointId isReceiveQ tid st st' hInv hStep x t hgt
       simp [ht']
-  · intro x txcb htcb
+  · intro _c x txcb _hcur htcb
     exact endpointQueueRemove_getTcb?_upToReg endpointId isReceiveQ tid st st' hInv hStep x txcb htcb
 
 /-- `ensureRunnable` leaves the object store untouched (it writes only the boot
@@ -2607,6 +2633,41 @@ private theorem ensureRunnable_objects_eq_local (st : SystemState) (tid : SeLe4n
   · split <;> rfl
 
 open SeLe4n.Kernel.PriorityInheritance in
+/-- WS-OD OD1.2: the timeout's object-only prefix preserves the register-nodup
+scheduler bundle.  `hNotCur` is what pays for the TCB store: the staged
+`.ipcTimeout` frame *moves* `registerContext`, so the equality disjunct is
+false and the right one — the thread runs on no core — carries it. -/
+theorem abortPendingIpcOnEndpoint_preserves_schedulerInvariantStructuralRegNodup_smp
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (hInv : st.objects.invExt)
+    (hNotCur : ∀ c, st.scheduler.currentOnCore c ≠ some tid)
+    (hStep : abortPendingIpcOnEndpoint endpointId isReceiveQ tid st = .ok st')
+    (hPre : schedulerInvariantStructuralRegNodup_smp st) :
+    schedulerInvariantStructuralRegNodup_smp st' := by
+  unfold abortPendingIpcOnEndpoint at hStep
+  split at hStep
+  · simp at hStep
+  · rename_i st1 hEQR
+    have hInv1 := endpointQueueRemove_preserves_objects_invExt _ _ _ _ _ hInv hEQR
+    have hPre1 := endpointQueueRemove_preserves_schedulerInvariantStructuralRegNodup_smp
+      _ _ _ _ _ hInv hEQR hPre
+    have hSch1 := endpointQueueRemove_scheduler_eq _ _ _ _ _ hEQR
+    split at hStep
+    · simp at hStep
+    · rename_i tcb hLook
+      have hOld1 : st1.getTcb? tid = some tcb :=
+        (SystemState.getTcb?_eq_some_iff st1 tid tcb).mpr (lookupTcb_some_objects st1 tid tcb hLook)
+      simp only [] at hStep
+      split at hStep
+      · simp at hStep
+      · rename_i st2 heq
+        simp only [Except.ok.injEq] at hStep
+        subst hStep
+        refine storeObject_tcb_preserves_schedulerInvariantStructuralRegNodup_smp
+          st1 tid tcb _ st2 hInv1 hOld1 ?_ heq hPre1
+        refine Or.inr (fun c hc => hNotCur c ?_)
+        rw [← hSch1]; exact hc
+
 /-- WS-SM SM5.I.8 (timeout atom): `timeoutThread` preserves the base safety
 invariant.  It composes `endpointQueueRemove` (preserves — atom above), the
 `storeObject` of the unblocked TCB (same `registerContext`; `ipcState` / state
@@ -2624,43 +2685,31 @@ theorem timeoutThread_preserves_schedulerInvariantStructuralRegNodup_smp
     (hStep : timeoutThread endpointId isReceiveQ tid execCore st = .ok r)
     (hPre : schedulerInvariantStructuralRegNodup_smp st) :
     schedulerInvariantStructuralRegNodup_smp r.1 := by
+  -- WS-OD OD1.2: the two object writes are the abort's; what is left here is
+  -- the wake (whose guard needs the target core) and the optional PIP revert.
   unfold timeoutThread at hStep
   split at hStep
   · simp at hStep
-  · rename_i st1 hEQR
-    have hInv1 := endpointQueueRemove_preserves_objects_invExt _ _ _ _ _ hInv hEQR
-    have hPre1 := endpointQueueRemove_preserves_schedulerInvariantStructuralRegNodup_smp
-      _ _ _ _ _ hInv hEQR hPre
-    have hSch1 := endpointQueueRemove_scheduler_eq _ _ _ _ _ hEQR
-    split at hStep
-    · simp at hStep
-    · rename_i tcb hLook
-      have hOld1 : st1.getTcb? tid = some tcb :=
-        (SystemState.getTcb?_eq_some_iff st1 tid tcb).mpr (lookupTcb_some_objects st1 tid tcb hLook)
-      simp only [] at hStep
-      split at hStep
-      · simp at hStep
-      · rename_i st2 heq
-        have hPre2 := by
-          refine storeObject_tcb_preserves_schedulerInvariantStructuralRegNodup_smp
-            st1 tid tcb _ st2 hInv1 hOld1 ?_ heq hPre1
-          rfl
-        have hInv2 := storeObject_preserves_objects_invExt st1 st2 tid.toObjId _ hInv1 heq
-        have hSch2 := storeObject_scheduler_eq st1 st2 tid.toObjId _ heq
-        -- round 8: the target-aware wake needs the guard on the wake TARGET core
-        have hNotCur2 : st2.scheduler.currentOnCore (determineTargetCore st2 tid) ≠ some tid := by
-          rw [hSch2, hSch1]; exact hNotCur _
-        have hPre3 := wakeThread_preserves_schedulerInvariantStructuralRegNodup_smp
-          st2 tid execCore hInv2 hNotCur2 hPre2
-        have hInv3 : (wakeThread st2 tid execCore).1.objects.invExt :=
-          wakeThread_preserves_objects_invExt _ _ execCore hInv2
-        split at hStep <;>
-          · simp only [Except.ok.injEq] at hStep
-            subst hStep
-            first
-              | exact revertPriorityInheritance_preserves_schedulerInvariantStructuralRegNodup_smp
-                  _ _ _ hInv3 hPre3
-              | exact hPre3
+  · rename_i st2 hAbort
+    have hInv2 := abortPendingIpcOnEndpoint_preserves_objects_invExt _ _ _ _ _ hInv hAbort
+    have hSch2 := abortPendingIpcOnEndpoint_scheduler_eq _ _ _ _ _ hAbort
+    have hPre2 := abortPendingIpcOnEndpoint_preserves_schedulerInvariantStructuralRegNodup_smp
+      _ _ _ _ _ hInv hNotCur hAbort hPre
+    -- round 8: the target-aware wake needs the guard on the wake TARGET core
+    have hNotCur2 : st2.scheduler.currentOnCore (determineTargetCore st2 tid) ≠ some tid := by
+      rw [hSch2]; exact hNotCur _
+    have hPre3 := wakeThread_preserves_schedulerInvariantStructuralRegNodup_smp
+      st2 tid execCore hInv2 hNotCur2 hPre2
+    have hInv3 : (wakeThread st2 tid execCore).1.objects.invExt :=
+      wakeThread_preserves_objects_invExt _ _ execCore hInv2
+    simp only [] at hStep
+    split at hStep <;>
+      · simp only [Except.ok.injEq] at hStep
+        subst hStep
+        first
+          | exact revertPriorityInheritance_preserves_schedulerInvariantStructuralRegNodup_smp
+              _ _ _ hInv3 hPre3
+          | exact hPre3
 
 open SeLe4n.Kernel.PriorityInheritance in
 /-- WS-SM SM5.I.8 (timeout atom; every-core since PR #880 round 8): `timeoutThread`
@@ -2675,29 +2724,24 @@ theorem timeoutThread_currentOnCore_eq
     (r : SystemState × Option (CoreId × SgiKind)) (c' : CoreId)
     (hStep : timeoutThread endpointId isReceiveQ tid execCore st = .ok r) :
     r.1.scheduler.currentOnCore c' = st.scheduler.currentOnCore c' := by
+  -- WS-OD OD1.2: the abort writes no scheduler state at all, so the whole
+  -- object half collapses to one frame.
   unfold timeoutThread at hStep
   split at hStep
   · simp at hStep
-  · rename_i st1 hEQR
-    have h1 := endpointQueueRemove_scheduler_eq _ _ _ _ _ hEQR
-    split at hStep
-    · simp at hStep
-    · rename_i tcb hLook
-      simp only [] at hStep
-      split at hStep
-      · simp at hStep
-      · rename_i st2 heq
-        have h2 := storeObject_scheduler_eq _ _ _ _ heq
-        have hWake : (wakeThread st2 tid execCore).1.scheduler.currentOnCore c'
-            = st2.scheduler.currentOnCore c' := by
-          rw [wakeThread_state_eq_enqueue]
-          exact enqueueRunnableOnCore_currentOnCore st2 _ tid c'
-        split at hStep <;>
-          · simp only [Except.ok.injEq] at hStep
-            subst hStep
-            first
-              | rw [revert_currentOnCore_eq, hWake, h2, h1]
-              | rw [hWake, h2, h1]
+  · rename_i st2 hAbort
+    have hAbortSched := abortPendingIpcOnEndpoint_scheduler_eq _ _ _ _ _ hAbort
+    have hWake : (wakeThread st2 tid execCore).1.scheduler.currentOnCore c'
+        = st2.scheduler.currentOnCore c' := by
+      rw [wakeThread_state_eq_enqueue]
+      exact enqueueRunnableOnCore_currentOnCore st2 _ tid c'
+    simp only [] at hStep
+    split at hStep <;>
+      · simp only [Except.ok.injEq] at hStep
+        subst hStep
+        first
+          | rw [revert_currentOnCore_eq, hWake, hAbortSched]
+          | rw [hWake, hAbortSched]
 
 /-- WS-SM SM5.I.8 (timeout atom): `timeoutBlockedThreads` preserves the base
 safety invariant.  It folds `timeoutThread` over the SchedContext's blocked
@@ -3063,20 +3107,15 @@ theorem storeObject_tcb_getTcb?_isSome (st1 st2 : SystemState) (tid : SeLe4n.Thr
       (fun hh => hxt (SeLe4n.ThreadId.toObjId_injective _ _ hh)) hInv1 heq]
     exact hx
 
-open SeLe4n.Kernel.PriorityInheritance in
-/-- WS-SM SM5.I.8 (timeout atom): `timeoutThread` preserves the qcc-free run-queue
-safety bundle on core `c`, UNCONDITIONALLY (no `hNotCur` — the three conjuncts
-never read `current`).  Composes the `endpointQueueRemove` / `storeObject`
-objects-frames with the target-aware `wakeThread` re-enqueue and the optional
-PIP-chain `revertPriorityInheritance`, each of which preserves run-queue safety. -/
-theorem timeoutThread_preserves_runQueueSafetyOnCore
+/-- WS-OD OD1.2: the timeout's object-only prefix preserves the qcc-free
+run-queue safety bundle on core `c` — both of its writes are object-store
+frames, and neither touches the scheduler. -/
+theorem abortPendingIpcOnEndpoint_preserves_runQueueSafetyOnCore
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
-    (execCore : CoreId) (st : SystemState)
-    (r : SystemState × Option (CoreId × SgiKind)) (c : CoreId)
-    (hInv : st.objects.invExt)
-    (hStep : timeoutThread endpointId isReceiveQ tid execCore st = .ok r)
-    (h : runQueueSafetyOnCore st c) : runQueueSafetyOnCore r.1 c := by
-  unfold timeoutThread at hStep
+    (st st' : SystemState) (c : CoreId) (hInv : st.objects.invExt)
+    (hStep : abortPendingIpcOnEndpoint endpointId isReceiveQ tid st = .ok st')
+    (h : runQueueSafetyOnCore st c) : runQueueSafetyOnCore st' c := by
+  unfold abortPendingIpcOnEndpoint at hStep
   split at hStep
   · simp at hStep
   · rename_i st1 hEQR
@@ -3098,20 +3137,44 @@ theorem timeoutThread_preserves_runQueueSafetyOnCore
       split at hStep
       · simp at hStep
       · rename_i st2 heq
-        have hInv2 := storeObject_preserves_objects_invExt st1 st2 tid.toObjId _ hInv1 heq
-        have h2 : runQueueSafetyOnCore st2 c :=
-          objects_frame_preserves_runQueueSafetyOnCore st1 st2 c
-            (storeObject_scheduler_eq st1 st2 _ _ heq)
-            (fun x hx => storeObject_tcb_getTcb?_isSome st1 st2 tid _ hInv1 heq x hx) h1
-        have h3 := wakeThread_preserves_runQueueSafetyOnCore st2 tid execCore c hInv2 h2
-        have hInv3 : (wakeThread st2 tid execCore).1.objects.invExt :=
-          wakeThread_preserves_objects_invExt _ _ execCore hInv2
-        split at hStep <;>
-          · simp only [Except.ok.injEq] at hStep
-            subst hStep
-            first
-              | exact revertPriorityInheritance_preserves_runQueueSafetyOnCore _ _ _ _ hInv3 h3
-              | exact h3
+        simp only [Except.ok.injEq] at hStep
+        subst hStep
+        exact objects_frame_preserves_runQueueSafetyOnCore st1 st2 c
+          (storeObject_scheduler_eq st1 st2 _ _ heq)
+          (fun x hx => storeObject_tcb_getTcb?_isSome st1 st2 tid _ hInv1 heq x hx) h1
+
+open SeLe4n.Kernel.PriorityInheritance in
+/-- WS-SM SM5.I.8 (timeout atom): `timeoutThread` preserves the qcc-free run-queue
+safety bundle on core `c`, UNCONDITIONALLY (no `hNotCur` — the three conjuncts
+never read `current`).  Composes the `endpointQueueRemove` / `storeObject`
+objects-frames with the target-aware `wakeThread` re-enqueue and the optional
+PIP-chain `revertPriorityInheritance`, each of which preserves run-queue safety. -/
+theorem timeoutThread_preserves_runQueueSafetyOnCore
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (execCore : CoreId) (st : SystemState)
+    (r : SystemState × Option (CoreId × SgiKind)) (c : CoreId)
+    (hInv : st.objects.invExt)
+    (hStep : timeoutThread endpointId isReceiveQ tid execCore st = .ok r)
+    (h : runQueueSafetyOnCore st c) : runQueueSafetyOnCore r.1 c := by
+  -- WS-OD OD1.2: the two object writes are the abort's; what is left here is
+  -- the wake and the optional PIP revert.
+  unfold timeoutThread at hStep
+  split at hStep
+  · simp at hStep
+  · rename_i st2 hAbort
+    have hInv2 := abortPendingIpcOnEndpoint_preserves_objects_invExt _ _ _ _ _ hInv hAbort
+    have h2 : runQueueSafetyOnCore st2 c :=
+      abortPendingIpcOnEndpoint_preserves_runQueueSafetyOnCore _ _ _ _ _ c hInv hAbort h
+    have h3 := wakeThread_preserves_runQueueSafetyOnCore st2 tid execCore c hInv2 h2
+    have hInv3 : (wakeThread st2 tid execCore).1.objects.invExt :=
+      wakeThread_preserves_objects_invExt _ _ execCore hInv2
+    simp only [] at hStep
+    split at hStep <;>
+      · simp only [Except.ok.injEq] at hStep
+        subst hStep
+        first
+          | exact revertPriorityInheritance_preserves_runQueueSafetyOnCore _ _ _ _ hInv3 h3
+          | exact h3
 
 /-- WS-SM SM5.I.8 (timeout fold): `timeoutBlockedThreads` preserves the qcc-free
 run-queue safety bundle on core `c` UNCONDITIONALLY.  Folds the `timeoutThread`
@@ -3301,8 +3364,13 @@ private theorem tsAgree_peel_ep_tid {base T : RobinHood.RHTable SeLe4n.ObjId Ker
     (RobinHood.RHTable.insert_preserves_invExt _ _ _ hI) hbase hv
 
 /-- Thread `tsAgree` through `endpointQueueRemove`'s conditional successor-patch
-insert (`queueNext`): the inserted `{nextTcb with queuePrev := …}` preserves
-`timeSlice`, and the base agreement is supplied by `ha1` at `nextTid`. -/
+insert (`queueNext`): the inserted `{nextTcb with queuePrev := …, queuePPrev := …}`
+preserves `timeSlice`, and the base agreement is supplied by `ha1` at `nextTid`.
+
+WS-OD OD1.1: the insert gained `queuePPrev`, which the removal had been leaving
+stale on the successor.  This statement quotes the record update literally, so it
+had to move with it — the proof did not, because it turns on `timeSlice` alone
+and a record update that names neither field preserves it by `rfl`. -/
 private theorem tsAgree_next_step (st : SystemState) (tcb : TCB)
     (objs1 : RobinHood.RHTable SeLe4n.ObjId KernelObject)
     (ha1 : tsAgree st.objects objs1) (hi1 : objs1.invExt) :
@@ -3310,7 +3378,9 @@ private theorem tsAgree_next_step (st : SystemState) (tcb : TCB)
       | none => objs1
       | some nextTid => match objs1[nextTid.toObjId]? with
         | some (.tcb nextTcb) =>
-          objs1.insert nextTid.toObjId (.tcb { nextTcb with queuePrev := tcb.queuePrev })
+          objs1.insert nextTid.toObjId
+            (.tcb { nextTcb with queuePrev := tcb.queuePrev,
+                                 queuePPrev := tcb.queuePPrev })
         | _ => objs1) := by
   cases tcb.queueNext with
   | none => simpa only [] using ha1
@@ -3444,19 +3514,15 @@ theorem wakeThread_preserves_allThreadsTimeSlicePositive (st : SystemState)
   exact enqueueRunnableOnCore_preserves_allThreadsTimeSlicePositive st
     (determineTargetCore st tid) tid hInv h
 
-/-- WS-SM SM5.I global strengthening: `timeoutThread` preserves
-`allThreadsTimeSlicePositive`.  Composes the four sub-ops: endpointQueueRemove
-(step 2d), the TCB `storeObject` (`{tcb with ipcState/threadState/… := …}`,
-timeSlice-preserving), the target-aware wake (ready-save is timeSlice-preserving),
-and `revertPriorityInheritance` (step 2c).  Mirrors
-`timeoutThread_preserves_runQueueSafetyOnCore`. -/
-theorem timeoutThread_preserves_allThreadsTimeSlicePositive
+/-- WS-OD OD1.2: the timeout's object-only prefix preserves
+`allThreadsTimeSlicePositive` — its two writes are the queue removal (which
+preserves it) and one TCB store that names no `timeSlice`. -/
+theorem abortPendingIpcOnEndpoint_preserves_allThreadsTimeSlicePositive
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
-    (execCore : CoreId) (st : SystemState)
-    (r : SystemState × Option (CoreId × SgiKind)) (hInv : st.objects.invExt)
-    (hStep : timeoutThread endpointId isReceiveQ tid execCore st = .ok r)
-    (h : allThreadsTimeSlicePositive st) : allThreadsTimeSlicePositive r.1 := by
-  unfold timeoutThread at hStep
+    (st st' : SystemState) (hInv : st.objects.invExt)
+    (hStep : abortPendingIpcOnEndpoint endpointId isReceiveQ tid st = .ok st')
+    (h : allThreadsTimeSlicePositive st) : allThreadsTimeSlicePositive st' := by
+  unfold abortPendingIpcOnEndpoint at hStep
   split at hStep
   · simp at hStep
   · rename_i st1 hEQR
@@ -3470,21 +3536,45 @@ theorem timeoutThread_preserves_allThreadsTimeSlicePositive
       split at hStep
       · simp at hStep
       · rename_i st2 heq
-        have hInv2 := storeObject_preserves_objects_invExt st1 st2 tid.toObjId _ hInv1 heq
         have hpre : st1.getTcb? tid = some tcb :=
           (SystemState.getTcb?_eq_some_iff st1 tid tcb).mpr (lookupTcb_some_objects st1 tid tcb hLook)
-        have h2 : allThreadsTimeSlicePositive st2 :=
-          storeObject_tcb_preserves_allThreads hInv1 hpre heq rfl h1
-        have h3 : allThreadsTimeSlicePositive (wakeThread st2 tid execCore).1 :=
-          wakeThread_preserves_allThreadsTimeSlicePositive st2 tid execCore hInv2 h2
-        have hInv3 : (wakeThread st2 tid execCore).1.objects.invExt :=
-          wakeThread_preserves_objects_invExt _ _ execCore hInv2
-        split at hStep <;>
-          · simp only [Except.ok.injEq] at hStep
-            subst hStep
-            first
-              | exact revertPriorityInheritance_preserves_allThreadsTimeSlicePositive _ _ _ hInv3 h3
-              | exact h3
+        simp only [Except.ok.injEq] at hStep
+        subst hStep
+        exact storeObject_tcb_preserves_allThreads hInv1 hpre heq rfl h1
+
+/-- WS-SM SM5.I global strengthening: `timeoutThread` preserves
+`allThreadsTimeSlicePositive`.  Composes the four sub-ops: endpointQueueRemove
+(step 2d), the TCB `storeObject` (`{tcb with ipcState/threadState/… := …}`,
+timeSlice-preserving), the target-aware wake (ready-save is timeSlice-preserving),
+and `revertPriorityInheritance` (step 2c).  Mirrors
+`timeoutThread_preserves_runQueueSafetyOnCore`. -/
+theorem timeoutThread_preserves_allThreadsTimeSlicePositive
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (execCore : CoreId) (st : SystemState)
+    (r : SystemState × Option (CoreId × SgiKind)) (hInv : st.objects.invExt)
+    (hStep : timeoutThread endpointId isReceiveQ tid execCore st = .ok r)
+    (h : allThreadsTimeSlicePositive st) : allThreadsTimeSlicePositive r.1 := by
+  -- WS-OD OD1.2: the two object writes are the abort's, so the carriage across
+  -- them is stated at that level; what is left here is the wake and the
+  -- optional PIP revert.
+  unfold timeoutThread at hStep
+  split at hStep
+  · simp at hStep
+  · rename_i st2 hAbort
+    have hInv2 := abortPendingIpcOnEndpoint_preserves_objects_invExt _ _ _ _ _ hInv hAbort
+    have h2 : allThreadsTimeSlicePositive st2 :=
+      abortPendingIpcOnEndpoint_preserves_allThreadsTimeSlicePositive _ _ _ _ _ hInv hAbort h
+    have h3 : allThreadsTimeSlicePositive (wakeThread st2 tid execCore).1 :=
+      wakeThread_preserves_allThreadsTimeSlicePositive st2 tid execCore hInv2 h2
+    have hInv3 : (wakeThread st2 tid execCore).1.objects.invExt :=
+      wakeThread_preserves_objects_invExt _ _ execCore hInv2
+    simp only [] at hStep
+    split at hStep <;>
+      · simp only [Except.ok.injEq] at hStep
+        subst hStep
+        first
+          | exact revertPriorityInheritance_preserves_allThreadsTimeSlicePositive _ _ _ hInv3 h3
+          | exact h3
 
 /-- WS-SM SM5.I global strengthening: `timeoutBlockedThreads` preserves
 `allThreadsTimeSlicePositive` (folds the `timeoutThread` atom).  Mirrors

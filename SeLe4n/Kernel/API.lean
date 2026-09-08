@@ -762,15 +762,16 @@ def resolveReplyRecvReply (gate : SyscallGate) (decoded : SyscallDecodeResult)
           match extractReplyId rcap with
           | .error e => .error e
           | .ok rid =>
-              match st.getReply? rid with
-              | some reply =>
-                  match reply.caller with
-                  -- PR #822 review: carry the *reply cap's* badge (the reply
-                  -- authority), not the endpoint receive cap's, so the previous
-                  -- caller receives the badge associated with the reply cap (as in
-                  -- the `.reply` arm) when the two differ.
-                  | some prevCaller => .ok (rid, prevCaller, rcap.badge)
-                  | none => .error .replyCapInvalid
+              -- WS-RR RR7.11: one resolution of "which thread does this reply
+              -- capability answer", shared with the `.reply` arm and with the
+              -- declared-footprint resolver.  Both former `none` arms produced
+              -- `.replyCapInvalid`, so this is behaviour-identical.
+              match replyAnsweredCaller? st rid with
+              -- PR #822 review: carry the *reply cap's* badge (the reply
+              -- authority), not the endpoint receive cap's, so the previous
+              -- caller receives the badge associated with the reply cap (as in
+              -- the `.reply` arm) when the two differ.
+              | some prevCaller => .ok (rid, prevCaller, rcap.badge)
               | none => .error .replyCapInvalid
 
 /-- WS-SM SM6.C (PR #822 review): the `ReplyRecv` post-receive donation
@@ -989,6 +990,74 @@ theorem replyRecvReturnDonation_preserves_replenishQueueAffinityConsistent_smp
                 | _ =>
                     rw [hIpc] at h; simp only [] at h; cases h
                     exact hPip _ (hDeschedInv _ hInv1) (hDesched _ hCons1)
+/-- **WS-RR RR7.34**: the three live SchedContext hand-offs, as one relation.
+
+`SMP_CROSS_CORE_IPC_PLAN` §4.3 and §10 and `SMP_PER_CORE_SCHEDULER_PLAN` §PIP
+all name an SM5 theorem `donation_perCore_consistent` — "if the receiver
+inherits the SC and is on a different core, the SC's CBS replenish queue
+migrates per SM5.H.4" — that existed nowhere.  The *content* did, three times
+over, once per donation path; what was missing is the statement the catalogue
+names, over all of them at once.
+
+Derived rather than listed: a constructor per live hand-off, each carrying that
+path's own home-core resolutions, so a fourth donation path added without a
+migration proof cannot be introduced here without extending this relation and
+answering `donation_perCore_consistent` for it.  The pre-state affinity
+resolutions are hypotheses because each live call site discharges them by `rfl`
+from its own pre-state — which is the shape the three underlying theorems were
+stated in, and the reason they compose. -/
+inductive PerCoreDonationStep (st st' : SystemState) : Prop
+  /-- The call rendezvous donates the caller's SchedContext to the receiver. -/
+  | call (callerVtid receiverVtid : SeLe4n.ValidThreadId)
+      (donorHome doneeHome : Concurrency.CoreId)
+      (hDonorHome : determineTargetCore st callerVtid.val = donorHome)
+      (hDoneeHome : determineTargetCore st receiverVtid.val = doneeHome)
+      (hStep : applyCallDonationOnCore st callerVtid receiverVtid donorHome doneeHome = .ok st')
+  /-- The reply returns a donated SchedContext to its original owner. -/
+  | reply (replierVtid : SeLe4n.ValidThreadId)
+      (executingCore replierHome ownerHome : Concurrency.CoreId)
+      (hReplierHome : determineTargetCore st replierVtid.val = replierHome)
+      (hOwnerHome : ∀ scId owner, replyDonationReturn? st replierVtid.val = some (scId, owner) →
+          determineTargetCore st owner = ownerHome)
+      (hStep : applyReplyDonationOnCore st replierVtid executingCore replierHome ownerHome
+          = .ok st')
+  /-- `.replyRecv` fuses the return with the next request's donation. -/
+  | replyRecv (tid recordedServer nextThread : SeLe4n.ThreadId)
+      (serverCore : Concurrency.CoreId) (u : Unit)
+      (hStep : replyRecvReturnDonation tid recordedServer nextThread serverCore st = .ok (u, st'))
+
+/-- **WS-RR RR7.34** (`SMP_CROSS_CORE_IPC_PLAN` §10's SM5 catalogue entry,
+authored): **every SchedContext hand-off leaves the replenish queues where the
+bound threads are.**
+
+`replenishQueueAffinityConsistent_smp` says a SchedContext's CBS replenishments
+sit on its bound thread's home core.  A donation rebinds `boundThread`, so a
+cross-core hand-off falsifies it from the instant it commits unless the
+replenishment migrates with the binding — which is why every live path calls
+`migrateSchedContextReplenishment`, and why a same-core hand-off costs nothing
+(`migrateSchedContextReplenishment_noop`).
+
+This is the catalogued statement over all three paths.  Its proof is the three
+per-path theorems and nothing else: the aggregation is the content, since a
+reader looking for "the donation theorem" found three names and no claim about
+the family. -/
+theorem donation_perCore_consistent (st st' : SystemState)
+    (hObjInv : st.objects.invExt)
+    (hCons : replenishQueueAffinityConsistent_smp st)
+    (hStep : PerCoreDonationStep st st') :
+    replenishQueueAffinityConsistent_smp st' := by
+  cases hStep with
+  | call callerVtid receiverVtid donorHome doneeHome hDonorHome hDoneeHome h =>
+      exact applyCallDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
+        st st' callerVtid receiverVtid donorHome doneeHome hObjInv hCons hDonorHome hDoneeHome h
+  | reply replierVtid executingCore replierHome ownerHome hReplierHome hOwnerHome h =>
+      exact applyReplyDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
+        st st' replierVtid executingCore replierHome ownerHome hObjInv hCons hReplierHome
+        hOwnerHome h
+  | replyRecv tid recordedServer nextThread serverCore u h =>
+      exact replyRecvReturnDonation_preserves_replenishQueueAffinityConsistent_smp
+        tid recordedServer nextThread serverCore st st' u hObjInv hCons h
+
 /-- **WS-RR RR2 (closure audit): the `.replyRecv` donation resolution preserves
 the whole IPC invariant bundle.**
 
@@ -2933,7 +3002,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
         -- *its* home core and removes the sender from *its own* core; on the boot
         -- core it is the single-core transition.
         let executingCore := determineExecutingCore st tid
-        match endpointSendDualWithCapsOnCore epId tid msg cap.rights gate.cspaceRoot
+        match endpointSendDualWithCapsOnCore epId tid msg cap.rights
             decoded.capRecvSlot executingCore st with
         | (_, .error e) => .error e
         | (st', .ok (summary, _)) =>
@@ -3048,7 +3117,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
         -- message in its `pendingMessage`; stage its return frame (the CALLER
         -- itself always blocks — §3.5 — and is owed its frame by the reply path).
         let wokenReceiver? := (st.getEndpoint? epId).bind (·.receiveQ.head)
-        match endpointCallCrossCoreDispatch epId tid msg cap.rights gate.cspaceRoot
+        match endpointCallCrossCoreDispatch epId tid msg cap.rights
             decoded.capRecvSlot executingCore st with
         -- PR #866 round-2: the woken receiver's `extraCaps` is the transfer
         -- summary's INSTALLED count (zero on grant-denied / slot-exhausted
@@ -3074,12 +3143,14 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
         -- (PR #827 review #3) — atomic with the delivery, no separate dispatch
         -- step.  Fails closed (`.replyCapInvalid`) on a dangling reply or an
         -- unlinked caller.
-        match st.getReply? rid with
+        -- WS-RR RR7.11: the answered thread is `replyAnsweredCaller?`, the
+        -- expression the declared footprint resolver reads.  The two-level
+        -- match this replaces collapsed a dangling reply and an unlinked one
+        -- onto the same error, so this is that arm verbatim with the
+        -- resolution named once.
+        match replyAnsweredCaller? st rid with
         | none => .error .replyCapInvalid
-        | some reply =>
-          match reply.caller with
-          | none => .error .replyCapInvalid
-          | some callerTid =>
+        | some callerTid =>
             let executingCore := determineExecutingCore st tid
             -- WS-RR RR4.14/RR4.15: seL4's `doReplyTransfer` branches on the
             -- answered thread's `tcbFault` before it transfers anything.  On an
@@ -3383,7 +3454,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
         -- sender→endpoint flow gate, then the per-core transition.
         let executingCore := determineExecutingCore st tid
         match endpointSendCrossCoreDispatchChecked ctx epId tid msg cap.rights
-            gate.cspaceRoot decoded.capRecvSlot executingCore st with
+            decoded.capRecvSlot executingCore st with
         | (_, .error e) => .error e
         | (st', .ok (summary, _)) =>
             match clearWokenReceiverStash wokenReceiver? st' with
@@ -3501,7 +3572,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
         -- call's own flow gate ran inside the checked dispatch, before the wake).
         let wokenReceiver? := (st.getEndpoint? epId).bind (·.receiveQ.head)
         match endpointCallCrossCoreDispatchChecked ctx epId tid msg cap.rights
-            gate.cspaceRoot decoded.capRecvSlot executingCore st with
+            decoded.capRecvSlot executingCore st with
         -- PR #866 round-2: `extraCaps` = the summary's INSTALLED count, like
         -- the unchecked arm.
         | (st', .ok (summary, _)) =>
@@ -3527,12 +3598,11 @@ def dispatchWithCapChecked (ctx : LabelingContext)
         -- review #3) — atomic with the delivery, no separate dispatch step.
         -- Fails closed (`.replyCapInvalid`) on a dangling reply or an unlinked
         -- caller.
-        match st.getReply? rid with
+        -- WS-RR RR7.11: the answered thread is `replyAnsweredCaller?`, the same
+        -- resolution the unchecked arm and the declared-footprint resolver read.
+        match replyAnsweredCaller? st rid with
         | none => .error .replyCapInvalid
-        | some reply =>
-          match reply.caller with
-          | none => .error .replyCapInvalid
-          | some callerTid =>
+        | some callerTid =>
             -- WS-SM SM6.D (PR #822 review, IF-ordering): a denied replier→caller flow
             -- must be **indistinguishable** from an unlinked/consumed reply.  Probing
             -- `reply.caller` (above) is unavoidable — the flow gate needs the caller
@@ -4242,7 +4312,8 @@ theorem checkedDispatch_reply_eq_unchecked_when_allowed
   -- (which folds the consume), then collapse checked → unchecked under the flow
   -- guard.
   simp only [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly,
-    hSyscall, hCap, hReply, hCaller, hFlow, if_true]
+    hSyscall, hCap, replyAnsweredCaller?, hReply, hCaller, Option.bind,
+    hFlow, if_true]
   -- WS-RR RR4.14: the seam collapses on *both* branches under the same flow
   -- guard, so the fault branch costs this proof nothing.
   rw [replyTransferOnCoreChecked_eq_unchecked_of_flow_allowed ctx tid callerTid
@@ -4302,7 +4373,8 @@ theorem checkedDispatch_reply_flow_denied_collapses
     (hCaller : reply.caller = some callerTid)
     (hDenied : securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf callerTid) = false) :
     dispatchWithCapChecked ctx decoded tid gate cap st = .error .replyCapInvalid := by
-  simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hCap, hReply, hCaller, hDenied]
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hCap,
+    replyAnsweredCaller?, hReply, hCaller, Option.bind, hDenied]
 
 /-- WS-SM SM6.D (PR #822 review, IF-ordering): a checked `.receive` whose
 endpoint→receiver flow is **denied** returns `.flowDenied` *for every state and decode*
@@ -4920,7 +4992,7 @@ theorem dispatchWithCap_send_uses_withCaps
                                   capsGranted := cap.rights.mem .grant }
         let wokenReceiver? := (st.getEndpoint? epId).bind (·.receiveQ.head)
         let executingCore := determineExecutingCore st tid
-        match endpointSendDualWithCapsOnCore epId tid msg cap.rights gate.cspaceRoot
+        match endpointSendDualWithCapsOnCore epId tid msg cap.rights
             decoded.capRecvSlot executingCore st with
         | (_, .error e) => .error e
         | (st', .ok (summary, _)) =>
@@ -4967,7 +5039,7 @@ theorem dispatchWithCap_call_uses_crossCoreDispatch
         -- separate post-dispatch link step.
         -- WS-RA RA.B.5b: the woken receiver's staged frame rides in the RHS.
         let wokenReceiver? := (st.getEndpoint? epId).bind (·.receiveQ.head)
-        match endpointCallCrossCoreDispatch epId tid msg cap.rights gate.cspaceRoot
+        match endpointCallCrossCoreDispatch epId tid msg cap.rights
             decoded.capRecvSlot executingCore st with
         | (st', .ok (summary, _)) =>
             .ok ((), Architecture.stageWokenDelivery st' wokenReceiver?
@@ -4995,12 +5067,14 @@ theorem dispatchWithCap_reply_populates_msg
     dispatchWithCap decoded tid gate cap =
       fun st =>
         let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
-        match st.getReply? rid with
+        -- WS-RR RR7.11: the answered thread is `replyAnsweredCaller?`, the
+        -- expression the declared footprint resolver reads.  The two-level
+        -- match this replaces collapsed a dangling reply and an unlinked one
+        -- onto the same error, so this is that arm verbatim with the
+        -- resolution named once.
+        match replyAnsweredCaller? st rid with
         | none => .error .replyCapInvalid
-        | some reply =>
-          match reply.caller with
-          | none => .error .replyCapInvalid
-          | some callerTid =>
+        | some callerTid =>
             let executingCore := determineExecutingCore st tid
             -- WS-RR RR4.14/RR4.15: seL4's `doReplyTransfer` branch on the
             -- answered thread's `tcbFault`.  On an unfaulted caller this is the
@@ -5253,8 +5327,8 @@ theorem dispatchArm_call_frame_delivered_by_reply
       Architecture.readReturnFrame stPost callerTid
         = Architecture.returnFrameOfMessage msg 0 := by
   refine ⟨rfl, Architecture.stageDeliveredMessage st1 callerTid 0, ?_, ?_⟩
-  · simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hReply,
-      hCaller, replyTransferOnCore, hNoFault, hDispatch]
+  · simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget,
+      replyAnsweredCaller?, hReply, hCaller, replyTransferOnCore, hNoFault, hDispatch]
   · exact Architecture.blockedReturn_staged_in_waiter_frame st1 callerTid tcb msg 0
       hTcb hReady hMsg hObjInv
 
@@ -6191,6 +6265,216 @@ theorem dispatchSyscallChecked_audit_right_checked_second
       simp [SeLe4n.Kernel.capTargetsReservedIdleObject, hTarget]
     simp [hRes, hArm]
 
+
+-- ============================================================================
+-- WS-RR RR7.3: the capability-held guarantee on the LIVE checked dispatch path
+--
+-- Register §4 finding 5: `syscallEntry_implies_capability_held` and
+-- `dispatchSyscall_requires_right` are stated over the *legacy* entry, which is
+-- `bootCoreId`-pinned and whose only non-test callers are the trace harness and
+-- the exception model.  The path the hardware takes is
+-- `@[export lean_syscall_dispatch_cross_core]` → `syscallDispatchCrossCoreEntry`
+-- → `Platform.FFI.syscallDispatchFromAbi` → `syscallEntryChecked` →
+-- `dispatchSyscallChecked`, and nothing covered it.  These are the analogues,
+-- parameterized over the executing core rather than the boot core.
+--
+-- The checked dispatcher has two gate shapes and the guarantee holds through
+-- both: the 31 ordinary arms take the rights-checking `syscallInvoke`, and the
+-- two `syscallChecksTargetFirst` arms take the resolve-only
+-- `syscallInvokeResolved` and check the right in the arm, after the target.
+-- The second half is what the first attempt at this theorem would have missed —
+-- a rights conclusion read off the gate alone is false for the audit pair.
+-- ============================================================================
+
+/-- **WS-RR RR7.3**: a successful audit arm of the flow-checked dispatch implies
+the capability carried the required right.
+
+The arm's own gate, stated in the direction the entry-point guarantee needs.
+`dispatchWithCapChecked_audit_insufficient_right_denied` is the contrapositive
+for a capability that already targets the audit trail; this form takes no
+`hTarget` hypothesis, because `extractAuditAuthority` is total and a
+non-audit-trail target refuses before the rights test is reached. -/
+theorem dispatchWithCapChecked_audit_success_requires_right
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability) (st : SystemState) (st' : SystemState)
+    (hSyscall : decoded.syscallId = .auditRead ∨ decoded.syscallId = .auditDrain)
+    (hOk : dispatchWithCapChecked ctx decoded tid gate cap st = .ok ((), st')) :
+    cap.hasRight gate.requiredRight = true := by
+  by_cases hRight : cap.hasRight gate.requiredRight
+  · exact hRight
+  · exfalso
+    simp only [Bool.not_eq_true] at hRight
+    simp only [dispatchWithCapChecked, dispatchCapabilityOnly] at hOk
+    rcases hSyscall with h | h <;> rw [h] at hOk <;>
+      · simp only [extractAuditAuthority] at hOk
+        cases hTgt : cap.target <;> rw [hTgt] at hOk <;>
+          simp only [hRight, if_false, Bool.false_eq_true] at hOk <;>
+          exact absurd hOk (by simp)
+
+/-- **WS-RR RR7.3**: if the **flow-checked** dispatch succeeds, the caller held a
+capability with the required access right for the invoked syscall.
+
+The live-path analogue of `dispatchSyscall_requires_right`.  Both gate shapes
+are covered: the ordinary arms through `syscallInvoke_requires_right`, and the
+target-first (audit) pair through `syscallResolveCap`'s resolution plus
+`dispatchWithCapChecked_audit_success_requires_right` — the arm's own rights
+test, which is where the audit pair's second gate lives since PR #870 round 5. -/
+theorem dispatchSyscallChecked_requires_right
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (st : SystemState) (st' : SystemState)
+    (hOk : dispatchSyscallChecked ctx decoded tid st = .ok ((), st')) :
+    ∃ tcb, st.getTcb? tid = some tcb ∧
+      ∃ rootCn, st.getCNode? tcb.cspaceRoot = some rootCn ∧
+        ∃ cap ref,
+          resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref ∧
+          SystemState.lookupSlotCap st ref = some cap ∧
+          cap.hasRight (syscallRequiredRight decoded.syscallId) = true := by
+  simp only [dispatchSyscallChecked] at hOk
+  split at hOk
+  next tcb hTcb =>
+    refine ⟨tcb, (SystemState.getTcb?_eq_some_iff st tid tcb).mpr hTcb, ?_⟩
+    split at hOk
+    next rootCn hRoot =>
+      refine ⟨rootCn, (SystemState.getCNode?_eq_some_iff st tcb.cspaceRoot rootCn).mpr hRoot, ?_⟩
+      split at hOk
+      · simp at hOk
+      next stPost hInvokeOk =>
+        -- The gate the dispatcher chose is the `if` inside the invoke's own
+        -- `match`; split it so each shape supplies its own rights witness.
+        split at hInvokeOk
+        next hTargetFirst =>
+          -- The audit pair: resolve-only lookup, rights checked in the arm.
+          simp only [syscallInvokeResolved] at hInvokeOk
+          split at hInvokeOk
+          · simp at hInvokeOk
+          next cap stRes hResolveOk =>
+            obtain ⟨ref, hResolve, hSlot, hStEq⟩ :=
+              syscallResolveCap_implies_capability_at_slot _ _ cap stRes hResolveOk
+            subst hStEq
+            refine ⟨cap, ref, hResolve, hSlot, ?_⟩
+            exact dispatchWithCapChecked_audit_success_requires_right ctx decoded tid _ cap
+              _ stPost ((syscallChecksTargetFirst_iff decoded.syscallId).mp hTargetFirst)
+              hInvokeOk
+        next =>
+          -- Every other arm: the classic rights-gated lookup.
+          obtain ⟨cap, ref, hResolve, hSlot, hRight⟩ :=
+            syscallInvoke_requires_right _ (dispatchWithCapChecked ctx decoded tid _)
+              _ () stPost hInvokeOk
+          exact ⟨cap, ref, hResolve, hSlot, hRight⟩
+    · simp at hOk
+    · simp at hOk
+  · simp at hOk
+  · simp at hOk
+
+/-- **WS-RR RR7.3**: if the **flow-checked** syscall entry succeeds, the caller
+held the required access right — the live-path analogue of
+`syscallEntry_implies_capability_held`.
+
+Three differences from the legacy statement, all of them the point:
+
+* the caller is identified on the **executing** core (`currentOnCore
+  executingCore`), not on `bootCoreId`, so the guarantee covers a syscall issued
+  from a secondary PE;
+* the capability is resolved against the state the decode's TLB fill produced
+  (`tlbFillIpcBufferOnCore`), which is the state the dispatcher is handed — a
+  statement about `st` would be about a state no arm ever sees;
+* the entry's own `isInsecureDefaultContext` refusal is part of the chain, so a
+  success also witnesses that a deployment labeling context was installed.
+
+`resolveCapAddress` and `lookupSlotCap` read only the object store, which the
+TLB fill leaves alone (`tlbFillIpcBufferOnCore_frame`), so the resolution is
+equally a resolution against `st`; that corollary is
+`syscallEntryChecked_implies_capability_held_of_pre_state` below. -/
+theorem syscallEntryChecked_implies_capability_held
+    (ctx : LabelingContext) (layout : SeLe4n.SyscallRegisterLayout)
+    (executingCore : Concurrency.CoreId) (regCount : Nat)
+    (st : SystemState) (st' : SystemState)
+    (hOk : syscallEntryChecked ctx layout executingCore regCount st = .ok ((), st')) :
+    isInsecureDefaultContext ctx = false ∧
+    ∃ tid regs decoded,
+      (st.scheduler.currentOnCore executingCore) = some tid ∧
+      lookupThreadRegisterContext tid st = .ok (regs, st) ∧
+      SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+        st tid layout regs regCount = .ok decoded ∧
+      ∃ stFilled,
+        SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
+          st executingCore tid decoded.overflowCount = stFilled ∧
+        ∃ tcb, stFilled.getTcb? tid = some tcb ∧
+          ∃ rootCn, stFilled.getCNode? tcb.cspaceRoot = some rootCn ∧
+            ∃ cap ref,
+              resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth stFilled =
+                .ok ref ∧
+              SystemState.lookupSlotCap stFilled ref = some cap ∧
+              cap.hasRight (syscallRequiredRight decoded.syscallId) = true := by
+  unfold syscallEntryChecked at hOk
+  split at hOk
+  · simp at hOk
+  next hCtx =>
+    simp only [Bool.not_eq_true] at hCtx
+    refine ⟨hCtx, ?_⟩
+    split at hOk
+    · simp at hOk
+    next tid hCurrent =>
+      split at hOk
+      · simp at hOk
+      next regs _stRegs hLookup =>
+        split at hOk
+        · simp at hOk
+        next decoded hDecode =>
+          have hStEq : _stRegs = st := by
+            unfold lookupThreadRegisterContext at hLookup
+            split at hLookup <;> simp at hLookup
+            exact hLookup.2.symm
+          subst hStEq
+          obtain ⟨tcb, hTcb, rootCn, hRoot, cap, ref, hResolve, hSlot, hRight⟩ :=
+            dispatchSyscallChecked_requires_right ctx decoded tid _ st' hOk
+          exact ⟨tid, regs, decoded, hCurrent, hLookup, hDecode, _, rfl,
+                 tcb, hTcb, rootCn, hRoot, cap, ref, hResolve, hSlot, hRight⟩
+
+
+/-- **WS-RR RR7.3**: the live-path capability guarantee, stated on the state the
+caller trapped in.
+
+`syscallEntryChecked_implies_capability_held` resolves against the state the
+decode's TLB fill produced, because that is the state the dispatcher is handed.
+The fill touches only the per-core TLB view (`tlbFillIpcBufferOnCore_frame`) and
+the CSpace walk reads only the object store
+(`resolveCapAddress_congr_objects`), so the same capability is at the same slot
+of the pre-state — which is the form a reader of "every syscall is capability
+gated" wants, since the pre-state is the one user space could have arranged. -/
+theorem syscallEntryChecked_implies_capability_held_of_pre_state
+    (ctx : LabelingContext) (layout : SeLe4n.SyscallRegisterLayout)
+    (executingCore : Concurrency.CoreId) (regCount : Nat)
+    (st : SystemState) (st' : SystemState)
+    (hOk : syscallEntryChecked ctx layout executingCore regCount st = .ok ((), st')) :
+    isInsecureDefaultContext ctx = false ∧
+    ∃ tid regs decoded,
+      (st.scheduler.currentOnCore executingCore) = some tid ∧
+      lookupThreadRegisterContext tid st = .ok (regs, st) ∧
+      SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+        st tid layout regs regCount = .ok decoded ∧
+      ∃ tcb, st.getTcb? tid = some tcb ∧
+        ∃ rootCn, st.getCNode? tcb.cspaceRoot = some rootCn ∧
+          ∃ cap ref,
+            resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref ∧
+            SystemState.lookupSlotCap st ref = some cap ∧
+            cap.hasRight (syscallRequiredRight decoded.syscallId) = true := by
+  obtain ⟨hCtx, tid, regs, decoded, hCurrent, hLookup, hDecode, stFilled, hFill,
+          tcb, hTcb, rootCn, hRoot, cap, ref, hResolve, hSlot, hRight⟩ :=
+    syscallEntryChecked_implies_capability_held ctx layout executingCore regCount st st' hOk
+  subst hFill
+  have hObjects :
+      (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
+        st executingCore tid decoded.overflowCount).objects = st.objects :=
+    (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_frame
+      st executingCore tid decoded.overflowCount).1
+  refine ⟨hCtx, tid, regs, decoded, hCurrent, hLookup, hDecode, tcb, ?_, rootCn, ?_,
+          cap, ref, ?_, ?_, hRight⟩
+  · simpa only [SystemState.getTcb?, hObjects] using hTcb
+  · simpa only [SystemState.getCNode?, hObjects] using hRoot
+  · rw [← resolveCapAddress_congr_objects _ st hObjects]; exact hResolve
+  · rw [← lookupSlotCap_congr_objects _ st ref hObjects]; exact hSlot
+
 /-- **WS-SM SM9.A.10: there is no unchecked audit read.**
 
 The unchecked dispatch fails closed on both audit syscalls.  Stated as a theorem
@@ -6449,7 +6733,7 @@ theorem dispatchWithCap_send_delegates
                 -- message, so a send that parks can still transfer when a
                 -- receiver arrives later.
                 capsGranted := cap.rights.mem .grant }
-              cap.rights gate.cspaceRoot decoded.capRecvSlot
+              cap.rights decoded.capRecvSlot
               (determineExecutingCore st tid) st with
        | (_, .error e) => .error e
        | (st', .ok (summary, _)) =>
@@ -6481,7 +6765,7 @@ theorem dispatchWithCapChecked_send_delegates
                 -- message, so a send that parks can still transfer when a
                 -- receiver arrives later.
                 capsGranted := cap.rights.mem .grant }
-              cap.rights gate.cspaceRoot decoded.capRecvSlot
+              cap.rights decoded.capRecvSlot
               (determineExecutingCore st tid) st with
        | (_, .error e) => .error e
        | (st', .ok (summary, _)) =>
@@ -6591,7 +6875,7 @@ def syscallDelegates : SyscallId → Prop
                     -- PR #873 round 6: the sender's grant authority travels with
                     -- the message, so a parked send can still transfer later.
                     capsGranted := cap.rights.mem .grant }
-                  cap.rights gate.cspaceRoot decoded.capRecvSlot
+                  cap.rights decoded.capRecvSlot
                   (determineExecutingCore st tid) st with
            | (_, .error e) => .error e
            | (st', .ok (summary, _)) =>

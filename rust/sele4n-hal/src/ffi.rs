@@ -44,18 +44,34 @@
 // `cfg(panic = "abort")` is true only when the *currently-compiling* profile
 // has `panic = "abort"` — which the workspace `Cargo.toml` sets for dev and
 // release but CANNOT set for `cargo test` (Rust's stable test harness forces
-// unwind so `#[should_panic]` works). We therefore pair the check with
-// `not(debug_assertions)` so the guard fires ONLY in release builds that
-// attempt to opt back into unwinding, while allowing `cargo test` (which
-// compiles every crate with `debug_assertions = true`) to proceed.
+// unwind so `#[should_panic]` works).
+//
+// **WS-RR RR7.24 (register finding 12): the condition is the target, not the
+// profile.**  This used to read `not(debug_assertions)` as a stand-in for "a
+// release build of the image", and `cargo test --release` is a release build
+// that is not the image: cargo inherits `debug_assertions = false` from the
+// release profile and forces `panic = unwind` for the test harness, so both
+// conjuncts held and the crate refused to compile.  The panic-hang plan's
+// definition of done asks for `cargo test --workspace --release` five times
+// over and for `ITER_OVERRIDE=1000 cargo test --release …`; neither could ever
+// have run.
+//
+// The fact the guard is about is the **bare-metal image**: a `no_std` kernel
+// has no unwinder, so `panic = "abort"` is not a preference there but a
+// requirement, and the value of the guard is its actionable message rather
+// than the link error that would follow.  `target_os = "none"` names exactly
+// that build (`aarch64-unknown-none`) and nothing else — no host profile, test
+// or otherwise, can satisfy it, and no test profile can suppress it on the
+// target.
 //
 // In practice: if anyone ever edits Cargo.toml to remove `panic = "abort"`
-// from `[profile.release]`, this fires with the actionable message below.
-#[cfg(all(not(panic = "abort"), not(debug_assertions)))]
+// from `[profile.release]`, the cross build fires with the message below;
+// `scripts/test_aarch64_cross_build.sh` is the lane that would see it.
+#[cfg(all(target_os = "none", not(panic = "abort")))]
 compile_error!(
-    "seLe4n HAL requires panic = \"abort\" for release profiles. \
-     See rust/Cargo.toml [profile.release] and AK5-A in the \
-     WS-AN AN9 portfolio (closed at v0.30.11; see docs/REGISTERED_DEBT.md)."
+    "seLe4n HAL requires panic = \"abort\" for the bare-metal target: a no_std \
+     kernel has no unwinder. See rust/Cargo.toml [profile.release] and AK5-A in \
+     the WS-AN AN9 portfolio (closed at v0.30.11; see docs/REGISTERED_DEBT.md)."
 );
 
 // ============================================================================
@@ -1363,11 +1379,36 @@ pub const SUSPEND_BEFORE_LEAN_READY_STATUS: u32 = 2;
 /// `pageTableUpdate_full_coherency` theorem in
 /// `Architecture/TlbCacheComposition.lean`.
 ///
+/// **WS-RR RR7.2**: that obligation is now *enforced* rather than asserted.
+/// `DC CVAC` takes a virtual address, the kernel passes a physical one, and the
+/// two coincide only inside the boot identity map — the same relation
+/// [`crate::cache::apply_icache_invalidation`] fails closed on.  An
+/// out-of-window range halts the PE rather than cleaning an address the kernel
+/// did not mean, or faulting at EL1 inside a kernel that has no handler for it.
+/// The boot path's own use of the primitive (cleaning the boot tables before
+/// the MMU is on) goes through `cache::clean_pagetable_range` directly and is
+/// unaffected: at that point there is no identity map to be inside of.
+///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiCacheCleanPagetableRange`
 #[no_mangle]
 pub extern "C" fn cache_clean_pagetable_range(addr: u64, len: u64) {
+    clean_pagetable_range_within_identity_map(addr, len)
+}
+
+/// **WS-RR RR7.2**: the plain-Rust body of [`cache_clean_pagetable_range`].
+///
+/// Separate from the `extern "C"` wrapper because `cpu::fatal_halt` panics on
+/// the host, and a panic crossing an `extern "C"` boundary aborts the test
+/// process instead of unwinding into `#[should_panic]`.  The witnesses drive
+/// this function; the wrapper is one call, so nothing is left untested by the
+/// split.
+pub(crate) fn clean_pagetable_range_within_identity_map(addr: u64, len: u64) {
+    if !crate::mmu::is_boot_cacheable_range(addr, len) {
+        crate::cpu::fatal_halt();
+    }
     // SAFETY: Lean caller proves the range is valid via
-    // `pageTableUpdate_full_coherency`.  We forward to the existing
+    // `pageTableUpdate_full_coherency`, and the check above refuses any range
+    // the boot identity map does not cover.  We forward to the existing
     // unsafe primitive.
     unsafe { crate::cache::clean_pagetable_range(addr as usize, len as usize) }
 }
@@ -2386,5 +2427,34 @@ mod tests {
     fn ffi_fatal_halt_signatures_are_never_returning() {
         let _: extern "C" fn() -> ! = ffi_fatal_halt;
         let _: extern "C" fn() -> ! = ffi_fatal_halt_all;
+    }
+
+    // =====================================================================
+    // WS-RR RR7.2: the page-table clean seam's identity-map bound
+    // =====================================================================
+
+    #[test]
+    fn cleaning_a_pagetable_range_inside_the_identity_map_returns() {
+        // The complementary case, so the refusal witness below is not
+        // satisfied by a seam that halts unconditionally.
+        clean_pagetable_range_within_identity_map(0x0010_0000, 0x1000);
+    }
+
+    #[test]
+    #[should_panic(expected = "fail-closed halt reached")]
+    fn cleaning_a_pagetable_range_outside_the_identity_map_halts() {
+        // The mutation that keeps the operand and breaks the relation: a
+        // perfectly well-formed, page-aligned range, in the peripheral window
+        // rather than in RAM.  `DC CVAC` there cleans an address the kernel
+        // did not mean.
+        clean_pagetable_range_within_identity_map(0xFE20_1000, 0x1000);
+    }
+
+    #[test]
+    #[should_panic(expected = "fail-closed halt reached")]
+    fn cleaning_a_pagetable_range_that_runs_past_the_ram_top_halts() {
+        // The base is a good RAM frame and the range is not — the relation a
+        // base-address check would miss.
+        clean_pagetable_range_within_identity_map(crate::mmu::LOW_RAM_TOP - 0x1000, 0x2000);
     }
 }

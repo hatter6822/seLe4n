@@ -505,26 +505,34 @@ example :
 -- §6 — Permitted kinds for every syscall
 -- ============================================================================
 
-example : permittedKinds .send = [.tcb, .cnode, .endpoint] := by decide
+-- WS-RR RR7.7: `.objStore` — a capability-carrying rendezvous writes the CDT
+-- maps, whose declared subject is `stateLevelLock` (kind `.objStore`).
+example : permittedKinds .send = [.tcb, .cnode, .endpoint, .objStore] := by decide
 -- WS-SM SM6.D: `.receive` gains `.reply` — a `Call` rendezvous on the receive
 -- path links a server-supplied Reply object (`linkCallerReply` writes `reply.caller`
 -- under the per-object reply write-lock).
-example : permittedKinds .receive = [.tcb, .cnode, .endpoint, .reply] := by decide
+-- WS-RR RR7.11: `.objStore` — the receive leg installs through the same
+-- `ipcTransferSingleCap` the send does, and writes the same CDT maps.
+example : permittedKinds .receive = [.tcb, .cnode, .endpoint, .reply, .objStore] := by decide
 -- Audit-pass-3: `.call`/`.reply`/`.replyRecv` include `.schedContext` for the
 -- donation extension.  WS-SM SM6.D: they also gain `.reply` — each links or
 -- consumes a first-class Reply object under the per-object reply write-lock.
-example : permittedKinds .call = [.tcb, .cnode, .endpoint, .schedContext, .reply] := by decide
+example : permittedKinds .call = [.tcb, .cnode, .endpoint, .schedContext, .reply, .objStore] := by decide
 example : permittedKinds .reply = [.tcb, .cnode, .schedContext, .reply] := by decide
-example : permittedKinds .replyRecv = [.tcb, .cnode, .endpoint, .schedContext, .reply] := by decide
+example : permittedKinds .replyRecv =
+    [.tcb, .cnode, .endpoint, .schedContext, .reply, .objStore] := by decide
 -- WS-SM SM6.B: `.notificationSignal` gains `.endpoint` for the bound-delivery
 -- dequeue (a signal to a notification whose bound TCB is BlockedOnReceive removes
 -- it from its endpoint); `.notificationWait` is unchanged.
 example : permittedKinds .notificationSignal = [.tcb, .cnode, .notification, .endpoint] := by decide
 example : permittedKinds .notificationWait = [.tcb, .cnode, .notification] := by decide
-example : permittedKinds .cspaceMint = [.tcb, .cnode] := by decide
-example : permittedKinds .cspaceCopy = [.tcb, .cnode] := by decide
-example : permittedKinds .cspaceMove = [.tcb, .cnode] := by decide
-example : permittedKinds .cspaceDelete = [.tcb, .cnode] := by decide
+-- WS-RR RR7.9: `.objStore` joins all four — every capability operation writes
+-- the CDT (three mint nodes and add an edge, the delete removes one), and
+-- `stateLevelLock` is that structure's declared subject.
+example : permittedKinds .cspaceMint = [.tcb, .cnode, .objStore] := by decide
+example : permittedKinds .cspaceCopy = [.tcb, .cnode, .objStore] := by decide
+example : permittedKinds .cspaceMove = [.tcb, .cnode, .objStore] := by decide
+example : permittedKinds .cspaceDelete = [.tcb, .cnode, .objStore] := by decide
 -- PR #873 round 7: `.lifecycleRetype` admits EVERY kind too, and for the same
 -- reason `.declassify` does below.  SM9.D.12 makes the retype the arm that
 -- *clears* taint at `args.targetObj`, so `lockSet_lifecycleRetype` carries that
@@ -536,21 +544,34 @@ example : permittedKinds .lifecycleRetype =
      .objStore, .endpoint, .notification, .reply, .schedContext, .vspaceRoot, .page] := by decide
 example : permittedKinds .vspaceMap = [.tcb, .cnode, .vspaceRoot] := by decide
 example : permittedKinds .vspaceUnmap = [.tcb, .cnode, .vspaceRoot] := by decide
-example : permittedKinds .serviceRegister = [.tcb, .cnode, .endpoint] := by decide
-example : permittedKinds .serviceRevoke = [.tcb, .cnode] := by decide
-example : permittedKinds .serviceQuery = [.tcb, .cnode] := by decide
-example : permittedKinds .schedContextConfigure = [.tcb, .cnode, .schedContext] := by decide
-example : permittedKinds .schedContextBind = [.tcb, .cnode, .schedContext] := by decide
-example : permittedKinds .schedContextUnbind = [.tcb, .cnode, .schedContext] := by decide
+-- WS-RR RR7.23: `.objStore` on all three — `serviceRegistry` is a
+-- `SystemState`-level map and `stateLevelLock` is the only member that can name
+-- it; before this the trio carried the coverage as a convention.
+example : permittedKinds .serviceRegister = [.tcb, .cnode, .endpoint, .objStore] := by decide
+example : permittedKinds .serviceRevoke = [.tcb, .cnode, .objStore] := by decide
+example : permittedKinds .serviceQuery = [.tcb, .cnode, .objStore] := by decide
+-- WS-RR RR7.38: `.endpoint` and `.notification` join every arm that can write a
+-- *queued* TCB — the queue owner's lock, whose kind `QueueOwner.lock_kind` fixes
+-- to exactly these two.  The lists are pinned whole, so a third kind is still a
+-- failure here.
+example : permittedKinds .schedContextConfigure =
+    [.tcb, .cnode, .schedContext, .endpoint, .notification] := by decide
+example : permittedKinds .schedContextBind =
+    [.tcb, .cnode, .schedContext, .endpoint, .notification] := by decide
+example : permittedKinds .schedContextUnbind =
+    [.tcb, .cnode, .schedContext, .endpoint, .notification] := by decide
 -- Audit-pass-3: `.tcbSuspend` now includes `.schedContext` to cover
 -- the donation-cancel extension.  WS-SM SM6.E: + `.reply` to cover the
 -- `.blockedOnReply` reply-link teardown (`consumeReplyLink`).
 example : permittedKinds .tcbSuspend =
     [.tcb, .cnode, .endpoint, .notification, .schedContext, .reply] := by decide
-example : permittedKinds .tcbResume = [.tcb, .cnode] := by decide
-example : permittedKinds .tcbSetPriority = [.tcb, .cnode, .schedContext] := by decide
-example : permittedKinds .tcbSetMCPriority = [.tcb, .cnode, .schedContext] := by decide
-example : permittedKinds .tcbSetIPCBuffer = [.tcb, .cnode, .vspaceRoot] := by decide
+example : permittedKinds .tcbResume = [.tcb, .cnode, .endpoint, .notification] := by decide
+example : permittedKinds .tcbSetPriority =
+    [.tcb, .cnode, .schedContext, .endpoint, .notification] := by decide
+example : permittedKinds .tcbSetMCPriority =
+    [.tcb, .cnode, .schedContext, .endpoint, .notification] := by decide
+example : permittedKinds .tcbSetIPCBuffer =
+    [.tcb, .cnode, .vspaceRoot, .endpoint, .notification] := by decide
 -- PR #873 round 6: `.declassify` admits EVERY kind, and that is a statement
 -- about the arm rather than a relaxation.  The live arm hands
 -- `cap.target = .object targetId` to a transition that commits a `storeObject`
@@ -629,6 +650,23 @@ example :
   lockSet_consistent_call ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
     (some ⟨8⟩) (some ⟨100⟩)
 
+-- WS-RR RR7.7: and with a capability-transfer destination, on both arms.  The
+-- consistency theorems are stated over every `destCnode`, so these instantiate
+-- the argument the pre-RR7.7 statements defaulted away.
+example :
+    ∀ p ∈ (lockSet_endpointSend ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+              (some ⟨8⟩) (some (ObjId.ofNat 42))).pairs,
+      p.fst.kind ∈ permittedKinds .send :=
+  lockSet_consistent_send ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20) (some ⟨8⟩)
+    (some (ObjId.ofNat 42))
+
+example :
+    ∀ p ∈ (lockSet_endpointCall ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+              (some ⟨8⟩) (some ⟨100⟩) (some ⟨7⟩) (some (ObjId.ofNat 42))).pairs,
+      p.fst.kind ∈ permittedKinds .call :=
+  lockSet_consistent_call ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+    (some ⟨8⟩) (some ⟨100⟩) (some ⟨7⟩) (some (ObjId.ofNat 42))
+
 example :
     ∀ p ∈ (lockSet_tcbSuspend ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩
               (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30))
@@ -648,9 +686,9 @@ example :
     (some ⟨50⟩) (some ⟨7⟩)
 
 example :
-    ∀ p ∈ (lockSet_schedContextBind ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ ⟨3⟩).pairs,
+    ∀ p ∈ (lockSet_schedContextBind ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ ⟨3⟩ none).pairs,
       p.fst.kind ∈ permittedKinds .schedContextBind :=
-  lockSet_consistent_schedContextBind ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ ⟨3⟩
+  lockSet_consistent_schedContextBind ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ ⟨3⟩ none
 
 example :
     ∀ p ∈ (lockSet_lifecycleRetype ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
@@ -823,8 +861,10 @@ private def runAccessModeAlgebraChecks : IO Unit := do
 
 private def runPermittedKindsChecks : IO Unit := do
   IO.println "--- §4 PermittedKinds ---"
+  -- WS-RR RR7.7: `.objStore` joins, for the CDT maps a capability-carrying
+  -- rendezvous writes; `stateLevelLock` is that write's declared subject.
   assertBool "permittedKinds .send"
-    (decide (permittedKinds .send = [.tcb, .cnode, .endpoint]))
+    (decide (permittedKinds .send = [.tcb, .cnode, .endpoint, .objStore]))
   assertBool "permittedKinds .vspaceMap"
     (decide (permittedKinds .vspaceMap = [.tcb, .cnode, .vspaceRoot]))
   -- PR #873 round 7: every kind, because the retype's taint clear keys on
@@ -834,10 +874,35 @@ private def runPermittedKindsChecks : IO Unit := do
     (decide (permittedKinds .lifecycleRetype =
       [.tcb, .cnode, .untyped,
        .objStore, .endpoint, .notification, .reply, .schedContext, .vspaceRoot, .page]))
+  -- WS-RR RR7.23: five members, four kinds — the state-level lock joined the
+  -- fixed part because `lifecyclePreRetypeCleanup` sweeps the service registry
+  -- (an endpoint being re-purposed) and detaches CDT slot mappings (a CNode),
+  -- and neither map is nameable by a per-object kind.
   assertBool "NEGATIVE: the retype's fixed footprint is still exactly four kinds"
     ((lockSet_lifecycleRetype ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
         (ObjId.ofNat 30) none).pairs.all (fun p =>
-      decide (p.fst.kind ∈ [LockKind.tcb, LockKind.cnode, LockKind.untyped])))
+      decide (p.fst.kind ∈
+        [LockKind.tcb, LockKind.cnode, LockKind.untyped, LockKind.objStore])))
+  -- WS-RR RR7.23 (register finding 5): every registry writer declares the
+  -- state-level lock — the trio in write/write/read, and the retype.
+  assertBool "serviceRegister declares the registry's state-level write"
+    ((lockSet_serviceRegister ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).pairs.any (fun p =>
+      decide (p.fst = stateLevelLock ∧ p.snd = AccessMode.write)))
+  assertBool "serviceRevoke declares the registry's state-level write"
+    ((lockSet_serviceRevoke ⟨5⟩ (ObjId.ofNat 10)).pairs.any (fun p =>
+      decide (p.fst = stateLevelLock ∧ p.snd = AccessMode.write)))
+  assertBool "serviceQuery declares the registry's state-level read"
+    ((lockSet_serviceQuery ⟨5⟩ (ObjId.ofNat 10)).pairs.any (fun p =>
+      decide (p.fst = stateLevelLock ∧ p.snd = AccessMode.read)))
+  assertBool "the retype declares the registry's state-level write (the sweep no footprint named)"
+    ((lockSet_lifecycleRetype ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+        (ObjId.ofNat 30) none).pairs.any (fun p =>
+      decide (p.fst = stateLevelLock ∧ p.snd = AccessMode.write)))
+  -- The pin is that no two registry writers can hold disjoint sets.
+  assertBool "no two registry writers have disjoint footprints"
+    (decide (((lockSet_serviceRegister ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).pairs.map (·.fst)).any
+        (fun l => ((lockSet_lifecycleRetype ⟨6⟩ (ObjId.ofNat 11) (ObjId.ofNat 21)
+          (ObjId.ofNat 31) none).pairs.map (·.fst)).contains l)))
   assertBool "the resolved retype footprint carries the target's own write lock"
     ((lockSet_lifecycleRetype ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20) (ObjId.ofNat 30)
         (some (notificationLock (ObjId.ofNat 40)))).pairs.any (fun p =>
@@ -847,35 +912,43 @@ private def runPermittedKindsChecks : IO Unit := do
   assertBool "permittedKinds .tcbSuspend"
     (decide (permittedKinds .tcbSuspend =
       [.tcb, .cnode, .endpoint, .notification, .schedContext, .reply]))
+  -- WS-RR RR7.38: `.endpoint` and `.notification` — the queue owner's lock, on
+  -- every arm that can write a queued TCB.
   assertBool "permittedKinds .schedContextBind"
-    (decide (permittedKinds .schedContextBind = [.tcb, .cnode, .schedContext]))
+    (decide (permittedKinds .schedContextBind =
+      [.tcb, .cnode, .schedContext, .endpoint, .notification]))
   -- Audit-pass-3: .call, .reply, .replyRecv include .schedContext (donation).
   -- WS-SM SM6.D: they also include .reply (per-object reply write-lock).
-  assertBool "permittedKinds .call (donation + reply-object kind)"
-    (decide (permittedKinds .call = [.tcb, .cnode, .endpoint, .schedContext, .reply]))
+  -- WS-RR RR7.7: and `.objStore`, for the same CDT write `.send` declares.
+  assertBool "permittedKinds .call (donation + reply-object + CDT kinds)"
+    (decide (permittedKinds .call
+      = [.tcb, .cnode, .endpoint, .schedContext, .reply, .objStore]))
   assertBool "permittedKinds .reply (donation-return + reply-object kind)"
     (decide (permittedKinds .reply = [.tcb, .cnode, .schedContext, .reply]))
   assertBool "permittedKinds .replyRecv (donation-return + reply-object kind)"
     (decide (permittedKinds .replyRecv =
-      [.tcb, .cnode, .endpoint, .schedContext, .reply]))
+      [.tcb, .cnode, .endpoint, .schedContext, .reply, .objStore]))
   -- Audit-pass-6: .tcbSetPriority / .tcbSetMCPriority include .schedContext.
   -- updatePrioritySource writes the bound SC if binding is .bound/.donated.
   assertBool "permittedKinds .tcbSetPriority (audit-pass-6: includes .schedContext)"
-    (decide (permittedKinds .tcbSetPriority = [.tcb, .cnode, .schedContext]))
+    (decide (permittedKinds .tcbSetPriority =
+      [.tcb, .cnode, .schedContext, .endpoint, .notification]))
   assertBool "permittedKinds .tcbSetMCPriority (audit-pass-6: includes .schedContext)"
-    (decide (permittedKinds .tcbSetMCPriority = [.tcb, .cnode, .schedContext]))
+    (decide (permittedKinds .tcbSetMCPriority =
+      [.tcb, .cnode, .schedContext, .endpoint, .notification]))
   -- Audit-pass-6: .tcbSetIPCBuffer includes .vspaceRoot.
   -- validateIpcBufferAddress reads the target's VSpaceRoot.
   assertBool "permittedKinds .tcbSetIPCBuffer (audit-pass-6: includes .vspaceRoot)"
-    (decide (permittedKinds .tcbSetIPCBuffer = [.tcb, .cnode, .vspaceRoot]))
+    (decide (permittedKinds .tcbSetIPCBuffer =
+      [.tcb, .cnode, .vspaceRoot, .endpoint, .notification]))
   -- Audit-pass-6: .serviceRegister includes .endpoint.
   -- registerService reads st.objects[epId]? to verify endpoint kind.
-  assertBool "permittedKinds .serviceRegister (audit-pass-6: includes .endpoint)"
-    (decide (permittedKinds .serviceRegister = [.tcb, .cnode, .endpoint]))
-  assertBool "permittedKinds .serviceRevoke (unchanged: only registry mutation)"
-    (decide (permittedKinds .serviceRevoke = [.tcb, .cnode]))
-  assertBool "permittedKinds .serviceQuery (unchanged: only registry lookup)"
-    (decide (permittedKinds .serviceQuery = [.tcb, .cnode]))
+  assertBool "permittedKinds .serviceRegister (audit-pass-6 .endpoint + the registry's state-level lock)"
+    (decide (permittedKinds .serviceRegister = [.tcb, .cnode, .endpoint, .objStore]))
+  assertBool "permittedKinds .serviceRevoke (registry mutation, under the state-level lock)"
+    (decide (permittedKinds .serviceRevoke = [.tcb, .cnode, .objStore]))
+  assertBool "permittedKinds .serviceQuery (registry lookup, under the state-level lock)"
+    (decide (permittedKinds .serviceQuery = [.tcb, .cnode, .objStore]))
 
 private def runLockKindHelpersChecks : IO Unit := do
   IO.println "--- §5 LockKind helpers ---"
@@ -922,18 +995,33 @@ private def runPerTransitionShapeChecks : IO Unit := do
   assertBool "endpointSend size (with receiver) = 4"
     (decide ((lockSet_endpointSend ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
               (some ⟨2⟩)).size = 4))
-  -- Capability paths: 3 locks each.
-  assertBool "cspaceMint size = 3"
-    (decide ((lockSet_cspaceMint ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).size = 3))
-  assertBool "cspaceMove size = 3"
-    (decide ((lockSet_cspaceMove ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).size = 3))
+  -- Capability paths: 4 locks each since WS-RR RR7.9 — three per-object members
+  -- plus the state-level write the CDT mutation needs.
+  assertBool "cspaceMint size = 4"
+    (decide ((lockSet_cspaceMint ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).size = 4))
+  assertBool "cspaceMove size = 4"
+    (decide ((lockSet_cspaceMove ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).size = 4))
+  -- …and the member is present in all four, which the size alone would not say.
+  assertBool "every capability operation declares the state-level CDT write"
+    (decide ((stateLevelLock, AccessMode.write)
+        ∈ (lockSet_cspaceMint ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).pairs) &&
+     decide ((stateLevelLock, AccessMode.write)
+        ∈ (lockSet_cspaceCopy ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).pairs) &&
+     decide ((stateLevelLock, AccessMode.write)
+        ∈ (lockSet_cspaceMove ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).pairs) &&
+     decide ((stateLevelLock, AccessMode.write)
+        ∈ (lockSet_cspaceDelete ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).pairs) &&
+     decide ((stateLevelLock, AccessMode.write)
+        ∈ (lockSet_mintReplyCap ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).pairs))
   -- VSpace: 3 locks each.
   assertBool "vspaceMap size = 3"
     (decide ((lockSet_vspaceMap ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).size = 3))
-  -- Lifecycle: 4 locks (caller TCB read + CNode root read + untyped write + dst CNode write).
-  assertBool "lifecycleRetype size = 4"
+  -- Lifecycle: 5 locks (caller TCB read + CNode root read + untyped write + dst
+  -- CNode write + the state-level write WS-RR RR7.23 added for the registry
+  -- sweep and the CDT detach the pre-retype cleanup performs).
+  assertBool "lifecycleRetype size = 5"
     (decide ((lockSet_lifecycleRetype ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
-              (ObjId.ofNat 30)).size = 4))
+              (ObjId.ofNat 30)).size = 5))
   -- TCB suspend with both Option-blocked (no donation): 5 locks.
   assertBool "tcbSuspend size (block-options some, no donation) = 5"
     (decide ((lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩
@@ -959,26 +1047,31 @@ private def runPerTransitionShapeChecks : IO Unit := do
   -- Audit-pass-6 P1: tcbSetPriority with unbound target = 3 locks
   -- (caller TCB read, CNode read, target TCB write — no SC).
   assertBool "tcbSetPriority size (unbound target, no SC) = 3"
-    (decide ((lockSet_tcbSetPriority ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none).size = 3))
+    (decide ((lockSet_tcbSetPriority ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none).size = 3))
   -- Audit-pass-6 P1: tcbSetPriority with bound SC = 4 locks.
   assertBool "tcbSetPriority size (.bound binding, SC included) = 4"
-    (decide ((lockSet_tcbSetPriority ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩)).size = 4))
+    (decide ((lockSet_tcbSetPriority ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none).size = 4))
   -- Audit-pass-6 P1: tcbSetMCPriority with unbound target = 3 locks.
   assertBool "tcbSetMCPriority size (unbound target, no SC) = 3"
-    (decide ((lockSet_tcbSetMCPriority ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none).size = 3))
+    (decide ((lockSet_tcbSetMCPriority ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none).size = 3))
   -- Audit-pass-6 P1: tcbSetMCPriority with bound SC = 4 locks.
   assertBool "tcbSetMCPriority size (.bound binding, SC included) = 4"
-    (decide ((lockSet_tcbSetMCPriority ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩)).size = 4))
+    (decide ((lockSet_tcbSetMCPriority ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none).size = 4))
   -- Audit-pass-6 P1: tcbSetIPCBuffer with no target VSpaceRoot (target absent) = 3 locks.
   assertBool "tcbSetIPCBuffer size (no VSpaceRoot) = 3"
-    (decide ((lockSet_tcbSetIPCBuffer ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none).size = 3))
+    (decide ((lockSet_tcbSetIPCBuffer ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none).size = 3))
   -- Audit-pass-6 P1: tcbSetIPCBuffer with target VSpaceRoot = 4 locks.
   assertBool "tcbSetIPCBuffer size (VSpaceRoot included) = 4"
     (decide ((lockSet_tcbSetIPCBuffer ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩
-              (some (ObjId.ofNat 99))).size = 4))
-  -- Audit-pass-6 P2: serviceRegister now takes a mandatory endpoint read lock.
-  assertBool "serviceRegister size (with endpoint) = 3"
-    (decide ((lockSet_serviceRegister ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).size = 3))
+              (some (ObjId.ofNat 99)) none).size = 4))
+  -- Audit-pass-6 P2: serviceRegister takes a mandatory endpoint read lock;
+  -- WS-RR RR7.23 added the registry's own state-level write.
+  assertBool "serviceRegister size (endpoint + the registry's state-level write) = 4"
+    (decide ((lockSet_serviceRegister ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).size = 4))
+  assertBool "serviceRevoke size (caller, root, registry) = 3"
+    (decide ((lockSet_serviceRevoke ⟨1⟩ (ObjId.ofNat 10)).size = 3))
+  assertBool "serviceQuery size (caller, root, registry) = 3"
+    (decide ((lockSet_serviceQuery ⟨1⟩ (ObjId.ofNat 10)).size = 3))
 
 private def runLubMergeChecks : IO Unit := do
   IO.println "--- §9 Lub-merging on duplicate keys ---"
@@ -1058,6 +1151,35 @@ private def runConsistencyRuntimeChecks : IO Unit := do
     decide (p.fst.kind ∈ permittedKinds .tcbSuspend))
   assertBool "lockSet_tcbSuspend (full 4 Options some): all kinds in permittedKinds .tcbSuspend"
     allOk_susp
+  -- **WS-RR RR7.7**: the capability-transfer destination is *declared*, not
+  -- merely admissible.  A consistency check asks whether every declared kind is
+  -- permitted, which a footprint that declares nothing also passes; these ask
+  -- whether the two members the transfer needs are in the set at all.
+  let sendCaps := lockSet_endpointSend ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+                    (some ⟨8⟩) (some (ObjId.ofNat 42))
+  assertBool "send with caps declares the receiver CSpace root in write mode"
+    (sendCaps.pairs.contains (cnodeLock (ObjId.ofNat 42), AccessMode.write))
+  assertBool "send with caps declares the state-level lock for the CDT write"
+    (sendCaps.pairs.contains (stateLevelLock, AccessMode.write))
+  let callCaps := lockSet_endpointCall ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+                    (some ⟨8⟩) (some ⟨100⟩) (some ⟨7⟩) (some (ObjId.ofNat 42))
+  assertBool "call with caps declares the receiver CSpace root in write mode"
+    (callCaps.pairs.contains (cnodeLock (ObjId.ofNat 42), AccessMode.write))
+  assertBool "call with caps declares the state-level lock for the CDT write"
+    (callCaps.pairs.contains (stateLevelLock, AccessMode.write))
+  -- …and the capless shape declares neither, so the members are the transfer's
+  -- rather than an unconditional widening of every IPC footprint.
+  let sendCapless := lockSet_endpointSend ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+                       (some ⟨8⟩)
+  assertBool "a capless send declares no state-level lock"
+    (!sendCapless.pairs.contains (stateLevelLock, AccessMode.write))
+  -- The destination coinciding with the caller's own root upgrades the existing
+  -- read rather than adding a member: same size, stronger mode.
+  let sendSameRoot := lockSet_endpointSend ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+                        (some ⟨8⟩) (some (ObjId.ofNat 10))
+  assertBool "a transfer into the caller's own CSpace upgrades the read, not the size"
+    (decide (sendSameRoot.size = sendCapless.size + 1)
+      && sendSameRoot.pairs.contains (cnodeLock (ObjId.ofNat 10), AccessMode.write))
   -- Edge case: no Option args.
   let mint := lockSet_cspaceMint ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
   let allOk_mint := mint.pairs.all (fun p =>
@@ -1086,20 +1208,20 @@ private def runConsistencyRuntimeChecks : IO Unit := do
   assertBool "lockSet_endpointReply (with donation + owner): all kinds in permittedKinds .reply"
     allOk_replyDon
   -- Audit-pass-6 P1: .tcbSetPriority with bound SC — every kind permitted.
-  let setPriBound := lockSet_tcbSetPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩)
+  let setPriBound := lockSet_tcbSetPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none
   let allOk_setPriBound := setPriBound.pairs.all (fun p =>
     decide (p.fst.kind ∈ permittedKinds .tcbSetPriority))
   assertBool "lockSet_tcbSetPriority (.bound binding, SC included): all kinds permitted"
     allOk_setPriBound
   -- Audit-pass-6 P1: .tcbSetMCPriority with bound SC.
-  let setMcpBound := lockSet_tcbSetMCPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩)
+  let setMcpBound := lockSet_tcbSetMCPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none
   let allOk_setMcpBound := setMcpBound.pairs.all (fun p =>
     decide (p.fst.kind ∈ permittedKinds .tcbSetMCPriority))
   assertBool "lockSet_tcbSetMCPriority (.bound binding, SC included): all kinds permitted"
     allOk_setMcpBound
   -- Audit-pass-6 P1: .tcbSetIPCBuffer with VSpaceRoot.
   let setIpcVsr := lockSet_tcbSetIPCBuffer ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩
-                     (some (ObjId.ofNat 99))
+                     (some (ObjId.ofNat 99)) none
   let allOk_setIpcVsr := setIpcVsr.pairs.all (fun p =>
     decide (p.fst.kind ∈ permittedKinds .tcbSetIPCBuffer))
   assertBool "lockSet_tcbSetIPCBuffer (VSpaceRoot included): all kinds permitted"
@@ -1111,40 +1233,81 @@ private def runConsistencyRuntimeChecks : IO Unit := do
   assertBool "lockSet_serviceRegister (with endpoint): all kinds permitted"
     allOk_svcReg
 
+/-- **WS-RR RR7.38**: the queue-owner member — the declaration that closed
+`UncoveredLockDomain.queueOwnershipProtocol`.
+
+The fixtures above pass `none` and so still say exactly what they said, because
+`lockSetExtendOpt _ none` is the identity.  These say what the parameter is
+*for*: at `some`, the owner's write lock is a member, the footprint is one wider,
+and its kind is admitted.  Without them the widening would be a parameter every
+call site passes `none` to — a member no test ever sees. -/
+private def runQueueOwnerFootprintChecks : IO Unit := do
+  IO.println "--- §18 WS-RR RR7.38 queue-owner footprint member ---"
+  let ep : QueueOwner := .endpoint (ObjId.ofNat 20)
+  let ntfn : QueueOwner := .notification (ObjId.ofNat 21)
+  let bare := lockSet_tcbSetPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none
+  let queuedEp := lockSet_tcbSetPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) (some ep)
+  let queuedNtfn := lockSet_tcbSetPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) (some ntfn)
+  assertBool "a queued target adds exactly one member"
+    (decide (queuedEp.size = bare.size + 1))
+  assertBool "…and that member is the endpoint's WRITE lock, not a read"
+    (queuedEp.pairs.any (fun p =>
+      decide (p = (⟨.endpoint, ObjId.ofNat 20⟩, AccessMode.write))))
+  assertBool "NEGATIVE: at `none` the footprint carries no endpoint lock at all"
+    (decide (bare.pairs.all (fun p => p.fst.kind ≠ .endpoint)))
+  assertBool "a notification-queued target contributes the notification lock instead"
+    (queuedNtfn.pairs.any (fun p =>
+      decide (p = (⟨.notification, ObjId.ofNat 21⟩, AccessMode.write))))
+  -- The kinds the widened arm admits are exactly the two a queue owner can be.
+  assertBool "the queue-owner member's kind is permitted on the widened arm"
+    (queuedEp.pairs.all (fun p => decide (p.fst.kind ∈ permittedKinds .tcbSetPriority))
+     && queuedNtfn.pairs.all (fun p => decide (p.fst.kind ∈ permittedKinds .tcbSetPriority)))
+  -- The resolver: a blocked thread has an owner, a ready one does not.
+  let baseTcb : TCB :=
+    { tid := ThreadId.ofNat 3, priority := ⟨10⟩, domain := ⟨0⟩,
+      cspaceRoot := ObjId.ofNat 0, vspaceRoot := ObjId.ofNat 0,
+      ipcBuffer := SeLe4n.VAddr.ofNat 0 }
+  let blockedTcb : TCB := { baseTcb with ipcState := .blockedOnSend (ObjId.ofNat 20) }
+  let readyTcb : TCB := { baseTcb with ipcState := .ready }
+  assertBool "queueOwnerOf? reads the owner off a blocked thread's ipcState"
+    (decide (queueOwnerOf? blockedTcb = some (.endpoint (ObjId.ofNat 20))))
+  assertBool "NEGATIVE: a ready thread is in no object-owned queue"
+    (decide (queueOwnerOf? readyTcb = none))
+
 /-- Audit-pass-6 P1/P2 runtime checks: per-syscall lock-set
 correctness against the actual kernel transitions traced. -/
 private def runAuditPass6FootprintChecks : IO Unit := do
   IO.println "--- §17 Audit-pass-6 footprint completeness (P1+P2 closure) ---"
   -- P1 (tcbSetPriority): with unbound target, no SC lock — but the
   -- bound case adds (schedContextLock scId, .write).
-  let unboundPri := lockSet_tcbSetPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ none
-  let boundPri := lockSet_tcbSetPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩)
+  let unboundPri := lockSet_tcbSetPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ none none
+  let boundPri := lockSet_tcbSetPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none
   assertBool "P1: tcbSetPriority(.bound) has one more lock than .unbound"
     (decide (boundPri.size = unboundPri.size + 1))
   assertBool "P1: tcbSetPriority(.bound 50) contains schedContextLock ⟨50⟩ as write"
     (boundPri.pairs.any (fun p =>
       decide (p = (⟨.schedContext, ObjId.ofNat 50⟩, .write))))
   -- P1 (tcbSetMCPriority): same shape.
-  let boundMcp := lockSet_tcbSetMCPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩)
+  let boundMcp := lockSet_tcbSetMCPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none
   assertBool "P1: tcbSetMCPriority(.bound) contains schedContextLock ⟨50⟩ as write"
     (boundMcp.pairs.any (fun p =>
       decide (p = (⟨.schedContext, ObjId.ofNat 50⟩, .write))))
   -- P1 (tcbSetIPCBuffer): with target VSpaceRoot, contains read lock.
   let withVsr := lockSet_tcbSetIPCBuffer ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩
-                    (some (ObjId.ofNat 99))
+                    (some (ObjId.ofNat 99)) none
   assertBool "P1: tcbSetIPCBuffer(some 99) contains vspaceRootLock 99 as read"
     (withVsr.pairs.any (fun p =>
       decide (p = (⟨.vspaceRoot, ObjId.ofNat 99⟩, .read))))
   assertBool "P1: tcbSetIPCBuffer(none) does NOT contain any vspaceRoot lock"
-    (let noVsr := lockSet_tcbSetIPCBuffer ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ none
+    (let noVsr := lockSet_tcbSetIPCBuffer ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ none none
      decide (noVsr.pairs.all (fun p => p.fst.kind ≠ .vspaceRoot)))
   -- P2 (serviceRegister): contains the endpoint read lock.
   let svcReg := lockSet_serviceRegister ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
   assertBool "P2: serviceRegister contains endpointLock 20 as read"
     (svcReg.pairs.any (fun p =>
       decide (p = (⟨.endpoint, ObjId.ofNat 20⟩, .read))))
-  assertBool "P2: serviceRegister has exactly 3 locks (tcb + cnode + endpoint)"
-    (decide (svcReg.size = 3))
+  assertBool "serviceRegister has exactly 4 locks (tcb + cnode + endpoint + registry)"
+    (decide (svcReg.size = 4))
   -- Canonical-sort cross-check: the new SC entries in tcbSetPriority
   -- sort AFTER the target TCB at the same hierarchy band but distinct
   -- ObjIds.  At hierarchy level: cnode=2, tcb=3, schedContext=7.  So the
@@ -1368,6 +1531,7 @@ def runLockSetChecks : IO Unit := do
   runFstInjChecks
   runPipChainStartChecks
   runAuditPass6FootprintChecks
+  runQueueOwnerFootprintChecks
   IO.println "======================================"
   IO.println "All SM3.B LockSet checks PASS."
 

@@ -149,20 +149,26 @@ documentation and test work can take alongside the port.  The phase figure
 is therefore **14–24 weeks**, and the width is honest: items 5 and 13
 dominate it, and neither has a precedent in this tree to calibrate against.
 
-**Why the runtime port is sized here but not yet numbered.**  Numbering
-rows 2–13 as sub-tasks of SM10.1 would move the image build off
-`SM10.1.1`, and `SM10.1.1` is bound to "the image build" by three
-`CHANGELOG.md` entries — the citations this plan's own re-sequencing note
-says must never be silently repurposed, and which CLAUDE.md treats as
-frozen once they appear.  The two rules collide: *numbering is execution
-order* wants the port first, *IDs in CHANGELOG entries are frozen* wants
-`SM10.1.1` unchanged.  The register's own remediation for finding 42
-resolves it — "split SM10.1 out of the release-closure plan into its own
-phase with a proper PR sequence" — which is a restructuring of SM10, with
-its own prefix and no repurposed ID.  **That split is SM10's opening act**,
-and doing it inside a remediation phase's early row would renumber a phase
-that has not opened on the authority of a sub-task sized S.  The sizing is
-what RR1.11 owed the estimate; the numbering has an owner and a place.
+**Where the runtime port is numbered — `WS-BP`.**  Numbering rows 2–13 as
+sub-tasks of SM10.1 would move the image build off `SM10.1.1`, and
+`SM10.1.1` is bound to "the image build" by three `CHANGELOG.md` entries —
+citations CLAUDE.md treats as frozen once they appear.  The two rules
+collide: *numbering is execution order* wants the port first, *IDs in
+CHANGELOG entries are frozen* wants `SM10.1.1` unchanged.  The register's
+remediation for finding 42 resolves it — "split SM10.1 out of the
+release-closure plan into its own phase with a proper PR sequence" — and
+the resolution this note named is the one taken: **its own prefix and no
+repurposed ID**.
+
+WS-RR RR7.5 + RR7.15 landed that split at `v0.34.59`:
+[`SMP_BOOT_PATH_PLAN.md`](SMP_BOOT_PATH_PLAN.md) sequences the port as
+**42 sub-tasks across 9 phases `BP0..BP8`**, in execution order, with
+findings 19, 32 and 40–44 each scheduled to a named row and WS-XV absorbed as
+`BP0` at `v0.34.124`.  Nothing here is
+renumbered: `SM10.1.1` still means the image packaging, and `BP5.3` is the
+sub-task that produces what it packages.  The rows above stay as this
+plan's *sizing* — the estimate they support is unchanged — and the schedule
+lives in the plan that owns the work.
 
 ## 2. Dependencies
 
@@ -181,10 +187,13 @@ what RR1.11 owed the estimate; the numbering has an owner and a place.
   **SM10.1's context restore delivering the staged frame** (WS-RA §3.5); the
   wait-before-signal badge ordering is staged end to end and completes when
   the restore seam goes live.  (2) The cancellation/timeout error-frame
-  staging (WS-RA §9 registered debt): before `contextRestoreSeamLive` flips,
-  `cancelIpcBlocking` and `timeoutThread` must stage an error frame, or a
-  cancelled waiter resumes reading its stale staged arguments as a return
-  value.
+  staging (WS-RA §9 registered debt) — **CLOSED at `v0.34.67` by WS-RR
+  RR7.14**, so SM10.1 inherits its *delivery* half only: `timeoutThread`
+  stages `Architecture.timeoutFrame` and `cancelIpcBlocking`'s four blocked
+  arms stage `Architecture.cancelledIpcFrame` (`.ipcCancelled`, a new
+  `KernelError` at 57 — a timed-out caller may reissue, a cancelled one may
+  name an endpoint that is gone).  Before the fix a forcibly unblocked waiter
+  resumed reading its own stale staged arguments as a return value.
 - **WS-DT complete** — the IPC `ipcInvariantFull` de-threading workstream
   ([`IPC_INVARIANT_DETHREADING_PLAN.md`](../dev_history/planning/IPC_INVARIANT_DETHREADING_PLAN.md),
   registered in [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) as
@@ -204,6 +213,15 @@ what RR1.11 owed the estimate; the numbering has an owner and a place.
   `dispatchSyscall_preserves_ipcInvariantFull` staged with the `.call` surface
   they compose, under pre-state quiescence packs), and retired the plan at
   RR3.26 to `docs/dev_history/planning/`.
+- **Fine-lock migration Tracks B and C — LANDED** (WS-RR RR7.7–RR7.13,
+  `v0.34.60`–`v0.34.66`), recorded here at WS-RR RR7.19 because the register's
+  finding 8 was that this section named the fine-lock plan nowhere at all.
+  Track B declared the capability-transfer footprint and the four capability
+  operations' CDT members; Track C generalised `lockSetForSyscall` to
+  decoded-driven resolution, declared eight of the thirty-five arms, made the
+  **syscall seam acquire** them, and added the export-commit census that keeps
+  it true.  SM10 may read "the syscall path brackets" as settled and must not
+  read it as covering the scheduler path.
 - **Fine-lock migration Track D — commit partitioning**
   ([`SMP_FINE_LOCK_MIGRATION_PLAN.md`](SMP_FINE_LOCK_MIGRATION_PLAN.md) §4,
   PRs 10–12), registered in [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md)
@@ -295,6 +313,14 @@ context-restore seam.  **Everything downstream consumes this**, which is why
 it is first: `SM10.3.7`'s 4-core boot fixture cannot be generated without an
 image, `SM10.3.10`'s Tier-4 gate reports NOT RUN until one exists, and
 `SM10.5` boots the artefact this phase produces.
+
+**The port itself is planned in
+[`SMP_BOOT_PATH_PLAN.md`](SMP_BOOT_PATH_PLAN.md)** (WS-BP, 42 sub-tasks
+across `BP0..BP8`), which is where its schedule, its acceptance gate and its
+risk inventory live.  `SM10.1.1` below is unchanged and remains the release
+cut's row for the image *packaging*; `BP5.3` is the sub-task that produces
+it, and the two ids name one deliverable from the two plans that care about
+it.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
@@ -556,7 +582,8 @@ WS-SM PORTFOLIO COMPLETE.  v1.0.0 ships seLe4n as a bootable
 verified SMP microkernel on Raspberry Pi 5 (BCM2712).  All 4
 cores brought up; per-core scheduler with cross-core wake via
 SGI; per-object reader-writer fine locks with hierarchical
-acquire order; verified TicketLock + RwLock primitives modeled
+acquire order (**on the syscall seam** — see SMP-C3 below and
+quote the census figure, not this sentence); verified TicketLock + RwLock primitives modeled
 in Lean against an abstract ARMv8.1-A LSE memory model and
 proven correct; cross-core IPC; explicit-ack TLB shootdown
 protocol; per-core noninterference under SMP.
@@ -565,7 +592,16 @@ Closures (from the WS-SM audit):
 - SMP-C1: bring_up_secondaries wired via Phase 5 + DTB cmdline.
 - SMP-C2: rust_secondary_main full init (MMU/VBAR/GIC/timer).
 - SMP-C3: kernelStateRef safety under per-object fine locks +
-  serializability (Cor 2.1.11).
+  serializability (Cor 2.1.11).  **Quote this against the census,
+  not against the plan** (WS-RR RR7.19): `ExportCommitDisciplineCensus`
+  reports how many `@[export]` seams commit kernel state and how
+  many bracket — seven and two at `v0.34.66`.  The syscall seam
+  brackets (RR7.12); the three per-core scheduler entries do not,
+  and are RR7.39's.  Track D — which retires the SM5.I global entry
+  lock — is unstarted and seam-gated to this phase, so the line is
+  dischargeable for the syscall path and NOT for the scheduler path
+  until both land.  Writing it unqualified was the register's
+  finding 8.
 - SMP-C4: IS-variant TLB instructions + explicit-ack shootdown
   protocol (Thm 3.3.1 in SMP_TLB_SHOOTDOWN_PLAN).
 - SMP-H1: SGI primitive (gic::send_sgi + dispatch).

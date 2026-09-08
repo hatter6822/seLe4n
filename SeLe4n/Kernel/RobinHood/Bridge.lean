@@ -841,6 +841,88 @@ theorem RHTable.fold_preserves_of_lookup [BEq α] [Hashable α] [LawfulBEq α]
         have hGet := RHTable.slot_entry_implies_get t i.val hi e hSlot hExt
         exact hStep acc e.key e.value hGet hAcc)
 
+/-- **WS-RR RR7.22 (residual)**: fold property preservation **at a key the
+table holds** — the pointwise form.
+
+`fold_preserves` and `fold_preserves_of_lookup` carry a property of the whole
+accumulator; neither says that the body *ran* at any particular key, which is
+what a per-key characterisation of an object-store sweep needs.  A sweep's
+payoff is of the form "afterwards, no endpoint still names the removed thread",
+and that is false of the accumulator mid-fold at every key not yet visited — so
+it is not a fold invariant at all.  It is a **pointwise** fact, and this is the
+lemma that establishes one: `RHTable.fold` iterates over the slot array, and
+`get_some_slot_entry` puts every key `get?` finds in a slot, so every such key
+is visited exactly once (`noDupKeys`).
+
+Two properties, because the body needs to know the key is untouched when it
+decides to leave it alone:
+
+* `Pre k acc` — "the fold has not reached `k` yet", true of `init` and stable
+  under a step at any other key.  The body receives it at the visit.
+* `Q k acc` — the settled property, established by the visiting step and stable
+  under every later step at another key.
+
+A caller whose body is the identity on some inputs (a guard that declines to
+rewrite) discharges `hEstablish` from `Pre` — the accumulator still holds the
+table's own value there, so the guard's own negation *is* the conclusion. -/
+theorem RHTable.fold_pointwise [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (init : γ) (f : γ → α → β → γ)
+    (Pre : α → γ → Prop) (Q : α → γ → Prop) (hExt : t.invExt)
+    (hPreInit : ∀ k, Pre k init)
+    (hPreStable : ∀ acc k k' v', k ≠ k' → Pre k acc → Pre k (f acc k' v'))
+    (hEstablish : ∀ acc k v, t.get? k = some v → Pre k acc → Q k (f acc k v))
+    (hStable : ∀ acc k k' v', k ≠ k' → Q k acc → Q k (f acc k' v'))
+    (k : α) (v : β) (hk : t.get? k = some v) :
+    Q k (t.fold init f) := by
+  obtain ⟨p, hp, e, hSlot, hKeyEq, hValEq⟩ := RHTable.get_some_slot_entry t k v hk
+  have hKey : e.key = k := LawfulBEq.eq_of_beq hKeyEq
+  have hCap : t.slots.size = t.capacity := t.hSlotsLen
+  -- Every *other* occupied slot carries a different key: that is `noDupKeys`,
+  -- and it is what makes "visited exactly once" true rather than "visited".
+  have hOther : ∀ (j : Nat) (hj : j < t.capacity) (ej : RHEntry α β),
+      t.slots[j]'(t.hSlotsLen ▸ hj) = some ej → j ≠ p → ej.key ≠ k := by
+    intro j hj ej hs hjp hEq
+    exact hjp (hExt.2.2.1 j p hj hp ej e hs hSlot (by rw [hEq, hKey]; simp))
+  unfold RHTable.fold
+  have hMain := Array.foldl_induction
+    (as := t.slots)
+    (motive := fun i acc => (p < i → Q k acc) ∧ (i ≤ p → Pre k acc))
+    (init := init)
+    (f := fun acc slot => match slot with | none => acc | some e => f acc e.key e.value)
+    ⟨fun h => absurd h (Nat.not_lt_zero p), fun _ => hPreInit k⟩
+    (by
+      intro i acc hAcc
+      obtain ⟨hQ, hPre⟩ := hAcc
+      have hiCap : i.val < t.capacity := hCap ▸ i.isLt
+      refine ⟨?_, ?_⟩
+      · intro hlt
+        rcases Nat.lt_or_ge p i.val with hpi | hpi
+        · have hQi := hQ hpi
+          show Q k (match t.slots[i] with | none => acc | some e => f acc e.key e.value)
+          cases hs : t.slots[i] with
+          | none => simpa [hs] using hQi
+          | some ei =>
+            have hNe := hOther i.val hiCap ei hs (Nat.ne_of_gt hpi)
+            simpa [hs] using hStable acc k ei.key ei.value (fun h => hNe h.symm) hQi
+        · have hpe : p = i.val := Nat.le_antisymm (Nat.lt_succ_iff.mp hlt) hpi
+          have hPrei := hPre (Nat.le_of_eq hpe.symm)
+          subst hpe
+          show Q k (match t.slots[i] with | none => acc | some e => f acc e.key e.value)
+          rw [show t.slots[i] = some e from hSlot]
+          simp only
+          rw [hKey]
+          exact hEstablish acc k e.value (by rw [hValEq]; exact hk) hPrei
+      · intro hle
+        have hPrei := hPre (Nat.le_of_succ_le hle)
+        have hlt : i.val < p := Nat.lt_of_succ_le hle
+        show Pre k (match t.slots[i] with | none => acc | some e => f acc e.key e.value)
+        cases hs : t.slots[i] with
+        | none => simpa [hs] using hPrei
+        | some ei =>
+          have hNe := hOther i.val hiCap ei hs (Nat.ne_of_lt hlt)
+          simpa [hs] using hPreStable acc k ei.key ei.value (fun h => hNe h.symm) hPrei)
+  exact hMain.1 (by rw [hCap]; exact hp)
+
 -- Helper: fold induction for filter when every entry with key == k has f = false
 -- (the predicate-based variant of filter_fold_absent)
 private theorem filter_fold_absent_by_pred [BEq α] [Hashable α] [LawfulBEq α]

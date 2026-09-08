@@ -150,6 +150,13 @@ const FDT_END: u32 = 0x0000_0009;
 /// `boot_cpuid_phys`, `size_dt_strings`, `size_dt_struct`.
 const FDT_HEADER_SIZE: usize = 40;
 
+/// **RR7 audit round**: the lowest FDT layout version this parser may
+/// accept, because `size_dt_struct` — which `parse_fdt_header` reads
+/// unconditionally at byte 36 — enters the header at version 17.  Held
+/// equal to `SeLe4n.Platform.fdtMinimumVersion`; the two validators
+/// answer one question.
+const FDT_MINIMUM_VERSION: u32 = 17;
+
 /// **WS-SM SM1.D.1**: Fuel bound for the DTB structure walk.
 ///
 /// Caps the number of FDT tokens we'll consume before giving up.
@@ -436,7 +443,13 @@ struct FdtHeader {
     off_dt_struct: u32,
     /// Byte offset into the blob where the strings block begins.
     off_dt_strings: u32,
-    /// DTB format version.  v1.0.0 requires ≥ 16.
+    /// Byte offset into the blob where the memory reservation block
+    /// begins.  **RR7 audit round**: this walker does not read that
+    /// block -- the Lean reader does -- but the header's validity is
+    /// one question, and leaving the field unparsed is what let the
+    /// two validators disagree about a blob.
+    off_mem_rsvmap: u32,
+    /// DTB format version.  Must be >= [`FDT_MINIMUM_VERSION`].
     version: u32,
     /// Minimum FDT version required to parse this DTB.  Per the
     /// FDT spec, a parser at layout version `P` may read DTBs whose
@@ -465,7 +478,7 @@ fn parse_fdt_header(blob: &[u8]) -> Option<FdtHeader> {
     let totalsize = read_be_u32(blob, 4)?;
     let off_dt_struct = read_be_u32(blob, 8)?;
     let off_dt_strings = read_be_u32(blob, 12)?;
-    // Skip off_mem_rsvmap at 16.
+    let off_mem_rsvmap = read_be_u32(blob, 16)?;
     let version = read_be_u32(blob, 20)?;
     let last_comp_version = read_be_u32(blob, 24)?;
     // Skip boot_cpuid_phys at 28.
@@ -476,6 +489,7 @@ fn parse_fdt_header(blob: &[u8]) -> Option<FdtHeader> {
         totalsize,
         off_dt_struct,
         off_dt_strings,
+        off_mem_rsvmap,
         version,
         last_comp_version,
         size_dt_struct,
@@ -488,7 +502,8 @@ fn parse_fdt_header(blob: &[u8]) -> Option<FdtHeader> {
 /// Returns `true` if the header passes the full sanity check set:
 ///   1. Magic = `0xD00DFEED` (re-verified for defense-in-depth even
 ///      though [`parse_fdt_header`] already gates on it).
-///   2. `version >= 16` (the minimum we support).
+///   2. `version >= FDT_MINIMUM_VERSION` (the lowest whose header
+///      carries `size_dt_struct`, which this parser reads).
 ///   3. `last_comp_version <= FDT_PARSER_VERSION` — refuses DTBs
 ///      requiring a newer layout than this parser supports
 ///      (audit-pass-1 forward-compat defense).
@@ -506,7 +521,15 @@ fn validate_fdt_header(hdr: &FdtHeader) -> bool {
     if hdr.magic != FDT_MAGIC {
         return false;
     }
-    if hdr.version < 16 {
+    // RR7 audit round: `size_dt_struct` sits at byte 36 and exists only from
+    // version 17; a version-16 header ends at byte 36.  This parser reads that
+    // field unconditionally (`read_be_u32(blob, 36)`), so accepting version 16
+    // meant bounding the structure block by bytes outside the header.  Both
+    // this validator and the Lean one had the same gap, so it was a shared
+    // defect rather than a divergence -- and requiring the version that has the
+    // field rejects nothing that worked, since a v16 blob's byte 36 is padding
+    // and yielded an empty structure block the walker already refused.
+    if hdr.version < FDT_MINIMUM_VERSION {
         return false;
     }
     // Audit-pass-1: reject DTBs that require a newer parser than us.
@@ -540,6 +563,18 @@ fn validate_fdt_header(hdr: &FdtHeader) -> bool {
         return false;
     }
     if (hdr.off_dt_strings as u64) < FDT_HEADER_SIZE as u64 {
+        return false;
+    }
+    // RR7 audit round: and the memory reservation block, which neither
+    // validator checked.  Section 5.1 aligns it to 8 bytes and places it after
+    // the header; the Lean reader takes 16-byte entries from `off_mem_rsvmap`
+    // and, since its reservation set became a refusal rather than a shorter
+    // list, a misaligned or overlapping block is a blob whose carve-outs cannot
+    // be located rather than one that reserves nothing.
+    if !hdr.off_mem_rsvmap.is_multiple_of(8) {
+        return false;
+    }
+    if (hdr.off_mem_rsvmap as u64) < FDT_HEADER_SIZE as u64 {
         return false;
     }
     // Block end must fit inside the total size.  Use u64 arithmetic
@@ -816,66 +851,13 @@ fn find_bootargs_in_dtb(blob: &[u8]) -> Option<&[u8]> {
 /// returns empty for any non-null pointer (we cannot synthesise a
 /// safe DTB pointer on host).
 pub fn extract_bootargs_into(dtb_ptr: u64, buffer: &mut [u8]) -> &str {
-    if dtb_ptr == 0 {
-        return "";
-    }
-    // Read the totalsize field (header byte 4..8) to know how much
-    // memory to slice.  We start by reading the first 40 bytes (the
-    // header) and validating it before slicing the full DTB.
-    //
-    // Two reads:
-    //   1. Header slice (40 bytes) — covers magic + totalsize.
-    //   2. Full DTB slice (totalsize bytes) — used for the walk.
-    //
-    // This is a brief two-step to avoid trusting the totalsize before
-    // we've verified the magic word.
-    //
-    // SAFETY: on real hardware, U-Boot sets `dtb_ptr` to a valid DTB
-    // mapping (the ARM64 boot protocol guarantees this).  The reader
-    // checks magic before trusting any further fields, so an invalid
-    // pointer producing a non-magic header value will short-circuit
-    // here.  On host (cargo test) we never invoke this with a
-    // non-null pointer, so the unsafe slice is never constructed.
-
     #[cfg(target_arch = "aarch64")]
     let result = {
-        // SAFETY: The caller (boot.rs Phase 5) supplies `dtb_ptr` from
-        // U-Boot's `x0` register, which the ARM64 boot protocol
-        // requires to be either NULL or point to a valid DTB mapping
-        // of at least totalsize bytes.  We handle NULL above.  For
-        // non-NULL: read 40 bytes first to determine totalsize,
-        // validate the header, validate that totalsize ≤
-        // MAX_DTB_SIZE, then read the full blob.
-        //
-        // Audit-pass-1: bounding `totalsize` to MAX_DTB_SIZE is the
-        // critical defense against a malicious or malformed
-        // bootloader writing `totalsize = 0xFFFF_FFFF` (≈ 4 GiB).
-        // Constructing `core::slice::from_raw_parts(ptr, len)` over
-        // memory that isn't fully readable is Undefined Behaviour
-        // per Rust's safety invariants — even if we never read past
-        // the actual blob, the slice itself must describe a valid
-        // contiguous extent.  Real DTBs are tens to a few hundred
-        // KiB; the 2 MiB cap is orders of magnitude above any
-        // plausible legitimate DTB and well below the smallest RAM
-        // region typically mapped by U-Boot.
-        unsafe {
-            let header_slice = core::slice::from_raw_parts(dtb_ptr as *const u8, FDT_HEADER_SIZE);
-            match parse_fdt_header(header_slice) {
-                Some(hdr) if validate_fdt_header(&hdr) => {
-                    let total = hdr.totalsize as usize;
-                    if total > MAX_DTB_SIZE {
-                        // Defense: refuse to construct a slice over
-                        // a DTB extent that exceeds our safety bound.
-                        // Falls back to the default CmdlineConfig
-                        // (same as missing/malformed DTB).
-                        ""
-                    } else {
-                        let full_slice = core::slice::from_raw_parts(dtb_ptr as *const u8, total);
-                        bootargs_to_buffer(full_slice, buffer)
-                    }
-                }
-                _ => "",
-            }
+        // SAFETY: see [`dtb_blob_from_ptr`]'s contract — the caller (boot.rs
+        // Phase 5) supplies `dtb_ptr` from U-Boot's `x0` register.
+        match unsafe { dtb_blob_from_ptr(dtb_ptr) } {
+            Some(blob) => bootargs_to_buffer(blob, buffer),
+            None => "",
         }
     };
 
@@ -892,6 +874,61 @@ pub fn extract_bootargs_into(dtb_ptr: u64, buffer: &mut [u8]) -> &str {
     };
 
     result
+}
+
+/// **WS-SM SM1.D.1 / WS-RR RR7.1**: turn a raw DTB pointer into a validated
+/// blob slice, or `None`.
+///
+/// Factored out at RR7.1 because the boot path now asks the device tree two
+/// questions — `/chosen/bootargs` and `/memory` — and the header-first
+/// validation that makes the raw slice sound is one answer, not two.
+///
+/// Two reads, deliberately:
+///   1. Header slice (40 bytes) — covers magic + `totalsize`.
+///   2. Full DTB slice (`totalsize` bytes) — used for the walk.
+///
+/// The two-step avoids trusting `totalsize` before the magic word is verified.
+///
+/// # Safety
+///
+/// The caller supplies `dtb_ptr` from U-Boot's `x0` register, which the ARM64
+/// boot protocol requires to be either NULL or to point at a valid DTB mapping
+/// of at least `totalsize` bytes.  NULL is handled here.
+///
+/// Audit-pass-1: bounding `totalsize` to [`MAX_DTB_SIZE`] is the critical
+/// defense against a malicious or malformed bootloader writing
+/// `totalsize = 0xFFFF_FFFF` (≈ 4 GiB).  Constructing
+/// `core::slice::from_raw_parts(ptr, len)` over memory that is not fully
+/// readable is Undefined Behaviour per Rust's safety invariants — even if we
+/// never read past the actual blob, the slice itself must describe a valid
+/// contiguous extent.  Real DTBs are tens to a few hundred KiB; the 2 MiB cap
+/// is orders of magnitude above any plausible legitimate DTB and well below
+/// the smallest RAM region U-Boot typically maps.
+#[cfg(target_arch = "aarch64")]
+unsafe fn dtb_blob_from_ptr<'a>(dtb_ptr: u64) -> Option<&'a [u8]> {
+    if dtb_ptr == 0 {
+        return None;
+    }
+    // SAFETY: caller obligations documented above; the header read is bounded
+    // to the 40 bytes the boot protocol guarantees are present whenever the
+    // pointer is non-NULL.
+    let header_slice =
+        unsafe { core::slice::from_raw_parts(dtb_ptr as *const u8, FDT_HEADER_SIZE) };
+    let hdr = parse_fdt_header(header_slice)?;
+    if !validate_fdt_header(&hdr) {
+        return None;
+    }
+    let total = hdr.totalsize as usize;
+    if total > MAX_DTB_SIZE {
+        // Refuse to construct a slice over a DTB extent that exceeds the
+        // safety bound; the caller falls back exactly as it does for a
+        // missing or malformed DTB.
+        return None;
+    }
+    // SAFETY: `total` is the header's own `totalsize`, validated by
+    // `validate_fdt_header` to cover the structure and strings blocks and
+    // bounded above by `MAX_DTB_SIZE`.
+    Some(unsafe { core::slice::from_raw_parts(dtb_ptr as *const u8, total) })
 }
 
 /// **WS-SM SM1.D.1**: Test-friendly entry point: extract bootargs
@@ -951,6 +988,504 @@ fn bootargs_to_buffer<'b>(blob: &[u8], buffer: &'b mut [u8]) -> &'b str {
     // `unwrap_or_default()` on `Result<&str, _>` yields `""` on error,
     // which is exactly the safe-fallback contract we want.
     core::str::from_utf8(dst).unwrap_or_default()
+}
+
+// ===========================================================================
+// WS-RR RR7.1: the `/memory` query
+//
+// The boot MMU needs the board's RAM extent *before* it builds the identity
+// map, so that RAM above the 4 GiB boundary is mapped on an 8 GiB or 16 GiB
+// board and absent DRAM is not mapped on a smaller one (`mmu::boot_mapping_for`).
+// It is the same blob, the same header validation and the same fuel- and
+// depth-bounded walk the bootargs query uses — one FDT reader, two questions.
+// ===========================================================================
+
+/// **WS-RR RR7.1**: default `#address-cells` when the root node declares none
+/// (Devicetree Specification v0.4 §2.3.5).
+const FDT_DEFAULT_ADDRESS_CELLS: u32 = 2;
+
+/// **WS-RR RR7.1**: default `#size-cells` when the root node declares none
+/// (Devicetree Specification v0.4 §2.3.5).
+const FDT_DEFAULT_SIZE_CELLS: u32 = 1;
+
+/// **WS-RR RR7.1**: read `cells` big-endian 32-bit cells at `offset` as one
+/// unsigned integer.
+///
+/// Returns `None` for a cell count this parser does not support (0, or more
+/// than 2 — a 3-cell address cannot fit a `u64` and no BCM2712 device tree
+/// uses one) or when the cells run off the end of the blob.
+fn read_fdt_cells(blob: &[u8], offset: usize, cells: u32) -> Option<u64> {
+    match cells {
+        1 => read_be_u32(blob, offset).map(u64::from),
+        2 => {
+            let hi = read_be_u32(blob, offset)?;
+            let lo = read_be_u32(blob, offset.checked_add(4)?)?;
+            Some((u64::from(hi) << 32) | u64::from(lo))
+        }
+        _ => None,
+    }
+}
+
+/// **WS-RR RR7.1**: is `name` the node name of a `/memory` node?
+///
+/// Devicetree Specification v0.4 §3.4 names it `memory@<unit-address>`; a
+/// device tree that omits the unit address spells it `memory`.  Anything else
+/// at that depth (`memory-controller@…`, `reserved-memory`) is a different
+/// node and must not contribute.
+fn is_memory_node_name(name: &[u8]) -> bool {
+    name == b"memory" || (name.starts_with(b"memory@") && name.len() > b"memory@".len())
+}
+
+/// **WS-RR RR7.1**: collect the extents a `/memory` node's `reg` reports.
+///
+/// `reg` is a list of (address, size) pairs, each `address_cells` then
+/// `size_cells` big-endian 32-bit cells wide.  A `reg` whose length is not a
+/// whole number of pairs is malformed and rejected outright rather than parsed
+/// as far as it goes — a truncated final pair would otherwise contribute a
+/// partial address.
+///
+/// **PR #892 review round 3**: this used to fold every pair to the *maximum*
+/// `base + size`, and a maximum cannot see a hole.  The pairs are collected
+/// into `extents` and the RAM top is decided afterwards by
+/// [`contiguous_ram_top`], over all of them at once.
+fn fold_memory_reg(
+    blob: &[u8],
+    value_start: usize,
+    value_len: usize,
+    address_cells: u32,
+    size_cells: u32,
+    extents: &mut MemoryExtents,
+) -> Option<()> {
+    let pair_cells = address_cells.checked_add(size_cells)?;
+    let pair_bytes = (pair_cells as usize).checked_mul(4)?;
+    if pair_bytes == 0 || !value_len.is_multiple_of(pair_bytes) {
+        return None;
+    }
+    let pairs = value_len / pair_bytes;
+    for p in 0..pairs {
+        let pair_off = value_start.checked_add(p.checked_mul(pair_bytes)?)?;
+        let base = read_fdt_cells(blob, pair_off, address_cells)?;
+        let size_off = pair_off.checked_add((address_cells as usize).checked_mul(4)?)?;
+        let size = read_fdt_cells(blob, size_off, size_cells)?;
+        let top = base.checked_add(size)?;
+        extents.push(base, top)?;
+    }
+    Some(())
+}
+
+/// **PR #892 review round 3**: how many `/memory` extents a device tree may
+/// report before this parser refuses it.
+///
+/// The HAL allocates nothing, so the extents live in a fixed array.  A
+/// Raspberry Pi 5 reports at most two — the low aperture and the remainder the
+/// firmware relocates above 4 GiB — and a blob reporting more than this is
+/// refused outright (`None`, the linker's extent) rather than read in part: a
+/// partial read is the maximum fold this replaces, under another name.
+pub const MAX_MEMORY_EXTENTS: usize = 16;
+
+/// **PR #892 review round 3**: the `[base, end)` extents a device tree's
+/// `/memory` nodes report, collected before the RAM top is decided.
+struct MemoryExtents {
+    spans: [(u64, u64); MAX_MEMORY_EXTENTS],
+    len: usize,
+}
+
+impl MemoryExtents {
+    const fn new() -> Self {
+        Self {
+            spans: [(0, 0); MAX_MEMORY_EXTENTS],
+            len: 0,
+        }
+    }
+
+    /// Record one extent; `None` when the store is full.
+    fn push(&mut self, base: u64, end: u64) -> Option<()> {
+        if self.len >= MAX_MEMORY_EXTENTS {
+            return None;
+        }
+        self.spans[self.len] = (base, end);
+        self.len += 1;
+        Some(())
+    }
+
+    fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// The furthest end among the extents that contain `addr`, if any does.
+    fn furthest_end_containing(&self, addr: u64) -> Option<u64> {
+        let mut best: Option<u64> = None;
+        for &(base, end) in &self.spans[..self.len] {
+            if (base..end).contains(&addr) {
+                best = Some(match best {
+                    Some(current) if current >= end => current,
+                    _ => end,
+                });
+            }
+        }
+        best
+    }
+}
+
+/// **PR #892 review round 3**: the exclusive top of the RAM the boot tables may
+/// map — the end of the **contiguous** run of reported extents from address 0,
+/// with the peripheral window `[LOW_RAM_TOP, HIGH_RAM_BASE)` the one
+/// discontinuity the walk may cross.
+///
+/// The fold this replaces kept the maximum end.  A blob reporting
+/// `[4 GiB, 5 GiB)` and `[8 GiB, 9 GiB)` therefore handed `init_mmu` 9 GiB, and
+/// [`crate::mmu::boot_mapping_for`] mapped the unreported `[5 GiB, 8 GiB)`
+/// Normal-cacheable — a speculatively accessible hole — before any board
+/// validation could refuse the layout; a low aperture that stopped short of
+/// `LOW_RAM_TOP` beside a high extent did the same to `[top, LOW_RAM_TOP)`.
+/// The walk maps only what was reported.  RAM beyond a hole is a lost
+/// resource, never a false claim; a blob reporting no RAM at address 0 yields
+/// `0`, so the tables map no RAM at all — the fail-closed outcome for a board
+/// this image was not built for.
+///
+/// The peripheral-window jump is permitted only from a cursor that has reached
+/// `LOW_RAM_TOP`: a low aperture reported short is a hole in the aperture
+/// [`crate::mmu::boot_mapping_for`] would otherwise map whole once the top
+/// crosses `HIGH_RAM_BASE`, so the high extent is forfeited instead.
+///
+/// Termination: every productive step moves the cursor to an extent's end,
+/// strictly upward, so at most `len` steps are productive and the loop is
+/// bounded by `len + 1`.  This is the greedy walk the Lean bridge decides
+/// coverage by (`Platform.Boot.coverFrom`), asked for the largest extent
+/// rather than of a target.
+fn contiguous_ram_top(extents: &MemoryExtents) -> u64 {
+    let mut cursor: u64 = 0;
+    for _ in 0..=extents.len {
+        if let Some(end) = extents.furthest_end_containing(cursor) {
+            if end > cursor {
+                cursor = end;
+                continue;
+            }
+        }
+        // No extent contains the cursor.  The one gap a board may legitimately
+        // report is the peripheral window: a fully reported low aperture may
+        // continue at `HIGH_RAM_BASE`.
+        if (crate::mmu::LOW_RAM_TOP..crate::mmu::HIGH_RAM_BASE).contains(&cursor) {
+            if let Some(end) = extents.furthest_end_containing(crate::mmu::HIGH_RAM_BASE) {
+                cursor = end;
+                continue;
+            }
+        }
+        break;
+    }
+    cursor
+}
+
+/// **WS-RR RR7.1**: walk the FDT structure block for the exclusive top of the
+/// contiguous run of RAM the `/memory` nodes report from address 0
+/// ([`contiguous_ram_top`]; PR #892 review round 3 — it used to be the highest
+/// address any node claimed, which mapped every hole between two claims).
+///
+/// Returns `None` when the blob is unparseable, when no `/memory` node carries
+/// a well-formed `reg`, when the nodes report more than [`MAX_MEMORY_EXTENTS`]
+/// extents, or when the root declares a cell width this parser does not
+/// support — every one of which the caller turns into the linker's declared
+/// RAM extent rather than a guess.
+///
+/// ## Walk discipline
+///
+/// The same fuel- and depth-bounded scan [`find_bootargs_in_dtb`] performs,
+/// with three pieces of node-scoped state instead of one:
+///
+///   - `address_cells` / `size_cells`: the **root's** `#address-cells` and
+///     `#size-cells`, which govern the `reg` of the root's children.  Root
+///     properties are the ones seen at `depth == 1`.  The Devicetree
+///     Specification requires properties to precede sub-nodes, so they are
+///     read before any `/memory` node is entered.
+///   - `memory_reg`: the span of the current `/memory` node's `reg` value.
+///   - `device_type_ok`: whether the current `/memory` node's `device_type`,
+///     **if it declares one**, is `"memory"`.  A node named `memory@…` that
+///     declares some other device type is not memory.
+///   - `status_ok`: whether the current `/memory` node's `status`, **if it
+///     declares one**, is `okay` or `ok` (PR #892 review round 4).  A
+///     `disabled` — or `reserved`, `fail`, `fail-sss` — bank is DRAM the
+///     firmware has withheld, and its `reg` must not reach the walk.
+///
+/// The fold happens at the node's `FDT_END_NODE`, not at the `reg` property,
+/// because `device_type` and `status` may follow `reg` within the same node.
+fn find_ram_top_in_dtb(blob: &[u8]) -> Option<u64> {
+    let hdr = parse_fdt_header(blob)?;
+    if !validate_fdt_header(&hdr) {
+        return None;
+    }
+    let strings_off = hdr.off_dt_strings as usize;
+    let strings_size = hdr.size_dt_strings as usize;
+    let struct_start = hdr.off_dt_struct as usize;
+    let struct_end_exclusive = struct_start.checked_add(hdr.size_dt_struct as usize)?;
+    if struct_end_exclusive > blob.len() {
+        return None;
+    }
+
+    let mut offset = struct_start;
+    let mut depth: usize = 0;
+    let mut address_cells: u32 = FDT_DEFAULT_ADDRESS_CELLS;
+    let mut size_cells: u32 = FDT_DEFAULT_SIZE_CELLS;
+    let mut in_memory = false;
+    let mut memory_depth: usize = 0;
+    let mut memory_reg: Option<(usize, usize)> = None;
+    let mut device_type_ok = true;
+    // PR #892 review round 4: whether the current `/memory` node's `status`, if
+    // it declares one, says the memory is available.  Devicetree Specification
+    // v0.4 §2.3.4: an absent `status` means `okay`; `okay` and `ok` mean the
+    // node is operational; `disabled`, `reserved`, `fail` and `fail-sss` mean
+    // it is not.  A disabled memory bank's `reg` describes DRAM the firmware
+    // has explicitly withheld, and folding it would map that bank
+    // Normal-cacheable exactly as the maximum fold mapped a hole.
+    let mut status_ok = true;
+    let mut extents = MemoryExtents::new();
+    let mut fuel = FDT_WALK_FUEL;
+    // PR #892 review: whether the walk reached a top-level `FDT_END`.  Every
+    // other way out of this loop leaves the structure block unparsed, and this
+    // function *accumulates* rather than searching — so without the flag a blob
+    // that carries a well-formed `/memory` node and then runs out of structure
+    // block, or of fuel, would hand `init_mmu` a RAM top derived from a prefix
+    // it never validated, and the MMU would map Normal-cacheable pages over
+    // physical addresses nothing backs.  (Its twin `find_bootargs_in_dtb` needs
+    // no such flag: it *searches*, and returns `Some` only where it matched, so
+    // every early exit already fails closed.)
+    let mut terminated = false;
+
+    while fuel > 0 {
+        fuel -= 1;
+        let next_token_offset = offset.checked_add(4)?;
+        if next_token_offset > struct_end_exclusive {
+            // Ran off the end of the structure block with no terminator: the
+            // blob is malformed, so nothing it claimed is trustworthy.
+            return None;
+        }
+        let token = read_be_u32(blob, offset)?;
+        match token {
+            FDT_BEGIN_NODE => {
+                let (name, next_off) = read_node_name(blob, next_token_offset)?;
+                if next_off > struct_end_exclusive {
+                    return None;
+                }
+                if depth == 1 && !in_memory && is_memory_node_name(name) {
+                    in_memory = true;
+                    memory_depth = depth.checked_add(1)?;
+                    memory_reg = None;
+                    device_type_ok = true;
+                    status_ok = true;
+                }
+                depth = depth.checked_add(1)?;
+                if depth > FDT_MAX_DEPTH {
+                    return None;
+                }
+                offset = next_off;
+            }
+            FDT_END_NODE => {
+                if depth == 0 {
+                    return None;
+                }
+                depth -= 1;
+                if in_memory && depth < memory_depth {
+                    // Both node-scoped verdicts gate the fold: a node that is
+                    // not memory, or memory the firmware marked unavailable,
+                    // contributes nothing.
+                    if device_type_ok && status_ok {
+                        if let Some((value_start, value_len)) = memory_reg {
+                            // A malformed `reg` fails the whole query closed
+                            // rather than contributing a partial address.
+                            fold_memory_reg(
+                                blob,
+                                value_start,
+                                value_len,
+                                address_cells,
+                                size_cells,
+                                &mut extents,
+                            )?;
+                        }
+                    }
+                    in_memory = false;
+                    memory_reg = None;
+                    device_type_ok = true;
+                    status_ok = true;
+                }
+                offset = offset.checked_add(4)?;
+            }
+            FDT_PROP => {
+                let len_offset = offset.checked_add(4)?;
+                let nameoff_offset = offset.checked_add(8)?;
+                let len = read_be_u32(blob, len_offset)?;
+                let nameoff = read_be_u32(blob, nameoff_offset)?;
+                let value_start = offset.checked_add(12)?;
+                let len_usize = len as usize;
+                let value_end = value_start.checked_add(len_usize)?;
+                if value_end > struct_end_exclusive {
+                    return None;
+                }
+                let prop_name =
+                    lookup_fdt_string(blob, strings_off, strings_size, nameoff as usize)?;
+                if depth == 1 {
+                    // Root properties: the cell widths that govern the `reg`
+                    // of every child, `/memory` included.
+                    if prop_name == b"#address-cells" {
+                        address_cells = read_be_u32(blob, value_start)?;
+                    } else if prop_name == b"#size-cells" {
+                        size_cells = read_be_u32(blob, value_start)?;
+                    }
+                } else if in_memory && depth == memory_depth {
+                    if prop_name == b"reg" {
+                        memory_reg = Some((value_start, len_usize));
+                    } else if prop_name == b"device_type" {
+                        // The value is a null-terminated string; compare
+                        // against `memory` without the terminator.
+                        let value = blob.get(value_start..value_end)?;
+                        let trimmed = match value.iter().position(|&b| b == 0) {
+                            Some(nul) => &value[..nul],
+                            None => value,
+                        };
+                        device_type_ok = trimmed == b"memory";
+                    } else if prop_name == b"status" {
+                        // PR #892 review round 4: the node's availability.
+                        // Only the two spellings the specification defines as
+                        // operational count; every other value — `disabled`,
+                        // `reserved`, `fail`, `fail-sss`, or something the
+                        // specification does not define — withholds the bank.
+                        let value = blob.get(value_start..value_end)?;
+                        let trimmed = match value.iter().position(|&b| b == 0) {
+                            Some(nul) => &value[..nul],
+                            None => value,
+                        };
+                        status_ok = trimmed == b"okay" || trimmed == b"ok";
+                    }
+                }
+                let padding = (4usize - (len_usize % 4)) % 4;
+                let padded_len = len_usize.checked_add(padding)?;
+                offset = value_start.checked_add(padded_len)?;
+            }
+            FDT_NOP => {
+                offset = offset.checked_add(4)?;
+            }
+            FDT_END => {
+                terminated = true;
+                break;
+            }
+            _ => {
+                // Unknown token — malformed blob; fail safely.
+                return None;
+            }
+        }
+    }
+    // PR #892 review: accept the accumulated top only from a walk that reached
+    // a top-level `FDT_END` with every node closed.  `!terminated` covers both
+    // fuel exhaustion and a `break`-free fall-through; `depth != 0` covers a
+    // terminator reached inside an unbalanced node.
+    if !terminated || depth != 0 {
+        return None;
+    }
+    if extents.is_empty() {
+        return None;
+    }
+    Some(contiguous_ram_top(&extents))
+}
+
+/// **WS-RR RR7.1**: test-friendly entry point — the exclusive top of the
+/// contiguous run of RAM the `/memory` nodes of `blob` report from address 0
+/// ([`contiguous_ram_top`]).
+#[must_use]
+pub fn ram_top_from_blob(blob: &[u8]) -> Option<u64> {
+    find_ram_top_in_dtb(blob)
+}
+
+/// **WS-RR RR7.1**: the exclusive top of the contiguous run of RAM the
+/// `/memory` nodes of the DTB at `dtb_ptr` report from address 0 — the RAM the
+/// boot MMU maps ([`contiguous_ram_top`]).
+///
+/// `None` for a null pointer, a blob whose header does not validate, a blob
+/// larger than [`MAX_DTB_SIZE`], or a device tree with no well-formed
+/// `/memory` node.  `mmu::init_mmu` turns `None` into
+/// [`crate::mmu::LOW_RAM_TOP`], the RAM extent `link.ld` declares.
+///
+/// ## Safety
+///
+/// Same contract as [`extract_bootargs_into`]: `dtb_ptr` is the raw `x0` value
+/// the ARM64 boot protocol requires to be NULL or to point at a valid DTB
+/// mapping.  The blob is validated header-first through [`dtb_blob_from_ptr`]
+/// before any structure-block byte is read.
+#[must_use]
+pub fn ram_top_from_dtb(dtb_ptr: u64) -> Option<u64> {
+    #[cfg(target_arch = "aarch64")]
+    {
+        // SAFETY: see `dtb_blob_from_ptr`'s contract; the caller is
+        // `mmu::init_mmu`, which passes `rust_boot_main`'s `x0`.
+        let blob = unsafe { dtb_blob_from_ptr(dtb_ptr) }?;
+        find_ram_top_in_dtb(blob)
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        // Host-side stub, symmetric with `extract_bootargs_into`: cargo tests
+        // never pass a non-zero `dtb_ptr` (they drive [`ram_top_from_blob`]
+        // with a synthesised buffer), so the raw-pointer slice would be UB.
+        let _ = dtb_ptr;
+        None
+    }
+}
+
+/// **PR #892 review round 4**: the extent `[dtb_ptr, dtb_ptr + totalsize)` of
+/// the device tree the boot will read again once translation is on — the
+/// Phase-5 `parse_cmdline_from_dtb` walk, and SM10.1's handoff of the pointer
+/// to the kernel.  `mmu::init_mmu` refuses to enable the MMU unless this extent
+/// is inside the RAM the tables map, since a blob in a discarded tail would be
+/// read through an unmapped address after the enable.
+///
+/// `None` for a null pointer or a blob whose header does not validate — the
+/// cases in which the boot uses no device tree and there is nothing to keep
+/// mapped.  The `totalsize` is the header's own, bounded by [`MAX_DTB_SIZE`]
+/// exactly as [`dtb_blob_from_ptr`] bounds it.
+///
+/// ## Safety
+///
+/// Same contract as [`ram_top_from_dtb`].
+#[must_use]
+pub fn dtb_extent_from_dtb(dtb_ptr: u64) -> Option<(u64, u64)> {
+    #[cfg(target_arch = "aarch64")]
+    {
+        // SAFETY: see `dtb_blob_from_ptr`'s contract; the caller is
+        // `mmu::init_mmu`, which passes `rust_boot_main`'s `x0`.
+        let blob = unsafe { dtb_blob_from_ptr(dtb_ptr) }?;
+        Some((dtb_ptr, blob.len() as u64))
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        // Host-side stub, symmetric with `ram_top_from_dtb`: no host test
+        // passes a non-zero `dtb_ptr`.
+        let _ = dtb_ptr;
+        None
+    }
+}
+
+/// **PR #892 review round 8**: the extent at `dtb_ptr` that this image will
+/// dereference **after** translation is enabled, for a caller that must map it.
+///
+/// [`dtb_extent_from_dtb`] answers `None` for four different situations — a
+/// null pointer, a header that does not parse, a header that does not validate,
+/// and a `totalsize` above [`MAX_DTB_SIZE`] — and only the first of them means
+/// *nothing is dereferenced*.  `init_mmu` collapsed all four to the empty range
+/// and `boot_cacheable_range_in` accepts an empty range, so a non-null pointer
+/// whose extent could not be recovered was checked against nothing: if firmware
+/// placed that blob above the mapped top, translation was enabled anyway and
+/// Phase 5's [`parse_cmdline_from_dtb`] faulted reading its header, at a point
+/// with no handler installed and no way to say why.
+///
+/// So this distinguishes them.  A null pointer is `None`.  For any non-null
+/// pointer the answer is the range Phase 5 will actually touch: the blob's own
+/// `totalsize` extent when the header is recoverable, and the **header window**
+/// otherwise — because `dtb_blob_from_ptr` reads exactly those bytes before
+/// reaching the same verdict and giving up.  A caller therefore refuses exactly
+/// when the boot would fault, and a garbage non-null pointer that happens to
+/// lie inside the map still boots.
+#[must_use]
+pub fn dtb_dereferenced_range(dtb_ptr: u64) -> Option<(u64, u64)> {
+    if dtb_ptr == 0 {
+        return None;
+    }
+    Some(dtb_extent_from_dtb(dtb_ptr).unwrap_or((dtb_ptr, FDT_HEADER_SIZE as u64)))
 }
 
 /// **WS-SM SM1.D.1 + SM1.D.2**: One-shot helper combining
@@ -1447,6 +1982,48 @@ mod tests {
         blob[20..24].copy_from_slice(&15u32.to_be_bytes()); // version 15 < 16
         let hdr = parse_fdt_header(&blob).expect("should still parse fields");
         assert!(!validate_fdt_header(&hdr));
+    }
+
+    /// **RR7 audit round**: the conditions this validator had and the Lean
+    /// one did not, plus the two neither had.  Each case keeps every other
+    /// header field at its canonical value and moves exactly one.
+    #[test]
+    fn validate_fdt_header_rejects_each_layout_violation() {
+        // The control: the canonical header is accepted, so a rejection below
+        // is the moved field's doing and not the fixture's.
+        let base = build_minimal_dtb_header();
+        assert!(validate_fdt_header(
+            &parse_fdt_header(&base).expect("canonical header parses")
+        ));
+        // (offset of the field, replacement value, what it violates)
+        let cases: [(usize, u32, &str); 6] = [
+            (8, 41, "off_dt_struct must be 4-byte aligned"),
+            (12, 42, "off_dt_strings must be 4-byte aligned"),
+            (8, 0, "off_dt_struct must not overlap the header"),
+            (12, 4, "off_dt_strings must not overlap the header"),
+            (16, 44, "off_mem_rsvmap must be 8-byte aligned"),
+            (16, 8, "off_mem_rsvmap must not overlap the header"),
+        ];
+        for (at, value, why) in cases {
+            let mut blob = build_minimal_dtb_header();
+            blob[at..at + 4].copy_from_slice(&value.to_be_bytes());
+            let hdr = parse_fdt_header(&blob).expect("fields still parse");
+            assert!(!validate_fdt_header(&hdr), "{why}");
+        }
+    }
+
+    /// **RR7 audit round**: version 16 is refused, because `size_dt_struct`
+    /// -- which `parse_fdt_header` reads at byte 36 -- enters the header at
+    /// 17.  Version 15 was already refused; 16 is the case this round adds,
+    /// and 17 must still be accepted or the floor has been raised too far.
+    #[test]
+    fn validate_fdt_header_requires_the_version_carrying_size_dt_struct() {
+        for (version, want) in [(15u32, false), (16, false), (17, true)] {
+            let mut blob = build_minimal_dtb_header();
+            blob[20..24].copy_from_slice(&version.to_be_bytes());
+            let hdr = parse_fdt_header(&blob).expect("fields still parse");
+            assert_eq!(validate_fdt_header(&hdr), want, "version {version}");
+        }
     }
 
     #[test]
@@ -2452,5 +3029,714 @@ mod tests {
         blob.extend_from_slice(&s);
         blob.extend_from_slice(&strings);
         blob
+    }
+}
+
+// ===========================================================================
+// WS-RR RR7.1: `/memory` query witnesses
+// ===========================================================================
+
+#[cfg(test)]
+mod memory_node_tests {
+    use super::*;
+    use std::vec::Vec;
+
+    /// One property of a synthesised node.
+    struct Prop {
+        name: &'static [u8],
+        value: Vec<u8>,
+    }
+
+    /// One child of the synthesised root.
+    struct Node {
+        name: &'static [u8],
+        props: Vec<Prop>,
+    }
+
+    fn cells(values: &[(u64, u32)]) -> Vec<u8> {
+        let mut out = Vec::new();
+        for &(v, width) in values {
+            match width {
+                1 => out.extend_from_slice(&(v as u32).to_be_bytes()),
+                2 => {
+                    out.extend_from_slice(&((v >> 32) as u32).to_be_bytes());
+                    out.extend_from_slice(&(v as u32).to_be_bytes());
+                }
+                other => panic!("unsupported cell width {other}"),
+            }
+        }
+        out
+    }
+
+    fn pad_to_four(v: &mut Vec<u8>) {
+        while !v.len().is_multiple_of(4) {
+            v.push(0);
+        }
+    }
+
+    /// Build a DTB whose root carries `#address-cells` / `#size-cells` and the
+    /// given children.
+    fn build_dtb(address_cells: u32, size_cells: u32, nodes: &[Node]) -> Vec<u8> {
+        // Strings block: every distinct property name, null terminated.
+        let mut strings: Vec<u8> = Vec::new();
+        let nameoff = |strings: &mut Vec<u8>, name: &[u8]| -> u32 {
+            // Linear scan for an existing entry (the fixtures are tiny).
+            let needle: Vec<u8> = name.iter().copied().chain(core::iter::once(0)).collect();
+            if let Some(pos) = strings
+                .windows(needle.len())
+                .position(|w| w == needle.as_slice())
+            {
+                return pos as u32;
+            }
+            let off = strings.len() as u32;
+            strings.extend_from_slice(&needle);
+            off
+        };
+
+        let mut s: Vec<u8> = Vec::new();
+        // BEGIN_NODE "" (root)
+        s.extend_from_slice(&FDT_BEGIN_NODE.to_be_bytes());
+        s.extend_from_slice(&[0u8; 4]);
+        // Root properties: the cell widths.
+        for (name, value) in [
+            (&b"#address-cells"[..], address_cells),
+            (&b"#size-cells"[..], size_cells),
+        ] {
+            let off = nameoff(&mut strings, name);
+            s.extend_from_slice(&FDT_PROP.to_be_bytes());
+            s.extend_from_slice(&4u32.to_be_bytes());
+            s.extend_from_slice(&off.to_be_bytes());
+            s.extend_from_slice(&value.to_be_bytes());
+        }
+        for node in nodes {
+            s.extend_from_slice(&FDT_BEGIN_NODE.to_be_bytes());
+            s.extend_from_slice(node.name);
+            s.push(0);
+            pad_to_four(&mut s);
+            for prop in &node.props {
+                let off = nameoff(&mut strings, prop.name);
+                s.extend_from_slice(&FDT_PROP.to_be_bytes());
+                s.extend_from_slice(&(prop.value.len() as u32).to_be_bytes());
+                s.extend_from_slice(&off.to_be_bytes());
+                s.extend_from_slice(&prop.value);
+                pad_to_four(&mut s);
+            }
+            s.extend_from_slice(&FDT_END_NODE.to_be_bytes());
+        }
+        s.extend_from_slice(&FDT_END_NODE.to_be_bytes());
+        s.extend_from_slice(&FDT_END.to_be_bytes());
+
+        let off_dt_struct = FDT_HEADER_SIZE;
+        let off_dt_strings = off_dt_struct + s.len();
+        let totalsize = off_dt_strings + strings.len();
+
+        let mut blob = Vec::with_capacity(totalsize);
+        blob.extend_from_slice(&FDT_MAGIC.to_be_bytes());
+        blob.extend_from_slice(&(totalsize as u32).to_be_bytes());
+        blob.extend_from_slice(&(off_dt_struct as u32).to_be_bytes());
+        blob.extend_from_slice(&(off_dt_strings as u32).to_be_bytes());
+        blob.extend_from_slice(&(FDT_HEADER_SIZE as u32).to_be_bytes());
+        blob.extend_from_slice(&17u32.to_be_bytes());
+        blob.extend_from_slice(&16u32.to_be_bytes());
+        blob.extend_from_slice(&0u32.to_be_bytes());
+        blob.extend_from_slice(&(strings.len() as u32).to_be_bytes());
+        blob.extend_from_slice(&(s.len() as u32).to_be_bytes());
+        blob.extend_from_slice(&s);
+        blob.extend_from_slice(&strings);
+        blob
+    }
+
+    fn memory_node(name: &'static [u8], reg: Vec<u8>, device_type: Option<&'static [u8]>) -> Node {
+        let mut props = Vec::new();
+        if let Some(dt) = device_type {
+            let mut value = dt.to_vec();
+            value.push(0);
+            props.push(Prop {
+                name: b"device_type",
+                value,
+            });
+        }
+        props.push(Prop {
+            name: b"reg",
+            value: reg,
+        });
+        Node { name, props }
+    }
+
+    /// PR #892 review: the three token-preserving mutations that keep a
+    /// well-formed `/memory` node and break only the *walk*.  Each returns
+    /// `Some` before the terminator flag and `None` after it, which is what a
+    /// deletion-style fixture (drop the memory node) would never have caught.
+    fn four_gibibyte_blob() -> Vec<u8> {
+        build_dtb(
+            2,
+            2,
+            &[memory_node(
+                b"memory@0",
+                cells(&[(0, 2), (0xFC00_0000, 2)]),
+                Some(b"memory"),
+            )],
+        )
+    }
+
+    /// `size_dt_struct` lives at byte 36 of the header.
+    fn set_size_dt_struct(blob: &mut [u8], size: u32) {
+        blob[36..40].copy_from_slice(&size.to_be_bytes());
+    }
+
+    fn read_size_dt_struct(blob: &[u8]) -> u32 {
+        u32::from_be_bytes([blob[36], blob[37], blob[38], blob[39]])
+    }
+
+    #[test]
+    fn a_memory_node_in_a_truncated_structure_block_is_refused() {
+        // The `/memory` node is intact and folds exactly as in the accepted
+        // fixture; only the root's `FDT_END_NODE` and the `FDT_END` are cut off
+        // the end of the structure block.  Trusting the accumulated top here
+        // would hand `init_mmu` a RAM ceiling read out of a prefix the walk
+        // never validated.
+        let mut blob = four_gibibyte_blob();
+        assert_eq!(ram_top_from_blob(&blob), Some(0xFC00_0000));
+        let full = read_size_dt_struct(&blob);
+        set_size_dt_struct(&mut blob, full - 8);
+        assert_eq!(ram_top_from_blob(&blob), None);
+    }
+
+    #[test]
+    fn a_terminator_inside_an_unbalanced_node_is_refused() {
+        // Same blob, with the root's `FDT_END_NODE` overwritten by a `FDT_NOP`:
+        // the walk reaches a real `FDT_END`, but at depth 1.  A blob whose nodes
+        // do not close is malformed however well its `/memory` node parsed.
+        let mut blob = four_gibibyte_blob();
+        assert_eq!(ram_top_from_blob(&blob), Some(0xFC00_0000));
+        let struct_start = FDT_HEADER_SIZE;
+        let struct_len = read_size_dt_struct(&blob) as usize;
+        // The last two tokens are the root's END_NODE then END.
+        let root_end_node = struct_start + struct_len - 8;
+        blob[root_end_node..root_end_node + 4].copy_from_slice(&FDT_NOP.to_be_bytes());
+        assert_eq!(ram_top_from_blob(&blob), None);
+    }
+
+    #[test]
+    fn a_memory_node_buried_under_exhausted_fuel_is_refused() {
+        // `FDT_WALK_FUEL` NOPs ahead of the terminator: the `/memory` node has
+        // already folded when the walk runs out of fuel, so the pre-fix code
+        // returned the accumulated top from a scan that never finished.
+        let mut blob = four_gibibyte_blob();
+        let struct_start = FDT_HEADER_SIZE;
+        let struct_len = read_size_dt_struct(&blob) as usize;
+        let tail_at = struct_start + struct_len - 8;
+        let mut padded: Vec<u8> = blob[..tail_at].to_vec();
+        for _ in 0..FDT_WALK_FUEL {
+            padded.extend_from_slice(&FDT_NOP.to_be_bytes());
+        }
+        padded.extend_from_slice(&blob[tail_at..struct_start + struct_len]);
+        let strings = blob[struct_start + struct_len..].to_vec();
+        let new_struct_len = padded.len();
+        let mut rebuilt: Vec<u8> = blob[..struct_start].to_vec();
+        rebuilt.extend_from_slice(&padded);
+        rebuilt.extend_from_slice(&strings);
+        let off_dt_strings = (struct_start + new_struct_len) as u32;
+        rebuilt[12..16].copy_from_slice(&off_dt_strings.to_be_bytes());
+        let totalsize = rebuilt.len() as u32;
+        rebuilt[4..8].copy_from_slice(&totalsize.to_be_bytes());
+        set_size_dt_struct(&mut rebuilt, new_struct_len as u32);
+        blob = rebuilt;
+        assert_eq!(ram_top_from_blob(&blob), None);
+    }
+
+    #[test]
+    fn a_four_gibibyte_board_reports_the_low_aperture_top() {
+        // The shape a 4 GB Pi 5 device tree has: one `/memory@0` node whose
+        // single `reg` pair covers `[0, 0xFC00_0000)`.
+        let blob = build_dtb(
+            2,
+            2,
+            &[memory_node(
+                b"memory@0",
+                cells(&[(0, 2), (0xFC00_0000, 2)]),
+                Some(b"memory"),
+            )],
+        );
+        assert_eq!(ram_top_from_blob(&blob), Some(0xFC00_0000));
+    }
+
+    #[test]
+    fn an_eight_gibibyte_board_reports_the_high_aperture_top() {
+        // Two `reg` pairs: the low aperture and the region above 4 GiB.  The
+        // walk crosses the peripheral window from a fully reported low
+        // aperture, which is what sizes the L1 blocks the pre-RR7.1 boot table
+        // never populated.
+        let blob = build_dtb(
+            2,
+            2,
+            &[memory_node(
+                b"memory@0",
+                cells(&[
+                    (0, 2),
+                    (0xFC00_0000, 2),
+                    (0x1_0000_0000, 2),
+                    (0x1_0000_0000, 2),
+                ]),
+                Some(b"memory"),
+            )],
+        );
+        assert_eq!(ram_top_from_blob(&blob), Some(0x2_0000_0000));
+    }
+
+    #[test]
+    fn a_low_aperture_reported_short_forfeits_the_high_extent() {
+        // PR #892 review round 3: two nodes, `[0, 1 GiB)` and `[4 GiB, 6 GiB)`.
+        // The maximum fold answered 6 GiB, and `boot_mapping_for` then mapped
+        // the whole low aperture — `[1 GiB, 0xFC00_0000)` included, which the
+        // board never reported.  The walk stops where the report stops: the
+        // high extent is a lost resource, the hole is never a mapped one.
+        let blob = build_dtb(
+            2,
+            2,
+            &[
+                memory_node(
+                    b"memory@0",
+                    cells(&[(0, 2), (0x4000_0000, 2)]),
+                    Some(b"memory"),
+                ),
+                memory_node(
+                    b"memory@100000000",
+                    cells(&[(0x1_0000_0000, 2), (0x8000_0000, 2)]),
+                    Some(b"memory"),
+                ),
+            ],
+        );
+        assert_eq!(ram_top_from_blob(&blob), Some(0x4000_0000));
+    }
+
+    #[test]
+    fn discontiguous_high_memory_stops_at_the_first_hole() {
+        // PR #892 review round 3 — the finding's own layout: the low aperture,
+        // `[4 GiB, 5 GiB)` and `[8 GiB, 9 GiB)`.  The maximum fold answered
+        // 9 GiB and mapped the unreported `[5 GiB, 8 GiB)` Normal-cacheable;
+        // the walk answers 5 GiB.
+        let blob = build_dtb(
+            2,
+            2,
+            &[memory_node(
+                b"memory@0",
+                cells(&[
+                    (0, 2),
+                    (0xFC00_0000, 2),
+                    (0x1_0000_0000, 2),
+                    (0x4000_0000, 2),
+                    (0x2_0000_0000, 2),
+                    (0x4000_0000, 2),
+                ]),
+                Some(b"memory"),
+            )],
+        );
+        assert_eq!(ram_top_from_blob(&blob), Some(0x1_4000_0000));
+        // The token-preserving mutation: the same extents with the hole
+        // filled report a contiguous run, and the walk reaches the end.
+        let filled = build_dtb(
+            2,
+            2,
+            &[memory_node(
+                b"memory@0",
+                cells(&[
+                    (0, 2),
+                    (0xFC00_0000, 2),
+                    (0x1_0000_0000, 2),
+                    (0x4000_0000, 2),
+                    (0x1_4000_0000, 2),
+                    (0x1_0000_0000, 2),
+                ]),
+                Some(b"memory"),
+            )],
+        );
+        assert_eq!(ram_top_from_blob(&filled), Some(0x2_4000_0000));
+    }
+
+    #[test]
+    fn a_split_low_aperture_is_walked_as_one_run() {
+        // The low aperture reported in two adjacent pairs, as the Lean bridge's
+        // union coverage accepts it (PR #892 review round 2): the walk crosses
+        // the seam because the second extent contains the first's end.
+        let blob = build_dtb(
+            2,
+            2,
+            &[memory_node(
+                b"memory@0",
+                cells(&[(0, 2), (0x8000_0000, 2), (0x8000_0000, 2), (0x7C00_0000, 2)]),
+                Some(b"memory"),
+            )],
+        );
+        assert_eq!(ram_top_from_blob(&blob), Some(0xFC00_0000));
+    }
+
+    #[test]
+    fn extents_in_any_order_walk_to_the_same_top() {
+        // The walk scans every extent at each step, so the report's order is
+        // immaterial — the high extent listed first still needs the low
+        // aperture to reach it.
+        let blob = build_dtb(
+            2,
+            2,
+            &[memory_node(
+                b"memory@0",
+                cells(&[
+                    (0x1_0000_0000, 2),
+                    (0x1_0000_0000, 2),
+                    (0, 2),
+                    (0xFC00_0000, 2),
+                ]),
+                Some(b"memory"),
+            )],
+        );
+        assert_eq!(ram_top_from_blob(&blob), Some(0x2_0000_0000));
+    }
+
+    #[test]
+    fn an_eight_gibibyte_board_as_firmware_reports_it() {
+        // The firmware relocates the 64 MiB the peripheral window displaces to
+        // just above 4 GiB, so the high extent is `[4 GiB, 8 GiB + 64 MiB)`.
+        let blob = build_dtb(
+            2,
+            2,
+            &[memory_node(
+                b"memory@0",
+                cells(&[
+                    (0, 2),
+                    (0xFC00_0000, 2),
+                    (0x1_0000_0000, 2),
+                    (0x1_0400_0000, 2),
+                ]),
+                Some(b"memory"),
+            )],
+        );
+        assert_eq!(ram_top_from_blob(&blob), Some(0x2_0400_0000));
+    }
+
+    #[test]
+    fn ram_reported_only_at_a_foreign_base_maps_nothing() {
+        // No extent contains address 0: the walk never starts, the top is 0
+        // and the boot tables map no RAM — a board this image was not built
+        // for, refused by mapping nothing rather than by mapping the linker's
+        // declaration over memory the board did not report.
+        let blob = build_dtb(
+            2,
+            2,
+            &[memory_node(
+                b"memory@40000000",
+                cells(&[(0x4000_0000, 2), (0x4000_0000, 2)]),
+                Some(b"memory"),
+            )],
+        );
+        assert_eq!(ram_top_from_blob(&blob), Some(0));
+    }
+
+    #[test]
+    fn more_extents_than_the_store_holds_are_refused() {
+        // Sixteen extents fit; a seventeenth is refused outright rather than
+        // read in part, since a partial read is the maximum fold under
+        // another name.
+        let mut pairs: Vec<(u64, u32)> = Vec::new();
+        for i in 0..MAX_MEMORY_EXTENTS as u64 {
+            pairs.push((i * 0x0100_0000, 2));
+            pairs.push((0x0100_0000, 2));
+        }
+        let fits = build_dtb(
+            2,
+            2,
+            &[memory_node(b"memory@0", cells(&pairs), Some(b"memory"))],
+        );
+        assert_eq!(
+            ram_top_from_blob(&fits),
+            Some(MAX_MEMORY_EXTENTS as u64 * 0x0100_0000)
+        );
+        pairs.push((MAX_MEMORY_EXTENTS as u64 * 0x0100_0000, 2));
+        pairs.push((0x0100_0000, 2));
+        let overflows = build_dtb(
+            2,
+            2,
+            &[memory_node(b"memory@0", cells(&pairs), Some(b"memory"))],
+        );
+        assert_eq!(ram_top_from_blob(&overflows), None);
+    }
+
+    #[test]
+    fn single_cell_widths_are_supported() {
+        // A 32-bit device tree spells the same board with one cell each.
+        let blob = build_dtb(
+            1,
+            1,
+            &[memory_node(
+                b"memory@0",
+                cells(&[(0, 1), (0x3C00_0000, 1)]),
+                Some(b"memory"),
+            )],
+        );
+        assert_eq!(ram_top_from_blob(&blob), Some(0x3C00_0000));
+    }
+
+    #[test]
+    fn a_node_named_memory_without_a_unit_address_counts() {
+        let blob = build_dtb(
+            2,
+            2,
+            &[memory_node(
+                b"memory",
+                cells(&[(0, 2), (0x2000_0000, 2)]),
+                None,
+            )],
+        );
+        assert_eq!(ram_top_from_blob(&blob), Some(0x2000_0000));
+    }
+
+    #[test]
+    fn a_memory_named_node_with_another_device_type_is_not_memory() {
+        // The relation is "this node describes RAM", not "this node's name
+        // starts with memory": a `memory@…` node declaring some other device
+        // type must not contribute an aperture the board does not have.
+        let blob = build_dtb(
+            2,
+            2,
+            &[memory_node(
+                b"memory@0",
+                cells(&[(0, 2), (0x1_0000_0000, 2)]),
+                Some(b"pci"),
+            )],
+        );
+        assert_eq!(ram_top_from_blob(&blob), None);
+    }
+
+    #[test]
+    fn a_memory_controller_node_is_not_a_memory_node() {
+        let blob = build_dtb(
+            2,
+            2,
+            &[memory_node(
+                b"memory-controller@1000",
+                cells(&[(0, 2), (0x1_0000_0000, 2)]),
+                None,
+            )],
+        );
+        assert_eq!(ram_top_from_blob(&blob), None);
+    }
+
+    #[test]
+    fn reserved_memory_children_do_not_contribute() {
+        // `/reserved-memory` carries `memory@…`-shaped children, but they are
+        // at depth 2 and describe carve-outs, not apertures.  The walker only
+        // matches memory nodes among the root's own children.
+        let blob = build_dtb(
+            2,
+            2,
+            &[Node {
+                name: b"reserved-memory",
+                props: Vec::new(),
+            }],
+        );
+        assert_eq!(ram_top_from_blob(&blob), None);
+    }
+
+    #[test]
+    fn a_truncated_reg_fails_the_query_closed() {
+        // Seven cells where the pair width is four: a parser that consumed as
+        // far as it could would report an aperture derived from a partial
+        // address.  The whole query fails instead, and the caller falls back
+        // to the linker's declared extent.
+        let blob = build_dtb(
+            2,
+            2,
+            &[memory_node(
+                b"memory@0",
+                cells(&[(0, 2), (0x4000_0000, 2), (0x1_0000_0000, 2), (0, 1)]),
+                Some(b"memory"),
+            )],
+        );
+        assert_eq!(ram_top_from_blob(&blob), None);
+    }
+
+    #[test]
+    fn an_unsupported_cell_width_fails_the_query_closed() {
+        let blob = build_dtb(
+            3,
+            2,
+            &[memory_node(
+                b"memory@0",
+                cells(&[(0, 2), (0, 1), (0x4000_0000, 2)]),
+                Some(b"memory"),
+            )],
+        );
+        assert_eq!(ram_top_from_blob(&blob), None);
+    }
+
+    #[test]
+    fn no_memory_node_yields_none() {
+        let blob = build_dtb(2, 2, &[]);
+        assert_eq!(ram_top_from_blob(&blob), None);
+    }
+
+    #[test]
+    fn a_malformed_header_yields_none() {
+        let mut blob = build_dtb(
+            2,
+            2,
+            &[memory_node(
+                b"memory@0",
+                cells(&[(0, 2), (0x4000_0000, 2)]),
+                None,
+            )],
+        );
+        blob[0] = 0;
+        assert_eq!(ram_top_from_blob(&blob), None);
+    }
+
+    #[test]
+    fn a_null_pointer_yields_none() {
+        assert_eq!(ram_top_from_dtb(0), None);
+    }
+
+    #[test]
+    fn absent_cell_declarations_use_the_specification_defaults() {
+        // Devicetree Specification v0.4 §2.3.5: `#address-cells` defaults to 2
+        // and `#size-cells` to 1 when the root declares neither.  The fixture
+        // builder always writes both, so drive the constants directly and pin
+        // the values the walker starts from.
+        assert_eq!(FDT_DEFAULT_ADDRESS_CELLS, 2);
+        assert_eq!(FDT_DEFAULT_SIZE_CELLS, 1);
+    }
+
+    #[test]
+    fn an_address_plus_size_that_overflows_fails_closed() {
+        let blob = build_dtb(
+            2,
+            2,
+            &[memory_node(
+                b"memory@0",
+                cells(&[(u64::MAX - 3, 2), (16, 2)]),
+                Some(b"memory"),
+            )],
+        );
+        assert_eq!(ram_top_from_blob(&blob), None);
+    }
+
+    /// A `/memory` node carrying a `status` **after** its `reg`, so the fixture
+    /// exercises the fold-at-node-end ordering the walker relies on.
+    fn memory_node_with_status(name: &'static [u8], reg: Vec<u8>, status: &'static [u8]) -> Node {
+        let mut node = memory_node(name, reg, Some(b"memory"));
+        let mut value = status.to_vec();
+        value.push(0);
+        node.props.push(Prop {
+            name: b"status",
+            value,
+        });
+        node
+    }
+
+    /// The low aperture, enabled, and a 4 GiB bank at `HIGH_RAM_BASE` carrying
+    /// the given `status`.
+    fn low_aperture_and_high_bank_with_status(status: &'static [u8]) -> Vec<u8> {
+        build_dtb(
+            2,
+            2,
+            &[
+                memory_node(
+                    b"memory@0",
+                    cells(&[(0, 2), (0xFC00_0000, 2)]),
+                    Some(b"memory"),
+                ),
+                memory_node_with_status(
+                    b"memory@100000000",
+                    cells(&[(0x1_0000_0000, 2), (0x1_0000_0000, 2)]),
+                    status,
+                ),
+            ],
+        )
+    }
+
+    /// **PR #892 review round 4**: a `/memory` node whose `status` is
+    /// `disabled` describes DRAM the firmware has withheld, and its `reg` must
+    /// not reach the walk.  The finding's layout: the low aperture enabled and
+    /// a high bank present but disabled — the walk stops at the low top, where
+    /// the pre-round parser mapped the withheld bank Normal-cacheable exactly
+    /// as the maximum fold had mapped a hole.
+    #[test]
+    fn a_disabled_memory_bank_does_not_contribute() {
+        let blob = low_aperture_and_high_bank_with_status(b"disabled");
+        assert_eq!(ram_top_from_blob(&blob), Some(0xFC00_0000));
+    }
+
+    /// `okay` and `ok` are the two operational spellings the specification
+    /// defines (Devicetree Specification v0.4 §2.3.4); a bank carrying either
+    /// contributes exactly as one carrying no `status` at all.
+    #[test]
+    fn an_explicitly_okay_memory_bank_contributes() {
+        for status in [&b"okay"[..], &b"ok"[..]] {
+            let blob = low_aperture_and_high_bank_with_status(status);
+            assert_eq!(ram_top_from_blob(&blob), Some(0x2_0000_0000));
+        }
+    }
+
+    /// Every non-operational spelling withholds the bank: the specification's
+    /// `reserved`, `fail` and `fail-sss`, and a value it does not define.  The
+    /// mutation that finds a `!= "disabled"` test keeps the token and changes
+    /// the relation; the specification's list is closed on the *operational*
+    /// side, so that is the side the verdict is decided on.
+    #[test]
+    fn reserved_and_failed_memory_banks_do_not_contribute() {
+        for status in [
+            &b"reserved"[..],
+            &b"fail"[..],
+            &b"fail-ecc"[..],
+            &b"okay-ish"[..],
+        ] {
+            let blob = low_aperture_and_high_bank_with_status(status);
+            assert_eq!(
+                ram_top_from_blob(&blob),
+                Some(0xFC00_0000),
+                "status {:?}",
+                core::str::from_utf8(status)
+            );
+        }
+    }
+
+    /// A blob whose only memory node is disabled reports no RAM, and the caller
+    /// falls back to the linker's declared extent — the same answer as a blob
+    /// with no memory node, because for the walk that is what it is.
+    #[test]
+    fn a_blob_whose_only_memory_is_disabled_yields_none() {
+        let blob = build_dtb(
+            2,
+            2,
+            &[memory_node_with_status(
+                b"memory@0",
+                cells(&[(0, 2), (0xFC00_0000, 2)]),
+                b"disabled",
+            )],
+        );
+        assert_eq!(ram_top_from_blob(&blob), None);
+    }
+
+    /// The verdict is node-scoped: a disabled node listed before an enabled one
+    /// must not carry its `status` into its neighbour.  The mutation this finds
+    /// keeps `status_ok` and drops its per-node reset.
+    #[test]
+    fn a_status_does_not_leak_into_the_next_memory_node() {
+        let blob = build_dtb(
+            2,
+            2,
+            &[
+                memory_node_with_status(
+                    b"memory@100000000",
+                    cells(&[(0x1_0000_0000, 2), (0x1_0000_0000, 2)]),
+                    b"disabled",
+                ),
+                memory_node(
+                    b"memory@0",
+                    cells(&[(0, 2), (0xFC00_0000, 2)]),
+                    Some(b"memory"),
+                ),
+            ],
+        );
+        assert_eq!(ram_top_from_blob(&blob), Some(0xFC00_0000));
     }
 }

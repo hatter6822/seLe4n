@@ -1,13 +1,13 @@
 -- SPDX-License-Identifier: GPL-3.0-or-later
 /-
-  seLe4n  - A Lean Microkernel
-  Copyright (C) 2026  Adam Hall
+  seLe4n - A Lean Microkernel
+  Copyright (C) 2026 Adam Hall
   This program comes with ABSOLUTELY NO WARRANTY.
   This is free software, and you are welcome to redistribute it
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
--- WS-RR RR2.14 / RR2.15: PRODUCTION.  The invariant surface of the cross-core
+-- WS-RR RR2.14 / RR2.15: PRODUCTION. The invariant surface of the cross-core
 -- `Send` — the transition the live `.send` dispatch arm routes through.
 
 import SeLe4n.Kernel.IPC.CrossCore.EndpointSend
@@ -21,7 +21,7 @@ Audit blocker 3: `SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean` contained **zer
 occurrences of `preserves_ipcInvariantFull`, while its call-side sibling carried
 seven — and `endpointSendDualWithCapsOnCore` is what `API.dispatchWithCap`'s
 `.send` arm actually calls, since PR #861 round 12 re-routed `.send` at
-`v0.33.5`.  SM8's registered debt (b) named the gap correctly; SM6.D's scope note
+`v0.33.5`. SM8's registered debt (b) named the gap correctly; SM6.D's scope note
 did not, citing `endpointSendDualWithCaps_preserves_ipcInvariantFull_perCore` —
 a theorem about the *single-core, boot-pinned* function that stopped being the
 live arm at that re-route.
@@ -32,7 +32,7 @@ transcribing the 2805-line call-side invariant module:
 * §1 — the **agreement dichotomy** `endpointSendDualOnCore_post_agrees`: either
   the cross-core send failed (post-state = pre-state), or the single-core
   `endpointSendDual` succeeds from the same pre-state and the two post-states
-  agree **off-scheduler**.  The two transitions run the same pop / store or the
+  agree **off-scheduler**. The two transitions run the same pop / store or the
   same enqueue / store and differ only in the final scheduling step —
   `wakeThread` vs `ensureRunnable` (lookup-invisible on the just-stored `.ready`
   receiver) and `removeRunnableOnCore` vs `removeRunnable` (scheduler-only).
@@ -53,11 +53,11 @@ open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency
 
 -- ============================================================================
--- §1  RR2.14 — cross-core / single-core agreement dichotomy (send leg)
+-- §1 RR2.14 — cross-core / single-core agreement dichotomy (send leg)
 -- ============================================================================
 
 open SeLe4n.Model.SystemState in
-/-- WS-RR RR2.14: agreement dichotomy for the cross-core send.  Either the
+/-- WS-RR RR2.14: agreement dichotomy for the cross-core send. Either the
 transition failed (the per-core form is fail-closed, so the post-state is the
 pre-state), or the single-core `endpointSendDual` succeeds from the same
 pre-state and the two post-states agree off-scheduler.
@@ -129,12 +129,12 @@ theorem endpointSendDualOnCore_post_agrees
                 (removeRunnableOnCore_offSchedulerAgrees st2 sender executingCore)
 
 -- ============================================================================
--- §2  RR2.15 — the per-core `passiveServerIdle` frame
+-- §2 RR2.15 — the per-core `passiveServerIdle` frame
 -- ============================================================================
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR2.15: the cross-core send frames every core's `passiveServerIdle`
-reading.  Mirrors `endpointSendDual_passiveServerIdleFrameOnCore` step for step,
+reading. Mirrors `endpointSendDual_passiveServerIdleFrameOnCore` step for step,
 with the two per-core scheduling steps substituted: the rendezvous wake is
 lookup-invisible on the just-stored `.ready` receiver, and the block-path
 deschedule only removes the sender from its own core's queue.
@@ -225,11 +225,11 @@ theorem endpointSendDualOnCore_passiveServerIdleFrameOnCore
                   ((getTcb?_eq_some_iff st sender tcb0).mpr hTcb0)
 
 -- ============================================================================
--- §3  RR2.14 — object-store invariant preservation
+-- §3 RR2.14 — object-store invariant preservation
 -- ============================================================================
 
 /-- WS-RR RR2.14: the cross-core send preserves the Robin Hood object-store
-invariant.  Needed by the capability-carrying form, whose `ipcUnwrapCaps` leg
+invariant. Needed by the capability-carrying form, whose `ipcUnwrapCaps` leg
 runs on the send's post-state. -/
 theorem endpointSendDualOnCore_preserves_objects_invExt
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (msg : IpcMessage)
@@ -285,7 +285,7 @@ theorem endpointSendDualOnCore_preserves_objects_invExt
                 hObjInv1 hStore
 
 -- ============================================================================
--- §4  RR2.14 — the whole-bundle theorem the live `.send` arm was missing
+-- §4 RR2.14 — the whole-bundle theorem the live `.send` arm was missing
 -- ============================================================================
 
 open SeLe4n.Model.SystemState in
@@ -297,7 +297,7 @@ Hypotheses mirror `endpointSendDual_preserves_ipcInvariantFull` exactly, with
 the two threaded post-state conjuncts (`blockedThreadsPendingMessageConsistent`,
 `replyCallerLinkageReciprocal`) stated at the cross-core post-state — the same
 two the single-core theorem threads, and the two WS-RR RR3 is chartered to
-de-thread across the whole surface.  Nothing new is threaded here.
+de-thread across the whole surface. Nothing new is threaded here.
 
 The proof is the agreement dichotomy plus one scheduler-sensitive conjunct: the
 nineteen object-reading conjuncts transport across the off-scheduler agreement
@@ -391,7 +391,7 @@ theorem endpointSendDualOnCore_preserves_ipcInvariantFull_perCore
       (hInv c).passiveServerIdle)
 
 -- ============================================================================
--- §5  RR2.14 / RR2.15 — the capability-carrying live `.send` arm
+-- §5 RR2.14 / RR2.15 — the capability-carrying live `.send` arm
 -- ============================================================================
 
 open SeLe4n.Model.SystemState in
@@ -401,20 +401,20 @@ the whole IPC invariant bundle.
 
 The composition is the point: §4's bare cross-core bundle, then
 `ipcUnwrapCaps_preserves_ipcInvariantFull` on the arm that transfers
-capabilities.  The bare-send hypotheses are stated against the **stamped**
+capabilities. The bare-send hypotheses are stated against the **stamped**
 message `{ msg with capsGranted := endpointRights.mem .grant }`, because that is
 what the wrapper transmits (PR #873 round 13) — saying otherwise would be saying
 something false about the state the send parks.
 
 `hCapBadges` is the capability transfer's *input*
 conditions — a CNode at the destination CSpace root, and valid badges on the
-capabilities the message carries.  Neither is a post-state conjunct: they
+capabilities the message carries. Neither is a post-state conjunct: they
 constrain what the caller hands the transfer, so the transition cannot satisfy
 them itself, and `ipcUnwrapCaps_preserves_ipcInvariantFull` turns them into the
 `dualQueueSystemInvariant` and `badgeWellFormed` an earlier cut threaded. -/
 theorem endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (msg : IpcMessage)
-    (endpointRights : AccessRightSet) (senderCspaceRoot : SeLe4n.ObjId)
+    (endpointRights : AccessRightSet)
     (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
@@ -448,7 +448,7 @@ theorem endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull
     (hSenderNotUnbound : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
         tcb.schedContextBinding ≠ .unbound) :
     ipcInvariantFull
-      (endpointSendDualWithCapsOnCore endpointId sender msg endpointRights senderCspaceRoot
+      (endpointSendDualWithCapsOnCore endpointId sender msg endpointRights
         receiverSlotBase executingCore st).1 := by
   have hBare := endpointSendDualOnCore_preserves_ipcInvariantFull endpointId sender
     { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st hInv
@@ -481,13 +481,13 @@ theorem endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull
               simp only
               cases hUnwrap : ipcUnwrapCaps
                   { msg with capsGranted := endpointRights.mem AccessRight.grant }
-                  senderCspaceRoot recvRoot receiverSlotBase
+                  recvRoot receiverSlotBase
                   (endpointRights.mem AccessRight.grant) stSend with
               | error e => exact hBare
               | ok pair =>
                 obtain ⟨summary, stFinal⟩ := pair
                 simp only
-                exact ipcUnwrapCaps_preserves_ipcInvariantFull _ senderCspaceRoot recvRoot
+                exact ipcUnwrapCaps_preserves_ipcInvariantFull _ recvRoot
                   receiverSlotBase _ stSend stFinal summary hBare hBareInv
                   hCapBadges hUnwrap
 
@@ -498,13 +498,13 @@ capability transfer's own (`ipcUnwrapCaps_passiveServerIdleFrameOnCore`; the
 transfer writes no TCB at all). -/
 theorem endpointSendDualWithCapsOnCore_passiveServerIdleFrameOnCore
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (msg : IpcMessage)
-    (endpointRights : AccessRightSet) (senderCspaceRoot : SeLe4n.ObjId)
+    (endpointRights : AccessRightSet)
     (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState) (c : CoreId)
     (hObjInv : st.objects.invExt)
     (hSenderNotUnbound : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
         tcb.schedContextBinding ≠ .unbound) :
     passiveServerIdleFrameOnCore st
-      (endpointSendDualWithCapsOnCore endpointId sender msg endpointRights senderCspaceRoot
+      (endpointSendDualWithCapsOnCore endpointId sender msg endpointRights
         receiverSlotBase executingCore st).1 c := by
   have hBare := endpointSendDualOnCore_passiveServerIdleFrameOnCore endpointId sender
     { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st c hObjInv
@@ -536,23 +536,23 @@ theorem endpointSendDualWithCapsOnCore_passiveServerIdleFrameOnCore
               simp only
               cases hUnwrap : ipcUnwrapCaps
                   { msg with capsGranted := endpointRights.mem AccessRight.grant }
-                  senderCspaceRoot recvRoot receiverSlotBase
+                  recvRoot receiverSlotBase
                   (endpointRights.mem AccessRight.grant) stSend with
               | error e => exact hBare
               | ok pair =>
                 obtain ⟨summary, stFinal⟩ := pair
                 simp only
-                exact hBare.trans (ipcUnwrapCaps_passiveServerIdleFrameOnCore _ senderCspaceRoot
+                exact hBare.trans (ipcUnwrapCaps_passiveServerIdleFrameOnCore _
                   recvRoot receiverSlotBase _ stSend stFinal summary hBareInv hUnwrap)
 
 open SeLe4n.Model.SystemState in
 /-- **WS-RR RR2.15 (the live arm, per core)**: `endpointSendDualWithCapsOnCore`
-preserves **every core's** view of the IPC invariant bundle.  This is the
+preserves **every core's** view of the IPC invariant bundle. This is the
 theorem SM6.D's scope note claimed and cited the retired single-core function
 for; it is now about the function the live `.send` dispatch actually runs. -/
 theorem endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull_perCore
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (msg : IpcMessage)
-    (endpointRights : AccessRightSet) (senderCspaceRoot : SeLe4n.ObjId)
+    (endpointRights : AccessRightSet)
     (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
     (hInv : ipcInvariantFull_smp st)
     (hObjInv : st.objects.invExt)
@@ -587,16 +587,16 @@ theorem endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull_perCore
         tcb.schedContextBinding ≠ .unbound)
     (c : CoreId) :
     ipcInvariantFull_perCore
-      (endpointSendDualWithCapsOnCore endpointId sender msg endpointRights senderCspaceRoot
+      (endpointSendDualWithCapsOnCore endpointId sender msg endpointRights
         receiverSlotBase executingCore st).1 c :=
   ipcInvariantFull_perCore_of_full
     (endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull endpointId sender msg
-      endpointRights senderCspaceRoot receiverSlotBase executingCore st
+      endpointRights receiverSlotBase executingCore st
       (ipcInvariantFull_of_smp hInv) hObjInv hAllBudgetsNone
       hCapBadges hFreshSender hSendTailFresh hSenderNotRecv hSenderNotReply hSenderNotUnbound)
     (passiveServerIdle_perCore_of_frameOnCore
       (endpointSendDualWithCapsOnCore_passiveServerIdleFrameOnCore endpointId sender msg
-        endpointRights senderCspaceRoot receiverSlotBase executingCore st c hObjInv
+        endpointRights receiverSlotBase executingCore st c hObjInv
         hSenderNotUnbound)
       (hInv c).passiveServerIdle)
 

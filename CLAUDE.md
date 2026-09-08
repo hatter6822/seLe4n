@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.56.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.124.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,197 +203,208 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~53864 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22582 lines)
-- `tests/SmpInformationFlowSuite.lean` (~11797 lines)
+- `CHANGELOG.md` (~59342 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22578 lines)
+- `tests/SmpInformationFlowSuite.lean` (~12092 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
-- `SeLe4n/Kernel/API.lean` (~6926 lines)
-- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5742 lines)
-- `SeLe4n/Platform/Boot.lean` (~5724 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~5186 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5130 lines)
+- `SeLe4n/Kernel/API.lean` (~7210 lines)
+- `SeLe4n/Platform/Boot.lean` (~5847 lines)
+- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5822 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~5450 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5129 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5001 lines)
-- `docs/spec/SELE4N_SPEC.md` (~4775 lines)
-- `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4750 lines)
+- `docs/spec/SELE4N_SPEC.md` (~4939 lines)
+- `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4840 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
-- `SeLe4n/Model/State.lean` (~4503 lines)
+- `SeLe4n/Model/State.lean` (~4708 lines)
+- `SeLe4n/Kernel/CrossSubsystem.lean` (~4419 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (~4263 lines)
+- `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~4204 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
-- `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~4126 lines)
 - `tests/NegativeStateSuite.lean` (~4115 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3919 lines)
-- `SeLe4n/Kernel/InformationFlow/AuditRead.lean` (~3788 lines)
-- `SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (~3456 lines)
-- `SeLe4n/Kernel/CrossSubsystem.lean` (~3407 lines)
+- `SeLe4n/Kernel/InformationFlow/AuditRead.lean` (~3789 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~3783 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~3752 lines)
+- `SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean` (~3660 lines)
+- `SeLe4n/Platform/FFI.lean` (~3592 lines)
+- `SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (~3517 lines)
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
 - `tests/SmpTlbShootdownSuite.lean` (~3354 lines)
+- `SeLe4n/Testing/MainTraceHarness.lean` (~3330 lines)
 - `tests/OperationChainSuite.lean` (~3290 lines)
-- `SeLe4n/Testing/MainTraceHarness.lean` (~3216 lines)
-- `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~3210 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean` (~3159 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean` (~3257 lines)
+- `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~3194 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~3140 lines)
 - `docs/dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` (~3134 lines)
 - `SeLe4n/Model/Object/Structures.lean` (~3116 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean` (~3105 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean` (~2994 lines)
-- `SeLe4n/Platform/FFI.lean` (~2940 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~2939 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~2844 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean` (~3038 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2784 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~2755 lines)
-- `SeLe4n/Kernel/Capability/Operations.lean` (~2674 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~2768 lines)
+- `SeLe4n/Kernel/Capability/Operations.lean` (~2714 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2639 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean` (~2637 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean` (~2602 lines)
-- `docs/planning/HIERARCHICAL_CBS_PLAN.md` (~2581 lines)
+- `docs/planning/HIERARCHICAL_CBS_PLAN.md` (~2593 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2565 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdown.lean` (~2562 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~2542 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~2535 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~2505 lines)
-- `tests/ModelIntegritySuite.lean` (~2477 lines)
+- `tests/ModelIntegritySuite.lean` (~2484 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` (~2476 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md` (~2472 lines)
-- `SeLe4n/Kernel/InformationFlow/TaintPropagation.lean` (~2382 lines)
+- `SeLe4n/Kernel/InformationFlow/TaintPropagation.lean` (~2387 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md` (~2340 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md` (~2339 lines)
-- `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~2325 lines)
 - `docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md` (~2325 lines)
+- `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~2319 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueNextBlocking.lean` (~2290 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2287 lines)
 - `SeLe4n/Model/Object/Types.lean` (~2266 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2243 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2254 lines)
+- `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~2156 lines)
 - `SeLe4n/Prelude.lean` (~2137 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2112 lines)
+- `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2105 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2079 lines)
+- `tests/Ak9PlatformSuite.lean` (~2079 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~2074 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2059 lines)
-- `SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean` (~2042 lines)
+- `SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean` (~2043 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2034 lines)
 - `SeLe4n/Kernel/Architecture/Invariant.lean` (~2033 lines)
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~2028 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean` (~1994 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1967 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean` (~1946 lines)
+- `SeLe4n/Platform/DeviceTree.lean` (~1960 lines)
+- `SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean` (~1956 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md` (~1917 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean` (~1909 lines)
+- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~1908 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean` (~1901 lines)
+- `tests/InformationFlowSuite.lean` (~1895 lines)
 - `docs/dev_history/planning/V3E_IPC_UNWRAP_CAPS_LOOP_COMPOSITION_PLAN.md` (~1891 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md` (~1889 lines)
-- `tests/InformationFlowSuite.lean` (~1885 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1878 lines)
+- `SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean` (~1849 lines)
 - `SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean` (~1833 lines)
 - `SeLe4n/Model/FreezeProofs.lean` (~1827 lines)
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1822 lines)
-- `SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean` (~1822 lines)
+- `tests/SyscallDispatchSuite.lean` (~1812 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.6_WORKSTREAM_PLAN.md` (~1801 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1800 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md` (~1800 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` (~1794 lines)
-- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~1778 lines)
-- `docs/planning/UNFINISHED_SMP_WORK.md` (~1778 lines)
+- `docs/planning/UNFINISHED_SMP_WORK.md` (~1793 lines)
 - `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` (~1776 lines)
 - `SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean` (~1746 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1709 lines)
+- `tests/SmpCancellationSuite.lean` (~1706 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` (~1702 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
 - `tests/FaultHandlingSuite.lean` (~1660 lines)
 - `tests/SmpIpcSuite.lean` (~1660 lines)
-- `tests/SyscallDispatchSuite.lean` (~1645 lines)
+- `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1645 lines)
+- `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1604 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1600 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1508 lines)
-- `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~1491 lines)
-- `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~1488 lines)
-- `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1485 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1559 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~1556 lines)
+- `tests/LockSetSuite.lean` (~1541 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~1434 lines)
 - `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1425 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~1423 lines)
 - `docs/dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` (~1414 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~1411 lines)
 - `docs/dev_history/AUDIT_v0.23.21_WORKSTREAM_PLAN.md` (~1411 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~1394 lines)
+- `tests/SmpFoundationsSuite.lean` (~1406 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean` (~1393 lines)
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~1392 lines)
 - `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md` (~1382 lines)
-- `tests/LockSetSuite.lean` (~1377 lines)
 - `docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` (~1370 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
+- `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1340 lines)
 - `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1326 lines)
 - `tests/FrozenOpsSuite.lean` (~1324 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1317 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~1296 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1302 lines)
+- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1295 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1294 lines)
-- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1291 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean` (~1264 lines)
 - `SeLe4n/Kernel/InformationFlow/Taint.lean` (~1261 lines)
 - `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1261 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1254 lines)
 - `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
-- `tests/SmpCancellationSuite.lean` (~1247 lines)
+- `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1251 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean` (~1241 lines)
-- `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean` (~1235 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1233 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1216 lines)
+- `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean` (~1208 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1188 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean` (~1171 lines)
 - `tests/SmpCacheMaintenanceSuite.lean` (~1170 lines)
-- `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1169 lines)
 - `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~1168 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` (~1165 lines)
-- `SeLe4n/Platform/DeviceTree.lean` (~1154 lines)
 - `SeLe4n/Platform/RPi5/MmioAdapter.lean` (~1154 lines)
 - `tests/KernelErrorMatrixSuite.lean` (~1154 lines)
 - `SeLe4n/Kernel/Architecture/VSpace.lean` (~1142 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~1140 lines)
+- `tests/SyscallReturnAbiSuite.lean` (~1130 lines)
 - `SeLe4n/Machine.lean` (~1128 lines)
 - `tests/PerObjectLockSuite.lean` (~1104 lines)
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1085 lines)
-- `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1076 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean` (~1084 lines)
+- `tests/SmpIdleSuite.lean` (~1079 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
-- `tests/SyscallReturnAbiSuite.lean` (~1068 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetHeld.lean` (~1063 lines)
-- `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1046 lines)
+- `tests/SmpCrossCoreCallSuite.lean` (~1061 lines)
+- `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1050 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
-- `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1030 lines)
+- `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~1019 lines)
 - `SeLe4n/Model/FrozenState.lean` (~1007 lines)
-- `tests/SmpIdleSuite.lean` (~999 lines)
+- `tests/SmpCbsSuite.lean` (~1001 lines)
+- `SeLe4n/Kernel/Concurrency/Runtime.lean` (~1000 lines)
 - `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~998 lines)
-- `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean` (~995 lines)
-- `tests/SmpFoundationsSuite.lean` (~990 lines)
+- `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean` (~993 lines)
 - `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md` (~984 lines)
-- `tests/SmpCbsSuite.lean` (~977 lines)
 - `docs/planning/SMP_PER_CORE_STATE_PLAN.md` (~968 lines)
 - `docs/dev_history/planning/WS_X_LEAN_ETHEREUM_FORMALIZATION_PLAN.md` (~958 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~950 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreTickCbsPreservation.lean` (~952 lines)
 - `SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean` (~942 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreTickCbsPreservation.lean` (~941 lines)
 - `SeLe4n/Kernel/Concurrency/MemoryModel.lean` (~935 lines)
 - `SeLe4n/Kernel/InformationFlow/Declassification.lean` (~935 lines)
+- `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` (~933 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md` (~930 lines)
-- `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` (~924 lines)
+- `SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean` (~928 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_COMPREHENSIVE.md` (~921 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/LockSet2PL.lean` (~897 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean` (~893 lines)
+- `tests/SmpTimerSuite.lean` (~892 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~877 lines)
-- `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~875 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~880 lines)
+- `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` (~880 lines)
 - `SeLe4n/Kernel/IPC/Operations/Fault.lean` (~868 lines)
+- `docs/planning/SMP_RUST_HAL_PLAN.md` (~868 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` (~862 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
-- `docs/planning/SMP_RUST_HAL_PLAN.md` (~848 lines)
-- `tests/SmpTimerSuite.lean` (~840 lines)
+- `tests/SmpCrossCoreNotificationSuite.lean` (~851 lines)
 - `tests/DecodingSuite.lean` (~833 lines)
-- `tests/SmpCrossCoreCallSuite.lean` (~833 lines)
+- `SeLe4n/Kernel/SchedContext/BindingAffinity.lean` (~825 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean` (~824 lines)
-- `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` (~823 lines)
+- `tests/WithLockSetSuite.lean` (~820 lines)
+- `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` (~819 lines)
 - `docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
-- `SeLe4n/Kernel/SchedContext/BindingAffinity.lean` (~816 lines)
+- `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` (~817 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRecord.lean` (~811 lines)
-- `tests/WithLockSetSuite.lean` (~811 lines)
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
 - `docs/DEVELOPMENT.md` (~803 lines)
-- `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` (~800 lines)
 This bullet block is a **curated snapshot**, not a static enumeration.
 `scripts/find_large_lean_files.sh --check` (called from
 `scripts/sync_documentation_metrics.sh`) compares it against the live
@@ -570,6 +581,26 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   than a design choice. Three strippers is two too many; consolidating
   them onto `lean_code_view.strip` is a follow-up, deliberately not
   done in the same cut as the mechanism they would depend on.
+  **The view is per-language, and a language absent from it is read
+  raw** (WS-RR RR7.17). `test_lib.sh`'s classifier routes *every*
+  `rg`/`grep` anchor through the overlay, not only the Lean ones, but
+  the overlay linked `.rs` files whole — so 215 Tier-3 anchors over
+  Rust matched comments, and "gates read code, prose reads prose" held
+  for Lean only. It surfaced the way this class always does: the first
+  negative written against a Rust construct was satisfied by the
+  comment explaining what it forbids, and the project's own rule
+  forbids the obvious escape (*never contort prose to satisfy a
+  scanner*). The overlay's `_STRIPPERS` table now maps `.lean` to
+  `lean_code_view.strip` and `.rs` to `rust_code_view.code` — the same
+  view the Python gates read, so the tree has one Rust view rather than
+  two that can disagree — and a suffix absent from the table is linked
+  whole, which is a *decision* rather than a default: adding a language
+  whose files gates scan means adding its stripper. The witness suite
+  `test_code_view_wiring.sh` covers both languages on all three
+  directions (a comment cannot satisfy a code anchor; a prose check
+  still reads the real text; code anchors still match code), in both
+  Rust comment forms, because a Lean-only witness is exactly what let
+  the Rust hole stay open while the script reported PASS.
 - **A presence check is not a relation check.**  Nearly every gate here
   is a text scanner, and the recurring way one fails is that it asserts a
   *token is present* when the property it means is a *relation*: that the
@@ -620,7 +651,7 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   `build.rs` (`lean_code_view`) so the export inventory that drives the
   readiness gate is derived from code rather than from the docstrings that
   cite retired seams, and a recursive shell view in
-  `check_identifier_naming.py` so a `$( … )` body is lexed rather than copied.  The rule is unchanged and now has a mechanism:
+  `check_identifier_naming.py` so a `$( … )` body is lexed rather than copied — and, since the RR7 audit round, a here-document body is lexed as a document of its own, so an apostrophe in a fixture line cannot carry quote state past its terminator.  The rule is unchanged and now has a mechanism:
   **resolve the text into the structure it stands for before asserting** —
   expand the script's variables and check the command, take byte offsets
   and check the order, parse the array and check the element, lex the
@@ -769,7 +800,7 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   `reference_failure` in the same file required a *unique* candidate
   (both retired at round 17 with the rest of the Lean scan), and
   the recursive shell view lexed `$( … )` while the legacy backtick
-  spelling beside it was still copied verbatim.  None was a new class;
+  spelling beside it was still copied verbatim.  The RR7 audit round found the third sibling: a here-document body was lexed as the enclosing script's text, so one apostrophe in a Lean fixture inside `check_physical_address_width.sh` inverted the quote state for the rest of the file and every double-quoted diagnostic below it counted as code.  None was a new class;
   each was a rule already written down, applied at one site and not at
   its sibling.  **When a fix names a relation, grep for every other place
   that asks it** — the same file, the other language, the other
@@ -904,10 +935,18 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   yet, require a canonical spelling and refuse the rest.**
   `SeLe4n/Testing/BootEntryContract.lean` no longer analyses the boot entry —
   it requires the entry to *be* `Platform.FFI.bootAndInitialiseRPi5OrHalt`
-  applied to a configuration, decided by one `Meta.isDefEq` against a
-  metavariable.  Every question the walk approximated is then answered exactly
+  applied to a configuration, decided by reducing the entry's body **towards
+  the approved call** (`Meta.whnfUntil`: beta, zeta, delta through aliases,
+  until that constant is the head) and one reducible `isDefEq` against a
+  metavariable on what remains (PR #892 review round 2 — round 21 used one
+  unbounded `Meta.isDefEq`, which opens *both* sides: on a deviating entry the
+  unifier unfolded the approved call through the whole checked boot and hit
+  the recursion limit once the configuration binding reached the RPi5
+  RAM-variant selection, and it would have accepted an inlined copy of the
+  wrapper's body, which is exactly what naming the wrapper exists to refuse).
+  Every question the walk approximated is then answered exactly
   or has no subject: the entry *is* the boot, so nothing precedes it, there is
-  no bind whose instance could be lawless, `isDefEq` zeta- and beta-reduces so
+  no bind whose instance could be lawless, the reduction zeta- and beta-reduces so
   a `let`-bound head is not a form to know about, and nothing else runs at all
   — which makes the contract **stronger** than the walk, not weaker, since that
   one admitted any extra action which happened not to write kernel state.  The
@@ -1269,13 +1308,49 @@ message's tag decoded in userspace as a kernel error, so no fault handler could
 be written against `sele4n-abi`.  New code must not treat a nonzero `x1`
 label as an error; `ofErrorLabel?` / `decode_response` decide by range.
 
-What remains is owed to SM10.1: return-frame *delivery* at the context restore,
-and the cancellation/timeout error-frame staging.  Until that seam flips, a
-blocked caller's frame is poisoned with the fail-closed
+What remains is owed to SM10.1: return-frame *delivery* at the context restore.
+Until that seam flips, a blocked caller's frame is poisoned with the fail-closed
 `blocked_resume_sentinel_regs()` so a stale request register can never decode as
 a success.  A caller that took a fault at the seam is outcome tag 2
 (`.faulted`) and is never poisoned-and-resumed: the core halts pending SM10.1
 (PR #887 review round 5).
+
+**A forcibly unblocked thread is staged an error frame** (WS-RR RR7.14,
+v0.34.67) — the other half of §9's registered obligation, and closed.  A thread
+taken out of a blocking IPC has no value to receive, and both unblocking paths
+staged nothing, so the context restore would have delivered its own argument
+spill back as a return value.  They now stage, and they stage **different**
+errors because they are different facts: `timeoutThread` stages
+`Architecture.timeoutFrame` (`.ipcTimeout` — the budget expired under a
+well-formed operation, which the caller may reissue), and `cancelIpcBlocking`'s
+four blocked arms stage `Architecture.cancelledIpcFrame` (`.ipcCancelled`, a
+new `KernelError` at discriminant **57** — the operation was destroyed, so
+reissuing may be meaningless and a userspace library cannot write a correct
+retry against a conflated code; `timeout_and_cancelled_frames_differ` is the
+pin).  seL4 answers this by setting the thread `Restart`; this kernel has no
+restart state, so the crossing ends in a distinguishable error.  Three things
+new code must respect.  (1) **Two paths stage nothing, deliberately**:
+`cancelIpcBlocking`'s `.ready` arm commits no write at all, and `restoreToReady`
+— the *resume* spelling of the same field clear — stages nothing because
+`.tcbResume` restarts a thread where it was (RR4.11's
+`retirePendingFaultForResume` is the fault half of the same posture), so
+overwriting `x0`-`x5` would destroy the window the restart preserves.  Both are
+pinned as negatives.  (2) **One field clear, two spellings**:
+`restoreToReadyStaging` takes the frame as an argument and `restoreToReady` /
+`restoreToReadyCancelled` are its `none` / `some` instances, so every framing,
+`invExt`, `ipcInvariant`, `tcb_lookup`, identity and projection result is stated
+once and instantiated twice, and a field added to one clear and not the other
+fails to elaborate (`restoreToReadyCancelled_tcb`).  (3) **The staging is
+confined to the TCB**: `contextMatchesCurrentOnCore` compares a core's register
+bank against its **own current thread's** saved context and reads no other
+TCB's, so `objects_change_preserves_schedulerInvariantStructuralRegNodup_smp`'s
+`hReg` is scoped to the current thread and
+`storeObject_tcb_preserves_schedulerInvariantStructuralRegNodup_smp` takes a
+disjunction (the context is unchanged **or** the thread is current on no core);
+demanding the equality at every thread — as it did — is strictly stronger than
+the conclusion needs and refuses this write.  The information-flow half needs no
+new argument because the frame goes into the victim's *own* TCB, which holds
+only because `writeReturnFrameToTcb` deliberately does not touch `machine`.
 
 Plan: [`docs/planning/SYSCALL_RETURN_ABI_PLAN.md`](docs/planning/SYSCALL_RETURN_ABI_PLAN.md).
 
@@ -1308,6 +1383,44 @@ finding against its fix, and its §14 names the five classes the findings
 fell into with the rule that closes each.
 
 Plan: [`docs/planning/HIERARCHICAL_CBS_PLAN.md`](docs/planning/HIERARCHICAL_CBS_PLAN.md).
+
+### WS-OD SchedContext donation chains — IN FLIGHT (registered v0.34.98; OD1 closed v0.34.108)
+
+`applyCallDonation` donates only from a **`.bound`** caller, and
+`donateSchedContext` is the only operational construction site of a `.donated`
+binding — so a scheduling context stops at the first passive server and seL4's
+passive-server pattern does not work at call depth ≥ 2, where the callee stays
+`.unbound` and can never run.  seL4-MCS's `maybeDonateSchedContext` reads the
+sender's *effective* context, bound or donated, and passes it down the chain.
+Two register rows close here: that gap, and the `passiveServerIdle` break the
+`v0.34.97` reclaim introduced.  **41 sub-tasks across OD1..OD6.**  **OD1 is
+closed** (`v0.34.100` → `v0.34.108`); OD2..OD6 have not started.
+
+Six things new code must respect once this lands, and each is a decision the plan
+records rather than a default it inherited.  (1) **The `passiveServerIdle` hole was
+OD1, not a consequence of the chain**, and is **closed**: it was live on HEAD at
+depth 1 — a server that Calls an endpoint with no receiver blocks
+`.blockedOnCall` keeping its donation, and the reclaim then unbound it in place —
+so fixing it last would have meant every later phase doing bundle work over a
+known-false conjunct.  See the two standing constraints above for what the
+reclaim now does.  (2) **The pop
+lands before the push, and lands inert**: with the push first, a depth-2 chain is
+serviced by the flat return, which writes `.bound` at the intermediate thread and
+moves a context across a domain boundary in a state that *breaks no conjunct*.
+(3) **`SchedContext.scReply` is built**, because `Reply.wellFormed`'s docstring
+already requires "`donatedSc.scReply` agrees with this reply" of a field that does
+not exist — and because without it the push must read the owner's TCB and the
+outer reply, taking `lockSet_endpointCall` to ten against a ceiling of nine.
+(4) **The pop's new owner is an argument**, since the reply leg consumes the
+target's reply link before the donation return runs.  (5) **The pop validates the
+link it follows** — `Reply` has `prev` and no `next`, and Reply objects are
+re-linked to new callers, so a stale `prev` over a reused Reply would hand a
+thread's context to an unrelated thread in another domain.  (6) **The binding's
+`owner` stays the immediate donor**, which is what keeps all five donation
+conjuncts true at depth `n` unchanged and leaves the *binding* graph chain-free —
+the chain lives entirely in the reply stack.
+
+Plan: [`docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`](docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md).
 
 ### WS-SM SMP multi-core completion — IN FLIGHT (v0.31.2 → v1.0.0)
 
@@ -1357,11 +1470,69 @@ SGI INTID 0..4 reserved for kernel SMP coordination (SM0.H).
 | SM9 | CLOSED | v0.33.100 | Declassification completion — reader, refusal auditing, data-carrying signal, causal provenance, acceptance fixtures |
 | SM5 runtime seams | LANDED | v0.34.1 | The three seams SM5's docstrings promised between the verified per-core scheduler and the hardware IRQ path — IRQ vector redirect, `.reschedule` SGI receiver, secondary bring-up entry — all dormant behind the per-core `lean_ready` gate until SM10.1 |
 | WS-RR | IN FLIGHT | RR0 v0.34.26; RR1 v0.34.41; RR2 v0.34.42; RR3 v0.34.43; RR4 v0.34.44; RR5 v0.34.48; RR6 v0.34.50 | Pre-SM10 remediation: the audit's 3 blockers, 11 security findings, fault IPC, de-threading closure, lock completion (187 subs across RR0..RR8) |
-| SM10 | BLOCKED on WS-RR | — | Release closure (→ v1.0.0) |
+| SM10 | BLOCKED on WS-RR | — | Release closure (→ v1.0.0); SM10.1's content is **WS-BP** (see above) |
 
 **Plans**: master overview at
 [`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md);
-per-phase plans at `docs/planning/SMP_*.md`.
+per-phase plans at `docs/planning/SMP_*.md`, beginning with
+[`SMP_FOUNDATIONS_PLAN.md`](docs/planning/SMP_FOUNDATIONS_PLAN.md) (SM0), which
+the glob covers but no canonical index named until WS-RR RR7.32 made that
+checkable.
+
+### WS-BP The bare-metal boot path — PLANNED (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124)
+
+SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
+port**, and holding the two in one plan produced a phase goal ("all substantive
+SMP work is complete") that was false of the phase's own first row.  WS-RR
+RR7.5 + RR7.15 split it out: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md)
+sequences **42 sub-tasks across 9 phases `BP0..BP8`** in execution order — the
+cross-implementation gates, the aarch64 Lean object code, bare-metal runtime
+hosting, the RPi5 deployment, the boot seam and its install ordering, the
+image, per-core readiness, the context restore, and first boot — with an acceptance gate whose every box is ticked by
+an *executed run* rather than by an artefact existing.  No sub-task has started;
+WS-BP must not open until RR8 closes.
+
+Four things new code must respect.  **WS-BP takes its own prefix and renumbers
+nothing**: `SM10.1.1` still means the image *packaging* the release cut
+consumes, and `BP5.3` is the sub-task that produces what it packages — the
+collision between "numbering is execution order" and "IDs in CHANGELOG entries
+are frozen" resolved the way `SMP_RELEASE_CLOSURE_PLAN.md` §1.1 named it.  And
+the three `contextRestoreSeamLive` prerequisites are now scheduled rather than
+only described: `BP7.1`/`BP7.2` (the `VSpaceRoot → TTBR0` binding and its
+install), `BP7.3` (the full outgoing-frame save — `writeFfiRegistersToTcb`
+spills only x0–x5 and x7 today), `BP7.4` (per-core staging), with `BP7.6` the
+flip they gate.
+
+And **the boot map is BP2.6's, not the device tree's** (the maintainer's
+correction, recorded as a scheduled row rather than as prose).  `init_mmu`
+parses the firmware blob *before* translation is enabled — an
+attacker-influenced parser running in the window with no memory protection and
+no recovery but a halt — and it does so to obtain a RAM *size* the boot map does
+not need.  BP2.6 builds the map from the image, both stacks, BP2.1's arena, a
+bounded window at the firmware's DTB pointer and the board's device window,
+every one a linker symbol or a board constant, and retires `ram_top_from_dtb`,
+`clamp_ram_top`, `dtb_dereferenced_range` and `boot_ranges_mapped_under` with
+it.  That deletes the Rust FDT walker from the boot path, so the boot seam's
+Lean parse is the blob's only parse and the device-tree half of the WS-XV pair
+stops existing rather than being gated — which is what
+[`docs/REGISTERED_DEBT.md`](docs/REGISTERED_DEBT.md) table C names as that
+pair's remedy.
+
+And **WS-XV is BP0, not a workstream** (`v0.34.124`).  The cross-implementation
+findings registered at `v0.34.114` were never given a plan file, and reading
+their five rows back showed why: XV1 was always a WS-BP obligation and became
+**BP2.6**; XV2 and XV3 are interim *by their own text* ("only if XV1 is far
+off") and are retired by BP2.6; XV4 and XV5 sit on surfaces this plan modifies
+— the ABI BP7's context restore delivers, and the boot map BP2.6 rebuilds.
+Half of WS-XV is deleted by WS-BP's own work and the other half is a harness
+over what WS-BP changes.  BP0 is first because its value decays as the rest
+lands, and it is the one phase that may run **in parallel** with any other:
+nothing in BP1..BP8 consumes it, and the only coupling is BP2.6 retiring two of
+its rows and updating a third.  `docs/REGISTERED_DEBT.md` keeps the WS-XV
+*finding* — the evidence that nominal gates miss behavioural drift — and no
+longer a work list.
+
+Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 
 ### WS-LC Lock datatype completion — COMPLETE (v0.34.51 → v0.34.55; closure audit v0.34.56)
 
@@ -1421,13 +1592,120 @@ code may assume:
   panicking macro refuses the tripwire.
   Live WCRT is therefore weaker
   than `PerCoreWcrt.lean`'s fine-lock bound, which remains a statement about the
-  intended discipline.
-- **SM3.C.9 is deferred**: the `@[export]` bodies are, with one exception, not
-  yet wrapped in `withLockSet`, so the per-object fine locks are a model-level
-  discipline.  The exception is the `.tcbSuspend` arm of
-  `syscallDispatchCrossCoreEntry` (`SeLe4n/Kernel/SyscallDispatchEntry.lean`),
-  which resolves `lockSetForSyscall` and brackets its action — it is the one
-  arm `lockSetForSyscall` answers `some` for; the other 32 answer `none`.  The
+  intended discipline.  **And that bound carries no number** (WS-RR RR7.31): it is
+  `maxLockSetSize · (numCores − 1) · tCs`, and `tCs` — a per-object critical
+  section on a Cortex-A76 — is measured nowhere in this tree, so the whole surface
+  is parametric in it.  The master plan's §7.2 used to instantiate it as
+  `4 × 3 × 60 µs ≈ 720 µs`, "comfortably within the 1 ms timer tick"; the first
+  factor was a *typical* footprint size rather than `maxLockSetSize` (9 since
+  RR7.11, and 8 before that), and at 60 µs the tick admits **five** locks and
+  refuses six.  What the tree states instead is the budget condition solved for the
+  measurable factor: `admissibleCriticalSection budget` is the largest per-lock cost
+  a budget admits at the declared ceiling — **37 µs** for the 1 ms tick — with
+  `WCRT_lockSet_le_budget_of_admissible` the payoff and
+  `rpi5Tick_refuses_sixty_micro_sections` the `decide`-checked negative.  New code
+  must not quote a numeric syscall WCRT for this kernel; measuring `tCs` on the
+  target is an acceptance criterion of RR7.39–RR7.41 and fine-lock Track D.
+- **The syscall seam brackets; the scheduler entries do not** (WS-RR RR7.12,
+  v0.34.65).  `syscallDispatchCrossCoreEntry` runs its atomic step inside the
+  footprint `lockSetForSyscall` declares for the operation its own registers
+  decode to — resolve, acquire, **re-resolve at the state the growing phase
+  ended in**, refuse on change, unwind — via
+  `syscallDispatchCrossCoreBracketedStep`
+  (`SeLe4n/Kernel/SyscallLockBracket.lean` holds the mechanism).  Four things
+  new code must respect.  (1) **The fallback is exactly the pre-RR7.12 seam**
+  (`syscallDispatchCrossCoreBracketedStep_undeclared`, definitional), which is
+  what makes bracketing safe while twenty-seven arms are still undeclared:
+  falling back is always sound, claiming a footprint that does not cover a write
+  never is.  (2) **The operands come from the entry's own decode**, tied by
+  `abiEntryPlan_dispatches` — a footprint resolved from a decode the dispatch
+  does not use is a footprint for a different operation.  (3) **A multi-level
+  CSpace resolution declares nothing**: the footprint's only CNode member is the
+  caller's root, a `LockSet` is capped at `maxLockSetSize` and a CSpace path is
+  not, so a deeper walk selects the target through CNodes no declared lock
+  covers and the resolver refuses.  (4) **A refusal returns `.illegalState` and
+  commits nothing but the unwinding**
+  (`syscallDispatchCrossCoreBracketedStep_refused`); it is unreachable today,
+  since `modifyGetKernelState` is one global read-modify-write and the growing
+  phase writes nothing the resolver reads, and a dedicated `.lockContention`
+  becomes worth its ABI cost when the commit is partitioned.  The per-core scheduler path
+  brackets too since **WS-RR RR7.39** (v0.34.89), which gave `SchedLockId` the
+  state words it never had (`SystemState.schedulerLocks`) and made the
+  revalidating bracket shared — `Concurrency.runBracketed`, of which RR7.12's
+  `runUnderDeclaredLockSet` is now definitionally the object-domain instance.  So
+  the timer tick, the `.reschedule` SGI receiver and the secondary bring-up entry
+  run inside the footprints SM5.B–G declared for them, with the write set proved
+  inside the footprint on both steps (`perCoreRescheduleStep_coversWrites`,
+  `perCoreTimerTickStep_coversWrites`).  Two things new code must respect.  (1)
+  **The tick's footprint names every core's run-queue write lock**, not the boot
+  core's and its own: the replenish drain and the bound-exhausted timeout both
+  wake via `determineTargetCore`, so the two-lock segment was a *false* footprint
+  from SM5.F onward, and RR7.39 fixed it — the widening is free, because every
+  tick footprint already holds the object-store *table* lock
+  (`timerTickOnCoreCompleteLockSet_serialises_pairwise`), and `maxLockSetSize`
+  does not move.  (2) **The scheduler domain is not fully covered**: what remains
+  is the *syscall* seam's scheduler writes — an `endpointSend`'s receiver wake —
+  because `lockSetForSyscall` returns a `LockSet` whose `LockId` cannot name a
+  run-queue lock at all.  That is `UncoveredLockDomain.syscallSeamSchedulerDomain`,
+  owner RR8, and it needs per-arm resolved wake targets rather than the free
+  over-approximation, since those footprints hold `stateLevelLock` and per-object
+  locks rather than the table lock.  Live WCRT is still the global lock's, and
+  `PerCoreWcrt.lean` says which half acquires.
+  **How much of the kernel that is, is measured rather than asserted** (RR7.13,
+  v0.34.66): `SeLe4n/Testing/ExportCommitDisciplineCensus.lean` derives the
+  state-committing `@[export]` set from the elaborated environment — transitive
+  `getUsedConstants` reachability to a `kernelStateRef` write — and reconciles it
+  against a registry in **both** directions, so an unclassified committing seam
+  and a stale entry are each a build failure.  **Seven seams commit; five
+  bracket** (WS-RR RR7.39 — the two syscall seams and, since it gave the
+  scheduler domain a runtime, the three per-core scheduler entries; two before
+  it).  A body recorded `bracketed` must reach `runUnderDeclaredLockSet` or
+  `Concurrency.withLockSet`; one recorded `unbracketed` must carry a reason.  New
+  code adding an `@[export]` that commits kernel state must classify it there —
+  that is where the project's coverage figure is read off, and the two
+  fault-delivery seams (`lean_handle_fault`, `lean_handle_unknown_syscall`) are
+  recorded unbracketed because a fault is not a syscall and `lockSetForSyscall`
+  declares no footprint for one.
+- **SM3.C.9's `@[export]` body migration is otherwise deferred**: outside the
+  syscall seam and the raw `suspend_thread_cross_core` entry, the bodies are not
+  wrapped in `withLockSet`, so the per-object fine locks remain a model-level
+  discipline there.  **Eight of the
+  thirty-five arms are declared** since WS-RR RR7.11 (v0.34.64) — that suspend
+  plus the seven IPC hot-path arms `.send`, `.receive`, `.call`, `.reply`,
+  `.replyRecv`, `.notificationSignal` and `.notificationWait` — and twenty-seven
+  answer `none`, which `declaredFootprintSyscall` names and
+  `lockSetForSyscall_undeclared_none` enforces.  Declaring is not bracketing, and RR7.12
+  (v0.34.65) closed the gap at the syscall seam: the eight declared arms now run
+  inside their footprints there, the twenty-seven undeclared ones run exactly as
+  before, and the per-core scheduler entries still bracket nothing.  Three things new code must respect.  (1) `.send` and `.call` answer
+  `none` without a **message**: whether the footprint includes the receiver's
+  CSpace root and the state-level lock is a property of what the message carries,
+  so defaulting to the capless shape would declare a footprint that omits the two
+  members the caps path writes.  (2) The **receive** side writes the CDT too —
+  `ipcTransferSingleCap` is one function, so a receive that dequeues a
+  caps-bearing sender mints a derivation node and adds an edge exactly as a send
+  does; RR7.7 declared that on the two sending arms and RR7.11 on the two
+  receiving ones, and `capsCarryingIpcArms_footprints_share_serialization` is the
+  statement that no two of the four are ever disjoint.  (3) **`maxLockSetSize` is
+  9**, not 8: the widest declared footprint is a `.replyRecv` that both returns a
+  donation and installs capabilities, and that state-level write is its ninth
+  member.  The WCRT headline `maxLockSetSize · (numCores − 1) · tCs` is
+  parametric in it, and a theorem named `_size_le_maxLockSetSize` must state the
+  constant, never the numeral — five in the scheduler pinned `≤ 8` literally,
+  which is why the constant now lives in `Locks/LockSet.lean` where every
+  footprint-declaring module can name it.  (4) **`.replyRecv` declares only for
+  the recorded server** (PR #892 review round 6): the transition returns the
+  donation of `(recordedReplyServer? st prevCaller).getD tid`, so a *delegated*
+  reply — one answered by a thread other than the one the Reply records — would
+  need that server's own TCB lock, and the arm already sits at nine of nine.  It
+  therefore answers `none` there (`lockSetForSyscall_replyRecv_delegated`), and
+  every result about the arm (`lockSetForSyscall_replyRecv`, `_isSome_iff`,
+  `_eq`, `_covers_writes`, `_covers_capsWrites`) carries that ownership
+  hypothesis; `lockSet_endpointReplyRecvOnCore` resolves its donation from
+  `endpointReplyServerDonation? st target`, the resolver the `.reply` footprint
+  has used since PR #822's review — one question, one answer.  Recovering the
+  headroom so the delegated case can declare is WS-OD OD3.6's arm-selected
+  split, scheduled before OD3.7 for exactly this reason.  The
   migration plus commit partitioning is planned in
   [`docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md`](docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md),
   whose High-severity revocation-precision finding is **closed** at v0.33.88
@@ -1445,13 +1723,22 @@ code may assume:
 - **`ipcInvariantFull` has its dispatch payoff — three theorems, under
   stated packs and confinements.**  The whole bundle family is de-threaded:
   the RR3.1 gate (`scripts/check_ipc_invariant_dethreading.py`, Tier 0)
-  reports **zero** conjuncts bound on a post-state across all **146**
+  reports **zero** conjuncts bound on a post-state across all **169**
   `*_preserves_ipcInvariantFull*` / `*_establishes_ipcInvariantFull*`
   statements, measured over the comment-free code view with the conjunct set,
   the bundle family and each bundle's own pre-state all *derived* rather than
   listed, and prints `[PASS] ipcInvariantFull is de-threaded end to end`;
   `docs/planning/ipc_dethreading_pending.txt` carries zero registrations and
-  the gate holds that register in both directions.  The payoff tier (WS-RR
+  the gate holds that register in both directions.  **The figure above is
+  enforced, not asserted** (WS-RR RR7.28): the gate holds every tracked
+  Markdown file outside `CHANGELOG.md` and `docs/dev_history/` — where the
+  number is history, and rewriting it would be the falsification — to its own
+  `len(bundles)`, so a cut that adds a bundle fails until the prose it made
+  stale is corrected, and a claim spelled in a form the reader cannot parse
+  fails rather than being skipped.  A hand-maintained count beside a derivation
+  is the enumeration-standing-in-for-a-derivation shape this file warns about,
+  and it drifted exactly that way: RR7.22 added twelve statements and the three
+  canonical sites still said 146 two cuts later.  The payoff tier (WS-RR
   RR3.15–RR3.26, v0.34.43): `dispatchCapabilityOnly_preserves_ipcInvariantFull`
   (`SeLe4n/Kernel/API.lean`, **production**) covers every capability-gated arm
   under the pre-state pack `capabilityDispatchQuiescence`, composing the
@@ -1499,6 +1786,151 @@ code may assume:
   [`docs/REGISTERED_DEBT.md`](docs/REGISTERED_DEBT.md) (plan retired to
   [`docs/dev_history/planning/IPC_INVARIANT_DETHREADING_PLAN.md`](docs/dev_history/planning/IPC_INVARIANT_DETHREADING_PLAN.md));
   RR8.3 retires this bullet.
+- **A cancelled caller gets its donated SchedContext back** (WS-RR RR7.22
+  residual remediation, v0.34.97).  `cancelIpcBlocking`'s `.blockedOnReply` arm
+  is `consumeReplyLink (restoreToReadyCancelled (returnDonationToCancelledCaller
+  st tid tcb) tid) tid tcb` — seL4-MCS's `reply_remove`.  Before it, the server
+  kept `.donated scId caller` while the caller left `.blockedOnReply`, which
+  `donationOwnerValid` forbids and which permanently transferred the caller's CBS
+  reservation.  Four things new code must respect.  (1) **The return runs before
+  the restore**, because it reads the `.blockedOnReply` state the restore clears;
+  a Tier 3 negative refuses the old order.  (2) **The holder is the caller's
+  recorded reply target** (`cancelledCallerDonation?`), and that
+  `ipcInvariantFull` does not entail — it admits `.blockedOnReply epId rt` for any
+  `rt` and relates `rt` to no donation — so `donationHolderIsReplyTarget` states
+  it; the *behaviour* needs no hypothesis, only the payoff
+  `cancelIpcBlocking_reply_no_donation_to_victim` does.  (3) **The SM5.H
+  replenishment migration is at the cross-core layer** (`cancelIpcBlockingMigrated`),
+  where this tree resolves home cores for every donation-carrying path, which is
+  what keeps `cancelIpcBlocking` an objects-only write; that it *establishes*
+  `replenishQueueAffinityConsistent_smp` is registered RR8 debt.  (4) **The return
+  is invisible to every observer, not merely a high one**: `projectKernelObject`
+  strips `schedContextBinding` and `boundThread`, so writing a possibly-low
+  server's TCB on a high caller's cancellation leaks nothing
+  (`returnDonationToCancelledCaller_preserves_projection`).  `cancelIpcBlocking_lifecycle_eq`
+  is now conditional on there being no donation, because `storeObject` maintains
+  bookkeeping the arm's other writes bypass.
+- **...and the reclaim ends the holder's outstanding send or call first**
+  (WS-OD OD1.4, v0.34.104).  The hand-back is
+  `returnDonatedSchedContext (abortHolderPendingIpc st holder) holder scId tid`.
+  Without the prefix the reclaim leaves the holder `.unbound` while it is still
+  `.blockedOnCall` — reachable at depth 1 with no chain, when the server Calls an
+  endpoint with no receiver waiting — which `passiveServerIdle` forbids.
+  Semantically it is what a timeout is in MCS: the budget the operation was
+  issued on has been revoked, so the operation fails with `.ipcTimeout`.  Five
+  things new code must respect.  (1) **The abort runs before the hand-back**, for
+  the reason the hand-back runs before the restore, one level down: with the
+  return first the intermediate state *is* the violation being closed, and a
+  Tier 3 negative refuses the swapped order.  (2) **The prefix is
+  `abortPendingIpcOnEndpoint`, not `timeoutThread`** — the timeout's objects-only
+  half, without the wake and the priority-inheritance revert — because
+  `cancelIpcBlocking_scheduler_eq` has four cross-core consumers and must stay
+  true.  (3) **The reclaim is all-or-nothing**: a refused return discards the
+  abort, since `cancelledCallerDonation?` resolves through the *holder* and can
+  answer `some` for a caller with no TCB; committing the abort there would end a
+  live server's IPC for a reclaim that did not happen and would falsify
+  `returnDonationToCancelledCaller_eq_self_of_getTcb?_none`.  A Tier 3 negative
+  refuses the committing error arm.  (4) **Every fact the hand-back reads
+  survives the abort**, which is why the donation is resolved once, on the
+  pre-state: the abort writes no `schedContextBinding`
+  (`abortHolderPendingIpc_binding_backward` / `_forward`) and no SchedContext
+  (`abortPendingIpcOnEndpoint_schedContext_forward`), so
+  `donationOwnerValid` carries across it — given the holder holds a binding,
+  which it does, since owners are `.unbound` and the holder is `.donated`
+  (`abortHolderPendingIpc_preserves_donationOwnerValid`).  (5) **The abort is
+  projection-*visible* and the reply arm's NI result says so.**  It writes the
+  holder's endpoint, its queue neighbours and its own `ipcState` / queue links —
+  none of which `projectKernelObject` erases — so
+  `returnDonationToCancelledCaller_preserves_projection` and
+  `cancelIpcBlocking_blockedOnReply_preserves_projection` now carry
+  `abortHolderProjectionStable`.  That is the endpoint-queue label-uniformity gap
+  the three *queue* arms already carry, reaching the reply arm through the holder
+  rather than the victim; it is discharged outright wherever the abort is inert
+  (`abortHolderProjectionStable_of_allowed`, from
+  `abortHolderPendingIpc_eq_self_of_allowed` — the abort is the identity unless
+  the holder is blocked sending or calling), so no result that held before the
+  remediation is weakened on the states it held for, and the general discharge is
+  registered WS-OD debt.  New code must not read either projection theorem as
+  unconditional.
+- **...and the unblocked holder is placed on a run queue, not merely unblocked**
+  (WS-OD OD1.7, v0.34.108).  `cancelIpcBlockingOnCore`'s state is
+  `removeRunnableOnCore (wakeAbortedDonationHolder st (cancelIpcBlockingMigrated
+  …) …) victim home`.  Without the wake the abort left the holder `.ready`,
+  spliced off its endpoint and on **no** run queue, and every recovery path was
+  closed — `resumeThreadOnCore` demands `threadState = .Inactive` and the abort
+  leaves `.Ready`; `schedContextBind` re-buckets only a thread already queued
+  (`if tid ∈ runQueueOnCore bindHome`); `chooseThreadOnCore` selects exclusively
+  from `runQueueOnCore` and never scans ready TCBs — so the reclaim stranded the
+  server permanently, reachable from an ordinary `.tcbSuspend` on its client.
+  The premise the omission rested on is *false in this model*: an unbound thread
+  is fully schedulable here (`resolveEffectivePrioDeadline`'s `.unbound` arm
+  returns the legacy TCB priority), which `schedContextUnbind`'s own H2 step had
+  already recorded, having fixed the identical defect — one question answered
+  twice, the second time wrongly.  Six things new code must respect.  (1) **Waking
+  is the answer, not suspending**: the abort stages `.ipcTimeout` into the
+  holder's register context (WS-RR RR7.14), and a staged error frame the thread
+  can never observe is that defect one level over; leaving it `.Inactive` would
+  also suspend a *bystander* because its client was suspended.  (2) **The wake is
+  at the cross-core layer**, where the composite already writes the scheduler, so
+  `cancelIpcBlocking_scheduler_eq` and its four consumers are untouched — the same
+  division that puts the SM5.H replenishment migration there.  (3) **It is a
+  scheduler-only insert** (`enqueueAbortedHolderOnCore`), because the abort already
+  wrote `.ready`; writing it again would make the step touch `objects`, and
+  `cancelIpcBlockingOnCore_objects_eq` and the whole `CancellationNI` surface say
+  it does not.  `enqueueAbortedHolderOnCore_agrees_runQueueOnCore` ties it to
+  `enqueueRunnableOnCore` rather than leaving a second spelling of "enqueue" to
+  drift.  (4) **The gate is the post-state**: `cancelAbortedHolderWake?` fires on
+  the holder being `.ready` *after* the teardown, which is what distinguishes "the
+  abort ran" from "the abort was inert" (`.blockedOnReceive`) and from "the whole
+  reclaim was discarded" (OD1.4's all-or-nothing error arm); a pre-state guard
+  fires on the third — and the pre-state half is not optional in the other
+  direction either: `donationOwnerValid` constrains the donation's *owner*, never
+  its holder, so a `.donated` holder that is `.ready` and **currently running** is
+  admissible (the ordinary passive-server-running state), and on it the abort is
+  inert while the holder stays `.ready`, so a post-state-only gate would enqueue a
+  running thread.  `enqueueAbortedHolderOnCore` also refuses a running *or* queued
+  thread, since `runnableOnSomeCore` is run-queue membership only and
+  dequeue-on-dispatch means it does not catch a dispatched thread.  (5) **The
+  declared scheduler footprint names the woken core**: `cancelIpcBlockingOnCoreSchedLockSet` takes a `wakeCore : Option CoreId`,
+  because the holder's home core is neither the victim's nor the executing core,
+  and a footprint naming only `home` would be *false* of the transition — which
+  this project rates worse than a wide one.  (6) **The per-core locality clause
+  has a second stated exclusion**: `cancellation_cross_core_correct`'s run-queue
+  half is conditioned on `cancelAbortedHolderWakeCore?` and its current-slot half
+  is unconditional; the previous unconditional run-queue clause was true only
+  because the holder was placed nowhere.  The information-flow obligation is
+  `abortHolderWakeHigh`, the scheduler twin of OD1.4's
+  `abortHolderProjectionStable` — a run-queue insert is filtered by the inserted
+  thread's own observability, and the holder's label is not determined by the
+  victim's — discharged outright where no donation is resolved and registered as
+  WS-OD debt otherwise.
+- **...and `passiveServerIdle` is preserved by `cancelIpcBlocking` on every arm**
+  (WS-OD OD1.5, v0.34.105) — the theorem OD1 exists to prove, and one that was
+  *false* before the abort prefix: the reply arm's reclaim could leave a holder
+  `.unbound` and still `.blockedOnCall`.  Four things new code must respect.
+  (1) **The load-bearing fact is the filter, not a pullback**: every thread a
+  cancellation rewrites ends in a state `passiveServerIdle` permits, so
+  `passiveServerIdleFrame`'s own `¬ passiveServerIdleAllowed` hypothesis
+  discharges it and the pullback fires only on threads the transition left
+  alone.  That is why the frame primitive
+  (`passiveServerIdleFrame_of_backward_of_not_allowed`) hands the backward
+  obligation *both* discriminating hypotheses — the donation return needs the
+  `.unbound` one for the caller it re-binds and the filter for the holder it
+  unbinds.  (2) **`ipcStateQueueMembershipConsistent` is a hypothesis, and a
+  substantive one**: it is what makes the abort *succeed*
+  (`abortPendingIpcOnEndpoint_ok` — a thread blocked sending or calling names an
+  endpoint that exists), and a refused abort leaves the holder exactly where the
+  defect left it.  (3) **The footprint gained three members, not one**: the abort
+  *splices*, so `lockSet_cancelIpcBlocking` names the holder's endpoint **and its
+  two queue neighbours** (`cancelHolderBlockedEndpoint?`,
+  `cancelHolderSpliceNeighbors?`, both resolved from `st` because the holder is
+  resolved rather than supplied, and both gated on the abort's own guard).
+  (4) **The bound is a case analysis and the reply arm sits *at* the ceiling**:
+  summed, the resolved footprint carries eleven members, and it fits only because
+  the donation-derived members and the victim's own blocked-object members both
+  key on `tcb.ipcState`.  Nine of nine leaves no headroom — WS-OD OD3.6's
+  arm-selected split is what recovers it, and is scheduled before OD3.7 adds a
+  member for exactly that reason.
 - **A bare reply's post-state does not satisfy `donationOwnerValid`.**
   `endpointReply` wakes the answered caller `.ready` while the recorded server
   still holds `.donated _ caller`; the donated SchedContext comes back only at
@@ -1515,6 +1947,36 @@ code may assume:
   return, and must not add a bundle theorem that threads `donationOwnerValid` on
   such a state: it would be vacuous rather than conditional, which is how the
   nine pre-RR3.12 reply bundles asserted nothing on the ordinary seL4-MCS path.
+- **A bare endpoint splice's post-state does not satisfy
+  `ipcStateQueueMembershipConsistent`.**  `endpointQueueRemoveDual` takes a
+  thread out of its endpoint queue and deliberately does **not** touch that
+  thread's `ipcState`; the composites that use it write it in their very next
+  step (the bound delivery makes it `.ready`).  So the honest statement about
+  that state is `ipcInvariantFullExceptMembership st' tid` — the bundle with the
+  membership conjunct relaxed exactly at the removed thread — which
+  `endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership`
+  (`IPC/Invariant/QueueSplicePreservation.lean`) establishes from
+  `ipcInvariantFull`.  It stands to the splice as
+  `ipcInvariantFullExceptDonationOwner` stands to the bare reply, and new code
+  must not state a splice bundle threading the **full** membership conjunct on
+  the post-state: that would be vacuous rather than conditional.  Three further
+  things the module fixes in place.  (1) **The four-branch case analysis is
+  derived once**, as `SpliceShape`: which program `endpointQueueRemoveDual` is
+  depends on whether the removed thread is the queue head and whether it has a
+  successor, and that is a property of the *operation*, not of the conjunct — a
+  new conjunct proof consumes the four branches rather than re-running `unfold`.
+  (2) **One conjunct genuinely does not follow from the bundle**:
+  `splicePredecessorBlocked`, the fact that a predecessor promoted to tail is
+  blocked on that endpoint.  `queueNextTargetBlocked` propagates blockedness
+  *forwards*, the head conjunct constrains only the head, and link integrity
+  says nothing about `ipcState` — so it is stated, vacuous when the removed
+  thread is the head, and discharged from a reachability witness through
+  `spliceSideBlocked_along_path` (*every thread reachable from a queue head is
+  blocked on that endpoint* — the fact `queueNextTargetBlocked`'s own docstring
+  promised and nothing stated).  (3) **`endpointQueueNoDup` is a consequence,
+  not an obligation**: `endpointQueueNoDup_of_dualQueue_of_headBlocked` derives
+  it from the dual-queue invariant and the head conjunct, so a transition need
+  not re-establish it separately.
 - **The `.call` chain's IPC bundle is staged; every other live-arm bundle is
   production.**  RR2 (v0.34.42) gave the transitions behind `Kernel/API.lean`'s
   SMP dispatch `_preserves_ipcInvariantFull` theorems, and the RR2 closure audit
@@ -1533,8 +1995,29 @@ code may assume:
   `IPC/Invariant/DispatchPayoff.lean`, staged with the payoff tier) and the
   `Architecture.stage*` return-frame writes
   (`IPC/Invariant/DispatchArmPreservation.lean`, production).  What no
-  transition-level bundle covers yet: `notificationSignalBoundOnCore`
-  (SM6.D's registered bound-delivery debt) — the flow-`Checked` dispatch
+  transition-level bundle covers yet: `cancelIpcBlockingOnCore`'s *notification*
+  and *reply* arms (registered debt, owner RR8).  Its **blocked-on-endpoint** arm
+  is covered since v0.34.95 —
+  `cancelIpcBlocking_endpointArm_preserves_ipcInvariantFull`,
+  `SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean` (production) —
+  and its **notification** arm since v0.34.96
+  (`cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull`,
+  `…/CancellationNotificationShape.lean`).  Each needed its own engine, because
+  each runs a whole-store fold rather than RR7.22's splice.  Two hypotheses
+  beyond the bundle are common to both: the timeout-budget discipline
+  `allTimeoutBudgetsNone` (unavoidable — the conjunct says a budget-carrying
+  thread is *blocked*, and both operations make one `.ready`), and a
+  queue-coherence fact `ipcInvariantFull` does not entail, because it constrains
+  queues only at their boundaries and carries no connectivity:
+  `sweptThreadQueueCoherent`'s three clauses for the endpoint arm, and
+  `sweptThreadOffQueueChains` for the notification arm, which has no splice to
+  repair the swept thread's neighbours.  New code must state those rather than
+  assume them.  What is **not** a hypothesis is anything the bundle entails:
+  `replyObject_none_of_not_blockedOnReply` derives "holds no Reply object" from
+  the bundle's own reciprocity, and
+  `purgedAndRestored_victim_off_endpoint_boundaries` derives that a
+  notification-blocked thread bounds no endpoint queue.  Tier 3 negatives refuse
+  either as a premise.  The flow-`Checked` dispatch
   wrappers gained their own payoff tier
   (`dispatchWithCapChecked_preserves_ipcInvariantFull` /
   `dispatchSyscallChecked_preserves_ipcInvariantFull`, staged) in the same
@@ -1721,8 +2204,23 @@ code may assume:
   witness check, then the two installs, with the labeling-refusal arm
   unreachable (`bootAndInitialisePlatform_eq_checked_boot`) — of the
   **bound** config (round 7): `bindPlatformConfig` puts the caller's IRQ
-  table and objects under the binding's `machineConfig` and `bootVSpaceRoot`,
-  so a caller cannot omit the canonical root or describe other hardware.
+  table and objects under the binding's `bootVSpaceRoot` and the machine
+  configuration the binding **binds for the caller's account**
+  (`PlatformBinding.bindMachineConfig`, PR #892 review round 2), so a caller
+  cannot omit the canonical root or describe other hardware.  The account
+  selects *among* the binding's declared configurations and never becomes
+  one: on the RPi5 it is the largest of the five shipped RAM variants
+  (`rpi5Variants`, 1–16 GiB) the account covers, and the **smallest** when it
+  covers none (`rpi5VariantFor`) — the only member that claims no RAM a
+  Raspberry Pi 5 lacks, where the old unconditional 4 GiB map declared RAM
+  the 1 and 2 GiB boards do not have.  The DTB bridge validates the board
+  against that same function (`rpi5PlatformConfigFromDtb_ok_binds_detected_variant`),
+  so the variant checked and the variant booted are one value, and every
+  member declares the binding's PE count
+  (`bindMachineConfig_declaredCoreCount`, consumed by
+  `bootAndInitialisePlatform_checked_declaredCoreCount`).  The coverage
+  predicate the two share sits upstream of the bindings in
+  `Platform/Boot/MemoryCoverage.lean`.
   The hardware entry is `bootAndInitialiseRPi5`, the generic entry fixed at
   `RPi5Platform`; SM10.1's `lean_kernel_main` calls it and nothing else.
   **The declared
@@ -1780,10 +2278,32 @@ code may assume:
   dispatch, and the harness re-establishes it with `syncThreadStates` before
   it checks.  What the live decisions read is the inactive flag — `tcbSuspend`
   / `tcbResume` / the cancellation and fault suspends test the field against
-  `.Inactive` only — stated as `threadInactiveFlagConsistent`, proved of the
-  boot state (`…_threadInactiveFlagConsistent`), and owed across the scheduler
-  and IPC surfaces as registered debt (RR7.36).  New code must not cite
-  `threadStateConsistent` of a post-dispatch state.
+  `.Inactive` only — stated as `threadInactiveFlagConsistent` and proved of the
+  boot state (`…_threadInactiveFlagConsistent`).  **The per-core context switch
+  preserves it** (WS-RR RR7.36,
+  `switchToThreadOnCore_preserves_threadInactiveFlagConsistent`, with
+  `preemptCurrentOnCore_preserves_…` for the primitive it composes), under two
+  side conditions that are the two ways it genuinely breaks: a displaced thread
+  stranded off every queue, and a dispatch of a thread the state classifies
+  `.Inactive`.  The reusable machinery is
+  `threadInactiveFlagConsistent_of_frame` / `…_of_frame_placing` over
+  `threadPlacedOnSomeCore`, with `inferThreadState_eq_inactive_iff` the
+  characterisation — a thread is `.Inactive` exactly when it is unplaced and
+  not blocked — so a further surface is a per-transition application rather
+  than a fresh argument.  The wake and idle-enqueue paths (which change the
+  stored flag *and* the placement), the lifecycle pair and the IPC writers
+  remain registered debt.  New code must not cite `threadStateConsistent` of a
+  post-dispatch state.
+
+  **And the classification's placement tests are the cross-core wake's
+  single-placement tests** (RR7.36): `threadRunningOnSomeCore` /
+  `threadQueuedOnSomeCore` are *defined as* `runningOnSomeCore` /
+  `runnableOnSomeCore`, not stated to equal them.  RR5.10 wrote a second fold
+  over `allCores` in a module that does not import the one where SM5.C.1 and
+  SM5.D.4 had already asked the question, and this pair diverging is not
+  cosmetic: the wake's guard exists to keep one TCB off two cores, so a
+  disagreement would let a thread be enqueued a second time while still
+  classifying as running.
   **A successful boot respects the object-capacity invariant** (PR #889
   review round 18): `wellFormed`'s fifth conjunct `objectBudgetRespected`
   requires `initialObjects.length + 1 + numCores ≤ maxObjects` — room for the
@@ -1918,7 +2438,14 @@ code may assume:
   on every existing state and fixture; a new binding that declares fewer PEs
   must give its machine config the matching count, or its instance will not
   elaborate.  New code must not read `numCores` as the set of cores a thread may
-  be pinned to.
+  be pinned to.  **The unpinned half closed at v0.34.79** (WS-RR RR7.30):
+  `determineTargetCore_lt_declaredCoreCount` says an unpinned thread — and a
+  `tid` resolving to no TCB — routes to `bootCoreId`, which is core `0` and so
+  inside any declared set (`coreCountPos`), so with the two refusals above **no**
+  thread of any kind is enqueued on a PE the machine does not have.  `numCores`'s
+  own docstring now states this whole relation at the constant, since describing
+  only the RPi5 equality there is what made a reader conclude a narrower binding
+  could not shape kernel state at all.
 
 - **Thread-state classification is per-core** (WS-RR RR5.10).
   `inferThreadState` read `currentOnCore bootCoreId` / `runQueueOnCore
@@ -1931,6 +2458,80 @@ code may assume:
   (`inferThreadState_eq_bootCore_of_secondaries_quiescent`).  This had to land
   before the boot switch above: the boot state queues idle on all four cores.
 
+- **A device tree is read whole, and what it withholds is not a resource**
+  (PR #892 review round 5, v0.34.113).  Five facts new code must respect.  (1)
+  `parseFdtNodes` refuses a structure block that does not reach a top-level
+  `FDT_END` at depth zero — every partial exit is `.malformedBlob`, fuel
+  exhaustion stays `.fuelExhausted` — so a *fixture* blob must carry its
+  terminators or the bridge rejects it.  The header is validated first, and the two
+  validators are **one question**: `FdtHeader.isValid` and
+  `cmdline::validate_fdt_header` both require §5.1's layout — each block offset
+  4-byte aligned (8 for the reservation block) and at or beyond the 40-byte
+  header — and both require **version ≥ 17**, the version at which
+  `size_dt_struct` enters the header, since both read that field
+  unconditionally.  Four of those conditions were Rust-only, with Lean the
+  permissive side and Lean the side `BP2.6` makes the only reader; the
+  reservation-block pair and the version floor were missing from both.  A
+  strings block over the header is the sharpest of them: a property's `nameoff`
+  then resolves into header bytes, and every field there is the blob author's to
+  choose, so `reg` or `status` can be spelled inside a `totalsize`.  The walk
+  then refuses a property after a
+  child (§5.4.2), a repeated property name (§2.2.4) and — since the RR7 audit
+  round — **a repeated sibling node name**: §2.2.3 identifies a node by its full
+  path, which is unique only if siblings differ, and every selector in the file
+  reaches for a node by name and takes the **first** match.  A second
+  `reserved-memory` child was therefore never read, so its carve-outs were never
+  subtracted; enforcing uniqueness for properties and not for the nodes those
+  properties hang on left the selectors' own premise unchecked.  (2) The machine's RAM is selected by
+  `memoryNodeReg?` over that parsed tree, with the same three filters the Rust
+  walk applies: the node describes memory (`device_type`), it is operational
+  (`FdtNode.statusIsOperational` — `okay`/`ok` and nothing else, decided on the
+  operational side because that is the side the specification's list is closed
+  on), and it sits at the **top level**, so a `memory@…` under
+  `/reserved-memory` is a carve-out rather than an aperture.
+  `findMemoryRegPropertyChecked` is now a selector over the same tree, not a
+  second token walk, and `findMemoryRegPropertyChecked_eq_memoryNodeReg?` is
+  what keeps the standalone API and the boot path from disagreeing about a
+  blob.  (3) **A reservation set this parser cannot read whole is a refusal**, not a
+  shorter list (the RR7 audit round).  Both sources answer `Option`:
+  `FdtBlob.reservations` gives `none` when the §5.3 block reaches no zero
+  terminator inside its declared bound or holds an unreadable pair, and
+  `fdtReservedRanges` gives `none` when a `/reserved-memory` child's `reg` is
+  not a whole number of tuples at the declared cell widths — a child with **no**
+  `reg` still contributes nothing, because §3.5 says that is what a dynamic
+  allocation means.  `fromDtbFull` refuses on either.  The direction is the one
+  `CLAUDE.md` states for scanners: this list is a set of *subtractions*, so an
+  entry dropped hands back memory the firmware reserved and the map then permits
+  `MachineState.addrInRange` over a firmware, DMA or crash-kernel carve-out,
+  while one invented merely costs RAM.  The first cut ended the list at the
+  bound, at an unreadable pair and at a fixed fuel of 64 and called that
+  "fail-closed"; the fuel is now the block's own capacity, so only the
+  terminator or the declared bound can end the walk.  A **fixture** blob must
+  therefore carry a real reservation block: `offMemRsvmap` pointing at the
+  structure block is not "no reservations", it is no room for the terminator,
+  and it is refused.  (4) A peripheral's `reg` is a **child-bus** address until it is
+  translated: `extractPeripherals` carries an `FdtAddressContext` and composes
+  each bus's `ranges` outward, so a node under a bus with no `ranges` is not
+  reported at all (Devicetree Specification v0.4 §2.3.8 — nothing maps), an
+  empty `ranges` is the identity, and a node whose address falls outside every
+  window is refused rather than reported raw.  The tree root is the base case:
+  its children's `reg` *are* CPU physical addresses.
+- **The scheduler bracket acquires in ladder order because the domain sorts**
+  (PR #892 review round 5, v0.34.113).  `schedulerLockBracketDomain.sequence` is
+  `SchedLockSet.lockAcquireSequence`, a `mergeSort` on the key — the same answer
+  `objectLockBracketDomain` has given since SM3.B.  It was the declared list
+  verbatim, which rested on every footprint being declared ascending; that holds
+  for the footprints a *transition* declares and not for the one resolved from
+  the state, since `pipChainVisited` follows `blockingServer` and a blocking
+  chain descends in `ObjId` whenever a higher-numbered thread blocks on a
+  lower-numbered one.  Two things new code must respect.  (1) A `SchedLockSet`'s
+  `pairs` is **not** an acquisition order — it is whatever order the footprint
+  was resolved in; the order is `lockAcquireSequence`, and
+  `lockAcquireSequence_ordered` states it with no hypothesis.  (2) The change is
+  transparent to every declared footprint, because an ascending list is its own
+  sort (`lockAcquireSequence_eq_pairs_of_pairwise_le`), so an SM5 result stated
+  over the declared list still holds — but a *new* result about what the bracket
+  acquires names the sequence, not the pairs.
 - **The outer-shareable TLBI wrappers cannot execute on the first hardware
   target.**  `tlbi_vmalle1os` / `vae1os` / `aside1os` / `vale1os` are
   **FEAT_TLBIOS** (ARMv8.4-A); Cortex-A76 — the core in the RPi5's BCM2712 —
@@ -1990,7 +2591,9 @@ code may assume:
   a user send leaves it at `0` — because carrying a user's label would let a
   thread holding a send capability to a fault endpoint mint a message bearing a
   `seL4_Fault_tag`.  Restoring seL4's sender-side label pass-through needs its
-  own authority story and is registered debt.  (5) The handler capability is
+  own authority story and is registered debt — **owner WS-CB since v0.34.68**
+  (WS-RR RR7.17), with the constraint and two candidate designs stated in the
+  WS-RA plan's §9 rather than inside a review narrative.  (5) The handler capability is
   gated by seL4's `sendFaultIPC` predicate — send, and grant **or**
   grant-reply (`faultHandlerCapAuthorized`) — not send-and-grant: the reply
   link is structural in this model, so the disjunct is a policy gate, and the
@@ -2618,7 +3221,76 @@ code may assume:
 - **Registered uncovered lock domains** are enumerated in Lean, not in prose:
   `UncoveredLockDomain` (`InformationFlow/FineLockFlow.lean`) names each gap and
   its owner, and its completeness theorem forces a new domain to be registered.
-- **Staged modules**: 63 staged-only, listed in
+- **An operation's `_modifiedFields` list is a proof obligation, not a
+  comment** (WS-RR RR7.19, v0.34.70; completed by the RR7 audit round,
+  v0.34.109).  The six `*_modifiedFields` lists in
+  `Kernel/CrossSubsystem.lean` had no consumer at all: an operation could write
+  a field its own list omits and nothing would notice.  RR7.9 found one such
+  omission by reading (`capabilityOp_modifiedFields`, missing the four CDT
+  fields); giving the lists an obligation found a second immediately
+  (`storeObject_modifiedFields`, missing `.asidTable`, which `storeObject`'s
+  record update writes when the stored or displaced object is a `.vspaceRoot`);
+  and writing the four theorems v0.34.70 had promised and not shipped found two
+  more, plus the gap that had made one of them impossible to state.  Four
+  things new code must respect.  (1) **Declaring a write-set obliges you to
+  prove it**: `preservesFieldsOutside fs st st'` says every `StateField`
+  outside `fs` is unchanged, quantified over the whole field type rather than
+  over whatever the author enumerated, and **every one of the six lists carries
+  a `_preservesFieldsOutside` theorem at its own list** — `storeObject`,
+  `revokeService`, `serviceRegisterDependency`, the retype, the four capability
+  operations (`cspaceMintWithCdt`, `cspaceCopy`, `cspaceMove`,
+  `cspaceDeleteSlot`) and both dual-queue operations — each false at an
+  under-declared list.  (2) **`StateField` is total over `SystemState`, and the
+  pin is a theorem, not a count**: `SystemState.eq_of_fieldEq_all` proves that
+  agreement on every constructor is state equality, through
+  `SystemState.mk.injEq`, so a field added to the structure without a
+  constructor fails to elaborate.  At v0.34.70 the enumeration named sixteen of
+  twenty-seven fields, so a write to `scThreadIndex` — which the receive path's
+  donation return performs — could not be *declared* at all, and every
+  write-set claim in the tree was silent about eleven fields.  (3)
+  **Over-declaring is the safe direction** (`preservesFieldsOutside_mono`); it
+  costs disjointness, never soundness.  `ipcEndpointOp_modifiedFields` is
+  `storeObject`'s set **plus `.scheduler` and `.scThreadIndex`** (the wake and
+  the deschedule; the donation return), and `capabilityOp_modifiedFields` is
+  `storeObject`'s set plus the four CDT fields.  The v0.34.70 lists were
+  `storeObject`'s set alone and `[.objects, .lifecycle, …CDT]`, both *false* of
+  their operations — the second under the very sentence RR7.19 had retracted
+  for the first.  Tightening the index/ASID fields back out is registered debt
+  (`docs/REGISTERED_DEBT.md` §C), not an assumption.  (4) **The lists are
+  consumed**: `predicateFramedByDisjointWrites` turns "this read-set and that
+  write-set are disjoint" into "this operation preserves that predicate", so an
+  omitted field licenses a preservation conclusion the operation does not
+  earn.  A list that composes another is *defined over* it
+  (`lifecycleRetypeObject_modifiedFields = storeObject_modifiedFields`; the IPC
+  and capability lists are `storeObject_modifiedFields ++ …`), so a correction
+  cannot reach one and miss another; and each composite theorem is proved from
+  one lemma per primitive the operation is built from, composed by
+  `preservesFieldsOutside_trans`, never by a second reading of the operation.
+- **Every declared `LockSet` footprint carries a size bound, stated at its own
+  arity** (WS-RR RR7.18, v0.34.69).  `boundedWait_under_2pl`, the
+  `KernelOperation` invariant and the WCRT surface all take
+  `S.size ≤ maxLockSetSize` as a premise, so a footprint without one is a
+  transition that reasoning is **silent** about — worse than one it bounds
+  loosely.  `lockSetTransitions_within_bound` is a hand-written conjunction and
+  had 31 of the tree's **47** footprints; the missing thirteen included every
+  state-resolved `*OnCore` form, which is what RR7.12's bracket actually
+  acquires.  New code must respect two things.  (1) **The bound is stated over
+  every argument, never at a default.**  A footprint that gains a trailing
+  `Option … := none` leaves its existing bound elaborating — the default fills
+  the new argument in silently — so the shape the live transition declares is
+  unbounded while the theorem's name still promises a bound.  That has now
+  happened five times (`notificationSignal` at SM9.C.8, `endpointReceive` at
+  PR #873 round 8, `endpointSend` and `endpointCall` at RR7.7, and
+  `endpointReply`, found by the census: its bound was stated at five of six
+  arguments while the live `.reply` dispatch resolves the sixth to `some`).
+  (2) **The set is derived, not listed**:
+  `SeLe4n/Testing/LockFootprintBoundCensus.lean` collects every `def` whose type
+  ends in `LockSet` and named `lockSet_…`, builds the statement its bound *must*
+  have from the definition's own telescope, and decides by one `isDefEq` — so a
+  new footprint without a bound, or with one at the wrong arity, fails Tier 1
+  the day it is written.  A legitimate exemption goes in `boundExemptions` with
+  a reason; the list is empty and meant to stay so.
+- **Staged modules**: 67 staged-only, listed in
   `scripts/staged_module_allowlist.txt` and gated by
   `scripts/check_production_staging_partition.sh`.  Production must not import
   staged.  WS-RR RR5.15 promoted five (the three state-committing kernel

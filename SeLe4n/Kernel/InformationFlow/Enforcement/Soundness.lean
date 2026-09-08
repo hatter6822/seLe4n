@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-3.0-or-later
 /-
-  seLe4n  - A Lean Microkernel
-  Copyright (C) 2026  Adam Hall
+  seLe4n - A Lean Microkernel
+  Copyright (C) 2026 Adam Hall
   This program comes with ABSOLUTELY NO WARRANTY.
   This is free software, and you are welcome to redistribute it
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
@@ -344,7 +344,7 @@ theorem enforcementSoundness_registerServiceChecked
     check refuses, and records the downgrade in the audit trail).
     WS-SM SM8.E.3 expanded from 39 to 40 entries with the SM3 two-phase-locking
     bracket (withLockSet — capability-only, an internal building block used
-    under an already-capability-guarded context).  SM8.B classified it in a
+    under an already-capability-guarded context). SM8.B classified it in a
     separate per-core list and deferred the promotion here precisely so the
     canonical count moved exactly once, in the phase that owns the
     reconciliation.
@@ -389,16 +389,16 @@ override.
 
 Stated separately from the `securityFlowsTo` form below because the two now say
 different things: this is what the wrapper branched on, and that one is the half
-every pre-SM8.C consumer asked for.  Deriving the second from the first keeps
+every pre-SM8.C consumer asked for. Deriving the second from the first keeps
 one proof of the branch rather than two. -/
 theorem enforcementSoundness_endpointSendDualChecked_gate
     (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st : SystemState) (r : CapTransferSummary) (st' : SystemState)
     (hStep : endpointSendDualChecked ctx endpointId sender msg endpointRights
-              senderCspaceRoot receiverSlotBase st = .ok (r, st')) :
+              receiverSlotBase st = .ok (r, st')) :
     endpointFlowGate ctx endpointId (ctx.threadLabelOf sender)
       (ctx.endpointLabelOf endpointId) = true := by
   unfold endpointSendDualChecked at hStep
@@ -423,14 +423,14 @@ theorem enforcementSoundness_endpointSendDualChecked
     (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st : SystemState) (r : CapTransferSummary) (st' : SystemState)
     (hStep : endpointSendDualChecked ctx endpointId sender msg endpointRights
-              senderCspaceRoot receiverSlotBase st = .ok (r, st')) :
+              receiverSlotBase st = .ok (r, st')) :
     securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf endpointId) = true := by
   exact endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _
     (enforcementSoundness_endpointSendDualChecked_gate ctx endpointId sender msg endpointRights
-      senderCspaceRoot receiverSlotBase st r st' hStep)
+      receiverSlotBase st r st' hStep)
 
 /-- WS-H8/A-35: Enforcement soundness for notificationSignalChecked. -/
 theorem enforcementSoundness_notificationSignalChecked
@@ -505,10 +505,10 @@ theorem enforcementSoundness_endpointCallChecked_gate
     (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st : SystemState) (r : CapTransferSummary) (st' : SystemState)
     (hStep : endpointCallChecked ctx endpointId caller msg endpointRights
-              callerCspaceRoot receiverSlotBase st = .ok (r, st')) :
+              receiverSlotBase st = .ok (r, st')) :
     endpointFlowGate ctx endpointId (ctx.threadLabelOf caller)
       (ctx.endpointLabelOf endpointId) = true := by
   unfold endpointCallChecked at hStep
@@ -523,14 +523,14 @@ theorem enforcementSoundness_endpointCallChecked
     (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st : SystemState) (r : CapTransferSummary) (st' : SystemState)
     (hStep : endpointCallChecked ctx endpointId caller msg endpointRights
-              callerCspaceRoot receiverSlotBase st = .ok (r, st')) :
+              receiverSlotBase st = .ok (r, st')) :
     securityFlowsTo (ctx.threadLabelOf caller) (ctx.endpointLabelOf endpointId) = true := by
   exact endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _
     (enforcementSoundness_endpointCallChecked_gate ctx endpointId caller msg endpointRights
-      callerCspaceRoot receiverSlotBase st r st' hStep)
+      receiverSlotBase st r st' hStep)
 
 /-- Y2-E: Enforcement soundness for endpointReplyChecked.
 Success implies replier→target flow is allowed. -/
@@ -657,7 +657,7 @@ def declassifyStore
     else
       .error .declassificationDenied
 
-/-- WS-SM SM8.C.9: the gate **is** the decision followed by the store.  The
+/-- WS-SM SM8.C.9: the gate **is** the decision followed by the store. The
 correspondence that keeps `declassificationDecision` honest: it is not a second
 implementation of the checks, it is the checks `declassifyStore` performs. -/
 theorem declassifyStore_eq_decision_bind
@@ -674,7 +674,7 @@ theorem declassifyStore_eq_decision_bind
   · split <;> rfl
 
 /-- WS-SM SM8.C.9: the decision succeeds exactly when the downgrade is
-authorized — base policy denies and the declassification policy permits.  The
+authorized — base policy denies and the declassification policy permits. The
 decision-level form of `enforcementSoundness_declassifyStore`. -/
 theorem declassificationDecision_ok_iff
     (ctx : GenericLabelingContext)
@@ -860,21 +860,21 @@ their own denied-preserves-state proofs in Soundness.lean above.
 The full NI composition (linking checked dispatch to low-equivalence
 preservation) is in `Invariant/Composition.lean`. -/
 theorem checkedDispatch_flowDenied_preserves_state :
-    (∀ ctx epId sender msg (endpointRights : AccessRightSet) (senderCspaceRoot : SeLe4n.ObjId)
+    (∀ ctx epId sender msg (endpointRights : AccessRightSet)
         (receiverSlotBase : SeLe4n.Slot) st,
       securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf epId) = false →
       ¬∃ (r : CapTransferSummary) (st' : SystemState),
         endpointSendDualChecked ctx epId sender msg
-        endpointRights senderCspaceRoot receiverSlotBase st = .ok (r, st')) ∧
+        endpointRights receiverSlotBase st = .ok (r, st')) ∧
     (∀ ctx src dst rights badge st,
       securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) = false →
       ¬∃ st', cspaceMintChecked ctx src dst rights badge st = .ok ((), st')) ∧
     (∀ ctx caller reg st,
       securityFlowsTo (ctx.threadLabelOf caller) (ctx.serviceLabelOf reg.sid) = false →
       ¬∃ st', registerServiceChecked ctx caller reg st = .ok ((), st')) :=
-  ⟨fun ctx epId sender msg endpointRights senderCspaceRoot receiverSlotBase st hDeny =>
+  ⟨fun ctx epId sender msg endpointRights receiverSlotBase st hDeny =>
     endpointSendDualChecked_denied_preserves_state ctx epId sender msg
-      endpointRights senderCspaceRoot receiverSlotBase st hDeny,
+      endpointRights receiverSlotBase st hDeny,
    fun ctx src dst rights badge st hDeny =>
     cspaceMintChecked_denied_preserves_state ctx src dst rights badge st hDeny,
    fun ctx caller reg st hDeny => by
@@ -886,17 +886,17 @@ theorem checkedDispatch_flowDenied_preserves_state :
     This is a classification witness documenting which operations are checked.
     V6-L: Updated from 7 to 11 entries to match all policy-gated wrappers. -/
 def checkedDispatchEnforcementCoverage : List String :=
-  [ "endpointSendDualChecked"      -- .send → endpointSendDualChecked
-  , "endpointReceiveDualChecked"   -- .receive → endpointReceiveDualChecked
-  , "endpointCallChecked"          -- .call → endpointCallChecked (U5-B)
-  , "endpointReplyChecked"         -- .reply → endpointReplyChecked (U5-C)
-  , "endpointReplyRecvChecked"     -- .replyRecv → endpointReplyRecvChecked (V2-C)
-  , "cspaceMintChecked"            -- .cspaceMint → cspaceMintChecked
-  , "cspaceCopyChecked"            -- .cspaceCopy → cspaceCopyChecked
-  , "cspaceMoveChecked"            -- .cspaceMove → cspaceMoveChecked
-  , "notificationSignalChecked"    -- .notifSignal → notificationSignalChecked
-  , "notificationWaitChecked"      -- .notifWait → notificationWaitChecked (V2-A)
-  , "registerServiceChecked"       -- .serviceRegister → registerServiceChecked
+  [ "endpointSendDualChecked" -- .send → endpointSendDualChecked
+  , "endpointReceiveDualChecked" -- .receive → endpointReceiveDualChecked
+  , "endpointCallChecked" -- .call → endpointCallChecked (U5-B)
+  , "endpointReplyChecked" -- .reply → endpointReplyChecked (U5-C)
+  , "endpointReplyRecvChecked" -- .replyRecv → endpointReplyRecvChecked (V2-C)
+  , "cspaceMintChecked" -- .cspaceMint → cspaceMintChecked
+  , "cspaceCopyChecked" -- .cspaceCopy → cspaceCopyChecked
+  , "cspaceMoveChecked" -- .cspaceMove → cspaceMoveChecked
+  , "notificationSignalChecked" -- .notifSignal → notificationSignalChecked
+  , "notificationWaitChecked" -- .notifWait → notificationWaitChecked (V2-A)
+  , "registerServiceChecked" -- .serviceRegister → registerServiceChecked
   ]
 
 /-- T6-J/V6-L: The checked dispatch covers all 11 policy-gated operations. -/
@@ -929,9 +929,9 @@ theorem checkedDispatchEnforcementCoverage_complete :
 theorem enforcementBridge_to_NonInterferenceStep
     (ctx : LabelingContext) (st st' : SystemState) :
     -- 1. endpointSendDualChecked: success implies sender→endpoint flow allowed
-    (∀ eid sender msg (endpointRights : AccessRightSet) (senderCspaceRoot : SeLe4n.ObjId)
+    (∀ eid sender msg (endpointRights : AccessRightSet)
         (receiverSlotBase : SeLe4n.Slot) (r : CapTransferSummary),
-      endpointSendDualChecked ctx eid sender msg endpointRights senderCspaceRoot
+      endpointSendDualChecked ctx eid sender msg endpointRights
         receiverSlotBase st = .ok (r, st') →
       securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf eid) = true) ∧
     -- 2. notificationSignalChecked: success implies signaler→notification flow allowed
@@ -955,8 +955,8 @@ theorem enforcementBridge_to_NonInterferenceStep
       registerServiceChecked ctx caller reg st = .ok ((), st') →
       securityFlowsTo (ctx.threadLabelOf caller) (ctx.serviceLabelOf reg.sid) = true) ∧
     -- 7. endpointCallChecked: success implies caller→endpoint flow allowed
-    (∀ eid caller msg rights cRoot slotBase r,
-      endpointCallChecked ctx eid caller msg rights cRoot slotBase st = .ok (r, st') →
+    (∀ eid caller msg rights slotBase r,
+      endpointCallChecked ctx eid caller msg rights slotBase st = .ok (r, st') →
       securityFlowsTo (ctx.threadLabelOf caller) (ctx.endpointLabelOf eid) = true) ∧
     -- 8. endpointReplyChecked: success implies replier→target flow allowed
     (∀ replier target msg,
@@ -976,9 +976,9 @@ theorem enforcementBridge_to_NonInterferenceStep
       securityFlowsTo (ctx.threadLabelOf receiver) (ctx.threadLabelOf replyTarget) = true ∧
       securityFlowsTo (ctx.endpointLabelOf eid) (ctx.threadLabelOf receiver) = true) := by
   exact ⟨
-    fun eid sender msg endpointRights senderCspaceRoot receiverSlotBase r hStep =>
+    fun eid sender msg endpointRights receiverSlotBase r hStep =>
       enforcementSoundness_endpointSendDualChecked ctx eid sender msg endpointRights
-        senderCspaceRoot receiverSlotBase st r st' hStep,
+        receiverSlotBase st r st' hStep,
     fun ntfnId signaler badge hStep =>
       enforcementSoundness_notificationSignalChecked ctx ntfnId signaler badge st st' hStep,
     fun src dst hStep =>
@@ -989,8 +989,8 @@ theorem enforcementBridge_to_NonInterferenceStep
       enforcementSoundness_endpointReceiveDualChecked ctx eid receiver replyId st r st' hStep,
     fun caller reg hStep =>
       enforcementSoundness_registerServiceChecked ctx caller reg st st' hStep,
-    fun eid caller msg rights cRoot slotBase r hStep =>
-      enforcementSoundness_endpointCallChecked ctx eid caller msg rights cRoot slotBase st r st' hStep,
+    fun eid caller msg rights slotBase r hStep =>
+      enforcementSoundness_endpointCallChecked ctx eid caller msg rights slotBase st r st' hStep,
     fun replier target msg hStep =>
       enforcementSoundness_endpointReplyChecked ctx replier target msg st st' hStep,
     fun src dst rights badge hStep =>
@@ -1007,7 +1007,7 @@ theorem enforcementBridge_to_NonInterferenceStep
 -- ============================================================================
 
 /-! Both families were documented as covering "all policy-gated operations" while
-covering seven of them.  Four wrappers landed after the families were written and
+covering seven of them. Four wrappers landed after the families were written and
 never joined them — `endpointCallChecked` (U5-B), `endpointReplyChecked` (U5-C),
 `notificationWaitChecked` (V2-A) and `endpointReplyRecvChecked` (V2-C) — so the
 claim was false in the direction that matters: a reader checking whether *every*
@@ -1015,9 +1015,9 @@ gate fails closed, and whether any gate has a third behaviour beyond
 delegate-or-deny, had no theorem for a third of them.
 
 Per the implement-the-improvement rule the remedy is the theorems, not a smaller
-claim.  With these eight and the three in
+claim. With these eight and the three in
 `InformationFlow/Declassification.lean`, the families cover all twelve
-policy-gated entries of `enforcementBoundary`.  The declassification contributes
+policy-gated entries of `enforcementBoundary`. The declassification contributes
 three rather than two because its denial-preservation is stated at both levels:
 `declassifyObjectFromCore`, the name `enforcementBoundary` classifies (covering
 all three of its refusal modes — an idle core, an absent target, and a declined
@@ -1034,13 +1034,13 @@ theorem endpointCallChecked_denied_preserves_state
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (msg : IpcMessage)
     (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st : SystemState)
     (hDeny : securityFlowsTo (ctx.threadLabelOf caller)
                (ctx.endpointLabelOf endpointId) = false) :
     ¬∃ (r : CapTransferSummary) (st' : SystemState),
       endpointCallChecked ctx endpointId caller msg endpointRights
-        callerCspaceRoot receiverSlotBase st = .ok (r, st') := by
+        receiverSlotBase st = .ok (r, st') := by
   intro ⟨r, st', h⟩
   simp [endpointCallChecked,
     endpointFlowGate_false_of_securityFlowsTo_false ctx endpointId _ _ hDeny] at h
@@ -1050,18 +1050,18 @@ theorem enforcement_sufficiency_endpointCall
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (msg : IpcMessage)
     (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (receiverSlotBase : SeLe4n.Slot)
     (st : SystemState) :
     (endpointFlowGate ctx endpointId (ctx.threadLabelOf caller)
         (ctx.endpointLabelOf endpointId) = true ∧
        endpointCallChecked ctx endpointId caller msg endpointRights
-           callerCspaceRoot receiverSlotBase st =
+           receiverSlotBase st =
          endpointCallWithCaps endpointId caller msg endpointRights
-           callerCspaceRoot receiverSlotBase st) ∨
+           receiverSlotBase st) ∨
     (endpointFlowGate ctx endpointId (ctx.threadLabelOf caller)
         (ctx.endpointLabelOf endpointId) = false ∧
        endpointCallChecked ctx endpointId caller msg endpointRights
-           callerCspaceRoot receiverSlotBase st = .error .flowDenied) := by
+           receiverSlotBase st = .error .flowDenied) := by
   cases hFlow : endpointFlowGate ctx endpointId (ctx.threadLabelOf caller)
       (ctx.endpointLabelOf endpointId) with
   | true => left; exact ⟨rfl, by simp [endpointCallChecked, hFlow]⟩
@@ -1118,7 +1118,7 @@ theorem enforcement_sufficiency_notificationWait
 /-- WS-SM SM8.C: `endpointReplyRecvChecked` denied → no state change.
 
 The compound wrapper has two legs, so the hypothesis is a disjunction: **either**
-leg refusing sinks the whole operation.  That is the property a caller needs —
+leg refusing sinks the whole operation. That is the property a caller needs —
 there is no partial commit in which the reply lands and the receive does not. -/
 theorem endpointReplyRecvChecked_denied_preserves_state
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
@@ -1137,7 +1137,7 @@ theorem endpointReplyRecvChecked_denied_preserves_state
       endpointFlowGate_false_of_securityFlowsTo_false ctx endpointId _ _ hRecv] at h
 
 /-- WS-SM SM8.C: `endpointReplyRecvChecked` either delegates (both legs allowed)
-or returns `flowDenied`.  There is no third behaviour, and in particular no arm
+or returns `flowDenied`. There is no third behaviour, and in particular no arm
 that runs one leg. -/
 theorem enforcement_sufficiency_endpointReplyRecv
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)

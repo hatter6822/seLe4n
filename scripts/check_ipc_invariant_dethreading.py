@@ -112,6 +112,15 @@ PRE_STATE_PREDICATES = (
     "ipcInvariantFull_smp",
     "ipcInvariantFull_perCore",
     "ipcInvariantFullExceptDonationOwner",
+    # The queue splice's relaxed view: the bundle with the *membership*
+    # conjunct relaxed at the removed thread, which is the honest post-state
+    # of a bare `endpointQueueRemoveDual` for the same reason
+    # `…ExceptDonationOwner` is the honest post-state of a bare reply -- the
+    # operation deliberately leaves one thread's `ipcState` untouched.  Listed
+    # before the bare `ipcInvariantFull` spelling it extends: the matcher takes
+    # the first form that fits, and a shorter prefix placed first would claim
+    # the longer name's occurrences.
+    "ipcInvariantFullExceptMembership",
     "ipcInvariantFull",
     "ipcInvariantCore",
 )
@@ -183,7 +192,36 @@ CHECKS = (
     "payoff_theorems",
     "payoff_statement",
     "census_reachability",
+    "documented_family_size",
 )
+
+# The documented family size.
+#
+# The gate measures how many statements the bundle family holds; the project's
+# canonical documentation states that number in prose.  A hand-maintained
+# figure beside a derivation is the enumeration-for-a-derivation shape the
+# conventions warn about: it goes stale the moment a bundle is added and reads
+# as current while it does.  It did -- WS-RR RR7.22 added twelve statements and
+# the three canonical sites still said 146 two cuts later, which is what makes
+# this a mechanism rather than a correction (WS-RR RR7.28).
+#
+# The locator is deliberately looser than the reader.  A claim this gate cannot
+# parse is a gate defect, not an absence: the scanner builds a set of
+# *requirements* (prose claims to hold to the measurement), so it fails closed
+# by refusing input it cannot read rather than by skipping it.  A file with no
+# claim at all legitimately produces nothing -- that is the one input on this
+# path for which silence is the right answer.
+FAMILY_SIZE_LOCATOR = re.compile(r"post-state\s+across\s+all")
+FAMILY_SIZE_CLAIM = re.compile(r"post-state\s+across\s+all\s+\*\*(\d+)\*\*")
+
+# Where the figure is *history* rather than a claim about HEAD.  A CHANGELOG
+# entry and a retired plan record what was true at the version they describe;
+# rewriting them to today's count would be the falsification, not the fix --
+# the same rule that keeps `CHANGELOG.md` headers off the version-bump list.
+# Everything else tracked is held to the measurement, so a prose site added
+# tomorrow is covered the day it is written rather than the day someone
+# remembers to list it.
+HISTORICAL_PROSE = ("docs/dev_history/", "CHANGELOG.md")
 
 # Declaration-minting and surface-rewriting machinery: the keywords
 # through which Lean code can either bring a declaration into existence
@@ -289,6 +327,16 @@ MACHINERY_PINS = {
     # clean family theorem, so the no-macro-scope-skip rule is exercised
     # at every elaboration.
     ("SeLe4n/Testing/IpcDethreadingEnvironmentCensus.lean", "macro"): 1,
+    # WS-RR RR7.13: the export-commit census, decided over the elaborated
+    # environment.  One `run_cmd` -- the witnesses, the derived/registry
+    # reconciliation and the per-entry discipline check; it mints no
+    # declaration.
+    ("SeLe4n/Testing/ExportCommitDisciplineCensus.lean", "run_cmd"): 1,
+    # WS-RR RR7.18: the lock-footprint bound census, decided over the elaborated
+    # environment.  One `run_cmd` -- it derives the `LockSet` footprint set and
+    # compares each bound's TYPE against the definition's own telescope; it
+    # mints no declaration.
+    ("SeLe4n/Testing/LockFootprintBoundCensus.lean", "run_cmd"): 1,
 }
 
 # The declaration modifiers and top-level commands this gate's grammars
@@ -3105,6 +3153,83 @@ def family_references(root: str, sources: list[str]) -> list[str]:
     return problems
 
 
+def documentation_sources(root: str) -> list[str]:
+    """Every tracked `.md` file, or every `.md` file when git is absent.
+
+    The same shape as `lean_sources`, and for the same two reasons: the
+    tracked set is the honest one for a gate that runs pre-commit, and the
+    filesystem walk is what the self-test's temporary trees need.
+    """
+    try:
+        listed = subprocess.run(
+            ["git", "-C", root, "ls-files", "*.md"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.split()
+        if listed:
+            return sorted(listed)
+    except (OSError, subprocess.CalledProcessError):
+        pass
+    found = []
+    for base, _dirs, files in os.walk(root):
+        for name in files:
+            if name.endswith(".md"):
+                found.append(os.path.relpath(os.path.join(base, name), root))
+    return sorted(found)
+
+
+def documented_family_size(root: str, measured: int) -> list[str]:
+    """Violations for prose stating a family size that is not the measured one.
+
+    Derived on both axes.  The number is the census's own `len(bundles)`,
+    never a constant; the sites are every tracked Markdown file outside the
+    historical set, never a list -- so the check covers a prose site the day
+    it is written, and a stale figure fails the build on the cut that makes
+    it stale rather than on the cut that notices.
+    """
+    problems: list[str] = []
+    for relative in documentation_sources(root):
+        if any(relative.startswith(prefix) for prefix in HISTORICAL_PROSE):
+            continue
+        path = os.path.join(root, relative)
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                text = handle.read()
+        except (OSError, UnicodeDecodeError):
+            # Unreadable is not absent: a claim this gate cannot open is a
+            # claim it cannot hold to the measurement.
+            problems.append(
+                f"documented_family_size: {relative}: cannot be read, so any "
+                f"family-size claim it carries goes unchecked"
+            )
+            continue
+        readable = {match.start() for match in FAMILY_SIZE_CLAIM.finditer(text)}
+        for match in FAMILY_SIZE_LOCATOR.finditer(text):
+            line = text.count("\n", 0, match.start()) + 1
+            if match.start() not in readable:
+                problems.append(
+                    f"documented_family_size: {relative}:{line}: states the "
+                    f"family-size claim in a form this gate cannot read -- the "
+                    f"count must follow `post-state across all` as `**<n>**`, "
+                    f"so that a figure which drifts is a build failure rather "
+                    f"than a sentence nobody re-measured"
+                )
+        for match in FAMILY_SIZE_CLAIM.finditer(text):
+            claimed = int(match.group(1))
+            if claimed != measured:
+                line = text.count("\n", 0, match.start()) + 1
+                problems.append(
+                    f"documented_family_size: {relative}:{line}: claims the "
+                    f"bundle family holds {claimed} statements; the census "
+                    f"measures {measured}.  Re-measure with `--report` and "
+                    f"correct the prose -- the figure is the evidence for the "
+                    f"de-threading claim, so a stale one overstates or "
+                    f"understates exactly what the gate checked"
+                )
+    return problems
+
+
 def _reachable_modules(
     root: str, sources: list[str]
 ) -> tuple[set[str] | None, list[str]]:
@@ -3346,6 +3471,11 @@ def run_checks(root: str) -> list[str]:
         | frozenset(carrier_map),
         carrier_map,
     )
+    # The prose figure is held to the census the moment the census exists, and
+    # before any early return below can cut the pass short (WS-RR RR7.28): a
+    # documented count is evidence for the de-threading claim, so a stale one
+    # is a false statement about what this gate checked.
+    problems.extend(documented_family_size(root, len(bundles)))
     # A family-marker name is a claim about the conclusion, and the claim is
     # checked rather than trusted (PR #886 review): a conclusion that merely
     # *contains* the family application -- `ipcInvariantFull st' ∨ True` is
@@ -3664,6 +3794,12 @@ theorem dispatchSyscallChecked_preserves_ipcInvariantFull
 
 end SeLe4n.Kernel
 '''
+
+
+FAMILY_SIZE_DOC = """The Tier-0 gate reports **zero** conjuncts
+bound on a post-state across all {} statements in the family, with the
+conjunct set and the bundle family both derived from the sources.
+"""
 
 
 def _fixture() -> dict[str, str]:
@@ -6769,6 +6905,83 @@ theorem dispatchSyscall_preserves_ipcInvariantFull
             True,
             check="census_reachability",
             mutation="preserving",
+        )
+    )
+
+    # --- WS-RR RR7.28: the documented family size ------------------------
+    # The fixture's family holds five statements (one operation bundle plus
+    # the four payoffs), so a doc claiming five is accepted and any other
+    # figure is a stale claim.  If the fixture ever grows, the acceptance
+    # case below fails loudly rather than these cases silently checking a
+    # number nobody re-derived.
+    sized = _fixture()
+    sized["docs/spec/SELE4N_SPEC.md"] = FAMILY_SIZE_DOC.format("**5**")
+    cases.append(
+        _Case("a documented family size that matches the census", sized, False))
+
+    # Token-preserving: every word of the claim survives; only the digit --
+    # the relation between the prose and the measurement -- is wrong.  This
+    # is the shape that shipped: RR7.22 added twelve statements and three
+    # canonical sites still said 146.
+    stale = _fixture()
+    stale["docs/spec/SELE4N_SPEC.md"] = FAMILY_SIZE_DOC.format("**7**")
+    cases.append(
+        _Case(
+            "a documented family size that is not the measured one",
+            stale,
+            True,
+            check="documented_family_size",
+            mutation="preserving",
+        )
+    )
+
+    # Token-preserving, and the way the figure actually goes stale: the prose
+    # is *correct when written* and a later cut adds a bundle.  Nothing about
+    # the sentence changes; the tree moves underneath it.
+    grown = _fixture()
+    grown["SeLe4n/Kernel/IPC/Invariant/Structural/Bundles.lean"] = (
+        CLEAN_BUNDLE + CLEAN_BUNDLE.replace("endpointSendDual", "endpointReceiveDual")
+    )
+    grown["docs/spec/SELE4N_SPEC.md"] = FAMILY_SIZE_DOC.format("**5**")
+    cases.append(
+        _Case(
+            "a documented family size a newly added bundle made stale",
+            grown,
+            True,
+            check="documented_family_size",
+            mutation="preserving",
+        )
+    )
+
+    # Token-preserving, and the fail-closed default branch: the claim is
+    # stated in a spelling the reader cannot parse.  A scanner that builds a
+    # set of requirements must refuse what it cannot read -- skipping it is
+    # the silent direction, and the figure would then drift unwatched behind
+    # a sentence that still reads as a claim.
+    unreadable = _fixture()
+    unreadable["docs/spec/SELE4N_SPEC.md"] = FAMILY_SIZE_DOC.format("5")
+    cases.append(
+        _Case(
+            "a family-size claim spelled in a form the reader cannot parse",
+            unreadable,
+            True,
+            check="documented_family_size",
+            mutation="preserving",
+        )
+    )
+
+    # Acceptance: history records what was true at the version it describes.
+    # Holding a CHANGELOG entry or a retired plan to HEAD's measurement would
+    # falsify them, which is the same rule that keeps CHANGELOG headers off
+    # the version-bump list.
+    historical = _fixture()
+    historical["CHANGELOG.md"] = FAMILY_SIZE_DOC.format("**7**")
+    historical["docs/dev_history/planning/Retired.md"] = FAMILY_SIZE_DOC.format("**7**")
+    cases.append(
+        _Case(
+            "a stale family size inside historical prose is left alone",
+            historical,
+            False,
         )
     )
 

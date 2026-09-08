@@ -11,6 +11,9 @@ import SeLe4n.Kernel.Scheduler.Operations.Selection
 import SeLe4n.Kernel.Scheduler.Invariant.PerCore
 import SeLe4n.Kernel.Concurrency.Locks.RwLock
 import SeLe4n.Kernel.Concurrency.Locks.Kind
+-- WS-RR RR7.11: `maxLockSetSize`, so the `_size_le_maxLockSetSize` theorems
+-- below can state the bound their names claim rather than the numeral it holds.
+import SeLe4n.Kernel.Concurrency.Locks.LockSet
 
 /-!
 # WS-SM SM5.A — Per-core `chooseThread` (lock-set, independence, completeness)
@@ -571,9 +574,17 @@ theorem migrateSchedContextReplenishmentLockSet_pairwise_le_of_core_le (fromCore
   refine List.Pairwise.cons (fun a ha => ?_) (List.pairwise_singleton _ _)
   rw [List.mem_singleton] at ha; subst ha; exact h
 
-/-- SM5.H.4: the migration footprint is within the `maxLockSetSize` cap. -/
+/-- SM5.H.4: the migration footprint is within the `maxLockSetSize` cap.
+
+**WS-RR RR7.11**: stated against the constant its name claims, not against the
+numeral the constant happened to hold.  The five `_size_le_maxLockSetSize`
+theorems in the scheduler all pinned `≤ 8` literally, so each was a statement
+about a number while its name promised a relation to `maxLockSetSize` — and the
+`wcrt_op_bounded_of_size` consumers, which take the relation, type-checked only
+by coincidence.  Raising the constant is what surfaced it. -/
 theorem migrateSchedContextReplenishmentLockSet_size_le_maxLockSetSize (fromCore toCore : CoreId) :
-    (migrateSchedContextReplenishmentLockSet fromCore toCore).length ≤ 8 := by
+    (migrateSchedContextReplenishmentLockSet fromCore toCore).length
+      ≤ Concurrency.maxLockSetSize := by
   rw [migrateSchedContextReplenishmentLockSet_length]; decide
 
 /-- WS-SM SM5.A.2 (cross-domain unification): the **complete** lock-set

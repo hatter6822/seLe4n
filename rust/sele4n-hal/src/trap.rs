@@ -244,10 +244,14 @@ mod ec {
 /// AI1-A/AI1-B: Named constants replace bare numeric literals for
 /// maintainability and cross-reference clarity.
 mod error_code {
-    /// `KernelError::NotImplemented = 17` — historical SVC stub return.
-    /// Preserved for cross-reference even after AN9-F wired the real
-    /// dispatch path; the `svc_stub_returns_not_implemented` test in
-    /// the parent module still asserts this value.
+    /// `KernelError::NotImplemented = 17` — the discriminant the host
+    /// lane's SVC dispatch publishes, since no Lean kernel is linked
+    /// there.  On hardware the SVC arm reaches the real dispatch (AN9-F)
+    /// behind the readiness gate (WS-RR RR5), so this value is a
+    /// host-lane observable and a cross-reference, not the seam's
+    /// contract; `handle_sync_svc_via_frame` pins it and
+    /// `svc_arm_never_publishes_a_success_label` pins the property that
+    /// does hold on every arm.
     #[allow(dead_code)]
     pub const NOT_IMPLEMENTED: u32 = 17;
     /// `KernelError::VmFault = 44` — data abort or instruction abort.
@@ -1250,26 +1254,20 @@ mod tests {
         assert_eq!(frame.far_el1, 0x1234_5678);
     }
 
-    #[test]
-    fn handle_sync_reads_esr_from_frame() {
-        // AK5-F.3: handler uses `frame.esr_el1` not `mrs esr_el1`. Put an
-        // SVC ESR into the frame and verify the SVC-arm is taken.
-        //
-        // WS-RA: the stub kernel publishes the label-encoded
-        // `NotImplemented` (discriminant 17 → label ERROR_LABEL_BASE + 17)
-        // error frame, and the SVC arm's writeback is the full six-register
-        // restore — `x0 = 0`, the status label on `x1`, `x2`-`x5` zero.
-        // Under the retired bit-63 convention this test asserted `x0 == 17`.
-        let mut frame = zero_frame();
-        frame.esr_el1 = (ec::SVC_AARCH64 << 26) | 0x42; // lower bits ignored
-        drive_sync(&mut frame);
-        assert_eq!(frame.x0(), 0);
-        assert_eq!(
-            frame.x1(),
-            (crate::svc_dispatch::ERROR_LABEL_BASE + u64::from(error_code::NOT_IMPLEMENTED)) << 9
-        );
-        assert_eq!([frame.x2(), frame.x3(), frame.x4(), frame.x5()], [0; 4]);
-    }
+    // **WS-RR RR7.37 (register finding 84, swept)**: `handle_sync_reads_esr_from_frame`
+    // and `per_core_counters_track_distinct_exception_branches` moved to
+    // `tests/readiness_gate_after_mark.rs`.  Both drive an `SVC` through
+    // `handle_synchronous_exception`, whose arm halts the core before doing
+    // anything when the executing PE is not marked ready — and on the host lane
+    // `fatal_halt` panics inside an `extern "C"` handler, which **aborts the
+    // whole test binary** rather than failing one test.  The readiness bit in
+    // this binary is owned by
+    // `timer::tests::per_core_timer_tick_isr_never_advances_global_tick_count`,
+    // which asserts it is unset when it starts and sets it partway through, so
+    // these tests passed only when cargo happened to schedule that one first.
+    // CLAUDE.md's rule is that no test in the library binary may assume core 0's
+    // readiness in either direction; these two did, and losing the race took
+    // every other test in the binary down with them.
 
     #[test]
     fn handle_sync_data_abort_via_frame() {
@@ -1624,18 +1622,6 @@ mod tests {
         assert_eq!(error_code::NOT_IMPLEMENTED, 17);
     }
 
-    // AI1-B: Verify SVC handler returns NotImplemented (not success)
-    #[test]
-    fn svc_stub_returns_not_implemented() {
-        // The SVC handler is a pre-FFI stub. It must return NotImplemented (17)
-        // to prevent userspace from interpreting the no-op as success (0).
-        assert_ne!(
-            error_code::NOT_IMPLEMENTED,
-            0,
-            "SVC stub must not return success (0)"
-        );
-    }
-
     // ========================================================================
     // WS-SM SM1.I.1 / SM5 — Per-core IRQ handler entry tests
     //
@@ -1851,33 +1837,6 @@ mod tests {
             "Unknown EC must increment per-core user_exception_count (was {}, now {})",
             before,
             after
-        );
-    }
-
-    #[test]
-    fn per_core_counters_track_distinct_exception_branches() {
-        // Cross-check: each EC branch must advance ONLY its own counter
-        // (not other counters in the same call).
-        //
-        // We use the inner-form recorders' inverse property: an SVC
-        // call must NOT increment vm_fault_count.
-        //
-        // Audit-pass-3 (per external audit H2): without the mutex this
-        // test races against `sm1i4_handle_sync_dabt_increments_...`
-        // and friends, producing a ~2% transient failure rate.
-        // The mutex ensures the `assert_eq!` snapshot pair is atomic.
-        let _guard = PER_CORE_STATS_OBSERVATION_MUTEX
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let vm_before = crate::per_cpu_stats::vm_fault_count_for(0);
-        let mut frame = zero_frame();
-        frame.esr_el1 = ec::SVC_AARCH64 << 26;
-        handle_synchronous_exception(&mut frame);
-        let vm_after = crate::per_cpu_stats::vm_fault_count_for(0);
-        assert_eq!(
-            vm_after, vm_before,
-            "SVC must not increment vm_fault_count (was {}, now {})",
-            vm_before, vm_after
         );
     }
 }

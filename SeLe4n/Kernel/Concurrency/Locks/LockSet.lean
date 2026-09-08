@@ -218,6 +218,41 @@ def singleton (l : LockId) (m : AccessMode) : LockSet :=
 @[simp] theorem singleton_pairs (l : LockId) (m : AccessMode) :
     (singleton l m).pairs = [(l, m)] := rfl
 
+/-- **PR #892 review round 2 (the fail-closed constructor)**: build a `LockSet`
+from a declared list, refusing one whose keys repeat — the object-domain twin
+of `SchedLockSet.ofList?`.
+
+The dynamic chain extension needs a *footprint* rather than a raw key list,
+because holdership is a question about a footprint (`lockSetHeld`) and the
+extension now refuses to act on a chain it does not hold.  `none` is the honest
+answer for a list this domain cannot acquire correctly, and it is safe: the
+caller keeps whatever coarser serialisation it already has, exactly as the
+undeclared arm of the bracket does.  A walked chain never repeats a key
+(`chainLockSeq_keys_nodup`), so the arm is unreachable on a chain the walker
+produced and reachable only on a list nothing in the tree builds. -/
+def ofList? (pairs : List (LockId × AccessMode)) : Option LockSet :=
+  if h : (pairs.map (·.fst)).Nodup then some ⟨pairs, h⟩ else none
+
+/-- **PR #892 review round 2**: an accepted footprint carries exactly the list
+it was built from. -/
+theorem ofList?_pairs {pairs : List (LockId × AccessMode)} {S : LockSet}
+    (h : ofList? pairs = some S) : S.pairs = pairs := by
+  unfold ofList? at h
+  by_cases hN : (pairs.map (·.fst)).Nodup
+  · rw [dif_pos hN] at h
+    exact (Option.some.inj h) ▸ rfl
+  · rw [dif_neg hN] at h; exact absurd h (by simp)
+
+/-- **PR #892 review round 2**: a duplicate-free list always yields a footprint. -/
+theorem ofList?_isSome_of_nodup {pairs : List (LockId × AccessMode)}
+    (h : (pairs.map (·.fst)).Nodup) : ofList? pairs = some ⟨pairs, h⟩ := by
+  unfold ofList?; rw [dif_pos h]
+
+/-- **PR #892 review round 2**: a list with duplicate keys yields no footprint. -/
+theorem ofList?_none_of_dup {pairs : List (LockId × AccessMode)}
+    (h : ¬ (pairs.map (·.fst)).Nodup) : ofList? pairs = none := by
+  unfold ofList?; rw [dif_neg h]
+
 /-- WS-SM SM3.B: membership in a `LockSet` reduces to membership in
 the underlying `pairs` list.  Signature follows the Lean 4
 `Membership` convention: the collection comes first, the element
@@ -397,6 +432,29 @@ theorem insertOrMerge_mem (S : LockSet) (l : LockId) (m : AccessMode)
     rcases List.mem_cons.mp hMem with hNew | hOld
     · left; exact hNew
     · right; right; exact hOld
+
+/-- **WS-RR RR7.41**: after `insertOrMerge l m` the **key** `l` is declared, at
+some mode.
+
+Existential in the mode because a merge raises it by `AccessMode.lub`: what a
+caller building a set from a list needs is that every key it supplied is named,
+and the mode it gets back is at least the one it put in.  The `write`-specific
+form is `mem_insertOrMerge_write_self`; this is the general one, and is what
+`lockSetOfList_mem_of_mem` folds. -/
+theorem mem_insertOrMerge_self (S : LockSet) (l : LockId) (m : AccessMode) :
+    ∃ m', (l, m') ∈ (S.insertOrMerge l m).pairs := by
+  unfold LockSet.insertOrMerge
+  split
+  case h_1 hContains =>
+    -- Merge branch: `l` is already a key, and the map keeps it as a key.
+    have hMem : ∃ q ∈ S.pairs, q.fst = l := by
+      simpa [LockSet.containsKey, List.any_eq_true, decide_eq_true_eq] using hContains
+    obtain ⟨q, hq, hqKey⟩ := hMem
+    refine ⟨q.snd.lub m, ?_⟩
+    refine List.mem_map.mpr ⟨q, hq, ?_⟩
+    simp [hqKey]
+  case h_2 _ =>
+    exact ⟨m, List.mem_cons_self⟩
 
 /-- WS-SM SM3.B: membership is **preserved** by `insertOrMerge` when the inserted
 key differs from the element's key.  The forward dual of `insertOrMerge_mem`: an
@@ -788,5 +846,48 @@ where
         exact hNodup1_head hbFstInMap
 
 end LockSet
+
+
+-- ============================================================================
+-- WS-SM SM3.D.6 / WS-RR RR7.11 — the static lock-set cardinality bound
+-- ============================================================================
+
+/-- WS-SM SM3.D.6 (plan §5.4): the static worst-case lock-set size.  Per
+plan §5.4, most transitions touch ≤ 4 locks; the worst-case IPC paths
+(call/reply with donation) stay ≤ 8.  Every SM3.B `lockSet_<τ>`
+declaration respects this bound (exercised in `DeadlockFreedomSuite`).
+
+**WS-RR RR7.11: 8 → 9.**  The widest footprint is
+`lockSet_replyRecv` on the path that both returns a donation and installs
+capabilities, and it is nine keys: the four-member base (replier TCB, the
+replier's CSpace root, the answered caller's TCB, the endpoint) plus the
+rendezvous sender's TCB, the returned SchedContext, the donation's original
+owner, the Reply object, and — RR7.11's addition — the state-level lock the
+capability install's CDT write needs.
+
+Three considerations, since raising this constant widens the WCRT headline
+`maxLockSetSize · (numCores − 1) · tCs` by an eighth.
+
+*The ninth member is real.*  `ipcTransferSingleCap` mints a derivation node and
+adds an edge whichever arm reaches it, and RR7.7 declared that on the two
+sending arms.  A receiving arm that installs through the same call and does not
+declare it is a false footprint — the failure mode this whole family exists to
+exclude — so the choice was never "nine members or eight", it was "nine members
+or a footprint that does not cover its own writes".
+
+*Taking the lock outside the set is not the cheaper option.*  A lock acquired
+outside the declared set is invisible to the deadlock-freedom and
+serializability theorems, which is the same reasoning the hierarchical-CBS
+plan's D21 records for its own move of this constant.
+
+*The ninth member is only reachable on an invariant-violating state* — the
+donation discipline makes the original owner the answered caller, where
+`insertOrMerge`'s key merge collapses the two into one — but a declared
+footprint bounds the union over **all** argument values, not over the reachable
+ones, so the honest constant is the one the definition can produce.
+
+`lockSet_tcbSuspend` and `lockSet_endpointCall` remain eight at their widest;
+this constant is not tight for them. -/
+def maxLockSetSize : Nat := 9
 
 end SeLe4n.Kernel.Concurrency

@@ -678,7 +678,7 @@ def runInformationFlowChecks : IO Unit := do
   -- Same-domain send should be allowed (same result as unchecked)
   let testMsg : IpcMessage := { registers := #[], caps := #[], badge := none }
   -- AH1-E: Updated to pass cap transfer params (default values — no caps in testMsg)
-  let checkedResult := SeLe4n.Kernel.endpointSendDualChecked publicCtx ⟨10⟩ ⟨1⟩ testMsg default default default publicEndpointState
+  let checkedResult := SeLe4n.Kernel.endpointSendDualChecked publicCtx ⟨10⟩ ⟨1⟩ testMsg default default publicEndpointState
   let uncheckedResult := SeLe4n.Kernel.endpointSendDual ⟨10⟩ ⟨1⟩ testMsg publicEndpointState
   expect "same-domain endpointSendDualChecked equals unchecked send"
     (match checkedResult, uncheckedResult with
@@ -693,7 +693,7 @@ def runInformationFlowChecks : IO Unit := do
       endpointLabelOf := fun _ => publicLabel
       serviceLabelOf := fun _ => publicLabel }
 
-  let deniedResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ testMsg default default default publicEndpointState
+  let deniedResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ testMsg default default publicEndpointState
   expect "secret-to-public endpointSendDualChecked returns flowDenied"
     (match deniedResult with
       | .error .flowDenied => true
@@ -866,14 +866,14 @@ def runInformationFlowChecks : IO Unit := do
     (SeLe4n.Kernel.enforcementBoundary.length == 44)
 
   -- Verify enforcement boundary: denied flows produce errors
-  let deniedSendResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ testMsg default default default publicEndpointState
+  let deniedSendResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ testMsg default default publicEndpointState
   expect "enforcement boundary blocks cross-domain endpointSendDual"
     (match deniedSendResult with
       | .error .flowDenied => true
       | _ => false)
 
   -- Verify that same-domain operations pass through unchecked
-  let allowedSendResult := SeLe4n.Kernel.endpointSendDualChecked publicCtx ⟨10⟩ ⟨1⟩ testMsg default default default publicEndpointState
+  let allowedSendResult := SeLe4n.Kernel.endpointSendDualChecked publicCtx ⟨10⟩ ⟨1⟩ testMsg default default publicEndpointState
   let uncheckedSendResult := SeLe4n.Kernel.endpointSendDual ⟨10⟩ ⟨1⟩ testMsg publicEndpointState
   expect "same-domain endpointSendDualChecked matches unchecked"
     (match allowedSendResult, uncheckedSendResult with
@@ -888,7 +888,7 @@ def runInformationFlowChecks : IO Unit := do
   -- denying with a different discriminant, fails here rather than only in a
   -- proof a reader has to go find.
   let deniedCall :=
-    SeLe4n.Kernel.endpointCallChecked secretSenderCtx ⟨10⟩ ⟨1⟩ testMsg default default default
+    SeLe4n.Kernel.endpointCallChecked secretSenderCtx ⟨10⟩ ⟨1⟩ testMsg default default
       publicEndpointState
   expect "SM8.C: endpointCallChecked denies a cross-domain call"
     (match deniedCall with | .error .flowDenied => true | _ => false)
@@ -1373,11 +1373,21 @@ def runInformationFlowChecks : IO Unit := do
   -- ========================================================================
 
   -- V6-A: Cross-subsystem field-disjointness
-  expect "StateField enum has 16 variants"
+  -- WS-RR RR7 audit round (v0.34.109): 27, not 16 — `StateField` is now total
+  -- over `SystemState` (pinned by `SystemState.eq_of_fieldEq_all`, an
+  -- elaboration-time fact this runtime count merely mirrors).
+  expect "StateField enum has 27 variants, one per SystemState field"
     ([ SeLe4n.Kernel.StateField.machine, .objects, .objectIndex, .objectIndexSet,
        .services, .scheduler, .irqHandlers, .lifecycle,
        .asidTable, .interfaceRegistry, .serviceRegistry,
-       .cdt, .cdtSlotNode, .cdtNodeSlot, .cdtNextNode, .tlb ].length = 16)
+       .cdt, .cdtSlotNode, .cdtNodeSlot, .cdtNextNode,
+       .scThreadIndex, .tlb,
+       .objStoreLock, .schedulerLocks, .tlbShootdown,
+       .perCoreTlb, .perCoreICache, .pendingIcacheMaintenance,
+       .declassificationAuditLog, .declassificationAuditEpoch,
+       .declassificationRefusals, .declassificationTaint ].length = 27)
+  expect "StateField is total over SystemState (eq_of_fieldEq_all elaborates)"
+    (have _ := @SeLe4n.Kernel.SystemState.eq_of_fieldEq_all; true)
   -- AM4 audit remediation: field-set catalog extended from 10 to 11
   -- entries with `lifecycleObjectTypeLockstep_fields` (AL6-C / AM4).
   expect "+ AM4: crossSubsystemFieldSets has 11 entries"
@@ -1584,7 +1594,7 @@ def runInformationFlowChecks : IO Unit := do
         |>.buildChecked)
     let msgWithCaps : IpcMessage :=
       { registers := #[], caps := #[TransferCap.fromNode cap1 0], badge := none }
-    let result := SeLe4n.Kernel.ipcUnwrapCaps msgWithCaps senderCNode nonCNodeRoot
+    let result := SeLe4n.Kernel.ipcUnwrapCaps msgWithCaps nonCNodeRoot
       (SeLe4n.Slot.ofNat 0) true st
     expect "ipcUnwrapCaps with non-CNode root yields consistent outcome"
       (match result with
@@ -1696,7 +1706,7 @@ def runInformationFlowChecks : IO Unit := do
         let msgWithCaps : IpcMessage :=
           { registers := #[], caps := #[TransferCap.fromNode cap1 0], badge := none }
         let callResult := SeLe4n.Kernel.endpointCallWithCaps epId callerTid
-          msgWithCaps (AccessRightSet.ofList [.write, .grant]) callerCNode
+          msgWithCaps (AccessRightSet.ofList [.write, .grant])
           (SeLe4n.Slot.ofNat 0) stFaulty
         expect "endpointCallWithCaps never silently succeeds on missing-TCB receiver"
           (match callResult with

@@ -152,6 +152,40 @@ class PlatformBinding (platform : Type) where
       a core that does not exist, which is exactly the gap this closes. -/
   declaredCoreCountAgrees :
     machineConfig.declaredCoreCount = coreCount
+  /-- **PR #892 review round 2**: the machine configuration this binding
+      installs for a board whose own account of itself is `board` — the
+      configuration `Platform.FFI.bindPlatformConfig` puts under the caller's
+      deployment half, with the caller's `machineConfig` as the account.
+
+      A binding with one hardware description binds it unconditionally, which
+      is the default: the account selects nothing.  A binding whose hardware
+      ships in several memory sizes — the Raspberry Pi 5, in 1, 2, 4, 8 and
+      16 GiB — installs the member of its declared family the account covers
+      (`RPi5.rpi5BoundMachineConfig`: the largest covered, the smallest when
+      none is), so a device tree from a 1 GiB board boots the 1 GiB
+      configuration rather than being refused against the 4 GiB one.
+
+      What the account can and cannot do is the point.  It selects **among**
+      the binding's declared configurations and never becomes one: the caller
+      of the direct entry still cannot describe hardware the image does not run
+      on (PR #889 review round 7), and on the RPi5 the bound configuration is a
+      member of `rpi5Variants` whatever the account says
+      (`rpi5BoundMachineConfig_mem_family`).  Selecting a *smaller* member is
+      the lost-resource direction and never a false claim; selecting a larger
+      one requires the account to cover it, and on the production path the
+      account is the board's device tree, validated by the bridge against this
+      very function (`rpi5PlatformConfigFromDtb`). -/
+  bindMachineConfig : SeLe4n.MachineConfig → SeLe4n.MachineConfig := fun _ => machineConfig
+  /-- **PR #892 review round 2**: every configuration the binding can install
+      declares the binding's PE count — `declaredCoreCountAgrees` extended over
+      the family, and the obligation the boot's live count is read off
+      (`Platform.FFI.bootAndInitialisePlatform_checked_declaredCoreCount`).
+      Without it a binding could bind a member that names more PEs than it
+      declares, and the round-20 refusal in `.tcbSetAffinity` would trust it.
+      Stated without a default so a binding that overrides the family cannot
+      inherit a proof about the configuration it no longer installs. -/
+  bindMachineConfig_declaredCoreCount :
+    ∀ board, (bindMachineConfig board).declaredCoreCount = coreCount
   /-- **WS-SM SM0.G**: the boot core id, scoped to `Fin coreCount`
       so it is structurally in-range.  Always `0` in practice
       (PSCI brings up secondaries from `Aff0 = 0`); typeclass-
@@ -223,6 +257,22 @@ class PlatformBinding (platform : Type) where
 /-- Extract the machine configuration from a platform binding instance. -/
 @[inline] def PlatformBinding.config [PlatformBinding platform] : SeLe4n.MachineConfig :=
   PlatformBinding.machineConfig (platform := platform)
+
+/-- **PR #892 review round 2**: the configuration the binding installs for a
+    board account (`bindMachineConfig`), as a projection. -/
+@[inline] def PlatformBinding.boundConfig [PlatformBinding platform]
+    (board : SeLe4n.MachineConfig) : SeLe4n.MachineConfig :=
+  PlatformBinding.bindMachineConfig (platform := platform) board
+
+/-- **PR #892 review round 2**: a binding that binds its one configuration
+    unconditionally — the class default — binds `machineConfig` on every
+    account.  Stated so a binding relying on the default has a name for what
+    it committed to. -/
+theorem PlatformBinding.boundConfig_declaredCoreCount [PlatformBinding platform]
+    (board : SeLe4n.MachineConfig) :
+    (PlatformBinding.boundConfig (platform := platform) board).declaredCoreCount =
+      PlatformBinding.coreCount (platform := platform) :=
+  PlatformBinding.bindMachineConfig_declaredCoreCount (platform := platform) board
 
 /-- **WS-RC R3 (DEEP-BOOT-01)**: Extract the optional boot VSpaceRoot
     entry from a platform binding instance. -/

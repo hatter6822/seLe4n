@@ -110,6 +110,35 @@ private def threadStateConsistentChecks (objectIds : List SeLe4n.ObjId) (st : Sy
          tcb.threadState == expected) :: acc
     | none => acc) []
 
+/-- **WS-RR RR7.36**: the *live* thread-state relation, checked on the state as
+it stands rather than after a `syncThreadStates` round trip.
+
+`threadStateConsistentChecks` above is a design-consistency assertion because
+its caller syncs first, and it has to be: `threadStateConsistent` is a
+boot-state theorem and false after any core's first dispatch (no scheduler
+dispatch writes `.Running`, no rendezvous writes a `.Blocked*`).  The relation
+the live decisions actually read is narrower — `tcbSuspend` / `tcbResume` / the
+cross-core cancellation / the fault suspend all test the stored field against
+`.Inactive` only — and that one **is** preserved by the dispatch
+(`switchToThreadOnCore_preserves_threadInactiveFlagConsistent`).  So this check
+is a genuine divergence detector on states the full one cannot speak about, and
+it is what makes `assertLiveThreadStateInvariants` below meaningful. -/
+def threadInactiveFlagConsistentChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) :
+    List (String × Bool) :=
+  objectIds.foldr (fun oid acc =>
+    match st.getTcb? ⟨oid.toNat⟩ with
+    | some tcb =>
+        let inferred := SeLe4n.Kernel.inferThreadState st ⟨oid.toNat⟩ tcb
+        (s!"inactive flag consistent: oid={oid} stored={reprStr tcb.threadState} \
+inferred={reprStr inferred}",
+         (tcb.threadState == .Inactive) == (inferred == .Inactive)) :: acc
+    | none => acc) []
+
+/-- **WS-RR RR7.36**: the same relation as a single boolean, for suites that
+want to assert it of a state directly. -/
+def threadInactiveFlagConsistentBool (st : SystemState) : Bool :=
+  (threadInactiveFlagConsistentChecks st.objectIndex st).all (·.2)
+
 /-- M-11 CSpace coherency: every CNode slot whose capability targets an object has that
 object present in the object store. -/
 private def cspaceSlotCoherencyChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
@@ -412,6 +441,11 @@ def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
     ++ blockedOnReceiveNotRunnableChecks objectIds st
     ++ uniqueWaitersCheck objectIds st
     ++ threadStateConsistentChecks objectIds st
+    -- WS-RR RR7.36: the live (inactive-flag) relation is implied by the full
+    -- classification, so on a synced state this is redundant and cheap; it
+    -- earns its place because `stateInvariantChecksFor` is also the surface
+    -- `assertStateInvariantsWithoutSync` runs, where the two differ.
+    ++ threadInactiveFlagConsistentChecks objectIds st
 
 /--
 Fallback invariant check surface for callers without an explicit object-id inventory.
@@ -454,6 +488,30 @@ def assertStateInvariantsWithoutSync (label : String) (objectIds : List SeLe4n.O
     pure ()
   else
     throw <| IO.userError s!"{label}: invariant checks failed (without sync): {reprStr failures}"
+
+/-- **WS-RR RR7.36**: assert the *live* thread-state relation on the state as it
+stands.
+
+`assertStateInvariantsWithoutSync` runs the whole surface, which includes the
+full classification `threadStateConsistentChecks` — true of a boot state and
+false after any core's first dispatch, so it can only be called on quiescent
+states.  This entry point runs the relation that survives a dispatch, so a
+post-dispatch state can be checked at all.  Both exist because they are
+different claims: one says the stored field equals the inferred classification,
+the other says the field's `.Inactive` reading is right, which is what every
+live decision consults. -/
+def assertLiveThreadStateInvariantsFor (label : String) (objectIds : List SeLe4n.ObjId)
+    (st : SystemState) : IO Unit := do
+  let failures := failedChecks (threadInactiveFlagConsistentChecks objectIds st)
+  if failures.isEmpty then
+    pure ()
+  else
+    throw <| IO.userError
+      s!"{label}: live thread-state (inactive flag) checks failed: {reprStr failures}"
+
+/-- `assertLiveThreadStateInvariantsFor` over the state's own object index. -/
+def assertLiveThreadStateInvariants (label : String) (st : SystemState) : IO Unit :=
+  assertLiveThreadStateInvariantsFor label st.objectIndex st
 
 -- ============================================================================
 -- AG1-F + WS-AM AM4 audit remediation: Runtime crossSubsystemInvariant

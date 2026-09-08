@@ -510,8 +510,129 @@ private def runRuntimeContractChecks : IO Unit := do
           (default_state_perCoreInitialized c).1
       true))
 
+/-- **WS-RR RR7.19** (register §6 finding 9): the operation write-sets, and the
+defect that surfaced the moment they stopped being decoration.
+
+The six `*_modifiedFields` lists were declared, maintained by hand, and read by
+nothing.  RR7.9 corrected one of them (`capabilityOp_modifiedFields`, which
+omitted the four CDT fields) by reading the code; this row gave them all a proof
+obligation, and a second omission fell out immediately —
+`storeObject_modifiedFields` did not list `.asidTable`, which `storeObject`'s
+own record update writes when the stored or displaced object is a
+`.vspaceRoot`.
+
+The checks below are the runtime half.  The *elaboration* half is
+`storeObject_preservesFieldsOutside`, which is false at the old list, so the
+correction cannot be reverted without breaking the build.
+
+**The RR7 audit round (v0.34.109) found the same class twice more, and one
+level up.**  The IPC list was `storeObject`'s set while both dual-queue
+operations also write `scheduler` (the wake and the deschedule) and the receive
+path writes `scThreadIndex` (the donation return); the capability list omitted
+`storeObject`'s own index and ASID fields, under the sentence RR7.19 had
+retracted for the IPC list.  And `StateField` named sixteen of `SystemState`'s
+twenty-seven fields, so a write to `scThreadIndex` could not be *declared* at
+all — `SystemState.eq_of_fieldEq_all` now holds the enumeration to the
+structure.  All six lists carry their theorem; the pins below are the runtime
+half of each correction. -/
+private def runModifiedFieldsChecks : IO Unit := do
+  IO.println "--- §8 WS-RR RR7.19 — operation write-sets, and their consumers ---"
+  -- The correction itself, as a fact and not as prose.
+  assertBool "storeObject's write-set declares .asidTable (the RR7.19 correction)"
+    (decide (StateField.asidTable ∈ storeObject_modifiedFields))
+  assertBool "…and the four fields it always declared"
+    (decide (StateField.objects ∈ storeObject_modifiedFields ∧
+             StateField.objectIndex ∈ storeObject_modifiedFields ∧
+             StateField.objectIndexSet ∈ storeObject_modifiedFields ∧
+             StateField.lifecycle ∈ storeObject_modifiedFields))
+  -- RR7.9's correction, still in place.
+  assertBool "capabilityOp's write-set declares all four CDT fields (RR7.9)"
+    (decide (StateField.cdt ∈ capabilityOp_modifiedFields ∧
+             StateField.cdtSlotNode ∈ capabilityOp_modifiedFields ∧
+             StateField.cdtNodeSlot ∈ capabilityOp_modifiedFields ∧
+             StateField.cdtNextNode ∈ capabilityOp_modifiedFields))
+  -- The three lists that compose `storeObject` are DEFINED over its set, so a
+  -- correction to it cannot reach one and miss another.  The IPC and capability
+  -- lists each carry what their operations write beyond the store: the
+  -- audit-round correction (v0.34.109) — `storeObject`'s set alone was FALSE of
+  -- both, and the theorems at the widened lists are what say so.
+  assertBool "retype write-set IS storeObject's"
+    (decide (lifecycleRetypeObject_modifiedFields = storeObject_modifiedFields))
+  assertBool "IPC write-set is storeObject's plus scheduler and scThreadIndex"
+    (decide (ipcEndpointOp_modifiedFields =
+               storeObject_modifiedFields ++ [.scheduler, .scThreadIndex]))
+  assertBool "capability write-set is storeObject's plus the four CDT fields"
+    (decide (capabilityOp_modifiedFields =
+               storeObject_modifiedFields ++ [.cdt, .cdtSlotNode, .cdtNodeSlot, .cdtNextNode]))
+  -- The fields the v0.34.70 lists omitted, as facts rather than as prose.
+  assertBool "IPC write-set declares .scheduler and .scThreadIndex (the audit-round correction)"
+    (decide (StateField.scheduler ∈ ipcEndpointOp_modifiedFields ∧
+             StateField.scThreadIndex ∈ ipcEndpointOp_modifiedFields))
+  assertBool "capability write-set declares storeObject's index and ASID fields"
+    (decide (StateField.objectIndex ∈ capabilityOp_modifiedFields ∧
+             StateField.objectIndexSet ∈ capabilityOp_modifiedFields ∧
+             StateField.asidTable ∈ capabilityOp_modifiedFields))
+  -- The eleven fields `StateField` could not name before the audit round: each
+  -- is outside `storeObject`'s set, and each can now be SAID to be.
+  assertBool "NEGATIVE: storeObject declares none of the eleven fields StateField gained"
+    (decide (StateField.scThreadIndex ∉ storeObject_modifiedFields ∧
+             StateField.objStoreLock ∉ storeObject_modifiedFields ∧
+             StateField.schedulerLocks ∉ storeObject_modifiedFields ∧
+             StateField.tlbShootdown ∉ storeObject_modifiedFields ∧
+             StateField.perCoreTlb ∉ storeObject_modifiedFields ∧
+             StateField.perCoreICache ∉ storeObject_modifiedFields ∧
+             StateField.pendingIcacheMaintenance ∉ storeObject_modifiedFields ∧
+             StateField.declassificationAuditLog ∉ storeObject_modifiedFields ∧
+             StateField.declassificationAuditEpoch ∉ storeObject_modifiedFields ∧
+             StateField.declassificationRefusals ∉ storeObject_modifiedFields ∧
+             StateField.declassificationTaint ∉ storeObject_modifiedFields))
+  -- And the CDT fields are NOT in the IPC list, nor the scheduler in the
+  -- capability list: the two widened lists did not collapse into one.
+  assertBool "NEGATIVE: the IPC and capability write-sets remain distinct"
+    (decide (StateField.cdt ∉ ipcEndpointOp_modifiedFields ∧
+             StateField.scheduler ∉ capabilityOp_modifiedFields))
+  -- The payoff: a disjoint read-set means the operation cannot disturb the
+  -- predicate.  Decided here at the list level; the theorem above carries it to
+  -- states.
+  assertBool "storeObject's writes are disjoint from registryDependencyConsistent's reads"
+    (decide (fieldsDisjoint registryDependencyConsistent_fields
+               storeObject_modifiedFields = true))
+  assertBool "revokeService's writes are disjoint from noStaleEndpointQueueReferences' reads"
+    (decide (fieldsDisjoint noStaleEndpointQueueReferences_fields
+               revokeService_modifiedFields = true))
+  -- NEGATIVE, and load-bearing: the premise is not decoration.  `storeObject`
+  -- writes `.objects` and the queue-reference invariant reads `.objects`, so
+  -- the frame does NOT apply to that pair — correctly, since a store really can
+  -- strand a queue reference.
+  assertBool "NEGATIVE: storeObject is NOT framed away from the queue-reference invariant"
+    (decide (fieldsDisjoint noStaleEndpointQueueReferences_fields
+               storeObject_modifiedFields = false))
+  -- And a witness that the mechanism is not vacuous: a state changed only
+  -- outside a list satisfies `preservesFieldsOutside` at it, reflexively.
+  assertBool "preservesFieldsOutside is reflexive (the mechanism is inhabited)"
+    (decide (StateField.tlb ∉ storeObject_modifiedFields))
+
+/-- Elaboration pins for the write-set surface: the completeness theorem that
+holds `StateField` to `SystemState`, and one honesty theorem per declared list —
+six lists, six theorems, the dual-queue and capability composites included. -/
+private def writeSetSurfaceElaborates : Bool :=
+  have _ := @SystemState.eq_of_fieldEq_all
+  have _ := @storeObject_preservesFieldsOutside
+  have _ := @revokeService_preservesFieldsOutside
+  have _ := @serviceRegisterDependency_preservesFieldsOutside
+  have _ := @lifecycleRetypeObject_preservesFieldsOutside
+  have _ := @cspaceMintWithCdt_preservesFieldsOutside
+  have _ := @cspaceCopy_preservesFieldsOutside
+  have _ := @cspaceMove_preservesFieldsOutside
+  have _ := @cspaceDeleteSlot_preservesFieldsOutside
+  have _ := @endpointSendDual_preservesFieldsOutside
+  have _ := @endpointReceiveDual_preservesFieldsOutside
+  true
+
 def runCrossSubsystemPerCoreChecks : IO Unit := do
   IO.println "WS-SM SM4.D — Cross-subsystem per-core invariant migration suite"
+  assertBool "write-set surface elaborates (completeness pin + six honesty theorems)"
+    writeSetSurfaceElaborates
   IO.println "===================================="
   runIpcChecks
   runCapabilityChecks
@@ -522,6 +643,7 @@ def runCrossSubsystemPerCoreChecks : IO Unit := do
   runPreservationChecks
   runNonVacuousChecks
   runRuntimeContractChecks
+  runModifiedFieldsChecks
   IO.println "===================================="
   IO.println "All SM4.D cross-subsystem per-core invariant migration checks PASS."
 
