@@ -695,6 +695,35 @@ def review5_empty_ranges_is_the_identity : IO Unit := do
   expect "review5 a child under an empty ranges keeps its address"
     (devices.any (fun d => d.name == "child" && d.base.toNat == 0x20000000))
 
+/-- **PR #892 review round 7**: a `ranges` this parser cannot read whole maps
+**nothing**, so a child that falls in its first, complete window is not
+discovered either.
+
+The fixture keeps a complete translation entry and appends a truncated tail —
+the preserving mutation for a whole-tuple refusal — and puts the peripheral
+inside the *complete* entry's window, which is exactly the shape that satisfied
+`deviceTreeCoversMmioRegions` and let the RPi5 bridge bind a malformed blob.
+It is the unswept sibling of the memory-`reg` refusal
+(`extractMemoryRegionsChecked`) that the `v0.34.115` audit added. -/
+def review7_partial_ranges_tuple_maps_nothing : IO Unit := do
+  -- One complete (child, parent, length) tuple at 2/2/2 cells = 24 bytes, then
+  -- eight trailing bytes that begin a second tuple and do not finish it.
+  let completeEntry := mkRangesProperty 0 0x100000000 0x200000000
+  let truncated := completeEntry ++ (mkRegProperty 0 0).extract 0 8
+  let tree : List FdtNode := [
+    mkBus "ragged-bus" 0x10000000 truncated [
+      mkPeripheral "inside-first-window" 0x20000000 []
+    ]
+  ]
+  expect "review7 the complete prefix alone is a usable translation"
+    ((extractPeripherals [mkBus "ok-bus" 0x10000000 completeEntry
+        [mkPeripheral "inside-first-window" 0x20000000 []]] 1024).any
+      (fun d => d.name == "inside-first-window"))
+  expect "NEGATIVE review7 a ranges with a partial tuple maps nothing"
+    (!(extractPeripherals tree 1024).any (fun d => d.name == "inside-first-window"))
+  expect "review7 the bus itself is still discovered"
+    ((extractPeripherals tree 1024).any (fun d => d.name == "ragged-bus"))
+
 /-- **PR #892 review round 5**: an address outside every `ranges` window has no
 translation, so the node is not reported at all rather than reported raw. -/
 def review5_untranslatable_address_is_refused : IO Unit := do
@@ -893,6 +922,100 @@ private def boardDtbRegions (regions : List (Nat × Nat)) (withMmio : Bool := tr
 /-- A device tree for a board with `ramSize` bytes of RAM starting at 0. -/
 private def boardDtb (ramSize : Nat) (withMmio : Bool := true) : ByteArray :=
   boardDtbRegions [(0, ramSize)] withMmio
+
+/-- **PR #892 review round 7**: `assembleDtb` with the two declared block sizes
+supplied by the caller rather than measured.
+
+Every fixture above is self-consistent by construction, which is exactly why the
+round's four bounds findings were invisible to this suite: a parser that ignores
+`sizeDtStruct` and `sizeDtStrings` behaves identically on a blob whose header
+tells the truth.  The mutation these fixtures perform keeps every byte of the
+structure and strings blocks and **shrinks what the header declares**, so the
+data the old parser read is still there to be read. -/
+private def assembleDtbDeclaring (structBlock : Array UInt8)
+    (declaredStructSize declaredStringsSize : Nat) : ByteArray :=
+  let offDtStruct := 40
+  let offDtStrings := offDtStruct + structBlock.size
+  let totalsize := offDtStrings + stringsBlock.size
+  let header : Array UInt8 :=
+    be32 0xD00DFEED ++ be32 totalsize ++ be32 offDtStruct ++ be32 offDtStrings
+      ++ be32 40 ++ be32 17 ++ be32 16 ++ be32 0
+      ++ be32 declaredStringsSize ++ be32 declaredStructSize
+  ByteArray.mk (header ++ structBlock ++ stringsBlock)
+
+/-- The canonical board's structure block, reused by the round-7 fixtures. -/
+private def canonicalStructBlock : Array UInt8 :=
+  let memoryNode :=
+    fdtBeginNode "memory@0"
+      ++ fdtProp deviceTypeNameOff (fdtString "memory")
+      ++ fdtProp regNameOff (be64 0 ++ be64 0xFC000000)
+      ++ fdtEndNodeTok
+  let peripherals :=
+    peripheralNode "serial@fe201000" 0xFE201000 0x1000
+      ++ peripheralNode "interrupt-controller@ff841000" 0xFF841000 0x1000
+      ++ peripheralNode "interrupt-controller@ff842000" 0xFF842000 0x2000
+  fdtBeginNode "" ++ rootCellProperties ++ memoryNode ++ peripherals
+    ++ fdtEndNodeTok ++ fdtEndTok
+
+/-- **PR #892 review round 7**: the whole canonical board, with the header
+declaring a structure block four bytes shorter than the one it carries — so the
+closing `FDT_END` lies *outside* the declared block while remaining in the blob.
+
+Every token, name and property before it is untouched, which is the preserving
+mutation: a parser bounded by `blob.size` reads the terminator and reports
+success on a blob whose own header says the structure block ended earlier.  The
+Rust walker refuses it with `struct_end_exclusive`. -/
+private def terminatorOutsideStructBlockDtb : ByteArray :=
+  assembleDtbDeclaring canonicalStructBlock
+    (canonicalStructBlock.size - 4) stringsBlock.size
+
+/-- **PR #892 review round 7**: the whole canonical board, with the header
+declaring a strings block short enough to exclude `#size-cells` — the last name
+in the table — so a property that references it names a string in trailing data.
+
+`lookupFdtString` searched from `offDtStrings + nameoff` to the end of the blob,
+so the name resolved and the root's `#size-cells` was honoured on a blob that
+does not declare it.  The Rust parser rejects the same offset using
+`strings_size`. -/
+private def nameOutsideStringsBlockDtb : ByteArray :=
+  assembleDtbDeclaring canonicalStructBlock canonicalStructBlock.size sizeCellsNameOff
+
+/-- **PR #892 review round 7**: a blob whose **root** is the memory node.
+
+§3 of the specification requires exactly one root, named by the empty string.
+The old selector read `parseFdtNodes`' top-level list directly, so this root was
+picked as the machine's RAM — at the specification's default cell widths, since
+its own `#address-cells` governs its children and it has none. -/
+private def memoryNamedRootDtb : ByteArray :=
+  assembleDtb (fdtBeginNode "memory@0"
+    ++ fdtProp deviceTypeNameOff (fdtString "memory")
+    ++ fdtProp regNameOff (be64 0 ++ be64 0xFC000000)
+    ++ fdtEndNodeTok ++ fdtEndTok)
+
+/-- **PR #892 review round 7**: two root-level siblings — a well-formed root
+beside a bare `memory@0`.  Also refused: the top level carries one node. -/
+private def twoRootDtb : ByteArray :=
+  let memoryNode :=
+    fdtBeginNode "memory@0"
+      ++ fdtProp deviceTypeNameOff (fdtString "memory")
+      ++ fdtProp regNameOff (be64 0 ++ be64 0xFC000000)
+      ++ fdtEndNodeTok
+  assembleDtb (fdtBeginNode "" ++ rootCellProperties ++ memoryNode ++ fdtEndNodeTok
+    ++ fdtBeginNode "memory@40000000"
+      ++ fdtProp deviceTypeNameOff (fdtString "memory")
+      ++ fdtProp regNameOff (be64 0x40000000 ++ be64 0x10000000)
+      ++ fdtEndNodeTok
+    ++ fdtEndTok)
+
+/-- **PR #892 review round 7**: a board whose two `/memory` `reg` tuples
+**overlap**, so `MachineConfig.wellFormed` is false while `memRegions` is
+non-empty.
+
+`fromDtbFull` returned `.ok` on it, handing the caller a `DeviceTree` whose own
+docstring says `memoryMap` satisfies `wellFormed` "checked by
+`DeviceTree.validate`" — which nothing called. -/
+private def overlappingMemoryDtb : ByteArray :=
+  boardDtbRegions [(0, 0x80000000), (0x40000000, 0x40000000)]
 
 /-- **PR #892 review round 5**: the canonical board's structure block, without
 its closing `FDT_END_NODE` / `FDT_END`.
@@ -1361,6 +1484,72 @@ def deviceTreeBridge_17_reserved_memory_child_is_not_ram : IO Unit := do
   | .ok _ => expect "RR892-17 a reserved-memory child is not the machine's RAM" false
   | .error _ => expect "RR892-17 a reserved-memory child is not the machine's RAM" true
 
+/-- **PR #892 review round 7**: the four bounds findings and the validation one,
+each on a blob that keeps every byte the accepting parser read.
+
+Five findings, one defect: every read was bounded by `blob.size` rather than by
+the extents the header declares, so `sizeDtStruct` and `sizeDtStrings`
+constrained nothing.  `FdtBlob` is the contract that closes the class — a view
+built only by `FdtBlob.of?`, whose four accessors refuse an access outside the
+block they name — and these fixtures are its witnesses. -/
+def review7_declared_block_extents_are_enforced : IO Unit := do
+  let width := rpi5MachineConfig.physicalAddressWidth
+  -- The control: the same structure block, honestly declared, is accepted.
+  match DeviceTree.fromDtbFull (boardDtb 0xFC000000) width with
+  | .ok _ => expect "review7 the honestly-declared board is still accepted" true
+  | .error _ => expect "review7 the honestly-declared board is still accepted" false
+  -- R7-1: the terminator sits outside the declared structure block.
+  match DeviceTree.fromDtbFull terminatorOutsideStructBlockDtb width with
+  | .ok _ =>
+    expect "NEGATIVE review7 an FDT_END outside the declared struct block is refused" false
+  | .error _ =>
+    expect "NEGATIVE review7 an FDT_END outside the declared struct block is refused" true
+  -- ...and it is the BOUND that refuses it, not the fuel.  `parseFdtNodes`
+  -- defaults its fuel to `sizeDtStruct / 4`, so shrinking what the header
+  -- declares also shrinks the budget — a refusal at the default would be
+  -- indistinguishable from `.fuelExhausted` and this negative would assert
+  -- nothing about the extent.  Parsed at one explicit, generous budget, the
+  -- honest blob is accepted and both mutated ones are still refused.
+  let fuelProbes : List (String × ByteArray × Bool) :=
+    [ ("the honest board", boardDtb 0xFC000000, true)
+    , ("a short struct block", terminatorOutsideStructBlockDtb, false)
+    , ("a short strings block", nameOutsideStringsBlockDtb, false) ]
+  for probe in fuelProbes do
+    let (label, blob, shouldParse) := probe
+    match parseAndValidateFdtHeader blob with
+    | none => expect s!"review7 {label} has a valid header" false
+    | some hdr =>
+      -- The view itself is constructible in every case: each mutation shrinks a
+      -- declared block, so it still fits the blob.  What refuses is the
+      -- accessor, at the read that leaves the block.
+      expect s!"review7 {label} yields a view" (FdtBlob.of? blob hdr).isSome
+      let accepted := match parseFdtNodes blob hdr 100000 with
+        | .ok _ => true
+        | .error _ => false
+      expect s!"review7 {label} at a fixed generous fuel" (accepted == shouldParse)
+  -- R7-5: a property name sits outside the declared strings block.
+  match DeviceTree.fromDtbFull nameOutsideStringsBlockDtb width with
+  | .ok _ =>
+    expect "NEGATIVE review7 a name outside the declared strings block is refused" false
+  | .error _ =>
+    expect "NEGATIVE review7 a name outside the declared strings block is refused" true
+  -- R7-2: the root is the memory node, and two root-level siblings.
+  match DeviceTree.fromDtbFull memoryNamedRootDtb width with
+  | .ok _ => expect "NEGATIVE review7 a root named memory@0 is not the machine's RAM" false
+  | .error _ => expect "NEGATIVE review7 a root named memory@0 is not the machine's RAM" true
+  match DeviceTree.fromDtbFull twoRootDtb width with
+  | .ok _ => expect "NEGATIVE review7 two root-level siblings are refused" false
+  | .error _ => expect "NEGATIVE review7 two root-level siblings are refused" true
+  -- R7-4: the returned configuration satisfies the invariant the type documents.
+  match DeviceTree.fromDtbFull overlappingMemoryDtb width with
+  | .ok _ => expect "NEGATIVE review7 an overlapping memory map is refused" false
+  | .error _ => expect "NEGATIVE review7 an overlapping memory map is refused" true
+  -- ...and every accepted tree satisfies it, which is the positive half.
+  match DeviceTree.fromDtbFull (boardDtb 0xFC000000) width with
+  | .ok dt => expect "review7 an accepted device tree validates" dt.validate
+  | .error _ => expect "review7 an accepted device tree validates" false
+
+
 end SeLe4n.Testing.Ak9PlatformSuite
 
 open SeLe4n.Testing.Ak9PlatformSuite in
@@ -1436,6 +1625,8 @@ def main : IO Unit := do
   deviceTreeBridge_15_unknown_token_refused
   deviceTreeBridge_16_disabled_memory_refused
   deviceTreeBridge_17_reserved_memory_child_is_not_ram
+  review7_partial_ranges_tuple_maps_nothing
+  review7_declared_block_extents_are_enforced
   deviceTreeBridge_18_every_memory_node_contributes
   deviceTreeBridge_19_root_cell_widths_are_honoured
   deviceTreeBridge_20_partial_reg_pair_refused

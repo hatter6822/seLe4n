@@ -591,9 +591,122 @@ theorem readCStringChecked_rejects_fuel_zero (blob : ByteArray) (offset : Nat)
     readCStringChecked blob offset 0 = .error .fuelExhausted := by
   simp [readCStringChecked, Nat.not_le.mpr hInRange, readCStringChecked.go]
 
+/-- **PR #892 review round 7**: a null-terminated string read inside an explicit
+exclusive `limit`.
+
+The terminator must itself be **below** `limit`: a string that runs to the end
+of the block it is declared in is not terminated *in* that block, and reading
+past the end to find its terminator is exactly the defect this exists to
+refuse. -/
+def readCStringWithin (bytes : ByteArray) (limit offset : Nat) (fuel : Nat := 256)
+    : Option (String × Nat) :=
+  go bytes limit offset fuel []
+where
+  go (bytes : ByteArray) (limit offset fuel : Nat) (acc : List Char)
+      : Option (String × Nat) :=
+    match fuel with
+    | 0 => none -- Fuel exhausted without finding a terminator
+    | fuel' + 1 =>
+      if offset ≥ limit then none -- The terminator is outside the declared block
+      else
+        match bytes.data[offset]? with
+        | none => none
+        | some byte =>
+          if byte == 0 then
+            let nextOffset := offset + 1
+            some (String.ofList acc.reverse, ((nextOffset + 3) / 4) * 4)
+          else go bytes limit (offset + 1) fuel' (Char.ofNat byte.toNat :: acc)
+
+/-- **PR #892 review round 7**: the blob together with the extents its own
+header declares.
+
+Four of that round's five findings were **one** defect: every read in this
+parser was bounded by `blob.size`, so `sizeDtStruct` and `sizeDtStrings` —
+which the Rust walker enforces as `struct_end_exclusive` and `strings_size` —
+constrained nothing here.  A blob could put its `FDT_END`, a node name, a
+property value or a property *name* in trailing data outside the blocks it
+declares, and this parser read them as though they were declared.
+
+Bounding each read at its own call site is the *enumeration standing in for a
+derivation* this project's key conventions warn about: the set of reads is
+open, so the next one added is unbounded again — which is precisely how four
+of them accumulated.  `FdtBlob` is the **contract** instead.  It is built only
+by `FdtBlob.of?`, which refuses a header whose declared blocks do not fit
+inside the blob, and the walk reads *only* through the four accessors below,
+each of which refuses an access outside the block it names.  A reader that
+wants raw bytes has to name `.bytes`, which is visible in review; a reader
+that adds a new access gets the bound for free.
+
+The two blocks are held as absolute `[start, end)` intervals rather than as a
+truncated copy so that offsets stay the token stream's own. -/
+structure FdtBlob where
+  /-- The whole blob.  Named explicitly at every unbounded access, by design. -/
+  bytes : ByteArray
+  /-- First byte of the declared structure block. -/
+  structStart : Nat
+  /-- One past its last byte (`offDtStruct + sizeDtStruct`). -/
+  structEnd : Nat
+  /-- First byte of the declared strings block. -/
+  stringsStart : Nat
+  /-- One past its last byte (`offDtStrings + sizeDtStrings`). -/
+  stringsEnd : Nat
+
+/-- **PR #892 review round 7**: the only constructor — a view exists exactly
+when the header's two declared blocks fit inside the blob *and* inside the
+`totalsize` the header itself claims.  `FdtHeader.isValid` checks that each
+block's **offset** is inside `totalsize`; it says nothing about the sizes, so a
+header could declare a structure block running past the end of its own blob. -/
+def FdtBlob.of? (blob : ByteArray) (hdr : FdtHeader) : Option FdtBlob :=
+  let structStart := hdr.offDtStruct.toNat
+  let structEnd := structStart + hdr.sizeDtStruct.toNat
+  let stringsStart := hdr.offDtStrings.toNat
+  let stringsEnd := stringsStart + hdr.sizeDtStrings.toNat
+  if structEnd ≤ blob.size && stringsEnd ≤ blob.size
+      && structEnd ≤ hdr.totalsize.toNat && stringsEnd ≤ hdr.totalsize.toNat then
+    some { bytes := blob, structStart, structEnd, stringsStart, stringsEnd }
+  else none
+
+/-- A 32-bit token, refused unless it lies **wholly** inside the declared
+structure block. -/
+def FdtBlob.structBE32? (v : FdtBlob) (offset : Nat) : Option UInt32 :=
+  if v.structStart ≤ offset && offset + 4 ≤ v.structEnd then readBE32 v.bytes offset
+  else none
+
+/-- A node name, refused unless it starts inside the declared structure block
+and its terminator lies inside it too. -/
+def FdtBlob.structCString? (v : FdtBlob) (offset : Nat) (fuel : Nat := 256)
+    : Option (String × Nat) :=
+  if v.structStart ≤ offset && offset < v.structEnd then
+    readCStringWithin v.bytes v.structEnd offset fuel
+  else none
+
+/-- A property value, refused unless the whole span lies inside the declared
+structure block. -/
+def FdtBlob.structExtract? (v : FdtBlob) (start stop : Nat) : Option ByteArray :=
+  if v.structStart ≤ start && start ≤ stop && stop ≤ v.structEnd then
+    some (v.bytes.extract start stop)
+  else none
+
+/-- A property **name**, refused unless `nameoff` is inside the declared strings
+block and the name's terminator is inside it too.
+
+`lookupFdtString` searched from `offDtStrings + nameoff` to the end of the whole
+blob, so a `nameoff` at or beyond `sizeDtStrings` read trailing data — which is
+how a malformed blob could place the strings `reg` or `compatible` outside its
+declared table and have them treated as declared property names. -/
+def FdtBlob.stringsName? (v : FdtBlob) (nameoff : Nat) (fuel : Nat := 256)
+    : Option String :=
+  if nameoff < v.stringsEnd - v.stringsStart then
+    (readCStringWithin v.bytes v.stringsEnd (v.stringsStart + nameoff) fuel).map (·.1)
+  else none
+
 /-- V4-M2/L-PLAT-1: Look up a property name in the FDT string table.
     Given the string table offset and a property's `nameoff`, reads the
-    property name from the DTB string table. -/
+    property name from the DTB string table.
+
+    **Unbounded, and kept only for the deprecated legacy walk** (PR #892 review
+    round 7): it reads to the end of the blob rather than to the end of the
+    declared strings block.  The live parser uses `FdtBlob.stringsName?`. -/
 def lookupFdtString (blob : ByteArray) (offDtStrings : Nat) (nameoff : Nat)
     : Option String :=
   let absOffset := offDtStrings + nameoff
@@ -610,73 +723,17 @@ def lookupFdtString (blob : ByteArray) (offDtStrings : Nat) (nameoff : Nat)
 structure FdtSearchResult where
   regPropertyBytes : ByteArray
 
-/-- V4-M3/L-PLAT-1: Fuel-bounded traversal of the FDT structure block.
-    Iterates tokens to find the `/memory` node and extract its `reg` property.
+/- **PR #892 review round 7**: the deprecated legacy structure-block walk
+(`findMemoryRegProperty`) was **removed** here.
 
-    AK9-F (P-M07): The legacy fuel default `1000` was an arbitrary constant
-    that did not scale with DTB size. Callers should compute fuel from
-    `hdr.sizeDtStruct / 4` — the maximum possible token count in the
-    structure block, since each token is at least 4 bytes. See
-    `findMemoryRegPropertyChecked` for the Except-returning variant
-    that distinguishes fuel exhaustion from malformed-blob failures.
-
-    Token format (Devicetree Spec v0.4, §5.4):
-    - FDT_BEGIN_NODE (0x1): followed by node name (null-terminated, 4-byte aligned)
-    - FDT_END_NODE (0x2): no payload
-    - FDT_PROP (0x3): followed by len (u32), nameoff (u32), value (len bytes, 4-byte aligned)
-    - FDT_NOP (0x4): no payload
-    - FDT_END (0x9): terminates the structure block -/
-@[deprecated "AN7-A (H-14/PLT-M04): use findMemoryRegPropertyChecked which distinguishes .fuelExhausted from .malformedBlob via DeviceTreeParseError. Legacy form collapses both conditions into `none`." (since := "0.30.8")]
-def findMemoryRegProperty (blob : ByteArray) (hdr : FdtHeader)
-    (fuel : Nat := 1000) : Option FdtSearchResult :=
-  go blob hdr.offDtStruct.toNat hdr.offDtStrings.toNat fuel false
-where
-  go (blob : ByteArray) (offset offStrings fuel : Nat) (inMemoryNode : Bool)
-      : Option FdtSearchResult :=
-    match fuel with
-    | 0 => none  -- Fuel exhausted
-    | fuel' + 1 =>
-      match readBE32 blob offset with
-      | none => none  -- Read failure
-      | some token =>
-        if token == fdtBeginNode then
-          -- Read node name after token
-          match readCString blob (offset + 4) with
-          | none => none
-          | some (name, nextOffset) =>
-            -- Check if this is the /memory node (name is "memory" or "memory@...")
-            let isMemory := name == "memory" || name.startsWith "memory@"
-            go blob nextOffset offStrings fuel' isMemory
-        else if token == fdtEndNode then
-          go blob (offset + 4) offStrings fuel' false
-        else if token == fdtProp then
-          -- Read property: len (u32) at offset+4, nameoff (u32) at offset+8
-          match readBE32 blob (offset + 4), readBE32 blob (offset + 8) with
-          | some len, some nameoff =>
-            let valueOffset := offset + 12
-            let alignedNext := valueOffset + ((len.toNat + 3) / 4) * 4
-            if inMemoryNode then
-              -- Check if this property is named "reg"
-              match lookupFdtString blob offStrings nameoff.toNat with
-              | some propName =>
-                if propName == "reg" then
-                  -- Extract the reg property bytes
-                  if valueOffset + len.toNat ≤ blob.size then
-                    let regBytes := blob.extract valueOffset (valueOffset + len.toNat)
-                    some { regPropertyBytes := regBytes }
-                  else none  -- Truncated property
-                else
-                  go blob alignedNext offStrings fuel' inMemoryNode
-              | none => go blob alignedNext offStrings fuel' inMemoryNode
-            else
-              go blob alignedNext offStrings fuel' inMemoryNode
-          | _, _ => none  -- Malformed property header
-        else if token == fdtNop then
-          go blob (offset + 4) offStrings fuel' inMemoryNode
-        else if token == fdtEnd then
-          none  -- Reached end without finding /memory reg
-        else
-          none  -- Unknown token
+It was a *second* implementation of "walk the structure block", dead since
+`v0.30.8` (deprecated, no consumers, `check_devicetree_legacy_consumers.sh`
+proving so) and — like the live walk before this round — bounded only by
+`blob.size`.  Hardening it would have been hardening dead code; keeping it
+would have left the file with one bounded parser and one unbounded one, which
+is precisely the divergence WS-XV registers.  `findMemoryRegPropertyChecked`
+is the search API, and it reads the one walk.  `FdtSearchResult`, its result
+type, is retained just above. -/
 
 -- ============================================================================
 -- X4-A/H-7: Generic FDT device node traversal
@@ -790,18 +847,31 @@ structure FdtRangeEntry where
 An entry is (child address, parent address, length) with widths taken from the
 **bus's** `#address-cells` / `#size-cells` and its **parent's** `#address-cells`
 — which is why the walk has to carry the parent's cell counts down rather than
-reading each node in isolation.  A trailing partial entry ends the list; the
-caller decides what an empty list means, because for `ranges` that depends on
-whether the property was absent (no mapping) or present and empty (identity). -/
+reading each node in isolation.  The caller decides what an *empty* list means,
+because for `ranges` that depends on whether the property was absent (no
+mapping) or present and empty (identity).
+
+**A trailing partial entry fails the whole property** (PR #892 review round 7),
+which is why this answers `Option`.  It used to return the complete prefix, so a
+`ranges` carrying one good tuple followed by a truncated one installed a usable
+translation and a peripheral falling in the first window satisfied
+`deviceTreeCoversMmioRegions` — the RPi5 bridge would bind a malformed blob.
+That is the identical fail-open shape the `v0.34.115` audit closed on the memory
+`reg` path (`extractMemoryRegionsChecked`, against `fold_memory_reg`'s
+`value_len.is_multiple_of(pair_bytes)`); this is its unswept sibling, and the
+rule it broke is this project's own: *when a fix names a relation, grep for
+every other place that asks it*. -/
 def parseFdtRanges (bytes : ByteArray) (childAddressCells parentAddressCells childSizeCells : Nat)
-    (fuel : Nat := bytes.size / 4 + 1) : List FdtRangeEntry :=
-  go 0 fuel []
+    (fuel : Nat := bytes.size / 4 + 1) : Option (List FdtRangeEntry) :=
+  let entrySize := (childAddressCells + parentAddressCells + childSizeCells) * 4
+  if entrySize == 0 || bytes.size % entrySize != 0 then none
+  else go 0 fuel []
 where
-  go (offset : Nat) : Nat → List FdtRangeEntry → List FdtRangeEntry
-  | 0, acc => acc.reverse
+  go (offset : Nat) : Nat → List FdtRangeEntry → Option (List FdtRangeEntry)
+  | 0, acc => some acc.reverse
   | fuel + 1, acc =>
     let entrySize := (childAddressCells + parentAddressCells + childSizeCells) * 4
-    if entrySize == 0 || offset + entrySize > bytes.size then acc.reverse
+    if entrySize == 0 || offset + entrySize > bytes.size then some acc.reverse
     else
       match readFdtCells bytes offset childAddressCells,
             readFdtCells bytes (offset + childAddressCells * 4) parentAddressCells,
@@ -809,7 +879,7 @@ where
               childSizeCells with
       | some childBase, some parentBase, some length =>
         go (offset + entrySize) fuel ({ childBase, parentBase, length } :: acc)
-      | _, _, _ => acc.reverse
+      | _, _, _ => none
 
 /-- **PR #892 review round 5**: translate a child-bus **interval** into the
 parent's address space through a `ranges` list.
@@ -894,12 +964,20 @@ def FdtAddressContext.forChildren (parent : FdtAddressContext) (node : FdtNode) 
         { addressCells := childAddressCells, sizeCells := childSizeCells,
           translate := parent.translate }
       else
-        let ranges := parseFdtRanges bytes childAddressCells parent.addressCells childSizeCells
-        { addressCells := childAddressCells, sizeCells := childSizeCells,
-          translate := fun a size =>
-            match translateThroughFdtRanges ranges a size with
-            | some parentAddr => parent.translate parentAddr size
-            | none => none }
+        match parseFdtRanges bytes childAddressCells parent.addressCells childSizeCells with
+        | none =>
+          -- PR #892 review round 7: a `ranges` this parser cannot read whole
+          -- maps NOTHING, exactly as an absent one does.  Installing the
+          -- readable prefix would let a peripheral in the first window satisfy
+          -- the coverage check on a blob the parser has refused to understand.
+          { addressCells := childAddressCells, sizeCells := childSizeCells,
+            translate := fun _ _ => none }
+        | some ranges =>
+          { addressCells := childAddressCells, sizeCells := childSizeCells,
+            translate := fun a size =>
+              match translateThroughFdtRanges ranges a size with
+              | some parentAddr => parent.translate parentAddr size
+              | none => none }
 
 /-- X4-A/H-7: Fuel-bounded generic FDT structure block traversal.
     Parses the FDT structure block into a tree of `FdtNode` values.
@@ -936,43 +1014,50 @@ def FdtAddressContext.forChildren (parent : FdtAddressContext) (node : FdtNode) 
 -- rule says to sweep for when a relation is fixed at one site.
 def parseFdtNodes (blob : ByteArray) (hdr : FdtHeader)
     (fuel : Nat := hdr.sizeDtStruct.toNat / 4) : Except DeviceTreeParseError (List FdtNode) :=
-  match go blob hdr.offDtStruct.toNat hdr.offDtStrings.toNat fuel with
-  | .ok (nodes, _, true) => .ok nodes
-  | .ok (_, _, false) => .error .malformedBlob
-  | .error e => .error e
+  match FdtBlob.of? blob hdr with
+  | none => .error .malformedBlob -- The header declares blocks the blob does not hold
+  | some v =>
+    match go v v.structStart fuel with
+    | .ok (nodes, _, true) => .ok nodes
+    | .ok (_, _, false) => .error .malformedBlob
+    | .error e => .error e
 where
   /-- Parse nodes at the current level.  Returns the parsed nodes, the offset
       past the last consumed token, and whether the walk reached a **top-level
       `FDT_END`** — the only exit that says the structure block was read whole.
       Every structurally invalid input is `.error .malformedBlob`; running out
       of fuel is `.error .fuelExhausted`, kept distinct so a caller can tell a
-      blob it must refuse from a bound it may raise. -/
-  go (blob : ByteArray) (offset offStrings : Nat) :
+      blob it must refuse from a bound it may raise.
+
+      **Every read goes through the `FdtBlob` view** (PR #892 review round 7),
+      so a token, a name, a value or a property name outside the header's
+      declared blocks is refused rather than read from trailing data. -/
+  go (v : FdtBlob) (offset : Nat) :
       Nat → Except DeviceTreeParseError (List FdtNode × Nat × Bool)
   | 0 => .error .fuelExhausted -- AF3-A: Fuel exhausted — signal parse failure
   | fuel + 1 =>
-    match readBE32 blob offset with
+    match v.structBE32? offset with
     | none => .error .malformedBlob -- Read failure — the block ends mid-token
     | some token =>
       if token == fdtBeginNode then
         -- Read node name
-        match readCString blob (offset + 4) with
+        match v.structCString? (offset + 4) with
         | none => .error .malformedBlob
         | some (name, nextOffset) =>
           -- Parse this node's contents (properties + children)
-          match parseNodeContents blob nextOffset offStrings fuel with
+          match parseNodeContents v nextOffset fuel with
           | .error e => .error e
           | .ok (props, children, afterOffset) =>
             let node : FdtNode := { name, properties := props, children }
             -- Continue parsing sibling nodes
-            match go blob afterOffset offStrings fuel with
+            match go v afterOffset fuel with
             | .error e => .error e
             | .ok (siblings, endOffset, terminated) =>
               .ok (node :: siblings, endOffset, terminated)
       else if token == fdtEndNode then
         .ok ([], offset + 4, false)  -- End of current level, not of the block
       else if token == fdtNop then
-        go blob (offset + 4) offStrings fuel
+        go v (offset + 4) fuel
       else if token == fdtEnd then
         .ok ([], offset + 4, true)  -- End of structure block — the one good exit
       else
@@ -980,49 +1065,50 @@ where
   /-- Parse properties and children within a single node.
       Returns (properties, children, offset past FDT_END_NODE), or an error for
       input this parser cannot read whole. -/
-  parseNodeContents (blob : ByteArray) (offset offStrings : Nat) :
+  parseNodeContents (v : FdtBlob) (offset : Nat) :
       Nat → Except DeviceTreeParseError (List FdtProperty × List FdtNode × Nat)
   | 0 => .error .fuelExhausted -- AF3-A: Fuel exhausted — signal parse failure
   | fuel + 1 =>
-    match readBE32 blob offset with
+    match v.structBE32? offset with
     | none => .error .malformedBlob
     | some token =>
       if token == fdtProp then
         -- Read property header: len (u32), nameoff (u32)
-        match readBE32 blob (offset + 4), readBE32 blob (offset + 8) with
+        match v.structBE32? (offset + 4), v.structBE32? (offset + 8) with
         | some len, some nameoff =>
           let valueOffset := offset + 12
           let valueEnd := valueOffset + len.toNat
           let alignedNext := valueOffset + ((len.toNat + 3) / 4) * 4
-          if valueEnd ≤ blob.size then
-            let propName := match lookupFdtString blob offStrings nameoff.toNat with
-              | some n => n
-              | none => ""
-            let propValue := blob.extract valueOffset valueEnd
-            match parseNodeContents blob alignedNext offStrings fuel with
+          -- The value must lie inside the declared structure block, and the
+          -- name inside the declared strings block.  A name this parser cannot
+          -- resolve there used to become `""` — an unnamed property, which is
+          -- the fail-open direction: the blob declared a name it does not hold.
+          match v.structExtract? valueOffset valueEnd, v.stringsName? nameoff.toNat with
+          | some propValue, some propName =>
+            match parseNodeContents v alignedNext fuel with
             | .error e => .error e
             | .ok (moreProps, children, endOffset) =>
               .ok ({ name := propName, value := propValue } :: moreProps, children, endOffset)
-          else .error .malformedBlob -- Truncated property
+          | _, _ => .error .malformedBlob -- Truncated property, or a name outside the table
         | _, _ => .error .malformedBlob
       else if token == fdtBeginNode then
         -- Child node — recursively parse, then continue with remaining contents
-        match readCString blob (offset + 4) with
+        match v.structCString? (offset + 4) with
         | none => .error .malformedBlob
         | some (childName, nextOffset) =>
-          match parseNodeContents blob nextOffset offStrings fuel with
+          match parseNodeContents v nextOffset fuel with
           | .error e => .error e
           | .ok (childProps, grandchildren, afterChild) =>
             let child : FdtNode :=
               { name := childName, properties := childProps, children := grandchildren }
-            match parseNodeContents blob afterChild offStrings fuel with
+            match parseNodeContents v afterChild fuel with
             | .error e => .error e
             | .ok (moreProps, moreSiblings, endOffset) =>
               .ok (moreProps, child :: moreSiblings, endOffset)
       else if token == fdtEndNode then
         .ok ([], [], offset + 4) -- End of this node
       else if token == fdtNop then
-        parseNodeContents blob (offset + 4) offStrings fuel
+        parseNodeContents v (offset + 4) fuel
       else
         .error .malformedBlob -- Unknown token, or an `FDT_END` inside an open node
 
@@ -1040,6 +1126,25 @@ def FdtNode.isMemoryNode (node : FdtNode) : Bool :=
         let byteList := bytes.data.toList.takeWhile (· != 0)
         String.ofList (byteList.map (fun b => Char.ofNat b.toNat)) == "memory")
 
+/-- **PR #892 review round 7**: the tree's single root.
+
+§3 of the Devicetree Specification requires **exactly one** root node, named by
+the empty string.  `parseFdtNodes` returns the top level as a *list* because the
+token stream can carry any number of siblings there — and a blob that carries
+more than one, or one that is named, is malformed rather than a tree with an
+unusual root.
+
+It mattered because the memory selector read that list directly: a blob whose
+root was named `memory@0` was picked as the machine's RAM, at the
+specification's default cell widths rather than any it declared, and a blob with
+root-level peripheral siblings was bound by the RPi5 bridge.  The Rust walker
+recognises memory at depth 1 only and refuses both shapes, so this is the same
+one-question-two-answers divergence WS-XV registers. -/
+def fdtRoot? (nodes : List FdtNode) : Option FdtNode :=
+  match nodes with
+  | [root] => if root.name.isEmpty then some root else none
+  | _ => none
+
 /-- **PR #892 review round 5**: **every** available top-level memory node in a
 parsed tree, with the cell widths that govern its `reg`.
 
@@ -1051,12 +1156,13 @@ at the **top level**, so a `memory@…` under `/reserved-memory` — a carve-out
 not an aperture — is not read as the machine's RAM.  All three are the filters
 `cmdline::find_ram_top_in_dtb` applies on the Rust side.
 
-Searched at the top level and one level down, which is how this file's other
-selectors (`extractInterruptController`, `extractTimerFrequency`) reach past the
-tree root that `parseFdtNodes` returns.  The widths come from the node's
-**parent**, since `#address-cells` and `#size-cells` govern a node's children;
-at the top level there is no parent in the list, so the specification's defaults
-apply.
+Searched among the **root's children** — depth 1, which is where §3 of the
+specification puts the machine's memory and the only depth
+`cmdline::find_ram_top_in_dtb` recognises.  Taking the root as an argument
+rather than the top-level list is what closes PR #892 review round 7's finding:
+the list form treated a root *named* `memory@0` as ordinary RAM, and its own
+`#address-cells` then never applied to anything.  The widths are the root's,
+since `#address-cells` and `#size-cells` govern a node's children.
 
 **Every** node, not the first (PR #892 review round 5 audit).  The Rust walker
 folds each `/memory` node's extents into one store as it passes them, so a board
@@ -1065,16 +1171,11 @@ the specification allows and firmware uses — was read whole on that side and
 truncated to its first node here.  The two implementations answered "which
 memory does this blob declare" differently, which is the class this PR's fifth
 round registered as WS-XV; this is that audit finding its first instance. -/
-def memoryNodesWithCells (nodes : List FdtNode) : List (FdtNode × Nat × Nat) :=
-  let pick := fun (parentAddressCells parentSizeCells : Nat) (n : FdtNode) =>
+def memoryNodesWithCells (root : FdtNode) : List (FdtNode × Nat × Nat) :=
+  root.children.filterMap fun n =>
     if n.isMemoryNode && n.statusIsOperational then
-      some (n, parentAddressCells, parentSizeCells)
+      some (n, root.addressCells, root.sizeCells)
     else none
-  let top := nodes.filterMap (pick fdtDefaultAddressCells fdtDefaultSizeCells)
-  match top with
-  | _ :: _ => top
-  | [] => nodes.flatMap (fun parent =>
-      parent.children.filterMap (pick parent.addressCells parent.sizeCells))
 
 /-- **PR #892 review round 5**: the `reg` of the first available top-level
 memory node — the raw-bytes search `findMemoryRegPropertyChecked` answers.
@@ -1082,8 +1183,8 @@ memory node — the raw-bytes search `findMemoryRegPropertyChecked` answers.
 Derived from `memoryNodesWithCells`, so the search API and the boot path cannot
 disagree about *which* nodes are the machine's RAM; they differ only in how many
 of them each needs. -/
-def memoryNodeReg? (nodes : List FdtNode) : Option ByteArray :=
-  (memoryNodesWithCells nodes).findSome? (fun entry => entry.1.findProperty "reg")
+def memoryNodeReg? (root : FdtNode) : Option ByteArray :=
+  (memoryNodesWithCells root).findSome? (fun entry => entry.1.findProperty "reg")
 
 /-- **PR #892 review round 5 audit**: read a `/memory` node's `reg` at the given
 cell widths, refusing one that is not a whole number of (address, size) pairs.
@@ -1106,8 +1207,8 @@ parent declares, refused whole if any of them is malformed.
 This is the single answer the boot path takes, and the Lean counterpart of the
 Rust walker's extent store: same node filters, same cell widths, same
 whole-pairs refusal, and the same accumulation across nodes. -/
-def memoryRegionsFromNodes (nodes : List FdtNode) : Option (List FdtMemoryRegion) :=
-  (memoryNodesWithCells nodes).foldl
+def memoryRegionsFromNodes (root : FdtNode) : Option (List FdtMemoryRegion) :=
+  (memoryNodesWithCells root).foldl
     (fun acc entry =>
       match acc with
       | none => none
@@ -1145,9 +1246,13 @@ def findMemoryRegPropertyChecked (blob : ByteArray) (hdr : FdtHeader)
   match parseFdtNodes blob hdr fuel with
   | .error e => .error e
   | .ok nodes =>
-    match memoryNodeReg? nodes with
-    | some regBytes => .ok { regPropertyBytes := regBytes }
+    -- PR #892 review round 7: the single root, then memory among its children.
+    match fdtRoot? nodes with
     | none => .error .malformedBlob
+    | some root =>
+      match memoryNodeReg? root with
+      | some regBytes => .ok { regPropertyBytes := regBytes }
+      | none => .error .malformedBlob
 
 -- ============================================================================
 -- X4-B/H-7: DTB interrupt controller discovery
@@ -1394,7 +1499,12 @@ def DeviceTree.fromDtbFull (blob : ByteArray) (physicalAddressWidth : Nat)
     match parseFdtNodes blob hdr with
     | .error e => .error e
     | .ok nodes =>
-      match memoryRegionsFromNodes nodes with
+      -- PR #892 review round 7: §3 requires exactly one root, named by the
+      -- empty string.  Everything below reads the tree through it.
+      match fdtRoot? nodes with
+      | none => .error .malformedBlob
+      | some root =>
+      match memoryRegionsFromNodes root with
       | none => .error .malformedBlob
       | some fdtRegions =>
         let memRegions := fdtRegionsToMemoryRegions fdtRegions
@@ -1408,13 +1518,21 @@ def DeviceTree.fromDtbFull (blob : ByteArray) (physicalAddressWidth : Nat)
             maxASID := 65536
             memoryMap := memRegions
           }
-          .ok {
+          let dt : DeviceTree := {
             platformName := s!"DTB-parsed (version {hdr.version.toNat})"
             machineConfig := config
             peripherals := extractPeripherals nodes
             interruptController := extractInterruptController nodes
             timerFrequencyHz := extractTimerFrequency nodes
           }
+          -- PR #892 review round 7: `DeviceTree`'s own docstring states that
+          -- `memoryMap` satisfies `MachineConfig.wellFormed`, "checked by
+          -- `DeviceTree.validate`" — and nothing checked it.  A zero-sized
+          -- region, an overlapping pair of `reg` tuples, or an extent beyond
+          -- the physical address width all left `memRegions` non-empty, so the
+          -- caller received a `DeviceTree` whose documented invariant was
+          -- false.  The parse now establishes it.
+          if dt.validate then .ok dt else .error .malformedBlob
 
 -- AJ3-F (L-12): Removed `fromDtbParsed` convenience alias (no callers).
 -- Use `DeviceTree.fromDtbFull` directly.
@@ -1441,12 +1559,22 @@ theorem parseFdtHeader_fromDtbFull_ok (blob : ByteArray)
     (hValid : parseAndValidateFdtHeader blob = some hdr)
     (nodes : List FdtNode)
     (hNodes : parseFdtNodes blob hdr = .ok nodes)
+    (root : FdtNode)
+    (hRoot : fdtRoot? nodes = some root)
     (fdtRegions : List FdtMemoryRegion)
-    (hMem : memoryRegionsFromNodes nodes = some fdtRegions)
-    (hNonEmpty : (fdtRegionsToMemoryRegions fdtRegions).isEmpty = false) :
+    (hMem : memoryRegionsFromNodes root = some fdtRegions)
+    (hNonEmpty : (fdtRegionsToMemoryRegions fdtRegions).isEmpty = false)
+    -- PR #892 review round 7: a successful parse now *establishes* the
+    -- invariant `DeviceTree`'s docstring states, so the hypothesis that the
+    -- constructed configuration is well formed is what the last step needs.
+    (hWf : ({ registerWidth := 64, virtualAddressWidth := 48,
+              physicalAddressWidth := physicalAddressWidth, pageSize := 4096,
+              maxASID := 65536,
+              memoryMap := fdtRegionsToMemoryRegions fdtRegions } :
+                MachineConfig).wellFormed = true) :
     ∃ dt, DeviceTree.fromDtbFull blob physicalAddressWidth = .ok dt := by
   unfold DeviceTree.fromDtbFull
-  simp [hValid, hNodes, hMem, hNonEmpty]
+  simp [hValid, hNodes, hRoot, hMem, hNonEmpty, DeviceTree.validate, hWf]
 
 /-- **PR #892 review round 5**: the standalone search and the boot path's
 selector are the same answer, by definition rather than by agreement.
@@ -1455,12 +1583,13 @@ Stated so a caller holding a `findMemoryRegPropertyChecked` result can move to
 the tree form and back — and so a refactor that gave either one its own walk
 again has to break this. -/
 theorem findMemoryRegPropertyChecked_eq_memoryNodeReg? (blob : ByteArray) (hdr : FdtHeader)
-    (nodes : List FdtNode) (hNodes : parseFdtNodes blob hdr = .ok nodes) :
+    (nodes : List FdtNode) (hNodes : parseFdtNodes blob hdr = .ok nodes)
+    (root : FdtNode) (hRoot : fdtRoot? nodes = some root) :
     findMemoryRegPropertyChecked blob hdr
-      = (match memoryNodeReg? nodes with
+      = (match memoryNodeReg? root with
          | some regBytes => .ok { regPropertyBytes := regBytes }
          | none => .error .malformedBlob) := by
   unfold findMemoryRegPropertyChecked
-  rw [hNodes]
+  simp [hNodes, hRoot]
 
 end SeLe4n.Platform

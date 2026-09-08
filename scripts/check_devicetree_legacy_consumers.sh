@@ -14,10 +14,15 @@
 #   - `findMemoryRegPropertyChecked`  (Except DeviceTreeParseError)
 #   - `classifyMemoryRegionChecked`   (Option MemoryKind)
 #
-# The `DeviceTree.lean` module retains both legacy definitions (marked
-# `@[deprecated]`) and bridge theorems (`classifyMemoryRegionChecked_some_agrees`,
-# `classifyMemoryRegion_default`), which are allowed references in that
-# file only.
+# The `DeviceTree.lean` module retains `classifyMemoryRegion` (marked
+# `@[deprecated]`) and its bridge theorems
+# (`classifyMemoryRegionChecked_some_agrees`, `classifyMemoryRegion_default`),
+# which are allowed references in that file only.
+#
+# PR #892 review round 7 **removed** `findMemoryRegProperty` outright: it was a
+# second, unbounded walk of the structure block with no consumers, and this gate
+# is what proved there were none.  The pattern is kept — a reintroduction, here
+# or elsewhere, is still a finding.
 #
 # Exits 0 when clean, 1 when a forbidden reference is found.
 

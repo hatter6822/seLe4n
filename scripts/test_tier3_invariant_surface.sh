@@ -1508,7 +1508,8 @@ run_negative_check "INVARIANT" rg -n '^  sequence := SchedLockSet\.pairs$' SeLe4
 # partial tree indistinguishable from a complete one and `parseFdtNodes`
 # reported `.ok` — the incomplete-walk trust the Rust RAM parser had in round 1,
 # in the parser that feeds the same boot path.
-run_check "INVARIANT" rg -n -U 'match go blob hdr\.offDtStruct\.toNat hdr\.offDtStrings\.toNat fuel with\n  \| \.ok \(nodes, _, true\) => \.ok nodes\n  \| \.ok \(_, _, false\) => \.error \.malformedBlob\n  \| \.error e => \.error e' SeLe4n/Platform/DeviceTree.lean
+# (Round 7 routed the walk through the bounded view, so the entry names it.)
+run_check "INVARIANT" rg -n -U 'match go v v\.structStart fuel with\n    \| \.ok \(nodes, _, true\) => \.ok nodes\n    \| \.ok \(_, _, false\) => \.error \.malformedBlob\n    \| \.error e => \.error e' SeLe4n/Platform/DeviceTree.lean
 run_check "INVARIANT" rg -n -U 'else if token == fdtEnd then\n        \.ok \(\[\], offset \+ 4, true\)' SeLe4n/Platform/DeviceTree.lean
 run_check "INVARIANT" rg -n -U 'else if token == fdtEndNode then\n        \.ok \(\[\], offset \+ 4, false\)' SeLe4n/Platform/DeviceTree.lean
 # NEGATIVE: a partial exit reported as a parsed tree.
@@ -1518,7 +1519,7 @@ run_negative_check "INVARIANT" rg -n 'some \(\[\], offset\) -- Read failure' SeL
 # the Rust one does — `okay`/`ok` and nothing else — and the memory selector
 # applies it beside the kind test, at the top level only.
 run_check "INVARIANT" rg -n 'value == "okay" \|\| value == "ok"' SeLe4n/Platform/DeviceTree.lean
-run_check "INVARIANT" rg -n -U 'if n\.isMemoryNode && n\.statusIsOperational then\n      some \(n, parentAddressCells, parentSizeCells\)' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U 'if n\.isMemoryNode && n\.statusIsOperational then\n      some \(n, root\.addressCells, root\.sizeCells\)' SeLe4n/Platform/DeviceTree.lean
 # NEGATIVE: a `!= disabled` verdict, which passes `reserved` and `fail`.
 run_negative_check "INVARIANT" rg -n 'value != "disabled"' SeLe4n/Platform/DeviceTree.lean
 # PR #892 review round 5: a child-relative address is not a physical one.  The
@@ -1543,11 +1544,16 @@ run_negative_check "INVARIANT" rg -n -U 'let base := match readBE64 regBytes 0 w
 # store folds each node it passes), the root's declared cell widths govern the
 # `reg`, a `reg` that is not a whole number of pairs fails the query closed, and
 # `memory@` with no unit address is not a memory node.
-run_check "INVARIANT" rg -n -U 'let top := nodes\.filterMap \(pick fdtDefaultAddressCells fdtDefaultSizeCells\)\n  match top with\n  \| _ :: _ => top\n  \| \[\] => nodes\.flatMap' SeLe4n/Platform/DeviceTree.lean
+# (Round 7 made the root explicit: memory is selected among ITS children, at
+# depth 1, which is the only depth the specification and the Rust walker use.
+# The two-level fallback is the negative — it is what read a root named
+# `memory@0` as the machine's RAM.)
+run_check "INVARIANT" rg -n -U 'def memoryNodesWithCells \(root : FdtNode\) : List \(FdtNode × Nat × Nat\) :=\n  root\.children\.filterMap fun n =>' SeLe4n/Platform/DeviceTree.lean
+run_negative_check "INVARIANT" rg -n 'nodes\.flatMap \(fun parent =>' SeLe4n/Platform/DeviceTree.lean
 run_check "INVARIANT" rg -n '^def fdtDefaultSizeCells : Nat := 1$' SeLe4n/Platform/DeviceTree.lean
 run_check "INVARIANT" rg -n -U 'if entrySize == 0 \|\| regBytes\.size % entrySize != 0 then none\n  else some \(extractMemoryRegionsGeneral regBytes addressCells sizeCells\)' SeLe4n/Platform/DeviceTree.lean
 run_check "INVARIANT" rg -n 'node\.name\.startsWith "memory@" && node\.name\.length > 7' SeLe4n/Platform/DeviceTree.lean
-run_check "INVARIANT" rg -n -U 'match memoryRegionsFromNodes nodes with\n      \| none => \.error \.malformedBlob' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U 'match memoryRegionsFromNodes root with\n      \| none => \.error \.malformedBlob' SeLe4n/Platform/DeviceTree.lean
 # NEGATIVE: the first-node selector, the fixed-stride extractor, and the
 # non-specification size-cell default.
 run_negative_check "INVARIANT" rg -n 'fdtRegionsToMemoryRegions \(extractMemoryRegions regBytes\)' SeLe4n/Platform/DeviceTree.lean
@@ -10891,5 +10897,57 @@ open SeLe4n.Kernel
 #check @resolveEffectivePrioDeadline_fst_eq_effectiveRunQueuePriority_of_agree
 EOF
 lake env lean /tmp/sm5i_suite.lean'
+
+# ---------------------------------------------------------------------------
+# PR #892 review round 7: the FDT parser reads through a BOUNDED VIEW.
+#
+# Five findings, one defect: every read was bounded by `blob.size`, so
+# `sizeDtStruct` and `sizeDtStrings` — which the Rust walker enforces as
+# `struct_end_exclusive` and `strings_size` — constrained nothing.  Bounding
+# each read at its own call site is the enumeration this project's conventions
+# refuse; `FdtBlob` is the contract, built only by `FdtBlob.of?` and read only
+# through accessors that refuse an access outside the block they name.
+# ---------------------------------------------------------------------------
+run_check "INVARIANT" rg -n -U 'if structEnd ≤ blob\.size && stringsEnd ≤ blob\.size\n      && structEnd ≤ hdr\.totalsize\.toNat && stringsEnd ≤ hdr\.totalsize\.toNat then' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U 'def FdtBlob\.structBE32\? \(v : FdtBlob\) \(offset : Nat\) : Option UInt32 :=\n  if v\.structStart ≤ offset && offset \+ 4 ≤ v\.structEnd then readBE32 v\.bytes offset' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U 'if v\.structStart ≤ offset && offset < v\.structEnd then\n    readCStringWithin v\.bytes v\.structEnd offset fuel' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U 'if v\.structStart ≤ start && start ≤ stop && stop ≤ v\.structEnd then\n    some \(v\.bytes\.extract start stop\)' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U 'if nameoff < v\.stringsEnd - v\.stringsStart then\n    \(readCStringWithin v\.bytes v\.stringsEnd \(v\.stringsStart \+ nameoff\) fuel\)\.map' SeLe4n/Platform/DeviceTree.lean
+# The terminator must be strictly inside the block it terminates.
+# (No trailing comment in the pattern: the code view strips comments, so an
+# anchor that included one could never match — gates read code.)
+run_check "INVARIANT" rg -n -U 'if offset ≥ limit then none' SeLe4n/Platform/DeviceTree.lean
+# The walk reads ONLY through the view: the raw readers are the negatives.
+run_check "INVARIANT" rg -n -U 'match v\.structBE32\? \(offset \+ 4\), v\.structBE32\? \(offset \+ 8\) with' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U 'match v\.structExtract\? valueOffset valueEnd, v\.stringsName\? nameoff\.toNat with' SeLe4n/Platform/DeviceTree.lean
+run_negative_check "INVARIANT" rg -n 'match readBE32 blob offset with' SeLe4n/Platform/DeviceTree.lean
+run_negative_check "INVARIANT" rg -n 'match readCString blob \(offset \+ 4\) with' SeLe4n/Platform/DeviceTree.lean
+# NEGATIVE: the unnamed-property fallback, which accepted a name the blob's own
+# strings block does not hold.
+run_negative_check "INVARIANT" rg -n -U 'match lookupFdtString blob offStrings nameoff\.toNat with\n              \| some n => n\n              \| none => ""' SeLe4n/Platform/DeviceTree.lean
+# The tree has exactly one root, and it is named by the empty string.
+run_check "INVARIANT" rg -n -U 'def fdtRoot\? \(nodes : List FdtNode\) : Option FdtNode :=\n  match nodes with\n  \| \[root\] => if root\.name\.isEmpty then some root else none\n  \| _ => none' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U 'match fdtRoot\? nodes with\n      \| none => \.error \.malformedBlob\n      \| some root =>' SeLe4n/Platform/DeviceTree.lean
+# A `ranges` that is not a whole number of tuples maps NOTHING; the readable
+# prefix is the negative, since it let a peripheral in the first window satisfy
+# the coverage check on a blob the parser had refused to read.
+run_check "INVARIANT" rg -n -U 'if entrySize == 0 \|\| bytes\.size % entrySize != 0 then none\n  else go 0 fuel \[\]' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U 'match parseFdtRanges bytes childAddressCells parent\.addressCells childSizeCells with\n        \| none =>' SeLe4n/Platform/DeviceTree.lean
+run_negative_check "INVARIANT" rg -n 'let ranges := parseFdtRanges bytes childAddressCells' SeLe4n/Platform/DeviceTree.lean
+# A parse establishes the invariant `DeviceTree`'s own docstring states.
+run_check "INVARIANT" rg -n 'if dt\.validate then \.ok dt else \.error \.malformedBlob' SeLe4n/Platform/DeviceTree.lean
+# The round's Lean surface resolves.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && cat > /tmp/fdt_bounded_view_probe.lean <<EOF
+import SeLe4n.Platform.DeviceTree
+open SeLe4n.Platform
+#check @SeLe4n.Platform.FdtBlob.of?
+#check @SeLe4n.Platform.FdtBlob.structBE32?
+#check @SeLe4n.Platform.FdtBlob.structCString?
+#check @SeLe4n.Platform.FdtBlob.structExtract?
+#check @SeLe4n.Platform.FdtBlob.stringsName?
+#check @SeLe4n.Platform.readCStringWithin
+#check @SeLe4n.Platform.fdtRoot?
+EOF
+lake env lean /tmp/fdt_bounded_view_probe.lean'
 
 finalize_report

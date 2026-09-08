@@ -1,3 +1,94 @@
+## v0.34.117 — PR #892 review round 7: the FDT parser reads through a bounded view, and there is now one parser
+
+Codex's seventh round raised five threads, all in `SeLe4n/Platform/DeviceTree.lean`,
+and all five cite the Rust walker as the implementation that gets it right.
+Four of them are **one defect**: every read in the Lean parser was bounded by
+`blob.size`, so `sizeDtStruct` and `sizeDtStrings` — which the Rust side
+enforces as `struct_end_exclusive` and `strings_size` — constrained nothing
+here.  A blob could put its `FDT_END`, a node name, a property value or a
+property *name* in trailing data outside the blocks its own header declares,
+and this parser read them as though they were declared.
+
+**The cause, and why patching the four reads would not have closed it.**  Six
+consecutive review rounds have now found defects in this one parser, each
+answered by hardening one more thing it failed to check.  Bounding each read at
+its own call site is the *enumeration standing in for a derivation* this
+project's key conventions warn about: the set of reads is open, so the next one
+added is unbounded again — which is exactly how four accumulated.  The exit is
+the one `CLAUDE.md` states for this shape: **where the enumeration cannot be
+finished, state a contract instead.**
+
+`FdtBlob` is that contract.  It carries the blob together with the two
+`[start, end)` intervals its header declares; it is built **only** by
+`FdtBlob.of?`, which refuses a header whose blocks do not fit inside the blob
+or inside its own `totalsize` (`FdtHeader.isValid` checks each block's *offset*
+against `totalsize` and says nothing about the sizes); and the walk reads only
+through four accessors — `structBE32?`, `structCString?`, `structExtract?`,
+`stringsName?` — each of which refuses an access outside the block it names.  A
+reader that wants raw bytes must name `.bytes`, which is visible in review; a
+reader that adds a new access gets the bound for free.  `readCStringWithin`
+requires a terminator to lie **strictly inside** its limit, because a string
+running to the end of a block is not terminated in it.
+
+One consequence is a behaviour change worth stating: a property whose `nameoff`
+does not resolve inside the declared strings table used to become the unnamed
+property `""`.  That is the fail-open direction — the blob declared a name it
+does not hold — and it is now `.error .malformedBlob`.
+
+**There is now one walk of the structure block.**  `findMemoryRegProperty` —
+deprecated since `v0.30.8`, no consumers, with a gate proving so — was a
+*second* implementation of the same question and was unbounded in the same way.
+Hardening dead code is waste and keeping it would have left the file with one
+bounded parser and one unbounded one, which is the divergence WS-XV registers,
+so it is removed.  `findMemoryRegPropertyChecked` is the search API and it
+reads the one walk; `check_devicetree_legacy_consumers.sh` keeps the pattern,
+so a reintroduction is still a finding.
+
+**The fifth and the two that are not about bounds.**
+
+- **The tree has exactly one root, named by the empty string** (§3).
+  `parseFdtNodes` returns the top level as a list because the token stream can
+  carry any number of siblings there, and the memory selector read that list
+  directly — so a blob whose *root* was named `memory@0` was picked as the
+  machine's RAM at the specification's default cell widths, and a blob with
+  root-level peripheral siblings was bound by the RPi5 bridge.  `fdtRoot?`
+  requires the single empty-named root, and `memoryNodesWithCells` now selects
+  among **its children** at **its** declared cell widths — depth 1, the only
+  depth `cmdline::find_ram_top_in_dtb` recognises.
+- **A `ranges` with a trailing partial tuple maps nothing.**
+  `parseFdtRanges` returned the complete prefix, so a bus with one good tuple
+  and a truncated tail installed a usable translation and a peripheral in the
+  first window satisfied `deviceTreeCoversMmioRegions`.  It answers `Option`
+  now and refuses a value that is not a whole number of tuples; `forChildren`
+  treats a refused `ranges` exactly as an absent one — nothing maps.  This is
+  the identical fail-open shape the `v0.34.115` audit closed on the memory
+  `reg` path, at its **unswept sibling**: the rule broken was this project's
+  own — *when a fix names a relation, grep for every other place that asks it*.
+- **A successful parse establishes the invariant `DeviceTree` documents.**  Its
+  docstring says `memoryMap` satisfies `MachineConfig.wellFormed`, "checked by
+  `DeviceTree.validate`", and nothing called it: a zero-sized region, an
+  overlapping pair of `reg` tuples or an extent beyond the physical address
+  width all left `memRegions` non-empty and `fromDtbFull` returned `.ok`.  It
+  now returns the tree only if `dt.validate`.
+
+**Evidence.**  Twenty-one Tier 3 relation anchors, each mutation-tested by
+keeping the token and breaking the relation (21 mutations, all preserving:
+the constructor checking offsets instead of ends, each accessor re-bounded by
+`blob.size`, the limit bound but unconsulted, each raw reader restored, the
+root taken as the first sibling or unnamed, the tuple test made vacuous, the
+translation prefix reinstalled, `validate` evaluated-and-ignored and inverted).
+Four round-5/audit anchors were restated at the new shapes rather than left
+pinning the old ones.  Sixteen new runtime checks in `Ak9PlatformSuite` over
+five fixtures that each keep every byte the accepting parser read and only
+shrink what the header declares — **including an explicit isolation of the
+bound from the fuel**, since `parseFdtNodes` derives its default fuel from
+`sizeDtStruct` and a refusal at the default would have been indistinguishable
+from `.fuelExhausted`: parsed at one fixed generous budget, the honest blob is
+accepted and both mutants are still refused, and the view is constructible in
+all three.
+
+Refs: docs/REGISTERED_DEBT.md WS-XV
+
 ## v0.34.116 — PR #892 review round 6: a delegated `.replyRecv` declares nothing, a peripheral's `reg` is a list, and an unreadable device tree buys no RAM
 
 Codex's sixth round on `41a9216b` raised six threads; two of them named
