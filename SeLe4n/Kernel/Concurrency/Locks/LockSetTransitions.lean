@@ -2184,8 +2184,11 @@ resolution the live seam admits: `abiEntryGate` accepts only a single-level
 resolution, and `Capability.cspaceWalkPath_single_level` says such a walk reads
 exactly its root.  A multi-level walk — for which a root-only footprint would be
 false — is refused there, so no footprint is declared for one; a future consumer
-that wants to admit one takes `Capability.cspaceWalkLockSet`, whose conflict
-against an interior `cspaceDelete` is `cspaceWalk_conflicts_with_delete`. -/
+that wants to admit one takes `Capability.cspaceWalkLockSet` through
+`declaredLockSetForCSpaceWalk` — which refuses a walk wider than
+`maxLockSetSize` rather than declaring past the bound, and names the key a
+failed lookup read (PR #892 review round 4) — and whose conflict against an
+interior `cspaceDelete` is `cspaceWalk_conflicts_with_delete`. -/
 def lockSet_tcbSetFaultHandler (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (targetTcbTid : ThreadId)
     (targetCnodeRootObjId : Option ObjId) (handlerEndpointObjId : Option ObjId)

@@ -1212,6 +1212,28 @@ run_check "INVARIANT" rg -n 'const _: \(\) = assert!\(HIGH_RAM_BASE < BOOT_TABLE
 # NEGATIVE: the pre-round clamp — alignment applied to the RAW value.
 run_negative_check "INVARIANT" rg -n -U 'pub const fn clamp_ram_top\(raw: u64\) -> u64 \{\n    if raw >= HIGH_RAM_BASE' rust/sele4n-hal/src/mmu.rs
 run_negative_check "INVARIANT" rg -n 'raw & !\(L1_BLOCK_SIZE - 1\)' rust/sele4n-hal/src/mmu.rs
+# PR #892 review round 4: a `/memory` node whose `status` is not `okay`/`ok`
+# describes DRAM the firmware has withheld, and its `reg` must not reach the
+# walk.  The relation: the fold at the node's end is gated on BOTH node-scoped
+# verdicts, and the `status` verdict is decided against the two operational
+# spellings alone — every other value, defined by the specification or not,
+# withholds the bank.  A `!= disabled` test would keep the token and pass
+# `reserved`, `fail` and `fail-sss` through.
+run_check "INVARIANT" rg -n -U 'if device_type_ok && status_ok \{\n\s+if let Some\(\(value_start, value_len\)\) = memory_reg \{' rust/sele4n-hal/src/cmdline.rs
+run_check "INVARIANT" rg -n 'status_ok = trimmed == b"okay" \|\| trimmed == b"ok";' rust/sele4n-hal/src/cmdline.rs
+# NEGATIVE: the pre-round gate, on the device type alone.
+run_negative_check "INVARIANT" rg -n -U 'if device_type_ok \{\n\s+if let Some\(\(value_start, value_len\)\) = memory_reg' rust/sele4n-hal/src/cmdline.rs
+# PR #892 review round 4: a parsed RAM top is not trusted past what the boot
+# stands on.  Before translation is enabled the CLAMPED top is held to the
+# image, its stacks and the blob's own extent, and a top that fails parks the
+# PE.  The relation is the order: the refusal — its branch ending in
+# `fatal_halt` — dominates the table build, and the check reads the clamped
+# top the tables are built for, not the raw one.  The pure core is a
+# conjunction over every range, with `false` the fold's only early exit.
+run_check "INVARIANT" rg -n -U 'let mapped_top = clamp_ram_top\(ram_top\);\n    let dtb_extent = crate::cmdline::dtb_extent_from_dtb\(dtb_ptr\);\n    if !boot_ranges_mapped_under\(mapped_top, dtb_extent\) \{\n(.*\n)*?        crate::cpu::fatal_halt\(\);\n    \}\n    build_identity_tables\(ram_top\);' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -U 'pub const fn boot_critical_ranges_mapped\(ram_top: u64, ranges: &\[\(u64, u64\)\]\) -> bool \{\n    let mut i = 0;\n    while i < ranges\.len\(\) \{\n        let \(base, size\) = ranges\[i\];\n        if !boot_cacheable_range_in\(base, size, ram_top\) \{\n            return false;' rust/sele4n-hal/src/mmu.rs
+# NEGATIVE: the pre-round entry — the tables built straight from the parsed top.
+run_negative_check "INVARIANT" rg -n -U 'let ram_top = crate::cmdline::ram_top_from_dtb\(dtb_ptr\)\.unwrap_or\(LOW_RAM_TOP\);\n    build_identity_tables\(ram_top\);' rust/sele4n-hal/src/mmu.rs
 # PR #892 review round 2: the FIFO stress test's round count rounds UP, so an
 # acquisition override below the thread count cannot make every worker loop
 # run zero times and the test pass on the lock's initial state.
@@ -1445,6 +1467,42 @@ run_check "INVARIANT" rg -n 'runUnderDeclaredLockSet \(declaredLockSetForCSpaceW
 # declaration would rest on an argument in prose.
 run_check "INVARIANT" rg -n '^theorem cspaceWalkPath_single_level' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
 run_check "INVARIANT" rg -n '^theorem cspaceWalkLockSet_single_level' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+# PR #892 review round 4: the walk's footprint is REFUSED above the ceiling
+# rather than declared past it.  `maxLockSetSize` is the premise every bounded-
+# wait and WCRT result is stated at, and a walk reads one key per level, so a
+# CSpace deeper than the ladder carries declares `none` and the bracket falls
+# back to the pre-footprint seam.  The relation: the size test decides the
+# declaration, and the two theorems say what each verdict entails.
+run_check "INVARIANT" rg -n -U 'let S := cspaceWalkLockSet rootId addr bitsRemaining st\n\s+if S\.size ≤ Concurrency\.maxLockSetSize then some S else none' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+run_check "INVARIANT" rg -n '^theorem declaredLockSetForCSpaceWalk_some_size_le' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+run_check "INVARIANT" rg -n '^theorem declaredLockSetForCSpaceWalk_none_of_gt' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+# NEGATIVE: the unconditional declaration.
+run_negative_check "INVARIANT" rg -n 'fun st => some \(cspaceWalkLockSet' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+# ...and a FAILED lookup is a read the footprint names: the `none` arm records
+# the key, a key with no CNode declares the state-level READ lock — which
+# conflicts with the WRITE every structural writer declares — and every key
+# before the path's last holds a CNode, so a walk declares at most one such
+# member.  The relation is the arm's value and the classification's two arms.
+run_check "INVARIANT" rg -n -U 'match st\.getCNode\? rootId with\n\s+\| none => \[rootId\]' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+run_check "INVARIANT" rg -n -U 'def cspaceWalkKeyLock \(st : SystemState\) \(oid : SeLe4n\.ObjId\) : LockId × AccessMode :=\n  match st\.getCNode\? oid with\n  \| some _ => \(cnodeLock oid, AccessMode\.read\)\n  \| none => \(Concurrency\.stateLevelLock, AccessMode\.read\)' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+run_check "INVARIANT" rg -n '^theorem cspaceWalkPath_dropLast_cnode' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+run_check "INVARIANT" rg -n '^theorem mem_cspaceWalkLockSet_missing' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+# NEGATIVE: the first cut's arm, which declared nothing for the read.
+run_negative_check "INVARIANT" rg -n -U 'match st\.getCNode\? rootId with\n\s+\| none => \[\]' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+# The round's theorems resolve — the ceiling's two verdicts, the failed read's
+# membership, the interior-holds-a-CNode shape it rests on, and the conflict
+# restated over a key that may hold no CNode.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.Capability.CSpaceWalkFootprint
+#check @SeLe4n.Kernel.declaredLockSetForCSpaceWalk_some_size_le
+#check @SeLe4n.Kernel.declaredLockSetForCSpaceWalk_none_of_gt
+#check @SeLe4n.Kernel.declaredLockSetForCSpaceWalk_single_level
+#check @SeLe4n.Kernel.mem_cspaceWalkLockSet_missing
+#check @SeLe4n.Kernel.cspaceWalkPath_no_root
+#check @SeLe4n.Kernel.cspaceWalkPath_cons
+#check @SeLe4n.Kernel.cspaceWalkPath_dropLast_cnode
+#check @SeLe4n.Kernel.cspaceWalk_conflicts_with_delete
+EOF'
 # NEGATIVE: the completeness claim must not be restated as owed per-arm work.
 run_negative_check "INVARIANT" rg -n 'Adopting it here is' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # **WS-RR RR7.40**: the PIP chain's footprint names the home-core run queue the

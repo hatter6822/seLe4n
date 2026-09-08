@@ -55,6 +55,23 @@ That is round 21's rule applied here: where the subject is code this project
 writes, **require a canonical spelling and refuse the rest**, rather than
 analysing whatever an author happened to state.  Building this module is the
 check; `scripts/test_tier1_build.sh` builds it.
+
+## What is outside this census, and why that is a decision
+
+The universe is the `lockSet_`-prefixed definitions, and the requirement is an
+*unconditional* bound at the full arity — so a footprint **derived from the
+state**, whose size no closed theorem bounds, is outside it by construction
+rather than by omission.  The one such footprint in the tree is the CSpace
+walk's (`Capability.cspaceWalkLockSet`), which reads one key per level of the
+walk and therefore grows with the CSpace rather than with the operation's
+arguments (PR #892 review round 4).  Giving it a census-visible name would have
+registered a footprint the census could only ever refuse.  Its bound is
+enforced where a state-derived set can be bounded — at its **declaration**:
+`declaredLockSetForCSpaceWalk` answers `none` for a walk whose set exceeds
+`maxLockSetSize`, `declaredLockSetForCSpaceWalk_some_size_le` says a declared
+set is within the bound, and the bracket falls back on a refused one.  A new
+state-derived footprint takes the same shape — a declaration that refuses —
+and says so in its docstring, since this census will not find it.
 -/
 
 namespace SeLe4n.Testing.LockFootprintBoundCensus

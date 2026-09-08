@@ -3239,7 +3239,13 @@ conflicting lock with the resolution, so SM3.E's conflict order separates them.
 The acquisition is `runUnderDeclaredLockSet` over the sorted set rather than a
 hand-over-hand coupling walk — coupling would abandon the SM0.I total order the
 whole tree's deadlock freedom rests on, and the revalidating bracket buys the
-same exclusion while keeping it.
+same exclusion while keeping it.  Two relations PR #892 review round 4 closed
+in that mechanism: the declaration is **refused** above `maxLockSetSize`
+(`declaredLockSetForCSpaceWalk` answers `none` for a walk past the ceiling and
+the bracket falls back — a footprint the bound is false for is never claimed),
+and a **failed** lookup is a read the footprint names: a key holding no CNode
+declares `stateLevelLock` in read mode (`cspaceWalkKeyLock`), which conflicts
+with the write every structural writer declares.
 
 **The dynamic PIP chain's entry is deleted at v0.34.90 (WS-RR RR7.40).**  Its
 locks are nameable now that RR7.39 gave the scheduler domain a runtime:

@@ -841,10 +841,106 @@ fn enable_mmu() {
 /// 8 GiB or 16 GiB board and *not* mapped on a smaller one; a missing or
 /// unparseable device tree falls back to [`LOW_RAM_TOP`], which is the RAM
 /// extent `link.ld` declares and therefore what this image was built against.
+///
+/// **A parsed top is not trusted past what the boot stands on** (PR #892
+/// review round 4).  A structurally valid `/memory` node can report a small
+/// or unaligned low extent; [`clamp_ram_top`] then rounds it down — to zero,
+/// for anything under 2 MiB — and the tables map *no* RAM under the image, its
+/// stacks, its page tables or the device tree itself.  The first fetch after
+/// the enable faults, or the Phase-5 `parse_cmdline_from_dtb` read faults if
+/// the blob sat in the discarded tail, and neither is a diagnosis.  So before
+/// translation is enabled the clamped top is held to
+/// [`boot_critical_ranges_mapped`]: the image `[_start, __bss_end)` (which
+/// contains the boot tables), the primary stack, the secondary stacks, and the
+/// blob's own extent must all be Normal RAM under the tables about to be
+/// built.  A top that fails is refused and the PE parks with the reason on the
+/// UART: `cpu::fatal_halt` rather than `gic::halt_all`, because Phase 2 runs
+/// on the boot core alone before the GIC exists — there is no other PE to
+/// halt, and the barrier the rest of the tree calls is not yet callable.
 pub fn init_mmu(dtb_ptr: u64) {
     let ram_top = crate::cmdline::ram_top_from_dtb(dtb_ptr).unwrap_or(LOW_RAM_TOP);
+    let mapped_top = clamp_ram_top(ram_top);
+    let dtb_extent = crate::cmdline::dtb_extent_from_dtb(dtb_ptr);
+    if !boot_ranges_mapped_under(mapped_top, dtb_extent) {
+        crate::kprintln!(
+            "[boot] FATAL: the device tree's RAM (top {:#x}) does not cover the image, its \
+             stacks or the blob; refusing to enable translation",
+            mapped_top
+        );
+        crate::cpu::fatal_halt();
+    }
     build_identity_tables(ram_top);
     init_mmu_per_core(0);
+}
+
+/// **PR #892 review round 4**: is every range the boot cannot proceed without
+/// Normal RAM under tables built for `ram_top`?
+///
+/// The pure core of the refusal in [`init_mmu`]: each `(base, size)` in
+/// `ranges` must satisfy [`boot_cacheable_range_in`] — wholly inside the low
+/// aperture the top admits, or wholly inside the high one.  An empty slice is
+/// vacuously mapped; a range whose end overflows is not.  Stated over an
+/// explicit top and explicit ranges so the host can decide it without linker
+/// symbols or a live blob.
+#[must_use]
+pub const fn boot_critical_ranges_mapped(ram_top: u64, ranges: &[(u64, u64)]) -> bool {
+    let mut i = 0;
+    while i < ranges.len() {
+        let (base, size) = ranges[i];
+        if !boot_cacheable_range_in(base, size, ram_top) {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
+/// **PR #892 review round 4**: the ranges the running image occupies, read off
+/// the linker's own symbols — the image from `_start` to `__bss_end` (the boot
+/// page tables live in `.bss`), the primary stack, and the secondary stacks,
+/// which the secondaries run on under these same tables.
+///
+/// Only the symbols' *addresses* are taken, which forms no access.  The host
+/// has no link script, so it reports no ranges and the check reduces to the
+/// blob's extent there; the linker-symbol half is exercised by the cross build
+/// and on hardware.
+#[must_use]
+fn image_ranges() -> [(u64, u64); 3] {
+    #[cfg(target_arch = "aarch64")]
+    {
+        extern "C" {
+            static _start: u8;
+            static __bss_end: u8;
+            static __stack_bottom: u8;
+            static __stack_top: u8;
+            static __smp_secondary_stacks_bottom: u8;
+            static __smp_secondary_stack_top: u8;
+        }
+        let image_start = &raw const _start as u64;
+        let image_end = &raw const __bss_end as u64;
+        let stack_bottom = &raw const __stack_bottom as u64;
+        let stack_top = &raw const __stack_top as u64;
+        let smp_bottom = &raw const __smp_secondary_stacks_bottom as u64;
+        let smp_top = &raw const __smp_secondary_stack_top as u64;
+        [
+            (image_start, image_end.saturating_sub(image_start)),
+            (stack_bottom, stack_top.saturating_sub(stack_bottom)),
+            (smp_bottom, smp_top.saturating_sub(smp_bottom)),
+        ]
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        [(0, 0), (0, 0), (0, 0)]
+    }
+}
+
+/// **PR #892 review round 4**: [`boot_critical_ranges_mapped`] over the image's
+/// own ranges and the device tree's extent, when there is one.
+#[must_use]
+fn boot_ranges_mapped_under(ram_top: u64, dtb_extent: Option<(u64, u64)>) -> bool {
+    let image = image_ranges();
+    let dtb = dtb_extent.unwrap_or_default();
+    boot_critical_ranges_mapped(ram_top, &[image[0], image[1], image[2], dtb])
 }
 
 /// **WS-SM SM1.C.1** (closes SMP-C2 MMU step): Per-core MMU enable
@@ -1632,5 +1728,84 @@ mod boot_map_tests {
         // `link.ld`: `RAM : ORIGIN = 0x80000, LENGTH = 0xFBF80000`.
         assert_eq!(0x80000u64 + 0xFBF8_0000, LOW_RAM_TOP);
         assert_eq!(boot_ram_top(), LOW_RAM_TOP);
+    }
+
+    /// **PR #892 review round 4**: a parsed RAM top is not trusted past what
+    /// the boot stands on.  The pure core of `init_mmu`'s refusal, decided
+    /// here over explicit ranges: an image at `[0x80000, 0x200000)` — the
+    /// linker's origin and a 1.5 MiB image — under a top the clamp has reduced
+    /// to one 2 MiB block is mapped to the byte, and one byte further is not;
+    /// under a top the clamp reduces to zero (anything under 2 MiB) none of it
+    /// is; under the 4 GiB board's top all of it is.
+    #[test]
+    fn a_top_below_the_image_is_refused() {
+        let image = (0x8_0000u64, 0x18_0000u64);
+        assert!(boot_critical_ranges_mapped(0x20_0000, &[image]));
+        assert!(!boot_critical_ranges_mapped(
+            0x20_0000,
+            &[(0x8_0000, 0x18_0001)]
+        ));
+        assert_eq!(clamp_ram_top(0x10_0000), 0);
+        assert!(!boot_critical_ranges_mapped(
+            clamp_ram_top(0x10_0000),
+            &[image]
+        ));
+        assert!(!boot_critical_ranges_mapped(0x10_0000, &[image]));
+        assert!(boot_critical_ranges_mapped(FOUR_GIB_RAM_TOP, &[image]));
+    }
+
+    /// The firmware places the blob wherever it likes.  At 3.5 GiB on a board
+    /// whose `/memory` reports 2 GiB, the Phase-5 `bootargs` read would fault
+    /// on an unmapped page; the refusal is what says so before translation is
+    /// enabled.  In the high aperture the blob is mapped under a top that
+    /// reaches it and not under one that does not.
+    #[test]
+    fn a_device_tree_outside_the_tables_is_refused() {
+        let dtb = (0xE000_0000u64, 0x1_0000u64);
+        assert!(!boot_critical_ranges_mapped(0x8000_0000, &[dtb]));
+        assert!(boot_critical_ranges_mapped(FOUR_GIB_RAM_TOP, &[dtb]));
+        let high_dtb = (0x1_4000_0000u64, 0x1_0000u64);
+        assert!(boot_critical_ranges_mapped(EIGHT_GIB_RAM_TOP, &[high_dtb]));
+        assert!(!boot_critical_ranges_mapped(FOUR_GIB_RAM_TOP, &[high_dtb]));
+        // The device window is never RAM, whatever the top: a blob the
+        // firmware left inside the peripheral aperture is refused too.
+        assert!(!boot_critical_ranges_mapped(
+            EIGHT_GIB_RAM_TOP,
+            &[(0xFE20_1000, 0x1000)]
+        ));
+    }
+
+    /// The relation is a conjunction over the slice: one unmapped range among
+    /// mapped ones refuses, in any position.  The mutation that finds an `any`
+    /// keeps every token and changes the fold.  An empty slice is vacuously
+    /// mapped, and an absent blob contributes the empty range, which is
+    /// mapped under any top — so a boot with no device tree is decided on the
+    /// image alone.
+    #[test]
+    fn every_boot_critical_range_must_be_mapped_not_merely_one() {
+        let image = (0x8_0000u64, 0x18_0000u64);
+        let stack = (0x20_0000u64, 0x4000u64);
+        let far = (0xF000_0000u64, 0x1000u64);
+        assert!(boot_critical_ranges_mapped(0x4000_0000, &[image, stack]));
+        assert!(!boot_critical_ranges_mapped(
+            0x4000_0000,
+            &[image, stack, far]
+        ));
+        assert!(!boot_critical_ranges_mapped(
+            0x4000_0000,
+            &[far, image, stack]
+        ));
+        assert!(boot_critical_ranges_mapped(0, &[]));
+        assert!(boot_critical_ranges_mapped(0, &[(0, 0)]));
+        // A range whose end overflows is never mapped, whatever the top.
+        assert!(!boot_critical_ranges_mapped(
+            EIGHT_GIB_RAM_TOP,
+            &[(u64::MAX - 0xFFF, 0x2000)]
+        ));
+        // On the host the image reports no ranges, so the blob's extent is the
+        // whole question `boot_ranges_mapped_under` decides.
+        let dtb = (0xE000_0000u64, 0x1_0000u64);
+        assert!(!boot_ranges_mapped_under(0x8000_0000, Some(dtb)));
+        assert!(boot_ranges_mapped_under(FOUR_GIB_RAM_TOP, Some(dtb)));
     }
 }

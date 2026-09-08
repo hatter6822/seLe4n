@@ -848,19 +848,80 @@ private def runCSpaceWalkFootprintChecks : IO Unit := do
   let st : SeLe4n.Model.SystemState := default
   let root : SeLe4n.ObjId := SeLe4n.ObjId.ofNat 7
   let addr : SeLe4n.CPtr := SeLe4n.CPtr.ofNat 0
-  -- 1. The fail-closed arms: a zero-bit walk and an unresolvable root read no
-  --    CNode, so they declare nothing.  A footprint is owed exactly where a read
-  --    happened.
+  -- 1. The fail-closed arms.  A zero-bit walk reads no CNode and declares
+  --    nothing.  An unresolvable root is READ -- the `.objectNotFound` arm looked
+  --    the key up, and its verdict depended on what it found -- so the walk
+  --    names the key and, with no CNode there to lock, declares the state-level
+  --    lock in read mode (PR #892 review round 4: the first cut returned `[]`
+  --    here, so a concurrent retype or deletion at exactly that key shared no
+  --    lock with the resolution whose verdict it changed).  A footprint is owed
+  --    exactly where a read happened, and a failed read is a read.
   assertBool "a zero-bit walk reads no CNode"
     (decide (SeLe4n.Kernel.cspaceWalkPath root addr 0 st = []))
-  assertBool "an unresolvable root reads no CNode"
-    (decide (SeLe4n.Kernel.cspaceWalkPath root addr 32 st = []))
-  assertBool "…and therefore declares an empty footprint"
-    (decide ((SeLe4n.Kernel.cspaceWalkLockSet root addr 32 st).pairs = []))
-  -- 2. The declaration is total -- there is no resolution whose interior cannot
-  --    be named.  That was the previous state of affairs, not this one.
-  assertBool "every walk declares a footprint (there is no `none` arm)"
+  assertBool "an unresolvable root is the walk's one read"
+    (decide (SeLe4n.Kernel.cspaceWalkPath root addr 32 st = [root]))
+  assertBool "…and it declares the state-level read lock"
+    (decide ((SeLe4n.Kernel.cspaceWalkLockSet root addr 32 st).pairs
+      = [(SeLe4n.Kernel.Concurrency.stateLevelLock,
+          SeLe4n.Kernel.Concurrency.AccessMode.read)]))
+  assertBool "NEGATIVE: an unresolvable root does not declare an empty footprint"
+    (!decide ((SeLe4n.Kernel.cspaceWalkLockSet root addr 32 st).pairs = []))
+  -- A key holding another KIND of object (a Reply here) is the same read with
+  -- the same lock: `getCNode?` answers `none` for both, and the structural
+  -- writers that can change what a key holds all take the state-level lock in
+  -- WRITE mode.
+  let epKey : SeLe4n.ObjId := SeLe4n.ObjId.ofNat 11
+  let stEp : SeLe4n.Model.SystemState := { st with
+    objects := st.objects.insert epKey (.reply default) }
+  assertBool "a key holding another kind of object declares the state-level read lock"
+    (decide ((SeLe4n.Kernel.cspaceWalkLockSet epKey addr 32 stEp).pairs
+      = [(SeLe4n.Kernel.Concurrency.stateLevelLock,
+          SeLe4n.Kernel.Concurrency.AccessMode.read)]))
+  assertBool "cspaceDelete declares the state-level WRITE lock the failed read conflicts with"
+    (decide ((SeLe4n.Kernel.Concurrency.stateLevelLock,
+      SeLe4n.Kernel.Concurrency.AccessMode.write) ∈
+      (SeLe4n.Kernel.Concurrency.lockSet_cspaceDelete ⟨3⟩ root epKey).pairs))
+  assertBool "…and so does the retype that could install a CNode at that key"
+    (decide ((SeLe4n.Kernel.Concurrency.stateLevelLock,
+      SeLe4n.Kernel.Concurrency.AccessMode.write) ∈
+      (SeLe4n.Kernel.Concurrency.lockSet_lifecycleRetype ⟨3⟩ root
+        (SeLe4n.ObjId.ofNat 12) epKey).pairs))
+  -- 2. The declaration is REFUSED above the ceiling (PR #892 review round 4).
+  --    `maxLockSetSize` is the premise `boundedWait_under_2pl` and the WCRT
+  --    surface are stated at, and a walk reads one key per level, so a CSpace
+  --    deeper than the ladder carries declares `none` -- the bracket's fallback
+  --    runs exactly as before the footprint existed -- rather than a footprint
+  --    the bound is false for.  The first cut declared unconditionally.
+  assertBool "the failed root's one-member footprint is within the ceiling and declared"
     (SeLe4n.Kernel.declaredLockSetForCSpaceWalk root addr 32 st |>.isSome)
+  -- A chain of CNodes, each one bit wide and each slot 0 naming the next: a walk
+  -- of `n` bits from the head reads `n` CNodes, so ten levels is one more than
+  -- the ceiling and nine sits exactly at it.
+  let chainId : Nat → SeLe4n.ObjId := fun k => SeLe4n.ObjId.ofNat (100 + k)
+  let link : Nat → SeLe4n.Model.CNode := fun k =>
+    { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 1,
+      slots := SeLe4n.UniqueSlotMap.empty.insert (SeLe4n.Slot.ofNat 0)
+        { target := .object (chainId (k + 1)),
+          rights := SeLe4n.Model.AccessRightSet.empty, badge := none } }
+  let stChain : SeLe4n.Model.SystemState :=
+    (List.range 10).foldl (fun s k => { s with
+      objects := s.objects.insert (chainId k) (.cnode (link k)) }) st
+  assertBool "a ten-level walk reads ten CNodes"
+    (decide ((SeLe4n.Kernel.cspaceWalkPath (chainId 0) addr 10 stChain).length = 10))
+  assertBool "…every key before the last of which holds a CNode"
+    ((SeLe4n.Kernel.cspaceWalkPath (chainId 0) addr 10 stChain).dropLast.all
+      (fun k => (stChain.getCNode? k).isSome))
+  assertBool "…and its footprint is one member past the ceiling"
+    (decide ((SeLe4n.Kernel.cspaceWalkLockSet (chainId 0) addr 10 stChain).size
+      = SeLe4n.Kernel.Concurrency.maxLockSetSize + 1))
+  assertBool "…so the declaration is REFUSED rather than stated past the bound"
+    (SeLe4n.Kernel.declaredLockSetForCSpaceWalk (chainId 0) addr 10 stChain |>.isNone)
+  assertBool "a nine-level walk sits at the ceiling and is declared"
+    (SeLe4n.Kernel.declaredLockSetForCSpaceWalk (chainId 0) addr 9 stChain |>.isSome)
+  assertBool "NEGATIVE: a refused walk is never handed a footprint of any size"
+    (match SeLe4n.Kernel.declaredLockSetForCSpaceWalk (chainId 0) addr 10 stChain with
+     | some _ => false
+     | none => true)
   -- 3. The delete's side of the conflict: `cspaceDelete` takes the target
   --    CNode's WRITE lock, which is what a read lock on the path conflicts with.
   let target : SeLe4n.ObjId := SeLe4n.ObjId.ofNat 9

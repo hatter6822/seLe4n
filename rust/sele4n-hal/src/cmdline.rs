@@ -1166,9 +1166,13 @@ fn contiguous_ram_top(extents: &MemoryExtents) -> u64 {
 ///   - `device_type_ok`: whether the current `/memory` node's `device_type`,
 ///     **if it declares one**, is `"memory"`.  A node named `memory@…` that
 ///     declares some other device type is not memory.
+///   - `status_ok`: whether the current `/memory` node's `status`, **if it
+///     declares one**, is `okay` or `ok` (PR #892 review round 4).  A
+///     `disabled` — or `reserved`, `fail`, `fail-sss` — bank is DRAM the
+///     firmware has withheld, and its `reg` must not reach the walk.
 ///
 /// The fold happens at the node's `FDT_END_NODE`, not at the `reg` property,
-/// because `device_type` may follow `reg` within the same node.
+/// because `device_type` and `status` may follow `reg` within the same node.
 fn find_ram_top_in_dtb(blob: &[u8]) -> Option<u64> {
     let hdr = parse_fdt_header(blob)?;
     if !validate_fdt_header(&hdr) {
@@ -1190,6 +1194,14 @@ fn find_ram_top_in_dtb(blob: &[u8]) -> Option<u64> {
     let mut memory_depth: usize = 0;
     let mut memory_reg: Option<(usize, usize)> = None;
     let mut device_type_ok = true;
+    // PR #892 review round 4: whether the current `/memory` node's `status`, if
+    // it declares one, says the memory is available.  Devicetree Specification
+    // v0.4 §2.3.4: an absent `status` means `okay`; `okay` and `ok` mean the
+    // node is operational; `disabled`, `reserved`, `fail` and `fail-sss` mean
+    // it is not.  A disabled memory bank's `reg` describes DRAM the firmware
+    // has explicitly withheld, and folding it would map that bank
+    // Normal-cacheable exactly as the maximum fold mapped a hole.
+    let mut status_ok = true;
     let mut extents = MemoryExtents::new();
     let mut fuel = FDT_WALK_FUEL;
     // PR #892 review: whether the walk reached a top-level `FDT_END`.  Every
@@ -1223,6 +1235,7 @@ fn find_ram_top_in_dtb(blob: &[u8]) -> Option<u64> {
                     memory_depth = depth.checked_add(1)?;
                     memory_reg = None;
                     device_type_ok = true;
+                    status_ok = true;
                 }
                 depth = depth.checked_add(1)?;
                 if depth > FDT_MAX_DEPTH {
@@ -1236,7 +1249,10 @@ fn find_ram_top_in_dtb(blob: &[u8]) -> Option<u64> {
                 }
                 depth -= 1;
                 if in_memory && depth < memory_depth {
-                    if device_type_ok {
+                    // Both node-scoped verdicts gate the fold: a node that is
+                    // not memory, or memory the firmware marked unavailable,
+                    // contributes nothing.
+                    if device_type_ok && status_ok {
                         if let Some((value_start, value_len)) = memory_reg {
                             // A malformed `reg` fails the whole query closed
                             // rather than contributing a partial address.
@@ -1253,6 +1269,7 @@ fn find_ram_top_in_dtb(blob: &[u8]) -> Option<u64> {
                     in_memory = false;
                     memory_reg = None;
                     device_type_ok = true;
+                    status_ok = true;
                 }
                 offset = offset.checked_add(4)?;
             }
@@ -1289,6 +1306,18 @@ fn find_ram_top_in_dtb(blob: &[u8]) -> Option<u64> {
                             None => value,
                         };
                         device_type_ok = trimmed == b"memory";
+                    } else if prop_name == b"status" {
+                        // PR #892 review round 4: the node's availability.
+                        // Only the two spellings the specification defines as
+                        // operational count; every other value — `disabled`,
+                        // `reserved`, `fail`, `fail-sss`, or something the
+                        // specification does not define — withholds the bank.
+                        let value = blob.get(value_start..value_end)?;
+                        let trimmed = match value.iter().position(|&b| b == 0) {
+                            Some(nul) => &value[..nul],
+                            None => value,
+                        };
+                        status_ok = trimmed == b"okay" || trimmed == b"ok";
                     }
                 }
                 let padding = (4usize - (len_usize % 4)) % 4;
@@ -1358,6 +1387,39 @@ pub fn ram_top_from_dtb(dtb_ptr: u64) -> Option<u64> {
         // Host-side stub, symmetric with `extract_bootargs_into`: cargo tests
         // never pass a non-zero `dtb_ptr` (they drive [`ram_top_from_blob`]
         // with a synthesised buffer), so the raw-pointer slice would be UB.
+        let _ = dtb_ptr;
+        None
+    }
+}
+
+/// **PR #892 review round 4**: the extent `[dtb_ptr, dtb_ptr + totalsize)` of
+/// the device tree the boot will read again once translation is on — the
+/// Phase-5 `parse_cmdline_from_dtb` walk, and SM10.1's handoff of the pointer
+/// to the kernel.  `mmu::init_mmu` refuses to enable the MMU unless this extent
+/// is inside the RAM the tables map, since a blob in a discarded tail would be
+/// read through an unmapped address after the enable.
+///
+/// `None` for a null pointer or a blob whose header does not validate — the
+/// cases in which the boot uses no device tree and there is nothing to keep
+/// mapped.  The `totalsize` is the header's own, bounded by [`MAX_DTB_SIZE`]
+/// exactly as [`dtb_blob_from_ptr`] bounds it.
+///
+/// ## Safety
+///
+/// Same contract as [`ram_top_from_dtb`].
+#[must_use]
+pub fn dtb_extent_from_dtb(dtb_ptr: u64) -> Option<(u64, u64)> {
+    #[cfg(target_arch = "aarch64")]
+    {
+        // SAFETY: see `dtb_blob_from_ptr`'s contract; the caller is
+        // `mmu::init_mmu`, which passes `rust_boot_main`'s `x0`.
+        let blob = unsafe { dtb_blob_from_ptr(dtb_ptr) }?;
+        Some((dtb_ptr, blob.len() as u64))
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        // Host-side stub, symmetric with `ram_top_from_dtb`: no host test
+        // passes a non-zero `dtb_ptr`.
         let _ = dtb_ptr;
         None
     }
@@ -3450,5 +3512,126 @@ mod memory_node_tests {
             )],
         );
         assert_eq!(ram_top_from_blob(&blob), None);
+    }
+
+    /// A `/memory` node carrying a `status` **after** its `reg`, so the fixture
+    /// exercises the fold-at-node-end ordering the walker relies on.
+    fn memory_node_with_status(name: &'static [u8], reg: Vec<u8>, status: &'static [u8]) -> Node {
+        let mut node = memory_node(name, reg, Some(b"memory"));
+        let mut value = status.to_vec();
+        value.push(0);
+        node.props.push(Prop {
+            name: b"status",
+            value,
+        });
+        node
+    }
+
+    /// The low aperture, enabled, and a 4 GiB bank at `HIGH_RAM_BASE` carrying
+    /// the given `status`.
+    fn low_aperture_and_high_bank_with_status(status: &'static [u8]) -> Vec<u8> {
+        build_dtb(
+            2,
+            2,
+            &[
+                memory_node(
+                    b"memory@0",
+                    cells(&[(0, 2), (0xFC00_0000, 2)]),
+                    Some(b"memory"),
+                ),
+                memory_node_with_status(
+                    b"memory@100000000",
+                    cells(&[(0x1_0000_0000, 2), (0x1_0000_0000, 2)]),
+                    status,
+                ),
+            ],
+        )
+    }
+
+    /// **PR #892 review round 4**: a `/memory` node whose `status` is
+    /// `disabled` describes DRAM the firmware has withheld, and its `reg` must
+    /// not reach the walk.  The finding's layout: the low aperture enabled and
+    /// a high bank present but disabled — the walk stops at the low top, where
+    /// the pre-round parser mapped the withheld bank Normal-cacheable exactly
+    /// as the maximum fold had mapped a hole.
+    #[test]
+    fn a_disabled_memory_bank_does_not_contribute() {
+        let blob = low_aperture_and_high_bank_with_status(b"disabled");
+        assert_eq!(ram_top_from_blob(&blob), Some(0xFC00_0000));
+    }
+
+    /// `okay` and `ok` are the two operational spellings the specification
+    /// defines (Devicetree Specification v0.4 §2.3.4); a bank carrying either
+    /// contributes exactly as one carrying no `status` at all.
+    #[test]
+    fn an_explicitly_okay_memory_bank_contributes() {
+        for status in [&b"okay"[..], &b"ok"[..]] {
+            let blob = low_aperture_and_high_bank_with_status(status);
+            assert_eq!(ram_top_from_blob(&blob), Some(0x2_0000_0000));
+        }
+    }
+
+    /// Every non-operational spelling withholds the bank: the specification's
+    /// `reserved`, `fail` and `fail-sss`, and a value it does not define.  The
+    /// mutation that finds a `!= "disabled"` test keeps the token and changes
+    /// the relation; the specification's list is closed on the *operational*
+    /// side, so that is the side the verdict is decided on.
+    #[test]
+    fn reserved_and_failed_memory_banks_do_not_contribute() {
+        for status in [
+            &b"reserved"[..],
+            &b"fail"[..],
+            &b"fail-ecc"[..],
+            &b"okay-ish"[..],
+        ] {
+            let blob = low_aperture_and_high_bank_with_status(status);
+            assert_eq!(
+                ram_top_from_blob(&blob),
+                Some(0xFC00_0000),
+                "status {:?}",
+                core::str::from_utf8(status)
+            );
+        }
+    }
+
+    /// A blob whose only memory node is disabled reports no RAM, and the caller
+    /// falls back to the linker's declared extent — the same answer as a blob
+    /// with no memory node, because for the walk that is what it is.
+    #[test]
+    fn a_blob_whose_only_memory_is_disabled_yields_none() {
+        let blob = build_dtb(
+            2,
+            2,
+            &[memory_node_with_status(
+                b"memory@0",
+                cells(&[(0, 2), (0xFC00_0000, 2)]),
+                b"disabled",
+            )],
+        );
+        assert_eq!(ram_top_from_blob(&blob), None);
+    }
+
+    /// The verdict is node-scoped: a disabled node listed before an enabled one
+    /// must not carry its `status` into its neighbour.  The mutation this finds
+    /// keeps `status_ok` and drops its per-node reset.
+    #[test]
+    fn a_status_does_not_leak_into_the_next_memory_node() {
+        let blob = build_dtb(
+            2,
+            2,
+            &[
+                memory_node_with_status(
+                    b"memory@100000000",
+                    cells(&[(0x1_0000_0000, 2), (0x1_0000_0000, 2)]),
+                    b"disabled",
+                ),
+                memory_node(
+                    b"memory@0",
+                    cells(&[(0, 2), (0xFC00_0000, 2)]),
+                    Some(b"memory"),
+                ),
+            ],
+        );
+        assert_eq!(ram_top_from_blob(&blob), Some(0xFC00_0000));
     }
 }

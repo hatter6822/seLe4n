@@ -1,3 +1,110 @@
+## v0.34.112 — a withheld memory bank is not RAM, the boot refuses a top it does not stand on, and the walk's footprint is refused above the ceiling
+
+**PR #892 review round 4 (Codex, on `33849c82`).**  Four findings, all
+confirmed against the code and all fixed at the cause; none is a caveat and
+none is a skip.
+
+**A `/memory` node the firmware marked `disabled` is not RAM (P2).**
+`find_ram_top_in_dtb` folded every `/memory` node whose `device_type` did not
+say otherwise, and a `status = "disabled"` bank — DRAM the firmware has
+explicitly withheld, Devicetree Specification v0.4 §2.3.4 — folded like any
+other: its `reg` reached the contiguous walk, and the tables mapped the
+withheld bank Normal-cacheable exactly as round 3's maximum fold had mapped a
+hole.  The walk now carries a second node-scoped verdict beside the device
+type: `status`, if the node declares one, must be `okay` or `ok`, the only two
+spellings the specification defines as operational; `disabled`, `reserved`,
+`fail`, `fail-sss` and anything the specification does not define withhold
+the bank, and the fold at the node's end is gated on both verdicts.  The
+verdict is decided on the *operational* side because that is the side the
+specification's list is closed on — a `!= disabled` test would have passed
+`reserved` and `fail` through.  Five host tests: the finding's layout (the low
+aperture enabled, a high bank present but disabled) stops at the low top; an
+explicit `okay` or `ok` contributes as an absent `status` does; `reserved`,
+`fail`, `fail-ecc` and an undefined value each withhold; a blob whose only
+memory is disabled yields `None`, so the caller falls back to the linker's
+extent; and a `status` does not leak from one node into the next.  Tier 3 pins
+the gate on both verdicts and the two-spelling decision, with the
+device-type-only gate as the negative — each mutation-tested by keeping the
+tokens and breaking the relation (a disjunction, a `!= disabled`, a third
+spelling, the verdict read beside the gate rather than in it).
+
+**A parsed RAM top is not trusted past what the boot stands on (P2).**
+`init_mmu` handed whatever `ram_top_from_dtb` returned to
+`build_identity_tables`, and a structurally valid `/memory` node can report a
+small or unaligned low extent: `clamp_ram_top` rounds it down — to zero, for
+anything under 2 MiB — and the tables then map no RAM under the image, its
+stacks, its page tables or the device tree itself.  The first fetch after the
+enable faults, or the Phase-5 `bootargs` read faults if the blob sat in the
+discarded tail, and neither is a diagnosis.  Before translation is enabled the
+*clamped* top is now held to `boot_critical_ranges_mapped` over the image
+`[_start, __bss_end)` (the boot tables live in `.bss`), the primary stack, the
+secondary stacks and the blob's own extent (`cmdline::dtb_extent_from_dtb`,
+the header's `totalsize` from the pointer the firmware passed): each must be
+Normal RAM under `boot_cacheable_range_in` for the top the tables are about to
+be built for.  A top that fails is refused with the reason on the UART and the
+PE parks in `cpu::fatal_halt` — not `gic::halt_all`, because Phase 2 runs on
+the boot core alone before the GIC exists, so the barrier the rest of the tree
+calls is not yet callable and there is no other PE to halt.  The ranges are
+read off the linker's own symbols (`image_ranges`; addresses only, which forms
+no access), so the host reports none and the check reduces to the blob's
+extent there; the linker half is exercised by the cross build and on hardware.
+Three host tests decide the pure core: an image under a top the clamp reduced
+to one block is mapped to the byte and one byte further is not, and under a
+top the clamp reduces to zero none of it is; a blob at 3.5 GiB under a 2 GiB
+top is refused and under the 4 GiB board's is not, in the high aperture only
+under a top that reaches it, and never inside the device window; and the
+relation is a conjunction over every range in any position, with the
+overflowing range never mapped.  Tier 3 pins the order — the refusal, its
+branch ending in `fatal_halt`, dominates the table build and reads the clamped
+top — with the tables-straight-from-the-parsed-top entry as the negative;
+seven mutations (the build hoisted above the check and beside it, the raw top
+read, the halt dropped and the halt moved below the build, the fold made a
+disjunction and made a skip) each break exactly one relation.
+
+**The CSpace walk's footprint is refused above the ceiling (P2).**
+`declaredLockSetForCSpaceWalk` was `some (cspaceWalkLockSet …)`
+unconditionally, and a walk reads one key per level, so a CSpace deeper than
+nine levels declared a footprint wider than `maxLockSetSize` — the premise
+`boundedWait_under_2pl`, the `KernelOperation` invariant and the whole WCRT
+surface are stated at, which the bracket's own theorems then took as a
+hypothesis nothing discharged.  The RR7.18 bound census could not see it,
+because it finds footprints by the `lockSet_` prefix and this one is derived
+from the state; and it could not have stated a bound for it, because there is
+none.  The declaration is now `some S` when `S.size ≤ maxLockSetSize` and
+`none` otherwise, so a walk past the ceiling runs the bracket's fallback —
+RR7.12's rule that falling back is always sound where claiming a footprint
+the bound is false for never is — with
+`declaredLockSetForCSpaceWalk_some_size_le` (a declared footprint is within
+the bound), `_none_of_gt` (a footprint past it is refused) and
+`_single_level` (the live seam's single-level walk is always declared).  The
+suite walks a ten-CNode chain to the refusal and a nine-CNode chain to the
+declaration; Tier 3 pins the size test deciding the declaration, with the
+unconditional `some` as the negative.
+
+**A failed lookup is a read the footprint names (P2).**  `cspaceWalkPath`
+returned `[]` when the root — or, one level down, the child a slot named —
+held no CNode, and `resolveCapAddress` had *read* that key to find out: its
+`.objectNotFound` verdict depended on the key's state, so a concurrent retype
+installing a CNode there, or a `cspaceDelete` removing one, shared no lock with
+the resolution and could change its verdict between the bracket's revalidation
+and its walk.  The `none` arm now records the key, and `cspaceWalkKeyLock`
+classifies every key on the path: one holding a CNode declares that CNode's
+read lock as before; one holding no CNode — absent, or another kind of object,
+which `getCNode?` does not distinguish — declares `stateLevelLock` in **read**
+mode, the lock every structural writer that can change what a key holds takes
+in write mode (`lockSet_lifecycleRetype`, `lockSet_cspaceDelete`), so the read
+and the write conflict.  `cspaceWalk_conflicts_with_delete` is restated over a
+target that may hold no CNode; `mem_cspaceWalkLockSet_missing` is the new
+member; and `cspaceWalkPath_dropLast_cnode` — every key before the path's last
+holds a CNode, by strong induction on the bits remaining — is the shape that
+says a walk declares at most one state-level member, so the widening costs one
+member and only on a walk that fails.  The suite pins an unresolvable root as
+the walk's one read declaring the state-level read lock, a Reply-holding key
+declaring the same, and the delete's and the retype's state-level write beside
+it; Tier 3 pins the arm's value and the classification's two arms, with the
+first cut's `[]` as the negative, and an elaboration probe resolves the
+round's eight theorems.
+
 ## v0.34.111 — the boot RAM top is the contiguous run the device tree reports, and the register says what OD1 closed
 
 **PR #892 review round 3 (Codex, on `2c62e4ac`).**  Two findings, both
