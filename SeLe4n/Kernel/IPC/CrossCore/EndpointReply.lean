@@ -619,11 +619,16 @@ def lockSet_endpointReplyRecvOnCore (st : SystemState) (replier : SeLe4n.ThreadI
   -- than a wide one.  One question, two answers, with the right answer sitting
   -- thirty lines up in this same file.
   --
-  -- The delegated case is *also* refused at the entry resolver
-  -- (`lockSetForSyscall`), because the recorded server's own TCB write lock has
-  -- no room left under `maxLockSetSize` — see `lockSetForSyscall_replyRecv_delegated`.
-  -- Fixing the resolution here is still right: it makes the two reply arms agree,
-  -- and it is what a future consumer that finds room would take.
+  -- PR #892 review round 6 could only fix the *resolution* here: the entry
+  -- resolver still refused the delegated case outright, because the recorded
+  -- server's own TCB write lock had no room left under a `maxLockSetSize` of
+  -- nine.  The note that stood here said so, and named the refusing theorem.
+  -- **WS-OD OD3.5 is the "future consumer that finds room"** it anticipated —
+  -- the ceiling is eleven, the entry resolver declares
+  -- (`lockSetForSyscall_replyRecv_delegated_declares`), and the refusal it
+  -- named (`lockSetForSyscall_replyRecv_delegated`, concluding `none`) is
+  -- retired.  New code must not read the delegated case as falling back to the
+  -- coarse serialisation.
   -- **WS-OD OD3.5**: the two members this arm was missing.  The recorded server
   -- is resolved unconditionally — on a non-delegated reply it *is* `replier` and
   -- `insertOrMerge`'s key merge collapses the two, so declaring it costs nothing
