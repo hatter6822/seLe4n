@@ -138,6 +138,12 @@ open SeLe4n.Testing
 -- are members of the canonical footprint:
 #check @lockSet_notificationSignalOnCore_bound_endpoint_write_mem
 #check @lockSet_notificationSignalOnCore_bound_tcb_write_mem
+-- WS-OD OD3.10: the two queue neighbours the bound delivery's dequeue relinks.
+#check @notificationSignalSpliceNeighbors?
+#check @notificationSignalSpliceNeighbors?_of_target
+#check @notificationSignalSpliceNeighbors?_of_no_target
+#check @lockSet_notificationSignalOnCore_splice_prev_write_mem
+#check @lockSet_notificationSignalOnCore_splice_next_write_mem
 -- SM6.B bound-delivery semantics + invariant preservation:
 #check @notificationSignalBoundOnCore_fallthrough_eq
 #check @notificationSignalBoundOnCore_delivery_eq
@@ -704,6 +710,85 @@ private def runQueueSpliceChecks : IO Unit := do
          | some (p, n) => decide (p = none ∧ n = none)
          | none => false)
 
+/-- **WS-OD OD3.10** fixture: the bound TCB **mid-queue**, so the dequeue the
+bound delivery performs actually relinks a predecessor and a successor.
+
+The `runBoundDeliveryNonInterferenceChecks` fixture below has the bound TCB as
+its queue's only member, which is exactly the shape on which the neighbour
+members are vacuous — so the finding this row closes could not have been seen
+from it. -/
+private def stBoundMidQueue? : Option SystemState :=
+  let base :=
+    (BootstrapBuilder.empty
+      |>.withObject nId (.notification
+          { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+            boundTCB := some boundTid })
+      |>.withObject epId (.endpoint {})
+      |>.withObject signallerTid.toObjId (.tcb (mkTcb 501 40 none))
+      |>.withObject queueA.toObjId (.tcb (mkTcb 505 30 none))
+      |>.withObject boundTid.toObjId (.tcb (mkTcb 504 30 none))
+      |>.withObject queueC.toObjId (.tcb (mkTcb 507 30 none))
+      |>.withRunnable [signallerTid, queueA, boundTid, queueC]
+      |>.build)
+  match enqueueReceivers base [queueA, boundTid, queueC] with
+  | .ok st => some st
+  | .error _ => none
+
+/-- §3.12: **WS-OD OD3.10** — the bound delivery's dequeue relinks two TCBs the
+footprint did not name, and now does.
+
+`endpointQueueRemoveDual` writes the removed thread's predecessor and successor
+(`queueUnlinkPredecessor` / `queueUnlinkSuccessor`), so a `.notificationSignal`
+on one core and a `.tcbSuspend` of a queue-mate on another had provably disjoint
+footprints while both writing the same TCB.  Three guards keep this from passing
+vacuously: the delivery path must actually be taken (`boundDeliveryTarget?`
+resolves), the bound TCB must genuinely have both neighbours, and the two
+neighbour TCBs must be **observably rewritten** by the signal. -/
+private def runBoundSpliceFootprintChecks : IO Unit := do
+  IO.println "--- §3.12 WS-OD OD3.10 bound-delivery splice footprint ---"
+  match stBoundMidQueue? with
+  | none => assertBool "setup: bound TCB enqueued mid receive queue" false
+  | some st =>
+      assertBool "setup: the receive queue is queueA -> bound -> queueC"
+        (match receiveQueueOf st, linksOf st boundTid with
+         | some q, some (pb, nb) =>
+             decide (q.head = some queueA ∧ q.tail = some queueC ∧
+               pb = some queueA ∧ nb = some queueC)
+         | _, _ => false)
+      assertBool "setup: the bound-delivery path is the one this signal takes"
+        (match boundDeliveryTarget? st nId with
+         | some (t, ep) => decide (t = boundTid ∧ ep = epId)
+         | none => false)
+      -- The resolver answers with the bound TCB's own links.
+      assertBool "the splice resolver names both neighbours"
+        (decide (notificationSignalSpliceNeighbors? st nId = (some queueA, some queueC)))
+      -- ... and both are declared write-mode members of the resolved footprint.
+      let ls := lockSet_notificationSignalOnCore st nId signallerTid cnRoot
+      assertBool "the predecessor's TCB write lock is declared"
+        (decide ((tcbLock queueA, AccessMode.write) ∈ ls.pairs))
+      assertBool "the successor's TCB write lock is declared"
+        (decide ((tcbLock queueC, AccessMode.write) ∈ ls.pairs))
+      -- The declaration is not idle: the signal really does rewrite both.
+      let (st', _) := notificationSignalBoundOnCore nId badge bootCoreId st
+      assertBool "the signal rewrites the predecessor's queueNext"
+        (match linksOf st' queueA with
+         | some (_, na) => decide (na = some queueC)
+         | none => false)
+      assertBool "the signal rewrites the successor's queuePrev"
+        (match linksOf st' queueC with
+         | some (pc, _) => decide (pc = some queueA)
+         | none => false)
+      -- WS-OD OD3.9: and its `queuePPrev`, which is what the dual removal reads.
+      assertBool "the signal rewrites the successor's queuePPrev"
+        (match st'.getTcb? queueC with
+         | some t => decide (t.queuePPrev = some (.tcbNext queueA))
+         | none => false)
+      -- NEGATIVE: a signal that takes no bound-delivery path splices nothing,
+      -- so the footprint is the pre-OD3.10 one.  Mutating by deleting the
+      -- members would be caught above; this keeps them and changes the arm.
+      assertBool "a signal with no bound-delivery target declares no neighbours"
+        (decide (notificationSignalSpliceNeighbors? stBase nId = (none, none)))
+
 /-- WS-RR RR7.22 (register finding 3): a labelling under which the whole
 bound-delivery footprint is **high** — the endpoint, the bound TCB and the
 notification are all above the observer, and nothing else the fixture touches
@@ -840,6 +925,7 @@ def runSmpCrossCoreNotificationChecks : IO Unit := do
   runErrorChecks
   runBoundChecks
   runReviewFixChecks
+  runBoundSpliceFootprintChecks
   runBoundDeliveryNonInterferenceChecks
   runQueueSpliceChecks
   IO.println "===================================="

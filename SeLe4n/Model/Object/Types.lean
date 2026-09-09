@@ -1114,6 +1114,22 @@ makes a fourth removal impossible to get wrong. -/
 def queueUnlinkSuccessor (removed : TCB) : TCB → TCB :=
   fun n => { n with queuePrev := removed.queuePrev, queuePPrev := removed.queuePPrev }
 
+/-- **WS-OD OD3.10**: the two TCBs a splice of `removed` relinks — the ones
+`queueUnlinkPredecessor` and `queueUnlinkSuccessor` above are applied to.
+
+The neutral spelling of a question two footprint families ask.  It was
+`cancelSpliceNeighbors?`, in the cancellation module, when only the cancellation
+arms declared a splice; the bound-notification delivery splices too
+(`endpointQueueRemoveDual`), and a second copy of `(tcb.queuePrev, tcb.queueNext)`
+beside this one is the shape that let the three removals disagree about
+`queuePPrev`.  Arm selection stays with each arm — `cancelArmSpliceNeighbors?`
+and `notificationSignalSpliceNeighbors?` are gated on their own operation's
+guard — because *which* thread is spliced is an arm question and *who its
+neighbours are* is not. -/
+def queueSpliceNeighbors? (removed : TCB) :
+    Option SeLe4n.ThreadId × Option SeLe4n.ThreadId :=
+  (removed.queuePrev, removed.queueNext)
+
 /-- WS-H12c: Manual `BEq` for `TCB`. `DecidableEq` cannot be derived because
 `RegisterFile` contains a function field (`gpr : Nat → Nat`). Field-wise
 comparison uses the `BEq RegisterFile` instance from `Machine.lean`.

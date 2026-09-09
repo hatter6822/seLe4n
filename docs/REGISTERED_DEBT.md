@@ -458,7 +458,7 @@ discharged: the projection re-derivation landed with the fourth store at OD3.1,
 and the de-threading family size does not move, since the new theorem is not an
 `ipcInvariantFull` bundle.  OD4 onward are open. Plan:
 [`docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`](planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md)
-(43 sub-tasks across OD1..OD6). It closes two section-A rows: the onward-donation
+(44 sub-tasks across OD1..OD6). It closes two section-A rows: the onward-donation
 gap above, and the `passiveServerIdle` break the `v0.34.97` reclaim introduced —
 the second of which OD1 has now closed.
 

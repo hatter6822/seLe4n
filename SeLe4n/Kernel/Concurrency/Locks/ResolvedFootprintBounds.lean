@@ -177,15 +177,16 @@ theorem lockSet_endpointReceiveOnCore_size_le (st : SystemState)
 
 /-- The state-resolved **signal** footprint.  Both arms apply
 `lockSet_notificationSignal`, the bound-delivery one at `some`/`some` — the arm
-SM9.C's fix had to reach, and the reason that bound is stated over all six
-arguments rather than at their defaults. -/
+SM9.C's fix had to reach, and the reason that bound is stated over all *seven*
+arguments (six before WS-OD OD3.10's splice neighbours) rather than at their
+defaults. -/
 theorem lockSet_notificationSignalOnCore_size_le (st : SystemState)
     (notificationId : SeLe4n.ObjId) (signaller : SeLe4n.ThreadId)
     (cnodeRootObjId : SeLe4n.ObjId) :
     (lockSet_notificationSignalOnCore st notificationId signaller cnodeRootObjId).size
       ≤ maxLockSetSize := by
   unfold lockSet_notificationSignalOnCore
-  split <;> exact lockSet_notificationSignal_size_le _ _ _ _ _ _
+  split <;> exact lockSet_notificationSignal_size_le _ _ _ _ _ _ _
 
 /-- The **wait** footprint, which resolves nothing from `st` and is the base at
 its own arguments. -/

@@ -194,7 +194,7 @@ open SeLe4n.Testing
 -- PR #831 review 4: running-core resolution + write-set-honest sweeps.
 #check @Lifecycle.Suspend.runningCoreOf?
 #check @SeLe4n.Kernel.PriorityInheritance.currentScan_boot_of_single_core
-#check @cancelSpliceNeighbors?
+#check @queueSpliceNeighbors?
 
 -- Audit closure: sorted run-queue triple, current-uniqueness slice,
 -- donation-side observer capstone.
@@ -853,7 +853,7 @@ private def runReplyCancelChecks : IO Unit := do
     (decide (staleTcb.queuePrev = some bystanderTid
       ∧ staleTcb.queueNext = some ownerTid))
   assertBool "the summed resolver still reads them (it is not arm-aware)"
-    (decide (cancelSpliceNeighbors? staleTcb = (some bystanderTid, some ownerTid)))
+    (decide (queueSpliceNeighbors? staleTcb = (some bystanderTid, some ownerTid)))
   assertBool "the ARM-selected resolver answers (none, none) on the reply arm"
     (decide (cancelArmSpliceNeighbors? staleTcb = (none, none)))
   let lsStale := lockSet_cancelIpcBlockingOnCore stReplyBlockedStaleLinks victimTid

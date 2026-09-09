@@ -1,3 +1,52 @@
+## v0.34.135 — WS-OD OD3.10: `.notificationSignal` declares the two TCBs its dequeue relinks
+
+**The first of the arms the OD3.9 sweep found undeclared**, and the one whose
+gap is widest: the bound-delivery path runs `endpointQueueRemoveDual`, which
+writes the removed thread's **predecessor** and **successor** TCBs, and
+`lockSet_notificationSignal` named neither.  A footprint that omits a written
+object is *false* — the failure this project rates worse than a wide one — so a
+`.notificationSignal` on one core and a `.tcbSuspend` of a queue-mate on another
+had provably disjoint footprints while both writing the same TCB.  Latent rather
+than live, because SM5.I's global entry lock serialises every kernel entry and
+nothing boots yet (WS-BP unstarted); it is a verification defect, and the
+statements built on `lockSetForSyscall` were silent about those two objects
+rather than conservative.
+
+Four things new code must respect.
+
+1. **The resolver is derived twice over, not spelled.**
+   `notificationSignalSpliceNeighbors?` takes its *arm gate* from
+   `boundDeliveryTarget?` — the same resolver the arm's endpoint and bound-TCB
+   members already come from, so the footprint and the transition cannot
+   disagree about whether this signal splices — and its *neighbour identities*
+   from `queueSpliceNeighbors?`, so the two footprint families that ask "who
+   are a splice's neighbours" cannot disagree either.  A Tier 3 negative refuses
+   the inlined pair.
+2. **`cancelSpliceNeighbors?` is now `queueSpliceNeighbors?`, in
+   `SeLe4n/Model/Object/Types.lean`.**  It was the cancellation family's private
+   spelling of a fact that is not cancellation-specific, and adding a second
+   reader without unifying it would have been the divergence `v0.34.134` exists
+   to close, one level up.  Arm *selection* stays with each arm
+   (`cancelArmSpliceNeighbors?`, `notificationSignalSpliceNeighbors?`): which
+   thread is spliced is an arm question, who its neighbours are is not.
+3. **Every statement about this footprint is restated at the new full arity** —
+   the size bound, the kind-consistency proof, the three write-membership
+   lemmas, and the `lockSetTransitions_within_bound` conjunct.  A bound left at
+   the new argument's default is a different proposition, and RR7.18's census
+   refuses it; the same rule is now applied by hand to the membership and
+   consistency lemmas, which no census covers.
+4. **`maxLockSetSize` does not move.**  The shape is `3 + 5 = 8`, well inside
+   13, so `admissibleCriticalSection` stays at 25 µs for the 1 ms tick and the
+   published contention bound is unchanged.
+
+The coverage statement is `lockSetForSyscall_notificationSignal_covers_spliceNeighbors`,
+per neighbour rather than as a pair, because a bound TCB at the head of its
+queue has no predecessor and one at the tail no successor.  The executable
+witness (`tests/SmpCrossCoreNotificationSuite.lean` §3.12) puts the bound TCB
+**mid-queue** — the existing bound-delivery fixture has it as its queue's only
+member, which is exactly the shape on which the neighbour members are vacuous
+and the finding could not have been seen.
+
 ## v0.34.134 — WS-OD OD3.9: the third endpoint-queue removal maintains `queuePPrev`
 
 **A live correctness and availability defect, reported before being fixed, and

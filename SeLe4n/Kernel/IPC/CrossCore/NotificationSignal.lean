@@ -196,6 +196,43 @@ def notificationSignalWaiter? (st : SystemState) (notificationId : SeLe4n.ObjId)
   | some ntfn => ntfn.waitingThreads.head?
   | none => none
 
+/-- **WS-OD OD3.10**: the queue neighbours the bound delivery relinks.
+
+Derived from `boundDeliveryTarget?` -- the resolver the arm's endpoint and bound
+TCB members already come from -- so the footprint and the transition cannot
+disagree about *whether* this signal splices, and from `queueSpliceNeighbors?`,
+the neutral answer the cancellation arms use, so they cannot disagree about
+*who* the neighbours are.  `none, none` on every non-bound path, which is the
+overwhelming majority of signals: the bound path requires an empty waiter list
+and a bound TCB blocked on receive. -/
+def notificationSignalSpliceNeighbors? (st : SystemState) (notificationId : SeLe4n.ObjId) :
+    Option SeLe4n.ThreadId × Option SeLe4n.ThreadId :=
+  match boundDeliveryTarget? st notificationId with
+  | some (boundTcb, _) =>
+      match st.getTcb? boundTcb with
+      | some tcb => queueSpliceNeighbors? tcb
+      | none => (none, none)
+  | none => (none, none)
+
+/-- **WS-OD OD3.10**: a signal with no bound-delivery target splices nothing.
+The gate is the *same* resolver the footprint's other two optionals key on, so
+"this arm splices" is one fact rather than two that can drift. -/
+@[simp] theorem notificationSignalSpliceNeighbors?_of_no_target (st : SystemState)
+    (notificationId : SeLe4n.ObjId)
+    (hNone : boundDeliveryTarget? st notificationId = none) :
+    notificationSignalSpliceNeighbors? st notificationId = (none, none) := by
+  unfold notificationSignalSpliceNeighbors?; rw [hNone]
+
+/-- **WS-OD OD3.10**: on the delivery path the neighbours are the bound TCB's own
+queue links -- exactly the two TCBs `endpointQueueRemoveDual` relinks. -/
+theorem notificationSignalSpliceNeighbors?_of_target (st : SystemState)
+    (notificationId : SeLe4n.ObjId) (boundTcb : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
+    (tcb : TCB)
+    (hTarget : boundDeliveryTarget? st notificationId = some (boundTcb, epId))
+    (hTcb : st.getTcb? boundTcb = some tcb) :
+    notificationSignalSpliceNeighbors? st notificationId = (tcb.queuePrev, tcb.queueNext) := by
+  unfold notificationSignalSpliceNeighbors?; rw [hTarget]; simp only []; rw [hTcb]; rfl
+
 /-- WS-SM SM6.B.1: the concrete lock-set a cross-core `notificationSignalOnCore`
 on state `st` acquires.  **Bound-aware** (PR #822 review): the live
 `.notificationSignal` dispatch routes through `notificationSignalBoundOnCore`,
@@ -220,6 +257,8 @@ def lockSet_notificationSignalOnCore (st : SystemState) (notificationId : SeLe4n
       -- `none` here).
       lockSet_notificationSignal signaller cnodeRootObjId notificationId
         (notificationSignalWaiter? st notificationId) (some epId) (some boundTcb)
+        -- **WS-OD OD3.10**: and the two TCBs the dequeue relinks.
+        (notificationSignalSpliceNeighbors? st notificationId)
   | none =>
       lockSet_notificationSignal signaller cnodeRootObjId notificationId
         (notificationSignalWaiter? st notificationId)
@@ -396,8 +435,11 @@ theorem lockSet_notificationSignalOnCore_correct
       -- lemma already proves all its locks have a permitted kind (SM6.B extended
       -- `permittedKinds .notificationSignal` with `.endpoint` for the dequeue).
       obtain ⟨boundTcb, epId⟩ := pair
+      -- WS-OD OD3.10: and with the two splice-neighbour optionals set; both are
+      -- `.tcb`, already in `permittedKinds .notificationSignal`.
       exact lockSet_consistent_notificationSignal signaller cnodeRootObjId notificationId
         (notificationSignalWaiter? st notificationId) (some epId) (some boundTcb)
+        (notificationSignalSpliceNeighbors? st notificationId)
 
 /-- WS-SM SM6.B.1: the `notificationWait` lock-set is hierarchically correct —
 every declared lock has a kind in `permittedKinds .notificationWait`, and its keys
@@ -447,18 +489,25 @@ theorem lockSet_notificationSignal_notification_write_mem
     -- `lockSet_notificationSignalOnCore` resolves them from the state — so the
     -- bound-delivery shape, the one the SM6.B finding was about, was outside
     -- the theorem that records the finding's closure.
-    (boundEp? : Option SeLe4n.ObjId) (boundTcb? : Option SeLe4n.ThreadId) :
+    -- **WS-OD OD3.10**: and over the splice-neighbour pair, one arity later and
+    -- for the same reason.
+    (boundEp? : Option SeLe4n.ObjId) (boundTcb? : Option SeLe4n.ThreadId)
+    (spliceNeighbors : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId) :
     (notificationLock notificationId, AccessMode.write)
       ∈ (lockSet_notificationSignal signaller cnRoot notificationId waiter?
-          boundEp? boundTcb?).pairs := by
+          boundEp? boundTcb? spliceNeighbors).pairs := by
   -- The notification lock is the outermost `insertOrMerge` of the base list, and
   -- every extension carries a write member through unconditionally.
   unfold lockSet_notificationSignal lockSetOfList
   simp only [List.foldl]
+  -- WS-OD OD3.10: two further extensions (the splice neighbours), each carrying
+  -- the write member through unconditionally like the three before them.
   exact mem_write_lockSetExtendOpt _ _ _
     (mem_write_lockSetExtendOpt _ _ _
       (mem_write_lockSetExtendOpt _ _ _
-        (LockSet.mem_insertOrMerge_write_self _ _)))
+        (mem_write_lockSetExtendOpt _ _ _
+          (mem_write_lockSetExtendOpt _ _ _
+            (LockSet.mem_insertOrMerge_write_self _ _)))))
 
 /-- WS-SM SM6.B.6 (binding under lock-set, TCB end): the **woken waiter's TCB
 write lock** — under which the signal writes the waiter's `ipcState := .ready` and
@@ -496,12 +545,22 @@ endpoint-receive-queue/receiver-TCB write that the prior footprint left outside 
 theorem lockSet_notificationSignal_bound_tcb_write_mem
     (signaller : SeLe4n.ThreadId) (cnRoot notificationId : SeLe4n.ObjId)
     (waiter? : Option SeLe4n.ThreadId) (boundEp? : Option SeLe4n.ObjId)
-    (bt : SeLe4n.ThreadId) :
+    (bt : SeLe4n.ThreadId)
+    -- **WS-OD OD3.10**: stated over the splice-neighbour argument rather than at
+    -- its default, so the membership holds of the footprint the bound delivery
+    -- really declares.  Merge-tolerant (`mem_write_lockSetExtendOpt`): a
+    -- neighbour that happened to name the same key would lub to `write`, so no
+    -- key-distinctness side condition is needed -- and none is *available*
+    -- here, since it is a fact about the state, not about the footprint.
+    (spliceNeighbors : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId) :
     (tcbLock bt, AccessMode.write)
-      ∈ (lockSet_notificationSignal signaller cnRoot notificationId waiter? boundEp? (some bt)).pairs := by
+      ∈ (lockSet_notificationSignal signaller cnRoot notificationId waiter? boundEp? (some bt)
+           spliceNeighbors).pairs := by
   unfold lockSet_notificationSignal
   simp only [lockSetExtendOpt, Option.map_some]
-  exact self_write_mem_insertOrMerge _ (tcbLock bt)
+  exact mem_write_lockSetExtendOpt _ _ _
+    (mem_write_lockSetExtendOpt _ _ _
+      (self_write_mem_insertOrMerge _ (tcbLock bt)))
 
 /-- WS-SM SM6.B/SM6.D (PR #822 Codex review): the bound-delivery **endpoint write
 lock** — under which `notificationSignalBoundOnCore` dequeues the bound TCB from its
@@ -510,15 +569,71 @@ member of the canonical `notificationSignal` footprint once the bound endpoint +
 are resolved. -/
 theorem lockSet_notificationSignal_bound_endpoint_write_mem
     (signaller : SeLe4n.ThreadId) (cnRoot notificationId : SeLe4n.ObjId)
-    (waiter? : Option SeLe4n.ThreadId) (ep : SeLe4n.ObjId) (bt : SeLe4n.ThreadId) :
+    (waiter? : Option SeLe4n.ThreadId) (ep : SeLe4n.ObjId) (bt : SeLe4n.ThreadId)
+    -- **WS-OD OD3.10**: at the splice-neighbour arity, for the same reason.
+    (spliceNeighbors : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId) :
     (endpointLock ep, AccessMode.write)
-      ∈ (lockSet_notificationSignal signaller cnRoot notificationId waiter? (some ep) (some bt)).pairs := by
+      ∈ (lockSet_notificationSignal signaller cnRoot notificationId waiter? (some ep) (some bt)
+           spliceNeighbors).pairs := by
   unfold lockSet_notificationSignal
   simp only [lockSetExtendOpt, Option.map_some]
+  refine mem_write_lockSetExtendOpt _ _ _
+    (mem_write_lockSetExtendOpt _ _ _ ?_)
   refine mem_insertOrMerge_of_mem_of_ne _ _ _ _ ?_ ?_
   · exact self_write_mem_insertOrMerge _ (endpointLock ep)
   · show endpointLock ep ≠ tcbLock bt
     intro h; simp [endpointLock, tcbLock] at h
+
+/-- **WS-OD OD3.10**: the two queue neighbours the bound delivery relinks are
+declared members of the resolved footprint, in **write** mode.
+
+This is the finding this row closes.  `endpointQueueRemoveDual` -- the dequeue
+the bound path runs -- writes the removed thread's predecessor and successor
+TCBs (`queueUnlinkPredecessor` / `queueUnlinkSuccessor`), and the footprint named
+neither, so a `.notificationSignal` on one core and a `.tcbSuspend` of a
+queue-mate on another had provably disjoint footprints while both writing the
+same TCB.  Stated per neighbour rather than as a pair, because the two are
+independent optionals: a bound TCB at the head of its queue has no predecessor,
+one at the tail no successor. -/
+theorem lockSet_notificationSignalOnCore_splice_prev_write_mem
+    (st : SystemState) (notificationId : SeLe4n.ObjId) (signaller : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (t : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
+    (tcb : TCB) (prevTid : SeLe4n.ThreadId)
+    (hTarget : boundDeliveryTarget? st notificationId = some (t, epId))
+    (hTcb : st.getTcb? t = some tcb)
+    (hPrev : tcb.queuePrev = some prevTid) :
+    (tcbLock prevTid, AccessMode.write) ∈
+      (lockSet_notificationSignalOnCore st notificationId signaller cnodeRootObjId).pairs := by
+  unfold lockSet_notificationSignalOnCore
+  rw [hTarget]
+  simp only []
+  rw [notificationSignalSpliceNeighbors?_of_target st notificationId t epId tcb hTarget hTcb]
+  unfold lockSet_notificationSignal
+  simp only [lockSetExtendOpt, hPrev, Option.map_some]
+  cases tcb.queueNext with
+  | none => simp only [Option.map_none]; exact self_write_mem_insertOrMerge _ (tcbLock prevTid)
+  | some nx =>
+      simp only [Option.map_some]
+      exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+        (self_write_mem_insertOrMerge _ (tcbLock prevTid))
+
+/-- **WS-OD OD3.10**: and the successor. -/
+theorem lockSet_notificationSignalOnCore_splice_next_write_mem
+    (st : SystemState) (notificationId : SeLe4n.ObjId) (signaller : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (t : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
+    (tcb : TCB) (nextTid : SeLe4n.ThreadId)
+    (hTarget : boundDeliveryTarget? st notificationId = some (t, epId))
+    (hTcb : st.getTcb? t = some tcb)
+    (hNext : tcb.queueNext = some nextTid) :
+    (tcbLock nextTid, AccessMode.write) ∈
+      (lockSet_notificationSignalOnCore st notificationId signaller cnodeRootObjId).pairs := by
+  unfold lockSet_notificationSignalOnCore
+  rw [hTarget]
+  simp only []
+  rw [notificationSignalSpliceNeighbors?_of_target st notificationId t epId tcb hTarget hTcb]
+  unfold lockSet_notificationSignal
+  simp only [lockSetExtendOpt, hNext, Option.map_some]
+  exact self_write_mem_insertOrMerge _ (tcbLock nextTid)
 
 -- ============================================================================
 -- §7  SM6.B.5 — Per-core consistency of the signal wake

@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.134.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.135.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,7 +203,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~60495 lines)
+- `CHANGELOG.md` (~60626 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22597 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12165 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
@@ -218,15 +218,15 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `SeLe4n/Model/State.lean` (~4708 lines)
 - `SeLe4n/Kernel/CrossSubsystem.lean` (~4416 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~4297 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (~4263 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~4250 lines)
 - `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~4213 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
 - `tests/NegativeStateSuite.lean` (~4115 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~4047 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~4039 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3919 lines)
+- `SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean` (~3803 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRead.lean` (~3789 lines)
-- `SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean` (~3660 lines)
 - `SeLe4n/Platform/FFI.lean` (~3592 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (~3517 lines)
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
@@ -260,13 +260,13 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md` (~2339 lines)
 - `docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md` (~2325 lines)
 - `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~2319 lines)
+- `SeLe4n/Model/Object/Types.lean` (~2316 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueNextBlocking.lean` (~2290 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2287 lines)
-- `SeLe4n/Model/Object/Types.lean` (~2266 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2254 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2187 lines)
+- `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~2186 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` (~2176 lines)
-- `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~2156 lines)
 - `SeLe4n/Prelude.lean` (~2137 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2079 lines)
 - `tests/Ak9PlatformSuite.lean` (~2079 lines)
@@ -280,8 +280,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean` (~1994 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1967 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
+- `SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean` (~1963 lines)
 - `SeLe4n/Platform/DeviceTree.lean` (~1960 lines)
-- `SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean` (~1955 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md` (~1917 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean` (~1909 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean` (~1901 lines)
@@ -295,10 +295,10 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1824 lines)
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1822 lines)
 - `tests/SyscallDispatchSuite.lean` (~1812 lines)
+- `tests/SmpCancellationSuite.lean` (~1806 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.6_WORKSTREAM_PLAN.md` (~1801 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md` (~1800 lines)
 - `docs/planning/UNFINISHED_SMP_WORK.md` (~1795 lines)
-- `tests/SmpCancellationSuite.lean` (~1782 lines)
 - `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` (~1776 lines)
 - `SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean` (~1746 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~1740 lines)
@@ -309,9 +309,9 @@ To find files that need pagination today, run:
 - `tests/FaultHandlingSuite.lean` (~1660 lines)
 - `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1645 lines)
 - `tests/LockSetSuite.lean` (~1639 lines)
-- `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1604 lines)
+- `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1616 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1600 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~1574 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~1583 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1559 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
@@ -348,11 +348,11 @@ To find files that need pagination today, run:
 - `tests/SmpCacheMaintenanceSuite.lean` (~1170 lines)
 - `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~1168 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` (~1165 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean` (~1158 lines)
 - `SeLe4n/Platform/RPi5/MmioAdapter.lean` (~1154 lines)
 - `tests/KernelErrorMatrixSuite.lean` (~1154 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~1151 lines)
 - `SeLe4n/Kernel/Architecture/VSpace.lean` (~1142 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean` (~1130 lines)
 - `tests/SyscallReturnAbiSuite.lean` (~1130 lines)
 - `SeLe4n/Machine.lean` (~1128 lines)
 - `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1126 lines)
@@ -368,6 +368,7 @@ To find files that need pagination today, run:
 - `tests/SmpCbsSuite.lean` (~1001 lines)
 - `SeLe4n/Kernel/Concurrency/Runtime.lean` (~1000 lines)
 - `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~998 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~995 lines)
 - `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean` (~993 lines)
 - `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md` (~984 lines)
 - `docs/planning/SMP_PER_CORE_STATE_PLAN.md` (~968 lines)
@@ -376,6 +377,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreTickCbsPreservation.lean` (~952 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean` (~949 lines)
 - `SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean` (~942 lines)
+- `tests/SmpCrossCoreNotificationSuite.lean` (~937 lines)
 - `SeLe4n/Kernel/Concurrency/MemoryModel.lean` (~935 lines)
 - `SeLe4n/Kernel/InformationFlow/Declassification.lean` (~935 lines)
 - `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` (~933 lines)
@@ -387,17 +389,15 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet2PL.lean` (~897 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~880 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` (~880 lines)
 - `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` (~880 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` (~871 lines)
 - `SeLe4n/Kernel/IPC/Operations/Fault.lean` (~868 lines)
 - `docs/planning/SMP_RUST_HAL_PLAN.md` (~868 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
-- `tests/SmpCrossCoreNotificationSuite.lean` (~851 lines)
+- `docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md` (~838 lines)
 - `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` (~833 lines)
 - `tests/DecodingSuite.lean` (~833 lines)
-- `docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md` (~831 lines)
 - `SeLe4n/Kernel/SchedContext/BindingAffinity.lean` (~825 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean` (~824 lines)
 - `tests/WithLockSetSuite.lean` (~820 lines)
@@ -1455,7 +1455,7 @@ passive-server pattern does not work at call depth ≥ 2, where the callee stays
 `.unbound` and can never run.  seL4-MCS's `maybeDonateSchedContext` reads the
 sender's *effective* context, bound or donated, and passes it down the chain.
 Two register rows close here: that gap, and the `passiveServerIdle` break the
-`v0.34.97` reclaim introduced.  **43 sub-tasks across OD1..OD6.**  **OD1 is
+`v0.34.97` reclaim introduced.  **44 sub-tasks across OD1..OD6.**  **OD1 is
 closed** (`v0.34.100` → `v0.34.108`), **OD2 is closed** (`v0.34.125`, one cut),
 and **OD3 is closed** (`v0.34.126` → `v0.34.132`); OD4..OD6 have not
 started.
@@ -1531,6 +1531,35 @@ invariant surface runs through
 that `replyStackOuterCaller?_of_no_stack` proves is the answer on every reachable
 state.
 
+**And `.notificationSignal` declares the two TCBs its dequeue relinks** (OD3.10,
+`v0.34.135`).  The bound-delivery path runs `endpointQueueRemoveDual`, which writes
+the removed thread's predecessor and successor TCBs, and `lockSet_notificationSignal`
+named neither -- so a `.notificationSignal` on one core and a `.tcbSuspend` of a
+queue-mate on another had provably disjoint footprints while both writing the same
+TCB.  Latent rather than live (SM5.I's global entry lock serialises every kernel
+entry, and nothing boots yet), which makes it a *verification* defect: everything
+built on `lockSetForSyscall` was silent about those two objects rather than
+conservative.  Four things new code must respect.  (1) **The resolver is derived
+twice over**: `notificationSignalSpliceNeighbors?` takes its arm gate from
+`boundDeliveryTarget?` -- the resolver the arm's other two members already come
+from -- and its neighbour identities from `queueSpliceNeighbors?`, so neither the
+footprint and the transition nor the two footprint families can disagree.  A Tier 3
+negative refuses the inlined pair.  (2) **`cancelSpliceNeighbors?` is now
+`queueSpliceNeighbors?`**, beside the link fields it reads: it was one family's
+private spelling of a fact that is not cancellation-specific, and adding a second
+reader without unifying it would have been OD3.9's divergence one level up.  Arm
+*selection* stays per arm -- which thread is spliced is an arm question, who its
+neighbours are is not.  (3) **Every statement about the footprint is restated at
+the new full arity** -- the size bound, the kind-consistency proof, the three
+write-membership lemmas and the `lockSetTransitions_within_bound` conjunct; a
+bound left at a new argument's default is a different proposition, which RR7.18's
+census refuses for sizes and which nothing covers for the others.  (4)
+**`maxLockSetSize` does not move**: the shape is `3 + 5 = 8`, so
+`admissibleCriticalSection` stays at 25 µs and the published contention bound is
+unchanged.  The remaining arms the same sweep found -- `.send`, `.call`,
+`.receive` and `.replyRecv`, each writing one queue-structure TCB (the new head
+on a rendezvous, the old tail on a block) -- are the rows after this one.
+
 **The three endpoint-queue removals write one definition** (OD3.9, `v0.34.134`).
 `spliceOutMidQueueNode` -- the removal `.tcbSuspend` and thread destruction run --
 patched its successor's `queuePrev` and not its `queuePPrev`, leaving it naming
@@ -1565,7 +1594,7 @@ member the code writes and the footprint does not name is *false*, and this row
 found both directions of that.
 
 **The victim's splice neighbours are declared on the arm that splices.**
-`cancelSpliceNeighbors?` was the one resolver in the cancellation family that
+`queueSpliceNeighbors?` was the one resolver in the cancellation family that
 did not key on `tcb.ipcState` — every other member selects an arm and this pair
 was summed over all of them — so the reply and notification arms declared two
 TCB write locks for a splice they do not perform.  `cancelArmSpliceNeighbors?`

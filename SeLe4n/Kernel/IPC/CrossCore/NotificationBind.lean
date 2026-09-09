@@ -560,6 +560,7 @@ theorem lockSet_notificationSignalOnCore_bound_tcb_write_mem
   rw [hTarget]
   exact lockSet_notificationSignal_bound_tcb_write_mem signaller cnodeRootObjId notificationId
     (notificationSignalWaiter? st notificationId) (some epId) t
+    (notificationSignalSpliceNeighbors? st notificationId)
 
 /-- WS-SM SM6.B / PR #822 review (coverage): on the bound-delivery path the **endpoint
 write lock** is a declared member of the canonical signal footprint — the lock under
@@ -574,5 +575,6 @@ theorem lockSet_notificationSignalOnCore_bound_endpoint_write_mem
   rw [hTarget]
   exact lockSet_notificationSignal_bound_endpoint_write_mem signaller cnodeRootObjId notificationId
     (notificationSignalWaiter? st notificationId) epId t
+    (notificationSignalSpliceNeighbors? st notificationId)
 
 end SeLe4n.Kernel

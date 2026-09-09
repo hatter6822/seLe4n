@@ -806,7 +806,15 @@ def lockSet_notificationSignal (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (notificationObjId : ObjId)
     (waiterTid : Option ThreadId)
     (boundEndpoint : Option ObjId := none)
-    (boundTcb : Option ThreadId := none) : LockSet :=
+    (boundTcb : Option ThreadId := none)
+    -- **WS-OD OD3.10**: the bound TCB's queue neighbours.  The bound delivery
+    -- dequeues that TCB with `endpointQueueRemoveDual`, which relinks its
+    -- predecessor and its successor -- two TCB *objects* this footprint did not
+    -- name, so a `.notificationSignal` on one core and a `.tcbSuspend` of a
+    -- queue-mate on another had provably disjoint footprints while both writing
+    -- it.  Defaulted, so every non-bound call site is unchanged and reduces
+    -- definitionally to the pre-OD3.10 footprint.
+    (spliceNeighbors : Option ThreadId × Option ThreadId := (none, none)) : LockSet :=
   -- WS-SM SM6.B/SM6.D (PR #822 Codex review): a notification bound to a TCB
   -- blocked on receive takes the bound-delivery path (`notificationSignalBoundOnCore`):
   -- it dequeues the bound TCB from its endpoint (`endpointQueueRemoveDual` — an
@@ -825,8 +833,31 @@ def lockSet_notificationSignal (callerTid : ThreadId)
     (waiterTid.map (fun wt => (tcbLock wt, .write)))
   let withEp := lockSetExtendOpt withWaiter
     (boundEndpoint.map (fun ep => (endpointLock ep, .write)))
-  lockSetExtendOpt withEp
+  let withBound := lockSetExtendOpt withEp
     (boundTcb.map (fun bt => (tcbLock bt, .write)))
+  let withPrev := lockSetExtendOpt withBound
+    (spliceNeighbors.1.map (fun p => (tcbLock p, AccessMode.write)))
+  lockSetExtendOpt withPrev
+    (spliceNeighbors.2.map (fun n => (tcbLock n, AccessMode.write)))
+
+/-- **WS-OD OD3.10**: a signal that splices nothing is definitionally the
+pre-OD3.10 footprint, so every statement and fixture taken over the
+five-argument form survives unchanged. -/
+@[simp] theorem lockSet_notificationSignal_no_splice (callerTid : ThreadId)
+    (cnodeRootObjId notificationObjId : ObjId) (waiterTid : Option ThreadId)
+    (boundEndpoint : Option ObjId) (boundTcb : Option ThreadId) :
+    lockSet_notificationSignal callerTid cnodeRootObjId notificationObjId waiterTid
+        boundEndpoint boundTcb (none, none)
+      = lockSetExtendOpt
+          (lockSetExtendOpt
+            (lockSetExtendOpt
+              (lockSetOfList
+                [(tcbLock callerTid, .read),
+                 (cnodeLock cnodeRootObjId, .read),
+                 (notificationLock notificationObjId, .write)])
+              (waiterTid.map (fun wt => (tcbLock wt, .write))))
+            (boundEndpoint.map (fun ep => (endpointLock ep, .write))))
+          (boundTcb.map (fun bt => (tcbLock bt, .write))) := rfl
 
 /-- WS-SM SM3.B.3: `lockSet` for `notificationWait`.
 
@@ -2233,7 +2264,7 @@ for why fitting is not the reason to add them.
 That is a checked fact rather than a convention:
 `suspendFootprint_splice_neighbors_under_endpoint_lock` (SM8.D) proves it
 over the *resolved* footprint and names the neighbours through the same
-`cancelSpliceNeighbors?`, extending the `lockSet_tcbSuspend_*_write_mem`
+`queueSpliceNeighbors?`, extending the `lockSet_tcbSuspend_*_write_mem`
 family past the six members that stopped exactly where the umbrella
 began.  See `IPC/CrossCore/Cancellation.lean` §"Neighbour-lock convention
 bridge". -/
@@ -3520,10 +3551,16 @@ theorem lockSet_consistent_replyRecv (callerTid : ThreadId)
 /-- WS-SM SM3.B.4 for `.notificationSignal`. -/
 theorem lockSet_consistent_notificationSignal (callerTid : ThreadId)
     (cnRoot nId : ObjId) (wTid : Option ThreadId)
-    (boundEndpoint : Option ObjId := none) (boundTcb : Option ThreadId := none) :
-    ∀ p ∈ (lockSet_notificationSignal callerTid cnRoot nId wTid boundEndpoint boundTcb).pairs,
+    (boundEndpoint : Option ObjId := none) (boundTcb : Option ThreadId := none)
+    -- **WS-OD OD3.10**: stated at the splice-neighbour arity too.  A consistency
+    -- proof stated at fewer arguments is a different proposition, and the
+    -- default would fill the new one in silently -- the shape RR7.18's census
+    -- exists to refuse for the *size* bounds, asked here of the kind check.
+    (spliceNeighbors : Option ThreadId × Option ThreadId := (none, none)) :
+    ∀ p ∈ (lockSet_notificationSignal callerTid cnRoot nId wTid boundEndpoint boundTcb
+             spliceNeighbors).pairs,
       p.fst.kind ∈ permittedKinds .notificationSignal :=
-  lockSet_consistent_base_plus_three_opts _ _ _ _ _
+  lockSet_consistent_base_plus_five_opts _ _ _ _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -3544,6 +3581,16 @@ theorem lockSet_consistent_notificationSignal (callerTid : ThreadId)
         cases boundTcb with
         | none => simp at hpp
         | some bt => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        obtain ⟨pv?, nx?⟩ := spliceNeighbors
+        cases pv? with
+        | none => simp at hpp
+        | some pv => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        obtain ⟨pv?, nx?⟩ := spliceNeighbors
+        cases nx? with
+        | none => simp at hpp
+        | some nx => simp at hpp; rw [← hpp]; simp; decide)
 
 /-- WS-SM SM3.B.4 for `.declassifySignal` (SM9.C.8).
 

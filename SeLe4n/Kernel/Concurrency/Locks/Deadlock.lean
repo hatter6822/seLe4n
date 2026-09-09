@@ -966,11 +966,18 @@ theorem lockSet_replyRecv_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
 -- at every value it has held (8 then, 11 since WS-OD OD3.5), so nothing about
 -- the constant changes; what changes is that the bound now holds for the
 -- footprint the transition really declares.
+--
+-- **WS-OD OD3.10**: and at the splice-neighbour arity, for the same reason one
+-- more time.  The bound-delivery path's `endpointQueueRemoveDual` relinks the
+-- bound TCB's two queue neighbours, so the shape the transition declares is
+-- `3 + 5 = 8` -- still inside the constant (13 since WS-OD OD3.7), so nothing
+-- about the constant changes.
 theorem lockSet_notificationSignal_size_le (a : ThreadId) (b c : ObjId)
-    (d : Option ThreadId) (e : Option ObjId) (f : Option ThreadId) :
-    (lockSet_notificationSignal a b c d e f).size ≤ maxLockSetSize := by
+    (d : Option ThreadId) (e : Option ObjId) (f : Option ThreadId)
+    (g : Option ThreadId × Option ThreadId) :
+    (lockSet_notificationSignal a b c d e f g).size ≤ maxLockSetSize := by
   unfold lockSet_notificationSignal maxLockSetSize
-  exact Nat.le_trans (size_le_3 _ _ _ _) (by size_bound)
+  exact Nat.le_trans (size_le_5 _ _ _ _ _ _) (by size_bound)
 
 /-- WS-SM SM9.C.8: the data-carrying declassification's footprint is within the
 static bound — the ordinary signal's three-optional shape plus the state-level
@@ -1204,7 +1211,8 @@ theorem lockSetTransitions_within_bound :
     (∀ a b c d e f g h, (lockSet_endpointReply a b c d e f g h).size ≤ maxLockSetSize) ∧
     (∀ a b c d e f g h i j k l m,
       (lockSet_replyRecv a b c d e f g h i j k l m).size ≤ maxLockSetSize) ∧
-    (∀ a b c d e f, (lockSet_notificationSignal a b c d e f).size ≤ maxLockSetSize) ∧
+    -- WS-OD OD3.10: at the splice-neighbour arity, not at its default.
+    (∀ a b c d e f g, (lockSet_notificationSignal a b c d e f g).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_notificationWait a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_cspaceMint a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_cspaceCopy a b c).size ≤ maxLockSetSize) ∧
@@ -1238,7 +1246,8 @@ theorem lockSetTransitions_within_bound :
   ⟨lockSet_endpointSend_size_le, lockSet_endpointReceive_size_le,
    (fun a b c d e f g => lockSet_endpointCall_size_le a b c d e f g),
    (fun a b c d e f => lockSet_endpointReply_size_le a b c d e f),
-   lockSet_replyRecv_size_le, lockSet_notificationSignal_size_le,
+   lockSet_replyRecv_size_le,
+   lockSet_notificationSignal_size_le,
    lockSet_notificationWait_size_le, lockSet_cspaceMint_size_le,
    lockSet_cspaceCopy_size_le, lockSet_cspaceMove_size_le,
    lockSet_cspaceDelete_size_le, lockSet_lifecycleRetype_size_le,

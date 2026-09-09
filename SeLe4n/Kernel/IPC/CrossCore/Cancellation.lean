@@ -110,7 +110,7 @@ but fixed: it declares no member the pre-state does not name, so it cannot grow)
 splice's neighbour queue-link writes under the *endpoint* write lock (the
 queue-owning-object discipline above); the sub-operation-level
 `lockSet_cancelIpcBlockingOnCore` declares the same writes explicitly as
-neighbour-TCB locks (`cancelSpliceNeighbors?`, PR #831 review 4).  Both are
+neighbour-TCB locks (`queueSpliceNeighbors?`, PR #831 review 4).  Both are
 sound; the sub-op form is the finer-grained authority the runtime bracket
 should acquire, and the syscall form's endpoint-lock rationale is the
 coarser umbrella it already sits under.
@@ -1300,17 +1300,9 @@ def cancelConsumedReply? (tcb : TCB) : Option SeLe4n.ReplyId :=
   | .blockedOnReply _ _ => tcb.replyObject
   | _ => none
 
-/-- WS-SM SM6.E (PR #831 review 4): the queue-neighbour TCBs the splice
-(`spliceOutMidQueueNode`) would relink — the victim's `queuePrev` /
-`queueNext` interior links, pre-resolved from the victim's TCB.  A mid-queue
-cancellation patches the predecessor's `queueNext` and the successor's
-`queuePrev`, so both neighbour TCBs are write-footprint members. -/
-def cancelSpliceNeighbors? (tcb : TCB) : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId :=
-  (tcb.queuePrev, tcb.queueNext)
-
 /-- WS-OD OD3.5: **the queue-neighbour TCBs *this arm* relinks.**
 
-`cancelSpliceNeighbors?` above reads the victim's interior links whatever state
+`queueSpliceNeighbors?` above reads the victim's interior links whatever state
 it is in, and it was the one resolver in this family that did not key on
 `tcb.ipcState`: `cancelBlockedEndpoint?`, `cancelBlockedNotification?`,
 `cancelConsumedReply?` and `cancelledCallerDonation?` all select an arm, and the
@@ -1332,17 +1324,17 @@ Derived from `cancelBlockedEndpoint?` rather than re-matching `ipcState`: the
 arm question is asked once, so the two cannot answer it differently. -/
 def cancelArmSpliceNeighbors? (tcb : TCB) :
     Option SeLe4n.ThreadId × Option SeLe4n.ThreadId :=
-  if (cancelBlockedEndpoint? tcb).isSome then cancelSpliceNeighbors? tcb
+  if (cancelBlockedEndpoint? tcb).isSome then queueSpliceNeighbors? tcb
   else (none, none)
 
 /-- WS-OD OD3.5: on the arm that splices, the narrowed resolver **is** the
-summed one — so every statement taken over `cancelSpliceNeighbors?` on an
+summed one — so every statement taken over `queueSpliceNeighbors?` on an
 endpoint-blocked victim (SM8.D.5's
 `suspendFootprint_splice_neighbors_under_endpoint_lock`, for one) transfers
 unchanged. -/
 @[simp] theorem cancelArmSpliceNeighbors?_of_blockedEndpoint (tcb : TCB)
     (ep : SeLe4n.ObjId) (h : cancelBlockedEndpoint? tcb = some ep) :
-    cancelArmSpliceNeighbors? tcb = cancelSpliceNeighbors? tcb := by
+    cancelArmSpliceNeighbors? tcb = queueSpliceNeighbors? tcb := by
   unfold cancelArmSpliceNeighbors?
   rw [h]
   rfl
@@ -1595,7 +1587,7 @@ theorem lockSet_cancelIpcBlockingOnCore_endpointArm_covers_prev (st : SystemStat
     (tcbLock p, AccessMode.write) ∈ (lockSet_cancelIpcBlockingOnCore st victimTid).pairs := by
   unfold lockSet_cancelIpcBlockingOnCore
   rw [hT]
-  simp only [cancelArmSpliceNeighbors?_of_blockedEndpoint tcb ep hE, cancelSpliceNeighbors?,
+  simp only [cancelArmSpliceNeighbors?_of_blockedEndpoint tcb ep hE, queueSpliceNeighbors?,
     hPrev]
   exact mem_write_lockSetExtendOpt _ _ _ (LockSet.mem_insertOrMerge_write_self _ _)
 
@@ -1608,7 +1600,7 @@ theorem lockSet_cancelIpcBlockingOnCore_endpointArm_covers_next (st : SystemStat
     (tcbLock n, AccessMode.write) ∈ (lockSet_cancelIpcBlockingOnCore st victimTid).pairs := by
   unfold lockSet_cancelIpcBlockingOnCore
   rw [hT]
-  simp only [cancelArmSpliceNeighbors?_of_blockedEndpoint tcb ep hE, cancelSpliceNeighbors?,
+  simp only [cancelArmSpliceNeighbors?_of_blockedEndpoint tcb ep hE, queueSpliceNeighbors?,
     hNext]
   exact LockSet.mem_insertOrMerge_write_self _ _
 

@@ -905,8 +905,8 @@ theorem lockSetForSyscall_notificationSignal_covers_writes
   cases hDecl
   unfold lockSet_notificationSignalOnCore
   cases boundDeliveryTarget? st notificationId with
-  | none => exact lockSet_notificationSignal_notification_write_mem _ _ _ _ _ _
-  | some _ => exact lockSet_notificationSignal_notification_write_mem _ _ _ _ _ _
+  | none => exact lockSet_notificationSignal_notification_write_mem _ _ _ _ _ _ _
+  | some _ => exact lockSet_notificationSignal_notification_write_mem _ _ _ _ _ _ _
 
 /-- **WS-RR RR7.11**: and the bound-delivery pair, on the path that takes it —
 the bound TCB the badge is delivered to, and the endpoint it is dequeued from.
@@ -927,6 +927,34 @@ theorem lockSetForSyscall_notificationSignal_covers_boundDelivery
   cases hDecl
   exact ⟨lockSet_notificationSignalOnCore_bound_tcb_write_mem _ _ _ _ _ _ hBound,
          lockSet_notificationSignalOnCore_bound_endpoint_write_mem _ _ _ _ _ _ hBound⟩
+
+/-- **WS-OD OD3.10**: and the two queue neighbours the dequeue relinks.
+
+The pair above is the *principals* of the bound delivery; this is its
+*structure*.  `endpointQueueRemoveDual` writes the removed thread's predecessor
+and successor TCBs, and until this row the footprint the bracket acquires named
+neither -- so a `.notificationSignal` on one core and a `.tcbSuspend` of a
+queue-mate on another were provably disjoint while both writing the same TCB.
+Each neighbour is conditioned on the bound TCB actually having one, because a
+bound TCB at the head of its queue has no predecessor and one at the tail no
+successor. -/
+theorem lockSetForSyscall_notificationSignal_covers_spliceNeighbors
+    (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
+    (notificationId : ObjId) (S : LockSet) (boundTcb : ThreadId) (epId : ObjId)
+    (boundTcbObj : TCB)
+    (hTcb : st.getTcb? ops.caller = some caller)
+    (hNtfn : ops.targetObject = some notificationId)
+    (hBound : boundDeliveryTarget? st notificationId = some (boundTcb, epId))
+    (hBoundTcb : st.getTcb? boundTcb = some boundTcbObj)
+    (hDecl : lockSetForSyscall .notificationSignal ops st = some S) :
+    (∀ p, boundTcbObj.queuePrev = some p → (tcbLock p, AccessMode.write) ∈ S.pairs) ∧
+    (∀ n, boundTcbObj.queueNext = some n → (tcbLock n, AccessMode.write) ∈ S.pairs) := by
+  rw [lockSetForSyscall_notificationSignal_eq ops st caller notificationId hTcb hNtfn] at hDecl
+  cases hDecl
+  exact ⟨fun p hp => lockSet_notificationSignalOnCore_splice_prev_write_mem
+           _ _ _ _ _ _ _ _ hBound hBoundTcb hp,
+         fun n hn => lockSet_notificationSignalOnCore_splice_next_write_mem
+           _ _ _ _ _ _ _ _ hBound hBoundTcb hn⟩
 
 /-- **WS-RR RR7.11**: at resolved operands, `.notificationWait` declares the
 wait footprint. -/

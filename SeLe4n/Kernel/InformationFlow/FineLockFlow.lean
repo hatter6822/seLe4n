@@ -2869,7 +2869,7 @@ cannot satisfy that, which is exactly the discrimination the first cut lacked.
 
 It is stated over the **resolved** footprint (`suspendFootprintOf`, what the SM8.D
 resolver actually returns) rather than the parametric `lockSet_tcbSuspend`, and it
-names the neighbours through the same `cancelSpliceNeighbors?` the sub-operation
+names the neighbours through the same `queueSpliceNeighbors?` the sub-operation
 footprint reads, so it is a theorem about the splice rather than about the
 endpoint lock in isolation.
 
@@ -2911,9 +2911,9 @@ theorem suspendFootprint_splice_neighbors_under_endpoint_lock (st : SystemState)
     (hBlocked : victimBlockedOnEndpoint victim ep)
     (hLinks : tcbQueueLinkIntegrity st) :
     (SeLe4n.Kernel.Concurrency.endpointLock ep, AccessMode.write) ∈ S.pairs ∧
-      (∀ p, (SeLe4n.Kernel.cancelSpliceNeighbors? victim).1 = some p →
+      (∀ p, (SeLe4n.Model.queueSpliceNeighbors? victim).1 = some p →
         ∃ tcbP, st.getTcb? p = some tcbP ∧ tcbP.queueNext = some targetTid) ∧
-      (∀ n, (SeLe4n.Kernel.cancelSpliceNeighbors? victim).2 = some n →
+      (∀ n, (SeLe4n.Model.queueSpliceNeighbors? victim).2 = some n →
         ∃ tcbN, st.getTcb? n = some tcbN ∧ tcbN.queuePrev = some targetTid) := by
   -- The SM6.E link invariant is phrased over the raw store, so the victim's
   -- membership is transported through the AL2-A accessor bridge rather than
@@ -2940,13 +2940,13 @@ theorem suspendFootprint_splice_neighbors_under_endpoint_lock (st : SystemState)
     -- the victim's neighbour in the queue `ep` owns, not an arbitrary thread.
     intro p hp
     have hPrev : victim.queuePrev = some p := by
-      simpa [SeLe4n.Kernel.cancelSpliceNeighbors?] using hp
+      simpa [SeLe4n.Model.queueSpliceNeighbors?] using hp
     obtain ⟨tcbP, hMemP, hNextP⟩ := hLinks.2 targetTid victim hVictimRaw p hPrev
     exact ⟨tcbP, (SystemState.getTcb?_eq_some_iff st p tcbP).mpr hMemP, hNextP⟩
   · -- …and symmetrically for the successor.
     intro n hn
     have hNext : victim.queueNext = some n := by
-      simpa [SeLe4n.Kernel.cancelSpliceNeighbors?] using hn
+      simpa [SeLe4n.Model.queueSpliceNeighbors?] using hn
     obtain ⟨tcbN, hMemN, hPrevN⟩ := hLinks.1 targetTid victim hVictimRaw n hNext
     exact ⟨tcbN, (SystemState.getTcb?_eq_some_iff st n tcbN).mpr hMemN, hPrevN⟩
 

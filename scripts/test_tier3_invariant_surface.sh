@@ -932,6 +932,30 @@ run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_notificationArm_preserve
 # neither a "not blocked on reply" nor an "off every endpoint boundary" premise.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*hNotReply" SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean'
 run_check "INVARIANT" rg -n '^theorem purgedAndRestored_victim_off_endpoint_boundaries' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
+# WS-OD OD3.10: the bound-notification delivery declares the two TCBs its
+# dequeue relinks.  `endpointQueueRemoveDual` writes the removed thread's
+# predecessor and successor, and `lockSet_notificationSignal` named neither -- so
+# a `.notificationSignal` on one core and a `.tcbSuspend` of a queue-mate on
+# another had provably disjoint footprints while both writing the same TCB.
+run_check "INVARIANT" rg -n '^def notificationSignalSpliceNeighbors\?' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_notificationSignalOnCore_splice_prev_write_mem' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_notificationSignalOnCore_splice_next_write_mem' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
+run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_notificationSignal_covers_spliceNeighbors' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+# The resolver is *derived* from the two the arm already asks -- the arm gate
+# from `boundDeliveryTarget?`, the neighbour identities from the neutral
+# `queueSpliceNeighbors?` the cancellation arms use -- so the footprint and the
+# transition cannot disagree about whether this signal splices, nor the two
+# footprint families about who a splice's neighbours are.  A relation: the
+# tokens are present either way, what matters is that they compose.
+run_check "INVARIANT" bash -lc 'rg -U -n "def notificationSignalSpliceNeighbors\?[^\n]*(\n([ \t][^\n]*)?)*boundDeliveryTarget\? st notificationId" SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def notificationSignalSpliceNeighbors\?[^\n]*(\n([ \t][^\n]*)?)*queueSpliceNeighbors\? tcb" SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean'
+# NEGATIVE: the neighbour identities must not be re-spelled here.  Mutating by
+# deleting the resolver would be caught by the positives; this keeps it and
+# inlines the pair it should be deriving.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "def notificationSignalSpliceNeighbors\?[^\n]*(\n([ \t][^\n]*)?)*\(tcb\.queuePrev, tcb\.queueNext\)" SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean'
+# The neutral resolver is one definition, in the model, not one per family.
+run_check "INVARIANT" rg -n '^def queueSpliceNeighbors\?' SeLe4n/Model/Object/Types.lean
+run_negative_check "INVARIANT" rg -n '^def cancelSpliceNeighbors\?' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 # WS-OD OD1.1 + OD3.9: **all three** endpoint-queue removals agree on
 # `queuePPrev`, because there is one definition of what unlinking writes.  The
 # dual removal gives the successor the removed thread's own back-pointer and
@@ -1486,12 +1510,12 @@ run_check "INVARIANT" bash -lc 'rg -U -n "NEGATIVE: a frame below the head donat
 # is asked once.  Relation, not presence: the mutation keeps the definition and
 # makes it unconditional, which every "the resolver exists" check survives.
 run_check "INVARIANT" rg -n '^def cancelArmSpliceNeighbors\?' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelArmSpliceNeighbors\?[^\n]*(\n([ \t][^\n]*)?)*if \(cancelBlockedEndpoint\? tcb\)\.isSome then cancelSpliceNeighbors\? tcb" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelArmSpliceNeighbors\?[^\n]*(\n([ \t][^\n]*)?)*if \(cancelBlockedEndpoint\? tcb\)\.isSome then queueSpliceNeighbors\? tcb" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 run_check "INVARIANT" rg -n '^@\[simp\] theorem cancelArmSpliceNeighbors\?_of_blockedEndpoint' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem cancelArmSpliceNeighbors\?_of_not_blockedEndpoint' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 # ...and the resolved footprint reads the arm-selected pair, not the summed one.
 run_check "INVARIANT" bash -lc 'rg -U -n "\(\(cancelArmSpliceNeighbors\? tcb\)\.1\.map \(fun p => \(tcbLock p, \.write\)\)\)\)" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "\(\(cancelSpliceNeighbors\? tcb\)\.1\.map \(fun p => \(tcbLock p, \.write\)\)\)\)" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "\(\(queueSpliceNeighbors\? tcb\)\.1\.map \(fun p => \(tcbLock p, \.write\)\)\)\)" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 # The payoff, stated in both directions: the reply arm declares NO neighbour
 # member (as an equation, since a `∉` would be false for the accidental reason
 # that a neighbour may *be* the donation holder), and the arm that splices keeps
@@ -4069,7 +4093,7 @@ run_check "INVARIANT" rg -n 'ref\.cnode' SeLe4n/Kernel/InformationFlow/FineLockF
 # queue-owning-object umbrella) — the seventh member of a coverage family that
 # stopped at six, exactly where the umbrella began.
 run_check "INVARIANT" rg -n '^theorem suspendFootprint_splice_neighbors_under_endpoint_lock' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n 'cancelSpliceNeighbors\?' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n 'queueSpliceNeighbors\?' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The suite exercises the declared path POSITIVELY and demonstrates the refusal;
 # before round 5 every declared-footprint result in the group was `none`.
 run_check "INVARIANT" rg -n 'NEGATIVE: a capability replaced under the growing phase is refused' tests/SmpInformationFlowSuite.lean
@@ -7415,7 +7439,10 @@ run_check "INVARIANT" rg -n '^@\[inline\] def pipChainStart_tcbSuspend' SeLe4n/K
 # unbind path can key its guard on it; `Suspend.lean` re-exports the name.
 run_check "INVARIANT" rg -n '^def runningCoreOf\?' SeLe4n/Kernel/Scheduler/Operations/Core.lean
 run_check "INVARIANT" rg -n '^theorem currentScan_boot_of_single_core' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
-run_check "INVARIANT" rg -n '^def cancelSpliceNeighbors\?' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+# WS-OD OD3.10: the splice's neighbour resolver is the neutral
+# `queueSpliceNeighbors?`, in the model beside the link fields it reads, since
+# the bound-notification delivery asks the same question.
+run_check "INVARIANT" rg -n '^def queueSpliceNeighbors\?' SeLe4n/Model/Object/Types.lean
 # Audit closure (v0.32.66): running-core footprint triple, EDF deadline rules,
 # current-uniqueness invariant slice, donation-side observer capstone.
 # WS-RR RR2.10 (v0.34.42): the triple moved to `Scheduler/Operations/PerCoreChooseThread.lean`
