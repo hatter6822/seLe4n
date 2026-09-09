@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.132.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.133.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,7 +203,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~60327 lines)
+- `CHANGELOG.md` (~60495 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22597 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12165 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
@@ -211,7 +211,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~5919 lines)
 - `SeLe4n/Platform/Boot.lean` (~5861 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5833 lines)
-- `docs/spec/SELE4N_SPEC.md` (~5117 lines)
+- `docs/spec/SELE4N_SPEC.md` (~5118 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5046 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~4937 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4840 lines)
@@ -232,7 +232,7 @@ To find files that need pagination today, run:
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
 - `tests/SmpTlbShootdownSuite.lean` (~3354 lines)
 - `SeLe4n/Testing/MainTraceHarness.lean` (~3332 lines)
-- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~3326 lines)
+- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~3331 lines)
 - `tests/OperationChainSuite.lean` (~3290 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean` (~3259 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~3194 lines)
@@ -265,7 +265,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Model/Object/Types.lean` (~2266 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2254 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2187 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` (~2168 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` (~2176 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~2156 lines)
 - `SeLe4n/Prelude.lean` (~2137 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2079 lines)
@@ -395,10 +395,11 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_RUST_HAL_PLAN.md` (~868 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
 - `tests/SmpCrossCoreNotificationSuite.lean` (~851 lines)
+- `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` (~833 lines)
 - `tests/DecodingSuite.lean` (~833 lines)
+- `docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md` (~831 lines)
 - `SeLe4n/Kernel/SchedContext/BindingAffinity.lean` (~825 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean` (~824 lines)
-- `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` (~820 lines)
 - `tests/WithLockSetSuite.lean` (~820 lines)
 - `docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` (~817 lines)

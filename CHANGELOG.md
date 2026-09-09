@@ -1,3 +1,135 @@
+## v0.34.133 — Fine-lock Track D restructured: the Lean foundations come first, and the whole-state CAS is refused
+
+A planning cut, no kernel code.  Track D of
+`docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md` — the commit-partitioning
+end-state, three unstarted PRs — was read back against the code it is about.
+Four findings, each answered by the restructure rather than by a note.
+
+### 1. The track's biggest Lean row had no consumer
+
+The old PR 12 read "compute-from-snapshot + CAS on an `AtomicPtr`; on conflict
+re-run against fresh state (**sound by `transition_footprint_local`**)".
+Re-running is sound by *purity*: every transition in this kernel is a total
+function `SystemState → SystemState`, so compute-from-snapshot, CAS, retry is
+the textbook optimistic update and needs no locality theorem.  What locality
+buys is the property the track is named after — two commits with **disjoint
+footprints both succeeding** — and the old PR 12 never asked for it.  So PR 11,
+the largest item in the track, was motivated by a citation that did not hold.
+
+### 2. A single-`AtomicPtr` CAS is not partitioning, and regresses the WCRT bound
+
+One pointer to the whole state means every commit conflicts with every other:
+two cores doing disjoint IPC serialise exactly as they do under the SM5.I entry
+lock.  What changes is the *shape* of the wait — the ticket lock gives a bounded
+FIFO one, an optimistic retry loop an unbounded one, mitigated in the old plan
+by "bounded rebase fuel, fail-closed halt", i.e. a kernel that halts under
+contention.  For a system whose headline property is a worst-case response time
+that is a regression.  It is now a stated **non-goal**, with the reason, so a
+later cut has to argue against it rather than rediscover it.
+
+### 3. The runtime obligation is a set, and the design note named one field
+
+§5 said the key-local reading of the object-store lock is sound once "the
+runtime realises `SystemState.objects` as per-object storage — the same
+obligation `storeObject` already carries".  `storeObject`'s own *declared* write
+set is five fields and the IPC list is seven
+(`storeObject_modifiedFields` / `ipcEndpointOp_modifiedFields`,
+`Kernel/CrossSubsystem.lean`), every one a structure the model replaces whole.
+Three of them are sharper than the note allowed for:
+
+* `lifecycle.capabilityRefs` is rebuilt by a `filter` over **every** entry on
+  every `storeObject`, of every kind — not only on a CNode store;
+* `objectIndex` is a `List` whose head is shared;
+* **`RHTable.insert` tests the load factor before it knows whether the key is
+  resident** (`if t.size * 4 ≥ t.capacity * 3 then t.resize`), so a store at a
+  *resident* key rebuilds the whole table at three-quarters load.  Slot-locality
+  is conditional on the load factor, not on the key being new — which is the
+  opposite of the reading "creation needs the table lock, updates do not".
+
+Deriving that set from the write-set lists, rather than naming a field, is the
+enumeration-versus-derivation rule applied to a runtime obligation.
+
+### 4. The gate named a phase that no longer exists
+
+"Seam-gated to SM10.1" predates the WS-BP split: SM10.1's content is WS-BP's 42
+sub-tasks.  The seam flag is about the *entry lock*, so its gate is **BP6**
+(per-core readiness — the point at which more than one PE executes kernel code)
+with validation at **BP8** (first boot).  And the gate was wrong in the other
+direction too: the Lean rows have no runtime dependency at all.
+
+### The restructure
+
+Four PRs, renumbered so the proofs precede the runtime that relies on them —
+the numbering rule's semantic half, which the old order violated by gating the
+theorem and its consumer on the same event.
+
+| PR | What | Gate |
+|----|------|------|
+| 10 | **Footprint-local commit** (Lean) — the coverage relation a `LockSet` induces, the generalisation of SM3.E.5's *single-object* commutation to a transition confined to its footprint, and `transition_footprint_local` instantiated at the eight declared arms | none |
+| 11 | **The representation obligation, derived and decided** (Lean) — the field classification off the write-set lists, the `RHTable` locality theorem with its load-factor side condition, and the residue registered in `UncoveredLockDomain` beside `taintTablePerKeyStore` | none |
+| 12 | **The striped object-lock table** (Rust) | BP6 |
+| 13 | **The partitioned commit and the entry-lock retirement** (Rust + Lean) | BP6, validated BP8 |
+
+### And the refinement pass sharpened PR 10 again
+
+Reading `LockSetForSyscall.lean` back for PR 10's scope found that RR7.11's
+"coverage" is **two different statements**, and the file's own docstring says
+so.  The **membership** form
+(`lockSetForSyscall_<arm>_covers_writes`, seven arms) says the locks *someone
+listed* are in the declared set — a presence claim about a hand-written write
+set.  The **quantified** form
+(`lockSetForSyscall_{send,call}_object_writes_declared`, over RR7.8's
+`endpointSendDualWithCaps_object_writes_declared`) says *every object the step
+changes* has its lock declared, "which is stronger … because it quantifies over
+every object rather than over the members someone listed".
+
+Only the second is a coverage relation, and it holds for **two** of the eight
+declared arms, over the **capability-transfer step alone**, over the **`objects`
+field alone**; the eighth arm, `.tcbSuspend`, has neither form here — its
+containment is the scheduler domain's, a different lock type.  That is this project's own "a presence check is not a relation
+check" one level up from where it is usually applied — on the footprint surface
+itself — and it makes PR 10's second step the one that can *fail*: an arm whose
+transition writes a field its footprint does not cover is a false footprint,
+which is exactly what WS-OD OD3.5 and OD3.6 each found live.  So extending the
+quantified form to every arm, every step and every field is scheduled **before**
+the theorem that assumes it, not after.
+
+The same pass separated two questions §5 had merged: `lifecycle.objectTypes` is
+keyed by `ObjId` and `lifecycle.capabilityRefs` by `SlotRef = {cnode, slot}`, so
+both decompose by object *abstractly* and belong to the per-object locks — it is
+only their **runtime realisation** (the `filter` that rebuilds `capabilityRefs`
+on every store) that does not.  PR 10 owns the abstract question, PR 11 the
+representation one, and the plan now says which is which.
+
+PR 10's remaining content is what SM3.E.5 does not already give: that result
+(`objStoreWriteInstance_actionsCommuteObs`, `Locks/Serializability.lean`)
+commutes two `updateObjectAt` writes to distinct keys — **one** object each —
+while a declared footprint names up to `maxLockSetSize` members and its
+transition writes seven `StateField`s.  And the coverage relation itself, which
+the tree does not have at all: `lockWritesOnly` is about lock *words*, and the
+object domain has no analogue of RR7.39's `perCoreTimerTickStep_coversWrites`.
+
+PR 12's step 1 was an *exploration* ("confirm the current carrier"); the code
+answers it.  `STATIC_RW_LOCK_POOL` is `[QueuedRwLock; STATIC_RW_LOCK_POOL_SIZE]`
+with the size pinned equal to the RPi5 `coreCount` — a per-**core** pool, with
+the element type pinned in `build.rs` — so a stripe table is a replacement, not
+a resize, and the WS-LC LC3 withdrawal contract (one outstanding ticket per core
+per lock) travels with it into the multi-stripe acquire.
+
+### Sibling registrations re-pointed, so one question keeps one answer
+
+`SMP_RELEASE_CLOSURE_PLAN.md` §2 and `docs/REGISTERED_DEBT.md` both registered
+Track D as an SM10.1 dependency with **three** inherited obligations.  Both now
+state two: the per-key realisation of the derived *set*, and the measured WCRT
+claim — which no bound in that surface converts to a time until `tCs` is
+measured on the board, and BP8 is the first point that can happen.  The third,
+the `SM3.C.9.b` timer-tick bracket, is **closed**: WS-RR RR7.39 landed it at
+`v0.34.89`, and the plan's §8 had still named it as an open follow-on.
+`UNFINISHED_SMP_WORK.md`'s finding 7 keeps its audit-time text and its status
+line is corrected.
+
+Refs: docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md §4 Track D
+
 ## v0.34.132 — WS-OD OD3.8: the pop preserves the donation chain, and acyclicity is derived rather than assumed
 
 **WS-OD OD3.8** — the last row of OD3, and the one that turns

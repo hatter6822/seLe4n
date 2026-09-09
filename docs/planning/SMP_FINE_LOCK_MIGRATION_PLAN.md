@@ -1,6 +1,6 @@
 # SMP Fine-Lock Migration & Commit-Partitioning Plan
 
-> **Status**: **PARTIAL — 9 of 12 PRs landed** (WS-RR RR7.19, `v0.34.70`;
+> **Status**: **PARTIAL — 9 of 13 PRs landed** (WS-RR RR7.19, `v0.34.70`;
 > the header read "2 of 12" and "Tracks B, C and D are entirely unstarted"
 > until this row, which was true when RR0 wrote it at `v0.34.26` and false
 > from `v0.34.60` on).
@@ -16,14 +16,23 @@
 > the queue owner's write lock.  **Five of the register's seven domains are
 > covered and two remain** — `syscallSeamSchedulerDomain` (RR7.39's syscall
 > half) and `taintTablePerKeyStore` (owned by the representation cut, Track D's
-> PR 12); the register itself is the authority, since its completeness theorem
+> PR 13); the register itself is the authority, since its completeness theorem
 > fails until a covered constructor is deleted.
 > **Track C** (4 PRs) is closed: the decoded-driven resolver at `v0.34.63`
 > (RR7.10), the eight declared IPC footprints at `v0.34.64` (RR7.11), the
 > **syscall seam's bracket** at `v0.34.65` (RR7.12) and the export-commit
 > census at `v0.34.66` (RR7.13).
-> **Track D** (commit partitioning, 3 PRs) is **unstarted**, seam-gated to
-> **SM10.1** and registered as a named dependency by RR6.27.
+> **Track D** (commit partitioning, **4 PRs**) is **unstarted** and was
+> **restructured at `v0.34.133`** — see its own section for the four findings
+> that drove it.  Its first two rows are Lean and gated on **nothing**: the
+> footprint-local commit theorem and the representation obligation derived from
+> the write-set lists can be proved against the model as it stands, and the
+> numbering rule requires them before the runtime that relies on them.  Only the
+> two Rust rows are seam-gated, and to **BP6** (per-core readiness — the point at
+> which more than one PE executes kernel code) with validation at **BP8**, not to
+> "SM10.1", which is WS-BP's 42 sub-tasks rather than a phase.  RR6.27 registered
+> the track as a named SM10.1 dependency and that registration is re-pointed with
+> it.
 >
 > **What that means for the v1.0.0 claim.**  "Per-object reader-writer fine
 > locks" is true of the **syscall seam** — eight of the thirty-five arms
@@ -53,7 +62,7 @@
 > **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Origin**: [`SMP_PER_OBJECT_LOCKS_PLAN.md`](SMP_PER_OBJECT_LOCKS_PLAN.md) §5.2 (SM3.C.9 deferral) + the v0.33.54 audit that registered `UncoveredLockDomain.capTransferReceiverCnode` (closed at `v0.34.61`).
 > **Refs**: [`SMP_DECLASSIFICATION_COMPLETION_PLAN.md`](SMP_DECLASSIFICATION_COMPLETION_PLAN.md) §SM9.D (audit-pass-7 closure); [`SMP_TLB_SHOOTDOWN_PLAN.md`](SMP_TLB_SHOOTDOWN_PLAN.md) §"Kernel-entry serialisation" (SM5.I).
-> **Target releases**: v0.33.55+ across 12 PRs in four tracks.
+> **Target releases**: v0.33.55+ across 13 PRs in four tracks.
 > **Calendar estimate**: ~10–16 weeks (Track A security first; Track D is the largest — a runtime commit-model change).
 
 ## 1. Phase goal
@@ -73,8 +82,8 @@ Three coupled closures, sequenced security-first:
 3. **Land the deferred SM3.C.9 fine-locks work** — migrate the live
    `@[export]` state-committing bodies to wrap their transitions in
    `withLockSet`, then implement the **partitioned commit** that lets the SM5.I
-   global entry ticket lock finally be removed (seam-gated to SM10.1 hardware
-   validation).
+   global entry ticket lock finally be removed (Track D; its two Lean rows are
+   gated on nothing, its two Rust rows on **BP6** with validation at **BP8**).
 
 ## 2. Context
 
@@ -279,7 +288,7 @@ on the creator's runtime check. It belongs with the CDT coverage work in PR 5,
 where the four `cspace{Mint,Copy,Move,Delete}` footprints are already being
 opened up, and is recorded here so it is not lost.
 
-## 4. PR decomposition (12 PRs, four tracks, security-first)
+## 4. PR decomposition (13 PRs, four tracks, security-first)
 
 Each PR is one coherent, independently-green slice with its own patch bump +
 `CHANGELOG` entry + docs sync + per-module `lake build`. Tracks are ordered;
@@ -419,39 +428,195 @@ bracket or an explicit fail-closed-`none` justification; `--self-test` plants a
 bare-commit body and asserts detection. Precedent:
 `scripts/check_live_arm_per_core_routing.py`.
 
-### Track D — Commit partitioning (the end-state; seam-gated to SM10.1)
+### Track D — Commit partitioning (the end-state)
 
-**PR 10 — Striped object-lock table (Rust).**
-- *Step 1:* confirm the current carrier in `rust/sele4n-hal/src/lock_bridge.rs`
-  (exploration: a coreCount-sized per-core pool, not a stripe table).
-- *Step 2:* `OBJECT_STRIPE_POOL` (fixed lock-word pool) + `objid_stripe` hash +
-  sorted multi-stripe acquire (collisions over-serialize, never under-serialize
-  — the SM3 deadlock-freedom argument survives).
-- *Step 3:* unit tests + 8-thread host stress (`shootdown.rs` CAS-mutex stress
-  is the precedent).
+**Restructured at `v0.34.133`**, after reading the track back against the code
+it is about.  Four findings drove it, and each is answered by the shape below
+rather than by a note.
 
-**PR 11 — CAS-rebase soundness (Lean).** `transition_footprint_local` — a
-footprint-local commit re-run against a state that changed only *outside* the
-footprint yields the same delta. Built on `lockWritesOnly` (`FineLockFlow.lean`),
-`observableSlotsConfinedToCores`
-(`SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean`), and the 2PL
-serializability theorem in
-`SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (cite the exact name).
+1. **PR 11's theorem had no consumer in PR 12.**  The old PR 12 read
+   "compute-from-snapshot + CAS on an `AtomicPtr`; on conflict re-run against
+   fresh state (sound by `transition_footprint_local`)".  Re-running is sound by
+   *purity*: every transition here is a total function `SystemState →
+   SystemState`, so compute-from-snapshot, CAS, retry is the textbook optimistic
+   update and needs no locality theorem at all.  What locality actually buys is
+   the thing the track is named after — two commits with **disjoint footprints
+   both succeeding** — and the old PR 12 never asked for it.
+2. **A single-`AtomicPtr` CAS is not partitioning, and it regresses the WCRT
+   bound.**  One pointer to the whole state means every commit conflicts with
+   every other, so two cores doing disjoint IPC serialise exactly as they do
+   under the SM5.I entry lock — and where the ticket lock gives a **bounded
+   FIFO** wait, an optimistic retry loop gives an unbounded one, mitigated in
+   the old plan by "bounded rebase fuel, fail-closed halt": a kernel that
+   *halts under contention*.  For a system whose headline property is a
+   worst-case response time that is a regression, not a step towards the end
+   state.  It is a stated **non-goal** below.
+3. **The runtime obligation is a set, and the note named one field.**  §5's
+   note said the key-local reading of the object-store lock is sound once "the
+   runtime realises `SystemState.objects` as per-object storage".
+   `storeObject`'s own declared write set is five fields and the IPC list is
+   seven (`storeObject_modifiedFields`, `ipcEndpointOp_modifiedFields`,
+   `Kernel/CrossSubsystem.lean`), every one of them a structure the model
+   replaces **whole**.  Deriving the obligation from those lists rather than
+   naming a field is PR 11.
+4. **The gate named a phase that no longer exists.**  "SM10.1" is WS-BP's 42
+   sub-tasks now.  The seam flag is about the *entry lock*, so its gate is
+   **BP6** (per-core readiness — the point at which more than one PE executes
+   kernel code) with validation at **BP8** (first boot), and the two Lean rows
+   are gated on nothing at all.
 
-**PR 12 — CAS-rebase commit + seam gating.**
-- *Step 1:* replace `modifyGetKernelState`'s read-then-write (`Platform/FFI.lean`)
-  with compute-from-snapshot + CAS on an `AtomicPtr`; on conflict re-run against
-  fresh state (sound by `transition_footprint_local`); bounded rebase fuel,
-  fail-closed halt on exhaustion (SM7.B.6 discipline).
-- *Step 2:* seam flag — retain SM5.I's global entry ticket lock behind a flag
-  (`contextRestoreSeamLive` precedent), flipping only after SM10.1 hardware
-  validation.
-- *Step 3:* host stress both flag settings.
-- *Step 4:* release-closure re-pins (`SMP_RELEASE_CLOSURE_PLAN.md` SMP-C3 made
-  dischargeable; the SMP-plan risk row) + register the timer-tick fine-lock
-  migration as the named follow-on **SM3.C.9.b** — WS-RR **RR7.39** — (its
-  `SchedLockId` `withLockSet` bracket does not exist — the timer entry stays on
-  the global entry lock in this plan).
+**Non-goal — the whole-state optimistic CAS.**  Track D will not replace
+`modifyGetKernelState`'s read-modify-write with a compare-and-swap on a pointer
+to the whole `SystemState`.  It buys no parallelism over the ticket lock it
+would replace (every commit still conflicts with every other), and it trades the
+one property the ticket lock does provide — a bounded, FIFO-ordered wait, which
+is what `PerCoreWcrt.lean`'s live bound is stated over — for an unbounded retry
+count.  If a future cut wants lock-freedom for its own sake it must first state
+what its progress guarantee is; "bounded fuel then halt" is a liveness bug with
+a fail-closed dressing.
+
+**PR 10 — Footprint-local commit (Lean; gated on nothing).**  The theorem the
+track rests on, stated over the model and provable today.
+
+*What the tree already has, and it is two different things.*  RR7.11 gave the
+eight declared arms their "coverage", and `LockSetForSyscall.lean`'s own
+docstring distinguishes the two shapes it comes in.  The **membership** form —
+`lockSetForSyscall_<arm>_covers_writes`, for the seven arms `.send`, `.call`,
+`.receive`, `.reply`, `.replyRecv`, `.notificationSignal` and
+`.notificationWait`, with `_covers_capsWrites` / `_covers_redonation` /
+`_covers_boundDelivery` siblings where the arm has a conditional member — says
+the locks *someone listed* are in the declared set; it is a presence statement
+about a hand-written write set, and the project's own rule for that shape is
+that a presence check is not a relation check.  The **quantified** form —
+`lockSetForSyscall_{send,call}_object_writes_declared`, over RR7.8's
+`endpointSendDualWithCaps_object_writes_declared` — says *every object the step
+changes* has its lock declared, "which is stronger", in the file's words,
+"because it quantifies over every object rather than over the members someone
+listed".  Only the second is a coverage relation, and it exists for **two** of
+the eight declared arms, over the **capability-transfer step alone**
+(`st'` → `st''`), over the **`objects` field alone**.  The eighth arm,
+`.tcbSuspend`, has neither form in this file — its containment is the scheduler
+domain's (`suspendThreadOnCoreSchedLockSet`), which is a different lock type and
+must be reconciled, not assumed.  A footprint-local commit needs the quantified
+form for every declared arm, over the whole transition, over every field the arm
+writes.
+
+- *Step 1 (the missing definition):* **what a `LockSet` covers.**  `LockId` is
+  `(LockKind, ObjId)`, so a footprint names a set of object keys plus, through
+  `stateLevelLock`, the SystemState-level structures SM3.A.10 assigns to it.
+  Nothing in the tree maps a footprint to the part of `SystemState` it protects
+  — `lockWritesOnly` is about lock *words* — so define the coverage relation and
+  the agreement it induces (`agreeOnFootprint S st₁ st₂`).  **Keep the abstract
+  question separate from the representation one**, which is what conflating them
+  cost §5: `lifecycle.objectTypes` is keyed by `ObjId` and
+  `lifecycle.capabilityRefs` by `SlotRef = {cnode, slot}`, so both decompose by
+  object *abstractly* and are covered by the per-object locks; `objectIndex`
+  (a `List`), the CDT maps, `scThreadIndex` and `scheduler` do not, and are
+  `stateLevelLock`'s or the scheduler domain's.  Whether the **runtime** can
+  realise the per-object covers is a different question, and it is PR 11's.
+- *Step 2 (the quantified form, everywhere):* extend *changed ⇒ declared* from
+  two arms to eight, from the capability-transfer step to the whole transition,
+  and from `objects` to every field in the arm's write-set list.  This is the
+  step that can *fail* — an arm whose transition writes a field its footprint
+  does not cover is a false footprint, which is how OD3.5 and OD3.6 each found a
+  live one — so it is deliberately before the theorem that assumes it.
+- *Step 3 (the generalisation):* SM3.E.5 proves commutation for
+  `objStoreWriteInstance` — **one** object, written through `updateObjectAt`
+  (`Locks/Serializability.lean`, `objStoreWriteInstance_actionsCommuteObs`).  A
+  declared syscall footprint names up to `maxLockSetSize` members and its
+  transition writes seven `StateField`s, so the single-object instance is not
+  the shape the seam commits.  Generalise to a transition instance confined to
+  its footprint's coverage, and re-derive the commutation there.
+- *Step 4 (the payoff):* `transition_footprint_local` — a transition confined to
+  `S` carries any two states agreeing on `S`'s coverage to post-states that
+  agree on it and are unchanged outside, so two transitions with **disjoint**
+  footprints commute.  Consumes RR7.12's declared footprints, RR7.19's
+  `preservesFieldsOutside` and RR7.18's size bounds; instantiate at the eight
+  declared arms so the theorem is about the transitions the seam runs rather
+  than about an arbitrary `S`.
+- *Step 5:* Tier 3 anchors, including the negative that the statement is **not**
+  conditioned on a single global lock being held, and the negative that the
+  membership form is not restated as the quantified one.
+
+**PR 11 — The representation obligation, derived and decided (Lean; gated on
+nothing).**  What PR 10's abstract commutation needs of the *runtime* state
+before PR 13 can realise it — derived from the write-set lists, never
+enumerated.  **Steps 1 and 2 consume nothing and may run alongside PR 10**; step
+3 consumes PR 10's coverage relation, which is why the row is numbered second
+rather than beside it.
+- *Step 1:* classify every field in `storeObject_modifiedFields ++
+  ipcEndpointOp_modifiedFields ++ capabilityOp_modifiedFields` as **per-key
+  realisable** or **whole-structure**, with the classification *derived* from
+  the operation's own definition rather than asserted.  The four already known:
+  `lifecycle.capabilityRefs` is rebuilt by a `filter` over every entry on
+  **every** `storeObject`, of every kind; `objectIndex` is a `List` whose head
+  is shared; the CDT maps and `scThreadIndex` are the `stateLevelLock`
+  precedent (RR7.9, WS-OD OD3.5).
+- *Step 2:* **the `RHTable` locality theorem, with its real side condition.**
+  `insertLoop`'s key-match arm is one `Array.set` of the value alone and returns
+  at once, so two updates at distinct **resident** keys are slot-disjoint and
+  the probe reads only `key`/`dist`, which neither writes.  But `RHTable.insert`
+  tests the load factor *before* it knows whether the key is resident
+  (`if t.size * 4 ≥ t.capacity * 3 then t.resize`), so a store at a resident key
+  on a three-quarters-full table **rebuilds the whole table** — locality is
+  conditional on the load factor, not on the key being new.  State it that way;
+  the runtime consequence (pre-size the table, or take `stateLevelLock` on any
+  store that may resize) is PR 13's to choose, and it cannot choose without
+  this.
+- *Step 3:* register the classification's residue in `UncoveredLockDomain`,
+  beside `taintTablePerKeyStore`, which is the same shape and the only one of
+  the family currently named.  Its completeness theorem is what stops a
+  whole-structure write from being forgotten; PR 13 deletes the constructors it
+  closes, under the deletion-last discipline RR7.40 and RR7.41 used.
+
+**Parallelism, stated.**  PRs 10 and 11 are Lean-only, touch no file WS-OD or
+WS-RR RR8 touch, and may run in parallel with either and with each other (PR
+11's third step excepted, above).  PRs 12 and 13 are strictly sequential, follow
+both Lean rows, and may not begin before BP6: PR 13 changes what a commit *is*,
+and there is no way to validate that on a kernel that does not yet run on more
+than one PE.
+
+**PR 12 — The striped object-lock table (Rust; gated on BP6).**  Consumes PR 11.
+- *Step 1:* the carrier is **known**, not to be explored: `STATIC_RW_LOCK_POOL`
+  is `[QueuedRwLock; STATIC_RW_LOCK_POOL_SIZE]` with the size pinned equal to
+  the RPi5 `coreCount` (`lock_bridge.rs`), i.e. a per-**core** pool, and
+  `build.rs` pins the element type.  A stripe table is a different object and
+  the migration is a replacement, not a resize.
+- *Step 2:* `OBJECT_STRIPE_POOL` + `objid_stripe` hash + sorted multi-stripe
+  acquire (collisions over-serialize, never under-serialize — the SM3
+  deadlock-freedom argument survives).  Each `QueuedRwLock` carries three
+  per-PE arrays across two cache lines
+  (`shared_words_fill_the_first_line_and_requests_the_second`), so the stripe
+  count is a memory decision to state, not to default.
+- *Step 3:* the withdrawal contract travels with the lock: **one outstanding
+  ticket per core per lock** (WS-LC LC3), so a multi-stripe acquire holds one
+  ticket in each of several distinct locks and the unwind is `unwindAll` over
+  them, which is already the 2PL shrinking phase (WS-LC LC4).
+- *Step 4:* unit tests + 8-thread host stress (`shootdown.rs` CAS-mutex stress
+  is the precedent) + a loom pair for the multi-stripe acquire/unwind.
+
+**PR 13 — The partitioned commit and the entry-lock retirement (Rust + Lean;
+gated on BP6, validated at BP8).**  Consumes PR 12.
+- *Step 1:* realise the per-key structures PR 11 classified, and take
+  `stateLevelLock` for the ones it did not — the honest split, and the one that
+  makes the commit footprint-local rather than optimistic.
+- *Step 2:* commit under the acquired footprint instead of under the global
+  entry lock; two cores with disjoint footprints commit concurrently, which is
+  the property PR 10 proves sound and the reason the track exists.
+- *Step 3:* seam flag — retain SM5.I's global entry ticket lock behind a flag
+  (`contextRestoreSeamLive` precedent), flipping only after BP8 validates on the
+  board.  Both settings stay host-stressed while the flag exists.
+- *Step 4:* delete the `UncoveredLockDomain` constructors PR 11 registered and
+  PR 13 closes; re-pin the release closure
+  (`SMP_RELEASE_CLOSURE_PLAN.md` SMP-C3 made dischargeable; the SMP-plan risk
+  row).  The timer-tick fine-lock migration is **not** owed here: RR7.39 landed
+  it at `v0.34.89`, and what remains of the scheduler domain is the syscall
+  seam's own wake targets (`UncoveredLockDomain.syscallSeamSchedulerDomain`,
+  owner RR8).
+- *Step 5:* measure `tCs` on the board.  Every WCRT figure in this tree is
+  parametric in it (`admissibleCriticalSection`, WS-RR RR7.31), so the
+  partitioned commit's bound cannot be quoted as a time until this runs — and
+  BP8 is the first point at which it can.
 
 ## 5. Cross-cutting design notes
 
@@ -463,9 +628,18 @@ serializability theorem in
   (`LockSetTransitions.lean`) is already the declared serialization subject
   for the audit trail's List, so this is the established SM3.A.10 convention, not
   a new one; conservative (never under-serializes). *Runtime obligation
-  (Track D)*: the key-local reading of the object-store lock is sound only if the
-  runtime realises `SystemState.objects` as per-object storage — the same
-  obligation `storeObject` already carries, discharged at SM10.1.
+  (Track D)*: the key-local reading of the object-store lock is sound only once
+  the runtime realises the state per key — and that obligation is a **set**, not
+  a field.  It is derived in Track D PR 11 from the write-set lists themselves
+  (`storeObject_modifiedFields` is five fields, `ipcEndpointOp_modifiedFields`
+  seven), because naming one is the enumeration-standing-in-for-a-derivation
+  shape: `lifecycle.capabilityRefs` is rebuilt by a `filter` over every entry on
+  **every** `storeObject` of every kind, `objectIndex` is a `List` with a shared
+  head, and `RHTable.insert` tests the load factor before it knows whether the
+  key is resident — so even a store at a resident key rebuilds the table at
+  three-quarters load.  This note previously read "the runtime realises
+  `SystemState.objects` as per-object storage … discharged at SM10.1", which
+  named one of the seven and a phase that no longer exists.
 - **Caps-presence gating, not receiver-presence.** The capless-rendezvous
   `= 5`/900µs tick-fit pin (`tests/SmpIpcSuite.lean`) *has* a waiting
   receiver; receiver-gating would break it for all rendezvous calls. The
@@ -502,13 +676,20 @@ Expected assertion movements:
 - **PR 5**: cspace-op footprint size pins; `capabilityOp_modifiedFields` anchor.
 - **PR 7**: seven new per-arm coverage anchors.
 - **PR 8/9**: dispatch marker + `build.rs` pin; the export-body gate self-test.
-- **PR 10/11/12**: new Rust stress cases; the `transition_footprint_local`
-  anchor; seam-flag pins.
+- **PR 10**: the coverage relation and `transition_footprint_local` anchors,
+  plus the negative that the statement is not conditioned on a global lock.
+- **PR 11**: the field classification, the `RHTable` locality theorem with its
+  load-factor side condition, and the `UncoveredLockDomain` constructors it
+  registers (the completeness theorem moves with them).
+- **PR 12/13**: new Rust stress cases + a multi-stripe loom pair; seam-flag pins;
+  the `UncoveredLockDomain` deletions, under the deletion-last discipline.
 
 End-to-end: PR 2's regression proves `cspaceRevokeCdt` reaches transferred
 children; PR 8 keeps the golden trace byte-identical (bracket is
-projection-invisible); PR 12 host stress proves the CAS-rebase commit is
-race-free under contention with the seam flag in **both** settings.
+projection-invisible); PR 13 host stress proves the partitioned commit is
+race-free under contention with the seam flag in **both** settings, and BP8
+measures `tCs` on the board — without which no bound in this plan converts to a
+time.
 
 ## 7. Risks & mitigations
 
@@ -534,9 +715,16 @@ race-free under contention with the seam flag in **both** settings.
 - **CDT over-declaration cost** (PR 4/5) — `stateLevelLock` on send/call + the
   four cspace ops widens footprints; verify none breaks a size/WCRT pin (cspace
   ops are not on the 1 ms IPC path).
-- **Rebase livelock / stripe collision** (PR 12/10) — bounded fuel + fail-closed
-  halt; stripe collisions over-serialize (safe). Seam flag validated both
-  settings on host before any SM10.1 flip.
+- **Stripe collision** (PR 12) — collisions over-serialize, which is safe: the
+  SM3 deadlock-freedom argument rests on the acquisition *order*, and a sorted
+  multi-stripe acquire keeps it.  The stripe count is a stated memory decision,
+  since each `QueuedRwLock` occupies two cache lines.
+- **Retry livelock is designed out, not mitigated** (PR 13) — the whole-state
+  optimistic CAS is a stated non-goal precisely because "bounded fuel then
+  fail-closed halt" is an unbounded wait with a halt attached, and this kernel's
+  headline property is a bounded one.  A footprint-local commit under acquired
+  locks inherits the `QueuedRwLock` FIFO bound instead.  Seam flag validated in
+  both settings on host before any BP6 flip.
 
 ## 8. Acceptance / closure
 
@@ -549,12 +737,20 @@ race-free under contention with the seam flag in **both** settings.
 - [ ] PR 8: `lean_syscall_dispatch_cross_core` bracketed in `withLockSet`; trace
       byte-identical; the false `PerCoreWcrt` sentence flipped true.
 - [ ] PR 9: export-body CI gate live with `--self-test`.
-- [ ] PR 12: partitioned CAS-rebase commit host-validated; SM5.I global entry
-      lock behind a seam flag; timer-tick registered as SM3.C.9.b.
+- [ ] PR 10: `transition_footprint_local` proved and instantiated at the eight
+      declared arms; two disjoint footprints shown to commute.
+- [ ] PR 11: every field in the three write-set lists classified, derived from
+      the operations; the `RHTable` locality theorem stated with its load-factor
+      condition; the residue registered in `UncoveredLockDomain`.
+- [ ] PR 13: partitioned commit host-validated; SM5.I global entry lock behind a
+      seam flag; the constructors PR 11 registered and PR 13 closes deleted;
+      `tCs` measured on the board at BP8.
 
-The **timer-tick fine-lock migration (SM3.C.9.b)** and the **SM10.1 seam flip**
-are the two items that remain open after this plan; both are named follow-ons,
-not silent gaps.
+What remains open after this plan is the **syscall seam's scheduler domain**
+(`UncoveredLockDomain.syscallSeamSchedulerDomain`, owner RR8) and the **BP6 seam
+flip**; both are named follow-ons, not silent gaps.  The timer-tick fine-lock
+migration this section used to name as SM3.C.9.b is **closed** — RR7.39 landed
+it at `v0.34.89`.
 
 ## 9. Registered debt found while closing the queued-receive transfer
 
