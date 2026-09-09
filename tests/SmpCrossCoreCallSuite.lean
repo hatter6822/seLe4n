@@ -670,11 +670,13 @@ be vacuous: the failure shape de-threading exists to remove, one level up. -/
 example : ipcReachable (default : SystemState) := ipcReachable_default
 
 /-- WS-OD OD2.4: the donation-chain conjunct **decides** rather than refuses.
-Every reachable state discharges it vacuously today (nothing writes the three
-reply-stack fields), and a conjunct that only ever fires vacuously is one nobody
-has checked against the structure it constrains — an over-strong one would look
-identical from that side.  The witness is the state a depth-2 Call chain leaves,
-and it satisfies the predicate whole, completeness clause included. -/
+Every reachable state discharges it vacuously today — the donation pop is the
+only transition that writes the three reply-stack fields, and its writing arm
+needs a stack nothing yet constructs — and a conjunct that only ever fires
+vacuously is one nobody has checked against the structure it constrains: an
+over-strong one would look identical from that side.  The witness is the state a
+depth-2 Call chain leaves, and it satisfies the predicate whole, completeness
+clause included. -/
 example : donationChainWellFormed donationChainWitness :=
   donationChainWitness_wellFormed
 
@@ -685,6 +687,100 @@ example :
         (some donationChainWitnessInner)
       = some [donationChainWitnessInner, donationChainWitnessOuter] :=
   donationChainWitness_chain
+
+/-! ### WS-OD OD3.8 — the pop, exercised on the depth-2 witness
+
+The pop's chain-preservation theorem has two arms, and only one of them is
+reachable on any state this tree produces: with no context heading a stack the
+`head? = none` arm frames the chain outright and says nothing about the reply
+links.  A theorem exercised only on that arm would be indistinguishable from one
+whose `some` arm is wrong, which is the shape OD2.4's witness exists to refuse —
+so the witness is popped here, and the state the pop leaves is shown to satisfy
+the predicate whole and to head exactly the tail of the stack it started with. -/
+
+private theorem witnessChainContextObject :
+    donationChainWitness.getSchedContext? donationChainWitnessContext
+      = some witnessChainSchedContext := by
+  rw [SystemState.getSchedContext?_eq_some_iff, donationChainWitness_lookup_cases]
+  rw [show (donationChainWitnessInner.toObjId == donationChainWitnessContext.toObjId) = false from
+        by decide,
+      show (donationChainWitnessOuter.toObjId == donationChainWitnessContext.toObjId) = false from
+        by decide]
+  simp
+
+private theorem witnessChainOuterObject :
+    donationChainWitness.objects[donationChainWitnessOuter.toObjId]?
+      = some (.reply witnessChainOuterReply) := by
+  rw [donationChainWitness_lookup_cases]
+  rw [show (donationChainWitnessInner.toObjId == donationChainWitnessOuter.toObjId) = false from
+        by decide,
+      show (donationChainWitnessOuter.toObjId == donationChainWitnessOuter.toObjId) = true from
+        by decide]
+  simp
+
+private theorem witnessChainValidatedHead :
+    donationHeadOf? donationChainWitness donationChainWitnessContext
+        witnessChainSchedContext
+      = .ok (some (donationChainWitnessInner, witnessChainInnerReply)) := by
+  have hInner : donationChainWitness.getReply? donationChainWitnessInner
+      = some witnessChainInnerReply := by
+    rw [SystemState.getReply?_eq_some_iff, donationChainWitness_lookup_cases]
+    simp
+  unfold donationHeadOf?
+  rw [show witnessChainSchedContext.scReply = some donationChainWitnessInner from rfl]
+  simp only []
+  rw [hInner]
+  simp [witnessChainInnerReply]
+
+/-- WS-OD OD3.8: **the pop preserves the chain on a stack that is actually two
+frames deep.**  The head the operation clears is the inner call's reply, and the
+context is left heading the outer one — the `head? = some` arm, which no state
+this tree reaches exercises. -/
+theorem donationChainWitness_pop_wellFormed
+    (owner : SeLe4n.ThreadId) {s1 s2 : SystemState}
+    (hS1 : storeObject donationChainWitnessContext.toObjId
+      (.schedContext { witnessChainSchedContext with
+          boundThread := some owner, scReply := some donationChainWitnessOuter })
+      donationChainWitness = .ok ((), s1))
+    (hClear : storeDonationHeadClear (some donationChainWitnessInner) s1 = .ok s2) :
+    donationChainWellFormed s2 :=
+  donationHeadPop_preserves_donationChainWellFormed
+    (head? := some (donationChainWitnessInner, witnessChainInnerReply))
+    donationChainWitness_objects_invExt donationChainWitness_wellFormed
+    witnessChainContextObject witnessChainValidatedHead hS1 hClear
+
+/-- WS-OD OD3.8: ...and the stack the popped context heads is **exactly the tail**
+of the one it headed before — computed on the post-state's own object store, not
+read off the invariant.  With `donationChainWitness_chain` on the other side, the
+pop is seen to consume one frame and leave the rest intact. -/
+theorem donationChainWitness_pop_chain
+    (owner : SeLe4n.ThreadId) {s1 s2 : SystemState}
+    (hS1 : storeObject donationChainWitnessContext.toObjId
+      (.schedContext { witnessChainSchedContext with
+          boundThread := some owner, scReply := some donationChainWitnessOuter })
+      donationChainWitness = .ok ((), s1))
+    (hClear : storeDonationHeadClear (some donationChainWitnessInner) s1 = .ok s2) :
+    donationChainFrom s2 donationChainWitnessContext 1 (some donationChainWitnessOuter)
+      = some [donationChainWitnessOuter] := by
+  have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt
+    donationChainWitness s1 _ _ donationChainWitness_objects_invExt hS1
+  obtain ⟨r0, _, hS2⟩ := storeDonationHeadClear_some_ok hClear
+  have hOuter1 : s1.objects[donationChainWitnessOuter.toObjId]?
+      = some (.reply witnessChainOuterReply) := by
+    rw [SeLe4n.Model.storeObject_objects_ne donationChainWitness s1 _ _ _
+      (by decide) donationChainWitness_objects_invExt hS1]
+    exact witnessChainOuterObject
+  have hOuter2 : s2.objects[donationChainWitnessOuter.toObjId]?
+      = some (.reply witnessChainOuterReply) := by
+    rw [SeLe4n.Model.storeObject_objects_ne s1 s2 _ _ _ (by decide) hInv1 hS2]
+    exact hOuter1
+  have hLinks : replyStackLinksAt? s2 donationChainWitnessOuter
+      = some (some donationChainWitnessContext, none) := by
+    unfold replyStackLinksAt?
+    rw [hOuter2]
+    simp [replyStackLinks?, witnessChainOuterReply]
+  rw [donationChainFrom_succ, hLinks]
+  simp
 
 /-- WS-RR RR3.13: the enqueueing bundles' freshness precondition is a
 **consequence**, not an assumption — a `.ready` thread cannot head or tail any

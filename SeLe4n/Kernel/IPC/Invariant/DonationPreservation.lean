@@ -1907,4 +1907,270 @@ theorem applyReceiveRendezvousDonation_preserves_ipcInvariantFull
     · rw [hRv]
       exact hReceiverNotOwner
 
+-- ============================================================================
+-- §6  WS-OD OD3.8 — the pop preserves the donation chain
+-- ============================================================================
+
+/-! ## §6 — the first transition that writes the chain
+
+Every other transition in the tree discharges `donationChainWellFormed` through
+`donationChainFrame`: it writes no `Reply.donatedSc`, no `Reply.prev` and no
+`SchedContext.scReply`, so the two projections the walk reads are fixed and
+`donationChainWellFormed_of_frame` needs no case analysis.  The donation pop is
+the exception it was designed against — it writes all three — so it carries a
+preservation theorem instead, and the theorem is what makes OD2.4's predicate an
+obligation rather than a decoration.
+
+**What the argument turns on** is that the popped head is not reachable from
+below itself.  Clearing `rid`'s links is sound for the *rest* of `scId`'s stack
+only if none of those frames links back to `rid`, and for every *other* context's
+stack only if `rid` is on none of them.  The second is
+`not_mem_donationChainFrom_of_not_donating` — `rid` donates `scId`, so it is on
+no other context's chain.  The first is acyclicity, which the invariant carries
+as *termination*: `donationChainFrom_head_not_mem_tail` derives it from the walk
+being a function of its starting point, so a head appearing again below itself
+would make the walk from that occurrence return the whole chain, which is
+strictly longer than the suffix it must equal. -/
+
+/-- WS-OD OD3.8: **the pop's two chain writes preserve the chain invariant.**
+
+The prefix of `returnDonatedSchedContext`'s store chain that touches chain data:
+the SchedContext's stack head moves down one frame, and the frame it moved off is
+cleared.  Everything after this is TCB rewrites and an index refresh, which frame
+the chain outright — so the whole operation's preservation is this lemma plus
+`donationChainWellFormed_of_frame`.
+
+Stated over the two stores rather than over the operation, because that is the
+shape OD4's push will need on the other side: the push adds a frame and this
+removes one, and both have to be provable against the same two-store surface. -/
+theorem donationHeadPop_preserves_donationChainWellFormed
+    {st s1 s2 : SystemState} {scId : SeLe4n.SchedContextId} {sc : SchedContext}
+    {originalOwner : SeLe4n.ThreadId} {head? : Option (SeLe4n.ReplyId × Reply)}
+    (hObjInv : st.objects.invExt)
+    (hChain : donationChainWellFormed st)
+    (hSc : st.getSchedContext? scId = some sc)
+    (hHead : donationHeadOf? st scId sc = .ok head?)
+    (hS1 : storeObject scId.toObjId
+      (.schedContext { sc with boundThread := some originalOwner,
+                               scReply := head?.bind (fun p => p.2.prev) }) st = .ok ((), s1))
+    (hClear : storeDonationHeadClear (head?.map Prod.fst) s1 = .ok s2) :
+    donationChainWellFormed s2 := by
+  -- Two views of one read.  The typed accessor is what the operation and the
+  -- chain walk use -- a raw object-store lookup would be a second reading of the
+  -- same field, which the AK7 cascade counts as debt -- and the store-level view
+  -- below is derived from it once, because the `storeObject` frames and the
+  -- invariant's own conjuncts are keyed by `ObjId` and cannot be otherwise.
+  have hScStore := (SystemState.getSchedContext?_eq_some_iff st scId sc).mp hSc
+  cases head? with
+  | none =>
+    -- No stack: the context's head stays `none` and the clear is the identity,
+    -- so the prefix frames the chain and nothing has to be re-derived.
+    have hNoHead : sc.scReply = none := by
+      have hKey := donationHeadOf?_ok_key st scId sc none hHead
+      simpa using hKey.symm
+    have hFrame : donationChainFrame st s1 :=
+      donationChainFrame_of_storeObject_schedContext hObjInv hScStore (by simp [hNoHead]) hS1
+    have hs2 : s1 = s2 := by
+      have hC : (Except.ok s1 : Except KernelError SystemState) = .ok s2 := by
+        simpa using hClear
+      exact Except.ok.inj hC
+    subst hs2
+    exact donationChainWellFormed_of_frame hFrame hChain
+  | some pr =>
+    obtain ⟨rid, r⟩ := pr
+    obtain ⟨hRobj, hRdon⟩ := donationHeadOf?_ok_resolves st scId sc rid r hHead
+    have hScReply : sc.scReply = some rid := by
+      have hKey := donationHeadOf?_ok_key st scId sc (some (rid, r)) hHead
+      simpa using hKey.symm
+    -- The two written keys are distinct: `st` holds a Reply at one and a
+    -- SchedContext at the other.
+    have hKeyNe : rid.toObjId ≠ scId.toObjId := by
+      intro hEq; rw [hEq, hScStore] at hRobj; cases hRobj
+    -- §6.1  The post-state's object store, at the two written keys and off them.
+    have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+    have hS1Ne : ∀ k : SeLe4n.ObjId, k ≠ scId.toObjId → s1.objects[k]? = st.objects[k]? :=
+      fun k hk => SeLe4n.Model.storeObject_objects_ne st s1 _ k _ hk hObjInv hS1
+    obtain ⟨r0, hR0, hS2⟩ := storeDonationHeadClear_some_ok (st := s1) (by simpa using hClear)
+    have hr0 : r0 = r := by
+      have hR0Store := (SystemState.getReply?_eq_some_iff s1 rid r0).mp hR0
+      rw [hS1Ne rid.toObjId hKeyNe, hRobj] at hR0Store
+      exact (KernelObject.reply.inj (Option.some.inj hR0Store)).symm
+    subst hr0
+    have hS2Rid : s2.getReply? rid = some { r0 with donatedSc := none, prev := none } :=
+      (SystemState.getReply?_eq_some_iff s2 rid _).mpr
+        (SeLe4n.Model.storeObject_objects_eq s1 s2 _ _ hInv1 hS2)
+    have hS2RidStore := (SystemState.getReply?_eq_some_iff s2 rid _).mp hS2Rid
+    have hS2Ne : ∀ k : SeLe4n.ObjId, k ≠ rid.toObjId → s2.objects[k]? = s1.objects[k]? :=
+      fun k hk => SeLe4n.Model.storeObject_objects_ne s1 s2 _ k _ hk hInv1 hS2
+    have hS2Sc : s2.getSchedContext? scId =
+        some { sc with boundThread := some originalOwner, scReply := r0.prev } := by
+      refine (SystemState.getSchedContext?_eq_some_iff s2 scId _).mpr ?_
+      rw [hS2Ne scId.toObjId (fun hx => hKeyNe hx.symm)]
+      simpa using SeLe4n.Model.storeObject_objects_eq st s1 _ _ hObjInv hS1
+    have hS2ScStore := (SystemState.getSchedContext?_eq_some_iff s2 scId _).mp hS2Sc
+    have hS2Other : ∀ k : SeLe4n.ObjId, k ≠ scId.toObjId → k ≠ rid.toObjId →
+        s2.objects[k]? = st.objects[k]? :=
+      fun k hkSc hkRid => by rw [hS2Ne k hkRid, hS1Ne k hkSc]
+    -- §6.2  Off the cleared frame, the walk reads the same links it read before.
+    have hAgreeOff : ∀ q : SeLe4n.ReplyId, q ≠ rid →
+        (∃ rq : Reply, st.getReply? q = some rq) →
+        replyStackLinksAt? s2 q = replyStackLinksAt? st q := by
+      intro q hqNe hEx
+      obtain ⟨rq, hqT⟩ := hEx
+      have hq := (SystemState.getReply?_eq_some_iff st q rq).mp hqT
+      have h1 : q.toObjId ≠ scId.toObjId := by intro hx; rw [hx, hScStore] at hq; cases hq
+      have h2 : q.toObjId ≠ rid.toObjId :=
+        fun hx => hqNe (SeLe4n.ReplyId.toObjId_injective q rid hx)
+      unfold replyStackLinksAt?
+      rw [hS2Other q.toObjId h1 h2]
+    -- §6.3  The popped context's own stack, decomposed at the head being cleared.
+    obtain ⟨fuel, chain, hWalk0, hComplete⟩ := hChain.headHoldsWholeChain scId sc hScStore
+    rw [hScReply] at hWalk0
+    obtain ⟨f, rfl⟩ : ∃ f, fuel = f + 1 := by
+      cases fuel with
+      | zero => exact absurd hWalk0 (by simp)
+      | succ f => exact ⟨f, rfl⟩
+    have hLinksRid : replyStackLinksAt? st rid = some (r0.donatedSc, r0.prev) := by
+      unfold replyStackLinksAt?; rw [hRobj]; rfl
+    have hWalk := hWalk0
+    rw [donationChainFrom_succ, hLinksRid] at hWalk
+    simp only at hWalk
+    rw [if_pos hRdon] at hWalk
+    obtain ⟨rest, hRest, rfl⟩ :
+        ∃ rest, donationChainFrom st scId f r0.prev = some rest ∧ chain = rid :: rest := by
+      cases hRec : donationChainFrom st scId f r0.prev with
+      | none => rw [hRec] at hWalk; exact absurd hWalk (by simp)
+      | some rest =>
+        rw [hRec] at hWalk
+        exact ⟨rest, rfl, (Option.some.inj (by simpa using hWalk)).symm⟩
+    have hHeadNotInRest : rid ∉ rest :=
+      donationChainFrom_head_not_mem_tail st scId hWalk0
+    -- §6.4  The three conjuncts at the post-state.
+    refine ⟨?_, ?_, ?_⟩
+    · -- `replyWellFormed`: the cleared frame carries neither field.
+      intro q rq hq
+      by_cases hqRid : q.toObjId = rid.toObjId
+      · rw [hqRid, hS2RidStore] at hq
+        obtain rfl := KernelObject.reply.inj (Option.some.inj hq)
+        intro _; rfl
+      · by_cases hqSc : q.toObjId = scId.toObjId
+        · rw [hqSc, hS2ScStore] at hq; cases hq
+        · rw [hS2Other q.toObjId hqSc hqRid] at hq
+          exact hChain.replyWellFormed q rq hq
+    · -- `donatedContextResolves`: the cleared frame names nothing, and the one
+      -- context this rewrites is still a SchedContext.
+      intro q rq c hq hDon
+      by_cases hqRid : q.toObjId = rid.toObjId
+      · rw [hqRid, hS2RidStore] at hq
+        obtain rfl := KernelObject.reply.inj (Option.some.inj hq)
+        exact absurd hDon (by simp)
+      · by_cases hqSc : q.toObjId = scId.toObjId
+        · rw [hqSc, hS2ScStore] at hq; cases hq
+        · rw [hS2Other q.toObjId hqSc hqRid] at hq
+          obtain ⟨sc0, hsc0⟩ := hChain.donatedContextResolves q rq c hq hDon
+          by_cases hcSc : c.toObjId = scId.toObjId
+          · exact ⟨_, by rw [hcSc, hS2ScStore]⟩
+          · by_cases hcRid : c.toObjId = rid.toObjId
+            · rw [hcRid, hRobj] at hsc0; cases hsc0
+            · exact ⟨sc0, by rw [hS2Other c.toObjId hcSc hcRid]; exact hsc0⟩
+    · -- `headHoldsWholeChain`: the popped context walks the tail it kept, every
+      -- other context walks a chain the cleared frame was never on.
+      intro c sc' hsc'
+      by_cases hcRid : c.toObjId = rid.toObjId
+      · rw [hcRid, hS2RidStore] at hsc'; cases hsc'
+      · by_cases hcSc : c.toObjId = scId.toObjId
+        · -- The popped context: its head is now the frame below the one cleared.
+          obtain rfl : c = scId := SeLe4n.SchedContextId.toObjId_injective c scId hcSc
+          rw [hS2ScStore] at hsc'
+          obtain rfl := KernelObject.schedContext.inj (Option.some.inj hsc')
+          refine ⟨f, rest, ?_, ?_⟩
+          · exact donationChainFrom_congr_on_chain c f r0.prev rest hRest
+              (fun q hq => hAgreeOff q
+                (fun hEq => hHeadNotInRest (by rw [← hEq]; exact hq))
+                (by
+                  obtain ⟨rq, hrq, _⟩ :=
+                    donationChainFrom_mem st c f r0.prev rest hRest q hq
+                  exact ⟨rq, (SystemState.getReply?_eq_some_iff st q rq).mpr hrq⟩))
+          · intro q rq hq hDon
+            by_cases hqRid : q.toObjId = rid.toObjId
+            · rw [hqRid, hS2RidStore] at hq
+              obtain rfl := KernelObject.reply.inj (Option.some.inj hq)
+              exact absurd hDon (by simp)
+            · by_cases hqSc : q.toObjId = c.toObjId
+              · rw [hqSc, hS2ScStore] at hq; cases hq
+              · rw [hS2Other q.toObjId hqSc hqRid] at hq
+                have hMem := hComplete q rq hq hDon
+                rcases List.mem_cons.mp hMem with hHeadEq | hTail
+                · exact absurd (by rw [hHeadEq] : q.toObjId = rid.toObjId) hqRid
+                · exact hTail
+        · -- Every other context: the cleared frame donated `scId`, so it was on
+          -- none of this context's stack, and the walk is unchanged.
+          rw [hS2Other c.toObjId hcSc hcRid] at hsc'
+          obtain ⟨fuel', chain', hWalk', hComplete'⟩ := hChain.headHoldsWholeChain c sc' hsc'
+          have hNotDon : r0.donatedSc ≠ some c := by
+            rw [hRdon]
+            intro hx
+            exact hcSc (by rw [Option.some.inj hx])
+          have hRidNotIn : rid ∉ chain' :=
+            not_mem_donationChainFrom_of_not_donating hWalk' hRobj hNotDon
+          refine ⟨fuel', chain', ?_, ?_⟩
+          · exact donationChainFrom_congr_on_chain c fuel' sc'.scReply chain' hWalk'
+              (fun q hq => hAgreeOff q (fun hEq => hRidNotIn (by rw [← hEq]; exact hq))
+                (by
+                  obtain ⟨rq, hrq, _⟩ :=
+                    donationChainFrom_mem st c fuel' sc'.scReply chain' hWalk' q hq
+                  exact ⟨rq, (SystemState.getReply?_eq_some_iff st q rq).mpr hrq⟩))
+          · intro q rq hq hDon
+            by_cases hqRid : q.toObjId = rid.toObjId
+            · rw [hqRid, hS2RidStore] at hq
+              obtain rfl := KernelObject.reply.inj (Option.some.inj hq)
+              exact absurd hDon (by simp)
+            · by_cases hqSc : q.toObjId = scId.toObjId
+              · rw [hqSc, hS2ScStore] at hq; cases hq
+              · rw [hS2Other q.toObjId hqSc hqRid] at hq
+                exact hComplete' q rq hq hDon
+
+/-- WS-OD OD3.8: **`returnDonatedSchedContext` preserves the donation chain.**
+
+The payoff, and the theorem the whole predicate was stated for: the pop is the
+only transition in the tree that moves a `SchedContext.scReply` or clears a
+`Reply.donatedSc` / `Reply.prev`, so it is the only one that cannot reach
+`donationChainWellFormed_of_frame`.  With this, `donationChainWellFormed` is
+preserved by every kernel transition — the frame family covers the rest — and
+`ipcReachable` carries it rather than assuming it.
+
+**Unconditional in `newOwner?`.**  The pop's third and fourth stores rewrite two
+TCBs' `schedContextBinding`, which is not chain data at any depth, so the
+argument is the same at `none` (the inert shape every call site passes today) and
+at a resolved outer caller (the shape OD4.4 threads).  Nothing here is
+`hBottom`-conditioned, unlike the bundle composite. -/
+theorem returnDonatedSchedContext_preserves_donationChainWellFormed
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (newOwner? : Option SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hChain : donationChainWellFormed st)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
+    donationChainWellFormed st' := by
+  obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
+    hSc, _, hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
+    returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
+  have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+  have hInv2 := storeDonationHeadClear_preserves_objects_invExt hInv1 hClear
+  have hInv3 := SeLe4n.Model.storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
+  have hChain2 : donationChainWellFormed s2 :=
+    donationHeadPop_preserves_donationChainWellFormed hObjInv hChain
+      ((SystemState.getSchedContext?_eq_some_iff st scId sc).mpr hSc) hHead hS1 hClear
+  -- The two TCB rewrites and the index refresh carry no chain data.
+  have hFrame23 : donationChainFrame s2 s3 :=
+    donationChainFrame_of_tcb_rewrite hInv2
+      (lookupTcb_some_objects s2 originalOwner clientTcb hL1) hS3
+  have hFrame34 : donationChainFrame s3 s4 :=
+    donationChainFrame_of_tcb_rewrite hInv3
+      (lookupTcb_some_objects s3 serverTid serverTcb hL2) hS4
+  have hFrame4' : donationChainFrame s4 st' :=
+    donationChainFrame.of_objects_eq (by rw [hEq])
+  exact donationChainWellFormed_of_frame
+    ((hFrame23.trans hFrame34).trans hFrame4') hChain2
+
 end SeLe4n.Kernel

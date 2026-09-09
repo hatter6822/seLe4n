@@ -346,10 +346,10 @@ platform rather than with the lock.
 >
 > `lockSetForSyscall` answers `some` for eight of the thirty-five syscalls since
 > WS-RR RR7.11 — the suspend arm plus the seven IPC hot-path arms — each with its
-> coverage proof (`.replyRecv` only for a reply the replier itself recorded: the
-> transition returns the *recorded* server's donation, so a delegated reply would
-> need that server's own TCB lock and the arm is already at nine of nine, and it
-> answers `none` there), while the remaining twenty-seven answer `none` and their
+> coverage proof (`.replyRecv` declares for a **delegated** reply too since WS-OD
+> OD3.5: the transition returns the *recorded* server's donation, and that
+> server's own TCB lock is now declared unconditionally, so the round-6 refusal
+> that answered `none` there is retired), while the remaining twenty-seven answer `none` and their
 > callers keep the coarser serialisation. WS-RR RR7.12 makes the **syscall seam
 > acquire** those eight: the entry resolves the footprint from its own decode,
 > acquires, re-resolves at the state the growing phase ended in, refuses on

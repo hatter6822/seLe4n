@@ -296,15 +296,16 @@ private theorem cancelledCallerDonation_some_blockedOnReply
   repeat' split at h
   all_goals simp_all
 
-/-- **The one the `.tcbSuspend` bracket acquires**, and the tightest bound in the
-tree: **eight**, stated sharply rather than at the ceiling.
+/-- **The one the `.tcbSuspend` bracket acquires**, stated sharply rather than at
+the ceiling: **ten**.
 
-The state-resolved footprint carries eleven optional members at full arity — the
-victim's blocked endpoint or notification, its consumed reply, the returned
+The state-resolved footprint carries thirteen optional members at full arity —
+the victim's blocked endpoint or notification, its consumed reply, the returned
 SchedContext, the donation holder, the victim's two splice neighbours, (WS-OD
-OD1.5) the holder's endpoint and *its* two splice neighbours, and (WS-OD OD3.5)
-the state-level lock.  Summed that is twelve; the bound is eight because the
-members are **arm-selected**, and selected for a checkable reason rather than by
+OD1.5) the holder's endpoint and *its* two splice neighbours, (WS-OD OD3.5) the
+state-level lock, and (WS-OD OD3.7) the two objects the hand-back reads below the
+reply-stack head.  Summed that is fourteen; the bound is ten because the members
+are **arm-selected**, and selected for a checkable reason rather than by
 convention: every resolver keys on `tcb.ipcState`.  `cancelledCallerDonation?`
 answers `some` only for a `.blockedOnReply` victim;
 `cancelBlockedEndpoint?` / `cancelBlockedNotification?` answer `some` only for

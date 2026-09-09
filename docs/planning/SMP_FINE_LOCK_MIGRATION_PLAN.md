@@ -13,8 +13,11 @@
 > The third SM3.B-owned domain, `.queueOwnershipProtocol`, closed at
 > `v0.34.88` (RR7.38) — outside Track B, whose rows never touched splice
 > neighbours — by giving the eleven footprints that can write a *queued* TCB
-> the queue owner's write lock.  Three of the register's seven domains are
-> therefore covered and four remain.
+> the queue owner's write lock.  **Five of the register's seven domains are
+> covered and two remain** — `syscallSeamSchedulerDomain` (RR7.39's syscall
+> half) and `taintTablePerKeyStore` (owned by the representation cut, Track D's
+> PR 12); the register itself is the authority, since its completeness theorem
+> fails until a covered constructor is deleted.
 > **Track C** (4 PRs) is closed: the decoded-driven resolver at `v0.34.63`
 > (RR7.10), the eight declared IPC footprints at `v0.34.64` (RR7.11), the
 > **syscall seam's bracket** at `v0.34.65` (RR7.12) and the export-commit
@@ -24,18 +27,22 @@
 >
 > **What that means for the v1.0.0 claim.**  "Per-object reader-writer fine
 > locks" is true of the **syscall seam** — eight of the thirty-five arms
-> declare a footprint and the seam acquires it (`.replyRecv` for a reply the
-> replier itself recorded; a delegated one answers `none` and keeps the coarser
-> serialisation, since covering it needs the recorded server's own TCB lock and
-> the arm sits at nine of nine — WS-OD OD3.5 recovers the headroom) — and not yet true of the
+> declare a footprint and the seam acquires it, `.replyRecv` included for a
+> *delegated* reply since WS-OD OD3.5 (`v0.34.128`), which declares the recorded
+> server's own TCB lock unconditionally and retires the round-6 refusal that had
+> answered `none` there — and not yet true of the
 > **per-core scheduler entries**, which commit run-queue and replenish-queue
 > state under the SM5.I global entry lock only.  `ExportCommitDisciplineCensus`
 > measures it rather than asserting it: **seven seams commit, five bracket**
 > (WS-RR RR7.39; two before it).
 > Live WCRT is therefore still the global lock's, and the fine-lock bound
 > `PerCoreWcrt.lean` proves remains a statement about the intended discipline.
-> The three lock domains Track C leaves uncovered — the scheduler domain, the
-> dynamic PIP chain, the CSpace-walk interior — close in **RR7.39–RR7.41**.
+> Of the three lock domains Track C left uncovered, the dynamic PIP chain and
+> the CSpace-walk interior closed at `v0.34.90`–`v0.34.91` (RR7.40, RR7.41,
+> constructors deleted); RR7.39 gave the scheduler domain a runtime and put the
+> three per-core scheduler *entries* inside their declared footprints, leaving
+> only the **syscall** seam's scheduler writes — an `endpointSend`'s receiver
+> wake — which needs per-arm resolved wake targets and is owned by RR8.
 
 > **Phase**: SM3.C.9 (deferred `withLockSet` migration at the live kernel
 > entry) + the capability-transfer footprint closure (**landed** as WS-RR

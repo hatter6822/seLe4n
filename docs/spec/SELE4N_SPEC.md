@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.34.131` (`lakefile.toml`) |
+| **Package version** | `0.34.132` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 359,936 across 328 Lean files |
-| **Test LoC** | 73,737 across 70 Lean test suites |
-| **Proved declarations** | 12,054 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 360,465 across 328 Lean files |
+| **Test LoC** | 73,833 across 70 Lean test suites |
+| **Proved declarations** | 12,064 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -1772,13 +1772,14 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    is already stated against, and each with its coverage — the
    membership statements a 2PL consumer needs, plus the *changed ⇒
    declared* capstones for the two capability-transferring arms.
-   `.replyRecv` declares only where the replier **is** the thread the
-   Reply records as its server (PR #892 review round 6): the
-   transition returns the *recorded* server's donation, so a delegated
-   reply needs that server's own TCB lock and the arm already sits at
-   nine of nine — it answers `none` there rather than declaring a
-   footprint that names a SchedContext it does not touch, and
-   recovering the headroom is WS-OD OD3.5.  The
+   `.replyRecv` declares for a **delegated** reply too — one answered
+   by a thread other than the one the Reply records as its server —
+   since WS-OD OD3.5 (`v0.34.128`), which declares that recorded
+   server's own TCB lock unconditionally.  PR #892 review round 6 had
+   made the arm answer `none` there for want of room at nine of nine;
+   OD3.5 found the arm short a member on *every* case, not only the
+   delegated one, so the refusal is retired rather than merely
+   relaxed.  The
    remaining twenty-seven answer `none`
    (`declaredFootprintSyscall`, `lockSetForSyscall_undeclared_none`),
    which is the fail-closed direction: a declared footprint that does
@@ -4076,11 +4077,12 @@ clientTid` before transferring ownership.
 *transitive*: `applyCallDonation` donates only from a `.bound` caller, so a
 scheduling context stops at the first passive server and the "passive servers"
 claim above is false at call depth ≥ 2.  OD2 lands the structure the fix needs,
-with **no behavioural change** — no transition writes any of the fields below
-yet, and the invariant is therefore vacuously true of every state this tree
-reaches.  That is the point: the invariant and its frames exist *before* the
-transitions that must preserve them, so no live transition is ever ahead of its
-own proofs.
+with **no behavioural change**, and the invariant is vacuously true of every
+state this tree reaches: the one transition that writes the fields below is the
+donation pop, whose writing arm needs a context that already heads a stack, and
+nothing constructs one until OD4's push.  That is the point: the invariant and
+its frames exist *before* the transitions that must preserve them, so no live
+transition is ever ahead of its own proofs.
 
 - **`SchedContext.scReply : Option ReplyId`** — the head of the context's reply
   stack (seL4-MCS's `sc->scReply`), the field `Reply.wellFormed`'s docstring has
@@ -4163,6 +4165,46 @@ changes behaviour.
 - **The return is invisible to every observer, not merely a high one.**  Every
   field it writes is stripped by `projectKernelObject`, so the projection result
   no longer carries an observability hypothesis on the server.
+
+**The pop preserves it** (WS-OD OD3.8, v0.34.132).  Every other transition in the
+tree discharges `donationChainWellFormed` through `donationChainFrame` — it
+writes no `Reply.donatedSc`, no `Reply.prev` and no `SchedContext.scReply`, so
+the two projections the walk reads are fixed.  The pop is the exception the frame
+family was designed against, and
+`returnDonatedSchedContext_preserves_donationChainWellFormed`
+(`SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean`) is what closes it.  With
+it, the predicate is preserved by **every** kernel transition rather than by every
+transition but one, and `ipcReachable` carries it as a fact rather than as an
+aspiration.
+
+- **The argument is acyclicity, and acyclicity is derived rather than assumed.**
+  Clearing the popped head's links is sound for the rest of that context's stack
+  only if no frame below links back to it, and for every other context's stack
+  only if the head is on none of them.  The second is
+  `not_mem_donationChainFrom_of_not_donating` (the head donates *this* context, so
+  it is on no other's).  The first is
+  `donationChainFrom_head_not_mem_tail`, which reads acyclicity off the invariant's
+  own **termination** clause: the walk is a function of its starting point
+  (`donationChainFrom_deterministic`, over `donationChainFrom_mono_le`), so a head
+  appearing again below itself would make the walk from that occurrence return the
+  whole chain, which is strictly longer than the suffix it must equal.  No conjunct
+  was added to `donationChainWellFormed` to obtain it — a `NoDup` field would have
+  been an enumeration standing in for a derivation.
+- **The congruence is chain-scoped, not whole-store.**  `donationChainFrom_congr`
+  asks agreement at *every* key and is therefore useless here: the pop changes one
+  key's links.  `donationChainFrom_congr_on_chain` asks agreement only at the
+  chain's own members, which is exactly what the walk reads, and is what carries
+  every context's stack across the write.
+- **Unconditional in `newOwner?`.**  The pop's third and fourth stores rewrite two
+  TCBs' `schedContextBinding`, which is not chain data at any depth, so the
+  argument is the same at `none` and at a resolved outer caller.  Unlike the
+  `ipcInvariantFull` composite, nothing here is `hBottom`-conditioned.
+- **Exercised on the `some` arm, not only on the arm the tree reaches.**  A
+  theorem discharged only where the context heads no stack would be
+  indistinguishable from one whose writing arm is wrong.  So the depth-2 witness
+  of OD2.4 is popped (`donationChainWitness_pop_wellFormed`), and the state the pop
+  leaves is shown to satisfy the predicate whole and to head **exactly the tail**
+  of the stack it started with (`donationChainWitness_pop_chain`).
 
 ### 8.13 Priority Inheritance Protocol
 Priority inversion via Call/Reply IPC is mitigated by a deterministic Priority

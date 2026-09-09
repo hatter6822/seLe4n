@@ -314,8 +314,10 @@ theorem ipcReachable_default : ipcReachable (default : SystemState) := by
 -- ============================================================================
 
 /-! `donationChainWellFormed` is *vacuously* true of every state this tree
-reaches today, because no transition writes `Reply.donatedSc`, `Reply.prev` or
-`SchedContext.scReply`.  Every discharge in the tree is one of the two vacuous
+reaches today.  The one transition that writes `Reply.donatedSc`, `Reply.prev`
+and `SchedContext.scReply` is the donation pop, and its writing arm needs a
+context that already heads a reply stack — which nothing constructs until OD4's
+push.  So every discharge in the tree is one of the two vacuous
 constructors: `ipcReachable_default` uses
 `donationChainWellFormed_of_no_reply_or_schedContext` (the empty boot store holds
 neither kind), and the two dispatch-pack witnesses use
@@ -345,16 +347,24 @@ def donationChainWitnessInner : SeLe4n.ReplyId := ⟨12⟩
 /-- The **outer** call's Reply — the reply below the head. -/
 def donationChainWitnessOuter : SeLe4n.ReplyId := ⟨13⟩
 
-private def witnessChainSchedContext : SchedContext :=
+/-- The witness's scheduling context, heading the inner call's reply.  Public
+because a consumer of the witness needs its objects: WS-OD OD3.8 pops this stack
+and re-proves the chain invariant of the result, which is what keeps the pop's
+preservation theorem from being exercised only on the `head? = none` arm. -/
+def witnessChainSchedContext : SchedContext :=
   { SchedContext.empty donationChainWitnessContext with
       scReply := some donationChainWitnessInner }
 
-private def witnessChainInnerReply : Reply :=
+/-- The witness's inner (head) reply: donates the context, links down to the
+outer one.  Public for the same reason as `witnessChainSchedContext`. -/
+def witnessChainInnerReply : Reply :=
   { replyId := donationChainWitnessInner,
     donatedSc := some donationChainWitnessContext,
     prev := some donationChainWitnessOuter }
 
-private def witnessChainOuterReply : Reply :=
+/-- The witness's outer reply: donates the context and is the bottom of the
+stack.  Public for the same reason as `witnessChainSchedContext`. -/
+def witnessChainOuterReply : Reply :=
   { replyId := donationChainWitnessOuter,
     donatedSc := some donationChainWitnessContext }
 
@@ -422,8 +432,9 @@ private theorem donationChainWitness_lookup (oid : SeLe4n.ObjId) :
   · rw [← RHTable_getElem?_eq_get?]
 
 /-- Every object in the witness store, by key: the three the chain needs and
-nothing else. -/
-private theorem donationChainWitness_lookup_cases (oid : SeLe4n.ObjId) :
+nothing else.  Public since WS-OD OD3.8, which pops the witness's stack and needs
+to read the store back at the two keys the pop writes. -/
+theorem donationChainWitness_lookup_cases (oid : SeLe4n.ObjId) :
     donationChainWitness.objects[oid]?
       = if donationChainWitnessInner.toObjId == oid
         then some (.reply witnessChainInnerReply)
@@ -433,6 +444,13 @@ private theorem donationChainWitness_lookup_cases (oid : SeLe4n.ObjId) :
         then some (.schedContext witnessChainSchedContext)
         else none := by
   rw [donationChainWitness_lookup, chainWitnessSt2_lookup, chainWitnessSt1_lookup]
+
+/-- WS-OD OD3.8: the witness's object store is well formed as a table.  Every
+store-level lemma the pop composes takes this, so exposing it is what makes the
+witness usable as the pop's *input* rather than only as a state that satisfies
+the predicate. -/
+theorem donationChainWitness_objects_invExt : donationChainWitness.objects.invExt :=
+  RHTable_insert_preserves_invExt _ _ _ chainWitnessObjInv2
 
 /-- WS-OD OD2.4: the walk from the context's own head yields the whole stack,
 innermost first — the positive half of the chain's meaning, computed rather than

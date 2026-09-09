@@ -1243,6 +1243,39 @@ theorem storeDonationHeadClear_cases
         exact Or.inr ⟨rid, r, rfl,
           (SystemState.getReply?_eq_some_iff st rid r).mp hRep, by rw [← hS]⟩
 
+/-- WS-OD OD3.8: **the head clear on a `some` head is exactly one Reply store.**
+
+The `some` refinement of `storeDonationHeadClear_cases`, whose identity arm is
+reachable only for a `none` head: a caller that already knows there *is* a head
+should not have to refute "the step did nothing" before it can say what the step
+wrote.  The chain-preservation proof reads the post-state's object store at the
+cleared key and at every other, and both readings come from this one store.
+
+The Reply it exposes is read back through the state's own typed accessor, which
+is also how `storeDonationHeadClear` itself reads it — a raw object-store lookup
+here would be a second reading of the same field and an unmigrated site the AK7
+cascade counts as debt. -/
+theorem storeDonationHeadClear_some_ok
+    {rid : SeLe4n.ReplyId} {st st' : SystemState}
+    (h : storeDonationHeadClear (some rid) st = .ok st') :
+    ∃ r : Reply, st.getReply? rid = some r ∧
+      storeObject rid.toObjId (.reply { r with donatedSc := none, prev := none }) st
+        = .ok ((), st') := by
+  rw [storeDonationHeadClear_some] at h
+  revert h
+  cases hRep : st.getReply? rid with
+  | none => intro h; cases h
+  | some r =>
+    simp only []
+    cases hS : storeObject rid.toObjId
+        (.reply { r with donatedSc := none, prev := none }) st with
+    | error e => intro h; cases h
+    | ok pr =>
+      simp only []
+      intro h
+      cases h
+      exact ⟨r, rfl, by rw [← hS]⟩
+
 /-- WS-OD OD3.1: **the head clear succeeds when the head is a Reply.**
 
 The only error arm is a head that does not resolve to a Reply, so the step is

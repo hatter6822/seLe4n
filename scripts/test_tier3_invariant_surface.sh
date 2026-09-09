@@ -11756,4 +11756,60 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "lockSet_endpointReplyRecvOnCo
 run_check "INVARIANT" rg -n 'a \.replyRecv whose donation owner is the answered caller declares 12' tests/DeadlockFreedomSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: the sharpening is one member, not two' tests/DeadlockFreedomSuite.lean
 
+# ============================================================================
+# WS-OD OD3.8 -- the pop preserves the donation chain
+# ============================================================================
+#
+# Every other transition in the tree discharges `donationChainWellFormed`
+# through `donationChainFrame`: it writes no `Reply.donatedSc`, no `Reply.prev`
+# and no `SchedContext.scReply`, so the two projections the walk reads are
+# fixed.  The pop is the exception the frame family was designed against, so it
+# carries a preservation theorem instead -- and that theorem is what makes
+# OD2.4's predicate an obligation rather than a decoration.
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_preserves_donationChainWellFormed' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+run_check "INVARIANT" rg -n '^theorem donationHeadPop_preserves_donationChainWellFormed' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+# The two-store lemma is about the head that MOVES.  A version stated for a
+# store that leaves `scReply` where it is would be a corollary of
+# `donationChainFrame_of_storeObject_schedContext` and would say nothing about
+# the pop -- token-preserving, since it keeps the lemma and its name.  Bounded to
+# the declaration's own signature: an unbounded gap is not a region.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationHeadPop_preserves_donationChainWellFormed[^\n]*(\n([ \t][^\n]*)?)*scReply := head\?\.bind \(fun p => p\.2\.prev\)" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
+# ...and it is UNCONDITIONAL in `newOwner?`.  The pop's third and fourth stores
+# rewrite `schedContextBinding`, which is not chain data at any depth, so unlike
+# the `ipcInvariantFull` composite nothing here is `hBottom`-conditioned.  The
+# mutation keeps the theorem and adds the hypothesis, so a name anchor alone
+# would still pass.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem returnDonatedSchedContext_preserves_donationChainWellFormed[^\n]*(\n([ \t][^\n]*)?)*newOwner\? = none" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
+# Acyclicity is DERIVED from the invariant's own termination clause, not added to
+# it as a conjunct.  A `NoDup` field would be an enumeration standing in for a
+# derivation: the walk is a function of its starting point, so a head appearing
+# again below itself makes the walk from that occurrence return the whole chain,
+# which is strictly longer than the suffix it must equal.
+run_check "INVARIANT" rg -n '^theorem donationChainFrom_head_not_mem_tail' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainFrom_suffix_walk' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainFrom_deterministic' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainFrom_mono_le' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainFrom_length_le' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# NEGATIVE: the predicate did not gain an acyclicity conjunct.  Bounded to the
+# structure's own declaration, so the anchor cannot be satisfied or tripped by a
+# `NoDup` anywhere else in a 5700-line file.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^structure donationChainWellFormed[^\n]*(\n([ \t][^\n]*)?)*NoDup" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+# The congruence the pop consumes is CHAIN-scoped.  `donationChainFrom_congr`
+# asks agreement at every key and is useless here -- the pop changes one key's
+# links -- so the sharper form asks it only at the chain's own members, which is
+# exactly what the walk reads.
+run_check "INVARIANT" rg -n '^theorem donationChainFrom_congr_on_chain' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# The `some`-head refinement of the head clear: a caller that already knows there
+# IS a head should not have to refute "the step did nothing" before it can say
+# what the step wrote.
+run_check "INVARIANT" rg -n '^theorem storeDonationHeadClear_some_ok' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+# The theorem is EXERCISED on the `some` arm.  Discharged only where the context
+# heads no stack, it would be indistinguishable from one whose writing arm is
+# wrong -- the shape OD2.4's witness exists to refuse, one phase on.  So the
+# depth-2 witness is popped, and the state the pop leaves heads exactly the TAIL
+# of the stack it started with.
+run_check "INVARIANT" rg -n '^theorem donationChainWitness_pop_wellFormed' tests/SmpCrossCoreCallSuite.lean
+run_check "INVARIANT" rg -n '^theorem donationChainWitness_pop_chain' tests/SmpCrossCoreCallSuite.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationChainWitness_pop_chain[^\n]*(\n([ \t][^\n]*)?)*= some \[donationChainWitnessOuter\]" tests/SmpCrossCoreCallSuite.lean'
+
 finalize_report

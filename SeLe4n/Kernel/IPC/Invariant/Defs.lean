@@ -2270,6 +2270,212 @@ theorem donationChainFrom_congr {st st' : SystemState} (scId : SeLe4n.SchedConte
         · rw [ih below]
         · rfl
 
+/-- WS-OD OD3.8: **a successful walk is no longer than its fuel.**
+
+One unit of fuel admits one link and one admitted link contributes one member,
+so the chain's length *is* the number of steps taken.  Used below to contradict
+a chain that would contain itself as a proper suffix. -/
+theorem donationChainFrom_length_le (st : SystemState) (scId : SeLe4n.SchedContextId) :
+    ∀ (fuel : Nat) (rid? : Option SeLe4n.ReplyId) (chain : List SeLe4n.ReplyId),
+      donationChainFrom st scId fuel rid? = some chain → chain.length ≤ fuel := by
+  intro fuel
+  induction fuel with
+  | zero =>
+    intro rid? chain h
+    cases rid? with
+    | none => cases h; exact Nat.le_refl 0
+    | some rid => exact absurd h (by simp)
+  | succ n ih =>
+    intro rid? chain h
+    cases rid? with
+    | none => cases h; exact Nat.zero_le _
+    | some rid =>
+      rw [donationChainFrom_succ] at h
+      cases hLinks : replyStackLinksAt? st rid with
+      | none => rw [hLinks] at h; exact absurd h (by simp)
+      | some pair =>
+        obtain ⟨donated, below⟩ := pair
+        rw [hLinks] at h
+        simp only at h
+        split at h
+        · cases hRec : donationChainFrom st scId n below with
+          | none => rw [hRec] at h; exact absurd h (by simp)
+          | some tail =>
+            rw [hRec] at h
+            simp only [Option.map_some] at h
+            cases h
+            simpa using Nat.succ_le_succ (ih below tail hRec)
+        · exact absurd h (by simp)
+
+/-- WS-OD OD3.8: **the walk is monotone in fuel at `≤`, not merely at `+ 1`.**
+
+`donationChainFrom_mono` is the single step; this is its transitive closure, and
+it is what lets two walks witnessed at *different* fuels be compared — the ∃-fuel
+in `donationChainWellFormed` means no two facts about the same stack arrive with
+the same budget. -/
+theorem donationChainFrom_mono_le (st : SystemState) (scId : SeLe4n.SchedContextId)
+    {fuel : Nat} {rid? : Option SeLe4n.ReplyId} {chain : List SeLe4n.ReplyId}
+    (h : donationChainFrom st scId fuel rid? = some chain) :
+    ∀ fuel', fuel ≤ fuel' → donationChainFrom st scId fuel' rid? = some chain := by
+  intro fuel'
+  induction fuel' with
+  | zero =>
+    intro hLe
+    have hz : fuel = 0 := Nat.le_zero.mp hLe
+    subst hz; exact h
+  | succ n ih =>
+    intro hLe
+    rcases Nat.eq_or_lt_of_le hLe with heq | hlt
+    · subst heq; exact h
+    · exact donationChainFrom_mono st scId n rid? chain (ih (Nat.lt_succ_iff.mp hlt))
+
+/-- WS-OD OD3.8: **the walk is a function of its starting point.**
+
+Two successful walks from the same link, at whatever fuels, return the same
+chain: raise both to the larger budget and the answers coincide.  This is what
+makes "the chain from `rid`" well defined without the invariant having to fix a
+canonical fuel. -/
+theorem donationChainFrom_deterministic (st : SystemState) (scId : SeLe4n.SchedContextId)
+    {f₁ f₂ : Nat} {rid? : Option SeLe4n.ReplyId} {c₁ c₂ : List SeLe4n.ReplyId}
+    (h₁ : donationChainFrom st scId f₁ rid? = some c₁)
+    (h₂ : donationChainFrom st scId f₂ rid? = some c₂) :
+    c₁ = c₂ :=
+  Option.some.inj
+    ((donationChainFrom_mono_le st scId h₁ (max f₁ f₂) (Nat.le_max_left _ _)).symm.trans
+      (donationChainFrom_mono_le st scId h₂ (max f₁ f₂) (Nat.le_max_right _ _)))
+
+/-- WS-OD OD3.8: **every suffix of a chain is itself a chain, from its own head.**
+
+The walk is deterministic and its step is the target's own `prev`, so reaching
+the `i`-th member and starting at the `i`-th member are the same computation —
+at no more fuel than the whole walk took.  Stated with the prefix explicit rather
+than through `List.IsSuffix` so the induction is on the two structures that carry
+it, the fuel and the prefix. -/
+theorem donationChainFrom_suffix_walk (st : SystemState) (scId : SeLe4n.SchedContextId) :
+    ∀ (fuel : Nat) (rid? : Option SeLe4n.ReplyId) (pre : List SeLe4n.ReplyId)
+      (rid : SeLe4n.ReplyId) (rest : List SeLe4n.ReplyId),
+      donationChainFrom st scId fuel rid? = some (pre ++ rid :: rest) →
+      ∃ f, f ≤ fuel ∧ donationChainFrom st scId f (some rid) = some (rid :: rest) := by
+  intro fuel
+  induction fuel with
+  | zero =>
+    intro rid? pre rid rest h
+    cases rid? with
+    | none =>
+      have hNil := Option.some.inj h
+      exact absurd hNil.symm (by cases pre <;> simp)
+    | some r0 => exact absurd h (by simp)
+  | succ n ih =>
+    intro rid? pre rid rest h
+    cases rid? with
+    | none =>
+      have hNil := Option.some.inj h
+      exact absurd hNil.symm (by cases pre <;> simp)
+    | some r0 =>
+      rw [donationChainFrom_succ] at h
+      cases hLinks : replyStackLinksAt? st r0 with
+      | none => rw [hLinks] at h; exact absurd h (by simp)
+      | some pair =>
+        obtain ⟨donated, below⟩ := pair
+        rw [hLinks] at h
+        simp only at h
+        split at h
+        · next hDon =>
+          cases hRec : donationChainFrom st scId n below with
+          | none => rw [hRec] at h; exact absurd h (by simp)
+          | some tail =>
+            rw [hRec] at h
+            simp only [Option.map_some] at h
+            have hCons := Option.some.inj h
+            cases pre with
+            | nil =>
+              simp only [List.nil_append] at hCons
+              obtain ⟨hHead, hTail⟩ := List.cons.inj hCons
+              refine ⟨n + 1, Nat.le_refl _, ?_⟩
+              subst hHead
+              rw [donationChainFrom_succ, hLinks]
+              simp only
+              rw [if_pos hDon, hRec, hTail]
+              rfl
+            | cons p ps =>
+              simp only [List.cons_append] at hCons
+              obtain ⟨_, hTail⟩ := List.cons.inj hCons
+              obtain ⟨f, hf, hWalk⟩ := ih below ps rid rest (by rw [hRec, hTail])
+              exact ⟨f, Nat.le_succ_of_le hf, hWalk⟩
+        · exact absurd h (by simp)
+
+/-- WS-OD OD3.8: **a chain does not contain its own head.**
+
+Termination is acyclicity: the step from a member is a function of that member,
+so a head appearing again below itself would make the walk from that second
+occurrence return the *whole* chain, which is strictly longer than the suffix it
+must equal.  This is the fact the donation pop consumes — clearing the head's
+link is sound only because the frames below it never point back at it. -/
+theorem donationChainFrom_head_not_mem_tail (st : SystemState)
+    (scId : SeLe4n.SchedContextId) {fuel : Nat} {rid : SeLe4n.ReplyId}
+    {rest : List SeLe4n.ReplyId}
+    (h : donationChainFrom st scId fuel (some rid) = some (rid :: rest)) :
+    rid ∉ rest := by
+  intro hMem
+  obtain ⟨pre, post, hSplit⟩ := List.append_of_mem hMem
+  obtain ⟨f, _, hWalk⟩ := donationChainFrom_suffix_walk st scId fuel (some rid)
+    (rid :: pre) rid post (by rw [h, hSplit]; rfl)
+  have hEq : rid :: post = rid :: rest := donationChainFrom_deterministic st scId hWalk h
+  have hPost : post = rest := (List.cons.inj hEq).2
+  rw [hPost] at hSplit
+  have hLen := congrArg List.length hSplit
+  simp only [List.length_append, List.length_cons] at hLen
+  omega
+
+/-- WS-OD OD3.8: **the walk reads exactly its own members' links.**
+
+Sharper than `donationChainFrom_congr`, which asks agreement at *every* key: a
+step that rewrites a Reply's stack fields still computes the same chain from any
+starting point whose chain does not contain that Reply.  This is what carries a
+context's stack across the donation pop, which rewrites precisely the one Reply
+the popped context headed. -/
+theorem donationChainFrom_congr_on_chain {st st' : SystemState}
+    (scId : SeLe4n.SchedContextId) :
+    ∀ (fuel : Nat) (rid? : Option SeLe4n.ReplyId) (chain : List SeLe4n.ReplyId),
+      donationChainFrom st scId fuel rid? = some chain →
+      (∀ rid ∈ chain, replyStackLinksAt? st' rid = replyStackLinksAt? st rid) →
+      donationChainFrom st' scId fuel rid? = some chain := by
+  intro fuel
+  induction fuel with
+  | zero =>
+    intro rid? chain h _
+    cases rid? with
+    | none => cases h; rfl
+    | some rid => exact absurd h (by simp)
+  | succ n ih =>
+    intro rid? chain h hAgree
+    cases rid? with
+    | none => cases h; rfl
+    | some r0 =>
+      rw [donationChainFrom_succ] at h
+      cases hLinks : replyStackLinksAt? st r0 with
+      | none => rw [hLinks] at h; exact absurd h (by simp)
+      | some pair =>
+        obtain ⟨donated, below⟩ := pair
+        rw [hLinks] at h
+        simp only at h
+        split at h
+        · next hDon =>
+          cases hRec : donationChainFrom st scId n below with
+          | none => rw [hRec] at h; exact absurd h (by simp)
+          | some tail =>
+            rw [hRec] at h
+            simp only [Option.map_some] at h
+            have hCons := Option.some.inj h
+            subst hCons
+            rw [donationChainFrom_succ,
+              hAgree r0 List.mem_cons_self, hLinks]
+            simp only
+            rw [if_pos hDon,
+              ih below tail hRec (fun rid hRid => hAgree rid (List.mem_cons_of_mem _ hRid))]
+            rfl
+        · exact absurd h (by simp)
+
 /-- WS-OD OD2.4: **the SchedContext donation chain is well formed.**
 
 Three fields, each of them a *relation* rather than the presence of a link.  The
@@ -2301,12 +2507,17 @@ predicate joins `ipcReachable` and the two dispatch quiescence packs instead —
 where, per the same discipline, it is *preserved* rather than assumed: the frame
 family below is what every transition discharges it through.
 
-**Vacuously true today, and deliberately so.**  No transition writes
-`Reply.donatedSc`, `Reply.prev` or `SchedContext.scReply` yet, so every stored
-reply has `donatedSc = none` (which makes the first two conjuncts immediate) and
-every context has `scReply = none` (which makes the walk `some []` at fuel `0`,
-with completeness vacuous).  The predicate is stated first so that the pop and
-the push land against a surface that already carries their obligation. -/
+**Vacuously true on every state this tree reaches, and deliberately so.**  One
+transition writes the three fields — the donation pop, whose `head? = some` arm
+moves a `SchedContext.scReply` down one frame and clears the head Reply's
+`donatedSc` and `prev` — but that arm needs a context which already heads a
+stack, and nothing constructs one until OD4's push.  So every stored reply has
+`donatedSc = none` (which makes the first two conjuncts immediate) and every
+context has `scReply = none` (which makes the walk `some []` at fuel `0`, with
+completeness vacuous).  What is *not* vacuous is the pop's obligation:
+`returnDonatedSchedContext_preserves_donationChainWellFormed` is proved on both
+arms and exercised on the depth-2 witness, so the predicate is known to decide
+on the states OD4 will produce rather than only on the states it has. -/
 structure donationChainWellFormed (st : SystemState) : Prop where
   /-- Every stored Reply is locally well formed: no stack link without a stack. -/
   replyWellFormed : ∀ (rid : SeLe4n.ReplyId) (r : Reply),

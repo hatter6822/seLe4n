@@ -1,3 +1,130 @@
+## v0.34.132 — WS-OD OD3.8: the pop preserves the donation chain, and acyclicity is derived rather than assumed
+
+**WS-OD OD3.8** — the last row of OD3, and the one that turns
+`donationChainWellFormed` from a predicate the tree carries into an obligation
+every transition discharges.
+
+Every other transition in the tree reaches `donationChainWellFormed_of_frame`:
+it writes no `Reply.donatedSc`, no `Reply.prev` and no `SchedContext.scReply`,
+so the two projections the walk reads (`replyStackLinks?`,
+`schedContextStackHead?`) are fixed and no case analysis is needed.  The
+donation pop is the exception OD2.5's frame family was designed against — its
+`head? = some` arm moves a context's stack head down one frame and clears the
+frame it moved off — so it carries a preservation theorem instead.
+
+**`returnDonatedSchedContext_preserves_donationChainWellFormed`**
+(`SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean`) is that theorem, over
+`donationHeadPop_preserves_donationChainWellFormed` — the two chain-writing
+stores stated on their own, which is the surface OD4's push will need from the
+other side.  With it the predicate is preserved by **every** kernel transition
+rather than by every transition but one, and `ipcReachable` carries it as a fact.
+
+### What the row actually cost: acyclicity
+
+The plan row named "chain preservation" and did not name the argument.  Clearing
+the popped head's links is sound for the rest of that context's stack only if no
+frame below links back to it, and for every *other* context's stack only if the
+head is on none of them.
+
+* The second half already existed: `not_mem_donationChainFrom_of_not_donating`
+  says the head, which donates *this* context, is on no other's chain — the same
+  lemma the push consumes for freshness.
+* The first half is **acyclicity**, and it is *derived* rather than added as a
+  conjunct.  `donationChainFrom_head_not_mem_tail` reads it off the invariant's
+  own **termination** clause: the walk is a function of its starting point
+  (`donationChainFrom_deterministic`, over `donationChainFrom_mono_le` and
+  `donationChainFrom_suffix_walk`, with `donationChainFrom_length_le` supplying
+  the contradiction), so a head appearing again below itself would make the walk
+  from that occurrence return the whole chain, strictly longer than the suffix
+  it must equal.  A `NoDup` field on `donationChainWellFormed` would have been an
+  enumeration standing in for a derivation; a Tier 3 negative refuses one.
+
+### And the congruence is chain-scoped
+
+`donationChainFrom_congr` (OD2.5) asks agreement at *every* key and is therefore
+useless here — the pop rewrites one key's links.  `donationChainFrom_congr_on_chain`
+asks it only at the chain's own members, which is exactly what the walk reads,
+and is what carries every context's stack across the write.
+
+### Exercised on the arm the tree does not reach
+
+A theorem discharged only where the context heads no stack is indistinguishable
+from one whose writing arm is wrong — the shape OD2.4's witness exists to refuse,
+one phase on.  So the depth-2 witness is popped: `donationChainWitness_pop_wellFormed`
+proves the predicate whole of the state the pop leaves, and
+`donationChainWitness_pop_chain` proves that state heads **exactly the tail** of
+the stack it started with, computed on the post-state's own object store.  Three
+of the witness's objects, its store-by-key lemma and its `objects.invExt` become
+public for it; nothing about the witness changed.
+
+### Two deliverables were already discharged, and are recorded rather than redone
+
+* **The projection through the added store** landed at OD3.1/OD3.2, where the
+  fourth store made every hand-rolled copy of the operation's case analysis stop
+  compiling; `returnDonatedSchedContext_preserves_projection` has read the
+  four-store chain since `v0.34.126`.
+* **The de-threading family size does not move.**
+  `_preserves_donationChainWellFormed` is not an `ipcInvariantFull` bundle, so
+  `scripts/check_ipc_invariant_dethreading.py`'s own `len(bundles)` is unchanged
+  at 170 and every prose citation of the figure stays correct.
+
+### Prose corrected where it had gone stale
+
+`donationChainWellFormed`'s docstring, `Reachability.lean` §5, the suite's
+witness note and `docs/CLAIM_EVIDENCE_INDEX.md` all said "no transition writes"
+the three reply-stack fields.  One does, since `v0.34.126`.  The predicate is
+still vacuously true of every state this tree *reaches* — the pop's writing arm
+needs a context that already heads a stack, and nothing constructs one until
+OD4's push — and that is what the four sites say now.
+
+### Also
+
+* `storeDonationHeadClear_some_ok` — the `some`-head refinement of
+  `storeDonationHeadClear_cases`, so a caller that already knows there is a head
+  need not refute "the step did nothing" before it can say what the step wrote.
+* Fifteen Tier 3 anchors, including two negatives mutation-tested in both
+  directions: the preservation theorem must carry no `newOwner? = none`
+  hypothesis, and the predicate must not gain an acyclicity conjunct.
+
+### And a sweep for what OD3.5 and OD3.7 left stale
+
+Reading the fine-lock plan's Track D scope surfaced five documentation sites
+still carrying claims those two cuts retired, and one Lean docstring internally
+inconsistent with itself.  All are corrected here rather than registered:
+
+* **The retired delegated-`.replyRecv` refusal.**  PR #892 review round 6 made
+  `lockSetForSyscall` answer `none` for a reply answered by a thread other than
+  the one the Reply records; OD3.5 retired that at `v0.34.128` by declaring the
+  recorded server's TCB lock unconditionally.  Four sites still described the
+  refusal as live — `docs/spec/SELE4N_SPEC.md`,
+  `docs/CLAIM_EVIDENCE_INDEX.md`, `docs/gitbook/12-proof-and-invariant-map.md`
+  and `docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md`'s status header — three
+  of them repeating "the arm sits at nine of nine", which has not been the
+  ceiling since `v0.34.128`.  This is the sweep the retired-refusal fix owed its
+  siblings and did not run.
+* **A dangling theorem name.**  OD3.7 renamed
+  `lockSet_cancelIpcBlockingOnCore_size_le_eight` to `_size_le_ten` and left
+  four citations of the old name in `CLAUDE.md`, `AGENTS.md` and
+  `docs/REGISTERED_DEBT.md`, one of them asserting the superseded figure in the
+  present tense.
+* **A docstring at odds with its own theorem.**
+  `lockSet_cancelIpcBlockingOnCore_size_le_ten`'s docstring still opened "the
+  tightest bound in the tree: **eight**" and counted "eleven optional members …
+  summed that is twelve", figures OD3.7's two below-head reads moved to ten,
+  thirteen and fourteen — while its own arm-by-arm line and closing paragraph
+  had been updated.  Counted off the definition rather than adjusted by hand.
+* **`SCHEDCONTEXT_DONATION_CHAIN_PLAN.md` §8a** records the budget at
+  `v0.34.105` and is now headed by a superseded-by note naming the live figures,
+  rather than being rewritten: it is a historical record of OD1.5's acceptance.
+* **`SMP_FINE_LOCK_MIGRATION_PLAN.md`'s status header** said three of
+  `UncoveredLockDomain`'s seven domains were covered and four remained, and that
+  three close in RR7.39–RR7.41.  Two of those three closed at `v0.34.90`–`v0.34.91`
+  with their constructors deleted, so the register holds **two**:
+  `syscallSeamSchedulerDomain` and `taintTablePerKeyStore`.  Counted off the
+  inductive rather than off the prose.
+
+Refs: docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md OD3.8
+
 ## v0.34.131 — WS-OD OD3.7 (sharp bound): how much of the ceiling is slack, stated rather than left to be re-derived
 
 `maxLockSetSize` is thirteen because a declared bound is the union over **all**
