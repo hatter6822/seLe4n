@@ -101,6 +101,67 @@ theorem lockSet_endpointReplyRecvOnCore_size_le (st : SystemState)
       ≤ maxLockSetSize :=
   lockSet_replyRecv_size_le _ _ _ _ _ _ _ _ _ _ _ _ _
 
+/-- WS-OD OD1.5: `none` extends nothing. -/
+private theorem extendOpt_none (S : LockSet) : lockSetExtendOpt S none = S := rfl
+
+/-- **WS-OD OD3.7: what a reachable `.replyRecv` actually declares.**
+
+The donation a reply returns is owned by the thread the reply answers —
+`applyCallDonation` recorded it that way when the caller made the Call.  But
+`ipcInvariantFull` does **not** entail it: `donationOwnerValid` says only that the
+owner is `.unbound` and `.blockedOnReply epId rt` for *some* `rt`, and relates
+`rt` to no donation.  WS-RR RR7.22 met the same gap from the cancellation end and
+closed it by stating `donationHolderIsReplyTarget`; this is its reply-side twin,
+and it is stated rather than derived for exactly that reason.
+
+Kept as a predicate on `(st, target)` rather than folded into a bundle: it is a
+*local* coherence fact about one reply, and the resolved bound below is the only
+consumer.  A conjunct of `ipcReachable` would oblige every transition to
+re-establish it for every thread. -/
+def replyDonationOwnerIsAnsweredCaller (st : SystemState) (target : SeLe4n.ThreadId) : Prop :=
+  ∀ scId owner, endpointReplyServerDonation? st target = some (scId, owner) → owner = target
+
+/-- **WS-OD OD3.7: the resolved `.replyRecv` footprint is TWELVE, not thirteen.**
+
+`maxLockSetSize` is thirteen because a declared bound is the union over *all*
+argument values, and no reachable state supplies them all distinctly: the
+returned donation's owner is the answered caller, so two arguments name one key
+and `insertOrMerge` lubs the modes without moving the cardinality.
+
+**One member is the whole of the available sharpening**, and saying so is the
+point of stating this at all.  The other candidate merge — the recorded server
+with the invoking thread — holds exactly on a *non-delegated* reply, which is a
+case split rather than an invariant, and the delegated case is precisely the one
+WS-OD OD3.5 exists to declare.  Anyone reading the ceiling and wondering how much
+of it is slack gets the answer here rather than having to re-derive it.
+
+This does **not** move `maxLockSetSize`: the parametric bound is what
+`boundedWait_under_2pl` and the WCRT surface consume, and it must stay true of
+every argument value.  What this gives is a smaller number available where the
+state permits — the relationship `lockSet_cancelIpcBlockingOnCore_size_le_ten`
+already has to the ceiling. -/
+theorem lockSet_endpointReplyRecvOnCore_size_le_twelve (st : SystemState)
+    (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
+    (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId)
+    (hOwner : replyDonationOwnerIsAnsweredCaller st target) :
+    (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target endpointObjId).size
+      ≤ 12 := by
+  unfold lockSet_endpointReplyRecvOnCore
+  cases hDon : endpointReplyServerDonation? st target with
+  | none =>
+      -- No donation returned: the owner member is absent outright, so the set is
+      -- narrower still and the crude ceiling bound already gives twelve.
+      simp only [hDon, Option.map_none, extendOpt_none]
+      refine Nat.le_trans (size_le_7 _ _ _ _ _ _ _ _) ?_
+      simp only [List.length_cons, List.length_nil]
+      omega
+  | some pr =>
+      obtain ⟨scId, owner⟩ := pr
+      have hEq : owner = target := hOwner scId owner hDon
+      subst hEq
+      simp only [hDon, Option.map_some]
+      exact lockSet_replyRecv_size_le_twelve_of_owner_eq_target _ _ _ _ _ _ _ _ _ _ _ _
+
 /-- The resolved **receive** footprint.  Stated over the reply optional rather
 than at its default, so the receive-with-reply shape is bounded too. -/
 theorem lockSet_endpointReceiveOnCore_size_le (st : SystemState)
@@ -178,9 +239,6 @@ theorem lockSet_cancelDonation_size_le (victimTid : SeLe4n.ThreadId)
   refine Nat.le_trans (size_le_3 _ _ _ _) ?_
   simp only [List.length_cons, List.length_nil]
   omega
-
-/-- WS-OD OD1.5: `none` extends nothing. -/
-private theorem extendOpt_none (S : LockSet) : lockSetExtendOpt S none = S := rfl
 
 /-- WS-OD OD1.5: **the reply-arm shape of the cancellation footprint is eight.**
 

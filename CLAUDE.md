@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.130.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.131.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1662,6 +1662,24 @@ reply arm ten (`lockSet_cancelIpcBlockingOnCore_size_le_ten`) — and that is
 asserted rather than described.  (5) **Both members are `none` on every state
 this tree reaches**, so no live footprint widened; this declares ahead of OD4.4's
 code, which is the order the numbering rule requires.
+
+**And how much of that ceiling is slack is stated, not left to be re-derived**
+(OD3.7 sharp bound, `v0.34.131`).  Thirteen is the union over *all* argument
+values; a reachable `.replyRecv` declares **twelve**
+(`lockSet_endpointReplyRecvOnCore_size_le_twelve`), because the donation a reply
+returns is owned by the thread the reply answers, so two arguments name one key
+and `insertOrMerge` lubs the modes without moving the cardinality.  Three things
+new code must respect.  (1) **The equality is a stated hypothesis**
+(`replyDonationOwnerIsAnsweredCaller`), not a consequence of the bundle:
+`donationOwnerValid` says only that the owner is `.unbound` and `.blockedOnReply
+epId rt` for *some* `rt`, and relates `rt` to no donation — the gap WS-RR RR7.22
+met from the cancellation end and closed with `donationHolderIsReplyTarget`.  (2)
+**One member is the whole of the sharpening**: the recorded server merges with
+the invoking thread only on a *non-delegated* reply, a case split rather than an
+invariant, and the delegated case is the one OD3.5 exists to declare.  (3) **The
+sharp bound is not the ceiling** — `maxLockSetSize` is what
+`boundedWait_under_2pl` and the WCRT surface consume and must stay true of every
+argument value, so a Tier 3 negative refuses restating it as such.
 
 **The pop is live and inert** (OD3.1–OD3.3, `v0.34.126`).
 `returnDonatedSchedContext` takes a `newOwner? : Option ThreadId` and is four

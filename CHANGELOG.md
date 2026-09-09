@@ -1,3 +1,50 @@
+## v0.34.131 — WS-OD OD3.7 (sharp bound): how much of the ceiling is slack, stated rather than left to be re-derived
+
+`maxLockSetSize` is thirteen because a declared bound is the union over **all**
+argument values.  No reachable state supplies them all distinctly: the donation a
+reply returns is owned by the thread the reply answers — `applyCallDonation`
+recorded it that way when the caller made the Call — so two arguments name one
+key, and `insertOrMerge` lubs the modes without moving the cardinality.
+`lockSet_endpointReplyRecvOnCore_size_le_twelve` states the consequence: a
+reachable `.replyRecv` declares **twelve**, one inside the ceiling.
+
+**The hypothesis is stated, not derived, and that is the finding.**
+`ipcInvariantFull` does not entail the equality — `donationOwnerValid` says only
+that the owner is `.unbound` and `.blockedOnReply epId rt` for *some* `rt`, and
+relates `rt` to no donation.  WS-RR RR7.22 met exactly this gap from the
+cancellation end and had to close it by stating `donationHolderIsReplyTarget`;
+`replyDonationOwnerIsAnsweredCaller` is its reply-side twin.  It is a predicate on
+one reply rather than a conjunct of `ipcReachable`, because making it a bundle
+field would oblige every transition to re-establish it for every thread, for one
+consumer.
+
+**One member is the whole of the available sharpening**, and saying so is the
+point.  The other candidate merge — the recorded server with the invoking thread
+— holds exactly on a *non-delegated* reply, which is a case split rather than an
+invariant, and the delegated case is precisely the one WS-OD OD3.5 exists to
+declare.  A runtime witness executes the merge at the same operands as the widest
+shape with only the owner changed, so the difference is attributable to that one
+merge; a negative pins that the result is twelve and not eleven.
+
+**This does not move `maxLockSetSize`.**  The parametric bound is what
+`boundedWait_under_2pl` and the WCRT surface consume and must stay true of every
+argument value; lowering the constant to the reachable figure would leave the
+parametric footprint unbounded.  A Tier 3 negative refuses restating the sharp
+bound as the ceiling.  What this buys is a smaller number *available* where the
+state permits — the relationship `lockSet_cancelIpcBlockingOnCore_size_le_ten`
+already has to the ceiling.
+
+Two mechanisms landed with it.  `LockSet.size_insertOrMerge_of_containsKey` and
+its complement say what an extension costs — nothing on a key already present,
+exactly one on a fresh key — which is what lets a *resolved* footprint be sharper
+than the parametric bound measuring it; the pair is stated as equations rather
+than `≤`, since a `≤` would leave "did it shrink?" unanswered.  And `size_le_6_over`
+bounds six extensions over an **arbitrary** `LockSet`: the `size_le_k` family all
+bottom out in a literal base list, which cannot express "the base is whatever this
+merge left" — the shape a sharp bound needs when one layer is free.
+
+Refs: docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md §3 (OD3.7)
+
 ## v0.34.130 — WS-OD OD3.7: the two objects the donation return reads below the reply-stack head
 
 **A footprint that omits an object the transition *reads* is false the same way

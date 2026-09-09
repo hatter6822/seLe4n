@@ -383,6 +383,35 @@ def insertOrMerge (l : LockId) (m : AccessMode) (S : LockSet) : LockSet :=
             (fun a' ha' hEq => hNotMem (hEq ▸ ha')) S.hUniqueKeys
       }
 
+/-- **WS-OD OD3.7: extending with a key already present does not grow the set.**
+
+`insertOrMerge` maps over `pairs` when the key is present — same length, lub'd
+mode — and prepends only on a fresh key.  Trivial to prove and load-bearing for
+one thing: it is what lets a *resolved* footprint carry a bound strictly sharper
+than its parametric one.  A member whose resolver provably answers a key another
+member already holds costs nothing, so the ceiling a footprint is measured
+against (the union over *all* argument values) can exceed what any reachable
+state actually declares.
+
+Stated as an equation rather than `≤`: the merge changes the mode, never the
+cardinality, and a `≤` would leave "did it shrink?" unanswered. -/
+theorem size_insertOrMerge_of_containsKey (S : LockSet) (l : LockId) (m : AccessMode)
+    (h : S.containsKey l = true) :
+    (S.insertOrMerge l m).size = S.size := by
+  unfold insertOrMerge size
+  split
+  · simp only [List.length_map]
+  · next heq => rw [h] at heq; exact absurd heq (by simp)
+
+/-- WS-OD OD3.7: and the complementary case — a fresh key adds exactly one. -/
+theorem size_insertOrMerge_of_not_containsKey (S : LockSet) (l : LockId) (m : AccessMode)
+    (h : S.containsKey l = false) :
+    (S.insertOrMerge l m).size = S.size + 1 := by
+  unfold insertOrMerge size
+  split
+  · next heq => rw [h] at heq; exact absurd heq (by simp)
+  · simp only [List.length_cons]
+
 /-- WS-SM SM3.B: union of two `LockSet`s — fold `insertOrMerge` over
 the right-hand argument's pairs.
 

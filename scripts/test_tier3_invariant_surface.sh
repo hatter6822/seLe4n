@@ -11730,4 +11730,30 @@ run_check "INVARIANT" rg -n '^theorem lockSet_consistent_base_plus_eleven_opts' 
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "admissibleCriticalSection rpi5TickBudgetMicros = 30" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "admissibleCriticalSection rpi5TickBudgetMicros = 37" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 
+# WS-OD OD3.7 (the sharp bound): how much of the ceiling is slack, stated rather
+# than left for a reader to re-derive.  Thirteen is the union over ALL argument
+# values; no reachable state supplies them all distinctly, because the returned
+# donation's owner IS the answered caller.  `ipcInvariantFull` does not entail
+# that -- it admits `.blockedOnReply epId rt` for any `rt` and relates `rt` to no
+# donation -- so it is a STATED hypothesis, the reply-side twin of WS-RR RR7.22's
+# `donationHolderIsReplyTarget`, not a derived one.
+run_check "INVARIANT" rg -n '^def replyDonationOwnerIsAnsweredCaller' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_size_le_twelve' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_twelve_of_owner_eq_target' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+# The mechanism: a key already present costs nothing, which is what lets a
+# RESOLVED footprint be sharper than the parametric bound it is measured by.
+run_check "INVARIANT" rg -n '^theorem size_insertOrMerge_of_containsKey' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
+run_check "INVARIANT" rg -n '^theorem size_insertOrMerge_of_not_containsKey' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
+# NEGATIVE: the sharp bound must NOT be stated as the ceiling.  `maxLockSetSize`
+# is what `boundedWait_under_2pl` and the WCRT surface consume and must stay true
+# of every argument value; a cut that lowered the constant to the reachable
+# figure would make the parametric footprint unbounded.  Token-preserving: it
+# keeps the theorem and changes only the number it concludes.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "lockSet_endpointReplyRecvOnCore_size_le_twelve[^\n]*(\n([ \t][^\n]*)?)*≤ maxLockSetSize" SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean'
+# The runtime witness executes the merge, and pins that the sharpening is ONE
+# member: the recorded server merges only on a non-delegated reply, which is a
+# case split rather than an invariant.
+run_check "INVARIANT" rg -n 'a \.replyRecv whose donation owner is the answered caller declares 12' tests/DeadlockFreedomSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: the sharpening is one member, not two' tests/DeadlockFreedomSuite.lean
+
 finalize_report

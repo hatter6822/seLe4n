@@ -496,6 +496,27 @@ private def runSizeBoundChecks : IO Unit := do
     (decide (replySet.size ≤ maxLockSetSize))
   assertBool "lockSet_replyRecv (all options) size = maxLockSetSize (the bound, exactly)"
     (decide (replySet.size = maxLockSetSize))
+  -- **WS-OD OD3.7 (the sharp bound): how much of the ceiling is slack.**  The
+  -- thirteen is the union over ALL argument values; no reachable state supplies
+  -- them all distinctly, because the returned donation's owner IS the answered
+  -- caller, so those two arguments name one key and `insertOrMerge` lubs the
+  -- modes without moving the cardinality.  Executed here at the *same* operands
+  -- as the widest shape above with only the owner changed, so the difference is
+  -- attributable to that one merge and nothing else.
+  let reachableShapeReplyRecv := lockSet_replyRecv (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
+    (ThreadId.ofNat 3) (SeLe4n.ObjId.ofNat 4) (some (ThreadId.ofNat 5))
+    (some ⟨6⟩) (some (ThreadId.ofNat 3)) (some ⟨8⟩) true
+    (some (ThreadId.ofNat 9)) (some ⟨10⟩) (some ⟨11⟩) (some (ThreadId.ofNat 12))
+  assertBool "a .replyRecv whose donation owner is the answered caller declares 12"
+    (decide (reachableShapeReplyRecv.size = 12))
+  assertBool "…one inside the ceiling, which is the slack the constant carries"
+    (decide (reachableShapeReplyRecv.size < maxLockSetSize))
+  -- NEGATIVE: and it is exactly one member of slack, not two -- the recorded
+  -- server merges with the invoking thread only on a NON-delegated reply, which
+  -- is a case split rather than an invariant, so it cannot be taken in a bound.
+  -- Keeping the delegated server distinct here is what makes that visible.
+  assertBool "NEGATIVE: the sharpening is one member, not two"
+    (!decide (reachableShapeReplyRecv.size = 11))
   -- WS-OD OD3.7: and the two below-head reads are each a member of their own —
   -- the reason the ceiling moved 11 → 13.  Stated as the drop, so a merge would
   -- fail here rather than silently make the raise look unnecessary.

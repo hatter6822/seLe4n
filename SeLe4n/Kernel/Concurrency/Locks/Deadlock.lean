@@ -776,6 +776,27 @@ theorem size_le_11 (L : List (LockId × AccessMode))
     (Nat.add_le_add_right (size_le_10 L o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀) 1) ?_
   omega
 
+/-- WS-OD OD3.7: six optional extensions over an **arbitrary** `LockSet`, not
+over a `lockSetOfList`.  The `size_le_k` family above all bottom out in a literal
+base list, which cannot express "the base is whatever this merge left" — the
+shape a sharp bound needs when one layer is free. -/
+theorem size_le_6_over (S : LockSet) (o₁ o₂ o₃ o₄ o₅ o₆ : Option (LockId × AccessMode)) :
+    (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
+      (lockSetExtendOpt (lockSetExtendOpt S o₁) o₂) o₃) o₄) o₅) o₆).size ≤ S.size + 6 := by
+  refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
+  refine Nat.le_trans (Nat.add_le_add_right (lockSetExtendOpt_size_le _ _) 1) ?_
+  refine Nat.le_trans (Nat.add_le_add_right
+    (Nat.add_le_add_right (lockSetExtendOpt_size_le _ _) 1) 1) ?_
+  refine Nat.le_trans (Nat.add_le_add_right (Nat.add_le_add_right
+    (Nat.add_le_add_right (lockSetExtendOpt_size_le _ _) 1) 1) 1) ?_
+  refine Nat.le_trans (Nat.add_le_add_right (Nat.add_le_add_right
+    (Nat.add_le_add_right (Nat.add_le_add_right
+      (lockSetExtendOpt_size_le _ _) 1) 1) 1) 1) ?_
+  refine Nat.le_trans (Nat.add_le_add_right (Nat.add_le_add_right
+    (Nat.add_le_add_right (Nat.add_le_add_right (Nat.add_le_add_right
+      (lockSetExtendOpt_size_le _ _) 1) 1) 1) 1) 1) ?_
+  omega
+
 /-- Local tactic shorthand: reduce a concrete `[…].length (+k)` to a numeral
 and discharge the `≤ maxLockSetSize` goal. -/
 local macro "size_bound" : tactic =>
@@ -860,6 +881,73 @@ theorem lockSet_endpointReply_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
 -- Five optionals over a four-member base is `4 + 5 = 9`, which is
 -- `maxLockSetSize` exactly — this is the footprint that constant is measured
 -- against, and the reason it moved from 8 (see its docstring).
+/-- **WS-OD OD3.7 (the sharp bound): a `.replyRecv` whose returned donation is
+owned by the thread it answers declares at most TWELVE locks.**
+
+The parametric ceiling is thirteen because a bound is the union over *all*
+argument values, and at `donatedOriginalOwnerTid = some replyTargetTid` two
+arguments name one key — `insertOrMerge` lubs the modes and the cardinality does
+not move (`LockSet.size_insertOrMerge_of_containsKey`).
+
+That equality is a fact about *reachable* states, not one `ipcInvariantFull`
+entails: the bundle admits `.blockedOnReply epId rt` for any `rt` and relates
+`rt` to no donation, which is the same gap WS-RR RR7.22 met from the cancellation
+end and had to close with a stated `donationHolderIsReplyTarget`.  So the
+resolved bound in `ResolvedFootprintBounds` supplies it as a hypothesis rather
+than deriving it, and this parametric form takes the equality directly.
+
+**One member is the whole of the available sharpening.**  The other candidate
+merge — the recorded server with the invoking thread — holds exactly on a
+*non-delegated* reply, which is a case split rather than an invariant, and the
+delegated case is precisely the one WS-OD OD3.5 exists to declare.  So this
+does not move `maxLockSetSize`; it gives the WCRT surface a smaller number where
+the state permits, the way `lockSet_cancelIpcBlockingOnCore_size_le_ten` does. -/
+theorem lockSet_replyRecv_size_le_twelve_of_owner_eq_target
+    (a : ThreadId) (b : ObjId) (c : ThreadId) (d : ObjId)
+    (e : Option ThreadId) (f : Option SchedContextId)
+    (h : Option ReplyId) (i : Bool) (j : Option ThreadId) (k : Option SchedContextId)
+    (l : Option ReplyId) (m : Option ThreadId) :
+    (lockSet_replyRecv a b c d e f (some c) h i j k l m).size ≤ 12 := by
+  unfold lockSet_replyRecv
+  simp only [Option.map_some, lockSetExtendOpt]
+  -- The answered caller's TCB write lock is already in the set the owner
+  -- extension is applied to — it is the third member of the base list — so that
+  -- extension is a mode merge and costs nothing.
+  have hMem : (tcbLock c, AccessMode.write) ∈
+      (lockSetExtendOpt (lockSetExtendOpt
+        (lockSetOfList [(tcbLock a, AccessMode.write),
+                        (cnodeLock b, if i then AccessMode.write else AccessMode.read),
+                        (tcbLock c, AccessMode.write),
+                        (endpointLock d, AccessMode.write)])
+        (e.map (fun st => (tcbLock st, AccessMode.write))))
+        (f.map (fun sc => (schedContextLock sc, AccessMode.write)))).pairs := by
+    unfold lockSetOfList
+    simp only [List.foldl]
+    repeat apply mem_write_lockSetExtendOpt
+    exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+      (LockSet.mem_insertOrMerge_write_self _ _)
+  have hOwnerFree :
+      (LockSet.insertOrMerge (tcbLock c) AccessMode.write
+        (lockSetExtendOpt (lockSetExtendOpt
+          (lockSetOfList [(tcbLock a, AccessMode.write),
+                          (cnodeLock b, if i then AccessMode.write else AccessMode.read),
+                          (tcbLock c, AccessMode.write),
+                          (endpointLock d, AccessMode.write)])
+          (e.map (fun st => (tcbLock st, AccessMode.write))))
+          (f.map (fun sc => (schedContextLock sc, AccessMode.write))))).size
+        ≤ 6 :=
+    by
+      rw [LockSet.size_insertOrMerge_of_containsKey _ _ _
+        ((LockSet.containsKey_iff (tcbLock c) _).mpr ⟨AccessMode.write, hMem⟩)]
+      refine Nat.le_trans (size_le_2 _ _ _) ?_
+      simp only [List.length_cons, List.length_nil]
+      omega
+  -- Six extensions remain above it — the reply object, the recorded server, the
+  -- re-donated context, WS-OD OD3.7's two below-head reads, and the state-level
+  -- lock — so the whole set is `6 + 6 = 12`, one inside the ceiling.
+  exact Nat.le_trans (size_le_6_over _ _ _ _ _ _ _)
+    (by exact Nat.add_le_add_right hOwnerFree 6)
+
 theorem lockSet_replyRecv_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
     (d : ObjId) (e : Option ThreadId) (f : Option SchedContextId) (g : Option ThreadId)
     (h : Option ReplyId) (i : Bool) (j : Option ThreadId) (k : Option SchedContextId)
