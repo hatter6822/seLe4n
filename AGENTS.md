@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.135.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.136.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,7 +203,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~60626 lines)
+- `CHANGELOG.md` (~60681 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~22597 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12165 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
@@ -218,7 +218,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `SeLe4n/Model/State.lean` (~4708 lines)
 - `SeLe4n/Kernel/CrossSubsystem.lean` (~4416 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~4297 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~4332 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (~4263 lines)
 - `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~4213 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
@@ -235,7 +235,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~3331 lines)
 - `tests/OperationChainSuite.lean` (~3290 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean` (~3259 lines)
-- `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~3194 lines)
+- `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~3247 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~3140 lines)
 - `docs/dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` (~3134 lines)
 - `SeLe4n/Model/Object/Structures.lean` (~3116 lines)
@@ -300,8 +300,8 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md` (~1800 lines)
 - `docs/planning/UNFINISHED_SMP_WORK.md` (~1795 lines)
 - `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` (~1776 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~1746 lines)
 - `SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean` (~1746 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~1740 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` (~1702 lines)
@@ -311,7 +311,7 @@ To find files that need pagination today, run:
 - `tests/LockSetSuite.lean` (~1639 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1616 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1600 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~1583 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~1589 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1559 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
@@ -328,6 +328,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
 - `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1346 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
+- `tests/SmpCrossCoreCallSuite.lean` (~1327 lines)
 - `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1326 lines)
 - `tests/FrozenOpsSuite.lean` (~1324 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1317 lines)
@@ -340,18 +341,17 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1261 lines)
 - `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
 - `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1251 lines)
-- `tests/SmpCrossCoreCallSuite.lean` (~1243 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean` (~1241 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~1239 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1216 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean` (~1193 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
 - `tests/SmpCacheMaintenanceSuite.lean` (~1170 lines)
 - `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~1168 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` (~1165 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean` (~1158 lines)
 - `SeLe4n/Platform/RPi5/MmioAdapter.lean` (~1154 lines)
 - `tests/KernelErrorMatrixSuite.lean` (~1154 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~1151 lines)
 - `SeLe4n/Kernel/Architecture/VSpace.lean` (~1142 lines)
 - `tests/SyscallReturnAbiSuite.lean` (~1130 lines)
 - `SeLe4n/Machine.lean` (~1128 lines)
@@ -1455,7 +1455,7 @@ passive-server pattern does not work at call depth ≥ 2, where the callee stays
 `.unbound` and can never run.  seL4-MCS's `maybeDonateSchedContext` reads the
 sender's *effective* context, bound or donated, and passes it down the chain.
 Two register rows close here: that gap, and the `passiveServerIdle` break the
-`v0.34.97` reclaim introduced.  **44 sub-tasks across OD1..OD6.**  **OD1 is
+`v0.34.97` reclaim introduced.  **45 sub-tasks across OD1..OD6.**  **OD1 is
 closed** (`v0.34.100` → `v0.34.108`), **OD2 is closed** (`v0.34.125`, one cut),
 and **OD3 is closed** (`v0.34.126` → `v0.34.132`); OD4..OD6 have not
 started.
@@ -1530,6 +1530,29 @@ invariant surface runs through
 `hBottom`-conditioned until OD4.3, so all six sites still pass the literal `none`
 that `replyStackOuterCaller?_of_no_stack` proves is the answer on every reachable
 state.
+
+**And `.send` / `.call` declare the queue-structure neighbour** (OD3.11,
+`v0.34.136`).  Every `.send` / `.call` / `.receive` / `.replyRecv` either **pops**
+the head of one endpoint queue or **enqueues** the caller on the other, and each
+writes exactly one TCB besides the operation's two principals: the pop relinks the
+popped thread's successor into the head, the enqueue relinks the queue's old tail.
+No footprint named either.  Four things new code must respect.  (1) **One
+definition** -- `endpointQueueStructureNeighbor?`, with the branch decided by the
+same resolver the arm's receiver/sender member already comes from
+(`endpointCallReceiver?` / `receiveRendezvousSender?`), so the footprint and the
+transition cannot disagree about which branch a call takes; a Tier 3 negative
+refuses re-reading the queue head at the instance.  (2) **An `Option`, not a
+pair**: the two cases are mutually exclusive, so each arm grows by one member.
+(3) **Restated at full arity everywhere** -- both size bounds, both
+kind-consistency proofs, the four write-membership lemmas, the
+`lockSetTransitions_within_bound` conjuncts, `KernelOperation.ofCall`, and the
+WithCaps footprint, which *is* the base at `some destCnodeObjId`.  (4)
+**`lockSet_endpointCallOnCore_capless` carries the resolver**: "capless" is a
+property of the *message*, and a call carrying no capabilities still pops or
+enqueues, so fixing the member at `none` there would describe a footprint the
+transition does not declare.  `maxLockSetSize` is unmoved (`3 + 4 = 7`,
+`3 + 6 = 9`).  `.receive` and `.replyRecv` are the same shape and not yet
+declared.
 
 **And `.notificationSignal` declares the two TCBs its dequeue relinks** (OD3.10,
 `v0.34.135`).  The bound-delivery path runs `endpointQueueRemoveDual`, which writes

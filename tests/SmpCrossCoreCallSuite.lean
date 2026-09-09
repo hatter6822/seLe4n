@@ -60,6 +60,16 @@ open SeLe4n.Testing
 #check @endpointCallServerFirstReply?
 #check @lockSet_endpointCallOnCore
 #check @lockSet_endpointCallOnCore_correct
+-- WS-OD OD3.11: the one TCB a rendezvous-or-block writes besides its two
+-- principals -- the promoted head on a pop, the old tail on an enqueue.
+#check @endpointQueueStructureNeighbor?
+#check @sendSideQueueStructureNeighbor?
+#check @sendSideQueueStructureNeighbor?_rendezvous
+#check @sendSideQueueStructureNeighbor?_block
+#check @lockSet_endpointCallOnCore_covers_queueNeighbour
+#check @lockSet_endpointSendOnCore_covers_queueNeighbour
+#check @lockSetForSyscall_call_covers_queueNeighbour
+#check @lockSetForSyscall_send_covers_queueNeighbour
 #check @lockSet_endpointCallWithCaps
 #check @removeRunnableOnCore_bootCoreId
 
@@ -955,6 +965,79 @@ example (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     hMsgCaps hAllBudgetsNone hFreshSender hSendTailFresh
     hSenderNotRecv hSenderNotReply hSenderNotUnbound hStep c
 
+/-- **WS-OD OD3.11** fixture (rendezvous branch): two receivers queued, so the
+pop the `.call` performs promotes the *second* one to head and writes its TCB. -/
+private def stTwoReceivers? : Option SystemState :=
+  match endpointReceiveDual epId recvLocalTid (some replyId) stBase with
+  | .ok (_, st1) =>
+      match endpointReceiveDual epId recvRemoteTid none st1 with
+      | .ok (_, st2) => some st2
+      | .error _ => none
+  | .error _ => none
+
+/-- **WS-OD OD3.11** fixture (blocking branch): one sender already parked, so a
+second `.call` enqueues behind it and writes *its* TCB as the old tail. -/
+private def stOneParkedSender? : Option SystemState :=
+  match endpointCallOnCore epId recvLocalTid IpcMessage.empty bootCoreId stBase with
+  | (st1, .ok _) => some st1
+  | _ => none
+
+/-- §3.12: **WS-OD OD3.11** — the queue-structure neighbour, on both branches.
+
+`endpointQueuePopHead` relinks the popped thread's successor into the head and
+`endpointQueueEnqueue` relinks the enqueueing queue's old tail; the `.send` and
+`.call` footprints named neither, so a rendezvous on one core and a
+`.tcbSuspend` of the affected neighbour on another had provably disjoint
+footprints while both writing that TCB.  Both branches are exercised, and each
+is guarded against passing vacuously: the resolver must name a real thread, that
+thread's lock must be declared, and the transition must observably rewrite it. -/
+private def runQueueNeighbourFootprintChecks : IO Unit := do
+  IO.println "--- §3.12 WS-OD OD3.11 queue-structure neighbour footprint ---"
+  -- Rendezvous branch: the pop promotes the second receiver.
+  match stTwoReceivers? with
+  | none => assertBool "setup: two receivers queued" false
+  | some st =>
+      assertBool "setup: the receive queue is local -> remote"
+        (match st.getEndpoint? epId with
+         | some ep => decide (ep.receiveQ.head = some recvLocalTid
+             ∧ ep.receiveQ.tail = some recvRemoteTid)
+         | none => false)
+      assertBool "the resolver names the popped receiver's successor"
+        (decide (sendSideQueueStructureNeighbor? st epId = some recvRemoteTid))
+      let ls := lockSet_endpointCallOnCore st epId callerTid cnRoot
+      assertBool "the successor's TCB write lock is declared (rendezvous)"
+        (decide ((tcbLock recvRemoteTid, AccessMode.write) ∈ ls.pairs))
+      let (st', _) := endpointCallOnCore epId callerTid IpcMessage.empty bootCoreId st
+      assertBool "the call rewrites the promoted head's links"
+        (match st'.getTcb? recvRemoteTid with
+         | some t => decide (t.queuePrev = none ∧ t.queuePPrev = some .endpointHead)
+         | none => false)
+  -- Blocking branch: the enqueue relinks the old tail.
+  match stOneParkedSender? with
+  | none => assertBool "setup: one sender parked on the send queue" false
+  | some st =>
+      assertBool "setup: the send queue holds exactly the parked sender"
+        (match st.getEndpoint? epId with
+         | some ep => decide (ep.sendQ.head = some recvLocalTid
+             ∧ ep.sendQ.tail = some recvLocalTid ∧ ep.receiveQ.head = none)
+         | none => false)
+      assertBool "the resolver names the send queue's old tail"
+        (decide (sendSideQueueStructureNeighbor? st epId = some recvLocalTid))
+      let ls := lockSet_endpointCallOnCore st epId callerTid cnRoot
+      assertBool "the old tail's TCB write lock is declared (blocking)"
+        (decide ((tcbLock recvLocalTid, AccessMode.write) ∈ ls.pairs))
+      let (st', _) := endpointCallOnCore epId callerTid IpcMessage.empty bootCoreId st
+      assertBool "the call rewrites the old tail's queueNext"
+        (match st'.getTcb? recvLocalTid with
+         | some t => decide (t.queueNext = some callerTid)
+         | none => false)
+  -- NEGATIVE: an endpoint with an empty send queue and no receiver has no
+  -- neighbour at all -- the caller becomes the sole member, and nothing else is
+  -- written.  Mutating by deleting the member would be caught above; this keeps
+  -- it and changes the state.
+  assertBool "an empty endpoint declares no queue-structure neighbour"
+    (decide (sendSideQueueStructureNeighbor? stBase epId = none))
+
 /-- SM6.D runtime: `threadHomeCore` and `determineTargetCore` agree on the
 suite fixtures (pinned → home core, unpinned → boot core). -/
 private def runPerCoreBundleChecks : IO Unit := do
@@ -1231,6 +1314,7 @@ def runSmpCrossCoreCallChecks : IO Unit := do
   runBlockingChecks
   runNoReceiverChecks
   runRendezvousChecks
+  runQueueNeighbourFootprintChecks
   runPerCoreBundleChecks
   runDeclaredFootprintBracketChecks
   runDelegatedReplyRecvFootprintChecks

@@ -2244,6 +2244,59 @@ def receiveRendezvousSender? (st : SystemState) (endpointId : SeLe4n.ObjId) :
     Option SeLe4n.ThreadId :=
   (st.getEndpoint? endpointId).bind (·.sendQ.head)
 
+/-- **WS-OD OD3.11**: the one TCB an endpoint rendezvous-or-block writes besides
+its two principals -- the queue *structure* the operation changes.
+
+Every `.send` / `.call` / `.receive` / `.replyRecv` either **pops** the head of
+one queue or **enqueues** the caller on the other, decided by whether that first
+queue has a head; and each of those writes exactly one neighbour TCB:
+
+* the pop (`endpointQueuePopHead`) relinks the popped thread's successor, which
+  becomes the new head (`queuePrev := none`, `queuePPrev := .endpointHead`);
+* the enqueue (`endpointQueueEnqueue`) relinks the **old tail**, whose
+  `queueNext` comes to name the freshly-enqueued thread.
+
+Neither was declared by any footprint, so a rendezvous on one core and a
+`.tcbSuspend` of the affected neighbour on another had provably disjoint
+footprints while both writing that TCB.
+
+One definition rather than four, and the arm question -- pop or block -- is
+answered by the *same* resolver the arm's receiver/sender member already comes
+from (`popped?`), so the footprint and the transition cannot disagree about
+which branch this call takes.  A `Option`-returning resolver rather than a pair,
+because the two cases are mutually exclusive: an endpoint queue that has a head
+is not one the caller blocks on. -/
+def endpointQueueStructureNeighbor?
+    (st : SystemState) (popped? : Option SeLe4n.ThreadId)
+    (blockQueueTail? : Option SeLe4n.ThreadId) : Option SeLe4n.ThreadId :=
+  match popped? with
+  | some h => (st.getTcb? h).bind (fun t => t.queueNext)
+  | none => blockQueueTail?
+
+/-- **WS-OD OD3.11**: on the rendezvous branch the neighbour is the popped
+thread's successor -- the thread `endpointQueuePopHead` promotes to head. -/
+@[simp] theorem endpointQueueStructureNeighbor?_rendezvous (st : SystemState)
+    (h : SeLe4n.ThreadId) (tcb : TCB) (blockQueueTail? : Option SeLe4n.ThreadId)
+    (hTcb : st.getTcb? h = some tcb) :
+    endpointQueueStructureNeighbor? st (some h) blockQueueTail? = tcb.queueNext := by
+  unfold endpointQueueStructureNeighbor?
+  simp only [hTcb, Option.bind_some]
+
+/-- **WS-OD OD3.11**: on the blocking branch it is the old tail of the queue the
+caller is appended to -- the thread `endpointQueueEnqueue` relinks. -/
+@[simp] theorem endpointQueueStructureNeighbor?_block (st : SystemState)
+    (blockQueueTail? : Option SeLe4n.ThreadId) :
+    endpointQueueStructureNeighbor? st none blockQueueTail? = blockQueueTail? := rfl
+
+/-- **WS-OD OD3.11**: the `.receive` / `.replyRecv` instance -- those arms pop
+the **send** queue and block on the **receive** queue.  Derived from
+`receiveRendezvousSender?`, the resolver the arm's sender member and its
+donation member already come from, so all three agree about the branch. -/
+def receiveSideQueueStructureNeighbor? (st : SystemState) (endpointId : SeLe4n.ObjId) :
+    Option SeLe4n.ThreadId :=
+  endpointQueueStructureNeighbor? st (receiveRendezvousSender? st endpointId)
+    ((st.getEndpoint? endpointId).bind (·.receiveQ.tail))
+
 /-- WS-SM SM6 (PR #873 round 8): **will this receive install capabilities?**
 
 The condition the WithCaps receive actually branches on, read from the same

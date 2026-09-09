@@ -650,8 +650,29 @@ theorem lockSetForSyscall_send_covers_writes
     (endpointLock endpointId, AccessMode.write) ∈ S.pairs := by
   rw [lockSetForSyscall_send_eq ops st caller endpointId msg hTcb hEp hMsg] at hDecl
   cases hDecl
-  exact ⟨lockSet_endpointSend_caller_tcb_write_mem _ _ _ _ _,
-         lockSet_endpointSend_endpoint_write_mem _ _ _ _ _⟩
+  exact ⟨lockSet_endpointSend_caller_tcb_write_mem _ _ _ _ _ _,
+         lockSet_endpointSend_endpoint_write_mem _ _ _ _ _ _⟩
+
+/-- **WS-OD OD3.11**: and the queue-structure neighbour, on both arms.
+
+A `.send` / `.call` either pops the endpoint's receive queue -- relinking the
+popped receiver's successor into the head -- or enqueues the caller on the send
+queue, relinking that queue's old tail.  Exactly one TCB, and the footprint the
+bracket acquires named neither until this row, so a rendezvous on one core and a
+`.tcbSuspend` of the affected neighbour on another were provably disjoint while
+both writing it. -/
+theorem lockSetForSyscall_send_covers_queueNeighbour
+    (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
+    (endpointId : ObjId) (msg : IpcMessage) (S : LockSet) (q : ThreadId)
+    (hTcb : st.getTcb? ops.caller = some caller)
+    (hEp : ops.targetObject = some endpointId)
+    (hMsg : ops.message = some msg)
+    (hq : sendSideQueueStructureNeighbor? st endpointId = some q)
+    (hDecl : lockSetForSyscall .send ops st = some S) :
+    (tcbLock q, AccessMode.write) ∈ S.pairs := by
+  rw [lockSetForSyscall_send_eq ops st caller endpointId msg hTcb hEp hMsg] at hDecl
+  cases hDecl
+  exact lockSet_endpointSendOnCore_covers_queueNeighbour _ _ _ _ _ _ hq
 
 /-- **WS-RR RR7.11**: and, when the message carries capabilities, the receiver's
 CSpace root and the state-level lock the CDT edge needs. -/
@@ -695,8 +716,8 @@ theorem lockSetForSyscall_call_covers_writes
     (endpointLock endpointId, AccessMode.write) ∈ S.pairs := by
   rw [lockSetForSyscall_call_eq ops st caller endpointId msg hTcb hEp hMsg] at hDecl
   cases hDecl
-  exact ⟨lockSet_endpointCall_caller_tcb_write_mem_unconditional _ _ _ _ _ _ _,
-         lockSet_endpointCall_endpoint_write_mem _ _ _ _ _ _ _⟩
+  exact ⟨lockSet_endpointCall_caller_tcb_write_mem_unconditional _ _ _ _ _ _ _ _,
+         lockSet_endpointCall_endpoint_write_mem _ _ _ _ _ _ _ _⟩
 
 /-- **WS-RR RR7.11**: and `.call`'s capability-transfer writes. -/
 theorem lockSetForSyscall_call_covers_capsWrites
@@ -713,6 +734,20 @@ theorem lockSetForSyscall_call_covers_capsWrites
   cases hDecl
   exact ⟨lockSet_endpointCallOnCore_covers_capsDestination _ _ _ _ _ _ hDest,
          lockSet_endpointCallOnCore_covers_cdt _ _ _ _ _ _ hDest⟩
+
+/-- **WS-OD OD3.11**: the `.call` half. -/
+theorem lockSetForSyscall_call_covers_queueNeighbour
+    (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
+    (endpointId : ObjId) (msg : IpcMessage) (S : LockSet) (q : ThreadId)
+    (hTcb : st.getTcb? ops.caller = some caller)
+    (hEp : ops.targetObject = some endpointId)
+    (hMsg : ops.message = some msg)
+    (hq : sendSideQueueStructureNeighbor? st endpointId = some q)
+    (hDecl : lockSetForSyscall .call ops st = some S) :
+    (tcbLock q, AccessMode.write) ∈ S.pairs := by
+  rw [lockSetForSyscall_call_eq ops st caller endpointId msg hTcb hEp hMsg] at hDecl
+  cases hDecl
+  exact lockSet_endpointCallOnCore_covers_queueNeighbour _ _ _ _ _ _ hq
 
 /-- **WS-RR RR7.11**: at resolved operands, `.receive` declares the receive
 footprint. -/

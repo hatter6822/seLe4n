@@ -1,3 +1,58 @@
+## v0.34.136 — WS-OD OD3.11: `.send` and `.call` declare the queue-structure neighbour
+
+The second and third arms the OD3.9 sweep found undeclared, and the shape that
+covers four of them.  Every `.send` / `.call` / `.receive` / `.replyRecv` either
+**pops** the head of one endpoint queue or **enqueues** the caller on the other,
+and each of those writes exactly one TCB besides the operation's two principals:
+
+* the pop (`endpointQueuePopHead`) relinks the popped thread's **successor**,
+  which becomes the new head (`queuePrev := none`, `queuePPrev := .endpointHead`);
+* the enqueue (`endpointQueueEnqueue`) relinks the queue's **old tail**, whose
+  `queueNext` comes to name the freshly-enqueued thread.
+
+No footprint named either, so a rendezvous on one core and a `.tcbSuspend` of
+the affected neighbour on another had provably disjoint footprints while both
+writing that TCB.  Latent rather than live for the same reason as OD3.10 —
+SM5.I's global entry lock, and nothing boots — so a verification defect: the
+statements built on `lockSetForSyscall` were silent about that object rather
+than conservative.  This cut lands the two send-side arms; `.receive` and
+`.replyRecv` follow.
+
+Four things new code must respect.
+
+1. **One definition, not four.**  `endpointQueueStructureNeighbor?` answers the
+   question once, and the *branch* — pop or block — is decided by the same
+   resolver the arm's receiver/sender member already comes from
+   (`endpointCallReceiver?` for the send side, `receiveRendezvousSender?` for
+   the receive side), so the footprint and the transition cannot disagree about
+   which branch a given call takes.  A Tier 3 negative refuses re-reading the
+   queue head here.
+2. **It is an `Option`, not a pair.**  The two cases are mutually exclusive: a
+   queue that has a head is not one the caller blocks on.  The footprint
+   therefore grows by **one** member per arm, not two.
+3. **Every statement about these two footprints is restated at the new full
+   arity** — both size bounds, both kind-consistency proofs, the four
+   write-membership lemmas, the `lockSetTransitions_within_bound` conjuncts, the
+   `KernelOperation.ofCall` builder, and the WithCaps footprint, which is the
+   base footprint at `some destCnodeObjId` and therefore inherits the member.
+   RR7.18's census caught both size bounds the moment they were left at the
+   default, which is what it exists for.
+4. **`maxLockSetSize` does not move.**  `.send` reaches `3 + 4 = 7` and `.call`
+   `3 + 6 = 9`, both inside 13, so `admissibleCriticalSection` stays at 25 µs
+   for the 1 ms tick and the published contention bound is unchanged.
+
+One correction to a claim this cut made false: `lockSet_endpointCallOnCore_capless`
+now carries the resolver on its right-hand side.  "Capless" is a property of the
+*message*; a call that carries no capabilities still pops or enqueues, so fixing
+the new member at `none` there would have been an equation about a footprint the
+transition does not declare.
+
+The executable witness (`tests/SmpCrossCoreCallSuite.lean` §3.12) exercises
+**both** branches — two receivers queued so the pop promotes the second, and a
+sender already parked so the enqueue relinks it — each guarded against passing
+vacuously: the resolver must name a real thread, that thread's lock must be
+declared, and the transition must observably rewrite it.
+
 ## v0.34.135 — WS-OD OD3.10: `.notificationSignal` declares the two TCBs its dequeue relinks
 
 **The first of the arms the OD3.9 sweep found undeclared**, and the one whose

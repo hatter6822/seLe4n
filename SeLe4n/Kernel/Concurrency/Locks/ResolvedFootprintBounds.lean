@@ -57,14 +57,14 @@ theorem lockSet_endpointSendOnCore_size_le (st : SystemState) (endpointId : SeLe
     (sender : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId) (msg : IpcMessage) :
     (lockSet_endpointSendOnCore st endpointId sender cnodeRootObjId msg).size
       ≤ maxLockSetSize :=
-  lockSet_endpointSend_size_le _ _ _ _ _
+  lockSet_endpointSend_size_le _ _ _ _ _ _
 
 /-- The state-resolved **call** footprint. -/
 theorem lockSet_endpointCallOnCore_size_le (st : SystemState) (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId) (msg : IpcMessage) :
     (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId msg).size
       ≤ maxLockSetSize :=
-  lockSet_endpointCall_size_le _ _ _ _ _ _ _
+  lockSet_endpointCall_size_le _ _ _ _ _ _ _ _
 
 /-- The WithCaps footprint is `lockSet_endpointCall` at `some destCnodeObjId`,
 so its bound is that one's.  Stated over the reply optional, not at its default
@@ -74,11 +74,14 @@ theorem lockSet_endpointCallWithCaps_size_le (callerTid : SeLe4n.ThreadId)
     (cnodeRootObjId destCnodeObjId endpointObjId : SeLe4n.ObjId)
     (receiverTid : Option SeLe4n.ThreadId)
     (donatedScId : Option SeLe4n.SchedContextId)
-    (replyId : Option SeLe4n.ReplyId) :
+    (replyId : Option SeLe4n.ReplyId)
+    -- **WS-OD OD3.11**: and over the queue-structure neighbour, for the same
+    -- reason the reply optional is stated rather than defaulted.
+    (queueNeighbour : Option SeLe4n.ThreadId) :
     (lockSet_endpointCallWithCaps callerTid cnodeRootObjId destCnodeObjId
-        endpointObjId receiverTid donatedScId replyId).size
+        endpointObjId receiverTid donatedScId replyId queueNeighbour).size
       ≤ maxLockSetSize :=
-  lockSet_endpointCall_size_le _ _ _ _ _ _ _
+  lockSet_endpointCall_size_le _ _ _ _ _ _ _ _
 
 /-- The state-resolved **reply** footprint. -/
 theorem lockSet_endpointReplyOnCore_size_le (st : SystemState)

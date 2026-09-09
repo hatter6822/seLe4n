@@ -391,17 +391,27 @@ existed survives by `rfl`. -/
 def lockSet_endpointSend (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (endpointObjId : ObjId)
     (receiverTid : Option ThreadId)
-    (destCnodeObjId : Option ObjId := none) : LockSet :=
+    (destCnodeObjId : Option ObjId := none)
+    -- **WS-OD OD3.11**: the queue-structure neighbour.  A rendezvous pops the
+    -- receive queue, which relinks the popped receiver's successor into the
+    -- head; a block enqueues on the send queue, which relinks its old tail.
+    -- Exactly one of the two, and neither was declared -- so a `.send` on one
+    -- core and a `.tcbSuspend` of that neighbour on another had provably
+    -- disjoint footprints while both writing it.  Defaulted, so a call site
+    -- that has not been re-resolved is unchanged.
+    (queueNeighbour : Option ThreadId := none) : LockSet :=
   lockSetExtendOpt
     (lockSetExtendOpt
       (lockSetExtendOpt
-        (lockSetOfList
-          [(tcbLock callerTid, .write),
-           (cnodeLock cnodeRootObjId, .read),
-           (endpointLock endpointObjId, .write)])
-        (receiverTid.map (fun rt => (tcbLock rt, .write))))
-      (destCnodeObjId.map (fun r => (cnodeLock r, AccessMode.write))))
-    (destCnodeObjId.map (fun _ => (stateLevelLock, AccessMode.write)))
+        (lockSetExtendOpt
+          (lockSetOfList
+            [(tcbLock callerTid, .write),
+             (cnodeLock cnodeRootObjId, .read),
+             (endpointLock endpointObjId, .write)])
+          (receiverTid.map (fun rt => (tcbLock rt, .write))))
+        (destCnodeObjId.map (fun r => (cnodeLock r, AccessMode.write))))
+      (destCnodeObjId.map (fun _ => (stateLevelLock, AccessMode.write))))
+    (queueNeighbour.map (fun q => (tcbLock q, AccessMode.write)))
 
 /-- **WS-RR RR7.7**: the capless send is definitionally the pre-RR7.7
 footprint, so every statement taken over the four-argument form survives
@@ -543,7 +553,11 @@ def lockSet_endpointCall (callerTid : ThreadId)
     -- here is what lets `lockSet_endpointCallWithCaps` *be* this footprint
     -- at `some` rather than a second definition that has to be kept in
     -- step with it.
-    (destCnodeObjId : Option ObjId := none) : LockSet :=
+    (destCnodeObjId : Option ObjId := none)
+    -- **WS-OD OD3.11**: the queue-structure neighbour, declared exactly as
+    -- `lockSet_endpointSend` declares it and for the same reason -- `.call`
+    -- takes the identical two branches through the identical two primitives.
+    (queueNeighbour : Option ThreadId := none) : LockSet :=
   let withReceiver := lockSetExtendOpt
     (lockSetOfList
       [(tcbLock callerTid, .write),
@@ -564,11 +578,13 @@ def lockSet_endpointCall (callerTid : ThreadId)
   -- do.  RR7.7 declared this lock for the CDT write and the donation write went
   -- undeclared beside it.  Conditioned on the same resolver as the SchedContext
   -- member, so the two cannot disagree about whether a donation happens.
-  lockSetExtendOpt
+  let withState := lockSetExtendOpt
     (lockSetExtendOpt withReply
       (destCnodeObjId.map (fun r => (cnodeLock r, AccessMode.write))))
     (if destCnodeObjId.isSome || donatedScId.isSome then
        some (stateLevelLock, AccessMode.write) else none)
+  lockSetExtendOpt withState
+    (queueNeighbour.map (fun q => (tcbLock q, AccessMode.write)))
 
 /-- **WS-RR RR7.7**: the capless call is definitionally the pre-RR7.7
 footprint, so every statement taken over the six-argument form survives
@@ -1457,10 +1473,12 @@ the caller has to discharge for nothing. -/
 blocks when no receiver is waiting and is descheduled from its core. -/
 theorem lockSet_endpointSend_caller_tcb_write_mem (callerTid : ThreadId)
     (cnodeRootObjId endpointObjId : ObjId) (receiverTid : Option ThreadId)
-    (destCnodeObjId : Option ObjId) :
+    (destCnodeObjId : Option ObjId)
+    -- **WS-OD OD3.11**: stated at the queue-structure-neighbour arity.
+    (queueNeighbour : Option ThreadId) :
     (tcbLock callerTid, AccessMode.write)
       ∈ (lockSet_endpointSend callerTid cnodeRootObjId endpointObjId receiverTid
-          destCnodeObjId).pairs := by
+          destCnodeObjId queueNeighbour).pairs := by
   unfold lockSet_endpointSend lockSetOfList
   simp only [List.foldl]
   -- The optional extensions are peeled by count rather than by a hand-nested
@@ -1474,10 +1492,11 @@ theorem lockSet_endpointSend_caller_tcb_write_mem (callerTid : ThreadId)
 rendezvous. -/
 theorem lockSet_endpointSend_endpoint_write_mem (callerTid : ThreadId)
     (cnodeRootObjId endpointObjId : ObjId) (receiverTid : Option ThreadId)
-    (destCnodeObjId : Option ObjId) :
+    (destCnodeObjId : Option ObjId)
+    (queueNeighbour : Option ThreadId) :
     (endpointLock endpointObjId, AccessMode.write)
       ∈ (lockSet_endpointSend callerTid cnodeRootObjId endpointObjId receiverTid
-          destCnodeObjId).pairs := by
+          destCnodeObjId queueNeighbour).pairs := by
   unfold lockSet_endpointSend lockSetOfList
   simp only [List.foldl]
   -- The optional extensions are peeled by count rather than by a hand-nested
@@ -1495,10 +1514,12 @@ proved from this one, because it is cited. -/
 theorem lockSet_endpointCall_caller_tcb_write_mem_unconditional (callerTid : ThreadId)
     (cnodeRootObjId endpointObjId : ObjId) (receiverTid : Option ThreadId)
     (donatedScId : Option SchedContextId) (replyId : Option ReplyId)
-    (destCnodeObjId : Option ObjId) :
+    (destCnodeObjId : Option ObjId)
+    -- **WS-OD OD3.11**: stated at the queue-structure-neighbour arity.
+    (queueNeighbour : Option ThreadId) :
     (tcbLock callerTid, AccessMode.write)
       ∈ (lockSet_endpointCall callerTid cnodeRootObjId endpointObjId receiverTid
-          donatedScId replyId destCnodeObjId).pairs := by
+          donatedScId replyId destCnodeObjId queueNeighbour).pairs := by
   unfold lockSet_endpointCall lockSetOfList
   simp only [List.foldl]
   -- The optional extensions are peeled by count rather than by a hand-nested
@@ -1512,10 +1533,11 @@ theorem lockSet_endpointCall_caller_tcb_write_mem_unconditional (callerTid : Thr
 theorem lockSet_endpointCall_endpoint_write_mem (callerTid : ThreadId)
     (cnodeRootObjId endpointObjId : ObjId) (receiverTid : Option ThreadId)
     (donatedScId : Option SchedContextId) (replyId : Option ReplyId)
-    (destCnodeObjId : Option ObjId) :
+    (destCnodeObjId : Option ObjId)
+    (queueNeighbour : Option ThreadId) :
     (endpointLock endpointObjId, AccessMode.write)
       ∈ (lockSet_endpointCall callerTid cnodeRootObjId endpointObjId receiverTid
-          donatedScId replyId destCnodeObjId).pairs := by
+          donatedScId replyId destCnodeObjId queueNeighbour).pairs := by
   unfold lockSet_endpointCall lockSetOfList
   simp only [List.foldl]
   -- The optional extensions are peeled by count rather than by a hand-nested
@@ -3315,10 +3337,13 @@ checked against one argument value while a fine-lock consumer acquires the
 footprint carrying the other. -/
 theorem lockSet_consistent_send (callerTid : ThreadId)
     (cnRoot epId : ObjId) (rTid : Option ThreadId)
-    (destCnode : Option ObjId := none) :
-    ∀ p ∈ (lockSet_endpointSend callerTid cnRoot epId rTid destCnode).pairs,
+    (destCnode : Option ObjId := none)
+    -- **WS-OD OD3.11**: stated at the queue-structure-neighbour arity.
+    (queueNeighbour : Option ThreadId := none) :
+    ∀ p ∈ (lockSet_endpointSend callerTid cnRoot epId rTid destCnode
+             queueNeighbour).pairs,
       p.fst.kind ∈ permittedKinds .send :=
-  lockSet_consistent_base_plus_three_opts _ _ _ _ _
+  lockSet_consistent_base_plus_four_opts _ _ _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -3339,6 +3364,10 @@ theorem lockSet_consistent_send (callerTid : ThreadId)
         cases destCnode with
         | none => simp at hpp
         | some _ => simp at hpp; rw [← hpp]; simp [stateLevelLock]; decide)
+    (by intro pp hpp
+        cases queueNeighbour with
+        | none => simp at hpp
+        | some q => simp at hpp; rw [← hpp]; simp; decide)
 
 /-- WS-SM SM3.B.4 for `.receive`.
 
@@ -3390,11 +3419,13 @@ theorem lockSet_consistent_call (callerTid : ThreadId)
     (cnRoot epId : ObjId) (rTid : Option ThreadId)
     (donatedScId : Option SchedContextId)
     (replyId : Option ReplyId := none)
-    (destCnode : Option ObjId := none) :
+    (destCnode : Option ObjId := none)
+    -- **WS-OD OD3.11**: stated at the queue-structure-neighbour arity.
+    (queueNeighbour : Option ThreadId := none) :
     ∀ p ∈ (lockSet_endpointCall callerTid cnRoot epId rTid donatedScId replyId
-             destCnode).pairs,
+             destCnode queueNeighbour).pairs,
       p.fst.kind ∈ permittedKinds .call :=
-  lockSet_consistent_base_plus_five_opts _ _ _ _ _ _ _
+  lockSet_consistent_base_plus_six_opts _ _ _ _ _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -3427,6 +3458,10 @@ theorem lockSet_consistent_call (callerTid : ThreadId)
         · rw [if_pos hc] at hpp
           simp at hpp; rw [← hpp]; simp [stateLevelLock]; decide
         · rw [if_neg hc] at hpp; simp at hpp)
+    (by intro pp hpp
+        cases queueNeighbour with
+        | none => simp at hpp
+        | some q => simp at hpp; rw [← hpp]; simp; decide)
 
 /-- WS-SM SM3.B.4 for `.reply` (audit-pass-3 + audit-pass-4: donation-
 return extension with separate `donatedOriginalOwnerTid` arg). -/

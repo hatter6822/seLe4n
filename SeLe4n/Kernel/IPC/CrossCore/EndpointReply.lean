@@ -1326,14 +1326,20 @@ of that and nothing else. -/
 theorem lockSet_endpointCall_reply_write_mem
     (callerTid : SeLe4n.ThreadId) (cnRoot endpointObjId : SeLe4n.ObjId)
     (receiverTid : Option SeLe4n.ThreadId) (donatedScId : Option SeLe4n.SchedContextId)
-    (rid : SeLe4n.ReplyId) (destCnode : Option SeLe4n.ObjId := none) :
+    (rid : SeLe4n.ReplyId) (destCnode : Option SeLe4n.ObjId := none)
+    -- **WS-OD OD3.11**: and over the queue-structure neighbour, which extends
+    -- past the reply member too.  Stated rather than defaulted: the live
+    -- `.call` resolves it, so a version fixed at `none` would be a membership
+    -- claim about a footprint the transition does not declare.
+    (queueNeighbour : Option SeLe4n.ThreadId := none) :
     (replyLock rid, AccessMode.write)
       ∈ (lockSet_endpointCall callerTid cnRoot endpointObjId receiverTid donatedScId
-           (some rid) destCnode).pairs := by
+           (some rid) destCnode queueNeighbour).pairs := by
   unfold lockSet_endpointCall
   exact mem_write_lockSetExtendOpt _ _ _
     (mem_write_lockSetExtendOpt _ _ _
-      (self_write_mem_insertOrMerge _ (replyLock rid)))
+      (mem_write_lockSetExtendOpt _ _ _
+        (self_write_mem_insertOrMerge _ (replyLock rid))))
 
 /-- WS-SM SM6.D (PR #827 review): the per-object reply **write** lock is likewise a
 declared member of the **WithCaps** `.call` footprint once the linked reply object

@@ -809,11 +809,13 @@ local macro "size_bound" : tactic =>
 -- form; leaving the statement at four arguments would have bounded only the
 -- capless send, which is the same silent unbounding the SM9.C
 -- `notificationSignal` fix closed and the round-8 `.receive` fix closed again.
+-- **WS-OD OD3.11**: and over the queue-structure neighbour.  `3 + 4 = 7`,
+-- inside the constant at every value it has held.
 theorem lockSet_endpointSend_size_le (a : ThreadId) (b c : ObjId) (d : Option ThreadId)
-    (e : Option ObjId) :
-    (lockSet_endpointSend a b c d e).size ≤ maxLockSetSize := by
+    (e : Option ObjId) (f : Option ThreadId) :
+    (lockSet_endpointSend a b c d e f).size ≤ maxLockSetSize := by
   unfold lockSet_endpointSend maxLockSetSize
-  exact Nat.le_trans (size_le_3 _ _ _ _) (by size_bound)
+  exact Nat.le_trans (size_le_4 _ _ _ _ _) (by size_bound)
 
 -- PR #873 round 8: stated over the reply optional and the caps flag too.  A
 -- partial application here is how an added member gets silently unbounded (the
@@ -848,13 +850,14 @@ theorem lockSet_endpointReceive_size_le (a : ThreadId) (b c : ObjId) (d : Option
 -- makes the under-application a type error.
 theorem lockSet_endpointCall_size_le (a : ThreadId) (b c : ObjId)
     (d : Option ThreadId) (e : Option SchedContextId)
-    (f : Option ReplyId) (g : Option ObjId) :
-    (lockSet_endpointCall a b c d e f g).size ≤ maxLockSetSize := by
+    (f : Option ReplyId) (g : Option ObjId) (h : Option ThreadId) :
+    (lockSet_endpointCall a b c d e f g h).size ≤ maxLockSetSize := by
   unfold lockSet_endpointCall maxLockSetSize
   -- PR #822 review: the server-first stashed reply is folded in as an optional;
-  -- WS-RR RR7.7 adds the destination CNode and the state-level lock outside it,
-  -- so the bound is the five-extension form.
-  exact Nat.le_trans (size_le_5 _ _ _ _ _ _) (by size_bound)
+  -- WS-RR RR7.7 adds the destination CNode and the state-level lock outside it;
+  -- WS-OD OD3.11 the queue-structure neighbour outside those -- so the bound is
+  -- the six-extension form, `3 + 6 = 9`, inside the constant.
+  exact Nat.le_trans (size_le_6 _ _ _ _ _ _ _) (by size_bound)
 
 -- WS-RR RR7.18: stated over the **reply optional** too.  It was defaulted here
 -- while `lockSet_endpointReply` takes six arguments, so the bound covered only
@@ -1205,9 +1208,10 @@ enumeration had missed — `mintReplyCap`, `tcbBindNotification`,
 `lockSet_derivedFootprintsBounded` below is why the number is now checked
 rather than counted by hand.) -/
 theorem lockSetTransitions_within_bound :
-    (∀ a b c d e, (lockSet_endpointSend a b c d e).size ≤ maxLockSetSize) ∧
+    -- WS-OD OD3.11: at the queue-structure-neighbour arity, not at its default.
+    (∀ a b c d e f, (lockSet_endpointSend a b c d e f).size ≤ maxLockSetSize) ∧
     (∀ a b c d e f g, (lockSet_endpointReceive a b c d e f g).size ≤ maxLockSetSize) ∧
-    (∀ a b c d e f g, (lockSet_endpointCall a b c d e f g).size ≤ maxLockSetSize) ∧
+    (∀ a b c d e f g h, (lockSet_endpointCall a b c d e f g h).size ≤ maxLockSetSize) ∧
     (∀ a b c d e f g h, (lockSet_endpointReply a b c d e f g h).size ≤ maxLockSetSize) ∧
     (∀ a b c d e f g h i j k l m,
       (lockSet_replyRecv a b c d e f g h i j k l m).size ≤ maxLockSetSize) ∧
@@ -1244,7 +1248,7 @@ theorem lockSetTransitions_within_bound :
     (∀ a b c d q, (lockSet_tcbUnbindNotification a b c d q).size ≤ maxLockSetSize) ∧
     (∀ a b c d q, (lockSet_tcbSetAffinity a b c d q).size ≤ maxLockSetSize) :=
   ⟨lockSet_endpointSend_size_le, lockSet_endpointReceive_size_le,
-   (fun a b c d e f g => lockSet_endpointCall_size_le a b c d e f g),
+   (fun a b c d e f g h => lockSet_endpointCall_size_le a b c d e f g h),
    (fun a b c d e f => lockSet_endpointReply_size_le a b c d e f),
    lockSet_replyRecv_size_le,
    lockSet_notificationSignal_size_le,
@@ -1293,8 +1297,10 @@ def KernelOperation.ofEndpointCall (a : ThreadId) (b c : ObjId)
     -- capabilities builds an operation whose footprint is the one its bracket
     -- acquires.  `none` is the capless shape and reduces definitionally, so
     -- every operation built before this argument existed is unchanged.
-    (g : Option ObjId := none) : KernelOperation :=
-  ⟨lockSet_endpointCall a b c d e f g, lockSet_endpointCall_size_le a b c d e f g⟩
+    (g : Option ObjId := none)
+    -- **WS-OD OD3.11**: the queue-structure neighbour, same discipline.
+    (h : Option ThreadId := none) : KernelOperation :=
+  ⟨lockSet_endpointCall a b c d e f g h, lockSet_endpointCall_size_le a b c d e f g h⟩
 
 /-- WS-SM SM3.D.6: build the `KernelOperation` for a `replyRecv` (a 7-arg,
 3-extension transition — the deepest static footprint). -/

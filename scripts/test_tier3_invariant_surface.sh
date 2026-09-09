@@ -932,6 +932,27 @@ run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_notificationArm_preserve
 # neither a "not blocked on reply" nor an "off every endpoint boundary" premise.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*hNotReply" SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean'
 run_check "INVARIANT" rg -n '^theorem purgedAndRestored_victim_off_endpoint_boundaries' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
+# WS-OD OD3.11: `.send` and `.call` declare the one TCB their queue *structure*
+# change writes.  A rendezvous pops the receive queue, relinking the popped
+# receiver's successor into the head; a block enqueues on the send queue,
+# relinking its old tail.  Exactly one of the two, and neither was declared.
+run_check "INVARIANT" rg -n '^def endpointQueueStructureNeighbor\?' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_check "INVARIANT" rg -n '^def receiveSideQueueStructureNeighbor\?' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_check "INVARIANT" rg -n '^def sendSideQueueStructureNeighbor\?' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointCallOnCore_covers_queueNeighbour' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointSendOnCore_covers_queueNeighbour' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_send_covers_queueNeighbour' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_call_covers_queueNeighbour' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+# The arm question -- pop or block -- is answered by the *same* resolver the
+# arm's receiver/sender member already comes from, so the footprint and the
+# transition cannot disagree about which branch this call takes.  A relation:
+# the tokens are present either way, what matters is that they compose.
+run_check "INVARIANT" bash -lc 'rg -U -n "def sendSideQueueStructureNeighbor\?[^\n]*(\n([ \t][^\n]*)?)*endpointQueueStructureNeighbor\? st \(endpointCallReceiver\? st endpointId\)" SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def receiveSideQueueStructureNeighbor\?[^\n]*(\n([ \t][^\n]*)?)*endpointQueueStructureNeighbor\? st \(receiveRendezvousSender\? st endpointId\)" SeLe4n/Kernel/IPC/DualQueue/Transport.lean'
+# NEGATIVE: the branch must not be re-read from the endpoint here.  Mutating by
+# deleting the resolver would be caught by the positives; this keeps it and
+# re-derives the branch from the queue instead of from the arm's own resolver.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "def sendSideQueueStructureNeighbor\?[^\n]*(\n([ \t][^\n]*)?)*receiveQ\.head" SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean'
 # WS-OD OD3.10: the bound-notification delivery declares the two TCBs its
 # dequeue relinks.  `endpointQueueRemoveDual` writes the removed thread's
 # predecessor and successor, and `lockSet_notificationSignal` named neither -- so
