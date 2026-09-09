@@ -1,3 +1,84 @@
+## v0.34.134 — WS-OD OD3.9: the third endpoint-queue removal maintains `queuePPrev`
+
+**A live correctness and availability defect, reported before being fixed, and
+the same one WS-OD OD1.1 closed at `v0.34.100` in a different copy.**
+
+`spliceOutMidQueueNode` — the endpoint-queue removal `.tcbSuspend`
+(`cancelIpcBlocking`) and thread destruction (`cleanupTcbReferences`) run —
+patched the removed thread's successor's `queuePrev` and **not** its
+`queuePPrev`.  The successor was therefore left carrying `.tcbNext <removed
+thread>`, which no longer describes its position, and `queuePPrev` is precisely
+the field `endpointQueueRemoveDual` validates: its `pprevConsistent` check
+requires `q.head ≠ some it` for a `.tcbNext` back-pointer and
+`it.queuePrev = some <that thread>`, and after the splice **both** fail — as the
+new head because it *is* the head, as an interior node because its `queuePrev`
+now names its new predecessor.  So in every case the removed thread had a
+successor at all, that successor could never again be dequeued by the dual
+removal, and every later bound-notification delivery to it returned
+`.illegalState`.
+
+The reachable consequence is authority-crossing: `.tcbSuspend` needs a TCB write
+capability on **A**, and the thread permanently damaged is **B**, A's queue
+successor, over which the caller holds nothing.  Concretely, a passive server
+blocked on an endpoint with a bound notification is cut off from all future
+`seL4_Signal` delivery by suspending whichever unrelated thread happens to sit
+ahead of it.  Unlike the footprint findings of this workstream this is *not* a
+concurrency defect — it is single-core logic, so SM5.I's global entry lock does
+not mask it and it would be live on first boot.  Availability only; no
+confidentiality or integrity consequence.
+
+Nothing caught it because no `ipcInvariantFull` conjunct relates `queuePPrev` to
+`queuePrev` or to the head — OD1.1 recorded exactly that about the first
+instance — and because the existing mid-queue splice test asked about the field
+the code *wrote* rather than the field it should have written.
+
+**Why it survived eight cuts.**  OD1.1 fixed the copy the finding named and
+wrote, in `endpointQueueRemove`'s own comment, that `endpointQueueRemoveDual` is
+"the removal every other kernel path uses".  It is not: `spliceOutMidQueueNode`
+is a third.  OD3.5 then met the divergence directly and recorded it as a design
+decision — "the two patches take different `upd` functions and not one" — rather
+than as the defect it was.  That is the sweep rule in `CLAUDE.md` failing in the
+way it describes: *when a fix names a relation, grep for every other place that
+asks it.*
+
+**The fix is one definition, not a third patched copy.**
+`queueUnlinkPredecessor` and `queueUnlinkSuccessor` (`SeLe4n/Model/Object/Types.lean`,
+beside the fields they maintain) are what unlinking writes to a removed node's
+neighbours; the successor's carries `queuePrev` **and** `queuePPrev`, both the
+removed thread's own, which is right in each case by construction (a removed
+head carries `.endpointHead`, inherited by the new head; a removed interior node
+carries `.tcbNext prev`, which is exactly the back-pointer the successor's new
+`queuePrev` names).  `endpointQueueRemove` and `spliceOutMidQueueNode` call them;
+`endpointQueueRemoveDual`, which spells its write through `storeTcbQueueLinks`,
+is tied to the same definition by
+`endpointQueueRemoveDual_stores_queueUnlinkSuccessor` /
+`…_queueUnlinkPredecessor` — theorems about the object the operation *stores*,
+because a name is not a definition.  A fourth removal cannot get this wrong
+without failing to elaborate.
+
+Three surfaces catch the mutation that keeps every token and breaks the relation
+(dropping `queuePPrev` from the shared update): the content theorem
+`spliceOutMidQueueNode_next_queuePPrev` stops elaborating, the three-way pin
+`tcbWithQueueLinks_eq_queueUnlinkSuccessor` fails as a definitional equality, and
+the executable regression in `tests/SmpCancellationSuite.lean` §3.10 fails —
+which now asserts the successor's `queuePPrev` *and* the end-to-end consequence,
+that both the successor and the promoted predecessor can still be dequeued by the
+dual removal after the cancellation.
+
+Also in this cut, all found by the same sweep or by running the gates over it:
+
+* `spliceOutMidQueueNode_tcb_value` and `sweptAndRestored_tcb_value` — the
+  splice's **sharp pointwise reading** — gain the `queuePPrev` clause.  They
+  carried only `queuePrev` because the operation wrote only `queuePrev`.
+* `storeTcbQueueLinks_as_storeObject` — the lookup peeled once, so the pins above
+  can talk about the value stored rather than the arguments passed.
+* Four unused-simp-argument warnings in
+  `SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean`, introduced by
+  the `v0.34.131` sharp bound.
+* A stale Tier 3 prose anchor shipped by `v0.34.133`: the fine-lock plan's status
+  header moved to "9 of 13 PRs landed" when Track D grew a fourth PR, and the
+  anchor still read "9 of 12".
+
 ## v0.34.133 — Fine-lock Track D restructured: the Lean foundations come first, and the whole-state CAS is refused
 
 A planning cut, no kernel code.  Track D of

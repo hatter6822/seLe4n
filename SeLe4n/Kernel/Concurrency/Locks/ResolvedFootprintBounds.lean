@@ -151,7 +151,7 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_twelve (st : SystemState)
   | none =>
       -- No donation returned: the owner member is absent outright, so the set is
       -- narrower still and the crude ceiling bound already gives twelve.
-      simp only [hDon, Option.map_none, extendOpt_none]
+      simp only [Option.map_none]
       refine Nat.le_trans (size_le_7 _ _ _ _ _ _ _ _) ?_
       simp only [List.length_cons, List.length_nil]
       omega
@@ -159,7 +159,7 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_twelve (st : SystemState)
       obtain ⟨scId, owner⟩ := pr
       have hEq : owner = target := hOwner scId owner hDon
       subst hEq
-      simp only [hDon, Option.map_some]
+      simp only [Option.map_some]
       exact lockSet_replyRecv_size_le_twelve_of_owner_eq_target _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- The resolved **receive** footprint.  Stated over the reply optional rather
@@ -339,7 +339,7 @@ theorem lockSet_cancelIpcBlockingOnCore_size_le_ten (st : SystemState)
       -- resolver this branch has just found to be `none`.
       rw [cancelBelowHeadReads?_of_no_donation st victimTid tcb hRes]
       simp only [Option.map_none, cancelHolderBlockedEndpoint?_none,
-        cancelHolderSpliceNeighbors?_none, extendOpt_none]
+        cancelHolderSpliceNeighbors?_none]
       refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
       refine Nat.le_trans (Nat.add_le_add_right (lockSetExtendOpt_size_le _ _) 1) ?_
       have := lockSet_cancelIpcBlocking_noDonation_size_le victimTid (cancelBlockedEndpoint? tcb)

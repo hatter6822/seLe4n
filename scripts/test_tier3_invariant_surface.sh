@@ -932,17 +932,35 @@ run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_notificationArm_preserve
 # neither a "not blocked on reply" nor an "off every endpoint boundary" premise.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*hNotReply" SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean'
 run_check "INVARIANT" rg -n '^theorem purgedAndRestored_victim_off_endpoint_boundaries' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
-# WS-OD OD1.1: the two endpoint-queue removals agree on `queuePPrev`.  The dual
-# removal gives the successor the removed thread's own back-pointer and refuses
-# a queue where that field disagrees with `queuePrev`; the single removal used to
-# patch `queuePrev` alone, so a timeout stranded its successor — it failed every
-# later dual-queue removal and could never leave the queue.  A *relation*, not a
-# presence: both fields must be written, in the same record update.
-run_check "INVARIANT" bash -lc 'rg -U -n "nextTid\.toObjId\s*\n?\s*\(\.tcb \{ nextTcb with queuePrev := tcb\.queuePrev,\s*\n?\s*queuePPrev := tcb\.queuePPrev \}\)" SeLe4n/Kernel/IPC/DualQueue/Core.lean'
-# NEGATIVE: the stranding form — the successor patch naming `queuePrev` alone —
-# must not come back.  Mutating by *removing* the whole patch would be caught by
-# the positive above; this keeps the patch and breaks the relation.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "\.tcb \{ nextTcb with queuePrev := tcb\.queuePrev \}" SeLe4n/Kernel/IPC/DualQueue/Core.lean'
+# WS-OD OD1.1 + OD3.9: **all three** endpoint-queue removals agree on
+# `queuePPrev`, because there is one definition of what unlinking writes.  The
+# dual removal gives the successor the removed thread's own back-pointer and
+# refuses a queue where that field disagrees with `queuePrev`; a removal that
+# patches `queuePrev` alone strands its successor -- it fails every later dual
+# removal and can never leave the queue.  OD1.1 fixed that in
+# `endpointQueueRemove` and asserted the dual was "the removal every other
+# kernel path uses"; `spliceOutMidQueueNode` -- the removal `.tcbSuspend` and
+# thread destruction run -- was a third, and kept the defect for eight cuts.
+run_check "INVARIANT" rg -n '^def queueUnlinkPredecessor' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def queueUnlinkSuccessor' SeLe4n/Model/Object/Types.lean
+# A *relation*, not a presence: the successor update writes both link fields.
+run_check "INVARIANT" bash -lc 'rg -U -n "def queueUnlinkSuccessor[^\n]*(\n([ \t][^\n]*)?)*queuePrev := removed\.queuePrev, queuePPrev := removed\.queuePPrev" SeLe4n/Model/Object/Types.lean'
+# The two removals that spell their patches inline call the shared updates ...
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointQueueRemove[^\n]*(\n([ \t][^\n]*)?)*queueUnlinkSuccessor tcb nextTcb" SeLe4n/Kernel/IPC/DualQueue/Core.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointQueueRemove[^\n]*(\n([ \t][^\n]*)?)*queueUnlinkPredecessor tcb prevTcb" SeLe4n/Kernel/IPC/DualQueue/Core.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def spliceOutMidQueueNode[^\n]*(\n([ \t][^\n]*)?)*queueUnlinkSuccessor tcb nextTcb" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def spliceOutMidQueueNode[^\n]*(\n([ \t][^\n]*)?)*queueUnlinkPredecessor tcb prevTcb" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
+# ... and the third, which spells its write through `storeTcbQueueLinks`, is
+# tied to the same definition by a theorem about the object it stores -- a name
+# is not a definition, so the tie is proved rather than asserted.
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_stores_queueUnlinkSuccessor' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_stores_queueUnlinkPredecessor' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem spliceOutMidQueueNode_next_queuePPrev' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+# NEGATIVE: the stranding form -- a successor patch naming `queuePrev` alone --
+# must not come back, in the shared definition or in any removal that inlines
+# one again.  Mutating by *removing* a patch would be caught by the positives
+# above; this keeps the patch and breaks the relation.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "with queuePrev := (tcb|tcbV|removed)\.queuePrev \}" SeLe4n/Model/Object/Types.lean SeLe4n/Kernel/IPC/DualQueue/Core.lean SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
 # WS-OD OD1.2: the timeout's object-only prefix.  `abortPendingIpcOnEndpoint`
 # is the splice-and-clear half of `timeoutThread` with the two scheduler
 # writes (the wake and the priority-inheritance revert) left to the caller,
@@ -6164,7 +6182,7 @@ run_check "INVARIANT" rg -n 'runModifiedFieldsChecks' tests/CrossSubsystemPerCor
 # The fine-lock plan's status header says what actually landed.  It read
 # "2 of 12 PRs" and "Tracks B, C and D are entirely unstarted" for ten cuts
 # after Track B started landing.
-run_prose_check "INVARIANT" rg -n '9 of 12 PRs landed' docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md
+run_prose_check "INVARIANT" rg -n '9 of 13 PRs landed' docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md
 run_prose_check "INVARIANT" rg -n 'Fine-lock migration Tracks B and C' docs/planning/SMP_RELEASE_CLOSURE_PLAN.md
 
 # WS-RR RR7.20: the SM7 deferrals get owners.  These are PROSE checks, and

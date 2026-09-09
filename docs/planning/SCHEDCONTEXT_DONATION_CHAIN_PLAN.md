@@ -12,7 +12,7 @@
 > **Predecessor findings**: the two Medium-severity model/specification gaps
 > recorded in [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) §A, reported while
 > proving the WS-RR RR7.22 residual at `v0.34.97` and `v0.34.98`.
-> **Sub-task count**: 42 across 6 phases (OD1..OD6), each phase numbered in the
+> **Sub-task count**: 43 across 6 phases (OD1..OD6), each phase numbered in the
 > order it is to be implemented
 
 ## 1. Phase goal
@@ -233,7 +233,7 @@ measurement.
 |-------|------------------|------|-----|
 | OD1 | The reclaim's `passiveServerIdle` hole — a live `v0.34.97` defect, independent of the reply stack | 7 | L |
 | OD2 | Inert structure: `SchedContext.scReply`, `Reply.wellFormed`, the chain predicate and its frames | 7 | M |
-| OD3 | The pop, generalised and behaviourally inert — signature, head validation, pre-state resolver, and the footprint split its growth needs | 8 | XL |
+| OD3 | The pop, generalised and behaviourally inert — signature, head validation, pre-state resolver, and the footprint split its growth needs | 9 | XL |
 | OD4 | The push — `applyCallDonation` accepts a `.donated` caller; the chain goes live; the call sites thread the resolver | 8 | XL |
 | OD5 | Chain-aware teardown and reply reuse — cancellation, retype, `.replyRecv`, freshening | 6 | L |
 | OD6 | Payoff, footprint census, tests, documentation, closure | 6 | M |
@@ -383,6 +383,7 @@ arm.  The arm it excludes is unreachable until OD4.1 writes a reply stack.
 
 ### OD4 — the push; the chain goes live
 
+| OD3.9 | **The third endpoint-queue removal.**  Unscheduled when this plan was written and found while sweeping every declared arm for undeclared queue-structure TCB writes: `spliceOutMidQueueNode` — the removal `.tcbSuspend` and thread destruction run — patched its successor's `queuePrev` and **not** its `queuePPrev`, so the successor was left naming the removed thread and failed `endpointQueueRemoveDual`'s `pprevConsistent` check in every case it had a successor at all.  It could then never leave the endpoint queue, and every later bound-notification delivery to it returned `.illegalState`: suspending the thread *ahead* of a passive server was an authority-crossing denial of service on that server.  Identical to the defect WS-OD OD1.1 closed in `endpointQueueRemove` at `v0.34.100`, live for eight further cuts because OD1.1 fixed the copy it was shown and asserted the dual removal was "the removal every other kernel path uses" — the sweep rule failing in the way `CLAUDE.md` describes.  Reported before being fixed.  One definition of what unlinking writes (`queueUnlinkPredecessor` / `queueUnlinkSuccessor`, beside the fields they maintain), used by both removals that spell their patches, and the third tied to it by a theorem about the object it stores.  **LANDED v0.34.134** | `SeLe4n/Model/Object/Types.lean`, `SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean`, `SeLe4n/Kernel/IPC/DualQueue/Core.lean`, `SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean`, `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean`, `SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean`, `tests/SmpCancellationSuite.lean`, `scripts/test_tier3_invariant_surface.sh` | M |
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
 | OD4.1 | `donateSchedContext` writes the reply's `donatedSc` and `prev` and pushes the context's head — `prev` read from an object the footprint already write-locks.  Four-store chain; the four theorems that unfold it re-derive in this row | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` | XL |

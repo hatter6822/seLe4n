@@ -1080,6 +1080,40 @@ structure TCB where
   pendingFault : Option ThreadFault := none
   deriving Repr
 
+/-- **WS-OD OD3.9**: the link update a removal writes to the **predecessor** of
+the node it unlinks — the predecessor's `queueNext` skips over `removed`.
+
+Lives beside the fields it maintains, and is one definition because "what does
+unlinking `removed` write to its neighbours" is one question.  It had three
+answers: `endpointQueueRemove`, `endpointQueueRemoveDual` and
+`spliceOutMidQueueNode` each spelled the pair inline, and the third of them
+disagreed with the other two — see `queueUnlinkSuccessor`. -/
+def queueUnlinkPredecessor (removed : TCB) : TCB → TCB :=
+  fun p => { p with queueNext := removed.queueNext }
+
+/-- **WS-OD OD3.9**: the link update a removal writes to the **successor** of the
+node it unlinks — the successor inherits `removed`'s `queuePrev` *and* its
+`queuePPrev`.
+
+Both fields, and the second is the one that was missing.  `queuePPrev` is the
+back-pointer `endpointQueueRemoveDual` validates (`pprevConsistent`, else
+`.illegalState`), and it is right in both cases by construction: a removed head
+carries `.endpointHead`, which the successor inherits as the new head, and a
+removed interior node carries `.tcbNext prev`, which is exactly the back-pointer
+the successor's new `queuePrev` names.
+
+WS-OD OD1.1 established this for `endpointQueueRemove` and recorded that leaving
+`queuePPrev` naming the removed thread strands the successor — every later dual
+removal on it fails, so it can never leave the endpoint queue.  It fixed the copy
+it was looking at.  `spliceOutMidQueueNode` — the removal `.tcbSuspend` and
+thread destruction run — was the third copy and kept writing `queuePrev` alone,
+so the identical defect stayed live on those two paths, and OD3.5 then wrote the
+divergence down as a design decision ("the two patches take different `upd`
+functions and not one") rather than as the defect it was.  One definition is what
+makes a fourth removal impossible to get wrong. -/
+def queueUnlinkSuccessor (removed : TCB) : TCB → TCB :=
+  fun n => { n with queuePrev := removed.queuePrev, queuePPrev := removed.queuePPrev }
+
 /-- WS-H12c: Manual `BEq` for `TCB`. `DecidableEq` cannot be derived because
 `RegisterFile` contains a function field (`gpr : Nat → Nat`). Field-wise
 comparison uses the `BEq RegisterFile` instance from `Machine.lean`.

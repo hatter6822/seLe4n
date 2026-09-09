@@ -1162,6 +1162,30 @@ private def runMidQueueSpliceChecks : IO Unit := do
         (match st'.getTcb? nextTid with
          | some t => decide (t.queuePrev = some prevTid)
          | none => false)
+      -- WS-OD OD3.9: and its `queuePPrev` with it.  The check above passed
+      -- before the fix, because it asked about the field the splice wrote;
+      -- `queuePPrev` is the field the splice *should* have written and the one
+      -- `endpointQueueRemoveDual` validates.
+      assertBool "successor's queuePPrev is patched to the predecessor"
+        (match st'.getTcb? nextTid with
+         | some t => decide (t.queuePPrev = some (.tcbNext prevTid))
+         | none => false)
+      -- WS-OD OD3.9 (the consequence, end to end): with a stale `queuePPrev`
+      -- the successor failed `pprevConsistent` and could never leave the
+      -- endpoint queue again -- so every later bound-notification delivery to
+      -- it returned `.illegalState`.  Suspending the thread *ahead* of a
+      -- passive server was therefore an authority-crossing denial of service
+      -- on that server.  The dual removal is the operation that reads the
+      -- field, so the regression is stated as that operation succeeding.
+      assertBool "the successor can still be dequeued by the dual removal"
+        (match endpointQueueRemoveDual epId false nextTid st' with
+         | .ok _ => true
+         | .error _ => false)
+      -- ... and so can the promoted predecessor, which is the queue head.
+      assertBool "the predecessor can still be dequeued by the dual removal"
+        (match endpointQueueRemoveDual epId false prevTid st' with
+         | .ok _ => true
+         | .error _ => false)
       -- Head/tail survive; the queue-mates stay blocked and keep their homes
       -- (the `spliceOutMidQueueNode_tcb_lookup` frame, operationally).
       assertBool "send-queue head/tail still span prev..next"

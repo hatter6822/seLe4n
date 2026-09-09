@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.133.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.134.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1455,7 +1455,7 @@ passive-server pattern does not work at call depth ≥ 2, where the callee stays
 `.unbound` and can never run.  seL4-MCS's `maybeDonateSchedContext` reads the
 sender's *effective* context, bound or donated, and passes it down the chain.
 Two register rows close here: that gap, and the `passiveServerIdle` break the
-`v0.34.97` reclaim introduced.  **42 sub-tasks across OD1..OD6.**  **OD1 is
+`v0.34.97` reclaim introduced.  **43 sub-tasks across OD1..OD6.**  **OD1 is
 closed** (`v0.34.100` → `v0.34.108`), **OD2 is closed** (`v0.34.125`, one cut),
 and **OD3 is closed** (`v0.34.126` → `v0.34.132`); OD4..OD6 have not
 started.
@@ -1530,6 +1530,34 @@ invariant surface runs through
 `hBottom`-conditioned until OD4.3, so all six sites still pass the literal `none`
 that `replyStackOuterCaller?_of_no_stack` proves is the answer on every reachable
 state.
+
+**The three endpoint-queue removals write one definition** (OD3.9, `v0.34.134`).
+`spliceOutMidQueueNode` -- the removal `.tcbSuspend` and thread destruction run --
+patched its successor's `queuePrev` and not its `queuePPrev`, leaving it naming
+the removed thread.  That is the field `endpointQueueRemoveDual` validates
+(`pprevConsistent`), and after the splice it fails in *every* case there was a
+successor: as the new head because it **is** the head, as an interior node
+because its `queuePrev` now names its new predecessor.  So the successor could
+never again be dequeued by the dual removal and every later bound-notification
+delivery to it returned `.illegalState` -- reachable by suspending the thread
+merely *ahead* of a passive server, over which the caller holds no authority, and
+single-core logic rather than a race, so SM5.I's global entry lock does not mask
+it.  Four things new code must respect.  (1) **What unlinking writes is
+`queueUnlinkPredecessor` / `queueUnlinkSuccessor`** (`Model/Object/Types.lean`,
+beside the fields they maintain), and the successor's carries both link fields;
+a new removal calls them rather than spelling a record update.  (2) **The third
+removal is tied to them by a theorem, not by a name**:
+`endpointQueueRemoveDual_stores_queueUnlinkSuccessor` / `…Predecessor` are about
+the object the operation *stores*, since that one spells its write through
+`storeTcbQueueLinks`.  (3) **No `ipcInvariantFull` conjunct reads `queuePPrev`**,
+which is why nothing caught either instance; the sharp pointwise readings
+(`spliceOutMidQueueNode_tcb_value`, `sweptAndRestored_tcb_value`) now state the
+field, so a reading that omits it is a statement about a different operation.
+(4) **`endpointQueueRemove`'s comment claiming the dual removal is "the removal
+every other kernel path uses" was false when OD1.1 wrote it** -- this is that
+finding's third copy, and it survived eight cuts because the fix was applied to
+the copy the finding named.  A removal added later is a fourth: sweep, do not
+patch.
 
 **The cancellation footprint is arm-selected, and `.replyRecv` declares the
 hand-off it was hiding** (OD3.5, `v0.34.128`).  Two changes with one cause: a

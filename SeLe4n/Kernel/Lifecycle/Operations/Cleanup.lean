@@ -172,15 +172,33 @@ def spliceOutMidQueueNode (st : SystemState) (tid : SeLe4n.ThreadId) : SystemSta
       | some prevTid =>
         match objs[prevTid.toObjId]? with
         | some (.tcb prevTcb) =>
-          objs.insert prevTid.toObjId (.tcb { prevTcb with queueNext := tcb.queueNext })
+          objs.insert prevTid.toObjId (.tcb (queueUnlinkPredecessor tcb prevTcb))
         | _ => objs
-    -- Patch successor's queuePrev to skip over tid (reads patched objs)
+    -- Patch successor's `queuePrev` **and `queuePPrev`** to skip over tid
+    -- (reads patched objs).
+    --
+    -- WS-OD OD3.9: `queuePPrev` was omitted here, and that stranded the
+    -- successor -- the same defect OD1.1 closed in `endpointQueueRemove`, live
+    -- on this third removal for eight more cuts.  A successor left carrying
+    -- `.tcbNext tid` fails `endpointQueueRemoveDual`'s `pprevConsistent` check
+    -- in *every* case it has a successor at all (as the new head, because that
+    -- arm requires `q.head != some it`; as an interior node, because its
+    -- `queuePrev` now names its new predecessor and not `tid`), so it can never
+    -- leave the endpoint queue again and every later bound-notification
+    -- delivery to it fails `.illegalState`.  `.tcbSuspend` of the thread ahead
+    -- of a passive server was therefore an authority-crossing denial of service
+    -- on that server, and no `ipcInvariantFull` conjunct reads `queuePPrev`, so
+    -- nothing caught it.
+    --
+    -- Both patches are now `queueUnlinkPredecessor` / `queueUnlinkSuccessor`,
+    -- the definitions the other two removals use, so the three cannot disagree
+    -- about what unlinking writes (`spliceOutMidQueueNode_successor_agrees_with_removals`).
     let objs := match tcb.queueNext with
       | none => objs
       | some nextTid =>
         match objs[nextTid.toObjId]? with
         | some (.tcb nextTcb) =>
-          objs.insert nextTid.toObjId (.tcb { nextTcb with queuePrev := tcb.queuePrev })
+          objs.insert nextTid.toObjId (.tcb (queueUnlinkSuccessor tcb nextTcb))
         | _ => objs
     { st with objects := objs }
 

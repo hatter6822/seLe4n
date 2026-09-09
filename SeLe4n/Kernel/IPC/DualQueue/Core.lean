@@ -676,12 +676,12 @@ def endpointQueueRemove
         | some prevTid =>
           match objs[prevTid.toObjId]? with
           | some (.tcb prevTcb) =>
-            objs.insert prevTid.toObjId (.tcb { prevTcb with queueNext := tcb.queueNext })
+            objs.insert prevTid.toObjId (.tcb (queueUnlinkPredecessor tcb prevTcb))
           | _ => objs
       -- Step 2: Patch successor's queuePrev **and queuePPrev** to skip tid.
       -- WS-OD OD1.1: `queuePPrev` was omitted here, and that stranded the
-      -- successor.  `endpointQueueRemoveDual` -- the removal every other kernel
-      -- path uses -- gives the successor the removed thread's own `queuePPrev`
+      -- successor.  `endpointQueueRemoveDual` -- the removal the IPC rendezvous
+      -- paths use -- gives the successor the removed thread's own `queuePPrev`
       -- and *requires* the field to agree with `queuePrev` (`pprevConsistent`,
       -- else `.illegalState`).  Leaving it naming `tid` meant that after a
       -- timeout the thread behind the timed-out one failed every later
@@ -693,15 +693,22 @@ def endpointQueueRemove
       -- removed head carries `.endpointHead`, which the successor inherits as
       -- the new head, and a removed interior node carries `.tcbNext prev`,
       -- which is exactly the back-pointer the successor's new `queuePrev`
-      -- names.  The two removals now write the same fields to the same values.
+      -- names.
+      --
+      -- WS-OD OD3.9: "the removal every other kernel path uses" was false when
+      -- OD1.1 wrote it.  `spliceOutMidQueueNode` -- the removal `.tcbSuspend`
+      -- and thread destruction run -- is a *third* removal, and it carried the
+      -- identical defect for eight more cuts, because the fix was applied to the
+      -- copy the finding named rather than swept across the ones asking the same
+      -- question.  Both patches are now `queueUnlinkPredecessor` /
+      -- `queueUnlinkSuccessor`, so all three removals write the same fields to
+      -- the same values by construction rather than by three authors agreeing.
       let objs := match tcb.queueNext with
         | none => objs  -- tid is tail; no successor to patch
         | some nextTid =>
           match objs[nextTid.toObjId]? with
           | some (.tcb nextTcb) =>
-            objs.insert nextTid.toObjId
-              (.tcb { nextTcb with queuePrev := tcb.queuePrev,
-                                   queuePPrev := tcb.queuePPrev })
+            objs.insert nextTid.toObjId (.tcb (queueUnlinkSuccessor tcb nextTcb))
           | _ => objs
       -- Step 3: Update endpoint head/tail pointers
       let q' : IntrusiveQueue := {
@@ -924,7 +931,12 @@ theorem endpointQueueRemove_getTcb_upToField {α : Type} (f : TCB → α)
       | some tcb =>
         simp only [hTcb] at h
         simp only [Except.ok.injEq] at h
-        rw [← h]; simp only []
+        rw [← h]
+        -- WS-OD OD3.9: the two neighbour patches are now the shared
+        -- `queueUnlinkPredecessor` / `queueUnlinkSuccessor`; unfold them here so
+        -- the case analysis below still sees the record updates it substitutes
+        -- link projections into.
+        simp only [queueUnlinkPredecessor, queueUnlinkSuccessor]
         -- Goal: ∃ ot', CHAIN.get? a = some (.tcb ot') ∧ ot.reg = ot'.reg
         refine (?_ : FieldRefines f st.objects _) a ot ha
         -- Step 4 (outermost): removed-TCB link clear.
