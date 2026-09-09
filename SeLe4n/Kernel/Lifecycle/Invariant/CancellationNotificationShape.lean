@@ -910,6 +910,28 @@ theorem cancelIpcBlocking_notification_arm_eq (st : SystemState) (tid : SeLe4n.T
   rw [hBlocked]
   rfl
 
+/-- **WS-OD OD3.5: the notification arm writes no queue neighbour**, which is
+what licenses the arm-selected cancellation footprint to stop declaring the
+victim's `queuePrev` / `queueNext` TCB locks on this arm.
+
+The purge rewrites notification objects and the restore rewrites the swept
+thread; nothing relinks a TCB, because a notification's waiter list is a field on
+the notification rather than a chain through TCB links.  So away from the victim
+every TCB reading is the pre-state's **verbatim** — not merely same-kind — and a
+`tcbLock` for a neighbour would be a declared write the arm never performs.
+
+Stated as an `Iff` because `purgedAndRestored_tcb_iff` is, and because the
+backward direction is the one that says the arm *invents* no TCB either. -/
+theorem cancelIpcBlocking_notificationArm_tcb_frame (st : SystemState)
+    (v : SeLe4n.ThreadId) (tcbV : TCB) (nId : SeLe4n.ObjId)
+    (hInv : st.objects.invExt)
+    (hBlocked : tcbV.ipcState = .blockedOnNotification nId)
+    (k : SeLe4n.ObjId) (t : TCB) (hNe : k ≠ v.toObjId) :
+    ((Lifecycle.Suspend.cancelIpcBlocking st v tcbV).objects[k]? = some (.tcb t))
+      ↔ (st.objects[k]? = some (.tcb t)) := by
+  rw [cancelIpcBlocking_notification_arm_eq st v tcbV nId hBlocked]
+  exact purgedAndRestored_tcb_iff st v _ hInv k t hNe
+
 /-- **WS-RR RR7.22 (residual)**: the cancellation's notification arm preserves
 `ipcInvariantFull`. -/
 theorem cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull

@@ -1843,4 +1843,68 @@ theorem propagatePipChainCrossCore_preserves_ipcInvariantFull (st : SystemState)
 
 
 
+/-! ### WS-OD OD3.6 — the receive rendezvous hand-off's invariant surface
+
+`applyReceiveRendezvousDonation` is the step both receiving arms run, so its
+obligations are discharged once here rather than at each arm.  The
+caller-blocked obligation is discharged **from the guard**
+(`rendezvousDequeuedCall_blockedOnReply`), which is the point of making the
+guard a definition: the arm cannot fire the donation on a state the invariant
+argument does not cover, because the same predicate decides both. -/
+
+/-- WS-OD OD3.6: the rendezvous hand-off preserves the object-store extension
+invariant. -/
+theorem applyRendezvousCallDonation_preserves_objects_invExt
+    (st st'' : SystemState) (receiver donor : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (h : applyRendezvousCallDonation st receiver donor = .ok st'') :
+    st''.objects.invExt := by
+  obtain ⟨donorV, receiverV, _, _, hDon⟩ :=
+    applyRendezvousCallDonation_ok_decompose st st'' receiver donor h
+  exact applyCallDonationOnCore_preserves_objects_invExt st st'' donorV receiverV _ _ hObjInv hDon
+
+/-- WS-OD OD3.6: and so does the guarded form, whose other arm changes nothing. -/
+theorem applyReceiveRendezvousDonation_preserves_objects_invExt
+    (st st'' : SystemState) (receiver dequeued : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (h : applyReceiveRendezvousDonation st receiver dequeued = .ok st'') :
+    st''.objects.invExt := by
+  unfold applyReceiveRendezvousDonation at h
+  cases hCall : rendezvousDequeuedCall st dequeued with
+  | false => rw [hCall] at h; simp only [Bool.false_eq_true, if_false] at h; cases h; exact hObjInv
+  | true =>
+    rw [hCall] at h
+    simp only [if_true] at h
+    exact applyRendezvousCallDonation_preserves_objects_invExt st st'' receiver dequeued hObjInv h
+
+/-- **WS-OD OD3.6: the receive rendezvous hand-off preserves `ipcInvariantFull`.**
+
+One hypothesis, not two.  `applyCallDonationOnCore_preserves_ipcInvariantFull`
+asks that the donor be `.blockedOnReply` and that no thread already holds a
+donation naming the receiver as owner; the first is exactly what the guard
+decides, so only `hReceiverNotOwner` -- a whole-store fact no local step can
+establish -- survives as a caller obligation. -/
+theorem applyReceiveRendezvousDonation_preserves_ipcInvariantFull
+    (st st'' : SystemState) (receiver dequeued : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hInv : ipcInvariantFull st)
+    (hReceiverNotOwner : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
+        st.getTcb? tid = some tcb → tcb.schedContextBinding ≠ .donated scId receiver)
+    (h : applyReceiveRendezvousDonation st receiver dequeued = .ok st'') :
+    ipcInvariantFull st'' := by
+  unfold applyReceiveRendezvousDonation at h
+  cases hCall : rendezvousDequeuedCall st dequeued with
+  | false => rw [hCall] at h; simp only [Bool.false_eq_true, if_false] at h; cases h; exact hInv
+  | true =>
+    rw [hCall] at h
+    simp only [if_true] at h
+    obtain ⟨donorV, receiverV, hDv, hRv, hDon⟩ :=
+      applyRendezvousCallDonation_ok_decompose st st'' receiver dequeued h
+    refine applyCallDonationOnCore_preserves_ipcInvariantFull st st'' donorV receiverV _ _
+      hObjInv hInv ?_ ?_ hDon
+    · rw [hDv]
+      exact rendezvousDequeuedCall_blockedOnReply st dequeued hCall
+    · rw [hRv]
+      exact hReceiverNotOwner
+
 end SeLe4n.Kernel

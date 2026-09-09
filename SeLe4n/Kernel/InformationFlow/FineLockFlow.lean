@@ -2873,12 +2873,21 @@ names the neighbours through the same `cancelSpliceNeighbors?` the sub-operation
 footprint reads, so it is a theorem about the splice rather than about the
 endpoint lock in isolation.
 
-**Why the footprint is not simply widened instead**: `lockSet_tcbSuspend` is
-eight members at full resolution, and `maxLockSetSize` is nine (WS-RR RR7.11
-raised it from eight, measured against a caps-installing `.replyRecv`).  So one
-neighbour lock would now fit and two would not — and the constant is the WCRT
-headline (`maxLockSetSize · (numCores − 1) · tCs`), so widening it again to make
-room is not free.  Adding two neighbour locks still breaks the bound.
+**Why the footprint is not simply widened instead.**  Until WS-OD OD3.5 the
+answer was arithmetic: `lockSet_tcbSuspend` was eight members at full resolution
+against a ceiling of nine, so two neighbour locks did not fit.  That reason is
+now spent — OD3.5 raised `maxLockSetSize` to eleven and the suspend footprint to
+nine, so the two would fit exactly — and the reason that remains is the one that
+was always load-bearing: the members would be **redundant**, not merely
+affordable.  The finer authority is already declared where it belongs, in the
+sub-operation footprint (`lockSet_cancelIpcBlockingOnCore` names both
+neighbours), and WS-RR RR7.38 turned the endpoint lock from an authorization
+into an *exclusion* mechanism by making every footprint that can write a queued
+TCB declare the queue owner's lock.  So adding them to the syscall footprint
+would buy no new exclusion and would take that footprint to the ceiling, which
+is contention — an observable channel here — for nothing.  The arithmetic is
+recorded because a reader who checks it will find room; the decision does not
+rest on there being none.
 
 **What this theorem does *not* establish — and an earlier version of this
 docstring wrongly claimed it did.**  This is an *authorization* statement: the

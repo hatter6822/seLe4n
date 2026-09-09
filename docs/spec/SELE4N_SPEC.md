@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.34.127` (`lakefile.toml`) |
+| **Package version** | `0.34.129` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 357,749 across 328 Lean files |
-| **Test LoC** | 73,315 across 70 Lean test suites |
-| **Proved declarations** | 11,997 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 359,285 across 328 Lean files |
+| **Test LoC** | 73,670 across 70 Lean test suites |
+| **Proved declarations** | 12,041 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -2886,16 +2886,34 @@ alongside the latent inventory (closing SMP-H3).
    bound is never vacuous.  **WS-RR RR7.11 (v0.34.64) moved
    `maxLockSetSize` from 8 to 9**, and moved the constant itself to
    `Locks/LockSet.lean` beside the datatype whose cardinality it
-   bounds.  The widest declared footprint is a `.replyRecv` that both
+   bounds.  The widest declared footprint was a `.replyRecv` that both
    returns a donation and installs capabilities, and its ninth member
    is the state-level lock the capability install's CDT write needs —
    a member RR7.7 had declared on the two *sending* arms and neither
    receiving one, though all four reach the same
-   `ipcTransferSingleCap`.  The WCRT headline is parametric in the
-   constant and widens by an eighth; the alternative was a declared
-   footprint that does not cover its own writes, or a lock acquired
-   outside the declared set, which is invisible to the
-   deadlock-freedom and serializability theorems.
+   `ipcTransferSingleCap`.
+
+   **WS-OD OD3.5 (v0.34.128) moved it from 9 to 11**, on the same
+   footprint and for the same class of reason.  `replyRecvBody`
+   performs *two* SchedContext hand-offs — the recorded server's
+   return, then `applyCallDonationOnCore nextThread tid` when the
+   receive leg dequeues a queued `Call` — and declared one, so the
+   passive-server steady state wrote a SchedContext object under no
+   declared lock; the eleventh member is the recorded server's own
+   TCB, which is what lets a *delegated* reply declare a footprint at
+   all (PR #892 review round 6 had made that case refuse for want of
+   room).  In the same cut every donation-carrying footprint gained
+   the state-level lock for `SystemState.scThreadIndex`, an `RHTable`
+   whose insert may rehash the whole table and therefore does not
+   decompose by object.
+
+   The WCRT headline is parametric in the constant, so
+   `admissibleCriticalSection` for the RPi5's 1 ms tick falls from
+   **37 µs to 30 µs** and the CC-5 contention bound widens in
+   proportion.  The alternative in both cuts was a declared footprint
+   that does not cover its own writes, or a lock acquired outside the
+   declared set, which is invisible to the deadlock-freedom and
+   serializability theorems.
 
    **SM3.D.5b — mode-aware deadlock-freedom**: the plan-signature
    `noDeadlock` / `waitGraph_acyclic_under_2pl` use bare `LockId`,
@@ -3907,6 +3925,20 @@ Server executes on client's budget. (3) Server replies via `endpointReply` —
 `returnDonatedSchedContext` returns the SC to the original owner. (4) Server
 becomes passive (`.unbound`, removed from RunQueue).
 
+**The hand-off happens at the rendezvous, on whichever side reaches it** (WS-OD
+OD3.6, v0.34.129). A client that Calls an endpoint with no receiver waiting
+blocks `.blockedOnCall`, keeping its binding; the donation then belongs to the
+*receive* that dequeues it — seL4-MCS's `receiveIPC` → `maybeDonateSchedContext`.
+`.replyRecv` performed that step and `.receive` did not, so a passive server
+taking its **first** request with `seL4_Recv` ran the client's work charged to no
+reservation, while the same server taking its later requests with
+`seL4_ReplyRecv` was charged correctly. Both receiving arms now run one shared
+step, `applyReceiveRendezvousDonation`, whose guard `rendezvousDequeuedCall` is
+the same predicate that discharges the donation's caller-blocked proof
+obligation; `replyRecvReturnDonation` calls it rather than carrying its own copy.
+The step is the identity wherever there is nothing to donate, so every result
+taken before it survives on the states it held for.
+
 **Architecture**: Donation is implemented as post-processing in the API dispatch
 layer (`API.lean`), preserving all existing IPC invariant proofs unchanged. Core
 IPC functions (`endpointCall`, `endpointReply`, `endpointReplyRecv`) are not
@@ -3926,7 +3958,7 @@ carry an explicit `h : ... = .ok st'` success hypothesis.
 `*_preserves_ipcInvariantFull` theorem now *establishes* each conjunct from its
 pre-state and the step rather than assuming it of its own post-state: the Tier-0
 gate `scripts/check_ipc_invariant_dethreading.py` reports **zero** conjuncts
-bound on a post-state across all **169** statements in the family (the
+bound on a post-state across all **170** statements in the family (the
 `*_establishes_ipcInvariantFull*` composites included), with the conjunct
 set, the bundle family and each bundle's pre-state all derived from the sources
 rather than listed, and prints `[PASS] ipcInvariantFull is de-threaded end to

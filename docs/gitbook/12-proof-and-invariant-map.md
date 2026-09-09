@@ -121,10 +121,10 @@ make the theorem assume what it claims to prove.
 `scripts/check_ipc_invariant_dethreading.py` (Tier 0) measures this over the
 comment-free code view, deriving the conjunct set and each bundle's own
 pre-state rather than matching binder names, and reports **zero** conjuncts
-bound on a post-state across all **169** statements in the family, with the
+bound on a post-state across all **170** statements in the family, with the
 conjunct set and the bundle family both derived from the sources.  The figure is
 spelled in the form the gate reads, so a cut that grows the family fails until
-this sentence is corrected — it said 146 while the tree measured 169, unwatched,
+this sentence is corrected — it said 146 while the tree measured 170, unwatched,
 because the claim was phrased in words the gate's locator does not match.
 
 The payoff is at the dispatcher:
@@ -363,7 +363,13 @@ platform rather than with the lock.
 > (WS-RR RR7.39; two before it).
 > The same cut moved `maxLockSetSize` from 8 to 9: a `.replyRecv` that both
 > returns a donation and installs capabilities is nine locks, the ninth being
-> the state-level lock the install's derivation-tree write needs. See
+> the state-level lock the install's derivation-tree write needs. **WS-OD OD3.5
+> (`v0.34.128`) moved it again, 9 to 11**, on the same footprint: that arm
+> performs *two* SchedContext hand-offs and declared one, and the eleventh
+> member is the recorded server's own TCB, which is what lets a reply answered
+> through a delegated capability declare a footprint at all. The constant is the
+> WCRT headline's first factor, so the per-lock critical section the RPi5's 1 ms
+> tick admits falls from 37 µs to 30 µs. See
 > [`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §SM3.C.9 for the
 > canonical statement.
 

@@ -1456,6 +1456,196 @@ run_check "INVARIANT" bash -lc 'rg -U -n "NEGATIVE: an outer caller that IS the 
 run_check "INVARIANT" bash -lc 'rg -U -n "NEGATIVE: an outer caller that IS the server is refused" tests/SmpIpcSuite.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "NEGATIVE: a frame below the head donating another context is refused" tests/SmpIpcSuite.lean'
 
+# ============================================================================
+# WS-OD OD3.5 — the arm-selected cancellation footprint, and the two members
+# `.replyRecv` was missing
+# ============================================================================
+#
+# The victim's splice neighbours were the ONE resolver in the cancellation
+# family that did not key on `tcb.ipcState`: every other member selected an arm
+# and the neighbour pair was summed over all of them.  Derived from
+# `cancelBlockedEndpoint?` rather than re-matching the state, so the arm question
+# is asked once.  Relation, not presence: the mutation keeps the definition and
+# makes it unconditional, which every "the resolver exists" check survives.
+run_check "INVARIANT" rg -n '^def cancelArmSpliceNeighbors\?' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelArmSpliceNeighbors\?[^\n]*(\n([ \t][^\n]*)?)*if \(cancelBlockedEndpoint\? tcb\)\.isSome then cancelSpliceNeighbors\? tcb" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" rg -n '^@\[simp\] theorem cancelArmSpliceNeighbors\?_of_blockedEndpoint' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem cancelArmSpliceNeighbors\?_of_not_blockedEndpoint' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+# ...and the resolved footprint reads the arm-selected pair, not the summed one.
+run_check "INVARIANT" bash -lc 'rg -U -n "\(\(cancelArmSpliceNeighbors\? tcb\)\.1\.map \(fun p => \(tcbLock p, \.write\)\)\)\)" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "\(\(cancelSpliceNeighbors\? tcb\)\.1\.map \(fun p => \(tcbLock p, \.write\)\)\)\)" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+# The payoff, stated in both directions: the reply arm declares NO neighbour
+# member (as an equation, since a `∉` would be false for the accidental reason
+# that a neighbour may *be* the donation holder), and the arm that splices keeps
+# both.
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_replyArm_eq' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_endpointArm_covers_prev' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_endpointArm_covers_next' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_size_le_eight' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+# ...and the frames that license the narrowing — an arm that declares no
+# neighbour must write none, and that is checked rather than read off the shape.
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_notificationArm_tcb_frame' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_replyArm_noDonation_tcb_frame' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem consumeReplyLink_other_tcb_eq' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+# ...and the general form, with the reclaim live: the four frames that state a
+# step's effect OUTSIDE its write set, and the composite over them.  A frame that
+# says only "some TCB is still there" (`_tcb_lookup`, `_tcb_rewrite`) does not
+# license a footprint narrowing, which is why these are separate statements.
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemove_objects_ne' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_other_tcb_eq' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem abortHolderPendingIpc_other_tcb_eq' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_other_tcb_eq' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_replyArm_tcb_frame' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+# The removal's two link patches ARE `queueNeighbourPatch`, so the third inlined
+# copy of that shape cannot come back silently.  Stated on the splicing arm --
+# the endpoint resolved, the thread resolved -- and reading the store through
+# `getEndpoint?`: an equation that re-opened the raw discriminator would be a
+# second raw read site for a question the operation has already asked, which is
+# what the AK7 cascade floor counts.  The two error arms are
+# `endpointQueueRemove_ok_getEndpoint?`'s subject, not this theorem's.
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemove_ok_getEndpoint\?' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointQueueRemove_eq_patches[^\n]*(\n([ \t][^\n]*)?)*\(hEp : st\.getEndpoint\? endpointId = some ep\)" SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointQueueRemove_eq_patches[^\n]*(\n([ \t][^\n]*)?)*queueNeighbourPatch[^\n]*(\n([ \t][^\n]*)?)*queueNeighbourPatch" SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean'
+# ...and it must not re-open the raw discriminator: an equation restating the
+# whole body is a second raw read site for a question the operation already asked.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointQueueRemove_eq_patches[^\n]*(\n([ \t][^\n]*)?)*match st\.objects\[" SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean'
+
+# OD3.5: **`.replyRecv` performs two SchedContext hand-offs and declared one.**
+# `replyRecvReturnDonation` runs `applyCallDonationOnCore nextThread tid` when the
+# receive leg dequeues a queued `Call`, and `donateSchedContext` writes the NEW
+# caller's context — provably not the returned one.  The member is resolved
+# through the resolver `.call` uses for the same question, applied to the
+# send-queue head the `newSenderTid` member beside it already reads.
+run_check "INVARIANT" rg -n '^def receiveRendezvousDonatedSc\?' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+# The resolver is DERIVED from `receiveRendezvousSender?` -- the resolver
+# `receiveInstallsCaps` and the `newSenderTid` member already use for "which
+# thread does this receive dequeue" -- rather than re-reading `sendQ.head`.  One
+# question, one answer: a second copy of that read can drift from the one the
+# transition branches on.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def receiveRendezvousDonatedSc\?[^\n]*(\n([ \t][^\n]*)?)*\(receiveRendezvousSender\? st endpointObjId\)\.bind \(endpointCallDonatedSc\? st\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def receiveRendezvousDonatedSc\?[^\n]*(\n([ \t][^\n]*)?)*sendQ\.head" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*\(receiveRendezvousDonatedSc\? st endpointObjId\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_redonated_sc_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_replyRecv_covers_redonation' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+# ...and the recorded server's own TCB, which is what the delegated case needs.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*\(recordedReplyServer\? st target\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_donation_server_tcb_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+# The entry resolver no longer REFUSES a delegated reply — it declares one.  A
+# negative on the retired refusal, because a theorem concluding `none` there
+# would now be false, and a positive on what replaced it.
+run_negative_check "INVARIANT" rg -n '^theorem lockSetForSyscall_replyRecv_delegated\b' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_replyRecv_delegated_declares' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_replyRecv_delegated_covers_server' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "\| \.replyRecv =>[^\n]*(\n([ \t][^\n]*)?)*if \(recordedReplyServer\? st prevCaller\)\.getD ops\.caller = ops\.caller then" SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean'
+
+# OD3.5: **`scThreadIndex` is an `RHTable`, so a donation takes the state-level
+# lock.**  Its insert may rehash and back-shift the whole table, exactly as the
+# CDT maps do (RR7.9/RR7.11) — it does not decompose by object, so no per-object
+# member can cover it.  Declared on every footprint whose transition donates or
+# returns a donation, conditioned on that footprint's own SchedContext resolver
+# so the two cannot disagree about whether a donation happens.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReply[^\n]*(\n([ \t][^\n]*)?)*if donatedScId\.isSome then some \(stateLevelLock, AccessMode\.write\) else none" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointCall[^\n]*(\n([ \t][^\n]*)?)*if destCnodeObjId\.isSome \|\| donatedScId\.isSome then" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_replyRecv[^\n]*(\n([ \t][^\n]*)?)*if installsCaps \|\| donatedScId\.isSome \|\| redonatedScId\.isSome then" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_tcbSuspend[^\n]*(\n([ \t][^\n]*)?)*if bindingScId\.isSome then some \(stateLevelLock, AccessMode\.write\) else none" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_cancelIpcBlocking[^\n]*(\n([ \t][^\n]*)?)*if returnedDonationSc\.isSome then some \(stateLevelLock, AccessMode\.write\) else none" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_cancelDonation[^\n]*(\n([ \t][^\n]*)?)*if bindingScId\.isSome then some \(stateLevelLock, AccessMode\.write\) else none" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+# The bind and the unbind take it UNCONDITIONALLY — the index write is not
+# optional on their success path, which is the `lockSet_cspaceMint` shape.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_schedContextBind[^\n]*(\n([ \t][^\n]*)?)*\(stateLevelLock, \.write\)\]\)" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_schedContextUnbind[^\n]*(\n([ \t][^\n]*)?)*\(stateLevelLock, \.write\)\]\)" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+# ...and `.schedContextConfigure` is split out rather than widened with them: it
+# writes the SchedContext and the bound thread and touches no index.
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.schedContextBind \| \.schedContextUnbind =>\n      \[\.tcb, \.cnode, \.schedContext, \.endpoint, \.notification, \.objStore\]\n  \| \.schedContextConfigure =>\n      \[\.tcb, \.cnode, \.schedContext, \.endpoint, \.notification\]" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+# The kind inventories that admit it.
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.reply =>\n      \[\.tcb, \.cnode, \.schedContext, \.reply, \.objStore\]" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.tcbSuspend =>\n      \[\.tcb, \.cnode, \.endpoint, \.notification, \.schedContext, \.reply, \.objStore\]" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+
+# ============================================================================
+# WS-OD OD3.6 -- seL4-MCS's `maybeDonateSchedContext`: the receive side donates
+# ============================================================================
+#
+# `.receive` performed NO scheduling-context donation at all.  seL4-MCS's
+# `receiveIPC` hands a dequeued `Call` caller's context to a passive receiver
+# (`reply_push` -> `schedContext_donate`); `.replyRecv` did exactly that here
+# and `.receive` did not -- so a passive server taking its FIRST request with
+# `seL4_Recv` ran on no reservation while the same server taking its second and
+# later requests with `seL4_ReplyRecv` was charged correctly.  One condition,
+# two API paths, and the asymmetric one silently defeating the budget
+# enforcement the whole CBS surface exists to provide.
+#
+# The step is ONE definition, shared by both receiving arms -- the fix for the
+# asymmetry cannot itself be a second copy.
+run_check "INVARIANT" rg -n '^def applyRendezvousCallDonation' SeLe4n/Kernel/IPC/Operations/Donation.lean
+run_check "INVARIANT" rg -n '^def rendezvousDequeuedCall' SeLe4n/Kernel/IPC/Operations/Donation.lean
+run_check "INVARIANT" rg -n '^def applyReceiveRendezvousDonation' SeLe4n/Kernel/IPC/Operations/Donation.lean
+# Both `.receive` dispatch arms run it -- the unchecked one and the
+# flow-checked one, with the same definition and behind no extra gate.  Anchored
+# on each arm's own call rather than on a count of occurrences: a cardinality
+# says how many, and the property is which.  The unchecked arm binds `dequeued`
+# from the WithCaps receive and stages from the donation's post-state; the
+# checked arm is pinned by the delegation theorem and the `syscallDelegates`
+# obligation below, both of which NAME the step -- a delegation claim that omits
+# a step is a claim about a different program.
+run_check "INVARIANT" rg -n 'applyReceiveRendezvousDonation st. tid dequeued' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem dispatchWithCapChecked_receive_delegates[^\n]*(\n([ \t][^\n]*)?)*applyReceiveRendezvousDonation st. tid dequeued" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.receive =>\n      \u2200 \(ctx : LabelingContext\)[^\n]*(\n([ \t][^\n]*)?)*applyReceiveRendezvousDonation st. tid dequeued" SeLe4n/Kernel/API.lean'
+# NEGATIVE: and the unchecked arm must not stage from the RECEIVE's post-state,
+# which is what it did before OD3.6 -- a token-preserving mutation that keeps the
+# donation call in the file while staging around it.
+run_negative_check "INVARIANT" rg -n 'stageWokenSendCompletion st. wokenSender' SeLe4n/Kernel/API.lean
+# ...and `replyRecvReturnDonation` runs the SAME step rather than its own copy.
+# The negative refuses the inlined `applyCallDonationOnCore` the arm used to
+# carry: keeping the call while un-sharing it is how the two would drift apart
+# again, and it is a mutation that leaves every name in the file present.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvReturnDonation[^\n]*(\n([ \t][^\n]*)?)*applyRendezvousCallDonation st1 tid nextThread" SeLe4n/Kernel/API.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvReturnDonation[^\n]*(\n([ \t][^\n]*)?)*applyCallDonationOnCore st1 nextV tidV" SeLe4n/Kernel/API.lean'
+# The guard IS the donation's caller-blocked obligation, not a second reading
+# of it: a receiving arm discharges the hypothesis from the predicate it
+# branches on, so the two cannot disagree about which states donate.
+run_check "INVARIANT" rg -n '^theorem rendezvousDequeuedCall_blockedOnReply' SeLe4n/Kernel/IPC/Operations/Donation.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem applyReceiveRendezvousDonation_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*rendezvousDequeuedCall_blockedOnReply st dequeued hCall" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
+# The step's own lifted obligations, so no arm re-derives the `toValid?` split.
+run_check "INVARIANT" rg -n '^theorem applyRendezvousCallDonation_ok_decompose' SeLe4n/Kernel/IPC/Operations/Donation.lean
+run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousDonation_preserves_replenishQueueAffinityConsistent_smp' SeLe4n/Kernel/IPC/Operations/Donation.lean
+run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousDonation_preserves_objects_invExt' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousDonation_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# The footprint declares what the arm now writes: the donated SchedContext, and
+# the state-level lock `SystemState.scThreadIndex` needs.  The state-level
+# member is a DISJUNCTION -- conditioning it on `installsCaps` alone would omit
+# it on exactly the passive-server path, which installs nothing.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReceive[^\n]*(\n([ \t][^\n]*)?)*if installsCaps \|\| donatedScId\.isSome then" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReceiveOnCore[^\n]*(\n([ \t][^\n]*)?)*\(receiveRendezvousDonatedSc\? st endpointId\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceive_donated_sc_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceive_donation_stateLevel_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceiveOnCore_covers_donatedSc' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceiveOnCore_covers_donationIndex' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+# `.receive` reaches the donation primitive, so `.schedContext` joins its kinds.
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.receive =>\n      \[\.tcb, \.cnode, \.endpoint, \.schedContext, \.reply, \.objStore\]" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+# ...and the size bound is restated at the NEW arity.  A bound left at the old
+# one still elaborates (the trailing argument would take a default) while
+# saying nothing about the shape the live arm declares -- the silent-unbounding
+# shape RR7.18's census exists to catch.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_endpointReceive_size_le[^\n]*(\n([ \t][^\n]*)?)*\(g : Option SchedContextId\)" SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean'
+run_check "INVARIANT" bash -lc 'rg -n "lockSet_endpointReceive a b c d e f g\)\.size" SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean'
+# The runtime witnesses: a `.receive` resolved against a fixture whose send-queue
+# head is a `.bound` caller, with the passive-server case (donates, installs
+# nothing) asserted positively and an inert rendezvous asserted to declare
+# neither member -- so both track the write rather than being unconditionally
+# present.
+run_check "INVARIANT" rg -n 'a donating .\.receive. declares the donated SchedContext write' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'a capless donating .\.receive. declares the state-level write' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: a non-donating capless .\.receive. declares no SchedContext' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'lockSet_endpointReceive \(caps \+ donation\) size = 7' tests/DeadlockFreedomSuite.lean
+run_check "INVARIANT" rg -n 'lockSet_endpointReceive \(donation, no caps\) size = 7' tests/DeadlockFreedomSuite.lean
+
+# OD3.5: the ceiling, and the figure derived from it.  `maxLockSetSize` is the
+# WCRT headline's first factor, so a cut that widens a footprint pays here —
+# visibly, as a theorem rather than a paragraph.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def maxLockSetSize : Nat := 11$" SeLe4n/Kernel/Concurrency/Locks/LockSet.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem admissibleCriticalSection_rpi5Tick :\n    admissibleCriticalSection rpi5TickBudgetMicros = 30 := by decide" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "admissibleCriticalSection rpi5TickBudgetMicros = 37" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
+
 # The projection result got STRONGER: every field the return writes is stripped,
 # so no observability hypothesis on the server is needed at all.  The gap is
 # bounded to the declaration's OWN signature — its header at column 0 followed by
@@ -1854,17 +2044,19 @@ run_check "INVARIANT" rg -n -U 'match memoryRegionsFromNodes root with\n      \|
 # non-specification size-cell default.
 run_negative_check "INVARIANT" rg -n 'fdtRegionsToMemoryRegions \(extractMemoryRegions regBytes\)' SeLe4n/Platform/DeviceTree.lean
 run_negative_check "INVARIANT" rg -n '^def fdtDefaultSizeCells : Nat := 2$' SeLe4n/Platform/DeviceTree.lean
-# PR #892 review round 6: `.replyRecv` declares a footprint only for a
-# non-delegated reply, and resolves its donation from the RECORDED SERVER — the
-# resolver `lockSet_endpointReplyOnCore` has used since PR #822's review.  The
-# transition returns `(recordedReplyServer? st prevCaller).getD tid`'s donation,
-# so a delegate-derived footprint named a donation the transition does not touch
-# and omitted the one it does; the server's own TCB lock has no room under
-# `maxLockSetSize`, so the arm refuses rather than declaring a false footprint.
-run_check "INVARIANT" rg -n -U 'if \(recordedReplyServer\? st prevCaller\)\.getD ops\.caller = ops\.caller then\n                some \(lockSet_endpointReplyRecvOnCore' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+# PR #892 review round 6: `.replyRecv` resolves its donation from the RECORDED
+# SERVER — the resolver `lockSet_endpointReplyOnCore` has used since PR #822's
+# review.  The transition returns `(recordedReplyServer? st prevCaller).getD
+# tid`'s donation, so a delegate-derived footprint named a donation the
+# transition does not touch and omitted the one it does.
+#
+# **WS-OD OD3.5** retired the round-6 *refusal* that sat beside this: the arm no
+# longer declines a delegated reply, it declares the recorded server's own TCB.
+# The resolution anchor stays — it is the half that was right — and the refusal's
+# anchors moved to the OD3.5 block above, stated as a negative on the retired
+# theorem and a positive on what replaced it.
 run_check "INVARIANT" rg -n -U 'lockSet_replyRecv replier cnodeRootObjId target endpointObjId newSender\?\n    \(\(endpointReplyServerDonation\? st target\)\.map \(·\.1\)\)\n    \(\(endpointReplyServerDonation\? st target\)\.map \(·\.2\)\)' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
-run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_replyRecv_delegated' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
-# NEGATIVE: the delegate-derived donation, and an unconditional declaration.
+# NEGATIVE: the delegate-derived donation.
 run_negative_check "INVARIANT" rg -n -U '\(\(endpointReplyDonation\? st replier\)\.map \(·\.1\)\)' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 # PR #892 review round 6: a peripheral's `reg` is a LIST of blocks (a GIC node
 # carries its distributor and CPU interface in one), and a block is reported
@@ -5594,17 +5786,36 @@ EOF'
 # key conventions warn about.  The load-bearing pin is the pair of membership
 # theorems above -- they are proved from the outermost extension, so deleting it
 # fails the build -- and these are the structural seconds.
-run_check "INVARIANT" rg -nU 'def lockSet_endpointReceive \(callerTid[\s\S]*?if installsCaps then some \(stateLevelLock, AccessMode.write\) else none' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -nU 'def lockSet_replyRecv \(callerTid[\s\S]*?if installsCaps then some \(stateLevelLock, AccessMode.write\) else none' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '\[\.tcb, \.cnode, \.endpoint, \.reply, \.objStore\]' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+# WS-OD OD3.6: the receive's state-level member is now a DISJUNCTION too --
+# the CDT write the install performs, or the `scThreadIndex` write the
+# rendezvous donation performs.  Anchored on the disjunction: pinning only
+# `installsCaps` would leave the member deletable on the passive-server path,
+# which donates and installs nothing.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReceive \(callerTid[^\n]*(\n([ \t][^\n]*)?)*if installsCaps \|\| donatedScId\.isSome then" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+# WS-OD OD3.5: `.replyRecv`'s state-level member is a DISJUNCTION -- the receive
+# leg's CDT writes, the donation return's `scThreadIndex` write, and the
+# re-donation's -- because all three touch state the per-object locks cannot
+# decompose.  Anchored on the disjunction, not on the caps conjunct alone: the
+# arm that returns a donation without installing capabilities is precisely the
+# passive-server steady state, and pinning only `installsCaps` would leave the
+# member deletable on exactly that path.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_replyRecv \(callerTid[^\n]*(\n([ \t][^\n]*)?)*if installsCaps \|\| donatedScId\.isSome \|\| redonatedScId\.isSome then" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+# WS-OD OD3.6: `.receive` gained `.schedContext` -- the rendezvous donation
+# reaches the same primitive `.call` does.  Anchored on the `.receive` arm
+# itself rather than on the bare list, which said only that SOME arm carried
+# those kinds.
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.receive =>\n      \[\.tcb, \.cnode, \.endpoint, \.schedContext, \.reply, \.objStore\]" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
 run_check "INVARIANT" rg -n '\[\.tcb, \.cnode, \.endpoint, \.schedContext, \.reply, \.objStore\]' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-# NEGATIVE: the pre-RR7.11 constant cannot come back.  `maxLockSetSize` is 9
-# because the widest declared footprint -- a `.replyRecv` that both returns a
-# donation and installs capabilities -- is nine members, and the ninth is that
-# state-level write.  Reverting the constant without reverting the member makes
-# a footprint the bounded-wait argument does not cover.
+# NEGATIVE: neither superseded constant can come back.  `maxLockSetSize` was 8
+# before RR7.11 and 9 before WS-OD OD3.5; it is 11 because the widest declared
+# footprint -- a delegated `.replyRecv` that returns a donation, re-donates and
+# installs capabilities -- is eleven members.  Reverting the constant without
+# reverting the members makes a footprint the bounded-wait argument does not
+# cover.  The positive pin is the single `:= 11` anchor above; stating it twice
+# is one question with two answers, and the second copy is the one that goes
+# stale.
 run_negative_check "INVARIANT" rg -n 'def maxLockSetSize : Nat := 8' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
-run_check "INVARIANT" rg -n 'def maxLockSetSize : Nat := 9' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
+run_negative_check "INVARIANT" rg -n 'def maxLockSetSize : Nat := 9' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
 # NEGATIVE: and a `_size_le_maxLockSetSize` theorem must state the CONSTANT, not
 # the numeral it happens to hold.  Five in the scheduler pinned `≤ 8` literally,
 # so each was a claim about a number while its name promised a relation -- the
@@ -5620,7 +5831,7 @@ run_negative_check "INVARIANT" rg -n 'match reply.caller with' SeLe4n/Kernel/API
 # capless send's asserted absent.
 run_check "INVARIANT" rg -n 'runIpcDeclaredFootprintChecks' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'a caps-installing .\.receive. declares the state-level write' tests/SmpInformationFlowSuite.lean
-run_check "INVARIANT" rg -n 'lockSet_replyRecv \(all options\) size = 9' tests/DeadlockFreedomSuite.lean
+run_check "INVARIANT" rg -n 'lockSet_replyRecv \(all options\) size = 11 \(the bound, exactly\)' tests/DeadlockFreedomSuite.lean
 # WS-RR RR7.12: the declared footprint is ACQUIRED at the live syscall seam.
 # Before this row exactly one live export bracketed (the raw
 # `suspend_thread_cross_core`), so "per-object reader-writer fine locks"
@@ -8837,7 +9048,7 @@ import SeLe4n.Kernel.Concurrency.LockSet
 -- cite in the shell comment introducing this block -- a heredoc body is script
 -- content to the identifier-naming gate, not prose.)
 #check @SeLe4n.Kernel.Concurrency.lockSet_endpointSend_capless
-#check @SeLe4n.Kernel.Concurrency.lockSet_endpointCall_capless
+#check @SeLe4n.Kernel.Concurrency.lockSet_endpointCall_capless_donationless
 -- SM3.B.4: permittedKinds + per-transition lockSet_consistent_*.
 #check @SeLe4n.Kernel.Concurrency.permittedKinds
 #check @SeLe4n.Kernel.Concurrency.lockSet_consistent_send

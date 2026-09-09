@@ -46,6 +46,17 @@
 // inline assembly). Each unsafe block carries a // SAFETY: comment referencing
 // the ARM Architecture Reference Manual. We deny at the module level where
 // possible and allow where hardware access is required.
+//
+// An `unsafe fn` is a contract on the CALLER; edition 2021 additionally makes
+// its body an implicit unsafe context, which would let a hardware operation
+// sit in one of these thirteen functions with no block and no `// SAFETY:`
+// comment — the discipline above says every unsafe block carries one, and
+// without this lint that sentence is unenforceable exactly where the hardware
+// access happens. The crate already writes the blocks explicitly on both the
+// host and `aarch64-unknown-none`; denying the lint is what keeps it doing so,
+// and it is edition 2024's default, so the behaviour is acquired here
+// deliberately rather than at some future edition bump.
+#![deny(unsafe_op_in_unsafe_fn)]
 #![allow(unsafe_code)]
 
 // ============================================================================

@@ -1748,20 +1748,28 @@ theorem endpointReplyOnCore_observer_atomic
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
     (cnRoot : SeLe4n.ObjId) (donatedSc? : Option SeLe4n.SchedContextId)
     (donatedOwner? : Option SeLe4n.ThreadId) (observed : SeLe4n.ThreadId)
+    -- WS-OD OD3.5: over **every** argument of the footprint this theorem names,
+    -- the resolved reply object included.  The three `.replyRecv`-only members
+    -- (`installsCaps`, the recorded server, the re-donated context) were
+    -- mistakenly declared here rather than on the companion below: they do not
+    -- occur in `lockSet_endpointReply` at all, so the statement read as covering
+    -- shapes it says nothing about while the compiler reported them unused.
+    (replyId : Option SeLe4n.ReplyId)
     (s : SystemState) (hInv : s.objects.invExt) :
     threadIpcStateObserver observed
         (acquireAll executingCore
           (lockSet_endpointReply replier cnRoot target donatedSc?
-            donatedOwner?).lockAcquireSequence s)
+            donatedOwner? replyId).lockAcquireSequence s)
       = threadIpcStateObserver observed s
     ∧ threadIpcStateObserver observed
-        (withLockSet (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner?)
+        (withLockSet
+          (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner? replyId)
           executingCore (endpointReplyOnCore replier target msg executingCore) s).1
       = threadIpcStateObserver observed
           (endpointReplyOnCore replier target msg executingCore
             (acquireAll executingCore
               (lockSet_endpointReply replier cnRoot target donatedSc?
-                donatedOwner?).lockAcquireSequence s)).1 :=
+                donatedOwner? replyId).lockAcquireSequence s)).1 :=
   lockSet_observer_atomic_of_objectStoreObserver _ executingCore _ s _
     (threadIpcStateObserver_insensitiveOn executingCore observed) hInv
     (fun s' h => endpointReplyOnCore_preserves_objects_invExt replier target msg
@@ -1775,22 +1783,28 @@ theorem endpointReplyRecvOnCore_observer_atomic
     (replyId : Option SeLe4n.ReplyId) (executingCore : CoreId) (cnRoot : SeLe4n.ObjId)
     (newSender? : Option SeLe4n.ThreadId) (donatedSc? : Option SeLe4n.SchedContextId)
     (donatedOwner? : Option SeLe4n.ThreadId) (observed : SeLe4n.ThreadId)
+    -- WS-OD OD3.5: the three members OD3.5 added, declared **explicitly** here.
+    -- They were auto-bound as implicits because their declarations had landed on
+    -- the theorem above, so the arity this statement carried was accidental
+    -- rather than chosen.
+    (installsCaps : Bool) (donationServer? : Option SeLe4n.ThreadId)
+    (redonatedSc? : Option SeLe4n.SchedContextId)
     (s : SystemState) (hInv : s.objects.invExt) :
     threadIpcStateObserver observed
         (acquireAll executingCore
           (lockSet_replyRecv receiver cnRoot target endpointId newSender? donatedSc?
-            donatedOwner? replyId).lockAcquireSequence s)
+            donatedOwner? replyId installsCaps donationServer? redonatedSc?).lockAcquireSequence s)
       = threadIpcStateObserver observed s
     ∧ threadIpcStateObserver observed
         (withLockSet (lockSet_replyRecv receiver cnRoot target endpointId newSender?
-            donatedSc? donatedOwner? replyId)
+            donatedSc? donatedOwner? replyId installsCaps donationServer? redonatedSc?)
           executingCore
           (endpointReplyRecvOnCore endpointId receiver target msg replyId executingCore) s).1
       = threadIpcStateObserver observed
           (endpointReplyRecvOnCore endpointId receiver target msg replyId executingCore
             (acquireAll executingCore
               (lockSet_replyRecv receiver cnRoot target endpointId newSender? donatedSc?
-                donatedOwner? replyId).lockAcquireSequence s)).1 :=
+                donatedOwner? replyId installsCaps donationServer? redonatedSc?).lockAcquireSequence s)).1 :=
   lockSet_observer_atomic_of_objectStoreObserver _ executingCore _ s _
     (threadIpcStateObserver_insensitiveOn executingCore observed) hInv
     (fun s' h => endpointReplyRecvOnCore_preserves_objects_invExt endpointId receiver

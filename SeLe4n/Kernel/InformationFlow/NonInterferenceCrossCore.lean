@@ -1389,6 +1389,37 @@ theorem applyCallDonationOnCore_confinedToCores (st st' : SystemState)
     simpa using observableSlotsConfinedToCores_trans h1
       (migrateSchedContextReplenishment_confinedToCores st1 scId donorHome doneeHome)
 
+/-- **WS-OD OD3.6**: the shared rendezvous hand-off is per-core silent, and so is
+its guarded form.
+
+Both receiving arms run it, so its confinement is stated once here rather than
+re-derived at each arm — and `[]` rather than a core list because a SchedContext
+hand-off writes only bindings, which the per-core observer does not read. -/
+theorem applyRendezvousCallDonation_confinedToCores (st st' : SystemState)
+    (receiver donor : SeLe4n.ThreadId)
+    (hStep : applyRendezvousCallDonation st receiver donor = .ok st') :
+    observableSlotsConfinedToCores st st' [] := by
+  obtain ⟨donorV, receiverV, _, _, hDon⟩ :=
+    applyRendezvousCallDonation_ok_decompose st st' receiver donor hStep
+  exact applyCallDonationOnCore_confinedToCores st st' donorV receiverV _ _ hDon
+
+/-- WS-OD OD3.6: and the guarded form, whose other arm is the identity. -/
+theorem applyReceiveRendezvousDonation_confinedToCores (st st' : SystemState)
+    (receiver dequeued : SeLe4n.ThreadId)
+    (hStep : applyReceiveRendezvousDonation st receiver dequeued = .ok st') :
+    observableSlotsConfinedToCores st st' [] := by
+  unfold applyReceiveRendezvousDonation at hStep
+  cases hCall : rendezvousDequeuedCall st dequeued with
+  | false =>
+    rw [hCall] at hStep
+    simp only [Bool.false_eq_true, if_false] at hStep
+    cases hStep
+    exact observableSlotsConfinedToCores_refl st []
+  | true =>
+    rw [hCall] at hStep
+    simp only [if_true] at hStep
+    exact applyRendezvousCallDonation_confinedToCores st st' receiver dequeued hStep
+
 /-- SM8.B.2: **the cores the live cross-core `.call` may write.**
 
 `endpointCallCrossCoreDispatch` is not just `endpointCallOnCore`: it runs the
@@ -1923,20 +1954,16 @@ def replyRecvReturnDonationWriteSet (tid recordedServer nextThread : SeLe4n.Thre
           -- transition does.
           let st1 := migrateSchedContextReplenishment st1' oldScId
             (determineTargetCore st recordedServer) (determineTargetCore st owner)
-          match lookupTcb st1 nextThread with
-          | some nextTcb =>
-            match nextTcb.ipcState with
-            | .blockedOnReply _ _ =>
-              match nextThread.toValid?, tid.toValid? with
-              | some nextV, some tidV =>
-                match applyCallDonationOnCore st1 nextV tidV
-                    (determineTargetCore st1 nextThread) (determineTargetCore st1 tid) with
-                | .error _ => []
-                | .ok st2 =>
-                    pipChainWriteSet st2 recordedServer serverCore st2.objectIndex.length
-              | _, _ => []
-            | _ => replyRecvDescheduleAndWalkWriteSet recordedServer serverCore st1
-          | none => replyRecvDescheduleAndWalkWriteSet recordedServer serverCore st1
+          -- WS-OD OD3.6: the mirror follows the transition onto the shared
+          -- rendezvous hand-off, guard and all — a write set that mirrors a
+          -- transition has to branch where the transition branches.
+          if rendezvousDequeuedCall st1 nextThread then
+            match applyRendezvousCallDonation st1 tid nextThread with
+            | .error _ => []
+            | .ok st2 =>
+                pipChainWriteSet st2 recordedServer serverCore st2.objectIndex.length
+          else
+            replyRecvDescheduleAndWalkWriteSet recordedServer serverCore st1
       | _, _ => []
     | _ => pipChainWriteSet st recordedServer serverCore st.objectIndex.length
 
@@ -1983,41 +2010,23 @@ theorem replyRecvReturnDonation_confinedToCores (tid recordedServer nextThread :
               (migrateSchedContextReplenishment_confinedToCores st1' oldScId _ _)
           -- Zeta-reduce the write set's own `let` so its match tree is splittable.
           simp only []
+          -- WS-OD OD3.6: the branch is the shared guard, so the six-way
+          -- `ipcState` case analysis is one `Bool` split in both.
           split
-          · next nextTcb hNext =>
-            simp only [hNext] at hStep
+          · next hCall =>
+            simp only [hCall, if_true] at hStep
             split
-            · next ep rt hIpc =>
-              simp only [hIpc] at hStep
-              split
-              · next nextV tidV hNextV hTidV =>
-                simp only [hNextV, hTidV] at hStep
-                split
-                · next e hDon => simp only [hDon] at hStep; exact absurd hStep (by simp)
-                · next st2 hDon =>
-                  simp only [hDon] at hStep
-                  rw [← hOkInj hStep]
-                  exact observableSlotsConfinedToCores_trans
-                    (observableSlotsConfinedToCores_trans hSilent
-                      (applyCallDonationOnCore_confinedToCores _ st2 _ _ _ _ hDon))
-                    (propagatePipChainCrossCore_confinedToCores serverCore
-                      st2.objectIndex.length st2 recordedServer)
-              · next hNo =>
-                exfalso
-                revert hStep
-                rcases hNV : nextThread.toValid? with _ | nextV <;>
-                  rcases hTV : tid.toValid? with _ | tidV <;>
-                  simp_all
-            · next hIpc =>
-              -- the catch-all arm: reduce `hStep` through the same scrutinee,
-              -- the rendezvous sub-branch contradicting the split's own guard
-              split at hStep
-              · next ep' rt' hEq => exact absurd hEq (by simpa using hIpc ep' rt')
-              · rw [← hOkInj hStep]
-                exact observableSlotsConfinedToCores_trans hSilent
-                  (replyRecvDescheduleAndWalk_confinedToCores recordedServer serverCore _)
-          · next hNext =>
-            simp only [hNext] at hStep
+            · next e hDon => simp only [hDon] at hStep; exact absurd hStep (by simp)
+            · next st2 hDon =>
+              simp only [hDon] at hStep
+              rw [← hOkInj hStep]
+              exact observableSlotsConfinedToCores_trans
+                (observableSlotsConfinedToCores_trans hSilent
+                  (applyRendezvousCallDonation_confinedToCores _ st2 _ _ hDon))
+                (propagatePipChainCrossCore_confinedToCores serverCore
+                  st2.objectIndex.length st2 recordedServer)
+          · next hCall =>
+            simp only [hCall, Bool.false_eq_true, if_false] at hStep
             rw [← hOkInj hStep]
             exact observableSlotsConfinedToCores_trans hSilent
               (replyRecvDescheduleAndWalk_confinedToCores recordedServer serverCore _)

@@ -727,10 +727,7 @@ theorem size_le_7 (L : List (LockId × AccessMode))
 
 /-- WS-OD OD1.5: eight optional extensions — the arity the state-resolved
 cancellation footprint reaches once the reclaim's abort prefix declares the
-holder's endpoint and its two queue neighbours.  On the reply arm, where the
-victim's own blocked-object members are `none`, that is nine of nine: the
-footprint sits **at** `maxLockSetSize`, which is the headroom the arm-selected
-split (WS-OD OD3.5) is scheduled to recover before anything else is added. -/
+holder's endpoint and its two queue neighbours. -/
 theorem size_le_8 (L : List (LockId × AccessMode))
     (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ : Option (LockId × AccessMode)) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
@@ -738,6 +735,19 @@ theorem size_le_8 (L : List (LockId × AccessMode))
         (lockSetOfList L) o₁) o₂) o₃) o₄) o₅) o₆) o₇) o₈).size ≤ L.length + 8 := by
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
   refine Nat.le_trans (Nat.add_le_add_right (size_le_7 L o₁ o₂ o₃ o₄ o₅ o₆ o₇) 1) ?_
+  omega
+
+/-- WS-OD OD3.5: nine optional extensions — the arity the parametric
+cancellation footprint reaches once the reply arm's donation hand-back declares
+the state-level lock its `scThreadIndex` write takes. -/
+theorem size_le_9 (L : List (LockId × AccessMode))
+    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ : Option (LockId × AccessMode)) :
+    (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
+      (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
+        (lockSetExtendOpt (lockSetOfList L) o₁) o₂) o₃) o₄) o₅) o₆) o₇) o₈) o₉).size
+      ≤ L.length + 9 := by
+  refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
+  refine Nat.le_trans (Nat.add_le_add_right (size_le_8 L o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈) 1) ?_
   omega
 
 /-- Local tactic shorthand: reduce a concrete `[…].length (+k)` to a numeral
@@ -764,14 +774,18 @@ theorem lockSet_endpointSend_size_le (a : ThreadId) (b c : ObjId) (d : Option Th
 -- into a key already present, so the bound is the same one — but it has to be
 -- *stated* at that argument to say so.
 -- WS-RR RR7.11: and over the state-level member the capability install needs.
--- Three optionals over a three-member base is `3 + 3 = 6 ≤ 8`, so the constant
--- is unchanged; what changes is that the bound holds for the footprint the
--- caps-carrying receive really declares.
+-- WS-OD OD3.6: and over the SchedContext the rendezvous donates.  Four
+-- optionals over a three-member base is `3 + 4 = 7 ≤ 11`, so the constant is
+-- unchanged; what changes is that the bound holds for the footprint the arm
+-- really declares, donation included.  Stated at every argument -- a partial
+-- application here is how an added member gets silently unbounded (the SM9.C
+-- `notificationSignal` defect, and the `endpointReply` one the OD3.5 census
+-- found).
 theorem lockSet_endpointReceive_size_le (a : ThreadId) (b c : ObjId) (d : Option ThreadId)
-    (e : Option ReplyId) (f : Bool) :
-    (lockSet_endpointReceive a b c d e f).size ≤ maxLockSetSize := by
+    (e : Option ReplyId) (f : Bool) (g : Option SchedContextId) :
+    (lockSet_endpointReceive a b c d e f g).size ≤ maxLockSetSize := by
   unfold lockSet_endpointReceive maxLockSetSize
-  exact Nat.le_trans (size_le_3 _ _ _ _) (by size_bound)
+  exact Nat.le_trans (size_le_4 _ _ _ _ _) (by size_bound)
 
 -- WS-RR RR7.7: and over the capability-transfer destination, which is where
 -- `lockSet_endpointCallWithCaps` now lives.  Five optionals over a three-member
@@ -808,7 +822,9 @@ theorem lockSet_endpointReply_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
     (d : Option SchedContextId) (e : Option ThreadId) (f : Option ReplyId) :
     (lockSet_endpointReply a b c d e f).size ≤ maxLockSetSize := by
   unfold lockSet_endpointReply maxLockSetSize
-  exact Nat.le_trans (size_le_3 _ _ _ _) (by size_bound)
+  -- WS-OD OD3.5: a fourth optional — the state-level lock the donation
+  -- return's `scThreadIndex` write takes.
+  exact Nat.le_trans (size_le_4 _ _ _ _ _) (by size_bound)
 
 -- WS-RR RR7.11: and over the state-level member the capability install needs.
 -- Five optionals over a four-member base is `4 + 5 = 9`, which is
@@ -816,10 +832,10 @@ theorem lockSet_endpointReply_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
 -- against, and the reason it moved from 8 (see its docstring).
 theorem lockSet_replyRecv_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
     (d : ObjId) (e : Option ThreadId) (f : Option SchedContextId) (g : Option ThreadId)
-    (h : Option ReplyId) (i : Bool) :
-    (lockSet_replyRecv a b c d e f g h i).size ≤ maxLockSetSize := by
+    (h : Option ReplyId) (i : Bool) (j : Option ThreadId) (k : Option SchedContextId) :
+    (lockSet_replyRecv a b c d e f g h i j k).size ≤ maxLockSetSize := by
   unfold lockSet_replyRecv maxLockSetSize
-  exact Nat.le_trans (size_le_5 _ _ _ _ _ _) (by size_bound)
+  exact Nat.le_trans (size_le_7 _ _ _ _ _ _ _ _) (by size_bound)
 
 -- WS-SM SM9.C.8: stated over **all six** arguments, including the SM6.B
 -- bound-delivery optionals.  Before this cut the theorem fixed those two at
@@ -827,7 +843,8 @@ theorem lockSet_replyRecv_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
 -- five members — a signal whose bound TCB is `BlockedOnReceive`, which
 -- additionally locks that TCB's endpoint and the TCB itself — had no size
 -- bound at all, and the WCRT reasoning built on `maxLockSetSize` did not cover
--- the path SM6.B added.  The general form is `3 + 3 = 6 ≤ 8`, so nothing about
+-- the path SM6.B added.  The general form is `3 + 3 = 6`, inside the constant
+-- at every value it has held (8 then, 11 since WS-OD OD3.5), so nothing about
 -- the constant changes; what changes is that the bound now holds for the
 -- footprint the transition really declares.
 theorem lockSet_notificationSignal_size_le (a : ThreadId) (b c : ObjId)
@@ -838,11 +855,12 @@ theorem lockSet_notificationSignal_size_le (a : ThreadId) (b c : ObjId)
 
 /-- WS-SM SM9.C.8: the data-carrying declassification's footprint is within the
 static bound — the ordinary signal's three-optional shape plus the state-level
-write, so `3 + 4 = 7 ≤ 8`.
+write, so `3 + 4 = 7`, inside `maxLockSetSize` at every value it has held.
 
-One member of slack remains, which is the honest reading: this is the largest
+Slack remains, which is the honest reading: this is the largest
 notification-side footprint the kernel declares, and it is *not* at the bound
-the way `lockSet_tcbSuspend` is (8 exactly). -/
+the way `lockSet_replyRecv` is (11 exactly since WS-OD OD3.5 — `lockSet_tcbSuspend`,
+which this sentence used to name, sat at the bound only while that bound was 8). -/
 theorem lockSet_declassifySignal_size_le (a : ThreadId) (b c : ObjId)
     (d : Option ThreadId) (e : Option ObjId) (f : Option ThreadId) :
     (lockSet_declassifySignal a b c d e f).size ≤ maxLockSetSize := by
@@ -968,7 +986,8 @@ theorem lockSet_tcbSuspend_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
     (h : Option ReplyId := none) :
     (lockSet_tcbSuspend a b c d e f g h).size ≤ maxLockSetSize := by
   unfold lockSet_tcbSuspend maxLockSetSize
-  exact Nat.le_trans (size_le_5 _ _ _ _ _ _) (by size_bound)
+  -- WS-OD OD3.5: a sixth optional — the state-level lock.
+  exact Nat.le_trans (size_le_6 _ _ _ _ _ _ _) (by size_bound)
 
 theorem lockSet_tcbResume_size_le (a : ThreadId) (b : ObjId) (c : ThreadId) (q : Option QueueOwner) :
     (lockSet_tcbResume a b c q).size ≤ maxLockSetSize := by
@@ -1061,10 +1080,10 @@ enumeration had missed — `mintReplyCap`, `tcbBindNotification`,
 rather than counted by hand.) -/
 theorem lockSetTransitions_within_bound :
     (∀ a b c d e, (lockSet_endpointSend a b c d e).size ≤ maxLockSetSize) ∧
-    (∀ a b c d e f, (lockSet_endpointReceive a b c d e f).size ≤ maxLockSetSize) ∧
+    (∀ a b c d e f g, (lockSet_endpointReceive a b c d e f g).size ≤ maxLockSetSize) ∧
     (∀ a b c d e f g, (lockSet_endpointCall a b c d e f g).size ≤ maxLockSetSize) ∧
     (∀ a b c d e f, (lockSet_endpointReply a b c d e f).size ≤ maxLockSetSize) ∧
-    (∀ a b c d e f g h i, (lockSet_replyRecv a b c d e f g h i).size ≤ maxLockSetSize) ∧
+    (∀ a b c d e f g h i j k, (lockSet_replyRecv a b c d e f g h i j k).size ≤ maxLockSetSize) ∧
     (∀ a b c d e f, (lockSet_notificationSignal a b c d e f).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_notificationWait a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_cspaceMint a b c).size ≤ maxLockSetSize) ∧
@@ -1154,7 +1173,8 @@ def KernelOperation.ofReplyRecv (a : ThreadId) (b : ObjId) (c : ThreadId)
     (d : ObjId) (e : Option ThreadId) (f : Option SchedContextId) (g : Option ThreadId)
     (h : Option ReplyId := none) (i : Bool := false) :
     KernelOperation :=
-  ⟨lockSet_replyRecv a b c d e f g h i, lockSet_replyRecv_size_le a b c d e f g h i⟩
+  ⟨lockSet_replyRecv a b c d e f g h i none none,
+   lockSet_replyRecv_size_le a b c d e f g h i none none⟩
 
 /-- WS-SM SM3.D.6: build the `KernelOperation` for a `tcbSuspend` (the
 5-extension transition — WS-SM SM6.E added the optional reply-link

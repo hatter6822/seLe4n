@@ -538,12 +538,14 @@ measure**, rather than a product:
 
     WCRT(syscall) ≤ budget   whenever   WCRT_per_lock ≤ budget ÷ (max-lock-set-size × (coreCount - 1))
 
-For RPi5 against the 1 ms tick, `9 × 3 = 27`, so the admissible per-lock
-critical section is **≤ 37 µs** (`admissibleCriticalSection_rpi5Tick`), and the
-60 µs previously assumed gives `9 × 3 × 60 = 1620 µs` — outside the tick
+For RPi5 against the 1 ms tick, `maxLockSetSize × (coreCount - 1) = 11 × 3 = 33`,
+so the admissible per-lock critical section is **≤ 30 µs**
+(`admissibleCriticalSection_rpi5Tick`), and the 60 µs previously assumed gives
+`11 × 3 × 60 = 1980 µs` — outside the tick
 (`rpi5Tick_refuses_sixty_micro_sections`). Both figures are `decide`-checked
 theorems, so a future cut that moves `maxLockSetSize` again has to confront them
-rather than a paragraph.
+rather than a paragraph — as WS-OD OD3.5 did, moving the ceiling 9 → 11 and with
+it these two numbers (37 µs and 1620 µs at RR7.11's constant).
 
 *And none of this is the shipping bound.* §2.1's discipline is the **intended**
 one; the live seam is the SM5.I global kernel-entry ticket lock (see §2.1's own

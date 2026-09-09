@@ -12,7 +12,7 @@
 > **Predecessor findings**: the two Medium-severity model/specification gaps
 > recorded in [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) §A, reported while
 > proving the WS-RR RR7.22 residual at `v0.34.97` and `v0.34.98`.
-> **Sub-task count**: 41 across 6 phases (OD1..OD6), each phase numbered in the
+> **Sub-task count**: 42 across 6 phases (OD1..OD6), each phase numbered in the
 > order it is to be implemented
 
 ## 1. Phase goal
@@ -198,7 +198,7 @@ conjunct to `ipcReachable` re-opens `ipcReachable_default`, two further
 reachability witnesses and **seventeen** `syscallDispatchQuiescence_inhabited*`
 witnesses — twenty discharges, against 166 bundles.  More importantly, a pack
 field that no transition is proven to preserve is a hypothesis wearing an
-invariant's name, so OD2.5 builds the frame family and OD3.6 / OD4.4 / OD5.6
+invariant's name, so OD2.5 builds the frame family and OD3.7 / OD4.4 / OD5.6
 supply the per-transition preservation.
 
 Weakening `passiveServerIdle` instead is not an escape either: `ThreadIpcState`
@@ -233,7 +233,7 @@ measurement.
 |-------|------------------|------|-----|
 | OD1 | The reclaim's `passiveServerIdle` hole — a live `v0.34.97` defect, independent of the reply stack | 7 | L |
 | OD2 | Inert structure: `SchedContext.scReply`, `Reply.wellFormed`, the chain predicate and its frames | 7 | M |
-| OD3 | The pop, generalised and behaviourally inert — signature, head validation, pre-state resolver, and the footprint split its growth needs | 7 | XL |
+| OD3 | The pop, generalised and behaviourally inert — signature, head validation, pre-state resolver, and the footprint split its growth needs | 8 | XL |
 | OD4 | The push — `applyCallDonation` accepts a `.donated` caller; the chain goes live; the call sites thread the resolver | 8 | XL |
 | OD5 | Chain-aware teardown and reply reuse — cancellation, retype, `.replyRecv`, freshening | 6 | L |
 | OD6 | Payoff, footprint census, tests, documentation, closure | 6 | M |
@@ -322,11 +322,24 @@ dropped, and `donationChainWellFormed.replyWellFormedAt` is the bridge.
 | OD3.3 | `returnDonatedSchedContext_eq_legacy_of_none` — at `newOwner? = none` the new definition **is** the old one.  This is the row that makes the phase inert and leaves OD4 as the only behaviour change | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` | S |
 | OD3.4 | `replyStackOuterCaller?` — the pre-state resolver and its correctness lemma, required because the reply leg consumes the target's link before the donation return runs (§3.3), on the same discipline as the two resolvers already beside it.  **Placement corrected at OD3.1**: it goes in `Endpoint.lean` beside `donationHeadOf?`, not in `EndpointReplyDispatch.lean`, because three of the six call sites that must resolve it (`cleanupDonatedSchedContext`, `applyReplyDonation`, `returnDonationToCancelledCaller`) are **upstream** of that module and none of them imports it | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` | M |
 | OD3.5 | **The arm-selected cancellation footprint.**  Split the summed `Option` arguments into footprints chosen by the victim's `ipcState`: the arms are mutually exclusive, but the bound census measures at full arity, so the summed form reaches nine before the next row adds a member.  Every later footprint change consumes this one.  **Also recovers the `.replyRecv` headroom** (PR #892 review round 6): a *delegated* reply — one answered by a thread other than the one the Reply records as its server — needs that server's own TCB lock, and the arm is already at nine of nine, so `lockSetForSyscall` answers `none` there and the delegated case keeps the coarser serialisation.  With the arms selected rather than summed, declare it | `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean`, `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` | L |
-| OD3.6 | Footprints: the reply, replyRecv and cancellation-reply-arm sets gain the previous reply's **read**; re-prove the bound at full arity on each.  If any exceeds the ceiling, stop and escalate — raising it widens the published covert-channel bound | `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean`, `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean`, `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` | L |
-| OD3.7 | Chain preservation for the pop; the projection result re-derived through the added store; the two Tier-3 name anchors; the family-size figure; version | `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean`, `scripts/test_tier3_invariant_surface.sh`, `CLAUDE.md`, `AGENTS.md`, `docs/spec/SELE4N_SPEC.md` | L |
+| OD3.6 | **seL4-MCS's `maybeDonateSchedContext`: the receive side donates.**  Unscheduled when this plan was written and found while threading OD3.5's resolvers: `.receive` performed *no* SchedContext donation at all, so a passive server taking its **first** request with `seL4_Recv` ran on no reservation while the same server taking its later requests with `seL4_ReplyRecv` was charged correctly — a budget-enforcement bypass, reported before being fixed.  One shared step (`applyReceiveRendezvousDonation`) called by both `.receive` arms **and** by `replyRecvReturnDonation`, whose inlined copy is retired; the guard discharges the donation's caller-blocked obligation, leaving only `hReceiverNotOwner` as a `recvStage` pack conjunct; `lockSet_endpointReceive` gains the donated SchedContext and a **disjunctive** state-level member (conditioning it on `installsCaps` alone omits it on exactly the passive-server path).  Bound restated at the new arity: `3 + 4 = 7 ≤ 11`  **LANDED v0.34.129** | `SeLe4n/Kernel/IPC/Operations/Donation.lean`, `SeLe4n/Kernel/API.lean`, `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` | L |
+| OD3.7 | Footprints: the reply, replyRecv and cancellation-reply-arm sets gain the previous reply's **read**; re-prove the bound at full arity on each.  If any exceeds the ceiling, stop and escalate — raising it widens the published covert-channel bound | `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean`, `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean`, `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` | L |
+| OD3.8 | Chain preservation for the pop; the projection result re-derived through the added store; the two Tier-3 name anchors; the family-size figure; version | `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean`, `scripts/test_tier3_invariant_surface.sh`, `CLAUDE.md`, `AGENTS.md`, `docs/spec/SELE4N_SPEC.md` | L |
 
 **Acceptance**: every call site passes `none`, and OD3.3 witnesses that the tree's
 behaviour is bit-identical to pre-OD3.
+
+**Landed OD3.5 at `v0.34.128`, and the row's second deliverable inverted.**  The
+arm-selected split went in as written — `cancelArmSpliceNeighbors?`, derived from
+`cancelBlockedEndpoint?` so the arm question is asked once, taking the widest
+cancellation arm from ten members to eight.  What the row planned as "recover the
+headroom so the delegated `.replyRecv` can declare" turned out to rest on a false
+premise: the arm was short a member on *every* case, not only the delegated one.
+`replyRecvReturnDonation` performs two SchedContext hand-offs and declared one,
+so the passive-server steady state wrote a kernel object under no declared lock.
+See §8.1 for the full account and the numbers it supersedes; the short version is
+that `maxLockSetSize` is 11, `admissibleCriticalSection` for the 1 ms tick is
+30 µs, and OD3.7 measures against those.
 
 **Landed OD3.4 at `v0.34.127`, and moved the threading row into OD4.**  Two
 things this row records rather than inherits.  (1) **The resolver validates the
@@ -491,7 +504,7 @@ recovered before they run:
   `ipcState` rather than summed.  On the reply arm it drops the victim's two
   neighbour members, which are vacuous there (that arm performs no victim
   splice), taking the reply arm from nine to seven.
-* **OD3.6** adds the previous reply's *read* to the reply, replyRecv and
+* **OD3.7** adds the previous reply's *read* to the reply, replyRecv and
   cancellation-reply-arm footprints, and is the row that would exceed the ceiling
   without OD3.5.
 
@@ -499,8 +512,54 @@ The narrowing was deliberately **not** pulled forward into OD1.5.  It ripples
 into `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` and
 `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean`, and doing it in the row
 that *adds* members would put a footprint restructuring ahead of the row that
-owns it.  If OD3.6 nevertheless exceeds the ceiling, stop and escalate: raising
+owns it.  If OD3.7 nevertheless exceeds the ceiling, stop and escalate: raising
 `maxLockSetSize` widens the published covert-channel bound.
+
+### 8.1 What OD3.5 actually found (landed `v0.34.128`)
+
+The split landed as planned and the arithmetic above is superseded, because
+implementing it surfaced a **false footprint** on the arm the row's second
+deliverable was about.  Recorded here rather than rewritten above, so the
+prediction and the outcome can be compared.
+
+`replyRecvBody`'s third stage, `replyRecvReturnDonation`, performs **two**
+SchedContext hand-offs: the recorded server's return, and then
+`applyCallDonationOnCore nextThread tid` when the receive leg dequeues a queued
+`Call`.  `donateSchedContext` writes the *new* caller's SchedContext, which is
+provably not the returned one, and `lockSet_replyRecv` named only the returned
+one — so a `.replyRecv` on one core and a `.tcbSuspend` of that queued caller on
+another had provably disjoint footprints while both writing that object.  It is
+the passive-server steady state, not an edge case: the receiver is `.unbound` at
+that point precisely because the return just made it so.  `.call` has declared
+exactly this member since SM6.A.5 and says why.
+
+Two consequences for the numbers this section states:
+
+* The **ceiling moved to 11**, the maintainer's decision against the alternative
+  of narrowing `.replyRecv`'s declaration further on the hottest IPC path.  The
+  cost is stated where it is paid: `admissibleCriticalSection` for the 1 ms tick
+  falls from 37 µs to 30 µs.  The plan's "stop and escalate" clause fired one row
+  early and for the opposite reason — a member that was *missing*, not one being
+  added.
+* The reply arm is **eight**, not seven: every donation-carrying footprint also
+  gained the state-level lock, because `SystemState.scThreadIndex` is an
+  `RHTable` whose insert may rehash the whole table and therefore does not
+  decompose by object.  The split was still *necessary* rather than merely
+  planned — with that member added, the un-narrowed reply arm would have reached
+  ten against the old ceiling of nine.
+
+The split is **licensed** rather than asserted: the four frames the tree lacked
+— `endpointQueueRemove_objects_ne`, `abortPendingIpcOnEndpoint_other_tcb_eq`,
+`abortHolderPendingIpc_other_tcb_eq` and
+`returnDonatedSchedContext_other_tcb_eq`, each stating a step's effect *outside*
+its write set — compose into `cancelIpcBlocking_replyArm_tcb_frame`, which shows
+the reply arm rewrites exactly the holder, its two queue neighbours and the
+cancelled caller, every one a declared member.  Building them retired the third
+inlined copy of the neighbour-patch shape (`endpointQueueRemove_eq_patches` pins
+it to `queueNeighbourPatch` by `rfl`).
+
+**OD3.7 re-measures against 11 and against these shapes**, not against the
+figures above.
 
 ## 9. Two things this plan deliberately does not fix
 

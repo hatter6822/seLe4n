@@ -390,6 +390,31 @@ open SeLe4n.Testing
 #check @lockSet_cancelIpcBlocking_holder_splice_next_write_mem
 #check @lockSet_cancelIpcBlocking_reply_size_le
 #check @lockSet_cancelIpcBlocking_noDonation_size_le
+-- WS-OD OD3.5: the footprint is **arm-selected** rather than summed — the
+-- victim's own splice neighbours are declared on the arm that splices and on no
+-- other, which is what takes the reply arm from ten members to eight and is
+-- checked in both directions.
+#check @cancelArmSpliceNeighbors?
+#check @cancelArmSpliceNeighbors?_of_blockedEndpoint
+#check @cancelArmSpliceNeighbors?_of_not_blockedEndpoint
+#check @lockSet_cancelIpcBlockingOnCore_replyArm_eq
+#check @lockSet_cancelIpcBlockingOnCore_endpointArm_covers_prev
+#check @lockSet_cancelIpcBlockingOnCore_endpointArm_covers_next
+#check @lockSet_cancelIpcBlockingOnCore_size_le_eight
+-- ...and the frames that license it: the arms that declare no neighbour write
+-- none.
+#check @cancelIpcBlocking_notificationArm_tcb_frame
+#check @cancelIpcBlocking_replyArm_noDonation_tcb_frame
+#check @consumeReplyLink_other_tcb_eq
+-- ...and the general reply-arm frame, with the reclaim live: the four steps
+-- stated OUTSIDE their write sets, and the composite over them.
+#check @endpointQueueRemove_ok_getEndpoint?
+#check @endpointQueueRemove_eq_patches
+#check @endpointQueueRemove_objects_ne
+#check @abortPendingIpcOnEndpoint_other_tcb_eq
+#check @abortHolderPendingIpc_other_tcb_eq
+#check @returnDonatedSchedContext_other_tcb_eq
+#check @cancelIpcBlocking_replyArm_tcb_frame
 -- WS-OD OD1.5: and the payoff — `passiveServerIdle` is preserved by
 -- `cancelIpcBlocking` on every arm, which is what OD1 exists to prove.
 #check @passiveServerIdleFrame_of_backward_of_not_allowed
@@ -764,6 +789,24 @@ private def stReplyBlocked : SystemState :=
         replyObject := some rId })
     |>.build)
 
+/-- WS-OD OD3.5: a reply-blocked victim that *also* carries queue links — the
+shape the arm-selected split is about.  The links are stale (a `.blockedOnReply`
+thread is on no endpoint queue) and nothing in `ipcInvariantFull` forbids them,
+which is exactly why the footprint must decide by arm rather than by reading the
+fields. -/
+private def stReplyBlockedStaleLinks : SystemState :=
+  (BootstrapBuilder.empty
+    |>.withObject epId (.endpoint {})
+    |>.withObject rId.toObjId (.reply { replyId := rId, caller := some victimTid })
+    |>.withObject bystanderTid.toObjId (.tcb (mkTcb 712 20 none))
+    |>.withObject ownerTid.toObjId (.tcb (mkTcb 713 20 none))
+    |>.withObject victimTid.toObjId (.tcb { mkTcb 710 30 (some core1) with
+        ipcState := .blockedOnReply epId (some ownerTid),
+        replyObject := some rId,
+        queuePrev := some bystanderTid,
+        queueNext := some ownerTid })
+    |>.build)
+
 private def runReplyCancelChecks : IO Unit := do
   IO.println "--- §3.3 SM6.E.5 cancel a reply-blocked victim (reply link consumed) ---"
   let tcb := victimTcb stReplyBlocked
@@ -792,6 +835,29 @@ private def runReplyCancelChecks : IO Unit := do
     (decide ((replyLock rId, AccessMode.write) ∈
       (lockSet_tcbSuspend bystanderTid cnRoot victimTid none none none none
         (some rId)).pairs))
+  -- WS-OD OD3.5: **the arm-selected split, exercised on the shape it is about.**
+  -- The victim below is reply-blocked *and* carries queue links — a stale pair,
+  -- since a `.blockedOnReply` thread is on no endpoint queue.  The summed
+  -- resolver read them and put two TCB write locks in the footprint for a splice
+  -- this arm does not perform; the arm-selected one answers `(none, none)`.
+  --
+  -- The fixture KEEPS the links and varies the arm, which is the mutation that
+  -- finds this class: deleting them would leave every check passing against
+  -- either resolver.
+  let staleTcb := victimTcb stReplyBlockedStaleLinks
+  assertBool "setup: the reply-blocked victim carries stale queue links"
+    (decide (staleTcb.queuePrev = some bystanderTid
+      ∧ staleTcb.queueNext = some ownerTid))
+  assertBool "the summed resolver still reads them (it is not arm-aware)"
+    (decide (cancelSpliceNeighbors? staleTcb = (some bystanderTid, some ownerTid)))
+  assertBool "the ARM-selected resolver answers (none, none) on the reply arm"
+    (decide (cancelArmSpliceNeighbors? staleTcb = (none, none)))
+  let lsStale := lockSet_cancelIpcBlockingOnCore stReplyBlockedStaleLinks victimTid
+  assertBool "no neighbour TCB write lock in the reply arm's footprint"
+    (decide ((tcbLock bystanderTid, AccessMode.write) ∉ lsStale.pairs
+      ∧ (tcbLock ownerTid, AccessMode.write) ∉ lsStale.pairs))
+  assertBool "...and the reply arm's footprint is within the sharp eight-member bound"
+    (decide (lsStale.size ≤ 8))
 
 -- ----------------------------------------------------------------------------
 -- Scenario D: actively RUNNING victim on a remote core (cross-core suspend).

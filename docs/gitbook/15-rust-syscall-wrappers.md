@@ -36,14 +36,24 @@ Core type definitions with zero `unsafe` and zero external dependencies:
 
 ### sele4n-abi
 
-ARM64 register ABI layer with exactly one `unsafe` block:
+ARM64 register ABI layer with exactly one unsafe *operation* — the `svc #0`
+instruction — reaching the reader in two `unsafe` blocks (the `asm!` itself and
+its one call site) and one `unsafe fn`. The crate denies
+`unsafe_op_in_unsafe_fn`, so an `unsafe fn` body is not an implicit unsafe
+context and every unsafe operation sits in a block the compiler can count; the
+earlier wording named one block in `raw_syscall`, where under edition 2021 there
+was none:
 
 - **`MessageInfo`**: Bitfield encode/decode (7-bit length, 2-bit extraCaps,
   20-bit label, seL4 convention). Fields are private (U3-B); construct via `new()` or `decode()`,
   access via `length()`, `extra_caps()`, `label()` accessors
 - **`SyscallRequest` / `SyscallResponse`**: Register structures
-- **`raw_syscall`**: Inline `svc #0` — the single `unsafe` function. Uses
-  `clobber_abi("C")` to declare all caller-saved registers clobbered (U3-A)
+- **`raw_syscall`**: Inline `svc #0` — the single `unsafe fn`. Uses
+  `clobber_abi("C")` to declare all caller-saved registers clobbered (U3-A).
+  Two definitions exist under a `cfg` split — the AArch64 trap and a host mock —
+  of which exactly one is compiled; the mock is `unsafe fn` for signature parity
+  and its body needs no `unsafe` block, which the lint above makes a
+  compiler-checked fact rather than a docstring claim
 - **`RegisterFile`**: Safe bounds-checked wrapper for the 7-element register
   array; `get()`/`set()` return `Option` (U3-G)
 - **Per-syscall argument structures**: CSpace, Lifecycle, VSpace, Service,

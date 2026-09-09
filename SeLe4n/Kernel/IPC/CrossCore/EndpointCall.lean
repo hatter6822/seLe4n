@@ -624,17 +624,28 @@ theorem endpointCallWithCaps_object_writes_declared
 
 /-- WS-SM SM6.A.5 (plan §4.3): the cross-core donation-chain lock-set
 extension. When the caller donates a SchedContext on the call, the
-`endpointCall` lock-set is *exactly* the non-donating lock-set extended with the
-donated SchedContext's **write** lock — so the SC migration (`applyCallDonation`
+`endpointCall` lock-set is the non-donating lock-set extended with the donated
+SchedContext's **write** lock — so the SC migration (`applyCallDonation`
 rebinding `boundThread` across cores, SM5.H.4) runs under a held SC write lock,
-serialised against every other core. -/
+serialised against every other core.
+
+**WS-OD OD3.5: and with the state-level lock**, because `donateSchedContext`
+does not stop at the object stores.  Its final step is
+`scThreadIndexAdd`/`scThreadIndexRemove` on `SystemState.scThreadIndex`, an
+`RHTable` whose insert may rehash and back-shift the whole table — so it does
+not decompose by object, and the SM3.A.10 declared subject for such structure is
+`stateLevelLock`.  The extension is therefore **two** members, not one; saying
+"exactly the non-donating set plus the SC lock", as this theorem did, was a
+statement about the object stores read as a statement about the operation. -/
 theorem lockSet_endpointCall_donation_extension
     (caller : SeLe4n.ThreadId) (cnRoot endpointId : SeLe4n.ObjId)
     (receiver? : Option SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId) :
     lockSet_endpointCall caller cnRoot endpointId receiver? (some scId)
       = lockSetExtendOpt
-          (lockSet_endpointCall caller cnRoot endpointId receiver? none)
-          (some (schedContextLock scId, .write)) := by
+          (lockSetExtendOpt
+            (lockSet_endpointCall caller cnRoot endpointId receiver? none)
+            (some (schedContextLock scId, .write)))
+          (some (stateLevelLock, .write)) := by
   unfold lockSet_endpointCall
   rfl
 

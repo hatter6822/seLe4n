@@ -345,11 +345,20 @@ run_check "HYGIENE" "${SCRIPT_DIR}/test_gate_skip_accounting.sh"
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_anchor_consistency.py"
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_anchor_consistency.py" --self-test
 
-# AN10-D: AK7 cascade monotonicity gate. Reads docs/dev_history/audits/AL0_baseline.txt
-# and rejects regressions on any AK7 cascade metric (raw-match site count,
-# typed-helper adoption, storeObjectKindChecked adoption, sentinel guard
-# coverage, AN10 regression test count).
+# AN10-D: AK7 cascade monotonicity gate. Reads scripts/store_reader_hygiene_baseline.txt
+# and rejects regressions on any AK7 cascade metric (the raw-read site
+# inventory, typed-helper adoption, storeObjectKindChecked adoption, sentinel
+# guard coverage, AN10 regression test count).
+#
+# WS-OD OD3.5: the binding floor is the per-(file, variant) inventory, not the
+# whole-tree cardinality it used to be -- a count answers "how many" when the
+# property is "which", so a raw read moving between files passed unseen.  The
+# self-test runs beside it because a gate whose fixtures mutate by DELETION
+# proves nothing about a cardinality check; all four of its rejecting cases are
+# token-preserving and leave every scalar total identical, which is the
+# statement that the old gate admitted them.
 run_check "HYGIENE" "${SCRIPT_DIR}/ak7_cascade_check_monotonic.sh"
+run_check "HYGIENE" "${SCRIPT_DIR}/ak7_cascade_check_monotonic.sh" --self-test
 
 # WS-RC R12.B (closes DEEP-ARCH-01 false positive structurally): verify
 # the production/staged module partition. The gate computes the transitive

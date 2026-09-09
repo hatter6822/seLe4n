@@ -274,11 +274,19 @@ private def runLockSetChecks : IO Unit := do
   assertBool "endpointCall lock-set keys are duplicate-free"
     (decide ((lockSet_endpointCall callerTid cnRoot epId (some recvRemoteTid)
         (some scId)).pairs.map (·.fst)).Nodup)
-  -- SM6.A.5: donating extends the footprint by exactly the SC write lock.
-  assertBool "donation extends the lock-set by the SchedContext write lock"
+  -- SM6.A.5: donating extends the footprint by exactly the SC write lock —
+  -- **and, since WS-OD OD3.5, by the state-level lock as well**, because
+  -- `donateSchedContext` maintains `SystemState.scThreadIndex`, an `RHTable`
+  -- whose insert may rehash and which therefore does not decompose by object.
+  -- This mirrors `lockSet_endpointCall_donation_extension`; the two must not
+  -- drift.
+  assertBool "donation extends the lock-set by the SchedContext and state-level write locks"
     (decide (lockSet_endpointCall callerTid cnRoot epId (some recvRemoteTid) (some scId)
-      = lockSetExtendOpt (lockSet_endpointCall callerTid cnRoot epId (some recvRemoteTid) none)
-          (some (schedContextLock scId, .write))))
+      = lockSetExtendOpt
+          (lockSetExtendOpt
+            (lockSet_endpointCall callerTid cnRoot epId (some recvRemoteTid) none)
+            (some (schedContextLock scId, .write)))
+          (some (stateLevelLock, .write))))
   -- SM6.A.6: the caller-TCB *write* lock — covering the reply-blocked-state
   -- write — is concretely a declared member of the footprint (the membership
   -- behind `lockSet_endpointCall_caller_tcb_write_mem`, on distinct caller/recv).
@@ -958,21 +966,25 @@ private def undeclaredDecl (st : SystemState) : Option Concurrency.LockSet :=
   declaredLockSetForAbiEntry harnessLabelingContext bootCoreId
     (syscallId := 4) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
 
-/-- **PR #892 review round 6**: `.replyRecv`'s footprint declares for a
-non-delegated reply and **refuses** a delegated one.
+/-- **WS-OD OD3.5**: `.replyRecv`'s footprint declares for a delegated reply,
+and names the recorded server's TCB.
 
 `replyRecvBody` returns the donation of `(recordedReplyServer? st prevCaller).getD tid`,
 which on a delegated reply is not the invoking thread — so the transition writes
-that server's TCB and SchedContext while the footprint named neither.  The
-server's TCB write lock cannot be added: `lockSet_replyRecv`'s worst case is
-already `maxLockSetSize` exactly.  So the arm refuses and the bracket runs its
-undeclared fallback, which is always sound.
+that server's TCB while the footprint named neither it nor the second hand-off's
+SchedContext.  PR #892 review round 6 answered that by making the arm **refuse**,
+because the server's write lock had nowhere to go under a ceiling of nine; this
+witness pinned the refusal.  OD3.5 raised the ceiling to eleven and declared both
+missing members, so the delegated case is now *covered* rather than excused, and
+the property worth pinning inverted: the arm declares, and what it declares names
+the delegated server.
 
-The two states differ in **one field** — the answered caller's recorded reply
-target — which is the mutation this pins: keep every operand and change who the
-reply was issued to. -/
+The two states still differ in **one field** — the answered caller's recorded
+reply target — which is the mutation this pins: keep every operand and change who
+the reply was issued to.  What that mutation must now change is the *footprint*,
+not the decision to have one. -/
 private def runDelegatedReplyRecvFootprintChecks : IO Unit := do
-  IO.println "--- PR #892 round 6: `.replyRecv` refuses a delegated footprint ---"
+  IO.println "--- WS-OD OD3.5: `.replyRecv` declares for a delegated reply ---"
   let replier : SeLe4n.ThreadId := ⟨2⟩
   let prevCaller : SeLe4n.ThreadId := ⟨3⟩
   let delegate : SeLe4n.ThreadId := ⟨4⟩
@@ -1008,14 +1020,38 @@ private def runDelegatedReplyRecvFootprintChecks : IO Unit := do
     (decide (SeLe4n.Kernel.recordedReplyServer? stDelegated prevCaller = some delegate))
   assertBool "a non-delegated `.replyRecv` declares a footprint"
     (Concurrency.lockSetForSyscall .replyRecv ops stOwn).isSome
-  assertBool "NEGATIVE: a delegated `.replyRecv` declares NONE"
-    (Concurrency.lockSetForSyscall .replyRecv ops stDelegated).isNone
-  -- And the declared one is inside the ceiling, which is why there is no room
-  -- for the delegated server's TCB.
-  assertBool "the declared footprint is at or under the ceiling"
-    (match Concurrency.lockSetForSyscall .replyRecv ops stOwn with
-     | some fp => decide (fp.size ≤ Concurrency.maxLockSetSize)
+  assertBool "…and so does a delegated one (OD3.5 — round 6's refusal is retired)"
+    (Concurrency.lockSetForSyscall .replyRecv ops stDelegated).isSome
+  -- The delegated server's TCB write lock is the member OD3.5 added.  It is a
+  -- key the non-delegated shape gets for free — there the recorded server IS the
+  -- invoking thread, so `insertOrMerge` folds it into the caller's own lock —
+  -- and the delegated shape must name separately.
+  assertBool "the delegated footprint names the recorded server's TCB write lock"
+    (match Concurrency.lockSetForSyscall .replyRecv ops stDelegated with
+     | some fp => decide ((tcbLock delegate, AccessMode.write) ∈ fp.pairs)
      | none => false)
+  assertBool "…which is a DISTINCT key from the invoking thread's"
+    (decide (tcbLock delegate ≠ tcbLock replier))
+  -- The mutation's payoff: changing who the reply was issued to changes the
+  -- footprint.  A declaration insensitive to the recorded server would satisfy
+  -- every assertion above about `stOwn` and still write a TCB it never named.
+  assertBool "NEGATIVE: the delegated footprint is not the non-delegated one"
+    (match Concurrency.lockSetForSyscall .replyRecv ops stOwn,
+           Concurrency.lockSetForSyscall .replyRecv ops stDelegated with
+     | some a, some b => !decide (a.pairs = b.pairs)
+     | _, _ => false)
+  assertBool "NEGATIVE: the non-delegated footprint does not name the delegate"
+    (match Concurrency.lockSetForSyscall .replyRecv ops stOwn with
+     | some fp => !decide ((tcbLock delegate, AccessMode.write) ∈ fp.pairs)
+     | none => false)
+  -- Both are inside the ceiling: OD3.5 raised it to eleven precisely so the
+  -- delegated shape fits rather than being refused.
+  assertBool "both declared footprints are at or under the ceiling"
+    (match Concurrency.lockSetForSyscall .replyRecv ops stOwn,
+           Concurrency.lockSetForSyscall .replyRecv ops stDelegated with
+     | some a, some b => decide (a.size ≤ Concurrency.maxLockSetSize)
+                      && decide (b.size ≤ Concurrency.maxLockSetSize)
+     | _, _ => false)
 
 /-- WS-RR RR7.12: the bracket, exercised. -/
 private def runDeclaredFootprintBracketChecks : IO Unit := do

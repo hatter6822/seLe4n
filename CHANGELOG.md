@@ -1,3 +1,302 @@
+## v0.34.129 — WS-OD OD3.6: the SchedContext hand-off `.receive` never performed, and one unsafe context made explicit
+
+**The `.receive` dispatch arm performed no scheduling-context donation at all.**
+seL4-MCS's `receiveIPC` hands a dequeued `Call` caller's scheduling context to a
+passive receiver (`reply_push` → `schedContext_donate`); `.replyRecv` did exactly
+that here, through `replyRecvReturnDonation`'s third stage, and `.receive` did
+not.  So a passive server taking its **first** request with `seL4_Recv` ran the
+client's work charged to no reservation, while the same server taking its second
+and later requests with `seL4_ReplyRecv` was charged correctly — one condition,
+two API paths, and the asymmetric one silently defeating the temporal isolation
+the whole CBS surface exists to provide.  The server is not even wedged, which is
+why nothing caught it: `resolveEffectivePrioDeadline`'s `.unbound` arm falls back
+to the legacy TCB priority, so it runs — just on nobody's budget.
+
+Reported as a Medium finding (budget-enforcement bypass; not remotely exploitable
+today, since no core is ever marked `lean_ready`) before being fixed.
+
+**The fix is one definition, shared.**  A second copy of the donation step would
+be the same defect one level up, so `applyRendezvousCallDonation` /
+`rendezvousDequeuedCall` / `applyReceiveRendezvousDonation` live beside the
+primitives they compose in `IPC/Operations/Donation.lean`, and
+`replyRecvReturnDonation` now *calls* the shared step rather than carrying its
+own inlined `applyCallDonationOnCore` — a Tier 3 negative refuses the inlined
+form returning, which is a mutation that leaves every name in the file present.
+The resolver was consolidated the same way: `receiveRendezvousDonatedSc?`
+(renamed from the arm-specific `replyRecvRedonatedSc?`, since both receiving arms
+ask it) is derived from `receiveRendezvousSender?` — the resolver
+`receiveInstallsCaps` and the `senderTid` member already use — instead of
+re-reading `sendQ.head` a second time.
+
+Five things new code must respect.  (1) **The guard *is* the donation's
+caller-blocked obligation.**  `applyCallDonationOnCore_preserves_ipcInvariantFull`
+asks that the donor be `.blockedOnReply`; `rendezvousDequeuedCall` is that fact
+read off the state the donation runs on, so
+`rendezvousDequeuedCall_blockedOnReply` discharges the hypothesis from the
+predicate the arm branches on and the two cannot disagree about which states
+donate.  Only `hReceiverNotOwner` — a whole-store fact — survives, as a new
+`recvStage` conjunct of `syscallDispatchQuiescence`, stated over the receive
+stage's committed state exactly as `replyRecvStage` states the same obligation
+for the reply leg, with the inhabitation witness extended to decide it
+(`witnessSt3_getTcb_unique`).  (2) **The step is total and inert where it must
+not fire**: `applyCallDonation` no-ops unless the receiver is `.unbound` **and**
+the donor `.bound`, and the guard is false for a receive that blocked (the
+returned id is the receiver, which is `.blockedOnReceive`) and for a plain `Send`
+rendezvous — so every result taken before OD3.6 survives on the states it held
+for.  (3) **The checked arm needs no extra gate**: the donation writes only
+`schedContextBinding` and `SchedContext.boundThread`, both erased by
+`projectKernelObject`, and the endpoint→receiver flow it follows is gated above
+it.  `dispatchWithCapChecked_receive_delegates` and the `syscallDelegates
+.receive` obligation both name the step, because a delegation claim that omits
+one is a claim about a different program.  (4) **The footprint declares what the
+arm now writes**: `lockSet_endpointReceive` gains the donated SchedContext and
+makes its state-level member a **disjunction** — conditioning it on
+`installsCaps` alone would omit it on exactly the passive-server path, which
+donates and installs nothing.  `permittedKinds .receive` gains `.schedContext`,
+the size bound is restated at the new arity (`3 + 4 = 7 ≤ 11`; a bound left at
+the old arity still elaborates while saying nothing about the live shape), and
+`maxLockSetSize` does not move.  (5) **`replyRecvReturnDonation`'s write set
+follows it**: `replyRecvReturnDonationWriteSet` mirrors the transition's control
+flow, so it branches on the same guard — a mirror that branches elsewhere is a
+mirror of a different program.
+
+Also in this cut, and unrelated to WS-OD — from a reading of
+`rust/sele4n-abi/src/trap.rs` prompted by its two `raw_syscall` definitions.
+They are a `cfg` split of one signature, not a duplicate: exactly one exists in
+any compilation, which is what lets `invoke_syscall` have a single call site.
+Three things were wrong around them.
+
+`MOCK_ERROR_FRAME_X1` replaces a hand-derived `(ERROR_LABEL_BASE + d) << 9` — the
+`label` shift from `MessageInfo::encode` copied into a second place *inside the
+crate that owns the encoder*, so moving the layout would have left the host mock
+publishing wrong bits.  It is built through `MessageInfo::new_const(..).encode()`
+and is `const`, so the label's fit in the 20-bit field is checked when the file
+compiles.  The test that covered it asserted `result.is_err()`, which any error
+whatsoever satisfies; it now names `KernelError::InvalidSyscallNumber`, reads the
+label back through `MessageInfo::decode` (so the value is pinned independently of
+the layout the constant was built with), and a third test pins the top of the
+range and one past it.
+
+And the crate's central safety claim was false in a way only the compiler could
+have caught: `lib.rs` said "exactly **one** `unsafe` block: the inline `svc #0`
+instruction in `trap::raw_syscall`", and that block did not exist.  Under edition
+2021 an `unsafe fn` body is an *implicit* unsafe context, so the `asm!` carried no
+block at all and the crate's only real one was in `invoke_syscall` — the
+documentation named the wrong function for the property the crate exists to
+minimise.  `sele4n-abi` and `sele4n-hal` now both deny
+`unsafe_op_in_unsafe_fn`: an `unsafe fn` is a contract on the **caller** and not a
+licence for the body, every unsafe operation sits in a block a reader can see and
+the compiler can count, and the HAL's own rule that "each unsafe block carries a
+`// SAFETY:` comment" becomes enforceable in the thirteen `unsafe fn` bodies where
+the hardware access actually happens.  Neither crate needed a code change to
+comply, on the host or on `aarch64-unknown-none` — which is the point: the
+discipline was already there and nothing held it.  It also makes the host mock's
+"performs no unsafe operation" claim *checked*: the body compiles with no block,
+so a future edit reaching for a raw pointer fails rather than making the docstring
+quietly false.  Edition 2024 denies this lint by default, so the behaviour is
+acquired here deliberately instead of at some future edition bump.
+
+Refs: docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md §3 (OD3.6)
+
+## v0.34.128 — WS-OD OD3.5: the arm-selected cancellation footprint, the SchedContext hand-off `.replyRecv` never declared, and an AK7 floor that could not see a moved site
+
+**A footprint that omits a lock the transition writes under is false, and this
+row found both directions of that.**  The planned deliverable was the
+arm-selected split — narrowing the cancellation footprint so each arm declares
+what it writes.  Doing it exposed the reason the row existed at all: `.replyRecv`
+had been refusing to declare its delegated case for want of one member, and the
+arm was short by a *different* member on every case, delegated or not.
+
+**The victim's splice neighbours are declared on the arm that splices.**
+`cancelSpliceNeighbors?` was the one resolver in the cancellation family that did
+not key on `tcb.ipcState`.  Every other member selects an arm —
+`cancelBlockedEndpoint?`, `cancelBlockedNotification?`, `cancelConsumedReply?`,
+`cancelledCallerDonation?` all do — and this pair was *summed* over all of them,
+so the reply and notification arms declared two TCB write locks for a splice they
+do not perform.  `cancelArmSpliceNeighbors?` is derived from
+`cancelBlockedEndpoint?` rather than re-matching the state, so the arm question is
+asked once and the two cannot answer it differently.  The widest arm drops from
+ten members to eight (`lockSet_cancelIpcBlockingOnCore_size_le_eight`), pinned in
+both directions: `_replyArm_eq` states the reply arm's set as an equation — a `∉`
+would be false for the accidental reason that a neighbour may *be* the donation
+holder — and `_endpointArm_covers_prev` / `_next` state that the splicing arm
+keeps both.
+
+Over-declaring is sound and **not free**: lock contention is an observable channel
+(SM8.D's CC-5), so a footprint wider than its operation carries contention that
+says nothing about the operation.  What licenses the narrowing is checked rather
+than read off the definition — `cancelIpcBlocking_notificationArm_tcb_frame` and
+`cancelIpcBlocking_replyArm_noDonation_tcb_frame` show those arms leave every
+other TCB **verbatim**, not merely same-kind, which is the reading a link-write
+argument needs.  `consumeReplyLink_other_tcb_eq` is the piece the tree was
+missing: `consumeReplyLink_tcb_lookup` says only that a TCB is still there.
+
+**`.replyRecv` performs two SchedContext hand-offs and declared one.**
+`replyRecvReturnDonation` returns the recorded server's donation and then, when
+the receive leg dequeues a queued `Call`, runs `applyCallDonationOnCore
+nextThread tid` — whose `donateSchedContext` writes the **new** caller's
+SchedContext, which is provably not the returned one, since two threads cannot be
+bound to a single context.  It is the passive-server steady state rather than an
+edge case: the receiver is `.unbound` at that point precisely because the return
+just made it so.  So the tree's most-travelled IPC path wrote a kernel object
+under no declared lock, and a `.replyRecv` on one core and a `.tcbSuspend` of that
+queued caller on another had provably *disjoint* footprints while both writing it
+— the lost-update shape this whole family exists to exclude.  `.call` has declared
+exactly this member since SM6.A.5 and says why
+(`lockSet_endpointCall_donation_extension`); one question, two answers, with the
+right one thirty lines away.
+
+The member is resolved through `.call`'s own resolver — `receiveRendezvousDonatedSc?`
+applies `endpointCallDonatedSc?` to the send-queue head, the same thread the
+`newSenderTid` member beside it already reads — and the **recorded server's** TCB
+joins it unconditionally, so a delegated reply declares like any other.  PR #892
+review round 6's refusal (`lockSetForSyscall_replyRecv_delegated`, concluding
+`none`) is retired and replaced by `_delegated_declares`; a passive server
+answering through a delegated reply capability no longer falls back to the coarse
+serialisation.
+
+**`SystemState.scThreadIndex` is an `RHTable`, so a donation takes the
+state-level lock.**  Its insert may rehash and back-shift the whole table,
+exactly as the CDT maps do (RR7.9/RR7.11) — it does not decompose by object, so
+no per-object member can cover it, and the SM3.A.10 declared subject for such
+structure is `stateLevelLock`.  Every footprint whose transition donates or
+returns a donation now declares it: `lockSet_endpointCall`,
+`lockSet_endpointReply`, `lockSet_replyRecv`, `lockSet_tcbSuspend`,
+`lockSet_cancelIpcBlocking` and `lockSet_cancelDonation`, each conditioned on its
+own SchedContext resolver so the two cannot disagree about whether a donation
+happens; and `lockSet_schedContextBind` / `_Unbind` unconditionally, since their
+index write is not optional on the success path — the `lockSet_cspaceMint` shape.
+`.schedContextConfigure` is split out of their `permittedKinds` row rather than
+widened with them: it writes the SchedContext and the bound thread and touches no
+index.
+
+**`maxLockSetSize` is 11, and the cost is stated rather than implied.**  The
+widest declared footprint is still a `.replyRecv`, now at eleven members: the
+four-member base, the rendezvous sender, the returned SchedContext and its
+original owner, the Reply object, the capability install's state-level write,
+and OD3.5's two.  This constant is the WCRT headline's first factor, so
+`admissibleCriticalSection` for the 1 ms tick falls from **37 µs to 30 µs**
+(`admissibleCriticalSection_rpi5Tick`) and the CC-5 contention bound widens in
+proportion.  The alternative was a narrower declaration on the hottest IPC path,
+and this project rates a footprint that omits a written lock worse than a wide
+one.  Two consequences worth recording: the arm-selected split was *necessary*
+rather than merely planned — with the state-level member added, the un-narrowed
+reply arm would have reached ten against the old ceiling of nine — and
+`suspendFootprint_splice_neighbors_under_endpoint_lock`'s "no room" rationale is
+now spent, so its docstring states the reason that was always load-bearing (the
+members would be redundant, since RR7.38 made the endpoint lock an exclusion
+mechanism) rather than the arithmetic one.
+
+**And the narrowing is licensed in full, not in part.**  The frames the tree
+lacked are the four that state a step's effect *outside* its write set:
+`endpointQueueRemove_objects_ne`, `abortPendingIpcOnEndpoint_other_tcb_eq`,
+`abortHolderPendingIpc_other_tcb_eq` and
+`returnDonatedSchedContext_other_tcb_eq`.  `cancelIpcBlocking_replyArm_tcb_frame`
+composes them: with the reclaim live, the arm rewrites exactly the holder, its
+two queue neighbours and the cancelled caller — every one a declared member — so
+the victim's own `queuePrev` / `queueNext` are stale links to threads this arm
+never touches, which is precisely what the arm-selected footprint asserts.
+
+Two things fell out of building them.  `endpointQueueRemove`'s two link patches
+are now *pinned* to `queueNeighbourPatch` (`endpointQueueRemove_eq_patches`),
+retiring the third inlined copy of a shape the tree had already named —
+`spliceOutMidQueueNode_eq_patches` is the same pin one module over.  It is
+stated on the arm that splices, given the endpoint and the thread resolved,
+rather than as a `rfl` restatement of the whole body: the equation is then about
+the program the removal *runs*, its two error arms are
+`endpointQueueRemove_ok_getEndpoint?`'s subject, and the store is read through
+`getEndpoint?` rather than by re-opening a discriminator the operation has
+already opened.  And `returnDonatedSchedContext_other_tcb_eq` sits beside
+`_tcb_rewrite` deliberately: the older theorem says every TCB survives with at
+most its binding changed, which is what the invariant surface needs, and neither
+implies the other — one permits a binding change at any key, the other permits
+no change at these keys.
+
+### The AK7 cascade floor is an inventory, not a cardinality
+
+Raised in review of the cut above: the raw-read metrics this gate holds are an
+*enumeration*, and enumerations are what this project's key conventions warn
+about.  The reading found three defects, all in
+`scripts/ak7_cascade_baseline.sh` / `scripts/ak7_cascade_check_monotonic.sh`.
+
+**A cardinality is not a set.**  The gate held residual raw
+`match st.objects[…]?` reads at one whole-tree floor per variant, while its own
+docstring says the floor means "a previously hygienized site re-introduced the
+raw pattern" — a statement about *which* sites, which a total cannot make.  A
+change that hygienizes one raw read in file A and introduces a fresh one in file
+B leaves every number identical, so the gate passed on exactly the movement it
+exists to catch.  Demonstrated against the real tree rather than a fixture:
+`RAW_MATCH_ENDPOINT` and `RAW_MATCH_TOTAL` both unmoved, a raw endpoint
+discriminator newly resident in `Scheduler/RunQueue.lean`, gate green.  The
+floor is now the per-(file, variant) inventory (`RAW_SITE` / `RAW_LOOKUP_SITE`
+rows) — the shape `scripts/identifier_naming_baseline.json` had already reached
+for the same reason, never swept onto its sibling: a set of keys alone cannot
+see a second occurrence inside a file that already contains one, and a count
+alone cannot see the first occurrence in a file that did not, so the floor is
+both.  A pair absent from the baseline fails outright; a pair present may only
+fall.  30 raw-read sites and 66 lookup sites are pinned; every per-variant total
+is unchanged (53/23/9/2/2/7/15), so the inventory reproduces the floors it
+replaces rather than re-anchoring past them.
+
+**The should-grow direction had the plain form of the same defect.**  Adoption
+was `grep -c "getEndpoint?"`, so `getEndpoint?_eq_some_iff`,
+`getEndpoint?_congr_objects` and every theorem named `*_ok_getEndpoint?` counted
+as a read of the object store — 29 of 210 hits — and writing a lemma *about* a
+helper raised the floor for *using* it.  It counts whole symbols now (neither
+preceded nor followed by an identifier character, `?` `!` `'` included), and the
+floors are re-anchored to the corrected definition.
+
+**And the per-variant scan leaked across file boundaries.**  The awk pass
+carried its 4-line pending window over the whole file list with no `FNR == 1`
+reset, so a trailing `match … .objects[` at the end of one file could pair with
+a `some (.tcb …)` in the first lines of the next and report a site existing in
+neither.  Reset added; no count moved, which is the evidence it had not yet
+fired.
+
+Three structural consequences.  `RAW_MATCH_TOTAL` is now *derived* from the
+inventory (111 classified sites) instead of being an independently-shaped
+`grep -cE "match.*\.objects\["` (130) printed under the same heading — two
+questions, one label; the unclassified figure survives as
+`RAW_MATCH_UNCLASSIFIED` with its own floor, so no ratchet is lost.  The gate
+gains a `--self-test`, wired into Tier 0, whose four rejecting cases are all
+**token-preserving** — a raw read moved to an unpinned file, a second occurrence
+inside a pinned file, a pinned site changing variant, a lookup moved — with the
+harness *asserting* that each leaves every scalar metric byte-identical, since
+that assertion is precisely the statement that the superseded gate admitted the
+case; a deleting fixture would prove nothing about a cardinality check, which is
+why none is written.  And the baseline moved from
+`docs/dev_history/audits/AL0_baseline.txt` to `scripts/store_reader_hygiene_baseline.txt`:
+a live Tier 0 floor does not belong in a directory this project reserves for
+material contributors are instructed not to read.
+
+Also in this cut, from reading the suites the change touched.  Three OD3.5
+runtime witnesses were stale (`permittedKinds .tcbSuspend` / `.reply` /
+`.schedContextBind` and four footprint sizes had not been re-run since the
+state-level members landed), and `SmpCrossCoreReplySuite`'s mirror of
+`lockSet_endpointReply_donation_extension` still described a two-member extension
+where the theorem states three.  Each is the same shape: an elaboration-time
+`example` was updated and its runtime twin was not.
+
+Raising the ceiling then found a second shape, and it is this file's own rule
+about enumerations: **a witness whose subject is a constant must name the
+constant.**  `SmpFoundationsSuite`'s CSpace-walk refusal spelled its depths `10`
+and `9` — correct at a ceiling of nine, and at eleven a statement about a walk
+well *inside* the bound, which is a false pass rather than a failure; it now
+derives both depths and the chain's length from `maxLockSetSize`.  `SmpTimerSuite`
+asserted the tick's footprint `≤ 8` rather than `≤ maxLockSetSize`, so it said
+nothing about the premise `boundedWait_under_2pl` actually takes — the same defect
+RR7.11 fixed in five scheduler theorems, still live in the runtime witness beside
+them.  `SmpWcrtSuite` pinned the admissible-cost *quotient* (37 µs) without its
+divisor; both are pinned now, divisor first.  `SmpCrossCoreCallSuite`'s delegated
+`.replyRecv` witness pinned PR #892 review round 6's **refusal**, which this cut
+retires — it now pins what replaced it: the arm declares, the declared footprint
+names the recorded server's TCB write lock, and it is a distinct key from the
+invoking thread's.  Four source docstrings and the master plan's §7.2 carried
+ceiling-derived arithmetic (`1620 µs`, `1440 µs`, `9 × 3 = 27`, `≤ 37 µs`,
+`3 + 4 = 7 ≤ 8`) that moved with the constant and had not.
+
+Refs: docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md §3 (OD3.5)
+
 ## v0.34.127 — WS-OD OD3.4: the outer-caller resolver, and the pop that validates what it is handed
 
 **The resolver OD3.5 will thread, and the guard that makes threading safe.**
@@ -47554,7 +47853,7 @@ Seven LOW-tier closures landed:
 * New `tests/KernelErrorMatrixSuite.lean` and `tests/Ak8CoverageSuite.lean`
   registered in `lakefile.toml` and `scripts/test_tier2_negative.sh`.
 * `docs/audits/AL0_baseline.txt` re-anchored at the AN11 floor
-  (`KERRORMATRIX_ROWS=41`, `TEST_COUNT_AK7=45`, all other metrics
+  (`KERRORMATRIX_ROWS=41`, `READER_HYGIENE_SUITE_TESTS=45`, all other metrics
   unchanged from AN10 close).
 * `docs/codebase_map.json` regenerated to reflect the two new test
   suites and the helper additions in `SeLe4n/Testing/Helpers.lean` /
@@ -47788,12 +48087,12 @@ AN10-residual-1 → deep-audit):
 | `GETCNODE_ADOPTION` | 0 | 33 | 56 | 56 |
 | `GETTCB_ADOPTION` | 34 | 99 | 100 | 100 |
 | `STOREOBJECTCHECKED_ADOPTION` | 41 | 57 | 58 | 58 |
-| `TEST_COUNT_AK7` | 17 | 32 | 43 | 45 |
+| `READER_HYGIENE_SUITE_TESTS` | 17 | 32 | 43 | 45 |
 | `SENTINEL_CHECK_DISPATCH` | 17 | 17 | 17 | 17 |
 
 Gate at the deep-audit tip: `lake build` (302 jobs, 0 warnings) +
 `an10_cascade_suite` 45/45 PASS + monotonicity gate PASS at new
-floors (TEST_COUNT_AK7=45) + `cargo test --workspace` (462 tests
+floors (READER_HYGIENE_SUITE_TESTS=45) + `cargo test --workspace` (462 tests
 across 9 binaries) + `cargo clippy --workspace -- -D warnings` (0
 warnings) + zero `sorry`/`axiom`/`native_decide`.
 
@@ -47936,7 +48235,7 @@ strengthening opportunities, all addressed in-PR:
      (e.g., `RAW_MATCH_TCB` 52 → 48 on the corrected metric).
    * `GETTCB_ADOPTION` 34 → 77, `GETSCHEDCTX_ADOPTION` 9 → 34
      (typed-helper consumers grow as migration proceeds).
-   * `TEST_COUNT_AK7` 17 → 26.
+   * `READER_HYGIENE_SUITE_TESTS` 17 → 26.
 4. **Documentation accuracy** — corrected a stale `tests/Ak7RegressionSuite.lean`
    reference in the `scripts/ak7_cascade_baseline.sh` docstring (the
    real path is `tests/An10CascadeSuite.lean`).
@@ -47989,7 +48288,7 @@ WS-AN Phase AN10 closes the two AK7 cascade tracking entries from
 * `scripts/ak7_cascade_baseline.sh` (new) — captures 19 metrics
   (`RAW_MATCH_*`, `RAW_LOOKUP_TID`, `GET*_ADOPTION`,
   `STOREOBJECTCHECKED_ADOPTION`, `SENTINEL_CHECK_DISPATCH`,
-  `TEST_COUNT_AK7`, `SORRY_COUNT`, `AXIOM_COUNT`).
+  `READER_HYGIENE_SUITE_TESTS`, `SORRY_COUNT`, `AXIOM_COUNT`).
 * `scripts/ak7_cascade_check_monotonic.sh` (new) — gate that enforces
   per-metric direction (should-drop / should-grow) against the
   `docs/audits/AL0_baseline.txt` floor.  Wired into
@@ -51068,7 +51367,7 @@ preserved as chronicle.
 `lake exe ak7_regression_suite` (**87 checks**, up from 84 —
 am4_04 +2 + am4_05 +1) + `cargo test --workspace` (415 tests,
 0 failed) + `cargo clippy --workspace -- -D warnings` (0 warnings) +
-`ak7_cascade_check_monotonic.sh` PASS (TEST_COUNT_AK7 84 → 87;
+`ak7_cascade_check_monotonic.sh` PASS (READER_HYGIENE_SUITE_TESTS 84 → 87;
 LIFECYCLELOCKSTEP_REFS 63 → 79; all should-drop metrics hold) +
 `check_version_sync.sh` PASS at 0.30.0 + zero sorry / zero axiom.
 
@@ -51130,7 +51429,7 @@ and (2) AM4's invariant-layer guarantee.
 ### AM5 — Baseline refresh + new metrics
 
 - `docs/audits/AL0_baseline.txt` refreshed to v0.30.0 equilibrium.
-  `TEST_COUNT_AK7` bumped 73 → 84.
+  `READER_HYGIENE_SUITE_TESTS` bumped 73 → 84.
 - Two new metrics added to the monotonicity guard:
   `STOREOBJECTCHECKED_ADOPTION` (AK7-F.writer wrapper adoption,
   floor 9) and `LIFECYCLELOCKSTEP_REFS` (AL6-C cross-subsystem

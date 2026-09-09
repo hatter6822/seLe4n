@@ -852,42 +852,66 @@ end LockSet
 -- WS-SM SM3.D.6 / WS-RR RR7.11 — the static lock-set cardinality bound
 -- ============================================================================
 
-/-- WS-SM SM3.D.6 (plan §5.4): the static worst-case lock-set size.  Per
-plan §5.4, most transitions touch ≤ 4 locks; the worst-case IPC paths
-(call/reply with donation) stay ≤ 8.  Every SM3.B `lockSet_<τ>`
-declaration respects this bound (exercised in `DeadlockFreedomSuite`).
+/-- WS-SM SM3.D.6 (plan §5.4): the static worst-case lock-set size.  Most
+transitions touch ≤ 4 locks; the widest is the `.replyRecv` shape the two
+paragraphs below describe, and it sits at the constant exactly.  Every SM3.B
+`lockSet_<τ>` declaration respects this bound (exercised in
+`DeadlockFreedomSuite`).  Plan §5.4's own figure was `≤ 8` for the worst-case
+IPC paths; it has moved twice since, so the sentence states the relation and the
+paragraphs below carry the history.
 
-**WS-RR RR7.11: 8 → 9.**  The widest footprint is
-`lockSet_replyRecv` on the path that both returns a donation and installs
-capabilities, and it is nine keys: the four-member base (replier TCB, the
-replier's CSpace root, the answered caller's TCB, the endpoint) plus the
-rendezvous sender's TCB, the returned SchedContext, the donation's original
-owner, the Reply object, and — RR7.11's addition — the state-level lock the
-capability install's CDT write needs.
+**WS-RR RR7.11: 8 → 9**, for the state-level lock a capability install's CDT
+write needs on a `.replyRecv` that also returns a donation.
 
-Three considerations, since raising this constant widens the WCRT headline
-`maxLockSetSize · (numCores − 1) · tCs` by an eighth.
+**WS-OD OD3.5: 9 → 11**, and the two members are the same defect RR7.11 fixed,
+found on the same footprint.  `lockSet_replyRecv` declared **one**
+`schedContextLock` — the donation the reply leg *returns* — while
+`replyRecvBody` performs **two** SchedContext hand-offs: after the return it
+runs `applyCallDonationOnCore nextThread tid`, whose `donateSchedContext` writes
+the *new* caller's SchedContext (`boundThread := tid`).  That object is provably
+not the returned one (two threads cannot be bound to one context), and it is not
+an edge case: the receiver is `.unbound` at that point precisely because the
+return just made it so, which is the passive-server loop's steady state.  The
+eleventh member is the **recorded server's** own TCB, which the return writes
+`.unbound`; it merges with the replier's on a non-delegated reply and is a
+distinct key exactly when the reply capability was delegated.
 
-*The ninth member is real.*  `ipcTransferSingleCap` mints a derivation node and
-adds an edge whichever arm reaches it, and RR7.7 declared that on the two
-sending arms.  A receiving arm that installs through the same call and does not
-declare it is a false footprint — the failure mode this whole family exists to
-exclude — so the choice was never "nine members or eight", it was "nine members
-or a footprint that does not cover its own writes".
+The three considerations RR7.11 recorded hold verbatim, and are why the answer
+is a wider ceiling rather than a narrower declaration.
+
+*The members are real.*  `.call` declares the donated SchedContext for this
+exact write and says why (`lockSet_endpointCall_donation_extension`: "so the SC
+migration runs under a held SC write lock, serialised against every other
+core").  `.replyRecv` runs the same primitive.  One question, two answers —
+and the wrong answer was a footprint that does not cover its own writes, which
+is the failure mode this family exists to exclude.  Concretely: a `.replyRecv`
+on one core and a `.tcbSuspend` of the queued caller on another had **provably
+disjoint** footprints while both writing that SchedContext.
 
 *Taking the lock outside the set is not the cheaper option.*  A lock acquired
 outside the declared set is invisible to the deadlock-freedom and
 serializability theorems, which is the same reasoning the hierarchical-CBS
 plan's D21 records for its own move of this constant.
 
-*The ninth member is only reachable on an invariant-violating state* — the
-donation discipline makes the original owner the answered caller, where
-`insertOrMerge`'s key merge collapses the two into one — but a declared
-footprint bounds the union over **all** argument values, not over the reachable
-ones, so the honest constant is the one the definition can produce.
+*Some members are only distinct on states the invariants exclude* — the
+donation discipline makes the original owner the answered caller, and a
+non-delegated reply makes the recorded server the replier, in both cases where
+`insertOrMerge`'s key merge collapses two into one — but a declared footprint
+bounds the union over **all** argument values, not over the reachable ones, so
+the honest constant is the one the definition can produce.
 
-`lockSet_tcbSuspend` and `lockSet_endpointCall` remain eight at their widest;
-this constant is not tight for them. -/
-def maxLockSetSize : Nat := 9
+**The cost, stated rather than implied.**  This constant is the WCRT headline's
+first factor (`maxLockSetSize · (numCores − 1) · tCs`), so 9 → 11 narrows the
+per-lock critical section the RPi5 tick admits from 37 µs to **30 µs**
+(`admissibleCriticalSection_rpi5Tick`), and widens the CC-5 contention bound in
+proportion.  It is the maintainer's decision, taken against the alternative of
+refusing to declare `.replyRecv` at all on the arms that do not fit — which
+would have left the tree's most-travelled IPC path under the coarse
+serialisation while the model claimed a footprint for it.
+
+`lockSet_tcbSuspend` and `lockSet_endpointCall` remain eight at their widest,
+and the arm-selected cancellation footprint (WS-OD OD3.5) is seven; this
+constant is not tight for any of them. -/
+def maxLockSetSize : Nat := 11
 
 end SeLe4n.Kernel.Concurrency

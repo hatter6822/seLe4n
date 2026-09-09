@@ -1987,6 +1987,63 @@ theorem returnDonatedSchedContext_tcb_rewrite_backward
     · exact (storeObject_objects_ne st s1 scId.toObjId k _ hEqK hObjInv hS1).symm.trans hk1
   exact ⟨t2, hk0, hR3.trans hR2⟩
 
+/-- **WS-OD OD3.5: the pop leaves every TCB but its two rewrite targets
+verbatim.**
+
+`returnDonatedSchedContext_tcb_rewrite` beside this says that *every* TCB
+survives with at most its `schedContextBinding` changed, which is what the
+invariant surface needs.  A **footprint** argument needs the other reading: away
+from the two threads the pop names, the stored TCB is not merely of the same
+shape, it is the same object — so no undeclared TCB is written at all.
+
+The two are different statements and neither implies the other: `tcbBindingRewrite`
+permits a binding change at any key, and this permits no change at these keys.
+Derived from the one decomposition (`_ok_storeChain`) rather than from a second
+reading of the operation, so a fifth store cannot satisfy both.
+
+The non-TCB stores drop out by kind: the SchedContext key holds a
+`.schedContext` in the pre-state and the stack head a `.reply`, so neither can
+alias a key the hypothesis says holds a `.tcb`. -/
+theorem returnDonatedSchedContext_other_tcb_eq
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (newOwner? : Option SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st')
+    (k : SeLe4n.ObjId) (t0 : TCB)
+    (hkOwner : k ≠ originalOwner.toObjId) (hkServer : k ≠ serverTid.toObjId)
+    (hPre : st.objects[k]? = some (.tcb t0)) :
+    st'.objects[k]? = some (.tcb t0) := by
+  obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
+    hSc, _, _hHead, hS1, hClear, _hL1, hS3, _hL2, hS4, hEq⟩ :=
+    returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
+  -- The SchedContext key holds a `.schedContext`, so it is not `k`.
+  have hkSc : k ≠ scId.toObjId := by
+    intro hEqK
+    rw [hEqK, hSc] at hPre
+    exact absurd hPre (by simp)
+  have h1 : s1.objects[k]? = st.objects[k]? :=
+    storeObject_objects_ne st s1 _ k _ hkSc hObjInv hS1
+  have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+  have h2 : s2.objects[k]? = s1.objects[k]? := by
+    rcases storeDonationHeadClear_cases hClear with hId | ⟨rid, r, _, hR, hStore⟩
+    · rw [hId]
+    · have hkR : k ≠ rid.toObjId := by
+        intro hEqK
+        subst hEqK
+        rw [hPre] at h1
+        rw [hR] at h1
+        exact absurd h1 (by simp)
+      exact storeObject_objects_ne s1 s2 _ k _ hkR hInv1 hStore
+  have hInv2 : s2.objects.invExt := storeDonationHeadClear_preserves_objects_invExt hInv1 hClear
+  have h3 : s3.objects[k]? = s2.objects[k]? :=
+    storeObject_objects_ne s2 s3 _ k _ hkOwner hInv2 hS3
+  have hInv3 : s3.objects.invExt := storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
+  have h4 : s4.objects[k]? = s3.objects[k]? :=
+    storeObject_objects_ne s3 s4 _ k _ hkServer hInv3 hS4
+  have hObjEq : st'.objects = s4.objects := by rw [hEq]
+  rw [hObjEq, h4, h3, h2, h1, hPre]
+
 /-- WS-OD OD3.2: **what the donation return leaves in each TCB's binding.**
 
 The trichotomy the invariant surface reads: the server is unbound, the thread the

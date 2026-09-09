@@ -54,17 +54,18 @@ respects the SM3.D static `maxLockSetSize` bound has lock-WCRT
 
 **WS-RR RR7.31: that bound is not automatically inside the 1 ms timer tick, and
 this header used to say it was.**  It is a product of three factors and only one
-of them is fixed: `maxLockSetSize` is **9** (RR7.11 raised it from 8), the
+of them is fixed: `maxLockSetSize` is **11** (RR7.11 raised it from 8 to 9; WS-OD
+OD3.5 from 9 to 11, for the two members `.replyRecv`'s second donation needs), the
 core-count factor is 3, and `WCRT_per_lock` — `tCs` throughout this module — is
 **ungrounded**: nothing in this tree measures a per-object critical section on a
 Cortex-A76, which is why the whole surface below is parametric in it.  So the
 honest statement is the budget condition solved for the measurable factor:
 `admissibleCriticalSection` gives the largest per-lock cost a budget admits
-(`WCRT_lockSet_le_budget_of_admissible`), which for the RPi5 tick is **37 µs**
+(`WCRT_lockSet_le_budget_of_admissible`), which for the RPi5 tick is **30 µs**
 (`admissibleCriticalSection_rpi5Tick`).  The 60 µs the master plan §7.2 assumed
-does **not** fit — `9 · 3 · 60 = 1620 µs`
-(`rpi5Tick_refuses_sixty_micro_sections`), nor did it at the previous ceiling of
-eight — and the boundary at that cost is a footprint of five locks
+does **not** fit — `11 · 3 · 60 = 1980 µs`
+(`rpi5Tick_refuses_sixty_micro_sections`), nor did it at either previous ceiling —
+and the boundary at that cost is a footprint of five locks
 (`rpi5Tick_sixty_micro_section_footprint_boundary`), which is what the plan's
 "typical lock-set size ≤ 4" was really about.
 
@@ -275,18 +276,25 @@ rather than repeating a literal. -/
 def rpi5TickBudgetMicros : Nat := 1000
 
 /-- WS-RR RR7.31: **the corrected §7.2 figure.**  At the model's declared ceiling
-the RPi5 tick admits a per-lock critical section of at most **37 µs**, not the
-60 µs the plan assumed — `maxLockSetSize · (numCores − 1) = 27`, and `1000 / 27`
-is 37. -/
+the RPi5 tick admits a per-lock critical section of at most **30 µs**, not the
+60 µs the plan assumed — `maxLockSetSize · (numCores − 1) = 33`, and `1000 / 33`
+is 30.
+
+**WS-OD OD3.5** moved this figure from 37 µs, by raising `maxLockSetSize` from 9
+to 11 so `.replyRecv` can declare the second SchedContext hand-off it performs
+and the recorded server's TCB it writes.  The figure is *derived*, so it moves
+whenever the ceiling does — which is the point of stating it as a theorem rather
+than a paragraph: a cut that widens a footprint pays here, visibly. -/
 theorem admissibleCriticalSection_rpi5Tick :
-    admissibleCriticalSection rpi5TickBudgetMicros = 37 := by decide
+    admissibleCriticalSection rpi5TickBudgetMicros = 30 := by decide
 
 /-- WS-RR RR7.31: **and the plan's own assumption fails it.**  A 60 µs per-lock
-section gives `9 · 3 · 60 = 1620 µs`, which is outside the 1 ms tick — so the
+section gives `11 · 3 · 60 = 1980 µs`, which is outside the 1 ms tick — so the
 §7.2 conclusion "comfortably fits within the 1-ms timer tick budget" is false at
-`maxLockSetSize = 9`.  Stated as a negative so the arithmetic is pinned in the
+`maxLockSetSize = 11`.  Stated as a negative so the arithmetic is pinned in the
 direction that matters: a future cut that raises `maxLockSetSize` again, or that
 grounds `tCs` at 60 µs, has to confront this theorem rather than a paragraph.
+WS-OD OD3.5 is the first cut to have done so.
 
 This is a statement about the *intended* fine-lock discipline, not about the
 shipping kernel: the live seam is the SM5.I global kernel-entry ticket lock, so
@@ -297,8 +305,9 @@ theorem rpi5Tick_refuses_sixty_micro_sections :
 /-- WS-RR RR7.31: **the plan's `4` was never `maxLockSetSize`.**  At 60 µs the
 tick admits a footprint of five locks and refuses six — and `maxLockSetSize` was
 already **8** when §7.2 was written, giving `8 · 3 · 60 = 1440 µs`.  So the
-product never was the bound the section presented it as; RR7.11's 8 → 9 widened
-an inequality that had not held since the ceiling passed five.  Pinned as an
+product never was the bound the section presented it as; RR7.11's 8 → 9 and
+WS-OD OD3.5's 9 → 11 widened an inequality that had not held since the ceiling
+passed five.  Pinned as an
 if-and-only-if boundary so the two readings — a typical footprint and the
 declared ceiling — cannot be conflated again. -/
 theorem rpi5Tick_sixty_micro_section_footprint_boundary :

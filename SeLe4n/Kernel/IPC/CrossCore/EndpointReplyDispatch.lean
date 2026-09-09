@@ -394,20 +394,29 @@ theorem applyReplyDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
 
 /-- WS-SM SM6.C.3 (plan §4.3): the cross-core donation-chain lock-set extension
 for reply.  When the reply returns a SchedContext to its original owner, the
-`endpointReply` lock-set is *exactly* the non-returning lock-set extended with the
-returned SchedContext's **write** lock and the original owner's TCB **write**
-lock — so the SC migration (`returnDonatedSchedContextValid` rebinding
-`boundThread` across cores, SM5.H.4) and the owner's re-activation both run under
-held write locks, serialised against every other core. -/
+`endpointReply` lock-set is the non-returning lock-set extended with the returned
+SchedContext's **write** lock and the original owner's TCB **write** lock — so the
+SC migration (`returnDonatedSchedContextValid` rebinding `boundThread` across
+cores, SM5.H.4) and the owner's re-activation both run under held write locks,
+serialised against every other core.
+
+**WS-OD OD3.5: and the state-level lock**, a third member, for the reason its
+`.call` counterpart records — `returnDonatedSchedContext` ends in
+`scThreadIndexAdd`/`scThreadIndexRemove` on `SystemState.scThreadIndex`, an
+`RHTable` whose insert may rehash and back-shift the whole table.  The word
+"exactly" left this docstring with it: the extension is three members, and the
+state-level one was written by the operation and named by no lock. -/
 theorem lockSet_endpointReply_donation_extension
     (replier : SeLe4n.ThreadId) (cnRoot : SeLe4n.ObjId) (target : SeLe4n.ThreadId)
     (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId) :
     lockSet_endpointReply replier cnRoot target (some scId) (some originalOwner)
       = lockSetExtendOpt
           (lockSetExtendOpt
-            (lockSet_endpointReply replier cnRoot target none none)
-            (some (schedContextLock scId, .write)))
-          (some (tcbLock originalOwner, .write)) := by
+            (lockSetExtendOpt
+              (lockSet_endpointReply replier cnRoot target none none)
+              (some (schedContextLock scId, .write)))
+            (some (tcbLock originalOwner, .write)))
+          (some (stateLevelLock, .write)) := by
   unfold lockSet_endpointReply
   rfl
 

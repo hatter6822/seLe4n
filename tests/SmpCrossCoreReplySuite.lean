@@ -246,7 +246,8 @@ private def runLockSetChecks : IO Unit := do
       ∈ (lockSet_endpointReply serverTid cnRoot clientLocalTid none none).pairs))
   -- SM6.C.5: the replyRecv lock-set is hierarchically correct.
   assertBool "replyRecv lock-set kinds all permitted"
-    (decide (∀ p ∈ (lockSet_replyRecv serverTid cnRoot clientLocalTid epId none none none).pairs,
+    (decide (∀ p ∈ (lockSet_replyRecv serverTid cnRoot clientLocalTid epId none none none
+          none false none none).pairs,
         p.fst.kind ∈ permittedKinds .replyRecv))
   -- SM6.C.1: the state-resolved reply lock-set is hierarchically correct.
   assertBool "state-resolved reply lock-set kinds all permitted"
@@ -268,7 +269,8 @@ private def runLockSetChecks : IO Unit := do
   -- on receive (and a server-first Call) links a Reply object under that lock.
   assertBool "per-object reply write-lock is in the .receive footprint (resolved rid)"
     (decide ((replyLock (⟨707⟩ : SeLe4n.ReplyId), AccessMode.write)
-      ∈ (lockSet_endpointReceive serverTid cnRoot epId none (some (⟨707⟩ : SeLe4n.ReplyId))).pairs))
+      ∈ (lockSet_endpointReceive serverTid cnRoot epId none (some (⟨707⟩ : SeLe4n.ReplyId))
+          false none).pairs))
   assertBool "per-object reply write-lock is in the .call footprint (resolved rid)"
     (decide ((replyLock (⟨707⟩ : SeLe4n.ReplyId), AccessMode.write)
       ∈ (lockSet_endpointCall serverTid cnRoot epId none none (some (⟨707⟩ : SeLe4n.ReplyId))).pairs))
@@ -408,11 +410,20 @@ private def runDonationChecks : IO Unit := do
   assertBool "donating reply lock-set includes the original-owner TCB write lock"
     (decide ((tcbLock clientLocalTid, AccessMode.write)
       ∈ (lockSet_endpointReply serverTid cnRoot clientLocalTid (some scId) (some clientLocalTid)).pairs))
-  -- The extension equation holds definitionally.
+  -- The extension equation holds definitionally.  **WS-OD OD3.5**: it is a
+  -- THREE-member extension — the returned SchedContext, the original owner's
+  -- TCB, and the state-level lock, because the donation return maintains
+  -- `SystemState.scThreadIndex` (an `RHTable` whose insert may rehash, so no
+  -- per-object lock decomposes it).  This mirrors
+  -- `lockSet_endpointReply_donation_extension`; the two must not drift.
   assertBool "donation lock-set extension equation holds"
     (decide ((lockSet_endpointReply serverTid cnRoot clientLocalTid (some scId) (some clientLocalTid)).pairs
-      = (lockSetExtendOpt (lockSetExtendOpt (lockSet_endpointReply serverTid cnRoot clientLocalTid none none)
-          (some (schedContextLock scId, .write))) (some (tcbLock clientLocalTid, .write))).pairs))
+      = (lockSetExtendOpt
+           (lockSetExtendOpt
+             (lockSetExtendOpt (lockSet_endpointReply serverTid cnRoot clientLocalTid none none)
+               (some (schedContextLock scId, .write)))
+             (some (tcbLock clientLocalTid, .write)))
+           (some (stateLevelLock, .write))).pairs))
   -- A replier holding no donated SC: the cross-core donation return is a no-op (ok).
   match SeLe4n.ThreadId.toValid? serverTid with
   | some serverV =>
