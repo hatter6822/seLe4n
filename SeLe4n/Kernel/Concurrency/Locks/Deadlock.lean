@@ -750,6 +750,32 @@ theorem size_le_9 (L : List (LockId × AccessMode))
   refine Nat.le_trans (Nat.add_le_add_right (size_le_8 L o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈) 1) ?_
   omega
 
+/-- WS-OD OD3.7: ten optionals. -/
+theorem size_le_10 (L : List (LockId × AccessMode))
+    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ : Option (LockId × AccessMode)) :
+    (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
+      (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
+        (lockSetExtendOpt (lockSetExtendOpt (lockSetOfList L) o₁) o₂) o₃) o₄) o₅)
+        o₆) o₇) o₈) o₉) o₁₀).size
+      ≤ L.length + 10 := by
+  refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
+  refine Nat.le_trans (Nat.add_le_add_right (size_le_9 L o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉) 1) ?_
+  omega
+
+/-- WS-OD OD3.7: eleven optionals — `lockSet_cancelIpcBlocking`'s arity once the
+reclaim's two below-head reads are declared. -/
+theorem size_le_11 (L : List (LockId × AccessMode))
+    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ : Option (LockId × AccessMode)) :
+    (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
+      (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
+        (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetOfList L) o₁) o₂) o₃)
+        o₄) o₅) o₆) o₇) o₈) o₉) o₁₀) o₁₁).size
+      ≤ L.length + 11 := by
+  refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
+  refine Nat.le_trans
+    (Nat.add_le_add_right (size_le_10 L o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀) 1) ?_
+  omega
+
 /-- Local tactic shorthand: reduce a concrete `[…].length (+k)` to a numeral
 and discharge the `≤ maxLockSetSize` goal. -/
 local macro "size_bound" : tactic =>
@@ -819,12 +845,16 @@ theorem lockSet_endpointCall_size_le (a : ThreadId) (b c : ObjId)
 -- bound's type against the definition's own telescope rather than trusting the
 -- name.
 theorem lockSet_endpointReply_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
-    (d : Option SchedContextId) (e : Option ThreadId) (f : Option ReplyId) :
-    (lockSet_endpointReply a b c d e f).size ≤ maxLockSetSize := by
+    (d : Option SchedContextId) (e : Option ThreadId) (f : Option ReplyId)
+    (g : Option ReplyId) (h : Option ThreadId) :
+    (lockSet_endpointReply a b c d e f g h).size ≤ maxLockSetSize := by
   unfold lockSet_endpointReply maxLockSetSize
   -- WS-OD OD3.5: a fourth optional — the state-level lock the donation
-  -- return's `scThreadIndex` write takes.
-  exact Nat.le_trans (size_le_4 _ _ _ _ _) (by size_bound)
+  -- return's `scThreadIndex` write takes.  **WS-OD OD3.7**: a fifth and a
+  -- sixth — the Reply below the stack head and that frame's caller's TCB, the
+  -- two objects the pop reads at call depth ≥ 2.  `3 + 6 = 9`, comfortably
+  -- inside the ceiling; only `.replyRecv` needed the raise.
+  exact Nat.le_trans (size_le_6 _ _ _ _ _ _ _) (by size_bound)
 
 -- WS-RR RR7.11: and over the state-level member the capability install needs.
 -- Five optionals over a four-member base is `4 + 5 = 9`, which is
@@ -832,10 +862,11 @@ theorem lockSet_endpointReply_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
 -- against, and the reason it moved from 8 (see its docstring).
 theorem lockSet_replyRecv_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
     (d : ObjId) (e : Option ThreadId) (f : Option SchedContextId) (g : Option ThreadId)
-    (h : Option ReplyId) (i : Bool) (j : Option ThreadId) (k : Option SchedContextId) :
-    (lockSet_replyRecv a b c d e f g h i j k).size ≤ maxLockSetSize := by
+    (h : Option ReplyId) (i : Bool) (j : Option ThreadId) (k : Option SchedContextId)
+    (l : Option ReplyId) (m : Option ThreadId) :
+    (lockSet_replyRecv a b c d e f g h i j k l m).size ≤ maxLockSetSize := by
   unfold lockSet_replyRecv maxLockSetSize
-  exact Nat.le_trans (size_le_7 _ _ _ _ _ _ _ _) (by size_bound)
+  exact Nat.le_trans (size_le_9 _ _ _ _ _ _ _ _ _ _) (by size_bound)
 
 -- WS-SM SM9.C.8: stated over **all six** arguments, including the SM6.B
 -- bound-delivery optionals.  Before this cut the theorem fixed those two at
@@ -1082,8 +1113,9 @@ theorem lockSetTransitions_within_bound :
     (∀ a b c d e, (lockSet_endpointSend a b c d e).size ≤ maxLockSetSize) ∧
     (∀ a b c d e f g, (lockSet_endpointReceive a b c d e f g).size ≤ maxLockSetSize) ∧
     (∀ a b c d e f g, (lockSet_endpointCall a b c d e f g).size ≤ maxLockSetSize) ∧
-    (∀ a b c d e f, (lockSet_endpointReply a b c d e f).size ≤ maxLockSetSize) ∧
-    (∀ a b c d e f g h i j k, (lockSet_replyRecv a b c d e f g h i j k).size ≤ maxLockSetSize) ∧
+    (∀ a b c d e f g h, (lockSet_endpointReply a b c d e f g h).size ≤ maxLockSetSize) ∧
+    (∀ a b c d e f g h i j k l m,
+      (lockSet_replyRecv a b c d e f g h i j k l m).size ≤ maxLockSetSize) ∧
     (∀ a b c d e f, (lockSet_notificationSignal a b c d e f).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_notificationWait a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_cspaceMint a b c).size ≤ maxLockSetSize) ∧
@@ -1173,8 +1205,8 @@ def KernelOperation.ofReplyRecv (a : ThreadId) (b : ObjId) (c : ThreadId)
     (d : ObjId) (e : Option ThreadId) (f : Option SchedContextId) (g : Option ThreadId)
     (h : Option ReplyId := none) (i : Bool := false) :
     KernelOperation :=
-  ⟨lockSet_replyRecv a b c d e f g h i none none,
-   lockSet_replyRecv_size_le a b c d e f g h i none none⟩
+  ⟨lockSet_replyRecv a b c d e f g h i none none none none,
+   lockSet_replyRecv_size_le a b c d e f g h i none none none none⟩
 
 /-- WS-SM SM3.D.6: build the `KernelOperation` for a `tcbSuspend` (the
 5-extension transition — WS-SM SM6.E added the optional reply-link

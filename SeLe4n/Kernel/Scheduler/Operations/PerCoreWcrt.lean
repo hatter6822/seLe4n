@@ -61,7 +61,7 @@ core-count factor is 3, and `WCRT_per_lock` — `tCs` throughout this module —
 Cortex-A76, which is why the whole surface below is parametric in it.  So the
 honest statement is the budget condition solved for the measurable factor:
 `admissibleCriticalSection` gives the largest per-lock cost a budget admits
-(`WCRT_lockSet_le_budget_of_admissible`), which for the RPi5 tick is **30 µs**
+(`WCRT_lockSet_le_budget_of_admissible`), which for the RPi5 tick is **25 µs**
 (`admissibleCriticalSection_rpi5Tick`).  The 60 µs the master plan §7.2 assumed
 does **not** fit — `11 · 3 · 60 = 1980 µs`
 (`rpi5Tick_refuses_sixty_micro_sections`), nor did it at either previous ceiling —
@@ -276,22 +276,23 @@ rather than repeating a literal. -/
 def rpi5TickBudgetMicros : Nat := 1000
 
 /-- WS-RR RR7.31: **the corrected §7.2 figure.**  At the model's declared ceiling
-the RPi5 tick admits a per-lock critical section of at most **30 µs**, not the
-60 µs the plan assumed — `maxLockSetSize · (numCores − 1) = 33`, and `1000 / 33`
-is 30.
+the RPi5 tick admits a per-lock critical section of at most **25 µs**, not the
+60 µs the plan assumed — `maxLockSetSize · (numCores − 1) = 39`, and `1000 / 39`
+is 25.
 
-**WS-OD OD3.5** moved this figure from 37 µs, by raising `maxLockSetSize` from 9
+**WS-OD OD3.7** moved this figure from 30 µs, by raising `maxLockSetSize` from 11
+to 13; **WS-OD OD3.5** had moved it from 37 µs, by raising the constant from 9
 to 11 so `.replyRecv` can declare the second SchedContext hand-off it performs
 and the recorded server's TCB it writes.  The figure is *derived*, so it moves
 whenever the ceiling does — which is the point of stating it as a theorem rather
 than a paragraph: a cut that widens a footprint pays here, visibly. -/
 theorem admissibleCriticalSection_rpi5Tick :
-    admissibleCriticalSection rpi5TickBudgetMicros = 30 := by decide
+    admissibleCriticalSection rpi5TickBudgetMicros = 25 := by decide
 
 /-- WS-RR RR7.31: **and the plan's own assumption fails it.**  A 60 µs per-lock
-section gives `11 · 3 · 60 = 1980 µs`, which is outside the 1 ms tick — so the
+section gives `13 · 3 · 60 = 2340 µs`, which is outside the 1 ms tick — so the
 §7.2 conclusion "comfortably fits within the 1-ms timer tick budget" is false at
-`maxLockSetSize = 11`.  Stated as a negative so the arithmetic is pinned in the
+`maxLockSetSize = 13`.  Stated as a negative so the arithmetic is pinned in the
 direction that matters: a future cut that raises `maxLockSetSize` again, or that
 grounds `tCs` at 60 µs, has to confront this theorem rather than a paragraph.
 WS-OD OD3.5 is the first cut to have done so.

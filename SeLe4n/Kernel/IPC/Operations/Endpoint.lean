@@ -1056,6 +1056,128 @@ theorem replyStackOuterCaller?_ok_some (st : SystemState)
               exact ⟨sc, rid, head, below, b, rfl, hHead, hPrev, hBelow,
                 by simpa using hDon, Except.ok.inj h⟩
 
+/-- **WS-OD OD3.7: the two objects the pop touches *below* the stack head.**
+
+`replyStackOuterCaller?` walks one link past the head, reading the `Reply` below
+it; `outerCallerAcceptable` then reads that Reply's `caller`'s TCB to check it is
+a waiting donor before the pop hands it a scheduling context.  Neither object is
+covered by any other footprint member — the head Reply is the answered caller's
+`replyObject`, and the outer caller is provably neither of the two threads the
+pop rewrites (`outerCallerAcceptable`'s own first two conjuncts) — so at call
+depth ≥ 2 a footprint that omits them is *false* of the transition.
+
+The second read is the sharper of the two: it is a **validate-then-commit**, so
+an unlocked read is a time-of-check/time-of-use window on precisely the thread
+the pop is about to bind a scheduling context to.  A concurrent
+`.tcbSuspend` of that thread between the check and the store would leave the
+context bound to a thread the check accepted and the store found elsewhere.
+
+**Returned as one pair because it is one question** — *what does the pop read
+below the head* — and the tree has twice now paid for asking one question in two
+places (`cancelArmSpliceNeighbors?`'s own docstring records the last time).  The
+plan row that scheduled this work named only the first read; the second is
+derived from the operation rather than from that list, which is the
+enumeration-versus-derivation rule this project states for gates applied to a
+footprint.
+
+Both components are `none` on every state this tree reaches today, since nothing
+writes a `scReply` until OD4's push (`replyStackBelowHeadReads?_of_no_stack`), so
+this widens no live footprint — it declares ahead of the code, which is the
+order the plan's own numbering rule requires. -/
+def replyStackBelowHeadReads? (st : SystemState) (scId : SeLe4n.SchedContextId) :
+    Option SeLe4n.ReplyId × Option SeLe4n.ThreadId :=
+  match st.getSchedContext? scId with
+  | none => (none, none)
+  | some sc =>
+    match donationHeadOf? st scId sc with
+    | .error _ => (none, none)
+    | .ok none => (none, none)
+    | .ok (some (_, head)) =>
+      match head.prev with
+      | none => (none, none)
+      | some below =>
+        -- The Reply below the head is read whether or not the validation that
+        -- follows accepts it, so it is declared on the link alone.  The caller's
+        -- TCB is read only when the resolver yields one, which is exactly when
+        -- the call site passes a `some` for `outerCallerAcceptable` to check.
+        (some below,
+         match st.getReply? below with
+         | none => none
+         | some b => if b.donatedSc != some scId then none else b.caller)
+
+/-- WS-OD OD3.7: **inert on every state this tree reaches.**
+
+A context heading no reply stack has nothing below its head, so both members are
+`none` and every footprint that gained them is definitionally the one it was
+before (`lockSetExtendOpt S none = S`).  This is what makes the row a
+declaration rather than a widening: the members become live exactly when OD4's
+push first writes a `scReply`. -/
+@[simp] theorem replyStackBelowHeadReads?_of_no_stack (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (sc : SchedContext)
+    (hSc : st.getSchedContext? scId = some sc) (hNoHead : sc.scReply = none) :
+    replyStackBelowHeadReads? st scId = (none, none) := by
+  unfold replyStackBelowHeadReads?
+  rw [hSc]
+  simp only [donationHeadOf?_of_no_stack st scId sc hNoHead]
+
+/-- WS-OD OD3.7: **the bottom of the stack reads nothing below it.**
+
+The depth-1 shape OD4's first push produces: a head with no `prev` is the last
+frame, so the pop reads no further and returns the context `.bound`.  Stated
+separately from `_of_no_stack` because the two are different states — no stack at
+all, versus a stack exactly one frame deep — and a reader checking that this
+footprint is inert at depth 1 needs the second. -/
+theorem replyStackBelowHeadReads?_of_bottom_head (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (sc : SchedContext) (rid : SeLe4n.ReplyId) (r : Reply)
+    (hSc : st.getSchedContext? scId = some sc)
+    (hHead : donationHeadOf? st scId sc = .ok (some (rid, r)))
+    (hBottom : r.prev = none) :
+    replyStackBelowHeadReads? st scId = (none, none) := by
+  unfold replyStackBelowHeadReads?
+  rw [hSc]
+  simp only [hHead, hBottom]
+
+/-- WS-OD OD3.7: **the declared caller is the resolver's answer.**
+
+The footprint's TCB member and `replyStackOuterCaller?`'s `some` answer are the
+same thread whenever the resolver succeeds — so the lock the footprint declares
+is a lock on the thread `outerCallerAcceptable` will actually read, not on one
+that merely happens to sit below the head.  Without this the two could drift,
+which is the shape OD3.5 spent a whole row closing on the delegated reply. -/
+theorem replyStackBelowHeadReads?_snd_eq_outerCaller (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (outer? : Option SeLe4n.ThreadId)
+    (h : replyStackOuterCaller? st scId = .ok outer?) :
+    (replyStackBelowHeadReads? st scId).2 = outer? := by
+  unfold replyStackBelowHeadReads?
+  unfold replyStackOuterCaller? at h
+  revert h
+  cases hSc : st.getSchedContext? scId with
+  | none => intro h; cases h
+  | some sc =>
+    simp only []
+    cases hHead : donationHeadOf? st scId sc with
+    | error e => intro h; cases h
+    | ok head? =>
+      cases head? with
+      | none => intro h; simp only []; exact Except.ok.inj h
+      | some pair =>
+        obtain ⟨rid, head⟩ := pair
+        simp only []
+        cases hPrev : head.prev with
+        | none => intro h; simp only []; exact Except.ok.inj h
+        | some below =>
+          simp only []
+          cases hBelow : st.getReply? below with
+          | none => intro h; cases h
+          | some b =>
+            simp only []
+            cases hDon : (b.donatedSc != some scId) with
+            | true => simp only [if_true]; intro h; cases h
+            | false =>
+              simp only [Bool.false_eq_true, if_false]
+              intro h
+              exact Except.ok.inj h
+
 /-- WS-OD OD3.1: **the head clear, as one step whether or not there is a head.**
 
 The pop writes a Reply only when the context heads a stack, and every frame the

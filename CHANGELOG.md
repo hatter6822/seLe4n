@@ -1,3 +1,81 @@
+## v0.34.130 — WS-OD OD3.7: the two objects the donation return reads below the reply-stack head
+
+**A footprint that omits an object the transition *reads* is false the same way
+one that omits a write is.**  `returnDonatedSchedContext` at call depth ≥ 2 does
+two things no declared lock covered.  `replyStackOuterCaller?` walks one link
+past the reply-stack head, reading the `Reply` one frame down to find the outer
+caller; `outerCallerAcceptable` then reads that caller's TCB to check it is a
+waiting donor before the pop binds a scheduling context to it.
+
+Neither object merges with a member the footprint already had.  The head Reply
+*is* the answered caller's own `replyObject` — the declared `replyId` member —
+and the outer caller is provably neither thread the pop rewrites, by
+`outerCallerAcceptable`'s own first two conjuncts.  The second read is the
+sharper of the two: it is a **validate-then-commit**, so reading it unlocked is a
+time-of-check/time-of-use window on precisely the thread about to receive the
+context.  A concurrent `.tcbSuspend` of that thread between check and store
+would leave the context bound to a thread the check accepted and the store found
+elsewhere.
+
+**The plan row named one read; the operation performs two.**  That is the
+enumeration-standing-in-for-a-derivation shape this project warns about, in a
+plan row rather than in a gate: the set of objects the pop touches at depth ≥ 2
+has to come from the operation, not from a list.  Both are resolved by **one**
+resolver, `replyStackBelowHeadReads?`, because it is one question — *what does
+the pop read below the head* — and the tree has twice paid for asking one
+question in two places.  `cancelBelowHeadReads?` derives the cancellation arm's
+pair from `cancelledCallerDonation?`, the reclaim's own answer to which context
+is handed back, so the footprint and the walk cannot disagree about which stack
+is walked.  `replyStackBelowHeadReads?_snd_eq_outerCaller` pins that the declared
+TCB is the thread the validation will actually read.
+
+**`maxLockSetSize` is 13**, and the cost is stated where a reviewer sees it:
+`admissibleCriticalSection` for the 1 ms tick falls from 30 µs to **25 µs**
+(`1000 ÷ 39`), the uniform envelope moves 1980 → 2340 µs, and the CC-5 contention
+bound widens in proportion.  All three are derived from the constant, so they
+moved by themselves; what needed changing was the `decide`-checked pins and the
+prose that quotes them.
+
+**Only `.replyRecv` needed the raise**, and that is asserted rather than
+described: `lockSet_endpointReply` reaches **nine** with the same two members and
+the cancellation reply arm **ten**
+(`lockSet_cancelIpcBlockingOnCore_size_le_ten`, replacing `_size_le_eight`).  The
+one arm at the ceiling is the one that fuses a reply leg, a receive leg and a
+donation return into a single syscall, so its footprint is three operations'
+write sets unioned.  The alternative was refusing to declare `.replyRecv` at
+depth ≥ 2 — the pattern OD3.5 retired for the delegated reply one cut ago — and
+this project rates a footprint that omits an object worse than a wide one.
+
+Four things new code must respect.  (1) **The pop is O(1) at any chain depth.**
+It walks exactly one link past the head — one frame of lookahead, no more (OD3.4)
+— so this is a constant `+2` on the footprint, not `O(depth)`.  A pop that
+traversed the chain could not be given a footprint at all: a `LockSet` is capped
+at `maxLockSetSize` and a chain is not, which is why a multi-level CSpace
+resolution declares `none`.  (2) **Both members are READ mode**; the pop inspects
+these objects and writes neither, and a write would serialise unrelated pops for
+nothing.  Tier 3 negatives refuse the write spelling, keeping both member names —
+a mutation that breaks the relation rather than deleting the token.  (3) **Both
+are `none` on every state this tree reaches** (`replyStackBelowHeadReads?_of_no_stack`,
+`_of_bottom_head`, `cancelBelowHeadReads?_of_no_donation`), so no live footprint
+widened: this declares ahead of OD4.4's code, which is the order the plan's
+numbering rule requires.  (4) **The membership proofs peel by count, not by a
+hand-nested tower.**  Where the member comes from the base list the peel is
+`repeat`; where it comes from an extension it is an exact `iterate n`, because
+peeling one layer too far discards the very lock being proved present.
+
+Also in this cut, from the arity change: `endpointReplyOnCore_lockSet_correct`
+and `endpointReplyOnCore_atomic_under_lockSet` were stated at `replyId`'s
+default, so both covered a shape the live `.reply` dispatch never declares —
+the RR7.18 defect their own `.replyRecv` siblings already refuse in as many
+words.  Both are at full arity now.  Two theorems auto-bound the new parameters
+as implicits, so their arity was accidental rather than chosen; both declare
+them explicitly.  And `lockSet_endpointReply_donation_extension` now pins its
+three trailing optionals at `none` on both sides *explicitly* — the equation
+characterises what the donation adds, `lockSetExtendOpt` is an insertion and does
+not commute, so members added after the donation's cannot be lifted over it.
+
+Refs: docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md §3 (OD3.7)
+
 ## v0.34.129 — WS-OD OD3.6: the SchedContext hand-off `.receive` never performed, and one unsafe context made explicit
 
 **The `.receive` dispatch arm performed no scheduling-context donation at all.**

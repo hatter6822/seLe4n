@@ -1390,8 +1390,13 @@ are mutually exclusive, both keying on `tcb.ipcState`
 
 **WS-OD OD3.5**: the resolved footprint is now **arm-selected** rather than
 summed — `cancelArmSpliceNeighbors?` gives the victim's own neighbours only on
-the arm that splices — so the widest arm is the reply arm at **seven**, not
-nine, and `lockSet_cancelIpcBlockingOnCore_size_le_seven` is the sharp bound
+the arm that splices — so the reply arm dropped from ten members to eight rather
+than carrying two TCB write locks for a splice it does not perform.
+
+**WS-OD OD3.7** takes that arm to **ten**: the reclaim's hand-back reads the
+Reply one frame below the reply-stack head and that frame's caller's TCB, and at
+call depth ≥ 2 neither is covered by another member.
+`lockSet_cancelIpcBlockingOnCore_size_le_ten` is the sharp bound
 (`lockSet_cancelIpcBlockingOnCore_size_le` is its corollary at the ceiling). -/
 def lockSet_cancelIpcBlocking (victimTid : SeLe4n.ThreadId)
     (blockedEndpointObjId : Option SeLe4n.ObjId)
@@ -1400,9 +1405,12 @@ def lockSet_cancelIpcBlocking (victimTid : SeLe4n.ThreadId)
     (returnedDonationSc : Option SeLe4n.SchedContextId)
     (donationHolderTid : Option SeLe4n.ThreadId)
     (holderEndpointObjId : Option SeLe4n.ObjId)
-    (holderSpliceNeighbors : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId) : LockSet :=
-  lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
+    (holderSpliceNeighbors : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId)
+    (belowHeadReplyId : Option SeLe4n.ReplyId)
+    (outerCallerTid : Option SeLe4n.ThreadId) : LockSet :=
+  lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
+    (lockSetExtendOpt
       (lockSetOfList [(tcbLock victimTid, .write)])
       (blockedEndpointObjId.map (fun ep => (endpointLock ep, .write))))
       (blockedNotificationObjId.map (fun n => (notificationLock n, .write))))
@@ -1423,6 +1431,13 @@ def lockSet_cancelIpcBlocking (victimTid : SeLe4n.ThreadId)
       (holderEndpointObjId.map (fun ep => (endpointLock ep, .write))))
       (holderSpliceNeighbors.1.map (fun p => (tcbLock p, .write))))
       (holderSpliceNeighbors.2.map (fun n => (tcbLock n, .write))))
+      -- **WS-OD OD3.7**: the two objects the hand-back reads *below* the
+      -- reply-stack head, in READ mode — the Reply one frame down, and that
+      -- frame's caller's TCB, which `outerCallerAcceptable` validates before the
+      -- pop binds it.  Both are `none` at every depth this tree reaches, so the
+      -- arm's resolved footprint is unchanged until OD4's push.
+      (belowHeadReplyId.map (fun r => (replyLock r, AccessMode.read))))
+      (outerCallerTid.map (fun ot => (tcbLock ot, AccessMode.read))))
     -- **WS-OD OD3.5**: the reply arm's donation hand-back runs
     -- `returnDonatedSchedContext`, whose last step maintains
     -- `SystemState.scThreadIndex` — an `RHTable` whose insert may rehash and
@@ -1446,6 +1461,36 @@ def lockSet_cancelDonation (victimTid : SeLe4n.ThreadId)
       (bindingScId.map (fun sc => (schedContextLock sc, .write))))
       (donatedOriginalOwnerTid.map (fun ot => (tcbLock ot, .write))))
     (if bindingScId.isSome then some (stateLevelLock, AccessMode.write) else none)
+
+/-- **WS-OD OD3.7**: the two objects the reply arm's reclaim reads *below* the
+reply-stack head.
+
+`returnDonationToCancelledCaller` hands the victim's donation back through
+`returnDonatedSchedContext`, and at call depth ≥ 2 that walks one link past the
+head to find the outer caller and then reads that caller's TCB to validate it.
+Derived from `cancelledCallerDonation?` — the reclaim's own resolver for *which*
+SchedContext is handed back — so the footprint and the operation cannot disagree
+about which stack is walked.
+
+Inert on every state this tree reaches (`replyStackBelowHeadReads?_of_no_stack`),
+and inert on every arm but the reply arm, since no other arm resolves a
+donation. -/
+def cancelBelowHeadReads? (st : SystemState) (victimTid : SeLe4n.ThreadId) (tcb : TCB) :
+    Option SeLe4n.ReplyId × Option SeLe4n.ThreadId :=
+  match (Lifecycle.Suspend.cancelledCallerDonation? st victimTid tcb).map Prod.fst with
+  | none => (none, none)
+  | some scId => replyStackBelowHeadReads? st scId
+
+/-- WS-OD OD3.7: **no donation, nothing below a head.**  The reclaim's two extra
+reads exist only on the arm that hands a SchedContext back, so on every other
+arm both members are `none` and the extensions reduce definitionally. -/
+@[simp] theorem cancelBelowHeadReads?_of_no_donation (st : SystemState)
+    (victimTid : SeLe4n.ThreadId) (tcb : TCB)
+    (h : Lifecycle.Suspend.cancelledCallerDonation? st victimTid tcb = none) :
+    cancelBelowHeadReads? st victimTid tcb = (none, none) := by
+  unfold cancelBelowHeadReads?
+  rw [h]
+  rfl
 
 /-- WS-SM SM6.E.1: the concrete lock-set a cross-core `cancelIpcBlockingOnCore`
 on state `st` acquires — the parametric footprint with the blocked-on object
@@ -1484,14 +1529,20 @@ def lockSet_cancelIpcBlockingOnCore (st : SystemState)
             (cancelHolderBlockedEndpoint? st
               ((Lifecycle.Suspend.cancelledCallerDonation? st victimTid tcb).map Prod.snd))
             (cancelHolderSpliceNeighbors? st
-              ((Lifecycle.Suspend.cancelledCallerDonation? st victimTid tcb).map Prod.snd)))
+              ((Lifecycle.Suspend.cancelledCallerDonation? st victimTid tcb).map Prod.snd))
+            -- **WS-OD OD3.7**: the two below-head reads, resolved through the
+            -- same resolver the reply and replyRecv arms use, on the very
+            -- SchedContext this reclaim hands back.  One question, one answer.
+            (cancelBelowHeadReads? st victimTid tcb).1
+            (cancelBelowHeadReads? st victimTid tcb).2)
           -- WS-OD OD3.5: the *arm-selected* neighbours, not the summed pair.
           -- Only the endpoint arm splices, so on the reply, notification and
           -- `.ready` arms these two extensions are `none` and the footprint
           -- stops declaring write locks on threads the operation never touches.
           ((cancelArmSpliceNeighbors? tcb).1.map (fun p => (tcbLock p, .write))))
         ((cancelArmSpliceNeighbors? tcb).2.map (fun n => (tcbLock n, .write)))
-  | none => lockSet_cancelIpcBlocking victimTid none none none none none none (none, none)
+  | none =>
+      lockSet_cancelIpcBlocking victimTid none none none none none none (none, none) none none
 
 /-- **WS-OD OD3.5: the reply arm's resolved footprint has no neighbour members
 at all.**
@@ -1521,7 +1572,9 @@ theorem lockSet_cancelIpcBlockingOnCore_replyArm_eq (st : SystemState)
           (cancelHolderBlockedEndpoint? st
             ((Lifecycle.Suspend.cancelledCallerDonation? st victimTid tcb).map Prod.snd))
           (cancelHolderSpliceNeighbors? st
-            ((Lifecycle.Suspend.cancelledCallerDonation? st victimTid tcb).map Prod.snd)) := by
+            ((Lifecycle.Suspend.cancelledCallerDonation? st victimTid tcb).map Prod.snd))
+          (cancelBelowHeadReads? st victimTid tcb).1
+          (cancelBelowHeadReads? st victimTid tcb).2 := by
   have hE : cancelBlockedEndpoint? tcb = none := by
     unfold cancelBlockedEndpoint?; rw [hIp]
   have hN : cancelBlockedNotification? tcb = none := by
@@ -1583,11 +1636,15 @@ theorem lockSet_consistent_cancelIpcBlocking (victimTid : SeLe4n.ThreadId)
     (returnedDonationSc : Option SeLe4n.SchedContextId)
     (donationHolderTid : Option SeLe4n.ThreadId)
     (holderEndpointObjId : Option SeLe4n.ObjId)
-    (holderSpliceNeighbors : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId) :
+    (holderSpliceNeighbors : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId)
+    -- WS-OD OD3.7: the two below-head reads the reclaim performs at depth ≥ 2.
+    (belowHeadReplyId : Option SeLe4n.ReplyId)
+    (outerCallerTid : Option SeLe4n.ThreadId) :
     ∀ p ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId
-        returnedDonationSc donationHolderTid holderEndpointObjId holderSpliceNeighbors).pairs,
+        returnedDonationSc donationHolderTid holderEndpointObjId holderSpliceNeighbors
+        belowHeadReplyId outerCallerTid).pairs,
       p.fst.kind ∈ permittedKinds .tcbSuspend :=
-  lockSet_consistent_base_plus_nine_opts _ _ _ _ _ _ _ _ _ _ _
+  lockSet_consistent_base_plus_eleven_opts _ _ _ _ _ _ _ _ _ _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -1626,6 +1683,17 @@ theorem lockSet_consistent_cancelIpcBlocking (victimTid : SeLe4n.ThreadId)
         cases hN2 : holderSpliceNeighbors.2 with
         | none => rw [hN2] at hpp; simp at hpp
         | some n => rw [hN2] at hpp; simp at hpp; rw [← hpp]; simp; decide)
+    -- WS-OD OD3.7: the Reply one frame below the stack head, and that frame's
+    -- caller's TCB — both read-mode, and both kinds `.tcbSuspend` already
+    -- admits, so the ladder is unchanged.
+    (by intro pp hpp
+        cases belowHeadReplyId with
+        | none => simp at hpp
+        | some r => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        cases outerCallerTid with
+        | none => simp at hpp
+        | some ot => simp at hpp; rw [← hpp]; simp; decide)
     -- WS-OD OD3.5: the state-level lock, taken when the reply arm hands a
     -- donation back and maintains `scThreadIndex` with it.
     (by intro pp hpp
@@ -1668,14 +1736,16 @@ theorem cancelIpcBlockingOnCore_lockSet_correct (victimTid : SeLe4n.ThreadId)
     (blEp blN : Option SeLe4n.ObjId) (consumedReplyId : Option SeLe4n.ReplyId)
     (rdSc : Option SeLe4n.SchedContextId) (dhTid : Option SeLe4n.ThreadId)
     (holderEp : Option SeLe4n.ObjId)
-    (holderNb : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId) :
-    (∀ p ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid holderEp holderNb).pairs,
+    (holderNb : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId)
+    -- WS-OD OD3.7: the two below-head reads the reclaim performs at depth ≥ 2.
+    (belowHeadReply? : Option SeLe4n.ReplyId) (outerCaller? : Option SeLe4n.ThreadId) :
+    (∀ p ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller?).pairs,
         p.fst.kind ∈ permittedKinds .tcbSuspend) ∧
-    ((lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid holderEp holderNb).pairs.map
+    ((lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller?).pairs.map
         (·.fst)).Nodup :=
   ⟨lockSet_consistent_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid
-      holderEp holderNb,
-   (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid holderEp holderNb).hUniqueKeys⟩
+      holderEp holderNb belowHeadReply? outerCaller?,
+   (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller?).hUniqueKeys⟩
 
 /-- WS-SM SM6.E.4: the `cancelDonation` lock-set is hierarchically correct. -/
 theorem cancelDonationOnCore_lockSet_correct (victimTid : SeLe4n.ThreadId)
@@ -1702,7 +1772,7 @@ theorem lockSet_cancelIpcBlockingOnCore_correct (st : SystemState)
       -- writes, already permitted for `.tcbSuspend`.
       refine lockSet_consistent_extendOpt _ _ _
         (lockSet_consistent_extendOpt _ _ _
-          (lockSet_consistent_cancelIpcBlocking victimTid _ _ _ _ _ _ _) ?_) ?_
+          (lockSet_consistent_cancelIpcBlocking victimTid _ _ _ _ _ _ _ _ _) ?_) ?_
       · intro pp hEq
         cases h1 : (cancelArmSpliceNeighbors? tcb).1 with
         | none => rw [h1] at hEq; cases hEq
@@ -1723,7 +1793,7 @@ theorem lockSet_cancelIpcBlockingOnCore_correct (st : SystemState)
           rw [tcbLock_kind]; decide
   | none =>
       exact lockSet_consistent_cancelIpcBlocking victimTid none none none none none none
-        (none, none)
+        (none, none) none none
 
 /-- WS-SM SM6.E.3: the state-resolved donation-cancellation lock-set is
 hierarchically correct. -/
@@ -1754,13 +1824,18 @@ theorem lockSet_cancelIpcBlocking_victim_tcb_write_mem
     (consumedReplyId : Option SeLe4n.ReplyId)
     (rdSc : Option SeLe4n.SchedContextId) (dhTid : Option SeLe4n.ThreadId)
     (holderEp : Option SeLe4n.ObjId)
-    (holderNb : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId) :
+    (holderNb : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId)
+    -- WS-OD OD3.7: the two below-head reads the reclaim performs at depth ≥ 2.
+    (belowHeadReply? : Option SeLe4n.ReplyId) (outerCaller? : Option SeLe4n.ThreadId) :
     (tcbLock victimTid, AccessMode.write)
-      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid holderEp holderNb).pairs := by
+      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller?).pairs := by
   unfold lockSet_cancelIpcBlocking
   -- WS-OD OD1.5: three more optional extensions on the outside — the abort
   -- prefix's endpoint and its two queue neighbours.  WS-OD OD3.5 adds a fourth:
-  -- the state-level lock the hand-back's `scThreadIndex` write takes.
+  -- the state-level lock the hand-back's `scThreadIndex` write takes, and
+  -- WS-OD OD3.7 a fifth and sixth: the Reply below the reply-stack head and
+  -- that frame's caller's TCB, the two objects the reclaim reads at depth ≥ 2.
+  refine mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ ?_)
   refine mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _
     (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ ?_)))
   refine mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _
@@ -1778,13 +1853,18 @@ theorem lockSet_cancelIpcBlocking_blocked_endpoint_write_mem
     (blN : Option SeLe4n.ObjId) (consumedReplyId : Option SeLe4n.ReplyId)
     (rdSc : Option SeLe4n.SchedContextId) (dhTid : Option SeLe4n.ThreadId)
     (holderEp : Option SeLe4n.ObjId)
-    (holderNb : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId) :
+    (holderNb : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId)
+    -- WS-OD OD3.7: the two below-head reads the reclaim performs at depth ≥ 2.
+    (belowHeadReply? : Option SeLe4n.ReplyId) (outerCaller? : Option SeLe4n.ThreadId) :
     (endpointLock ep, AccessMode.write)
-      ∈ (lockSet_cancelIpcBlocking victimTid (some ep) blN consumedReplyId rdSc dhTid holderEp holderNb).pairs := by
+      ∈ (lockSet_cancelIpcBlocking victimTid (some ep) blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller?).pairs := by
   unfold lockSet_cancelIpcBlocking
   -- WS-OD OD1.5: three more optional extensions on the outside — the abort
   -- prefix's endpoint and its two queue neighbours.  WS-OD OD3.5 adds a fourth:
-  -- the state-level lock the hand-back's `scThreadIndex` write takes.
+  -- the state-level lock the hand-back's `scThreadIndex` write takes, and
+  -- WS-OD OD3.7 a fifth and sixth: the Reply below the reply-stack head and
+  -- that frame's caller's TCB, the two objects the reclaim reads at depth ≥ 2.
+  refine mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ ?_)
   refine mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _
     (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ ?_)))
   refine mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _
@@ -1800,13 +1880,18 @@ theorem lockSet_cancelIpcBlocking_blocked_notification_write_mem
     (n : SeLe4n.ObjId) (consumedReplyId : Option SeLe4n.ReplyId)
     (rdSc : Option SeLe4n.SchedContextId) (dhTid : Option SeLe4n.ThreadId)
     (holderEp : Option SeLe4n.ObjId)
-    (holderNb : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId) :
+    (holderNb : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId)
+    -- WS-OD OD3.7: the two below-head reads the reclaim performs at depth ≥ 2.
+    (belowHeadReply? : Option SeLe4n.ReplyId) (outerCaller? : Option SeLe4n.ThreadId) :
     (notificationLock n, AccessMode.write)
-      ∈ (lockSet_cancelIpcBlocking victimTid blEp (some n) consumedReplyId rdSc dhTid holderEp holderNb).pairs := by
+      ∈ (lockSet_cancelIpcBlocking victimTid blEp (some n) consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller?).pairs := by
   unfold lockSet_cancelIpcBlocking
   -- WS-OD OD1.5: three more optional extensions on the outside — the abort
   -- prefix's endpoint and its two queue neighbours.  WS-OD OD3.5 adds a fourth:
-  -- the state-level lock the hand-back's `scThreadIndex` write takes.
+  -- the state-level lock the hand-back's `scThreadIndex` write takes, and
+  -- WS-OD OD3.7 a fifth and sixth: the Reply below the reply-stack head and
+  -- that frame's caller's TCB, the two objects the reclaim reads at depth ≥ 2.
+  refine mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ ?_)
   refine mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _
     (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ ?_)))
   refine mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _
@@ -1822,13 +1907,18 @@ theorem lockSet_cancelIpcBlocking_consumed_reply_write_mem
     (r : SeLe4n.ReplyId)
     (rdSc : Option SeLe4n.SchedContextId) (dhTid : Option SeLe4n.ThreadId)
     (holderEp : Option SeLe4n.ObjId)
-    (holderNb : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId) :
+    (holderNb : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId)
+    -- WS-OD OD3.7: the two below-head reads the reclaim performs at depth ≥ 2.
+    (belowHeadReply? : Option SeLe4n.ReplyId) (outerCaller? : Option SeLe4n.ThreadId) :
     (replyLock r, AccessMode.write)
-      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN (some r) rdSc dhTid holderEp holderNb).pairs := by
+      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN (some r) rdSc dhTid holderEp holderNb belowHeadReply? outerCaller?).pairs := by
   unfold lockSet_cancelIpcBlocking
   -- WS-OD OD1.5: three more optional extensions on the outside — the abort
   -- prefix's endpoint and its two queue neighbours.  WS-OD OD3.5 adds a fourth:
-  -- the state-level lock the hand-back's `scThreadIndex` write takes.
+  -- the state-level lock the hand-back's `scThreadIndex` write takes, and
+  -- WS-OD OD3.7 a fifth and sixth: the Reply below the reply-stack head and
+  -- that frame's caller's TCB, the two objects the reclaim reads at depth ≥ 2.
+  refine mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ ?_)
   refine mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _
     (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ ?_)))
   refine mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ ?_)
@@ -1843,13 +1933,18 @@ theorem lockSet_cancelIpcBlocking_returned_donation_sc_write_mem
     (consumedReplyId : Option SeLe4n.ReplyId) (sc : SeLe4n.SchedContextId)
     (dhTid : Option SeLe4n.ThreadId)
     (holderEp : Option SeLe4n.ObjId)
-    (holderNb : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId) :
+    (holderNb : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId)
+    -- WS-OD OD3.7: the two below-head reads the reclaim performs at depth ≥ 2.
+    (belowHeadReply? : Option SeLe4n.ReplyId) (outerCaller? : Option SeLe4n.ThreadId) :
     (schedContextLock sc, AccessMode.write)
-      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId (some sc) dhTid holderEp holderNb).pairs := by
+      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId (some sc) dhTid holderEp holderNb belowHeadReply? outerCaller?).pairs := by
   unfold lockSet_cancelIpcBlocking
   -- WS-OD OD1.5: three more optional extensions on the outside — the abort
   -- prefix's endpoint and its two queue neighbours.  WS-OD OD3.5 adds a fourth:
-  -- the state-level lock the hand-back's `scThreadIndex` write takes.
+  -- the state-level lock the hand-back's `scThreadIndex` write takes, and
+  -- WS-OD OD3.7 a fifth and sixth: the Reply below the reply-stack head and
+  -- that frame's caller's TCB, the two objects the reclaim reads at depth ≥ 2.
+  refine mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ ?_)
   refine mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _
     (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ ?_)))
   refine mem_write_lockSetExtendOpt _ _ _ ?_
@@ -1864,13 +1959,18 @@ theorem lockSet_cancelIpcBlocking_donation_holder_tcb_write_mem
     (consumedReplyId : Option SeLe4n.ReplyId)
     (rdSc : Option SeLe4n.SchedContextId) (h : SeLe4n.ThreadId)
     (holderEp : Option SeLe4n.ObjId)
-    (holderNb : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId) :
+    (holderNb : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId)
+    -- WS-OD OD3.7: the two below-head reads the reclaim performs at depth ≥ 2.
+    (belowHeadReply? : Option SeLe4n.ReplyId) (outerCaller? : Option SeLe4n.ThreadId) :
     (tcbLock h, AccessMode.write)
-      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc (some h) holderEp holderNb).pairs := by
+      ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc (some h) holderEp holderNb belowHeadReply? outerCaller?).pairs := by
   unfold lockSet_cancelIpcBlocking
   -- WS-OD OD1.5: three more optional extensions on the outside — the abort
   -- prefix's endpoint and its two queue neighbours.  WS-OD OD3.5 adds a fourth:
-  -- the state-level lock the hand-back's `scThreadIndex` write takes.
+  -- the state-level lock the hand-back's `scThreadIndex` write takes, and
+  -- WS-OD OD3.7 a fifth and sixth: the Reply below the reply-stack head and
+  -- that frame's caller's TCB, the two objects the reclaim reads at depth ≥ 2.
+  refine mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ ?_)
   refine mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _
     (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ ?_)))
   simp only [lockSetExtendOpt, Option.map_some]
@@ -1889,13 +1989,18 @@ theorem lockSet_cancelIpcBlocking_holder_endpoint_write_mem
     (consumedReplyId : Option SeLe4n.ReplyId)
     (rdSc : Option SeLe4n.SchedContextId) (dhTid : Option SeLe4n.ThreadId)
     (ep : SeLe4n.ObjId)
-    (holderNb : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId) :
+    (holderNb : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId)
+    -- WS-OD OD3.7: the two below-head reads the reclaim performs at depth ≥ 2.
+    (belowHeadReply? : Option SeLe4n.ReplyId) (outerCaller? : Option SeLe4n.ThreadId) :
     (endpointLock ep, AccessMode.write)
       ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid
-          (some ep) holderNb).pairs := by
+          (some ep) holderNb belowHeadReply? outerCaller?).pairs := by
   unfold lockSet_cancelIpcBlocking
+  -- WS-OD OD3.7: two peels deeper — the below-head Reply and the outer caller's
+  -- TCB now sit between this member and the state-level lock.
   refine mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _
-    (mem_write_lockSetExtendOpt _ _ _ ?_))
+    (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _
+      (mem_write_lockSetExtendOpt _ _ _ ?_))))
   simp only [lockSetExtendOpt, Option.map_some]
   exact self_write_mem_insertOrMerge _ (endpointLock ep)
 
@@ -1909,9 +2014,11 @@ theorem lockSet_cancelIpcBlocking_holder_splice_prev_write_mem
     (p : SeLe4n.ThreadId) (nb2 : Option SeLe4n.ThreadId) :
     (tcbLock p, AccessMode.write)
       ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid
-          holderEp (some p, nb2)).pairs := by
+          holderEp (some p, nb2) belowHeadReply? outerCaller?).pairs := by
   unfold lockSet_cancelIpcBlocking
-  refine mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ ?_)
+  -- WS-OD OD3.7: two peels deeper, for the same reason.
+  refine mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _
+    (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ ?_)))
   simp only [lockSetExtendOpt, Option.map_some]
   exact self_write_mem_insertOrMerge _ (tcbLock p)
 
@@ -1925,10 +2032,12 @@ theorem lockSet_cancelIpcBlocking_holder_splice_next_write_mem
     (nb1 : Option SeLe4n.ThreadId) (n : SeLe4n.ThreadId) :
     (tcbLock n, AccessMode.write)
       ∈ (lockSet_cancelIpcBlocking victimTid blEp blN consumedReplyId rdSc dhTid
-          holderEp (nb1, some n)).pairs := by
+          holderEp (nb1, some n) belowHeadReply? outerCaller?).pairs := by
   unfold lockSet_cancelIpcBlocking
-  -- WS-OD OD3.5: the state-level extension now sits outside this member.
-  refine mem_write_lockSetExtendOpt _ _ _ ?_
+  -- WS-OD OD3.5: the state-level extension sits outside this member; WS-OD
+  -- OD3.7 puts the two below-head reads between them.
+  refine mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _
+    (mem_write_lockSetExtendOpt _ _ _ ?_))
   simp only [lockSetExtendOpt, Option.map_some]
   exact self_write_mem_insertOrMerge _ (tcbLock n)
 
@@ -2104,14 +2213,18 @@ theorem cancelIpcBlocking_atomic_under_lockSet
     (rdSc : Option SeLe4n.SchedContextId) (dhTid : Option SeLe4n.ThreadId)
     (holderEp : Option SeLe4n.ObjId)
     (holderNb : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId)
+    -- WS-OD OD3.7: declared **explicitly**.  Left off the binder list these two
+    -- are auto-bound as implicits, so the arity the statement carries would be
+    -- accidental rather than chosen — the same defect OD3.5 fixed one file over.
+    (belowHeadReply? : Option SeLe4n.ReplyId) (outerCaller? : Option SeLe4n.ThreadId)
     (s : SystemState) :
-    withLockSet (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb)
+    withLockSet (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller?)
         executingCore (fun st => (cancelIpcBlocking st victim tcb, ())) s
       = (unwindAll executingCore
-          (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb).lockAcquireSequence.reverse
+          (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller?).lockAcquireSequence.reverse
           (cancelIpcBlocking
             (acquireAll executingCore
-              (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb).lockAcquireSequence s)
+              (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller?).lockAcquireSequence s)
             victim tcb),
          ()) :=
   lockSet_atomic_under_2pl _ executingCore _ s
@@ -2125,17 +2238,21 @@ theorem cancelIpcBlockingOnCore_atomic_under_lockSet
     (rdSc : Option SeLe4n.SchedContextId) (dhTid : Option SeLe4n.ThreadId)
     (holderEp : Option SeLe4n.ObjId)
     (holderNb : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId)
+    -- WS-OD OD3.7: declared **explicitly**.  Left off the binder list these two
+    -- are auto-bound as implicits, so the arity the statement carries would be
+    -- accidental rather than chosen — the same defect OD3.5 fixed one file over.
+    (belowHeadReply? : Option SeLe4n.ReplyId) (outerCaller? : Option SeLe4n.ThreadId)
     (s : SystemState) :
-    withLockSet (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb)
+    withLockSet (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller?)
         executingCore (cancelIpcBlockingOnCore victim tcb executingCore) s
       = (unwindAll executingCore
-          (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb).lockAcquireSequence.reverse
+          (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller?).lockAcquireSequence.reverse
           (cancelIpcBlockingOnCore victim tcb executingCore
             (acquireAll executingCore
-              (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb).lockAcquireSequence s)).1,
+              (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller?).lockAcquireSequence s)).1,
          (cancelIpcBlockingOnCore victim tcb executingCore
             (acquireAll executingCore
-              (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb).lockAcquireSequence s)).2) :=
+              (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller?).lockAcquireSequence s)).2) :=
   lockSet_atomic_under_2pl _ executingCore _ s
 
 /-- WS-SM SM6.E.4 (plan §5 `cancelDonation_atomic_under_lockSet`, Theorem
@@ -3416,22 +3533,22 @@ theorem cancelIpcBlockingOnCore_observer_atomic
     cancellationVictimIpcStateObserver victim
         (acquireAll executingCore
           (lockSet_cancelIpcBlocking victim blEp blN
-            consumedReplyId rdSc dhTid holderEp holderNb).lockAcquireSequence s)
+            consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller?).lockAcquireSequence s)
       = cancellationVictimIpcStateObserver victim s
     ∧ cancellationVictimIpcStateObserver victim
-        (withLockSet (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb)
+        (withLockSet (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller?)
           executingCore (cancelIpcBlockingOnCore victim tcb executingCore) s).1
       = cancellationVictimIpcStateObserver victim
           (cancelIpcBlockingOnCore victim tcb executingCore
             (acquireAll executingCore
               (lockSet_cancelIpcBlocking victim blEp blN
-                consumedReplyId rdSc dhTid holderEp holderNb).lockAcquireSequence s)).1 := by
+                consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller?).lockAcquireSequence s)).1 := by
   have hAcqStable : ∀ (s' : SystemState) l m, s'.objects.invExt →
       (acquireLockOnObject s' executingCore l m).objects.invExt :=
     fun s' l m h => acquireLockOnObject_preserves_invExt s' executingCore l m h
   have hInvAcq : (acquireAll executingCore
       (lockSet_cancelIpcBlocking victim blEp blN
-        consumedReplyId rdSc dhTid holderEp holderNb).lockAcquireSequence s).objects.invExt :=
+        consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller?).lockAcquireSequence s).objects.invExt :=
     (acquireAll_lockInsensitiveOn _ executingCore _
       (cancellationObserver_acquireInsensitiveOn executingCore victim) hAcqStable
       _ s hInv).2

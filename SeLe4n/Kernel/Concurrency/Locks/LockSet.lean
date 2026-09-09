@@ -901,17 +901,28 @@ bounds the union over **all** argument values, not over the reachable ones, so
 the honest constant is the one the definition can produce.
 
 **The cost, stated rather than implied.**  This constant is the WCRT headline's
-first factor (`maxLockSetSize · (numCores − 1) · tCs`), so 9 → 11 narrows the
-per-lock critical section the RPi5 tick admits from 37 µs to **30 µs**
-(`admissibleCriticalSection_rpi5Tick`), and widens the CC-5 contention bound in
-proportion.  It is the maintainer's decision, taken against the alternative of
-refusing to declare `.replyRecv` at all on the arms that do not fit — which
-would have left the tree's most-travelled IPC path under the coarse
-serialisation while the model claimed a footprint for it.
+first factor (`maxLockSetSize · (numCores − 1) · tCs`), so each raise narrows the
+per-lock critical section the RPi5 tick admits: 37 µs at nine, 30 µs at eleven,
+and **25 µs** at thirteen (`admissibleCriticalSection_rpi5Tick`), widening the
+CC-5 contention bound in proportion each time.  Both raises are the maintainer's
+decision, taken against the same alternative — refusing to declare `.replyRecv`
+on the arms that do not fit — which would leave the tree's most-travelled IPC
+path under the coarse serialisation while the model claimed a footprint for it.
 
-`lockSet_tcbSuspend` and `lockSet_endpointCall` remain eight at their widest,
-and the arm-selected cancellation footprint (WS-OD OD3.5) is seven; this
-constant is not tight for any of them. -/
-def maxLockSetSize : Nat := 11
+**WS-OD OD3.7: 11 → 13**, and again on that same arm.  The donation return walks
+one link past the reply-stack head to find the outer caller
+(`replyStackOuterCaller?`) and then reads that caller's TCB to validate it
+(`outerCallerAcceptable`) — two objects no other member covers, since the head is
+the answered caller's own `replyObject` and the outer caller is provably neither
+thread the pop rewrites.  Both are **read**-mode members, and the second is a
+validate-then-commit, so leaving it undeclared is a time-of-check/time-of-use
+window on exactly the thread about to be handed a scheduling context.
+
+*Only `.replyRecv` needed the raise.*  `lockSet_endpointReply` takes the same two
+members and reaches nine; the arm-selected cancellation footprint reaches ten;
+`lockSet_tcbSuspend` and `lockSet_endpointCall` remain eight at their widest.
+This constant is not tight for any of them, and is tight only for the one arm
+that fuses a reply leg, a receive leg and a donation return into one syscall. -/
+def maxLockSetSize : Nat := 13
 
 end SeLe4n.Kernel.Concurrency

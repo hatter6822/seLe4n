@@ -474,7 +474,7 @@ theorem lockSetForSyscall_replyRecv_delegated_covers_server
       ∈ (lockSet_endpointReplyRecvOnCore st replier cnRoot prevCaller endpointId).pairs := by
   unfold lockSet_endpointReplyRecvOnCore
   rw [hServer]
-  exact lockSet_replyRecv_donation_server_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _
+  exact lockSet_replyRecv_donation_server_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- **WS-OD OD3.5**: a **delegated** `.replyRecv` — one whose reply capability
 answers a caller whose recorded server is some *other* thread — now declares a
@@ -786,10 +786,10 @@ theorem lockSetForSyscall_reply_covers_writes
       (replyLock linked, AccessMode.write) ∈ S.pairs) := by
   rw [lockSetForSyscall_reply_eq ops st caller rid answered hTcb hRid hAns] at hDecl
   cases hDecl
-  refine ⟨lockSet_endpointReply_target_tcb_write_mem _ _ _ _ _ _, ?_⟩
+  refine ⟨lockSet_endpointReply_target_tcb_write_mem _ _ _ _ _ _ _ _, ?_⟩
   intro linked hLinked
   simp only [lockSet_endpointReplyOnCore, hLinked]
-  exact lockSet_endpointReply_reply_write_mem _ _ _ _ _ _
+  exact lockSet_endpointReply_reply_write_mem _ _ _ _ _ _ _ _
 
 /-- **WS-RR RR7.11**: at resolved operands, `.replyRecv` declares the fused
 footprint.
@@ -825,9 +825,9 @@ theorem lockSetForSyscall_replyRecv_covers_writes
   rw [lockSetForSyscall_replyRecv_eq ops st caller endpointId rid prevCaller
     hTcb hEp hRid hAns] at hDecl
   cases hDecl
-  exact ⟨lockSet_replyRecv_caller_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _,
-         lockSet_replyRecv_target_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _,
-         lockSet_replyRecv_endpoint_write_mem _ _ _ _ _ _ _ _ _ _ _⟩
+  exact ⟨lockSet_replyRecv_caller_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _,
+         lockSet_replyRecv_target_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _,
+         lockSet_replyRecv_endpoint_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _⟩
 
 /-- **WS-RR RR7.11**: and its receive leg's capability install, which writes the
 same CDT structure a send's does. -/
@@ -847,7 +847,7 @@ theorem lockSetForSyscall_replyRecv_covers_capsWrites
   cases hDecl
   refine ⟨?_, lockSet_endpointReplyRecvOnCore_covers_cdt _ _ _ _ _ hCaps⟩
   simp only [lockSet_endpointReplyRecvOnCore, hCaps]
-  exact lockSet_replyRecv_capsInstall_write_mem _ _ _ _ _ _ _ _ _ _
+  exact lockSet_replyRecv_capsInstall_write_mem _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- **WS-OD OD3.5**: and the two writes this arm was missing — the second
 SchedContext hand-off's object lock, and the state-level lock that hand-off's
@@ -877,8 +877,8 @@ theorem lockSetForSyscall_replyRecv_covers_redonation
   cases hDecl
   unfold lockSet_endpointReplyRecvOnCore
   rw [hNew]
-  exact ⟨lockSet_replyRecv_redonated_sc_write_mem _ _ _ _ _ _ _ _ _ _ _,
-         lockSet_replyRecv_redonation_stateLevel_write_mem _ _ _ _ _ _ _ _ _ _ _⟩
+  exact ⟨lockSet_replyRecv_redonated_sc_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _,
+         lockSet_replyRecv_redonation_stateLevel_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _⟩
 
 /-- **WS-RR RR7.11**: at resolved operands, `.notificationSignal` declares the
 bound-delivery-aware signal footprint. -/

@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.129.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.130.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1456,7 +1456,7 @@ sender's *effective* context, bound or donated, and passes it down the chain.
 Two register rows close here: that gap, and the `passiveServerIdle` break the
 `v0.34.97` reclaim introduced.  **42 sub-tasks across OD1..OD6.**  **OD1 is
 closed** (`v0.34.100` → `v0.34.108`), **OD2 is closed** (`v0.34.125`, one cut),
-and **OD3.1–OD3.6 have landed** (`v0.34.126` → `v0.34.129`); OD3.7..OD6 have not
+and **OD3.1–OD3.7 have landed** (`v0.34.126` → `v0.34.130`); OD3.8..OD6 have not
 started.
 
 Six things new code must respect once this lands, and each is a decision the plan
@@ -1581,9 +1581,10 @@ because it is the same question — `.call` has declared this member since SM6.A
 and said why.  (2) **The recorded server's TCB is declared unconditionally**, so
 a *delegated* reply declares like any other: PR #892 review round 6's refusal
 (`lockSetForSyscall_replyRecv_delegated`, concluding `none`) is retired and
-replaced by `_delegated_declares`.  (3) **`maxLockSetSize` is 11**, and that is
+replaced by `_delegated_declares`.  (3) **`maxLockSetSize` is 11 at this cut**, and that is
 the cost: `admissibleCriticalSection` for the 1 ms tick falls from 37 µs to
-30 µs, and the CC-5 bound widens in proportion.  The alternative was a narrower
+30 µs, and the CC-5 bound widens in proportion.  (OD3.7 moves it again, to 13 and
+25 µs — see the bullet below.)  The alternative was a narrower
 declaration on the hottest path, and this project rates a footprint that omits a
 written lock worse than a wide one.  (4) **`SystemState.scThreadIndex` is an
 `RHTable`**, so every donation and every return takes `stateLevelLock` — an
@@ -1634,6 +1635,33 @@ not cosmetic: conditioning it on `installsCaps` alone omits it on exactly the
 passive-server path, which donates and installs nothing.  `permittedKinds
 .receive` gains `.schedContext`, the size bound is restated at the new arity
 (`3 + 4 = 7 ≤ 11`), and `maxLockSetSize` does not move.
+
+**...and the pop declares the two objects it reads below the head** (OD3.7,
+`v0.34.130`).  `returnDonatedSchedContext` at call depth ≥ 2 walks one link past
+the reply-stack head to find the outer caller (`replyStackOuterCaller?`) and then
+reads that caller's TCB to validate it (`outerCallerAcceptable`).  Neither object
+is covered by another member — the head Reply *is* the answered caller's own
+`replyObject`, and the outer caller is provably neither thread the pop rewrites —
+so a footprint that omits them is *false* at depth ≥ 2, and the TCB read is a
+**validate-then-commit**, which makes an unlocked read a time-of-check/time-of-use
+window on exactly the thread about to receive a scheduling context.  Five things
+new code must respect.  (1) **The pop is O(1) at any chain depth** — one frame of
+lookahead, no more — so this is a constant `+2` on the footprint rather than
+`O(depth)`; a pop that traversed the chain could not be given a footprint at all,
+since a `LockSet` is capped at `maxLockSetSize` and a chain is not.  (2) **Both
+members are read-mode**, and Tier 3 negatives refuse the write spelling.  (3)
+**One resolver answers for all three arms**: `replyStackBelowHeadReads?`, with
+`cancelBelowHeadReads?` deriving the cancellation arm's pair from
+`cancelledCallerDonation?` — the plan row named only the first read, and the
+second is derived from the operation, which is the enumeration-versus-derivation
+rule applied to a footprint.  (4) **`maxLockSetSize` is 13**:
+`admissibleCriticalSection` for the 1 ms tick falls to **25 µs** and the uniform
+envelope moves to 2340 µs, all derived from the constant.  **Only `.replyRecv`
+needed the raise** — `lockSet_endpointReply` reaches nine and the cancellation
+reply arm ten (`lockSet_cancelIpcBlockingOnCore_size_le_ten`) — and that is
+asserted rather than described.  (5) **Both members are `none` on every state
+this tree reaches**, so no live footprint widened; this declares ahead of OD4.4's
+code, which is the order the numbering rule requires.
 
 **The pop is live and inert** (OD3.1–OD3.3, `v0.34.126`).
 `returnDonatedSchedContext` takes a `newOwner? : Option ThreadId` and is four
@@ -1858,7 +1886,7 @@ code may assume:
   **five** locks and
   refuses six.  What the tree states instead is the budget condition solved for the
   measurable factor: `admissibleCriticalSection budget` is the largest per-lock cost
-  a budget admits at the declared ceiling — **30 µs** for the 1 ms tick — with
+  a budget admits at the declared ceiling — **25 µs** for the 1 ms tick — with
   `WCRT_lockSet_le_budget_of_admissible` the payoff and
   `rpi5Tick_refuses_sixty_micro_sections` the `decide`-checked negative.  New code
   must not quote a numeric syscall WCRT for this kernel; measuring `tCs` on the
@@ -1944,12 +1972,13 @@ code may assume:
   does; RR7.7 declared that on the two sending arms and RR7.11 on the two
   receiving ones, and `capsCarryingIpcArms_footprints_share_serialization` is the
   statement that no two of the four are ever disjoint.  (3) **`maxLockSetSize` is
-  11** (WS-OD OD3.5; 9 at RR7.11, 8 before that): the widest declared footprint
-  is a `.replyRecv` that returns a donation, re-donates, installs capabilities
-  and was answered through a *delegated* reply capability.  The WCRT headline
+  13** (WS-OD OD3.7; 11 at OD3.5, 9 at RR7.11, 8 before that): the widest declared
+  footprint is a `.replyRecv` that returns a donation, re-donates, installs
+  capabilities, was answered through a *delegated* reply capability, and reads the
+  two objects below its reply-stack head.  The WCRT headline
   `maxLockSetSize · (numCores − 1) · tCs` is
-  parametric in it — `admissibleCriticalSection` reads **30 µs** off it for the
-  1 ms tick, down from 37 — and a theorem named `_size_le_maxLockSetSize` must
+  parametric in it — `admissibleCriticalSection` reads **25 µs** off it for the
+  1 ms tick, down from 30 — and a theorem named `_size_le_maxLockSetSize` must
   state the
   constant, never the numeral — five in the scheduler pinned `≤ 8` literally,
   which is why the constant now lives in `Locks/LockSet.lean` where every

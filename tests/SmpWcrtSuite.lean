@@ -250,12 +250,13 @@ private def runPerOpExactChecks : IO Unit := do
   assertBool "advanceDomainOnCore (1 lock) lock-WCRT = 180"
     (decide (WCRT_lockSet (advanceDomainOnCoreLockSet bootCoreId) tCs60 = 180))
 
-/-- §3.2: SM5.J.2 — the RPi5 §3.9 bound `≤ maxLockSetSize · 3 · tCs = 11·180 = 1980`,
+/-- §3.2: SM5.J.2 — the RPi5 §3.9 bound `≤ maxLockSetSize · 3 · tCs = 13·180 = 2340`,
 and the typical `|lockSet| ≤ 4` syscall fits the 1 ms (1000 µs) timer-tick budget
 (`4 · 3 · 60 = 720 < 1000`).
 
-**WS-RR RR7.11** moved `maxLockSetSize` from 8 to 9 and **WS-OD OD3.5** from
-9 to 11, so the uniform envelope moved 1440 → 1620 → 1980 µs.  What fits the 1 ms budget is the *typical*
+**WS-RR RR7.11** moved `maxLockSetSize` from 8 to 9, **WS-OD OD3.5** from 9 to
+11 and **WS-OD OD3.7** from 11 to 13, so the uniform envelope moved
+1440 → 1620 → 1980 → 2340 µs.  What fits the 1 ms budget is the *typical*
 four-lock syscall and the tick's own three-lock footprint (540 µs), never the
 envelope — which did not fit at 8 either.  Both figures are pinned below so the
 distinction is checked rather than described. -/
@@ -264,19 +265,19 @@ private def runRpi5BoundChecks : IO Unit := do
   -- **The stable half first.**  `3 · tCs` is the per-lock, per-contending-core
   -- cost and moves only with the board; the *envelope* is that times the
   -- ceiling, so it moves with every footprint widening (8 → 9 at RR7.11,
-  -- 9 → 11 at WS-OD OD3.5).  Pinning only the product is what made this witness
-  -- go stale twice: it reads as a claim about the board when it is a claim
-  -- about the ceiling.
+  -- 9 → 11 at WS-OD OD3.5, 11 → 13 at WS-OD OD3.7).  Pinning only the product is
+  -- what made this witness go stale twice: it reads as a claim about the board
+  -- when it is a claim about the ceiling.
   assertBool "the per-lock, per-core cost 3 · tCs = 180 µs (the board's half)"
     (decide (3 * tCs60 = 180))
-  assertBool "the RPi5 uniform envelope maxLockSetSize·3·60 = 1980 (moves with the ceiling)"
-    (decide (maxLockSetSize * (3 * tCs60) = 1980))
+  assertBool "the RPi5 uniform envelope maxLockSetSize·3·60 = 2340 (moves with the ceiling)"
+    (decide (maxLockSetSize * (3 * tCs60) = 2340))
   -- The envelope is NOT the tick-budget claim: it exceeds 1 ms, and did at 8 too.
   assertBool "NEGATIVE: the uniform envelope does not itself fit the 1 ms budget"
     (decide (¬ (maxLockSetSize * (3 * tCs60) < 1000)))
-  assertBool "chooseThreadOnCore lock-WCRT (360) ≤ RPi5 bound (1980)"
+  assertBool "chooseThreadOnCore lock-WCRT (360) ≤ RPi5 bound (2340)"
     (decide (WCRT_lockSet (chooseThreadOnCoreLockSet bootCoreId) tCs60 ≤ maxLockSetSize * (3 * tCs60)))
-  assertBool "timerTickOnCore lock-WCRT (540) ≤ RPi5 bound (1980)"
+  assertBool "timerTickOnCore lock-WCRT (540) ≤ RPi5 bound (2340)"
     (decide (WCRT_lockSet (timerTickOnCoreLockSet bootCoreId) tCs60 ≤ maxLockSetSize * (3 * tCs60)))
   -- …and the tick's OWN footprint is what fits the 1 ms budget.
   assertBool "the tick's own lock-WCRT (540 µs) < 1000 µs (the 1 ms tick budget)"
@@ -300,15 +301,16 @@ private def runRpi5BoundChecks : IO Unit := do
     (decide (5 * (3 * tCs60) ≤ 1000) && decide (¬ (6 * (3 * tCs60) ≤ 1000)))
   -- WS-RR RR7.31: the useful statement — the budget solved for the per-lock cost.
   -- The divisor is `maxLockSetSize · (numCores − 1)`, so a 1 ms budget admits
-  -- `1000 ÷ 33 = 30 µs` at WS-OD OD3.5's ceiling of eleven (it was `1000 ÷ 27 =
-  -- 37 µs` at RR7.11's nine), and every declared footprint then fits by
+  -- `1000 ÷ 39 = 25 µs` at WS-OD OD3.7's ceiling of thirteen (it was
+  -- `1000 ÷ 33 = 30 µs` at OD3.5's eleven and `1000 ÷ 27 = 37 µs` at RR7.11's
+  -- nine), and every declared footprint then fits by
   -- `WCRT_lockSet_le_budget_of_admissible`.  The divisor is pinned first, as the
   -- thing the figure is a function of: pinning only the quotient is what made
   -- the envelope witness above go stale twice.
-  assertBool "the admissible-cost divisor is maxLockSetSize · (numCores − 1) = 33"
-    (decide (maxLockSetSize * (numCores - 1) = 33))
-  assertBool "…so the 1 ms tick admits a 30 µs per-lock critical section"
-    (decide (admissibleCriticalSection rpi5TickBudgetMicros = 30))
+  assertBool "the admissible-cost divisor is maxLockSetSize · (numCores − 1) = 39"
+    (decide (maxLockSetSize * (numCores - 1) = 39))
+  assertBool "…so the 1 ms tick admits a 25 µs per-lock critical section"
+    (decide (admissibleCriticalSection rpi5TickBudgetMicros = 25))
   assertBool "…and at that cost the declared ceiling fits the budget"
     (decide (maxLockSetSize * (3 * admissibleCriticalSection rpi5TickBudgetMicros)
       ≤ rpi5TickBudgetMicros))

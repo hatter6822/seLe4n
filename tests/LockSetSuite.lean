@@ -343,7 +343,7 @@ example :
 a single (TCB, write) entry. -/
 
 example :
-    let S := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩ none none
+    let S := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩ none none none none none
     S.size = 2 := by decide
 
 -- ============================================================================
@@ -1137,7 +1137,7 @@ private def runLubMergeChecks : IO Unit := do
       [(⟨.cnode, ObjId.ofNat 10⟩, .read),
        (⟨.tcb, ObjId.ofNat 5⟩, .write)]))
   -- endpointReply(caller=replyTarget) collapses.
-  let selfReply := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩ none none
+  let selfReply := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩ none none none none none
   assertBool "endpointReply(caller=replyTarget) collapses to 2 locks"
     (decide (selfReply.size = 2))
   -- Audit-pass-3+4: endpointReply with donation-return.
@@ -1146,57 +1146,73 @@ private def runLubMergeChecks : IO Unit := do
   -- WS-OD OD3.5: five, not four — a reply that returns a donation also holds
   -- the state-level lock, for the `scThreadIndex` maintenance the return ends in.
   let donReply := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
-                    (some ⟨42⟩) (some ⟨7⟩)
+                    (some ⟨42⟩) (some ⟨7⟩) none none none
   assertBool "endpointReply(caller=5, target=7, donatedSc=42, owner=7=target) has 5 locks (lub-collapse)"
     (decide (donReply.size = 5))
   -- Audit-pass-4: under hypothetical invariant violation where
   -- originalOwner ≠ replyTarget, the lockSet correctly covers both.
   let donReplyDrift := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
-                         (some ⟨42⟩) (some ⟨9⟩)
+                         (some ⟨42⟩) (some ⟨9⟩) none none none
   assertBool "endpointReply(caller=5, target=7, owner=9≠target) has 6 locks (drift case)"
     (decide (donReplyDrift.size = 6))
   -- WS-OD OD3.5: a reply that returns *nothing* holds no state-level lock — the
   -- member is conditioned on the donation, not unconditional, and a check that
   -- only ever saw the donating shape could not tell the two apart.
-  let bareReply := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ none none
+  let bareReply := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ none none none none none
   assertBool "endpointReply with no donation has 3 locks (no state-level member)"
     (decide (bareReply.size = 3))
   -- Audit-pass-3+4: replyRecv with full donation extension.
   -- WS-OD OD3.5: seven, not six — the state-level lock joins for the same reason.
   let donReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                        (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨7⟩) none false
-                       none none
+                       none none none none
   assertBool "replyRecv (sender + donation + owner=target=7 collapse) has 7 locks"
     (decide (donReplyRecv.size = 7))
   -- WS-OD OD3.5: a **non-delegated** reply names its recorded server, and that
   -- is the invoking thread, so the member merges and the size does not move.
   let selfServedReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                               (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨7⟩) none false
-                              (some ⟨5⟩) none
+                              (some ⟨5⟩) none none none
   assertBool "replyRecv with a non-delegated recorded server still has 7 locks (lub-collapse)"
     (decide (selfServedReplyRecv.size = 7))
   -- ...and a **delegated** one names a third thread, which is the member PR #892
   -- review round 6 had no room for and OD3.5 declares.
   let delegatedReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                              (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨7⟩) none false
-                             (some ⟨9⟩) none
+                             (some ⟨9⟩) none none none
   assertBool "replyRecv with a delegated recorded server has 8 locks"
     (decide (delegatedReplyRecv.size = 8))
   -- ...and the second SchedContext hand-off — the member whose absence made this
   -- footprint false — is a ninth, distinct from the returned context.
   let redonatingReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                               (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨7⟩) none false
-                              (some ⟨9⟩) (some ⟨43⟩)
+                              (some ⟨9⟩) (some ⟨43⟩) none none
   assertBool "replyRecv that also re-donates has 9 locks (the second hand-off's SC)"
     (decide (redonatingReplyRecv.size = 9))
+  -- WS-OD OD3.7: and the two objects the donation return reads *below* the
+  -- reply-stack head are a twelfth and thirteenth — the reason the ceiling moved
+  -- again.  Each is asserted on its own, since a member that merged would make
+  -- the raise look unnecessary while the footprint stayed false.
+  let belowHeadReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
+                             (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨7⟩) none false
+                             (some ⟨9⟩) (some ⟨43⟩) (some ⟨44⟩) none
+  assertBool "replyRecv that reads the Reply below the head has 10 locks"
+    (decide (belowHeadReplyRecv.size = 10))
+  let outerCallerReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
+                               (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨7⟩) none false
+                               (some ⟨9⟩) (some ⟨43⟩) none (some ⟨12⟩)
+  assertBool "replyRecv that also validates the outer caller's TCB has 10 locks"
+    (decide (outerCallerReplyRecv.size = 10))
   -- The widest shape the arm can declare: a delegated, re-donating, caps-carrying
-  -- `.replyRecv` with a distinct original owner — eleven, which is what
-  -- `maxLockSetSize` is measured against.
+  -- `.replyRecv` with a distinct original owner, reading both objects below its
+  -- reply-stack head — thirteen, which is what `maxLockSetSize` is measured
+  -- against.
   let widestReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                           (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨11⟩)
                           (some ⟨60⟩) true (some ⟨9⟩) (some ⟨43⟩)
-  assertBool "the widest declarable .replyRecv has 11 locks (= maxLockSetSize)"
-    (decide (widestReplyRecv.size = 11))
+                          (some ⟨44⟩) (some ⟨12⟩)
+  assertBool "the widest declarable .replyRecv has 13 locks (= maxLockSetSize)"
+    (decide (widestReplyRecv.size = 13))
   assertBool "...and that is exactly maxLockSetSize"
     (decide (widestReplyRecv.size = maxLockSetSize))
 
@@ -1280,8 +1296,11 @@ private def runConsistencyRuntimeChecks : IO Unit := do
   assertBool "lockSet_endpointCall (with donation): all kinds in permittedKinds .call"
     allOk_callDon
   -- Audit-pass-3+4: donation-return extension on .reply (full args).
+  -- WS-OD OD3.7: taken with both below-head reads resolved, so the kind check
+  -- covers the shape the live arm declares at call depth ≥ 2 rather than the
+  -- chain-free one.
   let replyDon := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
-                    (some ⟨42⟩) (some ⟨7⟩)
+                    (some ⟨42⟩) (some ⟨7⟩) none (some ⟨44⟩) (some ⟨12⟩)
   let allOk_replyDon := replyDon.pairs.all (fun p =>
     decide (p.fst.kind ∈ permittedKinds .reply))
   assertBool "lockSet_endpointReply (with donation + owner): all kinds in permittedKinds .reply"
@@ -1585,7 +1604,7 @@ private def runPipChainStartChecks : IO Unit := do
     (let st := pipChainStart_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                  none none
      let ls := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
-                 none none
+                 none none none none none
      match st with
      | none => true
      | some tid => decide (ls.containsKey ⟨.tcb, ObjId.ofNat tid.toNat⟩ = true))

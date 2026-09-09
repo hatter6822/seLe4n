@@ -405,15 +405,24 @@ serialised against every other core.
 `scThreadIndexAdd`/`scThreadIndexRemove` on `SystemState.scThreadIndex`, an
 `RHTable` whose insert may rehash and back-shift the whole table.  The word
 "exactly" left this docstring with it: the extension is three members, and the
-state-level one was written by the operation and named by no lock. -/
+state-level one was written by the operation and named by no lock.
+
+**WS-OD OD3.7**: the reply object and the two below-head reads are pinned at
+`none` on *both* sides, and explicitly rather than by a default.  This equation
+characterises what the *donation* adds, and `lockSetExtendOpt` is an insertion —
+it does not commute — so the donation's two members cannot be lifted over
+members added after them.  Stating it on the chain-free, reply-object-free shape
+is therefore the general form this equation has; the members it holds fixed were
+already fixed before, silently, by `replyId`'s default. -/
 theorem lockSet_endpointReply_donation_extension
     (replier : SeLe4n.ThreadId) (cnRoot : SeLe4n.ObjId) (target : SeLe4n.ThreadId)
     (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId) :
     lockSet_endpointReply replier cnRoot target (some scId) (some originalOwner)
+        none none none
       = lockSetExtendOpt
           (lockSetExtendOpt
             (lockSetExtendOpt
-              (lockSet_endpointReply replier cnRoot target none none)
+              (lockSet_endpointReply replier cnRoot target none none none none none)
               (some (schedContextLock scId, .write)))
             (some (tcbLock originalOwner, .write)))
           (some (stateLevelLock, .write)) := by

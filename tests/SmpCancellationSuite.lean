@@ -400,7 +400,7 @@ open SeLe4n.Testing
 #check @lockSet_cancelIpcBlockingOnCore_replyArm_eq
 #check @lockSet_cancelIpcBlockingOnCore_endpointArm_covers_prev
 #check @lockSet_cancelIpcBlockingOnCore_endpointArm_covers_next
-#check @lockSet_cancelIpcBlockingOnCore_size_le_eight
+#check @lockSet_cancelIpcBlockingOnCore_size_le_ten
 -- ...and the frames that license it: the arms that declare no neighbour write
 -- none.
 #check @cancelIpcBlocking_notificationArm_tcb_frame
@@ -445,6 +445,9 @@ variable (rdSc? : Option SeLe4n.SchedContextId) (dh? : Option SeLe4n.ThreadId)
 -- holder's endpoint and its two queue neighbours.
 variable (hEp? : Option SeLe4n.ObjId)
 variable (hNb? : Option SeLe4n.ThreadId × Option SeLe4n.ThreadId)
+-- WS-OD OD3.7: and two more — the Reply one frame below the reply-stack head and
+-- that frame's caller's TCB, which the hand-back reads at call depth ≥ 2.
+variable (bhR? : Option SeLe4n.ReplyId) (oc? : Option SeLe4n.ThreadId)
 
 /-- SM6.E.5: the flagship's remote-poke conjunct applies. -/
 example (h1 : st.getTcb? victim = some tcb0)
@@ -537,16 +540,17 @@ example (stPost : SystemState) (holder : SeLe4n.ThreadId) (t : TCB)
 
 /-- SM6.E.2: the single-core atomicity theorem applies (2PL bracket shape). -/
 example :
-    withLockSet (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb?) ec
+    withLockSet (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb? bhR? oc?) ec
         (fun st => (cancelIpcBlocking st victim tcb, ())) s
       = (unwindAll ec
-          (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb?).lockAcquireSequence.reverse
+          (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb? bhR? oc?).lockAcquireSequence.reverse
           (cancelIpcBlocking
             (acquireAll ec
-              (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb?).lockAcquireSequence s)
+              (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb? bhR? oc?).lockAcquireSequence s)
             victim tcb),
          ()) :=
-  cancelIpcBlocking_atomic_under_lockSet victim tcb ec blEp blN r? rdSc? dh? hEp? hNb? s
+  cancelIpcBlocking_atomic_under_lockSet victim tcb ec blEp blN r? rdSc? dh? hEp? hNb?
+    bhR? oc? s
 
 /-- SM6.E.4: the donation atomicity companion applies (dispatcher form). -/
 example :

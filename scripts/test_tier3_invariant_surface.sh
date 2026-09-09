@@ -1481,7 +1481,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "\(\(cancelSpliceNeighbors\? t
 run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_replyArm_eq' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_endpointArm_covers_prev' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_endpointArm_covers_next' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_size_le_eight' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_size_le_ten' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
 # ...and the frames that license the narrowing — an arm that declares no
 # neighbour must write none, and that is checked rather than read off the shape.
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_notificationArm_tcb_frame' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
@@ -1642,8 +1642,8 @@ run_check "INVARIANT" rg -n 'lockSet_endpointReceive \(donation, no caps\) size 
 # OD3.5: the ceiling, and the figure derived from it.  `maxLockSetSize` is the
 # WCRT headline's first factor, so a cut that widens a footprint pays here —
 # visibly, as a theorem rather than a paragraph.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def maxLockSetSize : Nat := 11$" SeLe4n/Kernel/Concurrency/Locks/LockSet.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem admissibleCriticalSection_rpi5Tick :\n    admissibleCriticalSection rpi5TickBudgetMicros = 30 := by decide" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def maxLockSetSize : Nat := 13$" SeLe4n/Kernel/Concurrency/Locks/LockSet.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem admissibleCriticalSection_rpi5Tick :\n    admissibleCriticalSection rpi5TickBudgetMicros = 25 := by decide" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "admissibleCriticalSection rpi5TickBudgetMicros = 37" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 
 # The projection result got STRONGER: every field the return writes is stripped,
@@ -5806,16 +5806,18 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_replyRecv \(callerTid[^\n
 # those kinds.
 run_check "INVARIANT" bash -lc 'rg -U -n "\| \.receive =>\n      \[\.tcb, \.cnode, \.endpoint, \.schedContext, \.reply, \.objStore\]" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
 run_check "INVARIANT" rg -n '\[\.tcb, \.cnode, \.endpoint, \.schedContext, \.reply, \.objStore\]' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-# NEGATIVE: neither superseded constant can come back.  `maxLockSetSize` was 8
-# before RR7.11 and 9 before WS-OD OD3.5; it is 11 because the widest declared
-# footprint -- a delegated `.replyRecv` that returns a donation, re-donates and
-# installs capabilities -- is eleven members.  Reverting the constant without
+# NEGATIVE: no superseded constant can come back.  `maxLockSetSize` was 8 before
+# RR7.11, 9 before WS-OD OD3.5 and 11 before WS-OD OD3.7; it is 13 because the
+# widest declared footprint -- a delegated `.replyRecv` that returns a donation,
+# re-donates, installs capabilities and reads the two objects below its
+# reply-stack head -- is thirteen members.  Reverting the constant without
 # reverting the members makes a footprint the bounded-wait argument does not
-# cover.  The positive pin is the single `:= 11` anchor above; stating it twice
+# cover.  The positive pin is the single `:= 13` anchor above; stating it twice
 # is one question with two answers, and the second copy is the one that goes
 # stale.
 run_negative_check "INVARIANT" rg -n 'def maxLockSetSize : Nat := 8' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
 run_negative_check "INVARIANT" rg -n 'def maxLockSetSize : Nat := 9' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
+run_negative_check "INVARIANT" rg -n 'def maxLockSetSize : Nat := 11' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
 # NEGATIVE: and a `_size_le_maxLockSetSize` theorem must state the CONSTANT, not
 # the numeral it happens to hold.  Five in the scheduler pinned `≤ 8` literally,
 # so each was a claim about a number while its name promised a relation -- the
@@ -5831,7 +5833,10 @@ run_negative_check "INVARIANT" rg -n 'match reply.caller with' SeLe4n/Kernel/API
 # capless send's asserted absent.
 run_check "INVARIANT" rg -n 'runIpcDeclaredFootprintChecks' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'a caps-installing .\.receive. declares the state-level write' tests/SmpInformationFlowSuite.lean
-run_check "INVARIANT" rg -n 'lockSet_replyRecv \(all options\) size = 11 \(the bound, exactly\)' tests/DeadlockFreedomSuite.lean
+# WS-OD OD3.7: the label names the CONSTANT, not the numeral it holds -- this
+# anchor pinned `= 11` and went stale the moment the ceiling moved, which is the
+# same defect the `_size_le_maxLockSetSize` negative below refuses in Lean.
+run_check "INVARIANT" rg -n 'lockSet_replyRecv \(all options\) size = maxLockSetSize \(the bound, exactly\)' tests/DeadlockFreedomSuite.lean
 # WS-RR RR7.12: the declared footprint is ACQUIRED at the live syscall seam.
 # Before this row exactly one live export bracketed (the raw
 # `suspend_thread_cross_core`), so "per-object reader-writer fine locks"
@@ -11667,5 +11672,62 @@ run_negative_check "INVARIANT" rg -n '// Skip off_mem_rsvmap at 16\.' rust/sele4
 run_check "INVARIANT" rg -n 'fails header validation' tests/*PlatformSuite.lean
 run_check "INVARIANT" rg -n 'validate_fdt_header_rejects_each_layout_violation' rust/sele4n-hal/src/cmdline.rs
 run_check "INVARIANT" rg -n 'validate_fdt_header_requires_the_version_carrying_size_dt_struct' rust/sele4n-hal/src/cmdline.rs
+
+# ============================================================================
+# WS-OD OD3.7 -- the two objects the donation return reads BELOW the stack head
+# ============================================================================
+#
+# `returnDonatedSchedContext` at call depth >= 2 walks one link past the
+# reply-stack head to find the outer caller (`replyStackOuterCaller?`) and then
+# reads that caller's TCB to validate it (`outerCallerAcceptable`).  Neither is
+# covered by another member: the head Reply IS the answered caller's own
+# `replyObject`, and `outerCallerAcceptable`'s first two conjuncts prove the
+# outer caller is neither thread the pop rewrites.  The second read is a
+# validate-then-commit, so an unlocked read is a time-of-check/time-of-use
+# window on exactly the thread about to receive a scheduling context.
+#
+# The two are ONE resolver, because it is one question.  The plan row named only
+# the first read; the second is derived from the operation, which is the
+# enumeration-versus-derivation rule applied to a footprint.
+run_check "INVARIANT" rg -n '^def replyStackBelowHeadReads\?' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem replyStackBelowHeadReads\?_of_no_stack' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem replyStackBelowHeadReads\?_of_bottom_head' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+# The declared caller IS the resolver's answer -- so the lock is on the thread
+# `outerCallerAcceptable` will actually read, not on one that merely sits below
+# the head.  Without this the footprint and the walk could drift, which is the
+# shape OD3.5 spent a whole row closing on the delegated reply.
+run_check "INVARIANT" rg -n '^theorem replyStackBelowHeadReads\?_snd_eq_outerCaller' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+# Both members are READ mode: the pop inspects these objects and writes neither.
+# A write here would serialise unrelated pops against each other for nothing.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReply[^\n]*(\n([ \t][^\n]*)?)*belowHeadReplyId\.map \(fun rid => \(replyLock rid, AccessMode\.read\)\)" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReply[^\n]*(\n([ \t][^\n]*)?)*outerCallerTid\.map \(fun ot => \(tcbLock ot, AccessMode\.read\)\)" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_replyRecv[^\n]*(\n([ \t][^\n]*)?)*belowHeadReplyId\.map \(fun rid => \(replyLock rid, AccessMode\.read\)\)" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_replyRecv[^\n]*(\n([ \t][^\n]*)?)*outerCallerTid\.map \(fun ot => \(tcbLock ot, AccessMode\.read\)\)" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+# NEGATIVE: a WRITE-mode below-head member is refused -- token-preserving, since
+# it keeps both member names and changes only the relation they declare.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "belowHeadReplyId\.map \(fun rid => \(replyLock rid, AccessMode\.write\)\)" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "outerCallerTid\.map \(fun ot => \(tcbLock ot, AccessMode\.write\)\)" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+# The cancellation reply arm reads them too -- its reclaim runs the same pop --
+# and its resolver is DERIVED from `cancelledCallerDonation?`, the reclaim's own
+# answer to which SchedContext is handed back.  One question, one answer.
+run_check "INVARIANT" rg -n '^def cancelBelowHeadReads\?' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelBelowHeadReads\?[^\n]*(\n([ \t][^\n]*)?)*replyStackBelowHeadReads\? st scId" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" rg -n '^@\[simp\] theorem cancelBelowHeadReads\?_of_no_donation' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+# The three resolved footprints supply them from the pre-state.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReplyOnCore[^\n]*(\n([ \t][^\n]*)?)*replyStackBelowHeadReads\? st scId" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*replyStackBelowHeadReads\? st scId" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_cancelIpcBlockingOnCore[^\n]*(\n([ \t][^\n]*)?)*cancelBelowHeadReads\? st victimTid tcb" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+# The bounds, restated at the new arity.  Only `.replyRecv` needed the ceiling
+# raise: the reply arm reaches nine and the cancellation reply arm ten.
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_size_le_ten' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+run_check "INVARIANT" rg -n '^theorem size_le_11' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_consistent_base_plus_eleven_opts' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+# The admissible per-lock cost moved with the ceiling, as a derived figure.  The
+# POSITIVE pin lives once, at the theorem itself (see the `:= by decide` anchor
+# above); repeating it here would be one question with two answers.  What this
+# block adds is the negative: no superseded figure may come back while the
+# ceiling stands at thirteen.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "admissibleCriticalSection rpi5TickBudgetMicros = 30" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "admissibleCriticalSection rpi5TickBudgetMicros = 37" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 
 finalize_report

@@ -1755,21 +1755,25 @@ theorem endpointReplyOnCore_observer_atomic
     -- occur in `lockSet_endpointReply` at all, so the statement read as covering
     -- shapes it says nothing about while the compiler reported them unused.
     (replyId : Option SeLe4n.ReplyId)
+    -- WS-OD OD3.7: and the two objects the donation return reads below the
+    -- reply-stack head, for the same reason the reply object is here.
+    (belowHeadReply? : Option SeLe4n.ReplyId) (outerCaller? : Option SeLe4n.ThreadId)
     (s : SystemState) (hInv : s.objects.invExt) :
     threadIpcStateObserver observed
         (acquireAll executingCore
           (lockSet_endpointReply replier cnRoot target donatedSc?
-            donatedOwner? replyId).lockAcquireSequence s)
+            donatedOwner? replyId belowHeadReply? outerCaller?).lockAcquireSequence s)
       = threadIpcStateObserver observed s
     ∧ threadIpcStateObserver observed
         (withLockSet
-          (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner? replyId)
+          (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner? replyId
+            belowHeadReply? outerCaller?)
           executingCore (endpointReplyOnCore replier target msg executingCore) s).1
       = threadIpcStateObserver observed
           (endpointReplyOnCore replier target msg executingCore
             (acquireAll executingCore
               (lockSet_endpointReply replier cnRoot target donatedSc?
-                donatedOwner? replyId).lockAcquireSequence s)).1 :=
+                donatedOwner? replyId belowHeadReply? outerCaller?).lockAcquireSequence s)).1 :=
   lockSet_observer_atomic_of_objectStoreObserver _ executingCore _ s _
     (threadIpcStateObserver_insensitiveOn executingCore observed) hInv
     (fun s' h => endpointReplyOnCore_preserves_objects_invExt replier target msg
@@ -1789,22 +1793,28 @@ theorem endpointReplyRecvOnCore_observer_atomic
     -- rather than chosen.
     (installsCaps : Bool) (donationServer? : Option SeLe4n.ThreadId)
     (redonatedSc? : Option SeLe4n.SchedContextId)
+    -- WS-OD OD3.7: and the two below-head reads, declared explicitly for the
+    -- same reason.
+    (belowHeadReply? : Option SeLe4n.ReplyId) (outerCaller? : Option SeLe4n.ThreadId)
     (s : SystemState) (hInv : s.objects.invExt) :
     threadIpcStateObserver observed
         (acquireAll executingCore
           (lockSet_replyRecv receiver cnRoot target endpointId newSender? donatedSc?
-            donatedOwner? replyId installsCaps donationServer? redonatedSc?).lockAcquireSequence s)
+            donatedOwner? replyId installsCaps donationServer? redonatedSc?
+            belowHeadReply? outerCaller?).lockAcquireSequence s)
       = threadIpcStateObserver observed s
     ∧ threadIpcStateObserver observed
         (withLockSet (lockSet_replyRecv receiver cnRoot target endpointId newSender?
-            donatedSc? donatedOwner? replyId installsCaps donationServer? redonatedSc?)
+            donatedSc? donatedOwner? replyId installsCaps donationServer? redonatedSc?
+            belowHeadReply? outerCaller?)
           executingCore
           (endpointReplyRecvOnCore endpointId receiver target msg replyId executingCore) s).1
       = threadIpcStateObserver observed
           (endpointReplyRecvOnCore endpointId receiver target msg replyId executingCore
             (acquireAll executingCore
               (lockSet_replyRecv receiver cnRoot target endpointId newSender? donatedSc?
-                donatedOwner? replyId installsCaps donationServer? redonatedSc?).lockAcquireSequence s)).1 :=
+                donatedOwner? replyId installsCaps donationServer? redonatedSc?
+            belowHeadReply? outerCaller?).lockAcquireSequence s)).1 :=
   lockSet_observer_atomic_of_objectStoreObserver _ executingCore _ s _
     (threadIpcStateObserver_insensitiveOn executingCore observed) hInv
     (fun s' h => endpointReplyRecvOnCore_preserves_objects_invExt endpointId receiver

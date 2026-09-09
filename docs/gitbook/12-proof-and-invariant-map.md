@@ -367,9 +367,13 @@ platform rather than with the lock.
 > (`v0.34.128`) moved it again, 9 to 11**, on the same footprint: that arm
 > performs *two* SchedContext hand-offs and declared one, and the eleventh
 > member is the recorded server's own TCB, which is what lets a reply answered
-> through a delegated capability declare a footprint at all. The constant is the
-> WCRT headline's first factor, so the per-lock critical section the RPi5's 1 ms
-> tick admits falls from 37 µs to 30 µs. See
+> through a delegated capability declare a footprint at all. **WS-OD OD3.7
+> (`v0.34.130`) moved it again, 11 to 13**, on the same footprint once more and
+> for the first time on objects the transition *reads*: the donation return walks
+> one link past the reply-stack head and then validates that frame's caller's TCB
+> before binding a context to it. The constant is the WCRT headline's first
+> factor, so the per-lock critical section the RPi5's 1 ms tick admits falls
+> 37 µs → 30 µs → 25 µs across the three cuts. See
 > [`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §SM3.C.9 for the
 > canonical statement.
 

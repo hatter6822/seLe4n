@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Sécurité" /></a>
-  <img src="https://img.shields.io/badge/version-0.34.129-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.34.130-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Licence" /></a>
 </p>
@@ -96,11 +96,11 @@ de preuve de Lean 4 :
 
 | Attribut | Valeur |
 |----------|--------|
-| **Version** | `0.34.129` |
+| **Version** | `0.34.130` |
 | **Chaîne d'outils Lean** | `v4.28.0` |
-| **LoC Lean de production** | 359 285 réparties sur 328 fichiers |
-| **LoC Lean de test** | 73 670 réparties sur 70 suites de tests |
-| **Déclarations prouvées** | 12 041 déclarations theorem/lemma (zéro sorry/axiom) |
+| **LoC Lean de production** | 359 761 réparties sur 328 fichiers |
+| **LoC Lean de test** | 73 716 réparties sur 70 suites de tests |
+| **Déclarations prouvées** | 12 049 déclarations theorem/lemma (zéro sorry/axiom) |
 | **Matériel cible** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Audit canonique** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — audit complet pré-1.0 (202 résultats ; corrigés par WS-AK AK1–AK10 ; archivé) |
 | **Dernier audit** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../../../docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) — audit de préparation pré-1.0 réalisé après la clôture de WS-AN (succède au désormais archivé [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md), corrigé par WS-AN AN0–AN12). WS-RC R0..R5 LANDED en v0.31.2 ; WS-RC R6..R14 absorbés dans WS-SM selon la cartographie d'absorption SM0.Q.1 (voir [`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](../../../docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)). Plan du flux de travail actif : [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md). |

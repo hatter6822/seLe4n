@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.34.129` (`lakefile.toml`) |
+| **Package version** | `0.34.130` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 359,285 across 328 Lean files |
-| **Test LoC** | 73,670 across 70 Lean test suites |
-| **Proved declarations** | 12,041 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 359,761 across 328 Lean files |
+| **Test LoC** | 73,716 across 70 Lean test suites |
+| **Proved declarations** | 12,049 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -2907,13 +2907,26 @@ alongside the latent inventory (closing SMP-H3).
    whose insert may rehash the whole table and therefore does not
    decompose by object.
 
+   **WS-OD OD3.7 (v0.34.130) moved it from 11 to 13**, on the same
+   footprint again, and for the first time on objects the transition
+   *reads* rather than writes.  `returnDonatedSchedContext` at call
+   depth ≥ 2 walks one link past the reply-stack head to find the
+   outer caller, and then reads that caller's TCB to validate it
+   before binding a scheduling context to it — a validate-then-commit,
+   so reading it unlocked is a time-of-check/time-of-use window on
+   exactly that thread.  Both members are **read**-mode, and the pop
+   remains O(1) at any chain depth, so this is a constant `+2` rather
+   than a bound that grows with the chain.  **Only `.replyRecv`
+   required the raise**: `lockSet_endpointReply` reaches nine with the
+   same two members and the cancellation reply arm ten.
+
    The WCRT headline is parametric in the constant, so
-   `admissibleCriticalSection` for the RPi5's 1 ms tick falls from
-   **37 µs to 30 µs** and the CC-5 contention bound widens in
-   proportion.  The alternative in both cuts was a declared footprint
-   that does not cover its own writes, or a lock acquired outside the
-   declared set, which is invisible to the deadlock-freedom and
-   serializability theorems.
+   `admissibleCriticalSection` for the RPi5's 1 ms tick falls
+   **37 µs → 30 µs → 25 µs** across the three cuts, and the CC-5
+   contention bound widens in proportion.  The alternative in every
+   cut was a declared footprint that does not cover the objects it
+   touches, or a lock acquired outside the declared set, which is
+   invisible to the deadlock-freedom and serializability theorems.
 
    **SM3.D.5b — mode-aware deadlock-freedom**: the plan-signature
    `noDeadlock` / `waitGraph_acyclic_under_2pl` use bare `LockId`,
