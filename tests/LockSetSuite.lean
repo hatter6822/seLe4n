@@ -1205,14 +1205,15 @@ private def runLubMergeChecks : IO Unit := do
     (decide (outerCallerReplyRecv.size = 10))
   -- The widest shape the arm can declare: a delegated, re-donating, caps-carrying
   -- `.replyRecv` with a distinct original owner, reading both objects below its
-  -- reply-stack head — thirteen, which is what `maxLockSetSize` is measured
+  -- reply-stack head, and relinking the queue-structure TCB its receive leg
+  -- writes (WS-OD OD3.13) — fourteen, which is what `maxLockSetSize` is measured
   -- against.
   let widestReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                           (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨11⟩)
                           (some ⟨60⟩) true (some ⟨9⟩) (some ⟨43⟩)
-                          (some ⟨44⟩) (some ⟨12⟩)
-  assertBool "the widest declarable .replyRecv has 13 locks (= maxLockSetSize)"
-    (decide (widestReplyRecv.size = 13))
+                          (some ⟨44⟩) (some ⟨12⟩) (some ⟨13⟩)
+  assertBool "the widest declarable .replyRecv has 14 locks (= maxLockSetSize)"
+    (decide (widestReplyRecv.size = 14))
   assertBool "...and that is exactly maxLockSetSize"
     (decide (widestReplyRecv.size = maxLockSetSize))
 

@@ -952,6 +952,6 @@ members and reaches nine; the arm-selected cancellation footprint reaches ten;
 `lockSet_tcbSuspend` and `lockSet_endpointCall` remain eight at their widest.
 This constant is not tight for any of them, and is tight only for the one arm
 that fuses a reply leg, a receive leg and a donation return into one syscall. -/
-def maxLockSetSize : Nat := 13
+def maxLockSetSize : Nat := 14
 
 end SeLe4n.Kernel.Concurrency

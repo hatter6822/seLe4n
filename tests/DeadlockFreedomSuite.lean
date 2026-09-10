@@ -233,15 +233,17 @@ example : ¬ mutualBlocked execNoDeadlock c0 c1 := by decide
 
 /-! ## SM3.D.6 — Bounded-wait arithmetic -/
 
--- WS-RR RR7.11: 8 → 9.  WS-OD OD3.5: 9 → 11.  WS-OD OD3.7: 11 → 13.  The widest
--- declared footprint is a `.replyRecv` every time: OD3.5 added the recorded
--- server's TCB and the *second* SchedContext hand-off that arm performs, and
--- OD3.7 added the two objects the donation return reads below the reply-stack
--- head — the Reply one frame down, and that frame's caller's TCB, which is a
--- validate-then-commit and so cannot be read unlocked.  See `maxLockSetSize`'s
--- docstring for why the answer was a wider ceiling rather than a narrower
--- declaration, each time.
-example : maxLockSetSize = 13 := by decide
+-- WS-RR RR7.11: 8 → 9.  WS-OD OD3.5: 9 → 11.  WS-OD OD3.7: 11 → 13.  WS-OD
+-- OD3.13: 13 → 14.  The widest declared footprint is a `.replyRecv` every time:
+-- OD3.5 added the recorded server's TCB and the *second* SchedContext hand-off
+-- that arm performs; OD3.7 added the two objects the donation return reads below
+-- the reply-stack head — the Reply one frame down, and that frame's caller's
+-- TCB, which is a validate-then-commit and so cannot be read unlocked; and
+-- OD3.13 added the queue-structure TCB the arm's receive leg writes (the popped
+-- sender's successor promoted to head, or the receive queue's old tail).  See
+-- `maxLockSetSize`'s docstring for why the answer was a wider ceiling rather
+-- than a narrower declaration, each time.
+example : maxLockSetSize = 14 := by decide
 example : perLockWaitCost 10 = 30 := by decide
 -- The `totalWaitCost ≤ …` bound is established via the theorem in §3
 -- (`boundedWait_under_2pl`).  Elaboration-time `decide` cannot reduce
@@ -420,7 +422,7 @@ private def runWaitGraphChecks : IO Unit := do
 
 private def runBoundedWaitChecks : IO Unit := do
   IO.println "--- §5 SM3.D.6 — bounded wait ---"
-  assertBool "maxLockSetSize = 13" (decide (maxLockSetSize = 13))
+  assertBool "maxLockSetSize = 14" (decide (maxLockSetSize = 14))
   assertBool "perLockWaitCost 10 = (numCores-1)*10 = 30" (decide (perLockWaitCost 10 = 30))
   -- A singleton lock set: total wait = 1 * (3 * 10) = 30.
   assertBool "totalWaitCost (singleton) 10 = 30"
@@ -483,21 +485,22 @@ private def runSizeBoundChecks : IO Unit := do
     (some ⟨6⟩) (some (ThreadId.ofNat 7)) (some ⟨8⟩)
   assertBool "lockSet_tcbSuspend (all options) size ≤ maxLockSetSize"
     (decide (suspendSet.size ≤ maxLockSetSize))
-  -- replyRecv at **every** optional — base 4 plus five extensions, the widest
+  -- replyRecv at **every** optional — base 4 plus ten extensions, the widest
   -- footprint the kernel declares and the one `maxLockSetSize` is measured
-  -- against (WS-RR RR7.11, WS-OD OD3.5, WS-OD OD3.7).  Taken at distinct threads
-  -- and contexts throughout and with the capability install on, so this is the
-  -- thirteen-member shape, not a merged one.
+  -- against (WS-RR RR7.11, WS-OD OD3.5, OD3.7, OD3.13).  Taken at distinct
+  -- threads and contexts throughout and with the capability install on, so this
+  -- is the fourteen-member shape, not a merged one.
   let replySet := lockSet_replyRecv (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
     (ThreadId.ofNat 3) (SeLe4n.ObjId.ofNat 4) (some (ThreadId.ofNat 5))
     (some ⟨6⟩) (some (ThreadId.ofNat 7)) (some ⟨8⟩) true
     (some (ThreadId.ofNat 9)) (some ⟨10⟩) (some ⟨11⟩) (some (ThreadId.ofNat 12))
+    (some (ThreadId.ofNat 13))
   assertBool "lockSet_replyRecv (all options) size ≤ maxLockSetSize"
     (decide (replySet.size ≤ maxLockSetSize))
   assertBool "lockSet_replyRecv (all options) size = maxLockSetSize (the bound, exactly)"
     (decide (replySet.size = maxLockSetSize))
   -- **WS-OD OD3.7 (the sharp bound): how much of the ceiling is slack.**  The
-  -- thirteen is the union over ALL argument values; no reachable state supplies
+  -- fourteen is the union over ALL argument values; no reachable state supplies
   -- them all distinctly, because the returned donation's owner IS the answered
   -- caller, so those two arguments name one key and `insertOrMerge` lubs the
   -- modes without moving the cardinality.  Executed here at the *same* operands
@@ -507,8 +510,9 @@ private def runSizeBoundChecks : IO Unit := do
     (ThreadId.ofNat 3) (SeLe4n.ObjId.ofNat 4) (some (ThreadId.ofNat 5))
     (some ⟨6⟩) (some (ThreadId.ofNat 3)) (some ⟨8⟩) true
     (some (ThreadId.ofNat 9)) (some ⟨10⟩) (some ⟨11⟩) (some (ThreadId.ofNat 12))
-  assertBool "a .replyRecv whose donation owner is the answered caller declares 12"
-    (decide (reachableShapeReplyRecv.size = 12))
+    (some (ThreadId.ofNat 13))
+  assertBool "a .replyRecv whose donation owner is the answered caller declares 13"
+    (decide (reachableShapeReplyRecv.size = 13))
   assertBool "…one inside the ceiling, which is the slack the constant carries"
     (decide (reachableShapeReplyRecv.size < maxLockSetSize))
   -- NEGATIVE: and it is exactly one member of slack, not two -- the recorded
@@ -516,7 +520,7 @@ private def runSizeBoundChecks : IO Unit := do
   -- is a case split rather than an invariant, so it cannot be taken in a bound.
   -- Keeping the delegated server distinct here is what makes that visible.
   assertBool "NEGATIVE: the sharpening is one member, not two"
-    (!decide (reachableShapeReplyRecv.size = 11))
+    (!decide (reachableShapeReplyRecv.size = 12))
   -- WS-OD OD3.7: and the two below-head reads are each a member of their own —
   -- the reason the ceiling moved 11 → 13.  Stated as the drop, so a merge would
   -- fail here rather than silently make the raise look unnecessary.
@@ -524,19 +528,31 @@ private def runSizeBoundChecks : IO Unit := do
     (decide ((lockSet_replyRecv (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
       (ThreadId.ofNat 3) (SeLe4n.ObjId.ofNat 4) (some (ThreadId.ofNat 5))
       (some ⟨6⟩) (some (ThreadId.ofNat 7)) (some ⟨8⟩) true
-      (some (ThreadId.ofNat 9)) (some ⟨10⟩) none none).size = maxLockSetSize - 2))
+      (some (ThreadId.ofNat 9)) (some ⟨10⟩) none none
+      (some (ThreadId.ofNat 13))).size = maxLockSetSize - 2))
+  -- WS-OD OD3.13: and the receive leg's queue-structure neighbour is a member of
+  -- its own too — the reason the ceiling moved 13 → 14.  Same shape of check:
+  -- stated as the drop, so a merge would fail here rather than make the raise
+  -- look unnecessary.
+  assertBool "…and dropping the queue-structure neighbour drops it by exactly one"
+    (decide ((lockSet_replyRecv (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
+      (ThreadId.ofNat 3) (SeLe4n.ObjId.ofNat 4) (some (ThreadId.ofNat 5))
+      (some ⟨6⟩) (some (ThreadId.ofNat 7)) (some ⟨8⟩) true
+      (some (ThreadId.ofNat 9)) (some ⟨10⟩) (some ⟨11⟩) (some (ThreadId.ofNat 12))
+      none).size = maxLockSetSize - 1))
   -- **The caps flag is a MODE, not a member.**  RR7.11 expressed the receiver's
   -- CSpace-root upgrade as `installsCaps`'s effect on an existing member's
   -- access mode, precisely so the footprint's size and acquisition order do not
   -- move with it — and WS-OD OD3.5 made the state-level member a *disjunction*,
   -- so a donating arm declares it whether or not it installs.  Both together
-  -- mean the capless shape here is the same eleven members: the witness asserts
-  -- the equality rather than a smaller number, because a size that *did* drop
-  -- would mean one of those two design choices had been undone.
+  -- mean the capless shape here is the same fourteen members: the witness
+  -- asserts the equality rather than a smaller number, because a size that *did*
+  -- drop would mean one of those two design choices had been undone.
   let replySetCapless := lockSet_replyRecv (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
     (ThreadId.ofNat 3) (SeLe4n.ObjId.ofNat 4) (some (ThreadId.ofNat 5))
     (some ⟨6⟩) (some (ThreadId.ofNat 7)) (some ⟨8⟩) false
     (some (ThreadId.ofNat 9)) (some ⟨10⟩) (some ⟨11⟩) (some (ThreadId.ofNat 12))
+    (some (ThreadId.ofNat 13))
   assertBool "lockSet_replyRecv capless size = maxLockSetSize (the caps flag is a mode)"
     (decide (replySetCapless.size = maxLockSetSize))
   assertBool "a capless donating .replyRecv still declares the state-level lock"

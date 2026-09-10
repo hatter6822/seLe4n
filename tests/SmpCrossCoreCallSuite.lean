@@ -1037,6 +1037,34 @@ private def runQueueNeighbourFootprintChecks : IO Unit := do
   -- it and changes the state.
   assertBool "an empty endpoint declares no queue-structure neighbour"
     (decide (sendSideQueueStructureNeighbor? stBase epId = none))
+  -- **WS-OD OD3.12**: the receive side is the mirror -- it pops the *send*
+  -- queue and blocks on the *receive* queue -- so the same two branches, with
+  -- the queues exchanged.
+  match stOneParkedSender? with
+  | none => assertBool "setup (receive side): one sender parked" false
+  | some st =>
+      assertBool "the receive-side resolver names the parked sender's successor"
+        (decide (receiveSideQueueStructureNeighbor? st epId = none))
+      let lsR := lockSet_endpointReceiveOnCore st epId callerTid cnRoot none
+      assertBool "a sole parked sender has no successor, so no member is declared"
+        (decide (lsR.pairs.all (fun p => p.1 ≠ tcbLock recvRemoteTid)))
+  match stTwoReceivers? with
+  | none => assertBool "setup (receive side): two receivers queued" false
+  | some st =>
+      -- With no sender parked, a `.receive` blocks and relinks the *receive*
+      -- queue's old tail -- here the second receiver.
+      assertBool "the receive-side resolver names the receive queue's old tail"
+        (decide (receiveSideQueueStructureNeighbor? st epId = some recvRemoteTid))
+      let lsR := lockSet_endpointReceiveOnCore st epId callerTid cnRoot none
+      assertBool "the old tail's TCB write lock is declared (receive, blocking)"
+        (decide ((tcbLock recvRemoteTid, AccessMode.write) ∈ lsR.pairs))
+      match endpointReceiveDualOnCore epId callerTid none bootCoreId st with
+      | (st', .ok _) =>
+          assertBool "the receive rewrites the old tail's queueNext"
+            (match st'.getTcb? recvRemoteTid with
+             | some t => decide (t.queueNext = some callerTid)
+             | none => false)
+      | (_, .error _) => assertBool "the blocking receive succeeds" false
 
 /-- SM6.D runtime: `threadHomeCore` and `determineTargetCore` agree on the
 suite fixtures (pinned → home core, unpinned → boot core). -/

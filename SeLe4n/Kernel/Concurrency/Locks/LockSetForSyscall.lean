@@ -474,7 +474,7 @@ theorem lockSetForSyscall_replyRecv_delegated_covers_server
       ∈ (lockSet_endpointReplyRecvOnCore st replier cnRoot prevCaller endpointId).pairs := by
   unfold lockSet_endpointReplyRecvOnCore
   rw [hServer]
-  exact lockSet_replyRecv_donation_server_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact lockSet_replyRecv_donation_server_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- **WS-OD OD3.5**: a **delegated** `.replyRecv` — one whose reply capability
 answers a caller whose recorded server is some *other* thread — now declares a
@@ -772,8 +772,26 @@ theorem lockSetForSyscall_receive_covers_writes
     (endpointLock endpointId, AccessMode.write) ∈ S.pairs := by
   rw [lockSetForSyscall_receive_eq ops st caller endpointId hTcb hEp] at hDecl
   cases hDecl
-  exact ⟨lockSet_endpointReceive_caller_tcb_write_mem _ _ _ _ _ _ _,
-         lockSet_endpointReceive_endpoint_write_mem _ _ _ _ _ _ _⟩
+  exact ⟨lockSet_endpointReceive_caller_tcb_write_mem _ _ _ _ _ _ _ _,
+         lockSet_endpointReceive_endpoint_write_mem _ _ _ _ _ _ _ _⟩
+
+/-- **WS-OD OD3.12**: and the queue-structure neighbour.
+
+A `.receive` either pops the endpoint's send queue -- relinking the popped
+sender's successor into the head -- or enqueues the receiver on the receive
+queue, relinking its old tail.  Exactly one TCB, and the footprint the bracket
+acquires named neither until this row. -/
+theorem lockSetForSyscall_receive_covers_queueNeighbour
+    (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
+    (endpointId : ObjId) (S : LockSet) (q : ThreadId)
+    (hTcb : st.getTcb? ops.caller = some caller)
+    (hEp : ops.targetObject = some endpointId)
+    (hq : receiveSideQueueStructureNeighbor? st endpointId = some q)
+    (hDecl : lockSetForSyscall .receive ops st = some S) :
+    (tcbLock q, AccessMode.write) ∈ S.pairs := by
+  rw [lockSetForSyscall_receive_eq ops st caller endpointId hTcb hEp] at hDecl
+  cases hDecl
+  exact lockSet_endpointReceiveOnCore_covers_queueNeighbour _ _ _ _ _ _ hq
 
 /-- **WS-RR RR7.11**: and the receive-side capability install's two writes — the
 receiver's own CSpace root, and the state-level lock the CDT edge needs.
@@ -860,9 +878,9 @@ theorem lockSetForSyscall_replyRecv_covers_writes
   rw [lockSetForSyscall_replyRecv_eq ops st caller endpointId rid prevCaller
     hTcb hEp hRid hAns] at hDecl
   cases hDecl
-  exact ⟨lockSet_replyRecv_caller_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _,
-         lockSet_replyRecv_target_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _,
-         lockSet_replyRecv_endpoint_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _⟩
+  exact ⟨lockSet_replyRecv_caller_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _,
+         lockSet_replyRecv_target_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _,
+         lockSet_replyRecv_endpoint_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _⟩
 
 /-- **WS-RR RR7.11**: and its receive leg's capability install, which writes the
 same CDT structure a send's does. -/
@@ -882,7 +900,28 @@ theorem lockSetForSyscall_replyRecv_covers_capsWrites
   cases hDecl
   refine ⟨?_, lockSet_endpointReplyRecvOnCore_covers_cdt _ _ _ _ _ hCaps⟩
   simp only [lockSet_endpointReplyRecvOnCore, hCaps]
-  exact lockSet_replyRecv_capsInstall_write_mem _ _ _ _ _ _ _ _ _ _ _ _
+  exact lockSet_replyRecv_capsInstall_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _
+
+/-- **WS-OD OD3.13**: and the receive leg's queue-structure neighbour.
+
+`.replyRecv`'s receive leg is the same transition `.receive` runs, so it pops or
+enqueues and writes the same one neighbour TCB.  This arm was at 13 of 13, so
+declaring it is what raised `maxLockSetSize` to 14. -/
+theorem lockSetForSyscall_replyRecv_covers_queueNeighbour
+    (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
+    (endpointId : ObjId) (rid : ReplyId) (prevCaller : ThreadId) (S : LockSet)
+    (q : ThreadId)
+    (hTcb : st.getTcb? ops.caller = some caller)
+    (hEp : ops.targetObject = some endpointId)
+    (hRid : ops.targetReply = some rid)
+    (hAns : replyAnsweredCaller? st rid = some prevCaller)
+    (hq : receiveSideQueueStructureNeighbor? st endpointId = some q)
+    (hDecl : lockSetForSyscall .replyRecv ops st = some S) :
+    (tcbLock q, AccessMode.write) ∈ S.pairs := by
+  rw [lockSetForSyscall_replyRecv_eq ops st caller endpointId rid prevCaller
+    hTcb hEp hRid hAns] at hDecl
+  cases hDecl
+  exact lockSet_endpointReplyRecvOnCore_covers_queueNeighbour _ _ _ _ _ _ hq
 
 /-- **WS-OD OD3.5**: and the two writes this arm was missing — the second
 SchedContext hand-off's object lock, and the state-level lock that hand-off's
@@ -912,8 +951,8 @@ theorem lockSetForSyscall_replyRecv_covers_redonation
   cases hDecl
   unfold lockSet_endpointReplyRecvOnCore
   rw [hNew]
-  exact ⟨lockSet_replyRecv_redonated_sc_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _,
-         lockSet_replyRecv_redonation_stateLevel_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _⟩
+  exact ⟨lockSet_replyRecv_redonated_sc_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _,
+         lockSet_replyRecv_redonation_stateLevel_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _⟩
 
 /-- **WS-RR RR7.11**: at resolved operands, `.notificationSignal` declares the
 bound-delivery-aware signal footprint. -/

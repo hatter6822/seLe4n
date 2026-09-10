@@ -102,7 +102,7 @@ theorem lockSet_endpointReplyRecvOnCore_size_le (st : SystemState)
     (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId) :
     (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target endpointObjId).size
       ≤ maxLockSetSize :=
-  lockSet_replyRecv_size_le _ _ _ _ _ _ _ _ _ _ _ _ _
+  lockSet_replyRecv_size_le _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- WS-OD OD1.5: `none` extends nothing. -/
 private theorem extendOpt_none (S : LockSet) : lockSetExtendOpt S none = S := rfl
@@ -124,9 +124,13 @@ re-establish it for every thread. -/
 def replyDonationOwnerIsAnsweredCaller (st : SystemState) (target : SeLe4n.ThreadId) : Prop :=
   ∀ scId owner, endpointReplyServerDonation? st target = some (scId, owner) → owner = target
 
-/-- **WS-OD OD3.7: the resolved `.replyRecv` footprint is TWELVE, not thirteen.**
+/-- **WS-OD OD3.7: the resolved `.replyRecv` footprint is one inside the ceiling.**
 
-`maxLockSetSize` is thirteen because a declared bound is the union over *all*
+**WS-OD OD3.13** moved both numbers together: the ceiling is fourteen and this
+is thirteen, because the receive leg's queue-structure neighbour is a member of
+each.  The *gap* is what this theorem records, and it has not moved.
+
+`maxLockSetSize` is fourteen because a declared bound is the union over *all*
 argument values, and no reachable state supplies them all distinctly: the
 returned donation's owner is the answered caller, so two arguments name one key
 and `insertOrMerge` lubs the modes without moving the cardinality.
@@ -143,19 +147,19 @@ This does **not** move `maxLockSetSize`: the parametric bound is what
 every argument value.  What this gives is a smaller number available where the
 state permits — the relationship `lockSet_cancelIpcBlockingOnCore_size_le_ten`
 already has to the ceiling. -/
-theorem lockSet_endpointReplyRecvOnCore_size_le_twelve (st : SystemState)
+theorem lockSet_endpointReplyRecvOnCore_size_le_thirteen (st : SystemState)
     (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId)
     (hOwner : replyDonationOwnerIsAnsweredCaller st target) :
     (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target endpointObjId).size
-      ≤ 12 := by
+      ≤ 13 := by
   unfold lockSet_endpointReplyRecvOnCore
   cases hDon : endpointReplyServerDonation? st target with
   | none =>
       -- No donation returned: the owner member is absent outright, so the set is
-      -- narrower still and the crude ceiling bound already gives twelve.
+      -- narrower still and the crude ceiling bound already gives thirteen.
       simp only [Option.map_none]
-      refine Nat.le_trans (size_le_7 _ _ _ _ _ _ _ _) ?_
+      refine Nat.le_trans (size_le_8 _ _ _ _ _ _ _ _ _) ?_
       simp only [List.length_cons, List.length_nil]
       omega
   | some pr =>
@@ -163,7 +167,7 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_twelve (st : SystemState)
       have hEq : owner = target := hOwner scId owner hDon
       subst hEq
       simp only [Option.map_some]
-      exact lockSet_replyRecv_size_le_twelve_of_owner_eq_target _ _ _ _ _ _ _ _ _ _ _ _
+      exact lockSet_replyRecv_size_le_thirteen_of_owner_eq_target _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- The resolved **receive** footprint.  Stated over the reply optional rather
 than at its default, so the receive-with-reply shape is bounded too. -/
@@ -172,7 +176,7 @@ theorem lockSet_endpointReceiveOnCore_size_le (st : SystemState)
     (cnodeRootObjId : SeLe4n.ObjId) (replyId : Option SeLe4n.ReplyId) :
     (lockSet_endpointReceiveOnCore st endpointId receiver cnodeRootObjId replyId).size
       ≤ maxLockSetSize :=
-  lockSet_endpointReceive_size_le _ _ _ _ _ _ _
+  lockSet_endpointReceive_size_le _ _ _ _ _ _ _ _
 
 -- ============================================================================
 -- §2  The notification footprints

@@ -660,6 +660,9 @@ def lockSet_endpointReplyRecvOnCore (st : SystemState) (replier : SeLe4n.ThreadI
     (recordedReplyServer? st target)
     (receiveRendezvousDonatedSc? st endpointObjId)
     belowHead.1 belowHead.2
+    -- **WS-OD OD3.13**: and the receive leg's queue-structure neighbour, through
+    -- the same resolver `.receive` uses -- it is the same transition.
+    (receiveSideQueueStructureNeighbor? st endpointObjId)
 
 /-- **WS-RR RR7.11: the concrete lock-set a cross-core `.receive` acquires.**
 
@@ -697,6 +700,9 @@ def lockSet_endpointReceiveOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
     -- the same pre-state and through the same `receiveRendezvousSender?` the two
     -- members above read.
     (receiveRendezvousDonatedSc? st endpointId)
+    -- **WS-OD OD3.12**: and the queue-structure neighbour, through the same
+    -- resolver again.
+    (receiveSideQueueStructureNeighbor? st endpointId)
 
 -- ============================================================================
 -- §3  Path reduction lemmas (full characterisation of each control path)
@@ -946,20 +952,45 @@ theorem endpointReplyRecv_lockSet_correct
     (donationServer? : Option SeLe4n.ThreadId)
     (redonatedSc? : Option SeLe4n.SchedContextId)
     -- WS-OD OD3.7: and over the two below-head reads, for the same reason.
-    (belowHeadReply? : Option SeLe4n.ReplyId) (outerCaller? : Option SeLe4n.ThreadId) :
+    (belowHeadReply? : Option SeLe4n.ReplyId) (outerCaller? : Option SeLe4n.ThreadId)
+    -- **WS-OD OD3.13**: at the queue-structure-neighbour arity.
+    (queueNeighbour? : Option SeLe4n.ThreadId) :
     (∀ p ∈ (lockSet_replyRecv replier cnRoot target epId newSender? donatedSc? donatedOwner?
               replyId? installsCaps donationServer? redonatedSc?
-              belowHeadReply? outerCaller?).pairs,
+              belowHeadReply? outerCaller? queueNeighbour?).pairs,
         p.fst.kind ∈ permittedKinds .replyRecv) ∧
     ((lockSet_replyRecv replier cnRoot target epId newSender? donatedSc? donatedOwner?
         replyId? installsCaps donationServer? redonatedSc?
-        belowHeadReply? outerCaller?).pairs.map
+        belowHeadReply? outerCaller? queueNeighbour?).pairs.map
         (·.fst)).Nodup :=
   ⟨lockSet_consistent_replyRecv replier cnRoot target epId newSender? donatedSc? donatedOwner?
-      replyId? installsCaps donationServer? redonatedSc? belowHeadReply? outerCaller?,
+      replyId? installsCaps donationServer? redonatedSc? belowHeadReply? outerCaller?
+      queueNeighbour?,
    (lockSet_replyRecv replier cnRoot target epId newSender? donatedSc? donatedOwner?
       replyId? installsCaps donationServer? redonatedSc?
-      belowHeadReply? outerCaller?).hUniqueKeys⟩
+      belowHeadReply? outerCaller? queueNeighbour?).hUniqueKeys⟩
+
+/-- **WS-OD OD3.13**: the queue-structure neighbour of the **receive leg** is a
+declared write member of the resolved `.replyRecv` footprint.
+
+The arm the ceiling was raised for.  `.replyRecv`'s receive leg *is*
+`endpointReceiveDualOnCore`, so it pops the send queue or enqueues on the
+receive queue exactly as `.receive` does, and writes the same one neighbour TCB
+-- but the arm was already at 13 of 13, so declaring it cost
+`maxLockSetSize` a raise to 14 and `admissibleCriticalSection` two microseconds
+on the 1 ms tick.  Read that cost as the price of the alternative: a footprint
+that omits a written object is *false*, and this project rates that worse than a
+wide one. -/
+theorem lockSet_endpointReplyRecvOnCore_covers_queueNeighbour
+    (st : SystemState) (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
+    (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId) (q : SeLe4n.ThreadId)
+    (hq : receiveSideQueueStructureNeighbor? st endpointObjId = some q) :
+    (tcbLock q, AccessMode.write)
+      ∈ (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target
+           endpointObjId).pairs := by
+  unfold lockSet_endpointReplyRecvOnCore lockSet_replyRecv
+  rw [hq]
+  exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- WS-SM SM6.C.5: the **state-resolved** replyRecv lock-set is hierarchically
 correct — the form the runtime acquisition consumes. -/
@@ -970,7 +1001,7 @@ theorem lockSet_endpointReplyRecvOnCore_correct
       p.fst.kind ∈ permittedKinds .replyRecv := by
   unfold lockSet_endpointReplyRecvOnCore
   exact lockSet_consistent_replyRecv replier cnodeRootObjId target endpointObjId
-    _ _ _ _ _ _ _ _ _
+    _ _ _ _ _ _ _ _ _ _
 
 -- ============================================================================
 -- §6  SM6.C.4 / SM6.C.6 — Reply payload delivery + reply-state lifecycle
@@ -1164,16 +1195,19 @@ two cores with copied caps to the same Reply both observe it free and race
 theorem lockSet_endpointReceive_reply_write_mem
     (callerTid : SeLe4n.ThreadId) (cnRoot endpointObjId : SeLe4n.ObjId)
     (senderTid : Option SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
-    (installsCaps : Bool) (donatedScId : Option SeLe4n.SchedContextId) :
+    (installsCaps : Bool) (donatedScId : Option SeLe4n.SchedContextId)
+    -- **WS-OD OD3.12**: at the queue-structure-neighbour arity.
+    (queueNeighbour : Option SeLe4n.ThreadId) :
     (replyLock rid, AccessMode.write)
       ∈ (lockSet_endpointReceive callerTid cnRoot endpointObjId senderTid (some rid)
-          installsCaps donatedScId).pairs := by
+          installsCaps donatedScId queueNeighbour).pairs := by
   unfold lockSet_endpointReceive
   -- WS-OD OD3.6: one extension deeper -- the donated SchedContext sits between
-  -- this member and the state-level lock.
+  -- this member and the state-level lock.  WS-OD OD3.12: and one deeper again.
   exact mem_write_lockSetExtendOpt _ _ _
     (mem_write_lockSetExtendOpt _ _ _
-      (self_write_mem_insertOrMerge _ (replyLock rid)))
+      (mem_write_lockSetExtendOpt _ _ _
+        (self_write_mem_insertOrMerge _ (replyLock rid))))
 
 /-- **WS-SM SM3.B (PR #873 round 8): a capability-installing receive holds the
 receiver's CSpace root in WRITE mode.**
@@ -1192,21 +1226,25 @@ order are untouched. -/
 theorem lockSet_endpointReceive_capsInstall_write_mem
     (callerTid : SeLe4n.ThreadId) (cnRoot endpointObjId : SeLe4n.ObjId)
     (senderTid : Option SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
-    (donatedScId : Option SeLe4n.SchedContextId) :
+    (donatedScId : Option SeLe4n.SchedContextId)
+    -- **WS-OD OD3.12**: at the queue-structure-neighbour arity.
+    (queueNeighbour : Option SeLe4n.ThreadId) :
     (cnodeLock cnRoot, AccessMode.write)
       ∈ (lockSet_endpointReceive callerTid cnRoot endpointObjId senderTid replyId
-          (installsCaps := true) donatedScId).pairs := by
+          (installsCaps := true) donatedScId queueNeighbour).pairs := by
   unfold lockSet_endpointReceive lockSetOfList
   simp only [List.foldl, if_true, Bool.true_or]
   -- WS-RR RR7.11: one extension deeper — the state-level lock the CDT write
   -- needs sits outermost on this same `installsCaps` path.
   -- WS-OD OD3.6: and one deeper again, for the donated SchedContext.
+  -- WS-OD OD3.12: and once more, for the queue-structure neighbour.
   exact mem_write_lockSetExtendOpt _ _ _
     (mem_write_lockSetExtendOpt _ _ _
       (mem_write_lockSetExtendOpt _ _ _
         (mem_write_lockSetExtendOpt _ _ _
-          (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
-            (LockSet.mem_insertOrMerge_write_self _ _)))))
+          (mem_write_lockSetExtendOpt _ _ _
+            (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+              (LockSet.mem_insertOrMerge_write_self _ _))))))
 
 /-- **WS-SM SM3.B (PR #873 round 8): and so does `.replyRecv`'s receive leg** —
 the same transition, so the same write, so the same declared mode. -/
@@ -1217,11 +1255,14 @@ theorem lockSet_replyRecv_capsInstall_write_mem
     (donatedOwnerTid : Option SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
     (donationServer? : Option SeLe4n.ThreadId)
     (redonatedSc? : Option SeLe4n.SchedContextId)
-    (belowHeadReply? : Option SeLe4n.ReplyId) (outerCaller? : Option SeLe4n.ThreadId) :
+    (belowHeadReply? : Option SeLe4n.ReplyId) (outerCaller? : Option SeLe4n.ThreadId)
+    -- **WS-OD OD3.13**: at the queue-structure-neighbour arity.
+    (queueNeighbour? : Option SeLe4n.ThreadId) :
     (cnodeLock cnRoot, AccessMode.write)
       ∈ (lockSet_replyRecv callerTid cnRoot target endpointObjId newSenderTid
           donatedScId donatedOwnerTid replyId (installsCaps := true)
-          donationServer? redonatedSc? belowHeadReply? outerCaller?).pairs := by
+          donationServer? redonatedSc? belowHeadReply? outerCaller?
+          queueNeighbour?).pairs := by
   unfold lockSet_replyRecv lockSetOfList
   simp only [List.foldl, if_true]
   -- The optional extensions are peeled by count rather than by a hand-nested
@@ -1245,7 +1286,7 @@ theorem lockSet_endpointReceiveOnCore_covers_cdt
   exact lockSet_endpointReceive_stateLevel_write_mem receiver cnodeRootObjId endpointId
     (receiveRendezvousSender? st endpointId) replyId
     (receiveRendezvousDonatedSc? st endpointId)
-
+    (receiveSideQueueStructureNeighbor? st endpointId)
 /-- **WS-RR RR7.11**: and the receiver's own CSpace root in **write** mode, the
 member `ipcTransferSingleCap`'s `cspaceInsertSlot` needs. -/
 theorem lockSet_endpointReceiveOnCore_covers_capsDestination
@@ -1259,6 +1300,27 @@ theorem lockSet_endpointReceiveOnCore_covers_capsDestination
   exact lockSet_endpointReceive_capsInstall_write_mem receiver cnodeRootObjId endpointId
     (receiveRendezvousSender? st endpointId) replyId
     (receiveRendezvousDonatedSc? st endpointId)
+    (receiveSideQueueStructureNeighbor? st endpointId)
+
+/-- **WS-OD OD3.12**: the queue-structure neighbour is a declared **write**
+member of the resolved `.receive` footprint.
+
+A `.receive` either pops the endpoint's send queue -- relinking the popped
+sender's successor into the head -- or enqueues the receiver on the receive
+queue, relinking that queue's old tail.  Exactly one TCB, and the footprint
+named neither until this row, so a `.receive` on one core and a `.tcbSuspend`
+of the affected neighbour on another had provably disjoint footprints while
+both writing it. -/
+theorem lockSet_endpointReceiveOnCore_covers_queueNeighbour
+    (st : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (replyId : Option SeLe4n.ReplyId)
+    (q : SeLe4n.ThreadId)
+    (hq : receiveSideQueueStructureNeighbor? st endpointId = some q) :
+    (tcbLock q, AccessMode.write)
+      ∈ (lockSet_endpointReceiveOnCore st endpointId receiver cnodeRootObjId replyId).pairs := by
+  unfold lockSet_endpointReceiveOnCore lockSet_endpointReceive
+  rw [hq]
+  exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-OD OD3.6: the resolved `.receive` footprint covers the rendezvous
 donation.**
@@ -1280,6 +1342,7 @@ theorem lockSet_endpointReceiveOnCore_covers_donatedSc
   rw [hSc]
   exact lockSet_endpointReceive_donated_sc_write_mem receiver cnodeRootObjId endpointId
     (receiveRendezvousSender? st endpointId) replyId (receiveInstallsCaps st endpointId) scId
+    (receiveSideQueueStructureNeighbor? st endpointId)
 
 /-- WS-OD OD3.6: and the state-level lock, on the donating path — which is the
 passive-server steady state and installs no capability, so the CDT-conditioned
@@ -1295,6 +1358,7 @@ theorem lockSet_endpointReceiveOnCore_covers_donationIndex
   rw [hSc]
   exact lockSet_endpointReceive_donation_stateLevel_write_mem receiver cnodeRootObjId endpointId
     (receiveRendezvousSender? st endpointId) replyId (receiveInstallsCaps st endpointId) scId
+    (receiveSideQueueStructureNeighbor? st endpointId)
 
 /-- **WS-RR RR7.11**: and `.replyRecv`'s resolved footprint declares the same
 state-level write, since its receive leg is the same transition. -/

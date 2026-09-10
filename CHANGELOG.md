@@ -1,3 +1,61 @@
+## v0.34.137 — WS-OD OD3.12/OD3.13: the receive-side arms declare it, and `maxLockSetSize` moves to 14
+
+**The last two arms the OD3.9 sweep found undeclared**, and the ceiling they
+cost.  `.receive` and `.replyRecv` pop the endpoint's **send** queue or enqueue
+on its **receive** queue, through the same two primitives the send side uses, so
+each writes the same one queue-structure TCB — the popped thread's successor
+promoted to head, or the queue's old tail.  Both are now declared, through the
+same `receiveSideQueueStructureNeighbor?`, because `.replyRecv`'s receive leg
+*is* `.receive`'s transition.
+
+**`maxLockSetSize` is 14** (from 13 at WS-OD OD3.7).  `.replyRecv` was at 13 of
+13 — four base members and nine optionals — so declaring the object its receive
+leg writes had nowhere to go. The maintainer's call was to raise and state the
+cost; here it is, in full:
+
+| | before | after |
+|---|---|---|
+| `maxLockSetSize` | 13 | **14** |
+| `admissibleCriticalSection` for the 1 ms tick | 25 µs | **23 µs** |
+| the 60 µs envelope `maxLockSetSize · (numCores − 1) · 60` | 2340 µs | **2520 µs** |
+| the sharp reachable `.replyRecv` bound | 12 | **13** |
+
+Every one of those is *derived* from the constant and moves with it — which is
+the point of stating them as theorems (`admissibleCriticalSection_rpi5Tick`,
+`lockSet_replyRecv_size_le_thirteen_of_owner_eq_target`) rather than as
+paragraphs: a cut that widens a footprint pays here, visibly, and cannot pay
+silently.  The *gap* between the ceiling and the sharp bound is unchanged at
+one; what OD3.7 recorded about that gap still holds.
+
+Read the cost against the alternative.  A footprint that omits a written object
+is **false**, and every statement built on `lockSetForSyscall` — the 2PL
+serialisation results, `boundedWait_under_2pl`, the CC-5 contention bound — was
+*silent* about that TCB rather than conservative.  This project rates a false
+footprint worse than a wide one, and the two microseconds are what the true one
+costs.
+
+Three things new code must respect.
+
+1. **One resolver serves both arms.**  `receiveSideQueueStructureNeighbor?` is
+   `endpointQueueStructureNeighbor?` at `receiveRendezvousSender?` — the
+   resolver the sender member, the caps flag and the donation member already
+   read — so all four agree about which branch a given receive takes.
+2. **Every statement about both footprints is restated at the new full arity** —
+   two size bounds (including the sharp one), two kind-consistency proofs, ten
+   write-membership lemmas, the `lockSetTransitions_within_bound` conjuncts and
+   `KernelOperation.ofReplyRecv`.  RR7.18's census refuses a size bound left at
+   the default; the rest are done by hand for the same reason.
+3. **The sharp bound is renamed, not weakened.**
+   `lockSet_replyRecv_size_le_twelve_of_owner_eq_target` is now
+   `…_size_le_thirteen_of_owner_eq_target`, and
+   `lockSet_endpointReplyRecvOnCore_size_le_twelve` is now `…_size_le_thirteen`.
+   Both say exactly what they said before — a reachable `.replyRecv` is one
+   inside the ceiling, because the returned donation's owner is the answered
+   caller and two arguments name one key.
+
+With this cut all eight declared syscall arms have a footprint that names every
+object they write, and the sweep that began at `v0.34.134` is closed.
+
 ## v0.34.136 — WS-OD OD3.11: `.send` and `.call` declare the queue-structure neighbour
 
 The second and third arms the OD3.9 sweep found undeclared, and the shape that

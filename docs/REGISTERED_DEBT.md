@@ -439,9 +439,9 @@ and `outerCallerAcceptable` then reads that frame's caller's TCB to validate it
 before the pop binds a context to it, so an unlocked read is a
 time-of-check/time-of-use window).  The row's own escalation clause fired and was
 answered in favour of the raise: `maxLockSetSize` 11 → **13**,
-`admissibleCriticalSection` for the 1 ms tick 30 → **25 µs**, the uniform envelope
-1980 → 2340 µs — only `.replyRecv` needed it, and the *reachable* `.replyRecv`
-declares twelve (`lockSet_endpointReplyRecvOnCore_size_le_twelve`), stated rather
+`admissibleCriticalSection` for the 1 ms tick 30 → 25 µs (and 23 µs since
+WS-OD OD3.13 took the ceiling to 14), the uniform envelope 1980 → 2340 → 2520 µs — only `.replyRecv` needed it, and the *reachable* `.replyRecv`
+declares twelve (`lockSet_endpointReplyRecvOnCore_size_le_thirteen`), stated rather
 than left for a reader to re-derive.  **OD3.8 landed at `v0.34.132`, closing
 OD3** — the pop is the one transition in the tree that writes `Reply.donatedSc`,
 `Reply.prev` and `SchedContext.scReply`, so it is the one that cannot reach
@@ -458,7 +458,7 @@ discharged: the projection re-derivation landed with the fourth store at OD3.1,
 and the de-threading family size does not move, since the new theorem is not an
 `ipcInvariantFull` bundle.  OD4 onward are open. Plan:
 [`docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`](planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md)
-(45 sub-tasks across OD1..OD6). It closes two section-A rows: the onward-donation
+(47 sub-tasks across OD1..OD6). It closes two section-A rows: the onward-donation
 gap above, and the `passiveServerIdle` break the `v0.34.97` reclaim introduced —
 the second of which OD1 has now closed.
 
