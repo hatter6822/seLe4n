@@ -49,9 +49,9 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.34.141` (`lakefile.toml`) |
+| **Package version** | `0.34.142` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 361,976 across 328 Lean files |
+| **Production LoC** | 361,981 across 328 Lean files |
 | **Test LoC** | 74,275 across 70 Lean test suites |
 | **Proved declarations** | 12,106 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
@@ -2927,6 +2927,17 @@ alongside the latent inventory (closing SMP-H3).
    than a bound that grows with the chain.  **Only `.replyRecv`
    required the raise**: `lockSet_endpointReply` reaches nine with the
    same two members and the cancellation reply arm ten.
+
+   **At HEAD, the declared lock-set ceiling is **14**, the RPi5 tick admits **23 µs** per lock, and the uniform 60 µs envelope is **2520 µs**.**
+   All three are *derived* — from `maxLockSetSize`, `numCores` and
+   `rpi5TickBudgetMicros`, through `admissibleCriticalSection`'s own
+   formula — and since WS-OD OD3.15 (v0.34.142)
+   `scripts/check_lock_ceiling_figures.py` (Tier 0) holds every prose
+   copy of them to those sources.  The spelling above is canonical:
+   narrative may name a superseded value freely, a live claim is
+   written that way or it is not checkable, and a near-miss is
+   reported as a gate defect rather than skipped.  Quote the theorem
+   (`admissibleCriticalSection_rpi5Tick`), never this paragraph.
 
    The WCRT headline is parametric in the constant, so
    `admissibleCriticalSection` for the RPi5's 1 ms tick falls

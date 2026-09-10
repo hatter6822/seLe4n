@@ -1,3 +1,58 @@
+## v0.34.142 — WS-OD OD3.15: the ceiling's derived figures stop being hand-maintained
+
+`maxLockSetSize` is the WCRT headline's first factor, and two published figures
+are functions of it: the per-lock critical section the RPi5 tick admits
+(`admissibleCriticalSection`), and the contention envelope at a uniform cost.
+Every raise in this phase — OD3.5 (9 → 11), OD3.7 (11 → 13), OD3.13 (13 → 14) —
+left a hand-maintained copy of one of those figures behind somewhere in the
+prose, and **four consecutive review rounds each found one the previous round's
+sweep had missed**; the OD3.14 cut alone hand-fixed three more (the spec's
+`.chainStart` category size, the GitBook chapter's ceiling history, the plan's
+superseded-budget note).
+
+That is the enumeration-standing-in-for-a-derivation shape at the scale of a
+document set, and this repo already had the remedy: WS-RR RR7.28 holds the
+de-threading bundle count to its own census, and that gate caught the family
+moving 170 → 172 on the cut that made it stale rather than on the cut that
+noticed.  `scripts/check_lock_ceiling_figures.py` is the same mechanism for the
+ceiling, wired into Tier 0.
+
+**Both axes are derived.**  The numbers come out of the Lean sources — the three
+constants (`maxLockSetSize`, `numCores`, `rpi5TickBudgetMicros`) **and** the
+shape of `admissibleCriticalSection`'s body, pinned so that a changed formula
+stops the derivation rather than silently producing a figure the kernel does not
+compute.  The sites are every tracked Markdown and Lean file outside
+`CHANGELOG.md` and `docs/dev_history/`, so a prose site is covered the day it is
+written.  Lean files are in scope because two of the four stale copies were in
+module docstrings.
+
+**The live claim has a canonical spelling, by contract.**  A regex cannot tell a
+live assertion from narrative that legitimately names an old value ("OD3.5 raised
+the ceiling to 11", "against a ceiling of nine"), and the set of spellings is
+unbounded — this project's rule for that case is to require a canonical form and
+refuse the rest rather than to keep teaching a scanner one more.  So a live claim
+is written as `the declared lock-set ceiling is **N**`, `the RPi5 tick admits
+**N µs** per lock`, or `the uniform C µs envelope is **N µs**`, and every
+occurrence is held to the derivation.  The envelope claim carries its own cost
+and is checked against `ceiling · (numCores − 1) · C`, so it generalises rather
+than hard-coding 60.
+
+**It fails closed on what it cannot read, and cannot be silenced by deletion.**
+A near-miss — the locator phrase present, the strict claim absent — is reported
+as a gate defect, because the scanner builds a set of *requirements* and dropping
+one is a check nobody runs.  Five documents (`CLAUDE.md`, `AGENTS.md`, the spec,
+the GitBook proof map, and `LockSet.lean`) are pinned to carry the statement;
+that list is a pin rather than a derivation, and it says so.
+
+**Fifteen self-test cases**, and the harness refuses a check whose only rejecting
+fixture deletes a token — including a token-preserving case for the pinned-site
+check, where the document states every figure correctly but uncheckably.
+
+Also in this cut: the overtaken D21 raise in `HIERARCHICAL_CBS_PLAN.md` is
+flagged for WS-CB's first cut at all three sites that quoted it — the ceiling is
+14, so the `+ 2` D21 schedules lands `lockSet_tcbSuspend` at eleven, inside the
+ceiling, and the raise itself is unnecessary on that row's arithmetic.
+
 ## v0.34.141 — WS-OD OD3.14: the receive rendezvous hands over the caller's priority, not only its budget
 
 A review finding on the OD3 cut, verified against the code, reported as a

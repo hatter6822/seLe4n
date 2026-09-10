@@ -450,4 +450,19 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_tlbi_broadcast_discipline.py"
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_ipc_invariant_dethreading.py" --self-test
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_ipc_invariant_dethreading.py"
 
+# WS-OD OD3.15: hold every prose claim about the lock-set ceiling to the value
+# Lean derives.  `maxLockSetSize` is the WCRT headline's first factor and two
+# further published figures are functions of it, so every raise left a
+# hand-maintained copy behind somewhere -- four consecutive review rounds each
+# found one the previous round's sweep had missed, which is the
+# enumeration-standing-in-for-a-derivation shape at the scale of a whole
+# document set.  Both axes are derived (the constants and the formula from the
+# Lean sources; the sites from the tracked tree), the live claim has a canonical
+# spelling so narrative naming an old value is free, a near-miss is a gate
+# defect rather than a skip, and five documents are pinned to carry the
+# statement so deleting the sentence does not satisfy it.  Self-test first, and
+# its harness refuses a check whose only rejecting fixture deletes a token.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_lock_ceiling_figures.py" --self-test
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_lock_ceiling_figures.py"
+
 finalize_report

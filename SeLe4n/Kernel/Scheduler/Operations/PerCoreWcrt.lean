@@ -278,7 +278,7 @@ rather than repeating a literal. -/
 def rpi5TickBudgetMicros : Nat := 1000
 
 /-- WS-RR RR7.31: **the corrected §7.2 figure.**  At the model's declared ceiling
-the RPi5 tick admits a per-lock critical section of at most **23 µs**, not the
+the RPi5 tick admits **23 µs** per lock, not the
 60 µs the plan assumed — `maxLockSetSize · (numCores − 1) = 42`, and `1000 / 42`
 is 23.
 

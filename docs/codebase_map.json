@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/od2-inert-structure-chain-ngczo8",
-      "commit_sha": "a193085c77ec7f849b8f9cddafce06a57370d9ea",
-      "tree_sha": "cc1d350e23503c868e51e723cf7224421b9fc8d9",
-      "committed_at_utc": "2026-09-10T05:37:02+00:00"
+      "commit_sha": "2541553e05e69fdb67d7becc9b6e15b7cb6143e5",
+      "tree_sha": "b7c6035f7e9f73ff466bd3f4865c0ce0e95a5c95",
+      "committed_at_utc": "2026-09-10T16:02:06+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "5a6d94feb982b960d413bfae9a866dd2c803f5da6e411f23799765f9d7c9968a"
+    "source_digest": "38dd7be369e52d18489cbe41d3597c14924d3a3da7cfe46f94ae6a92b14e7d55"
   },
   "summary": {
     "module_count": 398,
     "declaration_count": 20668
   },
   "readme_sync": {
-    "version": "0.34.141",
+    "version": "0.34.142",
     "lean_toolchain": "v4.28.0",
     "production_files": 328,
-    "production_loc": 361976,
+    "production_loc": 361981,
     "test_files": 70,
     "test_loc": 74275,
     "proved_theorem_lemma_decls": 12106,
@@ -38367,7 +38367,7 @@
         {
           "kind": "def",
           "name": "maxLockSetSize",
-          "line": 971,
+          "line": 976,
           "called": []
         }
       ]

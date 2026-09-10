@@ -385,7 +385,12 @@ platform rather than with the lock.
 > now walk is state-discovered and unbounded, so its locks are declared through
 > the `pipChainStart_<τ>` markers the SM3.C walker consumes rather than through
 > `lockSet_<τ>` — which is what keeps the static footprint an honest declaration
-> of the *static* locks. See
+> of the *static* locks.
+>
+> At HEAD, the declared lock-set ceiling is **14**, the RPi5 tick admits **23 µs** per lock, and the uniform 60 µs envelope is **2520 µs** —
+> the canonical spelling `scripts/check_lock_ceiling_figures.py` (Tier 0, WS-OD
+> OD3.15) holds to the Lean sources, so this chapter cannot go stale behind the
+> constant the way it did between OD3.7 and OD3.14. See
 > [`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §SM3.C.9 for the
 > canonical statement.
 

@@ -931,10 +931,15 @@ the honest constant is the one the definition can produce.
 
 **The cost, stated rather than implied.**  This constant is the WCRT headline's
 first factor (`maxLockSetSize · (numCores − 1) · tCs`), so each raise narrows the
-per-lock critical section the RPi5 tick admits: 37 µs at nine, 30 µs at eleven,
-25 µs at thirteen, and **23 µs** at fourteen
+per-lock critical section the 1 ms budget allows: 37 µs at nine, 30 µs at eleven,
+25 µs at thirteen, and 23 µs at fourteen
 (`admissibleCriticalSection_rpi5Tick`), widening the CC-5 contention bound in
-proportion each time.  The figure is *derived* from this constant and must be
+proportion each time.
+
+At the value above, the declared lock-set ceiling is **14**, the RPi5 tick admits **23 µs** per lock, and the uniform 60 µs envelope is **2520 µs** —
+the canonical spelling `scripts/check_lock_ceiling_figures.py` holds to the Lean
+sources, so a raise that leaves a copy of any of the three behind is a build
+failure on the cut that makes it stale rather than on the cut that notices.  The figure is *derived* from this constant and must be
 read off that theorem rather than from this paragraph: at fourteen the tick
 admits `14 · 3 · 23 = 966 µs ≤ 1000`, and quoting a superseded per-lock cost
 beside the current ceiling states a budget the constant does not satisfy.  Every

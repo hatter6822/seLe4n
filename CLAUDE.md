@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.34.141.
+Lean 4.28.0 toolchain, Lake build system, version 0.34.142.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1446,7 +1446,7 @@ fell into with the rule that closes each.
 
 Plan: [`docs/planning/HIERARCHICAL_CBS_PLAN.md`](docs/planning/HIERARCHICAL_CBS_PLAN.md).
 
-### WS-OD SchedContext donation chains — IN FLIGHT (registered v0.34.98; OD1 closed v0.34.108, OD2 v0.34.125, OD3 v0.34.126→141)
+### WS-OD SchedContext donation chains — IN FLIGHT (registered v0.34.98; OD1 closed v0.34.108, OD2 v0.34.125, OD3 v0.34.126→142)
 
 `applyCallDonation` donates only from a **`.bound`** caller, and
 `donateSchedContext` is the only operational construction site of a `.donated`
@@ -1455,9 +1455,9 @@ passive-server pattern does not work at call depth ≥ 2, where the callee stays
 `.unbound` and can never run.  seL4-MCS's `maybeDonateSchedContext` reads the
 sender's *effective* context, bound or donated, and passes it down the chain.
 Two register rows close here: that gap, and the `passiveServerIdle` break the
-`v0.34.97` reclaim introduced.  **48 sub-tasks across OD1..OD6.**  **OD1 is
+`v0.34.97` reclaim introduced.  **49 sub-tasks across OD1..OD6.**  **OD1 is
 closed** (`v0.34.100` → `v0.34.108`), **OD2 is closed** (`v0.34.125`, one cut),
-and **OD3 is closed** (`v0.34.126` → `v0.34.141`); OD4..OD6 have not
+and **OD3 is closed** (`v0.34.126` → `v0.34.142`); OD4..OD6 have not
 started.
 
 Six things new code must respect once this lands, and each is a decision the plan
@@ -2079,9 +2079,22 @@ code may assume:
   **five** locks and
   refuses six.  What the tree states instead is the budget condition solved for the
   measurable factor: `admissibleCriticalSection budget` is the largest per-lock cost
-  a budget admits at the declared ceiling — **23 µs** for the 1 ms tick — with
+  a budget admits at the declared ceiling, with
   `WCRT_lockSet_le_budget_of_admissible` the payoff and
-  `rpi5Tick_refuses_sixty_micro_sections` the `decide`-checked negative.  New code
+  `rpi5Tick_refuses_sixty_micro_sections` the `decide`-checked negative.  At
+  HEAD, the declared lock-set ceiling is **14**, the RPi5 tick admits **23 µs** per lock, and the uniform 60 µs envelope is **2520 µs**.
+  Those three figures are **derived**, and since WS-OD OD3.15
+  `scripts/check_lock_ceiling_figures.py` (Tier 0) holds every prose copy of them
+  to the Lean sources: the constants and the formula that combines them are read
+  out of `LockSet.lean`, `Types.lean` and `PerCoreWcrt.lean`, and every tracked
+  Markdown and Lean file outside `CHANGELOG.md` and `docs/dev_history/` is scanned
+  for the canonical spelling above.  Narrative may name an old value freely
+  (`OD3.5 raised the ceiling to 11`); a **live** claim is written in that spelling
+  or it is not checkable, and a phrase that comes close without matching is
+  reported as a gate defect rather than skipped.  Five documents are pinned to
+  carry the statement, so deleting the sentence is not a way to satisfy the gate.
+  Four consecutive review rounds each found a stale copy the previous round's
+  sweep had missed, which is what made this a mechanism rather than a correction.  New code
   must not quote a numeric syscall WCRT for this kernel; measuring `tCs` on the
   target is an acceptance criterion of RR7.39–RR7.41 and fine-lock Track D.
 - **The syscall seam brackets; the scheduler entries do not** (WS-RR RR7.12,
